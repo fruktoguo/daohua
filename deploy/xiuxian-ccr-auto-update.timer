@@ -1,0 +1,12 @@
+[Unit]
+Description=定时检查太虚仙途 CCR 镜像
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+RandomizedDelaySec=10s
+Persistent=true
+Unit=xiuxian-ccr-auto-update.service
+
+[Install]
+WantedBy=timers.target

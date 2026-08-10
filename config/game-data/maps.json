@@ -1,0 +1,261 @@
+[
+  {
+    "id": "map.qingyun-mountains",
+    "name": "青云山脉",
+    "description": "灵脉、山谷和古道交错的入门地域。不同地点会改变可用行动、妖兽遭遇和修炼环境。",
+    "backgroundSeed": 73021,
+    "nodes": [
+      {
+        "id": "node.herb-vale",
+        "name": "青岚药谷",
+        "description": "低阶灵草沿溪谷生长，是初入修行者最稳定的采集地。",
+        "x": 13,
+        "y": 63,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "explore.gather-herbs",
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.qi-beast"
+        ],
+        "npcs": [
+          {
+            "id": "npc.herbalist-lin",
+            "name": "采药人林伯",
+            "kind": "npc",
+            "description": "熟悉药谷路径的老采药人。",
+            "effect": "后续可提供采集委托"
+          }
+        ],
+        "buildings": []
+      },
+      {
+        "id": "node.cloud-gate",
+        "name": "青云山门",
+        "description": "连接药谷、灵泉和西岭的山门，也是低阶修士的聚集处。",
+        "x": 31,
+        "y": 39,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.qi-beast"
+        ],
+        "npcs": [
+          {
+            "id": "npc.gate-disciple",
+            "name": "守山弟子",
+            "kind": "npc",
+            "description": "负责记录进出山门的修士。",
+            "effect": "山门附近不会出现高阶妖兽"
+          }
+        ],
+        "buildings": [
+          {
+            "id": "building.qingyun-gate",
+            "name": "青云山门",
+            "kind": "building",
+            "description": "覆盖整条古道的防护阵基。",
+            "effect": "区域内受袭概率降低"
+          }
+        ]
+      },
+      {
+        "id": "node.spirit-spring",
+        "name": "澄心灵泉",
+        "description": "泉眼不断逸散精纯灵气，适合吐纳与稳固周天。",
+        "x": 49,
+        "y": 57,
+        "cultivationMultiplier": 1.25,
+        "availableActionIds": [
+          "explore.gather-herbs"
+        ],
+        "encounterIds": [],
+        "npcs": [
+          {
+            "id": "npc.spring-meditator",
+            "name": "静修道人",
+            "kind": "npc",
+            "description": "常年在泉边静坐，对外界少有回应。",
+            "effect": "提示灵泉修炼增益"
+          }
+        ],
+        "buildings": []
+      },
+      {
+        "id": "node.sunset-ridge",
+        "name": "落霞西岭",
+        "description": "山势开阔却常有聚气兽徘徊，适合低阶斗法历练。",
+        "x": 36,
+        "y": 17,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "combat.hunt-qi-beast"
+        ],
+        "encounterIds": [
+          "encounter.qi-beast"
+        ],
+        "npcs": [],
+        "buildings": []
+      },
+      {
+        "id": "node.twilight-pass",
+        "name": "暮影关",
+        "description": "通往暮影谷的狭窄关口，谷中妖物会成群出现。",
+        "x": 68,
+        "y": 20,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.twilight-watchtower",
+            "name": "暮影哨塔",
+            "kind": "building",
+            "description": "观察谷内妖气变化的旧哨塔。",
+            "effect": "显示暮影谷敌群情报"
+          }
+        ]
+      },
+      {
+        "id": "node.stone-vein",
+        "name": "玄岩矿脉",
+        "description": "裸露的山体中可见玄铁纹路，后续会开放采矿行动。",
+        "x": 84,
+        "y": 55,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [],
+        "encounterIds": [],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.abandoned-mine",
+            "name": "废弃矿架",
+            "kind": "building",
+            "description": "旧矿道入口仍残留可修复的木制矿架。",
+            "effect": "后续玩家建筑槽位"
+          }
+        ]
+      },
+      {
+        "id": "node.cloud-market",
+        "name": "流云集",
+        "description": "山中散修交换物资的集市，灵市功能在此最为活跃。",
+        "x": 61,
+        "y": 82,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [],
+        "encounterIds": [],
+        "npcs": [
+          {
+            "id": "npc.market-broker",
+            "name": "灵市牙人",
+            "kind": "npc",
+            "description": "替往来修士整理挂牌与交割。",
+            "effect": "后续降低本地市场手续费"
+          }
+        ],
+        "buildings": [
+          {
+            "id": "building.cloud-market",
+            "name": "流云集市",
+            "kind": "building",
+            "description": "沿山道搭建的常驻交易棚。",
+            "effect": "提供灵市访问"
+          }
+        ]
+      },
+      {
+        "id": "node.ancient-terrace",
+        "name": "观星古台",
+        "description": "残破石台位于群峰之间，夜间可感应更活跃的天地灵机。",
+        "x": 88,
+        "y": 26,
+        "cultivationMultiplier": 1.12,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "npcs": [],
+        "buildings": []
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge.herb-gate",
+        "fromNodeId": "node.herb-vale",
+        "toNodeId": "node.cloud-gate",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.herb-spring",
+        "fromNodeId": "node.herb-vale",
+        "toNodeId": "node.spirit-spring",
+        "durationSeconds": 18
+      },
+      {
+        "id": "edge.gate-spring",
+        "fromNodeId": "node.cloud-gate",
+        "toNodeId": "node.spirit-spring",
+        "durationSeconds": 11
+      },
+      {
+        "id": "edge.gate-sunset",
+        "fromNodeId": "node.cloud-gate",
+        "toNodeId": "node.sunset-ridge",
+        "durationSeconds": 9
+      },
+      {
+        "id": "edge.sunset-twilight",
+        "fromNodeId": "node.sunset-ridge",
+        "toNodeId": "node.twilight-pass",
+        "durationSeconds": 17
+      },
+      {
+        "id": "edge.spring-twilight",
+        "fromNodeId": "node.spirit-spring",
+        "toNodeId": "node.twilight-pass",
+        "durationSeconds": 19
+      },
+      {
+        "id": "edge.spring-market",
+        "fromNodeId": "node.spirit-spring",
+        "toNodeId": "node.cloud-market",
+        "durationSeconds": 13
+      },
+      {
+        "id": "edge.market-stone",
+        "fromNodeId": "node.cloud-market",
+        "toNodeId": "node.stone-vein",
+        "durationSeconds": 12
+      },
+      {
+        "id": "edge.twilight-stone",
+        "fromNodeId": "node.twilight-pass",
+        "toNodeId": "node.stone-vein",
+        "durationSeconds": 18
+      },
+      {
+        "id": "edge.twilight-terrace",
+        "fromNodeId": "node.twilight-pass",
+        "toNodeId": "node.ancient-terrace",
+        "durationSeconds": 13
+      },
+      {
+        "id": "edge.stone-terrace",
+        "fromNodeId": "node.stone-vein",
+        "toNodeId": "node.ancient-terrace",
+        "durationSeconds": 15
+      }
+    ]
+  }
+]

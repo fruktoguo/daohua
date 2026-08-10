@@ -1,0 +1,1380 @@
+.expedition-page {
+  display: flex;
+  height: 100%;
+  min-height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.expedition-header {
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
+
+.expedition-header > div {
+  min-width: 0;
+}
+
+.expedition-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.expedition-tabs button {
+  min-width: 68px;
+  padding: 6px 12px;
+  border-color: transparent;
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.expedition-tabs button.active {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.12);
+}
+
+.expedition-content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.expedition-content > * {
+  width: 100%;
+}
+
+.expedition-content--duel {
+  margin-right: -12px;
+  margin-left: -12px;
+  overflow: hidden;
+}
+
+.world-map-loading,
+.location-action-empty {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.world-map-layout {
+  display: grid;
+  min-width: 0;
+  min-height: clamp(430px, 62vh, 680px);
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 30%);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(5, 7, 6, 0.58);
+}
+
+.world-map-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 430px;
+  overflow: hidden;
+  border: 1px solid rgba(114, 169, 140, 0.22);
+  background: rgba(7, 9, 7, 0.94);
+  isolation: isolate;
+  clip-path: polygon(0 12px, 12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+}
+
+.world-map-stage::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  inset: 8px;
+  border: 1px solid rgba(114, 169, 140, 0.12);
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.7);
+  content: "";
+  pointer-events: none;
+}
+
+.world-map-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.world-map-edges {
+  z-index: 1;
+  overflow: visible;
+}
+
+.world-map-edges g {
+  pointer-events: stroke;
+}
+
+.world-map-edge-line {
+  stroke: rgba(201, 180, 109, 0.32);
+  stroke-width: 0.34;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.world-map-edge-hitbox {
+  stroke: transparent;
+  stroke-width: 12;
+  vector-effect: non-scaling-stroke;
+}
+
+.world-map-edges g.is-planned .world-map-edge-line {
+  stroke: #e8d69a;
+  stroke-width: 1.1;
+  stroke-dasharray: 3 2;
+  animation: world-route-flow 0.7s linear infinite;
+}
+
+.world-map-edges text {
+  opacity: 0;
+  fill: rgba(233, 227, 210, 0.5);
+  font-family: Arial, sans-serif;
+  font-size: 2.3px;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(7, 6, 4, 0.88);
+  stroke-width: 0.8px;
+  text-anchor: middle;
+  transition: opacity 0.16s ease;
+}
+
+.world-map-edges g:hover .world-map-edge-line {
+  stroke: var(--gold-bright);
+  stroke-width: 1;
+}
+
+.world-map-edges g:hover text {
+  opacity: 1;
+}
+
+@keyframes world-route-flow {
+  to { stroke-dashoffset: -5; }
+}
+
+.world-map-node {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  width: clamp(72px, 9vw, 94px);
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(201, 180, 109, 0.62);
+  border-radius: 0;
+  color: var(--gold-bright);
+  background:
+    linear-gradient(135deg, rgba(201, 180, 109, 0.12), transparent 52%),
+    rgba(10, 12, 9, 0.96);
+  box-shadow: 0 0 0 4px rgba(7, 6, 4, 0.68), 0 8px 20px rgba(0, 0, 0, 0.56);
+  clip-path: none;
+  transform: translate(-50%, -50%);
+}
+
+.world-map-node > strong {
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 13px;
+  font-weight: 500;
+  text-shadow: 0 1px 3px #000;
+  white-space: nowrap;
+}
+
+.world-map-node:active:not(:disabled) {
+  transform: translate(-50%, -50%);
+}
+
+.world-map-node.is-selected {
+  border-color: var(--gold-bright);
+  background: rgba(86, 70, 27, 0.92);
+  box-shadow: 0 0 0 4px rgba(7, 6, 4, 0.68), 0 0 24px rgba(232, 214, 154, 0.38);
+}
+
+.world-map-node.is-current::after {
+  position: absolute;
+  width: calc(100% + 12px);
+  height: calc(100% + 12px);
+  border: 1px solid rgba(114, 169, 140, 0.72);
+  clip-path: polygon(0 11px, 11px 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
+  content: "";
+  animation: world-current-pulse 1.8s ease-out infinite;
+}
+
+@keyframes world-current-pulse {
+  0% { opacity: 0.9; transform: scale(0.76); }
+  100% { opacity: 0; transform: scale(1.28); }
+}
+
+.world-player-marker {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid #b7ebd0;
+  border-radius: 0;
+  color: #07100c;
+  background: #72a98c;
+  box-shadow: 0 0 16px rgba(114, 169, 140, 0.66);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 14px;
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(45deg);
+  transition: left 0.9s linear, top 0.9s linear;
+}
+
+.world-player-marker b {
+  font-weight: 400;
+  transform: rotate(-45deg);
+}
+
+.world-player-marker.is-at-node {
+  margin-top: -31px;
+}
+
+.world-location-panel {
+  display: flex;
+  min-width: 0;
+  padding: 16px 14px;
+  flex-direction: column;
+  gap: 15px;
+  border: 1px solid rgba(201, 180, 109, 0.16);
+  background:
+    linear-gradient(135deg, rgba(201, 180, 109, 0.055), transparent 38%),
+    rgba(7, 9, 7, 0.78);
+  clip-path: polygon(0 10px, 10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+
+.world-location-current {
+  display: grid;
+  gap: 2px;
+  padding: 0 0 12px 10px;
+  border-bottom: 1px solid var(--gold-faint);
+  border-left: 2px solid var(--jade);
+}
+
+.world-location-current span,
+.world-location-panel header > span {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.world-location-current strong,
+.world-location-panel h3 {
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.world-location-current small {
+  color: #91bba6;
+}
+
+.world-location-panel h3,
+.world-location-panel p {
+  margin: 0;
+}
+
+.world-location-panel header p {
+  margin-top: 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.world-location-stats {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--gold-faint);
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.world-location-stats > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px 5px;
+  text-align: center;
+}
+
+.world-location-stats > div + div {
+  border-left: 1px solid var(--gold-faint);
+}
+
+.world-location-stats dt {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.world-location-stats dd {
+  margin: 0;
+  color: var(--text);
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+}
+
+.world-location-tags {
+  display: flex;
+  align-content: flex-start;
+  gap: 5px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.world-location-tags span {
+  height: fit-content;
+  padding: 3px 7px;
+  border: 1px solid rgba(114, 169, 140, 0.38);
+  color: #9ec9b3;
+  font-size: 10px;
+}
+
+.world-location-tags span.is-danger {
+  border-color: rgba(200, 82, 63, 0.46);
+  color: #df8d7e;
+}
+
+.world-location-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.world-location-actions button {
+  min-height: 36px;
+}
+
+.nearby-layout {
+  min-height: 100%;
+  padding: 4px 2px;
+}
+
+.nearby-heading {
+  display: grid;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.nearby-heading span {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.nearby-heading h3 {
+  margin: 2px 0;
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.nearby-heading p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.nearby-section {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.nearby-section h4 {
+  margin: 0 0 8px;
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.nearby-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.nearby-card {
+  display: grid;
+  min-width: 0;
+  min-height: 92px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  background: rgba(201, 180, 109, 0.025);
+}
+
+.nearby-card.is-player { border-color: rgba(114, 169, 140, 0.42); }
+.nearby-card.is-building { border-color: rgba(117, 169, 173, 0.4); }
+
+.nearby-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid currentColor;
+  color: var(--gold);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 18px;
+}
+
+.nearby-card strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.nearby-card p,
+.nearby-card small {
+  display: block;
+  margin: 2px 0 0;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.nearby-card small { color: var(--gold-dim); }
+
+.nearby-empty {
+  display: grid;
+  min-height: 92px;
+  margin: 0;
+  place-items: center;
+  border: 1px dashed var(--gold-faint);
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: center;
+}
+
+.expedition-duel {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(220px, 1fr) auto;
+  gap: 0;
+  overflow: hidden;
+}
+
+.combat-arena-shell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(201, 180, 109, 0.28);
+  background:
+    linear-gradient(90deg, rgba(53, 82, 71, 0.08), transparent 42%, rgba(117, 44, 39, 0.08)),
+    rgba(6, 7, 6, 0.82);
+  box-shadow: inset 0 0 54px rgba(0, 0, 0, 0.48);
+  border-right: 0;
+  border-left: 0;
+  contain: layout paint;
+  isolation: isolate;
+}
+
+.combat-arena-shell::before {
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgba(201, 180, 109, 0.08);
+  content: "";
+  pointer-events: none;
+}
+
+.combat-arena-toolbar {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 12px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.18);
+  background: rgba(201, 180, 109, 0.035);
+}
+
+.combat-arena-toolbar > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.combat-arena-toolbar > div span {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.combat-arena-toolbar > div strong {
+  overflow: hidden;
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 17px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combat-phase-badge {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border: 1px solid rgba(117, 169, 173, 0.42);
+  color: #abd2c5;
+  background: rgba(50, 98, 82, 0.12);
+  font-size: 10px;
+}
+
+.combat-arena-field {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(190px, 1fr));
+  align-items: center;
+  justify-content: center;
+  gap: clamp(24px, 8vw, 120px);
+  padding: 18px clamp(24px, 6vw, 86px) 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(201, 180, 109, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(201, 180, 109, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  contain: layout paint;
+}
+
+.arena-actor {
+  position: relative;
+  display: grid;
+  width: min(100%, 180px);
+  height: auto;
+  max-height: 240px;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 3 / 4;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  justify-self: center;
+  overflow: visible;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
+  cursor: pointer;
+  contain: layout style;
+}
+
+.arena-actor:focus-visible .arena-avatar {
+  outline: 1px solid var(--gold-bright);
+  outline-offset: 4px;
+}
+
+.arena-actor.is-dormant {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.arena-actor--player {
+  border-color: rgba(114, 169, 140, 0.42);
+}
+
+.arena-actor--enemy {
+  border-color: rgba(200, 82, 63, 0.42);
+}
+
+.arena-overhead {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 0 0 8px;
+}
+
+.arena-overhead > strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arena-actor-body {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.arena-avatar {
+  position: relative;
+  display: grid;
+  width: min(100%, 116px);
+  height: auto;
+  aspect-ratio: 3 / 4;
+  align-self: end;
+  justify-self: center;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(201, 180, 109, 0.26);
+  color: #a9d6c4;
+  background: rgba(255, 255, 255, 0.018);
+  clip-path: polygon(0 10px, 10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%);
+}
+
+.arena-actor--enemy .arena-avatar { color: #e09a8d; }
+
+.arena-avatar span {
+  color: currentColor;
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 42px;
+  text-shadow: 0 0 8px currentColor;
+}
+
+.arena-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.arena-actor.is-dead .arena-avatar {
+  opacity: 0.4;
+  filter: grayscale(1);
+}
+
+.arena-seal {
+  position: relative;
+  display: grid;
+  width: 74px;
+  height: 96px;
+  place-items: center;
+  color: #a9d6c4;
+}
+
+.arena-actor--enemy .arena-seal {
+  color: #e09a8d;
+}
+
+.arena-seal::before,
+.arena-seal::after {
+  position: absolute;
+  inset: 8px 15px;
+  border: 1px solid currentColor;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.arena-seal::after {
+  opacity: 0.35;
+  transform: rotate(45deg) scale(0.72);
+}
+
+.arena-seal b {
+  position: relative;
+  z-index: 1;
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 30px;
+  font-weight: 400;
+  text-shadow: 0 0 14px currentColor;
+}
+
+.arena-seal > i {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  border-top: 1px solid currentColor;
+}
+
+.arena-seal > i:first-child { left: 0; }
+.arena-seal > i:last-child { right: 0; }
+
+.arena-vitals {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.arena-resource {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  font-family: Arial, sans-serif;
+  font-size: 9px;
+}
+
+.arena-resource > span {
+  color: var(--text-dim);
+}
+
+.arena-resource-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(201, 180, 109, 0.16);
+  background: rgba(255, 255, 255, 0.035);
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+
+.arena-resource-meter {
+  position: relative;
+  min-width: 0;
+}
+
+.arena-resource-track > i {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #376f59, #79b697);
+  box-shadow: 0 0 8px rgba(114, 169, 140, 0.38);
+  transform-origin: left center;
+  transition: transform 0.45s linear;
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+}
+
+.arena-resource--mp .arena-resource-track > i,
+.arena-resource--mp .arena-resource-slice {
+  background: linear-gradient(90deg, #345e7b, #75a9ad);
+  box-shadow: 0 0 8px rgba(117, 169, 173, 0.38);
+}
+
+.arena-resource-slice {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #376f59, #79b697);
+  box-shadow: 0 0 8px rgba(114, 169, 140, 0.42);
+  animation: arena-hp-slice 0.85s ease-out forwards;
+  clip-path: polygon(7px 0, 100% 0, calc(100% - 7px) 100%, 0 100%);
+  pointer-events: none;
+}
+
+.arena-resource--mp .arena-resource-slice {
+  animation-name: arena-mp-slice;
+}
+
+.arena-resource-floats {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.arena-actor-buffs {
+  display: flex;
+  min-height: 18px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.arena-actor-buffs span {
+  max-width: 68px;
+  overflow: hidden;
+  padding: 1px 4px;
+  border: 1px solid rgba(201, 180, 109, 0.18);
+  color: var(--gold-bright);
+  background: rgba(7, 6, 4, 0.74);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arena-resource-floats em {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  color: #ef8d7e;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 2px #000, 0 0 7px currentColor;
+  white-space: nowrap;
+  animation: arena-resource-float-up 0.85s ease-out forwards;
+}
+
+.arena-resource-floats em.is-positive { color: #9bd7ae; }
+.arena-resource--mp .arena-resource-floats em { color: #8fc8e4; animation-name: arena-resource-float-down; }
+.arena-resource--mp .arena-resource-floats em.is-positive { color: #b5d9f0; }
+
+@keyframes arena-hp-slice {
+  to { opacity: 0; transform: translateY(-18px); }
+}
+
+@keyframes arena-mp-slice {
+  to { opacity: 0; transform: translateY(18px); }
+}
+
+@keyframes arena-resource-float-up {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, -24px); }
+}
+
+@keyframes arena-resource-float-down {
+  from { opacity: 1; transform: translate(-50%, 0); }
+  to { opacity: 0; transform: translate(-50%, 24px); }
+}
+
+.arena-resource > strong {
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.arena-action-bar {
+  display: grid;
+  grid-template-rows: 14px 5px;
+  gap: 4px;
+  padding: 8px 0 0;
+  border: 0;
+  background: transparent;
+}
+
+.arena-action-bar strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combat-arena-controls {
+  position: absolute;
+  z-index: 6;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  height: auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 0;
+  border: 0;
+}
+
+.combat-arena-controls button {
+  min-width: max-content;
+}
+
+.combat-arena-controls span {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.arena-action-bar > i {
+  display: block;
+  height: 5px;
+  overflow: hidden;
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.arena-action-bar > i b {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #5b806f, #b4d7c8);
+  box-shadow: 0 0 8px rgba(114, 169, 140, 0.38);
+  transform-origin: left center;
+  transition: none;
+}
+
+.arena-action-bar--enemy > i b {
+  background: linear-gradient(90deg, #873e35, #e19b8e);
+  box-shadow: 0 0 8px rgba(200, 82, 63, 0.38);
+}
+
+.arena-action-bar--cast > i b {
+  background: linear-gradient(90deg, #6d5890, #c6a9ef);
+}
+
+.arena-actor > footer {
+  min-height: 36px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(201, 180, 109, 0.1);
+  color: var(--text-dim);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.arena-actor > footer i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.arena-transition {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  color: var(--gold-dim);
+}
+
+.arena-transition span {
+  position: relative;
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  border: 0;
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 23px;
+  isolation: isolate;
+}
+
+.arena-transition span::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border: 1px solid currentColor;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.arena-transition i {
+  width: 1px;
+  height: 66px;
+  background: linear-gradient(transparent, currentColor, transparent);
+}
+
+.arena-search-state {
+  display: grid;
+  width: min(100%, 240px);
+  justify-self: center;
+  place-items: center;
+  gap: 12px;
+  padding: 28px 22px;
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  background: rgba(9, 10, 8, 0.82);
+  text-align: center;
+}
+
+.arena-search-state--initial-search {
+  color: #d8ca8d;
+}
+
+.arena-search-state--search {
+  color: #9bc9b6;
+}
+
+.arena-search-state--death {
+  color: #df8f84;
+}
+
+.arena-search-state--search .arena-search-progress i {
+  background: linear-gradient(90deg, #426c63, #9bc9b6);
+}
+
+.arena-search-state--death .arena-search-progress i {
+  background: linear-gradient(90deg, #74352f, #df8f84);
+}
+
+.arena-search-sigil {
+  position: relative;
+  display: grid;
+  width: 86px;
+  height: 86px;
+  place-items: center;
+  color: var(--gold);
+  animation: arena-search-breathe 1.8s ease-in-out infinite;
+}
+
+.arena-search-sigil i {
+  position: absolute;
+  inset: 9px;
+  border: 1px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.arena-search-sigil i:nth-child(2) { inset: 21px; transform: rotate(0); }
+.arena-search-sigil b { z-index: 1; font-size: 22px; font-weight: 400; }
+
+@keyframes arena-search-breathe {
+  50% { filter: drop-shadow(0 0 9px rgba(201, 180, 109, 0.42)); transform: scale(1.04); }
+}
+
+.arena-search-state > strong { color: var(--text); font-weight: 500; }
+.arena-search-state > span { color: var(--text-dim); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.arena-search-progress {
+  width: min(240px, 100%);
+  height: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(201, 180, 109, 0.16);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.arena-search-progress i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold-dim), var(--gold-bright));
+  transform-origin: left center;
+  transition: transform 0.45s linear;
+}
+
+.duel-action-grid {
+  display: grid;
+  width: min(100%, 380px);
+  justify-self: center;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.duel-action-grid button {
+  display: grid;
+  min-height: 92px;
+  align-content: center;
+  gap: 1px;
+  padding: 7px;
+}
+
+.duel-action-grid button span,
+.duel-action-grid button small {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.duel-action-grid button strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.duel-action-grid p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 10px;
+  text-align: center;
+}
+
+.combat-arena-footer {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border-top: 1px solid rgba(117, 169, 173, 0.22);
+}
+
+.combat-arena-footer > div {
+  display: grid;
+}
+
+.combat-arena-footer span {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.combat-arena-footer strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.arena-event-log {
+  display: grid;
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(201, 180, 109, 0.12);
+  background: rgba(0, 0, 0, 0.18);
+  list-style: none;
+}
+
+.arena-event-log li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  padding: 3px 0;
+  color: var(--text-dim);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.arena-event-log li + li { border-top: 1px solid rgba(201, 180, 109, 0.06); }
+.arena-event-log li span { color: var(--gold-dim); font-family: Arial, sans-serif; }
+
+.expedition-duel-config {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.combat-loadout {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 5px 0 0;
+  border: 0;
+  border-top: 1px solid rgba(205, 133, 77, 0.28);
+  background: transparent;
+}
+
+.combat-equipment-slot > .combat-slot-label {
+  grid-column: auto;
+}
+
+.combat-slot-tray {
+  --item-slot-size: clamp(75px, 5.2vw, 85px);
+  --item-tile-size: calc(var(--item-slot-size) - 10px);
+  display: grid;
+  width: 100%;
+  min-width: 100%;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 4fr);
+  justify-content: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding: 4px 0 0;
+}
+
+.combat-slot-section {
+  min-width: 0;
+  margin-top: 0;
+  justify-items: center;
+  border-top: 0;
+  border-bottom: 0;
+  border-left: 0;
+  background: transparent;
+}
+
+.combat-slot-section + .combat-slot-section {
+  border-left: 1px solid var(--gold-faint);
+}
+
+.combat-trigger-row {
+  grid-template-columns: repeat(4, 88px) minmax(76px, 1fr) 28px;
+  align-items: start;
+}
+
+.combat-trigger-row input {
+  min-height: 88px;
+  text-align: center;
+}
+
+.combat-ability-cooldown {
+  --cooldown-ratio: 1;
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #f2ead2;
+  background:
+    conic-gradient(from 0turn, rgba(4, 5, 5, 0.82) calc(var(--cooldown-ratio) * 1turn), transparent 0),
+    rgba(4, 5, 5, 0.28);
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+}
+
+.combat-slot-tray .slot-group:last-child {
+  min-width: 0;
+}
+
+@media (max-width: 1200px) {
+  .world-map-layout {
+    grid-template-columns: minmax(0, 1fr) 230px;
+  }
+
+  .world-map-node {
+    width: 38px;
+    height: 38px;
+  }
+
+  .arena-player-side,
+  .arena-enemy-side {
+    padding: 18px 10px;
+  }
+
+  .arena-combatant {
+    width: 124px;
+  }
+
+  .combat-trigger-row {
+    grid-template-columns: repeat(3, 88px) minmax(88px, 1fr) 28px;
+  }
+}
+
+@media (max-width: 760px) {
+  .expedition-header {
+    align-items: stretch;
+  }
+
+  .expedition-tabs button {
+    flex: 1;
+  }
+
+  .world-map-layout {
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .world-map-stage {
+    min-height: 420px;
+    aspect-ratio: 1 / 1;
+  }
+
+  .world-location-panel {
+    border-top: 1px solid var(--gold-faint);
+    border-left: 0;
+  }
+
+  .combat-arena-shell {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .combat-arena-field {
+    height: 100%;
+    min-height: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 8px;
+  }
+
+  .arena-transition {
+    grid-template-columns: auto 60px;
+    gap: 10px;
+  }
+
+  .arena-transition i {
+    width: 60px;
+    height: 1px;
+  }
+
+  .arena-actor,
+  .arena-search-state,
+  .duel-action-grid {
+    width: min(100%, 150px);
+  }
+
+  .combat-slot-tray {
+    --item-slot-size: 75px;
+    --item-tile-size: 65px;
+    min-width: 760px;
+  }
+
+  .combat-trigger-row {
+    grid-template-columns: repeat(3, 88px);
+  }
+
+  .combat-trigger-row input {
+    width: 88px;
+  }
+}
+
+@media (max-width: 520px) {
+  .expedition-page {
+    overflow: hidden;
+  }
+
+  .expedition-tabs {
+    width: 100%;
+  }
+
+  .expedition-tabs button {
+    min-width: 0;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .world-map-stage {
+    min-height: 330px;
+  }
+
+  .world-map-node {
+    width: 68px;
+    height: 30px;
+  }
+
+  .world-map-node > strong {
+    font-size: 10px;
+  }
+
+  .world-player-marker {
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
+  }
+
+  .world-location-panel {
+    padding: 12px 4px;
+  }
+
+  .world-location-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nearby-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .duel-action-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .arena-actor-body {
+    grid-template-columns: 62px minmax(0, 1fr);
+    gap: 8px;
+    padding: 12px 9px;
+  }
+
+  .arena-seal {
+    width: 58px;
+    height: 76px;
+  }
+
+  .arena-seal b {
+    font-size: 24px;
+  }
+
+  .arena-resource {
+    grid-template-columns: auto minmax(38px, 1fr);
+  }
+
+  .arena-resource > strong {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
+  .combat-arena-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .combat-slot-tray {
+    justify-content: start;
+  }
+
+  .combat-trigger-row {
+    grid-template-columns: repeat(2, minmax(0, 88px));
+  }
+}

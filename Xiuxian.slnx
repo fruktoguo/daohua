@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Xiuxian.DataTool/Xiuxian.DataTool.csproj" />
+    <Project Path="src/Xiuxian.Domain/Xiuxian.Domain.csproj" />
+    <Project Path="src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj" />
+    <Project Path="src/Xiuxian.Protocol/Xiuxian.Protocol.csproj" />
+    <Project Path="src/Xiuxian.Server/Xiuxian.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Xiuxian.Domain.Tests/Xiuxian.Domain.Tests.csproj" />
+  </Folder>
+  <Project Path="vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Analyzers/YuoCore.Analyzers.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Persistence/YuoCore.Persistence.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj" />
+</Solution>

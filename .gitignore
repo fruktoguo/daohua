@@ -1,0 +1,36 @@
+# .NET 构建、测试与分析产物
+**/bin/
+**/obj/
+artifacts/
+**/TestResults/
+BenchmarkDotNet.Artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# 前端依赖、构建与缓存产物
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+*.tsbuildinfo
+
+# 本地运行数据和持久化状态
+data/
+**/data/snapshots/
+**/data/outbox/
+
+# 本地环境变量和凭据
+.env
+.env.*
+!.env.example
+
+# IDE、系统与临时文件
+**/.vs/
+**/.idea/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.pid

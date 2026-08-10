@@ -1,0 +1,326 @@
+[
+  {
+    "id": "enemy.qi-beast",
+    "name": "聚气兽",
+    "visual": {
+      "renderer": "text",
+      "source": "聚",
+      "poster": null
+    },
+    "style": "body",
+    "damageType": "nature",
+    "maxHitpoints": 70,
+    "maxManapoints": 100,
+    "attackIntervalMilliseconds": 3500,
+    "accuracyRating": 15,
+    "evasionRating": 15,
+    "maxDamage": 15,
+    "defensiveMaxDamage": 10,
+    "armor": 1,
+    "waterResistance": 1,
+    "natureResistance": 1,
+    "fireResistance": 1,
+    "tenacity": 0,
+    "pierceChance": 0,
+    "curseRatio": 0,
+    "furyRatio": 0,
+    "weakenRatio": 0,
+    "lifeStealRatio": 0,
+    "armorDamageRatio": 0,
+    "hpDrainRatio": 0,
+    "criticalChance": 0,
+    "criticalDamageRatio": 0,
+    "criticalAvoidance": 0,
+    "damageAbsorptionRatio": 0,
+    "hpRegenPerTenSeconds": 0.01,
+    "mpRegenPerTenSeconds": 0.01,
+    "enrageTimeMilliseconds": 0,
+    "experience": 0,
+    "spiritMin": 0,
+    "spiritMax": 0,
+    "dropTable": [],
+    "rareDropTable": [],
+    "abilityIds": [
+      "ability.spirit-pulse"
+    ]
+  },
+  {
+    "id": "enemy.twilight-blood-cultivator",
+    "name": "血影邪修",
+    "visual": {
+      "renderer": "text",
+      "source": "血",
+      "poster": null
+    },
+    "style": "sword",
+    "damageType": "physical",
+    "maxHitpoints": 2200,
+    "maxManapoints": 2200,
+    "attackIntervalMilliseconds": 2933,
+    "accuracyRating": 260,
+    "evasionRating": 180,
+    "maxDamage": 210,
+    "defensiveMaxDamage": 180,
+    "armor": 34,
+    "waterResistance": 64,
+    "natureResistance": 64,
+    "fireResistance": 44,
+    "tenacity": 0,
+    "pierceChance": 0,
+    "curseRatio": 0,
+    "furyRatio": 0,
+    "weakenRatio": 0,
+    "lifeStealRatio": 0.02,
+    "armorDamageRatio": 0,
+    "hpDrainRatio": 0,
+    "criticalChance": 0,
+    "criticalDamageRatio": 0,
+    "criticalAvoidance": 0,
+    "damageAbsorptionRatio": 0,
+    "hpRegenPerTenSeconds": 0.01,
+    "mpRegenPerTenSeconds": 0.01,
+    "enrageTimeMilliseconds": 180000,
+    "experience": 290,
+    "spiritMin": 0,
+    "spiritMax": 0,
+    "dropTable": [
+      {
+        "itemId": "currency.spirit",
+        "dropChance": 0.8,
+        "minQuantity": 600,
+        "maxQuantity": 3000
+      },
+      {
+        "itemId": "item.qi-beast-core",
+        "dropChance": 1,
+        "minQuantity": 1,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.cloud-sugar",
+        "dropChance": 0.3,
+        "minQuantity": 2,
+        "maxQuantity": 6
+      }
+    ],
+    "rareDropTable": [
+      {
+        "itemId": "item.small-qi-chest",
+        "dropChance": 0.0017825000000000002,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "abilityIds": [
+      "ability.spirit-pulse"
+    ]
+  },
+  {
+    "id": "enemy.twilight-corpse",
+    "name": "暮影阴尸",
+    "visual": {
+      "renderer": "text",
+      "source": "暮",
+      "poster": null
+    },
+    "style": "blade",
+    "damageType": "physical",
+    "maxHitpoints": 1800,
+    "maxManapoints": 1800,
+    "attackIntervalMilliseconds": 3119,
+    "accuracyRating": 190,
+    "evasionRating": 160,
+    "maxDamage": 200,
+    "defensiveMaxDamage": 160,
+    "armor": 30,
+    "waterResistance": 30,
+    "natureResistance": 30,
+    "fireResistance": 10,
+    "tenacity": 0,
+    "pierceChance": 0,
+    "curseRatio": 0,
+    "furyRatio": 0,
+    "weakenRatio": 0,
+    "lifeStealRatio": 0,
+    "armorDamageRatio": 0,
+    "hpDrainRatio": 0,
+    "criticalChance": 0,
+    "criticalDamageRatio": 0,
+    "criticalAvoidance": 0,
+    "damageAbsorptionRatio": 0,
+    "hpRegenPerTenSeconds": 0.01,
+    "mpRegenPerTenSeconds": 0.01,
+    "enrageTimeMilliseconds": 180000,
+    "experience": 260,
+    "spiritMin": 0,
+    "spiritMax": 0,
+    "dropTable": [
+      {
+        "itemId": "currency.spirit",
+        "dropChance": 0.8,
+        "minQuantity": 500,
+        "maxQuantity": 2500
+      },
+      {
+        "itemId": "item.qi-beast-core",
+        "dropChance": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.spirit-herb",
+        "dropChance": 0.3,
+        "minQuantity": 1,
+        "maxQuantity": 5
+      }
+    ],
+    "rareDropTable": [
+      {
+        "itemId": "item.small-qi-chest",
+        "dropChance": 0.0012191666666666666,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "abilityIds": [
+      "ability.nature-veil"
+    ]
+  },
+  {
+    "id": "enemy.twilight-moon-demon",
+    "name": "啸月妖修",
+    "visual": {
+      "renderer": "text",
+      "source": "啸",
+      "poster": null
+    },
+    "style": "blade",
+    "damageType": "physical",
+    "maxHitpoints": 2500,
+    "maxManapoints": 2500,
+    "attackIntervalMilliseconds": 2780,
+    "accuracyRating": 240,
+    "evasionRating": 170,
+    "maxDamage": 240,
+    "defensiveMaxDamage": 170,
+    "armor": 32,
+    "waterResistance": 62,
+    "natureResistance": 62,
+    "fireResistance": 42,
+    "tenacity": 0,
+    "pierceChance": 0,
+    "curseRatio": 0,
+    "furyRatio": 0,
+    "weakenRatio": 0,
+    "lifeStealRatio": 0,
+    "armorDamageRatio": 0,
+    "hpDrainRatio": 0,
+    "criticalChance": 0,
+    "criticalDamageRatio": 0,
+    "criticalAvoidance": 0,
+    "damageAbsorptionRatio": 0,
+    "hpRegenPerTenSeconds": 0.01,
+    "mpRegenPerTenSeconds": 0.01,
+    "enrageTimeMilliseconds": 180000,
+    "experience": 340,
+    "spiritMin": 0,
+    "spiritMax": 0,
+    "dropTable": [
+      {
+        "itemId": "currency.spirit",
+        "dropChance": 0.8,
+        "minQuantity": 750,
+        "maxQuantity": 3750
+      },
+      {
+        "itemId": "item.qi-beast-core",
+        "dropChance": 1,
+        "minQuantity": 1,
+        "maxQuantity": 3
+      },
+      {
+        "itemId": "item.cloud-sugar",
+        "dropChance": 0.3,
+        "minQuantity": 3,
+        "maxQuantity": 9
+      }
+    ],
+    "rareDropTable": [
+      {
+        "itemId": "item.small-qi-chest",
+        "dropChance": 0.0019861111111111112,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "abilityIds": [
+      "ability.spirit-pulse"
+    ]
+  },
+  {
+    "id": "enemy.twilight-valley-master",
+    "name": "暮影谷主",
+    "visual": {
+      "renderer": "text",
+      "source": "暮",
+      "poster": null
+    },
+    "style": "talisman",
+    "damageType": "physical",
+    "maxHitpoints": 8800,
+    "maxManapoints": 8800,
+    "attackIntervalMilliseconds": 3043,
+    "accuracyRating": 310,
+    "evasionRating": 260,
+    "maxDamage": 350,
+    "defensiveMaxDamage": 260,
+    "armor": 50,
+    "waterResistance": 90,
+    "natureResistance": 90,
+    "fireResistance": 70,
+    "tenacity": 50,
+    "pierceChance": 0,
+    "curseRatio": 0,
+    "furyRatio": 0,
+    "weakenRatio": 0,
+    "lifeStealRatio": 0.02,
+    "armorDamageRatio": 0,
+    "hpDrainRatio": 0,
+    "criticalChance": 0,
+    "criticalDamageRatio": 0,
+    "criticalAvoidance": 0,
+    "damageAbsorptionRatio": 0,
+    "hpRegenPerTenSeconds": 0.01,
+    "mpRegenPerTenSeconds": 0.01,
+    "enrageTimeMilliseconds": 600000,
+    "experience": 2100,
+    "spiritMin": 0,
+    "spiritMax": 0,
+    "dropTable": [
+      {
+        "itemId": "currency.spirit",
+        "dropChance": 0.8,
+        "minQuantity": 4000,
+        "maxQuantity": 20000
+      },
+      {
+        "itemId": "item.qi-beast-core",
+        "dropChance": 0.5,
+        "minQuantity": 10,
+        "maxQuantity": 30
+      }
+    ],
+    "rareDropTable": [
+      {
+        "itemId": "item.small-qi-chest",
+        "dropChance": 0.011940833333333333,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "abilityIds": [
+      "ability.silencing-talisman",
+      "ability.blazing-storm"
+    ]
+  }
+]

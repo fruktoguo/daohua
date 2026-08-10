@@ -1,0 +1,440 @@
+[
+  {
+    "id": "item.spirit-herb",
+    "name": "灵草",
+    "description": "野外采集的基础炼丹材料。",
+    "kind": "material",
+    "category": "材料",
+    "tier": 1,
+    "sellPrice": 3,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.qi-gathering-pill",
+    "name": "引气丹",
+    "description": "修炼时自动服用，临时提高引气效率。",
+    "kind": "consumable",
+    "category": "丹药",
+    "tier": 1,
+    "sellPrice": 18,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation"
+      ],
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [
+        {
+          "buffId": "buff.qi-gathering",
+          "name": "引气增益",
+          "durationSeconds": 60,
+          "stackable": true,
+          "maxStacks": 5,
+          "qiGainMultiplier": 1.25,
+          "attackLevelRatio": 0,
+          "damageRatio": 0,
+          "attackSpeedRatio": 0,
+          "gatheringOutputMultiplier": 1,
+          "alchemyOutputMultiplier": 1
+        }
+      ],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.gathering-incense",
+    "name": "寻灵香",
+    "description": "探索时点燃，短时间提高灵草收获量。",
+    "kind": "consumable",
+    "category": "探索用品",
+    "tier": 1,
+    "sellPrice": 20,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "exploration"
+      ],
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [
+        {
+          "buffId": "buff.gathering-blessing",
+          "name": "寻灵",
+          "durationSeconds": 120,
+          "stackable": false,
+          "maxStacks": 1,
+          "qiGainMultiplier": 1,
+          "attackLevelRatio": 0,
+          "damageRatio": 0,
+          "attackSpeedRatio": 0,
+          "gatheringOutputMultiplier": 1.5,
+          "alchemyOutputMultiplier": 1
+        }
+      ],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.alchemy-flame",
+    "name": "地火引",
+    "description": "炼丹时引动地火，短时间提高丹药产出。",
+    "kind": "consumable",
+    "category": "炼丹用品",
+    "tier": 1,
+    "sellPrice": 22,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "alchemy"
+      ],
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [
+        {
+          "buffId": "buff.alchemy-focus",
+          "name": "地火专注",
+          "durationSeconds": 120,
+          "stackable": false,
+          "maxStacks": 1,
+          "qiGainMultiplier": 1,
+          "attackLevelRatio": 0,
+          "damageRatio": 0,
+          "attackSpeedRatio": 0,
+          "gatheringOutputMultiplier": 1,
+          "alchemyOutputMultiplier": 1.25
+        }
+      ],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.healing-elixir",
+    "name": "回元灵液",
+    "description": "历练中恢复生命，拥有独立冷却。",
+    "kind": "consumable",
+    "category": "灵食",
+    "tier": 1,
+    "sellPrice": 24,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 60,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 45,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": [
+        {
+          "dependency": "self",
+          "condition": "missingHitpoints",
+          "comparator": "greaterThanOrEqual",
+          "value": 45,
+          "buffId": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "item.rejuvenating-dew",
+    "name": "回春灵露",
+    "description": "历练中持续恢复生命，每 5 秒结算一次。",
+    "kind": "consumable",
+    "category": "灵食",
+    "tier": 2,
+    "sellPrice": 56,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 90,
+      "recoverySeconds": 30,
+      "triggerHpRatio": 0.75,
+      "triggerAtCombatStart": true,
+      "hitpointRestore": 60,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": [
+        {
+          "dependency": "self",
+          "condition": "missingHitpoints",
+          "comparator": "greaterThanOrEqual",
+          "value": 60,
+          "buffId": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "item.spirit-tea",
+    "name": "凝神灵茶",
+    "description": "历练中提高攻速，拥有独立冷却。",
+    "kind": "consumable",
+    "category": "灵饮",
+    "tier": 1,
+    "sellPrice": 30,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 300,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [
+        {
+          "buffId": "buff.spirit-tea",
+          "name": "凝神",
+          "durationSeconds": 300,
+          "stackable": false,
+          "maxStacks": 1,
+          "qiGainMultiplier": 1,
+          "attackLevelRatio": 0,
+          "damageRatio": 0,
+          "attackSpeedRatio": 0.1,
+          "gatheringOutputMultiplier": 1,
+          "alchemyOutputMultiplier": 1
+        }
+      ],
+      "defaultCombatTriggers": [
+        {
+          "dependency": "self",
+          "condition": "buffStacks",
+          "comparator": "isInactive",
+          "value": 0,
+          "buffId": "buff.spirit-tea"
+        }
+      ]
+    }
+  },
+  {
+    "id": "item.fire-talisman",
+    "name": "赤焰符",
+    "description": "历练中提高术式伤害，拥有独立冷却。",
+    "kind": "consumable",
+    "category": "符箓",
+    "tier": 2,
+    "sellPrice": 80,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 300,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [
+        {
+          "buffId": "buff.fire-talisman",
+          "name": "赤焰",
+          "durationSeconds": 300,
+          "stackable": false,
+          "maxStacks": 1,
+          "qiGainMultiplier": 1,
+          "attackLevelRatio": 0,
+          "damageRatio": 0.08,
+          "attackSpeedRatio": 0,
+          "gatheringOutputMultiplier": 1,
+          "alchemyOutputMultiplier": 1
+        }
+      ],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "equipment.cursed-spirit-bow",
+    "name": "蚀心灵弓",
+    "description": "命中后叠加蚀心，使目标承受的伤害提高。",
+    "kind": "equipment",
+    "category": "双手法器",
+    "tier": 5,
+    "sellPrice": 5000000,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "equipment.furious-spirit-spear",
+    "name": "沸血灵枪",
+    "description": "连续命中会叠加沸血，提高命中与伤害。",
+    "kind": "equipment",
+    "category": "主手法器",
+    "tier": 5,
+    "sellPrice": 5000000,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "equipment.griffin-spirit-bulwark",
+    "name": "玄狮重盾",
+    "description": "攻击者每次出手都会积累衰弱，降低其后续伤害。",
+    "kind": "equipment",
+    "category": "双手法器",
+    "tier": 5,
+    "sellPrice": 5000000,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "equipment.sundering-spirit-crossbow",
+    "name": "破阵灵弩",
+    "description": "命中后有概率追击下一目标；单目标历练中记录为穿透触发。",
+    "kind": "equipment",
+    "category": "主手法器",
+    "tier": 5,
+    "sellPrice": 5000000,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "currency.spirit",
+    "name": "灵石",
+    "description": "修仙界通用货币。",
+    "kind": "currency",
+    "category": "货币",
+    "tier": 1,
+    "sellPrice": 1,
+    "isTradable": false,
+    "consumable": null
+  },
+  {
+    "id": "resource.qi",
+    "name": "灵气",
+    "description": "修炼积累的基础修为资源。",
+    "kind": "resource",
+    "category": "修为",
+    "tier": 1,
+    "sellPrice": 0,
+    "isTradable": false,
+    "consumable": null
+  },
+  {
+    "id": "item.qi-beast-core",
+    "name": "聚气兽核",
+    "description": "击败低阶妖兽后获得的灵核。",
+    "kind": "material",
+    "category": "战利品",
+    "tier": 1,
+    "sellPrice": 12,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.cloud-sugar",
+    "name": "云糖",
+    "description": "聚气兽偶尔携带的灵食材料。",
+    "kind": "material",
+    "category": "材料",
+    "tier": 1,
+    "sellPrice": 4,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.verdant-spirit-milk",
+    "name": "青木灵乳",
+    "description": "蕴含木灵气息的低阶灵乳。",
+    "kind": "consumable",
+    "category": "灵食",
+    "tier": 1,
+    "sellPrice": 10,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 60,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 25,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": [
+        {
+          "dependency": "self",
+          "condition": "missingHitpoints",
+          "comparator": "greaterThanOrEqual",
+          "value": 25,
+          "buffId": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "item.azure-spirit-milk",
+    "name": "碧水灵乳",
+    "description": "蕴含水灵气息的低阶灵乳。",
+    "kind": "consumable",
+    "category": "灵食",
+    "tier": 1,
+    "sellPrice": 14,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "cooldownSeconds": 60,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 30,
+      "buffs": [],
+      "defaultCombatTriggers": [
+        {
+          "dependency": "self",
+          "condition": "missingManapoints",
+          "comparator": "greaterThanOrEqual",
+          "value": 30,
+          "buffId": null
+        }
+      ]
+    }
+  },
+  {
+    "id": "item.spirit-pulse-manual",
+    "name": "聚气冲击诀",
+    "description": "记录聚气冲击术式的入门功法残页。",
+    "kind": "material",
+    "category": "功法残页",
+    "tier": 2,
+    "sellPrice": 75,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.small-qi-chest",
+    "name": "小聚气宝匣",
+    "description": "极低概率从聚气兽身上获得的战利宝匣。",
+    "kind": "material",
+    "category": "稀有战利品",
+    "tier": 3,
+    "sellPrice": 180,
+    "isTradable": true,
+    "consumable": null
+  }
+]

@@ -1,0 +1,46 @@
+name: xiuxian
+
+services:
+  app:
+    image: ${XIUXIAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/xiuxian:prod}
+    container_name: xiuxian-app
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${XIUXIAN_PORT:-15128}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Storage__DataDirectory: /app/data
+      Storage__DurableOutboxEnabled: "true"
+      Storage__OutboxDirectory: /app/data/outbox
+      Storage__PersistenceQueueCapacity: "65536"
+      Market__LedgerProvider: local-json
+      Market__PartitionCount: "1"
+      Market__PartitionId: "0"
+    volumes:
+      - xiuxian-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: "1.00"
+    mem_limit: 1g
+    stop_grace_period: 90s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"
+
+volumes:
+  xiuxian-data:

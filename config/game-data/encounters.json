@@ -1,0 +1,126 @@
+[
+  {
+    "id": "encounter.qi-beast",
+    "name": "聚气兽",
+    "enemyId": "enemy.qi-beast",
+    "randomSpawns": [],
+    "maxSpawnCount": 1,
+    "maxTotalStrength": 1,
+    "bossEnemyIds": [],
+    "battlesPerBoss": 0,
+    "searchMilliseconds": 20000,
+    "respawnMilliseconds": 5000,
+    "playerRespawnMilliseconds": 180000,
+    "experiencePerWin": 15,
+    "spiritMinPerWin": 0,
+    "spiritMaxPerWin": 0,
+    "enrageTimeMilliseconds": 180000,
+    "enrageTickMilliseconds": 60000,
+    "maxEnrageStacks": 10,
+    "enrageRatioPerStack": 0.1,
+    "dropTable": [
+      {
+        "itemId": "currency.spirit",
+        "dropChance": 0.8,
+        "minQuantity": 10,
+        "maxQuantity": 50
+      },
+      {
+        "itemId": "item.qi-beast-core",
+        "dropChance": 1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.spirit-herb",
+        "dropChance": 0.3,
+        "minQuantity": 1,
+        "maxQuantity": 3
+      },
+      {
+        "itemId": "item.cloud-sugar",
+        "dropChance": 0.3,
+        "minQuantity": 1,
+        "maxQuantity": 6
+      },
+      {
+        "itemId": "item.qi-gathering-pill",
+        "dropChance": 0.2,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.verdant-spirit-milk",
+        "dropChance": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.azure-spirit-milk",
+        "dropChance": 0.05,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.spirit-pulse-manual",
+        "dropChance": 0.005,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "rareDropTable": [
+      {
+        "itemId": "item.small-qi-chest",
+        "dropChance": 0.0001923833333333333,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "dropItemId": "item.qi-beast-core",
+    "dropChance": 0.8,
+    "dropQuantity": 1
+  },
+  {
+    "id": "encounter.twilight-valley",
+    "name": "暮影谷",
+    "enemyId": "enemy.twilight-corpse",
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.twilight-corpse",
+        "weight": 1,
+        "strength": 70
+      },
+      {
+        "enemyId": "enemy.twilight-blood-cultivator",
+        "weight": 1,
+        "strength": 80
+      },
+      {
+        "enemyId": "enemy.twilight-moon-demon",
+        "weight": 1,
+        "strength": 100
+      }
+    ],
+    "maxSpawnCount": 3,
+    "maxTotalStrength": 250,
+    "bossEnemyIds": [
+      "enemy.twilight-valley-master"
+    ],
+    "battlesPerBoss": 10,
+    "searchMilliseconds": 20000,
+    "respawnMilliseconds": 5000,
+    "playerRespawnMilliseconds": 180000,
+    "experiencePerWin": 0,
+    "spiritMinPerWin": 0,
+    "spiritMaxPerWin": 0,
+    "enrageTimeMilliseconds": 180000,
+    "enrageTickMilliseconds": 60000,
+    "maxEnrageStacks": 10,
+    "enrageRatioPerStack": 0.1,
+    "dropTable": [],
+    "rareDropTable": [],
+    "dropItemId": null,
+    "dropChance": 0,
+    "dropQuantity": 1
+  }
+]

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "alchemy.refine-qi-pill",
+    "name": "炼制引气丹",
+    "description": "消耗三株灵草，炼制一枚引气丹。",
+    "type": "alchemy",
+    "durationSeconds": 12,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.spirit-herb": 3
+    },
+    "outputs": {
+      "item.qi-gathering-pill": 1
+    }
+  },
+  {
+    "id": "combat.hunt-qi-beast",
+    "name": "历练聚气兽",
+    "description": "在灵脉外围迎战聚气兽，获取灵核与战斗经验。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.qi-beast",
+    "availableNodeIds": [
+      "node.herb-vale",
+      "node.cloud-gate",
+      "node.sunset-ridge"
+    ],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {}
+  },
+  {
+    "id": "combat.sweep-twilight-valley",
+    "name": "清剿暮影谷",
+    "description": "深入高阶暮影战区，每轮会按强度生成一至三名敌人，每十场遭遇一次谷主。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.twilight-valley",
+    "availableNodeIds": [
+      "node.twilight-pass",
+      "node.ancient-terrace"
+    ],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {}
+  },
+  {
+    "id": "cultivation.draw-qi",
+    "name": "引气入体",
+    "description": "吐纳灵气，积累灵力与修为。",
+    "type": "cultivation",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "resource.qi": 10
+    }
+  },
+  {
+    "id": "explore.gather-herbs",
+    "name": "采集草药",
+    "description": "在野外寻找灵草，收集炼丹材料。",
+    "type": "exploration",
+    "durationSeconds": 8,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [
+      "node.herb-vale",
+      "node.spirit-spring"
+    ],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.spirit-herb": 3
+    }
+  },
+  {
+    "id": "world.travel",
+    "name": "赶路",
+    "description": "沿已规划的山道前往目标地点。",
+    "type": "exploration",
+    "durationSeconds": 1,
+    "executionKind": "travel",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": true,
+    "inputs": {},
+    "outputs": {}
+  }
+]
