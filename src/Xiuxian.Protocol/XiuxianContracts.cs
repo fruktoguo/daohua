@@ -211,7 +211,8 @@ public sealed record XiuxianStatsDto(
     long CombatExperience = 0,
     long CombatDamageDealt = 0,
     long CombatDamageTaken = 0,
-    long CombatEnemiesDefeated = 0);
+    long CombatEnemiesDefeated = 0,
+    long CombatPlayersDefeated = 0);
 
 public sealed record XiuxianCombatAbilitySlotDto(
     string? AbilityId,

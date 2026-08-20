@@ -603,7 +603,8 @@ public static class XiuxianStateMapper
             stats.CombatExperience,
             stats.CombatDamageDealt,
             stats.CombatDamageTaken,
-            stats.CombatEnemiesDefeated);
+            stats.CombatEnemiesDefeated,
+            stats.CombatPlayersDefeated);
     }
 
     private static XiuxianCombatLoadoutDto ToCombat(XiuxianCombatLoadout combat)

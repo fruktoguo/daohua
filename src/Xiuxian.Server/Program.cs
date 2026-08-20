@@ -11,9 +11,27 @@ var builder = WebApplication.CreateBuilder(args);
 var configuredGameDataDirectory = builder.Configuration["GameData:Directory"];
 var gameData = string.IsNullOrWhiteSpace(configuredGameDataDirectory)
     ? XiuxianGameData.Current
-    : XiuxianGameData.LoadFromDirectory(Path.IsPathRooted(configuredGameDataDirectory)
-        ? configuredGameDataDirectory
-        : Path.Combine(builder.Environment.ContentRootPath, configuredGameDataDirectory));
+    : XiuxianGameData.LoadFromDirectory(ResolveGameDataPath(builder.Environment.ContentRootPath, configuredGameDataDirectory));
+
+static string ResolveGameDataPath(string contentRoot, string configuredPath)
+{
+    if (Path.IsPathRooted(configuredPath)) return configuredPath;
+    var candidates = new[]
+    {
+        Path.Combine(contentRoot, configuredPath),
+        Path.Combine(contentRoot, "../../", configuredPath),
+        Path.Combine(Directory.GetCurrentDirectory(), configuredPath),
+        Path.Combine(AppContext.BaseDirectory, configuredPath)
+    };
+    foreach (var candidate in candidates)
+    {
+        if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "manifest.json")))
+        {
+            return Path.GetFullPath(candidate);
+        }
+    }
+    return Path.GetFullPath(Path.Combine(contentRoot, configuredPath));
+}
 var configuredServerUrls = builder.Configuration["Server:Urls"];
 var hasStandardAspNetBinding =
     !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))

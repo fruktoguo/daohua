@@ -39,6 +39,71 @@ public sealed class XiuxianCombatTests
     }
 
     [Fact]
+    public void Contest_and_resistance_factor_formulas_behave_correctly()
+    {
+        // 消耗换算测试
+        Assert.Equal(20, XiuxianCombatFormula.CalculateManaCost(2));
+        Assert.Equal(50, XiuxianCombatFormula.CalculateManaCost(5));
+
+        // 减伤公式测试: 伤害 = 原始伤害 * (原始伤害 / (原始伤害 + 抗性 * 5 + 1))
+        // 原始伤害 100, 抗性 0 -> 100 * (100 / 100) = 100
+        var fullDmg = XiuxianCombatFormula.CalculateMitigatedDamageWithResistanceFactor(100, 0);
+        Assert.Equal(100, fullDmg);
+
+        // 原始伤害 100, 抗性 20 -> 100 * (100 / (100 + 20 * 5 + 1)) = 100 * (100 / 201) ~ 50
+        var reducedDmg = XiuxianCombatFormula.CalculateMitigatedDamageWithResistanceFactor(100, 20);
+        Assert.InRange(reducedDmg, 48, 52);
+
+        // 对抗概率计算: 自身100, 对方100 -> 100 / (100 + 100 + 1) ~ 0.4975
+        var contestRate = XiuxianCombatFormula.CalculateContestRate(100, 100);
+        Assert.InRange(contestRate, 0.49, 0.51);
+
+        // 破招判定
+        Assert.True(XiuxianCombatFormula.CheckBreakSuccess(100, 50, 0.1));
+        Assert.False(XiuxianCombatFormula.CheckBreakSuccess(50, 100, 0.1));
+
+        // 拆招判定
+        Assert.True(XiuxianCombatFormula.CheckParrySuccess(100, 50, 0.1));
+        Assert.False(XiuxianCombatFormula.CheckParrySuccess(50, 100, 0.1));
+    }
+
+    [Fact]
+    public void Percent_value_type_behaves_correctly_for_linear_and_nonlinear_modes()
+    {
+        // 1. 线性模式 (Linear): 增伤、免伤、仇恨
+        // 0 -> 0%, multiplier = 1.0
+        var linearZero = PercentValue.Linear(0);
+        Assert.Equal(0, linearZero.DisplayPercentage);
+        Assert.Equal(1.0, linearZero.Multiplier);
+
+        // +100 -> +100%, multiplier = 2.0
+        var linearPositive = PercentValue.Linear(100);
+        Assert.Equal(100, linearPositive.DisplayPercentage);
+        Assert.Equal(2.0, linearPositive.Multiplier);
+
+        // -100 -> -50%, multiplier = 0.5
+        var linearNegative = PercentValue.Linear(-100);
+        Assert.Equal(-50, linearNegative.DisplayPercentage);
+        Assert.Equal(0.5, linearNegative.Multiplier);
+
+        // 2. 非线性模式 (NonLinear): 冷却速度、行动速度、灵力消耗减免
+        // 0 -> 0% 缩减, multiplier = 1.0
+        var nonLinearZero = PercentValue.NonLinear(0);
+        Assert.Equal(0, nonLinearZero.DisplayPercentage);
+        Assert.Equal(1.0, nonLinearZero.Multiplier);
+
+        // +100 -> 50% 缩减, multiplier = 0.5
+        var nonLinearPositive = PercentValue.NonLinear(100);
+        Assert.Equal(50, nonLinearPositive.DisplayPercentage);
+        Assert.Equal(0.5, nonLinearPositive.Multiplier);
+
+        // -100 -> -100% 惩罚, multiplier = 2.0
+        var nonLinearNegative = PercentValue.NonLinear(-100);
+        Assert.Equal(-100, nonLinearNegative.DisplayPercentage);
+        Assert.Equal(2.0, nonLinearNegative.Multiplier);
+    }
+
+    [Fact]
     public void Cast_resolves_when_simulation_reaches_the_exact_millisecond_boundary()
     {
         var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), now: Baseline);

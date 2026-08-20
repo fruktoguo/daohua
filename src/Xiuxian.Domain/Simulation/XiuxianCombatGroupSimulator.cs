@@ -221,8 +221,8 @@ public static partial class XiuxianCombatSimulator
             {
                 enemy.PendingAbility = null;
                 enemy.PendingAbilityIndex = -1;
-                enemy.NextActionAt = playerRespawnAt;
-                enemy.ActionName = "等待修士复起";
+                enemy.NextActionAt = InfiniteTime;
+                enemy.ActionName = "待机";
                 enemy.ActionKind = "wait";
                 enemy.ActionStartedAt = now;
             }
@@ -646,7 +646,7 @@ public static partial class XiuxianCombatSimulator
                     if (!encounterDefeated)
                     {
                         nextPlayerAction = checked(now + player.AttackIntervalMilliseconds);
-                        playerActionName = ability is null ? "灵击" : $"{ability.Name}回气";
+                        playerActionName = ability is null ? "普通攻击" : ability.Name;
                         playerActionKind = "attack";
                         playerActionStartedAt = now;
                     }
@@ -779,7 +779,7 @@ public static partial class XiuxianCombatSimulator
                     enemy.AbilityReadyAt[enemyAbilityIndex] = checked(now + Math.Max(1, enemyAbility.CooldownMilliseconds));
                 }
                 enemy.NextActionAt = checked(now + enemy.Stats.AttackIntervalMilliseconds);
-                enemy.ActionName = enemyAbility is null ? "攻击" : $"{enemyAbility.Name}回气";
+                enemy.ActionName = enemyAbility is null ? "普通攻击" : enemyAbility.Name;
                 enemy.ActionKind = "attack";
                 enemy.ActionStartedAt = now;
                 if (playerHitpoints <= 0) FinalizePlayerDefeat();

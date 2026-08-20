@@ -106,4 +106,106 @@ public static class XiuxianCombatFormula
 
         return Math.Max(0, (long)Math.Floor(maxResource * ratio));
     }
+
+    /// <summary>
+    /// 计算功法灵力消耗。
+    /// </summary>
+    public static long CalculateManaCost(long baseCost, int multiplier = XiuxianCombatConstants.DefaultManaCostMultiplier)
+    {
+        return Math.Max(0, checked(baseCost * multiplier));
+    }
+
+    /// <summary>
+    /// 减伤计算公式：伤害 = 原始伤害 * (原始伤害 / (原始伤害 + 抗性 * 抗性减伤系数 + 系数))。
+    /// </summary>
+    public static long CalculateMitigatedDamageWithResistanceFactor(
+        long rawDamage,
+        double resistance,
+        double penetrationRatio = 0,
+        double resistanceFactor = XiuxianCombatConstants.DefaultResistanceFactor,
+        double baseFactor = XiuxianCombatConstants.DefaultDamageBaseFactor)
+    {
+        if (rawDamage <= 0) return 0;
+        var effectiveResistance = CalculateEffectiveResistance(resistance, penetrationRatio);
+        if (effectiveResistance <= 0) return rawDamage;
+
+        var denominator = rawDamage + effectiveResistance * resistanceFactor + baseFactor;
+        if (denominator <= 0) return rawDamage;
+        var multiplier = rawDamage / denominator;
+        return Math.Max(1, (long)Math.Ceiling(rawDamage * multiplier));
+    }
+
+    /// <summary>
+    /// 对抗概率计算公式：自身属性 / (自身属性 + 对方对抗属性 * 系数 + 系数)。
+    /// 适用于：命中 vs 闪避、暴击 vs 免爆、破招 vs 拆招。
+    /// </summary>
+    public static double CalculateContestRate(
+        double selfAttr,
+        double opponentAttr,
+        double factor = XiuxianCombatConstants.DefaultContestOpponentFactor,
+        double baseConst = XiuxianCombatConstants.DefaultContestBaseConst)
+    {
+        var selfVal = Math.Max(0, selfAttr);
+        var opponentVal = Math.Max(0, opponentAttr);
+        var denom = selfVal + opponentVal * factor + baseConst;
+        if (denom <= 0) return 0;
+        return Math.Clamp(selfVal / denom, 0, 1);
+    }
+
+    /// <summary>
+    /// 命中率计算 (命中 vs 闪避)。
+    /// 闪避成功则不造成伤害。
+    /// </summary>
+    public static double CalculateHitContestRate(
+        double hit,
+        double evasion,
+        double factor = XiuxianCombatConstants.DefaultContestOpponentFactor,
+        double baseConst = XiuxianCombatConstants.DefaultContestBaseConst)
+    {
+        return CalculateContestRate(hit, evasion, factor, baseConst);
+    }
+
+    /// <summary>
+    /// 暴击率计算 (暴击 vs 免爆)。
+    /// </summary>
+    public static double CalculateCritContestRate(
+        double crit,
+        double critAvoid,
+        double factor = XiuxianCombatConstants.DefaultContestOpponentFactor,
+        double baseConst = XiuxianCombatConstants.DefaultContestBaseConst)
+    {
+        return CalculateContestRate(crit, critAvoid, factor, baseConst);
+    }
+
+    /// <summary>
+    /// 破招判定：当攻击者破招 > 被攻击者拆招时计算破招概率。
+    /// 破招成功：命中与暴击效果翻倍 (× BreakSuccessEffectMultiplier)。
+    /// </summary>
+    public static bool CheckBreakSuccess(
+        double attackerBreak,
+        double defenderParry,
+        double rollRatio,
+        double factor = XiuxianCombatConstants.DefaultContestOpponentFactor,
+        double baseConst = XiuxianCombatConstants.DefaultContestBaseConst)
+    {
+        if (attackerBreak <= defenderParry) return false;
+        var rate = CalculateContestRate(attackerBreak, defenderParry, factor, baseConst);
+        return rollRatio < rate;
+    }
+
+    /// <summary>
+    /// 拆招判定：当被攻击者拆招 > 攻击者破招时计算拆招概率。
+    /// 拆招成功：双抗与闪避计算效果翻倍 (× ParrySuccessEffectMultiplier)。
+    /// </summary>
+    public static bool CheckParrySuccess(
+        double defenderParry,
+        double attackerBreak,
+        double rollRatio,
+        double factor = XiuxianCombatConstants.DefaultContestOpponentFactor,
+        double baseConst = XiuxianCombatConstants.DefaultContestBaseConst)
+    {
+        if (defenderParry <= attackerBreak) return false;
+        var rate = CalculateContestRate(defenderParry, attackerBreak, factor, baseConst);
+        return rollRatio < rate;
+    }
 }

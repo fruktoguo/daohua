@@ -248,6 +248,7 @@ public sealed class XiuxianPlayerStats
     public long CombatDamageDealt { get; set; }
     public long CombatDamageTaken { get; set; }
     public long CombatEnemiesDefeated { get; set; }
+    public long CombatPlayersDefeated { get; set; }
 }
 
 public sealed class XiuxianLogEvent
@@ -340,7 +341,8 @@ public sealed class XiuxianPlayerState
                 CombatExperience = Stats.CombatExperience,
                 CombatDamageDealt = Stats.CombatDamageDealt,
                 CombatDamageTaken = Stats.CombatDamageTaken,
-                CombatEnemiesDefeated = Stats.CombatEnemiesDefeated
+                CombatEnemiesDefeated = Stats.CombatEnemiesDefeated,
+                CombatPlayersDefeated = Stats.CombatPlayersDefeated
             },
             EventLog = [.. EventLog],
             EventSequence = EventSequence,

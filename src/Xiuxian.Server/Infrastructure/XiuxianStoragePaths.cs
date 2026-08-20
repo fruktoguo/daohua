@@ -23,8 +23,20 @@ public sealed class XiuxianStoragePaths
     private static string Resolve(string contentRoot, string configuredPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(configuredPath);
-        return Path.GetFullPath(Path.IsPathRooted(configuredPath)
-            ? configuredPath
-            : Path.Combine(contentRoot, configuredPath));
+        if (Path.IsPathRooted(configuredPath)) return Path.GetFullPath(configuredPath);
+        var candidates = new[]
+        {
+            Path.Combine(contentRoot, configuredPath),
+            Path.Combine(contentRoot, "../../", configuredPath),
+            Path.Combine(Directory.GetCurrentDirectory(), configuredPath)
+        };
+        foreach (var candidate in candidates)
+        {
+            if (Directory.Exists(candidate))
+            {
+                return Path.GetFullPath(candidate);
+            }
+        }
+        return Path.GetFullPath(Path.Combine(contentRoot, configuredPath));
     }
 }

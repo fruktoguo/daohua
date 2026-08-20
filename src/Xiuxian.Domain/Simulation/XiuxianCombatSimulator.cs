@@ -280,8 +280,8 @@ public static partial class XiuxianCombatSimulator
             playerActionStartedAt = now;
             if (!enemyDead)
             {
-                nextEnemyAction = playerRespawnAt;
-                enemyActionName = "等待修士复起";
+                nextEnemyAction = InfiniteTime;
+                enemyActionName = "待机";
                 enemyActionKind = "wait";
                 enemyActionStartedAt = now;
             }
@@ -719,7 +719,7 @@ public static partial class XiuxianCombatSimulator
                     }
 
                     nextPlayerAction = checked(now + player.AttackIntervalMilliseconds);
-                    playerActionName = ability is null ? "灵击" : $"{ability.Name}回气";
+                    playerActionName = ability is null ? "普通攻击" : ability.Name;
                     playerActionKind = "attack";
                     playerActionStartedAt = now;
                     if (ability is not null)
@@ -856,7 +856,7 @@ public static partial class XiuxianCombatSimulator
                     }
 
                     nextEnemyAction = checked(now + enemy.AttackIntervalMilliseconds);
-                    enemyActionName = enemyAbility is null ? "攻击" : $"{enemyAbility.Name}回气";
+                    enemyActionName = enemyAbility is null ? "普通攻击" : enemyAbility.Name;
                     enemyActionKind = "attack";
                     enemyActionStartedAt = now;
                     if (playerHitpoints <= 0)

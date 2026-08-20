@@ -209,6 +209,7 @@ export interface Stats {
   combatDamageDealt?: number
   combatDamageTaken?: number
   combatEnemiesDefeated?: number
+  combatPlayersDefeated?: number
 }
 
 export interface CombatAbilitySlot {
