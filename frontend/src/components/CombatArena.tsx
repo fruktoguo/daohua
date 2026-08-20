@@ -341,7 +341,13 @@ function ArenaActorBuffs({ buffs = [] }: { buffs?: readonly Buff[] }): React.JSX
   )
 }
 
-function ArenaPhaseFill({ expedition }: { expedition: ExpeditionProgress }): React.JSX.Element {
+function ArenaPhaseFill({
+  expedition,
+  orientation = 'vertical',
+}: {
+  expedition: ExpeditionProgress
+  orientation?: 'horizontal' | 'vertical'
+}): React.JSX.Element {
   const fillRef = useRef<HTMLElement>(null)
   const animationRef = useRef<Animation | null>(null)
   const anchorRef = useRef<{
@@ -366,15 +372,16 @@ function ArenaPhaseFill({ expedition }: { expedition: ExpeditionProgress }): Rea
 
     animationRef.current?.cancel()
     const fraction = elapsed / duration
-    fill.style.transform = `scaleX(${fraction})`
+    const transformProperty = orientation === 'vertical' ? 'scaleY' : 'scaleX'
+    fill.style.transform = `${transformProperty}(${fraction})`
     anchorRef.current = { signature, elapsed, duration, startedAt: now }
     const remaining = duration - elapsed
     if (remaining <= 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     animationRef.current = fill.animate(
-      [{ transform: `scaleX(${fraction})` }, { transform: 'scaleX(1)' }],
+      [{ transform: `${transformProperty}(${fraction})` }, { transform: `${transformProperty}(1)` }],
       { duration: remaining, easing: 'linear', fill: 'forwards' },
     )
-  }, [expedition.battleSequence, expedition.durationSeconds, expedition.phase, expedition.progress])
+  }, [expedition.battleSequence, expedition.durationSeconds, expedition.phase, expedition.progress, orientation])
 
   useEffect(() => () => animationRef.current?.cancel(), [])
 
@@ -389,21 +396,19 @@ function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): Re
     ? '还魂中'
     : isInitialSearch
       ? '神识探微'
-      : '索敌中'
+      : '灵觉索敌'
 
   const sigil = isDeath ? '魂' : isInitialSearch ? '识' : '觅'
   const remaining = Math.max(0, expedition.durationSeconds - expedition.elapsedSeconds)
 
   return (
     <div className={`arena-search-state arena-search-state--${expedition.phase}`} role="status" aria-label={title}>
-      <div className="arena-search-mini-badge">
-        <span className="arena-search-sigil-mini" aria-hidden="true">{sigil}</span>
-        <strong className="arena-search-title-mini">{title}</strong>
+      <span className="arena-search-sigil-vertical" aria-hidden="true">{sigil}</span>
+      <strong className="arena-search-text-vertical">{title}</strong>
+      <div className="arena-search-progress-vertical">
+        <ArenaPhaseFill expedition={expedition} orientation="vertical" />
       </div>
-      <div className="arena-search-progress-mini">
-        <ArenaPhaseFill expedition={expedition} />
-      </div>
-      <span className="arena-search-time-mini">{remaining.toFixed(1)}s</span>
+      <span className="arena-search-time-vertical">{remaining.toFixed(1)}s</span>
     </div>
   )
 }

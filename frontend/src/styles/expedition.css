@@ -1480,82 +1480,97 @@
   background: linear-gradient(transparent, currentColor, transparent);
 }
 
-/* ================= 居中极窄轻量搜寻指示器 ================= */
+/* ================= 居中完全纵向灵符搜寻指示器 ================= */
 .arena-search-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: max-content;
-  max-width: 86px;
-  padding: 4px 8px;
-  gap: 3px;
-  border: 1px solid rgba(201, 180, 109, 0.28);
-  border-radius: 12px;
-  background: rgba(9, 8, 6, 0.76);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(3px);
+  width: 26px;
+  min-width: 24px;
+  max-width: 30px;
+  padding: 8px 3px;
+  gap: 5px;
+  border: 1px solid rgba(201, 180, 109, 0.35);
+  border-radius: 13px;
+  background: linear-gradient(180deg, rgba(16, 14, 10, 0.88), rgba(7, 6, 4, 0.92));
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.7), inset 0 0 8px rgba(201, 180, 109, 0.08);
+  backdrop-filter: blur(4px);
   text-align: center;
   pointer-events: none;
   z-index: 5;
+  user-select: none;
 }
 
-.arena-search-state--initial-search { color: var(--gold-bright); }
-.arena-search-state--search { color: var(--jade); }
-.arena-search-state--death { color: #e09a8d; }
-
-.arena-search-mini-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.arena-search-state--initial-search {
+  color: var(--gold-bright);
+  border-color: rgba(201, 180, 109, 0.45);
 }
 
-.arena-search-sigil-mini {
+.arena-search-state--search {
+  color: var(--jade);
+  border-color: rgba(114, 169, 140, 0.45);
+}
+
+.arena-search-state--death {
+  color: #e09a8d;
+  border-color: rgba(224, 154, 141, 0.45);
+}
+
+.arena-search-sigil-vertical {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
   background: rgba(201, 180, 109, 0.15);
   border: 1px solid currentColor;
-  font-size: 8.5px;
+  font-size: 9px;
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
-}
-
-.arena-search-title-mini {
-  font-size: 10px;
   color: currentColor;
-  font-weight: 600;
-  white-space: nowrap;
-  letter-spacing: 0.5px;
+  box-shadow: 0 0 6px currentColor;
 }
 
-.arena-search-progress-mini {
-  width: 58px;
-  height: 3px;
+.arena-search-text-vertical {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: currentColor;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+}
+
+.arena-search-progress-vertical {
+  width: 3px;
+  height: 32px;
   overflow: hidden;
   border-radius: 1.5px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(201, 180, 109, 0.2);
+  background: rgba(0, 0, 0, 0.65);
+  border: 1px solid rgba(201, 180, 109, 0.25);
+  position: relative;
 }
 
-.arena-search-progress-mini i {
+.arena-search-progress-vertical i {
   display: block;
   width: 100%;
   height: 100%;
   background: currentColor;
-  transform-origin: left center;
+  transform-origin: bottom center;
   transition: transform 0.45s linear;
 }
 
-.arena-search-time-mini {
-  font-size: 8.5px;
+.arena-search-time-vertical {
+  font-size: 8px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .duel-action-grid {
