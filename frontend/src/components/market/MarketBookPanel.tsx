@@ -7,11 +7,11 @@ const BOOK_PLACEHOLDER_ROWS = 8
 function MarketRows({ levels, side }: { levels: readonly MarketLevel[]; side: 'ask' | 'bid' }): React.JSX.Element {
   const placeholders = Math.max(0, BOOK_PLACEHOLDER_ROWS - levels.length)
   return (
-    <div className="market-levels" role="table" aria-label={side === 'ask' ? '卖单' : '买单'}>
+    <div className="market-levels" role="table" aria-label={side === 'ask' ? '正在售卖' : '求购'}>
       <div className="market-level market-level--header" role="row">
-        <span role="columnheader">单价</span>
+        <span role="columnheader">单价 (灵石)</span>
         <span role="columnheader">数量</span>
-        <span role="columnheader">订单</span>
+        <span role="columnheader">笔数</span>
       </div>
       {levels.map(level => (
         <div className={`market-level market-level--${side}`} key={level.price} role="row">
@@ -31,29 +31,28 @@ function MarketRows({ levels, side }: { levels: readonly MarketLevel[]; side: 'a
 
 interface MarketBookPanelProps {
   book: MarketBook | null
-  sides: readonly ('ask' | 'bid')[]
+  sides?: readonly ('ask' | 'bid')[]
 }
 
-export const MarketBookPanel = memo(function MarketBookPanel({ book, sides }: MarketBookPanelProps): React.JSX.Element {
-  const bestAsk = book?.asks[0]?.price
-  const bestBid = book?.bids[0]?.price
+export const MarketBookPanel = memo(function MarketBookPanel({ book, sides = ['bid', 'ask'] }: MarketBookPanelProps): React.JSX.Element {
   return (
     <div className="market-book-panel">
-      <div className="market-summary" aria-label="盘口摘要">
-        <div><span>买一</span><strong className="market-bid-text">{bestBid === undefined ? '—' : formatNumber(bestBid)}</strong></div>
-        <div><span>卖一</span><strong className="market-ask-text">{bestAsk === undefined ? '—' : formatNumber(bestAsk)}</strong></div>
-        <div><span>活动订单</span><strong>{formatNumber(book?.activeOrderCount ?? 0)}</strong></div>
-      </div>
       <div className="market-book">
         {sides.includes('bid') && (
-          <section>
-            <h3>求购</h3>
+          <section className="market-book-side market-book-side--bid">
+            <div className="market-book-side-title">
+              <h3>求购订单</h3>
+              <span className="market-book-side-tag market-book-side-tag--bid">买单</span>
+            </div>
             <MarketRows levels={book?.bids ?? []} side="bid" />
           </section>
         )}
         {sides.includes('ask') && (
-          <section>
-            <h3>出售</h3>
+          <section className="market-book-side market-book-side--ask">
+            <div className="market-book-side-title">
+              <h3>正在售卖</h3>
+              <span className="market-book-side-tag market-book-side-tag--ask">卖单</span>
+            </div>
             <MarketRows levels={book?.asks ?? []} side="ask" />
           </section>
         )}

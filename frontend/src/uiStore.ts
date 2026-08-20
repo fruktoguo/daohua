@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { ActionType } from './game/types'
 
-export type TabId = ActionType | 'market' | 'inventory' | 'log' | 'settings'
+export type TabId = 'insight' | ActionType | 'market' | 'inventory' | 'log' | 'settings'
 
 interface UiStore {
   activeTab: TabId

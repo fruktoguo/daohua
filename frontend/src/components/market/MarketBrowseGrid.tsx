@@ -18,9 +18,9 @@ function getMetadata(item: MarketInstrument): ItemMetadata {
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
-      description: '灵市可交易物品。',
-      source: '灵市',
-      usage: '可在灵市挂牌交易。',
+      description: '坊市可交易物品。',
+      source: '坊市',
+      usage: '可在坊市挂牌交易。',
     }
   }
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
@@ -28,7 +28,7 @@ function getMetadata(item: MarketInstrument): ItemMetadata {
 
 interface MarketBrowseGridProps {
   instruments: readonly MarketInstrument[]
-  value: string
+  value?: string | null
   onSelect: (itemId: string) => void
 }
 
