@@ -1,6 +1,7 @@
 import { memo, useMemo } from 'react'
 import { formatNumber } from '../game/format'
 import type { CombatEncounterDefinition, CombatSpawnDefinition, CombatantDefinition } from '../game/types'
+import { FloatingTooltip } from './FloatingPopover'
 
 function damageTypeLabel(value: string): string {
   return {
@@ -28,18 +29,26 @@ const EnemyCard = memo(function EnemyCard({
           <strong>{enemy.name}</strong>
           <span>{damageTypeLabel(enemy.damageType)} · {enemy.experience} 经验</span>
         </div>
-        {strength !== undefined && <b title="生成强度">{strength}</b>}
+        {strength !== undefined && (
+          <FloatingTooltip placement="top" title="妖邪生成强度等阶" tone="gold">
+            <b>{strength}</b>
+          </FloatingTooltip>
+        )}
       </div>
-      <div className="combat-resource-line" title={`生命 ${formatNumber(enemy.maxHitpoints)}`}>
-        <span>生命</span>
-        <div><i /></div>
-        <strong>{formatNumber(enemy.maxHitpoints)}</strong>
-      </div>
-      <div className="combat-resource-line mana" title={`灵力 ${formatNumber(enemy.maxManapoints)}`}>
-        <span>灵力</span>
-        <div><i /></div>
-        <strong>{formatNumber(enemy.maxManapoints)}</strong>
-      </div>
+      <FloatingTooltip placement="top" title={`妖兽生命气血上限：${formatNumber(enemy.maxHitpoints)}`} tone="jade">
+        <div className="combat-resource-line">
+          <span>生命</span>
+          <div><i /></div>
+          <strong>{formatNumber(enemy.maxHitpoints)}</strong>
+        </div>
+      </FloatingTooltip>
+      <FloatingTooltip placement="top" title={`妖兽灵力上限：${formatNumber(enemy.maxManapoints)}`} tone="qi">
+        <div className="combat-resource-line mana">
+          <span>灵力</span>
+          <div><i /></div>
+          <strong>{formatNumber(enemy.maxManapoints)}</strong>
+        </div>
+      </FloatingTooltip>
       <dl className="combat-enemy-stats">
         <div><dt>伤害</dt><dd>{formatNumber(enemy.maxDamage)}</dd></div>
         <div><dt>间隔</dt><dd>{(enemy.attackIntervalMilliseconds / 1000).toFixed(2)}s</dd></div>

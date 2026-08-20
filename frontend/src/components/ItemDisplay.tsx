@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { createPortal } from 'react-dom'
+import { type ReactNode } from 'react'
 import { describeCombatTrigger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { ITEM_META, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import type { CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
+import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { ValueText } from './ValueText'
 
 interface ItemTooltipTargetProps {
@@ -14,11 +14,6 @@ interface ItemTooltipTargetProps {
   metadata?: ItemMetadata
   definition?: ItemDefinition
   tabIndex?: number
-}
-
-interface TooltipPosition {
-  left: number
-  top: number
 }
 
 interface ItemTileProps {
@@ -45,6 +40,25 @@ function fallbackMetadata(itemId: string): ItemMetadata {
   }
 }
 
+function rarityToTone(rarity: ItemRarity): FloatingTone {
+  switch (rarity) {
+    case 'emperor':
+    case 'saint':
+      return 'gold'
+    case 'spirit':
+    case 'heaven':
+      return 'purple'
+    case 'earth':
+      return 'qi'
+    case 'mystic':
+      return 'jade'
+    case 'yellow':
+      return 'gold'
+    default:
+      return 'muted'
+  }
+}
+
 export function ItemTooltipTarget({
   itemId,
   amount,
@@ -55,97 +69,75 @@ export function ItemTooltipTarget({
   tabIndex = 0,
 }: ItemTooltipTargetProps): React.JSX.Element {
   const baseMetadata = metadataOverride ?? ITEM_META[itemId] ?? fallbackMetadata(itemId)
-  const rawMetadata = definition ? {
-    ...baseMetadata,
-    label: definition.name,
-    category: definition.category,
-    level: definition.tier,
-    description: definition.description,
-  } : baseMetadata
-  const metadata = rawMetadata.level === undefined
-    ? rawMetadata
-    : withItemGrade(rawMetadata, rawMetadata.level)
-  const anchorRef = useRef<HTMLSpanElement>(null)
-  const tooltipRef = useRef<HTMLDivElement>(null)
-  const tooltipId = useId()
-  const [visible, setVisible] = useState(false)
-  const [position, setPosition] = useState<TooltipPosition>({ left: 8, top: 8 })
-  const equipment = useGameStore(state => state.equipment.find(entry => entry.equipmentId === itemId))
+  const rawMetadata = definition
+    ? {
+        ...baseMetadata,
+        label: definition.name,
+        category: definition.category,
+        level: definition.tier,
+        description: definition.description,
+      }
+    : baseMetadata
+  const metadata =
+    rawMetadata.level === undefined ? rawMetadata : withItemGrade(rawMetadata, rawMetadata.level)
+  const equipment = useGameStore((state) =>
+    state.equipment.find((entry) => entry.equipmentId === itemId)
+  )
   const effectLines = [...describeItemEffects(definition), ...describeEquipmentEffects(equipment)]
 
-  const positionTooltip = useCallback(() => {
-    const anchor = anchorRef.current
-    if (!anchor) return
-    const anchorRect = anchor.getBoundingClientRect()
-    const tooltipWidth = Math.min(300, window.innerWidth - 16)
-    const measuredHeight = tooltipRef.current?.offsetHeight ?? 190
-    const left = Math.max(8, Math.min(window.innerWidth - tooltipWidth - 8, anchorRect.left + anchorRect.width / 2 - tooltipWidth / 2))
-    const below = anchorRect.bottom + 8
-    const top = below + measuredHeight <= window.innerHeight - 8
-      ? below
-      : Math.max(8, anchorRect.top - measuredHeight - 8)
-    setPosition(current => current.left === left && current.top === top ? current : { left, top })
-  }, [])
+  const stats: { label: string; value: ReactNode; tone?: FloatingTone }[] = [
+    { label: '品类', value: metadata.category, tone: 'muted' },
+  ]
+  if (metadata.level !== undefined) {
+    stats.push({ label: '等阶', value: `Lv. ${metadata.level}`, tone: 'gold' })
+  }
+  if (amount !== undefined) {
+    stats.push({ label: '持有', value: formatNumber(amount), tone: 'gold' })
+  }
+  if (metadata.source) {
+    stats.push({ label: '产出', value: metadata.source, tone: 'jade' })
+  }
 
-  useLayoutEffect(() => {
-    if (!visible) return undefined
-    positionTooltip()
-    return undefined
-  }, [positionTooltip, visible])
+  // 附属卡片：如果存在额外用途说明或特殊词条，可以作为附属气泡组合展示
+  const asideCards: FloatingAsideCard[] = []
+  if (metadata.usage) {
+    asideCards.push({
+      mark: '用途',
+      title: '使用法门',
+      tone: 'qi',
+      lines: [metadata.usage],
+    })
+  }
 
-  useEffect(() => {
-    if (!visible) return undefined
-    window.addEventListener('resize', positionTooltip)
-    window.addEventListener('scroll', positionTooltip, true)
-    return () => {
-      window.removeEventListener('resize', positionTooltip)
-      window.removeEventListener('scroll', positionTooltip, true)
-    }
-  }, [positionTooltip, visible])
+  const tone = rarityToTone(metadata.rarity)
 
   return (
-    <>
-      <span
-        aria-describedby={visible ? tooltipId : undefined}
-        className={`item-tooltip-target ${className}`.trim()}
-        data-rarity={metadata.rarity}
-        onBlur={() => setVisible(false)}
-        onFocus={() => setVisible(true)}
-        onMouseEnter={() => setVisible(true)}
-        onMouseLeave={() => setVisible(false)}
-        ref={anchorRef}
-        tabIndex={tabIndex}
-      >{children}</span>
-      {visible && createPortal(
-        <div
-          className={`item-tooltip item-tooltip--${metadata.rarity}`}
-          id={tooltipId}
-          ref={tooltipRef}
-          role="tooltip"
-          style={{ left: position.left, top: position.top }}
-        >
-          <header>
-            <strong>{metadata.label}</strong>
-            <span>{metadata.rarityLabel}</span>
-          </header>
-          {metadata.description && <p>{metadata.description}</p>}
-          {effectLines.length > 0 && (
-            <section className="item-tooltip-effects">
-              <strong>效果</strong>
-              <ul>{effectLines.map(line => <li key={line}><ValueText className="effect-value-capsule" text={line} /></li>)}</ul>
-            </section>
-          )}
-          <dl>
-            <div><dt>类型</dt><dd>{metadata.category}</dd></div>
-            {metadata.level !== undefined && <div><dt>等级</dt><dd>Lv. {metadata.level}</dd></div>}
-            {amount !== undefined && <div><dt>拥有</dt><dd>{formatNumber(amount)}</dd></div>}
-            {metadata.source && <div><dt>来源</dt><dd>{metadata.source}</dd></div>}
-            {metadata.usage && <div><dt>用途</dt><dd>{metadata.usage}</dd></div>}
-          </dl>
-        </div>,
-        document.body,
-      )}
-    </>
+    <FloatingPopover
+      asideCards={asideCards.length > 0 ? asideCards : undefined}
+      closeDelay={120}
+      content={
+        <FloatingInfoCard
+          badge={metadata.rarityLabel}
+          badgeTone={tone}
+          description={metadata.description}
+          lines={effectLines.map((line) => (
+            <ValueText className="effect-value-capsule" key={line} text={line} />
+          ))}
+          stats={stats}
+          subtitle={metadata.source ? `来源：${metadata.source}` : undefined}
+          title={metadata.label}
+        />
+      }
+      gap={8}
+      interactive={false}
+      openDelay={60}
+      placement="bottom"
+      tabIndex={tabIndex}
+      trigger="hover"
+      triggerClassName={`item-tooltip-target ${className}`.trim()}
+    >
+      {children}
+    </FloatingPopover>
   )
 }
 
@@ -168,13 +160,19 @@ function describeItemEffects(definition?: ItemDefinition): string[] {
   if (definition.cooldownSeconds > 0) lines.push(`冷却 ${definition.cooldownSeconds} 秒`)
   if (definition.triggerAtCombatStart) lines.push('进入战斗时使用')
   for (const trigger of definition.defaultCombatTriggers ?? []) lines.push(`默认条件 ${describeCombatTrigger(trigger)}`)
-  if ((definition.defaultCombatTriggers?.length ?? 0) === 0
-    && (definition.hitpointRestore > 0 || definition.manapointRestore > 0)
-    && definition.triggerHpRatio > 0) {
+  if (
+    (definition.defaultCombatTriggers?.length ?? 0) === 0 &&
+    (definition.hitpointRestore > 0 || definition.manapointRestore > 0) &&
+    definition.triggerHpRatio > 0
+  ) {
     lines.push(`默认在生命低于 ${Math.round(definition.triggerHpRatio * 100)}% 时使用`)
   }
   for (const buff of definition.buffEffects ?? []) {
-    const heading = [buff.name, buff.durationSeconds > 0 ? `${buff.durationSeconds} 秒` : '', buff.maxStacks > 1 ? `最多 ${buff.maxStacks} 层` : '']
+    const heading = [
+      buff.name,
+      buff.durationSeconds > 0 ? `${buff.durationSeconds} 秒` : '',
+      buff.maxStacks > 1 ? `最多 ${buff.maxStacks} 层` : '',
+    ]
       .filter(Boolean)
       .join(' · ')
     if (heading) lines.push(heading)
@@ -277,7 +275,7 @@ export function ItemReference({
   className?: string
 }): React.JSX.Element {
   const metadata = ITEM_META[itemId] ?? fallbackMetadata(itemId)
-  const definition = useGameStore(state => state.items.find(item => item.itemId === itemId))
+  const definition = useGameStore((state) => state.items.find((item) => item.itemId === itemId))
   return (
     <ItemTooltipTarget amount={amount} className={`item-reference ${className}`.trim()} definition={definition} itemId={itemId}>
       {label ?? metadata.label}

@@ -5,32 +5,35 @@ import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
 import { EffectTooltipTarget, type EffectTooltipContent } from './components/EffectTooltip'
+import { FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
 import { ItemCard, ItemReference } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
+import { InsightPage } from './components/InsightPage'
+import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
 import { describeCombatTrigger, formatNumber } from './game/format'
+import { calculateRealmInfo } from './game/combatConstants'
 import { ACTION_DEFINITIONS, ACTION_TAB_META, ACTION_TYPES, ITEM_META } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import type { ActionDefinition, ActionType, CombatAbilityDefinition, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
 import { gameClient } from './network/gameClient'
 import { useUiStore, type TabId } from './uiStore'
 
-const QI_PER_LAYER = 100
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
 const NAV_ITEMS: ReadonlyArray<{ tab: ActionType; hint: string }> = [
   { tab: 'cultivation', hint: '吐纳灵气，提升修为' },
   { tab: 'exploration', hint: '外出采集，寻觅灵草' },
   { tab: 'alchemy', hint: '开炉炼丹，化草为丹' },
-  { tab: 'combat', hint: '地图、附近与斗法' },
+  { tab: 'combat', hint: '地图、附近与行动详情' },
 ]
 
-type IconName = ActionType | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
+type IconName = 'insight' | ActionType | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
 
 function Icon({ name }: { name: IconName }): React.JSX.Element {
   const common = {
@@ -43,6 +46,8 @@ function Icon({ name }: { name: IconName }): React.JSX.Element {
   }
 
   switch (name) {
+    case 'insight':
+      return <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg>
     case 'cultivation':
       return <svg {...common}><path d="M12 4.5c2 2.4 2 6.2 0 8.6-2-2.4-2-6.2 0-8.6Z" /><path d="M4.8 8.8c3 .3 5.4 2.4 6.1 5.4-3.2-.2-5.7-2.3-6.1-5.4Z" /><path d="M19.2 8.8c-3 .3-5.4 2.4-6.1 5.4 3.2-.2 5.7-2.3 6.1-5.4Z" /><path d="M3.5 15.5c2.6 2.8 5.4 4 8.5 4s5.9-1.2 8.5-4" /></svg>
     case 'exploration':
@@ -200,12 +205,14 @@ function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Eleme
     }
     const percent = Math.round(Math.max(0, Math.min(1, expedition.progress)) * 100)
     return (
-      <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
-        <div className="qc-expedition-meta">
-          <span>{combatPhaseLabel(expedition.phase)}</span>
-          <strong>{percent}%</strong>
+      <div className={`queue-combat-state queue-combat-state--${expedition.phase}`}>
+        <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
+          <div className="qc-expedition-meta">
+            <span>{combatPhaseLabel(expedition.phase)}</span>
+            <strong>{percent}%</strong>
+          </div>
+          <SmoothProgressBar entry={phaseEntry} />
         </div>
-        <SmoothProgressBar entry={phaseEntry} />
       </div>
     )
   }
@@ -215,16 +222,18 @@ function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Eleme
   const enemyMax = Math.max(1, expedition?.enemyMaxHitpoints ?? 1)
   const enemyValue = Math.max(0, Math.min(enemyMax, expedition?.enemyHitpoints ?? 0))
   return (
-    <div className="queue-combat-vitals" role="status" aria-label="战斗生命状态">
-      <div className="queue-combat-vital queue-combat-vital--player">
-        <span>己</span>
-        <i><b style={{ transform: `scaleX(${playerValue / playerMax})` }} /></i>
-        <strong>{formatNumber(playerValue)} / {formatNumber(playerMax)}</strong>
-      </div>
-      <div className="queue-combat-vital queue-combat-vital--enemy">
-        <span>敌</span>
-        <i><b style={{ transform: `scaleX(${enemyValue / enemyMax})` }} /></i>
-        <strong>{formatNumber(enemyValue)} / {formatNumber(enemyMax)}</strong>
+    <div className="queue-combat-state queue-combat-state--combat">
+      <div className="queue-combat-vitals" role="status" aria-label="战斗生命状态">
+        <div className="queue-combat-vital queue-combat-vital--player">
+          <span>己</span>
+          <i><b style={{ transform: `scaleX(${playerValue / playerMax})` }} /></i>
+          <strong>{formatNumber(playerValue)} / {formatNumber(playerMax)}</strong>
+        </div>
+        <div className="queue-combat-vital queue-combat-vital--enemy">
+          <span>敌</span>
+          <i><b style={{ transform: `scaleX(${enemyValue / enemyMax})` }} /></i>
+          <strong>{formatNumber(enemyValue)} / {formatNumber(enemyMax)}</strong>
+        </div>
       </div>
     </div>
   )
@@ -316,15 +325,17 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
 
       <div className="qc-upcoming" aria-label="后续行动">
         {upcoming.map(entry => (
-          <div className="qc-next" key={entry.entryId} title={actionDescription(entry)}>
-            <span className={`item-glyph tone-${ACTION_TAB_META[entry.type].accent}`} aria-hidden="true">
-              <Icon name={entry.type} />
-            </span>
-            <div className="qc-next-text">
-              <span className="qc-next-name">{entry.actionName}</span>
-              <span className="qc-next-repeats">{repeatsLabel(entry.remainingRepeats)}</span>
+          <FloatingTooltip key={entry.entryId} placement="bottom" title={actionDescription(entry)} tone="gold">
+            <div className="qc-next">
+              <span className={`item-glyph tone-${ACTION_TAB_META[entry.type].accent}`} aria-hidden="true">
+                <Icon name={entry.type} />
+              </span>
+              <div className="qc-next-text">
+                <span className="qc-next-name">{entry.actionName}</span>
+                <span className="qc-next-repeats">{repeatsLabel(entry.remainingRepeats)}</span>
+              </div>
             </div>
-          </div>
+          </FloatingTooltip>
         ))}
       </div>
 
@@ -462,40 +473,41 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
 function TopBar(): React.JSX.Element {
   const name = useGameStore(state => state.name)
   const stats = useGameStore(state => state.stats)
-  const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const presence = useGameStore(state => state.presenceMode)
-  const layer = 1 + Math.floor(stats.spirit / QI_PER_LAYER)
-  const intoLayer = stats.spirit % QI_PER_LAYER
-  const spiritStones = itemAmount(inventory, 'currency.spirit')
+  const setActiveTab = useUiStore(state => state.setActiveTab)
+  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
   const connectionText = connection === 'online' ? '已连接' : connection === 'connecting' ? '连接中' : connection === 'reconnecting' ? '重连中' : '已离线'
   const presenceText = presence === 'online' ? '在线' : presence === 'idle-offline' ? '离线挂机' : '完全离线'
 
   return (
     <header className="topbar">
-      <div className="player-block">
-        <div className="player-avatar" aria-hidden="true">修</div>
+      <div
+        aria-label="切换至内视主面板，查看完整六维与修真数值"
+        className="player-block"
+        onClick={() => setActiveTab('insight')}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('insight') }}
+        role="button"
+        tabIndex={0}
+      >
         <div className="player-info">
           <div className="player-line">
             <strong className="player-name">{name}</strong>
-            <span className="realm-badge">炼气 {layer} 层</span>
-            <span className={`connection-dot connection-dot--${connection}`} title={`${connectionText} · ${presenceText}`} />
+            <RealmBadge realmInfo={realmInfo} />
+            <FloatingTooltip placement="bottom" title={`${connectionText} · ${presenceText}`} tone={connection === 'online' ? 'jade' : 'danger'}>
+              <span className={`connection-dot connection-dot--${connection}`} />
+            </FloatingTooltip>
           </div>
-          <div className="realm-progress" title={`修为 ${formatNumber(stats.spirit)}`}>
-            <i style={{ width: `${intoLayer}%` }} />
-            <span>修为 {intoLayer}/{QI_PER_LAYER}</span>
-          </div>
+          <FloatingTooltip placement="bottom" title={`总修为 ${formatNumber(stats.spirit)} · 当前层突破进度 ${realmInfo.layerProgress.toFixed(1)}/100.0`} tone="gold">
+            <div className="realm-progress">
+              <i style={{ width: `${realmInfo.layerProgress}%` }} />
+              <span>层境突破 {realmInfo.layerProgress.toFixed(0)}%</span>
+            </div>
+          </FloatingTooltip>
         </div>
       </div>
       <QueueCenter />
       <BuffBar />
-      <div className="wallet-block" title="灵石">
-        <span className="item-glyph tone-gold" aria-hidden="true"><Icon name="spirit" /></span>
-        <div className="wallet-text">
-          <span className="wallet-label">灵石</span>
-          <strong className="wallet-amount">{formatNumber(spiritStones)}</strong>
-        </div>
-      </div>
     </header>
   )
 }
@@ -508,13 +520,23 @@ function Sidebar(): React.JSX.Element {
     <aside className="sidebar panel" aria-label="行动导航">
       <nav className="sidebar-nav">
         <button
+          className={`nav-item${activeTab === 'insight' ? ' active' : ''}`}
+          onClick={() => setActiveTab('insight')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="insight" /></span>
+          <span className="nav-text">
+            <span className="nav-label">内视</span>
+          </span>
+        </button>
+        <button
           className={`nav-item${activeTab === 'market' ? ' active' : ''}`}
           onClick={() => setActiveTab('market')}
           type="button"
         >
           <span className="nav-glyph" aria-hidden="true"><Icon name="market" /></span>
           <span className="nav-text">
-            <span className="nav-label">灵市</span>
+            <span className="nav-label">坊市</span>
           </span>
         </button>
         {NAV_ITEMS.map(item => (
@@ -1086,21 +1108,21 @@ type ExpeditionSubTab = 'map' | 'nearby' | 'duel'
 const EXPEDITION_TABS: ReadonlyArray<{ id: ExpeditionSubTab; label: string }> = [
   { id: 'map', label: '地图' },
   { id: 'nearby', label: '附近' },
-  { id: 'duel', label: '斗法' },
+  { id: 'duel', label: '详情' },
 ]
 
 const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const [activeSubTab, setActiveSubTab] = useState<ExpeditionSubTab>('map')
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
-  const activeCombatEntryId = useGameStore(state => {
+  const activeEntryId = useGameStore(state => {
     const current = state.queue.entries[0]
-    return current?.type === 'combat' ? current.entryId : null
+    return current ? current.entryId : null
   })
   const closeModal = useCallback(() => setSelectedAction(null), [])
 
   useEffect(() => {
-    if (!hidden && activeCombatEntryId) setActiveSubTab('duel')
-  }, [activeCombatEntryId, hidden])
+    if (!hidden && activeEntryId) setActiveSubTab('duel')
+  }, [activeEntryId, hidden])
 
   return (
     <section className="panel expedition-page" hidden={hidden}>
@@ -1180,7 +1202,7 @@ function SettingsPage(): React.JSX.Element {
 function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
-  const visibleItems = inventory.filter(item => item.itemId !== 'currency.spirit' && item.amount > 0)
+  const visibleItems = inventory.filter(item => item.amount > 0)
 
   return (
     <section className={`panel inventory-panel ${className}`.trim()}>
@@ -1199,7 +1221,8 @@ function InventoryPanel({ className = '' }: { className?: string }): React.JSX.E
 }
 
 const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; label: string; icon: IconName }> = [
-  { tab: 'market', label: '灵市', icon: 'market' },
+  { tab: 'insight', label: '内视', icon: 'insight' },
+  { tab: 'market', label: '坊市', icon: 'market' },
   { tab: 'cultivation', label: '修炼', icon: 'cultivation' },
   { tab: 'exploration', label: '探索', icon: 'exploration' },
   { tab: 'alchemy', label: '炼丹', icon: 'alchemy' },
@@ -1259,6 +1282,7 @@ export default function App(): React.JSX.Element {
         <Sidebar />
         <div className="center-column">
           <main className="main-content">
+            {activeTab === 'insight' && <InsightPage />}
             {ACTION_TYPES.filter(type => type !== 'combat').map(type => <SkillPage hidden={activeTab !== type} key={type} type={type} />)}
             <ExpeditionPage hidden={activeTab !== 'combat'} />
             {activeTab === 'market' && <MarketPage />}
