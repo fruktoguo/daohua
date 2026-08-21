@@ -20,6 +20,7 @@ docs/
 | [combat-design.md](design/combat-design.md) | 战斗数值与内视设计规约：`double` 数值类型架构、六维根基换算、抗性减伤与对抗公式。 |
 | [player-expected-attributes-model.md](design/player-expected-attributes-model.md) | 境界阶位体系与基准玩家期望属性量化模型（由脚本生成，勿手改数值表）。 |
 | [combat-benchmark-model.md](design/combat-benchmark-model.md) | 战斗基准模拟与关卡产出期望模型：全 12 阶单人与组队效率基准（由脚本生成，勿手改数值表）。 |
+| [early-game-skills-design.md](design/early-game-skills-design.md) | 前期技能设计规约：五大流派定位、前期技能清单规划、数值模型与获取途径。 |
 | [game-data.md](design/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |
 | [performance-baseline.md](design/performance-baseline.md) | 首轮性能基线：在线、离线挂机、市场场景实测数据与相对回归口径。 |
 | [milky-way-idle-mapping.md](design/milky-way-idle-mapping.md) | Milky Way Idle 公开玩法/数值映射与排除边界（仅作参考，不复制其内容）。 |
