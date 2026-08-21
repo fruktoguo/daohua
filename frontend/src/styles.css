@@ -4596,6 +4596,39 @@ input[type="checkbox"] {
   border-left: 2px solid var(--gold);
 }
 
+.insight-sub-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed rgba(201, 180, 109, 0.15);
+}
+
+.insight-sub-tab-btn {
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.insight-sub-tab-btn:hover {
+  color: var(--text);
+  border-color: rgba(201, 180, 109, 0.4);
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.insight-sub-tab-btn.active {
+  color: var(--gold-bright);
+  border-color: var(--gold);
+  background: rgba(201, 180, 109, 0.16);
+  box-shadow: 0 0 6px rgba(201, 180, 109, 0.2);
+}
+
 /* 六维根基横向列表 */
 /* ========================================================================= */
 /* 复合数值展示 Label (Compound Stat & Bonus Labels)                           */

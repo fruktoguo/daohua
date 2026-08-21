@@ -7,16 +7,18 @@ import {
   PercentValue,
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
   BASELINE_COMBAT_ATTRIBUTES,
-  calculateRootLevelAndProgress,
   calculateRealmInfo,
+  calculateBaseAttributes,
 } from '../game/combatConstants'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
+type RootsSubTab = 'sixDimensions' | 'baseAttributes'
 
 export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<InsightTab>('roots')
+  const [rootsSubTab, setRootsSubTab] = useState<RootsSubTab>('sixDimensions')
 
   const name = useGameStore(state => state.name)
   const stats = useGameStore(state => state.stats)
@@ -31,25 +33,12 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
 
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
   const dimensions = useMemo(() => {
-    const staminaLevel: number = loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS // 体魄 10
-    const meridiansLevel: number = loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS // 经脉 10
-    const boneLevel: number = loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS // 根骨 10
-    const strengthLevel: number = loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS // 力道 10
-    const consciousnessLevel: number = loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS // 神识 10
-    const agilityLevel: number = loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS // 身法 10
-
-    // 格式化经验进度：例如 5.8万 / 100.0万
-    const getProgress = (level: number) => {
-      const totalExp = 100.0 * Math.pow(Math.max(1.0, level) - 1.0, 3.0) + (level * 580.0)
-      const res = calculateRootLevelAndProgress(totalExp)
-      const cur = res.currentProgress >= 10000 ? `${(res.currentProgress / 10000).toFixed(1)}万` : res.currentProgress.toFixed(0)
-      const req = res.levelRequirement >= 10000 ? `${(res.levelRequirement / 10000).toFixed(1)}万` : res.levelRequirement.toFixed(0)
-      return {
-        current: res.currentProgress,
-        max: res.levelRequirement,
-        text: `${cur}/${req}`,
-      }
-    }
+    const staminaLevel: number = Math.max(10, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 体魄 10
+    const meridiansLevel: number = Math.max(10, loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 经脉 10
+    const boneLevel: number = Math.max(10, loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 根骨 10
+    const strengthLevel: number = Math.max(10, loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 力道 10
+    const consciousnessLevel: number = Math.max(10, loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 神识 10
+    const agilityLevel: number = Math.max(10, loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 身法 10
 
     return [
       {
@@ -57,7 +46,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         name: '体魄',
         tone: 'emerald' as PillTone,
         level: staminaLevel,
-        progress: getProgress(staminaLevel),
         tooltip: '体魄强韧肉身宝体。每点提升 1% 最大生命值、1% 护甲、1% 生命值回复。',
         bonuses: [
           { label: '生命上限', value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
@@ -70,7 +58,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         name: '经脉',
         tone: 'cyan' as PillTone,
         level: meridiansLevel,
-        progress: getProgress(meridiansLevel),
         tooltip: '经脉纳通周天灵气。每点提升 1% 最大灵力值、1% 法术抗性、1% 灵力值回复。',
         bonuses: [
           { label: '灵力上限', value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
@@ -83,7 +70,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         name: '根骨',
         tone: 'violet' as PillTone,
         level: boneLevel,
-        progress: getProgress(boneLevel),
         tooltip: '先天仙骨化解万物。每点提升 1% 最大生命值、1% 最大灵力值、1% 化解。',
         bonuses: [
           { label: '生命上限', value: `+${boneLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
@@ -96,7 +82,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         name: '力道',
         tone: 'amber' as PillTone,
         level: strengthLevel,
-        progress: getProgress(strengthLevel),
         tooltip: '力道拔山断岳破阵。每点提升 1% 物理攻击、1% 暴击点数、1% 破招点数。',
         bonuses: [
           { label: '物理攻击', value: `+${strengthLevel.toFixed(1)}%`, tone: 'crimson' as PillTone },
@@ -109,7 +94,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         name: '神识',
         tone: 'indigo' as PillTone,
         level: consciousnessLevel,
-        progress: getProgress(consciousnessLevel),
         tooltip: '神识灵台锁定杀机。每点提升 2% 术法攻击 (×2 强效加成)、1% 命中点数。',
         bonuses: [
           { label: '术法攻击', value: `+${(consciousnessLevel * 2.0).toFixed(1)}%`, tone: 'indigo' as PillTone },
@@ -121,7 +105,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         name: '身法',
         tone: 'teal' as PillTone,
         level: agilityLevel,
-        progress: getProgress(agilityLevel),
         tooltip: '身法凌波趋吉避凶。每点提升 1% 闪避点数、1% 免爆点数、1% 化解。',
         bonuses: [
           { label: '闪避', value: `+${agilityLevel.toFixed(1)}%`, tone: 'teal' as PillTone },
@@ -139,20 +122,27 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     loadout?.talismanLevel,
   ])
 
+  // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
+  const basePool = useMemo(() => calculateBaseAttributes(stats.spirit ?? 0), [stats.spirit])
+
   // 1. 基础战斗属性 (固定数值类型，全部使用 double)
-  // 默认基础: hp100, mp50, ad10, ap5, 物抗10, 法抗0, 命中/闪避/暴击/免爆/破招/拆招均为1, 回复为2/1, 百分比全为0
-  const maxHp: number = attributes?.maxHitpoints ?? BASELINE_COMBAT_ATTRIBUTES.maxHp
-  const maxMp: number = attributes?.maxManapoints ?? BASELINE_COMBAT_ATTRIBUTES.maxMp
-  const physAtk: number = attributes ? Math.max(1.0, attributes.maxDamage * 0.9) : BASELINE_COMBAT_ATTRIBUTES.physAtk
-  const spellAtk: number = attributes ? Math.max(1.0, attributes.maxDamage * 1.1) : BASELINE_COMBAT_ATTRIBUTES.spellAtk
-  const armor: number = Math.max(0.0, attributes?.armor ?? BASELINE_COMBAT_ATTRIBUTES.armor)
-  const magicRes: number = Math.max(0.0, attributes?.waterResistance ?? BASELINE_COMBAT_ATTRIBUTES.magicRes)
-  const accuracy: number = attributes?.accuracyRating ?? BASELINE_COMBAT_ATTRIBUTES.accuracy
-  const evasion: number = attributes?.evasionRating ?? BASELINE_COMBAT_ATTRIBUTES.evasion
-  const critPoint: number = attributes ? attributes.criticalChance * 100.0 : BASELINE_COMBAT_ATTRIBUTES.criticalRating
-  const critAvoidPoint: number = attributes ? attributes.criticalAvoidance * 100.0 : BASELINE_COMBAT_ATTRIBUTES.critAvoidance
-  const parryBreakPoint: number = attributes ? attributes.pierceChance * 100.0 : BASELINE_COMBAT_ATTRIBUTES.breakPower
-  const parryResolvePoint: number = attributes ? attributes.damageAbsorptionRatio * 100.0 : BASELINE_COMBAT_ATTRIBUTES.parryResolve
+  // 当 attributes 存在时使用实时数值；未推送时以 basePool 为底座应用六维加成
+  const staminaBonus = (loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
+  const intelligenceBonus = (loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
+  const boneBonus = (loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
+
+  const maxHp: number = attributes?.maxHitpoints ?? Math.round(basePool.baseHp * (1.0 + staminaBonus) * (1.0 + boneBonus))
+  const maxMp: number = attributes?.maxManapoints ?? Math.round(basePool.baseMp * (1.0 + intelligenceBonus) * (1.0 + boneBonus))
+  const physAtk: number = attributes ? Math.max(1.0, attributes.maxDamage * 0.9) : Math.round(basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
+  const spellAtk: number = attributes ? Math.max(1.0, attributes.maxDamage * 1.1) : Math.round(basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02))
+  const armor: number = Math.max(0.0, attributes?.armor ?? (basePool.baseArmor * (1.0 + staminaBonus)))
+  const magicRes: number = Math.max(0.0, attributes?.waterResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus)))
+  const accuracy: number = attributes?.accuracyRating ?? basePool.baseAccuracy
+  const evasion: number = attributes?.evasionRating ?? basePool.baseEvasion
+  const critPoint: number = attributes ? attributes.criticalChance * 100.0 : basePool.baseCrit
+  const critAvoidPoint: number = attributes ? attributes.criticalAvoidance * 100.0 : basePool.baseCritAvoid
+  const parryBreakPoint: number = attributes ? attributes.pierceChance * 100.0 : basePool.baseBreak
+  const parryResolvePoint: number = attributes ? attributes.damageAbsorptionRatio * 100.0 : basePool.baseParry
 
   // 生命回复与灵力回复 (固定值属性，每 5 秒回复量，受六维加成)
   const hpRegenBase = BASELINE_COMBAT_ATTRIBUTES.hpRegen
@@ -307,34 +297,77 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
       {/* 主体内容 */}
       <div className="insight-body">
         {/* ========================================================================= */}
-        {/* TAB 1: 根基 (数值展示胶囊 + 后面跟随多个加成胶囊，无图标)                    */}
+        {/* TAB 1: 根基 (支持二级 Tab 切换：六维根基 | 基础数值)                          */}
         {/* ========================================================================= */}
         {activeTab === 'roots' && (
           <div className="insight-panel insight-panel--roots">
-            <div className="insight-roots-list">
-              {dimensions.map(dim => (
-                <div className="insight-root-row" key={dim.id}>
-                  <PillStatLabel
-                    label={dim.name}
-                    value={`Lv.${dim.level.toFixed(0)}`}
-                    tone={dim.tone}
-                    progress={dim.progress}
-                    tooltip={dim.tooltip}
-                    tooltipTone={dim.tone === 'purple' ? 'purple' : dim.tone === 'qi' ? 'qi' : dim.tone === 'jade' ? 'jade' : 'gold'}
-                  />
-                  <div className="insight-root-bonuses">
-                    {dim.bonuses.map((bonus, idx) => (
-                      <PillBonusLabel
-                        key={idx}
-                        label={bonus.label}
-                        value={bonus.value}
-                        tone={bonus.tone}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
+            <div className="insight-sub-tabs" role="tablist">
+              <button
+                className={`insight-sub-tab-btn ${rootsSubTab === 'sixDimensions' ? 'active' : ''}`}
+                onClick={() => setRootsSubTab('sixDimensions')}
+                type="button"
+              >
+                六维根基
+              </button>
+              <button
+                className={`insight-sub-tab-btn ${rootsSubTab === 'baseAttributes' ? 'active' : ''}`}
+                onClick={() => setRootsSubTab('baseAttributes')}
+                type="button"
+              >
+                基础数值
+              </button>
             </div>
+
+            {rootsSubTab === 'sixDimensions' ? (
+              <div className="insight-roots-list">
+                {dimensions.map(dim => (
+                  <div className="insight-root-row" key={dim.id}>
+                    <PillStatLabel
+                      label={dim.name}
+                      value={formatNumber(dim.level)}
+                      tone={dim.tone}
+                      tooltip={dim.tooltip}
+                      tooltipTone={dim.tone === 'purple' ? 'purple' : dim.tone === 'qi' ? 'qi' : dim.tone === 'jade' ? 'jade' : 'gold'}
+                    />
+                    <div className="insight-root-bonuses">
+                      {dim.bonuses.map((bonus, idx) => (
+                        <PillBonusLabel
+                          key={idx}
+                          label={bonus.label}
+                          value={bonus.value}
+                          tone={bonus.tone}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="insight-pill-group">
+                <h4 className="insight-pill-group-title">
+                  {realmInfo.stageName}阶位 · 境界基础底座（Base Flat · 乘区一底座）
+                </h4>
+                <div className="insight-pill-group-items">
+                  <PillStatLabel label="生命底座" value={formatNumber(basePool.baseHp)} tone="emerald" tooltip="仙躯当前境界所拥有的纯净基础生命池底座。" />
+                  <PillStatLabel label="灵力底座" value={formatNumber(basePool.baseMp)} tone="cyan" tooltip="气海当前境界所拥有的纯净基础灵力池底座。" />
+                  <PillStatLabel label="物理攻击" value={formatNumber(basePool.baseAd)} tone="crimson" tooltip="当前境界物理攻击基础输出威力。" />
+                  <PillStatLabel label="术法攻击" value={formatNumber(basePool.baseAp)} tone="indigo" tooltip="当前境界术法轰击基础输出威力。" />
+                  <PillStatLabel label="护甲底座" value={formatNumber(basePool.baseArmor)} tone="bronze" tooltip="当前境界物理防御基础护甲。" />
+                  <PillStatLabel label="法抗底座" value={formatNumber(basePool.baseMagicRes)} tone="violet" tooltip="当前境界全元素术法抗性。" />
+                  <PillStatLabel label="命中等级" value={formatNumber(basePool.baseAccuracy)} tone="sky" tooltip="当前境界命中对抗基础点数。" />
+                  <PillStatLabel label="闪避等级" value={formatNumber(basePool.baseEvasion)} tone="teal" tooltip="当前境界闪避回避基础点数。" />
+                  <PillStatLabel label="暴击点数" value={formatNumber(basePool.baseCrit)} tone="gold" tooltip="当前境界暴击对抗基础点数。" />
+                  <PillStatLabel label="免暴点数" value={formatNumber(basePool.baseCritAvoid)} tone="slate" tooltip="当前境界免暴对抗基础点数。" />
+                  <PillStatLabel label="破招点数" value={formatNumber(basePool.baseBreak)} tone="amber" tooltip="当前境界破招对抗基础点数。" />
+                  <PillStatLabel label="化解点数" value={formatNumber(basePool.baseParry)} tone="silver" tooltip="当前境界拆招化解基础点数。" />
+                  <PillStatLabel label="技能强度" value={`${basePool.skillIntensity.toFixed(2)}x`} tone="purple" tooltip="当前阶位专属技能强度倍率增量。" />
+                  <PillStatLabel label="破防因子" value={`K = ${basePool.k.toFixed(1)}`} tone="amber" tooltip="平方减伤模型下的阶位动态抗性拦截穿透系数。" />
+                  <PillStatLabel label="暴伤倍率" value={`${(basePool.critDmg * 100).toFixed(1)}%`} tone="gold" tooltip="当前阶位基础暴击伤害倍率。" />
+                  <PillStatLabel label="冷却缩减" value={`${(basePool.cdr * 100).toFixed(1)}%`} tone="cyan" tooltip="当前阶位主动技能冷却缩减 (CDR)。" />
+                  <PillStatLabel label="动作加速" value={`${(basePool.atr * 100).toFixed(1)}%`} tone="teal" tooltip="当前阶位动作时间与施法吟唱缩减 (ATR)。" />
+                </div>
+              </div>
+            )}
           </div>
         )}
 

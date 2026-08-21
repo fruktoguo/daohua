@@ -48,7 +48,16 @@
 
 ---
 
-## 5. 物品方块与图元展示 (Item Tile & Display)
+## 5. 面板二级导航与子选项卡 (Panel Sub-Tabs Navigation)
+
+- **适用场景**：
+  - 面板主分类下的二级切换栏（如内视根基下的「六维根基」与「基础数值」切换，采用紧凑暗墨胶囊按键与金色微光高亮）。
+- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`
+- **样式文件**：[`frontend/src/styles.css`](file:///home/yuohira/game/xiuxian/frontend/src/styles.css) (搜索 `.insight-sub-tabs`)
+
+---
+
+## 6. 物品方块与图元展示 (Item Tile & Display)
 
 - **适用场景**：
   - 行囊、掉落、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
@@ -57,7 +66,7 @@
 
 ---
 
-## 6. 网格选择器与目录拾取器 (Item Grid & Catalog Pickers)
+## 7. 网格选择器与目录拾取器 (Item Grid & Catalog Pickers)
 
 - **适用场景**：
   - **物品网格选择弹窗**（支持搜索、分类筛选、物品图元网格排列、空态选项、数量/品质高亮） -> `ItemGridPicker`

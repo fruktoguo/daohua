@@ -444,3 +444,116 @@ export function calculateRealmInfo(spirit = 0): RealmInfo {
   }
 }
 
+export interface BaseAttributePool {
+  level: number
+  tier: number
+  baseHp: number
+  baseMp: number
+  baseAd: number
+  baseAp: number
+  baseArmor: number
+  baseMagicRes: number
+  baseAccuracy: number
+  baseEvasion: number
+  baseCrit: number
+  baseCritAvoid: number
+  baseBreak: number
+  baseParry: number
+  cdr: number
+  atr: number
+  critDmg: number
+  skillIntensity: number
+  k: number
+}
+
+const BASE_FLAT_ANCHORS = [
+  { level: 1,   hp: 100,   mp: 50,    ad: 10,   ap: 5,    armor: 10,  mr: 0,    acc: 1,   eva: 1,   crit: 1,   cavoid: 1,  breakPt: 1,   parry: 1 },
+  { level: 18,  hp: 232,   mp: 90,    ad: 15,   ap: 7,    armor: 13,  mr: 0,    acc: 3,   eva: 1,   crit: 1,   cavoid: 1,  breakPt: 1,   parry: 1 },
+  { level: 30,  hp: 472,   mp: 570,   ad: 30,   ap: 27,   armor: 23,  mr: 14,   acc: 7,   eva: 4,   crit: 3,   cavoid: 2,  breakPt: 2,   parry: 2 },
+  { level: 42,  hp: 1108,  mp: 1402,  ad: 62,   ap: 67,   armor: 46,  mr: 41,   acc: 12,  eva: 8,   crit: 6,   cavoid: 4,  breakPt: 4,   parry: 4 },
+  { level: 54,  hp: 2164,  mp: 2770,  ad: 116,  ap: 133,  armor: 83,  mr: 85,   acc: 19,  eva: 15,  crit: 13,  cavoid: 8,  breakPt: 7,   parry: 7 },
+  { level: 66,  hp: 4624,  mp: 4234,  ad: 196,  ap: 232,  armor: 138, mr: 152,  acc: 28,  eva: 24,  crit: 22,  cavoid: 14, breakPt: 13,  parry: 12 },
+  { level: 78,  hp: 8056,  mp: 6282,  ad: 308,  ap: 369,  armor: 214, mr: 246,  acc: 39,  eva: 35,  crit: 33,  cavoid: 25, breakPt: 23,  parry: 20 },
+  { level: 90,  hp: 11644, mp: 8586,  ad: 430,  ap: 517,  armor: 297, mr: 347,  acc: 50,  eva: 46,  crit: 44,  cavoid: 36, breakPt: 34,  parry: 30 },
+  { level: 102, hp: 16360, mp: 11618, ad: 590,  ap: 712,  armor: 406, mr: 480,  acc: 65,  eva: 61,  crit: 59,  cavoid: 50, breakPt: 48,  parry: 44 },
+  { level: 114, hp: 22372, mp: 15474, ad: 794,  ap: 961,  armor: 545, mr: 650,  acc: 84,  eva: 79,  crit: 77,  cavoid: 68, breakPt: 66,  parry: 62 },
+  { level: 126, hp: 29824, mp: 20258, ad: 1047, ap: 1270, armor: 717, mr: 860,  acc: 107, eva: 102, crit: 100, cavoid: 91, breakPt: 89,  parry: 84 },
+  { level: 127, hp: 38872, mp: 26066, ad: 1354, ap: 1645, armor: 927, mr: 1116, acc: 135, eva: 130, crit: 128, cavoid: 119,breakPt: 116, parry: 111 },
+]
+
+export function calculateBaseAttributes(spirit = 0): BaseAttributePool {
+  const level = Math.max(1.0, 1.0 + Math.floor(spirit / 100.0))
+  let tier = 1
+  if (level <= 18.0) tier = level <= 1.0 ? 1 : 2
+  else if (level <= 30.0) tier = 3
+  else if (level <= 42.0) tier = 4
+  else if (level <= 54.0) tier = 5
+  else if (level <= 66.0) tier = 6
+  else if (level <= 78.0) tier = 7
+  else if (level <= 90.0) tier = 8
+  else if (level <= 102.0) tier = 9
+  else if (level <= 114.0) tier = 10
+  else if (level <= 126.0) tier = 11
+  else tier = 12
+
+  let lowIndex = 0
+  for (let i = 0; i < BASE_FLAT_ANCHORS.length - 1; i++) {
+    if (level >= BASE_FLAT_ANCHORS[i].level && level <= BASE_FLAT_ANCHORS[i + 1].level) {
+      lowIndex = i
+      break
+    }
+    if (level > BASE_FLAT_ANCHORS[i + 1].level) {
+      lowIndex = i + 1
+    }
+  }
+
+  const low = BASE_FLAT_ANCHORS[lowIndex]
+  const high = lowIndex < BASE_FLAT_ANCHORS.length - 1 ? BASE_FLAT_ANCHORS[lowIndex + 1] : low
+  const span = Math.max(1e-6, high.level - low.level)
+  const t = lowIndex < BASE_FLAT_ANCHORS.length - 1 ? Math.min(1.0, Math.max(0.0, (level - low.level) / span)) : 0.0
+
+  const baseHp = low.hp + (high.hp - low.hp) * t
+  const baseMp = low.mp + (high.mp - low.mp) * t
+  const baseAd = low.ad + (high.ad - low.ad) * t
+  const baseAp = low.ap + (high.ap - low.ap) * t
+  const baseArmor = low.armor + (high.armor - low.armor) * t
+  const baseMagicRes = low.mr + (high.mr - low.mr) * t
+  const baseAccuracy = low.acc + (high.acc - low.acc) * t
+  const baseEvasion = low.eva + (high.eva - low.eva) * t
+  const baseCrit = low.crit + (high.crit - low.crit) * t
+  const baseCritAvoid = low.cavoid + (high.cavoid - low.cavoid) * t
+  const baseBreak = low.breakPt + (high.breakPt - low.breakPt) * t
+  const baseParry = low.parry + (high.parry - low.parry) * t
+
+  const x = Math.min(1.0, Math.max(0.0, (level - 1.0) / 126.0))
+  const progress = x * x
+  const cdr = progress * 0.75
+  const atr = progress * 0.50
+  const critDmg = 1.50 + progress * 3.50
+  const skillIntensity = 1.0 + (tier - 1) * 0.30
+  const k = tier
+
+  return {
+    level,
+    tier,
+    baseHp,
+    baseMp,
+    baseAd,
+    baseAp,
+    baseArmor,
+    baseMagicRes,
+    baseAccuracy,
+    baseEvasion,
+    baseCrit,
+    baseCritAvoid,
+    baseBreak,
+    baseParry,
+    cdr,
+    atr,
+    critDmg,
+    skillIntensity,
+    k,
+  }
+}
+
+
