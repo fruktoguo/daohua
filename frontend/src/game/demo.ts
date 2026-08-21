@@ -80,6 +80,7 @@ export function createDemoSnapshot(playerId: string): PlayerSnapshot {
     stats: {
       qi: 0,
       spirit: 0,
+      foundationExp: 0,
       herbsCollected: 0,
       pillsCrafted: 0,
       cultivationCycles: 0,

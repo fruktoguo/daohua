@@ -7,6 +7,7 @@ import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, Combat
 import { gameClient } from '../network/gameClient'
 import { Modal } from './Modal'
 import { ValueText } from './ValueText'
+import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { VectorCharacter, resolveCharacterKind } from './VectorCharacter'
 
@@ -293,50 +294,111 @@ function ArenaActionBar({ action, role }: { action?: CombatActionState | null; r
   )
 }
 
-function ArenaActorBuffs({ buffs = [] }: { buffs?: readonly Buff[] }): React.JSX.Element | null {
+function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
+  const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
+  const circleRef = useRef<SVGCircleElement>(null)
+  const initialDurationRef = useRef<number>(Math.max(10, remaining))
+
+  if (remaining > initialDurationRef.current) {
+    initialDurationRef.current = remaining
+  }
+  const total = initialDurationRef.current
+
+  // 效果说明与单字图标
+  let tone: 'qi' | 'jade' | 'purple' | 'danger' | 'gold' = 'gold'
+  let glyph = buff.name.slice(0, 1) || '益'
+  let effectDesc = '战斗增益'
+
+  if (buff.qiGainMultiplier > 1) {
+    tone = 'qi'
+    glyph = '气'
+    effectDesc = `灵气收益 +${Math.round((buff.qiGainMultiplier - 1) * 100)}%`
+  } else if (buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1) {
+    tone = 'jade'
+    glyph = '草'
+    effectDesc = `灵草产出 +${Math.round((buff.gatheringOutputMultiplier - 1) * 100)}%`
+  } else if (buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1) {
+    tone = 'purple'
+    glyph = '丹'
+    effectDesc = `丹药产出 +${Math.round((buff.alchemyOutputMultiplier - 1) * 100)}%`
+  } else if (buff.damageRatio && buff.damageRatio > 0) {
+    tone = 'danger'
+    glyph = '伤'
+    effectDesc = `术式伤害 +${Math.round(buff.damageRatio * 100)}%`
+  } else if (buff.attackSpeedRatio && buff.attackSpeedRatio > 0) {
+    tone = 'gold'
+    glyph = '速'
+    effectDesc = `攻速 +${Math.round(buff.attackSpeedRatio * 100)}%`
+  }
+
+  const radius = 9
+  const circumference = 2 * Math.PI * radius
+
+  useLayoutEffect(() => {
+    const circle = circleRef.current
+    if (!circle) return
+
+    circle.style.strokeDasharray = `${circumference}`
+    let animationFrameId: number
+
+    const update = () => {
+      const currentRemaining = Math.max(0, buff.expiresAtUnixSeconds - Date.now() / 1000)
+      const ratio = Math.min(1, Math.max(0, currentRemaining / total))
+      const offset = circumference * (1 - ratio)
+      circle.style.strokeDashoffset = `${offset}`
+
+      if (currentRemaining > 0) {
+        animationFrameId = requestAnimationFrame(update)
+      }
+    }
+
+    update()
+    return () => cancelAnimationFrame(animationFrameId)
+  }, [buff.expiresAtUnixSeconds, circumference, total])
+
+  return (
+    <FloatingPopover
+      content={
+        <FloatingInfoCard
+          badge={`共 ${buff.stacks} 层`}
+          badgeTone={tone}
+          description={effectDesc}
+          subtitle={`剩余时间：${remaining} 秒`}
+          title={buff.name}
+        />
+      }
+      interactive={false}
+      openDelay={60}
+      placement="bottom"
+      size="small"
+    >
+      <div className={`arena-buff-square arena-buff-square--${tone}`}>
+        <span className="arena-buff-glyph">{glyph}</span>
+        <svg className="arena-buff-cd-svg" viewBox="0 0 24 24">
+          <circle className="arena-buff-cd-bg" cx="12" cy="12" r={radius} />
+          <circle
+            className="arena-buff-cd-fill"
+            cx="12"
+            cy="12"
+            r={radius}
+            ref={circleRef}
+          />
+        </svg>
+        {buff.stacks > 1 && <span className="arena-buff-stack">{buff.stacks}</span>}
+      </div>
+    </FloatingPopover>
+  )
+}
+
+function ArenaActorBuffs({ buffs = [] }: { buffs?: readonly Buff[] }): React.JSX.Element | null {
   if (!buffs || buffs.length === 0) return null
 
   return (
     <div className="arena-actor-buff-list" aria-label="当前状态效果">
-      {buffs.map(buff => {
-        const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
-        const effectDesc = buff.qiGainMultiplier > 1
-          ? `灵气收益 +${Math.round((buff.qiGainMultiplier - 1) * 100)}%`
-          : buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1
-            ? `灵草产出 +${Math.round((buff.gatheringOutputMultiplier - 1) * 100)}%`
-            : buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1
-              ? `丹药产出 +${Math.round((buff.alchemyOutputMultiplier - 1) * 100)}%`
-              : buff.damageRatio && buff.damageRatio > 0
-                ? `术式伤害 +${Math.round(buff.damageRatio * 100)}%`
-                : buff.attackSpeedRatio && buff.attackSpeedRatio > 0
-                  ? `攻速 +${Math.round(buff.attackSpeedRatio * 100)}%`
-                  : '战斗增益'
-
-        return (
-          <FloatingPopover
-            interactive={false}
-            key={buff.buffId}
-            openDelay={60}
-            placement="bottom"
-            size="small"
-            content={
-              <FloatingInfoCard
-                badge={`共 ${buff.stacks} 层`}
-                badgeTone="qi"
-                description={effectDesc}
-                subtitle={`剩余时间：${remaining} 秒`}
-                title={buff.name}
-              />
-            }
-          >
-            <div className="arena-buff-chip">
-              <span className="arena-buff-name">{buff.name}</span>
-              {buff.stacks > 1 && <span className="arena-buff-stack">{buff.stacks}</span>}
-            </div>
-          </FloatingPopover>
-        )
-      })}
+      {buffs.map(buff => (
+        <ArenaBuffSquare buff={buff} key={buff.buffId} />
+      ))}
     </div>
   )
 }
@@ -350,6 +412,7 @@ function ArenaPhaseFill({
 }): React.JSX.Element {
   const fillRef = useRef<HTMLElement>(null)
   const animationRef = useRef<Animation | null>(null)
+  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
   const anchorRef = useRef<{
     signature: string
     elapsed: number
@@ -361,7 +424,9 @@ function ArenaPhaseFill({
     const fill = fillRef.current
     if (!fill) return
     const duration = Math.max(1, expedition.durationSeconds * 1000)
-    const elapsed = Math.max(0, Math.min(duration, expedition.progress * duration))
+    const baseElapsedMs = Math.max(0, (expedition.elapsedSeconds ?? (expedition.progress * expedition.durationSeconds)) * 1000)
+    const elapsedSinceSync = Math.max(0, performance.now() - lastSyncPerformanceTime)
+    const elapsed = Math.max(0, Math.min(duration, baseElapsedMs + elapsedSinceSync))
     const signature = `${expedition.phase}|${expedition.battleSequence ?? 0}|${duration}`
     const now = performance.now()
     const anchor = anchorRef.current
@@ -381,7 +446,7 @@ function ArenaPhaseFill({
       [{ transform: `${transformProperty}(${fraction})` }, { transform: `${transformProperty}(1)` }],
       { duration: remaining, easing: 'linear', fill: 'forwards' },
     )
-  }, [expedition.battleSequence, expedition.durationSeconds, expedition.phase, expedition.progress, orientation])
+  }, [expedition.battleSequence, expedition.durationSeconds, expedition.elapsedSeconds, expedition.phase, expedition.progress, lastSyncPerformanceTime, orientation])
 
   useEffect(() => () => animationRef.current?.cancel(), [])
 
@@ -618,7 +683,9 @@ function ArenaLifeGoalCard({
 
   const title = isAlchemy ? '炼丹总目标' : isCultivation ? '吐纳静修' : isExploration ? '采撷寻珍' : '行动总目标'
   const actionName = queueEntry?.actionName || actionDef?.name || '静修'
-  const repeats = (queueEntry?.remainingRepeats ?? 0) + 1
+  const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
+  const remainingRepeats = queueEntry?.remainingRepeats ?? 0
+  const repeats = isInfinite ? -1 : remainingRepeats + 1
 
   // 目标产物分析
   const outputs = actionDef?.outputs || {}
@@ -626,7 +693,7 @@ function ArenaLifeGoalCard({
   const primaryOutput = outputEntries[0]
   const primaryItemId = primaryOutput ? primaryOutput[0] : null
   const primaryAmountPerBatch = primaryOutput ? primaryOutput[1] : 1
-  const totalTargetAmount = primaryAmountPerBatch * repeats
+  const totalTargetDisplay = isInfinite ? '∞' : formatNumber(primaryAmountPerBatch * repeats)
 
   const itemMeta = primaryItemId ? ITEM_META[primaryItemId] : null
   const itemDefinition = primaryItemId ? itemCatalog.find(i => i.itemId === primaryItemId) : null
@@ -638,10 +705,20 @@ function ArenaLifeGoalCard({
   const inputs = actionDef?.inputs || {}
   const inputEntries = Object.entries(inputs)
 
-  // 进度计算
+  // 进度条 DOM 引用与全局帧级统一同步
+  const barRef = useRef<HTMLDivElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
   const duration = Math.max(1, queueEntry?.durationSeconds || actionDef?.durationSeconds || 10)
   const progressSec = queueEntry?.progressSeconds || 0
-  const progressRatio = Math.min(1, Math.max(0, progressSec / duration))
+
+  useSmoothProgressRef({
+    entry: queueEntry,
+    fillRef: barRef,
+    textRef: textRef,
+    textFormat: (currentSec, dur, pct) => `本轮进度 ${currentSec.toFixed(1)}s / ${dur}s (${pct}%)`,
+  })
+
+  const initialRatio = duration > 0 ? Math.min(1, Math.max(0, progressSec / duration)) : 0
 
   return (
     <div className="arena-life-card">
@@ -653,7 +730,7 @@ function ArenaLifeGoalCard({
       <div className="arena-life-body">
         <div className={`arena-life-icon-box arena-life-icon-box--${itemTone}`}>
           <span className="arena-life-glyph">{itemGlyph}</span>
-          <span className="arena-life-count-badge">x{formatNumber(totalTargetAmount)}</span>
+          <span className="arena-life-count-badge">{isInfinite ? '∞' : `x${totalTargetDisplay}`}</span>
         </div>
 
         <div className="arena-life-meta">
@@ -663,11 +740,13 @@ function ArenaLifeGoalCard({
           </div>
           <div className="arena-life-target-total">
             <span>计划总量：</span>
-            <strong className="tone-bright">{formatNumber(totalTargetAmount)} {primaryItemId === 'resource.qi' ? '缕' : '枚/份'}</strong>
+            <strong className="tone-bright">
+              {totalTargetDisplay} {primaryItemId === 'resource.qi' ? '缕' : '枚/份'}
+            </strong>
           </div>
           <div className="arena-life-subinfo">
             <span>单次产出：+{primaryAmountPerBatch}</span>
-            <span>剩余轮次：{queueEntry?.remainingRepeats ?? 0} 轮</span>
+            <span>剩余轮次：{isInfinite ? '∞ 轮' : `${remainingRepeats} 轮`}</span>
           </div>
         </div>
 
@@ -681,7 +760,7 @@ function ArenaLifeGoalCard({
                 const inName = inDef?.name || inMeta?.label || inId
                 return (
                   <span className="arena-life-input-chip" key={inId}>
-                    {inName} x{inAmt} (总需 {formatNumber(inAmt * repeats)})
+                    {inName} x{inAmt} (总需 {isInfinite ? '∞' : formatNumber(inAmt * repeats)})
                   </span>
                 )
               })}
@@ -692,9 +771,15 @@ function ArenaLifeGoalCard({
 
       <div className="arena-life-footer">
         <div className="arena-life-progress-bar">
-          <i style={{ width: `${progressRatio * 100}%` }} />
-          <span className="arena-life-progress-text">
-            本轮进度 {progressSec.toFixed(1)}s / {duration}s ({Math.round(progressRatio * 100)}%)
+          <div
+            className="arena-life-progress-fill"
+            ref={barRef}
+            style={{ transform: `scaleX(${initialRatio})` }}
+          >
+            <i />
+          </div>
+          <span className="arena-life-progress-text" ref={textRef}>
+            本轮进度 {progressSec.toFixed(1)}s / {duration}s ({Math.round(initialRatio * 100)}%)
           </span>
         </div>
         {onStop && (
@@ -790,6 +875,7 @@ export const CombatArena = memo(function CombatArena({
   const encounters = useGameStore(state => state.encounters)
   const world = useGameStore(state => state.world)
   const queue = useGameStore(state => state.queue.entries)
+  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
   const [inspectedActor, setInspectedActor] = useState<'player' | 'enemy' | null>(null)
 
   const current = queue[0] ?? null
@@ -811,19 +897,27 @@ export const CombatArena = memo(function CombatArena({
   const fallbackMaxMp = 100 + (combat?.intelligenceLevel ?? 1) * 10
   const playerMaxHp = expedition?.playerMaxHitpoints ?? combatResources?.maxHitpoints ?? fallbackMaxHp
   const playerMaxMp = expedition?.playerMaxManapoints ?? combatResources?.maxManapoints ?? fallbackMaxMp
-  const playerHp = expedition?.playerHitpoints ?? combatResources?.hitpoints ?? playerMaxHp
-  const playerMp = expedition?.playerManapoints ?? combatResources?.manapoints ?? playerMaxMp
+  const playerHp = isCombat
+    ? (expedition?.playerHitpoints ?? combatResources?.hitpoints ?? playerMaxHp)
+    : playerMaxHp
+  const playerMp = isCombat
+    ? (expedition?.playerManapoints ?? combatResources?.manapoints ?? playerMaxMp)
+    : playerMaxMp
   const phase = expedition?.phase ?? (isLifeAction ? 'life-action' : 'idle')
   const enemyVisible = isCombat && (phase === 'combat' || phase === 'death' || ((expedition?.enemyHitpoints ?? 0) > 0))
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (phase === 'death') {
+      const durMs = Math.max(1, (expedition?.durationSeconds ?? 1) * 1000)
+      const baseElMs = Math.max(0, (expedition?.elapsedSeconds ?? ((expedition?.progress ?? 0) * (expedition?.durationSeconds ?? 1))) * 1000)
+      const elapsedSinceSync = Math.max(0, performance.now() - lastSyncPerformanceTime)
+      const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
       return {
         kind: 'wait',
         name: '还魂中',
-        durationMilliseconds: Math.max(1, (expedition?.durationSeconds ?? 1) * 1000),
-        elapsedMilliseconds: Math.max(0, (expedition?.progress ?? 0) * (expedition?.durationSeconds ?? 1) * 1000),
-        completesAtUnixMilliseconds: Date.now() + Math.max(0, (1 - (expedition?.progress ?? 0)) * (expedition?.durationSeconds ?? 1) * 1000),
+        durationMilliseconds: durMs,
+        elapsedMilliseconds: currentElMs,
+        completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - currentElMs),
       }
     }
     if (isCombat) {
@@ -831,17 +925,20 @@ export const CombatArena = memo(function CombatArena({
     }
     if (isLifeAction && current) {
       const durMs = Math.max(1, current.durationSeconds * 1000)
-      const elMs = Math.max(0, current.progressSeconds * 1000)
+      const baseElMs = Math.max(0, current.progressSeconds * 1000)
+      const isRunning = current.status === 'running'
+      const elapsedSinceSync = isRunning ? Math.max(0, performance.now() - lastSyncPerformanceTime) : 0
+      const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
       return {
         kind: 'cast',
         name: current.actionName,
         durationMilliseconds: durMs,
-        elapsedMilliseconds: elMs,
-        completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - elMs),
+        elapsedMilliseconds: currentElMs,
+        completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - currentElMs),
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, phase])
+  }, [current, expedition, isCombat, isLifeAction, lastSyncPerformanceTime, phase])
 
   const enemyRef = useRef<EnemyDisplayState>({
     actorKey: 'enemy:idle',

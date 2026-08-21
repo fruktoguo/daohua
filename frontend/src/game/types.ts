@@ -198,6 +198,7 @@ export interface Buff {
 export interface Stats {
   qi: number
   spirit: number
+  foundationExp?: number
   herbsCollected: number
   pillsCrafted: number
   cultivationCycles: number
@@ -455,6 +456,7 @@ export interface PlayerSnapshot {
   combatAttributes?: CombatAttributes
   visual?: CharacterVisual
   world?: WorldState
+  isPendingBreakthrough?: boolean
 }
 
 export interface PlayerPatch {
@@ -475,6 +477,7 @@ export interface PlayerPatch {
   combatAttributes?: CombatAttributes
   visual?: CharacterVisual
   world?: WorldState
+  isPendingBreakthrough?: boolean
 }
 
 export interface Packet<T = unknown> {

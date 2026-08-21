@@ -12,7 +12,9 @@ interface GameStore {
   version: number
   serverTimeUnixSeconds: number
   serverTimeUnixMilliseconds: number
+  lastSyncPerformanceTime: number
   presenceMode: PlayerSnapshot['presenceMode']
+  isPendingBreakthrough: boolean
   queue: PlayerSnapshot['queue']
   inventory: PlayerSnapshot['inventory']
   buffs: PlayerSnapshot['buffs']
@@ -116,7 +118,9 @@ export const useGameStore = create<GameStore>((set) => ({
   version: initial.version,
   serverTimeUnixSeconds: initial.serverTimeUnixSeconds,
   serverTimeUnixMilliseconds: initial.serverTimeUnixMilliseconds ?? initial.serverTimeUnixSeconds * 1000,
+  lastSyncPerformanceTime: performance.now(),
   presenceMode: initial.presenceMode,
+  isPendingBreakthrough: false,
   queue: initial.queue,
   inventory: initial.inventory,
   buffs: initial.buffs,
@@ -148,7 +152,9 @@ export const useGameStore = create<GameStore>((set) => ({
     version: snapshot.version,
     serverTimeUnixSeconds: snapshot.serverTimeUnixSeconds,
     serverTimeUnixMilliseconds: snapshot.serverTimeUnixMilliseconds ?? snapshot.serverTimeUnixSeconds * 1000,
+    lastSyncPerformanceTime: performance.now(),
     presenceMode: snapshot.presenceMode,
+    isPendingBreakthrough: snapshot.isPendingBreakthrough ?? false,
     queue: normalizeQueue(snapshot.queue),
     inventory: snapshot.inventory,
     buffs: snapshot.buffs,
@@ -180,7 +186,9 @@ export const useGameStore = create<GameStore>((set) => ({
       version: patch.version,
       serverTimeUnixSeconds: patch.serverTimeUnixSeconds,
       serverTimeUnixMilliseconds: patch.serverTimeUnixMilliseconds ?? patch.serverTimeUnixSeconds * 1000,
+      lastSyncPerformanceTime: performance.now(),
       presenceMode: patch.presenceMode ?? state.presenceMode,
+      isPendingBreakthrough: patch.isPendingBreakthrough ?? state.isPendingBreakthrough,
       queue,
       inventory: patch.inventory ?? state.inventory,
       buffs: patch.buffs ?? state.buffs,

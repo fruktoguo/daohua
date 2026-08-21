@@ -20,6 +20,7 @@ import { describeCombatTrigger, formatNumber } from './game/format'
 import { calculateRealmInfo } from './game/combatConstants'
 import { ACTION_DEFINITIONS, ACTION_TAB_META, ACTION_TYPES, ITEM_META } from './game/ids'
 import { useGameStore } from './game/gameStore'
+import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatAbilityDefinition, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
 import { gameClient } from './network/gameClient'
 import { useUiStore, type TabId } from './uiStore'
@@ -79,12 +80,14 @@ function actionDescription(entry: QueueEntry): string {
   return ACTION_DEFINITIONS.find(action => action.id === entry.actionId)?.description ?? entry.actionName
 }
 
-function repeatsLabel(repeats: number): string {
-  return repeats < 0 ? '∞' : `×${repeats}`
+function repeatsLabel(remainingRepeats: number): string {
+  if (remainingRepeats < 0) return '∞'
+  if (remainingRepeats === 0) return '1次'
+  return `${remainingRepeats + 1}次`
 }
 
 function useMobileLayout(): boolean {
-  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 960px)').matches)
+  const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 960px)').matches)
   useEffect(() => {
     const media = window.matchMedia('(max-width: 960px)')
     const update = () => setMobile(media.matches)
@@ -96,68 +99,29 @@ function useMobileLayout(): boolean {
 
 function SmoothProgressBar({ entry }: { entry: QueueEntry }): React.JSX.Element {
   const fillRef = useRef<HTMLDivElement>(null)
-  const animationRef = useRef<Animation | null>(null)
-  const anchorRef = useRef<{
-    entryId: string
-    status: QueueEntry['status']
-    duration: number
-    progress: number
-    startedAt: number
-  } | null>(null)
-  const percent = entry.durationSeconds > 0
-    ? Math.max(0, Math.min(100, entry.progressSeconds / entry.durationSeconds * 100))
+  const textRef = useRef<HTMLSpanElement>(null)
+
+  useSmoothProgressRef({
+    entry,
+    fillRef,
+    textRef,
+  })
+
+  const initialRatio = entry.durationSeconds > 0
+    ? Math.min(1, Math.max(0, entry.progressSeconds / entry.durationSeconds))
     : 0
-
-  useLayoutEffect(() => {
-    const fill = fillRef.current
-    if (!fill) return
-    const now = performance.now()
-    const anchor = anchorRef.current
-    const sameRun = anchor
-      && anchor.entryId === entry.entryId
-      && anchor.status === entry.status
-      && anchor.duration === entry.durationSeconds
-    if (sameRun && entry.status === 'running') {
-      const expected = Math.min(entry.durationSeconds, anchor.progress + (now - anchor.startedAt) / 1000)
-      if (Math.abs(entry.progressSeconds - expected) <= 1.25) return
-    }
-
-    animationRef.current?.cancel()
-    const fraction = entry.durationSeconds > 0
-      ? Math.max(0, Math.min(1, entry.progressSeconds / entry.durationSeconds))
-      : 0
-    fill.style.transform = `scaleX(${fraction})`
-    anchorRef.current = {
-      entryId: entry.entryId,
-      status: entry.status,
-      duration: entry.durationSeconds,
-      progress: entry.progressSeconds,
-      startedAt: now,
-    }
-
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const remainingMs = Math.max(0, (entry.durationSeconds - entry.progressSeconds) * 1000)
-    if (entry.status === 'running' && remainingMs > 0 && !reduceMotion) {
-      animationRef.current = fill.animate(
-        [{ transform: `scaleX(${fraction})` }, { transform: 'scaleX(1)' }],
-        { duration: remainingMs, easing: 'linear', fill: 'forwards' },
-      )
-    }
-  }, [entry.durationSeconds, entry.entryId, entry.progressSeconds, entry.status])
-
-  useEffect(() => () => animationRef.current?.cancel(), [])
 
   return (
     <div
-      aria-label={`${Math.round(percent)}%`}
+      aria-label={`${Math.round(initialRatio * 100)}%`}
       aria-valuemax={100}
       aria-valuemin={0}
-      aria-valuenow={Math.round(percent)}
+      aria-valuenow={Math.round(initialRatio * 100)}
       className="progress"
       role="progressbar"
     >
-      <div className="progress-fill" ref={fillRef}><i /></div>
-      <span className="progress-text">{entry.progressSeconds}s / {entry.durationSeconds}s</span>
+      <div className="progress-fill" ref={fillRef} style={{ transform: `scaleX(${initialRatio})` }}><i /></div>
+      <span className="progress-text" ref={textRef}>{Math.floor(entry.progressSeconds)}s / {entry.durationSeconds}s</span>
     </div>
   )
 }

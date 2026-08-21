@@ -1,6 +1,6 @@
 :root {
-  --item-slot-size: 85px;
-  --item-tile-size: 75px;
+  --item-slot-size: 79px;
+  --item-tile-size: 63px;
 }
 
 .inventory-grid,
@@ -15,9 +15,7 @@
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell,
-  .item-use-slot--empty,
-  .item-grid-picker-card--empty
+  .combat-ability-slot-shell
 ) {
   --item-frame-rgb: 201, 180, 109;
   position: relative;
@@ -27,7 +25,7 @@
   min-width: var(--item-slot-size);
   min-height: var(--item-slot-size);
   aspect-ratio: 1 / 1;
-  overflow: hidden;
+  overflow: visible;
   place-items: center;
   padding: 2px;
   isolation: isolate;
@@ -36,12 +34,9 @@
 }
 
 :is(
-  .inventory-item-anchor,
-  .item-grid-picker-tooltip,
-  .item-use-slot-tooltip,
-  .market-browse-tooltip,
-  .combat-ability-slot-shell,
+  .item-tile,
   .item-use-slot--empty,
+  .combat-ability-slot--empty,
   .item-grid-picker-card--empty
 )::before {
   position: absolute;
@@ -49,12 +44,33 @@
   top: 0;
   left: 0;
   width: 100%;
-  height: 0.5px;
+  height: 1px;
   opacity: 0;
   background: linear-gradient(90deg, #8a5200 0%, #d59618 68%, #ffd66b 88%, #fff5cc 97%, #fff 100%);
-  box-shadow: 0 1px 1px rgba(255, 245, 204, 0.96), 0 2px 6px rgba(238, 166, 31, 0.92), 0 5px 10px rgba(155, 84, 0, 0.42);
+  box-shadow: 0 1px 2px rgba(255, 245, 204, 0.96), 0 2px 6px rgba(238, 166, 31, 0.92), 0 5px 10px rgba(155, 84, 0, 0.42);
   transform: scaleX(0);
   transform-origin: left center;
+  content: "";
+  pointer-events: none;
+}
+
+:is(
+  .item-tile,
+  .item-use-slot--empty,
+  .combat-ability-slot--empty,
+  .item-grid-picker-card--empty
+)::after {
+  position: absolute;
+  z-index: 12;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  opacity: 0;
+  background: linear-gradient(270deg, #8a5200 0%, #d59618 68%, #ffd66b 88%, #fff5cc 97%, #fff 100%);
+  box-shadow: 0 -1px 2px rgba(255, 245, 204, 0.96), 0 -2px 6px rgba(238, 166, 31, 0.92), 0 -5px 10px rgba(155, 84, 0, 0.42);
+  transform: scaleX(0);
+  transform-origin: right center;
   content: "";
   pointer-events: none;
 }
@@ -64,12 +80,30 @@
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-tile::before,
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell
+):is(:hover, :focus-visible, :focus-within) .item-tile::after,
+:is(
+  .item-tile,
   .item-use-slot--empty,
+  .combat-ability-slot--empty,
   .item-grid-picker-card--empty
 ):is(:hover, :focus-visible, :focus-within)::before,
-.item-grid-picker-card--empty.is-selected::before {
-  animation: ui-edge-light-fill 0.42s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+:is(
+  .item-tile,
+  .item-use-slot--empty,
+  .combat-ability-slot--empty,
+  .item-grid-picker-card--empty
+):is(:hover, :focus-visible, :focus-within)::after,
+.item-grid-picker-card--empty.is-selected::before,
+.item-grid-picker-card--empty.is-selected::after {
+  animation: ui-edge-light-fill 0.6s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
 }
 
 .item-tile {
@@ -79,11 +113,15 @@
   width: var(--item-tile-size);
   height: var(--item-tile-size);
   min-width: var(--item-tile-size);
-  min-height: 0;
+  max-width: var(--item-tile-size);
+  min-height: var(--item-tile-size);
+  max-height: var(--item-tile-size);
   aspect-ratio: 1 / 1;
+  place-self: center;
+  box-sizing: border-box;
   align-content: center;
   gap: 1px;
-  overflow: hidden;
+  overflow: visible;
   isolation: isolate;
   border-color: var(--item-accent);
   background:
@@ -203,10 +241,10 @@
 }
 
 .item-tile .item-corner {
-  max-width: calc(100% - 15px);
-  padding: 3px 5px;
-  font-size: 12px;
-  line-height: 1.35;
+  max-width: calc(100% - 10px);
+  padding: 2px 4px;
+  font-size: 10px;
+  line-height: 1.2;
   transition: filter 0.18s ease, transform 0.18s ease;
 }
 
@@ -258,11 +296,11 @@
 .item-tile-name {
   display: block;
   max-width: 100%;
-  padding: 15px 5px 12px;
+  padding: 10px 3px 8px;
   overflow-wrap: anywhere;
   color: var(--text);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.2;
   text-align: center;
@@ -279,7 +317,7 @@
   display: block;
   width: var(--item-tile-size);
   height: var(--item-tile-size);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .combat-ability-slot-shell {
@@ -293,7 +331,7 @@
   min-width: var(--item-tile-size);
   min-height: 0;
   aspect-ratio: 1 / 1;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .auto-use-slot .item-use-slot-tooltip,
@@ -309,13 +347,13 @@
 }
 
 .item-use-slot--empty {
-  width: var(--item-slot-size);
-  height: var(--item-slot-size);
-  min-width: var(--item-slot-size);
-  min-height: var(--item-slot-size);
-  max-width: var(--item-slot-size);
-  max-height: var(--item-slot-size);
-  flex: 0 0 var(--item-slot-size);
+  width: var(--item-tile-size);
+  height: var(--item-tile-size);
+  min-width: var(--item-tile-size);
+  min-height: var(--item-tile-size);
+  max-width: var(--item-tile-size);
+  max-height: var(--item-tile-size);
+  flex: 0 0 var(--item-tile-size);
   place-self: center;
   aspect-ratio: 1 / 1;
   padding: 6px;
@@ -431,11 +469,12 @@
 
 .auto-use-slot,
 .combat-slot-card {
-  display: block;
+  display: grid;
   width: var(--item-slot-size);
   height: var(--item-slot-size);
   min-width: var(--item-slot-size);
   min-height: var(--item-slot-size);
+  place-items: center;
   aspect-ratio: 1 / 1;
 }
 
@@ -450,7 +489,7 @@
   min-width: var(--item-tile-size);
   min-height: var(--item-tile-size);
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   place-items: center;
   border: 0;
   background: transparent;
@@ -468,13 +507,13 @@
   .item-grid-picker-card,
   .market-browse-card,
   .item-use-slot:not(.item-use-slot--empty),
-  .combat-ability-slot
+  .combat-ability-slot:not(.combat-ability-slot--empty)
 )::before,
 :is(
   .item-grid-picker-card,
   .market-browse-card,
   .item-use-slot:not(.item-use-slot--empty),
-  .combat-ability-slot
+  .combat-ability-slot:not(.combat-ability-slot--empty)
 )::after {
   display: none;
 }

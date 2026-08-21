@@ -642,7 +642,7 @@
   pointer-events: auto;
 }
 
-/* ================= 角色（始终保持 3:4 竖向比例，绝不拉扁） ================= */
+/* ================= 角色（固定 3:4 竖向尺寸，绝不拉扁） ================= */
 .arena-actor {
   --arena-hit-return: 3px;
   --arena-hit-settle: -2px;
@@ -652,13 +652,9 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  width: clamp(110px, 13vw, 160px);
-  min-width: 100px;
-  aspect-ratio: 3 / 4;
-  min-height: 140px;
-  height: auto;
-  max-height: 96%;
-  justify-content: space-between;
+  width: 96px;
+  gap: 3px;
+  justify-content: center;
   align-items: center;
   overflow: visible;
   border: 0;
@@ -669,6 +665,7 @@
   cursor: pointer;
   contain: layout style;
   transform: translateZ(0);
+  flex-shrink: 0;
 }
 
 .arena-actor:focus-visible {
@@ -702,15 +699,16 @@
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  gap: 4px;
+  gap: 8px;
   padding: 0;
+  margin-bottom: 2px;
 }
 
 .arena-overhead > strong {
   overflow: visible;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Arial Rounded MT Bold", sans-serif;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   text-align: center;
   text-overflow: ellipsis;
@@ -724,37 +722,48 @@
 .arena-avatar-stage {
   position: relative;
   display: flex;
-  width: 100%;
-  flex: 1;
-  min-height: 0;
+  width: 90px;
+  height: 120px;
+  min-width: 90px;
+  min-height: 120px;
+  max-width: 90px;
+  max-height: 120px;
   aspect-ratio: 3 / 4;
   align-items: center;
   justify-content: center;
   overflow: visible;
   transform-origin: 50% 75%;
   will-change: transform, filter;
-  padding: 4px 6px;
+  padding: 0;
+  margin: 0 auto;
+  flex-shrink: 0;
 }
 
 .arena-avatar {
   position: relative;
   z-index: 1;
   display: flex;
-  width: 100%;
-  height: 100%;
+  width: 90px;
+  height: 120px;
+  min-width: 90px;
+  min-height: 120px;
+  max-width: 90px;
+  max-height: 120px;
+  aspect-ratio: 3 / 4;
   align-items: center;
   justify-content: center;
   overflow: visible;
   border: 0;
   background: transparent;
   clip-path: none;
+  flex-shrink: 0;
 }
 
 .arena-avatar .vector-character {
-  width: 75%;
-  height: 75%;
-  max-width: 75%;
-  max-height: 75%;
+  width: 90px;
+  height: 120px;
+  max-width: 90px;
+  max-height: 120px;
   object-fit: contain;
   filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45));
   transition: transform 0.2s ease, filter 0.2s ease;
@@ -932,7 +941,7 @@
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -105%) skewX(20deg);
+  transform: translate(-50%, -50%) skewX(20deg);
   z-index: 3;
   display: inline-flex;
   align-items: center;
@@ -1006,70 +1015,109 @@
   pointer-events: none;
 }
 
+/* ================= 行动条下方绝对定位 Buff 列表 (不参与主卡片布局) ================= */
 .arena-actor-buff-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-wrap: wrap;
-  width: 100%;
-  gap: 3px;
-  margin-top: 4px;
+  width: max-content;
+  max-width: 140px;
+  gap: 4px;
   justify-content: center;
   align-items: center;
+  pointer-events: auto;
+  z-index: 10;
 }
 
-.arena-buff-chip {
+/* 正方形 Buff 图标 */
+.arena-buff-square {
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 1px 5px;
-  background: rgba(14, 12, 7, 0.88);
-  border: 1px solid rgba(201, 180, 109, 0.35);
-  border-radius: 2px;
-  font-size: 9.5px;
-  color: var(--gold-bright);
-  line-height: 1.2;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: rgba(14, 12, 8, 0.92);
+  border: 1px solid rgba(201, 180, 109, 0.4);
+  border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
   cursor: help;
   user-select: none;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
 
-.arena-buff-chip:hover {
-  border-color: var(--gold);
-  background: rgba(201, 180, 109, 0.2);
+.arena-buff-square:hover {
+  border-color: var(--gold-bright);
+  transform: scale(1.08);
   z-index: 20;
 }
 
-.arena-buff-name {
-  font-size: 9.5px;
+.arena-buff-glyph {
+  font-size: 10px;
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-weight: 700;
+  color: var(--gold-bright);
+  line-height: 1;
+  z-index: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
-.arena-buff-stack {
-  color: var(--jade);
-  font-weight: 800;
-  font-size: 8.5px;
-}
+.arena-buff-square--qi .arena-buff-glyph { color: #fef08a; }
+.arena-buff-square--jade .arena-buff-glyph { color: #86efac; }
+.arena-buff-square--purple .arena-buff-glyph,
+.arena-buff-square--violet .arena-buff-glyph { color: #d8b4fe; }
+.arena-buff-square--danger .arena-buff-glyph { color: #fca5a5; }
+.arena-buff-square--cyan .arena-buff-glyph { color: #7dd3fc; }
 
-.arena-buff-tooltip {
+/* 圆形填充倒计时 SVG 遮罩 */
+.arena-buff-cd-svg {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  display: none;
-  min-width: 120px;
-  max-width: 200px;
-  padding: 6px 8px;
-  background: rgba(8, 7, 5, 0.96);
-  border: 1px solid var(--gold);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8);
-  border-radius: 3px;
-  z-index: 100;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
   pointer-events: none;
-  white-space: normal;
-  text-align: left;
+  z-index: 2;
 }
 
-.arena-buff-chip:hover .arena-buff-tooltip {
-  display: block;
+.arena-buff-cd-bg {
+  fill: transparent;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 2;
+}
+
+.arena-buff-cd-fill {
+  fill: transparent;
+  stroke: var(--gold-bright);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+.arena-buff-square--qi .arena-buff-cd-fill { stroke: #fef08a; }
+.arena-buff-square--jade .arena-buff-cd-fill { stroke: #86efac; }
+.arena-buff-square--purple .arena-buff-cd-fill,
+.arena-buff-square--violet .arena-buff-cd-fill { stroke: #c084fc; }
+.arena-buff-square--danger .arena-buff-cd-fill { stroke: #f87171; }
+.arena-buff-square--cyan .arena-buff-cd-fill { stroke: #38bdf8; }
+
+/* 右下角叠层数徽标 */
+.arena-buff-square .arena-buff-stack {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: rgba(7, 6, 4, 0.95);
+  border: 1px solid currentColor;
+  color: var(--jade);
+  font-size: 7.5px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 1px 2px;
+  border-radius: 2px;
+  z-index: 3;
 }
 
 .arena-buff-tooltip-title {
@@ -1666,7 +1714,7 @@
   display: block;
   min-width: 0;
   margin: 0;
-  padding: 5px 0 0;
+  padding: 5px 0;
   border: 0;
   border-top: 1px solid rgba(205, 133, 77, 0.28);
   background: transparent;
@@ -1677,22 +1725,28 @@
 }
 
 .combat-slot-tray {
-  --item-slot-size: clamp(75px, 5.2vw, 85px);
-  --item-tile-size: calc(var(--item-slot-size) - 10px);
+  --item-slot-size: clamp(69px, 4.8vw, 79px);
+  --item-tile-size: calc(var(--item-slot-size) - 16px);
   display: grid;
   width: 100%;
   min-width: 100%;
   grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 4fr);
   justify-content: stretch;
+  align-items: center;
   gap: 0;
   overflow-x: auto;
-  padding: 4px 0 0;
+  padding: 0;
 }
 
 .combat-slot-section {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
-  margin-top: 0;
-  justify-items: center;
+  margin: 0;
+  padding: 0 6px 0 20px;
   border-top: 0;
   border-bottom: 0;
   border-left: 0;
@@ -1701,6 +1755,26 @@
 
 .combat-slot-section + .combat-slot-section {
   border-left: 1px solid var(--gold-faint);
+}
+
+.combat-slot-section .slot-group-label {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  white-space: nowrap;
+  letter-spacing: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1;
+  width: 1em;
+  height: auto;
+  padding: 0;
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.85;
 }
 
 .combat-trigger-row {
@@ -1802,8 +1876,18 @@
   }
 
   .arena-actor {
-    max-width: 84px;
-    max-height: 116px;
+    width: 80px;
+  }
+
+  .arena-avatar-stage,
+  .arena-avatar,
+  .arena-avatar .vector-character {
+    width: 75px;
+    height: 100px;
+    min-width: 75px;
+    min-height: 100px;
+    max-width: 75px;
+    max-height: 100px;
   }
 
   .arena-overhead > strong {
@@ -1826,8 +1910,8 @@
   }
 
   .combat-slot-tray {
-    --item-slot-size: 75px;
-    --item-tile-size: 65px;
+    --item-slot-size: 69px;
+    --item-tile-size: 53px;
     min-width: 760px;
   }
 
@@ -1891,8 +1975,18 @@
   }
 
   .arena-actor {
-    max-width: 72px;
-    max-height: 100px;
+    width: 68px;
+  }
+
+  .arena-avatar-stage,
+  .arena-avatar,
+  .arena-avatar .vector-character {
+    width: 63px;
+    height: 84px;
+    min-width: 63px;
+    min-height: 84px;
+    max-width: 63px;
+    max-height: 84px;
   }
 
   .arena-resource {
@@ -2067,9 +2161,9 @@
 .arena-life-progress-bar {
   position: relative;
   width: 100%;
-  height: 16px;
-  background: rgba(0, 0, 0, 0.6);
-  border: 1px solid rgba(201, 180, 109, 0.3);
+  height: 18px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(201, 180, 109, 0.35);
   border-radius: 2px;
   overflow: hidden;
   display: flex;
@@ -2077,22 +2171,46 @@
   justify-content: center;
 }
 
-.arena-life-progress-bar i {
+.arena-life-progress-fill {
   position: absolute;
-  left: 0;
+  inset: 0;
+  background: linear-gradient(90deg, #426c63, #72a98c 48%, #c9b46d 82%, #e8d69a);
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
+}
+
+.arena-life-progress-fill::before {
+  position: absolute;
   top: 0;
   bottom: 0;
-  background: linear-gradient(90deg, var(--jade), var(--gold-bright));
-  opacity: 0.65;
-  transition: width 0.3s ease;
+  left: 0;
+  width: 30%;
+  min-width: 36px;
+  background: linear-gradient(105deg, transparent 0 24%, rgba(255, 250, 220, 0.46) 48%, transparent 72% 100%);
+  animation: qi-flow 1.25s linear infinite;
+  will-change: transform;
+  content: "";
+}
+
+.arena-life-progress-fill i {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: #fff6c8;
+  box-shadow: 0 0 7px 2px rgba(232, 214, 154, 0.72);
 }
 
 .arena-life-progress-text {
   position: relative;
   z-index: 2;
-  font-size: 9.5px;
+  font-size: 10px;
   color: #ffffff;
+  font-weight: 600;
   text-shadow: 0 1px 2px #000000;
+  font-variant-numeric: tabular-nums;
 }
 
 .arena-life-stop-btn {

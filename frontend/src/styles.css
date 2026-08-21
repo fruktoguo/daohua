@@ -4597,90 +4597,345 @@ input[type="checkbox"] {
 }
 
 /* 六维根基横向列表 */
-.insight-dimensions-list {
+/* ========================================================================= */
+/* 复合数值展示 Label (Compound Stat & Bonus Labels)                           */
+/* 外层为修仙风格暗色卡片，内层元素各具特色：图标裸显、标题胶囊、数值下划线、底边经验条 */
+/* ========================================================================= */
+.compound-stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px 8px;
+  background: rgba(20, 17, 12, 0.88);
+  border: 1px solid rgba(201, 180, 109, 0.25);
+  border-radius: 3px;
+  color: #e5e7eb;
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.compound-stat-label:hover {
+  background: rgba(28, 24, 16, 0.95);
+  border-color: rgba(201, 180, 109, 0.45);
+}
+
+.compound-stat-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compound-exp-text {
+  font-size: 10px;
+  color: var(--text-dim, #9ca3af);
+  margin-left: 2px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+  letter-spacing: 0.2px;
+  line-height: 1;
+}
+
+/* 复合属性加成 Label (去掉外边框) */
+.compound-bonus-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  white-space: nowrap;
+  box-shadow: none;
+  transition: opacity 0.2s ease;
+}
+
+.compound-bonus-label:hover {
+  opacity: 0.88;
+}
+
+/* 内部各元素分段特色样式 */
+
+/* 1. 图标裸显 (无胶囊) */
+.compound-icon {
+  font-size: 13.5px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 2. 标题胶囊 (微胶囊包裹) */
+.capsule-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5px 7px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 11px;
+  font-weight: 500;
+  color: #d1d5db;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+}
+
+/* 3. 等级/数值下划线高亮 */
+.underlined-value {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px 1px 2px;
+  border-bottom: 1.5px solid currentColor;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold-bright, #fce79a);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+}
+
+/* 4. 底边经验进度条 */
+.compound-stat-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.compound-stat-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #059669 0%, #10b981 100%);
+  transition: width 0.3s ease;
+}
+
+/* 色彩主题 (Pill Tones) 在下划线数值与进度条上的专属响应 */
+.pill-tone--emerald {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.pill-tone--emerald .underlined-value {
+  color: #34d399;
+}
+.pill-tone--emerald .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #059669, #34d399);
+}
+
+.pill-tone--cyan {
+  border-color: rgba(14, 165, 233, 0.35);
+}
+.pill-tone--cyan .underlined-value {
+  color: #38bdf8;
+}
+.pill-tone--cyan .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #0284c7, #38bdf8);
+}
+
+.pill-tone--violet {
+  border-color: rgba(168, 85, 247, 0.35);
+}
+.pill-tone--violet .underlined-value {
+  color: #c084fc;
+}
+.pill-tone--violet .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #7e22ce, #a855f7);
+}
+
+.pill-tone--amber {
+  border-color: rgba(249, 115, 22, 0.35);
+}
+.pill-tone--amber .underlined-value {
+  color: #fb923c;
+}
+.pill-tone--amber .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #c2410c, #f97316);
+}
+
+.pill-tone--indigo {
+  border-color: rgba(99, 102, 241, 0.35);
+}
+.pill-tone--indigo .underlined-value {
+  color: #818cf8;
+}
+.pill-tone--indigo .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #4338ca, #6366f1);
+}
+
+.pill-tone--teal {
+  border-color: rgba(20, 184, 166, 0.35);
+}
+.pill-tone--teal .underlined-value {
+  color: #2dd4bf;
+}
+.pill-tone--teal .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #0f766e, #14b8a6);
+}
+
+.pill-tone--gold {
+  border-color: rgba(234, 179, 8, 0.35);
+}
+.pill-tone--gold .underlined-value {
+  color: #fde047;
+}
+.pill-tone--gold .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #ca8a04, #fbbf24);
+}
+
+.pill-tone--crimson {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+.pill-tone--crimson .underlined-value {
+  color: #f87171;
+}
+.pill-tone--crimson .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+}
+
+.pill-tone--silver {
+  border-color: rgba(148, 163, 184, 0.3);
+}
+.pill-tone--silver .underlined-value {
+  color: #cbd5e1;
+}
+.pill-tone--silver .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #64748b, #94a3b8);
+}
+
+.pill-tone--slate {
+  border-color: rgba(113, 113, 122, 0.3);
+}
+.pill-tone--slate .underlined-value {
+  color: #a1a1aa;
+}
+.pill-tone--slate .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #52525b, #71717a);
+}
+
+.pill-tone--sky {
+  border-color: rgba(6, 182, 212, 0.35);
+}
+.pill-tone--sky .underlined-value {
+  color: #67e8f9;
+}
+.pill-tone--sky .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #0891b2, #06b6d4);
+}
+
+.pill-tone--bronze {
+  border-color: rgba(202, 138, 4, 0.35);
+}
+.pill-tone--bronze .underlined-value {
+  color: #fbbf24;
+}
+.pill-tone--bronze .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #854d0e, #d97706);
+}
+
+.pill-tone--jade {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.pill-tone--jade .underlined-value {
+  color: #6ee7b7;
+}
+.pill-tone--jade .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #059669, #34d399);
+}
+
+.pill-tone--qi {
+  border-color: rgba(56, 189, 248, 0.3);
+}
+.pill-tone--qi .underlined-value {
+  color: #7dd3fc;
+}
+.pill-tone--qi .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #0284c7, #38bdf8);
+}
+
+.pill-tone--purple {
+  border-color: rgba(168, 85, 247, 0.3);
+}
+.pill-tone--purple .underlined-value {
+  color: #d8b4fe;
+}
+.pill-tone--purple .compound-stat-progress-fill {
+  background: linear-gradient(90deg, #9333ea, #c084fc);
+}
+
+.pill-tone--muted {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.pill-tone--muted .underlined-value {
+  color: var(--text-dim, #9ca3af);
+}
+
+/* 根基与底蕴列表布局 (去掉大横条背景胶囊，加成与六维label底部对齐) */
+.insight-roots-list,
+.insight-foundation-pills {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.insight-dimension-row {
-  background: rgba(14, 12, 7, 0.85);
-  border: 1px solid rgba(201, 180, 109, 0.2);
-  padding: 10px 16px;
+.insight-root-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-radius: 2px;
-  position: relative;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
-}
-
-.insight-dimension-row:hover {
-  background: rgba(22, 19, 11, 0.95);
-  border-color: rgba(201, 180, 109, 0.4);
-}
-
-.insight-dim-row-left {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  min-width: 260px;
-}
-
-.insight-dim-identity {
-  display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
+  padding: 2px 0;
 }
 
-.insight-dim-name {
-  font-size: 15px;
-  letter-spacing: 0.5px;
-}
-
-.insight-dim-level {
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 6px;
-  border: 1px solid;
-  border-radius: 2px;
-}
-
-.insight-dim-exp {
+.insight-root-bonuses {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.insight-dim-exp-label {
-  color: var(--text-dim);
-}
-
-.insight-dim-exp-val {
-  color: var(--gold-bright);
-}
-
-.insight-dim-row-right {
-  display: flex;
-  align-items: center;
-}
-
-.insight-dim-benefits-row {
-  display: flex;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.insight-benefit-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  background: rgba(201, 180, 109, 0.08);
-  border: 1px solid rgba(201, 180, 109, 0.25);
-  color: var(--gold-bright);
-  border-radius: 2px;
-  white-space: nowrap;
+.insight-foundation-pill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 2px 0;
+}
+
+/* 斗法与生平分栏胶囊流式布局 (Pill Group Layout) */
+.insight-pill-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.insight-pill-group-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-primary, #c9b46d);
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.insight-pill-group-title::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 10px;
+  background: var(--gold-primary, #c9b46d);
+  border-radius: 1px;
+}
+
+.insight-pill-group-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 /* 全局 Hover Tooltip 悬浮提示 */
@@ -4902,5 +5157,38 @@ input[type="checkbox"] {
     grid-template-columns: 1fr;
   }
 }
+
+/* ========================================================================= */
+/* 破境突破与底蕴面板专属样式 (Breakthrough & Foundation Panel)                  */
+/* ========================================================================= */
+.insight-breakthrough-btn {
+  margin-top: 5px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.3) 0%, rgba(232, 214, 154, 0.4) 100%);
+  border: 1px solid var(--gold-bright);
+  color: #fff6c8;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(201, 180, 109, 0.35);
+  animation: qi-pulse 2s infinite ease-in-out;
+  transition: all 0.2s ease;
+}
+
+.insight-breakthrough-btn:hover {
+  background: linear-gradient(135deg, rgba(201, 180, 109, 0.5) 0%, rgba(232, 214, 154, 0.65) 100%);
+  box-shadow: 0 0 16px rgba(232, 214, 154, 0.6);
+  transform: translateY(-1px);
+}
+
+.insight-panel--foundation {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 
 
