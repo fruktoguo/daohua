@@ -29,8 +29,8 @@ cleanup() {
     kill_tree "$FRONTEND_PID" TERM
   fi
   if [[ -n "$BACKEND_SUPERVISOR_PID" ]]; then
-    # 对监督子 shell 整棵进程树发 TERM，带走其下的 dotnet watch 与服务端进程；
-    # 服务端收到 TERM 后会走优雅停服（保存市场账本并释放写者租约）。
+    # 对 dev-hot 守护进程整棵进程树发 TERM；守护进程会先优雅停止服务端
+    # （保存市场账本并释放写者租约）再退出。
     kill_tree "$BACKEND_SUPERVISOR_PID" TERM
   fi
   sleep 2
@@ -69,52 +69,10 @@ if ss -H -ltn 'sport = :15172' 2>/dev/null | grep -q .; then
   exit 1
 fi
 
-# 4. 启动服务端（dotnet watch：检测到任意源码修改后自动重新构建并重启进程；
-#    编译失败时保持旧进程继续运行，与 mud_mmo_next 的 dev-hot 行为一致）
-printf '==> 启动服务端 (http://127.0.0.1:5128, 源码变更自动重建重启)...\n'
-
-# 监督 dotnet watch：进程异常退出（如热重启时市场租约交接失败）后按退避自动拉起，
-# 30 秒内连续 3 次失败则放慢到 5 秒间隔，避免崩溃循环刷屏。
-BACKEND_RESTART_COUNT=0
-BACKEND_LAST_EXIT_AT=0
-SHUTTING_DOWN=0
-
-start_backend() {
-  ASPNETCORE_ENVIRONMENT=Development dotnet watch --no-hot-reload \
-    --project src/Xiuxian.Server/Xiuxian.Server.csproj &
-}
-
-# 监督循环在子 shell 中运行；父脚本只持有监督进程 PID，
-# 停止时对监督进程整棵进程树发信号即可带走 dotnet watch。
-supervise_backend() {
-  local exit_code now delay
-  while true; do
-    start_backend
-    local child_pid=$!
-    set +e
-    wait "$child_pid"
-    exit_code=$?
-    set -e
-    if [[ "$SHUTTING_DOWN" -eq 1 ]]; then
-      return 0
-    fi
-    now="$(date +%s)"
-    if (( now - BACKEND_LAST_EXIT_AT < 30 )); then
-      BACKEND_RESTART_COUNT=$((BACKEND_RESTART_COUNT + 1))
-    else
-      BACKEND_RESTART_COUNT=0
-    fi
-    BACKEND_LAST_EXIT_AT="$now"
-    delay=1
-    if (( BACKEND_RESTART_COUNT >= 3 )); then
-      delay=5
-    fi
-    printf '==> 服务端监督: dotnet watch 异常退出 (code=%s)，%ss 后自动拉起\n' "$exit_code" "$delay" >&2
-    sleep "$delay"
-  done
-}
-
-supervise_backend &
+# 4. 启动服务端（dev-hot.mjs 守护进程：源码变更进入 60s 防抖静默期，期间有新变更则刷新；
+#    静默期满先 dotnet build，编译失败保持旧进程，成功才优雅重启并自动拉起异常退出）
+printf '==> 启动服务端 (http://127.0.0.1:5128, 源码变更静默 60s 后重建重启)...\n'
+node scripts/dev-hot.mjs &
 BACKEND_SUPERVISOR_PID=$!
 
 # 5. 等待服务端健康端点就绪（监督循环会自动拉起异常退出的进程，这里只探测端点）
@@ -139,11 +97,11 @@ FRONTEND_PID=$!
 
 printf '\n'
 printf '  道化太初 本地开发服务已启动\n'
-printf '  ----------------------------------------------------\n'
+printf '  热更新:      源码变更静默 60s 后重建重启（编译失败保持旧进程）\n'
 printf '  后端 API:    http://127.0.0.1:5128\n'
 printf '  WebSocket:  ws://127.0.0.1:5128/ws\n'
 printf '  前端地址:    http://127.0.0.1:15172\n'
-printf '  热更新:      服务端源码变更后自动重建并重启（编译失败保持旧进程）\n'
+printf '  ----------------------------------------------------\n'
 printf '====================================================\n\n'
 
 # 挂起等待监督循环或前端退出；任一退出即触发 cleanup 停止全部服务
