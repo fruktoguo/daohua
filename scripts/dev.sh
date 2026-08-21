@@ -92,7 +92,7 @@ fi
 
 # 6. 启动前端（不打开浏览器）
 printf '==> 启动前端开发服务器 (http://127.0.0.1:15172)...\n'
-npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open &
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open --force &
 FRONTEND_PID=$!
 
 printf '\n'
