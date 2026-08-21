@@ -153,6 +153,8 @@ public sealed class XiuxianCombatTests
     public void Combat_simulation_is_deterministic_for_same_start_boundary()
     {
         var first = XiuxianSimulation.CreateDefaultState(Guid.Parse("11111111-1111-1111-1111-111111111111"), now: Baseline);
+        first.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.HeavySlash);
+        first.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
         var second = first.Clone();
         var encounter = XiuxianCombatCatalog.GetEncounter(XiuxianCombatEncounterIds.QiBeast);
 
@@ -659,7 +661,7 @@ public sealed class XiuxianCombatTests
 
         Assert.False(result.Success);
         Assert.Equal("ABILITY_NOT_LEARNED", result.Code);
-        Assert.Equal(XiuxianCombatAbilityIds.HeavySlash, state.Combat.AbilitySlots[0].AbilityId);
+        Assert.Null(state.Combat.AbilitySlots[0].AbilityId);
     }
 
     [Fact]

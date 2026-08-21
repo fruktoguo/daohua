@@ -90,7 +90,9 @@ public static partial class XiuxianCombatSimulator
         XiuxianCombatPlayerState? initialPlayerState = null,
         bool stopAfterFirstOutcome = false,
         bool stopAfterFirstVictory = false,
-        long playerSpirit = 0)
+        long playerSpirit = 0,
+        IReadOnlyDictionary<string, long>? initialAbilityCooldowns = null,
+        IReadOnlyList<long>? initialConsumableCooldowns = null)
     {
         ArgumentNullException.ThrowIfNull(loadout);
         ArgumentNullException.ThrowIfNull(activeBuffs);
@@ -115,7 +117,9 @@ public static partial class XiuxianCombatSimulator
                 initialPlayerState,
                 stopAfterFirstOutcome,
                 stopAfterFirstVictory,
-                playerSpirit);
+                playerSpirit,
+                initialAbilityCooldowns,
+                initialConsumableCooldowns);
         }
 
         var durationMilliseconds = Math.Max(0, checked((long)Math.Floor(duration.TotalMilliseconds)));
@@ -157,6 +161,19 @@ public static partial class XiuxianCombatSimulator
         XiuxianCombatAbilityDefinition? pendingEnemyAbility = null;
         var pendingEnemyAbilityIndex = -1;
         var nextConsumableUse = new long[Math.Max(0, loadout.ConsumableSlots.Count)];
+        for (var i = 0; i < nextConsumableUse.Length; i++)
+        {
+            if (initialConsumableCooldowns is not null
+                && i < initialConsumableCooldowns.Count
+                && initialConsumableCooldowns[i] > 0)
+            {
+                nextConsumableUse[i] = initialConsumableCooldowns[i];
+            }
+            else
+            {
+                nextConsumableUse[i] = 0L;
+            }
+        }
         long nextRegenTick = RegenTickMilliseconds;
         long nextEnrageTick = Math.Max(
             1,
@@ -165,7 +182,21 @@ public static partial class XiuxianCombatSimulator
                 : encounter.EnrageTickMilliseconds);
         var enemySpawnAt = 0L;
         var abilityReadyAt = new long[Math.Max(0, loadout.AbilitySlots.Count)];
-        Array.Fill(abilityReadyAt, 0L);
+        for (var i = 0; i < abilityReadyAt.Length; i++)
+        {
+            var abilityId = loadout.AbilitySlots[i].AbilityId;
+            if (!string.IsNullOrWhiteSpace(abilityId)
+                && initialAbilityCooldowns is not null
+                && initialAbilityCooldowns.TryGetValue(abilityId, out var cd)
+                && cd > 0)
+            {
+                abilityReadyAt[i] = cd;
+            }
+            else
+            {
+                abilityReadyAt[i] = 0L;
+            }
+        }
         var playerAbilities = loadout.AbilitySlots
             .Select(slot => XiuxianCombatCatalog.TryGetAbility(slot.AbilityId, out var ability)
                 ? XiuxianCombatCatalog.GetAbilityAtLevel(ability.Id, slot.Level)
@@ -371,8 +402,14 @@ public static partial class XiuxianCombatSimulator
                 player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                 playerHitpoints = player.MaxHitpoints;
                 playerManapoints = player.MaxManapoints;
-                Array.Fill(abilityReadyAt, now);
-                Array.Fill(nextConsumableUse, now);
+                for (var i = 0; i < abilityReadyAt.Length; i++)
+                {
+                    abilityReadyAt[i] = Math.Max(abilityReadyAt[i], now);
+                }
+                for (var i = 0; i < nextConsumableUse.Length; i++)
+                {
+                    nextConsumableUse[i] = Math.Max(nextConsumableUse[i], now);
+                }
                 nextPlayerAction = now;
                 nextEnemyAction = now;
                 playerActionStartedAt = now;

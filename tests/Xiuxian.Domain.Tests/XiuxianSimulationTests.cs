@@ -208,6 +208,8 @@ public sealed class XiuxianSimulationTests
         state.Combat.AttackLevel = 1_000;
         state.Combat.SwordsmanshipLevel = 1_000;
         state.Combat.SearchSpeedRatio = 1;
+        state.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.HeavySlash);
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
         state.CombatResources = new XiuxianCombatResourceState
         {
             Initialized = true,
@@ -362,6 +364,8 @@ public sealed class XiuxianSimulationTests
         state.Queue.Entries.Clear();
         state.Combat.AttackLevel = 1_000;
         state.Combat.SwordsmanshipLevel = 1_000;
+        state.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.HeavySlash);
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
 
         var command = XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 2);
         Assert.True(command.Success);

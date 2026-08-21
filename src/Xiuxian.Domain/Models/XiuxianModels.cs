@@ -74,6 +74,8 @@ public sealed class XiuxianCombatResourceState
     public long Manapoints { get; set; }
     public double HitpointRemainder { get; set; }
     public double ManapointRemainder { get; set; }
+    public Dictionary<string, DateTimeOffset> AbilityCooldowns { get; set; } = new(StringComparer.Ordinal);
+    public List<DateTimeOffset> ConsumableSlotCooldowns { get; set; } = [];
 
     public XiuxianCombatResourceState Clone() => new()
     {
@@ -81,7 +83,9 @@ public sealed class XiuxianCombatResourceState
         Hitpoints = Hitpoints,
         Manapoints = Manapoints,
         HitpointRemainder = HitpointRemainder,
-        ManapointRemainder = ManapointRemainder
+        ManapointRemainder = ManapointRemainder,
+        AbilityCooldowns = new Dictionary<string, DateTimeOffset>(AbilityCooldowns, StringComparer.Ordinal),
+        ConsumableSlotCooldowns = new List<DateTimeOffset>(ConsumableSlotCooldowns)
     };
 }
 
@@ -99,6 +103,8 @@ public sealed class XiuxianCombatExpeditionState
     public DateTimeOffset BattleStartedAt { get; set; }
     public long InitialHitpoints { get; set; }
     public long InitialManapoints { get; set; }
+    public Dictionary<string, long> InitialAbilityCooldowns { get; set; } = new(StringComparer.Ordinal);
+    public List<long> InitialConsumableCooldowns { get; set; } = [];
     public int EmittedEventCount { get; set; }
     public XiuxianCombatLoadout? BattleLoadout { get; set; }
     public List<XiuxianBuffState> BattleBuffs { get; set; } = [];
@@ -127,6 +133,8 @@ public sealed class XiuxianCombatExpeditionState
         BattleStartedAt = BattleStartedAt,
         InitialHitpoints = InitialHitpoints,
         InitialManapoints = InitialManapoints,
+        InitialAbilityCooldowns = new Dictionary<string, long>(InitialAbilityCooldowns, StringComparer.Ordinal),
+        InitialConsumableCooldowns = new List<long>(InitialConsumableCooldowns),
         EmittedEventCount = EmittedEventCount,
         BattleLoadout = BattleLoadout?.Clone(),
         BattleBuffs = BattleBuffs.Select(CloneBuff).ToList(),
