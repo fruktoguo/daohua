@@ -24,7 +24,7 @@ import os
 import random
 import sys
 
-REPO_ROOT = "/home/yuohira/game/xiuxian"
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CONFIG_PATH = os.path.join(REPO_ROOT, "config", "game-data", "expected-attributes.json")
 COMBAT_DOC_PATH = os.path.join(REPO_ROOT, "docs", "design", "combat-benchmark-model.md")
 PLAYER_DOC_PATH = os.path.join(REPO_ROOT, "docs", "design", "player-expected-attributes-model.md")

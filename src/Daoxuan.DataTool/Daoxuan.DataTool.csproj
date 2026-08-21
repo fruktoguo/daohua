@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Daoxuan.DataTool</AssemblyName>
+    <RootNamespace>Daoxuan.DataTool</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Daoxuan.Domain/Daoxuan.Domain.csproj" />
+  </ItemGroup>
+</Project>

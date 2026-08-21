@@ -1,4 +1,4 @@
-// 与 src/Xiuxian.Domain/Models/XiuxianIds.cs 一一对应。
+// 与 src/Daoxuan.Domain/Models/DaoxuanIds.cs 一一对应。
 // 接真实后端时，这些 id 就是协议里的字符串。
 
 export type ActionType = 'cultivation' | 'exploration' | 'alchemy'

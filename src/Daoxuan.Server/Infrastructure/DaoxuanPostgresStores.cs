@@ -1,0 +1,825 @@
+using System.Buffers.Binary;
+using System.IO.Compression;
+using System.Text.Json;
+using Npgsql;
+using NpgsqlTypes;
+using Daoxuan.Domain.Market;
+using Daoxuan.Domain.Models;
+using YuoCore.Persistence;
+
+namespace Daoxuan.Server.Infrastructure;
+
+public sealed class DaoxuanDatabaseOptions
+{
+    public string Provider { get; init; } = "local-json";
+    public string? ConnectionString { get; init; }
+    public bool EnableSchemaBootstrap { get; init; } = true;
+    public int MarketTradeRetentionDays { get; init; } = 14;
+
+    public static DaoxuanDatabaseOptions From(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        return new DaoxuanDatabaseOptions
+        {
+            Provider = configuration["Storage:Provider"] ?? "local-json",
+            ConnectionString = configuration.GetConnectionString("Daoxuan")
+                ?? configuration["Storage:ConnectionString"],
+            EnableSchemaBootstrap = configuration.GetValue("Storage:EnableSchemaBootstrap", true),
+            MarketTradeRetentionDays = Math.Clamp(
+                configuration.GetValue("Market:TradeRetentionDays", 14),
+                1,
+                90)
+        };
+    }
+
+    public bool IsPostgres => string.Equals(Provider, "postgres", StringComparison.OrdinalIgnoreCase);
+}
+
+public sealed class DaoxuanPostgresSchemaHostedService(
+    NpgsqlDataSource dataSource,
+    DaoxuanDatabaseOptions options,
+    ILogger<DaoxuanPostgresSchemaHostedService> logger) : IHostedService
+{
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        if (!options.EnableSchemaBootstrap)
+        {
+            logger.LogInformation("PostgreSQL 自动建表已关闭，跳过 schema bootstrap");
+            return;
+        }
+
+        await DaoxuanPostgresSchema.EnsureCreatedAsync(
+            dataSource,
+            options.MarketTradeRetentionDays,
+            cancellationToken).ConfigureAwait(false);
+        logger.LogInformation("PostgreSQL schema 已确认，市场流水保留 {RetentionDays} 天", options.MarketTradeRetentionDays);
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+public static class DaoxuanPostgresSchema
+{
+    public static async Task EnsureCreatedAsync(
+        NpgsqlDataSource dataSource,
+        int marketTradeRetentionDays,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await ExecuteAsync(connection, transaction, SchemaSql, cancellationToken).ConfigureAwait(false);
+        await EnsureMarketTradePartitionsAsync(
+            connection,
+            transaction,
+            DateTimeOffset.UtcNow,
+            marketTradeRetentionDays,
+            cancellationToken).ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureMarketTradePartitionsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        DateTimeOffset now,
+        int retentionDays,
+        CancellationToken cancellationToken)
+    {
+        var utcDate = now.UtcDateTime.Date;
+        var currentWeekStart = utcDate.AddDays(-((int)utcDate.DayOfWeek + 6) % 7);
+        for (var offset = -1; offset <= 2; offset++)
+        {
+            var start = currentWeekStart.AddDays(offset * 7);
+            var end = start.AddDays(7);
+            var tableName = $"market_trades_{start:yyyy}_w{System.Globalization.ISOWeek.GetWeekOfYear(start):D2}";
+            await ExecuteAsync(
+                connection,
+                transaction,
+                $"""
+                CREATE TABLE IF NOT EXISTS {tableName} PARTITION OF market_trades
+                    FOR VALUES FROM ('{start:yyyy-MM-dd}') TO ('{end:yyyy-MM-dd}');
+                """,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var dropBefore = utcDate.AddDays(-retentionDays);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT inhrelid::regclass::text
+            FROM pg_inherits
+            WHERE inhparent = 'market_trades'::regclass
+            """,
+            connection,
+            transaction);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var staleTables = new List<string>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var table = reader.GetString(0);
+            if (!TryParseWeeklyPartitionStart(table, out var start)) continue;
+            if (start.AddDays(7) < dropBefore)
+            {
+                staleTables.Add(table);
+            }
+        }
+
+        await reader.DisposeAsync().ConfigureAwait(false);
+        foreach (var table in staleTables)
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                $"DROP TABLE IF EXISTS {QuoteQualifiedIdentifier(table)};",
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static bool TryParseWeeklyPartitionStart(string tableName, out DateTime start)
+    {
+        start = default;
+        var bare = tableName.Contains('.', StringComparison.Ordinal) ? tableName[(tableName.LastIndexOf('.') + 1)..] : tableName;
+        var match = System.Text.RegularExpressions.Regex.Match(bare, @"^market_trades_(\d{4})_w(\d{2})$");
+        if (!match.Success) return false;
+        var year = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        var week = int.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+        start = System.Globalization.ISOWeek.ToDateTime(year, week, DayOfWeek.Monday);
+        return true;
+    }
+
+    private static string QuoteQualifiedIdentifier(string value)
+    {
+        return string.Join('.', value.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => $"\"{part.Replace("\"", "\"\"", StringComparison.Ordinal)}\""));
+    }
+
+    private static async Task ExecuteAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private const string SchemaSql = """
+CREATE TABLE IF NOT EXISTS accounts (
+    player_id UUID PRIMARY KEY,
+    account VARCHAR(32) NOT NULL,
+    account_normalized VARCHAR(32) NOT NULL,
+    password_hash VARCHAR(128) NOT NULL,
+    salt VARCHAR(48) NOT NULL,
+    character_name VARCHAR(32) NOT NULL,
+    character_name_normalized VARCHAR(32) NOT NULL,
+    sequence_id BIGINT GENERATED BY DEFAULT AS IDENTITY UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (account_normalized),
+    UNIQUE (character_name_normalized)
+);
+
+CREATE TABLE IF NOT EXISTS player_snapshots (
+    kind VARCHAR(32) NOT NULL,
+    id VARCHAR(64) NOT NULL,
+    payload_encoding VARCHAR(16) NOT NULL DEFAULT 'br-json',
+    payload BYTEA NOT NULL,
+    payload_bytes INT NOT NULL,
+    compressed_bytes INT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    player_id UUID,
+    account VARCHAR(32),
+    character_name VARCHAR(32),
+    sequence_id BIGINT,
+    version BIGINT,
+    presence_mode SMALLINT,
+    last_simulated_at TIMESTAMPTZ,
+    PRIMARY KEY (kind, id)
+) WITH (autovacuum_vacuum_scale_factor = 0.05);
+
+CREATE INDEX IF NOT EXISTS ix_player_snapshots_player_id ON player_snapshots (player_id) WHERE player_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_player_snapshots_idle_backlog ON player_snapshots (presence_mode, last_simulated_at) WHERE kind = 'player';
+
+CREATE TABLE IF NOT EXISTS market_ledgers (
+    partition_id INT NOT NULL,
+    partition_count INT NOT NULL,
+    algorithm VARCHAR(64) NOT NULL,
+    revision BIGINT NOT NULL,
+    payload_encoding VARCHAR(16) NOT NULL DEFAULT 'br-json',
+    payload BYTEA NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    writer_instance VARCHAR(160) NOT NULL,
+    PRIMARY KEY (partition_id, partition_count, algorithm)
+) WITH (autovacuum_vacuum_scale_factor = 0.05);
+
+CREATE TABLE IF NOT EXISTS persistence_outbox (
+    sequence BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    command_kind SMALLINT NOT NULL,
+    snapshot_kind VARCHAR(32),
+    snapshot_id VARCHAR(64),
+    event_stream VARCHAR(96),
+    event_type VARCHAR(64),
+    payload BYTEA NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS persistence_outbox_ack (
+    id SMALLINT PRIMARY KEY CHECK (id = 1),
+    acknowledged_through BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS distributed_compute_nodes (
+    node_id VARCHAR(80) PRIMARY KEY,
+    endpoint VARCHAR(512) NOT NULL,
+    weight SMALLINT NOT NULL DEFAULT 1,
+    high_latency BOOLEAN NOT NULL DEFAULT TRUE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_seen_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS distributed_compute_jobs (
+    job_id UUID PRIMARY KEY,
+    player_id UUID NOT NULL,
+    assigned_node_id VARCHAR(80),
+    status SMALLINT NOT NULL DEFAULT 0,
+    target_time TIMESTAMPTZ NOT NULL,
+    input_payload BYTEA NOT NULL,
+    output_payload BYTEA,
+    error_code VARCHAR(64),
+    error_message VARCHAR(512),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_distributed_compute_jobs_status ON distributed_compute_jobs (status, created_at);
+
+CREATE TABLE IF NOT EXISTS market_trades (
+    trade_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    buyer_id UUID NOT NULL,
+    seller_id UUID NOT NULL,
+    item_id VARCHAR(32) NOT NULL,
+    enhancement_level SMALLINT NOT NULL DEFAULT 0,
+    price BIGINT NOT NULL,
+    quantity BIGINT NOT NULL,
+    gross_amount BIGINT NOT NULL,
+    tax_amount BIGINT NOT NULL DEFAULT 0,
+    traded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (trade_id, traded_at)
+) PARTITION BY RANGE (traded_at);
+""";
+}
+
+public static class DaoxuanPostgresPayloadCodec
+{
+    public const string RawJson = "json";
+    public const string BrotliJson = "br-json";
+
+    public static byte[] Encode(ReadOnlyMemory<byte> payload, out string encoding, out int originalBytes)
+    {
+        originalBytes = payload.Length;
+        if (payload.Length < 256)
+        {
+            encoding = RawJson;
+            return payload.ToArray();
+        }
+
+        using var output = new MemoryStream();
+        using (var brotli = new BrotliStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            brotli.Write(payload.Span);
+        }
+
+        var compressed = output.ToArray();
+        if (compressed.Length >= payload.Length)
+        {
+            encoding = RawJson;
+            return payload.ToArray();
+        }
+
+        encoding = BrotliJson;
+        return compressed;
+    }
+
+    public static byte[] Decode(string encoding, byte[] payload)
+    {
+        return encoding switch
+        {
+            RawJson => payload,
+            BrotliJson => DecodeBrotli(payload),
+            _ => throw new InvalidDataException($"未知快照压缩格式: {encoding}")
+        };
+    }
+
+    private static byte[] DecodeBrotli(byte[] payload)
+    {
+        using var input = new MemoryStream(payload);
+        using var brotli = new BrotliStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        brotli.CopyTo(output);
+        return output.ToArray();
+    }
+}
+
+public sealed class DaoxuanPostgresSnapshotStore(NpgsqlDataSource dataSource) : IYuoSnapshotStore
+{
+    public async ValueTask SaveAsync(YuoSnapshotRecord snapshot, CancellationToken cancellationToken = default)
+    {
+        var metadata = ExtractPlayerMetadata(snapshot);
+        var payload = DaoxuanPostgresPayloadCodec.Encode(snapshot.Payload, out var encoding, out var originalBytes);
+        await using var command = dataSource.CreateCommand(
+            """
+            INSERT INTO player_snapshots (
+                kind, id, payload_encoding, payload, payload_bytes, compressed_bytes, updated_at,
+                player_id, account, character_name, sequence_id, version, presence_mode, last_simulated_at)
+            VALUES (
+                @kind, @id, @encoding, @payload, @payloadBytes, @compressedBytes, @updatedAt,
+                @playerId, @account, @characterName, @sequenceId, @version, @presenceMode, @lastSimulatedAt)
+            ON CONFLICT (kind, id) DO UPDATE SET
+                payload_encoding = EXCLUDED.payload_encoding,
+                payload = EXCLUDED.payload,
+                payload_bytes = EXCLUDED.payload_bytes,
+                compressed_bytes = EXCLUDED.compressed_bytes,
+                updated_at = EXCLUDED.updated_at,
+                player_id = EXCLUDED.player_id,
+                account = EXCLUDED.account,
+                character_name = EXCLUDED.character_name,
+                sequence_id = EXCLUDED.sequence_id,
+                version = EXCLUDED.version,
+                presence_mode = EXCLUDED.presence_mode,
+                last_simulated_at = EXCLUDED.last_simulated_at
+            """);
+        command.Parameters.AddWithValue("kind", snapshot.Kind);
+        command.Parameters.AddWithValue("id", snapshot.Id);
+        command.Parameters.AddWithValue("encoding", encoding);
+        command.Parameters.AddWithValue("payload", NpgsqlDbType.Bytea, payload);
+        command.Parameters.AddWithValue("payloadBytes", originalBytes);
+        command.Parameters.AddWithValue("compressedBytes", payload.Length);
+        command.Parameters.AddWithValue("updatedAt", snapshot.UpdatedAt);
+        AddNullable(command, "playerId", NpgsqlDbType.Uuid, metadata.PlayerId);
+        AddNullable(command, "account", NpgsqlDbType.Varchar, metadata.Account);
+        AddNullable(command, "characterName", NpgsqlDbType.Varchar, metadata.CharacterName);
+        AddNullable(command, "sequenceId", NpgsqlDbType.Bigint, metadata.SequenceId);
+        AddNullable(command, "version", NpgsqlDbType.Bigint, metadata.Version);
+        AddNullable(command, "presenceMode", NpgsqlDbType.Smallint, metadata.PresenceMode);
+        AddNullable(command, "lastSimulatedAt", NpgsqlDbType.TimestampTz, metadata.LastSimulatedAt);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<YuoSnapshotRecord?> LoadAsync(
+        string kind,
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        await using var command = dataSource.CreateCommand(
+            """
+            SELECT payload_encoding, payload, updated_at
+            FROM player_snapshots
+            WHERE kind = @kind AND id = @id
+            """);
+        command.Parameters.AddWithValue("kind", kind);
+        command.Parameters.AddWithValue("id", id);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) return null;
+        var encoding = reader.GetString(0);
+        var storedPayload = (byte[])reader[1];
+        var updatedAt = reader.GetFieldValue<DateTimeOffset>(2);
+        return new YuoSnapshotRecord(kind, id, DaoxuanPostgresPayloadCodec.Decode(encoding, storedPayload), updatedAt);
+    }
+
+    internal static async ValueTask SaveAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        YuoSnapshotRecord snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        var metadata = ExtractPlayerMetadata(snapshot);
+        var payload = DaoxuanPostgresPayloadCodec.Encode(snapshot.Payload, out var encoding, out var originalBytes);
+        await using var command = new NpgsqlCommand(
+            """
+            INSERT INTO player_snapshots (
+                kind, id, payload_encoding, payload, payload_bytes, compressed_bytes, updated_at,
+                player_id, account, character_name, sequence_id, version, presence_mode, last_simulated_at)
+            VALUES (
+                @kind, @id, @encoding, @payload, @payloadBytes, @compressedBytes, @updatedAt,
+                @playerId, @account, @characterName, @sequenceId, @version, @presenceMode, @lastSimulatedAt)
+            ON CONFLICT (kind, id) DO UPDATE SET
+                payload_encoding = EXCLUDED.payload_encoding,
+                payload = EXCLUDED.payload,
+                payload_bytes = EXCLUDED.payload_bytes,
+                compressed_bytes = EXCLUDED.compressed_bytes,
+                updated_at = EXCLUDED.updated_at,
+                player_id = EXCLUDED.player_id,
+                account = EXCLUDED.account,
+                character_name = EXCLUDED.character_name,
+                sequence_id = EXCLUDED.sequence_id,
+                version = EXCLUDED.version,
+                presence_mode = EXCLUDED.presence_mode,
+                last_simulated_at = EXCLUDED.last_simulated_at
+            """,
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("kind", snapshot.Kind);
+        command.Parameters.AddWithValue("id", snapshot.Id);
+        command.Parameters.AddWithValue("encoding", encoding);
+        command.Parameters.AddWithValue("payload", NpgsqlDbType.Bytea, payload);
+        command.Parameters.AddWithValue("payloadBytes", originalBytes);
+        command.Parameters.AddWithValue("compressedBytes", payload.Length);
+        command.Parameters.AddWithValue("updatedAt", snapshot.UpdatedAt);
+        AddNullable(command, "playerId", NpgsqlDbType.Uuid, metadata.PlayerId);
+        AddNullable(command, "account", NpgsqlDbType.Varchar, metadata.Account);
+        AddNullable(command, "characterName", NpgsqlDbType.Varchar, metadata.CharacterName);
+        AddNullable(command, "sequenceId", NpgsqlDbType.Bigint, metadata.SequenceId);
+        AddNullable(command, "version", NpgsqlDbType.Bigint, metadata.Version);
+        AddNullable(command, "presenceMode", NpgsqlDbType.Smallint, metadata.PresenceMode);
+        AddNullable(command, "lastSimulatedAt", NpgsqlDbType.TimestampTz, metadata.LastSimulatedAt);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static PlayerSnapshotMetadata ExtractPlayerMetadata(YuoSnapshotRecord snapshot)
+    {
+        if (!string.Equals(snapshot.Kind, "player", StringComparison.OrdinalIgnoreCase)
+            || !Guid.TryParse(snapshot.Id, out var playerId))
+        {
+            return default;
+        }
+
+        try
+        {
+            var state = DaoxuanStateSerializer.Deserialize(snapshot.Payload);
+            if (state is null) return default;
+            return new PlayerSnapshotMetadata(
+                playerId,
+                EmptyToNull(state.Account),
+                EmptyToNull(state.Name),
+                state.SequenceId > 0 ? state.SequenceId : null,
+                state.Version,
+                (short)state.PresenceMode,
+                state.LastSimulatedAt == default ? null : state.LastSimulatedAt);
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static void AddNullable(NpgsqlCommand command, string name, NpgsqlDbType type, object? value)
+    {
+        command.Parameters.Add(new NpgsqlParameter(name, type) { Value = value ?? DBNull.Value });
+    }
+
+    private readonly record struct PlayerSnapshotMetadata(
+        Guid? PlayerId,
+        string? Account,
+        string? CharacterName,
+        long? SequenceId,
+        long? Version,
+        short? PresenceMode,
+        DateTimeOffset? LastSimulatedAt);
+}
+
+public sealed class DaoxuanPostgresPersistenceOutbox(NpgsqlDataSource dataSource) : IYuoPersistenceOutbox
+{
+    private const short SnapshotCommand = 1;
+    private const short EventCommand = 2;
+
+    public async ValueTask<long> AppendAsync(YuoPersistenceCommand command, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (command is YuoOutboxPersistenceCommand)
+        {
+            throw new ArgumentException("append inner command only", nameof(command));
+        }
+
+        var frame = Encode(command);
+        await using var dbCommand = dataSource.CreateCommand(
+            """
+            INSERT INTO persistence_outbox (
+                command_kind, snapshot_kind, snapshot_id, event_stream, event_type, payload, occurred_at)
+            VALUES (@kind, @snapshotKind, @snapshotId, @eventStream, @eventType, @payload, @occurredAt)
+            RETURNING sequence
+            """);
+        dbCommand.Parameters.AddWithValue("kind", frame.Kind);
+        AddNullable(dbCommand, "snapshotKind", NpgsqlDbType.Varchar, frame.SnapshotKind);
+        AddNullable(dbCommand, "snapshotId", NpgsqlDbType.Varchar, frame.SnapshotId);
+        AddNullable(dbCommand, "eventStream", NpgsqlDbType.Varchar, frame.EventStream);
+        AddNullable(dbCommand, "eventType", NpgsqlDbType.Varchar, frame.EventType);
+        dbCommand.Parameters.AddWithValue("payload", NpgsqlDbType.Bytea, frame.Payload);
+        dbCommand.Parameters.AddWithValue("occurredAt", frame.OccurredAt);
+        return (long)(await dbCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException("PostgreSQL outbox 未返回 sequence。"));
+    }
+
+    public async IAsyncEnumerable<YuoPersistenceOutboxEntry> ReplayAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await using var command = dataSource.CreateCommand(
+            """
+            SELECT sequence, command_kind, snapshot_kind, snapshot_id, event_stream, event_type, payload, occurred_at
+            FROM persistence_outbox
+            WHERE sequence > COALESCE((SELECT acknowledged_through FROM persistence_outbox_ack WHERE id = 1), 0)
+            ORDER BY sequence
+            """);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var sequence = reader.GetInt64(0);
+            var frame = new OutboxFrame(
+                reader.GetInt16(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2),
+                reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? null : reader.GetString(5),
+                (byte[])reader[6],
+                reader.GetFieldValue<DateTimeOffset>(7));
+            yield return new YuoPersistenceOutboxEntry(sequence, Decode(frame));
+        }
+    }
+
+    public async ValueTask AcknowledgeThroughAsync(long sequence, CancellationToken cancellationToken = default)
+    {
+        if (sequence <= 0) return;
+        await using var command = dataSource.CreateCommand(
+            """
+            INSERT INTO persistence_outbox_ack (id, acknowledged_through, updated_at)
+            VALUES (1, @sequence, NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                acknowledged_through = GREATEST(persistence_outbox_ack.acknowledged_through, EXCLUDED.acknowledged_through),
+                updated_at = NOW();
+            DELETE FROM persistence_outbox WHERE sequence <= @sequence;
+            """);
+        command.Parameters.AddWithValue("sequence", sequence);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public ValueTask CompactAsync(CancellationToken cancellationToken = default) => AcknowledgeThroughAsync(0, cancellationToken);
+
+    private static OutboxFrame Encode(YuoPersistenceCommand command)
+    {
+        return command switch
+        {
+            SaveSnapshotCommand snapshot => new OutboxFrame(
+                SnapshotCommand,
+                snapshot.Snapshot.Kind,
+                snapshot.Snapshot.Id,
+                null,
+                null,
+                snapshot.Snapshot.Payload.ToArray(),
+                snapshot.Snapshot.UpdatedAt),
+            AppendEventCommand append => new OutboxFrame(
+                EventCommand,
+                null,
+                null,
+                append.Event.Stream,
+                append.Event.EventType,
+                append.Event.Payload.ToArray(),
+                append.Event.CreatedAt),
+            _ => throw new NotSupportedException($"PostgreSQL outbox 不支持命令 {command.GetType().Name}。")
+        };
+    }
+
+    private static YuoPersistenceCommand Decode(OutboxFrame frame)
+    {
+        return frame.Kind switch
+        {
+            SnapshotCommand => new SaveSnapshotCommand(new YuoSnapshotRecord(
+                Required(frame.SnapshotKind, nameof(frame.SnapshotKind)),
+                Required(frame.SnapshotId, nameof(frame.SnapshotId)),
+                frame.Payload,
+                frame.OccurredAt)),
+            EventCommand => new AppendEventCommand(new YuoEventRecord(
+                Required(frame.EventStream, nameof(frame.EventStream)),
+                Required(frame.EventType, nameof(frame.EventType)),
+                frame.Payload,
+                frame.OccurredAt)),
+            _ => throw new InvalidDataException($"未知 PostgreSQL outbox 命令类型: {frame.Kind}")
+        };
+    }
+
+    private static string Required(string? value, string name) =>
+        string.IsNullOrWhiteSpace(value) ? throw new InvalidDataException($"outbox 字段 {name} 为空。") : value;
+
+    private static void AddNullable(NpgsqlCommand command, string name, NpgsqlDbType type, object? value)
+    {
+        command.Parameters.Add(new NpgsqlParameter(name, type) { Value = value ?? DBNull.Value });
+    }
+
+    private readonly record struct OutboxFrame(
+        short Kind,
+        string? SnapshotKind,
+        string? SnapshotId,
+        string? EventStream,
+        string? EventType,
+        byte[] Payload,
+        DateTimeOffset OccurredAt);
+}
+
+public sealed class DaoxuanPostgresMarketLedgerStore(
+    NpgsqlDataSource dataSource,
+    ILogger<DaoxuanPostgresMarketLedgerStore> logger) : IDaoxuanMarketLedgerStore, IAsyncDisposable
+{
+    private NpgsqlConnection? _leaseConnection;
+    private long _leaseKey;
+    private string _instanceId = string.Empty;
+
+    public string ProviderName => "postgres";
+    public bool SupportsDistributedPartitions => true;
+    public bool PersistsPlayerSnapshotAtomically => true;
+
+    public async ValueTask AcquireWriterAsync(
+        DaoxuanMarketTopology topology,
+        string instanceId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(topology);
+        ArgumentException.ThrowIfNullOrWhiteSpace(instanceId);
+        if (_leaseConnection is not null)
+        {
+            throw new InvalidOperationException("当前实例已经持有 PostgreSQL 市场写者租约。");
+        }
+
+        var key = CreateAdvisoryLockKey(topology);
+        var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock(@key)", connection);
+            command.Parameters.AddWithValue("key", key);
+            var acquired = (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
+            if (!acquired)
+            {
+                throw new InvalidOperationException($"市场主分片 {topology.PartitionId}/{topology.PartitionCount} 已由其他实例持有。 ");
+            }
+
+            _leaseConnection = connection;
+            _leaseKey = key;
+            _instanceId = instanceId;
+            logger.LogInformation("PostgreSQL 市场写者租约已取得 {PartitionId}/{PartitionCount} {InstanceId}",
+                topology.PartitionId,
+                topology.PartitionCount,
+                instanceId);
+            connection = null!;
+        }
+        finally
+        {
+            if (connection is not null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    public async ValueTask<DaoxuanMarketLedgerState?> LoadAsync(
+        DaoxuanMarketTopology topology,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureLease();
+        await using var command = dataSource.CreateCommand(
+            """
+            SELECT payload_encoding, payload
+            FROM market_ledgers
+            WHERE partition_id = @partitionId
+              AND partition_count = @partitionCount
+              AND algorithm = @algorithm
+            """);
+        AddTopologyParameters(command, topology);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)) return null;
+        var encoding = reader.GetString(0);
+        var payload = (byte[])reader[1];
+        return JsonSerializer.Deserialize<DaoxuanMarketLedgerState>(
+            DaoxuanPostgresPayloadCodec.Decode(encoding, payload),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidDataException("PostgreSQL 市场账本为空。 ");
+    }
+
+    public async ValueTask CommitAsync(
+        DaoxuanMarketTopology topology,
+        long expectedRevision,
+        DaoxuanMarketLedgerState ledger,
+        YuoSnapshotRecord? playerSnapshot,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureLease();
+        ArgumentNullException.ThrowIfNull(ledger);
+        if (ledger.Revision != checked(expectedRevision + 1))
+        {
+            throw new InvalidOperationException("新市场账本版本必须严格递增 1。 ");
+        }
+
+        var rawPayload = JsonSerializer.SerializeToUtf8Bytes(ledger, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var payload = DaoxuanPostgresPayloadCodec.Encode(rawPayload, out var encoding, out _);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (playerSnapshot is not null)
+            {
+                await DaoxuanPostgresSnapshotStore.SaveAsync(connection, transaction, playerSnapshot, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await using var command = new NpgsqlCommand(
+                """
+                INSERT INTO market_ledgers (
+                    partition_id, partition_count, algorithm, revision, payload_encoding, payload, updated_at, writer_instance)
+                VALUES (@partitionId, @partitionCount, @algorithm, @revision, @encoding, @payload, NOW(), @writer)
+                ON CONFLICT (partition_id, partition_count, algorithm) DO UPDATE SET
+                    revision = EXCLUDED.revision,
+                    payload_encoding = EXCLUDED.payload_encoding,
+                    payload = EXCLUDED.payload,
+                    updated_at = NOW(),
+                    writer_instance = EXCLUDED.writer_instance
+                WHERE market_ledgers.revision = @expectedRevision
+                RETURNING revision
+                """,
+                connection,
+                transaction);
+            AddTopologyParameters(command, topology);
+            command.Parameters.AddWithValue("revision", ledger.Revision);
+            command.Parameters.AddWithValue("expectedRevision", expectedRevision);
+            command.Parameters.AddWithValue("encoding", encoding);
+            command.Parameters.AddWithValue("payload", NpgsqlDbType.Bytea, payload);
+            command.Parameters.AddWithValue("writer", _instanceId);
+            var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (result is null || result is DBNull)
+            {
+                var actual = await ReadActualRevisionAsync(connection, transaction, topology, cancellationToken).ConfigureAwait(false);
+                throw new DaoxuanMarketLedgerConcurrencyException(expectedRevision, actual);
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    public async ValueTask ReleaseWriterAsync(CancellationToken cancellationToken = default)
+    {
+        var connection = Interlocked.Exchange(ref _leaseConnection, null);
+        if (connection is null) return;
+        try
+        {
+            await using var command = new NpgsqlCommand("SELECT pg_advisory_unlock(@key)", connection);
+            command.Parameters.AddWithValue("key", _leaseKey);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            logger.LogInformation("PostgreSQL 市场写者租约已释放");
+        }
+    }
+
+    public ValueTask DisposeAsync() => ReleaseWriterAsync(CancellationToken.None);
+
+    private void EnsureLease()
+    {
+        if (_leaseConnection is null)
+        {
+            throw new InvalidOperationException("PostgreSQL 市场写者租约尚未取得。 ");
+        }
+    }
+
+    private static long CreateAdvisoryLockKey(DaoxuanMarketTopology topology)
+    {
+        Span<byte> bytes = stackalloc byte[8];
+        BinaryPrimitives.WriteInt32BigEndian(bytes[..4], topology.PartitionCount);
+        BinaryPrimitives.WriteInt32BigEndian(bytes[4..], topology.PartitionId);
+        return BinaryPrimitives.ReadInt64BigEndian(bytes) ^ unchecked((long)0x58695869584D4B54); // XiXiXMKT
+    }
+
+    private static void AddTopologyParameters(NpgsqlCommand command, DaoxuanMarketTopology topology)
+    {
+        command.Parameters.AddWithValue("partitionId", topology.PartitionId);
+        command.Parameters.AddWithValue("partitionCount", topology.PartitionCount);
+        command.Parameters.AddWithValue("algorithm", topology.Algorithm);
+    }
+
+    private static async ValueTask<long> ReadActualRevisionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        DaoxuanMarketTopology topology,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT revision
+            FROM market_ledgers
+            WHERE partition_id = @partitionId
+              AND partition_count = @partitionCount
+              AND algorithm = @algorithm
+            """,
+            connection,
+            transaction);
+        AddTopologyParameters(command, topology);
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is long revision ? revision : 0;
+    }
+}

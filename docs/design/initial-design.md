@@ -87,7 +87,7 @@
 ```mermaid
 flowchart LR
     UI[React 客户端] -->|二进制 JSON / WebSocket| WS[ASP.NET Core 网关]
-    LOAD[在线压测客户端] -->|同一 XiuxianPacketCodec| WS
+    LOAD[在线压测客户端] -->|同一 DaoxuanPacketCodec| WS
     WS --> FIBER[YuoCore PlayerShard Fiber]
     FIBER --> ECS[YuoCore ECS 玩家聚合]
     ECS --> SIM[纯行动快进器]
@@ -99,9 +99,9 @@ flowchart LR
 
 关键边界：
 
-- `Xiuxian.Domain` 不依赖 Web、文件系统和 UI，便于确定性测试与未来拆分 Shard。
+- `Daoxuan.Domain` 不依赖 Web、文件系统和 UI，便于确定性测试与未来拆分 Shard。
 - 每个玩家聚合只能在所属 YuoCore Fiber 中修改；网络线程通过 mailbox 调用。
-- 当前原型使用一个 `PlayerShard-0`，玩家 ID 路由边界已经集中在 `XiuxianGameHost`，后续可按哈希扩到多个 Fiber 或进程。
+- 当前原型使用一个 `PlayerShard-0`，玩家 ID 路由边界已经集中在 `DaoxuanGameHost`，后续可按哈希扩到多个 Fiber 或进程。
 - 在线截止时间使用带代际校验的最小堆维护；单个玩家状态变化只更新自己的截止时间，取下一事件和重新排程为 `O(log N)`，失效节点采用惰性清理并在膨胀阈值触发压缩。
 - 持久化通过有界 `YuoPersistenceQueue` 异步执行，快照使用临时文件后原子替换；可选 `Storage:DurableOutboxEnabled=true` 时先进入 YuoCore 文件 WAL，后台写回成功后按序 ack，重启会 replay 未确认命令。
 - 行动事件、实时命令和 30 秒检查点进入持久化队列；两个事件之间的进度可由时间戳确定性重建，不需要周期性推进。
@@ -124,7 +124,7 @@ flowchart LR
 - `GET /api/world/maps`：返回静态地图节点、连线、通行时间、地点行动、遭遇、NPC 与建筑目录；客户端的程序化山景只负责表现，不参与路径与位置计算。
 - `GET /api/combat/encounters`：返回加权敌群、强度限制、独立敌人属性和首领轮次，供战斗页与行动详情复用；实时战场生命、灵力和行动条由队首 `queueProgress.expedition` 下发。
 
-普通行动只在开始、完成、被命令修改或其他真实事件边界发送状态；队列结构变化时发送完整 `queue`，其余事件发送最小 Delta。客户端按区段合并，不替换整个页面。服务端包和在线压测均使用 `XiuxianPacketCodec`，因此压测统计的是生产序列化后的真实包体，而不是估算对象大小。
+普通行动只在开始、完成、被命令修改或其他真实事件边界发送状态；队列结构变化时发送完整 `queue`，其余事件发送最小 Delta。客户端按区段合并，不替换整个页面。服务端包和在线压测均使用 `DaoxuanPacketCodec`，因此压测统计的是生产序列化后的真实包体，而不是估算对象大小。
 
 日志同步采用“短快照 + 增量流”而不是反复发送完整列表：
 
@@ -212,11 +212,11 @@ flowchart LR
 
 ## 9. 当前边界与下一阶段
 
-当前是可运行的垂直切片，已包含单敌人和加权多敌人历练、首存活目标与群攻、每十组首领、功法施法完成事件、战斗消耗品冷却与 5 秒持续恢复、10 秒基础恢复与遭遇狂暴事件、订单簿核心、权威行动/物品/战区目录、灵市下单/撤单/领取和本地账本恢复；市场账本已抽出 `IXiuxianMarketLedgerStore`，本地实现具备进程级单写者租约、稳定分片拓扑和 revision CAS，玩家快照另有可选 YuoCore durable outbox，账号鉴权、数据库、多实例主分片事务、实时战场状态流、跨服排行榜、宗门/公会、房屋和正式美术仍未完成。下一阶段建议按以下顺序推进：
+当前是可运行的垂直切片，已包含单敌人和加权多敌人历练、首存活目标与群攻、每十组首领、功法施法完成事件、战斗消耗品冷却与 5 秒持续恢复、10 秒基础恢复与遭遇狂暴事件、订单簿核心、权威行动/物品/战区目录、灵市下单/撤单/领取和本地账本恢复；市场账本已抽出 `IDaoxuanMarketLedgerStore`，本地实现具备进程级单写者租约、稳定分片拓扑和 revision CAS，玩家快照另有可选 YuoCore durable outbox，账号鉴权、数据库、多实例主分片事务、实时战场状态流、跨服排行榜、宗门/公会、房屋和正式美术仍未完成。下一阶段建议按以下顺序推进：
 
 1. 在获得数据库依赖许可并准备 PostgreSQL 环境后，将已接入的 YuoCore 文件 durable outbox 替换为 PostgreSQL 快照与事件 Outbox，并保持 replay/ack 语义。
 2. 账号登录、会话恢复、命令幂等键和客户端重放保护。
 3. 多 Fiber 玩家分片与热点玩家迁移测试。
-4. 市场生产化：实现 `IXiuxianMarketLedgerStore` 的 PostgreSQL 适配器，把账本 CAS、玩家快照和 Outbox 放入同一数据库事务，补充分布式租约、跨实例主分片和鉴权；30 天订单过期已在内存账本以时间索引接入，数据库阶段需补充对应查询索引，盘口继续使用分片订单簿。
+4. 市场生产化：实现 `IDaoxuanMarketLedgerStore` 的 PostgreSQL 适配器，把账本 CAS、玩家快照和 Outbox 放入同一数据库事务，补充分布式租约、跨实例主分片和鉴权；30 天订单过期已在内存账本以时间索引接入，数据库阶段需补充对应查询索引，盘口继续使用分片订单簿。
 5. 物品效果注册表扩展，使探索、炼丹、修炼和历练分别拥有更多可配置消耗品。
 6. 500 人在线长稳压测、10,000 离线挂机批处理压测和性能门槛自动化。

@@ -47,7 +47,7 @@ docs/
 | [README.md](world/README.md) | 剧情与设定总览：定位、创作原则与叙事红线（世界与故事真源入口）。 |
 | [lore.md](world/lore.md) | 世界观设定：太初之世的时代背景、势力与炁序（区分对外口径与内部设定）。 |
 | [story.md](world/story.md) | 七章主线剧情设计。 |
-| [maps.md](world/maps.md) | 云脊山脉地图节点设定与剧情职能，对齐 `XiuxianWorldCatalog` 现有节点。 |
+| [maps.md](world/maps.md) | 云脊山脉地图节点设定与剧情职能，对齐 `DaoxuanWorldCatalog` 现有节点。 |
 
 ## 维护约定
 

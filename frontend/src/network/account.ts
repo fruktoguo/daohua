@@ -19,11 +19,11 @@ export interface AuthResponseDto {
   message?: string | null
 }
 
-const STORAGE_ACCOUNT_KEY = 'xiuxian_account'
-const STORAGE_CHAR_NAME_KEY = 'xiuxian_character_name'
-const STORAGE_PLAYER_ID_KEY = 'xiuxian-player-id'
-const STORAGE_SAVED_ACCOUNTS_KEY = 'xiuxian_saved_accounts_list'
-const COOKIE_PLAYER_ID_KEY = 'xiuxian_player_id'
+const STORAGE_ACCOUNT_KEY = 'daoxuan_account'
+const STORAGE_CHAR_NAME_KEY = 'daoxuan_character_name'
+const STORAGE_PLAYER_ID_KEY = 'daoxuan-player-id'
+const STORAGE_SAVED_ACCOUNTS_KEY = 'daoxuan_saved_accounts_list'
+const COOKIE_PLAYER_ID_KEY = 'daoxuan_player_id'
 
 function getCookiePlayerId(): string | null {
   if (typeof document === 'undefined') return null

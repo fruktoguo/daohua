@@ -5,7 +5,8 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/compose.yaml"
 SERVICE_URL="http://127.0.0.1:5128"
-DATA_VOLUME="xiuxian_xiuxian-data"
+DATA_VOLUME="daoxuan_daoxuan-data"
+DB_VOLUME="daoxuan_daoxuan-postgres"
 COMMAND="${1:-up}"
 
 cd "$ROOT_DIR"
@@ -61,6 +62,7 @@ case "$COMMAND" in
     require_docker
     assert_fixed_port_available
     docker volume create "$DATA_VOLUME" >/dev/null
+    docker volume create "$DB_VOLUME" >/dev/null
     docker compose -f "$COMPOSE_FILE" up --detach --build app
     wait_healthy
     node scripts/smoke-production.mjs "$SERVICE_URL"
@@ -69,6 +71,7 @@ case "$COMMAND" in
     require_docker
     assert_fixed_port_available
     docker volume create "$DATA_VOLUME" >/dev/null
+    docker volume create "$DB_VOLUME" >/dev/null
     docker compose -f "$COMPOSE_FILE" up --detach --build --force-recreate app
     wait_healthy
     node scripts/smoke-production.mjs "$SERVICE_URL"

@@ -1,0 +1,14 @@
+[Unit]
+Description=道玄 PostgreSQL 自动备份
+After=docker.service network-online.target daoxuan-ccr-auto-update.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/daoxuan/backup.sh
+User=root
+Group=root
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6

@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'xiuxian_ui_zoom'
+const STORAGE_KEY = 'daoxuan_ui_zoom'
 const MIN_SCALE = 50
 const MAX_SCALE = 200
 const DEFAULT_SCALE = 100

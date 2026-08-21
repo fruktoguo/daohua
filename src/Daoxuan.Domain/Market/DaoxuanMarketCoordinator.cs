@@ -1,0 +1,456 @@
+using Daoxuan.Domain.Models;
+using Daoxuan.Domain.Simulation;
+
+namespace Daoxuan.Domain.Market;
+
+/// <summary>
+/// 玩家资产与订单簿之间的结算边界。
+/// 调用方应在所属玩家 Fiber 内串行调用；订单簿本身仍按品种分片，不共享玩家锁。
+/// </summary>
+public sealed class DaoxuanMarketCoordinator
+{
+    private readonly DaoxuanMarketEngine _engine;
+    private readonly Dictionary<string, Reservation> _reservations = new(StringComparer.Ordinal);
+    private readonly Dictionary<Guid, PendingCredits> _pendingCredits = [];
+
+    public DaoxuanMarketCoordinator(DaoxuanMarketEngine engine)
+    {
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+    }
+
+    public int ActiveReservationCount => _reservations.Count;
+
+    public DaoxuanMarketCoordinatorState ExportState()
+    {
+        var reservations = _reservations.Values
+            .OrderBy(reservation => reservation.OrderId, StringComparer.Ordinal)
+            .Select(reservation => new DaoxuanMarketReservationState(
+                reservation.OrderId,
+                reservation.OwnerId,
+                reservation.Instrument,
+                reservation.Side,
+                reservation.RemainingQuantity,
+                reservation.ReservedCoins))
+            .ToArray();
+        var pending = _pendingCredits
+            .OrderBy(pair => pair.Key)
+            .Select(pair => new DaoxuanMarketPendingCreditsState(
+                pair.Key,
+                pair.Value.Spirit,
+                pair.Value.Items
+                    .OrderBy(item => item.Key.Instrument.ItemId, StringComparer.Ordinal)
+                    .ThenBy(item => item.Key.Instrument.EnhancementLevel)
+                    .Select(item => new DaoxuanMarketPendingItemState(item.Key.Instrument, item.Value))
+                    .ToArray()))
+            .ToArray();
+        return new DaoxuanMarketCoordinatorState(reservations, pending);
+    }
+
+    /// <summary>
+    /// 恢复玩家资产冻结和待领取结算。恢复前必须先恢复订单簿，以便校验每个冻结对应活动订单。
+    /// </summary>
+    public void RestoreState(DaoxuanMarketCoordinatorState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        _reservations.Clear();
+        _pendingCredits.Clear();
+
+        var reservations = state.Reservations ?? throw new InvalidDataException("市场冻结账本不能为空。");
+        foreach (var snapshot in reservations)
+        {
+            if (snapshot is null
+                || string.IsNullOrWhiteSpace(snapshot.OrderId)
+                || snapshot.OwnerId == Guid.Empty
+                || !snapshot.Instrument.IsValid
+                || !Enum.IsDefined(snapshot.Side)
+                || snapshot.RemainingQuantity < 0
+                || snapshot.ReservedCoins < 0
+                || !_engine.TryGetOrder(snapshot.OrderId, out var order)
+                || order is null
+                || order.OwnerId != snapshot.OwnerId
+                || order.Instrument != snapshot.Instrument
+                || order.Side != snapshot.Side
+                || !IsReservationAmountConsistent(snapshot, order)
+                || !_reservations.TryAdd(
+                    snapshot.OrderId,
+                    new Reservation(
+                        snapshot.OrderId,
+                        snapshot.OwnerId,
+                        snapshot.Instrument,
+                        snapshot.Side,
+                        snapshot.RemainingQuantity,
+                        snapshot.ReservedCoins)))
+            {
+                throw new InvalidDataException("市场冻结账本与活动订单不一致。");
+            }
+        }
+
+        var pendingCredits = state.PendingCredits
+            ?? throw new InvalidDataException("市场待领取账本不能为空。");
+        foreach (var pending in pendingCredits)
+        {
+            if (pending is null
+                || pending.OwnerId == Guid.Empty
+                || pending.Spirit < 0
+                || !_pendingCredits.TryAdd(pending.OwnerId, new PendingCredits()))
+            {
+                throw new InvalidDataException("市场待领取账本无效或重复。");
+            }
+
+            var target = _pendingCredits[pending.OwnerId];
+            target.Spirit = pending.Spirit;
+            foreach (var item in pending.Items ?? throw new InvalidDataException("待领取物品列表不能为空。"))
+            {
+                if (item is null
+                    || !item.Instrument.IsValid
+                    || item.Quantity <= 0
+                    || !DaoxuanItemCatalog.TryGet(item.Instrument.ItemId, out var definition)
+                    || !definition.IsTradable)
+                {
+                    throw new InvalidDataException("市场待领取物品无效。");
+                }
+
+                var key = new PendingItemKey(item.Instrument);
+                if (!target.Items.TryAdd(key, item.Quantity))
+                {
+                    throw new InvalidDataException("市场待领取物品重复。");
+                }
+            }
+        }
+    }
+
+    public DaoxuanMarketPlacementResult Place(
+        DaoxuanPlayerState owner,
+        DaoxuanMarketOrderRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        if (request is null)
+        {
+            return DaoxuanMarketPlacementResult.Fail("INVALID_REQUEST", "订单参数不能为空。");
+        }
+
+        if (request.OwnerId != owner.PlayerId)
+        {
+            return DaoxuanMarketPlacementResult.Fail("ORDER_FORBIDDEN", "订单所有者必须是当前玩家。");
+        }
+
+        Claim(owner);
+        if (!TryReserve(owner, request, out var reservation, out var errorCode, out var errorMessage))
+        {
+            return DaoxuanMarketPlacementResult.Fail(errorCode, errorMessage);
+        }
+
+        if (!_reservations.TryAdd(request.OrderId, reservation))
+        {
+            ReleaseReservation(owner, reservation);
+            return DaoxuanMarketPlacementResult.Fail("DUPLICATE_ORDER_ID", "订单 ID 已存在。");
+        }
+        DaoxuanMarketPlacementResult result;
+        try
+        {
+            result = _engine.Place(request);
+        }
+        catch
+        {
+            _reservations.Remove(request.OrderId);
+            ReleaseReservation(owner, reservation);
+            throw;
+        }
+        if (!result.Success)
+        {
+            ReleaseReservation(owner, reservation);
+            _reservations.Remove(request.OrderId);
+            return result;
+        }
+
+        foreach (var fill in result.Fills)
+        {
+            ApplyFill(fill);
+        }
+
+        CloseCompletedReservations(owner, result);
+        Claim(owner);
+        TouchInventory(owner);
+        return result;
+    }
+
+    public DaoxuanMarketCancellationResult Cancel(
+        DaoxuanPlayerState owner,
+        string orderId)
+    {
+        ArgumentNullException.ThrowIfNull(owner);
+        Claim(owner);
+        if (!_reservations.TryGetValue(orderId, out var reservation)
+            || reservation.OwnerId != owner.PlayerId)
+        {
+            return DaoxuanMarketCancellationResult.Fail("ORDER_NOT_FOUND", "没有找到当前玩家的活动订单。");
+        }
+
+        var result = _engine.Cancel(orderId, owner.PlayerId);
+        if (!result.Success) return result;
+        ReleaseReservation(owner, reservation);
+        _reservations.Remove(orderId);
+        TouchInventory(owner);
+        return result;
+    }
+
+    public bool Claim(DaoxuanPlayerState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        if (!_pendingCredits.Remove(state.PlayerId, out var credits)) return false;
+
+        if (credits.Spirit != 0)
+        {
+            state.Inventory.Add(DaoxuanItemIds.Spirit, credits.Spirit);
+        }
+
+        foreach (var item in credits.Items)
+        {
+            state.Inventory.Add(item.Key.Instrument.ItemId, item.Value);
+        }
+
+        state.Version++;
+        state.DirtySections |= DaoxuanDirtySections.Inventory;
+        return true;
+    }
+
+    /// <summary>
+    /// 处理已过期订单并把未成交的冻结资产转为待领取结算。
+    /// 该操作不要求玩家在线，也不触碰玩家 Fiber；玩家下次领取时再写入库存。
+    /// </summary>
+    public int Expire(DateTimeOffset now)
+    {
+        var expired = _engine.Expire(now);
+        foreach (var order in expired)
+        {
+            if (!_reservations.Remove(order.OrderId, out var reservation)) continue;
+
+            if (reservation.Side == DaoxuanMarketSide.Sell)
+            {
+                AddPendingItem(reservation.OwnerId, reservation.Instrument, reservation.RemainingQuantity);
+            }
+            else
+            {
+                AddPendingSpirit(reservation.OwnerId, reservation.ReservedCoins);
+            }
+        }
+
+        return expired.Count;
+    }
+
+    private bool TryReserve(
+        DaoxuanPlayerState owner,
+        DaoxuanMarketOrderRequest request,
+        out Reservation reservation,
+        out string errorCode,
+        out string errorMessage)
+    {
+        reservation = default!;
+        if (!Enum.IsDefined(request.Side)
+            || request.Price <= 0
+            || request.Quantity <= 0
+            || !request.Instrument.IsValid)
+        {
+            errorCode = "INVALID_ORDER";
+            errorMessage = "订单价格、数量或品种无效。";
+            return false;
+        }
+
+        if (request.Side == DaoxuanMarketSide.Sell)
+        {
+            if (owner.Inventory.Get(request.Instrument.ItemId) < request.Quantity)
+            {
+                errorCode = "INSUFFICIENT_ITEM";
+                errorMessage = "挂牌物品数量不足。";
+                return false;
+            }
+
+            owner.Inventory.Add(request.Instrument.ItemId, -request.Quantity);
+            reservation = new Reservation(
+                request.OrderId,
+                owner.PlayerId,
+                request.Instrument,
+                request.Side,
+                request.Quantity,
+                0);
+        }
+        else
+        {
+            long maximumAmount;
+            try
+            {
+                maximumAmount = checked(request.Price * request.Quantity);
+            }
+            catch (OverflowException)
+            {
+                errorCode = "ORDER_TOO_LARGE";
+                errorMessage = "订单金额超出支持范围。";
+                return false;
+            }
+
+            if (owner.Inventory.Get(DaoxuanItemIds.Spirit) < maximumAmount)
+            {
+                errorCode = "INSUFFICIENT_SPIRIT";
+                errorMessage = "灵石余额不足以覆盖买单上限。";
+                return false;
+            }
+
+            owner.Inventory.Add(DaoxuanItemIds.Spirit, -maximumAmount);
+            reservation = new Reservation(
+                request.OrderId,
+                owner.PlayerId,
+                request.Instrument,
+                request.Side,
+                0,
+                maximumAmount);
+        }
+
+        errorCode = string.Empty;
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    private void ApplyFill(DaoxuanMarketFill fill)
+    {
+        if (_reservations.TryGetValue(fill.TakerOrderId, out var taker))
+        {
+            ConsumeReservation(taker, fill);
+        }
+
+        if (_reservations.TryGetValue(fill.MakerOrderId, out var maker))
+        {
+            ConsumeReservation(maker, fill);
+        }
+
+        AddPendingSpirit(fill.SellerId, fill.SellerProceeds);
+        AddPendingItem(fill.BuyerId, fill.Instrument, fill.Quantity);
+    }
+
+    private void ConsumeReservation(Reservation reservation, DaoxuanMarketFill fill)
+    {
+        if (reservation.Side == DaoxuanMarketSide.Sell)
+        {
+            reservation.RemainingQuantity = checked(reservation.RemainingQuantity - fill.Quantity);
+        }
+        else
+        {
+            reservation.ReservedCoins = checked(reservation.ReservedCoins - fill.GrossAmount);
+        }
+    }
+
+    private void CloseCompletedReservations(
+        DaoxuanPlayerState currentOwner,
+        DaoxuanMarketPlacementResult placement)
+    {
+        if (placement.Order is { Status: DaoxuanMarketOrderStatus.Filled } incoming
+            && _reservations.Remove(incoming.OrderId, out var incomingReservation))
+        {
+            ReleaseReservation(currentOwner, incomingReservation);
+        }
+
+        // Maker 的终态由成交量推导，订单簿会在同一撮合边界移除其路由。
+        foreach (var fill in placement.Fills)
+        {
+            if (_reservations.TryGetValue(fill.MakerOrderId, out var maker)
+                && (maker.Side == DaoxuanMarketSide.Sell
+                    ? maker.RemainingQuantity == 0
+                    : maker.ReservedCoins == 0))
+            {
+                _reservations.Remove(fill.MakerOrderId);
+                ReleaseReservation(currentOwner, maker);
+            }
+        }
+    }
+
+    private void ReleaseReservation(DaoxuanPlayerState currentOwner, Reservation reservation)
+    {
+        if (reservation.Side == DaoxuanMarketSide.Sell)
+        {
+            AddPendingItem(reservation.OwnerId, reservation.Instrument, reservation.RemainingQuantity);
+        }
+        else
+        {
+            AddPendingSpirit(reservation.OwnerId, reservation.ReservedCoins);
+        }
+
+        if (reservation.OwnerId == currentOwner.PlayerId)
+        {
+            Claim(currentOwner);
+        }
+    }
+
+    private void AddPendingSpirit(Guid ownerId, long amount)
+    {
+        if (amount == 0) return;
+        var credits = GetPending(ownerId);
+        credits.Spirit = checked(credits.Spirit + amount);
+    }
+
+    private void AddPendingItem(Guid ownerId, DaoxuanMarketInstrument instrument, long amount)
+    {
+        if (amount == 0) return;
+        var credits = GetPending(ownerId);
+        var key = new PendingItemKey(instrument);
+        credits.Items[key] = checked(credits.Items.GetValueOrDefault(key) + amount);
+    }
+
+    private PendingCredits GetPending(Guid ownerId)
+    {
+        if (!_pendingCredits.TryGetValue(ownerId, out var credits))
+        {
+            credits = new PendingCredits();
+            _pendingCredits.Add(ownerId, credits);
+        }
+
+        return credits;
+    }
+
+    private static bool IsReservationAmountConsistent(
+        DaoxuanMarketReservationState reservation,
+        DaoxuanMarketOrderView order)
+    {
+        return reservation.Side == DaoxuanMarketSide.Sell
+            ? reservation.RemainingQuantity == order.RemainingQuantity && reservation.ReservedCoins == 0
+            : reservation.RemainingQuantity == 0 && reservation.ReservedCoins >= 0;
+    }
+
+    private static void TouchInventory(DaoxuanPlayerState state)
+    {
+        state.Version++;
+        state.DirtySections |= DaoxuanDirtySections.Inventory;
+    }
+
+    private sealed class Reservation
+    {
+        public Reservation(
+            string orderId,
+            Guid ownerId,
+            DaoxuanMarketInstrument instrument,
+            DaoxuanMarketSide side,
+            long remainingQuantity,
+            long reservedCoins)
+        {
+            OrderId = orderId;
+            OwnerId = ownerId;
+            Instrument = instrument;
+            Side = side;
+            RemainingQuantity = remainingQuantity;
+            ReservedCoins = reservedCoins;
+        }
+
+        public string OrderId { get; }
+        public Guid OwnerId { get; }
+        public DaoxuanMarketInstrument Instrument { get; }
+        public DaoxuanMarketSide Side { get; }
+        public long RemainingQuantity { get; set; }
+        public long ReservedCoins { get; set; }
+    }
+
+    private sealed class PendingCredits
+    {
+        public long Spirit { get; set; }
+        public Dictionary<PendingItemKey, long> Items { get; } = [];
+    }
+
+    private readonly record struct PendingItemKey(DaoxuanMarketInstrument Instrument);
+}

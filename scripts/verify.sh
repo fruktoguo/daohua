@@ -14,21 +14,28 @@ printf '==> 安装前端锁定依赖\n'
 npm --prefix frontend ci
 
 printf '==> Release 构建\n'
-dotnet build Xiuxian.slnx --configuration Release --disable-build-servers --nologo
+dotnet build Daoxuan.slnx --configuration Release --disable-build-servers --nologo
 
 printf '==> 领域测试\n'
-dotnet test tests/Xiuxian.Domain.Tests/Xiuxian.Domain.Tests.csproj \
+dotnet test tests/Daoxuan.Domain.Tests/Daoxuan.Domain.Tests.csproj \
   --configuration Release \
   --no-build \
   --disable-build-servers \
   --nologo
 
 printf '==> 游戏数据校验\n'
-dotnet run --project src/Xiuxian.DataTool/Xiuxian.DataTool.csproj \
+dotnet run --project src/Daoxuan.DataTool/Daoxuan.DataTool.csproj \
   --configuration Release \
   --no-build \
   -- \
   validate config/game-data
+
+printf '==> 2c4g/40g 容量目标门禁\n'
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj \
+  --configuration Release \
+  --no-build \
+  -- \
+  --scenario capacity-target
 
 printf '==> 前端类型检查与构建\n'
 npm --prefix frontend run build

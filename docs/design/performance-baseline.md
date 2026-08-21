@@ -7,17 +7,39 @@
 
 服务端已将 ASP.NET Core 的逐请求结果日志降到 `Warning`，压测保留应用异常与市场账本日志，避免框架日志 I/O 污染收发和撮合指标。
 
+## 0. 2c4g/40g 容量目标门禁
+
+命令：
+
+```bash
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --configuration Release --no-build -- \
+  --scenario capacity-target
+```
+
+当前 Release 样本用于锁定用户要求的最低目标：`5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。该场景不改战斗和玩法逻辑，只使用正式 `DaoxuanSimulation` 与 `DaoxuanPacketCodec` 估算账号快照、命令包体和冷挂机补算。
+
+| 指标 | 结果 | 预算 |
+| --- | ---: | ---: |
+| 错误 | 0 | 0 |
+| 5000 账号估算存储 | 18,596,673 B | 268,435,456 B |
+| 500 高峰命令包体 / 秒 | 64,680 B/s | 524,288 B/s |
+| 2000 冷挂机补算一小时墙钟 | 1,947.9 ms | 30,000 ms |
+| 进程工作集 | 126,214,144 B | 805,306,368 B |
+| 完成行动 / 边界转换 | 720,000 / 720,000 | — |
+
+本样本运行于 WSL2 5800X，强于目标 VPS；因此它是回归门禁，不是最终生产 P95/P99 承诺。正式容量验收仍需在 2 核 CPU 配额、4 GiB 内存和 PostgreSQL 容器同时运行时复测在线 500 人和 HTTP/WS P95/P99。
+
 ## 1. 在线 500 人
 
 命令：
 
 ```bash
-dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -- \
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --no-build -- \
   --scenario online --players 500 --duration-seconds 15 \
   --url ws://127.0.0.1:5128/ws --connect-concurrency 64
 ```
 
-每个客户端使用真实 `ClientWebSocket` 和生产 `XiuxianPacketCodec`。初始快照与稳态流量分开统计；稳态每人每秒发送一个固定、不会无限扩张队列的真实命令。
+每个客户端使用真实 `ClientWebSocket` 和生产 `DaoxuanPacketCodec`。初始快照与稳态流量分开统计；稳态每人每秒发送一个固定、不会无限扩张队列的真实命令。
 
 | 指标 | 结果 |
 | --- | ---: |
@@ -39,7 +61,7 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 | 持久化最高水位 | 500 / 65,536 |
 | 稳态结束持久化积压 | 0 |
 
-接入冷玩家淘汰后，2026-08-06 Release 负载发生器对当前 Debug 服务复测：初始快照 1,722,937 B/500 帧，15 秒稳态上行 1,179,000 B（78,600 B/s），稳态下行 8,524,470 B（568,298 B/s），发送/接收帧 7,500/18,168，客户端 CPU 3,166 ms；服务端连接阶段 CPU 增量 713 ms、稳态 CPU 增量 5,287 ms、断开清理 CPU 增量 597 ms，持久化队列最高水位 353/65,536，错误 0。断开后连接数与加载中的 ECS 玩家数都从 501 回到 1；玩家最新状态以序列化冷快照保留，重连时再通过同一离线快进逻辑恢复。另用固定账号验证了冷却后重载：玩家 ID、战斗配置和队列条目集合不变，离线期间队列正常轮转并结算资源。本轮接入 `IXiuxianPersistenceQueue` dispatcher 后的 memory-queue 复测为：初始快照 1,722,950 B，稳态下行 8,595,064 B，发送/接收帧 7,500/18,404，服务端稳态 CPU 增量 5,508 ms，断开后 `loadedPlayers=1`，错误 0；收发和冷存档边界未出现回归。历史样本的服务端稳态 CPU 约等于单个逻辑核心的 62%；不同同机负载会造成明显波动，不能用单次结果作容量承诺。托管堆和进程工作集不会在断开瞬间归还给操作系统，正式容量测试仍需固定 CPU/内存配额并连续采集 P95/P99。
+接入冷玩家淘汰后，2026-08-06 Release 负载发生器对当前 Debug 服务复测：初始快照 1,722,937 B/500 帧，15 秒稳态上行 1,179,000 B（78,600 B/s），稳态下行 8,524,470 B（568,298 B/s），发送/接收帧 7,500/18,168，客户端 CPU 3,166 ms；服务端连接阶段 CPU 增量 713 ms、稳态 CPU 增量 5,287 ms、断开清理 CPU 增量 597 ms，持久化队列最高水位 353/65,536，错误 0。断开后连接数与加载中的 ECS 玩家数都从 501 回到 1；玩家最新状态以序列化冷快照保留，重连时再通过同一离线快进逻辑恢复。另用固定账号验证了冷却后重载：玩家 ID、战斗配置和队列条目集合不变，离线期间队列正常轮转并结算资源。本轮接入 `IDaoxuanPersistenceQueue` dispatcher 后的 memory-queue 复测为：初始快照 1,722,950 B，稳态下行 8,595,064 B，发送/接收帧 7,500/18,404，服务端稳态 CPU 增量 5,508 ms，断开后 `loadedPlayers=1`，错误 0；收发和冷存档边界未出现回归。历史样本的服务端稳态 CPU 约等于单个逻辑核心的 62%；不同同机负载会造成明显波动，不能用单次结果作容量承诺。托管堆和进程工作集不会在断开瞬间归还给操作系统，正式容量测试仍需固定 CPU/内存配额并连续采集 P95/P99。
 
 本轮市场存储边界重构后的同负载复测（Debug 服务、Release 负载发生器）为：15 秒稳态上行 `1,179,000 B`、下行 `8,516,487 B`，发送/接收帧 `7,500/18,113`，客户端 CPU `3,758 ms`，服务端稳态 CPU `5,183 ms`，错误 `0`；断开后 `loadedPlayers=1`、连接数 `1`、持久化积压 `0`。稳定分片计算和本地账本 revision CAS 没有改变在线包体或冷玩家淘汰边界。
 
@@ -48,7 +70,7 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 命令：
 
 ```bash
-dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -- \
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --no-build -- \
   --scenario idle-offline --players 10000 --duration-seconds 3600
 ```
 
@@ -71,7 +93,7 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 命令：
 
 ```bash
-dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -- \
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --no-build -- \
   --scenario fully-offline --players 100000 --duration-seconds 3600
 ```
 
@@ -91,7 +113,7 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 命令：
 
 ```bash
-dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -- \
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --no-build -- \
   --scenario combat-offline --players 10000 --duration-seconds 3600
 ```
 
@@ -137,7 +159,7 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 命令：
 
 ```bash
-dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -- \
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --no-build -- \
   --scenario market --players 100000 --duration-seconds 1
 ```
 
@@ -145,14 +167,14 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 
 首轮基线为 239.7 ms 墙钟、约 417,194 单/秒；接入目录接口和灵市页面后的复测为 264.7 ms、约 377,807 单/秒；移除每玩家嵌套挂单索引、改为复用全局路由过滤后的复测为 220.9 ms、约 452,735 单/秒。此前 Debug 复测为 220.3 ms、约 453,974 单/秒、41,669 次撮合、0 个错误，托管内存增量约 35.6 MiB；2026-08-06 Debug 同机再次采样为 284.9 ms、约 350,977 单/秒、41,669 次撮合、0 个错误，托管内存增量约 35.4 MiB；同日 Release 样本为 217.4 ms、约 459,929 单/秒，随后同负载样本为 192.2 ms、约 520,421 单/秒，均为 41,669 次撮合、0 个错误、托管内存约 35.4~35.7 MiB；本轮 Release 样本为 310.0 ms、约 322,545 单/秒、41,669 次撮合、0 个错误、托管内存增量约 35.4 MiB。这个波动说明单次样本不能作为容量承诺，必须固定 CPU 配额并采集 P95/P99。各次结果均未把 HTTP/UI 刷新放入撮合线程；“我的挂单”只在玩家打开页面时查询，避免为大量一次性账号常驻索引容器。领域层另有市场协调器和账本恢复测试覆盖物品/灵石冻结、退款和重启恢复；当前数字仍未包含逐单 JSON 落盘和网络序列化，正式容量数字需要在这些条件接入后重新采集。
 
-市场写路径的本地烟测还覆盖了：卖单冻结库存、原子写入 `data/snapshots/market-ledger.json`、重启后恢复活动订单、按原序列撤单解冻，以及 WebSocket `market_place` 的 `snapshot → ack → delta` 链路。服务启动时通过 `IXiuxianMarketLedgerStore` 取得 `market-owner.lock` 单写者租约，第二个同目录实例会拒绝启动；提交前还检查账本 revision CAS，租约和 CAS 都不在撮合热路径中。该验证使用单机文件快照，不代表多实例数据库事务能力。
+市场写路径的本地烟测还覆盖了：卖单冻结库存、原子写入 `data/snapshots/market-ledger.json`、重启后恢复活动订单、按原序列撤单解冻，以及 WebSocket `market_place` 的 `snapshot → ack → delta` 链路。服务启动时通过 `IDaoxuanMarketLedgerStore` 取得 `market-owner.lock` 单写者租约，第二个同目录实例会拒绝启动；提交前还检查账本 revision CAS，租约和 CAS 都不在撮合热路径中。该验证使用单机文件快照，不代表多实例数据库事务能力。
 
 接入官方 `1/2/5` 价格档位和物品回收价下限后，负载脚本改为从权威目录生成合法价格；2026-08-06 Release 复测 100,000 单为 448.7 ms、约 222,874 单/秒、52,777 次撮合、0 个错误，托管内存增量约 41.6 MiB、工作集约 101 MiB。该结果是同机单次样本，不作为容量承诺；正式容量仍需固定 CPU 配额并采集 P95/P99，且另行计入数据库事务和网络序列化开销。
 
 过期索引专项命令：
 
 ```bash
-dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -- \
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --no-build -- \
   --scenario market-expiry --players 100000 --duration-seconds 1
 ```
 
@@ -165,7 +187,7 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 命令：
 
 ```bash
-dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -c Release -- \
+dotnet run --project src/Daoxuan.LoadTests/Daoxuan.LoadTests.csproj --no-build -c Release -- \
   --scenario market-read --players 500 --duration-seconds 15 \
   --url ws://127.0.0.1:5128/ws --connect-concurrency 64
 ```
@@ -187,9 +209,9 @@ dotnet run --project src/Xiuxian.LoadTests/Xiuxian.LoadTests.csproj --no-build -
 
 本次服务端为 Debug、负载发生器为 Release，且浏览器另有一个在线会话。P99 峰值来自同机 500 人同步突发，不代表稳态单请求延迟。当前测试盘口为空，正文大小属于下限；接口、序列化和缓存路径与正式页面一致，但在容量定案前仍需用填满 20/50 档深度的预发布订单簿复测。字节统计为未压缩 HTTP/1.1 应用层估算，不包含 TCP/IP 开销。
 
-## 7. Durable Outbox 烟测
+## 7. Durable Outbox / PostgreSQL 烟测
 
-使用 `Storage__DurableOutboxEnabled=true` 启动正式服务，对固定玩家调用 `/api/debug/fast-forward` 产生快照：内存队列积压保持 0，outbox ack 序列持续推进；停服阶段先停止事件调度、保存市场账本，再 drain 玩家 WAL 并 compact，阶段日志均为毫秒级，进程退出码为 0。重启后同一 outbox 文件可继续作为 replay 源。该模式覆盖玩家快照，不覆盖市场账本；市场存储契约已把数据库事务所需的玩家快照参数预留出来，真正的 PostgreSQL 适配器仍需要单独接入和数据库环境压测。
+生产同构模式启用 `Storage__Provider=postgres` 后，玩家快照、YuoCore durable outbox、市场账本和市场流水均落在 PostgreSQL；市场写路径可在同一事务内提交玩家快照与账本。`local-json` 仍保留为本地便捷开发路径和候选镜像预热路径，不作为生产权威存储。
 
 ## 8. 浏览器日志面板
 

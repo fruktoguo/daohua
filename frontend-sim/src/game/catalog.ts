@@ -1,7 +1,7 @@
 import { ACTION_IDS, ITEM_IDS } from './ids'
 import type { ActionDefinition } from './types'
 
-// 与 XiuxianActionCatalog.cs 一致。
+// 与 DaoxuanActionCatalog.cs 一致。
 
 const definitions = new Map<string, ActionDefinition>([
   [
@@ -67,7 +67,7 @@ export interface ItemMeta {
   description: string
 }
 
-// 对应 XiuxianInventoryItemDto 的展示元数据。
+// 对应 DaoxuanInventoryItemDto 的展示元数据。
 export const ITEM_METAS: Record<string, ItemMeta> = {
   [ITEM_IDS.spiritHerb]: {
     id: ITEM_IDS.spiritHerb,

@@ -11,33 +11,37 @@
 
 ## 2. 项目权威边界
 
-- `src/Xiuxian.Domain`：纯领域规则、确定性模拟、战斗、地图和市场模型；不得依赖 ASP.NET Core、Docker、数据库或浏览器实现。
-- `src/Xiuxian.Protocol`：服务端、浏览器和压测共享的纯数据协议；不得暴露 ECS、Fiber、Actor 或存储实现对象。
-- `src/Xiuxian.Server`：ASP.NET Core 宿主、WebSocket、运行时装配和持久化适配。
-- `src/Xiuxian.LoadTests`：负载场景，不是生产运行时依赖。
+- `src/Daoxuan.Domain`：纯领域规则、确定性模拟、战斗、地图和市场模型；不得依赖 ASP.NET Core、Docker、数据库或浏览器实现。
+- `src/Daoxuan.Protocol`：服务端、浏览器和压测共享的纯数据协议；不得暴露 ECS、Fiber、Actor 或存储实现对象。
+- `src/Daoxuan.Server`：ASP.NET Core 宿主、WebSocket、运行时装配和持久化适配。
+- `src/Daoxuan.ComputeNode`：可选高延迟冷挂机计算节点；只执行确定性补算，不持有玩家权威状态，不直接访问生产数据库。
+- `src/Daoxuan.LoadTests`：负载场景，不是生产运行时依赖。
 - `frontend`：唯一正式 React/Vite 前端。
 - `frontend-sim`：历史模拟与参考实现，不得作为正式入口或生产镜像来源。
-- `tests/Xiuxian.Domain.Tests`：领域和协议回归门禁。
+- `tests/Daoxuan.Domain.Tests`：领域和协议回归门禁。
 - `vendor/YuoCore`：固定版本的 Git submodule。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。
 - `data`：运行数据，不进入镜像，不提交 Git，不随代码发布覆盖。
 
 依赖方向必须保持：
 
 ```text
-Xiuxian.Protocol <- Xiuxian.Domain <- Xiuxian.Server
-                                 <- Xiuxian.LoadTests
-Xiuxian.Domain -> YuoCore.Abstractions + YuoCore.Ecs
-Xiuxian.Server -> YuoCore.Persistence + YuoCore.Runtime
+Daoxuan.Protocol <- Daoxuan.Domain <- Daoxuan.Server
+                                 <- Daoxuan.LoadTests
+                                 <- Daoxuan.ComputeNode
+Daoxuan.Domain -> YuoCore.Abstractions + YuoCore.Ecs
+Daoxuan.Server -> YuoCore.Persistence + YuoCore.Runtime + PostgreSQL/Npgsql
 ```
 
 禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
 
-## 3. 当前生产架构约束
+## 3. 当前生产架构与容量目标
 
-- 当前玩家快照和市场账本使用本地原子 JSON，生产只能运行一个 `app` 实例。
-- `Market:PartitionId=0`、`Market:PartitionCount=1` 是当前硬约束；未接入事务数据库前禁止水平扩容。
-- 生产必须启用 durable outbox，目录固定挂载到持久卷 `/app/data/outbox`。
-- 玩家快照和市场数据固定位于持久卷 `/app/data/snapshots`，镜像更新不得替换或清空该卷。
+- 项目内部代表名统一使用 `daoxuan` / `Daoxuan` / `DAOXUAN`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
+- 当前内测阶段允许破坏历史数据、存档格式和部署拓扑兼容；为了达成容量与落盘目标，可以直接改表、改快照和清空内测数据，但生产/远端真实数据操作仍必须先备份并获得明确许可。
+- 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
+- 生产主存储为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；`/app/data` 仅保留容器本地 outbox 兼容目录和临时运行数据，不再作为玩家/市场权威存储。
+- 市场账本使用 PostgreSQL revision CAS 与 advisory lock；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
+- 远程个人设备只能作为高延迟冷挂机计算节点，通过 `Daoxuan.ComputeNode` 的内部 HTTP 批处理接口被主服务调用；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。
 - `/api/debug/*` 只能在 `Development` 环境存在；生产 Caddy 还必须显式拦截 debug 和 metrics 路径。
 - 当前客户端使用本地 UUID 标识玩家，尚未形成商业账号鉴权。涉及充值、真实资产或开放注册前，必须先完成服务端身份认证、授权和审计。
@@ -68,7 +72,7 @@ npm --prefix frontend ci
 启动服务端：
 
 ```bash
-dotnet run --project src/Xiuxian.Server/Xiuxian.Server.csproj
+dotnet run --project src/Daoxuan.Server/Daoxuan.Server.csproj
 ```
 
 启动正式前端开发服务器：
@@ -103,7 +107,7 @@ docker compose down
 - 不用特殊 case 掩盖根因，不留下 debug 输出、临时代码、无说明 TODO 或无用文件。
 - 错误处理必须明确；不得静默吞掉持久化、结算、鉴权和部署异常。
 - 不随意修改公共 API、WebSocket 包结构、事件名、配置键和存档格式。
-- 对兼容性或数据格式有影响的变更必须先说明迁移和回滚方案。
+- 内测阶段可破坏旧数据兼容；若变更数据格式或部署拓扑，必须同步更新 PostgreSQL schema、备份/恢复文档和容量门禁。
 - 新增依赖必须有明确收益，使用现有 package manager，并同步锁文件。
 - 注释只解释设计意图、业务约束、安全假设、边界或性能取舍，默认使用中文。
 
@@ -135,6 +139,7 @@ docker compose down
 
 - 领域或协议变更：运行对应 xUnit 测试，必要时补充确定性和边界测试。
 - 服务端装配变更：至少运行 Release build、领域测试、`/healthz`、`/readyz` 和 WebSocket 烟测。
+- 容量相关变更必须运行 `capacity-target` 门禁，覆盖 `5000` 账号存储估算、`500` 峰值命令包体和 `2000` 冷挂机一小时补算。
 - 前端变更：至少运行 `npm --prefix frontend run build`；交互变化还需浏览器验证。
 - Docker 变更：必须实际构建镜像，并以只读根文件系统、持久卷和非 root 用户启动验证。
 - 部署变更：必须分别验证 Git 状态、CCR 镜像摘要、远端运行镜像 ID、容器健康和公网入口。
@@ -161,7 +166,7 @@ docker compose down
 scripts/docker-build-prod.sh --push
 ```
 
-- 默认仓库为 `ccr.ccs.tencentyun.com/yuohira/xiuxian`。
+- 默认仓库为 `ccr.ccs.tencentyun.com/yuohira/daoxuan`。
 - 正式发布前工作区必须已提交且验证通过；脚本默认拒绝 dirty worktree。
 - `--allow-dirty` 只允许首次引导和明确排障，不得作为日常发布路径。
 - `--push` 会同时推送不可变标签和 `prod`；未传入时只能本地构建。
@@ -173,18 +178,18 @@ scripts/docker-build-prod.sh --push
 ## 12. 生产部署与更新规则
 
 - 默认服务器 SSH 别名为 `yuohira`，域名为 `xx.yuohira.com`。
-- 生产目录固定为 `/opt/xiuxian`，Compose 项目名固定为 `xiuxian`。
+- 生产目录固定为 `/opt/daoxuan`，Compose 项目名固定为 `daoxuan`。
 - 应用端口只绑定 `127.0.0.1:15128`，禁止直接暴露到公网。
 - 首次部署和受控更新使用 `scripts/deploy-prod.sh --image <不可变镜像>`。
-- `xiuxian-ccr-auto-update.timer` 每分钟检查 `prod`；镜像 ID 未变化时不得重建容器。
+- `daoxuan-ccr-auto-update.timer` 每分钟检查 `prod`；镜像 ID 未变化时不得重建容器。
 - 新镜像未通过健康检查时必须自动回滚，并记录失败镜像 ID；同一失败版本不得循环重试。
-- 更新不得删除、重建或改名 `xiuxian_xiuxian-data` 卷。
-- 当前单实例存储不做零停机双实例滚动；正常更新依靠 WebSocket 自动重连和 durable outbox 恢复。
+- 更新不得删除、重建或改名 `daoxuan_daoxuan-data` 与 `daoxuan_daoxuan-postgres` 卷。
+- 当前数据库已支持市场主分片分布式租约，但在线玩家分片和红绿无停机仍未完成；正常更新依靠 WebSocket 自动重连、PostgreSQL outbox 和单实例 app 优雅替换恢复。
 - 回滚前先停用自动更新 timer，使用已验证的不可变镜像，验证完成后再决定是否恢复 timer。
 
 ## 13. Caddy 规则
 
-- 站点配置独立放在 `/etc/caddy/sites/xiuxian.caddy`，主 Caddyfile 只增加一次 import。
+- 站点配置独立放在 `/etc/caddy/sites/daoxuan.caddy`，主 Caddyfile 只增加一次 import。
 - 修改前必须备份现有主配置和站点配置。
 - 必须先执行 `caddy validate`，成功后使用 `systemctl reload caddy`，不得无验证重启。
 - 校验或 reload 失败必须自动恢复原配置。
@@ -194,9 +199,9 @@ scripts/docker-build-prod.sh --push
 
 ## 14. 数据、备份与安全
 
-- 生产数据操作前先确认精确卷名、容器状态和备份路径。
-- 一致性备份使用远端 `/opt/xiuxian/backup.sh`；该脚本会短暂停服、校验归档并恢复原运行状态。
-- 不自动清理历史备份。删除、恢复、覆盖生产数据必须获得用户单独明确许可。
+- 生产数据操作前先确认精确卷名、容器状态、PostgreSQL 健康和备份路径。
+- 自动备份使用远端 `/opt/daoxuan/backup.sh`：每小时生成 PostgreSQL custom dump 压缩归档，小时保留 24 份、每日 00:00 保留 7 份、每周一 00:00 保留 4 份，并生成 SHA-256 校验文件。
+- 删除、恢复、覆盖生产数据必须获得用户单独明确许可；恢复前应先新建当前状态备份并验证目标归档。
 - 数据库 migration、存档迁移、密钥轮换和批量玩家数据修复必须先提供备份、兼容和回滚方案。
 - 不读取或输出无关 secret；不得提交 `.env`、token、cookie、私钥、连接串或 Docker auth。
 - 外部输入必须校验；错误响应不得包含堆栈、路径、凭据或内部存储内容。

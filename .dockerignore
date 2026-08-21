@@ -12,7 +12,7 @@ data
 **/data/**
 docs
 frontend-sim
-src/Xiuxian.LoadTests
+src/Daoxuan.LoadTests
 tests
 *.user
 *.suo

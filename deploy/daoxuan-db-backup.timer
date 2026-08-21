@@ -1,0 +1,12 @@
+[Unit]
+Description=整点执行道玄 PostgreSQL 备份
+
+[Timer]
+OnCalendar=hourly
+AccuracySec=1min
+RandomizedDelaySec=0
+Persistent=true
+Unit=daoxuan-db-backup.service
+
+[Install]
+WantedBy=timers.target

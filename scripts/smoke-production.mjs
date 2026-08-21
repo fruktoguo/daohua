@@ -29,8 +29,11 @@ if (health.status !== 'ok' || ready.status !== 'ready') {
 if (!health.gameDataVersion || !health.gameDataFingerprint) {
   throw new Error('健康端点缺少游戏数据版本或指纹。')
 }
-if (ready.deployment?.snapshotProvider !== 'local-json' || ready.deployment?.singleWriter !== true) {
-  throw new Error('当前生产存储能力声明与预期不一致。')
+if (ready.deployment?.snapshotProvider !== 'postgres'
+    || ready.deployment?.marketProvider !== 'postgres'
+    || ready.deployment?.scaleOutReady !== true
+    || ready.deployment?.zeroDowntimeReady !== false) {
+  throw new Error('当前生产存储能力声明与 PostgreSQL 目标不一致。')
 }
 if (!Array.isArray(actions) || actions.length === 0) {
   throw new Error('行动目录为空。')

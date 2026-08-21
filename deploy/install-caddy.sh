@@ -5,7 +5,7 @@ set -Eeuo pipefail
 SOURCE_FILE="${1:-}"
 CADDY_FILE="/etc/caddy/Caddyfile"
 SITES_DIR="/etc/caddy/sites"
-TARGET_FILE="${SITES_DIR}/xiuxian.caddy"
+TARGET_FILE="${SITES_DIR}/daoxuan.caddy"
 IMPORT_LINE='import /etc/caddy/sites/*.caddy'
 TIMESTAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
 MAIN_BACKUP="${CADDY_FILE}.backup-${TIMESTAMP}"

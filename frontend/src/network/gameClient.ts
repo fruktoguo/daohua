@@ -20,7 +20,7 @@ function getEndpoint(playerId: string, account?: string, name?: string): string 
   return endpoint.toString()
 }
 
-export class XiuxianGameClient {
+export class DaoxuanGameClient {
   private socket: WebSocket | null = null
   private reconnectTimer: number | undefined
   private requestSequence = 0
@@ -233,4 +233,4 @@ export class XiuxianGameClient {
   }
 }
 
-export const gameClient = new XiuxianGameClient()
+export const gameClient = new DaoxuanGameClient()

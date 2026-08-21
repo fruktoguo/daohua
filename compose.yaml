@@ -1,26 +1,79 @@
-name: xiuxian-local
+name: daoxuan-local
 
 services:
+  db:
+    image: postgres:17-alpine
+    container_name: daoxuan-local-db
+    init: true
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: daoxuan
+      POSTGRES_USER: daoxuan
+      POSTGRES_PASSWORD: ${DAOXUAN_POSTGRES_PASSWORD:-daoxuan-local-dev}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - max_connections=50
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1536MB
+      - -c
+      - max_wal_size=1GB
+      - -c
+      - min_wal_size=80MB
+      - -c
+      - autovacuum_max_workers=2
+      - -c
+      - autovacuum_vacuum_scale_factor=0.05
+    volumes:
+      - daoxuan-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U daoxuan -d daoxuan"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    shm_size: 256m
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "3"
+
   app:
     build:
       context: .
       args:
         BUILD_VERSION: local
-    image: xiuxian:local
+    image: daoxuan:local
     init: true
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
-      - "127.0.0.1:${XIUXIAN_PORT:-5128}:8080"
+      - "127.0.0.1:${DAOXUAN_PORT:-5128}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Storage__Provider: postgres
+      Storage__ConnectionString: Host=db;Port=5432;Database=daoxuan;Username=daoxuan;Password=${DAOXUAN_POSTGRES_PASSWORD:-daoxuan-local-dev};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__DataDirectory: /app/data
       Storage__DurableOutboxEnabled: "true"
       Storage__OutboxDirectory: /app/data/outbox
-      Market__LedgerProvider: local-json
+      Storage__PersistenceQueueCapacity: "65536"
+      Storage__EnableSchemaBootstrap: "true"
+      Market__LedgerProvider: postgres
       Market__PartitionCount: "1"
       Market__PartitionId: "0"
+      Market__TradeRetentionDays: "14"
+      DistributedCompute__Enabled: ${DAOXUAN_DISTRIBUTED_COMPUTE_ENABLED:-false}
+      DistributedCompute__NodeEndpoints: ${DAOXUAN_COMPUTE_NODE_ENDPOINTS:-}
+      DistributedCompute__Token: ${DAOXUAN_COMPUTE_TOKEN:-}
     volumes:
-      - xiuxian-data:/app/data
+      - daoxuan-data:/app/data
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -35,14 +88,17 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 45s
     logging:
       driver: json-file
       options:
         max-size: 20m
-        max-file: "5"
+        max-file: "3"
 
 volumes:
-  xiuxian-data:
+  daoxuan-data:
     external: true
-    name: xiuxian_xiuxian-data
+    name: daoxuan_daoxuan-data
+  daoxuan-postgres:
+    external: true
+    name: daoxuan_daoxuan-postgres

@@ -219,11 +219,11 @@ let floatingPortalRoot: HTMLElement | null = null
 function getOrCreateFloatingPortalRoot(): HTMLElement {
   if (typeof document === 'undefined') return null as unknown as HTMLElement
   if (!floatingPortalRoot || !floatingPortalRoot.isConnected) {
-    let existing = document.getElementById('xiuxian-floating-root')
+    let existing = document.getElementById('daoxuan-floating-root')
     if (!existing) {
       existing = document.createElement('div')
-      existing.id = 'xiuxian-floating-root'
-      existing.className = 'xiuxian-floating-portal-root'
+      existing.id = 'daoxuan-floating-root'
+      existing.className = 'daoxuan-floating-portal-root'
       document.body.appendChild(existing)
     }
     floatingPortalRoot = existing
@@ -589,7 +589,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         aria-controls={isOpen ? id : undefined}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className={`xiuxian-floating-trigger ${displayContents ? 'xiuxian-floating-trigger--contents' : ''} ${triggerClassName}`.trim()}
+        className={`daoxuan-floating-trigger ${displayContents ? 'daoxuan-floating-trigger--contents' : ''} ${triggerClassName}`.trim()}
         onClick={handleTriggerClick}
         onMouseEnter={handleTriggerMouseEnter}
         onMouseLeave={handleTriggerMouseLeave}
@@ -628,8 +628,8 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         ? createPortal(
             <FloatingContext.Provider value={{ close: () => setOpen(false) }}>
               <div
-                className={`xiuxian-floating-layer ${hasAside ? 'xiuxian-floating-layer--composite' : ''} ${
-                  interactive ? 'xiuxian-floating-layer--interactive' : 'xiuxian-floating-layer--passthrough'
+                className={`daoxuan-floating-layer ${hasAside ? 'daoxuan-floating-layer--composite' : ''} ${
+                  interactive ? 'daoxuan-floating-layer--interactive' : 'daoxuan-floating-layer--passthrough'
                 }`}
                 data-placement={pos.actualPlacement}
                 id={id}
@@ -647,60 +647,60 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
               >
                 {/* 主气泡面板 */}
                 <div
-                  className={`xiuxian-floating-card xiuxian-floating-card--main xiuxian-floating-card--${size} ${className}`.trim()}
+                  className={`daoxuan-floating-card daoxuan-floating-card--main daoxuan-floating-card--${size} ${className}`.trim()}
                   role="tooltip"
                   style={customCardStyle}
                 >
                   {/* 四角修仙古典折角装饰 */}
-                  <span className="xiuxian-floating-corner xiuxian-floating-corner--tl" />
-                  <span className="xiuxian-floating-corner xiuxian-floating-corner--tr" />
-                  <span className="xiuxian-floating-corner xiuxian-floating-corner--bl" />
-                  <span className="xiuxian-floating-corner xiuxian-floating-corner--br" />
+                  <span className="daoxuan-floating-corner daoxuan-floating-corner--tl" />
+                  <span className="daoxuan-floating-corner daoxuan-floating-corner--tr" />
+                  <span className="daoxuan-floating-corner daoxuan-floating-corner--bl" />
+                  <span className="daoxuan-floating-corner daoxuan-floating-corner--br" />
 
                   {/* 顶部金华流光线 */}
-                  <div className="xiuxian-floating-shimmer-bar" />
+                  <div className="daoxuan-floating-shimmer-bar" />
 
                   {/* 卡片主体内容 */}
-                  <div className="xiuxian-floating-body">{renderedContentNode}</div>
+                  <div className="daoxuan-floating-body">{renderedContentNode}</div>
                 </div>
 
                 {/* 附属卡片气泡群（支持多气泡联动组合） */}
                 {hasAside && (
-                  <div className="xiuxian-floating-aside-group">
+                  <div className="daoxuan-floating-aside-group">
                     {mergedAsideCards.map((aside, idx) => (
                       <div
-                        className={`xiuxian-floating-card xiuxian-floating-aside-card xiuxian-floating-aside-card--${
+                        className={`daoxuan-floating-card daoxuan-floating-aside-card daoxuan-floating-aside-card--${
                           aside.tone ?? 'gold'
                         }`}
                         data-aside-id={aside.id}
                         key={aside.id ?? `${aside.title}-${idx}`}
                       >
-                        <span className="xiuxian-floating-corner xiuxian-floating-corner--tl" />
-                        <span className="xiuxian-floating-corner xiuxian-floating-corner--tr" />
-                        <span className="xiuxian-floating-corner xiuxian-floating-corner--bl" />
-                        <span className="xiuxian-floating-corner xiuxian-floating-corner--br" />
+                        <span className="daoxuan-floating-corner daoxuan-floating-corner--tl" />
+                        <span className="daoxuan-floating-corner daoxuan-floating-corner--tr" />
+                        <span className="daoxuan-floating-corner daoxuan-floating-corner--bl" />
+                        <span className="daoxuan-floating-corner daoxuan-floating-corner--br" />
 
                         {aside.isSingleRow ? (
-                          <div className="xiuxian-floating-aside-single-row">
-                            <strong className="xiuxian-floating-aside-title">{aside.title}</strong>
-                            <span className="xiuxian-floating-aside-val">
+                          <div className="daoxuan-floating-aside-single-row">
+                            <strong className="daoxuan-floating-aside-title">{aside.title}</strong>
+                            <span className="daoxuan-floating-aside-val">
                               {aside.lines?.[0] ?? aside.subtitle ?? ''}
                             </span>
                           </div>
                         ) : (
                           <>
-                            <div className="xiuxian-floating-aside-head">
+                            <div className="daoxuan-floating-aside-head">
                               {aside.mark && (
-                                <span className="xiuxian-floating-aside-mark">{aside.mark}</span>
+                                <span className="daoxuan-floating-aside-mark">{aside.mark}</span>
                               )}
-                              <strong className="xiuxian-floating-aside-title">{aside.title}</strong>
+                              <strong className="daoxuan-floating-aside-title">{aside.title}</strong>
                               {aside.subtitle && (
-                                <span className="xiuxian-floating-aside-sub">{aside.subtitle}</span>
+                                <span className="daoxuan-floating-aside-sub">{aside.subtitle}</span>
                               )}
                             </div>
 
                             {aside.lines && aside.lines.length > 0 && (
-                              <ul className="xiuxian-floating-aside-lines">
+                              <ul className="daoxuan-floating-aside-lines">
                                 {aside.lines.map((line, lineIdx) => (
                                   <li key={lineIdx}>{line}</li>
                                 ))}
@@ -708,7 +708,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
                             )}
 
                             {aside.content && (
-                              <div className="xiuxian-floating-aside-custom">{aside.content}</div>
+                              <div className="daoxuan-floating-aside-custom">{aside.content}</div>
                             )}
                           </>
                         )}
@@ -756,9 +756,9 @@ export function FloatingTooltip({
 
   return (
     <FloatingPopover
-      className={`xiuxian-floating-tooltip-simple xiuxian-floating-tooltip--${tone}`}
+      className={`daoxuan-floating-tooltip-simple daoxuan-floating-tooltip--${tone}`}
       closeDelay={60}
-      content={<div className="xiuxian-floating-tooltip-text">{title}</div>}
+      content={<div className="daoxuan-floating-tooltip-text">{title}</div>}
       gap={6}
       interactive={false}
       openDelay={100}
@@ -805,31 +805,31 @@ export function FloatingInfoCard({
   className = '',
 }: FloatingInfoCardProps): React.JSX.Element {
   return (
-    <div className={`xiuxian-floating-info-card ${className}`.trim()}>
+    <div className={`daoxuan-floating-info-card ${className}`.trim()}>
       {/* 头部区 */}
-      <header className="xiuxian-floating-card-header">
-        <div className="xiuxian-floating-card-title-row">
-          <strong className="xiuxian-floating-card-title">{title}</strong>
+      <header className="daoxuan-floating-card-header">
+        <div className="daoxuan-floating-card-title-row">
+          <strong className="daoxuan-floating-card-title">{title}</strong>
           {badge && (
-            <span className={`xiuxian-floating-badge xiuxian-floating-badge--${badgeTone}`}>
+            <span className={`daoxuan-floating-badge daoxuan-floating-badge--${badgeTone}`}>
               {badge}
             </span>
           )}
         </div>
-        {subtitle && <div className="xiuxian-floating-card-subtitle">{subtitle}</div>}
+        {subtitle && <div className="daoxuan-floating-card-subtitle">{subtitle}</div>}
       </header>
 
       {/* 描述段落 */}
-      {description && <div className="xiuxian-floating-card-desc">{description}</div>}
+      {description && <div className="daoxuan-floating-card-desc">{description}</div>}
 
       {/* 键值对网格 */}
       {stats && stats.length > 0 && (
-        <div className="xiuxian-floating-card-stats">
+        <div className="daoxuan-floating-card-stats">
           {stats.map((stat, idx) => (
-            <div className="xiuxian-floating-stat-item" key={idx}>
-              <span className="xiuxian-floating-stat-label">{stat.label}</span>
+            <div className="daoxuan-floating-stat-item" key={idx}>
+              <span className="daoxuan-floating-stat-label">{stat.label}</span>
               <span
-                className={`xiuxian-floating-stat-value xiuxian-floating-stat-value--${
+                className={`daoxuan-floating-stat-value daoxuan-floating-stat-value--${
                   stat.tone ?? 'gold'
                 }`}
               >
@@ -842,9 +842,9 @@ export function FloatingInfoCard({
 
       {/* 词条条目列表 */}
       {lines && lines.length > 0 && (
-        <ul className="xiuxian-floating-card-lines">
+        <ul className="daoxuan-floating-card-lines">
           {lines.map((line, idx) => (
-            <li className="xiuxian-floating-card-line-item" key={idx}>
+            <li className="daoxuan-floating-card-line-item" key={idx}>
               {line}
             </li>
           ))}
@@ -852,7 +852,7 @@ export function FloatingInfoCard({
       )}
 
       {/* 底部区 */}
-      {footer && <footer className="xiuxian-floating-card-footer">{footer}</footer>}
+      {footer && <footer className="daoxuan-floating-card-footer">{footer}</footer>}
     </div>
   )
 }
@@ -887,20 +887,20 @@ export function FloatingMenuItem({
 
   return (
     <button
-      className={`xiuxian-floating-menu-item xiuxian-floating-menu-item--${tone}`}
+      className={`daoxuan-floating-menu-item daoxuan-floating-menu-item--${tone}`}
       disabled={disabled}
       onClick={handleClick}
       type="button"
     >
-      {icon && <span className="xiuxian-floating-menu-icon">{icon}</span>}
-      <span className="xiuxian-floating-menu-label">{label}</span>
-      {hint && <span className="xiuxian-floating-menu-hint">{hint}</span>}
+      {icon && <span className="daoxuan-floating-menu-icon">{icon}</span>}
+      <span className="daoxuan-floating-menu-label">{label}</span>
+      {hint && <span className="daoxuan-floating-menu-hint">{hint}</span>}
     </button>
   )
 }
 
 export function FloatingMenuDivider(): React.JSX.Element {
-  return <div className="xiuxian-floating-menu-divider" />
+  return <div className="daoxuan-floating-menu-divider" />
 }
 
 export function FloatingMenuGroup({
@@ -911,9 +911,9 @@ export function FloatingMenuGroup({
   children: ReactNode
 }): React.JSX.Element {
   return (
-    <div className="xiuxian-floating-menu-group">
-      {title && <div className="xiuxian-floating-menu-group-title">{title}</div>}
-      <div className="xiuxian-floating-menu-group-items">{children}</div>
+    <div className="daoxuan-floating-menu-group">
+      {title && <div className="daoxuan-floating-menu-group-title">{title}</div>}
+      <div className="daoxuan-floating-menu-group-items">{children}</div>
     </div>
   )
 }

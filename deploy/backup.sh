@@ -2,72 +2,84 @@
 
 set -Eeuo pipefail
 
-DEPLOY_DIR="${XIUXIAN_DEPLOY_DIR:-/opt/xiuxian}"
-COMPOSE_FILE="${DEPLOY_DIR}/compose.prod.yaml"
-BACKUP_DIR="${DEPLOY_DIR}/backups"
-CONTAINER_NAME="xiuxian-app"
-VOLUME_NAME="xiuxian_xiuxian-data"
-LOCK_FILE="/run/lock/xiuxian-ccr-auto-update.lock"
+DEPLOY_DIR="${DAOXUAN_DEPLOY_DIR:-/opt/daoxuan}"
+COMPOSE_FILE="${DAOXUAN_COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
+ENV_FILE="${DEPLOY_DIR}/daoxuan.env"
+BACKUP_DIR="${DAOXUAN_BACKUP_DIR:-${DEPLOY_DIR}/backups}"
+DB_CONTAINER_NAME="${DAOXUAN_DB_CONTAINER_NAME:-daoxuan-db}"
+LOCK_FILE="${DAOXUAN_BACKUP_LOCK_FILE:-/run/lock/daoxuan-ccr-auto-update.lock}"
 
-if [[ "${EUID}" -ne 0 ]]; then
+if [[ "${EUID}" -ne 0 && "${DAOXUAN_ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
   printf '该脚本必须以 root 运行。\n' >&2
   exit 1
 fi
 
+
+compose() {
+  if [[ -f "$ENV_FILE" ]]; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  else
+    docker compose -f "$COMPOSE_FILE" "$@"
+  fi
+}
+
 exec 9>"$LOCK_FILE"
 flock 9
 
-mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR/hourly" "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly"
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
-archive="${BACKUP_DIR}/xiuxian-data-${timestamp}.tar.gz"
-partial="${archive}.partial"
-volume_path="$(docker volume inspect --format '{{.Mountpoint}}' "$VOLUME_NAME")"
-was_running="$(docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || printf 'false')"
-restart_required=0
+hour_archive="${BACKUP_DIR}/hourly/daoxuan-postgres-hourly-${timestamp}.dump"
+partial="${hour_archive}.partial"
+sha_file="${hour_archive}.sha256"
 
-wait_healthy() {
-  local attempt state
-  for attempt in {1..60}; do
-    state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-    if [[ "$state" == "healthy" ]]; then
-      return 0
-    fi
-    if [[ "$state" == "exited" || "$state" == "dead" ]]; then
-      return 1
-    fi
-    sleep 2
-  done
-  return 1
-}
+db_state="$(docker inspect --format '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$DB_CONTAINER_NAME" 2>/dev/null || true)"
+if [[ -z "$db_state" || "$db_state" != true\ healthy ]]; then
+  printf 'PostgreSQL 容器未健康运行: %s\n' "${db_state:-missing}" >&2
+  exit 1
+fi
 
-restart_app() {
-  if [[ "$restart_required" == "1" ]]; then
-    docker compose -f "$COMPOSE_FILE" start app >/dev/null
-    wait_healthy
+if ! compose exec -T db pg_dump \
+  --username=daoxuan \
+  --dbname=daoxuan \
+  --format=custom \
+  --compress=gzip:9 \
+  --no-owner \
+  --no-privileges \
+  >"$partial"; then
+  rm -f "$partial"
+  printf '数据库备份失败。\n' >&2
+  exit 1
+fi
+
+mv "$partial" "$hour_archive"
+compose exec -T db pg_restore --list <"$hour_archive" >/dev/null
+sha256sum "$hour_archive" >"$sha_file"
+
+utc_hour="$(date -u +'%H')"
+utc_day="$(date -u +'%u')"
+if [[ "$utc_hour" == "00" ]]; then
+  daily_archive="${BACKUP_DIR}/daily/daoxuan-postgres-daily-${timestamp}.dump"
+  cp -p "$hour_archive" "$daily_archive"
+  sha256sum "$daily_archive" >"${daily_archive}.sha256"
+  if [[ "$utc_day" == "1" ]]; then
+    weekly_archive="${BACKUP_DIR}/weekly/daoxuan-postgres-weekly-${timestamp}.dump"
+    cp -p "$hour_archive" "$weekly_archive"
+    sha256sum "$weekly_archive" >"${weekly_archive}.sha256"
   fi
+fi
+
+prune_backups() {
+  local dir="$1"
+  local keep="$2"
+  mapfile -t files < <(find "$dir" -maxdepth 1 -type f -name '*.dump' -printf '%T@ %p\n' | sort -rn | awk -v keep="$keep" 'NR>keep {print $2}')
+  for file in "${files[@]:-}"; do
+    rm -f -- "$file" "${file}.sha256"
+  done
 }
-trap restart_app EXIT
 
-if [[ "$was_running" == "true" ]]; then
-  restart_required=1
-  docker compose -f "$COMPOSE_FILE" stop --timeout 90 app
-fi
+prune_backups "${BACKUP_DIR}/hourly" 24
+prune_backups "${BACKUP_DIR}/daily" 7
+prune_backups "${BACKUP_DIR}/weekly" 4
 
-tar --numeric-owner --xattrs --acls --one-file-system \
-  --directory "$volume_path" \
-  --create \
-  --gzip \
-  --file "$partial" \
-  .
-mv "$partial" "$archive"
-tar --list --gzip --file "$archive" >/dev/null
-sha256sum "$archive" >"${archive}.sha256"
-
-if [[ "$restart_required" == "1" ]]; then
-  docker compose -f "$COMPOSE_FILE" start app >/dev/null
-  wait_healthy
-  restart_required=0
-fi
-
-printf '备份完成: %s\n' "$archive"
-printf '校验文件: %s\n' "${archive}.sha256"
+printf '数据库备份完成: %s\n' "$hour_archive"
+printf '校验文件: %s\n' "$sha_file"

@@ -4,8 +4,8 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_PREFIX="${TENCENT_IMAGE_PREFIX:-ccr.ccs.tencentyun.com/yuohira}"
-IMAGE_NAME="${XIUXIAN_IMAGE_NAME:-xiuxian}"
-MOVING_TAG="${XIUXIAN_MOVING_TAG:-prod}"
+IMAGE_NAME="${DAOXUAN_IMAGE_NAME:-daoxuan}"
+MOVING_TAG="${DAOXUAN_MOVING_TAG:-prod}"
 RELEASE_TAG="${RELEASE_TAG:-}"
 PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}"

@@ -5,7 +5,7 @@ import { describeCombatTrigger, formatNumber } from '../game/format'
 import type { CombatTrigger } from '../game/types'
 import { useT } from '../i18n'
 
-/** 每个槽位最多 4 条触发条件，与服务端 XiuxianCombatLimits.TriggerCountPerSlot 保持一致。 */
+/** 每个槽位最多 4 条触发条件，与服务端 DaoxuanCombatLimits.TriggerCountPerSlot 保持一致。 */
 const MAX_TRIGGERS = 4
 
 const STATUS_COMPARATORS = ['is-active', 'is-inactive'] as const

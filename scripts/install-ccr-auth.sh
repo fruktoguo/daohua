@@ -4,9 +4,9 @@ set -Eeuo pipefail
 set +x
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REMOTE_HOST="${XIUXIAN_SSH_HOST:-yuohira}"
-REGISTRY="${XIUXIAN_REGISTRY:-ccr.ccs.tencentyun.com}"
-IMAGE="${XIUXIAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/xiuxian:prod}"
+REMOTE_HOST="${DAOXUAN_SSH_HOST:-yuohira}"
+REGISTRY="${DAOXUAN_REGISTRY:-ccr.ccs.tencentyun.com}"
+IMAGE="${DAOXUAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daoxuan:prod}"
 DOCKER_CONFIG_FILE="${DOCKER_CONFIG_FILE:-${HOME}/.docker/config.json}"
 
 if [[ "${1:-}" != "--confirm" ]]; then
@@ -57,7 +57,7 @@ if [[ ! "$username" =~ ^[A-Za-z0-9._@-]+$ || -z "$password" ]]; then
 fi
 
 printf '==> 停用自动更新，安装远端 CCR 登录态\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" 'sudo systemctl disable --now xiuxian-ccr-auto-update.timer >/dev/null 2>&1 || true'
+ssh -o BatchMode=yes "$REMOTE_HOST" 'sudo systemctl disable --now daoxuan-ccr-auto-update.timer >/dev/null 2>&1 || true'
 printf '%s' "$password" | ssh -o BatchMode=yes "$REMOTE_HOST" \
   "sudo docker login --username '$username' --password-stdin '$REGISTRY'"
 
@@ -68,12 +68,12 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
   sudo jq -e --arg registry '$REGISTRY' '.auths[\$registry].auth | type == \"string\" and length > 0' /root/.docker/config.json >/dev/null
   sudo docker pull '$IMAGE' >/dev/null
-  if sudo systemctl cat xiuxian-ccr-auto-update.service >/dev/null 2>&1 \
-    && sudo test -f /opt/xiuxian/compose.prod.yaml; then
-    sudo systemctl start xiuxian-ccr-auto-update.service
-    sudo systemctl enable --now xiuxian-ccr-auto-update.timer
-    sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' xiuxian-app
-    sudo systemctl is-active xiuxian-ccr-auto-update.timer
+  if sudo systemctl cat daoxuan-ccr-auto-update.service >/dev/null 2>&1 \
+    && sudo test -f /opt/daoxuan/compose.prod.yaml; then
+    sudo systemctl start daoxuan-ccr-auto-update.service
+    sudo systemctl enable --now daoxuan-ccr-auto-update.timer
+    sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daoxuan-app
+    sudo systemctl is-active daoxuan-ccr-auto-update.timer
   else
     printf 'CCR 拉取成功；部署资产尚未安装，暂不启用 timer。\n'
   fi

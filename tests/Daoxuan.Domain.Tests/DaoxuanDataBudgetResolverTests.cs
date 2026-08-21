@@ -1,0 +1,152 @@
+using Daoxuan.Domain.GameData;
+using Daoxuan.Domain.Models;
+using Xunit;
+
+namespace Daoxuan.Domain.Tests;
+
+public sealed class DaoxuanDataBudgetResolverTests
+{
+    [Fact]
+    public void ResolveAbility_WithExplicitValues_PreservesExplicitFields()
+    {
+        var config = new DaoxuanAbilityConfig(
+            Id: "ability.custom-slash",
+            Name: "自定义剑招",
+            Style: DaoxuanCombatStyle.Sword,
+            DamageType: DaoxuanDamageType.Physical,
+            CooldownMilliseconds: 10000,
+            CastMilliseconds: 500,
+            ManaCostRatio: 10,
+            DamageRatio: 1.75,
+            FlatDamage: 40,
+            StunChance: 0.25,
+            StunMilliseconds: 2000,
+            PenetrationRatio: 0.15);
+
+        var definition = DaoxuanDataBudgetResolver.ResolveAbility(config);
+
+        Assert.Equal("ability.custom-slash", definition.Id);
+        Assert.Equal("自定义剑招", definition.Name);
+        Assert.Equal(DaoxuanCombatStyle.Sword, definition.Style);
+        Assert.Equal(1.75, definition.DamageRatio);
+        Assert.Equal(40, definition.FlatDamage);
+        Assert.Equal(0.25, definition.StunChance);
+        Assert.Equal(2000, definition.StunMilliseconds);
+        Assert.Equal(0.15, definition.PenetrationRatio);
+        // Tier 1 ExpectedMp=57.7, ManaCostRatio=10 → ceil(57.7 * 10 * 0.01) = ceil(5.77) = 6
+        Assert.Equal(6, definition.ManaCost);
+    }
+
+    [Fact]
+    public void ResolveAbility_ManaCostRatio_CalculatesCeiledManaCost()
+    {
+        // Tier 3 ExpectedMp=1434.04, ManaCostRatio=3 → ceil(1434.04 * 3 * 0.01) = ceil(43.0212) = 44
+        var config = new DaoxuanAbilityConfig(
+            Id: "ability.tier3-spell",
+            Name: "烈火术",
+            Tier: 3,
+            ManaCostRatio: 3,
+            DamageRatio: 1.5);
+
+        var definition = DaoxuanDataBudgetResolver.ResolveAbility(config);
+
+        Assert.Equal(44, definition.ManaCost);
+        Assert.Equal(1.5, definition.DamageRatio);
+    }
+
+    [Fact]
+    public void ResolveAbility_ZeroManaCostRatio_ProducesZeroCost()
+    {
+        var config = new DaoxuanAbilityConfig(
+            Id: "ability.free-attack",
+            Name: "普攻",
+            ManaCostRatio: 0,
+            DamageRatio: 0.5);
+
+        var definition = DaoxuanDataBudgetResolver.ResolveAbility(config);
+
+        Assert.Equal(0, definition.ManaCost);
+    }
+
+    [Fact]
+    public void ResolveEquipment_WithIntensityAndWeights_GeneratesStatsAndEnhancementBonus()
+    {
+        // 强度 100.0，双手法器 (two-hand)
+        var config = new DaoxuanEquipmentConfig(
+            Id: "equipment.iron-bulwark",
+            Name: "玄铁重盾",
+            Slot: "two-hand",
+            Tier: 3,
+            Intensity: 100.0,
+            Weights: new Dictionary<string, double>
+            {
+                ["armor"] = 0.50,
+                ["allResistance"] = 0.30,
+                ["weakenRatio"] = 0.20
+            });
+
+        var definition = DaoxuanDataBudgetResolver.ResolveEquipment(config);
+
+        // armor: 100 * 0.50 * 1.0 = 50.0
+        // allRes: 100 * 0.30 * 0.4 = 12.0 for water/nature/fire
+        // weaken: 100 * 0.20 * 0.003 = 0.06
+        Assert.Equal(50.0, definition.Stats.Armor, precision: 2);
+        Assert.Equal(12.0, definition.Stats.WaterResistance, precision: 2);
+        Assert.Equal(12.0, definition.Stats.NatureResistance, precision: 2);
+        Assert.Equal(12.0, definition.Stats.FireResistance, precision: 2);
+        Assert.Equal(0.06, definition.Stats.WeakenRatio, precision: 3);
+
+        // 自动生成的强化增量应为 Stats / 50.0
+        Assert.Equal(1.0, definition.EnhancementBonus.Armor, precision: 2);
+        Assert.Equal(0.24, definition.EnhancementBonus.WaterResistance, precision: 3);
+        Assert.Equal(0.0012, definition.EnhancementBonus.WeakenRatio, precision: 4);
+    }
+
+    [Fact]
+    public void ResolveItem_WithConsumableWeights_CalculatesRestoreAndBuffValues()
+    {
+        var config = new DaoxuanItemConfig(
+            Id: "item.spirit-elixir",
+            Name: "回元大丹",
+            Description: "测试丹药",
+            Kind: DaoxuanItemKind.Consumable,
+            Category: "丹药",
+            Tier: 2,
+            Consumable: new DaoxuanConsumableConfig(
+                UsableInActionTypes: new HashSet<DaoxuanActionType> { DaoxuanActionType.Combat },
+                Intensity: 30.0,
+                Weights: new Dictionary<string, double>
+                {
+                    ["hitpointRestore"] = 0.60,
+                    ["manapointRestore"] = 0.40
+                },
+                Buffs:
+                [
+                    new DaoxuanBuffEffectConfig(
+                        BuffId: "buff.elixir-power",
+                        Name: "丹煞",
+                        DurationSeconds: 120,
+                        Intensity: 20.0,
+                        Weights: new Dictionary<string, double>
+                        {
+                            ["damageRatio"] = 0.50,
+                            ["attackSpeedRatio"] = 0.50
+                        })
+                ]));
+
+        var definition = DaoxuanDataBudgetResolver.ResolveItem(config);
+
+        Assert.NotNull(definition.Consumable);
+        // hp: 30 * 0.60 * 12.0 = 216
+        // mp: 30 * 0.40 * 8.0 = 96
+        Assert.Equal(216, definition.Consumable.HitpointRestore);
+        Assert.Equal(96, definition.Consumable.ManapointRestore);
+
+        Assert.Single(definition.Consumable.Buffs);
+        var buff = definition.Consumable.Buffs[0];
+        // dmg: 20 * 0.50 * 0.01 = 0.10 (+10%)
+        // spd: 20 * 0.50 * 0.01 = 0.10 (+10%)
+        Assert.Equal(0.10, buff.DamageRatio, precision: 3);
+        Assert.Equal(0.10, buff.AttackSpeedRatio, precision: 3);
+    }
+}

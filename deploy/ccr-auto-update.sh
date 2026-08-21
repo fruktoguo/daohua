@@ -2,13 +2,23 @@
 
 set -Eeuo pipefail
 
-DEPLOY_DIR="${XIUXIAN_DEPLOY_DIR:-/opt/xiuxian}"
+DEPLOY_DIR="${DAOXUAN_DEPLOY_DIR:-/opt/daoxuan}"
 COMPOSE_FILE="${DEPLOY_DIR}/compose.prod.yaml"
-IMAGE="${XIUXIAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/xiuxian:prod}"
-CONTAINER_NAME="xiuxian-app"
-PREFLIGHT_CONTAINER_NAME="xiuxian-preflight"
+ENV_FILE="${DEPLOY_DIR}/daoxuan.env"
+IMAGE="${DAOXUAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daoxuan:prod}"
+CONTAINER_NAME="daoxuan-app"
+PREFLIGHT_CONTAINER_NAME="daoxuan-preflight"
 FAILED_IMAGE_FILE="${DEPLOY_DIR}/failed-image.id"
-LOCK_FILE="/run/lock/xiuxian-ccr-auto-update.lock"
+LOCK_FILE="/run/lock/daoxuan-ccr-auto-update.lock"
+
+
+compose() {
+  if [[ -f "$ENV_FILE" ]]; then
+    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
+  else
+    docker compose -f "$COMPOSE_FILE" "$@"
+  fi
+}
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
@@ -79,9 +89,8 @@ preflight_image() {
 
 deploy_image() {
   local image="$1"
-  XIUXIAN_IMAGE="$image" docker compose -f "$COMPOSE_FILE" up \
+  DAOXUAN_IMAGE="$image" compose up \
     --detach \
-    --no-deps \
     --force-recreate \
     app
   wait_healthy
@@ -114,7 +123,7 @@ fi
 
 rollback_image=""
 if [[ -n "$running_id" ]]; then
-  rollback_image="xiuxian-rollback:previous"
+  rollback_image="daoxuan-rollback:previous"
   docker tag "$running_id" "$rollback_image"
 fi
 
