@@ -1,0 +1,2167 @@
+{
+  "version": "1.0.0",
+  "description": "太虚仙途标准玩家期望属性矩阵与反推基准配置",
+  "fourMultiplierFormula": "FinalStat = BaseFlat * (1 + Root%) * (1 + Equip%) * (1 + Buff%)",
+  "rules": {
+    "rootScalingFormula": "Root% = Level * 0.03 (每级 3%)",
+    "singleBuffSingleStatFormula": "EquipPieceBase / 4 (精确整数百分比)",
+    "singleBuffAllStatsFormula": "EquipPieceBase / 48",
+    "expectedBuffCountFormula": "round(Tier * 1.1^Tier)",
+    "equipEquivStatFormula": "EnhancedPieceBase / 2",
+    "enhancementMultiplierFormula": "1.05^EnhancementLevel",
+    "monsterWaveRules": {
+      "monstersPerWave": 3,
+      "bossWaveFrequency": "每 20 波",
+      "eliteWaveFrequency": "每 5 波 (非 Boss 波)",
+      "minionAttributes": "80% 全属性, 300% 生命值",
+      "eliteAttributes": "120% 全属性, 500% 生命值",
+      "bossAttributes": "150% 全属性, 2000% 生命值"
+    },
+    "waveSearchDelayFormula": "WaitSeconds = 5.0 - 2.5 * ((Level - 1) / 126.0) (5.0s 线性削减至 2.5s)",
+    "skillIntensityFormula": "SkillIntensity = 1.0 + (Tier - 1) * 0.30 (1.0x ~ 4.30x，纯技能强度成长，无穿透)",
+    "standardSkillsModel": {
+      "skillSlots": 4,
+      "activeCombatSkills": [
+        {
+          "type": "single",
+          "name": "核心单体",
+          "baseDamageRatio": 2.0,
+          "cooldownSeconds": 12.0,
+          "maxTargets": 1
+        },
+        {
+          "type": "aoe_large",
+          "name": "大范围群攻",
+          "baseDamageRatio": 0.8,
+          "cooldownSeconds": 18.0,
+          "maxTargets": 5
+        },
+        {
+          "type": "aoe_heavy",
+          "name": "强力群攻",
+          "baseDamageRatio": 1.2,
+          "cooldownSeconds": 22.0,
+          "maxTargets": 3
+        }
+      ],
+      "passiveBuffSkill": {
+        "type": "buff",
+        "description": "常驻/被动 Buff 型技能，不参与战斗即时伤害施法，其增益已直接计入四独立乘区中的 Buff 乘区 (1 + Buff%)"
+      },
+      "skillIntensityFormula": "SkillIntensity = 1.0 + (Tier - 1) * 0.30 (1.00x ~ 4.30x，纯技能强度，无穿透)",
+      "waveSearchDelayFormula": "WaitSeconds = 5.0 - 2.5 * ((Level - 1) / 126.0) (5.0s 线性削减至 2.5s)"
+    },
+    "damageFormula": {
+      "dynamicResistanceCoefficientFormula": "K(Tier) = 1.0 + (Tier - 1) * 1.0 = Tier (1阶为1.0，每阶递增1.0，12阶真仙为12.0)",
+      "damageFactorFormula": "DamageFactor = Attack / (Attack + EffectiveResistance * Tier + 1.0)",
+      "actualDamageFormula": "ActualDamage = Attack * DamageFactor * (isCritical ? 1.5 : 1.0)"
+    },
+    "cooldownReductionFormula": "CDR(Level) = ((Level - 1) / 126.0) * 75% (0% -> 75% 线性削减，真仙期仅剩 25% 基础 CD)",
+    "criticalDamageRatioFormula": "CritDamageMultiplier(Level) = 1.50 + ((Level - 1) / 126.0) * 3.50 (150% -> 500% 线性成长)",
+    "dualStyleSkillModels": {
+      "castTimeRules": {
+        "singleTargetCastSeconds": 1.0,
+        "aoeTargetCastSeconds": 2.0,
+        "magicAutoAttackCastSeconds": 2.0,
+        "physicalAutoAttackIntervalSeconds": 2.0
+      },
+      "physicalStyle": {
+        "description": "物理系：2个单体技能 + 1个群攻技能 + 1个0增益Buff技能 + 物理普攻(100% AD)",
+        "skills": [
+          {
+            "slot": 1,
+            "name": "核心单体1",
+            "baseRatio": 2.0,
+            "cooldownSeconds": 12.0,
+            "castSeconds": 1.0,
+            "maxTargets": 1
+          },
+          {
+            "slot": 2,
+            "name": "核心单体2",
+            "baseRatio": 2.0,
+            "cooldownSeconds": 12.0,
+            "castSeconds": 1.0,
+            "maxTargets": 1
+          },
+          {
+            "slot": 3,
+            "name": "群体绝技",
+            "baseRatio": 1.2,
+            "cooldownSeconds": 18.0,
+            "castSeconds": 2.0,
+            "maxTargets": 3
+          },
+          {
+            "slot": 4,
+            "name": "功能Buff",
+            "baseRatio": 0.0,
+            "description": "纯功能/状态型技能，不提供数值增益，不计入伤害计算"
+          }
+        ]
+      },
+      "magicStyle": {
+        "description": "法术系：2个群攻技能 + 1个法术普攻(60% AP, 0CD, 2s吟唱) + 1个0增益Buff技能",
+        "skills": [
+          {
+            "slot": 1,
+            "name": "大范围群攻",
+            "baseRatio": 0.8,
+            "cooldownSeconds": 18.0,
+            "castSeconds": 2.0,
+            "maxTargets": 5
+          },
+          {
+            "slot": 2,
+            "name": "强力群攻",
+            "baseRatio": 1.2,
+            "cooldownSeconds": 22.0,
+            "castSeconds": 2.0,
+            "maxTargets": 3
+          },
+          {
+            "slot": 3,
+            "name": "法术普攻",
+            "baseRatio": 0.6,
+            "cooldownSeconds": 0.0,
+            "castSeconds": 2.0,
+            "maxTargets": 1,
+            "description": "0 CD，2秒吟唱，无主动技能可用时施放",
+            "scalingFormula": "60% AP * SkillIntensity (60% -> 258% AP，享受当前位阶技能强度放大)"
+          },
+          {
+            "slot": 4,
+            "name": "功能Buff",
+            "baseRatio": 0.0,
+            "description": "纯功能/状态型技能，不提供数值增益，不计入伤害计算"
+          }
+        ]
+      }
+    },
+    "castTimeReductionFormula": "CTR(Level) = ((Level - 1) / 126.0) * 50% (0% -> 50% 线性削减，满级真仙期仅剩 50% 吟唱时间)"
+  },
+  "tiers": [
+    {
+      "tier": 1,
+      "level": 1,
+      "realmName": "凡俗 [武] 凡胎",
+      "baseFlat": {
+        "maxHitpoints": 100.0,
+        "maxManapoints": 50.0,
+        "physicalAttack": 10.0,
+        "magicAttack": 5.0,
+        "armor": 10.0,
+        "magicResistance": 0.0,
+        "accuracyRating": 1.0,
+        "evasionRating": 1.0,
+        "criticalRating": 1.0,
+        "criticalAvoidance": 1.0,
+        "breakRating": 1.0,
+        "parryRating": 1.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 0.03,
+        "multiplier": 1.03
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 0.2,
+        "expectedEnhancement": 3,
+        "enhancementMultiplier": 1.1576,
+        "enhancedPiecePercentage": 0.2315,
+        "allStatsEquivalentPercentage": 0.1158,
+        "multiplier": 1.1158
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 1,
+        "singleBuffSingleStatPercentage": 0.05,
+        "singleBuffAllStatsPercentage": 0.004167,
+        "buffTotalPercentage": 0.0042,
+        "multiplier": 1.0042
+      },
+      "compoundMultiplier": 1.154,
+      "finalExpected": {
+        "maxHitpoints": 115.4,
+        "maxManapoints": 57.7,
+        "physicalAttack": 11.54,
+        "magicAttack": 5.77,
+        "armor": 11.54,
+        "magicResistance": 0.0,
+        "accuracyRating": 1.15,
+        "evasionRating": 1.15,
+        "criticalRating": 1.15,
+        "criticalAvoidance": 1.15,
+        "breakRating": 1.15,
+        "parryRating": 1.15
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 1.0,
+        "cooldownReductionPct": 0.0,
+        "criticalDamageMultiplierPct": 150.0,
+        "waveSearchDelaySeconds": 5.0,
+        "skillIntensity": 1.0,
+        "hourlyKills": 113.25,
+        "hourlyWaves": 37.75,
+        "dailyKills24h": 2718,
+        "dailyWaves24h": 906,
+        "avgKillTimeSeconds": 31.79,
+        "avgWaveDurationSeconds": 90.36,
+        "avgNormalWaveDurationSeconds": 101.85,
+        "avgEliteWaveDurationSeconds": 47.03,
+        "avgBossWaveDurationSeconds": 36.23
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 0.0,
+        "physicalStyle": {
+          "hourlyKills": 114.0,
+          "hourlyWaves": 38.0,
+          "dailyKills24h": 2736,
+          "avgKillTimeSeconds": 31.58,
+          "avgWaveDurationSeconds": 89.74,
+          "avgBossWaveDurationSeconds": 35.74
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 60.0,
+          "hourlyKills": 113.38,
+          "hourlyWaves": 37.79,
+          "dailyKills24h": 2721,
+          "avgKillTimeSeconds": 31.75,
+          "avgWaveDurationSeconds": 90.26,
+          "avgBossWaveDurationSeconds": 33.22
+        }
+      }
+    },
+    {
+      "tier": 2,
+      "level": 18,
+      "realmName": "凡俗 [天] 叩仙门",
+      "baseFlat": {
+        "maxHitpoints": 232.0,
+        "maxManapoints": 90.0,
+        "physicalAttack": 15.0,
+        "magicAttack": 7.0,
+        "armor": 13.0,
+        "magicResistance": 0.0,
+        "accuracyRating": 3.0,
+        "evasionRating": 1.0,
+        "criticalRating": 1.0,
+        "criticalAvoidance": 1.0,
+        "breakRating": 1.0,
+        "parryRating": 1.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 0.54,
+        "multiplier": 1.54
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 0.32,
+        "expectedEnhancement": 5,
+        "enhancementMultiplier": 1.2763,
+        "enhancedPiecePercentage": 0.4084,
+        "allStatsEquivalentPercentage": 0.2042,
+        "multiplier": 1.2042
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 2,
+        "singleBuffSingleStatPercentage": 0.08,
+        "singleBuffAllStatsPercentage": 0.006667,
+        "buffTotalPercentage": 0.0133,
+        "multiplier": 1.0133
+      },
+      "compoundMultiplier": 1.8792,
+      "finalExpected": {
+        "maxHitpoints": 435.97,
+        "maxManapoints": 169.13,
+        "physicalAttack": 28.19,
+        "magicAttack": 13.15,
+        "armor": 24.43,
+        "magicResistance": 0.0,
+        "accuracyRating": 5.64,
+        "evasionRating": 1.88,
+        "criticalRating": 1.88,
+        "criticalAvoidance": 1.88,
+        "breakRating": 1.88,
+        "parryRating": 1.88
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 2.0,
+        "cooldownReductionPct": 10.1,
+        "criticalDamageMultiplierPct": 197.2,
+        "waveSearchDelaySeconds": 4.66,
+        "skillIntensity": 1.3,
+        "hourlyKills": 105.38,
+        "hourlyWaves": 35.12,
+        "dailyKills24h": 2529,
+        "dailyWaves24h": 843,
+        "avgKillTimeSeconds": 34.16,
+        "avgWaveDurationSeconds": 97.83,
+        "avgNormalWaveDurationSeconds": 109.54,
+        "avgEliteWaveDurationSeconds": 53.64,
+        "avgBossWaveDurationSeconds": 42.15
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 6.7,
+        "physicalStyle": {
+          "hourlyKills": 97.38,
+          "hourlyWaves": 32.46,
+          "dailyKills24h": 2337,
+          "avgKillTimeSeconds": 36.97,
+          "avgWaveDurationSeconds": 106.25,
+          "avgBossWaveDurationSeconds": 42.67
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 78.0,
+          "hourlyKills": 105.12,
+          "hourlyWaves": 35.04,
+          "dailyKills24h": 2523,
+          "avgKillTimeSeconds": 34.24,
+          "avgWaveDurationSeconds": 98.07,
+          "avgBossWaveDurationSeconds": 42.86
+        }
+      }
+    },
+    {
+      "tier": 3,
+      "level": 30,
+      "realmName": "练气 [极] 半步筑基",
+      "baseFlat": {
+        "maxHitpoints": 472.0,
+        "maxManapoints": 570.0,
+        "physicalAttack": 30.0,
+        "magicAttack": 27.0,
+        "armor": 23.0,
+        "magicResistance": 14.0,
+        "accuracyRating": 7.0,
+        "evasionRating": 4.0,
+        "criticalRating": 3.0,
+        "criticalAvoidance": 2.0,
+        "breakRating": 2.0,
+        "parryRating": 2.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 0.9,
+        "multiplier": 1.9
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 0.4,
+        "expectedEnhancement": 7,
+        "enhancementMultiplier": 1.4071,
+        "enhancedPiecePercentage": 0.5628,
+        "allStatsEquivalentPercentage": 0.2814,
+        "multiplier": 1.2814
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 4,
+        "singleBuffSingleStatPercentage": 0.1,
+        "singleBuffAllStatsPercentage": 0.008333,
+        "buffTotalPercentage": 0.0333,
+        "multiplier": 1.0333
+      },
+      "compoundMultiplier": 2.5159,
+      "finalExpected": {
+        "maxHitpoints": 1187.48,
+        "maxManapoints": 1434.04,
+        "physicalAttack": 75.48,
+        "magicAttack": 67.93,
+        "armor": 57.86,
+        "magicResistance": 35.22,
+        "accuracyRating": 17.61,
+        "evasionRating": 10.06,
+        "criticalRating": 7.55,
+        "criticalAvoidance": 5.03,
+        "breakRating": 5.03,
+        "parryRating": 5.03
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 3.0,
+        "cooldownReductionPct": 17.3,
+        "criticalDamageMultiplierPct": 230.6,
+        "waveSearchDelaySeconds": 4.42,
+        "skillIntensity": 1.6,
+        "hourlyKills": 59.5,
+        "hourlyWaves": 19.83,
+        "dailyKills24h": 1428,
+        "dailyWaves24h": 476,
+        "avgKillTimeSeconds": 60.5,
+        "avgWaveDurationSeconds": 177.09,
+        "avgNormalWaveDurationSeconds": 205.03,
+        "avgEliteWaveDurationSeconds": 69.06,
+        "avgBossWaveDurationSeconds": 52.43
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 11.5,
+        "physicalStyle": {
+          "hourlyKills": 69.5,
+          "hourlyWaves": 23.17,
+          "dailyKills24h": 1668,
+          "avgKillTimeSeconds": 51.8,
+          "avgWaveDurationSeconds": 150.97,
+          "avgBossWaveDurationSeconds": 54.14
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 96.0,
+          "hourlyKills": 55.75,
+          "hourlyWaves": 18.58,
+          "dailyKills24h": 1338,
+          "avgKillTimeSeconds": 64.57,
+          "avgWaveDurationSeconds": 189.3,
+          "avgBossWaveDurationSeconds": 53.53
+        }
+      }
+    },
+    {
+      "tier": 4,
+      "level": 42,
+      "realmName": "筑基 [极] 半步金丹",
+      "baseFlat": {
+        "maxHitpoints": 1108.0,
+        "maxManapoints": 1402.0,
+        "physicalAttack": 62.0,
+        "magicAttack": 67.0,
+        "armor": 46.0,
+        "magicResistance": 41.0,
+        "accuracyRating": 12.0,
+        "evasionRating": 8.0,
+        "criticalRating": 6.0,
+        "criticalAvoidance": 4.0,
+        "breakRating": 4.0,
+        "parryRating": 4.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 1.26,
+        "multiplier": 2.26
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 0.6,
+        "expectedEnhancement": 9,
+        "enhancementMultiplier": 1.5513,
+        "enhancedPiecePercentage": 0.9308,
+        "allStatsEquivalentPercentage": 0.4654,
+        "multiplier": 1.4654
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 6,
+        "singleBuffSingleStatPercentage": 0.15,
+        "singleBuffAllStatsPercentage": 0.0125,
+        "buffTotalPercentage": 0.075,
+        "multiplier": 1.075
+      },
+      "compoundMultiplier": 3.5602,
+      "finalExpected": {
+        "maxHitpoints": 3944.69,
+        "maxManapoints": 4991.38,
+        "physicalAttack": 220.73,
+        "magicAttack": 238.53,
+        "armor": 163.77,
+        "magicResistance": 145.97,
+        "accuracyRating": 42.72,
+        "evasionRating": 28.48,
+        "criticalRating": 21.36,
+        "criticalAvoidance": 14.24,
+        "breakRating": 14.24,
+        "parryRating": 14.24
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 4.0,
+        "cooldownReductionPct": 24.4,
+        "criticalDamageMultiplierPct": 263.9,
+        "waveSearchDelaySeconds": 4.19,
+        "skillIntensity": 1.9,
+        "hourlyKills": 67.75,
+        "hourlyWaves": 22.58,
+        "dailyKills24h": 1626,
+        "dailyWaves24h": 542,
+        "avgKillTimeSeconds": 53.14,
+        "avgWaveDurationSeconds": 155.22,
+        "avgNormalWaveDurationSeconds": 169.27,
+        "avgEliteWaveDurationSeconds": 105.39,
+        "avgBossWaveDurationSeconds": 78.93
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 16.3,
+        "physicalStyle": {
+          "hourlyKills": 73.0,
+          "hourlyWaves": 24.33,
+          "dailyKills24h": 1752,
+          "avgKillTimeSeconds": 49.32,
+          "avgWaveDurationSeconds": 143.76,
+          "avgBossWaveDurationSeconds": 79.27
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 114.0,
+          "hourlyKills": 55.5,
+          "hourlyWaves": 18.5,
+          "dailyKills24h": 1332,
+          "avgKillTimeSeconds": 64.86,
+          "avgWaveDurationSeconds": 190.41,
+          "avgBossWaveDurationSeconds": 76.29
+        }
+      }
+    },
+    {
+      "tier": 5,
+      "level": 54,
+      "realmName": "金丹 [极] 半步元婴",
+      "baseFlat": {
+        "maxHitpoints": 2164.0,
+        "maxManapoints": 2770.0,
+        "physicalAttack": 116.0,
+        "magicAttack": 133.0,
+        "armor": 83.0,
+        "magicResistance": 85.0,
+        "accuracyRating": 19.0,
+        "evasionRating": 15.0,
+        "criticalRating": 13.0,
+        "criticalAvoidance": 8.0,
+        "breakRating": 7.0,
+        "parryRating": 7.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 1.62,
+        "multiplier": 2.62
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 0.8,
+        "expectedEnhancement": 10,
+        "enhancementMultiplier": 1.6289,
+        "enhancedPiecePercentage": 1.3031,
+        "allStatsEquivalentPercentage": 0.6516,
+        "multiplier": 1.6516
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 8,
+        "singleBuffSingleStatPercentage": 0.2,
+        "singleBuffAllStatsPercentage": 0.016667,
+        "buffTotalPercentage": 0.1333,
+        "multiplier": 1.1333
+      },
+      "compoundMultiplier": 4.904,
+      "finalExpected": {
+        "maxHitpoints": 10612.31,
+        "maxManapoints": 13584.15,
+        "physicalAttack": 568.87,
+        "magicAttack": 652.24,
+        "armor": 407.03,
+        "magicResistance": 416.84,
+        "accuracyRating": 93.18,
+        "evasionRating": 73.56,
+        "criticalRating": 63.75,
+        "criticalAvoidance": 39.23,
+        "breakRating": 34.33,
+        "parryRating": 34.33
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 5.0,
+        "cooldownReductionPct": 31.5,
+        "criticalDamageMultiplierPct": 297.2,
+        "waveSearchDelaySeconds": 3.95,
+        "skillIntensity": 2.2,
+        "hourlyKills": 76.62,
+        "hourlyWaves": 25.54,
+        "dailyKills24h": 1839,
+        "dailyWaves24h": 613,
+        "avgKillTimeSeconds": 46.98,
+        "avgWaveDurationSeconds": 137.0,
+        "avgNormalWaveDurationSeconds": 136.8,
+        "avgEliteWaveDurationSeconds": 148.69,
+        "avgBossWaveDurationSeconds": 104.4
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 21.0,
+        "physicalStyle": {
+          "hourlyKills": 85.25,
+          "hourlyWaves": 28.42,
+          "dailyKills24h": 2046,
+          "avgKillTimeSeconds": 42.23,
+          "avgWaveDurationSeconds": 122.74,
+          "avgBossWaveDurationSeconds": 104.53
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 132.0,
+          "hourlyKills": 66.88,
+          "hourlyWaves": 22.29,
+          "dailyKills24h": 1605,
+          "avgKillTimeSeconds": 53.83,
+          "avgWaveDurationSeconds": 157.55,
+          "avgBossWaveDurationSeconds": 101.62
+        }
+      }
+    },
+    {
+      "tier": 6,
+      "level": 66,
+      "realmName": "元婴 [极] 半步化神",
+      "baseFlat": {
+        "maxHitpoints": 4624.0,
+        "maxManapoints": 4234.0,
+        "physicalAttack": 196.0,
+        "magicAttack": 232.0,
+        "armor": 138.0,
+        "magicResistance": 152.0,
+        "accuracyRating": 28.0,
+        "evasionRating": 24.0,
+        "criticalRating": 22.0,
+        "criticalAvoidance": 14.0,
+        "breakRating": 13.0,
+        "parryRating": 12.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 1.98,
+        "multiplier": 2.98
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 1.0,
+        "expectedEnhancement": 12,
+        "enhancementMultiplier": 1.7959,
+        "enhancedPiecePercentage": 1.7959,
+        "allStatsEquivalentPercentage": 0.8979,
+        "multiplier": 1.8979
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 11,
+        "singleBuffSingleStatPercentage": 0.25,
+        "singleBuffAllStatsPercentage": 0.020833,
+        "buffTotalPercentage": 0.2292,
+        "multiplier": 1.2292
+      },
+      "compoundMultiplier": 6.952,
+      "finalExpected": {
+        "maxHitpoints": 32145.83,
+        "maxManapoints": 29434.57,
+        "physicalAttack": 1362.58,
+        "magicAttack": 1612.85,
+        "armor": 959.37,
+        "magicResistance": 1056.7,
+        "accuracyRating": 194.65,
+        "evasionRating": 166.85,
+        "criticalRating": 152.94,
+        "criticalAvoidance": 97.33,
+        "breakRating": 90.38,
+        "parryRating": 83.42
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 6.0,
+        "cooldownReductionPct": 38.7,
+        "criticalDamageMultiplierPct": 330.6,
+        "waveSearchDelaySeconds": 3.71,
+        "skillIntensity": 2.5,
+        "hourlyKills": 66.88,
+        "hourlyWaves": 22.29,
+        "dailyKills24h": 1605,
+        "dailyWaves24h": 535,
+        "avgKillTimeSeconds": 53.83,
+        "avgWaveDurationSeconds": 157.79,
+        "avgNormalWaveDurationSeconds": 135.1,
+        "avgEliteWaveDurationSeconds": 271.24,
+        "avgBossWaveDurationSeconds": 177.78
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 25.8,
+        "physicalStyle": {
+          "hourlyKills": 72.88,
+          "hourlyWaves": 24.29,
+          "dailyKills24h": 1749,
+          "avgKillTimeSeconds": 49.4,
+          "avgWaveDurationSeconds": 144.49,
+          "avgBossWaveDurationSeconds": 182.69
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 150.0,
+          "hourlyKills": 57.0,
+          "hourlyWaves": 19.0,
+          "dailyKills24h": 1368,
+          "avgKillTimeSeconds": 63.16,
+          "avgWaveDurationSeconds": 185.77,
+          "avgBossWaveDurationSeconds": 170.81
+        }
+      }
+    },
+    {
+      "tier": 7,
+      "level": 78,
+      "realmName": "化神 [极] 半步炼虚",
+      "baseFlat": {
+        "maxHitpoints": 8056.0,
+        "maxManapoints": 6282.0,
+        "physicalAttack": 308.0,
+        "magicAttack": 369.0,
+        "armor": 214.0,
+        "magicResistance": 246.0,
+        "accuracyRating": 39.0,
+        "evasionRating": 35.0,
+        "criticalRating": 33.0,
+        "criticalAvoidance": 25.0,
+        "breakRating": 23.0,
+        "parryRating": 20.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 2.34,
+        "multiplier": 3.34
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 1.4,
+        "expectedEnhancement": 14,
+        "enhancementMultiplier": 1.9799,
+        "enhancedPiecePercentage": 2.7719,
+        "allStatsEquivalentPercentage": 1.386,
+        "multiplier": 2.386
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 14,
+        "singleBuffSingleStatPercentage": 0.35,
+        "singleBuffAllStatsPercentage": 0.029167,
+        "buffTotalPercentage": 0.4083,
+        "multiplier": 1.4083
+      },
+      "compoundMultiplier": 11.2231,
+      "finalExpected": {
+        "maxHitpoints": 90413.46,
+        "maxManapoints": 70503.65,
+        "physicalAttack": 3456.72,
+        "magicAttack": 4141.33,
+        "armor": 2401.75,
+        "magicResistance": 2760.89,
+        "accuracyRating": 437.7,
+        "evasionRating": 392.81,
+        "criticalRating": 370.36,
+        "criticalAvoidance": 280.58,
+        "breakRating": 258.13,
+        "parryRating": 224.46
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 7.0,
+        "cooldownReductionPct": 45.8,
+        "criticalDamageMultiplierPct": 363.9,
+        "waveSearchDelaySeconds": 3.47,
+        "skillIntensity": 2.8,
+        "hourlyKills": 66.38,
+        "hourlyWaves": 22.12,
+        "dailyKills24h": 1593,
+        "dailyWaves24h": 531,
+        "avgKillTimeSeconds": 54.24,
+        "avgWaveDurationSeconds": 159.24,
+        "avgNormalWaveDurationSeconds": 127.51,
+        "avgEliteWaveDurationSeconds": 284.9,
+        "avgBossWaveDurationSeconds": 291.29
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 30.6,
+        "physicalStyle": {
+          "hourlyKills": 78.0,
+          "hourlyWaves": 26.0,
+          "dailyKills24h": 1872,
+          "avgKillTimeSeconds": 46.15,
+          "avgWaveDurationSeconds": 134.99,
+          "avgBossWaveDurationSeconds": 259.27
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 168.0,
+          "hourlyKills": 57.75,
+          "hourlyWaves": 19.25,
+          "dailyKills24h": 1386,
+          "avgKillTimeSeconds": 62.34,
+          "avgWaveDurationSeconds": 183.54,
+          "avgBossWaveDurationSeconds": 295.67
+        }
+      }
+    },
+    {
+      "tier": 8,
+      "level": 90,
+      "realmName": "炼虚 [极] 半步合体",
+      "baseFlat": {
+        "maxHitpoints": 11644.0,
+        "maxManapoints": 8586.0,
+        "physicalAttack": 430.0,
+        "magicAttack": 517.0,
+        "armor": 297.0,
+        "magicResistance": 347.0,
+        "accuracyRating": 50.0,
+        "evasionRating": 46.0,
+        "criticalRating": 44.0,
+        "criticalAvoidance": 36.0,
+        "breakRating": 34.0,
+        "parryRating": 30.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 2.7,
+        "multiplier": 3.7
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 1.8,
+        "expectedEnhancement": 15,
+        "enhancementMultiplier": 2.0789,
+        "enhancedPiecePercentage": 3.7421,
+        "allStatsEquivalentPercentage": 1.871,
+        "multiplier": 2.871
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 17,
+        "singleBuffSingleStatPercentage": 0.45,
+        "singleBuffAllStatsPercentage": 0.0375,
+        "buffTotalPercentage": 0.6375,
+        "multiplier": 1.6375
+      },
+      "compoundMultiplier": 17.3949,
+      "finalExpected": {
+        "maxHitpoints": 202546.05,
+        "maxManapoints": 149352.49,
+        "physicalAttack": 7479.8,
+        "magicAttack": 8993.16,
+        "armor": 5166.28,
+        "magicResistance": 6036.03,
+        "accuracyRating": 869.74,
+        "evasionRating": 800.16,
+        "criticalRating": 765.37,
+        "criticalAvoidance": 626.22,
+        "breakRating": 591.43,
+        "parryRating": 521.85
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 8.0,
+        "cooldownReductionPct": 53.0,
+        "criticalDamageMultiplierPct": 397.2,
+        "waveSearchDelaySeconds": 3.23,
+        "skillIntensity": 3.1,
+        "hourlyKills": 75.62,
+        "hourlyWaves": 25.21,
+        "dailyKills24h": 1815,
+        "dailyWaves24h": 605,
+        "avgKillTimeSeconds": 47.6,
+        "avgWaveDurationSeconds": 139.58,
+        "avgNormalWaveDurationSeconds": 101.91,
+        "avgEliteWaveDurationSeconds": 229.45,
+        "avgBossWaveDurationSeconds": 474.67
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 35.3,
+        "physicalStyle": {
+          "hourlyKills": 92.5,
+          "hourlyWaves": 30.83,
+          "dailyKills24h": 2220,
+          "avgKillTimeSeconds": 38.92,
+          "avgWaveDurationSeconds": 113.52,
+          "avgBossWaveDurationSeconds": 422.82
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 186.0,
+          "hourlyKills": 65.0,
+          "hourlyWaves": 21.67,
+          "dailyKills24h": 1560,
+          "avgKillTimeSeconds": 55.38,
+          "avgWaveDurationSeconds": 162.92,
+          "avgBossWaveDurationSeconds": 489.14
+        }
+      }
+    },
+    {
+      "tier": 9,
+      "level": 102,
+      "realmName": "合体 [极] 半步大乘",
+      "baseFlat": {
+        "maxHitpoints": 16360.0,
+        "maxManapoints": 11618.0,
+        "physicalAttack": 590.0,
+        "magicAttack": 712.0,
+        "armor": 406.0,
+        "magicResistance": 480.0,
+        "accuracyRating": 65.0,
+        "evasionRating": 61.0,
+        "criticalRating": 59.0,
+        "criticalAvoidance": 50.0,
+        "breakRating": 48.0,
+        "parryRating": 44.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 3.06,
+        "multiplier": 4.06
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 2.4,
+        "expectedEnhancement": 16,
+        "enhancementMultiplier": 2.1829,
+        "enhancedPiecePercentage": 5.2389,
+        "allStatsEquivalentPercentage": 2.6194,
+        "multiplier": 3.6194
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 21,
+        "singleBuffSingleStatPercentage": 0.6,
+        "singleBuffAllStatsPercentage": 0.05,
+        "buffTotalPercentage": 1.05,
+        "multiplier": 2.05
+      },
+      "compoundMultiplier": 30.1247,
+      "finalExpected": {
+        "maxHitpoints": 492839.74,
+        "maxManapoints": 349988.51,
+        "physicalAttack": 17773.56,
+        "magicAttack": 21448.77,
+        "armor": 12230.62,
+        "magicResistance": 14459.85,
+        "accuracyRating": 1958.1,
+        "evasionRating": 1837.61,
+        "criticalRating": 1777.36,
+        "criticalAvoidance": 1506.23,
+        "breakRating": 1445.98,
+        "parryRating": 1325.49
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 9.0,
+        "cooldownReductionPct": 60.1,
+        "criticalDamageMultiplierPct": 430.6,
+        "waveSearchDelaySeconds": 3.0,
+        "skillIntensity": 3.4,
+        "hourlyKills": 82.5,
+        "hourlyWaves": 27.5,
+        "dailyKills24h": 1980,
+        "dailyWaves24h": 660,
+        "avgKillTimeSeconds": 43.64,
+        "avgWaveDurationSeconds": 127.91,
+        "avgNormalWaveDurationSeconds": 78.3,
+        "avgEliteWaveDurationSeconds": 178.93,
+        "avgBossWaveDurationSeconds": 768.65
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 40.1,
+        "physicalStyle": {
+          "hourlyKills": 91.0,
+          "hourlyWaves": 30.33,
+          "dailyKills24h": 2184,
+          "avgKillTimeSeconds": 39.56,
+          "avgWaveDurationSeconds": 115.69,
+          "avgBossWaveDurationSeconds": 747.67
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 204.0,
+          "hourlyKills": 69.38,
+          "hourlyWaves": 23.12,
+          "dailyKills24h": 1665,
+          "avgKillTimeSeconds": 51.89,
+          "avgWaveDurationSeconds": 152.68,
+          "avgBossWaveDurationSeconds": 778.41
+        }
+      }
+    },
+    {
+      "tier": 10,
+      "level": 114,
+      "realmName": "大乘 [极] 半步渡劫",
+      "baseFlat": {
+        "maxHitpoints": 22372.0,
+        "maxManapoints": 15474.0,
+        "physicalAttack": 794.0,
+        "magicAttack": 961.0,
+        "armor": 545.0,
+        "magicResistance": 650.0,
+        "accuracyRating": 84.0,
+        "evasionRating": 79.0,
+        "criticalRating": 77.0,
+        "criticalAvoidance": 68.0,
+        "breakRating": 66.0,
+        "parryRating": 62.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 3.42,
+        "multiplier": 4.42
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 3.0,
+        "expectedEnhancement": 17,
+        "enhancementMultiplier": 2.292,
+        "enhancedPiecePercentage": 6.8761,
+        "allStatsEquivalentPercentage": 3.438,
+        "multiplier": 4.438
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 26,
+        "singleBuffSingleStatPercentage": 0.75,
+        "singleBuffAllStatsPercentage": 0.0625,
+        "buffTotalPercentage": 1.625,
+        "multiplier": 2.625
+      },
+      "compoundMultiplier": 51.4922,
+      "finalExpected": {
+        "maxHitpoints": 1151983.81,
+        "maxManapoints": 796790.52,
+        "physicalAttack": 40884.82,
+        "magicAttack": 49484.02,
+        "armor": 28063.26,
+        "magicResistance": 33469.94,
+        "accuracyRating": 4325.35,
+        "evasionRating": 4067.88,
+        "criticalRating": 3964.9,
+        "criticalAvoidance": 3501.47,
+        "breakRating": 3398.49,
+        "parryRating": 3192.52
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 10.0,
+        "cooldownReductionPct": 67.3,
+        "criticalDamageMultiplierPct": 463.9,
+        "waveSearchDelaySeconds": 2.76,
+        "skillIntensity": 3.7,
+        "hourlyKills": 98.75,
+        "hourlyWaves": 32.92,
+        "dailyKills24h": 2370,
+        "dailyWaves24h": 790,
+        "avgKillTimeSeconds": 36.46,
+        "avgWaveDurationSeconds": 106.61,
+        "avgNormalWaveDurationSeconds": 59.83,
+        "avgEliteWaveDurationSeconds": 137.33,
+        "avgBossWaveDurationSeconds": 771.01
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 44.8,
+        "physicalStyle": {
+          "hourlyKills": 107.5,
+          "hourlyWaves": 35.83,
+          "dailyKills24h": 2580,
+          "avgKillTimeSeconds": 33.49,
+          "avgWaveDurationSeconds": 97.71,
+          "avgBossWaveDurationSeconds": 642.2
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 222.0,
+          "hourlyKills": 70.0,
+          "hourlyWaves": 23.33,
+          "dailyKills24h": 1680,
+          "avgKillTimeSeconds": 51.43,
+          "avgWaveDurationSeconds": 151.53,
+          "avgBossWaveDurationSeconds": 1231.44
+        }
+      }
+    },
+    {
+      "tier": 11,
+      "level": 126,
+      "realmName": "渡劫 [极] 半步飞升",
+      "baseFlat": {
+        "maxHitpoints": 29824.0,
+        "maxManapoints": 20258.0,
+        "physicalAttack": 1047.0,
+        "magicAttack": 1270.0,
+        "armor": 717.0,
+        "magicResistance": 860.0,
+        "accuracyRating": 107.0,
+        "evasionRating": 102.0,
+        "criticalRating": 100.0,
+        "criticalAvoidance": 91.0,
+        "breakRating": 89.0,
+        "parryRating": 84.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 3.78,
+        "multiplier": 4.78
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 4.0,
+        "expectedEnhancement": 18,
+        "enhancementMultiplier": 2.4066,
+        "enhancedPiecePercentage": 9.6265,
+        "allStatsEquivalentPercentage": 4.8132,
+        "multiplier": 5.8132
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 31,
+        "singleBuffSingleStatPercentage": 1.0,
+        "singleBuffAllStatsPercentage": 0.083333,
+        "buffTotalPercentage": 2.5833,
+        "multiplier": 3.5833
+      },
+      "compoundMultiplier": 99.5711,
+      "finalExpected": {
+        "maxHitpoints": 2969608.08,
+        "maxManapoints": 2017111.06,
+        "physicalAttack": 104250.93,
+        "magicAttack": 126455.28,
+        "armor": 71392.47,
+        "magicResistance": 85631.13,
+        "accuracyRating": 10654.11,
+        "evasionRating": 10156.25,
+        "criticalRating": 9957.11,
+        "criticalAvoidance": 9060.97,
+        "breakRating": 8861.83,
+        "parryRating": 8363.97
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 11.0,
+        "cooldownReductionPct": 74.4,
+        "criticalDamageMultiplierPct": 497.2,
+        "waveSearchDelaySeconds": 2.52,
+        "skillIntensity": 4.0,
+        "hourlyKills": 137.38,
+        "hourlyWaves": 45.79,
+        "dailyKills24h": 3297,
+        "dailyWaves24h": 1099,
+        "avgKillTimeSeconds": 26.21,
+        "avgWaveDurationSeconds": 76.1,
+        "avgNormalWaveDurationSeconds": 42.33,
+        "avgEliteWaveDurationSeconds": 100.64,
+        "avgBossWaveDurationSeconds": 551.4
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 49.6,
+        "physicalStyle": {
+          "hourlyKills": 156.25,
+          "hourlyWaves": 52.08,
+          "dailyKills24h": 3750,
+          "avgKillTimeSeconds": 23.04,
+          "avgWaveDurationSeconds": 66.6,
+          "avgBossWaveDurationSeconds": 458.1
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 240.0,
+          "hourlyKills": 84.38,
+          "hourlyWaves": 28.12,
+          "dailyKills24h": 2025,
+          "avgKillTimeSeconds": 42.67,
+          "avgWaveDurationSeconds": 125.48,
+          "avgBossWaveDurationSeconds": 1132.32
+        }
+      }
+    },
+    {
+      "tier": 12,
+      "level": 127,
+      "realmName": "飞升 [极] 飞升真仙",
+      "baseFlat": {
+        "maxHitpoints": 38872.0,
+        "maxManapoints": 26066.0,
+        "physicalAttack": 1354.0,
+        "magicAttack": 1645.0,
+        "armor": 927.0,
+        "magicResistance": 1116.0,
+        "accuracyRating": 135.0,
+        "evasionRating": 130.0,
+        "criticalRating": 128.0,
+        "criticalAvoidance": 119.0,
+        "breakRating": 116.0,
+        "parryRating": 111.0
+      },
+      "rootMultiplier": {
+        "rootPercentage": 3.81,
+        "multiplier": 4.81
+      },
+      "equipBaseline": {
+        "pieceBasePercentage": 5.0,
+        "expectedEnhancement": 20,
+        "enhancementMultiplier": 2.6533,
+        "enhancedPiecePercentage": 13.2665,
+        "allStatsEquivalentPercentage": 6.6332,
+        "multiplier": 7.6332
+      },
+      "buffBaseline": {
+        "expectedBuffCount": 38,
+        "singleBuffSingleStatPercentage": 1.25,
+        "singleBuffAllStatsPercentage": 0.104167,
+        "buffTotalPercentage": 3.9583,
+        "multiplier": 4.9583
+      },
+      "compoundMultiplier": 182.0497,
+      "finalExpected": {
+        "maxHitpoints": 7076635.75,
+        "maxManapoints": 4745307.35,
+        "physicalAttack": 246495.29,
+        "magicAttack": 299471.75,
+        "armor": 168760.07,
+        "magicResistance": 203167.46,
+        "accuracyRating": 24576.71,
+        "evasionRating": 23666.46,
+        "criticalRating": 23302.36,
+        "criticalAvoidance": 21663.91,
+        "breakRating": 21117.76,
+        "parryRating": 20207.52
+      },
+      "combatSimulationBaseline": {
+        "resistanceCoefficientK": 12.0,
+        "cooldownReductionPct": 75.0,
+        "criticalDamageMultiplierPct": 500.0,
+        "waveSearchDelaySeconds": 2.5,
+        "skillIntensity": 4.3,
+        "hourlyKills": 142.88,
+        "hourlyWaves": 47.62,
+        "dailyKills24h": 3429,
+        "dailyWaves24h": 1143,
+        "avgKillTimeSeconds": 25.2,
+        "avgWaveDurationSeconds": 73.09,
+        "avgNormalWaveDurationSeconds": 40.29,
+        "avgEliteWaveDurationSeconds": 94.89,
+        "avgBossWaveDurationSeconds": 534.28
+      },
+      "combatSimulationDualStyle": {
+        "castTimeReductionPct": 50.0,
+        "physicalStyle": {
+          "hourlyKills": 162.5,
+          "hourlyWaves": 54.17,
+          "dailyKills24h": 3900,
+          "avgKillTimeSeconds": 22.15,
+          "avgWaveDurationSeconds": 63.96,
+          "avgBossWaveDurationSeconds": 440.19
+        },
+        "magicStyle": {
+          "magicAutoAttackRatio": 258.0,
+          "hourlyKills": 89.5,
+          "hourlyWaves": 29.83,
+          "dailyKills24h": 2148,
+          "avgKillTimeSeconds": 40.22,
+          "avgWaveDurationSeconds": 118.17,
+          "avgBossWaveDurationSeconds": 1067.07
+        }
+      }
+    }
+  ],
+  "allRealmNodes": [
+    {
+      "level": 1,
+      "name": "凡俗 [武] 凡胎",
+      "kind": "初始凡胎",
+      "budgetPoints": 0,
+      "delta": {
+        "hp": 0.0,
+        "mp": 0.0,
+        "ad": 0.0,
+        "ap": 0.0,
+        "armor": 0.0,
+        "mres": 0.0,
+        "hit": 0.0,
+        "eva": 0.0,
+        "crit": 0.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 100.0,
+        "mp": 50.0,
+        "ad": 10.0,
+        "ap": 5.0,
+        "armor": 10.0,
+        "mres": 0.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 1.0,
+        "parry": 1.0
+      }
+    },
+    {
+      "level": 11,
+      "name": "凡俗 [玄] 通玄",
+      "kind": "位阶晋升",
+      "budgetPoints": 11,
+      "delta": {
+        "hp": 48.0,
+        "mp": 16.0,
+        "ad": 2.0,
+        "ap": 1.0,
+        "armor": 1.0,
+        "mres": 0.0,
+        "hit": 1.0,
+        "eva": 0.0,
+        "crit": 0.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 148.0,
+        "mp": 66.0,
+        "ad": 12.0,
+        "ap": 6.0,
+        "armor": 11.0,
+        "mres": 0.0,
+        "hit": 2.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 1.0,
+        "parry": 1.0
+      }
+    },
+    {
+      "level": 17,
+      "name": "凡俗 [天] 天人",
+      "kind": "位阶晋升",
+      "budgetPoints": 17,
+      "delta": {
+        "hp": 84.0,
+        "mp": 24.0,
+        "ad": 3.0,
+        "ap": 1.0,
+        "armor": 2.0,
+        "mres": 0.0,
+        "hit": 1.0,
+        "eva": 0.0,
+        "crit": 0.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 232.0,
+        "mp": 90.0,
+        "ad": 15.0,
+        "ap": 7.0,
+        "armor": 13.0,
+        "mres": 0.0,
+        "hit": 3.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 1.0,
+        "parry": 1.0
+      }
+    },
+    {
+      "level": 19,
+      "name": "练气 [初] 练气一层",
+      "kind": "大境界突破",
+      "budgetPoints": 76,
+      "delta": {
+        "hp": 120.0,
+        "mp": 240.0,
+        "ad": 8.0,
+        "ap": 10.0,
+        "armor": 5.0,
+        "mres": 7.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 1.0,
+        "parry": 1.0
+      },
+      "cumulativeBase": {
+        "hp": 352.0,
+        "mp": 330.0,
+        "ad": 23.0,
+        "ap": 17.0,
+        "armor": 18.0,
+        "mres": 7.0,
+        "hit": 4.0,
+        "eva": 2.0,
+        "crit": 2.0,
+        "cavoid": 2.0,
+        "break_p": 2.0,
+        "parry": 2.0
+      }
+    },
+    {
+      "level": 22,
+      "name": "练气 [中] 练气四层",
+      "kind": "位阶晋升",
+      "budgetPoints": 22,
+      "delta": {
+        "hp": 36.0,
+        "mp": 72.0,
+        "ad": 2.0,
+        "ap": 3.0,
+        "armor": 1.0,
+        "mres": 2.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 0.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 388.0,
+        "mp": 402.0,
+        "ad": 25.0,
+        "ap": 20.0,
+        "armor": 19.0,
+        "mres": 9.0,
+        "hit": 5.0,
+        "eva": 3.0,
+        "crit": 2.0,
+        "cavoid": 2.0,
+        "break_p": 2.0,
+        "parry": 2.0
+      }
+    },
+    {
+      "level": 25,
+      "name": "练气 [后] 练气七层",
+      "kind": "位阶晋升",
+      "budgetPoints": 25,
+      "delta": {
+        "hp": 36.0,
+        "mp": 80.0,
+        "ad": 2.0,
+        "ap": 3.0,
+        "armor": 2.0,
+        "mres": 2.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 424.0,
+        "mp": 482.0,
+        "ad": 27.0,
+        "ap": 23.0,
+        "armor": 21.0,
+        "mres": 11.0,
+        "hit": 6.0,
+        "eva": 4.0,
+        "crit": 3.0,
+        "cavoid": 2.0,
+        "break_p": 2.0,
+        "parry": 2.0
+      }
+    },
+    {
+      "level": 28,
+      "name": "练气 [极] 练气巅峰",
+      "kind": "位阶晋升",
+      "budgetPoints": 28,
+      "delta": {
+        "hp": 48.0,
+        "mp": 88.0,
+        "ad": 3.0,
+        "ap": 4.0,
+        "armor": 2.0,
+        "mres": 3.0,
+        "hit": 1.0,
+        "eva": 0.0,
+        "crit": 0.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 472.0,
+        "mp": 570.0,
+        "ad": 30.0,
+        "ap": 27.0,
+        "armor": 23.0,
+        "mres": 14.0,
+        "hit": 7.0,
+        "eva": 4.0,
+        "crit": 3.0,
+        "cavoid": 2.0,
+        "break_p": 2.0,
+        "parry": 2.0
+      }
+    },
+    {
+      "level": 31,
+      "name": "筑基 [初] 筑基一层",
+      "kind": "大境界突破",
+      "budgetPoints": 186,
+      "delta": {
+        "hp": 396.0,
+        "mp": 520.0,
+        "ad": 20.0,
+        "ap": 25.0,
+        "armor": 14.0,
+        "mres": 17.0,
+        "hit": 2.0,
+        "eva": 2.0,
+        "crit": 2.0,
+        "cavoid": 2.0,
+        "break_p": 2.0,
+        "parry": 2.0
+      },
+      "cumulativeBase": {
+        "hp": 868.0,
+        "mp": 1090.0,
+        "ad": 50.0,
+        "ap": 52.0,
+        "armor": 37.0,
+        "mres": 31.0,
+        "hit": 9.0,
+        "eva": 6.0,
+        "crit": 5.0,
+        "cavoid": 4.0,
+        "break_p": 4.0,
+        "parry": 4.0
+      }
+    },
+    {
+      "level": 34,
+      "name": "筑基 [中] 筑基四层",
+      "kind": "位阶晋升",
+      "budgetPoints": 34,
+      "delta": {
+        "hp": 72.0,
+        "mp": 96.0,
+        "ad": 4.0,
+        "ap": 5.0,
+        "armor": 3.0,
+        "mres": 3.0,
+        "hit": 1.0,
+        "eva": 0.0,
+        "crit": 0.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 940.0,
+        "mp": 1186.0,
+        "ad": 54.0,
+        "ap": 57.0,
+        "armor": 40.0,
+        "mres": 34.0,
+        "hit": 10.0,
+        "eva": 6.0,
+        "crit": 5.0,
+        "cavoid": 4.0,
+        "break_p": 4.0,
+        "parry": 4.0
+      }
+    },
+    {
+      "level": 37,
+      "name": "筑基 [后] 筑基七层",
+      "kind": "位阶晋升",
+      "budgetPoints": 37,
+      "delta": {
+        "hp": 84.0,
+        "mp": 104.0,
+        "ad": 4.0,
+        "ap": 5.0,
+        "armor": 3.0,
+        "mres": 3.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 0.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 1024.0,
+        "mp": 1290.0,
+        "ad": 58.0,
+        "ap": 62.0,
+        "armor": 43.0,
+        "mres": 37.0,
+        "hit": 11.0,
+        "eva": 7.0,
+        "crit": 5.0,
+        "cavoid": 4.0,
+        "break_p": 4.0,
+        "parry": 4.0
+      }
+    },
+    {
+      "level": 40,
+      "name": "筑基 [极] 筑基巅峰",
+      "kind": "位阶晋升",
+      "budgetPoints": 40,
+      "delta": {
+        "hp": 84.0,
+        "mp": 112.0,
+        "ad": 4.0,
+        "ap": 5.0,
+        "armor": 3.0,
+        "mres": 4.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 1108.0,
+        "mp": 1402.0,
+        "ad": 62.0,
+        "ap": 67.0,
+        "armor": 46.0,
+        "mres": 41.0,
+        "hit": 12.0,
+        "eva": 8.0,
+        "crit": 6.0,
+        "cavoid": 4.0,
+        "break_p": 4.0,
+        "parry": 4.0
+      }
+    },
+    {
+      "level": 43,
+      "name": "金丹 [初] 金丹一层",
+      "kind": "大境界突破",
+      "budgetPoints": 344,
+      "delta": {
+        "hp": 744.0,
+        "mp": 960.0,
+        "ad": 38.0,
+        "ap": 46.0,
+        "armor": 26.0,
+        "mres": 31.0,
+        "hit": 4.0,
+        "eva": 4.0,
+        "crit": 4.0,
+        "cavoid": 3.0,
+        "break_p": 3.0,
+        "parry": 3.0
+      },
+      "cumulativeBase": {
+        "hp": 1852.0,
+        "mp": 2362.0,
+        "ad": 100.0,
+        "ap": 113.0,
+        "armor": 72.0,
+        "mres": 72.0,
+        "hit": 16.0,
+        "eva": 12.0,
+        "crit": 10.0,
+        "cavoid": 7.0,
+        "break_p": 7.0,
+        "parry": 7.0
+      }
+    },
+    {
+      "level": 46,
+      "name": "金丹 [中] 金丹四层",
+      "kind": "位阶晋升",
+      "budgetPoints": 46,
+      "delta": {
+        "hp": 96.0,
+        "mp": 128.0,
+        "ad": 5.0,
+        "ap": 6.0,
+        "armor": 3.0,
+        "mres": 4.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 1948.0,
+        "mp": 2490.0,
+        "ad": 105.0,
+        "ap": 119.0,
+        "armor": 75.0,
+        "mres": 76.0,
+        "hit": 17.0,
+        "eva": 13.0,
+        "crit": 11.0,
+        "cavoid": 8.0,
+        "break_p": 7.0,
+        "parry": 7.0
+      }
+    },
+    {
+      "level": 49,
+      "name": "金丹 [后] 金丹七层",
+      "kind": "位阶晋升",
+      "budgetPoints": 49,
+      "delta": {
+        "hp": 108.0,
+        "mp": 136.0,
+        "ad": 5.0,
+        "ap": 7.0,
+        "armor": 4.0,
+        "mres": 4.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 2056.0,
+        "mp": 2626.0,
+        "ad": 110.0,
+        "ap": 126.0,
+        "armor": 79.0,
+        "mres": 80.0,
+        "hit": 18.0,
+        "eva": 14.0,
+        "crit": 12.0,
+        "cavoid": 8.0,
+        "break_p": 7.0,
+        "parry": 7.0
+      }
+    },
+    {
+      "level": 52,
+      "name": "金丹 [极] 金丹巅峰",
+      "kind": "位阶晋升",
+      "budgetPoints": 52,
+      "delta": {
+        "hp": 108.0,
+        "mp": 144.0,
+        "ad": 6.0,
+        "ap": 7.0,
+        "armor": 4.0,
+        "mres": 5.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 2164.0,
+        "mp": 2770.0,
+        "ad": 116.0,
+        "ap": 133.0,
+        "armor": 83.0,
+        "mres": 85.0,
+        "hit": 19.0,
+        "eva": 15.0,
+        "crit": 13.0,
+        "cavoid": 8.0,
+        "break_p": 7.0,
+        "parry": 7.0
+      }
+    },
+    {
+      "level": 55,
+      "name": "元婴 [初] 元婴一层",
+      "kind": "大境界突破",
+      "budgetPoints": 550,
+      "delta": {
+        "hp": 1848.0,
+        "mp": 1104.0,
+        "ad": 60.0,
+        "ap": 74.0,
+        "armor": 41.0,
+        "mres": 50.0,
+        "hit": 6.0,
+        "eva": 6.0,
+        "crit": 6.0,
+        "cavoid": 5.0,
+        "break_p": 5.0,
+        "parry": 5.0
+      },
+      "cumulativeBase": {
+        "hp": 4012.0,
+        "mp": 3874.0,
+        "ad": 176.0,
+        "ap": 207.0,
+        "armor": 124.0,
+        "mres": 135.0,
+        "hit": 25.0,
+        "eva": 21.0,
+        "crit": 19.0,
+        "cavoid": 13.0,
+        "break_p": 12.0,
+        "parry": 12.0
+      }
+    },
+    {
+      "level": 58,
+      "name": "元婴 [中] 元婴四层",
+      "kind": "位阶晋升",
+      "budgetPoints": 58,
+      "delta": {
+        "hp": 192.0,
+        "mp": 112.0,
+        "ad": 6.0,
+        "ap": 8.0,
+        "armor": 4.0,
+        "mres": 5.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 1.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 4204.0,
+        "mp": 3986.0,
+        "ad": 182.0,
+        "ap": 215.0,
+        "armor": 128.0,
+        "mres": 140.0,
+        "hit": 26.0,
+        "eva": 22.0,
+        "crit": 20.0,
+        "cavoid": 14.0,
+        "break_p": 13.0,
+        "parry": 12.0
+      }
+    },
+    {
+      "level": 61,
+      "name": "元婴 [后] 元婴七层",
+      "kind": "位阶晋升",
+      "budgetPoints": 61,
+      "delta": {
+        "hp": 204.0,
+        "mp": 120.0,
+        "ad": 7.0,
+        "ap": 8.0,
+        "armor": 5.0,
+        "mres": 6.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 4408.0,
+        "mp": 4106.0,
+        "ad": 189.0,
+        "ap": 223.0,
+        "armor": 133.0,
+        "mres": 146.0,
+        "hit": 27.0,
+        "eva": 23.0,
+        "crit": 21.0,
+        "cavoid": 14.0,
+        "break_p": 13.0,
+        "parry": 12.0
+      }
+    },
+    {
+      "level": 64,
+      "name": "元婴 [极] 元婴巅峰",
+      "kind": "位阶晋升",
+      "budgetPoints": 64,
+      "delta": {
+        "hp": 216.0,
+        "mp": 128.0,
+        "ad": 7.0,
+        "ap": 9.0,
+        "armor": 5.0,
+        "mres": 6.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 0.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 4624.0,
+        "mp": 4234.0,
+        "ad": 196.0,
+        "ap": 232.0,
+        "armor": 138.0,
+        "mres": 152.0,
+        "hit": 28.0,
+        "eva": 24.0,
+        "crit": 22.0,
+        "cavoid": 14.0,
+        "break_p": 13.0,
+        "parry": 12.0
+      }
+    },
+    {
+      "level": 67,
+      "name": "化神 [初] 化神一层",
+      "kind": "大境界突破",
+      "budgetPoints": 804,
+      "delta": {
+        "hp": 2700.0,
+        "mp": 1608.0,
+        "ad": 88.0,
+        "ap": 108.0,
+        "armor": 60.0,
+        "mres": 74.0,
+        "hit": 8.0,
+        "eva": 8.0,
+        "crit": 8.0,
+        "cavoid": 8.0,
+        "break_p": 8.0,
+        "parry": 8.0
+      },
+      "cumulativeBase": {
+        "hp": 7324.0,
+        "mp": 5842.0,
+        "ad": 284.0,
+        "ap": 340.0,
+        "armor": 198.0,
+        "mres": 226.0,
+        "hit": 36.0,
+        "eva": 32.0,
+        "crit": 30.0,
+        "cavoid": 22.0,
+        "break_p": 21.0,
+        "parry": 20.0
+      }
+    },
+    {
+      "level": 70,
+      "name": "化神 [中] 化神四层",
+      "kind": "位阶晋升",
+      "budgetPoints": 70,
+      "delta": {
+        "hp": 240.0,
+        "mp": 144.0,
+        "ad": 8.0,
+        "ap": 9.0,
+        "armor": 5.0,
+        "mres": 6.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 0.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 7564.0,
+        "mp": 5986.0,
+        "ad": 292.0,
+        "ap": 349.0,
+        "armor": 203.0,
+        "mres": 232.0,
+        "hit": 37.0,
+        "eva": 33.0,
+        "crit": 31.0,
+        "cavoid": 23.0,
+        "break_p": 21.0,
+        "parry": 20.0
+      }
+    },
+    {
+      "level": 73,
+      "name": "化神 [后] 化神七层",
+      "kind": "位阶晋升",
+      "budgetPoints": 73,
+      "delta": {
+        "hp": 240.0,
+        "mp": 144.0,
+        "ad": 8.0,
+        "ap": 10.0,
+        "armor": 5.0,
+        "mres": 7.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 1.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 7804.0,
+        "mp": 6130.0,
+        "ad": 300.0,
+        "ap": 359.0,
+        "armor": 208.0,
+        "mres": 239.0,
+        "hit": 38.0,
+        "eva": 34.0,
+        "crit": 32.0,
+        "cavoid": 24.0,
+        "break_p": 22.0,
+        "parry": 20.0
+      }
+    },
+    {
+      "level": 76,
+      "name": "化神 [极] 化神巅峰",
+      "kind": "位阶晋升",
+      "budgetPoints": 76,
+      "delta": {
+        "hp": 252.0,
+        "mp": 152.0,
+        "ad": 8.0,
+        "ap": 10.0,
+        "armor": 6.0,
+        "mres": 7.0,
+        "hit": 1.0,
+        "eva": 1.0,
+        "crit": 1.0,
+        "cavoid": 1.0,
+        "break_p": 1.0,
+        "parry": 0.0
+      },
+      "cumulativeBase": {
+        "hp": 8056.0,
+        "mp": 6282.0,
+        "ad": 308.0,
+        "ap": 369.0,
+        "armor": 214.0,
+        "mres": 246.0,
+        "hit": 39.0,
+        "eva": 35.0,
+        "crit": 33.0,
+        "cavoid": 25.0,
+        "break_p": 23.0,
+        "parry": 20.0
+      }
+    },
+    {
+      "level": 79,
+      "name": "炼虚 [初] 炼虚一层",
+      "kind": "大境界突破",
+      "budgetPoints": 1106,
+      "delta": {
+        "hp": 3588.0,
+        "mp": 2304.0,
+        "ad": 122.0,
+        "ap": 148.0,
+        "armor": 83.0,
+        "mres": 101.0,
+        "hit": 11.0,
+        "eva": 11.0,
+        "crit": 11.0,
+        "cavoid": 11.0,
+        "break_p": 11.0,
+        "parry": 10.0
+      },
+      "cumulativeBase": {
+        "hp": 11644.0,
+        "mp": 8586.0,
+        "ad": 430.0,
+        "ap": 517.0,
+        "armor": 297.0,
+        "mres": 347.0,
+        "hit": 50.0,
+        "eva": 46.0,
+        "crit": 44.0,
+        "cavoid": 36.0,
+        "break_p": 34.0,
+        "parry": 30.0
+      }
+    },
+    {
+      "level": 91,
+      "name": "合体 [初] 合体一层",
+      "kind": "大境界突破",
+      "budgetPoints": 1456,
+      "delta": {
+        "hp": 4716.0,
+        "mp": 3032.0,
+        "ad": 160.0,
+        "ap": 195.0,
+        "armor": 109.0,
+        "mres": 133.0,
+        "hit": 15.0,
+        "eva": 15.0,
+        "crit": 15.0,
+        "cavoid": 14.0,
+        "break_p": 14.0,
+        "parry": 14.0
+      },
+      "cumulativeBase": {
+        "hp": 16360.0,
+        "mp": 11618.0,
+        "ad": 590.0,
+        "ap": 712.0,
+        "armor": 406.0,
+        "mres": 480.0,
+        "hit": 65.0,
+        "eva": 61.0,
+        "crit": 59.0,
+        "cavoid": 50.0,
+        "break_p": 48.0,
+        "parry": 44.0
+      }
+    },
+    {
+      "level": 103,
+      "name": "大乘 [初] 大乘一层",
+      "kind": "大境界突破",
+      "budgetPoints": 1854,
+      "delta": {
+        "hp": 6012.0,
+        "mp": 3856.0,
+        "ad": 204.0,
+        "ap": 249.0,
+        "armor": 139.0,
+        "mres": 170.0,
+        "hit": 19.0,
+        "eva": 18.0,
+        "crit": 18.0,
+        "cavoid": 18.0,
+        "break_p": 18.0,
+        "parry": 18.0
+      },
+      "cumulativeBase": {
+        "hp": 22372.0,
+        "mp": 15474.0,
+        "ad": 794.0,
+        "ap": 961.0,
+        "armor": 545.0,
+        "mres": 650.0,
+        "hit": 84.0,
+        "eva": 79.0,
+        "crit": 77.0,
+        "cavoid": 68.0,
+        "break_p": 66.0,
+        "parry": 62.0
+      }
+    },
+    {
+      "level": 115,
+      "name": "渡劫 [初] 渡劫一层",
+      "kind": "大境界突破",
+      "budgetPoints": 2300,
+      "delta": {
+        "hp": 7452.0,
+        "mp": 4784.0,
+        "ad": 253.0,
+        "ap": 309.0,
+        "armor": 172.0,
+        "mres": 210.0,
+        "hit": 23.0,
+        "eva": 23.0,
+        "crit": 23.0,
+        "cavoid": 23.0,
+        "break_p": 23.0,
+        "parry": 22.0
+      },
+      "cumulativeBase": {
+        "hp": 29824.0,
+        "mp": 20258.0,
+        "ad": 1047.0,
+        "ap": 1270.0,
+        "armor": 717.0,
+        "mres": 860.0,
+        "hit": 107.0,
+        "eva": 102.0,
+        "crit": 100.0,
+        "cavoid": 91.0,
+        "break_p": 89.0,
+        "parry": 84.0
+      }
+    },
+    {
+      "level": 127,
+      "name": "飞升 [极] 飞升真仙",
+      "kind": "终极飞升",
+      "budgetPoints": 2794,
+      "delta": {
+        "hp": 9048.0,
+        "mp": 5808.0,
+        "ad": 307.0,
+        "ap": 375.0,
+        "armor": 210.0,
+        "mres": 256.0,
+        "hit": 28.0,
+        "eva": 28.0,
+        "crit": 28.0,
+        "cavoid": 28.0,
+        "break_p": 27.0,
+        "parry": 27.0
+      },
+      "cumulativeBase": {
+        "hp": 38872.0,
+        "mp": 26066.0,
+        "ad": 1354.0,
+        "ap": 1645.0,
+        "armor": 927.0,
+        "mres": 1116.0,
+        "hit": 135.0,
+        "eva": 130.0,
+        "crit": 128.0,
+        "cavoid": 119.0,
+        "break_p": 116.0,
+        "parry": 111.0
+      }
+    }
+  ]
+}
