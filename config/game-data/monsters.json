@@ -447,11 +447,11 @@
     ]
   },
   {
-    "id": "enemy.star-ape",
-    "name": "噬星狂猿",
+    "id": "enemy.blade-corpse",
+    "name": "残刃尸煞",
     "visual": {
       "renderer": "text",
-      "source": "狂",
+      "source": "煞",
       "poster": null
     },
     "style": "blade",

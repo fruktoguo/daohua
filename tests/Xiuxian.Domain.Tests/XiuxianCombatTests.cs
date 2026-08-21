@@ -52,33 +52,33 @@ public sealed class XiuxianCombatTests
         var reducedDmg = XiuxianCombatFormula.CalculateMitigatedDamageWithResistanceFactor(100, 20);
         Assert.InRange(reducedDmg, 48, 52);
 
-        // 对抗概率计算: 自身100, 对方100 -> 100 / (100 + 100 + 1) ~ 0.4975
+        // 对抗概率计算: 自身100, 对方100 -> 100 / (100 + 100 + 100) = 1/3 ~ 0.3333
         var contestRate = XiuxianCombatFormula.CalculateContestRate(100, 100);
-        Assert.InRange(contestRate, 0.49, 0.51);
+        Assert.InRange(contestRate, 0.32, 0.34);
 
         // 破招判定
         Assert.True(XiuxianCombatFormula.CheckBreakSuccess(100, 50, 0.1));
-        Assert.False(XiuxianCombatFormula.CheckBreakSuccess(50, 100, 0.1));
+        Assert.False(XiuxianCombatFormula.CheckBreakSuccess(50, 100, 0.5));
 
         // 拆招判定
         Assert.True(XiuxianCombatFormula.CheckParrySuccess(100, 50, 0.1));
-        Assert.False(XiuxianCombatFormula.CheckParrySuccess(50, 100, 0.1));
+        Assert.False(XiuxianCombatFormula.CheckParrySuccess(50, 100, 0.5));
     }
 
     [Fact]
     public void Hit_and_crit_use_unified_contest_formula_per_design()
     {
-        // 命中 vs 闪避：统一对抗公式 260/(260+180+1) ≈ 0.589
+        // 命中 vs 闪避：统一对抗公式 闪避率 180/(180+260+100)=180/540=1/3, 命中率 1-1/3 ≈ 0.667
         var hitRate = XiuxianCombatFormula.CalculateHitContestRate(260, 180);
-        Assert.InRange(hitRate, 0.58, 0.60);
+        Assert.InRange(hitRate, 0.65, 0.68);
 
-        // 高阶位同阶对抗：暴击 128 点 vs 免爆 119 点 -> 约 0.518，不得被减法钳制归零
+        // 高阶位同阶对抗：暴击 128 点 vs 免爆 119 点 -> 128/(128+119+100) = 128/347 ≈ 0.369
         var critRate = XiuxianCombatFormula.CalculateCritContestRate(128, 119);
-        Assert.InRange(critRate, 0.50, 0.54);
+        Assert.InRange(critRate, 0.35, 0.39);
 
-        // 破招成功时暴击点数翻倍后再进对抗：256/(256+119+1) ≈ 0.680
+        // 破招成功时暴击点数翻倍后再进对抗：256/(256+119+100) = 256/475 ≈ 0.539
         var breakCritRate = XiuxianCombatFormula.CalculateCritContestRate(128 * 2.0, 119);
-        Assert.InRange(breakCritRate, 0.66, 0.70);
+        Assert.InRange(breakCritRate, 0.52, 0.56);
     }
 
     [Fact]
@@ -1235,9 +1235,9 @@ public sealed class XiuxianCombatTests
         Assert.Equal(257, lowRawDmg);
 
         // 2. 验证破招 vs 拆招 对抗判定
-        // 破招 100, 拆招 50 -> 概率 100 / (100 + 50 + 1) ~ 0.662
-        Assert.True(XiuxianCombatFormula.CheckBreakSuccess(100, 50, 0.5));
-        Assert.False(XiuxianCombatFormula.CheckBreakSuccess(100, 50, 0.8));
+        // 破招 100, 拆招 50 -> 概率 100 / (100 + 50 + 100) = 100 / 250 = 0.40
+        Assert.True(XiuxianCombatFormula.CheckBreakSuccess(100, 50, 0.35));
+        Assert.False(XiuxianCombatFormula.CheckBreakSuccess(100, 50, 0.45));
 
         // 3. 验证战斗模拟器带破招、ATR、CDR 运行时正常结算
         var loadout = new XiuxianCombatLoadout
