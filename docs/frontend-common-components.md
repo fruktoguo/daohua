@@ -78,7 +78,7 @@
 
 ---
 
-## 7. 数量步进与快捷选择器 (Quantity Selector)
+## 8. 数量步进与快捷选择器 (Quantity Selector)
 
 - **适用场景**：
   - 市场交易、批量制造、行囊使用、派遣探索次数的选择（包含数字输入框、快捷预设数量按钮、可选无限 `∞` 按钮） -> `QuantitySelector`
@@ -87,7 +87,7 @@
 
 ---
 
-## 8. 通用模态弹窗与确认对话框 (Modals & Confirm Dialogs)
+## 9. 通用模态弹窗与确认对话框 (Modals & Confirm Dialogs)
 
 - **适用场景**：
   - **通用全屏居中遮罩弹窗**（基于 React Portal 顶层挂载、Focus 焦点锁定陷阱、ESC 键响应、三种标准尺寸 `small`/`medium`/`large`） -> `Modal`
@@ -99,7 +99,7 @@
 
 ---
 
-## 9. 状态动效与平滑进度 Hooks (Smooth Progress Hook)
+## 10. 状态动效与平滑进度 Hooks (Smooth Progress Hook)
 
 - **适用场景**：
   - 战斗气血/真元条、行动倒计时平滑插值动画，防止卡顿跳跃 -> `useSmoothProgress`
@@ -107,7 +107,7 @@
 
 ---
 
-## 10. 通用文本与数值格式化 (Format Helpers)
+## 11. 通用文本与数值格式化 (Format Helpers)
 
 - **适用场景**：
   - 灵石/大额数值格式化（万、亿、兆）、时长格式化、百分比格式化 -> `formatNumber`, `formatDuration`, `formatPercent`
