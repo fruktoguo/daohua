@@ -90,6 +90,11 @@ public sealed class XiuxianLocalMarketLedgerStore : IXiuxianMarketLedgerStore, I
         WriteIndented = false
     };
 
+    // 热重启交接窗口：前任实例优雅停服（保存最终账本并释放租约）通常在数秒内完成；
+    // 超过该窗口仍被占用才判定为多实例分裂并拒绝启动。
+    private static readonly TimeSpan LeaseHandoffWaitTimeout = TimeSpan.FromSeconds(30);
+    private const int LeaseRetryDelayMilliseconds = 250;
+
     private readonly IYuoSnapshotStore _snapshotStore;
     private readonly ILogger<XiuxianLocalMarketLedgerStore> _logger;
     private readonly string _ownershipLockPath;
@@ -114,7 +119,7 @@ public sealed class XiuxianLocalMarketLedgerStore : IXiuxianMarketLedgerStore, I
     public bool SupportsDistributedPartitions => false;
     public bool PersistsPlayerSnapshotAtomically => false;
 
-    public ValueTask AcquireWriterAsync(
+    public async ValueTask AcquireWriterAsync(
         XiuxianMarketTopology topology,
         string instanceId,
         CancellationToken cancellationToken = default)
@@ -134,15 +139,39 @@ public sealed class XiuxianLocalMarketLedgerStore : IXiuxianMarketLedgerStore, I
             throw new InvalidOperationException("当前市场存储已经持有写者租约。");
         }
 
+        // 开发热重启与受控更新时，前任实例可能仍在优雅停服中持有租约；
+        // 在有限窗口内等待其释放属于正常交接，超时仍被占用才判定为多实例分裂。
+        var deadline = DateTimeOffset.UtcNow + LeaseHandoffWaitTimeout;
+        var waited = false;
+        while (true)
+        {
+            try
+            {
+                _ownershipLock = new FileStream(
+                    _ownershipLockPath,
+                    FileMode.OpenOrCreate,
+                    FileAccess.ReadWrite,
+                    FileShare.None,
+                    bufferSize: 128,
+                    options: FileOptions.Asynchronous);
+                break;
+            }
+            catch (IOException exception) when (DateTimeOffset.UtcNow < deadline)
+            {
+                if (!waited)
+                {
+                    waited = true;
+                    _logger.LogInformation(
+                        "市场写者租约由其他实例持有，最多等待 {TimeoutSeconds}s 完成交接",
+                        LeaseHandoffWaitTimeout.TotalSeconds);
+                }
+
+                await Task.Delay(LeaseRetryDelayMilliseconds, cancellationToken);
+            }
+        }
+
         try
         {
-            _ownershipLock = new FileStream(
-                _ownershipLockPath,
-                FileMode.OpenOrCreate,
-                FileAccess.ReadWrite,
-                FileShare.None,
-                bufferSize: 128,
-                options: FileOptions.Asynchronous);
             _ownershipLock.SetLength(0);
             _ownershipLock.Position = 0;
             using var writer = new StreamWriter(_ownershipLock, leaveOpen: true);
@@ -150,7 +179,7 @@ public sealed class XiuxianLocalMarketLedgerStore : IXiuxianMarketLedgerStore, I
             writer.Flush();
             _ownershipLock.Flush(flushToDisk: true);
             _logger.LogInformation("市场写者租约已取得 {InstanceId}", instanceId);
-            return ValueTask.CompletedTask;
+            return;
         }
         catch (IOException exception)
         {
