@@ -61,8 +61,9 @@
 
 - **适用场景**：
   - 行囊、掉落、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
+  - **多气泡联动与独立数量气泡**：物品悬浮时在主信息卡旁自动附带独立的「储量详查」副气泡，清晰分段展示大数与精确数额。
 - **组件源码**：[`frontend/src/components/ItemDisplay.tsx`](../../frontend/src/components/ItemDisplay.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-badge-rarity-*`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-badge-rarity-*`), [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) (搜索 `.xiuxian-quantity-aside-*`)
 
 ---
 

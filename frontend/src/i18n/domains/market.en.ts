@@ -140,6 +140,9 @@ export const marketEn = {
       usageMark: 'Usage',
       usageTitle: 'How to use',
       sourcePrefix: 'Source: {source}',
+      quantityMark: 'Qty',
+      quantityTitle: 'Exact Quantity',
+      exactQuantity: 'Exact Count',
     },
     effect: {
       restoreHp: 'Restore HP {value}',

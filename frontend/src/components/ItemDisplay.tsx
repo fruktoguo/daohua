@@ -1,5 +1,10 @@
 import { type ReactNode } from 'react'
-import { describeCombatTrigger, formatNumber } from '../game/format'
+import {
+  describeCombatTrigger,
+  formatChineseSplitNumber,
+  formatExactNumber,
+  formatNumber,
+} from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { getT, useT } from '../i18n'
@@ -95,14 +100,36 @@ export function ItemTooltipTarget({
     stats.push({ label: t('market.tooltip.level'), value: `Lv. ${formatNumber(metadata.level)}`, tone: 'gold' })
   }
   if (amount !== undefined) {
-    stats.push({ label: t('market.tooltip.held'), value: formatNumber(amount), tone: 'gold' })
+    stats.push({
+      label: t('market.tooltip.held'),
+      value: <UnitNumber disableTooltip value={amount} />,
+      tone: 'gold',
+    })
   }
   if (metadata.source) {
     stats.push({ label: t('market.tooltip.source'), value: metadata.source, tone: 'jade' })
   }
 
-  // 附属卡片：如果存在额外用途说明或特殊词条，可以作为附属气泡组合展示
+  // 附属卡片：单独数量详情气泡 + 额外用途说明或特殊词条
   const asideCards: FloatingAsideCard[] = []
+  if (amount !== undefined) {
+    asideCards.push({
+      mark: t('market.tooltip.quantityMark'),
+      title: t('market.tooltip.quantityTitle'),
+      tone: 'gold',
+      content: (
+        <div className="xiuxian-quantity-aside-body">
+          <div className="xiuxian-quantity-aside-split">{formatChineseSplitNumber(amount)}</div>
+          <div className="xiuxian-quantity-aside-compact">
+            约 <UnitNumber disableTooltip value={amount} />
+          </div>
+          <div className="xiuxian-quantity-aside-exact">
+            {t('market.tooltip.exactQuantity')}：{formatExactNumber(amount)}
+          </div>
+        </div>
+      ),
+    })
+  }
   if (metadata.usage) {
     asideCards.push({
       mark: t('market.tooltip.usageMark'),

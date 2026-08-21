@@ -141,6 +141,9 @@ export const marketZh = {
       usageMark: '用途',
       usageTitle: '使用法门',
       sourcePrefix: '来源：{source}',
+      quantityMark: '量',
+      quantityTitle: '储量详查',
+      exactQuantity: '精确数量',
     },
     effect: {
       restoreHp: '恢复生命 {value}',
