@@ -4,175 +4,256 @@ description: >-
   Use this skill whenever designing, reviewing, modifying, or balancing skills, equipment, items, buffs, monsters, and encounters in the Xiuxian codebase. Enforces the strict 'Intensity (Budget) + Attribute Weights' quantitative methodology, ensuring all numerical values in config files are derived deterministically.
 ---
 
-# 《道化太初》技能、装备、物品与 Buff 强度权重设计规范
+# 《道化太初》数值设计规范
 
-## 1. 核心设计哲学与绝对红线
+## 1. 核心原则
 
-在《道化太初》中，**杜绝一切“拍脑袋填表、凭感觉填魔数”的配表行为**。所有战斗数值（技能、装备、消耗品、Buff、怪物）在配置文件中，**必须严格由【强度 (Intensity / Base Budget)】与【各属性权重 (Attribute Weights)】共同决定最终数值**。
+所有战斗数值配表必须有据可查、可推导、可复现。禁止拍脑袋填数。
 
-### 1.1 核心公式
-$$\mathbf{属性数值} = \mathbf{总强度预算 (Budget)} \times \frac{\mathbf{属性分配权重 (Weight)}}{\sum \mathbf{权重}} \times \mathbf{属性单位价值换算系数 (ConversionRate)}$$
-
-### 1.2 绝对规则
-1. **全量统一 `double` 精度**：所有数值计算与储存必须使用 `double` 类型，严禁整数截断导致的非预期突变。
-2. **百分比统一存储为点数**：以 100 点 = 100% 当量（1 点 = 1%）作为基准，增减伤走 `Linear` 模式，CDR/攻速走 `NonLinear` 倒数模式。
-3. **四独立乘区归一化**：$\text{最终面板} = \text{基础数值池 (BaseFlat)} \times (1 + \text{六维\%}) \times (1 + \text{装备\%}) \times (1 + \text{Buff\%})$。
-4. **任何新增或修改配置均须给出完整的预算与权重推导过程**。
+数值精度统一使用 `double`，百分比以点数存储（1 点 = 1%）。
 
 ---
 
-## 2. 统一属性价值换算常数表 (Unit Valuation Exchange)
+## 2. 可量化属性体系
 
-所有强度预算（$1.0$ 点标准预算）在各属性间的等价折算常数：
+### 2.1 全部可量化属性只有两类
 
-| 属性大类 | 属性项 | 符号 | 1.0 点标准预算对应价值 | 换算公式 / 约束 |
-| :--- | :--- | :--- | :--- | :--- |
-| **生存池** | 最大生命值 | HP | **`12.0` 点** | $\Delta \text{HP} = 12.0 \times \text{Budget}$ |
-| **能量池** | 最大灵力值 | MP | **`8.0` 点** | $\Delta \text{MP} = 8.0 \times \text{Budget}$ |
-| **物理输出** | 物理攻击 | AD | **`1.0` 点** | $\Delta \text{AD} = 1.0 \times \text{Budget}$ |
-| **术法输出** | 术法攻击 | AP | **`2.0` 点** (固定 2.0x 倾斜) | $\Delta \text{AP} = 2.0 \times \text{Budget}$ |
-| **防御抗性** | 物理护甲 | Armor | **`1.0` 点** | $\Delta \text{Armor} = 1.0 \times \text{Budget}$ |
-| **防御抗性** | 法术抗性 (水/木/火) | MRes | **`1.0` 点** | 单系抗性 $1.0$，全系三防各 $0.4$ (合计 $1.2$) |
-| **对抗属性** | 命中 / 闪避 | Hit / Eva | **`1.0` 点** | 命中与闪避对抗点数 |
-| **对抗属性** | 暴击 / 免爆 | Crit / CAvoid | **`1.0` 点** | 暴击与抗暴对抗点数 |
-| **对抗属性** | 破招 / 拆招 | Break / Parry | **`1.0` 点** | 破招与化解对抗点数 |
-| **百分比点数** | 增伤 / 免伤 | DmgRatio | **`1.0` 点 (1.0%)** | 线性加成点数 |
-| **高级机制** | 穿透率 | Penetration | **`0.8` 点 (0.8%)** | 破甲/穿抗百分比 |
-| **高级机制** | 伤害吸血 | LifeSteal | **`0.5` 点 (0.5%)** | 命中吸血比例 |
-| **控制时长** | 眩晕 / 沉默 / 致盲 | CC Seconds | **`0.2` 秒** (按 100% 概率) | $1.0\text{s 控场} = 5.0\text{ 预算}$ |
+#### 第一类：12 个基础属性 + 2 个自动回复（共 14 项）
 
----
+这 14 项是唯一参与预算量化的属性。其基准数值由 `BaseFlatAnchors` 锚点表按境界等级插值决定。
 
-## 3. 各模块强度与权重设计模型
+| 编号 | 属性 | 代码字段 | 预算消耗 |
+| :--: | :--- | :--- | :--: |
+| 1 | 最大生命值 | `BaseHitpoints` | 每 1 点属性值 = **1 点**预算 |
+| 2 | 最大灵力值 | `BaseManapoints` | 每 1 点属性值 = **1 点**预算 |
+| 3 | 物理攻击 | `BasePhysicalAttack` | 每 1 点属性值 = **1 点**预算 |
+| 4 | 术法攻击 | `BaseSpellAttack` | 每 1 点属性值 = **1 点**预算 |
+| 5 | 物理护甲 | `BaseArmor` | 每 1 点属性值 = **1 点**预算 |
+| 6 | 法术抗性 | `BaseMagicResistance` | 每 1 点属性值 = **1 点**预算 |
+| 7 | 命中 | `BaseAccuracy` | 每 1 点属性值 = **1 点**预算 |
+| 8 | 闪避 | `BaseEvasion` | 每 1 点属性值 = **1 点**预算 |
+| 9 | 暴击 | `BaseCritical` | 每 1 点属性值 = **1 点**预算 |
+| 10 | 免爆 | `BaseCriticalAvoidance` | 每 1 点属性值 = **1 点**预算 |
+| 11 | 破招 | `BaseBreak` | 每 1 点属性值 = **1 点**预算 |
+| 12 | 拆招 | `BaseParry` | 每 1 点属性值 = **1 点**预算 |
+| 13 | 生命回复 | `HpRegenPerTenSeconds` | 每 1 点属性值 = **3 点**预算 |
+| 14 | 灵力回复 | `MpRegenPerTenSeconds` | 每 1 点属性值 = **3 点**预算 |
 
-### 3.1 技能设计模型 (Abilities)
+> **关键**：12 个基础属性的单位预算消耗相同（1:1），不做差异化换算——属性之间的价值差异已经由 `BaseFlatAnchors` 锚点表的数值量级天然体现（HP 数值远大于 AD，所以 +1 HP 自然比 +1 AD 便宜得多）。
 
-每个技能的总强度预算 $B_{\text{skill}}$ 由**阶位基准预算 $B_T$**、**技能类型定位系数 $K_{\text{type}}$** 与 **技能强度乘区 $I_{\text{skill}} = 1.0 + (T-1) \times 0.30$** 决定：
+#### 第二类：任意属性的百分比增幅
 
-$$B_{\text{skill}} = B_T \times K_{\text{type}} \times I_{\text{skill}}$$
+对上述 14 项基础属性中的任意一项进行百分比增幅加成：
 
-#### 技能类型定位系数 $K_{\text{type}}$：
-- **基础平A / 填充技 (0 CD)**：$K = 0.5$（需平摊到高频施法，单次伤害低）。
-- **主力核心单体技 (CD 6~12s)**：$K = 1.0$。
-- **长 CD 爆发 / 控制大招 (CD 15~20s)**：$K = 1.5$。
-- **全屏 / 多目标群攻 (AoE)**：$K = 1.2$，单目标伤害需除以 $\sqrt{N_{\text{targets}}}$。
+| 增幅类型 | 预算消耗 |
+| :--- | :--: |
+| 任意属性 +1% 百分比增幅 | **1 点**预算 |
 
-#### 技能预算分配权重项：
-1. **伤害倍率权重 ($W_{\text{ratio}}$)**：转化为 `DamageRatio`。
-2. **固定直伤权重 ($W_{\text{flat}}$)**：转化为 `FlatDamage`。
-3. **控制机制权重 ($W_{\text{cc}}$)**：转化为 `Stun/Blind/Silence` 概率与秒数（消耗预算 = $\text{Chance} \times \text{Seconds} \times 5.0$）。
-4. **特殊收益权重 ($W_{\text{special}}$)**：穿透（Penetration）、吸血（HpDrain）、护甲转化（ArmorDamage）。
-5. **冷却与耗蓝修正**：
-   - 耗蓝增加 $\to$ 返还额外预算（每 10 点 MP 补偿 $+0.8$ 预算）。
-   - 吟唱时间长（CastTime $\ge 2.0$s）$\to$ 补偿 $+15\%$ 额外预算。
+百分比增幅是独立乘区，最终面板 = 基础数值 × (1 + 百分比增幅之和)。
 
----
+### 2.2 特殊属性（不量化，人工平衡）
 
-### 3.2 装备设计模型 (Equipment)
+以下属性无法用统一的预算公式量化，每次设计时需要人工判断合理性：
 
-全套装备（6 大部位）提供与角色本体同等的 **1.0x 装备乘区增益**。
+- **CD 减免** (`CooldownReductionRatio`)
+- **行动加速** (`ActionSpeedReductionRatio`)
+- **穿透率** (`PenetrationRatio`)
+- **穿透追击** (`PierceChance`)
+- **吸血** (`LifeStealRatio`, `HpDrainRatio`)
+- **反伤 / 护甲转化伤害** (`ArmorDamageRatio`)
+- **诅咒** (`CurseRatio`)
+- **狂暴** (`FuryRatio`)
+- **削弱** (`WeakenRatio`)
+- **韧性** (`Tenacity`)
+- **伤害吸收** (`DamageAbsorptionRatio`)
+- **暴击伤害** (`CriticalDamageRatio`)
+- **控制效果**（眩晕/致盲/沉默的概率与时长）
+- **持续伤害** (`DamageOverTimeRatio`)
+- **技能强度** (`SkillIntensity`)
 
-#### 槽位权重预算分配表：
-| 部位 | 槽位权重占比 | 核心主属性倾斜权重 |
-| :--- | :--- | :--- |
-| **武器 (Weapon)** | **20.0%** | AD (40%), AP (40%), 命中 (10%), 破招 (10%) |
-| **衣服 (Body)** | **20.0%** | 生命 HP (40%), 护甲 (30%), 法抗 (20%), 拆招 (10%) |
-| **头盔 (Head)** | **15.0%** | 生命 HP (35%), 灵力 MP (35%), 护甲 (30%) |
-| **下装 (Legs)** | **15.0%** | 生命 HP (40%), 闪避 (30%), 护甲 (30%) |
-| **戒指 (Ring)** | **15.0%** | AD/AP (40%), 暴击 (30%), 命中 (30%) |
-| **项链 (Neck)** | **15.0%** | 灵力 MP (40%), 免爆 (30%), 破招 (30%) |
-
-#### 装备品质乘区（Quality Multipliers）：
-- 凡品 (Q1): $1.0\times$
-- 灵品 (Q2): $1.15\times$
-- 玄品 (Q3): $1.35\times$
-- 地品 (Q4): $1.60\times$
-- 天品 (Q5): $1.90\times$
-- 仙品 (Q6): $2.30\times$
-- 神品 (Q7): $2.80\times$
-- 混沌 (Q8): $3.50\times$
-
-#### 强化成长公式（Enhancement Bonus）：
-$$\text{单级强化增量 (EnhancementBonus)} = \frac{\text{基础属性 (BaseStats)}}{50.0}$$
-（强化至 +20 满级时，总属性刚好翻倍 $+100\%$）。
+设计这些属性时，参考同阶位已有实体的数值范围，确保不出现明显失衡即可。
 
 ---
 
-### 3.3 消耗品与 Buff 设计模型 (Consumables & Buffs)
+## 3. 阶位基准预算表
 
-#### 消耗品预算换算：
-- **瞬时恢复药（生命/灵力）**：$B = \text{Tier} \times 15.0$。转化为恢复量：$\Delta \text{HP} = B \times 12.0$；$\Delta \text{MP} = B \times 8.0$。
-- **持续增益灵食/符箓（Buff）**：
-  - 标准持续时长：300 秒（战斗灵饮/符箓）或 60~120 秒（挂机生产灵香/地火）。
-  - 百分比增益预算：
-    - 攻击/增伤 Buff：$+1.0\%$ 增益 $= 1.0$ 点预算。
-    - 攻速/CDR Buff：$+1.0\%$ 点数 $= 1.2$ 点预算。
-    - 生产产出倍率（采集/炼丹）：$+25\%$ 产出 $= 2.0$ 点预算；$+50\%$ 产出 $= 4.0$ 点预算。
+每个阶位有一个固定的**基准预算**，所有同阶位实体的总预算都应以此为参考基础。
 
----
+| 阶位 | 代表境界 | 代表等级 | 基准预算 $B_T$ |
+| :--: | :--- | :--: | :--: |
+| 1 | 凡俗 \[武\] 凡胎 | Lv 1 | 10.0 |
+| 2 | 凡俗 \[天\] 叩仙门 | Lv 18 | 25.0 |
+| 3 | 练气 \[极\] 半步筑基 | Lv 30 | 60.0 |
+| 4 | 筑基 \[极\] 半步金丹 | Lv 42 | 130.0 |
+| 5 | 金丹 \[极\] 半步元婴 | Lv 54 | 250.0 |
+| 6 | 元婴 \[极\] 半步化神 | Lv 66 | 450.0 |
+| 7 | 化神 \[极\] 半步炼虚 | Lv 78 | 750.0 |
+| 8 | 炼虚 \[极\] 半步合体 | Lv 90 | 1,150.0 |
+| 9 | 合体 \[极\] 半步大乘 | Lv 102 | 1,700.0 |
+| 10 | 大乘 \[极\] 半步渡劫 | Lv 114 | 2,450.0 |
+| 11 | 渡劫 \[极\] 半步飞升 | Lv 126 | 3,400.0 |
+| 12 | 飞升 \[极\] 飞升真仙 | Lv 127 | 4,600.0 |
 
-### 3.4 怪物与遭遇设计模型 (Monsters & Encounters)
-
-怪物无需人工填写独立孤立数值，必须对齐目标境界阶位 $T$ 的基准玩家：
-
-$$\text{MonsterStats} = \text{BaselinePlayer}(T) \times \text{TierMultiplier} \times \text{TendencyWeights}$$
-
-| 怪物层级 (Tier) | 全属性倍率 | 生命值 (HP) 倍率 |
-| :--- | :--- | :--- |
-| **普通妖修 (Normal)** | $1.0\times$ | $1.0\times$ |
-| **精英大妖 (Elite)** | $1.2\times$ | $3.0\times \sim 3.6\times$ |
-| **妖王首领 (Boss)** | $1.5\times$ | $10.0\times \sim 14.0\times$ |
+代码位置：[`XiuxianDataBudgetResolver.GetTierBaseBudget()`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/GameData/XiuxianDataBudgetResolver.cs#L123-L138)
 
 ---
 
-## 4. 设计工作流程与步骤 (SOP)
+## 4. 技能设计模型
 
-当需要设计或修改一项技能、装备或 Buff 时，必须遵循以下步骤：
+### 4.1 核心思路
 
-```mermaid
-flowchart TD
-    S1[1. 确定目标阶位 Tier 与定位分类] --> S2[2. 计算总强度预算 Budget]
-    S2 --> S3[3. 分配属性权重向量 Weights]
-    S3 --> S4[4. 代入属性价值折算表求值]
-    S4 --> S5[5. 生成/更新 JSON 配置文件]
-    S5 --> S6[6. 运行自动化测试与数据校验]
+技能的总消耗预算 = **参考强度 × 倍率**。
+
+参考强度就是同阶位的基准预算 $B_T$。倍率根据技能类型决定：
+
+| 技能类型 | 倍率 $K$ | 说明 |
+| :--- | :--: | :--- |
+| 平 A / 填充技（0 CD） | 0.5 | 高频施放，单次弱 |
+| 核心单体技（CD 6~12s） | 1.0 | 标准参考值 |
+| 长 CD 大招（CD 15~20s） | 1.5 | 单次强力 |
+| 群攻 AoE | 1.2 | 单目标伤害需除以 $\sqrt{N}$ |
+
+$$B_{\text{skill}} = B_T \times K$$
+
+### 4.2 预算修正
+
+| 条件 | 修正 |
+| :--- | :--- |
+| 每 10 点灵力消耗 | +0.8 预算 |
+| 吟唱时间 ≥ 2.0s | ×1.15 总预算 |
+
+### 4.3 技能预算分配
+
+将总预算按权重分配给各属性效果（所有权重之和 = 1.0）：
+
+- **伤害倍率** (`DamageRatio`)：1.0 预算 = +0.025 倍率（基底 1.0）
+- **固定伤害** (`FlatDamage`)：1.0 预算 = +4.2 固定伤害
+- **治疗倍率** (`HealingRatio`)：1.0 预算 = +0.015 倍率
+- **固定治疗** (`FlatHealing`)：1.0 预算 = +5.0 治疗量
+- **持续伤害** (`DamageOverTimeRatio`)：1.0 预算 = +0.02 倍率
+- **控制 / 穿透 / 吸血等特殊效果**：按人工平衡分配，参考现有技能
+
+### 4.4 等级成长自动推导
+
+若未显式指定：
+
+- `DamageRatioLevelBonus` = `DamageRatio × 0.006`
+- `FlatDamageLevelBonus` = `FlatDamage × 0.01`
+- 治疗同理
+
+代码位置：[`XiuxianDataBudgetResolver.ResolveAbility()`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/GameData/XiuxianDataBudgetResolver.cs#L186-L305)
+
+### 4.5 现有技能参考
+
+查看当前所有技能定义：[`abilities.json`](file:///home/yuohira/game/xiuxian/config/game-data/abilities.json)
+
+---
+
+## 5. 装备设计模型
+
+### 5.1 预算计算
+
+$$B_{\text{equip}} = B_T \times Q_{\text{mult}} \times S_{\text{weight}} \times 5.0$$
+
+- $Q_{\text{mult}}$：品质乘区（见 §5.2）
+- $S_{\text{weight}}$：槽位权重（武器 20%，甲 20%，头 15%，腿 15%，戒 15%，链 15%）
+
+### 5.2 品质乘区
+
+| 品质 | 名称 | 倍率 |
+| :--: | :--: | :--: |
+| Q1 | 凡品 | 1.00× |
+| Q2 | 灵品 | 1.15× |
+| Q3 | 玄品 | 1.35× |
+| Q4 | 地品 | 1.60× |
+| Q5 | 天品 | 1.90× |
+| Q6 | 仙品 | 2.30× |
+| Q7 | 神品 | 2.80× |
+| Q8 | 混沌 | 3.50× |
+
+### 5.3 装备属性类型
+
+装备提供的属性全部是**百分比增幅**（`XiuxianEquipmentCombatStats` 中的字段），每个增幅属性消耗 1 点预算/1% 增幅。
+
+装备也可以提供特殊属性（穿透、吸血等），这些不走预算量化，人工分配。
+
+### 5.4 强化成长
+
+$$\text{每级强化增量} = \frac{\text{基础属性}}{50.0}$$
+
+强化至 +20 满级时 = 总属性约 +40%。
+
+代码位置：[`XiuxianDataBudgetResolver.ResolveEquipment()`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/GameData/XiuxianDataBudgetResolver.cs#L311-L365)
+
+---
+
+## 6. 消耗品与 Buff 设计模型
+
+### 6.1 消耗品
+
+- 瞬时恢复药预算：$B = \text{Tier} \times 15.0$
+- 恢复量按基础属性预算换算（HP/MP 恢复属于基础属性，1:1 预算）
+
+### 6.2 Buff
+
+Buff 提供的百分比增幅同样遵循 1 点预算 = 1% 增幅的规则。持续时长和叠加层数属于特殊属性，人工平衡。
+
+代码位置：[`XiuxianDataBudgetResolver.ResolveItem()`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/GameData/XiuxianDataBudgetResolver.cs#L370-L417)
+
+---
+
+## 7. 怪物设计模型
+
+怪物属性 = 目标境界基准玩家属性 × 层级倍率 × 倾向权重
+
+| 怪物层级 | 全属性倍率 | HP 倍率 |
+| :--- | :--: | :--: |
+| 普通妖修 | 1.0× | 1.0× |
+| 精英大妖 | 1.2× | 3.0~3.6× |
+| 妖王首领 | 1.5× | 10.0~14.0× |
+
+怪物的特殊属性（控制、穿透等）人工配置，参考玩家对应阶位的抗性水平。
+
+---
+
+## 8. 设计工作流程
+
+```
+1. 确定阶位和定位 → 2. 查表获得基准预算
+    → 3. 根据类型乘以倍率得到总预算
+    → 4. 分配可量化属性（基础 / 百分比增幅）
+    → 5. 分配特殊属性（人工平衡，参考同类）
+    → 6. 写入配置文件
+    → 7. 运行测试验证
 ```
 
-### 步骤详细说明：
-1. **步骤 1（明确定义）**：确定目标所属阶位（Tier 1~12）、品质（Quality 1~8）以及流派风格（剑修/刀修/符箓/五行/炼体）。
-2. **步骤 2（计算预算）**：查阅对应阶位标准预算底座（详见 [references/budget-tables.md](./references/budget-tables.md)），计算总预算 $B$。
-3. **步骤 3（分配权重）**：列出该项实体的各项属性权重（如：`{ DamageRatio: 0.6, CC_Stun: 0.2, Penetration: 0.2 }`），确保权重总和为 1.0（或明确各自分配额度）。
-4. **步骤 4（数值求解）**：将预算与权重相乘，乘以对应价值折算系数，得出具体配置参数（全部保留 `double` 精度）。
-5. **步骤 5（写入配置）**：严格按照 `config/game-data/*.json` 的 Schema 写入。
-6. **步骤 6（验证门禁）**：执行 `dotnet test`，确保无未知 ID 引用、无负数/非法概率值。
+### 8.1 关键代码参考
+
+- 基础属性锚点表：[`BaseFlatAnchors`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/Simulation/XiuxianCombatFormula.cs#L250-L264)
+- 玩家面板构建：[`BuildPlayerStats()`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/Simulation/XiuxianCombatSimulator.cs#L1200-L1320)
+- 技能伤害计算：[`ResolveCombat()`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/Simulation/XiuxianCombatSimulator.cs#L1440-L1506)
+- 预算解析器：[`XiuxianDataBudgetResolver`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/GameData/XiuxianDataBudgetResolver.cs)
+
+### 8.2 配置文件位置
+
+- 技能：[`config/game-data/abilities.json`](file:///home/yuohira/game/xiuxian/config/game-data/abilities.json)
+- 技能数据模型：[`XiuxianCombatAbilityDefinition`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/Models/XiuxianCombatModels.cs#L100-L135)
+- 装备数据模型：[`XiuxianCombatEquipmentDefinition`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/Models/XiuxianCombatModels.cs#L247-L255)
+- 战斗面板模型：[`XiuxianCombatAttributeState`](file:///home/yuohira/game/xiuxian/src/Xiuxian.Domain/Models/XiuxianCombatModels.cs#L317-L351)
 
 ---
 
-## 5. 快速推导案例
+## 9. 速查总结
 
-### 案例 1：设计 2 阶剑修爆发技能【惊鸿断空】
-1. **阶位与定位**：第 2 阶（叩仙门），长 CD 绝杀技（CD 18s，耗蓝 50 MP）。
-2. **强度预算**：
-   - 阶位基准预算 $B_2 = 25.0$。
-   - 大招系数 $K = 1.5$ $\to$ $B = 25.0 \times 1.5 = 37.5$。
-   - 耗蓝补偿：50 MP 补偿 $+4.0$ 预算 $\to$ 最终总预算 $B_{\text{total}} = 41.5$。
-3. **权重分配**：
-   - 伤害倍率（DamageRatio）权重：$70\%$（预算 $29.05 \to$ 基础 1.0 + 增量 $0.80 = 1.80$ 即 $180\%$）。
-   - 固定伤害（FlatDamage）权重：$20\%$（预算 $8.3 \to 8.3 \times 4.2 \approx 35$）。
-   - 特殊破招暴伤联动：$10\%$（预算 $4.15 \to$ 破招时追加 $30\%$ 暴伤）。
-4. **生成 JSON**：
-   ```json
-   {
-     "id": "ability.jinghong-sever",
-     "name": "惊鸿断空",
-     "style": "sword",
-     "damageType": "physical",
-     "cooldownMilliseconds": 18000,
-     "castMilliseconds": 500,
-     "manaCost": 50,
-     "damageRatio": 1.8,
-     "flatDamage": 35,
-     "damageRatioLevelBonus": 0.012,
-     "flatDamageLevelBonus": 0.5
-   }
-   ```
+```
+可量化预算体系（只有这些参与预算计算）：
+├── 12 个基础属性值：每 1 点 = 1 点预算
+├── 2 个自动回复：每 1 点 = 3 点预算
+└── 任意属性百分比增幅：每 1% = 1 点预算
+
+特殊属性（不量化，人工平衡）：
+└── CD、攻速、穿透、吸血、反伤、控制、韧性、暴伤等
+
+技能预算 = 阶位基准预算 × 类型倍率 + 耗蓝补偿 + 吟唱补偿
+装备预算 = 阶位基准预算 × 品质乘区 × 槽位权重 × 5.0
+```
