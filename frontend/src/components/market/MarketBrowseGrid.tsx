@@ -1,12 +1,14 @@
 import { memo, useMemo, useState } from 'react'
 import { formatNumber } from '../../game/format'
-import { ITEM_META, resolveItemGrade, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import type { MarketInstrument } from './MarketOrderForm'
 
-function getMetadata(item: MarketInstrument): ItemMetadata {
-  const registered = ITEM_META[item.itemId]
+// 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
+function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  const registered = resolveItemMetadata(item.itemId)
   if (!registered) {
     const tier = Math.max(1, item.tier)
     const grade = resolveItemGrade(tier)
@@ -18,9 +20,9 @@ function getMetadata(item: MarketInstrument): ItemMetadata {
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
-      description: '坊市可交易物品。',
-      source: '坊市',
-      usage: '可在坊市挂牌交易。',
+      description: t('market.itemFallback.description'),
+      source: t('market.itemFallback.source'),
+      usage: t('market.itemFallback.usage'),
     }
   }
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
@@ -37,6 +39,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   value,
   onSelect,
 }: MarketBrowseGridProps): React.JSX.Element {
+  const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
@@ -54,13 +57,13 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   return (
     <div className="market-browse">
       <div className="market-browse-toolbar">
-        <div className="market-category-chips" role="group" aria-label="品类筛选">
+        <div className="market-category-chips" role="group" aria-label={t('market.browse.filterCategoryAria')}>
           <button
             aria-pressed={category === null}
             className={category === null ? 'active' : ''}
             onClick={() => setCategory(null)}
             type="button"
-          >全部</button>
+          >{t('market.browse.categoryAll')}</button>
           {categories.map(name => (
             <button
               aria-pressed={category === name}
@@ -72,17 +75,17 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
           ))}
         </div>
         <input
-          aria-label="搜索物品"
+          aria-label={t('market.browse.searchItems')}
           autoComplete="off"
           onChange={event => setQuery(event.target.value)}
-          placeholder="搜索物品"
+          placeholder={t('market.browse.searchItems')}
           type="search"
           value={query}
         />
       </div>
-      <div className="market-browse-grid" role="listbox" aria-label="全部可交易物品">
+      <div className="market-browse-grid" role="listbox" aria-label={t('market.browse.gridAria')}>
         {visibleItems.map(item => {
-          const metadata = getMetadata(item)
+          const metadata = getMetadata(item, t)
           const amount = inventory.find(entry => entry.itemId === item.itemId)?.amount ?? 0
           const selected = value === item.itemId
           return (
@@ -96,7 +99,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               tabIndex={-1}
             >
               <button
-                aria-label={`${item.name}，拥有 ${formatNumber(amount)}`}
+                aria-label={t('market.browse.itemOwned', { name: item.name, count: formatNumber(amount) })}
                 aria-selected={selected}
                 className={`market-browse-card${selected ? ' is-selected' : ''}`}
                 onClick={() => onSelect(item.itemId)}
@@ -116,7 +119,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
           )
         })}
       </div>
-      {visibleItems.length === 0 && <p className="market-browse-empty">没有匹配的物品</p>}
+      {visibleItems.length === 0 && <p className="market-browse-empty">{t('market.browse.noMatch')}</p>}
     </div>
   )
 })

@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
+import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { ItemDefinition, MarketBook } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
@@ -54,6 +55,7 @@ export const MarketOrderForm = memo(function MarketOrderForm({
   book,
   onPlaced,
 }: MarketOrderFormProps): React.JSX.Element {
+  const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
@@ -84,23 +86,23 @@ export const MarketOrderForm = memo(function MarketOrderForm({
     const parsedPrice = Number.parseInt(price, 10)
     const parsedQuantity = quantity
     if (!Number.isSafeInteger(parsedPrice) || parsedPrice < vendorPrice || !Number.isSafeInteger(parsedQuantity) || parsedQuantity <= 0) {
-      setNotice('请输入有效的价格和数量。')
+      setNotice(getT()('market.error.invalidInput'))
       return
     }
 
     if (parsedPrice !== normalizeMarketPrice(parsedPrice, vendorPrice, false)) {
       setPrice(String(normalizeMarketPrice(parsedPrice, vendorPrice, true)))
-      setNotice('价格已调整为当前市场档位，请再次提交。')
+      setNotice(getT()('market.error.priceAdjusted'))
       return
     }
 
     if (parsedQuantity > quantityLimit) {
-      setNotice('订单数量超过当前可用上限。')
+      setNotice(getT()('market.error.quantityExceedsLimit'))
       return
     }
 
     if (side === 'sell' && parsedQuantity > selectedAmount) {
-      setNotice('挂牌数量超过当前库存。')
+      setNotice(getT()('market.error.sellExceedsStock'))
       return
     }
 
@@ -113,17 +115,17 @@ export const MarketOrderForm = memo(function MarketOrderForm({
       quantity: parsedQuantity,
       enhancementLevel: 0,
     })) return
-    setNotice('订单已提交，等待服务端撮合。')
+    setNotice(getT()('market.notice.orderSubmitted'))
     window.setTimeout(onPlaced, 120)
   }, [itemId, onPlaced, price, quantity, quantityLimit, selectedAmount, setNotice, side, vendorPrice])
 
   return (
     <form className="market-order-form" onSubmit={submitOrder}>
       <span className={`market-order-side-label market-order-side-label--${side}`}>
-        {side === 'sell' ? '出售' : '求购'}
+        {side === 'sell' ? t('market.side.sell') : t('market.side.buy')}
       </span>
       <label>
-        单价
+        {t('market.unitPrice')}
         <input
           min={minimumPrice}
           onBlur={() => {
@@ -135,12 +137,12 @@ export const MarketOrderForm = memo(function MarketOrderForm({
           type="number"
           value={price}
         />
-        <small>最低 {formatNumber(minimumPrice)} · 回收价 {formatNumber(vendorPrice)}</small>
+        <small>{t('market.priceHint', { min: formatNumber(minimumPrice), vendor: formatNumber(vendorPrice) })}</small>
       </label>
       <label>
-        数量
+        {t('market.quantity')}
         <QuantitySelector
-          ariaLabel="市场订单数量"
+          ariaLabel={t('market.orderQuantityAria')}
           compact
           max={quantityLimit}
           onChange={setQuantity}
@@ -148,13 +150,13 @@ export const MarketOrderForm = memo(function MarketOrderForm({
           value={Math.min(quantity, quantityLimit)}
         />
       </label>
-      <span className="market-order-hint">{side === 'sell' ? `库存 ${formatNumber(selectedAmount)}` : `灵石 ${formatNumber(spiritAmount)}`}</span>
-      <div className="market-price-shortcuts" role="group" aria-label="盘口价格快捷设置">
-        <button disabled={bestAsk === undefined} onClick={() => bestAsk !== undefined && setPrice(String(bestAsk))} type="button">卖一</button>
-        <button disabled={bestBid === undefined} onClick={() => bestBid !== undefined && setPrice(String(bestBid))} type="button">买一</button>
+      <span className="market-order-hint">{side === 'sell' ? t('market.stockHint', { count: formatNumber(selectedAmount) }) : t('market.spiritHint', { amount: formatNumber(spiritAmount) })}</span>
+      <div className="market-price-shortcuts" role="group" aria-label={t('market.quickPricesAria')}>
+        <button disabled={bestAsk === undefined} onClick={() => bestAsk !== undefined && setPrice(String(bestAsk))} type="button">{t('market.bestAsk')}</button>
+        <button disabled={bestBid === undefined} onClick={() => bestBid !== undefined && setPrice(String(bestBid))} type="button">{t('market.bestBid')}</button>
       </div>
       <button className="market-submit" disabled={connection !== 'online'} type="submit">
-        {side === 'sell' ? '挂牌出售' : '发布求购'}
+        {side === 'sell' ? t('market.submitSell') : t('market.submitBuy')}
       </button>
     </form>
   )

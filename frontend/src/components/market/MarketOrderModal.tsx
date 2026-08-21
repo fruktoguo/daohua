@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { ITEM_META, resolveItemGrade, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { getT, useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
@@ -10,8 +11,9 @@ import { Modal } from '../Modal'
 import type { MarketInstrument } from './MarketOrderForm'
 import { getMarketPriceIncrement, normalizeMarketPrice } from './MarketOrderForm'
 
-function getMetadata(item: MarketInstrument): ItemMetadata {
-  const registered = ITEM_META[item.itemId]
+// 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
+function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  const registered = resolveItemMetadata(item.itemId)
   if (!registered) {
     const tier = Math.max(1, item.tier)
     const grade = resolveItemGrade(tier)
@@ -23,9 +25,9 @@ function getMetadata(item: MarketInstrument): ItemMetadata {
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
-      description: '坊市可交易物品。',
-      source: '坊市',
-      usage: '可在坊市挂牌交易。',
+      description: t('market.itemFallback.description'),
+      source: t('market.itemFallback.source'),
+      usage: t('market.itemFallback.usage'),
     }
   }
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
@@ -48,6 +50,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   onClose,
   onPlaced,
 }: MarketOrderModalProps): React.JSX.Element | null {
+  const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
@@ -94,23 +97,23 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     const numQuantity = quantity
 
     if (!Number.isSafeInteger(numPrice) || numPrice < vendorPrice || !Number.isSafeInteger(numQuantity) || numQuantity <= 0) {
-      setNotice('请输入有效的价格和数量。')
+      setNotice(getT()('market.error.invalidInput'))
       return
     }
 
     if (numPrice !== normalizeMarketPrice(numPrice, vendorPrice, false)) {
       setPrice(String(normalizeMarketPrice(numPrice, vendorPrice, true)))
-      setNotice('价格已调整为当前市场档位，请再次确认提交。')
+      setNotice(getT()('market.error.priceAdjustedConfirm'))
       return
     }
 
     if (side === 'sell' && numQuantity > selectedAmount) {
-      setNotice('挂牌数量超过当前背包库存。')
+      setNotice(getT()('market.error.sellExceedsBagStock'))
       return
     }
 
     if (side === 'buy' && numPrice * numQuantity > spiritAmount) {
-      setNotice('所需灵石超过当前持有量。')
+      setNotice(getT()('market.error.insufficientSpirit'))
       return
     }
 
@@ -125,7 +128,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     })
 
     if (success) {
-      setNotice(side === 'sell' ? '挂售订单已提交，等待撮合。' : '求购订单已提交，等待撮合。')
+      setNotice(getT()(side === 'sell' ? 'market.notice.sellSubmitted' : 'market.notice.buySubmitted'))
       onClose()
       window.setTimeout(onPlaced, 120)
     }
@@ -133,13 +136,13 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
   if (!open || !instrument) return null
 
-  const metadata = getMetadata(instrument)
+  const metadata = getMetadata(instrument, t)
   const titleId = `market-order-modal-title-${instrument.itemId}`
 
   return (
     <Modal
       className="market-order-modal-shell"
-      closeLabel="关闭"
+      closeLabel={t('common.close')}
       labelledBy={titleId}
       onClose={onClose}
       open={open}
@@ -148,10 +151,10 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       <header className="market-order-modal-header">
         <div className="market-order-modal-title-row">
           <span className={`market-order-badge market-order-badge--${side}`}>
-            {side === 'sell' ? '发起挂售' : '发起求购'}
+            {side === 'sell' ? t('market.placeSell') : t('market.placeBuy')}
           </span>
           <h2 id={titleId}>{instrument.name}</h2>
-          <span className="market-order-modal-category">{instrument.category} · {metadata.rarityLabel ?? '一阶'}</span>
+          <span className="market-order-modal-category">{instrument.category} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
         </div>
       </header>
 
@@ -166,12 +169,12 @@ export const MarketOrderModal = memo(function MarketOrderModal({
         />
         <div className="market-order-modal-item-info">
           <div className="market-order-modal-meta-row">
-            <span>当前库存：<strong>{formatNumber(selectedAmount)}</strong></span>
-            <span>持有灵石：<strong>{formatNumber(spiritAmount)}</strong></span>
+            <span>{t('market.currentStock')}<strong>{formatNumber(selectedAmount)}</strong></span>
+            <span>{t('market.spiritHeld')}<strong>{formatNumber(spiritAmount)}</strong></span>
           </div>
           <div className="market-order-modal-meta-row">
-            <span>回收保底：{formatNumber(vendorPrice)}</span>
-            <span>档位步长：{formatNumber(getMarketPriceIncrement(effectivePrice))}</span>
+            <span>{t('market.vendorFloor')}{formatNumber(vendorPrice)}</span>
+            <span>{t('market.tickSize')}{formatNumber(getMarketPriceIncrement(effectivePrice))}</span>
           </div>
         </div>
       </div>
@@ -179,15 +182,15 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       <form className="market-order-modal-form" onSubmit={submitOrder}>
         <div className="market-order-modal-field">
           <div className="market-order-modal-field-header">
-            <label htmlFor="market-order-price-input">单价（灵石）</label>
-            <div className="market-order-quick-prices" role="group" aria-label="快捷填价">
+            <label htmlFor="market-order-price-input">{t('market.unitPriceSpirit')}</label>
+            <div className="market-order-quick-prices" role="group" aria-label={t('market.quickFillAria')}>
               {bestBid !== undefined && (
                 <button
                   className="market-quick-btn market-quick-btn--bid"
                   onClick={() => setPrice(String(bestBid))}
                   type="button"
                 >
-                  买一 {formatNumber(bestBid)}
+                  {t('market.bidPrice', { price: formatNumber(bestBid) })}
                 </button>
               )}
               {bestAsk !== undefined && (
@@ -196,7 +199,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
                   onClick={() => setPrice(String(bestAsk))}
                   type="button"
                 >
-                  卖一 {formatNumber(bestAsk)}
+                  {t('market.askPrice', { price: formatNumber(bestAsk) })}
                 </button>
               )}
               <button
@@ -204,7 +207,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
                 onClick={() => setPrice(String(minimumPrice))}
                 type="button"
               >
-                底价 {formatNumber(minimumPrice)}
+                {t('market.floorPrice', { price: formatNumber(minimumPrice) })}
               </button>
             </div>
           </div>
@@ -226,13 +229,13 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
         <div className="market-order-modal-field">
           <div className="market-order-modal-field-header">
-            <label>数量</label>
+            <label>{t('market.quantity')}</label>
             <span className="market-order-max-hint">
-              {side === 'sell' ? `最大可挂售 ${formatNumber(selectedAmount)}` : `最大可求购 ${formatNumber(quantityLimit)}`}
+              {side === 'sell' ? t('market.maxSellable', { count: formatNumber(selectedAmount) }) : t('market.maxBuyable', { count: formatNumber(quantityLimit) })}
             </span>
           </div>
           <QuantitySelector
-            ariaLabel="订单数量"
+            ariaLabel={t('market.quantityAria')}
             compact={false}
             max={Math.max(1, quantityLimit)}
             onChange={setQuantity}
@@ -245,31 +248,31 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           {side === 'buy' ? (
             <>
               <div className="market-order-summary-row">
-                <span>订单总价</span>
-                <strong>{formatNumber(totalPrice)} 灵石</strong>
+                <span>{t('market.totalPrice')}</span>
+                <strong>{formatNumber(totalPrice)} {t('market.spiritUnit')}</strong>
               </div>
               <div className="market-order-summary-row">
-                <span>交易扣款</span>
-                <span className="market-bid-text">-{formatNumber(totalPrice)} 灵石</span>
+                <span>{t('market.debitLine')}</span>
+                <span className="market-bid-text">-{formatNumber(totalPrice)} {t('market.spiritUnit')}</span>
               </div>
               <div className="market-order-summary-row">
-                <span>灵石结余预估</span>
-                <span>{formatNumber(Math.max(0, spiritAmount - totalPrice))} 灵石</span>
+                <span>{t('market.balanceAfter')}</span>
+                <span>{formatNumber(Math.max(0, spiritAmount - totalPrice))} {t('market.spiritUnit')}</span>
               </div>
             </>
           ) : (
             <>
               <div className="market-order-summary-row">
-                <span>订单总价</span>
-                <strong>{formatNumber(totalPrice)} 灵石</strong>
+                <span>{t('market.totalPrice')}</span>
+                <strong>{formatNumber(totalPrice)} {t('market.spiritUnit')}</strong>
               </div>
               <div className="market-order-summary-row">
-                <span>交易税 (2%)</span>
-                <span className="market-tax-text">-{formatNumber(tax)} 灵石</span>
+                <span>{t('market.taxLine')}</span>
+                <span className="market-tax-text">-{formatNumber(tax)} {t('market.spiritUnit')}</span>
               </div>
               <div className="market-order-summary-row">
-                <span>预计净收益</span>
-                <span className="market-ask-text">+{formatNumber(netEarnings)} 灵石</span>
+                <span>{t('market.netEarnings')}</span>
+                <span className="market-ask-text">+{formatNumber(netEarnings)} {t('market.spiritUnit')}</span>
               </div>
             </>
           )}
@@ -277,7 +280,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
         <div className="market-order-modal-actions">
           <button className="market-order-btn-cancel" onClick={onClose} type="button">
-            取消
+            {t('common.cancel')}
           </button>
           <button
             className={`market-order-btn-submit market-order-btn-submit--${side}`}
@@ -288,7 +291,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             }
             type="submit"
           >
-            {side === 'sell' ? '确认挂售' : '确认求购'}
+            {side === 'sell' ? t('market.confirmSell') : t('market.confirmBuy')}
           </button>
         </div>
       </form>

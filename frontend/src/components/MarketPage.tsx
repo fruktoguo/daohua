@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatNumber } from '../game/format'
-import { ITEM_META, resolveItemGrade, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
+import { getT, useT, type TFunction } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketMetrics, MarketOrder } from '../game/types'
 import { fetchMarketBook, fetchMarketMetrics, fetchMarketOrders } from '../network/apiClient'
@@ -18,13 +19,14 @@ const BOOK_DEPTH = 20
 
 type MarketTab = 'browse' | 'orders'
 
-const MARKET_TABS: ReadonlyArray<{ id: MarketTab; label: string }> = [
-  { id: 'browse', label: '浏览' },
-  { id: 'orders', label: '我的订单' },
+const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
+  { id: 'browse' },
+  { id: 'orders' },
 ]
 
-function getMetadata(item: MarketInstrument): ItemMetadata {
-  const registered = ITEM_META[item.itemId]
+// 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
+function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  const registered = resolveItemMetadata(item.itemId)
   if (!registered) {
     const tier = Math.max(1, item.tier)
     const grade = resolveItemGrade(tier)
@@ -36,15 +38,16 @@ function getMetadata(item: MarketInstrument): ItemMetadata {
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
-      description: '坊市可交易物品。',
-      source: '坊市',
-      usage: '可在坊市挂牌交易。',
+      description: t('market.itemFallback.description'),
+      source: t('market.itemFallback.source'),
+      usage: t('market.itemFallback.usage'),
     }
   }
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
 export const MarketPage = memo(function MarketPage(): React.JSX.Element {
+  const t = useT()
   const catalog = useGameStore(state => state.items)
   const playerId = useGameStore(state => state.playerId)
   const inventory = useGameStore(state => state.inventory)
@@ -137,7 +140,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
           hasFailure = true
         }
 
-        setError(hasFailure ? '坊市数据暂时不可用' : null)
+        setError(hasFailure ? getT()('market.error.unavailable') : null)
       } finally {
         if (!disposed) setLoading(false)
         inFlight = false
@@ -185,8 +188,8 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   return (
     <section className="panel market-page">
       <header className="panel-header market-header">
-        <h2>坊市</h2>
-        <nav aria-label="坊市功能" className="market-tabs" role="tablist">
+        <h2>{t('market.title')}</h2>
+        <nav aria-label={t('market.tabsAria')} className="market-tabs" role="tablist">
           {MARKET_TABS.map(tab => (
             <button
               aria-selected={activeTab === tab.id}
@@ -195,22 +198,26 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
               onClick={() => setActiveTab(tab.id)}
               role="tab"
               type="button"
-            >{tab.label}</button>
+            >{t(`market.tab.${tab.id}`)}</button>
           ))}
         </nav>
-        <button aria-label="刷新盘口" className="market-refresh" disabled={loading} onClick={refresh} title="刷新盘口" type="button">↻</button>
+        <button aria-label={t('market.refreshBook')} className="market-refresh" disabled={loading} onClick={refresh} title={t('market.refreshBook')} type="button">↻</button>
       </header>
 
       <div className="market-status-row">
         <span className="market-toolbar-label">
           {activeTab === 'orders'
-            ? `活动挂单 ${formatNumber(orders.length)} 笔`
+            ? t('market.activeOrdersCount', { count: formatNumber(orders.length) })
             : selected
-              ? `${selected.name} · 零阶盘口`
-              : `共 ${formatNumber(instruments.length)} 种可交易物品`}
+              ? t('market.instrumentBook', { name: selected.name })
+              : t('market.tradableCount', { count: formatNumber(instruments.length) })}
         </span>
         <span className={`market-status${error ? ' is-error' : ''}`} role="status">
-          {error ?? (loading ? '同步中' : (selected && book ? `序号 ${formatNumber(book.sequence)}` : `灵石 ${formatNumber(spiritAmount)}`))}
+          {error ?? (loading
+            ? t('market.syncing')
+            : (selected && book
+              ? t('market.bookSequence', { sequence: formatNumber(book.sequence) })
+              : t('market.spiritAmount', { amount: formatNumber(spiritAmount) })))}
         </span>
       </div>
 
@@ -231,7 +238,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                     onClick={() => setSelectedItemId(null)}
                     type="button"
                   >
-                    ← 返回列表
+                    {t('market.backToList')}
                   </button>
                 </div>
 
@@ -241,35 +248,35 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                     className="market-detail-tooltip"
                     definition={selected.definition}
                     itemId={selected.itemId}
-                    metadata={getMetadata(selected)}
+                    metadata={getMetadata(selected, t)}
                   >
                     <div className="market-detail-item-card">
                       <ItemTile
                         amount={selectedAmount}
                         category={selected.category}
                         className="inventory-cell"
-                        level={getMetadata(selected).level}
+                        level={getMetadata(selected, t).level}
                         name={selected.name}
-                        rarity={getMetadata(selected).rarity}
+                        rarity={getMetadata(selected, t).rarity}
                       />
                     </div>
                   </ItemTooltipTarget>
                 </div>
 
-                <div className="market-detail-actions" role="group" aria-label="发起买卖">
+                <div className="market-detail-actions" role="group" aria-label={t('market.actionsGroupAria')}>
                   <button
                     className="market-action-btn market-action-btn--buy"
                     onClick={() => setOrderModalSide('buy')}
                     type="button"
                   >
-                    发起求购
+                    {t('market.placeBuy')}
                   </button>
                   <button
                     className="market-action-btn market-action-btn--sell"
                     onClick={() => setOrderModalSide('sell')}
                     type="button"
                   >
-                    发起挂售
+                    {t('market.placeSell')}
                   </button>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import { memo, useCallback } from 'react'
 import { formatNumber } from '../../game/format'
+import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketMetrics, MarketOrder } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
@@ -15,40 +16,41 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
   metrics,
   onChanged,
 }: MarketOwnOrdersProps): React.JSX.Element {
+  const t = useT()
   const catalog = useGameStore(state => state.items)
   const setNotice = useGameStore(state => state.setNotice)
   const cancelOrder = useCallback((orderId: string) => {
     if (!gameClient.sendCommand('market_cancel', { orderId })) return
-    setNotice('撤单请求已提交。')
+    setNotice(getT()('market.notice.cancelSubmitted'))
     window.setTimeout(onChanged, 120)
   }, [onChanged, setNotice])
 
   return (
     <div className="market-own-panel">
       <div className="market-own-toolbar">
-        <span className="market-toolbar-label">共 {formatNumber(orders.length)} 笔活动挂单</span>
-        <button className="market-claim" onClick={() => gameClient.sendCommand('market_claim', {})} type="button">领取结算</button>
+        <span className="market-toolbar-label">{t('market.activeOrdersTotal', { count: formatNumber(orders.length) })}</span>
+        <button className="market-claim" onClick={() => gameClient.sendCommand('market_claim', {})} type="button">{t('market.claimSettlement')}</button>
       </div>
       <section className="market-own-orders">
         {orders.length === 0
-          ? <div className="market-own-empty">暂无活动挂单</div>
+          ? <div className="market-own-empty">{t('market.noActiveOrders')}</div>
           : orders.map(order => (
               <div className="market-own-order" key={order.orderId}>
-                <span className={`market-own-side market-own-side--${order.side}`}>{order.side === 'buy' ? '求购' : '出售'}</span>
+                <span className={`market-own-side market-own-side--${order.side}`}>{order.side === 'buy' ? t('market.side.buy') : t('market.side.sell')}</span>
                 <strong>{catalog.find(item => item.itemId === order.itemId)?.name ?? order.itemId}</strong>
                 <span>{formatNumber(order.price)} × {formatNumber(order.remainingQuantity)}</span>
-                <span>{order.status === 'partially-filled' ? '部分成交' : '挂单中'}</span>
-                <time dateTime={order.expiresAt} title={`创建于 ${new Date(order.createdAt).toLocaleString('zh-CN')}`}>
-                  {new Date(order.expiresAt).toLocaleDateString('zh-CN')} 到期
+                <span>{order.status === 'partially-filled' ? t('market.status.partiallyFilled') : t('market.status.open')}</span>
+                <time dateTime={order.expiresAt} title={t('market.createdAt', { time: new Date(order.createdAt).toLocaleString('zh-CN') })}>
+                  {t('market.expiresOn', { date: new Date(order.expiresAt).toLocaleDateString('zh-CN') })}
                 </time>
-                <button aria-label="撤销订单" onClick={() => cancelOrder(order.orderId)} title="撤销订单" type="button">×</button>
+                <button aria-label={t('market.cancelOrder')} onClick={() => cancelOrder(order.orderId)} title={t('market.cancelOrder')} type="button">×</button>
               </div>
             ))}
       </section>
       <footer className="market-footer">
-        <span>累计成交 {formatNumber(metrics?.tradedQuantity ?? 0)}</span>
-        <span>撮合 {formatNumber(metrics?.matchCount ?? 0)}</span>
-        <span>2% 卖方税</span>
+        <span>{t('market.metricsTraded', { count: formatNumber(metrics?.tradedQuantity ?? 0) })}</span>
+        <span>{t('market.metricsMatches', { count: formatNumber(metrics?.matchCount ?? 0) })}</span>
+        <span>{t('market.sellerTaxNote')}</span>
       </footer>
     </div>
   )
