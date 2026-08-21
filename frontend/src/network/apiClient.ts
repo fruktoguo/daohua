@@ -1,4 +1,5 @@
 import type { ActionDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
+import { getAccessToken } from './access_token'
 
 function getHttpBase(): string {
   const configuredApi = import.meta.env.VITE_API_URL as string | undefined
@@ -18,9 +19,17 @@ export function getApiUrl(path: string): string {
   return `${getHttpBase()}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+// 每次请求动态构造头部：令牌保存在 localStorage，用户可能随时修改。
+function buildHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { Accept: 'application/json' }
+  const token = getAccessToken()
+  if (token) headers['X-Access-Token'] = token
+  return headers
+}
+
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(getApiUrl(path), {
-    headers: { Accept: 'application/json' },
+    headers: buildHeaders(),
     signal,
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -29,7 +38,7 @@ async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
 
 async function getConditionalJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(getApiUrl(path), {
-    headers: { Accept: 'application/json' },
+    headers: buildHeaders(),
     // 由浏览器使用服务端 ETag 做重验证；跨域时不会因脚本自定义
     // If-None-Match 请求头而为每次轮询额外触发 CORS 预检。
     cache: 'no-cache',

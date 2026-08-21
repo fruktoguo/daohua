@@ -22,6 +22,7 @@ import { ACTION_DEFINITIONS, ACTION_TAB_META, ACTION_TYPES, ITEM_META } from './
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatAbilityDefinition, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
+import { getAccessToken, setAccessToken } from './network/access_token'
 import { gameClient } from './network/gameClient'
 import { useUiStore, type TabId } from './uiStore'
 
@@ -1122,6 +1123,7 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
 })
 
 function SettingsPage(): React.JSX.Element {
+  const [tokenDraft, setTokenDraft] = useState(getAccessToken())
   const playerId = useGameStore(state => state.playerId)
   const name = useGameStore(state => state.name)
   const version = useGameStore(state => state.version)
@@ -1158,6 +1160,36 @@ function SettingsPage(): React.JSX.Element {
             >{label}</button>
           ))}
         </div>
+      </div>
+      <div className="settings-block">
+        <h3>访问令牌</h3>
+        <div className="stat-row">
+          <span>令牌</span>
+          {/* styles.css 不允许为本任务改动，且无现成文本输入样式类，故用最简内联样式。 */}
+          <input
+            aria-label="访问令牌"
+            onChange={event => setTokenDraft(event.target.value)}
+            placeholder="留空表示不使用"
+            style={{
+              border: '1px solid var(--gold-faint)',
+              background: 'rgba(255, 255, 255, 0.04)',
+              color: 'var(--text)',
+              fontSize: 11,
+              height: 28,
+              padding: '3px 9px',
+              width: 'min(220px, 100%)',
+            }}
+            type="password"
+            value={tokenDraft}
+          />
+        </div>
+        <button
+          onClick={() => {
+            setAccessToken(tokenDraft)
+            gameClient.notifyAccessTokenChanged()
+          }}
+          type="button"
+        >保存令牌</button>
       </div>
     </section>
   )

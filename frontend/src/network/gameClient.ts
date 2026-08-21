@@ -1,6 +1,7 @@
 import { useGameStore } from '../game/gameStore'
 import type { AckPayload, ErrorPayload, Packet, PlayerPatch, PlayerSnapshot } from '../game/types'
 import { gameLogService } from '../logging/gameLogService'
+import { getAccessToken } from './access_token'
 import { fetchActionDefinitions, fetchCombatAbilities, fetchCombatEncounters, fetchCombatEquipment, fetchItemDefinitions, fetchWorldMaps } from './apiClient'
 
 const decoder = new TextDecoder()
@@ -33,6 +34,8 @@ function getEndpoint(playerId: string): string {
   const endpoint = new URL(configured || fallback)
   endpoint.searchParams.set('playerId', playerId)
   endpoint.searchParams.set('name', 'YuoHira')
+  const token = getAccessToken()
+  if (token) endpoint.searchParams.set('token', token)
   return endpoint.toString()
 }
 
@@ -43,6 +46,8 @@ export class XiuxianGameClient {
   private disposed = false
   private reconnectDelay = 500
   private catalogAbortController: AbortController | null = null
+  private immediateFailures = 0
+  private stoppedByRejection = false
 
   readonly playerId = getPlayerId()
 
@@ -61,6 +66,15 @@ export class XiuxianGameClient {
     this.catalogAbortController = null
     void gameLogService.flush()
     useGameStore.getState().setConnection('offline')
+  }
+
+  /** 用户保存新访问令牌后调用；仅在因鉴权被拒而停止重连时立即恢复连接。 */
+  notifyAccessTokenChanged(): void {
+    if (this.disposed || !this.stoppedByRejection) return
+    this.stoppedByRejection = false
+    this.immediateFailures = 0
+    this.reconnectDelay = 500
+    this.open()
   }
 
   sendCommand(command: string, payload: unknown): boolean {
@@ -84,12 +98,16 @@ export class XiuxianGameClient {
   private open(): void {
     if (this.disposed) return
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
+    const attemptStartedAt = Date.now()
+    let openedThisSocket = false
     const socket = new WebSocket(getEndpoint(this.playerId))
     socket.binaryType = 'arraybuffer'
     this.socket = socket
 
     socket.addEventListener('open', () => {
+      openedThisSocket = true
       this.reconnectDelay = 500
+      this.immediateFailures = 0
       useGameStore.getState().setConnection('online')
       void this.loadCatalogs()
       this.sendHello()
@@ -103,6 +121,17 @@ export class XiuxianGameClient {
     socket.addEventListener('close', () => {
       if (this.socket === socket) this.socket = null
       if (this.disposed) return
+      // 从未 open 且快速失败，通常是服务端拒绝了令牌；连续多次后停止自动重连，
+      // 等待用户在设置中保存新令牌后再恢复，避免无限循环撞墙。
+      const failedFastWithoutOpen = !openedThisSocket && Date.now() - attemptStartedAt < 2000
+      if (failedFastWithoutOpen) this.immediateFailures += 1
+      else this.immediateFailures = 0
+      if (failedFastWithoutOpen && this.immediateFailures >= 3) {
+        this.stoppedByRejection = true
+        useGameStore.getState().setConnection('offline')
+        useGameStore.getState().setNotice('连接被服务端拒绝，请检查访问令牌设置')
+        return
+      }
       useGameStore.getState().setConnection('reconnecting')
       const delay = this.reconnectDelay
       this.reconnectDelay = Math.min(8000, this.reconnectDelay * 2)
