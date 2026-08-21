@@ -391,11 +391,20 @@ public sealed class XiuxianSimulationTests
 
         XiuxianSimulation.AdvanceTo(state, respawnAt);
 
-        // 复活后玩家立即击败怪物并结算胜利，进入下一个遭遇的搜寻阶段
+        Assert.Equal(XiuxianCombatExpeditionPhase.Combat, expedition.Phase);
+        Assert.Equal(2, action.RemainingRepeats);
+        var restored = XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt);
+        Assert.Equal(restored.MaxHitpoints, state.CombatResources.Hitpoints);
+        Assert.Equal(restored.MaxManapoints, state.CombatResources.Manapoints);
+        for (var seconds = 1; seconds <= 60 && expedition.Phase == XiuxianCombatExpeditionPhase.Combat; seconds++)
+        {
+            XiuxianSimulation.AdvanceTo(state, respawnAt.AddSeconds(seconds));
+        }
+
         Assert.Equal(1, state.Stats.CombatLosses);
         Assert.Equal(XiuxianCombatExpeditionPhase.Search, expedition.Phase);
         Assert.Equal(1, action.RemainingRepeats);
-        Assert.True(state.CombatResources.Hitpoints >= 1);
+        Assert.True(state.CombatResources.Hitpoints > 0);
         Assert.Contains(state.StructuredEventLog, entry => entry.Template.Contains("战斗复起", StringComparison.Ordinal));
     }
 
@@ -898,9 +907,9 @@ public sealed class XiuxianSimulationTests
     }
 
     [Fact]
-    public void No_automatic_regeneration_in_idle_and_non_combat_actions_or_search()
+    public void Continuous_regeneration_applies_in_idle_and_non_combat_actions()
     {
-        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "无回复修士", Baseline);
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "自动回复修士", Baseline);
         state.Queue.Entries.Clear();
         state.CombatResources = new XiuxianCombatResourceState
         {
@@ -910,24 +919,49 @@ public sealed class XiuxianSimulationTests
         };
 
         var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, Baseline, state.Stats.Spirit);
-        Assert.Equal(0.0, attributes.HpRegenPerTenSeconds);
-        Assert.Equal(0.0, attributes.MpRegenPerTenSeconds);
+        Assert.True(attributes.HpRegenPerTenSeconds > 0);
+        Assert.True(attributes.MpRegenPerTenSeconds > 0);
 
-        // 空闲 10 秒：无自动回复，生命与灵力保持不变
+        // 空闲 10 秒：正常享受自然自动回复
         XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(10));
-        Assert.Equal(50, state.CombatResources.Hitpoints);
-        Assert.Equal(20, state.CombatResources.Manapoints);
+        var expectedHpGain = (long)Math.Floor(attributes.MaxHitpoints * attributes.HpRegenPerTenSeconds * (10_000.0 / 10_000.0));
+        var expectedMpGain = (long)Math.Floor(attributes.MaxManapoints * attributes.MpRegenPerTenSeconds * (10_000.0 / 10_000.0));
 
-        // 加入非战斗行动（采药），推进 8 秒：依然无自动回复
+        Assert.Equal(Math.Min(attributes.MaxHitpoints, 50 + expectedHpGain), state.CombatResources.Hitpoints);
+        Assert.Equal(Math.Min(attributes.MaxManapoints, 20 + expectedMpGain), state.CombatResources.Manapoints);
+
+        // 加入非战斗行动（采药），推进 8 秒：持续运转回复
         state.Queue.Entries.Add(new XiuxianQueuedAction
         {
             ActionId = XiuxianActionIds.GatherHerbs,
             DurationSeconds = 8
         });
 
+        var prevHp = state.CombatResources.Hitpoints;
+        var prevMp = state.CombatResources.Manapoints;
         XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(18));
-        Assert.Equal(50, state.CombatResources.Hitpoints);
-        Assert.Equal(20, state.CombatResources.Manapoints);
+        Assert.True(state.CombatResources.Hitpoints >= prevHp);
+        Assert.True(state.CombatResources.Manapoints >= prevMp);
+    }
+
+    [Fact]
+    public void Death_state_regenerates_mana_while_health_remains_zero_until_full_respawn()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "死亡回蓝修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.CombatResources = new XiuxianCombatResourceState
+        {
+            Initialized = true,
+            Hitpoints = 0,
+            Manapoints = 20
+        };
+
+        // 处于死亡状态（生命为 0）：空闲推进 10 秒
+        XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(10));
+
+        // 生命值依然为 0（未复活不回血），而灵力正常自动回复
+        Assert.Equal(0, state.CombatResources.Hitpoints);
+        Assert.True(state.CombatResources.Manapoints > 20);
     }
 
     [Fact]
@@ -1008,9 +1042,9 @@ public sealed class XiuxianSimulationTests
     }
 
     [Fact]
-    public void No_regeneration_while_all_loop_actions_are_blocked_and_combat_entry_preserves_damaged_resources()
+    public void Continuous_regeneration_applies_while_all_loop_actions_are_blocked()
     {
-        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "空转无回复修士", Baseline);
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "空转回复修士", Baseline);
         state.Queue.Entries.Clear();
         state.Queue.LoopEnabled = true;
         state.CombatResources = new XiuxianCombatResourceState
@@ -1027,21 +1061,14 @@ public sealed class XiuxianSimulationTests
             DurationSeconds = XiuxianActionCatalog.Get(XiuxianActionIds.RefineQiPill).DurationSeconds
         });
 
+        var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, Baseline, state.Stats.Spirit);
         XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(10));
 
-        // 空转的 10 秒内无自动回复，生命与法力保持不变
-        Assert.Equal(50, state.CombatResources.Hitpoints);
-        Assert.Equal(20, state.CombatResources.Manapoints);
-
-        // 进入战斗：保持 50 生命和 20 灵力，绝不自动回满
-        Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 1).Success);
-        Assert.Equal(50, state.CombatResources.Hitpoints);
-        Assert.Equal(20, state.CombatResources.Manapoints);
-
-        // 推进到搜寻结束进入战斗
-        XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(15));
-        Assert.Equal(50, state.CombatResources.Hitpoints);
-        Assert.Equal(20, state.CombatResources.Manapoints);
+        // 空转的 10 秒同样享受自动回复
+        var expectedHpGain = (long)Math.Floor(attributes.MaxHitpoints * attributes.HpRegenPerTenSeconds * 1.0);
+        var expectedMpGain = (long)Math.Floor(attributes.MaxManapoints * attributes.MpRegenPerTenSeconds * 1.0);
+        Assert.Equal(Math.Min(attributes.MaxHitpoints, 50 + expectedHpGain), state.CombatResources.Hitpoints);
+        Assert.Equal(Math.Min(attributes.MaxManapoints, 20 + expectedMpGain), state.CombatResources.Manapoints);
     }
 
     [Fact]

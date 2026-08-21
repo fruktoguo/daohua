@@ -1147,6 +1147,10 @@ public static class XiuxianSimulation
                     expedition.PhaseElapsedMilliseconds = checked(expedition.PhaseElapsedMilliseconds + available);
                     current.ProgressSeconds = ToDisplaySeconds(expedition.PhaseElapsedMilliseconds);
                     current.DurationSeconds = ToDisplaySeconds(duration);
+                    if (RegenerateResources(state, cursor, available))
+                    {
+                        dirty |= XiuxianDirtySections.Combat;
+                    }
                     cursor = target;
                     dirty |= XiuxianDirtySections.QueueProgress;
                     return;
@@ -1156,8 +1160,12 @@ public static class XiuxianSimulation
                 expedition.PhaseElapsedMilliseconds = 0;
                 current.ProgressSeconds = 0;
                 transitions++;
-                SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, cursor, hitpoints: 1, manapoints: 0, spirit: state.Stats.Spirit));
-                AddEvent(state, "你已重伤复苏（生命值恢复至 1 点）。", cursor);
+                if (RegenerateResources(state, cursor, remaining))
+                {
+                    dirty |= XiuxianDirtySections.Combat;
+                }
+                SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, cursor, spirit: state.Stats.Spirit));
+                AddEvent(state, "你已复活。", cursor);
                 dirty |= XiuxianDirtySections.Combat | XiuxianDirtySections.Events;
 
                 if (expedition.CompleteAfterRespawn)
@@ -1515,8 +1523,6 @@ public static class XiuxianSimulation
         if (elapsedMilliseconds <= 0) return false;
         EnsureCombatResources(state, at);
 
-        if (state.CombatResources.Hitpoints <= 0) return false;
-
         var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, at, state.Stats.Spirit);
         var maxHp = attributes.MaxHitpoints;
         var maxMp = attributes.MaxManapoints;
@@ -1525,28 +1531,36 @@ public static class XiuxianSimulation
 
         var changed = false;
 
-        if (state.CombatResources.Hitpoints < maxHp && hpRegenRatio > 0 && maxHp > 0)
+        // 生命值自动回复：仅在玩家存活（Hitpoints > 0）时生效
+        if (state.CombatResources.Hitpoints > 0)
         {
-            var totalGain = maxHp * hpRegenRatio * (elapsedMilliseconds / 10_000.0) + state.CombatResources.HitpointRemainder;
-            var hpGain = (long)Math.Floor(totalGain);
-            state.CombatResources.HitpointRemainder = totalGain - hpGain;
-            if (hpGain > 0)
+            if (state.CombatResources.Hitpoints < maxHp && hpRegenRatio > 0 && maxHp > 0)
             {
-                state.CombatResources.Hitpoints = Math.Min(maxHp, state.CombatResources.Hitpoints + hpGain);
-                if (state.CombatResources.Hitpoints >= maxHp)
+                var totalGain = maxHp * hpRegenRatio * (elapsedMilliseconds / 10_000.0) + state.CombatResources.HitpointRemainder;
+                var hpGain = (long)Math.Floor(totalGain);
+                state.CombatResources.HitpointRemainder = totalGain - hpGain;
+                if (hpGain > 0)
                 {
-                    state.CombatResources.HitpointRemainder = 0;
+                    state.CombatResources.Hitpoints = Math.Min(maxHp, state.CombatResources.Hitpoints + hpGain);
+                    if (state.CombatResources.Hitpoints >= maxHp)
+                    {
+                        state.CombatResources.HitpointRemainder = 0;
+                    }
+                    changed = true;
                 }
-                changed = true;
+            }
+            else if (state.CombatResources.Hitpoints >= maxHp)
+            {
+                if (state.CombatResources.Hitpoints > maxHp)
+                {
+                    state.CombatResources.Hitpoints = maxHp;
+                    changed = true;
+                }
+                state.CombatResources.HitpointRemainder = 0;
             }
         }
-        else if (state.CombatResources.Hitpoints >= maxHp)
+        else
         {
-            if (state.CombatResources.Hitpoints > maxHp)
-            {
-                state.CombatResources.Hitpoints = maxHp;
-                changed = true;
-            }
             state.CombatResources.HitpointRemainder = 0;
         }
 

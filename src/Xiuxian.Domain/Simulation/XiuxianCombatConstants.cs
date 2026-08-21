@@ -105,18 +105,18 @@ public static class XiuxianCombatConstants
     // =========================================================================
 
     /// <summary>
-    /// 体魄：每点提供 1% (0.01) 生命值、1% (0.01) 护甲。
+    /// 体魄：每点提供 1% (0.01) 生命值、1% (0.01) 护甲、1% (0.01) 生命值回复。
     /// </summary>
     public const double StaminaHpRatioPerLevel = 0.01;
     public const double StaminaArmorRatioPerLevel = 0.01;
-    public const double StaminaHpRegenRatioPerLevel = 0.0;
+    public const double StaminaHpRegenRatioPerLevel = 0.01;
 
     /// <summary>
-    /// 经脉：每点提供 1% (0.01) 灵力值、1% (0.01) 法抗。
+    /// 经脉：每点提供 1% (0.01) 灵力值、1% (0.01) 法抗、1% (0.01) 灵力值回复。
     /// </summary>
     public const double MeridiansMpRatioPerLevel = 0.01;
     public const double MeridiansMagicResRatioPerLevel = 0.01;
-    public const double MeridiansMpRegenRatioPerLevel = 0.0;
+    public const double MeridiansMpRegenRatioPerLevel = 0.01;
 
     /// <summary>
     /// 根骨：每点提供 1% (0.01) 生命值、1% (0.01) 灵力值、1% (0.01) 化解(拆招)。
@@ -195,14 +195,14 @@ public static class XiuxianCombatConstants
     public const double BaselineMagicResistance = 0.0;
 
     /// <summary>
-    /// 生命值回复基准值 (固定值，设定无自动回复为 0.0)。
+    /// 生命值回复基准值 (固定值，每 5 秒回复 2.0 生命值)。
     /// </summary>
-    public const double BaselineHpRegenPerFiveSeconds = 0.0;
+    public const double BaselineHpRegenPerFiveSeconds = 2.0;
 
     /// <summary>
-    /// 灵力回复基准值 (固定值，设定无自动回复为 0.0)。
+    /// 灵力回复基准值 (固定值，每 5 秒回复 1.0 灵力值)。
     /// </summary>
-    public const double BaselineMpRegenPerFiveSeconds = 0.0;
+    public const double BaselineMpRegenPerFiveSeconds = 1.0;
 
     /// <summary>
     /// 其他基础战斗属性基准值 (命中, 闪避, 暴击, 免爆, 破招, 拆招 均为 1.0)。

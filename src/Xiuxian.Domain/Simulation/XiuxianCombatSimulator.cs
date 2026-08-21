@@ -369,8 +369,8 @@ public static partial class XiuxianCombatSimulator
                 playerControl.Clear();
                 playerModifiers.Clear();
                 player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
-                playerHitpoints = 1;
-                playerManapoints = 0;
+                playerHitpoints = player.MaxHitpoints;
+                playerManapoints = player.MaxManapoints;
                 Array.Fill(abilityReadyAt, now);
                 Array.Fill(nextConsumableUse, now);
                 nextPlayerAction = now;
@@ -415,16 +415,17 @@ public static partial class XiuxianCombatSimulator
                         XiuxianCombatFormula.CalculateRegeneration(
                             player.MaxHitpoints,
                             player.HpRegenPerTenSeconds));
-                    var restoredManapoints = Math.Min(
-                        Math.Max(0, player.MaxManapoints - playerManapoints),
-                        XiuxianCombatFormula.CalculateRegeneration(
-                            player.MaxManapoints,
-                            player.MpRegenPerTenSeconds));
                     playerHitpoints = checked(playerHitpoints + restoredHitpoints);
-                    playerManapoints = checked(playerManapoints + restoredManapoints);
                     hitpointsRegenerated = checked(hitpointsRegenerated + restoredHitpoints);
-                    manapointsRegenerated = checked(manapointsRegenerated + restoredManapoints);
                 }
+
+                var restoredManapoints = Math.Min(
+                    Math.Max(0, player.MaxManapoints - playerManapoints),
+                    XiuxianCombatFormula.CalculateRegeneration(
+                        player.MaxManapoints,
+                        player.MpRegenPerTenSeconds));
+                playerManapoints = checked(playerManapoints + restoredManapoints);
+                manapointsRegenerated = checked(manapointsRegenerated + restoredManapoints);
 
                 if (!enemyDead)
                 {
@@ -1258,9 +1259,11 @@ public static partial class XiuxianCombatSimulator
         var criticalChance = XiuxianCombatFormula.CalculateCritContestRate(criticalRating, criticalAvoidanceRating);
         var criticalAvoidance = XiuxianCombatFormula.CalculateCritContestRate(criticalAvoidanceRating, criticalRating);
 
-        // 7. 回复速率 (设定无自动回复为 0.0，底层属性记录 10 秒量)
-        var hpRegen = Math.Max(0.0, (basePool.BaseHpRegen * 2.0 + loadout.HpRegenPerTenSeconds) * (1.0 + staminaBonus));
-        var mpRegen = Math.Max(0.0, (basePool.BaseMpRegen * 2.0 + loadout.MpRegenPerTenSeconds) * (1.0 + intelligenceBonus));
+        // 7. 回复速率 (每 5 秒基础回复 2% 基础上限，底层属性记录 10 秒比率)
+        var baseHpRegenRatio = basePool.BaseHitpoints > 0 ? (basePool.BaseHpRegen * 2.0) / basePool.BaseHitpoints : 0.04;
+        var baseMpRegenRatio = basePool.BaseManapoints > 0 ? (basePool.BaseMpRegen * 2.0) / basePool.BaseManapoints : 0.02;
+        var hpRegen = Math.Max(0.0, (baseHpRegenRatio + loadout.HpRegenPerTenSeconds) * (1.0 + staminaBonus));
+        var mpRegen = Math.Max(0.0, (baseMpRegenRatio + loadout.MpRegenPerTenSeconds) * (1.0 + intelligenceBonus));
 
         // 8. 攻击间隔
         var baseInterval = equipment.AttackIntervalMilliseconds > 0

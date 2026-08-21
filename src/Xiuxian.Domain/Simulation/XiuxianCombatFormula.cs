@@ -302,9 +302,9 @@ public static class XiuxianCombatFormula
         var baseBreak = low.Break + (high.Break - low.Break) * t;
         var baseParry = low.Parry + (high.Parry - low.Parry) * t;
 
-        // 设定无自动回复，基础生命回复与灵力回复固定为 0.0
-        var baseHpRegen = 0.0;
-        var baseMpRegen = 0.0;
+        // 基础生命回复与灵力回复固定为每 5 秒 2% 基础上限，四舍五入取整（保底 1.0）
+        var baseHpRegen = Math.Max(1.0, Math.Round(baseHp * 0.02));
+        var baseMpRegen = Math.Max(1.0, Math.Round(baseMp * 0.02));
 
         return new BaseAttributePool(
             level,

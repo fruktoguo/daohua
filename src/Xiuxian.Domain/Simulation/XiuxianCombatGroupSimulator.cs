@@ -346,8 +346,8 @@ public static partial class XiuxianCombatSimulator
                 playerControl.Clear();
                 playerModifiers.Clear();
                 player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
-                playerHitpoints = 1;
-                playerManapoints = 0;
+                playerHitpoints = player.MaxHitpoints;
+                playerManapoints = player.MaxManapoints;
                 Array.Fill(abilityReadyAt, now);
                 Array.Fill(nextConsumableUse, now);
                 nextPlayerAction = now;
@@ -385,25 +385,26 @@ public static partial class XiuxianCombatSimulator
                     var restoredHitpoints = Math.Min(
                         Math.Max(0, player.MaxHitpoints - playerHitpoints),
                         XiuxianCombatFormula.CalculateRegeneration(player.MaxHitpoints, player.HpRegenPerTenSeconds));
-                    var restoredManapoints = Math.Min(
-                        Math.Max(0, player.MaxManapoints - playerManapoints),
-                        XiuxianCombatFormula.CalculateRegeneration(player.MaxManapoints, player.MpRegenPerTenSeconds));
                     playerHitpoints = checked(playerHitpoints + restoredHitpoints);
-                    playerManapoints = checked(playerManapoints + restoredManapoints);
                     hitpointsRegenerated = checked(hitpointsRegenerated + restoredHitpoints);
-                    manapointsRegenerated = checked(manapointsRegenerated + restoredManapoints);
                 }
+
+                var restoredManapoints = Math.Min(
+                    Math.Max(0, player.MaxManapoints - playerManapoints),
+                    XiuxianCombatFormula.CalculateRegeneration(player.MaxManapoints, player.MpRegenPerTenSeconds));
+                playerManapoints = checked(playerManapoints + restoredManapoints);
+                manapointsRegenerated = checked(manapointsRegenerated + restoredManapoints);
 
                 foreach (var enemy in enemies.Where(enemy => !enemy.IsDefeated))
                 {
-                    var restoredHitpoints = Math.Min(
+                    var restoredEnemyHitpoints = Math.Min(
                         Math.Max(0, enemy.Stats.MaxHitpoints - enemy.Hitpoints),
                         XiuxianCombatFormula.CalculateRegeneration(enemy.Stats.MaxHitpoints, enemy.Stats.HpRegenPerTenSeconds));
-                    var restoredManapoints = Math.Min(
+                    var restoredEnemyManapoints = Math.Min(
                         Math.Max(0, enemy.Stats.MaxManapoints - enemy.Manapoints),
                         XiuxianCombatFormula.CalculateRegeneration(enemy.Stats.MaxManapoints, enemy.Stats.MpRegenPerTenSeconds));
-                    enemy.Hitpoints = checked(enemy.Hitpoints + restoredHitpoints);
-                    enemy.Manapoints = checked(enemy.Manapoints + restoredManapoints);
+                    enemy.Hitpoints = checked(enemy.Hitpoints + restoredEnemyHitpoints);
+                    enemy.Manapoints = checked(enemy.Manapoints + restoredEnemyManapoints);
                 }
 
                 nextRegenTick = checked(now + RegenTickMilliseconds);
