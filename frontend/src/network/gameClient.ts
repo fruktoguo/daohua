@@ -3,38 +3,18 @@ import type { AckPayload, ErrorPayload, Packet, PlayerPatch, PlayerSnapshot } fr
 import { getT } from '../i18n'
 import { gameLogService } from '../logging/gameLogService'
 import { getAccessToken } from './access_token'
+import { clearStoredAccount, getStoredAccount } from './account'
 import { fetchActionDefinitions, fetchCombatAbilities, fetchCombatEncounters, fetchCombatEquipment, fetchItemDefinitions, fetchWorldMaps } from './apiClient'
 
 const decoder = new TextDecoder()
 
-function getPlayerId(): string {
-  const key = 'xiuxian-player-id'
-  const cookieKey = 'xiuxian_player_id'
-  const cookieValue = document.cookie
-    .split(';')
-    .map(part => part.trim())
-    .find(part => part.startsWith(`${cookieKey}=`))
-    ?.slice(cookieKey.length + 1)
-  const cookiePlayerId = cookieValue ? decodeURIComponent(cookieValue) : null
-  const localPlayerId = window.localStorage.getItem(key)
-  const existing = cookiePlayerId || localPlayerId
-  if (existing) {
-    window.localStorage.setItem(key, existing)
-    document.cookie = `${cookieKey}=${encodeURIComponent(existing)}; Path=/; Max-Age=315360000; SameSite=Lax`
-    return existing
-  }
-  const created = crypto.randomUUID()
-  window.localStorage.setItem(key, created)
-  document.cookie = `${cookieKey}=${encodeURIComponent(created)}; Path=/; Max-Age=315360000; SameSite=Lax`
-  return created
-}
-
-function getEndpoint(playerId: string): string {
+function getEndpoint(playerId: string, account?: string, name?: string): string {
   const configured = import.meta.env.VITE_WS_URL as string | undefined
   const fallback = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
   const endpoint = new URL(configured || fallback)
   endpoint.searchParams.set('playerId', playerId)
-  endpoint.searchParams.set('name', 'YuoHira')
+  if (account) endpoint.searchParams.set('account', account)
+  endpoint.searchParams.set('name', name || account || '无名修士')
   const token = getAccessToken()
   if (token) endpoint.searchParams.set('token', token)
   return endpoint.toString()
@@ -50,18 +30,34 @@ export class XiuxianGameClient {
   private immediateFailures = 0
   private stoppedByRejection = false
 
-  readonly playerId = getPlayerId()
+  playerId = getStoredAccount()?.playerId ?? ''
+  account = getStoredAccount()?.account ?? ''
+  characterName = getStoredAccount()?.name ?? ''
 
   connect(): void {
+    const accountInfo = getStoredAccount()
+    if (!accountInfo) {
+      useGameStore.getState().setConnection('offline')
+      return
+    }
+    this.playerId = accountInfo.playerId
+    this.account = accountInfo.account
+    this.characterName = accountInfo.name
     this.disposed = false
     void gameLogService.activate(this.playerId)
     this.open()
   }
 
+  logout(): void {
+    clearStoredAccount()
+    this.dispose()
+    useGameStore.getState().resetGameStore()
+  }
+
   dispose(): void {
     this.disposed = true
     if (this.reconnectTimer !== undefined) window.clearTimeout(this.reconnectTimer)
-    this.socket?.close(1000, '页面关闭')
+    this.socket?.close(1000, '客户端断开')
     this.socket = null
     this.catalogAbortController?.abort()
     this.catalogAbortController = null
@@ -97,11 +93,11 @@ export class XiuxianGameClient {
   }
 
   private open(): void {
-    if (this.disposed) return
+    if (this.disposed || !this.playerId) return
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
     const attemptStartedAt = Date.now()
     let openedThisSocket = false
-    const socket = new WebSocket(getEndpoint(this.playerId))
+    const socket = new WebSocket(getEndpoint(this.playerId, this.account, this.characterName))
     socket.binaryType = 'arraybuffer'
     this.socket = socket
 
@@ -170,11 +166,12 @@ export class XiuxianGameClient {
 
   private sendHello(): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
+    const currentName = useGameStore.getState().name || this.characterName || '无名修士'
     const packet: Packet = {
       kind: 'hello',
       requestId: `${this.playerId.slice(0, 8)}-hello-${++this.requestSequence}`,
       sequence: 0,
-      payload: { name: 'YuoHira' },
+      payload: { name: currentName },
     }
     this.socket.send(new TextEncoder().encode(JSON.stringify(packet)))
   }

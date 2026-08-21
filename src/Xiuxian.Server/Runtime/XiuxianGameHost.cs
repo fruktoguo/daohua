@@ -41,6 +41,8 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<Guid, byte> _knownPlayers = new();
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastPlayerAccess = new();
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, XiuxianSession>> _sessions = new();
+    private readonly ConcurrentDictionary<string, Guid> _takenPlayerNames = new(StringComparer.OrdinalIgnoreCase);
+    private long _maxSequenceId = 10_000;
     private long _entitySequence = 10_000;
     private long _packetSequence;
     private long _simulationRevision;
@@ -73,12 +75,21 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
     public int LoadedPlayerCount => Volatile.Read(ref _loadedPlayerCount);
     public int ConnectedSessionCount => _sessions.Values.Sum(group => group.Count);
 
-    public async Task<XiuxianSession> RegisterSessionAsync(
+    public Task<XiuxianSession> RegisterSessionAsync(
         Guid playerId,
         string? name,
         CancellationToken cancellationToken)
     {
-        await EnsurePlayerAsync(playerId, name, cancellationToken);
+        return RegisterSessionAsync(playerId, name, null, cancellationToken);
+    }
+
+    public async Task<XiuxianSession> RegisterSessionAsync(
+        Guid playerId,
+        string? name,
+        string? account,
+        CancellationToken cancellationToken)
+    {
+        await EnsurePlayerAsync(playerId, name, account, cancellationToken);
         var session = new XiuxianSession(playerId);
         var snapshot = await ExecuteOnOwnerAsync(_ =>
         {
@@ -723,7 +734,16 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         return ValueTask.CompletedTask;
     }
 
-    private async Task EnsurePlayerAsync(Guid playerId, string? name, CancellationToken cancellationToken)
+    private Task EnsurePlayerAsync(Guid playerId, string? name, CancellationToken cancellationToken)
+    {
+        return EnsurePlayerAsync(playerId, name, null, cancellationToken);
+    }
+
+    private async Task EnsurePlayerAsync(
+        Guid playerId,
+        string? name,
+        string? account,
+        CancellationToken cancellationToken)
     {
         var now = _clock.UtcNow;
         _lastPlayerAccess[playerId] = now;
@@ -735,8 +755,39 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         await ExecuteOnOwnerAsync(fiber =>
         {
             if (_players.ContainsKey(playerId)) return true;
-            var state = restored ?? XiuxianSimulation.CreateDefaultState(playerId, name, now);
+            var state = restored ?? XiuxianSimulation.CreateDefaultState(playerId, name, now, account);
             state.PlayerId = playerId;
+
+            if (state.SequenceId <= 0)
+            {
+                state.SequenceId = Interlocked.Increment(ref _maxSequenceId);
+                migrationRecord = ToSnapshotRecord(state);
+            }
+            else
+            {
+                var currentMax = Volatile.Read(ref _maxSequenceId);
+                while (state.SequenceId > currentMax)
+                {
+                    var previous = Interlocked.CompareExchange(ref _maxSequenceId, state.SequenceId, currentMax);
+                    if (previous == currentMax) break;
+                    currentMax = previous;
+                }
+            }
+
+            if (state.CreatedAt == default)
+            {
+                state.CreatedAt = now;
+                migrationRecord = ToSnapshotRecord(state);
+            }
+
+            if (string.IsNullOrWhiteSpace(state.Account))
+            {
+                state.Account = string.IsNullOrWhiteSpace(account) ? state.Name : account.Trim();
+                migrationRecord = ToSnapshotRecord(state);
+            }
+
+            _takenPlayerNames[state.Name] = playerId;
+
             if (restored is not null)
             {
                 XiuxianSimulation.NormalizeState(state);
@@ -748,7 +799,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
                 XiuxianSimulation.AdvanceTo(state, now);
             }
 
-            if (restored is not null)
+            if (restored is not null && migrationRecord is null)
             {
                 // 旧快照可能需要补齐战斗槽位或队列字段，恢复时立即排队保存迁移结果。
                 migrationRecord = ToSnapshotRecord(state);
@@ -892,7 +943,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         }
     }
 
-    private static XiuxianCommandResult ApplyCommand(
+    private XiuxianCommandResult ApplyCommand(
         XiuxianPlayerState state,
         string command,
         JsonElement payload,
@@ -902,6 +953,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         {
             return command switch
             {
+                "rename" => ApplyRename(state, payload.Deserialize<RenameRequest>(XiuxianPacketCodec.JsonOptions), commandAt),
                 "enqueue_action" => ApplyEnqueue(state, payload.Deserialize<EnqueueActionRequest>(XiuxianPacketCodec.JsonOptions)),
                 "start_combat" => ApplyStartCombat(state, payload.Deserialize<StartCombatRequest>(XiuxianPacketCodec.JsonOptions)),
                 "remove_action" => ApplyRemove(state, payload.Deserialize<RemoveActionRequest>(XiuxianPacketCodec.JsonOptions)),
@@ -920,6 +972,56 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         {
             return XiuxianCommandResult.Fail("INVALID_PAYLOAD", "命令参数格式错误。");
         }
+    }
+
+    private XiuxianCommandResult ApplyRename(
+        XiuxianPlayerState state,
+        RenameRequest? request,
+        DateTimeOffset commandAt)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Name))
+        {
+            return XiuxianCommandResult.Fail("INVALID_NAME", "修士道号不能为空。");
+        }
+
+        var newName = request.Name.Trim();
+        if (newName.Length is < 2 or > 12)
+        {
+            return XiuxianCommandResult.Fail("INVALID_NAME_LENGTH", "修士道号长度必须在 2 到 12 个字符之间。");
+        }
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(newName, @"^[\u4e00-\u9fa5a-zA-Z0-9_]+$"))
+        {
+            return XiuxianCommandResult.Fail("INVALID_NAME_CHARACTERS", "修士道号仅支持中文、英文字母、数字和下划线，不支持特殊字符。");
+        }
+
+        if (string.Equals(state.Name, newName, StringComparison.Ordinal))
+        {
+            return XiuxianCommandResult.Fail("SAME_NAME", "新道号不能与当前道号相同。");
+        }
+
+        if (state.LastRenamedAt.HasValue && commandAt - state.LastRenamedAt.Value < TimeSpan.FromHours(24))
+        {
+            var remaining = TimeSpan.FromHours(24) - (commandAt - state.LastRenamedAt.Value);
+            var hours = (int)remaining.TotalHours;
+            var minutes = remaining.Minutes;
+            return XiuxianCommandResult.Fail("RENAME_COOLDOWN", $"改名冷却中，还需等待 {hours} 小时 {minutes} 分。");
+        }
+
+        if (_takenPlayerNames.TryGetValue(newName, out var ownerId) && ownerId != state.PlayerId)
+        {
+            return XiuxianCommandResult.Fail("NAME_ALREADY_EXISTS", "该道号已被其他修士使用，请更换其他名称。");
+        }
+
+        _takenPlayerNames.TryRemove(state.Name, out _);
+        _takenPlayerNames[newName] = state.PlayerId;
+
+        var oldName = state.Name;
+        state.Name = newName;
+        state.LastRenamedAt = commandAt;
+        state.DirtySections |= XiuxianDirtySections.Stats;
+        XiuxianSimulation.AddEvent(state, $"修士道号已由【{oldName}】修改为【{newName}】。");
+        return XiuxianCommandResult.Ok($"道号已成功变更为【{newName}】。");
     }
 
     private static XiuxianCommandResult ApplyEnqueue(XiuxianPlayerState state, EnqueueActionRequest? request)

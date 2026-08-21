@@ -36,6 +36,7 @@ public static class XiuxianWebSocketEndpoint
             return;
         }
         var playerName = SanitizePlayerName(context.Request.Query["name"].FirstOrDefault());
+        var account = SanitizePlayerName(context.Request.Query["account"].FirstOrDefault()) ?? playerName;
         context.Response.Cookies.Append("xiuxian_player_id", playerId.ToString("D"), new CookieOptions
         {
             Path = "/",
@@ -52,7 +53,7 @@ public static class XiuxianWebSocketEndpoint
 
         try
         {
-            session = await gameHost.RegisterSessionAsync(playerId, playerName, connectionCts.Token);
+            session = await gameHost.RegisterSessionAsync(playerId, playerName, account, connectionCts.Token);
             var sendTask = SendLoopAsync(socket, session, connectionCts.Token);
             var receiveTask = ReceiveLoopAsync(socket, session, gameHost, connectionCts.Token);
             await Task.WhenAny(sendTask, receiveTask);

@@ -155,3 +155,17 @@
   - [`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-reference`, `.item-reference-compound`)
 
+---
+
+## 15. 改名弹窗、登录界面与独立连接状态屏幕 (Rename Modal, Login & Connection Screens)
+
+- **适用场景**：
+  - **修改修士道号弹窗**（含 2~12 字符校验、正则无特殊字符校验、查重与 24 小时改名冷却） -> `RenameModal`
+  - **独立全屏登录/注册界面**（无账号或登出时展示，支持输入账号、道号与可选访问令牌，自带粒子与修仙太极光晕） -> `LoginPage`
+  - **独立全屏连接中与断网重试屏幕**（避免未连接时渲染默认 3 任务测试界面引发数据丢失疑惑，提供连接动画、重试与登出/切换账号入口） -> `ConnectingPage`, `ConnectionErrorPage`
+- **组件源码**：
+  - [`frontend/src/components/RenameModal.tsx`](../../frontend/src/components/RenameModal.tsx)
+  - [`frontend/src/components/LoginPage.tsx`](../../frontend/src/components/LoginPage.tsx)
+  - [`frontend/src/components/ConnectingPage.tsx`](../../frontend/src/components/ConnectingPage.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.rename-modal`, `.login-screen`, `.connecting-screen`, `.error-screen`)
+

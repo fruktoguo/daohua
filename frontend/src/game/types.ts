@@ -468,6 +468,10 @@ export interface PlayerSnapshot {
   visual?: CharacterVisual
   world?: WorldState
   isPendingBreakthrough?: boolean
+  account?: string | null
+  sequenceId?: number
+  createdAtUnixSeconds?: number
+  renameCooldownSeconds?: number
 }
 
 export interface PlayerPatch {
@@ -489,6 +493,11 @@ export interface PlayerPatch {
   visual?: CharacterVisual
   world?: WorldState
   isPendingBreakthrough?: boolean
+  name?: string
+  account?: string | null
+  sequenceId?: number
+  createdAtUnixSeconds?: number
+  renameCooldownSeconds?: number
 }
 
 export interface Packet<T = unknown> {

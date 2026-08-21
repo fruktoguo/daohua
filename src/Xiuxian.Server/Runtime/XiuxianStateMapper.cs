@@ -26,7 +26,11 @@ public static class XiuxianStateMapper
             ToCombatAttributes(state, now),
             ToVisual(state.Visual),
             now.ToUnixTimeMilliseconds(),
-            state.IsPendingBreakthrough);
+            state.IsPendingBreakthrough,
+            state.Account,
+            state.SequenceId,
+            state.CreatedAt.ToUnixTimeSeconds(),
+            CalculateRenameCooldown(state, now));
     }
 
     public static XiuxianPlayerPatchDto ToPatch(
@@ -59,7 +63,19 @@ public static class XiuxianStateMapper
                 : null,
             sections.HasFlag(XiuxianDirtySections.Combat) ? ToVisual(state.Visual) : null,
             now.ToUnixTimeMilliseconds(),
-            sections.HasFlag(XiuxianDirtySections.Stats) ? state.IsPendingBreakthrough : null);
+            sections.HasFlag(XiuxianDirtySections.Stats) ? state.IsPendingBreakthrough : null,
+            sections.HasFlag(XiuxianDirtySections.Stats) ? state.Name : null,
+            sections.HasFlag(XiuxianDirtySections.Stats) ? state.Account : null,
+            sections.HasFlag(XiuxianDirtySections.Stats) ? state.SequenceId : null,
+            sections.HasFlag(XiuxianDirtySections.Stats) ? state.CreatedAt.ToUnixTimeSeconds() : null,
+            sections.HasFlag(XiuxianDirtySections.Stats) ? CalculateRenameCooldown(state, now) : null);
+    }
+
+    public static long CalculateRenameCooldown(XiuxianPlayerState state, DateTimeOffset now)
+    {
+        if (!state.LastRenamedAt.HasValue) return 0;
+        var remaining = (state.LastRenamedAt.Value.AddHours(24) - now).TotalSeconds;
+        return remaining > 0 ? (long)Math.Ceiling(remaining) : 0;
     }
 
     public static XiuxianActionDto ToAction(XiuxianActionDefinition definition)

@@ -8,6 +8,10 @@ export type ConnectionState = 'connecting' | 'online' | 'reconnecting' | 'offlin
 interface GameStore {
   playerId: string
   name: string
+  account: string
+  sequenceId: number
+  createdAtUnixSeconds: number
+  renameCooldownSeconds: number
   visual: PlayerSnapshot['visual']
   version: number
   serverTimeUnixSeconds: number
@@ -15,6 +19,7 @@ interface GameStore {
   lastSyncPerformanceTime: number
   presenceMode: PlayerSnapshot['presenceMode']
   isPendingBreakthrough: boolean
+  hasReceivedSnapshot: boolean
   queue: PlayerSnapshot['queue']
   inventory: PlayerSnapshot['inventory']
   buffs: PlayerSnapshot['buffs']
@@ -41,6 +46,7 @@ interface GameStore {
   setMaps: (maps: readonly WorldMapDefinition[]) => void
   applySnapshot: (snapshot: PlayerSnapshot) => void
   applyPatch: (patch: PlayerPatch) => void
+  resetGameStore: () => void
 }
 
 const initial = createDemoSnapshot('local-preview')
@@ -114,6 +120,10 @@ function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['comb
 export const useGameStore = create<GameStore>((set) => ({
   playerId: initial.playerId,
   name: initial.name,
+  account: initial.name,
+  sequenceId: 0,
+  createdAtUnixSeconds: initial.serverTimeUnixSeconds,
+  renameCooldownSeconds: 0,
   visual: initial.visual,
   version: initial.version,
   serverTimeUnixSeconds: initial.serverTimeUnixSeconds,
@@ -121,6 +131,7 @@ export const useGameStore = create<GameStore>((set) => ({
   lastSyncPerformanceTime: performance.now(),
   presenceMode: initial.presenceMode,
   isPendingBreakthrough: false,
+  hasReceivedSnapshot: false,
   queue: initial.queue,
   inventory: initial.inventory,
   buffs: initial.buffs,
@@ -148,6 +159,11 @@ export const useGameStore = create<GameStore>((set) => ({
   applySnapshot: (snapshot) => set({
     playerId: snapshot.playerId,
     name: snapshot.name,
+    account: snapshot.account ?? snapshot.name,
+    sequenceId: snapshot.sequenceId ?? 0,
+    createdAtUnixSeconds: snapshot.createdAtUnixSeconds ?? snapshot.serverTimeUnixSeconds,
+    renameCooldownSeconds: snapshot.renameCooldownSeconds ?? 0,
+    hasReceivedSnapshot: true,
     visual: snapshot.visual ?? stateVisualFallback(snapshot.name),
     version: snapshot.version,
     serverTimeUnixSeconds: snapshot.serverTimeUnixSeconds,
@@ -182,6 +198,11 @@ export const useGameStore = create<GameStore>((set) => ({
       : state.queue)
     return {
       playerId: patch.playerId || state.playerId,
+      name: patch.name ?? state.name,
+      account: patch.account ?? state.account,
+      sequenceId: patch.sequenceId ?? state.sequenceId,
+      createdAtUnixSeconds: patch.createdAtUnixSeconds ?? state.createdAtUnixSeconds,
+      renameCooldownSeconds: patch.renameCooldownSeconds ?? state.renameCooldownSeconds,
       visual: patch.visual ?? state.visual,
       version: patch.version,
       serverTimeUnixSeconds: patch.serverTimeUnixSeconds,
@@ -198,6 +219,15 @@ export const useGameStore = create<GameStore>((set) => ({
       combatAttributes: patch.combatAttributes ?? state.combatAttributes,
       world: patch.world ?? state.world,
     }
+  }),
+  resetGameStore: () => set({
+    hasReceivedSnapshot: false,
+    connection: 'offline',
+    notice: null,
+    queue: initial.queue,
+    inventory: initial.inventory,
+    buffs: [],
+    stats: initial.stats,
   }),
 }))
 

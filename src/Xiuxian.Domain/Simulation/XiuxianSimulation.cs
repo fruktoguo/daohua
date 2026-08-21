@@ -17,13 +17,18 @@ public static class XiuxianSimulation
     public static XiuxianPlayerState CreateDefaultState(
         Guid playerId,
         string? name = null,
-        DateTimeOffset? now = null)
+        DateTimeOffset? now = null,
+        string? account = null)
     {
         var timestamp = NormalizeTime(now ?? DateTimeOffset.UtcNow);
+        var resolvedName = string.IsNullOrWhiteSpace(name) ? "无名修士" : name.Trim();
+        var resolvedAccount = string.IsNullOrWhiteSpace(account) ? resolvedName : account.Trim();
         var state = new XiuxianPlayerState
         {
             PlayerId = playerId,
-            Name = string.IsNullOrWhiteSpace(name) ? "无名修士" : name.Trim(),
+            Name = resolvedName,
+            Account = resolvedAccount,
+            CreatedAt = timestamp,
             LastSimulatedAt = timestamp,
             PresenceMode = XiuxianPresenceMode.Online
         };
@@ -2632,7 +2637,7 @@ public static class XiuxianSimulation
         state.DirtySections |= sections;
     }
 
-    private static void AddEvent(
+    public static void AddEvent(
         XiuxianPlayerState state,
         string message,
         DateTimeOffset? occurredAt = null)

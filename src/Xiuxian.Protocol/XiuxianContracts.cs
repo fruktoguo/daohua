@@ -449,7 +449,11 @@ public sealed record XiuxianPlayerSnapshotDto(
     XiuxianCombatAttributesDto? CombatAttributes = null,
     XiuxianCharacterVisualDto? Visual = null,
     long? ServerTimeUnixMilliseconds = null,
-    bool IsPendingBreakthrough = false);
+    bool IsPendingBreakthrough = false,
+    string? Account = null,
+    long SequenceId = 0,
+    long CreatedAtUnixSeconds = 0,
+    long RenameCooldownSeconds = 0);
 
 public sealed record XiuxianPlayerPatchDto(
     string PlayerId,
@@ -469,7 +473,12 @@ public sealed record XiuxianPlayerPatchDto(
     XiuxianCombatAttributesDto? CombatAttributes = null,
     XiuxianCharacterVisualDto? Visual = null,
     long? ServerTimeUnixMilliseconds = null,
-    bool? IsPendingBreakthrough = null);
+    bool? IsPendingBreakthrough = null,
+    string? Name = null,
+    string? Account = null,
+    long? SequenceId = null,
+    long? CreatedAtUnixSeconds = null,
+    long? RenameCooldownSeconds = null);
 
 public sealed record XiuxianAckDto(
     bool Success,
@@ -480,6 +489,7 @@ public sealed record XiuxianAckDto(
 public sealed record XiuxianErrorDto(string Code, string Message);
 
 public sealed record HelloRequest(string? Name = null);
+public sealed record RenameRequest(string Name);
 public sealed record EnqueueActionRequest(string ActionId, int Repeats = 1);
 public sealed record StartCombatRequest(string ActionId, int Repeats = 1);
 public sealed record RemoveActionRequest(string EntryId);

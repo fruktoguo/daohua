@@ -5495,3 +5495,500 @@ input[type="checkbox"] {
 .unit-number--tone-crimson { color: #fca5a5; text-decoration-color: rgba(252, 165, 165, 0.45); }
 .unit-number--tone-emerald { color: #86efac; text-decoration-color: rgba(134, 239, 172, 0.45); }
 .unit-number--tone-muted { color: #9ca3af; text-decoration-color: rgba(156, 163, 175, 0.3); }
+
+/* 设置面板子选项卡与功能模块 */
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-sub-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-sub-tab {
+  padding: 4px 14px;
+  font-size: 13px;
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+  background: rgba(201, 180, 109, 0.04);
+  transition: all 0.2s ease;
+}
+
+.settings-sub-tab:hover {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+}
+
+.settings-sub-tab.active {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.14);
+  box-shadow: 0 0 8px rgba(201, 180, 109, 0.2);
+}
+
+.stat-value-with-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-highlight-name {
+  color: var(--gold-bright);
+  font-size: 14px;
+}
+
+.inline-modify-btn {
+  padding: 2px 8px;
+  font-size: 12px;
+  border-color: var(--gold-dim);
+}
+
+.cooldown-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: #fcd34d;
+  background: rgba(252, 211, 77, 0.1);
+  border: 1px solid rgba(252, 211, 77, 0.3);
+}
+
+.sequence-id-tag {
+  font-family: monospace;
+  color: var(--qi);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.settings-logout-block {
+  margin-top: 20px;
+  border-color: rgba(200, 82, 63, 0.25);
+  background: rgba(200, 82, 63, 0.03);
+}
+
+.settings-logout-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-logout-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.logout-action-btn {
+  padding: 6px 18px;
+  font-weight: 600;
+}
+
+.settings-desc {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* 界面缩放控制 */
+.zoom-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.zoom-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.zoom-min,
+.zoom-max {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.zoom-slider {
+  flex: 1;
+  accent-color: var(--gold);
+  height: 6px;
+  cursor: pointer;
+}
+
+.zoom-current-badge {
+  min-width: 52px;
+  text-align: center;
+  padding: 3px 8px;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.08);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.zoom-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.zoom-preset-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoom-preset-btn.active {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.15);
+}
+
+.zoom-reset-btn {
+  padding: 3px 10px;
+  font-size: 12px;
+  margin-left: auto;
+  border-color: var(--gold-faint);
+  color: var(--text-dim);
+}
+
+/* 改名弹窗 */
+.rename-modal {
+  padding: 20px;
+}
+
+.rename-modal-header {
+  margin-bottom: 16px;
+}
+
+.rename-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rename-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rename-label {
+  font-size: 13px;
+  color: var(--gold-bright);
+}
+
+.rename-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.rename-input:focus {
+  border-color: var(--gold-bright);
+  outline: none;
+}
+
+.rename-error {
+  font-size: 12px;
+  color: #fca5a5;
+}
+
+.rename-hint {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.rename-cancel {
+  padding: 6px 16px;
+  color: var(--text-dim);
+}
+
+.rename-submit {
+  padding: 6px 20px;
+  border-color: var(--gold);
+  color: #070604;
+  background: var(--gold);
+  font-weight: 600;
+}
+
+.rename-submit:hover:not(:disabled) {
+  background: var(--gold-bright);
+}
+
+/* 全屏登录与连接状态屏幕 */
+.login-screen,
+.status-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #15110a 0%, #070604 70%);
+  padding: 20px;
+}
+
+.login-card,
+.status-card {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 32px 28px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(14, 12, 7, 0.94);
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(201, 180, 109, 0.1);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.login-badge-aura,
+.status-spinner-aura {
+  width: 60px;
+  height: 60px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.login-yin-yang {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(to bottom, #e9e3d2 50%, #070604 50%);
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 15px rgba(201, 180, 109, 0.4);
+  position: relative;
+}
+
+.login-yin-yang::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e9e3d2;
+  transform: translateY(-50%);
+}
+
+.login-yin-yang::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #070604;
+  transform: translateY(-50%);
+}
+
+.status-pulsing-circle {
+  width: 46px;
+  height: 46px;
+  border: 2px dashed var(--gold);
+  border-radius: 50%;
+  animation: spin-aura 6s linear infinite;
+}
+
+.status-orbit-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  box-shadow: 0 0 10px var(--gold-bright);
+  animation: orbit-dot 2s linear infinite;
+}
+
+@keyframes spin-aura {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orbit-dot {
+  0% { transform: rotate(0deg) translateX(26px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(26px) rotate(-360deg); }
+}
+
+.status-error-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  color: #fca5a5;
+  filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.4));
+}
+
+.login-title,
+.status-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--gold-bright);
+  letter-spacing: 2px;
+}
+
+.login-subtitle,
+.status-subtitle {
+  margin: 0 0 24px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.login-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.login-label {
+  font-size: 12px;
+  color: var(--gold);
+}
+
+.login-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.login-input:focus {
+  border-color: var(--gold-bright);
+  outline: none;
+}
+
+.login-toggle-token-btn {
+  font-size: 11.5px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.login-toggle-token-btn:hover {
+  color: var(--gold);
+}
+
+.login-error-msg {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.login-submit-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 10px;
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #070604;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.login-submit-btn:hover:not(:disabled) {
+  background: var(--gold-bright);
+}
+
+.login-footer {
+  margin-top: 20px;
+  font-size: 11px;
+  color: rgba(233, 227, 210, 0.38);
+}
+
+.status-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(201, 180, 109, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 24px;
+  position: relative;
+}
+
+.status-progress-glow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, var(--gold-bright), transparent);
+  animation: progress-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0% { left: -35%; }
+  100% { left: 100%; }
+}
+
+.status-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+.status-btn {
+  padding: 8px 20px;
+  font-size: 13px;
+}
+
+.status-btn.primary {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #070604;
+  font-weight: 600;
+}
+
+.status-btn.primary:hover {
+  background: var(--gold-bright);
+}
+
+.status-btn.secondary {
+  border-color: var(--gold-dim);
+  color: var(--text-dim);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.status-btn.secondary:hover {
+  border-color: var(--gold);
+  color: var(--text);
+}
+

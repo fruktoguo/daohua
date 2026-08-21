@@ -16,6 +16,9 @@ import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
+import { SettingsPage } from './components/SettingsPage'
+import { LoginPage } from './components/LoginPage'
+import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
 import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
@@ -23,8 +26,9 @@ import { ACTION_TAB_META, ACTION_TYPES, actionTabLabel, resolveActionDefinition,
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
-import { getAccessToken, setAccessToken } from './network/access_token'
 import { gameClient } from './network/gameClient'
+import { getStoredAccount } from './network/account'
+import { initUiScale } from './utils/uiScale'
 import { useUiStore, type TabId } from './uiStore'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
@@ -438,6 +442,8 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
 
 function TopBar(): React.JSX.Element {
   const name = useGameStore(state => state.name)
+  const sequenceId = useGameStore(state => state.sequenceId)
+  const playerId = useGameStore(state => state.playerId)
   const stats = useGameStore(state => state.stats)
   const connection = useGameStore(state => state.connection)
   const presence = useGameStore(state => state.presenceMode)
@@ -465,6 +471,9 @@ function TopBar(): React.JSX.Element {
         <div className="player-info">
           <div className="player-line">
             <strong className="player-name">{name}</strong>
+            <span className="sequence-id-tag" title={`修士序号: #${sequenceId > 0 ? sequenceId : playerId.slice(0, 8)}`}>
+              #{sequenceId > 0 ? sequenceId : playerId.slice(0, 8)}
+            </span>
             <RealmBadge realmInfo={realmInfo} />
             <FloatingTooltip placement="bottom" title={`${connectionText} · ${presenceText}`} tone={connection === 'online' ? 'jade' : 'danger'}>
               <span className={`connection-dot connection-dot--${connection}`} />
@@ -1096,79 +1105,6 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
   )
 })
 
-function SettingsPage(): React.JSX.Element {
-  const [tokenDraft, setTokenDraft] = useState(getAccessToken())
-  const playerId = useGameStore(state => state.playerId)
-  const name = useGameStore(state => state.name)
-  const version = useGameStore(state => state.version)
-  const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
-  const presence = useGameStore(state => state.presenceMode)
-  const connection = useGameStore(state => state.connection)
-  const modes = [
-    ['online', '在线'],
-    ['idle-offline', '离线挂机'],
-    ['fully-offline', '完全离线'],
-  ] as const
-
-  return (
-    <section className="panel settings-page">
-      <header className="panel-header"><h2>设置</h2></header>
-      <div className="settings-block">
-        <h3>账号</h3>
-        <div className="stat-row"><span>玩家</span><span>{name}</span></div>
-        <div className="stat-row"><span>玩家 ID</span><span>{playerId.slice(0, 8)}</span></div>
-        <div className="stat-row"><span>状态版本</span><span><UnitNumber value={version} /></span></div>
-        <div className="stat-row"><span>服务器时间</span><span>{new Date(serverTime * 1000).toLocaleString('zh-CN')}</span></div>
-        <div className="stat-row"><span>连接</span><span>{connection}</span></div>
-      </div>
-      <div className="settings-block">
-        <h3>运行状态</h3>
-        <div className="presence-options" role="group" aria-label="运行状态">
-          {modes.map(([mode, label]) => (
-            <button
-              aria-pressed={presence === mode}
-              className={presence === mode ? 'active' : ''}
-              key={mode}
-              onClick={() => gameClient.sendCommand('set_presence', { mode })}
-              type="button"
-            >{label}</button>
-          ))}
-        </div>
-      </div>
-      <div className="settings-block">
-        <h3>访问令牌</h3>
-        <div className="stat-row">
-          <span>令牌</span>
-          {/* styles.css 不允许为本任务改动，且无现成文本输入样式类，故用最简内联样式。 */}
-          <input
-            aria-label="访问令牌"
-            onChange={event => setTokenDraft(event.target.value)}
-            placeholder="留空表示不使用"
-            style={{
-              border: '1px solid var(--gold-faint)',
-              background: 'rgba(255, 255, 255, 0.04)',
-              color: 'var(--text)',
-              fontSize: 11,
-              height: 28,
-              padding: '3px 9px',
-              width: 'min(220px, 100%)',
-            }}
-            type="password"
-            value={tokenDraft}
-          />
-        </div>
-        <button
-          onClick={() => {
-            setAccessToken(tokenDraft)
-            gameClient.notifyAccessTokenChanged()
-          }}
-          type="button"
-        >保存令牌</button>
-      </div>
-    </section>
-  )
-}
-
 function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
@@ -1238,11 +1174,35 @@ function Notice(): React.JSX.Element | null {
 export default function App(): React.JSX.Element {
   const activeTab = useUiStore(state => state.activeTab)
   const mobileLayout = useMobileLayout()
+  const connection = useGameStore(state => state.connection)
+  const hasReceivedSnapshot = useGameStore(state => state.hasReceivedSnapshot)
+  const [accountInfo, setAccountInfo] = useState(() => getStoredAccount())
 
   useEffect(() => {
+    initUiScale()
     gameClient.connect()
     return () => gameClient.dispose()
   }, [])
+
+  const handleLoggedIn = useCallback(() => {
+    setAccountInfo(getStoredAccount())
+  }, [])
+
+  const handleLogout = useCallback(() => {
+    gameClient.logout()
+    setAccountInfo(null)
+  }, [])
+
+  if (!accountInfo) {
+    return <LoginPage onLoggedIn={handleLoggedIn} />
+  }
+
+  if (!hasReceivedSnapshot) {
+    if (connection === 'connecting') {
+      return <ConnectingPage onCancel={handleLogout} />
+    }
+    return <ConnectionErrorPage onRetry={() => gameClient.connect()} onLogout={handleLogout} />
+  }
 
   return (
     <div className="app">

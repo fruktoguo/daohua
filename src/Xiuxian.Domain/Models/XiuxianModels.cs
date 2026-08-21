@@ -276,6 +276,10 @@ public sealed class XiuxianPlayerState
 {
     public Guid PlayerId { get; set; }
     public string Name { get; set; } = "无名修士";
+    public string Account { get; set; } = string.Empty;
+    public long SequenceId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? LastRenamedAt { get; set; }
     public XiuxianCharacterVisualDefinition Visual { get; set; } = new() { Renderer = "text", Source = "修" };
     public long Version { get; set; }
     public DateTimeOffset LastSimulatedAt { get; set; }
@@ -305,6 +309,10 @@ public sealed class XiuxianPlayerState
         {
             PlayerId = PlayerId,
             Name = Name,
+            Account = Account,
+            SequenceId = SequenceId,
+            CreatedAt = CreatedAt,
+            LastRenamedAt = LastRenamedAt,
             Visual = new XiuxianCharacterVisualDefinition
             {
                 Renderer = Visual.Renderer,
