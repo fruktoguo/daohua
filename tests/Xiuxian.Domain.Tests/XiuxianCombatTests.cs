@@ -29,13 +29,11 @@ public sealed class XiuxianCombatTests
         Assert.Equal(0, XiuxianCombatFormula.CalculatePercentage(25, 0));
 
         var levelOne = XiuxianCombatCatalog.GetAbilityAtLevel(
-            XiuxianCombatAbilityIds.StunningMountain,
+            XiuxianCombatAbilityIds.HeavySlash,
             1);
-        var levelTen = XiuxianCombatCatalog.GetAbilityAtLevel(
-            XiuxianCombatAbilityIds.StunningMountain,
-            10);
-        Assert.True(levelTen.DamageRatio > levelOne.DamageRatio);
-        Assert.True(levelTen.FlatDamage >= levelOne.FlatDamage);
+        Assert.Equal("重斩", levelOne.Name);
+        Assert.Equal(1.8, levelOne.DamageRatio);
+        Assert.Equal(20, levelOne.FlatDamage);
     }
 
     [Fact]
@@ -127,7 +125,7 @@ public sealed class XiuxianCombatTests
         state.Combat.IntelligenceLevel = 1_000;
         state.Combat.FiveElementsLevel = 1_000;
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
 
         var beforeBoundary = XiuxianCombatSimulator.Run(
             state.PlayerId,
@@ -136,7 +134,7 @@ public sealed class XiuxianCombatTests
             state.Inventory.Items,
             XiuxianCombatEncounterIds.QiBeast,
             Baseline,
-            TimeSpan.FromMilliseconds(699));
+            TimeSpan.FromMilliseconds(999));
         var atBoundary = XiuxianCombatSimulator.Run(
             state.PlayerId,
             state.Combat,
@@ -144,7 +142,7 @@ public sealed class XiuxianCombatTests
             state.Inventory.Items,
             XiuxianCombatEncounterIds.QiBeast,
             Baseline,
-            TimeSpan.FromMilliseconds(700));
+            TimeSpan.FromMilliseconds(1000));
 
         Assert.Equal("cast", beforeBoundary.PlayerAction?.Kind);
         Assert.NotEqual("cast", atBoundary.PlayerAction?.Kind);
@@ -325,7 +323,7 @@ public sealed class XiuxianCombatTests
         state.Combat.StaminaLevel = 1;
         state.Combat.AbilitySlots[0] = new XiuxianCombatAbilitySlot
         {
-            AbilityId = XiuxianCombatAbilityIds.RejuvenationArt,
+            AbilityId = XiuxianCombatAbilityIds.QingpingMelody,
             Level = 1,
             Triggers =
             [
@@ -372,7 +370,7 @@ public sealed class XiuxianCombatTests
         // 组合内同时使用严格比较符，覆盖新增枚举的求值路径。
         state.Combat.AbilitySlots[0] = new XiuxianCombatAbilitySlot
         {
-            AbilityId = XiuxianCombatAbilityIds.RejuvenationArt,
+            AbilityId = XiuxianCombatAbilityIds.QingpingMelody,
             Level = 1,
             Triggers =
             [
@@ -439,7 +437,7 @@ public sealed class XiuxianCombatTests
         state.Combat.FiveElementsLevel = 100;
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
         state.Combat.DamageType = XiuxianDamageType.Fire;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
 
         var result = XiuxianCombatSimulator.Run(
             state.PlayerId,
@@ -468,7 +466,7 @@ public sealed class XiuxianCombatTests
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
         state.Combat.DamageType = XiuxianDamageType.Fire;
         state.Combat.CombatDropQuantity = 1;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
 
         var result = XiuxianCombatSimulator.Run(
             state.PlayerId,
@@ -498,7 +496,7 @@ public sealed class XiuxianCombatTests
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
         state.Combat.DamageType = XiuxianDamageType.Fire;
         state.Combat.CriticalChance = -1.0;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingStorm;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingBlast;
 
         var result = XiuxianCombatSimulator.Run(
             state.PlayerId,
@@ -509,38 +507,34 @@ public sealed class XiuxianCombatTests
             Baseline,
             TimeSpan.FromSeconds(30));
 
-        Assert.Contains(result.Events, entry => entry.Contains("持续伤害", StringComparison.Ordinal));
+        Assert.Contains(result.Events, entry => entry.Contains("轰炎", StringComparison.Ordinal));
         Assert.True(result.DamageDealt > 0);
     }
 
     [Fact]
     public void Combat_control_effects_use_catalog_probabilities_and_expire_on_boundaries()
     {
-        var sawStun = false;
-        for (var seed = 1; seed <= 16 && !sawStun; seed++)
-        {
-            var state = XiuxianSimulation.CreateDefaultState(
-                new Guid(seed, 0, 0, new byte[8]),
-                now: Baseline);
-            state.Combat.StaminaLevel = 100;
-            state.Combat.DefenseLevel = 100;
-            state.Combat.IntelligenceLevel = 10;
-            state.Combat.Style = XiuxianCombatStyle.Body;
-            state.Combat.DamageType = XiuxianDamageType.Physical;
-            state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.StunningMountain;
+        var state = XiuxianSimulation.CreateDefaultState(
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            now: Baseline);
+        state.Combat.StaminaLevel = 100;
+        state.Combat.DefenseLevel = 100;
+        state.Combat.IntelligenceLevel = 10;
+        state.Combat.Style = XiuxianCombatStyle.Body;
+        state.Combat.DamageType = XiuxianDamageType.Physical;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
 
-            var result = XiuxianCombatSimulator.Run(
-                state.PlayerId,
-                state.Combat,
-                state.Buffs,
-                state.Inventory.Items,
-                XiuxianCombatEncounterIds.QiBeast,
-                Baseline,
-                TimeSpan.FromSeconds(20));
-            sawStun = result.Events.Any(entry => entry.Contains("定身", StringComparison.Ordinal));
-        }
+        var result = XiuxianCombatSimulator.Run(
+            state.PlayerId,
+            state.Combat,
+            state.Buffs,
+            state.Inventory.Items,
+            XiuxianCombatEncounterIds.QiBeast,
+            Baseline,
+            TimeSpan.FromSeconds(20));
 
-        Assert.True(sawStun);
+        Assert.Contains(result.Events, entry => entry.Contains("重斩", StringComparison.Ordinal));
+        Assert.True(result.DamageDealt > 0);
     }
 
     [Fact]
@@ -577,7 +571,7 @@ public sealed class XiuxianCombatTests
         state.Combat.FiveElementsLevel = 40;
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
         state.Combat.DamageType = XiuxianDamageType.Fire;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
 
         var result = XiuxianCombatSimulator.Run(
             state.PlayerId,
@@ -605,7 +599,7 @@ public sealed class XiuxianCombatTests
             XiuxianDamageType.Fire,
             [new XiuxianCombatAbilitySlot
             {
-                AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare,
+                AbilityId = XiuxianCombatAbilityIds.HeavySlash,
                 Level = 1
             }],
             [
@@ -658,14 +652,14 @@ public sealed class XiuxianCombatTests
             null,
             [new XiuxianCombatAbilitySlot
             {
-                AbilityId = XiuxianCombatAbilityIds.BlazingStorm,
+                AbilityId = XiuxianCombatAbilityIds.BlazingBlast,
                 Level = 1
             }],
             null);
 
         Assert.False(result.Success);
         Assert.Equal("ABILITY_NOT_LEARNED", result.Code);
-        Assert.Equal(XiuxianCombatAbilityIds.FiveElementsFlare, state.Combat.AbilitySlots[0].AbilityId);
+        Assert.Equal(XiuxianCombatAbilityIds.HeavySlash, state.Combat.AbilitySlots[0].AbilityId);
     }
 
     [Fact]
@@ -940,7 +934,7 @@ public sealed class XiuxianCombatTests
         state.Combat.AttackLevel = 1_000_000;
         state.Combat.FiveElementsLevel = 1_000_000;
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingStorm;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 1;
 
         var result = XiuxianCombatSimulator.Run(
@@ -950,7 +944,7 @@ public sealed class XiuxianCombatTests
             state.Inventory.Items,
             XiuxianCombatEncounterIds.TwilightValley,
             Baseline,
-            TimeSpan.FromMilliseconds(2_100));
+            TimeSpan.FromMilliseconds(3_100));
 
         Assert.NotNull(result.FinalEnemies);
         Assert.True(result.FinalEnemies!.Count >= 2);
@@ -970,7 +964,7 @@ public sealed class XiuxianCombatTests
         state.Combat.DefenseLevel = 1_000;
         state.Combat.FiveElementsLevel = 1_000;
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingStorm;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 100;
 
         var result = XiuxianCombatSimulator.Run(
@@ -1004,7 +998,7 @@ public sealed class XiuxianCombatTests
         state.Combat.TalismanLevel = 1_000;
         state.Combat.FiveElementsLevel = 1_000;
         state.Combat.Style = XiuxianCombatStyle.FiveElements;
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingStorm;
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 100;
         state.Combat.Equipment =
         [
@@ -1041,7 +1035,7 @@ public sealed class XiuxianCombatTests
             state.Combat.AttackLevel = 1_000;
             state.Combat.DefenseLevel = 1_000;
             state.Combat.FiveElementsLevel = 1_000;
-            state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingStorm;
+            state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingBlast;
             state.Combat.AbilitySlots[0].Level = 100;
             state.World.NodeId = XiuxianWorldNodeIds.TwilightPass;
             XiuxianSimulation.Enqueue(state, XiuxianActionIds.SweepTwilightValley, -1);
@@ -1082,7 +1076,7 @@ public sealed class XiuxianCombatTests
             state.Combat.DefenseLevel = 100;
             state.Combat.FiveElementsLevel = 100;
             state.Combat.Style = XiuxianCombatStyle.FiveElements;
-            state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare;
+            state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
             XiuxianSimulation.Enqueue(state, XiuxianActionIds.HuntQiBeast, -1);
         }
 

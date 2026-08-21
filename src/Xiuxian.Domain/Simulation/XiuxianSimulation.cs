@@ -34,8 +34,8 @@ public static class XiuxianSimulation
             Quantity = 1,
             Enabled = true
         };
-        state.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.FiveElementsFlare);
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare;
+        state.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.HeavySlash);
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
 
         state.Queue.Entries.Add(CreateQueuedAction(XiuxianActionIds.GatherHerbs));
         state.Queue.Entries.Add(CreateQueuedAction(XiuxianActionIds.RefineQiPill));
@@ -2494,7 +2494,7 @@ public static class XiuxianSimulation
 
         if (learned.Count == 0)
         {
-            learned.Add(XiuxianCombatAbilityIds.FiveElementsFlare);
+            learned.Add(XiuxianCombatAbilityIds.HeavySlash);
             changed = true;
         }
 

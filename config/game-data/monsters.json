@@ -41,7 +41,7 @@
     "dropTable": [],
     "rareDropTable": [],
     "abilityIds": [
-      "ability.spirit-pulse"
+      "ability.palm-lightning"
     ]
   },
   {
@@ -112,7 +112,7 @@
       }
     ],
     "abilityIds": [
-      "ability.spirit-pulse"
+      "ability.palm-lightning"
     ]
   },
   {
@@ -183,7 +183,7 @@
       }
     ],
     "abilityIds": [
-      "ability.nature-veil"
+      "ability.chain-strike"
     ]
   },
   {
@@ -254,7 +254,7 @@
       }
     ],
     "abilityIds": [
-      "ability.spirit-pulse"
+      "ability.palm-lightning"
     ]
   },
   {
@@ -319,8 +319,8 @@
       }
     ],
     "abilityIds": [
-      "ability.silencing-talisman",
-      "ability.blazing-storm"
+      "ability.blazing-blast",
+      "ability.lightning-attraction"
     ]
   }
 ]

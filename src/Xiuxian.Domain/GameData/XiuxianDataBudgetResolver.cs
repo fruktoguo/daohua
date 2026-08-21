@@ -156,24 +156,24 @@ public static class XiuxianDataBudgetResolver
     public static double GetSkillIntensityMultiplier(int tier) => 1.0 + Math.Max(0, tier - 1) * 0.30;
 
     /// <summary>
-    /// 获取指定阶位基准玩家的最大灵力值，与 BaseFlatAnchors 锚点表一致。
-    /// 用于 ManaCostRatio 解算：ManaCost = ceil(BaseMp × ManaCostRatio × 0.01)。
+    /// 获取指定阶位标准玩家的期望最大灵力值 (finalExpected.maxManapoints，源自 expected-attributes.json)。
+    /// 用于 ManaCostRatio 解算：ManaCost = ceil(ExpectedMp × ManaCostRatio × 0.01)。
     /// </summary>
     public static double GetTierBaseMaxManapoints(int tier) => tier switch
     {
-        1 => 50,
-        2 => 90,
-        3 => 570,
-        4 => 1402,
-        5 => 2770,
-        6 => 4234,
-        7 => 6282,
-        8 => 8586,
-        9 => 11618,
-        10 => 15474,
-        11 => 20258,
-        12 => 26066,
-        _ => 50
+        1 => 57.7,
+        2 => 169.13,
+        3 => 1434.04,
+        4 => 4991.38,
+        5 => 13584.15,
+        6 => 29434.57,
+        7 => 70503.65,
+        8 => 149352.49,
+        9 => 349988.51,
+        10 => 796790.52,
+        11 => 2017111.06,
+        12 => 4745307.35,
+        _ => 57.7
     };
 
     /// <summary>

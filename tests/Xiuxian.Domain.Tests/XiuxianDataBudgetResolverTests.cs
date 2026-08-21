@@ -33,14 +33,14 @@ public sealed class XiuxianDataBudgetResolverTests
         Assert.Equal(0.25, definition.StunChance);
         Assert.Equal(2000, definition.StunMilliseconds);
         Assert.Equal(0.15, definition.PenetrationRatio);
-        // Tier 1 BaseMp=50, ManaCostRatio=10 → ceil(50 * 10 * 0.01) = ceil(5) = 5
-        Assert.Equal(5, definition.ManaCost);
+        // Tier 1 ExpectedMp=57.7, ManaCostRatio=10 → ceil(57.7 * 10 * 0.01) = ceil(5.77) = 6
+        Assert.Equal(6, definition.ManaCost);
     }
 
     [Fact]
     public void ResolveAbility_ManaCostRatio_CalculatesCeiledManaCost()
     {
-        // Tier 3 BaseMp=570, ManaCostRatio=3 → ceil(570 * 3 * 0.01) = ceil(17.1) = 18
+        // Tier 3 ExpectedMp=1434.04, ManaCostRatio=3 → ceil(1434.04 * 3 * 0.01) = ceil(43.0212) = 44
         var config = new XiuxianAbilityConfig(
             Id: "ability.tier3-spell",
             Name: "烈火术",
@@ -50,7 +50,7 @@ public sealed class XiuxianDataBudgetResolverTests
 
         var definition = XiuxianDataBudgetResolver.ResolveAbility(config);
 
-        Assert.Equal(18, definition.ManaCost);
+        Assert.Equal(44, definition.ManaCost);
         Assert.Equal(1.5, definition.DamageRatio);
     }
 

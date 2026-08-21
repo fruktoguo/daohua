@@ -246,13 +246,13 @@ public static class XiuxianCombatCatalog
 
 public static class XiuxianCombatAbilityIds
 {
-    public const string FiveElementsFlare = "ability.five-elements-flare";
-    public const string SpiritPulse = "ability.spirit-pulse";
-    public const string FlameBullet = "ability.flame-bullet";
-    public const string RejuvenationArt = "ability.rejuvenation-art";
-    public const string BlazingStorm = "ability.blazing-storm";
-    public const string EntanglingVine = "ability.entangling-vine";
-    public const string NatureVeil = "ability.nature-veil";
-    public const string SilencingTalisman = "ability.silencing-talisman";
-    public const string StunningMountain = "ability.stunning-mountain";
+    public const string HeavySlash = "ability.heavy-slash";
+    public const string ChainStrike = "ability.chain-strike";
+    public const string PalmLightning = "ability.palm-lightning";
+    public const string BlazingBlast = "ability.blazing-blast";
+    public const string Taunt = "ability.taunt";
+    public const string HeavyClouds = "ability.heavy-clouds";
+    public const string QingpingMelody = "ability.qingping-melody";
+    public const string LightningAttraction = "ability.lightning-attraction";
+    public const string PozhenMelody = "ability.pozhen-melody";
 }

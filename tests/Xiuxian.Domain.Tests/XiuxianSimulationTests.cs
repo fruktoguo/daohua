@@ -505,7 +505,7 @@ public sealed class XiuxianSimulationTests
         var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "兼容修士", Baseline);
         state.Combat.AbilitySlots =
         [
-            new XiuxianCombatAbilitySlot { AbilityId = XiuxianCombatAbilityIds.FiveElementsFlare, Level = 7 },
+            new XiuxianCombatAbilitySlot { AbilityId = XiuxianCombatAbilityIds.HeavySlash, Level = 7 },
             new XiuxianCombatAbilitySlot(),
             new XiuxianCombatAbilitySlot(),
             new XiuxianCombatAbilitySlot()
@@ -534,7 +534,7 @@ public sealed class XiuxianSimulationTests
 
         Assert.True(changed);
         Assert.Equal(XiuxianCombatLimits.AbilitySlotCount, state.Combat.AbilitySlots.Count);
-        Assert.Equal(XiuxianCombatAbilityIds.FiveElementsFlare, state.Combat.AbilitySlots[0].AbilityId);
+        Assert.Equal(XiuxianCombatAbilityIds.HeavySlash, state.Combat.AbilitySlots[0].AbilityId);
         Assert.Equal(7, state.Combat.AbilitySlots[0].Level);
         Assert.Equal(3, state.Combat.ConsumableSlots.Count);
         Assert.Equal(XiuxianItemIds.HealingElixir, state.Combat.ConsumableSlots[0].ItemId);
@@ -567,11 +567,11 @@ public sealed class XiuxianSimulationTests
               },
               "combat": {
                 "abilitySlots": [
-                  { "abilityId": "{{XiuxianCombatAbilityIds.FiveElementsFlare}}", "level": 7, "triggers": [] },
+                  { "abilityId": "{{XiuxianCombatAbilityIds.HeavySlash}}", "level": 7, "triggers": [] },
                   { "abilityId": null, "level": 1, "triggers": [] },
                   { "abilityId": null, "level": 1, "triggers": [] },
                   { "abilityId": null, "level": 1, "triggers": [] },
-                  { "abilityId": "{{XiuxianCombatAbilityIds.BlazingStorm}}", "level": 3, "triggers": [] }
+                  { "abilityId": "{{XiuxianCombatAbilityIds.BlazingBlast}}", "level": 3, "triggers": [] }
                 ],
                 "foodSlots": [
                   { "itemId": "{{XiuxianItemIds.HealingElixir}}", "quantity": 1, "enabled": true, "triggers": [] },
@@ -610,7 +610,7 @@ public sealed class XiuxianSimulationTests
         Assert.Null(cultivationSlots[2].ItemId);
         Assert.Null(state.Queue.AutoUseSlots[XiuxianActionType.Exploration][0].ItemId);
         Assert.Equal(XiuxianCombatLimits.AbilitySlotCount, state.Combat.AbilitySlots.Count);
-        Assert.Equal(XiuxianCombatAbilityIds.FiveElementsFlare, state.Combat.AbilitySlots[0].AbilityId);
+        Assert.Equal(XiuxianCombatAbilityIds.HeavySlash, state.Combat.AbilitySlots[0].AbilityId);
         Assert.Equal(3, state.Combat.ConsumableSlots.Count);
         Assert.Equal(XiuxianItemIds.HealingElixir, state.Combat.ConsumableSlots[0].ItemId);
         Assert.Equal(XiuxianItemIds.SpiritTea, state.Combat.ConsumableSlots[1].ItemId);

@@ -37,7 +37,7 @@ public static class OfflineSimulationScenario
                 state.Combat.TalismanLevel = 1_000;
                 state.Combat.FiveElementsLevel = 1_000;
                 state.Combat.Style = XiuxianCombatStyle.FiveElements;
-                state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingStorm;
+                state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.BlazingBlast;
                 state.Combat.AbilitySlots[0].Level = 100;
                 state.Combat.Equipment =
                 [new XiuxianEquippedItem
