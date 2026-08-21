@@ -1,10 +1,13 @@
+import { memo } from 'react'
 import { gameClient } from '../network/gameClient'
+import { useT } from '../i18n'
 
 interface ConnectingPageProps {
   onCancel?: () => void
 }
 
-export function ConnectingPage({ onCancel }: ConnectingPageProps): React.JSX.Element {
+export const ConnectingPage = memo(function ConnectingPage({ onCancel }: ConnectingPageProps): React.JSX.Element {
+  const t = useT()
   const handleCancel = () => {
     gameClient.logout()
     onCancel?.()
@@ -20,27 +23,28 @@ export function ConnectingPage({ onCancel }: ConnectingPageProps): React.JSX.Ele
           <div className="status-pulsing-circle" />
           <div className="status-orbit-dot" />
         </div>
-        <h2 className="status-title">正在连通仙界</h2>
-        <p className="status-subtitle">感应天地法则，正在同步宗门仙境与修士本相…</p>
+        <h2 className="status-title">{t('app.connect.connectingTitle')}</h2>
+        <p className="status-subtitle">{t('app.connect.connectingSubtitle')}</p>
         <div className="status-progress-bar">
           <div className="status-progress-glow" />
         </div>
         <div className="status-actions">
           <button type="button" className="status-btn secondary" onClick={handleCancel}>
-            返回登录
+            {t('app.connect.returnLogin')}
           </button>
         </div>
       </div>
     </div>
   )
-}
+})
 
 interface ConnectionErrorPageProps {
   onRetry?: () => void
   onLogout?: () => void
 }
 
-export function ConnectionErrorPage({ onRetry, onLogout }: ConnectionErrorPageProps): React.JSX.Element {
+export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, onLogout }: ConnectionErrorPageProps): React.JSX.Element {
+  const t = useT()
   const handleRetry = () => {
     gameClient.connect()
     onRetry?.()
@@ -60,19 +64,19 @@ export function ConnectionErrorPage({ onRetry, onLogout }: ConnectionErrorPagePr
         <div className="status-error-icon" aria-hidden="true">
           <span>⚡</span>
         </div>
-        <h2 className="status-title">仙途阻隔 · 未能连通</h2>
+        <h2 className="status-title">{t('app.connect.errorTitle')}</h2>
         <p className="status-subtitle">
-          未能连接到修仙世界服务端。请检查您的网络连接或确认后端服务已正常启动。
+          {t('app.connect.errorSubtitle')}
         </p>
         <div className="status-actions">
           <button type="button" className="status-btn primary" onClick={handleRetry}>
-            重新连接
+            {t('app.connect.retryBtn')}
           </button>
           <button type="button" className="status-btn secondary" onClick={handleLogout}>
-            返回登录 / 切换账号
+            {t('app.connect.switchAccountBtn')}
           </button>
         </div>
       </div>
     </div>
   )
-}
+})

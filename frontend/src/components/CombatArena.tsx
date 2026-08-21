@@ -216,29 +216,34 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
   return <b ref={fillRef} />
 }
 
-function ActionCountdownBadge({
+const ActionCountdownBadge = memo(function ActionCountdownBadge({
   action,
   role,
 }: {
   action?: CombatActionState | null
   role: 'player' | 'enemy'
-}): React.JSX.Element | null {
+}): React.JSX.Element {
   const t = useT()
-  const [displayText, setDisplayText] = useState<string>('')
+  const badgeRef = useRef<HTMLSpanElement>(null)
   const serverTimeUnixMilliseconds = useGameStore(state => state.serverTimeUnixMilliseconds)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const badge = badgeRef.current
+    if (!badge) return
     // 怪物待机或无动作时：显示纯净空条，不渲染文字
     if (!action || action.durationMilliseconds <= 0 || action.name === '待机' || !action.name.trim()) {
       if (role === 'player' && action?.name === '调息中') {
-        setDisplayText(t('combat.arena.regenerating'))
+        badge.textContent = t('combat.arena.regenerating')
+        badge.style.display = ''
       } else {
-        setDisplayText('')
+        badge.textContent = ''
+        badge.style.display = 'none'
       }
       return
     }
 
-    let animationFrameId: number
+    badge.style.display = ''
+    let animationFrameId = 0
     const duration = Math.max(1, action.durationMilliseconds)
     let baseName = action.name.replace(/回气$/, '').replace(/\s*\([\d.]+s\/[\d.]+s\)/, '').trim()
     if (baseName === '灵击' || baseName === '攻击') {
@@ -259,7 +264,9 @@ function ActionCountdownBadge({
 
       const remainingSeconds = Math.max(0, currentRemaining / 1000)
       const formatted = t('combat.arena.countdown', { name: baseName, seconds: remainingSeconds.toFixed(1) })
-      setDisplayText(formatted)
+      if (badge.textContent !== formatted) {
+        badge.textContent = formatted
+      }
 
       if (currentRemaining > 0) {
         animationFrameId = requestAnimationFrame(tick)
@@ -269,7 +276,7 @@ function ActionCountdownBadge({
     tick()
 
     return () => {
-      cancelAnimationFrame(animationFrameId)
+      if (animationFrameId) cancelAnimationFrame(animationFrameId)
     }
   }, [
     action?.completesAtUnixMilliseconds,
@@ -281,9 +288,8 @@ function ActionCountdownBadge({
     serverTimeUnixMilliseconds,
   ])
 
-  if (!displayText) return null
-  return <span className="arena-action-badge">{displayText}</span>
-}
+  return <span className="arena-action-badge" ref={badgeRef} style={{ display: 'none' }} />
+})
 
 function ArenaActionBar({ action, role }: { action?: CombatActionState | null; role: 'player' | 'enemy' }): React.JSX.Element {
   const isRevivalAction = action?.kind === 'respawn' || action?.name?.includes('复活') || action?.name?.includes('复起') || action?.name?.includes('还魂')

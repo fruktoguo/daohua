@@ -6,6 +6,9 @@ export const insightEn = {
     multiplier: '(Qi density {value}x)',
     progressLabel: 'Layer Breakthrough Progress',
     progressComplete: 'Cultivation Perfected (Breakthrough Ready)',
+    currentExp: 'Current Cultivation',
+    nextExp: 'Breakthrough Required',
+    totalSpirit: 'Total Cultivation',
     breakthroughBtn: '⚡ Break Through',
     quick: {
       hp: 'HP',

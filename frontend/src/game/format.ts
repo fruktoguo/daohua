@@ -14,45 +14,81 @@ function abilityPercent(ratio: number): string {
 }
 
 export function describeAbility(ability: CombatAbilityDefinition, level: number): EffectTooltipContent {
+  const t = getT()
   const normalizedLevel = Math.max(1, level)
   const levelOffset = normalizedLevel - 1
   const damageRatio = ability.damageRatio + (ability.damageRatioLevelBonus ?? 0) * levelOffset
   const flatDamage = ability.flatDamage + (ability.flatDamageLevelBonus ?? 0) * levelOffset
   const healingRatio = (ability.healingRatio ?? 0) + (ability.healingRatioLevelBonus ?? 0) * levelOffset
   const flatHealing = (ability.flatHealing ?? 0) + (ability.flatHealingLevelBonus ?? 0) * levelOffset
-  const target = ability.targetType === 'all-enemies'
-    ? '敌方全体'
+  const targetKey = ability.targetType === 'all-enemies'
+    ? 'all-enemies'
     : ability.targetType === 'self'
-      ? '自身'
+      ? 'self'
       : ability.targetType === 'all-allies'
-        ? '己方全体'
+        ? 'all-allies'
         : ability.targetType === 'lowest-hp-ally'
-          ? '生命最低的友方'
-          : '当前敌人'
+          ? 'lowest-hp-ally'
+          : 'enemy'
+  const target = t(`game.abilityTarget.${targetKey}`)
   const lines = [
-    `等级 ${normalizedLevel}`,
-    `目标 ${target}`,
-    `灵力消耗 ${formatNumber(ability.manaCost)}`,
-    `施法 ${(ability.castMilliseconds / 1000).toFixed(1)} 秒`,
-    `冷却 ${(ability.cooldownMilliseconds / 1000).toFixed(1)} 秒`,
+    t('game.abilityDesc.level', { n: normalizedLevel }),
+    t('game.abilityDesc.target', { target }),
+    t('game.abilityDesc.manaCost', { n: formatNumber(ability.manaCost) }),
+    t('game.abilityDesc.castTime', { n: (ability.castMilliseconds / 1000).toFixed(1) }),
+    t('game.abilityDesc.cooldownTime', { n: (ability.cooldownMilliseconds / 1000).toFixed(1) }),
   ]
-  if (damageRatio !== 0 || flatDamage !== 0) lines.push(`伤害 ${abilityPercent(damageRatio)} + ${formatNumber(flatDamage)}`)
-  if (healingRatio !== 0 || flatHealing !== 0) lines.push(`治疗 ${abilityPercent(healingRatio)} + ${formatNumber(flatHealing)}`)
-  if ((ability.penetrationRatio ?? 0) !== 0) lines.push(`抗性穿透 ${abilityPercent(ability.penetrationRatio)}`)
-  if ((ability.pierceChance ?? 0) !== 0) lines.push(`穿透概率 ${abilityPercent(ability.pierceChance ?? 0)}`)
-  if ((ability.armorDamageRatio ?? 0) !== 0) lines.push(`护甲增伤 ${abilityPercent(ability.armorDamageRatio ?? 0)}`)
-  if ((ability.hpDrainRatio ?? 0) !== 0) lines.push(`生命汲取 ${abilityPercent(ability.hpDrainRatio ?? 0)}`)
-  if ((ability.damageOverTimeRatio ?? 0) !== 0) {
-    lines.push(`持续伤害 ${abilityPercent(ability.damageOverTimeRatio ?? 0)}，持续 ${((ability.damageOverTimeMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
+  if (damageRatio !== 0 || flatDamage !== 0) {
+    lines.push(t('game.abilityDesc.damage', { ratio: abilityPercent(damageRatio), flat: formatNumber(flatDamage) }))
   }
-  if ((ability.stunChance ?? 0) !== 0) lines.push(`定身 ${abilityPercent(ability.stunChance ?? 0)}，持续 ${((ability.stunMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
-  if ((ability.blindChance ?? 0) !== 0) lines.push(`致盲 ${abilityPercent(ability.blindChance ?? 0)}，持续 ${((ability.blindMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
-  if ((ability.silenceChance ?? 0) !== 0) lines.push(`沉默 ${abilityPercent(ability.silenceChance ?? 0)}，持续 ${((ability.silenceMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
-  for (const trigger of ability.defaultTriggers ?? []) lines.push(`默认条件 ${describeCombatTrigger(trigger)}`)
+  if (healingRatio !== 0 || flatHealing !== 0) {
+    lines.push(t('game.abilityDesc.healing', { ratio: abilityPercent(healingRatio), flat: formatNumber(flatHealing) }))
+  }
+  if ((ability.penetrationRatio ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.penetration', { n: abilityPercent(ability.penetrationRatio) }))
+  }
+  if ((ability.pierceChance ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.pierceChance', { n: abilityPercent(ability.pierceChance ?? 0) }))
+  }
+  if ((ability.armorDamageRatio ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.armorDamage', { n: abilityPercent(ability.armorDamageRatio ?? 0) }))
+  }
+  if ((ability.hpDrainRatio ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.hpDrain', { n: abilityPercent(ability.hpDrainRatio ?? 0) }))
+  }
+  if ((ability.damageOverTimeRatio ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.dot', {
+      ratio: abilityPercent(ability.damageOverTimeRatio ?? 0),
+      duration: ((ability.damageOverTimeMilliseconds ?? 0) / 1000).toFixed(1),
+    }))
+  }
+  if ((ability.stunChance ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.stun', {
+      chance: abilityPercent(ability.stunChance ?? 0),
+      duration: ((ability.stunMilliseconds ?? 0) / 1000).toFixed(1),
+    }))
+  }
+  if ((ability.blindChance ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.blind', {
+      chance: abilityPercent(ability.blindChance ?? 0),
+      duration: ((ability.blindMilliseconds ?? 0) / 1000).toFixed(1),
+    }))
+  }
+  if ((ability.silenceChance ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.silence', {
+      chance: abilityPercent(ability.silenceChance ?? 0),
+      duration: ((ability.silenceMilliseconds ?? 0) / 1000).toFixed(1),
+    }))
+  }
+  for (const trigger of ability.defaultTriggers ?? []) {
+    lines.push(t('game.abilityDesc.defaultTrigger', { trigger: describeCombatTrigger(trigger) }))
+  }
   return {
     title: ability.name,
     badge: `${ability.style} · ${ability.damageType}`,
-    description: ability.effectType === 'heal' ? `为${target}恢复生命。` : `对${target}结算战斗效果。`,
+    description: ability.effectType === 'heal'
+      ? t('game.abilityDesc.heal', { target })
+      : t('game.abilityDesc.effect', { target }),
     lines,
   }
 }

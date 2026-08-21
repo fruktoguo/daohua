@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { Modal } from './Modal'
 import { gameClient } from '../network/gameClient'
 import { useGameStore } from '../game/gameStore'
+import { useT } from '../i18n'
 
 interface RenameModalProps {
   open: boolean
@@ -10,17 +11,18 @@ interface RenameModalProps {
 
 const NAME_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
 
-export function RenameModal({ open, onClose }: RenameModalProps): React.JSX.Element | null {
+export const RenameModal = memo(function RenameModal({ open, onClose }: RenameModalProps): React.JSX.Element | null {
+  const t = useT()
   const currentName = useGameStore(state => state.name)
   const [draft, setDraft] = useState(currentName)
   const [validationError, setValidationError] = useState<string | null>(null)
 
   const validate = (value: string): string | null => {
     const trimmed = value.trim()
-    if (!trimmed) return '请输入道号'
-    if (trimmed.length < 2 || trimmed.length > 12) return '道号长度须在 2 至 12 个字符之间'
-    if (!NAME_REGEX.test(trimmed)) return '道号仅支持中文、字母、数字和下划线，不支持特殊字符'
-    if (trimmed === currentName) return '新道号不能与当前道号相同'
+    if (!trimmed) return t('app.rename.errorEmpty')
+    if (trimmed.length < 2 || trimmed.length > 12) return t('app.rename.errorLength')
+    if (!NAME_REGEX.test(trimmed)) return t('app.rename.errorFormat')
+    if (trimmed === currentName) return t('app.rename.errorSame')
     return null
   }
 
@@ -53,39 +55,39 @@ export function RenameModal({ open, onClose }: RenameModalProps): React.JSX.Elem
       size="small"
     >
       <header className="panel-header rename-modal-header">
-        <h2 id="rename-modal-title">修改修士道号</h2>
+        <h2 id="rename-modal-title">{t('app.rename.title')}</h2>
       </header>
       <form onSubmit={handleSubmit} className="rename-form">
         <div className="rename-field">
           <label htmlFor="rename-input" className="rename-label">
-            新道号
+            {t('app.rename.inputLabel')}
           </label>
           <input
             id="rename-input"
             className="rename-input"
             maxLength={12}
             onChange={handleChange}
-            placeholder="2~12字符，支持中文、英文、数字与下划线"
+            placeholder={t('app.rename.inputPlaceholder')}
             type="text"
             value={draft}
             autoFocus
           />
           {validationError && <span className="rename-error">{validationError}</span>}
-          <p className="rename-hint">道号在全服不可重复，修改后将进入 24 小时改名冷却。</p>
+          <p className="rename-hint">{t('app.rename.hint')}</p>
         </div>
         <div className="rename-actions">
           <button type="button" className="rename-cancel" onClick={onClose}>
-            取消
+            {t('app.rename.cancelBtn')}
           </button>
           <button
             type="submit"
             className="rename-submit active"
             disabled={Boolean(validationError) || !draft.trim() || draft.trim() === currentName}
           >
-            确认修改
+            {t('app.rename.submitBtn')}
           </button>
         </div>
       </form>
     </Modal>
   )
-}
+})

@@ -30,19 +30,21 @@ import { gameClient } from './network/gameClient'
 import { useAccountStore } from './network/account'
 import { initUiScale } from './utils/uiScale'
 import { useUiStore, type TabId } from './uiStore'
+import { useT } from './i18n'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
+const EMPTY_CONSUMABLE_COOLDOWNS: ReadonlyArray<number> = Object.freeze([])
 
-const NAV_ITEMS: ReadonlyArray<{ tab: ActionType; hint: string }> = [
-  { tab: 'cultivation', hint: '吐纳灵气，提升修为' },
-  { tab: 'exploration', hint: '外出采集，寻觅灵草' },
-  { tab: 'alchemy', hint: '开炉炼丹，化草为丹' },
-  { tab: 'combat', hint: '地图、附近与行动详情' },
+const NAV_ITEMS: ReadonlyArray<{ tab: ActionType; hintKey: 'cultivationHint' | 'explorationHint' | 'alchemyHint' | 'combatHint' }> = [
+  { tab: 'cultivation', hintKey: 'cultivationHint' },
+  { tab: 'exploration', hintKey: 'explorationHint' },
+  { tab: 'alchemy', hintKey: 'alchemyHint' },
+  { tab: 'combat', hintKey: 'combatHint' },
 ]
 
 type IconName = 'insight' | ActionType | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
 
-function Icon({ name }: { name: IconName }): React.JSX.Element {
+const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element {
   const common = {
     fill: 'none',
     stroke: 'currentColor',
@@ -76,7 +78,7 @@ function Icon({ name }: { name: IconName }): React.JSX.Element {
     case 'buff':
       return <svg {...common}><path d="M7 16a4.2 4.2 0 0 1-.6-8.3 5.2 5.2 0 0 1 10-1.3A3.8 3.8 0 0 1 17.5 16H7Z" /></svg>
   }
-}
+})
 
 function itemAmount(inventory: InventoryItem[], itemId: string): number {
   return inventory.find(item => item.itemId === itemId)?.amount ?? 0
@@ -86,10 +88,10 @@ function actionDescription(entry: QueueEntry): string {
   return resolveActionDefinition(entry.actionId)?.description ?? entry.actionName
 }
 
-function repeatsLabel(remainingRepeats: number): string {
-  if (remainingRepeats < 0) return '∞'
-  if (remainingRepeats === 0) return '1次'
-  return `${remainingRepeats + 1}次`
+function formatRepeatsLabel(remainingRepeats: number, t: (key: string, params?: Record<string, string | number>) => string): string {
+  if (remainingRepeats < 0) return t('app.queue.repeatsInfinite')
+  if (remainingRepeats === 0) return t('app.queue.repeatsOnce')
+  return t('app.queue.repeatsCount', { n: remainingRepeats + 1 })
 }
 
 function useMobileLayout(): boolean {
@@ -103,7 +105,7 @@ function useMobileLayout(): boolean {
   return mobile
 }
 
-function SmoothProgressBar({ entry }: { entry: QueueEntry }): React.JSX.Element {
+const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: QueueEntry }): React.JSX.Element {
   const fillRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
 
@@ -130,9 +132,10 @@ function SmoothProgressBar({ entry }: { entry: QueueEntry }): React.JSX.Element 
       <span className="progress-text" ref={textRef}>{Math.floor(entry.progressSeconds)}s / {entry.durationSeconds}s</span>
     </div>
   )
-}
+})
 
-function ExpeditionActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element | null {
+const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element | null {
+  const t = useT()
   const expedition = entry.expedition
   if (!expedition || entry.type === 'combat') return null
 
@@ -146,26 +149,27 @@ function ExpeditionActionProgress({ entry }: { entry: QueueEntry }): React.JSX.E
     <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
       <div className="qc-expedition-meta">
         <span>{expedition.phase === 'travel'
-          ? `路程 ${(expedition.travelledDistance ?? 0).toFixed(1)} / ${(expedition.totalDistance ?? 0).toFixed(1)} 里`
-          : `正在搜寻 ${expedition.enemyName ?? '妖兽'}`}</span>
+          ? t('app.queue.travelProgress', { current: (expedition.travelledDistance ?? 0).toFixed(1), total: (expedition.totalDistance ?? 0).toFixed(1) })
+          : t('app.queue.searchTarget', { name: expedition.enemyName ?? '妖兽' })}</span>
         <strong>{percent}%</strong>
       </div>
       <SmoothProgressBar entry={phaseEntry} />
     </div>
   )
-}
+})
 
-function combatPhaseLabel(phase?: string): string {
+function getCombatPhaseLabel(phase: string | undefined, t: (key: string) => string): string {
   switch (phase) {
-    case 'initial-search': return '寻找中'
-    case 'combat': return '战斗中'
-    case 'search': return '重新搜寻'
-    case 'death': return '复活中'
-    default: return '历练中'
+    case 'initial-search': return t('app.queue.phaseSearch')
+    case 'combat': return t('app.queue.phaseCombat')
+    case 'search': return t('app.queue.phaseResearch')
+    case 'death': return t('app.queue.phaseDeath')
+    default: return t('app.queue.phaseDefault')
   }
 }
 
-function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element {
+const CombatActionProgress = memo(function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element {
+  const t = useT()
   const expedition = entry.expedition
   if (expedition && expedition.phase !== 'combat') {
     const phaseEntry: QueueEntry = {
@@ -178,7 +182,7 @@ function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Eleme
       <div className={`queue-combat-state queue-combat-state--${expedition.phase}`}>
         <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
           <div className="qc-expedition-meta">
-            <span>{combatPhaseLabel(expedition.phase)}</span>
+            <span>{getCombatPhaseLabel(expedition.phase, t)}</span>
             <strong>{percent}%</strong>
           </div>
           <SmoothProgressBar entry={phaseEntry} />
@@ -193,35 +197,36 @@ function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Eleme
   const enemyValue = Math.max(0, Math.min(enemyMax, expedition?.enemyHitpoints ?? 0))
   return (
     <div className="queue-combat-state queue-combat-state--combat">
-      <div className="queue-combat-vitals" role="status" aria-label="战斗生命状态">
+      <div className="queue-combat-vitals" role="status" aria-label={t('app.queue.combatVitalsAria')}>
         <div className="queue-combat-vital queue-combat-vital--player">
-          <span>己</span>
+          <span>{t('app.queue.combatVitalSelf')}</span>
           <i><b style={{ transform: `scaleX(${playerValue / playerMax})` }} /></i>
           <strong><UnitNumber value={playerValue} /> / <UnitNumber value={playerMax} /></strong>
         </div>
         <div className="queue-combat-vital queue-combat-vital--enemy">
-          <span>敌</span>
+          <span>{t('app.queue.combatVitalEnemy')}</span>
           <i><b style={{ transform: `scaleX(${enemyValue / enemyMax})` }} /></i>
           <strong><UnitNumber value={enemyValue} /> / <UnitNumber value={enemyMax} /></strong>
         </div>
       </div>
     </div>
   )
-}
+})
 
-function CurrentActionCard({ entry, departing = false }: { entry: QueueEntry; departing?: boolean }): React.JSX.Element {
+const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = false }: { entry: QueueEntry; departing?: boolean }): React.JSX.Element {
+  const t = useT()
   const isCombatExpedition = entry.type === 'combat'
   const phaseLabel = isCombatExpedition
-    ? combatPhaseLabel(entry.expedition?.phase)
+    ? getCombatPhaseLabel(entry.expedition?.phase, t)
     : entry.expedition?.phase === 'travel'
-    ? '移动中'
+    ? t('app.queue.phaseTravel')
     : entry.expedition?.phase === 'search'
-      ? '准备中'
+      ? t('app.queue.phasePrepare')
       : entry.expedition?.phase === 'recovery'
-        ? '恢复中'
+        ? t('app.queue.phaseRecovery')
       : entry.expedition?.phase === 'combat'
-        ? '交战中'
-        : '进行中'
+        ? t('app.queue.phaseEngage')
+        : t('app.queue.phaseProgress')
   return (
     <div
       aria-hidden={departing || undefined}
@@ -234,10 +239,10 @@ function CurrentActionCard({ entry, departing = false }: { entry: QueueEntry; de
       <div className="qc-main">
         <div className="qc-title">
           <strong>{entry.actionName}</strong>
-          <span className="qc-repeats">{repeatsLabel(entry.remainingRepeats)}</span>
+          <span className="qc-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
           {(entry.status === 'blocked' || phaseLabel) && (
             <span className={entry.status === 'blocked' ? 'badge badge-danger' : 'badge'}>
-              {entry.status === 'blocked' ? '缺少材料' : phaseLabel}
+              {entry.status === 'blocked' ? t('app.queue.blocked') : phaseLabel}
             </span>
           )}
         </div>
@@ -249,9 +254,10 @@ function CurrentActionCard({ entry, departing = false }: { entry: QueueEntry; de
       </div>
     </div>
   )
-}
+})
 
-function QueueCurrentStage({ entry }: { entry?: QueueEntry }): React.JSX.Element {
+const QueueCurrentStage = memo(function QueueCurrentStage({ entry }: { entry?: QueueEntry }): React.JSX.Element {
+  const t = useT()
   const previousRef = useRef<QueueEntry | undefined>(entry)
   const exitTimerRef = useRef<number | undefined>(undefined)
   const [departing, setDeparting] = useState<QueueEntry | null>(null)
@@ -272,13 +278,14 @@ function QueueCurrentStage({ entry }: { entry?: QueueEntry }): React.JSX.Element
 
   return (
     <div className="qc-current-stage">
-      {entry ? <CurrentActionCard entry={entry} key={entry.entryId} /> : <div className="qc-current qc-idle">队列空闲</div>}
+      {entry ? <CurrentActionCard entry={entry} key={entry.entryId} /> : <div className="qc-current qc-idle">{t('app.queue.idle')}</div>}
       {departing && <CurrentActionCard departing entry={departing} key={`departing-${departing.entryId}`} />}
     </div>
   )
-}
+})
 
 const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
+  const t = useT()
   const queue = useGameStore(state => state.queue)
   const [open, setOpen] = useState(false)
   const [pendingRemoval, setPendingRemoval] = useState<QueueEntry | null>(null)
@@ -293,7 +300,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
     <div className="queue-center">
       <QueueCurrentStage entry={current} />
 
-      <div className="qc-upcoming" aria-label="后续行动">
+      <div className="qc-upcoming" aria-label={t('app.queue.upcomingAria')}>
         {upcoming.map(entry => (
           <FloatingTooltip key={entry.entryId} placement="bottom" title={actionDescription(entry)} tone="gold">
             <div className="qc-next">
@@ -302,7 +309,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
               </span>
               <div className="qc-next-text">
                 <span className="qc-next-name">{entry.actionName}</span>
-                <span className="qc-next-repeats">{repeatsLabel(entry.remainingRepeats)}</span>
+                <span className="qc-next-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
               </div>
             </div>
           </FloatingTooltip>
@@ -316,7 +323,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
             onChange={event => gameClient.sendCommand('set_loop', { enabled: event.target.checked })}
             type="checkbox"
           />
-          循环
+          {t('app.queue.loop')}
         </label>
         <button
           aria-expanded={open}
@@ -325,13 +332,13 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
           onClick={() => setOpen(value => !value)}
           type="button"
         >
-          队列 {queue.entries.length} {open ? '▴' : '▾'}
+          {t('app.queue.queueButton', { count: queue.entries.length, arrow: open ? '▴' : '▾' })}
         </button>
       </div>
 
       {open && (
         <>
-          <button aria-label="关闭行动队列" className="queue-backdrop" onClick={() => setOpen(false)} type="button" />
+          <button aria-label={t('app.queue.closeQueueAria')} className="queue-backdrop" onClick={() => setOpen(false)} type="button" />
           <ol className="queue-dropdown">
             {queue.entries.map((entry, index) => (
               <li
@@ -345,32 +352,32 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 <div className="queue-main">
                   <div className="queue-title">
                     <span className="queue-name">{entry.actionName}</span>
-                    <span className="queue-repeats">{repeatsLabel(entry.remainingRepeats)}</span>
-                    {entry.status === 'blocked' && <span className="badge badge-danger">缺少材料</span>}
-                    {index === 0 && entry.status === 'running' && <span className="badge">进行中</span>}
+                    <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
+                    {entry.status === 'blocked' && <span className="badge badge-danger">{t('app.queue.blocked')}</span>}
+                    {index === 0 && entry.status === 'running' && <span className="badge">{t('app.queue.running')}</span>}
                   </div>
                   <div className="queue-sub">{actionDescription(entry)}</div>
                 </div>
                 <div className="queue-actions">
                   <button
-                    aria-label="上移行动"
+                    aria-label={t('app.queue.moveUpAria')}
                     disabled={index === 0}
                     onClick={() => gameClient.sendCommand('move_action', { entryId: entry.entryId, direction: -1 })}
-                    title="上移"
+                    title={t('app.queue.moveUpTitle')}
                     type="button"
                   >↑</button>
                   <button
-                    aria-label="下移行动"
+                    aria-label={t('app.queue.moveDownAria')}
                     disabled={index === queue.entries.length - 1}
                     onClick={() => gameClient.sendCommand('move_action', { entryId: entry.entryId, direction: 1 })}
-                    title="下移"
+                    title={t('app.queue.moveDownTitle')}
                     type="button"
                   >↓</button>
                   <button
-                    aria-label="移除行动"
+                    aria-label={t('app.queue.removeAria')}
                     className="danger"
                     onClick={() => setPendingRemoval(entry)}
-                    title="移除"
+                    title={t('app.queue.removeTitle')}
                     type="button"
                   >×</button>
                 </div>
@@ -380,21 +387,22 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
         </>
       )}
       <ConfirmDialog
-        confirmLabel="移除"
+        confirmLabel={t('app.queue.removeConfirmBtn')}
         danger
-        description={pendingRemoval ? `确定从行动队列移除“${pendingRemoval.actionName}”吗？` : ''}
+        description={pendingRemoval ? t('app.queue.removeConfirmDesc', { name: pendingRemoval.actionName }) : ''}
         onClose={() => setPendingRemoval(null)}
         onConfirm={() => {
           if (pendingRemoval) gameClient.sendCommand('remove_action', { entryId: pendingRemoval.entryId })
         }}
         open={pendingRemoval !== null}
-        title="移除行动"
+        title={t('app.queue.removeConfirmTitle')}
       />
     </div>
   )
 })
 
 const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
+  const t = useT()
   const buffs = useGameStore(state => state.buffs)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const world = useGameStore(state => state.world)
@@ -402,13 +410,13 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
   if (buffs.length === 0 && !hasLocationEffect) return null
 
   return (
-    <div className="buff-bar" aria-label="当前增益">
+    <div className="buff-bar" aria-label={t('app.buff.barAria')}>
       {buffs.map(buff => {
         const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
         return (
           <span className="buff-chip" key={buff.buffId}>
             <Icon name="buff" />
-            <span className="buff-stack" aria-label={`${buff.stacks} 层`}>{buff.stacks}</span>
+            <span className="buff-stack" aria-label={t('app.buff.stackAria', { n: buff.stacks })}>{buff.stacks}</span>
             <span className="buff-tip">
               {buff.name} · {buff.qiGainMultiplier > 1
                 ? <>灵气收益 <em>+{Math.round((buff.qiGainMultiplier - 1) * 100)}%</em></>
@@ -420,8 +428,8 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
                   ? <>术式伤害 <em>+{Math.round(buff.damageRatio * 100)}%</em></>
                   : buff.attackSpeedRatio && buff.attackSpeedRatio > 0
                     ? <>攻速 <em>+{Math.round(buff.attackSpeedRatio * 100)}%</em></>
-                    : '战斗增益'}<br />
-              <span className="buff-timer">剩余 {remaining}s · 共 {buff.stacks} 层</span>
+                    : t('app.buff.combatBuff')}<br />
+              <span className="buff-timer">{t('app.buff.remainingStacks', { remaining, stacks: buff.stacks })}</span>
             </span>
           </span>
         )
@@ -429,10 +437,14 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
       {hasLocationEffect && (
         <span className="buff-chip buff-chip--location">
           <Icon name="spirit" />
-          <span className="buff-stack" aria-label="地点增益">地</span>
+          <span className="buff-stack" aria-label={t('app.buff.locationStackAria')}>{t('app.buff.locationMark')}</span>
           <span className="buff-tip">
-            {world.locationName} · 修炼效率 <em>{world.cultivationMultiplier > 1 ? '+' : ''}{Math.round((world.cultivationMultiplier - 1) * 100)}%</em><br />
-            <span className="buff-timer">仅在当前位置生效</span>
+            {t('app.buff.locationEfficiency', {
+              name: world.locationName,
+              sign: world.cultivationMultiplier > 1 ? '+' : '',
+              percent: Math.round((world.cultivationMultiplier - 1) * 100),
+            })}<br />
+            <span className="buff-timer">{t('app.buff.locationOnly')}</span>
           </span>
         </span>
       )}
@@ -440,7 +452,8 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
   )
 })
 
-function TopBar(): React.JSX.Element {
+const TopBar = memo(function TopBar(): React.JSX.Element {
+  const t = useT()
   const name = useGameStore(state => state.name)
   const stats = useGameStore(state => state.stats)
   const connection = useGameStore(state => state.connection)
@@ -448,18 +461,28 @@ function TopBar(): React.JSX.Element {
   const setActiveTab = useUiStore(state => state.setActiveTab)
   const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0), [stats.spirit])
   const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
-  const connectionText = connection === 'online' ? '已连接' : connection === 'connecting' ? '连接中' : connection === 'reconnecting' ? '重连中' : '已离线'
-  const presenceText = presence === 'online' ? '在线' : presence === 'idle-offline' ? '离线挂机' : '完全离线'
+  const connectionText = connection === 'online'
+    ? t('app.topbar.connected')
+    : connection === 'connecting'
+      ? t('app.topbar.connecting')
+      : connection === 'reconnecting'
+        ? t('app.topbar.reconnecting')
+        : t('app.topbar.offline')
+  const presenceText = presence === 'online'
+    ? t('app.topbar.presenceOnline')
+    : presence === 'idle-offline'
+      ? t('app.topbar.presenceIdle')
+      : t('app.topbar.presenceOffline')
 
   const progressDisplay = formatProgressText(realmProgress.currentLayerExp, realmProgress.expToNext, {
-    completedText: '飞升圆满 (100%)',
+    completedText: t('app.topbar.ascendedComplete'),
     percentDecimals: 0,
   })
 
   return (
     <header className="topbar">
       <div
-        aria-label="切换至内视主面板，查看完整六维与修真数值"
+        aria-label={t('app.topbar.insightAria')}
         className="player-block"
         onClick={() => setActiveTab('insight')}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setActiveTab('insight') }}
@@ -478,7 +501,7 @@ function TopBar(): React.JSX.Element {
             placement="bottom"
             title={
               <div className="unit-number-tooltip-inline">
-                <span className="unit-number-tooltip-label">总修为</span>
+                <span className="unit-number-tooltip-label">{t('app.topbar.totalSpirit')}</span>
                 <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(stats.spirit)}</strong>
               </div>
             }
@@ -495,14 +518,15 @@ function TopBar(): React.JSX.Element {
       <BuffBar />
     </header>
   )
-}
+})
 
-function Sidebar(): React.JSX.Element {
+const Sidebar = memo(function Sidebar(): React.JSX.Element {
+  const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const setActiveTab = useUiStore(state => state.setActiveTab)
 
   return (
-    <aside className="sidebar panel" aria-label="行动导航">
+    <aside className="sidebar panel" aria-label={t('app.nav.sidebarAria')}>
       <nav className="sidebar-nav">
         <button
           className={`nav-item${activeTab === 'insight' ? ' active' : ''}`}
@@ -511,7 +535,7 @@ function Sidebar(): React.JSX.Element {
         >
           <span className="nav-glyph" aria-hidden="true"><Icon name="insight" /></span>
           <span className="nav-text">
-            <span className="nav-label">内视</span>
+            <span className="nav-label">{t('app.nav.insight')}</span>
           </span>
         </button>
         <button
@@ -521,7 +545,7 @@ function Sidebar(): React.JSX.Element {
         >
           <span className="nav-glyph" aria-hidden="true"><Icon name="market" /></span>
           <span className="nav-text">
-            <span className="nav-label">坊市</span>
+            <span className="nav-label">{t('app.nav.market')}</span>
           </span>
         </button>
         {NAV_ITEMS.map(item => (
@@ -545,12 +569,12 @@ function Sidebar(): React.JSX.Element {
       >
         <span className="nav-glyph" aria-hidden="true"><Icon name="settings" /></span>
         <span className="nav-text">
-          <span className="nav-label">设置</span>
+          <span className="nav-label">{t('app.nav.settings')}</span>
         </span>
       </button>
     </aside>
   )
-}
+})
 
 const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   className = '',
@@ -563,6 +587,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   label: string
   type: ActionType
 }): React.JSX.Element {
+  const t = useT()
   const slots = useGameStore(state => state.queue.autoUseSlots[type])
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
@@ -619,7 +644,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
         })}
       </div>
       <ItemGridPicker
-        emptyLabel="不使用物品"
+        emptyLabel={t('common.pickerEmpty')}
         onClose={() => setPickerIndex(null)}
         onSelect={itemId => {
           if (pickerIndex === null) return
@@ -627,7 +652,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
         }}
         items={pickerItems}
         open={pickerIndex !== null}
-        title={pickerIndex === null ? '选择使用物品' : `选择使用物品 · 槽 ${pickerIndex + 1}`}
+        title={pickerIndex === null ? t('common.selectItem') : t('common.selectItemSlot', { n: pickerIndex + 1 })}
         value={pickerSlot?.itemId ?? null}
       />
     </section>
@@ -635,14 +660,15 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
 })
 
 const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX.Element {
+  const t = useT()
   return (
-    <div className="auto-use-tray" aria-label={`${actionTabLabel(type)}物品配置`}>
-      <AutoUseSlotGroup hideLabel label="物品使用" type={type} />
+    <div className="auto-use-tray" aria-label={t('app.action.autoUseTrayAria', { name: actionTabLabel(type) })}>
+      <AutoUseSlotGroup hideLabel label={t('app.action.autoUseLabel')} type={type} />
     </div>
   )
 })
 
-function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
+const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
   return (
     <button
       aria-haspopup="dialog"
@@ -658,9 +684,9 @@ function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (act
       <span className="action-card-chevron" aria-hidden="true">›</span>
     </button>
   )
-}
+})
 
-function ActionDetailItem({ itemId, amount, current }: { itemId: string; amount: number; current?: number }): React.JSX.Element {
+const ActionDetailItem = memo(function ActionDetailItem({ itemId, amount, current }: { itemId: string; amount: number; current?: number }): React.JSX.Element {
   const metadata = resolveItemMetadata(itemId)
   const insufficient = current !== undefined && current < amount
   return (
@@ -671,9 +697,10 @@ function ActionDetailItem({ itemId, amount, current }: { itemId: string; amount:
       </strong>
     </span>
   )
-}
+})
 
 const ActionModal = memo(function ActionModal({ action, onClose }: { action: ActionDefinition; onClose: () => void }): React.JSX.Element {
+  const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const encounter = useGameStore(state => state.encounters.find(item => item.encounterId === action.combatEncounterId))
   const queueLength = useGameStore(state => state.queue.entries.length)
@@ -695,8 +722,8 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
 
       <dl className="action-detail-list">
         <div>
-          <dt>需要</dt>
-          <dd>{inputs.length === 0 ? <span className="action-detail-empty">无</span> : inputs.map(input => (
+          <dt>{t('app.action.needs')}</dt>
+          <dd>{inputs.length === 0 ? <span className="action-detail-empty">{t('app.action.none')}</span> : inputs.map(input => (
             <ActionDetailItem
               amount={input.amount}
               current={itemAmount(inventory, input.itemId)}
@@ -706,18 +733,18 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           ))}</dd>
         </div>
         <div>
-          <dt>产出</dt>
-          <dd>{outputs.length === 0 ? <span className="action-detail-empty">按战斗掉落表结算</span> : outputs.map(output => (
+          <dt>{t('app.action.outputs')}</dt>
+          <dd>{outputs.length === 0 ? <span className="action-detail-empty">{t('app.action.combatDrops')}</span> : outputs.map(output => (
             <ActionDetailItem amount={output.amount} itemId={output.itemId} key={output.itemId} />
           ))}</dd>
         </div>
         {action.type === 'cultivation' && (
-          <div><dt>修为</dt><dd><span className="action-detail-value">每次 +1</span></dd></div>
+          <div><dt>{t('app.action.spirit')}</dt><dd><span className="action-detail-value">{t('app.action.cultivationPerRound')}</span></dd></div>
         )}
         <div>
-          <dt>耗时</dt>
+          <dt>{t('app.action.duration')}</dt>
           <dd><span className="action-detail-value">
-            {startsImmediately ? '不限时，战斗至分出胜负' : `${action.durationSeconds}s / 次`}
+            {startsImmediately ? t('app.action.combatUnlimited') : t('app.action.durationPerRound', { seconds: action.durationSeconds })}
           </span></dd>
         </div>
       </dl>
@@ -725,10 +752,10 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
       {encounter && <CombatEncounterPanel compact encounter={encounter} />}
 
       <div className="repeat-row">
-        <span>次数</span>
+        <span>{t('app.action.repeats')}</span>
         <QuantitySelector
           allowInfinity
-          ariaLabel="行动次数"
+          ariaLabel={t('app.action.repeatsAria')}
           max={1000}
           onChange={setRepeats}
           presets={[1, 10, 100]}
@@ -743,7 +770,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           if (gameClient.sendCommand(command, { actionId: action.id, repeats })) onClose()
         }}
         type="button"
-      >{startsImmediately ? '立即开始历练' : `添加到队列 #${queueLength + 1}`}</button>
+      >{startsImmediately ? t('app.action.startCombatNow') : t('app.action.enqueueAction', { n: queueLength + 1 })}</button>
     </Modal>
   )
 })
@@ -753,9 +780,7 @@ type CombatPickerTarget = {
   index: number
 }
 
-
-
-function AbilityCooldownOverlay({
+const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
   remainingMilliseconds,
   totalMilliseconds,
 }: {
@@ -785,10 +810,10 @@ function AbilityCooldownOverlay({
   }, [remainingMilliseconds, totalMilliseconds])
 
   return <span className="combat-ability-cooldown" ref={overlayRef} />
-}
-
+})
 
 const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element | null {
+  const t = useT()
   const combat = useGameStore(state => state.combat)
   const abilities = useGameStore(state => state.abilities)
   const itemCatalog = useGameStore(state => state.items)
@@ -800,7 +825,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const consumableCooldowns = useGameStore(
     state => state.queue.entries[0]?.expedition?.consumableCooldownMilliseconds
       ?? state.combatResources?.consumableCooldownMilliseconds,
-  ) ?? []
+  ) ?? EMPTY_CONSUMABLE_COOLDOWNS
   const [editingTrigger, setEditingTrigger] = useState<{
     kind: 'ability' | 'consumable'
     index: number
@@ -840,7 +865,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const abilityOptions = abilities.filter(ability => learnedAbilityIds.has(ability.abilityId)).map(ability => ({
     id: ability.abilityId,
     label: ability.name,
-    subtitle: `Lv. 1 · ${Math.round(ability.manaCost)} 灵力 · ${(ability.castMilliseconds / 1000).toFixed(1)}s 施法`,
+    subtitle: t('app.combatPanel.abilitySubtitle', { mana: Math.round(ability.manaCost), cast: (ability.castMilliseconds / 1000).toFixed(1) }),
     category: `${ability.style} · ${ability.damageType}`,
     tone: ability.effectType === 'heal' ? 'green' : 'violet',
     tooltip: describeAbility(ability, 1),
@@ -863,8 +888,8 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
       ? combat.abilitySlots[pickerTarget.index]?.abilityId ?? null
       : combat.consumableSlots[pickerTarget.index]?.itemId ?? null
   const pickerTitle = pickerTarget?.kind === 'ability'
-      ? `选择功法 · 槽 ${((pickerTarget?.index ?? 0) + 1)}`
-      : `选择战斗物品 · 槽 ${((pickerTarget?.index ?? 0) + 1)}`
+      ? t('app.combatPanel.chooseAbilityTitle', { slot: ((pickerTarget?.index ?? 0) + 1) })
+      : t('app.combatPanel.chooseConsumableTitle', { slot: ((pickerTarget?.index ?? 0) + 1) })
 
   const selectPickerValue = (value: string | null) => {
     if (!pickerTarget) return
@@ -878,10 +903,10 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const consumablePickerTarget = pickerTarget?.kind === 'consumable' ? pickerTarget : null
 
   return (
-    <div className="combat-loadout" aria-label="历练配置">
+    <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
       <div className="combat-slot-tray">
-        <section className="slot-group combat-slot-section" aria-label="消耗药品槽">
-          <span className="slot-group-label">消耗药品</span>
+        <section className="slot-group combat-slot-section" aria-label={t('app.combatPanel.consumablesAria')}>
+          <span className="slot-group-label">{t('app.combatPanel.consumablesGroup')}</span>
           <div className="combat-slot-grid">
             {combat.consumableSlots.map((slot, index) => {
               const selectedDefinition = slot.itemId
@@ -916,26 +941,26 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
           </div>
         </section>
 
-        <AutoUseSlotGroup className="combat-slot-section" label="通用物品" type="combat" />
+        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.generalGroup')} type="combat" />
 
-        <section className="slot-group combat-slot-section" aria-label="技能槽">
-          <span className="slot-group-label">技能</span>
+        <section className="slot-group combat-slot-section" aria-label={t('app.combatPanel.abilitiesAria')}>
+          <span className="slot-group-label">{t('app.combatPanel.abilitiesGroup')}</span>
           <div className="combat-slot-grid combat-slot-grid--abilities">
             {combat.abilitySlots.map((slot, index) => {
               const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
               const slotContent = (
                 <>
                   <button
-                    aria-label={ability ? `当前技能：${ability.name}` : `选择技能槽 ${index + 1}`}
+                    aria-label={ability ? t('app.combatPanel.currentAbilityAria', { name: ability.name }) : t('app.combatPanel.chooseAbilitySlotAria', { slot: index + 1 })}
                     className={`combat-ability-slot${ability ? '' : ' combat-ability-slot--empty'}`}
                     onClick={() => setPickerTarget({ kind: 'ability', index })}
                     type="button"
                   >
                     {ability ? (
                       <span className="item-tile combat-ability-cell" data-rarity="mystic">
-                        <span className="item-type-ribbon" aria-hidden="true"><span>技能</span></span>
+                        <span className="item-type-ribbon" aria-hidden="true"><span>{t('app.combatPanel.abilityRibbon')}</span></span>
                         <strong className="item-tile-name">{ability.name}</strong>
-                        <span className="item-corner item-corner--bottom-right">{Math.round(ability.manaCost)} 灵</span>
+                        <span className="item-corner item-corner--bottom-right">{t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}</span>
                         {(abilityCooldowns[ability.abilityId] ?? 0) > 0 && (
                           <AbilityCooldownOverlay
                             remainingMilliseconds={abilityCooldowns[ability.abilityId]}
@@ -943,14 +968,14 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                           />
                         )}
                       </span>
-                    ) : <span>选择技能</span>}
+                    ) : <span>{t('app.combatPanel.chooseAbility')}</span>}
                   </button>
                   {ability && (
                     <>
                       <span className="combat-ability-level-control" onClick={event => event.stopPropagation()}>
                         <span aria-hidden="true">Lv.</span>
                         <input
-                          aria-label={`${ability.name}等级`}
+                          aria-label={t('app.combatPanel.levelAria', { name: ability.name })}
                           className="combat-ability-level-input"
                           max={100}
                           min={1}
@@ -966,12 +991,12 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                         />
                       </span>
                       <button
-                        aria-label={`编辑${ability.name}的触发条件，共 ${slot.triggers?.length ?? 0} 条`}
+                        aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
                         className="item-slot-inline-action item-slot-inline-action--condition"
                         onClick={() => setEditingTrigger({ kind: 'ability', index })}
-                        title="编辑触发条件"
+                        title={t('app.combatPanel.editTriggersTitle')}
                         type="button"
-                      >条件{(slot.triggers?.length ?? 0) > 0 ? slot.triggers?.length : ''}</button>
+                      >{t('app.combatPanel.triggerConditionBtn', { count: (slot.triggers?.length ?? 0) > 0 ? (slot.triggers?.length ?? 0) : '' })}</button>
                     </>
                   )}
                 </>
@@ -1000,7 +1025,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
         value={pickerValue}
       />
       <ItemGridPicker
-        emptyLabel="不使用物品"
+        emptyLabel={t('common.pickerEmpty')}
         onClose={() => setPickerTarget(null)}
         onSelect={selectPickerValue}
         items={consumableItems}
@@ -1022,6 +1047,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
 })
 
 const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; hidden: boolean }): React.JSX.Element {
+  const t = useT()
   const actions = useGameStore(state => state.actions)
   const worldNodeId = useGameStore(state => state.world.nodeId)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
@@ -1038,7 +1064,7 @@ const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; 
       </header>
       <div className="action-cards">
         {visibleActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
-        {visibleActions.length === 0 && <p className="location-action-empty">当前位置没有开放此类行动，请先在历练地图中移动。</p>}
+        {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
       </div>
       <AutoUse type={type} />
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
@@ -1048,13 +1074,14 @@ const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; 
 
 type ExpeditionSubTab = 'map' | 'nearby' | 'duel'
 
-const EXPEDITION_TABS: ReadonlyArray<{ id: ExpeditionSubTab; label: string }> = [
-  { id: 'map', label: '地图' },
-  { id: 'nearby', label: '附近' },
-  { id: 'duel', label: '详情' },
+const EXPEDITION_TABS: ReadonlyArray<{ id: ExpeditionSubTab; labelKey: 'tabMap' | 'tabNearby' | 'tabDuel' }> = [
+  { id: 'map', labelKey: 'tabMap' },
+  { id: 'nearby', labelKey: 'tabNearby' },
+  { id: 'duel', labelKey: 'tabDuel' },
 ]
 
 const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolean }): React.JSX.Element {
+  const t = useT()
   const [activeSubTab, setActiveSubTab] = useState<ExpeditionSubTab>('map')
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const activeEntryId = useGameStore(state => {
@@ -1070,7 +1097,7 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
   return (
     <section className="panel expedition-page" hidden={hidden}>
       <header className="panel-header expedition-header">
-        <nav aria-label="历练功能" className="expedition-tabs" role="tablist">
+        <nav aria-label={t('app.combatPanel.tabsAria')} className="expedition-tabs" role="tablist">
           {EXPEDITION_TABS.map(tab => (
             <button
               aria-selected={activeSubTab === tab.id}
@@ -1079,7 +1106,7 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
               onClick={() => setActiveSubTab(tab.id)}
               role="tab"
               type="button"
-            >{tab.label}</button>
+            >{t(`app.combatPanel.${tab.labelKey}`)}</button>
           ))}
         </nav>
       </header>
@@ -1100,14 +1127,15 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
   )
 })
 
-function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
+const InventoryPanel = memo(function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
+  const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
   const visibleItems = inventory.filter(item => item.amount > 0)
 
   return (
     <section className={`panel inventory-panel ${className}`.trim()}>
-      <header className="panel-header"><h2>背包</h2></header>
+      <header className="panel-header"><h2>{t('app.inventory.title')}</h2></header>
       <div className="inventory-grid">
         {visibleItems.map(item => (
           <ItemCard
@@ -1119,25 +1147,26 @@ function InventoryPanel({ className = '' }: { className?: string }): React.JSX.E
       </div>
     </section>
   )
-}
+})
 
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; label: string; icon: IconName }> = [
-  { tab: 'insight', label: '内视', icon: 'insight' },
-  { tab: 'market', label: '坊市', icon: 'market' },
-  { tab: 'cultivation', label: '修炼', icon: 'cultivation' },
-  { tab: 'exploration', label: '探索', icon: 'exploration' },
-  { tab: 'alchemy', label: '炼丹', icon: 'alchemy' },
-  { tab: 'combat', label: '历练', icon: 'combat' },
-  { tab: 'inventory', label: '背包', icon: 'inventory' },
-  { tab: 'log', label: '日志', icon: 'log' },
-  { tab: 'settings', label: '设置', icon: 'settings' },
+const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'alchemy' | 'combat' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
+  { tab: 'insight', labelKey: 'insight', icon: 'insight' },
+  { tab: 'market', labelKey: 'market', icon: 'market' },
+  { tab: 'cultivation', labelKey: 'cultivation', icon: 'cultivation' },
+  { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
+  { tab: 'alchemy', labelKey: 'alchemy', icon: 'alchemy' },
+  { tab: 'combat', labelKey: 'combat', icon: 'combat' },
+  { tab: 'inventory', labelKey: 'inventory', icon: 'inventory' },
+  { tab: 'log', labelKey: 'log', icon: 'log' },
+  { tab: 'settings', labelKey: 'settings', icon: 'settings' },
 ]
 
-function BottomNav(): React.JSX.Element {
+const BottomNav = memo(function BottomNav(): React.JSX.Element {
+  const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const setActiveTab = useUiStore(state => state.setActiveTab)
   return (
-    <nav className="bottom-nav" aria-label="移动端导航">
+    <nav className="bottom-nav" aria-label={t('app.nav.mobileNavAria')}>
       {BOTTOM_TABS.map(item => (
         <button
           className={activeTab === item.tab ? 'active' : ''}
@@ -1146,14 +1175,14 @@ function BottomNav(): React.JSX.Element {
           type="button"
         >
           <span className="bottom-glyph" aria-hidden="true"><Icon name={item.icon} /></span>
-          <span>{item.label}</span>
+          <span>{t(`app.nav.${item.labelKey}`)}</span>
         </button>
       ))}
     </nav>
   )
-}
+})
 
-function Notice(): React.JSX.Element | null {
+const Notice = memo(function Notice(): React.JSX.Element | null {
   const notice = useGameStore(state => state.notice)
   const setNotice = useGameStore(state => state.setNotice)
 
@@ -1164,7 +1193,7 @@ function Notice(): React.JSX.Element | null {
   }, [notice, setNotice])
 
   return notice ? <div className="notice" role="status">{notice}</div> : null
-}
+})
 
 export default function App(): React.JSX.Element {
   const activeTab = useUiStore(state => state.activeTab)
@@ -1180,7 +1209,7 @@ export default function App(): React.JSX.Element {
       gameClient.connect()
     }
     return () => gameClient.dispose()
-  }, [])
+  }, [currentAccount])
 
   if (!currentAccount) {
     return <LoginPage />

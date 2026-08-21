@@ -251,8 +251,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   <strong className="tone-gold">{t('insight.progressComplete')}</strong>
                 ) : (
                   <strong>
-                    <UnitNumber tooltipLabel="当前修为" value={Math.floor(realmProgress.currentLayerExp)} /> /{' '}
-                    <UnitNumber tooltipLabel="突破所需" value={Math.floor(realmProgress.expToNext)} /> ({Math.floor(realmInfo.layerProgress * 10) / 10}%)
+                    <UnitNumber tooltipLabel={t('insight.currentExp')} value={Math.floor(realmProgress.currentLayerExp)} /> /{' '}
+                    <UnitNumber tooltipLabel={t('insight.nextExp')} value={Math.floor(realmProgress.expToNext)} /> ({Math.floor(realmInfo.layerProgress * 10) / 10}%)
                   </strong>
                 )}
               </div>
@@ -260,7 +260,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 placement="top"
                 title={
                   <div className="unit-number-tooltip-inline">
-                    <span className="unit-number-tooltip-label">总修为</span>
+                    <span className="unit-number-tooltip-label">{t('insight.totalSpirit')}</span>
                     <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(Math.floor(stats.spirit ?? 0))}</strong>
                   </div>
                 }

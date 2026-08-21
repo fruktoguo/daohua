@@ -6,6 +6,9 @@ export const insightZh = {
     multiplier: '（灵气倍率 {value}x）',
     progressLabel: '层境突破修为',
     progressComplete: '修为圆满 (待破境)',
+    currentExp: '当前修为',
+    nextExp: '突破所需',
+    totalSpirit: '总修为',
     breakthroughBtn: '⚡ 破境突破',
     quick: {
       hp: '生命值',

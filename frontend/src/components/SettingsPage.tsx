@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { RenameModal } from './RenameModal'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { getUiScale, setUiScale } from '../utils/uiScale'
-import { useI18nStore } from '../i18n'
+import { useI18nStore, useT } from '../i18n'
 
 type SettingsTab = 'account' | 'display'
 
-function formatDateTime(unixSeconds: number): string {
-  if (!unixSeconds || unixSeconds <= 0) return '未知'
+function formatDateTime(unixSeconds: number, fallbackText: string): string {
+  if (!unixSeconds || unixSeconds <= 0) return fallbackText
   const date = new Date(unixSeconds * 1000)
   const pad = (n: number) => String(n).padStart(2, '0')
   const y = date.getFullYear()
@@ -21,21 +21,22 @@ function formatDateTime(unixSeconds: number): string {
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
 }
 
-function formatCooldown(seconds: number): string {
+function formatCooldown(seconds: number, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (seconds <= 0) return ''
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   const s = seconds % 60
   if (h > 0) {
-    return `${h}小时${m}分`
+    return t('app.settings.timeHoursMinutes', { h, m })
   }
   if (m > 0) {
-    return `${m}分${s}秒`
+    return t('app.settings.timeMinutesSeconds', { m, s })
   }
-  return `${s}秒`
+  return t('app.settings.timeSeconds', { s })
 }
 
-export function SettingsPage(): React.JSX.Element {
+export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
+  const t = useT()
   const [activeTab, setActiveTab] = useState<SettingsTab>('account')
   const [renameModalOpen, setRenameModalOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
@@ -70,12 +71,13 @@ export function SettingsPage(): React.JSX.Element {
   }
 
   const zoomPresets = [50, 75, 100, 125, 150, 200]
+  const cooldownStr = formatCooldown(remainingCooldown, t)
 
   return (
     <section className="panel settings-page">
       <header className="panel-header settings-header">
-        <h2>设置</h2>
-        <nav className="settings-sub-tabs" role="tablist" aria-label="设置分类">
+        <h2>{t('app.settings.title')}</h2>
+        <nav className="settings-sub-tabs" role="tablist" aria-label={t('app.settings.categoryAria')}>
           <button
             type="button"
             role="tab"
@@ -83,7 +85,7 @@ export function SettingsPage(): React.JSX.Element {
             className={`settings-sub-tab${activeTab === 'account' ? ' active' : ''}`}
             onClick={() => setActiveTab('account')}
           >
-            账号
+            {t('app.settings.tabAccount')}
           </button>
           <button
             type="button"
@@ -92,7 +94,7 @@ export function SettingsPage(): React.JSX.Element {
             className={`settings-sub-tab${activeTab === 'display' ? ' active' : ''}`}
             onClick={() => setActiveTab('display')}
           >
-            显示
+            {t('app.settings.tabDisplay')}
           </button>
         </nav>
       </header>
@@ -100,14 +102,14 @@ export function SettingsPage(): React.JSX.Element {
       {activeTab === 'account' && (
         <div className="settings-tab-content">
           <div className="settings-block">
-            <h3>修士账号</h3>
+            <h3>{t('app.settings.accountHeading')}</h3>
             <div className="stat-row">
-              <span>道号</span>
+              <span>{t('app.settings.nameLabel')}</span>
               <div className="stat-value-with-action">
                 <strong className="player-highlight-name">{name}</strong>
                 {remainingCooldown > 0 ? (
-                  <span className="cooldown-tag" title={`改名冷却中，剩余 ${formatCooldown(remainingCooldown)}`}>
-                    冷却中 ({formatCooldown(remainingCooldown)})
+                  <span className="cooldown-tag" title={t('app.settings.cooldownTitle', { time: cooldownStr })}>
+                    {t('app.settings.cooldownTag', { time: cooldownStr })}
                   </span>
                 ) : (
                   <button
@@ -115,36 +117,36 @@ export function SettingsPage(): React.JSX.Element {
                     className="inline-modify-btn"
                     onClick={() => setRenameModalOpen(true)}
                   >
-                    修改道号
+                    {t('app.settings.modifyNameBtn')}
                   </button>
                 )}
               </div>
             </div>
             <div className="stat-row">
-              <span>登录账号</span>
+              <span>{t('app.settings.accountLabel')}</span>
               <span>{account || name}</span>
             </div>
             <div className="stat-row">
-              <span>序号 ID</span>
+              <span>{t('app.settings.sequenceIdLabel')}</span>
               <span className="sequence-id-tag">
                 #{sequenceId > 0 ? sequenceId : 1}
               </span>
             </div>
             <div className="stat-row">
-              <span>注册时间</span>
-              <span>{formatDateTime(createdAtUnixSeconds)}</span>
+              <span>{t('app.settings.registeredTimeLabel')}</span>
+              <span>{formatDateTime(createdAtUnixSeconds, t('app.settings.unknownTime'))}</span>
             </div>
           </div>
 
           <div className="settings-block settings-logout-block">
             <div className="settings-logout-row">
-              <span className="settings-logout-hint">若要切换其他修士账号或重新登录：</span>
+              <span className="settings-logout-hint">{t('app.settings.logoutHint')}</span>
               <button
                 type="button"
                 className="danger logout-action-btn"
                 onClick={() => setLogoutConfirmOpen(true)}
               >
-                退出登录
+                {t('app.settings.logoutBtn')}
               </button>
             </div>
           </div>
@@ -154,9 +156,9 @@ export function SettingsPage(): React.JSX.Element {
       {activeTab === 'display' && (
         <div className="settings-tab-content">
           <div className="settings-block">
-            <h3>整体界面缩放</h3>
+            <h3>{t('app.settings.zoomHeading')}</h3>
             <p className="settings-desc">
-              根据您的屏幕分辨率与视觉习惯调整全局界面大小（支持 50% 至 200%）。
+              {t('app.settings.zoomDesc')}
             </p>
             <div className="zoom-control-group">
               <div className="zoom-slider-row">
@@ -169,7 +171,7 @@ export function SettingsPage(): React.JSX.Element {
                   value={zoom}
                   onChange={e => handleZoomChange(Number(e.target.value))}
                   className="zoom-slider"
-                  aria-label="界面缩放"
+                  aria-label={t('app.settings.zoomAria')}
                 />
                 <span className="zoom-max">200%</span>
                 <strong className="zoom-current-badge">{zoom}%</strong>
@@ -190,15 +192,15 @@ export function SettingsPage(): React.JSX.Element {
                   className="zoom-reset-btn"
                   onClick={() => handleZoomChange(100)}
                 >
-                  重置 100%
+                  {t('app.settings.zoomReset')}
                 </button>
               </div>
             </div>
           </div>
 
           <div className="settings-block">
-            <h3>界面语言</h3>
-            <div className="presence-options" role="group" aria-label="界面语言">
+            <h3>{t('app.settings.languageHeading')}</h3>
+            <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
               {[
                 { code: 'zh-CN' as const, label: '简体中文' },
                 { code: 'en-US' as const, label: 'English' },
@@ -225,9 +227,9 @@ export function SettingsPage(): React.JSX.Element {
 
       <ConfirmDialog
         open={logoutConfirmOpen}
-        title="确认登出"
-        description="确定要退出当前修士账号并返回登录界面吗？"
-        confirmLabel="登出账号"
+        title={t('app.settings.logoutConfirmTitle')}
+        description={t('app.settings.logoutConfirmDesc')}
+        confirmLabel={t('app.settings.logoutConfirmBtn')}
         danger
         onConfirm={() => {
           setLogoutConfirmOpen(false)
@@ -237,4 +239,4 @@ export function SettingsPage(): React.JSX.Element {
       />
     </section>
   )
-}
+})
