@@ -123,6 +123,7 @@ builder.Services.AddSingleton<XiuxianMarketRuntime>();
 builder.Services.AddSingleton<XiuxianSimulationScheduleSignal>();
 builder.Services.AddSingleton<XiuxianSimulationClock>();
 builder.Services.AddSingleton<XiuxianGameHost>();
+builder.Services.AddSingleton<XiuxianAccessControl>();
 if (durableOutboxEnabled)
 {
     builder.Services.AddHostedService<XiuxianPersistenceReplayHostedService>();
@@ -151,6 +152,10 @@ app.Logger.LogInformation(
     "游戏数据版本 {ContentVersion}，配置指纹 {Fingerprint}",
     gameData.ContentVersion,
     gameData.Fingerprint);
+if (!app.Services.GetRequiredService<XiuxianAccessControl>().Enabled)
+{
+    app.Logger.LogWarning("未配置 Server:AccessToken，玩家级接口无鉴权，仅建议本地开发使用");
+}
 if (corsOrigins.Length > 0)
 {
     app.UseCors();
@@ -307,9 +312,17 @@ app.MapGet("/api/market/metrics", (
 app.MapPost("/api/players/{playerId:guid}/market/orders", async (
     Guid playerId,
     XiuxianMarketPlaceRequest request,
+    HttpRequest httpRequest,
     XiuxianGameHost host,
+    XiuxianAccessControl accessControl,
     CancellationToken cancellationToken) =>
 {
+    if (!accessControl.IsValid(httpRequest.Headers["X-Access-Token"]))
+    {
+        return Results.Json(
+            new { code = "UNAUTHORIZED", message = "缺少或错误的访问令牌。" },
+            statusCode: StatusCodes.Status401Unauthorized);
+    }
     if (request is null
         || string.IsNullOrWhiteSpace(request.OrderId)
         || string.IsNullOrWhiteSpace(request.ItemId)
@@ -348,17 +361,33 @@ app.MapPost("/api/players/{playerId:guid}/market/orders", async (
 app.MapDelete("/api/players/{playerId:guid}/market/orders/{orderId}", async (
     Guid playerId,
     string orderId,
+    HttpRequest httpRequest,
     XiuxianGameHost host,
+    XiuxianAccessControl accessControl,
     CancellationToken cancellationToken) =>
 {
+    if (!accessControl.IsValid(httpRequest.Headers["X-Access-Token"]))
+    {
+        return Results.Json(
+            new { code = "UNAUTHORIZED", message = "缺少或错误的访问令牌。" },
+            statusCode: StatusCodes.Status401Unauthorized);
+    }
     var outcome = await host.CancelMarketOrderAsync(playerId, orderId, cancellationToken);
     return Results.Ok(XiuxianMarketMapper.ToDto(outcome));
 });
 app.MapPost("/api/players/{playerId:guid}/market/claim", async (
     Guid playerId,
+    HttpRequest httpRequest,
     XiuxianGameHost host,
+    XiuxianAccessControl accessControl,
     CancellationToken cancellationToken) =>
 {
+    if (!accessControl.IsValid(httpRequest.Headers["X-Access-Token"]))
+    {
+        return Results.Json(
+            new { code = "UNAUTHORIZED", message = "缺少或错误的访问令牌。" },
+            statusCode: StatusCodes.Status401Unauthorized);
+    }
     var outcome = await host.ClaimMarketAssetsAsync(playerId, cancellationToken);
     return Results.Ok(XiuxianMarketMapper.ToDto(outcome));
 });
@@ -394,9 +423,20 @@ app.MapGet("/api/players/{playerId:guid}/market/orders", (
 });
 app.MapGet("/api/players/{playerId:guid}", async (
     Guid playerId,
+    HttpRequest httpRequest,
     XiuxianGameHost host,
+    XiuxianAccessControl accessControl,
     CancellationToken cancellationToken) =>
-    Results.Ok(await host.GetSnapshotAsync(playerId, cancellationToken)));
+{
+    if (!accessControl.IsValid(httpRequest.Headers["X-Access-Token"]))
+    {
+        return Results.Json(
+            new { code = "UNAUTHORIZED", message = "缺少或错误的访问令牌。" },
+            statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    return Results.Ok(await host.GetSnapshotAsync(playerId, cancellationToken));
+});
 if (app.Environment.IsDevelopment())
 {
     app.MapPost("/api/debug/fast-forward", async (

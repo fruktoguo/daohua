@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Net.WebSockets;
 using Xiuxian.Protocol;
+using Xiuxian.Server.Infrastructure;
 
 namespace Xiuxian.Server.Runtime;
 
@@ -20,10 +21,21 @@ public static class XiuxianWebSocketEndpoint
 
         var gameHost = context.RequestServices.GetRequiredService<XiuxianGameHost>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("XiuxianWebSocket");
-        var playerId = Guid.TryParse(context.Request.Query["playerId"], out var parsedPlayerId)
-            ? parsedPlayerId
-            : Guid.Parse("75d1ffb6-2f03-42e0-bdc1-cdce8b5d9a31");
-        var playerName = context.Request.Query["name"].FirstOrDefault();
+        var accessControl = context.RequestServices.GetRequiredService<XiuxianAccessControl>();
+        // playerId 即权限：解析失败直接拒绝，绝不回退到固定玩家，防止公网访客借未知参数接管默认账号。
+        if (!Guid.TryParse(context.Request.Query["playerId"], out var playerId))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsync("playerId invalid.");
+            return;
+        }
+        if (!accessControl.IsValid(context.Request.Query["token"]))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsync("缺少或错误的访问令牌。");
+            return;
+        }
+        var playerName = SanitizePlayerName(context.Request.Query["name"].FirstOrDefault());
         context.Response.Cookies.Append("xiuxian_player_id", playerId.ToString("D"), new CookieOptions
         {
             Path = "/",
@@ -85,6 +97,14 @@ public static class XiuxianWebSocketEndpoint
                 }
             }
         }
+    }
+
+    /// <summary>净化玩家显示名：Trim 后剔除控制字符并截断到 32 字符，空结果归为 null。</summary>
+    private static string? SanitizePlayerName(string? rawName)
+    {
+        if (string.IsNullOrWhiteSpace(rawName)) return null;
+        var sanitized = new string(rawName.Trim().Where(ch => !char.IsControl(ch)).Take(32).ToArray());
+        return sanitized.Length == 0 ? null : sanitized;
     }
 
     private static async Task SendLoopAsync(
