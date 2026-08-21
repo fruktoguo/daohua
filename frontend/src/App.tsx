@@ -442,8 +442,6 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
 
 function TopBar(): React.JSX.Element {
   const name = useGameStore(state => state.name)
-  const sequenceId = useGameStore(state => state.sequenceId)
-  const playerId = useGameStore(state => state.playerId)
   const stats = useGameStore(state => state.stats)
   const connection = useGameStore(state => state.connection)
   const presence = useGameStore(state => state.presenceMode)
@@ -471,9 +469,6 @@ function TopBar(): React.JSX.Element {
         <div className="player-info">
           <div className="player-line">
             <strong className="player-name">{name}</strong>
-            <span className="sequence-id-tag" title={`修士序号: #${sequenceId > 0 ? sequenceId : playerId.slice(0, 8)}`}>
-              #{sequenceId > 0 ? sequenceId : playerId.slice(0, 8)}
-            </span>
             <RealmBadge realmInfo={realmInfo} />
             <FloatingTooltip placement="bottom" title={`${connectionText} · ${presenceText}`} tone={connection === 'online' ? 'jade' : 'danger'}>
               <span className={`connection-dot connection-dot--${connection}`} />

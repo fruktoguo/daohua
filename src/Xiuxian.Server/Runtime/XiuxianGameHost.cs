@@ -42,7 +42,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastPlayerAccess = new();
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, XiuxianSession>> _sessions = new();
     private readonly ConcurrentDictionary<string, Guid> _takenPlayerNames = new(StringComparer.OrdinalIgnoreCase);
-    private long _maxSequenceId = 10_000;
+    private long _maxSequenceId;
     private long _entitySequence = 10_000;
     private long _packetSequence;
     private long _simulationRevision;

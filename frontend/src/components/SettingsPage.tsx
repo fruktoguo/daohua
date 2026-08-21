@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { RenameModal } from './RenameModal'
-import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
-import { getAccessToken, setAccessToken } from '../network/access_token'
 import { getUiScale, setUiScale } from '../utils/uiScale'
 import { useI18nStore } from '../i18n'
 
@@ -41,19 +39,13 @@ export function SettingsPage(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<SettingsTab>('account')
   const [renameModalOpen, setRenameModalOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
-  const [tokenDraft, setTokenDraft] = useState(getAccessToken())
   const [zoom, setZoom] = useState(getUiScale())
 
   const name = useGameStore(state => state.name)
   const account = useGameStore(state => state.account)
   const sequenceId = useGameStore(state => state.sequenceId)
-  const playerId = useGameStore(state => state.playerId)
   const createdAtUnixSeconds = useGameStore(state => state.createdAtUnixSeconds)
   const renameCooldownSeconds = useGameStore(state => state.renameCooldownSeconds)
-  const version = useGameStore(state => state.version)
-  const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
-  const presence = useGameStore(state => state.presenceMode)
-  const connection = useGameStore(state => state.connection)
 
   const locale = useI18nStore(state => state.locale)
   const setLocale = useI18nStore(state => state.setLocale)
@@ -76,12 +68,6 @@ export function SettingsPage(): React.JSX.Element {
     const clamped = setUiScale(newZoom)
     setZoom(clamped)
   }
-
-  const modes = [
-    ['online', '在线'],
-    ['idle-offline', '离线挂机'],
-    ['fully-offline', '完全离线'],
-  ] as const
 
   const zoomPresets = [50, 75, 100, 125, 150, 200]
 
@@ -114,7 +100,7 @@ export function SettingsPage(): React.JSX.Element {
       {activeTab === 'account' && (
         <div className="settings-tab-content">
           <div className="settings-block">
-            <h3>修士身份</h3>
+            <h3>修士账号</h3>
             <div className="stat-row">
               <span>道号</span>
               <div className="stat-value-with-action">
@@ -141,70 +127,13 @@ export function SettingsPage(): React.JSX.Element {
             <div className="stat-row">
               <span>序号 ID</span>
               <span className="sequence-id-tag">
-                {sequenceId > 0 ? `#${sequenceId}` : playerId.slice(0, 8)}
+                #{sequenceId > 0 ? sequenceId : 1}
               </span>
             </div>
             <div className="stat-row">
               <span>注册时间</span>
               <span>{formatDateTime(createdAtUnixSeconds)}</span>
             </div>
-            <div className="stat-row">
-              <span>状态版本</span>
-              <span><UnitNumber value={version} /></span>
-            </div>
-            <div className="stat-row">
-              <span>服务器时间</span>
-              <span>{new Date(serverTime * 1000).toLocaleString('zh-CN')}</span>
-            </div>
-            <div className="stat-row">
-              <span>连接状态</span>
-              <span>{connection === 'online' ? '正常连通' : connection}</span>
-            </div>
-          </div>
-
-          <div className="settings-block">
-            <h3>挂机运行状态</h3>
-            <div className="presence-options" role="group" aria-label="运行状态">
-              {modes.map(([mode, label]) => (
-                <button
-                  aria-pressed={presence === mode}
-                  className={presence === mode ? 'active' : ''}
-                  key={mode}
-                  onClick={() => gameClient.sendCommand('set_presence', { mode })}
-                  type="button"
-                >{label}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="settings-block">
-            <h3>访问令牌 (可选)</h3>
-            <div className="stat-row">
-              <span>令牌</span>
-              <input
-                aria-label="访问令牌"
-                onChange={event => setTokenDraft(event.target.value)}
-                placeholder="留空表示不使用"
-                style={{
-                  border: '1px solid var(--gold-faint)',
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  color: 'var(--text)',
-                  fontSize: 11,
-                  height: 28,
-                  padding: '3px 9px',
-                  width: 'min(220px, 100%)',
-                }}
-                type="password"
-                value={tokenDraft}
-              />
-            </div>
-            <button
-              onClick={() => {
-                setAccessToken(tokenDraft)
-                gameClient.notifyAccessTokenChanged()
-              }}
-              type="button"
-            >保存令牌</button>
           </div>
 
           <div className="settings-block settings-logout-block">
