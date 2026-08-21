@@ -1021,4 +1021,34 @@ public sealed class XiuxianSimulationTests
         Assert.Single(state.Buffs);
         Assert.Equal("test_buff", state.Buffs[0].BuffId);
     }
+
+    [Fact]
+    public void Regeneration_applies_while_all_loop_actions_are_blocked()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "空转回复修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.Queue.LoopEnabled = true;
+        state.CombatResources = new XiuxianCombatResourceState
+        {
+            Initialized = true,
+            Hitpoints = 50,
+            Manapoints = 20
+        };
+
+        // 队列中只有一个条件不满足的行动（缺少灵草），循环模式下会被跳过并空转。
+        state.Queue.Entries.Add(new XiuxianQueuedAction
+        {
+            ActionId = XiuxianActionIds.RefineQiPill,
+            DurationSeconds = XiuxianActionCatalog.Get(XiuxianActionIds.RefineQiPill).DurationSeconds
+        });
+
+        var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, Baseline, state.Stats.Spirit);
+        XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(10));
+
+        // 空转的 10 秒同样享受自动回复，而不是被直接丢弃。
+        var expectedHpGain = (long)Math.Floor(attributes.MaxHitpoints * attributes.HpRegenPerTenSeconds * 1.0);
+        var expectedMpGain = (long)Math.Floor(attributes.MaxManapoints * attributes.MpRegenPerTenSeconds * 1.0);
+        Assert.Equal(Math.Min(attributes.MaxHitpoints, 50 + expectedHpGain), state.CombatResources.Hitpoints);
+        Assert.Equal(Math.Min(attributes.MaxManapoints, 20 + expectedMpGain), state.CombatResources.Manapoints);
+    }
 }

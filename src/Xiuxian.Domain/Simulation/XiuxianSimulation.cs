@@ -857,6 +857,12 @@ public static class XiuxianSimulation
                 {
                     if (!skippedForMissingInputs.Add(current.EntryId))
                     {
+                        // 全部行动都被跳过时队列空转：这段空闲时间同样享受生命和灵力自动回复。
+                        var idleMilliseconds = GetAvailableMilliseconds(cursor, target);
+                        if (idleMilliseconds > 0 && RegenerateResources(state, cursor, idleMilliseconds))
+                        {
+                            dirty |= XiuxianDirtySections.Combat;
+                        }
                         cursor = target;
                         break;
                     }
