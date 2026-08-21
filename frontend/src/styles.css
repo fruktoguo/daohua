@@ -419,10 +419,10 @@ input[type="checkbox"] {
   height: 15px;
   margin-top: 3px;
   clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
-  border: 1px solid rgba(245, 158, 11, 0.4);
+  border: 1px solid rgba(56, 189, 248, 0.45);
   background:
-    repeating-linear-gradient(135deg, rgba(14, 12, 9, 0.95) 0 12px, rgba(28, 23, 16, 0.95) 12px 13px);
-  box-shadow: 0 0 6px rgba(245, 158, 11, 0.12), inset 0 1px 4px rgba(0, 0, 0, 0.85);
+    repeating-linear-gradient(135deg, rgba(8, 14, 24, 0.95) 0 12px, rgba(14, 26, 42, 0.95) 12px 13px);
+  box-shadow: 0 0 8px rgba(14, 165, 233, 0.2), inset 0 1px 4px rgba(0, 0, 0, 0.85);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -430,8 +430,8 @@ input[type="checkbox"] {
 }
 
 .player-block:hover .realm-progress {
-  border-color: rgba(251, 191, 36, 0.65);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.25), inset 0 1px 4px rgba(0, 0, 0, 0.9);
+  border-color: rgba(125, 211, 252, 0.8);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45), inset 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
 .realm-progress i {
@@ -439,12 +439,12 @@ input[type="checkbox"] {
   top: 0;
   left: 0;
   bottom: 0;
-  background: linear-gradient(90deg, #78350f, #b45309 30%, #d97706 65%, #f59e0b 88%, #fef08a 100%);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+  background: linear-gradient(90deg, #0c4a6e, #0284c7 35%, #0ea5e9 65%, #38bdf8 88%, #bae6fd 100%);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.55);
   transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 锋锐剑刃寒芒前端 */
+/* 锋锐冰魄灵刃寒芒前端 */
 .realm-progress i::after {
   position: absolute;
   top: 0;
@@ -452,7 +452,7 @@ input[type="checkbox"] {
   bottom: 0;
   width: 3px;
   background: #ffffff;
-  box-shadow: 0 0 6px #ffffff, 0 0 12px rgba(254, 240, 138, 0.9);
+  box-shadow: 0 0 6px #ffffff, 0 0 12px rgba(186, 230, 253, 0.95);
   content: "";
 }
 
@@ -463,13 +463,13 @@ input[type="checkbox"] {
   align-items: center;
   justify-content: center;
   z-index: 1;
-  color: #fffbeb;
+  color: #f0f9ff;
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.6px;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 1px 2px #000, 0 0 4px #000, 0 0 8px rgba(245, 158, 11, 0.65);
+  text-shadow: 0 1px 2px #000, 0 0 4px #000, 0 0 8px rgba(56, 189, 248, 0.75);
   white-space: nowrap;
   pointer-events: none;
   user-select: none;

@@ -470,7 +470,7 @@ function TopBar(): React.JSX.Element {
               <span className={`connection-dot connection-dot--${connection}`} />
             </FloatingTooltip>
           </div>
-          <FloatingTooltip placement="bottom" title={<>总修为 {formatChineseSplitNumber(stats.spirit)} · 当前层突破进度 {formatNumber(realmProgress.currentLayerExp)}/{formatNumber(realmProgress.expToNext)} ({realmInfo.layerProgress.toFixed(1)}%)</>} tone="gold">
+          <FloatingTooltip placement="bottom" title={<>总修为 {formatChineseSplitNumber(stats.spirit)} · 当前层突破进度 {formatNumber(realmProgress.currentLayerExp)}/{formatNumber(realmProgress.expToNext)} ({realmInfo.layerProgress.toFixed(1)}%)</>} tone="qi">
             <div className="realm-progress">
               <i style={{ width: `${realmInfo.layerProgress}%` }} />
               <span>{progressDisplay}</span>
