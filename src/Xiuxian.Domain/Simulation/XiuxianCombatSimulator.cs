@@ -1637,8 +1637,18 @@ public static partial class XiuxianCombatSimulator
         {
             var ability = enemy.Definition.Abilities[index];
             if (now < readyAt[index]
-                || manapoints < ability.ManaCost
-                || !AreTriggersActive(
+                || manapoints < ability.ManaCost) continue;
+
+            if (ability.TriggerHpRatio < 1.0 && selfMaxHitpoints > 0)
+            {
+                var currentHpRatio = selfHitpoints / (double)selfMaxHitpoints;
+                if (currentHpRatio > ability.TriggerHpRatio)
+                {
+                    continue;
+                }
+            }
+
+            if (!AreTriggersActive(
                     [],
                     ability.DefaultTriggers,
                     selfHitpoints,

@@ -9,32 +9,18 @@
     },
     "style": "body",
     "damageType": "physical",
-    "maxHitpoints": 320,
-    "maxManapoints": 0,
+    "level": 1,
+    "tier": 1,
+    "rank": "minion",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 1.0,
-    "evasionRating": 1.0,
-    "maxDamage": 9,
-    "defensiveMaxDamage": 6,
-    "armor": 6,
-    "waterResistance": 0,
-    "natureResistance": 0,
-    "fireResistance": 0,
-    "tenacity": 0,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
-    "criticalChance": 0,
-    "criticalDamageRatio": 0,
-    "criticalAvoidance": 0,
-    "damageAbsorptionRatio": 0,
-    "hpRegenPerTenSeconds": 0.0,
-    "mpRegenPerTenSeconds": 0.0,
-    "enrageTimeMilliseconds": 0,
+    "weights": {
+      "hp": 1.15,
+      "mp": 0.0,
+      "ad": 1.0,
+      "armor": 0.65,
+      "hit": 1.0,
+      "eva": 1.0
+    },
     "experience": 10,
     "spiritMin": 2,
     "spiritMax": 5,
@@ -47,7 +33,7 @@
       }
     ],
     "rareDropTable": [],
-    "abilityIds": []
+    "skills": []
   },
   {
     "id": "enemy.wood-spirit",
@@ -59,32 +45,19 @@
     },
     "style": "fiveElements",
     "damageType": "nature",
-    "maxHitpoints": 360,
-    "maxManapoints": 60,
+    "level": 1,
+    "tier": 1,
+    "rank": "minion",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 1.0,
-    "evasionRating": 1.0,
-    "maxDamage": 9,
-    "defensiveMaxDamage": 6,
-    "armor": 8,
-    "waterResistance": 0,
-    "natureResistance": 10,
-    "fireResistance": 0,
-    "tenacity": 0,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
-    "criticalChance": 0,
-    "criticalDamageRatio": 0,
-    "criticalAvoidance": 0,
-    "damageAbsorptionRatio": 0,
-    "hpRegenPerTenSeconds": 0.0,
-    "mpRegenPerTenSeconds": 0.0,
-    "enrageTimeMilliseconds": 0,
+    "weights": {
+      "hp": 1.30,
+      "mp": 1.30,
+      "ap": 1.95,
+      "armor": 0.87,
+      "natureResistance": 1.08,
+      "hit": 1.0,
+      "eva": 1.0
+    },
     "experience": 12,
     "spiritMin": 3,
     "spiritMax": 8,
@@ -97,8 +70,12 @@
       }
     ],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.palm-lightning"
+    "skills": [
+      {
+        "abilityId": "ability.palm-lightning",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
     ]
   },
   {
@@ -111,32 +88,19 @@
     },
     "style": "fiveElements",
     "damageType": "fire",
-    "maxHitpoints": 340,
-    "maxManapoints": 60,
+    "level": 1,
+    "tier": 1,
+    "rank": "minion",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 1.0,
-    "evasionRating": 1.0,
-    "maxDamage": 10,
-    "defensiveMaxDamage": 6,
-    "armor": 6,
-    "waterResistance": 0,
-    "natureResistance": 0,
-    "fireResistance": 12,
-    "tenacity": 0,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
-    "criticalChance": 0,
-    "criticalDamageRatio": 0,
-    "criticalAvoidance": 0,
-    "damageAbsorptionRatio": 0,
-    "hpRegenPerTenSeconds": 0.0,
-    "mpRegenPerTenSeconds": 0.0,
-    "enrageTimeMilliseconds": 0,
+    "weights": {
+      "hp": 1.23,
+      "mp": 1.30,
+      "ap": 2.16,
+      "armor": 0.65,
+      "fireResistance": 1.30,
+      "hit": 1.0,
+      "eva": 1.0
+    },
     "experience": 12,
     "spiritMin": 3,
     "spiritMax": 8,
@@ -149,8 +113,12 @@
       }
     ],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.blazing-blast"
+    "skills": [
+      {
+        "abilityId": "ability.blazing-blast",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
     ]
   },
   {
@@ -163,29 +131,22 @@
     },
     "style": "sword",
     "damageType": "physical",
-    "maxHitpoints": 600,
-    "maxManapoints": 80,
+    "level": 1,
+    "tier": 1,
+    "rank": "elite",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 1.5,
-    "evasionRating": 1.5,
-    "maxDamage": 14,
-    "defensiveMaxDamage": 10,
-    "armor": 14,
-    "waterResistance": 4,
-    "natureResistance": 4,
-    "fireResistance": 4,
-    "tenacity": 0,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
+    "weights": {
+      "hp": 0.87,
+      "mp": 1.15,
+      "ad": 1.01,
+      "armor": 1.01,
+      "mres": 0.29,
+      "hit": 1.09,
+      "eva": 1.09,
+      "break": 1.09,
+      "parry": 1.09
+    },
     "criticalChance": 0.05,
-    "criticalDamageRatio": 0,
-    "criticalAvoidance": 0,
-    "damageAbsorptionRatio": 0,
     "hpRegenPerTenSeconds": 0.01,
     "mpRegenPerTenSeconds": 0.01,
     "enrageTimeMilliseconds": 180000,
@@ -201,8 +162,12 @@
       }
     ],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.heavy-slash"
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 0.9
+      }
     ]
   },
   {
@@ -215,27 +180,22 @@
     },
     "style": "body",
     "damageType": "physical",
-    "maxHitpoints": 750,
-    "maxManapoints": 80,
+    "level": 1,
+    "tier": 1,
+    "rank": "elite",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 1.2,
-    "evasionRating": 1.0,
-    "maxDamage": 12,
-    "defensiveMaxDamage": 12,
-    "armor": 20,
-    "waterResistance": 8,
-    "natureResistance": 8,
-    "fireResistance": 8,
+    "weights": {
+      "hp": 1.08,
+      "mp": 1.15,
+      "ad": 0.87,
+      "armor": 1.45,
+      "mres": 0.58,
+      "hit": 0.87,
+      "eva": 0.72,
+      "break": 0.72,
+      "parry": 1.45
+    },
     "tenacity": 20,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
-    "criticalChance": 0,
-    "criticalDamageRatio": 0,
     "criticalAvoidance": 0.1,
     "damageAbsorptionRatio": 0.05,
     "hpRegenPerTenSeconds": 0.01,
@@ -253,8 +213,12 @@
       }
     ],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.taunt"
+    "skills": [
+      {
+        "abilityId": "ability.taunt",
+        "level": 1,
+        "triggerHpRatio": 0.8
+      }
     ]
   },
   {
@@ -267,29 +231,28 @@
     },
     "style": "blade",
     "damageType": "physical",
-    "maxHitpoints": 2400,
-    "maxManapoints": 150,
+    "level": 1,
+    "tier": 1,
+    "rank": "boss",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 2.0,
-    "evasionRating": 1.5,
-    "maxDamage": 18,
-    "defensiveMaxDamage": 14,
-    "armor": 18,
-    "waterResistance": 5,
-    "natureResistance": 5,
-    "fireResistance": 10,
+    "weights": {
+      "hp": 0.70,
+      "mp": 1.73,
+      "ad": 1.04,
+      "armor": 1.04,
+      "fireResistance": 0.58,
+      "mres": 0.29,
+      "hit": 1.16,
+      "eva": 0.87,
+      "break": 1.16,
+      "parry": 1.16
+    },
     "tenacity": 30,
     "pierceChance": 0.05,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
     "lifeStealRatio": 0.02,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
     "criticalChance": 0.1,
     "criticalDamageRatio": 0.2,
     "criticalAvoidance": 0.05,
-    "damageAbsorptionRatio": 0,
     "hpRegenPerTenSeconds": 0.01,
     "mpRegenPerTenSeconds": 0.01,
     "enrageTimeMilliseconds": 240000,
@@ -305,10 +268,22 @@
       }
     ],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.heavy-slash",
-      "ability.chain-strike",
-      "ability.blazing-blast"
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.7
+      },
+      {
+        "abilityId": "ability.blazing-blast",
+        "level": 1,
+        "triggerHpRatio": 0.4
+      }
     ]
   },
   {
@@ -321,39 +296,33 @@
     },
     "style": "sword",
     "damageType": "physical",
-    "maxHitpoints": 1350,
-    "maxManapoints": 120,
+    "level": 18,
+    "tier": 2,
+    "rank": "minion",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 4.5,
-    "evasionRating": 1.5,
-    "maxDamage": 22,
-    "defensiveMaxDamage": 16,
-    "armor": 22,
-    "waterResistance": 10,
-    "natureResistance": 10,
-    "fireResistance": 10,
-    "tenacity": 0,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
+    "weights": {
+      "hp": 1.29,
+      "mp": 0.89,
+      "ad": 0.98,
+      "armor": 1.13,
+      "mres": 0.51,
+      "hit": 1.00,
+      "eva": 1.00
+    },
     "criticalChance": 0.05,
-    "criticalDamageRatio": 0,
-    "criticalAvoidance": 0,
-    "damageAbsorptionRatio": 0,
     "hpRegenPerTenSeconds": 0.01,
     "mpRegenPerTenSeconds": 0.01,
-    "enrageTimeMilliseconds": 0,
     "experience": 80,
     "spiritMin": 20,
     "spiritMax": 60,
     "dropTable": [],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.chain-strike"
+    "skills": [
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.85
+      }
     ]
   },
   {
@@ -366,39 +335,33 @@
     },
     "style": "fiveElements",
     "damageType": "fire",
-    "maxHitpoints": 1200,
-    "maxManapoints": 180,
+    "level": 18,
+    "tier": 2,
+    "rank": "minion",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 5.0,
-    "evasionRating": 2.5,
-    "maxDamage": 24,
-    "defensiveMaxDamage": 14,
-    "armor": 16,
-    "waterResistance": 8,
-    "natureResistance": 8,
-    "fireResistance": 22,
-    "tenacity": 0,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
-    "criticalChance": 0,
-    "criticalDamageRatio": 0,
-    "criticalAvoidance": 0,
-    "damageAbsorptionRatio": 0,
+    "weights": {
+      "hp": 1.15,
+      "mp": 1.33,
+      "ap": 2.28,
+      "armor": 0.82,
+      "fireResistance": 1.13,
+      "mres": 0.41,
+      "hit": 1.11,
+      "eva": 1.66
+    },
     "hpRegenPerTenSeconds": 0.01,
     "mpRegenPerTenSeconds": 0.01,
-    "enrageTimeMilliseconds": 0,
     "experience": 85,
     "spiritMin": 25,
     "spiritMax": 70,
     "dropTable": [],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.palm-lightning"
+    "skills": [
+      {
+        "abilityId": "ability.palm-lightning",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      }
     ]
   },
   {
@@ -411,39 +374,34 @@
     },
     "style": "talisman",
     "damageType": "nature",
-    "maxHitpoints": 1250,
-    "maxManapoints": 200,
+    "level": 18,
+    "tier": 2,
+    "rank": "minion",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 4.5,
-    "evasionRating": 1.8,
-    "maxDamage": 23,
-    "defensiveMaxDamage": 16,
-    "armor": 18,
-    "waterResistance": 10,
-    "natureResistance": 18,
-    "fireResistance": 10,
-    "tenacity": 0,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
+    "weights": {
+      "hp": 1.20,
+      "mp": 1.48,
+      "ap": 2.19,
+      "armor": 0.92,
+      "natureResistance": 0.92,
+      "mres": 0.51,
+      "hit": 1.00,
+      "eva": 1.20
+    },
     "criticalChance": 0.05,
-    "criticalDamageRatio": 0,
-    "criticalAvoidance": 0,
-    "damageAbsorptionRatio": 0,
     "hpRegenPerTenSeconds": 0.01,
     "mpRegenPerTenSeconds": 0.01,
-    "enrageTimeMilliseconds": 0,
     "experience": 90,
     "spiritMin": 30,
     "spiritMax": 80,
     "dropTable": [],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.lightning-attraction"
+    "skills": [
+      {
+        "abilityId": "ability.lightning-attraction",
+        "level": 1,
+        "triggerHpRatio": 0.85
+      }
     ]
   },
   {
@@ -456,29 +414,27 @@
     },
     "style": "blade",
     "damageType": "physical",
-    "maxHitpoints": 2200,
-    "maxManapoints": 250,
+    "level": 18,
+    "tier": 2,
+    "rank": "elite",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 6.5,
-    "evasionRating": 2.0,
-    "maxDamage": 35,
-    "defensiveMaxDamage": 25,
-    "armor": 30,
-    "waterResistance": 20,
-    "natureResistance": 20,
-    "fireResistance": 20,
+    "weights": {
+      "hp": 0.84,
+      "mp": 1.23,
+      "ad": 1.04,
+      "armor": 1.02,
+      "mres": 0.68,
+      "hit": 0.96,
+      "eva": 0.89,
+      "break": 1.11,
+      "parry": 1.11
+    },
     "tenacity": 25,
     "pierceChance": 0.05,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
     "lifeStealRatio": 0.02,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
     "criticalChance": 0.1,
     "criticalDamageRatio": 0.2,
     "criticalAvoidance": 0.05,
-    "damageAbsorptionRatio": 0,
     "hpRegenPerTenSeconds": 0.01,
     "mpRegenPerTenSeconds": 0.01,
     "enrageTimeMilliseconds": 180000,
@@ -487,10 +443,22 @@
     "spiritMax": 400,
     "dropTable": [],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.heavy-clouds",
-      "ability.heavy-slash",
-      "ability.taunt"
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.heavy-clouds",
+        "level": 1,
+        "triggerHpRatio": 0.75
+      },
+      {
+        "abilityId": "ability.taunt",
+        "level": 1,
+        "triggerHpRatio": 0.5
+      }
     ]
   },
   {
@@ -503,29 +471,22 @@
     },
     "style": "fiveElements",
     "damageType": "nature",
-    "maxHitpoints": 2100,
-    "maxManapoints": 300,
+    "level": 18,
+    "tier": 2,
+    "rank": "elite",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 6.0,
-    "evasionRating": 2.2,
-    "maxDamage": 32,
-    "defensiveMaxDamage": 20,
-    "armor": 24,
-    "waterResistance": 28,
-    "natureResistance": 28,
-    "fireResistance": 28,
+    "weights": {
+      "hp": 0.80,
+      "mp": 1.48,
+      "ap": 2.03,
+      "armor": 0.82,
+      "mres": 0.96,
+      "hit": 0.89,
+      "eva": 0.98
+    },
     "tenacity": 20,
-    "pierceChance": 0,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
-    "lifeStealRatio": 0,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
     "criticalChance": 0.05,
-    "criticalDamageRatio": 0,
     "criticalAvoidance": 0.05,
-    "damageAbsorptionRatio": 0,
     "hpRegenPerTenSeconds": 0.01,
     "mpRegenPerTenSeconds": 0.01,
     "enrageTimeMilliseconds": 180000,
@@ -534,10 +495,22 @@
     "spiritMax": 450,
     "dropTable": [],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.palm-lightning",
-      "ability.qingping-melody",
-      "ability.pozhen-melody"
+    "skills": [
+      {
+        "abilityId": "ability.palm-lightning",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.pozhen-melody",
+        "level": 1,
+        "triggerHpRatio": 0.8
+      },
+      {
+        "abilityId": "ability.qingping-melody",
+        "level": 1,
+        "triggerHpRatio": 0.6
+      }
     ]
   },
   {
@@ -550,25 +523,24 @@
     },
     "style": "blade",
     "damageType": "physical",
-    "maxHitpoints": 8800,
-    "maxManapoints": 600,
+    "level": 18,
+    "tier": 2,
+    "rank": "boss",
     "attackIntervalMilliseconds": 1000,
-    "accuracyRating": 8.5,
-    "evasionRating": 3.0,
-    "maxDamage": 44,
-    "defensiveMaxDamage": 32,
-    "armor": 38,
-    "waterResistance": 30,
-    "natureResistance": 30,
-    "fireResistance": 30,
+    "weights": {
+      "hp": 0.67,
+      "mp": 2.36,
+      "ad": 1.04,
+      "armor": 1.04,
+      "mres": 0.82,
+      "hit": 1.00,
+      "eva": 1.06,
+      "break": 1.24,
+      "parry": 1.24
+    },
     "tenacity": 50,
     "pierceChance": 0.1,
-    "curseRatio": 0,
-    "furyRatio": 0,
-    "weakenRatio": 0,
     "lifeStealRatio": 0.03,
-    "armorDamageRatio": 0,
-    "hpDrainRatio": 0,
     "criticalChance": 0.15,
     "criticalDamageRatio": 0.3,
     "criticalAvoidance": 0.1,
@@ -581,11 +553,27 @@
     "spiritMax": 3000,
     "dropTable": [],
     "rareDropTable": [],
-    "abilityIds": [
-      "ability.heavy-slash",
-      "ability.chain-strike",
-      "ability.heavy-clouds",
-      "ability.star-piercer"
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.8
+      },
+      {
+        "abilityId": "ability.heavy-clouds",
+        "level": 1,
+        "triggerHpRatio": 0.5
+      },
+      {
+        "abilityId": "ability.star-piercer",
+        "level": 1,
+        "triggerHpRatio": 0.3
+      }
     ]
   }
 ]

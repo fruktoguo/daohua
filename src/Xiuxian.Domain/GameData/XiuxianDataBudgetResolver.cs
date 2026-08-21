@@ -550,4 +550,207 @@ public static class XiuxianDataBudgetResolver
 
         return result;
     }
+
+    /// <summary>
+    /// 标准玩家期望属性数据模型（源自 expected-attributes.json）。
+    /// </summary>
+    public sealed record FinalExpectedPlayerAttributes(
+        double MaxHitpoints,
+        double MaxManapoints,
+        double PhysicalAttack,
+        double MagicAttack,
+        double Armor,
+        double MagicResistance,
+        double AccuracyRating,
+        double EvasionRating,
+        double CriticalRating,
+        double CriticalAvoidance,
+        double BreakRating,
+        double ParryRating);
+
+    /// <summary>
+    /// 获取指定阶位标准玩家的期望属性矩阵（源自 expected-attributes.json）。
+    /// </summary>
+    public static FinalExpectedPlayerAttributes GetTierExpectedAttributes(int tier) => tier switch
+    {
+        1 => new(115.4, 57.7, 11.54, 5.77, 11.54, 0.0, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15),
+        2 => new(435.97, 169.13, 28.19, 13.15, 24.43, 0.0, 5.64, 1.88, 1.88, 1.88, 1.88, 1.88),
+        3 => new(1187.48, 1434.04, 75.48, 67.93, 57.86, 35.22, 17.61, 10.06, 7.55, 5.03, 5.03, 5.03),
+        4 => new(3944.69, 4991.38, 220.73, 238.53, 163.77, 145.97, 42.72, 28.48, 21.36, 14.24, 14.24, 14.24),
+        5 => new(10612.31, 13584.15, 568.87, 652.24, 407.03, 416.84, 93.18, 73.56, 63.75, 39.23, 34.33, 34.33),
+        6 => new(32145.83, 29434.57, 1362.58, 1612.85, 959.37, 1056.70, 194.65, 166.85, 152.94, 97.33, 90.38, 83.42),
+        7 => new(90413.46, 70503.65, 3456.72, 4141.33, 2401.75, 2760.89, 437.70, 392.81, 370.36, 280.58, 258.13, 224.46),
+        8 => new(202546.05, 149352.49, 7479.80, 8993.16, 5166.28, 6036.03, 869.74, 800.16, 765.37, 626.22, 591.43, 521.85),
+        9 => new(492839.74, 349988.51, 17773.56, 21448.77, 12230.62, 14459.85, 1958.10, 1837.61, 1777.36, 1506.23, 1445.98, 1325.49),
+        10 => new(1151983.81, 796790.52, 40884.82, 49484.02, 28063.26, 33469.94, 4325.35, 4067.88, 3964.90, 3501.47, 3398.49, 3192.52),
+        11 => new(2969608.08, 2017111.06, 104250.93, 126455.28, 71392.47, 85631.13, 10654.11, 10156.25, 9957.11, 9060.97, 8861.83, 8363.97),
+        12 => new(7076635.75, 4745307.35, 246495.29, 299471.75, 168760.07, 203167.46, 24576.71, 23666.46, 23302.36, 21663.91, 21117.76, 20207.52),
+        _ => new(115.4, 57.7, 11.54, 5.77, 11.54, 0.0, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15)
+    };
+
+    /// <summary>
+    /// 将怪物配置解析为战斗定义。
+    /// 支持基于阶位/等级期望属性与权重的自动推导（小怪80%/300%HP，精英120%/500%HP，Boss 150%/2000%HP）；
+    /// 支持显式覆盖；特殊高级属性直接指定。
+    /// </summary>
+    public static XiuxianCombatantDefinition ResolveCombatant(
+        XiuxianCombatantConfig config,
+        IReadOnlyDictionary<string, XiuxianCombatAbilityDefinition> abilities)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(abilities);
+
+        var tier = config.Tier > 0 ? config.Tier : Math.Max(1, (config.Level - 1) / 12 + 1);
+        var expected = GetTierExpectedAttributes(tier);
+        var (statMultiplier, hpMultiplier) = config.Rank?.ToLowerInvariant() switch
+        {
+            "boss" => (1.50, 20.00),
+            "elite" => (1.20, 5.00),
+            _ => (0.80, 3.00)
+        };
+
+        var weights = config.Weights;
+        double GetW(string[] keys, double defaultWeight)
+        {
+            if (weights is null || weights.Count == 0) return defaultWeight;
+            foreach (var key in keys)
+            {
+                if (weights.TryGetValue(key, out var val)) return val;
+            }
+            return defaultWeight;
+        }
+
+        bool hasWeights = weights is { Count: > 0 };
+
+        // 基础战斗属性解析
+        long maxHitpoints = config.MaxHitpoints ?? (long)Math.Round(expected.MaxHitpoints * GetW(["hp", "maxHitpoints", "hitpoints"], 1.0) * statMultiplier * hpMultiplier);
+        long maxManapoints = config.MaxManapoints ?? (long)Math.Round(expected.MaxManapoints * GetW(["mp", "maxManapoints", "manapoints"], 1.0) * statMultiplier);
+
+        var isMagic = config.Style == XiuxianCombatStyle.FiveElements || config.Style == XiuxianCombatStyle.Talisman;
+        var baseAttackExpected = isMagic ? expected.MagicAttack : expected.PhysicalAttack;
+        var attackWeight = GetW(isMagic ? ["ap", "magicAttack", "attack"] : ["ad", "physicalAttack", "maxDamage", "attack"], 1.0);
+        long maxDamage = config.MaxDamage ?? (long)Math.Round(baseAttackExpected * attackWeight * statMultiplier);
+
+        var defAtkWeight = GetW(["defensiveMaxDamage", "defensiveAttack", "defensivePhysicalAttack"], attackWeight * 0.7);
+        long defensiveMaxDamage = config.DefensiveMaxDamage ?? (long)Math.Round(baseAttackExpected * defAtkWeight * statMultiplier);
+
+        double armor = config.Armor ?? Math.Round(expected.Armor * GetW(["armor", "defense"], 1.0) * statMultiplier, 2);
+
+        var baseMRes = expected.MagicResistance > 0 ? expected.MagicResistance : expected.Armor;
+        double waterResistance = config.WaterResistance ?? Math.Round(baseMRes * GetW(["waterResistance", "mres", "magicResistance"], 0) * statMultiplier, 2);
+        double natureResistance = config.NatureResistance ?? Math.Round(baseMRes * GetW(["natureResistance", "mres", "magicResistance"], 0) * statMultiplier, 2);
+        double fireResistance = config.FireResistance ?? Math.Round(baseMRes * GetW(["fireResistance", "mres", "magicResistance"], 0) * statMultiplier, 2);
+
+        double accuracyRating = config.AccuracyRating ?? Math.Round(expected.AccuracyRating * GetW(["hit", "accuracyRating", "accuracy"], 1.0) * statMultiplier, 2);
+        double evasionRating = config.EvasionRating ?? Math.Round(expected.EvasionRating * GetW(["eva", "evasionRating", "evasion"], 1.0) * statMultiplier, 2);
+        double breakRating = config.BreakRating != 0 ? config.BreakRating : (hasWeights ? Math.Round(expected.BreakRating * GetW(["break", "break_p", "breakRating"], 1.0) * statMultiplier, 2) : 0);
+        double parryRating = config.ParryRating != 0 ? config.ParryRating : (hasWeights ? Math.Round(expected.ParryRating * GetW(["parry", "parryRating"], 1.0) * statMultiplier, 2) : 0);
+
+        // 技能列表解析
+        var resolvedAbilities = new List<XiuxianCombatAbilityDefinition>();
+        if (config.Skills is { Count: > 0 })
+        {
+            foreach (var skill in config.Skills)
+            {
+                if (abilities.TryGetValue(skill.AbilityId, out var baseAbility))
+                {
+                    resolvedAbilities.Add(new XiuxianCombatAbilityDefinition
+                    {
+                        Id = baseAbility.Id,
+                        Name = baseAbility.Name,
+                        Style = baseAbility.Style,
+                        DamageType = baseAbility.DamageType,
+                        CooldownMilliseconds = baseAbility.CooldownMilliseconds,
+                        CastMilliseconds = baseAbility.CastMilliseconds,
+                        ManaCost = baseAbility.ManaCost,
+                        EffectType = baseAbility.EffectType,
+                        TargetType = baseAbility.TargetType,
+                        DamageRatio = baseAbility.DamageRatio + Math.Max(0, skill.Level - 1) * baseAbility.DamageRatioLevelBonus,
+                        FlatDamage = baseAbility.FlatDamage + (long)(Math.Max(0, skill.Level - 1) * baseAbility.FlatDamageLevelBonus),
+                        DamageRatioLevelBonus = baseAbility.DamageRatioLevelBonus,
+                        FlatDamageLevelBonus = baseAbility.FlatDamageLevelBonus,
+                        HealingRatio = baseAbility.HealingRatio + Math.Max(0, skill.Level - 1) * baseAbility.HealingRatioLevelBonus,
+                        FlatHealing = baseAbility.FlatHealing + (long)(Math.Max(0, skill.Level - 1) * baseAbility.FlatHealingLevelBonus),
+                        HealingRatioLevelBonus = baseAbility.HealingRatioLevelBonus,
+                        FlatHealingLevelBonus = baseAbility.FlatHealingLevelBonus,
+                        DamageOverTimeRatio = baseAbility.DamageOverTimeRatio,
+                        DamageOverTimeMilliseconds = baseAbility.DamageOverTimeMilliseconds,
+                        DamageOverTimeTickMilliseconds = baseAbility.DamageOverTimeTickMilliseconds,
+                        StunChance = baseAbility.StunChance,
+                        StunMilliseconds = baseAbility.StunMilliseconds,
+                        BlindChance = baseAbility.BlindChance,
+                        BlindMilliseconds = baseAbility.BlindMilliseconds,
+                        SilenceChance = baseAbility.SilenceChance,
+                        SilenceMilliseconds = baseAbility.SilenceMilliseconds,
+                        PenetrationRatio = baseAbility.PenetrationRatio,
+                        ArmorDamageRatio = baseAbility.ArmorDamageRatio,
+                        HpDrainRatio = baseAbility.HpDrainRatio,
+                        PierceChance = baseAbility.PierceChance,
+                        TriggerHpRatio = skill.TriggerHpRatio > 0 ? skill.TriggerHpRatio : baseAbility.TriggerHpRatio,
+                        DefaultTriggers = baseAbility.DefaultTriggers
+                    });
+                }
+            }
+        }
+        else if (config.AbilityIds is { Count: > 0 })
+        {
+            foreach (var abilityId in config.AbilityIds)
+            {
+                if (abilities.TryGetValue(abilityId, out var baseAbility))
+                {
+                    resolvedAbilities.Add(baseAbility);
+                }
+            }
+        }
+
+        return new XiuxianCombatantDefinition
+        {
+            Id = config.Id,
+            Name = config.Name,
+            Visual = config.Visual is { Source.Length: > 0 }
+                ? config.Visual
+                : new XiuxianCharacterVisualDefinition { Renderer = "text", Source = config.Name[..1] },
+            Style = config.Style,
+            DamageType = config.DamageType,
+            MaxHitpoints = maxHitpoints,
+            MaxManapoints = maxManapoints,
+            AttackIntervalMilliseconds = config.AttackIntervalMilliseconds > 0 ? config.AttackIntervalMilliseconds : 1000,
+            AccuracyRating = accuracyRating,
+            EvasionRating = evasionRating,
+            MaxDamage = maxDamage,
+            DefensiveMaxDamage = defensiveMaxDamage,
+            Armor = armor,
+            WaterResistance = waterResistance,
+            NatureResistance = natureResistance,
+            FireResistance = fireResistance,
+            Tenacity = config.Tenacity,
+            PierceChance = config.PierceChance,
+            CurseRatio = config.CurseRatio,
+            FuryRatio = config.FuryRatio,
+            WeakenRatio = config.WeakenRatio,
+            LifeStealRatio = config.LifeStealRatio,
+            ArmorDamageRatio = config.ArmorDamageRatio,
+            HpDrainRatio = config.HpDrainRatio,
+            CriticalChance = config.CriticalChance,
+            CriticalDamageRatio = config.CriticalDamageRatio,
+            CriticalAvoidance = config.CriticalAvoidance,
+            DamageAbsorptionRatio = config.DamageAbsorptionRatio,
+            BreakRating = breakRating,
+            ParryRating = parryRating,
+            SkillIntensity = config.SkillIntensity,
+            DynamicResistanceFactorK = config.DynamicResistanceFactorK,
+            ActionSpeedReductionRatio = config.ActionSpeedReductionRatio,
+            CooldownReductionRatio = config.CooldownReductionRatio,
+            HpRegenPerTenSeconds = config.HpRegenPerTenSeconds,
+            MpRegenPerTenSeconds = config.MpRegenPerTenSeconds,
+            EnrageTimeMilliseconds = config.EnrageTimeMilliseconds,
+            AttackLevel = config.Level > 0 ? config.Level : 1,
+            Experience = config.Experience,
+            SpiritMin = config.SpiritMin,
+            SpiritMax = config.SpiritMax,
+            DropTable = config.DropTable ?? [],
+            RareDropTable = config.RareDropTable ?? [],
+            Abilities = resolvedAbilities
+        };
+    }
 }

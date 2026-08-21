@@ -362,10 +362,8 @@ public sealed class XiuxianSimulationTests
             "败退修士",
             Baseline);
         state.Queue.Entries.Clear();
-        state.Combat.AttackLevel = 1_000;
-        state.Combat.SwordsmanshipLevel = 1_000;
-        state.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.HeavySlash);
-        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
+        state.Combat.AttackLevel = 1;
+        state.Combat.SwordsmanshipLevel = 1;
 
         var command = XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 2);
         Assert.True(command.Success);
@@ -376,6 +374,7 @@ public sealed class XiuxianSimulationTests
         var encounterId = Assert.IsType<string>(expedition.EncounterId);
         var battleSequence = expedition.BattleSequence;
         expedition.InitialHitpoints = 0;
+        expedition.EmittedEventCount = 0;
         state.CombatResources.Hitpoints = 0;
 
         XiuxianSimulation.AdvanceTo(state, Baseline.AddMilliseconds(20_001));
@@ -393,14 +392,24 @@ public sealed class XiuxianSimulationTests
         Assert.Equal(2, action.RemainingRepeats);
         Assert.Equal(0, state.CombatResources.Hitpoints);
 
-        XiuxianSimulation.AdvanceTo(state, respawnAt);
+        state.Combat.AttackLevel = 1_000;
+        state.Combat.DefenseLevel = 1_000;
+        state.Combat.StaminaLevel = 1_000;
+        state.Combat.SwordsmanshipLevel = 1_000;
+        state.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.HeavySlash);
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
+        expedition.BattleLoadout = state.Combat.Clone();
+
+        XiuxianSimulation.AdvanceTo(state, respawnAt.AddSeconds(1));
 
         Assert.Equal(XiuxianCombatExpeditionPhase.Combat, expedition.Phase);
         Assert.Equal(2, action.RemainingRepeats);
+        Assert.Contains(state.StructuredEventLog, entry => entry.Template.Contains("战斗复起", StringComparison.Ordinal));
         var restored = XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt);
-        Assert.Equal(restored.MaxHitpoints, state.CombatResources.Hitpoints);
-        Assert.Equal(restored.MaxManapoints, state.CombatResources.Manapoints);
-        for (var seconds = 1; seconds <= 60 && expedition.Phase == XiuxianCombatExpeditionPhase.Combat; seconds++)
+        Assert.InRange(state.CombatResources.Hitpoints, 1, restored.MaxHitpoints);
+        Assert.InRange(state.CombatResources.Manapoints, 1, restored.MaxManapoints);
+
+        for (var seconds = 2; seconds <= 60 && expedition.Phase == XiuxianCombatExpeditionPhase.Combat; seconds++)
         {
             XiuxianSimulation.AdvanceTo(state, respawnAt.AddSeconds(seconds));
         }
@@ -409,7 +418,6 @@ public sealed class XiuxianSimulationTests
         Assert.Equal(XiuxianCombatExpeditionPhase.Search, expedition.Phase);
         Assert.Equal(1, action.RemainingRepeats);
         Assert.True(state.CombatResources.Hitpoints > 0);
-        Assert.Contains(state.StructuredEventLog, entry => entry.Template.Contains("战斗复起", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -82,6 +82,10 @@ static XiuxianCombatantConfig ToCombatantConfig(XiuxianCombatantDefinition monst
         : monster.Visual,
     monster.Style,
     monster.DamageType,
+    monster.AttackLevel,
+    monster.AttackLevel > 0 ? (monster.AttackLevel - 1) / 12 + 1 : 1,
+    "minion",
+    null,
     monster.MaxHitpoints,
     monster.MaxManapoints,
     monster.AttackIntervalMilliseconds,
@@ -113,7 +117,7 @@ static XiuxianCombatantConfig ToCombatantConfig(XiuxianCombatantDefinition monst
     monster.SpiritMax,
     monster.DropTable,
     monster.RareDropTable,
-    monster.Abilities.Select(ability => ability.Id).ToArray());
+    monster.Abilities.Select(ability => new XiuxianMonsterSkillConfig(ability.Id, 1, ability.TriggerHpRatio)).ToArray());
 
 static XiuxianCombatEncounterConfig ToEncounterConfig(XiuxianCombatEncounterDefinition encounter) => new(
     encounter.Id,

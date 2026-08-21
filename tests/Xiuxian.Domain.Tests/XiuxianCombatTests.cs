@@ -1,3 +1,4 @@
+using Xiuxian.Domain.GameData;
 using Xiuxian.Domain.Models;
 using Xiuxian.Domain.Simulation;
 using Xunit;
@@ -1283,4 +1284,97 @@ public sealed class XiuxianCombatTests
         Assert.NotNull(run);
         Assert.True(run.DamageDealt > 0);
     }
+
+    [Fact]
+    public void Monster_weight_budget_resolution_calculates_attributes_deterministically()
+    {
+        // 1. 验证小怪 (80% 属性, 300% HP)
+        var minionConfig = new XiuxianCombatantConfig(
+            Id: "test.rift-wolf",
+            Name: "测试妖狼",
+            Tier: 2,
+            Rank: "minion",
+            Weights: new Dictionary<string, double>
+            {
+                ["hp"] = 1.0,
+                ["ad"] = 1.0,
+                ["armor"] = 1.0
+            });
+        var minion = XiuxianDataBudgetResolver.ResolveCombatant(minionConfig, XiuxianCombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
+        // Tier 2 baseline: HP 435.97, AD 28.19, Armor 24.43
+        // HP = round(435.97 * 1.0 * 0.8 * 3.0) = round(1046.328) = 1046
+        // AD = round(28.19 * 1.0 * 0.8) = round(22.552) = 23
+        // Armor = round(24.43 * 1.0 * 0.8, 2) = 19.54
+        Assert.Equal(1046, minion.MaxHitpoints);
+        Assert.Equal(23, minion.MaxDamage);
+        Assert.Equal(19.54, minion.Armor);
+
+        // 2. 验证精英 (120% 属性, 500% HP)
+        var eliteConfig = new XiuxianCombatantConfig(
+            Id: "test.blade-corpse",
+            Name: "测试尸煞",
+            Tier: 2,
+            Rank: "elite",
+            Weights: new Dictionary<string, double>
+            {
+                ["hp"] = 1.0,
+                ["ad"] = 1.0
+            });
+        var elite = XiuxianDataBudgetResolver.ResolveCombatant(eliteConfig, XiuxianCombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
+        // HP = round(435.97 * 1.0 * 1.2 * 5.0) = round(2615.82) = 2616
+        // AD = round(28.19 * 1.0 * 1.2) = round(33.828) = 34
+        Assert.Equal(2616, elite.MaxHitpoints);
+        Assert.Equal(34, elite.MaxDamage);
+
+        // 3. 验证 Boss (150% 属性, 2000% HP)
+        var bossConfig = new XiuxianCombatantConfig(
+            Id: "test.falling-star-beast",
+            Name: "测试坠星兽",
+            Tier: 2,
+            Rank: "boss",
+            Weights: new Dictionary<string, double>
+            {
+                ["hp"] = 1.0,
+                ["ad"] = 1.0
+            });
+        var boss = XiuxianDataBudgetResolver.ResolveCombatant(bossConfig, XiuxianCombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
+        // HP = round(435.97 * 1.0 * 1.5 * 20.0) = round(13079.1) = 13079
+        // AD = round(28.19 * 1.0 * 1.5) = round(42.285) = 42
+        Assert.Equal(13079, boss.MaxHitpoints);
+        Assert.Equal(42, boss.MaxDamage);
+    }
+
+    [Fact]
+    public void Monster_skill_hp_trigger_ratio_is_configured_and_scaled_correctly()
+    {
+        var bossConfig = new XiuxianCombatantConfig(
+            Id: "test.boss-with-skills",
+            Name: "测试Boss",
+            Tier: 2,
+            Rank: "boss",
+            Skills:
+            [
+                new XiuxianMonsterSkillConfig("ability.heavy-slash", Level: 1, TriggerHpRatio: 1.0),
+                new XiuxianMonsterSkillConfig("ability.chain-strike", Level: 2, TriggerHpRatio: 0.8),
+                new XiuxianMonsterSkillConfig("ability.star-piercer", Level: 3, TriggerHpRatio: 0.3)
+            ]);
+
+        var abilityDict = new Dictionary<string, XiuxianCombatAbilityDefinition>(StringComparer.Ordinal)
+        {
+            ["ability.heavy-slash"] = new() { Id = "ability.heavy-slash", Name = "重斩", FlatDamage = 20, TriggerHpRatio = 1.0 },
+            ["ability.chain-strike"] = new() { Id = "ability.chain-strike", Name = "连环", FlatDamage = 15, TriggerHpRatio = 1.0 },
+            ["ability.star-piercer"] = new() { Id = "ability.star-piercer", Name = "贯星", FlatDamage = 50, FlatDamageLevelBonus = 15, TriggerHpRatio = 1.0 }
+        };
+
+        var monster = XiuxianDataBudgetResolver.ResolveCombatant(bossConfig, abilityDict);
+        Assert.Equal(3, monster.Abilities.Count);
+        Assert.Equal(1.0, monster.Abilities[0].TriggerHpRatio);
+        Assert.Equal(0.8, monster.Abilities[1].TriggerHpRatio);
+        Assert.Equal(0.3, monster.Abilities[2].TriggerHpRatio);
+
+        // 验证等级加成 (star-piercer lv3: flatDamage 50 + 2*15 = 80)
+        var starPiercer = monster.Abilities[2];
+        Assert.Equal(80, starPiercer.FlatDamage);
+    }
 }
+
