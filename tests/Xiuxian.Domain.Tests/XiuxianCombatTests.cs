@@ -206,7 +206,8 @@ public sealed class XiuxianCombatTests
             0,
             firstResult.EnemyAction.DurationMilliseconds);
         Assert.InRange(firstResult.ProcessedEvents, 1, 1_000);
-        Assert.True(firstResult.HitpointsRegenerated > 0);
+        Assert.Equal(0, firstResult.HitpointsRegenerated);
+        Assert.Equal(0, firstResult.ManapointsRegenerated);
         Assert.Contains(firstResult.Events, entry => entry.Contains("施放", StringComparison.Ordinal));
     }
 

@@ -76,8 +76,8 @@ public sealed class XiuxianCombatLoadout
     public int DefenseLevel { get; set; } = 10;
     public int TalismanLevel { get; set; } = 10;
     public int FiveElementsLevel { get; set; } = 10;
-    public double HpRegenPerTenSeconds { get; set; } = 0.01;
-    public double MpRegenPerTenSeconds { get; set; } = 0.01;
+    public double HpRegenPerTenSeconds { get; set; } = 0.0;
+    public double MpRegenPerTenSeconds { get; set; } = 0.0;
     // 韧性按百分比点数计算；控制命中率使用 100 / (100 + 韧性) 修正。
     public double Tenacity { get; set; }
     // 装备本身只保存目录 ID 与强化等级，战斗属性由 XiuxianCombatCatalog 聚合。

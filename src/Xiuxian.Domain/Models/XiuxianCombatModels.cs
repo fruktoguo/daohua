@@ -170,8 +170,8 @@ public sealed class XiuxianCombatantDefinition
     public double DynamicResistanceFactorK { get; init; } = 1.0;
     public double ActionSpeedReductionRatio { get; init; }
     public double CooldownReductionRatio { get; init; }
-    public double HpRegenPerTenSeconds { get; init; } = 0.01;
-    public double MpRegenPerTenSeconds { get; init; } = 0.01;
+    public double HpRegenPerTenSeconds { get; init; } = 0.0;
+    public double MpRegenPerTenSeconds { get; init; } = 0.0;
     public int EnrageTimeMilliseconds { get; init; }
     public int AttackLevel { get; init; } = 1;
     public long Experience { get; init; }

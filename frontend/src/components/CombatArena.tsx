@@ -4,7 +4,7 @@ import { formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
 import { resolveItemMetadata } from '../game/ids'
-import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, CombatantDefinition, ExpeditionProgress, QueueEntry } from '../game/types'
+import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionProgress, QueueEntry } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -859,6 +859,31 @@ function CharacterAttributeModal({
   )
 }
 
+function resolveEnemyDefinition(
+  enemyName: string,
+  activeEncounter: CombatEncounterDefinition | null | undefined,
+  encounters: readonly CombatEncounterDefinition[]
+): CombatantDefinition | null {
+  if (!enemyName && !activeEncounter) return null
+  if (activeEncounter) {
+    if (activeEncounter.enemy?.name === enemyName) {
+      return activeEncounter.enemy
+    }
+    const boss = activeEncounter.bossEnemies?.find(b => b.name === enemyName)
+    if (boss) return boss
+    const spawn = activeEncounter.randomSpawns?.find(s => s.enemy?.name === enemyName)
+    if (spawn) return spawn.enemy
+  }
+  for (const enc of encounters) {
+    if (enc.enemy?.name === enemyName) return enc.enemy
+    const boss = enc.bossEnemies?.find(b => b.name === enemyName)
+    if (boss) return boss
+    const spawn = enc.randomSpawns?.find(s => s.enemy?.name === enemyName)
+    if (spawn) return spawn.enemy
+  }
+  return activeEncounter?.enemy ?? null
+}
+
 interface EnemyDisplayState {
   actorKey: string
   name: string
@@ -960,18 +985,23 @@ export const CombatArena = memo(function CombatArena({
     visual: null,
   })
 
+  const enemyName = expedition?.enemyName ?? activeEncounter?.enemy?.name ?? t('combat.arena.unknownEnemy')
+  const enemyDefinition = useMemo(
+    () => resolveEnemyDefinition(enemyName, activeEncounter, encounters),
+    [enemyName, activeEncounter, encounters]
+  )
+
   if (enemyVisible) {
-    const enemyName = expedition?.enemyName ?? activeEncounter?.enemy?.name ?? t('combat.arena.unknownEnemy')
     enemyRef.current = {
       actorKey: `enemy:${expedition?.battleSequence ?? 0}:${enemyName}`,
       name: enemyName,
       seal: enemyName.slice(0, 1),
-      hp: expedition?.enemyHitpoints ?? activeEncounter?.enemy?.maxHitpoints ?? 0,
-      maxHp: expedition?.enemyMaxHitpoints ?? activeEncounter?.enemy?.maxHitpoints ?? 1,
-      mp: expedition?.enemyManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 0,
-      maxMp: expedition?.enemyMaxManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 1,
+      hp: expedition?.enemyHitpoints ?? enemyDefinition?.maxHitpoints ?? activeEncounter?.enemy?.maxHitpoints ?? 0,
+      maxHp: expedition?.enemyMaxHitpoints ?? enemyDefinition?.maxHitpoints ?? activeEncounter?.enemy?.maxHitpoints ?? 1,
+      mp: expedition?.enemyManapoints ?? enemyDefinition?.maxManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 0,
+      maxMp: expedition?.enemyMaxManapoints ?? enemyDefinition?.maxManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 1,
       action: phase === 'death' ? null : expedition?.enemyAction,
-      visual: activeEncounter?.enemy?.visual ?? null,
+      visual: enemyDefinition?.visual ?? activeEncounter?.enemy?.visual ?? null,
     }
   }
   const enemy = enemyRef.current
@@ -993,10 +1023,10 @@ export const CombatArena = memo(function CombatArena({
     { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
     { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
   ]
-  const playerSpecialCandidates: Array<[string, number, 'percent' | 'number']> = [
+  const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen']> = [
     [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
-    [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'percent'],
-    [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'percent'],
+    [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'regen'],
+    [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'regen'],
     [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
     [t('combat.special.pierceChance'), combatAttributes?.pierceChance ?? 0, 'percent'],
     [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
@@ -1019,9 +1049,12 @@ export const CombatArena = memo(function CombatArena({
     .filter(([, value]) => Math.abs(value) > 0.000001)
     .map(([label, value, kind]) => ({
       label,
-      value: kind === 'percent' ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%` : formatNumber(value),
+      value: kind === 'percent'
+        ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
+        : kind === 'regen'
+          ? `+${formatNumber(value)} / 10s`
+          : formatNumber(value),
     }))
-  const enemyDefinition: CombatantDefinition | null = activeEncounter?.enemy ?? null
   const enemyBaseRows: AttributeRow[] = [
     { label: t('combat.attr.hp'), value: `${formatNumber(enemy.hp)} / ${formatNumber(enemy.maxHp)}` },
     { label: t('combat.attr.mp'), value: `${formatNumber(enemy.mp)} / ${formatNumber(enemy.maxMp)}` },
@@ -1034,10 +1067,10 @@ export const CombatArena = memo(function CombatArena({
     { label: t('combat.attr.natureRes'), value: formatNumber(enemyDefinition?.natureResistance ?? 0) },
     { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
   ]
-  const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds']> = [
+  const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'ratio_regen']> = [
     [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
-    [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'percent'],
-    [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'percent'],
+    [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+    [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
     [t('combat.special.pierceChance'), enemyDefinition?.pierceChance ?? 0, 'percent'],
     [t('combat.special.curse'), enemyDefinition?.curseRatio ?? 0, 'percent'],
     [t('combat.special.fury'), enemyDefinition?.furyRatio ?? 0, 'percent'],
@@ -1057,9 +1090,11 @@ export const CombatArena = memo(function CombatArena({
       label,
       value: kind === 'percent'
         ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
-        : kind === 'milliseconds'
-          ? t('combat.attr.seconds', { n: formatNumber(value / 1000) })
-          : formatNumber(value),
+        : kind === 'ratio_regen'
+          ? `+${Math.round(value * 1000) / 10}% / 10s`
+          : kind === 'milliseconds'
+            ? t('combat.attr.seconds', { n: formatNumber(value / 1000) })
+            : formatNumber(value),
     }))
 
   return (

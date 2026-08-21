@@ -148,16 +148,20 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
 
   const maxHp: number = attributes?.maxHitpoints ?? Math.round(basePool.baseHp * (1.0 + staminaBonus) * (1.0 + boneBonus))
   const maxMp: number = attributes?.maxManapoints ?? Math.round(basePool.baseMp * (1.0 + intelligenceBonus) * (1.0 + boneBonus))
-  const physAtk: number = attributes ? Math.max(1.0, attributes.maxDamage * 0.9) : Math.round(basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
-  const spellAtk: number = attributes ? Math.max(1.0, attributes.maxDamage * 1.1) : Math.round(basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02))
+  const physAtk: number = attributes
+    ? (attributes.style === 'FiveElements' ? Math.round(basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)) : attributes.maxDamage)
+    : Math.round(basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
+  const spellAtk: number = attributes
+    ? (attributes.style === 'FiveElements' ? attributes.maxDamage : Math.round(basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
+    : Math.round(basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02))
   const armor: number = Math.max(0.0, attributes?.armor ?? (basePool.baseArmor * (1.0 + staminaBonus)))
   const magicRes: number = Math.max(0.0, attributes?.waterResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus)))
   const accuracy: number = attributes?.accuracyRating ?? basePool.baseAccuracy
   const evasion: number = attributes?.evasionRating ?? basePool.baseEvasion
   const critPoint: number = attributes ? attributes.criticalChance * 100.0 : basePool.baseCrit
   const critAvoidPoint: number = attributes ? attributes.criticalAvoidance * 100.0 : basePool.baseCritAvoid
-  const parryBreakPoint: number = attributes ? attributes.pierceChance * 100.0 : basePool.baseBreak
-  const parryResolvePoint: number = attributes ? attributes.damageAbsorptionRatio * 100.0 : basePool.baseParry
+  const parryBreakPoint: number = basePool.baseBreak + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)
+  const parryResolvePoint: number = basePool.baseParry + (loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)
 
   // 生命回复与灵力回复 (固定值属性，每 5 秒回复量，基础为 2% 上限，受六维加成)
   const hpRegenTotal = attributes ? attributes.hpRegenPerTenSeconds / 2.0 : (basePool.baseHpRegen * (1.0 + staminaBonus))

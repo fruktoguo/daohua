@@ -65,7 +65,7 @@ public enum XiuxianCombatExpeditionPhase
 
 /// <summary>
 /// 玩家跨连续遭遇及脱战后完全持久化的生命和灵力。
-/// 在非战斗及搜寻状态下持续享受自动回复；脱战或取消战斗时不再满血重置，若处于死亡状态则脱战复活（生命值恢复至 1 点，灵力不回复）。
+/// 设定上不进行任何自然自动回复，生命和灵力恢复完全依赖消耗品（丹药等）或主动技能；脱战或取消战斗时保持当前生命与灵力，若处于死亡状态则脱战复活（生命值恢复至 1 点，灵力不回复）。
 /// </summary>
 public sealed class XiuxianCombatResourceState
 {

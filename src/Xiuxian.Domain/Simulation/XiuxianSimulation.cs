@@ -200,13 +200,13 @@ public static class XiuxianSimulation
         if (!double.IsFinite(state.Combat.HpRegenPerTenSeconds)
             || state.Combat.HpRegenPerTenSeconds < 0)
         {
-            state.Combat.HpRegenPerTenSeconds = 0.01;
+            state.Combat.HpRegenPerTenSeconds = 0.0;
             combatChanged = true;
         }
         if (!double.IsFinite(state.Combat.MpRegenPerTenSeconds)
             || state.Combat.MpRegenPerTenSeconds < 0)
         {
-            state.Combat.MpRegenPerTenSeconds = 0.01;
+            state.Combat.MpRegenPerTenSeconds = 0.0;
             combatChanged = true;
         }
         if (!ValidateCombatMultiplier(state.Combat.CombatDropRate))
@@ -1156,8 +1156,8 @@ public static class XiuxianSimulation
                 expedition.PhaseElapsedMilliseconds = 0;
                 current.ProgressSeconds = 0;
                 transitions++;
-                SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, cursor, spirit: state.Stats.Spirit));
-                AddEvent(state, "你已复活。", cursor);
+                SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, cursor, hitpoints: 1, manapoints: 0, spirit: state.Stats.Spirit));
+                AddEvent(state, "你已重伤复苏（生命值恢复至 1 点）。", cursor);
                 dirty |= XiuxianDirtySections.Combat | XiuxianDirtySections.Events;
 
                 if (expedition.CompleteAfterRespawn)

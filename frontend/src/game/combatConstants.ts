@@ -685,9 +685,9 @@ export function calculateBaseAttributes(spirit = 0): BaseAttributePool {
   const baseBreak = low.breakPt + (high.breakPt - low.breakPt) * t
   const baseParry = low.parry + (high.parry - low.parry) * t
 
-  // 基础生命回复与灵力回复固定为每 5 秒 2% 基础上限，四舍五入取整（保底 1.0）
-  const baseHpRegen = Math.max(1, Math.round(baseHp * 0.02))
-  const baseMpRegen = Math.max(1, Math.round(baseMp * 0.02))
+  // 设定无自动回复，基础生命回复与灵力回复固定为 0
+  const baseHpRegen = 0
+  const baseMpRegen = 0
 
   return {
     level,

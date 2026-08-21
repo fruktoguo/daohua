@@ -346,8 +346,8 @@ public static partial class XiuxianCombatSimulator
                 playerControl.Clear();
                 playerModifiers.Clear();
                 player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
-                playerHitpoints = player.MaxHitpoints;
-                playerManapoints = player.MaxManapoints;
+                playerHitpoints = 1;
+                playerManapoints = 0;
                 Array.Fill(abilityReadyAt, now);
                 Array.Fill(nextConsumableUse, now);
                 nextPlayerAction = now;
