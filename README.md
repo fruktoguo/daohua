@@ -26,6 +26,14 @@
 git submodule update --init --recursive
 ```
 
+前后端一起开发时推荐使用 `scripts/dev.sh`：服务端通过 `dotnet watch --no-hot-reload` 运行，
+任意源码修改会自动重新构建并重启服务端进程（编译失败保持旧进程继续运行）；服务端进程异常退出时由
+脚本监督循环按退避自动拉起。前端仍为 Vite 热更新。
+
+```bash
+scripts/dev.sh
+```
+
 启动服务端：
 
 ```bash
