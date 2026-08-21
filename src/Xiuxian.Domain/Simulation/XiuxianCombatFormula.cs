@@ -265,7 +265,8 @@ public static class XiuxianCombatFormula
 
     public static BaseAttributePool CalculateBaseAttributes(long spirit)
     {
-        var level = Math.Max(1.0, 1.0 + Math.Floor(spirit / 100.0));
+        var progress = XiuxianCombatConstants.CalculateRealmProgress(spirit);
+        var level = Math.Max(1.0, progress.TotalLevel);
         var tier = CalculateTier(level);
 
         // 在 12 阶基准锚点中进行分段线性平滑插值

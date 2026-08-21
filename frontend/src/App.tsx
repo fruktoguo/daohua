@@ -16,8 +16,8 @@ import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
-import { describeCombatTrigger, formatNumber } from './game/format'
-import { calculateRealmInfo } from './game/combatConstants'
+import { describeCombatTrigger, formatChineseSplitNumber, formatNumber } from './game/format'
+import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
 import { ACTION_TAB_META, ACTION_TYPES, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
@@ -192,12 +192,12 @@ function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Eleme
         <div className="queue-combat-vital queue-combat-vital--player">
           <span>己</span>
           <i><b style={{ transform: `scaleX(${playerValue / playerMax})` }} /></i>
-          <strong>{formatNumber(playerValue)} / {formatNumber(playerMax)}</strong>
+          <strong><UnitNumber value={playerValue} /> / <UnitNumber value={playerMax} /></strong>
         </div>
         <div className="queue-combat-vital queue-combat-vital--enemy">
           <span>敌</span>
           <i><b style={{ transform: `scaleX(${enemyValue / enemyMax})` }} /></i>
-          <strong>{formatNumber(enemyValue)} / {formatNumber(enemyMax)}</strong>
+          <strong><UnitNumber value={enemyValue} /> / <UnitNumber value={enemyMax} /></strong>
         </div>
       </div>
     </div>
@@ -441,9 +441,14 @@ function TopBar(): React.JSX.Element {
   const connection = useGameStore(state => state.connection)
   const presence = useGameStore(state => state.presenceMode)
   const setActiveTab = useUiStore(state => state.setActiveTab)
+  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0), [stats.spirit])
   const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
   const connectionText = connection === 'online' ? '已连接' : connection === 'connecting' ? '连接中' : connection === 'reconnecting' ? '重连中' : '已离线'
   const presenceText = presence === 'online' ? '在线' : presence === 'idle-offline' ? '离线挂机' : '完全离线'
+
+  const progressDisplay = realmProgress.expToNext > 0
+    ? `${formatNumber(realmProgress.currentLayerExp)}/${formatNumber(realmProgress.expToNext)} (${realmInfo.layerProgress.toFixed(0)}%)`
+    : `飞升圆满 (100%)`
 
   return (
     <header className="topbar">
@@ -463,10 +468,10 @@ function TopBar(): React.JSX.Element {
               <span className={`connection-dot connection-dot--${connection}`} />
             </FloatingTooltip>
           </div>
-          <FloatingTooltip placement="bottom" title={`总修为 ${formatNumber(stats.spirit)} · 当前层突破进度 ${realmInfo.layerProgress.toFixed(1)}/100.0`} tone="gold">
+          <FloatingTooltip placement="bottom" title={<>总修为 {formatChineseSplitNumber(stats.spirit)} · 当前层突破进度 {formatNumber(realmProgress.currentLayerExp)}/{formatNumber(realmProgress.expToNext)} ({realmInfo.layerProgress.toFixed(1)}%)</>} tone="gold">
             <div className="realm-progress">
               <i style={{ width: `${realmInfo.layerProgress}%` }} />
-              <span>层境突破 {realmInfo.layerProgress.toFixed(0)}%</span>
+              <span>{progressDisplay}</span>
             </div>
           </FloatingTooltip>
         </div>
@@ -647,7 +652,7 @@ function ActionDetailItem({ itemId, amount, current }: { itemId: string; amount:
     <span className="action-detail-item">
       <ItemReference amount={current} itemId={itemId} label={metadata?.label ?? itemId} />
       <strong className={insufficient ? 'is-insufficient' : ''}>
-        {current === undefined ? `×${amount}` : `${formatNumber(current)} / ${formatNumber(amount)}`}
+        {current === undefined ? <UnitNumber prefix="×" value={amount} /> : <><UnitNumber value={current} /> / <UnitNumber value={amount} /></>}
       </strong>
     </span>
   )
@@ -1144,7 +1149,7 @@ function SettingsPage(): React.JSX.Element {
         <h3>账号</h3>
         <div className="stat-row"><span>玩家</span><span>{name}</span></div>
         <div className="stat-row"><span>玩家 ID</span><span>{playerId.slice(0, 8)}</span></div>
-        <div className="stat-row"><span>状态版本</span><span>{formatNumber(version)}</span></div>
+        <div className="stat-row"><span>状态版本</span><span><UnitNumber value={version} /></span></div>
         <div className="stat-row"><span>服务器时间</span><span>{new Date(serverTime * 1000).toLocaleString('zh-CN')}</span></div>
         <div className="stat-row"><span>连接</span><span>{connection}</span></div>
       </div>

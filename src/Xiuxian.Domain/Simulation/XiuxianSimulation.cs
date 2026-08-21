@@ -720,8 +720,9 @@ public static class XiuxianSimulation
     public static XiuxianCommandResult Breakthrough(XiuxianPlayerState state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        var currentLayerExp = state.Stats.Spirit % 100.0;
-        var isCap = currentLayerExp < 0.0001 && state.Stats.Spirit > 0;
+        var progress = XiuxianCombatConstants.CalculateRealmProgress(state.Stats.Spirit);
+        var expToCap = progress.ExpToNext - progress.CurrentLayerExp;
+        var isCap = progress.ExpToNext > 0 && expToCap <= 0.0001 && state.Stats.Spirit > 0;
         if (!state.IsPendingBreakthrough && !isCap)
         {
             return XiuxianCommandResult.Fail("CULTIVATION_NOT_CAPPED", "修为尚未圆满，无法突破。");
@@ -736,7 +737,7 @@ public static class XiuxianSimulation
     /// <summary>
     /// 增加玩家修炼修为。
     /// 规则：
-    /// 1. 当修为达到当前层满值（每层 100 点）且未突破时：
+    /// 1. 当修为达到当前层满值且未突破时：
     ///    获得的全部修为转化为「底蕴」(FoundationExp)；
     /// 2. 当有底蕴时：获得修为享受 3 倍经验（基础 1x + 消耗底蕴提供 2x 加成，若底蕴不足则消耗全部底蕴提供等值加成）；
     /// 3. 若加上获得修为后触及当前层境界满值，则卡在满值并开启待突破标记，溢出部分自动注入底蕴。
@@ -747,19 +748,13 @@ public static class XiuxianSimulation
     {
         if (baseSpiritGain <= 0) return (0, 0, 0);
 
-        var currentLayerExp = state.Stats.Spirit % 100.0;
-        var expToCap = (100.0 - currentLayerExp) % 100.0;
-        if (currentLayerExp > 0 && expToCap < 0.0001)
+        var progress = XiuxianCombatConstants.CalculateRealmProgress(state.Stats.Spirit);
+        var expToCap = progress.ExpToNext - progress.CurrentLayerExp;
+
+        if (progress.ExpToNext <= 0.0 || progress.Level >= XiuxianCombatConstants.MaxRealmLevel)
         {
-            expToCap = 0;
-        }
-        else if (currentLayerExp == 0 && state.Stats.Spirit > 0 && state.IsPendingBreakthrough)
-        {
-            expToCap = 0;
-        }
-        else if (expToCap == 0)
-        {
-            expToCap = 100.0;
+            state.Stats.FoundationExp += baseSpiritGain;
+            return (0, baseSpiritGain, 0);
         }
 
         if (state.IsPendingBreakthrough || expToCap <= 0.0001)
@@ -769,7 +764,7 @@ public static class XiuxianSimulation
             return (0, baseSpiritGain, 0);
         }
 
-        // 当有底蕴时：获得修为会三倍经验，但会扣除等值的底蕴
+        // 当有底蕴时：获得修为享受三倍经验，但会扣除等值的底蕴
         // 比如获得 10 修为，底蕴 10，则消耗 10 底蕴获得 20 实际修为；底蕴 50，则消耗 20 底蕴获得 30 实际修为
         var maxBonus = baseSpiritGain * 2.0;
         var foundationConsumed = Math.Min(state.Stats.FoundationExp, maxBonus);

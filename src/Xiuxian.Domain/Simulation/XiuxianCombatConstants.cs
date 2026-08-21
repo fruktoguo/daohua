@@ -247,6 +247,207 @@ public static class XiuxianCombatConstants
         var l = level - 1.0;
         return 100.0 * Math.Pow(l, 3.0);
     }
+
+    // =========================================================================
+    // 9. 境界升级经验表与换算规范 (127 级，乘以 1000 后的经验值)
+    // =========================================================================
+
+    public const int MaxRealmLevel = 127;
+
+    /// <summary>
+    /// 各境界等级升到下一级所需的经验 (ExpToNext)，索引 0 对应 Lv.1，索引 126 对应 Lv.127 (终境为 0)。
+    /// </summary>
+    public static readonly double[] RealmLevelExpToNext = [
+        10000.0, // Lv.1 凡胎
+        12000.0, // Lv.2 炼皮
+        15000.0, // Lv.3 锻骨
+        20000.0, // Lv.4 易筋
+        25000.0, // Lv.5 洗髓
+        30000.0, // Lv.6 养气
+        50000.0, // Lv.7 通脉
+        60000.0, // Lv.8 瑶光
+        70000.0, // Lv.9 开阳
+        90000.0, // Lv.10 玉衡
+        110000.0, // Lv.11 天权
+        130000.0, // Lv.12 天玑
+        160000.0, // Lv.13 天璇
+        250000.0, // Lv.14 天枢
+        300000.0, // Lv.15 宗师
+        400000.0, // Lv.16 大宗师
+        500000.0, // Lv.17 临渊
+        800000.0, // Lv.18 叩仙门
+        1263000.0, // Lv.19 练气一层
+        1516000.0, // Lv.20 练气二层
+        1895000.0, // Lv.21 练气三层
+        2274000.0, // Lv.22 练气四层
+        2779000.0, // Lv.23 练气五层
+        3789000.0, // Lv.24 练气六层
+        4547000.0, // Lv.25 练气七层
+        5432000.0, // Lv.26 练气八层
+        6568000.0, // Lv.27 练气九层
+        7832000.0, // Lv.28 练气巅峰
+        9474000.0, // Lv.29 练气大圆满
+        12631000.0, // Lv.30 半步筑基
+        15158000.0, // Lv.31 筑基一层
+        18316000.0, // Lv.32 筑基二层
+        21979000.0, // Lv.33 筑基三层
+        26526000.0, // Lv.34 筑基四层
+        31579000.0, // Lv.35 筑基五层
+        44211000.0, // Lv.36 筑基六层
+        53053000.0, // Lv.37 筑基七层
+        63158000.0, // Lv.38 筑基八层
+        75789000.0, // Lv.39 筑基九层
+        90947000.0, // Lv.40 筑基巅峰
+        108632000.0, // Lv.41 筑基大圆满
+        151578000.0, // Lv.42 半步金丹
+        176842000.0, // Lv.43 金丹一层
+        214737000.0, // Lv.44 金丹二层
+        252632000.0, // Lv.45 金丹三层
+        303158000.0, // Lv.46 金丹四层
+        366316000.0, // Lv.47 金丹五层
+        505263000.0, // Lv.48 金丹六层
+        606316000.0, // Lv.49 金丹七层
+        732632000.0, // Lv.50 金丹八层
+        884211000.0, // Lv.51 金丹九层
+        1061053000.0, // Lv.52 金丹巅峰
+        1263158000.0, // Lv.53 金丹大圆满
+        1768419000.0, // Lv.54 半步元婴
+        2147368000.0, // Lv.55 元婴一层
+        2526316000.0, // Lv.56 元婴二层
+        3031579000.0, // Lv.57 元婴三层
+        3663158000.0, // Lv.58 元婴四层
+        4421053000.0, // Lv.59 元婴五层
+        6315789000.0, // Lv.60 元婴六层
+        7578947000.0, // Lv.61 元婴七层
+        9094737000.0, // Lv.62 元婴八层
+        10863158000.0, // Lv.63 元婴九层
+        13010526000.0, // Lv.64 元婴巅峰
+        15663158000.0, // Lv.65 元婴大圆满
+        22736843000.0, // Lv.66 半步化神
+        27789474000.0, // Lv.67 化神一层
+        32842105000.0, // Lv.68 化神二层
+        39157895000.0, // Lv.69 化神三层
+        46736842000.0, // Lv.70 化神四层
+        56842105000.0, // Lv.71 化神五层
+        82105263000.0, // Lv.72 化神六层
+        101052632000.0, // Lv.73 化神七层
+        109136842000.0, // Lv.74 化神八层
+        117852632000.0, // Lv.75 化神九层
+        127326316000.0, // Lv.76 化神巅峰
+        137557895000.0, // Lv.77 化神大圆满
+        148547367000.0, // Lv.78 半步炼虚
+        160421053000.0, // Lv.79 炼虚一层
+        173305263000.0, // Lv.80 炼虚二层
+        187200000000.0, // Lv.81 炼虚三层
+        202231579000.0, // Lv.82 炼虚四层
+        218400000000.0, // Lv.83 炼虚五层
+        235831579000.0, // Lv.84 炼虚六层
+        254652632000.0, // Lv.85 炼虚七层
+        274989474000.0, // Lv.86 炼虚八层
+        296968421000.0, // Lv.87 炼虚九层
+        320715789000.0, // Lv.88 炼虚巅峰
+        346357895000.0, // Lv.89 炼虚大圆满
+        374021052000.0, // Lv.90 半步合体
+        403957895000.0, // Lv.91 合体一层
+        436294737000.0, // Lv.92 合体二层
+        471157895000.0, // Lv.93 合体三层
+        508800000000.0, // Lv.94 合体四层
+        549473684000.0, // Lv.95 合体五层
+        593431579000.0, // Lv.96 合体六层
+        640926316000.0, // Lv.97 合体七层
+        692210526000.0, // Lv.98 合体八层
+        747536842000.0, // Lv.99 合体九层
+        807284211000.0, // Lv.100 合体巅峰
+        871831579000.0, // Lv.101 合体大圆满
+        941557894000.0, // Lv.102 半步大乘
+        1016842105000.0, // Lv.103 大乘一层
+        1098189474000.0, // Lv.104 大乘二层
+        1186105263000.0, // Lv.105 大乘三层
+        1280968421000.0, // Lv.106 大乘四层
+        1383410526000.0, // Lv.107 大乘五层
+        1494063158000.0, // Lv.108 大乘六层
+        1613557895000.0, // Lv.109 大乘七层
+        1742652632000.0, // Lv.110 大乘八层
+        1882105263000.0, // Lv.111 大乘九层
+        2032673684000.0, // Lv.112 大乘巅峰
+        2195242105000.0, // Lv.113 大乘大圆满
+        2370821053000.0, // Lv.114 半步渡劫
+        2560547368000.0, // Lv.115 渡劫一层
+        2765431579000.0, // Lv.116 渡劫二层
+        2986610526000.0, // Lv.117 渡劫三层
+        3225600000000.0, // Lv.118 渡劫四层
+        3483663158000.0, // Lv.119 渡劫五层
+        3762315789000.0, // Lv.120 渡劫六层
+        4063326316000.0, // Lv.121 渡劫七层
+        4388336842000.0, // Lv.122 渡劫八层
+        4739368421000.0, // Lv.123 渡劫九层
+        5118568421000.0, // Lv.124 渡劫巅峰
+        5528084211000.0, // Lv.125 渡劫大圆满
+        5970315790000.0, // Lv.126 半步飞升
+        0.0, // Lv.127 飞升
+    ];
+
+    /// <summary>
+    /// 各境界等级起始所需的累计总经验 (CumulativeExp)，大小为 128 (索引 1 对应 Lv.1 起始为 0)。
+    /// </summary>
+    public static readonly double[] RealmLevelCumulativeExp = InitializeCumulativeExp();
+
+    private static double[] InitializeCumulativeExp()
+    {
+        var cum = new double[MaxRealmLevel + 1];
+        cum[0] = 0.0;
+        cum[1] = 0.0;
+        for (var i = 1; i < MaxRealmLevel; i++)
+        {
+            cum[i + 1] = cum[i] + RealmLevelExpToNext[i - 1];
+        }
+        return cum;
+    }
+
+    public static double GetRealmExpToNext(int level)
+    {
+        if (level < 1) return RealmLevelExpToNext[0];
+        if (level >= MaxRealmLevel) return 0.0;
+        return RealmLevelExpToNext[level - 1];
+    }
+
+    public static double GetRealmCumulativeExp(int level)
+    {
+        if (level <= 1) return 0.0;
+        if (level > MaxRealmLevel) return RealmLevelCumulativeExp[MaxRealmLevel];
+        return RealmLevelCumulativeExp[level];
+    }
+
+    public readonly record struct RealmProgressResult(
+        int Level,
+        double CurrentLayerExp,
+        double ExpToNext,
+        double ProgressPercentage,
+        double TotalLevel);
+
+    public static RealmProgressResult CalculateRealmProgress(double totalSpirit)
+    {
+        var spirit = Math.Max(0.0, totalSpirit);
+        var level = 1;
+        while (level < MaxRealmLevel && spirit >= RealmLevelCumulativeExp[level + 1])
+        {
+            level++;
+        }
+
+        var baseExp = RealmLevelCumulativeExp[level];
+        var expToNext = GetRealmExpToNext(level);
+        var currentLayerExp = spirit - baseExp;
+
+        if (expToNext <= 0.0 || level >= MaxRealmLevel)
+        {
+            return new RealmProgressResult(MaxRealmLevel, 0.0, 0.0, 100.0, MaxRealmLevel);
+        }
+
+        var progressPercentage = Math.Clamp((currentLayerExp / expToNext) * 100.0, 0.0, 100.0);
+        var totalLevel = level + Math.Clamp(currentLayerExp / expToNext, 0.0, 1.0);
+
+        return new RealmProgressResult(level, currentLayerExp, expToNext, progressPercentage, totalLevel);
+    }
 }
 
 /// <summary>

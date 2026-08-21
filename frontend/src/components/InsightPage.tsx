@@ -3,11 +3,13 @@ import { VectorCharacter } from './VectorCharacter'
 import { RealmBadge } from './RealmBadge'
 import { PillStatLabel, PillBonusLabel, type PillTone } from './PillLabel'
 import { formatNumber } from '../game/format'
+import { UnitNumber } from './UnitNumber'
 import {
   PercentValue,
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
   BASELINE_COMBAT_ATTRIBUTES,
   calculateRealmInfo,
+  calculateRealmProgress,
   calculateBaseAttributes,
 } from '../game/combatConstants'
 import { useGameStore } from '../game/gameStore'
@@ -31,6 +33,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const buffs = useGameStore(state => state.buffs)
 
   // 境界计算体系 (大境界 · 位阶 · 小境界)
+  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0), [stats.spirit])
   const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
 
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
@@ -220,7 +223,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {isPendingBreakthrough || realmInfo.layerProgress >= 99.99 ? (
                   <strong className="tone-gold">{t('insight.progressComplete')}</strong>
                 ) : (
-                  <strong>{realmInfo.layerProgress.toFixed(1)} / 100.0 ({realmInfo.layerProgress.toFixed(1)}%)</strong>
+                  <strong>
+                    <UnitNumber value={realmProgress.currentLayerExp} /> / <UnitNumber value={realmProgress.expToNext} /> ({realmInfo.layerProgress.toFixed(1)}%)
+                  </strong>
                 )}
               </div>
               <div className="insight-progress-bar">
@@ -240,11 +245,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-quick-stats">
               <div className="insight-quick-item">
                 <span>{t('insight.quick.hp')}</span>
-                <strong className="tone-green">{formatNumber(maxHp)}</strong>
+                <strong className="tone-green"><UnitNumber tone="jade" value={maxHp} /></strong>
               </div>
               <div className="insight-quick-item">
                 <span>{t('insight.quick.mp')}</span>
-                <strong className="tone-blue">{formatNumber(maxMp)}</strong>
+                <strong className="tone-blue"><UnitNumber tone="qi" value={maxMp} /></strong>
               </div>
             </div>
           </div>
@@ -337,27 +342,23 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel
                     label={t('insight.base.maxHp')}
-                    value={formatNumber(basePool.baseHp)}
+                    value={basePool.baseHp}
                     tone="emerald"
-                    tooltip={t('insight.base.maxHpTooltip', { value: formatNumber(basePool.baseHp) })}
                   />
                   <PillStatLabel
                     label={t('insight.base.maxMp')}
-                    value={formatNumber(basePool.baseMp)}
+                    value={basePool.baseMp}
                     tone="cyan"
-                    tooltip={t('insight.base.maxMpTooltip', { value: formatNumber(basePool.baseMp) })}
                   />
                   <PillStatLabel
                     label={t('insight.base.hpRegen')}
-                    value={`${formatNumber(basePool.baseHpRegen)}/5s`}
+                    value={<><UnitNumber value={basePool.baseHpRegen} />/5s</>}
                     tone="emerald"
-                    tooltip={t('insight.base.hpRegenTooltip', { value: formatNumber(basePool.baseHpRegen) })}
                   />
                   <PillStatLabel
                     label={t('insight.base.mpRegen')}
-                    value={`${formatNumber(basePool.baseMpRegen)}/5s`}
+                    value={<><UnitNumber value={basePool.baseMpRegen} />/5s</>}
                     tone="cyan"
-                    tooltip={t('insight.base.mpRegenTooltip', { value: formatNumber(basePool.baseMpRegen) })}
                   />
                 </div>
 
@@ -365,25 +366,25 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel
                     label={t('insight.base.physAtk')}
-                    value={formatNumber(basePool.baseAd)}
+                    value={basePool.baseAd}
                     tone="crimson"
                     tooltip={t('insight.base.physAtkTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.spellAtk')}
-                    value={formatNumber(basePool.baseAp)}
+                    value={basePool.baseAp}
                     tone="indigo"
                     tooltip={t('insight.base.spellAtkTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.armor')}
-                    value={formatNumber(basePool.baseArmor)}
+                    value={basePool.baseArmor}
                     tone="bronze"
                     tooltip={t('insight.base.armorTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.magicRes')}
-                    value={formatNumber(basePool.baseMagicRes)}
+                    value={basePool.baseMagicRes}
                     tone="violet"
                     tooltip={t('insight.base.magicResTooltip')}
                   />
@@ -393,37 +394,37 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel
                     label={t('insight.base.accuracy')}
-                    value={formatNumber(basePool.baseAccuracy)}
+                    value={basePool.baseAccuracy}
                     tone="sky"
                     tooltip={t('insight.base.accuracyTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.evasion')}
-                    value={formatNumber(basePool.baseEvasion)}
+                    value={basePool.baseEvasion}
                     tone="teal"
                     tooltip={t('insight.base.evasionTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.crit')}
-                    value={formatNumber(basePool.baseCrit)}
+                    value={basePool.baseCrit}
                     tone="gold"
                     tooltip={t('insight.base.critTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.critAvoid')}
-                    value={formatNumber(basePool.baseCritAvoid)}
+                    value={basePool.baseCritAvoid}
                     tone="slate"
                     tooltip={t('insight.base.critAvoidTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.parryBreak')}
-                    value={formatNumber(basePool.baseBreak)}
+                    value={basePool.baseBreak}
                     tone="amber"
                     tooltip={t('insight.base.parryBreakTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.parryResolve')}
-                    value={formatNumber(basePool.baseParry)}
+                    value={basePool.baseParry}
                     tone="silver"
                     tooltip={t('insight.base.parryResolveTooltip')}
                   />
@@ -442,7 +443,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
                   label={t('insight.foundation.daoFoundation')}
-                  value={formatNumber(stats.foundationExp ?? 0)}
+                  value={stats.foundationExp ?? 0}
                   tone="gold"
                   tooltip={t('insight.foundation.daoFoundationTooltip')}
                   tooltipTone="gold"
@@ -452,7 +453,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
                   label={t('insight.foundation.combatExp')}
-                  value={(stats.combatExperience ?? 0).toFixed(1)}
+                  value={stats.combatExperience ?? 0}
                   tone="qi"
                   tooltip={t('insight.foundation.combatExpTooltip')}
                   tooltipTone="qi"
@@ -469,49 +470,74 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
           <div className="insight-panel insight-panel--combat">
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.combat.groupBase')}</h4>
-              <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.combat.hp')} value={maxHp.toFixed(1)} tone="emerald" tooltip={t('insight.combat.hpTooltip')} />
-                <PillStatLabel label={t('insight.combat.mp')} value={maxMp.toFixed(1)} tone="cyan" tooltip={t('insight.combat.mpTooltip')} />
-                <PillStatLabel label={t('insight.combat.hpRegen')} value={`${hpRegenTotal.toFixed(1)}/5s`} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
-                <PillStatLabel label={t('insight.combat.mpRegen')} value={`${mpRegenTotal.toFixed(1)}/5s`} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
-                <PillStatLabel label={t('insight.combat.physAtk')} value={physAtk.toFixed(1)} tone="crimson" tooltip={t('insight.combat.physAtkTooltip')} />
-                <PillStatLabel label={t('insight.combat.spellAtk')} value={spellAtk.toFixed(1)} tone="indigo" tooltip={t('insight.combat.spellAtkTooltip')} />
-                <PillStatLabel label={t('insight.combat.armor')} value={armor.toFixed(1)} tone="bronze" tooltip={t('insight.combat.armorTooltip')} />
-                <PillStatLabel label={t('insight.combat.magicRes')} value={magicRes.toFixed(1)} tone="violet" tooltip={t('insight.combat.magicResTooltip')} />
-                <PillStatLabel label={t('insight.combat.accuracy')} value={accuracy.toFixed(1)} tone="sky" tooltip={t('insight.combat.accuracyTooltip')} />
-                <PillStatLabel label={t('insight.combat.evasion')} value={evasion.toFixed(1)} tone="teal" tooltip={t('insight.combat.evasionTooltip')} />
-                <PillStatLabel label={t('insight.combat.crit')} value={critPoint.toFixed(1)} tone="gold" tooltip={t('insight.combat.critTooltip')} />
-                <PillStatLabel label={t('insight.combat.critAvoid')} value={critAvoidPoint.toFixed(1)} tone="slate" tooltip={t('insight.combat.critAvoidTooltip')} />
-                <PillStatLabel label={t('insight.combat.parryBreak')} value={parryBreakPoint.toFixed(1)} tone="amber" tooltip={t('insight.combat.parryBreakTooltip')} />
-                <PillStatLabel label={t('insight.combat.parryResolve')} value={parryResolvePoint.toFixed(1)} tone="silver" tooltip={t('insight.combat.parryResolveTooltip')} />
+              <div className="insight-base-layout">
+                {/* 第 1 排：气血、灵力与自然回复 */}
+                <div className="insight-base-row">
+                  <PillStatLabel label={t('insight.combat.hp')} value={maxHp} tone="emerald" tooltip={t('insight.combat.hpTooltip')} />
+                  <PillStatLabel label={t('insight.combat.mp')} value={maxMp} tone="cyan" tooltip={t('insight.combat.mpTooltip')} />
+                  <PillStatLabel label={t('insight.combat.hpRegen')} value={<><UnitNumber value={hpRegenTotal} />/5s</>} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.mpRegen')} value={<><UnitNumber value={mpRegenTotal} />/5s</>} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
+                </div>
+
+                {/* 第 2 排：攻防属性 (物理攻击、术法攻击、物理护甲、术法抗性) */}
+                <div className="insight-base-row">
+                  <PillStatLabel label={t('insight.combat.physAtk')} value={physAtk} tone="crimson" tooltip={t('insight.combat.physAtkTooltip')} />
+                  <PillStatLabel label={t('insight.combat.spellAtk')} value={spellAtk} tone="indigo" tooltip={t('insight.combat.spellAtkTooltip')} />
+                  <PillStatLabel label={t('insight.combat.armor')} value={armor} tone="bronze" tooltip={t('insight.combat.armorTooltip')} />
+                  <PillStatLabel label={t('insight.combat.magicRes')} value={magicRes} tone="violet" tooltip={t('insight.combat.magicResTooltip')} />
+                </div>
+
+                {/* 第 3 排：博弈对抗 (命中/闪避、暴击/免暴、破招/化解) */}
+                <div className="insight-base-row">
+                  <PillStatLabel label={t('insight.combat.accuracy')} value={accuracy} tone="sky" tooltip={t('insight.combat.accuracyTooltip')} />
+                  <PillStatLabel label={t('insight.combat.evasion')} value={evasion} tone="teal" tooltip={t('insight.combat.evasionTooltip')} />
+                  <PillStatLabel label={t('insight.combat.crit')} value={critPoint} tone="gold" tooltip={t('insight.combat.critTooltip')} />
+                  <PillStatLabel label={t('insight.combat.critAvoid')} value={critAvoidPoint} tone="slate" tooltip={t('insight.combat.critAvoidTooltip')} />
+                  <PillStatLabel label={t('insight.combat.parryBreak')} value={parryBreakPoint} tone="amber" tooltip={t('insight.combat.parryBreakTooltip')} />
+                  <PillStatLabel label={t('insight.combat.parryResolve')} value={parryResolvePoint} tone="silver" tooltip={t('insight.combat.parryResolveTooltip')} />
+                </div>
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.combat.groupSpecial')}</h4>
-              <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.combat.critDamage')} value={critDamagePercent.format()} tone="gold" tooltip={t('insight.combat.critDamageTooltip')} />
-                <PillStatLabel label={t('insight.combat.actionSpeed')} value={actionSpeedPercent.format()} tone="teal" tooltip={t('insight.combat.actionSpeedTooltip')} />
-                <PillStatLabel label={t('insight.combat.cooldownSpeed')} value={cooldownSpeedPercent.format()} tone="cyan" tooltip={t('insight.combat.cooldownSpeedTooltip')} />
-                <PillStatLabel label={t('insight.combat.manaCostReduction')} value={manaCostReductionPercent.format()} tone="cyan" tooltip={t('insight.combat.manaCostReductionTooltip')} />
-                <PillStatLabel label={t('insight.combat.damageBoost')} value={damageBoostPercent.format()} tone="gold" tooltip={t('insight.combat.damageBoostTooltip')} />
-                <PillStatLabel label={t('insight.combat.damageReduction')} value={damageReductionPercent.format()} tone="emerald" tooltip={t('insight.combat.damageReductionTooltip')} />
-                <PillStatLabel label={t('insight.combat.armorPen')} value={armorPenPercent.format()} tone="bronze" tooltip={t('insight.combat.armorPenTooltip')} />
-                <PillStatLabel label={t('insight.combat.magicPen')} value={magicPenPercent.format()} tone="violet" tooltip={t('insight.combat.magicPenTooltip')} />
-                <PillStatLabel label={t('insight.combat.threatBonus')} value={threatBonusPercent.format()} tone="crimson" tooltip={t('insight.combat.threatBonusTooltip')} />
+              <div className="insight-base-layout">
+                {/* 第 1 排：时序与施法效能 */}
+                <div className="insight-base-row">
+                  <PillStatLabel label={t('insight.combat.critDamage')} value={critDamagePercent.format()} tone="gold" tooltip={t('insight.combat.critDamageTooltip')} />
+                  <PillStatLabel label={t('insight.combat.actionSpeed')} value={actionSpeedPercent.format()} tone="teal" tooltip={t('insight.combat.actionSpeedTooltip')} />
+                  <PillStatLabel label={t('insight.combat.cooldownSpeed')} value={cooldownSpeedPercent.format()} tone="cyan" tooltip={t('insight.combat.cooldownSpeedTooltip')} />
+                  <PillStatLabel label={t('insight.combat.manaCostReduction')} value={manaCostReductionPercent.format()} tone="cyan" tooltip={t('insight.combat.manaCostReductionTooltip')} />
+                </div>
+
+                {/* 第 2 排：增伤减伤与穿透 */}
+                <div className="insight-base-row">
+                  <PillStatLabel label={t('insight.combat.damageBoost')} value={damageBoostPercent.format()} tone="gold" tooltip={t('insight.combat.damageBoostTooltip')} />
+                  <PillStatLabel label={t('insight.combat.damageReduction')} value={damageReductionPercent.format()} tone="emerald" tooltip={t('insight.combat.damageReductionTooltip')} />
+                  <PillStatLabel label={t('insight.combat.armorPen')} value={armorPenPercent.format()} tone="bronze" tooltip={t('insight.combat.armorPenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.magicPen')} value={magicPenPercent.format()} tone="violet" tooltip={t('insight.combat.magicPenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.threatBonus')} value={threatBonusPercent.format()} tone="crimson" tooltip={t('insight.combat.threatBonusTooltip')} />
+                </div>
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.combat.groupElements')}</h4>
-              <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.combat.physBoostReduce')} value={`${physBoostPercent.format()} / ${physReductionPercent.format()}`} tone="crimson" tooltip={t('insight.combat.physBoostReduceTooltip')} />
-                <PillStatLabel label={t('insight.combat.spellBoostReduce')} value={`${spellBoostPercent.format()} / ${spellReductionPercent.format()}`} tone="indigo" tooltip={t('insight.combat.spellBoostReduceTooltip')} />
-                <PillStatLabel label={t('insight.combat.metalBoostReduce')} value={`${metalBoostPercent.format()} / ${metalReductionPercent.format()}`} tone="gold" tooltip={t('insight.combat.metalBoostReduceTooltip')} />
-                <PillStatLabel label={t('insight.combat.woodBoostReduce')} value={`${woodBoostPercent.format()} / ${woodReductionPercent.format()}`} tone="emerald" tooltip={t('insight.combat.woodBoostReduceTooltip')} />
-                <PillStatLabel label={t('insight.combat.waterBoostReduce')} value={`${waterBoostPercent.format()} / ${waterReductionPercent.format()}`} tone="cyan" tooltip={t('insight.combat.waterBoostReduceTooltip')} />
-                <PillStatLabel label={t('insight.combat.fireBoostReduce')} value={`${fireBoostPercent.format()} / ${fireReductionPercent.format()}`} tone="amber" tooltip={t('insight.combat.fireBoostReduceTooltip')} />
-                <PillStatLabel label={t('insight.combat.earthBoostReduce')} value={`${earthBoostPercent.format()} / ${earthReductionPercent.format()}`} tone="bronze" tooltip={t('insight.combat.earthBoostReduceTooltip')} />
+              <div className="insight-base-layout">
+                {/* 第 1 排：物法基础增减伤 */}
+                <div className="insight-base-row">
+                  <PillStatLabel label={t('insight.combat.physBoostReduce')} value={`${physBoostPercent.format()} / ${physReductionPercent.format()}`} tone="crimson" tooltip={t('insight.combat.physBoostReduceTooltip')} />
+                  <PillStatLabel label={t('insight.combat.spellBoostReduce')} value={`${spellBoostPercent.format()} / ${spellReductionPercent.format()}`} tone="indigo" tooltip={t('insight.combat.spellBoostReduceTooltip')} />
+                </div>
+
+                {/* 第 2 排：五行克制增免 */}
+                <div className="insight-base-row">
+                  <PillStatLabel label={t('insight.combat.metalBoostReduce')} value={`${metalBoostPercent.format()} / ${metalReductionPercent.format()}`} tone="gold" tooltip={t('insight.combat.metalBoostReduceTooltip')} />
+                  <PillStatLabel label={t('insight.combat.woodBoostReduce')} value={`${woodBoostPercent.format()} / ${woodReductionPercent.format()}`} tone="emerald" tooltip={t('insight.combat.woodBoostReduceTooltip')} />
+                  <PillStatLabel label={t('insight.combat.waterBoostReduce')} value={`${waterBoostPercent.format()} / ${waterReductionPercent.format()}`} tone="cyan" tooltip={t('insight.combat.waterBoostReduceTooltip')} />
+                  <PillStatLabel label={t('insight.combat.fireBoostReduce')} value={`${fireBoostPercent.format()} / ${fireReductionPercent.format()}`} tone="amber" tooltip={t('insight.combat.fireBoostReduceTooltip')} />
+                  <PillStatLabel label={t('insight.combat.earthBoostReduce')} value={`${earthBoostPercent.format()} / ${earthReductionPercent.format()}`} tone="bronze" tooltip={t('insight.combat.earthBoostReduceTooltip')} />
+                </div>
               </div>
             </div>
 
@@ -543,18 +569,18 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupAdventure')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.normalKills')} value={biographyData.normalKills.toFixed(0)} tone="slate" tooltip={t('insight.bio.normalKillsTooltip')} />
-                <PillStatLabel label={t('insight.bio.eliteKills')} value={biographyData.eliteKills.toFixed(0)} tone="cyan" tooltip={t('insight.bio.eliteKillsTooltip')} />
-                <PillStatLabel label={t('insight.bio.bossKills')} value={biographyData.bossKills.toFixed(0)} tone="gold" tooltip={t('insight.bio.bossKillsTooltip')} />
-                <PillStatLabel label={t('insight.bio.totalMonsters')} value={biographyData.totalMonsters.toFixed(0)} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
+                <PillStatLabel label={t('insight.bio.normalKills')} value={biographyData.normalKills} tone="slate" tooltip={t('insight.bio.normalKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.eliteKills')} value={biographyData.eliteKills} tone="cyan" tooltip={t('insight.bio.eliteKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.bossKills')} value={biographyData.bossKills} tone="gold" tooltip={t('insight.bio.bossKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.totalMonsters')} value={biographyData.totalMonsters} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupRivalry')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.playersDefeated')} value={biographyData.playersDefeated.toFixed(0)} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
-                <PillStatLabel label={t('insight.bio.totalDefeats')} value={biographyData.totalDefeats.toFixed(0)} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
+                <PillStatLabel label={t('insight.bio.playersDefeated')} value={biographyData.playersDefeated} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
+                <PillStatLabel label={t('insight.bio.totalDefeats')} value={biographyData.totalDefeats} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
               </div>
             </div>
 

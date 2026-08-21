@@ -1,6 +1,7 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { formatNumber } from '../game/format'
+import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
 import { resolveItemMetadata } from '../game/ids'
 import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, CombatantDefinition, ExpeditionProgress, QueueEntry } from '../game/types'
@@ -102,7 +103,7 @@ function ArenaResource({
         <div className="arena-resource-track">
           <i style={{ transform: `scaleX(${normalizedValue / normalizedMax})` }} />
           <span className="arena-resource-badge">
-            {formatNumber(normalizedValue)} / {formatNumber(normalizedMax)}
+            <UnitNumber disableTooltip value={normalizedValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
           </span>
         </div>
         <span className="arena-resource-shards" aria-hidden="true">

@@ -363,7 +363,8 @@ public static class XiuxianStateMapper
             state.Buffs,
             state.LastSimulatedAt,
             persistedResources?.Initialized == true ? persistedResources.Hitpoints : null,
-            persistedResources?.Initialized == true ? persistedResources.Manapoints : null);
+            persistedResources?.Initialized == true ? persistedResources.Manapoints : null,
+            state.Stats.Spirit);
 
         if (expedition.Phase != XiuxianCombatExpeditionPhase.Combat)
         {
@@ -462,7 +463,8 @@ public static class XiuxianStateMapper
             state.Buffs,
             now,
             persisted?.Initialized == true ? persisted.Hitpoints : null,
-            persisted?.Initialized == true ? persisted.Manapoints : null);
+            persisted?.Initialized == true ? persisted.Manapoints : null,
+            state.Stats.Spirit);
         return new XiuxianCombatResourceDto(
             player.Hitpoints,
             player.MaxHitpoints,

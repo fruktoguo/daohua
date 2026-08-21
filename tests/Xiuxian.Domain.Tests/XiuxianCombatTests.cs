@@ -1116,42 +1116,76 @@ public sealed class XiuxianCombatTests
     public void Foundation_accumulates_when_capped_and_converts_with_triple_multiplier()
     {
         var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), now: Baseline);
-        state.Stats.Spirit = 90;
+        var expToNext = XiuxianCombatConstants.GetRealmExpToNext(1); // 10000.0
+        state.Stats.Spirit = (long)(expToNext - 1000); // 9000
         state.Stats.FoundationExp = 0;
         state.IsPendingBreakthrough = false;
 
-        // 1. 获得 10 点修为达到满值 (100)
-        var res1 = XiuxianSimulation.AddCultivationSpirit(state, 10);
-        Assert.Equal(10, res1.actualSpiritGain);
-        Assert.Equal(100, state.Stats.Spirit);
+        // 1. 获得 1000 点修为达到满值 (10000)
+        var res1 = XiuxianSimulation.AddCultivationSpirit(state, 1000);
+        Assert.Equal(1000, res1.actualSpiritGain);
+        Assert.Equal(10000, state.Stats.Spirit);
         Assert.True(state.IsPendingBreakthrough);
 
         // 2. 满值未突破时获得修为，全部转化为底蕴
-        var res2 = XiuxianSimulation.AddCultivationSpirit(state, 10);
+        var res2 = XiuxianSimulation.AddCultivationSpirit(state, 1000);
         Assert.Equal(0, res2.actualSpiritGain);
-        Assert.Equal(10, res2.foundationGain);
-        Assert.Equal(10, state.Stats.FoundationExp);
-        Assert.Equal(100, state.Stats.Spirit);
+        Assert.Equal(1000, res2.foundationGain);
+        Assert.Equal(1000, state.Stats.FoundationExp);
+        Assert.Equal(10000, state.Stats.Spirit);
 
         // 3. 破境突破
         var bt = XiuxianSimulation.Breakthrough(state);
         Assert.True(bt.Success);
         Assert.False(state.IsPendingBreakthrough);
 
-        // 4. 突破后获得 10 修为，底蕴有 10 点：消耗 10 点底蕴，实际获得 20 修为 (10 基础 + 10 底蕴)
-        var res3 = XiuxianSimulation.AddCultivationSpirit(state, 10);
-        Assert.Equal(20, res3.actualSpiritGain);
-        Assert.Equal(10, res3.foundationConsumed);
+        // 4. 突破后获得 1000 修为，底蕴有 1000 点：消耗 1000 点底蕴，实际获得 2000 修为 (1000 基础 + 1000 底蕴)
+        var res3 = XiuxianSimulation.AddCultivationSpirit(state, 1000);
+        Assert.Equal(2000, res3.actualSpiritGain);
+        Assert.Equal(1000, res3.foundationConsumed);
         Assert.Equal(0, state.Stats.FoundationExp);
-        Assert.Equal(120, state.Stats.Spirit);
+        Assert.Equal(12000, state.Stats.Spirit);
 
-        // 5. 补充 50 点底蕴，再获得 10 修为：满额三倍加速，消耗 20 点底蕴，实际获得 30 修为 (10 基础 + 20 底蕴)
-        state.Stats.FoundationExp = 50;
-        var res4 = XiuxianSimulation.AddCultivationSpirit(state, 10);
-        Assert.Equal(30, res4.actualSpiritGain);
-        Assert.Equal(20, res4.foundationConsumed);
-        Assert.Equal(30, state.Stats.FoundationExp);
-        Assert.Equal(150, state.Stats.Spirit);
+        // 5. 补充 5000 点底蕴，再获得 1000 修为：满额三倍加速，消耗 2000 点底蕴，实际获得 3000 修为 (1000 基础 + 2000 底蕴)
+        state.Stats.FoundationExp = 5000;
+        var res4 = XiuxianSimulation.AddCultivationSpirit(state, 1000);
+        Assert.Equal(3000, res4.actualSpiritGain);
+        Assert.Equal(2000, res4.foundationConsumed);
+        Assert.Equal(3000, state.Stats.FoundationExp);
+        Assert.Equal(15000, state.Stats.Spirit);
+    }
+
+    [Fact]
+    public void RealmExpTable_calculates_correct_levels_and_progress()
+    {
+        // 1. Lv.1 初始
+        var p1 = XiuxianCombatConstants.CalculateRealmProgress(0);
+        Assert.Equal(1, p1.Level);
+        Assert.Equal(0, p1.CurrentLayerExp);
+        Assert.Equal(10000.0, p1.ExpToNext);
+        Assert.Equal(0.0, p1.ProgressPercentage);
+        Assert.Equal(1.0, p1.TotalLevel);
+
+        // 2. Lv.1 中间
+        var p2 = XiuxianCombatConstants.CalculateRealmProgress(5000);
+        Assert.Equal(1, p2.Level);
+        Assert.Equal(5000.0, p2.CurrentLayerExp);
+        Assert.Equal(50.0, p2.ProgressPercentage);
+        Assert.Equal(1.5, p2.TotalLevel);
+
+        // 3. Lv.18 叩仙门起始累计修为: 2,232,000
+        var p18 = XiuxianCombatConstants.CalculateRealmProgress(2232000);
+        Assert.Equal(18, p18.Level);
+        Assert.Equal(0.0, p18.CurrentLayerExp);
+        Assert.Equal(800000.0, p18.ExpToNext);
+        Assert.Equal(18.0, p18.TotalLevel);
+
+        // 4. Lv.19 练气一层起始累计修为: 3,032,000
+        var p19 = XiuxianCombatConstants.CalculateRealmProgress(3032000);
+        Assert.Equal(19, p19.Level);
+        Assert.Equal(0.0, p19.CurrentLayerExp);
+        Assert.Equal(1263000.0, p19.ExpToNext);
+        Assert.Equal(19.0, p19.TotalLevel);
     }
 
     [Fact]

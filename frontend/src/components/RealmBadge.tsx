@@ -2,6 +2,7 @@ import React from 'react'
 import type { RealmInfo } from '../game/combatConstants'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { formatNumber } from '../game/format'
+import { UnitNumber } from './UnitNumber'
 import { useT } from '../i18n'
 
 interface RealmBadgeProps {
@@ -25,7 +26,7 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
           stats={[
             { label: t('insight.badge.stage'), value: realmInfo.stageName, tone: 'gold' },
             { label: t('insight.badge.minor'), value: realmInfo.minorName, tone: 'qi' },
-            { label: t('insight.badge.totalLevel'), value: `Lv. ${lv}`, tone: 'gold' },
+            { label: t('insight.badge.totalLevel'), value: <>Lv. <UnitNumber disableTooltip value={lv} /></>, tone: 'gold' },
             { label: t('insight.badge.layerProgress'), value: `${realmInfo.layerProgress.toFixed(1)}%`, tone: 'jade' },
           ]}
         />

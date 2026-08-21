@@ -1,5 +1,6 @@
 import React, { memo, type CSSProperties, type ReactNode } from 'react'
 import { FloatingTooltip, type FloatingTone } from './FloatingPopover'
+import { UnitNumber } from './UnitNumber'
 
 export type PillTone =
   | 'gold'
@@ -42,12 +43,19 @@ export interface PillStatLabelProps {
 export interface PillBonusLabelProps {
   icon?: ReactNode
   label: string
-  value: string | number
+  value: string | number | ReactNode
   tone?: PillTone
   tooltip?: string
   tooltipTone?: FloatingTone
   className?: string
   style?: CSSProperties
+}
+
+function renderPillValue(value: string | number | ReactNode, hasOuterTooltip: boolean): ReactNode {
+  if (typeof value === 'number') {
+    return <UnitNumber value={value} disableTooltip={hasOuterTooltip} />
+  }
+  return value
 }
 
 /**
@@ -77,7 +85,7 @@ export const PillStatLabel = memo(function PillStatLabel({
       <div className="compound-stat-main">
         {icon && <span className="compound-icon">{icon}</span>}
         <span className="capsule-label">{label}</span>
-        <strong className="underlined-value">{value}</strong>
+        <strong className="underlined-value">{renderPillValue(value, Boolean(tooltip))}</strong>
         {progress?.text && <span className="compound-exp-text">{progress.text}</span>}
       </div>
       {progress && (
@@ -117,7 +125,7 @@ export const PillBonusLabel = memo(function PillBonusLabel({
     <div className={`compound-bonus-label pill-tone--${tone} ${className}`} style={style}>
       {icon && <span className="compound-icon">{icon}</span>}
       <span className="capsule-label">{label}</span>
-      <span className="underlined-value">{value}</span>
+      <span className="underlined-value">{renderPillValue(value, Boolean(tooltip))}</span>
     </div>
   )
 

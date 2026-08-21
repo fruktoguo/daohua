@@ -1,5 +1,6 @@
 import { memo, useCallback } from 'react'
 import { formatNumber } from '../../game/format'
+import { UnitNumber } from '../UnitNumber'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketMetrics, MarketOrder } from '../../game/types'
@@ -38,7 +39,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
               <div className="market-own-order" key={order.orderId}>
                 <span className={`market-own-side market-own-side--${order.side}`}>{order.side === 'buy' ? t('market.side.buy') : t('market.side.sell')}</span>
                 <strong>{catalog.find(item => item.itemId === order.itemId)?.name ?? order.itemId}</strong>
-                <span>{formatNumber(order.price)} × {formatNumber(order.remainingQuantity)}</span>
+                <span><UnitNumber value={order.price} /> × <UnitNumber value={order.remainingQuantity} /></span>
                 <span>{order.status === 'partially-filled' ? t('market.status.partiallyFilled') : t('market.status.open')}</span>
                 <time dateTime={order.expiresAt} title={t('market.createdAt', { time: new Date(order.createdAt).toLocaleString('zh-CN') })}>
                   {t('market.expiresOn', { date: new Date(order.expiresAt).toLocaleDateString('zh-CN') })}

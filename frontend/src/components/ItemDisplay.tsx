@@ -6,6 +6,7 @@ import { getT, useT } from '../i18n'
 import type { CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { ValueText } from './ValueText'
+import { UnitNumber } from './UnitNumber'
 
 interface ItemTooltipTargetProps {
   itemId: string
@@ -19,7 +20,7 @@ interface ItemTooltipTargetProps {
 
 interface ItemTileProps {
   amount?: number
-  bottomRightLabel?: string
+  bottomRightLabel?: ReactNode
   category: string
   className: string
   level?: number
@@ -239,11 +240,17 @@ export function ItemTile({
   name,
   rarity,
 }: ItemTileProps): React.JSX.Element {
-  const bottomRight = bottomRightLabel ?? (amount === undefined ? null : `×${formatNumber(amount)}`)
+  const bottomRight =
+    bottomRightLabel ??
+    (amount === undefined ? null : <UnitNumber disableTooltip prefix="×" value={amount} />)
   return (
     <span className={`item-tile ${className}`.trim()} data-rarity={rarity}>
       <span className="item-type-ribbon" aria-hidden="true"><span>{category}</span></span>
-      {level !== undefined && <span className="item-corner item-corner--top-right">Lv. {formatNumber(level)}</span>}
+      {level !== undefined && (
+        <span className="item-corner item-corner--top-right">
+          Lv. <UnitNumber disableTooltip value={level} />
+        </span>
+      )}
       <strong className="item-tile-name">{name}</strong>
       {bottomRight !== null && <span className="item-corner item-corner--bottom-right">{bottomRight}</span>}
     </span>

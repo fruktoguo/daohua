@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { formatNumber } from '../../game/format'
+import { UnitNumber } from '../UnitNumber'
 import { useT } from '../../i18n'
 import type { MarketBook, MarketLevel } from '../../game/types'
 
@@ -17,9 +17,9 @@ function MarketRows({ levels, side }: { levels: readonly MarketLevel[]; side: 'a
       </div>
       {levels.map(level => (
         <div className={`market-level market-level--${side}`} key={level.price} role="row">
-          <strong role="cell">{formatNumber(level.price)}</strong>
-          <span role="cell">{formatNumber(level.quantity)}</span>
-          <span role="cell">{formatNumber(level.orderCount)}</span>
+          <strong role="cell"><UnitNumber value={level.price} tone={side === 'bid' ? 'jade' : 'crimson'} /></strong>
+          <span role="cell"><UnitNumber value={level.quantity} /></span>
+          <span role="cell"><UnitNumber value={level.orderCount} /></span>
         </div>
       ))}
       {levels.length === 0
