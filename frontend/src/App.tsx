@@ -4,7 +4,7 @@ import { CatalogPicker } from './components/CatalogPicker'
 import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
-import { EffectTooltipTarget, type EffectTooltipContent } from './components/EffectTooltip'
+import { EffectTooltipTarget } from './components/EffectTooltip'
 import { FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
 import { ItemCard, ItemReference } from './components/ItemDisplay'
@@ -16,13 +16,13 @@ import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
-import { describeAbility, describeCombatTrigger, formatChineseSplitNumber, formatNumber, formatProgressText } from './game/format'
+import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
 import { ACTION_TAB_META, ACTION_TYPES, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
-import type { ActionDefinition, ActionType, CombatAbilityDefinition, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
+import type { ActionDefinition, ActionType, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
 import { getAccessToken, setAccessToken } from './network/access_token'
 import { gameClient } from './network/gameClient'
 import { useUiStore, type TabId } from './uiStore'
@@ -740,9 +740,7 @@ type CombatPickerTarget = {
   index: number
 }
 
-function abilityPercent(value: number): string {
-  return `${Math.round(value * 1000) / 10}%`
-}
+
 
 function AbilityCooldownOverlay({
   remainingMilliseconds,

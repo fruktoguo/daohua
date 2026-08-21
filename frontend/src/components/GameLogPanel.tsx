@@ -1,6 +1,8 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { formatNumber } from '../game/format'
+import { describeAbility, formatNumber } from '../game/format'
+import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
+import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
 import { ItemReference } from './ItemDisplay'
 import { gameLogService, type GameLogEntry, type LogSegment } from '../logging/gameLogService'
 import { ValueText } from './ValueText'
@@ -11,10 +13,116 @@ function formatLogTime(timestampMs: number): string {
   return `${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`
 }
 
+function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
+  const abilities = useGameStore((state) => state.abilities)
+  const ability = abilities.find((entry) => entry.abilityId === abilityId)
+
+  if (!ability) {
+    return (
+      <FloatingTooltip placement="top" title={`功法技能：${label}`} tone="qi">
+        <span className="log-reference log-reference--ability">{label}</span>
+      </FloatingTooltip>
+    )
+  }
+
+  const tooltip = describeAbility(ability, 1)
+
+  return (
+    <FloatingPopover
+      closeDelay={120}
+      content={
+        <FloatingInfoCard
+          badge={tooltip.badge}
+          badgeTone="qi"
+          description={tooltip.description}
+          lines={tooltip.lines?.map((line) => (
+            <ValueText className="effect-value-capsule" key={line} text={line} />
+          ))}
+          title={tooltip.title}
+        />
+      }
+      gap={8}
+      interactive={false}
+      openDelay={60}
+      placement="bottom"
+      trigger="hover"
+      triggerClassName="log-reference log-reference--ability"
+    >
+      {label}
+    </FloatingPopover>
+  )
+}
+
+function EnemyReference({
+  enemyId,
+  kind,
+  label,
+}: {
+  enemyId: string
+  kind: 'enemy' | 'encounter'
+  label: string
+}): React.JSX.Element {
+  const encounters = useGameStore((state) => state.encounters)
+  const encounter = encounters.find(
+    (entry) => entry.encounterId === enemyId || entry.enemy?.enemyId === enemyId
+  )
+  const enemy = encounter?.enemy
+
+  if (encounter || enemy) {
+    const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = []
+    if (enemy?.style) stats.push({ label: '功法', value: enemy.style, tone: 'gold' })
+    if (enemy?.damageType) stats.push({ label: '属性', value: enemy.damageType, tone: 'purple' })
+    if (enemy?.maxHitpoints) stats.push({ label: '气血', value: formatNumber(enemy.maxHitpoints), tone: 'danger' })
+    if (enemy?.maxManapoints) stats.push({ label: '真元', value: formatNumber(enemy.maxManapoints), tone: 'qi' })
+
+    return (
+      <FloatingPopover
+        closeDelay={120}
+        content={
+          <FloatingInfoCard
+            badge={kind === 'encounter' ? '遭遇敌怪' : '妖兽敌人'}
+            badgeTone="gold"
+            description={encounter ? '出没于修仙界中的敌方遭遇。' : '战斗中的妖兽敌人。'}
+            stats={stats.length > 0 ? stats : undefined}
+            title={label || enemy?.name || encounter?.name || enemyId}
+          />
+        }
+        gap={8}
+        interactive={false}
+        openDelay={60}
+        placement="bottom"
+        trigger="hover"
+        triggerClassName={`log-reference log-reference--${kind}`}
+      >
+        {label}
+      </FloatingPopover>
+    )
+  }
+
+  return (
+    <FloatingTooltip placement="top" title={`妖兽敌怪：${label}`} tone="gold">
+      <span className={`log-reference log-reference--${kind}`}>{label}</span>
+    </FloatingTooltip>
+  )
+}
+
 function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
   if (segment.type === 'text') return <ValueText className="log-value-capsule" text={segment.value} />
   if (segment.kind === 'item') {
-    return <ItemReference className="log-reference log-reference--item" itemId={segment.id} label={segment.label} />
+    return (
+      <ItemReference
+        amount={segment.amount}
+        className="log-reference log-reference--item"
+        itemId={segment.id}
+        label={segment.label}
+      />
+    )
+  }
+  if (segment.kind === 'ability') {
+    return <AbilityReference abilityId={segment.id} label={segment.label} />
+  }
+  if (segment.kind === 'enemy' || segment.kind === 'encounter') {
+    return <EnemyReference enemyId={segment.id} kind={segment.kind} label={segment.label} />
   }
   return (
     <span className={`log-reference log-reference--${segment.kind}`} title={`${segment.kind}: ${segment.id}`}>

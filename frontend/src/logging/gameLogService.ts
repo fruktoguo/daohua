@@ -1,11 +1,26 @@
 import type { LogEvent } from '../game/types'
 import { GameLogRepository, type GameLogCursor, type StoredGameLog } from './logRepository'
 
-export type LogReferenceKind = 'item' | 'character' | 'mechanic' | 'action' | 'location'
+export type LogReferenceKind =
+  | 'item'
+  | 'character'
+  | 'mechanic'
+  | 'action'
+  | 'location'
+  | 'ability'
+  | 'encounter'
+  | 'enemy'
 
 export type LogSegment =
   | { type: 'text'; value: string }
-  | { type: 'reference'; kind: LogReferenceKind; id: string; label: string }
+  | {
+      type: 'reference'
+      kind: LogReferenceKind
+      id: string
+      label: string
+      amount?: number
+      extra?: string
+    }
 
 export interface GameLogEntry extends StoredGameLog {
   segments: readonly LogSegment[]
@@ -25,7 +40,8 @@ const VISIBLE_LOG_LIMIT = 100
 const WRITE_DELAY_MS = 200
 const WRITE_BATCH_LIMIT = 500
 const VIEW_NOTIFY_DELAY_MS = 80
-const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location):([^|{}]+)\|([^{}]+)}}/g
+const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location|ability|encounter|enemy):([^|{}]+)\|([^{}|]+)(?:\|([^{}]+))?}}/g
+const TRAILING_AMOUNT_PATTERN = /^\s*[×x*]\s*(\d+)/
 const FULL_TIME_PATTERN = /^\[(?:(\d{4})-)?(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})]\s*/
 const SHORT_TIME_PATTERN = /^\[(\d{2}):(\d{2}):(\d{2})]\s*/
 
@@ -42,18 +58,52 @@ export function parseLogTemplate(template: string): readonly LogSegment[] {
   const segments: LogSegment[] = []
   let lastIndex = 0
   REFERENCE_PATTERN.lastIndex = 0
-  for (const match of template.matchAll(REFERENCE_PATTERN)) {
+  let match: RegExpExecArray | null
+  while ((match = REFERENCE_PATTERN.exec(template)) !== null) {
     const index = match.index
-    if (index > lastIndex) segments.push({ type: 'text', value: template.slice(lastIndex, index) })
+    if (index > lastIndex) {
+      segments.push({ type: 'text', value: template.slice(lastIndex, index) })
+    }
+    const kind = match[1] as LogReferenceKind
+    const id = match[2]
+    const label = match[3]
+    const extra = match[4]
+    let amount: number | undefined
+    if (extra !== undefined) {
+      const parsed = Number(extra.replace(/[^\d]/g, ''))
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        amount = parsed
+      }
+    }
+    let matchEnd = index + match[0].length
+
+    // 如果是 item 且尚未指定 amount，检查紧随其后的文本是否是 " × 数量"
+    if (kind === 'item' && amount === undefined) {
+      const rest = template.slice(matchEnd)
+      const trailingMatch = rest.match(TRAILING_AMOUNT_PATTERN)
+      if (trailingMatch) {
+        const parsed = Number(trailingMatch[1])
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          amount = parsed
+          matchEnd += trailingMatch[0].length
+        }
+      }
+    }
+
     segments.push({
       type: 'reference',
-      kind: match[1] as LogReferenceKind,
-      id: match[2],
-      label: match[3],
+      kind,
+      id,
+      label,
+      ...(amount !== undefined ? { amount } : {}),
+      ...(extra !== undefined ? { extra } : {}),
     })
-    lastIndex = index + match[0].length
+    lastIndex = matchEnd
+    REFERENCE_PATTERN.lastIndex = matchEnd
   }
-  if (lastIndex < template.length) segments.push({ type: 'text', value: template.slice(lastIndex) })
+  if (lastIndex < template.length) {
+    segments.push({ type: 'text', value: template.slice(lastIndex) })
+  }
   return segments.length > 0 ? segments : [{ type: 'text', value: template }]
 }
 

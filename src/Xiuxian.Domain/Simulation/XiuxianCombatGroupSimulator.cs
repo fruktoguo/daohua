@@ -313,7 +313,7 @@ public static partial class XiuxianCombatSimulator
                 if (enemy.Modifiers.Expire(now))
                 {
                     enemy.RebuildStats(encounter);
-                    AddEvent(events, $"战斗状态消退：{enemy.Definition.Name} 的词缀层数已更新");
+                    AddEvent(events, $"战斗状态消退：{{{{enemy:{enemy.Definition.Id}|{enemy.Definition.Name}}}}} 的词缀层数已更新");
                 }
 
                 if (enemy.Control.Expire(now) && enemy.PendingAbility is null)
@@ -484,7 +484,7 @@ public static partial class XiuxianCombatSimulator
                         var actualDamage = Math.Min(dotTarget.Hitpoints, tickDamage);
                         dotTarget.Hitpoints = Math.Max(0, dotTarget.Hitpoints - actualDamage);
                         damageDealt = checked(damageDealt + actualDamage);
-                        AddEvent(events, $"持续伤害：{dotTarget.Definition.Name} 生命 -{actualDamage}");
+                        AddEvent(events, $"持续伤害：{{{{enemy:{dotTarget.Definition.Id}|{dotTarget.Definition.Name}}}}} 生命 -{actualDamage}");
                         targetDefeated = dotTarget.Hitpoints <= 0;
                     }
 
@@ -602,13 +602,13 @@ public static partial class XiuxianCombatSimulator
                                     ? "灵击"
                                     : $"{{{{ability:{ability.Id}|{ability.Name}}}}}";
                                 var critical = resolution.IsCritical ? "{{mechanic:critical|暴击}} " : string.Empty;
-                                AddEvent(events, $"{critical}{actionName}命中 {currentTarget.Definition.Name}，造成 {resolution.Damage} 点伤害");
+                                AddEvent(events, $"{critical}{actionName}命中 {{{{enemy:{currentTarget.Definition.Id}|{currentTarget.Definition.Name}}}}}，造成 {resolution.Damage} 点伤害");
                             }
                             else if (!resolution.DidHit)
                             {
                                 AddEvent(events, ability is null
-                                    ? $"灵击未能命中 {currentTarget.Definition.Name}"
-                                    : $"{{{{ability:{ability.Id}|{ability.Name}}}}}未能命中 {currentTarget.Definition.Name}");
+                                    ? $"灵击未能命中 {{{{enemy:{currentTarget.Definition.Id}|{currentTarget.Definition.Name}}}}}"
+                                    : $"{{{{ability:{ability.Id}|{ability.Name}}}}}未能命中 {{{{enemy:{currentTarget.Definition.Id}|{currentTarget.Definition.Name}}}}}" );
                             }
                             ApplyPlayerHealing(resolution);
                             if (resolution.Pierced) AddEvent(events, "破阵触发：本次攻击无视目标抗性");
@@ -730,7 +730,7 @@ public static partial class XiuxianCombatSimulator
                 enemy.Manapoints = enemyManapoints;
                 if (enemyAbility is null && enemy.Control.IsBlinded(now))
                 {
-                    AddEvent(events, $"{enemy.Definition.Name} 处于致盲状态，本次攻击落空");
+                    AddEvent(events, $"{{{{enemy:{enemy.Definition.Id}|{enemy.Definition.Name}}}}} 处于致盲状态，本次攻击落空");
                 }
                 if (enemyResolution.Damage > 0)
                 {
@@ -740,11 +740,11 @@ public static partial class XiuxianCombatSimulator
                         ? "攻击"
                         : $"施展 {{{{ability:{enemyAbility.Id}|{enemyAbility.Name}}}}}";
                     var critical = enemyResolution.IsCritical ? "{{mechanic:critical|暴击}} " : string.Empty;
-                    AddEvent(events, $"{critical}{enemy.Definition.Name}{actionName}，造成 {enemyResolution.Damage} 点伤害");
+                    AddEvent(events, $"{critical}{{{{enemy:{enemy.Definition.Id}|{enemy.Definition.Name}}}}}{actionName}，造成 {enemyResolution.Damage} 点伤害");
                 }
                 else if (!enemyResolution.DidHit)
                 {
-                    AddEvent(events, $"{enemy.Definition.Name}的攻击未能命中");
+                    AddEvent(events, $"{{{{enemy:{enemy.Definition.Id}|{enemy.Definition.Name}}}}}的攻击未能命中");
                 }
                 if (enemyResolution.Healing > 0)
                 {

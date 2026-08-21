@@ -241,7 +241,7 @@ public static partial class XiuxianCombatSimulator
             var dropSummary = events.Count < MaxResultEvents
                 ? FormatDropSummary(regularDrops, rareDrops)
                 : string.Empty;
-            AddEvent(events, $"击败 {{{{encounter:{encounter.Id}|{encounter.Name}}}}}，获得 {gainedExperience:F1} 点战斗经验{dropSummary}");
+            AddEvent(events, $"击败 {{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}}，获得 {gainedExperience:F1} 点战斗经验{dropSummary}");
             enemyDead = true;
             pendingEnemyAbility = null;
             pendingEnemyAbilityIndex = -1;
@@ -543,7 +543,7 @@ public static partial class XiuxianCombatSimulator
                             var actualDamage = Math.Min(enemyHitpoints, tickDamage);
                             enemyHitpoints = Math.Max(0, enemyHitpoints - actualDamage);
                             damageDealt = checked(damageDealt + actualDamage);
-                            AddEvent(events, $"持续伤害：妖兽生命 -{actualDamage}");
+                            AddEvent(events, $"持续伤害：{{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}} 生命 -{actualDamage}");
                         }
                     }
 
@@ -657,13 +657,13 @@ public static partial class XiuxianCombatSimulator
                             ? "灵击"
                             : $"{{{{ability:{ability.Id}|{ability.Name}}}}}";
                         var critical = resolution.IsCritical ? "{{mechanic:critical|暴击}} " : string.Empty;
-                        AddEvent(events, $"{critical}{actionName}命中 {encounter.Enemy.Name}，造成 {resolution.Damage} 点伤害");
+                        AddEvent(events, $"{critical}{actionName}命中 {{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}}，造成 {resolution.Damage} 点伤害");
                     }
                     else if (!resolution.DidHit)
                     {
                         AddEvent(events, ability is null
-                            ? $"灵击未能命中 {encounter.Enemy.Name}"
-                            : $"{{{{ability:{ability.Id}|{ability.Name}}}}}未能命中 {encounter.Enemy.Name}");
+                            ? $"灵击未能命中 {{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}}"
+                            : $"{{{{ability:{ability.Id}|{ability.Name}}}}}未能命中 {{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}}");
                     }
 
                     if (resolution.Healing > 0)
@@ -798,7 +798,7 @@ public static partial class XiuxianCombatSimulator
                         : ResolveEnemyAttack(enemy, player, enemyAbility, ref enemyManapoints, ref random);
                     if (enemyAbility is null && enemyControl.IsBlinded(now))
                     {
-                        AddEvent(events, "妖兽致盲：本次攻击落空");
+                        AddEvent(events, $"{{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}}处于致盲状态，本次攻击落空");
                     }
                     if (resolution.Damage > 0)
                     {
@@ -808,11 +808,11 @@ public static partial class XiuxianCombatSimulator
                             ? "攻击"
                             : $"施展 {{{{ability:{enemyAbility.Id}|{enemyAbility.Name}}}}}";
                         var critical = resolution.IsCritical ? "{{mechanic:critical|暴击}} " : string.Empty;
-                        AddEvent(events, $"{critical}{encounter.Enemy.Name}{actionName}，造成 {resolution.Damage} 点伤害");
+                        AddEvent(events, $"{critical}{{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}}{actionName}，造成 {resolution.Damage} 点伤害");
                     }
                     else if (!resolution.DidHit)
                     {
-                        AddEvent(events, $"{encounter.Enemy.Name}的攻击未能命中");
+                        AddEvent(events, $"{{{{enemy:{encounter.Enemy.Id}|{encounter.Enemy.Name}}}}}的攻击未能命中");
                     }
 
                     if (resolution.Healing > 0)
@@ -2007,7 +2007,7 @@ public static partial class XiuxianCombatSimulator
         {
             if (XiuxianItemCatalog.TryGet(pair.Key, out var item))
             {
-                parts.Add($"{{{{item:{pair.Key}|{item.Name}}}}} × {pair.Value}");
+                parts.Add($"{{{{item:{pair.Key}|{item.Name}|{pair.Value}}}}}");
             }
         }
 
@@ -2015,7 +2015,7 @@ public static partial class XiuxianCombatSimulator
         {
             if (XiuxianItemCatalog.TryGet(pair.Key, out var item))
             {
-                parts.Add($"稀有 {{{{item:{pair.Key}|{item.Name}}}}} × {pair.Value}");
+                parts.Add($"稀有 {{{{item:{pair.Key}|{item.Name}|{pair.Value}}}}}");
             }
         }
 

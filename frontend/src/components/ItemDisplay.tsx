@@ -294,9 +294,33 @@ export function ItemReference({
   useT()
   const metadata = resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const definition = useGameStore((state) => state.items.find((item) => item.itemId === itemId))
+  const displayLabel = label ?? metadata.label
+  const tone = rarityToTone(metadata.rarity)
+
+  if (amount !== undefined) {
+    return (
+      <ItemTooltipTarget
+        amount={amount}
+        className={`item-reference-compound pill-tone--${tone} ${className}`.trim()}
+        definition={definition}
+        itemId={itemId}
+      >
+        <span className="capsule-label">{displayLabel}</span>
+        <span className="underlined-value">
+          × <UnitNumber disableTooltip value={amount} />
+        </span>
+      </ItemTooltipTarget>
+    )
+  }
+
   return (
-    <ItemTooltipTarget amount={amount} className={`item-reference ${className}`.trim()} definition={definition} itemId={itemId}>
-      {label ?? metadata.label}
+    <ItemTooltipTarget
+      amount={amount}
+      className={`item-reference pill-tone--${tone} ${className}`.trim()}
+      definition={definition}
+      itemId={itemId}
+    >
+      {displayLabel}
     </ItemTooltipTarget>
   )
 }
