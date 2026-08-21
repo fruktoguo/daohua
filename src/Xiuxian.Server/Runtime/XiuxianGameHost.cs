@@ -24,7 +24,17 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
     private readonly SemaphoreSlim _ownerGate = new(1, 1);
     private readonly Dictionary<Guid, YuoEntity> _players = [];
     // 冷玩家仍保留最新序列化快照，避免断开连接后再次请求必须阻塞 Fiber 做磁盘读取。
+    // 容量上限依据：平均每份快照数 KB，2 万份对应数十 MB 内存量级，可长期驻留而不失控。
+    // 安全性：冷快照只是内存缓存，每次写入 _coldSnapshots 的同时都会 EnqueueAsync(SaveSnapshotCommand)
+    // 异步落盘（断线路径与 EvictIdlePlayersAsync 均如此）；被 LRU 淘汰的玩家重连时经 EnsurePlayerAsync
+    // 从磁盘快照加载，并由确定性模拟 XiuxianSimulation.AdvanceTo(state, now) 补算到当前时刻，
+    // 结果与一直驻留内存一致——这是本项目确定性模拟设计的直接推论。淘汰仅移除内存缓存，
+    // 不落盘、不打错误日志。
+    private const int MaxColdSnapshotCount = 20_000;
     private readonly Dictionary<Guid, byte[]> _coldSnapshots = [];
+    // LRU 顺序结构：First 为最旧、Last 为最新；与 _coldSnapshots 同在 owner Fiber 上串行访问，无需加锁。
+    private readonly LinkedList<Guid> _coldSnapshotLru = [];
+    private readonly Dictionary<Guid, LinkedListNode<Guid>> _coldSnapshotLruNodes = [];
     private readonly HashSet<Guid> _onlinePlayers = [];
     private readonly PriorityQueue<ScheduledPlayerTransition, DateTimeOffset> _onlineTransitionQueue = new();
     private readonly Dictionary<Guid, long> _onlineTransitionGenerations = [];
@@ -777,7 +787,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
             XiuxianSimulation.AdvanceTo(state, _clock.UtcNow);
         }
 
-        _coldSnapshots.Remove(playerId);
+        RemoveColdSnapshot(playerId);
         CreatePlayerEntity(_fiber, state);
         _knownPlayers[playerId] = 0;
         _lastPlayerAccess[playerId] = _clock.UtcNow;
@@ -810,7 +820,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
 
         var state = entity.GetComponent<XiuxianPlayerComponent>().State;
         var record = ToSnapshotRecord(state);
-        _coldSnapshots[playerId] = record.Payload.ToArray();
+        AddColdSnapshot(playerId, record.Payload.ToArray());
         _lastPlayerAccess.TryRemove(playerId, out _);
         entity.Dispose();
         Interlocked.Decrement(ref _loadedPlayerCount);
@@ -835,7 +845,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
             if (!_players.Remove(playerId, out var entity)) continue;
             var state = entity.GetComponent<XiuxianPlayerComponent>().State;
             var record = ToSnapshotRecord(state);
-            _coldSnapshots[playerId] = record.Payload.ToArray();
+            AddColdSnapshot(playerId, record.Payload.ToArray());
             _lastPlayerAccess.TryRemove(playerId, out _);
             entity.Dispose();
             Interlocked.Decrement(ref _loadedPlayerCount);
@@ -843,6 +853,43 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         }
 
         return records;
+    }
+
+    // 冷快照缓存的统一维护入口。GetState / EvictPlayerToColdSnapshot /
+    // EvictIdlePlayersToColdSnapshots 全部经由 ExecuteOnOwnerAsync 在同一 owner Fiber 上
+    // 串行执行，以下方法不存在并发访问，无需加锁。
+    private void AddColdSnapshot(Guid playerId, byte[] payload)
+    {
+        if (_coldSnapshotLruNodes.TryGetValue(playerId, out var existing))
+        {
+            // 同一玩家重复转冷：替换载荷并刷新到最新端。
+            _coldSnapshots[playerId] = payload;
+            _coldSnapshotLru.Remove(existing);
+            _coldSnapshotLru.AddLast(existing);
+            return;
+        }
+
+        _coldSnapshots[playerId] = payload;
+        _coldSnapshotLruNodes[playerId] = _coldSnapshotLru.AddLast(playerId);
+        EvictOverflowColdSnapshots();
+    }
+
+    private void RemoveColdSnapshot(Guid playerId)
+    {
+        if (_coldSnapshots.Remove(playerId) && _coldSnapshotLruNodes.Remove(playerId, out var node))
+        {
+            _coldSnapshotLru.Remove(node);
+        }
+    }
+
+    // 超限时从最旧端淘汰：只移除内存缓存，不落盘也不打错误日志；
+    // 玩家重连时会经 EnsurePlayerAsync 从磁盘快照恢复并补算（见字段处安全性说明）。
+    private void EvictOverflowColdSnapshots()
+    {
+        while (_coldSnapshots.Count > MaxColdSnapshotCount && _coldSnapshotLru.First is not null)
+        {
+            RemoveColdSnapshot(_coldSnapshotLru.First.Value);
+        }
     }
 
     private static XiuxianCommandResult ApplyCommand(
