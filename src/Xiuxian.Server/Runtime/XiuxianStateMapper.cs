@@ -786,6 +786,10 @@ public static class XiuxianStateMapper
     private static string ToWire(XiuxianCombatTriggerDependency dependency) => dependency switch
     {
         XiuxianCombatTriggerDependency.TargetEnemy => "target-enemy",
+        XiuxianCombatTriggerDependency.AllyLowestHitpoints => "ally-lowest-hp",
+        XiuxianCombatTriggerDependency.AllyHighestHitpoints => "ally-highest-hp",
+        XiuxianCombatTriggerDependency.EnemyLowestHitpoints => "enemy-lowest-hp",
+        XiuxianCombatTriggerDependency.EnemyHighestHitpoints => "enemy-highest-hp",
         _ => "self"
     };
 
@@ -810,6 +814,8 @@ public static class XiuxianStateMapper
         XiuxianCombatTriggerComparator.LessThanOrEqual => "less-than-equal",
         XiuxianCombatTriggerComparator.IsActive => "is-active",
         XiuxianCombatTriggerComparator.IsInactive => "is-inactive",
+        XiuxianCombatTriggerComparator.LessThan => "less-than",
+        XiuxianCombatTriggerComparator.GreaterThan => "greater-than",
         _ => "greater-than-equal"
     };
 

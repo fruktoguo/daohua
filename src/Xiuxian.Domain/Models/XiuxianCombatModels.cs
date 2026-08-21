@@ -7,10 +7,18 @@ public sealed class XiuxianCharacterVisualDefinition
     public string? Poster { get; init; }
 }
 
+/// <summary>
+/// 触发条件的观察对象。友方/敌方极值依赖在当前单人战斗拓扑下分别解析为玩家自身与当前目标；
+/// 组队战斗接入后，极值依赖应改为在对应队伍的存活成员集合上求值。
+/// </summary>
 public enum XiuxianCombatTriggerDependency
 {
     Self = 0,
-    TargetEnemy = 1
+    TargetEnemy = 1,
+    AllyLowestHitpoints = 2,
+    AllyHighestHitpoints = 3,
+    EnemyLowestHitpoints = 4,
+    EnemyHighestHitpoints = 5
 }
 
 public enum XiuxianCombatTriggerCondition
@@ -34,7 +42,9 @@ public enum XiuxianCombatTriggerComparator
     LessThanOrEqual = 0,
     GreaterThanOrEqual = 1,
     IsActive = 2,
-    IsInactive = 3
+    IsInactive = 3,
+    LessThan = 4,
+    GreaterThan = 5
 }
 
 /// <summary>

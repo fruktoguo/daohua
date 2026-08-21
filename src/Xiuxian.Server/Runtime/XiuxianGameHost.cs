@@ -1188,6 +1188,10 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         {
             "self" => XiuxianCombatTriggerDependency.Self,
             "target-enemy" => XiuxianCombatTriggerDependency.TargetEnemy,
+            "ally-lowest-hp" => XiuxianCombatTriggerDependency.AllyLowestHitpoints,
+            "ally-highest-hp" => XiuxianCombatTriggerDependency.AllyHighestHitpoints,
+            "enemy-lowest-hp" => XiuxianCombatTriggerDependency.EnemyLowestHitpoints,
+            "enemy-highest-hp" => XiuxianCombatTriggerDependency.EnemyHighestHitpoints,
             _ => (XiuxianCombatTriggerDependency)(-1)
         };
         return Enum.IsDefined(dependency);
@@ -1224,6 +1228,8 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
         {
             "less-than-equal" => XiuxianCombatTriggerComparator.LessThanOrEqual,
             "greater-than-equal" => XiuxianCombatTriggerComparator.GreaterThanOrEqual,
+            "less-than" => XiuxianCombatTriggerComparator.LessThan,
+            "greater-than" => XiuxianCombatTriggerComparator.GreaterThan,
             "is-active" => XiuxianCombatTriggerComparator.IsActive,
             "is-inactive" => XiuxianCombatTriggerComparator.IsInactive,
             _ => (XiuxianCombatTriggerComparator)(-1)

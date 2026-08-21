@@ -359,6 +359,75 @@ public sealed class XiuxianCombatTests
     }
 
     [Fact]
+    public void Combat_trigger_resolves_team_extreme_dependencies_and_strict_comparators()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(
+            // 与上方触发器测试使用同一玩家 ID 与起始时间，保证随机轨迹一致：该轨迹下玩家必定受伤。
+            Guid.Parse("55555555-5555-5555-5555-555555555555"),
+            now: Baseline);
+        state.Combat.DefenseLevel = 1;
+        state.Combat.StaminaLevel = 1;
+        // 友方生命极值在单人拓扑下解析为玩家自身，敌方极值解析为当前目标；
+        // 组合内同时使用严格比较符，覆盖新增枚举的求值路径。
+        state.Combat.AbilitySlots[0] = new XiuxianCombatAbilitySlot
+        {
+            AbilityId = XiuxianCombatAbilityIds.RejuvenationArt,
+            Level = 1,
+            Triggers =
+            [
+                new XiuxianCombatTrigger
+                {
+                    Dependency = XiuxianCombatTriggerDependency.AllyLowestHitpoints,
+                    Condition = XiuxianCombatTriggerCondition.MissingHitpointsPercentage,
+                    Comparator = XiuxianCombatTriggerComparator.GreaterThan,
+                    Value = 0
+                },
+                new XiuxianCombatTrigger
+                {
+                    Dependency = XiuxianCombatTriggerDependency.EnemyHighestHitpoints,
+                    Condition = XiuxianCombatTriggerCondition.CurrentHitpointsPercentage,
+                    Comparator = XiuxianCombatTriggerComparator.LessThanOrEqual,
+                    Value = 100
+                }
+            ]
+        };
+
+        var result = XiuxianCombatSimulator.Run(
+            state.PlayerId,
+            state.Combat,
+            state.Buffs,
+            state.Inventory.Items,
+            XiuxianCombatEncounterIds.QiBeast,
+            Baseline,
+            TimeSpan.FromSeconds(60));
+
+        Assert.True(result.HitpointsRecoveredFromAbilities > 0);
+
+        // 敌方生命百分比不可能严格大于 100，该组合必须永不触发。
+        state.Combat.AbilitySlots[0].Triggers =
+        [
+            new XiuxianCombatTrigger
+            {
+                Dependency = XiuxianCombatTriggerDependency.EnemyHighestHitpoints,
+                Condition = XiuxianCombatTriggerCondition.CurrentHitpointsPercentage,
+                Comparator = XiuxianCombatTriggerComparator.GreaterThan,
+                Value = 100
+            }
+        ];
+
+        var blocked = XiuxianCombatSimulator.Run(
+            state.PlayerId,
+            state.Combat,
+            state.Buffs,
+            state.Inventory.Items,
+            XiuxianCombatEncounterIds.QiBeast,
+            Baseline,
+            TimeSpan.FromSeconds(60));
+
+        Assert.Equal(0, blocked.HitpointsRecoveredFromAbilities);
+    }
+
+    [Fact]
     public void Combat_uses_regular_and_rare_drop_tables_as_item_maps()
     {
         var state = XiuxianSimulation.CreateDefaultState(

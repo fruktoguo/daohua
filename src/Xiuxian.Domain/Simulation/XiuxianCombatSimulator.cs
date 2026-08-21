@@ -1640,7 +1640,11 @@ public static partial class XiuxianCombatSimulator
 
         foreach (var trigger in triggers)
         {
-            var isSelf = trigger.Dependency == XiuxianCombatTriggerDependency.Self;
+            // 友方极值依赖在当前单人战斗拓扑下解析为玩家自身；敌方极值依赖解析为当前目标。
+            // 组队战斗接入后，极值依赖应改为在对应队伍存活成员集合上求值。
+            var isSelf = trigger.Dependency is XiuxianCombatTriggerDependency.Self
+                or XiuxianCombatTriggerDependency.AllyLowestHitpoints
+                or XiuxianCombatTriggerDependency.AllyHighestHitpoints;
             var currentHitpoints = isSelf ? selfHitpoints : targetHitpoints;
             var maxHitpoints = isSelf ? selfMaxHitpoints : targetMaxHitpoints;
             var currentManapoints = isSelf ? selfManapoints : targetManapoints;
@@ -1678,6 +1682,8 @@ public static partial class XiuxianCombatSimulator
             {
                 XiuxianCombatTriggerComparator.LessThanOrEqual => value <= trigger.Value,
                 XiuxianCombatTriggerComparator.GreaterThanOrEqual => value >= trigger.Value,
+                XiuxianCombatTriggerComparator.LessThan => value < trigger.Value,
+                XiuxianCombatTriggerComparator.GreaterThan => value > trigger.Value,
                 XiuxianCombatTriggerComparator.IsActive => active,
                 XiuxianCombatTriggerComparator.IsInactive => !active,
                 _ => false
