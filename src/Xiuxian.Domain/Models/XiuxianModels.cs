@@ -64,19 +64,24 @@ public enum XiuxianCombatExpeditionPhase
 }
 
 /// <summary>
-/// 玩家跨连续遭遇保留的生命和灵力。复活或玩家主动重新开始历练时恢复至当前属性上限。
+/// 玩家跨连续遭遇及脱战后完全持久化的生命和灵力。
+/// 在非战斗及搜寻状态下持续享受自动回复；脱战或取消战斗时不再满血重置，若处于死亡状态则脱战复活（生命值恢复至 1 点，灵力不回复）。
 /// </summary>
 public sealed class XiuxianCombatResourceState
 {
     public bool Initialized { get; set; }
     public long Hitpoints { get; set; }
     public long Manapoints { get; set; }
+    public double HitpointRemainder { get; set; }
+    public double ManapointRemainder { get; set; }
 
     public XiuxianCombatResourceState Clone() => new()
     {
         Initialized = Initialized,
         Hitpoints = Hitpoints,
-        Manapoints = Manapoints
+        Manapoints = Manapoints,
+        HitpointRemainder = HitpointRemainder,
+        ManapointRemainder = ManapointRemainder
     };
 }
 

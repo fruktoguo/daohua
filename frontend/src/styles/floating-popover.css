@@ -290,36 +290,24 @@
   color: var(--text-dim, rgba(233, 227, 210, 0.56));
 }
 
-/* 详细数量独立副气泡 */
-.xiuxian-quantity-aside-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
-  padding: 4px 0 2px 0;
+/* 通用独立数量副气泡 (标题为「数量」，内容为四位分段「具体数值」) */
+.xiuxian-floating-aside-card[data-aside-id="quantity-aside-card"] {
+  min-width: 140px;
 }
 
-.xiuxian-quantity-aside-split {
-  font-size: 13px;
+.xiuxian-floating-aside-card[data-aside-id="quantity-aside-card"] .xiuxian-floating-aside-lines {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0 0;
+}
+
+.xiuxian-floating-aside-card[data-aside-id="quantity-aside-card"] .xiuxian-floating-aside-lines li {
+  font-size: 13.5px;
   font-weight: 700;
   color: #fffdf5;
   letter-spacing: 0.5px;
-  line-height: 1.3;
-}
-
-.xiuxian-quantity-aside-compact {
-  font-size: 11px;
-  color: var(--gold-light, #e8d69a);
-  opacity: 0.9;
-}
-
-.xiuxian-quantity-aside-exact {
-  font-size: 10.5px;
-  color: var(--text-dim, rgba(233, 227, 210, 0.65));
+  line-height: 1.35;
   font-variant-numeric: tabular-nums;
-  border-top: 1px dashed rgba(201, 180, 109, 0.16);
-  padding-top: 4px;
-  margin-top: 2px;
 }
 
 

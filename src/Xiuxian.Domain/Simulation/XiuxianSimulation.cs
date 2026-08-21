@@ -366,9 +366,7 @@ public static class XiuxianSimulation
             }
         }
 
-        SetCombatResources(
-            state,
-            XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt, spirit: state.Stats.Spirit));
+        EnsureAliveAfterLeavingCombat(state, state.LastSimulatedAt);
         state.Queue.Entries.Insert(0, CreateQueuedAction(actionId, repeats));
         Touch(state, XiuxianDirtySections.Queue | XiuxianDirtySections.Combat | XiuxianDirtySections.Events);
         AddEvent(state, $"已立即开始历练：{{{{action:{definition.Id}|{definition.Name}}}}} × {(repeats == -1 ? "∞" : repeats)}");
@@ -383,6 +381,10 @@ public static class XiuxianSimulation
         {
             return XiuxianCommandResult.Fail("TRAVEL_ROUTE_NOT_FOUND", "无法从当前位置规划到目标地点的路线。");
         }
+
+        var hadCombat = state.Queue.Entries.FirstOrDefault() is { } oldTop
+            && XiuxianActionCatalog.TryGet(oldTop.ActionId, out var oldTopDef)
+            && (oldTopDef.ExecutionKind == XiuxianActionExecutionKind.CombatEncounter || oldTop.CombatExpedition is not null);
 
         state.Queue.Entries.RemoveAll(entry => entry.TravelPlan is not null);
         if (state.Queue.Entries.FirstOrDefault() is { } current)
@@ -400,7 +402,13 @@ public static class XiuxianSimulation
             Status = XiuxianActionStatus.Queued,
             TravelPlan = plan
         });
-        Touch(state, XiuxianDirtySections.Queue | XiuxianDirtySections.Events);
+        var dirty = XiuxianDirtySections.Queue | XiuxianDirtySections.Events;
+        if (hadCombat)
+        {
+            EnsureAliveAfterLeavingCombat(state, state.LastSimulatedAt);
+            dirty |= XiuxianDirtySections.Combat;
+        }
+        Touch(state, dirty);
         AddEvent(
             state,
             $"已规划前往 {{{{location:{destination.Id}|{destination.Name}}}}}，共 {plan.Segments.Count} 段山路，预计 {plan.TotalDurationSeconds} 秒");
@@ -425,7 +433,7 @@ public static class XiuxianSimulation
         var dirty = XiuxianDirtySections.Queue | XiuxianDirtySections.Events;
         if (removed.CombatExpedition is not null || definition.ExecutionKind == XiuxianActionExecutionKind.CombatEncounter)
         {
-            SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt, spirit: state.Stats.Spirit));
+            EnsureAliveAfterLeavingCombat(state, state.LastSimulatedAt);
             dirty |= XiuxianDirtySections.Combat;
         }
         Touch(state, dirty);
@@ -827,6 +835,11 @@ public static class XiuxianSimulation
 
             if (state.Queue.Entries.Count == 0)
             {
+                var available = GetAvailableMilliseconds(cursor, target);
+                if (available > 0 && RegenerateResources(state, cursor, available))
+                {
+                    dirty |= XiuxianDirtySections.Combat;
+                }
                 cursor = target;
                 break;
             }
@@ -923,6 +936,10 @@ public static class XiuxianSimulation
                         XiuxianWorldCatalog.ApplyTravelProgress(state.World, current.TravelPlan, current.ProgressSeconds);
                         dirty |= XiuxianDirtySections.World;
                     }
+                    if (RegenerateResources(state, cursor, progress))
+                    {
+                        dirty |= XiuxianDirtySections.Combat;
+                    }
                 }
 
                 cursor = target;
@@ -937,6 +954,10 @@ public static class XiuxianSimulation
             {
                 XiuxianWorldCatalog.ApplyTravelProgress(state.World, current.TravelPlan, current.ProgressSeconds);
                 dirty |= XiuxianDirtySections.World;
+            }
+            if (RegenerateResources(state, cursor, remainingMilliseconds))
+            {
+                dirty |= XiuxianDirtySections.Combat;
             }
             CompleteAction(
                 state,
@@ -1160,6 +1181,10 @@ public static class XiuxianSimulation
                     expedition.PhaseElapsedMilliseconds = checked(expedition.PhaseElapsedMilliseconds + available);
                     current.ProgressSeconds = ToDisplaySeconds(expedition.PhaseElapsedMilliseconds);
                     current.DurationSeconds = ToDisplaySeconds(duration);
+                    if (RegenerateResources(state, cursor, available))
+                    {
+                        dirty |= XiuxianDirtySections.Combat;
+                    }
                     cursor = target;
                     dirty |= XiuxianDirtySections.QueueProgress;
                     return;
@@ -1169,6 +1194,10 @@ public static class XiuxianSimulation
                 expedition.PhaseElapsedMilliseconds = 0;
                 current.ProgressSeconds = 0;
                 transitions++;
+                if (RegenerateResources(state, cursor, remaining))
+                {
+                    dirty |= XiuxianDirtySections.Combat;
+                }
 
                 var startedEncounterId = BeginCombatBattle(state, current, definition, cursor);
                 var startedEncounter = XiuxianCombatCatalog.GetEncounter(startedEncounterId);
@@ -1443,13 +1472,104 @@ public static class XiuxianSimulation
             current.CombatExpedition = CreateCombatExpedition(definition);
             state.Queue.Entries.RemoveAt(0);
             state.Queue.Entries.Add(current);
+            EnsureCombatResources(state, completedAt);
         }
         else
         {
             state.Queue.Entries.RemoveAt(0);
+            EnsureAliveAfterLeavingCombat(state, completedAt);
         }
-        SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, completedAt, spirit: state.Stats.Spirit));
         dirty |= XiuxianDirtySections.Queue | XiuxianDirtySections.Stats | XiuxianDirtySections.Events | XiuxianDirtySections.Combat;
+    }
+
+    private static void EnsureAliveAfterLeavingCombat(XiuxianPlayerState state, DateTimeOffset at)
+    {
+        EnsureCombatResources(state, at);
+        var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, at, state.Stats.Spirit);
+        if (state.CombatResources.Hitpoints <= 0)
+        {
+            state.CombatResources.Hitpoints = 1;
+            state.CombatResources.HitpointRemainder = 0;
+            state.CombatResources.Manapoints = Math.Clamp(state.CombatResources.Manapoints, 0, attributes.MaxManapoints);
+            state.CombatResources.ManapointRemainder = 0;
+            AddEvent(state, "你已脱离战斗，重伤复苏（生命值恢复至 1 点）。", at);
+        }
+        else
+        {
+            state.CombatResources.Hitpoints = Math.Clamp(state.CombatResources.Hitpoints, 1, attributes.MaxHitpoints);
+            state.CombatResources.Manapoints = Math.Clamp(state.CombatResources.Manapoints, 0, attributes.MaxManapoints);
+        }
+    }
+
+    private static bool RegenerateResources(
+        XiuxianPlayerState state,
+        DateTimeOffset at,
+        double elapsedMilliseconds)
+    {
+        if (elapsedMilliseconds <= 0) return false;
+        EnsureCombatResources(state, at);
+
+        if (state.CombatResources.Hitpoints <= 0) return false;
+
+        var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, at, state.Stats.Spirit);
+        var maxHp = attributes.MaxHitpoints;
+        var maxMp = attributes.MaxManapoints;
+        var hpRegenRatio = attributes.HpRegenPerTenSeconds;
+        var mpRegenRatio = attributes.MpRegenPerTenSeconds;
+
+        var changed = false;
+
+        if (state.CombatResources.Hitpoints < maxHp && hpRegenRatio > 0 && maxHp > 0)
+        {
+            var totalGain = maxHp * hpRegenRatio * (elapsedMilliseconds / 10_000.0) + state.CombatResources.HitpointRemainder;
+            var hpGain = (long)Math.Floor(totalGain);
+            state.CombatResources.HitpointRemainder = totalGain - hpGain;
+            if (hpGain > 0)
+            {
+                state.CombatResources.Hitpoints = Math.Min(maxHp, state.CombatResources.Hitpoints + hpGain);
+                if (state.CombatResources.Hitpoints >= maxHp)
+                {
+                    state.CombatResources.HitpointRemainder = 0;
+                }
+                changed = true;
+            }
+        }
+        else if (state.CombatResources.Hitpoints >= maxHp)
+        {
+            if (state.CombatResources.Hitpoints > maxHp)
+            {
+                state.CombatResources.Hitpoints = maxHp;
+                changed = true;
+            }
+            state.CombatResources.HitpointRemainder = 0;
+        }
+
+        if (state.CombatResources.Manapoints < maxMp && mpRegenRatio > 0 && maxMp > 0)
+        {
+            var totalGain = maxMp * mpRegenRatio * (elapsedMilliseconds / 10_000.0) + state.CombatResources.ManapointRemainder;
+            var mpGain = (long)Math.Floor(totalGain);
+            state.CombatResources.ManapointRemainder = totalGain - mpGain;
+            if (mpGain > 0)
+            {
+                state.CombatResources.Manapoints = Math.Min(maxMp, state.CombatResources.Manapoints + mpGain);
+                if (state.CombatResources.Manapoints >= maxMp)
+                {
+                    state.CombatResources.ManapointRemainder = 0;
+                }
+                changed = true;
+            }
+        }
+        else if (state.CombatResources.Manapoints >= maxMp)
+        {
+            if (state.CombatResources.Manapoints > maxMp)
+            {
+                state.CombatResources.Manapoints = maxMp;
+                changed = true;
+            }
+            state.CombatResources.ManapointRemainder = 0;
+        }
+
+        return changed;
     }
 
     private static void ResetBattleSnapshot(XiuxianCombatExpeditionState expedition)

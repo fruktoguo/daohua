@@ -227,11 +227,13 @@ public sealed class XiuxianSimulationTests
         Assert.Equal(20_000, expedition.PhaseDurationMilliseconds);
         Assert.Equal(0, expedition.BattleSequence);
 
+        var expectedInitialPlayer = XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt);
         XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(20));
         Assert.Equal(XiuxianCombatExpeditionPhase.Combat, expedition.Phase);
         Assert.Equal(1, expedition.BattleSequence);
-        Assert.Equal(50, expedition.InitialHitpoints);
-        Assert.Equal(40, expedition.InitialManapoints);
+        // 初始搜寻阶段（20秒）自然回复生效
+        Assert.True(expedition.InitialHitpoints >= 50);
+        Assert.True(expedition.InitialManapoints >= 40);
         Assert.Equal(0, action.DurationSeconds);
 
         for (var seconds = 21; seconds <= 130 && expedition.Phase == XiuxianCombatExpeditionPhase.Combat; seconds++)
@@ -244,35 +246,33 @@ public sealed class XiuxianSimulationTests
         Assert.Equal(1, action.RemainingRepeats);
         var retainedHitpoints = state.CombatResources.Hitpoints;
         var retainedManapoints = state.CombatResources.Manapoints;
-        var fullPlayer = XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt);
-        Assert.True(retainedHitpoints < fullPlayer.MaxHitpoints || retainedManapoints < fullPlayer.MaxManapoints);
 
         var remainingSearchMilliseconds = expedition.PhaseDurationMilliseconds - expedition.PhaseElapsedMilliseconds;
         XiuxianSimulation.AdvanceTo(state, state.LastSimulatedAt.AddMilliseconds(remainingSearchMilliseconds + 1_000));
 
         Assert.Equal(XiuxianCombatExpeditionPhase.Combat, expedition.Phase);
         Assert.Equal(2, expedition.BattleSequence);
-        Assert.Equal(retainedHitpoints, expedition.InitialHitpoints);
-        Assert.Equal(retainedManapoints, expedition.InitialManapoints);
+        // 第二次遭遇开始时，生命和灵力享受了搜寻阶段的自然回复
+        Assert.True(expedition.InitialHitpoints >= retainedHitpoints);
+        Assert.True(expedition.InitialManapoints >= retainedManapoints);
     }
 
     [Fact]
-    public void Restarting_combat_restores_full_resources_and_starts_a_fresh_battle_timeline()
+    public void Restarting_combat_preserves_resources_and_starts_a_fresh_battle_timeline()
     {
         var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "重开历练修士", Baseline);
         state.Queue.Entries.Clear();
         state.CombatResources = new XiuxianCombatResourceState
         {
             Initialized = true,
-            Hitpoints = 1,
-            Manapoints = 2
+            Hitpoints = 10,
+            Manapoints = 20
         };
 
         Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 1).Success);
 
-        var full = XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, Baseline);
-        Assert.Equal(full.MaxHitpoints, state.CombatResources.Hitpoints);
-        Assert.Equal(full.MaxManapoints, state.CombatResources.Manapoints);
+        Assert.Equal(10, state.CombatResources.Hitpoints);
+        Assert.Equal(20, state.CombatResources.Manapoints);
         var expedition = Assert.IsType<XiuxianCombatExpeditionState>(state.Queue.Entries[0].CombatExpedition);
         Assert.Equal(XiuxianCombatExpeditionPhase.InitialSearch, expedition.Phase);
         Assert.Equal(0, expedition.BattleSequence);
@@ -281,7 +281,7 @@ public sealed class XiuxianSimulationTests
     }
 
     [Fact]
-    public void Restarting_during_death_replaces_the_old_death_action()
+    public void Restarting_during_death_replaces_action_and_revives_player_with_one_hp()
     {
         var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "死亡重开修士", Baseline);
         state.Queue.Entries.Clear();
@@ -293,7 +293,7 @@ public sealed class XiuxianSimulationTests
         oldExpedition.PhaseElapsedMilliseconds = 60_000;
         oldExpedition.PhaseDurationMilliseconds = 180_000;
         state.CombatResources.Hitpoints = 0;
-        state.CombatResources.Manapoints = 0;
+        state.CombatResources.Manapoints = 15;
 
         Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 1).Success);
 
@@ -302,9 +302,9 @@ public sealed class XiuxianSimulationTests
         var restartedExpedition = Assert.IsType<XiuxianCombatExpeditionState>(restarted.CombatExpedition);
         Assert.Equal(XiuxianCombatExpeditionPhase.InitialSearch, restartedExpedition.Phase);
         Assert.Equal(0, restartedExpedition.PhaseElapsedMilliseconds);
-        var full = XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, Baseline);
-        Assert.Equal(full.MaxHitpoints, state.CombatResources.Hitpoints);
-        Assert.Equal(full.MaxManapoints, state.CombatResources.Manapoints);
+        // 离开上一场战斗死亡状态复活：生命值回复到 1 点，灵力不回复（保持 15 点），保证不死
+        Assert.Equal(1, state.CombatResources.Hitpoints);
+        Assert.Equal(15, state.CombatResources.Manapoints);
     }
 
     [Fact]
@@ -433,8 +433,9 @@ public sealed class XiuxianSimulationTests
 
         Assert.Equal(XiuxianCombatExpeditionPhase.Search, expedition.Phase);
         Assert.Equal(5_000, expedition.PhaseDurationMilliseconds);
-        Assert.Equal(3, state.CombatResources.Hitpoints);
-        Assert.Equal(4, state.CombatResources.Manapoints);
+        // 迁移到 Search 阶段且经过 1 秒自然回复，数值不会瞬间回满，但保持自然增长
+        Assert.True(state.CombatResources.Hitpoints >= 3);
+        Assert.True(state.CombatResources.Manapoints >= 4);
         Assert.DoesNotContain(state.StructuredEventLog, entry => entry.Template.Contains("调息完成", StringComparison.Ordinal));
     }
 
@@ -903,5 +904,121 @@ public sealed class XiuxianSimulationTests
 
         Assert.Equal(2, state.Inventory.Get(XiuxianItemIds.QiGatheringPill));
         Assert.Equal(0, state.Inventory.Get(XiuxianItemIds.AlchemyFlame));
+    }
+
+    [Fact]
+    public void Continuous_regeneration_applies_in_idle_and_non_combat_actions()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "自动回复修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.CombatResources = new XiuxianCombatResourceState
+        {
+            Initialized = true,
+            Hitpoints = 50,
+            Manapoints = 20
+        };
+
+        var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, Baseline, state.Stats.Spirit);
+        Assert.True(attributes.HpRegenPerTenSeconds > 0);
+        Assert.True(attributes.MpRegenPerTenSeconds > 0);
+
+        // 空闲 10 秒
+        XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(10));
+        var expectedHpGain = (long)Math.Floor(attributes.MaxHitpoints * attributes.HpRegenPerTenSeconds * (10_000.0 / 10_000.0));
+        var expectedMpGain = (long)Math.Floor(attributes.MaxManapoints * attributes.MpRegenPerTenSeconds * (10_000.0 / 10_000.0));
+
+        Assert.Equal(Math.Min(attributes.MaxHitpoints, 50 + expectedHpGain), state.CombatResources.Hitpoints);
+        Assert.Equal(Math.Min(attributes.MaxManapoints, 20 + expectedMpGain), state.CombatResources.Manapoints);
+
+        // 加入非战斗行动（采药），推进 8 秒
+        state.Queue.Entries.Add(new XiuxianQueuedAction
+        {
+            ActionId = XiuxianActionIds.GatherHerbs,
+            DurationSeconds = 8
+        });
+
+        var prevHp = state.CombatResources.Hitpoints;
+        var prevMp = state.CombatResources.Manapoints;
+        XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(18));
+
+        Assert.True(state.CombatResources.Hitpoints >= prevHp);
+        Assert.True(state.CombatResources.Manapoints >= prevMp);
+    }
+
+    [Fact]
+    public void Leaving_combat_by_remove_or_finish_revives_dead_player_to_one_hp_and_preserves_living()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "脱战复活修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.CombatResources = new XiuxianCombatResourceState
+        {
+            Initialized = true,
+            Hitpoints = 50,
+            Manapoints = 30
+        };
+
+        // 存活状态下加入历练并移除：保持原有生命与灵力
+        Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 1).Success);
+        Assert.Equal(50, state.CombatResources.Hitpoints);
+        Assert.Equal(30, state.CombatResources.Manapoints);
+
+        var actionId = state.Queue.Entries[0].EntryId;
+        Assert.True(XiuxianSimulation.Remove(state, actionId).Success);
+        Assert.Equal(50, state.CombatResources.Hitpoints);
+        Assert.Equal(30, state.CombatResources.Manapoints);
+
+        // 死亡状态下（生命值 0）进入战斗后被移除：脱战复活至 1 点生命，灵力不回复
+        state.CombatResources.Hitpoints = 0;
+        state.CombatResources.Manapoints = 25;
+        Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 1).Success);
+        // StartCombat 脱战复活至 1 点血
+        Assert.Equal(1, state.CombatResources.Hitpoints);
+        Assert.Equal(25, state.CombatResources.Manapoints);
+
+        // 模拟战斗被打死
+        state.CombatResources.Hitpoints = 0;
+        state.CombatResources.Manapoints = 10;
+        var combatEntryId = state.Queue.Entries[0].EntryId;
+        Assert.True(XiuxianSimulation.Remove(state, combatEntryId).Success);
+
+        // 移除后脱离战斗复活：生命值为 1 点，灵力保持 10 点，保证不死
+        Assert.Equal(1, state.CombatResources.Hitpoints);
+        Assert.Equal(10, state.CombatResources.Manapoints);
+    }
+
+    [Fact]
+    public void Buffs_persist_and_do_not_reset_on_combat_exit_or_switch()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "永久增益修士", Baseline);
+        state.Buffs.Add(new XiuxianBuffState
+        {
+            BuffId = "test_buff",
+            Name = "聚元诀",
+            Stacks = 2,
+            DamageRatio = 0.2,
+            ExpiresAt = Baseline.AddMinutes(30)
+        });
+
+        // 开始战斗
+        Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 1).Success);
+        Assert.Single(state.Buffs);
+        Assert.Equal("test_buff", state.Buffs[0].BuffId);
+        Assert.Equal(2, state.Buffs[0].Stacks);
+
+        // 取消战斗
+        var combatId = state.Queue.Entries[0].EntryId;
+        Assert.True(XiuxianSimulation.Remove(state, combatId).Success);
+        Assert.Single(state.Buffs);
+        Assert.Equal("test_buff", state.Buffs[0].BuffId);
+
+        // 切换到赶路或采药
+        state.Queue.Entries.Add(new XiuxianQueuedAction
+        {
+            ActionId = XiuxianActionIds.GatherHerbs,
+            DurationSeconds = 8
+        });
+        XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(8));
+        Assert.Single(state.Buffs);
+        Assert.Equal("test_buff", state.Buffs[0].BuffId);
     }
 }

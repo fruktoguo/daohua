@@ -6,6 +6,7 @@ import React, {
   useId,
   useImperativeHandle,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -13,6 +14,8 @@ import React, {
   type RefObject,
 } from 'react'
 import { createPortal } from 'react-dom'
+
+import { formatChineseSplitNumber } from '../game/format'
 
 /**
  * 悬浮位置偏好
@@ -57,6 +60,23 @@ export interface FloatingAsideCard {
   tone?: FloatingTone
   lines?: readonly string[]
   content?: ReactNode
+}
+
+/**
+ * 通用数量详细副气泡构建工具
+ * 标题：数量（或自定义）
+ * 内容：具体数值（中文四位分段）
+ */
+export function createQuantityAsideCard(
+  quantity: number | bigint | string,
+  title = '数量'
+): FloatingAsideCard {
+  return {
+    id: 'quantity-aside-card',
+    title,
+    tone: 'gold',
+    lines: [formatChineseSplitNumber(quantity)],
+  }
 }
 
 /**
@@ -270,6 +290,10 @@ export interface FloatingPopoverProps {
   tabIndex?: number
   /** 附属气泡列表（支持多气泡同时显示组合） */
   asideCards?: readonly FloatingAsideCard[]
+  /** 可选关联数值：若提供，自动生成独立的数量详细副气泡（标题：数量，内容：具体数值） */
+  quantity?: number | bigint | string
+  /** 数量副气泡标题，默认 '数量' */
+  quantityTitle?: string
 }
 
 export interface FloatingPopoverHandle {
@@ -309,6 +333,8 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       style,
       tabIndex,
       asideCards,
+      quantity,
+      quantityTitle,
     },
     ref
   ) {
@@ -574,8 +600,16 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
 
     const portalRoot = typeof document !== 'undefined' ? getOrCreateFloatingPortalRoot() : null
 
-    // 组合多气泡渲染 (主气泡 + 附属气泡群)
-    const hasAside = asideCards && asideCards.length > 0
+    // 组合多气泡渲染 (主气泡 + 附属气泡群，自动集成 quantity 独立数量副气泡)
+    const mergedAsideCards = useMemo<FloatingAsideCard[]>(() => {
+      const list: FloatingAsideCard[] = asideCards ? [...asideCards] : []
+      if (quantity !== undefined) {
+        list.unshift(createQuantityAsideCard(quantity, quantityTitle ?? '数量'))
+      }
+      return list
+    }, [asideCards, quantity, quantityTitle])
+
+    const hasAside = mergedAsideCards.length > 0
 
     const renderedContentNode =
       typeof content === 'function' ? content({ close: () => setOpen(false) }) : content
@@ -629,11 +663,12 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
                 {/* 附属卡片气泡群（支持多气泡联动组合） */}
                 {hasAside && (
                   <div className="xiuxian-floating-aside-group">
-                    {asideCards.map((aside, idx) => (
+                    {mergedAsideCards.map((aside, idx) => (
                       <div
                         className={`xiuxian-floating-card xiuxian-floating-aside-card xiuxian-floating-aside-card--${
                           aside.tone ?? 'gold'
                         }`}
+                        data-aside-id={aside.id}
                         key={aside.id ?? `${aside.title}-${idx}`}
                       >
                         <span className="xiuxian-floating-corner xiuxian-floating-corner--tl" />
