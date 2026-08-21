@@ -4,7 +4,8 @@ using Xiuxian.Domain.Models;
 namespace Xiuxian.Domain.GameData;
 
 /// <summary>
-/// 技能的配置数据传输对象，支持直接填写显式数值或通过 intensity + weights 自动解算。
+/// 技能的配置数据传输对象。所有数值直接指定，仅灵力消耗通过 ManaCostRatio 系数解算。
+/// ManaCostRatio = 1.0 时消耗 = ceil(该技能设计阶位基准玩家最大灵力 × 1%)。
 /// </summary>
 public sealed record XiuxianAbilityConfig(
     string Id,
@@ -13,37 +14,33 @@ public sealed record XiuxianAbilityConfig(
     XiuxianDamageType DamageType = XiuxianDamageType.Nature,
     int CooldownMilliseconds = 0,
     int CastMilliseconds = 0,
-    long ManaCost = 0,
+    double ManaCostRatio = 0,
     XiuxianCombatAbilityEffectType EffectType = XiuxianCombatAbilityEffectType.Damage,
     XiuxianCombatAbilityTargetType TargetType = XiuxianCombatAbilityTargetType.Enemy,
-    double? DamageRatio = null,
-    long? FlatDamage = null,
-    double? DamageRatioLevelBonus = null,
-    double? FlatDamageLevelBonus = null,
-    double? HealingRatio = null,
-    long? FlatHealing = null,
-    double? HealingRatioLevelBonus = null,
-    double? FlatHealingLevelBonus = null,
-    double? DamageOverTimeRatio = null,
+    double DamageRatio = 1.0,
+    long FlatDamage = 0,
+    double DamageRatioLevelBonus = 0,
+    double FlatDamageLevelBonus = 0,
+    double HealingRatio = 0,
+    long FlatHealing = 0,
+    double HealingRatioLevelBonus = 0,
+    double FlatHealingLevelBonus = 0,
+    double DamageOverTimeRatio = 0,
     int DamageOverTimeMilliseconds = 0,
     int DamageOverTimeTickMilliseconds = 3000,
-    double? StunChance = null,
+    double StunChance = 0,
     int StunMilliseconds = 0,
-    double? BlindChance = null,
+    double BlindChance = 0,
     int BlindMilliseconds = 0,
-    double? SilenceChance = null,
+    double SilenceChance = 0,
     int SilenceMilliseconds = 0,
-    double? PenetrationRatio = null,
-    double? ArmorDamageRatio = null,
-    double? HpDrainRatio = null,
-    double? PierceChance = null,
+    double PenetrationRatio = 0,
+    double ArmorDamageRatio = 0,
+    double HpDrainRatio = 0,
+    double PierceChance = 0,
     double TriggerHpRatio = 1.0,
     IReadOnlyList<XiuxianCombatTrigger>? DefaultTriggers = null,
-    int Tier = 1,
-    int Quality = 1,
-    double? Intensity = null,
-    double? Budget = null,
-    IReadOnlyDictionary<string, double>? Weights = null);
+    int Tier = 1);
 
 /// <summary>
 /// 装备的配置数据传输对象，支持直接填写显式 Stats 或通过 intensity + weights 自动解算。
@@ -159,6 +156,27 @@ public static class XiuxianDataBudgetResolver
     public static double GetSkillIntensityMultiplier(int tier) => 1.0 + Math.Max(0, tier - 1) * 0.30;
 
     /// <summary>
+    /// 获取指定阶位基准玩家的最大灵力值，与 BaseFlatAnchors 锚点表一致。
+    /// 用于 ManaCostRatio 解算：ManaCost = ceil(BaseMp × ManaCostRatio × 0.01)。
+    /// </summary>
+    public static double GetTierBaseMaxManapoints(int tier) => tier switch
+    {
+        1 => 50,
+        2 => 90,
+        3 => 570,
+        4 => 1402,
+        5 => 2770,
+        6 => 4234,
+        7 => 6282,
+        8 => 8586,
+        9 => 11618,
+        10 => 15474,
+        11 => 20258,
+        12 => 26066,
+        _ => 50
+    };
+
+    /// <summary>
     /// 获取装备部位槽位的预算占比权重。
     /// </summary>
     public static double GetEquipmentSlotWeight(string? slot)
@@ -181,91 +199,17 @@ public static class XiuxianDataBudgetResolver
 
     /// <summary>
     /// 将技能配置解析为不可变的技能定义。
-    /// 若提供了 weights 或 intensity，则按量化预算模型计算并补齐未显式指定的字段。
+    /// 所有数值直接使用配置值，仅灵力消耗通过 ManaCostRatio 系数解算。
     /// </summary>
     public static XiuxianCombatAbilityDefinition ResolveAbility(XiuxianAbilityConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        var hasWeights = config.Weights is { Count: > 0 };
-        var totalBudget = config.Intensity ?? config.Budget ?? (hasWeights ? GetTierBaseBudget(config.Tier) * GetSkillIntensityMultiplier(config.Tier) : 0);
-
-        // 耗蓝补偿与长吟唱补偿
-        if (hasWeights && totalBudget > 0)
-        {
-            if (config.ManaCost > 0)
-            {
-                totalBudget += (config.ManaCost / 10.0) * 0.8;
-            }
-            if (config.CastMilliseconds >= 2000)
-            {
-                totalBudget *= 1.15;
-            }
-        }
-
-        var normalizedWeights = NormalizeWeights(config.Weights);
-
-        // 1. 伤害倍率 (每 1.0 预算 = 0.025 伤害倍率加成，基准 1.0)
-        var damageRatio = config.DamageRatio ?? (hasWeights && normalizedWeights.TryGetValue("damageratio", out var wDmg)
-            ? 1.0 + totalBudget * wDmg * 0.025
-            : (config.EffectType == XiuxianCombatAbilityEffectType.Damage ? 1.0 : 0.0));
-
-        // 2. 固定伤害 (每 1.0 预算 = 4.2 点固定伤害)
-        var flatDamage = config.FlatDamage ?? (hasWeights && normalizedWeights.TryGetValue("flatdamage", out var wFlat)
-            ? (long)Math.Round(totalBudget * wFlat * 4.2)
-            : 0L);
-
-        // 3. 治疗倍率与固定治疗
-        var healingRatio = config.HealingRatio ?? (hasWeights && normalizedWeights.TryGetValue("healingratio", out var wHeal)
-            ? totalBudget * wHeal * 0.015
-            : (config.EffectType == XiuxianCombatAbilityEffectType.Heal ? 0.45 : 0.0));
-
-        var flatHealing = config.FlatHealing ?? (hasWeights && normalizedWeights.TryGetValue("flathealing", out var wFlatHeal)
-            ? (long)Math.Round(totalBudget * wFlatHeal * 5.0)
-            : 0L);
-
-        // 4. 控制属性 (眩晕 / 致盲 / 沉默)
-        var stunChance = config.StunChance ?? (hasWeights && normalizedWeights.TryGetValue("stunchance", out var wStun)
-            ? Math.Clamp(totalBudget * wStun * 0.02, 0.0, 1.0)
-            : 0.0);
-        var stunMs = config.StunMilliseconds > 0 ? config.StunMilliseconds : (stunChance > 0 ? 2000 : 0);
-
-        var blindChance = config.BlindChance ?? (hasWeights && normalizedWeights.TryGetValue("blindchance", out var wBlind)
-            ? Math.Clamp(totalBudget * wBlind * 0.03, 0.0, 1.0)
-            : 0.0);
-        var blindMs = config.BlindMilliseconds > 0 ? config.BlindMilliseconds : (blindChance > 0 ? 4000 : 0);
-
-        var silenceChance = config.SilenceChance ?? (hasWeights && normalizedWeights.TryGetValue("silencechance", out var wSilence)
-            ? Math.Clamp(totalBudget * wSilence * 0.025, 0.0, 1.0)
-            : 0.0);
-        var silenceMs = config.SilenceMilliseconds > 0 ? config.SilenceMilliseconds : (silenceChance > 0 ? 4000 : 0);
-
-        // 5. 战斗词缀 (穿透 / 破甲增伤 / 吸血 / 穿透追击)
-        var penetrationRatio = config.PenetrationRatio ?? (hasWeights && normalizedWeights.TryGetValue("penetrationratio", out var wPen)
-            ? totalBudget * wPen * 0.008
-            : 0.0);
-
-        var armorDamageRatio = config.ArmorDamageRatio ?? (hasWeights && normalizedWeights.TryGetValue("armordamageratio", out var wArmorDmg)
-            ? totalBudget * wArmorDmg * 0.006
-            : 0.0);
-
-        var hpDrainRatio = config.HpDrainRatio ?? (hasWeights && normalizedWeights.TryGetValue("hpdrainratio", out var wHpDrain)
-            ? totalBudget * wHpDrain * 0.005
-            : 0.0);
-
-        var pierceChance = config.PierceChance ?? (hasWeights && normalizedWeights.TryGetValue("piercechance", out var wPierce)
-            ? Math.Clamp(totalBudget * wPierce * 0.008, 0.0, 1.0)
-            : 0.0);
-
-        var dotRatio = config.DamageOverTimeRatio ?? (hasWeights && normalizedWeights.TryGetValue("damageovertimeratio", out var wDot)
-            ? totalBudget * wDot * 0.02
-            : 0.0);
-
-        // 6. 等级成长自动推导
-        var dmgLevelBonus = config.DamageRatioLevelBonus ?? (damageRatio > 0 ? Math.Round(damageRatio * 0.006, 4) : 0.0);
-        var flatDmgLevelBonus = config.FlatDamageLevelBonus ?? (flatDamage > 0 ? Math.Round(flatDamage * 0.01, 2) : 0.0);
-        var healLevelBonus = config.HealingRatioLevelBonus ?? (healingRatio > 0 ? Math.Round(healingRatio * 0.006, 4) : 0.0);
-        var flatHealLevelBonus = config.FlatHealingLevelBonus ?? (flatHealing > 0 ? Math.Round(flatHealing * 0.01, 2) : 0.0);
+        // ManaCost = ceil(阶位基准玩家最大灵力 × ManaCostRatio × 0.01)
+        var baseMp = GetTierBaseMaxManapoints(config.Tier);
+        var manaCost = config.ManaCostRatio > 0
+            ? (long)Math.Ceiling(baseMp * config.ManaCostRatio * 0.01)
+            : 0L;
 
         return new XiuxianCombatAbilityDefinition
         {
@@ -275,30 +219,30 @@ public static class XiuxianDataBudgetResolver
             DamageType = config.DamageType,
             CooldownMilliseconds = config.CooldownMilliseconds,
             CastMilliseconds = config.CastMilliseconds,
-            ManaCost = config.ManaCost,
+            ManaCost = manaCost,
             EffectType = config.EffectType,
             TargetType = config.TargetType,
-            DamageRatio = damageRatio,
-            FlatDamage = flatDamage,
-            DamageRatioLevelBonus = dmgLevelBonus,
-            FlatDamageLevelBonus = flatDmgLevelBonus,
-            HealingRatio = healingRatio,
-            FlatHealing = flatHealing,
-            HealingRatioLevelBonus = healLevelBonus,
-            FlatHealingLevelBonus = flatHealLevelBonus,
-            DamageOverTimeRatio = dotRatio,
+            DamageRatio = config.DamageRatio,
+            FlatDamage = config.FlatDamage,
+            DamageRatioLevelBonus = config.DamageRatioLevelBonus,
+            FlatDamageLevelBonus = config.FlatDamageLevelBonus,
+            HealingRatio = config.HealingRatio,
+            FlatHealing = config.FlatHealing,
+            HealingRatioLevelBonus = config.HealingRatioLevelBonus,
+            FlatHealingLevelBonus = config.FlatHealingLevelBonus,
+            DamageOverTimeRatio = config.DamageOverTimeRatio,
             DamageOverTimeMilliseconds = config.DamageOverTimeMilliseconds,
             DamageOverTimeTickMilliseconds = config.DamageOverTimeTickMilliseconds,
-            StunChance = stunChance,
-            StunMilliseconds = stunMs,
-            BlindChance = blindChance,
-            BlindMilliseconds = blindMs,
-            SilenceChance = silenceChance,
-            SilenceMilliseconds = silenceMs,
-            PenetrationRatio = penetrationRatio,
-            ArmorDamageRatio = armorDamageRatio,
-            HpDrainRatio = hpDrainRatio,
-            PierceChance = pierceChance,
+            StunChance = config.StunChance,
+            StunMilliseconds = config.StunMilliseconds,
+            BlindChance = config.BlindChance,
+            BlindMilliseconds = config.BlindMilliseconds,
+            SilenceChance = config.SilenceChance,
+            SilenceMilliseconds = config.SilenceMilliseconds,
+            PenetrationRatio = config.PenetrationRatio,
+            ArmorDamageRatio = config.ArmorDamageRatio,
+            HpDrainRatio = config.HpDrainRatio,
+            PierceChance = config.PierceChance,
             TriggerHpRatio = config.TriggerHpRatio,
             DefaultTriggers = config.DefaultTriggers ?? []
         };

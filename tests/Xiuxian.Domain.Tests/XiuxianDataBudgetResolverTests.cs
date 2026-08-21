@@ -16,7 +16,7 @@ public sealed class XiuxianDataBudgetResolverTests
             DamageType: XiuxianDamageType.Physical,
             CooldownMilliseconds: 10000,
             CastMilliseconds: 500,
-            ManaCost: 20,
+            ManaCostRatio: 10,
             DamageRatio: 1.75,
             FlatDamage: 40,
             StunChance: 0.25,
@@ -33,62 +33,39 @@ public sealed class XiuxianDataBudgetResolverTests
         Assert.Equal(0.25, definition.StunChance);
         Assert.Equal(2000, definition.StunMilliseconds);
         Assert.Equal(0.15, definition.PenetrationRatio);
+        // Tier 1 BaseMp=50, ManaCostRatio=10 → ceil(50 * 10 * 0.01) = ceil(5) = 5
+        Assert.Equal(5, definition.ManaCost);
     }
 
     [Fact]
-    public void ResolveAbility_WithIntensityAndWeights_CalculatesDeterministicStats()
+    public void ResolveAbility_ManaCostRatio_CalculatesCeiledManaCost()
     {
-        // 强度 40.0，权重：伤害倍率 60%，固定伤害 20%，穿透 20%
+        // Tier 3 BaseMp=570, ManaCostRatio=3 → ceil(570 * 3 * 0.01) = ceil(17.1) = 18
         var config = new XiuxianAbilityConfig(
-            Id: "ability.weight-blade",
-            Name: "破阵斩",
-            Style: XiuxianCombatStyle.Blade,
-            DamageType: XiuxianDamageType.Physical,
-            CooldownMilliseconds: 12000,
-            CastMilliseconds: 600,
-            ManaCost: 0,
-            Intensity: 40.0,
-            Weights: new Dictionary<string, double>
-            {
-                ["damageRatio"] = 0.60,
-                ["flatDamage"] = 0.20,
-                ["penetrationRatio"] = 0.20
-            });
+            Id: "ability.tier3-spell",
+            Name: "烈火术",
+            Tier: 3,
+            ManaCostRatio: 3,
+            DamageRatio: 1.5);
 
         var definition = XiuxianDataBudgetResolver.ResolveAbility(config);
 
-        // 验证计算：
-        // totalBudget = 40.0
-        // damageRatio = 1.0 + 40.0 * 0.60 * 0.025 = 1.0 + 0.60 = 1.60
-        // flatDamage = round(40.0 * 0.20 * 4.2) = round(33.6) = 34
-        // penetrationRatio = 40.0 * 0.20 * 0.008 = 0.064
-        Assert.Equal(1.60, definition.DamageRatio, precision: 3);
-        Assert.Equal(34, definition.FlatDamage);
-        Assert.Equal(0.064, definition.PenetrationRatio, precision: 3);
-        Assert.True(definition.DamageRatioLevelBonus > 0);
-        Assert.True(definition.FlatDamageLevelBonus > 0);
+        Assert.Equal(18, definition.ManaCost);
+        Assert.Equal(1.5, definition.DamageRatio);
     }
 
     [Fact]
-    public void ResolveAbility_WithTierDefaultBudget_CalculatesFromTierBase()
+    public void ResolveAbility_ZeroManaCostRatio_ProducesZeroCost()
     {
-        // 第 2 阶基准预算 25.0，技能强度乘区 1.0 + (2-1)*0.30 = 1.30 -> 基础 32.5
-        // 耗蓝 50 MP 补偿 +4.0 -> 总预算 36.5
         var config = new XiuxianAbilityConfig(
-            Id: "ability.tier2-smash",
-            Name: "裂地击",
-            Tier: 2,
-            ManaCost: 50,
-            Weights: new Dictionary<string, double>
-            {
-                ["damageRatio"] = 0.70,
-                ["flatDamage"] = 0.30
-            });
+            Id: "ability.free-attack",
+            Name: "普攻",
+            ManaCostRatio: 0,
+            DamageRatio: 0.5);
 
         var definition = XiuxianDataBudgetResolver.ResolveAbility(config);
 
-        Assert.True(definition.DamageRatio > 1.0);
-        Assert.True(definition.FlatDamage > 0);
+        Assert.Equal(0, definition.ManaCost);
     }
 
     [Fact]

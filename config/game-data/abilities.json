@@ -6,7 +6,6 @@
     "damageType": "fire",
     "cooldownMilliseconds": 12000,
     "castMilliseconds": 700,
-    "manaCost": 12,
     "effectType": "damage",
     "targetType": "enemy",
     "damageRatio": 1.35,
@@ -39,7 +38,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 24.0
   },
   {
     "id": "ability.spirit-pulse",
@@ -48,7 +48,6 @@
     "damageType": "nature",
     "cooldownMilliseconds": 8000,
     "castMilliseconds": 500,
-    "manaCost": 0,
     "effectType": "damage",
     "targetType": "enemy",
     "damageRatio": 1,
@@ -81,7 +80,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 0
   },
   {
     "id": "ability.flame-bullet",
@@ -90,7 +90,6 @@
     "damageType": "fire",
     "cooldownMilliseconds": 0,
     "castMilliseconds": 3000,
-    "manaCost": 10,
     "effectType": "damage",
     "targetType": "enemy",
     "damageRatio": 0.5,
@@ -123,7 +122,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 20.0
   },
   {
     "id": "ability.rejuvenation-art",
@@ -132,7 +132,6 @@
     "damageType": "nature",
     "cooldownMilliseconds": 15000,
     "castMilliseconds": 500,
-    "manaCost": 60,
     "effectType": "heal",
     "targetType": "self",
     "damageRatio": 1,
@@ -165,7 +164,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 120.0
   },
   {
     "id": "ability.blazing-storm",
@@ -174,7 +174,6 @@
     "damageType": "fire",
     "cooldownMilliseconds": 15000,
     "castMilliseconds": 2000,
-    "manaCost": 75,
     "effectType": "damage",
     "targetType": "allEnemies",
     "damageRatio": 0.6,
@@ -207,7 +206,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 150.0
   },
   {
     "id": "ability.entangling-vine",
@@ -216,7 +216,6 @@
     "damageType": "nature",
     "cooldownMilliseconds": 0,
     "castMilliseconds": 3000,
-    "manaCost": 10,
     "effectType": "damage",
     "targetType": "enemy",
     "damageRatio": 0.44,
@@ -249,7 +248,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 20.0
   },
   {
     "id": "ability.nature-veil",
@@ -258,7 +258,6 @@
     "damageType": "nature",
     "cooldownMilliseconds": 15000,
     "castMilliseconds": 2000,
-    "manaCost": 75,
     "effectType": "damage",
     "targetType": "enemy",
     "damageRatio": 0.9,
@@ -291,7 +290,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 150.0
   },
   {
     "id": "ability.silencing-talisman",
@@ -300,7 +300,6 @@
     "damageType": "physical",
     "cooldownMilliseconds": 20000,
     "castMilliseconds": 500,
-    "manaCost": 50,
     "effectType": "damage",
     "targetType": "enemy",
     "damageRatio": 1,
@@ -333,7 +332,8 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 100.0
   },
   {
     "id": "ability.stunning-mountain",
@@ -342,7 +342,6 @@
     "damageType": "physical",
     "cooldownMilliseconds": 20000,
     "castMilliseconds": 300,
-    "manaCost": 50,
     "effectType": "damage",
     "targetType": "enemy",
     "damageRatio": 1.1,
@@ -375,6 +374,7 @@
         "value": 1,
         "buffId": null
       }
-    ]
+    ],
+    "manaCostRatio": 100.0
   }
 ]
