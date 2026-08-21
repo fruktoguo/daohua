@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-太虚仙途 · 战斗基准模拟与产出期望模型文档/配置自动化生成工具
+道化太初 · 战斗基准模拟与产出期望模型文档/配置自动化生成工具
 ------------------------------------------------------------
 最终确定平衡参数体系:
 1. 物理系 (1 AD : 1 暴击 : 1 破招):
@@ -26,8 +26,8 @@ import sys
 
 REPO_ROOT = "/home/yuohira/game/xiuxian"
 CONFIG_PATH = os.path.join(REPO_ROOT, "config", "game-data", "expected-attributes.json")
-COMBAT_DOC_PATH = os.path.join(REPO_ROOT, "docs", "combat-benchmark-model.md")
-PLAYER_DOC_PATH = os.path.join(REPO_ROOT, "docs", "player-expected-attributes-model.md")
+COMBAT_DOC_PATH = os.path.join(REPO_ROOT, "docs", "design", "combat-benchmark-model.md")
+PLAYER_DOC_PATH = os.path.join(REPO_ROOT, "docs", "design", "player-expected-attributes-model.md")
 
 
 def get_stage_name(tier):
@@ -434,7 +434,7 @@ def run_deterministic_sim(tier_info, team_type="physical", team_size=1, sim_seco
 
 def main():
     print("==========================================================")
-    print("太虚仙途 · 战斗基准模拟与产出期望模型自动化生成中...")
+    print("道化太初 · 战斗基准模拟与产出期望模型自动化生成中...")
     print("==========================================================")
 
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -667,14 +667,14 @@ def main():
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
-    # 3. Generate docs/combat-benchmark-model.md
-    print("4/4 动态渲染并生成 docs/combat-benchmark-model.md 与 docs/player-expected-attributes-model.md...")
+    # 3. Generate docs/design/combat-benchmark-model.md
+    print("4/4 动态渲染并生成 docs/design/combat-benchmark-model.md 与 docs/design/player-expected-attributes-model.md...")
     lines = []
-    lines.append("# 太虚仙途 · 战斗基准模拟与产出期望模型 (Combat Benchmark Model)")
+    lines.append("# 道化太初 · 战斗基准模拟与产出期望模型 (Combat Benchmark Model)")
     lines.append("")
     lines.append("> **文档定位**：全游戏战斗数值、关卡挂机产出、技能循环、单人与组队效率全景标准规约文档。  ")
-    lines.append("> **关联配置文件**：[`config/game-data/expected-attributes.json`](file:///home/yuohira/game/xiuxian/config/game-data/expected-attributes.json)  ")
-    lines.append("> **玩家属性基准文档**：[`docs/player-expected-attributes-model.md`](file:///home/yuohira/game/xiuxian/docs/player-expected-attributes-model.md)  ")
+    lines.append("> **关联配置文件**：[`config/game-data/expected-attributes.json`](../../config/game-data/expected-attributes.json)  ")
+    lines.append("> **玩家属性基准文档**：[`player-expected-attributes-model.md`](./player-expected-attributes-model.md)  ")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -879,19 +879,19 @@ def main():
     with open(COMBAT_DOC_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
-    # 4. Generate docs/player-expected-attributes-model.md
+    # 4. Generate docs/design/player-expected-attributes-model.md
     p_lines = []
-    p_lines.append("# 太虚仙途 · 境界阶位体系与基准玩家期望属性量化模型")
+    p_lines.append("# 道化太初 · 境界阶位体系与基准玩家期望属性量化模型")
     p_lines.append("")
     p_lines.append("> **文档定位**：全游戏数值顶层规约文档（标准玩家属性底座、装备预算与成长乘区）。  ")
-    p_lines.append("> **关联配置文件**：[`config/game-data/expected-attributes.json`](file:///home/yuohira/game/xiuxian/config/game-data/expected-attributes.json)  ")
-    p_lines.append("> **战斗与产出基准文档**：[`docs/combat-benchmark-model.md`](file:///home/yuohira/game/xiuxian/docs/combat-benchmark-model.md)  ")
+    p_lines.append("> **关联配置文件**：[`config/game-data/expected-attributes.json`](../../config/game-data/expected-attributes.json)  ")
+    p_lines.append("> **战斗与产出基准文档**：[`combat-benchmark-model.md`](./combat-benchmark-model.md)  ")
     p_lines.append("")
     p_lines.append("---")
     p_lines.append("")
     p_lines.append("## 1. 境界、阶位与品质三维架构")
     p_lines.append("")
-    p_lines.append("《太虚仙途》建立了一套**横向境界阶位（12 阶四阶段）**与**纵向品质稀有度（8 品）**交织的修仙数值架构：")
+    p_lines.append("《道化太初》建立了一套**横向境界阶位（12 阶四阶段）**与**纵向品质稀有度（8 品）**交织的修仙数值架构：")
     p_lines.append("")
     p_lines.append("### 1.1 命名规范与概念界定")
     p_lines.append("1. **【阶位】（Tier 1 ~ 12）**：统领装备、法宝、技能、丹药与关卡怪物的基础属性数值底座与修为佩戴门槛；")
@@ -966,13 +966,13 @@ def main():
     p_lines.append("## 5. 跨系统消费与数据流转拓扑")
     p_lines.append("1. **怪我同构数据模型**：怪物与玩家采用完全同构的数据建模，具备相同的属性池、技能系统与普通攻击机制；")
     p_lines.append("2. **地图出怪与基准抽象**：不同地图/秘境/关卡支持灵活独立的出怪逻辑配置，基准文档中的波次为全周期产出基线；")
-    p_lines.append("3. **战斗模拟与关卡产出规约**：完整的战斗公式、双流派技能、单人/组队战斗模拟详表，详见独立规约文档 [`docs/combat-benchmark-model.md`](file:///home/yuohira/game/xiuxian/docs/combat-benchmark-model.md)；")
-    p_lines.append("4. **代码与服务端消费**：所有数值模型以 [`config/game-data/expected-attributes.json`](file:///home/yuohira/game/xiuxian/config/game-data/expected-attributes.json) 作为单点真实数据源。")
+    p_lines.append("3. **战斗模拟与关卡产出规约**：完整的战斗公式、双流派技能、单人/组队战斗模拟详表，详见独立规约文档 [`combat-benchmark-model.md`](./combat-benchmark-model.md)；")
+    p_lines.append("4. **代码与服务端消费**：所有数值模型以 [`config/game-data/expected-attributes.json`](../../config/game-data/expected-attributes.json) 作为单点真实数据源。")
 
     with open(PLAYER_DOC_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(p_lines) + "\n")
 
-    print("已成功动态刷新 docs/combat-benchmark-model.md, docs/player-expected-attributes-model.md 与 config/game-data/expected-attributes.json！")
+    print("已成功动态刷新 docs/design/combat-benchmark-model.md, docs/design/player-expected-attributes-model.md 与 config/game-data/expected-attributes.json！")
     print("==========================================================")
 
 
