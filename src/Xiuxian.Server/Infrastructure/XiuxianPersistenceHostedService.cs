@@ -14,7 +14,14 @@ public sealed class XiuxianPersistenceHostedService(
     private const int BatchSize = 256;
     private const int MaxWriteAttempts = 3;
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(50);
+    // 队列水位告警阈值：积压达容量 80% 打警告、95% 打错误；回落到 70% 以下才重置武装状态，
+    // 采用状态沿触发，避免磁盘卡顿期间每个批次都重复刷屏。仅观测，不改变持久化行为。
+    private const double WarningRatio = 0.80;
+    private const double ErrorRatio = 0.95;
+    private const double RearmRatio = 0.70;
     private long _outboxAckBlockedAt;
+    // 水位告警状态：0=正常，1=警告，2=错误；仅由 ExecuteAsync 单读循环访问，无需并发保护。
+    private int _watermarkLevel;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -23,6 +30,7 @@ public sealed class XiuxianPersistenceHostedService(
             while (!stoppingToken.IsCancellationRequested)
             {
                 var batch = await queue.DequeueBatchAsync(BatchSize, stoppingToken);
+                CheckQueueWatermark();
                 // 命令一旦出队就必须完成原子快照写入，不能让停服取消造成 in-flight 命令丢失。
                 await PersistBatchAsync(batch, CancellationToken.None);
             }
@@ -34,6 +42,44 @@ public sealed class XiuxianPersistenceHostedService(
         catch (ChannelClosedException)
         {
             // 写入端关闭后，剩余命令由 StopAsync drain。
+        }
+    }
+
+    /// <summary>
+    /// 出队后检查持久化队列水位：跨越 80%/95% 阈值时各告警一次，回落到 70% 以下重置。
+    /// 队列空闲时本循环阻塞在 DequeueBatchAsync 上，不会忙等或重复输出。
+    /// </summary>
+    private void CheckQueueWatermark()
+    {
+        var stats = queue.GetStats();
+        if (stats.Capacity <= 0) return;
+
+        var ratio = stats.BacklogRatio;
+        if (ratio < RearmRatio)
+        {
+            _watermarkLevel = 0;
+            return;
+        }
+
+        var nextLevel = ratio >= ErrorRatio ? 2 : ratio >= WarningRatio ? 1 : 0;
+        if (nextLevel == 0 || _watermarkLevel >= nextLevel) return;
+
+        _watermarkLevel = nextLevel;
+        if (nextLevel == 2)
+        {
+            logger.LogError(
+                "持久化队列积压达到错误水位：pending {Pending}/{Capacity}（{Ratio:P1}），磁盘写入可能严重受阻",
+                stats.PendingCount,
+                stats.Capacity,
+                ratio);
+        }
+        else
+        {
+            logger.LogWarning(
+                "持久化队列积压达到警告水位：pending {Pending}/{Capacity}（{Ratio:P1}）",
+                stats.PendingCount,
+                stats.Capacity,
+                ratio);
         }
     }
 
