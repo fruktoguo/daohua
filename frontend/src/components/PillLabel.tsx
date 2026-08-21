@@ -1,6 +1,7 @@
 import React, { memo, type CSSProperties, type ReactNode } from 'react'
-import { FloatingTooltip, type FloatingTone } from './FloatingPopover'
+import { FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
 import { UnitNumber } from './UnitNumber'
+import { formatChineseSplitNumber } from '../game/format'
 
 export type PillTone =
   | 'gold'
@@ -51,9 +52,9 @@ export interface PillBonusLabelProps {
   style?: CSSProperties
 }
 
-function renderPillValue(value: string | number | ReactNode, hasOuterTooltip: boolean): ReactNode {
+function renderPillValue(value: string | number | ReactNode, label: string, hasOuterTooltip: boolean): ReactNode {
   if (typeof value === 'number') {
-    return <UnitNumber value={value} disableTooltip={hasOuterTooltip} />
+    return <UnitNumber disableTooltip={hasOuterTooltip} tooltipLabel={label} value={value} />
   }
   return value
 }
@@ -75,6 +76,7 @@ export const PillStatLabel = memo(function PillStatLabel({
   onClick,
 }: PillStatLabelProps): React.JSX.Element {
   const ratio = progress ? Math.min(100, Math.max(0, (progress.current / Math.max(0.0001, progress.max)) * 100)) : 0
+  const isNumeric = typeof value === 'number'
 
   const content = (
     <div
@@ -85,7 +87,7 @@ export const PillStatLabel = memo(function PillStatLabel({
       <div className="compound-stat-main">
         {icon && <span className="compound-icon">{icon}</span>}
         <span className="capsule-label">{label}</span>
-        <strong className="underlined-value">{renderPillValue(value, Boolean(tooltip))}</strong>
+        <strong className="underlined-value">{renderPillValue(value, label, Boolean(tooltip) || isNumeric)}</strong>
         {progress?.text && <span className="compound-exp-text">{progress.text}</span>}
       </div>
       {progress && (
@@ -97,8 +99,37 @@ export const PillStatLabel = memo(function PillStatLabel({
   )
 
   if (tooltip) {
+    if (isNumeric) {
+      return (
+        <FloatingPopover
+          content={tooltip}
+          interactive={false}
+          placement="top"
+          quantity={value}
+          quantityTitle={label || '数量'}
+          trigger="hover"
+        >
+          {content}
+        </FloatingPopover>
+      )
+    }
     return (
       <FloatingTooltip placement="top" title={tooltip} tone={tooltipTone}>
+        {content}
+      </FloatingTooltip>
+    )
+  }
+
+  if (isNumeric) {
+    const splitText = formatChineseSplitNumber(value)
+    const singleRowTooltip = (
+      <div className="unit-number-tooltip-inline">
+        <span className="unit-number-tooltip-label">{label || '数量'}</span>
+        <strong className="unit-number-tooltip-split">{splitText}</strong>
+      </div>
+    )
+    return (
+      <FloatingTooltip placement="top" title={singleRowTooltip} tone={tooltipTone}>
         {content}
       </FloatingTooltip>
     )
@@ -121,17 +152,48 @@ export const PillBonusLabel = memo(function PillBonusLabel({
   className = '',
   style,
 }: PillBonusLabelProps): React.JSX.Element {
+  const isNumeric = typeof value === 'number'
+
   const content = (
     <div className={`compound-bonus-label pill-tone--${tone} ${className}`} style={style}>
       {icon && <span className="compound-icon">{icon}</span>}
       <span className="capsule-label">{label}</span>
-      <span className="underlined-value">{renderPillValue(value, Boolean(tooltip))}</span>
+      <span className="underlined-value">{renderPillValue(value, label, Boolean(tooltip) || isNumeric)}</span>
     </div>
   )
 
   if (tooltip) {
+    if (isNumeric) {
+      return (
+        <FloatingPopover
+          content={tooltip}
+          interactive={false}
+          placement="top"
+          quantity={value}
+          quantityTitle={label || '数量'}
+          trigger="hover"
+        >
+          {content}
+        </FloatingPopover>
+      )
+    }
     return (
       <FloatingTooltip placement="top" title={tooltip} tone={tooltipTone}>
+        {content}
+      </FloatingTooltip>
+    )
+  }
+
+  if (isNumeric) {
+    const splitText = formatChineseSplitNumber(value)
+    const singleRowTooltip = (
+      <div className="unit-number-tooltip-inline">
+        <span className="unit-number-tooltip-label">{label || '数量'}</span>
+        <strong className="unit-number-tooltip-split">{splitText}</strong>
+      </div>
+    )
+    return (
+      <FloatingTooltip placement="top" title={singleRowTooltip} tone={tooltipTone}>
         {content}
       </FloatingTooltip>
     )

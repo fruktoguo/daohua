@@ -290,24 +290,35 @@
   color: var(--text-dim, rgba(233, 227, 210, 0.56));
 }
 
-/* 通用独立数量副气泡 (标题为「数量」，内容为四位分段「具体数值」) */
-.xiuxian-floating-aside-card[data-aside-id="quantity-aside-card"] {
-  min-width: 140px;
+/* 通用独立数量副气泡 (单行：标题对应数量，然后显示具体数值) */
+.xiuxian-floating-aside-single-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
 }
 
-.xiuxian-floating-aside-card[data-aside-id="quantity-aside-card"] .xiuxian-floating-aside-lines {
-  list-style: none;
-  padding: 0;
-  margin: 4px 0 0 0;
+.xiuxian-floating-aside-single-row .xiuxian-floating-aside-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--gold-light, #e8d69a);
+  opacity: 0.9;
 }
 
-.xiuxian-floating-aside-card[data-aside-id="quantity-aside-card"] .xiuxian-floating-aside-lines li {
-  font-size: 13.5px;
+.xiuxian-floating-aside-single-row .xiuxian-floating-aside-val {
+  font-size: 13px;
   font-weight: 700;
   color: #fffdf5;
   letter-spacing: 0.5px;
-  line-height: 1.35;
   font-variant-numeric: tabular-nums;
+}
+
+.xiuxian-floating-aside-card[data-aside-id="quantity-aside-card"] {
+  min-width: unset;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 6px 10px;
 }
 
 

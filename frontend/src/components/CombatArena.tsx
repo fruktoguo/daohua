@@ -909,12 +909,8 @@ export const CombatArena = memo(function CombatArena({
   const fallbackMaxMp = 100 + (combat?.intelligenceLevel ?? 1) * 10
   const playerMaxHp = expedition?.playerMaxHitpoints ?? combatResources?.maxHitpoints ?? fallbackMaxHp
   const playerMaxMp = expedition?.playerMaxManapoints ?? combatResources?.maxManapoints ?? fallbackMaxMp
-  const playerHp = isCombat
-    ? (expedition?.playerHitpoints ?? combatResources?.hitpoints ?? playerMaxHp)
-    : playerMaxHp
-  const playerMp = isCombat
-    ? (expedition?.playerManapoints ?? combatResources?.manapoints ?? playerMaxMp)
-    : playerMaxMp
+  const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
+  const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
   const phase = expedition?.phase ?? (isLifeAction ? 'life-action' : 'idle')
   const enemyVisible = isCombat && (phase === 'combat' || phase === 'death' || ((expedition?.enemyHitpoints ?? 0) > 0))
 

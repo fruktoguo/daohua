@@ -2,7 +2,8 @@ import { memo, useMemo, useState } from 'react'
 import { VectorCharacter } from './VectorCharacter'
 import { RealmBadge } from './RealmBadge'
 import { PillStatLabel, PillBonusLabel, type PillTone } from './PillLabel'
-import { formatNumber } from '../game/format'
+import { formatChineseSplitNumber, formatNumber } from '../game/format'
+import { FloatingTooltip } from './FloatingPopover'
 import { UnitNumber } from './UnitNumber'
 import {
   PercentValue,
@@ -244,13 +245,24 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   <strong className="tone-gold">{t('insight.progressComplete')}</strong>
                 ) : (
                   <strong>
-                    <UnitNumber value={realmProgress.currentLayerExp} /> / <UnitNumber value={realmProgress.expToNext} /> ({realmInfo.layerProgress.toFixed(1)}%)
+                    <UnitNumber tooltipLabel="当前修为" value={realmProgress.currentLayerExp} /> /{' '}
+                    <UnitNumber tooltipLabel="突破所需" value={realmProgress.expToNext} /> ({realmInfo.layerProgress.toFixed(1)}%)
                   </strong>
                 )}
               </div>
-              <div className="insight-progress-bar">
-                <div className="insight-progress-fill" style={{ width: `${isPendingBreakthrough || realmInfo.layerProgress >= 99.99 ? 100 : realmInfo.layerProgress}%` }} />
-              </div>
+              <FloatingTooltip
+                placement="top"
+                title={
+                  <div className="unit-number-tooltip-inline">
+                    <span className="unit-number-tooltip-label">总修为</span>
+                    <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(stats.spirit ?? 0)}</strong>
+                  </div>
+                }
+              >
+                <div className="insight-progress-bar">
+                  <div className="insight-progress-fill" style={{ width: `${isPendingBreakthrough || realmInfo.layerProgress >= 99.99 ? 100 : realmInfo.layerProgress}%` }} />
+                </div>
+              </FloatingTooltip>
               {(isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.spirit ?? 0) > 0)) && (
                 <button
                   className="insight-breakthrough-btn"
@@ -265,11 +277,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-quick-stats">
               <div className="insight-quick-item">
                 <span>{t('insight.quick.hp')}</span>
-                <strong className="tone-green"><UnitNumber tone="jade" value={maxHp} /></strong>
+                <strong className="tone-green"><UnitNumber tooltipLabel={t('insight.quick.hp')} tone="jade" value={maxHp} /></strong>
               </div>
               <div className="insight-quick-item">
                 <span>{t('insight.quick.mp')}</span>
-                <strong className="tone-blue"><UnitNumber tone="qi" value={maxMp} /></strong>
+                <strong className="tone-blue"><UnitNumber tooltipLabel={t('insight.quick.mp')} tone="qi" value={maxMp} /></strong>
               </div>
             </div>
           </div>
@@ -338,7 +350,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   <div className="insight-root-row" key={dim.id}>
                     <PillStatLabel
                       label={t(`insight.root.${dim.id}.name`)}
-                      value={formatNumber(dim.level)}
+                      value={dim.level}
                       tone={dim.tone}
                       progress={dim.progress}
                       tooltip={t(`insight.root.${dim.id}.desc`)}
@@ -373,12 +385,12 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   />
                   <PillStatLabel
                     label={t('insight.base.hpRegen')}
-                    value={<><UnitNumber value={basePool.baseHpRegen} />/5s</>}
+                    value={<><UnitNumber tooltipLabel={t('insight.base.hpRegen')} value={basePool.baseHpRegen} />/5s</>}
                     tone="emerald"
                   />
                   <PillStatLabel
                     label={t('insight.base.mpRegen')}
-                    value={<><UnitNumber value={basePool.baseMpRegen} />/5s</>}
+                    value={<><UnitNumber tooltipLabel={t('insight.base.mpRegen')} value={basePool.baseMpRegen} />/5s</>}
                     tone="cyan"
                   />
                 </div>
@@ -496,8 +508,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel label={t('insight.combat.hp')} value={maxHp} tone="emerald" tooltip={t('insight.combat.hpTooltip')} />
                   <PillStatLabel label={t('insight.combat.mp')} value={maxMp} tone="cyan" tooltip={t('insight.combat.mpTooltip')} />
-                  <PillStatLabel label={t('insight.combat.hpRegen')} value={<><UnitNumber value={hpRegenTotal} />/5s</>} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
-                  <PillStatLabel label={t('insight.combat.mpRegen')} value={<><UnitNumber value={mpRegenTotal} />/5s</>} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.hpRegen')} value={<><UnitNumber tooltipLabel={t('insight.combat.hpRegen')} value={hpRegenTotal} />/5s</>} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.mpRegen')} value={<><UnitNumber tooltipLabel={t('insight.combat.mpRegen')} value={mpRegenTotal} />/5s</>} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
                 </div>
 
                 {/* 第 2 排：攻防属性 (物理攻击、术法攻击、物理护甲、术法抗性) */}

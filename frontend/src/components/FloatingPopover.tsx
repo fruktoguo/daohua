@@ -60,12 +60,15 @@ export interface FloatingAsideCard {
   tone?: FloatingTone
   lines?: readonly string[]
   content?: ReactNode
+  /** 是否以单行模式展示 (左侧标题，右侧具体数值) */
+  isSingleRow?: boolean
 }
 
 /**
  * 通用数量详细副气泡构建工具
  * 标题：数量（或自定义）
  * 内容：具体数值（中文四位分段）
+ * 结构：1 行展示
  */
 export function createQuantityAsideCard(
   quantity: number | bigint | string,
@@ -75,6 +78,7 @@ export function createQuantityAsideCard(
     id: 'quantity-aside-card',
     title,
     tone: 'gold',
+    isSingleRow: true,
     lines: [formatChineseSplitNumber(quantity)],
   }
 }
@@ -676,26 +680,37 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
                         <span className="xiuxian-floating-corner xiuxian-floating-corner--bl" />
                         <span className="xiuxian-floating-corner xiuxian-floating-corner--br" />
 
-                        <div className="xiuxian-floating-aside-head">
-                          {aside.mark && (
-                            <span className="xiuxian-floating-aside-mark">{aside.mark}</span>
-                          )}
-                          <strong className="xiuxian-floating-aside-title">{aside.title}</strong>
-                          {aside.subtitle && (
-                            <span className="xiuxian-floating-aside-sub">{aside.subtitle}</span>
-                          )}
-                        </div>
+                        {aside.isSingleRow ? (
+                          <div className="xiuxian-floating-aside-single-row">
+                            <strong className="xiuxian-floating-aside-title">{aside.title}</strong>
+                            <span className="xiuxian-floating-aside-val">
+                              {aside.lines?.[0] ?? aside.subtitle ?? ''}
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="xiuxian-floating-aside-head">
+                              {aside.mark && (
+                                <span className="xiuxian-floating-aside-mark">{aside.mark}</span>
+                              )}
+                              <strong className="xiuxian-floating-aside-title">{aside.title}</strong>
+                              {aside.subtitle && (
+                                <span className="xiuxian-floating-aside-sub">{aside.subtitle}</span>
+                              )}
+                            </div>
 
-                        {aside.lines && aside.lines.length > 0 && (
-                          <ul className="xiuxian-floating-aside-lines">
-                            {aside.lines.map((line, lineIdx) => (
-                              <li key={lineIdx}>{line}</li>
-                            ))}
-                          </ul>
-                        )}
+                            {aside.lines && aside.lines.length > 0 && (
+                              <ul className="xiuxian-floating-aside-lines">
+                                {aside.lines.map((line, lineIdx) => (
+                                  <li key={lineIdx}>{line}</li>
+                                ))}
+                              </ul>
+                            )}
 
-                        {aside.content && (
-                          <div className="xiuxian-floating-aside-custom">{aside.content}</div>
+                            {aside.content && (
+                              <div className="xiuxian-floating-aside-custom">{aside.content}</div>
+                            )}
+                          </>
                         )}
                       </div>
                     ))}

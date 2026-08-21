@@ -2,7 +2,6 @@ import React, { memo, type CSSProperties, type ReactNode } from 'react'
 import { FloatingTooltip, type FloatingPlacement, type FloatingTone } from './FloatingPopover'
 import {
   formatChineseSplitNumber,
-  formatExactNumber,
   formatUnitNumber,
 } from '../game/format'
 import type { PillTone } from './PillLabel'
@@ -32,8 +31,6 @@ export interface UnitNumberProps {
   tooltipTone?: FloatingTone
   /** 气泡标题前缀说明 (如 "当前灵石"、"角色真元") */
   tooltipLabel?: ReactNode
-  /** 是否在气泡中额外展示标准千分位数字 (默认 true) */
-  showStandardGroupInTooltip?: boolean
   /** 自定义气泡完整内容（若提供则覆盖默认分段提示） */
   customTooltip?: ReactNode
   /** 额外自定义类名 */
@@ -62,7 +59,6 @@ export const UnitNumber = memo(function UnitNumber({
   tooltipPlacement = 'top',
   tooltipTone = 'gold',
   tooltipLabel,
-  showStandardGroupInTooltip = true,
   customTooltip,
   className = '',
   style,
@@ -79,18 +75,12 @@ export const UnitNumber = memo(function UnitNumber({
   // 2. 完整四位分段文本 (例如 "1234亿 7777万 5211")
   const splitText = formatChineseSplitNumber(value)
 
-  // 3. 千分位标准格式 (例如 "123,477,775,211")
-  const numericVal = typeof value === 'number' ? value : Number(value)
-  const standardText = !isNaN(numericVal) ? formatExactNumber(numericVal) : String(value)
-
-  // 构建 Hover 提示内容
+  // 构建 Hover 提示内容 (严格保证单行展示：标题对应数量，然后显示具体数值，就只要这俩文本)
+  const titleText = tooltipLabel ?? '数量'
   const tooltipContent = customTooltip ?? (
-    <div className="unit-number-tooltip-content">
-      {tooltipLabel && <div className="unit-number-tooltip-label">{tooltipLabel}</div>}
-      <div className="unit-number-tooltip-split">{splitText}</div>
-      {showStandardGroupInTooltip && standardText !== splitText && standardText !== compactText && (
-        <div className="unit-number-tooltip-std">（{standardText}）</div>
-      )}
+    <div className="unit-number-tooltip-inline">
+      <span className="unit-number-tooltip-label">{titleText}</span>
+      <strong className="unit-number-tooltip-split">{splitText}</strong>
     </div>
   )
 

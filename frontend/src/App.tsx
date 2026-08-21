@@ -16,7 +16,7 @@ import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
-import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText } from './game/format'
+import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
 import { ACTION_TAB_META, ACTION_TYPES, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
@@ -470,7 +470,16 @@ function TopBar(): React.JSX.Element {
               <span className={`connection-dot connection-dot--${connection}`} />
             </FloatingTooltip>
           </div>
-          <FloatingTooltip placement="bottom" title={<>总修为 {formatChineseSplitNumber(stats.spirit)} · 当前层突破进度 {formatNumber(realmProgress.currentLayerExp)}/{formatNumber(realmProgress.expToNext)} ({realmInfo.layerProgress.toFixed(1)}%)</>} tone="qi">
+          <FloatingTooltip
+            placement="bottom"
+            title={
+              <div className="unit-number-tooltip-inline">
+                <span className="unit-number-tooltip-label">总修为</span>
+                <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(stats.spirit)}</strong>
+              </div>
+            }
+            tone="qi"
+          >
             <div className="realm-progress">
               <i style={{ width: `${realmInfo.layerProgress}%` }} />
               <span>{progressDisplay}</span>
