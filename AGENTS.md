@@ -203,10 +203,10 @@ scripts/docker-build-prod.sh --push
 
 ## 15. Git 规则
 
-- 用户未明确要求时不自动 commit。
-- `commit` 不等于 `push`；push、force push、reset、rebase、amend、tag、release 和 deploy 都需要明确许可。
-- commit 前只暂存本次任务文件，先运行对应验证，再核对 `git diff --cached`。
-- 提交使用 Conventional Commits，说明必须为中文，例如：
+- **自动提交要求**：每次完成完整功能修改或添加，或解决一组 Bug 并通过完整验证后，**必须自动执行 Git 提交**，无需等待用户额外发出提交指令。
+- `commit` 不等于 `push`；push、force push、reset、rebase、amend、tag、release 和 deploy 仍需用户明确许可。
+- commit 前只暂存本次任务直接相关文件，先运行对应验证（如 `scripts/verify.sh` 或相应单测），核对 `git diff --cached` 确保无无关改动后自动 commit。
+- 提交说明必须使用规范的中文 Conventional Commits，例如：
 
 ```text
 feat: 完善 CCR 生产部署流程
