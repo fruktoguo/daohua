@@ -24,8 +24,8 @@
 flowchart TD
     Config["单点真实数据源 (Single Source of Truth)<br>config/game-data/expected-attributes.json"]
     
-    Doc1["【玩家与装备模型】<br>docs/player-expected-attributes-model.md<br>(12阶位+8品质 / 4大乘区 / 基础池与最终期望)"]
-    Doc2["【战斗与产出基准】<br>docs/combat-benchmark-model.md<br>(关卡怪物标准 / 动态抗性 / 二次曲线 / 单人与3人队效率比)"]
+    Doc1["【玩家与装备模型】<br>player-expected-attributes-model.md<br>(12阶位+8品质 / 4大乘区 / 基础池与最终期望)"]
+    Doc2["【战斗与产出基准】<br>combat-benchmark-model.md<br>(关卡怪物标准 / 动态抗性 / 二次曲线 / 单人与3人队效率比)"]
     
     Domain["领域模型与确定性模拟<br>src/Xiuxian.Domain"]
     Server["服务启动装配与ECS组件<br>src/Xiuxian.Server"]
@@ -34,9 +34,9 @@ flowchart TD
     Config --> Domain & Server
 ```
 
-- **玩家期望属性与装备预算模型**：详见 [`docs/player-expected-attributes-model.md`](file:///home/yuohira/game/xiuxian/docs/player-expected-attributes-model.md)；
-- **战斗基准模拟与产出期望模型**：详见 [`docs/combat-benchmark-model.md`](file:///home/yuohira/game/xiuxian/docs/combat-benchmark-model.md)；
-- **前端公共组件与模板规范**：详见 [`docs/frontend-common-components.md`](file:///home/yuohira/game/xiuxian/docs/frontend-common-components.md)。
+- **玩家期望属性与装备预算模型**：详见 [`player-expected-attributes-model.md`](./player-expected-attributes-model.md)；
+- **战斗基准模拟与产出期望模型**：详见 [`combat-benchmark-model.md`](./combat-benchmark-model.md)；
+- **前端公共组件与模板规范**：详见 [`common-components.md`](../frontend/common-components.md)。
 
 ---
 

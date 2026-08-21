@@ -1,6 +1,6 @@
-# 太虚仙途 · 通用悬浮气泡与菜单体系设计规范 (Floating Popover System)
+# 道化太初 · 通用悬浮气泡与菜单体系设计规范 (Floating Popover System)
 
-本文件是《太虚仙途》前端通用的悬浮提示、信息气泡与操作菜单体系的标准设计与技术实现文档。
+本文件是《道化太初》前端通用的悬浮提示、信息气泡与操作菜单体系的标准设计与技术实现文档。
 
 ---
 
@@ -19,7 +19,7 @@
 
 ## 2. 核心架构与组件划分
 
-悬浮体系由 [`frontend/src/components/FloatingPopover.tsx`](file:///home/yuohira/game/xiuxian/frontend/src/components/FloatingPopover.tsx) 与 [`frontend/src/styles/floating-popover.css`](file:///home/yuohira/game/xiuxian/frontend/src/styles/floating-popover.css) 构成：
+悬浮体系由 [`frontend/src/components/FloatingPopover.tsx`](../../frontend/src/components/FloatingPopover.tsx) 与 [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) 构成：
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐

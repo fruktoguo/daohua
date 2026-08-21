@@ -1,8 +1,8 @@
-# 太虚仙途 · 战斗基准模拟与产出期望模型 (Combat Benchmark Model)
+# 道化太初 · 战斗基准模拟与产出期望模型 (Combat Benchmark Model)
 
 > **文档定位**：全游戏战斗数值、关卡挂机产出、技能循环、单人与组队效率全景标准规约文档。  
-> **关联配置文件**：[`config/game-data/expected-attributes.json`](file:///home/yuohira/game/xiuxian/config/game-data/expected-attributes.json)  
-> **玩家属性基准文档**：[`docs/player-expected-attributes-model.md`](file:///home/yuohira/game/xiuxian/docs/player-expected-attributes-model.md)  
+> **关联配置文件**：[`config/game-data/expected-attributes.json`](../../config/game-data/expected-attributes.json)  
+> **玩家属性基准文档**：[`player-expected-attributes-model.md`](./player-expected-attributes-model.md)  
 
 ---
 

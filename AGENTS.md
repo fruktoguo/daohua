@@ -1,4 +1,4 @@
-# AGENTS.md - 太虚仙途开发与发布规则
+# AGENTS.md - 道化太初开发与发布规则
 
 本文件适用于仓库根目录及全部子目录。用户当次明确要求优先于本文件；存在冲突时先说明冲突和风险，再等待用户裁定。
 
@@ -52,7 +52,7 @@ Xiuxian.Server -> YuoCore.Persistence + YuoCore.Runtime
 4. 非简单任务先给出简短中文计划。
 5. 确认真实工具链：.NET 10、Node.js 22、npm 和 Docker Buildx。
 6. 涉及生产时先只读核对 DNS、SSH、容器、持久卷、Caddy 和健康端点。
-7. 涉及前端开发时，必须先查阅前端公共组件文档 `docs/frontend-common-components.md`，核对已有统一模板与复用组件。
+7. 涉及前端开发时，必须先查阅前端公共组件文档 `docs/frontend/common-components.md`，核对已有统一模板与复用组件。
 
 禁止覆盖、丢弃、暂存、格式化或提交用户已有的无关改动。
 
@@ -127,8 +127,8 @@ docker compose down
 - API、WebSocket 和 UI 状态的错误必须可见且可恢复，不能无限静默重连。
 - 桌面和移动端都必须避免文本溢出、控件重叠和动态内容引发布局跳动。
 - **公共组件与统一模板强制收拢**：
-  - 前端开发前，**必须先阅读前端公共组件文档 [`docs/frontend-common-components.md`](file:///home/yuohira/game/xiuxian/docs/frontend-common-components.md)**，检索是否存在可复用的公共组件或统一模板（如 Hover 提示、复合 Label、境界徽章、模态弹窗、网格选择器等），禁止随意重新自制相似样式或重复实现。
-  - 凡是将任何前端部分收拢走统一模板（如 hoverinfo、label、badge、picker 等），**必须同步登记写入 [`docs/frontend-common-components.md`](file:///home/yuohira/game/xiuxian/docs/frontend-common-components.md)**。
+  - 前端开发前，**必须先阅读前端公共组件文档 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**，检索是否存在可复用的公共组件或统一模板（如 Hover 提示、复合 Label、境界徽章、模态弹窗、网格选择器等），禁止随意重新自制相似样式或重复实现。
+  - 凡是将任何前端部分收拢走统一模板（如 hoverinfo、label、badge、picker 等），**必须同步登记写入 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**。
   - 前端公共组件文档**不记录具体样式细节**，只作为**快速索引查找表**，仅记录适用场景（什么情况下使用）和指定源码/样式路径，具体用法与样式随用随查对应文件。
 
 ## 9. 测试与验证
@@ -218,14 +218,14 @@ docs: 补充数据备份和回滚说明
 
 ## 16. 文档同步
 
-修改以下内容时必须同步更新 `README.md` 或 `docs/deployment.md`：
+修改以下内容时必须同步更新 `README.md` 或 `docs/ops/deployment.md`：
 
 - 开发命令、依赖版本、端口或目录。
 - Docker 构建、镜像名、标签或平台。
 - 环境变量、健康端点、Caddy、CCR、部署和回滚方式。
 - 数据卷、备份、恢复、存档格式或运行拓扑。
 - 对外 API、WebSocket 协议和生产安全边界。
-- 前端公共组件、统一模板或基础交互规范变更（同步更新 `docs/frontend-common-components.md`）。
+- 前端公共组件、统一模板或基础交互规范变更（同步更新 `docs/frontend/common-components.md`）。
 
 ## 17. 完成标准
 

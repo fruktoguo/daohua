@@ -1,4 +1,4 @@
-# 太虚仙途（暂定名）
+# 道化太初
 
 基于 YuoCore 的 C# 服务端行动队列放置游戏原型。当前已经打通“采集草药 → 炼制引气丹 → 自动服丹引气入体”的首个完整循环，并提供真实 WebSocket 在线压测、离线挂机快进压测和完全离线账号压测。
 
@@ -12,9 +12,11 @@
 - `tests/Xiuxian.Domain.Tests`：循环、材料阻塞、快进一致性、战斗和市场测试。
 - `frontend`：React 19、Zustand 和 Vite 前端；包含行动、背包、日志、战斗配置、灵市盘口、下单和挂单管理页面。
 - `config/game-data`：地图、怪物、技能、物品、装备、遭遇和行动的版本化 JSON 配置。
-- `docs/initial-design.md`：初步游戏与技术设计。
-- `docs/performance-baseline.md`：三种在线状态的首轮实测基线。
-- `docs/milky-way-idle-mapping.md`：公开玩法/数值到修仙系统的映射与排除边界。
+- `docs/`：项目文档，导航索引见 `docs/README.md`。
+  - `docs/design/`：游戏与数值设计——初步设计总纲、战斗数值规约、境界阶位与期望属性模型、战斗基准与产出模型、游戏数据架构、性能基线、Milky Way Idle 玩法映射参考。
+  - `docs/frontend/`：前端规范——公共组件与统一模板速查手册、悬浮提示与浮层专项设计。
+  - `docs/ops/`：部署运维——生产构建、CCR 发布、服务器更新与回滚。
+  - `docs/world/`：世界观与剧情——设定总览、世界观、章节剧情与地图设计。
 
 ## 本地运行
 
@@ -103,7 +105,7 @@ docker compose up -d --build
 node scripts/smoke-production.mjs http://127.0.0.1:5128
 ```
 
-项目提供 CCR 不可变版本和 `prod` 标签发布、服务器定时更新、失败回滚、持久卷、一致性备份及 `xx.yuohira.com` Caddy 配置。完整流程、运维命令和当前单实例/鉴权边界见 `docs/deployment.md`。
+项目提供 CCR 不可变版本和 `prod` 标签发布、服务器定时更新、失败回滚、持久卷、一致性备份及 `xx.yuohira.com` Caddy 配置。完整流程、运维命令和当前单实例/鉴权边界见 `docs/ops/deployment.md`。
 
 ## 性能场景
 

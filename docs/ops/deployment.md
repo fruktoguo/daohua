@@ -1,4 +1,6 @@
-# 太虚仙途生产构建与部署
+# 道化太初生产构建与部署
+
+> **文档定位**：生产构建、CCR 镜像发布、服务器部署更新、持久卷与备份回滚的完整运维流程；本地开发启动见根目录 `README.md`。
 
 ## 目标架构
 
@@ -239,6 +241,37 @@ scripts/deploy-prod.sh \
 ```bash
 ssh yuohira 'sudo systemctl enable --now xiuxian-ccr-auto-update.timer'
 ```
+
+## 访问令牌（可选）
+
+当前客户端只用本地 UUID 标识玩家，`playerId` 即权限：知道 ID 就能读取该玩家快照，并以下单、撤单、领取市场资产。服务端提供可选共享访问令牌，为公网部署增加最低门槛：
+
+- 配置 `Server:AccessToken`（环境变量 `Server__AccessToken`）后，`/ws`、`GET /api/players/{id}` 与三个市场写接口都要求携带令牌：HTTP 使用 `X-Access-Token` 请求头，WebSocket 使用 query 参数 `token`；缺失或不匹配返回 401。
+- 未配置时不启用鉴权，行为与历史版本一致；启动日志会输出 Warning：`未配置 Server:AccessToken，玩家级接口无鉴权，仅建议本地开发使用`。
+
+生成强随机令牌：
+
+```bash
+openssl rand -base64 32
+```
+
+本地开发：
+
+```bash
+Server__AccessToken=<令牌> dotnet run --project src/Xiuxian.Server/Xiuxian.Server.csproj
+```
+
+前端在「设置 → 访问令牌」保存后写入 localStorage（键 `xiuxian_access_token`），之后每个 API 请求和 WebSocket 连接自动携带。
+
+生产在 `/opt/xiuxian/xiuxian.env` 中设置：
+
+```text
+XIUXIAN_ACCESS_TOKEN=<令牌>
+```
+
+Compose 将其插值为容器环境变量 `Server__AccessToken`；自动更新 timer 通过 unit 内 `EnvironmentFile=-/opt/xiuxian/xiuxian.env` 读取同一文件，保证自动重建容器时插值不丢失。修改后需重建容器才生效（等待一次自动更新，或手工执行 `docker compose up -d --force-recreate app`）。
+
+该令牌是部署者持有的共享口令，不是账号体系：轮换令牌即可让全部旧客户端失效，但在接入真正的身份认证之前，仍不得用于充值或真实资产归属。
 
 ## 安全与商业化边界
 

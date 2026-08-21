@@ -1,14 +1,14 @@
-# 太虚仙途 · 境界阶位体系与基准玩家期望属性量化模型
+# 道化太初 · 境界阶位体系与基准玩家期望属性量化模型
 
 > **文档定位**：全游戏数值顶层规约文档（标准玩家属性底座、装备预算与成长乘区）。  
-> **关联配置文件**：[`config/game-data/expected-attributes.json`](file:///home/yuohira/game/xiuxian/config/game-data/expected-attributes.json)  
-> **战斗与产出基准文档**：[`docs/combat-benchmark-model.md`](file:///home/yuohira/game/xiuxian/docs/combat-benchmark-model.md)  
+> **关联配置文件**：[`config/game-data/expected-attributes.json`](../../config/game-data/expected-attributes.json)  
+> **战斗与产出基准文档**：[`combat-benchmark-model.md`](./combat-benchmark-model.md)  
 
 ---
 
 ## 1. 境界、阶位与品质三维架构
 
-《太虚仙途》建立了一套**横向境界阶位（12 阶四阶段）**与**纵向品质稀有度（8 品）**交织的修仙数值架构：
+《道化太初》建立了一套**横向境界阶位（12 阶四阶段）**与**纵向品质稀有度（8 品）**交织的修仙数值架构：
 
 ### 1.1 命名规范与概念界定
 1. **【阶位】（Tier 1 ~ 12）**：统领装备、法宝、技能、丹药与关卡怪物的基础属性数值底座与修为佩戴门槛；
@@ -104,5 +104,5 @@ $$\mathbf{最终面板属性} = \mathbf{基础数值池 (BaseFlat)} \times \math
 ## 5. 跨系统消费与数据流转拓扑
 1. **怪我同构数据模型**：怪物与玩家采用完全同构的数据建模，具备相同的属性池、技能系统与普通攻击机制；
 2. **地图出怪与基准抽象**：不同地图/秘境/关卡支持灵活独立的出怪逻辑配置，基准文档中的波次为全周期产出基线；
-3. **战斗模拟与关卡产出规约**：完整的战斗公式、双流派技能、单人/组队战斗模拟详表，详见独立规约文档 [`docs/combat-benchmark-model.md`](file:///home/yuohira/game/xiuxian/docs/combat-benchmark-model.md)；
-4. **代码与服务端消费**：所有数值模型以 [`config/game-data/expected-attributes.json`](file:///home/yuohira/game/xiuxian/config/game-data/expected-attributes.json) 作为单点真实数据源。
+3. **战斗模拟与关卡产出规约**：完整的战斗公式、双流派技能、单人/组队战斗模拟详表，详见独立规约文档 [`combat-benchmark-model.md`](./combat-benchmark-model.md)；
+4. **代码与服务端消费**：所有数值模型以 [`config/game-data/expected-attributes.json`](../../config/game-data/expected-attributes.json) 作为单点真实数据源。
