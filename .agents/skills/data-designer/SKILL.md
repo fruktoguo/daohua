@@ -1,5 +1,5 @@
 ---
-name: xiuxian-data-designer
+name: data-designer
 description: >-
   Use this skill whenever designing, reviewing, modifying, or balancing skills, equipment, items, buffs, monsters, and encounters in the Xiuxian codebase. Enforces the strict 'Intensity (Budget) + Attribute Weights' quantitative methodology, ensuring all numerical values in config files are derived deterministically.
 ---

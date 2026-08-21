@@ -1,6 +1,6 @@
 # 《道化太初》全阶位预算与属性折算速查表 (Budget & Conversion Reference)
 
-本文档作为 `xiuxian-data-designer` Skill 的补充参考手册，提供全 12 阶位的标准强度预算底座、品质倍率及换算速查。
+本文档作为 `data-designer` Skill 的补充参考手册，提供全 12 阶位的标准强度预算底座、品质倍率及换算速查。
 
 ---
 
