@@ -348,7 +348,9 @@ public sealed record XiuxianCombatAttributeState(
     double SkillIntensity = 1.0,
     double DynamicResistanceFactorK = 1.0,
     double ActionSpeedReductionRatio = 0,
-    double CooldownReductionRatio = 0);
+    double CooldownReductionRatio = 0,
+    double CriticalRating = 0,
+    double CriticalAvoidanceRating = 0);
 
 public sealed record XiuxianCombatActionState(
     string Name,
