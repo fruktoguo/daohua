@@ -1,11 +1,13 @@
 [Unit]
-Description=太虚仙途 CCR 镜像更新检查
+Description=道化太初 CCR 镜像更新检查
 After=docker.service network-online.target
 Wants=network-online.target
 Requires=docker.service
 
 [Service]
 Type=oneshot
+# Compose 插值 XIUXIAN_ACCESS_TOKEN 需要环境变量来源；负号表示文件可缺省。
+EnvironmentFile=-/opt/xiuxian/xiuxian.env
 ExecStart=/opt/xiuxian/ccr-auto-update.sh
 User=root
 Group=root

@@ -17,6 +17,8 @@ services:
       Market__LedgerProvider: local-json
       Market__PartitionCount: "1"
       Market__PartitionId: "0"
+      # 可选共享访问令牌；空默认不启用，来源 /opt/xiuxian/xiuxian.env。
+      Server__AccessToken: ${XIUXIAN_ACCESS_TOKEN:-}
     volumes:
       - xiuxian-data:/app/data
     read_only: true
