@@ -288,6 +288,39 @@ public sealed class XiuxianCombatTests
     }
 
     [Fact]
+    public void Combat_simulator_respects_initial_cooldowns_and_preserves_on_respawn()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.Parse("33333333-3333-3333-3333-333333333333"), now: Baseline);
+        state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;
+
+        var initialAbilityCds = new Dictionary<string, long>
+        {
+            [XiuxianCombatAbilityIds.HeavySlash] = 5_000
+        };
+        var initialConsumableCds = new List<long> { 10_000, 0, 0 };
+
+        // 模拟 1 秒（未达到 5 秒 CD）
+        var result = XiuxianCombatSimulator.Run(
+            state.PlayerId,
+            state.Combat,
+            state.Buffs,
+            state.Inventory.Items,
+            XiuxianCombatEncounterIds.QiBeast,
+            Baseline,
+            TimeSpan.FromSeconds(1),
+            initialAbilityCooldowns: initialAbilityCds,
+            initialConsumableCooldowns: initialConsumableCds);
+
+        // 技能和物品应分别剩余约 4000ms 和 9000ms 冷却
+        Assert.NotNull(result.PlayerAbilityCooldowns);
+        Assert.True(result.PlayerAbilityCooldowns.TryGetValue(XiuxianCombatAbilityIds.HeavySlash, out var abilityCd));
+        Assert.Equal(4_000, abilityCd);
+
+        Assert.NotNull(result.PlayerConsumableCooldowns);
+        Assert.Equal(9_000, result.PlayerConsumableCooldowns[0]);
+    }
+
+    [Fact]
     public void Combat_recovery_consumable_is_applied_on_five_second_event_boundaries()
     {
         var state = XiuxianSimulation.CreateDefaultState(Guid.Parse("44444444-4444-4444-4444-444444444444"), now: Baseline);

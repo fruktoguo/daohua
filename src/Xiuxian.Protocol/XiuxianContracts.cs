@@ -105,7 +105,9 @@ public sealed record XiuxianCombatResourceDto(
     long Hitpoints,
     long MaxHitpoints,
     long Manapoints,
-    long MaxManapoints);
+    long MaxManapoints,
+    IReadOnlyDictionary<string, long>? AbilityCooldownMilliseconds = null,
+    IReadOnlyList<long>? ConsumableCooldownMilliseconds = null);
 
 public sealed record XiuxianCombatAttributesDto(
     long MaxHitpoints,

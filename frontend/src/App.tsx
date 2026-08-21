@@ -790,10 +790,12 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const itemCatalog = useGameStore(state => state.items)
   const inventory = useGameStore(state => state.inventory)
   const abilityCooldowns = useGameStore(
-    state => state.queue.entries[0]?.expedition?.abilityCooldownMilliseconds,
+    state => state.queue.entries[0]?.expedition?.abilityCooldownMilliseconds
+      ?? state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
   const consumableCooldowns = useGameStore(
-    state => state.queue.entries[0]?.expedition?.consumableCooldownMilliseconds,
+    state => state.queue.entries[0]?.expedition?.consumableCooldownMilliseconds
+      ?? state.combatResources?.consumableCooldownMilliseconds,
   ) ?? []
   const [editingTrigger, setEditingTrigger] = useState<{
     kind: 'ability' | 'consumable'

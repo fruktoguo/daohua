@@ -1101,4 +1101,73 @@ public sealed class XiuxianSimulationTests
         Assert.True(state.CombatResources.Hitpoints <= attributes.MaxHitpoints);
         Assert.True(state.CombatResources.Manapoints <= attributes.MaxManapoints);
     }
+
+    [Fact]
+    public void Combat_end_does_not_clear_skill_and_consumable_cooldowns()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "历练修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.Stats.Spirit = 100;
+        state.CombatResources = new XiuxianCombatResourceState
+        {
+            Initialized = true,
+            Hitpoints = 500,
+            Manapoints = 200
+        };
+        state.Inventory.Add(XiuxianItemIds.FireTalisman, 5);
+        state.Combat.ConsumableSlots[0] = new XiuxianConsumableSlot
+        {
+            ItemId = XiuxianItemIds.FireTalisman,
+            Quantity = 1,
+            Enabled = true,
+            Triggers =
+            [
+                new XiuxianCombatTrigger
+                {
+                    Dependency = XiuxianCombatTriggerDependency.Self,
+                    Condition = XiuxianCombatTriggerCondition.CurrentHitpoints,
+                    Comparator = XiuxianCombatTriggerComparator.GreaterThanOrEqual,
+                    Value = 1
+                }
+            ]
+        };
+
+        // 启动历练
+        Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 10).Success);
+
+        // 推进到初次搜寻结束并进入战斗且发生使用 (初次搜寻20秒 + 战斗5秒)
+        XiuxianSimulation.AdvanceTo(state, Baseline.AddSeconds(25));
+
+        // 验证消耗品使用后产生冷却
+        var hasCooldown = state.CombatResources.ConsumableSlotCooldowns.Count > 0
+            && state.CombatResources.ConsumableSlotCooldowns[0] > state.LastSimulatedAt;
+        Assert.True(hasCooldown);
+
+        // 推进到下一场搜寻（10秒后）
+        var previousSimulatedAt = state.LastSimulatedAt;
+        XiuxianSimulation.AdvanceTo(state, previousSimulatedAt.AddSeconds(10));
+
+        // 冷却时间随物理时间自然缩短，但未到期的冷却不会被重置清除
+        var remaining = (state.CombatResources.ConsumableSlotCooldowns[0] - state.LastSimulatedAt).TotalMilliseconds;
+        Assert.True(remaining > 0);
+    }
+
+    [Fact]
+    public void Leaving_combat_preserves_cooldowns_in_combat_resources()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "脱战修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.CombatResources.AbilityCooldowns[XiuxianCombatAbilityIds.HeavySlash] = Baseline.AddSeconds(20);
+        state.CombatResources.ConsumableSlotCooldowns = [Baseline.AddSeconds(15)];
+
+        // 启动历练然后移除队列（脱离战斗）
+        Assert.True(XiuxianSimulation.StartCombat(state, XiuxianActionIds.HuntQiBeast, 1).Success);
+        var entryId = state.Queue.Entries[0].EntryId;
+        Assert.True(XiuxianSimulation.Remove(state, entryId).Success);
+
+        // 确认脱战后，技能和物品冷却依然完好保存在 CombatResources
+        Assert.True(state.CombatResources.AbilityCooldowns.ContainsKey(XiuxianCombatAbilityIds.HeavySlash));
+        Assert.Equal(Baseline.AddSeconds(20), state.CombatResources.AbilityCooldowns[XiuxianCombatAbilityIds.HeavySlash]);
+        Assert.Equal(Baseline.AddSeconds(15), state.CombatResources.ConsumableSlotCooldowns[0]);
+    }
 }

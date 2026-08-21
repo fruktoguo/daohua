@@ -75,7 +75,9 @@ public static partial class XiuxianCombatSimulator
             player.CriticalChance,
             player.CriticalDamageRatio,
             player.CriticalAvoidance,
-            player.DamageAbsorptionRatio);
+            player.DamageAbsorptionRatio,
+            CriticalRating: player.CriticalRating,
+            CriticalAvoidanceRating: player.CriticalAvoidanceRating);
     }
 
     public static XiuxianCombatRunResult Run(

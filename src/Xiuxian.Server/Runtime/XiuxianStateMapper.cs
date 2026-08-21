@@ -377,6 +377,29 @@ public static class XiuxianStateMapper
                 XiuxianCombatExpeditionPhase.Death => "death",
                 _ => "search"
             };
+            Dictionary<string, long>? nonCombatAbilityCooldowns = null;
+            List<long>? nonCombatConsumableCooldowns = null;
+            if (persistedResources is not null)
+            {
+                if (persistedResources.AbilityCooldowns.Count > 0)
+                {
+                    nonCombatAbilityCooldowns = new Dictionary<string, long>(StringComparer.Ordinal);
+                    foreach (var (abilityId, readyAt) in persistedResources.AbilityCooldowns)
+                    {
+                        var remaining = Math.Max(0, (long)Math.Ceiling((readyAt - state.LastSimulatedAt).TotalMilliseconds));
+                        if (remaining > 0)
+                        {
+                            nonCombatAbilityCooldowns[abilityId] = remaining;
+                        }
+                    }
+                }
+                if (persistedResources.ConsumableSlotCooldowns.Count > 0)
+                {
+                    nonCombatConsumableCooldowns = persistedResources.ConsumableSlotCooldowns
+                        .Select(readyAt => Math.Max(0, (long)Math.Ceiling((readyAt - state.LastSimulatedAt).TotalMilliseconds)))
+                        .ToList();
+                }
+            }
             return new XiuxianExpeditionProgressDto(
                 phase,
                 Math.Clamp(phaseElapsed / (double)phaseDuration, 0, 1),
@@ -398,6 +421,8 @@ public static class XiuxianStateMapper
                             .ToUnixTimeMilliseconds())
                     : null,
                 BattleSequence: expedition.BattleSequence,
+                AbilityCooldownMilliseconds: nonCombatAbilityCooldowns,
+                ConsumableCooldownMilliseconds: nonCombatConsumableCooldowns,
                 EncounterId: encounterId);
         }
 
@@ -422,7 +447,9 @@ public static class XiuxianStateMapper
             expedition.CompletedEncountersBeforeBattle,
             initialPlayer,
             stopAfterFirstVictory: true,
-            playerSpirit: state.Stats.Spirit);
+            playerSpirit: state.Stats.Spirit,
+            initialAbilityCooldowns: expedition.InitialAbilityCooldowns,
+            initialConsumableCooldowns: expedition.InitialConsumableCooldowns);
         var player = result.FinalPlayer;
         var enemies = result.FinalEnemies ?? [];
         var enemyHitpoints = enemies.Sum(enemy => Math.Max(0, enemy.Hitpoints));
@@ -465,11 +492,36 @@ public static class XiuxianStateMapper
             persisted?.Initialized == true ? persisted.Hitpoints : null,
             persisted?.Initialized == true ? persisted.Manapoints : null,
             state.Stats.Spirit);
+        Dictionary<string, long>? abilityCooldowns = null;
+        List<long>? consumableCooldowns = null;
+        if (persisted is not null)
+        {
+            if (persisted.AbilityCooldowns.Count > 0)
+            {
+                abilityCooldowns = new Dictionary<string, long>(StringComparer.Ordinal);
+                foreach (var (abilityId, readyAt) in persisted.AbilityCooldowns)
+                {
+                    var remaining = Math.Max(0, (long)Math.Ceiling((readyAt - now).TotalMilliseconds));
+                    if (remaining > 0)
+                    {
+                        abilityCooldowns[abilityId] = remaining;
+                    }
+                }
+            }
+            if (persisted.ConsumableSlotCooldowns.Count > 0)
+            {
+                consumableCooldowns = persisted.ConsumableSlotCooldowns
+                    .Select(readyAt => Math.Max(0, (long)Math.Ceiling((readyAt - now).TotalMilliseconds)))
+                    .ToList();
+            }
+        }
         return new XiuxianCombatResourceDto(
             player.Hitpoints,
             player.MaxHitpoints,
             player.Manapoints,
-            player.MaxManapoints);
+            player.MaxManapoints,
+            abilityCooldowns,
+            consumableCooldowns);
     }
 
     private static XiuxianCombatAttributesDto ToCombatAttributes(XiuxianPlayerState state, DateTimeOffset now)

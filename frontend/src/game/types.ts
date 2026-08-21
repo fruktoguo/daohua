@@ -98,6 +98,8 @@ export interface CombatResourceState {
   maxHitpoints: number
   manapoints: number
   maxManapoints: number
+  abilityCooldownMilliseconds?: Record<string, number> | null
+  consumableCooldownMilliseconds?: number[] | null
 }
 
 export interface CombatAttributes {

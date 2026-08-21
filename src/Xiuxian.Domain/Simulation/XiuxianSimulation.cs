@@ -1079,7 +1079,9 @@ public static class XiuxianSimulation
             expedition.CompletedEncountersBeforeBattle,
             initialPlayer,
             stopAfterFirstVictory: true,
-            playerSpirit: state.Stats.Spirit);
+            playerSpirit: state.Stats.Spirit,
+            initialAbilityCooldowns: expedition.InitialAbilityCooldowns,
+            initialConsumableCooldowns: expedition.InitialConsumableCooldowns);
         if (result.OutcomeMilliseconds is not null)
         {
             return expedition.BattleStartedAt.AddMilliseconds(result.OutcomeMilliseconds.Value);
@@ -1243,7 +1245,9 @@ public static class XiuxianSimulation
                 expedition.CompletedEncountersBeforeBattle,
                 initialPlayer,
                 stopAfterFirstVictory: true,
-                playerSpirit: state.Stats.Spirit);
+                playerSpirit: state.Stats.Spirit,
+                initialAbilityCooldowns: expedition.InitialAbilityCooldowns,
+                initialConsumableCooldowns: expedition.InitialConsumableCooldowns);
 
             dirty |= ApplyIncrementalCombatConsumption(state, expedition, result);
             dirty |= EmitIncrementalCombatEvents(state, expedition, result, cursor);
@@ -1257,6 +1261,7 @@ public static class XiuxianSimulation
             if (result.FinalPlayer is { } currentPlayer)
             {
                 SetCombatResources(state, currentPlayer);
+                UpdateCombatCooldowns(state, result, expedition.BattleStartedAt);
                 dirty |= XiuxianDirtySections.Combat;
             }
 
@@ -1325,6 +1330,18 @@ public static class XiuxianSimulation
         expedition.BattleStartedAt = startedAt;
         expedition.InitialHitpoints = initial.Hitpoints;
         expedition.InitialManapoints = initial.Manapoints;
+        expedition.InitialAbilityCooldowns.Clear();
+        foreach (var (abilityId, readyAt) in state.CombatResources.AbilityCooldowns)
+        {
+            var remaining = Math.Max(0, (long)Math.Ceiling((readyAt - startedAt).TotalMilliseconds));
+            if (remaining > 0)
+            {
+                expedition.InitialAbilityCooldowns[abilityId] = remaining;
+            }
+        }
+        expedition.InitialConsumableCooldowns = state.CombatResources.ConsumableSlotCooldowns
+            .Select(readyAt => Math.Max(0, (long)Math.Ceiling((readyAt - startedAt).TotalMilliseconds)))
+            .ToList();
         expedition.EmittedEventCount = 0;
         expedition.BattleLoadout = state.Combat.Clone();
         expedition.BattleBuffs = state.Buffs.Select(CloneCombatBuff).ToList();
@@ -1589,6 +1606,55 @@ public static class XiuxianSimulation
         return changed;
     }
 
+    private static void UpdateCombatCooldowns(
+        XiuxianPlayerState state,
+        XiuxianCombatRunResult result,
+        DateTimeOffset battleStartedAt)
+    {
+        EnsureCombatResources(state, state.LastSimulatedAt);
+        var simulatedAt = battleStartedAt.AddMilliseconds(result.SimulatedMilliseconds);
+
+        if (result.PlayerAbilityCooldowns is not null)
+        {
+            foreach (var (abilityId, remainingMs) in result.PlayerAbilityCooldowns)
+            {
+                if (remainingMs > 0)
+                {
+                    state.CombatResources.AbilityCooldowns[abilityId] = simulatedAt.AddMilliseconds(remainingMs);
+                }
+                else
+                {
+                    state.CombatResources.AbilityCooldowns.Remove(abilityId);
+                }
+            }
+            foreach (var slot in state.Combat.AbilitySlots)
+            {
+                if (!string.IsNullOrWhiteSpace(slot.AbilityId)
+                    && !result.PlayerAbilityCooldowns.ContainsKey(slot.AbilityId)
+                    && state.CombatResources.AbilityCooldowns.TryGetValue(slot.AbilityId, out var readyAt)
+                    && readyAt <= simulatedAt)
+                {
+                    state.CombatResources.AbilityCooldowns.Remove(slot.AbilityId);
+                }
+            }
+        }
+
+        if (result.PlayerConsumableCooldowns is not null)
+        {
+            while (state.CombatResources.ConsumableSlotCooldowns.Count < result.PlayerConsumableCooldowns.Count)
+            {
+                state.CombatResources.ConsumableSlotCooldowns.Add(DateTimeOffset.MinValue);
+            }
+            for (var i = 0; i < result.PlayerConsumableCooldowns.Count; i++)
+            {
+                var remainingMs = result.PlayerConsumableCooldowns[i];
+                state.CombatResources.ConsumableSlotCooldowns[i] = remainingMs > 0
+                    ? simulatedAt.AddMilliseconds(remainingMs)
+                    : DateTimeOffset.MinValue;
+            }
+        }
+    }
+
     private static void ResetBattleSnapshot(XiuxianCombatExpeditionState expedition)
     {
         expedition.PhaseElapsedMilliseconds = 0;
@@ -1596,6 +1662,8 @@ public static class XiuxianSimulation
         expedition.BattleStartedAt = default;
         expedition.InitialHitpoints = 0;
         expedition.InitialManapoints = 0;
+        expedition.InitialAbilityCooldowns.Clear();
+        expedition.InitialConsumableCooldowns.Clear();
         expedition.EmittedEventCount = 0;
         expedition.BattleLoadout = null;
         expedition.BattleBuffs.Clear();
