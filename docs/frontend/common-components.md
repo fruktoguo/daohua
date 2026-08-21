@@ -111,6 +111,7 @@
 
 - **适用场景**：
   - 灵石/大额数值格式化（万、亿、兆）、时长格式化、百分比格式化 -> `formatNumber`, `formatDuration`, `formatPercent`
+  - 通用进度描述文本（如 `5000/1万 (50%)`、`66万/100万 (66%)`、`已圆满 (100%)`）-> `formatProgressText`
   - 大数自动改后缀与万进制紧凑展示（最多6位数字、最多2位小数四舍五入） -> `formatUnitNumber`
   - 中文大数完整四位分段格式化（如 `1234亿 7777万 5211`） -> `formatChineseSplitNumber`
   - 获取数值完整拆解信息 -> `getUnitNumberInfo`

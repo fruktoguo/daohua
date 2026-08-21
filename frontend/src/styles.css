@@ -416,45 +416,55 @@ input[type="checkbox"] {
 .realm-progress {
   position: relative;
   width: 100%;
-  height: 5px;
-  margin-top: 2px;
-  overflow: visible;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 24px, rgba(201, 180, 109, 0.28) 24px 25px),
-    rgba(201, 180, 109, 0.1);
+  height: 14px;
+  margin-top: 3px;
+  border-radius: 7px;
+  border: 1px solid rgba(201, 180, 109, 0.28);
+  background: rgba(15, 13, 9, 0.85);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
 }
 
 .realm-progress i {
-  position: relative;
-  display: block;
-  height: 100%;
-  background: linear-gradient(90deg, var(--gold-dim), var(--gold) 70%, var(--gold-bright));
-  box-shadow: 0 0 12px rgba(201, 180, 109, 0.35);
-  transition: width 0.45s linear;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(146, 64, 14, 0.85), rgba(217, 119, 6, 0.9) 60%, rgba(251, 191, 36, 0.98));
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+  transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 6px 0 0 6px;
 }
 
 .realm-progress i::after {
   position: absolute;
-  top: 50%;
-  right: -4px;
-  width: 8px;
-  height: 8px;
-  background: var(--gold-bright);
-  box-shadow: 0 0 10px rgba(232, 214, 154, 0.8);
-  transform: translateY(-50%) rotate(45deg);
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8));
   content: "";
 }
 
 .realm-progress span {
   position: absolute;
-  top: 9px;
-  left: 50%;
-  transform: translateX(-50%);
-  color: var(--text-dim);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  color: #fef08a;
   font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.2px;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 4px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
-  text-align: center;
+  pointer-events: none;
+  user-select: none;
 }
 
 .wallet-block {
@@ -1363,7 +1373,7 @@ input[type="checkbox"] {
 .log-reference {
   display: inline-flex;
   min-height: 18px;
-  padding: 0 5px;
+  padding: 0 6px;
   align-items: center;
   border: 1px solid rgba(201, 180, 109, 0.35);
   color: var(--gold-bright);
@@ -1371,6 +1381,13 @@ input[type="checkbox"] {
   line-height: 1.25;
   vertical-align: baseline;
   border-radius: 999px;
+  cursor: default;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.log-reference:hover {
+  background: rgba(201, 180, 109, 0.18);
+  border-color: rgba(201, 180, 109, 0.6);
 }
 
 .log-reference--item {
@@ -1378,11 +1395,99 @@ input[type="checkbox"] {
   color: #9bc6aa;
   background: rgba(114, 169, 140, 0.08);
 }
+.log-reference--item:hover {
+  background: rgba(114, 169, 140, 0.18);
+  border-color: rgba(114, 169, 140, 0.7);
+}
 
-.log-reference--character { color: #d4c794; }
-.log-reference--mechanic { border-color: rgba(117, 169, 173, 0.48); color: #9bc7ca; }
-.log-reference--action { border-color: rgba(201, 180, 109, 0.48); }
-.log-reference--location { border-color: rgba(114, 169, 140, 0.52); color: #a8d2b9; background: rgba(114, 169, 140, 0.08); }
+.log-reference--ability {
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #7dd3fc;
+  background: rgba(14, 165, 233, 0.1);
+}
+.log-reference--ability:hover {
+  background: rgba(14, 165, 233, 0.2);
+  border-color: rgba(56, 189, 248, 0.75);
+}
+
+.log-reference--enemy,
+.log-reference--encounter {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+}
+.log-reference--enemy:hover,
+.log-reference--encounter:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(248, 113, 113, 0.75);
+}
+
+.log-reference--character {
+  color: #d4c794;
+  border-color: rgba(212, 199, 148, 0.4);
+}
+.log-reference--character:hover {
+  background: rgba(212, 199, 148, 0.15);
+}
+
+.log-reference--mechanic {
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  font-weight: 600;
+}
+
+.log-reference--action {
+  border-color: rgba(201, 180, 109, 0.48);
+  color: #fce79a;
+}
+
+.log-reference--location {
+  border-color: rgba(114, 169, 140, 0.52);
+  color: #a8d2b9;
+  background: rgba(114, 169, 140, 0.08);
+}
+
+/* 复合物品引用胶囊（类似内视风格，包含胶囊标签与高亮数量下划线） */
+.item-reference-compound {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+  padding: 0 5px 0 0;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  line-height: 1.25;
+  cursor: default;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.item-reference-compound:hover {
+  background: rgba(0, 0, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.item-reference-compound .capsule-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.item-reference-compound .underlined-value {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px 1px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border-bottom: 1.5px solid currentColor;
+}
 
 .value-capsule {
   display: inline-flex;

@@ -1,5 +1,61 @@
-import type { CombatTrigger } from './types'
+import type { CombatAbilityDefinition, CombatTrigger } from './types'
 import { getT, useI18nStore } from '../i18n'
+
+export interface EffectTooltipContent {
+  title: string
+  badge?: string
+  description: string
+  lines: readonly string[]
+}
+
+function abilityPercent(ratio: number): string {
+  const percent = Math.round(ratio * 1000) / 10
+  return `${percent > 0 ? '+' : ''}${percent}%`
+}
+
+export function describeAbility(ability: CombatAbilityDefinition, level: number): EffectTooltipContent {
+  const normalizedLevel = Math.max(1, level)
+  const levelOffset = normalizedLevel - 1
+  const damageRatio = ability.damageRatio + (ability.damageRatioLevelBonus ?? 0) * levelOffset
+  const flatDamage = ability.flatDamage + (ability.flatDamageLevelBonus ?? 0) * levelOffset
+  const healingRatio = (ability.healingRatio ?? 0) + (ability.healingRatioLevelBonus ?? 0) * levelOffset
+  const flatHealing = (ability.flatHealing ?? 0) + (ability.flatHealingLevelBonus ?? 0) * levelOffset
+  const target = ability.targetType === 'all-enemies'
+    ? '敌方全体'
+    : ability.targetType === 'self'
+      ? '自身'
+      : ability.targetType === 'all-allies'
+        ? '己方全体'
+        : ability.targetType === 'lowest-hp-ally'
+          ? '生命最低的友方'
+          : '当前敌人'
+  const lines = [
+    `等级 ${normalizedLevel}`,
+    `目标 ${target}`,
+    `灵力消耗 ${formatNumber(ability.manaCost)}`,
+    `施法 ${(ability.castMilliseconds / 1000).toFixed(1)} 秒`,
+    `冷却 ${(ability.cooldownMilliseconds / 1000).toFixed(1)} 秒`,
+  ]
+  if (damageRatio !== 0 || flatDamage !== 0) lines.push(`伤害 ${abilityPercent(damageRatio)} + ${formatNumber(flatDamage)}`)
+  if (healingRatio !== 0 || flatHealing !== 0) lines.push(`治疗 ${abilityPercent(healingRatio)} + ${formatNumber(flatHealing)}`)
+  if ((ability.penetrationRatio ?? 0) !== 0) lines.push(`抗性穿透 ${abilityPercent(ability.penetrationRatio)}`)
+  if ((ability.pierceChance ?? 0) !== 0) lines.push(`穿透概率 ${abilityPercent(ability.pierceChance ?? 0)}`)
+  if ((ability.armorDamageRatio ?? 0) !== 0) lines.push(`护甲增伤 ${abilityPercent(ability.armorDamageRatio ?? 0)}`)
+  if ((ability.hpDrainRatio ?? 0) !== 0) lines.push(`生命汲取 ${abilityPercent(ability.hpDrainRatio ?? 0)}`)
+  if ((ability.damageOverTimeRatio ?? 0) !== 0) {
+    lines.push(`持续伤害 ${abilityPercent(ability.damageOverTimeRatio ?? 0)}，持续 ${((ability.damageOverTimeMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
+  }
+  if ((ability.stunChance ?? 0) !== 0) lines.push(`定身 ${abilityPercent(ability.stunChance ?? 0)}，持续 ${((ability.stunMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
+  if ((ability.blindChance ?? 0) !== 0) lines.push(`致盲 ${abilityPercent(ability.blindChance ?? 0)}，持续 ${((ability.blindMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
+  if ((ability.silenceChance ?? 0) !== 0) lines.push(`沉默 ${abilityPercent(ability.silenceChance ?? 0)}，持续 ${((ability.silenceMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
+  for (const trigger of ability.defaultTriggers ?? []) lines.push(`默认条件 ${describeCombatTrigger(trigger)}`)
+  return {
+    title: ability.name,
+    badge: `${ability.style} · ${ability.damageType}`,
+    description: ability.effectType === 'heal' ? `为${target}恢复生命。` : `对${target}结算战斗效果。`,
+    lines,
+  }
+}
 
 const numberFormatters = new Map<string, Intl.NumberFormat>()
 
@@ -25,6 +81,37 @@ export function formatNumber(
   options?: FormatUnitOptions
 ): string {
   return formatUnitNumber(value, options)
+}
+
+export interface FormatProgressOptions {
+  /** 是否展示百分比后缀，默认 true */
+  showPercent?: boolean
+  /** 百分比小数位，默认 0 */
+  percentDecimals?: number
+  /** 圆满/完成时的替代文本（当 max <= 0 时默认展示） */
+  completedText?: string
+}
+
+/**
+ * 通用进度描述文本生成器
+ * 示例：
+ * - 5000, 10000 -> "5000/1万 (50%)"
+ * - 660000, 1000000 -> "66万/100万 (66%)"
+ * - 0, 0 -> "已圆满 (100%)"
+ */
+export function formatProgressText(
+  current: number,
+  max: number,
+  options?: FormatProgressOptions
+): string {
+  if (max <= 0) {
+    return options?.completedText ?? '已圆满 (100%)'
+  }
+  const curStr = formatNumber(Math.max(0, current))
+  const maxStr = formatNumber(max)
+  const decimals = options?.percentDecimals ?? 0
+  const pct = Math.min(100, Math.max(0, (current / max) * 100.0)).toFixed(decimals)
+  return options?.showPercent === false ? `${curStr}/${maxStr}` : `${curStr}/${maxStr} (${pct}%)`
 }
 
 // 触发条件枚举 -> 展示文案统一走 i18n；组合语序由模板键承载（中英语序不同）。

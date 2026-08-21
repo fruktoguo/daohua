@@ -16,7 +16,7 @@ import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
-import { describeCombatTrigger, formatChineseSplitNumber, formatNumber } from './game/format'
+import { describeAbility, describeCombatTrigger, formatChineseSplitNumber, formatNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
 import { ACTION_TAB_META, ACTION_TYPES, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
@@ -447,9 +447,10 @@ function TopBar(): React.JSX.Element {
   const connectionText = connection === 'online' ? '已连接' : connection === 'connecting' ? '连接中' : connection === 'reconnecting' ? '重连中' : '已离线'
   const presenceText = presence === 'online' ? '在线' : presence === 'idle-offline' ? '离线挂机' : '完全离线'
 
-  const progressDisplay = realmProgress.expToNext > 0
-    ? `${formatNumber(realmProgress.currentLayerExp)}/${formatNumber(realmProgress.expToNext)} (${realmInfo.layerProgress.toFixed(0)}%)`
-    : `飞升圆满 (100%)`
+  const progressDisplay = formatProgressText(realmProgress.currentLayerExp, realmProgress.expToNext, {
+    completedText: '飞升圆满 (100%)',
+    percentDecimals: 0,
+  })
 
   return (
     <header className="topbar">
@@ -775,49 +776,6 @@ function AbilityCooldownOverlay({
   return <span className="combat-ability-cooldown" ref={overlayRef} />
 }
 
-function describeAbility(ability: CombatAbilityDefinition, level: number): EffectTooltipContent {
-  const normalizedLevel = Math.max(1, level)
-  const levelOffset = normalizedLevel - 1
-  const damageRatio = ability.damageRatio + (ability.damageRatioLevelBonus ?? 0) * levelOffset
-  const flatDamage = ability.flatDamage + (ability.flatDamageLevelBonus ?? 0) * levelOffset
-  const healingRatio = (ability.healingRatio ?? 0) + (ability.healingRatioLevelBonus ?? 0) * levelOffset
-  const flatHealing = (ability.flatHealing ?? 0) + (ability.flatHealingLevelBonus ?? 0) * levelOffset
-  const target = ability.targetType === 'all-enemies'
-    ? '敌方全体'
-    : ability.targetType === 'self'
-      ? '自身'
-      : ability.targetType === 'all-allies'
-        ? '己方全体'
-        : ability.targetType === 'lowest-hp-ally'
-          ? '生命最低的友方'
-          : '当前敌人'
-  const lines = [
-    `等级 ${normalizedLevel}`,
-    `目标 ${target}`,
-    `灵力消耗 ${formatNumber(ability.manaCost)}`,
-    `施法 ${(ability.castMilliseconds / 1000).toFixed(1)} 秒`,
-    `冷却 ${(ability.cooldownMilliseconds / 1000).toFixed(1)} 秒`,
-  ]
-  if (damageRatio !== 0 || flatDamage !== 0) lines.push(`伤害 ${abilityPercent(damageRatio)} + ${formatNumber(flatDamage)}`)
-  if (healingRatio !== 0 || flatHealing !== 0) lines.push(`治疗 ${abilityPercent(healingRatio)} + ${formatNumber(flatHealing)}`)
-  if ((ability.penetrationRatio ?? 0) !== 0) lines.push(`抗性穿透 ${abilityPercent(ability.penetrationRatio)}`)
-  if ((ability.pierceChance ?? 0) !== 0) lines.push(`穿透概率 ${abilityPercent(ability.pierceChance ?? 0)}`)
-  if ((ability.armorDamageRatio ?? 0) !== 0) lines.push(`护甲增伤 ${abilityPercent(ability.armorDamageRatio ?? 0)}`)
-  if ((ability.hpDrainRatio ?? 0) !== 0) lines.push(`生命汲取 ${abilityPercent(ability.hpDrainRatio ?? 0)}`)
-  if ((ability.damageOverTimeRatio ?? 0) !== 0) {
-    lines.push(`持续伤害 ${abilityPercent(ability.damageOverTimeRatio ?? 0)}，持续 ${((ability.damageOverTimeMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
-  }
-  if ((ability.stunChance ?? 0) !== 0) lines.push(`定身 ${abilityPercent(ability.stunChance ?? 0)}，持续 ${((ability.stunMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
-  if ((ability.blindChance ?? 0) !== 0) lines.push(`致盲 ${abilityPercent(ability.blindChance ?? 0)}，持续 ${((ability.blindMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
-  if ((ability.silenceChance ?? 0) !== 0) lines.push(`沉默 ${abilityPercent(ability.silenceChance ?? 0)}，持续 ${((ability.silenceMilliseconds ?? 0) / 1000).toFixed(1)} 秒`)
-  for (const trigger of ability.defaultTriggers ?? []) lines.push(`默认条件 ${describeCombatTrigger(trigger)}`)
-  return {
-    title: ability.name,
-    badge: `${ability.style} · ${ability.damageType}`,
-    description: ability.effectType === 'heal' ? `为${target}恢复生命。` : `对${target}结算战斗效果。`,
-    lines,
-  }
-}
 
 const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element | null {
   const combat = useGameStore(state => state.combat)
