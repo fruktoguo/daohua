@@ -26,9 +26,10 @@
 git submodule update --init --recursive
 ```
 
-前后端一起开发时推荐使用 `scripts/dev.sh`：服务端通过 `dotnet watch --no-hot-reload` 运行，
-任意源码修改会自动重新构建并重启服务端进程（编译失败保持旧进程继续运行）；服务端进程异常退出时由
-脚本监督循环按退避自动拉起。前端仍为 Vite 热更新。
+前后端一起开发时推荐使用 `scripts/dev.sh`：服务端由 `scripts/dev-hot.mjs` 守护，源码变更进入
+60 秒防抖静默期（期间有新变更则刷新等待），静默期满先 `dotnet build`——编译失败保持旧进程继续运行，
+成功才优雅重启服务端；服务端进程异常退出时按退避自动拉起。防抖时长可用环境变量
+`SERVER_DEV_RESTART_DEBOUNCE_MS` 调整（设为 0 表示立即重建）。前端仍为 Vite 热更新。
 
 ```bash
 scripts/dev.sh
