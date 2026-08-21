@@ -205,8 +205,12 @@ public sealed class XiuxianSimulationTests
     {
         var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), "连续历练修士", Baseline);
         state.Queue.Entries.Clear();
+        state.Combat.StaminaLevel = 1_000;
+        state.Combat.IntelligenceLevel = 1_000;
         state.Combat.AttackLevel = 1_000;
+        state.Combat.DefenseLevel = 1_000;
         state.Combat.SwordsmanshipLevel = 1_000;
+        state.Combat.TalismanLevel = 1_000;
         state.Combat.SearchSpeedRatio = 1;
         state.Combat.LearnedAbilityIds.Add(XiuxianCombatAbilityIds.HeavySlash);
         state.Combat.AbilitySlots[0].AbilityId = XiuxianCombatAbilityIds.HeavySlash;

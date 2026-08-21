@@ -1269,32 +1269,31 @@ public static partial class XiuxianCombatSimulator
         var maxHitpoints = (long)Math.Max(1, Math.Ceiling(basePool.BaseHitpoints * (1.0 + staminaBonus) * (1.0 + defenseBonus)));
         var maxManapoints = (long)Math.Max(1, Math.Ceiling(basePool.BaseManapoints * (1.0 + intelligenceBonus) * (1.0 + defenseBonus)));
 
-        // 2. 命中与闪避
-        var accuracy = (basePool.BaseAccuracy + attack * 0.5 + swordsmanship * 0.5) * (1.0 + swordsmanshipBonus) * Math.Max(0.01, 1 + attackRatio);
-        var evasion = (basePool.BaseEvasion + defense * 0.5 + talisman * 0.5) * (1.0 + talismanBonus) * Math.Max(0.01, 1 + equipment.EvasionRatio + attackRatio * 0.5);
+        // 2. 命中与闪避 (神识 +% 命中乘区，身法 +% 闪避乘区)
+        var accuracy = basePool.BaseAccuracy * (1.0 + swordsmanshipBonus) * Math.Max(0.01, 1 + attackRatio);
+        var evasion = basePool.BaseEvasion * (1.0 + talismanBonus) * Math.Max(0.01, 1 + equipment.EvasionRatio + attackRatio * 0.5);
 
-        // 3. 攻击力 (根据流派决定物攻/法攻基础池与加成)
+        // 3. 攻击力 (根据流派决定物攻/法攻基础池与加成；力道 +% 物攻，神识 +2% 法攻)
         var isMagic = combatStyle == XiuxianCombatStyle.FiveElements;
         var baseDmg = isMagic ? basePool.BaseSpellAttack : basePool.BasePhysicalAttack;
         var scaledAttack = isMagic
-            ? (baseDmg + styleLevel * 0.5 + swordsmanship * 0.5) * (1.0 + swordsmanshipBonus * 2.0)
-            : (baseDmg + styleLevel * 0.5 + attack * 0.5) * (1.0 + attackBonus);
+            ? baseDmg * (1.0 + swordsmanshipBonus * 2.0)
+            : baseDmg * (1.0 + attackBonus);
         var maxDamage = scaledAttack * Math.Max(0.01, 1.0 + damageRatio);
 
-        // 4. 双抗
-        var armor = (basePool.BaseArmor + 0.2 * defense + 0.2 * stamina + equipment.Armor) * (1.0 + staminaBonus);
-        var waterResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.WaterResistance) * (1.0 + intelligenceBonus);
-        var natureResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.NatureResistance) * (1.0 + intelligenceBonus);
-        var fireResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.FireResistance) * (1.0 + intelligenceBonus);
+        // 4. 双抗 (体魄 +% 物理护甲，经脉 +% 术法抗性；装备为加法底座)
+        var armor = (basePool.BaseArmor + equipment.Armor) * (1.0 + staminaBonus);
+        var waterResistance = (basePool.BaseMagicResistance + equipment.WaterResistance) * (1.0 + intelligenceBonus);
+        var natureResistance = (basePool.BaseMagicResistance + equipment.NatureResistance) * (1.0 + intelligenceBonus);
+        var fireResistance = (basePool.BaseMagicResistance + equipment.FireResistance) * (1.0 + intelligenceBonus);
 
-        // 5. 破招与拆招 (根骨与身法各提供每点 1% 化解加成，同乘区叠加)
-        var breakRating = (basePool.BaseBreak + loadout.BreakRating + equipment.BreakRating + attack * 1.0) * (1.0 + attackBonus);
-        var parryRating = (basePool.BaseParry + loadout.ParryRating + equipment.ParryRating + defense * 1.0) * (1.0 + defenseBonus + talismanBonus);
+        // 5. 破招与拆招 (力道 +% 破招，根骨 +% 化解 + 身法 +% 化解)
+        var breakRating = (basePool.BaseBreak + loadout.BreakRating + equipment.BreakRating) * (1.0 + attackBonus);
+        var parryRating = (basePool.BaseParry + loadout.ParryRating + equipment.ParryRating) * (1.0 + defenseBonus + talismanBonus);
 
-        // 6. 暴击与免爆：以点数参与统一对抗公式 (规约 §7.3)，装备/词条百分比按 K=100 折算为点数；
-        //    力道每点 +1% 暴击、身法每点 +1% 免爆折算为对应点数
-        var criticalRating = Math.Max(0, basePool.BaseCritical + (loadout.CriticalChance + equipment.CriticalChance) * 100.0 + attack);
-        var criticalAvoidanceRating = Math.Max(0, basePool.BaseCriticalAvoidance + (loadout.CriticalAvoidance + equipment.CriticalAvoidance) * 100.0 + talisman);
+        // 6. 暴击与免爆 (力道 +% 暴击，身法 +% 免爆；装备百分比按 K=100 折算为点数)
+        var criticalRating = Math.Max(0, (basePool.BaseCritical + (loadout.CriticalChance + equipment.CriticalChance) * 100.0) * (1.0 + attackBonus));
+        var criticalAvoidanceRating = Math.Max(0, (basePool.BaseCriticalAvoidance + (loadout.CriticalAvoidance + equipment.CriticalAvoidance) * 100.0) * (1.0 + talismanBonus));
         var criticalChance = XiuxianCombatFormula.CalculateCritContestRate(criticalRating, criticalAvoidanceRating);
         var criticalAvoidance = XiuxianCombatFormula.CalculateCritContestRate(criticalAvoidanceRating, criticalRating);
 
