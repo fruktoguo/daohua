@@ -218,23 +218,21 @@ export function parseNumericParts(value: number | bigint | string): ParsedNumeri
   }
 }
 
-/**
- * 完整数字中文四位分段格式化
- * 例如：
- * 123477775211 -> "1234亿 7777万 5211"
- * 2000000000 -> "20亿"
- * 200005211 -> "2亿 5211"
- * 5211 -> "5211"
- * 0 -> "0"
- * -123477775211 -> "-1234亿 7777万 5211"
- */
-export function formatChineseSplitNumber(value: number | bigint | string): string {
-  const { sign, intStr, decStr, isZero } = parseNumericParts(value)
-  if (isZero) return '0'
+export interface FormatChineseSplitOptions {
+  /** 小数点后最多位数，默认 2 */
+  maxDecimals?: number
+  /** 取整模式：'round'(四舍五入, 默认) | 'floor'(向下截断) | 'ceil'(向上取整) */
+  roundMode?: 'round' | 'floor' | 'ceil'
+  /** 是否强制保留小数位数（默认 false，即去除末尾多余 0） */
+  padDecimals?: boolean
+}
 
-  // 从低到高每 4 位切分
-  const sections: { val: number; unit: string; chunk: string }[] = []
-  let remaining = intStr
+function splitIntegerIntoChineseSections(intStr: string): string {
+  const cleanInt = intStr.replace(/^0+(?=\d)/, '') || '0'
+  if (cleanInt === '0') return '0'
+
+  const sections: { val: number; unit: string }[] = []
+  let remaining = cleanInt
   let unitIdx = 0
 
   while (remaining.length > 0) {
@@ -244,11 +242,10 @@ export function formatChineseSplitNumber(value: number | bigint | string): strin
 
     const numVal = parseInt(chunk, 10)
     const unit = CHINESE_SECTION_UNITS[unitIdx] ?? ''
-    sections.push({ val: numVal, unit, chunk })
+    sections.push({ val: numVal, unit })
     unitIdx++
   }
 
-  // 过滤出非零段，从高到低排列
   const nonZeroSections: string[] = []
   for (let i = sections.length - 1; i >= 0; i--) {
     const sec = sections[i]
@@ -257,13 +254,7 @@ export function formatChineseSplitNumber(value: number | bigint | string): strin
     }
   }
 
-  let result = nonZeroSections.length === 0 ? '0' : nonZeroSections.join(' ')
-
-  if (decStr) {
-    result += `.${decStr}`
-  }
-
-  return `${sign}${result}`
+  return nonZeroSections.length === 0 ? '0' : nonZeroSections.join(' ')
 }
 
 function roundToMaxDecimals(
@@ -291,13 +282,62 @@ function roundToMaxDecimals(
 }
 
 /**
+ * 完整数字中文四位分段格式化（通用的完整数值悬浮展示，最多展示小数点后两位）
+ * 例如：
+ * 123477775211 -> "1234亿 7777万 5211"
+ * 2000000000 -> "20亿"
+ * 200005211 -> "2亿 5211"
+ * 5211 -> "5211"
+ * 10.5 -> "10.5"
+ * 12345.678 -> "1万 2345.68"
+ * 0 -> "0"
+ * -123477775211 -> "-1234亿 7777万 5211"
+ */
+export function formatChineseSplitNumber(
+  value: number | bigint | string,
+  options?: FormatChineseSplitOptions | number
+): string {
+  const opts: FormatChineseSplitOptions =
+    typeof options === 'number' ? { maxDecimals: options } : options ?? {}
+  const { maxDecimals = 2, roundMode = 'round', padDecimals = false } = opts
+
+  if (typeof value === 'bigint') {
+    const isNeg = value < 0n
+    const absBig = isNeg ? -value : value
+    if (absBig === 0n) return '0'
+    return `${isNeg ? '-' : ''}${splitIntegerIntoChineseSections(absBig.toString())}`
+  }
+
+  const rawStr = String(value).trim()
+  if (!rawStr || rawStr === 'NaN' || rawStr === 'undefined' || rawStr === 'null') {
+    return '0'
+  }
+
+  const num = typeof value === 'number' ? value : Number(rawStr)
+  if (isNaN(num)) return '0'
+  if (!isFinite(num)) return num > 0 ? '∞' : '-∞'
+  if (num === 0) return '0'
+
+  const isNeg = num < 0
+  const absVal = Math.abs(num)
+
+  const roundedStr = roundToMaxDecimals(absVal, maxDecimals, roundMode, padDecimals)
+  const [rawInt = '0', rawDec = ''] = roundedStr.split('.')
+  const sectionStr = splitIntegerIntoChineseSections(rawInt)
+  const decStr = padDecimals ? rawDec : rawDec.replace(/0+$/, '')
+
+  const decPart = decStr ? `.${decStr}` : ''
+  return `${isNeg ? '-' : ''}${sectionStr}${decPart}`
+}
+
+/**
  * 自动改后缀单位格式化：
  * 1. 小数点后最多两位 (maxDecimals=2)
  * 2. 数字最多六个字符 (maxDigits=6，整数1~4位 + 小数0~2位)
- * 3. 满万、亿、兆、京等阶梯自动进位改后缀，四舍五入
+ * 3. 满万、亿、兆、京等阶梯自动进位改后缀，默认向下取整 (floor)
  * 例如：
- * 99999 -> "10万" (round) 或 "9.99万" (floor)
- * 99999999 -> "1亿" (round) 或 "9999.99万" (floor)
+ * 99999 -> "9.99万" (floor)
+ * 99999999 -> "9999.99万" (floor)
  * 2000000000 -> "20亿"
  * 200000000 -> "2亿"
  */
@@ -305,7 +345,7 @@ export function formatUnitNumber(
   value: number | bigint | string,
   options?: FormatUnitOptions
 ): string {
-  const { maxDecimals = 2, roundMode = 'round', padDecimals = false } = options ?? {}
+  const { maxDecimals = 2, roundMode = 'floor', padDecimals = false } = options ?? {}
 
   const num = typeof value === 'number' ? value : Number(value)
   if (isNaN(num)) return '0'
@@ -332,7 +372,7 @@ export function formatUnitNumber(
   let scaled = absVal / scale
   let formatted = roundToMaxDecimals(scaled, maxDecimals, roundMode, padDecimals)
 
-  // 检查四舍五入是否进位为 10000（例如 9999.996 万 -> 10000 万，进位为 1 亿）
+  // 检查进位是否达到 10000（例如 9999.996 万进位为 1 亿）
   if (Number(formatted) >= 10000 && unitIndex < CHINESE_SECTION_UNITS.length - 1) {
     unitIndex++
     scale *= 10000
@@ -343,6 +383,7 @@ export function formatUnitNumber(
   const unitSymbol = CHINESE_SECTION_UNITS[unitIndex]
   return `${isNeg ? '-' : ''}${formatted}${unitSymbol}`
 }
+
 
 export interface UnitNumberInfo {
   raw: number | bigint | string

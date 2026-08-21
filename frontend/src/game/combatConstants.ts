@@ -347,12 +347,14 @@ export class PercentValue {
   }
 
   /**
-   * 格式化为百分比文本字符串，如 "+100.0%"、"-50.0%"、"50.0%"
+   * 格式化为百分比文本字符串，如 "+100.0%"、"-50.0%"、"50.0%"，向下取整
    */
   format(decimals = 1): string {
     const val = this.displayPercentage
-    const prefix = this.mode === 'linear' && val > 0 ? '+' : ''
-    return `${prefix}${val.toFixed(decimals)}%`
+    const factor = Math.pow(10, decimals)
+    const floored = Math.floor(val * factor + 1e-9) / factor
+    const prefix = this.mode === 'linear' && floored > 0 ? '+' : ''
+    return `${prefix}${floored.toFixed(decimals)}%`
   }
 }
 
@@ -715,22 +717,22 @@ export function calculateBaseAttributes(spirit = 0): BaseAttributePool {
   const span = Math.max(1e-6, high.level - low.level)
   const t = lowIndex < BASE_FLAT_ANCHORS.length - 1 ? Math.min(1.0, Math.max(0.0, (level - low.level) / span)) : 0.0
 
-  const baseHp = low.hp + (high.hp - low.hp) * t
-  const baseMp = low.mp + (high.mp - low.mp) * t
-  const baseAd = low.ad + (high.ad - low.ad) * t
-  const baseAp = low.ap + (high.ap - low.ap) * t
-  const baseArmor = low.armor + (high.armor - low.armor) * t
-  const baseMagicRes = low.mr + (high.mr - low.mr) * t
-  const baseAccuracy = low.acc + (high.acc - low.acc) * t
-  const baseEvasion = low.eva + (high.eva - low.eva) * t
-  const baseCrit = low.crit + (high.crit - low.crit) * t
-  const baseCritAvoid = low.cavoid + (high.cavoid - low.cavoid) * t
-  const baseBreak = low.breakPt + (high.breakPt - low.breakPt) * t
-  const baseParry = low.parry + (high.parry - low.parry) * t
+  const baseHp = Math.floor(low.hp + (high.hp - low.hp) * t)
+  const baseMp = Math.floor(low.mp + (high.mp - low.mp) * t)
+  const baseAd = Math.floor(low.ad + (high.ad - low.ad) * t)
+  const baseAp = Math.floor(low.ap + (high.ap - low.ap) * t)
+  const baseArmor = Math.floor(low.armor + (high.armor - low.armor) * t)
+  const baseMagicRes = Math.floor(low.mr + (high.mr - low.mr) * t)
+  const baseAccuracy = Math.floor(low.acc + (high.acc - low.acc) * t)
+  const baseEvasion = Math.floor(low.eva + (high.eva - low.eva) * t)
+  const baseCrit = Math.floor(low.crit + (high.crit - low.crit) * t)
+  const baseCritAvoid = Math.floor(low.cavoid + (high.cavoid - low.cavoid) * t)
+  const baseBreak = Math.floor(low.breakPt + (high.breakPt - low.breakPt) * t)
+  const baseParry = Math.floor(low.parry + (high.parry - low.parry) * t)
 
-  // 基础生命回复与灵力回复固定为每 5 秒 2% 基础上限，四舍五入取整（保底 1.0）
-  const baseHpRegen = Math.max(1, Math.round(baseHp * 0.02))
-  const baseMpRegen = Math.max(1, Math.round(baseMp * 0.02))
+  // 基础生命回复与灵力回复固定为每 5 秒 2% 基础上限，向下取整（保底 1.0）
+  const baseHpRegen = Math.max(1, Math.floor(baseHp * 0.02))
+  const baseMpRegen = Math.max(1, Math.floor(baseMp * 0.02))
 
   return {
     level,

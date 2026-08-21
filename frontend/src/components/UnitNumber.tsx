@@ -19,7 +19,7 @@ export interface UnitNumberProps {
   maxDecimals?: number
   /** 最大数字字符总数 (默认 6) */
   maxDigits?: number
-  /** 取整模式 (默认 'round'，可选 'floor' 或 'ceil') */
+  /** 取整模式 (默认 'floor'，可选 'round' 或 'ceil') */
   roundMode?: 'round' | 'floor' | 'ceil'
   /** 是否强制保留两位小数 (默认 false) */
   padDecimals?: boolean
@@ -43,8 +43,8 @@ export interface UnitNumberProps {
 
 /**
  * 基础修仙单位数值组件 (UnitNumber)
- * - 自动改后缀（万、亿、兆、京等阶梯），数字最多六位，小数点后最多两位，四舍五入
- * - 鼠标悬停 (Hover) 时弹出轻量气泡展示完整数字，并按中文四位分段（如 "1234亿 7777万 5211"）
+ * - 自动改后缀（万、亿、兆、京等阶梯），数字最多六位，小数点后最多两位，默认向下取整 (floor)
+ * - 鼠标悬停 (Hover) 时弹出轻量气泡展示完整数字，并按中文四位分段，最多显示小数点后两位（如 "1234亿 7777万 5211"）
  */
 export const UnitNumber = memo(function UnitNumber({
   value,
@@ -53,7 +53,7 @@ export const UnitNumber = memo(function UnitNumber({
   suffix,
   maxDecimals = 2,
   maxDigits = 6,
-  roundMode = 'round',
+  roundMode = 'floor',
   padDecimals = false,
   disableTooltip = false,
   tooltipPlacement = 'top',

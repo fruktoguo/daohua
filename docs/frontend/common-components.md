@@ -114,8 +114,8 @@
 - **适用场景**：
   - 灵石/大额数值格式化（万、亿、兆）、时长格式化、百分比格式化 -> `formatNumber`, `formatDuration`, `formatPercent`
   - 通用进度描述文本（如 `5000/1万 (50%)`、`66万/100万 (66%)`、`已圆满 (100%)`）-> `formatProgressText`
-  - 大数自动改后缀与万进制紧凑展示（最多6位数字、最多2位小数四舍五入） -> `formatUnitNumber`
-  - 中文大数完整四位分段格式化（如 `1234亿 7777万 5211`） -> `formatChineseSplitNumber`
+  - 大数自动改后缀与万进制紧凑展示（最多6位数字、最多2位小数、默认向下取整） -> `formatUnitNumber`
+  - 中文大数完整四位分段格式化，最多展示小数点后两位（如 `1234亿 7777万 5211`） -> `formatChineseSplitNumber`
   - 获取数值完整拆解信息 -> `getUnitNumberInfo`
 - **源码路径**：[`frontend/src/game/format.ts`](../../frontend/src/game/format.ts)
 
@@ -137,8 +137,8 @@
 ## 13. 基础修仙单位数值与自动换算组件 (UnitNumber)
 
 - **适用场景**：
-  - **大额数值/灵石/修为/战力紧凑展示**：支持万、亿、兆、京等阶梯自动改后缀，确保有效数字不超过 6 个字符，小数点后最多 2 位，支持四舍五入。
-  - **内置 Hover 气泡与四位分割**：鼠标悬停自动弹出轻量 Tooltip，以中文每四位分割清晰展示完整数字（如 `1234亿 7777万 5211`），兼具修仙色调高亮与标准千分位对照。
+  - **大额数值/灵石/修为/战力紧凑展示**：支持万、亿、兆、京等阶梯自动改后缀，确保有效数字不超过 6 个字符，小数点后最多 2 位，默认向下取整。
+  - **内置 Hover 气泡与四位分割**：鼠标悬停自动弹出轻量 Tooltip，以中文每四位分割清晰展示完整数字（如 `1234亿 7777万 5211`），最多展示小数点后两位，兼具修仙色调高亮与标准千分位对照。
 - **组件源码**：[`frontend/src/components/UnitNumber.tsx`](../../frontend/src/components/UnitNumber.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.unit-number`, `.unit-number-tooltip-*`)
 

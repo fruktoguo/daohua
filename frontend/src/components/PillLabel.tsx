@@ -32,6 +32,8 @@ export interface PillStatLabelProps {
   icon?: ReactNode
   label: string
   value: string | number | ReactNode
+  suffix?: ReactNode
+  quantity?: number | bigint | string
   tone?: PillTone
   progress?: PillProgress
   tooltip?: string | ReactNode
@@ -45,6 +47,8 @@ export interface PillBonusLabelProps {
   icon?: ReactNode
   label: string
   value: string | number | ReactNode
+  suffix?: ReactNode
+  quantity?: number | bigint | string
   tone?: PillTone
   tooltip?: string
   tooltipTone?: FloatingTone
@@ -52,11 +56,21 @@ export interface PillBonusLabelProps {
   style?: CSSProperties
 }
 
-function renderPillValue(value: string | number | ReactNode, label: string, hasOuterTooltip: boolean): ReactNode {
+function renderPillValue(
+  value: string | number | ReactNode,
+  label: string,
+  hasOuterTooltip: boolean,
+  suffix?: ReactNode
+): ReactNode {
   if (typeof value === 'number') {
-    return <UnitNumber disableTooltip={hasOuterTooltip} tooltipLabel={label} value={value} />
+    return <UnitNumber disableTooltip={hasOuterTooltip} suffix={suffix} tooltipLabel={label} value={value} />
   }
-  return value
+  return (
+    <>
+      {value}
+      {suffix}
+    </>
+  )
 }
 
 /**
@@ -67,6 +81,8 @@ export const PillStatLabel = memo(function PillStatLabel({
   icon,
   label,
   value,
+  suffix,
+  quantity,
   tone = 'default',
   progress,
   tooltip,
@@ -76,7 +92,8 @@ export const PillStatLabel = memo(function PillStatLabel({
   onClick,
 }: PillStatLabelProps): React.JSX.Element {
   const ratio = progress ? Math.min(100, Math.max(0, (progress.current / Math.max(0.0001, progress.max)) * 100)) : 0
-  const isNumeric = typeof value === 'number'
+  const numericVal = quantity !== undefined ? quantity : (typeof value === 'number' ? value : undefined)
+  const isNumeric = numericVal !== undefined
 
   const content = (
     <div
@@ -87,7 +104,7 @@ export const PillStatLabel = memo(function PillStatLabel({
       <div className="compound-stat-main">
         {icon && <span className="compound-icon">{icon}</span>}
         <span className="capsule-label">{label}</span>
-        <strong className="underlined-value">{renderPillValue(value, label, Boolean(tooltip) || isNumeric)}</strong>
+        <strong className="underlined-value">{renderPillValue(value, label, Boolean(tooltip) || isNumeric, suffix)}</strong>
         {progress?.text && <span className="compound-exp-text">{progress.text}</span>}
       </div>
       {progress && (
@@ -105,7 +122,7 @@ export const PillStatLabel = memo(function PillStatLabel({
           content={tooltip}
           interactive={false}
           placement="top"
-          quantity={value}
+          quantity={numericVal}
           quantityTitle={label || '数量'}
           trigger="hover"
         >
@@ -121,7 +138,7 @@ export const PillStatLabel = memo(function PillStatLabel({
   }
 
   if (isNumeric) {
-    const splitText = formatChineseSplitNumber(value)
+    const splitText = formatChineseSplitNumber(numericVal)
     const singleRowTooltip = (
       <div className="unit-number-tooltip-inline">
         <span className="unit-number-tooltip-label">{label || '数量'}</span>
@@ -146,19 +163,22 @@ export const PillBonusLabel = memo(function PillBonusLabel({
   icon,
   label,
   value,
+  suffix,
+  quantity,
   tone = 'default',
   tooltip,
   tooltipTone = 'gold',
   className = '',
   style,
 }: PillBonusLabelProps): React.JSX.Element {
-  const isNumeric = typeof value === 'number'
+  const numericVal = quantity !== undefined ? quantity : (typeof value === 'number' ? value : undefined)
+  const isNumeric = numericVal !== undefined
 
   const content = (
     <div className={`compound-bonus-label pill-tone--${tone} ${className}`} style={style}>
       {icon && <span className="compound-icon">{icon}</span>}
       <span className="capsule-label">{label}</span>
-      <span className="underlined-value">{renderPillValue(value, label, Boolean(tooltip) || isNumeric)}</span>
+      <span className="underlined-value">{renderPillValue(value, label, Boolean(tooltip) || isNumeric, suffix)}</span>
     </div>
   )
 
@@ -169,7 +189,7 @@ export const PillBonusLabel = memo(function PillBonusLabel({
           content={tooltip}
           interactive={false}
           placement="top"
-          quantity={value}
+          quantity={numericVal}
           quantityTitle={label || '数量'}
           trigger="hover"
         >
@@ -185,7 +205,7 @@ export const PillBonusLabel = memo(function PillBonusLabel({
   }
 
   if (isNumeric) {
-    const splitText = formatChineseSplitNumber(value)
+    const splitText = formatChineseSplitNumber(numericVal)
     const singleRowTooltip = (
       <div className="unit-number-tooltip-inline">
         <span className="unit-number-tooltip-label">{label || '数量'}</span>

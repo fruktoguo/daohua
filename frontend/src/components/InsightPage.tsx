@@ -41,22 +41,22 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
   // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
   const dimensions = useMemo(() => {
-    const staminaLevel: number = Math.max(10, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 体魄 10
-    const meridiansLevel: number = Math.max(10, loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 经脉 10
-    const boneLevel: number = Math.max(10, loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 根骨 10
-    const strengthLevel: number = Math.max(10, loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 力道 10
-    const consciousnessLevel: number = Math.max(10, loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 神识 10
-    const agilityLevel: number = Math.max(10, loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 身法 10
+    const staminaLevel = Math.floor(Math.max(10, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 体魄 10
+    const meridiansLevel = Math.floor(Math.max(10, loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 经脉 10
+    const boneLevel = Math.floor(Math.max(10, loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 根骨 10
+    const strengthLevel = Math.floor(Math.max(10, loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 力道 10
+    const consciousnessLevel = Math.floor(Math.max(10, loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识 10
+    const agilityLevel = Math.floor(Math.max(10, loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法 10
 
     // 格式化经验进度：例如 5800/2.71万
     const getProgress = (level: number) => {
       const totalExp = 100.0 * Math.pow(Math.max(1.0, level) - 1.0, 3.0) + (level * 580.0)
       const res = calculateRootLevelAndProgress(totalExp)
-      const cur = formatNumber(res.currentProgress)
-      const req = formatNumber(res.levelRequirement)
+      const cur = formatNumber(Math.floor(res.currentProgress))
+      const req = formatNumber(Math.floor(res.levelRequirement))
       return {
-        current: res.currentProgress,
-        max: res.levelRequirement,
+        current: Math.floor(res.currentProgress),
+        max: Math.floor(res.levelRequirement),
         text: `${cur}/${req}`,
       }
     }
@@ -68,9 +68,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: staminaLevel,
         progress: getProgress(staminaLevel),
         bonuses: [
-          { value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
-          { value: `+${staminaLevel.toFixed(1)}%`, tone: 'bronze' as PillTone },
-          { value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
+          { value: `+${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
+          { value: `+${Math.floor(staminaLevel)}%`, tone: 'bronze' as PillTone },
+          { value: `+${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
         ],
       },
       {
@@ -79,9 +79,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: meridiansLevel,
         progress: getProgress(meridiansLevel),
         bonuses: [
-          { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
-          { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'violet' as PillTone },
-          { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
+          { value: `+${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
+          { value: `+${Math.floor(meridiansLevel)}%`, tone: 'violet' as PillTone },
+          { value: `+${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
         ],
       },
       {
@@ -90,9 +90,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: boneLevel,
         progress: getProgress(boneLevel),
         bonuses: [
-          { value: `+${boneLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
-          { value: `+${boneLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
-          { value: `+${boneLevel.toFixed(1)}%`, tone: 'silver' as PillTone },
+          { value: `+${Math.floor(boneLevel)}%`, tone: 'emerald' as PillTone },
+          { value: `+${Math.floor(boneLevel)}%`, tone: 'cyan' as PillTone },
+          { value: `+${Math.floor(boneLevel)}%`, tone: 'silver' as PillTone },
         ],
       },
       {
@@ -101,9 +101,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: strengthLevel,
         progress: getProgress(strengthLevel),
         bonuses: [
-          { value: `+${strengthLevel.toFixed(1)}%`, tone: 'crimson' as PillTone },
-          { value: `+${strengthLevel.toFixed(1)}%`, tone: 'gold' as PillTone },
-          { value: `+${strengthLevel.toFixed(1)}%`, tone: 'amber' as PillTone },
+          { value: `+${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
+          { value: `+${Math.floor(strengthLevel)}%`, tone: 'gold' as PillTone },
+          { value: `+${Math.floor(strengthLevel)}%`, tone: 'amber' as PillTone },
         ],
       },
       {
@@ -112,8 +112,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: consciousnessLevel,
         progress: getProgress(consciousnessLevel),
         bonuses: [
-          { value: `+${(consciousnessLevel * 2.0).toFixed(1)}%`, tone: 'indigo' as PillTone },
-          { value: `+${consciousnessLevel.toFixed(1)}%`, tone: 'sky' as PillTone },
+          { value: `+${Math.floor(consciousnessLevel * 2.0)}%`, tone: 'indigo' as PillTone },
+          { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
         ],
       },
       {
@@ -122,9 +122,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: agilityLevel,
         progress: getProgress(agilityLevel),
         bonuses: [
-          { value: `+${agilityLevel.toFixed(1)}%`, tone: 'teal' as PillTone },
-          { value: `+${agilityLevel.toFixed(1)}%`, tone: 'slate' as PillTone },
-          { value: `+${agilityLevel.toFixed(1)}%`, tone: 'silver' as PillTone },
+          { value: `+${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
+          { value: `+${Math.floor(agilityLevel)}%`, tone: 'slate' as PillTone },
+          { value: `+${Math.floor(agilityLevel)}%`, tone: 'silver' as PillTone },
         ],
       },
     ]
@@ -140,34 +140,34 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
   const basePool = useMemo(() => calculateBaseAttributes(stats.spirit ?? 0), [stats.spirit])
 
-  // 1. 基础战斗属性 (固定数值类型，全部使用 double)
+  // 1. 基础战斗属性 (固定数值类型，全部向下取整)
   // 当 attributes 存在时使用实时数值；未推送时以 basePool 为底座应用六维加成
   const staminaBonus = (loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
   const intelligenceBonus = (loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
   const boneBonus = (loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
 
-  const maxHp: number = attributes?.maxHitpoints ?? Math.round(basePool.baseHp * (1.0 + staminaBonus) * (1.0 + boneBonus))
-  const maxMp: number = attributes?.maxManapoints ?? Math.round(basePool.baseMp * (1.0 + intelligenceBonus) * (1.0 + boneBonus))
-  const physAtk: number = attributes
-    ? (attributes.style === 'FiveElements' ? Math.round(basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)) : attributes.maxDamage)
-    : Math.round(basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
-  const spellAtk: number = attributes
-    ? (attributes.style === 'FiveElements' ? attributes.maxDamage : Math.round(basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
-    : Math.round(basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02))
-  const armor: number = Math.max(0.0, attributes?.armor ?? (basePool.baseArmor * (1.0 + staminaBonus)))
-  const magicRes: number = Math.max(0.0, attributes?.waterResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus)))
-  const accuracy: number = attributes?.accuracyRating ?? basePool.baseAccuracy
-  const evasion: number = attributes?.evasionRating ?? basePool.baseEvasion
-  const critPoint: number = attributes ? (attributes.criticalRating ?? attributes.criticalChance * 100.0) : basePool.baseCrit
-  const critAvoidPoint: number = attributes ? (attributes.criticalAvoidanceRating ?? attributes.criticalAvoidance * 100.0) : basePool.baseCritAvoid
-  const parryBreakPoint: number = basePool.baseBreak + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)
-  const parryResolvePoint: number = basePool.baseParry + (loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)
+  const maxHp: number = Math.floor(attributes?.maxHitpoints ?? (basePool.baseHp * (1.0 + staminaBonus) * (1.0 + boneBonus)))
+  const maxMp: number = Math.floor(attributes?.maxManapoints ?? (basePool.baseMp * (1.0 + intelligenceBonus) * (1.0 + boneBonus)))
+  const physAtk: number = Math.floor(attributes
+    ? (attributes.style === 'FiveElements' ? (basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)) : attributes.maxDamage)
+    : (basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
+  const spellAtk: number = Math.floor(attributes
+    ? (attributes.style === 'FiveElements' ? attributes.maxDamage : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
+    : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
+  const armor: number = Math.floor(Math.max(0.0, attributes?.armor ?? (basePool.baseArmor * (1.0 + staminaBonus))))
+  const magicRes: number = Math.floor(Math.max(0.0, attributes?.waterResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus))))
+  const accuracy: number = Math.floor(attributes?.accuracyRating ?? (basePool.baseAccuracy * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
+  const evasion: number = Math.floor(attributes?.evasionRating ?? (basePool.baseEvasion * (1.0 + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
+  const critPoint: number = Math.floor(attributes ? (attributes.criticalRating ?? attributes.criticalChance * 100.0) : (basePool.baseCrit * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
+  const critAvoidPoint: number = Math.floor(attributes ? (attributes.criticalAvoidanceRating ?? attributes.criticalAvoidance * 100.0) : (basePool.baseCritAvoid * (1.0 + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
+  const parryBreakPoint: number = Math.floor(basePool.baseBreak * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
+  const parryResolvePoint: number = Math.floor(basePool.baseParry * (1.0 + boneBonus + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
 
-  // 生命回复与灵力回复 (固定值属性，每 5 秒回复量)
+  // 生命回复与灵力回复 (固定值属性，每 5 秒回复量，全部向下取整)
   // 服务端 HpRegenPerTenSeconds 是比率 (如 0.044 = 每 10 秒回复 maxHp 的 4.4%)
   // 实际每 5 秒回复量 = maxHp * ratio / 2
-  const hpRegenTotal = attributes ? (maxHp * attributes.hpRegenPerTenSeconds / 2.0) : (basePool.baseHpRegen * (1.0 + staminaBonus))
-  const mpRegenTotal = attributes ? (maxMp * attributes.mpRegenPerTenSeconds / 2.0) : (basePool.baseMpRegen * (1.0 + intelligenceBonus))
+  const hpRegenTotal = Math.floor(attributes ? (maxHp * attributes.hpRegenPerTenSeconds / 2.0) : (basePool.baseHpRegen * (1.0 + staminaBonus)))
+  const mpRegenTotal = Math.floor(attributes ? (maxMp * attributes.mpRegenPerTenSeconds / 2.0) : (basePool.baseMpRegen * (1.0 + intelligenceBonus)))
 
   // 2. 特殊战斗属性 (统一百分比类型 PercentValue，内部均为 double 点数)
   const critDamagePercent = PercentValue.linear((attributes?.criticalDamageRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0 + 150.0)
@@ -197,16 +197,16 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const earthBoostPercent = PercentValue.linear(0.0)
   const earthReductionPercent = PercentValue.linear(0.0)
 
-  // 4. 生平记录 (斩妖为怪物击败数，破敌严格为击败玩家数，败走为败退次数，苦修为修炼时长)
+  // 4. 生平记录 (斩妖为怪物击败数，破敌严格为击败玩家数，败走为败退次数，苦修为修炼时长，全部向下取整)
   const biographyData = useMemo(() => {
-    const normalKills: number = stats.combatEnemiesDefeated ?? 0.0
+    const normalKills: number = Math.floor(stats.combatEnemiesDefeated ?? 0.0)
     const eliteKills: number = 0.0
     const bossKills: number = 0.0
     const totalMonsters: number = normalKills + eliteKills + bossKills
-    const playersDefeated: number = stats.combatPlayersDefeated ?? 0.0
-    const totalDefeats: number = stats.combatLosses ?? 0.0
-    const cultivationSeconds: number = (stats.cultivationCycles ?? 0.0) * 10.0
-    const cultivationHours: number = cultivationSeconds / 3600.0
+    const playersDefeated: number = Math.floor(stats.combatPlayersDefeated ?? 0.0)
+    const totalDefeats: number = Math.floor(stats.combatLosses ?? 0.0)
+    const cultivationSeconds: number = Math.floor((stats.cultivationCycles ?? 0.0) * 10.0)
+    const cultivationHours: number = Math.floor(cultivationSeconds / 3600.0)
 
     return {
       normalKills,
@@ -251,8 +251,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   <strong className="tone-gold">{t('insight.progressComplete')}</strong>
                 ) : (
                   <strong>
-                    <UnitNumber tooltipLabel="当前修为" value={realmProgress.currentLayerExp} /> /{' '}
-                    <UnitNumber tooltipLabel="突破所需" value={realmProgress.expToNext} /> ({realmInfo.layerProgress.toFixed(1)}%)
+                    <UnitNumber tooltipLabel="当前修为" value={Math.floor(realmProgress.currentLayerExp)} /> /{' '}
+                    <UnitNumber tooltipLabel="突破所需" value={Math.floor(realmProgress.expToNext)} /> ({Math.floor(realmInfo.layerProgress * 10) / 10}%)
                   </strong>
                 )}
               </div>
@@ -261,7 +261,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 title={
                   <div className="unit-number-tooltip-inline">
                     <span className="unit-number-tooltip-label">总修为</span>
-                    <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(stats.spirit ?? 0)}</strong>
+                    <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(Math.floor(stats.spirit ?? 0))}</strong>
                   </div>
                 }
               >
@@ -381,23 +381,29 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel
                     label={t('insight.base.maxHp')}
-                    value={basePool.baseHp}
+                    value={Math.floor(basePool.baseHp)}
                     tone="emerald"
+                    tooltip={t('insight.combat.hpTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.maxMp')}
-                    value={basePool.baseMp}
+                    value={Math.floor(basePool.baseMp)}
                     tone="cyan"
+                    tooltip={t('insight.combat.mpTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.hpRegen')}
-                    value={<><UnitNumber tooltipLabel={t('insight.base.hpRegen')} value={basePool.baseHpRegen} />/5s</>}
+                    value={Math.floor(basePool.baseHpRegen)}
+                    suffix="/5s"
                     tone="emerald"
+                    tooltip={t('insight.combat.hpRegenTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.mpRegen')}
-                    value={<><UnitNumber tooltipLabel={t('insight.base.mpRegen')} value={basePool.baseMpRegen} />/5s</>}
+                    value={Math.floor(basePool.baseMpRegen)}
+                    suffix="/5s"
                     tone="cyan"
+                    tooltip={t('insight.combat.mpRegenTooltip')}
                   />
                 </div>
 
@@ -405,25 +411,25 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel
                     label={t('insight.base.physAtk')}
-                    value={basePool.baseAd}
+                    value={Math.floor(basePool.baseAd)}
                     tone="crimson"
                     tooltip={t('insight.base.physAtkTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.spellAtk')}
-                    value={basePool.baseAp}
+                    value={Math.floor(basePool.baseAp)}
                     tone="indigo"
                     tooltip={t('insight.base.spellAtkTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.armor')}
-                    value={basePool.baseArmor}
+                    value={Math.floor(basePool.baseArmor)}
                     tone="bronze"
                     tooltip={t('insight.base.armorTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.magicRes')}
-                    value={basePool.baseMagicRes}
+                    value={Math.floor(basePool.baseMagicRes)}
                     tone="violet"
                     tooltip={t('insight.base.magicResTooltip')}
                   />
@@ -433,37 +439,37 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel
                     label={t('insight.base.accuracy')}
-                    value={basePool.baseAccuracy}
+                    value={Math.floor(basePool.baseAccuracy)}
                     tone="sky"
                     tooltip={t('insight.base.accuracyTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.evasion')}
-                    value={basePool.baseEvasion}
+                    value={Math.floor(basePool.baseEvasion)}
                     tone="teal"
                     tooltip={t('insight.base.evasionTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.crit')}
-                    value={basePool.baseCrit}
+                    value={Math.floor(basePool.baseCrit)}
                     tone="gold"
                     tooltip={t('insight.base.critTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.critAvoid')}
-                    value={basePool.baseCritAvoid}
+                    value={Math.floor(basePool.baseCritAvoid)}
                     tone="slate"
                     tooltip={t('insight.base.critAvoidTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.parryBreak')}
-                    value={basePool.baseBreak}
+                    value={Math.floor(basePool.baseBreak)}
                     tone="amber"
                     tooltip={t('insight.base.parryBreakTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.parryResolve')}
-                    value={basePool.baseParry}
+                    value={Math.floor(basePool.baseParry)}
                     tone="silver"
                     tooltip={t('insight.base.parryResolveTooltip')}
                   />
@@ -482,7 +488,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
                   label={t('insight.foundation.daoFoundation')}
-                  value={stats.foundationExp ?? 0}
+                  value={Math.floor(stats.foundationExp ?? 0)}
                   tone="gold"
                   tooltip={t('insight.foundation.daoFoundationTooltip')}
                   tooltipTone="gold"
@@ -492,7 +498,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
                   label={t('insight.foundation.combatExp')}
-                  value={stats.combatExperience ?? 0}
+                  value={Math.floor(stats.combatExperience ?? 0)}
                   tone="qi"
                   tooltip={t('insight.foundation.combatExpTooltip')}
                   tooltipTone="qi"
@@ -514,8 +520,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel label={t('insight.combat.hp')} value={maxHp} tone="emerald" tooltip={t('insight.combat.hpTooltip')} />
                   <PillStatLabel label={t('insight.combat.mp')} value={maxMp} tone="cyan" tooltip={t('insight.combat.mpTooltip')} />
-                  <PillStatLabel label={t('insight.combat.hpRegen')} value={<><UnitNumber tooltipLabel={t('insight.combat.hpRegen')} value={hpRegenTotal} />/5s</>} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
-                  <PillStatLabel label={t('insight.combat.mpRegen')} value={<><UnitNumber tooltipLabel={t('insight.combat.mpRegen')} value={mpRegenTotal} />/5s</>} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.hpRegen')} value={hpRegenTotal} suffix="/5s" tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.mpRegen')} value={mpRegenTotal} suffix="/5s" tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
                 </div>
 
                 {/* 第 2 排：攻防属性 (物理攻击、术法攻击、物理护甲、术法抗性) */}
