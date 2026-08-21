@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useMemo, useState } from 'react'
 import { formatNumber } from '../game/format'
-import { ITEM_META, resolveItemGrade, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
+import { useT, type TFunction } from '../i18n'
 import type { ItemDefinition } from '../game/types'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
@@ -26,7 +27,8 @@ interface ItemGridPickerProps {
   emptyLabel?: string
 }
 
-function fallbackMetadata(item: ItemPickerEntry): ItemMetadata {
+// 未注册物品的兜底元数据：名称/品类/描述保留服务端数据，来源与用途走 market 域词典。
+function fallbackMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
   const tier = Math.max(1, item.tier)
   const grade = resolveItemGrade(tier)
   return {
@@ -38,14 +40,14 @@ function fallbackMetadata(item: ItemPickerEntry): ItemMetadata {
     rarityLabel: grade.label,
     level: tier,
     description: item.description,
-    source: '物品目录',
-    usage: `可用于${item.category}行动。`,
+    source: t('market.itemFallback.catalogSource'),
+    usage: t('market.itemFallback.usableFor', { category: item.category }),
   }
 }
 
-function getMetadata(item: ItemPickerEntry): ItemMetadata {
-  const registered = ITEM_META[item.itemId]
-  if (!registered) return fallbackMetadata(item)
+function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
+  const registered = resolveItemMetadata(item.itemId)
+  if (!registered) return fallbackMetadata(item, t)
   return withItemGrade({
     ...registered,
     label: item.name || registered.label,
@@ -64,7 +66,8 @@ function ItemGridCell({
   selected: boolean
   onSelect: () => void
 }): React.JSX.Element {
-  const metadata = getMetadata(item)
+  const t = useT()
+  const metadata = getMetadata(item, t)
   return (
     <ItemTooltipTarget
       amount={item.amount}
@@ -75,7 +78,7 @@ function ItemGridCell({
       tabIndex={-1}
     >
       <button
-        aria-label={`${item.name}，拥有 ${formatNumber(item.amount)}`}
+        aria-label={t('market.browse.itemOwned', { name: item.name, count: formatNumber(item.amount) })}
         aria-selected={selected}
         className={`item-grid-picker-card${selected ? ' is-selected' : ''}${item.amount <= 0 ? ' is-empty' : ''}`}
         disabled={item.amount <= 0}
@@ -104,8 +107,9 @@ export function ItemGridPicker({
   onClose,
   onSelect,
   allowEmpty = true,
-  emptyLabel = '不使用物品',
+  emptyLabel,
 }: ItemGridPickerProps): React.JSX.Element | null {
+  const t = useT()
   const titleId = useId()
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
@@ -122,6 +126,8 @@ export function ItemGridPicker({
 
   if (!open) return null
 
+  // 默认参数不能在解构处调用 hook，收拢到组件体内解析。
+  const emptyText = emptyLabel ?? t('common.pickerEmpty')
   const select = (itemId: string | null) => {
     onSelect(itemId)
     onClose()
@@ -134,10 +140,10 @@ export function ItemGridPicker({
           <h2 id={titleId}>{title}</h2>
         </div>
         <input
-          aria-label={`${title}搜索`}
+          aria-label={t('market.picker.searchTitleTemplate', { title })}
           autoComplete="off"
           onChange={event => setQuery(event.target.value)}
-          placeholder="搜索物品"
+          placeholder={t('market.browse.searchItems')}
           type="search"
           value={query}
         />
@@ -152,7 +158,7 @@ export function ItemGridPicker({
             type="button"
           >
             <span className="item-grid-picker-empty-cell">
-              <strong>{emptyLabel}</strong>
+              <strong>{emptyText}</strong>
             </span>
           </button>
         )}
@@ -165,7 +171,7 @@ export function ItemGridPicker({
           />
         ))}
       </div>
-      {visibleItems.length === 0 && <p className="item-grid-picker-empty">没有匹配的可用物品</p>}
+      {visibleItems.length === 0 && <p className="item-grid-picker-empty">{t('market.picker.noAvailableMatch')}</p>}
     </Modal>
   )
 }
@@ -183,15 +189,16 @@ export function ItemUseSlot({
   onClick: () => void
   onCondition?: () => void
 }): React.JSX.Element {
+  const t = useT()
   if (!item) {
     return (
-      <button aria-label="选择使用物品" className="item-use-slot item-use-slot--empty" onClick={onClick} type="button">
-        <span>选择物品</span>
+      <button aria-label={t('common.selectItem')} className="item-use-slot item-use-slot--empty" onClick={onClick} type="button">
+        <span>{t('market.picker.selectItemShort')}</span>
       </button>
     )
   }
 
-  const metadata = getMetadata(item)
+  const metadata = getMetadata(item, t)
   const depleted = item.amount <= 0
   return (
     <ItemTooltipTarget
@@ -204,7 +211,7 @@ export function ItemUseSlot({
     >
       <span className={`item-use-slot-shell${depleted ? ' is-depleted' : ''}`}>
         <button
-          aria-label={`当前使用物品：${item.name}${depleted ? '，数量不足' : ''}`}
+          aria-label={t('market.picker.currentItem', { name: depleted ? `${item.name}${t('market.picker.insufficientAmount')}` : item.name })}
           className={`item-use-slot${depleted ? ' item-use-slot--depleted' : ''}`}
           onClick={onClick}
           type="button"
@@ -221,12 +228,12 @@ export function ItemUseSlot({
         {cooldownOverlay}
         {onCondition && (
           <button
-            aria-label={`编辑${item.name}的触发条件，共 ${conditionCount} 条`}
+            aria-label={t('market.picker.editConditionsWithCount', { name: item.name, count: formatNumber(conditionCount) })}
             className="item-slot-inline-action item-slot-inline-action--condition"
             onClick={onCondition}
-            title="编辑触发条件"
+            title={t('market.picker.editConditions')}
             type="button"
-          >条件{conditionCount > 0 ? conditionCount : ''}</button>
+          >{t('market.picker.conditionLabel', { count: conditionCount > 0 ? formatNumber(conditionCount) : '' })}</button>
         )}
       </span>
     </ItemTooltipTarget>

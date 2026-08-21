@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { useT } from '../i18n'
 
 const FOCUSABLE_SELECTOR = [
   'button:not(:disabled)',
@@ -31,10 +32,13 @@ export function Modal({
   children,
   size = 'medium',
   className = '',
-  closeLabel = '关闭',
+  closeLabel,
   initialFocusRef,
   dismissible = true,
 }: ModalProps): React.JSX.Element | null {
+  const t = useT()
+  // 关闭按钮文案默认取 common.close；默认参数无法调用 hook，改在组件体内解析。
+  const resolvedCloseLabel = closeLabel ?? t('common.close')
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
 
@@ -97,11 +101,11 @@ export function Modal({
       >
         {dismissible && (
           <button
-            aria-label={closeLabel}
+            aria-label={resolvedCloseLabel}
             className="modal-close"
             onClick={onClose}
             ref={closeRef}
-            title={closeLabel}
+            title={resolvedCloseLabel}
             type="button"
           >×</button>
         )}

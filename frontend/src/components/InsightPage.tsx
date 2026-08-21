@@ -12,11 +12,13 @@ import {
 } from '../game/combatConstants'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
+import { useT } from '../i18n'
 
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
 type RootsSubTab = 'sixDimensions' | 'baseAttributes'
 
 export const InsightPage = memo(function InsightPage(): React.JSX.Element {
+  const t = useT()
   const [activeTab, setActiveTab] = useState<InsightTab>('roots')
   const [rootsSubTab, setRootsSubTab] = useState<RootsSubTab>('sixDimensions')
 
@@ -32,6 +34,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
 
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
+  // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
   const dimensions = useMemo(() => {
     const staminaLevel: number = Math.max(10, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 体魄 10
     const meridiansLevel: number = Math.max(10, loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 经脉 10
@@ -43,73 +46,61 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     return [
       {
         id: 'stamina',
-        name: '体魄',
         tone: 'emerald' as PillTone,
         level: staminaLevel,
-        tooltip: '体魄强韧肉身宝体。每点提升 1% 最大生命值、1% 护甲、1% 生命值回复。',
         bonuses: [
-          { label: '生命上限', value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
-          { label: '护甲', value: `+${staminaLevel.toFixed(1)}%`, tone: 'bronze' as PillTone },
-          { label: '生命回复', value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
+          { value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
+          { value: `+${staminaLevel.toFixed(1)}%`, tone: 'bronze' as PillTone },
+          { value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
         ],
       },
       {
         id: 'meridians',
-        name: '经脉',
         tone: 'cyan' as PillTone,
         level: meridiansLevel,
-        tooltip: '经脉纳通周天灵气。每点提升 1% 最大灵力值、1% 法术抗性、1% 灵力值回复。',
         bonuses: [
-          { label: '灵力上限', value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
-          { label: '法抗', value: `+${meridiansLevel.toFixed(1)}%`, tone: 'violet' as PillTone },
-          { label: '灵力回复', value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
+          { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
+          { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'violet' as PillTone },
+          { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
         ],
       },
       {
         id: 'bone',
-        name: '根骨',
         tone: 'violet' as PillTone,
         level: boneLevel,
-        tooltip: '先天仙骨化解万物。每点提升 1% 最大生命值、1% 最大灵力值、1% 化解。',
         bonuses: [
-          { label: '生命上限', value: `+${boneLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
-          { label: '灵力上限', value: `+${boneLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
-          { label: '化解', value: `+${boneLevel.toFixed(1)}%`, tone: 'silver' as PillTone },
+          { value: `+${boneLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
+          { value: `+${boneLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
+          { value: `+${boneLevel.toFixed(1)}%`, tone: 'silver' as PillTone },
         ],
       },
       {
         id: 'strength',
-        name: '力道',
         tone: 'amber' as PillTone,
         level: strengthLevel,
-        tooltip: '力道拔山断岳破阵。每点提升 1% 物理攻击、1% 暴击点数、1% 破招点数。',
         bonuses: [
-          { label: '物理攻击', value: `+${strengthLevel.toFixed(1)}%`, tone: 'crimson' as PillTone },
-          { label: '暴击', value: `+${strengthLevel.toFixed(1)}%`, tone: 'gold' as PillTone },
-          { label: '破招', value: `+${strengthLevel.toFixed(1)}%`, tone: 'amber' as PillTone },
+          { value: `+${strengthLevel.toFixed(1)}%`, tone: 'crimson' as PillTone },
+          { value: `+${strengthLevel.toFixed(1)}%`, tone: 'gold' as PillTone },
+          { value: `+${strengthLevel.toFixed(1)}%`, tone: 'amber' as PillTone },
         ],
       },
       {
         id: 'consciousness',
-        name: '神识',
         tone: 'indigo' as PillTone,
         level: consciousnessLevel,
-        tooltip: '神识灵台锁定杀机。每点提升 2% 术法攻击 (×2 强效加成)、1% 命中点数。',
         bonuses: [
-          { label: '术法攻击', value: `+${(consciousnessLevel * 2.0).toFixed(1)}%`, tone: 'indigo' as PillTone },
-          { label: '命中', value: `+${consciousnessLevel.toFixed(1)}%`, tone: 'sky' as PillTone },
+          { value: `+${(consciousnessLevel * 2.0).toFixed(1)}%`, tone: 'indigo' as PillTone },
+          { value: `+${consciousnessLevel.toFixed(1)}%`, tone: 'sky' as PillTone },
         ],
       },
       {
         id: 'agility',
-        name: '身法',
         tone: 'teal' as PillTone,
         level: agilityLevel,
-        tooltip: '身法凌波趋吉避凶。每点提升 1% 闪避点数、1% 免爆点数、1% 化解。',
         bonuses: [
-          { label: '闪避', value: `+${agilityLevel.toFixed(1)}%`, tone: 'teal' as PillTone },
-          { label: '免爆', value: `+${agilityLevel.toFixed(1)}%`, tone: 'slate' as PillTone },
-          { label: '化解', value: `+${agilityLevel.toFixed(1)}%`, tone: 'silver' as PillTone },
+          { value: `+${agilityLevel.toFixed(1)}%`, tone: 'teal' as PillTone },
+          { value: `+${agilityLevel.toFixed(1)}%`, tone: 'slate' as PillTone },
+          { value: `+${agilityLevel.toFixed(1)}%`, tone: 'silver' as PillTone },
         ],
       },
     ]
@@ -218,16 +209,16 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <RealmBadge realmInfo={realmInfo} />
             </div>
             <p className="insight-location">
-              <span>所在洞天：</span>
-              <strong>{world.locationName || '青云宗·灵脉福地'}</strong>
-              <em className="insight-multiplier">（灵气倍率 {(world.cultivationMultiplier || 1.0).toFixed(2)}x）</em>
+              <span>{t('insight.location')}</span>
+              <strong>{world.locationName || t('insight.locationFallback')}</strong>
+              <em className="insight-multiplier">{t('insight.multiplier', { value: (world.cultivationMultiplier || 1.0).toFixed(2) })}</em>
             </p>
             {/* 突破修为进度 */}
             <div className="insight-progress-block">
               <div className="insight-progress-meta">
-                <span>层境突破修为</span>
+                <span>{t('insight.progressLabel')}</span>
                 {isPendingBreakthrough || realmInfo.layerProgress >= 99.99 ? (
-                  <strong className="tone-gold">修为圆满 (待破境)</strong>
+                  <strong className="tone-gold">{t('insight.progressComplete')}</strong>
                 ) : (
                   <strong>{realmInfo.layerProgress.toFixed(1)} / 100.0 ({realmInfo.layerProgress.toFixed(1)}%)</strong>
                 )}
@@ -241,18 +232,18 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   onClick={() => gameClient.sendCommand('breakthrough', {})}
                   type="button"
                 >
-                  ⚡ 破境突破
+                  {t('insight.breakthroughBtn')}
                 </button>
               )}
             </div>
             {/* 核心生息快照 */}
             <div className="insight-quick-stats">
               <div className="insight-quick-item">
-                <span>生命值</span>
+                <span>{t('insight.quick.hp')}</span>
                 <strong className="tone-green">{formatNumber(maxHp)}</strong>
               </div>
               <div className="insight-quick-item">
-                <span>灵力值</span>
+                <span>{t('insight.quick.mp')}</span>
                 <strong className="tone-blue">{formatNumber(maxMp)}</strong>
               </div>
             </div>
@@ -266,28 +257,28 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             onClick={() => setActiveTab('roots')}
             type="button"
           >
-            根基
+            {t('insight.tab.roots')}
           </button>
           <button
             className={`insight-tab-btn ${activeTab === 'foundation' ? 'active' : ''}`}
             onClick={() => setActiveTab('foundation')}
             type="button"
           >
-            底蕴
+            {t('insight.tab.foundation')}
           </button>
           <button
             className={`insight-tab-btn ${activeTab === 'combat' ? 'active' : ''}`}
             onClick={() => setActiveTab('combat')}
             type="button"
           >
-            斗法
+            {t('insight.tab.combat')}
           </button>
           <button
             className={`insight-tab-btn ${activeTab === 'biography' ? 'active' : ''}`}
             onClick={() => setActiveTab('biography')}
             type="button"
           >
-            生平
+            {t('insight.tab.biography')}
           </button>
         </nav>
       </header>
@@ -305,14 +296,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 onClick={() => setRootsSubTab('sixDimensions')}
                 type="button"
               >
-                六维
+                {t('insight.subTab.sixDimensions')}
               </button>
               <button
                 className={`insight-sub-tab-btn ${rootsSubTab === 'baseAttributes' ? 'active' : ''}`}
                 onClick={() => setRootsSubTab('baseAttributes')}
                 type="button"
               >
-                基础
+                {t('insight.subTab.base')}
               </button>
             </div>
 
@@ -321,17 +312,17 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {dimensions.map(dim => (
                   <div className="insight-root-row" key={dim.id}>
                     <PillStatLabel
-                      label={dim.name}
+                      label={t(`insight.root.${dim.id}.name`)}
                       value={formatNumber(dim.level)}
                       tone={dim.tone}
-                      tooltip={dim.tooltip}
+                      tooltip={t(`insight.root.${dim.id}.desc`)}
                       tooltipTone={dim.tone === 'purple' ? 'purple' : dim.tone === 'qi' ? 'qi' : dim.tone === 'jade' ? 'jade' : 'gold'}
                     />
                     <div className="insight-root-bonuses">
                       {dim.bonuses.map((bonus, idx) => (
                         <PillBonusLabel
                           key={idx}
-                          label={bonus.label}
+                          label={t(`insight.root.${dim.id}.benefit${idx + 1}`)}
                           value={bonus.value}
                           tone={bonus.tone}
                         />
@@ -345,96 +336,96 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 {/* 第 1 排：血蓝与自然回复 */}
                 <div className="insight-base-row">
                   <PillStatLabel
-                    label="生命上限"
+                    label={t('insight.base.maxHp')}
                     value={formatNumber(basePool.baseHp)}
                     tone="emerald"
-                    tooltip={`最大生命值，能承受 ${formatNumber(basePool.baseHp)} 点伤害。`}
+                    tooltip={t('insight.base.maxHpTooltip', { value: formatNumber(basePool.baseHp) })}
                   />
                   <PillStatLabel
-                    label="灵力上限"
+                    label={t('insight.base.maxMp')}
                     value={formatNumber(basePool.baseMp)}
                     tone="cyan"
-                    tooltip={`最大灵力值，施展神通与法术的初始灵力储量（${formatNumber(basePool.baseMp)} 点）。`}
+                    tooltip={t('insight.base.maxMpTooltip', { value: formatNumber(basePool.baseMp) })}
                   />
                   <PillStatLabel
-                    label="生命回复"
+                    label={t('insight.base.hpRegen')}
                     value={`${formatNumber(basePool.baseHpRegen)}/5s`}
                     tone="emerald"
-                    tooltip={`仙躯每 5 秒自然回复的基础生命值（约为当前境界生命上限的 2%，即 ${formatNumber(basePool.baseHpRegen)} 点）。`}
+                    tooltip={t('insight.base.hpRegenTooltip', { value: formatNumber(basePool.baseHpRegen) })}
                   />
                   <PillStatLabel
-                    label="灵力回复"
+                    label={t('insight.base.mpRegen')}
                     value={`${formatNumber(basePool.baseMpRegen)}/5s`}
                     tone="cyan"
-                    tooltip={`气海每 5 秒自然回复的基础灵力值（约为当前境界灵力上限的 2%，即 ${formatNumber(basePool.baseMpRegen)} 点）。`}
+                    tooltip={t('insight.base.mpRegenTooltip', { value: formatNumber(basePool.baseMpRegen) })}
                   />
                 </div>
 
                 {/* 第 2 排：AD / AP / 物理护甲 / 术法抗性 */}
                 <div className="insight-base-row">
                   <PillStatLabel
-                    label="物理攻击"
+                    label={t('insight.base.physAtk')}
                     value={formatNumber(basePool.baseAd)}
                     tone="crimson"
-                    tooltip="物理杀伤基础威力，决定物理技能与普通攻击的伤害。"
+                    tooltip={t('insight.base.physAtkTooltip')}
                   />
                   <PillStatLabel
-                    label="术法攻击"
+                    label={t('insight.base.spellAtk')}
                     value={formatNumber(basePool.baseAp)}
                     tone="indigo"
-                    tooltip="法术神通基础威力，决定法术轰击与奇门遁甲的伤害。"
+                    tooltip={t('insight.base.spellAtkTooltip')}
                   />
                   <PillStatLabel
-                    label="物理护甲"
+                    label={t('insight.base.armor')}
                     value={formatNumber(basePool.baseArmor)}
                     tone="bronze"
-                    tooltip="抵御物理攻击，护甲越高所受物理伤害越低。"
+                    tooltip={t('insight.base.armorTooltip')}
                   />
                   <PillStatLabel
-                    label="术法抗性"
+                    label={t('insight.base.magicRes')}
                     value={formatNumber(basePool.baseMagicRes)}
                     tone="violet"
-                    tooltip="抵御法术攻击，抗性越高所受法术与元素伤害越低。"
+                    tooltip={t('insight.base.magicResTooltip')}
                   />
                 </div>
 
                 {/* 第 3 排：命中闪避 暴击免暴 破招化解 */}
                 <div className="insight-base-row">
                   <PillStatLabel
-                    label="命中"
+                    label={t('insight.base.accuracy')}
                     value={formatNumber(basePool.baseAccuracy)}
                     tone="sky"
-                    tooltip="命中概率基础点数，提升击中目标的概率。"
+                    tooltip={t('insight.base.accuracyTooltip')}
                   />
                   <PillStatLabel
-                    label="闪避"
+                    label={t('insight.base.evasion')}
                     value={formatNumber(basePool.baseEvasion)}
                     tone="teal"
-                    tooltip="闪避回避基础点数，提升回避敌方攻击的概率。"
+                    tooltip={t('insight.base.evasionTooltip')}
                   />
                   <PillStatLabel
-                    label="暴击"
+                    label={t('insight.base.crit')}
                     value={formatNumber(basePool.baseCrit)}
                     tone="gold"
-                    tooltip="暴击概率基础点数，提升造成会心一击的概率。"
+                    tooltip={t('insight.base.critTooltip')}
                   />
                   <PillStatLabel
-                    label="免暴"
+                    label={t('insight.base.critAvoid')}
                     value={formatNumber(basePool.baseCritAvoid)}
                     tone="slate"
-                    tooltip="免暴抗爆基础点数，降低遭受敌方暴击的概率。"
+                    tooltip={t('insight.base.critAvoidTooltip')}
                   />
                   <PillStatLabel
-                    label="破招"
+                    label={t('insight.base.parryBreak')}
                     value={formatNumber(basePool.baseBreak)}
                     tone="amber"
-                    tooltip="破招对抗基础点数，破招成功时本次命中与暴击效果翻倍。"
+                    tooltip={t('insight.base.parryBreakTooltip')}
                   />
                   <PillStatLabel
-                    label="化解"
+                    label={t('insight.base.parryResolve')}
                     value={formatNumber(basePool.baseParry)}
                     tone="silver"
-                    tooltip="拆招化解基础点数，化解成功时本次双抗与闪避效果翻倍。"
+                    tooltip={t('insight.base.parryResolveTooltip')}
                   />
                 </div>
               </div>
@@ -450,20 +441,20 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-foundation-pills">
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
-                  label="道基底蕴"
+                  label={t('insight.foundation.daoFoundation')}
                   value={formatNumber(stats.foundationExp ?? 0)}
                   tone="gold"
-                  tooltip="修为达到当前境界满值未突破时，获得的修为将100%转化为底蕴。突破后修炼享受3倍经验加速（消耗等额底蕴）。"
+                  tooltip={t('insight.foundation.daoFoundationTooltip')}
                   tooltipTone="gold"
                 />
               </div>
 
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
-                  label="战斗经验"
+                  label={t('insight.foundation.combatExp')}
                   value={(stats.combatExperience ?? 0).toFixed(1)}
                   tone="qi"
-                  tooltip="击败真实敌方单位基础获得1.0点。每高自身1级+10%(指数增幅)，每低1级-20%(指数递减)。"
+                  tooltip={t('insight.foundation.combatExpTooltip')}
                   tooltipTone="qi"
                 />
               </div>
@@ -477,65 +468,65 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         {activeTab === 'combat' && (
           <div className="insight-panel insight-panel--combat">
             <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">基础战斗属性</h4>
+              <h4 className="insight-pill-group-title">{t('insight.combat.groupBase')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label="生命值" value={maxHp.toFixed(1)} tone="emerald" tooltip="仙躯气血总量。归零时重伤败退。受体魄与根骨百分比加成。" />
-                <PillStatLabel label="灵力值" value={maxMp.toFixed(1)} tone="cyan" tooltip="气海灵力储量。施展神通与法术时消耗。受经脉与根骨百分比加成。" />
-                <PillStatLabel label="生命回复" value={`${hpRegenTotal.toFixed(1)}/5s`} tone="emerald" tooltip="仙躯每 5 秒自然回复的生命值点数。基础 2.0，受体魄百分比加成。" />
-                <PillStatLabel label="灵力回复" value={`${mpRegenTotal.toFixed(1)}/5s`} tone="cyan" tooltip="气海每 5 秒自然回复的灵力值点数。基础 1.0，受经脉百分比加成。" />
-                <PillStatLabel label="物理攻击" value={physAtk.toFixed(1)} tone="crimson" tooltip="物理杀伐威力。决定物理技能与普攻的基础输出。受力道百分比加成。" />
-                <PillStatLabel label="术法攻击" value={spellAtk.toFixed(1)} tone="indigo" tooltip="术法神通威力。决定术法轰击与治疗效果。受神识×2 百分比加成。" />
-                <PillStatLabel label="护甲" value={armor.toFixed(1)} tone="bronze" tooltip="抵御物理攻击伤害。减伤公式：伤害 = 原始伤害 × (原始伤害 / (原始伤害 + 护甲 × 5.0 + 1.0))。" />
-                <PillStatLabel label="法抗" value={magicRes.toFixed(1)} tone="violet" tooltip="抵御术法与元素伤害。减伤公式：伤害 = 原始伤害 × (原始伤害 / (原始伤害 + 法抗 × 5.0 + 1.0))。" />
-                <PillStatLabel label="命中" value={accuracy.toFixed(1)} tone="sky" tooltip="命中 vs 闪避对抗。命中率 = 自身命中 / (自身命中 + 对方闪避 × 1.0 + 1.0)。破招时等效翻倍。" />
-                <PillStatLabel label="闪避" value={evasion.toFixed(1)} tone="teal" tooltip="闪避攻击概率。若成功闪避则完全免除本次伤害。化解时等效翻倍。" />
-                <PillStatLabel label="暴击" value={critPoint.toFixed(1)} tone="gold" tooltip="暴击 vs 免爆对抗。暴击率 = 自身暴击 / (自身暴击 + 对方免爆 × 1.0 + 1.0)。破招时等效翻倍。" />
-                <PillStatLabel label="免爆" value={critAvoidPoint.toFixed(1)} tone="slate" tooltip="抵抗暴击概率。削弱敌方对自身的暴击概率。" />
-                <PillStatLabel label="破招" value={parryBreakPoint.toFixed(1)} tone="amber" tooltip="破招对抗判定。当破招 > 对方化解时按对抗概率触发。触发成功：本次命中与暴击效果翻倍！" />
-                <PillStatLabel label="化解" value={parryResolvePoint.toFixed(1)} tone="silver" tooltip="化解对抗判定。当化解 > 对方破招时按对抗概率触发。触发成功：本次双抗与闪避效果翻倍！" />
+                <PillStatLabel label={t('insight.combat.hp')} value={maxHp.toFixed(1)} tone="emerald" tooltip={t('insight.combat.hpTooltip')} />
+                <PillStatLabel label={t('insight.combat.mp')} value={maxMp.toFixed(1)} tone="cyan" tooltip={t('insight.combat.mpTooltip')} />
+                <PillStatLabel label={t('insight.combat.hpRegen')} value={`${hpRegenTotal.toFixed(1)}/5s`} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
+                <PillStatLabel label={t('insight.combat.mpRegen')} value={`${mpRegenTotal.toFixed(1)}/5s`} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
+                <PillStatLabel label={t('insight.combat.physAtk')} value={physAtk.toFixed(1)} tone="crimson" tooltip={t('insight.combat.physAtkTooltip')} />
+                <PillStatLabel label={t('insight.combat.spellAtk')} value={spellAtk.toFixed(1)} tone="indigo" tooltip={t('insight.combat.spellAtkTooltip')} />
+                <PillStatLabel label={t('insight.combat.armor')} value={armor.toFixed(1)} tone="bronze" tooltip={t('insight.combat.armorTooltip')} />
+                <PillStatLabel label={t('insight.combat.magicRes')} value={magicRes.toFixed(1)} tone="violet" tooltip={t('insight.combat.magicResTooltip')} />
+                <PillStatLabel label={t('insight.combat.accuracy')} value={accuracy.toFixed(1)} tone="sky" tooltip={t('insight.combat.accuracyTooltip')} />
+                <PillStatLabel label={t('insight.combat.evasion')} value={evasion.toFixed(1)} tone="teal" tooltip={t('insight.combat.evasionTooltip')} />
+                <PillStatLabel label={t('insight.combat.crit')} value={critPoint.toFixed(1)} tone="gold" tooltip={t('insight.combat.critTooltip')} />
+                <PillStatLabel label={t('insight.combat.critAvoid')} value={critAvoidPoint.toFixed(1)} tone="slate" tooltip={t('insight.combat.critAvoidTooltip')} />
+                <PillStatLabel label={t('insight.combat.parryBreak')} value={parryBreakPoint.toFixed(1)} tone="amber" tooltip={t('insight.combat.parryBreakTooltip')} />
+                <PillStatLabel label={t('insight.combat.parryResolve')} value={parryResolvePoint.toFixed(1)} tone="silver" tooltip={t('insight.combat.parryResolveTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">特殊战斗属性</h4>
+              <h4 className="insight-pill-group-title">{t('insight.combat.groupSpecial')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label="暴击伤害" value={critDamagePercent.format()} tone="gold" tooltip="暴击成功时的伤害倍率。基础 150.0% + 额外加成。" />
-                <PillStatLabel label="行动速度" value={actionSpeedPercent.format()} tone="teal" tooltip="普通攻击与动作出招速度。默认 0 点无增减。" />
-                <PillStatLabel label="冷却速度" value={cooldownSpeedPercent.format()} tone="cyan" tooltip="非线性冷却缩减。公式：缩减率 = 点数 / (点数 + 100)。100 点对应 50% CD缩减。" />
-                <PillStatLabel label="灵力减耗" value={manaCostReductionPercent.format()} tone="cyan" tooltip="施法与功法灵力消耗非线性减免率。" />
-                <PillStatLabel label="伤害增加" value={damageBoostPercent.format()} tone="gold" tooltip="最终输出伤害线性放大乘区。倍率：1 + 增伤/100。" />
-                <PillStatLabel label="伤害减免" value={damageReductionPercent.format()} tone="emerald" tooltip="最终承伤线性减免乘区。受到伤害降低对应百分比。" />
-                <PillStatLabel label="护甲穿透" value={armorPenPercent.format()} tone="bronze" tooltip="无视敌方护甲百分比。有效护甲 = 护甲 / (1 + 穿透率)。" />
-                <PillStatLabel label="法抗穿透" value={magicPenPercent.format()} tone="violet" tooltip="无视敌方法抗百分比。有效法抗 = 法抗 / (1 + 穿透率)。" />
-                <PillStatLabel label="仇恨增加" value={threatBonusPercent.format()} tone="crimson" tooltip="战斗中吸引怪物与敌手攻击的仇恨放大倍率。" />
+                <PillStatLabel label={t('insight.combat.critDamage')} value={critDamagePercent.format()} tone="gold" tooltip={t('insight.combat.critDamageTooltip')} />
+                <PillStatLabel label={t('insight.combat.actionSpeed')} value={actionSpeedPercent.format()} tone="teal" tooltip={t('insight.combat.actionSpeedTooltip')} />
+                <PillStatLabel label={t('insight.combat.cooldownSpeed')} value={cooldownSpeedPercent.format()} tone="cyan" tooltip={t('insight.combat.cooldownSpeedTooltip')} />
+                <PillStatLabel label={t('insight.combat.manaCostReduction')} value={manaCostReductionPercent.format()} tone="cyan" tooltip={t('insight.combat.manaCostReductionTooltip')} />
+                <PillStatLabel label={t('insight.combat.damageBoost')} value={damageBoostPercent.format()} tone="gold" tooltip={t('insight.combat.damageBoostTooltip')} />
+                <PillStatLabel label={t('insight.combat.damageReduction')} value={damageReductionPercent.format()} tone="emerald" tooltip={t('insight.combat.damageReductionTooltip')} />
+                <PillStatLabel label={t('insight.combat.armorPen')} value={armorPenPercent.format()} tone="bronze" tooltip={t('insight.combat.armorPenTooltip')} />
+                <PillStatLabel label={t('insight.combat.magicPen')} value={magicPenPercent.format()} tone="violet" tooltip={t('insight.combat.magicPenTooltip')} />
+                <PillStatLabel label={t('insight.combat.threatBonus')} value={threatBonusPercent.format()} tone="crimson" tooltip={t('insight.combat.threatBonusTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">增免伤与五行属性</h4>
+              <h4 className="insight-pill-group-title">{t('insight.combat.groupElements')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label="物理增免" value={`${physBoostPercent.format()} / ${physReductionPercent.format()}`} tone="crimson" tooltip="物理伤害专属独立放大与减免乘区。" />
-                <PillStatLabel label="术法增免" value={`${spellBoostPercent.format()} / ${spellReductionPercent.format()}`} tone="indigo" tooltip="术法伤害专属独立放大与减免乘区。" />
-                <PillStatLabel label="金系增免" value={`${metalBoostPercent.format()} / ${metalReductionPercent.format()}`} tone="gold" tooltip="庚金属性伤害专属放大与减免乘区。" />
-                <PillStatLabel label="木系增免" value={`${woodBoostPercent.format()} / ${woodReductionPercent.format()}`} tone="emerald" tooltip="乙木属性伤害专属放大与减免乘区。" />
-                <PillStatLabel label="水系增免" value={`${waterBoostPercent.format()} / ${waterReductionPercent.format()}`} tone="cyan" tooltip="癸水属性伤害专属放大与减免乘区。" />
-                <PillStatLabel label="火系增免" value={`${fireBoostPercent.format()} / ${fireReductionPercent.format()}`} tone="amber" tooltip="离火属性伤害专属放大与减免乘区。" />
-                <PillStatLabel label="土系增免" value={`${earthBoostPercent.format()} / ${earthReductionPercent.format()}`} tone="bronze" tooltip="戊土属性伤害专属放大与减免乘区。" />
+                <PillStatLabel label={t('insight.combat.physBoostReduce')} value={`${physBoostPercent.format()} / ${physReductionPercent.format()}`} tone="crimson" tooltip={t('insight.combat.physBoostReduceTooltip')} />
+                <PillStatLabel label={t('insight.combat.spellBoostReduce')} value={`${spellBoostPercent.format()} / ${spellReductionPercent.format()}`} tone="indigo" tooltip={t('insight.combat.spellBoostReduceTooltip')} />
+                <PillStatLabel label={t('insight.combat.metalBoostReduce')} value={`${metalBoostPercent.format()} / ${metalReductionPercent.format()}`} tone="gold" tooltip={t('insight.combat.metalBoostReduceTooltip')} />
+                <PillStatLabel label={t('insight.combat.woodBoostReduce')} value={`${woodBoostPercent.format()} / ${woodReductionPercent.format()}`} tone="emerald" tooltip={t('insight.combat.woodBoostReduceTooltip')} />
+                <PillStatLabel label={t('insight.combat.waterBoostReduce')} value={`${waterBoostPercent.format()} / ${waterReductionPercent.format()}`} tone="cyan" tooltip={t('insight.combat.waterBoostReduceTooltip')} />
+                <PillStatLabel label={t('insight.combat.fireBoostReduce')} value={`${fireBoostPercent.format()} / ${fireReductionPercent.format()}`} tone="amber" tooltip={t('insight.combat.fireBoostReduceTooltip')} />
+                <PillStatLabel label={t('insight.combat.earthBoostReduce')} value={`${earthBoostPercent.format()} / ${earthReductionPercent.format()}`} tone="bronze" tooltip={t('insight.combat.earthBoostReduceTooltip')} />
               </div>
             </div>
 
             {/* 运转中的丹药与神通 Buff */}
             {buffs.length > 0 && (
               <div className="insight-pill-group">
-                <h4 className="insight-pill-group-title">当前运转丹药与神通加持</h4>
+                <h4 className="insight-pill-group-title">{t('insight.combat.groupBuffs')}</h4>
                 <div className="insight-pill-group-items">
                   {buffs.map(buff => (
                     <PillStatLabel
                       key={buff.buffId}
                       label={buff.name}
-                      value={buff.stacks > 1 ? `×${buff.stacks}` : '生效中'}
+                      value={buff.stacks > 1 ? `×${formatNumber(buff.stacks)}` : t('insight.combat.buffActive')}
                       tone="gold"
-                      tooltip={`${buff.name}（${buff.stacks}层）加持运转中`}
+                      tooltip={t('insight.combat.buffTooltip', { name: buff.name, stacks: formatNumber(buff.stacks) })}
                     />
                   ))}
                 </div>
@@ -550,27 +541,27 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         {activeTab === 'biography' && (
           <div className="insight-panel insight-panel--biography">
             <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">历练</h4>
+              <h4 className="insight-pill-group-title">{t('insight.bio.groupAdventure')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label="普通妖修" value={biographyData.normalKills.toFixed(0)} tone="slate" tooltip="诛灭普通妖修魔物统计" />
-                <PillStatLabel label="精英大妖" value={biographyData.eliteKills.toFixed(0)} tone="cyan" tooltip="斩杀深山大泽精英大妖统计" />
-                <PillStatLabel label="妖王魔尊" value={biographyData.bossKills.toFixed(0)} tone="gold" tooltip="镇压绝世妖王魔尊战绩统计" />
-                <PillStatLabel label="斩妖总计" value={biographyData.totalMonsters.toFixed(0)} tone="crimson" tooltip="修仙历练途中诛灭妖邪魔物总尊数" />
+                <PillStatLabel label={t('insight.bio.normalKills')} value={biographyData.normalKills.toFixed(0)} tone="slate" tooltip={t('insight.bio.normalKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.eliteKills')} value={biographyData.eliteKills.toFixed(0)} tone="cyan" tooltip={t('insight.bio.eliteKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.bossKills')} value={biographyData.bossKills.toFixed(0)} tone="gold" tooltip={t('insight.bio.bossKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.totalMonsters')} value={biographyData.totalMonsters.toFixed(0)} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">争锋</h4>
+              <h4 className="insight-pill-group-title">{t('insight.bio.groupRivalry')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label="击破同道" value={biographyData.playersDefeated.toFixed(0)} tone="emerald" tooltip="仙魔争锋斗法中击败其他同道修士的战绩统计" />
-                <PillStatLabel label="重伤败走" value={biographyData.totalDefeats.toFixed(0)} tone="crimson" tooltip="历练或斗法中仙躯重伤败退的累计次数" />
+                <PillStatLabel label={t('insight.bio.playersDefeated')} value={biographyData.playersDefeated.toFixed(0)} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
+                <PillStatLabel label={t('insight.bio.totalDefeats')} value={biographyData.totalDefeats.toFixed(0)} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">修行</h4>
+              <h4 className="insight-pill-group-title">{t('insight.bio.groupCultivation')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label="修炼" value={`${biographyData.cultivationHours.toFixed(2)} 时`} tone="gold" tooltip={`潜心闭关修炼总时长（${biographyData.cultivationSeconds.toFixed(0)} 秒）`} />
+                <PillStatLabel label={t('insight.bio.cultivation')} value={t('insight.bio.cultivationValue', { hours: formatNumber(biographyData.cultivationHours) })} tone="gold" tooltip={t('insight.bio.cultivationTooltip', { seconds: formatNumber(biographyData.cultivationSeconds) })} />
               </div>
             </div>
           </div>

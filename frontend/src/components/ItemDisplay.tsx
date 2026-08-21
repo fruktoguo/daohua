@@ -1,7 +1,8 @@
 import { type ReactNode } from 'react'
 import { describeCombatTrigger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { ITEM_META, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { getT, useT } from '../i18n'
 import type { CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { ValueText } from './ValueText'
@@ -68,7 +69,8 @@ export function ItemTooltipTarget({
   definition,
   tabIndex = 0,
 }: ItemTooltipTargetProps): React.JSX.Element {
-  const baseMetadata = metadataOverride ?? ITEM_META[itemId] ?? fallbackMetadata(itemId)
+  const t = useT()
+  const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const rawMetadata = definition
     ? {
         ...baseMetadata,
@@ -86,24 +88,24 @@ export function ItemTooltipTarget({
   const effectLines = [...describeItemEffects(definition), ...describeEquipmentEffects(equipment)]
 
   const stats: { label: string; value: ReactNode; tone?: FloatingTone }[] = [
-    { label: '品类', value: metadata.category, tone: 'muted' },
+    { label: t('market.tooltip.category'), value: metadata.category, tone: 'muted' },
   ]
   if (metadata.level !== undefined) {
-    stats.push({ label: '等阶', value: `Lv. ${metadata.level}`, tone: 'gold' })
+    stats.push({ label: t('market.tooltip.level'), value: `Lv. ${formatNumber(metadata.level)}`, tone: 'gold' })
   }
   if (amount !== undefined) {
-    stats.push({ label: '持有', value: formatNumber(amount), tone: 'gold' })
+    stats.push({ label: t('market.tooltip.held'), value: formatNumber(amount), tone: 'gold' })
   }
   if (metadata.source) {
-    stats.push({ label: '产出', value: metadata.source, tone: 'jade' })
+    stats.push({ label: t('market.tooltip.source'), value: metadata.source, tone: 'jade' })
   }
 
   // 附属卡片：如果存在额外用途说明或特殊词条，可以作为附属气泡组合展示
   const asideCards: FloatingAsideCard[] = []
   if (metadata.usage) {
     asideCards.push({
-      mark: '用途',
-      title: '使用法门',
+      mark: t('market.tooltip.usageMark'),
+      title: t('market.tooltip.usageTitle'),
       tone: 'qi',
       lines: [metadata.usage],
     })
@@ -124,7 +126,7 @@ export function ItemTooltipTarget({
             <ValueText className="effect-value-capsule" key={line} text={line} />
           ))}
           stats={stats}
-          subtitle={metadata.source ? `来源：${metadata.source}` : undefined}
+          subtitle={metadata.source ? t('market.tooltip.sourcePrefix', { source: metadata.source }) : undefined}
           title={metadata.label}
         />
       }
@@ -153,25 +155,27 @@ function multiplierPercent(value: number): string | null {
 
 function describeItemEffects(definition?: ItemDefinition): string[] {
   if (!definition) return []
+  // 非渲染辅助路径：词条行由调用方组件的重渲染携带语言切换。
+  const t = getT()
   const lines: string[] = []
-  if (definition.hitpointRestore > 0) lines.push(`恢复生命 ${formatNumber(definition.hitpointRestore)}`)
-  if (definition.manapointRestore > 0) lines.push(`恢复灵力 ${formatNumber(definition.manapointRestore)}`)
-  if (definition.recoverySeconds > 0) lines.push(`恢复持续 ${definition.recoverySeconds} 秒`)
-  if (definition.cooldownSeconds > 0) lines.push(`冷却 ${definition.cooldownSeconds} 秒`)
-  if (definition.triggerAtCombatStart) lines.push('进入战斗时使用')
-  for (const trigger of definition.defaultCombatTriggers ?? []) lines.push(`默认条件 ${describeCombatTrigger(trigger)}`)
+  if (definition.hitpointRestore > 0) lines.push(t('market.effect.restoreHp', { value: formatNumber(definition.hitpointRestore) }))
+  if (definition.manapointRestore > 0) lines.push(t('market.effect.restoreMp', { value: formatNumber(definition.manapointRestore) }))
+  if (definition.recoverySeconds > 0) lines.push(t('market.effect.recoveryDuration', { seconds: formatNumber(definition.recoverySeconds) }))
+  if (definition.cooldownSeconds > 0) lines.push(t('market.effect.cooldown', { seconds: formatNumber(definition.cooldownSeconds) }))
+  if (definition.triggerAtCombatStart) lines.push(t('market.effect.useAtCombatStart'))
+  for (const trigger of definition.defaultCombatTriggers ?? []) lines.push(t('market.effect.defaultCondition', { trigger: describeCombatTrigger(trigger) }))
   if (
     (definition.defaultCombatTriggers?.length ?? 0) === 0 &&
     (definition.hitpointRestore > 0 || definition.manapointRestore > 0) &&
     definition.triggerHpRatio > 0
   ) {
-    lines.push(`默认在生命低于 ${Math.round(definition.triggerHpRatio * 100)}% 时使用`)
+    lines.push(t('market.effect.autoUseBelowHp', { percent: formatNumber(Math.round(definition.triggerHpRatio * 100)) }))
   }
   for (const buff of definition.buffEffects ?? []) {
     const heading = [
       buff.name,
-      buff.durationSeconds > 0 ? `${buff.durationSeconds} 秒` : '',
-      buff.maxStacks > 1 ? `最多 ${buff.maxStacks} 层` : '',
+      buff.durationSeconds > 0 ? t('market.effect.secondsShort', { seconds: formatNumber(buff.durationSeconds) }) : '',
+      buff.maxStacks > 1 ? t('market.effect.maxStacks', { stacks: formatNumber(buff.maxStacks) }) : '',
     ]
       .filter(Boolean)
       .join(' · ')
@@ -179,18 +183,20 @@ function describeItemEffects(definition?: ItemDefinition): string[] {
     const qi = multiplierPercent(buff.qiGainMultiplier)
     const gathering = multiplierPercent(buff.gatheringOutputMultiplier)
     const alchemy = multiplierPercent(buff.alchemyOutputMultiplier)
-    if (qi) lines.push(`修炼收益 ${qi}`)
-    if (buff.attackLevelRatio !== 0) lines.push(`命中 ${signedPercent(buff.attackLevelRatio)}`)
-    if (buff.damageRatio !== 0) lines.push(`伤害 ${signedPercent(buff.damageRatio)}`)
-    if (buff.attackSpeedRatio !== 0) lines.push(`攻击速度 ${signedPercent(buff.attackSpeedRatio)}`)
-    if (gathering) lines.push(`采集产出 ${gathering}`)
-    if (alchemy) lines.push(`炼丹产出 ${alchemy}`)
+    if (qi) lines.push(t('market.effect.qiGainBonus', { value: qi }))
+    if (buff.attackLevelRatio !== 0) lines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
+    if (buff.damageRatio !== 0) lines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
+    if (buff.attackSpeedRatio !== 0) lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
+    if (gathering) lines.push(t('market.effect.gatheringOutput', { value: gathering }))
+    if (alchemy) lines.push(t('market.effect.alchemyOutput', { value: alchemy }))
   }
   return lines
 }
 
 function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string[] {
   if (!equipment) return []
+  // 非渲染辅助路径：词条行由调用方组件的重渲染携带语言切换。
+  const t = getT()
   const stats = equipment.stats
   const lines: string[] = []
   const addPercent = (label: string, value: number) => {
@@ -199,28 +205,28 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
   const addNumber = (label: string, value: number) => {
     if (value !== 0) lines.push(`${label} ${formatNumber(value)}`)
   }
-  addPercent('命中', stats.accuracyRatio)
-  addPercent('伤害', stats.damageRatio)
-  addPercent('攻击速度', stats.attackSpeedRatio)
-  addPercent('闪避', stats.evasionRatio)
-  addNumber('护甲', stats.armor)
-  addNumber('水抗', stats.waterResistance)
-  addNumber('木抗', stats.natureResistance)
-  addNumber('火抗', stats.fireResistance)
-  addNumber('控制抗性', stats.tenacity)
-  addPercent('抗性穿透', stats.penetrationRatio)
-  addPercent('穿透概率', stats.pierceChance)
-  addPercent('蚀心', stats.curseRatio)
-  addPercent('沸血', stats.furyRatio)
-  addPercent('衰弱', stats.weakenRatio)
-  addPercent('生命偷取', stats.lifeStealRatio)
-  addPercent('护甲增伤', stats.armorDamageRatio)
-  addPercent('生命汲取', stats.hpDrainRatio)
-  addPercent('暴击率', stats.criticalChance)
-  addPercent('暴击增伤', stats.criticalDamageRatio)
-  addPercent('免暴率', stats.criticalAvoidance)
-  addPercent('伤害吸收', stats.damageAbsorptionRatio)
-  if (stats.attackIntervalMilliseconds > 0) lines.push(`攻击间隔 ${(stats.attackIntervalMilliseconds / 1000).toFixed(2)} 秒`)
+  addPercent(t('market.stat.accuracy'), stats.accuracyRatio)
+  addPercent(t('market.stat.damage'), stats.damageRatio)
+  addPercent(t('market.stat.attackSpeed'), stats.attackSpeedRatio)
+  addPercent(t('market.stat.evasion'), stats.evasionRatio)
+  addNumber(t('market.stat.armor'), stats.armor)
+  addNumber(t('market.stat.waterRes'), stats.waterResistance)
+  addNumber(t('market.stat.natureRes'), stats.natureResistance)
+  addNumber(t('market.stat.fireRes'), stats.fireResistance)
+  addNumber(t('market.stat.tenacity'), stats.tenacity)
+  addPercent(t('market.stat.penetration'), stats.penetrationRatio)
+  addPercent(t('market.stat.pierceChance'), stats.pierceChance)
+  addPercent(t('market.stat.curse'), stats.curseRatio)
+  addPercent(t('market.stat.fury'), stats.furyRatio)
+  addPercent(t('market.stat.weaken'), stats.weakenRatio)
+  addPercent(t('market.stat.lifeSteal'), stats.lifeStealRatio)
+  addPercent(t('market.stat.armorDamage'), stats.armorDamageRatio)
+  addPercent(t('market.stat.hpDrain'), stats.hpDrainRatio)
+  addPercent(t('market.stat.critChance'), stats.criticalChance)
+  addPercent(t('market.stat.critDamage'), stats.criticalDamageRatio)
+  addPercent(t('market.stat.critAvoidance'), stats.criticalAvoidance)
+  addPercent(t('market.stat.damageAbsorption'), stats.damageAbsorptionRatio)
+  if (stats.attackIntervalMilliseconds > 0) lines.push(t('market.stat.attackInterval', { seconds: (stats.attackIntervalMilliseconds / 1000).toFixed(2) }))
   return lines
 }
 
@@ -237,7 +243,7 @@ export function ItemTile({
   return (
     <span className={`item-tile ${className}`.trim()} data-rarity={rarity}>
       <span className="item-type-ribbon" aria-hidden="true"><span>{category}</span></span>
-      {level !== undefined && <span className="item-corner item-corner--top-right">Lv. {level}</span>}
+      {level !== undefined && <span className="item-corner item-corner--top-right">Lv. {formatNumber(level)}</span>}
       <strong className="item-tile-name">{name}</strong>
       {bottomRight !== null && <span className="item-corner item-corner--bottom-right">{bottomRight}</span>}
     </span>
@@ -245,9 +251,12 @@ export function ItemTile({
 }
 
 export function ItemCard({ item, definition }: { item: InventoryItem; definition?: ItemDefinition }): React.JSX.Element {
+  // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
+  useT()
+  const meta = resolveItemMetadata(item.itemId)
   const metadata = withItemGrade(
-    ITEM_META[item.itemId] ?? fallbackMetadata(item.itemId),
-    item.tier ?? ITEM_META[item.itemId]?.level ?? 1,
+    meta ?? fallbackMetadata(item.itemId),
+    item.tier ?? meta?.level ?? 1,
   )
   return (
     <ItemTooltipTarget amount={item.amount} className="inventory-item-anchor" definition={definition} itemId={item.itemId} metadata={metadata}>
@@ -274,7 +283,9 @@ export function ItemReference({
   label?: string
   className?: string
 }): React.JSX.Element {
-  const metadata = ITEM_META[itemId] ?? fallbackMetadata(itemId)
+  // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
+  useT()
+  const metadata = resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const definition = useGameStore((state) => state.items.find((item) => item.itemId === itemId))
   return (
     <ItemTooltipTarget amount={amount} className={`item-reference ${className}`.trim()} definition={definition} itemId={itemId}>

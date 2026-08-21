@@ -1,15 +1,14 @@
 import { memo, useMemo } from 'react'
 import { formatNumber } from '../game/format'
 import type { CombatEncounterDefinition, CombatSpawnDefinition, CombatantDefinition } from '../game/types'
+import { useT, type TFunction } from '../i18n'
 import { FloatingTooltip } from './FloatingPopover'
 
-function damageTypeLabel(value: string): string {
-  return {
-    physical: '物理',
-    water: '水行',
-    nature: '木行',
-    fire: '火行',
-  }[value] ?? value
+// 已知伤害类型走 i18n；未知类型原样回显，保持对服务端新增类型的兼容。
+const DAMAGE_TYPES: readonly string[] = ['physical', 'water', 'nature', 'fire']
+
+function damageTypeLabel(t: TFunction, value: string): string {
+  return DAMAGE_TYPES.includes(value) ? t(`combat.encounter.damageType.${value}`) : value
 }
 
 const EnemyCard = memo(function EnemyCard({
@@ -21,38 +20,39 @@ const EnemyCard = memo(function EnemyCard({
   strength?: number
   boss?: boolean
 }): React.JSX.Element {
+  const t = useT()
   return (
     <article className={`combat-enemy-card${boss ? ' is-boss' : ''}`}>
       <div className="combat-enemy-heading">
         <span className="combat-enemy-seal" aria-hidden="true">{enemy.name.slice(0, 1)}</span>
         <div>
           <strong>{enemy.name}</strong>
-          <span>{damageTypeLabel(enemy.damageType)} · {enemy.experience} 经验</span>
+          <span>{t('combat.encounter.experience', { type: damageTypeLabel(t, enemy.damageType), n: formatNumber(enemy.experience) })}</span>
         </div>
         {strength !== undefined && (
-          <FloatingTooltip placement="top" title="妖邪生成强度等阶" tone="gold">
-            <b>{strength}</b>
+          <FloatingTooltip placement="top" title={t('combat.encounter.strengthTip')} tone="gold">
+            <b>{formatNumber(strength)}</b>
           </FloatingTooltip>
         )}
       </div>
-      <FloatingTooltip placement="top" title={`妖兽生命气血上限：${formatNumber(enemy.maxHitpoints)}`} tone="jade">
+      <FloatingTooltip placement="top" title={t('combat.encounter.hpTip', { n: formatNumber(enemy.maxHitpoints) })} tone="jade">
         <div className="combat-resource-line">
-          <span>生命</span>
+          <span>{t('combat.attr.hp')}</span>
           <div><i /></div>
           <strong>{formatNumber(enemy.maxHitpoints)}</strong>
         </div>
       </FloatingTooltip>
-      <FloatingTooltip placement="top" title={`妖兽灵力上限：${formatNumber(enemy.maxManapoints)}`} tone="qi">
+      <FloatingTooltip placement="top" title={t('combat.encounter.manaTip', { n: formatNumber(enemy.maxManapoints) })} tone="qi">
         <div className="combat-resource-line mana">
-          <span>灵力</span>
+          <span>{t('combat.attr.mp')}</span>
           <div><i /></div>
           <strong>{formatNumber(enemy.maxManapoints)}</strong>
         </div>
       </FloatingTooltip>
       <dl className="combat-enemy-stats">
-        <div><dt>伤害</dt><dd>{formatNumber(enemy.maxDamage)}</dd></div>
-        <div><dt>间隔</dt><dd>{(enemy.attackIntervalMilliseconds / 1000).toFixed(2)}s</dd></div>
-        <div><dt>护甲</dt><dd>{formatNumber(enemy.armor)}</dd></div>
+        <div><dt>{t('combat.encounter.statDamage')}</dt><dd>{formatNumber(enemy.maxDamage)}</dd></div>
+        <div><dt>{t('combat.encounter.statInterval')}</dt><dd>{formatNumber(enemy.attackIntervalMilliseconds / 1000)}s</dd></div>
+        <div><dt>{t('combat.encounter.statArmor')}</dt><dd>{formatNumber(enemy.armor)}</dd></div>
       </dl>
     </article>
   )
@@ -65,6 +65,7 @@ export const CombatEncounterPanel = memo(function CombatEncounterPanel({
   encounter: CombatEncounterDefinition
   compact?: boolean
 }): React.JSX.Element {
+  const t = useT()
   const spawns = useMemo<CombatSpawnDefinition[]>(() => (
     encounter.randomSpawns.length > 0
       ? encounter.randomSpawns
@@ -72,16 +73,16 @@ export const CombatEncounterPanel = memo(function CombatEncounterPanel({
   ), [encounter])
 
   return (
-    <section className={`combat-encounter-panel${compact ? ' is-compact' : ''}`} aria-label={`${encounter.name}敌情`}>
+    <section className={`combat-encounter-panel${compact ? ' is-compact' : ''}`} aria-label={t('combat.encounter.aria', { name: encounter.name })}>
       <header className="combat-encounter-heading">
         <div>
-          <span>战区敌情</span>
+          <span>{t('combat.encounter.heading')}</span>
           <h3>{encounter.name}</h3>
         </div>
         <dl>
-          <div><dt>同场上限</dt><dd>{encounter.maxSpawnCount}</dd></div>
-          <div><dt>强度上限</dt><dd>{encounter.maxTotalStrength}</dd></div>
-          <div><dt>刷新</dt><dd>{(encounter.respawnMilliseconds / 1000).toFixed(0)}s</dd></div>
+          <div><dt>{t('combat.encounter.maxSpawns')}</dt><dd>{formatNumber(encounter.maxSpawnCount)}</dd></div>
+          <div><dt>{t('combat.encounter.maxStrength')}</dt><dd>{formatNumber(encounter.maxTotalStrength)}</dd></div>
+          <div><dt>{t('combat.encounter.respawn')}</dt><dd>{formatNumber(encounter.respawnMilliseconds / 1000)}s</dd></div>
         </dl>
       </header>
       <div className="combat-enemy-grid">
@@ -91,7 +92,7 @@ export const CombatEncounterPanel = memo(function CombatEncounterPanel({
       </div>
       {encounter.bossEnemies.length > 0 && (
         <div className="combat-boss-line">
-          <span>第 {encounter.battlesPerBoss} 场</span>
+          <span>{t('combat.encounter.bossRound', { n: formatNumber(encounter.battlesPerBoss) })}</span>
           {encounter.bossEnemies.map(enemy => <EnemyCard boss enemy={enemy} key={enemy.enemyId} />)}
         </div>
       )}

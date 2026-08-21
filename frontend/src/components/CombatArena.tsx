@@ -2,9 +2,10 @@ import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties } from 'react'
 import { formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { ITEM_META } from '../game/ids'
+import { resolveItemMetadata } from '../game/ids'
 import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, CombatantDefinition, ExpeditionProgress, QueueEntry } from '../game/types'
 import { gameClient } from '../network/gameClient'
+import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
 import { ValueText } from './ValueText'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
@@ -221,6 +222,7 @@ function ActionCountdownBadge({
   action?: CombatActionState | null
   role: 'player' | 'enemy'
 }): React.JSX.Element | null {
+  const t = useT()
   const [displayText, setDisplayText] = useState<string>('')
   const serverTimeUnixMilliseconds = useGameStore(state => state.serverTimeUnixMilliseconds)
 
@@ -228,7 +230,7 @@ function ActionCountdownBadge({
     // 怪物待机或无动作时：显示纯净空条，不渲染文字
     if (!action || action.durationMilliseconds <= 0 || action.name === '待机' || !action.name.trim()) {
       if (role === 'player' && action?.name === '调息中') {
-        setDisplayText('调息中')
+        setDisplayText(t('combat.arena.regenerating'))
       } else {
         setDisplayText('')
       }
@@ -239,7 +241,7 @@ function ActionCountdownBadge({
     const duration = Math.max(1, action.durationMilliseconds)
     let baseName = action.name.replace(/回气$/, '').replace(/\s*\([\d.]+s\/[\d.]+s\)/, '').trim()
     if (baseName === '灵击' || baseName === '攻击') {
-      baseName = '普通攻击'
+      baseName = t('combat.arena.basicAttack')
     }
     const relativeElapsed = Math.max(0, Math.min(duration, action.elapsedMilliseconds))
     const localClockOffset = Math.abs(serverTimeUnixMilliseconds - Date.now())
@@ -255,7 +257,7 @@ function ActionCountdownBadge({
         : Math.max(0, initialRemaining - (performance.now() - startPerfTime))
 
       const remainingSeconds = Math.max(0, currentRemaining / 1000)
-      const formatted = `${baseName} ${remainingSeconds.toFixed(1)}s`
+      const formatted = t('combat.arena.countdown', { name: baseName, seconds: remainingSeconds.toFixed(1) })
       setDisplayText(formatted)
 
       if (currentRemaining > 0) {
@@ -274,6 +276,7 @@ function ActionCountdownBadge({
     action?.elapsedMilliseconds,
     action?.name,
     role,
+    t,
     serverTimeUnixMilliseconds,
   ])
 
@@ -295,6 +298,7 @@ function ArenaActionBar({ action, role }: { action?: CombatActionState | null; r
 }
 
 function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
+  const t = useT()
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
   const circleRef = useRef<SVGCircleElement>(null)
@@ -305,31 +309,31 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   }
   const total = initialDurationRef.current
 
-  // 效果说明与单字图标
+  // 效果说明与单字图标（说明文案与字形均随语言切换）
   let tone: 'qi' | 'jade' | 'purple' | 'danger' | 'gold' = 'gold'
-  let glyph = buff.name.slice(0, 1) || '益'
-  let effectDesc = '战斗增益'
+  let glyph = buff.name.slice(0, 1) || t('combat.arena.glyphGeneric')
+  let effectDesc = t('combat.arena.buffGeneric')
 
   if (buff.qiGainMultiplier > 1) {
     tone = 'qi'
-    glyph = '气'
-    effectDesc = `灵气收益 +${Math.round((buff.qiGainMultiplier - 1) * 100)}%`
+    glyph = t('combat.arena.glyphQi')
+    effectDesc = t('combat.arena.buffQiGain', { n: formatNumber(Math.round((buff.qiGainMultiplier - 1) * 100)) })
   } else if (buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1) {
     tone = 'jade'
-    glyph = '草'
-    effectDesc = `灵草产出 +${Math.round((buff.gatheringOutputMultiplier - 1) * 100)}%`
+    glyph = t('combat.arena.glyphGathering')
+    effectDesc = t('combat.arena.buffGathering', { n: formatNumber(Math.round((buff.gatheringOutputMultiplier - 1) * 100)) })
   } else if (buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1) {
     tone = 'purple'
-    glyph = '丹'
-    effectDesc = `丹药产出 +${Math.round((buff.alchemyOutputMultiplier - 1) * 100)}%`
+    glyph = t('combat.arena.glyphAlchemy')
+    effectDesc = t('combat.arena.buffAlchemy', { n: formatNumber(Math.round((buff.alchemyOutputMultiplier - 1) * 100)) })
   } else if (buff.damageRatio && buff.damageRatio > 0) {
     tone = 'danger'
-    glyph = '伤'
-    effectDesc = `术式伤害 +${Math.round(buff.damageRatio * 100)}%`
+    glyph = t('combat.arena.glyphDamage')
+    effectDesc = t('combat.arena.buffDamage', { n: formatNumber(Math.round(buff.damageRatio * 100)) })
   } else if (buff.attackSpeedRatio && buff.attackSpeedRatio > 0) {
     tone = 'gold'
-    glyph = '速'
-    effectDesc = `攻速 +${Math.round(buff.attackSpeedRatio * 100)}%`
+    glyph = t('combat.arena.glyphSpeed')
+    effectDesc = t('combat.arena.buffAttackSpeed', { n: formatNumber(Math.round(buff.attackSpeedRatio * 100)) })
   }
 
   const radius = 9
@@ -361,10 +365,10 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
     <FloatingPopover
       content={
         <FloatingInfoCard
-          badge={`共 ${buff.stacks} 层`}
+          badge={t('combat.arena.buffStacks', { n: formatNumber(buff.stacks) })}
           badgeTone={tone}
           description={effectDesc}
-          subtitle={`剩余时间：${remaining} 秒`}
+          subtitle={t('combat.arena.buffRemaining', { n: formatNumber(remaining) })}
           title={buff.name}
         />
       }
@@ -392,10 +396,11 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
 }
 
 function ArenaActorBuffs({ buffs = [] }: { buffs?: readonly Buff[] }): React.JSX.Element | null {
+  const t = useT()
   if (!buffs || buffs.length === 0) return null
 
   return (
-    <div className="arena-actor-buff-list" aria-label="当前状态效果">
+    <div className="arena-actor-buff-list" aria-label={t('combat.arena.buffsAria')}>
       {buffs.map(buff => (
         <ArenaBuffSquare buff={buff} key={buff.buffId} />
       ))}
@@ -454,16 +459,17 @@ function ArenaPhaseFill({
 }
 
 function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): React.JSX.Element {
+  const t = useT()
   const isInitialSearch = expedition.phase === 'initial-search'
   const isDeath = expedition.phase === 'death'
 
   const title = isDeath
-    ? '还魂中'
+    ? t('combat.arena.phaseDeath')
     : isInitialSearch
-      ? '神识探微'
-      : '灵觉索敌'
+      ? t('combat.arena.phaseSearch')
+      : t('combat.arena.phaseHunt')
 
-  const sigil = isDeath ? '魂' : isInitialSearch ? '识' : '觅'
+  const sigil = isDeath ? t('combat.arena.sigilDeath') : isInitialSearch ? t('combat.arena.sigilSearch') : t('combat.arena.sigilHunt')
   const remaining = Math.max(0, expedition.durationSeconds - expedition.elapsedSeconds)
 
   return (
@@ -545,6 +551,7 @@ function ArenaActor({
   visible?: boolean
   compact?: boolean
 }): React.JSX.Element {
+  const t = useT()
   const nextMotionId = useRef(1)
   const previousHitpoints = useRef({ actorKey, hp })
   const scheduledAction = useRef<{
@@ -618,7 +625,7 @@ function ArenaActor({
 
   return (
     <article
-      aria-label={`查看${name || '角色'}属性`}
+      aria-label={t('combat.arena.inspectAria', { name: name || t('combat.arena.defaultActorName') })}
       className={`arena-actor arena-actor--${role}${compact ? ' arena-actor--compact' : ''}${visible ? '' : ' is-dormant'}${hp <= 0 ? ' is-dead' : ''}${actionMotion ? ` is-action-${actionMotion.kind}` : ''}${impact ? ' is-hit' : ''}`}
       onClick={onInspect}
       onKeyDown={event => {
@@ -638,7 +645,7 @@ function ArenaActor({
         </div>
       </header>
       <div className="arena-avatar-stage">
-        <div className="arena-avatar" aria-label={`${name}形象`}>
+        <div className="arena-avatar" aria-label={t('combat.arena.portraitAria', { name })}>
           <ArenaPortrait actorId={actorId} fallback={seal} isDead={hp <= 0} name={name} role={role} visual={visual} />
         </div>
         {actionMotion && (
@@ -676,13 +683,14 @@ function ArenaLifeGoalCard({
   actionDef?: ActionDefinition | null
   onStop?: () => void
 }): React.JSX.Element {
+  const t = useT()
   const itemCatalog = useGameStore(state => state.items)
   const isAlchemy = queueEntry?.type === 'alchemy'
   const isCultivation = queueEntry?.type === 'cultivation'
   const isExploration = queueEntry?.type === 'exploration'
 
-  const title = isAlchemy ? '炼丹总目标' : isCultivation ? '吐纳静修' : isExploration ? '采撷寻珍' : '行动总目标'
-  const actionName = queueEntry?.actionName || actionDef?.name || '静修'
+  const title = isAlchemy ? t('combat.life.titleAlchemy') : isCultivation ? t('combat.life.titleCultivation') : isExploration ? t('combat.life.titleExploration') : t('combat.life.titleDefault')
+  const actionName = queueEntry?.actionName || actionDef?.name || t('combat.life.fallbackActionName')
   const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
   const remainingRepeats = queueEntry?.remainingRepeats ?? 0
   const repeats = isInfinite ? -1 : remainingRepeats + 1
@@ -695,9 +703,9 @@ function ArenaLifeGoalCard({
   const primaryAmountPerBatch = primaryOutput ? primaryOutput[1] : 1
   const totalTargetDisplay = isInfinite ? '∞' : formatNumber(primaryAmountPerBatch * repeats)
 
-  const itemMeta = primaryItemId ? ITEM_META[primaryItemId] : null
+  const itemMeta = primaryItemId ? resolveItemMetadata(primaryItemId) : null
   const itemDefinition = primaryItemId ? itemCatalog.find(i => i.itemId === primaryItemId) : null
-  const itemName = itemDefinition?.name || itemMeta?.label || (primaryItemId === 'resource.qi' ? '纯净灵气' : '修炼产物')
+  const itemName = itemDefinition?.name || itemMeta?.label || (primaryItemId === 'resource.qi' ? t('combat.life.qiName') : t('combat.life.fallbackItemName'))
   const itemGlyph = itemMeta?.glyph || (isAlchemy ? '⚗️' : isCultivation ? '☯' : '🌿')
   const itemTone = itemMeta?.tone || 'gold'
 
@@ -715,7 +723,7 @@ function ArenaLifeGoalCard({
     entry: queueEntry,
     fillRef: barRef,
     textRef: textRef,
-    textFormat: (currentSec, dur, pct) => `本轮进度 ${currentSec.toFixed(1)}s / ${dur}s (${pct}%)`,
+    textFormat: (currentSec, dur, pct) => getT()('combat.life.roundProgress', { current: currentSec.toFixed(1), duration: formatNumber(dur), percent: formatNumber(pct) }),
   })
 
   const initialRatio = duration > 0 ? Math.min(1, Math.max(0, progressSec / duration)) : 0
@@ -735,32 +743,32 @@ function ArenaLifeGoalCard({
 
         <div className="arena-life-meta">
           <div className="arena-life-target-title">
-            <span>目标产物：</span>
+            <span>{t('combat.life.targetOutput')}</span>
             <strong className="tone-gold">{itemName}</strong>
           </div>
           <div className="arena-life-target-total">
-            <span>计划总量：</span>
+            <span>{t('combat.life.plannedTotal')}</span>
             <strong className="tone-bright">
-              {totalTargetDisplay} {primaryItemId === 'resource.qi' ? '缕' : '枚/份'}
+              {totalTargetDisplay} {primaryItemId === 'resource.qi' ? t('combat.life.unitQi') : t('combat.life.unitItem')}
             </strong>
           </div>
           <div className="arena-life-subinfo">
-            <span>单次产出：+{primaryAmountPerBatch}</span>
-            <span>剩余轮次：{isInfinite ? '∞ 轮' : `${remainingRepeats} 轮`}</span>
+            <span>{t('combat.life.perBatch', { n: formatNumber(primaryAmountPerBatch) })}</span>
+            <span>{isInfinite ? t('combat.life.infiniteRounds') : t('combat.life.remainingRounds', { n: formatNumber(remainingRepeats) })}</span>
           </div>
         </div>
 
         {inputEntries.length > 0 && (
           <div className="arena-life-inputs">
-            <span className="arena-life-inputs-label">单轮所需药材/消耗：</span>
+            <span className="arena-life-inputs-label">{t('combat.life.inputsLabel')}</span>
             <div className="arena-life-inputs-list">
               {inputEntries.map(([inId, inAmt]) => {
                 const inDef = itemCatalog.find(i => i.itemId === inId)
-                const inMeta = ITEM_META[inId]
+                const inMeta = resolveItemMetadata(inId)
                 const inName = inDef?.name || inMeta?.label || inId
                 return (
                   <span className="arena-life-input-chip" key={inId}>
-                    {inName} x{inAmt} (总需 {isInfinite ? '∞' : formatNumber(inAmt * repeats)})
+                    {t('combat.life.inputChip', { name: inName, n: formatNumber(inAmt), total: isInfinite ? '∞' : formatNumber(inAmt * repeats) })}
                   </span>
                 )
               })}
@@ -779,12 +787,12 @@ function ArenaLifeGoalCard({
             <i />
           </div>
           <span className="arena-life-progress-text" ref={textRef}>
-            本轮进度 {progressSec.toFixed(1)}s / {duration}s ({Math.round(initialRatio * 100)}%)
+            {t('combat.life.roundProgress', { current: progressSec.toFixed(1), duration: formatNumber(duration), percent: formatNumber(Math.round(initialRatio * 100)) })}
           </span>
         </div>
         {onStop && (
           <button className="arena-life-stop-btn danger" onClick={onStop} type="button">
-            终止{isAlchemy ? '炼丹' : isCultivation ? '吐纳' : '行动'}
+            {isAlchemy ? t('combat.life.stopAlchemy') : isCultivation ? t('combat.life.stopCultivation') : t('combat.life.stopAction')}
           </button>
         )}
       </div>
@@ -793,11 +801,12 @@ function ArenaLifeGoalCard({
 }
 
 function ArenaIdleCard(): React.JSX.Element {
+  const t = useT()
   return (
     <div className="arena-idle-card">
-      <div className="arena-idle-sigil">道</div>
-      <strong className="arena-idle-title">气定神闲 · 心如明镜</strong>
-      <p className="arena-idle-desc">当前暂无正在执行的行动，可前往左侧行动列表开启吐纳、探索、炼丹或进入地图历练。</p>
+      <div className="arena-idle-sigil">{t('combat.idle.sigil')}</div>
+      <strong className="arena-idle-title">{t('combat.idle.title')}</strong>
+      <p className="arena-idle-desc">{t('combat.idle.desc')}</p>
     </div>
   )
 }
@@ -822,23 +831,24 @@ function CharacterAttributeModal({
   specialRows: readonly AttributeRow[]
   title: string
 }): React.JSX.Element | null {
+  const t = useT()
   const titleId = useId()
   return (
     <Modal className="character-attribute-modal" labelledBy={titleId} onClose={onClose} open={open} size="medium">
       <header className="character-attribute-header"><h2 id={titleId}>{title}</h2></header>
       <section className="character-attribute-section">
-        <h3>基础属性</h3>
+        <h3>{t('combat.attrs.base')}</h3>
         <dl>{baseRows.map(row => <div key={row.label}><dt>{row.label}</dt><dd><ValueText text={row.value} /></dd></div>)}</dl>
       </section>
       {specialRows.length > 0 && (
         <section className="character-attribute-section">
-          <h3>特殊属性</h3>
+          <h3>{t('combat.attrs.special')}</h3>
           <dl>{specialRows.map(row => <div key={row.label}><dt>{row.label}</dt><dd><ValueText text={row.value} /></dd></div>)}</dl>
         </section>
       )}
       {buffs.length > 0 && (
         <section className="character-attribute-section">
-          <h3>当前效果</h3>
+          <h3>{t('combat.attrs.effects')}</h3>
           <div className="character-buff-list">
             {buffs.map(buff => <span key={buff.buffId}>{buff.name}{buff.stacks > 1 ? ` ×${buff.stacks}` : ''}</span>)}
           </div>
@@ -877,6 +887,7 @@ export const CombatArena = memo(function CombatArena({
   const queue = useGameStore(state => state.queue.entries)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
   const [inspectedActor, setInspectedActor] = useState<'player' | 'enemy' | null>(null)
+  const t = useT()
 
   const current = queue[0] ?? null
   const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
@@ -914,7 +925,7 @@ export const CombatArena = memo(function CombatArena({
       const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
       return {
         kind: 'wait',
-        name: '还魂中',
+        name: t('combat.arena.phaseDeath'),
         durationMilliseconds: durMs,
         elapsedMilliseconds: currentElMs,
         completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - currentElMs),
@@ -938,7 +949,7 @@ export const CombatArena = memo(function CombatArena({
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, lastSyncPerformanceTime, phase])
+  }, [current, expedition, isCombat, isLifeAction, lastSyncPerformanceTime, phase, t])
 
   const enemyRef = useRef<EnemyDisplayState>({
     actorKey: 'enemy:idle',
@@ -953,7 +964,7 @@ export const CombatArena = memo(function CombatArena({
   })
 
   if (enemyVisible) {
-    const enemyName = expedition?.enemyName ?? activeEncounter?.enemy?.name ?? '未知敌群'
+    const enemyName = expedition?.enemyName ?? activeEncounter?.enemy?.name ?? t('combat.arena.unknownEnemy')
     enemyRef.current = {
       actorKey: `enemy:${expedition?.battleSequence ?? 0}:${enemyName}`,
       name: enemyName,
@@ -968,44 +979,44 @@ export const CombatArena = memo(function CombatArena({
   }
   const enemy = enemyRef.current
   const playerBaseRows: AttributeRow[] = [
-    { label: '生命', value: `${formatNumber(playerHp)} / ${formatNumber(playerMaxHp)}` },
-    { label: '灵力', value: `${formatNumber(playerMp)} / ${formatNumber(playerMaxMp)}` },
-    { label: '体魄', value: formatNumber(Math.max(10, combat?.staminaLevel ?? 10)) },
-    { label: '经脉', value: formatNumber(Math.max(10, combat?.intelligenceLevel ?? 10)) },
-    { label: '根骨', value: formatNumber(Math.max(10, combat?.defenseLevel ?? 10)) },
-    { label: '力道', value: formatNumber(Math.max(10, combat?.attackLevel ?? 10)) },
-    { label: '神识', value: formatNumber(Math.max(10, combat?.swordsmanshipLevel ?? 10)) },
-    { label: '身法', value: formatNumber(Math.max(10, combat?.talismanLevel ?? 10)) },
-    { label: '攻击', value: formatNumber(combatAttributes?.maxDamage ?? 0) },
-    { label: '命中', value: formatNumber(combatAttributes?.accuracyRating ?? 0) },
-    { label: '闪避', value: formatNumber(combatAttributes?.evasionRating ?? 0) },
-    { label: '护甲', value: formatNumber(combatAttributes?.armor ?? 0) },
-    { label: '水抗', value: formatNumber(combatAttributes?.waterResistance ?? 0) },
-    { label: '木抗', value: formatNumber(combatAttributes?.natureResistance ?? 0) },
-    { label: '火抗', value: formatNumber(combatAttributes?.fireResistance ?? 0) },
-    { label: '攻击间隔', value: `${((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000).toFixed(2)} 秒` },
+    { label: t('combat.attr.hp'), value: `${formatNumber(playerHp)} / ${formatNumber(playerMaxHp)}` },
+    { label: t('combat.attr.mp'), value: `${formatNumber(playerMp)} / ${formatNumber(playerMaxMp)}` },
+    { label: t('combat.attr.stamina'), value: formatNumber(Math.max(10, combat?.staminaLevel ?? 10)) },
+    { label: t('combat.attr.meridian'), value: formatNumber(Math.max(10, combat?.intelligenceLevel ?? 10)) },
+    { label: t('combat.attr.defense'), value: formatNumber(Math.max(10, combat?.defenseLevel ?? 10)) },
+    { label: t('combat.attr.attack'), value: formatNumber(Math.max(10, combat?.attackLevel ?? 10)) },
+    { label: t('combat.attr.divineSense'), value: formatNumber(Math.max(10, combat?.swordsmanshipLevel ?? 10)) },
+    { label: t('combat.attr.movement'), value: formatNumber(Math.max(10, combat?.talismanLevel ?? 10)) },
+    { label: t('combat.attr.power'), value: formatNumber(combatAttributes?.maxDamage ?? 0) },
+    { label: t('combat.attr.accuracy'), value: formatNumber(combatAttributes?.accuracyRating ?? 0) },
+    { label: t('combat.attr.evasion'), value: formatNumber(combatAttributes?.evasionRating ?? 0) },
+    { label: t('combat.attr.armor'), value: formatNumber(combatAttributes?.armor ?? 0) },
+    { label: t('combat.attr.waterRes'), value: formatNumber(combatAttributes?.waterResistance ?? 0) },
+    { label: t('combat.attr.natureRes'), value: formatNumber(combatAttributes?.natureResistance ?? 0) },
+    { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
+    { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
   ]
   const playerSpecialCandidates: Array<[string, number, 'percent' | 'number']> = [
-    ['控制抗性', combatAttributes?.tenacity ?? 0, 'number'],
-    ['生命恢复', combatAttributes?.hpRegenPerTenSeconds ?? 0, 'percent'],
-    ['灵力恢复', combatAttributes?.mpRegenPerTenSeconds ?? 0, 'percent'],
-    ['抗性穿透', combatAttributes?.penetrationRatio ?? 0, 'percent'],
-    ['穿透概率', combatAttributes?.pierceChance ?? 0, 'percent'],
-    ['暴击率', combatAttributes?.criticalChance ?? 0, 'percent'],
-    ['暴击增伤', combatAttributes?.criticalDamageRatio ?? 0, 'percent'],
-    ['免暴率', combatAttributes?.criticalAvoidance ?? 0, 'percent'],
-    ['伤害吸收', combatAttributes?.damageAbsorptionRatio ?? 0, 'percent'],
-    ['蚀心', combatAttributes?.curseRatio ?? 0, 'percent'],
-    ['沸血', combatAttributes?.furyRatio ?? 0, 'percent'],
-    ['衰弱', combatAttributes?.weakenRatio ?? 0, 'percent'],
-    ['生命偷取', combatAttributes?.lifeStealRatio ?? 0, 'percent'],
-    ['护甲增伤', combatAttributes?.armorDamageRatio ?? 0, 'percent'],
-    ['生命汲取', combatAttributes?.hpDrainRatio ?? 0, 'percent'],
-    ['承受伤害', combatAttributes?.damageTakenRatio ?? 0, 'percent'],
-    ['掉落率', combat?.combatDropRate ?? 0, 'percent'],
-    ['掉落数量', combat?.combatDropQuantity ?? 0, 'percent'],
-    ['稀有发现', combat?.combatRareFind ?? 0, 'percent'],
-    ['重寻速度', combat?.searchSpeedRatio ?? 0, 'percent'],
+    [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
+    [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'percent'],
+    [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'percent'],
+    [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
+    [t('combat.special.pierceChance'), combatAttributes?.pierceChance ?? 0, 'percent'],
+    [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
+    [t('combat.special.criticalDamage'), combatAttributes?.criticalDamageRatio ?? 0, 'percent'],
+    [t('combat.special.criticalAvoidance'), combatAttributes?.criticalAvoidance ?? 0, 'percent'],
+    [t('combat.special.damageAbsorption'), combatAttributes?.damageAbsorptionRatio ?? 0, 'percent'],
+    [t('combat.special.curse'), combatAttributes?.curseRatio ?? 0, 'percent'],
+    [t('combat.special.fury'), combatAttributes?.furyRatio ?? 0, 'percent'],
+    [t('combat.special.weaken'), combatAttributes?.weakenRatio ?? 0, 'percent'],
+    [t('combat.special.lifeSteal'), combatAttributes?.lifeStealRatio ?? 0, 'percent'],
+    [t('combat.special.armorDamage'), combatAttributes?.armorDamageRatio ?? 0, 'percent'],
+    [t('combat.special.hpDrain'), combatAttributes?.hpDrainRatio ?? 0, 'percent'],
+    [t('combat.special.damageTaken'), combatAttributes?.damageTakenRatio ?? 0, 'percent'],
+    [t('combat.special.dropRate'), combat?.combatDropRate ?? 0, 'percent'],
+    [t('combat.special.dropQuantity'), combat?.combatDropQuantity ?? 0, 'percent'],
+    [t('combat.special.rareFind'), combat?.combatRareFind ?? 0, 'percent'],
+    [t('combat.special.searchSpeed'), combat?.searchSpeedRatio ?? 0, 'percent'],
   ]
   const playerSpecialRows = playerSpecialCandidates
     .filter(([, value]) => Math.abs(value) > 0.000001)
@@ -1015,33 +1026,33 @@ export const CombatArena = memo(function CombatArena({
     }))
   const enemyDefinition: CombatantDefinition | null = activeEncounter?.enemy ?? null
   const enemyBaseRows: AttributeRow[] = [
-    { label: '生命', value: `${formatNumber(enemy.hp)} / ${formatNumber(enemy.maxHp)}` },
-    { label: '灵力', value: `${formatNumber(enemy.mp)} / ${formatNumber(enemy.maxMp)}` },
-    { label: '命中', value: formatNumber(enemyDefinition?.accuracyRating ?? 0) },
-    { label: '闪避', value: formatNumber(enemyDefinition?.evasionRating ?? 0) },
-    { label: '最大伤害', value: formatNumber(enemyDefinition?.maxDamage ?? 0) },
-    { label: '攻击间隔', value: `${((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000).toFixed(2)} 秒` },
-    { label: '护甲', value: formatNumber(enemyDefinition?.armor ?? 0) },
-    { label: '水抗', value: formatNumber(enemyDefinition?.waterResistance ?? 0) },
-    { label: '木抗', value: formatNumber(enemyDefinition?.natureResistance ?? 0) },
-    { label: '火抗', value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
+    { label: t('combat.attr.hp'), value: `${formatNumber(enemy.hp)} / ${formatNumber(enemy.maxHp)}` },
+    { label: t('combat.attr.mp'), value: `${formatNumber(enemy.mp)} / ${formatNumber(enemy.maxMp)}` },
+    { label: t('combat.attr.accuracy'), value: formatNumber(enemyDefinition?.accuracyRating ?? 0) },
+    { label: t('combat.attr.evasion'), value: formatNumber(enemyDefinition?.evasionRating ?? 0) },
+    { label: t('combat.attr.maxDamage'), value: formatNumber(enemyDefinition?.maxDamage ?? 0) },
+    { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
+    { label: t('combat.attr.armor'), value: formatNumber(enemyDefinition?.armor ?? 0) },
+    { label: t('combat.attr.waterRes'), value: formatNumber(enemyDefinition?.waterResistance ?? 0) },
+    { label: t('combat.attr.natureRes'), value: formatNumber(enemyDefinition?.natureResistance ?? 0) },
+    { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
   ]
   const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds']> = [
-    ['控制抗性', enemyDefinition?.tenacity ?? 0, 'number'],
-    ['生命恢复', enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'percent'],
-    ['灵力恢复', enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'percent'],
-    ['穿透概率', enemyDefinition?.pierceChance ?? 0, 'percent'],
-    ['蚀心', enemyDefinition?.curseRatio ?? 0, 'percent'],
-    ['沸血', enemyDefinition?.furyRatio ?? 0, 'percent'],
-    ['衰弱', enemyDefinition?.weakenRatio ?? 0, 'percent'],
-    ['生命偷取', enemyDefinition?.lifeStealRatio ?? 0, 'percent'],
-    ['护甲增伤', enemyDefinition?.armorDamageRatio ?? 0, 'percent'],
-    ['生命汲取', enemyDefinition?.hpDrainRatio ?? 0, 'percent'],
-    ['暴击率', enemyDefinition?.criticalChance ?? 0, 'percent'],
-    ['暴击增伤', enemyDefinition?.criticalDamageRatio ?? 0, 'percent'],
-    ['免暴率', enemyDefinition?.criticalAvoidance ?? 0, 'percent'],
-    ['伤害吸收', enemyDefinition?.damageAbsorptionRatio ?? 0, 'percent'],
-    ['狂暴周期', enemyDefinition?.enrageTimeMilliseconds ?? 0, 'milliseconds'],
+    [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
+    [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'percent'],
+    [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'percent'],
+    [t('combat.special.pierceChance'), enemyDefinition?.pierceChance ?? 0, 'percent'],
+    [t('combat.special.curse'), enemyDefinition?.curseRatio ?? 0, 'percent'],
+    [t('combat.special.fury'), enemyDefinition?.furyRatio ?? 0, 'percent'],
+    [t('combat.special.weaken'), enemyDefinition?.weakenRatio ?? 0, 'percent'],
+    [t('combat.special.lifeSteal'), enemyDefinition?.lifeStealRatio ?? 0, 'percent'],
+    [t('combat.special.armorDamage'), enemyDefinition?.armorDamageRatio ?? 0, 'percent'],
+    [t('combat.special.hpDrain'), enemyDefinition?.hpDrainRatio ?? 0, 'percent'],
+    [t('combat.special.criticalChance'), enemyDefinition?.criticalChance ?? 0, 'percent'],
+    [t('combat.special.criticalDamage'), enemyDefinition?.criticalDamageRatio ?? 0, 'percent'],
+    [t('combat.special.criticalAvoidance'), enemyDefinition?.criticalAvoidance ?? 0, 'percent'],
+    [t('combat.special.damageAbsorption'), enemyDefinition?.damageAbsorptionRatio ?? 0, 'percent'],
+    [t('combat.special.enragePeriod'), enemyDefinition?.enrageTimeMilliseconds ?? 0, 'milliseconds'],
   ]
   const enemySpecialRows = enemySpecialCandidates
     .filter(([, value]) => Math.abs(value) > 0.000001)
@@ -1050,7 +1061,7 @@ export const CombatArena = memo(function CombatArena({
       value: kind === 'percent'
         ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
         : kind === 'milliseconds'
-          ? `${(value / 1000).toFixed(1)} 秒`
+          ? t('combat.attr.seconds', { n: formatNumber(value / 1000) })
           : formatNumber(value),
     }))
 
@@ -1074,7 +1085,7 @@ export const CombatArena = memo(function CombatArena({
                 name={playerName}
                 onInspect={() => setInspectedActor('player')}
                 role="player"
-                seal={playerName.slice(0, 1) || '修'}
+                seal={playerName.slice(0, 1) || t('combat.arena.sealFallback')}
                 visual={playerVisual}
               />
             </div>
@@ -1155,7 +1166,7 @@ export const CombatArena = memo(function CombatArena({
             onClick={() => gameClient.sendCommand('remove_action', { entryId: current.entryId })}
             type="button"
           >
-            终止当前行动 ({current.actionName})
+            {t('combat.arena.stopCurrent', { name: current.actionName })}
           </button>
         ) : availableActions.length > 0 ? (
           availableActions.map(action => (

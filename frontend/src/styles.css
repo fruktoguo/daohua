@@ -1971,46 +1971,125 @@ input[type="checkbox"] {
   font-size: 9px;
 }
 
+.combat-trigger-modal.modal-shell {
+  width: min(94vw, 680px);
+}
+
 .combat-trigger-editor {
   display: grid;
-  gap: 16px;
-  min-width: min(100%, 720px);
+  gap: 12px;
+  min-width: 0;
+}
+
+.combat-trigger-hint {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.combat-trigger-summary {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .combat-trigger-list {
   display: grid;
   gap: 8px;
+  max-height: min(52dvh, 420px);
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
-.combat-trigger-row {
+.combat-trigger-empty {
+  padding: 18px 0;
+  border: 1px dashed rgba(205, 133, 77, 0.25);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+.combat-trigger-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(205, 133, 77, 0.22);
+  border-radius: 8px;
+}
+
+.combat-trigger-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.combat-trigger-index {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  background: rgba(205, 133, 77, 0.16);
+  border-radius: 999px;
+  color: #e8b06a;
+  font-size: 10px;
+}
+
+.combat-trigger-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combat-trigger-remove {
+  flex-shrink: 0;
+  width: 24px;
+  min-width: 24px;
+  padding: 1px 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.combat-trigger-fields {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(90px, 1fr) minmax(100px, 1fr) minmax(90px, 1fr) minmax(100px, 1fr) 28px;
-  align-items: center;
   gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.combat-trigger-row select,
-.combat-trigger-row input {
+.combat-trigger-fields .choice-menu {
+  width: 100%;
+}
+
+.combat-trigger-fields .choice-menu-trigger {
+  font-size: 11px;
+}
+
+.combat-trigger-value {
+  display: grid;
+  gap: 3px;
+  align-content: end;
+}
+
+.combat-trigger-value small {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.combat-trigger-value input {
   width: 100%;
   min-width: 0;
   padding: 5px 6px;
   font-size: 12px;
-}
-
-.combat-trigger-row .choice-menu {
-  width: 100%;
-}
-
-.combat-trigger-row .choice-menu-trigger {
-  font-size: 12px;
-}
-
-.combat-trigger-remove {
-  width: 28px;
-  min-width: 28px;
-  padding: 3px 0;
-  color: var(--danger);
+  font-variant-numeric: tabular-nums;
 }
 
 .combat-trigger-actions {
@@ -2023,7 +2102,7 @@ input[type="checkbox"] {
 .combat-trigger-actions > span {
   margin-right: auto;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .catalog-picker-modal {
@@ -4132,13 +4211,17 @@ input[type="checkbox"] {
     min-width: 100%;
   }
 
-  .combat-trigger-row {
+  .combat-trigger-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .combat-trigger-row .combat-trigger-remove {
-    grid-column: 1 / -1;
-    justify-self: end;
+  .combat-trigger-actions {
+    flex-wrap: wrap;
+  }
+
+  .combat-trigger-actions > span {
+    flex-basis: 100%;
+    order: -1;
   }
 
   .combat-encounter-heading {

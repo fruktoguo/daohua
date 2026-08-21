@@ -1,4 +1,5 @@
 import { useId } from 'react'
+import { useT } from '../i18n'
 import { Modal } from './Modal'
 
 interface ConfirmDialogProps {
@@ -16,12 +17,16 @@ export function ConfirmDialog({
   open,
   title,
   description,
-  confirmLabel = '确认',
-  cancelLabel = '取消',
+  confirmLabel,
+  cancelLabel,
   danger = false,
   onConfirm,
   onClose,
 }: ConfirmDialogProps): React.JSX.Element | null {
+  const t = useT()
+  // 默认按钮文案取 common.confirm/common.cancel；默认参数无法调用 hook，改在组件体内解析。
+  const confirmText = confirmLabel ?? t('common.confirm')
+  const cancelText = cancelLabel ?? t('common.cancel')
   const titleId = useId()
   return (
     <Modal labelledBy={titleId} onClose={onClose} open={open} size="small">
@@ -29,7 +34,7 @@ export function ConfirmDialog({
         <h2 id={titleId}>{title}</h2>
         <p>{description}</p>
         <div className="confirm-dialog-actions">
-          <button onClick={onClose} type="button">{cancelLabel}</button>
+          <button onClick={onClose} type="button">{cancelText}</button>
           <button
             className={danger ? 'danger confirm-primary' : 'confirm-primary'}
             onClick={() => {
@@ -37,7 +42,7 @@ export function ConfirmDialog({
               onClose()
             }}
             type="button"
-          >{confirmLabel}</button>
+          >{confirmText}</button>
         </div>
       </div>
     </Modal>

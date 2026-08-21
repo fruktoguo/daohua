@@ -1,6 +1,8 @@
 import React from 'react'
 import type { RealmInfo } from '../game/combatConstants'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
+import { formatNumber } from '../game/format'
+import { useT } from '../i18n'
 
 interface RealmBadgeProps {
   realmInfo: RealmInfo
@@ -8,6 +10,7 @@ interface RealmBadgeProps {
 }
 
 export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): React.JSX.Element {
+  const t = useT()
   const lv = Math.floor(realmInfo.totalLevel)
   return (
     <FloatingPopover
@@ -15,15 +18,15 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
       content={
         <FloatingInfoCard
           title={`${realmInfo.stageName} · ${realmInfo.minorName}`}
-          badge={`修为等阶 Lv.${lv}`}
+          badge={t('insight.badge.levelBadge', { level: formatNumber(lv) })}
           badgeTone="gold"
-          subtitle={`位阶：${realmInfo.phaseName} (${realmInfo.rankChar})`}
-          description="道法自然，夺天地之造化。突破更高境界可大幅提升气血、真元及各项仙道杀伐防御属性。"
+          subtitle={t('insight.badge.phase', { phase: realmInfo.phaseName, rank: realmInfo.rankChar })}
+          description={t('insight.badge.description')}
           stats={[
-            { label: '大境界', value: realmInfo.stageName, tone: 'gold' },
-            { label: '小境界', value: realmInfo.minorName, tone: 'qi' },
-            { label: '总等阶', value: `Lv. ${lv}`, tone: 'gold' },
-            { label: '本层进度', value: `${realmInfo.layerProgress.toFixed(1)}%`, tone: 'jade' },
+            { label: t('insight.badge.stage'), value: realmInfo.stageName, tone: 'gold' },
+            { label: t('insight.badge.minor'), value: realmInfo.minorName, tone: 'qi' },
+            { label: t('insight.badge.totalLevel'), value: `Lv. ${lv}`, tone: 'gold' },
+            { label: t('insight.badge.layerProgress'), value: `${realmInfo.layerProgress.toFixed(1)}%`, tone: 'jade' },
           ]}
         />
       }

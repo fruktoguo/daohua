@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useT } from '../i18n'
 
 interface QuantitySelectorProps {
   value: number
@@ -27,6 +28,7 @@ export function QuantitySelector({
   className = '',
   commitOnInput = true,
 }: QuantitySelectorProps): React.JSX.Element {
+  const t = useT()
   const [draft, setDraft] = useState(String(value < min ? min : value))
   const focused = useRef(false)
 
@@ -84,12 +86,12 @@ export function QuantitySelector({
       ))}
       {allowInfinity && (
         <button
-          aria-label="无限次数"
+          aria-label={t('market.selector.infinityAria')}
           aria-pressed={value === -1}
           className={value === -1 ? 'active' : ''}
           disabled={disabled}
           onClick={() => choose(-1)}
-          title="无限"
+          title={t('market.selector.infinity')}
           type="button"
         >∞</button>
       )}

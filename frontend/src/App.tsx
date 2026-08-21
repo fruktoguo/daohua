@@ -18,7 +18,7 @@ import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
 import { describeCombatTrigger, formatNumber } from './game/format'
 import { calculateRealmInfo } from './game/combatConstants'
-import { ACTION_DEFINITIONS, ACTION_TAB_META, ACTION_TYPES, ITEM_META } from './game/ids'
+import { ACTION_TAB_META, ACTION_TYPES, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatAbilityDefinition, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
@@ -78,7 +78,7 @@ function itemAmount(inventory: InventoryItem[], itemId: string): number {
 }
 
 function actionDescription(entry: QueueEntry): string {
-  return ACTION_DEFINITIONS.find(action => action.id === entry.actionId)?.description ?? entry.actionName
+  return resolveActionDefinition(entry.actionId)?.description ?? entry.actionName
 }
 
 function repeatsLabel(remainingRepeats: number): string {
@@ -513,7 +513,7 @@ function Sidebar(): React.JSX.Element {
           >
             <span className="nav-glyph" aria-hidden="true"><Icon name={item.tab} /></span>
             <span className="nav-text">
-              <span className="nav-label">{ACTION_TAB_META[item.tab].label}</span>
+              <span className="nav-label">{actionTabLabel(item.tab)}</span>
             </span>
           </button>
         ))}
@@ -616,7 +616,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
 
 const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX.Element {
   return (
-    <div className="auto-use-tray" aria-label={`${ACTION_TAB_META[type].label}物品配置`}>
+    <div className="auto-use-tray" aria-label={`${actionTabLabel(type)}物品配置`}>
       <AutoUseSlotGroup hideLabel label="物品使用" type={type} />
     </div>
   )
@@ -641,7 +641,7 @@ function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (act
 }
 
 function ActionDetailItem({ itemId, amount, current }: { itemId: string; amount: number; current?: number }): React.JSX.Element {
-  const metadata = ITEM_META[itemId]
+  const metadata = resolveItemMetadata(itemId)
   const insufficient = current !== undefined && current < amount
   return (
     <span className="action-detail-item">
@@ -849,12 +849,13 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
       ? combat.abilitySlots[target.index]?.triggers ?? []
       : combat.consumableSlots[target.index]?.triggers ?? []
   )
-  const saveTriggers = (triggers: CombatTrigger[]) => {
+  const saveTriggers = (triggers: CombatTrigger[] | null) => {
     if (!editingTrigger) return
+    const nextTriggers = triggers ?? []
     if (editingTrigger.kind === 'ability') {
-      update({ abilitySlots: combat.abilitySlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers } : slot) })
+      update({ abilitySlots: combat.abilitySlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers: nextTriggers } : slot) })
     } else {
-      update({ consumableSlots: combat.consumableSlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers } : slot) })
+      update({ consumableSlots: combat.consumableSlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers: nextTriggers } : slot) })
     }
   }
 
@@ -1056,7 +1057,7 @@ const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; 
   return (
     <section className="panel skill-page" hidden={hidden}>
       <header className="panel-header">
-        <h2>{ACTION_TAB_META[type].label}</h2>
+        <h2>{actionTabLabel(type)}</h2>
       </header>
       <div className="action-cards">
         {visibleActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}

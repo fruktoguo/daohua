@@ -1,4 +1,6 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { formatNumber } from '../game/format'
+import { useT } from '../i18n'
 import { ItemReference } from './ItemDisplay'
 import { gameLogService, type GameLogEntry, type LogSegment } from '../logging/gameLogService'
 import { ValueText } from './ValueText'
@@ -34,6 +36,7 @@ const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.J
 })
 
 export function GameLogPanel({ className = '' }: { className?: string }): React.JSX.Element {
+  const t = useT()
   const logState = useSyncExternalStore(gameLogService.subscribe, gameLogService.getSnapshot)
   const [tab, setTab] = useState<'log' | 'chat'>('log')
   const [history, setHistory] = useState<readonly GameLogEntry[] | null>(null)
@@ -84,17 +87,17 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
 
   return (
     <section className={`panel log-panel ${className}`.trim()}>
-      <div className="log-tabs" role="tablist" aria-label="消息">
-        <button className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')} role="tab" type="button">日志</button>
-        <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')} role="tab" type="button">聊天</button>
+      <div className="log-tabs" role="tablist" aria-label={t('combat.log.messagesAria')}>
+        <button className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')} role="tab" type="button">{t('combat.log.tabLog')}</button>
+        <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')} role="tab" type="button">{t('combat.log.tabChat')}</button>
         <span
-          aria-label={logState.persistence === 'memory' ? '日志仅保留在内存' : '日志已在本地保存'}
+          aria-label={logState.persistence === 'memory' ? t('combat.log.memoryOnly') : t('combat.log.saved')}
           className={`log-storage-status log-storage-status--${logState.persistence}`}
-          title={logState.persistence === 'memory' ? '本地存储不可用，当前仅保留最近 100 条' : '日志已在本地保存'}
+          title={logState.persistence === 'memory' ? t('combat.log.memoryOnlyTitle') : t('combat.log.saved')}
         />
         {history !== null && (
           <button className="log-latest-button" onClick={showLatest} type="button">
-            {unseenCount > 0 ? `最新 +${unseenCount}` : '回到最新'}
+            {unseenCount > 0 ? t('combat.log.latestWithCount', { n: formatNumber(unseenCount) }) : t('combat.log.backToLatest')}
           </button>
         )}
       </div>
@@ -112,11 +115,11 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
           }}
           ref={listRef}
         >
-          {loadingHistory && <li className="log-state-row">正在读取更早记录…</li>}
-          {reachedStart && <li className="log-state-row">已到最早记录</li>}
+          {loadingHistory && <li className="log-state-row">{t('combat.log.loadingOlder')}</li>}
+          {reachedStart && <li className="log-state-row">{t('combat.log.reachedStart')}</li>}
           {visibleEntries.map(entry => <LogRow entry={entry} key={entry.id} />)}
         </ol>
-      ) : <div className="chat-placeholder">聊天频道尚未开放</div>}
+      ) : <div className="chat-placeholder">{t('combat.log.chatUnavailable')}</div>}
     </section>
   )
 }

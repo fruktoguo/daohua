@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useT } from '../i18n'
 import { EffectTooltipTarget, type EffectTooltipContent } from './EffectTooltip'
 import { Modal } from './Modal'
 
@@ -32,8 +33,9 @@ export function CatalogPicker({
   onClose,
   onSelect,
   allowEmpty = true,
-  emptyLabel = '卸下 / 不使用',
+  emptyLabel,
 }: CatalogPickerProps): React.JSX.Element | null {
+  const t = useT()
   const titleId = useId()
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
@@ -50,6 +52,8 @@ export function CatalogPicker({
 
   if (!open) return null
 
+  // 默认参数不能在解构处调用 hook，收拢到组件体内解析。
+  const emptyText = emptyLabel ?? t('market.picker.emptyDefault')
   const select = (id: string | null) => {
     onSelect(id)
     onClose()
@@ -62,10 +66,10 @@ export function CatalogPicker({
           <h2 id={titleId}>{title}</h2>
         </div>
         <input
-          aria-label={`${title}搜索`}
+          aria-label={t('market.picker.searchTitleTemplate', { title })}
           autoComplete="off"
           onChange={event => setQuery(event.target.value)}
-          placeholder="搜索名称、分类"
+          placeholder={t('market.picker.searchNameCategory')}
           type="search"
           value={query}
         />
@@ -79,7 +83,7 @@ export function CatalogPicker({
             role="option"
             type="button"
           >
-            <strong>{emptyLabel}</strong>
+            <strong>{emptyText}</strong>
           </button>
         )}
         {visibleOptions.map(option => {
@@ -93,7 +97,7 @@ export function CatalogPicker({
             type="button"
           >
             {option.category && <span className="catalog-picker-corner catalog-picker-corner--top-left">{option.category}</span>}
-            {value === option.id && <span className="catalog-picker-corner catalog-picker-corner--top-right" aria-label="已选择">已选</span>}
+            {value === option.id && <span className="catalog-picker-corner catalog-picker-corner--top-right" aria-label={t('market.picker.selectedAria')}>{t('market.picker.selectedTag')}</span>}
             <span className="catalog-picker-copy">
               <strong>{option.label}</strong>
               {option.subtitle && <span>{option.subtitle}</span>}
@@ -107,7 +111,7 @@ export function CatalogPicker({
           ) : <span className="catalog-picker-tooltip" key={option.id}>{card}</span>
         })}
       </div>
-      {visibleOptions.length === 0 && <p className="catalog-picker-empty">没有匹配的目录项</p>}
+      {visibleOptions.length === 0 && <p className="catalog-picker-empty">{t('market.picker.noCatalogMatch')}</p>}
     </Modal>
   )
 }
@@ -125,8 +129,9 @@ export function PickerTrigger({
   onClick: () => void
   className?: string
 }): React.JSX.Element {
+  const t = useT()
   return (
-    <button aria-label={`打开${label}选择器`} className={`picker-trigger ${className}`.trim()} onClick={onClick} type="button">
+    <button aria-label={t('market.picker.openPickerTemplate', { name: label })} className={`picker-trigger ${className}`.trim()} onClick={onClick} type="button">
       <span className="picker-trigger-label">{label}</span>
       <span className="picker-trigger-copy">
         <strong>{value}</strong>
@@ -159,6 +164,7 @@ export function ChoiceMenu({
   const [open, setOpen] = useState(false)
   const titleId = useId()
   const selected = options.find(option => option.id === value)
+  const t = useT()
 
   return (
     <div className={`choice-menu${open ? ' is-open' : ''} ${className}`.trim()}>
@@ -176,10 +182,10 @@ export function ChoiceMenu({
       {open && (
         <Modal className="choice-menu-modal" labelledBy={titleId} onClose={() => setOpen(false)} open size="small">
           <header className="choice-menu-modal-header">
-            <span>条件配置</span>
+            <span>{t('market.picker.choiceMenuConfig')}</span>
             <h2 id={titleId}>{label}</h2>
           </header>
-          <div aria-label={`${label}选项`} className="choice-menu-options" role="listbox">
+          <div aria-label={t('market.picker.optionsTemplate', { name: label })} className="choice-menu-options" role="listbox">
             {options.map(option => (
               <button
                 aria-selected={option.id === value}
