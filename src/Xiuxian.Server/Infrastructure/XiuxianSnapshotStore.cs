@@ -21,8 +21,39 @@ public sealed class XiuxianSnapshotStore : IYuoSnapshotStore
         var target = Path.Combine(_rootDirectory, $"{safeKind}-{safeId}.json");
         var temporary = $"{target}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp";
 
-        await File.WriteAllBytesAsync(temporary, snapshot.Payload.ToArray(), cancellationToken);
+        // 临时文件写入后必须 fsync 落盘再原子替换，否则主机断电时页缓存丢失会导致最近快照损坏。
+        await using (var stream = new FileStream(
+            temporary,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.Asynchronous))
+        {
+            await stream.WriteAsync(snapshot.Payload.ToArray(), cancellationToken);
+            // 先刷新托管与 OS 缓冲，再强制 fsync；文件本体 fsync 失败必须向上抛出，不得吞掉。
+            await stream.FlushAsync(cancellationToken);
+            stream.Flush(flushToDisk: true);
+        }
+
         File.Move(temporary, target, overwrite: true);
+
+        // 目录 fsync 为尽力而为，仅 POSIX 生效；文件本体 fsync 失败必须向上抛出，不得吞掉。
+        try
+        {
+            await using var directory = new FileStream(
+                _rootDirectory,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 0,
+                FileOptions.Asynchronous);
+            directory.Flush(flushToDisk: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            // Windows 或权限受限环境无法对目录 fsync，忽略即可，不影响替换结果。
+        }
     }
 
     public async ValueTask<YuoSnapshotRecord?> LoadAsync(
