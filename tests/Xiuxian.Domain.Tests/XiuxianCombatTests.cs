@@ -68,6 +68,22 @@ public sealed class XiuxianCombatTests
     }
 
     [Fact]
+    public void Hit_and_crit_use_unified_contest_formula_per_design()
+    {
+        // 命中 vs 闪避：统一对抗公式 260/(260+180+1) ≈ 0.589
+        var hitRate = XiuxianCombatFormula.CalculateHitContestRate(260, 180);
+        Assert.InRange(hitRate, 0.58, 0.60);
+
+        // 高阶位同阶对抗：暴击 128 点 vs 免爆 119 点 -> 约 0.518，不得被减法钳制归零
+        var critRate = XiuxianCombatFormula.CalculateCritContestRate(128, 119);
+        Assert.InRange(critRate, 0.50, 0.54);
+
+        // 破招成功时暴击点数翻倍后再进对抗：256/(256+119+1) ≈ 0.680
+        var breakCritRate = XiuxianCombatFormula.CalculateCritContestRate(128 * 2.0, 119);
+        Assert.InRange(breakCritRate, 0.66, 0.70);
+    }
+
+    [Fact]
     public void Percent_value_type_behaves_correctly_for_linear_and_nonlinear_modes()
     {
         // 1. 线性模式 (Linear): 增伤、免伤、仇恨

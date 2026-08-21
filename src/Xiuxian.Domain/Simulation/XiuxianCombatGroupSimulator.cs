@@ -18,7 +18,8 @@ public static partial class XiuxianCombatSimulator
         long completedEncountersBeforeRun,
         XiuxianCombatPlayerState? initialPlayerState,
         bool stopAfterFirstOutcome,
-        bool stopAfterFirstVictory)
+        bool stopAfterFirstVictory,
+        long playerSpirit = 0)
     {
         var durationMilliseconds = Math.Max(0, checked((long)Math.Floor(duration.TotalMilliseconds)));
         var random = new DeterministicRandom(CreateSeed(playerId, startedAt, encounter.Id));
@@ -33,7 +34,7 @@ public static partial class XiuxianCombatSimulator
         var playerControl = new CombatControlRuntime();
         var playerModifiers = new CombatModifierRuntime();
         var events = new List<string>(capacity: 24);
-        var player = BuildPlayerStats(loadout, buffs, playerModifiers, 0);
+        var player = BuildPlayerStats(loadout, buffs, playerModifiers, 0, playerSpirit);
         var playerHitpoints = Math.Clamp(initialPlayerState?.Hitpoints ?? player.MaxHitpoints, 0, player.MaxHitpoints);
         var playerManapoints = Math.Clamp(initialPlayerState?.Manapoints ?? player.MaxManapoints, 0, player.MaxManapoints);
         var playerDead = false;
@@ -303,7 +304,7 @@ public static partial class XiuxianCombatSimulator
 
             if (playerModifiers.Expire(now))
             {
-                player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                 AddEvent(events, "战斗状态消退：自身词缀层数已更新");
             }
 
@@ -344,7 +345,7 @@ public static partial class XiuxianCombatSimulator
                 damageOverTimes.RemoveAll(dot => dot.TargetsPlayer);
                 playerControl.Clear();
                 playerModifiers.Clear();
-                player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                 playerHitpoints = player.MaxHitpoints;
                 playerManapoints = player.MaxManapoints;
                 Array.Fill(abilityReadyAt, now);
@@ -530,7 +531,7 @@ public static partial class XiuxianCombatSimulator
                 events,
                 playerControl,
                 target.Control);
-            player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+            player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
 
             if (nextPlayerAction == now && !playerControl.IsStunned(now))
             {
@@ -621,7 +622,7 @@ public static partial class XiuxianCombatSimulator
                                     now,
                                     events))
                             {
-                                player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                                 currentTarget.RebuildStats(encounter);
                             }
 
@@ -765,7 +766,7 @@ public static partial class XiuxianCombatSimulator
                         events))
                 {
                     enemy.RebuildStats(encounter);
-                    player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                    player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                 }
 
                 if (enemyAbility is not null && enemyResolution.Damage > 0)

@@ -1,5 +1,5 @@
 /**
- * 太虚仙途 · 战斗核心常量与中文公式说明脚本
+ * 道化太初 · 战斗核心常量与中文公式说明脚本
  * 集中管理抗性减伤系数、技能消耗倍率、对抗概率系数、六维根基增益等全局配置。
  */
 
@@ -459,11 +459,8 @@ export interface BaseAttributePool {
   baseCritAvoid: number
   baseBreak: number
   baseParry: number
-  cdr: number
-  atr: number
-  critDmg: number
-  skillIntensity: number
-  k: number
+  baseHpRegen: number
+  baseMpRegen: number
 }
 
 const BASE_FLAT_ANCHORS = [
@@ -525,13 +522,9 @@ export function calculateBaseAttributes(spirit = 0): BaseAttributePool {
   const baseBreak = low.breakPt + (high.breakPt - low.breakPt) * t
   const baseParry = low.parry + (high.parry - low.parry) * t
 
-  const x = Math.min(1.0, Math.max(0.0, (level - 1.0) / 126.0))
-  const progress = x * x
-  const cdr = progress * 0.75
-  const atr = progress * 0.50
-  const critDmg = 1.50 + progress * 3.50
-  const skillIntensity = 1.0 + (tier - 1) * 0.30
-  const k = tier
+  // 基础生命回复与灵力回复固定为每 5 秒 2% 基础上限，四舍五入取整（保底 1.0）
+  const baseHpRegen = Math.max(1, Math.round(baseHp * 0.02))
+  const baseMpRegen = Math.max(1, Math.round(baseMp * 0.02))
 
   return {
     level,
@@ -548,11 +541,8 @@ export function calculateBaseAttributes(spirit = 0): BaseAttributePool {
     baseCritAvoid,
     baseBreak,
     baseParry,
-    cdr,
-    atr,
-    critDmg,
-    skillIntensity,
-    k,
+    baseHpRegen,
+    baseMpRegen,
   }
 }
 

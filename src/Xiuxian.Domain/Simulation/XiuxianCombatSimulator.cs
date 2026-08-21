@@ -89,7 +89,8 @@ public static partial class XiuxianCombatSimulator
         long completedEncountersBeforeRun = 0,
         XiuxianCombatPlayerState? initialPlayerState = null,
         bool stopAfterFirstOutcome = false,
-        bool stopAfterFirstVictory = false)
+        bool stopAfterFirstVictory = false,
+        long playerSpirit = 0)
     {
         ArgumentNullException.ThrowIfNull(loadout);
         ArgumentNullException.ThrowIfNull(activeBuffs);
@@ -113,7 +114,8 @@ public static partial class XiuxianCombatSimulator
                 completedEncountersBeforeRun,
                 initialPlayerState,
                 stopAfterFirstOutcome,
-                stopAfterFirstVictory);
+                stopAfterFirstVictory,
+                playerSpirit);
         }
 
         var durationMilliseconds = Math.Max(0, checked((long)Math.Floor(duration.TotalMilliseconds)));
@@ -131,7 +133,7 @@ public static partial class XiuxianCombatSimulator
         var playerModifiers = new CombatModifierRuntime();
         var enemyModifiers = new CombatModifierRuntime();
         var events = new List<string>(capacity: 16);
-        var player = BuildPlayerStats(loadout, buffs, playerModifiers, 0);
+        var player = BuildPlayerStats(loadout, buffs, playerModifiers, 0, playerSpirit);
         var enemyEnrageStacks = 0;
         var enemy = BuildEnemyStats(encounter.Enemy, enemyEnrageStacks, encounter, enemyModifiers);
         var playerHitpoints = Math.Clamp(initialPlayerState?.Hitpoints ?? player.MaxHitpoints, 0, player.MaxHitpoints);
@@ -334,7 +336,7 @@ public static partial class XiuxianCombatSimulator
             now = next;
             if (playerModifiers.Expire(now))
             {
-                player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                 AddEvent(events, "战斗状态消退：自身词缀层数已更新");
             }
 
@@ -366,7 +368,7 @@ public static partial class XiuxianCombatSimulator
                 damageOverTimes.RemoveAll(dot => dot.TargetsPlayer);
                 playerControl.Clear();
                 playerModifiers.Clear();
-                player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                 playerHitpoints = player.MaxHitpoints;
                 playerManapoints = player.MaxManapoints;
                 Array.Fill(abilityReadyAt, now);
@@ -597,7 +599,7 @@ public static partial class XiuxianCombatSimulator
                 events,
                 playerControl,
                 enemyControl);
-            player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+            player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
 
             if (nextPlayerAction == now && !playerControl.IsStunned(now))
             {
@@ -699,7 +701,7 @@ public static partial class XiuxianCombatSimulator
                             now,
                             events))
                     {
-                        player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                        player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                         enemy = BuildEnemyStats(encounter.Enemy, enemyEnrageStacks, encounter, enemyModifiers);
                     }
 
@@ -833,7 +835,7 @@ public static partial class XiuxianCombatSimulator
                             now,
                             events))
                     {
-                        player = BuildPlayerStats(loadout, buffs, playerModifiers, now);
+                        player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
                         enemy = BuildEnemyStats(encounter.Enemy, enemyEnrageStacks, encounter, enemyModifiers);
                     }
 
@@ -1245,17 +1247,20 @@ public static partial class XiuxianCombatSimulator
         var natureResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.NatureResistance) * (1.0 + intelligenceBonus);
         var fireResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.FireResistance) * (1.0 + intelligenceBonus);
 
-        // 5. 破招与拆招
+        // 5. 破招与拆招 (根骨与身法各提供每点 1% 化解加成，同乘区叠加)
         var breakRating = (basePool.BaseBreak + loadout.BreakRating + equipment.BreakRating + attack * 1.0) * (1.0 + attackBonus);
-        var parryRating = (basePool.BaseParry + loadout.ParryRating + equipment.ParryRating + defense * 1.0) * (1.0 + defenseBonus);
+        var parryRating = (basePool.BaseParry + loadout.ParryRating + equipment.ParryRating + defense * 1.0) * (1.0 + defenseBonus + talismanBonus);
 
-        // 6. 暴击与免暴
-        var criticalChance = Math.Clamp(basePool.BaseCritical * 0.01 + loadout.CriticalChance + equipment.CriticalChance + attack * 0.01, 0, 1);
-        var criticalAvoidance = Math.Clamp(basePool.BaseCriticalAvoidance * 0.01 + loadout.CriticalAvoidance + equipment.CriticalAvoidance + talisman * 0.01, 0, 1);
+        // 6. 暴击与免爆：以点数参与统一对抗公式 (规约 §7.3)，装备/词条百分比按 K=100 折算为点数；
+        //    力道每点 +1% 暴击、身法每点 +1% 免爆折算为对应点数
+        var criticalRating = Math.Max(0, basePool.BaseCritical + (loadout.CriticalChance + equipment.CriticalChance) * 100.0 + attack);
+        var criticalAvoidanceRating = Math.Max(0, basePool.BaseCriticalAvoidance + (loadout.CriticalAvoidance + equipment.CriticalAvoidance) * 100.0 + talisman);
+        var criticalChance = XiuxianCombatFormula.CalculateCritContestRate(criticalRating, criticalAvoidanceRating);
+        var criticalAvoidance = XiuxianCombatFormula.CalculateCritContestRate(criticalAvoidanceRating, criticalRating);
 
-        // 7. 回复速率
-        var hpRegen = Math.Max(0.01, loadout.HpRegenPerTenSeconds * (1.0 + staminaBonus));
-        var mpRegen = Math.Max(0.01, loadout.MpRegenPerTenSeconds * (1.0 + intelligenceBonus));
+        // 7. 回复速率 (每 5 秒基础回复 2% 基础上限，底层属性记录 10 秒量)
+        var hpRegen = Math.Max(1.0, (basePool.BaseHpRegen * 2.0 + loadout.HpRegenPerTenSeconds) * (1.0 + staminaBonus));
+        var mpRegen = Math.Max(1.0, (basePool.BaseMpRegen * 2.0 + loadout.MpRegenPerTenSeconds) * (1.0 + intelligenceBonus));
 
         // 8. 攻击间隔
         var baseInterval = equipment.AttackIntervalMilliseconds > 0
@@ -1263,12 +1268,12 @@ public static partial class XiuxianCombatSimulator
             : 1_000;
         var interval = XiuxianCombatFormula.CalculateAttackIntervalMilliseconds(baseInterval, attack, attackSpeedRatio);
 
-        // 9. 高级机制
-        var cdr = Math.Clamp(basePool.CooldownReductionRatio + loadout.CooldownReductionRatio + equipment.CooldownReductionRatio, 0, 0.75);
-        var atr = Math.Clamp(basePool.ActionSpeedReductionRatio + loadout.ActionSpeedReductionRatio + equipment.ActionSpeedRatio, 0, 0.50);
-        var critDamageRatio = Math.Max(basePool.CriticalDamageRatio, loadout.CriticalDamageRatio + equipment.CriticalDamageRatio);
-        var skillIntensity = Math.Max(basePool.SkillIntensity, loadout.SkillIntensity + equipment.SkillIntensity);
-        var kFactor = Math.Max(basePool.DynamicResistanceFactorK, loadout.DynamicResistanceFactorK);
+        // 9. 高级机制 (高级机制为独立词条属性体系，动态抗性因子 K 由当前阶位决定)
+        var cdr = Math.Clamp(loadout.CooldownReductionRatio + equipment.CooldownReductionRatio, 0, 0.75);
+        var atr = Math.Clamp(loadout.ActionSpeedReductionRatio + equipment.ActionSpeedRatio, 0, 0.50);
+        var critDamageRatio = Math.Max(0.0, loadout.CriticalDamageRatio + equipment.CriticalDamageRatio);
+        var skillIntensity = Math.Max(1.0, loadout.SkillIntensity + equipment.SkillIntensity);
+        var kFactor = Math.Max((double)basePool.Tier, loadout.DynamicResistanceFactorK);
 
         return new CombatStats(
             maxHitpoints,
@@ -1305,7 +1310,9 @@ public static partial class XiuxianCombatSimulator
             skillIntensity,
             kFactor,
             atr,
-            cdr);
+            cdr,
+            criticalRating,
+            criticalAvoidanceRating);
     }
 
     private static CombatStats BuildEnemyStats(
@@ -1352,7 +1359,9 @@ public static partial class XiuxianCombatSimulator
             Math.Max(1.0, definition.SkillIntensity),
             Math.Max(1.0, definition.DynamicResistanceFactorK),
             Math.Clamp(definition.ActionSpeedReductionRatio, 0, 0.99),
-            Math.Clamp(definition.CooldownReductionRatio, 0, 0.99));
+            Math.Clamp(definition.CooldownReductionRatio, 0, 0.99),
+            Math.Max(0, definition.CriticalChance * 100.0),
+            Math.Max(0, definition.CriticalAvoidance * 100.0));
     }
 
     private static CombatResolution ResolvePlayerAttack(
@@ -1423,13 +1432,13 @@ public static partial class XiuxianCombatSimulator
             }
         }
 
-        // 破招成功：命中与暴击效果翻倍；拆招成功：闪避与抗性效果翻倍
+        // 破招成功：命中与暴击点数翻倍后再进对抗；拆招成功：闪避点数与抗性效果翻倍
         var effectiveHit = source.AccuracyRating * (isBreak ? XiuxianCombatConstants.BreakSuccessEffectMultiplier : 1.0);
-        var effectiveCrit = Math.Max(0.0, source.CriticalChance) * (isBreak ? XiuxianCombatConstants.BreakSuccessEffectMultiplier : 1.0);
+        var effectiveCrit = Math.Max(0.0, source.CriticalRating) * (isBreak ? XiuxianCombatConstants.BreakSuccessEffectMultiplier : 1.0);
         var effectiveEva = target.EvasionRating * (isParry ? XiuxianCombatConstants.ParrySuccessEffectMultiplier : 1.0);
 
-        // 2. 命中 vs 闪避 对抗判定
-        var hitChance = XiuxianCombatFormula.CalculateHitChance(effectiveHit, effectiveEva);
+        // 2. 命中 vs 闪避 统一对抗判定 (规约 §7.3)
+        var hitChance = XiuxianCombatFormula.CalculateHitContestRate(effectiveHit, effectiveEva);
         if (random.NextDouble() > hitChance)
         {
             return new CombatResolution(0, 0, DidHit: false);
@@ -1464,8 +1473,8 @@ public static partial class XiuxianCombatSimulator
             kFactor,
             XiuxianCombatConstants.DefaultDamageBaseFactor);
 
-        // 5. 暴击 vs 免暴 对抗判定与伤害放大
-        var criticalChance = XiuxianCombatFormula.CalculateCriticalChance(effectiveCrit, target.CriticalAvoidance);
+        // 5. 暴击 vs 免爆 统一对抗判定 (规约 §7.3) 与伤害放大
+        var criticalChance = XiuxianCombatFormula.CalculateCritContestRate(effectiveCrit, target.CriticalAvoidanceRating);
         var isCritical = source.CriticalDamageRatio > 0
             && criticalChance > 0
             && random.NextDouble() < criticalChance;
@@ -2356,7 +2365,9 @@ public static partial class XiuxianCombatSimulator
         double SkillIntensity = 1.0,
         double DynamicResistanceFactorK = 1.0,
         double ActionSpeedReductionRatio = 0,
-        double CooldownReductionRatio = 0);
+        double CooldownReductionRatio = 0,
+        double CriticalRating = 0,
+        double CriticalAvoidanceRating = 0);
 
     private readonly record struct CombatResolution(
         long Damage,

@@ -144,11 +144,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const parryBreakPoint: number = attributes ? attributes.pierceChance * 100.0 : basePool.baseBreak
   const parryResolvePoint: number = attributes ? attributes.damageAbsorptionRatio * 100.0 : basePool.baseParry
 
-  // 生命回复与灵力回复 (固定值属性，每 5 秒回复量，受六维加成)
-  const hpRegenBase = BASELINE_COMBAT_ATTRIBUTES.hpRegen
-  const mpRegenBase = BASELINE_COMBAT_ATTRIBUTES.mpRegen
-  const hpRegenTotal = hpRegenBase * (1.0 + (loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)
-  const mpRegenTotal = mpRegenBase * (1.0 + (loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)
+  // 生命回复与灵力回复 (固定值属性，每 5 秒回复量，基础为 2% 上限，受六维加成)
+  const hpRegenTotal = attributes ? attributes.hpRegenPerTenSeconds / 2.0 : (basePool.baseHpRegen * (1.0 + staminaBonus))
+  const mpRegenTotal = attributes ? attributes.mpRegenPerTenSeconds / 2.0 : (basePool.baseMpRegen * (1.0 + intelligenceBonus))
 
   // 2. 特殊战斗属性 (统一百分比类型 PercentValue，内部均为 double 点数)
   const critDamagePercent = PercentValue.linear((attributes?.criticalDamageRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0 + 150.0)
@@ -297,7 +295,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
       {/* 主体内容 */}
       <div className="insight-body">
         {/* ========================================================================= */}
-        {/* TAB 1: 根基 (支持二级 Tab 切换：六维根基 | 基础数值)                          */}
+        {/* TAB 1: 根基 (支持二级 Tab 切换：六维 | 基础)                                  */}
         {/* ========================================================================= */}
         {activeTab === 'roots' && (
           <div className="insight-panel insight-panel--roots">
@@ -307,14 +305,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 onClick={() => setRootsSubTab('sixDimensions')}
                 type="button"
               >
-                六维根基
+                六维
               </button>
               <button
                 className={`insight-sub-tab-btn ${rootsSubTab === 'baseAttributes' ? 'active' : ''}`}
                 onClick={() => setRootsSubTab('baseAttributes')}
                 type="button"
               >
-                基础数值
+                基础
               </button>
             </div>
 
@@ -343,28 +341,101 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 ))}
               </div>
             ) : (
-              <div className="insight-pill-group">
-                <h4 className="insight-pill-group-title">
-                  {realmInfo.stageName}阶位 · 境界基础底座（Base Flat · 乘区一底座）
-                </h4>
-                <div className="insight-pill-group-items">
-                  <PillStatLabel label="生命底座" value={formatNumber(basePool.baseHp)} tone="emerald" tooltip="仙躯当前境界所拥有的纯净基础生命池底座。" />
-                  <PillStatLabel label="灵力底座" value={formatNumber(basePool.baseMp)} tone="cyan" tooltip="气海当前境界所拥有的纯净基础灵力池底座。" />
-                  <PillStatLabel label="物理攻击" value={formatNumber(basePool.baseAd)} tone="crimson" tooltip="当前境界物理攻击基础输出威力。" />
-                  <PillStatLabel label="术法攻击" value={formatNumber(basePool.baseAp)} tone="indigo" tooltip="当前境界术法轰击基础输出威力。" />
-                  <PillStatLabel label="护甲底座" value={formatNumber(basePool.baseArmor)} tone="bronze" tooltip="当前境界物理防御基础护甲。" />
-                  <PillStatLabel label="法抗底座" value={formatNumber(basePool.baseMagicRes)} tone="violet" tooltip="当前境界全元素术法抗性。" />
-                  <PillStatLabel label="命中等级" value={formatNumber(basePool.baseAccuracy)} tone="sky" tooltip="当前境界命中对抗基础点数。" />
-                  <PillStatLabel label="闪避等级" value={formatNumber(basePool.baseEvasion)} tone="teal" tooltip="当前境界闪避回避基础点数。" />
-                  <PillStatLabel label="暴击点数" value={formatNumber(basePool.baseCrit)} tone="gold" tooltip="当前境界暴击对抗基础点数。" />
-                  <PillStatLabel label="免暴点数" value={formatNumber(basePool.baseCritAvoid)} tone="slate" tooltip="当前境界免暴对抗基础点数。" />
-                  <PillStatLabel label="破招点数" value={formatNumber(basePool.baseBreak)} tone="amber" tooltip="当前境界破招对抗基础点数。" />
-                  <PillStatLabel label="化解点数" value={formatNumber(basePool.baseParry)} tone="silver" tooltip="当前境界拆招化解基础点数。" />
-                  <PillStatLabel label="技能强度" value={`${basePool.skillIntensity.toFixed(2)}x`} tone="purple" tooltip="当前阶位专属技能强度倍率增量。" />
-                  <PillStatLabel label="破防因子" value={`K = ${basePool.k.toFixed(1)}`} tone="amber" tooltip="平方减伤模型下的阶位动态抗性拦截穿透系数。" />
-                  <PillStatLabel label="暴伤倍率" value={`${(basePool.critDmg * 100).toFixed(1)}%`} tone="gold" tooltip="当前阶位基础暴击伤害倍率。" />
-                  <PillStatLabel label="冷却缩减" value={`${(basePool.cdr * 100).toFixed(1)}%`} tone="cyan" tooltip="当前阶位主动技能冷却缩减 (CDR)。" />
-                  <PillStatLabel label="动作加速" value={`${(basePool.atr * 100).toFixed(1)}%`} tone="teal" tooltip="当前阶位动作时间与施法吟唱缩减 (ATR)。" />
+              <div className="insight-base-layout">
+                {/* 第 1 排：血蓝与自然回复 */}
+                <div className="insight-base-row">
+                  <PillStatLabel
+                    label="生命上限"
+                    value={formatNumber(basePool.baseHp)}
+                    tone="emerald"
+                    tooltip={`最大生命值，能承受 ${formatNumber(basePool.baseHp)} 点伤害。`}
+                  />
+                  <PillStatLabel
+                    label="灵力上限"
+                    value={formatNumber(basePool.baseMp)}
+                    tone="cyan"
+                    tooltip={`最大灵力值，施展神通与法术的初始灵力储量（${formatNumber(basePool.baseMp)} 点）。`}
+                  />
+                  <PillStatLabel
+                    label="生命回复"
+                    value={`${formatNumber(basePool.baseHpRegen)}/5s`}
+                    tone="emerald"
+                    tooltip={`仙躯每 5 秒自然回复的基础生命值（约为当前境界生命上限的 2%，即 ${formatNumber(basePool.baseHpRegen)} 点）。`}
+                  />
+                  <PillStatLabel
+                    label="灵力回复"
+                    value={`${formatNumber(basePool.baseMpRegen)}/5s`}
+                    tone="cyan"
+                    tooltip={`气海每 5 秒自然回复的基础灵力值（约为当前境界灵力上限的 2%，即 ${formatNumber(basePool.baseMpRegen)} 点）。`}
+                  />
+                </div>
+
+                {/* 第 2 排：AD / AP / 物理护甲 / 术法抗性 */}
+                <div className="insight-base-row">
+                  <PillStatLabel
+                    label="物理攻击"
+                    value={formatNumber(basePool.baseAd)}
+                    tone="crimson"
+                    tooltip="物理杀伤基础威力，决定物理技能与普通攻击的伤害。"
+                  />
+                  <PillStatLabel
+                    label="术法攻击"
+                    value={formatNumber(basePool.baseAp)}
+                    tone="indigo"
+                    tooltip="法术神通基础威力，决定法术轰击与奇门遁甲的伤害。"
+                  />
+                  <PillStatLabel
+                    label="物理护甲"
+                    value={formatNumber(basePool.baseArmor)}
+                    tone="bronze"
+                    tooltip="抵御物理攻击，护甲越高所受物理伤害越低。"
+                  />
+                  <PillStatLabel
+                    label="术法抗性"
+                    value={formatNumber(basePool.baseMagicRes)}
+                    tone="violet"
+                    tooltip="抵御法术攻击，抗性越高所受法术与元素伤害越低。"
+                  />
+                </div>
+
+                {/* 第 3 排：命中闪避 暴击免暴 破招化解 */}
+                <div className="insight-base-row">
+                  <PillStatLabel
+                    label="命中"
+                    value={formatNumber(basePool.baseAccuracy)}
+                    tone="sky"
+                    tooltip="命中概率基础点数，提升击中目标的概率。"
+                  />
+                  <PillStatLabel
+                    label="闪避"
+                    value={formatNumber(basePool.baseEvasion)}
+                    tone="teal"
+                    tooltip="闪避回避基础点数，提升回避敌方攻击的概率。"
+                  />
+                  <PillStatLabel
+                    label="暴击"
+                    value={formatNumber(basePool.baseCrit)}
+                    tone="gold"
+                    tooltip="暴击概率基础点数，提升造成会心一击的概率。"
+                  />
+                  <PillStatLabel
+                    label="免暴"
+                    value={formatNumber(basePool.baseCritAvoid)}
+                    tone="slate"
+                    tooltip="免暴抗爆基础点数，降低遭受敌方暴击的概率。"
+                  />
+                  <PillStatLabel
+                    label="破招"
+                    value={formatNumber(basePool.baseBreak)}
+                    tone="amber"
+                    tooltip="破招对抗基础点数，破招成功时本次命中与暴击效果翻倍。"
+                  />
+                  <PillStatLabel
+                    label="化解"
+                    value={formatNumber(basePool.baseParry)}
+                    tone="silver"
+                    tooltip="拆招化解基础点数，化解成功时本次双抗与闪避效果翻倍。"
+                  />
                 </div>
               </div>
             )}

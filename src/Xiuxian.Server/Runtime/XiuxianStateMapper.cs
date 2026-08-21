@@ -408,7 +408,8 @@ public static class XiuxianStateMapper
             battleBuffs,
             expedition.BattleStartedAt,
             expedition.InitialHitpoints,
-            expedition.InitialManapoints);
+            expedition.InitialManapoints,
+            state.Stats.Spirit);
         var result = XiuxianCombatSimulator.Run(
             state.PlayerId,
             battleLoadout,
@@ -419,7 +420,8 @@ public static class XiuxianStateMapper
             TimeSpan.FromMilliseconds(Math.Max(0, expedition.PhaseElapsedMilliseconds)),
             expedition.CompletedEncountersBeforeBattle,
             initialPlayer,
-            stopAfterFirstVictory: true);
+            stopAfterFirstVictory: true,
+            playerSpirit: state.Stats.Spirit);
         var player = result.FinalPlayer;
         var enemies = result.FinalEnemies ?? [];
         var enemyHitpoints = enemies.Sum(enemy => Math.Max(0, enemy.Hitpoints));

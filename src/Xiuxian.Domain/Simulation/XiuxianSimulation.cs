@@ -1059,7 +1059,8 @@ public static class XiuxianSimulation
             TimeSpan.FromMilliseconds(Math.Max(0, expedition.PhaseElapsedMilliseconds)),
             expedition.CompletedEncountersBeforeBattle,
             initialPlayer,
-            stopAfterFirstVictory: true);
+            stopAfterFirstVictory: true,
+            playerSpirit: state.Stats.Spirit);
         if (result.OutcomeMilliseconds is not null)
         {
             return expedition.BattleStartedAt.AddMilliseconds(result.OutcomeMilliseconds.Value);
@@ -1206,7 +1207,8 @@ public static class XiuxianSimulation
                 TimeSpan.FromMilliseconds(requestedElapsed),
                 expedition.CompletedEncountersBeforeBattle,
                 initialPlayer,
-                stopAfterFirstVictory: true);
+                stopAfterFirstVictory: true,
+                playerSpirit: state.Stats.Spirit);
 
             dirty |= ApplyIncrementalCombatConsumption(state, expedition, result);
             dirty |= EmitIncrementalCombatEvents(state, expedition, result, cursor);
@@ -1865,7 +1867,8 @@ public static class XiuxianSimulation
             encounterId,
             startedAt,
             TimeSpan.FromSeconds(combatSeconds),
-            state.CombatEncounterCompletions.GetValueOrDefault(encounterId));
+            state.CombatEncounterCompletions.GetValueOrDefault(encounterId),
+            playerSpirit: state.Stats.Spirit);
         ApplyCombatRunResult(
             state,
             definition,

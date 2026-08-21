@@ -4971,6 +4971,20 @@ input[type="checkbox"] {
   align-items: center;
 }
 
+.insight-base-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.insight-base-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: center;
+}
+
 /* 全局 Hover Tooltip 悬浮提示 */
 .has-tooltip {
   position: relative;

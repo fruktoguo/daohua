@@ -244,11 +244,8 @@ public static class XiuxianCombatFormula
         double BaseCriticalAvoidance,
         double BaseBreak,
         double BaseParry,
-        double CooldownReductionRatio,
-        double ActionSpeedReductionRatio,
-        double CriticalDamageRatio,
-        double SkillIntensity,
-        double DynamicResistanceFactorK);
+        double BaseHpRegen,
+        double BaseMpRegen);
 
     private static readonly (double Level, double Hp, double Mp, double Ad, double Ap, double Armor, double Mr, double Acc, double Eva, double Crit, double CAvoid, double Break, double Parry)[] BaseFlatAnchors =
     [
@@ -304,13 +301,9 @@ public static class XiuxianCombatFormula
         var baseBreak = low.Break + (high.Break - low.Break) * t;
         var baseParry = low.Parry + (high.Parry - low.Parry) * t;
 
-        var x = Math.Clamp((level - 1.0) / 126.0, 0.0, 1.0);
-        var progress = x * x;
-        var cdr = progress * 0.75;
-        var atr = progress * 0.50;
-        var critDmg = 1.50 + progress * 3.50;
-        var skillIntensity = 1.0 + (tier - 1) * 0.30;
-        var k = (double)tier;
+        // 基础生命回复与灵力回复固定为每 5 秒 2% 基础上限，四舍五入取整（保底 1.0）
+        var baseHpRegen = Math.Max(1.0, Math.Round(baseHp * 0.02));
+        var baseMpRegen = Math.Max(1.0, Math.Round(baseMp * 0.02));
 
         return new BaseAttributePool(
             level,
@@ -327,11 +320,8 @@ public static class XiuxianCombatFormula
             baseCritAvoid,
             baseBreak,
             baseParry,
-            cdr,
-            atr,
-            critDmg,
-            skillIntensity,
-            k);
+            baseHpRegen,
+            baseMpRegen);
     }
 
     public static int CalculateTier(double level)
