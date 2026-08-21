@@ -181,9 +181,21 @@ public static class XiuxianGameData
         }
 
         var actions = Index(Read<XiuxianActionDefinition[]>(files, "actions.json"), entry => entry.Id, "行动");
-        var items = Index(Read<XiuxianItemDefinition[]>(files, "items.json"), entry => entry.Id, "物品");
-        var abilities = Index(Read<XiuxianCombatAbilityDefinition[]>(files, "abilities.json"), entry => entry.Id, "技能");
-        var equipment = Index(Read<XiuxianCombatEquipmentDefinition[]>(files, "equipment.json"), entry => entry.Id, "装备");
+        var itemConfigs = Index(Read<XiuxianItemConfig[]>(files, "items.json"), entry => entry.Id, "物品");
+        var items = itemConfigs.ToDictionary(
+            pair => pair.Key,
+            pair => XiuxianDataBudgetResolver.ResolveItem(pair.Value),
+            StringComparer.Ordinal);
+        var abilityConfigs = Index(Read<XiuxianAbilityConfig[]>(files, "abilities.json"), entry => entry.Id, "技能");
+        var abilities = abilityConfigs.ToDictionary(
+            pair => pair.Key,
+            pair => XiuxianDataBudgetResolver.ResolveAbility(pair.Value),
+            StringComparer.Ordinal);
+        var equipmentConfigs = Index(Read<XiuxianEquipmentConfig[]>(files, "equipment.json"), entry => entry.Id, "装备");
+        var equipment = equipmentConfigs.ToDictionary(
+            pair => pair.Key,
+            pair => XiuxianDataBudgetResolver.ResolveEquipment(pair.Value),
+            StringComparer.Ordinal);
         var monsterConfigs = Index(Read<XiuxianCombatantConfig[]>(files, "monsters.json"), entry => entry.Id, "怪物");
         var monsters = monsterConfigs.ToDictionary(
             pair => pair.Key,
