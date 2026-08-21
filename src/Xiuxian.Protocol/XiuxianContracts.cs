@@ -208,11 +208,12 @@ public sealed record XiuxianStatsDto(
     long BlockedActions,
     long CombatWins = 0,
     long CombatLosses = 0,
-    long CombatExperience = 0,
+    double CombatExperience = 0,
     long CombatDamageDealt = 0,
     long CombatDamageTaken = 0,
     long CombatEnemiesDefeated = 0,
-    long CombatPlayersDefeated = 0);
+    long CombatPlayersDefeated = 0,
+    double FoundationExp = 0);
 
 public sealed record XiuxianCombatAbilitySlotDto(
     string? AbilityId,
@@ -443,7 +444,8 @@ public sealed record XiuxianPlayerSnapshotDto(
     XiuxianCombatResourceDto? CombatResources = null,
     XiuxianCombatAttributesDto? CombatAttributes = null,
     XiuxianCharacterVisualDto? Visual = null,
-    long? ServerTimeUnixMilliseconds = null);
+    long? ServerTimeUnixMilliseconds = null,
+    bool IsPendingBreakthrough = false);
 
 public sealed record XiuxianPlayerPatchDto(
     string PlayerId,
@@ -462,7 +464,8 @@ public sealed record XiuxianPlayerPatchDto(
     XiuxianCombatResourceDto? CombatResources = null,
     XiuxianCombatAttributesDto? CombatAttributes = null,
     XiuxianCharacterVisualDto? Visual = null,
-    long? ServerTimeUnixMilliseconds = null);
+    long? ServerTimeUnixMilliseconds = null,
+    bool? IsPendingBreakthrough = null);
 
 public sealed record XiuxianAckDto(
     bool Success,

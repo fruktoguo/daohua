@@ -107,7 +107,7 @@ public sealed class XiuxianCombatExpeditionState
     public int AppliedProcessedEvents { get; set; }
     public long AppliedDamageDealt { get; set; }
     public long AppliedDamageTaken { get; set; }
-    public long AppliedExperience { get; set; }
+    public double AppliedExperience { get; set; }
     public long AppliedSpirit { get; set; }
     public bool CompleteAfterRespawn { get; set; }
 
@@ -237,6 +237,7 @@ public sealed class XiuxianPlayerStats
 {
     public long Qi { get; set; }
     public long Spirit { get; set; }
+    public double FoundationExp { get; set; }
     public long HerbsCollected { get; set; }
     public long PillsCrafted { get; set; }
     public long CultivationCycles { get; set; }
@@ -244,7 +245,7 @@ public sealed class XiuxianPlayerStats
     public long BlockedActions { get; set; }
     public long CombatWins { get; set; }
     public long CombatLosses { get; set; }
-    public long CombatExperience { get; set; }
+    public double CombatExperience { get; set; }
     public long CombatDamageDealt { get; set; }
     public long CombatDamageTaken { get; set; }
     public long CombatEnemiesDefeated { get; set; }
@@ -266,6 +267,7 @@ public sealed class XiuxianPlayerState
     public long Version { get; set; }
     public DateTimeOffset LastSimulatedAt { get; set; }
     public XiuxianPresenceMode PresenceMode { get; set; } = XiuxianPresenceMode.IdleOffline;
+    public bool IsPendingBreakthrough { get; set; }
     public XiuxianActionQueueState Queue { get; set; } = new();
     public XiuxianInventoryState Inventory { get; set; } = new();
     public List<XiuxianBuffState> Buffs { get; set; } = [];
@@ -299,6 +301,7 @@ public sealed class XiuxianPlayerState
             Version = Version,
             LastSimulatedAt = LastSimulatedAt,
             PresenceMode = PresenceMode,
+            IsPendingBreakthrough = IsPendingBreakthrough,
             Queue = new XiuxianActionQueueState
             {
                 LoopEnabled = Queue.LoopEnabled,
@@ -331,6 +334,7 @@ public sealed class XiuxianPlayerState
             {
                 Qi = Stats.Qi,
                 Spirit = Stats.Spirit,
+                FoundationExp = Stats.FoundationExp,
                 HerbsCollected = Stats.HerbsCollected,
                 PillsCrafted = Stats.PillsCrafted,
                 CultivationCycles = Stats.CultivationCycles,

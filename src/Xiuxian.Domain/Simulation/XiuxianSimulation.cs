@@ -415,7 +415,13 @@ public static class XiuxianSimulation
             ? definition.Name
             : $"赶往{XiuxianWorldCatalog.GetNode(removed.TravelPlan.MapId, removed.TravelPlan.DestinationNodeId).Name}";
         state.Queue.Entries.RemoveAt(index);
-        Touch(state, XiuxianDirtySections.Queue | XiuxianDirtySections.Events);
+        var dirty = XiuxianDirtySections.Queue | XiuxianDirtySections.Events;
+        if (removed.CombatExpedition is not null || definition.ExecutionKind == XiuxianActionExecutionKind.CombatEncounter)
+        {
+            SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt));
+            dirty |= XiuxianDirtySections.Combat;
+        }
+        Touch(state, dirty);
         AddEvent(state, $"已从队列移除行动：{actionName}");
         return XiuxianCommandResult.Ok("行动已移除。");
     }
@@ -702,6 +708,85 @@ public static class XiuxianSimulation
         state.PresenceMode = mode;
         Touch(state, XiuxianDirtySections.Presence);
         return XiuxianCommandResult.Ok($"状态已切换为 {mode}。");
+    }
+
+    public static XiuxianCommandResult Breakthrough(XiuxianPlayerState state)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var currentLayerExp = state.Stats.Spirit % 100.0;
+        var isCap = currentLayerExp < 0.0001 && state.Stats.Spirit > 0;
+        if (!state.IsPendingBreakthrough && !isCap)
+        {
+            return XiuxianCommandResult.Fail("CULTIVATION_NOT_CAPPED", "修为尚未圆满，无法突破。");
+        }
+
+        state.IsPendingBreakthrough = false;
+        Touch(state, XiuxianDirtySections.Stats | XiuxianDirtySections.Events | XiuxianDirtySections.Combat);
+        AddEvent(state, "破境功成！洗髓伐经，道行更进一层。");
+        return XiuxianCommandResult.Ok("突破成功！");
+    }
+
+    /// <summary>
+    /// 增加玩家修炼修为。
+    /// 规则：
+    /// 1. 当修为达到当前层满值（每层 100 点）且未突破时：
+    ///    获得的全部修为转化为「底蕴」(FoundationExp)；
+    /// 2. 当有底蕴时：获得修为享受 3 倍经验（基础 1x + 消耗底蕴提供 2x 加成，若底蕴不足则消耗全部底蕴提供等值加成）；
+    /// 3. 若加上获得修为后触及当前层境界满值，则卡在满值并开启待突破标记，溢出部分自动注入底蕴。
+    /// </summary>
+    public static (double actualSpiritGain, double foundationGain, double foundationConsumed) AddCultivationSpirit(
+        XiuxianPlayerState state,
+        double baseSpiritGain)
+    {
+        if (baseSpiritGain <= 0) return (0, 0, 0);
+
+        var currentLayerExp = state.Stats.Spirit % 100.0;
+        var expToCap = (100.0 - currentLayerExp) % 100.0;
+        if (currentLayerExp > 0 && expToCap < 0.0001)
+        {
+            expToCap = 0;
+        }
+        else if (currentLayerExp == 0 && state.Stats.Spirit > 0 && state.IsPendingBreakthrough)
+        {
+            expToCap = 0;
+        }
+        else if (expToCap == 0)
+        {
+            expToCap = 100.0;
+        }
+
+        if (state.IsPendingBreakthrough || expToCap <= 0.0001)
+        {
+            state.IsPendingBreakthrough = true;
+            state.Stats.FoundationExp += baseSpiritGain;
+            return (0, baseSpiritGain, 0);
+        }
+
+        // 当有底蕴时：获得修为会三倍经验，但会扣除等值的底蕴
+        // 比如获得 10 修为，底蕴 10，则消耗 10 底蕴获得 20 实际修为；底蕴 50，则消耗 20 底蕴获得 30 实际修为
+        var maxBonus = baseSpiritGain * 2.0;
+        var foundationConsumed = Math.Min(state.Stats.FoundationExp, maxBonus);
+        state.Stats.FoundationExp = Math.Max(0, state.Stats.FoundationExp - foundationConsumed);
+
+        var totalGain = baseSpiritGain + foundationConsumed;
+
+        if (totalGain >= expToCap)
+        {
+            var actualGain = expToCap;
+            state.Stats.Spirit += (long)Math.Round(actualGain);
+            state.IsPendingBreakthrough = true;
+            var overflow = totalGain - expToCap;
+            if (overflow > 0)
+            {
+                state.Stats.FoundationExp += overflow;
+            }
+            return (actualGain, overflow, foundationConsumed);
+        }
+        else
+        {
+            state.Stats.Spirit += (long)Math.Round(totalGain);
+            return (totalGain, 0, foundationConsumed);
+        }
     }
 
     public static XiuxianSimulationResult AdvanceTo(
@@ -1356,7 +1441,8 @@ public static class XiuxianSimulation
         {
             state.Queue.Entries.RemoveAt(0);
         }
-        dirty |= XiuxianDirtySections.Queue | XiuxianDirtySections.Stats | XiuxianDirtySections.Events;
+        SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, completedAt));
+        dirty |= XiuxianDirtySections.Queue | XiuxianDirtySections.Stats | XiuxianDirtySections.Events | XiuxianDirtySections.Combat;
     }
 
     private static void ResetBattleSnapshot(XiuxianCombatExpeditionState expedition)
@@ -1607,7 +1693,15 @@ public static class XiuxianSimulation
                 state.Inventory.Add(XiuxianItemIds.Qi, qiGain);
                 state.Stats.CultivationCycles++;
                 state.Stats.Qi += qiGain;
-                state.Stats.Spirit += 1;
+                var (actualSpiritGain, foundationGain, foundationConsumed) = AddCultivationSpirit(state, 1);
+                if (foundationGain > 0)
+                {
+                    AddEvent(state, $"当前境界已满，运转吐纳将修为转化为 {foundationGain:F0} 点道基底蕴");
+                }
+                else if (foundationConsumed > 0)
+                {
+                    AddEvent(state, $"底蕴化生，获 3 倍修为加速 (+{actualSpiritGain:F0} 修为，消耗 {foundationConsumed:F0} 点底蕴)");
+                }
                 dirty |= XiuxianDirtySections.Stats;
                 break;
             case XiuxianActionType.Combat:

@@ -208,4 +208,24 @@ public static class XiuxianCombatFormula
         var rate = CalculateContestRate(defenderParry, attackerBreak, factor, baseConst);
         return rollRatio < rate;
     }
+
+    /// <summary>
+    /// 计算击败单个真实战斗单位所获得的战斗经验。
+    /// 基础经验：1.0 点
+    /// 对方每超过自身 1 级：指数额外获得 10% (1.0 * 1.10^diff)
+    /// 对方每低于自身 1 级：指数减少 20% (1.0 * 0.80^diff)
+    /// </summary>
+    public static double CalculateCombatExperience(double playerLevel, double targetLevel)
+    {
+        var levelDiff = targetLevel - playerLevel;
+        if (levelDiff > 0)
+        {
+            return Math.Max(0.01, 1.0 * Math.Pow(1.10, levelDiff));
+        }
+        if (levelDiff < 0)
+        {
+            return Math.Max(0.01, 1.0 * Math.Pow(0.80, -levelDiff));
+        }
+        return 1.0;
+    }
 }

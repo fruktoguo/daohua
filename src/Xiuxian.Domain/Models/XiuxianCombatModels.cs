@@ -157,6 +157,7 @@ public sealed class XiuxianCombatantDefinition
     public double HpRegenPerTenSeconds { get; init; } = 0.01;
     public double MpRegenPerTenSeconds { get; init; } = 0.01;
     public int EnrageTimeMilliseconds { get; init; }
+    public int AttackLevel { get; init; } = 1;
     public long Experience { get; init; }
     public long SpiritMin { get; init; }
     public long SpiritMax { get; init; }
@@ -336,7 +337,7 @@ public sealed record XiuxianCombatRunResult(
     int Losses,
     long DamageDealt,
     long DamageTaken,
-    long Experience,
+    double Experience,
     long Spirit,
     long DroppedQuantity,
     IReadOnlyDictionary<string, long> ConsumedItems,

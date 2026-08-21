@@ -63,7 +63,7 @@ public static partial class XiuxianCombatSimulator
         var enemiesDefeated = 0;
         long damageDealt = 0;
         long damageTaken = 0;
-        long experience = 0;
+        double experience = 0;
         long spirit = 0;
         long droppedQuantity = 0;
         long hitpointsRegenerated = 0;
@@ -95,7 +95,10 @@ public static partial class XiuxianCombatSimulator
         void GrantEnemyRewards(GroupEnemyRuntime enemy)
         {
             var definition = enemy.Definition;
-            experience = checked(experience + Math.Max(0, definition.Experience));
+            var playerLevel = Math.Max(1.0, (double)loadout.AttackLevel);
+            var enemyLevel = Math.Max(1.0, (double)definition.AttackLevel);
+            var gainedExperience = XiuxianCombatFormula.CalculateCombatExperience(playerLevel, enemyLevel);
+            experience += gainedExperience;
             var spiritMin = Math.Max(0, definition.SpiritMin);
             var spiritMax = Math.Max(spiritMin, definition.SpiritMax);
             var spiritReward = spiritMin == spiritMax
@@ -127,12 +130,15 @@ public static partial class XiuxianCombatSimulator
             var dropSummary = events.Count < MaxResultEvents
                 ? FormatDropSummary(regularDrops, rareDrops)
                 : string.Empty;
-            AddEvent(events, $"击败 {{{{enemy:{definition.Id}|{definition.Name}}}}}，获得 {definition.Experience} 点战斗经验{dropSummary}");
+            AddEvent(events, $"击败 {{{{enemy:{definition.Id}|{definition.Name}}}}}，获得 {gainedExperience:F1} 点战斗经验{dropSummary}");
         }
 
         void GrantLegacyEncounterRewards()
         {
-            experience = checked(experience + encounter.ExperiencePerWin);
+            var playerLevel = Math.Max(1.0, (double)loadout.AttackLevel);
+            var enemyLevel = Math.Max(1.0, (double)encounter.Enemy.AttackLevel);
+            var gainedExperience = XiuxianCombatFormula.CalculateCombatExperience(playerLevel, enemyLevel);
+            experience += gainedExperience;
             var spiritMin = Math.Max(0, encounter.SpiritMinPerWin);
             var spiritMax = Math.Max(spiritMin, encounter.SpiritMaxPerWin);
             var spiritReward = spiritMin == spiritMax

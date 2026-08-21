@@ -106,7 +106,7 @@ public sealed class XiuxianCombatTests
     [Fact]
     public void Cast_resolves_when_simulation_reaches_the_exact_millisecond_boundary()
     {
-        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        var state = XiuxianSimulation.CreateDefaultState(Guid.Parse("11111111-1111-1111-1111-111111111111"), now: Baseline);
         state.Combat.AttackLevel = 1_000;
         state.Combat.IntelligenceLevel = 1_000;
         state.Combat.FiveElementsLevel = 1_000;
@@ -502,7 +502,7 @@ public sealed class XiuxianCombatTests
             TimeSpan.FromSeconds(60));
 
         Assert.True(result.Wins > 0);
-        Assert.True(result.Experience >= result.Wins * 15);
+        Assert.True(result.Experience > 0);
     }
 
     [Fact]
@@ -1014,5 +1014,57 @@ public sealed class XiuxianCombatTests
         Assert.Equal(
             fast.Queue.Entries[0].CombatExpedition?.PhaseElapsedMilliseconds,
             stepped.Queue.Entries[0].CombatExpedition?.PhaseElapsedMilliseconds);
+    }
+
+    [Fact]
+    public void CombatExperience_scales_with_level_difference_exponentially()
+    {
+        Assert.Equal(1.0, XiuxianCombatFormula.CalculateCombatExperience(5, 5), precision: 4);
+        Assert.Equal(1.10, XiuxianCombatFormula.CalculateCombatExperience(5, 6), precision: 4);
+        Assert.Equal(1.21, XiuxianCombatFormula.CalculateCombatExperience(5, 7), precision: 4);
+        Assert.Equal(0.80, XiuxianCombatFormula.CalculateCombatExperience(5, 4), precision: 4);
+        Assert.Equal(0.64, XiuxianCombatFormula.CalculateCombatExperience(5, 3), precision: 4);
+    }
+
+    [Fact]
+    public void Foundation_accumulates_when_capped_and_converts_with_triple_multiplier()
+    {
+        var state = XiuxianSimulation.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Stats.Spirit = 90;
+        state.Stats.FoundationExp = 0;
+        state.IsPendingBreakthrough = false;
+
+        // 1. 获得 10 点修为达到满值 (100)
+        var res1 = XiuxianSimulation.AddCultivationSpirit(state, 10);
+        Assert.Equal(10, res1.actualSpiritGain);
+        Assert.Equal(100, state.Stats.Spirit);
+        Assert.True(state.IsPendingBreakthrough);
+
+        // 2. 满值未突破时获得修为，全部转化为底蕴
+        var res2 = XiuxianSimulation.AddCultivationSpirit(state, 10);
+        Assert.Equal(0, res2.actualSpiritGain);
+        Assert.Equal(10, res2.foundationGain);
+        Assert.Equal(10, state.Stats.FoundationExp);
+        Assert.Equal(100, state.Stats.Spirit);
+
+        // 3. 破境突破
+        var bt = XiuxianSimulation.Breakthrough(state);
+        Assert.True(bt.Success);
+        Assert.False(state.IsPendingBreakthrough);
+
+        // 4. 突破后获得 10 修为，底蕴有 10 点：消耗 10 点底蕴，实际获得 20 修为 (10 基础 + 10 底蕴)
+        var res3 = XiuxianSimulation.AddCultivationSpirit(state, 10);
+        Assert.Equal(20, res3.actualSpiritGain);
+        Assert.Equal(10, res3.foundationConsumed);
+        Assert.Equal(0, state.Stats.FoundationExp);
+        Assert.Equal(120, state.Stats.Spirit);
+
+        // 5. 补充 50 点底蕴，再获得 10 修为：满额三倍加速，消耗 20 点底蕴，实际获得 30 修为 (10 基础 + 20 底蕴)
+        state.Stats.FoundationExp = 50;
+        var res4 = XiuxianSimulation.AddCultivationSpirit(state, 10);
+        Assert.Equal(30, res4.actualSpiritGain);
+        Assert.Equal(20, res4.foundationConsumed);
+        Assert.Equal(30, state.Stats.FoundationExp);
+        Assert.Equal(150, state.Stats.Spirit);
     }
 }

@@ -25,7 +25,8 @@ public static class XiuxianStateMapper
             ToCombatResources(state, now),
             ToCombatAttributes(state, now),
             ToVisual(state.Visual),
-            now.ToUnixTimeMilliseconds());
+            now.ToUnixTimeMilliseconds(),
+            state.IsPendingBreakthrough);
     }
 
     public static XiuxianPlayerPatchDto ToPatch(
@@ -57,7 +58,8 @@ public static class XiuxianStateMapper
                 ? ToCombatAttributes(state, now)
                 : null,
             sections.HasFlag(XiuxianDirtySections.Combat) ? ToVisual(state.Visual) : null,
-            now.ToUnixTimeMilliseconds());
+            now.ToUnixTimeMilliseconds(),
+            sections.HasFlag(XiuxianDirtySections.Stats) ? state.IsPendingBreakthrough : null);
     }
 
     public static XiuxianActionDto ToAction(XiuxianActionDefinition definition)
@@ -604,7 +606,8 @@ public static class XiuxianStateMapper
             stats.CombatDamageDealt,
             stats.CombatDamageTaken,
             stats.CombatEnemiesDefeated,
-            stats.CombatPlayersDefeated);
+            stats.CombatPlayersDefeated,
+            stats.FoundationExp);
     }
 
     private static XiuxianCombatLoadoutDto ToCombat(XiuxianCombatLoadout combat)

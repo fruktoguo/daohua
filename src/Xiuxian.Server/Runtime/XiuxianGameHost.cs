@@ -865,6 +865,7 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
                 "set_combat_loadout" => ApplyCombatLoadout(state, payload.Deserialize<SetCombatLoadoutRequest>(XiuxianPacketCodec.JsonOptions)),
                 "set_loop" => ApplyLoop(state, payload.Deserialize<SetLoopRequest>(XiuxianPacketCodec.JsonOptions)),
                 "set_presence" => ApplyPresence(state, payload.Deserialize<SetPresenceRequest>(XiuxianPacketCodec.JsonOptions), commandAt),
+                "breakthrough" => ApplyBreakthrough(state),
                 _ => XiuxianCommandResult.Fail("COMMAND_NOT_FOUND", "未知命令。")
             };
         }
@@ -1073,6 +1074,11 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
             request.Tenacity,
             request.SearchSpeedRatio,
             equipment);
+    }
+
+    private static XiuxianCommandResult ApplyBreakthrough(XiuxianPlayerState state)
+    {
+        return XiuxianSimulation.Breakthrough(state);
     }
 
     private static List<XiuxianCombatTrigger> ParseTriggers(
