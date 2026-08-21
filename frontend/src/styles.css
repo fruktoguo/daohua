@@ -5933,6 +5933,12 @@ input[type="checkbox"] {
   box-shadow: 0 0 8px rgba(201, 180, 109, 0.18);
 }
 
+.saved-account-chip.selected {
+  border-color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.18);
+  box-shadow: 0 0 10px rgba(201, 180, 109, 0.25);
+}
+
 .saved-account-info {
   display: flex;
   flex-direction: column;

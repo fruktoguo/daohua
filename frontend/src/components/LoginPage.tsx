@@ -7,6 +7,7 @@ interface LoginPageProps {
 
 type AuthMode = 'login' | 'register'
 
+const ACCOUNT_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
 const NAME_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
 
 const RANDOM_DAO_NAMES = [
@@ -19,17 +20,28 @@ const RANDOM_DAO_NAMES = [
 export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
   const [mode, setMode] = useState<AuthMode>('login')
   const savedAccounts = useAccountStore(state => state.savedAccounts)
-  const loginAction = useAccountStore(state => state.login)
+  const loginWithAuth = useAccountStore(state => state.loginWithAuth)
+  const registerWithAuth = useAccountStore(state => state.registerWithAuth)
   const removeAccountAction = useAccountStore(state => state.removeSavedAccount)
 
+  // Login form state
   const [loginAccount, setLoginAccount] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+
+  // Register form state
   const [regAccount, setRegAccount] = useState('')
   const [regCharName, setRegCharName] = useState('')
+  const [regPassword, setRegPassword] = useState('')
+  const [regConfirmPassword, setRegConfirmPassword] = useState('')
+
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleQuickLogin = (account: string, name: string) => {
-    loginAction(account, name)
-    onLoggedIn?.()
+  const handleSelectSaved = (account: string) => {
+    setLoginAccount(account)
+    setError(null)
+    const pwdInput = document.getElementById('login-pwd-input')
+    pwdInput?.focus()
   }
 
   const handleRemoveSaved = (e: React.MouseEvent, account: string) => {
@@ -44,27 +56,35 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
     setError(null)
   }
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const clean = loginAccount.trim()
-    if (!clean) {
+    const cleanAcc = loginAccount.trim()
+    if (!cleanAcc) {
       setError('请输入登录账号')
       return
     }
-    if (clean.length < 2 || clean.length > 20) {
-      setError('账号长度须在 2 至 20 个字符之间')
-      return
-    }
-    if (!NAME_REGEX.test(clean)) {
-      setError('账号仅支持英文、数字、中文与下划线')
+    if (!loginPassword) {
+      setError('请输入登录密码')
       return
     }
 
-    loginAction(clean)
-    onLoggedIn?.()
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await loginWithAuth(cleanAcc, loginPassword)
+      if (!res.success) {
+        setError(res.message || '登录失败，请检查账号和密码')
+      } else {
+        onLoggedIn?.()
+      }
+    } catch {
+      setError('连接服务器失败，请检查网络连接')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const cleanAcc = regAccount.trim()
     const cleanName = (regCharName || cleanAcc).trim()
@@ -77,7 +97,7 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
       setError('账号长度须在 2 至 20 个字符之间')
       return
     }
-    if (!NAME_REGEX.test(cleanAcc)) {
+    if (!ACCOUNT_REGEX.test(cleanAcc)) {
       setError('账号仅支持英文、数字、中文与下划线')
       return
     }
@@ -89,9 +109,29 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
       setError('修士道号仅支持中文、字母、数字与下划线')
       return
     }
+    if (!regPassword || regPassword.length < 6 || regPassword.length > 32) {
+      setError('密码长度须在 6 至 32 个字符之间')
+      return
+    }
+    if (regPassword !== regConfirmPassword) {
+      setError('两次输入的密码不一致，请核对后重新输入')
+      return
+    }
 
-    loginAction(cleanAcc, cleanName)
-    onLoggedIn?.()
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await registerWithAuth(cleanAcc, regPassword, cleanName)
+      if (!res.success) {
+        setError(res.message || '注册失败，请更换账号或道号')
+      } else {
+        onLoggedIn?.()
+      }
+    } catch {
+      setError('连接服务器失败，请检查网络连接')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -142,8 +182,8 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
                   {savedAccounts.map(item => (
                     <div
                       key={item.account}
-                      className="saved-account-chip"
-                      onClick={() => handleQuickLogin(item.account, item.name)}
+                      className={`saved-account-chip${loginAccount === item.account ? ' selected' : ''}`}
+                      onClick={() => handleSelectSaved(item.account)}
                       role="button"
                       tabIndex={0}
                     >
@@ -162,7 +202,7 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
                     </div>
                   ))}
                 </div>
-                <div className="auth-divider"><span>或输入其他账号</span></div>
+                <div className="auth-divider"><span>输入账号密码登入</span></div>
               </div>
             )}
 
@@ -185,10 +225,27 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
                 />
               </div>
 
+              <div className="login-field">
+                <label htmlFor="login-pwd-input" className="login-label">
+                  登录密码
+                </label>
+                <input
+                  id="login-pwd-input"
+                  className="login-input"
+                  type="password"
+                  placeholder="请输入您的密码"
+                  value={loginPassword}
+                  onChange={e => {
+                    setLoginPassword(e.target.value)
+                    setError(null)
+                  }}
+                />
+              </div>
+
               {error && <div className="login-error-msg">{error}</div>}
 
-              <button type="submit" className="login-submit-btn">
-                踏入仙途
+              <button type="submit" className="login-submit-btn" disabled={loading}>
+                {loading ? '正在开辟神识...' : '踏入仙途'}
               </button>
             </form>
           </div>
@@ -205,7 +262,7 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
                   id="reg-acc-input"
                   className="login-input"
                   type="text"
-                  placeholder="2~20位字母、数字或中文"
+                  placeholder="2~20位字母、数字、中文或下划线"
                   value={regAccount}
                   onChange={e => {
                     setRegAccount(e.target.value)
@@ -243,17 +300,51 @@ export function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
                 />
               </div>
 
+              <div className="login-field">
+                <label htmlFor="reg-pwd-input" className="login-label">
+                  设置密码
+                </label>
+                <input
+                  id="reg-pwd-input"
+                  className="login-input"
+                  type="password"
+                  placeholder="6~32位字符"
+                  value={regPassword}
+                  onChange={e => {
+                    setRegPassword(e.target.value)
+                    setError(null)
+                  }}
+                />
+              </div>
+
+              <div className="login-field">
+                <label htmlFor="reg-confirm-pwd-input" className="login-label">
+                  确认密码
+                </label>
+                <input
+                  id="reg-confirm-pwd-input"
+                  className="login-input"
+                  type="password"
+                  placeholder="请再次输入相同密码"
+                  value={regConfirmPassword}
+                  onChange={e => {
+                    setRegConfirmPassword(e.target.value)
+                    setError(null)
+                  }}
+                />
+              </div>
+
               {error && <div className="login-error-msg">{error}</div>}
 
-              <button type="submit" className="login-submit-btn">
-                凝聚元神 · 踏入仙途
+              <button type="submit" className="login-submit-btn" disabled={loading}>
+                {loading ? '正在凝聚元神...' : '凝聚元神 · 踏入仙途'}
               </button>
             </form>
           </div>
         )}
 
         <footer className="login-footer">
-          <span>数据由服务端权威持久化 · 随时可离线挂机</span>
+          <span>密码经哈希加密保障 · 服务端权威持久化</span>
         </footer>
       </div>
     </div>

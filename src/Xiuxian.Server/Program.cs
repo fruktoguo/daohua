@@ -122,6 +122,7 @@ builder.Services.AddSingleton<XiuxianMarketCoordinator>();
 builder.Services.AddSingleton<XiuxianMarketRuntime>();
 builder.Services.AddSingleton<XiuxianSimulationScheduleSignal>();
 builder.Services.AddSingleton<XiuxianSimulationClock>();
+builder.Services.AddSingleton<XiuxianAccountStore>();
 builder.Services.AddSingleton<XiuxianGameHost>();
 builder.Services.AddSingleton<XiuxianAccessControl>();
 if (durableOutboxEnabled)
@@ -217,6 +218,39 @@ app.MapGet("/api/combat/abilities", () => Results.Ok(XiuxianCombatCatalog.AllAbi
 app.MapGet("/api/combat/equipment", () => Results.Ok(XiuxianCombatCatalog.AllEquipment.Select(XiuxianStateMapper.ToCombatEquipment)));
 app.MapGet("/api/combat/encounters", () => Results.Ok(XiuxianCombatCatalog.AllEncounters.Select(XiuxianStateMapper.ToCombatEncounter)));
 app.MapGet("/api/world/maps", () => Results.Ok(XiuxianWorldCatalog.All.Select(XiuxianStateMapper.ToWorldMap)));
+app.MapPost("/api/auth/register", (
+    RegisterAccountRequest request,
+    XiuxianAccountStore accountStore,
+    XiuxianGameHost gameHost) =>
+{
+    var result = accountStore.Register(
+        request.Account,
+        request.Password,
+        request.CharacterName,
+        name => gameHost.IsPlayerNameTaken(name),
+        () => gameHost.GetNextSequenceId());
+
+    return Results.Ok(new AuthResponse(
+        result.Success,
+        result.Account,
+        result.CharacterName,
+        result.PlayerId?.ToString("D"),
+        result.SequenceId,
+        result.Message));
+});
+app.MapPost("/api/auth/login", (
+    LoginAccountRequest request,
+    XiuxianAccountStore accountStore) =>
+{
+    var result = accountStore.Login(request.Account, request.Password);
+    return Results.Ok(new AuthResponse(
+        result.Success,
+        result.Account,
+        result.CharacterName,
+        result.PlayerId?.ToString("D"),
+        result.SequenceId,
+        result.Message));
+});
 app.MapGet("/api/metrics", (XiuxianGameHost host) => Results.Ok(host.GetMetrics()));
 app.MapGet("/api/market/book", (
     string? itemId,

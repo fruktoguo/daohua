@@ -6,7 +6,17 @@ export interface StoredAccountInfo {
   account: string
   name: string
   playerId: string
+  sequenceId?: number
   lastLoginAt?: number
+}
+
+export interface AuthResponseDto {
+  success: boolean
+  account?: string | null
+  characterName?: string | null
+  playerId?: string | null
+  sequenceId?: number
+  message?: string | null
 }
 
 const STORAGE_ACCOUNT_KEY = 'xiuxian_account'
@@ -62,34 +72,54 @@ function getInitialAccount(): StoredAccountInfo | null {
     }
   }
 
-  // 兼容老玩家（已有 playerId 但尚未记录账号名，自动升级为默认账号）
-  if (playerId) {
-    const defaultAccount = 'YuoHira'
-    const defaultName = 'YuoHira'
-    window.localStorage.setItem(STORAGE_ACCOUNT_KEY, defaultAccount)
-    window.localStorage.setItem(STORAGE_CHAR_NAME_KEY, defaultName)
-    window.localStorage.setItem(STORAGE_PLAYER_ID_KEY, playerId)
-    setCookiePlayerId(playerId)
-    const info: StoredAccountInfo = {
-      account: defaultAccount,
-      name: defaultName,
-      playerId,
-      lastLoginAt: Date.now(),
-    }
-    const saved = loadSavedAccounts()
-    if (!saved.some(a => a.account.toLowerCase() === defaultAccount.toLowerCase())) {
-      persistSavedAccounts([info, ...saved])
-    }
-    return info
-  }
-
   return null
+}
+
+export async function requestRegister(
+  account: string,
+  password: string,
+  characterName?: string,
+): Promise<AuthResponseDto> {
+  const url = `${window.location.origin}/api/auth/register`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      account: account.trim(),
+      password,
+      characterName: characterName?.trim() || undefined,
+    }),
+  })
+  if (!res.ok) {
+    return { success: false, message: `服务器响应异常 (${res.status})` }
+  }
+  return (await res.json()) as AuthResponseDto
+}
+
+export async function requestLogin(
+  account: string,
+  password: string,
+): Promise<AuthResponseDto> {
+  const url = `${window.location.origin}/api/auth/login`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      account: account.trim(),
+      password,
+    }),
+  })
+  if (!res.ok) {
+    return { success: false, message: `服务器响应异常 (${res.status})` }
+  }
+  return (await res.json()) as AuthResponseDto
 }
 
 interface AccountStore {
   currentAccount: StoredAccountInfo | null
   savedAccounts: StoredAccountInfo[]
-  login: (account: string, name?: string, explicitPlayerId?: string) => StoredAccountInfo
+  loginWithAuth: (account: string, password: string) => Promise<AuthResponseDto>
+  registerWithAuth: (account: string, password: string, characterName?: string) => Promise<AuthResponseDto>
   logout: () => void
   removeSavedAccount: (account: string) => void
   updateCharacterName: (newName: string) => void
@@ -99,21 +129,18 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
   currentAccount: getInitialAccount(),
   savedAccounts: loadSavedAccounts(),
 
-  login: (account: string, name?: string, explicitPlayerId?: string) => {
-    const cleanAccount = account.trim()
-    const cleanName = (name || cleanAccount).trim()
-    const accountKey = `xiuxian_account_player_id_${cleanAccount.toLowerCase()}`
-
-    let playerId = explicitPlayerId?.trim()
-    if (!playerId && typeof window !== 'undefined') {
-      playerId = window.localStorage.getItem(accountKey)?.trim()
-        || crypto.randomUUID()
-    } else if (!playerId) {
-      playerId = crypto.randomUUID()
+  loginWithAuth: async (account: string, password: string) => {
+    const res = await requestLogin(account, password)
+    if (!res.success || !res.playerId || !res.account) {
+      return res
     }
 
+    const cleanAccount = res.account
+    const cleanName = res.characterName || cleanAccount
+    const playerId = res.playerId
+    const sequenceId = res.sequenceId
+
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(accountKey, playerId)
       window.localStorage.setItem(STORAGE_ACCOUNT_KEY, cleanAccount)
       window.localStorage.setItem(STORAGE_CHAR_NAME_KEY, cleanName)
       window.localStorage.setItem(STORAGE_PLAYER_ID_KEY, playerId)
@@ -124,6 +151,7 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
       account: cleanAccount,
       name: cleanName,
       playerId,
+      sequenceId,
       lastLoginAt: Date.now(),
     }
 
@@ -139,7 +167,48 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     })
 
     gameClient.connect()
-    return info
+    return res
+  },
+
+  registerWithAuth: async (account: string, password: string, characterName?: string) => {
+    const res = await requestRegister(account, password, characterName)
+    if (!res.success || !res.playerId || !res.account) {
+      return res
+    }
+
+    const cleanAccount = res.account
+    const cleanName = res.characterName || cleanAccount
+    const playerId = res.playerId
+    const sequenceId = res.sequenceId
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_ACCOUNT_KEY, cleanAccount)
+      window.localStorage.setItem(STORAGE_CHAR_NAME_KEY, cleanName)
+      window.localStorage.setItem(STORAGE_PLAYER_ID_KEY, playerId)
+      setCookiePlayerId(playerId)
+    }
+
+    const info: StoredAccountInfo = {
+      account: cleanAccount,
+      name: cleanName,
+      playerId,
+      sequenceId,
+      lastLoginAt: Date.now(),
+    }
+
+    const filtered = get().savedAccounts.filter(
+      a => a.account.toLowerCase() !== cleanAccount.toLowerCase(),
+    )
+    const updatedList = [info, ...filtered]
+    persistSavedAccounts(updatedList)
+
+    set({
+      currentAccount: info,
+      savedAccounts: updatedList,
+    })
+
+    gameClient.connect()
+    return res
   },
 
   logout: () => {
@@ -185,10 +254,6 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
 
 export function getStoredAccount(): StoredAccountInfo | null {
   return useAccountStore.getState().currentAccount
-}
-
-export function setStoredAccount(account: string, name?: string, explicitPlayerId?: string): StoredAccountInfo {
-  return useAccountStore.getState().login(account, name, explicitPlayerId)
 }
 
 export function clearStoredAccount(): void {

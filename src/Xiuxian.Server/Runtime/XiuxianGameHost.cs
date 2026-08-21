@@ -75,6 +75,17 @@ public sealed class XiuxianGameHost : IAsyncDisposable, IDisposable
     public int LoadedPlayerCount => Volatile.Read(ref _loadedPlayerCount);
     public int ConnectedSessionCount => _sessions.Values.Sum(group => group.Count);
 
+    public bool IsPlayerNameTaken(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        return _takenPlayerNames.ContainsKey(name.Trim());
+    }
+
+    public long GetNextSequenceId()
+    {
+        return Interlocked.Increment(ref _maxSequenceId);
+    }
+
     public Task<XiuxianSession> RegisterSessionAsync(
         Guid playerId,
         string? name,

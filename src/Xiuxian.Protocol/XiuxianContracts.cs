@@ -643,3 +643,20 @@ public static class XiuxianPacketCodec
         return Encode(XiuxianPacketKinds.Hello, requestId, 0, payload);
     }
 }
+
+public sealed record RegisterAccountRequest(
+    string Account,
+    string Password,
+    string? CharacterName = null);
+
+public sealed record LoginAccountRequest(
+    string Account,
+    string Password);
+
+public sealed record AuthResponse(
+    bool Success,
+    string? Account,
+    string? CharacterName,
+    string? PlayerId,
+    long SequenceId,
+    string? Message = null);
