@@ -52,8 +52,8 @@ WORKDIR /app
 ARG BUILD_DATE=unknown
 ARG BUILD_VERSION=dev
 ARG VCS_REF=unknown
-LABEL org.opencontainers.image.title="太虚仙途" \
-      org.opencontainers.image.description="太虚仙途 Web 与游戏服务端" \
+LABEL org.opencontainers.image.title="道化太初" \
+      org.opencontainers.image.description="道化太初 Web 与游戏服务端" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.version="${BUILD_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}"

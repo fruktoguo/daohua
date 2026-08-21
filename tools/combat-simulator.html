@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>太虚仙途 · 战斗数值平衡与调参可视化模拟器</title>
+  <title>道化太初 · 战斗数值平衡与调参可视化模拟器</title>
   <!-- Tailwind CSS & Chart.js CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -29,7 +29,7 @@
       <div class="flex items-center gap-3">
         <span class="text-2xl">⚔️</span>
         <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
-          太虚仙途 · 战斗数值平衡与快速调参模拟器
+          道化太初 · 战斗数值平衡与快速调参模拟器
         </h1>
         <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-900/60 text-blue-300 border border-blue-700">
           固定 2.0x AP · 破招暴击 vs 破防必中
@@ -837,7 +837,7 @@
       const exportData = {
         exportedAt: new Date().toISOString(),
         tuningParameters: params,
-        description: "太虚仙途战斗平衡调参配置快照(最终平衡基准)"
+        description: "道化太初战斗平衡调参配置快照(最终平衡基准)"
       };
       const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
       const downloadAnchor = document.createElement("a");

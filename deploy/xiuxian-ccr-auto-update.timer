@@ -1,5 +1,5 @@
 [Unit]
-Description=定时检查太虚仙途 CCR 镜像
+Description=定时检查道化太初 CCR 镜像
 
 [Timer]
 OnBootSec=2min

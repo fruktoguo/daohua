@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "太虚仙途标准玩家期望属性矩阵与反推基准配置",
+  "description": "道化太初标准玩家期望属性矩阵与反推基准配置",
   "fourMultiplierFormula": "FinalStat = BaseFlat * (1 + Root%) * (1 + Equip%) * (1 + Buff%)",
   "rules": {
     "rootScalingFormula": "Root% = Level * 0.03 (每级 3%)",
