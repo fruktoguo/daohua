@@ -27,7 +27,7 @@ import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
 import { gameClient } from './network/gameClient'
-import { getStoredAccount } from './network/account'
+import { useAccountStore } from './network/account'
 import { initUiScale } from './utils/uiScale'
 import { useUiStore, type TabId } from './uiStore'
 
@@ -1171,32 +1171,26 @@ export default function App(): React.JSX.Element {
   const mobileLayout = useMobileLayout()
   const connection = useGameStore(state => state.connection)
   const hasReceivedSnapshot = useGameStore(state => state.hasReceivedSnapshot)
-  const [accountInfo, setAccountInfo] = useState(() => getStoredAccount())
+  const currentAccount = useAccountStore(state => state.currentAccount)
+  const logout = useAccountStore(state => state.logout)
 
   useEffect(() => {
     initUiScale()
-    gameClient.connect()
+    if (currentAccount) {
+      gameClient.connect()
+    }
     return () => gameClient.dispose()
   }, [])
 
-  const handleLoggedIn = useCallback(() => {
-    setAccountInfo(getStoredAccount())
-  }, [])
-
-  const handleLogout = useCallback(() => {
-    gameClient.logout()
-    setAccountInfo(null)
-  }, [])
-
-  if (!accountInfo) {
-    return <LoginPage onLoggedIn={handleLoggedIn} />
+  if (!currentAccount) {
+    return <LoginPage />
   }
 
   if (!hasReceivedSnapshot) {
     if (connection === 'connecting') {
-      return <ConnectingPage onCancel={handleLogout} />
+      return <ConnectingPage onCancel={logout} />
     }
-    return <ConnectionErrorPage onRetry={() => gameClient.connect()} onLogout={handleLogout} />
+    return <ConnectionErrorPage onRetry={() => gameClient.connect()} onLogout={logout} />
   }
 
   return (

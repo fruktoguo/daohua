@@ -44,19 +44,23 @@ export class XiuxianGameClient {
     this.account = accountInfo.account
     this.characterName = accountInfo.name
     this.disposed = false
+    this.immediateFailures = 0
+    this.stoppedByRejection = false
+    this.reconnectDelay = 500
     void gameLogService.activate(this.playerId)
     this.open()
   }
 
   logout(): void {
     clearStoredAccount()
-    this.dispose()
-    useGameStore.getState().resetGameStore()
   }
 
   dispose(): void {
     this.disposed = true
-    if (this.reconnectTimer !== undefined) window.clearTimeout(this.reconnectTimer)
+    if (this.reconnectTimer !== undefined) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = undefined
+    }
     this.socket?.close(1000, '客户端断开')
     this.socket = null
     this.catalogAbortController?.abort()
@@ -126,7 +130,6 @@ export class XiuxianGameClient {
       if (failedFastWithoutOpen && this.immediateFailures >= 3) {
         this.stoppedByRejection = true
         useGameStore.getState().setConnection('offline')
-        useGameStore.getState().setNotice(getT()('common.net.tokenRejected'))
         return
       }
       useGameStore.getState().setConnection('reconnecting')
