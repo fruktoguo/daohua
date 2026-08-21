@@ -8,6 +8,7 @@ import {
   PercentValue,
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
   BASELINE_COMBAT_ATTRIBUTES,
+  calculateRootLevelAndProgress,
   calculateRealmInfo,
   calculateRealmProgress,
   calculateBaseAttributes,
@@ -46,11 +47,25 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     const consciousnessLevel: number = Math.max(10, loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 神识 10
     const agilityLevel: number = Math.max(10, loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) // 身法 10
 
+    // 格式化经验进度：例如 5800/2.71万
+    const getProgress = (level: number) => {
+      const totalExp = 100.0 * Math.pow(Math.max(1.0, level) - 1.0, 3.0) + (level * 580.0)
+      const res = calculateRootLevelAndProgress(totalExp)
+      const cur = formatNumber(res.currentProgress)
+      const req = formatNumber(res.levelRequirement)
+      return {
+        current: res.currentProgress,
+        max: res.levelRequirement,
+        text: `${cur}/${req}`,
+      }
+    }
+
     return [
       {
         id: 'stamina',
         tone: 'emerald' as PillTone,
         level: staminaLevel,
+        progress: getProgress(staminaLevel),
         bonuses: [
           { value: `+${staminaLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
           { value: `+${staminaLevel.toFixed(1)}%`, tone: 'bronze' as PillTone },
@@ -61,6 +76,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'meridians',
         tone: 'cyan' as PillTone,
         level: meridiansLevel,
+        progress: getProgress(meridiansLevel),
         bonuses: [
           { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
           { value: `+${meridiansLevel.toFixed(1)}%`, tone: 'violet' as PillTone },
@@ -71,6 +87,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'bone',
         tone: 'violet' as PillTone,
         level: boneLevel,
+        progress: getProgress(boneLevel),
         bonuses: [
           { value: `+${boneLevel.toFixed(1)}%`, tone: 'emerald' as PillTone },
           { value: `+${boneLevel.toFixed(1)}%`, tone: 'cyan' as PillTone },
@@ -81,6 +98,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'strength',
         tone: 'amber' as PillTone,
         level: strengthLevel,
+        progress: getProgress(strengthLevel),
         bonuses: [
           { value: `+${strengthLevel.toFixed(1)}%`, tone: 'crimson' as PillTone },
           { value: `+${strengthLevel.toFixed(1)}%`, tone: 'gold' as PillTone },
@@ -91,6 +109,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'consciousness',
         tone: 'indigo' as PillTone,
         level: consciousnessLevel,
+        progress: getProgress(consciousnessLevel),
         bonuses: [
           { value: `+${(consciousnessLevel * 2.0).toFixed(1)}%`, tone: 'indigo' as PillTone },
           { value: `+${consciousnessLevel.toFixed(1)}%`, tone: 'sky' as PillTone },
@@ -100,6 +119,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'agility',
         tone: 'teal' as PillTone,
         level: agilityLevel,
+        progress: getProgress(agilityLevel),
         bonuses: [
           { value: `+${agilityLevel.toFixed(1)}%`, tone: 'teal' as PillTone },
           { value: `+${agilityLevel.toFixed(1)}%`, tone: 'slate' as PillTone },
@@ -320,6 +340,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                       label={t(`insight.root.${dim.id}.name`)}
                       value={formatNumber(dim.level)}
                       tone={dim.tone}
+                      progress={dim.progress}
                       tooltip={t(`insight.root.${dim.id}.desc`)}
                       tooltipTone={dim.tone === 'purple' ? 'purple' : dim.tone === 'qi' ? 'qi' : dim.tone === 'jade' ? 'jade' : 'gold'}
                     />
