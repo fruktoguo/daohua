@@ -7,6 +7,8 @@
 // 1. 伤害与抗性减伤公式相关常量
 // =========================================================================
 
+import { getT } from '../i18n'
+
 /**
  * 抗性减伤系数 (常量配置，暂定为 5.0)
  * 
@@ -119,56 +121,33 @@ export const BASE_CRITICAL_DAMAGE_MULTIPLIER = 1.5
 // 6. 六维根基换算系数
 // =========================================================================
 
+// 六维的名称、拼音、描述与增益文案属展示文本，统一走 i18n（insight.root.*），此处仅保留数值系数。
 export const ROOT_ATTRIBUTES_CONFIG = {
   stamina: {
-    name: '体魄',
-    pinyin: 'Tǐ Pò',
-    desc: '强筋壮骨，筑就修仙宝体之基石。',
-    benefitsText: ['生命值 +1%', '护甲 +1%', '生命值回复 +1%'],
     hpRatioPerLevel: 0.01,
     armorRatioPerLevel: 0.01,
     hpRegenRatioPerLevel: 0.01,
   },
   meridians: {
-    name: '经脉',
-    pinyin: 'Jīng Mài',
-    desc: '气海通达周天，温养灵力纳涌与法御屏障。',
-    benefitsText: ['灵力值 +1%', '法抗 +1%', '灵力值回复 +1%'],
     mpRatioPerLevel: 0.01,
     magicResRatioPerLevel: 0.01,
     mpRegenRatioPerLevel: 0.01,
   },
   bone: {
-    name: '根骨',
-    pinyin: 'Gēn Gǔ',
-    desc: '天生仙骨资质，交泰阴阳化解天地诸力。',
-    benefitsText: ['生命值 +1%', '灵力值 +1%', '化解 +1%'],
     hpRatioPerLevel: 0.01,
     mpRatioPerLevel: 0.01,
     parryRatioPerLevel: 0.01,
   },
   strength: {
-    name: '力道',
-    pinyin: 'Lì Dào',
-    desc: '力拔山河破岳，以纯粹杀力洞穿敌手破绽。',
-    benefitsText: ['物理攻击 +1%', '暴击 +1%', '破招 +1%'],
     physAtkRatioPerLevel: 0.01,
     critRatioPerLevel: 0.01,
     breakRatioPerLevel: 0.01,
   },
   consciousness: {
-    name: '神识',
-    pinyin: 'Shén Shí',
-    desc: '灵台清明通幽，神念锁定敌手并极度催发术法杀威。',
-    benefitsText: ['术法攻击 +2% (×2)', '命中 +1%'],
     spellAtkRatioPerLevel: 0.02,
     hitRatioPerLevel: 0.01,
   },
   agility: {
-    name: '身法',
-    pinyin: 'Shēn Fǎ',
-    desc: '步踏罡斗凌波，规避致命杀机并从容化解攻势。',
-    benefitsText: ['闪避 +1%', '免爆 +1%', '化解 +1%'],
     evasionRatioPerLevel: 0.01,
     critAvoidRatioPerLevel: 0.01,
     parryRatioPerLevel: 0.01,
@@ -250,19 +229,17 @@ export function getCumulativeExpForLevel(level: number): number {
 /**
  * 非玩家单位品阶层级量化定义
  */
+// 单位品阶显示名走 i18n（game.unitTier.*），此处仅保留数值倍率。
 export const NON_PLAYER_UNIT_TIERS = {
   normal: {
-    name: '普通',
     allStatsMultiplier: 1.0,
     hpMultiplier: 1.0,
   },
   elite: {
-    name: '精英',
     allStatsMultiplier: 1.2,
     hpMultiplier: 3.0,
   },
   boss: {
-    name: '妖王',
     allStatsMultiplier: 1.5,
     hpMultiplier: 10.0,
   },
@@ -358,34 +335,30 @@ export interface RealmInfo {
 export function calculateRealmInfo(spirit = 0): RealmInfo {
   const totalLevel = 1.0 + Math.floor(spirit / 100.0)
   const layerProgress = spirit % 100.0
+  // 境界名属展示文本，统一走 i18n；rankChar 为徽章单字字形，双语共用。
+  const t = getT()
 
-  const mortalStageNames = [
-    '凡胎', '炼皮', '锻骨', '易筋', '洗髓', '养气',
-    '通脉', '瑶光', '开阳', '玉衡', '天权', '天玑',
-    '天璇', '天枢', '宗师', '大宗师', '临渊', '叩仙门'
-  ]
-
-  let stageName = '凡俗'
-  let phaseName = '凡武'
-  let minorName = '凡胎'
+  let stageName = t('game.realm.stageFallback')
+  let phaseName = t('game.realm.phaseMortal1')
+  let minorName = t('game.realm.minorFallback')
   let rankChar = '武'
   let stageColor = '#9ca3af'
 
   if (totalLevel <= 18.0) {
-    stageName = '凡俗'
-    const mortalIndex = Math.max(0, Math.min(17, Math.floor(totalLevel) - 1))
-    minorName = mortalStageNames[mortalIndex]
+    stageName = t('game.realm.stageFallback')
+    const mortalIndex = Math.max(1, Math.min(18, Math.floor(totalLevel)))
+    minorName = t(`game.realm.mortal.${mortalIndex}`)
 
     if (totalLevel <= 6.0) {
-      phaseName = '凡武'
+      phaseName = t('game.realm.phaseMortal1')
       rankChar = '武'
       stageColor = '#9ca3af'
     } else if (totalLevel <= 12.0) {
-      phaseName = '通玄'
+      phaseName = t('game.realm.phaseMortal2')
       rankChar = '玄'
       stageColor = '#4ade80'
     } else {
-      phaseName = '天人'
+      phaseName = t('game.realm.phaseMortal3')
       rankChar = '天'
       stageColor = '#38bdf8'
     }
@@ -394,42 +367,49 @@ export function calculateRealmInfo(spirit = 0): RealmInfo {
     const majorIndex = Math.floor((cultivationLevel - 1.0) / 12.0)
     const layerInMajor = Math.floor(((cultivationLevel - 1.0) % 12.0) + 1.0)
 
-    const majorNames = ['练气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘', '渡劫']
+    const majorCount = 9
     const majorColors = ['var(--gold)', '#38bdf8', '#f59e0b', '#c084fc', '#e879f9', '#f43f5e', '#fb7185', '#fb923c', '#facc15']
 
-    const rawMajorName = majorNames[majorIndex] || '飞升'
+    const rawMajorName = majorIndex >= 1 && majorIndex <= majorCount
+      ? t(`game.realm.major.${majorIndex}`)
+      : t('game.realm.ascension')
     stageName = rawMajorName
-    stageColor = majorColors[majorIndex] || '#facc15'
+    stageColor = majorIndex >= 1 && majorIndex <= majorCount ? majorColors[majorIndex - 1] : '#facc15'
 
-    const nextMajorName = majorNames[majorIndex + 1] || '飞升'
+    const nextMajorName = majorIndex + 1 >= 1 && majorIndex + 1 <= majorCount
+      ? t(`game.realm.major.${majorIndex + 1}`)
+      : t('game.realm.ascension')
     if (layerInMajor <= 9) {
-      const chineseDigits = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']
-      minorName = `${rawMajorName}${chineseDigits[layerInMajor]}层`
+      minorName = t('game.realm.layer', {
+        major: rawMajorName,
+        digit: t(`game.realm.digit.${layerInMajor}`),
+        n: layerInMajor,
+      })
     } else if (layerInMajor === 10) {
-      minorName = `${rawMajorName}巅峰`
+      minorName = t('game.realm.peak', { major: rawMajorName })
     } else if (layerInMajor === 11) {
-      minorName = `${rawMajorName}大圆满`
+      minorName = t('game.realm.greatPerfection', { major: rawMajorName })
     } else {
-      minorName = `半步${nextMajorName}`
+      minorName = t('game.realm.halfStep', { next: nextMajorName })
     }
 
     if (layerInMajor <= 3) {
-      phaseName = '初'
+      phaseName = t('game.realm.phaseEarly')
       rankChar = '初'
     } else if (layerInMajor <= 6) {
-      phaseName = '中'
+      phaseName = t('game.realm.phaseMiddle')
       rankChar = '中'
     } else if (layerInMajor <= 9) {
-      phaseName = '后'
+      phaseName = t('game.realm.phaseLate')
       rankChar = '后'
     } else {
-      phaseName = '极'
+      phaseName = t('game.realm.phasePeak')
       rankChar = '极'
     }
   }
 
-  const subStage = `${phaseName} ${minorName}`
-  const fullDisplayName = `${stageName} [${rankChar}] ${minorName}`
+  const subStage = t('game.realm.subStage', { phase: phaseName, minor: minorName })
+  const fullDisplayName = t('game.realm.fullDisplay', { stage: stageName, rank: rankChar, minor: minorName })
 
   return {
     totalLevel,

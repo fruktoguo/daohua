@@ -1,36 +1,34 @@
 import type { CombatTrigger } from './types'
+import { getT, useI18nStore } from '../i18n'
 
-const numberFormatter = new Intl.NumberFormat('zh-CN')
+const numberFormatters = new Map<string, Intl.NumberFormat>()
 
+// 数字分组随当前语言切换；Intl.NumberFormat 按 locale 缓存，避免每次渲染重建。
 export function formatNumber(value: number): string {
-  return numberFormatter.format(value)
+  const locale = useI18nStore.getState().locale
+  let formatter = numberFormatters.get(locale)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat(locale)
+    numberFormatters.set(locale, formatter)
+  }
+  return formatter.format(value)
 }
 
+// 触发条件枚举 -> 展示文案统一走 i18n；组合语序由模板键承载（中英语序不同）。
 export function describeCombatTrigger(trigger: CombatTrigger): string {
-  const dependency = trigger.dependency === 'target-enemy' ? '目标' : '自身'
-  const condition = {
-    'current-hp': '当前生命',
-    'current-mana': '当前灵力',
-    'missing-hp': '生命缺口',
-    'missing-mana': '灵力缺口',
-    'current-hp-percentage': '生命百分比',
-    'missing-hp-percentage': '生命缺口百分比',
-    'current-mana-percentage': '灵力百分比',
-    'missing-mana-percentage': '灵力缺口百分比',
-    'buff-stacks': '效果层数',
-    'stun-status': '定身',
-    'blind-status': '致盲',
-    'silence-status': '沉默',
-  }[trigger.condition] ?? trigger.condition
-  const comparator = {
-    'less-than-equal': '不高于',
-    'greater-than-equal': '不低于',
-    'is-active': '已生效',
-    'is-inactive': '未生效',
-  }[trigger.comparator] ?? trigger.comparator
+  const t = getT()
+  const dependency = t(`game.trigger.dependency.${trigger.dependency}`)
+  const condition = t(`game.trigger.condition.${trigger.condition}`)
+  const comparator = t(`game.trigger.comparator.${trigger.comparator}`)
   if (trigger.comparator === 'is-active' || trigger.comparator === 'is-inactive') {
-    return `${dependency}${condition}${comparator}`
+    return t('game.trigger.template.status', { dependency, condition, comparator })
   }
   const isPercentage = trigger.condition.includes('percentage')
-  return `${dependency}${condition}${comparator} ${formatNumber(trigger.value)}${isPercentage ? '%' : ''}`
+  return t('game.trigger.template.value', {
+    dependency,
+    condition,
+    comparator,
+    value: formatNumber(trigger.value),
+    unit: isPercentage ? '%' : '',
+  })
 }

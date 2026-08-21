@@ -220,9 +220,16 @@ export interface CombatAbilitySlot {
 }
 
 export interface CombatTrigger {
-  dependency: 'self' | 'target-enemy' | string
+  dependency:
+    | 'self'
+    | 'target-enemy'
+    | 'ally-lowest-hp'
+    | 'ally-highest-hp'
+    | 'enemy-lowest-hp'
+    | 'enemy-highest-hp'
+    | string
   condition: 'current-hp' | 'current-mana' | 'missing-hp' | 'missing-mana' | 'current-hp-percentage' | 'missing-hp-percentage' | 'current-mana-percentage' | 'missing-mana-percentage' | 'buff-stacks' | 'stun-status' | 'blind-status' | 'silence-status' | string
-  comparator: 'less-than-equal' | 'greater-than-equal' | 'is-active' | 'is-inactive' | string
+  comparator: 'less-than-equal' | 'greater-than-equal' | 'is-active' | 'is-inactive' | 'less-than' | 'greater-than' | string
   value: number
   buffId?: string | null
 }

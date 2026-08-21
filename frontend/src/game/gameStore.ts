@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { ACTION_DEFINITIONS } from './ids'
+import { resolveActionDefinitions } from './ids'
 import { createDemoSnapshot } from './demo'
 import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, CombatLoadout, ConsumableSlot, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
@@ -129,7 +129,7 @@ export const useGameStore = create<GameStore>((set) => ({
   combatResources: initial.combatResources,
   combatAttributes: initial.combatAttributes,
   world: initial.world!,
-  actions: ACTION_DEFINITIONS,
+  actions: resolveActionDefinitions(),
   items: [],
   abilities: [],
   encounters: [],

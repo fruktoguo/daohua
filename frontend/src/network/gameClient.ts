@@ -1,5 +1,6 @@
 import { useGameStore } from '../game/gameStore'
 import type { AckPayload, ErrorPayload, Packet, PlayerPatch, PlayerSnapshot } from '../game/types'
+import { getT } from '../i18n'
 import { gameLogService } from '../logging/gameLogService'
 import { getAccessToken } from './access_token'
 import { fetchActionDefinitions, fetchCombatAbilities, fetchCombatEncounters, fetchCombatEquipment, fetchItemDefinitions, fetchWorldMaps } from './apiClient'
@@ -79,7 +80,7 @@ export class XiuxianGameClient {
 
   sendCommand(command: string, payload: unknown): boolean {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      useGameStore.getState().setNotice('连接尚未建立，操作将在重连后可用。')
+      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
       return false
     }
 
@@ -129,7 +130,7 @@ export class XiuxianGameClient {
       if (failedFastWithoutOpen && this.immediateFailures >= 3) {
         this.stoppedByRejection = true
         useGameStore.getState().setConnection('offline')
-        useGameStore.getState().setNotice('连接被服务端拒绝，请检查访问令牌设置')
+        useGameStore.getState().setNotice(getT()('common.net.tokenRejected'))
         return
       }
       useGameStore.getState().setConnection('reconnecting')
