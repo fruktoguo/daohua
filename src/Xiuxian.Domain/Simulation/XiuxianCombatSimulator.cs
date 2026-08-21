@@ -1255,7 +1255,6 @@ public static partial class XiuxianCombatSimulator
         var swordsmanship = Math.Max(10, loadout.SwordsmanshipLevel);
         var talisman = Math.Max(10, loadout.TalismanLevel);
         var combatStyle = equipment.Style ?? loadout.Style;
-        var styleLevel = Math.Max(1, GetStyleLevel(loadout, combatStyle));
 
         // 六维根基百分比加成乘区 (每点提供 1% 对应的领域增益)
         var staminaBonus = stamina * 0.01;
@@ -1307,7 +1306,7 @@ public static partial class XiuxianCombatSimulator
         var baseInterval = equipment.AttackIntervalMilliseconds > 0
             ? equipment.AttackIntervalMilliseconds
             : 1_000;
-        var interval = XiuxianCombatFormula.CalculateAttackIntervalMilliseconds(baseInterval, attack, attackSpeedRatio);
+        var interval = XiuxianCombatFormula.CalculateAttackIntervalMilliseconds(baseInterval, 0, attackSpeedRatio);
 
         // 9. 高级机制 (高级机制为独立词条属性体系，动态抗性因子 K 由当前阶位决定)
         var cdr = Math.Clamp(loadout.CooldownReductionRatio + equipment.CooldownReductionRatio, 0, 0.75);
