@@ -458,17 +458,18 @@
       const totalRaw = rawDmg * teamSize;
 
       // 1. 破招 vs 拆招 (物理系高破招，法术系基线)
-      const breakProb = pAtkStats.breakR / (pAtkStats.breakR + targetDefStats.parry + 1.0);
+      const breakProb = pAtkStats.breakR / (pAtkStats.breakR + targetDefStats.parry + 100.0);
       const isBreak = (pAtkStats.breakR > targetDefStats.parry) ? (breakProb * 0.75) : (breakProb * 0.25);
 
       const effHit = pAtkStats.hit * (1.0 + isBreak * 1.0);
       const effCrit = pAtkStats.crit * (1.0 + isBreak * 1.0);
 
-      // 2. 命中 vs 闪避
-      const hitProb = Math.min(1.0, effHit / (effHit + targetDefStats.eva + 1.0));
+      // 2. 命中 vs 闪避 (闪避率 = 闪避 / (闪避 + 命中 + 100))
+      const dodgeProb = targetDefStats.eva / (targetDefStats.eva + effHit + 100.0);
+      const hitProb = Math.max(0.0, 1.0 - dodgeProb);
 
       // 3. 暴击 vs 免暴
-      const critProb = Math.min(1.0, effCrit / (effCrit + targetDefStats.cavoid + 1.0));
+      const critProb = Math.min(1.0, effCrit / (effCrit + targetDefStats.cavoid + 100.0));
       const critMult = 1.0 + critProb * (critDmgRatio - 1.0);
 
       // 4. 抗性减伤 (非线性平方减伤公式)

@@ -68,9 +68,28 @@ public sealed class XiuxianCombatTests
     [Fact]
     public void Hit_and_crit_use_unified_contest_formula_per_design()
     {
-        // 命中 vs 闪避：统一对抗公式 闪避率 180/(180+260+100)=180/540=1/3, 命中率 1-1/3 ≈ 0.667
+        // 命中 vs 闪避：
+        // 0 闪避 vs 0 命中 -> 闪避率 0/100 = 0%, 命中率 100%
+        Assert.Equal(0.0, XiuxianCombatFormula.CalculateDodgeContestRate(0, 0));
+        Assert.Equal(1.0, XiuxianCombatFormula.CalculateHitContestRate(0, 0));
+
+        // 100 闪避 vs 0 命中 -> 闪避率 100/(100+0+100) = 0.5 (50%), 命中率 50%
+        Assert.Equal(0.5, XiuxianCombatFormula.CalculateDodgeContestRate(100, 0));
+        Assert.Equal(0.5, XiuxianCombatFormula.CalculateHitContestRate(0, 100));
+
+        // 统一对抗公式 闪避 180 vs 命中 260：闪避率 180/(180+260+100)=180/540=1/3, 命中率 1-1/3 ≈ 0.667
+        var dodgeRate = XiuxianCombatFormula.CalculateDodgeContestRate(180, 260);
         var hitRate = XiuxianCombatFormula.CalculateHitContestRate(260, 180);
+        Assert.InRange(dodgeRate, 0.32, 0.34);
         Assert.InRange(hitRate, 0.65, 0.68);
+
+        // 暴击 vs 免暴：
+        // 0 暴击 -> 暴击率 0%
+        Assert.Equal(0.0, XiuxianCombatFormula.CalculateCritContestRate(0, 0));
+        Assert.Equal(0.0, XiuxianCombatFormula.CalculateCritContestRate(0, 100));
+
+        // 100 暴击 vs 0 免暴 -> 100/(100+0+100) = 0.5 (50%)
+        Assert.Equal(0.5, XiuxianCombatFormula.CalculateCritContestRate(100, 0));
 
         // 高阶位同阶对抗：暴击 128 点 vs 免爆 119 点 -> 128/(128+119+100) = 128/347 ≈ 0.369
         var critRate = XiuxianCombatFormula.CalculateCritContestRate(128, 119);

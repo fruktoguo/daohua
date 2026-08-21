@@ -162,18 +162,18 @@ def run_deterministic_sim(tier_info, team_type="physical", team_size=1, sim_seco
     def calc_damage_per_hit(raw_dmg, def_res, atk_hit, def_eva, atk_crit, def_cavoid, atk_break, def_parry, is_player=True):
         break_succ = False
         if atk_break > def_parry:
-            prob = atk_break / (atk_break + def_parry + 1.0)
+            prob = atk_break / (atk_break + def_parry + 100.0)
             if random.random() < prob:
                 break_succ = True
 
         effective_hit = atk_hit * (2.0 if break_succ else 1.0)
         effective_crit = atk_crit * (2.0 if break_succ else 1.0)
 
-        hit_prob = effective_hit / (effective_hit + def_eva + 1.0)
-        if random.random() > hit_prob:
+        dodge_prob = def_eva / (def_eva + effective_hit + 100.0)
+        if random.random() < dodge_prob:
             return 0.0
 
-        crit_prob = effective_crit / (effective_crit + def_cavoid + 1.0)
+        crit_prob = effective_crit / (effective_crit + def_cavoid + 100.0)
         is_crit = random.random() < crit_prob
         crit_mult = (crit_dmg_ratio if is_player else 1.5) if is_crit else 1.0
 

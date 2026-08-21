@@ -136,8 +136,8 @@ public static class XiuxianCombatFormula
     }
 
     /// <summary>
-    /// 对抗概率计算公式：自身属性 / (自身属性 + 对方对抗属性 * 系数 + 系数)。
-    /// 适用于：命中 vs 闪避、暴击 vs 免爆、破招 vs 拆招。
+    /// 对抗概率计算公式：自身属性 / (自身属性 + 对方对抗属性 * 系数 + 基础平滑常数)。
+    /// 适用于：闪避 vs 命中、暴击 vs 免爆、破招 vs 拆招。
     /// </summary>
     public static double CalculateContestRate(
         double selfAttr,
@@ -153,8 +153,22 @@ public static class XiuxianCombatFormula
     }
 
     /// <summary>
+    /// 闪避率计算 (闪避 vs 命中)。
+    /// 闪避率 = 守方闪避 / (守方闪避 + 攻方命中 * 系数 + 基础平滑常数)。
+    /// 闪避成功则免除本次全部伤害。0闪避0命中时闪避率为0% (即100%命中)。
+    /// </summary>
+    public static double CalculateDodgeContestRate(
+        double evasion,
+        double hit,
+        double factor = XiuxianCombatConstants.DefaultContestOpponentFactor,
+        double baseConst = XiuxianCombatConstants.DefaultContestBaseConst)
+    {
+        return CalculateContestRate(evasion, hit, factor, baseConst);
+    }
+
+    /// <summary>
     /// 命中率计算 (命中 vs 闪避)。
-    /// 闪避成功则不造成伤害。
+    /// 命中率 = 1.0 - 闪避率 = (攻方命中 * 系数 + 基础平滑常数) / (守方闪避 + 攻方命中 * 系数 + 基础平滑常数)。
     /// </summary>
     public static double CalculateHitContestRate(
         double hit,
@@ -162,11 +176,12 @@ public static class XiuxianCombatFormula
         double factor = XiuxianCombatConstants.DefaultContestOpponentFactor,
         double baseConst = XiuxianCombatConstants.DefaultContestBaseConst)
     {
-        return CalculateContestRate(hit, evasion, factor, baseConst);
+        return 1.0 - CalculateDodgeContestRate(evasion, hit, factor, baseConst);
     }
 
     /// <summary>
     /// 暴击率计算 (暴击 vs 免爆)。
+    /// 暴击率 = 攻方暴击 / (攻方暴击 + 守方免爆 * 系数 + 基础平滑常数)。
     /// </summary>
     public static double CalculateCritContestRate(
         double crit,

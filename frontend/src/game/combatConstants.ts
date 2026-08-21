@@ -60,12 +60,15 @@ export function calculateManaCost(baseCost: number, multiplier = MANA_COST_MULTI
 export const CONTEST_OPPONENT_FACTOR = 1.0
 
 /**
- * 对抗公式基础平滑常数 (默认 1.0)
+ * 对抗公式基础平滑常数 (默认 100.0)
  * 
- * 【中文公式】：
- * 概率 = 自身属性 / (自身属性 + 对方对抗属性 * 对抗放大系数 + 基础平滑常数)
+ * 【中文公式说明】：
+ * 1. 通用对抗成功概率 = 自身属性 / (自身属性 + 对方对抗属性 * 对抗放大系数 + 基础平滑常数 100.0)
+ * 2. 闪避概率 = 守方闪避 / (守方闪避 + 攻方命中 * 对抗放大系数 + 100.0)
+ * 3. 命中概率 = 1.0 - 闪避概率 = (攻方命中 * 对抗放大系数 + 100.0) / (守方闪避 + 攻方命中 * 对抗放大系数 + 100.0)
+ * 4. 暴击概率 = 攻方暴击 / (攻方暴击 + 守方免暴 * 对抗放大系数 + 100.0)
  */
-export const CONTEST_BASE_CONST = 1.0
+export const CONTEST_BASE_CONST = 100.0
 
 /**
  * 通用对抗胜率计算方法
@@ -81,6 +84,46 @@ export function calculateContestRate(
   const denom = selfVal + opponentVal * factor + baseConst
   if (denom <= 0) return 0
   return Math.max(0, Math.min(1, selfVal / denom))
+}
+
+/**
+ * 闪避概率计算 (闪避 vs 命中)
+ * 闪避率 = 守方闪避 / (守方闪避 + 攻方命中 * 系数 + 100.0)
+ * 0闪避0命中时闪避率为0% (即100%命中)
+ */
+export function calculateDodgeContestRate(
+  evasion: number,
+  hit: number,
+  factor = CONTEST_OPPONENT_FACTOR,
+  baseConst = CONTEST_BASE_CONST,
+): number {
+  return calculateContestRate(evasion, hit, factor, baseConst)
+}
+
+/**
+ * 命中概率计算 (命中 vs 闪避)
+ * 命中率 = 1.0 - 闪避率
+ */
+export function calculateHitContestRate(
+  hit: number,
+  evasion: number,
+  factor = CONTEST_OPPONENT_FACTOR,
+  baseConst = CONTEST_BASE_CONST,
+): number {
+  return 1.0 - calculateDodgeContestRate(evasion, hit, factor, baseConst)
+}
+
+/**
+ * 暴击概率计算 (暴击 vs 免爆)
+ * 暴击率 = 攻方暴击 / (攻方暴击 + 守方免暴 * 系数 + 100.0)
+ */
+export function calculateCritContestRate(
+  crit: number,
+  critAvoid: number,
+  factor = CONTEST_OPPONENT_FACTOR,
+  baseConst = CONTEST_BASE_CONST,
+): number {
+  return calculateContestRate(crit, critAvoid, factor, baseConst)
 }
 
 // =========================================================================
