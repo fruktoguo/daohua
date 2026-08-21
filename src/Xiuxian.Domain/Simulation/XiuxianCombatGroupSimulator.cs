@@ -561,7 +561,8 @@ public static partial class XiuxianCombatSimulator
                     {
                         pendingPlayerAbility = ability;
                         pendingPlayerAbilityIndex = abilityIndex;
-                        nextPlayerAction = checked(now + ability.CastMilliseconds);
+                        var castTime = Math.Max(100, (int)Math.Round(ability.CastMilliseconds * (1.0 - player.ActionSpeedReductionRatio)));
+                        nextPlayerAction = checked(now + castTime);
                         playerActionName = ability.Name;
                         playerActionKind = "cast";
                         playerActionStartedAt = now;
@@ -658,7 +659,8 @@ public static partial class XiuxianCombatSimulator
                     }
                     if (ability is not null && abilityIndex >= 0)
                     {
-                        abilityReadyAt[abilityIndex] = checked(now + Math.Max(1, ability.CooldownMilliseconds));
+                        var cooldownTime = Math.Max(1, (int)Math.Round(ability.CooldownMilliseconds * (1.0 - player.CooldownReductionRatio)));
+                        abilityReadyAt[abilityIndex] = checked(now + cooldownTime);
                     }
                     if (encounterDefeated) continue;
                 }
@@ -709,13 +711,14 @@ public static partial class XiuxianCombatSimulator
                         out enemyAbilityIndex);
                     if (enemyAbility is not null && enemyAbility.CastMilliseconds > 0)
                     {
-                    enemy.PendingAbility = enemyAbility;
-                    enemy.PendingAbilityIndex = enemyAbilityIndex;
-                    enemy.NextActionAt = checked(now + enemyAbility.CastMilliseconds);
-                    enemy.ActionName = enemyAbility.Name;
-                    enemy.ActionKind = "cast";
-                    enemy.ActionStartedAt = now;
-                    continue;
+                        enemy.PendingAbility = enemyAbility;
+                        enemy.PendingAbilityIndex = enemyAbilityIndex;
+                        var enemyCastTime = Math.Max(100, (int)Math.Round(enemyAbility.CastMilliseconds * (1.0 - enemy.Stats.ActionSpeedReductionRatio)));
+                        enemy.NextActionAt = checked(now + enemyCastTime);
+                        enemy.ActionName = enemyAbility.Name;
+                        enemy.ActionKind = "cast";
+                        enemy.ActionStartedAt = now;
+                        continue;
                     }
                 }
 
@@ -782,7 +785,8 @@ public static partial class XiuxianCombatSimulator
 
                 if (enemyAbility is not null && enemyAbilityIndex >= 0)
                 {
-                    enemy.AbilityReadyAt[enemyAbilityIndex] = checked(now + Math.Max(1, enemyAbility.CooldownMilliseconds));
+                    var enemyCooldownTime = Math.Max(1, (int)Math.Round(enemyAbility.CooldownMilliseconds * (1.0 - enemy.Stats.CooldownReductionRatio)));
+                    enemy.AbilityReadyAt[enemyAbilityIndex] = checked(now + enemyCooldownTime);
                 }
                 enemy.NextActionAt = checked(now + enemy.Stats.AttackIntervalMilliseconds);
                 enemy.ActionName = enemyAbility is null ? "普通攻击" : enemyAbility.Name;

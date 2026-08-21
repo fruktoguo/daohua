@@ -22,12 +22,13 @@ public static partial class XiuxianCombatSimulator
         IReadOnlyList<XiuxianBuffState> activeBuffs,
         DateTimeOffset at,
         long? hitpoints = null,
-        long? manapoints = null)
+        long? manapoints = null,
+        long spirit = 0)
     {
         ArgumentNullException.ThrowIfNull(loadout);
         ArgumentNullException.ThrowIfNull(activeBuffs);
         var buffs = CreateBuffRuntime(activeBuffs, at);
-        var player = BuildPlayerStats(loadout, buffs, new CombatModifierRuntime(), 0);
+        var player = BuildPlayerStats(loadout, buffs, new CombatModifierRuntime(), 0, spirit);
         return new XiuxianCombatPlayerState(
             Math.Clamp(hitpoints ?? player.MaxHitpoints, 0, player.MaxHitpoints),
             player.MaxHitpoints,
@@ -39,12 +40,13 @@ public static partial class XiuxianCombatSimulator
     public static XiuxianCombatAttributeState CreatePlayerAttributes(
         XiuxianCombatLoadout loadout,
         IReadOnlyList<XiuxianBuffState> activeBuffs,
-        DateTimeOffset at)
+        DateTimeOffset at,
+        long spirit = 0)
     {
         ArgumentNullException.ThrowIfNull(loadout);
         ArgumentNullException.ThrowIfNull(activeBuffs);
         var buffs = CreateBuffRuntime(activeBuffs, at);
-        var player = BuildPlayerStats(loadout, buffs, new CombatModifierRuntime(), 0);
+        var player = BuildPlayerStats(loadout, buffs, new CombatModifierRuntime(), 0, spirit);
         return new XiuxianCombatAttributeState(
             player.MaxHitpoints,
             player.MaxManapoints,
@@ -626,7 +628,8 @@ public static partial class XiuxianCombatSimulator
                     {
                         pendingPlayerAbility = ability;
                         pendingPlayerAbilityIndex = abilityIndex;
-                        nextPlayerAction = checked(now + ability.CastMilliseconds);
+                        var castTime = Math.Max(100, (int)Math.Round(ability.CastMilliseconds * (1.0 - player.ActionSpeedReductionRatio)));
+                        nextPlayerAction = checked(now + castTime);
                         playerActionName = ability.Name;
                         playerActionKind = "cast";
                         playerActionStartedAt = now;
@@ -729,7 +732,8 @@ public static partial class XiuxianCombatSimulator
                     {
                         if (abilityIndex >= 0)
                         {
-                            abilityReadyAt[abilityIndex] = checked(now + Math.Max(1, ability.CooldownMilliseconds));
+                            var cooldownTime = Math.Max(1, (int)Math.Round(ability.CooldownMilliseconds * (1.0 - player.CooldownReductionRatio)));
+                            abilityReadyAt[abilityIndex] = checked(now + cooldownTime);
                         }
                     }
 
@@ -776,7 +780,8 @@ public static partial class XiuxianCombatSimulator
                     {
                         pendingEnemyAbility = enemyAbility;
                         pendingEnemyAbilityIndex = enemyAbilityIndex;
-                        nextEnemyAction = checked(now + enemyAbility.CastMilliseconds);
+                        var enemyCastTime = Math.Max(100, (int)Math.Round(enemyAbility.CastMilliseconds * (1.0 - enemy.ActionSpeedReductionRatio)));
+                        nextEnemyAction = checked(now + enemyCastTime);
                         enemyActionName = enemyAbility.Name;
                         enemyActionKind = "cast";
                         enemyActionStartedAt = now;
@@ -855,7 +860,8 @@ public static partial class XiuxianCombatSimulator
 
                     if (enemyAbility is not null && enemyAbilityIndex >= 0)
                     {
-                        enemyAbilityReadyAt[enemyAbilityIndex] = checked(now + Math.Max(1, enemyAbility.CooldownMilliseconds));
+                        var enemyCooldownTime = Math.Max(1, (int)Math.Round(enemyAbility.CooldownMilliseconds * (1.0 - enemy.CooldownReductionRatio)));
+                        enemyAbilityReadyAt[enemyAbilityIndex] = checked(now + enemyCooldownTime);
                     }
 
                     nextEnemyAction = checked(now + enemy.AttackIntervalMilliseconds);
@@ -1186,8 +1192,10 @@ public static partial class XiuxianCombatSimulator
         XiuxianCombatLoadout loadout,
         IReadOnlyDictionary<string, BuffRuntime> buffs,
         CombatModifierRuntime modifiers,
-        long now)
+        long now,
+        long spirit = 0)
     {
+        var basePool = XiuxianCombatFormula.CalculateBaseAttributes(spirit);
         var equipment = XiuxianCombatCatalog.AggregateEquipmentStats(loadout.Equipment);
         var attackRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.AttackLevelRatio)
             + equipment.AccuracyRatio
@@ -1198,35 +1206,87 @@ public static partial class XiuxianCombatSimulator
             - modifiers.WeakenStacks * modifiers.WeakenRatioPerStack;
         var attackSpeedRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.AttackSpeedRatio)
             + equipment.AttackSpeedRatio;
-        var stamina = Math.Max(1, loadout.StaminaLevel);
-        var intelligence = Math.Max(1, loadout.IntelligenceLevel);
-        var attack = Math.Max(1, loadout.AttackLevel);
-        var defense = Math.Max(1, loadout.DefenseLevel);
+        var stamina = Math.Max(10, loadout.StaminaLevel);
+        var intelligence = Math.Max(10, loadout.IntelligenceLevel);
+        var attack = Math.Max(10, loadout.AttackLevel);
+        var defense = Math.Max(10, loadout.DefenseLevel);
+        var swordsmanship = Math.Max(10, loadout.SwordsmanshipLevel);
+        var talisman = Math.Max(10, loadout.TalismanLevel);
         var combatStyle = equipment.Style ?? loadout.Style;
         var styleLevel = Math.Max(1, GetStyleLevel(loadout, combatStyle));
-        var accuracy = (10 + attack) * Math.Max(0.01, 1 + attackRatio);
-        var maxDamage = (10 + styleLevel) * Math.Max(0.01, 1 + damageRatio);
+
+        // 六维根基百分比加成乘区 (每点提供 1% 对应的领域增益)
+        var staminaBonus = stamina * 0.01;
+        var intelligenceBonus = intelligence * 0.01;
+        var defenseBonus = defense * 0.01;
+        var attackBonus = attack * 0.01;
+        var swordsmanshipBonus = swordsmanship * 0.01;
+        var talismanBonus = talisman * 0.01;
+
+        // 1. 生命与灵力 (以当前境界基础池为底座，叠加六维乘区加成)
+        var maxHitpoints = (long)Math.Max(1, Math.Ceiling(basePool.BaseHitpoints * (1.0 + staminaBonus) * (1.0 + defenseBonus)));
+        var maxManapoints = (long)Math.Max(1, Math.Ceiling(basePool.BaseManapoints * (1.0 + intelligenceBonus) * (1.0 + defenseBonus)));
+
+        // 2. 命中与闪避
+        var accuracy = (basePool.BaseAccuracy + attack * 0.5 + swordsmanship * 0.5) * (1.0 + swordsmanshipBonus) * Math.Max(0.01, 1 + attackRatio);
+        var evasion = (basePool.BaseEvasion + defense * 0.5 + talisman * 0.5) * (1.0 + talismanBonus) * Math.Max(0.01, 1 + equipment.EvasionRatio + attackRatio * 0.5);
+
+        // 3. 攻击力 (根据流派决定物攻/法攻基础池与加成)
+        var isMagic = combatStyle == XiuxianCombatStyle.FiveElements;
+        var baseDmg = isMagic ? basePool.BaseSpellAttack : basePool.BasePhysicalAttack;
+        var scaledAttack = isMagic
+            ? (baseDmg + styleLevel * 0.5 + swordsmanship * 0.5) * (1.0 + swordsmanshipBonus * 2.0)
+            : (baseDmg + styleLevel * 0.5 + attack * 0.5) * (1.0 + attackBonus);
+        var maxDamage = scaledAttack * Math.Max(0.01, 1.0 + damageRatio);
+
+        // 4. 双抗
+        var armor = (basePool.BaseArmor + 0.2 * defense + 0.2 * stamina + equipment.Armor) * (1.0 + staminaBonus);
+        var waterResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.WaterResistance) * (1.0 + intelligenceBonus);
+        var natureResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.NatureResistance) * (1.0 + intelligenceBonus);
+        var fireResistance = (basePool.BaseMagicResistance + 0.2 * defense + 0.2 * intelligence + equipment.FireResistance) * (1.0 + intelligenceBonus);
+
+        // 5. 破招与拆招
+        var breakRating = (basePool.BaseBreak + loadout.BreakRating + equipment.BreakRating + attack * 1.0) * (1.0 + attackBonus);
+        var parryRating = (basePool.BaseParry + loadout.ParryRating + equipment.ParryRating + defense * 1.0) * (1.0 + defenseBonus);
+
+        // 6. 暴击与免暴
+        var criticalChance = Math.Clamp(basePool.BaseCritical * 0.01 + loadout.CriticalChance + equipment.CriticalChance + attack * 0.01, 0, 1);
+        var criticalAvoidance = Math.Clamp(basePool.BaseCriticalAvoidance * 0.01 + loadout.CriticalAvoidance + equipment.CriticalAvoidance + talisman * 0.01, 0, 1);
+
+        // 7. 回复速率
+        var hpRegen = Math.Max(0.01, loadout.HpRegenPerTenSeconds * (1.0 + staminaBonus));
+        var mpRegen = Math.Max(0.01, loadout.MpRegenPerTenSeconds * (1.0 + intelligenceBonus));
+
+        // 8. 攻击间隔
         var baseInterval = equipment.AttackIntervalMilliseconds > 0
             ? equipment.AttackIntervalMilliseconds
-            : 3_000;
+            : 1_000;
         var interval = XiuxianCombatFormula.CalculateAttackIntervalMilliseconds(baseInterval, attack, attackSpeedRatio);
+
+        // 9. 高级机制
+        var cdr = Math.Clamp(basePool.CooldownReductionRatio + loadout.CooldownReductionRatio + equipment.CooldownReductionRatio, 0, 0.75);
+        var atr = Math.Clamp(basePool.ActionSpeedReductionRatio + loadout.ActionSpeedReductionRatio + equipment.ActionSpeedRatio, 0, 0.50);
+        var critDamageRatio = Math.Max(basePool.CriticalDamageRatio, loadout.CriticalDamageRatio + equipment.CriticalDamageRatio);
+        var skillIntensity = Math.Max(basePool.SkillIntensity, loadout.SkillIntensity + equipment.SkillIntensity);
+        var kFactor = Math.Max(basePool.DynamicResistanceFactorK, loadout.DynamicResistanceFactorK);
+
         return new CombatStats(
-            Math.Max(1, checked(10L * (10 + stamina))),
-            Math.Max(1, checked(10L * (10 + intelligence))),
+            maxHitpoints,
+            maxManapoints,
             interval,
             accuracy,
             maxDamage,
-            (10 + defense) * Math.Max(0.01, 1 + equipment.EvasionRatio + attackRatio * 0.5),
-            0.2 * defense + equipment.Armor,
-            0.2 * defense + equipment.WaterResistance,
-            0.2 * defense + equipment.NatureResistance,
-            0.2 * defense + equipment.FireResistance,
+            evasion,
+            armor,
+            waterResistance,
+            natureResistance,
+            fireResistance,
             combatStyle,
             equipment.DamageType ?? loadout.DamageType,
             null,
             Math.Max(0, loadout.Tenacity + equipment.Tenacity),
-            Math.Max(0, loadout.HpRegenPerTenSeconds),
-            Math.Max(0, loadout.MpRegenPerTenSeconds),
+            hpRegen,
+            mpRegen,
             Math.Max(0, loadout.PenetrationRatio + equipment.PenetrationRatio),
             Math.Clamp(loadout.PierceChance + equipment.PierceChance, 0, 1),
             Math.Max(0, loadout.CurseRatio + equipment.CurseRatio),
@@ -1236,10 +1296,16 @@ public static partial class XiuxianCombatSimulator
             Math.Max(0, loadout.ArmorDamageRatio + equipment.ArmorDamageRatio),
             Math.Max(0, loadout.HpDrainRatio + equipment.HpDrainRatio),
             Math.Max(0, modifiers.CurseStacks * modifiers.CurseRatioPerStack),
-            Math.Clamp(loadout.CriticalChance + equipment.CriticalChance, 0, 1),
-            Math.Max(0, loadout.CriticalDamageRatio + equipment.CriticalDamageRatio),
-            Math.Clamp(loadout.CriticalAvoidance + equipment.CriticalAvoidance, 0, 1),
-            Math.Clamp(loadout.DamageAbsorptionRatio + equipment.DamageAbsorptionRatio, 0, 1));
+            criticalChance,
+            critDamageRatio,
+            criticalAvoidance,
+            Math.Clamp(loadout.DamageAbsorptionRatio + equipment.DamageAbsorptionRatio, 0, 1),
+            Math.Max(0, breakRating),
+            Math.Max(0, parryRating),
+            skillIntensity,
+            kFactor,
+            atr,
+            cdr);
     }
 
     private static CombatStats BuildEnemyStats(
@@ -1280,7 +1346,13 @@ public static partial class XiuxianCombatSimulator
             Math.Clamp(definition.CriticalChance, 0, 1),
             Math.Max(0, definition.CriticalDamageRatio),
             Math.Clamp(definition.CriticalAvoidance, 0, 1),
-            Math.Clamp(definition.DamageAbsorptionRatio, 0, 1));
+            Math.Clamp(definition.DamageAbsorptionRatio, 0, 1),
+            Math.Max(0, definition.BreakRating),
+            Math.Max(0, definition.ParryRating),
+            Math.Max(1.0, definition.SkillIntensity),
+            Math.Max(1.0, definition.DynamicResistanceFactorK),
+            Math.Clamp(definition.ActionSpeedReductionRatio, 0, 0.99),
+            Math.Clamp(definition.CooldownReductionRatio, 0, 0.99));
     }
 
     private static CombatResolution ResolvePlayerAttack(
@@ -1290,12 +1362,7 @@ public static partial class XiuxianCombatSimulator
         ref long mana,
         ref DeterministicRandom random)
     {
-        if (ability is null)
-        {
-            return ResolveDamage(source, target, null, ref random);
-        }
-
-        if (mana < ability.ManaCost)
+        if (ability is null || mana < ability.ManaCost)
         {
             return ResolveDamage(source, target, null, ref random);
         }
@@ -1336,45 +1403,87 @@ public static partial class XiuxianCombatSimulator
         XiuxianCombatAbilityDefinition? ability,
         ref DeterministicRandom random)
     {
-        var hitChance = XiuxianCombatFormula.CalculateHitChance(source.AccuracyRating, target.EvasionRating);
+        // 1. 破招 vs 拆招 对抗判定
+        var isBreak = false;
+        var isParry = false;
+        if (source.BreakRating > target.ParryRating && source.BreakRating > 0)
+        {
+            var breakRate = XiuxianCombatFormula.CalculateContestRate(source.BreakRating, target.ParryRating);
+            if (random.NextDouble() < breakRate)
+            {
+                isBreak = true;
+            }
+        }
+        else if (target.ParryRating > source.BreakRating && target.ParryRating > 0)
+        {
+            var parryRate = XiuxianCombatFormula.CalculateContestRate(target.ParryRating, source.BreakRating);
+            if (random.NextDouble() < parryRate)
+            {
+                isParry = true;
+            }
+        }
+
+        // 破招成功：命中与暴击效果翻倍；拆招成功：闪避与抗性效果翻倍
+        var effectiveHit = source.AccuracyRating * (isBreak ? XiuxianCombatConstants.BreakSuccessEffectMultiplier : 1.0);
+        var effectiveCrit = Math.Max(0.0, source.CriticalChance) * (isBreak ? XiuxianCombatConstants.BreakSuccessEffectMultiplier : 1.0);
+        var effectiveEva = target.EvasionRating * (isParry ? XiuxianCombatConstants.ParrySuccessEffectMultiplier : 1.0);
+
+        // 2. 命中 vs 闪避 对抗判定
+        var hitChance = XiuxianCombatFormula.CalculateHitChance(effectiveHit, effectiveEva);
         if (random.NextDouble() > hitChance)
         {
             return new CombatResolution(0, 0, DidHit: false);
         }
 
+        // 3. 基础伤害与技能强度放大
         var maximum = Math.Max(1, (long)Math.Floor(source.MaxDamage));
         var minimum = Math.Max(1, maximum / 2);
         var rolled = random.NextInt64(minimum, checked(maximum + 1));
         var damageRatio = ability?.DamageRatio ?? 1;
         var flatDamage = ability?.FlatDamage ?? 0;
         var armorDamage = source.Armor * Math.Max(0, source.ArmorDamageRatio + (ability?.ArmorDamageRatio ?? 0));
-        var amplifiedDouble = rolled * Math.Max(0, damageRatio) + flatDamage + armorDamage;
-        var criticalChance = XiuxianCombatFormula.CalculateCriticalChance(
-            source.CriticalChance,
-            target.CriticalAvoidance);
-        var isCritical = source.CriticalDamageRatio > 0
-            && criticalChance > 0
-            && random.NextDouble() < criticalChance;
-        amplifiedDouble = XiuxianCombatFormula.ApplyCriticalDamage(
-            amplifiedDouble,
-            source.CriticalDamageRatio,
-            isCritical);
-        var amplified = amplifiedDouble >= long.MaxValue
-            ? long.MaxValue
-            : Math.Max(0, (long)Math.Floor(amplifiedDouble));
+        var skillIntensity = Math.Max(1.0, source.SkillIntensity);
+        var amplifiedDouble = (rolled * Math.Max(0, damageRatio) + flatDamage) * skillIntensity + armorDamage;
+
+        // 4. 抗性穿透与动态抗性平方减伤公式
         var damageType = ability?.DamageType ?? source.DamageType;
         var pierceChance = Math.Clamp(source.PierceChance + (ability?.PierceChance ?? 0), 0, 1);
         var pierced = pierceChance > 0 && random.NextDouble() < pierceChance;
-        var resistance = pierced ? 0 : GetResistance(target, damageType);
+        var baseResistance = pierced ? 0 : GetResistance(target, damageType);
+        var effectiveResistance = baseResistance * (isParry ? XiuxianCombatConstants.ParrySuccessEffectMultiplier : 1.0);
         var penetrationRatio = Math.Max(0, source.PenetrationRatio + (ability?.PenetrationRatio ?? 0));
-        var mitigated = XiuxianCombatFormula.CalculateMitigatedDamage(amplified, resistance, penetrationRatio);
-        var withDamageTaken = mitigated * Math.Max(0, 1 + target.DamageTakenRatio);
+        var kFactor = Math.Max(1.0, source.DynamicResistanceFactorK);
+
+        var rawDamageLong = amplifiedDouble >= long.MaxValue
+            ? long.MaxValue
+            : Math.Max(1, (long)Math.Floor(amplifiedDouble));
+        var mitigated = XiuxianCombatFormula.CalculateMitigatedDamageWithResistanceFactor(
+            rawDamageLong,
+            effectiveResistance,
+            penetrationRatio,
+            kFactor,
+            XiuxianCombatConstants.DefaultDamageBaseFactor);
+
+        // 5. 暴击 vs 免暴 对抗判定与伤害放大
+        var criticalChance = XiuxianCombatFormula.CalculateCriticalChance(effectiveCrit, target.CriticalAvoidance);
+        var isCritical = source.CriticalDamageRatio > 0
+            && criticalChance > 0
+            && random.NextDouble() < criticalChance;
+        var critMultiplier = XiuxianCombatConstants.BaseCriticalDamageMultiplier + source.CriticalDamageRatio;
+        var withCrit = isCritical
+            ? mitigated * critMultiplier
+            : (double)mitigated;
+
+        // 6. 易伤、减伤与伤害吸收
+        var withDamageTaken = withCrit * Math.Max(0, 1 + target.DamageTakenRatio);
         var absorbed = XiuxianCombatFormula.ApplyDamageAbsorption(
             withDamageTaken,
             target.DamageAbsorptionRatio);
         var damage = absorbed >= long.MaxValue
             ? long.MaxValue
             : Math.Max(0, (long)Math.Ceiling(absorbed));
+
+        // 7. 吸血与汲取
         var drainRatio = ability is null
             ? source.LifeStealRatio
             : source.HpDrainRatio + ability.HpDrainRatio;
@@ -2241,7 +2350,13 @@ public static partial class XiuxianCombatSimulator
         double CriticalChance,
         double CriticalDamageRatio,
         double CriticalAvoidance,
-        double DamageAbsorptionRatio);
+        double DamageAbsorptionRatio,
+        double BreakRating = 0,
+        double ParryRating = 0,
+        double SkillIntensity = 1.0,
+        double DynamicResistanceFactorK = 1.0,
+        double ActionSpeedReductionRatio = 0,
+        double CooldownReductionRatio = 0);
 
     private readonly record struct CombatResolution(
         long Damage,

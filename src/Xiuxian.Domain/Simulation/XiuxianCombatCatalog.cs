@@ -140,6 +140,11 @@ public static class XiuxianCombatCatalog
         double criticalDamageRatio = 0;
         double criticalAvoidance = 0;
         double damageAbsorptionRatio = 0;
+        double breakRating = 0;
+        double parryRating = 0;
+        double skillIntensity = 0;
+        double actionSpeedRatio = 0;
+        double cooldownReductionRatio = 0;
         var attackInterval = 0;
         XiuxianCombatStyle? style = null;
         XiuxianDamageType? damageType = null;
@@ -175,6 +180,11 @@ public static class XiuxianCombatCatalog
             criticalDamageRatio += stats.CriticalDamageRatio + multiplier * bonus.CriticalDamageRatio;
             criticalAvoidance += stats.CriticalAvoidance + multiplier * bonus.CriticalAvoidance;
             damageAbsorptionRatio += stats.DamageAbsorptionRatio + multiplier * bonus.DamageAbsorptionRatio;
+            breakRating += stats.BreakRating + multiplier * bonus.BreakRating;
+            parryRating += stats.ParryRating + multiplier * bonus.ParryRating;
+            skillIntensity += stats.SkillIntensity + multiplier * bonus.SkillIntensity;
+            actionSpeedRatio += stats.ActionSpeedRatio + multiplier * bonus.ActionSpeedRatio;
+            cooldownReductionRatio += stats.CooldownReductionRatio + multiplier * bonus.CooldownReductionRatio;
             if (stats.AttackIntervalMilliseconds > 0)
             {
                 attackInterval = stats.AttackIntervalMilliseconds;
@@ -205,6 +215,11 @@ public static class XiuxianCombatCatalog
             Math.Max(0, criticalDamageRatio),
             Math.Clamp(criticalAvoidance, 0, 1),
             Math.Clamp(damageAbsorptionRatio, 0, 1),
+            Math.Max(0, breakRating),
+            Math.Max(0, parryRating),
+            Math.Max(0, skillIntensity),
+            Math.Max(0, actionSpeedRatio),
+            Math.Max(0, cooldownReductionRatio),
             attackInterval,
             style,
             damageType);

@@ -470,7 +470,7 @@ public static class XiuxianStateMapper
 
     private static XiuxianCombatAttributesDto ToCombatAttributes(XiuxianPlayerState state, DateTimeOffset now)
     {
-        var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, now);
+        var attributes = XiuxianCombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, now, state.Stats.Spirit);
         return new XiuxianCombatAttributesDto(
             attributes.MaxHitpoints,
             attributes.MaxManapoints,

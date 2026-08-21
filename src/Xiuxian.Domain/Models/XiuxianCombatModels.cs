@@ -154,6 +154,12 @@ public sealed class XiuxianCombatantDefinition
     public double CriticalDamageRatio { get; init; }
     public double CriticalAvoidance { get; init; }
     public double DamageAbsorptionRatio { get; init; }
+    public double BreakRating { get; init; }
+    public double ParryRating { get; init; }
+    public double SkillIntensity { get; init; } = 1.0;
+    public double DynamicResistanceFactorK { get; init; } = 1.0;
+    public double ActionSpeedReductionRatio { get; init; }
+    public double CooldownReductionRatio { get; init; }
     public double HpRegenPerTenSeconds { get; init; } = 0.01;
     public double MpRegenPerTenSeconds { get; init; } = 0.01;
     public int EnrageTimeMilliseconds { get; init; }
@@ -216,6 +222,11 @@ public sealed record XiuxianEquipmentCombatStats(
     double CriticalDamageRatio = 0,
     double CriticalAvoidance = 0,
     double DamageAbsorptionRatio = 0,
+    double BreakRating = 0,
+    double ParryRating = 0,
+    double SkillIntensity = 0,
+    double ActionSpeedRatio = 0,
+    double CooldownReductionRatio = 0,
     int AttackIntervalMilliseconds = 0,
     XiuxianCombatStyle? Style = null,
     XiuxianDamageType? DamageType = null);
@@ -321,7 +332,13 @@ public sealed record XiuxianCombatAttributeState(
     double CriticalChance,
     double CriticalDamageRatio,
     double CriticalAvoidance,
-    double DamageAbsorptionRatio);
+    double DamageAbsorptionRatio,
+    double BreakRating = 0,
+    double ParryRating = 0,
+    double SkillIntensity = 1.0,
+    double DynamicResistanceFactorK = 1.0,
+    double ActionSpeedReductionRatio = 0,
+    double CooldownReductionRatio = 0);
 
 public sealed record XiuxianCombatActionState(
     string Name,

@@ -47,7 +47,13 @@ public sealed record XiuxianCombatantConfig(
     long SpiritMax,
     IReadOnlyList<XiuxianCombatDropDefinition> DropTable,
     IReadOnlyList<XiuxianCombatDropDefinition> RareDropTable,
-    IReadOnlyList<string> AbilityIds);
+    IReadOnlyList<string> AbilityIds,
+    double BreakRating = 0,
+    double ParryRating = 0,
+    double SkillIntensity = 1.0,
+    double DynamicResistanceFactorK = 1.0,
+    double ActionSpeedReductionRatio = 0,
+    double CooldownReductionRatio = 0);
 
 public sealed record XiuxianCombatSpawnConfig(
     string EnemyId,
@@ -239,6 +245,12 @@ public static class XiuxianGameData
             CriticalDamageRatio = config.CriticalDamageRatio,
             CriticalAvoidance = config.CriticalAvoidance,
             DamageAbsorptionRatio = config.DamageAbsorptionRatio,
+            BreakRating = config.BreakRating,
+            ParryRating = config.ParryRating,
+            SkillIntensity = config.SkillIntensity,
+            DynamicResistanceFactorK = config.DynamicResistanceFactorK,
+            ActionSpeedReductionRatio = config.ActionSpeedReductionRatio,
+            CooldownReductionRatio = config.CooldownReductionRatio,
             HpRegenPerTenSeconds = config.HpRegenPerTenSeconds,
             MpRegenPerTenSeconds = config.MpRegenPerTenSeconds,
             EnrageTimeMilliseconds = config.EnrageTimeMilliseconds,

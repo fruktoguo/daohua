@@ -234,6 +234,13 @@ public static class XiuxianSimulation
             state.Combat.Tenacity = 0;
             combatChanged = true;
         }
+        if (state.Combat.StaminaLevel < 10) { state.Combat.StaminaLevel = 10; combatChanged = true; }
+        if (state.Combat.IntelligenceLevel < 10) { state.Combat.IntelligenceLevel = 10; combatChanged = true; }
+        if (state.Combat.AttackLevel < 10) { state.Combat.AttackLevel = 10; combatChanged = true; }
+        if (state.Combat.DefenseLevel < 10) { state.Combat.DefenseLevel = 10; combatChanged = true; }
+        if (state.Combat.SwordsmanshipLevel < 10) { state.Combat.SwordsmanshipLevel = 10; combatChanged = true; }
+        if (state.Combat.TalismanLevel < 10) { state.Combat.TalismanLevel = 10; combatChanged = true; }
+        if (state.Combat.FiveElementsLevel < 10) { state.Combat.FiveElementsLevel = 10; combatChanged = true; }
         combatChanged |= NormalizeEquipment(state.Combat.Equipment);
         combatChanged |= NormalizeCombatEffectRatios(state.Combat);
         combatChanged |= NormalizeSlots(
@@ -361,7 +368,7 @@ public static class XiuxianSimulation
 
         SetCombatResources(
             state,
-            XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt));
+            XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt, spirit: state.Stats.Spirit));
         state.Queue.Entries.Insert(0, CreateQueuedAction(actionId, repeats));
         Touch(state, XiuxianDirtySections.Queue | XiuxianDirtySections.Combat | XiuxianDirtySections.Events);
         AddEvent(state, $"已立即开始历练：{{{{action:{definition.Id}|{definition.Name}}}}} × {(repeats == -1 ? "∞" : repeats)}");
@@ -418,7 +425,7 @@ public static class XiuxianSimulation
         var dirty = XiuxianDirtySections.Queue | XiuxianDirtySections.Events;
         if (removed.CombatExpedition is not null || definition.ExecutionKind == XiuxianActionExecutionKind.CombatEncounter)
         {
-            SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt));
+            SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, state.LastSimulatedAt, spirit: state.Stats.Spirit));
             dirty |= XiuxianDirtySections.Combat;
         }
         Touch(state, dirty);
@@ -1040,7 +1047,8 @@ public static class XiuxianSimulation
             battleBuffs,
             expedition.BattleStartedAt,
             expedition.InitialHitpoints,
-            expedition.InitialManapoints);
+            expedition.InitialManapoints,
+            state.Stats.Spirit);
         var result = XiuxianCombatSimulator.Run(
             state.PlayerId,
             battleLoadout,
@@ -1125,7 +1133,7 @@ public static class XiuxianSimulation
                 expedition.PhaseElapsedMilliseconds = 0;
                 current.ProgressSeconds = 0;
                 transitions++;
-                SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, cursor));
+                SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, cursor, spirit: state.Stats.Spirit));
                 AddEvent(state, "你已复活。", cursor);
                 dirty |= XiuxianDirtySections.Combat | XiuxianDirtySections.Events;
 
@@ -1186,7 +1194,8 @@ public static class XiuxianSimulation
                 battleBuffs,
                 expedition.BattleStartedAt,
                 expedition.InitialHitpoints,
-                expedition.InitialManapoints);
+                expedition.InitialManapoints,
+                state.Stats.Spirit);
             var result = XiuxianCombatSimulator.Run(
                 state.PlayerId,
                 battleLoadout,
@@ -1267,7 +1276,8 @@ public static class XiuxianSimulation
             state.Buffs,
             startedAt,
             state.CombatResources.Hitpoints,
-            state.CombatResources.Manapoints);
+            state.CombatResources.Manapoints,
+            state.Stats.Spirit);
         SetCombatResources(state, initial);
         expedition.Phase = XiuxianCombatExpeditionPhase.Combat;
         expedition.PhaseDurationMilliseconds = 0;
@@ -1441,7 +1451,7 @@ public static class XiuxianSimulation
         {
             state.Queue.Entries.RemoveAt(0);
         }
-        SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, completedAt));
+        SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, completedAt, spirit: state.Stats.Spirit));
         dirty |= XiuxianDirtySections.Queue | XiuxianDirtySections.Stats | XiuxianDirtySections.Events | XiuxianDirtySections.Combat;
     }
 
@@ -1473,7 +1483,7 @@ public static class XiuxianSimulation
     {
         state.CombatResources ??= new XiuxianCombatResourceState();
         if (state.CombatResources.Initialized) return;
-        SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, at));
+        SetCombatResources(state, XiuxianCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, at, spirit: state.Stats.Spirit));
     }
 
     private static void SetCombatResources(XiuxianPlayerState state, XiuxianCombatPlayerState player)

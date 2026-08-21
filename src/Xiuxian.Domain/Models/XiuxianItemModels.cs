@@ -69,13 +69,13 @@ public sealed class XiuxianCombatLoadout
 {
     public XiuxianCombatStyle Style { get; set; } = XiuxianCombatStyle.Sword;
     public XiuxianDamageType DamageType { get; set; } = XiuxianDamageType.Physical;
-    public int StaminaLevel { get; set; } = 1;
-    public int IntelligenceLevel { get; set; } = 1;
-    public int AttackLevel { get; set; } = 1;
-    public int SwordsmanshipLevel { get; set; } = 1;
-    public int DefenseLevel { get; set; } = 1;
-    public int TalismanLevel { get; set; } = 1;
-    public int FiveElementsLevel { get; set; } = 1;
+    public int StaminaLevel { get; set; } = 10;
+    public int IntelligenceLevel { get; set; } = 10;
+    public int AttackLevel { get; set; } = 10;
+    public int SwordsmanshipLevel { get; set; } = 10;
+    public int DefenseLevel { get; set; } = 10;
+    public int TalismanLevel { get; set; } = 10;
+    public int FiveElementsLevel { get; set; } = 10;
     public double HpRegenPerTenSeconds { get; set; } = 0.01;
     public double MpRegenPerTenSeconds { get; set; } = 0.01;
     // 韧性按百分比点数计算；控制命中率使用 100 / (100 + 韧性) 修正。
@@ -95,6 +95,12 @@ public sealed class XiuxianCombatLoadout
     public double CriticalDamageRatio { get; set; }
     public double CriticalAvoidance { get; set; }
     public double DamageAbsorptionRatio { get; set; }
+    public double BreakRating { get; set; }
+    public double ParryRating { get; set; }
+    public double SkillIntensity { get; set; } = 1.0;
+    public double DynamicResistanceFactorK { get; set; } = 1.0;
+    public double ActionSpeedReductionRatio { get; set; }
+    public double CooldownReductionRatio { get; set; }
     // 采用公开战斗模拟器的“百分比增量”语义：0 表示目录基础值，0.2 表示提高 20%。
     public double CombatDropRate { get; set; }
     public double CombatDropQuantity { get; set; }
@@ -140,6 +146,12 @@ public sealed class XiuxianCombatLoadout
             CriticalDamageRatio = CriticalDamageRatio,
             CriticalAvoidance = CriticalAvoidance,
             DamageAbsorptionRatio = DamageAbsorptionRatio,
+            BreakRating = BreakRating,
+            ParryRating = ParryRating,
+            SkillIntensity = SkillIntensity,
+            DynamicResistanceFactorK = DynamicResistanceFactorK,
+            ActionSpeedReductionRatio = ActionSpeedReductionRatio,
+            CooldownReductionRatio = CooldownReductionRatio,
             CombatDropRate = CombatDropRate,
             CombatDropQuantity = CombatDropQuantity,
             CombatRareFind = CombatRareFind,
