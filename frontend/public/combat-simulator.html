@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>太虚仙途 · 战斗数值平衡与调参可视化模拟器</title>
+  <!-- Tailwind CSS & Chart.js CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { background-color: #080c14; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+    .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.6); }
+    .glass-card { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(71, 85, 105, 0.4); }
+    input[type=range] { accent-color: #3b82f6; }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b1120; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .badge-phys { background: rgba(180, 83, 9, 0.25); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .badge-magic { background: rgba(109, 40, 217, 0.25); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.4); }
+    .badge-equal { background: rgba(15, 118, 110, 0.25); color: #5eead4; border: 1px solid rgba(20, 184, 166, 0.4); }
+  </style>
+</head>
+<body class="p-4 md:p-6 min-h-screen">
+  <!-- Top Navigation / Header -->
+  <header class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 mb-4 border-b border-gray-800">
+    <div>
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">⚔️</span>
+        <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 bg-clip-text text-transparent">
+          太虚仙途 · 战斗数值平衡与快速调参模拟器
+        </h1>
+        <span class="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-blue-900/60 text-blue-300 border border-blue-700">
+          固定 2.0x AP · 破招暴击 vs 破防必中
+        </span>
+      </div>
+      <p class="text-xs text-gray-400 mt-1">
+        物理：<span class="text-amber-300 font-mono">1 AD : 1 暴击 : 1 破招</span> (破招翻倍暴击 + 1秒4刀) ｜ 法术：<span class="text-purple-300 font-mono">固定 2.0x AP : 1 命中</span> (超高AP击穿魔抗 + 必中AoE)
+      </p>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="flex items-center gap-3 self-end md:self-auto">
+      <div class="flex items-center gap-2 bg-gray-900/90 px-3 py-1.5 rounded-lg border border-gray-700 text-xs">
+        <span class="text-gray-400">模拟波次:</span>
+        <select id="simWavesSelect" class="bg-gray-800 text-gray-200 rounded px-2 py-1 border border-gray-600 focus:outline-none focus:border-blue-500" onchange="runSimulation()">
+          <option value="40">40 波 (超极速, 2次Boss)</option>
+          <option value="60" selected>60 波 (标准短模拟, 3次Boss)</option>
+          <option value="120">120 波 (中周期, 6次Boss)</option>
+          <option value="200">200 波 (高精度, 10次Boss)</option>
+        </select>
+      </div>
+      <button onclick="resetToDefaults()" class="px-3 py-1.5 text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg border border-gray-600 transition">
+        ↺ 重置默认
+      </button>
+      <button onclick="exportConfigJson()" class="px-3.5 py-1.5 text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg shadow-lg shadow-blue-500/20 transition">
+        📥 导出配置
+      </button>
+    </div>
+  </header>
+
+  <!-- 🌟 4 STAGE DYNAMIC EVALUATION KPI BANNERS -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+    <div class="glass-panel rounded-xl p-3 text-center border-l-4 border-slate-500">
+      <div class="text-[11px] text-gray-400">前期 (T1~T2 凡俗)</div>
+      <div id="kpi_stage1_dyn" class="text-sm md:text-base font-bold font-mono mt-1">计算中...</div>
+      <div class="text-[10px] text-gray-500 mt-0.5">凡胎 / 叩仙门</div>
+    </div>
+    <div class="glass-panel rounded-xl p-3 text-center border-l-4 border-cyan-500">
+      <div class="text-[11px] text-gray-400">中期 (T3~T5 练气筑基金丹)</div>
+      <div id="kpi_stage2_dyn" class="text-sm md:text-base font-bold font-mono mt-1">计算中...</div>
+      <div class="text-[10px] text-gray-500 mt-0.5">修仙入门至结丹</div>
+    </div>
+    <div class="glass-panel rounded-xl p-3 text-center border-l-4 border-indigo-500">
+      <div class="text-[11px] text-gray-400">后期 (T6~T9 元婴化神炼虚合体)</div>
+      <div id="kpi_stage3_dyn" class="text-sm md:text-base font-bold font-mono mt-1">计算中...</div>
+      <div class="text-[10px] text-gray-500 mt-0.5">高阶修仙渡世</div>
+    </div>
+    <div class="glass-panel rounded-xl p-3 text-center border-l-4 border-amber-500">
+      <div class="text-[11px] text-gray-400">大后期 (T10~T12 大乘渡劫真仙)</div>
+      <div id="kpi_stage4_dyn" class="text-sm md:text-base font-bold font-mono mt-1">计算中...</div>
+      <div class="text-[10px] text-gray-500 mt-0.5">大乘之后通天彻地</div>
+    </div>
+    <div class="glass-panel rounded-xl p-3 text-center border-l-4 border-emerald-500 col-span-2 md:col-span-1">
+      <div class="text-[11px] text-gray-400">3 人组队提速</div>
+      <div id="kpi_speedup_dyn" class="text-sm md:text-base font-bold text-emerald-300 font-mono mt-1">--</div>
+      <div class="text-[10px] text-gray-500 mt-0.5">相对单人产出</div>
+    </div>
+  </div>
+
+  <!-- Main Grid Layout: Left Controls (5 cols), Right Visualization (7 cols) -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    
+    <!-- LEFT PANEL: Parameters Tuning -->
+    <div class="lg:col-span-5 space-y-4 max-h-[calc(100vh-230px)] overflow-y-auto pr-1.5">
+      
+      <!-- 1. 物理系配置卡片 (1 AD : 1 暴击 : 1 破招) -->
+      <div class="glass-panel rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3 border-b border-gray-800 pb-2">
+          <div class="flex items-center gap-2">
+            <span class="text-amber-400 font-bold text-sm">🗡️ 物理系 (1 AD : 1 暴击 : 1 破招)</span>
+          </div>
+          <span class="text-[11px] text-amber-300/90 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-800/50 font-mono">破招触发2x暴击命中</span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <!-- 物理平A -->
+          <div class="glass-card rounded-lg p-2.5 space-y-2">
+            <div class="font-semibold text-gray-200 flex justify-between items-center">
+              <span>物理普通攻击 (平 A 动作)</span>
+              <span id="p_auto_summary" class="text-blue-400 font-mono text-[11px]">1.0s / 100% AD</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-gray-400 flex justify-between">基础动作间隔: <span id="val_p_auto_interval" class="text-gray-200 font-mono">1.0s</span></label>
+                <input type="range" id="p_auto_interval" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full" oninput="updateParam('p_auto_interval', this.value, 's')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">基础伤害倍率: <span id="val_p_auto_ratio" class="text-gray-200 font-mono">100%</span></label>
+                <input type="range" id="p_auto_ratio" min="50" max="200" step="10" value="100" class="w-full" oninput="updateParam('p_auto_ratio', this.value, '%')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">满级专属攻速: <span id="val_p_auto_spd_max" class="text-gray-200 font-mono">50%</span></label>
+                <input type="range" id="p_auto_spd_max" min="0" max="80" step="5" value="50" class="w-full" oninput="updateParam('p_auto_spd_max', this.value, '%')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">满级专属增伤: <span id="val_p_auto_dmg_max" class="text-gray-200 font-mono">100%</span></label>
+                <input type="range" id="p_auto_dmg_max" min="0" max="200" step="10" value="100" class="w-full" oninput="updateParam('p_auto_dmg_max', this.value, '%')">
+              </div>
+            </div>
+          </div>
+
+          <!-- 核心单体1 & 2 -->
+          <div class="glass-card rounded-lg p-2.5 space-y-2">
+            <div class="font-semibold text-gray-200 flex justify-between items-center">
+              <span>物理技能 1 & 2 (核心单体输出)</span>
+              <span id="p_s1_summary" class="text-blue-400 font-mono text-[11px]">CD 12s / 动作 1s / 220%</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-gray-400 flex justify-between">基础倍率: <span id="val_p_s1_ratio" class="text-gray-200 font-mono">220%</span></label>
+                <input type="range" id="p_s1_ratio" min="100" max="400" step="10" value="220" class="w-full" oninput="updateParam('p_s1_ratio', this.value, '%')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">基础 CD: <span id="val_p_s1_cd" class="text-gray-200 font-mono">12.0s</span></label>
+                <input type="range" id="p_s1_cd" min="4" max="24" step="1" value="12" class="w-full" oninput="updateParam('p_s1_cd', this.value, 's')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">动作准备: <span id="val_p_s1_cast" class="text-gray-200 font-mono">1.0s</span></label>
+                <input type="range" id="p_s1_cast" min="0.2" max="2.0" step="0.1" value="1.0" class="w-full" oninput="updateParam('p_s1_cast', this.value, 's')">
+              </div>
+            </div>
+          </div>
+
+          <!-- 物理群攻3 -->
+          <div class="glass-card rounded-lg p-2.5 space-y-2">
+            <div class="font-semibold text-gray-200 flex justify-between items-center">
+              <span>物理技能 3 (群体绝技)</span>
+              <span id="p_aoe_summary" class="text-blue-400 font-mono text-[11px]">3怪 / CD 18s / 180%</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-gray-400 flex justify-between">基础倍率: <span id="val_p_aoe_ratio" class="text-gray-200 font-mono">180%</span></label>
+                <input type="range" id="p_aoe_ratio" min="50" max="300" step="10" value="180" class="w-full" oninput="updateParam('p_aoe_ratio', this.value, '%')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">基础 CD: <span id="val_p_aoe_cd" class="text-gray-200 font-mono">18.0s</span></label>
+                <input type="range" id="p_aoe_cd" min="6" max="30" step="1" value="18" class="w-full" oninput="updateParam('p_aoe_cd', this.value, 's')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">最大目标: <span id="val_p_aoe_targets" class="text-gray-200 font-mono">3只</span></label>
+                <input type="range" id="p_aoe_targets" min="1" max="5" step="1" value="3" class="w-full" oninput="updateParam('p_aoe_targets', this.value, '只')">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 法术系配置卡片 (固定 2.0x AP : 1 命中) -->
+      <div class="glass-panel rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3 border-b border-gray-800 pb-2">
+          <div class="flex items-center gap-2">
+            <span class="text-purple-400 font-bold text-sm">🔮 法术系技能配置</span>
+          </div>
+          <span class="text-[11px] text-purple-300/90 bg-purple-950/50 px-2 py-0.5 rounded border border-purple-800/50 font-mono">固定 2.0x AP (2 AP : 1 命中)</span>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <!-- 法术群攻1 -->
+          <div class="glass-card rounded-lg p-2.5 space-y-2">
+            <div class="font-semibold text-gray-200 flex justify-between items-center">
+              <span>法术技能 1 (大范围群攻)</span>
+              <span id="m_s1_summary" class="text-purple-400 font-mono text-[11px]">5怪 / CD 22s / 90% AP</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-gray-400 flex justify-between">基础倍率: <span id="val_m_s1_ratio" class="text-gray-200 font-mono">90%</span></label>
+                <input type="range" id="m_s1_ratio" min="40" max="200" step="5" value="90" class="w-full" oninput="updateParam('m_s1_ratio', this.value, '%')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">基础 CD: <span id="val_m_s1_cd" class="text-gray-200 font-mono">22.0s</span></label>
+                <input type="range" id="m_s1_cd" min="6" max="30" step="1" value="22" class="w-full" oninput="updateParam('m_s1_cd', this.value, 's')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">最大目标: <span id="val_m_s1_targets" class="text-gray-200 font-mono">5只</span></label>
+                <input type="range" id="m_s1_targets" min="1" max="5" step="1" value="5" class="w-full" oninput="updateParam('m_s1_targets', this.value, '只')">
+              </div>
+            </div>
+          </div>
+
+          <!-- 法术群攻2 -->
+          <div class="glass-card rounded-lg p-2.5 space-y-2">
+            <div class="font-semibold text-gray-200 flex justify-between items-center">
+              <span>法术技能 2 (强力群攻)</span>
+              <span id="m_s2_summary" class="text-purple-400 font-mono text-[11px]">3怪 / CD 20s / 120% AP</span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="text-gray-400 flex justify-between">基础倍率: <span id="val_m_s2_ratio" class="text-gray-200 font-mono">120%</span></label>
+                <input type="range" id="m_s2_ratio" min="60" max="250" step="10" value="120" class="w-full" oninput="updateParam('m_s2_ratio', this.value, '%')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">基础 CD: <span id="val_m_s2_cd" class="text-gray-200 font-mono">20.0s</span></label>
+                <input type="range" id="m_s2_cd" min="8" max="36" step="1" value="20" class="w-full" oninput="updateParam('m_s2_cd', this.value, 's')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">施法吟唱: <span id="val_m_s2_cast" class="text-gray-200 font-mono">2.0s</span></label>
+                <input type="range" id="m_s2_cast" min="0.5" max="3.5" step="0.1" value="2.0" class="w-full" oninput="updateParam('m_s2_cast', this.value, 's')">
+              </div>
+            </div>
+          </div>
+
+          <!-- 法术普攻灵爆 -->
+          <div class="glass-card rounded-lg p-2.5 space-y-2">
+            <div class="font-semibold text-gray-200 flex justify-between items-center">
+              <span>法术普攻 (0 CD 灵爆术)</span>
+              <span id="m_auto_summary" class="text-purple-400 font-mono text-[11px]">吟唱 2.0s / 60% AP</span>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-gray-400 flex justify-between">基础吟唱时间: <span id="val_m_auto_cast" class="text-gray-200 font-mono">2.0s</span></label>
+                <input type="range" id="m_auto_cast" min="0.5" max="3.0" step="0.1" value="2.0" class="w-full" oninput="updateParam('m_auto_cast', this.value, 's')">
+              </div>
+              <div>
+                <label class="text-gray-400 flex justify-between">基础伤害倍率: <span id="val_m_auto_ratio" class="text-gray-200 font-mono">60%</span></label>
+                <input type="range" id="m_auto_ratio" min="30" max="150" step="5" value="60" class="w-full" oninput="updateParam('m_auto_ratio', this.value, '%')">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. 高级机制与二次曲线配置卡片 -->
+      <div class="glass-panel rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3 border-b border-gray-800 pb-2">
+          <span class="text-cyan-400 font-bold text-sm">⚡ 高级机制与二次曲线调参</span>
+          <span class="text-xs text-gray-400 font-mono">f(x) = x²</span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <label class="text-gray-400 flex justify-between">满级 CDR 上限: <span id="val_cdr_max" class="text-gray-200 font-mono">75%</span></label>
+            <input type="range" id="cdr_max" min="30" max="90" step="5" value="75" class="w-full" oninput="updateParam('cdr_max', this.value, '%')">
+          </div>
+          <div>
+            <label class="text-gray-400 flex justify-between">满级行动速度 (ATR): <span id="val_atr_max" class="text-gray-200 font-mono">50%</span></label>
+            <input type="range" id="atr_max" min="20" max="80" step="5" value="50" class="w-full" oninput="updateParam('atr_max', this.value, '%')">
+          </div>
+          <div>
+            <label class="text-gray-400 flex justify-between">满级暴伤倍率: <span id="val_crit_dmg_max" class="text-gray-200 font-mono">500%</span></label>
+            <input type="range" id="crit_dmg_max" min="200" max="800" step="25" value="500" class="w-full" oninput="updateParam('crit_dmg_max', this.value, '%')">
+          </div>
+          <div>
+            <label class="text-gray-400 flex justify-between">每阶技能强度增量: <span id="val_skill_inc" class="text-gray-200 font-mono">+0.30x</span></label>
+            <input type="range" id="skill_inc" min="0.10" max="0.60" step="0.05" value="0.30" class="w-full" oninput="updateParam('skill_inc', this.value, 'x')">
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL: Dynamic Visual Matrix & Charts -->
+    <div class="lg:col-span-7 space-y-5">
+      
+      <!-- 🌟 12-Tier Dynamic Balance Heatmap Grid -->
+      <div class="glass-panel rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3 border-b border-gray-800 pb-2">
+          <h3 class="text-sm font-bold text-gray-100 flex items-center gap-2">
+            <span>🔥</span> 全 12 阶四阶段 动态优势分布矩阵 (12-Tier Balance Matrix)
+          </h3>
+          <span class="text-[11px] text-gray-400 font-mono">单人 1v1 & 3人组队 真实态势</span>
+        </div>
+        
+        <!-- 12 Cards Grid -->
+        <div id="tierMatrixGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+          <!-- Dynamically populated via JS -->
+        </div>
+      </div>
+
+      <!-- Chart: Combat Efficiency Curves across All 12 Tiers -->
+      <div class="glass-panel rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="text-sm font-bold text-gray-200 flex items-center gap-2">
+            📊 全 12 阶两系效率比曲线 (物 / 法 %)
+          </h3>
+          <span class="text-xs text-gray-400 font-mono">100% 为平衡基线；&gt;100% 物理优，&lt;100% 法术优</span>
+        </div>
+        <div class="h-60">
+          <canvas id="ratioChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Comprehensive Data Table Preview -->
+      <div class="glass-panel rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold text-gray-200 flex items-center gap-2">
+            📋 全 12 阶全景数据即时计算详表 (单人 1v1 & 3人组队)
+          </h3>
+          <span class="text-[11px] text-gray-400 font-mono">真实破招暴击与2.0x AP破防推演</span>
+        </div>
+        <div class="overflow-x-auto max-h-72">
+          <table class="w-full text-[11px] text-left">
+            <thead class="text-[10px] text-gray-400 uppercase bg-gray-900/90 sticky top-0 border-b border-gray-700">
+              <tr>
+                <th class="py-1.5 px-2">阶位与阶段</th>
+                <th class="py-1.5 px-2 text-cyan-300">平A实际间隔</th>
+                <th class="py-1.5 px-2 text-amber-300">单人物理单波(杀/h)</th>
+                <th class="py-1.5 px-2 text-purple-300">单语法术单波(杀/h)</th>
+                <th class="py-1.5 px-2 text-center text-cyan-400">单人优势判定</th>
+                <th class="py-1.5 px-2 text-amber-300">3物理队(杀/h)</th>
+                <th class="py-1.5 px-2 text-purple-300">3法术队(杀/h)</th>
+                <th class="py-1.5 px-2 text-center text-cyan-400">组队优势判定</th>
+                <th class="py-1.5 px-2 text-emerald-400">组队提速</th>
+              </tr>
+            </thead>
+            <tbody id="resultTableBody" class="divide-y divide-gray-800 font-mono text-gray-300">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Javascript Logic -->
+  <script>
+    // Global Static Player Expected Attributes Baseline (Tiers 1~12)
+    const BASE_TIERS = [
+      { tier: 1,  name: "凡胎", stage: "前期", level: 1,   hp: 310,    mp: 60,      ad: 17.5,    armor: 13.5,   mres: 9.0,   hit: 12.0,  eva: 8.0,   crit: 10.0,  cavoid: 8.0,  breakR: 10.0, parry: 8.0 },
+      { tier: 2,  name: "叩仙门", stage: "前期", level: 18, hp: 1205,   mp: 388,     ad: 68.0,    armor: 52.6,   mres: 35.0,  hit: 46.8,  eva: 31.2,  crit: 39.0,  cavoid: 31.2, breakR: 39.0, parry: 31.2 },
+      { tier: 3,  name: "练气", stage: "中期", level: 30,  hp: 2470,   mp: 1434,    ad: 139.4,   armor: 46.3,   mres: 28.2,  hit: 96.0,  eva: 64.0,  crit: 80.0,  cavoid: 64.0, breakR: 80.0, parry: 64.0 },
+      { tier: 4,  name: "筑基", stage: "中期", level: 42,  hp: 5064,   mp: 4402,    ad: 285.8,   armor: 95.0,   mres: 57.9,  hit: 196.8, eva: 131.2, crit: 164.0, cavoid: 131.2,breakR: 164.0,parry: 131.2 },
+      { tier: 5,  name: "金丹", stage: "中期", level: 54,  hp: 10381,  mp: 10785,   ad: 585.8,   armor: 195.0,  mres: 118.6, hit: 403.4, eva: 269.0, crit: 336.2, cavoid: 269.0,breakR: 336.2,parry: 269.0 },
+      { tier: 6,  name: "元婴", stage: "后期", level: 66,  hp: 21282,  mp: 20286,   ad: 1200.9,  armor: 399.7,  mres: 243.2, hit: 827.1, eva: 551.4, crit: 689.3, cavoid: 551.4,breakR: 689.3,parry: 551.4 },
+      { tier: 7,  name: "化神", stage: "后期", level: 78,  hp: 43627,  mp: 34100,   ad: 2461.9,  armor: 819.5,  mres: 498.6, hit: 1695.5,eva: 1130.3,crit: 1412.9,cavoid: 1130.3,breakR:1412.9,parry: 1130.3 },
+      { tier: 8,  name: "炼虚", stage: "后期", level: 90,  hp: 89436,  mp: 59624,   ad: 5046.9,  armor: 1680.0, mres: 1022.2,hit: 3475.8,eva: 2317.2,crit: 2896.5,cavoid: 2317.2,breakR:2896.5,parry: 2317.2 },
+      { tier: 9,  name: "合体", stage: "后期", level: 102, hp: 183344, mp: 122229,  ad: 10346.1, armor: 3443.9, mres: 2095.5,hit: 7125.4,eva: 4750.3,crit: 5937.8,cavoid: 4750.3,breakR:5937.8,parry: 4750.3 },
+      { tier: 10, name: "大乘", stage: "大后期", level: 114, hp: 375854, mp: 250569,  ad: 21209.4, armor: 7059.9, mres: 4295.7,hit: 14607, eva: 9738,  crit: 12173, cavoid: 9738, breakR:12173, parry: 9738 },
+      { tier: 11, name: "渡劫", stage: "大后期", level: 126, hp: 770502, mp: 513668,  ad: 43479.3, armor: 14472.9,mres: 8806.3,hit: 29944, eva: 19963, crit: 24953, cavoid: 19963,breakR:24953, parry: 19963 },
+      { tier: 12, name: "真仙", stage: "大后期", level: 127, hp: 1186572,mp: 791048,  ad: 66958.2, armor: 22287.2,mres: 13561.7,hit: 46115, eva: 30743, crit: 38429, cavoid: 30743,breakR:38429, parry: 30743 }
+    ];
+
+    // Current Final Balanced Parameters
+    let params = {
+      // 物理系: 1 AD : 1 暴击 : 1 破招
+      p_auto_interval: 1.0,
+      p_auto_ratio: 100,
+      p_auto_spd_max: 50,
+      p_auto_dmg_max: 100,
+      p_s1_ratio: 220, // 220% AD
+      p_s1_cd: 12.0,
+      p_s1_cast: 1.0,
+      p_aoe_ratio: 180, // 180% AD 3怪
+      p_aoe_cd: 18.0,
+      p_aoe_targets: 3,
+      // 法术系: 固定 2.0x AP : 1 命中
+      m_s1_ratio: 90,  // 5怪 90% AP CD 22s
+      m_s1_cd: 22.0,
+      m_s1_targets: 5,
+      m_s2_ratio: 120, // 3怪 120% AP CD 20s
+      m_s2_cd: 20.0,
+      m_s2_cast: 2.0,
+      m_auto_cast: 2.0,
+      m_auto_ratio: 60, // 60% AP
+      // 高级机制
+      cdr_max: 75,
+      atr_max: 50,
+      crit_dmg_max: 500,
+      skill_inc: 0.30
+    };
+
+    let ratioChart = null;
+
+    function updateParam(key, val, unit) {
+      params[key] = parseFloat(val);
+      const valEl = document.getElementById("val_" + key);
+      if (valEl) valEl.innerText = val + unit;
+      
+      document.getElementById("p_auto_summary").innerText = `${params.p_auto_interval}s / ${params.p_auto_ratio}% AD`;
+      document.getElementById("p_s1_summary").innerText = `CD ${params.p_s1_cd}s / 动作 ${params.p_s1_cast}s / ${params.p_s1_ratio}%`;
+      document.getElementById("p_aoe_summary").innerText = `${params.p_aoe_targets}怪 / CD ${params.p_aoe_cd}s / ${params.p_aoe_ratio}%`;
+      document.getElementById("m_s1_summary").innerText = `${params.m_s1_targets}怪 / CD ${params.m_s1_cd}s / ${params.m_s1_ratio}% AP`;
+      document.getElementById("m_s2_summary").innerText = `3怪 / CD ${params.m_s2_cd}s / ${params.m_s2_ratio}% AP`;
+      document.getElementById("m_auto_summary").innerText = `吟唱 ${params.m_auto_cast}s / ${params.m_auto_ratio}% AP`;
+
+      runSimulation();
+    }
+
+    function resetToDefaults() {
+      params = {
+        p_auto_interval: 1.0, p_auto_ratio: 100, p_auto_spd_max: 50, p_auto_dmg_max: 100,
+        p_s1_ratio: 220, p_s1_cd: 12.0, p_s1_cast: 1.0,
+        p_aoe_ratio: 180, p_aoe_cd: 18.0, p_aoe_targets: 3,
+        m_s1_ratio: 90, m_s1_cd: 22.0, m_s1_targets: 5,
+        m_s2_ratio: 120, m_s2_cd: 20.0, m_s2_cast: 2.0,
+        m_auto_cast: 2.0, m_auto_ratio: 60,
+        cdr_max: 75, atr_max: 50, crit_dmg_max: 500, skill_inc: 0.30
+      };
+      for (const k in params) {
+        const el = document.getElementById(k);
+        if (el) el.value = params[k];
+        const valEl = document.getElementById("val_" + k);
+        if (valEl) valEl.innerText = params[k];
+      }
+      runSimulation();
+    }
+
+    function formatAdvantageBadge(ratio) {
+      if (Math.abs(ratio - 100.0) <= 2.0) {
+        return `<span class="badge-equal px-1.5 py-0.5 rounded text-[10px] font-bold">⚖️ 均衡 ${ratio.toFixed(1)}%</span>`;
+      } else if (ratio > 100.0) {
+        const lead = ratio - 100.0;
+        return `<span class="badge-phys px-1.5 py-0.5 rounded text-[10px] font-bold">🗡️ 物优 +${lead.toFixed(1)}%</span>`;
+      } else {
+        const lead = (100.0 / ratio - 1.0) * 100.0;
+        return `<span class="badge-magic px-1.5 py-0.5 rounded text-[10px] font-bold">🔮 法优 +${lead.toFixed(1)}%</span>`;
+      }
+    }
+
+    function formatStageKpiText(avgRatio) {
+      if (Math.abs(avgRatio - 100.0) <= 3.0) {
+        return `<span class="text-teal-300">⚖️ 均衡 (${avgRatio.toFixed(1)}%)</span>`;
+      } else if (avgRatio > 100.0) {
+        const lead = avgRatio - 100.0;
+        return `<span class="text-amber-400">🗡️ 物优 +${lead.toFixed(1)}%</span>`;
+      } else {
+        const lead = (100.0 / avgRatio - 1.0) * 100.0;
+        return `<span class="text-purple-400">🔮 法优 +${lead.toFixed(1)}%</span>`;
+      }
+    }
+
+    // Precise Non-linear damage calculation with Contest Breakdown & Resistance Reduction
+    function calcActualDamageContest(rawDmg, pAtkStats, targetDefStats, kRes, critDmgRatio, teamSize) {
+      if (rawDmg <= 0) return 0;
+      const totalRaw = rawDmg * teamSize;
+
+      // 1. 破招 vs 拆招 (物理系高破招，法术系基线)
+      const breakProb = pAtkStats.breakR / (pAtkStats.breakR + targetDefStats.parry + 1.0);
+      const isBreak = (pAtkStats.breakR > targetDefStats.parry) ? (breakProb * 0.75) : (breakProb * 0.25);
+
+      const effHit = pAtkStats.hit * (1.0 + isBreak * 1.0);
+      const effCrit = pAtkStats.crit * (1.0 + isBreak * 1.0);
+
+      // 2. 命中 vs 闪避
+      const hitProb = Math.min(1.0, effHit / (effHit + targetDefStats.eva + 1.0));
+
+      // 3. 暴击 vs 免暴
+      const critProb = Math.min(1.0, effCrit / (effCrit + targetDefStats.cavoid + 1.0));
+      const critMult = 1.0 + critProb * (critDmgRatio - 1.0);
+
+      // 4. 抗性减伤 (非线性平方减伤公式)
+      const reduction = totalRaw / (totalRaw + targetDefStats.res * kRes + 1.0);
+
+      return totalRaw * reduction * hitProb * critMult;
+    }
+
+    // Stabilized Deterministic Short-Simulation Kernel
+    function simulateTier(tData, teamType, teamSize, totalWaves) {
+      const lv = tData.level;
+      const t = tData.tier;
+      const x = (lv - 1) / 126.0;
+      const x_quad = x * x;
+
+      const cdr = (x_quad * params.cdr_max) / 100.0;
+      const atr = (x_quad * params.atr_max) / 100.0;
+      const cd_mult = 1.0 - cdr;
+      const action_mult = 1.0 - atr;
+      const skill_int = 1.0 + (t - 1) * params.skill_inc;
+      const wait_delay = 5.0 - 2.5 * x_quad;
+
+      const p_extra_spd = (x_quad * params.p_auto_spd_max) / 100.0;
+      const p_extra_dmg = (x_quad * params.p_auto_dmg_max) / 100.0;
+
+      const p_auto_int = Math.max(0.05, params.p_auto_interval * action_mult * (1.0 - p_extra_spd));
+      const p_auto_dmg_mult = (params.p_auto_ratio / 100.0) * (1.0 + p_extra_dmg);
+
+      const m_auto_cast = Math.max(0.1, params.m_auto_cast * action_mult);
+      const m_auto_dmg_mult = (params.m_auto_ratio / 100.0) * skill_int;
+
+      const p_ad = tData.ad;
+      const p_ap = p_ad * 2.0; // 固定 2.0x AP (2 AP : 1 命中)
+      const p_armor = tData.armor;
+      const p_mres = tData.mres;
+      const p_hp = tData.hp;
+
+      const k_res = t * 1.0;
+      const crit_dmg_ratio = (150.0 + x_quad * (params.crit_dmg_max - 150.0)) / 100.0;
+
+      let p_stats;
+      if (teamType === "physical") {
+        p_stats = {
+          hit: tData.hit * 1.0,
+          crit: tData.crit * 2.0,
+          breakR: tData.breakR * 2.0
+        };
+      } else {
+        p_stats = {
+          hit: tData.hit * 2.0,
+          crit: tData.crit * 0.5,
+          breakR: tData.breakR * 0.5
+        };
+      }
+
+      let normal_durations = [];
+      let elite_durations = [];
+      let boss_durations = [];
+      let total_dur = 0.0;
+      let kills = 0;
+
+      for (let w = 1; w <= totalWaves; w++) {
+        total_dur += wait_delay;
+        const is_boss = (w % 20 === 0);
+        const is_elite = (!is_boss) && (w % 5 === 0);
+
+        let mobs = [];
+        if (is_boss) {
+          mobs.push({ hp: p_hp * 20.0, max_hp: p_hp * 20.0, armor: p_armor * 1.5, mres: p_mres * 1.5, eva: tData.eva * 1.5, cavoid: tData.cavoid * 1.5, parry: tData.parry * 1.5, is_boss: true });
+          mobs.push({ hp: p_hp * 3.0, max_hp: p_hp * 3.0, armor: p_armor * 0.8, mres: p_mres * 0.8, eva: tData.eva * 0.8, cavoid: tData.cavoid * 0.8, parry: tData.parry * 0.8 });
+          mobs.push({ hp: p_hp * 3.0, max_hp: p_hp * 3.0, armor: p_armor * 0.8, mres: p_mres * 0.8, eva: tData.eva * 0.8, cavoid: tData.cavoid * 0.8, parry: tData.parry * 0.8 });
+        } else if (is_elite) {
+          mobs.push({ hp: p_hp * 5.0, max_hp: p_hp * 5.0, armor: p_armor * 1.2, mres: p_mres * 1.2, eva: tData.eva * 1.2, cavoid: tData.cavoid * 1.2, parry: tData.parry * 1.2, is_elite: true });
+          mobs.push({ hp: p_hp * 3.0, max_hp: p_hp * 3.0, armor: p_armor * 0.8, mres: p_mres * 0.8, eva: tData.eva * 0.8, cavoid: tData.cavoid * 0.8, parry: tData.parry * 0.8 });
+          mobs.push({ hp: p_hp * 3.0, max_hp: p_hp * 3.0, armor: p_armor * 0.8, mres: p_mres * 0.8, eva: tData.eva * 0.8, cavoid: tData.cavoid * 0.8, parry: tData.parry * 0.8 });
+        } else {
+          mobs.push({ hp: p_hp * 3.0, max_hp: p_hp * 3.0, armor: p_armor * 0.8, mres: p_mres * 0.8, eva: tData.eva * 0.8, cavoid: tData.cavoid * 0.8, parry: tData.parry * 0.8 });
+          mobs.push({ hp: p_hp * 3.0, max_hp: p_hp * 3.0, armor: p_armor * 0.8, mres: p_mres * 0.8, eva: tData.eva * 0.8, cavoid: tData.cavoid * 0.8, parry: tData.parry * 0.8 });
+          mobs.push({ hp: p_hp * 3.0, max_hp: p_hp * 3.0, armor: p_armor * 0.8, mres: p_mres * 0.8, eva: tData.eva * 0.8, cavoid: tData.cavoid * 0.8, parry: tData.parry * 0.8 });
+        }
+
+        let wave_time = 0.0;
+        let p_next_s1 = 0.0, p_next_s2 = 0.0, p_next_s3 = 0.0;
+        let m_next_s1 = 0.0, m_next_s2 = 0.0;
+
+        while (mobs.some(m => m.hp > 0) && wave_time < 900.0) {
+          let alive = mobs.filter(m => m.hp > 0);
+          if (alive.length === 0) break;
+
+          if (teamType === "physical") {
+            if (wave_time >= p_next_s1) {
+              const raw = p_ad * (params.p_s1_ratio / 100.0) * skill_int;
+              const defStats = { res: alive[0].armor, eva: alive[0].eva, cavoid: alive[0].cavoid, parry: alive[0].parry };
+              const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);
+              alive[0].hp -= dmg;
+              const cast = params.p_s1_cast * action_mult;
+              p_next_s1 = wave_time + cast + params.p_s1_cd * cd_mult;
+              wave_time += cast;
+            } else if (wave_time >= p_next_s2) {
+              const raw = p_ad * (params.p_s1_ratio / 100.0) * skill_int;
+              const defStats = { res: alive[0].armor, eva: alive[0].eva, cavoid: alive[0].cavoid, parry: alive[0].parry };
+              const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);
+              alive[0].hp -= dmg;
+              const cast = params.p_s1_cast * action_mult;
+              p_next_s2 = wave_time + cast + params.p_s1_cd * cd_mult;
+              wave_time += cast;
+            } else if (wave_time >= p_next_s3) {
+              const raw = p_ad * (params.p_aoe_ratio / 100.0) * skill_int;
+              const tgts = alive.slice(0, params.p_aoe_targets);
+              tgts.forEach(m => {
+                const defStats = { res: m.armor, eva: m.eva, cavoid: m.cavoid, parry: m.parry };
+                const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);
+                m.hp -= dmg;
+              });
+              const cast = 2.0 * action_mult;
+              p_next_s3 = wave_time + cast + params.p_aoe_cd * cd_mult;
+              wave_time += cast;
+            } else {
+              const raw = p_ad * p_auto_dmg_mult;
+              const defStats = { res: alive[0].armor, eva: alive[0].eva, cavoid: alive[0].cavoid, parry: alive[0].parry };
+              const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);
+              alive[0].hp -= dmg;
+              wave_time += p_auto_int;
+            }
+          } else {
+            if (wave_time >= m_next_s1) {
+              const raw = p_ap * (params.m_s1_ratio / 100.0) * skill_int;
+              const tgts = alive.slice(0, params.m_s1_targets);
+              tgts.forEach(m => {
+                const defStats = { res: m.mres, eva: m.eva, cavoid: m.cavoid, parry: m.parry };
+                const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);
+                m.hp -= dmg;
+              });
+              const cast = 2.0 * action_mult;
+              m_next_s1 = wave_time + cast + params.m_s1_cd * cd_mult;
+              wave_time += cast;
+            } else if (wave_time >= m_next_s2) {
+              const raw = p_ap * (params.m_s2_ratio / 100.0) * skill_int;
+              const tgts = alive.slice(0, 3);
+              tgts.forEach(m => {
+                const defStats = { res: m.mres, eva: m.eva, cavoid: m.cavoid, parry: m.parry };
+                const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);
+                m.hp -= dmg;
+              });
+              const cast = params.m_s2_cast * action_mult;
+              m_next_s2 = wave_time + cast + params.m_s2_cd * cd_mult;
+              wave_time += cast;
+            } else {
+              const raw = p_ap * m_auto_dmg_mult;
+              const defStats = { res: alive[0].mres, eva: alive[0].eva, cavoid: alive[0].cavoid, parry: alive[0].parry };
+              const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);
+              alive[0].hp -= dmg;
+              wave_time += m_auto_cast;
+            }
+          }
+        }
+
+        total_dur += wave_time;
+        kills += mobs.length;
+
+        if (is_boss) boss_durations.push(wave_time);
+        else if (is_elite) elite_durations.push(wave_time);
+        else normal_durations.push(wave_time);
+      }
+
+      const non_boss_list = normal_durations.concat(elite_durations);
+      const avg_non_boss = non_boss_list.reduce((a, b) => a + b, 0) / Math.max(1, non_boss_list.length);
+      const avg_boss = boss_durations.reduce((a, b) => a + b, 0) / Math.max(1, boss_durations.length);
+      const hourly_kills = (kills / total_dur) * 3600.0;
+      const hourly_waves = (totalWaves / total_dur) * 3600.0;
+
+      return {
+        tier: t,
+        name: tData.name,
+        stage: tData.stage,
+        level: lv,
+        p_auto_interval: p_auto_int,
+        m_auto_cast: m_auto_cast,
+        avgNonBossWaveSec: avg_non_boss,
+        avgBossSec: avg_boss,
+        hourlyKills: hourly_kills,
+        hourlyWaves: hourly_waves,
+        totalDur: total_dur
+      };
+    }
+
+    function runSimulation() {
+      const totalWaves = parseInt(document.getElementById("simWavesSelect").value) || 60;
+      
+      let tableRowsHtml = "";
+      let gridCardsHtml = "";
+      let labels = [];
+      let soloOverallRatios = [];
+      let partyOverallRatios = [];
+
+      let stage1Ratios = [];
+      let stage2Ratios = [];
+      let stage3Ratios = [];
+      let stage4Ratios = [];
+      let speedups = [];
+
+      for (let i = 0; i < BASE_TIERS.length; i++) {
+        const tData = BASE_TIERS[i];
+        labels.push(`T${tData.tier} ${tData.name}`);
+
+        const sp = simulateTier(tData, "physical", 1, totalWaves);
+        const sm = simulateTier(tData, "magic", 1, totalWaves);
+        const tp = simulateTier(tData, "physical", 3, totalWaves);
+        const tm = simulateTier(tData, "magic", 3, totalWaves);
+
+        const solo_overall_r = (sp.hourlyKills / Math.max(0.01, sm.hourlyKills)) * 100.0;
+        const party_overall_r = (tp.hourlyKills / Math.max(0.01, tm.hourlyKills)) * 100.0;
+        const speedup = (tp.hourlyKills + tm.hourlyKills) / Math.max(0.1, (sp.hourlyKills + sm.hourlyKills));
+
+        soloOverallRatios.push(solo_overall_r.toFixed(1));
+        partyOverallRatios.push(party_overall_r.toFixed(1));
+
+        if (tData.tier >= 1 && tData.tier <= 2) stage1Ratios.push(solo_overall_r);
+        if (tData.tier >= 3 && tData.tier <= 5) stage2Ratios.push(solo_overall_r);
+        if (tData.tier >= 6 && tData.tier <= 9) stage3Ratios.push(solo_overall_r);
+        if (tData.tier >= 10 && tData.tier <= 12) stage4Ratios.push(solo_overall_r);
+        speedups.push(speedup);
+
+        const soloBadge = formatAdvantageBadge(solo_overall_r);
+        const partyBadge = formatAdvantageBadge(party_overall_r);
+
+        let stageBorder = "border-slate-700/60";
+        let stageTag = `<span class="px-1.5 py-0.2 text-[9px] rounded bg-slate-800 text-slate-300">前期</span>`;
+        if (tData.tier >= 3 && tData.tier <= 5) {
+          stageBorder = "border-cyan-800/60";
+          stageTag = `<span class="px-1.5 py-0.2 text-[9px] rounded bg-cyan-950 text-cyan-300 border border-cyan-800/40">中期</span>`;
+        } else if (tData.tier >= 6 && tData.tier <= 9) {
+          stageBorder = "border-indigo-800/60";
+          stageTag = `<span class="px-1.5 py-0.2 text-[9px] rounded bg-indigo-950 text-indigo-300 border border-indigo-800/40">后期</span>`;
+        } else if (tData.tier >= 10) {
+          stageBorder = "border-amber-800/60";
+          stageTag = `<span class="px-1.5 py-0.2 text-[9px] rounded bg-amber-950 text-amber-300 border border-amber-800/40">大后期</span>`;
+        }
+
+        gridCardsHtml += `
+          <div class="glass-card rounded-lg p-2.5 flex flex-col justify-between space-y-1.5 border ${stageBorder} hover:border-blue-500/50 transition">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-gray-100 text-xs">T${tData.tier} ${tData.name}</span>
+                ${stageTag}
+              </div>
+              <span class="text-[10px] text-gray-400 font-mono">Lv${tData.level}</span>
+            </div>
+            <div class="space-y-1 text-[10px]">
+              <div class="flex items-center justify-between">
+                <span class="text-gray-400">单人:</span>
+                ${soloBadge}
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-gray-400">3人队:</span>
+                ${partyBadge}
+              </div>
+            </div>
+            <div class="text-[9px] text-gray-500 font-mono flex justify-between border-t border-gray-800/80 pt-1">
+              <span>刀速 ${sp.p_auto_interval.toFixed(2)}s</span>
+              <span class="text-emerald-400 font-semibold">${speedup.toFixed(1)}x速</span>
+            </div>
+          </div>
+        `;
+
+        tableRowsHtml += `
+          <tr class="hover:bg-gray-800/50 transition border-b border-gray-800/60">
+            <td class="py-1.5 px-2 font-semibold text-gray-200 flex items-center gap-1.5">
+              <span>T${tData.tier} ${tData.name}</span>
+              ${stageTag}
+              <span class="text-gray-500 text-[10px]">Lv${tData.level}</span>
+            </td>
+            <td class="py-1.5 px-2 text-cyan-300 font-mono">${sp.p_auto_interval.toFixed(3)}s</td>
+            <td class="py-1.5 px-2 text-amber-300 font-mono">${sp.avgNonBossWaveSec.toFixed(1)}s <span class="text-gray-400 text-[10px]">(${sp.hourlyKills.toFixed(0)})</span></td>
+            <td class="py-1.5 px-2 text-purple-300 font-mono">${sm.avgNonBossWaveSec.toFixed(1)}s <span class="text-gray-400 text-[10px]">(${sm.hourlyKills.toFixed(0)})</span></td>
+            <td class="py-1.5 px-2 text-center">${soloBadge}</td>
+            <td class="py-1.5 px-2 text-amber-300 font-mono">${tp.avgNonBossWaveSec.toFixed(1)}s <span class="text-gray-400 text-[10px]">(${tp.hourlyKills.toFixed(0)})</span></td>
+            <td class="py-1.5 px-2 text-purple-300 font-mono">${tm.avgNonBossWaveSec.toFixed(1)}s <span class="text-gray-400 text-[10px]">(${tm.hourlyKills.toFixed(0)})</span></td>
+            <td class="py-1.5 px-2 text-center">${partyBadge}</td>
+            <td class="py-1.5 px-2 text-emerald-300 font-mono font-bold">${speedup.toFixed(2)}x</td>
+          </tr>
+        `;
+      }
+
+      document.getElementById("tierMatrixGrid").innerHTML = gridCardsHtml;
+      document.getElementById("resultTableBody").innerHTML = tableRowsHtml;
+
+      const avgStage1 = stage1Ratios.reduce((a, b) => a + b, 0) / stage1Ratios.length;
+      const avgStage2 = stage2Ratios.reduce((a, b) => a + b, 0) / stage2Ratios.length;
+      const avgStage3 = stage3Ratios.reduce((a, b) => a + b, 0) / stage3Ratios.length;
+      const avgStage4 = stage4Ratios.reduce((a, b) => a + b, 0) / stage4Ratios.length;
+      const avgSpeedup = speedups.reduce((a, b) => a + b, 0) / speedups.length;
+
+      document.getElementById("kpi_stage1_dyn").innerHTML = formatStageKpiText(avgStage1);
+      document.getElementById("kpi_stage2_dyn").innerHTML = formatStageKpiText(avgStage2);
+      document.getElementById("kpi_stage3_dyn").innerHTML = formatStageKpiText(avgStage3);
+      document.getElementById("kpi_stage4_dyn").innerHTML = formatStageKpiText(avgStage4);
+      document.getElementById("kpi_speedup_dyn").innerText = `${avgSpeedup.toFixed(2)}x 提速`;
+
+      renderCharts(labels, soloOverallRatios, partyOverallRatios);
+    }
+
+    function renderCharts(labels, soloRatios, partyRatios) {
+      if (ratioChart) ratioChart.destroy();
+      const ctx = document.getElementById("ratioChart").getContext("2d");
+      ratioChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: "单人总效率比 (物理/法术 %)",
+              data: soloRatios,
+              borderColor: "#38bdf8",
+              backgroundColor: "rgba(56, 189, 248, 0.12)",
+              tension: 0.3,
+              fill: true,
+              borderWidth: 2.5
+            },
+            {
+              label: "3人队总效率比 (3物/3法 %)",
+              data: partyRatios,
+              borderColor: "#c084fc",
+              backgroundColor: "rgba(192, 132, 252, 0.08)",
+              tension: 0.3,
+              fill: true,
+              borderWidth: 2.5
+            },
+            {
+              label: "100% 平衡基线",
+              data: Array(labels.length).fill(100),
+              borderColor: "#64748b",
+              borderDash: [4, 4],
+              pointRadius: 0,
+              borderWidth: 1.5
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#cbd5e1", font: { size: 11 } } },
+            tooltip: {
+              mode: "index",
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  const val = parseFloat(context.raw);
+                  if (context.datasetIndex === 2) return "100% 绝对平衡线";
+                  if (val > 100) return `${context.dataset.label}: 🗡️ 物理优 +${(val - 100).toFixed(1)}% (${val.toFixed(1)}%)`;
+                  else return `${context.dataset.label}: 🔮 法术优 +${(100/val - 1).toFixed(1)}% (${val.toFixed(1)}%)`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(51, 65, 85, 0.3)" } },
+            y: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "rgba(51, 65, 85, 0.3)" } }
+          }
+        }
+      });
+    }
+
+    function exportConfigJson() {
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        tuningParameters: params,
+        description: "太虚仙途战斗平衡调参配置快照(最终平衡基准)"
+      };
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", "combat-tuning-parameters.json");
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      resetToDefaults();
+    });
+  </script>
+</body>
+</html>

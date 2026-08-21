@@ -17,128 +17,120 @@
       "eliteAttributes": "120% 全属性, 500% 生命值",
       "bossAttributes": "150% 全属性, 2000% 生命值"
     },
-    "waveSearchDelayFormula": "WaitSeconds = 5.0 - 2.5 * ((Level - 1) / 126.0) (5.0s 线性削减至 2.5s)",
-    "skillIntensityFormula": "SkillIntensity = 1.0 + (Tier - 1) * 0.30 (1.0x ~ 4.30x，纯技能强度成长，无穿透)",
-    "standardSkillsModel": {
-      "skillSlots": 4,
-      "activeCombatSkills": [
-        {
-          "type": "single",
-          "name": "核心单体",
-          "baseDamageRatio": 2.0,
-          "cooldownSeconds": 12.0,
-          "maxTargets": 1
-        },
-        {
-          "type": "aoe_large",
-          "name": "大范围群攻",
-          "baseDamageRatio": 0.8,
-          "cooldownSeconds": 18.0,
-          "maxTargets": 5
-        },
-        {
-          "type": "aoe_heavy",
-          "name": "强力群攻",
-          "baseDamageRatio": 1.2,
-          "cooldownSeconds": 22.0,
-          "maxTargets": 3
-        }
-      ],
-      "passiveBuffSkill": {
-        "type": "buff",
-        "description": "常驻/被动 Buff 型技能，不参与战斗即时伤害施法，其增益已直接计入四独立乘区中的 Buff 乘区 (1 + Buff%)"
-      },
-      "skillIntensityFormula": "SkillIntensity = 1.0 + (Tier - 1) * 0.30 (1.00x ~ 4.30x，纯技能强度，无穿透)",
-      "waveSearchDelayFormula": "WaitSeconds = 5.0 - 2.5 * ((Level - 1) / 126.0) (5.0s 线性削减至 2.5s)"
+    "growthCurveModel": {
+      "type": "quadratic",
+      "normalizedFormula": "x = (Level - 1) / 126.0, Progress(x) = x^2",
+      "description": "二次函数模型，前期平缓，中后期爆发式提升"
     },
-    "damageFormula": {
-      "dynamicResistanceCoefficientFormula": "K(Tier) = 1.0 + (Tier - 1) * 1.0 = Tier (1阶为1.0，每阶递增1.0，12阶真仙为12.0)",
-      "damageFactorFormula": "DamageFactor = Attack / (Attack + EffectiveResistance * Tier + 1.0)",
-      "actualDamageFormula": "ActualDamage = Attack * DamageFactor * (isCritical ? 1.5 : 1.0)"
+    "advancedMechanicsFormulas": {
+      "cooldownReductionFormula": "CDR(Level) = ((Level - 1) / 126.0)^2 * 75% (0% -> 75% 二次曲线，仅负责主动技能 CD 缩减)",
+      "actionSpeedReductionFormula": "ATR(Level) = ((Level - 1) / 126.0)^2 * 50% (0% -> 50% 二次曲线，动作时间与施法吟唱时间缩减，时间乘数 1.00 -> 0.50)",
+      "criticalDamageRatioFormula": "CritDamageMultiplier(Level) = 1.50 + ((Level - 1) / 126.0)^2 * 3.50 (150% -> 500% 二次曲线)",
+      "waveSearchDelayFormula": "WaitSeconds = 5.0 - 2.5 * ((Level - 1) / 126.0)^2 (5.0s -> 2.5s 二次曲线)",
+      "skillIntensityFormula": "SkillIntensity = 1.0 + (Tier - 1) * 0.30 (1.00x ~ 4.30x，纯技能强度成长)"
     },
-    "cooldownReductionFormula": "CDR(Level) = ((Level - 1) / 126.0) * 75% (0% -> 75% 线性削减，真仙期仅剩 25% 基础 CD)",
-    "criticalDamageRatioFormula": "CritDamageMultiplier(Level) = 1.50 + ((Level - 1) / 126.0) * 3.50 (150% -> 500% 线性成长)",
-    "dualStyleSkillModels": {
-      "castTimeRules": {
-        "singleTargetCastSeconds": 1.0,
-        "aoeTargetCastSeconds": 2.0,
-        "magicAutoAttackCastSeconds": 2.0,
-        "physicalAutoAttackIntervalSeconds": 2.0
-      },
+    "damageMitigationFormula": {
+      "model": "Damage Squared Resistance Penetration (攻击力与伤害非线性平方模型)",
+      "dynamicResistanceCoefficientFormula": "K(Tier) = Tier (1阶为1.0，12阶真仙为12.0)",
+      "mitigatedDamageFormula": "ActualDamage = RawDamage * (RawDamage / (RawDamage + EffectiveResistance * K + 1.0)) * (isCritical ? CritDmg : 1.0)",
+      "description": "单发原始伤害越高，天然穿甲能力越强；单发原始伤害低，受抗性拦截更严重"
+    },
+    "statAllocationStyles": {
       "physicalStyle": {
-        "description": "物理系：2个单体技能 + 1个群攻技能 + 1个0增益Buff技能 + 物理普攻(100% AD)",
+        "allocationRatio": "1 AD : 1 暴击 : 1 破招",
+        "mechanics": "破招成功触发双倍命中(2x)与双倍暴击(2x)，配合1秒4刀极速出刀与220%高倍单体大招"
+      },
+      "magicStyle": {
+        "allocationRatio": "固定 2.0x AP : 1 命中",
+        "mechanics": "固定 2.0x AP 超高大攻击力在平方减伤下天然破防击穿魔抗，2.0x 命中确保绝对必中，全屏大范围 AoE 极速清怪"
+      }
+    },
+    "benchmarkCombatSkillsModel": {
+      "physicalStyle": {
+        "name": "物理系标准技能基准 (1 AD : 1 暴击 : 1 破招)",
+        "autoAttack": {
+          "name": "物理普通攻击 (平 A)",
+          "baseIntervalSeconds": 1.0,
+          "baseDamageRatioPct": 100.0,
+          "maxExtraAttackSpeedPct": 50.0,
+          "maxExtraDamagePct": 100.0,
+          "finalIntervalSeconds": 0.25,
+          "finalDamageRatioPct": 200.0,
+          "description": "受 ATR 与专属攻速双重缩减，12阶真仙达到 0.250s (1秒4刀) / 200% AD"
+        },
         "skills": [
           {
             "slot": 1,
             "name": "核心单体1",
-            "baseRatio": 2.0,
-            "cooldownSeconds": 12.0,
-            "castSeconds": 1.0,
-            "maxTargets": 1
+            "baseDamageRatioPct": 220.0,
+            "baseCooldownSeconds": 12.0,
+            "baseCastSeconds": 1.0,
+            "maxTargets": 1,
+            "cost": 20
           },
           {
             "slot": 2,
             "name": "核心单体2",
-            "baseRatio": 2.0,
-            "cooldownSeconds": 12.0,
-            "castSeconds": 1.0,
-            "maxTargets": 1
+            "baseDamageRatioPct": 220.0,
+            "baseCooldownSeconds": 12.0,
+            "baseCastSeconds": 1.0,
+            "maxTargets": 1,
+            "cost": 20
           },
           {
             "slot": 3,
             "name": "群体绝技",
-            "baseRatio": 1.2,
-            "cooldownSeconds": 18.0,
-            "castSeconds": 2.0,
-            "maxTargets": 3
+            "baseDamageRatioPct": 180.0,
+            "baseCooldownSeconds": 18.0,
+            "baseCastSeconds": 2.0,
+            "maxTargets": 3,
+            "cost": 30
           },
           {
             "slot": 4,
             "name": "功能Buff",
-            "baseRatio": 0.0,
-            "description": "纯功能/状态型技能，不提供数值增益，不计入伤害计算"
+            "description": "常驻/被动 Buff 型技能，不参与战斗即时伤害施法，其增益已直接计入四独立乘区中的 Buff 乘区 (1 + Buff%)"
           }
         ]
       },
       "magicStyle": {
-        "description": "法术系：2个群攻技能 + 1个法术普攻(60% AP, 0CD, 2s吟唱) + 1个0增益Buff技能",
+        "name": "法术系标准技能基准 (固定 2.0x AP : 1 命中)",
+        "autoAttack": {
+          "name": "法术普攻 (灵爆术)",
+          "baseCastSeconds": 2.0,
+          "baseDamageRatioPct": 60.0,
+          "cooldownSeconds": 0.0,
+          "finalCastSeconds": 1.0,
+          "finalDamageRatioPct": 258.0,
+          "description": "0 CD 技能，受 ATR 缩减至 1.00s (1秒1发)，伤害享受技能强度阶位成长 (60% -> 258% AP)"
+        },
         "skills": [
           {
             "slot": 1,
             "name": "大范围群攻",
-            "baseRatio": 0.8,
-            "cooldownSeconds": 18.0,
-            "castSeconds": 2.0,
-            "maxTargets": 5
+            "baseDamageRatioPct": 90.0,
+            "baseCooldownSeconds": 22.0,
+            "baseCastSeconds": 2.0,
+            "maxTargets": 5,
+            "cost": 30
           },
           {
             "slot": 2,
             "name": "强力群攻",
-            "baseRatio": 1.2,
-            "cooldownSeconds": 22.0,
-            "castSeconds": 2.0,
-            "maxTargets": 3
-          },
-          {
-            "slot": 3,
-            "name": "法术普攻",
-            "baseRatio": 0.6,
-            "cooldownSeconds": 0.0,
-            "castSeconds": 2.0,
-            "maxTargets": 1,
-            "description": "0 CD，2秒吟唱，无主动技能可用时施放",
-            "scalingFormula": "60% AP * SkillIntensity (60% -> 258% AP，享受当前位阶技能强度放大)"
+            "baseDamageRatioPct": 120.0,
+            "baseCooldownSeconds": 20.0,
+            "baseCastSeconds": 2.0,
+            "maxTargets": 3,
+            "cost": 35
           },
           {
             "slot": 4,
             "name": "功能Buff",
-            "baseRatio": 0.0,
-            "description": "纯功能/状态型技能，不提供数值增益，不计入伤害计算"
+            "description": "常驻/被动 Buff 型技能，不参与战斗即时伤害施法，其增益已直接计入四独立乘区中的 Buff 乘区 (1 + Buff%)"
           }
         ]
       }
-    },
-    "castTimeReductionFormula": "CTR(Level) = ((Level - 1) / 126.0) * 50% (0% -> 50% 线性削减，满级真仙期仅剩 50% 吟唱时间)"
+    }
   },
   "tiers": [
     {
@@ -210,24 +202,131 @@
         "avgBossWaveDurationSeconds": 36.23
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 0.0,
         "physicalStyle": {
-          "hourlyKills": 114.0,
-          "hourlyWaves": 38.0,
-          "dailyKills24h": 2736,
-          "avgKillTimeSeconds": 31.58,
-          "avgWaveDurationSeconds": 89.74,
-          "avgBossWaveDurationSeconds": 35.74
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 80.83,
+          "eliteWaveDurationSeconds": 43.01,
+          "nonBossAvgWaveSeconds": 74.76,
+          "nonBossAvgKillSeconds": 24.92,
+          "bossWaveDurationSeconds": 32.14,
+          "overallAvgWaveSeconds": 72.84,
+          "overallAvgKillSeconds": 25.95,
+          "hourlyWaves": 46.25,
+          "hourlyKills": 138.75,
+          "dailyKills24h": 3330.0,
+          "totalDps": 4.0,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 0.6470608514709646,
+              "pct": 16.268760039255877
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 0.1418195120626985,
+              "pct": 3.5657042230068035
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 0.0,
+              "pct": 0.0
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 3.188440894568566,
+              "pct": 80.16553573773732
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 60.0,
-          "hourlyKills": 113.38,
-          "hourlyWaves": 37.79,
-          "dailyKills24h": 2721,
-          "avgKillTimeSeconds": 31.75,
-          "avgWaveDurationSeconds": 90.26,
-          "avgBossWaveDurationSeconds": 33.22
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 77.78,
+          "eliteWaveDurationSeconds": 43.54,
+          "nonBossAvgWaveSeconds": 72.44,
+          "nonBossAvgKillSeconds": 24.15,
+          "bossWaveDurationSeconds": 34.78,
+          "overallAvgWaveSeconds": 70.79,
+          "overallAvgKillSeconds": 25.26,
+          "hourlyWaves": 47.5,
+          "hourlyKills": 142.5,
+          "dailyKills24h": 3420.0,
+          "totalDps": 2.2,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 0.4770983281278706,
+              "pct": 21.635893631892316
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 0.0,
+              "pct": 0.0
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 1.728025880028734,
+              "pct": 78.36410636810768
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 0.0,
+        "ctrPct": 0.0,
+        "critDmgPct": 150.0,
+        "waitDelaySeconds": 5.0,
+        "autoSpeedBonusPct": 0.0,
+        "autoDmgBonusPct": 0.0,
+        "physAutoSpeedBonusPct": 0.0,
+        "physAutoDmgBonusPct": 0.0
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 96.9,
+          "bossDurationRatioPct": 92.4,
+          "overallKillsRatioPct": 97.4
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 80.93,
+            "eliteWaveDurationSeconds": 118.46,
+            "nonBossAvgWaveSeconds": 87.04,
+            "nonBossAvgKillSeconds": 29.01,
+            "bossWaveDurationSeconds": 176.2,
+            "overallAvgWaveSeconds": 91.0,
+            "hourlyWaves": 37.5,
+            "hourlyKills": 112.5,
+            "dailyKills24h": 2700.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 196.51,
+            "eliteWaveDurationSeconds": 268.91,
+            "nonBossAvgWaveSeconds": 207.65,
+            "nonBossAvgKillSeconds": 69.22,
+            "bossWaveDurationSeconds": 168.5,
+            "overallAvgWaveSeconds": 205.74,
+            "hourlyWaves": 17.08,
+            "hourlyKills": 51.25,
+            "dailyKills24h": 1230.0
+          },
+          "teamNonBossEfficiencyRatioPct": 238.6,
+          "teamOverallKillsRatioPct": 219.5,
+          "partySpeedupMultiplier": 0.58
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 0.0,
+        "actionSpeedReductionPct": 0.0,
+        "criticalDamageMultiplierPct": 150.0,
+        "physicalAutoExtraAttackSpeedPct": 0.0,
+        "physicalAutoExtraDamagePct": 0.0,
+        "waveWaitDelaySeconds": 5.0,
+        "skillIntensityMultiplier": 1.0,
+        "dynamicResistanceFactorK": 1.0,
+        "physicalAutoIntervalSeconds": 1.0,
+        "physicalAutoDamageRatioPct": 100.0,
+        "magicAutoCastSeconds": 2.0,
+        "magicAutoDamageRatioPct": 60.0
       }
     },
     {
@@ -299,24 +398,131 @@
         "avgBossWaveDurationSeconds": 42.15
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 6.7,
         "physicalStyle": {
-          "hourlyKills": 97.38,
-          "hourlyWaves": 32.46,
-          "dailyKills24h": 2337,
-          "avgKillTimeSeconds": 36.97,
-          "avgWaveDurationSeconds": 106.25,
-          "avgBossWaveDurationSeconds": 42.67
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 86.78,
+          "eliteWaveDurationSeconds": 48.32,
+          "nonBossAvgWaveSeconds": 80.89,
+          "nonBossAvgKillSeconds": 26.96,
+          "bossWaveDurationSeconds": 40.44,
+          "overallAvgWaveSeconds": 78.93,
+          "overallAvgKillSeconds": 27.96,
+          "hourlyWaves": 42.92,
+          "hourlyKills": 128.75,
+          "dailyKills24h": 3090.0,
+          "totalDps": 21.1,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 3.775759087908288,
+              "pct": 17.892503722245966
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 3.267109072926458,
+              "pct": 15.482121578022698
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 4.48499989061238,
+              "pct": 21.253442120829487
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 9.574595564161022,
+              "pct": 45.371932578901855
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 78.0,
-          "hourlyKills": 105.12,
-          "hourlyWaves": 35.04,
-          "dailyKills24h": 2523,
-          "avgKillTimeSeconds": 34.24,
-          "avgWaveDurationSeconds": 98.07,
-          "avgBossWaveDurationSeconds": 42.86
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 93.77,
+          "eliteWaveDurationSeconds": 46.99,
+          "nonBossAvgWaveSeconds": 86.23,
+          "nonBossAvgKillSeconds": 28.74,
+          "bossWaveDurationSeconds": 35.17,
+          "overallAvgWaveSeconds": 84.12,
+          "overallAvgKillSeconds": 29.69,
+          "hourlyWaves": 40.42,
+          "hourlyKills": 121.25,
+          "dailyKills24h": 2910.0,
+          "totalDps": 26.6,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 4.200637109663319,
+              "pct": 15.787353860129386
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 5.432423423310068,
+              "pct": 20.41680551375347
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 16.974546713177823,
+              "pct": 63.79584062611715
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 1.4,
+        "ctrPct": 0.9,
+        "critDmgPct": 156.4,
+        "waitDelaySeconds": 4.95,
+        "autoSpeedBonusPct": 0.9,
+        "autoDmgBonusPct": 1.8,
+        "physAutoSpeedBonusPct": 0.9,
+        "physAutoDmgBonusPct": 1.8
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 106.6,
+          "bossDurationRatioPct": 115.0,
+          "overallKillsRatioPct": 106.2
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 58.19,
+            "eliteWaveDurationSeconds": 85.02,
+            "nonBossAvgWaveSeconds": 62.43,
+            "nonBossAvgKillSeconds": 20.81,
+            "bossWaveDurationSeconds": 154.84,
+            "overallAvgWaveSeconds": 67.05,
+            "hourlyWaves": 50.0,
+            "hourlyKills": 150.0,
+            "dailyKills24h": 3600.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 36.47,
+            "eliteWaveDurationSeconds": 45.64,
+            "nonBossAvgWaveSeconds": 37.96,
+            "nonBossAvgKillSeconds": 12.65,
+            "bossWaveDurationSeconds": 179.49,
+            "overallAvgWaveSeconds": 44.43,
+            "hourlyWaves": 72.92,
+            "hourlyKills": 218.75,
+            "dailyKills24h": 5250.0
+          },
+          "teamNonBossEfficiencyRatioPct": 60.8,
+          "teamOverallKillsRatioPct": 68.6,
+          "partySpeedupMultiplier": 1.48
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 1.37,
+        "actionSpeedReductionPct": 0.91,
+        "criticalDamageMultiplierPct": 156.37,
+        "physicalAutoExtraAttackSpeedPct": 0.91,
+        "physicalAutoExtraDamagePct": 1.82,
+        "waveWaitDelaySeconds": 4.95,
+        "skillIntensityMultiplier": 1.3,
+        "dynamicResistanceFactorK": 2.0,
+        "physicalAutoIntervalSeconds": 0.982,
+        "physicalAutoDamageRatioPct": 101.8,
+        "magicAutoCastSeconds": 1.98,
+        "magicAutoDamageRatioPct": 78.0
       }
     },
     {
@@ -388,24 +594,131 @@
         "avgBossWaveDurationSeconds": 52.43
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 11.5,
         "physicalStyle": {
-          "hourlyKills": 69.5,
-          "hourlyWaves": 23.17,
-          "dailyKills24h": 1668,
-          "avgKillTimeSeconds": 51.8,
-          "avgWaveDurationSeconds": 150.97,
-          "avgBossWaveDurationSeconds": 54.14
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 139.72,
+          "eliteWaveDurationSeconds": 63.36,
+          "nonBossAvgWaveSeconds": 127.79,
+          "nonBossAvgKillSeconds": 42.6,
+          "bossWaveDurationSeconds": 45.17,
+          "overallAvgWaveSeconds": 124.09,
+          "overallAvgKillSeconds": 42.99,
+          "hourlyWaves": 27.92,
+          "hourlyKills": 83.75,
+          "dailyKills24h": 2010.0,
+          "totalDps": 73.0,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 14.83109135660475,
+              "pct": 20.31219885882708
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 15.49048542987612,
+              "pct": 21.215284358105283
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 17.680128281805477,
+              "pct": 24.21415072395715
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 25.01398102105892,
+              "pct": 34.25836605911049
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 96.0,
-          "hourlyKills": 55.75,
-          "hourlyWaves": 18.58,
-          "dailyKills24h": 1338,
-          "avgKillTimeSeconds": 64.57,
-          "avgWaveDurationSeconds": 189.3,
-          "avgBossWaveDurationSeconds": 53.53
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 126.87,
+          "eliteWaveDurationSeconds": 58.71,
+          "nonBossAvgWaveSeconds": 116.16,
+          "nonBossAvgKillSeconds": 38.72,
+          "bossWaveDurationSeconds": 51.37,
+          "overallAvgWaveSeconds": 113.49,
+          "overallAvgKillSeconds": 39.45,
+          "hourlyWaves": 30.42,
+          "hourlyKills": 91.25,
+          "dailyKills24h": 2190.0,
+          "totalDps": 80.3,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 17.491307599137723,
+              "pct": 21.772035573229278
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 25.395166226486566,
+              "pct": 31.61024179223702
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 37.45193798849609,
+              "pct": 46.6177226345337
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 4.0,
+        "ctrPct": 2.6,
+        "critDmgPct": 168.5,
+        "waitDelaySeconds": 4.87,
+        "autoSpeedBonusPct": 2.6,
+        "autoDmgBonusPct": 5.3,
+        "physAutoSpeedBonusPct": 2.6,
+        "physAutoDmgBonusPct": 5.3
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 90.9,
+          "bossDurationRatioPct": 87.9,
+          "overallKillsRatioPct": 91.8
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 44.7,
+            "eliteWaveDurationSeconds": 64.68,
+            "nonBossAvgWaveSeconds": 47.8,
+            "nonBossAvgKillSeconds": 15.93,
+            "bossWaveDurationSeconds": 213.05,
+            "overallAvgWaveSeconds": 55.95,
+            "hourlyWaves": 59.17,
+            "hourlyKills": 177.5,
+            "dailyKills24h": 4260.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 40.15,
+            "eliteWaveDurationSeconds": 52.15,
+            "nonBossAvgWaveSeconds": 42.07,
+            "nonBossAvgKillSeconds": 14.02,
+            "bossWaveDurationSeconds": 223.67,
+            "overallAvgWaveSeconds": 50.17,
+            "hourlyWaves": 65.42,
+            "hourlyKills": 196.25,
+            "dailyKills24h": 4710.0
+          },
+          "teamNonBossEfficiencyRatioPct": 88.0,
+          "teamOverallKillsRatioPct": 90.4,
+          "partySpeedupMultiplier": 2.14
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 3.97,
+        "actionSpeedReductionPct": 2.65,
+        "criticalDamageMultiplierPct": 168.54,
+        "physicalAutoExtraAttackSpeedPct": 2.65,
+        "physicalAutoExtraDamagePct": 5.3,
+        "waveWaitDelaySeconds": 4.87,
+        "skillIntensityMultiplier": 1.6,
+        "dynamicResistanceFactorK": 3.0,
+        "physicalAutoIntervalSeconds": 0.948,
+        "physicalAutoDamageRatioPct": 105.3,
+        "magicAutoCastSeconds": 1.95,
+        "magicAutoDamageRatioPct": 96.0
       }
     },
     {
@@ -477,24 +790,131 @@
         "avgBossWaveDurationSeconds": 78.93
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 16.3,
         "physicalStyle": {
-          "hourlyKills": 73.0,
-          "hourlyWaves": 24.33,
-          "dailyKills24h": 1752,
-          "avgKillTimeSeconds": 49.32,
-          "avgWaveDurationSeconds": 143.76,
-          "avgBossWaveDurationSeconds": 79.27
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 128.52,
+          "eliteWaveDurationSeconds": 92.38,
+          "nonBossAvgWaveSeconds": 123.05,
+          "nonBossAvgKillSeconds": 41.02,
+          "bossWaveDurationSeconds": 64.33,
+          "overallAvgWaveSeconds": 120.49,
+          "overallAvgKillSeconds": 41.74,
+          "hourlyWaves": 28.75,
+          "hourlyKills": 86.25,
+          "dailyKills24h": 2070.0,
+          "totalDps": 262.2,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 60.565398470231585,
+              "pct": 23.09947970108486
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 58.95705523496263,
+              "pct": 22.48606192701155
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 67.4928664122436,
+              "pct": 25.741597298727253
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 75.17845763846182,
+              "pct": 28.672861073176335
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 114.0,
-          "hourlyKills": 55.5,
-          "hourlyWaves": 18.5,
-          "dailyKills24h": 1332,
-          "avgKillTimeSeconds": 64.86,
-          "avgWaveDurationSeconds": 190.41,
-          "avgBossWaveDurationSeconds": 76.29
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 133.74,
+          "eliteWaveDurationSeconds": 87.72,
+          "nonBossAvgWaveSeconds": 126.55,
+          "nonBossAvgKillSeconds": 42.18,
+          "bossWaveDurationSeconds": 74.97,
+          "overallAvgWaveSeconds": 124.24,
+          "overallAvgKillSeconds": 42.99,
+          "hourlyWaves": 27.92,
+          "hourlyKills": 83.75,
+          "dailyKills24h": 2010.0,
+          "totalDps": 255.6,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 58.3229626723815,
+              "pct": 22.815119004677186
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 82.81345760190102,
+              "pct": 32.395454616897815
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 114.4965337349649,
+              "pct": 44.78942637842499
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 7.9,
+        "ctrPct": 5.3,
+        "critDmgPct": 187.1,
+        "waitDelaySeconds": 4.74,
+        "autoSpeedBonusPct": 5.3,
+        "autoDmgBonusPct": 10.6,
+        "physAutoSpeedBonusPct": 5.3,
+        "physAutoDmgBonusPct": 10.6
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 102.8,
+          "bossDurationRatioPct": 85.8,
+          "overallKillsRatioPct": 103.0
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 40.93,
+            "eliteWaveDurationSeconds": 61.93,
+            "nonBossAvgWaveSeconds": 44.21,
+            "nonBossAvgKillSeconds": 14.74,
+            "bossWaveDurationSeconds": 201.64,
+            "overallAvgWaveSeconds": 51.37,
+            "hourlyWaves": 64.17,
+            "hourlyKills": 192.5,
+            "dailyKills24h": 4620.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 41.75,
+            "eliteWaveDurationSeconds": 55.06,
+            "nonBossAvgWaveSeconds": 43.83,
+            "nonBossAvgKillSeconds": 14.61,
+            "bossWaveDurationSeconds": 251.43,
+            "overallAvgWaveSeconds": 53.65,
+            "hourlyWaves": 61.67,
+            "hourlyKills": 185.0,
+            "dailyKills24h": 4440.0
+          },
+          "teamNonBossEfficiencyRatioPct": 99.1,
+          "teamOverallKillsRatioPct": 104.1,
+          "partySpeedupMultiplier": 2.22
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 7.94,
+        "actionSpeedReductionPct": 5.29,
+        "criticalDamageMultiplierPct": 187.06,
+        "physicalAutoExtraAttackSpeedPct": 5.29,
+        "physicalAutoExtraDamagePct": 10.59,
+        "waveWaitDelaySeconds": 4.74,
+        "skillIntensityMultiplier": 1.9,
+        "dynamicResistanceFactorK": 4.0,
+        "physicalAutoIntervalSeconds": 0.897,
+        "physicalAutoDamageRatioPct": 110.6,
+        "magicAutoCastSeconds": 1.89,
+        "magicAutoDamageRatioPct": 114.0
       }
     },
     {
@@ -566,24 +986,131 @@
         "avgBossWaveDurationSeconds": 104.4
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 21.0,
         "physicalStyle": {
-          "hourlyKills": 85.25,
-          "hourlyWaves": 28.42,
-          "dailyKills24h": 2046,
-          "avgKillTimeSeconds": 42.23,
-          "avgWaveDurationSeconds": 122.74,
-          "avgBossWaveDurationSeconds": 104.53
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 109.33,
+          "eliteWaveDurationSeconds": 143.87,
+          "nonBossAvgWaveSeconds": 114.76,
+          "nonBossAvgKillSeconds": 38.25,
+          "bossWaveDurationSeconds": 91.43,
+          "overallAvgWaveSeconds": 113.8,
+          "overallAvgKillSeconds": 39.45,
+          "hourlyWaves": 30.42,
+          "hourlyKills": 91.25,
+          "dailyKills24h": 2190.0,
+          "totalDps": 826.1,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 201.2799580147873,
+              "pct": 24.366094156034947
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 178.53266908719647,
+              "pct": 21.612404274186446
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 228.10360524971904,
+              "pct": 27.613250607084066
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 218.14951592061396,
+              "pct": 26.40825096269454
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 132.0,
-          "hourlyKills": 66.88,
-          "hourlyWaves": 22.29,
-          "dailyKills24h": 1605,
-          "avgKillTimeSeconds": 53.83,
-          "avgWaveDurationSeconds": 157.55,
-          "avgBossWaveDurationSeconds": 101.62
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 115.75,
+          "eliteWaveDurationSeconds": 122.09,
+          "nonBossAvgWaveSeconds": 116.76,
+          "nonBossAvgKillSeconds": 38.92,
+          "bossWaveDurationSeconds": 85.3,
+          "overallAvgWaveSeconds": 115.45,
+          "overallAvgKillSeconds": 40.0,
+          "hourlyWaves": 30.0,
+          "hourlyKills": 90.0,
+          "dailyKills24h": 2160.0,
+          "totalDps": 792.5,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 181.7882553211276,
+              "pct": 22.939766634729292
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 261.3664253875024,
+              "pct": 32.98169507128696
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 349.3043630809097,
+              "pct": 44.07853829398375
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 13.3,
+        "ctrPct": 8.8,
+        "critDmgPct": 211.9,
+        "waitDelaySeconds": 4.56,
+        "autoSpeedBonusPct": 8.8,
+        "autoDmgBonusPct": 17.7,
+        "physAutoSpeedBonusPct": 8.8,
+        "physAutoDmgBonusPct": 17.7
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 101.7,
+          "bossDurationRatioPct": 107.2,
+          "overallKillsRatioPct": 101.4
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 33.23,
+            "eliteWaveDurationSeconds": 50.17,
+            "nonBossAvgWaveSeconds": 35.87,
+            "nonBossAvgKillSeconds": 11.96,
+            "bossWaveDurationSeconds": 178.29,
+            "overallAvgWaveSeconds": 42.92,
+            "hourlyWaves": 75.83,
+            "hourlyKills": 227.5,
+            "dailyKills24h": 5460.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 34.81,
+            "eliteWaveDurationSeconds": 48.26,
+            "nonBossAvgWaveSeconds": 36.9,
+            "nonBossAvgKillSeconds": 12.3,
+            "bossWaveDurationSeconds": 241.16,
+            "overallAvgWaveSeconds": 46.57,
+            "hourlyWaves": 70.42,
+            "hourlyKills": 211.25,
+            "dailyKills24h": 5070.0
+          },
+          "teamNonBossEfficiencyRatioPct": 102.9,
+          "teamOverallKillsRatioPct": 107.7,
+          "partySpeedupMultiplier": 2.42
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 13.27,
+        "actionSpeedReductionPct": 8.85,
+        "criticalDamageMultiplierPct": 211.93,
+        "physicalAutoExtraAttackSpeedPct": 8.85,
+        "physicalAutoExtraDamagePct": 17.69,
+        "waveWaitDelaySeconds": 4.56,
+        "skillIntensityMultiplier": 2.2,
+        "dynamicResistanceFactorK": 5.0,
+        "physicalAutoIntervalSeconds": 0.831,
+        "physicalAutoDamageRatioPct": 117.7,
+        "magicAutoCastSeconds": 1.82,
+        "magicAutoDamageRatioPct": 132.0
       }
     },
     {
@@ -655,24 +1182,131 @@
         "avgBossWaveDurationSeconds": 177.78
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 25.8,
         "physicalStyle": {
-          "hourlyKills": 72.88,
-          "hourlyWaves": 24.29,
-          "dailyKills24h": 1749,
-          "avgKillTimeSeconds": 49.4,
-          "avgWaveDurationSeconds": 144.49,
-          "avgBossWaveDurationSeconds": 182.69
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 101.76,
+          "eliteWaveDurationSeconds": 145.29,
+          "nonBossAvgWaveSeconds": 109.02,
+          "nonBossAvgKillSeconds": 36.34,
+          "bossWaveDurationSeconds": 155.27,
+          "overallAvgWaveSeconds": 110.87,
+          "overallAvgKillSeconds": 38.4,
+          "hourlyWaves": 31.25,
+          "hourlyKills": 93.75,
+          "dailyKills24h": 2250.0,
+          "totalDps": 2686.5,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 654.0898674324044,
+              "pct": 24.347217166173344
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 634.3441566669762,
+              "pct": 23.61222166778182
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 767.4760128052077,
+              "pct": 28.56779486119816
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 630.5976775834562,
+              "pct": 23.472766304846672
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 150.0,
-          "hourlyKills": 57.0,
-          "hourlyWaves": 19.0,
-          "dailyKills24h": 1368,
-          "avgKillTimeSeconds": 63.16,
-          "avgWaveDurationSeconds": 185.77,
-          "avgBossWaveDurationSeconds": 170.81
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 120.94,
+          "eliteWaveDurationSeconds": 164.49,
+          "nonBossAvgWaveSeconds": 127.96,
+          "nonBossAvgKillSeconds": 42.65,
+          "bossWaveDurationSeconds": 141.83,
+          "overallAvgWaveSeconds": 128.6,
+          "overallAvgKillSeconds": 44.31,
+          "hourlyWaves": 27.08,
+          "hourlyKills": 81.25,
+          "dailyKills24h": 1950.0,
+          "totalDps": 2278.6,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 532.6892412420526,
+              "pct": 23.377950286180866
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 773.9381302746558,
+              "pct": 33.96555765225081
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 971.9694888630272,
+              "pct": 42.656492061568336
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 20.0,
+        "ctrPct": 13.3,
+        "critDmgPct": 243.1,
+        "waitDelaySeconds": 4.33,
+        "autoSpeedBonusPct": 13.3,
+        "autoDmgBonusPct": 26.6,
+        "physAutoSpeedBonusPct": 13.3,
+        "physAutoDmgBonusPct": 26.6
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 117.4,
+          "bossDurationRatioPct": 109.5,
+          "overallKillsRatioPct": 115.4
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 31.79,
+            "eliteWaveDurationSeconds": 46.98,
+            "nonBossAvgWaveSeconds": 34.21,
+            "nonBossAvgKillSeconds": 11.4,
+            "bossWaveDurationSeconds": 176.21,
+            "overallAvgWaveSeconds": 40.9,
+            "hourlyWaves": 79.58,
+            "hourlyKills": 238.75,
+            "dailyKills24h": 5730.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 37.75,
+            "eliteWaveDurationSeconds": 50.76,
+            "nonBossAvgWaveSeconds": 39.8,
+            "nonBossAvgKillSeconds": 13.27,
+            "bossWaveDurationSeconds": 237.14,
+            "overallAvgWaveSeconds": 49.67,
+            "hourlyWaves": 66.67,
+            "hourlyKills": 200.0,
+            "dailyKills24h": 4800.0
+          },
+          "teamNonBossEfficiencyRatioPct": 116.3,
+          "teamOverallKillsRatioPct": 119.4,
+          "partySpeedupMultiplier": 2.51
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 19.96,
+        "actionSpeedReductionPct": 13.31,
+        "criticalDamageMultiplierPct": 243.14,
+        "physicalAutoExtraAttackSpeedPct": 13.31,
+        "physicalAutoExtraDamagePct": 26.61,
+        "waveWaitDelaySeconds": 4.33,
+        "skillIntensityMultiplier": 2.5,
+        "dynamicResistanceFactorK": 6.0,
+        "physicalAutoIntervalSeconds": 0.752,
+        "physicalAutoDamageRatioPct": 126.6,
+        "magicAutoCastSeconds": 1.73,
+        "magicAutoDamageRatioPct": 150.0
       }
     },
     {
@@ -744,24 +1378,131 @@
         "avgBossWaveDurationSeconds": 291.29
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 30.6,
         "physicalStyle": {
-          "hourlyKills": 78.0,
-          "hourlyWaves": 26.0,
-          "dailyKills24h": 1872,
-          "avgKillTimeSeconds": 46.15,
-          "avgWaveDurationSeconds": 134.99,
-          "avgBossWaveDurationSeconds": 259.27
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 85.71,
+          "eliteWaveDurationSeconds": 118.0,
+          "nonBossAvgWaveSeconds": 90.83,
+          "nonBossAvgKillSeconds": 30.28,
+          "bossWaveDurationSeconds": 210.65,
+          "overallAvgWaveSeconds": 96.41,
+          "overallAvgKillSeconds": 33.49,
+          "hourlyWaves": 35.83,
+          "hourlyKills": 107.5,
+          "dailyKills24h": 2580.0,
+          "totalDps": 8951.1,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 2182.3056246045558,
+              "pct": 24.38027459196635
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 2130.1618347277144,
+              "pct": 23.79773477667648
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 2597.2851241350704,
+              "pct": 29.01634116051769
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 2041.3591703094455,
+              "pct": 22.805649470839473
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 168.0,
-          "hourlyKills": 57.75,
-          "hourlyWaves": 19.25,
-          "dailyKills24h": 1386,
-          "avgKillTimeSeconds": 62.34,
-          "avgWaveDurationSeconds": 183.54,
-          "avgBossWaveDurationSeconds": 295.67
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 108.32,
+          "eliteWaveDurationSeconds": 149.8,
+          "nonBossAvgWaveSeconds": 114.61,
+          "nonBossAvgKillSeconds": 38.2,
+          "bossWaveDurationSeconds": 265.17,
+          "overallAvgWaveSeconds": 121.15,
+          "overallAvgKillSeconds": 41.74,
+          "hourlyWaves": 28.75,
+          "hourlyKills": 86.25,
+          "dailyKills24h": 2070.0,
+          "totalDps": 7009.3,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 1690.887895342391,
+              "pct": 24.123451833905975
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 2426.0698491945036,
+              "pct": 34.612098953422496
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 2892.353804176941,
+              "pct": 41.264449212671536
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 28.0,
+        "ctrPct": 18.7,
+        "critDmgPct": 280.7,
+        "waitDelaySeconds": 4.07,
+        "autoSpeedBonusPct": 18.7,
+        "autoDmgBonusPct": 37.3,
+        "physAutoSpeedBonusPct": 18.7,
+        "physAutoDmgBonusPct": 37.3
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 126.2,
+          "bossDurationRatioPct": 79.4,
+          "overallKillsRatioPct": 124.6
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 24.85,
+            "eliteWaveDurationSeconds": 39.74,
+            "nonBossAvgWaveSeconds": 27.19,
+            "nonBossAvgKillSeconds": 9.06,
+            "bossWaveDurationSeconds": 147.76,
+            "overallAvgWaveSeconds": 32.86,
+            "hourlyWaves": 97.5,
+            "hourlyKills": 292.5,
+            "dailyKills24h": 7020.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 32.57,
+            "eliteWaveDurationSeconds": 45.66,
+            "nonBossAvgWaveSeconds": 34.65,
+            "nonBossAvgKillSeconds": 11.55,
+            "bossWaveDurationSeconds": 252.98,
+            "overallAvgWaveSeconds": 44.46,
+            "hourlyWaves": 74.17,
+            "hourlyKills": 222.5,
+            "dailyKills24h": 5340.0
+          },
+          "teamNonBossEfficiencyRatioPct": 127.4,
+          "teamOverallKillsRatioPct": 131.5,
+          "partySpeedupMultiplier": 2.66
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 28.01,
+        "actionSpeedReductionPct": 18.67,
+        "criticalDamageMultiplierPct": 280.71,
+        "physicalAutoExtraAttackSpeedPct": 18.67,
+        "physicalAutoExtraDamagePct": 37.35,
+        "waveWaitDelaySeconds": 4.07,
+        "skillIntensityMultiplier": 2.8,
+        "dynamicResistanceFactorK": 7.0,
+        "physicalAutoIntervalSeconds": 0.661,
+        "physicalAutoDamageRatioPct": 137.3,
+        "magicAutoCastSeconds": 1.63,
+        "magicAutoDamageRatioPct": 168.0
       }
     },
     {
@@ -833,24 +1574,131 @@
         "avgBossWaveDurationSeconds": 474.67
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 35.3,
         "physicalStyle": {
-          "hourlyKills": 92.5,
-          "hourlyWaves": 30.83,
-          "dailyKills24h": 2220,
-          "avgKillTimeSeconds": 38.92,
-          "avgWaveDurationSeconds": 113.52,
-          "avgBossWaveDurationSeconds": 422.82
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 61.3,
+          "eliteWaveDurationSeconds": 94.49,
+          "nonBossAvgWaveSeconds": 66.61,
+          "nonBossAvgKillSeconds": 22.2,
+          "bossWaveDurationSeconds": 317.14,
+          "overallAvgWaveSeconds": 78.54,
+          "overallAvgKillSeconds": 27.43,
+          "hourlyWaves": 43.75,
+          "hourlyKills": 131.25,
+          "dailyKills24h": 3150.0,
+          "totalDps": 26178.8,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 6476.098029211531,
+              "pct": 24.73793813860717
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 6273.131330925996,
+              "pct": 23.96262905530779
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 7828.03477227206,
+              "pct": 29.90217860659979
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 5601.54670027106,
+              "pct": 21.397254199485253
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 186.0,
-          "hourlyKills": 65.0,
-          "hourlyWaves": 21.67,
-          "dailyKills24h": 1560,
-          "avgKillTimeSeconds": 55.38,
-          "avgWaveDurationSeconds": 162.92,
-          "avgBossWaveDurationSeconds": 489.14
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 86.69,
+          "eliteWaveDurationSeconds": 125.59,
+          "nonBossAvgWaveSeconds": 93.09,
+          "nonBossAvgKillSeconds": 31.03,
+          "bossWaveDurationSeconds": 520.17,
+          "overallAvgWaveSeconds": 109.95,
+          "overallAvgKillSeconds": 37.89,
+          "hourlyWaves": 31.67,
+          "hourlyKills": 95.0,
+          "dailyKills24h": 2280.0,
+          "totalDps": 18071.1,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 4311.276216869316,
+              "pct": 23.857242648833342
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 6321.116969043742,
+              "pct": 34.979067393562396
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 7438.74890007375,
+              "pct": 41.16368995760427
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 37.4,
+        "ctrPct": 24.9,
+        "critDmgPct": 324.6,
+        "waitDelaySeconds": 3.75,
+        "autoSpeedBonusPct": 24.9,
+        "autoDmgBonusPct": 49.9,
+        "physAutoSpeedBonusPct": 24.9,
+        "physAutoDmgBonusPct": 49.9
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 139.8,
+          "bossDurationRatioPct": 61.0,
+          "overallKillsRatioPct": 138.2
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 18.35,
+            "eliteWaveDurationSeconds": 28.59,
+            "nonBossAvgWaveSeconds": 19.96,
+            "nonBossAvgKillSeconds": 6.65,
+            "bossWaveDurationSeconds": 112.07,
+            "overallAvgWaveSeconds": 24.48,
+            "hourlyWaves": 127.5,
+            "hourlyKills": 382.5,
+            "dailyKills24h": 9180.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 25.91,
+            "eliteWaveDurationSeconds": 38.36,
+            "nonBossAvgWaveSeconds": 27.89,
+            "nonBossAvgKillSeconds": 9.3,
+            "bossWaveDurationSeconds": 204.8,
+            "overallAvgWaveSeconds": 36.05,
+            "hourlyWaves": 90.42,
+            "hourlyKills": 271.25,
+            "dailyKills24h": 6510.0
+          },
+          "teamNonBossEfficiencyRatioPct": 139.7,
+          "teamOverallKillsRatioPct": 141.0,
+          "partySpeedupMultiplier": 2.89
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 37.42,
+        "actionSpeedReductionPct": 24.95,
+        "criticalDamageMultiplierPct": 324.63,
+        "physicalAutoExtraAttackSpeedPct": 24.95,
+        "physicalAutoExtraDamagePct": 49.89,
+        "waveWaitDelaySeconds": 3.75,
+        "skillIntensityMultiplier": 3.1,
+        "dynamicResistanceFactorK": 8.0,
+        "physicalAutoIntervalSeconds": 0.563,
+        "physicalAutoDamageRatioPct": 149.9,
+        "magicAutoCastSeconds": 1.5,
+        "magicAutoDamageRatioPct": 186.0
       }
     },
     {
@@ -922,24 +1770,131 @@
         "avgBossWaveDurationSeconds": 768.65
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 40.1,
         "physicalStyle": {
-          "hourlyKills": 91.0,
-          "hourlyWaves": 30.33,
-          "dailyKills24h": 2184,
-          "avgKillTimeSeconds": 39.56,
-          "avgWaveDurationSeconds": 115.69,
-          "avgBossWaveDurationSeconds": 747.67
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 44.69,
+          "eliteWaveDurationSeconds": 63.22,
+          "nonBossAvgWaveSeconds": 47.55,
+          "nonBossAvgKillSeconds": 15.85,
+          "bossWaveDurationSeconds": 241.18,
+          "overallAvgWaveSeconds": 57.03,
+          "overallAvgKillSeconds": 20.14,
+          "hourlyWaves": 59.58,
+          "hourlyKills": 178.75,
+          "dailyKills24h": 4290.0,
+          "totalDps": 87220.7,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 21879.597214983205,
+              "pct": 25.085319324112902
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 21205.734861290653,
+              "pct": 24.312725013679255
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 25362.807449211254,
+              "pct": 29.078877347145998
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 18772.584804508795,
+              "pct": 21.523078315061852
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 204.0,
-          "hourlyKills": 69.38,
-          "hourlyWaves": 23.12,
-          "dailyKills24h": 1665,
-          "avgKillTimeSeconds": 51.89,
-          "avgWaveDurationSeconds": 152.68,
-          "avgBossWaveDurationSeconds": 778.41
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 65.53,
+          "eliteWaveDurationSeconds": 90.59,
+          "nonBossAvgWaveSeconds": 69.66,
+          "nonBossAvgKillSeconds": 23.22,
+          "bossWaveDurationSeconds": 494.79,
+          "overallAvgWaveSeconds": 87.56,
+          "overallAvgKillSeconds": 30.32,
+          "hourlyWaves": 39.58,
+          "hourlyKills": 118.75,
+          "dailyKills24h": 2850.0,
+          "totalDps": 56097.3,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 13960.728912628068,
+              "pct": 24.886648780988
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 20701.701884632697,
+              "pct": 36.90322956601177
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 21434.83258073683,
+              "pct": 38.210121653000236
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 48.2,
+        "ctrPct": 32.1,
+        "critDmgPct": 374.9,
+        "waitDelaySeconds": 3.39,
+        "autoSpeedBonusPct": 32.1,
+        "autoDmgBonusPct": 64.3,
+        "physAutoSpeedBonusPct": 32.1,
+        "physAutoDmgBonusPct": 64.3
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 146.5,
+          "bossDurationRatioPct": 48.7,
+          "overallKillsRatioPct": 150.5
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 13.54,
+            "eliteWaveDurationSeconds": 19.11,
+            "nonBossAvgWaveSeconds": 14.42,
+            "nonBossAvgKillSeconds": 4.81,
+            "bossWaveDurationSeconds": 78.6,
+            "overallAvgWaveSeconds": 17.53,
+            "hourlyWaves": 172.08,
+            "hourlyKills": 516.25,
+            "dailyKills24h": 12390.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 18.88,
+            "eliteWaveDurationSeconds": 29.66,
+            "nonBossAvgWaveSeconds": 20.58,
+            "nonBossAvgKillSeconds": 6.86,
+            "bossWaveDurationSeconds": 158.28,
+            "overallAvgWaveSeconds": 27.46,
+            "hourlyWaves": 116.67,
+            "hourlyKills": 350.0,
+            "dailyKills24h": 8400.0
+          },
+          "teamNonBossEfficiencyRatioPct": 142.7,
+          "teamOverallKillsRatioPct": 147.5,
+          "partySpeedupMultiplier": 2.91
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 48.19,
+        "actionSpeedReductionPct": 32.13,
+        "criticalDamageMultiplierPct": 374.89,
+        "physicalAutoExtraAttackSpeedPct": 32.13,
+        "physicalAutoExtraDamagePct": 64.25,
+        "waveWaitDelaySeconds": 3.39,
+        "skillIntensityMultiplier": 3.4,
+        "dynamicResistanceFactorK": 9.0,
+        "physicalAutoIntervalSeconds": 0.461,
+        "physicalAutoDamageRatioPct": 164.2,
+        "magicAutoCastSeconds": 1.36,
+        "magicAutoDamageRatioPct": 204.0
       }
     },
     {
@@ -1011,24 +1966,131 @@
         "avgBossWaveDurationSeconds": 771.01
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 44.8,
         "physicalStyle": {
-          "hourlyKills": 107.5,
-          "hourlyWaves": 35.83,
-          "dailyKills24h": 2580,
-          "avgKillTimeSeconds": 33.49,
-          "avgWaveDurationSeconds": 97.71,
-          "avgBossWaveDurationSeconds": 642.2
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 28.89,
+          "eliteWaveDurationSeconds": 41.59,
+          "nonBossAvgWaveSeconds": 30.9,
+          "nonBossAvgKillSeconds": 10.3,
+          "bossWaveDurationSeconds": 138.67,
+          "overallAvgWaveSeconds": 36.28,
+          "overallAvgKillSeconds": 13.09,
+          "hourlyWaves": 91.67,
+          "hourlyKills": 275.0,
+          "dailyKills24h": 6600.0,
+          "totalDps": 317029.4,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 80917.86843708639,
+              "pct": 25.523771767981803
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 77278.3930954252,
+              "pct": 24.375778873829105
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 95405.95596735194,
+              "pct": 30.09372209687057
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 63427.2136228262,
+              "pct": 20.006727261318524
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 222.0,
-          "hourlyKills": 70.0,
-          "hourlyWaves": 23.33,
-          "dailyKills24h": 1680,
-          "avgKillTimeSeconds": 51.43,
-          "avgWaveDurationSeconds": 151.53,
-          "avgBossWaveDurationSeconds": 1231.44
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 47.01,
+          "eliteWaveDurationSeconds": 73.47,
+          "nonBossAvgWaveSeconds": 51.16,
+          "nonBossAvgKillSeconds": 17.05,
+          "bossWaveDurationSeconds": 399.37,
+          "overallAvgWaveSeconds": 68.42,
+          "overallAvgKillSeconds": 23.8,
+          "hourlyWaves": 50.42,
+          "hourlyKills": 151.25,
+          "dailyKills24h": 3630.0,
+          "totalDps": 171838.7,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 44412.711708438925,
+              "pct": 25.845578004215714
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 66768.73895990485,
+              "pct": 38.855466929380015
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 60657.274320490695,
+              "pct": 35.29895506640428
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 60.3,
+        "ctrPct": 40.2,
+        "critDmgPct": 431.5,
+        "waitDelaySeconds": 2.99,
+        "autoSpeedBonusPct": 40.2,
+        "autoDmgBonusPct": 80.4,
+        "physAutoSpeedBonusPct": 40.2,
+        "physAutoDmgBonusPct": 80.4
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 165.6,
+          "bossDurationRatioPct": 34.7,
+          "overallKillsRatioPct": 181.8
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 8.6,
+            "eliteWaveDurationSeconds": 12.62,
+            "nonBossAvgWaveSeconds": 9.23,
+            "nonBossAvgKillSeconds": 3.08,
+            "bossWaveDurationSeconds": 51.44,
+            "overallAvgWaveSeconds": 11.33,
+            "hourlyWaves": 251.25,
+            "hourlyKills": 753.75,
+            "dailyKills24h": 18090.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 13.69,
+            "eliteWaveDurationSeconds": 23.55,
+            "nonBossAvgWaveSeconds": 15.23,
+            "nonBossAvgKillSeconds": 5.08,
+            "bossWaveDurationSeconds": 127.77,
+            "overallAvgWaveSeconds": 20.81,
+            "hourlyWaves": 151.25,
+            "hourlyKills": 453.75,
+            "dailyKills24h": 10890.0
+          },
+          "teamNonBossEfficiencyRatioPct": 165.0,
+          "teamOverallKillsRatioPct": 166.1,
+          "partySpeedupMultiplier": 2.83
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 60.32,
+        "actionSpeedReductionPct": 40.21,
+        "criticalDamageMultiplierPct": 431.5,
+        "physicalAutoExtraAttackSpeedPct": 40.21,
+        "physicalAutoExtraDamagePct": 80.43,
+        "waveWaitDelaySeconds": 2.99,
+        "skillIntensityMultiplier": 3.7,
+        "dynamicResistanceFactorK": 10.0,
+        "physicalAutoIntervalSeconds": 0.357,
+        "physicalAutoDamageRatioPct": 180.4,
+        "magicAutoCastSeconds": 1.2,
+        "magicAutoDamageRatioPct": 222.0
       }
     },
     {
@@ -1100,24 +2162,131 @@
         "avgBossWaveDurationSeconds": 551.4
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 49.6,
         "physicalStyle": {
-          "hourlyKills": 156.25,
-          "hourlyWaves": 52.08,
-          "dailyKills24h": 3750,
-          "avgKillTimeSeconds": 23.04,
-          "avgWaveDurationSeconds": 66.6,
-          "avgBossWaveDurationSeconds": 458.1
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 17.4,
+          "eliteWaveDurationSeconds": 26.93,
+          "nonBossAvgWaveSeconds": 18.9,
+          "nonBossAvgKillSeconds": 6.3,
+          "bossWaveDurationSeconds": 95.88,
+          "overallAvgWaveSeconds": 22.72,
+          "overallAvgKillSeconds": 8.42,
+          "hourlyWaves": 142.5,
+          "hourlyKills": 427.5,
+          "dailyKills24h": 10260.0,
+          "totalDps": 1307687.3,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 345348.0006287952,
+              "pct": 26.409064988061605
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 338674.98671045265,
+              "pct": 25.898773751642455
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 392811.1117541702,
+              "pct": 30.038610791029562
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 230853.24532756797,
+              "pct": 17.653550469266374
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 240.0,
-          "hourlyKills": 84.38,
-          "hourlyWaves": 28.12,
-          "dailyKills24h": 2025,
-          "avgKillTimeSeconds": 42.67,
-          "avgWaveDurationSeconds": 125.48,
-          "avgBossWaveDurationSeconds": 1132.32
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 29.95,
+          "eliteWaveDurationSeconds": 48.58,
+          "nonBossAvgWaveSeconds": 32.86,
+          "nonBossAvgKillSeconds": 10.95,
+          "bossWaveDurationSeconds": 253.39,
+          "overallAvgWaveSeconds": 43.42,
+          "overallAvgKillSeconds": 15.32,
+          "hourlyWaves": 78.33,
+          "hourlyKills": 235.0,
+          "dailyKills24h": 5640.0,
+          "totalDps": 698601.1,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 201579.20547412414,
+              "pct": 28.85469272544373
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 301068.70141343377,
+              "pct": 43.09593763950093
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 195953.20937514945,
+              "pct": 28.04936963505534
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 73.8,
+        "ctrPct": 49.2,
+        "critDmgPct": 494.5,
+        "waitDelaySeconds": 2.54,
+        "autoSpeedBonusPct": 49.2,
+        "autoDmgBonusPct": 98.4,
+        "physAutoSpeedBonusPct": 49.2,
+        "physAutoDmgBonusPct": 98.4
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 173.9,
+          "bossDurationRatioPct": 37.8,
+          "overallKillsRatioPct": 181.9
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 5.13,
+            "eliteWaveDurationSeconds": 7.67,
+            "nonBossAvgWaveSeconds": 5.53,
+            "nonBossAvgKillSeconds": 1.84,
+            "bossWaveDurationSeconds": 31.04,
+            "overallAvgWaveSeconds": 6.8,
+            "hourlyWaves": 385.42,
+            "hourlyKills": 1156.25,
+            "dailyKills24h": 27750.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 8.9,
+            "eliteWaveDurationSeconds": 16.35,
+            "nonBossAvgWaveSeconds": 10.08,
+            "nonBossAvgKillSeconds": 3.36,
+            "bossWaveDurationSeconds": 90.03,
+            "overallAvgWaveSeconds": 14.08,
+            "hourlyWaves": 216.67,
+            "hourlyKills": 650.0,
+            "dailyKills24h": 15600.0
+          },
+          "teamNonBossEfficiencyRatioPct": 182.3,
+          "teamOverallKillsRatioPct": 177.9,
+          "partySpeedupMultiplier": 2.73
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 73.81,
+        "actionSpeedReductionPct": 49.21,
+        "criticalDamageMultiplierPct": 494.47,
+        "physicalAutoExtraAttackSpeedPct": 49.21,
+        "physicalAutoExtraDamagePct": 98.42,
+        "waveWaitDelaySeconds": 2.54,
+        "skillIntensityMultiplier": 4.0,
+        "dynamicResistanceFactorK": 11.0,
+        "physicalAutoIntervalSeconds": 0.258,
+        "physicalAutoDamageRatioPct": 198.4,
+        "magicAutoCastSeconds": 1.02,
+        "magicAutoDamageRatioPct": 240.0
       }
     },
     {
@@ -1189,24 +2358,131 @@
         "avgBossWaveDurationSeconds": 534.28
       },
       "combatSimulationDualStyle": {
-        "castTimeReductionPct": 50.0,
         "physicalStyle": {
-          "hourlyKills": 162.5,
-          "hourlyWaves": 54.17,
-          "dailyKills24h": 3900,
-          "avgKillTimeSeconds": 22.15,
-          "avgWaveDurationSeconds": 63.96,
-          "avgBossWaveDurationSeconds": 440.19
+          "attackPowerType": "AD (Physical Attack) [1 AD : 1 Crit : 1 Break]",
+          "normalWaveDurationSeconds": 15.74,
+          "eliteWaveDurationSeconds": 24.04,
+          "nonBossAvgWaveSeconds": 17.05,
+          "nonBossAvgKillSeconds": 5.68,
+          "bossWaveDurationSeconds": 85.44,
+          "overallAvgWaveSeconds": 20.3,
+          "overallAvgKillSeconds": 7.6,
+          "hourlyWaves": 157.92,
+          "hourlyKills": 473.75,
+          "dailyKills24h": 11370.0,
+          "totalDps": 3477668.0,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "核心单体1 (220%)",
+              "dps": 971817.057421693,
+              "pct": 27.94450345176055
+            },
+            "skill_2": {
+              "name": "核心单体2 (220%)",
+              "dps": 887104.3123794111,
+              "pct": 25.508596839334263
+            },
+            "skill_3": {
+              "name": "群体绝技 (180% 3怪)",
+              "dps": 1114434.375084387,
+              "pct": 32.04545032779037
+            },
+            "auto_attack": {
+              "name": "物理平A (1秒4刀)",
+              "dps": 504312.2662827906,
+              "pct": 14.501449381114812
+            }
+          }
         },
         "magicStyle": {
-          "magicAutoAttackRatio": 258.0,
-          "hourlyKills": 89.5,
-          "hourlyWaves": 29.83,
-          "dailyKills24h": 2148,
-          "avgKillTimeSeconds": 40.22,
-          "avgWaveDurationSeconds": 118.17,
-          "avgBossWaveDurationSeconds": 1067.07
+          "attackPowerType": "AP = 2.0 * AD [2 AP : 1 Hit]",
+          "normalWaveDurationSeconds": 29.09,
+          "eliteWaveDurationSeconds": 44.67,
+          "nonBossAvgWaveSeconds": 31.55,
+          "nonBossAvgKillSeconds": 10.52,
+          "bossWaveDurationSeconds": 214.5,
+          "overallAvgWaveSeconds": 40.7,
+          "overallAvgKillSeconds": 14.4,
+          "hourlyWaves": 83.33,
+          "hourlyKills": 250.0,
+          "dailyKills24h": 6000.0,
+          "totalDps": 1776771.2,
+          "dpsBreakdown": {
+            "skill_1": {
+              "name": "大范围群攻 (90% 5怪)",
+              "dps": 535005.8844037978,
+              "pct": 30.111129082675564
+            },
+            "skill_2": {
+              "name": "强力群攻 (120% 3怪)",
+              "dps": 746855.0518843039,
+              "pct": 42.034395375665135
+            },
+            "skill_3": {
+              "name": "法术普攻 (灵爆 60%)",
+              "dps": 494910.3130889711,
+              "pct": 27.854475541659298
+            }
+          }
         }
+      },
+      "advancedMechanicsQuadratic": {
+        "cdrPct": 75.0,
+        "ctrPct": 50.0,
+        "critDmgPct": 500.0,
+        "waitDelaySeconds": 2.5,
+        "autoSpeedBonusPct": 50.0,
+        "autoDmgBonusPct": 100.0,
+        "physAutoSpeedBonusPct": 50.0,
+        "physAutoDmgBonusPct": 100.0
+      },
+      "combatEfficiencyRatio": {
+        "solo": {
+          "nonBossEfficiencyRatioPct": 185.0,
+          "bossDurationRatioPct": 39.8,
+          "overallKillsRatioPct": 189.5
+        },
+        "party3Player": {
+          "physicalTeam": {
+            "normalWaveDurationSeconds": 4.65,
+            "eliteWaveDurationSeconds": 7.05,
+            "nonBossAvgWaveSeconds": 5.03,
+            "nonBossAvgKillSeconds": 1.68,
+            "bossWaveDurationSeconds": 28.28,
+            "overallAvgWaveSeconds": 6.17,
+            "hourlyWaves": 415.0,
+            "hourlyKills": 1245.0,
+            "dailyKills24h": 29880.0
+          },
+          "magicTeam": {
+            "normalWaveDurationSeconds": 8.14,
+            "eliteWaveDurationSeconds": 14.97,
+            "nonBossAvgWaveSeconds": 9.21,
+            "nonBossAvgKillSeconds": 3.07,
+            "bossWaveDurationSeconds": 82.33,
+            "overallAvgWaveSeconds": 12.85,
+            "hourlyWaves": 234.58,
+            "hourlyKills": 703.75,
+            "dailyKills24h": 16890.0
+          },
+          "teamNonBossEfficiencyRatioPct": 183.1,
+          "teamOverallKillsRatioPct": 176.9,
+          "partySpeedupMultiplier": 2.69
+        }
+      },
+      "expectedSpecialAttributes": {
+        "cooldownReductionPct": 75.0,
+        "actionSpeedReductionPct": 50.0,
+        "criticalDamageMultiplierPct": 500.0,
+        "physicalAutoExtraAttackSpeedPct": 50.0,
+        "physicalAutoExtraDamagePct": 100.0,
+        "waveWaitDelaySeconds": 2.5,
+        "skillIntensityMultiplier": 4.3,
+        "dynamicResistanceFactorK": 12.0,
+        "physicalAutoIntervalSeconds": 0.25,
+        "physicalAutoDamageRatioPct": 200.0,
+        "magicAutoCastSeconds": 1.0,
+        "magicAutoDamageRatioPct": 258.0
       }
     }
   ],
@@ -2163,5 +3439,22 @@
         "parry": 111.0
       }
     }
-  ]
+  ],
+  "terminology": {
+    "tierSystem": {
+      "name": "阶位",
+      "field": "tier",
+      "count": 12,
+      "description": "横向境界层级（一阶 ~ 十二阶），对应 12 个修仙境界，统领装备、法宝、技能、丹药、灵材与怪物的基础数值底座"
+    },
+    "qualitySystem": {
+      "name": "品质",
+      "field": "quality",
+      "count": 8,
+      "description": "纵向稀有度品阶（天地玄黄凡等 8 档品质），决定词条数量、完美度与稀有度偏置"
+    },
+    "namingRule": {
+      "itemDisplayName": "物品/技能直接使用本名（例：青锋剑、太乙神雷），不在名称中强行拼接入阶位和品质前缀；阶位与品质在详情面板/Tooltip 标签中展示"
+    }
+  }
 }
