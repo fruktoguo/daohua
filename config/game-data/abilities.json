@@ -385,5 +385,48 @@
       }
     ],
     "tier": 2
+  },
+  {
+    "id": "ability.star-piercer",
+    "name": "贯星",
+    "style": "sword",
+    "damageType": "physical",
+    "cooldownMilliseconds": 36000,
+    "castMilliseconds": 2000,
+    "manaCostRatio": 30.0,
+    "effectType": "damage",
+    "targetType": "enemy",
+    "damageRatio": 3.0,
+    "flatDamage": 50,
+    "damageRatioLevelBonus": 0.0,
+    "flatDamageLevelBonus": 0.0,
+    "healingRatio": 0.0,
+    "flatHealing": 0,
+    "healingRatioLevelBonus": 0.0,
+    "flatHealingLevelBonus": 0.0,
+    "damageOverTimeRatio": 0.0,
+    "damageOverTimeMilliseconds": 0,
+    "damageOverTimeTickMilliseconds": 3000,
+    "stunChance": 0.0,
+    "stunMilliseconds": 0,
+    "blindChance": 0.0,
+    "blindMilliseconds": 0,
+    "silenceChance": 0.0,
+    "silenceMilliseconds": 0,
+    "penetrationRatio": 0.0,
+    "armorDamageRatio": 0.0,
+    "hpDrainRatio": 0.0,
+    "pierceChance": 0.0,
+    "triggerHpRatio": 1.0,
+    "defaultTriggers": [
+      {
+        "dependency": "targetEnemy",
+        "condition": "currentHitpoints",
+        "comparator": "greaterThanOrEqual",
+        "value": 1.0,
+        "buffId": null
+      }
+    ],
+    "tier": 2
   }
 ]

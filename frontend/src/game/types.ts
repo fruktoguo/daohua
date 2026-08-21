@@ -131,6 +131,8 @@ export interface CombatAttributes {
   criticalDamageRatio: number
   criticalAvoidance: number
   damageAbsorptionRatio: number
+  criticalRating?: number
+  criticalAvoidanceRating?: number
 }
 
 export interface InventoryItem {

@@ -555,7 +555,9 @@ public static class XiuxianStateMapper
             attributes.CriticalChance,
             attributes.CriticalDamageRatio,
             attributes.CriticalAvoidance,
-            attributes.DamageAbsorptionRatio);
+            attributes.DamageAbsorptionRatio,
+            attributes.CriticalRating,
+            attributes.CriticalAvoidanceRating);
     }
 
     private static XiuxianCombatActionStateDto? ToCombatAction(

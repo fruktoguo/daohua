@@ -956,7 +956,7 @@ public sealed class XiuxianCombatTests
 
         Assert.NotNull(result.FinalEnemies);
         var enemy = Assert.Single(result.FinalEnemies!);
-        Assert.Equal("enemy.twilight-valley-master", enemy.EnemyId);
+        Assert.Equal("enemy.falling-star-beast", enemy.EnemyId);
     }
 
     [Fact]

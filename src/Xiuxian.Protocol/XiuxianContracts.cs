@@ -137,7 +137,9 @@ public sealed record XiuxianCombatAttributesDto(
     double CriticalChance,
     double CriticalDamageRatio,
     double CriticalAvoidance,
-    double DamageAbsorptionRatio);
+    double DamageAbsorptionRatio,
+    double CriticalRating = 0,
+    double CriticalAvoidanceRating = 0);
 
 public sealed record XiuxianInventoryItemDto(
     string ItemId,

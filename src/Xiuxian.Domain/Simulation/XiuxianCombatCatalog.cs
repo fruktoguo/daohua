@@ -255,4 +255,5 @@ public static class XiuxianCombatAbilityIds
     public const string QingpingMelody = "ability.qingping-melody";
     public const string LightningAttraction = "ability.lightning-attraction";
     public const string PozhenMelody = "ability.pozhen-melody";
+    public const string StarPiercer = "ability.star-piercer";
 }

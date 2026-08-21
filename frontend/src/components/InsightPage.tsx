@@ -158,14 +158,16 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const magicRes: number = Math.max(0.0, attributes?.waterResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus)))
   const accuracy: number = attributes?.accuracyRating ?? basePool.baseAccuracy
   const evasion: number = attributes?.evasionRating ?? basePool.baseEvasion
-  const critPoint: number = attributes ? attributes.criticalChance * 100.0 : basePool.baseCrit
-  const critAvoidPoint: number = attributes ? attributes.criticalAvoidance * 100.0 : basePool.baseCritAvoid
+  const critPoint: number = attributes ? (attributes.criticalRating ?? attributes.criticalChance * 100.0) : basePool.baseCrit
+  const critAvoidPoint: number = attributes ? (attributes.criticalAvoidanceRating ?? attributes.criticalAvoidance * 100.0) : basePool.baseCritAvoid
   const parryBreakPoint: number = basePool.baseBreak + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)
   const parryResolvePoint: number = basePool.baseParry + (loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)
 
-  // 生命回复与灵力回复 (固定值属性，每 5 秒回复量，基础为 2% 上限，受六维加成)
-  const hpRegenTotal = attributes ? attributes.hpRegenPerTenSeconds / 2.0 : (basePool.baseHpRegen * (1.0 + staminaBonus))
-  const mpRegenTotal = attributes ? attributes.mpRegenPerTenSeconds / 2.0 : (basePool.baseMpRegen * (1.0 + intelligenceBonus))
+  // 生命回复与灵力回复 (固定值属性，每 5 秒回复量)
+  // 服务端 HpRegenPerTenSeconds 是比率 (如 0.044 = 每 10 秒回复 maxHp 的 4.4%)
+  // 实际每 5 秒回复量 = maxHp * ratio / 2
+  const hpRegenTotal = attributes ? (maxHp * attributes.hpRegenPerTenSeconds / 2.0) : (basePool.baseHpRegen * (1.0 + staminaBonus))
+  const mpRegenTotal = attributes ? (maxMp * attributes.mpRegenPerTenSeconds / 2.0) : (basePool.baseMpRegen * (1.0 + intelligenceBonus))
 
   // 2. 特殊战斗属性 (统一百分比类型 PercentValue，内部均为 double 点数)
   const critDamagePercent = PercentValue.linear((attributes?.criticalDamageRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0 + 150.0)

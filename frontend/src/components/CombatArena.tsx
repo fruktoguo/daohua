@@ -1023,10 +1023,10 @@ export const CombatArena = memo(function CombatArena({
     { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
     { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
   ]
-  const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen']> = [
+  const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen' | 'ratio_regen']> = [
     [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
-    [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'regen'],
-    [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'regen'],
+    [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+    [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
     [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
     [t('combat.special.pierceChance'), combatAttributes?.pierceChance ?? 0, 'percent'],
     [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
@@ -1053,7 +1053,9 @@ export const CombatArena = memo(function CombatArena({
         ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
         : kind === 'regen'
           ? `+${formatNumber(value)} / 10s`
-          : formatNumber(value),
+          : kind === 'ratio_regen'
+            ? `+${Math.round(value * 1000) / 10}% / 10s`
+            : formatNumber(value),
     }))
   const enemyBaseRows: AttributeRow[] = [
     { label: t('combat.attr.hp'), value: `${formatNumber(enemy.hp)} / ${formatNumber(enemy.maxHp)}` },
