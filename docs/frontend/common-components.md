@@ -64,7 +64,7 @@
   - 行囊、掉落、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
   - **多气泡联动与独立数量气泡**：物品悬浮时在主信息卡旁自动附带独立的数量副气泡（标题为「数量」，内容为中文四位分段「具体数值」）。
 - **组件源码**：[`frontend/src/components/ItemDisplay.tsx`](../../frontend/src/components/ItemDisplay.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-badge-rarity-*`), [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) (搜索 `.daoxuan-floating-aside-*`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-badge-rarity-*`), [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) (搜索 `.daohua-floating-aside-*`)
 
 ---
 
@@ -127,7 +127,7 @@
   - **任何新增 UI 文本**（按钮、标题、提示、aria-label、placeholder、模板消息）——禁止在组件内硬编码中文/英文字符串，一律登记词典并用 `t()` 取值
   - 需要随语言切换即时刷新的渲染路径 -> `useT()`；事件回调、非渲染辅助函数 -> `getT()`
   - 带参数的模板消息（如「选择使用物品 · 槽 {n}」）-> 词典值写 `{name}` 占位符，调用 `t(key, params)` 内插
-  - 语言切换 UI 与偏好持久化（localStorage `daoxuan.locale`，默认 zh-CN）-> `useI18nStore` / `LOCALES`
+  - 语言切换 UI 与偏好持久化（localStorage `daohua.locale`，默认 zh-CN）-> `useI18nStore` / `LOCALES`
 - **内核源码**：[`frontend/src/i18n/index.ts`](../../frontend/src/i18n/index.ts)
 - **词典结构**：[`frontend/src/i18n/domains/`](../../frontend/src/i18n/domains/) 按域成对维护 `<域>.zh.ts` / `<域>.en.ts`（common/app/insight/market/combat/game 六域，根键互不重叠）；聚合入口 [`locales/zh-CN.ts`](../../frontend/src/i18n/locales/zh-CN.ts)（类型源）与 [`locales/en-US.ts`](../../frontend/src/i18n/locales/en-US.ts)（形状编译期强制一致）
 - **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端下发的游戏内容（物品名、行动名、日志模板等协议数据）不走前端 i18n

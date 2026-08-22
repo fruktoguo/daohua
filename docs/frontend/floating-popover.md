@@ -24,7 +24,7 @@
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    FloatingPopover (核心底座)                 │
-│  - Portal 顶层渲染 (#daoxuan-floating-root, z-index: 10000)   │
+│  - Portal 顶层渲染 (#daohua-floating-root, z-index: 10000)   │
 │  - 智能视口边界安全计算 (Auto Flip + Viewport Clamp)             │
 │  - 双端事件分流 (Desktop Hover / Mobile Touch / Passthrough)  │
 └──────────────┬───────────────────────────────┬──────────────┘
@@ -52,7 +52,7 @@
 ## 3. 关键技术实现机制
 
 ### 3.1 Portal 顶层挂载与防裁切
-- 浮层节点不挂载在业务组件内部，而是通过 React `createPortal` 挂载至全局独立的专用容器 `#daoxuan-floating-root`；
+- 浮层节点不挂载在业务组件内部，而是通过 React `createPortal` 挂载至全局独立的专用容器 `#daohua-floating-root`；
 - 专用容器样式为 `position: fixed; top: 0; left: 0; width: 0; height: 0; z-index: 10000; pointer-events: none;`；
 - 浮层彻底脱离任何局部 CSS 上下文，绝对避免被 `overflow: hidden` 或 `transform` 裁切。
 
@@ -100,8 +100,8 @@
 ## 5. 修仙古典美学规范
 
 1. **暗墨玄石材质**：`rgba(14, 12, 7, 0.96)` 高透明度深黑底色，叠加 `backdrop-filter: blur(14px)` 毛玻璃效果；
-2. **古典折角金纹**：卡片四角带有直角暗金装饰纹理（`.daoxuan-floating-corner`）；
-3. **顶部金华流光**：细微暗金渐变高光细线（`.daoxuan-floating-shimmer-bar`）；
+2. **古典折角金纹**：卡片四角带有直角暗金装饰纹理（`.daohua-floating-corner`）；
+3. **顶部金华流光**：细微暗金渐变高光细线（`.daohua-floating-shimmer-bar`）；
 4. **典雅字体与排版**：标题采用楷体/宋体（`"Noto Serif SC", "Kaiti SC", serif`），词条采用古典胶囊排版；
 5. **五行与修仙色调 (`FloatingTone`)**：
    - `gold`：暗金真金（法宝、主属性、极品）；

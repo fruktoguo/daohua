@@ -1,7 +1,7 @@
 ---
 name: data-designer
 description: >-
-  Use this skill whenever designing, reviewing, modifying, or balancing skills, equipment, items, buffs, monsters, and encounters in the Daoxuan codebase. Enforces the strict 'Intensity (Budget) + Attribute Weights' quantitative methodology, ensuring all numerical values in config files are derived deterministically.
+  Use this skill whenever designing, reviewing, modifying, or balancing skills, equipment, items, buffs, monsters, and encounters in the DaoHua codebase. Enforces the strict 'Intensity (Budget) + Attribute Weights' quantitative methodology, ensuring all numerical values in config files are derived deterministically.
 ---
 
 # 《道化太初》数值设计规范
@@ -94,7 +94,7 @@ description: >-
 | 11 | 渡劫 \[极\] 半步飞升 | Lv 126 | 3,400.0 |
 | 12 | 飞升 \[极\] 飞升真仙 | Lv 127 | 4,600.0 |
 
-代码位置：[`DaoxuanDataBudgetResolver.GetTierBaseBudget()`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/GameData/DaoxuanDataBudgetResolver.cs#L123-L138)
+代码位置：[`DaoHuaDataBudgetResolver.GetTierBaseBudget()`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/GameData/DaoHuaDataBudgetResolver.cs#L123-L138)
 
 ---
 
@@ -141,11 +141,11 @@ $$B_{\text{skill}} = B_T \times K$$
 - `FlatDamageLevelBonus` = `FlatDamage × 0.01`
 - 治疗同理
 
-代码位置：[`DaoxuanDataBudgetResolver.ResolveAbility()`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/GameData/DaoxuanDataBudgetResolver.cs#L186-L305)
+代码位置：[`DaoHuaDataBudgetResolver.ResolveAbility()`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/GameData/DaoHuaDataBudgetResolver.cs#L186-L305)
 
 ### 4.5 现有技能参考
 
-查看当前所有技能定义：[`abilities.json`](file:///home/yuohira/game/daoxuan/config/game-data/abilities.json)
+查看当前所有技能定义：[`abilities.json`](file:///home/yuohira/game/daohua/config/game-data/abilities.json)
 
 ---
 
@@ -173,7 +173,7 @@ $$B_{\text{equip}} = B_T \times Q_{\text{mult}} \times S_{\text{weight}} \times 
 
 ### 5.3 装备属性类型
 
-装备提供的属性全部是**百分比增幅**（`DaoxuanEquipmentCombatStats` 中的字段），每个增幅属性消耗 1 点预算/1% 增幅。
+装备提供的属性全部是**百分比增幅**（`DaoHuaEquipmentCombatStats` 中的字段），每个增幅属性消耗 1 点预算/1% 增幅。
 
 装备也可以提供特殊属性（穿透、吸血等），这些不走预算量化，人工分配。
 
@@ -183,7 +183,7 @@ $$\text{每级强化增量} = \frac{\text{基础属性}}{50.0}$$
 
 强化至 +20 满级时 = 总属性约 +40%。
 
-代码位置：[`DaoxuanDataBudgetResolver.ResolveEquipment()`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/GameData/DaoxuanDataBudgetResolver.cs#L311-L365)
+代码位置：[`DaoHuaDataBudgetResolver.ResolveEquipment()`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/GameData/DaoHuaDataBudgetResolver.cs#L311-L365)
 
 ---
 
@@ -198,7 +198,7 @@ $$\text{每级强化增量} = \frac{\text{基础属性}}{50.0}$$
 
 Buff 提供的百分比增幅同样遵循 1 点预算 = 1% 增幅的规则。持续时长和叠加层数属于特殊属性，人工平衡。
 
-代码位置：[`DaoxuanDataBudgetResolver.ResolveItem()`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/GameData/DaoxuanDataBudgetResolver.cs#L370-L417)
+代码位置：[`DaoHuaDataBudgetResolver.ResolveItem()`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/GameData/DaoHuaDataBudgetResolver.cs#L370-L417)
 
 ---
 
@@ -229,17 +229,17 @@ Buff 提供的百分比增幅同样遵循 1 点预算 = 1% 增幅的规则。持
 
 ### 8.1 关键代码参考
 
-- 基础属性锚点表：[`BaseFlatAnchors`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/Simulation/DaoxuanCombatFormula.cs#L250-L264)
-- 玩家面板构建：[`BuildPlayerStats()`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/Simulation/DaoxuanCombatSimulator.cs#L1200-L1320)
-- 技能伤害计算：[`ResolveCombat()`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/Simulation/DaoxuanCombatSimulator.cs#L1440-L1506)
-- 预算解析器：[`DaoxuanDataBudgetResolver`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/GameData/DaoxuanDataBudgetResolver.cs)
+- 基础属性锚点表：[`BaseFlatAnchors`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/Simulation/DaoHuaCombatFormula.cs#L250-L264)
+- 玩家面板构建：[`BuildPlayerStats()`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/Simulation/DaoHuaCombatSimulator.cs#L1200-L1320)
+- 技能伤害计算：[`ResolveCombat()`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/Simulation/DaoHuaCombatSimulator.cs#L1440-L1506)
+- 预算解析器：[`DaoHuaDataBudgetResolver`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/GameData/DaoHuaDataBudgetResolver.cs)
 
 ### 8.2 配置文件位置
 
-- 技能：[`config/game-data/abilities.json`](file:///home/yuohira/game/daoxuan/config/game-data/abilities.json)
-- 技能数据模型：[`DaoxuanCombatAbilityDefinition`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/Models/DaoxuanCombatModels.cs#L100-L135)
-- 装备数据模型：[`DaoxuanCombatEquipmentDefinition`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/Models/DaoxuanCombatModels.cs#L247-L255)
-- 战斗面板模型：[`DaoxuanCombatAttributeState`](file:///home/yuohira/game/daoxuan/src/Daoxuan.Domain/Models/DaoxuanCombatModels.cs#L317-L351)
+- 技能：[`config/game-data/abilities.json`](file:///home/yuohira/game/daohua/config/game-data/abilities.json)
+- 技能数据模型：[`DaoHuaCombatAbilityDefinition`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/Models/DaoHuaCombatModels.cs#L100-L135)
+- 装备数据模型：[`DaoHuaCombatEquipmentDefinition`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/Models/DaoHuaCombatModels.cs#L247-L255)
+- 战斗面板模型：[`DaoHuaCombatAttributeState`](file:///home/yuohira/game/daohua/src/DaoHua.Domain/Models/DaoHuaCombatModels.cs#L317-L351)
 
 ---
 
