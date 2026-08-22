@@ -3,10 +3,6 @@ import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
 
-/** 地图虚拟坐标画布尺寸（用于统一像素比例与消除 SVG 非等比拉伸） */
-const MAP_WIDTH = 1200
-const MAP_HEIGHT = 800
-
 /** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
   from: { x: number; y: number },
@@ -21,12 +17,11 @@ function getEdgeDistance(
  * 修仙大千世界大地图与游历导航面板 (WorldMapPanel)
  *
  * 核心功能与交互流程：
- * 1. 节点与连线网络：基于虚拟像素坐标 (1200x800) 渲染大地图节点与通路，彻底杜绝文本拉伸变形；
+ * 1. 响应式自适应布局：基于 100% 相对坐标与像素级 SVG 覆盖渲染，杜绝任何字形拉伸变形；
  * 2. 交互式漫游视口：支持鼠标拖拽 (Pan)、触屏漫游与缩放微调 (Zoom)，提供快捷定位与重置；
- * 3. 玩家位置标记：以向下矢量指示箭头实时锚定当前地点或行进路径，打开地图时默认居中对齐玩家位置；
- * 4. 可靠节点交互：区分平移漫游与地点点击，支持一键选中地点查看灵地属性与行动；
- * 5. 宽域连线交互：宽达 32px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)；
- * 6. 灵地详情侧边栏：选中节点后展示修炼灵气倍率、可用行动列表、潜伏敌怪遭遇及行进耗时。
+ * 3. 玩家位置居中：打开地图时默认将玩家当前所在位置（驻留地点或行进路径）对齐至视口中心；
+ * 4. 可靠节点交互：区分平移漫游与地点点击，支持一键精准选中地点并查看详情；
+ * 5. 宽域连线交互：宽达 28px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)。
  */
 export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const t = useT()
@@ -63,8 +58,8 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     if (!stageW || !stageH) return
 
     const z = targetZoom ?? zoom
-    const playerPxX = (world.x / 100) * MAP_WIDTH
-    const playerPxY = (world.y / 100) * MAP_HEIGHT
+    const playerPxX = (world.x / 100) * stageW
+    const playerPxY = (world.y / 100) * stageH
 
     setPan({
       x: Math.round(stageW / 2 - playerPxX * z),
@@ -72,7 +67,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     })
   }, [world.x, world.y, zoom])
 
-  // 打开地图或视口尺寸变动时，确保默认居中玩家当前位置
+  // 打开地图或视口初始化时，默认将玩家当前位置居中
   const hasAutoCenteredRef = useRef<boolean>(false)
   useEffect(() => {
     const stage = stageRef.current
@@ -81,7 +76,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     const tryCenter = () => {
       const stageW = stage.clientWidth
       const stageH = stage.clientHeight
-      if (stageW > 0 && stageH > 0) {
+      if (stageW > 0 && stageH > 0 && !hasAutoCenteredRef.current) {
         centerOnPlayer(zoom)
         hasAutoCenteredRef.current = true
       }
@@ -198,7 +193,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
 
     const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89
     setZoom(prevZoom => {
-      const nextZoom = Math.min(1.6, Math.max(0.65, prevZoom * zoomFactor))
+      const nextZoom = Math.min(1.8, Math.max(0.6, prevZoom * zoomFactor))
       const worldX = (mouseX - pan.x) / prevZoom
       const worldY = (mouseY - pan.y) / prevZoom
       setPan({
@@ -247,7 +242,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
             <button
               className="world-map-tool-btn icon-only"
               onClick={() => {
-                const nextZoom = Math.min(1.6, zoom + 0.15)
+                const nextZoom = Math.min(1.8, zoom + 0.15)
                 setZoom(nextZoom)
                 centerOnPlayer(nextZoom)
               }}
@@ -257,7 +252,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
             <button
               className="world-map-tool-btn icon-only"
               onClick={() => {
-                const nextZoom = Math.max(0.65, zoom - 0.15)
+                const nextZoom = Math.max(0.6, zoom - 0.15)
                 setZoom(nextZoom)
                 centerOnPlayer(nextZoom)
               }}
@@ -268,7 +263,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
               className="world-map-tool-btn icon-only"
               onClick={() => {
                 setZoom(1)
-                centerOnPlayer(1)
+                setPan({ x: 0, y: 0 })
               }}
               title={t('combat.map.resetView')}
               type="button"
@@ -276,23 +271,16 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
           </div>
         </div>
 
-        {/* 漫游画布视口（统一 1200x800 虚拟绝对像素） */}
+        {/* 漫游画布视口 */}
         <div
           className="world-map-canvas"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: '0 0',
-            width: `${MAP_WIDTH}px`,
-            height: `${MAP_HEIGHT}px`,
+            transformOrigin: '50% 50%',
           }}
         >
-          {/* SVG 路径与距离标注（1:1 无形变） */}
-          <svg
-            className="world-map-edges"
-            height={MAP_HEIGHT}
-            viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
-            width={MAP_WIDTH}
-          >
+          {/* SVG 路径与距离标注（像素渲染，100% 正常字形比例） */}
+          <svg className="world-map-edges">
             <defs>
               <filter id="world-route-glow" x="-20%" y="-20%" width="140%" height="140%">
                 <feDropShadow dx="0" dy="0" floodColor="#e8d69a" floodOpacity="0.7" stdDeviation="3" />
@@ -303,13 +291,9 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
               const to = map.nodes.find(node => node.nodeId === edge.toNodeId)
               if (!from || !to) return null
               const distance = getEdgeDistance(from, to)
-              const x1 = (from.x / 100) * MAP_WIDTH
-              const y1 = (from.y / 100) * MAP_HEIGHT
-              const x2 = (to.x / 100) * MAP_WIDTH
-              const y2 = (to.y / 100) * MAP_HEIGHT
-              const midX = (x1 + x2) / 2
-              const midY = (y1 + y2) / 2
               const isPlanned = plannedEdges.has(edge.edgeId)
+              const midX = (from.x + to.x) / 2
+              const midY = (from.y + to.y) / 2
 
               return (
                 <g
@@ -317,25 +301,22 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
                   className={`world-map-edge-group${isPlanned ? ' is-planned' : ''}`}
                   key={edge.edgeId}
                 >
-                  {/* 宽容度极高的透明交互拾取层 (32px) */}
-                  <line className="world-map-edge-hitbox" x1={x1} x2={x2} y1={y1} y2={y2} />
+                  {/* 宽容度高的透明交互拾取层 (28px) */}
+                  <line className="world-map-edge-hitbox" x1={`${from.x}%`} x2={`${to.x}%`} y1={`${from.y}%`} y2={`${to.y}%`} />
                   {/* 底色衬线 */}
-                  <line className="world-map-edge-bg" x1={x1} x2={x2} y1={y1} y2={y2} />
+                  <line className="world-map-edge-bg" x1={`${from.x}%`} x2={`${to.x}%`} y1={`${from.y}%`} y2={`${to.y}%`} />
                   {/* 核心主路径 */}
-                  <line className="world-map-edge-line" x1={x1} x2={x2} y1={y1} y2={y2} />
-                  {/* 距离微型胶囊标注（比例完全正常，居中无拉伸） */}
-                  <g className="world-map-edge-label" transform={`translate(${midX}, ${midY})`}>
-                    <rect className="world-map-edge-label-bg" height={22} rx={4} width={54} x={-27} y={-11} />
-                    <text
-                      className="world-map-edge-label-text"
-                      dominantBaseline="central"
-                      textAnchor="middle"
-                      x={0}
-                      y={0}
-                    >
-                      {t('combat.map.edgeDistance', { distance: distance.toFixed(1) })}
-                    </text>
-                  </g>
+                  <line className="world-map-edge-line" x1={`${from.x}%`} x2={`${to.x}%`} y1={`${from.y}%`} y2={`${to.y}%`} />
+                  {/* 距离文字标注（标准字形比例，带黑色轮廓发光） */}
+                  <text
+                    className="world-map-edge-label-text"
+                    dominantBaseline="central"
+                    textAnchor="middle"
+                    x={`${midX}%`}
+                    y={`${midY}%`}
+                  >
+                    {t('combat.map.edgeDistance', { distance: distance.toFixed(1) })}
+                  </text>
                 </g>
               )
             })}
@@ -343,8 +324,6 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
 
           {/* 地图节点实体按钮 */}
           {map.nodes.map(node => {
-            const px = (node.x / 100) * MAP_WIDTH
-            const py = (node.y / 100) * MAP_HEIGHT
             const isCurrent = node.nodeId === world.nodeId
             const isSelected = selectedNodeId === node.nodeId
 
@@ -359,7 +338,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
                   e.stopPropagation()
                   setSelectedNodeId(node.nodeId)
                 }}
-                style={{ left: `${px}px`, top: `${py}px` }}
+                style={{ left: `${node.x}%`, top: `${node.y}%` }}
                 type="button"
               >
                 <strong>{node.name}</strong>
@@ -372,8 +351,8 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
             aria-label={t('combat.map.playerMarkerAria', { name: world.locationName })}
             className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}`}
             style={{
-              left: `${(world.x / 100) * MAP_WIDTH}px`,
-              top: `${(world.y / 100) * MAP_HEIGHT}px`,
+              left: `${world.x}%`,
+              top: `${world.y}%`,
             }}
             title={world.locationName}
           >

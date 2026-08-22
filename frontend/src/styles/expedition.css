@@ -161,6 +161,8 @@
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
   will-change: transform;
   pointer-events: auto;
 }
@@ -169,6 +171,8 @@
   position: absolute;
   top: 0;
   left: 0;
+  width: 100%;
+  height: 100%;
   z-index: 1;
   overflow: visible;
   pointer-events: stroke;
@@ -181,14 +185,14 @@
 
 .world-map-edge-hitbox {
   stroke: rgba(0, 0, 0, 0.001);
-  stroke-width: 32px;
+  stroke-width: 28px;
   stroke-linecap: round;
   pointer-events: stroke;
 }
 
 .world-map-edge-bg {
-  stroke: rgba(0, 0, 0, 0.7);
-  stroke-width: 3.5px;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 4px;
   stroke-linecap: round;
   pointer-events: none;
 }
@@ -215,38 +219,26 @@
   filter: drop-shadow(0 0 8px rgba(201, 180, 109, 0.9));
 }
 
-.world-map-edge-label {
-  pointer-events: none;
-  opacity: 0.7;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.world-map-edge-label-bg {
-  fill: rgba(10, 14, 12, 0.92);
-  stroke: rgba(201, 180, 109, 0.4);
-  stroke-width: 1px;
-}
-
 .world-map-edge-label-text {
   fill: #e8d69a;
   font-family: Arial, "Kaiti SC", STKaiti, KaiTi, sans-serif;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  text-shadow: 0 1px 2px #000;
+  paint-order: stroke;
+  stroke: rgba(6, 8, 6, 0.95);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  opacity: 0.85;
+  transition: opacity 0.2s ease, fill 0.2s ease;
 }
 
-.world-map-edge-group:hover .world-map-edge-label,
-.world-map-edge-group.is-planned .world-map-edge-label {
+.world-map-edge-group:hover .world-map-edge-label-text,
+.world-map-edge-group.is-planned .world-map-edge-label-text {
   opacity: 1;
-}
-
-.world-map-edge-group:hover .world-map-edge-label-bg {
-  fill: rgba(20, 26, 22, 0.98);
-  stroke: var(--gold-bright);
-}
-
-.world-map-edge-group:hover .world-map-edge-label-text {
   fill: #ffffff;
+  stroke: rgba(0, 0, 0, 0.95);
+  stroke-width: 4px;
 }
 
 @keyframes world-route-flow {
@@ -916,7 +908,8 @@
   flex-shrink: 0;
 }
 
-.arena-avatar .vector-character {
+.arena-avatar .vector-character,
+.arena-avatar .character-avatar {
   width: 90px;
   height: 120px;
   max-width: 90px;
@@ -926,12 +919,22 @@
   transition: transform 0.2s ease, filter 0.2s ease;
 }
 
-.arena-actor:hover .vector-character {
+.arena-avatar .character-avatar.is-flipped {
+  transform: scaleX(-1);
+}
+
+.arena-actor:hover .vector-character,
+.arena-actor:hover .character-avatar {
   transform: scale(1.08);
   filter: drop-shadow(0 4px 10px rgba(201, 180, 109, 0.5));
 }
 
-.arena-actor.is-dead .arena-avatar .vector-character {
+.arena-actor:hover .character-avatar.is-flipped {
+  transform: scaleX(-1) scale(1.08);
+}
+
+.arena-actor.is-dead .arena-avatar .vector-character,
+.arena-actor.is-dead .arena-avatar .character-avatar {
   opacity: 0.35;
   filter: grayscale(1) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }

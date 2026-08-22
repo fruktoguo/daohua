@@ -3,6 +3,7 @@ import { formatNumber } from '../game/format'
 import type { CombatEncounterDefinition, CombatSpawnDefinition, CombatantDefinition } from '../game/types'
 import { useT, type TFunction } from '../i18n'
 import { FloatingTooltip } from './FloatingPopover'
+import { CharacterAvatar } from './CharacterAvatar'
 
 // 已知伤害类型走 i18n；未知类型原样回显，保持对服务端新增类型的兼容。
 const DAMAGE_TYPES: readonly string[] = ['physical', 'water', 'nature', 'fire']
@@ -14,7 +15,7 @@ function damageTypeLabel(t: TFunction, value: string): string {
 /**
  * 敌怪属性卡片小组件 (EnemyCard)
  *
- * 渲染遭遇中的单个敌怪/Boss 的头像单字、伤害类型、经验掉落、血气条、真元条及攻防基础三维。
+ * 渲染遭遇中的单个敌怪/Boss 的立绘头像 (水平翻转对齐)、伤害类型、经验掉落、血气条、真元条及攻防基础三维。
  */
 const EnemyCard = memo(function EnemyCard({
   enemy,
@@ -32,7 +33,16 @@ const EnemyCard = memo(function EnemyCard({
   return (
     <article className={`combat-enemy-card${boss ? ' is-boss' : ''}`}>
       <div className="combat-enemy-heading">
-        <span className="combat-enemy-seal" aria-hidden="true">{enemy.name.slice(0, 1)}</span>
+        <div className="combat-enemy-avatar-wrap">
+          <CharacterAvatar
+            actorId={enemy.enemyId}
+            className="combat-enemy-avatar"
+            fallback={enemy.name.slice(0, 1)}
+            isFlipped={true}
+            name={enemy.name}
+            role="enemy"
+          />
+        </div>
         <div>
           <strong>{enemy.name}</strong>
           <span>{t('combat.encounter.experience', { type: damageTypeLabel(t, enemy.damageType), n: formatNumber(enemy.experience) })}</span>
