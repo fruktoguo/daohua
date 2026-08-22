@@ -50,10 +50,10 @@ public sealed class CharacterStatResolverTests
     }
 
     [Theory]
-    [InlineData(UnitRank.Minion, 0.75, 0.50)]
-    [InlineData(UnitRank.Elite, 1.15, 2.00)]
-    [InlineData(UnitRank.Boss, 1.50, 6.00)]
-    [InlineData(UnitRank.Leader, 1.30, 3.50)]
+    [InlineData(UnitRank.Minion, 0.80, 3.00)]
+    [InlineData(UnitRank.Elite, 1.20, 5.00)]
+    [InlineData(UnitRank.Boss, 1.50, 20.00)]
+    [InlineData(UnitRank.Leader, 1.35, 10.00)]
     [InlineData(UnitRank.Summon, 1.00, 1.00)]
     [InlineData(UnitRank.Pet, 1.00, 1.00)]
     [InlineData(UnitRank.Npc, 1.00, 1.00)]

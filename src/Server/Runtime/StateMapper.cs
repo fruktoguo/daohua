@@ -446,6 +446,10 @@ public static class StateMapper
                 PlayerMaxHitpoints: projectedPlayer.MaxHitpoints,
                 PlayerManapoints: projectedPlayer.Manapoints,
                 PlayerMaxManapoints: projectedPlayer.MaxManapoints,
+                EnemyHitpoints: configuredEncounter.Enemy.MaxHitpoints,
+                EnemyMaxHitpoints: configuredEncounter.Enemy.MaxHitpoints,
+                EnemyManapoints: configuredEncounter.Enemy.MaxManapoints,
+                EnemyMaxManapoints: configuredEncounter.Enemy.MaxManapoints,
                 EnemyId: configuredEncounter.Enemy.Id,
                 EnemyName: configuredEncounter.Enemy.Name,
                 PlayerAction: null,
@@ -467,10 +471,10 @@ public static class StateMapper
         var player = result.FinalPlayer;
         var enemies = result.FinalEnemies ?? [];
         var activeEnemy = enemies.FirstOrDefault(enemy => !enemy.IsDefeated && enemy.Hitpoints > 0) ?? enemies.LastOrDefault();
-        var enemyHitpoints = enemies.Sum(enemy => Math.Max(0, enemy.Hitpoints));
-        var enemyMaxHitpoints = enemies.Sum(enemy => Math.Max(0, enemy.MaxHitpoints));
-        var enemyManapoints = enemies.Sum(enemy => Math.Max(0, enemy.Manapoints));
-        var enemyMaxManapoints = enemies.Sum(enemy => Math.Max(0, enemy.MaxManapoints));
+        var enemyHitpoints = activeEnemy?.Hitpoints ?? 0;
+        var enemyMaxHitpoints = activeEnemy?.MaxHitpoints ?? combatEncounter.Enemy.MaxHitpoints;
+        var enemyManapoints = activeEnemy?.Manapoints ?? 0;
+        var enemyMaxManapoints = activeEnemy?.MaxManapoints ?? combatEncounter.Enemy.MaxManapoints;
         return new ExpeditionProgressDto(
             "combat",
             0,

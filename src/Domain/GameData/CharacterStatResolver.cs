@@ -26,19 +26,19 @@ public static class CharacterStatResolver
     public static (double StatMultiplier, double HpMultiplier) GetRankMultipliers(UnitRank rank) =>
         rank switch
         {
-            UnitRank.Boss => (1.50, 6.00),
-            UnitRank.Leader => (1.30, 3.50),
-            UnitRank.Elite => (1.15, 2.00),
+            UnitRank.Boss => (1.50, 20.00),
+            UnitRank.Leader => (1.35, 10.00),
+            UnitRank.Elite => (1.20, 5.00),
             UnitRank.Summon or UnitRank.Pet => (1.00, 1.00),
             UnitRank.Normal or UnitRank.PlayerMirror or UnitRank.Npc => (1.00, 1.00),
-            _ => (0.75, 0.50) // 默认 minion 小怪 (0.75 全属性, 0.50 基准生命)
+            _ => (0.80, 3.00) // 默认 minion 小怪
         };
 
     /// <summary>
     /// 兼容重载：从字符串解析 Rank 并获取乘区。
     /// </summary>
     public static (double StatMultiplier, double HpMultiplier) GetRankMultipliers(string? rank) =>
-        TryParseRank(rank, out var parsed) ? GetRankMultipliers(parsed) : (0.75, 0.50);
+        TryParseRank(rank, out var parsed) ? GetRankMultipliers(parsed) : (0.80, 3.00);
 
     public static bool TryParseRank(string? rank, out UnitRank parsed)
     {
