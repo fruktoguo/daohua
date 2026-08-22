@@ -10,7 +10,7 @@ import type {
   SimulationResult
 } from './types'
 
-// DaoxuanSimulation.cs 的忠实移植：行动队列的唯一结算入口。
+// DaoHuaSimulation.cs 的忠实移植：行动队列的唯一结算入口。
 // 结算按“行动完成边界”推进，不按离线时长逐秒循环，重开页面后可直接快进到当前时间。
 
 const MAX_TRANSITIONS_PER_ADVANCE = 2_000_000

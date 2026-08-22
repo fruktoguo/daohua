@@ -15,7 +15,7 @@ import type { CommandResult, DirtySection, PlayerState } from './types'
 // 模拟状态放在 React 之外的可变单例里，zustand 只保存各脏区段的版本号。
 // 组件订阅自己关心的区段版本号，tick 高频推进时不会整棵树重渲染。
 
-const SAVE_KEY = 'daoxuan-save-v1'
+const SAVE_KEY = 'daohua-save-v1'
 
 export const sim: { state: PlayerState } = {
   state: loadOrCreate()
@@ -31,13 +31,13 @@ function loadOrCreate(): PlayerState {
         // 启动即离线快进：把离开期间的时间一次性补全。
         const result = advanceTo(state, nowSeconds())
         if (result.transitions > 0) {
-          console.info(`[daoxuan] 离线快进完成：${result.transitions} 次行动结算`)
+          console.info(`[daohua] 离线快进完成：${result.transitions} 次行动结算`)
         }
         return state
       }
     }
   } catch (error) {
-    console.warn('[daoxuan] 存档读取失败，已新建存档', error)
+    console.warn('[daohua] 存档读取失败，已新建存档', error)
   }
   return createDefaultState(crypto.randomUUID?.() ?? `player-${Date.now()}`)
 }
@@ -72,7 +72,7 @@ export function saveNow(): void {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(sim.state))
   } catch (error) {
-    console.warn('[daoxuan] 存档写入失败', error)
+    console.warn('[daohua] 存档写入失败', error)
   }
 }
 
@@ -164,7 +164,7 @@ export function startEngine(): void {
   window.addEventListener('beforeunload', saveNow)
 }
 
-// ---- UI 指令入口：与 DaoxuanContracts.cs 的请求一一对应 ----
+// ---- UI 指令入口：与 DaoHuaContracts.cs 的请求一一对应 ----
 
 export const gameCommands = {
   enqueue: (actionId: string, repeats: number) => dispatch(enqueue(sim.state, actionId, repeats)),

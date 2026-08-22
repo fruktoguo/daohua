@@ -1,6 +1,6 @@
 import type { ActionStatus, ActionType, PresenceMode } from './ids'
 
-// 与 DaoxuanModels.cs / DaoxuanContracts.cs 对应的类型。
+// 与 DaoHuaModels.cs / DaoHuaContracts.cs 对应的类型。
 // 时间一律用 unix 秒（number），对应 C# 侧 NormalizeTime 截断到秒。
 
 export interface ActionDefinition {
@@ -67,7 +67,7 @@ export interface PlayerState {
   eventLog: string[]
 }
 
-// 脏区段：对应 DaoxuanDirtySections，store 用它做细粒度刷新。
+// 脏区段：对应 DaoHuaDirtySections，store 用它做细粒度刷新。
 export type DirtySection = 'queue' | 'inventory' | 'buffs' | 'stats' | 'events' | 'presence'
 
 export interface CommandResult {
