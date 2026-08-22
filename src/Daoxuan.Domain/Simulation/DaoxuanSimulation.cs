@@ -14,6 +14,14 @@ public static class DaoxuanSimulation
     private const int MinimumCombatSearchMilliseconds = 1_000;
     private const int MaximumCombatSearchMilliseconds = 60_000;
 
+    /// <summary>
+    /// 为新创建的玩家生成默认初始聚合状态，包括默认采集/炼丹/修炼队列。
+    /// </summary>
+    /// <param name="playerId">玩家唯一 GUID。</param>
+    /// <param name="name">玩家道号/昵称。</param>
+    /// <param name="now">创建时间戳。</param>
+    /// <param name="account">所属账号标识。</param>
+    /// <returns>初始化的玩家聚合根状态对象。</returns>
     public static DaoxuanPlayerState CreateDefaultState(
         Guid playerId,
         string? name = null,
@@ -46,6 +54,11 @@ public static class DaoxuanSimulation
         return state;
     }
 
+    /// <summary>
+    /// 归一化校验玩家状态，修剪非法/过期数据，补齐缺失集合并标记脏段。
+    /// </summary>
+    /// <param name="state">待归一化的玩家状态聚合根。</param>
+    /// <returns>如果有任何字段被修复或更改则返回 true，否则返回 false。</returns>
     public static bool NormalizeState(DaoxuanPlayerState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -262,6 +275,13 @@ public static class DaoxuanSimulation
         return dirty != DaoxuanDirtySections.None;
     }
 
+    /// <summary>
+    /// 向玩家行动队列尾部追加一个常规行动。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="actionId">行动原型 ID。</param>
+    /// <param name="repeats">重复次数（-1 表示无限循环，或 1 ~ 1000）。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult Enqueue(
         DaoxuanPlayerState state,
         string actionId,
@@ -296,6 +316,13 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok("行动已加入队列。");
     }
 
+    /// <summary>
+    /// 立即向队列头部插入并启动一次历练战斗行动。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="actionId">历练行动 ID。</param>
+    /// <param name="repeats">重复次数。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult StartCombat(
         DaoxuanPlayerState state,
         string actionId,
@@ -342,6 +369,12 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok("历练已开始。");
     }
 
+    /// <summary>
+    /// 规划前往目标节点的大地图路线并将其置于队列首位开始赶路。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="destinationNodeId">目的地地点节点 ID。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult TravelTo(DaoxuanPlayerState state, string destinationNodeId)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -384,6 +417,12 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok($"已开始前往{destination.Name}。");
     }
 
+    /// <summary>
+    /// 从行动队列中移除指定唯一编号的行动项。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="entryId">队列项唯一 EntryId。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult Remove(DaoxuanPlayerState state, Guid entryId)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -410,6 +449,13 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok("行动已移除。");
     }
 
+    /// <summary>
+    /// 调整队列中某行动项的前后顺序（-1 表示前移，1 表示后移）。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="entryId">队列项 EntryId。</param>
+    /// <param name="direction">移动方向（-1 或 1）。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult Move(DaoxuanPlayerState state, Guid entryId, int direction)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -437,6 +483,17 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok("队列顺序已更新。");
     }
 
+    /// <summary>
+    /// 配置指定行动类型的消耗品自动使用槽位及触发条件。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="actionType">行动类型。</param>
+    /// <param name="itemId">物品 ID（可为空表示清空）。</param>
+    /// <param name="quantity">单次使用数量。</param>
+    /// <param name="enabled">是否启用。</param>
+    /// <param name="slotIndex">槽位下标（0 ~ 4）。</param>
+    /// <param name="triggers">自定义触发条件列表。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult SetAutoUse(
         DaoxuanPlayerState state,
         DaoxuanActionType actionType,
@@ -507,6 +564,14 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok("自动使用槽已更新。");
     }
 
+    /// <summary>
+    /// 手动立即使用指定背包消耗品，获得对应 Buff 增益。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="itemId">消耗品 ID。</param>
+    /// <param name="actionType">生效动作类型。</param>
+    /// <param name="quantity">使用数量。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult UseItem(
         DaoxuanPlayerState state,
         string itemId,
@@ -545,6 +610,21 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok("物品已使用。");
     }
 
+    /// <summary>
+    /// 更新玩家战斗配置方案（包括流派、伤害属性、技能槽位、消耗品槽位、装备列表及高级战斗词条加成）。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="style">战斗流派（体魄/神识/五行等）。</param>
+    /// <param name="damageType">主修伤害属性（物理/真火/癸水/乙木等）。</param>
+    /// <param name="abilitySlots">装配的技能槽位列表。</param>
+    /// <param name="consumableSlots">装配的战斗消耗品槽位列表。</param>
+    /// <param name="combatDropRate">战斗掉落率加成比例。</param>
+    /// <param name="combatDropQuantity">战斗掉落数量加成比例。</param>
+    /// <param name="combatRareFind">稀有掉落发现率加成比例。</param>
+    /// <param name="tenacity">韧性点数。</param>
+    /// <param name="searchSpeedRatio">寻怪速度加成比例。</param>
+    /// <param name="equipment">穿戴装备列表。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult SetCombatLoadout(
         DaoxuanPlayerState state,
         DaoxuanCombatStyle? style,
@@ -664,6 +744,12 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok("战斗配置已更新。");
     }
 
+    /// <summary>
+    /// 开启或关闭队列循环模式。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="enabled">是否开启循环。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult SetLoop(DaoxuanPlayerState state, bool enabled)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -677,6 +763,13 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok(enabled ? "循环已开启。" : "循环已关闭。");
     }
 
+    /// <summary>
+    /// 设置玩家在线/挂机状态（Online/BackgroundSimulated/FullyOffline），并在此之前追赶进度。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="mode">目标存在状态。</param>
+    /// <param name="now">当前时间戳。</param>
+    /// <returns>命令执行结果。</returns>
     public static DaoxuanCommandResult SetPresence(
         DaoxuanPlayerState state,
         DaoxuanPresenceMode mode,
@@ -694,6 +787,11 @@ public static class DaoxuanSimulation
         return DaoxuanCommandResult.Ok($"状态已切换为 {mode}。");
     }
 
+    /// <summary>
+    /// 执行破境突破操作。当修为达到当前大境界/层级上限且标记待突破时方可成功。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <returns>突破执行结果。</returns>
     public static DaoxuanCommandResult Breakthrough(DaoxuanPlayerState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -719,6 +817,9 @@ public static class DaoxuanSimulation
     /// 2. 当有底蕴时：获得修为享受 3 倍经验（基础 1x + 消耗底蕴提供 2x 加成，若底蕴不足则消耗全部底蕴提供等值加成）；
     /// 3. 若加上获得修为后触及当前层境界满值，则卡在满值并开启待突破标记，溢出部分自动注入底蕴。
     /// </summary>
+    /// <param name="state">玩家状态。</param>
+    /// <param name="baseSpiritGain">基础修为增量。</param>
+    /// <returns>实际获得修为、转化为底蕴的修为、消耗掉的底蕴修为。</returns>
     public static (double actualSpiritGain, double foundationGain, double foundationConsumed) AddCultivationSpirit(
         DaoxuanPlayerState state,
         double baseSpiritGain)
@@ -768,6 +869,13 @@ public static class DaoxuanSimulation
         }
     }
 
+    /// <summary>
+    /// 将玩家聚合状态以确定性边界方式快进推演至目标时间戳。
+    /// 按行动完成边界、Buff 过期时间、战斗遭遇结算逐步迭代。
+    /// </summary>
+    /// <param name="state">待推进的玩家状态聚合根。</param>
+    /// <param name="targetTime">目标对齐时间戳。</param>
+    /// <returns>推进结算摘要结果（脏段、完成动作数、状态转移数、产生事件列表等）。</returns>
     public static DaoxuanSimulationResult AdvanceTo(
         DaoxuanPlayerState state,
         DateTimeOffset targetTime)
@@ -975,6 +1083,11 @@ public static class DaoxuanSimulation
             combatEvents);
     }
 
+    /// <summary>
+    /// 计算该玩家下一次需要发生状态转换或事件推进的目标时间戳（用于定时器调度与离线快进预判）。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <returns>下次事件触发时间戳，若无任何挂起事件或处于完全离线则返回 null。</returns>
     public static DateTimeOffset? GetNextTransitionAt(DaoxuanPlayerState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -2481,6 +2594,12 @@ public static class DaoxuanSimulation
         state.DirtySections |= sections;
     }
 
+    /// <summary>
+    /// 向玩家状态中追加一条结构化领域日志事件，并在在线时同步入队挂起推送列表。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <param name="message">事件模板文本（支持双大括号实体标签）。</param>
+    /// <param name="occurredAt">事件发生时间（为空则默认使用上次推进时间戳）。</param>
     public static void AddEvent(
         DaoxuanPlayerState state,
         string message,
@@ -2511,9 +2630,18 @@ public static class DaoxuanSimulation
     }
 }
 
+/// <summary>
+/// 领域命令执行结果记录。
+/// </summary>
+/// <param name="Success">是否执行成功。</param>
+/// <param name="Code">状态码（如 "OK", "ACTION_NOT_FOUND" 等）。</param>
+/// <param name="Message">用户可见的中文提示信息。</param>
 public sealed record DaoxuanCommandResult(bool Success, string Code, string Message)
 {
+    /// <summary>构建成功执行结果。</summary>
     public static DaoxuanCommandResult Ok(string message) => new(true, "OK", message);
 
+    /// <summary>构建失败执行结果。</summary>
     public static DaoxuanCommandResult Fail(string code, string message) => new(false, code, message);
 }
+

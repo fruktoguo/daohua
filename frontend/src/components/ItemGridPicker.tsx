@@ -6,24 +6,45 @@ import type { ItemDefinition } from '../game/types'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
 
+/**
+ * 物品网格选择条目定义
+ */
 export interface ItemPickerEntry {
+  /** 物品唯一 ID */
   itemId: string
+  /** 物品名称 */
   name: string
+  /** 物品描述 */
   description: string
+  /** 物品品类 */
   category: string
+  /** 物品等阶/品阶 */
   tier: number
+  /** 玩家背包持存数量 */
   amount: number
+  /** 可选服务端原始定义 */
   definition?: ItemDefinition
 }
 
+/**
+ * 物品网格选择模态窗 Props
+ */
 interface ItemGridPickerProps {
+  /** 弹窗展开状态 */
   open: boolean
+  /** 弹窗标题 */
   title: string
+  /** 可供选择的物品列表 */
   items: readonly ItemPickerEntry[]
+  /** 当前选中的物品 ID (null 表示空选/卸下) */
   value: string | null
+  /** 关闭弹窗回调 */
   onClose: () => void
+  /** 选中物品回调 */
   onSelect: (itemId: string | null) => void
+  /** 是否提供空选/卸下槽位按钮（默认 true） */
   allowEmpty?: boolean
+  /** 空选项文本标签 */
   emptyLabel?: string
 }
 
@@ -57,6 +78,7 @@ function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
   }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
+/** 物品网格单元格组件 */
 function ItemGridCell({
   item,
   selected,
@@ -99,6 +121,12 @@ function ItemGridCell({
   )
 }
 
+/**
+ * 物品网格选择器模态窗组件 (ItemGridPicker)
+ *
+ * 用于快捷药品装配、丹药吞服、战斗法宝选用等网格式物品检索与选择。
+ * 支持搜索过滤、持存数量气泡查看、空选卸下功能。
+ */
 export function ItemGridPicker({
   open,
   title,
@@ -176,6 +204,14 @@ export function ItemGridPicker({
   )
 }
 
+/**
+ * 物品装配/快捷使用槽位组件 (ItemUseSlot)
+ *
+ * 渲染单个技能栏/丹药槽位的物品方块：
+ * 1. 空槽状态展示虚线占位符与“选用物品”引导；
+ * 2. 已装配状态展示物品卡片，支持冷却倒计时蒙层 (cooldownOverlay)；
+ * 3. 支持触发条件编辑按钮入口 (onCondition)，展示当前配置的条件数量。
+ */
 export function ItemUseSlot({
   cooldownOverlay,
   conditionCount = 0,
@@ -183,10 +219,15 @@ export function ItemUseSlot({
   onClick,
   onCondition,
 }: {
+  /** 冷却动画或倒计时蒙层节点 */
   cooldownOverlay?: ReactNode
+  /** 已配置的战斗触发条件数量 */
   conditionCount?: number
+  /** 当前装配的物品信息 (null 为空槽) */
   item: ItemPickerEntry | null
+  /** 点击槽位选择/更换物品回调 */
   onClick: () => void
+  /** 点击编辑战斗触发条件回调 */
   onCondition?: () => void
 }): React.JSX.Element {
   const t = useT()

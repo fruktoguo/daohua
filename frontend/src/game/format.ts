@@ -1,18 +1,34 @@
 import type { CombatAbilityDefinition, CombatTrigger } from './types'
 import { getT, useI18nStore } from '../i18n'
 
+/**
+ * 技能效果浮动提示内容结构
+ */
 export interface EffectTooltipContent {
+  /** 提示标题（如技能名称） */
   title: string
+  /** 徽章标签（如 流派 · 伤害类型） */
   badge?: string
+  /** 简短效果概述 */
   description: string
+  /** 详细属性条目列表（每行一个描述） */
   lines: readonly string[]
 }
 
+/**
+ * 格式化技能系数为百分比字符串（保留1位小数，如 "+15.5%"）
+ */
 function abilityPercent(ratio: number): string {
   const percent = Math.round(ratio * 1000) / 10
   return `${percent > 0 ? '+' : ''}${percent}%`
 }
 
+/**
+ * 根据功法技能定义与当前等级，生成用于 Tooltip 展示的结构化说明数据
+ * @param ability 技能定义
+ * @param level 当前技能等级
+ * @returns Tooltip 数据结构
+ */
 export function describeAbility(ability: CombatAbilityDefinition, level: number): EffectTooltipContent {
   const t = getT()
   const normalizedLevel = Math.max(1, level)
@@ -150,6 +166,10 @@ export function formatProgressText(
   return options?.showPercent === false ? `${curStr}/${maxStr}` : `${curStr}/${maxStr} (${pct}%)`
 }
 
+/**
+ * 战斗触发条件转展示文案（如「自身生命值 <= 30%」）
+ * @param trigger 触发条件对象
+ */
 // 触发条件枚举 -> 展示文案统一走 i18n；组合语序由模板键承载（中英语序不同）。
 export function describeCombatTrigger(trigger: CombatTrigger): string {
   const t = getT()
@@ -169,6 +189,9 @@ export function describeCombatTrigger(trigger: CombatTrigger): string {
   })
 }
 
+/**
+ * 中文万进制大数阶梯单位数组 (万、亿、兆、京、垓、秭、穰、沟、涧、正、载、极)
+ */
 export const CHINESE_SECTION_UNITS = [
   '',
   '万',
@@ -185,6 +208,9 @@ export const CHINESE_SECTION_UNITS = [
   '极',
 ] as const
 
+/**
+ * 单位数值格式化选项
+ */
 export interface FormatUnitOptions {
   /** 小数点后最多位数，默认 2 */
   maxDecimals?: number
@@ -196,6 +222,9 @@ export interface FormatUnitOptions {
   padDecimals?: boolean
 }
 
+/**
+ * 解析后的数值结构拆解
+ */
 export interface ParsedNumericParts {
   sign: string
   intStr: string
@@ -263,6 +292,9 @@ export interface FormatChineseSplitOptions {
   padDecimals?: boolean
 }
 
+/**
+ * 将整数字符串按万进制拆分并加上中文单位（如 12345678 -> "1234万 5678"）
+ */
 function splitIntegerIntoChineseSections(intStr: string): string {
   const cleanInt = intStr.replace(/^0+(?=\d)/, '') || '0'
   if (cleanInt === '0') return '0'
@@ -293,6 +325,9 @@ function splitIntegerIntoChineseSections(intStr: string): string {
   return nonZeroSections.length === 0 ? '0' : nonZeroSections.join(' ')
 }
 
+/**
+ * 按照指定小数位与取整模式四舍五入/向下截断/向上取整
+ */
 function roundToMaxDecimals(
   val: number,
   maxDecimals: number,
@@ -421,18 +456,30 @@ export function formatUnitNumber(
 }
 
 
+/**
+ * 数值拆解信息对象（包含原始值、正负符号、紧凑数值、单位后缀、完整四位分段字符串等）
+ */
 export interface UnitNumberInfo {
+  /** 原始传入数值 */
   raw: number | bigint | string
+  /** 符号（"-" 或 ""） */
   sign: string
+  /** 紧凑主数值（去除单位后缀） */
   compactNumber: string
+  /** 单位后缀（如 "万", "亿"） */
   unit: string
+  /** 紧凑展示文本（如 "-12.5万"） */
   compactText: string
+  /** 中文万进制完整分段文本（如 "1234亿 5678万"） */
   splitText: string
+  /** 标准千分位展示文本（如 "123,456"） */
   standardText: string
 }
 
 /**
- * 获取数值的完整拆解信息
+ * 获取数值的完整拆解信息（用于 UnitNumber 组件的悬浮提示与阶梯渲染）
+ * @param value 原始数值
+ * @param options 格式化选项
  */
 export function getUnitNumberInfo(
   value: number | bigint | string,

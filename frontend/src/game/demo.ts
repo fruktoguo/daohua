@@ -1,5 +1,9 @@
 import type { PlayerSnapshot, QueueState } from './types'
 
+/**
+ * 本地预览/初始状态下的演示行动队列定义。
+ * 包含修炼、探索、炼丹的初始槽位及预设演示行动。
+ */
 const demoQueue: QueueState = {
   loopEnabled: true,
   autoUseSlots: {
@@ -58,6 +62,11 @@ const demoQueue: QueueState = {
   ],
 }
 
+/**
+ * 构造用于本地离线预览或初次加载时的玩家快照数据。
+ * @param playerId 玩家唯一标识符
+ * @returns 完整的玩家快照对象 (PlayerSnapshot)
+ */
 export function createDemoSnapshot(playerId: string): PlayerSnapshot {
   const now = new Date()
   return {

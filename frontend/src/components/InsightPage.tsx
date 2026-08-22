@@ -18,9 +18,24 @@ import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
 
+/** 内视四大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
+
+/** 根基模块二级子 Tab 标识 (六维灵根与基础属性乘区) */
 type RootsSubTab = 'sixDimensions' | 'baseAttributes'
 
+/**
+ * 角色内视修行总览主页面 (InsightPage)
+ *
+ * 体系与交互结构：
+ * 1. 头部修仙境界展示：当前大境界/位阶/小境界 (RealmBadge)、所在地灵气倍率、修为突破进度条与一键突破按钮；
+ * 2. 根基 Tab (roots)：
+ *    - 六维根基 (sixDimensions)：体魄、经脉、根骨、力道、神识、身法等级与属性百分比加成；
+ *    - 基础属性 (baseAttributes)：展示当前境界的基础属性底座数值 (Base Pool)；
+ * 3. 底蕴 Tab (foundation)：道行底蕴与战斗历练值纯净展示；
+ * 4. 斗法 Tab (combat)：展示攻防、博弈对抗 (命中/闪避/暴击/化解)、时序与五行增免伤等全量乘区，以及运转中的丹药与神通 Buff；
+ * 5. 生平 Tab (biography)：记录斩妖总数、玩家争锋破敌战绩及闭关苦修累计时长。
+ */
 export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const t = useT()
   const [activeTab, setActiveTab] = useState<InsightTab>('roots')

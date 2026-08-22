@@ -4,10 +4,16 @@ using Xunit;
 
 namespace Daoxuan.Domain.Tests;
 
+/// <summary>
+/// 验证 DaoxuanWorld（世界大地图拓扑、Dijkstra 最短寻路路径规划、路途中断重规划与区域行动限制）。
+/// </summary>
 public sealed class DaoxuanWorldTests
 {
     private static readonly DateTimeOffset Baseline = DateTimeOffset.Parse("2026-08-07T00:00:00Z");
 
+    /// <summary>
+    /// 验证大地图寻路规划器将跨多条相连路段的最短路径整合为单个复合 WorldTravel 行动。
+    /// </summary>
     [Fact]
     public void Travel_planner_combines_shortest_multi_edge_path_into_one_action()
     {
@@ -25,6 +31,9 @@ public sealed class DaoxuanWorldTests
             travel.TravelPlan!.Segments.Select(segment => segment.EdgeId).ToArray());
     }
 
+    /// <summary>
+    /// 验证在路段中途中断移动时，玩家位置精准锚定在当前路段比例进度上，且后续寻路自动以该中间点为起点计算新路径。
+    /// </summary>
     [Fact]
     public void Removing_travel_keeps_player_on_edge_and_replans_from_that_position()
     {
@@ -49,6 +58,9 @@ public sealed class DaoxuanWorldTests
         Assert.Equal(0, returnTravel.TravelPlan!.Segments[0].EndProgress);
     }
 
+    /// <summary>
+    /// 验证离线挂机快进推进时，大地图移动能跨越时间边界顺利完成并准确降落在目的地节点。
+    /// </summary>
     [Fact]
     public void Offline_fast_forward_completes_travel_and_arrives_at_destination()
     {
@@ -66,6 +78,9 @@ public sealed class DaoxuanWorldTests
         Assert.Contains(result.Events, entry => entry == $"arrived:{DaoxuanWorldNodeIds.CloudMarket}");
     }
 
+    /// <summary>
+    /// 验证节点地理位置对行动执行的准入限制（不在产地禁止采集）以及特定节点的修炼增益。
+    /// </summary>
     [Fact]
     public void Location_restricts_actions_and_scales_cultivation_output()
     {
@@ -86,6 +101,9 @@ public sealed class DaoxuanWorldTests
         Assert.Equal(13, state.Stats.Qi);
     }
 
+    /// <summary>
+    /// 验证重新下发移动目的地时，旧的移动规划被安全替换，且队列中的其他非移动行动完整保留。
+    /// </summary>
     [Fact]
     public void Replanning_travel_replaces_old_route_but_preserves_other_actions()
     {

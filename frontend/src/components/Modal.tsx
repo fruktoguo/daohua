@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useT } from '../i18n'
 
+/** 可聚焦元素选择器列表，用于弹窗内焦点循环锁定 (Focus Trap) */
 const FOCUSABLE_SELECTOR = [
   'button:not(:disabled)',
   'input:not(:disabled)',
@@ -11,20 +12,43 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+/** 模态窗预设尺寸规格 */
 export type ModalSize = 'small' | 'medium' | 'large'
 
+/**
+ * 通用模态弹窗组件 Props
+ */
 interface ModalProps {
+  /** 弹窗是否开启显示 */
   open: boolean
+  /** 关联标题无障碍 ID (aria-labelledby) */
   labelledBy: string
+  /** 关闭弹窗回调 */
   onClose: () => void
+  /** 弹窗主体子内容 */
   children: ReactNode
+  /** 弹窗尺寸规格（默认 'medium'） */
   size?: ModalSize
+  /** 外部样式类名 */
   className?: string
+  /** 关闭按钮提示文本（默认取 common.close） */
   closeLabel?: string
+  /** 初始聚焦元素 Ref */
   initialFocusRef?: RefObject<HTMLElement | null>
+  /** 是否允许通过 ESC 键或点击遮罩层关闭（默认 true） */
   dismissible?: boolean
 }
 
+/**
+ * 通用修仙风模态弹窗基础组件 (Modal)
+ *
+ * 核心特性与无障碍支持：
+ * 1. 使用 createPortal 挂载至 document.body，彻底隔离层叠上下文与父级 overflow 裁剪；
+ * 2. 焦点陷阱 (Focus Trap)：按下 Tab/Shift+Tab 时自动在弹窗内首尾可聚焦元素之间循环，防止焦点逃逸；
+ * 3. 自动还原焦点：弹窗销毁时自动还原至唤起前的活跃 DOM 元素；
+ * 4. 滚动穿透锁定：打开弹窗时锁定 document.body 页面滚动；
+ * 5. 键盘与遮罩交互：支持 Escape 键关闭与点击背景蒙层关闭 (dismissible=true 时)。
+ */
 export function Modal({
   open,
   labelledBy,

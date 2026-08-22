@@ -1,12 +1,21 @@
 import { getT } from '../i18n'
 import type { ActionDefinition, ActionType } from './types'
 
+/**
+ * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
+ */
 export const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
 
+/**
+ * 行动定义纯数据核心（不包含多语言展示文案）
+ */
 // 行动定义只保留纯数据核心：显示文本统一走 i18n（game.action.<id>.*），
 // 由 resolveActionDefinition 在渲染期按当前语言解析，避免数据表内重复存放文案。
 export type ActionDefinitionCore = Omit<ActionDefinition, 'name' | 'description'>
 
+/**
+ * 静态兜底行动核心定义列表
+ */
 const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   {
     id: 'cultivation.draw-qi',
@@ -44,6 +53,10 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   },
 ]
 
+/**
+ * 解析单个行动的完整定义（注入当前语言的名称和描述）
+ * @param id 行动唯一标识符
+ */
 export function resolveActionDefinition(id: string): ActionDefinition | undefined {
   const core = ACTION_DEFINITION_CORES.find(action => action.id === id)
   if (!core) return undefined
@@ -55,12 +68,18 @@ export function resolveActionDefinition(id: string): ActionDefinition | undefine
   }
 }
 
+/**
+ * 解析全部离线兜底行动定义
+ */
 // 离线兜底目录：仅在服务端目录尚未到达时展示；语言取模块加载时的当前语言，
 // 服务端目录到达后即被整体替换。
 export function resolveActionDefinitions(): ActionDefinition[] {
   return ACTION_DEFINITION_CORES.map(core => resolveActionDefinition(core.id)!)
 }
 
+/**
+ * 各行动类型对应的 UI 图标符号与主题色
+ */
 // 页签仅保留非文本元数据；label 统一经 actionTabLabel() 走 i18n。
 export const ACTION_TAB_META: Record<ActionType, { glyph: string; accent: string }> = {
   cultivation: { glyph: '☯', accent: 'cyan' },
@@ -69,12 +88,21 @@ export const ACTION_TAB_META: Record<ActionType, { glyph: string; accent: string
   combat: { glyph: '⚔', accent: 'orange' },
 }
 
+/**
+ * 获取行动类型的多语言显示标签
+ */
 export function actionTabLabel(type: ActionType): string {
   return getT()(`game.tab.${type}`)
 }
 
+/**
+ * 物品品阶品质枚举：凡品、黄阶、玄阶、地阶、天阶、灵品、圣品、帝品
+ */
 export type ItemRarity = 'mundane' | 'yellow' | 'mystic' | 'earth' | 'heaven' | 'spirit' | 'saint' | 'emperor'
 
+/**
+ * 物品品阶信息（包含品质枚举与本地化文案）
+ */
 export interface ItemGrade {
   rarity: ItemRarity
   label: string
@@ -84,35 +112,61 @@ const ITEM_GRADE_ORDER: readonly ItemRarity[] = [
   'mundane', 'yellow', 'mystic', 'earth', 'heaven', 'spirit', 'saint', 'emperor',
 ]
 
+/**
+ * 根据阶位数值 (tier, 1~8) 计算对应的物品品质与多语言文本
+ * @param tier 阶位数值
+ */
 export function resolveItemGrade(tier = 1): ItemGrade {
   const index = Math.max(0, Math.min(ITEM_GRADE_ORDER.length - 1, Math.floor(tier) - 1))
   const rarity = ITEM_GRADE_ORDER[index]
   return { rarity, label: getT()(`game.grade.${rarity}`) }
 }
 
+/**
+ * 将指定品阶/等阶应用到物品元数据上
+ */
 export function withItemGrade(metadata: ItemMetadata, tier = metadata.level ?? 1): ItemMetadata {
   const grade = resolveItemGrade(tier)
   return { ...metadata, rarity: grade.rarity, rarityLabel: grade.label, level: tier }
 }
 
+/**
+ * 物品完整元数据结构体
+ */
 export interface ItemMetadata {
+  /** 物品名称 */
   label: string
+  /** 物品图标符号 */
   glyph: string
+  /** 色调主题 */
   tone: string
+  /** 分类名称（如 "材料", "丹药"） */
   category: string
+  /** 品质等级 */
   rarity: ItemRarity
+  /** 品质中文/多语言标签（如 "黄阶", "通宝"） */
   rarityLabel: string
+  /** 物品等阶 */
   level?: number
+  /** 详细描述 */
   description: string
+  /** 产出来源 */
   source: string
+  /** 用途说明 */
   usage: string
 }
 
+/**
+ * 物品分类多语言键枚举
+ */
 export type ItemCategoryKey =
   | 'material' | 'pill' | 'currency' | 'resource' | 'spiritFood' | 'spiritDrink'
   | 'talisman' | 'loot' | 'rareLoot' | 'manualFragment' | 'explorationSupply'
   | 'alchemySupply' | 'mainHandImplement' | 'twoHandImplement'
 
+/**
+ * 物品元数据纯数据核心
+ */
 // 物品元数据核心：category/rarityLabel 去重为键（game.category.* / game.rarityLabel.*），
 // 专属文本（label/description/source/usage）走 game.item.<itemId>.*。
 interface ItemMetaCore {
@@ -125,6 +179,9 @@ interface ItemMetaCore {
   rarityLabelOverride?: 'currency'
 }
 
+/**
+ * 基础物品静态元数据字典
+ */
 const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.spirit-herb': { glyph: '✤', tone: 'green', rarity: 'spirit', level: 1, category: 'material' },
   'item.qi-gathering-pill': { glyph: '✺', tone: 'violet', rarity: 'mystic', level: 1, category: 'pill' },
@@ -148,6 +205,10 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.sundering-spirit-crossbow': { glyph: '弩', tone: 'violet', rarity: 'heaven', level: 5, category: 'mainHandImplement' },
 }
 
+/**
+ * 根据物品 ID 解析带多语言文案的完整物品元数据
+ * @param itemId 物品唯一标识
+ */
 export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
   const core = ITEM_META_CORES[itemId]
   if (!core) return undefined

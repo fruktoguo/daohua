@@ -5,10 +5,17 @@ using Xunit;
 
 namespace Daoxuan.Domain.Tests;
 
+/// <summary>
+/// 验证 DaoxuanCombat（战斗系统、战斗公式、技能触发器、伤害穿透、多敌人遭遇战、装备词条与境界修为成长）。
+/// </summary>
 public sealed class DaoxuanCombatTests
 {
     private static readonly DateTimeOffset Baseline = DateTimeOffset.Parse("2026-08-05T00:00:00Z");
 
+    /// <summary>
+    /// 验证各项基础战斗公式的基准曲线形态：
+    /// 包含命中率对抗、抗性减伤、攻击间隔换算、生命/灵力回复、狂暴层数累加、控制抗性衰减及百分比计算。
+    /// </summary>
     [Fact]
     public void Combat_formulas_match_reference_shapes()
     {
@@ -36,6 +43,10 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(20, levelOne.FlatDamage);
     }
 
+    /// <summary>
+    /// 验证抗性减伤公式与破招/拆招对抗判定的数学行为。
+    /// 减伤公式：伤害 = Raw^2 / (Raw + Res * K + 1)，破招与拆招根据属性点进行概率对抗。
+    /// </summary>
     [Fact]
     public void Contest_and_resistance_factor_formulas_behave_correctly()
     {
@@ -61,6 +72,10 @@ public sealed class DaoxuanCombatTests
         Assert.False(DaoxuanCombatFormula.CheckParrySuccess(50, 100, 0.5));
     }
 
+    /// <summary>
+    /// 验证命中 vs 闪避、暴击 vs 免暴全面采用统一对抗公式（Contest Formula）：
+    /// 率 = 进攻点数 / (进攻点数 + 防守点数 + 100)，破招成功时暴击点数翻倍。
+    /// </summary>
     [Fact]
     public void Hit_and_crit_use_unified_contest_formula_per_design()
     {
@@ -96,6 +111,9 @@ public sealed class DaoxuanCombatTests
         Assert.InRange(breakCritRate, 0.52, 0.56);
     }
 
+    /// <summary>
+    /// 验证 PercentValue 百分比值对象在 线性（Linear：增伤免伤）与 非线性（NonLinear：CDR、行动速度）两种模式下的乘数计算与显示。
+    /// </summary>
     [Fact]
     public void Percent_value_type_behaves_correctly_for_linear_and_nonlinear_modes()
     {
@@ -132,6 +150,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(2.0, nonLinearNegative.Multiplier);
     }
 
+    /// <summary>
+    /// 验证技能吟唱在精确到达设定的毫秒边界时顺利完成并结算伤害，未达边界时保持吟唱状态。
+    /// </summary>
     [Fact]
     public void Cast_resolves_when_simulation_reaches_the_exact_millisecond_boundary()
     {
@@ -163,6 +184,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(atBoundary.DamageDealt > beforeBoundary.DamageDealt);
     }
 
+    /// <summary>
+    /// 验证在相同的初始随机种子、角色装配与起始时间下，战斗模拟器执行结果严格一致（完全确定性）。
+    /// </summary>
     [Fact]
     public void Combat_simulation_is_deterministic_for_same_start_boundary()
     {
@@ -225,6 +249,9 @@ public sealed class DaoxuanCombatTests
         Assert.Contains(firstResult.Events, entry => entry.Contains("施放", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 验证丹药、灵茶与灵符三个独立消耗品槽位的消耗逻辑与 Buff 施加生效。
+    /// </summary>
     [Fact]
     public void Combat_consumes_food_drink_and_talisman_by_independent_slot_rules()
     {
@@ -267,6 +294,9 @@ public sealed class DaoxuanCombatTests
         Assert.Contains(result.BuffApplications, buff => buff.BuffId == DaoxuanBuffIds.FireTalisman);
     }
 
+    /// <summary>
+    /// 验证战斗正确上报消耗品槽位剩余冷却时间，且重新运行且冷却未过时不发生即时复用。
+    /// </summary>
     [Fact]
     public void Combat_reports_consumable_slot_cooldowns_and_new_runs_reset_before_immediate_use()
     {
@@ -301,6 +331,9 @@ public sealed class DaoxuanCombatTests
         Assert.All(restarted.PlayerConsumableCooldowns.Skip(1), remaining => Assert.Equal(0, remaining));
     }
 
+    /// <summary>
+    /// 验证战斗模拟器严格遵守外部传入的技能与物品初始冷却时间，且波次重生时正确延续。
+    /// </summary>
     [Fact]
     public void Combat_simulator_respects_initial_cooldowns_and_preserves_on_respawn()
     {
@@ -334,6 +367,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(9_000, result.PlayerConsumableCooldowns[0]);
     }
 
+    /// <summary>
+    /// 验证恢复类消耗品在 5 秒事件边界处按需判定使用并回复生命值。
+    /// </summary>
     [Fact]
     public void Combat_recovery_consumable_is_applied_on_five_second_event_boundaries()
     {
@@ -362,6 +398,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(0, result.ManapointsRecoveredFromConsumables);
     }
 
+    /// <summary>
+    /// 验证功法技能触发器支持复合 AND 语义（如自身缺失生命百分比 >= 1% 且 当前法力 >= 60），满足时成功施法并产生治疗。
+    /// </summary>
     [Fact]
     public void Combat_ability_trigger_uses_custom_and_semantics_and_heal_effect()
     {
@@ -406,6 +445,9 @@ public sealed class DaoxuanCombatTests
         Assert.Contains(result.Events, entry => entry.Contains("功法恢复", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 验证战斗触发器解析团队极值依赖（友方最低血量、敌方最高血量）与严格比较符（严格大于/小于等于）的求值准确性。
+    /// </summary>
     [Fact]
     public void Combat_trigger_resolves_team_extreme_dependencies_and_strict_comparators()
     {
@@ -475,6 +517,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(0, blocked.HitpointsRecoveredFromAbilities);
     }
 
+    /// <summary>
+    /// 验证战斗掉落系统正确读取常规与稀有掉落表映射，在击败怪物后按概率产出对应战利品。
+    /// </summary>
     [Fact]
     public void Combat_uses_regular_and_rare_drop_tables_as_item_maps()
     {
@@ -508,6 +553,9 @@ public sealed class DaoxuanCombatTests
         Assert.Contains(result.Events, entry => entry.Contains("掉落", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 验证掉落数量倍率加成（CombatDropQuantity）按比例线性放大保底战利品掉落数量。
+    /// </summary>
     [Fact]
     public void Combat_drop_quantity_multiplier_scales_guaranteed_drops()
     {
@@ -540,6 +588,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(result.DroppedItems!.GetValueOrDefault(DaoxuanItemIds.QiBeastCore) >= result.Wins * 2L);
     }
 
+    /// <summary>
+    /// 验证持续伤害（DoT / 灼烧）在固定事件周期边界上被正确驱动与结算。
+    /// </summary>
     [Fact]
     public void Combat_damage_over_time_is_processed_on_event_boundaries()
     {
@@ -569,6 +620,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(result.DamageDealt > 0);
     }
 
+    /// <summary>
+    /// 验证控制类效果（如眩晕）依据配置概率生效并在到达持续时间边界后准时失效解除。
+    /// </summary>
     [Fact]
     public void Combat_control_effects_use_catalog_probabilities_and_expire_on_boundaries()
     {
@@ -595,6 +649,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(result.DamageDealt > 0);
     }
 
+    /// <summary>
+    /// 验证战斗历练行动完成时，累计获胜次数、战斗经验与战利品结算同步持久化写回状态统计与背包。
+    /// </summary>
     [Fact]
     public void Combat_action_updates_stats_and_inventory_at_completion_boundary()
     {
@@ -622,6 +679,9 @@ public sealed class DaoxuanCombatTests
         Assert.Empty(state.Queue.Entries);
     }
 
+    /// <summary>
+    /// 验证高属性强力角色能够连续扫荡击败多波低阶怪物并持续累积经验收益。
+    /// </summary>
     [Fact]
     public void Stronger_loadout_can_clear_multiple_low_tier_encounters()
     {
@@ -651,6 +711,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(result.Experience > 0);
     }
 
+    /// <summary>
+    /// 验证包含非法参数（如无效消耗品物品）的战斗配置下发时被整体验证拒绝，不产生部分修改脏状态。
+    /// </summary>
     [Fact]
     public void Invalid_combat_loadout_does_not_partially_mutate_state()
     {
@@ -687,6 +750,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(originalAbility, state.Combat.AbilitySlots[0].AbilityId);
     }
 
+    /// <summary>
+    /// 验证非法枚举值（如不存在的 CombatStyle）在最外层被立即拦截，不修改角色战斗配置。
+    /// </summary>
     [Fact]
     public void Invalid_combat_enum_is_rejected_before_any_mutation()
     {
@@ -706,6 +772,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(original.DamageType, state.Combat.DamageType);
     }
 
+    /// <summary>
+    /// 验证角色尝试装配未习得的技能时被安全拦截（ABILITY_NOT_LEARNED），槽位不被篡改。
+    /// </summary>
     [Fact]
     public void Combat_loadout_rejects_abilities_the_player_has_not_learned()
     {
@@ -727,6 +796,9 @@ public sealed class DaoxuanCombatTests
         Assert.Null(state.Combat.AbilitySlots[0].AbilityId);
     }
 
+    /// <summary>
+    /// 验证手动使用道具复用统一的目录 Buff 规则与背包扣除逻辑，正确叠加 Buff 层数与乘数。
+    /// </summary>
     [Fact]
     public void Manual_item_use_reuses_catalog_buff_and_inventory_rules()
     {
@@ -745,6 +817,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(1.5, state.Buffs[0].QiGainMultiplier);
     }
 
+    /// <summary>
+    /// 验证长达 600 秒的战斗大步快进与逐秒推进在胜负场次、经验、伤害及物品产出上严格一致。
+    /// </summary>
     [Fact]
     public void Combat_fast_forward_matches_incremental_progression()
     {
@@ -805,6 +880,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(stepped.Queue.Entries[0].ProgressSeconds, fast.Queue.Entries[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证装备强化倍率曲线（0级 0%、10级 14.5倍、20级 50倍）以及装备属性的综合聚合算法。
+    /// </summary>
     [Fact]
     public void Equipment_catalog_uses_reference_enhancement_curve()
     {
@@ -825,6 +903,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(DaoxuanDamageType.Physical, stats.DamageType);
     }
 
+    /// <summary>
+    /// 验证当暴击或护盾吸收参数为 0 时，相关公式保持无额外影响（零值无害性）。
+    /// </summary>
     [Fact]
     public void Critical_and_absorption_formulas_keep_zero_values_effectless()
     {
@@ -832,6 +913,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(100, DaoxuanCombatFormula.ApplyDamageAbsorption(100, 0));
     }
 
+    /// <summary>
+    /// 验证免暴率与伤害吸收护盾比例能够正确削减实际受到的伤害。
+    /// </summary>
     [Fact]
     public void Critical_avoidance_and_damage_absorption_apply_numeric_values()
     {
@@ -842,6 +926,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(75, DaoxuanCombatFormula.ApplyDamageAbsorption(100, 0.25));
     }
 
+    /// <summary>
+    /// 验证非法装备槽位冲突（例如同时装备两把双手武器）时被原子性拒绝，原装配不被破坏。
+    /// </summary>
     [Fact]
     public void Invalid_equipment_layout_is_rejected_atomically()
     {
@@ -866,6 +953,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(original.Style, state.Combat.Style);
     }
 
+    /// <summary>
+    /// 验证法宝专属词条（如蚀心等）作为战斗状态事件正常触发并影响伤害输出。
+    /// </summary>
     [Fact]
     public void Equipment_affixes_are_applied_as_combat_status_events()
     {
@@ -896,6 +986,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(result.DamageDealt > 0);
     }
 
+    /// <summary>
+    /// 验证佩戴强化装备时，大步长战斗快进与逐秒推进轨迹严格一致。
+    /// </summary>
     [Fact]
     public void Equipment_combat_fast_forward_matches_stepped_progression()
     {
@@ -930,6 +1023,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(stepped.Queue.Entries[0].ProgressSeconds, fast.Queue.Entries[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证多怪物区域（如暮影谷）根据各怪物的强度权重和区域总战力上限随机生成怪物组，且同种子生成结果完全一致。
+    /// </summary>
     [Fact]
     public void Multi_enemy_zone_uses_weighted_strength_limited_spawn_rules()
     {
@@ -969,6 +1065,9 @@ public sealed class DaoxuanCombatTests
         Assert.NotNull(first.EnemyAction);
     }
 
+    /// <summary>
+    /// 验证多怪物区域逢第十场（completedEncountersBeforeRun = 9）必定生成守关 Boss（坠星兽）。
+    /// </summary>
     [Fact]
     public void Multi_enemy_zone_spawns_boss_on_every_tenth_encounter()
     {
@@ -990,6 +1089,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal("enemy.falling-star-beast", enemy.EnemyId);
     }
 
+    /// <summary>
+    /// 验证全体范围伤害技能（AllEnemies）在施法完成时对所有存活敌人同时结算伤害与击杀。
+    /// </summary>
     [Fact]
     public void All_enemies_ability_resolves_against_the_whole_alive_group()
     {
@@ -1021,6 +1123,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(1, result.Wins);
     }
 
+    /// <summary>
+    /// 验证清空整波怪物后，模拟器平滑过渡到重生等待阶段，不会在同一时间戳发生空转死循环。
+    /// </summary>
     [Fact]
     public void Cleared_multi_enemy_zone_advances_to_respawn_without_same_timestamp_spin()
     {
@@ -1051,6 +1156,9 @@ public sealed class DaoxuanCombatTests
         Assert.InRange(result.ProcessedEvents, 1, 1_000);
     }
 
+    /// <summary>
+    /// 验证在怪物群体重生期间控制效果过期不会意外提前唤醒玩家动作或引发事件爆炸。
+    /// </summary>
     [Fact]
     public void Control_expiration_during_group_respawn_does_not_wake_player_action()
     {
@@ -1089,6 +1197,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(state.Stats.CombatWins > 0);
     }
 
+    /// <summary>
+    /// 验证多怪物区域在 4 分钟长时段快进推进与逐秒递增推进在遭遇数、胜负、杀敌数与经验上完全等价。
+    /// </summary>
     [Fact]
     public void Multi_enemy_combat_fast_forward_matches_incremental_progression()
     {
@@ -1128,6 +1239,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(stepped.Queue.Entries[0].ProgressSeconds, fast.Queue.Entries[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证战斗大步快进与在线 100ms 细粒度微步推进在胜负场、承伤、输出及残余血蓝资源上完全一致。
+    /// </summary>
     [Fact]
     public void Combat_fast_forward_matches_fine_grained_online_progression()
     {
@@ -1165,6 +1279,9 @@ public sealed class DaoxuanCombatTests
             stepped.Queue.Entries[0].CombatExpedition?.PhaseElapsedMilliseconds);
     }
 
+    /// <summary>
+    /// 验证战斗经验随角色与怪物等级差呈指数级缩放（越级挑战获得更多经验，碾压低级怪物经验衰减）。
+    /// </summary>
     [Fact]
     public void CombatExperience_scales_with_level_difference_exponentially()
     {
@@ -1175,6 +1292,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(0.64, DaoxuanCombatFormula.CalculateCombatExperience(5, 3), precision: 4);
     }
 
+    /// <summary>
+    /// 验证底蕴机制：修为达到层级上限待突破时，溢出修为 100% 积攒为底蕴；突破成功后，底蕴按最高 3 倍加速转化为实际修为。
+    /// </summary>
     [Fact]
     public void Foundation_accumulates_when_capped_and_converts_with_triple_multiplier()
     {
@@ -1218,6 +1338,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(15000, state.Stats.Spirit);
     }
 
+    /// <summary>
+    /// 验证境界经验表计算逻辑：根据累计修为精确换算出当前境界层级、本层累计经验与升级进度百分比。
+    /// </summary>
     [Fact]
     public void RealmExpTable_calculates_correct_levels_and_progress()
     {
@@ -1251,6 +1374,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(19.0, p19.TotalLevel);
     }
 
+    /// <summary>
+    /// 验证全套战斗公式集成：包含平方穿透减伤（高伤爆发穿透/低伤过滤）、破招 vs 拆招对抗及 ATR/CDR 缩减运行时结算。
+    /// </summary>
     [Fact]
     public void CombatSimulator_applies_full_combat_formulas_correctly()
     {
@@ -1298,6 +1424,9 @@ public sealed class DaoxuanCombatTests
         Assert.True(run.DamageDealt > 0);
     }
 
+    /// <summary>
+    /// 验证怪物数值预算解析器（DaoxuanDataBudgetResolver）根据品质阶位（小怪/精英/Boss）与属性权重确定性生成怪物属性。
+    /// </summary>
     [Fact]
     public void Monster_weight_budget_resolution_calculates_attributes_deterministically()
     {
@@ -1357,6 +1486,9 @@ public sealed class DaoxuanCombatTests
         Assert.Equal(42, boss.MaxDamage);
     }
 
+    /// <summary>
+    /// 验证怪物技能的生命值触发比例（TriggerHpRatio）与等级技能伤害加成的正确解析与缩放。
+    /// </summary>
     [Fact]
     public void Monster_skill_hp_trigger_ratio_is_configured_and_scaled_correctly()
     {

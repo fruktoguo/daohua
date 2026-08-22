@@ -44,6 +44,9 @@ const NAV_ITEMS: ReadonlyArray<{ tab: ActionType; hintKey: 'cultivationHint' | '
 
 type IconName = 'insight' | ActionType | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
 
+/**
+ * 矢量图标组件（按名称渲染内联 SVG）
+ */
 const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element {
   const common = {
     fill: 'none',
@@ -94,6 +97,9 @@ function formatRepeatsLabel(remainingRepeats: number, t: (key: string, params?: 
   return t('app.queue.repeatsCount', { n: remainingRepeats + 1 })
 }
 
+/**
+ * 响应式监听移动端断点 (< 960px) 的自定义 Hook
+ */
 function useMobileLayout(): boolean {
   const [mobile, setMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 960px)').matches)
   useEffect(() => {
@@ -105,6 +111,9 @@ function useMobileLayout(): boolean {
   return mobile
 }
 
+/**
+ * 平滑进度条组件
+ */
 const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: QueueEntry }): React.JSX.Element {
   const fillRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
@@ -134,6 +143,9 @@ const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: Qu
   )
 })
 
+/**
+ * 远征行动进度组件（包含行进里程与搜寻状态）
+ */
 const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element | null {
   const t = useT()
   const expedition = entry.expedition
@@ -168,6 +180,9 @@ function getCombatPhaseLabel(phase: string | undefined, t: (key: string) => stri
   }
 }
 
+/**
+ * 战斗中顶部紧凑血量条与行动进度展示组件
+ */
 const CombatActionProgress = memo(function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element {
   const t = useT()
   const expedition = entry.expedition
@@ -213,6 +228,9 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
   )
 })
 
+/**
+ * 当前正在执行的行动卡片（支持出场/入场平滑过渡动画）
+ */
 const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = false }: { entry: QueueEntry; departing?: boolean }): React.JSX.Element {
   const t = useT()
   const isCombatExpedition = entry.type === 'combat'
@@ -256,6 +274,9 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
   )
 })
 
+/**
+ * 队列中当前行动展示区（支持切换动画）
+ */
 const QueueCurrentStage = memo(function QueueCurrentStage({ entry }: { entry?: QueueEntry }): React.JSX.Element {
   const t = useT()
   const previousRef = useRef<QueueEntry | undefined>(entry)
@@ -284,6 +305,9 @@ const QueueCurrentStage = memo(function QueueCurrentStage({ entry }: { entry?: Q
   )
 })
 
+/**
+ * 顶部行动队列总控中心组件（展示当前行动、后续队列预览、循环开关与展开下拉抽屉）
+ */
 const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
   const t = useT()
   const queue = useGameStore(state => state.queue)
@@ -401,6 +425,9 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
   )
 })
 
+/**
+ * 顶部 Buff 与灵脉环境增益状态栏
+ */
 const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
   const t = useT()
   const buffs = useGameStore(state => state.buffs)
@@ -452,6 +479,9 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
   )
 })
 
+/**
+ * 客户端全局顶栏组件（包含道号、境界徽章、修为进度条、队列控制中心与 Buff 栏）
+ */
 const TopBar = memo(function TopBar(): React.JSX.Element {
   const t = useT()
   const name = useGameStore(state => state.name)
@@ -520,6 +550,9 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   )
 })
 
+/**
+ * 桌面端主侧边导航栏组件
+ */
 const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
@@ -576,6 +609,9 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   )
 })
 
+/**
+ * 自动消耗品槽位组选择与配置组件
+ */
 const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   className = '',
   hideLabel = false,
@@ -659,6 +695,9 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   )
 })
 
+/**
+ * 各行动页签下的自动消耗品快捷托盘
+ */
 const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX.Element {
   const t = useT()
   return (
@@ -668,6 +707,9 @@ const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX
   )
 })
 
+/**
+ * 单个行动卡片组件（点击打开行动配置与执行弹窗）
+ */
 const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
   return (
     <button
@@ -686,6 +728,9 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   )
 })
 
+/**
+ * 行动详情弹窗中的单个材料消耗/产出条目
+ */
 const ActionDetailItem = memo(function ActionDetailItem({ itemId, amount, current }: { itemId: string; amount: number; current?: number }): React.JSX.Element {
   const metadata = resolveItemMetadata(itemId)
   const insufficient = current !== undefined && current < amount
@@ -699,6 +744,9 @@ const ActionDetailItem = memo(function ActionDetailItem({ itemId, amount, curren
   )
 })
 
+/**
+ * 行动执行配置模态弹窗（设置循环轮次、查看消耗产出并加入行动队列）
+ */
 const ActionModal = memo(function ActionModal({ action, onClose }: { action: ActionDefinition; onClose: () => void }): React.JSX.Element {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
@@ -780,6 +828,9 @@ type CombatPickerTarget = {
   index: number
 }
 
+/**
+ * 技能与物品槽位冷却扇形遮罩覆盖层
+ */
 const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
   remainingMilliseconds,
   totalMilliseconds,
@@ -812,6 +863,9 @@ const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
   return <span className="combat-ability-cooldown" ref={overlayRef} />
 })
 
+/**
+ * 战斗装配面板（配置 4 个功法技能槽、3 个战斗丹药符箓槽以及释放条件触发器）
+ */
 const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element | null {
   const t = useT()
   const combat = useGameStore(state => state.combat)
@@ -1046,6 +1100,9 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   )
 })
 
+/**
+ * 通用单类行动列表页面（修炼、探索、炼丹）
+ */
 const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; hidden: boolean }): React.JSX.Element {
   const t = useT()
   const actions = useGameStore(state => state.actions)
@@ -1080,6 +1137,9 @@ const EXPEDITION_TABS: ReadonlyArray<{ id: ExpeditionSubTab; labelKey: 'tabMap' 
   { id: 'duel', labelKey: 'tabDuel' },
 ]
 
+/**
+ * 远征探索与战斗总览页面（包含大地图、周边环境、实时对决擂台）
+ */
 const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
   const [activeSubTab, setActiveSubTab] = useState<ExpeditionSubTab>('map')
@@ -1127,6 +1187,9 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
   )
 })
 
+/**
+ * 储物袋（背包）物品网格展示面板
+ */
 const InventoryPanel = memo(function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
@@ -1161,6 +1224,9 @@ const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 
   { tab: 'settings', labelKey: 'settings', icon: 'settings' },
 ]
 
+/**
+ * 移动端底部快捷导航栏
+ */
 const BottomNav = memo(function BottomNav(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
@@ -1182,6 +1248,9 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
   )
 })
 
+/**
+ * 全局浮动操作提示气泡（自动定时消失）
+ */
 const Notice = memo(function Notice(): React.JSX.Element | null {
   const notice = useGameStore(state => state.notice)
   const setNotice = useGameStore(state => state.setNotice)
@@ -1195,6 +1264,10 @@ const Notice = memo(function Notice(): React.JSX.Element | null {
   return notice ? <div className="notice" role="status">{notice}</div> : null
 })
 
+/**
+ * 道化太初客户端顶层根组件
+ * 负责应用初始化、鉴权状态路由（登录页 / 连接加载页 / 错误重试页 / 游戏主舞台）以及响应式多列布局渲染
+ */
 export default function App(): React.JSX.Element {
   const activeTab = useUiStore(state => state.activeTab)
   const mobileLayout = useMobileLayout()

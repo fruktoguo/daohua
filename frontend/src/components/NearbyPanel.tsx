@@ -3,6 +3,15 @@ import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 
 // 地点/NPC/建筑名称与描述来自服务端数据（world.npcs/buildings），仅面板框架文本走 i18n。
+
+/**
+ * 附近同域修士、NPC 与灵地建筑列表面板 (NearbyPanel)
+ *
+ * 渲染当前地图节点所驻留的：
+ * 1. 同行修士/玩家列表（显示道号与身份识别）；
+ * 2. 驻足 NPC 列表（显示交互描述与效果说明）；
+ * 3. 灵地修仙建筑设施（如宗门大殿、丹阁、坊市建筑等）。
+ */
 export const NearbyPanel = memo(function NearbyPanel(): React.JSX.Element {
   const t = useT()
   const playerId = useGameStore(state => state.playerId)

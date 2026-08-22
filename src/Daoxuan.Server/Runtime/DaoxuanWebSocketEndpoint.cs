@@ -5,11 +5,24 @@ using Daoxuan.Server.Infrastructure;
 
 namespace Daoxuan.Server.Runtime;
 
+/// <summary>
+/// WebSocket 连接接入与消息调度终结点 (DaoxuanWebSocketEndpoint)。
+/// <para>
+/// 职责：
+/// 1. 验证客户端连接请求（协议升级、鉴权令牌、玩家 GUID 格式）。
+/// 2. 为连接创建并注册 <see cref="DaoxuanSession"/>，并启动双工收发循环 (SendLoop / ReceiveLoop)。
+/// 3. 处理网络层数据分片拼包（基于 ArrayPool 内存池复用，限制单包最大 64 KiB），解码并路由指令。
+/// 4. 在客户端断开或异常时执行会话注销与资源优雅释放，提供完善的异常隔离保护。
+/// </para>
+/// </summary>
 public static class DaoxuanWebSocketEndpoint
 {
     private const int ReceiveBufferSize = 8 * 1024;
     private const int MaxMessageSize = 64 * 1024;
 
+    /// <summary>
+    /// 处理 HTTP 到 WebSocket 升级请求并托管会话完整生命周期。
+    /// </summary>
     public static async Task HandleAsync(HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest)
@@ -108,6 +121,9 @@ public static class DaoxuanWebSocketEndpoint
         return sanitized.Length == 0 ? null : sanitized;
     }
 
+    /// <summary>
+    /// 下行发送循环：从 Session 的 Channel 中消费二进制数据包并写入 WebSocket。
+    /// </summary>
     private static async Task SendLoopAsync(
         WebSocket socket,
         DaoxuanSession session,
@@ -119,6 +135,9 @@ public static class DaoxuanWebSocketEndpoint
         }
     }
 
+    /// <summary>
+    /// 上行接收循环：从 WebSocket 持续读取数据包、解码请求并转发 GameHost 执行，随后下发 Ack 响应。
+    /// </summary>
     private static async Task ReceiveLoopAsync(
         WebSocket socket,
         DaoxuanSession session,
@@ -163,6 +182,9 @@ public static class DaoxuanWebSocketEndpoint
         }
     }
 
+    /// <summary>
+    /// 从 WebSocket 异步读取一个完整应用层数据包，支持分片重组与 ArrayPool 缓冲区复用。
+    /// </summary>
     private static async Task<byte[]?> ReceivePacketAsync(WebSocket socket, CancellationToken cancellationToken)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(ReceiveBufferSize);
@@ -193,6 +215,9 @@ public static class DaoxuanWebSocketEndpoint
         }
     }
 
+    /// <summary>
+    /// 忽略任务取消异常与非正常断开时的传输异常。
+    /// </summary>
     private static async Task IgnoreCancellation(Task task, CancellationToken cancellationToken)
     {
         try

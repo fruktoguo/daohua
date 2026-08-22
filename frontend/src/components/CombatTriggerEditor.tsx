@@ -10,18 +10,37 @@ const MAX_TRIGGERS = 4
 
 const STATUS_COMPARATORS = ['is-active', 'is-inactive'] as const
 
+/**
+ * 战斗技能触发条件编辑器 Props
+ */
 interface CombatTriggerEditorProps {
+  /** 弹窗展开状态 */
   open: boolean
+  /** 弹窗标题（通常为正在编辑的技能名称） */
   title: string
+  /** 初始触发条件列表 */
   initialTriggers?: CombatTrigger[]
+  /** 关闭弹窗回调 */
   onClose: () => void
+  /** 保存触发条件回调（null 表示清空所有条件，默认总是释放） */
   onSave: (triggers: CombatTrigger[] | null) => void
 }
 
+/** 深拷贝触发条件数组，避免直接变异外部 props 状态 */
 function cloneTriggers(triggers: CombatTrigger[] | undefined): CombatTrigger[] {
   return (triggers ?? []).map(trigger => ({ ...trigger }))
 }
 
+/**
+ * 战斗技能触发条件编辑器模态窗 (CombatTriggerEditor)
+ *
+ * 交互与状态机流转机制：
+ * 1. 目标依赖 (dependency)：自身 (self)、目标敌怪 (target-enemy)、最低/最高气血队友与敌方；
+ * 2. 触发条件 (condition)：当前/损失气血比例、当前/损失真元比例、固定数值阈值、Buff 层数以及眩晕/致盲/沉默等控制状态；
+ * 3. 比较符智能切换：数值型条件采用 (<=, <, >=, >)；状态型条件自动切换为 (生效中 is-active / 未生效 is-inactive)；
+ * 4. 自动重置安全机制：当条件类型切换时，重置比较符与阈值，清除非 Buff 条件的 buffId，防止非法组合提交；
+ * 5. 条件数量上限：严格受限在 MAX_TRIGGERS (4条) 之内，条件之间为逻辑与 (AND) 关系。
+ */
 export function CombatTriggerEditor({
   open,
   title,
@@ -33,6 +52,7 @@ export function CombatTriggerEditor({
   const titleId = useId()
   const [triggers, setTriggers] = useState<CombatTrigger[]>(() => cloneTriggers(initialTriggers))
 
+  // 打开弹窗时重新同步外部 initialTriggers
   useEffect(() => {
     if (open) setTriggers(cloneTriggers(initialTriggers))
   }, [initialTriggers, open])
@@ -53,6 +73,7 @@ export function CombatTriggerEditor({
     }))
   }
 
+  // 格式化当前条件的自然语言总结文本
   const summary = useMemo(() => (
     triggers.map(trigger => describeCombatTrigger(trigger)).join(t('combat.trigger.summarySeparator'))
   ), [t, triggers])

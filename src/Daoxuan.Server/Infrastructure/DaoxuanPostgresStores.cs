@@ -9,11 +9,21 @@ using YuoCore.Persistence;
 
 namespace Daoxuan.Server.Infrastructure;
 
+/// <summary>
+/// PostgreSQL 数据库连接与表结构选项配置 (DaoxuanDatabaseOptions)。
+/// </summary>
 public sealed class DaoxuanDatabaseOptions
 {
+    /// <summary>存储提供者标识（固定为 "postgres"）。</summary>
     public string Provider { get; init; } = "postgres";
+
+    /// <summary>PostgreSQL 数据库连接字符串。</summary>
     public string? ConnectionString { get; init; }
+
+    /// <summary>是否在应用启动时自动检查并创建表结构。</summary>
     public bool EnableSchemaBootstrap { get; init; } = true;
+
+    /// <summary>市场撮合成交流水在数据库分区表中的保留天数（默认 14 天）。</summary>
     public int MarketTradeRetentionDays { get; init; } = 14;
 
     public static DaoxuanDatabaseOptions From(IConfiguration configuration)
@@ -32,9 +42,16 @@ public sealed class DaoxuanDatabaseOptions
         };
     }
 
+    /// <summary>当前存储提供者是否为 PostgreSQL。</summary>
     public bool IsPostgres => string.Equals(Provider, "postgres", StringComparison.OrdinalIgnoreCase);
 }
 
+/// <summary>
+/// PostgreSQL 数据库架构自动初始化后台服务 (DaoxuanPostgresSchemaHostedService)。
+/// <para>
+/// 在服务启动时自动创建 accounts, player_snapshots, persistence_outbox, market_ledgers 等核心表，并自动创建/清理市场成交按日分区表。
+/// </para>
+/// </summary>
 public sealed class DaoxuanPostgresSchemaHostedService(
     NpgsqlDataSource dataSource,
     DaoxuanDatabaseOptions options,
@@ -247,11 +264,17 @@ CREATE TABLE IF NOT EXISTS market_trades (
 """;
 }
 
+/// <summary>
+/// PostgreSQL 载荷压缩编码工具类（透明集成 Brotli 压缩，小载荷或压缩无收益时自动使用 raw 原始存储）。
+/// </summary>
 public static class DaoxuanPostgresPayloadCodec
 {
     public const string Raw = "raw";
     public const string Brotli = "br";
 
+    /// <summary>
+    /// 对二进制载荷进行条件压缩（大于 256 字节且压缩后体积缩小时采用 Brotli，否则保持 raw）。
+    /// </summary>
     public static byte[] Encode(ReadOnlyMemory<byte> payload, out string encoding, out int originalBytes)
     {
         originalBytes = payload.Length;
@@ -278,6 +301,9 @@ public static class DaoxuanPostgresPayloadCodec
         return compressed;
     }
 
+    /// <summary>
+    /// 根据编码标识解码载荷。
+    /// </summary>
     public static byte[] Decode(string encoding, byte[] payload)
     {
         return encoding switch
@@ -298,6 +324,15 @@ public static class DaoxuanPostgresPayloadCodec
     }
 }
 
+/// <summary>
+/// 基于 PostgreSQL 的快照仓储实现 (DaoxuanPostgresSnapshotStore)。
+/// <para>
+/// 职责：
+/// 1. 将快照存入 <c>player_snapshots</c> 表，利用 <c>ON CONFLICT (kind, id) DO UPDATE</c> 实现原子 Upsert。
+/// 2. 自动提取核心元数据列（player_id, account, character_name, sequence_id, version, presence_mode, last_simulated_at），便于运维与冷挂机检索。
+/// 3. 支持跨模块事务同批次写入（内部提供携带 Connection/Transaction 的重载）。
+/// </para>
+/// </summary>
 public sealed class DaoxuanPostgresSnapshotStore(NpgsqlDataSource dataSource) : IYuoSnapshotStore
 {
     public async ValueTask SaveAsync(YuoSnapshotRecord snapshot, CancellationToken cancellationToken = default)
@@ -457,6 +492,15 @@ public sealed class DaoxuanPostgresSnapshotStore(NpgsqlDataSource dataSource) : 
         DateTimeOffset? LastSimulatedAt);
 }
 
+/// <summary>
+/// 基于 PostgreSQL 的持久化出件箱实现 (DaoxuanPostgresPersistenceOutbox)。
+/// <para>
+/// 职责：
+/// 1. 提供可靠消息落库 (<see cref="AppendAsync"/>)，利用自增序列号 sequence 保证全局严格单调递增。
+/// 2. 重启时扫描未确认命令 (<see cref="ReplayAsync"/>)，向持久化引擎重放。
+/// 3. 执行确认 (<see cref="AcknowledgeThroughAsync"/>)，更新水位并物理清理已消费的 Outbox 行。
+/// </para>
+/// </summary>
 public sealed class DaoxuanPostgresPersistenceOutbox(NpgsqlDataSource dataSource) : IYuoPersistenceOutbox
 {
     private const short SnapshotCommand = 1;
@@ -593,6 +637,15 @@ public sealed class DaoxuanPostgresPersistenceOutbox(NpgsqlDataSource dataSource
         DateTimeOffset OccurredAt);
 }
 
+/// <summary>
+/// 基于 PostgreSQL 的市场账本仓储实现 (DaoxuanPostgresMarketLedgerStore)。
+/// <para>
+/// 核心并发与锁机制：
+/// 1. 采用 PostgreSQL 会话级咨询排他锁 (<c>pg_try_advisory_lock</c>) 实现主分片单写者分布式租约。
+/// 2. 基于版本号 (<c>revision</c>) CAS 乐观锁更新账本，冲突时抛出 <see cref="DaoxuanMarketLedgerConcurrencyException"/>。
+/// 3. 支持在同一数据库事务中原子写入市场账本与玩家快照。
+/// </para>
+/// </summary>
 public sealed class DaoxuanPostgresMarketLedgerStore(
     NpgsqlDataSource dataSource,
     ILogger<DaoxuanPostgresMarketLedgerStore> logger) : IDaoxuanMarketLedgerStore, IAsyncDisposable

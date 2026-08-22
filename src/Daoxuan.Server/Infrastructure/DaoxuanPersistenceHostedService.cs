@@ -5,6 +5,16 @@ using YuoCore.Persistence;
 
 namespace Daoxuan.Server.Infrastructure;
 
+/// <summary>
+/// 异步快照持久化后台写回服务 (DaoxuanPersistenceHostedService)。
+/// <para>
+/// 职责与容灾机制：
+/// 1. 批量出队：单循环批量消费 <see cref="YuoPersistenceQueue"/>（每批最大 256 条），减少数据库交互开销。
+/// 2. 状态沿高低水位监控：队列积压达 80% 记录 Warning，达 95% 记录 Error；回落至 70% 以下自动重置告警状态。
+/// 3. 重试与 Outbox 确认：保存快照到存储时支持短暂 IO 重试；成功后递增推进 Outbox Ack，若某条失败则阻塞后续 Ack (<see cref="MarkOutboxAckBlocked"/>) 确保崩溃后全量重放。
+/// 4. 停机排空 (Drain)：停服时提供 60 秒预算排空队列中全部剩余命令并执行 Outbox 压缩。
+/// </para>
+/// </summary>
 public sealed class DaoxuanPersistenceHostedService(
     YuoPersistenceQueue queue,
     IYuoSnapshotStore store,
@@ -83,6 +93,9 @@ public sealed class DaoxuanPersistenceHostedService(
         }
     }
 
+    /// <summary>
+    /// 停机排空：关闭队列输入、消费排空全部在途快照并执行 Outbox 压缩整理。
+    /// </summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         _ = cancellationToken;

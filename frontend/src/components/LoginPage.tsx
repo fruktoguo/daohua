@@ -2,15 +2,21 @@ import { memo, useState } from 'react'
 import { useAccountStore } from '../network/account'
 import { useT } from '../i18n'
 
+/** 登录注册页 Props */
 interface LoginPageProps {
+  /** 登录/注册成功后的回调 */
   onLoggedIn?: () => void
 }
 
+/** 认证模式：登录或注册 */
 type AuthMode = 'login' | 'register'
 
+/** 账号字符格式校验规则（汉字、英文字母、数字与下划线） */
 const ACCOUNT_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
+/** 道号字符格式校验规则 */
 const NAME_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
 
+/** 随机修仙道号词库 */
 const RANDOM_DAO_NAMES = [
   '太玄真君', '凌霄散人', '紫府剑仙', '青云修士', '落霞真人',
   '忘忧居士', '丹阳道者', '清虚道君', '九天玄圣', '南华羽士',
@@ -18,6 +24,14 @@ const RANDOM_DAO_NAMES = [
   '云水行者', '纯阳剑修', '妙法散人', '寒霄道人', '乾元真仙',
 ]
 
+/**
+ * 账号登录与注册认证主页面组件 (LoginPage)
+ *
+ * 功能与交互特性：
+ * 1. 登录模式：展示已记住的本机本地账号列表（支持点击快捷选择与删除），并提供账号密码表单提交；
+ * 2. 注册模式：支持账号、修仙道号（支持一键随机起名）、密码及确认密码校验；
+ * 3. 严格的前端格式校验与错误提示，并连接底层 account 鉴权仓库 (useAccountStore)。
+ */
 export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps): React.JSX.Element {
   const t = useT()
   const [mode, setMode] = useState<AuthMode>('login')

@@ -12,11 +12,16 @@ import type { MarketInstrument } from './market/MarketOrderForm'
 import { MarketOrderModal } from './market/MarketOrderModal'
 import { MarketOwnOrders } from './market/MarketOwnOrders'
 
+/** 坊市行情深度轮询间隔（3秒） */
 const REFRESH_INTERVAL_MS = 3_000
+/** 个人订单刷新间隔（5秒） */
 const ORDERS_REFRESH_INTERVAL_MS = 5_000
+/** 市场宏观指标刷新间隔（10秒） */
 const METRICS_REFRESH_INTERVAL_MS = 10_000
+/** 盘口深度展示档位数 */
 const BOOK_DEPTH = 20
 
+/** 坊市 Tab 页面分类 */
 type MarketTab = 'browse' | 'orders'
 
 const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
@@ -46,6 +51,16 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
+/**
+ * 修仙界坊市主页面组件 (MarketPage)
+ *
+ * 核心架构与交互数据流：
+ * 1. 浏览与选品 (browse Tab)：展示全服可交易物品网格列表 (MarketBrowseGrid)；
+ * 2. 标的行情详情：选中物品后进入标的盘口深度界面，展示多档买盘/卖盘挂单 (MarketBookPanel)；
+ * 3. 挂单交易弹窗：提供买入/卖出限价挂单模态窗 (MarketOrderModal)，支持快捷填价、税率计算与滑点校验；
+ * 4. 个人委托管理 (orders Tab)：展示玩家当前活跃挂单列表 (MarketOwnOrders)，支持单笔撤单与结算收益提取；
+ * 5. 智能轮询机制：基于 visibilityState 在页面前台时高频轮询订单簿/个人订单/宏观撮合指标，后台时自动休眠节能。
+ */
 export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const t = useT()
   const catalog = useGameStore(state => state.items)

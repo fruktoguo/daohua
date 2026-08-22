@@ -7,7 +7,11 @@ public static class DaoxuanCombatFormula
 {
     /// <summary>
     /// 公开战斗模拟器的控制命中修正：韧性为百分比点数，而不是 0 到 1 的比例。
+    /// 命中几率 = 基础概率 * 100 / (100 + 目标韧性)。
     /// </summary>
+    /// <param name="baseChance">技能基础控制概率（0.0 ~ 1.0）。</param>
+    /// <param name="tenacity">受击目标韧性点数。</param>
+    /// <returns>修正后的实际控制触发概率。</returns>
     public static double CalculateControlChance(double baseChance, double tenacity)
     {
         var chance = Math.Clamp(double.IsFinite(baseChance) ? baseChance : 0, 0, 1);
@@ -15,12 +19,25 @@ public static class DaoxuanCombatFormula
         return chance * 100 / (100 + normalizedTenacity);
     }
 
+    /// <summary>
+    /// 计算数值在最大上限中的百分比比例（0.0 ~ 100.0）。
+    /// </summary>
+    /// <param name="value">当前数值。</param>
+    /// <param name="maximum">最大上限。</param>
+    /// <returns>百分比数值。</returns>
     public static double CalculatePercentage(long value, long maximum)
     {
         if (maximum <= 0) return 0;
         return Math.Clamp(value * 100d / maximum, 0, 100);
     }
 
+    /// <summary>
+    /// 计算经过防御穿透削减后的有效抗性/护甲。
+    /// 有效抗性 = 原始抗性 / (1 + 穿透比例)。
+    /// </summary>
+    /// <param name="resistance">受击方原始抗性值。</param>
+    /// <param name="penetrationRatio">攻击方穿透比例。</param>
+    /// <returns>削减后的有效抗性。</returns>
     public static double CalculateEffectiveResistance(double resistance, double penetrationRatio)
     {
         return resistance >= 0
@@ -28,6 +45,12 @@ public static class DaoxuanCombatFormula
             : resistance;
     }
 
+    /// <summary>
+    /// 应用伤害吸收/减免比例，计算最终穿透吸收层后的实际伤害。
+    /// </summary>
+    /// <param name="damage">承受伤害。</param>
+    /// <param name="damageAbsorptionRatio">伤害吸收比例（0.0 ~ 1.0）。</param>
+    /// <returns>吸收后的剩余伤害。</returns>
     public static double ApplyDamageAbsorption(double damage, double damageAbsorptionRatio)
     {
         var absorption = double.IsFinite(damageAbsorptionRatio)
@@ -36,6 +59,13 @@ public static class DaoxuanCombatFormula
         return Math.Max(0, damage) * (1 - absorption);
     }
 
+    /// <summary>
+    /// 根据攻速加成比例计算普攻实际攻击间隔（毫秒）。
+    /// 实际间隔 = 基础间隔 / (1 + 攻速比例)，保底 100 毫秒。
+    /// </summary>
+    /// <param name="baseIntervalMilliseconds">基础攻击间隔毫秒数。</param>
+    /// <param name="attackSpeedRatio">攻击速度加成比例。</param>
+    /// <returns>修正后的攻击间隔毫秒数。</returns>
     public static int CalculateAttackIntervalMilliseconds(
         int baseIntervalMilliseconds,
         double attackSpeedRatio)
@@ -47,6 +77,13 @@ public static class DaoxuanCombatFormula
                 / (1 + Math.Max(-0.99, attackSpeedRatio))));
     }
 
+    /// <summary>
+    /// 根据战斗已持续时间计算敌怪累加的狂暴层数。
+    /// </summary>
+    /// <param name="encounterElapsedMilliseconds">当前战斗已进行毫秒数。</param>
+    /// <param name="enrageTimeMilliseconds">单层狂暴增加的间隔时间。</param>
+    /// <param name="maxStacks">最大狂暴层数上限（默认 10）。</param>
+    /// <returns>当前狂暴层数。</returns>
     public static int CalculateEnrageStacks(
         long encounterElapsedMilliseconds,
         int enrageTimeMilliseconds,
@@ -61,6 +98,12 @@ public static class DaoxuanCombatFormula
             checked((int)(encounterElapsedMilliseconds / enrageTimeMilliseconds)));
     }
 
+    /// <summary>
+    /// 计算固定比例回复的资源点数（如按最大上限百分比回复）。
+    /// </summary>
+    /// <param name="maxResource">资源最大上限。</param>
+    /// <param name="ratio">回复比例。</param>
+    /// <returns>回复点数。</returns>
     public static long CalculateRegeneration(long maxResource, double ratio)
     {
         if (maxResource < 0) throw new ArgumentOutOfRangeException(nameof(maxResource));
@@ -75,6 +118,12 @@ public static class DaoxuanCombatFormula
     /// <summary>
     /// 减伤计算公式：伤害 = 原始伤害 * (原始伤害 / (原始伤害 + 抗性 * 抗性减伤系数 + 系数))。
     /// </summary>
+    /// <param name="rawDamage">原始未减免伤害。</param>
+    /// <param name="resistance">受击方对应抗性/护甲值。</param>
+    /// <param name="penetrationRatio">攻击方穿透比例。</param>
+    /// <param name="resistanceFactor">抗性放大系数。</param>
+    /// <param name="baseFactor">防零平滑常数。</param>
+    /// <returns>减免后造成的实际伤害（保底 1 点）。</returns>
     public static long CalculateMitigatedDamageWithResistanceFactor(
         long rawDamage,
         double resistance,
@@ -96,6 +145,11 @@ public static class DaoxuanCombatFormula
     /// 对抗概率计算公式：自身属性 / (自身属性 + 对方对抗属性 * 系数 + 基础平滑常数)。
     /// 适用于：闪避 vs 命中、暴击 vs 免爆、破招 vs 拆招。
     /// </summary>
+    /// <param name="selfAttr">己方对抗属性值。</param>
+    /// <param name="opponentAttr">对方对抗属性值。</param>
+    /// <param name="factor">对方属性权重系数。</param>
+    /// <param name="baseConst">基础平滑常数。</param>
+    /// <returns>己方对抗胜出概率（0.0 ~ 1.0）。</returns>
     public static double CalculateContestRate(
         double selfAttr,
         double opponentAttr,
@@ -114,6 +168,11 @@ public static class DaoxuanCombatFormula
     /// 闪避率 = 守方闪避 / (守方闪避 + 攻方命中 * 系数 + 基础平滑常数)。
     /// 闪避成功则免除本次全部伤害。0闪避0命中时闪避率为0% (即100%命中)。
     /// </summary>
+    /// <param name="evasion">守方身法闪避值。</param>
+    /// <param name="hit">攻方神识精准命中值。</param>
+    /// <param name="factor">对抗放大系数。</param>
+    /// <param name="baseConst">基础平滑常数。</param>
+    /// <returns>本次攻击被闪避的概率。</returns>
     public static double CalculateDodgeContestRate(
         double evasion,
         double hit,
@@ -127,6 +186,11 @@ public static class DaoxuanCombatFormula
     /// 命中率计算 (命中 vs 闪避)。
     /// 命中率 = 1.0 - 闪避率 = (攻方命中 * 系数 + 基础平滑常数) / (守方闪避 + 攻方命中 * 系数 + 基础平滑常数)。
     /// </summary>
+    /// <param name="hit">攻方命中值。</param>
+    /// <param name="evasion">守方闪避值。</param>
+    /// <param name="factor">对抗放大系数。</param>
+    /// <param name="baseConst">基础平滑常数。</param>
+    /// <returns>攻击命中的概率。</returns>
     public static double CalculateHitContestRate(
         double hit,
         double evasion,
@@ -140,6 +204,11 @@ public static class DaoxuanCombatFormula
     /// 暴击率计算 (暴击 vs 免爆)。
     /// 暴击率 = 攻方暴击 / (攻方暴击 + 守方免爆 * 系数 + 基础平滑常数)。
     /// </summary>
+    /// <param name="crit">攻方暴击值。</param>
+    /// <param name="critAvoid">守方抗暴免爆值。</param>
+    /// <param name="factor">对抗放大系数。</param>
+    /// <param name="baseConst">基础平滑常数。</param>
+    /// <returns>触发暴击的概率。</returns>
     public static double CalculateCritContestRate(
         double crit,
         double critAvoid,
@@ -153,6 +222,12 @@ public static class DaoxuanCombatFormula
     /// 破招判定：当攻击者破招 > 被攻击者拆招时计算破招概率。
     /// 破招成功：命中与暴击效果翻倍 (× BreakSuccessEffectMultiplier)。
     /// </summary>
+    /// <param name="attackerBreak">攻击方破招值。</param>
+    /// <param name="defenderParry">防御方拆招值。</param>
+    /// <param name="rollRatio">随机掷骰比率（0.0 ~ 1.0）。</param>
+    /// <param name="factor">对抗系数。</param>
+    /// <param name="baseConst">平滑常数。</param>
+    /// <returns>是否判定破招成功。</returns>
     public static bool CheckBreakSuccess(
         double attackerBreak,
         double defenderParry,
@@ -169,6 +244,12 @@ public static class DaoxuanCombatFormula
     /// 拆招判定：当被攻击者拆招 > 攻击者破招时计算拆招概率。
     /// 拆招成功：双抗与闪避计算效果翻倍 (× ParrySuccessEffectMultiplier)。
     /// </summary>
+    /// <param name="defenderParry">防御方拆招值。</param>
+    /// <param name="attackerBreak">攻击方破招值。</param>
+    /// <param name="rollRatio">随机掷骰比率（0.0 ~ 1.0）。</param>
+    /// <param name="factor">对抗系数。</param>
+    /// <param name="baseConst">平滑常数。</param>
+    /// <returns>是否判定拆招成功。</returns>
     public static bool CheckParrySuccess(
         double defenderParry,
         double attackerBreak,
@@ -187,6 +268,9 @@ public static class DaoxuanCombatFormula
     /// 对方每超过自身 1 级：指数额外获得 10% (1.0 * 1.10^diff)
     /// 对方每低于自身 1 级：指数减少 20% (1.0 * 0.80^diff)
     /// </summary>
+    /// <param name="playerLevel">玩家当前境界等级。</param>
+    /// <param name="targetLevel">目标敌怪境界等级。</param>
+    /// <returns>本次结算获得的战斗经验值。</returns>
     public static double CalculateCombatExperience(double playerLevel, double targetLevel)
     {
         var levelDiff = targetLevel - playerLevel;
@@ -201,6 +285,9 @@ public static class DaoxuanCombatFormula
         return 1.0;
     }
 
+    /// <summary>
+    /// 角色在当前境界等级下的全量基础战斗属性池快照。
+    /// </summary>
     public readonly record struct BaseAttributePool(
         double Level,
         int Tier,
@@ -235,6 +322,11 @@ public static class DaoxuanCombatFormula
         (127, 38872, 26066, 1354, 1645, 927, 1116, 135, 130, 128, 119, 116, 111)
     ];
 
+    /// <summary>
+    /// 根据玩家当前持有的灵气修为总点数，通过境界基准锚点线性插值计算出基础属性池。
+    /// </summary>
+    /// <param name="spirit">累计修为点数。</param>
+    /// <returns>基础战斗属性池快照。</returns>
     public static BaseAttributePool CalculateBaseAttributes(long spirit)
     {
         var progress = DaoxuanCombatConstants.CalculateRealmProgress(spirit);
@@ -297,6 +389,11 @@ public static class DaoxuanCombatFormula
             baseMpRegen);
     }
 
+    /// <summary>
+    /// 根据境界等级计算对应的大境界/品阶层次（1 ~ 12 阶）。
+    /// </summary>
+    /// <param name="level">境界等级。</param>
+    /// <returns>品阶编号。</returns>
     public static int CalculateTier(double level)
     {
         if (level <= 18.0) return level <= 1.0 ? 1 : 2;
@@ -312,3 +409,4 @@ public static class DaoxuanCombatFormula
         return 12;
     }
 }
+

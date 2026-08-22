@@ -4,13 +4,22 @@ import { gameClient } from '../network/gameClient'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 
+/** 修改道号模态窗 Props */
 interface RenameModalProps {
+  /** 弹窗是否展开 */
   open: boolean
+  /** 关闭弹窗回调 */
   onClose: () => void
 }
 
+/** 道号字符格式校验规则（2-12字符，支持汉字、英文字母、数字与下划线） */
 const NAME_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
 
+/**
+ * 修改修士道号模态窗组件 (RenameModal)
+ *
+ * 具备实时格式与长度校验，向服务端发送 rename 指令并在成功时关闭弹窗。
+ */
 export const RenameModal = memo(function RenameModal({ open, onClose }: RenameModalProps): React.JSX.Element | null {
   const t = useT()
   const currentName = useGameStore(state => state.name)

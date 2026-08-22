@@ -44,16 +44,29 @@ public sealed class DaoxuanOrderBook
         _terminalOrderCallback = terminalOrderCallback;
     }
 
+    /// <summary>当前订单簿对应的交易品种。</summary>
     public DaoxuanMarketInstrument Instrument => _instrument;
+    /// <summary>当前订单簿递增序列号。</summary>
     public long Sequence => _sequence;
+    /// <summary>当前活动委托订单数。</summary>
     public long ActiveOrderCount => _activeOrderCount;
+    /// <summary>累计挂单请求次数。</summary>
     public long PlacementCount => _placementCount;
+    /// <summary>累计撮合成交笔数。</summary>
     public long MatchCount => _matchCount;
+    /// <summary>累计主动撤单次数。</summary>
     public long CancelCount => _cancelCount;
+    /// <summary>累计拒绝非法订单次数。</summary>
     public long RejectedCount => _rejectedCount;
+    /// <summary>累计成交物品总件数。</summary>
     public long TradedQuantity => _tradedQuantity;
+    /// <summary>累计成交总灵石流水金额。</summary>
     public long TradedGrossAmount => _tradedGrossAmount;
 
+    /// <summary>
+    /// 导出当前订单簿的持久化快照（包含全部活动订单与序列指标）。
+    /// </summary>
+    /// <returns>订单簿快照对象。</returns>
     public DaoxuanMarketBookState ExportState()
     {
         return new DaoxuanMarketBookState(
@@ -86,6 +99,7 @@ public sealed class DaoxuanOrderBook
     /// <summary>
     /// 从账本恢复活动订单。恢复只接受非终态订单，并按原始序列重建同价 FIFO。
     /// </summary>
+    /// <param name="state">待恢复的订单簿快照。</param>
     public void RestoreState(DaoxuanMarketBookState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -189,6 +203,11 @@ public sealed class DaoxuanOrderBook
         _sequence = state.Sequence;
     }
 
+    /// <summary>
+    /// 处理新订单挂牌，并对对手盘进行价格/时间优先（Price-Time Priority FIFO）撮合。
+    /// </summary>
+    /// <param name="request">挂单请求。</param>
+    /// <returns>挂单与撮合成交结果。</returns>
     public DaoxuanMarketPlacementResult Place(DaoxuanMarketOrderRequest request)
     {
         _placementCount++;
@@ -301,6 +320,8 @@ public sealed class DaoxuanOrderBook
     /// <summary>
     /// 低频清理已过期挂牌。调用方应在市场分片锁内调用，避免把时间判断放入撮合循环。
     /// </summary>
+    /// <param name="now">当前时间戳。</param>
+    /// <returns>已过期的订单视图列表。</returns>
     public IReadOnlyList<DaoxuanMarketOrderView> Expire(DateTimeOffset now)
     {
         var expired = new List<MutableOrder>();
@@ -333,6 +354,12 @@ public sealed class DaoxuanOrderBook
         return expired.OrderBy(order => order.Sequence).Select(ToView).ToArray();
     }
 
+    /// <summary>
+    /// 从盘口撤销指定属于该玩家的活动订单。
+    /// </summary>
+    /// <param name="orderId">订单 ID。</param>
+    /// <param name="ownerId">所有者玩家 GUID。</param>
+    /// <returns>撤单结果。</returns>
     public DaoxuanMarketCancellationResult Cancel(string orderId, Guid ownerId)
     {
         if (string.IsNullOrWhiteSpace(orderId) || !_orders.TryGetValue(orderId, out var order))
@@ -370,6 +397,12 @@ public sealed class DaoxuanOrderBook
         return new DaoxuanMarketCancellationResult(true, "OK", "订单已撤销。", ToView(order));
     }
 
+    /// <summary>
+    /// 尝试在订单簿内查找指定订单 ID 的订单视图。
+    /// </summary>
+    /// <param name="orderId">订单 ID。</param>
+    /// <param name="order">输出订单视图。</param>
+    /// <returns>找到返回 true，否则返回 false。</returns>
     public bool TryGetOrder(string orderId, out DaoxuanMarketOrderView? order)
     {
         if (_orders.TryGetValue(orderId, out var found))
@@ -382,6 +415,11 @@ public sealed class DaoxuanOrderBook
         return false;
     }
 
+    /// <summary>
+    /// 生成该品种当前买卖盘口前 N 档深度的只读快照。
+    /// </summary>
+    /// <param name="depth">最大档位深度限制。</param>
+    /// <returns>盘口深度快照。</returns>
     public DaoxuanMarketBookSnapshot Snapshot(int depth = 20)
     {
         var normalizedDepth = Math.Clamp(depth, 1, 100);
@@ -392,6 +430,7 @@ public sealed class DaoxuanOrderBook
             _activeOrderCount,
             _sequence);
     }
+
 
     private void AddRestingOrder(MutableOrder order)
     {

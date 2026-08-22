@@ -18,8 +18,13 @@ public sealed class DaoxuanMarketCoordinator
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
     }
 
+    /// <summary>获取当前活动冻结记录数。</summary>
     public int ActiveReservationCount => _reservations.Count;
 
+    /// <summary>
+    /// 导出当前市场协调器的全量状态快照（包括所有活动冻结与待领取账本）。
+    /// </summary>
+    /// <returns>市场协调器快照对象。</returns>
     public DaoxuanMarketCoordinatorState ExportState()
     {
         var reservations = _reservations.Values
@@ -49,6 +54,7 @@ public sealed class DaoxuanMarketCoordinator
     /// <summary>
     /// 恢复玩家资产冻结和待领取结算。恢复前必须先恢复订单簿，以便校验每个冻结对应活动订单。
     /// </summary>
+    /// <param name="state">待恢复的市场协调器快照。</param>
     public void RestoreState(DaoxuanMarketCoordinatorState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -119,6 +125,12 @@ public sealed class DaoxuanMarketCoordinator
         }
     }
 
+    /// <summary>
+    /// 校验玩家资金/物品充足性、冻结对应资产并向撮合引擎提交订单，最后处理即时成交与待领取入账。
+    /// </summary>
+    /// <param name="owner">挂单发起玩家。</param>
+    /// <param name="request">订单请求数据。</param>
+    /// <returns>挂单撮合执行结果。</returns>
     public DaoxuanMarketPlacementResult Place(
         DaoxuanPlayerState owner,
         DaoxuanMarketOrderRequest request)
@@ -174,6 +186,12 @@ public sealed class DaoxuanMarketCoordinator
         return result;
     }
 
+    /// <summary>
+    /// 取消指定订单并将未成交的冻结资产返还给玩家。
+    /// </summary>
+    /// <param name="owner">撤单玩家。</param>
+    /// <param name="orderId">订单 ID。</param>
+    /// <returns>撤单结果。</returns>
     public DaoxuanMarketCancellationResult Cancel(
         DaoxuanPlayerState owner,
         string orderId)
@@ -194,6 +212,11 @@ public sealed class DaoxuanMarketCoordinator
         return result;
     }
 
+    /// <summary>
+    /// 提取属于该玩家的全部待领取灵石与物品至玩家背包。
+    /// </summary>
+    /// <param name="state">玩家聚合状态。</param>
+    /// <returns>如果有任何待领取资产入账则返回 true，否则返回 false。</returns>
     public bool Claim(DaoxuanPlayerState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -218,6 +241,8 @@ public sealed class DaoxuanMarketCoordinator
     /// 处理已过期订单并把未成交的冻结资产转为待领取结算。
     /// 该操作不要求玩家在线，也不触碰玩家 Fiber；玩家下次领取时再写入库存。
     /// </summary>
+    /// <param name="now">当前时间戳。</param>
+    /// <returns>本次处理的过期订单数量。</returns>
     public int Expire(DateTimeOffset now)
     {
         var expired = _engine.Expire(now);
@@ -237,6 +262,7 @@ public sealed class DaoxuanMarketCoordinator
 
         return expired.Count;
     }
+
 
     private bool TryReserve(
         DaoxuanPlayerState owner,

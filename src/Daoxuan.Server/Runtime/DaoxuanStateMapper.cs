@@ -4,8 +4,20 @@ using Daoxuan.Protocol;
 
 namespace Daoxuan.Server.Runtime;
 
+/// <summary>
+/// 领域模型与网络协议 DTO 转换映射器 (DaoxuanStateMapper)。
+/// <para>
+/// 职责：
+/// 1. 将服务端的权威 ECS/领域玩家状态 (<see cref="DaoxuanPlayerState"/>) 投影为用于客户端初始化/全量同步的 <see cref="DaoxuanPlayerSnapshotDto"/>。
+/// 2. 基于脏区位标记 (<see cref="DaoxuanDirtySections"/>) 将局部变化精确打包为轻量级增量补丁 <see cref="DaoxuanPlayerPatchDto"/>。
+/// 3. 将游戏静态配置与图鉴（行动、物品、技能、装备、历练、地图等）投影为协议 DTO。
+/// </para>
+/// </summary>
 public static class DaoxuanStateMapper
 {
+    /// <summary>
+    /// 将玩家领域状态投影为完整的全量快照 DTO。
+    /// </summary>
     public static DaoxuanPlayerSnapshotDto ToSnapshot(DaoxuanPlayerState state, DateTimeOffset now)
     {
         return new DaoxuanPlayerSnapshotDto(
@@ -32,6 +44,9 @@ public static class DaoxuanStateMapper
             CalculateRenameCooldown(state, now));
     }
 
+    /// <summary>
+    /// 根据脏区位标记将变更部分投影为增量补丁 DTO。
+    /// </summary>
     public static DaoxuanPlayerPatchDto ToPatch(
         DaoxuanPlayerState state,
         DaoxuanDirtySections sections,
@@ -69,6 +84,9 @@ public static class DaoxuanStateMapper
             sections.HasFlag(DaoxuanDirtySections.Stats) ? CalculateRenameCooldown(state, now) : null);
     }
 
+    /// <summary>
+    /// 计算改名剩余冷却时间（秒）。
+    /// </summary>
     public static long CalculateRenameCooldown(DaoxuanPlayerState state, DateTimeOffset now)
     {
         if (!state.LastRenamedAt.HasValue) return 0;
@@ -76,6 +94,9 @@ public static class DaoxuanStateMapper
         return remaining > 0 ? (long)Math.Ceiling(remaining) : 0;
     }
 
+    /// <summary>
+    /// 将行动配置投影为行动 DTO。
+    /// </summary>
     public static DaoxuanActionDto ToAction(DaoxuanActionDefinition definition)
     {
         return new DaoxuanActionDto(

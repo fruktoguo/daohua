@@ -115,8 +115,10 @@ public sealed record DaoxuanItemConfig(
 public static class DaoxuanDataBudgetResolver
 {
     /// <summary>
-    /// 获取指定阶位的基础强度预算。
+    /// 获取指定品阶（1 ~ 12 阶）的基础强度数值预算（Budget）。
     /// </summary>
+    /// <param name="tier">品阶（1 ~ 12）。</param>
+    /// <returns>基础强度预算数值。</returns>
     public static double GetTierBaseBudget(int tier) => tier switch
     {
         1 => 10.0,
@@ -135,8 +137,10 @@ public static class DaoxuanDataBudgetResolver
     };
 
     /// <summary>
-    /// 获取指定品质的乘区倍率。
+    /// 获取指定装备/物品品质（1 ~ 8 品）的强度放大倍率乘区。
     /// </summary>
+    /// <param name="quality">品质品级（1:普通 ~ 8:神话）。</param>
+    /// <returns>品质放大倍率。</returns>
     public static double GetQualityMultiplier(int quality) => quality switch
     {
         1 => 1.00,
@@ -153,12 +157,16 @@ public static class DaoxuanDataBudgetResolver
     /// <summary>
     /// 获取指定阶位的技能强度乘区 (Skill Intensity Multiplier)。
     /// </summary>
+    /// <param name="tier">品阶层次。</param>
+    /// <returns>技能强度倍率。</returns>
     public static double GetSkillIntensityMultiplier(int tier) => 1.0 + Math.Max(0, tier - 1) * 0.30;
 
     /// <summary>
     /// 获取指定阶位标准玩家的期望最大灵力值 (finalExpected.maxManapoints，源自 expected-attributes.json)。
     /// 用于 ManaCostRatio 解算：ManaCost = ceil(ExpectedMp × ManaCostRatio × 0.01)。
     /// </summary>
+    /// <param name="tier">品阶层次。</param>
+    /// <returns>期望最大灵力基准值。</returns>
     public static double GetTierBaseMaxManapoints(int tier) => tier switch
     {
         1 => 57.7,
@@ -177,8 +185,10 @@ public static class DaoxuanDataBudgetResolver
     };
 
     /// <summary>
-    /// 获取装备部位槽位的预算占比权重。
+    /// 获取装备部位槽位的预算占比权重（如双手武器 35%，单手武器 20%，衣服 20%，首饰 15% 等）。
     /// </summary>
+    /// <param name="slot">部位槽位名称。</param>
+    /// <returns>部位预算权重比例。</returns>
     public static double GetEquipmentSlotWeight(string? slot)
     {
         if (string.IsNullOrWhiteSpace(slot)) return 0.20;
@@ -201,6 +211,8 @@ public static class DaoxuanDataBudgetResolver
     /// 将技能配置解析为不可变的技能定义。
     /// 所有数值直接使用配置值，仅灵力消耗通过 ManaCostRatio 系数解算。
     /// </summary>
+    /// <param name="config">技能配置传输对象。</param>
+    /// <returns>解算后的技能原型定义。</returns>
     public static DaoxuanCombatAbilityDefinition ResolveAbility(DaoxuanAbilityConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -252,6 +264,8 @@ public static class DaoxuanDataBudgetResolver
     /// 将装备配置解析为不可变的装备定义。
     /// 若提供了 weights 或 intensity，则按装备槽位预算模型推导 Stats，并自动生成 50 级均摊强化增量。
     /// </summary>
+    /// <param name="config">装备配置传输对象。</param>
+    /// <returns>解算后的装备原型定义。</returns>
     public static DaoxuanCombatEquipmentDefinition ResolveEquipment(DaoxuanEquipmentConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -311,6 +325,8 @@ public static class DaoxuanDataBudgetResolver
     /// <summary>
     /// 将物品配置解析为不可变的物品定义。
     /// </summary>
+    /// <param name="config">物品配置传输对象。</param>
+    /// <returns>解算后的物品原型定义。</returns>
     public static DaoxuanItemDefinition ResolveItem(DaoxuanItemConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -571,6 +587,8 @@ public static class DaoxuanDataBudgetResolver
     /// <summary>
     /// 获取指定阶位标准玩家的期望属性矩阵（源自 expected-attributes.json）。
     /// </summary>
+    /// <param name="tier">品阶层次（1 ~ 12）。</param>
+    /// <returns>期望属性矩阵对象。</returns>
     public static FinalExpectedPlayerAttributes GetTierExpectedAttributes(int tier) => tier switch
     {
         1 => new(115.4, 57.7, 11.54, 5.77, 11.54, 0.0, 1.15, 1.15, 1.15, 1.15, 1.15, 1.15),
@@ -593,6 +611,9 @@ public static class DaoxuanDataBudgetResolver
     /// 支持基于阶位/等级期望属性与权重的自动推导（小怪80%/300%HP，精英120%/500%HP，Boss 150%/2000%HP）；
     /// 支持显式覆盖；特殊高级属性直接指定。
     /// </summary>
+    /// <param name="config">怪物配置传输对象。</param>
+    /// <param name="abilities">已解算的技能库字典。</param>
+    /// <returns>解算后的战斗单位定义原型。</returns>
     public static DaoxuanCombatantDefinition ResolveCombatant(
         DaoxuanCombatantConfig config,
         IReadOnlyDictionary<string, DaoxuanCombatAbilityDefinition> abilities)

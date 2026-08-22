@@ -3,8 +3,14 @@ using Xunit;
 
 namespace Daoxuan.Domain.Tests;
 
+/// <summary>
+/// 验证 Daoxuan.Protocol（纯数据协议层）的编解码（DaoxuanPacketCodec）、增量差分补丁（Delta/Patch）格式及前后端通信契约。
+/// </summary>
 public sealed class DaoxuanProtocolTests
 {
+    /// <summary>
+    /// 验证命令数据包编解码的往返一致性（Round-Trip），确保压测与生产客户端命令在序列化后能无损反序列化。
+    /// </summary>
     [Fact]
     public void Production_packet_codec_round_trips_load_test_command()
     {
@@ -20,6 +26,9 @@ public sealed class DaoxuanProtocolTests
         Assert.Equal(3, packet.Payload.GetProperty("payload").GetProperty("repeats").GetInt32());
     }
 
+    /// <summary>
+    /// 验证状态差分增量（Delta）只序列化已标记脏的字段，未变更的分区（如 inventory, buffs）在 JSON 输出中被完全剔除。
+    /// </summary>
     [Fact]
     public void Delta_packet_omits_unchanged_sections()
     {
@@ -37,6 +46,9 @@ public sealed class DaoxuanProtocolTests
         Assert.DoesNotContain("\"buffs\"", json, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 验证高频进度差分只下发当前执行项的 progressSeconds，避免每次跳字均全量下发整条队列结构。
+    /// </summary>
     [Fact]
     public void Progress_delta_contains_only_current_queue_entry()
     {
@@ -59,6 +71,9 @@ public sealed class DaoxuanProtocolTests
         Assert.DoesNotContain("\"inventory\"", json, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 验证战斗资源增量独立下发当前生命值与法力值，避免附带冗余的静态战斗属性负载。
+    /// </summary>
     [Fact]
     public void Combat_resource_delta_serializes_persistent_current_values()
     {
@@ -77,6 +92,9 @@ public sealed class DaoxuanProtocolTests
         Assert.DoesNotContain("\"combat\"", json, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 验证结构化日志批量增量（eventBatch）正确携带序号、时间戳与模板，保持单调递增并支持模板字符串解析。
+    /// </summary>
     [Fact]
     public void Event_delta_serializes_incremental_structured_batch()
     {
@@ -104,6 +122,9 @@ public sealed class DaoxuanProtocolTests
             decoded.Payload.GetProperty("eventBatch")[0].GetProperty("template").GetString());
     }
 
+    /// <summary>
+    /// 验证行动与战斗配置 DTO 结构符合传输契约，可在快照与增量中透明互通。
+    /// </summary>
     [Fact]
     public void Combat_action_and_loadout_fields_are_wire_compatible()
     {
@@ -136,6 +157,9 @@ public sealed class DaoxuanProtocolTests
         Assert.Equal("combat-encounter", packet.Payload.GetProperty("action").GetProperty("executionKind").GetString());
     }
 
+    /// <summary>
+    /// 验证战斗动作增量包含服务端时间与动作绝对截止毫秒时间戳，保障前端施法进度条插值平滑且与服务端同步。
+    /// </summary>
     [Fact]
     public void Combat_action_packet_contains_absolute_millisecond_deadline()
     {
@@ -185,6 +209,9 @@ public sealed class DaoxuanProtocolTests
                 .GetInt64());
     }
 
+    /// <summary>
+    /// 验证静态数据目录包（Catalog Snapshot）包含权威的行动输入输出消耗及物品可交易/可用性元数据。
+    /// </summary>
     [Fact]
     public void Catalog_packets_include_authoritative_action_rules_and_item_metadata()
     {
@@ -216,6 +243,9 @@ public sealed class DaoxuanProtocolTests
         Assert.Equal("cultivation", packet.Payload.GetProperty("item").GetProperty("usableActionTypes")[0].GetString());
     }
 
+    /// <summary>
+    /// 验证大地图移动指令（travel_to）的目的地节点 ID 编解码正确。
+    /// </summary>
     [Fact]
     public void Travel_command_round_trips_destination_node()
     {
@@ -231,6 +261,9 @@ public sealed class DaoxuanProtocolTests
             packet.Payload.GetProperty("payload").GetProperty("destinationNodeId").GetString());
     }
 
+    /// <summary>
+    /// 验证大地图路段中途移动状态的权威下发，包含当前路段 ID、行驶进度（0.0 ~ 1.0）且不附带离散节点标识。
+    /// </summary>
     [Fact]
     public void World_delta_contains_authoritative_mid_edge_position()
     {

@@ -4,8 +4,18 @@ using Daoxuan.Domain.Simulation;
 
 namespace Daoxuan.LoadTests;
 
+/// <summary>
+/// 离线挂机与事件驱动快进压测场景。
+/// 支持完全离线（FullyOffline）、空闲挂机（IdleOffline）及多怪物暮影谷战斗（CombatOffline）的批量并行补算，度量千人规模大时段快进吞吐。
+/// </summary>
 public static class OfflineSimulationScenario
 {
+    /// <summary>
+    /// 执行离线挂机补算压测：
+    /// 1. 批量初始化玩家状态（可配置千级战斗流派与法宝强化）；
+    /// 2. 使用多线程并行调度事件驱动快进模拟器推进指定时长；
+    /// 3. 聚合统计排行榜校验和、战斗胜负、击杀数、事件流转及 CPU 耗时。
+    /// </summary>
     public static LoadTestReport Run(
         LoadTestOptions options,
         bool fullyOffline,

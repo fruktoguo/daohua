@@ -3,49 +3,101 @@ import { resolveActionDefinitions } from './ids'
 import { createDemoSnapshot } from './demo'
 import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
+/**
+ * 前端与服务端的网络连接生命周期状态：
+ * - 'connecting': 正在建立初始连接
+ * - 'online': 已连接且正常同步
+ * - 'reconnecting': 连接意外断开，正在指数退避重连
+ * - 'offline': 已离线（登出或因鉴权被拒停止自动重连）
+ */
 export type ConnectionState = 'connecting' | 'online' | 'reconnecting' | 'offline'
 
+/**
+ * 游戏全局状态接口（Zustand Store）
+ * 集中管理玩家快照、世界状态、行动队列、战斗装配、静态目录与网络同步状态
+ */
 interface GameStore {
+  /** 玩家唯一标识符 (UUID) */
   playerId: string
+  /** 角色名 (展示用) */
   name: string
+  /** 账号标识 */
   account: string
+  /** 角色自增序列编号 */
   sequenceId: number
+  /** 角色创建时间戳（Unix 秒） */
   createdAtUnixSeconds: number
+  /** 改名冷却倒计时（秒） */
   renameCooldownSeconds: number
+  /** 角色视觉形象配置 */
   visual: PlayerSnapshot['visual']
+  /** 权威快照/增量版本号（单调递增，用于丢弃乱序旧包） */
   version: number
+  /** 服务端权威时间（Unix 秒） */
   serverTimeUnixSeconds: number
+  /** 服务端权威时间（Unix 毫秒） */
   serverTimeUnixMilliseconds: number
+  /** 上次收到服务端同步包时的客户端 performance.now() 时间戳（用于平滑进度插值） */
   lastSyncPerformanceTime: number
+  /** 玩家在线/离线补算模式 */
   presenceMode: PlayerSnapshot['presenceMode']
+  /** 是否处于突破待确认状态 */
   isPendingBreakthrough: boolean
+  /** 是否已成功接收到服务端全量快照 */
   hasReceivedSnapshot: boolean
+  /** 行动队列状态（当前执行、等待列表、自动消耗槽位） */
   queue: PlayerSnapshot['queue']
+  /** 背包物品列表 */
   inventory: PlayerSnapshot['inventory']
+  /** 角色当前生效的 Buff 列表 */
   buffs: PlayerSnapshot['buffs']
+  /** 角色统计数据（修为、击杀、战斗胜负等） */
   stats: PlayerSnapshot['stats']
+  /** 战斗装配（流派、已学技能、技能槽配置、战斗消耗品槽） */
   combat: PlayerSnapshot['combat']
+  /** 实时战斗资源（生命值、灵力值、冷却时间） */
   combatResources: PlayerSnapshot['combatResources']
+  /** 战斗属性面板（攻击力、护甲、抗性、命中/闪避等） */
   combatAttributes: PlayerSnapshot['combatAttributes']
+  /** 当前所在大地图节点与环境信息 */
   world: NonNullable<PlayerSnapshot['world']>
+  /** 全量行动目录（服务端下发或离线兜底） */
   actions: readonly ActionDefinition[]
+  /** 全量物品目录 */
   items: readonly ItemDefinition[]
+  /** 全量功法技能目录 */
   abilities: readonly CombatAbilityDefinition[]
+  /** 全量遭遇战/野怪目录 */
   encounters: readonly CombatEncounterDefinition[]
+  /** 全量装备配置目录 */
   equipment: readonly CombatEquipmentDefinition[]
+  /** 全量大地图世界配置目录 */
   maps: readonly WorldMapDefinition[]
+  /** 当前网络连接状态 */
   connection: ConnectionState
+  /** 顶部全局提示消息（为 null 时隐藏） */
   notice: string | null
+  /** 设置网络连接状态 */
   setConnection: (connection: ConnectionState) => void
+  /** 设置顶部全局提示消息 */
   setNotice: (notice: string | null) => void
+  /** 更新行动目录 */
   setActions: (actions: readonly ActionDefinition[]) => void
+  /** 更新物品目录 */
   setItems: (items: readonly ItemDefinition[]) => void
+  /** 更新功法技能目录 */
   setAbilities: (abilities: readonly CombatAbilityDefinition[]) => void
+  /** 更新战斗遭遇目录 */
   setEncounters: (encounters: readonly CombatEncounterDefinition[]) => void
+  /** 更新装备目录 */
   setEquipment: (equipment: readonly CombatEquipmentDefinition[]) => void
+  /** 更新世界地图目录 */
   setMaps: (maps: readonly WorldMapDefinition[]) => void
+  /** 应用服务端全量快照 (Snapshot) */
   applySnapshot: (snapshot: PlayerSnapshot) => void
+  /** 应用服务端增量补丁 (Delta Patch) */
   applyPatch: (patch: PlayerPatch) => void
+  /** 重置游戏状态至离线初始值（登出时调用） */
   resetGameStore: () => void
 }
 
@@ -56,6 +108,9 @@ const COMBAT_ABILITY_SLOT_COUNT = 4
 const COMBAT_CONSUMABLE_SLOT_COUNT = 3
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
 
+/**
+ * 归一化单个自动消耗槽位数据，确保默认值完整
+ */
 function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined): AutoUseSlot {
   return {
     itemId: slot?.itemId ?? null,
@@ -65,6 +120,9 @@ function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined): AutoUseSlot
   }
 }
 
+/**
+ * 归一化各行动类型的自动消耗槽位集合（固定每种类型 3 个槽位）
+ */
 function normalizeAutoUseSlots(
   slots: Partial<Record<ActionType, AutoUseSlot[]>> | null | undefined,
 ): QueueState['autoUseSlots'] {
@@ -76,10 +134,16 @@ function normalizeAutoUseSlots(
   return normalized
 }
 
+/**
+ * 归一化行动队列对象
+ */
 function normalizeQueue(queue: PlayerSnapshot['queue']): PlayerSnapshot['queue'] {
   return { ...queue, autoUseSlots: normalizeAutoUseSlots(queue.autoUseSlots) }
 }
 
+/**
+ * 归一化战斗装配对象（确保 4 个技能槽、3 个消耗品槽以及已学技能列表完整）
+ */
 function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['combat'] {
   if (!combat) return combat
   const abilitySlots = Array.isArray(combat.abilitySlots) ? combat.abilitySlots : []
@@ -106,6 +170,9 @@ function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['comb
   }
 }
 
+/**
+ * 游戏核心全局 Zustand 状态机
+ */
 export const useGameStore = create<GameStore>((set) => ({
   playerId: initial.playerId,
   name: initial.name,
@@ -170,6 +237,7 @@ export const useGameStore = create<GameStore>((set) => ({
     world: snapshot.world ?? initial.world!,
   }),
   applyPatch: (patch) => set((state) => {
+    // 丢弃版本过旧的乱序补丁
     if (patch.version < state.version) return state
     const queue = patch.queue ? normalizeQueue(patch.queue) : (patch.queueProgress
       ? {
@@ -220,6 +288,9 @@ export const useGameStore = create<GameStore>((set) => ({
   }),
 }))
 
+/**
+ * 角色形象缺省回退（使用角色首字作为文本头像）
+ */
 function stateVisualFallback(name: string): NonNullable<PlayerSnapshot['visual']> {
   return { renderer: 'text', source: name.slice(0, 1) || '修' }
 }

@@ -209,6 +209,8 @@ public static class DaoxuanCombatConstants
     /// 六维累计经验到等级换算方法（经验累加不清空）。
     /// 每级累计所需经验 = 100 * (level ^ 3)。
     /// </summary>
+    /// <param name="totalCumulativeExp">累计总经验值。</param>
+    /// <returns>计算得出的当前等级、当前级经验进度及升级所需经验值元组。</returns>
     public static (double Level, double CurrentProgress, double LevelRequirement) CalculateRootLevelAndProgress(double totalCumulativeExp)
     {
         var exp = Math.Max(0.0, totalCumulativeExp);
@@ -227,6 +229,11 @@ public static class DaoxuanCombatConstants
         return (level, currentProgress, levelRequirement);
     }
 
+    /// <summary>
+    /// 获取达到指定六维等级所需要的累计总经验值。
+    /// </summary>
+    /// <param name="level">目标等级。</param>
+    /// <returns>累计经验值。</returns>
     public static double GetCumulativeExpForLevel(double level)
     {
         if (level <= 1.0) return 0.0;
@@ -238,6 +245,7 @@ public static class DaoxuanCombatConstants
     // 9. 境界升级经验表与换算规范 (127 级，乘以 1000 后的经验值)
     // =========================================================================
 
+    /// <summary>最高境界等级上限 (127 级)。</summary>
     public const int MaxRealmLevel = 127;
 
     /// <summary>
@@ -390,6 +398,11 @@ public static class DaoxuanCombatConstants
         return cum;
     }
 
+    /// <summary>
+    /// 获取指定境界等级升到下一级所需的修为经验。
+    /// </summary>
+    /// <param name="level">当前境界等级。</param>
+    /// <returns>升级所需经验值。</returns>
     public static double GetRealmExpToNext(int level)
     {
         if (level < 1) return RealmLevelExpToNext[0];
@@ -397,6 +410,11 @@ public static class DaoxuanCombatConstants
         return RealmLevelExpToNext[level - 1];
     }
 
+    /// <summary>
+    /// 获取达到指定境界等级起始所需的累计总修为经验。
+    /// </summary>
+    /// <param name="level">目标境界等级。</param>
+    /// <returns>累计总经验值。</returns>
     public static double GetRealmCumulativeExp(int level)
     {
         if (level <= 1) return 0.0;
@@ -404,6 +422,14 @@ public static class DaoxuanCombatConstants
         return RealmLevelCumulativeExp[level];
     }
 
+    /// <summary>
+    /// 境界突破与经验结算进度结果结构体。
+    /// </summary>
+    /// <param name="Level">计算得出的当前整境界等级。</param>
+    /// <param name="CurrentLayerExp">当前等级内已累积的经验点数。</param>
+    /// <param name="ExpToNext">当前等级升至下一级所需经验。</param>
+    /// <param name="ProgressPercentage">当前等级进度百分比（0.0 ~ 100.0）。</param>
+    /// <param name="TotalLevel">包含小数精度的总境界等级。</param>
     public readonly record struct RealmProgressResult(
         int Level,
         double CurrentLayerExp,
@@ -411,6 +437,11 @@ public static class DaoxuanCombatConstants
         double ProgressPercentage,
         double TotalLevel);
 
+    /// <summary>
+    /// 根据玩家累计获得的总修为/灵气值，计算其所处的境界等级与升级进度。
+    /// </summary>
+    /// <param name="totalSpirit">累计修为点数。</param>
+    /// <returns>境界等级进度结算结果。</returns>
     public static RealmProgressResult CalculateRealmProgress(double totalSpirit)
     {
         var spirit = Math.Max(0.0, totalSpirit);

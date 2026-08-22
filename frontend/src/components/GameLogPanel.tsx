@@ -7,12 +7,18 @@ import { ItemReference } from './ItemDisplay'
 import { gameLogService, type GameLogEntry, type LogSegment } from '../logging/gameLogService'
 import { ValueText } from './ValueText'
 
+/** 格式化日志时间戳为月-日 时:分:秒 */
 function formatLogTime(timestampMs: number): string {
   const date = new Date(timestampMs)
   const part = (value: number) => String(value).padStart(2, '0')
   return `${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`
 }
 
+/**
+ * 战报中的功法/神通引用组件 (AbilityReference)
+ *
+ * 鼠标悬停展示功法详细效果、伤害加成与冷却机制气泡。
+ */
 function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
   const abilities = useGameStore((state) => state.abilities)
   const ability = abilities.find((entry) => entry.abilityId === abilityId)
@@ -53,6 +59,11 @@ function AbilityReference({ abilityId, label }: { abilityId: string; label: stri
   )
 }
 
+/**
+ * 战报中的妖兽/敌方遭遇引用组件 (EnemyReference)
+ *
+ * 悬停展示敌怪流派、属性、气血真元等面板数据。
+ */
 function EnemyReference({
   enemyId,
   kind,
@@ -106,6 +117,11 @@ function EnemyReference({
   )
 }
 
+/**
+ * 日志单条分段内容解析分发组件 (LogContent)
+ *
+ * 识别文本、物品掉落、功法施放、妖兽击败等分段类型并附加富文本高亮与交互气泡。
+ */
 function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
   if (segment.type === 'text') return <ValueText className="log-value-capsule" text={segment.value} />
   if (segment.kind === 'item') {
@@ -131,6 +147,9 @@ function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
   )
 }
 
+/**
+ * 单行游戏日志展示组件 (LogRow)
+ */
 const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.JSX.Element {
   const displayTime = formatLogTime(entry.timestampMs)
   return (
@@ -143,6 +162,15 @@ const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.J
   )
 })
 
+/**
+ * 游戏战报与系统日志主面板组件 (GameLogPanel)
+ *
+ * 核心机制与交互：
+ * 1. 订阅全局 gameLogService 状态快照 (useSyncExternalStore)；
+ * 2. 自动贴底滚动：当玩家未向上滚动翻查历史时，新日志产生自动滑动到最新行；
+ * 3. 向上滚动懒加载：滑动到顶部触碰阈值时异步向服务端拉取更早的历史日志；
+ * 4. 新日志计数悬浮：向上浏览历史时提示“回到底部 (N条新动态)”按钮。
+ */
 export function GameLogPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const t = useT()
   const logState = useSyncExternalStore(gameLogService.subscribe, gameLogService.getSnapshot)

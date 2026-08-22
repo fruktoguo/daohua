@@ -28,12 +28,24 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
+/** 坊市可交易物品网格浏览 Props */
 interface MarketBrowseGridProps {
+  /** 全部可交易标的列表 */
   instruments: readonly MarketInstrument[]
+  /** 当前选中的物品 ID */
   value?: string | null
+  /** 选中物品进入详情盘口回调 */
   onSelect: (itemId: string) => void
 }
 
+/**
+ * 坊市标的网格检索与分类浏览组件 (MarketBrowseGrid)
+ *
+ * 核心功能：
+ * 1. 分类胶囊标签栏 (Category Chips)：支持快速按“丹药”、“灵材”、“法宝”等品类筛选；
+ * 2. 实时名称检索输入框；
+ * 3. 物品网格卡片与背包持存数量悬浮气泡查看。
+ */
 export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   instruments,
   value,

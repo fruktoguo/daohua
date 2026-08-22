@@ -3,6 +3,9 @@ import { FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingP
 import { UnitNumber } from './UnitNumber'
 import { formatChineseSplitNumber } from '../game/format'
 
+/**
+ * 复合标签修仙色系主题
+ */
 export type PillTone =
   | 'gold'
   | 'jade'
@@ -22,37 +25,71 @@ export type PillTone =
   | 'muted'
   | 'default'
 
+/**
+ * 属性经验/熟练度进度定义
+ */
 export interface PillProgress {
+  /** 当前数值 */
   current: number
+  /** 上限数值 */
   max: number
+  /** 自定义格式化文本（如 "5800/2.71万"） */
   text?: string
 }
 
+/**
+ * 复合属性数值 Label Props
+ */
 export interface PillStatLabelProps {
+  /** 可选左侧前置图标 */
   icon?: ReactNode
+  /** 属性标题文本 */
   label: string
+  /** 属性数值或节点 */
   value: string | number | ReactNode
+  /** 数值后缀（如 "/5s", "%"） */
   suffix?: ReactNode
+  /** 原始精确数量（用于自动生成四位分段气泡） */
   quantity?: number | bigint | string
+  /** 色系主题 */
   tone?: PillTone
+  /** 可选底部经验进度条数据 */
   progress?: PillProgress
+  /** 悬浮气泡内容（提供时覆盖默认提示） */
   tooltip?: string | ReactNode
+  /** 悬浮气泡主题色 */
   tooltipTone?: FloatingTone
+  /** 外部样式类名 */
   className?: string
+  /** 外部内联样式 */
   style?: CSSProperties
+  /** 点击回调事件 */
   onClick?: () => void
 }
 
+/**
+ * 复合属性加成 Label Props
+ */
 export interface PillBonusLabelProps {
+  /** 可选左侧前置图标 */
   icon?: ReactNode
+  /** 加成属性名称 */
   label: string
+  /** 加成数值（如 "+10%"） */
   value: string | number | ReactNode
+  /** 加成后缀 */
   suffix?: ReactNode
+  /** 原始数量 */
   quantity?: number | bigint | string
+  /** 色系主题 */
   tone?: PillTone
+  /** 悬浮提示文本 */
   tooltip?: string
+  /** 悬浮提示主题色 */
   tooltipTone?: FloatingTone
+  /** 外部样式类名 */
   className?: string
+  /** 外部内联样式 */
   style?: CSSProperties
 }
 

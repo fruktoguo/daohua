@@ -2,10 +2,17 @@ import { memo } from 'react'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
 
+/** 连接中页面 Props */
 interface ConnectingPageProps {
+  /** 点击返回登录页回调 */
   onCancel?: () => void
 }
 
+/**
+ * 网络连接建立中过渡页面 (ConnectingPage)
+ *
+ * 展示全屏灵气粒子动效、太极聚灵旋转指示器与连接进度条，支持取消连接并登出。
+ */
 export const ConnectingPage = memo(function ConnectingPage({ onCancel }: ConnectingPageProps): React.JSX.Element {
   const t = useT()
   const handleCancel = () => {
@@ -38,11 +45,19 @@ export const ConnectingPage = memo(function ConnectingPage({ onCancel }: Connect
   )
 })
 
+/** 连接异常重试页面 Props */
 interface ConnectionErrorPageProps {
+  /** 点击重试连接回调 */
   onRetry?: () => void
+  /** 点击切换道号/登出回调 */
   onLogout?: () => void
 }
 
+/**
+ * 网络连接失败/断开页面 (ConnectionErrorPage)
+ *
+ * 展示断连警示图标与说明文案，提供一键重新连接 (Retry) 与切换账号 (Switch Account) 选项。
+ */
 export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, onLogout }: ConnectionErrorPageProps): React.JSX.Element {
   const t = useT()
   const handleRetry = () => {

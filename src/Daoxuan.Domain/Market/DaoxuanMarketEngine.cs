@@ -31,8 +31,13 @@ public sealed class DaoxuanMarketEngine
         _vendorPriceResolver = vendorPriceResolver ?? GetCatalogVendorPrice;
     }
 
+    /// <summary>获取当前引擎分片总数。</summary>
     public int ShardCount => _shards.Length;
 
+    /// <summary>
+    /// 导出所有分片下全部交易品种订单簿的全量快照。
+    /// </summary>
+    /// <returns>市场引擎快照对象。</returns>
     public DaoxuanMarketEngineState ExportState()
     {
         var books = new List<DaoxuanMarketBookState>();
@@ -53,6 +58,7 @@ public sealed class DaoxuanMarketEngine
     /// <summary>
     /// 在服务启动阶段恢复订单簿和全局订单路由。调用期间不应接收市场写请求。
     /// </summary>
+    /// <param name="state">待恢复的市场引擎快照。</param>
     public void RestoreState(DaoxuanMarketEngineState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -113,6 +119,11 @@ public sealed class DaoxuanMarketEngine
         }
     }
 
+    /// <summary>
+    /// 向对应分片提交挂单请求并执行价格/时间优先撮合。
+    /// </summary>
+    /// <param name="request">订单挂单请求。</param>
+    /// <returns>挂单与撮合成交执行结果。</returns>
     public DaoxuanMarketPlacementResult Place(DaoxuanMarketOrderRequest request)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.OrderId))
@@ -166,6 +177,12 @@ public sealed class DaoxuanMarketEngine
         return result;
     }
 
+    /// <summary>
+    /// 取消指定活动订单。
+    /// </summary>
+    /// <param name="orderId">订单 ID。</param>
+    /// <param name="ownerId">撤单发起人玩家 GUID。</param>
+    /// <returns>撤单结果。</returns>
     public DaoxuanMarketCancellationResult Cancel(string orderId, Guid ownerId)
     {
         if (string.IsNullOrWhiteSpace(orderId) || !_routes.TryGetValue(orderId, out var route))
@@ -186,6 +203,12 @@ public sealed class DaoxuanMarketEngine
         }
     }
 
+    /// <summary>
+    /// 尝试根据订单 ID 查找活动或终态订单快照。
+    /// </summary>
+    /// <param name="orderId">订单 ID。</param>
+    /// <param name="order">输出订单视图。</param>
+    /// <returns>找到返回 true，否则返回 false。</returns>
     public bool TryGetOrder(string orderId, out DaoxuanMarketOrderView? order)
     {
         if (!_routes.TryGetValue(orderId, out var route))
@@ -201,6 +224,12 @@ public sealed class DaoxuanMarketEngine
         }
     }
 
+    /// <summary>
+    /// 查询指定玩家当前所有的活动委托订单列表。
+    /// </summary>
+    /// <param name="ownerId">玩家 GUID。</param>
+    /// <param name="limit">最大返回条数（默认 100，最大 500）。</param>
+    /// <returns>活动订单列表。</returns>
     public IReadOnlyList<DaoxuanMarketOrderView> GetActiveOrders(Guid ownerId, int limit = 100)
     {
         if (ownerId == Guid.Empty)
@@ -230,6 +259,12 @@ public sealed class DaoxuanMarketEngine
             .ToArray();
     }
 
+    /// <summary>
+    /// 获取特定交易品种的当前盘口深度快照。
+    /// </summary>
+    /// <param name="instrument">交易品种。</param>
+    /// <param name="depth">档位深度限制。</param>
+    /// <returns>盘口深度快照。</returns>
     public DaoxuanMarketBookSnapshot GetBook(DaoxuanMarketInstrument instrument, int depth = 20)
     {
         return GetBookWithVersion(instrument, depth).Snapshot;
@@ -238,6 +273,9 @@ public sealed class DaoxuanMarketEngine
     /// <summary>
     /// 在同一个分片锁内生成盘口和对应版本，防止 HTTP 缓存标签领先于响应正文。
     /// </summary>
+    /// <param name="instrument">交易品种。</param>
+    /// <param name="depth">深度限制。</param>
+    /// <returns>盘口深度快照与版本标签元组。</returns>
     public (DaoxuanMarketBookSnapshot Snapshot, DaoxuanMarketBookVersion Version) GetBookWithVersion(
         DaoxuanMarketInstrument instrument,
         int depth = 20)
@@ -254,6 +292,8 @@ public sealed class DaoxuanMarketEngine
     /// <summary>
     /// 读取盘口版本而不生成档位数组。HTTP 层可据此在未变化时直接返回 304。
     /// </summary>
+    /// <param name="instrument">交易品种。</param>
+    /// <returns>盘口当前版本特征结构。</returns>
     public DaoxuanMarketBookVersion GetBookVersion(DaoxuanMarketInstrument instrument)
     {
         if (!instrument.IsValid) throw new ArgumentException("市场品种无效。", nameof(instrument));
@@ -269,6 +309,11 @@ public sealed class DaoxuanMarketEngine
         }
     }
 
+    /// <summary>
+    /// 触发所有分片订单簿的订单过期清理。
+    /// </summary>
+    /// <param name="now">当前时间戳。</param>
+    /// <returns>本次过期的订单列表。</returns>
     public IReadOnlyList<DaoxuanMarketOrderView> Expire(DateTimeOffset now)
     {
         var expired = new List<DaoxuanMarketOrderView>();
@@ -286,6 +331,10 @@ public sealed class DaoxuanMarketEngine
         return expired;
     }
 
+    /// <summary>
+    /// 汇总收集全部分片的实时统计指标（活跃单数、撮合数、挂单数、成交量等）。
+    /// </summary>
+    /// <returns>引擎监控指标快照。</returns>
     public DaoxuanMarketEngineMetrics GetMetrics()
     {
         long active = 0;
@@ -322,6 +371,7 @@ public sealed class DaoxuanMarketEngine
             quantity,
             gross);
     }
+
 
     private int GetShardIndex(DaoxuanMarketInstrument instrument)
     {

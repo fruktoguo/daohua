@@ -5,6 +5,17 @@ using Daoxuan.Domain.GameData;
 using Daoxuan.Domain.Models;
 using Daoxuan.Domain.Simulation;
 
+// ============================================================================
+// Daoxuan.DataTool - 游戏数据校验与默认配置导出工具
+// ----------------------------------------------------------------------------
+// 设计定位与用途：
+// 1. 本工具为独立 CLI 工具，用于开发/发布阶段维护游戏数值配置 JSON。
+// 2. 校验模式 (validate <目录>): 加载指定目录下的 manifest 与全部配置 JSON，
+//    校验数据完整性并输出版本指纹及各项要素统计。
+// 3. 导出模式 (export-defaults <目录>): 从代码内建数据源导出全套默认游戏配置文件
+//    (manifest, actions, items, abilities, equipment, monsters, encounters, maps)。
+// ============================================================================
+
 if (args.Length != 2)
 {
     Console.Error.WriteLine("用法: dotnet run --project src/Daoxuan.DataTool -- <validate|export-defaults> <目录>");
@@ -12,6 +23,8 @@ if (args.Length != 2)
 }
 
 var outputDirectory = Path.GetFullPath(args[1]);
+
+// --- 1. 校验模式 ---
 if (string.Equals(args[0], "validate", StringComparison.Ordinal))
 {
     var snapshot = DaoxuanGameData.LoadFromDirectory(outputDirectory);
@@ -36,6 +49,7 @@ if (!string.Equals(args[0], "export-defaults", StringComparison.Ordinal))
     return 2;
 }
 
+// --- 2. 导出默认数据模式 ---
 Directory.CreateDirectory(outputDirectory);
 
 var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
@@ -66,6 +80,9 @@ await WriteAsync("maps.json", DaoxuanWorldCatalog.All);
 Console.WriteLine($"游戏数据已导出到 {outputDirectory}");
 return 0;
 
+/// <summary>
+/// 将配置对象序列化为格式化 JSON 文件并写入磁盘。
+/// </summary>
 async Task WriteAsync<T>(string fileName, T value)
 {
     var path = Path.Combine(outputDirectory, fileName);
@@ -74,6 +91,9 @@ async Task WriteAsync<T>(string fileName, T value)
     await stream.WriteAsync("\n"u8.ToArray());
 }
 
+/// <summary>
+/// 将内存战斗实体定义转换为可导出的怪物配置模型 (DaoxuanCombatantConfig)。
+/// </summary>
 static DaoxuanCombatantConfig ToCombatantConfig(DaoxuanCombatantDefinition monster) => new(
     Id: monster.Id,
     Name: monster.Name,
@@ -129,6 +149,9 @@ static DaoxuanCombatantConfig ToCombatantConfig(DaoxuanCombatantDefinition monst
     ActionSpeedReductionRatio: monster.ActionSpeedReductionRatio,
     CooldownReductionRatio: monster.CooldownReductionRatio);
 
+/// <summary>
+/// 将副本领域定义转换为可导出的副本配置模型 (DaoxuanCombatEncounterConfig)。
+/// </summary>
 static DaoxuanCombatEncounterConfig ToEncounterConfig(DaoxuanCombatEncounterDefinition encounter) => new(
     Id: encounter.Id,
     Name: encounter.Name,

@@ -1,5 +1,8 @@
 import { memo } from 'react'
 
+/**
+ * 矢量立绘人物/妖兽形象类型
+ */
 export type CharacterKind =
   | 'player'
   | 'qi-beast'
@@ -10,6 +13,9 @@ export type CharacterKind =
   | 'default-enemy'
   | 'default-ally'
 
+/**
+ * 根据角色身份 (role)、实体标识符 (id) 与名称 (name) 智能解析匹配的矢量人物立绘形态
+ */
 export function resolveCharacterKind(role: 'player' | 'enemy', id?: string | null, name?: string | null): CharacterKind {
   if (role === 'player') return 'player'
   const normalizedId = (id ?? '').toLowerCase()
@@ -34,13 +40,23 @@ export function resolveCharacterKind(role: 'player' | 'enemy', id?: string | nul
   return role === 'enemy' ? 'default-enemy' : 'default-ally'
 }
 
+/** 矢量立绘组件 Props */
 interface VectorCharacterProps {
+  /** 形象类型 */
   kind: CharacterKind
+  /** 参战身份 (player 己方 / enemy 敌方) */
   role?: 'player' | 'enemy'
+  /** 是否已阵亡（死亡变灰暗倒下） */
   isDead?: boolean
+  /** 外部样式类名 */
   className?: string
 }
 
+/**
+ * 原生矢量修仙人物/妖兽立绘组件 (VectorCharacter)
+ *
+ * 采用纯 SVG 路径精细绘制包含剑阵光环、浮空飞剑、飘逸道袍、兽角鳞甲、血煞魔刃、幽冥法相与九霄魔皇冠冕等国风修仙视觉。
+ */
 export const VectorCharacter = memo(function VectorCharacter({
   kind,
   role = 'player',

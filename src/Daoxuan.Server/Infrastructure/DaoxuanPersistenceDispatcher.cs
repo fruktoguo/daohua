@@ -3,22 +3,37 @@ using YuoCore.Persistence;
 namespace Daoxuan.Server.Infrastructure;
 
 /// <summary>
-/// Daoxuan 的 PostgreSQL 持久化装配边界。默认写入内存队列，开启 durable outbox 后先进入数据库 outbox，
-/// 后台写回成功后按序 ack，重启会 replay 未确认命令。
+/// 持久化命令队列分发契约 (IDaoxuanPersistenceQueue)。
+/// <para>
+/// 职责：
+/// 1. 统一封装快照写入等异步持久化命令的入队操作。
+/// 2. 向上层屏蔽底层使用的是纯内存有界队列还是持久化出件箱 (Durable Outbox)。
+/// </para>
 /// </summary>
 public interface IDaoxuanPersistenceQueue
 {
+    /// <summary>异步将单条持久化命令加入调度队列。</summary>
     ValueTask EnqueueAsync(YuoPersistenceCommand command, CancellationToken cancellationToken = default);
 
+    /// <summary>异步批量将多条持久化命令加入调度队列。</summary>
     ValueTask EnqueueBatchAsync(
         IReadOnlyList<YuoPersistenceCommand> commands,
         CancellationToken cancellationToken = default);
 
+    /// <summary>获取当前持久化队列监控统计指标（已入队、已处理、失败与丢弃计数）。</summary>
     YuoPersistenceQueueStats GetStats();
 
+    /// <summary>标记队列输入完成，通知后台工作线程排空剩余命令。</summary>
     void Complete();
 }
 
+/// <summary>
+/// 持久化命令分发器 (DaoxuanPersistenceDispatcher)。
+/// <para>
+/// 当配置启用 <c>Storage:DurableOutboxEnabled</c> 时，将命令路由至 <see cref="YuoDurablePersistenceQueue"/> 先写 PostgreSQL Outbox 表防丢；
+/// 未启用时直接写入内存高性能有界队列 <see cref="YuoPersistenceQueue"/>。
+/// </para>
+/// </summary>
 public sealed class DaoxuanPersistenceDispatcher : IDaoxuanPersistenceQueue
 {
     private readonly YuoPersistenceQueue _queue;
@@ -59,7 +74,10 @@ public sealed class DaoxuanPersistenceDispatcher : IDaoxuanPersistenceQueue
 }
 
 /// <summary>
-/// durable outbox 必须在通用后台写回服务之前 replay，避免启动窗口丢失未确认快照。
+/// 出件箱未确认命令启动重放后台服务 (DaoxuanPersistenceReplayHostedService)。
+/// <para>
+/// 必须在通用持久化写回后台服务启动前执行，确保在系统异常重启后优先恢复并重放未确认的快照命令。
+/// </para>
 /// </summary>
 public sealed class DaoxuanPersistenceReplayHostedService(
     YuoDurablePersistenceQueue queue,

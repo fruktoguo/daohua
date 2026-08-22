@@ -8,23 +8,39 @@ import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type Floatin
 import { ValueText } from './ValueText'
 import { UnitNumber } from './UnitNumber'
 
+/** 物品悬浮提示气泡触发器 Props */
 interface ItemTooltipTargetProps {
+  /** 物品唯一 ID */
   itemId: string
+  /** 拥有/涉及数量 */
   amount?: number
+  /** 被包裹触发子元素 */
   children: ReactNode
+  /** 触发器样式类名 */
   className?: string
+  /** 自定义覆盖元数据 */
   metadata?: ItemMetadata
+  /** 服务端原始物品定义 */
   definition?: ItemDefinition
+  /** 键盘焦点 tab 索引 */
   tabIndex?: number
 }
 
+/** 物品网格方块 Props */
 interface ItemTileProps {
+  /** 显示数量（位于右下角） */
   amount?: number
+  /** 右下角自定义标签（覆盖默认数量） */
   bottomRightLabel?: ReactNode
+  /** 物品品类名称（展示在左上角丝带 Ribbon） */
   category: string
+  /** 外部样式类名 */
   className: string
+  /** 物品等阶/品级（展示在右上角） */
   level?: number
+  /** 物品名称 */
   name: string
+  /** 稀有度品质（决定边框与背景光效） */
   rarity: ItemRarity
 }
 
@@ -61,6 +77,14 @@ function rarityToTone(rarity: ItemRarity): FloatingTone {
   }
 }
 
+/**
+ * 物品悬浮气泡包裹组件 (ItemTooltipTarget)
+ *
+ * 鼠标悬停展示修仙风物品卡片气泡：
+ * 1. 顶部展示物品品阶徽章 (rarityLabel)、名称与来源出处；
+ * 2. 中部展示恢复效果、冷却时间、丹药增益或装备攻防特殊词缀 (describeItemEffects / describeEquipmentEffects)；
+ * 3. 底部展示持存数量、品阶等统计键值对，以及用途副气泡 (asideCards)。
+ */
 export function ItemTooltipTarget({
   itemId,
   amount,
@@ -236,6 +260,11 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
   return lines
 }
 
+/**
+ * 物品标准卡片瓦片组件 (ItemTile)
+ *
+ * 紧凑的修仙网格方块：左上角品类丝带、右上角等阶 Lv、中间名称与右下角拥有数量。
+ */
 export function ItemTile({
   amount,
   bottomRightLabel,
@@ -262,6 +291,11 @@ export function ItemTile({
   )
 }
 
+/**
+ * 背包物品卡片完整组件 (ItemCard)
+ *
+ * 结合了 ItemTooltipTarget 与 ItemTile，用于背包格子的标准渲染。
+ */
 export function ItemCard({ item, definition }: { item: InventoryItem; definition?: ItemDefinition }): React.JSX.Element {
   // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
   useT()
@@ -284,15 +318,25 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
   )
 }
 
+/**
+ * 文本行内物品引用胶囊组件 (ItemReference)
+ *
+ * 用于日志、任务描述、制造需求等行内文本中引用特定物品，
+ * 点击/悬停弹出完整物品气泡，并显示品质对应的主题色下划线与数量。
+ */
 export function ItemReference({
   itemId,
   amount,
   label,
   className = '',
 }: {
+  /** 物品唯一 ID */
   itemId: string
+  /** 涉及数量（提供时显示复合胶囊） */
   amount?: number
+  /** 覆写显示文本（默认取物品名称） */
   label?: string
+  /** 额外样式类名 */
   className?: string
 }): React.JSX.Element {
   // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。

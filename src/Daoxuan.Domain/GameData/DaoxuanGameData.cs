@@ -6,15 +6,24 @@ using Daoxuan.Domain.Models;
 
 namespace Daoxuan.Domain.GameData;
 
+/// <summary>
+/// 游戏数据清单清单元数据。
+/// </summary>
 public sealed record DaoxuanGameDataManifest(
     int SchemaVersion,
     string ContentVersion);
 
+/// <summary>
+/// 敌怪技能装配配置。
+/// </summary>
 public sealed record DaoxuanMonsterSkillConfig(
     string AbilityId,
     int Level = 1,
     double TriggerHpRatio = 1.0);
 
+/// <summary>
+/// 战斗单位（怪物/Boss）原始数据配置传输对象。
+/// </summary>
 public sealed record DaoxuanCombatantConfig(
     string Id,
     string Name,
@@ -68,11 +77,17 @@ public sealed record DaoxuanCombatantConfig(
     double ActionSpeedReductionRatio = 0,
     double CooldownReductionRatio = 0);
 
+/// <summary>
+/// 遭遇战随机刷怪权重配置。
+/// </summary>
 public sealed record DaoxuanCombatSpawnConfig(
     string EnemyId,
     double Weight,
     int Strength);
 
+/// <summary>
+/// 战斗遭遇（副本/关卡）静态配置传输对象。
+/// </summary>
 public sealed record DaoxuanCombatEncounterConfig(
     string Id,
     string Name,
@@ -94,6 +109,9 @@ public sealed record DaoxuanCombatEncounterConfig(
     IReadOnlyList<DaoxuanCombatDropDefinition>? DropTable = null,
     IReadOnlyList<DaoxuanCombatDropDefinition>? RareDropTable = null);
 
+/// <summary>
+/// 游戏静态只读配置全量快照聚合根，包含所有动作、物品、技能、装备、怪物、遭遇和地图定义。
+/// </summary>
 public sealed class DaoxuanGameDataSnapshot
 {
     internal DaoxuanGameDataSnapshot(
@@ -118,19 +136,32 @@ public sealed class DaoxuanGameDataSnapshot
         Maps = maps;
     }
 
+    /// <summary>内容数据版本号。</summary>
     public string ContentVersion { get; }
+    /// <summary>全量数据哈希指纹（前 16 位）。</summary>
     public string Fingerprint { get; }
+    /// <summary>行动原型字典。</summary>
     public IReadOnlyDictionary<string, DaoxuanActionDefinition> Actions { get; }
+    /// <summary>物品原型字典。</summary>
     public IReadOnlyDictionary<string, DaoxuanItemDefinition> Items { get; }
+    /// <summary>技能原型字典。</summary>
     public IReadOnlyDictionary<string, DaoxuanCombatAbilityDefinition> Abilities { get; }
+    /// <summary>装备原型字典。</summary>
     public IReadOnlyDictionary<string, DaoxuanCombatEquipmentDefinition> Equipment { get; }
+    /// <summary>怪物/Boss 战斗原型字典。</summary>
     public IReadOnlyDictionary<string, DaoxuanCombatantDefinition> Monsters { get; }
+    /// <summary>遭遇关卡原型字典。</summary>
     public IReadOnlyDictionary<string, DaoxuanCombatEncounterDefinition> Encounters { get; }
+    /// <summary>大世界地图原型字典。</summary>
     public IReadOnlyDictionary<string, DaoxuanWorldMapDefinition> Maps { get; }
 }
 
+/// <summary>
+/// 游戏数据只读单例仓储与加载器。支持内嵌默认资源与外部目录热加载。
+/// </summary>
 public static class DaoxuanGameData
 {
+    /// <summary>支持的数据结构 Schema 版本。</summary>
     public const int SupportedSchemaVersion = 1;
 
     private static readonly string[] FileNames =
@@ -148,8 +179,14 @@ public static class DaoxuanGameData
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static DaoxuanGameDataSnapshot _current = LoadEmbedded();
 
+    /// <summary>获取当前生效的游戏静态数据单例快照。</summary>
     public static DaoxuanGameDataSnapshot Current => Volatile.Read(ref _current);
 
+    /// <summary>
+    /// 从外部指定目录读取 JSON 数据文件并原子替换当前单例快照。
+    /// </summary>
+    /// <param name="directory">包含全量数据 JSON 文件的目录路径。</param>
+    /// <returns>构建后的新游戏数据快照。</returns>
     public static DaoxuanGameDataSnapshot LoadFromDirectory(string directory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
@@ -162,6 +199,7 @@ public static class DaoxuanGameData
         Interlocked.Exchange(ref _current, snapshot);
         return snapshot;
     }
+
 
     private static DaoxuanGameDataSnapshot LoadEmbedded()
     {

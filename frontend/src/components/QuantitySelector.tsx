@@ -1,20 +1,40 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useT } from '../i18n'
 
+/**
+ * 数量选择器组件 Props
+ */
 interface QuantitySelectorProps {
+  /** 当前数值（-1 表示无限循环） */
   value: number
+  /** 数值变更回调 */
   onChange: (value: number) => void
+  /** 无障碍输入标签 */
   ariaLabel: string
+  /** 允许的最小值（默认 1） */
   min?: number
+  /** 允许的最大值（默认 1000） */
   max?: number
+  /** 快速预设按钮数值列表（如 [1, 10, 100]） */
   presets?: readonly number[]
+  /** 是否提供无限循环 (∞, 对应 -1) 按钮 */
   allowInfinity?: boolean
+  /** 是否禁用输入与按钮 */
   disabled?: boolean
+  /** 是否使用紧凑布局 */
   compact?: boolean
+  /** 外部样式类名 */
   className?: string
+  /** 是否在输入框即时输入且有效时立即提交变更（默认 true） */
   commitOnInput?: boolean
 }
 
+/**
+ * 通用数量选择器组件 (QuantitySelector)
+ *
+ * 适用于物品使用、批量购买/出售挂单、生活技能轮次设定等场景。
+ * 具备输入框手输、预设档位快捷点选与无限轮次 (∞) 支持。
+ */
 export function QuantitySelector({
   value,
   onChange,

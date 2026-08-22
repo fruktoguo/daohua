@@ -3,7 +3,19 @@ using Daoxuan.Domain.GameData;
 using Daoxuan.Domain.Models;
 using Daoxuan.Domain.Simulation;
 
+// ============================================================================
+// Daoxuan.ComputeNode - 分布式冷挂机确定性计算节点宿主
+// ----------------------------------------------------------------------------
+// 设计定位与架构说明：
+// 1. 本服务为可选的高延迟冷计算工作节点，运行在远程个人设备或辅助计算服务器上。
+// 2. 无状态纯计算：不持有在线玩家权威状态、不直连生产 PostgreSQL 数据库、不参与市场撮合。
+// 3. 仅通过内部 HTTP 批处理接口 (/internal/compute/advance-batch) 接收主服务分发的离线快照，
+//    调用 Daoxuan.Domain.Simulation.DaoxuanSimulation.AdvanceTo 进行确定性快进，并将新快照返回主服务。
+// ============================================================================
+
 var builder = WebApplication.CreateBuilder(args);
+
+// 加载游戏配置数据与指纹校验
 var configuredGameDataDirectory = builder.Configuration["GameData:Directory"];
 var gameData = string.IsNullOrWhiteSpace(configuredGameDataDirectory)
     ? DaoxuanGameData.Current
@@ -13,6 +25,7 @@ var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
     WriteIndented = false
 };
 
+// 配置服务监听端点（默认 http://127.0.0.1:5129）
 var configuredUrls = builder.Configuration["ComputeNode:Urls"];
 if (!string.IsNullOrWhiteSpace(configuredUrls))
 {
@@ -33,6 +46,9 @@ if (string.IsNullOrWhiteSpace(token))
     app.Logger.LogWarning("未配置 ComputeNode:Token，计算节点只建议在本机开发使用");
 }
 
+/// <summary>
+/// 计算节点健康检查端点（返回当前加载的游戏数据版本与指纹）。
+/// </summary>
 app.MapGet("/healthz", () => Results.Ok(new
 {
     status = "ok",
@@ -41,6 +57,9 @@ app.MapGet("/healthz", () => Results.Ok(new
     gameDataFingerprint = gameData.Fingerprint
 }));
 
+/// <summary>
+/// 内部批处理冷计算端点：校验 Token、反序列化玩家快照、执行确定性时间快进并返回新快照。
+/// </summary>
 app.MapPost("/internal/compute/advance-batch", (
     HttpRequest httpRequest,
     AdvanceBatchRequest request,
@@ -70,6 +89,9 @@ app.MapPost("/internal/compute/advance-batch", (
 
 app.Run();
 
+/// <summary>
+/// 探测并解析游戏数据目录物理路径。
+/// </summary>
 string ResolveGameDataPath(string contentRoot, string configuredPath)
 {
     if (Path.IsPathRooted(configuredPath)) return configuredPath;
@@ -90,6 +112,9 @@ string ResolveGameDataPath(string contentRoot, string configuredPath)
     return Path.GetFullPath(Path.Combine(contentRoot, configuredPath));
 }
 
+/// <summary>
+/// 校验请求头中的 X-Compute-Token。
+/// </summary>
 bool IsTokenValid(HttpRequest request, string? configuredToken)
 {
     if (string.IsNullOrWhiteSpace(configuredToken)) return true;
@@ -98,6 +123,9 @@ bool IsTokenValid(HttpRequest request, string? configuredToken)
         && CryptographicEquals(supplied, configuredToken);
 }
 
+/// <summary>
+/// 恒定时间比较两个字符串，防止时序侧信道攻击。
+/// </summary>
 bool CryptographicEquals(string left, string right)
 {
     var leftBytes = System.Text.Encoding.UTF8.GetBytes(left);
@@ -105,6 +133,9 @@ bool CryptographicEquals(string left, string right)
     return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
 }
 
+/// <summary>
+/// 执行单个玩家快照的确定性模拟快进。
+/// </summary>
 AdvanceJobResult AdvanceJob(AdvanceJobRequest job)
 {
     if (job.JobId == Guid.Empty || job.PlayerId == Guid.Empty || string.IsNullOrWhiteSpace(job.PayloadBase64))
@@ -141,18 +172,30 @@ AdvanceJobResult AdvanceJob(AdvanceJobRequest job)
     }
 }
 
+/// <summary>
+/// 批处理任务请求。
+/// </summary>
 public sealed record AdvanceBatchRequest(IReadOnlyList<AdvanceJobRequest> Jobs);
 
+/// <summary>
+/// 单个玩家快照计算任务。
+/// </summary>
 public sealed record AdvanceJobRequest(
     Guid JobId,
     Guid PlayerId,
     string PayloadBase64,
     long TargetUnixMilliseconds);
 
+/// <summary>
+/// 批处理任务响应。
+/// </summary>
 public sealed record AdvanceBatchResponse(
     IReadOnlyList<AdvanceJobResult> Jobs,
     string GameDataFingerprint);
 
+/// <summary>
+/// 单个玩家快照计算结果。
+/// </summary>
 public sealed record AdvanceJobResult(
     Guid JobId,
     Guid PlayerId,

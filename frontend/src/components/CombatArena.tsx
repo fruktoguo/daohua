@@ -13,6 +13,7 @@ import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { VectorCharacter, resolveCharacterKind } from './VectorCharacter'
 
+/** 资源条数值变动特效记录（跳字与血条破裂碎片） */
 interface ResourceEffect {
   id: number
   delta: number
@@ -21,13 +22,16 @@ interface ResourceEffect {
   lane: number
 }
 
+/** 实体动作类型（攻击或施法） */
 type ActorMotionKind = 'attack' | 'cast'
 
+/** 实体行动动作状态 */
 interface ActorMotion {
   id: number
   kind: ActorMotionKind
 }
 
+/** 实体受击震颤与冲击特效状态 */
 interface ActorImpact {
   id: number
   distance: number
@@ -37,25 +41,40 @@ interface ActorImpact {
 // 单次损失低于最大值 2% 时不产生断裂碎片(如持续伤害的小额跳数)
 const resourceShardMinimumRatio = 0.02
 
+/** 动作前摇时间（毫秒） */
 const actorMotionLeadMilliseconds: Record<ActorMotionKind, number> = {
   attack: 170,
   cast: 300,
-}
+  }
 
+/** 动作持续时间（毫秒） */
 const actorMotionDurationMilliseconds: Record<ActorMotionKind, number> = {
   attack: 520,
   cast: 720,
 }
 
+/**
+ * 战场生命/真元资源条组件 (ArenaResource)
+ *
+ * 渲染角色气血 (HP) 与灵力 (MP) 仪表盘。
+ * 当数值发生变化时：
+ * 1. 产生向上飘散的增减跳字浮动动画 (+/- delta)；
+ * 2. 受到大额伤害时（>= 最大值 2%），在受损区间生成带物理位移与旋转的血条碎裂切片特效 (Shards)；
+ * 3. 具有自动清理定时器以防内存泄漏。
+ */
 function ArenaResource({
   actorKey,
   value,
   max,
   tone,
 }: {
+  /** 实体唯一标识符（切换目标时重置特效） */
   actorKey: string
+  /** 当前数值 */
   value: number
+  /** 最大上限数值 */
   max: number
+  /** 色调类型：hp 气血红 / mp 灵力蓝 */
   tone: 'hp' | 'mp'
 }): React.JSX.Element {
   const normalizedMax = Math.max(1, max)
@@ -152,6 +171,12 @@ function ArenaResource({
   )
 }
 
+/**
+ * 平滑行动条填充组件 (SmoothActionFill)
+ *
+ * 采用 Web Animations API (Element.animate) 结合服务端绝对截止时间戳，
+ * 在跨帧与网络同步间隔中提供 60fps 丝滑线性进度填充，自动对齐时钟漂移。
+ */
 function SmoothActionFill({ action }: { action?: CombatActionState | null }): React.JSX.Element {
   const fillRef = useRef<HTMLElement>(null)
   const animationRef = useRef<Animation | null>(null)
@@ -216,11 +241,18 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
   return <b ref={fillRef} />
 }
 
+/**
+ * 行动条倒计时文字徽章 (ActionCountdownBadge)
+ *
+ * 基于 requestAnimationFrame 高频更新显示当前技能名称与精确到 0.1s 的倒计时。
+ */
 const ActionCountdownBadge = memo(function ActionCountdownBadge({
   action,
   role,
 }: {
+  /** 当前行动状态 */
   action?: CombatActionState | null
+  /** 角色身份：player 己方 / enemy 敌方 */
   role: 'player' | 'enemy'
 }): React.JSX.Element {
   const t = useT()
@@ -291,6 +323,9 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
   return <span className="arena-action-badge" ref={badgeRef} style={{ display: 'none' }} />
 })
 
+/**
+ * 角色行动条组合容器 (ArenaActionBar)
+ */
 function ArenaActionBar({ action, role }: { action?: CombatActionState | null; role: 'player' | 'enemy' }): React.JSX.Element {
   const isRevivalAction = action?.kind === 'respawn' || action?.name?.includes('复活') || action?.name?.includes('复起') || action?.name?.includes('还魂')
   const effectiveAction = role === 'enemy' && isRevivalAction ? null : action
@@ -304,6 +339,11 @@ function ArenaActionBar({ action, role }: { action?: CombatActionState | null; r
   )
 }
 
+/**
+ * 战场 Buff 方块组件 (ArenaBuffSquare)
+ *
+ * 具备圆形 SVG 环形倒计时动画遮罩与悬浮详细属性气泡卡片。
+ */
 function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   const t = useT()
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
@@ -402,6 +442,9 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   )
 }
 
+/**
+ * 实体增益/减益 Buff 列表横条组件
+ */
 function ArenaActorBuffs({ buffs = [] }: { buffs?: readonly Buff[] }): React.JSX.Element | null {
   const t = useT()
   if (!buffs || buffs.length === 0) return null
@@ -415,6 +458,9 @@ function ArenaActorBuffs({ buffs = [] }: { buffs?: readonly Buff[] }): React.JSX
   )
 }
 
+/**
+ * 历练/搜寻阶段垂直或水平平滑填充条组件
+ */
 function ArenaPhaseFill({
   expedition,
   orientation = 'vertical',
@@ -465,6 +511,9 @@ function ArenaPhaseFill({
   return <i ref={fillRef} />
 }
 
+/**
+ * 战场中心历练/搜寻阶段状态告示牌组件
+ */
 function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): React.JSX.Element {
   const t = useT()
   const isInitialSearch = expedition.phase === 'initial-search'
@@ -491,6 +540,11 @@ function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): Re
   )
 }
 
+/**
+ * 战场头像分发渲染组件 (ArenaPortrait)
+ *
+ * 支持 vector 矢量国风修仙人物、image 远程图片/海报 poster，以及 text 单字徽标优雅降级。
+ */
 function ArenaPortrait({
   fallback,
   visual,
@@ -519,12 +573,24 @@ function ArenaPortrait({
   return <VectorCharacter isDead={isDead} kind={kind} role={role} />
 }
 
+/**
+ * 解析行动对应的动画触发类型 (attack 普攻挥砍 / cast 施法蓄力)
+ */
 function resolveActorMotionKind(action?: CombatActionState | null): ActorMotionKind | null {
   if (action?.kind === 'cast') return 'cast'
   if (action?.kind === 'attack') return 'attack'
   return null
 }
 
+/**
+ * 九宫格战斗实体卡片组件 (ArenaActor)
+ *
+ * 封装单个参战角色（己方或敌方）的全部实时状态渲染：
+ * 1. 顶部名字与气血/法力双资源条；
+ * 2. 形象立绘台、受击震颤 Impact 粒子、施法/攻击雷光剑气特效 FX；
+ * 3. 底部读条进度与生效 Buff 悬浮气泡；
+ * 4. 支持键盘与点击唤起属性查看模态窗。
+ */
 function ArenaActor({
   actorKey,
   actorId,
@@ -681,13 +747,22 @@ function ArenaActor({
   )
 }
 
+/**
+ * 非战斗生活行动总目标与轮次进度卡片 (ArenaLifeGoalCard)
+ *
+ * 当玩家队列首项为炼丹、打坐修炼、游历采集等生活类行动时，
+ * 右侧敌方九宫格无缝切换为此卡片，显示目标产物大图标、计划总产出、所需原料消耗清单与平滑进度条。
+ */
 function ArenaLifeGoalCard({
   queueEntry,
   actionDef,
   onStop,
 }: {
+  /** 当前正在执行的队列条目 */
   queueEntry?: QueueEntry | null
+  /** 对应动作定义详情 */
   actionDef?: ActionDefinition | null
+  /** 中止当前生活行动回调 */
   onStop?: () => void
 }): React.JSX.Element {
   const t = useT()
@@ -807,6 +882,9 @@ function ArenaLifeGoalCard({
   )
 }
 
+/**
+ * 战场空闲待机提示卡片 (ArenaIdleCard)
+ */
 function ArenaIdleCard(): React.JSX.Element {
   const t = useT()
   return (
@@ -818,11 +896,15 @@ function ArenaIdleCard(): React.JSX.Element {
   )
 }
 
+/** 角色属性行数据 */
 interface AttributeRow {
   label: string
   value: string
 }
 
+/**
+ * 参战角色详细属性与生效 Buff 模态窗组件 (CharacterAttributeModal)
+ */
 function CharacterAttributeModal({
   baseRows,
   buffs,
@@ -865,6 +947,9 @@ function CharacterAttributeModal({
   )
 }
 
+/**
+ * 根据敌怪名称或遭遇定义解析出具体的敌怪数值模型 (CombatantDefinition)
+ */
 function resolveEnemyDefinition(
   enemyName: string,
   activeEncounter: CombatEncounterDefinition | null | undefined,
@@ -902,6 +987,19 @@ interface EnemyDisplayState {
   visual?: CharacterVisual | null
 }
 
+/**
+ * 主战场竞技场核心组件 (CombatArena)
+ *
+ * 核心功能与交互流程：
+ * 1. 左侧己方 3x3 阵型 (九宫格，1号位在前排中间靠近敌方)；
+ * 2. 居中阶段提示：在搜寻 (initial-search / search) 阶段居中展示倒计时罗盘；
+ * 3. 右侧动态区域：
+ *    - 战斗状态：展示敌方 3x3 阵型与敌方实体状态；
+ *    - 生活行动状态：展示炼丹/修炼/探索等行动总目标进度卡片 (ArenaLifeGoalCard)；
+ *    - 空闲状态：展示空闲太极符文卡片 (ArenaIdleCard)；
+ * 4. 底部快捷操作条：支持快捷终止当前队列或发起可用战斗动作；
+ * 5. 点击角色实体即刻呼出详细攻防/博弈/抗性属性模态窗 (CharacterAttributeModal)。
+ */
 export const CombatArena = memo(function CombatArena({
   onOpenAction,
 }: {

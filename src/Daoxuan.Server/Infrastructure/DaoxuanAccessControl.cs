@@ -4,15 +4,21 @@ using System.Text;
 namespace Daoxuan.Server.Infrastructure;
 
 /// <summary>
-/// 玩家级接口的可选共享访问令牌校验。
-/// 安全假设：当前客户端仅以本地 UUID 标识玩家，playerId 即权限；本令牌用于公网部署时
-/// 阻止任意访客枚举或接管他人 playerId，属于部署者持有的共享口令，不是账号级鉴权。
-/// 开放注册或涉及真实资产前，仍须补齐完整的身份认证、授权与审计。
+/// 玩家级接口共享访问控制 (DaoxuanAccessControl)。
+/// <para>
+/// 职责与安全说明：
+/// 1. 当前客户端使用本地 UUID 标识玩家，未配置商业鉴权前使用共享口令 (Server:AccessToken) 保护 API 与 WebSocket。
+/// 2. 未配置令牌时默认放行（便于本地开发）；配置后强制要求调用方提供正确 Token。
+/// 3. 使用 <see cref="CryptographicOperations.FixedTimeEquals"/> 恒定时间比较，防止时序侧信道攻击 (Timing Attack)。
+/// </para>
 /// </summary>
 public sealed class DaoxuanAccessControl
 {
     private readonly byte[]? _expectedToken;
 
+    /// <summary>
+    /// 从应用配置加载 AccessToken 并预编码为 UTF8 字节。
+    /// </summary>
     public DaoxuanAccessControl(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

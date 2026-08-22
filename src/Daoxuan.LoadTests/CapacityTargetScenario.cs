@@ -6,6 +6,10 @@ using Daoxuan.Protocol;
 
 namespace Daoxuan.LoadTests;
 
+/// <summary>
+/// 2c4g/40g 服务器硬件目标容量门禁压测场景。
+/// 验证 5000+ 注册账号存储预算（<=256MB）、500 高峰命令网络吞吐（<=512KB/s）、2000 冷挂机 1 小时补算耗时（<=30s）以及常驻工作集内存（<=768MB）。
+/// </summary>
 public static class CapacityTargetScenario
 {
     private const int RegisteredAccountTarget = 5_000;
@@ -17,6 +21,13 @@ public static class CapacityTargetScenario
     private const double IdleComputeBudgetMilliseconds = 30_000;
     private const long WorkingSetBudgetBytes = 768L * 1024 * 1024;
 
+    /// <summary>
+    /// 执行容量门禁全项验收：
+    /// 1. 序列化并统计 5000 个玩家账号与全量快照体积，核验存储预算；
+    /// 2. 编码 500 个并发命令包体，核验峰值带宽预算；
+    /// 3. 并行多线程快进推进 2000 个离线挂机玩家 1 小时进度，核验 CPU 补算耗时；
+    /// 4. 统计物理工作集内存（WorkingSet64），核验 2c4g 内存预算。
+    /// </summary>
     public static LoadTestReport Run(LoadTestOptions options)
     {
         _ = options;

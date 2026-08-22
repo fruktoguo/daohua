@@ -1,3 +1,12 @@
+// ============================================================================
+// Daoxuan.Server 宿主启动入口 (Program.cs)
+// 职责：
+// 1. 初始化 WebApplication 宿主环境，加载游戏数据与静态配置。
+// 2. 装配依赖注入拓扑（数据库、存储适配器、市场引擎、模拟时钟、持久化队列与后台服务）。
+// 3. 配置 HTTP 中间件（CORS、静态文件、WebSocket 协议升级、HTTP 缓存）。
+// 4. 注册 RESTful API 路由（健康检查、图鉴配置、账号鉴权、市场交易、监控指标）与 WebSocket 入口。
+// ============================================================================
+
 using System.Reflection;
 using Daoxuan.Domain.GameData;
 using Daoxuan.Domain.Market;
@@ -9,11 +18,18 @@ using YuoCore.Persistence;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ----------------------------------------------------------------------------
+// 1. 游戏数据与配置加载
+// ----------------------------------------------------------------------------
 var configuredGameDataDirectory = builder.Configuration["GameData:Directory"];
 var gameData = string.IsNullOrWhiteSpace(configuredGameDataDirectory)
     ? DaoxuanGameData.Current
     : DaoxuanGameData.LoadFromDirectory(ResolveGameDataPath(builder.Environment.ContentRootPath, configuredGameDataDirectory));
 
+/// <summary>
+/// 解析游戏数据目录路径，按优先级从 ContentRoot、上级目录、工作目录与程序基目录查找 manifest.json。
+/// </summary>
 static string ResolveGameDataPath(string contentRoot, string configuredPath)
 {
     if (Path.IsPathRooted(configuredPath)) return configuredPath;
@@ -33,6 +49,9 @@ static string ResolveGameDataPath(string contentRoot, string configuredPath)
     }
     return Path.GetFullPath(Path.Combine(contentRoot, configuredPath));
 }
+// ----------------------------------------------------------------------------
+// 2. 宿主网络绑定与 Kestrel 配置
+// ----------------------------------------------------------------------------
 var configuredServerUrls = builder.Configuration["Server:Urls"];
 var hasStandardAspNetBinding =
     !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))
@@ -55,6 +74,9 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.Server.Kestrel.Connections", Log
 builder.Logging.AddFilter("Microsoft.AspNetCore.Http.Result", LogLevel.Warning);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Cors.Infrastructure.CorsService", LogLevel.Warning);
 
+// ----------------------------------------------------------------------------
+// 3. 跨域安全策略 (CORS)
+// ----------------------------------------------------------------------------
 var corsOrigins = builder.Configuration
     .GetSection("Server:CorsOrigins")
     .Get<string[]>()?
@@ -82,6 +104,10 @@ if (corsOrigins.Length > 0)
             .AllowCredentials());
     });
 }
+
+// ----------------------------------------------------------------------------
+// 4. 存储、市场与分布式计算选项配置
+// ----------------------------------------------------------------------------
 var persistenceQueueCapacity = builder.Configuration.GetValue<int?>("Storage:PersistenceQueueCapacity") ?? 65_536;
 if (persistenceQueueCapacity is < 1 or > 1_000_000)
 {
@@ -110,11 +136,19 @@ var marketPartitionCount = builder.Configuration.GetValue<int?>("Market:Partitio
 var marketPartitionId = builder.Configuration.GetValue<int?>("Market:PartitionId") ?? 0;
 var marketTopology = new DaoxuanMarketTopology(marketPartitionId, marketPartitionCount);
 
+// ----------------------------------------------------------------------------
+// 5. 依赖注入拓扑装配 (DI Registration)
+// ----------------------------------------------------------------------------
+// 数据库连接池与基础选项
 builder.Services.AddSingleton(databaseOptions);
 builder.Services.AddSingleton(distributedComputeOptions);
 builder.Services.AddSingleton(marketTopology);
 builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(databaseOptions.ConnectionString!));
+
+// 数据库架构迁移后台服务
 builder.Services.AddHostedService<DaoxuanPostgresSchemaHostedService>();
+
+// 仓储层实现：快照存储、账号存储、出件箱、市场账本
 builder.Services.AddSingleton<IYuoSnapshotStore, DaoxuanPostgresSnapshotStore>();
 builder.Services.AddSingleton<IDaoxuanAccountStore, DaoxuanPostgresAccountStore>();
 if (durableOutboxEnabled)
@@ -123,13 +157,15 @@ if (durableOutboxEnabled)
 }
 builder.Services.AddSingleton<IDaoxuanMarketLedgerStore, DaoxuanPostgresMarketLedgerStore>();
 
+// 持久化调度队列
 builder.Services.AddSingleton(new YuoPersistenceQueue(persistenceQueueCapacity));
 if (durableOutboxEnabled)
 {
     builder.Services.AddSingleton<YuoDurablePersistenceQueue>();
 }
-
 builder.Services.AddSingleton<IDaoxuanPersistenceQueue, DaoxuanPersistenceDispatcher>();
+
+// 领域与运行时服务：市场引擎、协调器、时钟、宿主与安全控制
 builder.Services.AddSingleton(new DaoxuanMarketEngine(shardCount: 64));
 builder.Services.AddSingleton<DaoxuanMarketCoordinator>();
 builder.Services.AddSingleton<DaoxuanMarketRuntime>();
@@ -137,6 +173,8 @@ builder.Services.AddSingleton<DaoxuanSimulationScheduleSignal>();
 builder.Services.AddSingleton<DaoxuanSimulationClock>();
 builder.Services.AddSingleton<DaoxuanGameHost>();
 builder.Services.AddSingleton<DaoxuanAccessControl>();
+
+// 后台生命周期托管服务 (IHostedService)
 if (durableOutboxEnabled)
 {
     builder.Services.AddHostedService<DaoxuanPersistenceReplayHostedService>();
@@ -151,6 +189,9 @@ if (distributedComputeOptions.Enabled)
 }
 builder.Services.AddHostedService<DaoxuanMaintenanceHostedService>();
 
+// ----------------------------------------------------------------------------
+// 6. WebApplication 构建与启动日志
+// ----------------------------------------------------------------------------
 var app = builder.Build();
 var releaseVersion = typeof(Program).Assembly
     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
@@ -178,11 +219,15 @@ if (corsOrigins.Length > 0)
     app.UseCors();
 }
 
+// ----------------------------------------------------------------------------
+// 7. HTTP 中间件管道配置
+// ----------------------------------------------------------------------------
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = context =>
     {
+        // 针对 Vite 打包的静态资产使用长期不可变缓存，其余 HTML/JSON 默认禁止缓存
         context.Context.Response.Headers.CacheControl =
             context.Context.Request.Path.StartsWithSegments("/assets")
                 ? "public, max-age=31536000, immutable"
@@ -194,6 +239,10 @@ app.UseWebSockets(new WebSocketOptions
     KeepAliveInterval = TimeSpan.FromSeconds(20)
 });
 
+// ----------------------------------------------------------------------------
+// 8. 健康检查与就绪探针 (Health Check & Readiness)
+// ----------------------------------------------------------------------------
+// 存活探针：用于容器探活与暴露非敏感版本及数据指纹
 app.MapGet("/healthz", () => Results.Ok(new
 {
     status = "ok",
@@ -202,6 +251,8 @@ app.MapGet("/healthz", () => Results.Ok(new
     gameDataVersion = gameData.ContentVersion,
     gameDataFingerprint = gameData.Fingerprint
 }));
+
+// 就绪探针：用于监控市场主分片、在线玩家数、会话数与版本修订号
 app.MapGet("/readyz", (DaoxuanGameHost host, DaoxuanMarketRuntime market) => Results.Ok(new
 {
     status = "ready",
@@ -228,12 +279,20 @@ app.MapGet("/readyz", (DaoxuanGameHost host, DaoxuanMarketRuntime market) => Res
         market.Revision
     }
 }));
+
+// ----------------------------------------------------------------------------
+// 9. 静态只读图鉴与配置 API
+// ----------------------------------------------------------------------------
 app.MapGet("/api/actions", () => Results.Ok(DaoxuanActionCatalog.All.Select(DaoxuanStateMapper.ToAction)));
 app.MapGet("/api/items", () => Results.Ok(DaoxuanItemCatalog.All.Select(DaoxuanStateMapper.ToItemDefinition)));
 app.MapGet("/api/combat/abilities", () => Results.Ok(DaoxuanCombatCatalog.AllAbilities.Select(DaoxuanStateMapper.ToCombatAbility)));
 app.MapGet("/api/combat/equipment", () => Results.Ok(DaoxuanCombatCatalog.AllEquipment.Select(DaoxuanStateMapper.ToCombatEquipment)));
 app.MapGet("/api/combat/encounters", () => Results.Ok(DaoxuanCombatCatalog.AllEncounters.Select(DaoxuanStateMapper.ToCombatEncounter)));
 app.MapGet("/api/world/maps", () => Results.Ok(DaoxuanWorldCatalog.All.Select(DaoxuanStateMapper.ToWorldMap)));
+
+// ----------------------------------------------------------------------------
+// 10. 账号注册与登录鉴权 API
+// ----------------------------------------------------------------------------
 app.MapPost("/api/auth/register", async (
     RegisterAccountRequest request,
     IDaoxuanAccountStore accountStore,
@@ -267,6 +326,7 @@ app.MapPost("/api/auth/register", async (
         result.SequenceId,
         result.Message));
 });
+
 app.MapPost("/api/auth/login", async (
     LoginAccountRequest request,
     IDaoxuanAccountStore accountStore,
@@ -281,7 +341,16 @@ app.MapPost("/api/auth/login", async (
         result.SequenceId,
         result.Message));
 });
+
+// ----------------------------------------------------------------------------
+// 11. 运行时指标与监控 API
+// ----------------------------------------------------------------------------
 app.MapGet("/api/metrics", (DaoxuanGameHost host) => Results.Ok(host.GetMetrics()));
+
+// ----------------------------------------------------------------------------
+// 12. 市场交易 API (订单簿、拓扑、指标、挂单、撤单、资产提取与订单查询)
+// ----------------------------------------------------------------------------
+// 查询指定交易品种的订单簿深度快照（带 ETag 弱缓存验证）
 app.MapGet("/api/market/book", (
     string? itemId,
     int? enhancementLevel,
@@ -351,6 +420,8 @@ app.MapGet("/api/market/book", (
     DaoxuanHttpCaching.ApplyHeaders(httpResponse, etag);
     return Results.Ok(DaoxuanMarketMapper.ToDto(read.Snapshot));
 });
+
+// 查询当前市场分片拓扑元数据
 app.MapGet("/api/market/topology", (DaoxuanMarketRuntime market) => Results.Ok(new
 {
     provider = market.StorageProvider,
@@ -358,6 +429,8 @@ app.MapGet("/api/market/topology", (DaoxuanMarketRuntime market) => Results.Ok(n
     partitionCount = market.PartitionCount,
     algorithm = market.PartitionAlgorithm
 }));
+
+// 查询市场撮合引擎运行指标
 app.MapGet("/api/market/metrics", (
     HttpRequest httpRequest,
     HttpResponse httpResponse,
@@ -373,6 +446,8 @@ app.MapGet("/api/market/metrics", (
     DaoxuanHttpCaching.ApplyHeaders(httpResponse, etag);
     return Results.Ok(DaoxuanMarketMapper.ToDto(market.GetMetrics()));
 });
+
+// 提交玩家市场限价挂单
 app.MapPost("/api/players/{playerId:guid}/market/orders", async (
     Guid playerId,
     DaoxuanMarketPlaceRequest request,
@@ -422,6 +497,8 @@ app.MapPost("/api/players/{playerId:guid}/market/orders", async (
         cancellationToken);
     return Results.Ok(DaoxuanMarketMapper.ToDto(outcome));
 });
+
+// 撤销玩家在市场上的挂单
 app.MapDelete("/api/players/{playerId:guid}/market/orders/{orderId}", async (
     Guid playerId,
     string orderId,
@@ -439,6 +516,8 @@ app.MapDelete("/api/players/{playerId:guid}/market/orders/{orderId}", async (
     var outcome = await host.CancelMarketOrderAsync(playerId, orderId, cancellationToken);
     return Results.Ok(DaoxuanMarketMapper.ToDto(outcome));
 });
+
+// 提取玩家在市场已撮合或已撤单归还的暂存资产
 app.MapPost("/api/players/{playerId:guid}/market/claim", async (
     Guid playerId,
     HttpRequest httpRequest,
@@ -455,6 +534,8 @@ app.MapPost("/api/players/{playerId:guid}/market/claim", async (
     var outcome = await host.ClaimMarketAssetsAsync(playerId, cancellationToken);
     return Results.Ok(DaoxuanMarketMapper.ToDto(outcome));
 });
+
+// 查询单笔市场订单状态
 app.MapGet("/api/market/orders/{orderId}", (
     string orderId,
     DaoxuanMarketEngine market) =>
@@ -463,6 +544,8 @@ app.MapGet("/api/market/orders/{orderId}", (
         ? Results.Ok(DaoxuanMarketMapper.ToDto(order!))
         : Results.NotFound(new { code = "ORDER_NOT_FOUND", message = "订单不存在或已离开活动订单路由。" });
 });
+
+// 查询指定玩家当前在市场的挂单列表
 app.MapGet("/api/players/{playerId:guid}/market/orders", (
     Guid playerId,
     int? limit,
@@ -485,6 +568,11 @@ app.MapGet("/api/players/{playerId:guid}/market/orders", (
     DaoxuanHttpCaching.ApplyHeaders(httpResponse, etag);
     return Results.Ok(market.GetActiveOrders(playerId, normalizedLimit).Select(DaoxuanMarketMapper.ToDto));
 });
+
+// ----------------------------------------------------------------------------
+// 13. 玩家快照与调试接口
+// ----------------------------------------------------------------------------
+// 获取指定玩家当前的完整快照状态
 app.MapGet("/api/players/{playerId:guid}", async (
     Guid playerId,
     HttpRequest httpRequest,
@@ -501,6 +589,8 @@ app.MapGet("/api/players/{playerId:guid}", async (
 
     return Results.Ok(await host.GetSnapshotAsync(playerId, cancellationToken));
 });
+
+// 开发环境专用：快进指定玩家的离线模拟时间
 if (app.Environment.IsDevelopment())
 {
     app.MapPost("/api/debug/fast-forward", async (
@@ -517,6 +607,10 @@ if (app.Environment.IsDevelopment())
         return Results.Ok(snapshot);
     });
 }
+
+// ----------------------------------------------------------------------------
+// 14. WebSocket 终结点与单页应用 Fallback
+// ----------------------------------------------------------------------------
 app.Map("/ws", DaoxuanWebSocketEndpoint.HandleAsync);
 app.MapFallback("/api/{**path}", () => Results.NotFound(new
 {
@@ -527,5 +621,9 @@ app.MapFallbackToFile("index.html");
 
 app.Run();
 
+/// <summary>
+/// 调试快进请求包体。
+/// </summary>
 public sealed record FastForwardRequest(Guid PlayerId, int Seconds);
+
 public partial class Program;

@@ -6,7 +6,8 @@ using Daoxuan.Domain.Simulation;
 namespace Daoxuan.LoadTests;
 
 /// <summary>
-/// 验证订单到期索引的低频回收成本。该场景只创建卖单，不把撮合和回收耗时混在一起。
+/// 灵市订单 30 天到期低频批量回收压测场景。
+/// 并发挂单模拟海量已超期卖单，通过时间索引高效检索并批量释放超期订单至待认领列表，不扫描全量历史订单。
 /// </summary>
 public static class MarketExpiryLoadScenario
 {
@@ -18,6 +19,12 @@ public static class MarketExpiryLoadScenario
         DaoxuanItemIds.FireTalisman
     ];
 
+    /// <summary>
+    /// 执行灵市过期订单批量回收压测：
+    /// 1. 并发生成指定玩家规模的已过期卖单并注入 64 分片撮合引擎；
+    /// 2. 触发 Expire 批量回收逻辑，度量检索与状态流转耗时；
+    /// 3. 统计回收前后内存变化与盘口活跃订单数。
+    /// </summary>
     public static LoadTestReport Run(LoadTestOptions options)
     {
         GC.Collect();

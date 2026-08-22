@@ -1,11 +1,22 @@
+/**
+ * 存储在本地 IndexedDB 中的原始日志数据结构
+ */
 export interface StoredGameLog {
+  /** 日志唯一 ID (格式如 "${playerId}:server:${sequence}") */
   id: string
+  /** 归属玩家 ID */
   playerId: string
+  /** 发生时间戳（毫秒） */
   timestampMs: number
+  /** 事件全局序列号 */
   sequence: number
+  /** 原始日志模板字符串 */
   template: string
 }
 
+/**
+ * 分页游标定义（按时间戳与序列号复合检索）
+ */
 export interface GameLogCursor {
   timestampMs: number
   sequence: number
@@ -16,6 +27,9 @@ const DATABASE_VERSION = 1
 const LOG_STORE = 'logs'
 const PLAYER_TIME_INDEX = 'playerTime'
 
+/**
+ * 等待 IndexedDB 事务完成的 Promise 包装
+ */
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     transaction.addEventListener('complete', () => resolve(), { once: true })
@@ -24,6 +38,9 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   })
 }
 
+/**
+ * 初始化并打开 IndexedDB 本地日志数据库
+ */
 function openDatabase(): Promise<IDBDatabase> {
   if (!('indexedDB' in window)) return Promise.reject(new Error('当前浏览器不支持 IndexedDB。'))
   return new Promise((resolve, reject) => {
@@ -34,6 +51,7 @@ function openDatabase(): Promise<IDBDatabase> {
         ? request.transaction?.objectStore(LOG_STORE)
         : database.createObjectStore(LOG_STORE, { keyPath: 'id' })
       if (store && !store.indexNames.contains(PLAYER_TIME_INDEX)) {
+        // 创建复合索引，支持按玩家、时间戳与序列号快速倒序查询
         store.createIndex(PLAYER_TIME_INDEX, ['playerId', 'timestampMs', 'sequence'], { unique: false })
       }
     })
@@ -43,6 +61,9 @@ function openDatabase(): Promise<IDBDatabase> {
   })
 }
 
+/**
+ * 逆序读取游标范围内的指定条数记录并按时间升序返回
+ */
 function readCursor(
   index: IDBIndex,
   range: IDBKeyRange,
@@ -65,9 +86,15 @@ function readCursor(
   })
 }
 
+/**
+ * 本地 IndexedDB 日志存储仓储
+ */
 export class GameLogRepository {
   private readonly database = openDatabase()
 
+  /**
+   * 批量持久化日志记录
+   */
   async appendBatch(entries: readonly StoredGameLog[]): Promise<void> {
     if (entries.length === 0) return
     const database = await this.database
@@ -77,6 +104,9 @@ export class GameLogRepository {
     await transactionDone(transaction)
   }
 
+  /**
+   * 加载指定玩家最新的 limit 条日志
+   */
   async loadLatest(playerId: string, limit: number): Promise<StoredGameLog[]> {
     const database = await this.database
     const transaction = database.transaction(LOG_STORE, 'readonly')
@@ -88,6 +118,9 @@ export class GameLogRepository {
     return readCursor(index, range, limit)
   }
 
+  /**
+   * 分页向上拉取早于游标 cursor 的历史日志记录
+   */
   async loadBefore(playerId: string, cursor: GameLogCursor, limit: number): Promise<StoredGameLog[]> {
     const database = await this.database
     const transaction = database.transaction(LOG_STORE, 'readonly')

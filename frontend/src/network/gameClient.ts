@@ -8,6 +8,9 @@ import { fetchActionDefinitions, fetchCombatAbilities, fetchCombatEncounters, fe
 
 const decoder = new TextDecoder()
 
+/**
+ * 构造带有玩家标识、账号与访问令牌的 WebSocket 连接地址
+ */
 function getEndpoint(playerId: string, account?: string, name?: string): string {
   const configured = import.meta.env.VITE_WS_URL as string | undefined
   const fallback = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
@@ -20,6 +23,10 @@ function getEndpoint(playerId: string, account?: string, name?: string): string 
   return endpoint.toString()
 }
 
+/**
+ * 道化太初核心 WebSocket 游戏客户端
+ * 负责维护与服务端的长连接、断线指数退避重连、静态目录加载、双向心跳与二进制/JSON 数据包流转
+ */
 export class DaoxuanGameClient {
   private socket: WebSocket | null = null
   private reconnectTimer: number | undefined
@@ -34,6 +41,9 @@ export class DaoxuanGameClient {
   account = getStoredAccount()?.account ?? ''
   characterName = getStoredAccount()?.name ?? ''
 
+  /**
+   * 启动游戏网络连接
+   */
   connect(): void {
     const accountInfo = getStoredAccount()
     if (!accountInfo) {
@@ -51,10 +61,16 @@ export class DaoxuanGameClient {
     this.open()
   }
 
+  /**
+   * 退出登录并清理账号
+   */
   logout(): void {
     clearStoredAccount()
   }
 
+  /**
+   * 释放客户端资源并优雅关闭 WebSocket
+   */
   dispose(): void {
     this.disposed = true
     if (this.reconnectTimer !== undefined) {
@@ -78,6 +94,12 @@ export class DaoxuanGameClient {
     this.open()
   }
 
+  /**
+   * 向服务端发送业务操作命令 (Command Packet)
+   * @param command 命令名称（如 'enqueue_action', 'set_combat_loadout' 等）
+   * @param payload 命令参数载荷
+   * @returns 是否成功发出
+   */
   sendCommand(command: string, payload: unknown): boolean {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
@@ -96,6 +118,9 @@ export class DaoxuanGameClient {
     return true
   }
 
+  /**
+   * 内部打开 WebSocket 连接并配置事件监听
+   */
   private open(): void {
     if (this.disposed || !this.playerId) return
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
@@ -139,6 +164,9 @@ export class DaoxuanGameClient {
     })
   }
 
+  /**
+   * 连接建立后异步并发拉取最新的各类静态数据目录
+   */
   private async loadCatalogs(): Promise<void> {
     this.catalogAbortController?.abort()
     const controller = new AbortController()
@@ -167,6 +195,9 @@ export class DaoxuanGameClient {
     }
   }
 
+  /**
+   * 向服务端发送初始 Hello 握手包
+   */
   private sendHello(): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
     const packet: Packet = {
@@ -178,6 +209,9 @@ export class DaoxuanGameClient {
     this.socket.send(new TextEncoder().encode(JSON.stringify(packet)))
   }
 
+  /**
+   * 处理服务端下发的 WebSocket 消息包
+   */
   private async handleMessage(data: unknown): Promise<void> {
     const bytes = data instanceof Blob
       ? new Uint8Array(await data.arrayBuffer())
@@ -228,4 +262,5 @@ export class DaoxuanGameClient {
   }
 }
 
+/** 全局单例游戏网络客户端 */
 export const gameClient = new DaoxuanGameClient()

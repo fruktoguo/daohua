@@ -7,8 +7,18 @@ using Daoxuan.Protocol;
 
 namespace Daoxuan.LoadTests;
 
+/// <summary>
+/// 在线多长连接 WebSocket 实时交互负载压测场景。
+/// 模拟真实 ClientWebSocket 并发长连接建立、首包快照同步，并在稳态阶段周期性下发二进制命令，度量吞吐帧率与网络收发。
+/// </summary>
 public static class OnlineLoadScenario
 {
+    /// <summary>
+    /// 异步执行在线客户端长连接压测：
+    /// 1. 并发建立指定数量的 WebSocket 长连接，等待首帧全量快照同步；
+    /// 2. 周期性（每秒）分发业务指令（hello、set_auto_use、set_loop）；
+    /// 3. 统计网络收发字节、帧数、服务端 CPU/内存抖动与错误连接数。
+    /// </summary>
     public static async Task<LoadTestReport> RunAsync(LoadTestOptions options)
     {
         GC.Collect();

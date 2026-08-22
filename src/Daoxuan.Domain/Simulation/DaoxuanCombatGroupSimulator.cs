@@ -5,8 +5,24 @@ namespace Daoxuan.Domain.Simulation;
 public static partial class DaoxuanCombatSimulator
 {
     /// <summary>
-    /// 多敌人遭遇使用独立事件时间轴；单敌人仍走更紧凑的快速路径，二者共享公式、触发器和掉落实现。
+    /// 多敌人遭遇战独立事件时间轴模拟核心逻辑。
+    /// 推进攻击、吟唱、控制、狂暴、恢复与掉落结算。
     /// </summary>
+    /// <param name="playerId">玩家唯一 GUID。</param>
+    /// <param name="loadout">玩家战斗配置装配。</param>
+    /// <param name="activeBuffs">活跃 Buff 列表。</param>
+    /// <param name="inventory">背包物品字典。</param>
+    /// <param name="encounter">遭遇副本关卡配置原型。</param>
+    /// <param name="startedAt">战斗开始时间戳。</param>
+    /// <param name="duration">推进模拟时长。</param>
+    /// <param name="completedEncountersBeforeRun">此前通关遭遇次数。</param>
+    /// <param name="initialPlayerState">玩家入场初始状态。</param>
+    /// <param name="stopAfterFirstOutcome">分出胜负时是否立刻终止。</param>
+    /// <param name="stopAfterFirstVictory">首次胜利时是否立刻终止。</param>
+    /// <param name="playerSpirit">玩家修为总点数。</param>
+    /// <param name="initialAbilityCooldowns">初始技能冷却字典。</param>
+    /// <param name="initialConsumableCooldowns">初始消耗品槽位冷却列表。</param>
+    /// <returns>多目标战斗推演结果。</returns>
     private static DaoxuanCombatRunResult RunGroupEncounter(
         Guid playerId,
         DaoxuanCombatLoadout loadout,

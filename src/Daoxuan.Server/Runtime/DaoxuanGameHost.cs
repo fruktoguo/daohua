@@ -11,9 +11,22 @@ using YuoCore.Runtime;
 
 namespace Daoxuan.Server.Runtime;
 
+/// <summary>
+/// 游戏运行时核心宿主 (DaoxuanGameHost)。
+/// <para>
+/// 职责：
+/// 1. 管理所有在线与活跃玩家的 ECS 实体与状态生命周期，确保在专属 Fiber 上串行调度与确定性快进。
+/// 2. 维护热实体与冷快照 LRU 缓存，平衡内存开销与读盘 I/O。
+/// 3. 管理玩家网络会话 (DaoxuanSession)，广播增量补丁 (Delta) 与全量快照 (Snapshot)。
+/// 4. 路由并执行玩家指令（历练、修炼、背包、突破、改名等）以及市场挂单/撤单/提取资产。
+/// 5. 驱动在线玩家状态定时推进 (AdvanceDueOnlinePlayersAsync) 与持久化刷盘 (Checkpoint/Flush)。
+/// </para>
+/// </summary>
 public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
 {
+    /// <summary>冷玩家在内存中保留的空闲时长阈值（超过后移入冷快照 LRU 缓存并卸载 ECS 实体）。</summary>
     private static readonly TimeSpan ColdPlayerRetention = TimeSpan.FromSeconds(30);
+
     private readonly IYuoSnapshotStore _snapshotStore;
     private readonly IDaoxuanPersistenceQueue _persistenceQueue;
     private readonly DaoxuanMarketRuntime _marketRuntime;
@@ -23,6 +36,7 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
     private readonly YuoFiber _fiber;
     private readonly SemaphoreSlim _ownerGate = new(1, 1);
     private readonly Dictionary<Guid, YuoEntity> _players = [];
+
     // 冷玩家仍保留最新序列化快照，避免断开连接后再次请求必须阻塞 Fiber 做磁盘读取。
     // 容量上限依据：平均每份快照数 KB，2 万份对应数十 MB 内存量级，可长期驻留而不失控。
     // 安全性：冷快照只是内存缓存，每次写入 _coldSnapshots 的同时都会 EnqueueAsync(SaveSnapshotCommand)
@@ -32,6 +46,7 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
     // 不落盘、不打错误日志。
     private const int MaxColdSnapshotCount = 20_000;
     private readonly Dictionary<Guid, byte[]> _coldSnapshots = [];
+
     // LRU 顺序结构：First 为最旧、Last 为最新；与 _coldSnapshots 同在 owner Fiber 上串行访问，无需加锁。
     private readonly LinkedList<Guid> _coldSnapshotLru = [];
     private readonly Dictionary<Guid, LinkedListNode<Guid>> _coldSnapshotLruNodes = [];
@@ -50,6 +65,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
     private int _loadedPlayerCount;
     private bool _disposed;
 
+    /// <summary>
+    /// 初始化游戏运行时宿主并创建专属调度 Fiber。
+    /// </summary>
     public DaoxuanGameHost(
         IYuoSnapshotStore snapshotStore,
         IDaoxuanPersistenceQueue persistenceQueue,
@@ -71,21 +89,35 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         });
     }
 
+    /// <summary>模拟状态演进全局修订版本号。</summary>
     public long SimulationRevision => Volatile.Read(ref _simulationRevision);
+
+    /// <summary>当前在内存中加载的 ECS 实体玩家总数。</summary>
     public int LoadedPlayerCount => Volatile.Read(ref _loadedPlayerCount);
+
+    /// <summary>当前所有已连接的客户端 WebSocket 会话总数。</summary>
     public int ConnectedSessionCount => _sessions.Values.Sum(group => group.Count);
 
+    /// <summary>
+    /// 检查指定角色道号是否已被占用。
+    /// </summary>
     public bool IsPlayerNameTaken(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return false;
         return _takenPlayerNames.ContainsKey(name.Trim());
     }
 
+    /// <summary>
+    /// 分配并获取下一个全局自增账号序列号。
+    /// </summary>
     public long GetNextSequenceId()
     {
         return Interlocked.Increment(ref _maxSequenceId);
     }
 
+    /// <summary>
+    /// 为新注册账号创建初始玩家状态快照并落盘。
+    /// </summary>
     public async Task EnsureRegisteredPlayerSnapshotAsync(
         Guid playerId,
         string name,
@@ -128,11 +160,17 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
             _clock.UtcNow), cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 判断指定玩家当前是否常驻于本地内存（实体或冷快照）。
+    /// </summary>
     public Task<bool> IsPlayerLocallyResidentAsync(Guid playerId, CancellationToken cancellationToken)
     {
         return ExecuteOnOwnerAsync(_ => _players.ContainsKey(playerId) || _coldSnapshots.ContainsKey(playerId), cancellationToken);
     }
 
+    /// <summary>
+    /// 注册客户端会话（默认无指定账号名）。
+    /// </summary>
     public Task<DaoxuanSession> RegisterSessionAsync(
         Guid playerId,
         string? name,
@@ -141,6 +179,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return RegisterSessionAsync(playerId, name, null, cancellationToken);
     }
 
+    /// <summary>
+    /// 注册客户端 WebSocket 会话：确保玩家状态加载、切换为在线状态、调度下次状态跃迁，并下发初始全量快照。
+    /// </summary>
     public async Task<DaoxuanSession> RegisterSessionAsync(
         Guid playerId,
         string? name,
@@ -171,6 +212,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return session;
     }
 
+    /// <summary>
+    /// 注销客户端会话：在没有其他活动连接时将玩家状态置为离线闲置，转为冷快照并提交持久化落盘。
+    /// </summary>
     public async Task UnregisterSessionAsync(DaoxuanSession session, CancellationToken cancellationToken)
     {
         session.Complete();
@@ -205,6 +249,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         }
     }
 
+    /// <summary>
+    /// 处理客户端发来的业务指令（历练、修炼、改名、战斗流派配置、市场交易等），执行确定性模拟并广播增量。
+    /// </summary>
     public async Task<DaoxuanCommandOutcome> HandleCommandAsync(
         Guid playerId,
         DaoxuanIncomingPacket packet,
@@ -290,6 +337,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return new DaoxuanCommandOutcome(result, patch);
     }
 
+    /// <summary>
+    /// 处理来自 WebSocket 的市场挂单、撤单与提取资产指令。
+    /// </summary>
     private async Task<DaoxuanCommandOutcome> HandleMarketCommandAsync(
         Guid playerId,
         string command,
@@ -346,6 +396,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         }
     }
 
+    /// <summary>
+    /// 获取指定玩家在当前时刻的完整状态快照 DTO。
+    /// </summary>
     public async Task<DaoxuanPlayerSnapshotDto> GetSnapshotAsync(
         Guid playerId,
         CancellationToken cancellationToken)
@@ -356,6 +409,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
             cancellationToken);
     }
 
+    /// <summary>
+    /// 在市场引擎上提交限价订单：校验主分片权属、获取市场写租约、扣减玩家资产/物品并撮合交易，最后持久化玩家快照与市场账本。
+    /// </summary>
     public async Task<DaoxuanMarketCommandOutcome> PlaceMarketOrderAsync(
         Guid playerId,
         DaoxuanMarketOrderRequest request,
@@ -402,6 +458,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return DaoxuanMarketCommandOutcome.From(result, snapshot);
     }
 
+    /// <summary>
+    /// 撤销玩家在市场上的挂单：解冻未成交的资产/物品并持久化账本。
+    /// </summary>
     public async Task<DaoxuanMarketCommandOutcome> CancelMarketOrderAsync(
         Guid playerId,
         string orderId,
@@ -441,6 +500,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return DaoxuanMarketCommandOutcome.From(result, snapshot);
     }
 
+    /// <summary>
+    /// 提取玩家在市场已成交或撤单退回的暂存资金与物品，合并入背包与灵石余额。
+    /// </summary>
     public async Task<DaoxuanMarketCommandOutcome> ClaimMarketAssetsAsync(
         Guid playerId,
         CancellationToken cancellationToken)
@@ -478,6 +540,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return DaoxuanMarketCommandOutcome.Ok("市场资产已领取。", snapshot);
     }
 
+    /// <summary>
+    /// 快进指定玩家的模拟时间（调试接口或离线补算用），执行确定性推演并保存快照。
+    /// </summary>
     public async Task<DaoxuanPlayerSnapshotDto> FastForwardAsync(
         Guid playerId,
         TimeSpan duration,
@@ -514,6 +579,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return snapshot;
     }
 
+    /// <summary>
+    /// 获取当前所有在线玩家中最早需要发生状态跃迁（行动完成、战斗回合、恢复等）的时间点。
+    /// </summary>
     public async Task<DateTimeOffset?> GetNextOnlineTransitionAtAsync(CancellationToken cancellationToken)
     {
         return await ExecuteOnOwnerAsync(_ =>
@@ -522,6 +590,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         }, cancellationToken);
     }
 
+    /// <summary>
+    /// 批量推进所有已到达跃迁截止时间的在线玩家状态，生成差异补丁 (Delta) 广播给客户端并异步入队快照落盘。
+    /// </summary>
     public async Task<DaoxuanAdvanceReport> AdvanceDueOnlinePlayersAsync(
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -580,6 +651,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return new DaoxuanAdvanceReport(SimulationRevision, updates.Count, elapsed.TotalMilliseconds);
     }
 
+    /// <summary>
+    /// 对当前所有在线玩家执行周期性检查点快照落盘。
+    /// </summary>
     public async Task CheckpointOnlinePlayersAsync(CancellationToken cancellationToken)
     {
         var records = await ExecuteOnOwnerAsync(_ => _onlinePlayers
@@ -593,6 +667,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
             cancellationToken);
     }
 
+    /// <summary>
+    /// 淘汰超时未活动的闲置玩家：将其实体卸载并转移至冷快照 LRU 缓存，同时异步入队落盘。
+    /// </summary>
     public async Task EvictIdlePlayersAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var records = await ExecuteOnOwnerAsync(
@@ -686,6 +763,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         }
     }
 
+    /// <summary>
+    /// 强制将当前加载的所有玩家状态快照批量刷入持久化队列（用于优雅停服或维护触发）。
+    /// </summary>
     public async Task FlushAllAsync(CancellationToken cancellationToken)
     {
         var records = await ExecuteOnOwnerAsync(_ => _players.Values
@@ -759,6 +839,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
             record));
     }
 
+    /// <summary>
+    /// 获取服务器运行时指标（模拟修订号、在线玩家数、活跃连接、持久化队列与系统内存占用）。
+    /// </summary>
     public DaoxuanServerMetrics GetMetrics()
     {
         using var process = System.Diagnostics.Process.GetCurrentProcess();
@@ -792,11 +875,17 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return ValueTask.CompletedTask;
     }
 
+    /// <summary>
+    /// 确保玩家已在内存中就绪（若未加载则从存储快照加载并进行版本迁移与离线时间补算）。
+    /// </summary>
     private Task EnsurePlayerAsync(Guid playerId, string? name, CancellationToken cancellationToken)
     {
         return EnsurePlayerAsync(playerId, name, null, cancellationToken);
     }
 
+    /// <summary>
+    /// 确保玩家已加载：从快照存储反序列化、初始化默认字段与 SequenceId、规范化数据并按确定性规则补算离线演进。
+    /// </summary>
     private async Task EnsurePlayerAsync(
         Guid playerId,
         string? name,
@@ -882,6 +971,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         }
     }
 
+    /// <summary>
+    /// 获取指定玩家的状态对象：若在实体中直接返回，若在冷快照中则恢复为实体并从 LRU 移除。
+    /// </summary>
     private DaoxuanPlayerState GetState(Guid playerId)
     {
         if (_players.TryGetValue(playerId, out var entity))
@@ -911,6 +1003,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return state;
     }
 
+    /// <summary>
+    /// 在指定的 Fiber ECS World 中创建并注册玩家实体。
+    /// </summary>
     private void CreatePlayerEntity(YuoFiber fiber, DaoxuanPlayerState state)
     {
         var entity = new YuoEntity(fiber.World, Interlocked.Increment(ref _entitySequence))
@@ -1009,6 +1104,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         }
     }
 
+    /// <summary>
+    /// 解析并分发玩家具体的业务指令。
+    /// </summary>
     private DaoxuanCommandResult ApplyCommand(
         DaoxuanPlayerState state,
         string command,
@@ -1493,6 +1591,9 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         YuoSnapshotRecord? SnapshotRecord);
 }
 
+/// <summary>
+/// 玩家指令执行产出物（包含领域执行结果与可选的增量补丁 DTO）。
+/// </summary>
 public sealed record DaoxuanCommandOutcome(
     DaoxuanCommandResult Result,
     DaoxuanPlayerPatchDto? Patch)
@@ -1501,6 +1602,9 @@ public sealed record DaoxuanCommandOutcome(
         new(DaoxuanCommandResult.Fail(code, message), null);
 }
 
+/// <summary>
+/// 市场指令执行产出物（包含订单视图、成交明细与全量快照）。
+/// </summary>
 public sealed record DaoxuanMarketCommandOutcome(
     bool Success,
     string Code,
@@ -1528,10 +1632,19 @@ public sealed record DaoxuanMarketCommandOutcome(
         new(true, "OK", message, null, [], snapshot);
 }
 
+/// <summary>
+/// 在线玩家状态推进耗时与更新数量报告。
+/// </summary>
 public sealed record DaoxuanAdvanceReport(long Revision, int UpdatedPlayers, double ElapsedMilliseconds);
 
+/// <summary>
+/// 计划在未来时刻发生状态跃迁的玩家调度条目。
+/// </summary>
 internal readonly record struct ScheduledPlayerTransition(Guid PlayerId, long Generation);
 
+/// <summary>
+/// 服务器性能与业务运行监控指标快照。
+/// </summary>
 public sealed record DaoxuanServerMetrics(
     long SimulationRevision,
     int LoadedPlayers,

@@ -11,13 +11,21 @@ function damageTypeLabel(t: TFunction, value: string): string {
   return DAMAGE_TYPES.includes(value) ? t(`combat.encounter.damageType.${value}`) : value
 }
 
+/**
+ * 敌怪属性卡片小组件 (EnemyCard)
+ *
+ * 渲染遭遇中的单个敌怪/Boss 的头像单字、伤害类型、经验掉落、血气条、真元条及攻防基础三维。
+ */
 const EnemyCard = memo(function EnemyCard({
   enemy,
   strength,
   boss = false,
 }: {
+  /** 敌怪数值与基础定义 */
   enemy: CombatantDefinition
+  /** 敌怪战力评分 */
   strength?: number
+  /** 是否为 Boss 级强敌 */
   boss?: boolean
 }): React.JSX.Element {
   const t = useT()
@@ -58,11 +66,18 @@ const EnemyCard = memo(function EnemyCard({
   )
 })
 
+/**
+ * 战斗遭遇/副本地牢配置面板组件 (CombatEncounterPanel)
+ *
+ * 用于地图探索或副本详情中展示当前遭遇的刷怪上限、战力总额、刷新周期、普通怪网格及 Boss 出没轮次。
+ */
 export const CombatEncounterPanel = memo(function CombatEncounterPanel({
   encounter,
   compact = false,
 }: {
+  /** 战斗遭遇定义 */
   encounter: CombatEncounterDefinition
+  /** 是否以紧凑样式渲染 */
   compact?: boolean
 }): React.JSX.Element {
   const t = useT()

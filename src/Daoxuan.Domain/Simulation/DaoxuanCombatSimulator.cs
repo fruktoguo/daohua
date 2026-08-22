@@ -17,6 +17,16 @@ public static partial class DaoxuanCombatSimulator
     private const int CombatModifierDurationMilliseconds = 15_000;
     private const long InfiniteTime = long.MaxValue / 4;
 
+    /// <summary>
+    /// 根据玩家当前战斗配置、活跃 Buff 及境界修为，构建战斗内部的玩家实时状态。
+    /// </summary>
+    /// <param name="loadout">玩家战斗配置装配。</param>
+    /// <param name="activeBuffs">生效中的 Buff 列表。</param>
+    /// <param name="at">当前时间戳。</param>
+    /// <param name="hitpoints">指定的初始生命值（为空则默认满血）。</param>
+    /// <param name="manapoints">指定的初始法力值（为空则默认满蓝）。</param>
+    /// <param name="spirit">玩家持有的修为总点数。</param>
+    /// <returns>玩家战斗实时状态对象。</returns>
     public static DaoxuanCombatPlayerState CreatePlayerState(
         DaoxuanCombatLoadout loadout,
         IReadOnlyList<DaoxuanBuffState> activeBuffs,
@@ -37,6 +47,14 @@ public static partial class DaoxuanCombatSimulator
             (hitpoints ?? player.MaxHitpoints) <= 0);
     }
 
+    /// <summary>
+    /// 根据玩家战斗配置、Buff 及修为，计算并导出对外的角色综合战斗属性面板。
+    /// </summary>
+    /// <param name="loadout">玩家战斗配置方案。</param>
+    /// <param name="activeBuffs">生效中的 Buff 列表。</param>
+    /// <param name="at">当前时间戳。</param>
+    /// <param name="spirit">玩家持有的修为总点数。</param>
+    /// <returns>战斗属性面板状态快照。</returns>
     public static DaoxuanCombatAttributeState CreatePlayerAttributes(
         DaoxuanCombatLoadout loadout,
         IReadOnlyList<DaoxuanBuffState> activeBuffs,
@@ -80,6 +98,24 @@ public static partial class DaoxuanCombatSimulator
             CriticalAvoidanceRating: player.CriticalAvoidanceRating);
     }
 
+    /// <summary>
+    /// 执行确定性战斗事件模拟推演。
+    /// </summary>
+    /// <param name="playerId">玩家唯一 GUID。</param>
+    /// <param name="loadout">玩家战斗配置方案。</param>
+    /// <param name="activeBuffs">生效中的 Buff 状态列表。</param>
+    /// <param name="inventory">背包物品持有字典。</param>
+    /// <param name="encounterId">战斗遭遇副本 ID。</param>
+    /// <param name="startedAt">模拟起始时间。</param>
+    /// <param name="duration">推进持续时长。</param>
+    /// <param name="completedEncountersBeforeRun">此前累计通关遭遇次数。</param>
+    /// <param name="initialPlayerState">入场初始玩家状态。</param>
+    /// <param name="stopAfterFirstOutcome">产生首次胜负结果后是否立即停止推进。</param>
+    /// <param name="stopAfterFirstVictory">首次取得胜利后是否立即停止推进。</param>
+    /// <param name="playerSpirit">玩家修为总点数。</param>
+    /// <param name="initialAbilityCooldowns">初始技能冷却剩余毫秒字典。</param>
+    /// <param name="initialConsumableCooldowns">初始消耗品槽位冷却剩余毫秒列表。</param>
+    /// <returns>战斗模拟推演执行结果。</returns>
     public static DaoxuanCombatRunResult Run(
         Guid playerId,
         DaoxuanCombatLoadout loadout,
@@ -121,6 +157,7 @@ public static partial class DaoxuanCombatSimulator
             initialAbilityCooldowns,
             initialConsumableCooldowns);
     }
+
 
     private static IReadOnlyDictionary<string, long> CreatePlayerAbilityCooldowns(
         DaoxuanCombatLoadout loadout,

@@ -45,6 +45,9 @@ export const MANA_COST_MULTIPLIER = 10
 
 /**
  * 计算技能实际灵力消耗的方法
+ * @param baseCost 技能基础灵力消耗点数
+ * @param multiplier 消耗换算倍率（默认为 MANA_COST_MULTIPLIER 即 10）
+ * @returns 实际消耗的灵力数值（保底为 0）
  */
 export function calculateManaCost(baseCost: number, multiplier = MANA_COST_MULTIPLIER): number {
   return Math.max(0, Math.round(baseCost * multiplier))
@@ -218,6 +221,9 @@ export const BASIC_ATTACK_CONFIG = {
 // 7. 统一基准数值规范 (Baseline Attributes, 全量 double)
 // =========================================================================
 
+/**
+ * 角色 1 级时的基础基准战斗属性（全量 double 浮点数设计）
+ */
 export const BASELINE_COMBAT_ATTRIBUTES = {
   maxHp: 100.0,
   maxMp: 50.0,
@@ -239,6 +245,8 @@ export const BASELINE_COMBAT_ATTRIBUTES = {
 /**
  * 六维累计经验到等级换算方法（经验累加不清空）。
  * 每级累计所需经验 = 100 * (level ^ 3)。
+ * @param totalCumulativeExp 累计获得的总经验值
+ * @returns 包含当前等级、本级当前进度经验、升至下一级所需经验的对象
  */
 export function calculateRootLevelAndProgress(totalCumulativeExp: number): {
   level: number
@@ -263,6 +271,10 @@ export function calculateRootLevelAndProgress(totalCumulativeExp: number): {
   }
 }
 
+/**
+ * 获取升到指定六维等级所需的累计经验总和
+ * @param level 目标等级
+ */
 export function getCumulativeExpForLevel(level: number): number {
   if (level <= 1.0) return 0.0
   const l = level - 1.0
@@ -270,7 +282,7 @@ export function getCumulativeExpForLevel(level: number): number {
 }
 
 /**
- * 非玩家单位品阶层级量化定义
+ * 非玩家单位品阶层级量化定义（普通、精英、首领对应的全属性与生命倍率）
  */
 // 单位品阶显示名走 i18n（game.unitTier.*），此处仅保留数值倍率。
 export const NON_PLAYER_UNIT_TIERS = {
@@ -292,6 +304,11 @@ export const NON_PLAYER_UNIT_TIERS = {
 // 8. 统一百分比数值类型 (PercentValue)
 // =========================================================================
 
+/**
+ * 百分比曲线计算模式：
+ * - 'linear': 线性缩放（如灵气收益、伤害加成等）
+ * - 'non-linear': 速率倒数缩减（用于攻速、冷却缩减等避免无限递增的属性）
+ */
 export type PercentCurveMode = 'linear' | 'non-linear'
 
 /**
@@ -308,10 +325,18 @@ export class PercentValue {
     this.mode = mode
   }
 
+  /**
+   * 创建线性百分比数值
+   * @param points 百分比点数（100 点 = 100%）
+   */
   public static linear(points: number): PercentValue {
     return new PercentValue(points, 'linear')
   }
 
+  /**
+   * 创建非线性（倒数递减）百分比数值
+   * @param points 百分比点数
+   */
   public static nonLinear(points: number): PercentValue {
     return new PercentValue(points, 'non-linear')
   }
@@ -494,6 +519,9 @@ export const REALM_LEVEL_EXP_TO_NEXT: readonly number[] = [
   0, // Lv.127 飞升
 ]
 
+/**
+ * 境界等级累计所需修为查表缓存数组（索引即境界等级）
+ */
 export const REALM_LEVEL_CUMULATIVE_EXP: readonly number[] = (() => {
   const cum = new Array<number>(MAX_REALM_LEVEL + 1)
   cum[0] = 0
@@ -504,6 +532,11 @@ export const REALM_LEVEL_CUMULATIVE_EXP: readonly number[] = (() => {
   return cum
 })()
 
+/**
+ * 根据总修为计算境界进度与当前等级
+ * @param totalSpirit 角色累计获得的总修为（灵气）
+ * @returns 包含当前等级、当前重进度、下一重所需修为、百分比与带小数精度的总等级
+ */
 export function calculateRealmProgress(totalSpirit = 0): {
   level: number
   currentLayerExp: number
@@ -543,20 +576,34 @@ export function calculateRealmProgress(totalSpirit = 0): {
   }
 }
 
+/**
+ * 境界展示信息结构体（用于 UI 渲染境界文本、颜色与徽章字形）
+ */
 export interface RealmInfo {
+  /** 境界精确总等级 (带小数位，如 19.3) */
   totalLevel: number
+  /** 当前层进度百分比 (0 - 100) */
   layerProgress: number
+  /** 大境界名称 (如 "练气期", "筑基期") */
   stageName: string
+  /** 位阶名称 (如 "前期", "中期", "后期", "巅峰") */
   phaseName: string
+  /** 小境界/层数名称 (如 "练气一层", "筑基圆满") */
   minorName: string
+  /** 子阶段展示文案 (如 "练气期 · 练气一层") */
   subStage: string
+  /** 徽章展示字形单字 (如 "初", "中", "后", "极", "武", "玄", "天") */
   rankChar: string
+  /** 大境界专属主题色 HEX/CSS 变量 */
   stageColor: string
+  /** 完整境界展示名称 */
   fullDisplayName: string
 }
 
 /**
  * 根据总修为值计算当前的 大境界、位阶、小境界 及专属棱形徽章信息
+ * @param spirit 角色累计修为
+ * @returns 境界展示数据
  */
 export function calculateRealmInfo(spirit = 0): RealmInfo {
   const progress = calculateRealmProgress(spirit)
@@ -651,6 +698,9 @@ export function calculateRealmInfo(spirit = 0): RealmInfo {
   }
 }
 
+/**
+ * 境界基础属性池结构（包含通过境界等级线性插值得到的所有攻防恢复基础值）
+ */
 export interface BaseAttributePool {
   level: number
   tier: number
@@ -670,6 +720,9 @@ export interface BaseAttributePool {
   baseMpRegen: number
 }
 
+/**
+ * 境界各关键等级锚点基础数值表（用于不同境界等级区间的线性插值计算）
+ */
 const BASE_FLAT_ANCHORS = [
   { level: 1,   hp: 100,   mp: 50,    ad: 10,   ap: 5,    armor: 10,  mr: 0,    acc: 1,   eva: 1,   crit: 1,   cavoid: 1,  breakPt: 1,   parry: 1 },
   { level: 18,  hp: 232,   mp: 90,    ad: 15,   ap: 7,    armor: 13,  mr: 0,    acc: 3,   eva: 1,   crit: 1,   cavoid: 1,  breakPt: 1,   parry: 1 },
@@ -685,6 +738,11 @@ const BASE_FLAT_ANCHORS = [
   { level: 127, hp: 38872, mp: 26066, ad: 1354, ap: 1645, armor: 927, mr: 1116, acc: 135, eva: 130, crit: 128, cavoid: 119,breakPt: 116, parry: 111 },
 ]
 
+/**
+ * 根据角色累计修为计算基础战斗属性池（通过分段线性插值）
+ * @param spirit 累计修为
+ * @returns 角色当前境界对应的基础属性池
+ */
 export function calculateBaseAttributes(spirit = 0): BaseAttributePool {
   const progress = calculateRealmProgress(spirit)
   const level = Math.max(1.0, progress.totalLevel)

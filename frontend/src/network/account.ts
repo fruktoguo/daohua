@@ -2,14 +2,25 @@ import { create } from 'zustand'
 import { gameClient } from './gameClient'
 import { useGameStore } from '../game/gameStore'
 
+/**
+ * 存储在本地的已登录账号凭据信息
+ */
 export interface StoredAccountInfo {
+  /** 账号名 */
   account: string
+  /** 角色名称 */
   name: string
+  /** 绑定的角色唯一 UUID (playerId) */
   playerId: string
+  /** 角色编号 */
   sequenceId?: number
+  /** 最近登录时间戳（毫秒） */
   lastLoginAt?: number
 }
 
+/**
+ * 鉴权接口 (注册/登录) 返回的数据传输对象 (DTO)
+ */
 export interface AuthResponseDto {
   success: boolean
   account?: string | null
@@ -25,6 +36,9 @@ const STORAGE_PLAYER_ID_KEY = 'daoxuan-player-id'
 const STORAGE_SAVED_ACCOUNTS_KEY = 'daoxuan_saved_accounts_list'
 const COOKIE_PLAYER_ID_KEY = 'daoxuan_player_id'
 
+/**
+ * 从 Cookie 中读取当前 playerId（作为 localStorage 的备选容灾）
+ */
 function getCookiePlayerId(): string | null {
   if (typeof document === 'undefined') return null
   const cookieValue = document.cookie
@@ -35,11 +49,17 @@ function getCookiePlayerId(): string | null {
   return cookieValue ? decodeURIComponent(cookieValue) : null
 }
 
+/**
+ * 将 playerId 写入持久化 Cookie (10年有效期)
+ */
 function setCookiePlayerId(playerId: string): void {
   if (typeof document === 'undefined') return
   document.cookie = `${COOKIE_PLAYER_ID_KEY}=${encodeURIComponent(playerId)}; Path=/; Max-Age=315360000; SameSite=Lax`
 }
 
+/**
+ * 从 localStorage 读取历史上登录过的全部账号列表
+ */
 function loadSavedAccounts(): StoredAccountInfo[] {
   if (typeof window === 'undefined') return []
   try {
@@ -52,11 +72,17 @@ function loadSavedAccounts(): StoredAccountInfo[] {
   }
 }
 
+/**
+ * 将已保存的账号列表序列化持久化至 localStorage
+ */
 function persistSavedAccounts(list: StoredAccountInfo[]): void {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(STORAGE_SAVED_ACCOUNTS_KEY, JSON.stringify(list))
 }
 
+/**
+ * 初始化时从 localStorage/Cookie 恢复当前账号会话
+ */
 function getInitialAccount(): StoredAccountInfo | null {
   if (typeof window === 'undefined') return null
   const account = window.localStorage.getItem(STORAGE_ACCOUNT_KEY)?.trim()
@@ -75,6 +101,12 @@ function getInitialAccount(): StoredAccountInfo | null {
   return null
 }
 
+/**
+ * 向服务端发起账号注册 HTTP POST 请求
+ * @param account 注册账号
+ * @param password 登录密码
+ * @param characterName 初始道号（可选）
+ */
 export async function requestRegister(
   account: string,
   password: string,
@@ -96,6 +128,11 @@ export async function requestRegister(
   return (await res.json()) as AuthResponseDto
 }
 
+/**
+ * 向服务端发起账号登录 HTTP POST 请求
+ * @param account 登录账号
+ * @param password 登录密码
+ */
 export async function requestLogin(
   account: string,
   password: string,
@@ -115,16 +152,30 @@ export async function requestLogin(
   return (await res.json()) as AuthResponseDto
 }
 
+/**
+ * 账号管理状态机接口
+ */
 interface AccountStore {
+  /** 当前登录的账号信息（为 null 时处于未登录状态） */
   currentAccount: StoredAccountInfo | null
+  /** 本地记录的历史账号列表 */
   savedAccounts: StoredAccountInfo[]
+  /** 账号密码登录 */
   loginWithAuth: (account: string, password: string) => Promise<AuthResponseDto>
+  /** 账号密码注册并自动登录 */
   registerWithAuth: (account: string, password: string, characterName?: string) => Promise<AuthResponseDto>
+  /** 退出当前账号（清理会话并断开 WebSocket） */
   logout: () => void
+  /** 从历史账号列表中移除指定账号 */
   removeSavedAccount: (account: string) => void
+  /** 更新当前账号对应的角色名 */
   updateCharacterName: (newName: string) => void
 }
 
+/**
+ * 账号管理全局状态机
+ * 负责账号登录注册状态流转、历史账号列表管理以及角色名更新
+ */
 export const useAccountStore = create<AccountStore>((set, get) => ({
   currentAccount: getInitialAccount(),
   savedAccounts: loadSavedAccounts(),
@@ -140,6 +191,7 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     const playerId = res.playerId
     const sequenceId = res.sequenceId
 
+    // 持久化存储到 localStorage 和 Cookie
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_ACCOUNT_KEY, cleanAccount)
       window.localStorage.setItem(STORAGE_CHAR_NAME_KEY, cleanName)
@@ -166,6 +218,7 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
       savedAccounts: updatedList,
     })
 
+    // 登录成功后立即连接 WebSocket
     gameClient.connect()
     return res
   },
@@ -207,6 +260,7 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
       savedAccounts: updatedList,
     })
 
+    // 注册成功后自动连接 WebSocket
     gameClient.connect()
     return res
   },
@@ -252,10 +306,16 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
   },
 }))
 
+/**
+ * 同步获取当前保存的账号信息
+ */
 export function getStoredAccount(): StoredAccountInfo | null {
   return useAccountStore.getState().currentAccount
 }
 
+/**
+ * 清除当前登录状态（登出）
+ */
 export function clearStoredAccount(): void {
   useAccountStore.getState().logout()
 }

@@ -5,10 +5,16 @@ using Xunit;
 
 namespace Daoxuan.Domain.Tests;
 
+/// <summary>
+/// 验证 DaoxuanSimulation（单人离线与在线确定性模拟器）的核心状态机流转、行动队列、自动消耗品使用、增益结算与快进确定性。
+/// </summary>
 public sealed class DaoxuanSimulationTests
 {
     private static readonly DateTimeOffset Baseline = DateTimeOffset.Parse("2026-08-05T00:00:00Z");
 
+    /// <summary>
+    /// 验证背包在扣减物品数量至 0 时，自动从 Items 字典中移除对应 Key，保持数据紧凑。
+    /// </summary>
     [Fact]
     public void Inventory_removes_item_entry_when_quantity_reaches_zero()
     {
@@ -21,6 +27,9 @@ public sealed class DaoxuanSimulationTests
         Assert.DoesNotContain(DaoxuanItemIds.GatheringIncense, inventory.Items.Keys);
     }
 
+    /// <summary>
+    /// 验证状态归一化（NormalizeState）会清理背包中遗留的数量为 0 的物品条目，同时保留自动使用槽位引用。
+    /// </summary>
     [Fact]
     public void Normalize_state_removes_legacy_zero_inventory_entries_without_clearing_item_slots()
     {
@@ -38,6 +47,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(state.DirtySections.HasFlag(DaoxuanDirtySections.Inventory));
     }
 
+    /// <summary>
+    /// 验证定时行动在微步推进时保留毫秒级进度，并在到达确切截止时间边界时精准触发完成。
+    /// </summary>
     [Fact]
     public void Timed_action_preserves_millisecond_progress_and_completes_at_exact_deadline()
     {
@@ -61,6 +73,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(1, state.Stats.CompletedActions);
     }
 
+    /// <summary>
+    /// 验证初始默认队列依次完成采药、炼丹和引气修炼循环，正确产出真气并循环轮转。
+    /// </summary>
     [Fact]
     public void Initial_queue_completes_gather_alchemy_cultivation_loop()
     {
@@ -82,6 +97,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(DaoxuanActionIds.GatherHerbs, state.Queue.Entries[0].ActionId);
     }
 
+    /// <summary>
+    /// 验证结构化事件日志（StructuredEventLog）保持单调递增的序号 Sequence，并保留完整发生时间与模板。
+    /// </summary>
     [Fact]
     public void Log_events_keep_stable_sequence_and_full_display_time()
     {
@@ -95,6 +113,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Contains("{{action:explore.gather-herbs|采集草药}}", state.StructuredEventLog[1].Template, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 验证离线挂机推进时记录历史结构化日志，但不向内存中的 WebSocket 待发队列（PendingEvents）堆积冗余消息。
+    /// </summary>
     [Fact]
     public void Offline_progress_keeps_history_without_queuing_websocket_events()
     {
@@ -111,6 +132,9 @@ public sealed class DaoxuanSimulationTests
             entry => entry.Template.Contains("行动完成", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// 验证循环模式下单个行动执行完毕后，立即重置执行次数并移至队列末尾。
+    /// </summary>
     [Fact]
     public void Completed_loop_action_moves_to_queue_tail_immediately()
     {
@@ -127,6 +151,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(0, state.Queue.Entries[^1].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证配置了多次重复的行动在全部批次执行完毕前留在队首，耗尽后才轮转至队尾。
+    /// </summary>
     [Fact]
     public void Repeated_loop_action_finishes_its_batch_before_moving_to_tail()
     {
@@ -159,6 +186,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(2, state.Queue.Entries[1].RemainingRepeats);
     }
 
+    /// <summary>
+    /// 验证无限循环行动（repeats = -1）持续在队首执行且不随完成减少次数。
+    /// </summary>
     [Fact]
     public void Infinite_action_is_accepted_and_stays_at_queue_head()
     {
@@ -176,6 +206,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(0, state.Queue.Entries[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证发起历练战斗（StartCombat）会立即中断当前正在运行的队列并抢占队首执行。
+    /// </summary>
     [Fact]
     public void Starting_combat_interrupts_current_loop_and_runs_immediately()
     {
@@ -199,6 +232,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(1, state.Queue.Entries[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证历练远征包含固定的初始搜寻（20s）与次级搜寻（2.5s），期间生命/灵力享受自然回复。
+    /// </summary>
     [Fact]
     public void Combat_expedition_keeps_fixed_initial_search_and_resources_between_encounters()
     {
@@ -262,6 +298,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(expedition.InitialManapoints >= retainedManapoints);
     }
 
+    /// <summary>
+    /// 验证重新开启战斗会继承现有生命/灵力资源，并重置全新的初始搜寻时间线。
+    /// </summary>
     [Fact]
     public void Restarting_combat_preserves_resources_and_starts_a_fresh_battle_timeline()
     {
@@ -285,6 +324,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Empty(expedition.AppliedConsumedItems);
     }
 
+    /// <summary>
+    /// 验证在战败死亡（0点生命）状态下重新开启战斗时，自动复活至 1 点生命值并启动新战斗。
+    /// </summary>
     [Fact]
     public void Restarting_during_combat_with_zero_hp_replaces_action_and_revives_player_with_one_hp()
     {
@@ -312,6 +354,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(15, state.CombatResources.Manapoints);
     }
 
+    /// <summary>
+    /// 验证战斗状态机能够准确对齐下一次战斗事件（如施法/攻击）的时间截止点，无多余延迟。
+    /// </summary>
     [Fact]
     public void Combat_action_consumes_the_exact_next_event_deadline_without_extra_delay()
     {
@@ -357,6 +402,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(followingDeadline is null || followingDeadline > exactDeadline);
     }
 
+    /// <summary>
+    /// 验证玩家战斗败退后原地等待 180 秒完全重生，且重生后继续挑战当前波次直至获胜。
+    /// </summary>
     [Fact]
     public void Player_death_keeps_the_same_wave_until_full_respawn_and_victory()
     {
@@ -423,6 +471,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(state.CombatResources.Hitpoints > 0);
     }
 
+    /// <summary>
+    /// 验证快照 JSON 反序列化后能够归一化补齐固定数量的功法槽与自动消耗品槽位数组。
+    /// </summary>
     [Fact]
     public void Snapshot_deserializes_and_normalizes_to_slot_lists()
     {
@@ -495,6 +546,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(3, reloaded.Combat.ConsumableSlots.Count);
     }
 
+    /// <summary>
+    /// 验证多槽位自动消耗品独立判定与扣减，各已启用槽位的物品在行动开始时按配置数量正确扣减并产出对应收益。
+    /// </summary>
     [Fact]
     public void Auto_use_consumes_each_enabled_slot_independently()
     {
@@ -532,6 +586,9 @@ public sealed class DaoxuanSimulationTests
             state.StructuredEventLog.Count(entry => entry.Template.Contains("自动使用", StringComparison.Ordinal)));
     }
 
+    /// <summary>
+    /// 验证自动消耗品配置校验：槽位索引越界与单个槽位触发器数量超限（>3个）时被安全拦截。
+    /// </summary>
     [Fact]
     public void Auto_use_rejects_out_of_range_slot_index_and_invalid_triggers()
     {
@@ -587,6 +644,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Single(state.Queue.AutoUseSlots[DaoxuanActionType.Exploration][2].Triggers!);
     }
 
+    /// <summary>
+    /// 验证一小时大步长快进推进与 3600 次逐秒推进在修为、完成数、采集品及丹药产出上完全等价（确定性补算）。
+    /// </summary>
     [Fact]
     public void One_hour_fast_forward_matches_second_by_second_progression()
     {
@@ -607,6 +667,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(stepped.Inventory.Get(DaoxuanItemIds.QiGatheringPill), fast.Inventory.Get(DaoxuanItemIds.QiGatheringPill));
     }
 
+    /// <summary>
+    /// 验证完全离线模式（FullyOffline）下不推进行动队列，仅更新最后模拟时间戳。
+    /// </summary>
     [Fact]
     public void Fully_offline_player_does_not_advance_action_queue()
     {
@@ -620,6 +683,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(Baseline.AddDays(7), state.LastSimulatedAt);
     }
 
+    /// <summary>
+    /// 验证非循环模式下，当队首行动因缺少材料无法执行时立即终止并移除，后续可用行动顺利衔接。
+    /// </summary>
     [Fact]
     public void Missing_action_ends_and_next_action_continues_when_loop_is_disabled()
     {
@@ -650,6 +716,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(0, state.Inventory.Get(DaoxuanItemIds.QiGatheringPill));
     }
 
+    /// <summary>
+    /// 验证循环模式下，材料不足的行动被标记为 Blocked 并自动轮转至队尾，不中断队列中其他可用行动的执行。
+    /// </summary>
     [Fact]
     public void Missing_action_moves_to_tail_and_next_action_runs_when_loop_is_enabled()
     {
@@ -678,6 +747,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Contains("skipped:alchemy.refine-qi-pill", result.Events);
     }
 
+    /// <summary>
+    /// 验证循环防空转机制：当队列中所有行动均不可用且被跳过一遍后，模拟器自动停止空转，避免死循环消耗 CPU。
+    /// </summary>
     [Fact]
     public void Loop_stops_after_each_unavailable_action_was_skipped_once()
     {
@@ -700,6 +772,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(Baseline.AddHours(1), state.LastSimulatedAt);
     }
 
+    /// <summary>
+    /// 验证局部进度推进（行动未完成）只标记 QueueProgress 脏位，而不触发整条 Queue 脏标记。
+    /// </summary>
     [Fact]
     public void Partial_advance_marks_only_queue_progress_dirty()
     {
@@ -713,6 +788,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(1, state.Queue.Entries[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证重复下发相同运行时设置（如相同的循环开关、自动消耗品槽位）具有幂等性，不修改版本号且不产生脏标记。
+    /// </summary>
     [Fact]
     public void Repeating_identical_realtime_settings_does_not_dirty_state()
     {
@@ -732,6 +810,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(DaoxuanDirtySections.None, state.DirtySections);
     }
 
+    /// <summary>
+    /// 验证在探索（采药）和炼丹行动中，自动使用槽位配置引灵香/异火道具可按规则正确获得产出加成倍率。
+    /// </summary>
     [Fact]
     public void Exploration_and_alchemy_auto_use_slots_apply_output_buffs()
     {
@@ -769,6 +850,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(0, state.Inventory.Get(DaoxuanItemIds.AlchemyFlame));
     }
 
+    /// <summary>
+    /// 验证玩家处于空闲或非战斗行动期间，依据角色属性每 10 秒自然回复生命值与法力值。
+    /// </summary>
     [Fact]
     public void Continuous_regeneration_applies_in_idle_and_non_combat_actions()
     {
@@ -807,6 +891,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(state.CombatResources.Manapoints >= prevMp);
     }
 
+    /// <summary>
+    /// 验证玩家死亡（生命值为 0）状态下，灵力依然正常自动回复，而生命值保持为 0 直至完全重生。
+    /// </summary>
     [Fact]
     public void Death_state_regenerates_mana_while_health_remains_zero_until_full_respawn()
     {
@@ -827,6 +914,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(state.CombatResources.Manapoints > 20);
     }
 
+    /// <summary>
+    /// 验证脱离战斗（通过移除队列或战斗结束）时，存活玩家保持现有血量/法力，而死亡玩家脱战复活至 1 点生命保底。
+    /// </summary>
     [Fact]
     public void Leaving_combat_by_remove_or_finish_revives_dead_player_to_one_hp_and_preserves_living()
     {
@@ -868,6 +958,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(10, state.CombatResources.Manapoints);
     }
 
+    /// <summary>
+    /// 验证玩家身上的持续 Buff 状态在进入战斗、脱离战斗以及切换其他非战斗行动时均持久保留，不被意外清除。
+    /// </summary>
     [Fact]
     public void Buffs_persist_and_do_not_reset_on_combat_exit_or_switch()
     {
@@ -904,6 +997,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal("test_buff", state.Buffs[0].BuffId);
     }
 
+    /// <summary>
+    /// 验证当队列中所有行动都因条件不满足而空转时，角色依然持续获得自然自动回复。
+    /// </summary>
     [Fact]
     public void Continuous_regeneration_applies_while_all_loop_actions_are_blocked()
     {
@@ -934,6 +1030,9 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(Math.Min(attributes.MaxManapoints, 20 + expectedMpGain), state.CombatResources.Manapoints);
     }
 
+    /// <summary>
+    /// 验证历练在多轮遭遇战之间正确保留战斗损耗（残血/残蓝），绝不在新一轮遭遇战开始时违规重置回满。
+    /// </summary>
     [Fact]
     public void Combat_encounters_preserve_damaged_resources_across_battles()
     {
@@ -961,6 +1060,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(state.CombatResources.Manapoints <= attributes.MaxManapoints);
     }
 
+    /// <summary>
+    /// 验证战斗结束或切换波次时，未到期的技能与消耗品冷却时间不会被强制清零重置。
+    /// </summary>
     [Fact]
     public void Combat_end_does_not_clear_skill_and_consumable_cooldowns()
     {
@@ -1011,6 +1113,9 @@ public sealed class DaoxuanSimulationTests
         Assert.True(remaining > 0);
     }
 
+    /// <summary>
+    /// 验证脱离战斗后，尚未结束的技能与消耗品冷却时间完好保存在 CombatResources 中。
+    /// </summary>
     [Fact]
     public void Leaving_combat_preserves_cooldowns_in_combat_resources()
     {

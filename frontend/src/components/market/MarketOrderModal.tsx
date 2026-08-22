@@ -33,15 +33,34 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
+/** 挂单交易模态弹窗 Props */
 interface MarketOrderModalProps {
+  /** 弹窗展开状态 */
   open: boolean
+  /** 挂单方向：卖出 sell / 买入 buy */
   side: 'sell' | 'buy'
+  /** 交易标的 */
   instrument: MarketInstrument | null
+  /** 当前盘口行情深度 */
   book: MarketBook | null
+  /** 关闭弹窗回调 */
   onClose: () => void
+  /** 挂单成功后的刷新回调 */
   onPlaced: () => void
 }
 
+/**
+ * 坊市快速限价挂单模态弹窗组件 (MarketOrderModal)
+ *
+ * 核心功能与交易校验机制：
+ * 1. 标的概览与预览：展示物品卡片、当前背包持存数量、持有灵石、系统回收底价与步长；
+ * 2. 快捷填价按钮：支持一键填入盘口最高买价 (bestBid)、最低卖价 (bestAsk) 与系统底价；
+ * 3. 数量调节器 (QuantitySelector) 与最大可买/可卖上限联动约束；
+ * 4. 交易明细核算：
+ *    - 买入：显示总价扣款与扣款后预计剩余灵石；
+ *    - 卖出：显示总价、2% 卖家印花税与扣税后预计净收益灵石；
+ * 5. 安全校验：阻断余额不足、持仓不足、价格低于底价等非法提交。
+ */
 export const MarketOrderModal = memo(function MarketOrderModal({
   open,
   side,

@@ -6,15 +6,31 @@ import { useGameStore } from '../../game/gameStore'
 import type { ItemDefinition, MarketBook } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
 
+/**
+ * 坊市交易标的元数据定义
+ */
 export interface MarketInstrument {
+  /** 物品唯一 ID */
   itemId: string
+  /** 物品名称 */
   name: string
+  /** 物品品类 */
   category: string
+  /** 物品等阶/品阶 */
   tier: number
+  /** 系统商店回收底价 (Vendor Price) */
   sellPrice: number
+  /** 服务端原始物品定义 */
   definition: ItemDefinition
 }
 
+/**
+ * 根据价格区间动态计算坊市最小变动价格步长 (Tick Size)
+ *
+ * 步长规则：
+ * - 低价位以 1 为基准；
+ * - 随着价格数量级放大，按 1/2/5 阶梯逐步放宽报价精度，避免盘口档位过度碎片化。
+ */
 export function getMarketPriceIncrement(price: number): number {
   if (price <= 1) return 1
   let firstDigit = Math.floor(price)
@@ -30,6 +46,9 @@ export function getMarketPriceIncrement(price: number): number {
   return 1
 }
 
+/**
+ * 归一化挂单价格至合法的步长网格，并强制不得低于系统回收底价
+ */
 export function normalizeMarketPrice(price: number, vendorPrice: number, roundUp: boolean): number {
   if (price <= 1) return 2
   const increment = getMarketPriceIncrement(price)
@@ -40,14 +59,25 @@ export function normalizeMarketPrice(price: number, vendorPrice: number, roundUp
   return Math.max(2, Math.trunc(normalized))
 }
 
+/** 挂单表单组件 Props */
 interface MarketOrderFormProps {
+  /** 挂单方向：买入 buy 或 卖出 sell */
   side: 'sell' | 'buy'
+  /** 标的物品 ID */
   itemId: string
+  /** 可交易标的列表 */
   instruments: readonly MarketInstrument[]
+  /** 当前盘口行情数据 */
   book: MarketBook | null
+  /** 挂单成功后的刷新回调 */
   onPlaced: () => void
 }
 
+/**
+ * 坊市限价挂单表单嵌入组件 (MarketOrderForm)
+ *
+ * 处理单笔挂单的价格归一化校验、灵石/背包上限计算与向服务端发送 market_place 交易指令。
+ */
 export const MarketOrderForm = memo(function MarketOrderForm({
   side,
   itemId,

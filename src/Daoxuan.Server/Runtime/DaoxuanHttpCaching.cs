@@ -1,10 +1,19 @@
 namespace Daoxuan.Server.Runtime;
 
 /// <summary>
-/// 统一处理只读市场接口的条件响应，避免每个端点各自实现不一致的缓存判断。
+/// HTTP 条件缓存与 ETag 协商工具类 (DaoxuanHttpCaching)。
+/// <para>
+/// 职责：
+/// 1. 为只读市场深度、指标与玩家订单接口生成弱实体标签 (Weak ETag)，组合版本修订号、品种与序列号。
+/// 2. 解析客户端 <c>If-None-Match</c> 请求头并进行匹配校验。
+/// 3. 设置 <c>Cache-Control: no-cache, must-revalidate</c> 并在命中缓存时高效返回 304 Not Modified。
+/// </para>
 /// </summary>
 public static class DaoxuanHttpCaching
 {
+    /// <summary>
+    /// 根据业务作用域与状态要素拼接生成弱 ETag 字符串（格式：<c>W/"scope-comp1-comp2..."</c>）。
+    /// </summary>
     public static string CreateWeakTag(string scope, params object?[] components)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(scope);
@@ -14,6 +23,9 @@ public static class DaoxuanHttpCaching
         return $"W/\"{scope}-{value}\"";
     }
 
+    /// <summary>
+    /// 检查客户端请求的 If-None-Match 头是否包含当前 ETag。
+    /// </summary>
     public static bool IsNotModified(HttpRequest request, string etag)
     {
         foreach (var headerValue in request.Headers.IfNoneMatch)
@@ -32,6 +44,9 @@ public static class DaoxuanHttpCaching
         return false;
     }
 
+    /// <summary>
+    /// 在 HTTP 响应头中注入 ETag 与协商缓存控制头。
+    /// </summary>
     public static void ApplyHeaders(HttpResponse response, string etag)
     {
         response.Headers.ETag = etag;
@@ -39,6 +54,9 @@ public static class DaoxuanHttpCaching
         response.Headers.CacheControl = "no-cache, must-revalidate";
     }
 
+    /// <summary>
+    /// 构造 304 Not Modified 响应结果。
+    /// </summary>
     public static IResult NotModified(HttpResponse response, string etag)
     {
         ApplyHeaders(response, etag);

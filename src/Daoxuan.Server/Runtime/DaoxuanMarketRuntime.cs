@@ -4,8 +4,14 @@ using Daoxuan.Server.Infrastructure;
 namespace Daoxuan.Server.Runtime;
 
 /// <summary>
-/// 市场领域服务及其账本生命周期。
-/// 订单簿的撮合仍在内存中完成，账本快照只在写操作和停服阶段落盘，读盘口不会触碰磁盘。
+/// 市场领域服务及其账本持久化运行时 (DaoxuanMarketRuntime)。
+/// <para>
+/// 职责与并发架构：
+/// 1. 撮合与挂单全程在内存中完成，读盘口与查深度纯内存无 I/O，保证极低延迟。
+/// 2. 独占写者租约：启动时向存储层获取主分片写者租约 (<see cref="IDaoxuanMarketLedgerStore.AcquireWriterAsync"/>)，防止多实例写冲突。
+/// 3. 快照与状态恢复：启动时从数据库加载最新账本恢复订单簿与暂存资产；每次发生挂单、撤单、领奖或停机时原子写回账本（支持与玩家快照同事务原子提交）。
+/// 4. 读写互斥锁：通过 <see cref="DaoxuanMarketWriteLease"/> 保证撮合与落盘串行。
+/// </para>
 /// </summary>
 public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
 {
@@ -20,6 +26,9 @@ public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
     private bool _started;
     private bool _disposed;
 
+    /// <summary>
+    /// 初始化市场运行时。
+    /// </summary>
     public DaoxuanMarketRuntime(
         DaoxuanMarketEngine engine,
         DaoxuanMarketCoordinator coordinator,
@@ -34,21 +43,52 @@ public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <summary>市场订单簿撮合引擎。</summary>
     public DaoxuanMarketEngine Engine { get; }
+
+    /// <summary>市场结算与暂存资产协调器。</summary>
     public DaoxuanMarketCoordinator Coordinator { get; }
+
+    /// <summary>市场账本是否已完成恢复并处于就绪状态。</summary>
     public bool IsReady => Volatile.Read(ref _started);
+
+    /// <summary>当前市场账本提交版本号。</summary>
     public long Revision => Volatile.Read(ref _revision);
+
+    /// <summary>当前服务实例唯一标识。</summary>
     public string InstanceId => _instanceId;
+
+    /// <summary>当前实例负责的市场主分片 ID。</summary>
     public int PartitionId => _topology.PartitionId;
+
+    /// <summary>市场主分片总数。</summary>
     public int PartitionCount => _topology.PartitionCount;
+
+    /// <summary>分片路由哈希算法。</summary>
     public string PartitionAlgorithm => _topology.Algorithm;
+
+    /// <summary>市场账本底层存储实现名。</summary>
     public string StorageProvider => _ledgerStore.ProviderName;
+
+    /// <summary>底层存储是否支持玩家快照与市场账本原子提交。</summary>
     public bool PersistsPlayerSnapshotAtomically => _ledgerStore.PersistsPlayerSnapshotAtomically;
+
+    /// <summary>底层存储是否支持多主分片分布式扩展。</summary>
     public bool SupportsDistributedPartitions => _ledgerStore.SupportsDistributedPartitions;
 
+    /// <summary>
+    /// 获取负责指定交易品种的市场分片 ID。
+    /// </summary>
     public int GetOwnerPartition(DaoxuanMarketInstrument instrument) => _topology.GetOwner(instrument);
+
+    /// <summary>
+    /// 检查指定交易品种是否由当前主分片负责。
+    /// </summary>
     public bool Owns(DaoxuanMarketInstrument instrument) => _topology.Owns(instrument);
 
+    /// <summary>
+    /// 获取市场写互斥租约（用于挂单、撤单、提取或持久化）。
+    /// </summary>
     public async ValueTask<DaoxuanMarketWriteLease> AcquireWriteAsync(
         CancellationToken cancellationToken = default)
     {
@@ -57,6 +97,9 @@ public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
         return new DaoxuanMarketWriteLease(_marketWriteGate);
     }
 
+    /// <summary>
+    /// 托管服务启动：抢占分片写者租约，并从存储中恢复市场历史账本。
+    /// </summary>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -106,6 +149,9 @@ public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
         Volatile.Write(ref _started, true);
     }
 
+    /// <summary>
+    /// 托管服务停止：将最终内存账本刷盘入库，并释放写者租约。
+    /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (!_started || _disposed) return;
@@ -140,6 +186,9 @@ public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 在写锁保护下提交账本快照并自增版本号。
+    /// </summary>
     public async ValueTask<long> PersistAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -166,6 +215,10 @@ public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
         return expiredCount;
     }
 
+    /// <summary>
+    /// 在已持有写互斥锁的环境下，导出撮合引擎与协调器内存状态，递增修订号并提交至底层存储。
+    /// 可选地携带玩家快照一同进行事务性原子写入。
+    /// </summary>
     internal async ValueTask<long> PersistUnderWriteLockAsync(
         YuoCore.Persistence.YuoSnapshotRecord? playerSnapshot = null,
         CancellationToken cancellationToken = default)
@@ -208,9 +261,11 @@ public sealed class DaoxuanMarketRuntime : IHostedService, IAsyncDisposable
         _marketWriteGate.Dispose();
         _persistGate.Dispose();
     }
-
 }
 
+/// <summary>
+/// 市场写互斥租约句柄（RAII 模式：Dispose 时自动释放 SemaphoreSlim）。
+/// </summary>
 public readonly struct DaoxuanMarketWriteLease : IDisposable
 {
     private readonly SemaphoreSlim? _gate;

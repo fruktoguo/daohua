@@ -6,14 +6,30 @@ using YuoCore.Persistence;
 
 namespace Daoxuan.Server.Infrastructure;
 
+/// <summary>
+/// 分布式冷挂机计算选项配置 (DaoxuanDistributedComputeOptions)。
+/// </summary>
 public sealed class DaoxuanDistributedComputeOptions
 {
+    /// <summary>是否启用分布式冷计算。</summary>
     public bool Enabled { get; init; }
+
+    /// <summary>远程计算节点 HTTP 端点列表。</summary>
     public string[] NodeEndpoints { get; init; } = [];
+
+    /// <summary>调用远程计算节点的安全 Token (X-Compute-Token)。</summary>
     public string? Token { get; init; }
+
+    /// <summary>每批次发送给计算节点的玩家快照上限。</summary>
     public int BatchSize { get; init; } = 64;
+
+    /// <summary>玩家最小离线滞后时长（秒），超过此时长未模拟的离线玩家才会被选为冷计算候选。</summary>
     public int MinimumIdleLagSeconds { get; init; } = 300;
+
+    /// <summary>轮询数据库候选玩家的间隔时间（秒）。</summary>
     public int PollIntervalSeconds { get; init; } = 30;
+
+    /// <summary>向计算节点发起批处理 HTTP 请求的超时时间（秒）。</summary>
     public int RequestTimeoutSeconds { get; init; } = 60;
 
     public static DaoxuanDistributedComputeOptions From(IConfiguration configuration)
@@ -39,6 +55,16 @@ public sealed class DaoxuanDistributedComputeOptions
     }
 }
 
+/// <summary>
+/// 分布式冷挂机计算协调后台服务 (DaoxuanDistributedComputeHostedService)。
+/// <para>
+/// 职责与安全拓扑：
+/// 1. 扫描数据库中长时间处于离线/闲置挂机状态且滞后时长超过阈值的玩家快照。
+/// 2. 严格过滤掉当前常驻在本地内存或正连接的玩家（防止状态覆写）。
+/// 3. 将快照打包为批处理任务，轮询分发给外部无状态冷计算节点 (<c>Daoxuan.ComputeNode</c>) 进行纯 CPU 确定性演进。
+/// 4. 校验计算结果并将演进后的新快照写回数据库，同时记录任务流水至 <c>distributed_compute_jobs</c> 表。
+/// </para>
+/// </summary>
 public sealed class DaoxuanDistributedComputeHostedService(
     DaoxuanDistributedComputeOptions options,
     DaoxuanDatabaseOptions databaseOptions,

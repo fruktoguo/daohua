@@ -4,7 +4,7 @@ using Daoxuan.Domain.Models;
 namespace Daoxuan.Domain.Simulation;
 
 /// <summary>
-/// 战斗目录只读取版本化游戏数据；运行时不保留第二份技能、装备、怪物或遭遇定义。
+/// 战斗配置目录，集中检索版本化技能、装备、怪物与副本遭遇定义，并提供强化倍率与装备属性聚合计算。
 /// </summary>
 public static class DaoxuanCombatCatalog
 {
@@ -15,15 +15,24 @@ public static class DaoxuanCombatCatalog
         16.7, 19.2, 22, 25.1, 28.5, 32.2, 36.2, 40.5, 45.1, 50
     ];
 
+    /// <summary>获取全部战斗技能原型列表。</summary>
     public static IReadOnlyCollection<DaoxuanCombatAbilityDefinition> AllAbilities =>
         DaoxuanGameData.Current.Abilities.Values.ToArray();
 
+    /// <summary>获取全部战斗装备原型列表。</summary>
     public static IReadOnlyCollection<DaoxuanCombatEquipmentDefinition> AllEquipment =>
         DaoxuanGameData.Current.Equipment.Values.ToArray();
 
+    /// <summary>获取全部战斗遭遇副本原型列表。</summary>
     public static IReadOnlyCollection<DaoxuanCombatEncounterDefinition> AllEncounters =>
         DaoxuanGameData.Current.Encounters.Values.ToArray();
 
+    /// <summary>
+    /// 根据技能 ID 获取技能静态定义原型。
+    /// </summary>
+    /// <param name="abilityId">技能唯一 ID。</param>
+    /// <returns>技能原型对象。</returns>
+    /// <exception cref="KeyNotFoundException">当技能 ID 不存在时抛出。</exception>
     public static DaoxuanCombatAbilityDefinition GetAbility(string abilityId)
     {
         return DaoxuanGameData.Current.Abilities.TryGetValue(abilityId, out var definition)
@@ -31,6 +40,12 @@ public static class DaoxuanCombatCatalog
             : throw new KeyNotFoundException($"未知战斗能力: {abilityId}");
     }
 
+    /// <summary>
+    /// 获取指定等级计算加成后的技能数值定义。
+    /// </summary>
+    /// <param name="abilityId">技能唯一 ID。</param>
+    /// <param name="level">技能等级（1 ~ N）。</param>
+    /// <returns>计算了等级伤害/治疗加成后的技能定义副本。</returns>
     public static DaoxuanCombatAbilityDefinition GetAbilityAtLevel(string abilityId, int level)
     {
         var definition = GetAbility(abilityId);
@@ -44,6 +59,7 @@ public static class DaoxuanCombatCatalog
             return definition;
         }
 
+        // 根据等级差值累加伤害倍率、固定伤害及治疗加成
         var levelOffset = normalizedLevel - 1;
         return new DaoxuanCombatAbilityDefinition
         {
@@ -82,6 +98,9 @@ public static class DaoxuanCombatCatalog
         };
     }
 
+    /// <summary>
+    /// 尝试根据技能 ID 获取技能定义。
+    /// </summary>
     public static bool TryGetAbility(string? abilityId, out DaoxuanCombatAbilityDefinition definition)
     {
         if (string.IsNullOrWhiteSpace(abilityId))
@@ -93,6 +112,9 @@ public static class DaoxuanCombatCatalog
         return DaoxuanGameData.Current.Abilities.TryGetValue(abilityId, out definition!);
     }
 
+    /// <summary>
+    /// 尝试根据装备物品 ID 获取战斗装备原型定义。
+    /// </summary>
     public static bool TryGetEquipment(string? itemId, out DaoxuanCombatEquipmentDefinition definition)
     {
         if (string.IsNullOrWhiteSpace(itemId))
@@ -104,6 +126,12 @@ public static class DaoxuanCombatCatalog
         return DaoxuanGameData.Current.Equipment.TryGetValue(itemId, out definition!);
     }
 
+    /// <summary>
+    /// 获取指定强化等级对应的累计属性加成总倍率。
+    /// </summary>
+    /// <param name="enhancementLevel">强化等级（0 ~ 20）。</param>
+    /// <returns>强化总倍率系数。</returns>
+    /// <exception cref="ArgumentOutOfRangeException">当等级超出 0~20 范围时抛出。</exception>
     public static double GetEnhancementTotalBonusMultiplier(int enhancementLevel)
     {
         if (enhancementLevel < 0 || enhancementLevel >= EnhancementTotalBonusMultipliers.Length)
@@ -114,6 +142,11 @@ public static class DaoxuanCombatCatalog
         return EnhancementTotalBonusMultipliers[enhancementLevel];
     }
 
+    /// <summary>
+    /// 将玩家当前所有穿戴装备的基础属性与强化增量聚合累加为最终装备属性修饰。
+    /// </summary>
+    /// <param name="equippedItems">穿戴的装备及强化等级列表。</param>
+    /// <returns>合并后的装备战斗属性修饰对象。</returns>
     public static DaoxuanEquipmentCombatStats AggregateEquipmentStats(
         IReadOnlyList<DaoxuanEquippedItem>? equippedItems)
     {
@@ -149,6 +182,7 @@ public static class DaoxuanCombatCatalog
         DaoxuanCombatStyle? style = null;
         DaoxuanDamageType? damageType = null;
 
+        // 逐件装备累计基础属性与强化成长
         foreach (var equipped in equippedItems)
         {
             if (!TryGetEquipment(equipped.ItemId, out var definition))
@@ -225,6 +259,9 @@ public static class DaoxuanCombatCatalog
             damageType);
     }
 
+    /// <summary>
+    /// 获取指定 ID 的战斗遭遇副本定义。
+    /// </summary>
     public static DaoxuanCombatEncounterDefinition GetEncounter(string encounterId)
     {
         return DaoxuanGameData.Current.Encounters.TryGetValue(encounterId, out var definition)
@@ -232,6 +269,9 @@ public static class DaoxuanCombatCatalog
             : throw new KeyNotFoundException($"未知战斗遭遇: {encounterId}");
     }
 
+    /// <summary>
+    /// 尝试根据 ID 获取战斗遭遇副本定义。
+    /// </summary>
     public static bool TryGetEncounter(string? encounterId, out DaoxuanCombatEncounterDefinition definition)
     {
         if (string.IsNullOrWhiteSpace(encounterId))
@@ -244,16 +284,30 @@ public static class DaoxuanCombatCatalog
     }
 }
 
+/// <summary>
+/// 核心内置技能 ID 常量定义。
+/// </summary>
 public static class DaoxuanCombatAbilityIds
 {
+    /// <summary>重劈狂刃。</summary>
     public const string HeavySlash = "ability.heavy-slash";
+    /// <summary>连环绝斩。</summary>
     public const string ChainStrike = "ability.chain-strike";
+    /// <summary>掌心惊雷。</summary>
     public const string PalmLightning = "ability.palm-lightning";
+    /// <summary>炽炎爆裂。</summary>
     public const string BlazingBlast = "ability.blazing-blast";
+    /// <summary>道门怒吼/嘲讽。</summary>
     public const string Taunt = "ability.taunt";
+    /// <summary>重云护体。</summary>
     public const string HeavyClouds = "ability.heavy-clouds";
+    /// <summary>青坪引幽曲。</summary>
     public const string QingpingMelody = "ability.qingping-melody";
+    /// <summary>九天引雷诀。</summary>
     public const string LightningAttraction = "ability.lightning-attraction";
+    /// <summary>破阵狂澜曲。</summary>
     public const string PozhenMelody = "ability.pozhen-melody";
+    /// <summary>穿星一矢。</summary>
     public const string StarPiercer = "ability.star-piercer";
 }
+

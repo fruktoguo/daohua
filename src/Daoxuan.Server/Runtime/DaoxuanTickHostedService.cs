@@ -2,6 +2,16 @@ using Daoxuan.Server.Infrastructure;
 
 namespace Daoxuan.Server.Runtime;
 
+/// <summary>
+/// 在线玩家事件截止时间驱动后台服务 (DaoxuanSimulationHostedService)。
+/// <para>
+/// 职责与调度模型：
+/// 1. 采用离散事件截止时间驱动（Event Deadline Driven）而非固定 Tick 轮询。
+/// 2. 获取所有在线玩家中最近的事件截止时间点进行精确异步等待；当有新玩家上线或指令修改队列时，由 <see cref="DaoxuanSimulationScheduleSignal"/> 提前打断并重新评估。
+/// 3. 到达截止时间时批量推进演进 (<see cref="DaoxuanGameHost.AdvanceDueOnlinePlayersAsync"/>)，广播增量并入队落盘。
+/// 4. 停机时执行安全排空：强制将全部内存玩家快照刷入持久化队列并关闭队列输入端。
+/// </para>
+/// </summary>
 public sealed class DaoxuanSimulationHostedService : BackgroundService
 {
     private readonly DaoxuanGameHost _gameHost;
@@ -95,6 +105,16 @@ public sealed class DaoxuanSimulationHostedService : BackgroundService
     }
 }
 
+/// <summary>
+/// 系统后台定期维护托管服务 (DaoxuanMaintenanceHostedService)。
+/// <para>
+/// 职责：
+/// 1. 周期性检查点 (Checkpoint)：每 30 秒将当前所有在线玩家最新状态入队落盘。
+/// 2. 冷玩家淘汰 (Cold Eviction)：每 15 秒扫描超时未活动的离线玩家，释放 ECS 实体并转入冷快照 LRU。
+/// 3. 市场过期单清理 (Market Expiration Sweep)：每 60 秒扫描并回收已过有效期的市场挂牌。
+/// 4. 采用单定时器动态对齐 (<see cref="MinDeadline"/>)，避免并发多定时器线程开销。
+/// </para>
+/// </summary>
 public sealed class DaoxuanMaintenanceHostedService : BackgroundService
 {
     private static readonly TimeSpan CheckpointInterval = TimeSpan.FromSeconds(30);

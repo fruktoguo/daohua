@@ -3,12 +3,23 @@ using Daoxuan.Domain.Models;
 
 namespace Daoxuan.Domain.Simulation;
 
+/// <summary>
+/// 修真大世界大地图目录与寻路拓扑管理类。
+/// 负责地图节点、路径边检索、位置坐标插值、Dijktra 最短路径规划与移动进度推进。
+/// </summary>
 public static class DaoxuanWorldCatalog
 {
     private const double PositionEpsilon = 0.000_001;
 
+    /// <summary>获取所有大地图定义。</summary>
     public static IReadOnlyCollection<DaoxuanWorldMapDefinition> All => DaoxuanGameData.Current.Maps.Values.ToArray();
 
+    /// <summary>
+    /// 根据地图 ID 获取地图拓扑定义。
+    /// </summary>
+    /// <param name="mapId">地图 ID。</param>
+    /// <returns>地图定义对象。</returns>
+    /// <exception cref="KeyNotFoundException">当地图 ID 不存在时抛出。</exception>
     public static DaoxuanWorldMapDefinition GetMap(string mapId)
     {
         return DaoxuanGameData.Current.Maps.TryGetValue(mapId, out var map)
@@ -16,18 +27,37 @@ public static class DaoxuanWorldCatalog
             : throw new KeyNotFoundException($"未知地图: {mapId}");
     }
 
+    /// <summary>
+    /// 获取指定地图下的特定地点节点。
+    /// </summary>
+    /// <param name="mapId">地图 ID。</param>
+    /// <param name="nodeId">节点 ID。</param>
+    /// <returns>节点原型对象。</returns>
+    /// <exception cref="KeyNotFoundException">当节点不存在时抛出。</exception>
     public static DaoxuanWorldNodeDefinition GetNode(string mapId, string nodeId)
     {
         return GetMap(mapId).Nodes.FirstOrDefault(node => node.Id == nodeId)
             ?? throw new KeyNotFoundException($"未知地图节点: {nodeId}");
     }
 
+    /// <summary>
+    /// 获取指定地图下的特定路径边。
+    /// </summary>
+    /// <param name="mapId">地图 ID。</param>
+    /// <param name="edgeId">连线边 ID。</param>
+    /// <returns>路径边原型对象。</returns>
+    /// <exception cref="KeyNotFoundException">当路径边不存在时抛出。</exception>
     public static DaoxuanWorldEdgeDefinition GetEdge(string mapId, string edgeId)
     {
         return GetMap(mapId).Edges.FirstOrDefault(edge => edge.Id == edgeId)
             ?? throw new KeyNotFoundException($"未知地图连线: {edgeId}");
     }
 
+    /// <summary>
+    /// 归一化校验玩家大地图位置状态（纠正非法地图、孤立边或到达端点时落入节点）。
+    /// </summary>
+    /// <param name="world">玩家大地图位置状态。</param>
+    /// <returns>如果有任何字段被修复则返回 true，否则返回 false。</returns>
     public static bool Normalize(DaoxuanWorldState world)
     {
         ArgumentNullException.ThrowIfNull(world);
@@ -88,18 +118,34 @@ public static class DaoxuanWorldCatalog
         return true;
     }
 
+    /// <summary>
+    /// 校验玩家当前所处地点是否允许执行特定行动。
+    /// </summary>
+    /// <param name="world">玩家世界位置状态。</param>
+    /// <param name="action">待执行的行动原型。</param>
+    /// <returns>允许执行返回 true，否则返回 false。</returns>
     public static bool CanPerformAction(DaoxuanWorldState world, DaoxuanActionDefinition action)
     {
         if (action.AvailableNodeIds.Count == 0) return true;
         return world.NodeId is not null && action.AvailableNodeIds.Contains(world.NodeId);
     }
 
+    /// <summary>
+    /// 获取玩家当前所在节点的修炼灵气倍率加成（如福地洞天增益）。
+    /// </summary>
+    /// <param name="world">玩家世界位置状态。</param>
+    /// <returns>修炼倍率系数（在路径上时保底为 1.0）。</returns>
     public static double GetCultivationMultiplier(DaoxuanWorldState world)
     {
         if (world.NodeId is null) return 1;
         return GetNode(world.MapId, world.NodeId).CultivationMultiplier;
     }
 
+    /// <summary>
+    /// 获取玩家在当前大地图坐标系中的二维位置 (X, Y)（包含在路径边上的插值计算）。
+    /// </summary>
+    /// <param name="world">玩家世界位置状态。</param>
+    /// <returns>二维坐标元组。</returns>
     public static (double X, double Y) GetPosition(DaoxuanWorldState world)
     {
         if (world.NodeId is not null)
@@ -118,6 +164,13 @@ public static class DaoxuanWorldCatalog
             from.Y + (to.Y - from.Y) * progress);
     }
 
+    /// <summary>
+    /// 尝试规划从当前位置（节点或路径中间）前往目标地点的最短时间路径方案。
+    /// </summary>
+    /// <param name="world">玩家当前世界位置。</param>
+    /// <param name="destinationNodeId">目标目的地节点 ID。</param>
+    /// <param name="plan">输出规划好的旅行方案。</param>
+    /// <returns>规划成功返回 true，目的地不存在或已在目的地则返回 false。</returns>
     public static bool TryPlanTravel(
         DaoxuanWorldState world,
         string destinationNodeId,
@@ -170,8 +223,15 @@ public static class DaoxuanWorldCatalog
         return true;
     }
 
+    /// <summary>
+    /// 根据已过去的时间秒数，计算并应用玩家在路线方案上的实时位置。
+    /// </summary>
+    /// <param name="world">玩家世界位置状态。</param>
+    /// <param name="plan">正在执行的旅行方案。</param>
+    /// <param name="elapsedSeconds">该赶路行动已进行秒数。</param>
     public static void ApplyTravelProgress(DaoxuanWorldState world, DaoxuanTravelPlan plan, int elapsedSeconds)
     {
+
         if (plan.Segments.Count == 0 || elapsedSeconds >= plan.TotalDurationSeconds)
         {
             world.MapId = plan.MapId;

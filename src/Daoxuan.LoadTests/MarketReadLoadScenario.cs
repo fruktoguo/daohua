@@ -8,8 +8,8 @@ using System.Text.Json;
 namespace Daoxuan.LoadTests;
 
 /// <summary>
-/// 使用正式 HTTP 端点和 ETag 条件请求模拟灵市页面。所有读者采用相同节奏，
-/// 用同步峰值检验盘口只读路径，不把浏览器渲染或领域层直调混入结果。
+/// 灵市 HTTP 读接口高并发轮询压测场景。
+/// 模拟 500 名读者并发使用 HTTP/1.1 ETag 条件请求周期性轮询盘口（3s）、个人挂单（5s）与市场指标（10s），检验 304 缓存收益与服务端吞吐。
 /// </summary>
 public static class MarketReadLoadScenario
 {
@@ -17,6 +17,12 @@ public static class MarketReadLoadScenario
     private const int OrdersIntervalSeconds = 5;
     private const int MetricsIntervalSeconds = 10;
 
+    /// <summary>
+    /// 异步执行灵市只读请求并发压测：
+    /// 1. 初始化并发 HTTP 客户端连接池；
+    /// 2. 按 3s/5s/10s 节奏并发轮询各端点，携带 If-None-Match 验证 ETag 命中；
+    /// 3. 统计请求数、200/304 响应分布、P50/P95/P99 延迟分位数及带宽流量。
+    /// </summary>
     public static async Task<LoadTestReport> RunAsync(LoadTestOptions options)
     {
         GC.Collect();

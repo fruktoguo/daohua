@@ -4,10 +4,16 @@ using Xunit;
 
 namespace Daoxuan.Domain.Tests;
 
+/// <summary>
+/// 验证 DaoxuanMarket（灵市撮合引擎与订单簿）的核心算法、分区哈希、价格档位规则、撤单权限与快照版本控制。
+/// </summary>
 public sealed class DaoxuanMarketTests
 {
     private static readonly DaoxuanMarketInstrument Herb = new(DaoxuanItemIds.SpiritHerb);
 
+    /// <summary>
+    /// 验证订单簿的价格优先与时间优先（Price-Time Priority）撮合原则，以及标准成交税扣除。
+    /// </summary>
     [Fact]
     public void Order_book_uses_price_time_priority_and_standard_tax()
     {
@@ -34,6 +40,9 @@ public sealed class DaoxuanMarketTests
         Assert.Equal(3, book.Snapshot().Asks[0].Quantity);
     }
 
+    /// <summary>
+    /// 验证撤单权限所有权校验（非本人禁止撤单），且撤销指定品类挂单不影响其他交易品种。
+    /// </summary>
     [Fact]
     public void Cancellation_is_owner_checked_and_does_not_touch_other_instrument()
     {
@@ -56,6 +65,9 @@ public sealed class DaoxuanMarketTests
         Assert.Single(engine.GetBook(otherInstrument).Asks);
     }
 
+    /// <summary>
+    /// 验证非法价格（<=0）与不可交易物品（如真气等系统专属货币）在挂单入口处被立即拦截。
+    /// </summary>
     [Fact]
     public void Invalid_and_nontradable_orders_are_rejected_without_creating_books()
     {
@@ -74,6 +86,9 @@ public sealed class DaoxuanMarketTests
         Assert.Equal("ITEM_NOT_TRADABLE", nontradable.Code);
     }
 
+    /// <summary>
+    /// 验证异常税率策略（如产生 NaN 浮点计算错误）在挂单入簿前被安全拦截并返回错误代码。
+    /// </summary>
     [Fact]
     public void Invalid_tax_policy_is_rejected_before_order_enters_book()
     {
@@ -88,6 +103,9 @@ public sealed class DaoxuanMarketTests
         Assert.False(book.TryGetOrder("invalid-tax", out _));
     }
 
+    /// <summary>
+    /// 验证多分片引擎支持多线程并发挂单，分片隔离锁机制保证计数与指标严格准确。
+    /// </summary>
     [Fact]
     public void Sharded_engine_handles_parallel_instrument_orders()
     {
@@ -103,6 +121,9 @@ public sealed class DaoxuanMarketTests
         Assert.Equal(1_000, metrics.ActiveOrderCount);
     }
 
+    /// <summary>
+    /// 验证完全成交的买卖单会自动从活跃订单索引中清理释放，避免内存无界泄露。
+    /// </summary>
     [Fact]
     public void Terminal_order_route_is_released_after_match()
     {
@@ -117,6 +138,9 @@ public sealed class DaoxuanMarketTests
         Assert.Equal(0, engine.GetMetrics().ActiveOrderCount);
     }
 
+    /// <summary>
+    /// 验证导出订单簿快照并还原后，能精确保留原有的价格档位、时间挂单次序与序列号。
+    /// </summary>
     [Fact]
     public void Order_book_snapshot_restores_price_time_priority()
     {
@@ -135,6 +159,9 @@ public sealed class DaoxuanMarketTests
         Assert.Equal(3, restored.ExportState().Sequence);
     }
 
+    /// <summary>
+    /// 验证玩家专属挂单索引在新增挂单、快照恢复以及主动撤单全流程中的同步准确性。
+    /// </summary>
     [Fact]
     public void Owner_order_index_tracks_active_and_restored_orders()
     {
@@ -151,6 +178,9 @@ public sealed class DaoxuanMarketTests
         Assert.Empty(restored.GetActiveOrders(owner));
     }
 
+    /// <summary>
+    /// 验证灵市品种哈希算法（FNV-1a UTF-16）的确定性与强化等级敏感性，确保相同品种分片路由稳定。
+    /// </summary>
     [Fact]
     public void Market_partition_hash_is_stable_and_includes_enhancement_level()
     {
@@ -164,6 +194,9 @@ public sealed class DaoxuanMarketTests
         Assert.False(DaoxuanMarketPartitioner.IsOwnedBy(baseInstrument, 59, 64));
     }
 
+    /// <summary>
+    /// 验证非法分片拓扑参数（分片数<=0 或分片越界）时抛出参数异常。
+    /// </summary>
     [Fact]
     public void Market_partition_hash_rejects_invalid_topology()
     {
@@ -173,6 +206,9 @@ public sealed class DaoxuanMarketTests
             DaoxuanMarketPartitioner.IsOwnedBy(Herb, 2, 2));
     }
 
+    /// <summary>
+    /// 验证 1-2-5 阶梯价格步进规则（Price Increment Bands），在不同单价区间下步长平滑递增。
+    /// </summary>
     [Theory]
     [InlineData(49, 1)]
     [InlineData(50, 2)]
@@ -186,6 +222,9 @@ public sealed class DaoxuanMarketTests
         Assert.Equal(increment, DaoxuanMarketPricePolicy.GetIncrement(price));
     }
 
+    /// <summary>
+    /// 验证价格规范化取整（向上/向下）以及禁止低于系统回收价（Vendor Floor）的底线约束。
+    /// </summary>
     [Fact]
     public void Market_price_policy_rounds_to_band_and_enforces_vendor_floor()
     {
@@ -205,6 +244,9 @@ public sealed class DaoxuanMarketTests
         Assert.Equal("PRICE_BELOW_VENDOR", belowVendor.Code);
     }
 
+    /// <summary>
+    /// 验证订单具有 30 天有效期限，到期自动出簿并标记为 Expired，快照恢复后到期时间保持一致。
+    /// </summary>
     [Fact]
     public void Market_orders_expire_at_thirty_days_and_restore_time_metadata()
     {
@@ -239,6 +281,9 @@ public sealed class DaoxuanMarketTests
         Assert.False(restored.TryGetOrder(expired.OrderId, out _));
     }
 
+    /// <summary>
+    /// 验证盘口只读版本号（BookVersion）在挂单、部分成交、撤单与超期回收各生命周期的递增演进。
+    /// </summary>
     [Fact]
     public void Market_book_read_version_tracks_partial_fill_cancel_and_expiry()
     {

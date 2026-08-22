@@ -6,8 +6,10 @@ import { gameClient } from '../network/gameClient'
 import { getUiScale, setUiScale } from '../utils/uiScale'
 import { useI18nStore, useT } from '../i18n'
 
+/** 设置页面 Tab 分类（账号信息与显示偏好） */
 type SettingsTab = 'account' | 'display'
 
+/** 格式化绝对时间戳为 YYYY-MM-DD HH:mm:ss 字符串 */
 function formatDateTime(unixSeconds: number, fallbackText: string): string {
   if (!unixSeconds || unixSeconds <= 0) return fallbackText
   const date = new Date(unixSeconds * 1000)
@@ -21,6 +23,7 @@ function formatDateTime(unixSeconds: number, fallbackText: string): string {
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}`
 }
 
+/** 格式化改名冷却时间文案（时/分/秒） */
 function formatCooldown(seconds: number, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (seconds <= 0) return ''
   const h = Math.floor(seconds / 3600)
@@ -35,6 +38,13 @@ function formatCooldown(seconds: number, t: (key: string, params?: Record<string
   return t('app.settings.timeSeconds', { s })
 }
 
+/**
+ * 游戏设置中心主页面组件 (SettingsPage)
+ *
+ * 功能与交互模块：
+ * 1. 账号信息 (account Tab)：展示道号、账号、序列 ID、注册时间，支持道号重命名（含冷却倒计时）与退出登录确认；
+ * 2. 显示设置 (display Tab)：提供界面缩放比例 (UI Scale: 50%~200% 滑块与预设档位) 与多语言切换 (zh-CN / en-US)。
+ */
 export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const t = useT()
   const [activeTab, setActiveTab] = useState<SettingsTab>('account')

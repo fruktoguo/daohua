@@ -245,12 +245,15 @@ export function useFloatingContext(): FloatingContextValue | null {
 /**
  * 通用 FloatingPopover 属性
  */
+/**
+ * 通用 FloatingPopover 属性定义
+ */
 export interface FloatingPopoverProps {
-  /** 触发元素，支持 JSX 或渲染函数 */
+  /** 触发元素，支持 JSX 或渲染函数 (props: { isOpen, toggle }) */
   children: ReactNode | ((props: { isOpen: boolean; toggle: () => void }) => ReactNode)
-  /** 浮层内容，支持 JSX 或渲染函数 */
+  /** 浮层内容，支持 JSX 或渲染函数 (props: { close }) */
   content: ReactNode | ((props: { close: () => void }) => ReactNode)
-  /** 触发方式：hover (桌面端默认带延时), click, 或 manual (受控) */
+  /** 触发方式：hover (桌面端默认带延时), click, 或 manual (受控模式) */
   trigger?: 'hover' | 'click' | 'manual'
   /** 优选悬浮方向，默认 'bottom' */
   placement?: FloatingPlacement
@@ -258,7 +261,7 @@ export interface FloatingPopoverProps {
   size?: FloatingSize
   /** 自定义精确宽度 (支持 number 如 320，或 string 如 '340px') */
   width?: number | string
-  /** 悬浮窗间隙，默认 8px */
+  /** 悬浮窗与触发器间隙，默认 8px */
   gap?: number
   /** 视口内安全边距，默认 10px */
   padding?: number
@@ -300,15 +303,29 @@ export interface FloatingPopoverProps {
   quantityTitle?: string
 }
 
+/**
+ * 外部命令式控制句柄定义
+ */
 export interface FloatingPopoverHandle {
+  /** 打开浮层 */
   open: () => void
+  /** 关闭浮层 */
   close: () => void
+  /** 切换开闭 */
   toggle: () => void
+  /** 当前是否处于展开状态 */
   isOpen: boolean
 }
 
 /**
- * 通用的修仙风悬浮气泡/菜单组件
+ * 通用修仙风悬浮气泡/菜单核心组件 (FloatingPopover)
+ *
+ * 核心机制与特性：
+ * 1. 独立 Portal 挂载：通过全局专用 #daoxuan-floating-root 挂载到 body，避免受父级 overflow: hidden 裁剪与 z-index 层叠上下文限制；
+ * 2. 视口边缘避让 (Safe Viewport Clamping)：自动进行上下/左右翻转检测并严格夹持在安全可视区域内；
+ * 3. 触屏/鼠标双模适配：桌面端默认带防抖延时 hover 打开；移动端/触控设备自动切为轻量点击展示；
+ * 4. 非侵入式点击穿透：支持 interactive=false (pointer-events: none) 零阻碍背景点击，以及点击外部静默被动关闭；
+ * 5. 多气泡组合排布：支持主卡片 + 附属气泡群 (asideCards) 以及数量副气泡 (createQuantityAsideCard) 联动展示。
  */
 export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingPopoverProps>(
   function FloatingPopover(

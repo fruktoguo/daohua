@@ -4,8 +4,16 @@ using Xunit;
 
 namespace Daoxuan.Domain.Tests;
 
+/// <summary>
+/// 验证 DaoxuanDataBudgetResolver（数值预算解析器）的确定性解析逻辑。
+/// 覆盖技能、法宝装备、消耗品物品及词条增量在配置强度与属性权重下的预算映射与数值生成。
+/// </summary>
 public sealed class DaoxuanDataBudgetResolverTests
 {
+    /// <summary>
+    /// 验证显式配置属性的保留与法力消耗计算。
+    /// 确保配置中明确声明的战斗风格、伤害系数、固定伤害、控制与穿透参数完整透传，并依品阶期望法力计算法力消耗。
+    /// </summary>
     [Fact]
     public void ResolveAbility_WithExplicitValues_PreservesExplicitFields()
     {
@@ -37,6 +45,9 @@ public sealed class DaoxuanDataBudgetResolverTests
         Assert.Equal(6, definition.ManaCost);
     }
 
+    /// <summary>
+    /// 验证按法力消耗比率（ManaCostRatio）和品阶基准期望法力值向上取整的计算逻辑。
+    /// </summary>
     [Fact]
     public void ResolveAbility_ManaCostRatio_CalculatesCeiledManaCost()
     {
@@ -54,6 +65,9 @@ public sealed class DaoxuanDataBudgetResolverTests
         Assert.Equal(1.5, definition.DamageRatio);
     }
 
+    /// <summary>
+    /// 验证零法力消耗配置解析结果为 0，适用于无消耗的基础攻击与武技。
+    /// </summary>
     [Fact]
     public void ResolveAbility_ZeroManaCostRatio_ProducesZeroCost()
     {
@@ -68,6 +82,9 @@ public sealed class DaoxuanDataBudgetResolverTests
         Assert.Equal(0, definition.ManaCost);
     }
 
+    /// <summary>
+    /// 验证依据装备强度（Intensity）与属性权重字典生成基础属性及对应强化成长曲线。
+    /// </summary>
     [Fact]
     public void ResolveEquipment_WithIntensityAndWeights_GeneratesStatsAndEnhancementBonus()
     {
@@ -102,6 +119,9 @@ public sealed class DaoxuanDataBudgetResolverTests
         Assert.Equal(0.0012, definition.EnhancementBonus.WeakenRatio, precision: 4);
     }
 
+    /// <summary>
+    /// 验证依据消耗品权重计算生命/灵力即时恢复量以及附带持续 Buff 属性加成。
+    /// </summary>
     [Fact]
     public void ResolveItem_WithConsumableWeights_CalculatesRestoreAndBuffValues()
     {

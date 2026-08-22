@@ -5,6 +5,10 @@ using Daoxuan.Domain.Simulation;
 
 namespace Daoxuan.LoadTests;
 
+/// <summary>
+/// 灵市高并发挂单与交叉撮合吞吐量压测场景。
+/// 模拟多玩家并发挂牌买卖单，跨 64 分片进行并行撮合，度量撮合引擎每秒订单处理能力（TPS）与内存增长。
+/// </summary>
 public static class MarketLoadScenario
 {
     private static readonly string[] TradableItems =
@@ -15,6 +19,12 @@ public static class MarketLoadScenario
         DaoxuanItemIds.FireTalisman
     ];
 
+    /// <summary>
+    /// 执行灵市撮合吞吐量压测：
+    /// 1. 并发提交卖方挂单建立订单簿盘口；
+    /// 2. 并发提交买方撮合单触发交叉成交；
+    /// 3. 统计成交笔数（Fills）、撮合耗时、TPS 及各分片指标。
+    /// </summary>
     public static LoadTestReport Run(LoadTestOptions options)
     {
         GC.Collect();

@@ -5,6 +5,9 @@ using Npgsql;
 
 namespace Daoxuan.Server.Infrastructure;
 
+/// <summary>
+/// 账号实体数据记录。
+/// </summary>
 public sealed class DaoxuanAccountRecord
 {
     public string Account { get; set; } = string.Empty;
@@ -16,6 +19,9 @@ public sealed class DaoxuanAccountRecord
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>
+/// 鉴权操作（注册/登录）结果记录。
+/// </summary>
 public sealed record AuthResult(
     bool Success,
     string? Account,
@@ -25,8 +31,14 @@ public sealed record AuthResult(
     string? Message = null,
     DateTimeOffset? CreatedAt = null);
 
+/// <summary>
+/// 账号认证仓储接口 (IDaoxuanAccountStore)。
+/// </summary>
 public interface IDaoxuanAccountStore
 {
+    /// <summary>
+    /// 注册新账号：执行输入格式校验、密码盐化哈希并持久化入库。
+    /// </summary>
     ValueTask<AuthResult> RegisterAsync(
         string account,
         string password,
@@ -35,11 +47,20 @@ public interface IDaoxuanAccountStore
         Func<long> localSequenceProvider,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 账号登录验证：比对 PBKDF2 密码哈希。
+    /// </summary>
     ValueTask<AuthResult> LoginAsync(string account, string password, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// 更新角色的道号/角色名。
+    /// </summary>
     ValueTask UpdateCharacterNameAsync(string account, string newName, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 账号仓储基础类：提供 PBKDF2-SHA256 密码哈希、随机加盐、恒定时间比对与账号/道号格式校验。
+/// </summary>
 public abstract class DaoxuanAccountStoreBase
 {
     private const int SaltBytes = 16;
@@ -47,6 +68,9 @@ public abstract class DaoxuanAccountStoreBase
     private const int Pbkdf2Iterations = 120_000;
     private static readonly Regex AccountNamePattern = new(@"^[\u4e00-\u9fa5a-zA-Z0-9_]+$", RegexOptions.Compiled);
 
+    /// <summary>
+    /// 校验注册输入的账号、密码与道号格式。
+    /// </summary>
     protected static AuthResult? ValidateRegistrationInput(string account, string password, string? characterName, out string cleanAccount, out string cleanName)
     {
         cleanAccount = string.Empty;
@@ -86,6 +110,9 @@ public abstract class DaoxuanAccountStoreBase
         return null;
     }
 
+    /// <summary>
+    /// 校验登录输入的非空。
+    /// </summary>
     protected static AuthResult? ValidateLoginInput(string account, string password, out string cleanAccount)
     {
         cleanAccount = string.Empty;
@@ -103,12 +130,18 @@ public abstract class DaoxuanAccountStoreBase
         return null;
     }
 
+    /// <summary>
+    /// 生成 16 字节随机盐并基于 PBKDF2-SHA256 计算密码哈希。
+    /// </summary>
     protected static (string Hash, string Salt) HashPassword(string password)
     {
         var saltBytes = RandomNumberGenerator.GetBytes(SaltBytes);
         return (HashPassword(password, saltBytes, Pbkdf2Iterations), Convert.ToBase64String(saltBytes));
     }
 
+    /// <summary>
+    /// 使用恒定时间比较验证输入的密码明文与存储哈希。
+    /// </summary>
     protected static bool VerifyPassword(string password, string storedHash, string storedSalt)
     {
         var saltBytes = Convert.FromBase64String(storedSalt);
@@ -119,6 +152,9 @@ public abstract class DaoxuanAccountStoreBase
             Encoding.UTF8.GetBytes(storedHash));
     }
 
+    /// <summary>
+    /// 归一化键名（去除前后空白并转大写，用于不区分大小写与空白的唯一性比对）。
+    /// </summary>
     protected static string NormalizeKey(string value) => value.Trim().ToUpperInvariant();
 
     private static string HashPassword(string password, byte[] salt, int iterations)
@@ -147,7 +183,15 @@ public abstract class DaoxuanAccountStoreBase
     }
 }
 
-
+/// <summary>
+/// 基于 PostgreSQL 的账号仓储实现 (DaoxuanPostgresAccountStore)。
+/// <para>
+/// 职责：
+/// 1. 将账号凭据与归一化键持久化于 accounts 表。
+/// 2. 依赖 PostgreSQL 唯一索引约束排重，捕获 UniqueViolation (23505) 错误返回业务友好提示。
+/// 3. 利用 PostgreSQL 自动递增主键 sequence_id 为每个账号分配单调序列号。
+/// </para>
+/// </summary>
 public sealed class DaoxuanPostgresAccountStore(NpgsqlDataSource dataSource) : DaoxuanAccountStoreBase, IDaoxuanAccountStore
 {
     public async ValueTask<AuthResult> RegisterAsync(

@@ -3,6 +3,7 @@ import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
 
+/** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
   from: { x: number; y: number },
   to: { x: number; y: number },
@@ -11,6 +12,16 @@ function getEdgeDistance(
 }
 
 // 地图节点/地点名称与描述来自服务端数据，仅面板框架文本与 aria 描述模板走 i18n。
+
+/**
+ * 修仙大千世界大地图与游历导航面板 (WorldMapPanel)
+ *
+ * 核心功能与交互流程：
+ * 1. 节点与连线网络：基于 SVG 渲染大地图节点网格与通路连线，高亮已规划行进路线 (is-planned)；
+ * 2. 玩家位置标记：实时在地图当前节点或沿途行进轨迹中展示玩家光标 (world-player-marker)；
+ * 3. 灵地详情侧边栏：选中节点后展示修练灵气倍率、可用行动列表、潜伏敌怪遭遇及行进耗时；
+ * 4. 游历与中途停止：支持向目标节点发送 travel_to 移动指令或中途取消行程。
+ */
 export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const t = useT()
   const maps = useGameStore(state => state.maps)
