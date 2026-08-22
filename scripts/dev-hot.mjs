@@ -55,14 +55,26 @@ function isWatchableFile(relativePath) {
   return /\.(cs|csproj|json)$/.test(relativePath);
 }
 
+const IGNORED_DIR_NAMES = new Set([
+  "bin",
+  "obj",
+  "node_modules",
+  ".git",
+  ".vs",
+  ".idea",
+]);
+
 /** 递归收集目录下全部文件相对路径。 */
 function listFilesRecursive(dir, baseDir = dir, out = []) {
   for (const entry of readdirSafe(dir)) {
-    const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (IGNORED_DIR_NAMES.has(entry.name) || entry.name.startsWith(".")) {
+        continue;
+      }
+      const full = path.join(dir, entry.name);
       listFilesRecursive(full, baseDir, out);
     } else {
-      out.push(path.relative(baseDir, full));
+      out.push(path.relative(baseDir, path.join(dir, entry.name)));
     }
   }
   return out;
@@ -239,8 +251,27 @@ setInterval(() => {
   }
 }, 1_000).unref();
 
-startServer();
+function initialBuildAndStart() {
+  building = true;
+  log("正在执行初次构建...");
+  const build = spawn("dotnet", ["build", project], {
+    cwd: rootDir,
+    env: { ...process.env },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
 
-if (process.stdout.isTTY) {
-  log(`已就绪。防抖 ${debounceMs / 1_000}s，Ctrl+C 停止全部服务。`);
+  build.on("exit", (code) => {
+    building = false;
+    if (shuttingDown) return;
+    if (code !== 0) {
+      log(`初次构建失败 (code=${code})，等待源码变更修复后重试`);
+      return;
+    }
+    startServer();
+    if (process.stdout.isTTY) {
+      log(`已就绪。防抖 ${debounceMs / 1_000}s，Ctrl+C 停止全部服务。`);
+    }
+  });
 }
+
+initialBuildAndStart();
