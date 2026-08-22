@@ -377,4 +377,149 @@ public sealed class ActionTransitionSystemTests
         Assert.Equal(ActionStatus.Running, queue.Current!.Status);
         Assert.True(queue.Current.ExecutionRevision > 0);
     }
+
+    /// <summary>
+    /// 验证 ApplyAdvanceResult 能够原子提交 Buff 的新增、叠加、驱散以及大地图移动增量（WorldDelta）。
+    /// </summary>
+    [Fact]
+    public void ApplyAdvanceResult_atomically_updates_buffs_and_world_delta()
+    {
+        var (_, entity) = CreateTestPlayerEntity();
+        var queue = entity.GetComponent<ActionQueueComponent>();
+        var cultivation = entity.GetComponent<CultivationComponent>();
+        var stats = entity.GetComponent<PlayerStatsComponent>();
+        var dirty = entity.GetComponent<SyncDirtyComponent>();
+
+        var entry = new QueueEntryState
+        {
+            ActionId = ActionIds.GatherHerbs,
+            RemainingRepeats = 1,
+            Travel = new TravelPlan
+            {
+                MapId = WorldMapIds.QingyunMountains,
+                DestinationNodeId = WorldNodeIds.HerbVale
+            }
+        };
+        queue.Entries.Add(entry);
+
+        cultivation.Buffs.Add(new BuffState
+        {
+            BuffId = "buff-old",
+            Name = "旧增益",
+            Stacks = 1,
+            ExpiresAt = Baseline.AddSeconds(10)
+        });
+
+        var result = new ActionAdvanceResult
+        {
+            ConsumedUntil = Baseline.AddSeconds(10),
+            Completed = false,
+            Delta = new ActionDelta
+            {
+                Stats = new ActionPlayerStatDelta
+                {
+                    CultivationCyclesDelta = 3
+                },
+                AddedBuffs =
+                [
+                    new BuffState { BuffId = "buff-new", Name = "新增益", Stacks = 2, ExpiresAt = Baseline.AddMinutes(5) }
+                ],
+                RemovedBuffIds = ["buff-old"],
+                World = new ActionWorldDelta
+                {
+                    TargetMapId = WorldMapIds.QingyunMountains,
+                    TargetNodeId = WorldNodeIds.CloudMarket
+                }
+            }
+        };
+
+        ActionTransitionSystem.ApplyAdvanceResult(entity, result);
+
+        // 验证 Buff 列表更新
+        Assert.DoesNotContain(cultivation.Buffs, b => b.BuffId == "buff-old");
+        var newBuff = Assert.Single(cultivation.Buffs, b => b.BuffId == "buff-new");
+        Assert.Equal(2, newBuff.Stacks);
+
+        // 验证 WorldDelta 作用于 Travel 与脏标记
+        Assert.Equal(WorldNodeIds.CloudMarket, entry.Travel?.DestinationNodeId);
+        Assert.True(dirty.IsDirty(DirtySections.World));
+        Assert.True(dirty.IsDirty(DirtySections.Buffs));
+
+        // 验证 CultivationCycles 统计
+        Assert.Equal(3, stats.CultivationCycles);
+        Assert.Equal(3, cultivation.CultivationCycles);
+    }
+
+    /// <summary>
+    /// 验证 AdvanceEntityTo 能够按序连续推进多个不同任务并在 LoopEnabled 时形成闭环。
+    /// </summary>
+    [Fact]
+    public void AdvanceEntityTo_advances_multiple_entries_sequentially_with_loop()
+    {
+        var (_, entity) = CreateTestPlayerEntity();
+        var queue = entity.GetComponent<ActionQueueComponent>();
+        var inventory = entity.GetComponent<InventoryComponent>();
+        var cultivation = entity.GetComponent<CultivationComponent>();
+
+        queue.LoopEnabled = true;
+        // 动作1：采集灵草（10s，产出灵草）
+        queue.Entries.Add(new QueueEntryState
+        {
+            ActionId = ActionIds.GatherHerbs,
+            TotalRepeats = 1,
+            RemainingRepeats = 1
+        });
+        // 动作2：吐纳灵气（10s，产出灵气）
+        queue.Entries.Add(new QueueEntryState
+        {
+            ActionId = ActionIds.DrawQi,
+            TotalRepeats = 1,
+            RemainingRepeats = 1
+        });
+
+        // 推进 20 秒：依次完成两个动作
+        var result = ActionTransitionSystem.AdvanceEntityTo(entity, Baseline.AddSeconds(20));
+
+        Assert.True(result.ReachedTarget);
+        Assert.False(result.Capped);
+        Assert.Equal(2, result.CompletedActions);
+        Assert.Equal(2, queue.Count);
+        Assert.True(inventory.Get(ItemIds.SpiritHerb) > 0);
+        Assert.True(cultivation.Qi > 0);
+        Assert.Equal(Baseline.AddSeconds(20), cultivation.LastSimulatedAt);
+    }
+
+    /// <summary>
+    /// 验证当队列中首个任务受阻且存在多个任务时，AdvanceEntityTo 能够轮换到后续可用任务执行。
+    /// </summary>
+    [Fact]
+    public void AdvanceEntityTo_rotates_blocked_entries_when_multiple_items_exist()
+    {
+        var (_, entity) = CreateTestPlayerEntity();
+        var queue = entity.GetComponent<ActionQueueComponent>();
+        var cultivation = entity.GetComponent<CultivationComponent>();
+
+        queue.LoopEnabled = true;
+        // 动作1：炼丹（缺少药材，受阻）
+        queue.Entries.Add(new QueueEntryState
+        {
+            ActionId = ActionIds.RefineQiPill,
+            TotalRepeats = 1,
+            RemainingRepeats = 1
+        });
+        // 动作2：吐纳（无消耗，10s）
+        queue.Entries.Add(new QueueEntryState
+        {
+            ActionId = ActionIds.DrawQi,
+            TotalRepeats = 1,
+            RemainingRepeats = 1
+        });
+
+        // 推进 10 秒：动作1受阻轮换到末尾，动作2成功执行并完成
+        var result = ActionTransitionSystem.AdvanceEntityTo(entity, Baseline.AddSeconds(10));
+
+        Assert.True(result.ReachedTarget);
+        Assert.Equal(1, result.CompletedActions);
+        Assert.True(cultivation.Qi > 0);
+    }
 }
