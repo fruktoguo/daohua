@@ -477,29 +477,31 @@ public sealed class PostgresSnapshotStore(NpgsqlDataSource dataSource) : IBatchS
 
     private static PlayerSnapshotMetadata ExtractPlayerMetadata(YuoSnapshotRecord snapshot)
     {
-        if (!string.Equals(snapshot.Kind, "player", StringComparison.OrdinalIgnoreCase)
-            || !Guid.TryParse(snapshot.Id, out var playerId))
+        if (!string.Equals(snapshot.Kind, "player", StringComparison.OrdinalIgnoreCase))
         {
             return default;
         }
 
-        try
+        if (!Guid.TryParse(snapshot.Id, out var playerId))
         {
-            var envelope = StateSerializer.DeserializeEnvelope(snapshot.Payload, Domain.GameData.GameDataCatalog.Current.Fingerprint);
-            var state = envelope.Payload;
-            return new PlayerSnapshotMetadata(
-                playerId,
-                EmptyToNull(state.Account),
-                EmptyToNull(state.Name),
-                envelope.SequenceId > 0 ? envelope.SequenceId : (state.SequenceId > 0 ? state.SequenceId : null),
-                envelope.PlayerStateVersion > 0 ? envelope.PlayerStateVersion : (state.Version > 0 ? state.Version : null),
-                (short)state.PresenceMode,
-                envelope.LastSimulatedAt == default ? (state.LastSimulatedAt == default ? null : state.LastSimulatedAt) : envelope.LastSimulatedAt);
+            throw new InvalidDataException($"玩家快照 Id 必须为有效 GUID，实际为: '{snapshot.Id}'");
         }
-        catch (Exception)
+
+        var envelope = StateSerializer.DeserializeEnvelope(snapshot.Payload, Domain.GameData.GameDataCatalog.Current.Fingerprint);
+        var state = envelope.Payload;
+        if (state.PlayerId != playerId)
         {
-            return default;
+            throw new InvalidDataException($"快照 Id '{snapshot.Id}' 与玩家状态 PlayerId '{state.PlayerId:D}' 不一致。");
         }
+
+        return new PlayerSnapshotMetadata(
+            playerId,
+            EmptyToNull(state.Account),
+            EmptyToNull(state.Name),
+            envelope.SequenceId,
+            envelope.PlayerStateVersion,
+            (short)state.PresenceMode,
+            envelope.LastSimulatedAt);
     }
 
     private static string? EmptyToNull(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

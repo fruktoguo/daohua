@@ -505,16 +505,15 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
                         SimulationEngine.SetPresence(state, PresenceMode.IdleOffline, _clock.UtcNow);
                     }
 
-                    return ToSnapshotRecord(state);
+                    return EvictPlayerToColdSnapshot(session.PlayerId) ?? ToSnapshotRecord(state);
                 }, CancellationToken.None);
-                // 断开连接的清理令牌通常已被取消，但这里的状态已经发生变化；
-                // 继续把快照写入队列，再由 Fiber 安全地转为冷存档，不能留下半个在线实体。
-                var coldRecord = await ExecuteOnOwnerAsync(
-                    _ => EvictPlayerToColdSnapshot(session.PlayerId),
-                    CancellationToken.None);
-                await _persistenceQueue.EnqueueAsync(
-                    new SaveSnapshotCommand(coldRecord ?? record),
-                    CancellationToken.None);
+
+                if (record is not null)
+                {
+                    await _persistenceQueue.EnqueueAsync(
+                        new SaveSnapshotCommand(record),
+                        CancellationToken.None);
+                }
                 _scheduleSignal.Pulse();
             }
         }

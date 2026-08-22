@@ -138,4 +138,84 @@ public sealed class StateSerializerEnvelopeTests
         var ex = Assert.Throws<InvalidDataException>(() => StateSerializer.DeserializeEnvelope(bytes));
         Assert.Contains("载荷 (Payload) 为空", ex.Message);
     }
+
+    [Fact]
+    public void Deserialize_RejectsTamperedVersion_ThrowsInvalidDataException()
+    {
+        var state = new PlayerState
+        {
+            PlayerId = Guid.NewGuid(),
+            Name = "版本篡改玩家",
+            SequenceId = 1,
+            Version = 1,
+            LastSimulatedAt = DateTimeOffset.UtcNow
+        };
+
+        var tamperedEnvelope = new SnapshotEnvelope(
+            SnapshotSchemaVersion: SnapshotEnvelope.CurrentSchemaVersion,
+            GameDataFingerprint: GameDataCatalog.Current.Fingerprint,
+            PlayerStateVersion: 999, // 篡改顶层版本号
+            SequenceId: 1,
+            LastSimulatedAt: state.LastSimulatedAt,
+            Payload: state);
+
+        var bytes = StateSerializer.SerializeEnvelope(tamperedEnvelope);
+        var ex = Assert.Throws<InvalidDataException>(() => StateSerializer.DeserializeEnvelope(bytes));
+        Assert.Contains("快照信封版本号 (999) 与载荷内部版本号 (1) 不一致", ex.Message);
+    }
+
+    [Fact]
+    public void Deserialize_RejectsTamperedSequenceId_ThrowsInvalidDataException()
+    {
+        var state = new PlayerState
+        {
+            PlayerId = Guid.NewGuid(),
+            Name = "序号篡改玩家",
+            SequenceId = 1,
+            Version = 1,
+            LastSimulatedAt = DateTimeOffset.UtcNow
+        };
+
+        var tamperedEnvelope = new SnapshotEnvelope(
+            SnapshotSchemaVersion: SnapshotEnvelope.CurrentSchemaVersion,
+            GameDataFingerprint: GameDataCatalog.Current.Fingerprint,
+            PlayerStateVersion: 1,
+            SequenceId: 888, // 篡改顶层序号
+            LastSimulatedAt: state.LastSimulatedAt,
+            Payload: state);
+
+        var bytes = StateSerializer.SerializeEnvelope(tamperedEnvelope);
+        var ex = Assert.Throws<InvalidDataException>(() => StateSerializer.DeserializeEnvelope(bytes));
+        Assert.Contains("快照信封序号 (888) 与载荷内部序号 (1) 不一致", ex.Message);
+    }
+
+    [Fact]
+    public void Deserialize_RejectsEmptyPlayerIdOrName_ThrowsInvalidDataException()
+    {
+        var stateWithEmptyId = new PlayerState
+        {
+            PlayerId = Guid.Empty,
+            Name = "无ID玩家",
+            SequenceId = 1,
+            Version = 1,
+            LastSimulatedAt = DateTimeOffset.UtcNow
+        };
+
+        var bytes = StateSerializer.Serialize(stateWithEmptyId);
+        var exId = Assert.Throws<InvalidDataException>(() => StateSerializer.DeserializeEnvelope(bytes));
+        Assert.Contains("PlayerId 为空", exId.Message);
+
+        var stateWithEmptyName = new PlayerState
+        {
+            PlayerId = Guid.NewGuid(),
+            Name = "   ",
+            SequenceId = 1,
+            Version = 1,
+            LastSimulatedAt = DateTimeOffset.UtcNow
+        };
+
+        var bytesName = StateSerializer.Serialize(stateWithEmptyName);
+        var exName = Assert.Throws<InvalidDataException>(() => StateSerializer.DeserializeEnvelope(bytesName));
+        Assert.Contains("玩家名称为空", exName.Message);
+    }
 }

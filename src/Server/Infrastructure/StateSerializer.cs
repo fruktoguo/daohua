@@ -106,6 +106,45 @@ public static class StateSerializer
             throw new InvalidDataException("快照信封中的玩家状态载荷 (Payload) 为空。");
         }
 
+        if (envelope.PlayerStateVersion <= 0)
+        {
+            throw new InvalidDataException($"快照信封版本号非法: {envelope.PlayerStateVersion}，必须为正整数。");
+        }
+
+        if (envelope.SequenceId <= 0)
+        {
+            throw new InvalidDataException($"快照信封序号非法: {envelope.SequenceId}，必须为正整数。");
+        }
+
+        var state = envelope.Payload;
+        if (state.PlayerId == Guid.Empty)
+        {
+            throw new InvalidDataException("快照载荷中的 PlayerId 为空。");
+        }
+
+        if (string.IsNullOrWhiteSpace(state.Name))
+        {
+            throw new InvalidDataException("快照载荷中的玩家名称为空。");
+        }
+
+        if (envelope.PlayerStateVersion != state.Version)
+        {
+            throw new InvalidDataException(
+                $"快照信封版本号 ({envelope.PlayerStateVersion}) 与载荷内部版本号 ({state.Version}) 不一致。");
+        }
+
+        if (envelope.SequenceId != state.SequenceId)
+        {
+            throw new InvalidDataException(
+                $"快照信封序号 ({envelope.SequenceId}) 与载荷内部序号 ({state.SequenceId}) 不一致。");
+        }
+
+        if (envelope.LastSimulatedAt != state.LastSimulatedAt)
+        {
+            throw new InvalidDataException(
+                $"快照信封结算时间 ({envelope.LastSimulatedAt:O}) 与载荷内部结算时间 ({state.LastSimulatedAt:O}) 不一致。");
+        }
+
         return envelope;
     }
 
