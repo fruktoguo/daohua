@@ -133,6 +133,12 @@ export const appEn: typeof appZh = {
     messages: {
       unparseablePacket: 'Received unparseable packet.',
     },
+    avatar: {
+      femaleName: 'Taixu Sword Immortal (Female)',
+      femaleDesc: 'White-and-cyan robes, flowing raven hair, holding an ethereal frost sword.',
+      maleName: 'Lingxiao Sword Sovereign (Male)',
+      maleDesc: 'Verdant and white robes, high ponytail, channeling aerial sword seals.',
+    },
     settings: {
       title: 'Settings',
       categoryAria: 'Settings Category',
@@ -148,6 +154,8 @@ export const appEn: typeof appZh = {
       modifyNameBtn: 'Modify Title',
       logoutHint: 'To switch to another account or re-login:',
       logoutBtn: 'Log Out',
+      avatarHeading: 'Cultivator Appearance (Portrait)',
+      avatarDesc: 'Customize your primary cultivator portrait displayed in Insight and Combat.',
       zoomHeading: 'Interface Scaling',
       zoomDesc: 'Adjust global UI scale according to your display resolution and preference (supports 50% to 200%).',
       zoomAria: 'UI Scale',

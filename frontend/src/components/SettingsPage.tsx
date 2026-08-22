@@ -5,6 +5,7 @@ import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { getUiScale, setUiScale } from '../utils/uiScale'
 import { useI18nStore, useT } from '../i18n'
+import { AVATAR_OPTIONS, useAvatarStore } from '../game/avatarStore'
 
 /** 设置页面 Tab 分类（账号信息与显示偏好） */
 type SettingsTab = 'account' | 'display'
@@ -60,6 +61,9 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
 
   const locale = useI18nStore(state => state.locale)
   const setLocale = useI18nStore(state => state.setLocale)
+
+  const avatarId = useAvatarStore(state => state.avatarId)
+  const setAvatarId = useAvatarStore(state => state.setAvatarId)
 
   const [remainingCooldown, setRemainingCooldown] = useState(renameCooldownSeconds)
 
@@ -165,6 +169,37 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
 
       {activeTab === 'display' && (
         <div className="settings-tab-content">
+          <div className="settings-block">
+            <h3>{t('app.settings.avatarHeading')}</h3>
+            <p className="settings-desc">
+              {t('app.settings.avatarDesc')}
+            </p>
+            <div className="avatar-selection-grid" role="radiogroup" aria-label={t('app.settings.avatarHeading')}>
+              {AVATAR_OPTIONS.map(opt => {
+                const isSelected = avatarId === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    className={`avatar-option-card${isSelected ? ' active' : ''}`}
+                    onClick={() => setAvatarId(opt.id)}
+                  >
+                    <div className="avatar-option-preview">
+                      <img alt={t(opt.nameKey)} draggable={false} src={opt.src} />
+                    </div>
+                    <div className="avatar-option-info">
+                      <strong className="avatar-option-name">{t(opt.nameKey)}</strong>
+                      <span className="avatar-option-desc">{t(opt.descKey)}</span>
+                    </div>
+                    {isSelected && <span className="avatar-selected-tag">已选定</span>}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <div className="settings-block">
             <h3>{t('app.settings.zoomHeading')}</h3>
             <p className="settings-desc">

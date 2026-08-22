@@ -10,6 +10,7 @@ export const insightZh = {
     nextExp: '突破所需',
     totalSpirit: '总修为',
     breakthroughBtn: '⚡ 破境突破',
+    changeAvatarTooltip: '点击切换修士立绘法相',
     quick: {
       hp: '生命值',
       mp: '灵力值',

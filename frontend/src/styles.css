@@ -4557,21 +4557,64 @@ input[type="checkbox"] {
 }
 
 .insight-avatar-stage {
+  position: relative;
   width: 84px;
   height: 112px;
   flex-shrink: 0;
-  background: radial-gradient(circle at 50% 60%, rgba(201, 180, 109, 0.12) 0%, rgba(10, 10, 14, 0.8) 70%);
-  border: 1px solid rgba(201, 180, 109, 0.25);
+  background: radial-gradient(circle at 50% 60%, rgba(201, 180, 109, 0.14) 0%, rgba(10, 10, 14, 0.85) 70%);
+  border: 1px solid rgba(201, 180, 109, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
+.insight-avatar-stage:hover {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 12px rgba(201, 180, 109, 0.35);
+  transform: translateY(-1px);
+}
+
+.insight-avatar-stage .insight-avatar-img,
 .insight-avatar-stage .vector-character {
-  width: 90%;
-  height: 90%;
+  width: 92%;
+  height: 92%;
   object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+  transition: transform 0.2s ease;
+}
+
+.insight-avatar-stage:hover .insight-avatar-img,
+.insight-avatar-stage:hover .vector-character {
+  transform: scale(1.06);
+}
+
+.insight-avatar-switch-hint {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(10, 10, 14, 0.85);
+  border: 1px solid var(--gold-dim);
+  color: var(--gold-bright);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  opacity: 0.65;
+  transition: opacity 0.2s ease, transform 0.3s ease, border-color 0.2s ease;
+}
+
+.insight-avatar-stage:hover .insight-avatar-switch-hint {
+  opacity: 1;
+  border-color: var(--gold-bright);
+  transform: rotate(180deg);
 }
 
 .insight-hero-info {
@@ -5592,6 +5635,100 @@ input[type="checkbox"] {
   margin: 0 0 12px;
   font-size: 12px;
   color: var(--text-dim);
+}
+
+/* 角色形象选择网格卡片 */
+.avatar-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.avatar-option-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  background: rgba(18, 20, 26, 0.75);
+  border: 1px solid rgba(201, 180, 109, 0.25);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+  outline: none;
+}
+
+.avatar-option-card:hover {
+  border-color: rgba(201, 180, 109, 0.65);
+  background: rgba(26, 30, 40, 0.9);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.avatar-option-card.active {
+  border-color: var(--gold-bright, #f1df9a);
+  background: radial-gradient(circle at 30% 50%, rgba(201, 180, 109, 0.15) 0%, rgba(20, 22, 30, 0.95) 100%);
+  box-shadow: 0 0 14px rgba(201, 180, 109, 0.25);
+}
+
+.avatar-option-preview {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: radial-gradient(circle, rgba(201, 180, 109, 0.15) 0%, rgba(10, 10, 14, 0.8) 70%);
+  border: 1px solid rgba(201, 180, 109, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.avatar-option-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.6));
+  transition: transform 0.2s ease;
+}
+
+.avatar-option-card:hover .avatar-option-preview img {
+  transform: scale(1.08);
+}
+
+.avatar-option-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.avatar-option-name {
+  font-size: 14px;
+  color: var(--gold-bright, #f1df9a);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.avatar-option-desc {
+  font-size: 11px;
+  color: var(--text-dim, #94a3b8);
+  line-height: 1.4;
+}
+
+.avatar-selected-tag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #0a0a0e;
+  background: linear-gradient(135deg, #e6ca65, #c9b46d);
+  border-radius: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
 /* 界面缩放控制 */

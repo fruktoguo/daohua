@@ -10,6 +10,7 @@ export const insightEn = {
     nextExp: 'Breakthrough Required',
     totalSpirit: 'Total Cultivation',
     breakthroughBtn: '⚡ Break Through',
+    changeAvatarTooltip: 'Click to switch cultivator portrait',
     quick: {
       hp: 'HP',
       mp: 'MP',

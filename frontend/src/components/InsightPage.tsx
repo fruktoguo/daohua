@@ -1,5 +1,4 @@
 import { memo, useMemo, useState } from 'react'
-import { VectorCharacter } from './VectorCharacter'
 import { RealmBadge } from './RealmBadge'
 import { PillStatLabel, PillBonusLabel, type PillTone } from './PillLabel'
 import { formatChineseSplitNumber, formatNumber } from '../game/format'
@@ -17,6 +16,7 @@ import {
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
+import { useAvatarStore } from '../game/avatarStore'
 
 /** 内视四大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
@@ -48,6 +48,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const attributes = useGameStore(state => state.combatAttributes)
   const world = useGameStore(state => state.world)
   const buffs = useGameStore(state => state.buffs)
+  const avatarId = useAvatarStore(state => state.avatarId)
+  const setAvatarId = useAvatarStore(state => state.setAvatarId)
 
   // 境界计算体系 (大境界 · 位阶 · 小境界)
   const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0), [stats.spirit])
@@ -245,9 +247,22 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
       {/* 头部：道号、境界与形象总览 */}
       <header className="panel-header insight-page-header">
         <div className="insight-hero">
-          <div className="insight-avatar-stage">
-            <VectorCharacter isDead={false} kind="player" role="player" />
-          </div>
+          <FloatingTooltip title={t('insight.changeAvatarTooltip')}>
+            <button
+              type="button"
+              className="insight-avatar-stage"
+              onClick={() => setAvatarId(avatarId === 'female' ? 'male' : 'female')}
+              aria-label={t('insight.changeAvatarTooltip')}
+            >
+              <img
+                alt={name}
+                className="insight-avatar-img"
+                draggable={false}
+                src={avatarId === 'male' ? '/avatars/male.webp' : '/avatars/female.webp'}
+              />
+              <span className="insight-avatar-switch-hint" aria-hidden="true">↻</span>
+            </button>
+          </FloatingTooltip>
           <div className="insight-hero-info">
             <div className="insight-title-row">
               <h2 className="insight-main-title">{name}</h2>

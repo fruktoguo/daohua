@@ -1,10 +1,13 @@
 import { memo } from 'react'
+import { useAvatarStore } from '../game/avatarStore'
 
 /**
- * 矢量立绘人物/妖兽形象类型
+ * 矢量/高清立绘人物/妖兽形象类型
  */
 export type CharacterKind =
   | 'player'
+  | 'player-female'
+  | 'player-male'
   | 'qi-beast'
   | 'twilight-blood-cultivator'
   | 'twilight-corpse'
@@ -63,6 +66,21 @@ export const VectorCharacter = memo(function VectorCharacter({
   isDead = false,
   className = '',
 }: VectorCharacterProps): React.JSX.Element {
+  const avatarId = useAvatarStore(state => state.avatarId)
+
+  if (kind === 'player' || kind === 'player-female' || kind === 'player-male') {
+    const resolvedId = kind === 'player' ? avatarId : kind === 'player-male' ? 'male' : 'female'
+    const src = resolvedId === 'male' ? '/avatars/male.webp' : '/avatars/female.webp'
+    return (
+      <img
+        alt=""
+        className={`vector-character vector-character--${kind} vector-character--${role}${isDead ? ' is-dead' : ''} ${className}`}
+        draggable={false}
+        src={src}
+      />
+    )
+  }
+
   return (
     <svg
       aria-hidden="true"
@@ -77,85 +95,7 @@ export const VectorCharacter = memo(function VectorCharacter({
       <ellipse cx="60" cy="155" rx="36" ry="7" fill="#090b10" opacity="0.45" />
 
       {/* ========================================================================= */}
-      {/* 1. 太虚剑仙 (凌霄绝世剑修 - 清冷绝美、高马尾、飘逸剑袍、浮空冰晶神剑)            */}
-      {/* ========================================================================= */}
-      {kind === 'player' && (
-        <g className="char-art char--player" strokeLinecap="round" strokeLinejoin="round">
-          {/* 背后八卦剑阵光环 */}
-          <circle cx="60" cy="70" r="42" stroke="#38bdf8" strokeWidth="1" strokeDasharray="6 4" opacity="0.5" />
-          <circle cx="60" cy="70" r="38" stroke="#fbbf24" strokeWidth="0.8" opacity="0.3" />
-
-          {/* 浮空凌霄飞剑 */}
-          <g transform="translate(86, 28) rotate(18)">
-            {/* 剑刃 */}
-            <path d="M0,-42 L7,-8 L3,14 L-3,14 L-7,-8 Z" fill="#38bdf8" stroke="#090a0f" strokeWidth="1.8" />
-            <path d="M0,-42 L7,-8 L3,14 L0,14 Z" fill="#0284c7" />
-            <line x1="0" y1="-38" x2="0" y2="12" stroke="#ffffff" strokeWidth="1" />
-            {/* 剑格与剑柄 */}
-            <path d="M-10,14 L10,14 L7,19 L-7,19 Z" fill="#f59e0b" stroke="#090a0f" strokeWidth="1.5" />
-            <rect x="-2.5" y="19" width="5" height="14" rx="1" fill="#0f172a" stroke="#090a0f" strokeWidth="1.5" />
-            <polygon points="0,33 4,37 0,41 -4,37" fill="#f59e0b" stroke="#090a0f" strokeWidth="1.2" />
-            {/* 赤红剑穗 */}
-            <path d="M0,41 Q-3,50 -2,56 Q1,50 0,41 Z" fill="#ef4444" stroke="#090a0f" strokeWidth="1.2" />
-          </g>
-
-          {/* 飘逸后摆长袍 */}
-          <path d="M38,112 C28,130 20,148 24,154 C34,154 48,150 52,118 Z" fill="#042f2e" stroke="#090a0f" strokeWidth="1.8" />
-          <path d="M68,112 C78,130 96,148 94,154 C82,154 70,150 66,118 Z" fill="#0f172a" stroke="#090a0f" strokeWidth="1.8" />
-
-          {/* 修长劲装腿与云靴 */}
-          <path d="M42,116 L38,152 L48,152 L50,116 Z" fill="#1e293b" stroke="#090a0f" strokeWidth="1.8" />
-          <path d="M70,116 L74,152 L64,152 L62,116 Z" fill="#1e293b" stroke="#090a0f" strokeWidth="1.8" />
-          <path d="M36,148 L49,148 L49,154 L34,154 Z" fill="#090a0f" />
-          <path d="M76,148 L63,148 L63,154 L78,154 Z" fill="#090a0f" />
-
-          {/* 青玄墨绿道袍主体 */}
-          <path d="M36,66 C34,85 36,110 38,118 L82,118 C84,110 86,85 84,66 Z" fill="#0d9488" stroke="#090a0f" strokeWidth="2" />
-          <path d="M44,66 L60,90 L52,118 L38,118 Z" fill="#042f2e" />
-          <path d="M54,66 L60,90 L68,118 L82,118 Z" fill="#115e59" />
-
-          {/* 交领白色内衬 */}
-          <path d="M50,62 L60,78 L68,64 L62,58 L56,58 Z" fill="#f8fafc" stroke="#090a0f" strokeWidth="1.5" />
-
-          {/* 黄金束腰与垂坠玉佩 */}
-          <rect x="40" y="94" width="40" height="9" rx="1.5" fill="#f59e0b" stroke="#090a0f" strokeWidth="1.6" />
-          <path d="M58,103 L62,103 L64,126 L56,126 Z" fill="#ef4444" stroke="#090a0f" strokeWidth="1.4" />
-          <circle cx="60" cy="112" r="3" fill="#38bdf8" stroke="#090a0f" strokeWidth="1.2" />
-
-          {/* 左臂：御剑剑指 */}
-          <path d="M36,68 L22,86 L30,92 L42,78 Z" fill="#0d9488" stroke="#090a0f" strokeWidth="1.8" />
-          <path d="M22,86 L14,94 L17,98 L28,91 Z" fill="#ffedd5" stroke="#090a0f" strokeWidth="1.5" />
-          <line x1="14" y1="94" x2="8" y2="86" stroke="#090a0f" strokeWidth="2" />
-          {/* 指尖剑意雷火 */}
-          <circle cx="8" cy="86" r="3.5" fill="#38bdf8" />
-
-          {/* 右臂：广袖垂云 */}
-          <path d="M84,68 C96,82 102,96 94,106 C88,104 82,92 78,82 Z" fill="#115e59" stroke="#090a0f" strokeWidth="1.8" />
-
-          {/* 帅气发型与高马尾 */}
-          <path d="M60,22 C45,8 30,22 34,42 C38,40 45,34 48,38 Z" fill="#090a0f" />
-          <path d="M60,20 C75,10 88,24 84,42 C80,40 75,34 72,38 Z" fill="#090a0f" />
-
-          {/* 俊秀脸庞 */}
-          <path d="M46,36 C45,52 52,64 60,64 C68,64 75,52 74,36 Z" fill="#ffedd5" stroke="#090a0f" strokeWidth="1.8" />
-
-          {/* 飘逸刘海 */}
-          <path d="M44,32 Q54,48 58,34 Q68,46 76,32 Q60,24 44,32 Z" fill="#0f172a" />
-
-          {/* 剑眉与剑眸 */}
-          <line x1="48" y1="44" x2="56" y2="42" stroke="#090a0f" strokeWidth="1.8" />
-          <line x1="64" y1="42" x2="72" y2="44" stroke="#090a0f" strokeWidth="1.8" />
-          <path d="M50,46 Q54,44 56,47 Z" fill="#0284c7" stroke="#090a0f" strokeWidth="1" />
-          <path d="M64,47 Q66,44 70,46 Z" fill="#0284c7" stroke="#090a0f" strokeWidth="1" />
-
-          {/* 黄金发冠与飞扬青丝带 */}
-          <path d="M53,16 L67,16 L65,24 L55,24 Z" fill="#f59e0b" stroke="#090a0f" strokeWidth="1.6" />
-          <path d="M52,22 Q36,18 38,28" stroke="#38bdf8" strokeWidth="2.2" fill="none" />
-        </g>
-      )}
-
-      {/* ========================================================================= */}
-      {/* 2. 聚气兽 (太古噬灵神尊·威武碧霄龙兽)                                        */}
+      {/* 1. 聚气兽 (太古噬灵神尊·威武碧霄龙兽)                                        */}
       {/* ========================================================================= */}
       {kind === 'qi-beast' && (
         <g className="char-art char--beast" strokeLinecap="round" strokeLinejoin="round">

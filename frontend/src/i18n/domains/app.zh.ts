@@ -139,6 +139,13 @@ export const appZh = {
     messages: {
       unparseablePacket: '收到无法解析的数据包。',
     },
+    // 角色立绘形象
+    avatar: {
+      femaleName: '太虚绝世剑仙 (女)',
+      femaleDesc: '白衣青罗，墨发如瀑，执玄青神剑，超凡脱俗。',
+      maleName: '凌霄傲骨剑尊 (男)',
+      maleDesc: '青衫白袍，束发御风，单手掐诀御剑，剑意凌云。',
+    },
     // 设置页面
     settings: {
       title: '设置',
@@ -155,6 +162,8 @@ export const appZh = {
       modifyNameBtn: '修改道号',
       logoutHint: '若要切换其他修士账号或重新登录：',
       logoutBtn: '退出登录',
+      avatarHeading: '道貌仪容（角色立绘）',
+      avatarDesc: '自定义您在太虚修仙界、悟道内视与战斗九宫格中显化的主角立绘。',
       zoomHeading: '整体界面缩放',
       zoomDesc: '根据您的屏幕分辨率与视觉习惯调整全局界面大小（支持 50% 至 200%）。',
       zoomAria: '界面缩放',
