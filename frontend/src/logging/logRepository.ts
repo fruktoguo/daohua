@@ -22,7 +22,7 @@ export interface GameLogCursor {
   sequence: number
 }
 
-const DATABASE_NAME = 'daoxuan-local-history'
+const DATABASE_NAME = 'daohua-local-history'
 const DATABASE_VERSION = 1
 const LOG_STORE = 'logs'
 const PLAYER_TIME_INDEX = 'playerTime'

@@ -4,7 +4,7 @@
  */
 
 /* 1. 顶层 Portal 容器 */
-.daoxuan-floating-portal-root {
+.daohua-floating-portal-root {
   position: fixed;
   top: 0;
   left: 0;
@@ -19,7 +19,7 @@
 }
 
 /* 2. 悬浮图层 */
-.daoxuan-floating-layer {
+.daohua-floating-layer {
   position: fixed;
   display: flex;
   flex-direction: row;
@@ -28,33 +28,33 @@
   max-width: calc(100vw - 20px);
   max-height: calc(100vh - 20px);
   transform-origin: top center;
-  animation: daoxuan-floating-enter 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: daohua-floating-enter 0.14s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* 交互型浮层 (支持点击内部菜单/按钮) */
-.daoxuan-floating-layer--interactive {
+.daohua-floating-layer--interactive {
   pointer-events: auto;
 }
 
 /* 穿透型浮层 (纯提示 Tooltip，完全不阻碍用户点击底下的任何 UI) */
-.daoxuan-floating-layer--passthrough,
-.daoxuan-floating-layer--passthrough * {
+.daohua-floating-layer--passthrough,
+.daohua-floating-layer--passthrough * {
   pointer-events: none !important;
 }
 
-.daoxuan-floating-layer[data-placement^="top"] {
+.daohua-floating-layer[data-placement^="top"] {
   transform-origin: bottom center;
 }
 
-.daoxuan-floating-layer[data-placement^="left"] {
+.daohua-floating-layer[data-placement^="left"] {
   transform-origin: right center;
 }
 
-.daoxuan-floating-layer[data-placement^="right"] {
+.daohua-floating-layer[data-placement^="right"] {
   transform-origin: left center;
 }
 
-@keyframes daoxuan-floating-enter {
+@keyframes daohua-floating-enter {
   0% {
     opacity: 0;
     transform: scale(0.96) translateY(2px);
@@ -66,7 +66,7 @@
 }
 
 /* 3. 触发器 */
-.daoxuan-floating-trigger {
+.daohua-floating-trigger {
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
@@ -76,12 +76,12 @@
 }
 
 /* 对布局完全透明的 contents 模式 */
-.daoxuan-floating-trigger--contents {
+.daohua-floating-trigger--contents {
   display: contents !important;
 }
 
 /* 4. 修仙卡片外壳 (具备规整统一的标准宽度) */
-.daoxuan-floating-card {
+.daohua-floating-card {
   position: relative;
   /* 默认采用 medium 标准 300px 宽度，避免宽窄不一 */
   width: min(300px, calc(100vw - 24px));
@@ -104,38 +104,38 @@
 }
 
 /* 标准尺寸预设 */
-.daoxuan-floating-card--small {
+.daohua-floating-card--small {
   width: min(240px, calc(100vw - 24px));
 }
 
-.daoxuan-floating-card--medium {
+.daohua-floating-card--medium {
   width: min(300px, calc(100vw - 24px));
 }
 
-.daoxuan-floating-card--large {
+.daohua-floating-card--large {
   width: min(380px, calc(100vw - 24px));
 }
 
-.daoxuan-floating-card--auto {
+.daohua-floating-card--auto {
   width: auto;
   min-width: 180px;
   max-width: min(420px, calc(100vw - 24px));
 }
 
 /* 滚动条精细化 */
-.daoxuan-floating-card::-webkit-scrollbar {
+.daohua-floating-card::-webkit-scrollbar {
   width: 4px;
 }
-.daoxuan-floating-card::-webkit-scrollbar-thumb {
+.daohua-floating-card::-webkit-scrollbar-thumb {
   background: rgba(201, 180, 109, 0.25);
   border-radius: 2px;
 }
-.daoxuan-floating-card::-webkit-scrollbar-thumb:hover {
+.daohua-floating-card::-webkit-scrollbar-thumb:hover {
   background: rgba(201, 180, 109, 0.45);
 }
 
 /* 5. 古典修仙四角金纹折角装饰 */
-.daoxuan-floating-corner {
+.daohua-floating-corner {
   position: absolute;
   width: 6px;
   height: 6px;
@@ -145,32 +145,32 @@
   opacity: 0.85;
 }
 
-.daoxuan-floating-corner--tl {
+.daohua-floating-corner--tl {
   top: 2px;
   left: 2px;
   border-width: 1.5px 0 0 1.5px;
 }
 
-.daoxuan-floating-corner--tr {
+.daohua-floating-corner--tr {
   top: 2px;
   right: 2px;
   border-width: 1.5px 1.5px 0 0;
 }
 
-.daoxuan-floating-corner--bl {
+.daohua-floating-corner--bl {
   bottom: 2px;
   left: 2px;
   border-width: 0 0 1.5px 1.5px;
 }
 
-.daoxuan-floating-corner--br {
+.daohua-floating-corner--br {
   bottom: 2px;
   right: 2px;
   border-width: 0 1.5px 1.5px 0;
 }
 
 /* 顶部暗金流光线 */
-.daoxuan-floating-shimmer-bar {
+.daohua-floating-shimmer-bar {
   position: absolute;
   top: 0;
   left: 0;
@@ -181,25 +181,25 @@
 }
 
 /* 主内容容器 */
-.daoxuan-floating-body {
+.daohua-floating-body {
   padding: 10px 12px;
 }
 
 /* 6. 多气泡组合 - 附属卡片群 (Aside Group) */
-.daoxuan-floating-aside-group {
+.daohua-floating-aside-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: min(220px, calc(100vw - 24px));
 }
 
-.daoxuan-floating-aside-card {
+.daohua-floating-aside-card {
   width: 100%;
   padding: 8px 10px;
   font-size: 12px;
 }
 
-.daoxuan-floating-aside-head {
+.daohua-floating-aside-head {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -208,7 +208,7 @@
   border-bottom: 1px dashed rgba(201, 180, 109, 0.16);
 }
 
-.daoxuan-floating-aside-mark {
+.daohua-floating-aside-mark {
   display: inline-block;
   padding: 1px 5px;
   font-size: 10px;
@@ -218,87 +218,87 @@
   border: 1px solid currentColor;
 }
 
-.daoxuan-floating-aside-title {
+.daohua-floating-aside-title {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.5px;
 }
 
-.daoxuan-floating-aside-sub {
+.daohua-floating-aside-sub {
   margin-left: auto;
   font-size: 11px;
   color: var(--text-dim, rgba(233, 227, 210, 0.56));
 }
 
-.daoxuan-floating-aside-lines {
+.daohua-floating-aside-lines {
   margin: 4px 0 0 0;
   padding: 0 0 0 14px;
   color: var(--text, #e9e3d2);
   line-height: 1.5;
 }
 
-.daoxuan-floating-aside-lines li {
+.daohua-floating-aside-lines li {
   margin-bottom: 2px;
 }
 
 /* 附属气泡色调 */
-.daoxuan-floating-aside-card--gold {
+.daohua-floating-aside-card--gold {
   border-color: rgba(201, 180, 109, 0.4);
 }
-.daoxuan-floating-aside-card--gold .daoxuan-floating-aside-title,
-.daoxuan-floating-aside-card--gold .daoxuan-floating-aside-mark {
+.daohua-floating-aside-card--gold .daohua-floating-aside-title,
+.daohua-floating-aside-card--gold .daohua-floating-aside-mark {
   color: var(--gold-bright, #e8d69a);
 }
 
-.daoxuan-floating-aside-card--jade {
+.daohua-floating-aside-card--jade {
   border-color: rgba(114, 169, 140, 0.4);
 }
-.daoxuan-floating-aside-card--jade .daoxuan-floating-aside-title,
-.daoxuan-floating-aside-card--jade .daoxuan-floating-aside-mark {
+.daohua-floating-aside-card--jade .daohua-floating-aside-title,
+.daohua-floating-aside-card--jade .daohua-floating-aside-mark {
   color: var(--jade, #72a98c);
 }
 
-.daoxuan-floating-aside-card--qi {
+.daohua-floating-aside-card--qi {
   border-color: rgba(117, 169, 173, 0.4);
 }
-.daoxuan-floating-aside-card--qi .daoxuan-floating-aside-title,
-.daoxuan-floating-aside-card--qi .daoxuan-floating-aside-mark {
+.daohua-floating-aside-card--qi .daohua-floating-aside-title,
+.daohua-floating-aside-card--qi .daohua-floating-aside-mark {
   color: var(--qi, #75a9ad);
 }
 
-.daoxuan-floating-aside-card--danger {
+.daohua-floating-aside-card--danger {
   border-color: rgba(200, 82, 63, 0.4);
 }
-.daoxuan-floating-aside-card--danger .daoxuan-floating-aside-title,
-.daoxuan-floating-aside-card--danger .daoxuan-floating-aside-mark {
+.daohua-floating-aside-card--danger .daohua-floating-aside-title,
+.daohua-floating-aside-card--danger .daohua-floating-aside-mark {
   color: var(--danger, #c8523f);
 }
 
-.daoxuan-floating-aside-card--purple {
+.daohua-floating-aside-card--purple {
   border-color: rgba(168, 120, 220, 0.4);
 }
-.daoxuan-floating-aside-card--purple .daoxuan-floating-aside-title,
-.daoxuan-floating-aside-card--purple .daoxuan-floating-aside-mark {
+.daohua-floating-aside-card--purple .daohua-floating-aside-title,
+.daohua-floating-aside-card--purple .daohua-floating-aside-mark {
   color: #c49eff;
 }
 
-.daoxuan-floating-aside-card--muted {
+.daohua-floating-aside-card--muted {
   border-color: rgba(233, 227, 210, 0.2);
 }
-.daoxuan-floating-aside-card--muted .daoxuan-floating-aside-title,
-.daoxuan-floating-aside-card--muted .daoxuan-floating-aside-mark {
+.daohua-floating-aside-card--muted .daohua-floating-aside-title,
+.daohua-floating-aside-card--muted .daohua-floating-aside-mark {
   color: var(--text-dim, rgba(233, 227, 210, 0.56));
 }
 
 /* 通用独立数量副气泡 (单行：标题对应数量，然后显示具体数值) */
-.daoxuan-floating-aside-single-row {
+.daohua-floating-aside-single-row {
   display: flex;
   align-items: center;
   gap: 10px;
   white-space: nowrap;
 }
 
-.daoxuan-floating-aside-single-row .daoxuan-floating-aside-title {
+.daohua-floating-aside-single-row .daohua-floating-aside-title {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -306,7 +306,7 @@
   opacity: 0.9;
 }
 
-.daoxuan-floating-aside-single-row .daoxuan-floating-aside-val {
+.daohua-floating-aside-single-row .daohua-floating-aside-val {
   font-size: 13px;
   font-weight: 700;
   color: #fffdf5;
@@ -314,7 +314,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.daoxuan-floating-aside-card[data-aside-id="quantity-aside-card"] {
+.daohua-floating-aside-card[data-aside-id="quantity-aside-card"] {
   min-width: unset;
   width: max-content;
   max-width: min(320px, calc(100vw - 24px));
@@ -323,16 +323,16 @@
 
 
 /* 7. 标准轻量 Tooltip */
-.daoxuan-floating-tooltip-simple {
+.daohua-floating-tooltip-simple {
   width: max-content;
   max-width: min(280px, calc(100vw - 20px));
 }
 
-.daoxuan-floating-tooltip-simple .daoxuan-floating-body {
+.daohua-floating-tooltip-simple .daohua-floating-body {
   padding: 5px 9px;
 }
 
-.daoxuan-floating-tooltip-text {
+.daohua-floating-tooltip-text {
   font-size: 12px;
   line-height: 1.45;
   color: var(--gold-bright, #e8d69a);
@@ -341,25 +341,25 @@
   word-break: break-word;
 }
 
-.daoxuan-floating-tooltip--jade .daoxuan-floating-tooltip-text {
+.daohua-floating-tooltip--jade .daohua-floating-tooltip-text {
   color: var(--jade, #72a98c);
 }
-.daoxuan-floating-tooltip--qi .daoxuan-floating-tooltip-text {
+.daohua-floating-tooltip--qi .daohua-floating-tooltip-text {
   color: var(--qi, #75a9ad);
 }
-.daoxuan-floating-tooltip--danger .daoxuan-floating-tooltip-text {
+.daohua-floating-tooltip--danger .daohua-floating-tooltip-text {
   color: var(--danger, #c8523f);
 }
 
 /* 8. 标准修仙信息卡片 (FloatingInfoCard) */
-.daoxuan-floating-info-card {
+.daohua-floating-info-card {
   display: flex;
   flex-direction: column;
   gap: 8px;
   width: 100%;
 }
 
-.daoxuan-floating-card-header {
+.daohua-floating-card-header {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -367,14 +367,14 @@
   padding-bottom: 6px;
 }
 
-.daoxuan-floating-card-title-row {
+.daohua-floating-card-title-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
 }
 
-.daoxuan-floating-card-title {
+.daohua-floating-card-title {
   color: var(--gold-bright, #e8d69a);
   font-family: "Noto Serif SC", "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 16px;
@@ -382,7 +382,7 @@
   letter-spacing: 0.5px;
 }
 
-.daoxuan-floating-badge {
+.daohua-floating-badge {
   display: inline-block;
   padding: 1px 6px;
   font-size: 11px;
@@ -393,43 +393,43 @@
   color: var(--gold, #c9b46d);
 }
 
-.daoxuan-floating-badge--jade {
+.daohua-floating-badge--jade {
   background: rgba(114, 169, 140, 0.12);
   border-color: rgba(114, 169, 140, 0.4);
   color: var(--jade, #72a98c);
 }
 
-.daoxuan-floating-badge--qi {
+.daohua-floating-badge--qi {
   background: rgba(117, 169, 173, 0.12);
   border-color: rgba(117, 169, 173, 0.4);
   color: var(--qi, #75a9ad);
 }
 
-.daoxuan-floating-badge--danger {
+.daohua-floating-badge--danger {
   background: rgba(200, 82, 63, 0.12);
   border-color: rgba(200, 82, 63, 0.4);
   color: var(--danger, #c8523f);
 }
 
-.daoxuan-floating-badge--purple {
+.daohua-floating-badge--purple {
   background: rgba(168, 120, 220, 0.12);
   border-color: rgba(168, 120, 220, 0.4);
   color: #c49eff;
 }
 
-.daoxuan-floating-card-subtitle {
+.daohua-floating-card-subtitle {
   font-size: 11px;
   color: var(--text-dim, rgba(233, 227, 210, 0.56));
 }
 
-.daoxuan-floating-card-desc {
+.daohua-floating-card-desc {
   font-size: 12px;
   line-height: 1.6;
   color: var(--text, #e9e3d2);
 }
 
 /* 键值对网格 */
-.daoxuan-floating-card-stats {
+.daohua-floating-card-stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 4px 8px;
@@ -439,34 +439,34 @@
   border-radius: 2px;
 }
 
-.daoxuan-floating-stat-item {
+.daohua-floating-stat-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
 }
 
-.daoxuan-floating-stat-label {
+.daohua-floating-stat-label {
   color: var(--text-dim, rgba(233, 227, 210, 0.56));
 }
 
-.daoxuan-floating-stat-value {
+.daohua-floating-stat-value {
   font-weight: 500;
   color: var(--gold-bright, #e8d69a);
 }
 
-.daoxuan-floating-stat-value--jade {
+.daohua-floating-stat-value--jade {
   color: var(--jade, #72a98c);
 }
-.daoxuan-floating-stat-value--qi {
+.daohua-floating-stat-value--qi {
   color: var(--qi, #75a9ad);
 }
-.daoxuan-floating-stat-value--danger {
+.daohua-floating-stat-value--danger {
   color: var(--danger, #c8523f);
 }
 
 /* 词条列表 */
-.daoxuan-floating-card-lines {
+.daohua-floating-card-lines {
   display: grid;
   gap: 3px;
   margin: 0;
@@ -476,13 +476,13 @@
   color: var(--text, #e9e3d2);
 }
 
-.daoxuan-floating-card-line-item {
+.daohua-floating-card-line-item {
   position: relative;
   padding-left: 12px;
   line-height: 1.5;
 }
 
-.daoxuan-floating-card-line-item::before {
+.daohua-floating-card-line-item::before {
   position: absolute;
   left: 2px;
   top: 0;
@@ -492,7 +492,7 @@
 }
 
 /* 底部操作区 */
-.daoxuan-floating-card-footer {
+.daohua-floating-card-footer {
   margin-top: 2px;
   padding-top: 6px;
   border-top: 1px solid rgba(201, 180, 109, 0.16);
@@ -501,26 +501,26 @@
 }
 
 /* 9. 悬浮菜单组件 (FloatingMenu) */
-.daoxuan-floating-menu-group {
+.daohua-floating-menu-group {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.daoxuan-floating-menu-group-title {
+.daohua-floating-menu-group-title {
   padding: 4px 8px 2px;
   font-size: 11px;
   color: var(--gold-dim, #6e6038);
   letter-spacing: 0.5px;
 }
 
-.daoxuan-floating-menu-group-items {
+.daohua-floating-menu-group-items {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.daoxuan-floating-menu-item {
+.daohua-floating-menu-item {
   display: flex;
   align-items: center;
   width: 100%;
@@ -536,22 +536,22 @@
   border-radius: 0;
 }
 
-.daoxuan-floating-menu-item:hover:not(:disabled) {
+.daohua-floating-menu-item:hover:not(:disabled) {
   background: rgba(201, 180, 109, 0.12);
   border-color: rgba(201, 180, 109, 0.28);
   color: var(--gold-bright, #e8d69a);
 }
 
-.daoxuan-floating-menu-item:active:not(:disabled) {
+.daohua-floating-menu-item:active:not(:disabled) {
   background: rgba(201, 180, 109, 0.2);
 }
 
-.daoxuan-floating-menu-item:disabled {
+.daohua-floating-menu-item:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.daoxuan-floating-menu-icon {
+.daohua-floating-menu-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -560,37 +560,37 @@
   color: var(--gold, #c9b46d);
 }
 
-.daoxuan-floating-menu-label {
+.daohua-floating-menu-label {
   flex: 1;
   white-space: nowrap;
 }
 
-.daoxuan-floating-menu-hint {
+.daohua-floating-menu-hint {
   font-size: 11px;
   color: var(--text-dim, rgba(233, 227, 210, 0.5));
 }
 
-.daoxuan-floating-menu-item--danger:hover:not(:disabled) {
+.daohua-floating-menu-item--danger:hover:not(:disabled) {
   background: rgba(200, 82, 63, 0.15);
   border-color: rgba(200, 82, 63, 0.35);
   color: #ff7a66;
 }
 
-.daoxuan-floating-menu-item--danger .daoxuan-floating-menu-icon {
+.daohua-floating-menu-item--danger .daohua-floating-menu-icon {
   color: var(--danger, #c8523f);
 }
 
-.daoxuan-floating-menu-item--jade:hover:not(:disabled) {
+.daohua-floating-menu-item--jade:hover:not(:disabled) {
   background: rgba(114, 169, 140, 0.15);
   border-color: rgba(114, 169, 140, 0.35);
   color: #9ee3bf;
 }
 
-.daoxuan-floating-menu-item--jade .daoxuan-floating-menu-icon {
+.daohua-floating-menu-item--jade .daohua-floating-menu-icon {
   color: var(--jade, #72a98c);
 }
 
-.daoxuan-floating-menu-divider {
+.daohua-floating-menu-divider {
   height: 1px;
   margin: 4px 0;
   background: linear-gradient(90deg, transparent 0%, rgba(201, 180, 109, 0.2) 50%, transparent 100%);
@@ -598,17 +598,17 @@
 
 /* 10. 移动端与小屏响应式适配 */
 @media (max-width: 768px) {
-  .daoxuan-floating-layer--composite {
+  .daohua-floating-layer--composite {
     flex-direction: column;
     max-width: calc(100vw - 16px);
   }
 
-  .daoxuan-floating-aside-group {
+  .daohua-floating-aside-group {
     width: 100%;
     max-width: 100%;
   }
 
-  .daoxuan-floating-card {
+  .daohua-floating-card {
     width: min(300px, calc(100vw - 16px));
     max-width: calc(100vw - 16px);
   }

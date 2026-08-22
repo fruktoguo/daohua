@@ -3,7 +3,7 @@
  * 集中管理用户自定义界面缩放比例，并通过 CSS 变量 `--ui-scale` 及 `document.documentElement.style.zoom` 实现全站即时无损缩放。
  */
 
-const STORAGE_KEY = 'daoxuan_ui_zoom'
+const STORAGE_KEY = 'daohua_ui_zoom'
 const MIN_SCALE = 50
 const MAX_SCALE = 200
 const DEFAULT_SCALE = 100

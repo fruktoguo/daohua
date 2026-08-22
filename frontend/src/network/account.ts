@@ -30,11 +30,11 @@ export interface AuthResponseDto {
   message?: string | null
 }
 
-const STORAGE_ACCOUNT_KEY = 'daoxuan_account'
-const STORAGE_CHAR_NAME_KEY = 'daoxuan_character_name'
-const STORAGE_PLAYER_ID_KEY = 'daoxuan-player-id'
-const STORAGE_SAVED_ACCOUNTS_KEY = 'daoxuan_saved_accounts_list'
-const COOKIE_PLAYER_ID_KEY = 'daoxuan_player_id'
+const STORAGE_ACCOUNT_KEY = 'daohua_account'
+const STORAGE_CHAR_NAME_KEY = 'daohua_character_name'
+const STORAGE_PLAYER_ID_KEY = 'daohua-player-id'
+const STORAGE_SAVED_ACCOUNTS_KEY = 'daohua_saved_accounts_list'
+const COOKIE_PLAYER_ID_KEY = 'daohua_player_id'
 
 /**
  * 从 Cookie 中读取当前 playerId（作为 localStorage 的备选容灾）

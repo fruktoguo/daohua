@@ -26,7 +26,7 @@ export type TFunction = (key: TranslationKey | (string & {}), params?: TParams) 
 
 const DICTIONARIES: Record<Locale, Messages> = { 'zh-CN': zhCN, 'en-US': enUS }
 const DEFAULT_LOCALE: Locale = 'zh-CN'
-const STORAGE_KEY = 'daoxuan.locale'
+const STORAGE_KEY = 'daohua.locale'
 const PARAM_PATTERN = /\{(\w+)\}/g
 
 function isLocale(value: unknown): value is Locale {
