@@ -1142,15 +1142,7 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
   const t = useT()
   const [activeSubTab, setActiveSubTab] = useState<ExpeditionSubTab>('map')
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
-  const activeEntryId = useGameStore(state => {
-    const current = state.queue.entries[0]
-    return current ? current.entryId : null
-  })
   const closeModal = useCallback(() => setSelectedAction(null), [])
-
-  useEffect(() => {
-    if (!hidden && activeEntryId) setActiveSubTab('duel')
-  }, [activeEntryId, hidden])
 
   return (
     <section className="panel expedition-page" hidden={hidden}>

@@ -83,12 +83,18 @@
   background: rgba(7, 9, 7, 0.94);
   isolation: isolate;
   clip-path: polygon(0 12px, 12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.world-map-stage.is-dragging {
+  cursor: grabbing;
 }
 
 .world-map-stage::after {
   position: absolute;
-  z-index: -1;
-  inset: 0;
+  z-index: 10;
   inset: 8px;
   border: 1px solid rgba(114, 169, 140, 0.12);
   box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.7);
@@ -96,85 +102,177 @@
   pointer-events: none;
 }
 
+/* 浮动操作快捷栏 */
+.world-map-toolbar {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.world-map-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(201, 180, 109, 0.4);
+  border-radius: 2px;
+  color: var(--gold-bright);
+  background: rgba(10, 14, 12, 0.88);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: all 0.15s ease;
+}
+
+.world-map-tool-btn:hover {
+  border-color: var(--gold-bright);
+  background: rgba(36, 42, 32, 0.95);
+  box-shadow: 0 0 10px rgba(201, 180, 109, 0.35);
+  transform: translateY(-1px);
+}
+
+.world-map-tool-btn:active {
+  transform: translateY(0);
+}
+
+.world-map-tool-btn.icon-only {
+  width: 28px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.world-map-zoom-group {
+  display: flex;
+  gap: 2px;
+}
+
+/* 漫游画布视口 */
+.world-map-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+  pointer-events: auto;
+}
+
 .world-map-edges {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.world-map-edges {
+  top: 0;
+  left: 0;
   z-index: 1;
   overflow: visible;
-}
-
-.world-map-edges g {
   pointer-events: stroke;
 }
 
-.world-map-edge-line {
-  stroke: rgba(201, 180, 109, 0.32);
-  stroke-width: 0.34;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
+.world-map-edge-group {
+  pointer-events: stroke;
+  cursor: pointer;
 }
 
 .world-map-edge-hitbox {
-  stroke: transparent;
-  stroke-width: 12;
-  vector-effect: non-scaling-stroke;
+  stroke: rgba(0, 0, 0, 0.001);
+  stroke-width: 32px;
+  stroke-linecap: round;
+  pointer-events: stroke;
 }
 
-.world-map-edges g.is-planned .world-map-edge-line {
-  stroke: #e8d69a;
-  stroke-width: 1.1;
-  stroke-dasharray: 3 2;
-  animation: world-route-flow 0.7s linear infinite;
-}
-
-.world-map-edges text {
-  opacity: 0;
-  fill: rgba(233, 227, 210, 0.5);
-  font-family: Arial, sans-serif;
-  font-size: 2.3px;
+.world-map-edge-bg {
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 3.5px;
+  stroke-linecap: round;
   pointer-events: none;
-  paint-order: stroke;
-  stroke: rgba(7, 6, 4, 0.88);
-  stroke-width: 0.8px;
-  text-anchor: middle;
-  transition: opacity 0.16s ease;
 }
 
-.world-map-edges g:hover .world-map-edge-line {
+.world-map-edge-line {
+  stroke: rgba(201, 180, 109, 0.35);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  pointer-events: none;
+  transition: stroke 0.2s ease, stroke-width 0.2s ease;
+}
+
+.world-map-edge-group.is-planned .world-map-edge-line {
+  stroke: #e8d69a;
+  stroke-width: 2.2px;
+  stroke-dasharray: 6 4;
+  filter: drop-shadow(0 0 4px rgba(232, 214, 154, 0.8));
+  animation: world-route-flow 0.8s linear infinite;
+}
+
+.world-map-edge-group:hover .world-map-edge-line {
   stroke: var(--gold-bright);
-  stroke-width: 1;
+  stroke-width: 2.5px;
+  filter: drop-shadow(0 0 8px rgba(201, 180, 109, 0.9));
 }
 
-.world-map-edges g:hover text {
+.world-map-edge-label {
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.world-map-edge-label-bg {
+  fill: rgba(10, 14, 12, 0.92);
+  stroke: rgba(201, 180, 109, 0.4);
+  stroke-width: 1px;
+}
+
+.world-map-edge-label-text {
+  fill: #e8d69a;
+  font-family: Arial, "Kaiti SC", STKaiti, KaiTi, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  text-shadow: 0 1px 2px #000;
+}
+
+.world-map-edge-group:hover .world-map-edge-label,
+.world-map-edge-group.is-planned .world-map-edge-label {
   opacity: 1;
 }
 
+.world-map-edge-group:hover .world-map-edge-label-bg {
+  fill: rgba(20, 26, 22, 0.98);
+  stroke: var(--gold-bright);
+}
+
+.world-map-edge-group:hover .world-map-edge-label-text {
+  fill: #ffffff;
+}
+
 @keyframes world-route-flow {
-  to { stroke-dashoffset: -5; }
+  to { stroke-dashoffset: -10; }
 }
 
 .world-map-node {
   position: absolute;
-  z-index: 2;
-  display: grid;
-  width: clamp(72px, 9vw, 94px);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 92px;
   height: 34px;
-  place-items: center;
-  padding: 0;
+  padding: 0 8px;
   border: 1px solid rgba(201, 180, 109, 0.62);
-  border-radius: 0;
+  border-radius: 2px;
   color: var(--gold-bright);
   background:
-    linear-gradient(135deg, rgba(201, 180, 109, 0.12), transparent 52%),
+    linear-gradient(135deg, rgba(201, 180, 109, 0.14), transparent 52%),
     rgba(10, 12, 9, 0.96);
-  box-shadow: 0 0 0 4px rgba(7, 6, 4, 0.68), 0 8px 20px rgba(0, 0, 0, 0.56);
+  box-shadow: 0 0 0 3px rgba(7, 6, 4, 0.68), 0 8px 20px rgba(0, 0, 0, 0.56);
   clip-path: none;
   transform: translate(-50%, -50%);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 
 .world-map-node > strong {
@@ -184,6 +282,13 @@
   font-weight: 500;
   text-shadow: 0 1px 3px #000;
   white-space: nowrap;
+  pointer-events: none;
+}
+
+.world-map-node:hover:not(:disabled) {
+  border-color: var(--gold-bright);
+  background: rgba(38, 32, 16, 0.95);
+  box-shadow: 0 0 0 3px rgba(7, 6, 4, 0.68), 0 0 16px rgba(232, 214, 154, 0.4);
 }
 
 .world-map-node:active:not(:disabled) {
@@ -193,16 +298,17 @@
 .world-map-node.is-selected {
   border-color: var(--gold-bright);
   background: rgba(86, 70, 27, 0.92);
-  box-shadow: 0 0 0 4px rgba(7, 6, 4, 0.68), 0 0 24px rgba(232, 214, 154, 0.38);
+  box-shadow: 0 0 0 3px rgba(7, 6, 4, 0.68), 0 0 24px rgba(232, 214, 154, 0.45);
 }
 
 .world-map-node.is-current::after {
   position: absolute;
   width: calc(100% + 12px);
   height: calc(100% + 12px);
-  border: 1px solid rgba(114, 169, 140, 0.72);
+  border: 1px solid rgba(114, 169, 140, 0.85);
   clip-path: polygon(0 11px, 11px 0, 100% 0, 100% calc(100% - 11px), calc(100% - 11px) 100%, 0 100%);
   content: "";
+  pointer-events: none;
   animation: world-current-pulse 1.8s ease-out infinite;
 }
 
@@ -211,32 +317,87 @@
   100% { opacity: 0; transform: scale(1.28); }
 }
 
+/* 玩家向下箭头指示器 */
 .world-player-marker {
   position: absolute;
-  z-index: 4;
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border: 1px solid #b7ebd0;
-  border-radius: 0;
-  color: #07100c;
-  background: #72a98c;
-  box-shadow: 0 0 16px rgba(114, 169, 140, 0.66);
-  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
-  font-size: 14px;
+  z-index: 5;
   pointer-events: none;
-  transform: translate(-50%, -50%) rotate(45deg);
-  transition: left 0.9s linear, top 0.9s linear;
+  transform: translate(-50%, -50%);
+  transition: left 0.8s linear, top 0.8s linear;
 }
 
-.world-player-marker b {
-  font-weight: 400;
-  transform: rotate(-45deg);
+.world-player-marker-anchor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.world-player-marker.is-at-node {
-  margin-top: -31px;
+.world-player-marker.is-at-node .world-player-marker-anchor {
+  transform: translate(0, -20px);
+}
+
+.world-player-marker.is-travelling .world-player-marker-anchor {
+  transform: translate(0, -2px);
+}
+
+.world-player-marker-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: world-player-bob 1.6s ease-in-out infinite;
+}
+
+.world-player-arrow-svg {
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
+}
+
+.player-arrow-body {
+  fill: #0d1e15;
+  stroke: #72a98c;
+  stroke-width: 1.6;
+}
+
+.player-arrow-symbol {
+  fill: #5be7a9;
+}
+
+.player-arrow-tip {
+  fill: #e8d69a;
+  filter: drop-shadow(0 0 3px rgba(232, 214, 154, 0.9));
+}
+
+.world-player-marker-pulse {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 16px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(114, 169, 140, 0.4);
+  box-shadow: 0 0 10px #72a98c;
+  transform: translate(-50%, 50%);
+  animation: world-player-pulse 1.8s ease-out infinite;
+}
+
+@keyframes world-player-bob {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes world-player-pulse {
+  0% {
+    opacity: 0.9;
+    transform: translate(-50%, 50%) scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 50%) scale(1.6);
+  }
 }
 
 .world-location-panel {
@@ -542,13 +703,11 @@
   justify-content: center;
   gap: clamp(12px, 3vw, 36px);
   padding: 10px clamp(12px, 3vw, 28px) 8px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   background:
     linear-gradient(rgba(201, 180, 109, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(201, 180, 109, 0.035) 1px, transparent 1px);
   background-size: 24px 24px;
-  contain: layout;
 }
 
 /* ================= 阵侧容器 ================= */
@@ -562,8 +721,7 @@
   height: 100%;
   justify-content: center;
   align-items: center;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   padding: 4px 0;
 }
 
@@ -663,7 +821,6 @@
   box-shadow: none;
   padding: 0;
   cursor: pointer;
-  contain: layout style;
   transform: translateZ(0);
   flex-shrink: 0;
 }
@@ -782,15 +939,16 @@
 .arena-avatar::after {
   position: absolute;
   z-index: 3;
-  inset: 0;
+  inset: -20px;
   opacity: 0;
-  background: linear-gradient(115deg, transparent 18%, rgba(255, 244, 220, 0.72) 48%, rgba(255, 88, 57, 0.38) 70%, transparent 88%);
+  background: radial-gradient(ellipse at center, rgba(255, 244, 220, 0.85) 0%, rgba(255, 110, 60, 0.45) 45%, transparent 70%);
+  border-radius: 50%;
   content: "";
   pointer-events: none;
 }
 
 .arena-actor.is-hit .arena-avatar::after {
-  animation: arena-hit-flash 0.3s ease-out both;
+  animation: arena-hit-flash 0.34s ease-out both;
 }
 
 .arena-actor.is-action-attack .arena-avatar-stage {
@@ -1204,18 +1362,20 @@
   position: absolute;
   z-index: 4;
   pointer-events: none;
+  overflow: visible;
 }
 
 .arena-action-fx--attack {
   top: 46%;
-  left: 52%;
-  width: 82px;
-  height: 46px;
+  left: 48%;
+  width: 110px;
+  height: 48px;
   transform: translateY(-50%);
+  overflow: visible;
 }
 
 .arena-actor--enemy .arena-action-fx--attack {
-  right: 52%;
+  right: 48%;
   left: auto;
   transform: translateY(-50%) scaleX(-1);
 }
@@ -1226,22 +1386,23 @@
   width: 100%;
   height: 2px;
   opacity: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff4be 48%, #d39745 82%, rgba(211, 151, 69, 0));
-  box-shadow: 0 0 5px #ffe7a3, 0 0 12px rgba(221, 160, 68, 0.84);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff4be 35%, #d39745 75%, rgba(211, 151, 69, 0));
+  box-shadow: 0 0 6px #ffe7a3, 0 0 14px rgba(221, 160, 68, 0.88);
   transform: skewX(-24deg) scaleX(0.12);
   transform-origin: left center;
   animation: arena-attack-streak 0.52s cubic-bezier(0.18, 0.78, 0.2, 1) both;
 }
 
 .arena-action-fx--attack > i:nth-child(1) { top: 11px; animation-delay: 20ms; }
-.arena-action-fx--attack > i:nth-child(2) { top: 22px; height: 3px; }
-.arena-action-fx--attack > i:nth-child(3) { top: 34px; animation-delay: 45ms; }
+.arena-action-fx--attack > i:nth-child(2) { top: 23px; height: 3px; }
+.arena-action-fx--attack > i:nth-child(3) { top: 35px; animation-delay: 45ms; }
 
 .arena-action-fx--cast {
-  inset: -18px;
+  inset: -28px;
   display: grid;
   place-items: center;
-  filter: drop-shadow(0 0 9px rgba(156, 118, 226, 0.78));
+  filter: drop-shadow(0 0 10px rgba(156, 118, 226, 0.85));
+  overflow: visible;
 }
 
 .arena-action-fx--cast > i {
@@ -1271,8 +1432,9 @@
   --impact-distance: 5px;
   --impact-distance-far: 9px;
   --impact-opacity: 0.9;
-  inset: -12px;
-  filter: drop-shadow(0 0 7px rgba(255, 99, 68, 0.9));
+  inset: -24px;
+  filter: drop-shadow(0 0 8px rgba(255, 99, 68, 0.95));
+  overflow: visible;
 }
 
 .arena-actor--player .arena-impact-fx {
@@ -1305,10 +1467,10 @@
 }
 
 @keyframes arena-attack-streak {
-  0%, 24% { opacity: 0; transform: skewX(-24deg) scaleX(0.08); }
-  39% { opacity: 1; transform: skewX(-24deg) scaleX(1); }
-  56% { opacity: 0.9; transform: translate3d(10px, 0, 0) skewX(-24deg) scaleX(0.82); }
-  100% { opacity: 0; transform: translate3d(30px, 0, 0) skewX(-24deg) scaleX(0.18); }
+  0%, 20% { opacity: 0; transform: skewX(-24deg) scaleX(0.08); }
+  35% { opacity: 1; transform: skewX(-24deg) scaleX(1); }
+  56% { opacity: 0.95; transform: translate3d(18px, 0, 0) skewX(-24deg) scaleX(0.85); }
+  100% { opacity: 0; transform: translate3d(45px, 0, 0) skewX(-24deg) scaleX(0.2); }
 }
 
 @keyframes arena-cast-pulse {
@@ -1344,10 +1506,9 @@
 }
 
 @keyframes arena-hit-flash {
-  0% { opacity: 0; transform: translateX(-28%) skewX(-12deg); }
-  22% { opacity: 1; }
-  58% { opacity: 0.72; }
-  100% { opacity: 0; transform: translateX(32%) skewX(-12deg); }
+  0% { opacity: 0; transform: scale(0.5); }
+  25% { opacity: 0.95; transform: scale(1.05); }
+  100% { opacity: 0; transform: scale(1.4); }
 }
 
 .arena-actor--enemy.is-hit {
@@ -1815,11 +1976,6 @@
     grid-template-columns: minmax(0, 1fr) 230px;
   }
 
-  .world-map-node {
-    width: 38px;
-    height: 38px;
-  }
-
   .arena-player-side,
   .arena-enemy-side {
     padding: 18px 10px;
@@ -1940,22 +2096,7 @@
   }
 
   .world-map-stage {
-    min-height: 330px;
-  }
-
-  .world-map-node {
-    width: 68px;
-    height: 30px;
-  }
-
-  .world-map-node > strong {
-    font-size: 10px;
-  }
-
-  .world-player-marker {
-    width: 22px;
-    height: 22px;
-    font-size: 11px;
+    min-height: 340px;
   }
 
   .world-location-panel {
