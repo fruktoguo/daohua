@@ -583,6 +583,23 @@ public sealed record CombatLoadoutDto(
     IReadOnlyList<string>? LearnedAbilityIds = null);
 
 /// <summary>
+/// 地点栖息的怪物实体信息传输对象。
+/// </summary>
+public sealed record NearbyMonsterDto(
+    string MonsterId,
+    string Name,
+    int Level,
+    int Tier,
+    string Rank,
+    double BudgetCost,
+    double MaxHitpoints,
+    double MaxDamage,
+    double Armor,
+    IReadOnlyList<string> Drops,
+    string? VisualSource = null,
+    string? VisualRenderer = null);
+
+/// <summary>
 /// 世界地图节点传输对象，代表大地图上的地点/宗门/秘境。
 /// </summary>
 public sealed record WorldNodeDto(
@@ -595,7 +612,14 @@ public sealed record WorldNodeDto(
     IReadOnlyList<string> AvailableActionIds,
     IReadOnlyList<string> EncounterIds,
     IReadOnlyList<NearbyEntityDto> Npcs,
-    IReadOnlyList<NearbyEntityDto> Buildings);
+    IReadOnlyList<NearbyEntityDto> Buildings,
+    double MinBudget = 0,
+    double MaxBudget = 0,
+    int EliteInterval = 5,
+    int BossInterval = 20,
+    IReadOnlyList<NearbyMonsterDto>? Monsters = null,
+    IReadOnlyList<NearbyMonsterDto>? EliteEnemies = null,
+    IReadOnlyList<NearbyMonsterDto>? BossEnemies = null);
 
 /// <summary>
 /// 世界地图路径边传输对象，连接两个节点。
@@ -642,7 +666,14 @@ public sealed record WorldStateDto(
     IReadOnlyList<string> AvailableActionIds,
     IReadOnlyList<string> EncounterIds,
     IReadOnlyList<NearbyEntityDto> Npcs,
-    IReadOnlyList<NearbyEntityDto> Buildings);
+    IReadOnlyList<NearbyEntityDto> Buildings,
+    double MinBudget = 0,
+    double MaxBudget = 0,
+    int EliteInterval = 5,
+    int BossInterval = 20,
+    IReadOnlyList<NearbyMonsterDto>? Monsters = null,
+    IReadOnlyList<NearbyMonsterDto>? EliteEnemies = null,
+    IReadOnlyList<NearbyMonsterDto>? BossEnemies = null);
 
 /// <summary>
 /// 历史事件日志条目传输对象。

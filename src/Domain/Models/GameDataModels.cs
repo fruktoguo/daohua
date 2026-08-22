@@ -184,7 +184,8 @@ public sealed record CombatantConfig(
     double SkillIntensity = 1.0,
     double DynamicResistanceFactorK = 1.0,
     double ActionSpeedReductionRatio = 0,
-    double CooldownReductionRatio = 0);
+    double CooldownReductionRatio = 0,
+    double? BudgetCost = null);
 
 /// <summary>
 /// 遭遇战随机刷怪权重配置。
@@ -208,6 +209,10 @@ public sealed record CombatEncounterConfig(
     int SearchMilliseconds,
     int RespawnMilliseconds,
     int PlayerRespawnMilliseconds,
+    double MinBudget = 10,
+    double MaxBudget = 50,
+    int EliteInterval = 5,
+    IReadOnlyList<string>? EliteEnemyIds = null,
     long ExperiencePerWin = 0,
     long SpiritMinPerWin = 0,
     long SpiritMaxPerWin = 0,

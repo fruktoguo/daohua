@@ -95,7 +95,7 @@
           "combat.hunt-qi-beast"
         ],
         "encounterIds": [
-          "encounter.qi-beast"
+          "encounter.sunset-ridge"
         ],
         "npcs": [],
         "buildings": []
@@ -111,7 +111,7 @@
           "combat.sweep-twilight-valley"
         ],
         "encounterIds": [
-          "encounter.twilight-valley"
+          "encounter.twilight-pass"
         ],
         "npcs": [],
         "buildings": [

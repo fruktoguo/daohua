@@ -310,6 +310,9 @@ public sealed record CombatantDefinition
     /// <summary>掉落灵石最大数量。</summary>
     public double SpiritMax { get; init; }
 
+    /// <summary>单体消耗预算/质量点数（对应刷怪预算扣减）。</summary>
+    public double BudgetCost { get; init; } = 10.0;
+
     /// <summary>常规掉落物品表。</summary>
     public ImmutableArray<CombatDropDefinition> DropTable { get; init; } = [];
 
@@ -357,6 +360,18 @@ public sealed record CombatEncounterDefinition
 
     /// <summary>单场战斗最大敌人总战力上限。</summary>
     public double MaxTotalStrength { get; init; } = 1.0;
+
+    /// <summary>关卡危险度刷怪总预算下限。</summary>
+    public double MinBudget { get; init; } = 10.0;
+
+    /// <summary>关卡危险度刷怪总预算上限。</summary>
+    public double MaxBudget { get; init; } = 50.0;
+
+    /// <summary>每通关多少次遭遇一次精英敌人（默认 5）。</summary>
+    public int EliteInterval { get; init; } = 5;
+
+    /// <summary>关卡精英敌人列表。</summary>
+    public ImmutableArray<CombatantDefinition> EliteEnemies { get; init; } = [];
 
     /// <summary>关底 Boss 敌人列表。</summary>
     public ImmutableArray<CombatantDefinition> BossEnemies { get; init; } = [];

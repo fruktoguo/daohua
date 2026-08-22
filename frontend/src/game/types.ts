@@ -721,6 +721,24 @@ export interface NearbyEntity {
 }
 
 /**
+ * 地点栖息的怪物实体定义
+ */
+export interface NearbyMonsterDefinition {
+  monsterId: string
+  name: string
+  level: number
+  tier: number
+  rank: string
+  budgetCost: number
+  maxHitpoints: number
+  maxDamage: number
+  armor: number
+  drops: string[]
+  visualSource?: string | null
+  visualRenderer?: string | null
+}
+
+/**
  * 大地图节点定义
  */
 export interface WorldNodeDefinition {
@@ -734,6 +752,13 @@ export interface WorldNodeDefinition {
   encounterIds: string[]
   npcs: NearbyEntity[]
   buildings: NearbyEntity[]
+  minBudget?: number
+  maxBudget?: number
+  eliteInterval?: number
+  bossInterval?: number
+  monsters?: NearbyMonsterDefinition[]
+  eliteEnemies?: NearbyMonsterDefinition[]
+  bossEnemies?: NearbyMonsterDefinition[]
 }
 
 /**
@@ -774,6 +799,13 @@ export interface WorldState {
   encounterIds: string[]
   npcs: NearbyEntity[]
   buildings: NearbyEntity[]
+  minBudget?: number
+  maxBudget?: number
+  eliteInterval?: number
+  bossInterval?: number
+  monsters?: NearbyMonsterDefinition[]
+  eliteEnemies?: NearbyMonsterDefinition[]
+  bossEnemies?: NearbyMonsterDefinition[]
 }
 
 /**

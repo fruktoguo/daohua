@@ -161,8 +161,9 @@ public sealed class CombatTests
     public void Cast_resolves_when_simulation_reaches_the_exact_millisecond_boundary()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.Parse("11111111-1111-1111-1111-111111111111"), now: Baseline);
-        state.Combat.AttackLevel = 1_000;
-        state.Combat.IntelligenceLevel = 1_000;
+        state.Combat.AttackLevel = 1_000_000;
+        state.Combat.IntelligenceLevel = 1_000_000;
+        state.Combat.SwordsmanshipLevel = 1_000_000;
         state.Combat.Style = CombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
 
@@ -1073,12 +1074,13 @@ public sealed class CombatTests
     /// 验证多怪物区域逢第十场（completedEncountersBeforeRun = 9）必定生成守关 Boss（坠星兽）。
     /// </summary>
     [Fact]
-    public void Multi_enemy_zone_spawns_boss_on_every_tenth_encounter()
+    public void Multi_enemy_zone_spawns_boss_on_every_twentieth_encounter_and_elite_on_fifth()
     {
         var playerId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
         var state = SimulationEngine.CreateDefaultState(playerId, now: Baseline);
 
-        var result = CombatSimulator.Run(
+        // 验证第 5 场（精英波次）
+        var eliteResult = CombatSimulator.Run(
             playerId,
             state.Combat,
             state.Buffs,
@@ -1086,10 +1088,23 @@ public sealed class CombatTests
             CombatEncounterIds.TwilightValley,
             Baseline,
             TimeSpan.Zero,
-            completedEncountersBeforeRun: 9);
+            completedEncountersBeforeRun: 4);
+        Assert.NotNull(eliteResult.FinalEnemies);
+        Assert.Contains(eliteResult.FinalEnemies!, e => e.EnemyId is "enemy.blade-corpse" or "enemy.fallen-devil-priest");
 
-        Assert.NotNull(result.FinalEnemies);
-        var enemy = Assert.Single(result.FinalEnemies!);
+        // 验证第 20 场（Boss 波次）
+        var bossResult = CombatSimulator.Run(
+            playerId,
+            state.Combat,
+            state.Buffs,
+            state.Inventory.Items,
+            CombatEncounterIds.TwilightValley,
+            Baseline,
+            TimeSpan.Zero,
+            completedEncountersBeforeRun: 19);
+
+        Assert.NotNull(bossResult.FinalEnemies);
+        var enemy = Assert.Single(bossResult.FinalEnemies!);
         Assert.Equal("enemy.falling-star-beast", enemy.EnemyId);
     }
 

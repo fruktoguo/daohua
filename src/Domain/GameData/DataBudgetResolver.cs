@@ -644,10 +644,13 @@ public static class DataBudgetResolver
             MpRegenPerTenSeconds = config.MpRegenPerTenSeconds,
             EnrageTimeMilliseconds = config.EnrageTimeMilliseconds,
             AttackLevel = config.Level > 0 ? config.Level : 1,
+            Tier = config.Tier,
+            Rank = config.Rank,
             ExperienceMultiplier = config.ExperienceMultiplier ?? 1.0,
             Experience = config.Experience,
             SpiritMin = config.SpiritMin,
             SpiritMax = config.SpiritMax,
+            BudgetCost = config.BudgetCost is > 0 ? config.BudgetCost.Value : 10.0,
             DropTable = config.DropTable ?? [],
             RareDropTable = config.RareDropTable ?? [],
             Abilities = resolvedAbilities

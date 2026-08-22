@@ -317,6 +317,10 @@ public sealed class CombatantDefinition
     public double MpRegenPerTenSeconds { get; init; } = 0.0;
     /// <summary>狂暴狂热倒计时（毫秒，超时后进入狂暴增伤）。</summary>
     public int EnrageTimeMilliseconds { get; init; }
+    /// <summary>阶位品级。</summary>
+    public int Tier { get; init; } = 1;
+    /// <summary>实体位阶（普通、精英、Boss等）。</summary>
+    public UnitRank Rank { get; init; } = UnitRank.Minion;
     /// <summary>攻击修炼等级。</summary>
     public int AttackLevel { get; init; } = 1;
     /// <summary>击败该实体产出的经验倍率。</summary>
@@ -327,6 +331,8 @@ public sealed class CombatantDefinition
     public long SpiritMin { get; init; }
     /// <summary>掉落灵石最大数量。</summary>
     public long SpiritMax { get; init; }
+    /// <summary>单体消耗预算/质量点数（对应刷怪预算扣减）。</summary>
+    public double BudgetCost { get; init; } = 10.0;
     /// <summary>常规掉落物品表。</summary>
     public IReadOnlyList<CombatDropDefinition> DropTable { get; init; } = [];
     /// <summary>稀有掉落物品表。</summary>
@@ -436,6 +442,14 @@ public sealed class CombatEncounterDefinition
     public int MaxSpawnCount { get; init; } = 1;
     /// <summary>单场战斗最大敌人总战力上限。</summary>
     public int MaxTotalStrength { get; init; } = 1;
+    /// <summary>关卡危险度刷怪总预算下限。</summary>
+    public double MinBudget { get; init; } = 10.0;
+    /// <summary>关卡危险度刷怪总预算上限。</summary>
+    public double MaxBudget { get; init; } = 50.0;
+    /// <summary>每通关多少次遭遇一次精英敌人（默认 5）。</summary>
+    public int EliteInterval { get; init; } = 5;
+    /// <summary>关卡精英敌人列表。</summary>
+    public IReadOnlyList<CombatantDefinition> EliteEnemies { get; init; } = [];
     /// <summary>关底 Boss 敌人列表。</summary>
     public IReadOnlyList<CombatantDefinition> BossEnemies { get; init; } = [];
     /// <summary>每通关多少次小怪战斗遭遇一次 Boss。</summary>

@@ -925,23 +925,27 @@ public static partial class CombatSimulator
         {
             definitions = encounter.BossEnemies;
         }
-        else
+        else if (encounter.EliteInterval > 0
+            && encounter.EliteEnemies.Count > 0
+            && nextEncounterNumber % encounter.EliteInterval == 0)
         {
+            var eliteIndex = (int)random.NextInt64(0, encounter.EliteEnemies.Count);
+            var elite = encounter.EliteEnemies[eliteIndex];
+            var spawned = new List<CombatantDefinition> { elite };
+
+            var minBudget = Math.Max(1.0, encounter.MinBudget > 0 ? encounter.MinBudget : 10.0);
+            var maxBudget = Math.Max(minBudget, encounter.MaxBudget > 0 ? encounter.MaxBudget : minBudget);
+            var totalBudget = minBudget + random.NextDouble() * (maxBudget - minBudget);
+            var remainBudget = totalBudget - elite.BudgetCost;
+
             var spawnTable = encounter.RandomSpawns
-                .Where(spawn => double.IsFinite(spawn.Weight) && spawn.Weight > 0 && spawn.Strength > 0)
+                .Where(spawn => double.IsFinite(spawn.Weight) && spawn.Weight > 0)
                 .ToArray();
-            if (spawnTable.Length == 0)
+            if (spawnTable.Length > 0 && remainBudget > 0)
             {
-                definitions = [encounter.Enemy];
-            }
-            else
-            {
-                var maxSpawnCount = Math.Max(1, encounter.MaxSpawnCount);
-                var maxTotalStrength = Math.Max(1, encounter.MaxTotalStrength);
                 var totalWeight = spawnTable.Sum(spawn => spawn.Weight);
-                var totalStrength = 0;
-                var spawned = new List<CombatantDefinition>(maxSpawnCount);
-                for (var index = 0; index < maxSpawnCount; index++)
+                var failCount = 0;
+                while (failCount < 3 && remainBudget > 0 && spawned.Count < 5)
                 {
                     var roll = random.NextDouble() * totalWeight;
                     var cumulativeWeight = 0d;
@@ -956,9 +960,66 @@ public static partial class CombatSimulator
                         }
                     }
 
-                    totalStrength = checked(totalStrength + selected.Strength);
-                    if (totalStrength > maxTotalStrength) break;
-                    spawned.Add(selected.Enemy);
+                    var cost = Math.Max(1.0, selected.Enemy.BudgetCost > 0 ? selected.Enemy.BudgetCost : selected.Strength);
+                    if (cost <= remainBudget)
+                    {
+                        spawned.Add(selected.Enemy);
+                        remainBudget -= cost;
+                        failCount = 0;
+                    }
+                    else
+                    {
+                        failCount++;
+                    }
+                }
+            }
+
+            definitions = spawned;
+        }
+        else
+        {
+            var spawnTable = encounter.RandomSpawns
+                .Where(spawn => double.IsFinite(spawn.Weight) && spawn.Weight > 0)
+                .ToArray();
+            if (spawnTable.Length == 0)
+            {
+                definitions = [encounter.Enemy];
+            }
+            else
+            {
+                var minBudget = Math.Max(1.0, encounter.MinBudget > 0 ? encounter.MinBudget : 10.0);
+                var maxBudget = Math.Max(minBudget, encounter.MaxBudget > 0 ? encounter.MaxBudget : minBudget);
+                var totalBudget = minBudget + random.NextDouble() * (maxBudget - minBudget);
+                var remainBudget = totalBudget;
+                var totalWeight = spawnTable.Sum(spawn => spawn.Weight);
+                var spawned = new List<CombatantDefinition>();
+                var failCount = 0;
+                while (failCount < 3 && remainBudget > 0 && spawned.Count < 5)
+                {
+                    var roll = random.NextDouble() * totalWeight;
+                    var cumulativeWeight = 0d;
+                    var selected = spawnTable[^1];
+                    foreach (var spawn in spawnTable)
+                    {
+                        cumulativeWeight += spawn.Weight;
+                        if (roll <= cumulativeWeight)
+                        {
+                            selected = spawn;
+                            break;
+                        }
+                    }
+
+                    var cost = Math.Max(1.0, selected.Enemy.BudgetCost > 0 ? selected.Enemy.BudgetCost : selected.Strength);
+                    if (cost <= remainBudget)
+                    {
+                        spawned.Add(selected.Enemy);
+                        remainBudget -= cost;
+                        failCount = 0;
+                    }
+                    else
+                    {
+                        failCount++;
+                    }
                 }
 
                 definitions = spawned.Count > 0 ? spawned : [spawnTable[0].Enemy];

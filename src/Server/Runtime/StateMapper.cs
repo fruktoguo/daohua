@@ -222,6 +222,54 @@ public static class StateMapper
             definition.PlayerRespawnMilliseconds);
     }
 
+    private static NearbyMonsterDto ToNearbyMonster(CombatantDefinition definition) => new(
+        definition.Id,
+        definition.Name,
+        (int)definition.AttackLevel,
+        definition.Tier,
+        ToWire(definition.Rank),
+        definition.BudgetCost,
+        definition.MaxHitpoints,
+        definition.MaxDamage,
+        definition.Armor,
+        definition.DropTable.Select(d => d.ItemId).Distinct().ToArray(),
+        definition.Visual?.Source,
+        definition.Visual?.Renderer.ToString().ToLowerInvariant());
+
+    private static (double MinBudget, double MaxBudget, int EliteInterval, int BossInterval, IReadOnlyList<NearbyMonsterDto> Monsters, IReadOnlyList<NearbyMonsterDto> EliteEnemies, IReadOnlyList<NearbyMonsterDto> BossEnemies) ResolveNodeCombatEcologies(WorldNodeDefinition node)
+    {
+        var encounters = node.EncounterIds
+            .Where(id => CombatCatalog.TryGetEncounter(id, out _))
+            .Select(CombatCatalog.GetEncounter)
+            .ToArray();
+        if (encounters.Length == 0)
+        {
+            return (0, 0, 5, 20, [], [], []);
+        }
+
+        var minBudget = encounters.Min(e => e.MinBudget);
+        var maxBudget = encounters.Max(e => e.MaxBudget);
+        var eliteInterval = encounters.Min(e => e.EliteInterval);
+        var bossInterval = encounters.Min(e => e.BattlesPerBoss);
+        var monsters = encounters
+            .SelectMany(e => e.RandomSpawns.Select(s => s.Enemy))
+            .DistinctBy(e => e.Id)
+            .Select(ToNearbyMonster)
+            .ToArray();
+        var eliteEnemies = encounters
+            .SelectMany(e => e.EliteEnemies)
+            .DistinctBy(e => e.Id)
+            .Select(ToNearbyMonster)
+            .ToArray();
+        var bossEnemies = encounters
+            .SelectMany(e => e.BossEnemies)
+            .DistinctBy(e => e.Id)
+            .Select(ToNearbyMonster)
+            .ToArray();
+
+        return (minBudget, maxBudget, eliteInterval, bossInterval, monsters, eliteEnemies, bossEnemies);
+    }
+
     public static WorldMapDto ToWorldMap(WorldMapDefinition definition)
     {
         return new WorldMapDto(
@@ -229,17 +277,28 @@ public static class StateMapper
             definition.Name,
             definition.Description,
             definition.BackgroundSeed,
-            definition.Nodes.Select(node => new WorldNodeDto(
-                node.Id,
-                node.Name,
-                node.Description,
-                node.X,
-                node.Y,
-                node.CultivationMultiplier,
-                node.AvailableActionIds.ToArray(),
-                node.EncounterIds.ToArray(),
-                node.Npcs.Select(ToNearbyEntity).ToArray(),
-                node.Buildings.Select(ToNearbyEntity).ToArray())).ToArray(),
+            definition.Nodes.Select(node =>
+            {
+                var (minBudget, maxBudget, eliteInterval, bossInterval, monsters, eliteEnemies, bossEnemies) = ResolveNodeCombatEcologies(node);
+                return new WorldNodeDto(
+                    node.Id,
+                    node.Name,
+                    node.Description,
+                    node.X,
+                    node.Y,
+                    node.CultivationMultiplier,
+                    node.AvailableActionIds.ToArray(),
+                    node.EncounterIds.ToArray(),
+                    node.Npcs.Select(ToNearbyEntity).ToArray(),
+                    node.Buildings.Select(ToNearbyEntity).ToArray(),
+                    minBudget,
+                    maxBudget,
+                    eliteInterval,
+                    bossInterval,
+                    monsters,
+                    eliteEnemies,
+                    bossEnemies);
+            }).ToArray(),
             definition.Edges.Select(edge => new WorldEdgeDto(
                 edge.Id,
                 edge.FromNodeId,
@@ -728,6 +787,7 @@ public static class StateMapper
         if (world.NodeId is not null)
         {
             var node = WorldCatalog.GetNode(world.MapId, world.NodeId);
+            var (minBudget, maxBudget, eliteInterval, bossInterval, monsters, eliteEnemies, bossEnemies) = ResolveNodeCombatEcologies(node);
             return new WorldStateDto(
                 world.MapId,
                 node.Id,
@@ -740,7 +800,14 @@ public static class StateMapper
                 node.AvailableActionIds.ToArray(),
                 node.EncounterIds.ToArray(),
                 node.Npcs.Select(ToNearbyEntity).ToArray(),
-                node.Buildings.Select(ToNearbyEntity).ToArray());
+                node.Buildings.Select(ToNearbyEntity).ToArray(),
+                minBudget,
+                maxBudget,
+                eliteInterval,
+                bossInterval,
+                monsters,
+                eliteEnemies,
+                bossEnemies);
         }
 
         var edge = WorldCatalog.GetEdge(world.MapId, world.EdgeId!);
@@ -756,6 +823,13 @@ public static class StateMapper
             $"{from.Name}至{to.Name}途中",
             1,
             [],
+            [],
+            [],
+            [],
+            0,
+            0,
+            5,
+            20,
             [],
             [],
             []);

@@ -517,6 +517,13 @@
   border-bottom: 1px solid var(--gold-faint);
 }
 
+.nearby-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .nearby-heading span {
   color: var(--text-dim);
   font-size: 10px;
@@ -528,6 +535,16 @@
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 20px;
   font-weight: 400;
+}
+
+.nearby-budget-pill {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(224, 86, 74, 0.35);
+  background: rgba(224, 86, 74, 0.1);
+  color: #ff9b9b;
+  font-size: 11px;
+  letter-spacing: 0.5px;
 }
 
 .nearby-heading p {
@@ -564,10 +581,38 @@
   padding: 10px;
   border: 1px solid rgba(201, 180, 109, 0.2);
   background: rgba(201, 180, 109, 0.025);
+  cursor: default;
+  transition: all 0.2s ease;
+}
+
+.nearby-card:hover {
+  background: rgba(201, 180, 109, 0.06);
 }
 
 .nearby-card.is-player { border-color: rgba(114, 169, 140, 0.42); }
 .nearby-card.is-building { border-color: rgba(117, 169, 173, 0.4); }
+.nearby-card.is-monster { border-color: rgba(201, 180, 109, 0.3); }
+.nearby-card.is-elite { border-color: rgba(168, 85, 247, 0.45); background: rgba(168, 85, 247, 0.04); }
+.nearby-card.is-boss { border-color: rgba(239, 68, 68, 0.55); background: rgba(239, 68, 68, 0.06); }
+
+.nearby-monster-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nearby-level-badge {
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(201, 180, 109, 0.15);
+  color: var(--gold-bright);
+  font-size: 10px;
+}
+
+.nearby-interval-hint {
+  color: #c084fc !important;
+  font-weight: 500;
+}
 
 .nearby-mark {
   display: grid;

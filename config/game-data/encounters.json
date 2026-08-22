@@ -1,7 +1,51 @@
 [
   {
     "id": "encounter.qi-beast",
-    "name": "青幽后山",
+    "name": "青岚后山",
+    "minBudget": 15,
+    "maxBudget": 45,
+    "eliteInterval": 5,
+    "bossInterval": 20,
+    "randomSpawns": [
+      {
+        "enemyId": "enemy.wood-spirit",
+        "weight": 1,
+        "strength": 15
+      }
+    ],
+    "maxSpawnCount": 3,
+    "maxTotalStrength": 50,
+    "eliteEnemyIds": [
+      "enemy.demon-ape"
+    ],
+    "bossEnemyIds": [
+      "enemy.chang-tiger"
+    ],
+    "battlesPerBoss": 20,
+    "searchMilliseconds": 20000,
+    "respawnMilliseconds": 5000,
+    "playerRespawnMilliseconds": 180000,
+    "enrageTimeMilliseconds": 180000,
+    "enrageTickMilliseconds": 60000,
+    "maxEnrageStacks": 10,
+    "enrageRatioPerStack": 0.1,
+    "dropTable": [
+      {
+        "itemId": "item.qi-beast-core",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "rareDropTable": []
+  },
+  {
+    "id": "encounter.sunset-ridge",
+    "name": "西岭荒野",
+    "minBudget": 20,
+    "maxBudget": 65,
+    "eliteInterval": 5,
+    "bossInterval": 20,
     "randomSpawns": [
       {
         "enemyId": "enemy.demonized-rabbit",
@@ -9,32 +53,65 @@
         "strength": 10
       },
       {
-        "enemyId": "enemy.wood-spirit",
-        "weight": 2,
-        "strength": 12
-      },
+        "enemyId": "enemy.armored-bear",
+        "weight": 1,
+        "strength": 45
+      }
+    ],
+    "maxSpawnCount": 3,
+    "maxTotalStrength": 65,
+    "eliteEnemyIds": [
+      "enemy.armored-bear"
+    ],
+    "bossEnemyIds": [
+      "enemy.chang-tiger"
+    ],
+    "battlesPerBoss": 20,
+    "searchMilliseconds": 20000,
+    "respawnMilliseconds": 5000,
+    "playerRespawnMilliseconds": 180000,
+    "enrageTimeMilliseconds": 180000,
+    "enrageTickMilliseconds": 60000,
+    "maxEnrageStacks": 10,
+    "enrageRatioPerStack": 0.1,
+    "dropTable": [
+      {
+        "itemId": "item.qi-beast-core",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "rareDropTable": []
+  },
+  {
+    "id": "encounter.twilight-pass",
+    "name": "暮影隘口",
+    "minBudget": 35,
+    "maxBudget": 80,
+    "eliteInterval": 5,
+    "bossInterval": 20,
+    "randomSpawns": [
       {
         "enemyId": "enemy.fire-spirit",
         "weight": 2,
-        "strength": 12
+        "strength": 18
       },
       {
         "enemyId": "enemy.demon-ape",
         "weight": 1,
-        "strength": 25
-      },
-      {
-        "enemyId": "enemy.armored-bear",
-        "weight": 1,
-        "strength": 25
+        "strength": 35
       }
     ],
     "maxSpawnCount": 3,
-    "maxTotalStrength": 50,
+    "maxTotalStrength": 80,
+    "eliteEnemyIds": [
+      "enemy.demon-ape"
+    ],
     "bossEnemyIds": [
       "enemy.chang-tiger"
     ],
-    "battlesPerBoss": 10,
+    "battlesPerBoss": 20,
     "searchMilliseconds": 20000,
     "respawnMilliseconds": 5000,
     "playerRespawnMilliseconds": 180000,
@@ -55,39 +132,37 @@
   {
     "id": "encounter.twilight-valley",
     "name": "坠星裂谷",
+    "minBudget": 60,
+    "maxBudget": 150,
+    "eliteInterval": 5,
+    "bossInterval": 20,
     "randomSpawns": [
       {
         "enemyId": "enemy.rift-wolf",
         "weight": 3,
-        "strength": 50
+        "strength": 30
       },
       {
         "enemyId": "enemy.star-flame-crow",
         "weight": 2,
-        "strength": 55
+        "strength": 35
       },
       {
         "enemyId": "enemy.plunder-cultivator",
         "weight": 2,
-        "strength": 55
-      },
-      {
-        "enemyId": "enemy.blade-corpse",
-        "weight": 1,
-        "strength": 100
-      },
-      {
-        "enemyId": "enemy.fallen-devil-priest",
-        "weight": 1,
-        "strength": 100
+        "strength": 40
       }
     ],
     "maxSpawnCount": 3,
-    "maxTotalStrength": 250,
+    "maxTotalStrength": 150,
+    "eliteEnemyIds": [
+      "enemy.blade-corpse",
+      "enemy.fallen-devil-priest"
+    ],
     "bossEnemyIds": [
       "enemy.falling-star-beast"
     ],
-    "battlesPerBoss": 10,
+    "battlesPerBoss": 20,
     "searchMilliseconds": 20000,
     "respawnMilliseconds": 5000,
     "playerRespawnMilliseconds": 180000,
