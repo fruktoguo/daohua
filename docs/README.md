@@ -6,7 +6,8 @@
 
 ```text
 docs/
-├── design/    游戏与数值设计（玩法、战斗、数值模型、数据架构、性能基线）
+├── design/    游戏玩法与数值设计（玩法规则、战斗模型、期望面板、技能规划）
+├── backend/   服务端开发与架构规范（数据架构、YuoCore 逻辑开发指南、配置管线、性能基线）
 ├── frontend/  前端规范（公共组件速查、专项交互设计）
 ├── ops/       部署与运维（构建、CCR 发布、服务器更新与回滚）
 ├── world/     世界观与剧情（设定真源、章节剧情、地图设计）
@@ -22,7 +23,7 @@ docs/
 | [tasks/](tasks/) | **任务独立详情文档目录**：每个非 Bug 修复任务的独立需求分析、技术方案、子任务拆解与时间线日志。 |
 
 
-## design/ — 游戏与数值设计
+## design/ — 游戏玩法与数值设计
 
 | 文档 | 定位 |
 | --- | --- |
@@ -31,11 +32,18 @@ docs/
 | [player-expected-attributes-model.md](design/player-expected-attributes-model.md) | 境界阶位体系与基准玩家期望属性量化模型（由脚本生成，勿手改数值表）。 |
 | [combat-benchmark-model.md](design/combat-benchmark-model.md) | 战斗基准模拟与关卡产出期望模型：全 12 阶单人与组队效率基准（由脚本生成，勿手改数值表）。 |
 | [early-game-skills-design.md](design/early-game-skills-design.md) | 前期技能设计规约：五大流派定位、前期技能清单规划、数值模型与获取途径。 |
-| [game-data.md](design/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |
-| [performance-baseline.md](design/performance-baseline.md) | 首轮性能基线：在线、离线挂机、市场场景实测数据与相对回归口径。 |
 | [milky-way-idle-mapping.md](design/milky-way-idle-mapping.md) | Milky Way Idle 公开玩法/数值映射与排除边界（仅作参考，不复制其内容）。 |
 
 生成链路：`scripts/generate-combat-benchmark.py` 动态刷新 `player-expected-attributes-model.md`、`combat-benchmark-model.md` 与 `config/game-data/expected-attributes.json`；修改数值模型应改脚本后重新生成，不直接编辑生成产物中的数值表。
+
+## backend/ — 服务端开发与架构规范
+
+| 文档 | 定位 |
+| --- | --- |
+| [domain-data-architecture.md](backend/domain-data-architecture.md) | 服务端领域数据架构与 YuoCore ECS 规约：四层架构体系、细粒度组件与强类型 ID。 |
+| [logic-development-guide.md](backend/logic-development-guide.md) | 服务端业务逻辑开发指南：基于 YuoCore ECS 的 Component、System、ActorHandler 开发 SOP 与红线。 |
+| [game-data.md](backend/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |
+| [performance-baseline.md](backend/performance-baseline.md) | 首轮性能基线：在线、离线挂机、市场场景实测数据与相对回归口径。 |
 
 ## frontend/ — 前端规范
 

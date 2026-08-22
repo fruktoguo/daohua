@@ -210,9 +210,11 @@ scripts/docker-build-prod.sh --push
 
 ## 15. Git 规则
 
-- **自动提交要求**：每次完成完整功能修改或添加，或解决一组 Bug 并通过完整验证后，**必须自动执行 Git 提交**，无需等待用户额外发出提交指令。
+- **自动提交范围与限制**：
+  - **功能与代码修改自动提交**：每次完成完整代码功能修改/添加，或解决一组 Bug 并通过完整门禁验证后，**必须自动执行 Git 提交**，无需等待用户额外发出提交指令。
+  - **纯文档修改严禁自动提交**：凡是纯文档类的修改（如 `docs/` 目录下的架构设计、开发指南、任务面板、注释或说明文档调整），**不得自动执行 Git 提交**，必须保持在工作区，等待用户明确指令或在后续完成对应功能代码实现后一并合并提交。
 - `commit` 不等于 `push`；push、force push、reset、rebase、amend、tag、release 和 deploy 仍需用户明确许可。
-- commit 前只暂存本次任务直接相关文件，先运行对应验证（如 `scripts/verify.sh` 或相应单测），核对 `git diff --cached` 确保无无关改动后自动 commit。
+- commit 前只暂存本次任务直接相关文件，先运行对应验证（如 `scripts/verify.sh` 或相应单测），核对 `git diff --cached` 确保无无关改动后提交。
 - 提交说明必须使用规范的中文 Conventional Commits，例如：
 
 ```text
