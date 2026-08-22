@@ -591,3 +591,98 @@ public sealed record DaoHuaCombatRunResult(
     long? NextEventMilliseconds = null,
     IReadOnlyList<long>? PlayerConsumableCooldowns = null);
 
+/// <summary>
+/// 非玩家单位品阶层级量化定义
+/// </summary>
+public enum NonPlayerUnitTier
+{
+    /// <summary>
+    /// 普通怪：全属性 100% 基准，生命 100% 基准。
+    /// </summary>
+    Normal = 0,
+
+    /// <summary>
+    /// 精英怪：全属性 120% 基准，生命 300% 基准。
+    /// </summary>
+    Elite = 1,
+
+    /// <summary>
+    /// 妖王首领：全属性 150% 基准，生命 1000% 基准。
+    /// </summary>
+    Boss = 2
+}
+
+/// <summary>
+/// 百分比曲线换算模式
+/// </summary>
+public enum PercentCurveMode
+{
+    /// <summary>
+    /// 线性模式（用于：增伤、免伤、仇恨增加、各类属性伤害增免）
+    /// 正向：+x% (倍率 1 + x/100)
+    /// 负向：除法软衰减 -|x|/(100+|x|)% (倍率 100/(100+|x|))
+    /// </summary>
+    Linear = 0,
+
+    /// <summary>
+    /// 非线性/速率倒数模式（用于：冷却速度、行动速度、灵力消耗减免）
+    /// 正向：双曲缩减 x/(100+x)% (倍率 100/(100+x))
+    /// 负向：时间/消耗线性延长 -|x|% (倍率 1 + |x|/100)
+    /// </summary>
+    NonLinear = 1
+}
+
+/// <summary>
+/// 统一百分比数值类型。
+/// 内部储存与计算均使用 double 类型的固定点数 (Points，基准 100 点 = 100%)。
+/// 支持在 Linear (线性) 和 NonLinear (非线性) 模式间换算。
+/// </summary>
+public readonly record struct PercentValue(double Points, PercentCurveMode Mode = PercentCurveMode.Linear)
+{
+    public static PercentValue Linear(double points) => new(points, PercentCurveMode.Linear);
+    public static PercentValue NonLinear(double points) => new(points, PercentCurveMode.NonLinear);
+
+    /// <summary>
+    /// 参与战斗公式乘法计算的实际倍率 (Multiplier)
+    /// </summary>
+    public double Multiplier => Mode switch
+    {
+        PercentCurveMode.Linear => Points >= 0
+            ? 1.0 + Points / 100.0
+            : 100.0 / (100.0 + Math.Abs(Points)),
+
+        PercentCurveMode.NonLinear => Points >= 0
+            ? 100.0 / (100.0 + Points)
+            : 1.0 + Math.Abs(Points) / 100.0,
+
+        _ => 1.0
+    };
+
+    /// <summary>
+    /// 面板或 UI 展示的实际百分比值 (DisplayPercentage)
+    /// </summary>
+    public double DisplayPercentage => Mode switch
+    {
+        PercentCurveMode.Linear => Points >= 0
+            ? Points
+            : -(Math.Abs(Points) / (100.0 + Math.Abs(Points))) * 100.0,
+
+        PercentCurveMode.NonLinear => Points >= 0
+            ? (Points / (100.0 + Points)) * 100.0
+            : -Math.Abs(Points),
+
+        _ => 0.0
+    };
+
+    /// <summary>
+    /// 格式化为百分比文本字符串
+    /// </summary>
+    public string Format(int decimals = 1)
+    {
+        var val = DisplayPercentage;
+        var prefix = (Mode == PercentCurveMode.Linear && val > 0) ? "+" : "";
+        return $"{prefix}{val.ToString($"F{decimals}")}%";
+    }
+}
+
+

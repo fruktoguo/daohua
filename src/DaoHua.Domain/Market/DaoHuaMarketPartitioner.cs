@@ -19,10 +19,10 @@ namespace DaoHua.Domain.Market;
 public static class DaoHuaMarketPartitioner
 {
     /// <summary>分片哈希算法标识版本。</summary>
-    public const string Algorithm = "fnv1a64-utf16-v1";
+    public const string Algorithm = DaoHuaMarketConstants.PartitionAlgorithm;
 
-    private const ulong OffsetBasis = 14695981039346656037UL;
-    private const ulong Prime = 1099511628211UL;
+    private const ulong OffsetBasis = DaoHuaMarketConstants.FnvOffsetBasis;
+    private const ulong Prime = DaoHuaMarketConstants.FnvPrime;
 
     /// <summary>
     /// 根据交易品种计算其对应的确定性分片分区序号（0 ~ partitionCount - 1）。

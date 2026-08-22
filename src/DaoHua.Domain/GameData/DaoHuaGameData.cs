@@ -21,7 +21,7 @@ namespace DaoHua.Domain.GameData;
 public static class DaoHuaGameData
 {
     /// <summary>支持的数据结构 Schema 版本。</summary>
-    public const int SupportedSchemaVersion = 1;
+    public const int SupportedSchemaVersion = DaoHuaGameDataConstants.SupportedSchemaVersion;
 
     private static readonly string[] FileNames =
     [

@@ -1,15 +1,15 @@
 // ==============================================================================
 // 文件名称: DaoHuaCombatConstants.cs
-// 主要职责: 修仙战斗核心数值常量配置与公式规范定义。
+// 主要职责: 修仙战斗核心数值常量配置、基础属性锚点与公式规范定义。
 // 核心逻辑 / 定义内容:
 //   1. 伤害与抗性减伤公式相关常量（抗性减伤系数、基础常数）。
 //   2. 对抗概率计算公式相关常量（命中vs闪避、暴击vs免暴、破招vs拆招）。
 //   3. 六维基础属性成长与属性转化系数常量。
-//   4. 功法法力消耗倍率与战斗规则常量。
+//   4. 功法法力消耗倍率与战斗规则常量、强化总奖励倍率表。
+//   5. 统一基准战斗数值与境界 127 级升级经验表与换算规范。
 // ==============================================================================
 
-namespace DaoHua.Domain.Simulation;
-
+namespace DaoHua.Domain.Constants;
 
 /// <summary>
 /// 修仙战斗核心常量配置与公式说明规范。
@@ -62,7 +62,7 @@ public static class DaoHuaCombatConstants
 
 
     // =========================================================================
-    // 4. 破招与拆招 (化解) 翻倍判定规则
+    // 3. 破招与拆招 (化解) 翻倍判定规则
     // =========================================================================
 
     /// <summary>
@@ -85,7 +85,7 @@ public static class DaoHuaCombatConstants
 
 
     // =========================================================================
-    // 5. 暴击伤害基础倍率
+    // 4. 暴击伤害基础倍率
     // =========================================================================
 
     /// <summary>
@@ -98,7 +98,7 @@ public static class DaoHuaCombatConstants
 
 
     // =========================================================================
-    // 6. 六维根基换算系数 (百分比增益)
+    // 5. 六维根基换算系数 (百分比增益)
     // =========================================================================
 
     /// <summary>
@@ -148,7 +148,7 @@ public static class DaoHuaCombatConstants
     public const double DefaultRootAttributePoints = 10.0;
 
     // =========================================================================
-    // 7. 普通攻击 (Basic Attack) 常量规则
+    // 6. 普通攻击 (Basic Attack) 常量规则
     // =========================================================================
 
     /// <summary>
@@ -177,7 +177,7 @@ public static class DaoHuaCombatConstants
     public const double DefaultActionSpeedPoints = 0.0;
 
     // =========================================================================
-    // 8. 统一基准数值规范 (Baseline Attributes, 全部采用 double)
+    // 7. 统一基准数值规范 (Baseline Attributes, 全部采用 double)
     // =========================================================================
 
     /// <summary>
@@ -217,6 +217,34 @@ public static class DaoHuaCombatConstants
     public const double BaselinePercentPoints = 0.0;
 
     /// <summary>
+    /// 强化总奖励倍率表（属于稳定公式版本，装备基础值和单级成长仍由 JSON 配置）。
+    /// </summary>
+    public static readonly double[] EnhancementTotalBonusMultipliers =
+    [
+        0, 1, 2.1, 3.3, 4.6, 6, 7.5, 9.1, 10.8, 12.6, 14.5,
+        16.7, 19.2, 22, 25.1, 28.5, 32.2, 36.2, 40.5, 45.1, 50
+    ];
+
+    /// <summary>
+    /// 境界平坦基础属性锚点表，用于线性插值基础战斗属性池。
+    /// </summary>
+    public static readonly (double Level, double Hp, double Mp, double Ad, double Ap, double Armor, double Mr, double Acc, double Eva, double Crit, double CAvoid, double Break, double Parry)[] BaseFlatAnchors =
+    [
+        (1,   100,   50,    10,   5,    10,  0,    1,   1,   1,   1,   1,   1),
+        (18,  232,   90,    15,   7,    13,  0,    3,   1,   1,   1,   1,   1),
+        (30,  472,   570,   30,   27,   23,  14,   7,   4,   3,   2,   2,   2),
+        (42,  1108,  1402,  62,   67,   46,  41,   12,  8,   6,   4,   4,   4),
+        (54,  2164,  2770,  116,  133,  83,  85,   19,  15,  13,  8,   7,   7),
+        (66,  4624,  4234,  196,  232,  138, 152,  28,  24,  22,  14,  13,  12),
+        (78,  8056,  6282,  308,  369,  214, 246,  39,  35,  33,  25,  23,  20),
+        (90,  11644, 8586,  430,  517,  297, 347,  50,  46,  44,  36,  34,  30),
+        (102, 16360, 11618, 590,  712,  406, 480,  65,  61,  59,  50,  48,  44),
+        (114, 22372, 15474, 794,  961,  545, 650,  84,  79,  77,  68,  66,  62),
+        (126, 29824, 20258, 1047, 1270, 717, 860,  107, 102, 100, 91,  89,  84),
+        (127, 38872, 26066, 1354, 1645, 927, 1116, 135, 130, 128, 119, 116, 111)
+    ];
+
+    /// <summary>
     /// 六维累计经验到等级换算方法（经验累加不清空）。
     /// 每级累计所需经验 = 100 * (level ^ 3)。
     /// </summary>
@@ -253,7 +281,7 @@ public static class DaoHuaCombatConstants
     }
 
     // =========================================================================
-    // 9. 境界升级经验表与换算规范 (127 级，乘以 1000 后的经验值)
+    // 8. 境界升级经验表与换算规范 (127 级，乘以 1000 后的经验值)
     // =========================================================================
 
     /// <summary>最高境界等级上限 (127 级)。</summary>
@@ -478,96 +506,3 @@ public static class DaoHuaCombatConstants
     }
 }
 
-/// <summary>
-/// 非玩家单位品阶层级量化定义
-/// </summary>
-public enum NonPlayerUnitTier
-{
-    /// <summary>
-    /// 普通怪：全属性 100% 基准，生命 100% 基准。
-    /// </summary>
-    Normal = 0,
-
-    /// <summary>
-    /// 精英怪：全属性 120% 基准，生命 300% 基准。
-    /// </summary>
-    Elite = 1,
-
-    /// <summary>
-    /// 妖王首领：全属性 150% 基准，生命 1000% 基准。
-    /// </summary>
-    Boss = 2
-}
-
-/// <summary>
-/// 百分比曲线换算模式
-/// </summary>
-public enum PercentCurveMode
-{
-    /// <summary>
-    /// 线性模式（用于：增伤、免伤、仇恨增加、各类属性伤害增免）
-    /// 正向：+x% (倍率 1 + x/100)
-    /// 负向：除法软衰减 -|x|/(100+|x|)% (倍率 100/(100+|x|))
-    /// </summary>
-    Linear = 0,
-
-    /// <summary>
-    /// 非线性/速率倒数模式（用于：冷却速度、行动速度、灵力消耗减免）
-    /// 正向：双曲缩减 x/(100+x)% (倍率 100/(100+x))
-    /// 负向：时间/消耗线性延长 -|x|% (倍率 1 + |x|/100)
-    /// </summary>
-    NonLinear = 1
-}
-
-/// <summary>
-/// 统一百分比数值类型。
-/// 内部储存与计算均使用 double 类型的固定点数 (Points，基准 100 点 = 100%)。
-/// 支持在 Linear (线性) 和 NonLinear (非线性) 模式间换算。
-/// </summary>
-public readonly record struct PercentValue(double Points, PercentCurveMode Mode = PercentCurveMode.Linear)
-{
-    public static PercentValue Linear(double points) => new(points, PercentCurveMode.Linear);
-    public static PercentValue NonLinear(double points) => new(points, PercentCurveMode.NonLinear);
-
-    /// <summary>
-    /// 参与战斗公式乘法计算的实际倍率 (Multiplier)
-    /// </summary>
-    public double Multiplier => Mode switch
-    {
-        PercentCurveMode.Linear => Points >= 0
-            ? 1.0 + Points / 100.0
-            : 100.0 / (100.0 + Math.Abs(Points)),
-
-        PercentCurveMode.NonLinear => Points >= 0
-            ? 100.0 / (100.0 + Points)
-            : 1.0 + Math.Abs(Points) / 100.0,
-
-        _ => 1.0
-    };
-
-    /// <summary>
-    /// 面板或 UI 展示的实际百分比值 (DisplayPercentage)
-    /// </summary>
-    public double DisplayPercentage => Mode switch
-    {
-        PercentCurveMode.Linear => Points >= 0
-            ? Points
-            : -(Math.Abs(Points) / (100.0 + Math.Abs(Points))) * 100.0,
-
-        PercentCurveMode.NonLinear => Points >= 0
-            ? (Points / (100.0 + Points)) * 100.0
-            : -Math.Abs(Points),
-
-        _ => 0.0
-    };
-
-    /// <summary>
-    /// 格式化为百分比文本字符串
-    /// </summary>
-    public string Format(int decimals = 1)
-    {
-        var val = DisplayPercentage;
-        var prefix = (Mode == PercentCurveMode.Linear && val > 0) ? "+" : "";
-        return $"{prefix}{val.ToString($"F{decimals}")}%";
-    }
-}

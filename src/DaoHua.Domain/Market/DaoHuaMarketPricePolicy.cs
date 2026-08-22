@@ -19,9 +19,9 @@ namespace DaoHua.Domain.Market;
 public static class DaoHuaMarketPricePolicy
 {
     /// <summary>坊市挂单绝对最低底价（2 灵石）。</summary>
-    public const long AbsoluteMinimumPrice = 2;
+    public const long AbsoluteMinimumPrice = DaoHuaMarketConstants.AbsoluteMinimumPrice;
     /// <summary>订单在盘口的有效存活期（30 天）。</summary>
-    public static readonly TimeSpan ListingLifetime = TimeSpan.FromDays(30);
+    public static readonly TimeSpan ListingLifetime = DaoHuaMarketConstants.ListingLifetime;
 
     /// <summary>
     /// 根据当前价格所处的数量级区间，计算对应的最小价格变动步长（Tick Size）。

@@ -18,11 +18,11 @@ namespace DaoHua.Domain.Simulation;
 /// </summary>
 public static class DaoHuaSimulation
 {
-    private const int MaxTransitionsPerAdvance = 2_000_000;
-    private const int EventLogLimit = 40;
-    private const int PendingEventLimit = 4_096;
-    private const int MinimumCombatSearchMilliseconds = 1_000;
-    private const int MaximumCombatSearchMilliseconds = 60_000;
+    private const int MaxTransitionsPerAdvance = DaoHuaSimulationConstants.MaxTransitionsPerAdvance;
+    private const int EventLogLimit = DaoHuaSimulationConstants.EventLogLimit;
+    private const int PendingEventLimit = DaoHuaSimulationConstants.PendingEventLimit;
+    private const int MinimumCombatSearchMilliseconds = DaoHuaSimulationConstants.MinimumCombatSearchMilliseconds;
+    private const int MaximumCombatSearchMilliseconds = DaoHuaSimulationConstants.MaximumCombatSearchMilliseconds;
 
     /// <summary>
     /// 为新创建的玩家生成默认初始聚合状态，包括默认采集/炼丹/修炼队列。

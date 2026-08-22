@@ -316,22 +316,6 @@ public static class DaoHuaCombatFormula
         double BaseHpRegen,
         double BaseMpRegen);
 
-    private static readonly (double Level, double Hp, double Mp, double Ad, double Ap, double Armor, double Mr, double Acc, double Eva, double Crit, double CAvoid, double Break, double Parry)[] BaseFlatAnchors =
-    [
-        (1,   100,   50,    10,   5,    10,  0,    1,   1,   1,   1,   1,   1),
-        (18,  232,   90,    15,   7,    13,  0,    3,   1,   1,   1,   1,   1),
-        (30,  472,   570,   30,   27,   23,  14,   7,   4,   3,   2,   2,   2),
-        (42,  1108,  1402,  62,   67,   46,  41,   12,  8,   6,   4,   4,   4),
-        (54,  2164,  2770,  116,  133,  83,  85,   19,  15,  13,  8,   7,   7),
-        (66,  4624,  4234,  196,  232,  138, 152,  28,  24,  22,  14,  13,  12),
-        (78,  8056,  6282,  308,  369,  214, 246,  39,  35,  33,  25,  23,  20),
-        (90,  11644, 8586,  430,  517,  297, 347,  50,  46,  44,  36,  34,  30),
-        (102, 16360, 11618, 590,  712,  406, 480,  65,  61,  59,  50,  48,  44),
-        (114, 22372, 15474, 794,  961,  545, 650,  84,  79,  77,  68,  66,  62),
-        (126, 29824, 20258, 1047, 1270, 717, 860,  107, 102, 100, 91,  89,  84),
-        (127, 38872, 26066, 1354, 1645, 927, 1116, 135, 130, 128, 119, 116, 111)
-    ];
-
     /// <summary>
     /// 根据玩家当前持有的灵气修为总点数，通过境界基准锚点线性插值计算出基础属性池。
     /// </summary>
@@ -343,25 +327,27 @@ public static class DaoHuaCombatFormula
         var level = Math.Max(1.0, progress.TotalLevel);
         var tier = CalculateTier(level);
 
+        var anchors = DaoHuaCombatConstants.BaseFlatAnchors;
+
         // 在 12 阶基准锚点中进行分段线性平滑插值
         var lowIndex = 0;
-        for (var i = 0; i < BaseFlatAnchors.Length - 1; i++)
+        for (var i = 0; i < anchors.Length - 1; i++)
         {
-            if (level >= BaseFlatAnchors[i].Level && level <= BaseFlatAnchors[i + 1].Level)
+            if (level >= anchors[i].Level && level <= anchors[i + 1].Level)
             {
                 lowIndex = i;
                 break;
             }
-            if (level > BaseFlatAnchors[i + 1].Level)
+            if (level > anchors[i + 1].Level)
             {
                 lowIndex = i + 1;
             }
         }
 
-        var low = BaseFlatAnchors[lowIndex];
-        var high = lowIndex < BaseFlatAnchors.Length - 1 ? BaseFlatAnchors[lowIndex + 1] : low;
+        var low = anchors[lowIndex];
+        var high = lowIndex < anchors.Length - 1 ? anchors[lowIndex + 1] : low;
         var span = Math.Max(1e-6, high.Level - low.Level);
-        var t = lowIndex < BaseFlatAnchors.Length - 1 ? Math.Clamp((level - low.Level) / span, 0.0, 1.0) : 0.0;
+        var t = lowIndex < anchors.Length - 1 ? Math.Clamp((level - low.Level) / span, 0.0, 1.0) : 0.0;
 
         var baseHp = low.Hp + (high.Hp - low.Hp) * t;
         var baseMp = low.Mp + (high.Mp - low.Mp) * t;

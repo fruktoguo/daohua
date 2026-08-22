@@ -18,13 +18,6 @@ namespace DaoHua.Domain.Simulation;
 /// </summary>
 public static class DaoHuaCombatCatalog
 {
-    // 强化总奖励倍率属于稳定公式版本，装备基础值和单级成长仍由 JSON 配置。
-    private static readonly double[] EnhancementTotalBonusMultipliers =
-    [
-        0, 1, 2.1, 3.3, 4.6, 6, 7.5, 9.1, 10.8, 12.6, 14.5,
-        16.7, 19.2, 22, 25.1, 28.5, 32.2, 36.2, 40.5, 45.1, 50
-    ];
-
     /// <summary>获取全部战斗技能原型列表。</summary>
     public static IReadOnlyCollection<DaoHuaCombatAbilityDefinition> AllAbilities =>
         DaoHuaGameData.Current.Abilities.Values.ToArray();
@@ -144,12 +137,12 @@ public static class DaoHuaCombatCatalog
     /// <exception cref="ArgumentOutOfRangeException">当等级超出 0~20 范围时抛出。</exception>
     public static double GetEnhancementTotalBonusMultiplier(int enhancementLevel)
     {
-        if (enhancementLevel < 0 || enhancementLevel >= EnhancementTotalBonusMultipliers.Length)
+        if (enhancementLevel < 0 || enhancementLevel >= DaoHuaCombatConstants.EnhancementTotalBonusMultipliers.Length)
         {
             throw new ArgumentOutOfRangeException(nameof(enhancementLevel), "强化等级必须在 0 到 20 之间。");
         }
 
-        return EnhancementTotalBonusMultipliers[enhancementLevel];
+        return DaoHuaCombatConstants.EnhancementTotalBonusMultipliers[enhancementLevel];
     }
 
     /// <summary>
