@@ -39,8 +39,11 @@ public sealed class ActionTransitionSystem : YuoSystem<ActionQueueComponent>, IA
             return;
         }
 
-        // 默认按当前时间推进到下一离散边界
-        AdvanceCurrentAction(entity, DateTimeOffset.UtcNow);
+        if (entity.TryGetComponent<CultivationComponent>(out var cultivation))
+        {
+            // 严格遵从确定性约束：使用实体当前的模拟游标，不直接调用 DateTimeOffset.UtcNow
+            AdvanceCurrentAction(entity, cultivation.LastSimulatedAt);
+        }
     }
 
     /// <summary>
@@ -311,91 +314,22 @@ public sealed class ActionTransitionSystem : YuoSystem<ActionQueueComponent>, IA
             return ApplyAdvanceResult(entity, invalidDefResult);
         }
 
-        // 检查输入材料消耗
-        if (definition.Inputs.Count > 0)
+        var context = new ActionExecutionContext
         {
-            foreach (var (itemId, requiredAmount) in definition.Inputs)
-            {
-                var held = inventory?.Get(itemId) ?? 0.0;
-                if (held < requiredAmount)
-                {
-                    var blockResult = ActionAdvanceResult.Block(cursor, ActionBlockReasons.MissingInputs);
-                    return ApplyAdvanceResult(entity, blockResult);
-                }
-            }
-        }
+            EntityId = entity.ID,
+            EntryId = current.EntryId,
+            ExecutionRevision = current.ExecutionRevision,
+            Action = definition,
+            Cursor = cursor,
+            Target = targetTime,
+            ProgressMilliseconds = current.ProgressMilliseconds,
+            AvailableInventory = inventory?.ToFrozenSnapshot() ?? FrozenDictionary<string, double>.Empty,
+            CurrentMapId = current.Travel?.MapId,
+            CurrentNodeId = current.Travel?.DestinationNodeId
+        };
 
-        var durationMs = (long)Math.Max(1000, definition.DurationSeconds * 1000.0);
-        var remainingMs = Math.Max(1, durationMs - current.ProgressMilliseconds);
-        var finishAt = cursor.AddMilliseconds(remainingMs);
-
-        if (finishAt <= targetTime)
-        {
-            // 本次动作周期已完成
-            var result = new ActionAdvanceResult
-            {
-                ConsumedUntil = finishAt,
-                Completed = true,
-                RemainingRepeatsDelta = -1,
-                NextProgressMilliseconds = 0,
-                NextTransitionHint = finishAt
-            };
-
-            // 扣减输入
-            foreach (var (itemId, amount) in definition.Inputs)
-            {
-                result.Delta.AddItemDelta(itemId, -amount);
-            }
-
-            // 增加产出
-            foreach (var (itemId, amount) in definition.Outputs)
-            {
-                result.Delta.AddItemDelta(itemId, amount);
-            }
-
-            // 根据类型增加统计与收益
-            switch (definition.Type)
-            {
-                case ActionType.Cultivation:
-                    result.Delta.Stats.QiDelta += 10.0;
-                    result.Delta.Stats.CultivationCyclesDelta += 1;
-                    break;
-                case ActionType.Exploration:
-                    result.Delta.Stats.HerbsCollectedDelta += 1;
-                    break;
-                case ActionType.Alchemy:
-                    result.Delta.Stats.PillsCraftedDelta += 1;
-                    break;
-            }
-
-            result.Delta.Stats.CompletedActionsDelta += 1;
-
-            result.Events.Add(new ActionEventDelta
-            {
-                IdempotencyKey = $"{entity.ID}:{current.EntryId}:{current.ExecutionRevision}:{finishAt.ToUnixTimeMilliseconds()}",
-                OccurredAt = finishAt,
-                Template = $"完成行动：{definition.Name}",
-                ActionType = definition.Type,
-                Category = definition.Type.ToString().ToLowerInvariant()
-            });
-
-            return ApplyAdvanceResult(entity, result);
-        }
-        else
-        {
-            // 目标时间不足以完成，推进部分进度
-            var elapsedMs = (long)(targetTime - cursor).TotalMilliseconds;
-            var nextProgress = Math.Min(durationMs, current.ProgressMilliseconds + elapsedMs);
-            var result = new ActionAdvanceResult
-            {
-                ConsumedUntil = targetTime,
-                Completed = false,
-                NextProgressMilliseconds = nextProgress,
-                NextTransitionHint = finishAt
-            };
-
-            return ApplyAdvanceResult(entity, result);
-        }
+        var advanceResult = ExecutorAction.Advance(context);
+        return ApplyAdvanceResult(entity, advanceResult);
     }
 
     /// <summary>

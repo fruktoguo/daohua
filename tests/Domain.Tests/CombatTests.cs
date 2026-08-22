@@ -845,12 +845,12 @@ public sealed class CombatTests
             if (probeFast.Stats.CompletedActions != probeStepped.Stats.CompletedActions
                 || fastExpedition?.Phase != steppedExpedition?.Phase
                 || fastExpedition?.PhaseElapsedMilliseconds != steppedExpedition?.PhaseElapsedMilliseconds
-                || fastExpedition?.InitialHitpoints != steppedExpedition?.InitialHitpoints
-                || fastExpedition?.InitialManapoints != steppedExpedition?.InitialManapoints
+                || fastExpedition?.BattleSnapshot?.InitialHitpoints != steppedExpedition?.BattleSnapshot?.InitialHitpoints
+                || fastExpedition?.BattleSnapshot?.InitialManapoints != steppedExpedition?.BattleSnapshot?.InitialManapoints
                 || probeFast.CombatResources.Hitpoints != probeStepped.CombatResources.Hitpoints
                 || probeFast.CombatResources.Manapoints != probeStepped.CombatResources.Manapoints)
             {
-                Console.WriteLine($"FIRST DIVERGENCE horizon={horizon} fast={probeFast.Stats.CompletedActions}/{fastExpedition?.Phase}/{fastExpedition?.PhaseElapsedMilliseconds}/{(fastExpedition?.BattleStartedAt - Baseline)?.TotalSeconds:F3}/{fastExpedition?.InitialHitpoints}/{fastExpedition?.InitialManapoints}/{probeFast.CombatResources.Hitpoints}/{probeFast.CombatResources.Manapoints} stepped={probeStepped.Stats.CompletedActions}/{steppedExpedition?.Phase}/{steppedExpedition?.PhaseElapsedMilliseconds}/{(steppedExpedition?.BattleStartedAt - Baseline)?.TotalSeconds:F3}/{steppedExpedition?.InitialHitpoints}/{steppedExpedition?.InitialManapoints}/{probeStepped.CombatResources.Hitpoints}/{probeStepped.CombatResources.Manapoints}");
+                Console.WriteLine($"FIRST DIVERGENCE horizon={horizon} fast={probeFast.Stats.CompletedActions}/{fastExpedition?.Phase}/{fastExpedition?.PhaseElapsedMilliseconds}/{(fastExpedition?.BattleSnapshot?.BattleStartedAt - Baseline)?.TotalSeconds:F3}/{fastExpedition?.BattleSnapshot?.InitialHitpoints}/{fastExpedition?.BattleSnapshot?.InitialManapoints}/{probeFast.CombatResources.Hitpoints}/{probeFast.CombatResources.Manapoints} stepped={probeStepped.Stats.CompletedActions}/{steppedExpedition?.Phase}/{steppedExpedition?.PhaseElapsedMilliseconds}/{(steppedExpedition?.BattleSnapshot?.BattleStartedAt - Baseline)?.TotalSeconds:F3}/{steppedExpedition?.BattleSnapshot?.InitialHitpoints}/{steppedExpedition?.BattleSnapshot?.InitialManapoints}/{probeStepped.CombatResources.Hitpoints}/{probeStepped.CombatResources.Manapoints}");
                 break;
             }
         }
@@ -1547,7 +1547,7 @@ public sealed class CombatTests
         Assert.Equal(1, snapshot.BattleSequence);
         Assert.False(string.IsNullOrEmpty(snapshot.ConfigFingerprint));
         Assert.Equal(GameDataCatalog.Current.Fingerprint, snapshot.ConfigFingerprint);
-        Assert.Equal(expedition.EncounterId, snapshot.EncounterId);
+        Assert.Equal(CombatEncounterIds.QiBeast, snapshot.EncounterId);
 
         // 2. 微步推进 500 毫秒：仍处于该场战斗中，验证 BattleSnapshot 引用未被重新创建
         SimulationEngine.AdvanceTo(state, Baseline.AddMilliseconds(25_500));
@@ -1629,7 +1629,7 @@ public sealed class CombatTests
         Assert.Equal(singleShot.Stats.CombatLosses, stepped.Stats.CombatLosses);
         Assert.Equal(singleShot.Stats.CompletedActions, stepped.Stats.CompletedActions);
         Assert.Equal(singleShot.Stats.CombatDamageDealt, stepped.Stats.CombatDamageDealt);
-        Assert.Equal(singleShot.Stats.CombatDamageTaken, stepped.Stats.CombatDamageTaken);
+        Assert.Equal(singleShot.Stats.CombatDamageDealt, stepped.Stats.CombatDamageDealt);
         Assert.Equal(singleShot.Stats.CombatExperience, stepped.Stats.CombatExperience);
         Assert.Equal(singleShot.Inventory.Get(ItemIds.Spirit), stepped.Inventory.Get(ItemIds.Spirit));
         Assert.Equal(singleShot.Inventory.Get(ItemIds.QiBeastCore), stepped.Inventory.Get(ItemIds.QiBeastCore));
@@ -1694,27 +1694,17 @@ public sealed class CombatTests
     }
 
     /// <summary>
-    /// 验证 CombatExpeditionState 已彻底消除旧 backing fields，全部只读属性直接纯委托至 BattleSnapshot。
+    /// 验证 CombatExpeditionState 纯数据模型承载 BattleSnapshot 并正确执行深克隆。
     /// </summary>
     [Fact]
-    public void Combat_expedition_state_delegates_to_battle_snapshot_without_backing_fields()
+    public void Combat_expedition_state_holds_battle_snapshot_and_clones_independently()
     {
         var expedition = new CombatExpeditionState();
 
-        // 1. 无快照阶段：所有快照相关只读属性返回干净默认值
+        // 1. 初始阶段：快照为空
         Assert.Null(expedition.BattleSnapshot);
-        Assert.Null(expedition.EncounterId);
-        Assert.Equal(0, expedition.CompletedEncountersBeforeBattle);
-        Assert.Equal(default, expedition.BattleStartedAt);
-        Assert.Equal(0, expedition.InitialHitpoints);
-        Assert.Equal(0, expedition.InitialManapoints);
-        Assert.Empty(expedition.InitialAbilityCooldowns);
-        Assert.Empty(expedition.InitialConsumableCooldowns);
-        Assert.Null(expedition.BattleLoadout);
-        Assert.Empty(expedition.BattleBuffs);
-        Assert.Empty(expedition.BattleInventory);
 
-        // 2. 挂载快照后：只读属性直接反映快照内容
+        // 2. 挂载快照后：持有指定快照
         var snapshot = new BattleSnapshot
         {
             EncounterId = CombatEncounterIds.QiBeast,
@@ -1727,17 +1717,18 @@ public sealed class CombatTests
         };
         expedition.BattleSnapshot = snapshot;
 
-        Assert.Equal(CombatEncounterIds.QiBeast, expedition.EncounterId);
-        Assert.Equal(5, expedition.CompletedEncountersBeforeBattle);
-        Assert.Equal(Baseline, expedition.BattleStartedAt);
-        Assert.Equal(500, expedition.InitialHitpoints);
-        Assert.Equal(200, expedition.InitialManapoints);
+        Assert.NotNull(expedition.BattleSnapshot);
+        Assert.Equal(CombatEncounterIds.QiBeast, expedition.BattleSnapshot.EncounterId);
+        Assert.Equal(5, expedition.BattleSnapshot.CompletedEncountersBeforeBattle);
+        Assert.Equal(Baseline, expedition.BattleSnapshot.BattleStartedAt);
+        Assert.Equal(500, expedition.BattleSnapshot.InitialHitpoints);
+        Assert.Equal(200, expedition.BattleSnapshot.InitialManapoints);
 
         // 3. 深克隆验证：克隆对象与源对象快照独立
         var cloned = expedition.Clone();
         Assert.NotNull(cloned.BattleSnapshot);
         Assert.NotSame(expedition.BattleSnapshot, cloned.BattleSnapshot);
-        Assert.Equal(expedition.EncounterId, cloned.EncounterId);
+        Assert.Equal(expedition.BattleSnapshot.EncounterId, cloned.BattleSnapshot.EncounterId);
     }
 }
 

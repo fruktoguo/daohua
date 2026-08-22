@@ -279,8 +279,8 @@ public sealed class SimulationEngineTests
         Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
         Assert.Equal(1, expedition.BattleSequence);
         // 初始搜寻阶段（20秒）自然回复生效
-        Assert.True(expedition.InitialHitpoints >= 50);
-        Assert.True(expedition.InitialManapoints >= 40);
+        Assert.True(expedition.BattleSnapshot!.InitialHitpoints >= 50);
+        Assert.True(expedition.BattleSnapshot!.InitialManapoints >= 40);
         Assert.Equal(0, action.DurationSeconds);
 
         for (var seconds = 21; seconds <= 130 && expedition.Phase == CombatExpeditionPhase.Combat; seconds++)
@@ -300,8 +300,8 @@ public sealed class SimulationEngineTests
         Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
         Assert.Equal(2, expedition.BattleSequence);
         // 第二次遭遇开始时，生命和灵力享受了搜寻阶段的自然回复
-        Assert.True(expedition.InitialHitpoints >= retainedHitpoints);
-        Assert.True(expedition.InitialManapoints >= retainedManapoints);
+        Assert.True(expedition.BattleSnapshot!.InitialHitpoints >= retainedHitpoints);
+        Assert.True(expedition.BattleSnapshot!.InitialManapoints >= retainedManapoints);
     }
 
     /// <summary>
@@ -326,7 +326,7 @@ public sealed class SimulationEngineTests
         var expedition = Assert.IsType<CombatExpeditionState>(state.Queue.Entries[0].CombatExpedition);
         Assert.Equal(CombatExpeditionPhase.InitialSearch, expedition.Phase);
         Assert.Equal(0, expedition.BattleSequence);
-        Assert.Equal(default, expedition.BattleStartedAt);
+        Assert.Null(expedition.BattleSnapshot);
         Assert.Empty(expedition.AppliedConsumedItems);
     }
 
@@ -375,26 +375,15 @@ public sealed class SimulationEngineTests
         var expedition = Assert.IsType<CombatExpeditionState>(action.CombatExpedition);
         Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
 
-        var loadout = Assert.IsType<CombatLoadout>(expedition.BattleLoadout);
-        var initialPlayer = CombatSimulator.CreatePlayerState(
-            loadout,
-            expedition.BattleBuffs ?? [],
-            expedition.BattleStartedAt,
-            expedition.InitialHitpoints,
-            expedition.InitialManapoints);
+        var snapshot = Assert.IsType<BattleSnapshot>(expedition.BattleSnapshot);
         var preview = CombatSimulator.Run(
             state.PlayerId,
-            loadout,
-            expedition.BattleBuffs ?? [],
-            expedition.BattleInventory ?? new Dictionary<string, long>(StringComparer.Ordinal),
-            CombatEncounterIds.QiBeast,
-            expedition.BattleStartedAt,
+            snapshot,
             TimeSpan.Zero,
-            expedition.CompletedEncountersBeforeBattle,
-            initialPlayer,
-            stopAfterFirstOutcome: true);
+            state.Stats.Spirit,
+            stopAfterFirstVictory: false);
         var nextEventMilliseconds = Assert.IsType<long>(preview.NextEventMilliseconds);
-        var exactDeadline = expedition.BattleStartedAt.AddMilliseconds(nextEventMilliseconds);
+        var exactDeadline = snapshot.BattleStartedAt.AddMilliseconds(nextEventMilliseconds);
 
         Assert.Equal(exactDeadline, SimulationEngine.GetNextTransitionAt(state));
 
@@ -428,7 +417,7 @@ public sealed class SimulationEngineTests
         SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(20));
         var action = state.Queue.Entries[0];
         var expedition = Assert.IsType<CombatExpeditionState>(action.CombatExpedition);
-        var encounterId = Assert.IsType<string>(expedition.EncounterId);
+        var encounterId = Assert.IsType<string>(expedition.BattleSnapshot?.EncounterId);
         var battleSequence = expedition.BattleSequence;
         expedition.BattleSnapshot!.InitialHitpoints = 0;
         expedition.EmittedEventCount = 0;
@@ -437,12 +426,12 @@ public sealed class SimulationEngineTests
         SimulationEngine.AdvanceTo(state, Baseline.AddMilliseconds(20_001));
 
         Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
-        Assert.Equal(encounterId, expedition.EncounterId);
+        Assert.Equal(encounterId, expedition.BattleSnapshot?.EncounterId);
         Assert.Equal(battleSequence, expedition.BattleSequence);
         Assert.Equal(2, action.RemainingRepeats);
         Assert.Equal(1, state.Stats.CombatLosses);
         Assert.Equal(0, state.CombatResources.Hitpoints);
-        var respawnAt = expedition.BattleStartedAt.AddSeconds(180);
+        var respawnAt = expedition.BattleSnapshot!.BattleStartedAt.AddSeconds(180);
 
         SimulationEngine.AdvanceTo(state, respawnAt.AddMilliseconds(-1));
         Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);

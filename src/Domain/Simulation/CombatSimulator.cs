@@ -127,8 +127,7 @@ public static partial class CombatSimulator
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        if (!string.IsNullOrEmpty(snapshot.ConfigFingerprint)
-            && !string.Equals(snapshot.ConfigFingerprint, GameData.GameDataCatalog.Current.Fingerprint, StringComparison.Ordinal))
+        if (!string.Equals(snapshot.ConfigFingerprint, GameData.GameDataCatalog.Current.Fingerprint, StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"战斗快照配置指纹不一致: 快照指纹 '{snapshot.ConfigFingerprint}' 与当前配置指纹 '{GameData.GameDataCatalog.Current.Fingerprint}' 不匹配，拒绝继续推进。");

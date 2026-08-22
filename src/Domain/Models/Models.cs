@@ -219,11 +219,6 @@ public sealed class BattleSnapshot
 /// </summary>
 public sealed class CombatExpeditionState
 {
-    private static readonly Dictionary<string, long> EmptyAbilityCooldowns = new(StringComparer.Ordinal);
-    private static readonly List<long> EmptyConsumableCooldowns = [];
-    private static readonly List<BuffState> EmptyBuffs = [];
-    private static readonly Dictionary<string, long> EmptyInventory = new(StringComparer.Ordinal);
-
     /// <summary>当前历练所处阶段（寻敌/战斗）。</summary>
     public CombatExpeditionPhase Phase { get; set; } = CombatExpeditionPhase.InitialSearch;
 
@@ -239,38 +234,8 @@ public sealed class CombatExpeditionState
     /// <summary>战斗入场固定快照。进入 Combat 阶段后只创建一次。</summary>
     public BattleSnapshot? BattleSnapshot { get; set; }
 
-    /// <summary>当前副本遭遇 ID（从当前战斗入场快照获取）。</summary>
-    public string? EncounterId => BattleSnapshot?.EncounterId;
-
-    /// <summary>本次战斗前已通关的遭遇波次数（从当前战斗入场快照获取）。</summary>
-    public long CompletedEncountersBeforeBattle => BattleSnapshot?.CompletedEncountersBeforeBattle ?? 0;
-
-    /// <summary>本场战斗开始的绝对时间戳（从当前战斗入场快照获取）。</summary>
-    public DateTimeOffset BattleStartedAt => BattleSnapshot?.BattleStartedAt ?? default;
-
-    /// <summary>战斗入场时的初始生命值（从当前战斗入场快照获取）。</summary>
-    public long InitialHitpoints => BattleSnapshot?.InitialHitpoints ?? 0;
-
-    /// <summary>战斗入场时的初始法力值（从当前战斗入场快照获取）。</summary>
-    public long InitialManapoints => BattleSnapshot?.InitialManapoints ?? 0;
-
-    /// <summary>入场时各技能的剩余冷却毫秒数字典（从当前战斗入场快照获取）。</summary>
-    public Dictionary<string, long> InitialAbilityCooldowns => BattleSnapshot?.InitialAbilityCooldowns ?? EmptyAbilityCooldowns;
-
-    /// <summary>入场时各消耗品槽位的剩余冷却毫秒数列表（从当前战斗入场快照获取）。</summary>
-    public List<long> InitialConsumableCooldowns => BattleSnapshot?.InitialConsumableCooldowns ?? EmptyConsumableCooldowns;
-
     /// <summary>已向客户端发射的战斗事件数量。</summary>
     public int EmittedEventCount { get; set; }
-
-    /// <summary>战斗入场时的玩家战斗装配快照（从当前战斗入场快照获取）。</summary>
-    public CombatLoadout? BattleLoadout => BattleSnapshot?.BattleLoadout;
-
-    /// <summary>战斗入场时的 Buff 列表快照（从当前战斗入场快照获取）。</summary>
-    public List<BuffState> BattleBuffs => BattleSnapshot?.BattleBuffs ?? EmptyBuffs;
-
-    /// <summary>战斗入场时的背包物品快照（从当前战斗入场快照获取）。</summary>
-    public Dictionary<string, long> BattleInventory => BattleSnapshot?.BattleInventory ?? EmptyInventory;
 
     /// <summary>战斗中已应用消耗的物品及数量统计。</summary>
     public Dictionary<string, long> AppliedConsumedItems { get; set; } = new(StringComparer.Ordinal);

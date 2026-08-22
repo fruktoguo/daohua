@@ -12,10 +12,8 @@ using System.Collections.Frozen;
 using System.Text.Json;
 using Domain.Common;
 using Domain.Constants;
-using Domain.Definitions;
 using Domain.Models;
 using Domain.Simulation;
-using ActionDefinition = Domain.Definitions.ActionDefinition;
 
 namespace Domain.Tests;
 
@@ -180,11 +178,11 @@ public sealed class ActionAdvanceContractsTests
         var entryId = Guid.NewGuid();
         var definition = new ActionDefinition
         {
-            Id = new ActionId(ActionIds.DrawQi),
+            Id = ActionIds.DrawQi,
             Name = "吐纳灵气",
             Description = "打坐吸纳天地灵气",
             Type = ActionType.Cultivation,
-            DurationSeconds = 10.0
+            DurationSeconds = 10
         };
 
         var context = new ActionExecutionContext
@@ -204,12 +202,72 @@ public sealed class ActionAdvanceContractsTests
         Assert.Equal(playerId, context.PlayerId);
         Assert.Equal(entryId, context.EntryId);
         Assert.Equal(3, context.ExecutionRevision);
-        Assert.Equal(new ActionId(ActionIds.DrawQi), context.Action.Id);
+        Assert.Equal(ActionIds.DrawQi, context.Action.Id);
         Assert.Equal(Baseline, context.Cursor);
         Assert.Equal(Baseline.AddSeconds(10), context.Target);
         Assert.Equal(2000, context.ProgressMilliseconds);
         Assert.Equal(WorldMapIds.QingyunMountains, context.CurrentMapId);
         Assert.Equal(WorldNodeIds.HerbVale, context.CurrentNodeId);
         Assert.Equal(50, context.AvailableInventory[ItemIds.Spirit]);
+    }
+
+    /// <summary>
+    /// 验证 ExecutorAction 纯函数在输入不足时受阻、输入充足且到达时间时生成正确增量。
+    /// </summary>
+    [Fact]
+    public void ExecutorAction_advances_or_blocks_deterministically_based_on_context()
+    {
+        var playerId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
+        var pillDefinition = new ActionDefinition
+        {
+            Id = ActionIds.RefineQiPill,
+            Name = "炼制聚气丹",
+            Description = "炼丹",
+            Type = ActionType.Alchemy,
+            DurationSeconds = 10,
+            Inputs = new Dictionary<string, long> { [ItemIds.SpiritHerb] = 2 },
+            Outputs = new Dictionary<string, long> { [ItemIds.QiGatheringPill] = 1 }
+        };
+
+        // 1. 输入不足：受阻
+        var blockedContext = new ActionExecutionContext
+        {
+            PlayerId = playerId,
+            EntryId = entryId,
+            ExecutionRevision = 1,
+            Action = pillDefinition,
+            Cursor = Baseline,
+            Target = Baseline.AddSeconds(10),
+            ProgressMilliseconds = 0,
+            AvailableInventory = new Dictionary<string, double> { [ItemIds.SpiritHerb] = 1.0 }.ToFrozenDictionary(StringComparer.Ordinal)
+        };
+
+        var blockedResult = ExecutorAction.Advance(blockedContext);
+        Assert.True(blockedResult.Blocked);
+        Assert.Equal(ActionBlockReasons.MissingInputs, blockedResult.BlockReasonCode);
+        Assert.False(blockedResult.Completed);
+
+        // 2. 输入充足且到达完成时间：成功完成
+        var successContext = new ActionExecutionContext
+        {
+            PlayerId = playerId,
+            EntryId = entryId,
+            ExecutionRevision = 1,
+            Action = pillDefinition,
+            Cursor = Baseline,
+            Target = Baseline.AddSeconds(10),
+            ProgressMilliseconds = 0,
+            AvailableInventory = new Dictionary<string, double> { [ItemIds.SpiritHerb] = 5.0 }.ToFrozenDictionary(StringComparer.Ordinal)
+        };
+
+        var successResult = ExecutorAction.Advance(successContext);
+        Assert.False(successResult.Blocked);
+        Assert.True(successResult.Completed);
+        Assert.Equal(Baseline.AddSeconds(10), successResult.ConsumedUntil);
+        Assert.Equal(-2.0, successResult.Delta.ItemDeltas[ItemIds.SpiritHerb]);
+        Assert.Equal(1.0, successResult.Delta.ItemDeltas[ItemIds.QiGatheringPill]);
+        Assert.Equal(1.0, successResult.Delta.Stats.PillsCraftedDelta);
+        Assert.Equal(1.0, successResult.Delta.Stats.CompletedActionsDelta);
     }
 }

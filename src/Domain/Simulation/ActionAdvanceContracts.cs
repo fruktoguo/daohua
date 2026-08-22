@@ -12,9 +12,7 @@ using System.Collections.Frozen;
 using System.Text.Json.Serialization;
 using Domain.Common;
 using Domain.Constants;
-using Domain.Definitions;
 using Domain.Models;
-using ActionDefinition = Domain.Definitions.ActionDefinition;
 
 namespace Domain.Simulation;
 
@@ -299,6 +297,9 @@ public sealed class ActionAdvanceResult
 /// </summary>
 public sealed class ActionExecutionContext
 {
+    /// <summary>实体 ID 标识。</summary>
+    public long EntityId { get; init; }
+
     /// <summary>玩家唯一 GUID。</summary>
     public Guid PlayerId { get; init; }
 

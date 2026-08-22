@@ -396,11 +396,6 @@ public static class StateMapper
         {
             PhaseDurationMilliseconds = Math.Max(1, fallbackEncounter.SearchMilliseconds)
         };
-        var encounterId = expedition.EncounterId is { Length: > 0 } selectedEncounterId
-            && CombatCatalog.TryGetEncounter(selectedEncounterId, out _)
-                ? selectedEncounterId
-                : fallbackEncounterId;
-        var encounter = CombatCatalog.GetEncounter(encounterId);
         var persistedResources = state.CombatResources;
         var projectedPlayer = CombatSimulator.CreatePlayerState(
             state.Combat,
@@ -412,6 +407,8 @@ public static class StateMapper
 
         if (expedition.Phase != CombatExpeditionPhase.Combat)
         {
+            var searchEncounterId = definition.CombatEncounterId ?? CombatEncounterIds.QiBeast;
+            var searchEncounter = CombatCatalog.GetEncounter(searchEncounterId);
             var phaseDuration = Math.Max(1, expedition.PhaseDurationMilliseconds);
             var phaseElapsed = Math.Clamp(expedition.PhaseElapsedMilliseconds, 0, phaseDuration);
             var phase = expedition.Phase switch
@@ -451,38 +448,23 @@ public static class StateMapper
                 PlayerMaxHitpoints: projectedPlayer.MaxHitpoints,
                 PlayerManapoints: projectedPlayer.Manapoints,
                 PlayerMaxManapoints: projectedPlayer.MaxManapoints,
-                EnemyName: encounter.Name,
+                EnemyName: searchEncounter.Name,
                 PlayerAction: null,
                 BattleSequence: expedition.BattleSequence,
                 AbilityCooldownMilliseconds: nonCombatAbilityCooldowns,
                 ConsumableCooldownMilliseconds: nonCombatConsumableCooldowns,
-                EncounterId: encounterId);
+                EncounterId: searchEncounterId);
         }
 
-        var battleLoadout = expedition.BattleLoadout ?? state.Combat;
-        var battleBuffs = expedition.BattleBuffs ?? state.Buffs;
-        var battleInventory = expedition.BattleInventory ?? state.Inventory.Items;
-        var initialPlayer = CombatSimulator.CreatePlayerState(
-            battleLoadout,
-            battleBuffs,
-            expedition.BattleStartedAt,
-            expedition.InitialHitpoints,
-            expedition.InitialManapoints,
-            state.Stats.Spirit);
+        var snapshot = expedition.BattleSnapshot
+            ?? throw new InvalidOperationException("历练处于战斗阶段但缺少 BattleSnapshot 战斗入场快照。");
+        var encounter = CombatCatalog.GetEncounter(snapshot.EncounterId);
         var result = CombatSimulator.Run(
             state.PlayerId,
-            battleLoadout,
-            battleBuffs,
-            battleInventory,
-            encounterId,
-            expedition.BattleStartedAt,
+            snapshot,
             TimeSpan.FromMilliseconds(Math.Max(0, expedition.PhaseElapsedMilliseconds)),
-            expedition.CompletedEncountersBeforeBattle,
-            initialPlayer,
-            stopAfterFirstVictory: true,
-            playerSpirit: state.Stats.Spirit,
-            initialAbilityCooldowns: expedition.InitialAbilityCooldowns,
-            initialConsumableCooldowns: expedition.InitialConsumableCooldowns);
+            state.Stats.Spirit,
+            stopAfterFirstVictory: true);
         var player = result.FinalPlayer;
         var enemies = result.FinalEnemies ?? [];
         var enemyHitpoints = enemies.Sum(enemy => Math.Max(0, enemy.Hitpoints));
@@ -505,14 +487,14 @@ public static class StateMapper
             EnemyName: encounter.Name,
             PlayerAction: ToCombatAction(
                 result.PlayerAction,
-                expedition.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds)),
+                snapshot.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds)),
             EnemyAction: ToCombatAction(
                 result.EnemyAction,
-                expedition.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds)),
+                snapshot.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds)),
             BattleSequence: expedition.BattleSequence,
             AbilityCooldownMilliseconds: result.PlayerAbilityCooldowns,
             ConsumableCooldownMilliseconds: result.PlayerConsumableCooldowns,
-            EncounterId: encounterId);
+            EncounterId: snapshot.EncounterId);
     }
 
     private static CombatResourceDto ToCombatResources(PlayerState state, DateTimeOffset now)
