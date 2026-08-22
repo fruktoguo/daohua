@@ -4,8 +4,8 @@
     "name": "青岚后山",
     "minBudget": 15,
     "maxBudget": 45,
-    "eliteInterval": 5,
-    "bossInterval": 20,
+    "eliteInterval": 0,
+    "bossInterval": 0,
     "randomSpawns": [
       {
         "enemyId": "enemy.wood-spirit",
@@ -15,13 +15,9 @@
     ],
     "maxSpawnCount": 3,
     "maxTotalStrength": 50,
-    "eliteEnemyIds": [
-      "enemy.demon-ape"
-    ],
-    "bossEnemyIds": [
-      "enemy.chang-tiger"
-    ],
-    "battlesPerBoss": 20,
+    "eliteEnemyIds": [],
+    "bossEnemyIds": [],
+    "battlesPerBoss": 0,
     "searchMilliseconds": 20000,
     "respawnMilliseconds": 5000,
     "playerRespawnMilliseconds": 180000,
@@ -29,14 +25,7 @@
     "enrageTickMilliseconds": 60000,
     "maxEnrageStacks": 10,
     "enrageRatioPerStack": 0.1,
-    "dropTable": [
-      {
-        "itemId": "item.qi-beast-core",
-        "dropChance": 1.0,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      }
-    ],
+    "dropTable": [],
     "rareDropTable": []
   },
   {
@@ -45,7 +34,7 @@
     "minBudget": 20,
     "maxBudget": 65,
     "eliteInterval": 5,
-    "bossInterval": 20,
+    "bossInterval": 0,
     "randomSpawns": [
       {
         "enemyId": "enemy.demonized-rabbit",
@@ -63,10 +52,8 @@
     "eliteEnemyIds": [
       "enemy.armored-bear"
     ],
-    "bossEnemyIds": [
-      "enemy.chang-tiger"
-    ],
-    "battlesPerBoss": 20,
+    "bossEnemyIds": [],
+    "battlesPerBoss": 0,
     "searchMilliseconds": 20000,
     "respawnMilliseconds": 5000,
     "playerRespawnMilliseconds": 180000,
@@ -74,14 +61,7 @@
     "enrageTickMilliseconds": 60000,
     "maxEnrageStacks": 10,
     "enrageRatioPerStack": 0.1,
-    "dropTable": [
-      {
-        "itemId": "item.qi-beast-core",
-        "dropChance": 1.0,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      }
-    ],
+    "dropTable": [],
     "rareDropTable": []
   },
   {
@@ -119,14 +99,7 @@
     "enrageTickMilliseconds": 60000,
     "maxEnrageStacks": 10,
     "enrageRatioPerStack": 0.1,
-    "dropTable": [
-      {
-        "itemId": "item.qi-beast-core",
-        "dropChance": 1.0,
-        "minQuantity": 1,
-        "maxQuantity": 1
-      }
-    ],
+    "dropTable": [],
     "rareDropTable": []
   },
   {
