@@ -29,8 +29,8 @@
         "strength": 25
       }
     ],
-    "maxSpawnCount": 3,
-    "maxTotalStrength": 50,
+    "maxSpawnCount": 1,
+    "maxTotalStrength": 25,
     "bossEnemyIds": [
       "enemy.chang-tiger"
     ],

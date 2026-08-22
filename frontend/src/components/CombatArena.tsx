@@ -1263,7 +1263,7 @@ export const CombatArena = memo(function CombatArena({
                 <div className="arena-slot arena-slot--occupied arena-slot--slot-1" key="enemy-slot-1">
                   <ArenaActor
                     action={enemy.action}
-                    actorId={activeEncounter?.enemy?.enemyId ?? activeEncounterId}
+                    actorId={expedition?.enemyId ?? activeEncounter?.enemy?.enemyId ?? activeEncounterId}
                     actorKey={enemy.actorKey}
                     compact
                     hp={enemy.hp}
@@ -1324,7 +1324,7 @@ export const CombatArena = memo(function CombatArena({
         ) : null}
       </div>
       <CharacterAttributeModal
-        actorId={inspectedActor === 'enemy' ? (activeEncounter?.enemy?.enemyId ?? activeEncounterId) : 'player'}
+        actorId={inspectedActor === 'enemy' ? (expedition?.enemyId ?? activeEncounter?.enemy?.enemyId ?? activeEncounterId) : 'player'}
         baseRows={inspectedActor === 'enemy' ? enemyBaseRows : playerBaseRows}
         buffs={inspectedActor === 'player' ? buffs : []}
         name={inspectedActor === 'enemy' ? enemy.name : playerName}

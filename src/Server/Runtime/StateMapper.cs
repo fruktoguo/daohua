@@ -446,7 +446,8 @@ public static class StateMapper
                 PlayerMaxHitpoints: projectedPlayer.MaxHitpoints,
                 PlayerManapoints: projectedPlayer.Manapoints,
                 PlayerMaxManapoints: projectedPlayer.MaxManapoints,
-                EnemyName: configuredEncounter.Name,
+                EnemyId: configuredEncounter.Enemy.Id,
+                EnemyName: configuredEncounter.Enemy.Name,
                 PlayerAction: null,
                 BattleSequence: expedition.BattleSequence,
                 AbilityCooldownMilliseconds: nonCombatAbilityCooldowns,
@@ -465,6 +466,7 @@ public static class StateMapper
             stopAfterFirstVictory: true);
         var player = result.FinalPlayer;
         var enemies = result.FinalEnemies ?? [];
+        var activeEnemy = enemies.FirstOrDefault(enemy => !enemy.IsDefeated && enemy.Hitpoints > 0) ?? enemies.LastOrDefault();
         var enemyHitpoints = enemies.Sum(enemy => Math.Max(0, enemy.Hitpoints));
         var enemyMaxHitpoints = enemies.Sum(enemy => Math.Max(0, enemy.MaxHitpoints));
         var enemyManapoints = enemies.Sum(enemy => Math.Max(0, enemy.Manapoints));
@@ -482,7 +484,8 @@ public static class StateMapper
             EnemyMaxHitpoints: enemyMaxHitpoints,
             EnemyManapoints: enemyManapoints,
             EnemyMaxManapoints: enemyMaxManapoints,
-            EnemyName: combatEncounter.Name,
+            EnemyId: activeEnemy?.EnemyId ?? combatEncounter.Enemy.Id,
+            EnemyName: activeEnemy?.Name ?? combatEncounter.Enemy.Name,
             PlayerAction: ToCombatAction(
                 result.PlayerAction,
                 snapshot.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds)),

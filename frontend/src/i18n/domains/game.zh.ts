@@ -4,13 +4,16 @@ export const gameZh = {
   game: {
     tab: {
       cultivation: '修炼',
-      exploration: '探索',
+      exploration: '历练',
       alchemy: '炼丹',
-      combat: '历练',
+      combat: '详情',
+      map: '地图',
     },
     nav: {
       insight: '内视',
       market: '坊市',
+      map: '地图',
+      combat: '详情',
       inventory: '背包',
       log: '日志',
       settings: '设置',

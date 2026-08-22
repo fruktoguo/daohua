@@ -22,7 +22,7 @@ import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage
 import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, ACTION_TYPES, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
@@ -35,14 +35,20 @@ import { useT } from './i18n'
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 const EMPTY_CONSUMABLE_COOLDOWNS: ReadonlyArray<number> = Object.freeze([])
 
-const NAV_ITEMS: ReadonlyArray<{ tab: ActionType; hintKey: 'cultivationHint' | 'explorationHint' | 'alchemyHint' | 'combatHint' }> = [
-  { tab: 'cultivation', hintKey: 'cultivationHint' },
-  { tab: 'exploration', hintKey: 'explorationHint' },
-  { tab: 'alchemy', hintKey: 'alchemyHint' },
-  { tab: 'combat', hintKey: 'combatHint' },
+const NAV_ITEMS: ReadonlyArray<{
+  tab: 'cultivation' | 'exploration' | 'alchemy' | 'map' | 'combat'
+  hintKey: 'cultivationHint' | 'explorationHint' | 'alchemyHint' | 'mapHint' | 'combatHint'
+  labelKey: 'cultivation' | 'exploration' | 'alchemy' | 'map' | 'combat'
+  icon: IconName
+}> = [
+  { tab: 'cultivation', hintKey: 'cultivationHint', labelKey: 'cultivation', icon: 'cultivation' },
+  { tab: 'exploration', hintKey: 'explorationHint', labelKey: 'exploration', icon: 'exploration' },
+  { tab: 'alchemy', hintKey: 'alchemyHint', labelKey: 'alchemy', icon: 'alchemy' },
+  { tab: 'map', hintKey: 'mapHint', labelKey: 'map', icon: 'map' },
+  { tab: 'combat', hintKey: 'combatHint', labelKey: 'combat', icon: 'combat' },
 ]
 
-type IconName = 'insight' | ActionType | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
+type IconName = 'insight' | ActionType | 'map' | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
 
 /**
  * 矢量图标组件（按名称渲染内联 SVG）
@@ -66,6 +72,8 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
       return <svg {...common}><circle cx="17.5" cy="6" r="2.2" /><path d="M3 19 9.5 7l4.5 7 2.5-3.5L21 19H3Z" /></svg>
     case 'alchemy':
       return <svg {...common}><path d="M8.5 10V7.5M15.5 10V7.5" /><path d="M5.5 10.5h13v3.5a6.5 6.5 0 0 1-13 0v-3.5Z" /><path d="M9 21v-2M15 21v-2" /></svg>
+    case 'map':
+      return <svg {...common}><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" /><path d="M9 3v15M15 6v15" /></svg>
     case 'combat':
       return <svg {...common}><path d="m5 4 15 15M19 4 4 19" /><path d="m7 7 3-3 3 3M17 17l-3 3-3-3" /></svg>
     case 'market':
@@ -586,9 +594,9 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
             onClick={() => setActiveTab(item.tab)}
             type="button"
           >
-            <span className="nav-glyph" aria-hidden="true"><Icon name={item.tab} /></span>
+            <span className="nav-glyph" aria-hidden="true"><Icon name={item.icon} /></span>
             <span className="nav-text">
-              <span className="nav-label">{actionTabLabel(item.tab)}</span>
+              <span className="nav-label">{t(`app.nav.${item.labelKey}`)}</span>
             </span>
           </button>
         ))}
@@ -813,7 +821,12 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
         className="action-modal-submit"
         onClick={() => {
           const command = startsImmediately ? 'start_combat' : 'enqueue_action'
-          if (gameClient.sendCommand(command, { actionId: action.id, repeats })) onClose()
+          if (gameClient.sendCommand(command, { actionId: action.id, repeats })) {
+            onClose()
+            if (action.type === 'combat' || startsImmediately) {
+              useUiStore.getState().setActiveTab('combat')
+            }
+          }
         }}
         type="button"
       >{startsImmediately ? t('app.action.startCombatNow') : t('app.action.enqueueAction', { n: queueLength + 1 })}</button>
@@ -1099,7 +1112,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
 })
 
 /**
- * 通用单类行动列表页面（修炼、探索、炼丹）
+ * 通用单类行动列表页面（修炼、炼丹）
  */
 const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; hidden: boolean }): React.JSX.Element {
   const t = useT()
@@ -1115,7 +1128,7 @@ const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; 
   return (
     <section className="panel skill-page" hidden={hidden}>
       <header className="panel-header">
-        <h2>{actionTabLabel(type)}</h2>
+        <h2>{t(`app.nav.${type}`)}</h2>
       </header>
       <div className="action-cards">
         {visibleActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
@@ -1127,28 +1140,76 @@ const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; 
   )
 })
 
-type ExpeditionSubTab = 'map' | 'nearby' | 'duel'
+/**
+ * 历练页面：显示当前地点的可选特殊行动（采集等）与妖兽历练行动
+ */
+const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: boolean }): React.JSX.Element {
+  const t = useT()
+  const actions = useGameStore(state => state.actions)
+  const worldNodeId = useGameStore(state => state.world.nodeId)
+  const world = useGameStore(state => state.world)
+  const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
 
-const EXPEDITION_TABS: ReadonlyArray<{ id: ExpeditionSubTab; labelKey: 'tabMap' | 'tabNearby' | 'tabDuel' }> = [
+  const visibleActions = useMemo(() => actions.filter(action => (
+    (action.type === 'exploration' || action.type === 'combat')
+      && (!action.availableNodeIds?.length || (worldNodeId !== null && action.availableNodeIds.includes(worldNodeId)))
+  )), [actions, worldNodeId])
+
+  const specialActions = useMemo(() => visibleActions.filter(action => action.type === 'exploration'), [visibleActions])
+  const combatActions = useMemo(() => visibleActions.filter(action => action.type === 'combat'), [visibleActions])
+
+  const closeModal = useCallback(() => setSelectedAction(null), [])
+
+  return (
+    <section className="panel skill-page" hidden={hidden}>
+      <header className="panel-header">
+        <h2>{t('app.nav.exploration')}</h2>
+        {world.locationName && <span className="location-sub-badge">{world.locationName}</span>}
+      </header>
+      <div className="action-cards">
+        {specialActions.length > 0 && (
+          <div className="action-group-section">
+            <span className="slot-group-label">{t('app.combatPanel.locationSpecialActions')}</span>
+            <div className="action-group-list">
+              {specialActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
+            </div>
+          </div>
+        )}
+        {combatActions.length > 0 && (
+          <div className="action-group-section">
+            <span className="slot-group-label">{t('app.combatPanel.combatTrialActions')}</span>
+            <div className="action-group-list">
+              {combatActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
+            </div>
+          </div>
+        )}
+        {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
+      </div>
+      <AutoUse type="exploration" />
+      {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
+    </section>
+  )
+})
+
+type MapSubTab = 'map' | 'nearby'
+
+const MAP_TABS: ReadonlyArray<{ id: MapSubTab; labelKey: 'tabMap' | 'tabNearby' }> = [
   { id: 'map', labelKey: 'tabMap' },
   { id: 'nearby', labelKey: 'tabNearby' },
-  { id: 'duel', labelKey: 'tabDuel' },
 ]
 
 /**
- * 远征探索与战斗总览页面（包含大地图、周边环境、实时对决擂台）
+ * 大地图与周边环境页面（包含修仙大地图与当前节点同域道友/灵地建筑）
  */
-const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolean }): React.JSX.Element {
+const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
-  const [activeSubTab, setActiveSubTab] = useState<ExpeditionSubTab>('map')
-  const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
-  const closeModal = useCallback(() => setSelectedAction(null), [])
+  const [activeSubTab, setActiveSubTab] = useState<MapSubTab>('map')
 
   return (
     <section className="panel expedition-page" hidden={hidden}>
       <header className="panel-header expedition-header">
         <nav aria-label={t('app.combatPanel.tabsAria')} className="expedition-tabs" role="tablist">
-          {EXPEDITION_TABS.map(tab => (
+          {MAP_TABS.map(tab => (
             <button
               aria-selected={activeSubTab === tab.id}
               className={activeSubTab === tab.id ? 'active' : ''}
@@ -1160,17 +1221,34 @@ const ExpeditionPage = memo(function ExpeditionPage({ hidden }: { hidden: boolea
           ))}
         </nav>
       </header>
-      <div className={`expedition-content${activeSubTab === 'duel' ? ' expedition-content--duel' : ''}`}>
+      <div className="expedition-content">
         {activeSubTab === 'map' && <WorldMapPanel />}
         {activeSubTab === 'nearby' && <NearbyPanel />}
-        {activeSubTab === 'duel' && (
-          <div className="expedition-duel">
-            <CombatArena onOpenAction={setSelectedAction} />
-            <div className="expedition-duel-config">
-              <CombatLoadoutPanel />
-            </div>
+      </div>
+    </section>
+  )
+})
+
+/**
+ * 战斗与战备详情页面（包含九宫格战场对决、战况实时监控、功法与战斗消耗品装配）
+ */
+const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: boolean }): React.JSX.Element {
+  const t = useT()
+  const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
+  const closeModal = useCallback(() => setSelectedAction(null), [])
+
+  return (
+    <section className="panel expedition-page" hidden={hidden}>
+      <header className="panel-header">
+        <h2>{t('app.nav.combat')}</h2>
+      </header>
+      <div className="expedition-content expedition-content--duel">
+        <div className="expedition-duel">
+          <CombatArena onOpenAction={setSelectedAction} />
+          <div className="expedition-duel-config">
+            <CombatLoadoutPanel />
           </div>
-        )}
+        </div>
       </div>
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
@@ -1202,12 +1280,13 @@ const InventoryPanel = memo(function InventoryPanel({ className = '' }: { classN
   )
 })
 
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'alchemy' | 'combat' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
+const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'alchemy' | 'map' | 'combat' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },
   { tab: 'cultivation', labelKey: 'cultivation', icon: 'cultivation' },
   { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
   { tab: 'alchemy', labelKey: 'alchemy', icon: 'alchemy' },
+  { tab: 'map', labelKey: 'map', icon: 'map' },
   { tab: 'combat', labelKey: 'combat', icon: 'combat' },
   { tab: 'inventory', labelKey: 'inventory', icon: 'inventory' },
   { tab: 'log', labelKey: 'log', icon: 'log' },
@@ -1294,8 +1373,11 @@ export default function App(): React.JSX.Element {
         <div className="center-column">
           <main className="main-content">
             {activeTab === 'insight' && <InsightPage />}
-            {ACTION_TYPES.filter(type => type !== 'combat').map(type => <SkillPage hidden={activeTab !== type} key={type} type={type} />)}
-            <ExpeditionPage hidden={activeTab !== 'combat'} />
+            <SkillPage hidden={activeTab !== 'cultivation'} type="cultivation" />
+            <ExplorationPage hidden={activeTab !== 'exploration'} />
+            <SkillPage hidden={activeTab !== 'alchemy'} type="alchemy" />
+            <MapPage hidden={activeTab !== 'map'} />
+            <CombatDetailsPage hidden={activeTab !== 'combat'} />
             {activeTab === 'market' && <MarketPage />}
             {activeTab === 'settings' && <SettingsPage />}
             {activeTab === 'inventory' && <InventoryPanel className="mobile-tab" />}

@@ -446,7 +446,7 @@ public sealed class SimulationEngineTests
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
         expedition.BattleSnapshot!.BattleLoadout = state.Combat.Clone();
 
-        SimulationEngine.AdvanceTo(state, respawnAt.AddSeconds(1));
+        SimulationEngine.AdvanceTo(state, respawnAt.AddMilliseconds(100));
 
         Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
         Assert.Equal(2, action.RemainingRepeats);
@@ -455,7 +455,7 @@ public sealed class SimulationEngineTests
         Assert.InRange(state.CombatResources.Hitpoints, 1, restored.MaxHitpoints);
         Assert.InRange(state.CombatResources.Manapoints, 1, restored.MaxManapoints);
 
-        for (var seconds = 2; seconds <= 60 && expedition.Phase == CombatExpeditionPhase.Combat; seconds++)
+        for (var seconds = 1; seconds <= 60 && expedition.Phase == CombatExpeditionPhase.Combat; seconds++)
         {
             SimulationEngine.AdvanceTo(state, respawnAt.AddSeconds(seconds));
         }

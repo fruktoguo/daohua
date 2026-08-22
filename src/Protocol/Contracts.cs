@@ -195,6 +195,7 @@ public sealed record ExpeditionProgressDto(
     long? EnemyManapoints = null,
     long? EnemyMaxManapoints = null,
     string? EnemyName = null,
+    string? EnemyId = null,
     string? Activity = null,
     CombatActionStateDto? PlayerAction = null,
     CombatActionStateDto? EnemyAction = null,

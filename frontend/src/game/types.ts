@@ -306,6 +306,8 @@ export interface ExpeditionProgress {
   enemyMaxManapoints?: number | null
   /** 敌人名称 */
   enemyName?: string | null
+  /** 敌人定义标识符 */
+  enemyId?: string | null
   /** 当前活动描述 */
   activity?: string | null
   /** 玩家当前施法/攻击动作 */

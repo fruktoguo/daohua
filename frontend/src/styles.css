@@ -2588,9 +2588,36 @@ input[type="checkbox"] {
 }
 
 .action-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.action-group-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.action-group-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 10px;
+}
+
+.location-sub-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 2px;
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.08);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: normal;
 }
 
 .action-card {

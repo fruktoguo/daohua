@@ -1448,14 +1448,14 @@ public sealed class CombatTests
             });
         var minion = DataBudgetResolver.ResolveCombatant(minionConfig, CombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
         // Tier 2 baseline: HP 435.97, AD 28.19, Armor 24.43
-        // HP = floor(435.97 * 1.0 * 0.8 * 3.0) = floor(1046.328) = 1046
-        // AD = floor(28.19 * 1.0 * 0.8) = floor(22.552) = 22
-        // Armor = floor(24.43 * 1.0 * 0.8) = 19
-        Assert.Equal(1046, minion.MaxHitpoints);
-        Assert.Equal(22, minion.MaxDamage);
-        Assert.Equal(19.0, minion.Armor);
+        // HP = floor(435.97 * 1.0 * 0.75 * 0.5) = floor(163.488) = 163
+        // AD = floor(28.19 * 1.0 * 0.75) = floor(21.142) = 21
+        // Armor = floor(24.43 * 1.0 * 0.75) = 18
+        Assert.Equal(163, minion.MaxHitpoints);
+        Assert.Equal(21, minion.MaxDamage);
+        Assert.Equal(18.0, minion.Armor);
 
-        // 2. 验证精英 (120% 属性, 500% HP)
+        // 2. 验证精英 (115% 属性, 200% HP)
         var eliteConfig = new CombatantConfig(
             Id: "test.blade-corpse",
             Name: "测试尸煞",
@@ -1467,12 +1467,12 @@ public sealed class CombatTests
                 ["ad"] = 1.0
             });
         var elite = DataBudgetResolver.ResolveCombatant(eliteConfig, CombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
-        // HP = floor(435.97 * 1.0 * 1.2 * 5.0) = floor(2615.82) = 2615
-        // AD = floor(28.19 * 1.0 * 1.2) = floor(33.828) = 33
-        Assert.Equal(2615, elite.MaxHitpoints);
-        Assert.Equal(33, elite.MaxDamage);
+        // HP = floor(435.97 * 1.0 * 1.15 * 2.0) = floor(1002.73) = 1002
+        // AD = floor(28.19 * 1.0 * 1.15) = floor(32.418) = 32
+        Assert.Equal(1002, elite.MaxHitpoints);
+        Assert.Equal(32, elite.MaxDamage);
 
-        // 3. 验证 Boss (150% 属性, 2000% HP)
+        // 3. 验证 Boss (150% 属性, 600% HP)
         var bossConfig = new CombatantConfig(
             Id: "test.falling-star-beast",
             Name: "测试坠星兽",
@@ -1484,9 +1484,9 @@ public sealed class CombatTests
                 ["ad"] = 1.0
             });
         var boss = DataBudgetResolver.ResolveCombatant(bossConfig, CombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
-        // HP = floor(435.97 * 1.0 * 1.5 * 20.0) = floor(13079.1) = 13079
+        // HP = floor(435.97 * 1.0 * 1.5 * 6.0) = floor(3923.73) = 3923
         // AD = floor(28.19 * 1.0 * 1.5) = floor(42.285) = 42
-        Assert.Equal(13079, boss.MaxHitpoints);
+        Assert.Equal(3923, boss.MaxHitpoints);
         Assert.Equal(42, boss.MaxDamage);
     }
 
