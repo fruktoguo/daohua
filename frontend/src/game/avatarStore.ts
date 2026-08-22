@@ -26,6 +26,14 @@ export const REGISTERED_AVATAR_MAP: Record<string, { src: string; format: Avatar
   'demon-ape': { src: '/avatars/demon-ape.webp', format: 'webp' },
   'armored-bear': { src: '/avatars/armored-bear.webp', format: 'webp' },
   'chang-tiger': { src: '/avatars/chang-tiger.webp', format: 'webp' },
+
+  // T2 怪物 (筑基期)
+  'rift-wolf': { src: '/avatars/rift-wolf.webp', format: 'webp' },
+  'star-flame-crow': { src: '/avatars/star-flame-crow.webp', format: 'webp' },
+  'plunder-cultivator': { src: '/avatars/plunder-cultivator.webp', format: 'webp' },
+  'blade-corpse': { src: '/avatars/blade-corpse.webp', format: 'webp' },
+  'fallen-devil-priest': { src: '/avatars/fallen-devil-priest.webp', format: 'webp' },
+  'falling-star-beast': { src: '/avatars/falling-star-beast.webp', format: 'webp' },
 }
 
 /**
