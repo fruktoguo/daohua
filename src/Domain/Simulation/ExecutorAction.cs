@@ -11,7 +11,6 @@ namespace Domain.Simulation;
 
 using Domain.Common;
 using Domain.Constants;
-using Domain.Definitions;
 using Domain.Models;
 
 /// <summary>

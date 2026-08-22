@@ -390,11 +390,11 @@ public static class StateMapper
             return null;
         }
 
-        var fallbackEncounterId = definition.CombatEncounterId ?? CombatEncounterIds.QiBeast;
-        var fallbackEncounter = CombatCatalog.GetEncounter(fallbackEncounterId);
+        var configuredEncounterId = definition.CombatEncounterId ?? throw new InvalidOperationException($"战斗行动 {definition.Id} 缺少 CombatEncounterId 配置。");
+        var configuredEncounter = CombatCatalog.GetEncounter(configuredEncounterId);
         var expedition = current.CombatExpedition ?? new CombatExpeditionState
         {
-            PhaseDurationMilliseconds = Math.Max(1, fallbackEncounter.SearchMilliseconds)
+            PhaseDurationMilliseconds = Math.Max(1, configuredEncounter.SearchMilliseconds)
         };
         var persistedResources = state.CombatResources;
         var projectedPlayer = CombatSimulator.CreatePlayerState(
@@ -407,8 +407,6 @@ public static class StateMapper
 
         if (expedition.Phase != CombatExpeditionPhase.Combat)
         {
-            var searchEncounterId = definition.CombatEncounterId ?? CombatEncounterIds.QiBeast;
-            var searchEncounter = CombatCatalog.GetEncounter(searchEncounterId);
             var phaseDuration = Math.Max(1, expedition.PhaseDurationMilliseconds);
             var phaseElapsed = Math.Clamp(expedition.PhaseElapsedMilliseconds, 0, phaseDuration);
             var phase = expedition.Phase switch
@@ -448,17 +446,17 @@ public static class StateMapper
                 PlayerMaxHitpoints: projectedPlayer.MaxHitpoints,
                 PlayerManapoints: projectedPlayer.Manapoints,
                 PlayerMaxManapoints: projectedPlayer.MaxManapoints,
-                EnemyName: searchEncounter.Name,
+                EnemyName: configuredEncounter.Name,
                 PlayerAction: null,
                 BattleSequence: expedition.BattleSequence,
                 AbilityCooldownMilliseconds: nonCombatAbilityCooldowns,
                 ConsumableCooldownMilliseconds: nonCombatConsumableCooldowns,
-                EncounterId: searchEncounterId);
+                EncounterId: configuredEncounterId);
         }
 
         var snapshot = expedition.BattleSnapshot
             ?? throw new InvalidOperationException("历练处于战斗阶段但缺少 BattleSnapshot 战斗入场快照。");
-        var encounter = CombatCatalog.GetEncounter(snapshot.EncounterId);
+        var combatEncounter = CombatCatalog.GetEncounter(snapshot.EncounterId);
         var result = CombatSimulator.Run(
             state.PlayerId,
             snapshot,
@@ -484,7 +482,7 @@ public static class StateMapper
             EnemyMaxHitpoints: enemyMaxHitpoints,
             EnemyManapoints: enemyManapoints,
             EnemyMaxManapoints: enemyMaxManapoints,
-            EnemyName: encounter.Name,
+            EnemyName: combatEncounter.Name,
             PlayerAction: ToCombatAction(
                 result.PlayerAction,
                 snapshot.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds)),

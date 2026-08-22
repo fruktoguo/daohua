@@ -355,10 +355,10 @@ public sealed class ActionTransitionSystemTests
     }
 
     /// <summary>
-    /// 验证通过 YuoCore 原生 RunSystem 标签机制调度 ActionTransitionSystem。
+    /// 验证通过 YuoCore 原生 RunSystem 标签机制调度 ActionTransitionSystem，需显式注入目标时间并真实推进游标与进度。
     /// </summary>
     [Fact]
-    public void YuoCore_tag_dispatch_triggers_ActionTransitionSystem()
+    public void YuoCore_tag_dispatch_triggers_ActionTransitionSystem_with_explicit_target()
     {
         var (world, entity) = CreateTestPlayerEntity();
         var queue = entity.GetComponent<ActionQueueComponent>();
@@ -370,12 +370,50 @@ public sealed class ActionTransitionSystemTests
             RemainingRepeats = 2
         });
 
+        var targetTime = Baseline.AddSeconds(5);
+        entity.AddComponent<ActionTransitionTargetComponent>().TargetTime = targetTime;
+
         // 通过 YuoWorld.RunSystem 触发 IActionTransitionDue
         YuoWorld.RunSystem<IActionTransitionDue>(entity);
 
-        // 验证系统已被成功触发，当前项状态切换为 Running 并推进了修订版本号
-        Assert.Equal(ActionStatus.Running, queue.Current!.Status);
+        // 验证系统已被成功触发：组件被一次性消费、时间游标真实推进、单步进度推进 5000ms
+        Assert.Null(entity.GetComponent<ActionTransitionTargetComponent>());
+        Assert.Equal(targetTime, cultivation.LastSimulatedAt);
+        Assert.Equal(5000, queue.Current!.ProgressMilliseconds);
+        Assert.Equal(ActionStatus.Running, queue.Current.Status);
         Assert.True(queue.Current.ExecutionRevision > 0);
+    }
+
+    /// <summary>
+    /// 验证当缺失 ActionTransitionTargetComponent 目标时间戳时触发 IActionTransitionDue 会快速失败。
+    /// </summary>
+    [Fact]
+    public void YuoCore_tag_dispatch_throws_when_target_component_missing()
+    {
+        var (_, entity) = CreateTestPlayerEntity();
+        var queue = entity.GetComponent<ActionQueueComponent>();
+
+        queue.Entries.Add(new QueueEntryState
+        {
+            ActionId = ActionIds.GatherHerbs,
+            RemainingRepeats = 2
+        });
+
+        // 1. 直接触发系统 Run 验证异常抛出
+        var system = new ActionTransitionSystem();
+        Assert.Throws<InvalidOperationException>(() => system.Run(queue));
+
+        // 2. 在开启 CloseSystemTry 模式下通过 YuoWorld 派发标签同样快速失败抛出
+        var prev = YuoWorld.CloseSystemTry;
+        try
+        {
+            YuoWorld.CloseSystemTry = true;
+            Assert.Throws<InvalidOperationException>(() => YuoWorld.RunSystem<IActionTransitionDue>(entity));
+        }
+        finally
+        {
+            YuoWorld.CloseSystemTry = prev;
+        }
     }
 
     /// <summary>

@@ -1148,7 +1148,7 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// 确保玩家已在内存中就绪（若未加载则从存储快照加载并进行版本迁移与离线时间补算）。
+    /// 确保玩家已在内存中就绪（若未加载则从存储快照加载并进行离线时间补算）。
     /// </summary>
     private Task EnsurePlayerAsync(Guid playerId, string? name, CancellationToken cancellationToken)
     {

@@ -285,32 +285,37 @@ public static partial class CombatSimulator
             if (!slot.Enabled || string.IsNullOrWhiteSpace(slot.ItemId) || now < nextConsumableUse[index]) continue;
             if (!ItemCatalog.TryGet(slot.ItemId, out var item) || item.Consumable is null) continue;
             var configuredTriggers = slot.Triggers ?? [];
-            // 灵食保留旧版行为：允许“战斗开始可用”，且没有触发条件时按血量阈值兜底；
-            // 灵饮、符箓等其他品类只看触发条件。
             var isFood = item.Category == ItemCategory.Food;
-            if (isFood && item.Consumable.TriggerAtCombatStart && now == 0)
+            var isTriggeredAtStart = item.Consumable.TriggerAtCombatStart && now == 0;
+            var areTriggersActive = isTriggeredAtStart || AreTriggersActive(
+                configuredTriggers,
+                item.Consumable.DefaultCombatTriggers,
+                hitpoints,
+                maxHitpoints,
+                manapoints,
+                maxManapoints,
+                enemyHitpoints,
+                enemyMaxHitpoints,
+                enemyManapoints,
+                enemyMaxManapoints,
+                buffs,
+                selfControl,
+                targetControl,
+                now);
+
+            if (!areTriggersActive)
             {
-                // 旧版目录曾用该字段表达“战斗开始可用”，保留它以兼容已有快照。
+                continue;
             }
-            else if (!AreTriggersActive(
-                         configuredTriggers,
-                         item.Consumable.DefaultCombatTriggers,
-                         hitpoints,
-                         maxHitpoints,
-                         manapoints,
-                         maxManapoints,
-                         enemyHitpoints,
-                         enemyMaxHitpoints,
-                         enemyManapoints,
-                         enemyMaxManapoints,
-                         buffs,
-                         selfControl,
-                         targetControl,
-                         now)
-                     || (isFood
-                         && configuredTriggers.Count == 0
-                         && item.Consumable.DefaultCombatTriggers.Count == 0
-                         && hitpoints > Math.Floor(maxHitpoints * item.Consumable.TriggerHpRatio))) continue;
+
+            if (isFood
+                && !isTriggeredAtStart
+                && configuredTriggers.Count == 0
+                && item.Consumable.DefaultCombatTriggers.Count == 0
+                && hitpoints > Math.Floor(maxHitpoints * item.Consumable.TriggerHpRatio))
+            {
+                continue;
+            }
             if (TryConsume(
                     slot.ItemId,
                     slot.Quantity,

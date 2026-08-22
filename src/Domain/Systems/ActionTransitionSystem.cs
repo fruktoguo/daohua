@@ -39,11 +39,16 @@ public sealed class ActionTransitionSystem : YuoSystem<ActionQueueComponent>, IA
             return;
         }
 
-        if (entity.TryGetComponent<CultivationComponent>(out var cultivation))
+        if (!entity.TryGetComponent<ActionTransitionTargetComponent>(out var targetComponent))
         {
-            // 严格遵从确定性约束：使用实体当前的模拟游标，不直接调用 DateTimeOffset.UtcNow
-            AdvanceCurrentAction(entity, cultivation.LastSimulatedAt);
+            throw new InvalidOperationException(
+                "通过 IActionTransitionDue 触发 ActionTransitionSystem 时必须显式注入 ActionTransitionTargetComponent 目标时间戳，禁止在缺失目标时隐式推进。");
         }
+
+        var targetTime = targetComponent.TargetTime;
+        entity.RemoveComponent<ActionTransitionTargetComponent>();
+
+        AdvanceCurrentAction(entity, targetTime);
     }
 
     /// <summary>
