@@ -1,3 +1,23 @@
+/**
+ * ==============================================================================
+ * 脚本名称: smoke-production.mjs
+ * 主要职责: 服务端与前端部署可用性端到端（E2E）闭环烟测
+ *
+ * 核心检查项:
+ *   1. /healthz 端点: 校验服务健康状态为 ok，核对游戏数据版本 (gameDataVersion) 与数据指纹；
+ *   2. /readyz 端点: 校验就绪状态为 ready，断言 PostgreSQL 快照与市场账本存储提供方声明；
+ *   3. /api/actions: 校验基础静态行动目录接口返回非空行动列表；
+ *   4. / 首页入口: 校验前端 HTML 页面可达且包含 root 挂载点 (`id="root"`)；
+ *   5. /ws WebSocket 握手: 创建真实客户端连接，发送 hello 登录握手包，验证接收首包（snapshot / ack / delta）；
+ *   6. 结构化输出: 打印测试通过的关键版本、行动数与数据指纹信息。
+ *
+ * 使用方式:
+ *   node scripts/smoke-production.mjs [目标服务基础URL]
+ *   例如: node scripts/smoke-production.mjs http://127.0.0.1:5128
+ *         node scripts/smoke-production.mjs https://xx.yuohira.com
+ * ==============================================================================
+ */
+
 import process from 'node:process'
 
 const baseUrl = new URL(process.argv[2] || 'http://127.0.0.1:5128')

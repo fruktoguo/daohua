@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# 脚本名称: install-ccr-auth.sh
+# 主要职责: 远端生产服务器腾讯云 CCR 镜像仓库认证凭据的受控安全安装
+#
+# 核心操作流程与安全约束:
+#   1. 操作确认防护: 强制要求传入 `--confirm` 参数，避免非预期误触；
+#   2. 本机凭据解析: 从本机 ~/.docker/config.json 提取指定 Registry 的 Base64 auth 凭据；
+#   3. 安全受控注入: 通过 SSH 执行 `docker login --password-stdin` 写入远端 root Docker 配置，
+#      禁止在日志、终端或脚本中打印明文凭据；
+#   4. 远端拉取验证: 在远端测试 `docker pull` 拉取目标镜像权限；
+#   5. 服务与定时器联动: 若远端生产资产已就绪，自动启动并启用 CCR 自动更新服务与 timer；
+#   6. 公网闭环烟测: 触发公网 HTTPS/WebSocket 烟测验证站点可用性。
+#
+# 使用方式:
+#   scripts/install-ccr-auth.sh --confirm
+# ==============================================================================
 
 set -Eeuo pipefail
 set +x
+
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${DAOHUA_SSH_HOST:-yuohira}"

@@ -1,4 +1,20 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# 脚本名称: install-caddy.sh
+# 主要职责: 生产 Caddy Web 服务器反向代理站点安全安装、格式化与无缝热重载
+#
+# 核心操作流程与回滚机制:
+#   1. 权限检查: 必须以 root 身份运行；
+#   2. 自动备份: 在变更前对主配置 /etc/caddy/Caddyfile 及现有站点配置生成带时间戳备份；
+#   3. 站点安装与格式化: 将指定的站点配置文件安装至 /etc/caddy/sites/daohua.caddy 并执行 caddy fmt；
+#   4. 主配置 import 确保: 若主 Caddyfile 尚未包含 `import /etc/caddy/sites/*.caddy`，自动追加引入行；
+#   5. 严格语法校验: 执行 `caddy validate --config /etc/caddy/Caddyfile`；
+#   6. 无缝安全重载: 校验成功后通过 `systemctl reload caddy` 实现平滑热生效；
+#   7. 自动故障恢复: 校验或 reload 任意环节失败立即自动恢复至备份配置并重新校验 reload。
+#
+# 使用方式:
+#   /opt/daohua/install-caddy.sh /path/to/xx.yuohira.com.caddy
+# ==============================================================================
 
 set -Eeuo pipefail
 

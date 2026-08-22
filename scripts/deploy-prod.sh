@@ -1,4 +1,25 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# 脚本名称: deploy-prod.sh
+# 主要职责: 远端生产环境全量受控发布、资产同步、服务更新与公网验收
+#
+# 核心发布流程:
+#   1. 远端前置环境检查: 验证远端 SSH 连通性、Docker 与 Docker Compose 运行时就绪；
+#   2. CCR 镜像权限验证: 验证远端是否具备拉取指定版本镜像权限；
+#   3. 同步生产资产: 创建安全临时目录，上传 Compose、Caddy、备份脚本及 systemd 配置文件；
+#   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置 PostgreSQL 密钥；
+#   5. 安装资产与触发更新: 将资产安装到 /opt/daohua，触发 ccr-auto-update.sh 进行沙箱预检与平滑更新；
+#   6. systemd 服务与定时器配置: 启用并启动 CCR 自动更新 timer 与数据库备份 timer；
+#   7. Caddy 反向代理部署: 可选校验并无缝热重载 Caddy 站点配置 (xx.yuohira.com.caddy)；
+#   8. 服务就绪与公网烟测: 检查容器健康与回环 /readyz 端点，执行公网 HTTPS/WebSocket 烟测。
+#
+# 参数说明:
+#   --host HOST       远端 SSH 主机名（默认 yuohira）
+#   --image IMAGE     指定的生产 CCR 镜像引用（默认 ccr.ccs.tencentyun.com/yuohira/daohua:prod）
+#   --skip-caddy      跳过远端 Caddy 站点配置的安装与 reload
+#   --skip-smoke      跳过发布后的公网 HTTP/WebSocket 烟测
+#   -h, --help        显示帮助信息
+# ==============================================================================
 
 set -Eeuo pipefail
 
