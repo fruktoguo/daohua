@@ -10,6 +10,7 @@ CONTAINER_NAME="daoxuan-app"
 PREFLIGHT_CONTAINER_NAME="daoxuan-preflight"
 PREFLIGHT_DB_CONTAINER_NAME="daoxuan-preflight-db"
 PREFLIGHT_DB_VOLUME="daoxuan-preflight-postgres"
+PREFLIGHT_NETWORK="daoxuan-preflight-net"
 FAILED_IMAGE_FILE="${DEPLOY_DIR}/failed-image.id"
 LOCK_FILE="/run/lock/daoxuan-ccr-auto-update.lock"
 
