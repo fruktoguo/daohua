@@ -12,6 +12,7 @@
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Domain.GameData;
 using Domain.Market;
 using Domain.Models;
 using Domain.Simulation;
@@ -419,6 +420,7 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         state.LastSimulatedAt = timestamp;
         state.PresenceMode = PresenceMode.IdleOffline;
         state.DirtySections = DirtySections.None;
+        state.Version = 1;
         ObserveSequenceId(sequenceId);
         _takenPlayerNames[state.Name] = playerId;
 
@@ -1155,8 +1157,6 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// 确保玩家已加载：从快照存储反序列化、初始化默认字段与 SequenceId、规范化数据并按确定性规则补算离线演进。
-    /// </summary>
     private async Task EnsurePlayerAsync(
         Guid playerId,
         string? name,
@@ -1167,8 +1167,7 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         _lastPlayerAccess[playerId] = now;
         if (_knownPlayers.ContainsKey(playerId)) return;
         var stored = await _snapshotStore.LoadAsync("player", playerId.ToString("D"), cancellationToken);
-        var restored = stored is null ? null : StateSerializer.Deserialize(stored.Payload);
-        YuoSnapshotRecord? migrationRecord = null;
+        var restored = stored is null ? null : StateSerializer.Deserialize(stored.Payload, GameDataCatalog.Current.Fingerprint);
 
         await ExecuteOnOwnerAsync(fiber =>
         {
@@ -1179,32 +1178,29 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
             if (state.SequenceId <= 0)
             {
                 state.SequenceId = _sharedState.GetNextSequenceId();
-                migrationRecord = ToSnapshotRecord(state);
             }
             else
             {
                 _sharedState.ObserveSequenceId(state.SequenceId);
             }
 
-
             if (state.CreatedAt == default)
             {
                 state.CreatedAt = now;
-                migrationRecord = ToSnapshotRecord(state);
             }
 
             if (string.IsNullOrWhiteSpace(state.Account))
             {
                 state.Account = string.IsNullOrWhiteSpace(account) ? state.Name : account.Trim();
-                migrationRecord = ToSnapshotRecord(state);
             }
 
-            if (restored is not null)
+            if (restored is null)
             {
-                if (SimulationEngine.NormalizeState(state))
-                {
-                    migrationRecord = ToSnapshotRecord(state);
-                }
+                state.Version = 1;
+            }
+            else
+            {
+                SimulationEngine.NormalizeState(state);
             }
 
             if (state.PresenceMode != PresenceMode.FullyOffline)
@@ -1217,11 +1213,6 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
             _knownPlayers[playerId] = 0;
             return true;
         }, cancellationToken);
-
-        if (migrationRecord is not null)
-        {
-            await _persistenceQueue.EnqueueAsync(new SaveSnapshotCommand(migrationRecord), cancellationToken);
-        }
     }
 
     private void ObserveSequenceId(long sequenceId) => _sharedState.ObserveSequenceId(sequenceId);
@@ -1242,8 +1233,7 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
             throw new KeyNotFoundException($"玩家不存在: {playerId:D}");
         }
 
-        var state = StateSerializer.Deserialize(payload)
-            ?? throw new InvalidDataException($"玩家冷存档无法解析: {playerId:D}");
+        var state = StateSerializer.Deserialize(payload, GameDataCatalog.Current.Fingerprint);
         SimulationEngine.NormalizeState(state);
         if (state.PresenceMode != PresenceMode.FullyOffline)
         {
@@ -1785,6 +1775,7 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
 
     private YuoSnapshotRecord ToSnapshotRecord(PlayerState state)
     {
+        state.Version++;
         return new YuoSnapshotRecord(
             "player",
             state.PlayerId.ToString("D"),

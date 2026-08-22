@@ -345,46 +345,50 @@ public static class PostgresPayloadCodec
 /// </summary>
 public sealed class PostgresSnapshotStore(NpgsqlDataSource dataSource) : IBatchSnapshotStore
 {
+    public const string UpsertSnapshotSql = """
+        INSERT INTO player_snapshots (
+            kind, id, payload_encoding, payload, payload_bytes, compressed_bytes, updated_at,
+            player_id, account, character_name, sequence_id, version, presence_mode, last_simulated_at)
+        VALUES (
+            @kind, @id, @encoding, @payload, @payloadBytes, @compressedBytes, @updatedAt,
+            @playerId, @account, @characterName, @sequenceId, @version, @presenceMode, @lastSimulatedAt)
+        ON CONFLICT (kind, id) DO UPDATE SET
+            payload_encoding = EXCLUDED.payload_encoding,
+            payload = EXCLUDED.payload,
+            payload_bytes = EXCLUDED.payload_bytes,
+            compressed_bytes = EXCLUDED.compressed_bytes,
+            updated_at = EXCLUDED.updated_at,
+            player_id = EXCLUDED.player_id,
+            account = EXCLUDED.account,
+            character_name = EXCLUDED.character_name,
+            sequence_id = EXCLUDED.sequence_id,
+            version = EXCLUDED.version,
+            presence_mode = EXCLUDED.presence_mode,
+            last_simulated_at = EXCLUDED.last_simulated_at
+        WHERE player_snapshots.version IS NULL
+           OR (EXCLUDED.version IS NOT NULL AND EXCLUDED.version > player_snapshots.version)
+        """;
+
+    /// <summary>
+    /// 判断传入快照版本是否满足对现有快照版本的更新条件（单调 CAS 规则）。
+    /// <para>
+    /// 1. 若现有快照无版本号（null），允许更新；
+    /// 2. 若传入快照带有版本号且严格大于现有快照版本号（incomingVersion > existingVersion），允许更新；
+    /// 3. 其余情况（传入版本号为空但现有已有版本号、传入版本号小于等于现有版本号）均拒绝覆盖。
+    /// </para>
+    /// </summary>
+    public static bool ShouldUpdateSnapshot(long? existingVersion, long? incomingVersion)
+    {
+        if (!existingVersion.HasValue) return true;
+        return incomingVersion.HasValue && incomingVersion.Value > existingVersion.Value;
+    }
+
     public async ValueTask SaveAsync(YuoSnapshotRecord snapshot, CancellationToken cancellationToken = default)
     {
         var metadata = ExtractPlayerMetadata(snapshot);
         var payload = PostgresPayloadCodec.Encode(snapshot.Payload, out var encoding, out var originalBytes);
-        await using var command = dataSource.CreateCommand(
-            """
-            INSERT INTO player_snapshots (
-                kind, id, payload_encoding, payload, payload_bytes, compressed_bytes, updated_at,
-                player_id, account, character_name, sequence_id, version, presence_mode, last_simulated_at)
-            VALUES (
-                @kind, @id, @encoding, @payload, @payloadBytes, @compressedBytes, @updatedAt,
-                @playerId, @account, @characterName, @sequenceId, @version, @presenceMode, @lastSimulatedAt)
-            ON CONFLICT (kind, id) DO UPDATE SET
-                payload_encoding = EXCLUDED.payload_encoding,
-                payload = EXCLUDED.payload,
-                payload_bytes = EXCLUDED.payload_bytes,
-                compressed_bytes = EXCLUDED.compressed_bytes,
-                updated_at = EXCLUDED.updated_at,
-                player_id = EXCLUDED.player_id,
-                account = EXCLUDED.account,
-                character_name = EXCLUDED.character_name,
-                sequence_id = EXCLUDED.sequence_id,
-                version = EXCLUDED.version,
-                presence_mode = EXCLUDED.presence_mode,
-                last_simulated_at = EXCLUDED.last_simulated_at
-            """);
-        command.Parameters.AddWithValue("kind", snapshot.Kind);
-        command.Parameters.AddWithValue("id", snapshot.Id);
-        command.Parameters.AddWithValue("encoding", encoding);
-        command.Parameters.AddWithValue("payload", NpgsqlDbType.Bytea, payload);
-        command.Parameters.AddWithValue("payloadBytes", originalBytes);
-        command.Parameters.AddWithValue("compressedBytes", payload.Length);
-        command.Parameters.AddWithValue("updatedAt", snapshot.UpdatedAt);
-        AddNullable(command, "playerId", NpgsqlDbType.Uuid, metadata.PlayerId);
-        AddNullable(command, "account", NpgsqlDbType.Varchar, metadata.Account);
-        AddNullable(command, "characterName", NpgsqlDbType.Varchar, metadata.CharacterName);
-        AddNullable(command, "sequenceId", NpgsqlDbType.Bigint, metadata.SequenceId);
-        AddNullable(command, "version", NpgsqlDbType.Bigint, metadata.Version);
-        AddNullable(command, "presenceMode", NpgsqlDbType.Smallint, metadata.PresenceMode);
-        AddNullable(command, "lastSimulatedAt", NpgsqlDbType.TimestampTz, metadata.LastSimulatedAt);
+        await using var command = dataSource.CreateCommand(UpsertSnapshotSql);
+        BindSnapshotParameters(command, snapshot, metadata, encoding, payload, originalBytes);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -442,30 +446,19 @@ public sealed class PostgresSnapshotStore(NpgsqlDataSource dataSource) : IBatchS
     {
         var metadata = ExtractPlayerMetadata(snapshot);
         var payload = PostgresPayloadCodec.Encode(snapshot.Payload, out var encoding, out var originalBytes);
-        await using var command = new NpgsqlCommand(
-            """
-            INSERT INTO player_snapshots (
-                kind, id, payload_encoding, payload, payload_bytes, compressed_bytes, updated_at,
-                player_id, account, character_name, sequence_id, version, presence_mode, last_simulated_at)
-            VALUES (
-                @kind, @id, @encoding, @payload, @payloadBytes, @compressedBytes, @updatedAt,
-                @playerId, @account, @characterName, @sequenceId, @version, @presenceMode, @lastSimulatedAt)
-            ON CONFLICT (kind, id) DO UPDATE SET
-                payload_encoding = EXCLUDED.payload_encoding,
-                payload = EXCLUDED.payload,
-                payload_bytes = EXCLUDED.payload_bytes,
-                compressed_bytes = EXCLUDED.compressed_bytes,
-                updated_at = EXCLUDED.updated_at,
-                player_id = EXCLUDED.player_id,
-                account = EXCLUDED.account,
-                character_name = EXCLUDED.character_name,
-                sequence_id = EXCLUDED.sequence_id,
-                version = EXCLUDED.version,
-                presence_mode = EXCLUDED.presence_mode,
-                last_simulated_at = EXCLUDED.last_simulated_at
-            """,
-            connection,
-            transaction);
+        await using var command = new NpgsqlCommand(UpsertSnapshotSql, connection, transaction);
+        BindSnapshotParameters(command, snapshot, metadata, encoding, payload, originalBytes);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void BindSnapshotParameters(
+        NpgsqlCommand command,
+        YuoSnapshotRecord snapshot,
+        PlayerSnapshotMetadata metadata,
+        string encoding,
+        byte[] payload,
+        int originalBytes)
+    {
         command.Parameters.AddWithValue("kind", snapshot.Kind);
         command.Parameters.AddWithValue("id", snapshot.Id);
         command.Parameters.AddWithValue("encoding", encoding);
@@ -480,7 +473,6 @@ public sealed class PostgresSnapshotStore(NpgsqlDataSource dataSource) : IBatchS
         AddNullable(command, "version", NpgsqlDbType.Bigint, metadata.Version);
         AddNullable(command, "presenceMode", NpgsqlDbType.Smallint, metadata.PresenceMode);
         AddNullable(command, "lastSimulatedAt", NpgsqlDbType.TimestampTz, metadata.LastSimulatedAt);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static PlayerSnapshotMetadata ExtractPlayerMetadata(YuoSnapshotRecord snapshot)
@@ -493,18 +485,18 @@ public sealed class PostgresSnapshotStore(NpgsqlDataSource dataSource) : IBatchS
 
         try
         {
-            var state = StateSerializer.Deserialize(snapshot.Payload);
-            if (state is null) return default;
+            var envelope = StateSerializer.DeserializeEnvelope(snapshot.Payload, Domain.GameData.GameDataCatalog.Current.Fingerprint);
+            var state = envelope.Payload;
             return new PlayerSnapshotMetadata(
                 playerId,
                 EmptyToNull(state.Account),
                 EmptyToNull(state.Name),
-                state.SequenceId > 0 ? state.SequenceId : null,
-                state.Version,
+                envelope.SequenceId > 0 ? envelope.SequenceId : (state.SequenceId > 0 ? state.SequenceId : null),
+                envelope.PlayerStateVersion > 0 ? envelope.PlayerStateVersion : (state.Version > 0 ? state.Version : null),
                 (short)state.PresenceMode,
-                state.LastSimulatedAt == default ? null : state.LastSimulatedAt);
+                envelope.LastSimulatedAt == default ? (state.LastSimulatedAt == default ? null : state.LastSimulatedAt) : envelope.LastSimulatedAt);
         }
-        catch (JsonException)
+        catch (Exception)
         {
             return default;
         }
