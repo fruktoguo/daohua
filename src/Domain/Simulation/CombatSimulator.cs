@@ -109,6 +109,57 @@ public static partial class CombatSimulator
     }
 
     /// <summary>
+    /// 根据战斗入场固定快照（BattleSnapshot）执行单场战斗模拟推演。
+    /// 包含配置指纹一致性校验与确定性重放。
+    /// </summary>
+    /// <param name="playerId">玩家 GUID。</param>
+    /// <param name="snapshot">战斗入场快照。</param>
+    /// <param name="duration">推进时长。</param>
+    /// <param name="playerSpirit">玩家当前境界修为点数。</param>
+    /// <param name="stopAfterFirstVictory">是否在首次胜利或结算时终止。</param>
+    /// <returns>战斗运行结算结果。</returns>
+    public static CombatRunResult Run(
+        Guid playerId,
+        BattleSnapshot snapshot,
+        TimeSpan duration,
+        long playerSpirit = 0,
+        bool stopAfterFirstVictory = true)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!string.IsNullOrEmpty(snapshot.ConfigFingerprint)
+            && !string.Equals(snapshot.ConfigFingerprint, GameData.GameDataCatalog.Current.Fingerprint, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"战斗快照配置指纹不一致: 快照指纹 '{snapshot.ConfigFingerprint}' 与当前配置指纹 '{GameData.GameDataCatalog.Current.Fingerprint}' 不匹配，拒绝继续推进。");
+        }
+
+        var initialPlayer = CreatePlayerState(
+            snapshot.BattleLoadout,
+            snapshot.BattleBuffs,
+            snapshot.BattleStartedAt,
+            snapshot.InitialHitpoints,
+            snapshot.InitialManapoints,
+            playerSpirit);
+
+        return Run(
+            playerId,
+            snapshot.BattleLoadout,
+            snapshot.BattleBuffs,
+            snapshot.BattleInventory,
+            snapshot.EncounterId,
+            snapshot.BattleStartedAt,
+            duration,
+            snapshot.CompletedEncountersBeforeBattle,
+            initialPlayer,
+            stopAfterFirstOutcome: false,
+            stopAfterFirstVictory: stopAfterFirstVictory,
+            playerSpirit: playerSpirit,
+            initialAbilityCooldowns: snapshot.InitialAbilityCooldowns,
+            initialConsumableCooldowns: snapshot.InitialConsumableCooldowns);
+    }
+
+    /// <summary>
     /// 执行确定性战斗事件模拟推演。
     /// </summary>
     /// <param name="playerId">玩家唯一 GUID。</param>

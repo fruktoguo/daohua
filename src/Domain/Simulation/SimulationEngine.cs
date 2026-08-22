@@ -8,6 +8,7 @@
 // ==============================================================================
 
 using Domain.Constants;
+using Domain.GameData;
 using Domain.Models;
 
 namespace Domain.Simulation;
@@ -885,10 +886,12 @@ public static class SimulationEngine
     /// </summary>
     /// <param name="state">待推进的玩家状态聚合根。</param>
     /// <param name="targetTime">目标对齐时间戳。</param>
+    /// <param name="maxTransitions">单次推演允许的最大动作/状态流转次数上限。</param>
     /// <returns>推进结算摘要结果（脏段、完成动作数、状态转移数、产生事件列表等）。</returns>
     public static SimulationResult AdvanceTo(
         PlayerState state,
-        DateTimeOffset targetTime)
+        DateTimeOffset targetTime,
+        int maxTransitions = SimulationConstants.MaxTransitionsPerAdvance)
     {
         ArgumentNullException.ThrowIfNull(state);
         var target = NormalizeTime(targetTime);
@@ -913,7 +916,7 @@ public static class SimulationEngine
         var hasPendingQueueRotation = false;
         var combatEvents = 0;
 
-        while (cursor <= target && transitions < MaxTransitionsPerAdvance)
+        while (cursor <= target && transitions < maxTransitions)
         {
             if (ExpireBuffs(state, cursor))
             {
@@ -1000,9 +1003,10 @@ public static class SimulationEngine
                     ref dirty,
                     ref completedActions,
                     ref transitions,
-                    ref combatEvents);
+                    ref combatEvents,
+                    maxTransitions);
                 skippedForMissingInputs.Clear();
-                if (cursor >= target || transitions >= MaxTransitionsPerAdvance) break;
+                if (cursor >= target || transitions >= maxTransitions) break;
                 continue;
             }
 
@@ -1064,7 +1068,8 @@ public static class SimulationEngine
             skippedForMissingInputs.Clear();
         }
 
-        if (transitions >= MaxTransitionsPerAdvance)
+        var isCapped = transitions >= maxTransitions && cursor < target;
+        if (isCapped)
         {
             AddEvent(state, "本次快进达到保护上限，剩余行动将在下一次推进继续结算");
             dirty |= DirtySections.Events;
@@ -1074,7 +1079,7 @@ public static class SimulationEngine
             }
         }
 
-        if (ExpireBuffs(state, target))
+        if (ExpireBuffs(state, cursor))
         {
             dirty |= DirtySections.Buffs;
         }
@@ -1084,13 +1089,15 @@ public static class SimulationEngine
             Touch(state, dirty);
         }
 
-        state.LastSimulatedAt = target;
+        state.LastSimulatedAt = cursor;
         return new SimulationResult(
             dirty,
             completedActions,
             transitions,
             events,
-            combatEvents);
+            combatEvents,
+            ReachedTarget: !isCapped,
+            Capped: isCapped);
     }
 
     /// <summary>
@@ -1152,38 +1159,43 @@ public static class SimulationEngine
             return state.LastSimulatedAt.AddMilliseconds(remaining);
         }
 
-        var encounterId = ResolveCombatEncounterId(state, definition, expedition);
-        var battleLoadout = expedition.BattleLoadout ?? state.Combat;
-        var battleBuffs = expedition.BattleBuffs ?? state.Buffs;
-        var battleInventory = expedition.BattleInventory ?? state.Inventory.Items;
-        var initialPlayer = CombatSimulator.CreatePlayerState(
-            battleLoadout,
-            battleBuffs,
-            expedition.BattleStartedAt,
-            expedition.InitialHitpoints,
-            expedition.InitialManapoints,
-            state.Stats.Spirit);
+        if (expedition.BattleSnapshot is null)
+        {
+            var encounterId = ResolveCombatEncounterId(state, definition, expedition);
+            var battleLoadout = expedition.BattleLoadout ?? state.Combat;
+            var battleBuffs = expedition.BattleBuffs ?? state.Buffs;
+            var battleInventory = expedition.BattleInventory ?? state.Inventory.Items;
+            expedition.BattleSnapshot = new BattleSnapshot
+            {
+                EncounterId = encounterId,
+                BattleSequence = expedition.BattleSequence,
+                CompletedEncountersBeforeBattle = expedition.CompletedEncountersBeforeBattle,
+                BattleStartedAt = expedition.BattleStartedAt,
+                InitialHitpoints = expedition.InitialHitpoints,
+                InitialManapoints = expedition.InitialManapoints,
+                InitialAbilityCooldowns = new Dictionary<string, long>(expedition.InitialAbilityCooldowns, StringComparer.Ordinal),
+                InitialConsumableCooldowns = new List<long>(expedition.InitialConsumableCooldowns),
+                BattleLoadout = battleLoadout.Clone(),
+                BattleBuffs = battleBuffs.Select(CloneCombatBuff).ToList(),
+                BattleInventory = new Dictionary<string, long>(battleInventory, StringComparer.Ordinal),
+                ConfigFingerprint = GameDataCatalog.Current.Fingerprint
+            };
+        }
+
+        var snapshot = expedition.BattleSnapshot;
         var result = CombatSimulator.Run(
             state.PlayerId,
-            battleLoadout,
-            battleBuffs,
-            battleInventory,
-            encounterId,
-            expedition.BattleStartedAt,
+            snapshot,
             TimeSpan.FromMilliseconds(Math.Max(0, expedition.PhaseElapsedMilliseconds)),
-            expedition.CompletedEncountersBeforeBattle,
-            initialPlayer,
-            stopAfterFirstVictory: true,
             playerSpirit: state.Stats.Spirit,
-            initialAbilityCooldowns: expedition.InitialAbilityCooldowns,
-            initialConsumableCooldowns: expedition.InitialConsumableCooldowns);
+            stopAfterFirstVictory: true);
         if (result.OutcomeMilliseconds is not null)
         {
-            return expedition.BattleStartedAt.AddMilliseconds(result.OutcomeMilliseconds.Value);
+            return snapshot.BattleStartedAt.AddMilliseconds(result.OutcomeMilliseconds.Value);
         }
 
         return result.NextEventMilliseconds is { } nextEvent
-            ? expedition.BattleStartedAt.AddMilliseconds(nextEvent)
+            ? snapshot.BattleStartedAt.AddMilliseconds(nextEvent)
             : null;
     }
 
@@ -1196,13 +1208,14 @@ public static class SimulationEngine
         ref DirtySections dirty,
         ref int completedActions,
         ref int transitions,
-        ref int combatEvents)
+        ref int combatEvents,
+        int maxTransitions = SimulationConstants.MaxTransitionsPerAdvance)
     {
         var expedition = current.CombatExpedition ??= CreateCombatExpedition(definition);
         EnsureCombatResources(state, cursor);
         current.DurationSeconds = 0;
 
-        while (cursor <= target && transitions < MaxTransitionsPerAdvance)
+        while (cursor <= target && transitions < maxTransitions)
         {
             if (expedition.Phase is CombatExpeditionPhase.InitialSearch
                 or CombatExpeditionPhase.Search)
@@ -1225,6 +1238,7 @@ public static class SimulationEngine
                 }
 
                 cursor = cursor.AddMilliseconds(remaining);
+                state.LastSimulatedAt = cursor;
                 expedition.PhaseElapsedMilliseconds = 0;
                 current.ProgressSeconds = 0;
                 transitions++;
@@ -1241,48 +1255,54 @@ public static class SimulationEngine
                 continue;
             }
 
-            var encounterId = ResolveCombatEncounterId(state, definition, expedition);
-            var encounter = CombatCatalog.GetEncounter(encounterId);
+            if (expedition.BattleSnapshot is null)
+            {
+                var encounterId = ResolveCombatEncounterId(state, definition, expedition);
+                var battleLoadout = expedition.BattleLoadout ?? state.Combat.Clone();
+                var battleBuffs = expedition.BattleBuffs ?? [];
+                var battleInventory = expedition.BattleInventory ?? new Dictionary<string, long>(StringComparer.Ordinal);
+                expedition.BattleSnapshot = new BattleSnapshot
+                {
+                    EncounterId = encounterId,
+                    BattleSequence = expedition.BattleSequence,
+                    CompletedEncountersBeforeBattle = expedition.CompletedEncountersBeforeBattle,
+                    BattleStartedAt = expedition.BattleStartedAt,
+                    InitialHitpoints = expedition.InitialHitpoints,
+                    InitialManapoints = expedition.InitialManapoints,
+                    InitialAbilityCooldowns = new Dictionary<string, long>(expedition.InitialAbilityCooldowns, StringComparer.Ordinal),
+                    InitialConsumableCooldowns = new List<long>(expedition.InitialConsumableCooldowns),
+                    BattleLoadout = battleLoadout.Clone(),
+                    BattleBuffs = battleBuffs.Select(CloneCombatBuff).ToList(),
+                    BattleInventory = new Dictionary<string, long>(battleInventory, StringComparer.Ordinal),
+                    ConfigFingerprint = GameDataCatalog.Current.Fingerprint
+                };
+            }
+
+            var snapshot = expedition.BattleSnapshot;
+            var encounter = CombatCatalog.GetEncounter(snapshot.EncounterId);
             var availableCombatMilliseconds = GetAvailableMilliseconds(cursor, target);
             var requestedElapsed = checked(expedition.PhaseElapsedMilliseconds + availableCombatMilliseconds);
-            var battleLoadout = expedition.BattleLoadout ?? state.Combat.Clone();
-            var battleBuffs = expedition.BattleBuffs ?? [];
-            var battleInventory = expedition.BattleInventory ?? new Dictionary<string, long>(StringComparer.Ordinal);
-            var initialPlayer = CombatSimulator.CreatePlayerState(
-                battleLoadout,
-                battleBuffs,
-                expedition.BattleStartedAt,
-                expedition.InitialHitpoints,
-                expedition.InitialManapoints,
-                state.Stats.Spirit);
+
             var result = CombatSimulator.Run(
                 state.PlayerId,
-                battleLoadout,
-                battleBuffs,
-                battleInventory,
-                encounterId,
-                expedition.BattleStartedAt,
+                snapshot,
                 TimeSpan.FromMilliseconds(requestedElapsed),
-                expedition.CompletedEncountersBeforeBattle,
-                initialPlayer,
-                stopAfterFirstVictory: true,
                 playerSpirit: state.Stats.Spirit,
-                initialAbilityCooldowns: expedition.InitialAbilityCooldowns,
-                initialConsumableCooldowns: expedition.InitialConsumableCooldowns);
+                stopAfterFirstVictory: true);
 
             dirty |= ApplyIncrementalCombatConsumption(state, expedition, result);
             dirty |= EmitIncrementalCombatEvents(state, expedition, result, cursor);
             dirty |= ApplyIncrementalCombatSettlement(
                 state,
                 expedition,
-                encounterId,
+                snapshot.EncounterId,
                 result,
-                expedition.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds),
+                snapshot.BattleStartedAt.AddMilliseconds(result.SimulatedMilliseconds),
                 ref combatEvents);
             if (result.FinalPlayer is { } currentPlayer)
             {
                 SetCombatResources(state, currentPlayer);
-                UpdateCombatCooldowns(state, result, expedition.BattleStartedAt);
+                UpdateCombatCooldowns(state, result, snapshot.BattleStartedAt);
                 dirty |= DirtySections.Combat;
             }
 
@@ -1292,12 +1312,14 @@ public static class SimulationEngine
                 current.ProgressSeconds = ToDisplaySeconds(requestedElapsed);
                 current.DurationSeconds = 0;
                 cursor = target;
+                state.LastSimulatedAt = cursor;
                 dirty |= DirtySections.QueueProgress;
                 return;
             }
 
             var consumedMilliseconds = Math.Max(0, outcomeMilliseconds - expedition.PhaseElapsedMilliseconds);
             cursor = cursor.AddMilliseconds(consumedMilliseconds);
+            state.LastSimulatedAt = cursor;
             expedition.PhaseElapsedMilliseconds = outcomeMilliseconds;
             state.Stats.CompletedActions++;
             completedActions++;
@@ -1342,31 +1364,52 @@ public static class SimulationEngine
             state.CombatResources.Manapoints,
             state.Stats.Spirit);
         SetCombatResources(state, initial);
-        expedition.Phase = CombatExpeditionPhase.Combat;
-        expedition.PhaseDurationMilliseconds = 0;
-        expedition.PhaseElapsedMilliseconds = 0;
-        expedition.EncounterId = encounterId;
-        expedition.BattleSequence = nextBattleSequence;
-        expedition.CompletedEncountersBeforeBattle = state.CombatEncounterCompletions.GetValueOrDefault(encounterId);
-        expedition.BattleStartedAt = startedAt;
-        expedition.InitialHitpoints = initial.Hitpoints;
-        expedition.InitialManapoints = initial.Manapoints;
-        expedition.InitialAbilityCooldowns.Clear();
+
+        var initialAbilityCooldowns = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var (abilityId, readyAt) in state.CombatResources.AbilityCooldowns)
         {
             var remaining = Math.Max(0, (long)Math.Ceiling((readyAt - startedAt).TotalMilliseconds));
             if (remaining > 0)
             {
-                expedition.InitialAbilityCooldowns[abilityId] = remaining;
+                initialAbilityCooldowns[abilityId] = remaining;
             }
         }
-        expedition.InitialConsumableCooldowns = state.CombatResources.ConsumableSlotCooldowns
+        var initialConsumableCooldowns = state.CombatResources.ConsumableSlotCooldowns
             .Select(readyAt => Math.Max(0, (long)Math.Ceiling((readyAt - startedAt).TotalMilliseconds)))
             .ToList();
+
+        var snapshot = new BattleSnapshot
+        {
+            EncounterId = encounterId,
+            BattleSequence = nextBattleSequence,
+            CompletedEncountersBeforeBattle = state.CombatEncounterCompletions.GetValueOrDefault(encounterId),
+            BattleStartedAt = startedAt,
+            InitialHitpoints = initial.Hitpoints,
+            InitialManapoints = initial.Manapoints,
+            InitialAbilityCooldowns = initialAbilityCooldowns,
+            InitialConsumableCooldowns = initialConsumableCooldowns,
+            BattleLoadout = state.Combat.Clone(),
+            BattleBuffs = state.Buffs.Select(CloneCombatBuff).ToList(),
+            BattleInventory = new Dictionary<string, long>(state.Inventory.Items, StringComparer.Ordinal),
+            ConfigFingerprint = GameDataCatalog.Current.Fingerprint
+        };
+
+        expedition.BattleSnapshot = snapshot;
+        expedition.Phase = CombatExpeditionPhase.Combat;
+        expedition.PhaseDurationMilliseconds = 0;
+        expedition.PhaseElapsedMilliseconds = 0;
+        expedition.EncounterId = encounterId;
+        expedition.BattleSequence = nextBattleSequence;
+        expedition.CompletedEncountersBeforeBattle = snapshot.CompletedEncountersBeforeBattle;
+        expedition.BattleStartedAt = startedAt;
+        expedition.InitialHitpoints = initial.Hitpoints;
+        expedition.InitialManapoints = initial.Manapoints;
+        expedition.InitialAbilityCooldowns = new Dictionary<string, long>(initialAbilityCooldowns, StringComparer.Ordinal);
+        expedition.InitialConsumableCooldowns = new List<long>(initialConsumableCooldowns);
         expedition.EmittedEventCount = 0;
-        expedition.BattleLoadout = state.Combat.Clone();
-        expedition.BattleBuffs = state.Buffs.Select(CloneCombatBuff).ToList();
-        expedition.BattleInventory = new Dictionary<string, long>(state.Inventory.Items, StringComparer.Ordinal);
+        expedition.BattleLoadout = snapshot.BattleLoadout.Clone();
+        expedition.BattleBuffs = snapshot.BattleBuffs.Select(CloneCombatBuff).ToList();
+        expedition.BattleInventory = new Dictionary<string, long>(snapshot.BattleInventory, StringComparer.Ordinal);
         expedition.AppliedConsumedItems.Clear();
         expedition.AppliedDroppedItems.Clear();
         expedition.AppliedRareDroppedItems.Clear();
@@ -1678,6 +1721,7 @@ public static class SimulationEngine
 
     private static void ResetBattleSnapshot(CombatExpeditionState expedition)
     {
+        expedition.BattleSnapshot = null;
         expedition.PhaseElapsedMilliseconds = 0;
         expedition.EncounterId = null;
         expedition.BattleStartedAt = default;

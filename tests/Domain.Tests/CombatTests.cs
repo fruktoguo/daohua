@@ -1525,5 +1525,147 @@ public sealed class CombatTests
         var starPiercer = monster.Abilities[2];
         Assert.Equal(80, starPiercer.FlatDamage);
     }
+
+    /// <summary>
+    /// 验证寻敌结束后进入战斗时只创建一次固定 BattleSnapshot，在后续战斗微步推进中始终复用该快照而不重复创建。
+    /// </summary>
+    [Fact]
+    public void Combat_search_creates_battle_snapshot_exactly_once_and_reuses_it()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.Entries.Clear();
+        SimulationEngine.Enqueue(state, ActionIds.HuntQiBeast, 1);
+
+        // 1. 推进 25 秒：跨过寻敌阶段（20s），正式进入 Combat 阶段
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(25));
+        var expedition = state.Queue.Entries[0].CombatExpedition;
+        Assert.NotNull(expedition);
+        Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
+
+        var snapshot = expedition.BattleSnapshot;
+        Assert.NotNull(snapshot);
+        Assert.Equal(1, snapshot.BattleSequence);
+        Assert.False(string.IsNullOrEmpty(snapshot.ConfigFingerprint));
+        Assert.Equal(GameDataCatalog.Current.Fingerprint, snapshot.ConfigFingerprint);
+        Assert.Equal(expedition.EncounterId, snapshot.EncounterId);
+
+        // 2. 微步推进 500 毫秒：仍处于该场战斗中，验证 BattleSnapshot 引用未被重新创建
+        SimulationEngine.AdvanceTo(state, Baseline.AddMilliseconds(25_500));
+        Assert.Same(snapshot, expedition.BattleSnapshot);
+        Assert.NotNull(expedition.BattleSnapshot);
+        Assert.Equal(1, expedition.BattleSnapshot.BattleSequence);
+        Assert.Equal(5_500, expedition.PhaseElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// 验证战斗中途克隆与同一时间戳重放不会重复扣减消耗品、不重复增加资产/经验/灵石与统计数据。
+    /// </summary>
+    [Fact]
+    public void Combat_clone_and_replay_does_not_duplicate_assets_or_stats()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.Entries.Clear();
+        SimulationEngine.Enqueue(state, ActionIds.HuntQiBeast, 1);
+
+        // 推进到战斗中途
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(26));
+        var expedition = state.Queue.Entries[0].CombatExpedition;
+        Assert.NotNull(expedition);
+        Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
+
+        var initialSpirit = state.Inventory.Get(ItemIds.Spirit);
+        var initialWins = state.Stats.CombatWins;
+        var initialDamageDealt = state.Stats.CombatDamageDealt;
+        var initialExp = state.Stats.CombatExperience;
+
+        // 克隆并向同一时间戳重复推进
+        var cloned = state.Clone();
+        var replayResult = SimulationEngine.AdvanceTo(cloned, cloned.LastSimulatedAt);
+
+        Assert.Equal(0, replayResult.CompletedActions);
+        Assert.Equal(0, replayResult.CombatEvents);
+        Assert.Equal(initialSpirit, cloned.Inventory.Get(ItemIds.Spirit));
+        Assert.Equal(initialWins, cloned.Stats.CombatWins);
+        Assert.Equal(initialDamageDealt, cloned.Stats.CombatDamageDealt);
+        Assert.Equal(initialExp, cloned.Stats.CombatExperience);
+
+        // 分别推进到相同未来时间戳，状态必须严格一致
+        var targetTime = Baseline.AddSeconds(50);
+        SimulationEngine.AdvanceTo(state, targetTime);
+        SimulationEngine.AdvanceTo(cloned, targetTime);
+
+        Assert.Equal(state.Stats.CombatWins, cloned.Stats.CombatWins);
+        Assert.Equal(state.Stats.CombatLosses, cloned.Stats.CombatLosses);
+        Assert.Equal(state.Stats.CombatDamageDealt, cloned.Stats.CombatDamageDealt);
+        Assert.Equal(state.Stats.CombatExperience, cloned.Stats.CombatExperience);
+        Assert.Equal(state.Inventory.Get(ItemIds.Spirit), cloned.Inventory.Get(ItemIds.Spirit));
+        Assert.Equal(state.CombatResources.Hitpoints, cloned.CombatResources.Hitpoints);
+        Assert.Equal(state.CombatResources.Manapoints, cloned.CombatResources.Manapoints);
+    }
+
+    /// <summary>
+    /// 验证战斗分段微步推进与单次跨度快进结算结果完全等价。
+    /// </summary>
+    [Fact]
+    public void Combat_segmented_advance_matches_single_shot_advance_deterministically()
+    {
+        var singleShot = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        var stepped = singleShot.Clone();
+        singleShot.Queue.Entries.Clear();
+        stepped.Queue.Entries.Clear();
+        SimulationEngine.Enqueue(singleShot, ActionIds.HuntQiBeast, -1);
+        SimulationEngine.Enqueue(stepped, ActionIds.HuntQiBeast, -1);
+
+        // 单次直接推进 150 秒
+        SimulationEngine.AdvanceTo(singleShot, Baseline.AddSeconds(150));
+
+        // 分段按 3 秒逐步推进到 150 秒
+        for (var sec = 3; sec <= 150; sec += 3)
+        {
+            SimulationEngine.AdvanceTo(stepped, Baseline.AddSeconds(sec));
+        }
+
+        Assert.Equal(singleShot.Stats.CombatWins, stepped.Stats.CombatWins);
+        Assert.Equal(singleShot.Stats.CombatLosses, stepped.Stats.CombatLosses);
+        Assert.Equal(singleShot.Stats.CompletedActions, stepped.Stats.CompletedActions);
+        Assert.Equal(singleShot.Stats.CombatDamageDealt, stepped.Stats.CombatDamageDealt);
+        Assert.Equal(singleShot.Stats.CombatDamageTaken, stepped.Stats.CombatDamageTaken);
+        Assert.Equal(singleShot.Stats.CombatExperience, stepped.Stats.CombatExperience);
+        Assert.Equal(singleShot.Inventory.Get(ItemIds.Spirit), stepped.Inventory.Get(ItemIds.Spirit));
+        Assert.Equal(singleShot.Inventory.Get(ItemIds.QiBeastCore), stepped.Inventory.Get(ItemIds.QiBeastCore));
+        Assert.Equal(singleShot.CombatResources.Hitpoints, stepped.CombatResources.Hitpoints);
+        Assert.Equal(singleShot.CombatResources.Manapoints, stepped.CombatResources.Manapoints);
+        Assert.Equal(
+            singleShot.Queue.Entries[0].CombatExpedition?.Phase,
+            stepped.Queue.Entries[0].CombatExpedition?.Phase);
+        Assert.Equal(
+            singleShot.Queue.Entries[0].CombatExpedition?.PhaseElapsedMilliseconds,
+            stepped.Queue.Entries[0].CombatExpedition?.PhaseElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// 验证战斗入场快照配置指纹不一致时快速失败并拒绝继续推进。
+    /// </summary>
+    [Fact]
+    public void Combat_snapshot_fingerprint_mismatch_fails_fast()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.Entries.Clear();
+        SimulationEngine.Enqueue(state, ActionIds.HuntQiBeast, 1);
+
+        // 进入战斗阶段
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(25));
+        var expedition = state.Queue.Entries[0].CombatExpedition;
+        Assert.NotNull(expedition?.BattleSnapshot);
+
+        // 篡改配置指纹为过期/非法值
+        expedition.BattleSnapshot.ConfigFingerprint = "mismatched_fake_hash_999";
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(30)));
+
+        Assert.Contains("战斗快照配置指纹不一致", ex.Message);
+        Assert.Contains("mismatched_fake_hash_999", ex.Message);
+    }
 }
 
