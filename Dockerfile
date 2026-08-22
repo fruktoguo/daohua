@@ -16,10 +16,10 @@ FROM ${DOTNET_SDK_IMAGE} AS server-build
 WORKDIR /src
 ARG BUILD_VERSION=dev
 COPY global.json ./
-COPY src/DaoHua.Domain/DaoHua.Domain.csproj src/DaoHua.Domain/
-COPY src/DaoHua.Protocol/DaoHua.Protocol.csproj src/DaoHua.Protocol/
-COPY src/DaoHua.Server/DaoHua.Server.csproj src/DaoHua.Server/
-COPY src/DaoHua.ComputeNode/DaoHua.ComputeNode.csproj src/DaoHua.ComputeNode/
+COPY src/Domain/Domain.csproj src/Domain/
+COPY src/Protocol/Protocol.csproj src/Protocol/
+COPY src/Server/Server.csproj src/Server/
+COPY src/ComputeNode/ComputeNode.csproj src/ComputeNode/
 COPY config/game-data/ config/game-data/
 COPY vendor/YuoCore/README.md vendor/YuoCore/README.md
 COPY vendor/YuoCore/src/Directory.Build.props vendor/YuoCore/src/Directory.Build.props
@@ -28,22 +28,22 @@ COPY vendor/YuoCore/src/YuoCore.Analyzers/YuoCore.Analyzers.csproj vendor/YuoCor
 COPY vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj vendor/YuoCore/src/YuoCore.Ecs/
 COPY vendor/YuoCore/src/YuoCore.Persistence/YuoCore.Persistence.csproj vendor/YuoCore/src/YuoCore.Persistence/
 COPY vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj vendor/YuoCore/src/YuoCore.Runtime/
-RUN dotnet restore src/DaoHua.Server/DaoHua.Server.csproj --nologo \
-    && dotnet restore src/DaoHua.ComputeNode/DaoHua.ComputeNode.csproj --nologo
-COPY src/DaoHua.Domain/ src/DaoHua.Domain/
-COPY src/DaoHua.Protocol/ src/DaoHua.Protocol/
-COPY src/DaoHua.ComputeNode/ src/DaoHua.ComputeNode/
-COPY src/DaoHua.Server/ src/DaoHua.Server/
+RUN dotnet restore src/Server/Server.csproj --nologo \
+    && dotnet restore src/ComputeNode/ComputeNode.csproj --nologo
+COPY src/Domain/ src/Domain/
+COPY src/Protocol/ src/Protocol/
+COPY src/ComputeNode/ src/ComputeNode/
+COPY src/Server/ src/Server/
 COPY config/game-data/ config/game-data/
 COPY vendor/YuoCore/src/ vendor/YuoCore/src/
-RUN dotnet publish src/DaoHua.Server/DaoHua.Server.csproj \
+RUN dotnet publish src/Server/Server.csproj \
     --configuration Release \
     --no-restore \
     --output /app/publish \
     --nologo \
     -p:ContinuousIntegrationBuild=true \
     -p:InformationalVersion="${BUILD_VERSION}"
-RUN dotnet publish src/DaoHua.ComputeNode/DaoHua.ComputeNode.csproj \
+RUN dotnet publish src/ComputeNode/ComputeNode.csproj \
     --configuration Release \
     --no-restore \
     --output /app/compute \
@@ -76,4 +76,4 @@ EXPOSE 8080
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl --fail --silent --show-error http://127.0.0.1:8080/readyz >/dev/null || exit 1
-ENTRYPOINT ["dotnet", "DaoHua.Server.dll"]
+ENTRYPOINT ["dotnet", "Server.dll"]

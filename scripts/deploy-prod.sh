@@ -24,8 +24,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REMOTE_HOST="${DAOHUA_SSH_HOST:-yuohira}"
-IMAGE="${DAOHUA_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+REMOTE_HOST="${SSH_HOST:-yuohira}"
+IMAGE="${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
 INSTALL_CADDY=1
 RUN_PUBLIC_SMOKE=1
 REMOTE_TMP=""
@@ -119,11 +119,11 @@ printf '==> 校验生产环境变量\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" '
   set -Eeuo pipefail
   if ! sudo test -f /opt/daohua/daohua.env; then
-    printf "缺少 /opt/daohua/daohua.env，请设置 DAOHUA_POSTGRES_PASSWORD。\n" >&2
+    printf "缺少 /opt/daohua/daohua.env，请设置 DB_PASSWORD。\n" >&2
     exit 1
   fi
-  if ! sudo grep -q "^DAOHUA_POSTGRES_PASSWORD=" /opt/daohua/daohua.env; then
-    printf "缺少 DAOHUA_POSTGRES_PASSWORD，PostgreSQL 无法启动。\n" >&2
+  if ! sudo grep -q "^DB_PASSWORD=" /opt/daohua/daohua.env; then
+    printf "缺少 DB_PASSWORD，PostgreSQL 无法启动。\n" >&2
     exit 1
   fi
 '
@@ -140,7 +140,7 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.timer' /etc/systemd/system/daohua-db-backup.timer
   sudo systemctl daemon-reload
   sudo rm -f /opt/daohua/failed-image.id
-  sudo env DAOHUA_IMAGE='$IMAGE' /opt/daohua/ccr-auto-update.sh
+  sudo env APP_IMAGE='$IMAGE' /opt/daohua/ccr-auto-update.sh
   sudo systemctl enable --now daohua-ccr-auto-update.timer
   sudo systemctl enable --now daohua-db-backup.timer
 "

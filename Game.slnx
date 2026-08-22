@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DataTool/DataTool.csproj" />
+    <Project Path="src/Domain/Domain.csproj" />
+    <Project Path="src/LoadTests/LoadTests.csproj" />
+    <Project Path="src/Protocol/Protocol.csproj" />
+    <Project Path="src/ComputeNode/ComputeNode.csproj" />
+    <Project Path="src/Server/Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Domain.Tests/Domain.Tests.csproj" />
+  </Folder>
+  <Project Path="vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Analyzers/YuoCore.Analyzers.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Persistence/YuoCore.Persistence.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj" />
+</Solution>

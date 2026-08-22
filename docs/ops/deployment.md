@@ -18,7 +18,7 @@
 
 生产容量目标固定按 `2c4g/40g` 预算设计：`5000+` 注册账号、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机补算。`scripts/verify.sh` 会运行 `capacity-target` 门禁，作为每次改动的最低回归检查。
 
-镜像同时包含 Vite 静态产物、ASP.NET Core 主服务和 `DaoHua.ComputeNode` 计算节点产物。浏览器 API 与 WebSocket 走同源；生产权威数据不在镜像内，PostgreSQL 数据保存在 Docker 卷 `daohua_daohua-postgres`。
+镜像同时包含 Vite 静态产物、ASP.NET Core 主服务和 `ComputeNode` 计算节点产物。浏览器 API 与 WebSocket 走同源；生产权威数据不在镜像内，PostgreSQL 数据保存在 Docker 卷 `daohua_daohua-postgres`。
 
 当前线上仍是单 `app` 实例承载在线连接；单进程内玩家按 `Runtime:PlayerShardCount` 多 Fiber 分片，默认值为逻辑 CPU 数。PostgreSQL 已提供事务快照、outbox、市场 revision CAS 和 advisory lock，为后续多主分片保留边界。远程个人设备只能运行高延迟冷挂机计算节点，通过 FRP 暴露内部 HTTP 批处理接口；它不连接生产数据库，不处理在线连接、市场写入或账号鉴权。
 
@@ -31,7 +31,7 @@
 - 生产发布者已执行 `docker login ccr.ccs.tencentyun.com`。
 - 远端 root Docker 也必须登录私有 CCR；凭据只能通过 `docker login --password-stdin` 安装，不得写入仓库或部署脚本。
 - SSH 别名 `yuohira` 可登录且具备免交互 `sudo`。
-- 生产 `/opt/daohua/daohua.env` 必须设置 `DAOHUA_POSTGRES_PASSWORD`；可选设置 `DAOHUA_ACCESS_TOKEN`、`DAOHUA_DISTRIBUTED_COMPUTE_ENABLED`、`DAOHUA_COMPUTE_NODE_ENDPOINTS`、`DAOHUA_COMPUTE_TOKEN`。
+- 生产 `/opt/daohua/daohua.env` 必须设置 `DB_PASSWORD`；可选设置 `ACCESS_TOKEN`、`DISTRIBUTED_COMPUTE_ENABLED`、`COMPUTE_NODE_ENDPOINTS`、`COMPUTE_TOKEN`。
 
 首次克隆必须初始化依赖：
 
@@ -56,7 +56,7 @@ scripts/install-ccr-auth.sh --confirm
 后端：
 
 ```bash
-dotnet run --project src/DaoHua.Server/DaoHua.Server.csproj
+dotnet run --project src/Server/Server.csproj
 ```
 
 直接运行后端时固定监听 `127.0.0.1:5128`，开发存档统一写入仓库根目录的 `data`，不会再因启动目录变化落到不同的 `src/*/data`。该目录被 Git 和镜像构建上下文排除。
@@ -143,7 +143,7 @@ scripts/deploy-prod.sh \
 脚本会执行以下操作：
 
 1. 只读检查远端 `sudo`、Docker 和 Compose。
-2. 校验 `/opt/daohua/daohua.env` 已设置 `DAOHUA_POSTGRES_PASSWORD`。
+2. 校验 `/opt/daohua/daohua.env` 已设置 `DB_PASSWORD`。
 3. 安装 `/opt/daohua/compose.prod.yaml`、更新器、数据库备份脚本和 systemd timer。
 4. 拉取指定镜像并等待 PostgreSQL 与应用容器健康。
 5. 启用 `daohua-ccr-auto-update.timer` 和 `daohua-db-backup.timer`。
@@ -262,7 +262,7 @@ openssl rand -base64 32
 本地开发：
 
 ```bash
-Server__AccessToken=<令牌> dotnet run --project src/DaoHua.Server/DaoHua.Server.csproj
+Server__AccessToken=<令牌> dotnet run --project src/Server/Server.csproj
 ```
 
 前端在「设置 → 访问令牌」保存后写入 localStorage（键 `daohua_access_token`），之后每个 API 请求和 WebSocket 连接自动携带。
@@ -270,7 +270,7 @@ Server__AccessToken=<令牌> dotnet run --project src/DaoHua.Server/DaoHua.Serve
 生产在 `/opt/daohua/daohua.env` 中设置：
 
 ```text
-DAOHUA_ACCESS_TOKEN=<令牌>
+ACCESS_TOKEN=<令牌>
 ```
 
 Compose 将其插值为容器环境变量 `Server__AccessToken`；自动更新 timer 通过 unit 内 `EnvironmentFile=-/opt/daohua/daohua.env` 读取同一文件，保证自动重建容器时插值不丢失。修改后需重建容器才生效（等待一次自动更新，或手工执行 `docker compose up -d --force-recreate app`）。

@@ -27,8 +27,8 @@ flowchart TD
     Doc1["【玩家与装备模型】<br>player-expected-attributes-model.md<br>(12阶位+8品质 / 4大乘区 / 基础池与最终期望)"]
     Doc2["【战斗与产出基准】<br>combat-benchmark-model.md<br>(关卡怪物标准 / 动态抗性 / 二次曲线 / 单人与3人队效率比)"]
     
-    Domain["领域模型与确定性模拟<br>src/DaoHua.Domain"]
-    Server["服务启动装配与ECS组件<br>src/DaoHua.Server"]
+    Domain["领域模型与确定性模拟<br>src/Domain"]
+    Server["服务启动装配与ECS组件<br>src/Server"]
     
     Config --> Doc1 & Doc2
     Config --> Domain & Server
@@ -56,7 +56,7 @@ flowchart TD
 修改任何游戏数据时必须同步提升 `manifest.json` 的 `contentVersion`，并运行：
 
 ```bash
-dotnet run --project src/DaoHua.DataTool/DaoHua.DataTool.csproj -- \
+dotnet run --project src/DataTool/DataTool.csproj -- \
   validate config/game-data
 scripts/verify.sh
 ```

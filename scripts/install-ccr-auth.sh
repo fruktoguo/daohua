@@ -21,9 +21,9 @@ set +x
 
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REMOTE_HOST="${DAOHUA_SSH_HOST:-yuohira}"
-REGISTRY="${DAOHUA_REGISTRY:-ccr.ccs.tencentyun.com}"
-IMAGE="${DAOHUA_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+REMOTE_HOST="${SSH_HOST:-yuohira}"
+REGISTRY="${REGISTRY:-ccr.ccs.tencentyun.com}"
+IMAGE="${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
 DOCKER_CONFIG_FILE="${DOCKER_CONFIG_FILE:-${HOME}/.docker/config.json}"
 
 if [[ "${1:-}" != "--confirm" ]]; then

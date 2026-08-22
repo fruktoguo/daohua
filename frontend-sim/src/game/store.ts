@@ -164,7 +164,7 @@ export function startEngine(): void {
   window.addEventListener('beforeunload', saveNow)
 }
 
-// ---- UI 指令入口：与 DaoHuaContracts.cs 的请求一一对应 ----
+// ---- UI 指令入口：与 Contracts.cs 的请求一一对应 ----
 
 export const gameCommands = {
   enqueue: (actionId: string, repeats: number) => dispatch(enqueue(sim.state, actionId, repeats)),

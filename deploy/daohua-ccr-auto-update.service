@@ -6,7 +6,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-# Compose 插值 DAOHUA_ACCESS_TOKEN 需要环境变量来源；负号表示文件可缺省。
+# Compose 插值 ACCESS_TOKEN 需要环境变量来源；负号表示文件可缺省。
 EnvironmentFile=-/opt/daohua/daohua.env
 ExecStart=/opt/daohua/ccr-auto-update.sh
 User=root

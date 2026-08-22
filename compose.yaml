@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: daohua
       POSTGRES_USER: daohua
-      POSTGRES_PASSWORD: ${DAOHUA_POSTGRES_PASSWORD:-daohua-local-dev}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-daohua-local-dev}
       PGDATA: /var/lib/postgresql/data/pgdata
     command:
       - postgres
@@ -37,6 +37,10 @@ services:
       start_period: 20s
     shm_size: 256m
     pids_limit: 256
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     logging:
       driver: json-file
       options:
@@ -55,11 +59,11 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${DAOHUA_PORT:-5128}:8080"
+      - "127.0.0.1:${APP_PORT:-5128}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Storage__Provider: postgres
-      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DAOHUA_POSTGRES_PASSWORD:-daohua-local-dev};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__DurableOutboxEnabled: "true"
       Storage__PersistenceQueueCapacity: "65536"
       Storage__EnableSchemaBootstrap: "true"
@@ -67,9 +71,9 @@ services:
       Market__PartitionCount: "1"
       Market__PartitionId: "0"
       Market__TradeRetentionDays: "14"
-      DistributedCompute__Enabled: ${DAOHUA_DISTRIBUTED_COMPUTE_ENABLED:-false}
-      DistributedCompute__NodeEndpoints: ${DAOHUA_COMPUTE_NODE_ENDPOINTS:-}
-      DistributedCompute__Token: ${DAOHUA_COMPUTE_TOKEN:-}
+      DistributedCompute__Enabled: ${DISTRIBUTED_COMPUTE_ENABLED:-false}
+      DistributedCompute__NodeEndpoints: ${COMPUTE_NODE_ENDPOINTS:-}
+      DistributedCompute__Token: ${COMPUTE_TOKEN:-}
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -78,6 +82,10 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 256
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     stop_grace_period: 90s
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/readyz"]

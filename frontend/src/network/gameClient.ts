@@ -27,7 +27,7 @@ function getEndpoint(playerId: string, account?: string, name?: string): string 
  * 道化太初核心 WebSocket 游戏客户端
  * 负责维护与服务端的长连接、断线指数退避重连、静态目录加载、双向心跳与二进制/JSON 数据包流转
  */
-export class DaoHuaGameClient {
+export class GameClient {
   private socket: WebSocket | null = null
   private reconnectTimer: number | undefined
   private requestSequence = 0
@@ -263,4 +263,4 @@ export class DaoHuaGameClient {
 }
 
 /** 全局单例游戏网络客户端 */
-export const gameClient = new DaoHuaGameClient()
+export const gameClient = new GameClient()

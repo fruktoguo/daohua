@@ -75,7 +75,7 @@
 
 ## 6. 基础属性锚点表 (BaseFlatAnchors)
 
-代码来源：`DaoHuaCombatFormula.cs` L250-L264
+代码来源：`CombatFormula.cs` L250-L264
 
 | Lv | HP | MP | AD | AP | Armor | MR | Acc | Eva | Crit | CAvoid | Break | Parry |
 | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |

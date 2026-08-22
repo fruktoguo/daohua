@@ -25,9 +25,9 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE_PREFIX="${DAOHUA_IMAGE_PREFIX:-${TENCENT_IMAGE_PREFIX:-ccr.ccs.tencentyun.com/yuohira}}"
-IMAGE_NAME="${DAOHUA_IMAGE_NAME:-daohua}"
-MOVING_TAG="${DAOHUA_MOVING_TAG:-prod}"
+IMAGE_PREFIX="${IMAGE_PREFIX:-${TENCENT_IMAGE_PREFIX:-ccr.ccs.tencentyun.com/yuohira}}"
+IMAGE_NAME="${IMAGE_NAME:-daohua}"
+MOVING_TAG="${MOVING_TAG:-prod}"
 RELEASE_TAG="${RELEASE_TAG:-}"
 PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 NPM_CONFIG_REGISTRY="${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}"

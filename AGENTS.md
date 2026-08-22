@@ -11,37 +11,37 @@
 
 ## 2. 项目权威边界
 
-- `src/DaoHua.Domain`：纯领域规则、确定性模拟、战斗、地图和市场模型；不得依赖 ASP.NET Core、Docker、数据库或浏览器实现。
-- `src/DaoHua.Protocol`：服务端、浏览器和压测共享的纯数据协议；不得暴露 ECS、Fiber、Actor 或存储实现对象。
-- `src/DaoHua.Server`：ASP.NET Core 宿主、WebSocket、运行时装配和持久化适配。
-- `src/DaoHua.ComputeNode`：可选高延迟冷挂机计算节点；只执行确定性补算，不持有玩家权威状态，不直接访问生产数据库。
-- `src/DaoHua.LoadTests`：负载场景，不是生产运行时依赖。
+- `src/Domain`：纯领域规则、确定性模拟、战斗、地图和市场模型；不得依赖 ASP.NET Core、Docker、数据库或浏览器实现。
+- `src/Protocol`：服务端、浏览器和压测共享的纯数据协议；不得暴露 ECS、Fiber、Actor 或存储实现对象。
+- `src/Server`：ASP.NET Core 宿主、WebSocket、运行时装配和持久化适配。
+- `src/ComputeNode`：可选高延迟冷挂机计算节点；只执行确定性补算，不持有玩家权威状态，不直接访问生产数据库。
+- `src/LoadTests`：负载场景，不是生产运行时依赖。
 - `frontend`：唯一正式 React/Vite 前端。
 - `frontend-sim`：历史模拟与参考实现，不得作为正式入口或生产镜像来源。
-- `tests/DaoHua.Domain.Tests`：领域和协议回归门禁。
+- `tests/Domain.Tests`：领域和协议回归门禁。
 - `vendor/YuoCore`：固定版本的 Git submodule。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。
 - `data`：运行数据，不进入镜像，不提交 Git，不随代码发布覆盖。
 
 依赖方向必须保持：
 
 ```text
-DaoHua.Protocol <- DaoHua.Domain <- DaoHua.Server
-                                 <- DaoHua.LoadTests
-                                 <- DaoHua.ComputeNode
-DaoHua.Domain -> YuoCore.Abstractions + YuoCore.Ecs
-DaoHua.Server -> YuoCore.Persistence + YuoCore.Runtime + PostgreSQL/Npgsql
+Protocol <- Domain <- Server
+                                 <- LoadTests
+                                 <- ComputeNode
+Domain -> YuoCore.Abstractions + YuoCore.Ecs
+Server -> YuoCore.Persistence + YuoCore.Runtime + PostgreSQL/Npgsql
 ```
 
 禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
 
 ## 3. 当前生产架构与容量目标
 
-- 项目内部代表名统一使用 `daohua` / `DaoHua` / `DAOHUA`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
+- 项目内部代表名统一使用 `daohua` / `` / `DAOHUA`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
 - 当前内测阶段允许破坏历史数据、存档格式和部署拓扑兼容；为了达成容量与落盘目标，可以直接改表、改快照和清空内测数据，但生产/远端真实数据操作仍必须先备份并获得明确许可。
 - 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
 - 主存储固定为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；应用容器不挂载数据卷。
 - 市场账本使用 PostgreSQL revision CAS 与 advisory lock；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
-- 远程个人设备只能作为高延迟冷挂机计算节点，通过 `DaoHua.ComputeNode` 的内部 HTTP 批处理接口被主服务调用；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
+- 远程个人设备只能作为高延迟冷挂机计算节点，通过 `ComputeNode` 的内部 HTTP 批处理接口被主服务调用；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。
 - `/api/debug/*` 只能在 `Development` 环境存在；生产 Caddy 还必须显式拦截 debug 和 metrics 路径。
 - 当前客户端使用本地 UUID 标识玩家，尚未形成商业账号鉴权。涉及充值、真实资产或开放注册前，必须先完成服务端身份认证、授权和审计。
@@ -73,7 +73,7 @@ npm --prefix frontend ci
 启动服务端：
 
 ```bash
-dotnet run --project src/DaoHua.Server/DaoHua.Server.csproj
+dotnet run --project src/Server/Server.csproj
 ```
 
 启动正式前端开发服务器：

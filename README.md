@@ -4,13 +4,13 @@
 
 ## 目录
 
-- `src/DaoHua.Domain`：纯领域模型、行动目录、确定性快进算法、权威地图/寻路/边中位置、支持多敌人/首领/群体目标/功法/消耗品/持续伤害/控制与韧性修正的战斗事件模拟器、分片市场订单簿和可恢复账本模型。
-- `src/DaoHua.DataTool`：游戏数据配置导出和跨文件完整性校验工具。
-- `src/DaoHua.Protocol`：服务端、浏览器和压测共用的数据包契约。
-- `src/DaoHua.Server`：ASP.NET Core、YuoCore Fiber/ECS、WebSocket 和持久化。
-- `src/DaoHua.ComputeNode`：可通过 FRP 暴露给主服务调用的高延迟冷挂机补算节点；只处理离线快照，不持有权威状态。
-- `src/DaoHua.LoadTests`：在线、离线、完全离线和市场并发负载模拟器。
-- `tests/DaoHua.Domain.Tests`：循环、材料阻塞、快进一致性、战斗和市场测试。
+- `src/Domain`：纯领域模型、行动目录、确定性快进算法、权威地图/寻路/边中位置、支持多敌人/首领/群体目标/功法/消耗品/持续伤害/控制与韧性修正的战斗事件模拟器、分片市场订单簿和可恢复账本模型。
+- `src/DataTool`：游戏数据配置导出和跨文件完整性校验工具。
+- `src/Protocol`：服务端、浏览器和压测共用的数据包契约。
+- `src/Server`：ASP.NET Core、YuoCore Fiber/ECS、WebSocket 和持久化。
+- `src/ComputeNode`：可通过 FRP 暴露给主服务调用的高延迟冷挂机补算节点；只处理离线快照，不持有权威状态。
+- `src/LoadTests`：在线、离线、完全离线和市场并发负载模拟器。
+- `tests/Domain.Tests`：循环、材料阻塞、快进一致性、战斗和市场测试。
 - `frontend`：React 19、Zustand 和 Vite 前端；包含行动、背包、日志、战斗配置、灵市盘口、下单和挂单管理页面。
 - `config/game-data`：地图、怪物、技能、物品、装备、遭遇和行动的版本化 JSON 配置。
 - `docs/`：项目文档，导航索引见 `docs/README.md`。
@@ -39,7 +39,7 @@ scripts/dev.sh
 启动服务端：
 
 ```bash
-dotnet run --project src/DaoHua.Server/DaoHua.Server.csproj
+dotnet run --project src/Server/Server.csproj
 ```
 
 开发服务固定监听 `127.0.0.1:5128`，存档写入仓库根目录 `data`。需要使用与生产一致的只读根文件系统、非 root 用户和 durable outbox 时，使用固定入口：
@@ -60,7 +60,7 @@ scripts/dev-service.sh up
 Storage__Provider=postgres \
 Storage__ConnectionString='Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=<密码>' \
 Market__LedgerProvider=postgres \
-dotnet run --project src/DaoHua.Server/DaoHua.Server.csproj
+dotnet run --project src/Server/Server.csproj
 ```
 
 远程冷挂机计算节点可在个人设备上运行，并通过 FRP 暴露给主服务。节点只接受主服务提交的离线快照批处理，不连接生产数据库、不处理在线会话：
@@ -68,7 +68,7 @@ dotnet run --project src/DaoHua.Server/DaoHua.Server.csproj
 ```bash
 ComputeNode__Token=<共享令牌> \
 ComputeNode__Urls=http://127.0.0.1:5129 \
-dotnet run --project src/DaoHua.ComputeNode/DaoHua.ComputeNode.csproj
+dotnet run --project src/ComputeNode/ComputeNode.csproj
 ```
 
 启动前端：
@@ -84,8 +84,8 @@ npm run dev
 ## 构建与测试
 
 ```bash
-dotnet build DaoHua.slnx --disable-build-servers --nologo
-dotnet test DaoHua.slnx --no-build --disable-build-servers --nologo
+dotnet build slnx --disable-build-servers --nologo
+dotnet test slnx --no-build --disable-build-servers --nologo
 npm --prefix frontend run build
 ```
 
@@ -98,14 +98,14 @@ scripts/verify.sh
 2c4g/40g 容量目标门禁：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario capacity-target
 ```
 
 单独校验游戏数据：
 
 ```bash
-dotnet run --project src/DaoHua.DataTool/DaoHua.DataTool.csproj -- \
+dotnet run --project src/DataTool/DataTool.csproj -- \
   validate config/game-data
 ```
 
@@ -122,10 +122,10 @@ node scripts/smoke-production.mjs http://127.0.0.1:5128
 
 ## 性能场景
 
-在线场景会建立真实 `ClientWebSocket`，并用生产 `DaoHuaPacketCodec` 发送相同节奏的命令包：
+在线场景会建立真实 `ClientWebSocket`，并用生产 `PacketCodec` 发送相同节奏的命令包：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario online --players 500 --duration-seconds 60 \
   --url ws://127.0.0.1:5128/ws --connect-concurrency 64
 ```
@@ -133,35 +133,35 @@ dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
 一万名离线挂机玩家补算一小时：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario idle-offline --players 10000 --duration-seconds 3600
 ```
 
 一万名历练玩家补算一小时暮影谷多敌人战斗行动：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario combat-offline --players 10000 --duration-seconds 3600
 ```
 
 十万名完全离线玩家进行账号规模与排行榜聚合基线测试：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario fully-offline --players 100000 --duration-seconds 3600
 ```
 
 市场订单簿并发基线（`players` 为订单总数）：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario market --players 100000 --duration-seconds 1
 ```
 
 500 人按正式灵市页面节奏读取盘口、个人挂单和市场指标：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario market-read --players 500 --duration-seconds 15 \
   --url ws://127.0.0.1:5128/ws --connect-concurrency 64
 ```
@@ -169,14 +169,14 @@ dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
 十万条过期挂牌的时间索引回收基线：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario market-expiry --players 100000 --duration-seconds 1
 ```
 
 2c4g/40g 容量门禁（5000+ 注册账号、500 高峰命令包体、2000 冷挂机补算）：
 
 ```bash
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj -- \
+dotnet run --project src/LoadTests/LoadTests.csproj -- \
   --scenario capacity-target
 ```
 

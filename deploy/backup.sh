@@ -20,14 +20,14 @@
 
 set -Eeuo pipefail
 
-DEPLOY_DIR="${DAOHUA_DEPLOY_DIR:-/opt/daohua}"
-COMPOSE_FILE="${DAOHUA_COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
+COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
 ENV_FILE="${DEPLOY_DIR}/daohua.env"
-BACKUP_DIR="${DAOHUA_BACKUP_DIR:-${DEPLOY_DIR}/backups}"
-DB_CONTAINER_NAME="${DAOHUA_DB_CONTAINER_NAME:-daohua-db}"
-LOCK_FILE="${DAOHUA_BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
+BACKUP_DIR="${BACKUP_DIR:-${DEPLOY_DIR}/backups}"
+DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-daohua-db}"
+LOCK_FILE="${BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
 
-if [[ "${EUID}" -ne 0 && "${DAOHUA_ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
+if [[ "${EUID}" -ne 0 && "${ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
   printf '该脚本必须以 root 运行。\n' >&2
   exit 1
 fi

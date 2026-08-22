@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: daohua
       POSTGRES_USER: daohua
-      POSTGRES_PASSWORD: ${DAOHUA_POSTGRES_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DAOHUA_POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DB_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     command:
       - postgres
@@ -43,8 +43,12 @@ services:
       start_period: 20s
     shm_size: 256m
     pids_limit: 256
-    cpus: "0.75"
-    mem_limit: 1g
+    cpus: "${DB_CPUS:-0.75}"
+    mem_limit: ${DB_MEM_LIMIT:-1g}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     logging:
       driver: json-file
       options:
@@ -52,7 +56,7 @@ services:
         max-file: "5"
 
   app:
-    image: ${DAOHUA_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}
+    image: ${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}
     container_name: daohua-app
     init: true
     restart: unless-stopped
@@ -60,11 +64,11 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${DAOHUA_PORT:-15128}:8080"
+      - "127.0.0.1:${APP_PORT:-15128}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Storage__Provider: postgres
-      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DAOHUA_POSTGRES_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DAOHUA_POSTGRES_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DB_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__DurableOutboxEnabled: "true"
       Storage__PersistenceQueueCapacity: "65536"
       Storage__EnableSchemaBootstrap: "true"
@@ -72,13 +76,13 @@ services:
       Market__PartitionCount: "1"
       Market__PartitionId: "0"
       Market__TradeRetentionDays: "14"
-      DistributedCompute__Enabled: ${DAOHUA_DISTRIBUTED_COMPUTE_ENABLED:-false}
-      DistributedCompute__NodeEndpoints: ${DAOHUA_COMPUTE_NODE_ENDPOINTS:-}
-      DistributedCompute__Token: ${DAOHUA_COMPUTE_TOKEN:-}
-      DistributedCompute__BatchSize: ${DAOHUA_COMPUTE_BATCH_SIZE:-64}
-      DistributedCompute__MinimumIdleLagSeconds: ${DAOHUA_COMPUTE_MIN_IDLE_LAG_SECONDS:-300}
+      DistributedCompute__Enabled: ${DISTRIBUTED_COMPUTE_ENABLED:-false}
+      DistributedCompute__NodeEndpoints: ${COMPUTE_NODE_ENDPOINTS:-}
+      DistributedCompute__Token: ${COMPUTE_TOKEN:-}
+      DistributedCompute__BatchSize: ${COMPUTE_BATCH_SIZE:-64}
+      DistributedCompute__MinimumIdleLagSeconds: ${COMPUTE_MIN_IDLE_LAG_SECONDS:-300}
       # 可选共享访问令牌；空默认不启用，来源 /opt/daohua/daohua.env。
-      Server__AccessToken: ${DAOHUA_ACCESS_TOKEN:-}
+      Server__AccessToken: ${ACCESS_TOKEN:-}
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -86,9 +90,13 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    pids_limit: 256
-    cpus: "1.00"
-    mem_limit: 1g
+    pids_limit: ${APP_PIDS_LIMIT:-2048}
+    cpus: "${APP_CPUS:-2.00}"
+    mem_limit: ${APP_MEM_LIMIT:-2g}
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     stop_grace_period: 90s
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/readyz"]

@@ -13,7 +13,7 @@
  *   6. 级联信号清理: 捕获 SIGINT / SIGTERM 信号，确保守护进程与服务端子进程树全部安全优雅退出。
  *
  * 环境变量支持:
- *   - DAOHUA_SERVER_PROJECT: 服务端工程文件路径（默认 src/DaoHua.Server/DaoHua.Server.csproj）
+ *   - SERVER_PROJECT: 服务端工程文件路径（默认 src/Server/Server.csproj）
  *   - SERVER_DEV_RESTART_DEBOUNCE_MS: 变更防抖毫秒数（默认 60000）
  *   - SERVER_DEV_STOP_TIMEOUT_MS: 优雅停止超时毫秒数（默认 20000）
  * ==============================================================================
@@ -27,8 +27,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const project = process.env.DAOHUA_SERVER_PROJECT
-  ?? "src/DaoHua.Server/DaoHua.Server.csproj";
+const project = process.env.SERVER_PROJECT
+  ?? "src/Server/Server.csproj";
 
 const debounceMs = parseNonNegativeInteger(
   process.env.SERVER_DEV_RESTART_DEBOUNCE_MS,

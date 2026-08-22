@@ -1,4 +1,4 @@
-// 与 src/DaoHua.Domain/Models/DaoHuaIds.cs 一一对应。
+// 与 src/Domain/Models/Ids.cs 一一对应。
 // 接真实后端时，这些 id 就是协议里的字符串。
 
 export type ActionType = 'cultivation' | 'exploration' | 'alchemy'

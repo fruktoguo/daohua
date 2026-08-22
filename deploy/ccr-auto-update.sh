@@ -22,10 +22,10 @@
 
 set -Eeuo pipefail
 
-DEPLOY_DIR="${DAOHUA_DEPLOY_DIR:-/opt/daohua}"
+DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
 COMPOSE_FILE="${DEPLOY_DIR}/compose.prod.yaml"
 ENV_FILE="${DEPLOY_DIR}/daohua.env"
-IMAGE="${DAOHUA_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+IMAGE="${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
 CONTAINER_NAME="daohua-app"
 PREFLIGHT_CONTAINER_NAME="daohua-preflight"
 PREFLIGHT_DB_CONTAINER_NAME="daohua-preflight-db"
@@ -141,7 +141,7 @@ preflight_image() {
 
 deploy_image() {
   local image="$1"
-  DAOHUA_IMAGE="$image" compose up \
+  APP_IMAGE="$image" compose up \
     --detach \
     --force-recreate \
     app
