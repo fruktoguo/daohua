@@ -129,7 +129,10 @@
   - 带参数的模板消息（如「选择使用物品 · 槽 {n}」）-> 词典值写 `{name}` 占位符，调用 `t(key, params)` 内插
   - 语言切换 UI 与偏好持久化（localStorage `daohua.locale`，默认 zh-CN）-> `useI18nStore` / `LOCALES`
 - **内核源码**：[`frontend/src/i18n/index.ts`](../../frontend/src/i18n/index.ts)
-- **词典结构**：[`frontend/src/i18n/domains/`](../../frontend/src/i18n/domains/) 按域成对维护 `<域>.zh.ts` / `<域>.en.ts`（common/app/insight/market/combat/game 六域，根键互不重叠）；聚合入口 [`locales/zh-CN.ts`](../../frontend/src/i18n/locales/zh-CN.ts)（类型源）与 [`locales/en-US.ts`](../../frontend/src/i18n/locales/en-US.ts)（形状编译期强制一致）
+- **词典结构与多语言架构**：
+  - **中文 TS 强类型源**：[`frontend/src/i18n/domains/`](../../frontend/src/i18n/domains/) 按业务域维护 `<域>.zh.ts`（common/app/insight/market/combat/game 六域，根键互不重叠），聚合入口 [`locales/zh-CN.ts`](../../frontend/src/i18n/locales/zh-CN.ts) 作为全量 `Messages` 与点路径 `TranslationKey` 静态类型基准与首屏零延迟内置源。
+  - **外语 CSV 动态静态包**：非中文语言（如 `en-US`）存放于 [`frontend/public/locales/`](../../frontend/public/locales/) 为标准 RFC 4180 CSV（如 `en-US.csv`），切换时按需异步 fetch 并内存缓存，未命中或加载中无缝回退至中文树状词典。
+  - **同步与导出工具**：运行 `npm --prefix frontend run i18n:export`（或 `node scripts/export-i18n-csv.mjs`）可自动从中文 TS 源码全量导出 `public/locales/en-US.csv` 与对照模板 `template.csv`。
 - **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端下发的游戏内容（物品名、行动名、日志模板等协议数据）不走前端 i18n
 
 ---

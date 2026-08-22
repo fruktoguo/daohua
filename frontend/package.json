@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --force",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "i18n:export": "node ../scripts/export-i18n-csv.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

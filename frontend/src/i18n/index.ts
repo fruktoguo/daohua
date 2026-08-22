@@ -1,16 +1,15 @@
+// ==============================================================================
+// 文件名称: index.ts
+// 主要职责: 前端轻量国际化 (i18n) 内核与状态调度中心。
+// 架构设计:
+//   1. 中文 (zh-CN) 为内置 TypeScript 静态类型源，提供全量编译期点路径检查与自动补全；
+//   2. 外语语言包 (如 en-US) 存储为 public/locales/*.csv 静态文件，按需异步拉取与内存缓存；
+//   3. 零依赖轻量 RFC 4180 CSV 解析器，未命中或网络加载中无缝回退至中文树状词典。
+// ==============================================================================
 import { useCallback } from 'react'
 import { create } from 'zustand'
-import { enUS } from './locales/en-US'
 import { zhCN, type Messages } from './locales/zh-CN'
 
-/**
- * 轻量 i18n 内核：
- * - 词典为嵌套对象，键用点路径访问；en-US 与 zh-CN 形状编译期强制一致。
- * - 文案内插使用 {name} 占位符，参数由调用方格式化后传入。
- * - 语言偏好持久化在 localStorage，切换时同步 <html lang>；组件渲染路径用 useT()
- *   获得响应式翻译，事件回调等非渲染路径用 getT()。
- * - 服务端下发的游戏内容（物品名、行动名、日志模板等协议数据）不在本模块范围。
- */
 export const LOCALES = ['zh-CN', 'en-US'] as const
 export type Locale = (typeof LOCALES)[number]
 export type { Messages }
@@ -24,10 +23,121 @@ export type TranslationKey = PathsOf<Messages>
 export type TParams = Record<string, string | number>
 export type TFunction = (key: TranslationKey | (string & {}), params?: TParams) => string
 
-const DICTIONARIES: Record<Locale, Messages> = { 'zh-CN': zhCN, 'en-US': enUS }
 const DEFAULT_LOCALE: Locale = 'zh-CN'
 const STORAGE_KEY = 'daohua.locale'
 const PARAM_PATTERN = /\{(\w+)\}/g
+
+/** 外部动态加载 CSV 语言包内存缓存 (扁平 key-value 映射) */
+const CSV_CACHE: Partial<Record<Locale, Record<string, string>>> = {}
+const LOADING_PROMISES: Partial<Record<Locale, Promise<void>>> = {}
+
+/**
+ * 零依赖轻量 RFC 4180 标准 CSV 解析器
+ * 支持引号转义 ("")、跨行换行、逗号与多余空白容错。
+ */
+export function parseCsvToMap(csvText: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  const length = csvText.length
+  let cursor = 0
+
+  function readField(): { value: string; isLastInRecord: boolean; isEof: boolean } {
+    if (cursor >= length) return { value: '', isLastInRecord: true, isEof: true }
+
+    let field = ''
+    if (csvText[cursor] === '"') {
+      cursor++ // 跳过起始双引号
+      while (cursor < length) {
+        if (csvText[cursor] === '"') {
+          if (cursor + 1 < length && csvText[cursor + 1] === '"') {
+            field += '"'
+            cursor += 2
+          } else {
+            cursor++ // 闭合双引号
+            break
+          }
+        } else {
+          field += csvText[cursor]
+          cursor++
+        }
+      }
+      while (cursor < length && (csvText[cursor] === ' ' || csvText[cursor] === '\t')) {
+        cursor++
+      }
+    } else {
+      while (cursor < length && csvText[cursor] !== ',' && csvText[cursor] !== '\r' && csvText[cursor] !== '\n') {
+        field += csvText[cursor]
+        cursor++
+      }
+    }
+
+    let isLastInRecord = false
+    if (cursor >= length) {
+      isLastInRecord = true
+    } else if (csvText[cursor] === ',') {
+      cursor++
+    } else if (csvText[cursor] === '\r' || csvText[cursor] === '\n') {
+      isLastInRecord = true
+      if (csvText[cursor] === '\r' && cursor + 1 < length && csvText[cursor + 1] === '\n') {
+        cursor += 2
+      } else {
+        cursor++
+      }
+    }
+
+    return { value: field, isLastInRecord, isEof: cursor >= length }
+  }
+
+  let isHeader = true
+  while (cursor < length) {
+    const keyField = readField()
+    if (keyField.isEof && keyField.value.trim() === '') break
+
+    let valField = { value: '', isLastInRecord: true, isEof: true }
+    if (!keyField.isLastInRecord) {
+      valField = readField()
+    }
+    while (!valField.isLastInRecord && !valField.isEof) {
+      valField = readField()
+    }
+
+    if (isHeader) {
+      isHeader = false
+      if (keyField.value.trim().toLowerCase() === 'key') {
+        continue
+      }
+    }
+
+    const k = keyField.value.trim()
+    if (k) {
+      result[k] = valField.value
+    }
+  }
+
+  return result
+}
+
+/** 动态异步加载外部 CSV 语言包 */
+export async function loadLocale(locale: Locale): Promise<void> {
+  if (locale === 'zh-CN' || CSV_CACHE[locale]) return
+  if (LOADING_PROMISES[locale]) return LOADING_PROMISES[locale]
+
+  LOADING_PROMISES[locale] = (async () => {
+    try {
+      const res = await fetch(`/locales/${locale}.csv`)
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} ${res.statusText}`)
+      }
+      const text = await res.text()
+      CSV_CACHE[locale] = parseCsvToMap(text)
+    } catch (err) {
+      console.warn(`[i18n] 加载语言包 "${locale}" 失败，将回退至中文:`, err)
+    } finally {
+      delete LOADING_PROMISES[locale]
+    }
+  })()
+
+  return LOADING_PROMISES[locale]
+}
 
 function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && (LOCALES as readonly string[]).includes(value)
@@ -49,12 +159,16 @@ function applyDocumentLocale(locale: Locale): void {
 
 interface I18nState {
   locale: Locale
-  setLocale: (locale: Locale) => void
+  loadedLocale: Locale
+  setLocale: (locale: Locale) => Promise<void>
 }
 
-export const useI18nStore = create<I18nState>(set => ({
-  locale: detectLocale(),
-  setLocale: locale => {
+const initialLocale = detectLocale()
+
+export const useI18nStore = create<I18nState>((set, get) => ({
+  locale: initialLocale,
+  loadedLocale: initialLocale === 'zh-CN' ? 'zh-CN' : (CSV_CACHE[initialLocale] ? initialLocale : 'zh-CN'),
+  setLocale: async locale => {
     if (!isLocale(locale)) return
     try {
       window.localStorage.setItem(STORAGE_KEY, locale)
@@ -63,10 +177,26 @@ export const useI18nStore = create<I18nState>(set => ({
     }
     applyDocumentLocale(locale)
     set({ locale })
+
+    if (locale !== 'zh-CN' && !CSV_CACHE[locale]) {
+      await loadLocale(locale)
+    }
+    if (get().locale === locale) {
+      set({ loadedLocale: locale })
+    }
   },
 }))
 
-applyDocumentLocale(useI18nStore.getState().locale)
+applyDocumentLocale(initialLocale)
+
+// 若首屏初始化为外语，立即在后台发起静态 CSV 预拉取
+if (initialLocale !== 'zh-CN') {
+  loadLocale(initialLocale).then(() => {
+    if (useI18nStore.getState().locale === initialLocale) {
+      useI18nStore.setState({ loadedLocale: initialLocale })
+    }
+  })
+}
 
 function lookup(dict: Messages, key: string): string | undefined {
   let node: unknown = dict
@@ -86,8 +216,14 @@ function interpolate(template: string, params?: TParams): string {
 }
 
 function translate(locale: Locale, key: string, params?: TParams): string {
-  const value = lookup(DICTIONARIES[locale], key) ?? lookup(DICTIONARIES[DEFAULT_LOCALE], key) ?? key
-  return interpolate(value, params)
+  let template: string | undefined
+  if (locale !== 'zh-CN' && CSV_CACHE[locale]) {
+    template = CSV_CACHE[locale][key]
+  }
+  if (template === undefined) {
+    template = lookup(zhCN, key) ?? key
+  }
+  return interpolate(template, params)
 }
 
 /** 非响应式翻译：用于事件回调、格式化辅助函数等非渲染路径；渲染期由 useT() 的订阅驱动刷新。 */
@@ -96,11 +232,12 @@ export function getT(): TFunction {
   return (key, params) => translate(locale, key, params)
 }
 
-/** 响应式翻译：组件渲染路径统一使用；语言切换时触发订阅组件重渲染。 */
+/** 响应式翻译：组件渲染路径统一使用；语言切换或 CSV 完成异步加载时触发订阅组件重渲染。 */
 export function useT(): TFunction {
   const locale = useI18nStore(state => state.locale)
+  const loadedLocale = useI18nStore(state => state.loadedLocale)
   return useCallback<TFunction>(
     (key, params) => translate(locale, key, params),
-    [locale],
+    [locale, loadedLocale],
   )
 }
