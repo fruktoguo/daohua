@@ -11,8 +11,7 @@ import { Modal } from './Modal'
 import { ValueText } from './ValueText'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
-import { VectorCharacter, resolveCharacterKind } from './VectorCharacter'
-import { DEFAULT_PLAYER_AVATAR_SRC } from '../game/avatarStore'
+import { CharacterAvatar } from './CharacterAvatar'
 
 /** 资源条数值变动特效记录（跳字与血条破裂碎片） */
 interface ResourceEffect {
@@ -541,7 +540,7 @@ function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): Re
 /**
  * 战场头像分发渲染组件 (ArenaPortrait)
  *
- * 支持 vector 矢量国风修仙人物、image 远程图片/海报 poster，以及 text 单字徽标优雅降级。
+ * 基于统一 CharacterAvatar，自动适应 WebP/PNG/SVG 与矢量降级，并在敌方角色时自动左右镜像翻转。
  */
 function ArenaPortrait({
   fallback,
@@ -558,18 +557,17 @@ function ArenaPortrait({
   name?: string | null
   isDead?: boolean
 }): React.JSX.Element {
-  const defaultPlayerSrc = DEFAULT_PLAYER_AVATAR_SRC
-  const renderer = visual?.renderer ?? (role === 'player' ? 'image' : 'vector')
-  const imageSource = (renderer === 'image' ? visual?.source : visual?.poster) ?? (role === 'player' ? defaultPlayerSrc : undefined)
-  const [failedSource, setFailedSource] = useState<string | null>(null)
-  if (imageSource && failedSource !== imageSource) {
-    return <img alt="" data-renderer={renderer} draggable={false} onError={() => setFailedSource(imageSource)} src={imageSource} />
-  }
-  if (renderer === 'text' && visual?.source && visual.source.length > 2) {
-    return <span className="arena-portrait-text">{visual.source || fallback}</span>
-  }
-  const kind = resolveCharacterKind(role, actorId ?? (visual?.source || null), name)
-  return <VectorCharacter isDead={isDead} kind={kind} role={role} />
+  return (
+    <CharacterAvatar
+      actorId={actorId}
+      fallback={fallback}
+      isDead={isDead}
+      isFlipped={role === 'enemy'}
+      name={name}
+      role={role}
+      visual={visual}
+    />
+  )
 }
 
 /**
@@ -905,6 +903,10 @@ interface AttributeRow {
  * 参战角色详细属性与生效 Buff 模态窗组件 (CharacterAttributeModal)
  */
 function CharacterAttributeModal({
+  actorId,
+  name,
+  role = 'player',
+  visual,
   baseRows,
   buffs,
   onClose,
@@ -912,6 +914,10 @@ function CharacterAttributeModal({
   specialRows,
   title,
 }: {
+  actorId?: string | null
+  name?: string | null
+  role?: 'player' | 'enemy'
+  visual?: CharacterVisual | null
   baseRows: readonly AttributeRow[]
   buffs: readonly Buff[]
   onClose: () => void
@@ -923,7 +929,24 @@ function CharacterAttributeModal({
   const titleId = useId()
   return (
     <Modal className="character-attribute-modal" labelledBy={titleId} onClose={onClose} open={open} size="medium">
-      <header className="character-attribute-header"><h2 id={titleId}>{title}</h2></header>
+      <header className="character-attribute-header">
+        <div className="character-attribute-avatar-stage">
+          <CharacterAvatar
+            actorId={actorId}
+            className="character-attribute-avatar"
+            isFlipped={role === 'enemy'}
+            name={name || title}
+            role={role}
+            visual={visual}
+          />
+        </div>
+        <div className="character-attribute-title-block">
+          <h2 id={titleId}>{title}</h2>
+          <span className={`character-attribute-role-badge character-attribute-role-badge--${role}`}>
+            {role === 'enemy' ? t('combat.attrs.enemyRole') : t('combat.attrs.playerRole')}
+          </span>
+        </div>
+      </header>
       <section className="character-attribute-section">
         <h3>{t('combat.attrs.base')}</h3>
         <dl>{baseRows.map(row => <div key={row.label}><dt>{row.label}</dt><dd><ValueText text={row.value} /></dd></div>)}</dl>
@@ -1301,12 +1324,16 @@ export const CombatArena = memo(function CombatArena({
         ) : null}
       </div>
       <CharacterAttributeModal
+        actorId={inspectedActor === 'enemy' ? (activeEncounter?.enemy?.enemyId ?? activeEncounterId) : 'player'}
         baseRows={inspectedActor === 'enemy' ? enemyBaseRows : playerBaseRows}
         buffs={inspectedActor === 'player' ? buffs : []}
+        name={inspectedActor === 'enemy' ? enemy.name : playerName}
         onClose={() => setInspectedActor(null)}
         open={inspectedActor !== null}
+        role={inspectedActor ?? 'player'}
         specialRows={inspectedActor === 'enemy' ? enemySpecialRows : playerSpecialRows}
         title={inspectedActor === 'enemy' ? enemy.name : playerName}
+        visual={inspectedActor === 'enemy' ? enemy.visual : null}
       />
     </div>
   )

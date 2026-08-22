@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
@@ -23,9 +23,10 @@ function getEdgeDistance(
  * 核心功能与交互流程：
  * 1. 节点与连线网络：基于虚拟像素坐标 (1200x800) 渲染大地图节点与通路，彻底杜绝文本拉伸变形；
  * 2. 交互式漫游视口：支持鼠标拖拽 (Pan)、触屏漫游与缩放微调 (Zoom)，提供快捷定位与重置；
- * 3. 玩家位置标记：以向下矢量指示箭头实时锚定当前地点或行进路径，初始与定位时自动居中玩家；
- * 4. 宽域连线交互：宽达 32px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)；
- * 5. 灵地详情侧边栏：选中节点后展示修炼灵气倍率、可用行动列表、潜伏敌怪遭遇及行进耗时。
+ * 3. 玩家位置标记：以向下矢量指示箭头实时锚定当前地点或行进路径，打开地图时默认居中对齐玩家位置；
+ * 4. 可靠节点交互：区分平移漫游与地点点击，支持一键选中地点查看灵地属性与行动；
+ * 5. 宽域连线交互：宽达 32px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)；
+ * 6. 灵地详情侧边栏：选中节点后展示修炼灵气倍率、可用行动列表、潜伏敌怪遭遇及行进耗时。
  */
 export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const t = useT()
@@ -44,9 +45,16 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const [zoom, setZoom] = useState<number>(1)
   const [isDragging, setIsDragging] = useState<boolean>(false)
   const isDraggingRef = useRef<boolean>(false)
-  const dragStartRef = useRef<{ clientX: number; clientY: number; panX: number; panY: number; moved: boolean } | null>(null)
+  const dragStartRef = useRef<{
+    clientX: number
+    clientY: number
+    panX: number
+    panY: number
+    moved: boolean
+    targetNodeId: string | null
+  } | null>(null)
 
-  // 居中聚焦到玩家当前所在位置
+  // 居中聚焦到玩家当前所在位置（在节点驻留时居中地点，在移动时居中路径当前坐标）
   const centerOnPlayer = useCallback((targetZoom?: number) => {
     const stage = stageRef.current
     if (!stage) return
@@ -59,35 +67,49 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     const playerPxY = (world.y / 100) * MAP_HEIGHT
 
     setPan({
-      x: stageW / 2 - playerPxX * z,
-      y: stageH / 2 - playerPxY * z,
+      x: Math.round(stageW / 2 - playerPxX * z),
+      y: Math.round(stageH / 2 - playerPxY * z),
     })
   }, [world.x, world.y, zoom])
 
-  // 首次渲染或地图切换时自动居中到玩家位置
-  const initializedMapIdRef = useRef<string | null>(null)
-  useLayoutEffect(() => {
-    if (!map) return
-    if (initializedMapIdRef.current !== map.mapId) {
-      initializedMapIdRef.current = map.mapId
-      centerOnPlayer(1)
-      setZoom(1)
-    }
-  }, [map, centerOnPlayer])
-
-  // 视口尺寸发生变化时响应式校准
+  // 打开地图或视口尺寸变动时，确保默认居中玩家当前位置
+  const hasAutoCenteredRef = useRef<boolean>(false)
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
-    const resizeObserver = new ResizeObserver(() => {
-      // 仅在首次未初始化或需要自适应时轻量触发
-      if (!isDraggingRef.current) {
-        // 保留当前居中倾向
+
+    const tryCenter = () => {
+      const stageW = stage.clientWidth
+      const stageH = stage.clientHeight
+      if (stageW > 0 && stageH > 0) {
+        centerOnPlayer(zoom)
+        hasAutoCenteredRef.current = true
+      }
+    }
+
+    tryCenter()
+    const rafId = requestAnimationFrame(tryCenter)
+    const resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
+          if (!hasAutoCenteredRef.current) {
+            tryCenter()
+          }
+        }
       }
     })
     resizeObserver.observe(stage)
-    return () => resizeObserver.disconnect()
-  }, [])
+
+    return () => {
+      cancelAnimationFrame(rafId)
+      resizeObserver.disconnect()
+    }
+  }, [map?.mapId, centerOnPlayer, zoom])
+
+  // 地图切换时重置自动居中标志
+  useEffect(() => {
+    hasAutoCenteredRef.current = false
+  }, [map?.mapId])
 
   useEffect(() => {
     if (!map) return
@@ -99,11 +121,14 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const selectedNode = map?.nodes.find(node => node.nodeId === selectedNodeId)
   const plannedEdges = useMemo(() => new Set(activeTravel?.travelPathEdgeIds ?? []), [activeTravel?.travelPathEdgeIds])
 
-  // 拖拽漫游事件监听
+  // 拖拽漫游事件监听：仅在位移超过 4px 时激活拖拽捕获，防止截断节点点击
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
     const target = e.target as HTMLElement
     if (target.closest('.world-map-toolbar')) return
+
+    const nodeEl = target.closest<HTMLElement>('.world-map-node')
+    const targetNodeId = nodeEl?.getAttribute('data-node-id') ?? null
 
     dragStartRef.current = {
       clientX: e.clientX,
@@ -111,19 +136,32 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
       panX: pan.x,
       panY: pan.y,
       moved: false,
+      targetNodeId,
     }
-    isDraggingRef.current = true
-    setIsDragging(true)
-    stageRef.current?.setPointerCapture(e.pointerId)
+    isDraggingRef.current = false
   }, [pan.x, pan.y])
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragStartRef.current) return
     const dx = e.clientX - dragStartRef.current.clientX
     const dy = e.clientY - dragStartRef.current.clientY
-    if (!dragStartRef.current.moved && Math.hypot(dx, dy) > 4) {
-      dragStartRef.current.moved = true
+    const dist = Math.hypot(dx, dy)
+
+    if (!dragStartRef.current.moved) {
+      if (dist > 4) {
+        dragStartRef.current.moved = true
+        isDraggingRef.current = true
+        setIsDragging(true)
+        try {
+          stageRef.current?.setPointerCapture(e.pointerId)
+        } catch {
+          // 忽略可能失败的指针捕获
+        }
+      } else {
+        return
+      }
     }
+
     setPan({
       x: dragStartRef.current.panX + dx,
       y: dragStartRef.current.panY + dy,
@@ -131,15 +169,21 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   }, [])
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragStartRef.current) {
-      isDraggingRef.current = false
-      setIsDragging(false)
-      dragStartRef.current = null
-      try {
-        stageRef.current?.releasePointerCapture(e.pointerId)
-      } catch {
-        // 忽略可能已释放的捕获
-      }
+    if (!dragStartRef.current) return
+    const { moved, targetNodeId } = dragStartRef.current
+    dragStartRef.current = null
+    isDraggingRef.current = false
+    setIsDragging(false)
+
+    try {
+      stageRef.current?.releasePointerCapture(e.pointerId)
+    } catch {
+      // 忽略可能已释放的捕获
+    }
+
+    // 若未发生拖拽且点击在节点上，确保选中该节点
+    if (!moved && targetNodeId) {
+      setSelectedNodeId(targetNodeId)
     }
   }, [])
 
@@ -155,7 +199,6 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89
     setZoom(prevZoom => {
       const nextZoom = Math.min(1.6, Math.max(0.65, prevZoom * zoomFactor))
-      // 保持鼠标指向点的相对位置稳定
       const worldX = (mouseX - pan.x) / prevZoom
       const worldY = (mouseY - pan.y) / prevZoom
       setPan({
@@ -165,12 +208,6 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
       return nextZoom
     })
   }, [pan.x, pan.y])
-
-  const handleNodeClick = useCallback((nodeId: string) => {
-    // 拖拽超过阈值时不触发节点选中
-    if (dragStartRef.current?.moved) return
-    setSelectedNodeId(nodeId)
-  }, [])
 
   if (!map) {
     return <div className="world-map-loading">{t('combat.map.loading')}</div>
@@ -316,8 +353,12 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
                 aria-label={t('combat.map.nodeAria', { name: node.name, description: node.description })}
                 aria-pressed={isSelected}
                 className={`world-map-node${isCurrent ? ' is-current' : ''}${isSelected ? ' is-selected' : ''}`}
+                data-node-id={node.nodeId}
                 key={node.nodeId}
-                onClick={() => handleNodeClick(node.nodeId)}
+                onClick={e => {
+                  e.stopPropagation()
+                  setSelectedNodeId(node.nodeId)
+                }}
                 style={{ left: `${px}px`, top: `${py}px` }}
                 type="button"
               >
