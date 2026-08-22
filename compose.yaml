@@ -6,6 +6,8 @@ services:
     container_name: daohua-local-db
     init: true
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: daohua
       POSTGRES_USER: daohua

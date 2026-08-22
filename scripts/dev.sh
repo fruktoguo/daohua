@@ -74,7 +74,26 @@ if [[ ! -d frontend/node_modules ]]; then
   npm --prefix frontend install
 fi
 
-# 3. 检查端口占用
+# 3. 检查并准备 PostgreSQL 数据库
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PORT="${DB_PORT:-5432}"
+if ! (echo > /dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    printf '==> 检测到 PostgreSQL (%s:%s) 未就绪，自动通过 Docker Compose 启动本地数据库...\n' "$DB_HOST" "$DB_PORT"
+    docker compose up -d db
+    printf '==> 等待 PostgreSQL 数据库就绪...\n'
+    for _ in {1..30}; do
+      if (echo > /dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+        break
+      fi
+      sleep 0.5
+    done
+  else
+    printf '警告: 本地 PostgreSQL 未在 %s:%s 运行，且 Docker 不可用。\n' "$DB_HOST" "$DB_PORT" >&2
+  fi
+fi
+
+# 4. 检查端口占用
 if ss -H -ltn 'sport = :5128' 2>/dev/null | grep -q .; then
   printf '错误: 端口 127.0.0.1:5128 已被占用，请先停止冲突进程。\n' >&2
   exit 1
@@ -85,13 +104,13 @@ if ss -H -ltn 'sport = :15172' 2>/dev/null | grep -q .; then
   exit 1
 fi
 
-# 4. 启动服务端（dev-hot.mjs 守护进程：源码变更进入 60s 防抖静默期，期间有新变更则刷新；
+# 5. 启动服务端（dev-hot.mjs 守护进程：源码变更进入 60s 防抖静默期，期间有新变更则刷新；
 #    静默期满先 dotnet build，编译失败保持旧进程，成功才优雅重启并自动拉起异常退出）
 printf '==> 启动服务端 (http://127.0.0.1:5128, 源码变更静默 60s 后重建重启)...\n'
 node scripts/dev-hot.mjs &
 BACKEND_SUPERVISOR_PID=$!
 
-# 5. 等待服务端健康端点就绪（监督循环会自动拉起异常退出的进程，这里只探测端点）
+# 6. 等待服务端健康端点就绪（监督循环会自动拉起异常退出的进程，这里只探测端点）
 printf '==> 等待服务端就绪...\n'
 BACKEND_READY=0
 for _ in {1..120}; do
@@ -106,7 +125,7 @@ if [[ "$BACKEND_READY" -ne 1 ]]; then
   printf '警告: 服务端就绪等待超时，继续启动前端...\n' >&2
 fi
 
-# 6. 启动前端（不打开浏览器）
+# 7. 启动前端（不打开浏览器）
 printf '==> 启动前端开发服务器 (http://127.0.0.1:15172)...\n'
 npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open --force &
 FRONTEND_PID=$!

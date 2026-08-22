@@ -42,7 +42,10 @@ public sealed class DatabaseOptions
         return new DatabaseOptions
         {
             Provider = configuration["Storage:Provider"] ?? "postgres",
-            ConnectionString = configuration.GetConnectionString("")
+            ConnectionString = configuration.GetConnectionString("DefaultConnection")
+                ?? configuration.GetConnectionString("Postgres")
+                ?? configuration.GetConnectionString("Default")
+                ?? configuration.GetConnectionString("")
                 ?? configuration["Storage:ConnectionString"],
             EnableSchemaBootstrap = configuration.GetValue("Storage:EnableSchemaBootstrap", true),
             MarketTradeRetentionDays = Math.Clamp(
