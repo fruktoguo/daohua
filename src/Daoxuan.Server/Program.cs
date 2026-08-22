@@ -10,6 +10,7 @@
 using System.Reflection;
 using Daoxuan.Domain.GameData;
 using Daoxuan.Domain.Market;
+using Daoxuan.Domain.Models;
 using Daoxuan.Domain.Simulation;
 using Daoxuan.Protocol;
 using Daoxuan.Server.Infrastructure;

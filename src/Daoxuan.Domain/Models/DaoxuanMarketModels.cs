@@ -1,4 +1,4 @@
-namespace Daoxuan.Domain.Market;
+namespace Daoxuan.Domain.Models;
 
 /// <summary>
 /// 交易委托买卖方向。
@@ -271,4 +271,3 @@ public static class DaoxuanMarketTaxPolicy
         return checked((long)decimal.Floor(retained));
     }
 }
-

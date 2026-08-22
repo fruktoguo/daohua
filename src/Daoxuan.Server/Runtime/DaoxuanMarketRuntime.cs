@@ -1,4 +1,5 @@
 using Daoxuan.Domain.Market;
+using Daoxuan.Domain.Models;
 using Daoxuan.Server.Infrastructure;
 
 namespace Daoxuan.Server.Runtime;

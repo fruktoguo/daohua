@@ -3,110 +3,6 @@ using Daoxuan.Domain.Models;
 
 namespace Daoxuan.Domain.GameData;
 
-/// <summary>
-/// 技能的配置数据传输对象。所有数值直接指定，仅灵力消耗通过 ManaCostRatio 系数解算。
-/// ManaCostRatio = 1.0 时消耗 = ceil(该技能设计阶位基准玩家最大灵力 × 1%)。
-/// </summary>
-public sealed record DaoxuanAbilityConfig(
-    string Id,
-    string Name,
-    DaoxuanCombatStyle Style = DaoxuanCombatStyle.FiveElements,
-    DaoxuanDamageType DamageType = DaoxuanDamageType.Nature,
-    int CooldownMilliseconds = 0,
-    int CastMilliseconds = 0,
-    double ManaCostRatio = 0,
-    DaoxuanCombatAbilityEffectType EffectType = DaoxuanCombatAbilityEffectType.Damage,
-    DaoxuanCombatAbilityTargetType TargetType = DaoxuanCombatAbilityTargetType.Enemy,
-    double DamageRatio = 1.0,
-    long FlatDamage = 0,
-    double DamageRatioLevelBonus = 0,
-    double FlatDamageLevelBonus = 0,
-    double HealingRatio = 0,
-    long FlatHealing = 0,
-    double HealingRatioLevelBonus = 0,
-    double FlatHealingLevelBonus = 0,
-    double DamageOverTimeRatio = 0,
-    int DamageOverTimeMilliseconds = 0,
-    int DamageOverTimeTickMilliseconds = 3000,
-    double StunChance = 0,
-    int StunMilliseconds = 0,
-    double BlindChance = 0,
-    int BlindMilliseconds = 0,
-    double SilenceChance = 0,
-    int SilenceMilliseconds = 0,
-    double PenetrationRatio = 0,
-    double ArmorDamageRatio = 0,
-    double HpDrainRatio = 0,
-    double PierceChance = 0,
-    double TriggerHpRatio = 1.0,
-    IReadOnlyList<DaoxuanCombatTrigger>? DefaultTriggers = null,
-    int Tier = 1);
-
-/// <summary>
-/// 装备的配置数据传输对象，支持直接填写显式 Stats 或通过 intensity + weights 自动解算。
-/// </summary>
-public sealed record DaoxuanEquipmentConfig(
-    string Id,
-    string Name,
-    string Slot,
-    int Tier = 1,
-    int Quality = 1,
-    double? Intensity = null,
-    double? Budget = null,
-    DaoxuanEquipmentCombatStats? Stats = null,
-    DaoxuanEquipmentCombatStats? EnhancementBonus = null,
-    IReadOnlyDictionary<string, double>? Weights = null,
-    int AttackIntervalMilliseconds = 0,
-    DaoxuanCombatStyle? Style = null,
-    DaoxuanDamageType? DamageType = null);
-
-/// <summary>
-/// 消耗品增益效果配置，支持显式属性或由强度权重推导。
-/// </summary>
-public sealed record DaoxuanBuffEffectConfig(
-    string BuffId,
-    string Name,
-    int DurationSeconds,
-    bool Stackable = false,
-    int MaxStacks = 1,
-    double? QiGainMultiplier = null,
-    double? AttackLevelRatio = null,
-    double? DamageRatio = null,
-    double? AttackSpeedRatio = null,
-    double? GatheringOutputMultiplier = null,
-    double? AlchemyOutputMultiplier = null,
-    double? Intensity = null,
-    IReadOnlyDictionary<string, double>? Weights = null);
-
-/// <summary>
-/// 消耗品配置。
-/// </summary>
-public sealed record DaoxuanConsumableConfig(
-    IReadOnlySet<DaoxuanActionType> UsableInActionTypes,
-    int CooldownSeconds = 0,
-    int RecoverySeconds = 0,
-    double TriggerHpRatio = 0.6,
-    bool TriggerAtCombatStart = false,
-    long? HitpointRestore = null,
-    long? ManapointRestore = null,
-    IReadOnlyList<DaoxuanBuffEffectConfig>? Buffs = null,
-    IReadOnlyList<DaoxuanCombatTrigger>? DefaultCombatTriggers = null,
-    double? Intensity = null,
-    IReadOnlyDictionary<string, double>? Weights = null);
-
-/// <summary>
-/// 物品总配置数据传输对象。
-/// </summary>
-public sealed record DaoxuanItemConfig(
-    string Id,
-    string Name,
-    string Description,
-    DaoxuanItemKind Kind,
-    string Category,
-    int Tier = 1,
-    long SellPrice = 0,
-    bool IsTradable = true,
-    DaoxuanConsumableConfig? Consumable = null);
 
 /// <summary>
 /// 核心统一强度预算与权重解析器 (Intensity & Weights Resolver)。
@@ -567,22 +463,6 @@ public static class DaoxuanDataBudgetResolver
         return result;
     }
 
-    /// <summary>
-    /// 标准玩家期望属性数据模型（源自 expected-attributes.json）。
-    /// </summary>
-    public sealed record FinalExpectedPlayerAttributes(
-        double MaxHitpoints,
-        double MaxManapoints,
-        double PhysicalAttack,
-        double MagicAttack,
-        double Armor,
-        double MagicResistance,
-        double AccuracyRating,
-        double EvasionRating,
-        double CriticalRating,
-        double CriticalAvoidance,
-        double BreakRating,
-        double ParryRating);
 
     /// <summary>
     /// 获取指定阶位标准玩家的期望属性矩阵（源自 expected-attributes.json）。

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Daoxuan.Domain.Models;
 using Daoxuan.Domain.Simulation;
 
 namespace Daoxuan.Domain.Market;

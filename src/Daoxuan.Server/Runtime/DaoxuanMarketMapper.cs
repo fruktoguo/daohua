@@ -1,4 +1,5 @@
 using Daoxuan.Domain.Market;
+using Daoxuan.Domain.Models;
 using Daoxuan.Protocol;
 
 namespace Daoxuan.Server.Runtime;

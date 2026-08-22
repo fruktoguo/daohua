@@ -1,3 +1,5 @@
+using Daoxuan.Domain.Models;
+
 namespace Daoxuan.Domain.Market;
 
 /// <summary>
