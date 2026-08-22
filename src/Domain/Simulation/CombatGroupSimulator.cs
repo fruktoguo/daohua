@@ -69,7 +69,7 @@ public static partial class CombatSimulator
         var playerRespawnAt = InfiniteTime;
         var nextPlayerAction = 0L;
         var playerActionName = "灵击";
-        var playerActionKind = "attack";
+        var playerActionKind = CombatActionKind.Attack;
         var playerActionStartedAt = 0L;
         CombatAbilityDefinition? pendingPlayerAbility = null;
         var pendingPlayerAbilityIndex = -1;
@@ -216,7 +216,7 @@ public static partial class CombatSimulator
             encounterRespawnAt = checked(now + Math.Max(1, encounter.RespawnMilliseconds));
             nextPlayerAction = encounterRespawnAt;
             playerActionName = "等待敌群";
-            playerActionKind = "wait";
+            playerActionKind = CombatActionKind.Wait;
             playerActionStartedAt = now;
             pendingPlayerAbility = null;
             pendingPlayerAbilityIndex = -1;
@@ -239,7 +239,7 @@ public static partial class CombatSimulator
             playerRespawnAt = checked(now + Math.Max(1, encounter.PlayerRespawnMilliseconds));
             nextPlayerAction = playerRespawnAt;
             playerActionName = "调息复起";
-            playerActionKind = "respawn";
+            playerActionKind = CombatActionKind.Respawn;
             playerActionStartedAt = now;
             foreach (var enemy in enemies.Where(enemy => !enemy.IsDefeated))
             {
@@ -247,7 +247,7 @@ public static partial class CombatSimulator
                 enemy.PendingAbilityIndex = -1;
                 enemy.NextActionAt = InfiniteTime;
                 enemy.ActionName = "待机";
-                enemy.ActionKind = "wait";
+                enemy.ActionKind = CombatActionKind.Wait;
                 enemy.ActionStartedAt = now;
             }
         }
@@ -337,7 +337,7 @@ public static partial class CombatSimulator
                 {
                     enemy.NextActionAt = now;
                     enemy.ActionName = "攻击";
-                    enemy.ActionKind = "attack";
+                    enemy.ActionKind = CombatActionKind.Attack;
                     enemy.ActionStartedAt = now;
                 }
             }
@@ -349,7 +349,7 @@ public static partial class CombatSimulator
             {
                 nextPlayerAction = now;
                 playerActionName = "灵击";
-                playerActionKind = "attack";
+                playerActionKind = CombatActionKind.Attack;
                 playerActionStartedAt = now;
             }
 
@@ -375,13 +375,13 @@ public static partial class CombatSimulator
                 }
                 nextPlayerAction = now;
                 playerActionName = "灵击";
-                playerActionKind = "attack";
+                playerActionKind = CombatActionKind.Attack;
                 playerActionStartedAt = now;
                 foreach (var enemy in enemies.Where(enemy => !enemy.IsDefeated))
                 {
                     enemy.NextActionAt = now;
                     enemy.ActionName = "攻击";
-                    enemy.ActionKind = "attack";
+                    enemy.ActionKind = CombatActionKind.Attack;
                     enemy.ActionStartedAt = now;
                 }
                 AddEvent(events, $"战斗复起：{{{{encounter:{encounter.Id}|{encounter.Name}}}}}");
@@ -394,7 +394,7 @@ public static partial class CombatSimulator
                 enemies = CreateEnemyGroup(encounter, completedEncounterCount, ref random, now);
                 nextPlayerAction = now;
                 playerActionName = "灵击";
-                playerActionKind = "attack";
+                playerActionKind = CombatActionKind.Attack;
                 playerActionStartedAt = now;
                 nextEnrageTick = GetNextEnrageTick(encounter, now);
                 encounters++;
@@ -589,7 +589,7 @@ public static partial class CombatSimulator
                         var castTime = Math.Max(100, (int)Math.Round(ability.CastMilliseconds * (1.0 - player.ActionSpeedReductionRatio)));
                         nextPlayerAction = checked(now + castTime);
                         playerActionName = ability.Name;
-                        playerActionKind = "cast";
+                        playerActionKind = CombatActionKind.Cast;
                         playerActionStartedAt = now;
                         AddEvent(events, $"施放 {{{{ability:{ability.Id}|{ability.Name}}}}}");
                         ability = null;
@@ -666,7 +666,7 @@ public static partial class CombatSimulator
                                     currentTarget.PendingAbilityIndex = -1;
                                     currentTarget.NextActionAt = Math.Max(currentTarget.NextActionAt, currentTarget.Control.StunUntil);
                                     currentTarget.ActionName = "受控";
-                                    currentTarget.ActionKind = "control";
+                                    currentTarget.ActionKind = CombatActionKind.Control;
                                     currentTarget.ActionStartedAt = now;
                                 }
                             }
@@ -679,7 +679,7 @@ public static partial class CombatSimulator
                     {
                         nextPlayerAction = checked(now + player.AttackIntervalMilliseconds);
                         playerActionName = ability is null ? "普通攻击" : ability.Name;
-                        playerActionKind = "attack";
+                        playerActionKind = CombatActionKind.Attack;
                         playerActionStartedAt = now;
                     }
                     if (ability is not null && abilityIndex >= 0)
@@ -695,7 +695,7 @@ public static partial class CombatSimulator
             {
                 nextPlayerAction = playerControl.StunUntil;
                 playerActionName = "受控";
-                playerActionKind = "control";
+                playerActionKind = CombatActionKind.Control;
                 playerActionStartedAt = now;
             }
 
@@ -708,7 +708,7 @@ public static partial class CombatSimulator
                 {
                     enemy.NextActionAt = enemy.Control.StunUntil;
                     enemy.ActionName = "受控";
-                    enemy.ActionKind = "control";
+                    enemy.ActionKind = CombatActionKind.Control;
                     enemy.ActionStartedAt = now;
                     continue;
                 }
@@ -741,7 +741,7 @@ public static partial class CombatSimulator
                         var enemyCastTime = Math.Max(100, (int)Math.Round(enemyAbility.CastMilliseconds * (1.0 - enemy.Stats.ActionSpeedReductionRatio)));
                         enemy.NextActionAt = checked(now + enemyCastTime);
                         enemy.ActionName = enemyAbility.Name;
-                        enemy.ActionKind = "cast";
+                        enemy.ActionKind = CombatActionKind.Cast;
                         enemy.ActionStartedAt = now;
                         continue;
                     }
@@ -803,7 +803,7 @@ public static partial class CombatSimulator
                         pendingPlayerAbilityIndex = -1;
                         nextPlayerAction = Math.Max(nextPlayerAction, playerControl.StunUntil);
                         playerActionName = "受控";
-                        playerActionKind = "control";
+                        playerActionKind = CombatActionKind.Control;
                         playerActionStartedAt = now;
                     }
                 }
@@ -815,7 +815,7 @@ public static partial class CombatSimulator
                 }
                 enemy.NextActionAt = checked(now + enemy.Stats.AttackIntervalMilliseconds);
                 enemy.ActionName = enemyAbility is null ? "普通攻击" : enemyAbility.Name;
-                enemy.ActionKind = "attack";
+                enemy.ActionKind = CombatActionKind.Attack;
                 enemy.ActionStartedAt = now;
                 if (playerHitpoints <= 0) FinalizePlayerDefeat();
             }
@@ -1100,7 +1100,7 @@ public static partial class CombatSimulator
             Manapoints = Stats.MaxManapoints;
             NextActionAt = spawnedAt;
             ActionName = "攻击";
-            ActionKind = "attack";
+            ActionKind = CombatActionKind.Attack;
             ActionStartedAt = spawnedAt;
             AbilityReadyAt = new long[Math.Max(0, definition.Abilities.Count)];
             Array.Fill(AbilityReadyAt, spawnedAt);
@@ -1114,7 +1114,7 @@ public static partial class CombatSimulator
         public long Manapoints { get; set; }
         public long NextActionAt { get; set; }
         public string ActionName { get; set; }
-        public string ActionKind { get; set; }
+        public CombatActionKind ActionKind { get; set; }
         public long ActionStartedAt { get; set; }
         public bool IsDefeated { get; set; }
         public int EnrageStacks { get; set; }

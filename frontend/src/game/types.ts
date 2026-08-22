@@ -17,6 +17,169 @@ export type PresenceMode = 'online' | 'idle-offline' | 'fully-offline'
 export type QueueEntryStatus = 'queued' | 'running' | 'blocked'
 
 /**
+ * 行动执行推进模式分类：标准计时推进 (timed)、战斗遭遇推进 (combat-encounter)、大地图移动旅行 (travel)
+ */
+export type ActionExecutionKind = 'timed' | 'combat-encounter' | 'travel'
+
+/**
+ * 远征探索与战斗历练阶段枚举：
+ * - 'none': 无/未初始化
+ * - 'travel': 节点间行进中
+ * - 'initial-search': 初始搜寻敌人
+ * - 'search': 战后搜寻下一波敌人
+ * - 'combat': 战斗交锋中
+ */
+export type ExpeditionPhase = 'none' | 'travel' | 'initial-search' | 'search' | 'combat'
+
+/**
+ * 实时战斗动作类型：攻击 (attack)、施法 (cast)、控制 (control)、等待/调息 (wait)、复活读条 (respawn)
+ */
+export type CombatActionKind = 'attack' | 'cast' | 'control' | 'wait' | 'respawn'
+
+/**
+ * 战斗流派/武道门类：御剑 (sword)、重刃 (blade)、符箓 (talisman)、五行奇术 (five-elements)、横练肉身 (body)
+ */
+export type CombatStyle = 'sword' | 'blade' | 'talisman' | 'five-elements' | 'body'
+
+/**
+ * 伤害属性类型：物理 (physical)、水/冰系 (water)、自然/木系 (nature)、火系 (fire)
+ */
+export type DamageType = 'physical' | 'water' | 'nature' | 'fire'
+
+/**
+ * 物品基础形态大类：材料 (material)、消耗品 (consumable)、货币 (currency)、资源 (resource)、装备 (equipment)
+ */
+export type ItemKind = 'material' | 'consumable' | 'currency' | 'resource' | 'equipment'
+
+/**
+ * 物品细分分类键：通用 (general)、材料 (material)、药材 (herb)、矿石 (mineral)、丹药 (pill)、
+ * 灵食 (food)、灵饮 (drink)、符箓 (talisman)、功法秘籍 (manual)、装备 (equipment)、
+ * 宝箱 (chest)、货币 (currency)、资源 (resource)
+ */
+export type ItemCategoryKey =
+  | 'general'
+  | 'material'
+  | 'herb'
+  | 'mineral'
+  | 'pill'
+  | 'food'
+  | 'drink'
+  | 'talisman'
+  | 'manual'
+  | 'equipment'
+  | 'chest'
+  | 'currency'
+  | 'resource'
+
+/**
+ * 装备穿戴槽位：主手武器 (weapon)、双手武器 (two-hand)、副手/盾牌 (off-hand)、
+ * 头部 (head)、护甲/上衣 (armor)、腿部/下装 (legs)、鞋靴 (boots)、
+ * 戒指 (ring)、项链 (neck)、饰品/法宝 (trinket)、符箓/灵宝 (talisman)
+ */
+export type EquipmentSlot =
+  | 'weapon'
+  | 'two-hand'
+  | 'off-hand'
+  | 'head'
+  | 'armor'
+  | 'legs'
+  | 'boots'
+  | 'ring'
+  | 'neck'
+  | 'trinket'
+  | 'talisman'
+
+/**
+ * 参战单位/怪物阶位等级：
+ * 小怪 (minion)、普通 (normal)、精英 (elite)、领袖 (leader)、首领/Boss (boss)、
+ * 召唤物 (summon)、宠物 (pet)、镜像玩家 (player-mirror)、NPC (npc)
+ */
+export type UnitRank =
+  | 'minion'
+  | 'normal'
+  | 'elite'
+  | 'leader'
+  | 'boss'
+  | 'summon'
+  | 'pet'
+  | 'player-mirror'
+  | 'npc'
+
+/**
+ * 地图周边实体类型：NPC (npc)、建筑 (building)、传送阵 (portal)、资源点 (resource-node)
+ */
+export type NearbyEntityKind = 'npc' | 'building' | 'portal' | 'resource-node'
+
+/**
+ * 角色/立绘视觉渲染器形态：文字图标 (text)、符号字符 (glyph)、贴图图片 (image)、Live2D 动效 (live2d)、3D模型 (model3d)
+ */
+export type CharacterRendererKind = 'text' | 'glyph' | 'image' | 'live2d' | 'model3d'
+
+/**
+ * 交易委托买卖方向：买入 (buy)、卖出 (sell)
+ */
+export type MarketSide = 'buy' | 'sell'
+
+/**
+ * 市场订单生命周期状态：已挂单活跃 (active)、部分成交 (partially-filled)、全部成交 (filled)、已取消 (cancelled)、已过期 (expired)
+ */
+export type MarketOrderStatus = 'active' | 'partially-filled' | 'filled' | 'cancelled' | 'expired'
+
+/**
+ * 战斗自动触发条件依赖目标
+ */
+export type CombatTriggerDependency =
+  | 'self'
+  | 'target-enemy'
+  | 'ally-lowest-hp'
+  | 'ally-highest-hp'
+  | 'enemy-lowest-hp'
+  | 'enemy-highest-hp'
+
+/**
+ * 战斗自动触发条件判定类型
+ */
+export type CombatTriggerCondition =
+  | 'current-hp'
+  | 'current-mana'
+  | 'missing-hp'
+  | 'missing-mana'
+  | 'current-hp-percentage'
+  | 'missing-hp-percentage'
+  | 'current-mana-percentage'
+  | 'missing-mana-percentage'
+  | 'buff-stacks'
+  | 'stun-status'
+  | 'blind-status'
+  | 'silence-status'
+
+/**
+ * 战斗自动触发条件比较操作符
+ */
+export type CombatTriggerComparator =
+  | 'less-than-equal'
+  | 'greater-than-equal'
+  | 'is-active'
+  | 'is-inactive'
+  | 'less-than'
+  | 'greater-than'
+
+/**
+ * 功法技能效果类型
+ */
+export type CombatAbilityEffectType = 'damage' | 'heal'
+
+/**
+ * 功法技能施法目标范围
+ */
+export type CombatAbilityTargetType =
+  | 'enemy'
+  | 'all-enemies'
+  | 'self'
+  | 'all-allies'
+  | 'lowest-hp-ally'
+
+/**
  * 行动定义配置接口（描述某个行动的耗时、产出与消耗规则）
  */
 export interface ActionDefinition {
@@ -31,7 +194,7 @@ export interface ActionDefinition {
   /** 单轮执行耗时（秒） */
   durationSeconds: number
   /** 特殊执行类型（如 'combat-encounter'） */
-  executionKind?: string
+  executionKind?: ActionExecutionKind
   /** 关联的战斗遭遇 ID */
   combatEncounterId?: string
   /** 消耗材料物品与数量映射 */
@@ -63,7 +226,7 @@ export interface QueueEntry {
   /** 剩余循环次数（-1 表示无限循环，0 表示当前轮结束后出队） */
   remainingRepeats: number
   /** 执行类型 */
-  executionKind?: string
+  executionKind?: ActionExecutionKind
   /** 跨节点移动目标节点 ID */
   travelDestinationNodeId?: string | null
   /** 移动经过的路径边 ID 列表 */
@@ -114,7 +277,7 @@ export interface QueueProgress {
  */
 export interface ExpeditionProgress {
   /** 阶段：行进(travel)、初次搜寻(initial-search)、搜寻(search)、战斗中(combat)等 */
-  phase: 'travel' | 'initial-search' | 'search' | 'combat' | string
+  phase: ExpeditionPhase
   /** 当前阶段归一化进度 (0.0 ~ 1.0) */
   progress: number
   /** 阶段已消耗秒数 */
@@ -166,7 +329,7 @@ export interface ExpeditionProgress {
  */
 export interface CombatActionState {
   name: string
-  kind: 'attack' | 'cast' | 'control' | 'respawn' | 'wait' | string
+  kind: CombatActionKind
   elapsedMilliseconds: number
   durationMilliseconds: number
   completesAtUnixMilliseconds?: number | null
@@ -176,7 +339,7 @@ export interface CombatActionState {
  * 角色视觉渲染配置
  */
 export interface CharacterVisual {
-  renderer: 'text' | 'image' | 'live2d' | 'model3d' | string
+  renderer: CharacterRendererKind
   source: string
   poster?: string | null
 }
@@ -207,8 +370,8 @@ export interface CombatAttributes {
   waterResistance: number
   natureResistance: number
   fireResistance: number
-  style: string
-  damageType: string
+  style: CombatStyle
+  damageType: DamageType
   tenacity: number
   hpRegenPerTenSeconds: number
   mpRegenPerTenSeconds: number
@@ -260,8 +423,8 @@ export interface ItemDefinition {
   itemId: string
   name: string
   description: string
-  kind: string
-  category: string
+  kind: ItemKind
+  category: ItemCategoryKey | string
   tier: number
   sellPrice: number
   isTradable: boolean
@@ -351,16 +514,9 @@ export interface CombatAbilitySlot {
  * 战斗自动触发条件规则配置
  */
 export interface CombatTrigger {
-  dependency:
-    | 'self'
-    | 'target-enemy'
-    | 'ally-lowest-hp'
-    | 'ally-highest-hp'
-    | 'enemy-lowest-hp'
-    | 'enemy-highest-hp'
-    | string
-  condition: 'current-hp' | 'current-mana' | 'missing-hp' | 'missing-mana' | 'current-hp-percentage' | 'missing-hp-percentage' | 'current-mana-percentage' | 'missing-mana-percentage' | 'buff-stacks' | 'stun-status' | 'blind-status' | 'silence-status' | string
-  comparator: 'less-than-equal' | 'greater-than-equal' | 'is-active' | 'is-inactive' | 'less-than' | 'greater-than' | string
+  dependency: CombatTriggerDependency
+  condition: CombatTriggerCondition
+  comparator: CombatTriggerComparator
   value: number
   buffId?: string | null
 }
@@ -371,8 +527,8 @@ export interface CombatTrigger {
 export interface CombatAbilityDefinition {
   abilityId: string
   name: string
-  style: string
-  damageType: string
+  style: CombatStyle
+  damageType: DamageType
   cooldownMilliseconds: number
   castMilliseconds: number
   manaCost: number
@@ -380,7 +536,7 @@ export interface CombatAbilityDefinition {
   flatDamage: number
   penetrationRatio: number
   triggerHpRatio: number
-  effectType?: 'damage' | 'heal' | string
+  effectType?: CombatAbilityEffectType
   healingRatio?: number
   flatHealing?: number
   defaultTriggers?: CombatTrigger[] | null
@@ -397,7 +553,7 @@ export interface CombatAbilityDefinition {
   flatDamageLevelBonus?: number
   healingRatioLevelBonus?: number
   flatHealingLevelBonus?: number
-  targetType?: 'enemy' | 'all-enemies' | 'self' | 'all-allies' | 'lowest-hp-ally' | string
+  targetType?: CombatAbilityTargetType
   pierceChance?: number
   armorDamageRatio?: number
   hpDrainRatio?: number
@@ -410,8 +566,9 @@ export interface CombatantDefinition {
   enemyId: string
   name: string
   visual: CharacterVisual
-  style: string
-  damageType: string
+  style: CombatStyle
+  damageType: DamageType
+  rank?: UnitRank
   maxHitpoints: number
   maxManapoints: number
   attackIntervalMilliseconds: number
@@ -493,8 +650,8 @@ export interface CombatEquipmentStats {
   criticalAvoidance: number
   damageAbsorptionRatio: number
   attackIntervalMilliseconds: number
-  style?: string | null
-  damageType?: string | null
+  style?: CombatStyle | null
+  damageType?: DamageType | null
 }
 
 /**
@@ -503,7 +660,7 @@ export interface CombatEquipmentStats {
 export interface CombatEquipmentDefinition {
   equipmentId: string
   name: string
-  slot: string
+  slot: EquipmentSlot
   tier: number
   stats: CombatEquipmentStats
   enhancementBonus: CombatEquipmentStats
@@ -531,8 +688,8 @@ export interface ConsumableSlot {
  * 玩家战斗装配方案
  */
 export interface CombatLoadout {
-  style: string
-  damageType: string
+  style: CombatStyle
+  damageType: DamageType
   staminaLevel: number
   intelligenceLevel: number
   attackLevel: number
@@ -556,7 +713,7 @@ export interface CombatLoadout {
 export interface NearbyEntity {
   entityId: string
   name: string
-  kind: 'npc' | 'building' | string
+  kind: NearbyEntityKind
   description: string
   effect: string
 }
@@ -780,7 +937,7 @@ export interface MarketOrder {
   /** 强化等级 */
   enhancementLevel: number
   /** 交易方向：买入 (buy) 或 卖出 (sell) */
-  side: 'buy' | 'sell'
+  side: MarketSide
   /** 挂单单价 */
   price: number
   /** 原始挂单总数量 */
@@ -790,7 +947,7 @@ export interface MarketOrder {
   /** 已成交数量 */
   filledQuantity: number
   /** 订单状态：活跃中、部分成交、全部成交、已取消、已过期 */
-  status: 'active' | 'partially-filled' | 'filled' | 'cancelled' | 'expired'
+  status: MarketOrderStatus
   /** 订单序列号 */
   sequence: number
   /** 创建时间 ISO 字符串 */

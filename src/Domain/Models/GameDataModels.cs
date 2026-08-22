@@ -62,7 +62,7 @@ public sealed record AbilityConfig(
 public sealed record EquipmentConfig(
     string Id,
     string Name,
-    string Slot,
+    EquipmentSlot Slot = EquipmentSlot.Weapon,
     int Tier = 1,
     int Quality = 1,
     double? Intensity = null,
@@ -116,7 +116,7 @@ public sealed record ItemConfig(
     string Name,
     string Description,
     ItemKind Kind,
-    string Category,
+    ItemCategory Category = ItemCategory.General,
     int Tier = 1,
     long SellPrice = 0,
     bool IsTradable = true,
@@ -141,7 +141,7 @@ public sealed record CombatantConfig(
     DamageType DamageType = DamageType.Physical,
     int Level = 1,
     int Tier = 1,
-    string? Rank = "minion",
+    UnitRank Rank = UnitRank.Minion,
     IReadOnlyDictionary<string, double>? Weights = null,
     long? MaxHitpoints = null,
     long? MaxManapoints = null,
@@ -226,7 +226,7 @@ public sealed record CharacterStatRequest
 {
     public int Level { get; init; } = 1;
     public int Tier { get; init; } = 0;
-    public string? Rank { get; init; } = "minion";
+    public UnitRank Rank { get; init; } = UnitRank.Minion;
     public CombatStyle Style { get; init; } = CombatStyle.Body;
     public DamageType DamageType { get; init; } = DamageType.Physical;
     public IReadOnlyDictionary<string, double>? Weights { get; init; }

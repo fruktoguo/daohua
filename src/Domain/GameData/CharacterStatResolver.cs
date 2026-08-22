@@ -21,18 +21,47 @@ public static class CharacterStatResolver
     /// <summary>
     /// 根据生命层次类型获取默认的全属性乘区与生命乘区。
     /// </summary>
-    /// <param name="rank">生命层次标识字符串。</param>
+    /// <param name="rank">生命层次枚举。</param>
     /// <returns>(全属性倍率, 生命倍率)</returns>
-    public static (double StatMultiplier, double HpMultiplier) GetRankMultipliers(string? rank) =>
-        rank?.Trim().ToLowerInvariant() switch
+    public static (double StatMultiplier, double HpMultiplier) GetRankMultipliers(UnitRank rank) =>
+        rank switch
         {
-            "boss" => (1.50, 20.00),
-            "leader" => (1.35, 10.00),
-            "elite" => (1.20, 5.00),
-            "summon" or "pet" or "minion_summon" => (1.00, 1.00),
-            "normal" or "player_mirror" or "npc" => (1.00, 1.00),
+            UnitRank.Boss => (1.50, 20.00),
+            UnitRank.Leader => (1.35, 10.00),
+            UnitRank.Elite => (1.20, 5.00),
+            UnitRank.Summon or UnitRank.Pet => (1.00, 1.00),
+            UnitRank.Normal or UnitRank.PlayerMirror or UnitRank.Npc => (1.00, 1.00),
             _ => (0.80, 3.00) // 默认 minion 小怪
         };
+
+    /// <summary>
+    /// 兼容重载：从字符串解析 Rank 并获取乘区。
+    /// </summary>
+    public static (double StatMultiplier, double HpMultiplier) GetRankMultipliers(string? rank) =>
+        TryParseRank(rank, out var parsed) ? GetRankMultipliers(parsed) : (0.80, 3.00);
+
+    public static bool TryParseRank(string? rank, out UnitRank parsed)
+    {
+        if (string.IsNullOrWhiteSpace(rank))
+        {
+            parsed = UnitRank.Minion;
+            return false;
+        }
+
+        var span = rank.AsSpan().Trim();
+        if (span.Equals("boss", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Boss; return true; }
+        if (span.Equals("leader", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Leader; return true; }
+        if (span.Equals("elite", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Elite; return true; }
+        if (span.Equals("summon", StringComparison.OrdinalIgnoreCase) || span.Equals("minion_summon", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Summon; return true; }
+        if (span.Equals("pet", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Pet; return true; }
+        if (span.Equals("player_mirror", StringComparison.OrdinalIgnoreCase) || span.Equals("playermirror", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.PlayerMirror; return true; }
+        if (span.Equals("npc", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Npc; return true; }
+        if (span.Equals("normal", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Normal; return true; }
+        if (span.Equals("minion", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Minion; return true; }
+
+        parsed = UnitRank.Minion;
+        return false;
+    }
 
     /// <summary>
     /// 执行通用角色数值解析。
@@ -176,7 +205,7 @@ public static class CharacterStatResolver
     /// </summary>
     public static ResolvedCharacterStats Resolve(
         int level,
-        string? rank = "minion",
+        UnitRank rank = UnitRank.Minion,
         CombatStyle style = CombatStyle.Body,
         DamageType damageType = DamageType.Physical,
         IReadOnlyDictionary<string, double>? weights = null,
@@ -192,4 +221,17 @@ public static class CharacterStatResolver
             Weights = weights,
             Floor = floor
         });
+
+    /// <summary>
+    /// 便捷解析重载（字符串 rank 兼容）：通过基础参数直接推导角色 14 项属性。
+    /// </summary>
+    public static ResolvedCharacterStats Resolve(
+        int level,
+        string? rank,
+        CombatStyle style = CombatStyle.Body,
+        DamageType damageType = DamageType.Physical,
+        IReadOnlyDictionary<string, double>? weights = null,
+        bool floor = true,
+        int tier = 0) =>
+        Resolve(level, TryParseRank(rank, out var parsed) ? parsed : UnitRank.Minion, style, damageType, weights, floor, tier);
 }

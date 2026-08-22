@@ -92,8 +92,8 @@ public sealed class ItemDefinition
     public required string Description { get; init; }
     /// <summary>物品所属大类形态。</summary>
     public required ItemKind Kind { get; init; }
-    /// <summary>物品细分分类字符串。</summary>
-    public required string Category { get; init; }
+    /// <summary>物品细分分类。</summary>
+    public ItemCategory Category { get; init; } = ItemCategory.General;
     /// <summary>物品品阶层次（1 ~ N 阶）。</summary>
     public int Tier { get; init; } = 1;
     /// <summary>系统商店基础售出单价（灵石）。</summary>

@@ -177,7 +177,7 @@ public static class SimulationEngine
         {
             state.Visual = new CharacterVisualDefinition
             {
-                Renderer = "text",
+                Renderer = VisualRendererKind.Text,
                 Source = state.Name[..1]
             };
             combatChanged = true;
@@ -2330,7 +2330,7 @@ public static class SimulationEngine
             return false;
         }
 
-        var occupiedSlots = new HashSet<string>(StringComparer.Ordinal);
+        var occupiedSlots = EquipmentSlotMask.None;
         foreach (var item in source)
         {
             if (item is null
@@ -2341,16 +2341,18 @@ public static class SimulationEngine
                 return false;
             }
 
-            if (!occupiedSlots.Add(definition.Slot))
+            var mask = (EquipmentSlotMask)(1 << (int)definition.Slot);
+            if ((occupiedSlots & mask) != 0)
             {
                 error = $"装备槽位 {definition.Slot} 不能重复占用。";
                 return false;
             }
 
+            occupiedSlots |= mask;
             normalized.Add(item.Clone());
         }
 
-        if (occupiedSlots.Contains("two-hand") && occupiedSlots.Contains("main-hand"))
+        if ((occupiedSlots & EquipmentSlotMask.TwoHand) != 0 && (occupiedSlots & EquipmentSlotMask.Weapon) != 0)
         {
             error = "双手法器不能与主手法器同时装备。";
             return false;

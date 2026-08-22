@@ -517,15 +517,12 @@ function ArenaPhaseFill({
 function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): React.JSX.Element {
   const t = useT()
   const isInitialSearch = expedition.phase === 'initial-search'
-  const isDeath = expedition.phase === 'death'
 
-  const title = isDeath
-    ? t('combat.arena.phaseDeath')
-    : isInitialSearch
-      ? t('combat.arena.phaseSearch')
-      : t('combat.arena.phaseHunt')
+  const title = isInitialSearch
+    ? t('combat.arena.phaseSearch')
+    : t('combat.arena.phaseHunt')
 
-  const sigil = isDeath ? t('combat.arena.sigilDeath') : isInitialSearch ? t('combat.arena.sigilSearch') : t('combat.arena.sigilHunt')
+  const sigil = isInitialSearch ? t('combat.arena.sigilSearch') : t('combat.arena.sigilHunt')
   const remaining = Math.max(0, expedition.durationSeconds - expedition.elapsedSeconds)
 
   return (
@@ -1041,22 +1038,9 @@ export const CombatArena = memo(function CombatArena({
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
   const phase = expedition?.phase ?? (isLifeAction ? 'life-action' : 'idle')
-  const enemyVisible = isCombat && (phase === 'combat' || phase === 'death' || ((expedition?.enemyHitpoints ?? 0) > 0))
+  const enemyVisible = isCombat && (phase === 'combat' || ((expedition?.enemyHitpoints ?? 0) > 0))
 
   const playerAction: CombatActionState | null = useMemo(() => {
-    if (phase === 'death') {
-      const durMs = Math.max(1, (expedition?.durationSeconds ?? 1) * 1000)
-      const baseElMs = Math.max(0, (expedition?.elapsedSeconds ?? ((expedition?.progress ?? 0) * (expedition?.durationSeconds ?? 1))) * 1000)
-      const elapsedSinceSync = Math.max(0, performance.now() - lastSyncPerformanceTime)
-      const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
-      return {
-        kind: 'wait',
-        name: t('combat.arena.phaseDeath'),
-        durationMilliseconds: durMs,
-        elapsedMilliseconds: currentElMs,
-        completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - currentElMs),
-      }
-    }
     if (isCombat) {
       return expedition?.playerAction ?? null
     }
@@ -1075,7 +1059,7 @@ export const CombatArena = memo(function CombatArena({
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, lastSyncPerformanceTime, phase, t])
+  }, [current, expedition, isCombat, isLifeAction, lastSyncPerformanceTime])
 
   const enemyRef = useRef<EnemyDisplayState>({
     actorKey: 'enemy:idle',
@@ -1104,7 +1088,7 @@ export const CombatArena = memo(function CombatArena({
       maxHp: expedition?.enemyMaxHitpoints ?? enemyDefinition?.maxHitpoints ?? activeEncounter?.enemy?.maxHitpoints ?? 1,
       mp: expedition?.enemyManapoints ?? enemyDefinition?.maxManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 0,
       maxMp: expedition?.enemyMaxManapoints ?? enemyDefinition?.maxManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 1,
-      action: phase === 'death' ? null : expedition?.enemyAction,
+      action: expedition?.enemyAction ?? null,
       visual: enemyDefinition?.visual ?? activeEncounter?.enemy?.visual ?? null,
     }
   }
@@ -1253,7 +1237,7 @@ export const CombatArena = memo(function CombatArena({
               <div className="arena-formation arena-formation--enemies">
                 <div className="arena-slot arena-slot--occupied arena-slot--slot-1" key="enemy-slot-1">
                   <ArenaActor
-                    action={phase === 'death' ? null : enemy.action}
+                    action={enemy.action}
                     actorId={activeEncounter?.enemy?.enemyId ?? activeEncounterId}
                     actorKey={enemy.actorKey}
                     compact

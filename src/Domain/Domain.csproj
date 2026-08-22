@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../Protocol/Protocol.csproj" />
     <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
     <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
   </ItemGroup>

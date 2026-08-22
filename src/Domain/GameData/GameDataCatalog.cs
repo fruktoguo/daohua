@@ -390,6 +390,12 @@ public static class GameDataCatalog
             ReadCommentHandling = JsonCommentHandling.Skip
         };
         options.Converters.Add(new ReadOnlySetJsonConverterFactory());
+        options.Converters.Add(new ItemCategoryJsonConverter());
+        options.Converters.Add(new EquipmentSlotJsonConverter());
+        options.Converters.Add(new UnitRankJsonConverter());
+        options.Converters.Add(new VisualRendererKindJsonConverter());
+        options.Converters.Add(new CombatActionKindJsonConverter());
+        options.Converters.Add(new ExpeditionPhaseJsonConverter());
         options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         return options;
     }

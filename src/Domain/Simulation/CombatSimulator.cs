@@ -197,7 +197,7 @@ public static partial class CombatSimulator
 
     private static CombatActionState CreateActionState(
         string name,
-        string kind,
+        CombatActionKind kind,
         long startedAtMilliseconds,
         long completesAtMilliseconds,
         long simulatedMilliseconds)
@@ -237,7 +237,7 @@ public static partial class CombatSimulator
             var configuredTriggers = slot.Triggers ?? [];
             // 灵食保留旧版行为：允许“战斗开始可用”，且没有触发条件时按血量阈值兜底；
             // 灵饮、符箓等其他品类只看触发条件。
-            var isFood = string.Equals(item.Category, "灵食", StringComparison.Ordinal);
+            var isFood = item.Category == ItemCategory.Food;
             if (isFood && item.Consumable.TriggerAtCombatStart && now == 0)
             {
                 // 旧版目录曾用该字段表达“战斗开始可用”，保留它以兼容已有快照。

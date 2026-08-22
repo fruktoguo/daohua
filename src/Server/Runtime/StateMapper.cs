@@ -129,7 +129,7 @@ public static class StateMapper
             definition.Name,
             definition.Description,
             ToWire(definition.Kind),
-            definition.Category,
+            ToWire(definition.Category),
             definition.Tier,
             definition.SellPrice,
             definition.IsTradable,
@@ -195,7 +195,7 @@ public static class StateMapper
         return new CombatEquipmentDto(
             definition.Id,
             definition.Name,
-            definition.Slot,
+            ToWire(definition.Slot),
             definition.Tier,
             ToEquipmentStats(definition.Stats),
             ToEquipmentStats(definition.EnhancementBonus));
@@ -282,7 +282,7 @@ public static class StateMapper
         definition.Abilities.Select(ability => ability.Id).ToArray());
 
     private static CharacterVisualDto ToVisual(CharacterVisualDefinition visual) => new(
-        string.IsNullOrWhiteSpace(visual.Renderer) ? "text" : visual.Renderer,
+        ToWire(visual.Renderer),
         visual.Source ?? string.Empty,
         visual.Poster);
 
@@ -608,7 +608,7 @@ public static class StateMapper
 
         return new CombatActionStateDto(
             action.Name,
-            action.Kind,
+            ToWire(action.Kind),
             action.ElapsedMilliseconds,
             action.DurationMilliseconds,
             readyAtUnixMilliseconds);
@@ -777,7 +777,7 @@ public static class StateMapper
     private static NearbyEntityDto ToNearbyEntity(NearbyEntityDefinition definition) => new(
         definition.Id,
         definition.Name,
-        definition.Kind,
+        ToWire(definition.Kind),
         definition.Description,
         definition.Effect);
 
@@ -813,7 +813,7 @@ public static class StateMapper
             ItemKind.Material => "✤",
             _ => "◇"
         };
-        return (definition.Name, definition.Category, tone, glyph, definition.Tier, definition.Description, definition.IsTradable);
+        return (definition.Name, ToWire(definition.Category), tone, glyph, definition.Tier, definition.Description, definition.IsTradable);
     }
 
     private static string ToWire(ActionType type) => type switch
@@ -926,5 +926,98 @@ public static class StateMapper
         ActionStatus.Running => "running",
         ActionStatus.Blocked => "blocked",
         _ => "unknown"
+    };
+
+    private static string ToWire(ItemCategory category) => category switch
+    {
+        ItemCategory.Material => "material",
+        ItemCategory.Herb => "herb",
+        ItemCategory.Mineral => "mineral",
+        ItemCategory.Pill => "pill",
+        ItemCategory.Food => "food",
+        ItemCategory.Drink => "drink",
+        ItemCategory.Talisman => "talisman",
+        ItemCategory.Manual => "manual",
+        ItemCategory.Equipment => "equipment",
+        ItemCategory.Chest => "chest",
+        ItemCategory.Currency => "currency",
+        ItemCategory.Resource => "resource",
+        _ => "general"
+    };
+
+    private static string ToWire(EquipmentSlot slot) => slot switch
+    {
+        EquipmentSlot.TwoHand => "two-hand",
+        EquipmentSlot.OffHand => "off-hand",
+        EquipmentSlot.Head => "head",
+        EquipmentSlot.Armor => "armor",
+        EquipmentSlot.Legs => "legs",
+        EquipmentSlot.Boots => "boots",
+        EquipmentSlot.Ring => "ring",
+        EquipmentSlot.Neck => "neck",
+        EquipmentSlot.Trinket => "trinket",
+        EquipmentSlot.Talisman => "talisman",
+        _ => "weapon"
+    };
+
+    private static string ToWire(VisualRendererKind renderer) => renderer switch
+    {
+        VisualRendererKind.Glyph => "glyph",
+        VisualRendererKind.Image => "image",
+        VisualRendererKind.Live2D => "live2d",
+        VisualRendererKind.Model3D => "model3d",
+        _ => "text"
+    };
+
+    private static string ToWire(CombatActionKind kind) => kind switch
+    {
+        CombatActionKind.Attack => "attack",
+        CombatActionKind.Cast => "cast",
+        CombatActionKind.Control => "control",
+        CombatActionKind.Respawn => "respawn",
+        _ => "wait"
+    };
+
+    private static string ToWire(NearbyEntityKind kind) => kind switch
+    {
+        NearbyEntityKind.Building => "building",
+        NearbyEntityKind.Portal => "portal",
+        NearbyEntityKind.ResourceNode => "resource-node",
+        _ => "npc"
+    };
+
+    private static string ToWire(UnitRank rank) => rank switch
+    {
+        UnitRank.Boss => "boss",
+        UnitRank.Leader => "leader",
+        UnitRank.Elite => "elite",
+        UnitRank.Summon => "summon",
+        UnitRank.Pet => "pet",
+        UnitRank.PlayerMirror => "player-mirror",
+        UnitRank.Npc => "npc",
+        UnitRank.Normal => "normal",
+        _ => "minion"
+    };
+
+    public static string ToWire(MarketResultCode code) => code switch
+    {
+        MarketResultCode.Ok => "OK",
+        MarketResultCode.InvalidRequest => "INVALID_REQUEST",
+        MarketResultCode.OrderForbidden => "ORDER_FORBIDDEN",
+        MarketResultCode.DuplicateOrderId => "DUPLICATE_ORDER_ID",
+        MarketResultCode.OrderNotFound => "ORDER_NOT_FOUND",
+        MarketResultCode.OrderNotActive => "ORDER_NOT_ACTIVE",
+        MarketResultCode.InsufficientItem => "INSUFFICIENT_ITEM",
+        MarketResultCode.InsufficientSpirit => "INSUFFICIENT_SPIRIT",
+        MarketResultCode.OrderTooLarge => "ORDER_TOO_LARGE",
+        MarketResultCode.InvalidOrderId => "INVALID_ORDER_ID",
+        MarketResultCode.InvalidInstrument => "INVALID_INSTRUMENT",
+        MarketResultCode.ItemNotTradable => "ITEM_NOT_TRADABLE",
+        MarketResultCode.InvalidTaxPolicy => "INVALID_TAX_POLICY",
+        MarketResultCode.InvalidVendorPrice => "INVALID_VENDOR_PRICE",
+        MarketResultCode.PriceBelowVendor => "PRICE_BELOW_VENDOR",
+        MarketResultCode.InvalidPriceIncrement => "INVALID_PRICE_INCREMENT",
+        MarketResultCode.InvalidCreatedAt => "INVALID_CREATED_AT",
+        _ => code.ToString()
     };
 }

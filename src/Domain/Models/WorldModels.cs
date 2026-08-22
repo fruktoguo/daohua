@@ -159,8 +159,8 @@ public sealed class NearbyEntityDefinition
     public required string Id { get; init; }
     /// <summary>实体名称。</summary>
     public required string Name { get; init; }
-    /// <summary>实体分类（npc、building 等）。</summary>
-    public required string Kind { get; init; }
+    /// <summary>实体分类（NPC、建筑、传送门等）。</summary>
+    public required NearbyEntityKind Kind { get; init; }
     /// <summary>实体外观与背景介绍。</summary>
     public required string Description { get; init; }
     /// <summary>实体附带的交互效果或特性说明。</summary>

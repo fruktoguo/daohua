@@ -1873,12 +1873,12 @@ public sealed record MarketCommandOutcome(
     public static MarketCommandOutcome From(
         MarketPlacementResult result,
         PlayerSnapshotDto? snapshot) =>
-        new(result.Success, result.Code, result.Message, result.Order, result.Fills, snapshot);
+        new(result.Success, StateMapper.ToWire(result.Code), result.Message, result.Order, result.Fills, snapshot);
 
     public static MarketCommandOutcome From(
         MarketCancellationResult result,
         PlayerSnapshotDto? snapshot) =>
-        new(result.Success, result.Code, result.Message, result.Order, [], snapshot);
+        new(result.Success, StateMapper.ToWire(result.Code), result.Message, result.Order, [], snapshot);
 
     public static MarketCommandOutcome Failed(string code, string message) =>
         new(false, code, message, null, [], null);

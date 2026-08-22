@@ -92,8 +92,22 @@ public static class DataBudgetResolver
     /// <summary>
     /// 获取装备部位槽位的预算占比权重（如双手武器 35%，单手武器 20%，衣服 20%，首饰 15% 等）。
     /// </summary>
-    /// <param name="slot">部位槽位名称。</param>
+    /// <summary>
+    /// 根据装备穿戴部位槽位获取其基准预算系数。
+    /// 双手法器 0.35、单手/衣服 0.20、其它 0.15。
+    /// </summary>
+    /// <param name="slot">部位槽位枚举。</param>
     /// <returns>部位预算权重比例。</returns>
+    public static double GetEquipmentSlotWeight(EquipmentSlot slot) => slot switch
+    {
+        EquipmentSlot.TwoHand => 0.35,
+        EquipmentSlot.Weapon or EquipmentSlot.Armor => 0.20,
+        _ => 0.15
+    };
+
+    /// <summary>
+    /// 兼容重载：从字符串槽位获取部位预算权重比例。
+    /// </summary>
     public static double GetEquipmentSlotWeight(string? slot)
     {
         if (string.IsNullOrWhiteSpace(slot)) return 0.20;
@@ -591,7 +605,7 @@ public static class DataBudgetResolver
             Name = config.Name,
             Visual = config.Visual is { Source.Length: > 0 }
                 ? config.Visual
-                : new CharacterVisualDefinition { Renderer = "text", Source = config.Name[..1] },
+                : new CharacterVisualDefinition { Renderer = VisualRendererKind.Text, Source = config.Name[..1] },
             Style = config.Style,
             DamageType = config.DamageType,
             MaxHitpoints = stats.MaxHitpoints,

@@ -431,7 +431,7 @@ public sealed class PlayerState
     /// <summary>上次修改道号的时间戳（用于改名冷却计算）。</summary>
     public DateTimeOffset? LastRenamedAt { get; set; }
     /// <summary>角色视觉形象定义。</summary>
-    public CharacterVisualDefinition Visual { get; set; } = new() { Renderer = "text", Source = "修" };
+    public CharacterVisualDefinition Visual { get; set; } = new() { Renderer = VisualRendererKind.Text, Source = "修" };
     /// <summary>状态快照版本号，每次持久化写回时单调自增。</summary>
     public long Version { get; set; }
     /// <summary>上次完成离线/在线模拟结算的时间戳。</summary>

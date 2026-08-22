@@ -164,10 +164,10 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const maxHp: number = Math.floor(attributes?.maxHitpoints ?? (basePool.baseHp * (1.0 + staminaBonus) * (1.0 + boneBonus)))
   const maxMp: number = Math.floor(attributes?.maxManapoints ?? (basePool.baseMp * (1.0 + intelligenceBonus) * (1.0 + boneBonus)))
   const physAtk: number = Math.floor(attributes
-    ? (attributes.style === 'FiveElements' ? (basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)) : attributes.maxDamage)
+    ? (attributes.style === 'five-elements' ? (basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)) : attributes.maxDamage)
     : (basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
   const spellAtk: number = Math.floor(attributes
-    ? (attributes.style === 'FiveElements' ? attributes.maxDamage : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
+    ? (attributes.style === 'five-elements' ? attributes.maxDamage : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
     : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
   const armor: number = Math.floor(Math.max(0.0, attributes?.armor ?? (basePool.baseArmor * (1.0 + staminaBonus))))
   const magicRes: number = Math.floor(Math.max(0.0, attributes?.waterResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus))))

@@ -96,13 +96,13 @@ static CombatantConfig ToCombatantConfig(CombatantDefinition monster) => new(
     Id: monster.Id,
     Name: monster.Name,
     Visual: string.IsNullOrWhiteSpace(monster.Visual.Source)
-        ? new CharacterVisualDefinition { Renderer = "text", Source = monster.Name[..1] }
+        ? new CharacterVisualDefinition { Renderer = VisualRendererKind.Text, Source = monster.Name[..1] }
         : monster.Visual,
     Style: monster.Style,
     DamageType: monster.DamageType,
     Level: monster.AttackLevel,
     Tier: monster.AttackLevel > 0 ? (monster.AttackLevel - 1) / 12 + 1 : 1,
-    Rank: "minion",
+    Rank: UnitRank.Minion,
     Weights: null,
     MaxHitpoints: monster.MaxHitpoints,
     MaxManapoints: monster.MaxManapoints,

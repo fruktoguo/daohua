@@ -238,10 +238,8 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
     ? getCombatPhaseLabel(entry.expedition?.phase, t)
     : entry.expedition?.phase === 'travel'
     ? t('app.queue.phaseTravel')
-    : entry.expedition?.phase === 'search'
+    : entry.expedition?.phase === 'initial-search' || entry.expedition?.phase === 'search'
       ? t('app.queue.phasePrepare')
-      : entry.expedition?.phase === 'recovery'
-        ? t('app.queue.phaseRecovery')
       : entry.expedition?.phase === 'combat'
         ? t('app.queue.phaseEngage')
         : t('app.queue.phaseProgress')

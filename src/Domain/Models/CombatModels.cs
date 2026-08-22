@@ -14,7 +14,7 @@ namespace Domain.Models;
 public sealed class CharacterVisualDefinition
 {
     /// <summary>渲染器类型（如 text 文字图标、glyph 字符、image 贴图等）。</summary>
-    public string Renderer { get; init; } = "text";
+    public VisualRendererKind Renderer { get; init; } = VisualRendererKind.Text;
     /// <summary>资源地址或图标字符。</summary>
     public string Source { get; init; } = "";
     /// <summary>封面海报缩略图地址。</summary>
@@ -410,7 +410,7 @@ public sealed class CombatEquipmentDefinition
     /// <summary>装备名称。</summary>
     public required string Name { get; init; }
     /// <summary>装备穿戴槽位（如 weapon 武器、armor 衣服、ring 戒指等）。</summary>
-    public required string Slot { get; init; }
+    public required EquipmentSlot Slot { get; init; }
     /// <summary>装备品阶层次。</summary>
     public int Tier { get; init; } = 1;
     /// <summary>装备基础属性修饰。</summary>
@@ -551,7 +551,7 @@ public sealed record CombatAttributeState(
 /// </summary>
 public sealed record CombatActionState(
     string Name,
-    string Kind,
+    CombatActionKind Kind,
     long ElapsedMilliseconds,
     long DurationMilliseconds);
 

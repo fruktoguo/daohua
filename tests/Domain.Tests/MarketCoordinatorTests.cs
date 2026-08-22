@@ -79,7 +79,7 @@ public sealed class MarketCoordinatorTests
         var result = coordinator.Place(state, request);
 
         Assert.False(result.Success);
-        Assert.Equal("INSUFFICIENT_SPIRIT", result.Code);
+        Assert.Equal(MarketResultCode.InsufficientSpirit, result.Code);
         Assert.Equal(0, engine.GetMetrics().ActiveOrderCount);
     }
 

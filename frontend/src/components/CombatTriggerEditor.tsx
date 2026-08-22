@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react'
 import { ChoiceMenu } from './CatalogPicker'
 import { Modal } from './Modal'
 import { describeCombatTrigger, formatNumber } from '../game/format'
-import type { CombatTrigger } from '../game/types'
+import type { CombatTrigger, CombatTriggerDependency, CombatTriggerCondition, CombatTriggerComparator } from '../game/types'
 import { useT } from '../i18n'
 
 /** 每个槽位最多 4 条触发条件，与服务端 CombatLimits.TriggerCountPerSlot 保持一致。 */
@@ -117,7 +117,7 @@ export function CombatTriggerEditor({
                 <div className="combat-trigger-fields">
                   <ChoiceMenu
                     label={t('combat.trigger.dependencyLabel')}
-                    onSelect={value => updateTrigger(index, { dependency: value })}
+                    onSelect={value => updateTrigger(index, { dependency: value as CombatTriggerDependency })}
                     options={[
                       { id: 'self', label: t('game.trigger.dependency.self') },
                       { id: 'target-enemy', label: t('game.trigger.dependency.target-enemy'), subtitle: t('combat.trigger.subtitle.targetEnemy') },
@@ -130,7 +130,7 @@ export function CombatTriggerEditor({
                   />
                   <ChoiceMenu
                     label={t('combat.trigger.conditionLabel')}
-                    onSelect={value => updateTrigger(index, { condition: value })}
+                    onSelect={value => updateTrigger(index, { condition: value as CombatTriggerCondition })}
                     options={[
                       { id: 'current-hp-percentage', label: t('game.trigger.condition.current-hp-percentage') },
                       { id: 'missing-hp-percentage', label: t('game.trigger.condition.missing-hp-percentage') },
@@ -149,7 +149,7 @@ export function CombatTriggerEditor({
                   />
                   <ChoiceMenu
                     label={t('combat.trigger.comparatorLabel')}
-                    onSelect={value => updateTrigger(index, { comparator: value })}
+                    onSelect={value => updateTrigger(index, { comparator: value as CombatTriggerComparator })}
                     options={(numeric
                       ? [
                           { id: 'less-than-equal', label: t('game.trigger.comparator.less-than-equal') },

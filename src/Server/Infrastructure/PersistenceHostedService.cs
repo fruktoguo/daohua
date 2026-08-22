@@ -46,9 +46,10 @@ public sealed class PersistenceHostedService(
     private const double WarningRatio = 0.80;
     private const double ErrorRatio = 0.95;
     private const double RearmRatio = 0.70;
+    private enum WatermarkLevel : byte { Normal = 0, Warning = 1, Error = 2 }
     private long _outboxAckBlockedAt;
-    // 水位告警状态：0=正常，1=警告，2=错误；仅由 ExecuteAsync 单读循环访问，无需并发保护。
-    private int _watermarkLevel;
+    // 水位告警状态：Normal=正常，Warning=警告，Error=错误；仅由 ExecuteAsync 单读循环访问，无需并发保护。
+    private WatermarkLevel _watermarkLevel = WatermarkLevel.Normal;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -84,15 +85,15 @@ public sealed class PersistenceHostedService(
         var ratio = stats.BacklogRatio;
         if (ratio < RearmRatio)
         {
-            _watermarkLevel = 0;
+            _watermarkLevel = WatermarkLevel.Normal;
             return;
         }
 
-        var nextLevel = ratio >= ErrorRatio ? 2 : ratio >= WarningRatio ? 1 : 0;
-        if (nextLevel == 0 || _watermarkLevel >= nextLevel) return;
+        var nextLevel = ratio >= ErrorRatio ? WatermarkLevel.Error : ratio >= WarningRatio ? WatermarkLevel.Warning : WatermarkLevel.Normal;
+        if (nextLevel == WatermarkLevel.Normal || _watermarkLevel >= nextLevel) return;
 
         _watermarkLevel = nextLevel;
-        if (nextLevel == 2)
+        if (nextLevel == WatermarkLevel.Error)
         {
             logger.LogError(
                 "持久化队列积压达到错误水位：pending {Pending}/{Capacity}（{Ratio:P1}），磁盘写入可能严重受阻",

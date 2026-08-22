@@ -63,7 +63,7 @@ public sealed class MarketTests
 
         var forbidden = engine.Cancel(order.OrderId, other);
         Assert.False(forbidden.Success);
-        Assert.Equal("ORDER_FORBIDDEN", forbidden.Code);
+        Assert.Equal(MarketResultCode.OrderForbidden, forbidden.Code);
 
         var cancelled = engine.Cancel(order.OrderId, owner);
         Assert.True(cancelled.Success);
@@ -83,7 +83,7 @@ public sealed class MarketTests
         var engine = new MarketEngine();
         var invalid = engine.Place(Sell("bad", Guid.NewGuid(), 0, 1));
         Assert.False(invalid.Success);
-        Assert.Equal("INVALID_ORDER", invalid.Code);
+        Assert.Equal(MarketResultCode.InvalidRequest, invalid.Code);
 
         var nontradable = engine.Place(Sell(
             "qi",
@@ -92,7 +92,7 @@ public sealed class MarketTests
             1,
             1));
         Assert.False(nontradable.Success);
-        Assert.Equal("ITEM_NOT_TRADABLE", nontradable.Code);
+        Assert.Equal(MarketResultCode.ItemNotTradable, nontradable.Code);
     }
 
     /// <summary>
@@ -106,7 +106,7 @@ public sealed class MarketTests
         var result = book.Place(Sell("invalid-tax", Guid.NewGuid(), 10, 2));
 
         Assert.False(result.Success);
-        Assert.Equal("INVALID_TAX_POLICY", result.Code);
+        Assert.Equal(MarketResultCode.InvalidTaxPolicy, result.Code);
         Assert.Equal(0, book.ActiveOrderCount);
         Assert.Empty(book.Snapshot().Asks);
         Assert.False(book.TryGetOrder("invalid-tax", out _));
@@ -246,11 +246,11 @@ public sealed class MarketTests
         var engine = new MarketEngine();
         var invalidIncrement = engine.Place(Sell("invalid-increment", Guid.NewGuid(), 75, 1));
         Assert.False(invalidIncrement.Success);
-        Assert.Equal("INVALID_PRICE_INCREMENT", invalidIncrement.Code);
+        Assert.Equal(MarketResultCode.InvalidPriceIncrement, invalidIncrement.Code);
 
         var belowVendor = engine.Place(Sell("below-vendor", Guid.NewGuid(), 2, 1));
         Assert.False(belowVendor.Success);
-        Assert.Equal("PRICE_BELOW_VENDOR", belowVendor.Code);
+        Assert.Equal(MarketResultCode.PriceBelowVendor, belowVendor.Code);
     }
 
     /// <summary>

@@ -140,24 +140,24 @@ public sealed class MarketEngine
     {
         if (request is null || string.IsNullOrWhiteSpace(request.OrderId))
         {
-            return MarketPlacementResult.Fail("INVALID_ORDER_ID", "订单 ID 不能为空。");
+            return MarketPlacementResult.Fail(MarketResultCode.InvalidOrderId, "订单 ID 不能为空。");
         }
 
         if (!request.Instrument.IsValid)
         {
-            return MarketPlacementResult.Fail("INVALID_INSTRUMENT", "市场品种无效。");
+            return MarketPlacementResult.Fail(MarketResultCode.InvalidInstrument, "市场品种无效。");
         }
 
         if (!_isTradable(request.Instrument.ItemId))
         {
-            return MarketPlacementResult.Fail("ITEM_NOT_TRADABLE", "该物品不能挂牌交易。");
+            return MarketPlacementResult.Fail(MarketResultCode.ItemNotTradable, "该物品不能挂牌交易。");
         }
 
         var shardIndex = GetShardIndex(request.Instrument);
         var route = new OrderRoute(shardIndex, request.Instrument, request.OwnerId);
         if (!_routes.TryAdd(request.OrderId, route))
         {
-            return MarketPlacementResult.Fail("DUPLICATE_ORDER_ID", "订单 ID 已存在。");
+            return MarketPlacementResult.Fail(MarketResultCode.DuplicateOrderId, "订单 ID 已存在。");
         }
 
         var shard = _shards[shardIndex];
@@ -199,7 +199,7 @@ public sealed class MarketEngine
     {
         if (string.IsNullOrWhiteSpace(orderId) || !_routes.TryGetValue(orderId, out var route))
         {
-            return MarketCancellationResult.Fail("ORDER_NOT_FOUND", "订单不存在。");
+            return MarketCancellationResult.Fail(MarketResultCode.OrderNotFound, "订单不存在。");
         }
 
         var shard = _shards[route.ShardIndex];

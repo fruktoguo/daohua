@@ -96,13 +96,13 @@ public sealed record MarketFill(
 /// </summary>
 public sealed record MarketPlacementResult(
     bool Success,
-    string Code,
+    MarketResultCode Code,
     string Message,
     MarketOrderView? Order,
     IReadOnlyList<MarketFill> Fills)
 {
     /// <summary>构建失败挂单结果。</summary>
-    public static MarketPlacementResult Fail(string code, string message) =>
+    public static MarketPlacementResult Fail(MarketResultCode code, string message) =>
         new(false, code, message, null, []);
 }
 
@@ -111,12 +111,12 @@ public sealed record MarketPlacementResult(
 /// </summary>
 public sealed record MarketCancellationResult(
     bool Success,
-    string Code,
+    MarketResultCode Code,
     string Message,
     MarketOrderView? Order)
 {
     /// <summary>构建失败撤单结果。</summary>
-    public static MarketCancellationResult Fail(string code, string message) =>
+    public static MarketCancellationResult Fail(MarketResultCode code, string message) =>
         new(false, code, message, null);
 }
 

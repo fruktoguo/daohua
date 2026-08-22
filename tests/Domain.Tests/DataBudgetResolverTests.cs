@@ -101,7 +101,7 @@ public sealed class DataBudgetResolverTests
         var config = new EquipmentConfig(
             Id: "equipment.iron-bulwark",
             Name: "玄铁重盾",
-            Slot: "two-hand",
+            Slot: EquipmentSlot.TwoHand,
             Tier: 3,
             Intensity: 100.0,
             Weights: new Dictionary<string, double>
@@ -139,7 +139,7 @@ public sealed class DataBudgetResolverTests
             Name: "回元大丹",
             Description: "测试丹药",
             Kind: ItemKind.Consumable,
-            Category: "丹药",
+            Category: ItemCategory.Pill,
             Tier: 2,
             Consumable: new ConsumableConfig(
                 UsableInActionTypes: new HashSet<ActionType> { ActionType.Combat },

@@ -179,13 +179,24 @@ public abstract class AccountStoreBase
 
     private static int ParseIterations(string storedHash)
     {
-        var parts = storedHash.Split('$', 3);
-        if (parts.Length == 3
-            && string.Equals(parts[0], "pbkdf2-sha256", StringComparison.Ordinal)
-            && int.TryParse(parts[1], out var parsed)
-            && parsed is >= 10_000 and <= 2_000_000)
+        var span = storedHash.AsSpan();
+        var firstDollar = span.IndexOf('$');
+        if (firstDollar >= 0)
         {
-            return parsed;
+            var prefix = span[..firstDollar];
+            if (prefix.SequenceEqual("pbkdf2-sha256"))
+            {
+                var rest = span[(firstDollar + 1)..];
+                var secondDollar = rest.IndexOf('$');
+                if (secondDollar >= 0)
+                {
+                    var iterSpan = rest[..secondDollar];
+                    if (int.TryParse(iterSpan, out var parsed) && parsed is >= 10_000 and <= 2_000_000)
+                    {
+                        return parsed;
+                    }
+                }
+            }
         }
 
         throw new InvalidDataException("账号密码哈希格式不受当前 PostgreSQL 存储支持。");

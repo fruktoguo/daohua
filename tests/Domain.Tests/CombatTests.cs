@@ -183,8 +183,8 @@ public sealed class CombatTests
             Baseline,
             TimeSpan.FromMilliseconds(1000));
 
-        Assert.Equal("cast", beforeBoundary.PlayerAction?.Kind);
-        Assert.NotEqual("cast", atBoundary.PlayerAction?.Kind);
+        Assert.Equal(CombatActionKind.Cast, beforeBoundary.PlayerAction?.Kind);
+        Assert.NotEqual(CombatActionKind.Cast, atBoundary.PlayerAction?.Kind);
         Assert.True(atBoundary.DamageDealt > beforeBoundary.DamageDealt);
     }
 
@@ -1439,7 +1439,7 @@ public sealed class CombatTests
             Id: "test.rift-wolf",
             Name: "测试妖狼",
             Tier: 2,
-            Rank: "minion",
+            Rank: UnitRank.Minion,
             Weights: new Dictionary<string, double>
             {
                 ["hp"] = 1.0,
@@ -1460,7 +1460,7 @@ public sealed class CombatTests
             Id: "test.blade-corpse",
             Name: "测试尸煞",
             Tier: 2,
-            Rank: "elite",
+            Rank: UnitRank.Elite,
             Weights: new Dictionary<string, double>
             {
                 ["hp"] = 1.0,
@@ -1477,7 +1477,7 @@ public sealed class CombatTests
             Id: "test.falling-star-beast",
             Name: "测试坠星兽",
             Tier: 2,
-            Rank: "boss",
+            Rank: UnitRank.Boss,
             Weights: new Dictionary<string, double>
             {
                 ["hp"] = 1.0,
@@ -1500,7 +1500,7 @@ public sealed class CombatTests
             Id: "test.boss-with-skills",
             Name: "测试Boss",
             Tier: 2,
-            Rank: "boss",
+            Rank: UnitRank.Boss,
             Skills:
             [
                 new MonsterSkillConfig("ability.heavy-slash", Level: 1, TriggerHpRatio: 1.0),

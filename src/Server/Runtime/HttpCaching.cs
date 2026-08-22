@@ -37,13 +37,27 @@ public static class HttpCaching
     /// </summary>
     public static bool IsNotModified(HttpRequest request, string etag)
     {
+        var targetSpan = etag.AsSpan();
         foreach (var headerValue in request.Headers.IfNoneMatch)
         {
             if (string.IsNullOrWhiteSpace(headerValue)) continue;
-            foreach (var candidate in headerValue.Split(','))
+            var span = headerValue.AsSpan();
+            while (!span.IsEmpty)
             {
-                var normalized = candidate.Trim();
-                if (normalized == "*" || string.Equals(normalized, etag, StringComparison.Ordinal))
+                var commaIndex = span.IndexOf(',');
+                ReadOnlySpan<char> candidate;
+                if (commaIndex >= 0)
+                {
+                    candidate = span[..commaIndex].Trim();
+                    span = span[(commaIndex + 1)..];
+                }
+                else
+                {
+                    candidate = span.Trim();
+                    span = default;
+                }
+
+                if (candidate.SequenceEqual("*") || candidate.SequenceEqual(targetSpan))
                 {
                     return true;
                 }

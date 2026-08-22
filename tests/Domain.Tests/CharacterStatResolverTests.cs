@@ -27,7 +27,7 @@ public sealed class CharacterStatResolverTests
         {
             Level = 1,
             Tier = 1,
-            Rank = "normal",
+            Rank = UnitRank.Normal,
             Floor = false
         });
 
@@ -50,15 +50,15 @@ public sealed class CharacterStatResolverTests
     }
 
     [Theory]
-    [InlineData("minion", 0.80, 3.00)]
-    [InlineData("elite", 1.20, 5.00)]
-    [InlineData("boss", 1.50, 20.00)]
-    [InlineData("leader", 1.35, 10.00)]
-    [InlineData("summon", 1.00, 1.00)]
-    [InlineData("pet", 1.00, 1.00)]
-    [InlineData("npc", 1.00, 1.00)]
-    [InlineData("normal", 1.00, 1.00)]
-    public void Life_stage_rank_multipliers_are_applied_accurately(string rank, double expectedStatMult, double expectedHpMult)
+    [InlineData(UnitRank.Minion, 0.80, 3.00)]
+    [InlineData(UnitRank.Elite, 1.20, 5.00)]
+    [InlineData(UnitRank.Boss, 1.50, 20.00)]
+    [InlineData(UnitRank.Leader, 1.35, 10.00)]
+    [InlineData(UnitRank.Summon, 1.00, 1.00)]
+    [InlineData(UnitRank.Pet, 1.00, 1.00)]
+    [InlineData(UnitRank.Npc, 1.00, 1.00)]
+    [InlineData(UnitRank.Normal, 1.00, 1.00)]
+    public void Life_stage_rank_multipliers_are_applied_accurately(UnitRank rank, double expectedStatMult, double expectedHpMult)
     {
         var (statMult, hpMult) = CharacterStatResolver.GetRankMultipliers(rank);
         Assert.Equal(expectedStatMult, statMult, precision: 4);
@@ -76,7 +76,7 @@ public sealed class CharacterStatResolverTests
         var floored = CharacterStatResolver.Resolve(new CharacterStatRequest
         {
             Level = 1,
-            Rank = "minion",
+            Rank = UnitRank.Minion,
             Floor = true
         });
 
@@ -84,7 +84,7 @@ public sealed class CharacterStatResolverTests
         var unfloored = CharacterStatResolver.Resolve(new CharacterStatRequest
         {
             Level = 1,
-            Rank = "minion",
+            Rank = UnitRank.Minion,
             Floor = false
         });
 
@@ -102,7 +102,7 @@ public sealed class CharacterStatResolverTests
             Level = 1,
             Tier = 1,
             Style = CombatStyle.Body,
-            Rank = "normal",
+            Rank = UnitRank.Normal,
             Floor = false
         });
 
@@ -112,7 +112,7 @@ public sealed class CharacterStatResolverTests
             Level = 1,
             Tier = 1,
             Style = CombatStyle.FiveElements,
-            Rank = "normal",
+            Rank = UnitRank.Normal,
             Floor = false
         });
 
@@ -127,7 +127,7 @@ public sealed class CharacterStatResolverTests
         var stats = CharacterStatResolver.Resolve(new CharacterStatRequest
         {
             Level = 1,
-            Rank = "minion",
+            Rank = UnitRank.Minion,
             MaxHitpoints = 99999,
             Armor = 888.5,
             HpRegen = 77.0
@@ -146,7 +146,7 @@ public sealed class CharacterStatResolverTests
         {
             Level = 12,
             Tier = 1,
-            Rank = "summon",
+            Rank = UnitRank.Summon,
             Style = CombatStyle.Body,
             Weights = new Dictionary<string, double>
             {

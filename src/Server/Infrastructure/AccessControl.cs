@@ -49,8 +49,20 @@ public sealed class AccessControl
     {
         if (!Enabled) return true;
         if (string.IsNullOrEmpty(provided)) return false;
-        var providedBytes = Encoding.UTF8.GetBytes(provided);
-        return providedBytes.Length == _expectedToken!.Length
-            && CryptographicOperations.FixedTimeEquals(providedBytes, _expectedToken);
+        var maxByteCount = Encoding.UTF8.GetMaxByteCount(provided.Length);
+        if (maxByteCount <= 256)
+        {
+            Span<byte> buffer = stackalloc byte[maxByteCount];
+            var written = Encoding.UTF8.GetBytes(provided.AsSpan(), buffer);
+            var providedBytes = buffer[..written];
+            return providedBytes.Length == _expectedToken!.Length
+                && CryptographicOperations.FixedTimeEquals(providedBytes, _expectedToken);
+        }
+        else
+        {
+            var providedBytes = Encoding.UTF8.GetBytes(provided);
+            return providedBytes.Length == _expectedToken!.Length
+                && CryptographicOperations.FixedTimeEquals(providedBytes, _expectedToken);
+        }
     }
 }

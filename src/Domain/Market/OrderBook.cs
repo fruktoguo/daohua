@@ -238,13 +238,13 @@ public sealed class OrderBook
         catch (Exception exception) when (exception is ArgumentException or ArithmeticException or InvalidOperationException)
         {
             _rejectedCount++;
-            return MarketPlacementResult.Fail("INVALID_TAX_POLICY", "市场税率配置无效。");
+            return MarketPlacementResult.Fail(MarketResultCode.InvalidTaxPolicy, "市场税率配置无效。");
         }
 
         if (!double.IsFinite(sellerTaxRate) || sellerTaxRate is < 0 or >= 1)
         {
             _rejectedCount++;
-            return MarketPlacementResult.Fail("INVALID_TAX_POLICY", "市场税率配置无效。");
+            return MarketPlacementResult.Fail(MarketResultCode.InvalidTaxPolicy, "市场税率配置无效。");
         }
 
         var order = new MutableOrder(
@@ -324,7 +324,7 @@ public sealed class OrderBook
 
         return new MarketPlacementResult(
             true,
-            "OK",
+            MarketResultCode.Ok,
             fills.Count == 0 ? "订单已进入订单簿。" : "订单已撮合。",
             ToView(order),
             fills);
@@ -377,19 +377,19 @@ public sealed class OrderBook
     {
         if (string.IsNullOrWhiteSpace(orderId) || !_orders.TryGetValue(orderId, out var order))
         {
-            return MarketCancellationResult.Fail("ORDER_NOT_FOUND", "订单不存在。");
+            return MarketCancellationResult.Fail(MarketResultCode.OrderNotFound, "订单不存在。");
         }
 
         if (order.OwnerId != ownerId)
         {
-            return MarketCancellationResult.Fail("ORDER_FORBIDDEN", "只能撤销自己的订单。");
+            return MarketCancellationResult.Fail(MarketResultCode.OrderForbidden, "只能撤销自己的订单。");
         }
 
         if (order.Status is MarketOrderStatus.Filled
             or MarketOrderStatus.Cancelled
             or MarketOrderStatus.Expired)
         {
-            return MarketCancellationResult.Fail("ORDER_NOT_ACTIVE", "订单已经结束。");
+            return MarketCancellationResult.Fail(MarketResultCode.OrderNotActive, "订单已经结束。");
         }
 
         if (order.Node is not null)
@@ -407,7 +407,7 @@ public sealed class OrderBook
         _cancelCount++;
         RecordTerminal(order);
         TrimTerminalHistory();
-        return new MarketCancellationResult(true, "OK", "订单已撤销。", ToView(order));
+        return new MarketCancellationResult(true, MarketResultCode.Ok, "订单已撤销。", ToView(order));
     }
 
     /// <summary>
@@ -507,47 +507,47 @@ public sealed class OrderBook
 
     private bool Validate(
         MarketOrderRequest request,
-        out string errorCode,
+        out MarketResultCode errorCode,
         out string errorMessage)
     {
         if (request is null)
         {
-            errorCode = "INVALID_REQUEST";
+            errorCode = MarketResultCode.InvalidRequest;
             errorMessage = "订单参数不能为空。";
             return false;
         }
 
         if (string.IsNullOrWhiteSpace(request.OrderId))
         {
-            errorCode = "INVALID_ORDER_ID";
+            errorCode = MarketResultCode.InvalidOrderId;
             errorMessage = "订单 ID 不能为空。";
             return false;
         }
 
         if (_orders.ContainsKey(request.OrderId))
         {
-            errorCode = "DUPLICATE_ORDER_ID";
+            errorCode = MarketResultCode.DuplicateOrderId;
             errorMessage = "订单 ID 已存在。";
             return false;
         }
 
         if (request.OwnerId == Guid.Empty)
         {
-            errorCode = "INVALID_OWNER";
+            errorCode = MarketResultCode.InvalidRequest;
             errorMessage = "订单所有者无效。";
             return false;
         }
 
         if (request.Instrument != _instrument)
         {
-            errorCode = "INSTRUMENT_MISMATCH";
+            errorCode = MarketResultCode.InvalidInstrument;
             errorMessage = "订单品种与当前订单簿不匹配。";
             return false;
         }
 
         if (!Enum.IsDefined(request.Side) || request.Price <= 0 || request.Quantity <= 0)
         {
-            errorCode = "INVALID_ORDER";
+            errorCode = MarketResultCode.InvalidRequest;
             errorMessage = "订单方向、价格和数量必须有效。";
             return false;
         }
@@ -555,7 +555,7 @@ public sealed class OrderBook
         if (request.CreatedAt is { } createdAt
             && createdAt.ToUniversalTime() > DateTimeOffset.MaxValue - MarketPricePolicy.ListingLifetime)
         {
-            errorCode = "INVALID_CREATED_AT";
+            errorCode = MarketResultCode.InvalidCreatedAt;
             errorMessage = "订单创建时间超出支持范围。";
             return false;
         }
@@ -567,28 +567,28 @@ public sealed class OrderBook
         }
         catch (Exception exception) when (exception is ArgumentException or ArithmeticException or InvalidOperationException)
         {
-            errorCode = "INVALID_VENDOR_PRICE";
+            errorCode = MarketResultCode.InvalidVendorPrice;
             errorMessage = "物品商店回收价配置无效。";
             return false;
         }
 
         if (vendorPrice < 0)
         {
-            errorCode = "INVALID_VENDOR_PRICE";
+            errorCode = MarketResultCode.InvalidVendorPrice;
             errorMessage = "物品商店回收价配置无效。";
             return false;
         }
 
         if (request.Price < Math.Max(MarketPricePolicy.AbsoluteMinimumPrice, vendorPrice))
         {
-            errorCode = "PRICE_BELOW_VENDOR";
+            errorCode = MarketResultCode.PriceBelowVendor;
             errorMessage = "挂牌价格不能低于物品商店回收价。";
             return false;
         }
 
         if (!MarketPricePolicy.IsValid(request.Price, vendorPrice))
         {
-            errorCode = "INVALID_PRICE_INCREMENT";
+            errorCode = MarketResultCode.InvalidPriceIncrement;
             errorMessage = "挂牌价格不符合当前价格档位。";
             return false;
         }
@@ -599,12 +599,12 @@ public sealed class OrderBook
         }
         catch (OverflowException)
         {
-            errorCode = "ORDER_TOO_LARGE";
+            errorCode = MarketResultCode.OrderTooLarge;
             errorMessage = "订单金额超出支持范围。";
             return false;
         }
 
-        errorCode = string.Empty;
+        errorCode = MarketResultCode.Ok;
         errorMessage = string.Empty;
         return true;
     }

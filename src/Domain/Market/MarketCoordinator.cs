@@ -148,12 +148,12 @@ public sealed class MarketCoordinator
         ArgumentNullException.ThrowIfNull(owner);
         if (request is null)
         {
-            return MarketPlacementResult.Fail("INVALID_REQUEST", "订单参数不能为空。");
+            return MarketPlacementResult.Fail(MarketResultCode.InvalidRequest, "订单参数不能为空。");
         }
 
         if (request.OwnerId != owner.PlayerId)
         {
-            return MarketPlacementResult.Fail("ORDER_FORBIDDEN", "订单所有者必须是当前玩家。");
+            return MarketPlacementResult.Fail(MarketResultCode.OrderForbidden, "订单所有者必须是当前玩家。");
         }
 
         Claim(owner);
@@ -165,7 +165,7 @@ public sealed class MarketCoordinator
         if (!_reservations.TryAdd(request.OrderId, reservation))
         {
             ReleaseReservation(owner, reservation);
-            return MarketPlacementResult.Fail("DUPLICATE_ORDER_ID", "订单 ID 已存在。");
+            return MarketPlacementResult.Fail(MarketResultCode.DuplicateOrderId, "订单 ID 已存在。");
         }
         MarketPlacementResult result;
         try
@@ -211,7 +211,7 @@ public sealed class MarketCoordinator
         if (!_reservations.TryGetValue(orderId, out var reservation)
             || reservation.OwnerId != owner.PlayerId)
         {
-            return MarketCancellationResult.Fail("ORDER_NOT_FOUND", "没有找到当前玩家的活动订单。");
+            return MarketCancellationResult.Fail(MarketResultCode.OrderNotFound, "没有找到当前玩家的活动订单。");
         }
 
         var result = _engine.Cancel(orderId, owner.PlayerId);
@@ -278,7 +278,7 @@ public sealed class MarketCoordinator
         PlayerState owner,
         MarketOrderRequest request,
         out Reservation reservation,
-        out string errorCode,
+        out MarketResultCode errorCode,
         out string errorMessage)
     {
         reservation = default!;
@@ -287,7 +287,7 @@ public sealed class MarketCoordinator
             || request.Quantity <= 0
             || !request.Instrument.IsValid)
         {
-            errorCode = "INVALID_ORDER";
+            errorCode = MarketResultCode.InvalidRequest;
             errorMessage = "订单价格、数量或品种无效。";
             return false;
         }
@@ -296,7 +296,7 @@ public sealed class MarketCoordinator
         {
             if (owner.Inventory.Get(request.Instrument.ItemId) < request.Quantity)
             {
-                errorCode = "INSUFFICIENT_ITEM";
+                errorCode = MarketResultCode.InsufficientItem;
                 errorMessage = "挂牌物品数量不足。";
                 return false;
             }
@@ -319,14 +319,14 @@ public sealed class MarketCoordinator
             }
             catch (OverflowException)
             {
-                errorCode = "ORDER_TOO_LARGE";
+                errorCode = MarketResultCode.OrderTooLarge;
                 errorMessage = "订单金额超出支持范围。";
                 return false;
             }
 
             if (owner.Inventory.Get(ItemIds.Spirit) < maximumAmount)
             {
-                errorCode = "INSUFFICIENT_SPIRIT";
+                errorCode = MarketResultCode.InsufficientSpirit;
                 errorMessage = "灵石余额不足以覆盖买单上限。";
                 return false;
             }
@@ -341,7 +341,7 @@ public sealed class MarketCoordinator
                 maximumAmount);
         }
 
-        errorCode = string.Empty;
+        errorCode = MarketResultCode.Ok;
         errorMessage = string.Empty;
         return true;
     }
