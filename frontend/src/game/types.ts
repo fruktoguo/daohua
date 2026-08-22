@@ -54,7 +54,7 @@ export interface QueueProgress {
 }
 
 export interface ExpeditionProgress {
-  phase: 'travel' | 'initial-search' | 'search' | 'combat' | 'death' | string
+  phase: 'travel' | 'initial-search' | 'search' | 'combat' | string
   progress: number
   elapsedSeconds: number
   durationSeconds: number
@@ -385,7 +385,6 @@ export interface CombatLoadout {
   defenseLevel: number
   swordsmanshipLevel: number
   talismanLevel: number
-  fiveElementsLevel: number
   abilitySlots: CombatAbilitySlot[]
   consumableSlots: ConsumableSlot[]
   combatDropRate?: number
@@ -460,7 +459,6 @@ export interface PlayerSnapshot {
   inventory: InventoryItem[]
   buffs: Buff[]
   stats: Stats
-  events: string[]
   logEvents?: LogEvent[]
   combat?: CombatLoadout
   combatResources?: CombatResourceState
@@ -484,7 +482,6 @@ export interface PlayerPatch {
   inventory?: InventoryItem[]
   buffs?: Buff[]
   stats?: Stats
-  events?: string[]
   queueProgress?: QueueProgress
   eventBatch?: LogEvent[]
   combat?: CombatLoadout

@@ -3,8 +3,8 @@ using YuoCore.Persistence;
 namespace Daoxuan.Server.Infrastructure;
 
 /// <summary>
-/// Daoxuan 的持久化装配边界。默认走内存队列，开启 durable outbox 后先写 YuoCore outbox，
-/// 生产者无需知道底层是本地 WAL 还是未来的数据库事务。
+/// Daoxuan 的 PostgreSQL 持久化装配边界。默认写入内存队列，开启 durable outbox 后先进入数据库 outbox，
+/// 后台写回成功后按序 ack，重启会 replay 未确认命令。
 /// </summary>
 public interface IDaoxuanPersistenceQueue
 {

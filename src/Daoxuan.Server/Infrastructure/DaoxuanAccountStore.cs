@@ -1,10 +1,7 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Npgsql;
-using NpgsqlTypes;
 
 namespace Daoxuan.Server.Infrastructure;
 
@@ -146,157 +143,10 @@ public abstract class DaoxuanAccountStoreBase
             return parsed;
         }
 
-        // 兼容开发期旧 JSON 存档；新注册一律使用带参数的格式。
-        return 10_000;
+        throw new InvalidDataException("账号密码哈希格式不受当前 PostgreSQL 存储支持。");
     }
 }
 
-public sealed class DaoxuanLocalAccountStore : DaoxuanAccountStoreBase, IDaoxuanAccountStore
-{
-    private readonly string _filePath;
-    private readonly ILogger<DaoxuanLocalAccountStore> _logger;
-    private readonly ConcurrentDictionary<string, DaoxuanAccountRecord> _accounts = new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _saveLock = new();
-
-    public DaoxuanLocalAccountStore(DaoxuanStoragePaths paths, ILogger<DaoxuanLocalAccountStore> logger)
-    {
-        ArgumentNullException.ThrowIfNull(paths);
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _filePath = Path.Combine(paths.SnapshotDirectory, "accounts.json");
-        Directory.CreateDirectory(paths.SnapshotDirectory);
-        Load();
-    }
-
-    public ValueTask<AuthResult> RegisterAsync(
-        string account,
-        string password,
-        string? characterName,
-        Func<string, bool> isHostNameTaken,
-        Func<long> localSequenceProvider,
-        CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var validation = ValidateRegistrationInput(account, password, characterName, out var cleanAccount, out var cleanName);
-        if (validation is not null) return ValueTask.FromResult(validation);
-
-        if (_accounts.ContainsKey(cleanAccount))
-        {
-            return ValueTask.FromResult(new AuthResult(false, null, null, null, 0, "该登录账号已被注册，请直接登录或更换账号。"));
-        }
-
-        if (IsCharacterNameTaken(cleanName) || isHostNameTaken(cleanName))
-        {
-            return ValueTask.FromResult(new AuthResult(false, null, null, null, 0, "该修士道号已被其他道友使用，请更换道号。"));
-        }
-
-        var (hash, salt) = HashPassword(password);
-        var record = new DaoxuanAccountRecord
-        {
-            Account = cleanAccount,
-            PasswordHash = hash,
-            Salt = salt,
-            PlayerId = Guid.NewGuid(),
-            CharacterName = cleanName,
-            SequenceId = localSequenceProvider(),
-            CreatedAt = DateTimeOffset.UtcNow
-        };
-
-        if (!_accounts.TryAdd(cleanAccount, record))
-        {
-            return ValueTask.FromResult(new AuthResult(false, null, null, null, 0, "该登录账号已被注册。"));
-        }
-
-        Save();
-        return ValueTask.FromResult(new AuthResult(true, record.Account, record.CharacterName, record.PlayerId, record.SequenceId, "注册成功，欢迎踏入仙途！", record.CreatedAt));
-    }
-
-    public ValueTask<AuthResult> LoginAsync(string account, string password, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var validation = ValidateLoginInput(account, password, out var cleanAccount);
-        if (validation is not null) return ValueTask.FromResult(validation);
-
-        if (!_accounts.TryGetValue(cleanAccount, out var record))
-        {
-            return ValueTask.FromResult(new AuthResult(false, null, null, null, 0, "账号不存在，请先注册道身。"));
-        }
-
-        if (!VerifyPassword(password, record.PasswordHash, record.Salt))
-        {
-            return ValueTask.FromResult(new AuthResult(false, null, null, null, 0, "登录密码错误，请重新输入。"));
-        }
-
-        return ValueTask.FromResult(new AuthResult(true, record.Account, record.CharacterName, record.PlayerId, record.SequenceId, "登录成功，仙道畅通！", record.CreatedAt));
-    }
-
-    public ValueTask UpdateCharacterNameAsync(string account, string newName, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        if (_accounts.TryGetValue(account.Trim(), out var record))
-        {
-            record.CharacterName = newName.Trim();
-            Save();
-        }
-
-        return ValueTask.CompletedTask;
-    }
-
-    private bool IsCharacterNameTaken(string characterName)
-    {
-        var clean = characterName.Trim();
-        return _accounts.Values.Any(a => string.Equals(a.CharacterName, clean, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private void Load()
-    {
-        if (!File.Exists(_filePath)) return;
-        try
-        {
-            var json = File.ReadAllText(_filePath);
-            var list = JsonSerializer.Deserialize<List<DaoxuanAccountRecord>>(json);
-            if (list is null) return;
-            foreach (var item in list.Where(item => !string.IsNullOrWhiteSpace(item.Account)))
-            {
-                _accounts[item.Account] = item;
-            }
-        }
-        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException or FormatException)
-        {
-            _logger.LogError(exception, "加载本地账号文件失败 {Path}", _filePath);
-            throw;
-        }
-    }
-
-    private void Save()
-    {
-        lock (_saveLock)
-        {
-            var list = _accounts.Values.OrderBy(record => record.SequenceId).ToList();
-            var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = false });
-            var temp = $"{_filePath}.{Guid.NewGuid():N}.tmp";
-            try
-            {
-                File.WriteAllText(temp, json);
-                File.Move(temp, _filePath, overwrite: true);
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                _logger.LogError(exception, "保存本地账号文件失败 {Path}", _filePath);
-                throw;
-            }
-            finally
-            {
-                try
-                {
-                    if (File.Exists(temp)) File.Delete(temp);
-                }
-                catch (IOException)
-                {
-                }
-            }
-        }
-    }
-}
 
 public sealed class DaoxuanPostgresAccountStore(NpgsqlDataSource dataSource) : DaoxuanAccountStoreBase, IDaoxuanAccountStore
 {

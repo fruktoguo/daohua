@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { resolveActionDefinitions } from './ids'
 import { createDemoSnapshot } from './demo'
-import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, CombatLoadout, ConsumableSlot, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
+import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
 export type ConnectionState = 'connecting' | 'online' | 'reconnecting' | 'offline'
 
@@ -56,8 +56,6 @@ const COMBAT_ABILITY_SLOT_COUNT = 4
 const COMBAT_CONSUMABLE_SLOT_COUNT = 3
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
 
-type AutoUseSlotWire = AutoUseSlot | AutoUseSlot[] | null | undefined
-
 function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined): AutoUseSlot {
   return {
     itemId: slot?.itemId ?? null,
@@ -68,41 +66,32 @@ function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined): AutoUseSlot
 }
 
 function normalizeAutoUseSlots(
-  slots: Partial<Record<ActionType, AutoUseSlotWire>> | null | undefined,
+  slots: Partial<Record<ActionType, AutoUseSlot[]>> | null | undefined,
 ): QueueState['autoUseSlots'] {
   const normalized = {} as QueueState['autoUseSlots']
   for (const type of ACTION_TYPE_KEYS) {
-    const wire = slots?.[type]
-    const list = Array.isArray(wire) ? wire : wire ? [wire] : []
+    const list = Array.isArray(slots?.[type]) ? slots[type] : []
     normalized[type] = Array.from({ length: AUTO_USE_SLOT_COUNT }, (_, index) => normalizeAutoUseSlot(list[index]))
   }
   return normalized
 }
 
 function normalizeQueue(queue: PlayerSnapshot['queue']): PlayerSnapshot['queue'] {
-  return { ...queue, autoUseSlots: normalizeAutoUseSlots(queue.autoUseSlots as Partial<Record<ActionType, AutoUseSlotWire>>) }
-}
-
-type LegacyCombatLoadout = CombatLoadout & {
-  foodSlots?: ConsumableSlot[]
-  drinkSlots?: ConsumableSlot[]
+  return { ...queue, autoUseSlots: normalizeAutoUseSlots(queue.autoUseSlots) }
 }
 
 function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['combat'] {
   if (!combat) return combat
-  const wire = combat as LegacyCombatLoadout
-  const abilitySlots = Array.isArray(wire.abilitySlots) ? wire.abilitySlots : []
+  const abilitySlots = Array.isArray(combat.abilitySlots) ? combat.abilitySlots : []
   const normalizedAbilitySlots = Array.from({ length: COMBAT_ABILITY_SLOT_COUNT }, (_, index) => ({
     abilityId: abilitySlots[index]?.abilityId ?? null,
     level: Math.max(1, abilitySlots[index]?.level ?? 1),
     triggers: abilitySlots[index]?.triggers ?? [],
   }))
-  const learnedAbilityIds = Array.isArray(wire.learnedAbilityIds)
-    ? wire.learnedAbilityIds
+  const learnedAbilityIds = Array.isArray(combat.learnedAbilityIds)
+    ? combat.learnedAbilityIds
     : normalizedAbilitySlots.map(slot => slot.abilityId).filter((abilityId): abilityId is string => Boolean(abilityId))
-  const consumableSlots = Array.isArray(wire.consumableSlots)
-    ? wire.consumableSlots
-    : [...(wire.foodSlots ?? []), ...(wire.drinkSlots ?? [])]
+  const consumableSlots = Array.isArray(combat.consumableSlots) ? combat.consumableSlots : []
   const normalizedConsumableSlots = Array.from({ length: COMBAT_CONSUMABLE_SLOT_COUNT }, (_, index) => ({
     itemId: consumableSlots[index]?.itemId ?? null,
     quantity: Math.max(1, consumableSlots[index]?.quantity ?? 1),

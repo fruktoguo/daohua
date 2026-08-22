@@ -5,7 +5,6 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/compose.yaml"
 SERVICE_URL="http://127.0.0.1:5128"
-DATA_VOLUME="daoxuan_daoxuan-data"
 DB_VOLUME="daoxuan_daoxuan-postgres"
 COMMAND="${1:-up}"
 
@@ -26,7 +25,7 @@ assert_fixed_port_available() {
   if [[ -n "$(compose_container_id)" ]]; then
     return 0
   fi
-  if ss -H -ltn 'sport = :5128' 2>/dev/null | grep -q .; then
+  if [[ -n "$(ss -H -ltn 'sport = :5128' 2>/dev/null || true)" ]]; then
     printf '固定端口 127.0.0.1:5128 已被其他进程占用，请先停止旧服务。\n' >&2
     exit 1
   fi
@@ -61,7 +60,6 @@ case "$COMMAND" in
   up)
     require_docker
     assert_fixed_port_available
-    docker volume create "$DATA_VOLUME" >/dev/null
     docker volume create "$DB_VOLUME" >/dev/null
     docker compose -f "$COMPOSE_FILE" up --detach --build app
     wait_healthy
@@ -70,7 +68,6 @@ case "$COMMAND" in
   restart)
     require_docker
     assert_fixed_port_available
-    docker volume create "$DATA_VOLUME" >/dev/null
     docker volume create "$DB_VOLUME" >/dev/null
     docker compose -f "$COMPOSE_FILE" up --detach --build --force-recreate app
     wait_healthy

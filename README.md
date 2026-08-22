@@ -48,21 +48,13 @@ dotnet run --project src/Daoxuan.Server/Daoxuan.Server.csproj
 scripts/dev-service.sh up
 ```
 
-该入口使用显式命名卷 `daoxuan_daoxuan-data` 与 `daoxuan_daoxuan-postgres`，重新构建不会更换存档卷，也不会在端口占用时静默切换到其他端口。
+该入口使用显式命名卷 `daoxuan_daoxuan-postgres`，重新构建不会更换数据库卷，也不会在端口占用时静默切换到其他端口。
 
 服务端默认监听 `http://127.0.0.1:5128`，WebSocket 地址为 `ws://127.0.0.1:5128/ws`。
 
 在线行动采用事件截止时间调度，不设置固定 Tick。服务端使用单调时间轴直接等待下一次攻击、施法、持续效果、搜索、复活或行动完成的精确毫秒边界；即使线程因操作系统调度稍晚唤醒，领域结算仍按原定边界顺序补算，不会把延迟累积到下一次行动。快照检查点、冷玩家回收和市场过期维护由独立后台调度器执行，不参与游戏时间推进。协议同时下发行动的绝对完成时刻，前端行动条按该时刻线性显示。
 
-需要启用 YuoCore durable outbox 时：
-
-```bash
-Storage__DurableOutboxEnabled=true \
-Storage__OutboxDirectory=data/outbox \
-dotnet run --project src/Daoxuan.Server/Daoxuan.Server.csproj
-```
-
-生产同构 Compose 默认启用 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；本地直跑不配置数据库时仍可使用 `local-json` 便捷开发路径。
+服务端直跑也必须连接 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库。
 
 ```bash
 Storage__Provider=postgres \

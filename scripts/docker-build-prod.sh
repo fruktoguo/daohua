@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-IMAGE_PREFIX="${TENCENT_IMAGE_PREFIX:-ccr.ccs.tencentyun.com/yuohira}"
+IMAGE_PREFIX="${DAOXUAN_IMAGE_PREFIX:-${TENCENT_IMAGE_PREFIX:-ccr.ccs.tencentyun.com/yuohira}}"
 IMAGE_NAME="${DAOXUAN_IMAGE_NAME:-daoxuan}"
 MOVING_TAG="${DAOXUAN_MOVING_TAG:-prod}"
 RELEASE_TAG="${RELEASE_TAG:-}"

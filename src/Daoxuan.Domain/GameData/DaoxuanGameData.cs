@@ -44,20 +44,23 @@ public sealed record DaoxuanCombatantConfig(
     double LifeStealRatio = 0,
     double ArmorDamageRatio = 0,
     double HpDrainRatio = 0,
+    double? CriticalRating = null,
     double CriticalChance = 0,
     double CriticalDamageRatio = 0,
     double CriticalAvoidance = 0,
     double DamageAbsorptionRatio = 0,
+    double? HpRegen = null,
+    double? MpRegen = null,
     double HpRegenPerTenSeconds = 0.0,
     double MpRegenPerTenSeconds = 0.0,
     int EnrageTimeMilliseconds = 0,
+    double? ExperienceMultiplier = 1.0,
     long Experience = 0,
     long SpiritMin = 0,
     long SpiritMax = 0,
     IReadOnlyList<DaoxuanCombatDropDefinition>? DropTable = null,
     IReadOnlyList<DaoxuanCombatDropDefinition>? RareDropTable = null,
     IReadOnlyList<DaoxuanMonsterSkillConfig>? Skills = null,
-    IReadOnlyList<string>? AbilityIds = null,
     double BreakRating = 0,
     double ParryRating = 0,
     double SkillIntensity = 1.0,
@@ -73,7 +76,6 @@ public sealed record DaoxuanCombatSpawnConfig(
 public sealed record DaoxuanCombatEncounterConfig(
     string Id,
     string Name,
-    string EnemyId,
     IReadOnlyList<DaoxuanCombatSpawnConfig> RandomSpawns,
     int MaxSpawnCount,
     int MaxTotalStrength,
@@ -82,18 +84,15 @@ public sealed record DaoxuanCombatEncounterConfig(
     int SearchMilliseconds,
     int RespawnMilliseconds,
     int PlayerRespawnMilliseconds,
-    long ExperiencePerWin,
-    long SpiritMinPerWin,
-    long SpiritMaxPerWin,
-    int EnrageTimeMilliseconds,
-    int EnrageTickMilliseconds,
-    int MaxEnrageStacks,
-    double EnrageRatioPerStack,
-    IReadOnlyList<DaoxuanCombatDropDefinition> DropTable,
-    IReadOnlyList<DaoxuanCombatDropDefinition> RareDropTable,
-    string? DropItemId,
-    double DropChance,
-    long DropQuantity);
+    long ExperiencePerWin = 0,
+    long SpiritMinPerWin = 0,
+    long SpiritMaxPerWin = 0,
+    int EnrageTimeMilliseconds = 180000,
+    int EnrageTickMilliseconds = 60000,
+    int MaxEnrageStacks = 10,
+    double EnrageRatioPerStack = 0.1,
+    IReadOnlyList<DaoxuanCombatDropDefinition>? DropTable = null,
+    IReadOnlyList<DaoxuanCombatDropDefinition>? RareDropTable = null);
 
 public sealed class DaoxuanGameDataSnapshot
 {
@@ -246,7 +245,9 @@ public static class DaoxuanGameData
         {
             Id = config.Id,
             Name = config.Name,
-            Enemy = monsters[config.EnemyId],
+            Enemy = config.RandomSpawns.Count > 0
+                ? monsters[config.RandomSpawns[0].EnemyId]
+                : monsters[config.BossEnemyIds[0]],
             RandomSpawns = config.RandomSpawns.Select(spawn => new DaoxuanCombatSpawnDefinition
             {
                 Enemy = monsters[spawn.EnemyId],
@@ -268,10 +269,7 @@ public static class DaoxuanGameData
             MaxEnrageStacks = config.MaxEnrageStacks,
             EnrageRatioPerStack = config.EnrageRatioPerStack,
             DropTable = config.DropTable,
-            RareDropTable = config.RareDropTable,
-            DropItemId = config.DropItemId,
-            DropChance = config.DropChance,
-            DropQuantity = config.DropQuantity
+            RareDropTable = config.RareDropTable
         };
     }
 
@@ -324,10 +322,6 @@ public static class DaoxuanGameData
                 throw Invalid("遭遇", encounter.Id, "随机生成的 weight 和 strength 必须大于 0");
             }
             ValidateDrops("遭遇", encounter.Id, encounter.DropTable.Concat(encounter.RareDropTable), items);
-            if (encounter.DropItemId is { Length: > 0 } dropItemId && !items.ContainsKey(dropItemId))
-            {
-                throw Invalid("遭遇", encounter.Id, $"引用了未知物品 {dropItemId}");
-            }
         }
 
         var knownNodes = new HashSet<string>(StringComparer.Ordinal);

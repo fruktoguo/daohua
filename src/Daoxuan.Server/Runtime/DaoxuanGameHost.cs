@@ -845,23 +845,18 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
                 migrationRecord = ToSnapshotRecord(state);
             }
 
-            _takenPlayerNames[state.Name] = playerId;
-
             if (restored is not null)
             {
-                DaoxuanSimulation.NormalizeState(state);
+                if (DaoxuanSimulation.NormalizeState(state))
+                {
+                    migrationRecord = ToSnapshotRecord(state);
+                }
             }
 
             if (state.PresenceMode != DaoxuanPresenceMode.FullyOffline)
             {
                 state.PresenceMode = DaoxuanPresenceMode.IdleOffline;
                 DaoxuanSimulation.AdvanceTo(state, now);
-            }
-
-            if (restored is not null && migrationRecord is null)
-            {
-                // 旧快照可能需要补齐战斗槽位或队列字段，恢复时立即排队保存迁移结果。
-                migrationRecord = ToSnapshotRecord(state);
             }
 
             CreatePlayerEntity(fiber, state);
@@ -1034,7 +1029,6 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
                 "use_item" => ApplyUseItem(state, payload.Deserialize<UseItemRequest>(DaoxuanPacketCodec.JsonOptions)),
                 "set_combat_loadout" => ApplyCombatLoadout(state, payload.Deserialize<SetCombatLoadoutRequest>(DaoxuanPacketCodec.JsonOptions)),
                 "set_loop" => ApplyLoop(state, payload.Deserialize<SetLoopRequest>(DaoxuanPacketCodec.JsonOptions)),
-                "set_presence" => ApplyPresence(state, payload.Deserialize<SetPresenceRequest>(DaoxuanPacketCodec.JsonOptions), commandAt),
                 "breakthrough" => ApplyBreakthrough(state),
                 _ => DaoxuanCommandResult.Fail("COMMAND_NOT_FOUND", "未知命令。")
             };
@@ -1244,31 +1238,6 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
 
             consumables = normalized.ToArray();
         }
-        else if (request.FoodSlots is not null || request.DrinkSlots is not null)
-        {
-            // 旧版客户端：按先灵食后灵饮合并，空槽跳过，超过槽位上限的丢弃。
-            var merged = new List<DaoxuanConsumableSlot>(DaoxuanCombatLimits.ConsumableSlotCount);
-            foreach (var slot in (request.FoodSlots ?? []).Concat(request.DrinkSlots ?? []))
-            {
-                var triggers = ParseTriggers(slot.Triggers, out var triggerError);
-                if (!string.IsNullOrWhiteSpace(triggerError))
-                {
-                    return DaoxuanCommandResult.Fail("INVALID_CONSUMABLE_TRIGGERS", triggerError);
-                }
-
-                if (string.IsNullOrWhiteSpace(slot.ItemId)) continue;
-                merged.Add(new DaoxuanConsumableSlot
-                {
-                    ItemId = slot.ItemId,
-                    Quantity = slot.Quantity,
-                    Enabled = slot.Enabled,
-                    Triggers = triggers
-                });
-                if (merged.Count >= DaoxuanCombatLimits.ConsumableSlotCount) break;
-            }
-
-            consumables = merged.ToArray();
-        }
 
         DaoxuanEquippedItem[]? equipment = null;
         if (request.Equipment is not null)
@@ -1410,16 +1379,6 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
         return Enum.IsDefined(comparator);
     }
 
-    private static DaoxuanCommandResult ApplyPresence(
-        DaoxuanPlayerState state,
-        SetPresenceRequest? request,
-        DateTimeOffset commandAt)
-    {
-        return request is not null && TryParsePresence(request.Mode, out var mode)
-            ? DaoxuanSimulation.SetPresence(state, mode, commandAt)
-            : DaoxuanCommandResult.Fail("INVALID_PRESENCE", "在线状态无效。");
-    }
-
     private static bool TryParseActionType(string value, out DaoxuanActionType type)
     {
         type = value switch
@@ -1469,18 +1428,6 @@ public sealed class DaoxuanGameHost : IAsyncDisposable, IDisposable
             _ => (DaoxuanDamageType)(-1)
         };
         return Enum.IsDefined(type);
-    }
-
-    private static bool TryParsePresence(string value, out DaoxuanPresenceMode mode)
-    {
-        mode = value switch
-        {
-            "online" => DaoxuanPresenceMode.Online,
-            "idle-offline" => DaoxuanPresenceMode.IdleOffline,
-            "fully-offline" => DaoxuanPresenceMode.FullyOffline,
-            _ => (DaoxuanPresenceMode)(-1)
-        };
-        return Enum.IsDefined(mode);
     }
 
     private YuoSnapshotRecord ToSnapshotRecord(DaoxuanPlayerState state)

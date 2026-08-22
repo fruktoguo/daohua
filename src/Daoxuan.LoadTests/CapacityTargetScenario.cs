@@ -52,8 +52,8 @@ public static class CapacityTargetScenario
                 index,
                 new
                 {
-                    command = "set_presence",
-                    payload = new { mode = index < SustainedNetworkTarget ? "online" : "idle-offline" }
+                    command = "set_loop",
+                    payload = new { enabled = index < SustainedNetworkTarget }
                 }).LongLength;
         }
 

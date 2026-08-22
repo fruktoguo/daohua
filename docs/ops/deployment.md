@@ -18,7 +18,7 @@
 
 生产容量目标固定按 `2c4g/40g` 预算设计：`5000+` 注册账号、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机补算。`scripts/verify.sh` 会运行 `capacity-target` 门禁，作为每次改动的最低回归检查。
 
-镜像同时包含 Vite 静态产物、ASP.NET Core 主服务和 `Daoxuan.ComputeNode` 计算节点产物。浏览器 API 与 WebSocket 走同源；生产权威数据不在镜像内，PostgreSQL 数据保存在 Docker 卷 `daoxuan_daoxuan-postgres`，应用本地运行数据保存在 `daoxuan_daoxuan-data`。
+镜像同时包含 Vite 静态产物、ASP.NET Core 主服务和 `Daoxuan.ComputeNode` 计算节点产物。浏览器 API 与 WebSocket 走同源；生产权威数据不在镜像内，PostgreSQL 数据保存在 Docker 卷 `daoxuan_daoxuan-postgres`。
 
 当前线上仍是单 `app` 实例承载在线连接；PostgreSQL 已提供事务快照、outbox、市场 revision CAS 和 advisory lock，为后续多主分片保留边界。远程个人设备只能运行高延迟冷挂机计算节点，通过 FRP 暴露内部 HTTP 批处理接口；它不连接生产数据库，不处理在线连接、市场写入或账号鉴权。
 
@@ -84,7 +84,7 @@ scripts/dev-service.sh status
 scripts/dev-service.sh down
 ```
 
-`scripts/dev-service.sh` 固定使用 `127.0.0.1:5128`，端口被其他进程占用时会直接失败，不会自动换端口。Compose 始终使用显式命名卷 `daoxuan_daoxuan-data` 和 `daoxuan_daoxuan-postgres`；普通 `down`、重新构建和项目名变化都不会更换持久卷。不要执行 `docker compose down --volumes` 或手工删除这些卷，除非明确要删除本地持久数据。
+`scripts/dev-service.sh` 固定使用 `127.0.0.1:5128`，端口被其他进程占用时会直接失败，不会自动换端口。Compose 始终使用显式命名卷 `daoxuan_daoxuan-postgres`；普通 `down`、重新构建和项目名变化都不会更换数据库卷。不要执行 `docker compose down --volumes` 或手工删除该卷，除非明确要删除本地持久数据。
 
 ## CCR 镜像发布
 

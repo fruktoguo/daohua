@@ -18,7 +18,6 @@ public static class DaoxuanStateMapper
             ToInventory(state.Inventory),
             ToBuffs(state.Buffs),
             ToStats(state.Stats),
-            state.EventLog.ToArray(),
             ToLogEvents(state.StructuredEventLog),
             ToCombat(state.Combat),
             ToWorld(state.World),
@@ -47,7 +46,6 @@ public static class DaoxuanStateMapper
             sections.HasFlag(DaoxuanDirtySections.Inventory) ? ToInventory(state.Inventory) : null,
             sections.HasFlag(DaoxuanDirtySections.Buffs) ? ToBuffs(state.Buffs) : null,
             sections.HasFlag(DaoxuanDirtySections.Stats) ? ToStats(state.Stats) : null,
-            null,
             sections.HasFlag(DaoxuanDirtySections.QueueProgress)
                 && !sections.HasFlag(DaoxuanDirtySections.Queue)
                     ? ToQueueProgress(state)
@@ -386,11 +384,9 @@ public static class DaoxuanStateMapper
         {
             var phaseDuration = Math.Max(1, expedition.PhaseDurationMilliseconds);
             var phaseElapsed = Math.Clamp(expedition.PhaseElapsedMilliseconds, 0, phaseDuration);
-            var isDead = expedition.Phase == DaoxuanCombatExpeditionPhase.Death;
             var phase = expedition.Phase switch
             {
                 DaoxuanCombatExpeditionPhase.InitialSearch => "initial-search",
-                DaoxuanCombatExpeditionPhase.Death => "death",
                 _ => "search"
             };
             Dictionary<string, long>? nonCombatAbilityCooldowns = null;
@@ -426,16 +422,7 @@ public static class DaoxuanStateMapper
                 PlayerManapoints: projectedPlayer.Manapoints,
                 PlayerMaxManapoints: projectedPlayer.MaxManapoints,
                 EnemyName: encounter.Name,
-                PlayerAction: isDead
-                    ? new DaoxuanCombatActionStateDto(
-                        "复活",
-                        "respawn",
-                        phaseElapsed,
-                        phaseDuration,
-                        state.LastSimulatedAt
-                            .AddMilliseconds(Math.Max(0, phaseDuration - phaseElapsed))
-                            .ToUnixTimeMilliseconds())
-                    : null,
+                PlayerAction: null,
                 BattleSequence: expedition.BattleSequence,
                 AbilityCooldownMilliseconds: nonCombatAbilityCooldowns,
                 ConsumableCooldownMilliseconds: nonCombatConsumableCooldowns,
@@ -695,7 +682,6 @@ public static class DaoxuanStateMapper
             combat.DefenseLevel,
             combat.SwordsmanshipLevel,
             combat.TalismanLevel,
-            combat.FiveElementsLevel,
             combat.AbilitySlots.Select(slot => new DaoxuanCombatAbilitySlotDto(
                 slot.AbilityId,
                 slot.Level,

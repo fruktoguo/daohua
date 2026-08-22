@@ -60,9 +60,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       Storage__Provider: postgres
       Storage__ConnectionString: Host=db;Port=5432;Database=daoxuan;Username=daoxuan;Password=${DAOXUAN_POSTGRES_PASSWORD:-daoxuan-local-dev};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
-      Storage__DataDirectory: /app/data
       Storage__DurableOutboxEnabled: "true"
-      Storage__OutboxDirectory: /app/data/outbox
       Storage__PersistenceQueueCapacity: "65536"
       Storage__EnableSchemaBootstrap: "true"
       Market__LedgerProvider: postgres
@@ -72,8 +70,6 @@ services:
       DistributedCompute__Enabled: ${DAOXUAN_DISTRIBUTED_COMPUTE_ENABLED:-false}
       DistributedCompute__NodeEndpoints: ${DAOXUAN_COMPUTE_NODE_ENDPOINTS:-}
       DistributedCompute__Token: ${DAOXUAN_COMPUTE_TOKEN:-}
-    volumes:
-      - daoxuan-data:/app/data
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -96,9 +92,4 @@ services:
         max-file: "3"
 
 volumes:
-  daoxuan-data:
-    external: true
-    name: daoxuan_daoxuan-data
   daoxuan-postgres:
-    external: true
-    name: daoxuan_daoxuan-postgres

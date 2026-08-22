@@ -12,12 +12,11 @@ public sealed class DaoxuanCombatTests
     [Fact]
     public void Combat_formulas_match_reference_shapes()
     {
-        var hitChance = DaoxuanCombatFormula.CalculateHitChance(15, 15);
-        Assert.InRange(hitChance, 0.49, 0.51);
-        Assert.Equal(100, DaoxuanCombatFormula.CalculateMitigatedDamage(100, 0, 0));
-        Assert.Equal(100, DaoxuanCombatFormula.CalculateMitigatedDamage(101, 1, 0));
-        Assert.Equal(3_000, DaoxuanCombatFormula.CalculateAttackIntervalMilliseconds(3_000, 0, 0));
-        Assert.True(DaoxuanCombatFormula.CalculateAttackIntervalMilliseconds(3_000, 100, 0) < 3_000);
+        var hitChance = DaoxuanCombatFormula.CalculateHitContestRate(15, 15);
+        Assert.InRange(hitChance, 0.87, 0.90);
+        Assert.Equal(100, DaoxuanCombatFormula.CalculateMitigatedDamageWithResistanceFactor(100, 0));
+        Assert.Equal(3_000, DaoxuanCombatFormula.CalculateAttackIntervalMilliseconds(3_000, 0));
+        Assert.True(DaoxuanCombatFormula.CalculateAttackIntervalMilliseconds(3_000, 0.5) < 3_000);
         Assert.Equal(1, DaoxuanCombatFormula.CalculateRegeneration(110, 0.01));
         Assert.Equal(0, DaoxuanCombatFormula.CalculateEnrageStacks(179_999, 180_000));
         Assert.Equal(1, DaoxuanCombatFormula.CalculateEnrageStacks(180_000, 180_000));
@@ -40,10 +39,6 @@ public sealed class DaoxuanCombatTests
     [Fact]
     public void Contest_and_resistance_factor_formulas_behave_correctly()
     {
-        // 消耗换算测试
-        Assert.Equal(20, DaoxuanCombatFormula.CalculateManaCost(2));
-        Assert.Equal(50, DaoxuanCombatFormula.CalculateManaCost(5));
-
         // 减伤公式测试: 伤害 = 原始伤害 * (原始伤害 / (原始伤害 + 抗性 * 5 + 1))
         // 原始伤害 100, 抗性 0 -> 100 * (100 / 100) = 100
         var fullDmg = DaoxuanCombatFormula.CalculateMitigatedDamageWithResistanceFactor(100, 0);
@@ -143,7 +138,6 @@ public sealed class DaoxuanCombatTests
         var state = DaoxuanSimulation.CreateDefaultState(Guid.Parse("11111111-1111-1111-1111-111111111111"), now: Baseline);
         state.Combat.AttackLevel = 1_000;
         state.Combat.IntelligenceLevel = 1_000;
-        state.Combat.FiveElementsLevel = 1_000;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.HeavySlash;
 
@@ -494,7 +488,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.DefenseLevel = 100;
         state.Combat.SwordsmanshipLevel = 100;
         state.Combat.TalismanLevel = 100;
-        state.Combat.FiveElementsLevel = 100;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
         state.Combat.DamageType = DaoxuanDamageType.Fire;
         state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.HeavySlash;
@@ -528,7 +521,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.DefenseLevel = 100;
         state.Combat.SwordsmanshipLevel = 100;
         state.Combat.TalismanLevel = 100;
-        state.Combat.FiveElementsLevel = 100;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
         state.Combat.DamageType = DaoxuanDamageType.Fire;
         state.Combat.CombatDropQuantity = 1;
@@ -557,7 +549,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.StaminaLevel = 100;
         state.Combat.DefenseLevel = 100;
         state.Combat.AttackLevel = 1;
-        state.Combat.FiveElementsLevel = 1;
         state.Combat.IntelligenceLevel = 10;
         state.Combat.SwordsmanshipLevel = 10;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
@@ -619,7 +610,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.DefenseLevel = 100;
         state.Combat.SwordsmanshipLevel = 100;
         state.Combat.TalismanLevel = 100;
-        state.Combat.FiveElementsLevel = 100;
         DaoxuanSimulation.Enqueue(state, DaoxuanActionIds.HuntQiBeast);
 
         var result = DaoxuanSimulation.AdvanceTo(state, Baseline.AddSeconds(300));
@@ -643,7 +633,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.DefenseLevel = 100;
         state.Combat.SwordsmanshipLevel = 100;
         state.Combat.TalismanLevel = 100;
-        state.Combat.FiveElementsLevel = 100;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
         state.Combat.DamageType = DaoxuanDamageType.Fire;
         state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.HeavySlash;
@@ -839,16 +828,17 @@ public sealed class DaoxuanCombatTests
     [Fact]
     public void Critical_and_absorption_formulas_keep_zero_values_effectless()
     {
-        Assert.Equal(0, DaoxuanCombatFormula.CalculateCriticalChance(0, 0));
-        Assert.Equal(100, DaoxuanCombatFormula.ApplyCriticalDamage(100, 0.5, false));
+        Assert.Equal(0, DaoxuanCombatFormula.CalculateCritContestRate(0, 0));
         Assert.Equal(100, DaoxuanCombatFormula.ApplyDamageAbsorption(100, 0));
     }
 
     [Fact]
     public void Critical_avoidance_and_damage_absorption_apply_numeric_values()
     {
-        Assert.Equal(0.3, DaoxuanCombatFormula.CalculateCriticalChance(0.5, 0.2), precision: 10);
-        Assert.Equal(150, DaoxuanCombatFormula.ApplyCriticalDamage(100, 0.5, true));
+        var critRate = DaoxuanCombatFormula.CalculateCritContestRate(100, 50);
+        Assert.True(critRate > 0);
+        var baseCritDmg = 100 * (DaoxuanCombatConstants.BaseCriticalDamageMultiplier + 0.5);
+        Assert.Equal(200, baseCritDmg);
         Assert.Equal(75, DaoxuanCombatFormula.ApplyDamageAbsorption(100, 0.25));
     }
 
@@ -1011,7 +1001,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.DefenseLevel = 1_000_000;
         state.Combat.SwordsmanshipLevel = 1_000_000;
         state.Combat.TalismanLevel = 1_000_000;
-        state.Combat.FiveElementsLevel = 1_000_000;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 1;
@@ -1044,7 +1033,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.DefenseLevel = 1_000;
         state.Combat.SwordsmanshipLevel = 1_000;
         state.Combat.TalismanLevel = 1_000;
-        state.Combat.FiveElementsLevel = 1_000;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 100;
@@ -1079,7 +1067,6 @@ public sealed class DaoxuanCombatTests
         state.Combat.SwordsmanshipLevel = 1_000;
         state.Combat.DefenseLevel = 1_000;
         state.Combat.TalismanLevel = 1_000;
-        state.Combat.FiveElementsLevel = 1_000;
         state.Combat.Style = DaoxuanCombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 100;
@@ -1117,7 +1104,6 @@ public sealed class DaoxuanCombatTests
             state.Combat.IntelligenceLevel = 1_000;
             state.Combat.AttackLevel = 1_000;
             state.Combat.DefenseLevel = 1_000;
-            state.Combat.FiveElementsLevel = 1_000;
             state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.BlazingBlast;
             state.Combat.AbilitySlots[0].Level = 100;
             state.World.NodeId = DaoxuanWorldNodeIds.TwilightPass;
@@ -1157,7 +1143,6 @@ public sealed class DaoxuanCombatTests
             state.Combat.IntelligenceLevel = 100;
             state.Combat.AttackLevel = 100;
             state.Combat.DefenseLevel = 100;
-            state.Combat.FiveElementsLevel = 100;
             state.Combat.Style = DaoxuanCombatStyle.FiveElements;
             state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.HeavySlash;
             DaoxuanSimulation.Enqueue(state, DaoxuanActionIds.HuntQiBeast, -1);

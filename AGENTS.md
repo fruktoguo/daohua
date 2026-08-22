@@ -39,7 +39,7 @@ Daoxuan.Server -> YuoCore.Persistence + YuoCore.Runtime + PostgreSQL/Npgsql
 - 项目内部代表名统一使用 `daoxuan` / `Daoxuan` / `DAOXUAN`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
 - 当前内测阶段允许破坏历史数据、存档格式和部署拓扑兼容；为了达成容量与落盘目标，可以直接改表、改快照和清空内测数据，但生产/远端真实数据操作仍必须先备份并获得明确许可。
 - 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
-- 生产主存储为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；`/app/data` 仅保留容器本地 outbox 兼容目录和临时运行数据，不再作为玩家/市场权威存储。
+- 主存储固定为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；应用容器不挂载数据卷。
 - 市场账本使用 PostgreSQL revision CAS 与 advisory lock；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
 - 远程个人设备只能作为高延迟冷挂机计算节点，通过 `Daoxuan.ComputeNode` 的内部 HTTP 批处理接口被主服务调用；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。
@@ -151,10 +151,10 @@ docker compose down
 ## 10. Docker 与镜像规则
 
 - 生产镜像必须使用多阶段构建，不携带源码、Node.js、SDK、测试产物或本地数据。
-- 容器必须以固定非 root UID/GID 运行，根文件系统只读，仅 `/app/data` 和 `/tmp` 可写。
+- 容器必须以固定非 root UID/GID 运行，根文件系统只读，仅 `/tmp` 可写。
 - 镜像必须包含 OCI `created`、`version`、`revision` 标签，并通过 `/healthz` 暴露非敏感版本。
 - 构建上下文不得包含 `.git`、secret、快照、outbox、`node_modules`、`bin` 或 `obj`。
-- 镜像验收必须确认镜像内 `/app/data` 初始文件数为 0，防止被 Git 忽略的本地快照进入镜像层。
+- 镜像验收必须确认镜像内不包含运行数据，防止本地持久化内容进入镜像层。
 - 正式镜像只构建 `linux/amd64`，除非目标服务器架构发生变化并已验证。
 - 不使用 `latest` 作为本项目生产移动标签；约定使用 `prod`，同时保留 `sha-*` 或明确版本的不可变标签。
 - 禁止把 token、CCR 密码、SSH key、证书或业务数据写入 Dockerfile、ARG、ENV、label 或镜像层。
@@ -184,7 +184,7 @@ scripts/docker-build-prod.sh --push
 - 首次部署和受控更新使用 `scripts/deploy-prod.sh --image <不可变镜像>`。
 - `daoxuan-ccr-auto-update.timer` 每分钟检查 `prod`；镜像 ID 未变化时不得重建容器。
 - 新镜像未通过健康检查时必须自动回滚，并记录失败镜像 ID；同一失败版本不得循环重试。
-- 更新不得删除、重建或改名 `daoxuan_daoxuan-data` 与 `daoxuan_daoxuan-postgres` 卷。
+- 更新不得删除、重建或改名 `daoxuan_daoxuan-postgres` 卷。
 - 当前数据库已支持市场主分片分布式租约，但在线玩家分片和红绿无停机仍未完成；正常更新依靠 WebSocket 自动重连、PostgreSQL outbox 和单实例 app 优雅替换恢复。
 - 回滚前先停用自动更新 timer，使用已验证的不可变镜像，验证完成后再决定是否恢复 timer。
 

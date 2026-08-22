@@ -103,7 +103,7 @@ flowchart LR
 - 每个玩家聚合只能在所属 YuoCore Fiber 中修改；网络线程通过 mailbox 调用。
 - 当前原型使用一个 `PlayerShard-0`，玩家 ID 路由边界已经集中在 `DaoxuanGameHost`，后续可按哈希扩到多个 Fiber 或进程。
 - 在线截止时间使用带代际校验的最小堆维护；单个玩家状态变化只更新自己的截止时间，取下一事件和重新排程为 `O(log N)`，失效节点采用惰性清理并在膨胀阈值触发压缩。
-- 持久化通过有界 `YuoPersistenceQueue` 异步执行，快照使用临时文件后原子替换；可选 `Storage:DurableOutboxEnabled=true` 时先进入 YuoCore 文件 WAL，后台写回成功后按序 ack，重启会 replay 未确认命令。
+- 持久化通过有界 `YuoPersistenceQueue` 异步执行，快照写入 PostgreSQL；可选 `Storage:DurableOutboxEnabled=true` 时先进入数据库 outbox，后台写回成功后按序 ack，重启会 replay 未确认命令。
 - 行动事件、实时命令和 30 秒检查点进入持久化队列；两个事件之间的进度可由时间戳确定性重建，不需要周期性推进。
 - 单会话发送队列有容量上限；慢客户端溢出后标记重同步，下一次发送完整快照，不无限堆积内存。
 

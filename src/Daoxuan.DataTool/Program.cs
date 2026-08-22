@@ -122,7 +122,6 @@ static DaoxuanCombatantConfig ToCombatantConfig(DaoxuanCombatantDefinition monst
 static DaoxuanCombatEncounterConfig ToEncounterConfig(DaoxuanCombatEncounterDefinition encounter) => new(
     encounter.Id,
     encounter.Name,
-    encounter.Enemy.Id,
     encounter.RandomSpawns.Select(spawn => new DaoxuanCombatSpawnConfig(
         spawn.Enemy.Id,
         spawn.Weight,
@@ -142,7 +141,4 @@ static DaoxuanCombatEncounterConfig ToEncounterConfig(DaoxuanCombatEncounterDefi
     encounter.MaxEnrageStacks,
     encounter.EnrageRatioPerStack,
     encounter.DropTable,
-    encounter.RareDropTable,
-    encounter.DropItemId,
-    encounter.DropChance,
-    encounter.DropQuantity);
+    encounter.RareDropTable);

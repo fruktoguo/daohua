@@ -158,7 +158,7 @@ public static class OnlineLoadScenario
     {
         return (second % 4) switch
         {
-            0 => client => DaoxuanPacketCodec.EncodeHello(client.NextRequestId(), new HelloRequest("负载修士")),
+            0 => client => DaoxuanPacketCodec.EncodeHello(client.NextRequestId(), new HelloRequest()),
             1 => client => DaoxuanPacketCodec.EncodeCommand(
                 client.NextRequestId(),
                 "set_auto_use",

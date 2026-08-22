@@ -160,6 +160,7 @@ public sealed class DaoxuanCombatantDefinition
     public double LifeStealRatio { get; init; }
     public double ArmorDamageRatio { get; init; }
     public double HpDrainRatio { get; init; }
+    public double CriticalRating { get; init; }
     public double CriticalChance { get; init; }
     public double CriticalDamageRatio { get; init; }
     public double CriticalAvoidance { get; init; }
@@ -170,10 +171,13 @@ public sealed class DaoxuanCombatantDefinition
     public double DynamicResistanceFactorK { get; init; } = 1.0;
     public double ActionSpeedReductionRatio { get; init; }
     public double CooldownReductionRatio { get; init; }
+    public double HpRegen { get; init; } = 0.0;
+    public double MpRegen { get; init; } = 0.0;
     public double HpRegenPerTenSeconds { get; init; } = 0.0;
     public double MpRegenPerTenSeconds { get; init; } = 0.0;
     public int EnrageTimeMilliseconds { get; init; }
     public int AttackLevel { get; init; } = 1;
+    public double ExperienceMultiplier { get; init; } = 1.0;
     public long Experience { get; init; }
     public long SpiritMin { get; init; }
     public long SpiritMax { get; init; }
@@ -277,11 +281,6 @@ public sealed class DaoxuanCombatEncounterDefinition
     public double EnrageRatioPerStack { get; init; } = 0.10;
     public IReadOnlyList<DaoxuanCombatDropDefinition> DropTable { get; init; } = [];
     public IReadOnlyList<DaoxuanCombatDropDefinition> RareDropTable { get; init; } = [];
-
-    // 旧版单掉落字段保留，便于读取早期快照和第三方调用方。
-    public string? DropItemId { get; init; }
-    public double DropChance { get; init; }
-    public long DropQuantity { get; init; } = 1;
 }
 
 public sealed record DaoxuanCombatBuffApplication(

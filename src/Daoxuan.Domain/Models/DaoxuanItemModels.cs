@@ -75,7 +75,6 @@ public sealed class DaoxuanCombatLoadout
     public int SwordsmanshipLevel { get; set; } = 10;
     public int DefenseLevel { get; set; } = 10;
     public int TalismanLevel { get; set; } = 10;
-    public int FiveElementsLevel { get; set; } = 10;
     public double HpRegenPerTenSeconds { get; set; } = 0.0;
     public double MpRegenPerTenSeconds { get; set; } = 0.0;
     // 韧性按百分比点数计算；控制命中率使用 100 / (100 + 韧性) 修正。
@@ -113,9 +112,6 @@ public sealed class DaoxuanCombatLoadout
     [new(), new(), new(), new()];
     public List<DaoxuanConsumableSlot> ConsumableSlots { get; set; } =
     [new(), new(), new()];
-    // 仅用于读取旧版快照；归一化时按先灵食后灵饮并入 ConsumableSlots 后清空。
-    public List<DaoxuanConsumableSlot> FoodSlots { get; set; } = [];
-    public List<DaoxuanConsumableSlot> DrinkSlots { get; set; } = [];
 
     public DaoxuanCombatLoadout Clone()
     {
@@ -129,7 +125,6 @@ public sealed class DaoxuanCombatLoadout
             SwordsmanshipLevel = SwordsmanshipLevel,
             DefenseLevel = DefenseLevel,
             TalismanLevel = TalismanLevel,
-            FiveElementsLevel = FiveElementsLevel,
             HpRegenPerTenSeconds = HpRegenPerTenSeconds,
             MpRegenPerTenSeconds = MpRegenPerTenSeconds,
             Tenacity = Tenacity,
@@ -163,9 +158,7 @@ public sealed class DaoxuanCombatLoadout
                 Level = slot.Level,
                 Triggers = slot.Triggers?.Select(trigger => trigger.Clone()).ToList() ?? []
             }).ToList(),
-            ConsumableSlots = ConsumableSlots.Select(CloneConsumableSlot).ToList(),
-            FoodSlots = FoodSlots.Select(CloneConsumableSlot).ToList(),
-            DrinkSlots = DrinkSlots.Select(CloneConsumableSlot).ToList()
+            ConsumableSlots = ConsumableSlots.Select(CloneConsumableSlot).ToList()
         };
     }
 

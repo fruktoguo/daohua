@@ -89,76 +89,39 @@ if (persistenceQueueCapacity is < 1 or > 1_000_000)
 }
 
 var durableOutboxEnabled = builder.Configuration.GetValue<bool>("Storage:DurableOutboxEnabled");
-var storagePaths = new DaoxuanStoragePaths(builder.Configuration, builder.Environment);
 var databaseOptions = DaoxuanDatabaseOptions.From(builder.Configuration);
 var distributedComputeOptions = DaoxuanDistributedComputeOptions.From(builder.Configuration);
-if (databaseOptions.IsPostgres && string.IsNullOrWhiteSpace(databaseOptions.ConnectionString))
+if (!databaseOptions.IsPostgres)
+{
+    throw new InvalidOperationException("Storage:Provider 必须配置为 postgres。");
+}
+if (string.IsNullOrWhiteSpace(databaseOptions.ConnectionString))
 {
     throw new InvalidOperationException("Storage:Provider=postgres 时必须配置 Storage:ConnectionString 或 ConnectionStrings:Daoxuan。");
 }
 
-var marketLedgerProvider = builder.Configuration["Market:LedgerProvider"]
-    ?? (databaseOptions.IsPostgres ? "postgres" : "local-json");
-if (!string.Equals(marketLedgerProvider, "local-json", StringComparison.OrdinalIgnoreCase)
-    && !string.Equals(marketLedgerProvider, "postgres", StringComparison.OrdinalIgnoreCase))
+var marketLedgerProvider = builder.Configuration["Market:LedgerProvider"] ?? "postgres";
+if (!string.Equals(marketLedgerProvider, "postgres", StringComparison.OrdinalIgnoreCase))
 {
-    throw new InvalidOperationException($"不支持的 Market:LedgerProvider={marketLedgerProvider}。");
-}
-if (string.Equals(marketLedgerProvider, "postgres", StringComparison.OrdinalIgnoreCase)
-    && !databaseOptions.IsPostgres)
-{
-    throw new InvalidOperationException("Market:LedgerProvider=postgres 必须同时启用 Storage:Provider=postgres。");
+    throw new InvalidOperationException("Market:LedgerProvider 必须配置为 postgres。");
 }
 
 var marketPartitionCount = builder.Configuration.GetValue<int?>("Market:PartitionCount") ?? 1;
 var marketPartitionId = builder.Configuration.GetValue<int?>("Market:PartitionId") ?? 0;
 var marketTopology = new DaoxuanMarketTopology(marketPartitionId, marketPartitionCount);
-if (string.Equals(marketLedgerProvider, "local-json", StringComparison.OrdinalIgnoreCase)
-    && (marketTopology.PartitionCount != 1 || marketTopology.PartitionId != 0))
-{
-    throw new InvalidOperationException(
-        "当前 local-json 市场账本只允许 Market:PartitionId=0、Market:PartitionCount=1；多主分片需启用 PostgreSQL 账本。");
-}
-if (distributedComputeOptions.Enabled && !databaseOptions.IsPostgres)
-{
-    throw new InvalidOperationException("DistributedCompute:Enabled=true 必须同时启用 Storage:Provider=postgres。");
-}
 
-
-builder.Services.AddSingleton(storagePaths);
 builder.Services.AddSingleton(databaseOptions);
 builder.Services.AddSingleton(distributedComputeOptions);
 builder.Services.AddSingleton(marketTopology);
-if (databaseOptions.IsPostgres)
+builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(databaseOptions.ConnectionString!));
+builder.Services.AddHostedService<DaoxuanPostgresSchemaHostedService>();
+builder.Services.AddSingleton<IYuoSnapshotStore, DaoxuanPostgresSnapshotStore>();
+builder.Services.AddSingleton<IDaoxuanAccountStore, DaoxuanPostgresAccountStore>();
+if (durableOutboxEnabled)
 {
-    builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(databaseOptions.ConnectionString!));
-    builder.Services.AddHostedService<DaoxuanPostgresSchemaHostedService>();
-    builder.Services.AddSingleton<IYuoSnapshotStore, DaoxuanPostgresSnapshotStore>();
-    builder.Services.AddSingleton<IDaoxuanAccountStore, DaoxuanPostgresAccountStore>();
-    if (durableOutboxEnabled)
-    {
-        builder.Services.AddSingleton<IYuoPersistenceOutbox, DaoxuanPostgresPersistenceOutbox>();
-    }
+    builder.Services.AddSingleton<IYuoPersistenceOutbox, DaoxuanPostgresPersistenceOutbox>();
 }
-else
-{
-    builder.Services.AddSingleton<IYuoSnapshotStore, DaoxuanSnapshotStore>();
-    builder.Services.AddSingleton<IDaoxuanAccountStore, DaoxuanLocalAccountStore>();
-    if (durableOutboxEnabled)
-    {
-        builder.Services.AddSingleton<IYuoPersistenceOutbox>(
-            new YuoFilePersistenceOutbox(storagePaths.OutboxDirectory, "daoxuan-player-snapshots"));
-    }
-}
-
-if (string.Equals(marketLedgerProvider, "postgres", StringComparison.OrdinalIgnoreCase))
-{
-    builder.Services.AddSingleton<IDaoxuanMarketLedgerStore, DaoxuanPostgresMarketLedgerStore>();
-}
-else
-{
-    builder.Services.AddSingleton<IDaoxuanMarketLedgerStore, DaoxuanLocalMarketLedgerStore>();
-}
+builder.Services.AddSingleton<IDaoxuanMarketLedgerStore, DaoxuanPostgresMarketLedgerStore>();
 
 builder.Services.AddSingleton(new YuoPersistenceQueue(persistenceQueueCapacity));
 if (durableOutboxEnabled)
@@ -250,8 +213,8 @@ app.MapGet("/readyz", (DaoxuanGameHost host, DaoxuanMarketRuntime market) => Res
         snapshotProvider = databaseOptions.Provider,
         marketProvider = marketLedgerProvider,
         durableOutbox = durableOutboxEnabled,
-        singleWriter = !databaseOptions.IsPostgres,
-        scaleOutReady = databaseOptions.IsPostgres && market.SupportsDistributedPartitions,
+        singleWriter = false,
+        scaleOutReady = market.SupportsDistributedPartitions,
         zeroDowntimeReady = false
     },
     simulationRevision = host.SimulationRevision,

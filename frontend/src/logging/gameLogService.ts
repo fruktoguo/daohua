@@ -42,17 +42,6 @@ const WRITE_BATCH_LIMIT = 500
 const VIEW_NOTIFY_DELAY_MS = 80
 const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location|ability|encounter|enemy):([^|{}]+)\|([^{}|]+)(?:\|([^{}]+))?}}/g
 const TRAILING_AMOUNT_PATTERN = /^\s*[×x*]\s*(\d+)/
-const FULL_TIME_PATTERN = /^\[(?:(\d{4})-)?(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})]\s*/
-const SHORT_TIME_PATTERN = /^\[(\d{2}):(\d{2}):(\d{2})]\s*/
-
-function hashText(value: string): number {
-  let hash = 2_166_136_261
-  for (let index = 0; index < value.length; index++) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16_777_619)
-  }
-  return hash >>> 0
-}
 
 export function parseLogTemplate(template: string): readonly LogSegment[] {
   const segments: LogSegment[] = []
@@ -121,10 +110,6 @@ function fromStructuredEvent(playerId: string, event: LogEvent): StoredGameLog {
   }
 }
 
-function snapshotEventKey(entry: StoredGameLog): string {
-  return `${Math.floor(entry.timestampMs / 1000)}\u0000${entry.template}`
-}
-
 function compareLogs(left: StoredGameLog, right: StoredGameLog): number {
   return left.timestampMs - right.timestampMs || left.sequence - right.sequence || left.id.localeCompare(right.id)
 }
@@ -134,45 +119,6 @@ function mergeLatest(current: readonly GameLogEntry[], additions: readonly GameL
   for (const entry of current) byId.set(entry.id, entry)
   for (const entry of additions) byId.set(entry.id, entry)
   return Array.from(byId.values()).sort(compareLogs).slice(-VISIBLE_LOG_LIMIT)
-}
-
-function parseLegacyEvent(
-  playerId: string,
-  raw: string,
-  serverTimeSeconds: number,
-  position: number,
-  occurrence: number,
-): StoredGameLog {
-  const fallback = new Date(serverTimeSeconds * 1000)
-  let timestampMs = fallback.getTime()
-  let template = raw
-  const full = raw.match(FULL_TIME_PATTERN)
-  const short = raw.match(SHORT_TIME_PATTERN)
-  if (full) {
-    const year = full[1] ? Number(full[1]) : fallback.getUTCFullYear()
-    timestampMs = Date.UTC(year, Number(full[2]) - 1, Number(full[3]), Number(full[4]), Number(full[5]), Number(full[6]))
-    template = raw.slice(full[0].length)
-  } else if (short) {
-    timestampMs = Date.UTC(
-      fallback.getUTCFullYear(),
-      fallback.getUTCMonth(),
-      fallback.getUTCDate(),
-      Number(short[1]),
-      Number(short[2]),
-      Number(short[3]),
-    )
-    template = raw.slice(short[0].length)
-  } else if (raw.startsWith('[现在]')) {
-    template = raw.slice(4).trimStart()
-  }
-  const hash = hashText(raw)
-  return {
-    id: `${playerId}:legacy:${hash}:${occurrence}`,
-    playerId,
-    timestampMs,
-    sequence: position,
-    template,
-  }
 }
 
 class GameLogService {
@@ -236,31 +182,10 @@ class GameLogService {
 
   ingestSnapshot(
     playerId: string,
-    events: readonly string[],
     logEvents: readonly LogEvent[] | undefined,
-    serverTimeSeconds: number,
   ): void {
     const structured = (logEvents ?? []).map(event => fromStructuredEvent(playerId, event))
-    const represented = new Map<string, number>()
-    for (const entry of structured) {
-      const key = snapshotEventKey(entry)
-      represented.set(key, (represented.get(key) ?? 0) + 1)
-    }
-    const occurrences = new Map<string, number>()
-    const legacy = events
-      .map((raw, position) => {
-        const occurrence = occurrences.get(raw) ?? 0
-        occurrences.set(raw, occurrence + 1)
-        return parseLegacyEvent(playerId, raw, serverTimeSeconds, position, occurrence)
-      })
-      .filter(entry => {
-        const key = snapshotEventKey(entry)
-        const count = represented.get(key) ?? 0
-        if (count === 0) return true
-        represented.set(key, count - 1)
-        return false
-      })
-    this.ingestStored(playerId, [...legacy, ...structured])
+    this.ingestStored(playerId, structured)
   }
 
   ingestBatch(playerId: string, events: readonly LogEvent[]): void {

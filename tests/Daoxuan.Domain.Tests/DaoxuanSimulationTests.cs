@@ -92,7 +92,6 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(2, state.StructuredEventLog.Count);
         Assert.Equal([1L, 2L], state.StructuredEventLog.Select(entry => entry.Sequence));
         Assert.Equal(Baseline, state.StructuredEventLog[0].OccurredAt);
-        Assert.StartsWith("[08-05 00:00:00]", state.EventLog[0], StringComparison.Ordinal);
         Assert.Contains("{{action:explore.gather-herbs|采集草药}}", state.StructuredEventLog[1].Template, StringComparison.Ordinal);
     }
 
@@ -287,7 +286,7 @@ public sealed class DaoxuanSimulationTests
     }
 
     [Fact]
-    public void Restarting_during_death_replaces_action_and_revives_player_with_one_hp()
+    public void Restarting_during_combat_with_zero_hp_replaces_action_and_revives_player_with_one_hp()
     {
         var state = DaoxuanSimulation.CreateDefaultState(Guid.NewGuid(), "死亡重开修士", Baseline);
         state.Queue.Entries.Clear();
@@ -295,7 +294,7 @@ public sealed class DaoxuanSimulationTests
         var oldAction = state.Queue.Entries[0];
         oldAction.Status = DaoxuanActionStatus.Running;
         var oldExpedition = Assert.IsType<DaoxuanCombatExpeditionState>(oldAction.CombatExpedition);
-        oldExpedition.Phase = DaoxuanCombatExpeditionPhase.Death;
+        oldExpedition.Phase = DaoxuanCombatExpeditionPhase.Search;
         oldExpedition.PhaseElapsedMilliseconds = 60_000;
         oldExpedition.PhaseDurationMilliseconds = 180_000;
         state.CombatResources.Hitpoints = 0;
@@ -425,186 +424,36 @@ public sealed class DaoxuanSimulationTests
     }
 
     [Fact]
-    public void Legacy_combat_recovery_phase_migrates_without_restoring_resources()
+    public void Snapshot_deserializes_and_normalizes_to_slot_lists()
     {
-        var state = DaoxuanSimulation.CreateDefaultState(Guid.NewGuid(), "旧档修士", Baseline);
-        state.Queue.Entries.Clear();
-        state.CombatResources = new DaoxuanCombatResourceState
-        {
-            Initialized = true,
-            Hitpoints = 3,
-            Manapoints = 4
-        };
-        Assert.True(DaoxuanSimulation.StartCombat(state, DaoxuanActionIds.HuntQiBeast, 2).Success);
-        state.CombatResources.Hitpoints = 3;
-        state.CombatResources.Manapoints = 4;
-        var action = state.Queue.Entries[0];
-        action.Status = DaoxuanActionStatus.Running;
-        var expedition = Assert.IsType<DaoxuanCombatExpeditionState>(action.CombatExpedition);
-        expedition.Phase = DaoxuanCombatExpeditionPhase.Recovery;
-        expedition.PhaseElapsedMilliseconds = 2_000;
-        expedition.PhaseDurationMilliseconds = 150_000;
-
-        DaoxuanSimulation.AdvanceTo(state, Baseline.AddSeconds(1));
-
-        Assert.Equal(DaoxuanCombatExpeditionPhase.Search, expedition.Phase);
-        Assert.Equal(5_000, expedition.PhaseDurationMilliseconds);
-        // 迁移到 Search 阶段且经过 1 秒自然回复，数值不会瞬间回满，但保持自然增长
-        Assert.True(state.CombatResources.Hitpoints >= 3);
-        Assert.True(state.CombatResources.Manapoints >= 4);
-        Assert.DoesNotContain(state.StructuredEventLog, entry => entry.Template.Contains("调息完成", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Legacy_loop_snapshot_restores_completed_prefix_to_queue_tail()
-    {
-        var state = DaoxuanSimulation.CreateDefaultState(Guid.NewGuid(), "旧档修士", Baseline);
-        var currentId = Guid.NewGuid();
-        state.Queue.Entries =
-        [
-            new DaoxuanQueuedAction
-            {
-                EntryId = currentId,
-                ActionId = DaoxuanActionIds.RefineQiPill,
-                RemainingRepeats = 2,
-                ProgressSeconds = 4,
-                DurationSeconds = 12,
-                Status = DaoxuanActionStatus.Running
-            },
-            new DaoxuanQueuedAction
-            {
-                ActionId = DaoxuanActionIds.DrawQi,
-                RemainingRepeats = 1,
-                DurationSeconds = 10
-            }
-        ];
-        state.Queue.LoopTemplate =
-        [
-            new DaoxuanQueuedAction
-            {
-                ActionId = DaoxuanActionIds.GatherHerbs,
-                RemainingRepeats = 2,
-                DurationSeconds = 8
-            },
-            new DaoxuanQueuedAction
-            {
-                ActionId = DaoxuanActionIds.RefineQiPill,
-                RemainingRepeats = 3,
-                DurationSeconds = 12
-            },
-            new DaoxuanQueuedAction
-            {
-                ActionId = DaoxuanActionIds.DrawQi,
-                RemainingRepeats = 1,
-                DurationSeconds = 10
-            }
-        ];
-
-        var changed = DaoxuanSimulation.NormalizeState(state);
-
-        Assert.True(changed);
-        Assert.Empty(state.Queue.LoopTemplate);
-        Assert.Equal(
-            [DaoxuanActionIds.RefineQiPill, DaoxuanActionIds.DrawQi, DaoxuanActionIds.GatherHerbs],
-            state.Queue.Entries.Select(entry => entry.ActionId));
-        Assert.Equal(currentId, state.Queue.Entries[0].EntryId);
-        Assert.Equal(3, state.Queue.Entries[0].TotalRepeats);
-        Assert.Equal(2, state.Queue.Entries[0].RemainingRepeats);
-        Assert.Equal(4, state.Queue.Entries[0].ProgressSeconds);
-        Assert.Equal(2, state.Queue.Entries[^1].TotalRepeats);
-        Assert.Equal(2, state.Queue.Entries[^1].RemainingRepeats);
-    }
-
-    [Fact]
-    public void Normalize_state_migrates_old_combat_slots_without_losing_configuration()
-    {
-        var state = DaoxuanSimulation.CreateDefaultState(Guid.NewGuid(), "兼容修士", Baseline);
-        state.Combat.AbilitySlots =
-        [
-            new DaoxuanCombatAbilitySlot { AbilityId = DaoxuanCombatAbilityIds.HeavySlash, Level = 7 },
-            new DaoxuanCombatAbilitySlot(),
-            new DaoxuanCombatAbilitySlot(),
-            new DaoxuanCombatAbilitySlot()
-        ];
-        state.Combat.FoodSlots =
-        [
-            new DaoxuanConsumableSlot
-            {
-                ItemId = DaoxuanItemIds.HealingElixir,
-                Quantity = 2,
-                Enabled = true
-            },
-            new DaoxuanConsumableSlot()
-        ];
-        state.Combat.DrinkSlots =
-        [
-            new DaoxuanConsumableSlot
-            {
-                ItemId = DaoxuanItemIds.SpiritTea,
-                Quantity = 1,
-                Enabled = true
-            }
-        ];
-
-        var changed = DaoxuanSimulation.NormalizeState(state);
-
-        Assert.True(changed);
-        Assert.Equal(DaoxuanCombatLimits.AbilitySlotCount, state.Combat.AbilitySlots.Count);
-        Assert.Equal(DaoxuanCombatAbilityIds.HeavySlash, state.Combat.AbilitySlots[0].AbilityId);
-        Assert.Equal(7, state.Combat.AbilitySlots[0].Level);
-        Assert.Equal(3, state.Combat.ConsumableSlots.Count);
-        Assert.Equal(DaoxuanItemIds.HealingElixir, state.Combat.ConsumableSlots[0].ItemId);
-        Assert.Equal(2, state.Combat.ConsumableSlots[0].Quantity);
-        Assert.Equal(DaoxuanItemIds.SpiritTea, state.Combat.ConsumableSlots[1].ItemId);
-        Assert.Null(state.Combat.ConsumableSlots[2].ItemId);
-        Assert.Empty(state.Combat.FoodSlots);
-        Assert.Empty(state.Combat.DrinkSlots);
-    }
-
-    [Fact]
-    public void Legacy_snapshot_deserializes_and_normalizes_to_slot_lists()
-    {
-        // 旧版快照形态：autoUseSlots 每类行动是单个槽位对象，战斗分 food/drink 两组，功法槽 5 格。
-        var legacyJson = $$"""
+        var snapshotJson = $$"""
             {
               "playerId": "00000000-0000-0000-0000-00000000beef",
-              "name": "旧快照修士",
+              "name": "测试快照修士",
               "lastSimulatedAt": "2026-08-04T00:00:00+00:00",
               "queue": {
                 "entries": [],
-                "loopTemplate": [],
                 "loopEnabled": true,
                 "autoUseSlots": {
-                  "Cultivation": { "itemId": "{{DaoxuanItemIds.QiGatheringPill}}", "quantity": 2, "enabled": true },
-                  "Exploration": { "itemId": null, "quantity": 1, "enabled": false },
-                  "Alchemy": { "itemId": null, "quantity": 1, "enabled": false },
-                  "Combat": { "itemId": null, "quantity": 1, "enabled": false }
+                  "Cultivation": [
+                    { "itemId": "{{DaoxuanItemIds.QiGatheringPill}}", "quantity": 2, "enabled": true, "triggers": [] }
+                  ]
                 }
               },
               "combat": {
                 "abilitySlots": [
-                  { "abilityId": "{{DaoxuanCombatAbilityIds.HeavySlash}}", "level": 7, "triggers": [] },
-                  { "abilityId": null, "level": 1, "triggers": [] },
-                  { "abilityId": null, "level": 1, "triggers": [] },
-                  { "abilityId": null, "level": 1, "triggers": [] },
-                  { "abilityId": "{{DaoxuanCombatAbilityIds.BlazingBlast}}", "level": 3, "triggers": [] }
+                  { "abilityId": "{{DaoxuanCombatAbilityIds.HeavySlash}}", "level": 7, "triggers": [] }
                 ],
-                "foodSlots": [
+                "consumableSlots": [
                   { "itemId": "{{DaoxuanItemIds.HealingElixir}}", "quantity": 1, "enabled": true, "triggers": [] },
-                  { "itemId": null, "quantity": 1, "enabled": false, "triggers": [] },
-                  { "itemId": null, "quantity": 1, "enabled": false, "triggers": [] }
-                ],
-                "drinkSlots": [
-                  { "itemId": "{{DaoxuanItemIds.SpiritTea}}", "quantity": 1, "enabled": true, "triggers": [] },
-                  { "itemId": null, "quantity": 1, "enabled": false, "triggers": [] },
-                  { "itemId": null, "quantity": 1, "enabled": false, "triggers": [] }
+                  { "itemId": "{{DaoxuanItemIds.SpiritTea}}", "quantity": 1, "enabled": true, "triggers": [] }
                 ]
               }
             }
             """;
 
         var state = JsonSerializer.Deserialize<DaoxuanPlayerState>(
-            legacyJson,
+            snapshotJson,
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.NotNull(state);
 
@@ -631,8 +480,6 @@ public sealed class DaoxuanSimulationTests
         Assert.Equal(DaoxuanItemIds.HealingElixir, state.Combat.ConsumableSlots[0].ItemId);
         Assert.Equal(DaoxuanItemIds.SpiritTea, state.Combat.ConsumableSlots[1].ItemId);
         Assert.Null(state.Combat.ConsumableSlots[2].ItemId);
-        Assert.Empty(state.Combat.FoodSlots);
-        Assert.Empty(state.Combat.DrinkSlots);
 
         // 归一化后写出的快照一律使用数组形态，可以再次无损读入。
         var reserialized = JsonSerializer.Serialize(

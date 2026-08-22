@@ -692,16 +692,6 @@ public static class DaoxuanDataBudgetResolver
                 }
             }
         }
-        else if (config.AbilityIds is { Count: > 0 })
-        {
-            foreach (var abilityId in config.AbilityIds)
-            {
-                if (abilities.TryGetValue(abilityId, out var baseAbility))
-                {
-                    resolvedAbilities.Add(baseAbility);
-                }
-            }
-        }
 
         return new DaoxuanCombatantDefinition
         {

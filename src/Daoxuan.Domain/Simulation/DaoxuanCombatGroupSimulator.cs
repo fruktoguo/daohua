@@ -164,41 +164,6 @@ public static partial class DaoxuanCombatSimulator
             AddEvent(events, $"击败 {{{{enemy:{definition.Id}|{definition.Name}}}}}，获得 {gainedExperience:F1} 点战斗经验{dropSummary}");
         }
 
-        void GrantLegacyEncounterRewards()
-        {
-            var playerLevel = Math.Max(1.0, (double)loadout.AttackLevel);
-            var enemyLevel = Math.Max(1.0, (double)encounter.Enemy.AttackLevel);
-            var gainedExperience = DaoxuanCombatFormula.CalculateCombatExperience(playerLevel, enemyLevel);
-            experience += gainedExperience;
-            var spiritMin = Math.Max(0, encounter.SpiritMinPerWin);
-            var spiritMax = Math.Max(spiritMin, encounter.SpiritMaxPerWin);
-            var spiritReward = spiritMin == spiritMax
-                ? spiritMin
-                : random.NextInt64(spiritMin, checked(spiritMax + 1));
-            spirit = checked(spirit + spiritReward);
-            var regularDrops = RollDrops(
-                encounter,
-                rare: false,
-                dropRateMultiplier,
-                rareFindMultiplier,
-                dropQuantityMultiplier,
-                ref random,
-                ref droppedQuantity);
-            var rareDrops = RollDrops(
-                encounter,
-                rare: true,
-                dropRateMultiplier,
-                rareFindMultiplier,
-                dropQuantityMultiplier,
-                ref random,
-                ref droppedQuantity);
-            MergeRewardDrops(regularDrops, rareDrops);
-            if (spiritReward > 0)
-            {
-                AddDrop(droppedItems, DaoxuanItemIds.Spirit, spiritReward, ref droppedQuantity);
-            }
-        }
-
         void FinalizeEnemyDefeat(GroupEnemyRuntime enemy)
         {
             if (enemy.IsDefeated || enemy.Hitpoints > 0) return;
@@ -219,10 +184,6 @@ public static partial class DaoxuanCombatSimulator
             outcomeMilliseconds ??= now;
             victoryMilliseconds ??= now;
             completedEncounterCount++;
-            if (enemies.All(current => !HasIndividualRewards(current.Definition)))
-            {
-                GrantLegacyEncounterRewards();
-            }
 
             AddEvent(events, $"完成遭遇 {{{{encounter:{encounter.Id}|{encounter.Name}}}}}，共击败 {enemies.Count} 名敌人");
             encounterDefeated = true;
@@ -981,15 +942,6 @@ public static partial class DaoxuanCombatSimulator
         return definitions
             .Select((definition, slot) => new GroupEnemyRuntime(slot, definition, encounter, spawnedAt))
             .ToList();
-    }
-
-    private static bool HasIndividualRewards(DaoxuanCombatantDefinition definition)
-    {
-        return definition.Experience > 0
-               || definition.SpiritMin > 0
-               || definition.SpiritMax > 0
-               || definition.DropTable.Count > 0
-               || definition.RareDropTable.Count > 0;
     }
 
     private static IReadOnlyDictionary<string, long> RollDropTable(

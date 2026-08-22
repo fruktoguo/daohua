@@ -11,7 +11,7 @@ namespace Daoxuan.Server.Infrastructure;
 
 public sealed class DaoxuanDatabaseOptions
 {
-    public string Provider { get; init; } = "local-json";
+    public string Provider { get; init; } = "postgres";
     public string? ConnectionString { get; init; }
     public bool EnableSchemaBootstrap { get; init; } = true;
     public int MarketTradeRetentionDays { get; init; } = 14;
@@ -21,7 +21,7 @@ public sealed class DaoxuanDatabaseOptions
         ArgumentNullException.ThrowIfNull(configuration);
         return new DaoxuanDatabaseOptions
         {
-            Provider = configuration["Storage:Provider"] ?? "local-json",
+            Provider = configuration["Storage:Provider"] ?? "postgres",
             ConnectionString = configuration.GetConnectionString("Daoxuan")
                 ?? configuration["Storage:ConnectionString"],
             EnableSchemaBootstrap = configuration.GetValue("Storage:EnableSchemaBootstrap", true),
@@ -62,7 +62,7 @@ public static class DaoxuanPostgresSchema
 {
     public static async Task EnsureCreatedAsync(
         NpgsqlDataSource dataSource,
-        int marketTradeRetentionDays,
+        int marketTradeRetentionDays = 14,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dataSource);
@@ -70,88 +70,7 @@ public static class DaoxuanPostgresSchema
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         await ExecuteAsync(connection, transaction, SchemaSql, cancellationToken).ConfigureAwait(false);
-        await EnsureMarketTradePartitionsAsync(
-            connection,
-            transaction,
-            DateTimeOffset.UtcNow,
-            marketTradeRetentionDays,
-            cancellationToken).ConfigureAwait(false);
-
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async Task EnsureMarketTradePartitionsAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        DateTimeOffset now,
-        int retentionDays,
-        CancellationToken cancellationToken)
-    {
-        var utcDate = now.UtcDateTime.Date;
-        var currentWeekStart = utcDate.AddDays(-((int)utcDate.DayOfWeek + 6) % 7);
-        for (var offset = -1; offset <= 2; offset++)
-        {
-            var start = currentWeekStart.AddDays(offset * 7);
-            var end = start.AddDays(7);
-            var tableName = $"market_trades_{start:yyyy}_w{System.Globalization.ISOWeek.GetWeekOfYear(start):D2}";
-            await ExecuteAsync(
-                connection,
-                transaction,
-                $"""
-                CREATE TABLE IF NOT EXISTS {tableName} PARTITION OF market_trades
-                    FOR VALUES FROM ('{start:yyyy-MM-dd}') TO ('{end:yyyy-MM-dd}');
-                """,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        var dropBefore = utcDate.AddDays(-retentionDays);
-        await using var command = new NpgsqlCommand(
-            """
-            SELECT inhrelid::regclass::text
-            FROM pg_inherits
-            WHERE inhparent = 'market_trades'::regclass
-            """,
-            connection,
-            transaction);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        var staleTables = new List<string>();
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var table = reader.GetString(0);
-            if (!TryParseWeeklyPartitionStart(table, out var start)) continue;
-            if (start.AddDays(7) < dropBefore)
-            {
-                staleTables.Add(table);
-            }
-        }
-
-        await reader.DisposeAsync().ConfigureAwait(false);
-        foreach (var table in staleTables)
-        {
-            await ExecuteAsync(
-                connection,
-                transaction,
-                $"DROP TABLE IF EXISTS {QuoteQualifiedIdentifier(table)};",
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static bool TryParseWeeklyPartitionStart(string tableName, out DateTime start)
-    {
-        start = default;
-        var bare = tableName.Contains('.', StringComparison.Ordinal) ? tableName[(tableName.LastIndexOf('.') + 1)..] : tableName;
-        var match = System.Text.RegularExpressions.Regex.Match(bare, @"^market_trades_(\d{4})_w(\d{2})$");
-        if (!match.Success) return false;
-        var year = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-        var week = int.Parse(match.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
-        start = System.Globalization.ISOWeek.ToDateTime(year, week, DayOfWeek.Monday);
-        return true;
-    }
-
-    private static string QuoteQualifiedIdentifier(string value)
-    {
-        return string.Join('.', value.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(part => $"\"{part.Replace("\"", "\"\"", StringComparison.Ordinal)}\""));
     }
 
     private static async Task ExecuteAsync(
@@ -183,7 +102,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS player_snapshots (
     kind VARCHAR(32) NOT NULL,
     id VARCHAR(64) NOT NULL,
-    payload_encoding VARCHAR(16) NOT NULL DEFAULT 'br-json',
+    payload_encoding VARCHAR(16) NOT NULL DEFAULT 'br',
     payload BYTEA NOT NULL,
     payload_bytes INT NOT NULL,
     compressed_bytes INT NOT NULL,
@@ -206,7 +125,7 @@ CREATE TABLE IF NOT EXISTS market_ledgers (
     partition_count INT NOT NULL,
     algorithm VARCHAR(64) NOT NULL,
     revision BIGINT NOT NULL,
-    payload_encoding VARCHAR(16) NOT NULL DEFAULT 'br-json',
+    payload_encoding VARCHAR(16) NOT NULL DEFAULT 'br',
     payload BYTEA NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     writer_instance VARCHAR(160) NOT NULL,
@@ -231,16 +150,6 @@ CREATE TABLE IF NOT EXISTS persistence_outbox_ack (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS distributed_compute_nodes (
-    node_id VARCHAR(80) PRIMARY KEY,
-    endpoint VARCHAR(512) NOT NULL,
-    weight SMALLINT NOT NULL DEFAULT 1,
-    high_latency BOOLEAN NOT NULL DEFAULT TRUE,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    last_seen_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS distributed_compute_jobs (
     job_id UUID PRIMARY KEY,
     player_id UUID NOT NULL,
@@ -255,34 +164,20 @@ CREATE TABLE IF NOT EXISTS distributed_compute_jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS ix_distributed_compute_jobs_status ON distributed_compute_jobs (status, created_at);
-
-CREATE TABLE IF NOT EXISTS market_trades (
-    trade_id BIGINT GENERATED ALWAYS AS IDENTITY,
-    buyer_id UUID NOT NULL,
-    seller_id UUID NOT NULL,
-    item_id VARCHAR(32) NOT NULL,
-    enhancement_level SMALLINT NOT NULL DEFAULT 0,
-    price BIGINT NOT NULL,
-    quantity BIGINT NOT NULL,
-    gross_amount BIGINT NOT NULL,
-    tax_amount BIGINT NOT NULL DEFAULT 0,
-    traded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (trade_id, traded_at)
-) PARTITION BY RANGE (traded_at);
 """;
 }
 
 public static class DaoxuanPostgresPayloadCodec
 {
-    public const string RawJson = "json";
-    public const string BrotliJson = "br-json";
+    public const string Raw = "raw";
+    public const string Brotli = "br";
 
     public static byte[] Encode(ReadOnlyMemory<byte> payload, out string encoding, out int originalBytes)
     {
         originalBytes = payload.Length;
         if (payload.Length < 256)
         {
-            encoding = RawJson;
+            encoding = Raw;
             return payload.ToArray();
         }
 
@@ -295,11 +190,11 @@ public static class DaoxuanPostgresPayloadCodec
         var compressed = output.ToArray();
         if (compressed.Length >= payload.Length)
         {
-            encoding = RawJson;
+            encoding = Raw;
             return payload.ToArray();
         }
 
-        encoding = BrotliJson;
+        encoding = Brotli;
         return compressed;
     }
 
@@ -307,8 +202,8 @@ public static class DaoxuanPostgresPayloadCodec
     {
         return encoding switch
         {
-            RawJson => payload,
-            BrotliJson => DecodeBrotli(payload),
+            Raw => payload,
+            Brotli => DecodeBrotli(payload),
             _ => throw new InvalidDataException($"未知快照压缩格式: {encoding}")
         };
     }
@@ -787,12 +682,14 @@ public sealed class DaoxuanPostgresMarketLedgerStore(
         }
     }
 
+    private const long MarketAdvisoryLockSalt = unchecked((long)0x44414F5855414E4D); // DAOXUANM
+
     private static long CreateAdvisoryLockKey(DaoxuanMarketTopology topology)
     {
         Span<byte> bytes = stackalloc byte[8];
         BinaryPrimitives.WriteInt32BigEndian(bytes[..4], topology.PartitionCount);
         BinaryPrimitives.WriteInt32BigEndian(bytes[4..], topology.PartitionId);
-        return BinaryPrimitives.ReadInt64BigEndian(bytes) ^ unchecked((long)0x58695869584D4B54); // XiXiXMKT
+        return BinaryPrimitives.ReadInt64BigEndian(bytes) ^ MarketAdvisoryLockSalt;
     }
 
     private static void AddTopologyParameters(NpgsqlCommand command, DaoxuanMarketTopology topology)

@@ -169,12 +169,11 @@ export class DaoxuanGameClient {
 
   private sendHello(): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
-    const currentName = useGameStore.getState().name || this.characterName || '无名修士'
     const packet: Packet = {
       kind: 'hello',
       requestId: `${this.playerId.slice(0, 8)}-hello-${++this.requestSequence}`,
       sequence: 0,
-      payload: { name: currentName },
+      payload: {},
     }
     this.socket.send(new TextEncoder().encode(JSON.stringify(packet)))
   }
@@ -199,9 +198,7 @@ export class DaoxuanGameClient {
         const snapshot = packet.payload as PlayerSnapshot
         gameLogService.ingestSnapshot(
           snapshot.playerId,
-          snapshot.events,
           snapshot.logEvents,
-          snapshot.serverTimeUnixSeconds,
         )
         useGameStore.getState().applySnapshot(snapshot)
         break
@@ -211,8 +208,6 @@ export class DaoxuanGameClient {
         const patch = packet.payload as PlayerPatch
         if (patch.eventBatch && patch.eventBatch.length > 0) {
           gameLogService.ingestBatch(patch.playerId, patch.eventBatch)
-        } else if (patch.events && patch.events.length > 0) {
-          gameLogService.ingestSnapshot(patch.playerId, patch.events, undefined, patch.serverTimeUnixSeconds)
         }
         useGameStore.getState().applyPatch(patch)
         break

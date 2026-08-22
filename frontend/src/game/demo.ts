@@ -60,8 +60,6 @@ const demoQueue: QueueState = {
 
 export function createDemoSnapshot(playerId: string): PlayerSnapshot {
   const now = new Date()
-  const part = (value: number) => String(value).padStart(2, '0')
-  const displayTime = `${part(now.getMonth() + 1)}-${part(now.getDate())} ${part(now.getHours())}:${part(now.getMinutes())}:${part(now.getSeconds())}`
   return {
     playerId,
     name: 'YuoHira',
@@ -106,6 +104,12 @@ export function createDemoSnapshot(playerId: string): PlayerSnapshot {
       npcs: [],
       buildings: [],
     },
-    events: [`[${displayTime}] 行动队列已建立：采集 → 炼丹 → 修炼`],
+    logEvents: [
+      {
+        sequence: 1,
+        timestampUnixMilliseconds: now.getTime(),
+        template: '行动队列已建立：采集 → 炼丹 → 修炼',
+      },
+    ],
   }
 }

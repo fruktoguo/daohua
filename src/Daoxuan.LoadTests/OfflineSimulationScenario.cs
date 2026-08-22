@@ -35,7 +35,6 @@ public static class OfflineSimulationScenario
                 state.Combat.SwordsmanshipLevel = 1_000;
                 state.Combat.DefenseLevel = 1_000;
                 state.Combat.TalismanLevel = 1_000;
-                state.Combat.FiveElementsLevel = 1_000;
                 state.Combat.Style = DaoxuanCombatStyle.FiveElements;
                 state.Combat.AbilitySlots[0].AbilityId = DaoxuanCombatAbilityIds.BlazingBlast;
                 state.Combat.AbilitySlots[0].Level = 100;

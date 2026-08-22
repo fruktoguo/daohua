@@ -8,6 +8,8 @@ ENV_FILE="${DEPLOY_DIR}/daoxuan.env"
 IMAGE="${DAOXUAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daoxuan:prod}"
 CONTAINER_NAME="daoxuan-app"
 PREFLIGHT_CONTAINER_NAME="daoxuan-preflight"
+PREFLIGHT_DB_CONTAINER_NAME="daoxuan-preflight-db"
+PREFLIGHT_NETWORK="daoxuan-preflight-net"
 FAILED_IMAGE_FILE="${DEPLOY_DIR}/failed-image.id"
 LOCK_FILE="/run/lock/daoxuan-ccr-auto-update.lock"
 
@@ -42,17 +44,42 @@ wait_healthy() {
 }
 
 cleanup_preflight() {
-  docker rm --force "$PREFLIGHT_CONTAINER_NAME" >/dev/null 2>&1 || true
+  docker rm --force "$PREFLIGHT_CONTAINER_NAME" "$PREFLIGHT_DB_CONTAINER_NAME" >/dev/null 2>&1 || true
+  docker network rm "$PREFLIGHT_NETWORK" >/dev/null 2>&1 || true
 }
 
 preflight_image() {
   local image="$1"
   local attempt state
   cleanup_preflight
+  docker network create "$PREFLIGHT_NETWORK" >/dev/null
+  docker run --detach \
+    --name "$PREFLIGHT_DB_CONTAINER_NAME" \
+    --network "$PREFLIGHT_NETWORK" \
+    --tmpfs /var/lib/postgresql/data:size=192m,mode=0700 \
+    --shm-size 64m \
+    --env POSTGRES_DB=daoxuan \
+    --env POSTGRES_USER=daoxuan \
+    --env POSTGRES_PASSWORD=daoxuan-preflight \
+    --env PGDATA=/var/lib/postgresql/data/pgdata \
+    postgres:17-alpine >/dev/null
+
+  for attempt in {1..45}; do
+    if docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daoxuan -d daoxuan >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  if ! docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daoxuan -d daoxuan >/dev/null 2>&1; then
+    docker logs --tail 100 "$PREFLIGHT_DB_CONTAINER_NAME" >&2 2>/dev/null || true
+    cleanup_preflight
+    return 1
+  fi
+
   docker run --detach \
     --name "$PREFLIGHT_CONTAINER_NAME" \
+    --network "$PREFLIGHT_NETWORK" \
     --read-only \
-    --tmpfs /app/data:size=64m,mode=0700 \
     --tmpfs /tmp:size=32m,mode=1777 \
     --cap-drop ALL \
     --security-opt no-new-privileges:true \
@@ -60,10 +87,11 @@ preflight_image() {
     --memory 512m \
     --cpus 0.50 \
     --env ASPNETCORE_ENVIRONMENT=Production \
-    --env Storage__DataDirectory=/app/data \
+    --env Storage__Provider=postgres \
+    --env Storage__ConnectionString='Host=daoxuan-preflight-db;Port=5432;Database=daoxuan;Username=daoxuan;Password=daoxuan-preflight;Maximum Pool Size=4;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30' \
     --env Storage__DurableOutboxEnabled=true \
-    --env Storage__OutboxDirectory=/app/data/outbox \
-    --env Market__LedgerProvider=local-json \
+    --env Storage__EnableSchemaBootstrap=true \
+    --env Market__LedgerProvider=postgres \
     --env Market__PartitionCount=1 \
     --env Market__PartitionId=0 \
     "$image" >/dev/null
@@ -83,6 +111,7 @@ preflight_image() {
   done
 
   docker logs --tail 100 "$PREFLIGHT_CONTAINER_NAME" >&2 2>/dev/null || true
+  docker logs --tail 100 "$PREFLIGHT_DB_CONTAINER_NAME" >&2 2>/dev/null || true
   cleanup_preflight
   return 1
 }

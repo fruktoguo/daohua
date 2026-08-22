@@ -127,7 +127,6 @@ public sealed class DaoxuanProtocolTests
                 1,
                 1,
                 1,
-                1,
                 [new DaoxuanCombatAbilitySlotDto("ability.five-elements-flare", 1)],
                 [])
         });

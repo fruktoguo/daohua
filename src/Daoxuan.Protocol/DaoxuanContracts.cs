@@ -368,7 +368,6 @@ public sealed record DaoxuanCombatLoadoutDto(
     int DefenseLevel,
     int SwordsmanshipLevel,
     int TalismanLevel,
-    int FiveElementsLevel,
     IReadOnlyList<DaoxuanCombatAbilitySlotDto> AbilitySlots,
     IReadOnlyList<DaoxuanConsumableSlotDto> ConsumableSlots,
     double CombatDropRate = 0,
@@ -441,7 +440,6 @@ public sealed record DaoxuanPlayerSnapshotDto(
     IReadOnlyList<DaoxuanInventoryItemDto> Inventory,
     IReadOnlyList<DaoxuanBuffDto> Buffs,
     DaoxuanStatsDto Stats,
-    IReadOnlyList<string> Events,
     IReadOnlyList<DaoxuanLogEventDto>? LogEvents = null,
     DaoxuanCombatLoadoutDto? Combat = null,
     DaoxuanWorldStateDto? World = null,
@@ -464,7 +462,6 @@ public sealed record DaoxuanPlayerPatchDto(
     IReadOnlyList<DaoxuanInventoryItemDto>? Inventory = null,
     IReadOnlyList<DaoxuanBuffDto>? Buffs = null,
     DaoxuanStatsDto? Stats = null,
-    IReadOnlyList<string>? Events = null,
     DaoxuanQueueProgressDto? QueueProgress = null,
     IReadOnlyList<DaoxuanLogEventDto>? EventBatch = null,
     DaoxuanCombatLoadoutDto? Combat = null,
@@ -488,7 +485,7 @@ public sealed record DaoxuanAckDto(
 
 public sealed record DaoxuanErrorDto(string Code, string Message);
 
-public sealed record HelloRequest(string? Name = null);
+public sealed record HelloRequest();
 public sealed record RenameRequest(string Name);
 public sealed record EnqueueActionRequest(string ActionId, int Repeats = 1);
 public sealed record StartCombatRequest(string ActionId, int Repeats = 1);
@@ -504,15 +501,11 @@ public sealed record SetAutoUseRequest(
     IReadOnlyList<DaoxuanCombatTriggerDto>? Triggers = null);
 public sealed record UseItemRequest(string ItemId, string ActionType, int Quantity = 1);
 public sealed record SetLoopRequest(bool Enabled);
-public sealed record SetPresenceRequest(string Mode);
 public sealed record SetCombatLoadoutRequest(
     string? Style = null,
     string? DamageType = null,
     IReadOnlyList<DaoxuanCombatAbilitySlotDto>? AbilitySlots = null,
     IReadOnlyList<DaoxuanConsumableSlotDto>? ConsumableSlots = null,
-    // 旧版客户端字段：仅用于兼容反序列化，服务端按先 foodSlots 后 drinkSlots 合并进 ConsumableSlots。
-    IReadOnlyList<DaoxuanConsumableSlotDto>? FoodSlots = null,
-    IReadOnlyList<DaoxuanConsumableSlotDto>? DrinkSlots = null,
     double? CombatDropRate = null,
     double? CombatDropQuantity = null,
     double? CombatRareFind = null,

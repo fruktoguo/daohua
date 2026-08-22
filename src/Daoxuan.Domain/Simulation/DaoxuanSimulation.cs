@@ -78,35 +78,6 @@ public static class DaoxuanSimulation
         state.World ??= new DaoxuanWorldState();
         var worldChanged = DaoxuanWorldCatalog.Normalize(state.World);
         queue.Entries ??= [];
-        queue.LoopTemplate ??= [];
-
-        if (queue.LoopTemplate.Count > 0)
-        {
-            var missingPrefixCount = queue.LoopEnabled
-                ? FindLegacyMissingPrefixCount(queue.Entries, queue.LoopTemplate)
-                : -1;
-
-            if (missingPrefixCount >= 0)
-            {
-                for (var index = 0; index < queue.Entries.Count; index++)
-                {
-                    queueChanged |= SetTotalRepeats(
-                        queue.Entries[index],
-                        GetConfiguredRepeats(queue.LoopTemplate[index + missingPrefixCount]));
-                }
-
-                for (var index = 0; index < missingPrefixCount; index++)
-                {
-                    var restored = queue.LoopTemplate[index].CloneForLoop();
-                    restored.TotalRepeats = NormalizeRepeats(GetConfiguredRepeats(queue.LoopTemplate[index]));
-                    restored.RemainingRepeats = restored.TotalRepeats;
-                    queue.Entries.Add(restored);
-                }
-            }
-
-            queue.LoopTemplate.Clear();
-            queueChanged = true;
-        }
 
         for (var index = queue.Entries.Count - 1; index >= 0; index--)
         {
@@ -195,8 +166,6 @@ public static class DaoxuanSimulation
         }
         state.Combat.AbilitySlots ??= [];
         state.Combat.ConsumableSlots ??= [];
-        state.Combat.FoodSlots ??= [];
-        state.Combat.DrinkSlots ??= [];
         state.Combat.Equipment ??= [];
         state.Combat.LearnedAbilityIds ??= [];
         if (!double.IsFinite(state.Combat.HpRegenPerTenSeconds)
@@ -242,7 +211,6 @@ public static class DaoxuanSimulation
         if (state.Combat.DefenseLevel < 10) { state.Combat.DefenseLevel = 10; combatChanged = true; }
         if (state.Combat.SwordsmanshipLevel < 10) { state.Combat.SwordsmanshipLevel = 10; combatChanged = true; }
         if (state.Combat.TalismanLevel < 10) { state.Combat.TalismanLevel = 10; combatChanged = true; }
-        if (state.Combat.FiveElementsLevel < 10) { state.Combat.FiveElementsLevel = 10; combatChanged = true; }
         combatChanged |= NormalizeEquipment(state.Combat.Equipment);
         combatChanged |= NormalizeCombatEffectRatios(state.Combat);
         combatChanged |= NormalizeSlots(
@@ -250,7 +218,6 @@ public static class DaoxuanSimulation
             DaoxuanCombatLimits.AbilitySlotCount,
             static () => new DaoxuanCombatAbilitySlot());
         combatChanged |= NormalizeLearnedAbilities(state.Combat);
-        combatChanged |= MigrateLegacyConsumableSlots(state.Combat);
         combatChanged |= NormalizeSlots(
             state.Combat.ConsumableSlots,
             DaoxuanCombatLimits.ConsumableSlotCount,
@@ -1112,82 +1079,8 @@ public static class DaoxuanSimulation
         EnsureCombatResources(state, cursor);
         current.DurationSeconds = 0;
 
-        // 旧快照中的 Recovery 代表战败后回满资源。现行规则统一进入可衰减的重新搜索，
-        // 只迁移阶段和耗时，不改动玩家已经保留的生命与灵力。
-        if (expedition.Phase == DaoxuanCombatExpeditionPhase.Recovery)
-        {
-            var encounter = GetCombatEncounter(state, definition, expedition);
-            expedition.Phase = DaoxuanCombatExpeditionPhase.Search;
-            expedition.PhaseDurationMilliseconds = CalculateCombatSearchMilliseconds(encounter, state.Combat);
-            expedition.PhaseElapsedMilliseconds = Math.Min(
-                expedition.PhaseElapsedMilliseconds,
-                expedition.PhaseDurationMilliseconds);
-            current.ProgressSeconds = ToDisplaySeconds(expedition.PhaseElapsedMilliseconds);
-            current.DurationSeconds = ToDisplaySeconds(expedition.PhaseDurationMilliseconds);
-            dirty |= DaoxuanDirtySections.Queue | DaoxuanDirtySections.QueueProgress;
-        }
-
-        if (state.CombatResources.Hitpoints <= 0
-            && expedition.Phase is DaoxuanCombatExpeditionPhase.InitialSearch or DaoxuanCombatExpeditionPhase.Search)
-        {
-            var encounter = GetCombatEncounter(state, definition, expedition);
-            expedition.Phase = DaoxuanCombatExpeditionPhase.Death;
-            expedition.PhaseElapsedMilliseconds = 0;
-            expedition.PhaseDurationMilliseconds = Math.Max(1, encounter.PlayerRespawnMilliseconds);
-            current.ProgressSeconds = 0;
-            current.DurationSeconds = ToDisplaySeconds(expedition.PhaseDurationMilliseconds);
-            dirty |= DaoxuanDirtySections.Queue | DaoxuanDirtySections.QueueProgress | DaoxuanDirtySections.Combat;
-        }
-
         while (cursor <= target && transitions < MaxTransitionsPerAdvance)
         {
-            if (expedition.Phase == DaoxuanCombatExpeditionPhase.Death)
-            {
-                var duration = Math.Max(1, expedition.PhaseDurationMilliseconds);
-                var available = GetAvailableMilliseconds(cursor, target);
-                var remaining = Math.Max(0, duration - expedition.PhaseElapsedMilliseconds);
-                if (available < remaining)
-                {
-                    expedition.PhaseElapsedMilliseconds = checked(expedition.PhaseElapsedMilliseconds + available);
-                    current.ProgressSeconds = ToDisplaySeconds(expedition.PhaseElapsedMilliseconds);
-                    current.DurationSeconds = ToDisplaySeconds(duration);
-                    if (RegenerateResources(state, cursor, available))
-                    {
-                        dirty |= DaoxuanDirtySections.Combat;
-                    }
-                    cursor = target;
-                    dirty |= DaoxuanDirtySections.QueueProgress;
-                    return;
-                }
-
-                cursor = cursor.AddMilliseconds(remaining);
-                expedition.PhaseElapsedMilliseconds = 0;
-                current.ProgressSeconds = 0;
-                transitions++;
-                if (RegenerateResources(state, cursor, remaining))
-                {
-                    dirty |= DaoxuanDirtySections.Combat;
-                }
-                SetCombatResources(state, DaoxuanCombatSimulator.CreatePlayerState(state.Combat, state.Buffs, cursor, spirit: state.Stats.Spirit));
-                AddEvent(state, "你已复活。", cursor);
-                dirty |= DaoxuanDirtySections.Combat | DaoxuanDirtySections.Events;
-
-                if (expedition.CompleteAfterRespawn)
-                {
-                    expedition.CompleteAfterRespawn = false;
-                    FinishCombatBatch(state, current, definition, cursor, ref dirty);
-                    return;
-                }
-
-                expedition.Phase = DaoxuanCombatExpeditionPhase.Search;
-                var legacyEncounter = GetCombatEncounter(state, definition, expedition);
-                expedition.PhaseDurationMilliseconds = CalculateCombatSearchMilliseconds(legacyEncounter, state.Combat);
-                current.DurationSeconds = ToDisplaySeconds(expedition.PhaseDurationMilliseconds);
-                current.Status = DaoxuanActionStatus.Running;
-                dirty |= DaoxuanDirtySections.Queue | DaoxuanDirtySections.QueueProgress;
-                continue;
-            }
-
             if (expedition.Phase is DaoxuanCombatExpeditionPhase.InitialSearch
                 or DaoxuanCombatExpeditionPhase.Search)
             {
@@ -2114,14 +2007,6 @@ public static class DaoxuanSimulation
                 state.Inventory.Add(drop.Key, drop.Value);
             }
         }
-        else if (result.DroppedQuantity > 0)
-        {
-            var fallbackEncounter = DaoxuanCombatCatalog.GetEncounter(encounterId);
-            if (!string.IsNullOrWhiteSpace(fallbackEncounter.DropItemId))
-            {
-                state.Inventory.Add(fallbackEncounter.DropItemId, result.DroppedQuantity);
-            }
-        }
 
         if (result.RareDroppedItems is { Count: > 0 })
         {
@@ -2414,27 +2299,6 @@ public static class DaoxuanSimulation
         return true;
     }
 
-    // 旧版快照的灵食/灵饮分组并入统一的消耗品槽：按先灵食后灵饮的顺序取有内容的前 3 格，其余丢弃。
-    private static bool MigrateLegacyConsumableSlots(DaoxuanCombatLoadout combat)
-    {
-        if (combat.FoodSlots.Count == 0 && combat.DrinkSlots.Count == 0) return false;
-        var legacy = combat.FoodSlots
-            .Concat(combat.DrinkSlots)
-            .Where(slot => slot is not null
-                && (!string.IsNullOrWhiteSpace(slot.ItemId) || slot.Triggers is { Count: > 0 }))
-            .Take(DaoxuanCombatLimits.ConsumableSlotCount)
-            .ToList();
-        if (legacy.Count > 0
-            && combat.ConsumableSlots.All(slot => slot is null || string.IsNullOrWhiteSpace(slot.ItemId)))
-        {
-            combat.ConsumableSlots = legacy;
-        }
-
-        combat.FoodSlots.Clear();
-        combat.DrinkSlots.Clear();
-        return true;
-    }
-
     private static bool NormalizeSlots<T>(List<T> slots, int expectedCount, Func<T> factory)
         where T : class
     {
@@ -2581,26 +2445,6 @@ public static class DaoxuanSimulation
         action.TotalRepeats = NormalizeRepeats(action.RemainingRepeats);
     }
 
-    private static int FindLegacyMissingPrefixCount(
-        IReadOnlyList<DaoxuanQueuedAction> entries,
-        IReadOnlyList<DaoxuanQueuedAction> template)
-    {
-        if (entries.Count > template.Count) return -1;
-        var missingPrefixCount = template.Count - entries.Count;
-        for (var index = 0; index < entries.Count; index++)
-        {
-            if (!string.Equals(
-                    entries[index].ActionId,
-                    template[index + missingPrefixCount].ActionId,
-                    StringComparison.Ordinal))
-            {
-                return -1;
-            }
-        }
-
-        return missingPrefixCount;
-    }
-
     private static int GetConfiguredRepeats(DaoxuanQueuedAction action)
     {
         return action.TotalRepeats == 0 ? action.RemainingRepeats : action.TotalRepeats;
@@ -2649,15 +2493,10 @@ public static class DaoxuanSimulation
             Template = message
         };
 
-        state.EventLog.Add($"[{entry.OccurredAt:MM-dd HH:mm:ss}] {message}");
         state.StructuredEventLog.Add(entry);
         if (state.PresenceMode == DaoxuanPresenceMode.Online)
         {
             state.PendingEvents.Add(entry);
-        }
-        if (state.EventLog.Count > EventLogLimit)
-        {
-            state.EventLog.RemoveRange(0, state.EventLog.Count - EventLogLimit);
         }
 
         if (state.StructuredEventLog.Count > EventLogLimit)

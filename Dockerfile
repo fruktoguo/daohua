@@ -69,13 +69,10 @@ LABEL org.opencontainers.image.title="道化太初" \
       org.opencontainers.image.revision="${VCS_REF}"
 COPY --from=server-build --chown=10001:10001 /app/publish/ ./
 COPY --from=server-build --chown=10001:10001 /app/compute/ /app/compute/
-RUN mkdir -p /app/data \
-    && chown -R 10001:10001 /app/data
 ENV ASPNETCORE_ENVIRONMENT=Production \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 USER 10001:10001
 EXPOSE 8080
-VOLUME ["/app/data"]
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl --fail --silent --show-error http://127.0.0.1:8080/readyz >/dev/null || exit 1

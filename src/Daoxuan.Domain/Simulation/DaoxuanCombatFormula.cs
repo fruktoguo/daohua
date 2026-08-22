@@ -5,13 +5,6 @@ namespace Daoxuan.Domain.Simulation;
 /// </summary>
 public static class DaoxuanCombatFormula
 {
-    public static double CalculateHitChance(double accuracyRating, double evasionRating)
-    {
-        var accuracy = Math.Pow(Math.Max(0.01, accuracyRating), 1.4);
-        var evasion = Math.Pow(Math.Max(0.01, evasionRating), 1.4);
-        return accuracy / (accuracy + evasion);
-    }
-
     /// <summary>
     /// 公开战斗模拟器的控制命中修正：韧性为百分比点数，而不是 0 到 1 的比例。
     /// </summary>
@@ -35,32 +28,6 @@ public static class DaoxuanCombatFormula
             : resistance;
     }
 
-    public static long CalculateMitigatedDamage(
-        long rolledDamage,
-        double resistance,
-        double penetrationRatio)
-    {
-        var effectiveResistance = CalculateEffectiveResistance(resistance, penetrationRatio);
-        var multiplier = effectiveResistance >= 0
-            ? 100d / (100d + effectiveResistance)
-            : (100d - effectiveResistance) / 100d;
-        return Math.Max(1, (long)Math.Ceiling(Math.Max(1, rolledDamage) * multiplier));
-    }
-
-    public static double CalculateCriticalChance(double criticalChance, double criticalAvoidance)
-    {
-        var chance = double.IsFinite(criticalChance) ? criticalChance : 0;
-        var avoidance = double.IsFinite(criticalAvoidance) ? criticalAvoidance : 0;
-        return Math.Clamp(chance - avoidance, 0, 1);
-    }
-
-    public static double ApplyCriticalDamage(double damage, double criticalDamageRatio, bool isCritical)
-    {
-        if (!isCritical) return Math.Max(0, damage);
-        var bonus = double.IsFinite(criticalDamageRatio) ? Math.Max(0, criticalDamageRatio) : 0;
-        return Math.Max(0, damage) * (1 + bonus);
-    }
-
     public static double ApplyDamageAbsorption(double damage, double damageAbsorptionRatio)
     {
         var absorption = double.IsFinite(damageAbsorptionRatio)
@@ -71,14 +38,12 @@ public static class DaoxuanCombatFormula
 
     public static int CalculateAttackIntervalMilliseconds(
         int baseIntervalMilliseconds,
-        int attackLevel,
         double attackSpeedRatio)
     {
         return Math.Max(
             100,
             (int)Math.Round(
                 Math.Max(100, baseIntervalMilliseconds)
-                / (1 + Math.Max(0, attackLevel) / 2_000d)
                 / (1 + Math.Max(-0.99, attackSpeedRatio))));
     }
 
@@ -105,14 +70,6 @@ public static class DaoxuanCombatFormula
         }
 
         return Math.Max(0, (long)Math.Floor(maxResource * ratio));
-    }
-
-    /// <summary>
-    /// 计算功法灵力消耗。
-    /// </summary>
-    public static long CalculateManaCost(long baseCost, int multiplier = DaoxuanCombatConstants.DefaultManaCostMultiplier)
-    {
-        return Math.Max(0, checked(baseCost * multiplier));
     }
 
     /// <summary>

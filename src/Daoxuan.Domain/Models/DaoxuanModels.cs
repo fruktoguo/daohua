@@ -56,11 +56,7 @@ public enum DaoxuanCombatExpeditionPhase
 {
     InitialSearch = 0,
     Combat = 1,
-    Search = 2,
-    // 仅用于兼容旧快照；推进时会迁移为 Search，且不会恢复生命或灵力。
-    Recovery = 3,
-    // 仅用于兼容旧快照；新战斗中的死亡由 Combat 内的角色状态表达。
-    Death = 4
+    Search = 2
 }
 
 /// <summary>
@@ -191,11 +187,7 @@ public sealed class DaoxuanAutoUseSlot
 public sealed class DaoxuanActionQueueState
 {
     public List<DaoxuanQueuedAction> Entries { get; set; } = [];
-    // 仅用于读取旧版快照；归一化后会清空，新的循环语义直接轮转 Entries。
-    public List<DaoxuanQueuedAction> LoopTemplate { get; set; } = [];
     public bool LoopEnabled { get; set; } = true;
-    // 每种行动固定 3 格自动使用槽；旧版快照的单槽形态由转换器兼容读取。
-    [JsonConverter(typeof(DaoxuanAutoUseSlotsJsonConverter))]
     public Dictionary<DaoxuanActionType, List<DaoxuanAutoUseSlot>> AutoUseSlots { get; set; } =
         new()
         {
@@ -293,7 +285,6 @@ public sealed class DaoxuanPlayerState
     public DaoxuanWorldState World { get; set; } = new();
     public Dictionary<string, long> CombatEncounterCompletions { get; set; } = new(StringComparer.Ordinal);
     public DaoxuanPlayerStats Stats { get; set; } = new();
-    public List<string> EventLog { get; set; } = [];
     public long EventSequence { get; set; }
     public List<DaoxuanLogEvent> StructuredEventLog { get; set; } = [];
 
@@ -327,7 +318,6 @@ public sealed class DaoxuanPlayerState
             {
                 LoopEnabled = Queue.LoopEnabled,
                 Entries = Queue.Entries.Select(CloneAction).ToList(),
-                LoopTemplate = Queue.LoopTemplate.Select(CloneAction).ToList(),
                 AutoUseSlots = Queue.AutoUseSlots.ToDictionary(
                     pair => pair.Key,
                     pair => pair.Value.Select(slot => slot.Clone()).ToList())
@@ -369,7 +359,6 @@ public sealed class DaoxuanPlayerState
                 CombatEnemiesDefeated = Stats.CombatEnemiesDefeated,
                 CombatPlayersDefeated = Stats.CombatPlayersDefeated
             },
-            EventLog = [.. EventLog],
             EventSequence = EventSequence,
             StructuredEventLog = StructuredEventLog.Select(CloneLogEvent).ToList()
         };
