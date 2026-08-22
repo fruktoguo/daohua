@@ -247,8 +247,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
             <h3>{t('app.settings.languageHeading')}</h3>
             <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
               {[
-                { code: 'zh-CN' as const, label: '简体中文' },
-                { code: 'en-US' as const, label: 'English' },
+                { code: 'zh-CN' as const, label: '简体中文 (内置)' },
               ].map(loc => (
                 <button
                   key={loc.code}
@@ -261,6 +260,9 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                 </button>
               ))}
             </div>
+            <p className="settings-desc" style={{ marginTop: '0.5rem' }}>
+              {t('app.settings.languageDesc')}
+            </p>
           </div>
         </div>
       )}

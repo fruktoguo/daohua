@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --force",
-    "build": "tsc -b && vite build",
+    "dev": "node ../scripts/export-i18n-csv.mjs && vite --force",
+    "build": "node ../scripts/export-i18n-csv.mjs && tsc -b && vite build",
     "preview": "vite preview",
     "i18n:export": "node ../scripts/export-i18n-csv.mjs"
   },

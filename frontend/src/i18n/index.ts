@@ -10,8 +10,8 @@ import { useCallback } from 'react'
 import { create } from 'zustand'
 import { zhCN, type Messages } from './locales/zh-CN'
 
-export const LOCALES = ['zh-CN', 'en-US'] as const
-export type Locale = (typeof LOCALES)[number]
+export const LOCALES = ['zh-CN'] as const
+export type Locale = (typeof LOCALES)[number] | (string & {})
 export type { Messages }
 
 // 点路径联合类型：为静态字面量键提供编译期校验与自动补全；动态拼键仍可通过 string 放行。

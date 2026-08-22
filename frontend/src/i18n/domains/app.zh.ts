@@ -170,6 +170,7 @@ export const appZh = {
       zoomReset: '重置 100%',
       languageHeading: '界面语言',
       languageAria: '界面语言',
+      languageDesc: '核心基准语言为简体中文。可通过 public/locales/ 目录放入 CSV 模板扩展其他语言包。',
       logoutConfirmTitle: '确认登出',
       logoutConfirmDesc: '确定要退出当前修士账号并返回登录界面吗？',
       logoutConfirmBtn: '登出账号',

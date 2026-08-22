@@ -131,8 +131,8 @@
 - **内核源码**：[`frontend/src/i18n/index.ts`](../../frontend/src/i18n/index.ts)
 - **词典结构与多语言架构**：
   - **中文 TS 强类型源**：[`frontend/src/i18n/domains/`](../../frontend/src/i18n/domains/) 按业务域维护 `<域>.zh.ts`（common/app/insight/market/combat/game 六域，根键互不重叠），聚合入口 [`locales/zh-CN.ts`](../../frontend/src/i18n/locales/zh-CN.ts) 作为全量 `Messages` 与点路径 `TranslationKey` 静态类型基准与首屏零延迟内置源。
-  - **外语 CSV 动态静态包**：非中文语言（如 `en-US`）存放于 [`frontend/public/locales/`](../../frontend/public/locales/) 为标准 RFC 4180 CSV（如 `en-US.csv`），切换时按需异步 fetch 并内存缓存，未命中或加载中无缝回退至中文树状词典。
-  - **同步与导出工具**：运行 `npm --prefix frontend run i18n:export`（或 `node scripts/export-i18n-csv.mjs`）可自动从中文 TS 源码全量导出 `public/locales/en-US.csv` 与对照模板 `template.csv`。
+  - **全自动生成翻译模板**：前端执行 `npm run dev` 或 `npm run build` 时，全自动从中文 TS 源生成最新 [`frontend/public/locales/template.csv`](../../frontend/public/locales/template.csv)（`key,zh_source,translation`），供外部/社区翻译对照。
+  - **外语 CSV 动态扩展**：支持直接在 [`frontend/public/locales/`](../../frontend/public/locales/) 放入第三方 CSV 语言包（如 `ja-JP.csv`），前端按需异步拉取并缓存，未命中或加载中无缝回退至中文树状词典。
 - **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端下发的游戏内容（物品名、行动名、日志模板等协议数据）不走前端 i18n
 
 ---
