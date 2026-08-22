@@ -1,5 +1,15 @@
+// ==============================================================================
+// 文件名称: DaoHuaCombatCatalog.cs
+// 主要职责: 集中检索版本化战斗技能、装备、怪物与副本遭遇定义，并提供强化与装备属性聚合计算。
+// 核心逻辑 / 定义内容:
+//   1. 技能、装备、遭遇等战斗静态数据原型的检索与等级动态数值计算（GetAbilityAtLevel）。
+//   2. 装备强化加成计算（CalculateEnhancementMultipliers）与全身装备属性聚合（AggregateEquipmentAttributes）。
+//   3. 装备强化消耗材料与成功概率计算（GetEnhancementCost）。
+// ==============================================================================
+
 using DaoHua.Domain.GameData;
 using DaoHua.Domain.Models;
+
 
 namespace DaoHua.Domain.Simulation;
 

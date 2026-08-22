@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaAccountStore.cs
+// 主要职责: 提供基于 PostgreSQL 与 PBKDF2 的玩家账号注册、认证与道号管理。
+// 核心逻辑 / 定义内容:
+//   1. 定义账号实体记录 (DaoHuaAccountRecord) 与认证结果契约 (AuthResult)。
+//   2. 实现基于 PBKDF2-SHA256 与密码盐 (Salt) 的安全哈希生成与恒定时间比对。
+//   3. 提供账号注册格式校验、角色名唯一性保障与道号修改等数据库操作。
+// ==============================================================================
+
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;

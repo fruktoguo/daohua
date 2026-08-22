@@ -1,3 +1,11 @@
+// ==============================================================================
+// 文件名称: DaoHuaMarketModels.cs
+// 主要职责: 定义修仙世界交易市场 / 撮合系统的订单请求、订单状态、交易品种、盘口视图与成交结算数据模型。
+// 核心逻辑 / 定义内容:
+//   1. 交易方向、订单生命周期状态及交易品种标的定义（DaoHuaMarketSide, DaoHuaMarketOrderStatus, DaoHuaMarketInstrument）
+//   2. 挂单委托、撤单请求及只读订单视图模型（DaoHuaMarketOrderRequest, DaoHuaMarketOrderView 等）
+//   3. 撮合成交记录、盘口深度视图与账本持久化模型（DaoHuaMarketMatchResult, DaoHuaMarketOrderBookView 等）
+// ==============================================================================
 namespace DaoHua.Domain.Models;
 
 /// <summary>

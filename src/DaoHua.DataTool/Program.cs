@@ -1,20 +1,18 @@
+// ==============================================================================
+// 文件名称: Program.cs
+// 主要职责: 游戏数值配置校验与默认数据导出的独立 CLI 工具入口。
+// 核心逻辑 / 定义内容:
+//   1. 校验模式 (validate): 读取并校验指定目录下的游戏配置 JSON 与 Manifest，统计数据要素。
+//   2. 导出模式 (export-defaults): 将代码内置的游戏数值与规则定义导出为标准格式的 JSON 配置文件。
+//   3. 统一规范化 JSON 序列化格式与命名策略。
+// ==============================================================================
+
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DaoHua.Domain.GameData;
 using DaoHua.Domain.Models;
 using DaoHua.Domain.Simulation;
-
-// ============================================================================
-// DaoHua.DataTool - 游戏数据校验与默认配置导出工具
-// ----------------------------------------------------------------------------
-// 设计定位与用途：
-// 1. 本工具为独立 CLI 工具，用于开发/发布阶段维护游戏数值配置 JSON。
-// 2. 校验模式 (validate <目录>): 加载指定目录下的 manifest 与全部配置 JSON，
-//    校验数据完整性并输出版本指纹及各项要素统计。
-// 3. 导出模式 (export-defaults <目录>): 从代码内建数据源导出全套默认游戏配置文件
-//    (manifest, actions, items, abilities, equipment, monsters, encounters, maps)。
-// ============================================================================
 
 if (args.Length != 2)
 {

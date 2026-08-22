@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaAccessControl.cs
+// 主要职责: 提供服务端 API 与 WebSocket 连接的共享访问控制与令牌防时序攻击校验。
+// 核心逻辑 / 定义内容:
+//   1. 从应用配置读取共享访问口令 (Server:AccessToken) 并缓存 UTF-8 字节。
+//   2. 使用 CryptographicOperations.FixedTimeEquals 执行恒定时间比较，防止时序侧信道攻击。
+//   3. 支持开发环境未配置时自动放行。
+// ==============================================================================
+
 using System.Security.Cryptography;
 using System.Text;
 

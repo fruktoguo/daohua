@@ -1,3 +1,11 @@
+// ==============================================================================
+// 文件名称: DaoHuaIds.cs
+// 主要职责: 定义修仙领域模型中通用的核心枚举常量以及预置物品、动作、技能、地图与节点的静态标识符（ID）常量。
+// 核心逻辑 / 定义内容:
+//   1. 基础行为类型、战斗流派、伤害属性与运行状态等核心领域枚举（DaoHuaActionType, DaoHuaCombatStyle, DaoHuaDamageType 等）
+//   2. 预置基础物品、动作与技能原型 ID 常量定义（DaoHuaItemIds, DaoHuaActionIds, DaoHuaAbilityIds）
+//   3. 预置大世界地图、节点与连接边 ID 常量定义（DaoHuaWorldMapIds, DaoHuaWorldNodeIds, DaoHuaWorldEdgeIds）
+// ==============================================================================
 namespace DaoHua.Domain.Models;
 
 /// <summary>

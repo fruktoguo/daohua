@@ -1,3 +1,11 @@
+// ==============================================================================
+// 文件名称: DaoHuaWorldModels.cs
+// 主要职责: 定义修仙大世界的拓扑地图、节点、路径边、玩家当前位置及大地图寻路与旅行规划模型。
+// 核心逻辑 / 定义内容:
+//   1. 玩家在大地图中的当前坐标、停留节点与移动进度状态（DaoHuaWorldState）
+//   2. 节点寻路方案与长途旅行路段执行计划（DaoHuaTravelPlan, DaoHuaTravelSegment）
+//   3. 地图拓扑图静态定义：包含节点坐标、区域属性与连接边定义（DaoHuaMapDefinition, DaoHuaMapNodeDefinition, DaoHuaMapEdgeDefinition）
+// ==============================================================================
 namespace DaoHua.Domain.Models;
 
 /// <summary>

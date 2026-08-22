@@ -1,3 +1,14 @@
+// ==============================================================================
+// 文件名称: DaoHuaGameHost.cs
+// 主要职责: 游戏服务端核心运行时宿主，管理多分片玩家生命周期、指令调度与状态演进
+// 核心逻辑 / 定义内容:
+//   1. 定义玩家分片配置与共享宿主状态（DaoHuaPlayerShardOptions、DaoHuaSharedGameHostState）。
+//   2. 统筹管理多 Fiber 分片宿主（DaoHuaPlayerShardHost），支持多核并行推进与负载均衡。
+//   3. 处理玩家登录会话绑定、在线状态快进演进（AdvanceDueOnlinePlayersAsync）与增量广播同步。
+//   4. 承载玩家与市场业务指令路由执行、确定性结算与数据持久化快照入队。
+//   5. 收集与暴露服务端运行时指标（DaoHuaServerMetrics）。
+// ==============================================================================
+
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Text.Json;

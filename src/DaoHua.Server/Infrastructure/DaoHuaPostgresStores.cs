@@ -1,3 +1,13 @@
+// ==============================================================================
+// 文件名称: DaoHuaPostgresStores.cs
+// 主要职责: 提供基于 PostgreSQL 的快照存储、Durable Outbox、市场账本与分区表落盘实现。
+// 核心逻辑 / 定义内容:
+//   1. 数据库配置与架构自动初始化服务 (DaoHuaDatabaseOptions, DaoHuaPostgresSchemaHostedService)。
+//   2. 玩家快照与二进制载荷高效读写存储 (DaoHuaPostgresSnapshotStore)。
+//   3. 崩溃恢复与高吞吐持久化出件箱 (DaoHuaPostgresPersistenceOutbox)。
+//   4. 市场账本 CAS 乐观锁并发写入与撮合流水按日分区存储 (DaoHuaPostgresMarketLedgerStore)。
+// ==============================================================================
+
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Text.Json;
@@ -501,7 +511,7 @@ public sealed class DaoHuaPostgresSnapshotStore(NpgsqlDataSource dataSource) : I
 /// 3. 执行确认 (<see cref="AcknowledgeThroughAsync"/>)，更新水位并物理清理已消费的 Outbox 行。
 /// </para>
 /// </summary>
-public sealed class DaoHuaPostgresPersistenceOutbox(NpgsqlDataSource dataSource) : IYuoPersistenceOutbox
+public sealed class DaoHuaPostgresPersistenceOutbox(NpgsqlDataSource dataSource) : IDaoHuaBatchPersistenceOutbox
 {
     private const short SnapshotCommand = 1;
     private const short EventCommand = 2;
@@ -531,6 +541,59 @@ public sealed class DaoHuaPostgresPersistenceOutbox(NpgsqlDataSource dataSource)
         dbCommand.Parameters.AddWithValue("occurredAt", frame.OccurredAt);
         return (long)(await dbCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("PostgreSQL outbox 未返回 sequence。"));
+    }
+
+    public async ValueTask<IReadOnlyList<long>> AppendBatchAsync(
+        IReadOnlyList<YuoPersistenceCommand> commands,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(commands);
+        if (commands.Count == 0) return [];
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var sequences = new long[commands.Count];
+        try
+        {
+            await using var dbCommand = new NpgsqlCommand(
+                """
+                INSERT INTO persistence_outbox (
+                    command_kind, snapshot_kind, snapshot_id, event_stream, event_type, payload, occurred_at)
+                VALUES (@kind, @snapshotKind, @snapshotId, @eventStream, @eventType, @payload, @occurredAt)
+                RETURNING sequence
+                """,
+                connection,
+                transaction);
+            var kind = dbCommand.Parameters.Add("kind", NpgsqlDbType.Smallint);
+            var snapshotKind = dbCommand.Parameters.Add("snapshotKind", NpgsqlDbType.Varchar);
+            var snapshotId = dbCommand.Parameters.Add("snapshotId", NpgsqlDbType.Varchar);
+            var eventStream = dbCommand.Parameters.Add("eventStream", NpgsqlDbType.Varchar);
+            var eventType = dbCommand.Parameters.Add("eventType", NpgsqlDbType.Varchar);
+            var payload = dbCommand.Parameters.Add("payload", NpgsqlDbType.Bytea);
+            var occurredAt = dbCommand.Parameters.Add("occurredAt", NpgsqlDbType.TimestampTz);
+
+            for (var index = 0; index < commands.Count; index++)
+            {
+                var frame = Encode(commands[index]);
+                kind.Value = frame.Kind;
+                snapshotKind.Value = (object?)frame.SnapshotKind ?? DBNull.Value;
+                snapshotId.Value = (object?)frame.SnapshotId ?? DBNull.Value;
+                eventStream.Value = (object?)frame.EventStream ?? DBNull.Value;
+                eventType.Value = (object?)frame.EventType ?? DBNull.Value;
+                payload.Value = frame.Payload;
+                occurredAt.Value = frame.OccurredAt;
+                sequences[index] = (long)(await dbCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException("PostgreSQL outbox 批量写入未返回 sequence。"));
+            }
+
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return sequences;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async IAsyncEnumerable<YuoPersistenceOutboxEntry> ReplayAsync(

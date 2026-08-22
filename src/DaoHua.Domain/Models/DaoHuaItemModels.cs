@@ -1,3 +1,11 @@
+// ==============================================================================
+// 文件名称: DaoHuaItemModels.cs
+// 主要职责: 定义道具、材料、消耗品、装备及其附带 Buff/词条等物品系统的核心领域模型与静态原型定义。
+// 核心逻辑 / 定义内容:
+//   1. 物品类型、Buff 增益效果及消耗品规则定义（DaoHuaItemKind, DaoHuaBuffEffectDefinition, DaoHuaConsumableDefinition）
+//   2. 装备槽位、属性与强化加成模型定义（DaoHuaEquipmentDefinition, DaoHuaEquippedSlots 等）
+//   3. 物品静态原型定义与背包/实例数据结构（DaoHuaItemDefinition, DaoHuaInventoryItem 等）
+// ==============================================================================
 namespace DaoHua.Domain.Models;
 
 /// <summary>

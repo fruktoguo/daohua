@@ -1,5 +1,14 @@
+// ==============================================================================
+// 文件名称: DaoHuaActionCatalog.cs
+// 主要职责: 游戏动作原型静态目录检索类，提供对全部可执行动作配置的快速访问。
+// 核心逻辑 / 定义内容:
+//   1. 提供全量公开动作（All）与包含隐藏动作（AllIncludingHidden）的集合检索。
+//   2. 根据动作 ID 获取动作定义原型（Get / TryGet）。
+// ==============================================================================
+
 using DaoHua.Domain.GameData;
 using DaoHua.Domain.Models;
+
 
 namespace DaoHua.Domain.Simulation;
 

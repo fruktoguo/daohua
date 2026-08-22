@@ -1,3 +1,11 @@
+// ==============================================================================
+// 文件名称: DaoHuaModels.cs
+// 主要职责: 定义玩家核心实体、个人档案、动作队列、境界属性以及 ECS 组件与快照等基础领域模型。
+// 核心逻辑 / 定义内容:
+//   1. 动作原型定义与玩家动作队列实例管理（DaoHuaActionDefinition, DaoHuaQueuedAction）
+//   2. 玩家角色档案、基础属性与在线/挂机运行时状态（DaoHuaPlayerProfile, DaoHuaPlayerState）
+//   3. 实体组件与完整玩家状态持久化快照（DaoHuaPlayerComponent, DaoHuaPlayerSnapshot）
+// ==============================================================================
 using System.Text.Json.Serialization;
 using YuoCore.Ecs;
 

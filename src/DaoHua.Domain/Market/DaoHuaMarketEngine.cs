@@ -1,6 +1,17 @@
+// ==============================================================================
+// 文件名称: DaoHuaMarketEngine.cs
+// 主要职责: 分片市场管理引擎与全局订单路由门面。
+// 核心逻辑 / 定义内容:
+//   1. 基于分片（MarketShard）隔离不同交易品种的订单簿，避免全局锁竞争。
+//   2. 维护全局订单路由映射表（OrderRoute），支持跨分片定位与操作指定订单。
+//   3. 挂单、吃单、撤单、到期淘汰与盘口聚合查询等门面 API。
+//   4. 市场引擎全量状态快照导出与启动恢复。
+// ==============================================================================
+
 using System.Collections.Concurrent;
 using DaoHua.Domain.Models;
 using DaoHua.Domain.Simulation;
+
 
 namespace DaoHua.Domain.Market;
 

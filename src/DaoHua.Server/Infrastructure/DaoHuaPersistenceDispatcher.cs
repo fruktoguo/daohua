@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaPersistenceDispatcher.cs
+// 主要职责: 提供快照持久化命令的统一队列分发与 Durable Outbox 路由调度。
+// 核心逻辑 / 定义内容:
+//   1. 持久化队列调度契约抽象 (IDaoHuaPersistenceQueue, IDaoHuaBatchPersistenceOutbox)。
+//   2. 依据配置将持久化命令路由至内存有界队列 (YuoPersistenceQueue) 或先写入 Outbox 表。
+//   3. 维护持久化队列监控指标与停服排空完成标记。
+// ==============================================================================
+
 using YuoCore.Persistence;
 
 namespace DaoHua.Server.Infrastructure;
@@ -27,6 +36,13 @@ public interface IDaoHuaPersistenceQueue
     void Complete();
 }
 
+public interface IDaoHuaBatchPersistenceOutbox : IYuoPersistenceOutbox
+{
+    ValueTask<IReadOnlyList<long>> AppendBatchAsync(
+        IReadOnlyList<YuoPersistenceCommand> commands,
+        CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// 持久化命令分发器 (DaoHuaPersistenceDispatcher)。
 /// <para>
@@ -38,6 +54,7 @@ public sealed class DaoHuaPersistenceDispatcher : IDaoHuaPersistenceQueue
 {
     private readonly YuoPersistenceQueue _queue;
     private readonly YuoDurablePersistenceQueue? _durableQueue;
+    private readonly IDaoHuaBatchPersistenceOutbox? _batchOutbox;
 
     public DaoHuaPersistenceDispatcher(
         YuoPersistenceQueue queue,
@@ -46,6 +63,7 @@ public sealed class DaoHuaPersistenceDispatcher : IDaoHuaPersistenceQueue
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         ArgumentNullException.ThrowIfNull(services);
         _durableQueue = services.GetService<YuoDurablePersistenceQueue>();
+        _batchOutbox = services.GetService<IYuoPersistenceOutbox>() as IDaoHuaBatchPersistenceOutbox;
     }
 
     public ValueTask EnqueueAsync(
@@ -62,6 +80,25 @@ public sealed class DaoHuaPersistenceDispatcher : IDaoHuaPersistenceQueue
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(commands);
+        if (commands.Count == 0) return;
+        if (_batchOutbox is not null)
+        {
+            var sequences = await _batchOutbox.AppendBatchAsync(commands, cancellationToken).ConfigureAwait(false);
+            if (sequences.Count != commands.Count)
+            {
+                throw new InvalidOperationException("PostgreSQL outbox 批量写入返回的 sequence 数量不一致。");
+            }
+
+            var wrapped = new YuoPersistenceCommand[commands.Count];
+            for (var index = 0; index < commands.Count; index++)
+            {
+                wrapped[index] = new YuoOutboxPersistenceCommand(sequences[index], commands[index]);
+            }
+
+            await _queue.EnqueueBatchAsync(wrapped, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         foreach (var command in commands)
         {
             await EnqueueAsync(command, cancellationToken).ConfigureAwait(false);

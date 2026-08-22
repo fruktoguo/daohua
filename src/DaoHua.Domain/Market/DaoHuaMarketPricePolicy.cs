@@ -1,4 +1,14 @@
+// ==============================================================================
+// 文件名称: DaoHuaMarketPricePolicy.cs
+// 主要职责: 坊市交易价格档位、最小变动步长（Tick Size）及价格合规性策略。
+// 核心逻辑 / 定义内容:
+//   1. 定义绝对最低底价（AbsoluteMinimumPrice）与订单有效期（ListingLifetime）。
+//   2. 按价格数量级采用 1/2/5 阶梯步长算法计算最小价格变动步长（GetIncrement）。
+//   3. 挂单价格的合法档位归一化（Normalize）与价格有效性校验（ValidateListingPrice）。
+// ==============================================================================
+
 using DaoHua.Domain.Models;
+
 
 namespace DaoHua.Domain.Market;
 

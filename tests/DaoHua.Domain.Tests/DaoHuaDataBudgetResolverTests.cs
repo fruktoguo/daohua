@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaDataBudgetResolverTests.cs
+// 主要职责: 数值预算解析器（DaoHuaDataBudgetResolver）量化推导算法单元测试。
+// 核心逻辑 / 定义内容:
+//   1. 验证技能（Ability）显式参数透传与基于品阶法力期望的消耗预算换算。
+//   2. 验证法宝装备（Equipment）总预算在各基础属性权重与词条上的确定性分配。
+//   3. 验证消耗品（Consumable）效果预算推导与词条增量（Affix Increment）计算规则。
+// ==============================================================================
+
 using DaoHua.Domain.GameData;
 using DaoHua.Domain.Models;
 using Xunit;

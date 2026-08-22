@@ -1,4 +1,14 @@
+// ==============================================================================
+// 文件名称: DaoHuaCombatSimulator.cs
+// 主要职责: 无帧、可复现的离散事件战斗模拟器入口与单体战斗模拟。
+// 核心逻辑 / 定义内容:
+//   1. 玩家实时战斗状态（CreatePlayerState）与综合属性面板（CreatePlayerAttributes）构建。
+//   2. 单体遭遇战斗推演（RunSingleEncounter）与对决主入口（RunEncounter）。
+//   3. 战斗 Buff 运行时构建与生命周期管理。
+// ==============================================================================
+
 using DaoHua.Domain.Models;
+
 
 namespace DaoHua.Domain.Simulation;
 

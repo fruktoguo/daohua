@@ -1,3 +1,11 @@
+// ==============================================================================
+// 文件名称: DaoHuaCombatModels.cs
+// 主要职责: 定义修仙世界战斗系统相关的核心领域模型、触发器、技能效果类型、战斗行动、战斗日志与遭遇/结算运行时状态。
+// 核心逻辑 / 定义内容:
+//   1. 战斗视觉、目标与自动化触发器系统（DaoHuaCharacterVisualDefinition, DaoHuaCombatTriggerDependency, DaoHuaCombatTrigger 等）
+//   2. 技能释放与战斗属性定义（DaoHuaCombatAbilitySlot, DaoHuaCombatStats 等）
+//   3. 战斗日志、回合结算与历练状态模型（DaoHuaCombatTurnLog, DaoHuaCombatResult, DaoHuaCombatExpeditionState 等）
+// ==============================================================================
 namespace DaoHua.Domain.Models;
 
 /// <summary>

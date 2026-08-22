@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaCharacterStatResolverTests.cs
+// 主要职责: 通用角色属性解析器（DaoHuaCharacterStatResolver）的确定性数值推导单元测试。
+// 核心逻辑 / 定义内容:
+//   1. 验证空权重全基准默认属性推导，确保 14 项战斗属性均有合理正数。
+//   2. 验证生命层次（Rank: normal/elite/boss/leader/overlord）阶梯系数放大。
+//   3. 验证整数向下取整开关、流派偏向偏重与显式属性值覆盖逻辑。
+// ==============================================================================
+
 using DaoHua.Domain.GameData;
 using DaoHua.Domain.Models;
 using Xunit;

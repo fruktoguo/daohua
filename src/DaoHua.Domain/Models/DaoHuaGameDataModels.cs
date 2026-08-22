@@ -1,3 +1,11 @@
+// ==============================================================================
+// 文件名称: DaoHuaGameDataModels.cs
+// 主要职责: 定义游戏静态配置（JSON/清单资源）的数据传输对象（DTO）及属性解算上下文数据结构。
+// 核心逻辑 / 定义内容:
+//   1. 游戏数据清单与版本元数据定义（DaoHuaGameDataManifest）
+//   2. 技能、装备、怪物、遭遇及地图等静态配置传输对象（DaoHuaAbilityConfig, DaoHuaEquipmentConfig, DaoHuaMonsterConfig, DaoHuaEncounterConfig, DaoHuaMapConfig）
+//   3. 角色与怪物数值解析请求与解算结果模型（DaoHuaCharacterStatRequest, DaoHuaResolvedCharacterStats 等）
+// ==============================================================================
 using DaoHua.Domain.Models;
 
 namespace DaoHua.Domain.Models;

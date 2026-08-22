@@ -1,5 +1,15 @@
+// ==============================================================================
+// 文件名称: DaoHuaMarketCoordinator.cs
+// 主要职责: 玩家资产与分片市场订单簿之间的结算边界与资金/物品冻结协调器。
+// 核心逻辑 / 定义内容:
+//   1. 挂单/撤单前的玩家灵石与物品资产冻结（Reservation）生命周期管理。
+//   2. 订单成交、部分成交或撤单后的资产结算与待领取账本（PendingCredits）累积与领取。
+//   3. 市场协调器状态的全量快照导出（ExportState）与崩溃恢复（RestoreState）。
+// ==============================================================================
+
 using DaoHua.Domain.Models;
 using DaoHua.Domain.Simulation;
+
 
 namespace DaoHua.Domain.Market;
 

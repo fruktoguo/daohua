@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaMarketMapper.cs
+// 主要职责: 市场领域模型与网络传输协议 DTO 之间的投影转换映射
+// 核心逻辑 / 定义内容:
+//   1. 将撮合引擎订单簿深度快照投影为 RESTful API 使用的 DaoHuaMarketBookDto。
+//   2. 映射市场运行监控指标（DaoHuaMarketEngineMetrics -> DaoHuaMarketMetricsDto）。
+//   3. 映射玩家市场订单视图与挂单、撤单、领奖等操作的响应结果 DTO。
+// ==============================================================================
+
 using DaoHua.Domain.Market;
 using DaoHua.Domain.Models;
 using DaoHua.Protocol;

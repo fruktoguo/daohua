@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaMarketLedgerStore.cs
+// 主要职责: 定义市场主分片拓扑元数据与市场订单簿账本的底层持久化存储契约。
+// 核心逻辑 / 定义内容:
+//   1. 市场主分片拓扑管理与交易品种确定性哈希路由 (DaoHuaMarketTopology)。
+//   2. 市场账本快照持久化接口 (IDaoHuaMarketLedgerStore) 与修订版本 CAS 控制。
+//   3. 市场撮合成交流水日志追加与日分区表管理契约。
+// ==============================================================================
+
 using DaoHua.Domain.Market;
 using DaoHua.Domain.Models;
 using YuoCore.Persistence;

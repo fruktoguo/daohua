@@ -1,17 +1,17 @@
+// ==============================================================================
+// 文件名称: Program.cs
+// 主要职责: 分布式冷挂机确定性计算节点的应用程序入口与轻量 HTTP 宿主。
+// 核心逻辑 / 定义内容:
+//   1. 初始化 ASP.NET Core Minimal API 宿主并加载只读游戏配置数据 (DaoHuaGameData)。
+//   2. 暴露 /healthz 健康检查端点，报告计算节点状态、配置版本与数据指纹。
+//   3. 暴露 /internal/compute/advance-batch 内部批处理接口，安全校验 Token 后执行确定性离线模拟 (DaoHuaSimulation.AdvanceTo)。
+//   4. 采用无状态纯计算设计，不直连生产数据库、不持有在线玩家权威状态。
+// ==============================================================================
+
 using System.Text.Json;
 using DaoHua.Domain.GameData;
 using DaoHua.Domain.Models;
 using DaoHua.Domain.Simulation;
-
-// ============================================================================
-// DaoHua.ComputeNode - 分布式冷挂机确定性计算节点宿主
-// ----------------------------------------------------------------------------
-// 设计定位与架构说明：
-// 1. 本服务为可选的高延迟冷计算工作节点，运行在远程个人设备或辅助计算服务器上。
-// 2. 无状态纯计算：不持有在线玩家权威状态、不直连生产 PostgreSQL 数据库、不参与市场撮合。
-// 3. 仅通过内部 HTTP 批处理接口 (/internal/compute/advance-batch) 接收主服务分发的离线快照，
-//    调用 DaoHua.Domain.Simulation.DaoHuaSimulation.AdvanceTo 进行确定性快进，并将新快照返回主服务。
-// ============================================================================
 
 var builder = WebApplication.CreateBuilder(args);
 

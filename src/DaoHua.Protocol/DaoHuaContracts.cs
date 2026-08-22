@@ -1,3 +1,14 @@
+// ==============================================================================
+// 文件名称: DaoHuaContracts.cs
+// 主要职责: 定义道化太初客户端、服务端与压测共享的数据传输契约与网络通信协议。
+// 核心逻辑 / 定义内容:
+//   1. 网络信封与包类型标识 (DaoHuaEnvelope, DaoHuaIncomingPacket, DaoHuaPacketKinds)。
+//   2. 游戏配置 DTO (ActionDefinitionDto, ItemDefinitionDto, AbilityDefinitionDto 等)。
+//   3. 玩家快照与增量更新契约 (DaoHuaSnapshotPayload, DaoHuaDeltaPayload)。
+//   4. 客户端上行指令与回执 (DaoHuaCommandPayload, DaoHuaAckPayload, DaoHuaErrorPayload)。
+//   5. 挂机补算与市场交易协议契约 (DaoHuaOfflineCatchUpContract, DaoHuaMarketContracts 等)。
+// ==============================================================================
+
 using System.Text.Json;
 using System.Text.Json.Serialization;
 

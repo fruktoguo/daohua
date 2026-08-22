@@ -1,3 +1,12 @@
+// ==============================================================================
+// 文件名称: DaoHuaDataBudgetResolver.cs
+// 主要职责: 核心数值强度预算与权重解析器，负责将品阶预算（Tier Budget）与强度（Intensity）结合权重模型解算为严格量化平衡的装备、技能与怪物数据。
+// 核心逻辑 / 定义内容:
+//   1. 品阶基础强度预算（Tier Budget）与装备品质乘区（Quality Multipliers）定义
+//   2. 装备数值解算（ResolveEquipment）：基于权重将强度预算分配给各类战斗与辅助属性
+//   3. 技能效果解算（ResolveAbility）：基于预算与乘区解算技能伤害、治疗、Dot 与控制参数
+//   4. 怪物基准属性（GetTierExpectedAttributes）与全品阶期望数值推导
+// ==============================================================================
 using System.Globalization;
 using DaoHua.Domain.Models;
 
