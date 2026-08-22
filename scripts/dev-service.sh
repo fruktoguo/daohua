@@ -5,7 +5,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/compose.yaml"
 SERVICE_URL="http://127.0.0.1:5128"
-DB_VOLUME="daoxuan_daoxuan-postgres"
+DB_VOLUME="daohua_daohua-postgres"
 COMMAND="${1:-up}"
 
 cd "$ROOT_DIR"

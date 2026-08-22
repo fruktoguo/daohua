@@ -6,7 +6,7 @@ OnBootSec=2min
 OnUnitActiveSec=1min
 RandomizedDelaySec=10s
 Persistent=true
-Unit=daoxuan-ccr-auto-update.service
+Unit=daohua-ccr-auto-update.service
 
 [Install]
 WantedBy=timers.target

@@ -8,7 +8,7 @@ FROM ${NODE_IMAGE} AS frontend-build
 WORKDIR /src/frontend
 ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --registry="${NPM_CONFIG_REGISTRY}"
+RUN npm ci --registry="${NPM_CONFIG_REGISTRY}" --ignore-scripts --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
@@ -16,10 +16,10 @@ FROM ${DOTNET_SDK_IMAGE} AS server-build
 WORKDIR /src
 ARG BUILD_VERSION=dev
 COPY global.json ./
-COPY src/Daoxuan.Domain/Daoxuan.Domain.csproj src/Daoxuan.Domain/
-COPY src/Daoxuan.Protocol/Daoxuan.Protocol.csproj src/Daoxuan.Protocol/
-COPY src/Daoxuan.Server/Daoxuan.Server.csproj src/Daoxuan.Server/
-COPY src/Daoxuan.ComputeNode/Daoxuan.ComputeNode.csproj src/Daoxuan.ComputeNode/
+COPY src/DaoHua.Domain/DaoHua.Domain.csproj src/DaoHua.Domain/
+COPY src/DaoHua.Protocol/DaoHua.Protocol.csproj src/DaoHua.Protocol/
+COPY src/DaoHua.Server/DaoHua.Server.csproj src/DaoHua.Server/
+COPY src/DaoHua.ComputeNode/DaoHua.ComputeNode.csproj src/DaoHua.ComputeNode/
 COPY config/game-data/ config/game-data/
 COPY vendor/YuoCore/README.md vendor/YuoCore/README.md
 COPY vendor/YuoCore/src/Directory.Build.props vendor/YuoCore/src/Directory.Build.props
@@ -28,22 +28,22 @@ COPY vendor/YuoCore/src/YuoCore.Analyzers/YuoCore.Analyzers.csproj vendor/YuoCor
 COPY vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj vendor/YuoCore/src/YuoCore.Ecs/
 COPY vendor/YuoCore/src/YuoCore.Persistence/YuoCore.Persistence.csproj vendor/YuoCore/src/YuoCore.Persistence/
 COPY vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj vendor/YuoCore/src/YuoCore.Runtime/
-RUN dotnet restore src/Daoxuan.Server/Daoxuan.Server.csproj --nologo \
-    && dotnet restore src/Daoxuan.ComputeNode/Daoxuan.ComputeNode.csproj --nologo
-COPY src/Daoxuan.Domain/ src/Daoxuan.Domain/
-COPY src/Daoxuan.Protocol/ src/Daoxuan.Protocol/
-COPY src/Daoxuan.ComputeNode/ src/Daoxuan.ComputeNode/
-COPY src/Daoxuan.Server/ src/Daoxuan.Server/
+RUN dotnet restore src/DaoHua.Server/DaoHua.Server.csproj --nologo \
+    && dotnet restore src/DaoHua.ComputeNode/DaoHua.ComputeNode.csproj --nologo
+COPY src/DaoHua.Domain/ src/DaoHua.Domain/
+COPY src/DaoHua.Protocol/ src/DaoHua.Protocol/
+COPY src/DaoHua.ComputeNode/ src/DaoHua.ComputeNode/
+COPY src/DaoHua.Server/ src/DaoHua.Server/
 COPY config/game-data/ config/game-data/
 COPY vendor/YuoCore/src/ vendor/YuoCore/src/
-RUN dotnet publish src/Daoxuan.Server/Daoxuan.Server.csproj \
+RUN dotnet publish src/DaoHua.Server/DaoHua.Server.csproj \
     --configuration Release \
     --no-restore \
     --output /app/publish \
     --nologo \
     -p:ContinuousIntegrationBuild=true \
     -p:InformationalVersion="${BUILD_VERSION}"
-RUN dotnet publish src/Daoxuan.ComputeNode/Daoxuan.ComputeNode.csproj \
+RUN dotnet publish src/DaoHua.ComputeNode/DaoHua.ComputeNode.csproj \
     --configuration Release \
     --no-restore \
     --output /app/compute \
@@ -56,8 +56,8 @@ RUN test ! -d /app/publish/data \
 
 FROM ${DOTNET_RUNTIME_IMAGE} AS runtime
 RUN apk add --no-cache curl icu-libs krb5-libs tzdata \
-    && addgroup -S -g 10001 daoxuan \
-    && adduser -S -D -H -u 10001 -G daoxuan daoxuan
+    && addgroup -S -g 10001 daohua \
+    && adduser -S -D -H -u 10001 -G daohua daohua
 WORKDIR /app
 ARG BUILD_DATE=unknown
 ARG BUILD_VERSION=dev
@@ -76,4 +76,4 @@ EXPOSE 8080
 STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl --fail --silent --show-error http://127.0.0.1:8080/readyz >/dev/null || exit 1
-ENTRYPOINT ["dotnet", "Daoxuan.Server.dll"]
+ENTRYPOINT ["dotnet", "DaoHua.Server.dll"]

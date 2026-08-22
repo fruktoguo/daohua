@@ -1,15 +1,15 @@
-name: daoxuan-local
+name: daohua-local
 
 services:
   db:
     image: postgres:17-alpine
-    container_name: daoxuan-local-db
+    container_name: daohua-local-db
     init: true
     restart: unless-stopped
     environment:
-      POSTGRES_DB: daoxuan
-      POSTGRES_USER: daoxuan
-      POSTGRES_PASSWORD: ${DAOXUAN_POSTGRES_PASSWORD:-daoxuan-local-dev}
+      POSTGRES_DB: daohua
+      POSTGRES_USER: daohua
+      POSTGRES_PASSWORD: ${DAOHUA_POSTGRES_PASSWORD:-daohua-local-dev}
       PGDATA: /var/lib/postgresql/data/pgdata
     command:
       - postgres
@@ -28,9 +28,9 @@ services:
       - -c
       - autovacuum_vacuum_scale_factor=0.05
     volumes:
-      - daoxuan-postgres:/var/lib/postgresql/data
+      - daohua-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U daoxuan -d daoxuan"]
+      test: ["CMD-SHELL", "pg_isready -U daohua -d daohua"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -48,18 +48,18 @@ services:
       context: .
       args:
         BUILD_VERSION: local
-    image: daoxuan:local
+    image: daohua:local
     init: true
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${DAOXUAN_PORT:-5128}:8080"
+      - "127.0.0.1:${DAOHUA_PORT:-5128}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Storage__Provider: postgres
-      Storage__ConnectionString: Host=db;Port=5432;Database=daoxuan;Username=daoxuan;Password=${DAOXUAN_POSTGRES_PASSWORD:-daoxuan-local-dev};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DAOHUA_POSTGRES_PASSWORD:-daohua-local-dev};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__DurableOutboxEnabled: "true"
       Storage__PersistenceQueueCapacity: "65536"
       Storage__EnableSchemaBootstrap: "true"
@@ -67,9 +67,9 @@ services:
       Market__PartitionCount: "1"
       Market__PartitionId: "0"
       Market__TradeRetentionDays: "14"
-      DistributedCompute__Enabled: ${DAOXUAN_DISTRIBUTED_COMPUTE_ENABLED:-false}
-      DistributedCompute__NodeEndpoints: ${DAOXUAN_COMPUTE_NODE_ENDPOINTS:-}
-      DistributedCompute__Token: ${DAOXUAN_COMPUTE_TOKEN:-}
+      DistributedCompute__Enabled: ${DAOHUA_DISTRIBUTED_COMPUTE_ENABLED:-false}
+      DistributedCompute__NodeEndpoints: ${DAOHUA_COMPUTE_NODE_ENDPOINTS:-}
+      DistributedCompute__Token: ${DAOHUA_COMPUTE_TOKEN:-}
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -92,4 +92,4 @@ services:
         max-file: "3"
 
 volumes:
-  daoxuan-postgres:
+  daohua-postgres:

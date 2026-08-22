@@ -17,8 +17,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const project = process.env.DAOXUAN_SERVER_PROJECT
-  ?? "src/Daoxuan.Server/Daoxuan.Server.csproj";
+const project = process.env.DAOHUA_SERVER_PROJECT
+  ?? "src/DaoHua.Server/DaoHua.Server.csproj";
 
 const debounceMs = parseNonNegativeInteger(
   process.env.SERVER_DEV_RESTART_DEBOUNCE_MS,

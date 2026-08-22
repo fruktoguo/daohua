@@ -2,17 +2,17 @@
 
 set -Eeuo pipefail
 
-DEPLOY_DIR="${DAOXUAN_DEPLOY_DIR:-/opt/daoxuan}"
+DEPLOY_DIR="${DAOHUA_DEPLOY_DIR:-/opt/daohua}"
 COMPOSE_FILE="${DEPLOY_DIR}/compose.prod.yaml"
-ENV_FILE="${DEPLOY_DIR}/daoxuan.env"
-IMAGE="${DAOXUAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daoxuan:prod}"
-CONTAINER_NAME="daoxuan-app"
-PREFLIGHT_CONTAINER_NAME="daoxuan-preflight"
-PREFLIGHT_DB_CONTAINER_NAME="daoxuan-preflight-db"
-PREFLIGHT_DB_VOLUME="daoxuan-preflight-postgres"
-PREFLIGHT_NETWORK="daoxuan-preflight-net"
+ENV_FILE="${DEPLOY_DIR}/daohua.env"
+IMAGE="${DAOHUA_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+CONTAINER_NAME="daohua-app"
+PREFLIGHT_CONTAINER_NAME="daohua-preflight"
+PREFLIGHT_DB_CONTAINER_NAME="daohua-preflight-db"
+PREFLIGHT_DB_VOLUME="daohua-preflight-postgres"
+PREFLIGHT_NETWORK="daohua-preflight-net"
 FAILED_IMAGE_FILE="${DEPLOY_DIR}/failed-image.id"
-LOCK_FILE="/run/lock/daoxuan-ccr-auto-update.lock"
+LOCK_FILE="/run/lock/daohua-ccr-auto-update.lock"
 
 
 compose() {
@@ -61,19 +61,19 @@ preflight_image() {
     --network "$PREFLIGHT_NETWORK" \
     --mount "type=volume,src=$PREFLIGHT_DB_VOLUME,dst=/var/lib/postgresql/data" \
     --shm-size 64m \
-    --env POSTGRES_DB=daoxuan \
-    --env POSTGRES_USER=daoxuan \
-    --env POSTGRES_PASSWORD=daoxuan-preflight \
+    --env POSTGRES_DB=daohua \
+    --env POSTGRES_USER=daohua \
+    --env POSTGRES_PASSWORD=daohua-preflight \
     --env PGDATA=/var/lib/postgresql/data/pgdata \
     postgres:17-alpine >/dev/null
 
   for attempt in {1..45}; do
-    if docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daoxuan -d daoxuan >/dev/null 2>&1; then
+    if docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daohua -d daohua >/dev/null 2>&1; then
       break
     fi
     sleep 1
   done
-  if ! docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daoxuan -d daoxuan >/dev/null 2>&1; then
+  if ! docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daohua -d daohua >/dev/null 2>&1; then
     docker logs --tail 100 "$PREFLIGHT_DB_CONTAINER_NAME" >&2 2>/dev/null || true
     cleanup_preflight
     return 1
@@ -91,7 +91,7 @@ preflight_image() {
     --cpus 0.50 \
     --env ASPNETCORE_ENVIRONMENT=Production \
     --env Storage__Provider=postgres \
-    --env Storage__ConnectionString='Host=daoxuan-preflight-db;Port=5432;Database=daoxuan;Username=daoxuan;Password=daoxuan-preflight;Maximum Pool Size=4;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30' \
+    --env Storage__ConnectionString='Host=daohua-preflight-db;Port=5432;Database=daohua;Username=daohua;Password=daohua-preflight;Maximum Pool Size=4;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30' \
     --env Storage__DurableOutboxEnabled=true \
     --env Storage__EnableSchemaBootstrap=true \
     --env Market__LedgerProvider=postgres \
@@ -121,7 +121,7 @@ preflight_image() {
 
 deploy_image() {
   local image="$1"
-  DAOXUAN_IMAGE="$image" compose up \
+  DAOHUA_IMAGE="$image" compose up \
     --detach \
     --force-recreate \
     app
@@ -155,7 +155,7 @@ fi
 
 rollback_image=""
 if [[ -n "$running_id" ]]; then
-  rollback_image="daoxuan-rollback:previous"
+  rollback_image="daohua-rollback:previous"
   docker tag "$running_id" "$rollback_image"
 fi
 

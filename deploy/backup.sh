@@ -2,14 +2,14 @@
 
 set -Eeuo pipefail
 
-DEPLOY_DIR="${DAOXUAN_DEPLOY_DIR:-/opt/daoxuan}"
-COMPOSE_FILE="${DAOXUAN_COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
-ENV_FILE="${DEPLOY_DIR}/daoxuan.env"
-BACKUP_DIR="${DAOXUAN_BACKUP_DIR:-${DEPLOY_DIR}/backups}"
-DB_CONTAINER_NAME="${DAOXUAN_DB_CONTAINER_NAME:-daoxuan-db}"
-LOCK_FILE="${DAOXUAN_BACKUP_LOCK_FILE:-/run/lock/daoxuan-ccr-auto-update.lock}"
+DEPLOY_DIR="${DAOHUA_DEPLOY_DIR:-/opt/daohua}"
+COMPOSE_FILE="${DAOHUA_COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
+ENV_FILE="${DEPLOY_DIR}/daohua.env"
+BACKUP_DIR="${DAOHUA_BACKUP_DIR:-${DEPLOY_DIR}/backups}"
+DB_CONTAINER_NAME="${DAOHUA_DB_CONTAINER_NAME:-daohua-db}"
+LOCK_FILE="${DAOHUA_BACKUP_LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
 
-if [[ "${EUID}" -ne 0 && "${DAOXUAN_ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
+if [[ "${EUID}" -ne 0 && "${DAOHUA_ALLOW_NON_ROOT_BACKUP:-0}" != "1" ]]; then
   printf '该脚本必须以 root 运行。\n' >&2
   exit 1
 fi
@@ -28,7 +28,7 @@ flock 9
 
 mkdir -p "$BACKUP_DIR/hourly" "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly"
 timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
-hour_archive="${BACKUP_DIR}/hourly/daoxuan-postgres-hourly-${timestamp}.dump"
+hour_archive="${BACKUP_DIR}/hourly/daohua-postgres-hourly-${timestamp}.dump"
 partial="${hour_archive}.partial"
 sha_file="${hour_archive}.sha256"
 
@@ -39,8 +39,8 @@ if [[ -z "$db_state" || "$db_state" != true\ healthy ]]; then
 fi
 
 if ! compose exec -T db pg_dump \
-  --username=daoxuan \
-  --dbname=daoxuan \
+  --username=daohua \
+  --dbname=daohua \
   --format=custom \
   --compress=gzip:9 \
   --no-owner \
@@ -58,11 +58,11 @@ sha256sum "$hour_archive" >"$sha_file"
 utc_hour="$(date -u +'%H')"
 utc_day="$(date -u +'%u')"
 if [[ "$utc_hour" == "00" ]]; then
-  daily_archive="${BACKUP_DIR}/daily/daoxuan-postgres-daily-${timestamp}.dump"
+  daily_archive="${BACKUP_DIR}/daily/daohua-postgres-daily-${timestamp}.dump"
   cp -p "$hour_archive" "$daily_archive"
   sha256sum "$daily_archive" >"${daily_archive}.sha256"
   if [[ "$utc_day" == "1" ]]; then
-    weekly_archive="${BACKUP_DIR}/weekly/daoxuan-postgres-weekly-${timestamp}.dump"
+    weekly_archive="${BACKUP_DIR}/weekly/daohua-postgres-weekly-${timestamp}.dump"
     cp -p "$hour_archive" "$weekly_archive"
     sha256sum "$weekly_archive" >"${weekly_archive}.sha256"
   fi

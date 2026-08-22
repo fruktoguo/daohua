@@ -3,8 +3,8 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REMOTE_HOST="${DAOXUAN_SSH_HOST:-yuohira}"
-IMAGE="${DAOXUAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daoxuan:prod}"
+REMOTE_HOST="${DAOHUA_SSH_HOST:-yuohira}"
+IMAGE="${DAOHUA_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
 INSTALL_CADDY=1
 RUN_PUBLIC_SMOKE=1
 REMOTE_TMP=""
@@ -61,7 +61,7 @@ if [[ ! "$IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]]; then
 fi
 
 cleanup() {
-  if [[ -n "$REMOTE_TMP" && "$REMOTE_TMP" == /tmp/daoxuan-deploy.* ]]; then
+  if [[ -n "$REMOTE_TMP" && "$REMOTE_TMP" == /tmp/daohua-deploy.* ]]; then
     ssh -o BatchMode=yes "$REMOTE_HOST" "rm -rf -- '$REMOTE_TMP'" >/dev/null 2>&1 || true
   fi
 }
@@ -74,8 +74,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" \
 printf '==> 验证远端 CCR 拉取权限\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" "sudo docker pull '$IMAGE' >/dev/null"
 
-REMOTE_TMP="$(ssh -o BatchMode=yes "$REMOTE_HOST" 'mktemp -d /tmp/daoxuan-deploy.XXXXXX')"
-if [[ "$REMOTE_TMP" != /tmp/daoxuan-deploy.* ]]; then
+REMOTE_TMP="$(ssh -o BatchMode=yes "$REMOTE_HOST" 'mktemp -d /tmp/daohua-deploy.XXXXXX')"
+if [[ "$REMOTE_TMP" != /tmp/daohua-deploy.* ]]; then
   printf '远端临时目录不符合预期: %s\n' "$REMOTE_TMP" >&2
   exit 1
 fi
@@ -85,10 +85,10 @@ scp -q \
   "$ROOT_DIR/deploy/compose.prod.yaml" \
   "$ROOT_DIR/deploy/ccr-auto-update.sh" \
   "$ROOT_DIR/deploy/backup.sh" \
-  "$ROOT_DIR/deploy/daoxuan-ccr-auto-update.service" \
-  "$ROOT_DIR/deploy/daoxuan-ccr-auto-update.timer" \
-  "$ROOT_DIR/deploy/daoxuan-db-backup.service" \
-  "$ROOT_DIR/deploy/daoxuan-db-backup.timer" \
+  "$ROOT_DIR/deploy/daohua-ccr-auto-update.service" \
+  "$ROOT_DIR/deploy/daohua-ccr-auto-update.timer" \
+  "$ROOT_DIR/deploy/daohua-db-backup.service" \
+  "$ROOT_DIR/deploy/daohua-db-backup.timer" \
   "$ROOT_DIR/deploy/install-caddy.sh" \
   "$ROOT_DIR/deploy/xx.yuohira.com.caddy" \
   "${REMOTE_HOST}:${REMOTE_TMP}/"
@@ -97,51 +97,51 @@ printf '==> 安装生产 Compose 与 systemd timer\n'
 printf '==> 校验生产环境变量\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" '
   set -Eeuo pipefail
-  if ! sudo test -f /opt/daoxuan/daoxuan.env; then
-    printf "缺少 /opt/daoxuan/daoxuan.env，请设置 DAOXUAN_POSTGRES_PASSWORD。\n" >&2
+  if ! sudo test -f /opt/daohua/daohua.env; then
+    printf "缺少 /opt/daohua/daohua.env，请设置 DAOHUA_POSTGRES_PASSWORD。\n" >&2
     exit 1
   fi
-  if ! sudo grep -q "^DAOXUAN_POSTGRES_PASSWORD=" /opt/daoxuan/daoxuan.env; then
-    printf "缺少 DAOXUAN_POSTGRES_PASSWORD，PostgreSQL 无法启动。\n" >&2
+  if ! sudo grep -q "^DAOHUA_POSTGRES_PASSWORD=" /opt/daohua/daohua.env; then
+    printf "缺少 DAOHUA_POSTGRES_PASSWORD，PostgreSQL 无法启动。\n" >&2
     exit 1
   fi
 '
 
 ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
-  sudo install -d -m 0755 /opt/daoxuan
-  sudo install -m 0644 '$REMOTE_TMP/compose.prod.yaml' /opt/daoxuan/compose.prod.yaml
-  sudo install -m 0755 '$REMOTE_TMP/ccr-auto-update.sh' /opt/daoxuan/ccr-auto-update.sh
-  sudo install -m 0755 '$REMOTE_TMP/backup.sh' /opt/daoxuan/backup.sh
-  sudo install -m 0644 '$REMOTE_TMP/daoxuan-ccr-auto-update.service' /etc/systemd/system/daoxuan-ccr-auto-update.service
-  sudo install -m 0644 '$REMOTE_TMP/daoxuan-ccr-auto-update.timer' /etc/systemd/system/daoxuan-ccr-auto-update.timer
-  sudo install -m 0644 '$REMOTE_TMP/daoxuan-db-backup.service' /etc/systemd/system/daoxuan-db-backup.service
-  sudo install -m 0644 '$REMOTE_TMP/daoxuan-db-backup.timer' /etc/systemd/system/daoxuan-db-backup.timer
+  sudo install -d -m 0755 /opt/daohua
+  sudo install -m 0644 '$REMOTE_TMP/compose.prod.yaml' /opt/daohua/compose.prod.yaml
+  sudo install -m 0755 '$REMOTE_TMP/ccr-auto-update.sh' /opt/daohua/ccr-auto-update.sh
+  sudo install -m 0755 '$REMOTE_TMP/backup.sh' /opt/daohua/backup.sh
+  sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.service' /etc/systemd/system/daohua-ccr-auto-update.service
+  sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.timer' /etc/systemd/system/daohua-ccr-auto-update.timer
+  sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.service' /etc/systemd/system/daohua-db-backup.service
+  sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.timer' /etc/systemd/system/daohua-db-backup.timer
   sudo systemctl daemon-reload
-  sudo rm -f /opt/daoxuan/failed-image.id
-  sudo env DAOXUAN_IMAGE='$IMAGE' /opt/daoxuan/ccr-auto-update.sh
-  sudo systemctl enable --now daoxuan-ccr-auto-update.timer
-  sudo systemctl enable --now daoxuan-db-backup.timer
+  sudo rm -f /opt/daohua/failed-image.id
+  sudo env DAOHUA_IMAGE='$IMAGE' /opt/daohua/ccr-auto-update.sh
+  sudo systemctl enable --now daohua-ccr-auto-update.timer
+  sudo systemctl enable --now daohua-db-backup.timer
 "
 
 if [[ "$INSTALL_CADDY" == "1" ]]; then
   printf '==> 校验并安装 Caddy 站点\n'
   ssh -o BatchMode=yes "$REMOTE_HOST" "
     set -Eeuo pipefail
-    sudo install -m 0755 '$REMOTE_TMP/install-caddy.sh' /opt/daoxuan/install-caddy.sh
-    sudo install -m 0644 '$REMOTE_TMP/xx.yuohira.com.caddy' /opt/daoxuan/xx.yuohira.com.caddy
-    sudo /opt/daoxuan/install-caddy.sh /opt/daoxuan/xx.yuohira.com.caddy
+    sudo install -m 0755 '$REMOTE_TMP/install-caddy.sh' /opt/daohua/install-caddy.sh
+    sudo install -m 0644 '$REMOTE_TMP/xx.yuohira.com.caddy' /opt/daohua/xx.yuohira.com.caddy
+    sudo /opt/daohua/install-caddy.sh /opt/daohua/xx.yuohira.com.caddy
   "
 fi
 
 printf '==> 核对远端容器和回环健康端点\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
-  sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daoxuan-app
+  sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-app
   curl --fail --silent --show-error http://127.0.0.1:15128/readyz
   printf '\n'
-  sudo systemctl is-enabled daoxuan-ccr-auto-update.timer
-  sudo systemctl is-active daoxuan-ccr-auto-update.timer
+  sudo systemctl is-enabled daohua-ccr-auto-update.timer
+  sudo systemctl is-active daohua-ccr-auto-update.timer
 "
 
 if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then

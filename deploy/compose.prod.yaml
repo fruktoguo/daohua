@@ -1,15 +1,15 @@
-name: daoxuan
+name: daohua
 
 services:
   db:
     image: postgres:17-alpine
-    container_name: daoxuan-db
+    container_name: daohua-db
     init: true
     restart: unless-stopped
     environment:
-      POSTGRES_DB: daoxuan
-      POSTGRES_USER: daoxuan
-      POSTGRES_PASSWORD: ${DAOXUAN_POSTGRES_PASSWORD:?需要在 /opt/daoxuan/daoxuan.env 设置 DAOXUAN_POSTGRES_PASSWORD}
+      POSTGRES_DB: daohua
+      POSTGRES_USER: daohua
+      POSTGRES_PASSWORD: ${DAOHUA_POSTGRES_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DAOHUA_POSTGRES_PASSWORD}
       PGDATA: /var/lib/postgresql/data/pgdata
     command:
       - postgres
@@ -34,9 +34,9 @@ services:
       - -c
       - autovacuum_vacuum_scale_factor=0.05
     volumes:
-      - daoxuan-postgres:/var/lib/postgresql/data
+      - daohua-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U daoxuan -d daoxuan"]
+      test: ["CMD-SHELL", "pg_isready -U daohua -d daohua"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -52,19 +52,19 @@ services:
         max-file: "5"
 
   app:
-    image: ${DAOXUAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daoxuan:prod}
-    container_name: daoxuan-app
+    image: ${DAOHUA_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}
+    container_name: daohua-app
     init: true
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${DAOXUAN_PORT:-15128}:8080"
+      - "127.0.0.1:${DAOHUA_PORT:-15128}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       Storage__Provider: postgres
-      Storage__ConnectionString: Host=db;Port=5432;Database=daoxuan;Username=daoxuan;Password=${DAOXUAN_POSTGRES_PASSWORD:?需要在 /opt/daoxuan/daoxuan.env 设置 DAOXUAN_POSTGRES_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DAOHUA_POSTGRES_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DAOHUA_POSTGRES_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__DurableOutboxEnabled: "true"
       Storage__PersistenceQueueCapacity: "65536"
       Storage__EnableSchemaBootstrap: "true"
@@ -72,13 +72,13 @@ services:
       Market__PartitionCount: "1"
       Market__PartitionId: "0"
       Market__TradeRetentionDays: "14"
-      DistributedCompute__Enabled: ${DAOXUAN_DISTRIBUTED_COMPUTE_ENABLED:-false}
-      DistributedCompute__NodeEndpoints: ${DAOXUAN_COMPUTE_NODE_ENDPOINTS:-}
-      DistributedCompute__Token: ${DAOXUAN_COMPUTE_TOKEN:-}
-      DistributedCompute__BatchSize: ${DAOXUAN_COMPUTE_BATCH_SIZE:-64}
-      DistributedCompute__MinimumIdleLagSeconds: ${DAOXUAN_COMPUTE_MIN_IDLE_LAG_SECONDS:-300}
-      # 可选共享访问令牌；空默认不启用，来源 /opt/daoxuan/daoxuan.env。
-      Server__AccessToken: ${DAOXUAN_ACCESS_TOKEN:-}
+      DistributedCompute__Enabled: ${DAOHUA_DISTRIBUTED_COMPUTE_ENABLED:-false}
+      DistributedCompute__NodeEndpoints: ${DAOHUA_COMPUTE_NODE_ENDPOINTS:-}
+      DistributedCompute__Token: ${DAOHUA_COMPUTE_TOKEN:-}
+      DistributedCompute__BatchSize: ${DAOHUA_COMPUTE_BATCH_SIZE:-64}
+      DistributedCompute__MinimumIdleLagSeconds: ${DAOHUA_COMPUTE_MIN_IDLE_LAG_SECONDS:-300}
+      # 可选共享访问令牌；空默认不启用，来源 /opt/daohua/daohua.env。
+      Server__AccessToken: ${DAOHUA_ACCESS_TOKEN:-}
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -103,4 +103,4 @@ services:
         max-file: "5"
 
 volumes:
-  daoxuan-postgres:
+  daohua-postgres:
