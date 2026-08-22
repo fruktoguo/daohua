@@ -16,7 +16,7 @@ import {
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
-import { useAvatarStore } from '../game/avatarStore'
+import { DEFAULT_PLAYER_AVATAR_SRC } from '../game/avatarStore'
 
 /** 内视四大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
@@ -48,8 +48,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const attributes = useGameStore(state => state.combatAttributes)
   const world = useGameStore(state => state.world)
   const buffs = useGameStore(state => state.buffs)
-  const avatarId = useAvatarStore(state => state.avatarId)
-  const setAvatarId = useAvatarStore(state => state.setAvatarId)
 
   // 境界计算体系 (大境界 · 位阶 · 小境界)
   const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0), [stats.spirit])
@@ -103,34 +101,35 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
       },
       {
         id: 'bone',
-        tone: 'violet' as PillTone,
+        tone: 'amber' as PillTone,
         level: boneLevel,
         progress: getProgress(boneLevel),
         bonuses: [
-          { value: `+${Math.floor(boneLevel)}%`, tone: 'emerald' as PillTone },
-          { value: `+${Math.floor(boneLevel)}%`, tone: 'cyan' as PillTone },
+          { value: `+${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
           { value: `+${Math.floor(boneLevel)}%`, tone: 'silver' as PillTone },
+          { value: `+${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
         ],
       },
       {
         id: 'strength',
-        tone: 'amber' as PillTone,
+        tone: 'crimson' as PillTone,
         level: strengthLevel,
         progress: getProgress(strengthLevel),
         bonuses: [
           { value: `+${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
-          { value: `+${Math.floor(strengthLevel)}%`, tone: 'gold' as PillTone },
-          { value: `+${Math.floor(strengthLevel)}%`, tone: 'amber' as PillTone },
+          { value: `+${Math.floor(strengthLevel)}%`, tone: 'slate' as PillTone },
+          { value: `+${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
         ],
       },
       {
         id: 'consciousness',
-        tone: 'indigo' as PillTone,
+        tone: 'purple' as PillTone,
         level: consciousnessLevel,
         progress: getProgress(consciousnessLevel),
         bonuses: [
-          { value: `+${Math.floor(consciousnessLevel * 2.0)}%`, tone: 'indigo' as PillTone },
+          { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'purple' as PillTone },
           { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
+          { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'purple' as PillTone },
         ],
       },
       {
@@ -140,8 +139,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         progress: getProgress(agilityLevel),
         bonuses: [
           { value: `+${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
-          { value: `+${Math.floor(agilityLevel)}%`, tone: 'slate' as PillTone },
-          { value: `+${Math.floor(agilityLevel)}%`, tone: 'silver' as PillTone },
+          { value: `+${Math.floor(agilityLevel)}%`, tone: 'muted' as PillTone },
+          { value: `+${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
         ],
       },
     ]
@@ -247,22 +246,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
       {/* 头部：道号、境界与形象总览 */}
       <header className="panel-header insight-page-header">
         <div className="insight-hero">
-          <FloatingTooltip title={t('insight.changeAvatarTooltip')}>
-            <button
-              type="button"
-              className="insight-avatar-stage"
-              onClick={() => setAvatarId(avatarId === 'female' ? 'male' : 'female')}
-              aria-label={t('insight.changeAvatarTooltip')}
-            >
-              <img
-                alt={name}
-                className="insight-avatar-img"
-                draggable={false}
-                src={avatarId === 'male' ? '/avatars/male.webp' : '/avatars/female.webp'}
-              />
-              <span className="insight-avatar-switch-hint" aria-hidden="true">↻</span>
-            </button>
-          </FloatingTooltip>
+          <div className="insight-avatar-stage">
+            <img
+              alt={name}
+              className="insight-avatar-img"
+              draggable={false}
+              src={DEFAULT_PLAYER_AVATAR_SRC}
+            />
+          </div>
           <div className="insight-hero-info">
             <div className="insight-title-row">
               <h2 className="insight-main-title">{name}</h2>

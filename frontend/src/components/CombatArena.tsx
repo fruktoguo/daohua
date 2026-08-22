@@ -12,7 +12,7 @@ import { ValueText } from './ValueText'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { VectorCharacter, resolveCharacterKind } from './VectorCharacter'
-import { useAvatarStore } from '../game/avatarStore'
+import { DEFAULT_PLAYER_AVATAR_SRC } from '../game/avatarStore'
 
 /** 资源条数值变动特效记录（跳字与血条破裂碎片） */
 interface ResourceEffect {
@@ -558,8 +558,7 @@ function ArenaPortrait({
   name?: string | null
   isDead?: boolean
 }): React.JSX.Element {
-  const avatarId = useAvatarStore(state => state.avatarId)
-  const defaultPlayerSrc = avatarId === 'male' ? '/avatars/male.webp' : '/avatars/female.webp'
+  const defaultPlayerSrc = DEFAULT_PLAYER_AVATAR_SRC
   const renderer = visual?.renderer ?? (role === 'player' ? 'image' : 'vector')
   const imageSource = (renderer === 'image' ? visual?.source : visual?.poster) ?? (role === 'player' ? defaultPlayerSrc : undefined)
   const [failedSource, setFailedSource] = useState<string | null>(null)

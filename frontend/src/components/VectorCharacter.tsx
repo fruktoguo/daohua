@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { useAvatarStore } from '../game/avatarStore'
+import { DEFAULT_PLAYER_AVATAR_SRC } from '../game/avatarStore'
 
 /**
  * 矢量/高清立绘人物/妖兽形象类型
@@ -66,17 +66,13 @@ export const VectorCharacter = memo(function VectorCharacter({
   isDead = false,
   className = '',
 }: VectorCharacterProps): React.JSX.Element {
-  const avatarId = useAvatarStore(state => state.avatarId)
-
   if (kind === 'player' || kind === 'player-female' || kind === 'player-male') {
-    const resolvedId = kind === 'player' ? avatarId : kind === 'player-male' ? 'male' : 'female'
-    const src = resolvedId === 'male' ? '/avatars/male.webp' : '/avatars/female.webp'
     return (
       <img
         alt=""
         className={`vector-character vector-character--${kind} vector-character--${role}${isDead ? ' is-dead' : ''} ${className}`}
         draggable={false}
-        src={src}
+        src={DEFAULT_PLAYER_AVATAR_SRC}
       />
     )
   }

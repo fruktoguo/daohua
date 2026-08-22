@@ -4567,7 +4567,7 @@ input[type="checkbox"] {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  cursor: pointer;
+  cursor: default;
   padding: 0;
   outline: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;

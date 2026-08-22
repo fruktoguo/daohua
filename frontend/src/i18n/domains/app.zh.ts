@@ -141,6 +141,8 @@ export const appZh = {
     },
     // 角色立绘形象
     avatar: {
+      defaultName: '太虚绝世剑仙',
+      defaultDesc: '青罗素裳，墨发如瀑，执玄青灵剑，衣袂随风凌空，超凡脱俗。',
       femaleName: '太虚绝世剑仙 (女)',
       femaleDesc: '白衣青罗，墨发如瀑，执玄青神剑，超凡脱俗。',
       maleName: '凌霄傲骨剑尊 (男)',
