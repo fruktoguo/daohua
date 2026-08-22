@@ -1667,5 +1667,77 @@ public sealed class CombatTests
         Assert.Contains("战斗快照配置指纹不一致", ex.Message);
         Assert.Contains("mismatched_fake_hash_999", ex.Message);
     }
+
+    /// <summary>
+    /// 验证历练处于 Combat 阶段但缺少 BattleSnapshot 时快速失败，绝不静默合成或回退。
+    /// </summary>
+    [Fact]
+    public void Combat_missing_snapshot_in_combat_phase_fails_fast()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.Entries.Clear();
+        SimulationEngine.Enqueue(state, ActionIds.HuntQiBeast, 1);
+
+        // 进入战斗阶段
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(25));
+        var expedition = state.Queue.Entries[0].CombatExpedition;
+        Assert.NotNull(expedition);
+        Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
+
+        // 强行置空快照（破坏不变量）
+        expedition.BattleSnapshot = null;
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(30)));
+
+        Assert.Contains("历练处于战斗阶段但缺少 BattleSnapshot 战斗入场快照", ex.Message);
+    }
+
+    /// <summary>
+    /// 验证 CombatExpeditionState 已彻底消除旧 backing fields，全部只读属性直接纯委托至 BattleSnapshot。
+    /// </summary>
+    [Fact]
+    public void Combat_expedition_state_delegates_to_battle_snapshot_without_backing_fields()
+    {
+        var expedition = new CombatExpeditionState();
+
+        // 1. 无快照阶段：所有快照相关只读属性返回干净默认值
+        Assert.Null(expedition.BattleSnapshot);
+        Assert.Null(expedition.EncounterId);
+        Assert.Equal(0, expedition.CompletedEncountersBeforeBattle);
+        Assert.Equal(default, expedition.BattleStartedAt);
+        Assert.Equal(0, expedition.InitialHitpoints);
+        Assert.Equal(0, expedition.InitialManapoints);
+        Assert.Empty(expedition.InitialAbilityCooldowns);
+        Assert.Empty(expedition.InitialConsumableCooldowns);
+        Assert.Null(expedition.BattleLoadout);
+        Assert.Empty(expedition.BattleBuffs);
+        Assert.Empty(expedition.BattleInventory);
+
+        // 2. 挂载快照后：只读属性直接反映快照内容
+        var snapshot = new BattleSnapshot
+        {
+            EncounterId = CombatEncounterIds.QiBeast,
+            BattleSequence = 3,
+            CompletedEncountersBeforeBattle = 5,
+            BattleStartedAt = Baseline,
+            InitialHitpoints = 500,
+            InitialManapoints = 200,
+            ConfigFingerprint = GameDataCatalog.Current.Fingerprint
+        };
+        expedition.BattleSnapshot = snapshot;
+
+        Assert.Equal(CombatEncounterIds.QiBeast, expedition.EncounterId);
+        Assert.Equal(5, expedition.CompletedEncountersBeforeBattle);
+        Assert.Equal(Baseline, expedition.BattleStartedAt);
+        Assert.Equal(500, expedition.InitialHitpoints);
+        Assert.Equal(200, expedition.InitialManapoints);
+
+        // 3. 深克隆验证：克隆对象与源对象快照独立
+        var cloned = expedition.Clone();
+        Assert.NotNull(cloned.BattleSnapshot);
+        Assert.NotSame(expedition.BattleSnapshot, cloned.BattleSnapshot);
+        Assert.Equal(expedition.EncounterId, cloned.EncounterId);
+    }
 }
 

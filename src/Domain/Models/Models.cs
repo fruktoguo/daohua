@@ -219,17 +219,10 @@ public sealed class BattleSnapshot
 /// </summary>
 public sealed class CombatExpeditionState
 {
-    private string? _encounterId;
-    private long _battleSequence;
-    private long _completedEncountersBeforeBattle;
-    private DateTimeOffset _battleStartedAt;
-    private long _initialHitpoints;
-    private long _initialManapoints;
-    private Dictionary<string, long> _initialAbilityCooldowns = new(StringComparer.Ordinal);
-    private List<long> _initialConsumableCooldowns = [];
-    private CombatLoadout? _battleLoadout;
-    private List<BuffState> _battleBuffs = [];
-    private Dictionary<string, long> _battleInventory = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, long> EmptyAbilityCooldowns = new(StringComparer.Ordinal);
+    private static readonly List<long> EmptyConsumableCooldowns = [];
+    private static readonly List<BuffState> EmptyBuffs = [];
+    private static readonly Dictionary<string, long> EmptyInventory = new(StringComparer.Ordinal);
 
     /// <summary>当前历练所处阶段（寻敌/战斗）。</summary>
     public CombatExpeditionPhase Phase { get; set; } = CombatExpeditionPhase.InitialSearch;
@@ -240,165 +233,44 @@ public sealed class CombatExpeditionState
     /// <summary>当前阶段预期总耗时（毫秒）。</summary>
     public long PhaseDurationMilliseconds { get; set; } = 20_000;
 
+    /// <summary>当前历练已进入/执行的战斗序号。</summary>
+    public long BattleSequence { get; set; }
+
     /// <summary>战斗入场固定快照。进入 Combat 阶段后只创建一次。</summary>
     public BattleSnapshot? BattleSnapshot { get; set; }
 
-    /// <summary>当前副本遭遇 ID。</summary>
-    public string? EncounterId
-    {
-        get => BattleSnapshot?.EncounterId ?? _encounterId;
-        set
-        {
-            _encounterId = value;
-            if (BattleSnapshot is not null && value is not null)
-            {
-                BattleSnapshot.EncounterId = value;
-            }
-        }
-    }
+    /// <summary>当前副本遭遇 ID（从当前战斗入场快照获取）。</summary>
+    public string? EncounterId => BattleSnapshot?.EncounterId;
 
-    /// <summary>战斗轮次递增序号。</summary>
-    public long BattleSequence
-    {
-        get => BattleSnapshot?.BattleSequence ?? _battleSequence;
-        set
-        {
-            _battleSequence = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.BattleSequence = value;
-            }
-        }
-    }
+    /// <summary>本次战斗前已通关的遭遇波次数（从当前战斗入场快照获取）。</summary>
+    public long CompletedEncountersBeforeBattle => BattleSnapshot?.CompletedEncountersBeforeBattle ?? 0;
 
-    /// <summary>本次战斗前已通关的遭遇波次数。</summary>
-    public long CompletedEncountersBeforeBattle
-    {
-        get => BattleSnapshot?.CompletedEncountersBeforeBattle ?? _completedEncountersBeforeBattle;
-        set
-        {
-            _completedEncountersBeforeBattle = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.CompletedEncountersBeforeBattle = value;
-            }
-        }
-    }
+    /// <summary>本场战斗开始的绝对时间戳（从当前战斗入场快照获取）。</summary>
+    public DateTimeOffset BattleStartedAt => BattleSnapshot?.BattleStartedAt ?? default;
 
-    /// <summary>本场战斗开始的绝对时间戳。</summary>
-    public DateTimeOffset BattleStartedAt
-    {
-        get => BattleSnapshot?.BattleStartedAt ?? _battleStartedAt;
-        set
-        {
-            _battleStartedAt = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.BattleStartedAt = value;
-            }
-        }
-    }
+    /// <summary>战斗入场时的初始生命值（从当前战斗入场快照获取）。</summary>
+    public long InitialHitpoints => BattleSnapshot?.InitialHitpoints ?? 0;
 
-    /// <summary>战斗入场时的初始生命值。</summary>
-    public long InitialHitpoints
-    {
-        get => BattleSnapshot?.InitialHitpoints ?? _initialHitpoints;
-        set
-        {
-            _initialHitpoints = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.InitialHitpoints = value;
-            }
-        }
-    }
+    /// <summary>战斗入场时的初始法力值（从当前战斗入场快照获取）。</summary>
+    public long InitialManapoints => BattleSnapshot?.InitialManapoints ?? 0;
 
-    /// <summary>战斗入场时的初始法力值。</summary>
-    public long InitialManapoints
-    {
-        get => BattleSnapshot?.InitialManapoints ?? _initialManapoints;
-        set
-        {
-            _initialManapoints = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.InitialManapoints = value;
-            }
-        }
-    }
+    /// <summary>入场时各技能的剩余冷却毫秒数字典（从当前战斗入场快照获取）。</summary>
+    public Dictionary<string, long> InitialAbilityCooldowns => BattleSnapshot?.InitialAbilityCooldowns ?? EmptyAbilityCooldowns;
 
-    /// <summary>入场时各技能的剩余冷却毫秒数字典。</summary>
-    public Dictionary<string, long> InitialAbilityCooldowns
-    {
-        get => BattleSnapshot?.InitialAbilityCooldowns ?? _initialAbilityCooldowns;
-        set
-        {
-            _initialAbilityCooldowns = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.InitialAbilityCooldowns = value;
-            }
-        }
-    }
-
-    /// <summary>入场时各消耗品槽位的剩余冷却毫秒数列表。</summary>
-    public List<long> InitialConsumableCooldowns
-    {
-        get => BattleSnapshot?.InitialConsumableCooldowns ?? _initialConsumableCooldowns;
-        set
-        {
-            _initialConsumableCooldowns = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.InitialConsumableCooldowns = value;
-            }
-        }
-    }
+    /// <summary>入场时各消耗品槽位的剩余冷却毫秒数列表（从当前战斗入场快照获取）。</summary>
+    public List<long> InitialConsumableCooldowns => BattleSnapshot?.InitialConsumableCooldowns ?? EmptyConsumableCooldowns;
 
     /// <summary>已向客户端发射的战斗事件数量。</summary>
     public int EmittedEventCount { get; set; }
 
-    /// <summary>战斗入场时的玩家战斗装配快照。</summary>
-    public CombatLoadout? BattleLoadout
-    {
-        get => BattleSnapshot?.BattleLoadout ?? _battleLoadout;
-        set
-        {
-            _battleLoadout = value;
-            if (BattleSnapshot is not null && value is not null)
-            {
-                BattleSnapshot.BattleLoadout = value;
-            }
-        }
-    }
+    /// <summary>战斗入场时的玩家战斗装配快照（从当前战斗入场快照获取）。</summary>
+    public CombatLoadout? BattleLoadout => BattleSnapshot?.BattleLoadout;
 
-    /// <summary>战斗入场时的 Buff 列表快照。</summary>
-    public List<BuffState> BattleBuffs
-    {
-        get => BattleSnapshot?.BattleBuffs ?? _battleBuffs;
-        set
-        {
-            _battleBuffs = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.BattleBuffs = value;
-            }
-        }
-    }
+    /// <summary>战斗入场时的 Buff 列表快照（从当前战斗入场快照获取）。</summary>
+    public List<BuffState> BattleBuffs => BattleSnapshot?.BattleBuffs ?? EmptyBuffs;
 
-    /// <summary>战斗入场时的背包物品快照。</summary>
-    public Dictionary<string, long> BattleInventory
-    {
-        get => BattleSnapshot?.BattleInventory ?? _battleInventory;
-        set
-        {
-            _battleInventory = value;
-            if (BattleSnapshot is not null)
-            {
-                BattleSnapshot.BattleInventory = value;
-            }
-        }
-    }
+    /// <summary>战斗入场时的背包物品快照（从当前战斗入场快照获取）。</summary>
+    public Dictionary<string, long> BattleInventory => BattleSnapshot?.BattleInventory ?? EmptyInventory;
 
     /// <summary>战斗中已应用消耗的物品及数量统计。</summary>
     public Dictionary<string, long> AppliedConsumedItems { get; set; } = new(StringComparer.Ordinal);
@@ -442,19 +314,9 @@ public sealed class CombatExpeditionState
         Phase = Phase,
         PhaseElapsedMilliseconds = PhaseElapsedMilliseconds,
         PhaseDurationMilliseconds = PhaseDurationMilliseconds,
+        BattleSequence = BattleSequence,
         BattleSnapshot = BattleSnapshot?.Clone(),
-        _encounterId = _encounterId,
-        _battleSequence = _battleSequence,
-        _completedEncountersBeforeBattle = _completedEncountersBeforeBattle,
-        _battleStartedAt = _battleStartedAt,
-        _initialHitpoints = _initialHitpoints,
-        _initialManapoints = _initialManapoints,
-        _initialAbilityCooldowns = new Dictionary<string, long>(_initialAbilityCooldowns, StringComparer.Ordinal),
-        _initialConsumableCooldowns = new List<long>(_initialConsumableCooldowns),
         EmittedEventCount = EmittedEventCount,
-        _battleLoadout = _battleLoadout?.Clone(),
-        _battleBuffs = _battleBuffs.Select(CloneBuff).ToList(),
-        _battleInventory = new Dictionary<string, long>(_battleInventory, StringComparer.Ordinal),
         AppliedConsumedItems = new Dictionary<string, long>(AppliedConsumedItems, StringComparer.Ordinal),
         AppliedDroppedItems = new Dictionary<string, long>(AppliedDroppedItems, StringComparer.Ordinal),
         AppliedRareDroppedItems = new Dictionary<string, long>(AppliedRareDroppedItems, StringComparer.Ordinal),
@@ -467,21 +329,6 @@ public sealed class CombatExpeditionState
         AppliedExperience = AppliedExperience,
         AppliedSpirit = AppliedSpirit,
         CompleteAfterRespawn = CompleteAfterRespawn
-    };
-
-    private static BuffState CloneBuff(BuffState buff) => new()
-    {
-        BuffId = buff.BuffId,
-        Name = buff.Name,
-        Stacks = buff.Stacks,
-        QiGainMultiplier = buff.QiGainMultiplier,
-        AttackLevelRatio = buff.AttackLevelRatio,
-        DamageRatio = buff.DamageRatio,
-        AttackSpeedRatio = buff.AttackSpeedRatio,
-        GatheringOutputMultiplier = buff.GatheringOutputMultiplier,
-        AlchemyOutputMultiplier = buff.AlchemyOutputMultiplier,
-        SourceItemId = buff.SourceItemId,
-        ExpiresAt = buff.ExpiresAt
     };
 }
 

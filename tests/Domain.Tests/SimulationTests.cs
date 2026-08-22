@@ -430,7 +430,7 @@ public sealed class SimulationEngineTests
         var expedition = Assert.IsType<CombatExpeditionState>(action.CombatExpedition);
         var encounterId = Assert.IsType<string>(expedition.EncounterId);
         var battleSequence = expedition.BattleSequence;
-        expedition.InitialHitpoints = 0;
+        expedition.BattleSnapshot!.InitialHitpoints = 0;
         expedition.EmittedEventCount = 0;
         state.CombatResources.Hitpoints = 0;
 
@@ -455,7 +455,7 @@ public sealed class SimulationEngineTests
         state.Combat.SwordsmanshipLevel = 1_000;
         state.Combat.LearnedAbilityIds.Add(CombatAbilityIds.HeavySlash);
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
-        expedition.BattleLoadout = state.Combat.Clone();
+        expedition.BattleSnapshot!.BattleLoadout = state.Combat.Clone();
 
         SimulationEngine.AdvanceTo(state, respawnAt.AddSeconds(1));
 
@@ -1139,5 +1139,178 @@ public sealed class SimulationEngineTests
         Assert.True(state.CombatResources.AbilityCooldowns.ContainsKey(CombatAbilityIds.HeavySlash));
         Assert.Equal(Baseline.AddSeconds(20), state.CombatResources.AbilityCooldowns[CombatAbilityIds.HeavySlash]);
         Assert.Equal(Baseline.AddSeconds(15), state.CombatResources.ConsumableSlotCooldowns[0]);
+    }
+
+    /// <summary>
+    /// 验证当推演达到单次最大流转上限（MaxTransitionsPerAdvance）时返回 Capped，
+    /// 保留已消费的 LastSimulatedAt 游标，未完成部分可在后续推进中继续无缝结算直到到达目标时间。
+    /// </summary>
+    [Fact]
+    public void Advance_to_capped_by_max_transitions_preserves_cursor_and_can_continue_to_target()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "突破上限修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.Queue.LoopEnabled = false;
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.GatherHerbs, 1000).Success);
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.GatherHerbs, 1000).Success);
+
+        var firstResult = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(16000), maxTransitions: 1000);
+
+        Assert.True(firstResult.Capped);
+        Assert.False(firstResult.ReachedTarget);
+        Assert.Equal(1000, firstResult.CompletedActions);
+        Assert.Equal(1000, firstResult.TransitionCount);
+        Assert.Equal(Baseline.AddSeconds(8000), state.LastSimulatedAt);
+        Assert.Equal(1000, state.Stats.CompletedActions);
+        Assert.Equal(3000, state.Stats.HerbsCollected);
+
+        var secondResult = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(16000), maxTransitions: 1000);
+
+        Assert.False(secondResult.Capped);
+        Assert.True(secondResult.ReachedTarget);
+        Assert.Equal(1000, secondResult.CompletedActions);
+        Assert.Equal(1000, secondResult.TransitionCount);
+        Assert.Equal(Baseline.AddSeconds(16000), state.LastSimulatedAt);
+        Assert.Equal(2000, state.Stats.CompletedActions);
+        Assert.Equal(6000, state.Stats.HerbsCollected);
+        Assert.Empty(state.Queue.Entries);
+    }
+
+    /// <summary>
+    /// 验证当达到单次流转上限时，LastSimulatedAt 停留在实际已消费游标处，
+    /// 不会跳过未结算时间，且 ExpireBuffs 只清理已过期的增益，未到期的增益完好保留。
+    /// </summary>
+    [Fact]
+    public void Advance_to_capped_does_not_skip_unsimulated_time_and_preserves_unexpired_buffs()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "增益时序修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.Queue.LoopEnabled = false;
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.GatherHerbs, 1000).Success);
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.GatherHerbs, 1000).Success);
+
+        state.Buffs.Add(new BuffState
+        {
+            BuffId = "early_buff",
+            Name = "前期增益",
+            ExpiresAt = Baseline.AddSeconds(4000)
+        });
+        state.Buffs.Add(new BuffState
+        {
+            BuffId = "late_buff",
+            Name = "后期增益",
+            ExpiresAt = Baseline.AddSeconds(12000)
+        });
+
+        var result = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(16000), maxTransitions: 1000);
+
+        Assert.True(result.Capped);
+        Assert.False(result.ReachedTarget);
+        Assert.Equal(Baseline.AddSeconds(8000), state.LastSimulatedAt);
+
+        Assert.Single(state.Buffs);
+        Assert.Equal("late_buff", state.Buffs[0].BuffId);
+
+        var finalResult = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(16000), maxTransitions: 1000);
+        Assert.True(finalResult.ReachedTarget);
+        Assert.Equal(Baseline.AddSeconds(16000), state.LastSimulatedAt);
+        Assert.Empty(state.Buffs);
+    }
+
+    /// <summary>
+    /// 验证同一目标时间下，通过分段上限（Capped 自动续算）推进与逐步按步长推进的关键状态与产出结果完全等价。
+    /// </summary>
+    [Fact]
+    public void Segmented_advance_with_caps_is_equivalent_to_stepped_advance()
+    {
+        var targetTime = Baseline.AddSeconds(16000);
+
+        var cappedState = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "分段修士", Baseline);
+        cappedState.Queue.Entries.Clear();
+        cappedState.Queue.LoopEnabled = false;
+        Assert.True(SimulationEngine.Enqueue(cappedState, ActionIds.GatherHerbs, 1000).Success);
+        Assert.True(SimulationEngine.Enqueue(cappedState, ActionIds.GatherHerbs, 1000).Success);
+
+        var iterations = 0;
+        while (true)
+        {
+            var res = SimulationEngine.AdvanceTo(cappedState, targetTime, maxTransitions: 1000);
+            if (res.ReachedTarget) break;
+            Assert.True(++iterations < 100, "分段推进次数超过安全阈值，可能陷入死循环。");
+        }
+
+        var steppedState = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "步进修士", Baseline);
+        steppedState.Queue.Entries.Clear();
+        steppedState.Queue.LoopEnabled = false;
+        Assert.True(SimulationEngine.Enqueue(steppedState, ActionIds.GatherHerbs, 1000).Success);
+        Assert.True(SimulationEngine.Enqueue(steppedState, ActionIds.GatherHerbs, 1000).Success);
+
+        for (var t = 4000; t <= 16000; t += 4000)
+        {
+            SimulationEngine.AdvanceTo(steppedState, Baseline.AddSeconds(t));
+        }
+
+        Assert.Equal(steppedState.LastSimulatedAt, cappedState.LastSimulatedAt);
+        Assert.Equal(steppedState.Stats.CompletedActions, cappedState.Stats.CompletedActions);
+        Assert.Equal(steppedState.Stats.HerbsCollected, cappedState.Stats.HerbsCollected);
+        Assert.Equal(steppedState.Inventory.Get(ItemIds.SpiritHerb), cappedState.Inventory.Get(ItemIds.SpiritHerb));
+        Assert.Equal(steppedState.Queue.Entries.Count, cappedState.Queue.Entries.Count);
+    }
+
+    /// <summary>
+    /// 验证历练战斗在单次流转上限截断时，停留在搜寻结束与战斗初始边界，
+    /// LastSimulatedAt 精确对齐，且未到期的 Buff 完好保留。
+    /// </summary>
+    [Fact]
+    public void Combat_advance_to_capped_preserves_cursor_phase_and_unexpired_buffs()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "战斗上限修士", Baseline);
+        state.Queue.Entries.Clear();
+        state.Combat.AttackLevel = 100;
+        state.Combat.DefenseLevel = 100;
+        state.Combat.StaminaLevel = 100;
+        state.Combat.SwordsmanshipLevel = 100;
+        state.Combat.LearnedAbilityIds.Add(CombatAbilityIds.HeavySlash);
+        state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
+
+        state.Buffs.Add(new BuffState
+        {
+            BuffId = "search_expire_buff",
+            Name = "搜寻期过期增益",
+            ExpiresAt = Baseline.AddSeconds(10)
+        });
+        state.Buffs.Add(new BuffState
+        {
+            BuffId = "combat_expire_buff",
+            Name = "战斗期过期增益",
+            ExpiresAt = Baseline.AddSeconds(30)
+        });
+
+        Assert.True(SimulationEngine.StartCombat(state, ActionIds.HuntQiBeast, 2).Success);
+
+        // maxTransitions: 1 使得在初次搜寻（20秒）结束转入战斗时（transitions = 1）即触发上限截断
+        var firstResult = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(60), maxTransitions: 1);
+
+        Assert.True(firstResult.Capped);
+        Assert.False(firstResult.ReachedTarget);
+        Assert.Equal(1, firstResult.TransitionCount);
+        Assert.Equal(0, firstResult.CompletedActions);
+        Assert.Equal(Baseline.AddSeconds(20), state.LastSimulatedAt);
+
+        var action = state.Queue.Entries[0];
+        var expedition = Assert.IsType<CombatExpeditionState>(action.CombatExpedition);
+        Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
+        Assert.Equal(1, expedition.BattleSequence);
+
+        // 搜寻期过期 Buff 被移除，战斗期过期 Buff 完好保留
+        Assert.Single(state.Buffs);
+        Assert.Equal("combat_expire_buff", state.Buffs[0].BuffId);
+
+        // 继续推进完成剩余战斗
+        var secondResult = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(60));
+        Assert.True(secondResult.ReachedTarget);
+        Assert.False(secondResult.Capped);
+        Assert.Equal(Baseline.AddSeconds(60), state.LastSimulatedAt);
+        Assert.Empty(state.Buffs);
     }
 }
