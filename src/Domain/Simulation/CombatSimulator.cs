@@ -286,7 +286,7 @@ public static partial class CombatSimulator
             if (!ItemCatalog.TryGet(slot.ItemId, out var item) || item.Consumable is null) continue;
             var configuredTriggers = slot.Triggers ?? [];
             var isFood = item.Category == ItemCategory.Food;
-            var isTriggeredAtStart = item.Consumable.TriggerAtCombatStart && now == 0;
+            var isTriggeredAtStart = isFood && item.Consumable.TriggerAtCombatStart && now == 0;
             var areTriggersActive = isTriggeredAtStart || AreTriggersActive(
                 configuredTriggers,
                 item.Consumable.DefaultCombatTriggers,

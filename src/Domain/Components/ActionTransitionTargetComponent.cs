@@ -9,6 +9,7 @@
 
 namespace Domain.Components;
 
+using System.Text.Json.Serialization;
 using YuoCore.Ecs;
 
 /// <summary>
@@ -18,5 +19,6 @@ using YuoCore.Ecs;
 public sealed class ActionTransitionTargetComponent : YuoComponent
 {
     /// <summary>本次推进的目标时间戳（确定性时间注入）。</summary>
+    [JsonIgnore]
     public DateTimeOffset TargetTime { get; set; }
 }

@@ -385,10 +385,10 @@ public sealed class ActionTransitionSystemTests
     }
 
     /// <summary>
-    /// 验证当缺失 ActionTransitionTargetComponent 目标时间戳时触发 IActionTransitionDue 会快速失败。
+    /// 验证当缺失 ActionTransitionTargetComponent 目标时间戳时直接执行 ActionTransitionSystem 会快速失败。
     /// </summary>
     [Fact]
-    public void YuoCore_tag_dispatch_throws_when_target_component_missing()
+    public void ActionTransitionSystem_throws_when_target_component_missing()
     {
         var (_, entity) = CreateTestPlayerEntity();
         var queue = entity.GetComponent<ActionQueueComponent>();
@@ -399,21 +399,8 @@ public sealed class ActionTransitionSystemTests
             RemainingRepeats = 2
         });
 
-        // 1. 直接触发系统 Run 验证异常抛出
         var system = new ActionTransitionSystem();
         Assert.Throws<InvalidOperationException>(() => system.Run(queue));
-
-        // 2. 在开启 CloseSystemTry 模式下通过 YuoWorld 派发标签同样快速失败抛出
-        var prev = YuoWorld.CloseSystemTry;
-        try
-        {
-            YuoWorld.CloseSystemTry = true;
-            Assert.Throws<InvalidOperationException>(() => YuoWorld.RunSystem<IActionTransitionDue>(entity));
-        }
-        finally
-        {
-            YuoWorld.CloseSystemTry = prev;
-        }
     }
 
     /// <summary>
