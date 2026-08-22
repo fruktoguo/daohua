@@ -70,8 +70,74 @@ public static class DaoxuanPostgresSchema
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         await ExecuteAsync(connection, transaction, SchemaSql, cancellationToken).ConfigureAwait(false);
+
+        await EnsureMarketTradePartitionsAsync(
+            connection,
+            transaction,
+            marketTradeRetentionDays,
+            cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private static async Task EnsureMarketTradePartitionsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int retentionDays,
+        CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        for (var offset = -1; offset <= 2; offset++)
+        {
+            var start = today.AddDays(offset);
+            var end = start.AddDays(1);
+            var partitionName = $"market_trades_{start:yyyyMMdd}";
+            await ExecuteAsync(
+                connection,
+                transaction,
+                $"""
+                CREATE TABLE IF NOT EXISTS {QuoteIdentifier(partitionName)}
+                PARTITION OF market_trades
+                FOR VALUES FROM ('{start:yyyy-MM-dd}') TO ('{end:yyyy-MM-dd}')
+                """,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        var cutoff = today.AddDays(-retentionDays);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT child.relname
+            FROM pg_inherits
+            JOIN pg_class child ON child.oid = pg_inherits.inhrelid
+            JOIN pg_class parent ON parent.oid = pg_inherits.inhparent
+            WHERE parent.relname = 'market_trades'
+            """,
+            connection,
+            transaction);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var expiredPartitions = new List<string>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var name = reader.GetString(0);
+            if (name.Length != "market_trades_yyyyMMdd".Length) continue;
+            if (!DateOnly.TryParseExact(name["market_trades_".Length..], "yyyyMMdd", out var partitionDate)) continue;
+            if (partitionDate < cutoff)
+            {
+                expiredPartitions.Add(name);
+            }
+        }
+
+        await reader.DisposeAsync().ConfigureAwait(false);
+        foreach (var name in expiredPartitions)
+        {
+            await ExecuteAsync(
+                connection,
+                transaction,
+                $"DROP TABLE IF EXISTS {QuoteIdentifier(name)}",
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static string QuoteIdentifier(string value) => $"\"{value.Replace("\"", "\"\"")}\"";
 
     private static async Task ExecuteAsync(
         NpgsqlConnection connection,
@@ -164,6 +230,20 @@ CREATE TABLE IF NOT EXISTS distributed_compute_jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS ix_distributed_compute_jobs_status ON distributed_compute_jobs (status, created_at);
+
+CREATE TABLE IF NOT EXISTS market_trades (
+    trade_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    buyer_id UUID NOT NULL,
+    seller_id UUID NOT NULL,
+    item_id VARCHAR(32) NOT NULL,
+    enhancement_level SMALLINT NOT NULL DEFAULT 0,
+    price BIGINT NOT NULL,
+    quantity BIGINT NOT NULL,
+    gross_amount BIGINT NOT NULL,
+    tax_amount BIGINT NOT NULL DEFAULT 0,
+    traded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (trade_id, traded_at)
+) PARTITION BY RANGE (traded_at);
 """;
 }
 
