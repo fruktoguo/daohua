@@ -415,14 +415,12 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   <PillStatLabel
                     label={t('insight.base.hpRegen')}
                     value={Math.floor(basePool.baseHpRegen)}
-                    suffix="/5s"
                     tone="emerald"
                     tooltip={t('insight.combat.hpRegenTooltip')}
                   />
                   <PillStatLabel
                     label={t('insight.base.mpRegen')}
                     value={Math.floor(basePool.baseMpRegen)}
-                    suffix="/5s"
                     tone="cyan"
                     tooltip={t('insight.combat.mpRegenTooltip')}
                   />
@@ -541,8 +539,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 <div className="insight-base-row">
                   <PillStatLabel label={t('insight.combat.hp')} value={maxHp} tone="emerald" tooltip={t('insight.combat.hpTooltip')} />
                   <PillStatLabel label={t('insight.combat.mp')} value={maxMp} tone="cyan" tooltip={t('insight.combat.mpTooltip')} />
-                  <PillStatLabel label={t('insight.combat.hpRegen')} value={hpRegenTotal} suffix="/5s" tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
-                  <PillStatLabel label={t('insight.combat.mpRegen')} value={mpRegenTotal} suffix="/5s" tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.hpRegen')} value={hpRegenTotal} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
+                  <PillStatLabel label={t('insight.combat.mpRegen')} value={mpRegenTotal} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
                 </div>
 
                 {/* 第 2 排：攻防属性 (物理攻击、术法攻击、物理护甲、术法抗性) */}
