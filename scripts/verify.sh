@@ -6,10 +6,10 @@
 # 核心验证流程:
 #   1. 校验 YuoCore Git submodule 是否已正确初始化；
 #   2. 执行 npm ci 严格安装前端锁定依赖；
-#   3. 执行 .NET 解决方案 Release 配置完整构建（DaoHua.slnx）；
-#   4. 运行领域规则与协议门禁测试（tests/DaoHua.Domain.Tests）；
-#   5. 运行游戏配置数据完整性校验工具（DaoHua.DataTool validate）；
-#   6. 运行 2c4g/40g 生产容量与性能门禁压测（DaoHua.LoadTests capacity-target）；
+#   3. 执行 .NET 解决方案 Release 配置完整构建（slnx）；
+#   4. 运行领域规则与协议门禁测试（tests/Domain.Tests）；
+#   5. 运行游戏配置数据完整性校验工具（DataTool validate）；
+#   6. 运行 2c4g/40g 生产容量与性能门禁压测（LoadTests capacity-target）；
 #   7. 执行前端 TypeScript 静态类型检查与 Vite 生产打包构建。
 #
 # 使用场景:
@@ -31,24 +31,24 @@ printf '==> 安装前端锁定依赖\n'
 npm --prefix frontend ci
 
 printf '==> Release 构建\n'
-dotnet build DaoHua.slnx --configuration Release --disable-build-servers --nologo
+dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
 
 printf '==> 领域测试\n'
-dotnet test tests/DaoHua.Domain.Tests/DaoHua.Domain.Tests.csproj \
+dotnet test tests/Domain.Tests/Domain.Tests.csproj \
   --configuration Release \
   --no-build \
   --disable-build-servers \
   --nologo
 
 printf '==> 游戏数据校验\n'
-dotnet run --project src/DaoHua.DataTool/DaoHua.DataTool.csproj \
+dotnet run --project src/DataTool/DataTool.csproj \
   --configuration Release \
   --no-build \
   -- \
   validate config/game-data
 
 printf '==> 2c4g/40g 容量目标门禁\n'
-dotnet run --project src/DaoHua.LoadTests/DaoHua.LoadTests.csproj \
+dotnet run --project src/LoadTests/LoadTests.csproj \
   --configuration Release \
   --no-build \
   -- \
