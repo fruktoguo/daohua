@@ -268,8 +268,8 @@ public static class DaoxuanGameData
             EnrageTickMilliseconds = config.EnrageTickMilliseconds,
             MaxEnrageStacks = config.MaxEnrageStacks,
             EnrageRatioPerStack = config.EnrageRatioPerStack,
-            DropTable = config.DropTable,
-            RareDropTable = config.RareDropTable
+            DropTable = config.DropTable ?? [],
+            RareDropTable = config.RareDropTable ?? []
         };
     }
 
@@ -307,7 +307,10 @@ public static class DaoxuanGameData
             if (monster.MaxHitpoints <= 0) throw Invalid("怪物", monster.Id, "maxHitpoints 必须大于 0");
             if (monster.AttackIntervalMilliseconds <= 0) throw Invalid("怪物", monster.Id, "attackIntervalMilliseconds 必须大于 0");
             ValidateProbability("怪物", monster.Id, "criticalChance", monster.CriticalChance);
-            ValidateProbability("怪物", monster.Id, "criticalAvoidance", monster.CriticalAvoidance);
+            if (monster.CriticalAvoidance < 0 || !double.IsFinite(monster.CriticalAvoidance))
+            {
+                throw Invalid("怪物", monster.Id, "criticalAvoidance 不能为负数");
+            }
             ValidateProbability("怪物", monster.Id, "damageAbsorptionRatio", monster.DamageAbsorptionRatio);
             ValidateNonNegativeRatio("怪物", monster.Id, "criticalDamageRatio", monster.CriticalDamageRatio);
             ValidateDrops("怪物", monster.Id, monster.DropTable.Concat(monster.RareDropTable), items);

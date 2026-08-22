@@ -10,7 +10,7 @@ public static partial class DaoxuanCombatSimulator
 {
     private const int MaxEventsPerRun = 2_000_000;
     private const int MaxResultEvents = 4_096;
-    private const int RegenTickMilliseconds = 10_000;
+    private const int RegenTickMilliseconds = 5_000;
     private const int ConsumableRecoveryTickMilliseconds = 5_000;
     private const int DamageOverTimeTickMilliseconds = 3_000;
     private const int DefaultEnrageTickMilliseconds = 60_000;
@@ -474,7 +474,9 @@ public static partial class DaoxuanCombatSimulator
             atr,
             cdr,
             criticalRating,
-            criticalAvoidanceRating);
+            criticalAvoidanceRating,
+            basePool.BaseHpRegen * (1.0 + staminaBonus),
+            basePool.BaseMpRegen * (1.0 + intelligenceBonus));
     }
 
     private static CombatStats BuildEnemyStats(
@@ -522,8 +524,10 @@ public static partial class DaoxuanCombatSimulator
             Math.Max(1.0, definition.DynamicResistanceFactorK),
             Math.Clamp(definition.ActionSpeedReductionRatio, 0, 0.99),
             Math.Clamp(definition.CooldownReductionRatio, 0, 0.99),
-            Math.Max(0, definition.CriticalChance * 100.0),
-            Math.Max(0, definition.CriticalAvoidance * 100.0));
+            Math.Max(0, definition.CriticalRating > 0 ? definition.CriticalRating : definition.CriticalChance * 100.0),
+            Math.Max(0, definition.CriticalAvoidance > 0 ? definition.CriticalAvoidance : 0.0),
+            Math.Max(0, definition.HpRegen > 0 ? definition.HpRegen : Math.Max(1.0, Math.Round(definition.MaxHitpoints * 0.02))),
+            Math.Max(0, definition.MpRegen > 0 ? definition.MpRegen : (definition.MaxManapoints > 0 ? Math.Max(1.0, Math.Round(definition.MaxManapoints * 0.02)) : 0.0)));
     }
 
     private static CombatResolution ResolvePlayerAttack(
@@ -1405,7 +1409,9 @@ public static partial class DaoxuanCombatSimulator
         double ActionSpeedReductionRatio = 0,
         double CooldownReductionRatio = 0,
         double CriticalRating = 0,
-        double CriticalAvoidanceRating = 0);
+        double CriticalAvoidanceRating = 0,
+        double HpRegen = 0,
+        double MpRegen = 0);
 
     private readonly record struct CombatResolution(
         long Damage,

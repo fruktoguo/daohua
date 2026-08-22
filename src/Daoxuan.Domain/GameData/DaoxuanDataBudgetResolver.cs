@@ -643,8 +643,13 @@ public static class DaoxuanDataBudgetResolver
 
         double accuracyRating = config.AccuracyRating ?? Math.Round(expected.AccuracyRating * GetW(["hit", "accuracyRating", "accuracy"], 1.0) * statMultiplier, 2);
         double evasionRating = config.EvasionRating ?? Math.Round(expected.EvasionRating * GetW(["eva", "evasionRating", "evasion"], 1.0) * statMultiplier, 2);
+        double criticalRating = config.CriticalRating ?? (hasWeights ? Math.Round(expected.CriticalRating * GetW(["crit", "critical", "criticalRating"], 1.0) * statMultiplier, 2) : 0);
+        double criticalAvoidance = config.CriticalAvoidance != 0 ? config.CriticalAvoidance : (hasWeights ? Math.Round(expected.CriticalAvoidance * GetW(["critavoid", "criticalAvoidance", "cavoid"], 1.0) * statMultiplier, 2) : 0);
         double breakRating = config.BreakRating != 0 ? config.BreakRating : (hasWeights ? Math.Round(expected.BreakRating * GetW(["break", "break_p", "breakRating"], 1.0) * statMultiplier, 2) : 0);
         double parryRating = config.ParryRating != 0 ? config.ParryRating : (hasWeights ? Math.Round(expected.ParryRating * GetW(["parry", "parryRating"], 1.0) * statMultiplier, 2) : 0);
+        double hpRegen = config.HpRegen ?? (hasWeights ? Math.Round(Math.Max(1.0, maxHitpoints * 0.02 * GetW(["hpregen", "regen", "hp_regen"], 1.0)), 2) : Math.Max(1.0, Math.Round(maxHitpoints * 0.02)));
+        double mpRegen = config.MpRegen ?? (maxManapoints > 0 ? (hasWeights ? Math.Round(Math.Max(1.0, maxManapoints * 0.02 * GetW(["mpregen", "regen", "mp_regen"], 1.0)), 2) : Math.Max(1.0, Math.Round(maxManapoints * 0.02))) : 0.0);
+        double experienceMultiplier = config.ExperienceMultiplier ?? 1.0;
 
         // 技能列表解析
         var resolvedAbilities = new List<DaoxuanCombatAbilityDefinition>();
@@ -721,9 +726,10 @@ public static class DaoxuanDataBudgetResolver
             LifeStealRatio = config.LifeStealRatio,
             ArmorDamageRatio = config.ArmorDamageRatio,
             HpDrainRatio = config.HpDrainRatio,
+            CriticalRating = criticalRating,
             CriticalChance = config.CriticalChance,
             CriticalDamageRatio = config.CriticalDamageRatio,
-            CriticalAvoidance = config.CriticalAvoidance,
+            CriticalAvoidance = criticalAvoidance,
             DamageAbsorptionRatio = config.DamageAbsorptionRatio,
             BreakRating = breakRating,
             ParryRating = parryRating,
@@ -731,10 +737,13 @@ public static class DaoxuanDataBudgetResolver
             DynamicResistanceFactorK = config.DynamicResistanceFactorK,
             ActionSpeedReductionRatio = config.ActionSpeedReductionRatio,
             CooldownReductionRatio = config.CooldownReductionRatio,
+            HpRegen = hpRegen,
+            MpRegen = mpRegen,
             HpRegenPerTenSeconds = config.HpRegenPerTenSeconds,
             MpRegenPerTenSeconds = config.MpRegenPerTenSeconds,
             EnrageTimeMilliseconds = config.EnrageTimeMilliseconds,
             AttackLevel = config.Level > 0 ? config.Level : 1,
+            ExperienceMultiplier = experienceMultiplier,
             Experience = config.Experience,
             SpiritMin = config.SpiritMin,
             SpiritMax = config.SpiritMax,

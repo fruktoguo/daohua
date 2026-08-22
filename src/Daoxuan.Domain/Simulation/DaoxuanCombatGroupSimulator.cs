@@ -128,7 +128,7 @@ public static partial class DaoxuanCombatSimulator
             var definition = enemy.Definition;
             var playerLevel = Math.Max(1.0, (double)loadout.AttackLevel);
             var enemyLevel = Math.Max(1.0, (double)definition.AttackLevel);
-            var gainedExperience = DaoxuanCombatFormula.CalculateCombatExperience(playerLevel, enemyLevel);
+            var gainedExperience = DaoxuanCombatFormula.CalculateCombatExperience(playerLevel, enemyLevel) * (definition.ExperienceMultiplier > 0 ? definition.ExperienceMultiplier : 1.0);
             experience += gainedExperience;
             var spiritMin = Math.Max(0, definition.SpiritMin);
             var spiritMax = Math.Max(spiritMin, definition.SpiritMax);
@@ -381,14 +381,14 @@ public static partial class DaoxuanCombatSimulator
                 {
                     var restoredHitpoints = Math.Min(
                         Math.Max(0, player.MaxHitpoints - playerHitpoints),
-                        DaoxuanCombatFormula.CalculateRegeneration(player.MaxHitpoints, player.HpRegenPerTenSeconds));
+                        player.HpRegen > 0 ? (long)Math.Round(player.HpRegen) : DaoxuanCombatFormula.CalculateRegeneration(player.MaxHitpoints, player.HpRegenPerTenSeconds));
                     playerHitpoints = checked(playerHitpoints + restoredHitpoints);
                     hitpointsRegenerated = checked(hitpointsRegenerated + restoredHitpoints);
                 }
 
                 var restoredManapoints = Math.Min(
                     Math.Max(0, player.MaxManapoints - playerManapoints),
-                    DaoxuanCombatFormula.CalculateRegeneration(player.MaxManapoints, player.MpRegenPerTenSeconds));
+                    player.MpRegen > 0 ? (long)Math.Round(player.MpRegen) : DaoxuanCombatFormula.CalculateRegeneration(player.MaxManapoints, player.MpRegenPerTenSeconds));
                 playerManapoints = checked(playerManapoints + restoredManapoints);
                 manapointsRegenerated = checked(manapointsRegenerated + restoredManapoints);
 
@@ -396,10 +396,10 @@ public static partial class DaoxuanCombatSimulator
                 {
                     var restoredEnemyHitpoints = Math.Min(
                         Math.Max(0, enemy.Stats.MaxHitpoints - enemy.Hitpoints),
-                        DaoxuanCombatFormula.CalculateRegeneration(enemy.Stats.MaxHitpoints, enemy.Stats.HpRegenPerTenSeconds));
+                        enemy.Stats.HpRegen > 0 ? (long)Math.Round(enemy.Stats.HpRegen) : DaoxuanCombatFormula.CalculateRegeneration(enemy.Stats.MaxHitpoints, enemy.Stats.HpRegenPerTenSeconds));
                     var restoredEnemyManapoints = Math.Min(
                         Math.Max(0, enemy.Stats.MaxManapoints - enemy.Manapoints),
-                        DaoxuanCombatFormula.CalculateRegeneration(enemy.Stats.MaxManapoints, enemy.Stats.MpRegenPerTenSeconds));
+                        enemy.Stats.MpRegen > 0 ? (long)Math.Round(enemy.Stats.MpRegen) : DaoxuanCombatFormula.CalculateRegeneration(enemy.Stats.MaxManapoints, enemy.Stats.MpRegenPerTenSeconds));
                     enemy.Hitpoints = checked(enemy.Hitpoints + restoredEnemyHitpoints);
                     enemy.Manapoints = checked(enemy.Manapoints + restoredEnemyManapoints);
                 }

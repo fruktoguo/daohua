@@ -9,7 +9,7 @@ IMAGE="${DAOXUAN_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daoxuan:prod}"
 CONTAINER_NAME="daoxuan-app"
 PREFLIGHT_CONTAINER_NAME="daoxuan-preflight"
 PREFLIGHT_DB_CONTAINER_NAME="daoxuan-preflight-db"
-PREFLIGHT_NETWORK="daoxuan-preflight-net"
+PREFLIGHT_DB_VOLUME="daoxuan-preflight-postgres"
 FAILED_IMAGE_FILE="${DEPLOY_DIR}/failed-image.id"
 LOCK_FILE="/run/lock/daoxuan-ccr-auto-update.lock"
 
@@ -46,6 +46,7 @@ wait_healthy() {
 cleanup_preflight() {
   docker rm --force "$PREFLIGHT_CONTAINER_NAME" "$PREFLIGHT_DB_CONTAINER_NAME" >/dev/null 2>&1 || true
   docker network rm "$PREFLIGHT_NETWORK" >/dev/null 2>&1 || true
+  docker volume rm --force "$PREFLIGHT_DB_VOLUME" >/dev/null 2>&1 || true
 }
 
 preflight_image() {
@@ -53,10 +54,11 @@ preflight_image() {
   local attempt state
   cleanup_preflight
   docker network create "$PREFLIGHT_NETWORK" >/dev/null
+  docker volume create "$PREFLIGHT_DB_VOLUME" >/dev/null
   docker run --detach \
     --name "$PREFLIGHT_DB_CONTAINER_NAME" \
     --network "$PREFLIGHT_NETWORK" \
-    --tmpfs /var/lib/postgresql/data:size=192m,mode=0700 \
+    --mount "type=volume,src=$PREFLIGHT_DB_VOLUME,dst=/var/lib/postgresql/data" \
     --shm-size 64m \
     --env POSTGRES_DB=daoxuan \
     --env POSTGRES_USER=daoxuan \
