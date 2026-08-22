@@ -69,6 +69,8 @@ export const combatZh = {
       base: '基础属性',
       special: '特殊属性',
       effects: '当前效果',
+      playerRole: '己方修士',
+      enemyRole: '遭遇敌怪',
     },
     // 基础属性行标签
     attr: {
