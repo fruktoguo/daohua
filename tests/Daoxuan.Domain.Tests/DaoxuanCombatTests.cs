@@ -1444,12 +1444,12 @@ public sealed class DaoxuanCombatTests
             });
         var minion = DaoxuanDataBudgetResolver.ResolveCombatant(minionConfig, DaoxuanCombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
         // Tier 2 baseline: HP 435.97, AD 28.19, Armor 24.43
-        // HP = round(435.97 * 1.0 * 0.8 * 3.0) = round(1046.328) = 1046
-        // AD = round(28.19 * 1.0 * 0.8) = round(22.552) = 23
-        // Armor = round(24.43 * 1.0 * 0.8, 2) = 19.54
+        // HP = floor(435.97 * 1.0 * 0.8 * 3.0) = floor(1046.328) = 1046
+        // AD = floor(28.19 * 1.0 * 0.8) = floor(22.552) = 22
+        // Armor = floor(24.43 * 1.0 * 0.8) = 19
         Assert.Equal(1046, minion.MaxHitpoints);
-        Assert.Equal(23, minion.MaxDamage);
-        Assert.Equal(19.54, minion.Armor);
+        Assert.Equal(22, minion.MaxDamage);
+        Assert.Equal(19.0, minion.Armor);
 
         // 2. 验证精英 (120% 属性, 500% HP)
         var eliteConfig = new DaoxuanCombatantConfig(
@@ -1463,10 +1463,10 @@ public sealed class DaoxuanCombatTests
                 ["ad"] = 1.0
             });
         var elite = DaoxuanDataBudgetResolver.ResolveCombatant(eliteConfig, DaoxuanCombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
-        // HP = round(435.97 * 1.0 * 1.2 * 5.0) = round(2615.82) = 2616
-        // AD = round(28.19 * 1.0 * 1.2) = round(33.828) = 34
-        Assert.Equal(2616, elite.MaxHitpoints);
-        Assert.Equal(34, elite.MaxDamage);
+        // HP = floor(435.97 * 1.0 * 1.2 * 5.0) = floor(2615.82) = 2615
+        // AD = floor(28.19 * 1.0 * 1.2) = floor(33.828) = 33
+        Assert.Equal(2615, elite.MaxHitpoints);
+        Assert.Equal(33, elite.MaxDamage);
 
         // 3. 验证 Boss (150% 属性, 2000% HP)
         var bossConfig = new DaoxuanCombatantConfig(
@@ -1480,8 +1480,8 @@ public sealed class DaoxuanCombatTests
                 ["ad"] = 1.0
             });
         var boss = DaoxuanDataBudgetResolver.ResolveCombatant(bossConfig, DaoxuanCombatCatalog.AllAbilities.ToDictionary(a => a.Id, StringComparer.Ordinal));
-        // HP = round(435.97 * 1.0 * 1.5 * 20.0) = round(13079.1) = 13079
-        // AD = round(28.19 * 1.0 * 1.5) = round(42.285) = 42
+        // HP = floor(435.97 * 1.0 * 1.5 * 20.0) = floor(13079.1) = 13079
+        // AD = floor(28.19 * 1.0 * 1.5) = floor(42.285) = 42
         Assert.Equal(13079, boss.MaxHitpoints);
         Assert.Equal(42, boss.MaxDamage);
     }

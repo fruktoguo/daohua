@@ -608,8 +608,7 @@ public static class DaoxuanDataBudgetResolver
 
     /// <summary>
     /// 将怪物配置解析为战斗定义。
-    /// 支持基于阶位/等级期望属性与权重的自动推导（小怪80%/300%HP，精英120%/500%HP，Boss 150%/2000%HP）；
-    /// 支持显式覆盖；特殊高级属性直接指定。
+    /// 内部复用通用的 DaoxuanCharacterStatResolver 解析基础 14 项属性，并组装技能与掉落信息。
     /// </summary>
     /// <param name="config">怪物配置传输对象。</param>
     /// <param name="abilities">已解算的技能库字典。</param>
@@ -621,56 +620,34 @@ public static class DaoxuanDataBudgetResolver
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(abilities);
 
-        var tier = config.Tier > 0 ? config.Tier : Math.Max(1, (config.Level - 1) / 12 + 1);
-        var expected = GetTierExpectedAttributes(tier);
-        var (statMultiplier, hpMultiplier) = config.Rank?.ToLowerInvariant() switch
+        var statRequest = new DaoxuanCharacterStatRequest
         {
-            "boss" => (1.50, 20.00),
-            "elite" => (1.20, 5.00),
-            _ => (0.80, 3.00)
+            Level = config.Level > 0 ? config.Level : 1,
+            Tier = config.Tier,
+            Rank = config.Rank,
+            Style = config.Style,
+            DamageType = config.DamageType,
+            Weights = config.Weights,
+            Floor = true,
+            MaxHitpoints = config.MaxHitpoints,
+            MaxManapoints = config.MaxManapoints,
+            MaxDamage = config.MaxDamage,
+            DefensiveMaxDamage = config.DefensiveMaxDamage,
+            Armor = config.Armor,
+            WaterResistance = config.WaterResistance,
+            NatureResistance = config.NatureResistance,
+            FireResistance = config.FireResistance,
+            AccuracyRating = config.AccuracyRating,
+            EvasionRating = config.EvasionRating,
+            CriticalRating = config.CriticalRating,
+            CriticalAvoidance = config.CriticalAvoidance != 0 ? config.CriticalAvoidance : null,
+            BreakRating = config.BreakRating != 0 ? config.BreakRating : null,
+            ParryRating = config.ParryRating != 0 ? config.ParryRating : null,
+            HpRegen = config.HpRegen,
+            MpRegen = config.MpRegen
         };
 
-        var weights = config.Weights;
-        double GetW(string[] keys, double defaultWeight)
-        {
-            if (weights is null || weights.Count == 0) return defaultWeight;
-            foreach (var key in keys)
-            {
-                if (weights.TryGetValue(key, out var val)) return val;
-            }
-            return defaultWeight;
-        }
-
-        bool hasWeights = weights is { Count: > 0 };
-
-        // 基础战斗属性解析
-        long maxHitpoints = config.MaxHitpoints ?? (long)Math.Round(expected.MaxHitpoints * GetW(["hp", "maxHitpoints", "hitpoints"], 1.0) * statMultiplier * hpMultiplier);
-        long maxManapoints = config.MaxManapoints ?? (long)Math.Round(expected.MaxManapoints * GetW(["mp", "maxManapoints", "manapoints"], 1.0) * statMultiplier);
-
-        var isMagic = config.Style == DaoxuanCombatStyle.FiveElements || config.Style == DaoxuanCombatStyle.Talisman;
-        var baseAttackExpected = isMagic ? expected.MagicAttack : expected.PhysicalAttack;
-        var attackWeight = GetW(isMagic ? ["ap", "magicAttack", "attack"] : ["ad", "physicalAttack", "maxDamage", "attack"], 1.0);
-        long maxDamage = config.MaxDamage ?? (long)Math.Round(baseAttackExpected * attackWeight * statMultiplier);
-
-        var defAtkWeight = GetW(["defensiveMaxDamage", "defensiveAttack", "defensivePhysicalAttack"], attackWeight * 0.7);
-        long defensiveMaxDamage = config.DefensiveMaxDamage ?? (long)Math.Round(baseAttackExpected * defAtkWeight * statMultiplier);
-
-        double armor = config.Armor ?? Math.Round(expected.Armor * GetW(["armor", "defense"], 1.0) * statMultiplier, 2);
-
-        var baseMRes = expected.MagicResistance > 0 ? expected.MagicResistance : expected.Armor;
-        double waterResistance = config.WaterResistance ?? Math.Round(baseMRes * GetW(["waterResistance", "mres", "magicResistance"], 0) * statMultiplier, 2);
-        double natureResistance = config.NatureResistance ?? Math.Round(baseMRes * GetW(["natureResistance", "mres", "magicResistance"], 0) * statMultiplier, 2);
-        double fireResistance = config.FireResistance ?? Math.Round(baseMRes * GetW(["fireResistance", "mres", "magicResistance"], 0) * statMultiplier, 2);
-
-        double accuracyRating = config.AccuracyRating ?? Math.Round(expected.AccuracyRating * GetW(["hit", "accuracyRating", "accuracy"], 1.0) * statMultiplier, 2);
-        double evasionRating = config.EvasionRating ?? Math.Round(expected.EvasionRating * GetW(["eva", "evasionRating", "evasion"], 1.0) * statMultiplier, 2);
-        double criticalRating = config.CriticalRating ?? (hasWeights ? Math.Round(expected.CriticalRating * GetW(["crit", "critical", "criticalRating"], 1.0) * statMultiplier, 2) : 0);
-        double criticalAvoidance = config.CriticalAvoidance != 0 ? config.CriticalAvoidance : (hasWeights ? Math.Round(expected.CriticalAvoidance * GetW(["critavoid", "criticalAvoidance", "cavoid"], 1.0) * statMultiplier, 2) : 0);
-        double breakRating = config.BreakRating != 0 ? config.BreakRating : (hasWeights ? Math.Round(expected.BreakRating * GetW(["break", "break_p", "breakRating"], 1.0) * statMultiplier, 2) : 0);
-        double parryRating = config.ParryRating != 0 ? config.ParryRating : (hasWeights ? Math.Round(expected.ParryRating * GetW(["parry", "parryRating"], 1.0) * statMultiplier, 2) : 0);
-        double hpRegen = config.HpRegen ?? (hasWeights ? Math.Round(Math.Max(1.0, maxHitpoints * 0.02 * GetW(["hpregen", "regen", "hp_regen"], 1.0)), 2) : Math.Max(1.0, Math.Round(maxHitpoints * 0.02)));
-        double mpRegen = config.MpRegen ?? (maxManapoints > 0 ? (hasWeights ? Math.Round(Math.Max(1.0, maxManapoints * 0.02 * GetW(["mpregen", "regen", "mp_regen"], 1.0)), 2) : Math.Max(1.0, Math.Round(maxManapoints * 0.02))) : 0.0);
-        double experienceMultiplier = config.ExperienceMultiplier ?? 1.0;
+        var stats = DaoxuanCharacterStatResolver.Resolve(statRequest);
 
         // 技能列表解析
         var resolvedAbilities = new List<DaoxuanCombatAbilityDefinition>();
@@ -728,17 +705,17 @@ public static class DaoxuanDataBudgetResolver
                 : new DaoxuanCharacterVisualDefinition { Renderer = "text", Source = config.Name[..1] },
             Style = config.Style,
             DamageType = config.DamageType,
-            MaxHitpoints = maxHitpoints,
-            MaxManapoints = maxManapoints,
+            MaxHitpoints = stats.MaxHitpoints,
+            MaxManapoints = stats.MaxManapoints,
             AttackIntervalMilliseconds = config.AttackIntervalMilliseconds > 0 ? config.AttackIntervalMilliseconds : 1000,
-            AccuracyRating = accuracyRating,
-            EvasionRating = evasionRating,
-            MaxDamage = maxDamage,
-            DefensiveMaxDamage = defensiveMaxDamage,
-            Armor = armor,
-            WaterResistance = waterResistance,
-            NatureResistance = natureResistance,
-            FireResistance = fireResistance,
+            AccuracyRating = stats.AccuracyRating,
+            EvasionRating = stats.EvasionRating,
+            MaxDamage = stats.MaxDamage,
+            DefensiveMaxDamage = stats.DefensiveMaxDamage,
+            Armor = stats.Armor,
+            WaterResistance = stats.WaterResistance,
+            NatureResistance = stats.NatureResistance,
+            FireResistance = stats.FireResistance,
             Tenacity = config.Tenacity,
             PierceChance = config.PierceChance,
             CurseRatio = config.CurseRatio,
@@ -747,24 +724,24 @@ public static class DaoxuanDataBudgetResolver
             LifeStealRatio = config.LifeStealRatio,
             ArmorDamageRatio = config.ArmorDamageRatio,
             HpDrainRatio = config.HpDrainRatio,
-            CriticalRating = criticalRating,
+            CriticalRating = stats.CriticalRating,
             CriticalChance = config.CriticalChance,
             CriticalDamageRatio = config.CriticalDamageRatio,
-            CriticalAvoidance = criticalAvoidance,
+            CriticalAvoidance = stats.CriticalAvoidance,
             DamageAbsorptionRatio = config.DamageAbsorptionRatio,
-            BreakRating = breakRating,
-            ParryRating = parryRating,
+            BreakRating = stats.BreakRating,
+            ParryRating = stats.ParryRating,
             SkillIntensity = config.SkillIntensity,
             DynamicResistanceFactorK = config.DynamicResistanceFactorK,
             ActionSpeedReductionRatio = config.ActionSpeedReductionRatio,
             CooldownReductionRatio = config.CooldownReductionRatio,
-            HpRegen = hpRegen,
-            MpRegen = mpRegen,
+            HpRegen = stats.HpRegen,
+            MpRegen = stats.MpRegen,
             HpRegenPerTenSeconds = config.HpRegenPerTenSeconds,
             MpRegenPerTenSeconds = config.MpRegenPerTenSeconds,
             EnrageTimeMilliseconds = config.EnrageTimeMilliseconds,
             AttackLevel = config.Level > 0 ? config.Level : 1,
-            ExperienceMultiplier = experienceMultiplier,
+            ExperienceMultiplier = config.ExperienceMultiplier ?? 1.0,
             Experience = config.Experience,
             SpiritMin = config.SpiritMin,
             SpiritMax = config.SpiritMax,
