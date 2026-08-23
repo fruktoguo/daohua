@@ -257,6 +257,9 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
 
     const nodeEl = target.closest<HTMLElement>('.world-map-node')
     const targetNodeId = nodeEl?.getAttribute('data-node-id') ?? null
+    if (targetNodeId) {
+      setSelectedNodeId(targetNodeId)
+    }
 
     dragStartRef.current = {
       clientX: e.clientX,
@@ -560,9 +563,33 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
 
       <aside className="world-location-panel">
         <div className="world-location-current">
-          <span>{t('combat.map.currentLocation')}</span>
+          <div className="world-current-label-row">
+            <span>{t('combat.map.currentLocation')}</span>
+            {!world.nodeId && <small>{t('combat.map.movingHint')}</small>}
+          </div>
           <strong>{world.locationName}</strong>
-          {!world.nodeId && <small>{t('combat.map.movingHint')}</small>}
+        </div>
+
+        {/* 地点快速切换栏 */}
+        <div className="world-node-selector-bar">
+          <span className="world-selector-title">探索目的地：</span>
+          <div className="world-node-chips-grid">
+            {map.nodes.map(node => {
+              const isCurr = node.nodeId === world.nodeId
+              const isSel = node.nodeId === selectedNodeId
+              return (
+                <button
+                  className={`world-node-chip${isCurr ? ' is-curr-pos' : ''}${isSel ? ' is-active-sel' : ''}`}
+                  key={node.nodeId}
+                  onClick={() => setSelectedNodeId(node.nodeId)}
+                  type="button"
+                >
+                  {isCurr && <span className="chip-pos-dot" title="当前所在位置">📍</span>}
+                  <span>{node.name}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
         {selectedNode ? (
           <>
@@ -570,6 +597,16 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
               <div className="world-location-title-row">
                 <span className="world-node-badge">{t('combat.map.nodeHeading')}</span>
                 <h3>{selectedNode.name}</h3>
+                {!atSelectedNode && (
+                  <button
+                    className="confirm-primary world-header-travel-btn"
+                    disabled={travellingToSelected}
+                    onClick={() => setTravelModalOpen(true)}
+                    type="button"
+                  >
+                    {travellingToSelected ? '前往中...' : '🚶 启程前往'}
+                  </button>
+                )}
               </div>
               <p>{selectedNode.description}</p>
             </header>
@@ -595,8 +632,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
               {/* 1. 产出资源 */}
               <div className="world-eco-block">
                 <div className="world-eco-title">
-                  <span className="eco-icon">🌿</span>
-                  <strong>{t('combat.map.resourcesHeading')}</strong>
+                  <span className="eco-label-name">资源</span>
                 </div>
                 <div className="world-eco-content">
                   {nodeResources.map(res => (
@@ -606,7 +642,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
                     </span>
                   ))}
                   {nodeResources.length === 0 && (
-                    <span className="world-eco-empty">{t('combat.map.noResources')}</span>
+                    <span className="world-eco-empty">无专属资源</span>
                   )}
                 </div>
               </div>
@@ -614,8 +650,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
               {/* 2. 栖息生灵 */}
               <div className="world-eco-block">
                 <div className="world-eco-title">
-                  <span className="eco-icon">🐾</span>
-                  <strong>{t('combat.map.monstersHeading')}</strong>
+                  <span className="eco-label-name">怪物</span>
                 </div>
                 <div className="world-eco-content">
                   {nodeMonsters.normal.map(monster => (
@@ -636,7 +671,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
                     </span>
                   ))}
                   {nodeMonsters.normal.length === 0 && nodeMonsters.elite.length === 0 && nodeMonsters.boss.length === 0 && (
-                    <span className="world-eco-empty">{t('combat.map.noMonsters')}</span>
+                    <span className="world-eco-empty">无怪物盘踞</span>
                   )}
                 </div>
               </div>
@@ -644,43 +679,53 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
               {/* 3. 地标建筑 */}
               <div className="world-eco-block">
                 <div className="world-eco-title">
-                  <span className="eco-icon">🏛️</span>
-                  <strong>{t('combat.map.buildingsHeading')}</strong>
+                  <span className="eco-label-name">地标与设施</span>
                 </div>
                 <div className="world-eco-content">
                   {nodeBuildings.map(b => (
                     <div className="world-building-card" key={b.entityId} title={b.description}>
                       <strong>{b.name}</strong>
+                      {b.description && <p>{b.description}</p>}
                       {b.effect && <small>{b.effect}</small>}
                     </div>
                   ))}
                   {nodeBuildings.length === 0 && (
-                    <span className="world-eco-empty">{t('combat.map.noBuildings')}</span>
+                    <span className="world-eco-empty">无特色设施</span>
                   )}
                 </div>
               </div>
             </div>
 
-            {/* 赶路操作按钮 */}
-            <div className="world-location-actions">
-              <button
-                className="confirm-primary world-travel-btn"
-                disabled={atSelectedNode || travellingToSelected}
-                onClick={() => setTravelModalOpen(true)}
-                type="button"
-              >
-                {atSelectedNode ? t('combat.map.atNode') : travellingToSelected ? t('combat.map.travelling') : t('combat.map.planTravel')}
-              </button>
-              {activeTravel && (
+            {/* 赶路操作按钮：仅在非当前地点显示 */}
+            {!atSelectedNode && (
+              <div className="world-location-actions">
                 <button
-                  className="danger"
-                  onClick={() => gameClient.sendCommand('remove_action', { entryId: activeTravel.entryId })}
+                  className="confirm-primary world-travel-btn is-ready"
+                  disabled={travellingToSelected}
+                  onClick={() => setTravelModalOpen(true)}
                   type="button"
                 >
-                  {t('combat.map.stopTravel')}
+                  {travellingToSelected
+                    ? `⏳ 正在前往该地点途中...`
+                    : `🚶 前往该地点`}
                 </button>
-              )}
-            </div>
+                {activeTravel && (
+                  <button
+                    className="danger world-stop-btn"
+                    onClick={() => gameClient.sendCommand('remove_action', { entryId: activeTravel.entryId })}
+                    type="button"
+                  >
+                    {t('combat.map.stopTravel')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {atSelectedNode && (
+              <div className="world-current-stay-badge">
+                <span>📍 当前正处于此地点</span>
+              </div>
+            )}
           </>
         ) : (
           <p>{t('combat.map.selectPrompt')}</p>
