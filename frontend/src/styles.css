@@ -1358,9 +1358,12 @@ input[type="checkbox"] {
   min-height: 0;
   flex: 1;
   overflow: hidden auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .main-content > .panel {
+  height: 100%;
   min-height: 100%;
 }
 
@@ -1649,6 +1652,11 @@ input[type="checkbox"] {
 }
 
 .skill-page {
+  display: flex;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -2772,16 +2780,21 @@ input[type="checkbox"] {
   position: relative;
   display: grid;
   width: 100%;
-  min-height: 92px;
+  min-height: 82px;
   grid-template-columns: 46px minmax(0, 1fr) 20px;
   align-items: center;
   gap: 11px;
-  padding: 13px;
+  padding: 11px 13px;
   border: 1px solid var(--gold-faint);
   color: var(--text);
   background: rgba(201, 180, 109, 0.03);
   text-align: left;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.action-card--crafting {
+  min-height: 74px;
+  padding: 10px 12px;
 }
 
 .action-card:hover {
@@ -2813,6 +2826,65 @@ input[type="checkbox"] {
   font-size: 12px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.action-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.action-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  font-size: 11px;
+  border-radius: 2px;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.action-badge--tier {
+  background: rgba(201, 180, 109, 0.08);
+  border-color: var(--gold-faint);
+  color: var(--gold-bright);
+  font-family: var(--font-serif);
+}
+
+.action-badge--quality {
+  font-family: var(--font-serif);
+}
+
+.item-badge-rarity-mundane {
+  background: rgba(160, 160, 160, 0.1);
+  border-color: rgba(160, 160, 160, 0.3);
+  color: #c0c0c0;
+}
+
+.item-badge-rarity-spirit {
+  background: rgba(80, 200, 160, 0.12);
+  border-color: rgba(80, 200, 160, 0.4);
+  color: #6ee7b7;
+}
+
+.item-badge-rarity-mystic {
+  background: rgba(100, 140, 240, 0.12);
+  border-color: rgba(100, 140, 240, 0.4);
+  color: #93c5fd;
+}
+
+.item-badge-rarity-earth {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.4);
+  color: #fcd34d;
+}
+
+.item-badge-rarity-heaven {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.4);
+  color: #d8b4fe;
 }
 
 .action-glyph {

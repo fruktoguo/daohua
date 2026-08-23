@@ -454,8 +454,11 @@
 
 .skill-page {
   display: flex;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .skill-page .action-cards,
@@ -464,6 +467,7 @@
   flex: 1;
   align-content: start;
   overflow-y: auto;
+  padding-right: 4px;
 }
 
 .slot-group {

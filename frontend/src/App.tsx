@@ -22,7 +22,7 @@ import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage
 import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemGrade, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
@@ -941,17 +941,50 @@ const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX
  * 单个行动卡片组件（点击打开行动配置与执行弹窗）
  */
 const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
+  const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
+  const itemCatalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
+
+  const primaryOutputId = useMemo(() => Object.keys(action.outputs || {})[0] ?? null, [action.outputs])
+
+  const meta = useMemo(() => {
+    const eq = equipmentCatalog.find(e => e.equipmentId === primaryOutputId)
+    if (eq) {
+      const tierLabel = `${eq.tier}阶`
+      const grade = resolveItemGrade(eq.tier)
+      const qualityLabel = grade.label
+      const rarity = grade.rarity
+      return { tierLabel, qualityLabel, rarity }
+    }
+    const it = itemCatalog.find(i => i.itemId === primaryOutputId)
+    if (it) {
+      const tierLabel = `${it.tier}阶`
+      const grade = resolveItemGrade(it.tier)
+      const qualityLabel = grade.label
+      const rarity = grade.rarity
+      return { tierLabel, qualityLabel, rarity }
+    }
+    return null
+  }, [isCrafting, primaryOutputId, equipmentCatalog, itemCatalog])
+
   return (
     <button
       aria-haspopup="dialog"
-      className="action-card"
+      className={`action-card${isCrafting ? ' action-card--crafting' : ''}`}
       onClick={() => onOpen(action)}
       type="button"
     >
       <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true"><Icon name={action.type} /></span>
       <span className="action-card-copy">
         <strong>{action.name}</strong>
-        <span>{action.description}</span>
+        {isCrafting && meta ? (
+          <div className="action-card-badges">
+            <span className="action-badge action-badge--tier">{meta.tierLabel}</span>
+            <span className={`action-badge action-badge--quality item-badge-rarity-${meta.rarity}`}>{meta.qualityLabel}</span>
+          </div>
+        ) : (
+          <span>{action.description}</span>
+        )}
       </span>
       <span className="action-card-chevron" aria-hidden="true">›</span>
     </button>
