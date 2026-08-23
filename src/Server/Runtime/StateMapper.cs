@@ -1074,13 +1074,11 @@ public static class StateMapper
     private static string ToWire(UnitRank rank) => rank switch
     {
         UnitRank.Boss => "boss",
-        UnitRank.Leader => "leader",
         UnitRank.Elite => "elite",
         UnitRank.Summon => "summon",
         UnitRank.Pet => "pet",
         UnitRank.PlayerMirror => "player-mirror",
         UnitRank.Npc => "npc",
-        UnitRank.Normal => "normal",
         _ => "minion"
     };
 

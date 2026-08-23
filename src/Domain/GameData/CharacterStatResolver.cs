@@ -26,12 +26,10 @@ public static class CharacterStatResolver
     public static (double StatMultiplier, double HpMultiplier) GetRankMultipliers(UnitRank rank) =>
         rank switch
         {
-            UnitRank.Boss => (1.50, 20.00),
-            UnitRank.Leader => (1.35, 10.00),
-            UnitRank.Elite => (1.20, 5.00),
-            UnitRank.Summon or UnitRank.Pet => (1.00, 1.00),
-            UnitRank.Normal or UnitRank.PlayerMirror or UnitRank.Npc => (1.00, 1.00),
-            _ => (0.80, 3.00) // 默认 minion 小怪
+            UnitRank.Boss => (1.50, 20.00),   // 妖王：1.50× 属性，20.0× 气血
+            UnitRank.Elite => (1.20, 5.00),   // 精英：1.20× 属性，5.0× 气血
+            UnitRank.Summon or UnitRank.Pet or UnitRank.PlayerMirror or UnitRank.Npc => (1.00, 1.00),
+            _ => (0.80, 3.00)                 // 妖兽：0.80× 属性，3.0× 气血
         };
 
     /// <summary>
@@ -49,15 +47,13 @@ public static class CharacterStatResolver
         }
 
         var span = rank.AsSpan().Trim();
-        if (span.Equals("boss", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Boss; return true; }
-        if (span.Equals("leader", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Leader; return true; }
-        if (span.Equals("elite", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Elite; return true; }
-        if (span.Equals("summon", StringComparison.OrdinalIgnoreCase) || span.Equals("minion_summon", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Summon; return true; }
-        if (span.Equals("pet", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Pet; return true; }
-        if (span.Equals("player_mirror", StringComparison.OrdinalIgnoreCase) || span.Equals("playermirror", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.PlayerMirror; return true; }
+        if (span.Equals("boss", StringComparison.OrdinalIgnoreCase) || span.Equals("妖王", StringComparison.Ordinal)) { parsed = UnitRank.Boss; return true; }
+        if (span.Equals("elite", StringComparison.OrdinalIgnoreCase) || span.Equals("精英", StringComparison.Ordinal)) { parsed = UnitRank.Elite; return true; }
+        if (span.Equals("summon", StringComparison.OrdinalIgnoreCase) || span.Equals("minion_summon", StringComparison.OrdinalIgnoreCase) || span.Equals("召唤物", StringComparison.Ordinal)) { parsed = UnitRank.Summon; return true; }
+        if (span.Equals("pet", StringComparison.OrdinalIgnoreCase) || span.Equals("灵宠", StringComparison.Ordinal)) { parsed = UnitRank.Pet; return true; }
+        if (span.Equals("player_mirror", StringComparison.OrdinalIgnoreCase) || span.Equals("playermirror", StringComparison.OrdinalIgnoreCase) || span.Equals("玩家镜像", StringComparison.Ordinal)) { parsed = UnitRank.PlayerMirror; return true; }
         if (span.Equals("npc", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Npc; return true; }
-        if (span.Equals("normal", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Normal; return true; }
-        if (span.Equals("minion", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Minion; return true; }
+        if (span.Equals("minion", StringComparison.OrdinalIgnoreCase) || span.Equals("妖兽", StringComparison.Ordinal) || span.Equals("normal", StringComparison.OrdinalIgnoreCase)) { parsed = UnitRank.Minion; return true; }
 
         parsed = UnitRank.Minion;
         return false;

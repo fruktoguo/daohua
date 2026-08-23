@@ -17,7 +17,7 @@ function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
 
   const details = [
     { label: '等级', value: `Lv.${monster.level}` },
-    { label: '位阶', value: monster.rank === 'boss' ? '领主首领' : monster.rank === 'elite' ? '精英妖兽' : '普通生灵' },
+    { label: '位阶', value: monster.rank === 'boss' ? '妖王' : monster.rank === 'elite' ? '精英' : '妖兽' },
     { label: '消耗预算', value: `${monster.budgetCost}` },
     { label: '气血上限', value: `${monster.maxHitpoints}` },
     { label: '攻击威能', value: `${monster.maxDamage}` },
@@ -35,10 +35,10 @@ function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
       content={
         <FloatingInfoCard
           title={monster.name}
-          badge={monster.rank === 'boss' ? '领主' : monster.rank === 'elite' ? '精英' : '普通'}
+          badge={monster.rank === 'boss' ? '妖王' : monster.rank === 'elite' ? '精英' : '妖兽'}
           badgeTone={monster.rank === 'boss' ? 'danger' : monster.rank === 'elite' ? 'purple' : 'gold'}
           subtitle={`Lv.${monster.level} · 阶位 ${monster.tier}`}
-          description={`栖息于此地的${monster.rank === 'boss' ? '关底领主' : monster.rank === 'elite' ? '精英强敌' : '常见妖物'}，战力消耗预算 ${monster.budgetCost}。`}
+          description={`栖息于此地的${monster.rank === 'boss' ? '绝世妖王' : monster.rank === 'elite' ? '精英大妖' : '寻常妖兽'}，战力消耗预算 ${monster.budgetCost}。`}
           stats={details}
         />
       }

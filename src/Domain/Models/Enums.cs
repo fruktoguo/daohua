@@ -242,24 +242,20 @@ public enum EquipmentSlotMask : ushort
 [JsonConverter(typeof(UnitRankJsonConverter))]
 public enum UnitRank : byte
 {
-    /// <summary>普通杂鱼/喽啰小怪。</summary>
+    /// <summary>基础妖兽（普通单位）。</summary>
     Minion = 0,
-    /// <summary>标准单位。</summary>
-    Normal = 1,
-    /// <summary>精英怪（气血与属性倍率提升）。</summary>
-    Elite = 2,
-    /// <summary>头目/首领级单位。</summary>
-    Leader = 3,
-    /// <summary>世界或关卡 Boss（多阶段/高乘区）。</summary>
-    Boss = 4,
+    /// <summary>精英妖兽（气血与属性倍率提升）。</summary>
+    Elite = 1,
+    /// <summary>绝世妖王（关底领主/高乘区大怪）。</summary>
+    Boss = 2,
     /// <summary>召唤物。</summary>
-    Summon = 5,
+    Summon = 3,
     /// <summary>灵宠/坐骑。</summary>
-    Pet = 6,
+    Pet = 4,
     /// <summary>玩家镜像/化身。</summary>
-    PlayerMirror = 7,
+    PlayerMirror = 5,
     /// <summary>城镇 NPC。</summary>
-    Npc = 8
+    Npc = 6
 }
 
 /// <summary>
@@ -477,16 +473,13 @@ public sealed class UnitRankJsonConverter : JsonConverter<UnitRank>
         var text = value switch
         {
             UnitRank.Boss => "boss",
-            UnitRank.Leader => "leader",
             UnitRank.Elite => "elite",
             UnitRank.Summon => "summon",
             UnitRank.Pet => "pet",
             UnitRank.PlayerMirror => "player-mirror",
             UnitRank.Npc => "npc",
-            UnitRank.Normal => "normal",
             _ => "minion"
         };
-        writer.WriteStringValue(text);
     }
 }
 

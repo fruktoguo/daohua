@@ -27,7 +27,7 @@ public sealed class CharacterStatResolverTests
         {
             Level = 1,
             Tier = 1,
-            Rank = UnitRank.Normal,
+            Rank = UnitRank.Npc,
             Floor = false
         });
 
@@ -53,11 +53,9 @@ public sealed class CharacterStatResolverTests
     [InlineData(UnitRank.Minion, 0.80, 3.00)]
     [InlineData(UnitRank.Elite, 1.20, 5.00)]
     [InlineData(UnitRank.Boss, 1.50, 20.00)]
-    [InlineData(UnitRank.Leader, 1.35, 10.00)]
     [InlineData(UnitRank.Summon, 1.00, 1.00)]
     [InlineData(UnitRank.Pet, 1.00, 1.00)]
     [InlineData(UnitRank.Npc, 1.00, 1.00)]
-    [InlineData(UnitRank.Normal, 1.00, 1.00)]
     public void Life_stage_rank_multipliers_are_applied_accurately(UnitRank rank, double expectedStatMult, double expectedHpMult)
     {
         var (statMult, hpMult) = CharacterStatResolver.GetRankMultipliers(rank);
@@ -102,7 +100,7 @@ public sealed class CharacterStatResolverTests
             Level = 1,
             Tier = 1,
             Style = CombatStyle.Body,
-            Rank = UnitRank.Normal,
+            Rank = UnitRank.Npc,
             Floor = false
         });
 
@@ -112,7 +110,7 @@ public sealed class CharacterStatResolverTests
             Level = 1,
             Tier = 1,
             Style = CombatStyle.FiveElements,
-            Rank = UnitRank.Normal,
+            Rank = UnitRank.Npc,
             Floor = false
         });
 
