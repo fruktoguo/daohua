@@ -184,6 +184,8 @@ export const marketZh = {
       critDamage: '暴击增伤',
       critAvoidance: '免暴率',
       damageAbsorption: '伤害吸收',
+      actionSpeed: '行动速度',
+      skillIntensity: '技能强度',
       attackInterval: '攻击间隔 {seconds} 秒',
     },
   },

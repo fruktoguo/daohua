@@ -239,17 +239,17 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
   const addNumber = (label: string, value: number) => {
     if (value !== 0) lines.push(`${label} ${formatNumber(value)}`)
   }
-  addPercent(t('market.stat.accuracy'), stats.accuracyRatio)
   addPercent(t('market.stat.damage'), stats.damageRatio)
+  addPercent(t('market.stat.accuracy'), stats.accuracyRatio)
   addPercent(t('market.stat.attackSpeed'), stats.attackSpeedRatio)
   addPercent(t('market.stat.evasion'), stats.evasionRatio)
-  addNumber(t('market.stat.armor'), stats.armor)
-  addNumber(t('market.stat.magicRes'), stats.magicResistance)
-  addNumber(t('market.stat.metalRes'), stats.metalResistance)
-  addNumber(t('market.stat.woodRes'), stats.woodResistance)
-  addNumber(t('market.stat.waterRes'), stats.waterResistance)
-  addNumber(t('market.stat.fireRes'), stats.fireResistance)
-  addNumber(t('market.stat.earthRes'), stats.earthResistance)
+  addPercent(t('market.stat.armor'), stats.armor)
+  addPercent(t('market.stat.magicRes'), stats.magicResistance)
+  addPercent(t('market.stat.metalRes'), stats.metalResistance)
+  addPercent(t('market.stat.woodRes'), stats.woodResistance)
+  addPercent(t('market.stat.waterRes'), stats.waterResistance)
+  addPercent(t('market.stat.fireRes'), stats.fireResistance)
+  addPercent(t('market.stat.earthRes'), stats.earthResistance)
   addNumber(t('market.stat.tenacity'), stats.tenacity)
   addPercent(t('market.stat.penetration'), stats.penetrationRatio)
   addPercent(t('market.stat.pierceChance'), stats.pierceChance)
@@ -263,7 +263,6 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
   addPercent(t('market.stat.critDamage'), stats.criticalDamageRatio)
   addPercent(t('market.stat.critAvoidance'), stats.criticalAvoidance)
   addPercent(t('market.stat.damageAbsorption'), stats.damageAbsorptionRatio)
-  if (stats.attackIntervalMilliseconds > 0) lines.push(t('market.stat.attackInterval', { seconds: (stats.attackIntervalMilliseconds / 1000).toFixed(2) }))
   return lines
 }
 
