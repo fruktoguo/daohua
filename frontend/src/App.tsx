@@ -382,7 +382,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                     {entry.status === 'blocked' && <span className="badge badge-danger">{t('app.queue.blocked')}</span>}
                     {index === 0 && entry.status === 'running' && <span className="badge">{t('app.queue.running')}</span>}
                   </div>
-                  <div className="queue-sub">{actionDescription(entry)}</div>
+                  {actionDescription(entry) && actionDescription(entry) !== entry.actionName ? <div className="queue-sub">{actionDescription(entry)}</div> : null}
                 </div>
                 <div className="queue-actions">
                   <button
@@ -988,9 +988,9 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
             <span className="action-badge action-badge--tier">{meta.tierLabel}</span>
             <span className={`action-badge action-badge--quality item-badge-rarity-${meta.rarity}`}>{meta.qualityLabel}</span>
           </div>
-        ) : (
+        ) : action.description ? (
           <span>{action.description}</span>
-        )}
+        ) : null}
       </span>
       <span className="action-card-chevron" aria-hidden="true">›</span>
     </button>
@@ -1040,14 +1040,14 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const outputs = Object.entries(action.outputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
   const titleId = `action-modal-title-${action.id}`
   const startsImmediately = action.executionKind === 'combat-encounter'
-
+  const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
   return (
     <Modal className="action-modal" labelledBy={titleId} onClose={onClose} open size="medium">
       <header className="action-modal-header">
         <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true"><Icon name={action.type} /></span>
         <div>
           <h2 id={titleId}>{action.name}</h2>
-          <p>{action.description}</p>
+          {!isCrafting && action.description ? <p>{action.description}</p> : null}
         </div>
       </header>
 

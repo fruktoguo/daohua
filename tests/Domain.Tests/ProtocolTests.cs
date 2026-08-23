@@ -224,8 +224,8 @@ public sealed class ProtocolTests
     {
         var action = new ActionDto(
             "alchemy.refine-qi-pill",
-            "炼制引气丹",
-            "以灵草温养一枚引气丹。",
+            "引气丹",
+            "",
             "alchemy",
             12,
             Inputs: new Dictionary<string, long> { ["item.spirit-herb"] = 3 },

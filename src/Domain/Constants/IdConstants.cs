@@ -17,7 +17,7 @@ public static class ActionIds
 {
     /// <summary>采集凝血草动作。</summary>
     public const string GatherHerbs = "explore.gather-ningxue-grass";
-    /// <summary>炼制引气丹动作。</summary>
+    /// <summary>引气丹动作。</summary>
     public const string RefineQiPill = "alchemy.refine-qi-pill";
     /// <summary>吐纳运功吸纳灵气动作。</summary>
     public const string DrawQi = "cultivation.draw-qi";
