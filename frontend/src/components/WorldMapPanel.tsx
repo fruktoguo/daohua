@@ -3,6 +3,7 @@ import { useGameStore } from '../game/gameStore'
 import type { WorldMapDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
+import { FloatingTooltip } from './FloatingPopover'
 import { Modal } from './Modal'
 /** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
@@ -564,141 +565,90 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
       </section>
 
       <aside className="world-location-panel">
-        <div className="world-location-current">
-          <div className="world-current-label-row">
-            <span>{t('combat.map.currentLocation')}</span>
-            {!world.nodeId && <small>{t('combat.map.movingHint')}</small>}
-          </div>
-          <strong>{world.locationName}</strong>
-        </div>
-
-        {/* 地点快速切换栏 */}
-        <div className="world-node-selector-bar">
-          <span className="world-selector-title">探索目的地：</span>
-          <div className="world-node-chips-grid">
-            {map.nodes.map(node => {
-              const isCurr = node.nodeId === world.nodeId
-              const isSel = node.nodeId === selectedNodeId
-              return (
-                <button
-                  className={`world-node-chip${isCurr ? ' is-curr-pos' : ''}${isSel ? ' is-active-sel' : ''}`}
-                  key={node.nodeId}
-                  onClick={() => setSelectedNodeId(node.nodeId)}
-                  type="button"
-                >
-                  {isCurr && <span className="chip-pos-dot" title="当前所在位置">📍</span>}
-                  <span>{node.name}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
         {selectedNode ? (
           <>
             <header className="world-location-header">
-              <div className="world-location-title-row">
-                <span className="world-node-badge">{t('combat.map.nodeHeading')}</span>
-                <h3>{selectedNode.name}</h3>
-                {!atSelectedNode && (
-                  <button
-                    className="confirm-primary world-header-travel-btn"
-                    disabled={travellingToSelected}
-                    onClick={() => setTravelModalOpen(true)}
-                    type="button"
-                  >
-                    {travellingToSelected ? '前往中...' : '🚶 启程前往'}
-                  </button>
-                )}
-              </div>
+              <h3>{selectedNode.name}</h3>
               <p>{selectedNode.description}</p>
             </header>
 
-            <dl className="world-location-stats">
-              <div>
-                <dt>{t('combat.map.cultivationEfficiency')}</dt>
-                <dd className={selectedNode.cultivationMultiplier > 1 ? 'text-gold' : ''}>
-                  {Math.round(selectedNode.cultivationMultiplier * 100)}%
-                </dd>
-              </div>
-              <div>
-                <dt>{t('combat.map.resourcesHeading')}</dt>
-                <dd>{nodeResources.length}</dd>
-              </div>
-              <div>
-                <dt>{t('combat.map.monstersHeading')}</dt>
-                <dd>{nodeMonsters.normal.length + nodeMonsters.elite.length + nodeMonsters.boss.length}</dd>
-              </div>
-            </dl>
-
             <div className="world-location-sections">
-              {/* 1. 产出资源 */}
-              <div className="world-eco-block">
-                <div className="world-eco-title">
-                  <span className="eco-label-name">资源</span>
+              {/* 1. 产出资源：仅在有产出时展示 */}
+              {nodeResources.length > 0 && (
+                <div className="world-eco-block">
+                  <div className="world-eco-title">
+                    <span className="eco-label-name">资源</span>
+                  </div>
+                  <div className="world-eco-content">
+                    {nodeResources.map(res => (
+                      <span className="world-resource-pill" key={res.itemId}>
+                        {res.name}
+                        {res.quantity > 1 && <small>×{res.quantity}</small>}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <div className="world-eco-content">
-                  {nodeResources.map(res => (
-                    <span className="world-resource-pill" key={res.itemId}>
-                      {res.name}
-                      {res.quantity > 1 && <small>×{res.quantity}</small>}
-                    </span>
-                  ))}
-                  {nodeResources.length === 0 && (
-                    <span className="world-eco-empty">无专属资源</span>
-                  )}
-                </div>
-              </div>
+              )}
 
-              {/* 2. 栖息生灵 */}
-              <div className="world-eco-block">
-                <div className="world-eco-title">
-                  <span className="eco-label-name">怪物</span>
+              {/* 2. 栖息生灵：仅在有怪物时展示 */}
+              {(nodeMonsters.normal.length > 0 || nodeMonsters.elite.length > 0 || nodeMonsters.boss.length > 0) && (
+                <div className="world-eco-block">
+                  <div className="world-eco-title">
+                    <span className="eco-label-name">怪物</span>
+                  </div>
+                  <div className="world-eco-content">
+                    {nodeMonsters.normal.map(monster => (
+                      <span className="world-monster-pill" key={monster.monsterId}>
+                        {monster.name}
+                      </span>
+                    ))}
+                    {nodeMonsters.elite.map(monster => (
+                      <span className="world-monster-pill is-elite" key={monster.monsterId}>
+                        <small className="monster-rank-tag">精</small>
+                        {monster.name}
+                      </span>
+                    ))}
+                    {nodeMonsters.boss.map(monster => (
+                      <span className="world-monster-pill is-boss" key={monster.monsterId}>
+                        <small className="monster-rank-tag">魁</small>
+                        {monster.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <div className="world-eco-content">
-                  {nodeMonsters.normal.map(monster => (
-                    <span className="world-monster-pill" key={monster.monsterId}>
-                      {monster.name}
-                    </span>
-                  ))}
-                  {nodeMonsters.elite.map(monster => (
-                    <span className="world-monster-pill is-elite" key={monster.monsterId}>
-                      <small className="monster-rank-tag">精</small>
-                      {monster.name}
-                    </span>
-                  ))}
-                  {nodeMonsters.boss.map(monster => (
-                    <span className="world-monster-pill is-boss" key={monster.monsterId}>
-                      <small className="monster-rank-tag">魁</small>
-                      {monster.name}
-                    </span>
-                  ))}
-                  {nodeMonsters.normal.length === 0 && nodeMonsters.elite.length === 0 && nodeMonsters.boss.length === 0 && (
-                    <span className="world-eco-empty">无怪物盘踞</span>
-                  )}
-                </div>
-              </div>
+              )}
 
-              {/* 3. 地标建筑 */}
-              <div className="world-eco-block">
-                <div className="world-eco-title">
-                  <span className="eco-label-name">地标与设施</span>
+              {/* 3. 地点（地标设施）：仅在有建筑设施时展示，仅展示名称，Hover 弹窗浮现描述与效果 */}
+              {nodeBuildings.length > 0 && (
+                <div className="world-eco-block">
+                  <div className="world-eco-title">
+                    <span className="eco-label-name">地点</span>
+                  </div>
+                  <div className="world-eco-content">
+                    {nodeBuildings.map(b => (
+                      <FloatingTooltip
+                        key={b.entityId}
+                        placement="top"
+                        title={
+                          <div className="world-building-popover">
+                            <strong className="text-gold">{b.name}</strong>
+                            {b.description && <p>{b.description}</p>}
+                            {b.effect && <small className="text-jade">{b.effect}</small>}
+                          </div>
+                        }
+                        tone="gold"
+                      >
+                        <span className="world-building-pill">
+                          {b.name}
+                        </span>
+                      </FloatingTooltip>
+                    ))}
+                  </div>
                 </div>
-                <div className="world-eco-content">
-                  {nodeBuildings.map(b => (
-                    <div className="world-building-card" key={b.entityId} title={b.description}>
-                      <strong>{b.name}</strong>
-                      {b.description && <p>{b.description}</p>}
-                      {b.effect && <small>{b.effect}</small>}
-                    </div>
-                  ))}
-                  {nodeBuildings.length === 0 && (
-                    <span className="world-eco-empty">无特色设施</span>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* 赶路操作按钮：仅在非当前地点显示 */}
+            {/* 底部大横条按钮：仅在非当前地点显示 */}
             {!atSelectedNode && (
               <div className="world-location-actions">
                 <button
@@ -722,15 +672,9 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
                 )}
               </div>
             )}
-
-            {atSelectedNode && (
-              <div className="world-current-stay-badge">
-                <span>📍 当前正处于此地点</span>
-              </div>
-            )}
           </>
         ) : (
-          <p>{t('combat.map.selectPrompt')}</p>
+          <p className="world-map-select-prompt">{t('combat.map.selectPrompt')}</p>
         )}
       </aside>
 
