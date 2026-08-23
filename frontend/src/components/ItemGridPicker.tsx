@@ -280,19 +280,16 @@ export function ItemUseSlot({
             rarity={metadata.rarity}
           />
         </button>
-        {isContinuousActive && (
-          <span className="item-slot-duration-badge" title={`持续加成生效中：剩余 ${Math.ceil(remainingDurationSeconds)} 秒`}>
-            <span className="item-slot-duration-text">
-              {remainingDurationSeconds >= 60
-                ? `${Math.floor(remainingDurationSeconds / 60)}m${Math.floor(remainingDurationSeconds % 60)}s`
-                : `${Math.ceil(remainingDurationSeconds)}s`}
-            </span>
-            {progressRatio > 0 && (
-              <span
-                className="item-slot-duration-bar"
-                style={{ width: `${progressRatio}%` }}
-              />
-            )}
+        {isContinuousActive && !cooldownOverlay && (
+          <span
+            className="combat-ability-cooldown item-slot-duration-overlay"
+            style={{
+              ['--cooldown-ratio' as string]: String(
+                progressRatio > 0 ? Math.min(1, progressRatio / 100) : 0
+              ),
+            }}
+          >
+            {Math.ceil(remainingDurationSeconds)}s
           </span>
         )}
         {cooldownOverlay}
