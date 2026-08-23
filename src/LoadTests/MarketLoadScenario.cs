@@ -25,7 +25,7 @@ public static class MarketLoadScenario
         ItemIds.SpiritHerb,
         ItemIds.QiGatheringPill,
         ItemIds.QiBeastCore,
-        ItemIds.FireTalisman
+        ItemIds.BlazingBlastFragment
     ];
 
     /// <summary>

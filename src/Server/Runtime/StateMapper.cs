@@ -761,8 +761,6 @@ public static class StateMapper
     private static CombatLoadoutDto ToCombat(CombatLoadout combat)
     {
         return new CombatLoadoutDto(
-            ToWire(combat.Style),
-            ToWire(combat.DamageType),
             combat.StaminaLevel,
             combat.IntelligenceLevel,
             combat.AttackLevel,

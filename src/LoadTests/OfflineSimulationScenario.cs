@@ -54,7 +54,6 @@ public static class OfflineSimulationScenario
                 state.Combat.SwordsmanshipLevel = 1_000;
                 state.Combat.DefenseLevel = 1_000;
                 state.Combat.TalismanLevel = 1_000;
-                state.Combat.Style = CombatStyle.FiveElements;
                 state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.BlazingBlast;
                 state.Combat.AbilitySlots[0].Level = 100;
                 state.Combat.Equipment =
@@ -62,10 +61,10 @@ public static class OfflineSimulationScenario
                 {
                     ItemId = (index % 4) switch
                     {
-                        0 => ItemIds.CursedSpiritBow,
-                        1 => ItemIds.FuriousSpiritSpear,
-                        2 => ItemIds.GriffinSpiritBulwark,
-                        _ => ItemIds.SunderingSpiritCrossbow
+                        0 => ItemIds.QingfengSword,
+                        1 => ItemIds.PogangSword,
+                        2 => ItemIds.YulinArmor,
+                        _ => ItemIds.ChaoyuanStaff
                     },
                     EnhancementLevel = index % (CombatLimits.MaxEnhancementLevel + 1)
                 }];

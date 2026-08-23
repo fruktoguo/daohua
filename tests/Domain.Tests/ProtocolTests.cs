@@ -149,8 +149,6 @@ public sealed class ProtocolTests
         {
             action,
             combat = new CombatLoadoutDto(
-                "sword",
-                "physical",
                 1,
                 1,
                 1,

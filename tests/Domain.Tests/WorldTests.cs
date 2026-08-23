@@ -113,6 +113,7 @@ public sealed class WorldTests
     public void Replanning_travel_replaces_old_route_but_preserves_other_actions()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
         var originalCount = state.Queue.Entries.Count;
         Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.CloudMarket).Success);
         Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.SunsetRidge).Success);

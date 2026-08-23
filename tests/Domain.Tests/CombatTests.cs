@@ -164,7 +164,6 @@ public sealed class CombatTests
         state.Combat.AttackLevel = 1_000_000;
         state.Combat.IntelligenceLevel = 1_000_000;
         state.Combat.SwordsmanshipLevel = 1_000_000;
-        state.Combat.Style = CombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
 
         var beforeBoundary = CombatSimulator.Run(
@@ -526,8 +525,6 @@ public sealed class CombatTests
         state.Combat.DefenseLevel = 100;
         state.Combat.SwordsmanshipLevel = 100;
         state.Combat.TalismanLevel = 100;
-        state.Combat.Style = CombatStyle.Sword;
-        state.Combat.DamageType = DamageType.Physical;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
 
         var result = CombatSimulator.Run(
@@ -562,8 +559,6 @@ public sealed class CombatTests
         state.Combat.DefenseLevel = 100;
         state.Combat.SwordsmanshipLevel = 100;
         state.Combat.TalismanLevel = 100;
-        state.Combat.Style = CombatStyle.Sword;
-        state.Combat.DamageType = DamageType.Physical;
         state.Combat.CombatDropQuantity = 1;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
 
@@ -595,8 +590,6 @@ public sealed class CombatTests
         state.Combat.AttackLevel = 1;
         state.Combat.IntelligenceLevel = 10;
         state.Combat.SwordsmanshipLevel = 10;
-        state.Combat.Style = CombatStyle.FiveElements;
-        state.Combat.DamageType = DamageType.Fire;
         state.Combat.CriticalChance = -1.0;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.BlazingBlast;
 
@@ -625,8 +618,6 @@ public sealed class CombatTests
         state.Combat.StaminaLevel = 100;
         state.Combat.DefenseLevel = 100;
         state.Combat.IntelligenceLevel = 10;
-        state.Combat.Style = CombatStyle.Body;
-        state.Combat.DamageType = DamageType.Physical;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
 
         var result = CombatSimulator.Run(
@@ -686,8 +677,6 @@ public sealed class CombatTests
         state.Combat.DefenseLevel = 100;
         state.Combat.SwordsmanshipLevel = 100;
         state.Combat.TalismanLevel = 100;
-        state.Combat.Style = CombatStyle.Sword;
-        state.Combat.DamageType = DamageType.Physical;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
 
         var result = CombatSimulator.Run(
@@ -711,13 +700,10 @@ public sealed class CombatTests
     public void Invalid_combat_loadout_does_not_partially_mutate_state()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
-        var originalStyle = state.Combat.Style;
         var originalAbility = state.Combat.AbilitySlots[0].AbilityId;
 
         var result = SimulationEngine.SetCombatLoadout(
             state,
-            CombatStyle.Body,
-            DamageType.Fire,
             [new CombatAbilitySlot
             {
                 AbilityId = CombatAbilityIds.HeavySlash,
@@ -726,7 +712,7 @@ public sealed class CombatTests
             [
                 new ConsumableSlot
                 {
-                    ItemId = ItemIds.SpiritTea,
+                    ItemId = ItemIds.ShunqiPill,
                     Quantity = 1,
                     Enabled = true
                 },
@@ -739,7 +725,6 @@ public sealed class CombatTests
             ]);
 
         Assert.False(result.Success);
-        Assert.Equal(originalStyle, state.Combat.Style);
         Assert.Equal(originalAbility, state.Combat.AbilitySlots[0].AbilityId);
     }
 
@@ -747,22 +732,20 @@ public sealed class CombatTests
     /// 验证非法枚举值（如不存在的 CombatStyle）在最外层被立即拦截，不修改角色战斗配置。
     /// </summary>
     [Fact]
-    public void Invalid_combat_enum_is_rejected_before_any_mutation()
+    public void Invalid_combat_multiplier_is_rejected_before_any_mutation()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
         var original = state.Combat.Clone();
 
         var result = SimulationEngine.SetCombatLoadout(
             state,
-            (CombatStyle)999,
-            DamageType.Fire,
             null,
-            null);
+            null,
+            combatDropRate: 9999999);
 
         Assert.False(result.Success);
-        Assert.Equal("INVALID_COMBAT_STYLE", result.Code);
-        Assert.Equal(original.Style, state.Combat.Style);
-        Assert.Equal(original.DamageType, state.Combat.DamageType);
+        Assert.Equal("INVALID_COMBAT_DROP_BONUS", result.Code);
+        Assert.Equal(original.CombatDropRate, state.Combat.CombatDropRate);
     }
 
     /// <summary>
@@ -775,8 +758,6 @@ public sealed class CombatTests
 
         var result = SimulationEngine.SetCombatLoadout(
             state,
-            null,
-            null,
             [new CombatAbilitySlot
             {
                 AbilityId = CombatAbilityIds.BlazingBlast,
@@ -874,7 +855,7 @@ public sealed class CombatTests
         Assert.Equal(stepped.Inventory.Get(ItemIds.QiBeastCore), fast.Inventory.Get(ItemIds.QiBeastCore));
         Assert.Equal(stepped.Inventory.Get(ItemIds.Spirit), fast.Inventory.Get(ItemIds.Spirit));
         Assert.Equal(stepped.Inventory.Get(ItemIds.SpiritHerb), fast.Inventory.Get(ItemIds.SpiritHerb));
-        Assert.Equal(stepped.Inventory.Get(ItemIds.CloudSugar), fast.Inventory.Get(ItemIds.CloudSugar));
+        Assert.Equal(stepped.Inventory.Get(ItemIds.BeastHide), fast.Inventory.Get(ItemIds.BeastHide));
         Assert.Equal(stepped.Queue.Entries[0].ProgressSeconds, fast.Queue.Entries[0].ProgressSeconds);
     }
 
@@ -937,18 +918,15 @@ public sealed class CombatTests
             state,
             null,
             null,
-            null,
-            null,
             equipment:
             [
-                new EquippedItem { ItemId = ItemIds.CursedSpiritBow },
-                new EquippedItem { ItemId = ItemIds.FuriousSpiritSpear }
+                new EquippedItem { ItemId = ItemIds.QingfengSword },
+                new EquippedItem { ItemId = ItemIds.PogangSword }
             ]);
 
         Assert.False(result.Success);
         Assert.Equal("INVALID_EQUIPMENT", result.Code);
         Assert.Empty(state.Combat.Equipment);
-        Assert.Equal(original.Style, state.Combat.Style);
     }
 
     /// <summary>
@@ -1001,7 +979,7 @@ public sealed class CombatTests
             state.Combat.Equipment =
             [new EquippedItem
             {
-                ItemId = ItemIds.SunderingSpiritCrossbow,
+                ItemId = ItemIds.ChaoyuanStaff,
                 EnhancementLevel = 10
             }];
             SimulationEngine.Enqueue(state, ActionIds.HuntQiBeast, -1);
@@ -1114,7 +1092,6 @@ public sealed class CombatTests
         state.Combat.DefenseLevel = 1_000_000;
         state.Combat.SwordsmanshipLevel = 1_000_000;
         state.Combat.TalismanLevel = 1_000_000;
-        state.Combat.Style = CombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 1;
 
@@ -1149,7 +1126,6 @@ public sealed class CombatTests
         state.Combat.DefenseLevel = 1_000;
         state.Combat.SwordsmanshipLevel = 1_000;
         state.Combat.TalismanLevel = 1_000;
-        state.Combat.Style = CombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 100;
 
@@ -1186,14 +1162,13 @@ public sealed class CombatTests
         state.Combat.SwordsmanshipLevel = 1_000;
         state.Combat.DefenseLevel = 1_000;
         state.Combat.TalismanLevel = 1_000;
-        state.Combat.Style = CombatStyle.FiveElements;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.BlazingBlast;
         state.Combat.AbilitySlots[0].Level = 100;
         state.Combat.Equipment =
         [
             new EquippedItem
             {
-                ItemId = ItemIds.SunderingSpiritCrossbow,
+                ItemId = ItemIds.ChaoyuanStaff,
                 EnhancementLevel = 7
             }
         ];
@@ -1268,7 +1243,6 @@ public sealed class CombatTests
             state.Combat.IntelligenceLevel = 100;
             state.Combat.AttackLevel = 100;
             state.Combat.DefenseLevel = 100;
-            state.Combat.Style = CombatStyle.FiveElements;
             state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
             SimulationEngine.Enqueue(state, ActionIds.HuntQiBeast, -1);
         }

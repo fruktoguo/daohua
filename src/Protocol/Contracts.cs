@@ -571,8 +571,6 @@ public sealed record ConsumableSlotDto(
 /// 玩家战斗配置方案（功法偏好、修炼境界加点、技能装备配置）传输对象。
 /// </summary>
 public sealed record CombatLoadoutDto(
-    string Style,
-    string DamageType,
     int StaminaLevel,
     int IntelligenceLevel,
     int AttackLevel,
@@ -815,8 +813,6 @@ public sealed record SetLoopRequest(bool Enabled);
 
 /// <summary>客户端发起的保存战斗配置方案请求载荷。</summary>
 public sealed record SetCombatLoadoutRequest(
-    string? Style = null,
-    string? DamageType = null,
     IReadOnlyList<CombatAbilitySlotDto>? AbilitySlots = null,
     IReadOnlyList<ConsumableSlotDto>? ConsumableSlots = null,
     double? CombatDropRate = null,

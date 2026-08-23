@@ -697,8 +697,6 @@ export interface ConsumableSlot {
  * 玩家战斗装配方案
  */
 export interface CombatLoadout {
-  style: CombatStyle
-  damageType: DamageType
   staminaLevel: number
   intelligenceLevel: number
   attackLevel: number

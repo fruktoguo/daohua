@@ -147,10 +147,6 @@ public sealed class CombatAbilitySlot
 /// </summary>
 public sealed class CombatLoadout
 {
-    /// <summary>当前选用的主修武道流派。</summary>
-    public CombatStyle Style { get; set; } = CombatStyle.Sword;
-    /// <summary>当前选用的主修伤害属性。</summary>
-    public DamageType DamageType { get; set; } = DamageType.Physical;
     /// <summary>气血/体魄修炼等级（影响生命上限与防御）。</summary>
     public int StaminaLevel { get; set; } = 10;
     /// <summary>神识/悟性修炼等级（影响法力上限与命中）。</summary>
@@ -231,8 +227,6 @@ public sealed class CombatLoadout
     {
         return new CombatLoadout
         {
-            Style = Style,
-            DamageType = DamageType,
             StaminaLevel = StaminaLevel,
             IntelligenceLevel = IntelligenceLevel,
             AttackLevel = AttackLevel,

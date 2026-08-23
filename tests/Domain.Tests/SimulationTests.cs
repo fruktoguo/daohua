@@ -40,6 +40,12 @@ public sealed class SimulationEngineTests
     public void Normalize_state_removes_legacy_zero_inventory_entries_without_clearing_item_slots()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "归零修士", Baseline);
+        state.Queue.AutoUseSlots[ActionType.Cultivation][0] = new AutoUseSlot
+        {
+            ItemId = ItemIds.QiGatheringPill,
+            Quantity = 1,
+            Enabled = true
+        };
         state.Inventory.Items[ItemIds.QiGatheringPill] = 0;
         state.DirtySections = DirtySections.None;
 
@@ -83,10 +89,18 @@ public sealed class SimulationEngineTests
     /// 验证初始默认队列依次完成采药、炼丹和引气修炼循环，正确产出真气并循环轮转。
     /// </summary>
     [Fact]
-    public void Initial_queue_completes_gather_alchemy_cultivation_loop()
+    public void Configured_queue_completes_gather_alchemy_cultivation_loop()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "测试修士", Baseline);
-
+        state.Queue.AutoUseSlots[ActionType.Cultivation][0] = new AutoUseSlot
+        {
+            ItemId = ItemIds.QiGatheringPill,
+            Quantity = 1,
+            Enabled = true
+        };
+        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
+        SimulationEngine.Enqueue(state, ActionIds.RefineQiPill);
+        SimulationEngine.Enqueue(state, ActionIds.DrawQi);
         var result = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(30));
 
         Assert.Equal(3, result.CompletedActions);
@@ -199,13 +213,13 @@ public sealed class SimulationEngineTests
     public void Log_events_keep_stable_sequence_and_full_display_time()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "日志修士", Baseline);
-
+        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
         SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(8));
 
-        Assert.Equal(2, state.StructuredEventLog.Count);
-        Assert.Equal([1L, 2L], state.StructuredEventLog.Select(entry => entry.Sequence));
+        Assert.Equal(3, state.StructuredEventLog.Count);
+        Assert.Equal([1L, 2L, 3L], state.StructuredEventLog.Select(entry => entry.Sequence));
         Assert.Equal(Baseline, state.StructuredEventLog[0].OccurredAt);
-        Assert.Contains("{{action:explore.gather-ningxue-grass|采集凝血草}}", state.StructuredEventLog[1].Template, StringComparison.Ordinal);
+        Assert.Contains("{{action:explore.gather-ningxue-grass|采集凝血草}}", state.StructuredEventLog[2].Template, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -215,6 +229,7 @@ public sealed class SimulationEngineTests
     public void Offline_progress_keeps_history_without_queuing_websocket_events()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "离线日志修士", Baseline);
+        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
         state.PendingEvents.Clear();
         state.PresenceMode = PresenceMode.IdleOffline;
 
@@ -234,6 +249,9 @@ public sealed class SimulationEngineTests
     public void Completed_loop_action_moves_to_queue_tail_immediately()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "轮转修士", Baseline);
+        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
+        SimulationEngine.Enqueue(state, ActionIds.RefineQiPill);
+        SimulationEngine.Enqueue(state, ActionIds.DrawQi);
         var completedEntryId = state.Queue.Entries[0].EntryId;
 
         SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(8));
@@ -308,6 +326,7 @@ public sealed class SimulationEngineTests
     public void Starting_combat_interrupts_current_loop_and_runs_immediately()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "历练修士", Baseline);
+        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
         var previousHead = state.Queue.Entries[0];
         previousHead.Status = ActionStatus.Running;
         previousHead.ProgressSeconds = 3;
@@ -580,8 +599,8 @@ public sealed class SimulationEngineTests
                   { "abilityId": "{{CombatAbilityIds.HeavySlash}}", "level": 7, "triggers": [] }
                 ],
                 "consumableSlots": [
-                  { "itemId": "{{ItemIds.HealingElixir}}", "quantity": 1, "enabled": true, "triggers": [] },
-                  { "itemId": "{{ItemIds.SpiritTea}}", "quantity": 1, "enabled": true, "triggers": [] }
+                  { "itemId": "{{ItemIds.ZhixuePowder}}", "quantity": 1, "enabled": true, "triggers": [] },
+                  { "itemId": "{{ItemIds.ShunqiPill}}", "quantity": 1, "enabled": true, "triggers": [] }
                 ]
               }
             }
@@ -612,8 +631,8 @@ public sealed class SimulationEngineTests
         Assert.Equal(CombatLimits.AbilitySlotCount, state.Combat.AbilitySlots.Count);
         Assert.Equal(CombatAbilityIds.HeavySlash, state.Combat.AbilitySlots[0].AbilityId);
         Assert.Equal(3, state.Combat.ConsumableSlots.Count);
-        Assert.Equal(ItemIds.HealingElixir, state.Combat.ConsumableSlots[0].ItemId);
-        Assert.Equal(ItemIds.SpiritTea, state.Combat.ConsumableSlots[1].ItemId);
+        Assert.Equal(ItemIds.ZhixuePowder, state.Combat.ConsumableSlots[0].ItemId);
+        Assert.Equal(ItemIds.ShunqiPill, state.Combat.ConsumableSlots[1].ItemId);
         Assert.Null(state.Combat.ConsumableSlots[2].ItemId);
 
         // 归一化后写出的快照一律使用数组形态，可以再次无损读入。
@@ -863,8 +882,8 @@ public sealed class SimulationEngineTests
     public void Partial_advance_marks_only_queue_progress_dirty()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "进度修士", Baseline);
+        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
         state.DirtySections = DirtySections.None;
-
         var result = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(1));
 
         Assert.True(result.DirtySections.HasFlag(DirtySections.QueueProgress));
@@ -881,6 +900,15 @@ public sealed class SimulationEngineTests
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "幂等修士", Baseline);
         state.DirtySections = DirtySections.None;
         var version = state.Version;
+
+        SimulationEngine.SetAutoUse(
+            state,
+            ActionType.Cultivation,
+            ItemIds.QiGatheringPill,
+            1,
+            true);
+        state.DirtySections = DirtySections.None;
+        version = state.Version;
 
         SimulationEngine.SetLoop(state, true);
         SimulationEngine.SetAutoUse(

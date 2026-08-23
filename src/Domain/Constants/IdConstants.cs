@@ -64,24 +64,10 @@ public static class ItemIds
     public const string PogangSword = "equipment.pogang-sword";
     /// <summary>朝元杖（装备）。</summary>
     public const string ChaoyuanStaff = "equipment.chaoyuan-staff";
-    /// <summary>兼容旧引用的长弓别名。</summary>
-    public const string CursedSpiritBow = "equipment.qingfeng-sword";
-    /// <summary>兼容旧引用的灵枪别名。</summary>
-    public const string FuriousSpiritSpear = "equipment.pogang-sword";
-    /// <summary>兼容旧引用的重盾别名。</summary>
-    public const string GriffinSpiritBulwark = "equipment.yulin-armor";
-    /// <summary>兼容旧引用的灵弩别名。</summary>
-    public const string SunderingSpiritCrossbow = "equipment.chaoyuan-staff";
-    /// <summary>兼容旧引用的疗伤药别名。</summary>
-    public const string HealingElixir = "item.zhixue-powder";
-    /// <summary>兼容旧引用的回生露别名。</summary>
-    public const string RejuvenatingDew = "item.zhixue-powder";
-    /// <summary>兼容旧引用的灵茶别名。</summary>
-    public const string SpiritTea = "item.shunqi-pill";
-    /// <summary>兼容旧引用的灵符别名。</summary>
-    public const string FireTalisman = "item.fragment.blazing-blast";
-    /// <summary>兼容旧引用的云锦糖别名。</summary>
-    public const string CloudSugar = "item.beast-hide";
+    /// <summary>羽鳞甲（装备）。</summary>
+    public const string YulinArmor = "equipment.yulin-armor";
+    /// <summary>烈火符残卷。</summary>
+    public const string BlazingBlastFragment = "item.fragment.blazing-blast";
     /// <summary>寻灵香。</summary>
     public const string GatheringIncense = "item.gathering-incense";
     /// <summary>地火引。</summary>

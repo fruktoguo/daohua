@@ -1553,28 +1553,6 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
             return CommandResult.Fail("INVALID_PAYLOAD", "缺少战斗配置参数。");
         }
 
-        CombatStyle? style = null;
-        if (!string.IsNullOrWhiteSpace(request.Style))
-        {
-            if (!TryParseCombatStyle(request.Style, out var parsedStyle))
-            {
-                return CommandResult.Fail("INVALID_COMBAT_STYLE", "战斗流派无效。");
-            }
-
-            style = parsedStyle;
-        }
-
-        DamageType? damageType = null;
-        if (!string.IsNullOrWhiteSpace(request.DamageType))
-        {
-            if (!TryParseDamageType(request.DamageType, out var parsedDamageType))
-            {
-                return CommandResult.Fail("INVALID_DAMAGE_TYPE", "伤害类型无效。");
-            }
-
-            damageType = parsedDamageType;
-        }
-
         CombatAbilitySlot[]? abilities = null;
         if (request.AbilitySlots is not null)
         {
@@ -1636,8 +1614,6 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
 
         return SimulationEngine.SetCombatLoadout(
             state,
-            style,
-            damageType,
             abilities,
             consumables,
             request.CombatDropRate,

@@ -478,7 +478,7 @@ public static partial class CombatSimulator
         var defense = Math.Max(10, loadout.DefenseLevel);
         var swordsmanship = Math.Max(10, loadout.SwordsmanshipLevel);
         var talisman = Math.Max(10, loadout.TalismanLevel);
-        var combatStyle = equipment.Style ?? loadout.Style;
+        var combatStyle = equipment.Style ?? CombatStyle.Body;
 
         // 六维根基百分比加成乘区 (每点提供 1% 对应的领域增益)
         var staminaBonus = stamina * 0.01;
@@ -551,7 +551,7 @@ public static partial class CombatSimulator
             natureResistance,
             fireResistance,
             combatStyle,
-            equipment.DamageType ?? loadout.DamageType,
+            equipment.DamageType ?? DamageType.Physical,
             null,
             Math.Max(0, loadout.Tenacity + equipment.Tenacity),
             hpRegen,

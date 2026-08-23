@@ -52,16 +52,7 @@ public static class SimulationEngine
             PresenceMode = PresenceMode.Online
         };
 
-        state.Queue.AutoUseSlots[ActionType.Cultivation][0] = new AutoUseSlot
-        {
-            ItemId = ItemIds.QiGatheringPill,
-            Quantity = 1,
-            Enabled = true
-        };
-        state.Queue.Entries.Add(CreateQueuedAction(ActionIds.GatherHerbs));
-        state.Queue.Entries.Add(CreateQueuedAction(ActionIds.RefineQiPill));
-        state.Queue.Entries.Add(CreateQueuedAction(ActionIds.DrawQi));
-        AddEvent(state, "行动队列已建立：采集 → 炼丹 → 修炼");
+        AddEvent(state, "仙缘初辟，踏入道途。");
         return state;
     }
 
@@ -722,8 +713,6 @@ public static class SimulationEngine
     /// <returns>命令执行结果。</returns>
     public static CommandResult SetCombatLoadout(
         PlayerState state,
-        CombatStyle? style,
-        DamageType? damageType,
         IReadOnlyList<CombatAbilitySlot>? abilitySlots,
         IReadOnlyList<ConsumableSlot>? consumableSlots,
         double? combatDropRate = null,
@@ -734,16 +723,6 @@ public static class SimulationEngine
         IReadOnlyList<EquippedItem>? equipment = null)
     {
         ArgumentNullException.ThrowIfNull(state);
-        if (style is not null && !Enum.IsDefined(style.Value))
-        {
-            return CommandResult.Fail("INVALID_COMBAT_STYLE", "战斗流派无效。");
-        }
-
-        if (damageType is not null && !Enum.IsDefined(damageType.Value))
-        {
-            return CommandResult.Fail("INVALID_DAMAGE_TYPE", "伤害类型无效。");
-        }
-
         if (!ValidateCombatMultiplier(combatDropRate)
             || !ValidateCombatMultiplier(combatDropQuantity)
             || !ValidateCombatMultiplier(combatRareFind))
@@ -828,8 +807,6 @@ public static class SimulationEngine
             state.Combat.Equipment = normalizedEquipment;
         }
 
-        if (style is not null) state.Combat.Style = style.Value;
-        if (damageType is not null) state.Combat.DamageType = damageType.Value;
         if (combatDropRate is not null) state.Combat.CombatDropRate = combatDropRate.Value;
         if (combatDropQuantity is not null) state.Combat.CombatDropQuantity = combatDropQuantity.Value;
         if (combatRareFind is not null) state.Combat.CombatRareFind = combatRareFind.Value;
