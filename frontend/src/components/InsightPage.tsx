@@ -9,7 +9,6 @@ import {
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
   BASELINE_COMBAT_ATTRIBUTES,
   getCumulativeExpForLevel,
-  calculateRootLevelAndProgress,
   calculateRealmInfo,
   calculateRealmProgress,
   calculateBaseAttributes,
