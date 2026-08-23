@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { resolveActionDefinitions } from './ids'
-import { createDemoSnapshot } from './demo'
 import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
 /**
@@ -101,12 +100,66 @@ interface GameStore {
   resetGameStore: () => void
 }
 
-const initial = createDemoSnapshot('local-preview')
-
 const AUTO_USE_SLOT_COUNT = 3
 const COMBAT_ABILITY_SLOT_COUNT = 4
 const COMBAT_CONSUMABLE_SLOT_COUNT = 3
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
+
+function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
+  const nowUnixSeconds = Math.floor(Date.now() / 1000)
+  return {
+    playerId,
+    name: '修士',
+    visual: { renderer: 'text', source: '修' },
+    version: 0,
+    serverTimeUnixSeconds: nowUnixSeconds,
+    serverTimeUnixMilliseconds: nowUnixSeconds * 1000,
+    presenceMode: 'online',
+    queue: {
+      loopEnabled: true,
+      autoUseSlots: {
+        cultivation: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
+        exploration: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
+        alchemy: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
+        combat: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
+      },
+      entries: [],
+    },
+    inventory: [],
+    buffs: [],
+    stats: {
+      qi: 0,
+      spirit: 0,
+      foundationExp: 0,
+      herbsCollected: 0,
+      pillsCrafted: 0,
+      cultivationCycles: 0,
+      completedActions: 0,
+      blockedActions: 0,
+      combatWins: 0,
+      combatLosses: 0,
+      combatExperience: 0,
+      combatDamageDealt: 0,
+      combatDamageTaken: 0,
+    },
+    world: {
+      mapId: 'map.qingyun-mountains',
+      nodeId: 'node.herb-vale',
+      edgeId: null,
+      edgeProgress: 0,
+      x: 13,
+      y: 63,
+      locationName: '青岚药谷',
+      cultivationMultiplier: 1,
+      availableActionIds: ['explore.gather-ningxue-grass', 'combat.hunt-qi-beast'],
+      encounterIds: ['encounter.qi-beast'],
+      npcs: [],
+      buildings: [],
+    },
+  }
+}
+
+const initial = createInitialSnapshot()
 
 /**
  * 归一化单个自动消耗槽位数据，确保默认值完整
