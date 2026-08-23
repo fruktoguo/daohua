@@ -214,19 +214,13 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
 
   // 4. 生平记录 (斩妖为怪物击败数，破敌严格为击败玩家数，败走为败退次数，苦修为修炼时长，全部向下取整)
   const biographyData = useMemo(() => {
-    const normalKills: number = Math.floor(stats.combatEnemiesDefeated ?? 0.0)
-    const eliteKills: number = 0.0
-    const bossKills: number = 0.0
-    const totalMonsters: number = normalKills + eliteKills + bossKills
+    const totalMonsters: number = Math.floor(stats.combatEnemiesDefeated ?? 0.0)
     const playersDefeated: number = Math.floor(stats.combatPlayersDefeated ?? 0.0)
     const totalDefeats: number = Math.floor(stats.combatLosses ?? 0.0)
     const cultivationSeconds: number = Math.floor((stats.cultivationCycles ?? 0.0) * 10.0)
     const cultivationHours: number = Math.floor(cultivationSeconds / 3600.0)
 
     return {
-      normalKills,
-      eliteKills,
-      bossKills,
       totalMonsters,
       playersDefeated,
       totalDefeats,
@@ -632,9 +626,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupAdventure')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.normalKills')} value={biographyData.normalKills} tone="slate" tooltip={t('insight.bio.normalKillsTooltip')} />
-                <PillStatLabel label={t('insight.bio.eliteKills')} value={biographyData.eliteKills} tone="cyan" tooltip={t('insight.bio.eliteKillsTooltip')} />
-                <PillStatLabel label={t('insight.bio.bossKills')} value={biographyData.bossKills} tone="gold" tooltip={t('insight.bio.bossKillsTooltip')} />
                 <PillStatLabel label={t('insight.bio.totalMonsters')} value={biographyData.totalMonsters} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
               </div>
             </div>
