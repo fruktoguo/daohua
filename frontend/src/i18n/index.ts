@@ -198,7 +198,26 @@ if (initialLocale !== 'zh-CN') {
   })
 }
 
+function flattenDict(obj: unknown, prefix = ''): Record<string, string> {
+  const result: Record<string, string> = {}
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return result
+  for (const [key, value] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      Object.assign(result, flattenDict(value, fullKey))
+    } else if (value !== undefined) {
+      result[fullKey] = String(value)
+    }
+  }
+  return result
+}
+
+const ZH_FLAT_CACHE: Record<string, string> = flattenDict(zhCN)
+
 function lookup(dict: Messages, key: string): string | undefined {
+  if (ZH_FLAT_CACHE[key] !== undefined) {
+    return ZH_FLAT_CACHE[key]
+  }
   let node: unknown = dict
   for (const part of key.split('.')) {
     if (node === null || typeof node !== 'object') return undefined
