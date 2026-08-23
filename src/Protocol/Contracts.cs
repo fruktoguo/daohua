@@ -317,7 +317,12 @@ public sealed record ItemDefinitionDto(
     double TriggerHpRatio = 0.6,
     bool TriggerAtCombatStart = false,
     IReadOnlyList<CombatTriggerDto>? DefaultCombatTriggers = null,
-    IReadOnlyList<ItemBuffEffectDto>? BuffEffects = null);
+    IReadOnlyList<ItemBuffEffectDto>? BuffEffects = null,
+    double DurationSeconds = 0,
+    bool IsContinuous = false,
+    double CultivationMultiplier = 1.0,
+    double GatheringMultiplier = 1.0,
+    double AlchemyMultiplier = 1.0);
 
 /// <summary>
 /// 物品附加的 Buff 增益效果定义传输对象。

@@ -150,7 +150,12 @@ public static class StateMapper
                 buff.DamageRatio,
                 buff.AttackSpeedRatio,
                 buff.GatheringOutputMultiplier,
-                buff.AlchemyOutputMultiplier)).ToArray());
+                buff.AlchemyOutputMultiplier)).ToArray(),
+            DurationSeconds: consumable?.DurationSeconds ?? 0.0,
+            IsContinuous: consumable?.IsContinuous ?? (consumable?.DurationSeconds > 0),
+            CultivationMultiplier: consumable?.CultivationMultiplier ?? 1.0,
+            GatheringMultiplier: consumable?.GatheringMultiplier ?? 1.0,
+            AlchemyMultiplier: consumable?.AlchemyMultiplier ?? 1.0);
     }
 
     public static CombatAbilityDto ToCombatAbility(CombatAbilityDefinition definition)

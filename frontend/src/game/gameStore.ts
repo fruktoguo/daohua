@@ -116,6 +116,7 @@ function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined): AutoUseSlot
     itemId: slot?.itemId ?? null,
     quantity: slot?.quantity ?? 1,
     enabled: slot?.enabled ?? false,
+    remainingDurationSeconds: slot?.remainingDurationSeconds ?? 0,
     triggers: slot?.triggers ?? [],
   }
 }

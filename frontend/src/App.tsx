@@ -679,6 +679,8 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
             <div className="auto-use-slot" key={index}>
               <ItemUseSlot
                 item={selectedItem}
+                remainingDurationSeconds={slot.remainingDurationSeconds}
+                totalDurationSeconds={selectedDefinition?.durationSeconds}
                 onClick={() => setPickerIndex(index)}
               />
             </div>

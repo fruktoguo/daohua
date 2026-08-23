@@ -406,9 +406,58 @@
 :is(
   .item-use-slot-tooltip,
   .combat-ability-slot-shell
-):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition {
+):is(:hover, :focus-visible, :focus-within) .item-slot-inline-action--condition:hover:not(:disabled) {
   filter: brightness(1.12) drop-shadow(0 0 4px rgba(201, 180, 109, 0.28));
   transform: none;
+}
+
+/* 持续消耗品剩余时间胶囊与进度条 */
+.item-slot-duration-badge {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 1px 4px;
+  background: rgba(10, 24, 20, 0.94);
+  border: 1px solid rgba(80, 200, 160, 0.65);
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), 0 0 6px rgba(80, 200, 160, 0.3);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.item-slot-duration-text {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: #7efcd0;
+  line-height: 1.1;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+.item-slot-duration-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #32d69f, #7efcd0);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.item-use-slot-shell.is-continuous-active {
+  box-shadow: 0 0 8px rgba(80, 200, 160, 0.25);
+}
+
+.item-use-slot.item-use-slot--continuous-active .item-tile {
+  border-color: rgba(80, 200, 160, 0.55);
 }
 
 .auto-use-tray {

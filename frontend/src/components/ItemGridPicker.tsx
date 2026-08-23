@@ -216,6 +216,8 @@ export function ItemUseSlot({
   cooldownOverlay,
   conditionCount = 0,
   item,
+  remainingDurationSeconds = 0,
+  totalDurationSeconds = 0,
   onClick,
   onCondition,
 }: {
@@ -225,6 +227,10 @@ export function ItemUseSlot({
   conditionCount?: number
   /** 当前装配的物品信息 (null 为空槽) */
   item: ItemPickerEntry | null
+  /** 已开启的持续消耗品剩余有效秒数（银河奶牛式） */
+  remainingDurationSeconds?: number
+  /** 持续消耗品单件总有效秒数 */
+  totalDurationSeconds?: number
   /** 点击槽位选择/更换物品回调 */
   onClick: () => void
   /** 点击编辑战斗触发条件回调 */
@@ -241,6 +247,14 @@ export function ItemUseSlot({
 
   const metadata = getMetadata(item, t)
   const depleted = item.amount <= 0
+  const effectiveTotal = totalDurationSeconds > 0
+    ? totalDurationSeconds
+    : (item.definition?.durationSeconds ?? 0)
+  const isContinuousActive = remainingDurationSeconds > 0
+  const progressRatio = effectiveTotal > 0
+    ? Math.min(100, Math.max(0, (remainingDurationSeconds / effectiveTotal) * 100))
+    : 0
+
   return (
     <ItemTooltipTarget
       amount={item.amount}
@@ -250,10 +264,10 @@ export function ItemUseSlot({
       metadata={metadata}
       tabIndex={-1}
     >
-      <span className={`item-use-slot-shell${depleted ? ' is-depleted' : ''}`}>
+      <span className={`item-use-slot-shell${depleted ? ' is-depleted' : ''}${isContinuousActive ? ' is-continuous-active' : ''}`}>
         <button
           aria-label={t('market.picker.currentItem', { name: depleted ? `${item.name}${t('market.picker.insufficientAmount')}` : item.name })}
-          className={`item-use-slot${depleted ? ' item-use-slot--depleted' : ''}`}
+          className={`item-use-slot${depleted ? ' item-use-slot--depleted' : ''}${isContinuousActive ? ' item-use-slot--continuous-active' : ''}`}
           onClick={onClick}
           type="button"
         >
@@ -266,6 +280,21 @@ export function ItemUseSlot({
             rarity={metadata.rarity}
           />
         </button>
+        {isContinuousActive && (
+          <span className="item-slot-duration-badge" title={`持续加成生效中：剩余 ${Math.ceil(remainingDurationSeconds)} 秒`}>
+            <span className="item-slot-duration-text">
+              {remainingDurationSeconds >= 60
+                ? `${Math.floor(remainingDurationSeconds / 60)}m${Math.floor(remainingDurationSeconds % 60)}s`
+                : `${Math.ceil(remainingDurationSeconds)}s`}
+            </span>
+            {progressRatio > 0 && (
+              <span
+                className="item-slot-duration-bar"
+                style={{ width: `${progressRatio}%` }}
+              />
+            )}
+          </span>
+        )}
         {cooldownOverlay}
         {onCondition && (
           <button

@@ -441,6 +441,11 @@ export interface ItemDefinition {
   triggerAtCombatStart: boolean
   defaultCombatTriggers?: CombatTrigger[] | null
   buffEffects?: ItemBuffEffectDefinition[] | null
+  durationSeconds?: number
+  isContinuous?: boolean
+  cultivationMultiplier?: number
+  gatheringMultiplier?: number
+  alchemyMultiplier?: number
 }
 
 /**
