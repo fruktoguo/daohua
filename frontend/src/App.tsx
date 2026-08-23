@@ -24,6 +24,7 @@ import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
 import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemGrade, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
+import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
 import { gameClient } from './network/gameClient'
@@ -948,8 +949,27 @@ const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX
  */
 const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
+  const isCultivation = action.type === 'cultivation'
   const itemCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
+  const inventory = useGameStore(state => state.inventory)
+  const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
+  const buffs = useGameStore(state => state.buffs)
+  const world = useGameStore(state => state.world)
+  const stats = useGameStore(state => state.stats)
+
+  const yieldPreview = useMemo(() => {
+    if (!isCultivation && !isCrafting) return null
+    return calculateActionYieldPreview({
+      action,
+      inventory,
+      items: itemCatalog,
+      autoUseSlots,
+      buffs,
+      world,
+      stats,
+    })
+  }, [action, isCultivation, isCrafting, inventory, itemCatalog, autoUseSlots, buffs, world, stats])
 
   const primaryOutputId = useMemo(() => Object.keys(action.outputs || {})[0] ?? null, [action.outputs])
 
@@ -971,7 +991,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       return { tierLabel, qualityLabel, rarity, itemDef: it }
     }
     return null
-  }, [isCrafting, primaryOutputId, equipmentCatalog, itemCatalog])
+  }, [primaryOutputId, equipmentCatalog, itemCatalog])
 
   const cardButton = (
     <button
@@ -983,33 +1003,52 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true"><Icon name={action.type} /></span>
       <span className="action-card-copy">
         <strong>{action.name}</strong>
-        {isCrafting && meta ? (
+        {isCultivation && yieldPreview?.cultivation ? (
           <div className="action-card-badges">
-            <span className="action-badge action-badge--tier">{meta.tierLabel}</span>
-            <span className={`action-badge action-badge--quality item-badge-rarity-${meta.rarity}`}>{meta.qualityLabel}</span>
+            <span className="action-badge action-badge--cultivation-exp">
+              +{yieldPreview.cultivation.boostedExp.toFixed(0)} 修为
+            </span>
+            <span className="action-badge action-badge--cultivation-qi">
+              +{yieldPreview.cultivation.boostedQi} 灵力
+            </span>
+            {yieldPreview.cultivation.totalMultiplier > 1.0 && (
+              <span className="action-badge action-badge--bonus">
+                +{Math.round((yieldPreview.cultivation.totalMultiplier - 1.0) * 100)}%
+              </span>
+            )}
+            {yieldPreview.cultivation.isPendingBreakthrough ? (
+              <span className="action-badge action-badge--pending">圆满待突破</span>
+            ) : yieldPreview.cultivation.hasFoundationAcceleration ? (
+              <span className="action-badge action-badge--foundation">底蕴加速×3</span>
+            ) : null}
           </div>
-        ) : action.description ? (
-          <span>{action.description}</span>
-        ) : null}
-      </span>
-      <span className="action-card-chevron" aria-hidden="true">›</span>
-    </button>
-  )
+        ) : isCrafting && meta ? (
+           <div className="action-card-badges">
+             <span className="action-badge action-badge--tier">{meta.tierLabel}</span>
+             <span className={`action-badge action-badge--quality item-badge-rarity-${meta.rarity}`}>{meta.qualityLabel}</span>
+           </div>
+         ) : action.description ? (
+           <span>{action.description}</span>
+         ) : null}
+       </span>
+       <span className="action-card-chevron" aria-hidden="true">›</span>
+     </button>
+   )
 
-  if (isCrafting && primaryOutputId) {
-    return (
-      <ItemTooltipTarget
-        definition={meta?.itemDef}
-        displayContents
-        itemId={primaryOutputId}
-      >
-        {cardButton}
-      </ItemTooltipTarget>
-    )
-  }
+   if (isCrafting && primaryOutputId) {
+     return (
+       <ItemTooltipTarget
+         definition={meta?.itemDef}
+         displayContents
+         itemId={primaryOutputId}
+       >
+         {cardButton}
+       </ItemTooltipTarget>
+     )
+   }
 
-  return cardButton
-})
+   return cardButton
+ })
 
 /**
  * 行动详情弹窗中的单个材料消耗/产出条目
@@ -1033,11 +1072,26 @@ const ActionDetailItem = memo(function ActionDetailItem({ itemId, amount, curren
 const ActionModal = memo(function ActionModal({ action, onClose }: { action: ActionDefinition; onClose: () => void }): React.JSX.Element {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
+  const items = useGameStore(state => state.items)
+  const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
+  const buffs = useGameStore(state => state.buffs)
+  const world = useGameStore(state => state.world)
+  const stats = useGameStore(state => state.stats)
   const encounter = useGameStore(state => state.encounters.find(item => item.encounterId === action.combatEncounterId))
   const queueLength = useGameStore(state => state.queue.entries.length)
   const [repeats, setRepeats] = useState(1)
+
+  const yieldPreview = useMemo(() => calculateActionYieldPreview({
+    action,
+    inventory,
+    items,
+    autoUseSlots,
+    buffs,
+    world,
+    stats,
+  }), [action, inventory, items, autoUseSlots, buffs, world, stats])
+
   const inputs = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
-  const outputs = Object.entries(action.outputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
   const titleId = `action-modal-title-${action.id}`
   const startsImmediately = action.executionKind === 'combat-encounter'
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
@@ -1065,13 +1119,74 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
         </div>
         <div>
           <dt>{t('app.action.outputs')}</dt>
-          <dd>{outputs.length === 0 ? <span className="action-detail-empty">{t('app.action.combatDrops')}</span> : outputs.map(output => (
-            <ActionDetailItem amount={output.amount} itemId={output.itemId} key={output.itemId} />
-          ))}</dd>
+          <dd>
+            {action.type === 'cultivation' && yieldPreview.cultivation ? (
+              <div className="action-cultivation-output-group">
+                <div className="action-cultivation-stats">
+                  <span className="action-stat-pill action-stat-pill--exp">
+                    <span className="action-stat-pill-label">{t('app.action.spirit')}</span>
+                    <strong className="action-stat-pill-value">
+                      +{yieldPreview.cultivation.boostedExp.toFixed(0)}
+                    </strong>
+                    {yieldPreview.cultivation.totalMultiplier > 1.0 && (
+                      <span className="action-stat-pill-bonus">
+                        (+{Math.round((yieldPreview.cultivation.totalMultiplier - 1.0) * 100)}%)
+                      </span>
+                    )}
+                  </span>
+                  <span className="action-stat-pill action-stat-pill--qi">
+                    <span className="action-stat-pill-label">{t('app.action.qi')}</span>
+                    <strong className="action-stat-pill-value">
+                      +{yieldPreview.cultivation.boostedQi}
+                    </strong>
+                    {yieldPreview.cultivation.totalMultiplier > 1.0 && (
+                      <span className="action-stat-pill-bonus">
+                        (+{Math.round((yieldPreview.cultivation.totalMultiplier - 1.0) * 100)}%)
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {yieldPreview.cultivation.isPendingBreakthrough ? (
+                  <div className="action-notice-badge action-notice-badge--pending">
+                    <span>⚠️ {t('app.action.pendingBreakthroughNote')}</span>
+                  </div>
+                ) : yieldPreview.cultivation.hasFoundationAcceleration ? (
+                  <div className="action-notice-badge action-notice-badge--foundation">
+                    <span>✨ {t('app.action.foundationAccelerationTip', {
+                      consumed: yieldPreview.cultivation.foundationConsumed.toFixed(0),
+                      gain: yieldPreview.cultivation.actualExpGain.toFixed(0),
+                    })}</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : yieldPreview.itemOutputs.length > 0 ? (
+              yieldPreview.itemOutputs.map(output => (
+                <ActionDetailItem
+                  amount={output.finalAmount}
+                  itemId={output.itemId}
+                  key={output.itemId}
+                />
+              ))
+            ) : (
+              <span className="action-detail-empty">{t('app.action.combatDrops')}</span>
+            )}
+          </dd>
         </div>
-        {action.type === 'cultivation' && (
-          <div><dt>{t('app.action.spirit')}</dt><dd><span className="action-detail-value">{t('app.action.cultivationPerRound')}</span></dd></div>
+
+        {yieldPreview.bonuses.length > 0 && (
+          <div>
+            <dt>{t('app.action.activeBonuses')}</dt>
+            <dd className="action-bonuses-container">
+              {yieldPreview.bonuses.map((bonus, idx) => (
+                <span className={`action-bonus-pill action-bonus-pill--${bonus.type}`} key={idx} title={bonus.description}>
+                  <span className="action-bonus-pill-source">{bonus.sourceName}</span>
+                  <strong className="action-bonus-pill-tag">{bonus.tag}</strong>
+                </span>
+              ))}
+            </dd>
+          </div>
         )}
+
         <div>
           <dt>{t('app.action.duration')}</dt>
           <dd><span className="action-detail-value">
