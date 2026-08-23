@@ -4,8 +4,6 @@
     "name": "青锋剑",
     "description": "青钢淬火锻造的三尺长剑，剑身青光如秋水澄澈。",
     "slot": "weapon",
-    "tier": 1,
-    "quality": 1,
     "attackIntervalMilliseconds": 2400,
     "baseStatRatios": {
       "physicalAttack": 0.2
@@ -20,8 +18,6 @@
     "name": "劈山刀",
     "description": "沉重坚实的山林朴刀，刀背厚重，刀锋刃口雪亮。",
     "slot": "weapon",
-    "tier": 1,
-    "quality": 1,
     "attackIntervalMilliseconds": 3000,
     "baseStatRatios": {
       "physicalAttack": 0.1,
@@ -40,8 +36,6 @@
     "name": "束发巾",
     "description": "以细密麻布缝制的行脚束发头巾，简朴干练。",
     "slot": "head",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "physicalArmor": 0.1
     },
@@ -55,8 +49,6 @@
     "name": "百衲甲",
     "description": "多层坚韧粗布与兽皮拼接缝制的护身短甲，结实耐磨。",
     "slot": "armor",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "physicalArmor": 0.2
     },
@@ -70,8 +62,6 @@
     "name": "扎口裤",
     "description": "下摆收口绑扎的武行布裤，便于翻山越岭与近身搏击。",
     "slot": "legs",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "physicalArmor": 0.1
     },
@@ -85,8 +75,6 @@
     "name": "行山靴",
     "description": "鹿皮底厚麻短靴，靴帮结实，行走山林落足无声。",
     "slot": "boots",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "evasion": 0.1
     },
@@ -100,8 +88,6 @@
     "name": "兽牙坠",
     "description": "以凶兽獠牙穿系而成的粗犷项坠，野性十足。",
     "slot": "trinket",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "physicalAttack": 0.1
     },
@@ -115,8 +101,6 @@
     "name": "九节杖",
     "description": "老山竹根削成的九节法杖，通体油亮光滑。",
     "slot": "weapon",
-    "tier": 1,
-    "quality": 1,
     "attackIntervalMilliseconds": 2400,
     "baseStatRatios": {
       "spellAttack": 0.2
@@ -131,8 +115,6 @@
     "name": "素心琴",
     "description": "以山中老桐木制成的七弦古琴，音质清越素雅。",
     "slot": "weapon",
-    "tier": 1,
-    "quality": 1,
     "attackIntervalMilliseconds": 2800,
     "baseStatRatios": {
       "spellAttack": 0.14
@@ -150,8 +132,6 @@
     "name": "混元巾",
     "description": "道家修士常戴的素色道巾，轻柔透气。",
     "slot": "head",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "spellResistance": 0.1
     },
@@ -165,8 +145,6 @@
     "name": "素麻袍",
     "description": "以粗麻纺织的宽松道袍，宽袖飘逸，不染俗尘。",
     "slot": "armor",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "spellResistance": 0.2
     },
@@ -180,8 +158,6 @@
     "name": "行气裤",
     "description": "宽大舒适的练功长裤，透气吸汗，利于周天行气。",
     "slot": "legs",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "spellResistance": 0.1
     },
@@ -195,8 +171,6 @@
     "name": "十方鞋",
     "description": "云游道人常穿的十方布鞋，鞋底轻软舒适。",
     "slot": "boots",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "evasion": 0.1
     },
@@ -210,8 +184,6 @@
     "name": "桃木符",
     "description": "百年阳坡桃木雕刻而成的辟邪木符，散发着草木幽香。",
     "slot": "trinket",
-    "tier": 1,
-    "quality": 1,
     "baseStatRatios": {
       "spellAttack": 0.1
     },

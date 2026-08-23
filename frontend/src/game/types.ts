@@ -691,6 +691,9 @@ export interface CombatEquipmentDefinition {
   tier: number
   stats: CombatEquipmentStats
   enhancementBonus: CombatEquipmentStats
+  baseStatRatios?: Record<string, number>
+  flatStats?: Record<string, number>
+  specialMechanics?: Record<string, number>
 }
 
 /**

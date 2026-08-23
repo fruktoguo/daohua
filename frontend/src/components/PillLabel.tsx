@@ -154,9 +154,16 @@ export const PillStatLabel = memo(function PillStatLabel({
 
   if (tooltip) {
     if (isNumeric) {
+      const tooltipNode =
+        typeof tooltip === 'string' ? (
+          <div className="daohua-floating-tooltip-text">{tooltip}</div>
+        ) : (
+          tooltip
+        )
       return (
         <FloatingPopover
-          content={tooltip}
+          className="daohua-floating-tooltip-simple"
+          content={tooltipNode}
           interactive={false}
           placement="top"
           quantity={numericVal}

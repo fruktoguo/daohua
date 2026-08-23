@@ -4,18 +4,11 @@
     "name": "魔化野兔",
     "visual": {
       "renderer": "text",
-      "source": "兔",
-      "poster": null
+      "source": "兔"
     },
-    "style": "body",
-    "level": 1,
-    "tier": 1,
-    "rank": "minion",
     "budgetCost": 10,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 1.15,
-      "mp": 0.0,
       "ad": 0.3,
       "armor": 0.65,
       "hit": 1.0,
@@ -28,26 +21,20 @@
         "minQuantity": 1,
         "maxQuantity": 1
       }
-    ],
-    "rareDropTable": [],
-    "skills": [],
-    "category": "physical",
-    "element": "none"
+    ]
   },
   {
     "id": "enemy.wood-spirit",
     "name": "木灵",
     "visual": {
       "renderer": "text",
-      "source": "木",
-      "poster": null
+      "source": "木"
     },
     "style": "fiveElements",
+    "category": "spell",
+    "element": "wood",
     "level": 3,
-    "tier": 1,
-    "rank": "minion",
     "budgetCost": 15,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 1.3,
       "mp": 1.3,
@@ -78,31 +65,26 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.palm-lightning",
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ],
-    "category": "spell",
-    "element": "wood"
+    ]
   },
   {
     "id": "enemy.fire-spirit",
     "name": "火灵",
     "visual": {
       "renderer": "text",
-      "source": "火",
-      "poster": null
+      "source": "火"
     },
     "style": "fiveElements",
+    "category": "spell",
+    "element": "fire",
     "level": 5,
-    "tier": 1,
-    "rank": "minion",
     "budgetCost": 18,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 1.23,
       "mp": 1.3,
@@ -133,31 +115,25 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.blazing-blast",
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ],
-    "category": "spell",
-    "element": "fire"
+    ]
   },
   {
     "id": "enemy.demon-ape",
     "name": "魔猿",
     "visual": {
       "renderer": "text",
-      "source": "猿",
-      "poster": null
+      "source": "猿"
     },
     "style": "sword",
     "level": 8,
-    "tier": 1,
     "rank": "elite",
     "budgetCost": 35,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 0.87,
       "mp": 1.15,
@@ -169,7 +145,6 @@
       "break": 1.09,
       "parry": 1.09
     },
-    "enrageTimeMilliseconds": 180000,
     "dropTable": [
       {
         "itemId": "item.beast-hide",
@@ -196,31 +171,24 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.heavy-slash",
         "level": 1,
         "triggerHpRatio": 0.9
       }
-    ],
-    "category": "physical",
-    "element": "none"
+    ]
   },
   {
     "id": "enemy.armored-bear",
     "name": "铁甲熊",
     "visual": {
       "renderer": "text",
-      "source": "熊",
-      "poster": null
+      "source": "熊"
     },
-    "style": "body",
     "level": 10,
-    "tier": 1,
     "rank": "elite",
     "budgetCost": 45,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 1.08,
       "mp": 1.15,
@@ -232,10 +200,6 @@
       "break": 0.72,
       "parry": 1.45
     },
-    "tenacity": 20,
-    "criticalAvoidance": 0.1,
-    "damageAbsorptionRatio": 0.05,
-    "enrageTimeMilliseconds": 180000,
     "dropTable": [
       {
         "itemId": "item.beast-bone",
@@ -274,31 +238,25 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.taunt",
         "level": 1,
         "triggerHpRatio": 0.8
       }
-    ],
-    "category": "physical",
-    "element": "none"
+    ]
   },
   {
     "id": "enemy.chang-tiger",
     "name": "伥虎",
     "visual": {
       "renderer": "text",
-      "source": "虎",
-      "poster": null
+      "source": "虎"
     },
     "style": "blade",
     "level": 12,
-    "tier": 1,
     "rank": "boss",
     "budgetCost": 100,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 0.7,
       "mp": 1.73,
@@ -311,12 +269,6 @@
       "break": 1.16,
       "parry": 1.16
     },
-    "tenacity": 30,
-    "pierceChance": 0.05,
-    "lifeStealRatio": 0.02,
-    "criticalDamageRatio": 0.2,
-    "criticalAvoidance": 0.05,
-    "enrageTimeMilliseconds": 240000,
     "dropTable": [
       {
         "itemId": "item.beast-hide",
@@ -367,7 +319,6 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.heavy-slash",
@@ -384,24 +335,19 @@
         "level": 1,
         "triggerHpRatio": 0.4
       }
-    ],
-    "category": "physical",
-    "element": "none"
+    ]
   },
   {
     "id": "enemy.rift-wolf",
     "name": "裂齿妖狼",
     "visual": {
       "renderer": "text",
-      "source": "狼",
-      "poster": null
+      "source": "狼"
     },
     "style": "sword",
     "level": 14,
     "tier": 2,
-    "rank": "minion",
     "budgetCost": 30,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 1.29,
       "mp": 0.89,
@@ -431,31 +377,27 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.chain-strike",
         "level": 1,
         "triggerHpRatio": 0.85
       }
-    ],
-    "category": "physical",
-    "element": "none"
+    ]
   },
   {
     "id": "enemy.star-flame-crow",
     "name": "星屑火鸦",
     "visual": {
       "renderer": "text",
-      "source": "鸦",
-      "poster": null
+      "source": "鸦"
     },
     "style": "fiveElements",
+    "category": "spell",
+    "element": "fire",
     "level": 16,
     "tier": 2,
-    "rank": "minion",
     "budgetCost": 35,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 1.15,
       "mp": 1.33,
@@ -498,31 +440,27 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.palm-lightning",
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ],
-    "category": "spell",
-    "element": "fire"
+    ]
   },
   {
     "id": "enemy.plunder-cultivator",
     "name": "掠灵邪修",
     "visual": {
       "renderer": "text",
-      "source": "修",
-      "poster": null
+      "source": "修"
     },
     "style": "talisman",
+    "category": "spell",
+    "element": "wood",
     "level": 18,
     "tier": 2,
-    "rank": "minion",
     "budgetCost": 40,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 1.2,
       "mp": 1.48,
@@ -553,31 +491,26 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.lightning-attraction",
         "level": 1,
         "triggerHpRatio": 0.85
       }
-    ],
-    "category": "spell",
-    "element": "wood"
+    ]
   },
   {
     "id": "enemy.blade-corpse",
     "name": "残刃尸煞",
     "visual": {
       "renderer": "text",
-      "source": "煞",
-      "poster": null
+      "source": "煞"
     },
     "style": "blade",
     "level": 20,
     "tier": 2,
     "rank": "elite",
     "budgetCost": 80,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 0.84,
       "mp": 1.23,
@@ -589,12 +522,6 @@
       "break": 1.11,
       "parry": 1.11
     },
-    "tenacity": 25,
-    "pierceChance": 0.05,
-    "lifeStealRatio": 0.02,
-    "criticalDamageRatio": 0.2,
-    "criticalAvoidance": 0.05,
-    "enrageTimeMilliseconds": 180000,
     "dropTable": [
       {
         "itemId": "item.beast-fang",
@@ -621,7 +548,6 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.heavy-slash",
@@ -638,24 +564,22 @@
         "level": 1,
         "triggerHpRatio": 0.5
       }
-    ],
-    "category": "physical",
-    "element": "none"
+    ]
   },
   {
     "id": "enemy.fallen-devil-priest",
     "name": "坠魔祭司",
     "visual": {
       "renderer": "text",
-      "source": "祭",
-      "poster": null
+      "source": "祭"
     },
     "style": "fiveElements",
+    "category": "spell",
+    "element": "wood",
     "level": 22,
     "tier": 2,
     "rank": "elite",
     "budgetCost": 90,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 0.8,
       "mp": 1.48,
@@ -665,9 +589,6 @@
       "hit": 0.89,
       "eva": 0.98
     },
-    "tenacity": 20,
-    "criticalAvoidance": 0.05,
-    "enrageTimeMilliseconds": 180000,
     "dropTable": [
       {
         "itemId": "item.soul-talisman",
@@ -694,7 +615,6 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.palm-lightning",
@@ -711,24 +631,20 @@
         "level": 1,
         "triggerHpRatio": 0.6
       }
-    ],
-    "category": "spell",
-    "element": "wood"
+    ]
   },
   {
     "id": "enemy.falling-star-beast",
     "name": "坠星兽",
     "visual": {
       "renderer": "text",
-      "source": "星",
-      "poster": null
+      "source": "星"
     },
     "style": "blade",
     "level": 24,
     "tier": 2,
     "rank": "boss",
     "budgetCost": 200,
-    "attackIntervalMilliseconds": 1000,
     "weights": {
       "hp": 0.67,
       "mp": 2.36,
@@ -740,13 +656,6 @@
       "break": 1.24,
       "parry": 1.24
     },
-    "tenacity": 50,
-    "pierceChance": 0.1,
-    "lifeStealRatio": 0.03,
-    "criticalDamageRatio": 0.3,
-    "criticalAvoidance": 0.1,
-    "damageAbsorptionRatio": 0.05,
-    "enrageTimeMilliseconds": 360000,
     "dropTable": [
       {
         "itemId": "item.beast-fang",
@@ -797,7 +706,6 @@
         "maxQuantity": 1
       }
     ],
-    "rareDropTable": [],
     "skills": [
       {
         "abilityId": "ability.heavy-slash",
@@ -819,8 +727,6 @@
         "level": 1,
         "triggerHpRatio": 0.3
       }
-    ],
-    "category": "physical",
-    "element": "none"
+    ]
   }
 ]

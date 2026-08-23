@@ -160,37 +160,41 @@ public static class GameDataCatalog
         CombatEncounterConfig config,
         IReadOnlyDictionary<string, CombatantDefinition> monsters)
     {
+        var randomSpawns = config.RandomSpawns ?? [];
+        var bossEnemyIds = config.BossEnemyIds ?? [];
+        var firstEnemy = randomSpawns.Count > 0
+            ? monsters[randomSpawns[0].EnemyId]
+            : (bossEnemyIds.Count > 0 ? monsters[bossEnemyIds[0]] : null!);
+
         return new CombatEncounterDefinition
         {
             Id = config.Id,
             Name = config.Name,
-            Enemy = config.RandomSpawns.Count > 0
-                ? monsters[config.RandomSpawns[0].EnemyId]
-                : monsters[config.BossEnemyIds[0]],
-            RandomSpawns = config.RandomSpawns.Select(spawn => new CombatSpawnDefinition
+            Enemy = firstEnemy,
+            RandomSpawns = randomSpawns.Select(spawn => new CombatSpawnDefinition
             {
                 Enemy = monsters[spawn.EnemyId],
                 Weight = spawn.Weight,
                 Strength = spawn.Strength
             }).ToArray(),
-            MaxSpawnCount = config.MaxSpawnCount,
-            MaxTotalStrength = config.MaxTotalStrength,
-            MinBudget = config.MinBudget > 0 ? config.MinBudget : 10.0,
-            MaxBudget = config.MaxBudget > 0 ? config.MaxBudget : 50.0,
-            EliteInterval = config.EliteInterval > 0 ? config.EliteInterval : 5,
+            MaxSpawnCount = config.MaxSpawnCount ?? 3,
+            MaxTotalStrength = config.MaxTotalStrength ?? 50,
+            MinBudget = config.MinBudget is > 0 ? config.MinBudget.Value : 10.0,
+            MaxBudget = config.MaxBudget is > 0 ? config.MaxBudget.Value : 50.0,
+            EliteInterval = config.EliteInterval is > 0 ? config.EliteInterval.Value : 5,
             EliteEnemies = (config.EliteEnemyIds ?? []).Where(monsters.ContainsKey).Select(enemyId => monsters[enemyId]).ToArray(),
-            BossEnemies = config.BossEnemyIds.Where(monsters.ContainsKey).Select(enemyId => monsters[enemyId]).ToArray(),
-            BattlesPerBoss = config.BattlesPerBoss,
-            SearchMilliseconds = config.SearchMilliseconds,
-            RespawnMilliseconds = config.RespawnMilliseconds,
-            PlayerRespawnMilliseconds = config.PlayerRespawnMilliseconds,
-            ExperiencePerWin = config.ExperiencePerWin,
-            SpiritMinPerWin = config.SpiritMinPerWin,
-            SpiritMaxPerWin = config.SpiritMaxPerWin,
-            EnrageTimeMilliseconds = config.EnrageTimeMilliseconds,
-            EnrageTickMilliseconds = config.EnrageTickMilliseconds,
-            MaxEnrageStacks = config.MaxEnrageStacks,
-            EnrageRatioPerStack = config.EnrageRatioPerStack,
+            BossEnemies = bossEnemyIds.Where(monsters.ContainsKey).Select(enemyId => monsters[enemyId]).ToArray(),
+            BattlesPerBoss = config.BattlesPerBoss ?? 0,
+            SearchMilliseconds = config.SearchMilliseconds ?? 20000,
+            RespawnMilliseconds = config.RespawnMilliseconds ?? 5000,
+            PlayerRespawnMilliseconds = config.PlayerRespawnMilliseconds ?? 180000,
+            ExperiencePerWin = config.ExperiencePerWin ?? 0L,
+            SpiritMinPerWin = config.SpiritMinPerWin ?? 0L,
+            SpiritMaxPerWin = config.SpiritMaxPerWin ?? 0L,
+            EnrageTimeMilliseconds = config.EnrageTimeMilliseconds ?? 180000,
+            EnrageTickMilliseconds = config.EnrageTickMilliseconds ?? 60000,
+            MaxEnrageStacks = config.MaxEnrageStacks ?? 10,
+            EnrageRatioPerStack = config.EnrageRatioPerStack ?? 0.1,
             DropTable = config.DropTable ?? [],
             RareDropTable = config.RareDropTable ?? []
         };

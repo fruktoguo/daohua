@@ -437,6 +437,12 @@ public sealed class CombatEquipmentDefinition
     public EquipmentCombatStats Stats { get; init; } = new();
     /// <summary>每级强化的属性增量加成。</summary>
     public EquipmentCombatStats EnhancementBonus { get; init; } = new();
+    /// <summary>基础 14 属性百分比加成字典（如 physicalAttack: 0.20）。</summary>
+    public IReadOnlyDictionary<string, double> BaseStatRatios { get; init; } = System.Collections.Frozen.FrozenDictionary<string, double>.Empty;
+    /// <summary>额外全属性固定值加成字典（如 physicalAttack: 10, accuracy: 10, maxHitpoints: 6）。</summary>
+    public IReadOnlyDictionary<string, double> FlatStats { get; init; } = System.Collections.Frozen.FrozenDictionary<string, double>.Empty;
+    /// <summary>特殊机制词条字典（如 threatRatio: 2.0, healingBonusRatio: 0.50）。</summary>
+    public IReadOnlyDictionary<string, double> SpecialMechanics { get; init; } = System.Collections.Frozen.FrozenDictionary<string, double>.Empty;
 }
 
 /// <summary>

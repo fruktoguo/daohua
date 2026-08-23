@@ -213,10 +213,94 @@ function describeItemEffects(definition?: ItemDefinition): string[] {
 
 function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string[] {
   if (!equipment) return []
-  // 非渲染辅助路径：词条行由调用方组件的重渲染携带语言切换。
   const t = getT()
-  const stats = equipment.stats
   const lines: string[] = []
+
+  const ratioLabels: Record<string, string> = {
+    physicalAttack: '物理攻击',
+    spellAttack: '术法攻击',
+    damage: '攻击威能',
+    physicalArmor: '物理护甲',
+    armor: '物理护甲',
+    spellResistance: '法术抗性',
+    mr: '法术抗性',
+    accuracy: '命中',
+    hit: '命中',
+    evasion: '闪避',
+    eva: '闪避',
+    criticalChance: '暴击率',
+    criticalDamage: '暴击伤害',
+    damageAbsorption: '伤害减免',
+    actionSpeed: '施法攻速',
+    cooldownReduction: '冷却缩减',
+  }
+
+  const flatLabels: Record<string, string> = {
+    physicalAttack: '物理攻击',
+    spellAttack: '术法攻击',
+    accuracy: '命中',
+    evasion: '闪避',
+    maxHitpoints: '生命上限',
+    hp: '生命上限',
+    maxManapoints: '灵力上限',
+    mp: '灵力上限',
+    physicalArmor: '物理护甲',
+    armor: '物理护甲',
+    spellResistance: '法术抗性',
+    mr: '法术抗性',
+    hitpointRegen: '生命回复',
+    hpRegen: '生命回复',
+    manapointRegen: '灵力回复',
+    mpRegen: '灵力回复',
+    criticalChance: '暴击率',
+    tenacity: '韧性',
+  }
+
+  const specialLabels: Record<string, (val: number) => string> = {
+    threatRatio: (val) => `额外威胁值 +${Math.round(val * 100)}%`,
+    healingBonusRatio: (val) => `额外治疗提升 +${Math.round(val * 100)}%`,
+  }
+
+  const hasStructured = Boolean(
+    (equipment.baseStatRatios && Object.keys(equipment.baseStatRatios).length > 0) ||
+    (equipment.flatStats && Object.keys(equipment.flatStats).length > 0) ||
+    (equipment.specialMechanics && Object.keys(equipment.specialMechanics).length > 0)
+  )
+
+  if (hasStructured) {
+    if (equipment.baseStatRatios) {
+      for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
+        if (val !== 0) {
+          const label = ratioLabels[key] ?? key
+          lines.push(`${label} ${signedPercent(val)}`)
+        }
+      }
+    }
+    if (equipment.flatStats) {
+      for (const [key, val] of Object.entries(equipment.flatStats)) {
+        if (val !== 0) {
+          const label = flatLabels[key] ?? key
+          if (key === 'criticalChance' && val <= 1.0) {
+            lines.push(`${label} +${formatNumber(val * 100)}%`)
+          } else {
+            lines.push(`${label} +${formatNumber(val)}`)
+          }
+        }
+      }
+    }
+    if (equipment.specialMechanics) {
+      for (const [key, val] of Object.entries(equipment.specialMechanics)) {
+        if (val !== 0) {
+          const describer = specialLabels[key]
+          lines.push(describer ? describer(val) : `${key}: +${val}`)
+        }
+      }
+    }
+    return lines
+  }
+
+  // 兜底回退：当没有结构化字段时读取 stats
+  const stats = equipment.stats
   const addPercent = (label: string, value: number) => {
     if (value !== 0) lines.push(`${label} ${signedPercent(value)}`)
   }
@@ -229,11 +313,6 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
   addPercent(t('market.stat.evasion'), stats.evasionRatio)
   addPercent(t('market.stat.armor'), stats.armor)
   addPercent(t('market.stat.magicRes'), stats.magicResistance)
-  addPercent(t('market.stat.metalRes'), stats.metalResistance)
-  addPercent(t('market.stat.woodRes'), stats.woodResistance)
-  addPercent(t('market.stat.waterRes'), stats.waterResistance)
-  addPercent(t('market.stat.fireRes'), stats.fireResistance)
-  addPercent(t('market.stat.earthRes'), stats.earthResistance)
   addNumber(t('market.stat.tenacity'), stats.tenacity)
   addPercent(t('market.stat.penetration'), stats.penetrationRatio)
   addPercent(t('market.stat.pierceChance'), stats.pierceChance)

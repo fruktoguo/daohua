@@ -136,10 +136,11 @@ public static class DataBudgetResolver
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        // ManaCost = ceil(阶位基准玩家最大灵力 × ManaCostRatio × 0.01)
-        var baseMp = GetTierBaseMaxManapoints(config.Tier);
-        var manaCost = config.ManaCostRatio > 0
-            ? (long)Math.Ceiling(baseMp * config.ManaCostRatio * 0.01)
+        var tier = config.Tier ?? 1;
+        var manaCostRatio = config.ManaCostRatio ?? 0;
+        var baseMp = GetTierBaseMaxManapoints(tier);
+        var manaCost = manaCostRatio > 0
+            ? (long)Math.Ceiling(baseMp * manaCostRatio * 0.01)
             : 0L;
 
         return new CombatAbilityDefinition
@@ -149,33 +150,33 @@ public static class DataBudgetResolver
             Style = config.Style,
             Category = config.Category,
             Element = config.Element,
-            CooldownMilliseconds = config.CooldownMilliseconds,
-            CastMilliseconds = config.CastMilliseconds,
+            CooldownMilliseconds = config.CooldownMilliseconds ?? 0,
+            CastMilliseconds = config.CastMilliseconds ?? 0,
             ManaCost = manaCost,
-            EffectType = config.EffectType,
-            TargetType = config.TargetType,
-            DamageRatio = config.DamageRatio,
-            FlatDamage = config.FlatDamage,
-            DamageRatioLevelBonus = config.DamageRatioLevelBonus,
-            FlatDamageLevelBonus = config.FlatDamageLevelBonus,
-            HealingRatio = config.HealingRatio,
-            FlatHealing = config.FlatHealing,
-            HealingRatioLevelBonus = config.HealingRatioLevelBonus,
-            FlatHealingLevelBonus = config.FlatHealingLevelBonus,
-            DamageOverTimeRatio = config.DamageOverTimeRatio,
-            DamageOverTimeMilliseconds = config.DamageOverTimeMilliseconds,
-            DamageOverTimeTickMilliseconds = config.DamageOverTimeTickMilliseconds,
-            StunChance = config.StunChance,
-            StunMilliseconds = config.StunMilliseconds,
-            BlindChance = config.BlindChance,
-            BlindMilliseconds = config.BlindMilliseconds,
-            SilenceChance = config.SilenceChance,
-            SilenceMilliseconds = config.SilenceMilliseconds,
-            PenetrationRatio = config.PenetrationRatio,
-            ArmorDamageRatio = config.ArmorDamageRatio,
-            HpDrainRatio = config.HpDrainRatio,
-            PierceChance = config.PierceChance,
-            TriggerHpRatio = config.TriggerHpRatio,
+            EffectType = config.EffectType ?? CombatAbilityEffectType.Damage,
+            TargetType = config.TargetType ?? CombatAbilityTargetType.Enemy,
+            DamageRatio = config.DamageRatio ?? 1.0,
+            FlatDamage = config.FlatDamage ?? 0L,
+            DamageRatioLevelBonus = config.DamageRatioLevelBonus ?? 0.0,
+            FlatDamageLevelBonus = config.FlatDamageLevelBonus ?? 0.0,
+            HealingRatio = config.HealingRatio ?? 0.0,
+            FlatHealing = config.FlatHealing ?? 0L,
+            HealingRatioLevelBonus = config.HealingRatioLevelBonus ?? 0.0,
+            FlatHealingLevelBonus = config.FlatHealingLevelBonus ?? 0.0,
+            DamageOverTimeRatio = config.DamageOverTimeRatio ?? 0.0,
+            DamageOverTimeMilliseconds = config.DamageOverTimeMilliseconds ?? 0,
+            DamageOverTimeTickMilliseconds = config.DamageOverTimeTickMilliseconds ?? 3000,
+            StunChance = config.StunChance ?? 0.0,
+            StunMilliseconds = config.StunMilliseconds ?? 0,
+            BlindChance = config.BlindChance ?? 0.0,
+            BlindMilliseconds = config.BlindMilliseconds ?? 0,
+            SilenceChance = config.SilenceChance ?? 0.0,
+            SilenceMilliseconds = config.SilenceMilliseconds ?? 0,
+            PenetrationRatio = config.PenetrationRatio ?? 0.0,
+            ArmorDamageRatio = config.ArmorDamageRatio ?? 0.0,
+            HpDrainRatio = config.HpDrainRatio ?? 0.0,
+            PierceChance = config.PierceChance ?? 0.0,
+            TriggerHpRatio = config.TriggerHpRatio ?? 1.0,
             DefaultTriggers = config.DefaultTriggers ?? []
         };
     }
@@ -223,11 +224,11 @@ public static class DataBudgetResolver
                 EvasionRatio: evasionRatio,
                 Armor: armorRatio,
                 MagicResistance: spellResRatio,
-                MetalResistance: spellResRatio,
-                WoodResistance: spellResRatio,
-                WaterResistance: spellResRatio,
-                FireResistance: spellResRatio,
-                EarthResistance: spellResRatio,
+                MetalResistance: 0.0,
+                WoodResistance: 0.0,
+                WaterResistance: 0.0,
+                FireResistance: 0.0,
+                EarthResistance: 0.0,
                 Tenacity: flats.GetValueOrDefault("tenacity", 0.0),
                 PenetrationRatio: 0.0,
                 PierceChance: 0.0,
@@ -246,7 +247,7 @@ public static class DataBudgetResolver
                 SkillIntensity: skillIntensity,
                 ActionSpeedRatio: ratios.GetValueOrDefault("actionSpeed", 0.0),
                 CooldownReductionRatio: ratios.GetValueOrDefault("cooldownReduction", 0.0),
-                AttackIntervalMilliseconds: config.AttackIntervalMilliseconds,
+                AttackIntervalMilliseconds: config.AttackIntervalMilliseconds ?? 0,
                 Style: config.Style,
                 Category: config.Category,
                 Element: config.Element);
@@ -254,12 +255,13 @@ public static class DataBudgetResolver
         else
         {
             var slotWeight = GetEquipmentSlotWeight(config.Slot);
+            var tier = config.Tier ?? 1;
+            var quality = config.Quality ?? 1;
             var totalBudget = config.Intensity ?? config.Budget ?? (
-                GetTierBaseBudget(config.Tier) * GetQualityMultiplier(config.Quality) * slotWeight * 5.0);
+                GetTierBaseBudget(tier) * GetQualityMultiplier(quality) * slotWeight * 5.0);
             var normalizedWeights = NormalizeWeights(config.Weights);
-            stats = ResolveEquipmentStats(totalBudget, normalizedWeights, config.AttackIntervalMilliseconds, config.Style, config.Category, config.Element);
+            stats = ResolveEquipmentStats(totalBudget, normalizedWeights, config.AttackIntervalMilliseconds ?? 0, config.Style, config.Category, config.Element);
         }
-
         // 如果未显式提供强化成长，自动按 50 级均摊（+20 级刚好获得 +40% 翻倍成长当量）
         var enhancementBonus = config.EnhancementBonus ?? new EquipmentCombatStats(
             AccuracyRatio: stats.AccuracyRatio / 50.0,
@@ -301,9 +303,12 @@ public static class DataBudgetResolver
             Id = config.Id,
             Name = config.Name,
             Slot = config.Slot,
-            Tier = config.Tier,
+            Tier = config.Tier ?? 1,
             Stats = stats,
-            EnhancementBonus = enhancementBonus
+            EnhancementBonus = enhancementBonus,
+            BaseStatRatios = config.BaseStatRatios ?? System.Collections.Frozen.FrozenDictionary<string, double>.Empty,
+            FlatStats = config.FlatStats ?? System.Collections.Frozen.FrozenDictionary<string, double>.Empty,
+            SpecialMechanics = config.SpecialMechanics ?? System.Collections.Frozen.FrozenDictionary<string, double>.Empty
         };
     }
 
@@ -362,7 +367,7 @@ public static class DataBudgetResolver
         if (config.Consumable is { } consConfig)
         {
             var hasConsWeights = consConfig.Weights is { Count: > 0 };
-            var consBudget = consConfig.Intensity ?? (hasConsWeights ? config.Tier * 15.0 : 0);
+            var consBudget = consConfig.Intensity ?? (hasConsWeights ? (config.Tier ?? 1) * 15.0 : 0);
             var normalizedConsWeights = NormalizeWeights(consConfig.Weights);
 
             var hpRestore = consConfig.HitpointRestore ?? (hasConsWeights && normalizedConsWeights.TryGetValue("hitpointrestore", out var wHp)
@@ -403,10 +408,10 @@ public static class DataBudgetResolver
             Name = config.Name,
             Description = config.Description,
             Kind = config.Kind,
-            Category = config.Category,
-            Tier = config.Tier,
-            SellPrice = config.SellPrice,
-            IsTradable = config.IsTradable,
+            Category = config.Category ?? ItemCategory.General,
+            Tier = config.Tier ?? 1,
+            SellPrice = config.SellPrice ?? 0L,
+            IsTradable = config.IsTradable ?? true,
             Consumable = consumable
         };
     }
@@ -661,11 +666,16 @@ public static class DataBudgetResolver
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(abilities);
 
+        var level = config.Level is > 0 ? config.Level.Value : 1;
+        var tier = config.Tier ?? 1;
+        var rank = config.Rank ?? UnitRank.Minion;
+        var attackInterval = config.AttackIntervalMilliseconds is > 0 ? config.AttackIntervalMilliseconds.Value : 1000;
+
         var statRequest = new CharacterStatRequest
         {
-            Level = config.Level > 0 ? config.Level : 1,
-            Tier = config.Tier,
-            Rank = config.Rank,
+            Level = level,
+            Tier = tier,
+            Rank = rank,
             Style = config.Style,
             Category = config.Category,
             Element = config.Element,
@@ -685,9 +695,9 @@ public static class DataBudgetResolver
             AccuracyRating = config.AccuracyRating,
             EvasionRating = config.EvasionRating,
             CriticalRating = config.CriticalRating,
-            CriticalAvoidance = config.CriticalAvoidance != 0 ? config.CriticalAvoidance : null,
-            BreakRating = config.BreakRating != 0 ? config.BreakRating : null,
-            ParryRating = config.ParryRating != 0 ? config.ParryRating : null,
+            CriticalAvoidance = config.CriticalAvoidance is > 0 ? config.CriticalAvoidance : null,
+            BreakRating = config.BreakRating is > 0 ? config.BreakRating : null,
+            ParryRating = config.ParryRating is > 0 ? config.ParryRating : null,
             HpRegen = config.HpRegen,
             MpRegen = config.MpRegen
         };
@@ -714,14 +724,12 @@ public static class DataBudgetResolver
                         ManaCost = baseAbility.ManaCost,
                         EffectType = baseAbility.EffectType,
                         TargetType = baseAbility.TargetType,
-                        DamageRatio = baseAbility.DamageRatio + Math.Max(0, skill.Level - 1) * baseAbility.DamageRatioLevelBonus,
-                        FlatDamage = baseAbility.FlatDamage + (long)(Math.Max(0, skill.Level - 1) * baseAbility.FlatDamageLevelBonus),
+                        DamageRatio = baseAbility.DamageRatio + Math.Max(0, (skill.Level ?? 1) - 1) * baseAbility.DamageRatioLevelBonus,
+                        FlatDamage = baseAbility.FlatDamage + (long)(Math.Max(0, (skill.Level ?? 1) - 1) * baseAbility.FlatDamageLevelBonus),
                         DamageRatioLevelBonus = baseAbility.DamageRatioLevelBonus,
                         FlatDamageLevelBonus = baseAbility.FlatDamageLevelBonus,
-                        HealingRatio = baseAbility.HealingRatio + Math.Max(0, skill.Level - 1) * baseAbility.HealingRatioLevelBonus,
-                        FlatHealing = baseAbility.FlatHealing + (long)(Math.Max(0, skill.Level - 1) * baseAbility.FlatHealingLevelBonus),
-                        HealingRatioLevelBonus = baseAbility.HealingRatioLevelBonus,
-                        FlatHealingLevelBonus = baseAbility.FlatHealingLevelBonus,
+                        HealingRatio = baseAbility.HealingRatio + Math.Max(0, (skill.Level ?? 1) - 1) * baseAbility.HealingRatioLevelBonus,
+                        FlatHealing = baseAbility.FlatHealing + (long)(Math.Max(0, (skill.Level ?? 1) - 1) * baseAbility.FlatHealingLevelBonus),
                         DamageOverTimeRatio = baseAbility.DamageOverTimeRatio,
                         DamageOverTimeMilliseconds = baseAbility.DamageOverTimeMilliseconds,
                         DamageOverTimeTickMilliseconds = baseAbility.DamageOverTimeTickMilliseconds,
@@ -735,7 +743,7 @@ public static class DataBudgetResolver
                         ArmorDamageRatio = baseAbility.ArmorDamageRatio,
                         HpDrainRatio = baseAbility.HpDrainRatio,
                         PierceChance = baseAbility.PierceChance,
-                        TriggerHpRatio = skill.TriggerHpRatio > 0 ? skill.TriggerHpRatio : baseAbility.TriggerHpRatio,
+                        TriggerHpRatio = skill.TriggerHpRatio is > 0 ? skill.TriggerHpRatio.Value : baseAbility.TriggerHpRatio,
                         DefaultTriggers = baseAbility.DefaultTriggers
                     });
                 }
@@ -754,7 +762,7 @@ public static class DataBudgetResolver
             Element = config.Element,
             MaxHitpoints = stats.MaxHitpoints,
             MaxManapoints = stats.MaxManapoints,
-            AttackIntervalMilliseconds = config.AttackIntervalMilliseconds > 0 ? config.AttackIntervalMilliseconds : 1000,
+            AttackIntervalMilliseconds = attackInterval,
             AccuracyRating = stats.AccuracyRating,
             EvasionRating = stats.EvasionRating,
             MaxDamage = stats.MaxDamage,
@@ -766,37 +774,37 @@ public static class DataBudgetResolver
             WaterResistance = stats.WaterResistance,
             FireResistance = stats.FireResistance,
             EarthResistance = stats.EarthResistance,
-            Tenacity = config.Tenacity,
-            PierceChance = config.PierceChance,
-            CurseRatio = config.CurseRatio,
-            FuryRatio = config.FuryRatio,
-            WeakenRatio = config.WeakenRatio,
-            LifeStealRatio = config.LifeStealRatio,
-            ArmorDamageRatio = config.ArmorDamageRatio,
-            HpDrainRatio = config.HpDrainRatio,
+            Tenacity = config.Tenacity ?? 0.0,
+            PierceChance = config.PierceChance ?? 0.0,
+            CurseRatio = config.CurseRatio ?? 0.0,
+            FuryRatio = config.FuryRatio ?? 0.0,
+            WeakenRatio = config.WeakenRatio ?? 0.0,
+            LifeStealRatio = config.LifeStealRatio ?? 0.0,
+            ArmorDamageRatio = config.ArmorDamageRatio ?? 0.0,
+            HpDrainRatio = config.HpDrainRatio ?? 0.0,
             CriticalRating = stats.CriticalRating,
-            CriticalChance = config.CriticalChance,
-            CriticalDamageRatio = config.CriticalDamageRatio,
+            CriticalChance = config.CriticalChance ?? 0.0,
+            CriticalDamageRatio = config.CriticalDamageRatio ?? 0.0,
             CriticalAvoidance = stats.CriticalAvoidance,
-            DamageAbsorptionRatio = config.DamageAbsorptionRatio,
+            DamageAbsorptionRatio = config.DamageAbsorptionRatio ?? 0.0,
             BreakRating = stats.BreakRating,
             ParryRating = stats.ParryRating,
-            SkillIntensity = config.SkillIntensity,
-            DynamicResistanceFactorK = config.DynamicResistanceFactorK,
-            ActionSpeedReductionRatio = config.ActionSpeedReductionRatio,
-            CooldownReductionRatio = config.CooldownReductionRatio,
+            SkillIntensity = config.SkillIntensity ?? 1.0,
+            DynamicResistanceFactorK = config.DynamicResistanceFactorK ?? 1.0,
+            ActionSpeedReductionRatio = config.ActionSpeedReductionRatio ?? 0.0,
+            CooldownReductionRatio = config.CooldownReductionRatio ?? 0.0,
             HpRegen = stats.HpRegen,
             MpRegen = stats.MpRegen,
-            HpRegenPerTenSeconds = config.HpRegenPerTenSeconds,
-            MpRegenPerTenSeconds = config.MpRegenPerTenSeconds,
-            EnrageTimeMilliseconds = config.EnrageTimeMilliseconds,
-            AttackLevel = config.Level > 0 ? config.Level : 1,
-            Tier = config.Tier,
-            Rank = config.Rank,
+            HpRegenPerTenSeconds = config.HpRegenPerTenSeconds ?? 0.0,
+            MpRegenPerTenSeconds = config.MpRegenPerTenSeconds ?? 0.0,
+            EnrageTimeMilliseconds = config.EnrageTimeMilliseconds ?? 0,
+            AttackLevel = level,
+            Tier = tier,
+            Rank = rank,
             ExperienceMultiplier = config.ExperienceMultiplier ?? 1.0,
-            Experience = config.Experience,
-            SpiritMin = config.SpiritMin,
-            SpiritMax = config.SpiritMax,
+            Experience = config.Experience ?? 0L,
+            SpiritMin = config.SpiritMin ?? 0L,
+            SpiritMax = config.SpiritMax ?? 0L,
             BudgetCost = config.BudgetCost is > 0 ? config.BudgetCost.Value : 10.0,
             DropTable = config.DropTable ?? [],
             RareDropTable = config.RareDropTable ?? [],

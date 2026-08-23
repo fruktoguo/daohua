@@ -4,13 +4,7 @@
     "name": "引气入体",
     "description": "吐纳天地灵气，滋养气血经络，积累灵力与修为。",
     "type": "cultivation",
-    "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
-    "inputs": {},
-    "outputs": {}
+    "durationSeconds": 10
   },
   {
     "id": "explore.gather-ningxue-grass",
@@ -18,14 +12,10 @@
     "description": "在幽深背阴的百草谷采摘暗红的凡阶凝血草。",
     "type": "exploration",
     "durationSeconds": 8,
-    "executionKind": "timed",
-    "combatEncounterId": null,
     "availableNodeIds": [
       "node.yunxi-village",
       "node.herb-valley"
     ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
     "outputs": {
       "item.ningxue-grass": 3
     }
@@ -36,13 +26,9 @@
     "description": "在落霞阳坡采伐带有微弱纯阳灵气的坚韧古桃木。",
     "type": "exploration",
     "durationSeconds": 6,
-    "executionKind": "timed",
-    "combatEncounterId": null,
     "availableNodeIds": [
       "node.peach-forest"
     ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
     "outputs": {
       "item.peach-wood": 1
     }
@@ -53,13 +39,9 @@
     "description": "在清石水滩露天砂石层中开采沉重致密的乌铁原矿。",
     "type": "exploration",
     "durationSeconds": 6,
-    "executionKind": "timed",
-    "combatEncounterId": null,
     "availableNodeIds": [
       "node.rock-beach"
     ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
     "outputs": {
       "item.dark-iron": 1
     }
@@ -70,13 +52,9 @@
     "description": "破晓时分在漱玉溪边草木叶尖汲取纯净无根晨露。",
     "type": "exploration",
     "durationSeconds": 6,
-    "executionKind": "timed",
-    "combatEncounterId": null,
     "availableNodeIds": [
       "node.shuyu-brook"
     ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
     "outputs": {
       "item.morning-dew": 1
     }
@@ -87,13 +65,9 @@
     "description": "在腐生古冢死气聚集处采摘吸纳死气伴生的伴灵异花。",
     "type": "exploration",
     "durationSeconds": 8,
-    "executionKind": "timed",
-    "combatEncounterId": null,
     "availableNodeIds": [
       "node.carrion-tomb"
     ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
     "outputs": {
       "item.banling-flower": 1
     }
@@ -104,13 +78,9 @@
     "description": "在畸木焦林采伐吸收星火异气的坚韧引灵松。",
     "type": "exploration",
     "durationSeconds": 8,
-    "executionKind": "timed",
-    "combatEncounterId": null,
     "availableNodeIds": [
       "node.scorched-pines"
     ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
     "outputs": {
       "item.yinlingsong-wood": 1
     }
@@ -121,13 +91,9 @@
     "description": "在荧石铜渊地底深处开采滚烫温热的赤铜矿石。",
     "type": "exploration",
     "durationSeconds": 8,
-    "executionKind": "timed",
-    "combatEncounterId": null,
     "availableNodeIds": [
       "node.fluorite-abyss"
     ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
     "outputs": {
       "item.crimson-copper": 1
     }
@@ -138,10 +104,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.dark-iron": 3
     },
@@ -155,10 +117,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood": 3
     },
@@ -172,10 +130,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.ningxue-grass": 2,
       "item.morning-dew": 1
@@ -190,10 +144,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.crimson-copper": 3
     },
@@ -207,10 +157,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.yinlingsong-wood": 3
     },
@@ -224,10 +170,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.banling-flower": 2,
       "item.morning-dew": 1
@@ -242,10 +184,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 12,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.ningxue-grass": 3
     },
@@ -259,10 +197,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.herb-essence": 1,
       "item.ningxue-grass": 1
@@ -277,10 +211,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.herb-essence": 1,
       "item.banling-flower": 1
@@ -295,10 +225,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.banling-essence": 2,
       "item.demon-core": 1
@@ -313,10 +239,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-iron": 7,
       "item.beast-bone": 1
@@ -331,10 +253,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-iron": 7,
       "item.beast-bone": 1
@@ -349,10 +267,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-iron": 5,
       "item.beast-hide": 1
@@ -367,10 +281,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-iron": 7,
       "item.beast-hide": 1
@@ -385,10 +295,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-iron": 5,
       "item.beast-hide": 1
@@ -403,10 +309,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-iron": 5,
       "item.beast-hide": 1
@@ -421,10 +323,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-iron": 5,
       "item.beast-bone": 1
@@ -439,10 +337,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood-crystal": 7,
       "item.broken-spirit-core": 1
@@ -457,10 +351,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood-crystal": 7,
       "item.broken-spirit-core": 1
@@ -475,10 +365,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood-crystal": 5,
       "item.broken-spirit-core": 1
@@ -493,10 +379,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 15,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood-crystal": 7,
       "item.beast-hide": 1
@@ -511,10 +393,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood-crystal": 5,
       "item.beast-hide": 1
@@ -529,10 +407,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood-crystal": 5,
       "item.beast-hide": 1
@@ -547,10 +421,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.peach-wood-crystal": 5,
       "item.broken-spirit-core": 1
@@ -565,10 +435,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 25,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1
@@ -583,10 +449,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 25,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1
@@ -601,10 +463,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1
@@ -619,10 +477,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 25,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-copper": 7,
       "item.beast-fang": 1
@@ -637,10 +491,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1
@@ -655,10 +505,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1
@@ -673,10 +519,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.refined-copper": 5,
       "item.beast-fang": 1
@@ -691,10 +533,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 25,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.spirit-pine-crystal": 7,
       "item.soul-talisman": 1
@@ -709,10 +547,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 25,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.spirit-pine-crystal": 7,
       "item.soul-talisman": 1
@@ -727,10 +561,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.soul-talisman": 1
@@ -745,10 +575,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 25,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.spirit-pine-crystal": 7,
       "item.fire-feather": 1
@@ -763,10 +589,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.fire-feather": 1
@@ -781,10 +603,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.fire-feather": 1
@@ -799,10 +617,6 @@
     "description": "",
     "type": "alchemy",
     "durationSeconds": 20,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
     "inputs": {
       "item.spirit-pine-crystal": 5,
       "item.soul-talisman": 1
@@ -827,10 +641,7 @@
       "node.rock-beach",
       "node.cloud-gate",
       "node.cloud-peak"
-    ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
-    "outputs": {}
+    ]
   },
   {
     "id": "combat.sweep-twilight-valley",
@@ -848,10 +659,7 @@
       "node.blood-pool",
       "node.bone-pit",
       "node.meteor-crater"
-    ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
-    "outputs": {}
+    ]
   },
   {
     "id": "world.travel",
@@ -860,10 +668,6 @@
     "type": "exploration",
     "durationSeconds": 1,
     "executionKind": "travel",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": true,
-    "inputs": {},
-    "outputs": {}
+    "hiddenFromCatalog": true
   }
 ]

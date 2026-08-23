@@ -162,13 +162,12 @@ export interface ItemMetadata {
 export type ItemCategoryKey =
   | 'material' | 'pill' | 'currency' | 'resource' | 'spiritFood' | 'spiritDrink'
   | 'talisman' | 'loot' | 'rareLoot' | 'manualFragment' | 'explorationSupply'
-  | 'alchemySupply' | 'mainHandImplement' | 'twoHandImplement'
+  | 'alchemySupply' | 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket'
+  | 'mainHandImplement' | 'twoHandImplement'
 
 /**
  * 物品元数据纯数据核心
  */
-// 物品元数据核心：category/rarityLabel 去重为键（game.category.* / game.rarityLabel.*），
-// 专属文本（label/description/source/usage）走 game.item.<itemId>.*。
 interface ItemMetaCore {
   glyph: string
   tone: string
@@ -235,34 +234,34 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.fragment.star-piercer': { glyph: '📜', tone: 'green', rarity: 'spirit', level: 2, category: 'manualFragment' },
   'item.gathering-incense': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, category: 'material' },
   'item.alchemy-flame': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, category: 'material' },
-  'equipment.qingfeng-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'mainHandImplement' },
-  'equipment.pishan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'mainHandImplement' },
-  'equipment.shufa-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.baina-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.zhakou-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.xingshan-boots': { glyph: '👞', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.shouya-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, category: 'rareLoot' },
-  'equipment.jiujie-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'mainHandImplement' },
-  'equipment.suxin-zither': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'mainHandImplement' },
-  'equipment.hunyuan-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.suma-robe': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.xingqi-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.shifang-shoes': { glyph: '👞', tone: 'gray', rarity: 'mundane', level: 1, category: 'twoHandImplement' },
-  'equipment.taomu-talisman': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, category: 'rareLoot' },
-  'equipment.pogang-sword': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'mainHandImplement' },
-  'equipment.zhansha-blade': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'mainHandImplement' },
-  'equipment.chijin-helmet': { glyph: '👑', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.yulin-armor': { glyph: '🥋', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.tazhen-greaves': { glyph: '👖', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.tashan-boots': { glyph: '👞', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.chiwen-ring': { glyph: '💍', tone: 'green', rarity: 'spirit', level: 2, category: 'rareLoot' },
-  'equipment.chaoyuan-staff': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'mainHandImplement' },
-  'equipment.songfeng-zither': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'mainHandImplement' },
-  'equipment.ziwu-crown': { glyph: '👑', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.pichen-shirt': { glyph: '🥋', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.bichen-shoes': { glyph: '👞', tone: 'green', rarity: 'spirit', level: 2, category: 'twoHandImplement' },
-  'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'spirit', level: 2, category: 'rareLoot' },
+  'equipment.qingfeng-sword': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'weapon' },
+  'equipment.pishan-blade': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'weapon' },
+  'equipment.shufa-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, category: 'head' },
+  'equipment.baina-armor': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, category: 'armor' },
+  'equipment.zhakou-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, category: 'legs' },
+  'equipment.xingshan-boots': { glyph: '👞', tone: 'gray', rarity: 'mundane', level: 1, category: 'boots' },
+  'equipment.shouya-pendant': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, category: 'trinket' },
+  'equipment.jiujie-staff': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'weapon' },
+  'equipment.suxin-zither': { glyph: '⚔️', tone: 'gray', rarity: 'mundane', level: 1, category: 'weapon' },
+  'equipment.hunyuan-scarf': { glyph: '👑', tone: 'gray', rarity: 'mundane', level: 1, category: 'head' },
+  'equipment.suma-robe': { glyph: '🥋', tone: 'gray', rarity: 'mundane', level: 1, category: 'armor' },
+  'equipment.xingqi-pants': { glyph: '👖', tone: 'gray', rarity: 'mundane', level: 1, category: 'legs' },
+  'equipment.shifang-shoes': { glyph: '👞', tone: 'gray', rarity: 'mundane', level: 1, category: 'boots' },
+  'equipment.taomu-talisman': { glyph: '💍', tone: 'gray', rarity: 'mundane', level: 1, category: 'trinket' },
+  'equipment.pogang-sword': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'weapon' },
+  'equipment.zhansha-blade': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'weapon' },
+  'equipment.chijin-helmet': { glyph: '👑', tone: 'green', rarity: 'spirit', level: 2, category: 'head' },
+  'equipment.yulin-armor': { glyph: '🥋', tone: 'green', rarity: 'spirit', level: 2, category: 'armor' },
+  'equipment.tazhen-greaves': { glyph: '👖', tone: 'green', rarity: 'spirit', level: 2, category: 'legs' },
+  'equipment.tashan-boots': { glyph: '👞', tone: 'green', rarity: 'spirit', level: 2, category: 'boots' },
+  'equipment.chiwen-ring': { glyph: '💍', tone: 'green', rarity: 'spirit', level: 2, category: 'trinket' },
+  'equipment.chaoyuan-staff': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'weapon' },
+  'equipment.songfeng-zither': { glyph: '⚔️', tone: 'green', rarity: 'spirit', level: 2, category: 'weapon' },
+  'equipment.ziwu-crown': { glyph: '👑', tone: 'green', rarity: 'spirit', level: 2, category: 'head' },
+  'equipment.pichen-shirt': { glyph: '🥋', tone: 'green', rarity: 'spirit', level: 2, category: 'armor' },
+  'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'spirit', level: 2, category: 'legs' },
+  'equipment.bichen-shoes': { glyph: '👞', tone: 'green', rarity: 'spirit', level: 2, category: 'boots' },
+  'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'spirit', level: 2, category: 'trinket' },
 }
 
 /**

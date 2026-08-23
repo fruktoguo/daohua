@@ -5,10 +5,7 @@
     "description": "生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。",
     "kind": "material",
     "category": "herb",
-    "tier": 1,
-    "sellPrice": 5,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 5
   },
   {
     "id": "item.peach-wood",
@@ -16,10 +13,7 @@
     "description": "向阳坡地采伐的百年老木，木质坚致密实，隐泛淡淡纯阳辟邪之意。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 5,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 5
   },
   {
     "id": "item.dark-iron",
@@ -27,10 +21,7 @@
     "description": "深山老矿采掘出的未淬原铁，色沉如墨，质地沉重坚硬。",
     "kind": "material",
     "category": "mineral",
-    "tier": 1,
-    "sellPrice": 5,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 5
   },
   {
     "id": "item.beast-hide",
@@ -38,10 +29,7 @@
     "description": "凡间野兽异变后留下的粗糙兽皮，皮质坚韧厚密。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 6,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 6
   },
   {
     "id": "item.beast-bone",
@@ -49,10 +37,7 @@
     "description": "山野猛兽身上的坚硬兽骨，骨质密实惨白。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 6,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 6
   },
   {
     "id": "item.morning-dew",
@@ -60,10 +45,7 @@
     "description": "破晓清晨凝结于山涧草木叶尖的无根甘露，清澈明净，不染尘埃。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 8,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 8
   },
   {
     "id": "item.broken-spirit-core",
@@ -71,10 +53,7 @@
     "description": "初具灵机的精怪异兽体内残留的微弱灵核碎屑，晶芒微弱。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 12,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 12
   },
   {
     "id": "item.demon-dan",
@@ -82,10 +61,7 @@
     "description": "深山凶兽体内凝结而成的浑浊兽丹，表面隐现血色煞纹。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 50,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 50
   },
   {
     "id": "item.sha-fang",
@@ -93,10 +69,7 @@
     "description": "凶兽口中浸透血气的森白尖齿，锋刃如匕，透着阵阵森冷凶煞。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 50,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 50
   },
   {
     "id": "item.banling-flower",
@@ -105,9 +78,7 @@
     "kind": "material",
     "category": "herb",
     "tier": 2,
-    "sellPrice": 15,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 15
   },
   {
     "id": "item.yinlingsong-wood",
@@ -116,9 +87,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 15,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 15
   },
   {
     "id": "item.crimson-copper",
@@ -127,9 +96,7 @@
     "kind": "material",
     "category": "mineral",
     "tier": 2,
-    "sellPrice": 15,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 15
   },
   {
     "id": "item.beast-fang",
@@ -138,9 +105,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 18,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 18
   },
   {
     "id": "item.fire-feather",
@@ -149,9 +114,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 18,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 18
   },
   {
     "id": "item.soul-talisman",
@@ -160,9 +123,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 20,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 20
   },
   {
     "id": "item.broken-blade",
@@ -171,9 +132,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 60,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 60
   },
   {
     "id": "item.sha-bone",
@@ -182,9 +141,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 60,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 60
   },
   {
     "id": "item.demon-core",
@@ -193,9 +150,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 150,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 150
   },
   {
     "id": "item.meteor-fragment",
@@ -204,9 +159,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 150,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 150
   },
   {
     "id": "item.refined-iron",
@@ -214,10 +167,7 @@
     "description": "经凡火千锤百炼去除凡浊的原铁精料，铁质匀密坚固。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 18,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 18
   },
   {
     "id": "item.peach-wood-crystal",
@@ -225,10 +175,7 @@
     "description": "自百年老桃木中淬炼凝结的琥珀状灵晶，木香淡雅，通体晶莹。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 18,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 18
   },
   {
     "id": "item.herb-essence",
@@ -236,10 +183,7 @@
     "description": "萃取百草朝露精粹而成的碧绿药露，香气清纯，生机内蕴。",
     "kind": "material",
     "category": "material",
-    "tier": 1,
-    "sellPrice": 20,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 20
   },
   {
     "id": "item.refined-copper",
@@ -248,9 +192,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 50,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 50
   },
   {
     "id": "item.spirit-pine-crystal",
@@ -259,9 +201,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 50,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 50
   },
   {
     "id": "item.banling-essence",
@@ -270,9 +210,7 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 55,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 55
   },
   {
     "id": "item.qi-gathering-pill",
@@ -280,9 +218,7 @@
     "description": "通体泛着淡青色光泽的初阶灵丹，散发着淡淡的草木清香。",
     "kind": "consumable",
     "category": "pill",
-    "tier": 1,
     "sellPrice": 35,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation"
@@ -298,9 +234,7 @@
     "description": "由草木研磨而成的暗红药粉，药性辛温，微带草木清气。",
     "kind": "consumable",
     "category": "pill",
-    "tier": 1,
     "sellPrice": 25,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -321,9 +255,7 @@
     "description": "圆润微润的暗黄药丸，气味清凉醒脑。",
     "kind": "consumable",
     "category": "pill",
-    "tier": 1,
     "sellPrice": 25,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "combat"
@@ -346,7 +278,6 @@
     "category": "pill",
     "tier": 2,
     "sellPrice": 200,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation"
@@ -362,10 +293,7 @@
     "description": "蕴含纯净天地灵气的六角晶石，光华内敛。",
     "kind": "currency",
     "category": "currency",
-    "tier": 1,
-    "sellPrice": 1,
-    "isTradable": true,
-    "consumable": null
+    "sellPrice": 1
   },
   {
     "id": "item.tome.heavy-slash",
@@ -373,9 +301,7 @@
     "description": "古朴厚重的蓝皮线装册页，字迹苍劲凌厉，隐有破空刀意。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 100,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -391,9 +317,7 @@
     "description": "边缘焦黑的古籍残页，墨迹斑驳但笔力沉雄。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 10,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -409,9 +333,7 @@
     "description": "记录连绵发力法门的武道典籍，图谱招式如水银泻地。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 100,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -427,9 +349,7 @@
     "description": "字迹略显模糊的招式图谱残篇，依稀可见连绵招法痕迹。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 10,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -445,9 +365,7 @@
     "description": "以雷击木皮为封面的道门符诀典籍，字里行间隐有电芒跃动。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 100,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -463,9 +381,7 @@
     "description": "残缺不全的引雷符诀断页，抚之微有麻酥触感。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 10,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -481,9 +397,7 @@
     "description": "绘有炽烈火纹的朱红古卷，卷轴触手灼热。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 100,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -499,9 +413,7 @@
     "description": "带有星火焦痕的火法残片，残存着微弱的热力。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 10,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -517,9 +429,7 @@
     "description": "记载引敌锁神之术的杂家古册，言语乖张奇诡。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 100,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -535,9 +445,7 @@
     "description": "撕裂破损的书页碎屑，绘着神态夸张的引敌图谱。",
     "kind": "consumable",
     "category": "manual",
-    "tier": 1,
     "sellPrice": 10,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -555,7 +463,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -573,7 +480,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -591,7 +497,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -609,7 +514,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -627,7 +531,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -645,7 +548,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -663,7 +565,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -681,7 +582,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -699,7 +599,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 250,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -717,7 +616,6 @@
     "category": "manual",
     "tier": 2,
     "sellPrice": 25,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "cultivation",
@@ -733,9 +631,7 @@
     "description": "以幽谷异草凝制的线香，点燃后青烟袅袅，香气沉静。",
     "kind": "consumable",
     "category": "herb",
-    "tier": 1,
     "sellPrice": 20,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "exploration"
@@ -757,9 +653,7 @@
     "description": "封存在温玉小管中的一缕地脉火苗，静默跳动，热力含而不发。",
     "kind": "consumable",
     "category": "material",
-    "tier": 1,
     "sellPrice": 22,
-    "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
         "alchemy"

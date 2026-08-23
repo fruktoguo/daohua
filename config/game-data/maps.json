@@ -19,7 +19,6 @@
         "encounterIds": [
           "encounter.qi-beast"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.old-well",
@@ -43,14 +42,12 @@
         "description": "清澈见底的山涧溪流，鹅卵石如玉，破晓时分灵木上的露水最为纯净。",
         "x": 12,
         "y": 82,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.collect-morning-dew"
         ],
         "encounterIds": [
           "encounter.qi-beast"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.shuyu-stones",
@@ -67,14 +64,12 @@
         "description": "背阴潮湿的山谷中野生草木繁茂，药香扑鼻，自生低阶灵草。",
         "x": 10,
         "y": 45,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.gather-ningxue-grass"
         ],
         "encounterIds": [
           "encounter.qi-beast"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.herb-rack",
@@ -91,14 +86,12 @@
         "description": "阳坡之上漫山桃花盛开，古桃木枝干苍劲，蕴含微弱纯阳灵气。",
         "x": 38,
         "y": 78,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.chop-peach-wood"
         ],
         "encounterIds": [
           "encounter.sunset-ridge"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.peach-bridge",
@@ -115,14 +108,12 @@
         "description": "溪水冲刷出的露天砂石滩，裸露的山岩中可见沉重致密的乌铁矿石。",
         "x": 35,
         "y": 92,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.mine-dark-iron"
         ],
         "encounterIds": [
           "encounter.sunset-ridge"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.mining-shed",
@@ -139,10 +130,6 @@
         "description": "山道转折处的草棚茶摊，过路散修在此歇脚喝茶、互通有无，灵市交易活跃。",
         "x": 45,
         "y": 48,
-        "cultivationMultiplier": 1,
-        "availableActionIds": [],
-        "encounterIds": [],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.tea-shed",
@@ -159,14 +146,12 @@
         "description": "白玉石牌坊高耸入云，连接凡尘与仙门，宗门守山灵兽护佑试炼。",
         "x": 60,
         "y": 30,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "combat.hunt-qi-beast"
         ],
         "encounterIds": [
           "encounter.twilight-pass"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.qingyun-arch",
@@ -191,7 +176,6 @@
         "encounterIds": [
           "encounter.twilight-pass"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.peak-cottage",
@@ -285,12 +269,9 @@
         "description": "天空撕裂出幽紫裂痕的界域边缘，罡风呼啸，是踏入星陨异境的起点。",
         "x": 15,
         "y": 50,
-        "cultivationMultiplier": 1,
-        "availableActionIds": [],
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.astral-monolith",
@@ -307,14 +288,12 @@
         "description": "古修残骨与腐朽道袍堆叠之地，死气深重，吸纳死气伴生的伴灵花在此妖艳绽放。",
         "x": 32,
         "y": 75,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.gather-banling-flower"
         ],
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.carrion-monument",
@@ -331,14 +310,12 @@
         "description": "被天外星火烧焦的黑木林，枝干扭曲如人肢，吸收星煞之气的引灵松在此生长。",
         "x": 35,
         "y": 25,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.chop-yinlingsong"
         ],
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.scorched-branches",
@@ -355,14 +332,12 @@
         "description": "裂谷深处散发着幽绿荧光与滚烫地热的矿脉，伴生有高温赤铜矿石。",
         "x": 60,
         "y": 80,
-        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.mine-crimson-copper"
         ],
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.copper-chasm",
@@ -386,7 +361,6 @@
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.blood-altar",
@@ -410,7 +384,6 @@
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.bone-mound",
@@ -434,7 +407,6 @@
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "npcs": [],
         "buildings": [
           {
             "id": "building.star-core",

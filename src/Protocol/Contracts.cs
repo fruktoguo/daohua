@@ -484,7 +484,10 @@ public sealed record CombatEquipmentDto(
     string Slot,
     int Tier,
     EquipmentCombatStatsDto Stats,
-    EquipmentCombatStatsDto EnhancementBonus);
+    EquipmentCombatStatsDto EnhancementBonus,
+    IReadOnlyDictionary<string, double>? BaseStatRatios = null,
+    IReadOnlyDictionary<string, double>? FlatStats = null,
+    IReadOnlyDictionary<string, double>? SpecialMechanics = null);
 
 /// <summary>
 /// 角色或怪物形象视觉展示配置传输对象。

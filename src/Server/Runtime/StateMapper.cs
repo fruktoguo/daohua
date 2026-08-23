@@ -204,7 +204,10 @@ public static class StateMapper
             ToWire(definition.Slot),
             definition.Tier,
             ToEquipmentStats(definition.Stats),
-            ToEquipmentStats(definition.EnhancementBonus));
+            ToEquipmentStats(definition.EnhancementBonus),
+            definition.BaseStatRatios,
+            definition.FlatStats,
+            definition.SpecialMechanics);
     }
 
     public static CombatEncounterDto ToCombatEncounter(CombatEncounterDefinition definition)

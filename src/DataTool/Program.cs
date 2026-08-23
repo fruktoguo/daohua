@@ -59,22 +59,23 @@ var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 
 await WriteAsync("manifest.json", new GameDataManifest(1, "2026.08.10.2"));
-await WriteAsync("actions.json", ActionCatalog.AllIncludingHidden);
+await WriteAsync("actions.json", ActionCatalog.AllIncludingHidden.Select(ToActionConfig).ToArray());
 await WriteAsync("items.json", ItemCatalog.All.Select(ToItemConfig).ToArray());
-await WriteAsync("abilities.json", CombatCatalog.AllAbilities);
-await WriteAsync("equipment.json", CombatCatalog.AllEquipment);
+await WriteAsync("abilities.json", CombatCatalog.AllAbilities.Select(ToAbilityConfig).ToArray());
+await WriteAsync("equipment.json", CombatCatalog.AllEquipment.Select(ToEquipmentConfig).ToArray());
 var encounters = CombatCatalog.AllEncounters.ToArray();
 var monsters = encounters
     .SelectMany(encounter => new[] { encounter.Enemy }
         .Concat(encounter.RandomSpawns.Select(spawn => spawn.Enemy))
         .Concat(encounter.BossEnemies))
     .GroupBy(monster => monster.Id, StringComparer.Ordinal)
-    .Select(group => ToCombatantConfig(group.First()))
+    .Select(group => group.First())
     .OrderBy(monster => monster.Id, StringComparer.Ordinal)
+    .Select(ToCombatantConfig)
     .ToArray();
 await WriteAsync("monsters.json", monsters);
 await WriteAsync("encounters.json", encounters.Select(ToEncounterConfig).ToArray());
-await WriteAsync("maps.json", WorldCatalog.All);
+await WriteAsync("maps.json", WorldCatalog.All.Select(ToMapConfig).ToArray());
 
 Console.WriteLine($"游戏数据已导出到 {outputDirectory}");
 return 0;
@@ -98,86 +99,209 @@ static CombatantConfig ToCombatantConfig(CombatantDefinition monster) => new(
     Name: monster.Name,
     Visual: string.IsNullOrWhiteSpace(monster.Visual.Source)
         ? new CharacterVisualDefinition { Renderer = VisualRendererKind.Text, Source = monster.Name[..1] }
-        : monster.Visual,
-    Style: monster.Style,
-    Category: monster.Category,
-    Element: monster.Element,
-    Level: monster.AttackLevel,
-    Tier: monster.AttackLevel > 0 ? (monster.AttackLevel - 1) / 12 + 1 : 1,
-    Rank: UnitRank.Minion,
-    Weights: null,
-    MaxHitpoints: monster.MaxHitpoints,
-    MaxManapoints: monster.MaxManapoints,
-    AttackIntervalMilliseconds: monster.AttackIntervalMilliseconds,
-    AccuracyRating: monster.AccuracyRating,
-    EvasionRating: monster.EvasionRating,
-    MaxDamage: monster.MaxDamage,
-    DefensiveMaxDamage: monster.DefensiveMaxDamage,
-    Armor: monster.Armor,
-    MagicResistance: monster.MagicResistance,
-    MetalResistance: monster.MetalResistance,
-    WoodResistance: monster.WoodResistance,
-    WaterResistance: monster.WaterResistance,
-    FireResistance: monster.FireResistance,
-    EarthResistance: monster.EarthResistance,
-    Tenacity: monster.Tenacity,
-    PierceChance: monster.PierceChance,
-    CurseRatio: monster.CurseRatio,
-    FuryRatio: monster.FuryRatio,
-    WeakenRatio: monster.WeakenRatio,
-    LifeStealRatio: monster.LifeStealRatio,
-    ArmorDamageRatio: monster.ArmorDamageRatio,
-    HpDrainRatio: monster.HpDrainRatio,
-    CriticalRating: monster.CriticalRating,
-    CriticalChance: monster.CriticalChance,
-    CriticalDamageRatio: monster.CriticalDamageRatio,
-    CriticalAvoidance: monster.CriticalAvoidance,
-    DamageAbsorptionRatio: monster.DamageAbsorptionRatio,
-    HpRegen: monster.HpRegen,
-    MpRegen: monster.MpRegen,
-    HpRegenPerTenSeconds: monster.HpRegenPerTenSeconds,
-    MpRegenPerTenSeconds: monster.MpRegenPerTenSeconds,
-    EnrageTimeMilliseconds: monster.EnrageTimeMilliseconds,
-    ExperienceMultiplier: monster.ExperienceMultiplier,
-    Experience: monster.Experience,
-    SpiritMin: monster.SpiritMin,
-    SpiritMax: monster.SpiritMax,
-    DropTable: monster.DropTable,
-    RareDropTable: monster.RareDropTable,
-    Skills: monster.Abilities.Select(ability => new MonsterSkillConfig(ability.Id, 1, ability.TriggerHpRatio)).ToArray(),
-    BreakRating: monster.BreakRating,
-    ParryRating: monster.ParryRating,
-    SkillIntensity: monster.SkillIntensity,
-    DynamicResistanceFactorK: monster.DynamicResistanceFactorK,
-    ActionSpeedReductionRatio: monster.ActionSpeedReductionRatio,
-    CooldownReductionRatio: monster.CooldownReductionRatio);
+        : (string.IsNullOrEmpty(monster.Visual.Poster) ? new CharacterVisualDefinition { Renderer = monster.Visual.Renderer, Source = monster.Visual.Source } : monster.Visual),
+    Style: monster.Style != CombatStyle.Body ? monster.Style : CombatStyle.Body,
+    Category: monster.Category != DamageCategory.Physical ? monster.Category : DamageCategory.Physical,
+    Element: monster.Element != Element.None ? monster.Element : Element.None,
+    Level: monster.AttackLevel > 1 ? monster.AttackLevel : null,
+    Tier: monster.AttackLevel > 0 && ((monster.AttackLevel - 1) / 12 + 1) > 1 ? (monster.AttackLevel - 1) / 12 + 1 : null,
+    Rank: monster.Rank != UnitRank.Minion ? monster.Rank : null,
+    BudgetCost: monster.BudgetCost > 0 && Math.Abs(monster.BudgetCost - 10.0) > 0.001 ? monster.BudgetCost : null,
+    AttackIntervalMilliseconds: monster.AttackIntervalMilliseconds != 1000 ? monster.AttackIntervalMilliseconds : null,
+    DropTable: monster.DropTable.Count > 0 ? monster.DropTable : null,
+    RareDropTable: monster.RareDropTable.Count > 0 ? monster.RareDropTable : null,
+    Skills: monster.Abilities.Count > 0
+        ? monster.Abilities.Select(ability => new MonsterSkillConfig(ability.Id, 1, Math.Abs(ability.TriggerHpRatio - 1.0) > 0.001 ? ability.TriggerHpRatio : null)).ToArray()
+        : null);
 
 /// <summary>
-/// 将副本领域定义转换为可导出的副本配置模型 (CombatEncounterConfig)。
+/// 将副本领域定义转换为精简的副本配置模型 (CombatEncounterConfig)。
 /// </summary>
 static CombatEncounterConfig ToEncounterConfig(CombatEncounterDefinition encounter) => new(
     Id: encounter.Id,
     Name: encounter.Name,
-    RandomSpawns: encounter.RandomSpawns.Select(spawn => new CombatSpawnConfig(
+    RandomSpawns: encounter.RandomSpawns.Count > 0 ? encounter.RandomSpawns.Select(spawn => new CombatSpawnConfig(
         spawn.Enemy.Id,
         spawn.Weight,
-        spawn.Strength)).ToArray(),
-    MaxSpawnCount: encounter.MaxSpawnCount,
-    MaxTotalStrength: encounter.MaxTotalStrength,
-    BossEnemyIds: encounter.BossEnemies.Select(enemy => enemy.Id).ToArray(),
-    BattlesPerBoss: encounter.BattlesPerBoss,
-    SearchMilliseconds: encounter.SearchMilliseconds,
-    RespawnMilliseconds: encounter.RespawnMilliseconds,
-    PlayerRespawnMilliseconds: encounter.PlayerRespawnMilliseconds,
-    ExperiencePerWin: encounter.ExperiencePerWin,
-    SpiritMinPerWin: encounter.SpiritMinPerWin,
-    SpiritMaxPerWin: encounter.SpiritMaxPerWin,
-    EnrageTimeMilliseconds: encounter.EnrageTimeMilliseconds,
-    EnrageTickMilliseconds: encounter.EnrageTickMilliseconds,
-    MaxEnrageStacks: encounter.MaxEnrageStacks,
-    EnrageRatioPerStack: encounter.EnrageRatioPerStack,
-    DropTable: encounter.DropTable,
-    RareDropTable: encounter.RareDropTable);
+        spawn.Strength)).ToArray() : null,
+    MaxSpawnCount: encounter.MaxSpawnCount != 3 ? encounter.MaxSpawnCount : null,
+    MaxTotalStrength: encounter.MaxTotalStrength != 50 ? encounter.MaxTotalStrength : null,
+    MinBudget: Math.Abs(encounter.MinBudget - 10.0) > 0.001 ? encounter.MinBudget : null,
+    MaxBudget: Math.Abs(encounter.MaxBudget - 50.0) > 0.001 ? encounter.MaxBudget : null,
+    EliteInterval: encounter.EliteInterval != 5 ? encounter.EliteInterval : null,
+    EliteEnemyIds: encounter.EliteEnemies.Count > 0 ? encounter.EliteEnemies.Select(enemy => enemy.Id).ToArray() : null,
+    BossEnemyIds: encounter.BossEnemies.Count > 0 ? encounter.BossEnemies.Select(enemy => enemy.Id).ToArray() : null,
+    BattlesPerBoss: encounter.BattlesPerBoss > 0 ? encounter.BattlesPerBoss : null,
+    SearchMilliseconds: encounter.SearchMilliseconds != 20000 ? encounter.SearchMilliseconds : null,
+    RespawnMilliseconds: encounter.RespawnMilliseconds != 5000 ? encounter.RespawnMilliseconds : null,
+    PlayerRespawnMilliseconds: encounter.PlayerRespawnMilliseconds != 180000 ? encounter.PlayerRespawnMilliseconds : null,
+    ExperiencePerWin: encounter.ExperiencePerWin > 0 ? encounter.ExperiencePerWin : null,
+    SpiritMinPerWin: encounter.SpiritMinPerWin > 0 ? encounter.SpiritMinPerWin : null,
+    SpiritMaxPerWin: encounter.SpiritMaxPerWin > 0 ? encounter.SpiritMaxPerWin : null,
+    EnrageTimeMilliseconds: encounter.EnrageTimeMilliseconds != 180000 ? encounter.EnrageTimeMilliseconds : null,
+    EnrageTickMilliseconds: encounter.EnrageTickMilliseconds != 60000 ? encounter.EnrageTickMilliseconds : null,
+    MaxEnrageStacks: encounter.MaxEnrageStacks != 10 ? encounter.MaxEnrageStacks : null,
+    EnrageRatioPerStack: Math.Abs(encounter.EnrageRatioPerStack - 0.1) > 0.001 ? encounter.EnrageRatioPerStack : null,
+    DropTable: encounter.DropTable.Count > 0 ? encounter.DropTable : null,
+    RareDropTable: encounter.RareDropTable.Count > 0 ? encounter.RareDropTable : null);
+
+/// <summary>
+/// 将行动定义转换为精简的字典对象以剔除默认配置。
+/// </summary>
+static object ToActionConfig(ActionDefinition action)
+{
+    var dict = new Dictionary<string, object?>
+    {
+        ["id"] = action.Id,
+        ["name"] = action.Name,
+        ["description"] = action.Description,
+        ["type"] = action.Type,
+        ["durationSeconds"] = action.DurationSeconds
+    };
+
+    if (action.ExecutionKind != ActionExecutionKind.Timed)
+    {
+        dict["executionKind"] = action.ExecutionKind;
+    }
+
+    if (!string.IsNullOrEmpty(action.CombatEncounterId))
+    {
+        dict["combatEncounterId"] = action.CombatEncounterId;
+    }
+
+    if (action.AvailableNodeIds.Count > 0)
+    {
+        dict["availableNodeIds"] = action.AvailableNodeIds;
+    }
+
+    if (action.HiddenFromCatalog)
+    {
+        dict["hiddenFromCatalog"] = true;
+    }
+
+    if (action.Inputs.Count > 0)
+    {
+        dict["inputs"] = action.Inputs;
+    }
+
+    if (action.Outputs.Count > 0)
+    {
+        dict["outputs"] = action.Outputs;
+    }
+
+    return dict;
+}
+
+/// <summary>
+/// 将技能定义转换为精简的技能配置传输对象 (AbilityConfig)。
+/// </summary>
+static AbilityConfig ToAbilityConfig(CombatAbilityDefinition ability) => new(
+    Id: ability.Id,
+    Name: ability.Name,
+    Style: ability.Style,
+    Category: ability.Category,
+    Element: ability.Element,
+    CooldownMilliseconds: ability.CooldownMilliseconds > 0 ? ability.CooldownMilliseconds : null,
+    CastMilliseconds: ability.CastMilliseconds > 0 ? ability.CastMilliseconds : null,
+    ManaCostRatio: ability.ManaCost > 0 ? 10.0 : null,
+    EffectType: ability.EffectType != CombatAbilityEffectType.Damage ? ability.EffectType : null,
+    TargetType: ability.TargetType != CombatAbilityTargetType.Enemy ? ability.TargetType : null,
+    DamageRatio: Math.Abs(ability.DamageRatio - 1.0) > 0.001 || ability.FlatDamage > 0 ? ability.DamageRatio : null,
+    FlatDamage: ability.FlatDamage > 0 ? ability.FlatDamage : null,
+    DamageRatioLevelBonus: ability.DamageRatioLevelBonus > 0 ? ability.DamageRatioLevelBonus : null,
+    FlatDamageLevelBonus: ability.FlatDamageLevelBonus > 0 ? ability.FlatDamageLevelBonus : null,
+    HealingRatio: ability.HealingRatio > 0 ? ability.HealingRatio : null,
+    FlatHealing: ability.FlatHealing > 0 ? ability.FlatHealing : null,
+    HealingRatioLevelBonus: ability.HealingRatioLevelBonus > 0 ? ability.HealingRatioLevelBonus : null,
+    FlatHealingLevelBonus: ability.FlatHealingLevelBonus > 0 ? ability.FlatHealingLevelBonus : null,
+    DamageOverTimeRatio: ability.DamageOverTimeRatio > 0 ? ability.DamageOverTimeRatio : null,
+    DamageOverTimeMilliseconds: ability.DamageOverTimeMilliseconds > 0 ? ability.DamageOverTimeMilliseconds : null,
+    DamageOverTimeTickMilliseconds: ability.DamageOverTimeTickMilliseconds != 3000 ? ability.DamageOverTimeTickMilliseconds : null,
+    StunChance: ability.StunChance > 0 ? ability.StunChance : null,
+    StunMilliseconds: ability.StunMilliseconds > 0 ? ability.StunMilliseconds : null,
+    BlindChance: ability.BlindChance > 0 ? ability.BlindChance : null,
+    BlindMilliseconds: ability.BlindMilliseconds > 0 ? ability.BlindMilliseconds : null,
+    SilenceChance: ability.SilenceChance > 0 ? ability.SilenceChance : null,
+    SilenceMilliseconds: ability.SilenceMilliseconds > 0 ? ability.SilenceMilliseconds : null,
+    PenetrationRatio: ability.PenetrationRatio > 0 ? ability.PenetrationRatio : null,
+    ArmorDamageRatio: ability.ArmorDamageRatio > 0 ? ability.ArmorDamageRatio : null,
+    HpDrainRatio: ability.HpDrainRatio > 0 ? ability.HpDrainRatio : null,
+    PierceChance: ability.PierceChance > 0 ? ability.PierceChance : null,
+    TriggerHpRatio: Math.Abs(ability.TriggerHpRatio - 1.0) > 0.001 ? ability.TriggerHpRatio : null,
+    DefaultTriggers: ability.DefaultTriggers.Count > 0 ? ability.DefaultTriggers : null,
+    Tier: null);
+
+/// <summary>
+/// 将装备定义转换为精简的装备配置传输对象 (EquipmentConfig)。
+/// </summary>
+static EquipmentConfig ToEquipmentConfig(CombatEquipmentDefinition equipment)
+{
+    var stats = equipment.Stats;
+    var baseRatios = new Dictionary<string, double>(StringComparer.Ordinal);
+    if (stats.DamageRatio > 0) baseRatios["physicalAttack"] = stats.DamageRatio;
+    if (stats.Armor > 0) baseRatios["armor"] = stats.Armor;
+    if (stats.MagicResistance > 0) baseRatios["spellResistance"] = stats.MagicResistance;
+
+    var flats = new Dictionary<string, double>(StringComparer.Ordinal);
+    if (stats.AccuracyRatio > 0) flats["accuracy"] = stats.AccuracyRatio;
+    if (stats.EvasionRatio > 0) flats["evasion"] = stats.EvasionRatio;
+    return new EquipmentConfig(
+        Id: equipment.Id,
+        Name: equipment.Name,
+        Slot: equipment.Slot,
+        Tier: equipment.Tier > 1 ? equipment.Tier : null,
+        Quality: null,
+        Style: stats.Style,
+        Category: stats.Category,
+        Element: stats.Element != Element.None ? stats.Element : null,
+        AttackIntervalMilliseconds: stats.AttackIntervalMilliseconds > 0 ? stats.AttackIntervalMilliseconds : null,
+        BaseStatRatios: baseRatios.Count > 0 ? baseRatios : null,
+        FlatStats: flats.Count > 0 ? flats : null);
+}
+
+/// <summary>
+/// 将大地图定义转换为精简的对象以剔除默认空集合与默认倍率。
+/// </summary>
+static object ToMapConfig(WorldMapDefinition map) => new
+{
+    id = map.Id,
+    name = map.Name,
+    description = map.Description,
+    backgroundSeed = map.BackgroundSeed,
+    nodes = map.Nodes.Select(node =>
+    {
+        var dict = new Dictionary<string, object?>
+        {
+            ["id"] = node.Id,
+            ["name"] = node.Name,
+            ["description"] = node.Description,
+            ["x"] = node.X,
+            ["y"] = node.Y
+        };
+        if (Math.Abs(node.CultivationMultiplier - 1.0) > 0.001)
+        {
+            dict["cultivationMultiplier"] = node.CultivationMultiplier;
+        }
+        if (node.AvailableActionIds.Count > 0)
+        {
+            dict["availableActionIds"] = node.AvailableActionIds;
+        }
+        if (node.EncounterIds.Count > 0)
+        {
+            dict["encounterIds"] = node.EncounterIds;
+        }
+        if (node.Npcs.Count > 0)
+        {
+            dict["npcs"] = node.Npcs;
+        }
+        if (node.Buildings.Count > 0)
+        {
+            dict["buildings"] = node.Buildings;
+        }
+        return dict;
+    }),
+    edges = map.Edges
+};
 
 /// <summary>
 /// 将内存物品实体定义转换为精简的物品配置传输对象 (ItemConfig)。
