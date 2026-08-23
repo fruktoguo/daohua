@@ -340,9 +340,6 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     })
   }, [pan.x, pan.y])
 
-  if (!map) {
-    return <div className="world-map-loading">{t('combat.map.loading')}</div>
-  }
   // 1. 提取该地点的产出资源（来自开放采集/生产行动 outputs）
   const nodeResources = useMemo(() => {
     if (!selectedNode) return []
@@ -389,6 +386,11 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
 
   const atSelectedNode = selectedNode?.nodeId === world.nodeId
   const travellingToSelected = selectedNode?.nodeId === activeTravel?.travelDestinationNodeId
+
+  if (!map) {
+    return <div className="world-map-loading">{t('combat.map.loading')}</div>
+  }
+
   return (
     <div className="world-map-layout">
       <section
