@@ -31,8 +31,8 @@ const demoQueue: QueueState = {
   entries: [
     {
       entryId: 'demo-gather',
-      actionId: 'explore.gather-herbs',
-      actionName: '采集草药',
+      actionId: 'explore.gather-ningxue-grass',
+      actionName: '采集凝血草',
       type: 'exploration',
       status: 'running',
       progressSeconds: 3,
@@ -78,9 +78,9 @@ export function createDemoSnapshot(playerId: string): PlayerSnapshot {
     presenceMode: 'online',
     queue: demoQueue,
     inventory: [
-      { itemId: 'item.spirit-herb', name: '灵草', category: '材料', amount: 0, tone: 'green', glyph: '✤' },
-      { itemId: 'item.qi-gathering-pill', name: '引气丹', category: '丹药', amount: 0, tone: 'violet', glyph: '✺' },
-      { itemId: 'currency.spirit', name: '灵石', category: '货币', amount: 0, tone: 'gold', glyph: '◈' },
+      { itemId: 'item.ningxue-grass', name: '凝血草', category: '材料', amount: 0, tone: 'green', glyph: '🌿' },
+      { itemId: 'item.qi-gathering-pill', name: '引气丹', category: '丹药', amount: 0, tone: 'violet', glyph: '💊' },
+      { itemId: 'currency.spirit-stone', name: '灵石', category: '货币', amount: 0, tone: 'gold', glyph: '◈' },
       { itemId: 'resource.qi', name: '灵气', category: '资源', amount: 0, tone: 'cyan', glyph: '◉' },
     ],
     buffs: [],
@@ -108,7 +108,7 @@ export function createDemoSnapshot(playerId: string): PlayerSnapshot {
       y: 63,
       locationName: '青岚药谷',
       cultivationMultiplier: 1,
-      availableActionIds: ['explore.gather-herbs', 'combat.hunt-qi-beast'],
+      availableActionIds: ['explore.gather-ningxue-grass', 'combat.hunt-qi-beast'],
       encounterIds: ['encounter.qi-beast'],
       npcs: [],
       buildings: [],
