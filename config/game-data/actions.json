@@ -1,8 +1,238 @@
 [
   {
+    "id": "cultivation.draw-qi",
+    "name": "引气入体",
+    "description": "吐纳天地灵气，滋养气血经络，积累灵力与修为。",
+    "type": "cultivation",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "resource.qi": 1
+    }
+  },
+  {
+    "id": "explore.gather-ningxue-grass",
+    "name": "采集凝血草",
+    "description": "在深山崖壁与背阴草丛中采摘暗红的凝血草。",
+    "type": "exploration",
+    "durationSeconds": 8,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [
+      "node.herb-vale"
+    ],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.ningxue-grass": 3
+    }
+  },
+  {
+    "id": "explore.chop-peach-wood",
+    "name": "采伐桃木",
+    "description": "在向阳山坡砍伐百年凡阶桃木。",
+    "type": "exploration",
+    "durationSeconds": 6,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.peach-wood": 1
+    }
+  },
+  {
+    "id": "explore.mine-dark-iron",
+    "name": "开采乌铁",
+    "description": "在深山老矿采掘未淬原矿乌铁石。",
+    "type": "exploration",
+    "durationSeconds": 6,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [
+      "node.stone-vein"
+    ],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.dark-iron": 1
+    }
+  },
+  {
+    "id": "explore.collect-morning-dew",
+    "name": "汲取晨露",
+    "description": "于清晨破晓时分汲取灵木叶尖凝结的无根甘露。",
+    "type": "exploration",
+    "durationSeconds": 6,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [
+      "node.spirit-spring"
+    ],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.morning-dew": 1
+    }
+  },
+  {
+    "id": "explore.gather-banling-flower",
+    "name": "采集伴灵花",
+    "description": "在仙门外围悬崖灵泉旁寻觅并采摘伴灵花。",
+    "type": "exploration",
+    "durationSeconds": 8,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.banling-flower": 1
+    }
+  },
+  {
+    "id": "explore.chop-yinlingsong",
+    "name": "采伐引灵松",
+    "description": "在绝壁悬崖采伐聚气引风的引灵松木。",
+    "type": "exploration",
+    "durationSeconds": 8,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.yinlingsong-wood": 1
+    }
+  },
+  {
+    "id": "explore.mine-crimson-copper",
+    "name": "开采赤铜",
+    "description": "在浅层灵脉矿脉开采导气赤铜矿石。",
+    "type": "exploration",
+    "durationSeconds": 8,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {},
+    "outputs": {
+      "item.crimson-copper": 1
+    }
+  },
+  {
+    "id": "craft.refine-iron",
+    "name": "熔铸百炼铁",
+    "description": "消耗 3 块乌铁，千锤百炼熔铸出 1 块精纯百炼铁。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.dark-iron": 3
+    },
+    "outputs": {
+      "item.refined-iron": 1
+    }
+  },
+  {
+    "id": "craft.refine-peach-wood-crystal",
+    "name": "萃炼桃木晶",
+    "description": "消耗 3 根桃木，以微火慢萃出 1 枚通灵桃木晶。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood": 3
+    },
+    "outputs": {
+      "item.peach-wood-crystal": 1
+    }
+  },
+  {
+    "id": "craft.extract-herb-essence",
+    "name": "提炼草木精华",
+    "description": "消耗 2 株凝血草与 1 滴晨露，熬炼出 1 份草木精华药液。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.ningxue-grass": 2,
+      "item.morning-dew": 1
+    },
+    "outputs": {
+      "item.herb-essence": 1
+    }
+  },
+  {
+    "id": "craft.refine-copper",
+    "name": "熔铸赤铜精",
+    "description": "消耗 3 块赤铜矿，经灵火熔炼提纯出 1 块赤铜精。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.crimson-copper": 3
+    },
+    "outputs": {
+      "item.refined-copper": 1
+    }
+  },
+  {
+    "id": "craft.refine-spirit-pine-crystal",
+    "name": "萃炼灵松晶",
+    "description": "消耗 3 段引灵松，萃取出 1 枚青翠灵松晶。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.yinlingsong-wood": 3
+    },
+    "outputs": {
+      "item.spirit-pine-crystal": 1
+    }
+  },
+  {
+    "id": "craft.extract-banling-essence",
+    "name": "提炼伴灵精华",
+    "description": "消耗 2 朵伴灵花与 1 滴晨露，萃取提纯出 1 份伴灵精华药液。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.banling-flower": 2,
+      "item.morning-dew": 1
+    },
+    "outputs": {
+      "item.banling-essence": 1
+    }
+  },
+  {
     "id": "alchemy.refine-qi-pill",
     "name": "炼制引气丹",
-    "description": "消耗三株灵草，炼制一枚引气丹。",
+    "description": "消耗 1 份草木精华与 1 颗破碎灵核，炼制 1 粒引气丹。",
     "type": "alchemy",
     "durationSeconds": 12,
     "executionKind": "timed",
@@ -10,10 +240,582 @@
     "availableNodeIds": [],
     "hiddenFromCatalog": false,
     "inputs": {
-      "item.spirit-herb": 3
+      "item.ningxue-grass": 3
     },
     "outputs": {
       "item.qi-gathering-pill": 1
+    }
+  },
+  {
+    "id": "alchemy.refine-zhixue-powder",
+    "name": "炼制止血散",
+    "description": "消耗 1 份草木精华与 1 株凝血草，研制 1 份止血散。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.herb-essence": 1,
+      "item.ningxue-grass": 1
+    },
+    "outputs": {
+      "item.zhixue-powder": 1
+    }
+  },
+  {
+    "id": "alchemy.refine-shunqi-pill",
+    "name": "炼制顺气丸",
+    "description": "消耗 1 份草木精华与 1 朵伴灵花，炼制 1 粒顺气丸。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.herb-essence": 1,
+      "item.banling-flower": 1
+    },
+    "outputs": {
+      "item.shunqi-pill": 1
+    }
+  },
+  {
+    "id": "alchemy.refine-tongmai-pill",
+    "name": "炼制通脉丹",
+    "description": "消耗 2 份伴灵精华与 1 颗坠星妖核，炼制 1 粒高阶通脉丹。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.banling-essence": 2,
+      "item.demon-core": 1
+    },
+    "outputs": {
+      "item.tongmai-pill": 1
+    }
+  },
+  {
+    "id": "forge.qingfeng-sword",
+    "name": "锻造青锋剑",
+    "description": "锻造或升阶合成装备【锻造青锋剑】。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-bone": 1
+    },
+    "outputs": {
+      "equipment.qingfeng-sword": 1
+    }
+  },
+  {
+    "id": "forge.pishan-blade",
+    "name": "锻造劈山刀",
+    "description": "锻造或升阶合成装备【锻造劈山刀】。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-bone": 1
+    },
+    "outputs": {
+      "equipment.pishan-blade": 1
+    }
+  },
+  {
+    "id": "forge.shufa-scarf",
+    "name": "缝制束发巾",
+    "description": "锻造或升阶合成装备【缝制束发巾】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "outputs": {
+      "equipment.shufa-scarf": 1
+    }
+  },
+  {
+    "id": "forge.baina-armor",
+    "name": "锻造百衲甲",
+    "description": "锻造或升阶合成装备【锻造百衲甲】。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.beast-hide": 1
+    },
+    "outputs": {
+      "equipment.baina-armor": 1
+    }
+  },
+  {
+    "id": "forge.zhakou-pants",
+    "name": "缝制扎口裤",
+    "description": "锻造或升阶合成装备【缝制扎口裤】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "outputs": {
+      "equipment.zhakou-pants": 1
+    }
+  },
+  {
+    "id": "forge.xingshan-boots",
+    "name": "缝制行山靴",
+    "description": "锻造或升阶合成装备【缝制行山靴】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-hide": 1
+    },
+    "outputs": {
+      "equipment.xingshan-boots": 1
+    }
+  },
+  {
+    "id": "forge.shouya-pendant",
+    "name": "雕琢兽牙坠",
+    "description": "锻造或升阶合成装备【雕琢兽牙坠】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-bone": 1
+    },
+    "outputs": {
+      "equipment.shouya-pendant": 1
+    }
+  },
+  {
+    "id": "forge.jiujie-staff",
+    "name": "雕琢九节杖",
+    "description": "锻造或升阶合成装备【雕琢九节杖】。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.broken-spirit-core": 1
+    },
+    "outputs": {
+      "equipment.jiujie-staff": 1
+    }
+  },
+  {
+    "id": "forge.suxin-zither",
+    "name": "斫制素心琴",
+    "description": "锻造或升阶合成装备【斫制素心琴】。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.broken-spirit-core": 1
+    },
+    "outputs": {
+      "equipment.suxin-zither": 1
+    }
+  },
+  {
+    "id": "forge.hunyuan-scarf",
+    "name": "缝制混元巾",
+    "description": "锻造或升阶合成装备【缝制混元巾】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.broken-spirit-core": 1
+    },
+    "outputs": {
+      "equipment.hunyuan-scarf": 1
+    }
+  },
+  {
+    "id": "forge.suma-robe",
+    "name": "织造素麻袍",
+    "description": "锻造或升阶合成装备【织造素麻袍】。",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood-crystal": 7,
+      "item.beast-hide": 1
+    },
+    "outputs": {
+      "equipment.suma-robe": 1
+    }
+  },
+  {
+    "id": "forge.xingqi-pants",
+    "name": "缝制行气裤",
+    "description": "锻造或升阶合成装备【缝制行气裤】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.beast-hide": 1
+    },
+    "outputs": {
+      "equipment.xingqi-pants": 1
+    }
+  },
+  {
+    "id": "forge.shifang-shoes",
+    "name": "编织十方鞋",
+    "description": "锻造或升阶合成装备【编织十方鞋】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.beast-hide": 1
+    },
+    "outputs": {
+      "equipment.shifang-shoes": 1
+    }
+  },
+  {
+    "id": "forge.taomu-talisman",
+    "name": "雕琢桃木符",
+    "description": "锻造或升阶合成装备【雕琢桃木符】。",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "item.peach-wood-crystal": 5,
+      "item.broken-spirit-core": 1
+    },
+    "outputs": {
+      "equipment.taomu-talisman": 1
+    }
+  },
+  {
+    "id": "forge.pogang-sword",
+    "name": "升阶锻造破罡剑",
+    "description": "锻造或升阶合成装备【升阶锻造破罡剑】。",
+    "type": "alchemy",
+    "durationSeconds": 25,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.qingfeng-sword": 2,
+      "item.refined-copper": 7,
+      "item.beast-fang": 1
+    },
+    "outputs": {
+      "equipment.pogang-sword": 1
+    }
+  },
+  {
+    "id": "forge.zhansha-blade",
+    "name": "升阶锻造斩煞刀",
+    "description": "锻造或升阶合成装备【升阶锻造斩煞刀】。",
+    "type": "alchemy",
+    "durationSeconds": 25,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.pishan-blade": 2,
+      "item.refined-copper": 7,
+      "item.beast-fang": 1
+    },
+    "outputs": {
+      "equipment.zhansha-blade": 1
+    }
+  },
+  {
+    "id": "forge.chijin-helmet",
+    "name": "升阶锻造赤金盔",
+    "description": "锻造或升阶合成装备【升阶锻造赤金盔】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.shufa-scarf": 2,
+      "item.refined-copper": 5,
+      "item.beast-fang": 1
+    },
+    "outputs": {
+      "equipment.chijin-helmet": 1
+    }
+  },
+  {
+    "id": "forge.yulin-armor",
+    "name": "升阶锻造鱼鳞甲",
+    "description": "锻造或升阶合成装备【升阶锻造鱼鳞甲】。",
+    "type": "alchemy",
+    "durationSeconds": 25,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.baina-armor": 2,
+      "item.refined-copper": 7,
+      "item.beast-fang": 1
+    },
+    "outputs": {
+      "equipment.yulin-armor": 1
+    }
+  },
+  {
+    "id": "forge.tazhen-greaves",
+    "name": "升阶锻造踏阵胫",
+    "description": "锻造或升阶合成装备【升阶锻造踏阵胫】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.zhakou-pants": 2,
+      "item.refined-copper": 5,
+      "item.beast-fang": 1
+    },
+    "outputs": {
+      "equipment.tazhen-greaves": 1
+    }
+  },
+  {
+    "id": "forge.tashan-boots",
+    "name": "升阶锻造踏山靴",
+    "description": "锻造或升阶合成装备【升阶锻造踏山靴】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.xingshan-boots": 2,
+      "item.refined-copper": 5,
+      "item.beast-fang": 1
+    },
+    "outputs": {
+      "equipment.tashan-boots": 1
+    }
+  },
+  {
+    "id": "forge.chiwen-ring",
+    "name": "升阶熔铸赤纹戒",
+    "description": "锻造或升阶合成装备【升阶熔铸赤纹戒】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.shouya-pendant": 2,
+      "item.refined-copper": 5,
+      "item.beast-fang": 1
+    },
+    "outputs": {
+      "equipment.chiwen-ring": 1
+    }
+  },
+  {
+    "id": "forge.chaoyuan-staff",
+    "name": "升阶雕琢朝元杖",
+    "description": "锻造或升阶合成装备【升阶雕琢朝元杖】。",
+    "type": "alchemy",
+    "durationSeconds": 25,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.jiujie-staff": 2,
+      "item.spirit-pine-crystal": 7,
+      "item.soul-talisman": 1
+    },
+    "outputs": {
+      "equipment.chaoyuan-staff": 1
+    }
+  },
+  {
+    "id": "forge.songfeng-zither",
+    "name": "升阶斫制松风琴",
+    "description": "锻造或升阶合成装备【升阶斫制松风琴】。",
+    "type": "alchemy",
+    "durationSeconds": 25,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.suxin-zither": 2,
+      "item.spirit-pine-crystal": 7,
+      "item.soul-talisman": 1
+    },
+    "outputs": {
+      "equipment.songfeng-zither": 1
+    }
+  },
+  {
+    "id": "forge.ziwu-crown",
+    "name": "升阶制备子午冠",
+    "description": "锻造或升阶合成装备【升阶制备子午冠】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.hunyuan-scarf": 2,
+      "item.spirit-pine-crystal": 5,
+      "item.soul-talisman": 1
+    },
+    "outputs": {
+      "equipment.ziwu-crown": 1
+    }
+  },
+  {
+    "id": "forge.pichen-shirt",
+    "name": "升阶织造辟尘衫",
+    "description": "锻造或升阶合成装备【升阶织造辟尘衫】。",
+    "type": "alchemy",
+    "durationSeconds": 25,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.suma-robe": 2,
+      "item.spirit-pine-crystal": 7,
+      "item.fire-feather": 1
+    },
+    "outputs": {
+      "equipment.pichen-shirt": 1
+    }
+  },
+  {
+    "id": "forge.liuyun-skirt",
+    "name": "升阶缝制流云裳",
+    "description": "锻造或升阶合成装备【升阶缝制流云裳】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.xingqi-pants": 2,
+      "item.spirit-pine-crystal": 5,
+      "item.fire-feather": 1
+    },
+    "outputs": {
+      "equipment.liuyun-skirt": 1
+    }
+  },
+  {
+    "id": "forge.bichen-shoes",
+    "name": "升阶制备避尘履",
+    "description": "锻造或升阶合成装备【升阶制备避尘履】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.shifang-shoes": 2,
+      "item.spirit-pine-crystal": 5,
+      "item.fire-feather": 1
+    },
+    "outputs": {
+      "equipment.bichen-shoes": 1
+    }
+  },
+  {
+    "id": "forge.juling-pendant",
+    "name": "升阶雕琢聚灵佩",
+    "description": "锻造或升阶合成装备【升阶雕琢聚灵佩】。",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "executionKind": "timed",
+    "combatEncounterId": null,
+    "availableNodeIds": [],
+    "hiddenFromCatalog": false,
+    "inputs": {
+      "equipment.taomu-talisman": 2,
+      "item.spirit-pine-crystal": 5,
+      "item.soul-talisman": 1
+    },
+    "outputs": {
+      "equipment.juling-pendant": 1
     }
   },
   {
@@ -48,39 +850,6 @@
     "hiddenFromCatalog": false,
     "inputs": {},
     "outputs": {}
-  },
-  {
-    "id": "cultivation.draw-qi",
-    "name": "引气入体",
-    "description": "吐纳灵气，积累灵力与修为。",
-    "type": "cultivation",
-    "durationSeconds": 10,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [],
-    "hiddenFromCatalog": false,
-    "inputs": {},
-    "outputs": {
-      "resource.qi": 1
-    }
-  },
-  {
-    "id": "explore.gather-herbs",
-    "name": "采集草药",
-    "description": "在野外寻找灵草，收集炼丹材料。",
-    "type": "exploration",
-    "durationSeconds": 8,
-    "executionKind": "timed",
-    "combatEncounterId": null,
-    "availableNodeIds": [
-      "node.herb-vale",
-      "node.spirit-spring"
-    ],
-    "hiddenFromCatalog": false,
-    "inputs": {},
-    "outputs": {
-      "item.spirit-herb": 3
-    }
   },
   {
     "id": "world.travel",

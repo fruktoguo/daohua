@@ -137,9 +137,9 @@ public sealed class MarketTests
     public void Terminal_order_route_is_released_after_match()
     {
         var engine = new MarketEngine(shardCount: 2);
-        var seller = Sell("terminal-sell", Guid.NewGuid(), 3, 1);
+        var seller = Sell("terminal-sell", Guid.NewGuid(), 5, 1);
         Assert.True(engine.Place(seller).Success);
-        var buyer = Buy("terminal-buy", Guid.NewGuid(), 3, 1);
+        var buyer = Buy("terminal-buy", Guid.NewGuid(), 5, 1);
         Assert.True(engine.Place(buyer).Success);
 
         Assert.False(engine.TryGetOrder(seller.OrderId, out _));
@@ -197,10 +197,10 @@ public sealed class MarketTests
         var enhancedInstrument = new MarketInstrument(ItemIds.SpiritHerb, 7);
 
         Assert.Equal("fnv1a64-utf16-v1", MarketPartitioner.Algorithm);
-        Assert.Equal(60, MarketPartitioner.GetPartition(baseInstrument, 64));
-        Assert.Equal(43, MarketPartitioner.GetPartition(enhancedInstrument, 64));
-        Assert.True(MarketPartitioner.IsOwnedBy(baseInstrument, 60, 64));
-        Assert.False(MarketPartitioner.IsOwnedBy(baseInstrument, 59, 64));
+        Assert.Equal(34, MarketPartitioner.GetPartition(baseInstrument, 64));
+        Assert.Equal(21, MarketPartitioner.GetPartition(enhancedInstrument, 64));
+        Assert.True(MarketPartitioner.IsOwnedBy(baseInstrument, 34, 64));
+        Assert.False(MarketPartitioner.IsOwnedBy(baseInstrument, 33, 64));
     }
 
     /// <summary>

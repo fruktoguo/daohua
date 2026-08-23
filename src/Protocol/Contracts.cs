@@ -587,7 +587,8 @@ public sealed record CombatLoadoutDto(
     double Tenacity = 0,
     double SearchSpeedRatio = 0,
     IReadOnlyList<EquippedItemDto>? Equipment = null,
-    IReadOnlyList<string>? LearnedAbilityIds = null);
+    IReadOnlyList<string>? LearnedAbilityIds = null,
+    IReadOnlyDictionary<string, double>? AbilityExperiences = null);
 
 /// <summary>
 /// 地点栖息的怪物实体信息传输对象。

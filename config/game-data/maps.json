@@ -13,7 +13,7 @@
         "y": 63,
         "cultivationMultiplier": 1,
         "availableActionIds": [
-          "explore.gather-herbs",
+          "explore.gather-ningxue-grass",
           "combat.hunt-qi-beast"
         ],
         "encounterIds": [
@@ -70,7 +70,7 @@
         "y": 57,
         "cultivationMultiplier": 1.25,
         "availableActionIds": [
-          "explore.gather-herbs"
+          "explore.collect-morning-dew"
         ],
         "encounterIds": [],
         "npcs": [
@@ -131,7 +131,9 @@
         "x": 84,
         "y": 55,
         "cultivationMultiplier": 1,
-        "availableActionIds": [],
+        "availableActionIds": [
+          "explore.mine-dark-iron"
+        ],
         "encounterIds": [],
         "npcs": [],
         "buildings": [

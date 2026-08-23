@@ -24,7 +24,7 @@
     },
     "dropTable": [
       {
-        "itemId": "item.qi-beast-core",
+        "itemId": "item.beast-hide",
         "dropChance": 1.0,
         "minQuantity": 1,
         "maxQuantity": 1
@@ -60,8 +60,20 @@
     },
     "dropTable": [
       {
-        "itemId": "item.qi-beast-core",
+        "itemId": "item.broken-spirit-core",
         "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.palm-lightning",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.palm-lightning",
+        "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -102,8 +114,20 @@
     },
     "dropTable": [
       {
-        "itemId": "item.qi-beast-core",
+        "itemId": "item.broken-spirit-core",
         "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.blazing-blast",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.blazing-blast",
+        "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -146,8 +170,26 @@
     "enrageTimeMilliseconds": 180000,
     "dropTable": [
       {
-        "itemId": "item.qi-beast-core",
-        "dropChance": 1.0,
+        "itemId": "item.beast-hide",
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.beast-bone",
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.chain-strike",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.chain-strike",
+        "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -193,8 +235,38 @@
     "enrageTimeMilliseconds": 180000,
     "dropTable": [
       {
-        "itemId": "item.qi-beast-core",
-        "dropChance": 1.0,
+        "itemId": "item.beast-bone",
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.broken-spirit-core",
+        "dropChance": 0.5,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.heavy-slash",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-slash",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.taunt",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.taunt",
+        "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -243,8 +315,50 @@
     "enrageTimeMilliseconds": 240000,
     "dropTable": [
       {
-        "itemId": "item.qi-beast-core",
+        "itemId": "item.beast-hide",
         "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.beast-bone",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.demon-dan",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.sha-fang",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.heavy-slash",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-slash",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.chain-strike",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.chain-strike",
+        "dropChance": 0.02,
         "minQuantity": 1,
         "maxQuantity": 1
       }
@@ -292,7 +406,26 @@
       "hit": 1.0,
       "eva": 1.0
     },
-    "dropTable": [],
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.chain-strike",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.chain-strike",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
     "rareDropTable": [],
     "skills": [
       {
@@ -327,7 +460,38 @@
       "hit": 1.11,
       "eva": 1.66
     },
-    "dropTable": [],
+    "dropTable": [
+      {
+        "itemId": "item.fire-feather",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.lightning-attraction",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.lightning-attraction",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.blazing-blast",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.blazing-blast",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
     "rareDropTable": [],
     "skills": [
       {
@@ -362,7 +526,26 @@
       "hit": 1.0,
       "eva": 1.2
     },
-    "dropTable": [],
+    "dropTable": [
+      {
+        "itemId": "item.soul-talisman",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.pozhen-melody",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.pozhen-melody",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
     "rareDropTable": [],
     "skills": [
       {
@@ -404,7 +587,32 @@
     "criticalDamageRatio": 0.2,
     "criticalAvoidance": 0.05,
     "enrageTimeMilliseconds": 180000,
-    "dropTable": [],
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.broken-blade",
+        "dropChance": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.heavy-clouds",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-clouds",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
     "rareDropTable": [],
     "skills": [
       {
@@ -451,7 +659,32 @@
     "tenacity": 20,
     "criticalAvoidance": 0.05,
     "enrageTimeMilliseconds": 180000,
-    "dropTable": [],
+    "dropTable": [
+      {
+        "itemId": "item.soul-talisman",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.sha-bone",
+        "dropChance": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.qingping-melody",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.qingping-melody",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
     "rareDropTable": [],
     "skills": [
       {
@@ -504,7 +737,56 @@
     "criticalAvoidance": 0.1,
     "damageAbsorptionRatio": 0.05,
     "enrageTimeMilliseconds": 360000,
-    "dropTable": [],
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.fire-feather",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.demon-core",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.meteor-fragment",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.star-piercer",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.star-piercer",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.heavy-clouds",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-clouds",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
     "rareDropTable": [],
     "skills": [
       {

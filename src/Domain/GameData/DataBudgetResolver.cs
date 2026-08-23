@@ -20,25 +20,25 @@ namespace Domain.GameData;
 public static class DataBudgetResolver
 {
     /// <summary>
-    /// 获取指定品阶（1 ~ 12 阶）的基础强度数值预算（Budget）。
+    /// 获取指定品阶（1 ~ 12 阶）单件白板装备的基础强度数值预算（源自 expected-attributes.json 权威真源 pieceBasePercentage）。
     /// </summary>
     /// <param name="tier">品阶（1 ~ 12）。</param>
-    /// <returns>基础强度预算数值。</returns>
+    /// <returns>基础强度预算数值（例如 1 阶为 20.0，对应 20% 属性增幅总和）。</returns>
     public static double GetTierBaseBudget(int tier) => tier switch
     {
-        1 => 10.0,
-        2 => 25.0,
-        3 => 60.0,
-        4 => 130.0,
-        5 => 250.0,
-        6 => 450.0,
-        7 => 750.0,
-        8 => 1150.0,
-        9 => 1700.0,
-        10 => 2450.0,
-        11 => 3400.0,
-        12 => 4600.0,
-        _ => 10.0 * Math.Pow(1.7, Math.Max(0, tier - 1))
+        1 => 28.0,
+        2 => 40.0,
+        3 => 40.0,
+        4 => 60.0,
+        5 => 80.0,
+        6 => 100.0,
+        7 => 140.0,
+        8 => 180.0,
+        9 => 240.0,
+        10 => 300.0,
+        11 => 400.0,
+        12 => 500.0,
+        _ => 20.0 * Math.Pow(1.35, Math.Max(0, tier - 1))
     };
 
     /// <summary>

@@ -784,7 +784,8 @@ public static class StateMapper
             combat.Tenacity,
             combat.SearchSpeedRatio,
             (combat.Equipment ?? []).Select(item => new EquippedItemDto(item.ItemId, item.EnhancementLevel)).ToArray(),
-            combat.LearnedAbilityIds.ToArray());
+            combat.LearnedAbilityIds.ToArray(),
+            combat.AbilityExperiences?.ToDictionary(k => k.Key, v => v.Value, StringComparer.Ordinal));
     }
 
     private static WorldStateDto ToWorld(WorldState world)

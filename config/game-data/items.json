@@ -1,23 +1,298 @@
 [
   {
-    "id": "item.spirit-herb",
-    "name": "灵草",
-    "description": "野外采集的基础炼丹材料。",
-    "kind": "material",
-    "category": "材料",
+    "id": "resource.qi",
+    "name": "灵气",
+    "description": "天地间游离的精纯灵气，用于打坐修炼与境界突破。",
+    "kind": "resource",
+    "category": "resource",
     "tier": 1,
-    "sellPrice": 3,
+    "sellPrice": 0,
+    "isTradable": false,
+    "consumable": null
+  },
+  {
+    "id": "item.ningxue-grass",
+    "name": "凝血草",
+    "description": "生长在深山背阴处的暗红草药，凡人捣碎外敷止血生肌、打熬气血，是提炼草木精华的基础药草。",
+    "kind": "material",
+    "category": "herb",
+    "tier": 1,
+    "sellPrice": 5,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.peach-wood",
+    "name": "桃木",
+    "description": "向阳坡地采伐的百年凡木，木质坚致微带辟邪之意，用于萃炼法系桃木晶。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 5,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.dark-iron",
+    "name": "乌铁",
+    "description": "深山老矿采掘的未淬原铁，沉重坚硬，是熔铸凡阶百炼铁的基础原料。",
+    "kind": "material",
+    "category": "mineral",
+    "tier": 1,
+    "sellPrice": 5,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.beast-hide",
+    "name": "兽皮",
+    "description": "凡间野兽魔化后留下的粗糙韧皮，可用于缝制基础防具与内衬。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 6,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.beast-bone",
+    "name": "兽骨",
+    "description": "野兽身上最坚硬的骨骼，常用于加固物理兵刃与百衲护具。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 6,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.morning-dew",
+    "name": "晨露",
+    "description": "破晓清晨凝结于灵木叶尖的无根甘露，清澈纯净，是提炼各类草木药液精华的绝佳溶媒。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 8,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.broken-spirit-core",
+    "name": "破碎灵核",
+    "description": "初具灵机的草木火灵或异兽体内残留的微弱灵核碎片，蕴含微量灵气。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 12,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.demon-dan",
+    "name": "妖丹",
+    "description": "深山伥虎体内凝结的浑浊兽丹，煞气缠绕，凡人武夫视若珍宝，可用于高阶炼养。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 50,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.sha-fang",
+    "name": "煞齿",
+    "description": "伥虎口中浸透百人精血的森白獠牙，坚硬锋锐，带有破罡厉煞之气。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 50,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.banling-flower",
+    "name": "伴灵花",
+    "description": "生长在仙门外围悬崖灵泉旁的幽香野花，常年沐浴微弱灵气，花瓣含微光，用于提炼伴灵精华。",
+    "kind": "material",
+    "category": "herb",
+    "tier": 2,
+    "sellPrice": 15,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.yinlingsong-wood",
+    "name": "引灵松",
+    "description": "扎根于险峻山崖的苍劲古松，松枝能自然引聚四周晨雾灵气，用于萃炼灵松晶。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 15,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.crimson-copper",
+    "name": "赤铜",
+    "description": "伴生于浅层灵脉附近的赤红金属矿石，延展性极佳且易于导气，用于熔铸赤铜精。",
+    "kind": "material",
+    "category": "mineral",
+    "tier": 2,
+    "sellPrice": 15,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.beast-fang",
+    "name": "兽牙",
+    "description": "裂齿妖狼锋利耐磨的犬齿，是打造破罡战将系列兵刃护甲的绝佳加固辅料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 18,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.fire-feather",
+    "name": "火羽",
+    "description": "星屑火鸦身上掉落的赤红翎羽，触手温热微带火芒，是织就辟尘法衣的核心辅料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 18,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.soul-talisman",
+    "name": "残魄灵符",
+    "description": "掠灵邪修随身携带的阴损符箓残片，虽有残损但符文法印依旧具备聚气通灵之效。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 20,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.broken-blade",
+    "name": "残刃",
+    "description": "残刃尸煞手中紧握的百战断刃，历经煞气淬炼锋芒不灭，稀有的兵刃重铸材料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 60,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.sha-bone",
+    "name": "煞骨",
+    "description": "坠魔祭司祭炼多年的魔煞法骨，散发着森森阴冷魔息，稀有的法器祭炼材料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 60,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.demon-core",
+    "name": "妖核",
+    "description": "坠星兽体内凝聚的天外异种妖核，蕴含狂暴的星陨灵气，是炼制高阶通脉丹的核心药引。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 150,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.meteor-fragment",
+    "name": "陨星破片",
+    "description": "伴随坠星兽降临大地的天外天外陨铁破片，质地奇异沉重，乃是锻造极品破罡神兵的稀世宝材。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 150,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.refined-iron",
+    "name": "百炼铁",
+    "description": "由乌铁经千锤百炼去除凡浊杂质而成的精纯熟铁，是打造 T1 凡阶物理装备的统一核心主料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 18,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.peach-wood-crystal",
+    "name": "桃木晶",
+    "description": "由阳坡桃木慢火萃取提炼出的木灵晶核，温润通灵，是雕琢 T1 凡阶术法装备的统一核心主料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 18,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.herb-essence",
+    "name": "草木精华",
+    "description": "采集凝血草融入清晨无根晨露慢熬精炼出的碧绿药液，药香扑鼻，专用于各类凡阶丹药炼制。",
+    "kind": "material",
+    "category": "material",
+    "tier": 1,
+    "sellPrice": 20,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.refined-copper",
+    "name": "赤铜精",
+    "description": "由赤铜经灵火熔炼提纯而出的赤红铜精，通透致密，是打造 T2 破罡战将物理装备的统一核心主料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 50,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.spirit-pine-crystal",
+    "name": "灵松晶",
+    "description": "由绝壁引灵松树芯灵髓凝练出的青翠松晶，内蕴淡淡松风灵机，是打造 T2 辟尘术法装备的统一核心主料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 50,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.banling-essence",
+    "name": "伴灵精华",
+    "description": "由伴灵花浸入晨露萃取而成的幽蓝清液，药力精纯通达经络，专用于炼制 T2 通脉丹等高阶灵丹。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 55,
     "isTradable": true,
     "consumable": null
   },
   {
     "id": "item.qi-gathering-pill",
     "name": "引气丹",
-    "description": "修炼时放入消耗品槽位，持续提供 30% 修炼效果加成。",
+    "description": "凡胎武者打坐吐纳必备的引灵丹药。放入修炼消耗槽，持续 300 秒内提升 30% 修炼收益。",
     "kind": "consumable",
-    "category": "丹药",
+    "category": "pill",
     "tier": 1,
-    "sellPrice": 18,
+    "sellPrice": 35,
     "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
@@ -37,19 +312,22 @@
     }
   },
   {
-    "id": "item.gathering-incense",
-    "name": "寻灵香",
-    "description": "探索时点燃，短时间提高灵草收获量。",
+    "id": "item.zhixue-powder",
+    "name": "止血散",
+    "description": "江湖武夫随身常备的疗伤灵散。历练战斗中使用，30 秒内生命回复属性增加 2 点固定值并获得 100% 回复增幅，冷却 60 秒。",
     "kind": "consumable",
-    "category": "探索用品",
+    "category": "pill",
     "tier": 1,
-    "sellPrice": 20,
+    "sellPrice": 25,
     "isTradable": true,
     "consumable": {
       "usableInActionTypes": [
-        "exploration"
+        "combat"
       ],
-      "cooldownSeconds": 0,
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 60,
       "recoverySeconds": 0,
       "triggerHpRatio": 0.6,
       "triggerAtCombatStart": false,
@@ -57,17 +335,716 @@
       "manapointRestore": 0,
       "buffs": [
         {
+          "buffId": "buff.zhixue",
+          "name": "止血散·回春",
+          "durationSeconds": 30,
+          "stackable": false,
+          "maxStacks": 1,
+          "qiGainMultiplier": 1.0,
+          "attackLevelRatio": 0.0,
+          "damageRatio": 0.0,
+          "attackSpeedRatio": 0.0,
+          "gatheringOutputMultiplier": 1.0,
+          "alchemyOutputMultiplier": 1.0
+        }
+      ],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.shunqi-pill",
+    "name": "顺气丸",
+    "description": "调理灵息、平息躁乱的定心丸。历练战斗中使用，30 秒内灵力回复属性增加 1 点固定值并获得 100% 回复增幅，冷却 60 秒。",
+    "kind": "consumable",
+    "category": "pill",
+    "tier": 1,
+    "sellPrice": 25,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 60,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [
+        {
+          "buffId": "buff.shunqi",
+          "name": "顺气丸·凝神",
+          "durationSeconds": 30,
+          "stackable": false,
+          "maxStacks": 1,
+          "qiGainMultiplier": 1.0,
+          "attackLevelRatio": 0.0,
+          "damageRatio": 0.0,
+          "attackSpeedRatio": 0.0,
+          "gatheringOutputMultiplier": 1.0,
+          "alchemyOutputMultiplier": 1.0
+        }
+      ],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tongmai-pill",
+    "name": "通脉丹",
+    "description": "以伴灵精华融合坠星妖核炼就的破障灵丹。放入修炼消耗槽，持续 300 秒内提升 50% 修炼收益。",
+    "kind": "consumable",
+    "category": "pill",
+    "tier": 2,
+    "sellPrice": 200,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation"
+      ],
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "cultivationMultiplier": 1.5,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 0.6,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "currency.spirit-stone",
+    "name": "灵石",
+    "description": "修仙界通用的天地灵气结晶货币，可用于坊市交易与天宝求购。",
+    "kind": "currency",
+    "category": "currency",
+    "tier": 1,
+    "sellPrice": 1,
+    "isTradable": true,
+    "consumable": null
+  },
+  {
+    "id": "item.tome.heavy-slash",
+    "name": "《重斩秘籍》",
+    "description": "记载【重斩】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.heavy-slash",
+    "name": "《重斩·残卷》",
+    "description": "散落的【重斩】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.chain-strike",
+    "name": "《连环秘籍》",
+    "description": "记载【连环】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.chain-strike",
+    "name": "《连环·残卷》",
+    "description": "散落的【连环】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.palm-lightning",
+    "name": "《掌心雷秘籍》",
+    "description": "记载【掌心雷】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.palm-lightning",
+    "name": "《掌心雷·残卷》",
+    "description": "散落的【掌心雷】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.blazing-blast",
+    "name": "《轰炎秘籍》",
+    "description": "记载【轰炎】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.blazing-blast",
+    "name": "《轰炎·残卷》",
+    "description": "散落的【轰炎】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.taunt",
+    "name": "《嘲讽秘籍》",
+    "description": "记载【嘲讽】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 100,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.taunt",
+    "name": "《嘲讽·残卷》",
+    "description": "散落的【嘲讽】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 1,
+    "sellPrice": 10,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.heavy-clouds",
+    "name": "《重云秘籍》",
+    "description": "记载【重云】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.heavy-clouds",
+    "name": "《重云·残卷》",
+    "description": "散落的【重云】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.qingping-melody",
+    "name": "《清平乐秘籍》",
+    "description": "记载【清平乐】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.qingping-melody",
+    "name": "《清平乐·残卷》",
+    "description": "散落的【清平乐】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.lightning-attraction",
+    "name": "《雷光引秘籍》",
+    "description": "记载【雷光引】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.lightning-attraction",
+    "name": "《雷光引·残卷》",
+    "description": "散落的【雷光引】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.pozhen-melody",
+    "name": "《破阵子秘籍》",
+    "description": "记载【破阵子】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.pozhen-melody",
+    "name": "《破阵子·残卷》",
+    "description": "散落的【破阵子】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.tome.star-piercer",
+    "name": "《贯星秘籍》",
+    "description": "记载【贯星】全篇修炼精要的完整秘籍。首次使用可直接领悟该功法；已领悟后再次研读可获得 10,000 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.fragment.star-piercer",
+    "name": "《贯星·残卷》",
+    "description": "散落的【贯星】残页断篇。必须先通过完整秘籍学会该功法方可研读，每次使用增加 500 点功法经验。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [],
+      "defaultCombatTriggers": []
+    }
+  },
+  {
+    "id": "item.gathering-incense",
+    "name": "寻灵香",
+    "description": "探索采集时点燃，静心凝神，短时间内提升 50% 采集药材产出。",
+    "kind": "consumable",
+    "category": "herb",
+    "tier": 1,
+    "sellPrice": 20,
+    "isTradable": true,
+    "consumable": {
+      "usableInActionTypes": [
+        "exploration"
+      ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "gatheringMultiplier": 1.5,
+      "alchemyMultiplier": 1.0,
+      "cooldownSeconds": 0,
+      "recoverySeconds": 0,
+      "triggerHpRatio": 1.0,
+      "triggerAtCombatStart": false,
+      "hitpointRestore": 0,
+      "manapointRestore": 0,
+      "buffs": [
+        {
           "buffId": "buff.gathering-blessing",
-          "name": "寻灵",
+          "name": "寻灵专注",
           "durationSeconds": 120,
           "stackable": false,
           "maxStacks": 1,
-          "qiGainMultiplier": 1,
-          "attackLevelRatio": 0,
-          "damageRatio": 0,
-          "attackSpeedRatio": 0,
+          "qiGainMultiplier": 1.0,
+          "attackLevelRatio": 0.0,
+          "damageRatio": 0.0,
+          "attackSpeedRatio": 0.0,
           "gatheringOutputMultiplier": 1.5,
-          "alchemyOutputMultiplier": 1
+          "alchemyOutputMultiplier": 1.0
         }
       ],
       "defaultCombatTriggers": []
@@ -76,9 +1053,9 @@
   {
     "id": "item.alchemy-flame",
     "name": "地火引",
-    "description": "炼丹时引动地火，短时间提高丹药产出。",
+    "description": "炼丹制药时引动地脉温火，提高丹药炼制产出。",
     "kind": "consumable",
-    "category": "炼丹用品",
+    "category": "material",
     "tier": 1,
     "sellPrice": 22,
     "isTradable": true,
@@ -86,344 +1063,33 @@
       "usableInActionTypes": [
         "alchemy"
       ],
+      "durationSeconds": 0,
+      "isContinuous": false,
+      "cultivationMultiplier": 1.0,
+      "gatheringMultiplier": 1.0,
+      "alchemyMultiplier": 1.25,
       "cooldownSeconds": 0,
       "recoverySeconds": 0,
-      "triggerHpRatio": 0.6,
+      "triggerHpRatio": 1.0,
       "triggerAtCombatStart": false,
       "hitpointRestore": 0,
       "manapointRestore": 0,
       "buffs": [
         {
           "buffId": "buff.alchemy-focus",
-          "name": "地火专注",
+          "name": "地火凝神",
           "durationSeconds": 120,
           "stackable": false,
           "maxStacks": 1,
-          "qiGainMultiplier": 1,
-          "attackLevelRatio": 0,
-          "damageRatio": 0,
-          "attackSpeedRatio": 0,
-          "gatheringOutputMultiplier": 1,
+          "qiGainMultiplier": 1.0,
+          "attackLevelRatio": 0.0,
+          "damageRatio": 0.0,
+          "attackSpeedRatio": 0.0,
+          "gatheringOutputMultiplier": 1.0,
           "alchemyOutputMultiplier": 1.25
         }
       ],
       "defaultCombatTriggers": []
     }
-  },
-  {
-    "id": "item.healing-elixir",
-    "name": "回元灵液",
-    "description": "历练中恢复生命，拥有独立冷却。",
-    "kind": "consumable",
-    "category": "灵食",
-    "tier": 1,
-    "sellPrice": 24,
-    "isTradable": true,
-    "consumable": {
-      "usableInActionTypes": [
-        "combat"
-      ],
-      "cooldownSeconds": 60,
-      "recoverySeconds": 0,
-      "triggerHpRatio": 0.6,
-      "triggerAtCombatStart": false,
-      "hitpointRestore": 45,
-      "manapointRestore": 0,
-      "buffs": [],
-      "defaultCombatTriggers": [
-        {
-          "dependency": "self",
-          "condition": "missingHitpoints",
-          "comparator": "greaterThanOrEqual",
-          "value": 45,
-          "buffId": null
-        }
-      ]
-    }
-  },
-  {
-    "id": "item.rejuvenating-dew",
-    "name": "回春灵露",
-    "description": "历练中持续恢复生命，每 5 秒结算一次。",
-    "kind": "consumable",
-    "category": "灵食",
-    "tier": 2,
-    "sellPrice": 56,
-    "isTradable": true,
-    "consumable": {
-      "usableInActionTypes": [
-        "combat"
-      ],
-      "cooldownSeconds": 90,
-      "recoverySeconds": 30,
-      "triggerHpRatio": 0.75,
-      "triggerAtCombatStart": true,
-      "hitpointRestore": 60,
-      "manapointRestore": 0,
-      "buffs": [],
-      "defaultCombatTriggers": [
-        {
-          "dependency": "self",
-          "condition": "missingHitpoints",
-          "comparator": "greaterThanOrEqual",
-          "value": 60,
-          "buffId": null
-        }
-      ]
-    }
-  },
-  {
-    "id": "item.spirit-tea",
-    "name": "凝神灵茶",
-    "description": "历练中提高攻速，拥有独立冷却。",
-    "kind": "consumable",
-    "category": "灵饮",
-    "tier": 1,
-    "sellPrice": 30,
-    "isTradable": true,
-    "consumable": {
-      "usableInActionTypes": [
-        "combat"
-      ],
-      "cooldownSeconds": 300,
-      "recoverySeconds": 0,
-      "triggerHpRatio": 0.6,
-      "triggerAtCombatStart": false,
-      "hitpointRestore": 0,
-      "manapointRestore": 0,
-      "buffs": [
-        {
-          "buffId": "buff.spirit-tea",
-          "name": "凝神",
-          "durationSeconds": 300,
-          "stackable": false,
-          "maxStacks": 1,
-          "qiGainMultiplier": 1,
-          "attackLevelRatio": 0,
-          "damageRatio": 0,
-          "attackSpeedRatio": 0.1,
-          "gatheringOutputMultiplier": 1,
-          "alchemyOutputMultiplier": 1
-        }
-      ],
-      "defaultCombatTriggers": [
-        {
-          "dependency": "self",
-          "condition": "buffStacks",
-          "comparator": "isInactive",
-          "value": 0,
-          "buffId": "buff.spirit-tea"
-        }
-      ]
-    }
-  },
-  {
-    "id": "item.fire-talisman",
-    "name": "赤焰符",
-    "description": "历练中提高术式伤害，拥有独立冷却。",
-    "kind": "consumable",
-    "category": "符箓",
-    "tier": 2,
-    "sellPrice": 80,
-    "isTradable": true,
-    "consumable": {
-      "usableInActionTypes": [
-        "combat"
-      ],
-      "cooldownSeconds": 300,
-      "recoverySeconds": 0,
-      "triggerHpRatio": 0.6,
-      "triggerAtCombatStart": false,
-      "hitpointRestore": 0,
-      "manapointRestore": 0,
-      "buffs": [
-        {
-          "buffId": "buff.fire-talisman",
-          "name": "赤焰",
-          "durationSeconds": 300,
-          "stackable": false,
-          "maxStacks": 1,
-          "qiGainMultiplier": 1,
-          "attackLevelRatio": 0,
-          "damageRatio": 0.08,
-          "attackSpeedRatio": 0,
-          "gatheringOutputMultiplier": 1,
-          "alchemyOutputMultiplier": 1
-        }
-      ],
-      "defaultCombatTriggers": []
-    }
-  },
-  {
-    "id": "equipment.cursed-spirit-bow",
-    "name": "蚀心灵弓",
-    "description": "命中后叠加蚀心，使目标承受的伤害提高。",
-    "kind": "equipment",
-    "category": "双手法器",
-    "tier": 5,
-    "sellPrice": 5000000,
-    "isTradable": true,
-    "consumable": null
-  },
-  {
-    "id": "equipment.furious-spirit-spear",
-    "name": "沸血灵枪",
-    "description": "连续命中会叠加沸血，提高命中与伤害。",
-    "kind": "equipment",
-    "category": "主手法器",
-    "tier": 5,
-    "sellPrice": 5000000,
-    "isTradable": true,
-    "consumable": null
-  },
-  {
-    "id": "equipment.griffin-spirit-bulwark",
-    "name": "玄狮重盾",
-    "description": "攻击者每次出手都会积累衰弱，降低其后续伤害。",
-    "kind": "equipment",
-    "category": "双手法器",
-    "tier": 5,
-    "sellPrice": 5000000,
-    "isTradable": true,
-    "consumable": null
-  },
-  {
-    "id": "equipment.sundering-spirit-crossbow",
-    "name": "破阵灵弩",
-    "description": "命中后有概率追击下一目标；单目标历练中记录为穿透触发。",
-    "kind": "equipment",
-    "category": "主手法器",
-    "tier": 5,
-    "sellPrice": 5000000,
-    "isTradable": true,
-    "consumable": null
-  },
-  {
-    "id": "currency.spirit",
-    "name": "灵石",
-    "description": "修仙界通用货币。",
-    "kind": "currency",
-    "category": "货币",
-    "tier": 1,
-    "sellPrice": 1,
-    "isTradable": false,
-    "consumable": null
-  },
-  {
-    "id": "resource.qi",
-    "name": "灵气",
-    "description": "修炼积累的基础修为资源。",
-    "kind": "resource",
-    "category": "修为",
-    "tier": 1,
-    "sellPrice": 0,
-    "isTradable": false,
-    "consumable": null
-  },
-  {
-    "id": "item.qi-beast-core",
-    "name": "聚气兽核",
-    "description": "击败低阶妖兽后获得的灵核。",
-    "kind": "material",
-    "category": "战利品",
-    "tier": 1,
-    "sellPrice": 12,
-    "isTradable": true,
-    "consumable": null
-  },
-  {
-    "id": "item.cloud-sugar",
-    "name": "云糖",
-    "description": "聚气兽偶尔携带的灵食材料。",
-    "kind": "material",
-    "category": "材料",
-    "tier": 1,
-    "sellPrice": 4,
-    "isTradable": true,
-    "consumable": null
-  },
-  {
-    "id": "item.verdant-spirit-milk",
-    "name": "青木灵乳",
-    "description": "蕴含木灵气息的低阶灵乳。",
-    "kind": "consumable",
-    "category": "灵食",
-    "tier": 1,
-    "sellPrice": 10,
-    "isTradable": true,
-    "consumable": {
-      "usableInActionTypes": [
-        "combat"
-      ],
-      "cooldownSeconds": 60,
-      "recoverySeconds": 0,
-      "triggerHpRatio": 0.6,
-      "triggerAtCombatStart": false,
-      "hitpointRestore": 25,
-      "manapointRestore": 0,
-      "buffs": [],
-      "defaultCombatTriggers": [
-        {
-          "dependency": "self",
-          "condition": "missingHitpoints",
-          "comparator": "greaterThanOrEqual",
-          "value": 25,
-          "buffId": null
-        }
-      ]
-    }
-  },
-  {
-    "id": "item.azure-spirit-milk",
-    "name": "碧水灵乳",
-    "description": "蕴含水灵气息的低阶灵乳。",
-    "kind": "consumable",
-    "category": "灵食",
-    "tier": 1,
-    "sellPrice": 14,
-    "isTradable": true,
-    "consumable": {
-      "usableInActionTypes": [
-        "combat"
-      ],
-      "cooldownSeconds": 60,
-      "recoverySeconds": 0,
-      "triggerHpRatio": 0.6,
-      "triggerAtCombatStart": false,
-      "hitpointRestore": 0,
-      "manapointRestore": 30,
-      "buffs": [],
-      "defaultCombatTriggers": [
-        {
-          "dependency": "self",
-          "condition": "missingManapoints",
-          "comparator": "greaterThanOrEqual",
-          "value": 30,
-          "buffId": null
-        }
-      ]
-    }
-  },
-  {
-    "id": "item.spirit-pulse-manual",
-    "name": "聚气冲击诀",
-    "description": "记录聚气冲击术式的入门功法残页。",
-    "kind": "material",
-    "category": "功法残页",
-    "tier": 2,
-    "sellPrice": 75,
-    "isTradable": true,
-    "consumable": null
-  },
-  {
-    "id": "item.small-qi-chest",
-    "name": "小聚气宝匣",
-    "description": "极低概率从聚气兽身上获得的战利宝匣。",
-    "kind": "material",
-    "category": "稀有战利品",
-    "tier": 3,
-    "sellPrice": 180,
-    "isTradable": true,
-    "consumable": null
   }
 ]

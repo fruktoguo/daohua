@@ -103,6 +103,24 @@ public static class GameDataCatalog
             pair => pair.Key,
             pair => DataBudgetResolver.ResolveEquipment(pair.Value),
             StringComparer.Ordinal);
+        foreach (var eq in equipment.Values)
+        {
+            if (!items.ContainsKey(eq.Id))
+            {
+                items[eq.Id] = new ItemDefinition
+                {
+                    Id = eq.Id,
+                    Name = eq.Name,
+                    Description = $"【{eq.Name}】品阶：{eq.Tier}阶装备，槽位：{eq.Slot}。",
+                    Kind = ItemKind.Equipment,
+                    Category = ItemCategory.Equipment,
+                    Tier = eq.Tier,
+                    SellPrice = eq.Tier == 1 ? 50 : 150,
+                    IsTradable = true,
+                    Consumable = null
+                };
+            }
+        }
         var monsterConfigs = Index(Read<CombatantConfig[]>(files, "monsters.json"), entry => entry.Id, "怪物");
         var monsters = monsterConfigs.ToDictionary(
             pair => pair.Key,

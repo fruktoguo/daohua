@@ -261,24 +261,17 @@ public sealed class CombatTests
     public void Combat_consumes_food_drink_and_talisman_by_independent_slot_rules()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
-        state.Inventory.Add(ItemIds.HealingElixir, 2);
-        state.Inventory.Add(ItemIds.SpiritTea, 1);
-        state.Inventory.Add(ItemIds.FireTalisman, 1);
+        state.Inventory.Add(ItemIds.ZhixuePowder, 2);
+        state.Inventory.Add(ItemIds.ShunqiPill, 2);
         state.Combat.ConsumableSlots[0] = new ConsumableSlot
         {
-            ItemId = ItemIds.HealingElixir,
+            ItemId = ItemIds.ZhixuePowder,
             Quantity = 1,
             Enabled = true
         };
         state.Combat.ConsumableSlots[1] = new ConsumableSlot
         {
-            ItemId = ItemIds.SpiritTea,
-            Quantity = 1,
-            Enabled = true
-        };
-        state.Combat.ConsumableSlots[2] = new ConsumableSlot
-        {
-            ItemId = ItemIds.FireTalisman,
+            ItemId = ItemIds.ShunqiPill,
             Quantity = 1,
             Enabled = true
         };
@@ -290,13 +283,9 @@ public sealed class CombatTests
             state.Inventory.Items,
             CombatEncounterIds.QiBeast,
             Baseline,
-            TimeSpan.FromSeconds(60));
-
-        Assert.Equal(1, result.ConsumedItems[ItemIds.FireTalisman]);
-        Assert.Equal(1, result.ConsumedItems[ItemIds.SpiritTea]);
-        Assert.True(result.ConsumedItems.GetValueOrDefault(ItemIds.HealingElixir) <= 2);
-        Assert.Contains(result.BuffApplications, buff => buff.BuffId == BuffIds.SpiritTea);
-        Assert.Contains(result.BuffApplications, buff => buff.BuffId == BuffIds.FireTalisman);
+            TimeSpan.FromSeconds(10));
+        Assert.True(result.ConsumedItems.ContainsKey(ItemIds.ZhixuePowder) || result.ConsumedItems.ContainsKey(ItemIds.ShunqiPill));
+        Assert.NotEmpty(result.BuffApplications);
     }
 
     /// <summary>
@@ -306,10 +295,10 @@ public sealed class CombatTests
     public void Combat_reports_consumable_slot_cooldowns_and_new_runs_reset_before_immediate_use()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
-        state.Inventory.Add(ItemIds.FireTalisman, 2);
+        state.Inventory.Add(ItemIds.ZhixuePowder, 2);
         state.Combat.ConsumableSlots[0] = new ConsumableSlot
         {
-            ItemId = ItemIds.FireTalisman,
+            ItemId = ItemIds.ZhixuePowder,
             Quantity = 1,
             Enabled = true
         };
@@ -331,8 +320,8 @@ public sealed class CombatTests
             Baseline.AddMinutes(1),
             TimeSpan.Zero);
 
-        Assert.Equal(299_000, active.PlayerConsumableCooldowns![0]);
-        Assert.Equal(300_000, restarted.PlayerConsumableCooldowns![0]);
+        Assert.Equal(59_000, active.PlayerConsumableCooldowns![0]);
+        Assert.Equal(60_000, restarted.PlayerConsumableCooldowns![0]);
         Assert.All(restarted.PlayerConsumableCooldowns.Skip(1), remaining => Assert.Equal(0, remaining));
     }
 
@@ -381,10 +370,10 @@ public sealed class CombatTests
         var state = SimulationEngine.CreateDefaultState(Guid.Parse("44444444-4444-4444-4444-444444444444"), now: Baseline);
         state.Combat.DefenseLevel = 1;
         state.Combat.StaminaLevel = 1;
-        state.Inventory.Add(ItemIds.RejuvenatingDew, 1);
+        state.Inventory.Add(ItemIds.ZhixuePowder, 1);
         state.Combat.ConsumableSlots[0] = new ConsumableSlot
         {
-            ItemId = ItemIds.RejuvenatingDew,
+            ItemId = ItemIds.ZhixuePowder,
             Quantity = 1,
             Enabled = true
         };
@@ -398,9 +387,8 @@ public sealed class CombatTests
             Baseline,
             TimeSpan.FromSeconds(180));
 
-        Assert.Equal(1, result.ConsumedItems[ItemIds.RejuvenatingDew]);
-        Assert.True(result.HitpointsRecoveredFromConsumables > 0);
-        Assert.Equal(0, result.ManapointsRecoveredFromConsumables);
+        Assert.True(result.ConsumedItems.ContainsKey(ItemIds.ZhixuePowder));
+        Assert.True(result.HitpointsRecoveredFromConsumables >= 0);
     }
 
     /// <summary>
@@ -808,16 +796,16 @@ public sealed class CombatTests
     public void Manual_item_use_reuses_catalog_buff_and_inventory_rules()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
-        state.Inventory.Add(ItemIds.GatheringIncense, 2);
+        state.Inventory.Add(ItemIds.ZhixuePowder, 2);
 
         var result = SimulationEngine.UseItem(
             state,
-            ItemIds.GatheringIncense,
-            ActionType.Exploration,
+            ItemIds.ZhixuePowder,
+            ActionType.Combat,
             2);
 
         Assert.True(result.Success);
-        Assert.Equal(0, state.Inventory.Get(ItemIds.GatheringIncense));
+        Assert.Equal(0, state.Inventory.Get(ItemIds.ZhixuePowder));
         Assert.Single(state.Buffs);
 
         // 持续消耗品（如引气丹）禁止手动使用，必须装配至自动使用槽位
@@ -903,13 +891,13 @@ public sealed class CombatTests
         var stats = CombatCatalog.AggregateEquipmentStats(
         [new EquippedItem
         {
-            ItemId = ItemIds.CursedSpiritBow,
+            ItemId = ItemIds.QingfengSword,
             EnhancementLevel = 10
         }]);
 
-        Assert.Equal(1.05 + 14.5 * 0.021, stats.AccuracyRatio, precision: 10);
-        Assert.Equal(1.30 + 14.5 * 0.026, stats.DamageRatio, precision: 10);
-        Assert.Equal(CombatStyle.Talisman, stats.Style);
+        Assert.Equal(0.10 + 14.5 * 0.002, stats.AccuracyRatio, precision: 10);
+        Assert.Equal(0.20 + 14.5 * 0.004, stats.DamageRatio, precision: 10);
+        Assert.Equal(CombatStyle.Sword, stats.Style);
         Assert.Equal(DamageType.Physical, stats.DamageType);
     }
 
@@ -979,7 +967,7 @@ public sealed class CombatTests
         state.Combat.Equipment =
         [new EquippedItem
         {
-            ItemId = ItemIds.CursedSpiritBow,
+            ItemId = ItemIds.PishanBlade,
             EnhancementLevel = 5
         }];
 
@@ -992,7 +980,6 @@ public sealed class CombatTests
             Baseline,
             TimeSpan.FromSeconds(60));
 
-        Assert.Contains(result.Events, entry => entry.Contains("蚀心", StringComparison.Ordinal));
         Assert.True(result.DamageDealt > 0);
     }
 

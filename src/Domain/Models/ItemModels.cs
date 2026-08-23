@@ -217,6 +217,8 @@ public sealed class CombatLoadout
     public double SearchSpeedRatio { get; set; }
     /// <summary>玩家当前已领悟/学会的所有技能 ID 列表。</summary>
     public List<string> LearnedAbilityIds { get; set; } = [];
+    /// <summary>玩家当前已领悟功法的经验值字典（AbilityId -> 累计经验值）。</summary>
+    public Dictionary<string, double> AbilityExperiences { get; set; } = new(StringComparer.Ordinal);
     /// <summary>4 个固定战斗技能装备槽位。</summary>
     public List<CombatAbilitySlot> AbilitySlots { get; set; } =
     [new(), new(), new(), new()];
@@ -264,6 +266,7 @@ public sealed class CombatLoadout
             CombatRareFind = CombatRareFind,
             SearchSpeedRatio = SearchSpeedRatio,
             LearnedAbilityIds = LearnedAbilityIds?.ToList() ?? [],
+            AbilityExperiences = AbilityExperiences?.ToDictionary(k => k.Key, v => v.Value, StringComparer.Ordinal) ?? new(StringComparer.Ordinal),
             AbilitySlots = AbilitySlots.Select(slot => new CombatAbilitySlot
             {
                 AbilityId = slot.AbilityId,
@@ -272,6 +275,19 @@ public sealed class CombatLoadout
             }).ToList(),
             ConsumableSlots = ConsumableSlots.Select(CloneConsumableSlot).ToList()
         };
+    }
+
+    /// <summary>
+    /// 获取指定技能的当前等级（基于累计经验计算，若未领悟返回 1）。
+    /// </summary>
+    public int GetAbilityLevel(string abilityId)
+    {
+        if (string.IsNullOrWhiteSpace(abilityId)) return 1;
+        if (AbilityExperiences != null && AbilityExperiences.TryGetValue(abilityId, out var exp))
+        {
+            return Domain.Constants.ExperienceConstants.GetLevelFromExp(exp);
+        }
+        return 1;
     }
 
     private static ConsumableSlot CloneConsumableSlot(ConsumableSlot slot)

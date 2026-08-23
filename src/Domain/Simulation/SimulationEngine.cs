@@ -192,6 +192,7 @@ public static class SimulationEngine
         state.Combat.ConsumableSlots ??= [];
         state.Combat.Equipment ??= [];
         state.Combat.LearnedAbilityIds ??= [];
+        state.Combat.AbilityExperiences ??= new(StringComparer.Ordinal);
         if (!double.IsFinite(state.Combat.HpRegenPerTenSeconds)
             || state.Combat.HpRegenPerTenSeconds < 0)
         {
@@ -609,6 +610,75 @@ public static class SimulationEngine
             || !item.Consumable.UsableInActionTypes.Contains(actionType))
         {
             return CommandResult.Fail("ITEM_NOT_SUPPORTED", "该物品不能用于当前行动类型。");
+        }
+        if (item.Category == ItemCategory.Manual
+            || item.Id.StartsWith("item.tome.", StringComparison.Ordinal)
+            || item.Id.StartsWith("item.fragment.", StringComparison.Ordinal))
+        {
+            state.Combat.LearnedAbilityIds ??= [];
+            state.Combat.AbilityExperiences ??= new(StringComparer.Ordinal);
+
+            if (item.Id.StartsWith("item.tome.", StringComparison.Ordinal))
+            {
+                if (state.Inventory.Get(itemId) < 1)
+                {
+                    return CommandResult.Fail("INSUFFICIENT_ITEM", "功法秘籍数量不足。");
+                }
+
+                var abilityId = "ability." + item.Id["item.tome.".Length..];
+                if (!CombatCatalog.TryGetAbility(abilityId, out var ability))
+                {
+                    return CommandResult.Fail("ABILITY_NOT_FOUND", "未找到对应的功法定义。");
+                }
+
+                if (!state.Combat.LearnedAbilityIds.Contains(abilityId, StringComparer.Ordinal))
+                {
+                    state.Inventory.Add(itemId, -1);
+                    state.Combat.LearnedAbilityIds.Add(abilityId);
+                    state.Combat.AbilityExperiences[abilityId] = SkillTomeConstants.FirstLearnExp;
+                    Touch(state, DirtySections.Inventory | DirtySections.Combat | DirtySections.Events);
+                    AddEvent(state, $"领悟并学会功法神通 {{{{ability:{ability.Id}|{ability.Name}}}}}！");
+                    return CommandResult.Ok($"已成功学会功法【{ability.Name}】！");
+                }
+                else
+                {
+                    state.Inventory.Add(itemId, -1);
+                    var newExp = state.Combat.AbilityExperiences.GetValueOrDefault(abilityId) + SkillTomeConstants.SubsequentTomeExp;
+                    state.Combat.AbilityExperiences[abilityId] = newExp;
+                    var (lvl, _, _, _) = ExperienceConstants.GetProgress(newExp);
+                    Touch(state, DirtySections.Inventory | DirtySections.Combat | DirtySections.Events);
+                    AddEvent(state, $"研读功法秘籍，{{{{ability:{ability.Id}|{ability.Name}}}}} 获得 {SkillTomeConstants.SubsequentTomeExp:F0} 点功法经验！当前等级：Lv.{lvl}");
+                    return CommandResult.Ok($"研读成功，【{ability.Name}】获得 10000 点经验（当前等级：Lv.{lvl}）！");
+                }
+            }
+
+            if (item.Id.StartsWith("item.fragment.", StringComparison.Ordinal))
+            {
+                var abilityId = "ability." + item.Id["item.fragment.".Length..];
+                if (!CombatCatalog.TryGetAbility(abilityId, out var ability))
+                {
+                    return CommandResult.Fail("ABILITY_NOT_FOUND", "未找到对应的功法定义。");
+                }
+
+                if (!state.Combat.LearnedAbilityIds.Contains(abilityId, StringComparer.Ordinal))
+                {
+                    return CommandResult.Fail("ABILITY_NOT_LEARNED", $"尚未掌握【{ability.Name}】完整秘籍，无法研读残卷。");
+                }
+
+                if (state.Inventory.Get(itemId) < quantity)
+                {
+                    return CommandResult.Fail("INSUFFICIENT_ITEM", "残卷数量不足。");
+                }
+
+                state.Inventory.Add(itemId, -quantity);
+                var expGain = SkillTomeConstants.FragmentExp * quantity;
+                var newExp = state.Combat.AbilityExperiences.GetValueOrDefault(abilityId) + expGain;
+                state.Combat.AbilityExperiences[abilityId] = newExp;
+                var (lvl, _, _, _) = ExperienceConstants.GetProgress(newExp);
+                Touch(state, DirtySections.Inventory | DirtySections.Combat | DirtySections.Events);
+                AddEvent(state, $"研读残卷，{{{{ability:{ability.Id}|{ability.Name}}}}} 获得 {expGain:F0} 点功法经验！当前等级：Lv.{lvl}");
+                return CommandResult.Ok($"研读成功，【{ability.Name}】获得 {expGain:F0} 点经验（当前等级：Lv.{lvl}）！");
+            }
         }
 
         if (item.Consumable.DurationSeconds > 0 || item.Consumable.IsContinuous)

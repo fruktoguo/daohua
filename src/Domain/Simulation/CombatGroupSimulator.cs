@@ -109,7 +109,7 @@ public static partial class CombatSimulator
         }
         var playerAbilities = loadout.AbilitySlots
             .Select(slot => CombatCatalog.TryGetAbility(slot.AbilityId, out var ability)
-                ? CombatCatalog.GetAbilityAtLevel(ability.Id, slot.Level)
+                ? CombatCatalog.GetAbilityAtLevel(ability.Id, Math.Max(slot.Level, loadout.GetAbilityLevel(ability.Id)))
                 : null)
             .ToArray();
         var completedEncounterCount = Math.Max(0, completedEncountersBeforeRun);

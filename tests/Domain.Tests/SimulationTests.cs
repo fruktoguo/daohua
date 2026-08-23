@@ -205,7 +205,7 @@ public sealed class SimulationEngineTests
         Assert.Equal(2, state.StructuredEventLog.Count);
         Assert.Equal([1L, 2L], state.StructuredEventLog.Select(entry => entry.Sequence));
         Assert.Equal(Baseline, state.StructuredEventLog[0].OccurredAt);
-        Assert.Contains("{{action:explore.gather-herbs|采集草药}}", state.StructuredEventLog[1].Template, StringComparison.Ordinal);
+        Assert.Contains("{{action:explore.gather-ningxue-grass|采集凝血草}}", state.StructuredEventLog[1].Template, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1159,10 +1159,10 @@ public sealed class SimulationEngineTests
             Hitpoints = 500,
             Manapoints = 200
         };
-        state.Inventory.Add(ItemIds.FireTalisman, 5);
+        state.Inventory.Add(ItemIds.ZhixuePowder, 5);
         state.Combat.ConsumableSlots[0] = new ConsumableSlot
         {
-            ItemId = ItemIds.FireTalisman,
+            ItemId = ItemIds.ZhixuePowder,
             Quantity = 1,
             Enabled = true,
             Triggers =

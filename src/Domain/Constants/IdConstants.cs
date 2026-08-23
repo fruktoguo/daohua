@@ -15,9 +15,9 @@ namespace Domain.Constants;
 /// </summary>
 public static class ActionIds
 {
-    /// <summary>采集灵草动作。</summary>
-    public const string GatherHerbs = "explore.gather-herbs";
-    /// <summary>炼制聚气丹动作。</summary>
+    /// <summary>采集凝血草动作。</summary>
+    public const string GatherHerbs = "explore.gather-ningxue-grass";
+    /// <summary>炼制引气丹动作。</summary>
     public const string RefineQiPill = "alchemy.refine-qi-pill";
     /// <summary>吐纳运功吸纳灵气动作。</summary>
     public const string DrawQi = "cultivation.draw-qi";
@@ -34,46 +34,58 @@ public static class ActionIds
 /// </summary>
 public static class ItemIds
 {
-    /// <summary>灵草材料。</summary>
-    public const string SpiritHerb = "item.spirit-herb";
-    /// <summary>聚气丹消耗品。</summary>
+    /// <summary>凝血草材料。</summary>
+    public const string SpiritHerb = "item.ningxue-grass";
+    /// <summary>引气丹消耗品。</summary>
     public const string QiGatheringPill = "item.qi-gathering-pill";
+    /// <summary>止血散消耗品。</summary>
+    public const string ZhixuePowder = "item.zhixue-powder";
+    /// <summary>顺气丸消耗品。</summary>
+    public const string ShunqiPill = "item.shunqi-pill";
+    /// <summary>通脉丹消耗品。</summary>
+    public const string TongmaiPill = "item.tongmai-pill";
     /// <summary>灵石基础流通货币。</summary>
-    public const string Spirit = "currency.spirit";
+    public const string Spirit = "currency.spirit-stone";
     /// <summary>灵气修为资源。</summary>
     public const string Qi = "resource.qi";
-    /// <summary>疗伤灵药。</summary>
-    public const string HealingElixir = "item.healing-elixir";
-    /// <summary>回生甘露。</summary>
-    public const string RejuvenatingDew = "item.rejuvenating-dew";
-    /// <summary>清心灵茶。</summary>
-    public const string SpiritTea = "item.spirit-tea";
-    /// <summary>赤炎灵符。</summary>
-    public const string FireTalisman = "item.fire-talisman";
-    /// <summary>灵兽内丹。</summary>
-    public const string QiBeastCore = "item.qi-beast-core";
-    /// <summary>云锦糖。</summary>
-    public const string CloudSugar = "item.cloud-sugar";
-    /// <summary>青灵玉乳。</summary>
-    public const string VerdantSpiritMilk = "item.verdant-spirit-milk";
-    /// <summary>碧落天乳。</summary>
-    public const string AzureSpiritMilk = "item.azure-spirit-milk";
-    /// <summary>灵脉真解功法书。</summary>
-    public const string SpiritPulseManual = "item.spirit-pulse-manual";
-    /// <summary>小型灵气锦囊。</summary>
-    public const string SmallQiChest = "item.small-qi-chest";
-    /// <summary>采药定神香。</summary>
+    /// <summary>破碎灵核。</summary>
+    public const string QiBeastCore = "item.broken-spirit-core";
+    /// <summary>兽皮。</summary>
+    public const string BeastHide = "item.beast-hide";
+    /// <summary>兽骨。</summary>
+    public const string BeastBone = "item.beast-bone";
+    /// <summary>百炼铁。</summary>
+    public const string RefinedIron = "item.refined-iron";
+    /// <summary>青锋剑（装备）。</summary>
+    public const string QingfengSword = "equipment.qingfeng-sword";
+    /// <summary>劈山刀（装备）。</summary>
+    public const string PishanBlade = "equipment.pishan-blade";
+    /// <summary>破罡剑（装备）。</summary>
+    public const string PogangSword = "equipment.pogang-sword";
+    /// <summary>朝元杖（装备）。</summary>
+    public const string ChaoyuanStaff = "equipment.chaoyuan-staff";
+    /// <summary>兼容旧引用的长弓别名。</summary>
+    public const string CursedSpiritBow = "equipment.qingfeng-sword";
+    /// <summary>兼容旧引用的灵枪别名。</summary>
+    public const string FuriousSpiritSpear = "equipment.pogang-sword";
+    /// <summary>兼容旧引用的重盾别名。</summary>
+    public const string GriffinSpiritBulwark = "equipment.yulin-armor";
+    /// <summary>兼容旧引用的灵弩别名。</summary>
+    public const string SunderingSpiritCrossbow = "equipment.chaoyuan-staff";
+    /// <summary>兼容旧引用的疗伤药别名。</summary>
+    public const string HealingElixir = "item.zhixue-powder";
+    /// <summary>兼容旧引用的回生露别名。</summary>
+    public const string RejuvenatingDew = "item.zhixue-powder";
+    /// <summary>兼容旧引用的灵茶别名。</summary>
+    public const string SpiritTea = "item.shunqi-pill";
+    /// <summary>兼容旧引用的灵符别名。</summary>
+    public const string FireTalisman = "item.fragment.blazing-blast";
+    /// <summary>兼容旧引用的云锦糖别名。</summary>
+    public const string CloudSugar = "item.beast-hide";
+    /// <summary>寻灵香。</summary>
     public const string GatheringIncense = "item.gathering-incense";
-    /// <summary>地心丹火。</summary>
+    /// <summary>地火引。</summary>
     public const string AlchemyFlame = "item.alchemy-flame";
-    /// <summary>怨灵长弓（装备）。</summary>
-    public const string CursedSpiritBow = "equipment.cursed-spirit-bow";
-    /// <summary>狂烈灵枪（装备）。</summary>
-    public const string FuriousSpiritSpear = "equipment.furious-spirit-spear";
-    /// <summary>狮鹫重盾（装备）。</summary>
-    public const string GriffinSpiritBulwark = "equipment.griffin-spirit-bulwark";
-    /// <summary>破甲灵弩（装备）。</summary>
-    public const string SunderingSpiritCrossbow = "equipment.sundering-spirit-crossbow";
 }
 
 /// <summary>
