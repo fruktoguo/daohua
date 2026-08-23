@@ -53,13 +53,14 @@ Directory.CreateDirectory(outputDirectory);
 var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 {
     Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    WriteIndented = true
+    WriteIndented = true,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
 };
 options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 
 await WriteAsync("manifest.json", new GameDataManifest(1, "2026.08.10.2"));
 await WriteAsync("actions.json", ActionCatalog.AllIncludingHidden);
-await WriteAsync("items.json", ItemCatalog.All);
+await WriteAsync("items.json", ItemCatalog.All.Select(ToItemConfig).ToArray());
 await WriteAsync("abilities.json", CombatCatalog.AllAbilities);
 await WriteAsync("equipment.json", CombatCatalog.AllEquipment);
 var encounters = CombatCatalog.AllEncounters.ToArray();
@@ -177,3 +178,67 @@ static CombatEncounterConfig ToEncounterConfig(CombatEncounterDefinition encount
     EnrageRatioPerStack: encounter.EnrageRatioPerStack,
     DropTable: encounter.DropTable,
     RareDropTable: encounter.RareDropTable);
+
+/// <summary>
+/// 将内存物品实体定义转换为精简的物品配置传输对象 (ItemConfig)。
+/// </summary>
+static ItemConfig ToItemConfig(ItemDefinition item) => new(
+    Id: item.Id,
+    Name: item.Name,
+    Description: item.Description,
+    Kind: item.Kind,
+    Category: item.Category,
+    Tier: item.Tier,
+    SellPrice: item.SellPrice,
+    IsTradable: item.IsTradable,
+    Consumable: item.Consumable == null ? null : ToConsumableConfig(item.Consumable));
+
+/// <summary>
+/// 将内存消耗品定义转换为精简的消耗品配置模型 (ConsumableConfig)，自动裁剪无意义的默认参数。
+/// </summary>
+static ConsumableConfig ToConsumableConfig(ConsumableDefinition consumable)
+{
+    var isManual = consumable.UsableInActionTypes.Count == 4
+        && consumable.DurationSeconds == 0
+        && consumable.Buffs.Count == 0
+        && consumable.HitpointRestore == 0
+        && consumable.ManapointRestore == 0;
+
+    if (isManual)
+    {
+        return new ConsumableConfig(
+            UsableInActionTypes: consumable.UsableInActionTypes);
+    }
+
+    return new ConsumableConfig(
+        UsableInActionTypes: consumable.UsableInActionTypes,
+        DurationSeconds: consumable.DurationSeconds > 0 ? consumable.DurationSeconds : null,
+        IsContinuous: consumable.IsContinuous ? true : null,
+        CultivationMultiplier: Math.Abs(consumable.CultivationMultiplier - 1.0) > 0.001 ? consumable.CultivationMultiplier : null,
+        GatheringMultiplier: Math.Abs(consumable.GatheringMultiplier - 1.0) > 0.001 ? consumable.GatheringMultiplier : null,
+        AlchemyMultiplier: Math.Abs(consumable.AlchemyMultiplier - 1.0) > 0.001 ? consumable.AlchemyMultiplier : null,
+        CooldownSeconds: consumable.CooldownSeconds > 0 ? consumable.CooldownSeconds : null,
+        RecoverySeconds: consumable.RecoverySeconds > 0 ? consumable.RecoverySeconds : null,
+        TriggerHpRatio: Math.Abs(consumable.TriggerHpRatio - 0.6) > 0.001 ? consumable.TriggerHpRatio : null,
+        TriggerAtCombatStart: consumable.TriggerAtCombatStart ? true : null,
+        HitpointRestore: consumable.HitpointRestore > 0 ? consumable.HitpointRestore : null,
+        ManapointRestore: consumable.ManapointRestore > 0 ? consumable.ManapointRestore : null,
+        Buffs: consumable.Buffs.Count > 0 ? consumable.Buffs.Select(ToBuffEffectConfig).ToArray() : null,
+        DefaultCombatTriggers: consumable.DefaultCombatTriggers.Count > 0 ? consumable.DefaultCombatTriggers.ToArray() : null);
+}
+
+/// <summary>
+/// 将内存增益效果定义转换为精简的增益配置模型 (BuffEffectConfig)，裁剪为 0 或 1.0 的默认加成。
+/// </summary>
+static BuffEffectConfig ToBuffEffectConfig(BuffEffectDefinition buff) => new(
+    BuffId: buff.BuffId,
+    Name: buff.Name,
+    DurationSeconds: buff.DurationSeconds,
+    Stackable: buff.Stackable ? true : null,
+    MaxStacks: buff.MaxStacks > 1 ? buff.MaxStacks : null,
+    QiGainMultiplier: Math.Abs(buff.QiGainMultiplier - 1.0) > 0.001 ? buff.QiGainMultiplier : null,
+    AttackLevelRatio: Math.Abs(buff.AttackLevelRatio) > 0.0001 ? buff.AttackLevelRatio : null,
+    DamageRatio: Math.Abs(buff.DamageRatio) > 0.0001 ? buff.DamageRatio : null,
+    AttackSpeedRatio: Math.Abs(buff.AttackSpeedRatio) > 0.0001 ? buff.AttackSpeedRatio : null,
+    GatheringOutputMultiplier: Math.Abs(buff.GatheringOutputMultiplier - 1.0) > 0.001 ? buff.GatheringOutputMultiplier : null,
+    AlchemyOutputMultiplier: Math.Abs(buff.AlchemyOutputMultiplier - 1.0) > 0.001 ? buff.AlchemyOutputMultiplier : null);

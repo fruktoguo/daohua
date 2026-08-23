@@ -375,18 +375,21 @@ public static class DataBudgetResolver
 
             var buffs = consConfig.Buffs?.Select(ResolveBuff).ToList() ?? [];
 
+            var duration = consConfig.DurationSeconds ?? 0;
+            var isContinuous = consConfig.IsContinuous ?? (duration > 0);
+
             consumable = new ConsumableDefinition
             {
                 UsableInActionTypes = consConfig.UsableInActionTypes,
-                DurationSeconds = consConfig.DurationSeconds,
-                IsContinuous = consConfig.IsContinuous || consConfig.DurationSeconds > 0,
-                CultivationMultiplier = consConfig.CultivationMultiplier > 0 ? consConfig.CultivationMultiplier : 1.0,
-                GatheringMultiplier = consConfig.GatheringMultiplier > 0 ? consConfig.GatheringMultiplier : 1.0,
-                AlchemyMultiplier = consConfig.AlchemyMultiplier > 0 ? consConfig.AlchemyMultiplier : 1.0,
-                CooldownSeconds = consConfig.CooldownSeconds,
-                RecoverySeconds = consConfig.RecoverySeconds,
-                TriggerHpRatio = consConfig.TriggerHpRatio,
-                TriggerAtCombatStart = consConfig.TriggerAtCombatStart,
+                DurationSeconds = duration,
+                IsContinuous = isContinuous,
+                CultivationMultiplier = consConfig.CultivationMultiplier is > 0 ? consConfig.CultivationMultiplier.Value : 1.0,
+                GatheringMultiplier = consConfig.GatheringMultiplier is > 0 ? consConfig.GatheringMultiplier.Value : 1.0,
+                AlchemyMultiplier = consConfig.AlchemyMultiplier is > 0 ? consConfig.AlchemyMultiplier.Value : 1.0,
+                CooldownSeconds = consConfig.CooldownSeconds ?? 0,
+                RecoverySeconds = consConfig.RecoverySeconds ?? 0,
+                TriggerHpRatio = consConfig.TriggerHpRatio ?? 0.6,
+                TriggerAtCombatStart = consConfig.TriggerAtCombatStart ?? false,
                 HitpointRestore = hpRestore,
                 ManapointRestore = mpRestore,
                 Buffs = buffs,
@@ -443,8 +446,8 @@ public static class DataBudgetResolver
             BuffId = config.BuffId,
             Name = config.Name,
             DurationSeconds = config.DurationSeconds,
-            Stackable = config.Stackable,
-            MaxStacks = config.MaxStacks,
+            Stackable = config.Stackable ?? false,
+            MaxStacks = config.MaxStacks ?? 1,
             QiGainMultiplier = qiGain,
             AttackLevelRatio = atkRatio,
             DamageRatio = dmgRatio,

@@ -77,7 +77,8 @@ public sealed record EquipmentConfig(
     EquipmentCombatStats? EnhancementBonus = null,
     double? Intensity = null,
     double? Budget = null,
-    IReadOnlyDictionary<string, double>? Weights = null);
+    IReadOnlyDictionary<string, double>? Weights = null,
+    string? Description = null);
 /// <summary>
 /// 消耗品增益效果配置，支持显式属性或由强度权重推导。
 /// </summary>
@@ -85,8 +86,8 @@ public sealed record BuffEffectConfig(
     string BuffId,
     string Name,
     int DurationSeconds,
-    bool Stackable = false,
-    int MaxStacks = 1,
+    bool? Stackable = null,
+    int? MaxStacks = null,
     double? QiGainMultiplier = null,
     double? AttackLevelRatio = null,
     double? DamageRatio = null,
@@ -101,15 +102,15 @@ public sealed record BuffEffectConfig(
 /// </summary>
 public sealed record ConsumableConfig(
     IReadOnlySet<ActionType> UsableInActionTypes,
-    double DurationSeconds = 0,
-    bool IsContinuous = false,
-    double CultivationMultiplier = 1.0,
-    double GatheringMultiplier = 1.0,
-    double AlchemyMultiplier = 1.0,
-    int CooldownSeconds = 0,
-    int RecoverySeconds = 0,
-    double TriggerHpRatio = 0.6,
-    bool TriggerAtCombatStart = false,
+    double? DurationSeconds = null,
+    bool? IsContinuous = null,
+    double? CultivationMultiplier = null,
+    double? GatheringMultiplier = null,
+    double? AlchemyMultiplier = null,
+    int? CooldownSeconds = null,
+    int? RecoverySeconds = null,
+    double? TriggerHpRatio = null,
+    bool? TriggerAtCombatStart = null,
     long? HitpointRestore = null,
     long? ManapointRestore = null,
     IReadOnlyList<BuffEffectConfig>? Buffs = null,
