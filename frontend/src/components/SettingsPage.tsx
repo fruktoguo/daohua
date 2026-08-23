@@ -143,7 +143,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
             <div className="stat-row">
               <span>{t('app.settings.sequenceIdLabel')}</span>
               <span className="sequence-id-tag">
-                #{sequenceId > 0 ? sequenceId : 1}
+                {sequenceId > 0 ? `#${sequenceId}` : '-'}
               </span>
             </div>
             <div className="stat-row">

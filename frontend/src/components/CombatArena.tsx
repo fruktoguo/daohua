@@ -11,6 +11,7 @@ import { Modal } from './Modal'
 import { ValueText } from './ValueText'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
+import { BASELINE_COMBAT_ATTRIBUTES } from '../game/combatConstants'
 import { CharacterAvatar } from './CharacterAvatar'
 
 /** 资源条数值变动特效记录（跳字与血条破裂碎片） */
@@ -1056,8 +1057,8 @@ export const CombatArena = memo(function CombatArena({
       && (!action.availableNodeIds?.length || (world.nodeId !== null && action.availableNodeIds.includes(world.nodeId)))
   )), [actions, world.nodeId])
 
-  const fallbackMaxHp = 100 + (combat?.staminaLevel ?? 1) * 12
-  const fallbackMaxMp = 100 + (combat?.intelligenceLevel ?? 1) * 10
+  const fallbackMaxHp = combatAttributes?.maxHitpoints ?? BASELINE_COMBAT_ATTRIBUTES.maxHp
+  const fallbackMaxMp = combatAttributes?.maxManapoints ?? BASELINE_COMBAT_ATTRIBUTES.maxMp
   const playerMaxHp = expedition?.playerMaxHitpoints ?? combatResources?.maxHitpoints ?? fallbackMaxHp
   const playerMaxMp = expedition?.playerMaxManapoints ?? combatResources?.maxManapoints ?? fallbackMaxMp
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
