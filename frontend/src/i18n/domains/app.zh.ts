@@ -33,6 +33,7 @@ export const appZh = {
       forging: '炼器',
       alchemyCultivation: '修炼',
       alchemyCombat: '斗法',
+      alchemyExtraction: '提炼',
       forgeWeapon: '武器',
       forgeHead: '头部',
       forgeArmor: '衣服',

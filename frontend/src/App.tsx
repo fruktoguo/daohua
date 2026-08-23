@@ -700,9 +700,10 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   )
 })
 
-const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyCultivation' | 'alchemyCombat' }> = [
+const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyCultivation' | 'alchemyCombat' | 'alchemyExtraction' }> = [
   { id: 'cultivation', labelKey: 'alchemyCultivation' },
   { id: 'combat', labelKey: 'alchemyCombat' },
+  { id: 'extraction', labelKey: 'alchemyExtraction' },
 ]
 
 const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' }> = [
@@ -750,21 +751,27 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   const filteredActions = useMemo(() => {
     if (craftingMode === 'alchemy') {
       if (alchemySubTab === 'cultivation') {
-        // 修炼：引气丹、通脉丹、草木精华、伴灵精华
+        // 修炼：引气丹、通脉丹
         return availableActions.filter(a =>
           a.id === 'alchemy.refine-qi-pill' ||
           a.id === 'alchemy.refine-tongmai-pill' ||
-          a.id === 'craft.extract-herb-essence' ||
-          a.id === 'craft.extract-banling-essence' ||
-          (a.type === 'alchemy' && !a.id.includes('zhixue') && !a.id.includes('shunqi') && !a.id.startsWith('forge.') && !a.id.startsWith('craft.refine-'))
+          (a.type === 'alchemy' && !a.id.includes('zhixue') && !a.id.includes('shunqi') && !a.id.startsWith('craft.extract-') && !a.id.startsWith('forge.') && !a.id.startsWith('craft.refine-'))
         )
-      } else {
+      } else if (alchemySubTab === 'combat') {
         // 斗法：止血散、顺气丸
         return availableActions.filter(a =>
           a.id === 'alchemy.refine-zhixue-powder' ||
           a.id === 'alchemy.refine-shunqi-pill' ||
           a.id.includes('zhixue') ||
           a.id.includes('shunqi')
+        )
+      } else {
+        // 提炼：草木精华、伴灵精华及其他药材/灵材萃炼
+        return availableActions.filter(a =>
+          a.id === 'craft.extract-herb-essence' ||
+          a.id === 'craft.extract-banling-essence' ||
+          a.id.startsWith('craft.extract-') ||
+          a.id.startsWith('craft.refine-')
         )
       }
     } else {

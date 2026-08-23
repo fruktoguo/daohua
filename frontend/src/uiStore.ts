@@ -19,9 +19,8 @@ export type TabId = 'insight' | 'market' | 'cultivation' | 'exploration' | 'craf
 /** 技艺当前模式：炼丹 vs 炼器 */
 export type CraftingMode = 'alchemy' | 'forging'
 
-/** 炼丹顶部子选项卡：修炼丹药 vs 斗法药剂 */
-export type AlchemySubTab = 'cultivation' | 'combat'
-
+/** 炼丹顶部子选项卡：修炼丹药 vs 斗法药剂 vs 材料提炼 */
+export type AlchemySubTab = 'cultivation' | 'combat' | 'extraction'
 /** 炼器顶部子选项卡：六大装备部位 */
 export type ForgingSubTab = 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket'
 
