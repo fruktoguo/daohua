@@ -70,7 +70,7 @@ export interface FloatingAsideCard {
  * 内容：具体数值（中文四位分段）
  * 结构：1 行展示
  */
-export function createQuantityAsideCard(
+function createQuantityAsideCard(
   quantity: number | bigint | string,
   title = '数量'
 ): FloatingAsideCard {
@@ -86,7 +86,7 @@ export function createQuantityAsideCard(
 /**
  * 检查当前是否偏好触屏/点击交互（移动端或无 hover 能力的设备）
  */
-export function isTouchPointerDevice(): boolean {
+function isTouchPointerDevice(): boolean {
   if (typeof window === 'undefined') return false
   if (typeof window.matchMedia === 'function') {
     return window.matchMedia('(pointer: coarse), (hover: none)').matches
@@ -106,7 +106,7 @@ interface PositionResult {
 /**
  * 计算浮层在视口内的安全坐标，绝对避免被裁剪、遮挡或超出屏幕
  */
-export function computeSafeFloatingPosition(
+function computeSafeFloatingPosition(
   anchorRect: DOMRect,
   floatingRect: DOMRect,
   placement: FloatingPlacement = 'bottom',
