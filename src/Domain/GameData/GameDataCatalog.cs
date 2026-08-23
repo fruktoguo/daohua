@@ -24,18 +24,6 @@ public static class GameDataCatalog
     /// <summary>支持的数据结构 Schema 版本。</summary>
     public const int SupportedSchemaVersion = GameDataCatalogConstants.SupportedSchemaVersion;
 
-    private static readonly string[] FileNames =
-    [
-        "manifest.json",
-        "actions.json",
-        "items.json",
-        "abilities.json",
-        "equipment.json",
-        "monsters.json",
-        "encounters.json",
-        "maps.json"
-    ];
-
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
     private static GameDataCatalogSnapshot _current = LoadEmbedded();
 
@@ -45,34 +33,68 @@ public static class GameDataCatalog
     /// <summary>
     /// 从外部指定目录读取 JSON 数据文件并原子替换当前单例快照。
     /// </summary>
-    /// <param name="directory">包含全量数据 JSON 文件的目录路径。</param>
+    /// <param name="directory">包含全量数据 JSON 文件或子目录的根路径。</param>
     /// <returns>构建后的新游戏数据快照。</returns>
     public static GameDataCatalogSnapshot LoadFromDirectory(string directory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directory);
         var fullPath = Path.GetFullPath(directory);
-        var files = FileNames.ToDictionary(
-            fileName => fileName,
-            fileName => File.ReadAllBytes(Path.Combine(fullPath, fileName)),
-            StringComparer.Ordinal);
+        var files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+
+        foreach (var file in Directory.EnumerateFiles(fullPath, "*.json", SearchOption.AllDirectories))
+        {
+            var relPath = Path.GetRelativePath(fullPath, file).Replace('\\', '/');
+            files[relPath] = File.ReadAllBytes(file);
+        }
+
+        if (files.Count == 0)
+        {
+            throw new InvalidOperationException($"指定目录未找到任何 JSON 游戏数据: {directory}");
+        }
+
         var snapshot = BuildSnapshot(files);
         Interlocked.Exchange(ref _current, snapshot);
         return snapshot;
     }
 
-
     private static GameDataCatalogSnapshot LoadEmbedded()
     {
         var assembly = typeof(GameDataCatalog).Assembly;
+        const string prefix = "Domain.GameData.Defaults.";
         var files = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-        foreach (var fileName in FileNames)
+        var categories = new[] { "actions", "items", "abilities", "equipment", "monsters", "encounters", "maps" };
+
+        foreach (var resourceName in assembly.GetManifestResourceNames())
         {
-            var resourceName = $"Domain.GameData.Defaults.{fileName}";
+            if (!resourceName.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var relPath = resourceName[prefix.Length..].Replace('\\', '/');
+            if (!relPath.Contains('/'))
+            {
+                foreach (var cat in categories)
+                {
+                    var catPrefix = cat + ".";
+                    if (relPath.StartsWith(catPrefix, StringComparison.OrdinalIgnoreCase) && !relPath.Equals($"{cat}.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        relPath = cat + "/" + relPath[catPrefix.Length..];
+                        break;
+                    }
+                }
+            }
+
             using var stream = assembly.GetManifestResourceStream(resourceName)
                 ?? throw new InvalidOperationException($"缺少内置游戏数据资源: {resourceName}");
             using var memory = new MemoryStream();
             stream.CopyTo(memory);
-            files[fileName] = memory.ToArray();
+            files[relPath] = memory.ToArray();
+        }
+
+        if (files.Count == 0)
+        {
+            throw new InvalidOperationException("未找到任何内置游戏数据资源。");
         }
 
         return BuildSnapshot(files);
@@ -87,18 +109,18 @@ public static class GameDataCatalog
                 $"游戏数据结构版本不兼容: {manifest.SchemaVersion}，当前仅支持 {SupportedSchemaVersion}。");
         }
 
-        var actions = Index(Read<ActionDefinition[]>(files, "actions.json"), entry => entry.Id, "行动");
-        var itemConfigs = Index(Read<ItemConfig[]>(files, "items.json"), entry => entry.Id, "物品");
+        var actions = Index(ReadFromCategory<ActionDefinition>(files, "actions"), entry => entry.Id, "行动");
+        var itemConfigs = Index(ReadFromCategory<ItemConfig>(files, "items"), entry => entry.Id, "物品");
         var items = itemConfigs.ToDictionary(
             pair => pair.Key,
             pair => DataBudgetResolver.ResolveItem(pair.Value),
             StringComparer.Ordinal);
-        var abilityConfigs = Index(Read<AbilityConfig[]>(files, "abilities.json"), entry => entry.Id, "技能");
+        var abilityConfigs = Index(ReadFromCategory<AbilityConfig>(files, "abilities"), entry => entry.Id, "技能");
         var abilities = abilityConfigs.ToDictionary(
             pair => pair.Key,
             pair => DataBudgetResolver.ResolveAbility(pair.Value),
             StringComparer.Ordinal);
-        var equipmentConfigs = Index(Read<EquipmentConfig[]>(files, "equipment.json"), entry => entry.Id, "装备");
+        var equipmentConfigs = Index(ReadFromCategory<EquipmentConfig>(files, "equipment"), entry => entry.Id, "装备");
         var equipment = equipmentConfigs.ToDictionary(
             pair => pair.Key,
             pair => DataBudgetResolver.ResolveEquipment(pair.Value),
@@ -124,17 +146,17 @@ public static class GameDataCatalog
                 };
             }
         }
-        var monsterConfigs = Index(Read<CombatantConfig[]>(files, "monsters.json"), entry => entry.Id, "怪物");
+        var monsterConfigs = Index(ReadFromCategory<CombatantConfig>(files, "monsters"), entry => entry.Id, "怪物");
         var monsters = monsterConfigs.ToDictionary(
             pair => pair.Key,
             pair => ToCombatant(pair.Value, abilities),
             StringComparer.Ordinal);
-        var encounterConfigs = Index(Read<CombatEncounterConfig[]>(files, "encounters.json"), entry => entry.Id, "遭遇");
+        var encounterConfigs = Index(ReadFromCategory<CombatEncounterConfig>(files, "encounters"), entry => entry.Id, "遭遇");
         var encounters = encounterConfigs.ToDictionary(
             pair => pair.Key,
             pair => ToEncounter(pair.Value, monsters),
             StringComparer.Ordinal);
-        var maps = Index(Read<WorldMapDefinition[]>(files, "maps.json"), entry => entry.Id, "地图");
+        var maps = Index(ReadFromCategory<WorldMapDefinition>(files, "maps"), entry => entry.Id, "地图");
 
         Validate(actions, items, abilities, equipment, monsters, encounters, maps);
         return new GameDataCatalogSnapshot(
@@ -400,13 +422,54 @@ public static class GameDataCatalog
         }
     }
 
+    private static List<T> ReadFromCategory<T>(IReadOnlyDictionary<string, byte[]> files, string category)
+    {
+        var prefix = category.TrimEnd('/') + "/";
+        var results = new List<T>();
+        var matchedFiles = files.Keys
+            .Where(path => (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                            || path.Equals($"{category}.json", StringComparison.OrdinalIgnoreCase))
+                           && path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => path, StringComparer.Ordinal);
+
+        foreach (var path in matchedFiles)
+        {
+            var bytes = files[path];
+            using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
+            ValidateNoDuplicateProperties(document.RootElement, path);
+
+            if (document.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                var array = JsonSerializer.Deserialize<T[]>(bytes, JsonOptions);
+                if (array != null)
+                {
+                    results.AddRange(array);
+                }
+            }
+            else if (document.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                var single = JsonSerializer.Deserialize<T>(bytes, JsonOptions);
+                if (single != null)
+                {
+                    results.Add(single);
+                }
+            }
+        }
+
+        return results;
+    }
+
     private static string CalculateFingerprint(IReadOnlyDictionary<string, byte[]> files)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        foreach (var fileName in FileNames.OrderBy(value => value, StringComparer.Ordinal))
+        foreach (var relativePath in files.Keys.OrderBy(value => value, StringComparer.Ordinal))
         {
-            hash.AppendData(Encoding.UTF8.GetBytes(fileName));
-            hash.AppendData(files[fileName]);
+            hash.AppendData(Encoding.UTF8.GetBytes(relativePath));
+            hash.AppendData(files[relativePath]);
         }
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()[..16];
     }

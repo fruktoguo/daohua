@@ -1,0 +1,106 @@
+// ==============================================================================
+// 文件名称: App.tsx
+// 主要职责: 配置编辑器主应用容器，路由切换 9 大专有编辑器面板与全局快捷键绑定
+// ==============================================================================
+
+import { useEffect } from 'react';
+import { ConfigProvider, useConfigContext } from './context/ConfigContext';
+import { Sidebar } from './components/layout/Sidebar';
+import { Header } from './components/layout/Header';
+
+import { ManifestEditor } from './components/editors/ManifestEditor';
+import { ActionsEditor } from './components/editors/ActionsEditor';
+import { ItemsEditor } from './components/editors/ItemsEditor';
+import { AbilitiesEditor } from './components/editors/AbilitiesEditor';
+import { EquipmentEditor } from './components/editors/EquipmentEditor';
+import { MonstersEditor } from './components/editors/MonstersEditor';
+import { EncountersEditor } from './components/editors/EncountersEditor';
+import { MapsEditor } from './components/editors/MapsEditor';
+import { ExpectedAttributesEditor } from './components/editors/ExpectedAttributesEditor';
+
+function EditorLayout() {
+  const { activeFile, loading, error, saveCurrentFile, reloadAllConfigs } = useConfigContext();
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveCurrentFile();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveCurrentFile]);
+
+  if (loading) {
+    return (
+      <div className="h-screen w-screen bg-[#0b0f14] flex flex-col items-center justify-center gap-3 text-zinc-400">
+        <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-sm font-medium">正在读取游戏全部配置文件...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-screen w-screen bg-[#0b0f14] flex flex-col items-center justify-center gap-4 text-zinc-300 p-6">
+        <div className="p-4 bg-red-950/40 border border-red-800 rounded-lg max-w-lg text-center flex flex-col gap-2">
+          <span className="text-lg font-bold text-red-300">无法读取配置文件</span>
+          <p className="text-xs text-red-200">{error}</p>
+          <button
+            type="button"
+            onClick={reloadAllConfigs}
+            className="mt-2 px-4 py-1.5 bg-red-900 hover:bg-red-800 text-white text-xs rounded mx-auto"
+          >
+            重试连接
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const renderActiveEditor = () => {
+    switch (activeFile) {
+      case 'manifest.json':
+        return <ManifestEditor />;
+      case 'actions.json':
+        return <ActionsEditor />;
+      case 'items.json':
+        return <ItemsEditor />;
+      case 'abilities.json':
+        return <AbilitiesEditor />;
+      case 'equipment.json':
+        return <EquipmentEditor />;
+      case 'monsters.json':
+        return <MonstersEditor />;
+      case 'encounters.json':
+        return <EncountersEditor />;
+      case 'maps.json':
+        return <MapsEditor />;
+      case 'expected-attributes.json':
+        return <ExpectedAttributesEditor />;
+      default:
+        return <div className="p-8 text-zinc-500">未知配置文件类型</div>;
+    }
+  };
+
+  return (
+    <div className="h-screen w-screen flex bg-[#0b0f14] text-zinc-100 overflow-hidden font-sans">
+      <Sidebar />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Header />
+        <main className="flex-1 overflow-hidden flex">
+          {renderActiveEditor()}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ConfigProvider>
+      <EditorLayout />
+    </ConfigProvider>
+  );
+}
