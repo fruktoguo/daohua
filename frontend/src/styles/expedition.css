@@ -2001,6 +2001,8 @@
   position: absolute;
   z-index: 5;
   inset: 0;
+  border-radius: 7px;
+  overflow: hidden;
   display: grid;
   place-items: center;
   color: #f2ead2;

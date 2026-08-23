@@ -2415,6 +2415,12 @@ input[type="checkbox"] {
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
+.combat-ability-cooldown,
+.item-slot-duration-overlay {
+  border-radius: 7px;
+  overflow: hidden;
+}
+
 .item-tile[data-rarity="mundane"] {
   --item-accent: rgba(164, 161, 151, 0.42);
   --item-surface: rgba(164, 161, 151, 0.08);

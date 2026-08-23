@@ -423,7 +423,7 @@
   background:
     conic-gradient(from 0turn, rgba(4, 5, 5, 0.82) calc(var(--cooldown-ratio) * 1turn), transparent 0),
     rgba(4, 5, 5, 0.28);
-  border-radius: var(--item-tile-radius, 6px);
+  border-radius: 7px;
   font-family: Arial, sans-serif;
   font-size: 13px;
   font-weight: 700;
