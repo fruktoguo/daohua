@@ -1173,7 +1173,7 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
         <h2>{t('app.nav.exploration')}</h2>
         {world.locationName && <span className="location-sub-badge">{world.locationName}</span>}
       </header>
-      <div className="action-cards">
+      <div className="action-sections">
         {specialActions.length > 0 && (
           <div className="action-group-section">
             <span className="slot-group-label">{t('app.combatPanel.locationSpecialActions')}</span>

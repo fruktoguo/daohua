@@ -458,7 +458,8 @@
   flex-direction: column;
 }
 
-.skill-page .action-cards {
+.skill-page .action-cards,
+.skill-page .action-sections {
   min-height: 0;
   flex: 1;
   align-content: start;
