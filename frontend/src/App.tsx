@@ -25,30 +25,17 @@ import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstan
 import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
-import type { ActionDefinition, ActionType, CombatTrigger, InventoryItem, QueueEntry } from './game/types'
+import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
 import { gameClient } from './network/gameClient'
 import { useAccountStore } from './network/account'
 import { initUiScale } from './utils/uiScale'
-import { useUiStore, type TabId } from './uiStore'
+import { useUiStore, type TabId, type AlchemySubTab, type ForgingSubTab } from './uiStore'
 import { useT } from './i18n'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 const EMPTY_CONSUMABLE_COOLDOWNS: ReadonlyArray<number> = Object.freeze([])
 
-const NAV_ITEMS: ReadonlyArray<{
-  tab: 'cultivation' | 'exploration' | 'alchemy' | 'map' | 'combat'
-  hintKey: 'cultivationHint' | 'explorationHint' | 'alchemyHint' | 'mapHint' | 'combatHint'
-  labelKey: 'cultivation' | 'exploration' | 'alchemy' | 'map' | 'combat'
-  icon: IconName
-}> = [
-  { tab: 'cultivation', hintKey: 'cultivationHint', labelKey: 'cultivation', icon: 'cultivation' },
-  { tab: 'exploration', hintKey: 'explorationHint', labelKey: 'exploration', icon: 'exploration' },
-  { tab: 'alchemy', hintKey: 'alchemyHint', labelKey: 'alchemy', icon: 'alchemy' },
-  { tab: 'map', hintKey: 'mapHint', labelKey: 'map', icon: 'map' },
-  { tab: 'combat', hintKey: 'combatHint', labelKey: 'combat', icon: 'combat' },
-]
-
-type IconName = 'insight' | ActionType | 'map' | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
+type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'map' | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
 
 /**
  * 矢量图标组件（按名称渲染内联 SVG）
@@ -72,6 +59,10 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
       return <svg {...common}><circle cx="17.5" cy="6" r="2.2" /><path d="M3 19 9.5 7l4.5 7 2.5-3.5L21 19H3Z" /></svg>
     case 'alchemy':
       return <svg {...common}><path d="M8.5 10V7.5M15.5 10V7.5" /><path d="M5.5 10.5h13v3.5a6.5 6.5 0 0 1-13 0v-3.5Z" /><path d="M9 21v-2M15 21v-2" /></svg>
+    case 'crafting':
+      return <svg {...common}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z" /></svg>
+    case 'forging':
+      return <svg {...common}><path d="M15 12l-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9" /><path d="M17.64 4.36a3 3 0 0 0-4.24 0L12 5.76l4.24 4.24 1.4-1.4a3 3 0 0 0 0-4.24Z" /><path d="m14 7 3 3" /></svg>
     case 'map':
       return <svg {...common}><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" /><path d="M9 3v15M15 6v15" /></svg>
     case 'combat':
@@ -568,6 +559,10 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const setActiveTab = useUiStore(state => state.setActiveTab)
+  const craftingMode = useUiStore(state => state.craftingMode)
+  const setCraftingMode = useUiStore(state => state.setCraftingMode)
+  const craftingNavExpanded = useUiStore(state => state.craftingNavExpanded)
+  const setCraftingNavExpanded = useUiStore(state => state.setCraftingNavExpanded)
 
   return (
     <aside className="sidebar panel" aria-label={t('app.nav.sidebarAria')}>
@@ -592,19 +587,104 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
             <span className="nav-label">{t('app.nav.market')}</span>
           </span>
         </button>
-        {NAV_ITEMS.map(item => (
+        <button
+          className={`nav-item${activeTab === 'cultivation' ? ' active' : ''}`}
+          onClick={() => setActiveTab('cultivation')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="cultivation" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.cultivation')}</span>
+          </span>
+        </button>
+        <button
+          className={`nav-item${activeTab === 'exploration' ? ' active' : ''}`}
+          onClick={() => setActiveTab('exploration')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="exploration" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.exploration')}</span>
+          </span>
+        </button>
+
+        {/* 技艺（可展开/折叠二级菜单：炼丹、炼器） */}
+        <div className="nav-group">
           <button
-            className={`nav-item${activeTab === item.tab ? ' active' : ''}`}
-            key={item.tab}
-            onClick={() => setActiveTab(item.tab)}
+            className={`nav-item nav-item--collapsible${activeTab === 'crafting' ? ' active' : ''}`}
+            onClick={() => {
+              if (activeTab !== 'crafting') {
+                setActiveTab('crafting')
+                setCraftingNavExpanded(true)
+              } else {
+                setCraftingNavExpanded(expanded => !expanded)
+              }
+            }}
             type="button"
           >
-            <span className="nav-glyph" aria-hidden="true"><Icon name={item.icon} /></span>
+            <span className="nav-glyph" aria-hidden="true"><Icon name="crafting" /></span>
             <span className="nav-text">
-              <span className="nav-label">{t(`app.nav.${item.labelKey}`)}</span>
+              <span className="nav-label">{t('app.nav.crafting')}</span>
+            </span>
+            <span
+              className={`nav-chevron${craftingNavExpanded ? ' is-expanded' : ''}`}
+              onClick={e => {
+                e.stopPropagation()
+                setCraftingNavExpanded(expanded => !expanded)
+              }}
+              aria-hidden="true"
+            >
+              ›
             </span>
           </button>
-        ))}
+          {craftingNavExpanded && (
+            <div className="nav-sub-menu">
+              <button
+                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'alchemy' ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveTab('crafting')
+                  setCraftingMode('alchemy')
+                }}
+                type="button"
+              >
+                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="alchemy" /></span>
+                <span className="nav-sub-label">{t('app.crafting.alchemy')}</span>
+              </button>
+              <button
+                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'forging' ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveTab('crafting')
+                  setCraftingMode('forging')
+                }}
+                type="button"
+              >
+                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="forging" /></span>
+                <span className="nav-sub-label">{t('app.crafting.forging')}</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        <button
+          className={`nav-item${activeTab === 'map' ? ' active' : ''}`}
+          onClick={() => setActiveTab('map')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="map" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.map')}</span>
+          </span>
+        </button>
+        <button
+          className={`nav-item${activeTab === 'combat' ? ' active' : ''}`}
+          onClick={() => setActiveTab('combat')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="combat" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.combat')}</span>
+          </span>
+        </button>
       </nav>
       <button
         className={`nav-item settings-entry${activeTab === 'settings' ? ' active' : ''}`}
@@ -619,6 +699,168 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
     </aside>
   )
 })
+
+const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyCultivation' | 'alchemyCombat' }> = [
+  { id: 'cultivation', labelKey: 'alchemyCultivation' },
+  { id: 'combat', labelKey: 'alchemyCombat' },
+]
+
+const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' }> = [
+  { id: 'weapon', labelKey: 'forgeWeapon' },
+  { id: 'head', labelKey: 'forgeHead' },
+  { id: 'armor', labelKey: 'forgeArmor' },
+  { id: 'legs', labelKey: 'forgeLegs' },
+  { id: 'boots', labelKey: 'forgeBoots' },
+  { id: 'trinket', labelKey: 'forgeTrinket' },
+]
+
+/**
+ * 技艺页面（整合炼丹与炼器两大修仙工艺系统，支持二级模式切换与顶部多子选项卡）
+ */
+const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean }): React.JSX.Element {
+  const t = useT()
+  const actions = useGameStore(state => state.actions)
+  const equipment = useGameStore(state => state.equipment)
+  const worldNodeId = useGameStore(state => state.world.nodeId)
+
+  const craftingMode = useUiStore(state => state.craftingMode)
+  const setCraftingMode = useUiStore(state => state.setCraftingMode)
+  const alchemySubTab = useUiStore(state => state.alchemySubTab)
+  const setAlchemySubTab = useUiStore(state => state.setAlchemySubTab)
+  const forgingSubTab = useUiStore(state => state.forgingSubTab)
+  const setForgingSubTab = useUiStore(state => state.setForgingSubTab)
+
+  const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
+  const closeModal = useCallback(() => setSelectedAction(null), [])
+
+  // 装备 ID -> 装备部位映射表
+  const equipmentSlotMap = useMemo<Record<string, EquipmentSlot>>(() => {
+    const map: Record<string, EquipmentSlot> = {}
+    for (const eq of equipment) {
+      map[eq.equipmentId] = eq.slot
+    }
+    return map
+  }, [equipment])
+  // 当前世界节点可执行的所有工艺类行动
+  const availableActions = useMemo(() => actions.filter(action => (
+    (action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.'))
+      && (!action.availableNodeIds?.length || (worldNodeId !== null && action.availableNodeIds.includes(worldNodeId)))
+  )), [actions, worldNodeId])
+
+  // 当前模式与当前子选项卡下的行动列表过滤
+  const filteredActions = useMemo(() => {
+    if (craftingMode === 'alchemy') {
+      if (alchemySubTab === 'cultivation') {
+        // 修炼：引气丹、通脉丹、草木精华、伴灵精华
+        return availableActions.filter(a =>
+          a.id === 'alchemy.refine-qi-pill' ||
+          a.id === 'alchemy.refine-tongmai-pill' ||
+          a.id === 'craft.extract-herb-essence' ||
+          a.id === 'craft.extract-banling-essence' ||
+          (a.type === 'alchemy' && !a.id.includes('zhixue') && !a.id.includes('shunqi') && !a.id.startsWith('forge.') && !a.id.startsWith('craft.refine-'))
+        )
+      } else {
+        // 斗法：止血散、顺气丸
+        return availableActions.filter(a =>
+          a.id === 'alchemy.refine-zhixue-powder' ||
+          a.id === 'alchemy.refine-shunqi-pill' ||
+          a.id.includes('zhixue') ||
+          a.id.includes('shunqi')
+        )
+      }
+    } else {
+      // 炼器：武器、头部、衣服、腿部、鞋履、饰品
+      return availableActions.filter(a => {
+        const outputIds = Object.keys(a.outputs || {})
+        for (const outId of outputIds) {
+          const slot = equipmentSlotMap[outId]
+          if (slot === forgingSubTab) return true
+        }
+        if (forgingSubTab === 'weapon' && (a.id.includes('sword') || a.id.includes('blade') || a.id.includes('staff') || a.id.includes('zither'))) return true
+        if (forgingSubTab === 'head' && (a.id.includes('scarf') || a.id.includes('helmet') || a.id.includes('crown'))) return true
+        if (forgingSubTab === 'armor' && (a.id.includes('armor') || a.id.includes('robe') || a.id.includes('shirt'))) return true
+        if (forgingSubTab === 'legs' && (a.id.includes('pants') || a.id.includes('greaves') || a.id.includes('skirt'))) return true
+        if (forgingSubTab === 'boots' && (a.id.includes('boots') || a.id.includes('shoes'))) return true
+        if (forgingSubTab === 'trinket' && (a.id.includes('pendant') || a.id.includes('talisman') || a.id.includes('ring'))) return true
+        return false
+      })
+    }
+  }, [availableActions, craftingMode, alchemySubTab, forgingSubTab, equipmentSlotMap])
+
+  return (
+    <section className="panel skill-page crafting-page" hidden={hidden}>
+      <header className="panel-header crafting-page-header">
+        <div className="crafting-header-main">
+          <h2>{t('app.nav.crafting')}</h2>
+          <div className="crafting-mode-tabs" role="tablist">
+            <button
+              aria-selected={craftingMode === 'alchemy'}
+              className={`crafting-mode-btn${craftingMode === 'alchemy' ? ' active' : ''}`}
+              onClick={() => setCraftingMode('alchemy')}
+              role="tab"
+              type="button"
+            >
+              <Icon name="alchemy" />
+              <span>{t('app.crafting.alchemy')}</span>
+            </button>
+            <button
+              aria-selected={craftingMode === 'forging'}
+              className={`crafting-mode-btn${craftingMode === 'forging' ? ' active' : ''}`}
+              onClick={() => setCraftingMode('forging')}
+              role="tab"
+              type="button"
+            >
+              <Icon name="forging" />
+              <span>{t('app.crafting.forging')}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 顶部子选项卡 */}
+        {craftingMode === 'alchemy' ? (
+          <div className="crafting-sub-tabs" role="tablist">
+            {ALCHEMY_SUB_TABS.map(tab => (
+              <button
+                aria-selected={alchemySubTab === tab.id}
+                key={tab.id}
+                className={`crafting-sub-tab-btn${alchemySubTab === tab.id ? ' active' : ''}`}
+                onClick={() => setAlchemySubTab(tab.id)}
+                role="tab"
+                type="button"
+              >
+                {t(`app.crafting.${tab.labelKey}`)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="crafting-sub-tabs" role="tablist">
+            {FORGING_SUB_TABS.map(tab => (
+              <button
+                aria-selected={forgingSubTab === tab.id}
+                key={tab.id}
+                className={`crafting-sub-tab-btn${forgingSubTab === tab.id ? ' active' : ''}`}
+                onClick={() => setForgingSubTab(tab.id)}
+                role="tab"
+                type="button"
+              >
+                {t(`app.crafting.${tab.labelKey}`)}
+              </button>
+            ))}
+          </div>
+        )}
+      </header>
+
+      <div className="action-cards">
+        {filteredActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
+        {filteredActions.length === 0 && <p className="location-action-empty">{t('app.crafting.empty')}</p>}
+      </div>
+
+      {craftingMode === 'alchemy' && <AutoUse type="alchemy" />}
+      {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
+    </section>
+  )
+})
+
 
 /**
  * 自动消耗品槽位组选择与配置组件
@@ -1287,12 +1529,12 @@ const InventoryPanel = memo(function InventoryPanel({ className = '' }: { classN
   )
 })
 
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'alchemy' | 'map' | 'combat' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
+const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'map' | 'combat' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },
   { tab: 'cultivation', labelKey: 'cultivation', icon: 'cultivation' },
   { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
-  { tab: 'alchemy', labelKey: 'alchemy', icon: 'alchemy' },
+  { tab: 'crafting', labelKey: 'crafting', icon: 'crafting' },
   { tab: 'map', labelKey: 'map', icon: 'map' },
   { tab: 'combat', labelKey: 'combat', icon: 'combat' },
   { tab: 'inventory', labelKey: 'inventory', icon: 'inventory' },
@@ -1382,7 +1624,7 @@ export default function App(): React.JSX.Element {
             {activeTab === 'insight' && <InsightPage />}
             <SkillPage hidden={activeTab !== 'cultivation'} type="cultivation" />
             <ExplorationPage hidden={activeTab !== 'exploration'} />
-            <SkillPage hidden={activeTab !== 'alchemy'} type="alchemy" />
+            <CraftingPage hidden={activeTab !== 'crafting'} />
             <MapPage hidden={activeTab !== 'map'} />
             <CombatDetailsPage hidden={activeTab !== 'combat'} />
             {activeTab === 'market' && <MarketPage />}

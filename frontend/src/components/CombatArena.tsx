@@ -1131,9 +1131,12 @@ export const CombatArena = memo(function CombatArena({
     { label: t('combat.attr.accuracy'), value: formatNumber(combatAttributes?.accuracyRating ?? 0) },
     { label: t('combat.attr.evasion'), value: formatNumber(combatAttributes?.evasionRating ?? 0) },
     { label: t('combat.attr.armor'), value: formatNumber(combatAttributes?.armor ?? 0) },
+    { label: t('combat.attr.magicRes'), value: formatNumber(combatAttributes?.magicResistance ?? 0) },
+    { label: t('combat.attr.metalRes'), value: formatNumber(combatAttributes?.metalResistance ?? 0) },
+    { label: t('combat.attr.woodRes'), value: formatNumber(combatAttributes?.woodResistance ?? 0) },
     { label: t('combat.attr.waterRes'), value: formatNumber(combatAttributes?.waterResistance ?? 0) },
-    { label: t('combat.attr.natureRes'), value: formatNumber(combatAttributes?.woodResistance ?? 0) },
     { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
+    { label: t('combat.attr.earthRes'), value: formatNumber(combatAttributes?.earthResistance ?? 0) },
     { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
   ]
   const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen' | 'ratio_regen']> = [
@@ -1178,9 +1181,12 @@ export const CombatArena = memo(function CombatArena({
     { label: t('combat.attr.maxDamage'), value: formatNumber(enemyDefinition?.maxDamage ?? 0) },
     { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
     { label: t('combat.attr.armor'), value: formatNumber(enemyDefinition?.armor ?? 0) },
+    { label: t('combat.attr.magicRes'), value: formatNumber(enemyDefinition?.magicResistance ?? 0) },
+    { label: t('combat.attr.metalRes'), value: formatNumber(enemyDefinition?.metalResistance ?? 0) },
+    { label: t('combat.attr.woodRes'), value: formatNumber(enemyDefinition?.woodResistance ?? 0) },
     { label: t('combat.attr.waterRes'), value: formatNumber(enemyDefinition?.waterResistance ?? 0) },
-    { label: t('combat.attr.natureRes'), value: formatNumber(enemyDefinition?.woodResistance ?? 0) },
     { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
+    { label: t('combat.attr.earthRes'), value: formatNumber(enemyDefinition?.earthResistance ?? 0) },
   ]
   const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'ratio_regen']> = [
     [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],

@@ -1263,6 +1263,83 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item--collapsible {
+  cursor: pointer;
+}
+
+.nav-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  color: var(--gold-dim);
+  font-family: Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.2s ease, color 0.2s ease;
+  padding: 0 4px;
+}
+
+.nav-chevron.is-expanded {
+  transform: rotate(90deg);
+  color: var(--gold-bright);
+}
+
+.nav-sub-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 24px;
+  padding-right: 4px;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  animation: modal-fade-in 0.15s ease-out;
+}
+
+.nav-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  background: rgba(201, 180, 109, 0.02);
+  color: var(--text-dim);
+  font-size: 13px;
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  text-align: left;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.nav-sub-item:hover:not(.active) {
+  background: rgba(201, 180, 109, 0.06);
+  color: var(--text);
+  border-color: rgba(201, 180, 109, 0.15);
+}
+
+.nav-sub-item.active {
+  color: var(--gold-bright);
+  border-color: var(--gold-faint);
+  background: linear-gradient(90deg, rgba(201, 180, 109, 0.12), rgba(201, 180, 109, 0.03));
+  box-shadow: inset 2px 0 0 var(--gold-bright);
+  font-weight: 500;
+}
+
+.nav-sub-glyph {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: var(--gold);
+}
 .settings-entry {
   margin-top: auto;
   padding-top: 14px;
@@ -2633,6 +2710,98 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 10px;
+}
+.crafting-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--gold-faint);
+}
+
+.crafting-header-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.crafting-mode-tabs {
+  display: flex;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 3px;
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+}
+
+.crafting-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.crafting-mode-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.crafting-mode-btn:hover:not(.active) {
+  color: var(--text);
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.crafting-mode-btn.active {
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.18);
+  border-color: var(--gold-dim);
+  box-shadow: 0 0 8px rgba(201, 180, 109, 0.15);
+}
+
+.crafting-sub-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.crafting-sub-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.crafting-sub-tab-btn:hover:not(.active) {
+  color: var(--text);
+  border-color: rgba(201, 180, 109, 0.4);
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.crafting-sub-tab-btn.active {
+  color: var(--gold-bright);
+  border-color: var(--gold);
+  background: rgba(201, 180, 109, 0.16);
+  box-shadow: 0 0 6px rgba(201, 180, 109, 0.2);
 }
 
 .location-sub-badge {

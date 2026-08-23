@@ -1,16 +1,5 @@
 [
   {
-    "id": "resource.qi",
-    "name": "灵气",
-    "description": "天地间游离的精纯灵气，用于打坐修炼与境界突破。",
-    "kind": "resource",
-    "category": "resource",
-    "tier": 1,
-    "sellPrice": 0,
-    "isTradable": false,
-    "consumable": null
-  },
-  {
     "id": "item.ningxue-grass",
     "name": "凝血草",
     "description": "生长在深山背阴处的暗红草药，凡人捣碎外敷止血生肌、打熬气血，是提炼草木精华的基础药草。",

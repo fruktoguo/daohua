@@ -2,7 +2,7 @@
 // 文件名称: Enums.cs
 // 主要职责: 定义修仙领域模型中通用的核心业务枚举类型。
 // 核心逻辑 / 定义内容:
-//   1. 基础行为类型、战斗流派与伤害属性枚举（ActionType, CombatStyle, DamageType）。
+///   1. 基础行为类型、战斗流派、伤害大类与五行属性枚举（ActionType, CombatStyle, DamageCategory, Element）。
 //   2. 玩家在线模式、动作执行状态与推进模式枚举（PresenceMode, ActionStatus, ActionExecutionKind）。
 //   3. 状态增量同步脏段掩码枚举（DirtySections）。
 // ==============================================================================

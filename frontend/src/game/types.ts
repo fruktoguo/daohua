@@ -656,9 +656,12 @@ export interface CombatEquipmentStats {
   attackSpeedRatio: number
   evasionRatio: number
   armor: number
+  magicResistance: number
+  metalResistance: number
+  woodResistance: number
   waterResistance: number
-  natureResistance: number
   fireResistance: number
+  earthResistance: number
   tenacity: number
   penetrationRatio: number
   pierceChance: number

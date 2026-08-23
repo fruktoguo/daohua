@@ -10,9 +10,7 @@
     "availableNodeIds": [],
     "hiddenFromCatalog": false,
     "inputs": {},
-    "outputs": {
-      "resource.qi": 1
-    }
+    "outputs": {}
   },
   {
     "id": "explore.gather-ningxue-grass",

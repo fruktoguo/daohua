@@ -21,7 +21,7 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
     id: 'cultivation.draw-qi',
     type: 'cultivation',
     durationSeconds: 10,
-    outputs: { 'resource.qi': 10 },
+    outputs: {},
   },
   {
     id: 'explore.gather-herbs',
@@ -183,7 +183,6 @@ interface ItemMetaCore {
  * 基础物品静态元数据字典
  */
 const ITEM_META_CORES: Record<string, ItemMetaCore> = {
-  'resource.qi': { glyph: '◉', tone: 'cyan', rarity: 'mundane', level: 1, category: 'resource' },
   'item.ningxue-grass': { glyph: '🌿', tone: 'gray', rarity: 'mundane', level: 1, category: 'material' },
   'item.peach-wood': { glyph: '🪵', tone: 'gray', rarity: 'mundane', level: 1, category: 'material' },
   'item.dark-iron': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, category: 'material' },

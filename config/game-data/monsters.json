@@ -54,7 +54,7 @@
       "ad": 0.4,
       "ap": 0.4,
       "armor": 0.87,
-      "natureResistance": 1.08,
+      "woodResistance": 1.08,
       "hit": 1.0,
       "eva": 1.0
     },
@@ -528,7 +528,7 @@
       "mp": 1.48,
       "ap": 2.19,
       "armor": 0.92,
-      "natureResistance": 0.92,
+      "woodResistance": 0.92,
       "mres": 0.51,
       "hit": 1.0,
       "eva": 1.2

@@ -63,7 +63,6 @@ export const gameZh = {
       'combat.sweep-twilight-valley': { name: '清剿暮影谷', description: '深入高阶暮影战区，每轮会按强度生成一至三名敌人，每十场遭遇一次谷主。' },
     },
     item: {
-      'resource.qi': { label: '灵气', description: '天地间游离的精纯灵气，用于打坐修炼与境界突破。', source: '采集、历练与坊市', usage: '炼丹、锻造或直接使用' },
       'item.ningxue-grass': { label: '凝血草', description: '生长在深山背阴处的暗红草药，凡人捣碎外敷止血生肌、打熬气血，是提炼草木精华的基础药草。', source: '采集、历练与坊市', usage: '炼丹、锻造或直接使用' },
       'item.peach-wood': { label: '桃木', description: '向阳坡地采伐的百年凡木，木质坚致微带辟邪之意，用于萃炼法系桃木晶。', source: '采集、历练与坊市', usage: '炼丹、锻造或直接使用' },
       'item.dark-iron': { label: '乌铁', description: '深山老矿采掘的未淬原铁，沉重坚硬，是熔铸凡阶百炼铁的基础原料。', source: '采集、历练与坊市', usage: '炼丹、锻造或直接使用' },
