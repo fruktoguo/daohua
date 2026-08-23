@@ -81,8 +81,8 @@ function EnemyReference({
 
   if (encounter || enemy) {
     const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = []
-    if (enemy?.style) stats.push({ label: '功法', value: enemy.style, tone: 'gold' })
-    if (enemy?.damageType) stats.push({ label: '属性', value: enemy.damageType, tone: 'purple' })
+    if (enemy?.category) stats.push({ label: '大类', value: enemy.category, tone: 'gold' })
+    if (enemy?.element && enemy.element !== 'none') stats.push({ label: '五行', value: enemy.element, tone: 'purple' })
     if (enemy?.maxHitpoints) stats.push({ label: '气血', value: formatNumber(enemy.maxHitpoints), tone: 'danger' })
     if (enemy?.maxManapoints) stats.push({ label: '真元', value: formatNumber(enemy.maxManapoints), tone: 'qi' })
 

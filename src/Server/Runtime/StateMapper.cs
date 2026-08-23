@@ -164,7 +164,8 @@ public static class StateMapper
             definition.Id,
             definition.Name,
             ToWire(definition.Style),
-            ToWire(definition.DamageType),
+            ToWire(definition.Category),
+            ToWire(definition.Element),
             definition.CooldownMilliseconds,
             definition.CastMilliseconds,
             definition.ManaCost,
@@ -316,7 +317,8 @@ public static class StateMapper
         definition.Name,
         ToVisual(definition.Visual),
         ToWire(definition.Style),
-        ToWire(definition.DamageType),
+        ToWire(definition.Category),
+        ToWire(definition.Element),
         definition.MaxHitpoints,
         definition.MaxManapoints,
         definition.AttackIntervalMilliseconds,
@@ -324,9 +326,12 @@ public static class StateMapper
         definition.EvasionRating,
         definition.MaxDamage,
         definition.Armor,
+        definition.MagicResistance,
+        definition.MetalResistance,
+        definition.WoodResistance,
         definition.WaterResistance,
-        definition.NatureResistance,
         definition.FireResistance,
+        definition.EarthResistance,
         definition.Tenacity,
         definition.PierceChance,
         definition.CurseRatio,
@@ -356,9 +361,12 @@ public static class StateMapper
         stats.AttackSpeedRatio,
         stats.EvasionRatio,
         stats.Armor,
+        stats.MagicResistance,
+        stats.MetalResistance,
+        stats.WoodResistance,
         stats.WaterResistance,
-        stats.NatureResistance,
         stats.FireResistance,
+        stats.EarthResistance,
         stats.Tenacity,
         stats.PenetrationRatio,
         stats.PierceChance,
@@ -374,7 +382,8 @@ public static class StateMapper
         stats.DamageAbsorptionRatio,
         stats.AttackIntervalMilliseconds,
         stats.Style is null ? null : ToWire(stats.Style.Value),
-        stats.DamageType is null ? null : ToWire(stats.DamageType.Value));
+        stats.Category is null ? null : ToWire(stats.Category.Value),
+        stats.Element is null ? null : ToWire(stats.Element.Value));
 
     private static QueueDto ToQueue(PlayerState state)
     {
@@ -620,11 +629,15 @@ public static class StateMapper
             attributes.MaxDamage,
             attributes.EvasionRating,
             attributes.Armor,
+            attributes.MagicResistance,
+            attributes.MetalResistance,
+            attributes.WoodResistance,
             attributes.WaterResistance,
-            attributes.NatureResistance,
             attributes.FireResistance,
+            attributes.EarthResistance,
             ToWire(attributes.Style),
-            ToWire(attributes.DamageType),
+            ToWire(attributes.Category),
+            ToWire(attributes.Element),
             attributes.Tenacity,
             attributes.HpRegenPerTenSeconds,
             attributes.MpRegenPerTenSeconds,
@@ -917,14 +930,20 @@ public static class StateMapper
         CombatStyle.Body => "body",
         _ => "sword"
     };
-
-    private static string ToWire(DamageType type) => type switch
+    private static string ToWire(DamageCategory category) => category switch
     {
-        DamageType.Physical => "physical",
-        DamageType.Water => "water",
-        DamageType.Nature => "nature",
-        DamageType.Fire => "fire",
+        DamageCategory.Spell => "spell",
         _ => "physical"
+    };
+
+    private static string ToWire(Element element) => element switch
+    {
+        Element.Metal => "metal",
+        Element.Wood => "wood",
+        Element.Water => "water",
+        Element.Fire => "fire",
+        Element.Earth => "earth",
+        _ => "none"
     };
 
     private static string ToWire(CombatAbilityEffectType type) => type switch

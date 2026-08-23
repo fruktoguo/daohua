@@ -132,11 +132,17 @@ export const combatZh = {
       statDamage: '伤害',
       statInterval: '间隔',
       statArmor: '护甲',
-      damageType: {
+      damageCategory: {
         physical: '物理',
+        spell: '术法',
+      },
+      element: {
+        none: '无属性',
+        metal: '金行',
+        wood: '木行',
         water: '水行',
-        nature: '木行',
         fire: '火行',
+        earth: '土行',
       },
     },
     // 附近面板（地点/NPC/建筑内容来自服务端，不收拢）

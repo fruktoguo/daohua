@@ -784,7 +784,7 @@ function ArenaLifeGoalCard({
 
   const itemMeta = primaryItemId ? resolveItemMetadata(primaryItemId) : null
   const itemDefinition = primaryItemId ? itemCatalog.find(i => i.itemId === primaryItemId) : null
-  const itemName = itemDefinition?.name || itemMeta?.label || (primaryItemId === 'resource.qi' ? t('combat.life.qiName') : t('combat.life.fallbackItemName'))
+  const itemName = itemDefinition?.name || itemMeta?.label || (isCultivation ? t('combat.life.qiName') : t('combat.life.fallbackItemName'))
   const itemGlyph = itemMeta?.glyph || (isAlchemy ? '⚗️' : isCultivation ? '☯' : '🌿')
   const itemTone = itemMeta?.tone || 'gold'
 
@@ -828,7 +828,7 @@ function ArenaLifeGoalCard({
           <div className="arena-life-target-total">
             <span>{t('combat.life.plannedTotal')}</span>
             <strong className="tone-bright">
-              {totalTargetDisplay} {primaryItemId === 'resource.qi' ? t('combat.life.unitQi') : t('combat.life.unitItem')}
+              {totalTargetDisplay} {isCultivation ? t('combat.life.unitQi') : t('combat.life.unitItem')}
             </strong>
           </div>
           <div className="arena-life-subinfo">
@@ -1132,7 +1132,7 @@ export const CombatArena = memo(function CombatArena({
     { label: t('combat.attr.evasion'), value: formatNumber(combatAttributes?.evasionRating ?? 0) },
     { label: t('combat.attr.armor'), value: formatNumber(combatAttributes?.armor ?? 0) },
     { label: t('combat.attr.waterRes'), value: formatNumber(combatAttributes?.waterResistance ?? 0) },
-    { label: t('combat.attr.natureRes'), value: formatNumber(combatAttributes?.natureResistance ?? 0) },
+    { label: t('combat.attr.natureRes'), value: formatNumber(combatAttributes?.woodResistance ?? 0) },
     { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
     { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
   ]
@@ -1179,7 +1179,7 @@ export const CombatArena = memo(function CombatArena({
     { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
     { label: t('combat.attr.armor'), value: formatNumber(enemyDefinition?.armor ?? 0) },
     { label: t('combat.attr.waterRes'), value: formatNumber(enemyDefinition?.waterResistance ?? 0) },
-    { label: t('combat.attr.natureRes'), value: formatNumber(enemyDefinition?.natureResistance ?? 0) },
+    { label: t('combat.attr.natureRes'), value: formatNumber(enemyDefinition?.woodResistance ?? 0) },
     { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
   ]
   const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'ratio_regen']> = [

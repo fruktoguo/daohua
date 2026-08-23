@@ -1762,32 +1762,6 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         return Enum.IsDefined(side);
     }
 
-    private static bool TryParseCombatStyle(string value, out CombatStyle style)
-    {
-        style = value switch
-        {
-            "sword" => CombatStyle.Sword,
-            "blade" => CombatStyle.Blade,
-            "talisman" => CombatStyle.Talisman,
-            "five-elements" => CombatStyle.FiveElements,
-            "body" => CombatStyle.Body,
-            _ => (CombatStyle)(-1)
-        };
-        return Enum.IsDefined(style);
-    }
-
-    private static bool TryParseDamageType(string value, out DamageType type)
-    {
-        type = value switch
-        {
-            "physical" => DamageType.Physical,
-            "water" => DamageType.Water,
-            "nature" => DamageType.Nature,
-            "fire" => DamageType.Fire,
-            _ => (DamageType)(-1)
-        };
-        return Enum.IsDefined(type);
-    }
 
     private YuoSnapshotRecord ToSnapshotRecord(PlayerState state)
     {

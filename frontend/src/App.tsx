@@ -938,7 +938,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
     id: ability.abilityId,
     label: ability.name,
     subtitle: t('app.combatPanel.abilitySubtitle', { mana: Math.round(ability.manaCost), cast: (ability.castMilliseconds / 1000).toFixed(1) }),
-    category: `${ability.style} · ${ability.damageType}`,
+    category: `${ability.category} · ${ability.element}`,
     tone: ability.effectType === 'heal' ? 'green' : 'violet',
     tooltip: describeAbility(ability, 1),
   }))

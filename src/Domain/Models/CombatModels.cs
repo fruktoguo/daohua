@@ -172,8 +172,10 @@ public sealed class CombatAbilityDefinition
     public required string Name { get; init; }
     /// <summary>技能所属武道流派。</summary>
     public CombatStyle Style { get; init; }
-    /// <summary>伤害属性类型。</summary>
-    public DamageType DamageType { get; init; }
+    /// <summary>伤害大类（物理/术法）。</summary>
+    public DamageCategory Category { get; init; } = DamageCategory.Physical;
+    /// <summary>五行属性类型。</summary>
+    public Element Element { get; init; } = Element.None;
     /// <summary>技能基础冷却时间（毫秒）。</summary>
     public int CooldownMilliseconds { get; init; }
     /// <summary>技能吟唱/施法读条时间（毫秒）。</summary>
@@ -245,8 +247,10 @@ public sealed class CombatantDefinition
     public CharacterVisualDefinition Visual { get; init; } = new();
     /// <summary>战斗流派。</summary>
     public CombatStyle Style { get; init; } = CombatStyle.Body;
-    /// <summary>主要伤害类型。</summary>
-    public DamageType DamageType { get; init; } = DamageType.Nature;
+    /// <summary>主要伤害大类。</summary>
+    public DamageCategory Category { get; init; } = DamageCategory.Physical;
+    /// <summary>主要五行属性。</summary>
+    public Element Element { get; init; } = Element.None;
     /// <summary>最大生命值上限。</summary>
     public long MaxHitpoints { get; init; }
     /// <summary>最大法力值上限。</summary>
@@ -263,12 +267,18 @@ public sealed class CombatantDefinition
     public long DefensiveMaxDamage { get; init; }
     /// <summary>护甲/物理减伤值。</summary>
     public double Armor { get; init; }
+    /// <summary>法术抗性点数。</summary>
+    public double MagicResistance { get; init; }
+    /// <summary>金系抗性点数。</summary>
+    public double MetalResistance { get; init; }
+    /// <summary>木系抗性点数。</summary>
+    public double WoodResistance { get; init; }
     /// <summary>水系抗性点数。</summary>
     public double WaterResistance { get; init; }
-    /// <summary>木系抗性点数。</summary>
-    public double NatureResistance { get; init; }
     /// <summary>火系抗性点数。</summary>
     public double FireResistance { get; init; }
+    /// <summary>土系抗性点数。</summary>
+    public double EarthResistance { get; init; }
     /// <summary>韧性/异常状态抗性。</summary>
     public double Tenacity { get; init; }
     /// <summary>贯穿/破甲一击概率。</summary>
@@ -381,9 +391,12 @@ public sealed record EquipmentCombatStats(
     double AttackSpeedRatio = 0,
     double EvasionRatio = 0,
     double Armor = 0,
+    double MagicResistance = 0,
+    double MetalResistance = 0,
+    double WoodResistance = 0,
     double WaterResistance = 0,
-    double NatureResistance = 0,
     double FireResistance = 0,
+    double EarthResistance = 0,
     double Tenacity = 0,
     double PenetrationRatio = 0,
     double PierceChance = 0,
@@ -404,7 +417,8 @@ public sealed record EquipmentCombatStats(
     double CooldownReductionRatio = 0,
     int AttackIntervalMilliseconds = 0,
     CombatStyle? Style = null,
-    DamageType? DamageType = null);
+    DamageCategory? Category = null,
+    Element? Element = null);
 
 /// <summary>
 /// 可被装备的静态目录项。强化奖励按公开的总倍率表应用到 EnhancementBonus 字段。
@@ -530,11 +544,15 @@ public sealed record CombatAttributeState(
     double MaxDamage,
     double EvasionRating,
     double Armor,
+    double MagicResistance,
+    double MetalResistance,
+    double WoodResistance,
     double WaterResistance,
-    double NatureResistance,
     double FireResistance,
+    double EarthResistance,
     CombatStyle Style,
-    DamageType DamageType,
+    DamageCategory Category,
+    Element Element,
     double Tenacity,
     double HpRegenPerTenSeconds,
     double MpRegenPerTenSeconds,

@@ -147,7 +147,8 @@ public static class DataBudgetResolver
             Id = config.Id,
             Name = config.Name,
             Style = config.Style,
-            DamageType = config.DamageType,
+            Category = config.Category,
+            Element = config.Element,
             CooldownMilliseconds = config.CooldownMilliseconds,
             CastMilliseconds = config.CastMilliseconds,
             ManaCost = manaCost,
@@ -196,7 +197,7 @@ public static class DataBudgetResolver
             : 0);
 
         var normalizedWeights = NormalizeWeights(config.Weights);
-        var stats = config.Stats ?? ResolveEquipmentStats(totalBudget, normalizedWeights, config.AttackIntervalMilliseconds, config.Style, config.DamageType);
+        var stats = config.Stats ?? ResolveEquipmentStats(totalBudget, normalizedWeights, config.AttackIntervalMilliseconds, config.Style, config.Category, config.Element);
 
         // 如果未显式提供强化成长，自动按 50 级均摊（+20 级刚好获得 +40% 翻倍成长当量）
         var enhancementBonus = config.EnhancementBonus ?? new EquipmentCombatStats(
@@ -205,9 +206,12 @@ public static class DataBudgetResolver
             AttackSpeedRatio: stats.AttackSpeedRatio / 50.0,
             EvasionRatio: stats.EvasionRatio / 50.0,
             Armor: stats.Armor / 50.0,
+            MagicResistance: stats.MagicResistance / 50.0,
+            MetalResistance: stats.MetalResistance / 50.0,
+            WoodResistance: stats.WoodResistance / 50.0,
             WaterResistance: stats.WaterResistance / 50.0,
-            NatureResistance: stats.NatureResistance / 50.0,
             FireResistance: stats.FireResistance / 50.0,
+            EarthResistance: stats.EarthResistance / 50.0,
             Tenacity: stats.Tenacity / 50.0,
             PenetrationRatio: stats.PenetrationRatio / 50.0,
             PierceChance: stats.PierceChance / 50.0,
@@ -228,7 +232,8 @@ public static class DataBudgetResolver
             CooldownReductionRatio: stats.CooldownReductionRatio / 50.0,
             AttackIntervalMilliseconds: 0,
             Style: null,
-            DamageType: null);
+            Category: null,
+            Element: null);
 
         return new CombatEquipmentDefinition
         {
@@ -351,16 +356,14 @@ public static class DataBudgetResolver
         IReadOnlyDictionary<string, double> weights,
         int attackIntervalMilliseconds,
         CombatStyle? style,
-        DamageType? damageType)
+        DamageCategory? category,
+        Element? element)
     {
         double accuracy = 0;
         double damage = 0;
         double attackSpeed = 0;
         double evasion = 0;
         double armor = 0;
-        double waterResistance = 0;
-        double natureResistance = 0;
-        double fireResistance = 0;
         double tenacity = 0;
         double penetration = 0;
         double pierce = 0;
@@ -390,21 +393,41 @@ public static class DataBudgetResolver
         if (weights.TryGetValue("armor", out var wArmor))
             armor = totalBudget * wArmor * 1.0;
 
+        double magicResistance = 0;
+        double metalResistance = 0;
+        double woodResistance = 0;
+        double waterResistance = 0;
+        double fireResistance = 0;
+        double earthResistance = 0;
+
+        if (weights.TryGetValue("magicresistance", out var wMagic) || weights.TryGetValue("magicres", out wMagic))
+            magicResistance = totalBudget * wMagic * 1.0;
+
+        if (weights.TryGetValue("metalresistance", out var wMetal) || weights.TryGetValue("metalres", out wMetal))
+            metalResistance = totalBudget * wMetal * 1.0;
+
+        if (weights.TryGetValue("woodresistance", out var wWood) || weights.TryGetValue("woodres", out wWood)
+            || weights.TryGetValue("natureresistance", out wWood) || weights.TryGetValue("natureres", out wWood))
+            woodResistance = totalBudget * wWood * 1.0;
+
         if (weights.TryGetValue("waterresistance", out var wWater) || weights.TryGetValue("waterres", out wWater))
             waterResistance = totalBudget * wWater * 1.0;
-
-        if (weights.TryGetValue("natureresistance", out var wNature) || weights.TryGetValue("natureres", out wNature))
-            natureResistance = totalBudget * wNature * 1.0;
 
         if (weights.TryGetValue("fireresistance", out var wFire) || weights.TryGetValue("fireres", out wFire))
             fireResistance = totalBudget * wFire * 1.0;
 
+        if (weights.TryGetValue("earthresistance", out var wEarth) || weights.TryGetValue("earthres", out wEarth))
+            earthResistance = totalBudget * wEarth * 1.0;
+
         if (weights.TryGetValue("allresistance", out var wAllRes) || weights.TryGetValue("allres", out wAllRes))
         {
             var res = totalBudget * wAllRes * 0.4;
+            magicResistance += res;
+            metalResistance += res;
+            woodResistance += res;
             waterResistance += res;
-            natureResistance += res;
             fireResistance += res;
+            earthResistance += res;
         }
 
         if (weights.TryGetValue("tenacity", out var wTenacity))
@@ -452,9 +475,12 @@ public static class DataBudgetResolver
             AttackSpeedRatio: attackSpeed,
             EvasionRatio: evasion,
             Armor: armor,
+            MagicResistance: magicResistance,
+            MetalResistance: metalResistance,
+            WoodResistance: woodResistance,
             WaterResistance: waterResistance,
-            NatureResistance: natureResistance,
             FireResistance: fireResistance,
+            EarthResistance: earthResistance,
             Tenacity: tenacity,
             PenetrationRatio: penetration,
             PierceChance: pierce,
@@ -470,7 +496,8 @@ public static class DataBudgetResolver
             DamageAbsorptionRatio: damageAbsorption,
             AttackIntervalMilliseconds: attackIntervalMilliseconds,
             Style: style,
-            DamageType: damageType);
+            Category: category,
+            Element: element);
     }
 
     private static IReadOnlyDictionary<string, double> NormalizeWeights(IReadOnlyDictionary<string, double>? weights)
@@ -534,7 +561,8 @@ public static class DataBudgetResolver
             Tier = config.Tier,
             Rank = config.Rank,
             Style = config.Style,
-            DamageType = config.DamageType,
+            Category = config.Category,
+            Element = config.Element,
             Weights = config.Weights,
             Floor = true,
             MaxHitpoints = config.MaxHitpoints,
@@ -542,9 +570,12 @@ public static class DataBudgetResolver
             MaxDamage = config.MaxDamage,
             DefensiveMaxDamage = config.DefensiveMaxDamage,
             Armor = config.Armor,
+            MagicResistance = config.MagicResistance,
+            MetalResistance = config.MetalResistance,
+            WoodResistance = config.WoodResistance,
             WaterResistance = config.WaterResistance,
-            NatureResistance = config.NatureResistance,
             FireResistance = config.FireResistance,
+            EarthResistance = config.EarthResistance,
             AccuracyRating = config.AccuracyRating,
             EvasionRating = config.EvasionRating,
             CriticalRating = config.CriticalRating,
@@ -570,7 +601,8 @@ public static class DataBudgetResolver
                         Id = baseAbility.Id,
                         Name = baseAbility.Name,
                         Style = baseAbility.Style,
-                        DamageType = baseAbility.DamageType,
+                        Category = baseAbility.Category,
+                        Element = baseAbility.Element,
                         CooldownMilliseconds = baseAbility.CooldownMilliseconds,
                         CastMilliseconds = baseAbility.CastMilliseconds,
                         ManaCost = baseAbility.ManaCost,
@@ -612,7 +644,8 @@ public static class DataBudgetResolver
                 ? config.Visual
                 : new CharacterVisualDefinition { Renderer = VisualRendererKind.Text, Source = config.Name[..1] },
             Style = config.Style,
-            DamageType = config.DamageType,
+            Category = config.Category,
+            Element = config.Element,
             MaxHitpoints = stats.MaxHitpoints,
             MaxManapoints = stats.MaxManapoints,
             AttackIntervalMilliseconds = config.AttackIntervalMilliseconds > 0 ? config.AttackIntervalMilliseconds : 1000,
@@ -621,9 +654,12 @@ public static class DataBudgetResolver
             MaxDamage = stats.MaxDamage,
             DefensiveMaxDamage = stats.DefensiveMaxDamage,
             Armor = stats.Armor,
+            MagicResistance = stats.MagicResistance,
+            MetalResistance = stats.MetalResistance,
+            WoodResistance = stats.WoodResistance,
             WaterResistance = stats.WaterResistance,
-            NatureResistance = stats.NatureResistance,
             FireResistance = stats.FireResistance,
+            EarthResistance = stats.EarthResistance,
             Tenacity = config.Tenacity,
             PierceChance = config.PierceChance,
             CurseRatio = config.CurseRatio,

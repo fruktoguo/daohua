@@ -82,8 +82,11 @@ public sealed record CombatAbilityDefinition
     /// <summary>技能所属武道流派。</summary>
     public CombatStyle Style { get; init; }
 
-    /// <summary>伤害属性类型。</summary>
-    public DamageType DamageType { get; init; }
+    /// <summary>伤害大类（物理/术法）。</summary>
+    public DamageCategory Category { get; init; } = DamageCategory.Physical;
+
+    /// <summary>五行属性类型。</summary>
+    public Element Element { get; init; } = Element.None;
 
     /// <summary>技能基础冷却时间（毫秒）。</summary>
     public double CooldownMilliseconds { get; init; }
@@ -187,8 +190,11 @@ public sealed record CombatantDefinition
     /// <summary>战斗流派。</summary>
     public CombatStyle Style { get; init; } = CombatStyle.Body;
 
-    /// <summary>主要伤害类型。</summary>
-    public DamageType DamageType { get; init; } = DamageType.Nature;
+    /// <summary>普通攻击伤害大类。</summary>
+    public DamageCategory Category { get; init; } = DamageCategory.Physical;
+
+    /// <summary>普通攻击五行属性类型。</summary>
+    public Element Element { get; init; } = Element.None;
 
     /// <summary>最大生命值上限。</summary>
     public double MaxHitpoints { get; init; }
@@ -214,15 +220,23 @@ public sealed record CombatantDefinition
     /// <summary>护甲/物理减伤值。</summary>
     public double Armor { get; init; }
 
-    /// <summary>水系抗性点数。</summary>
-    public double WaterResistance { get; init; }
+    /// <summary>法术抗性点数。</summary>
+    public double MagicResistance { get; init; }
+
+    /// <summary>金系抗性点数。</summary>
+    public double MetalResistance { get; init; }
 
     /// <summary>木系抗性点数。</summary>
-    public double NatureResistance { get; init; }
+    public double WoodResistance { get; init; }
+
+    /// <summary>水系抗性点数。</summary>
+    public double WaterResistance { get; init; }
 
     /// <summary>火系抗性点数。</summary>
     public double FireResistance { get; init; }
 
+    /// <summary>土系抗性点数。</summary>
+    public double EarthResistance { get; init; }
     /// <summary>韧性/异常状态抗性。</summary>
     public double Tenacity { get; init; }
 

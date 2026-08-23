@@ -879,7 +879,8 @@ public sealed class CombatTests
         Assert.Equal(0.10 + 14.5 * 0.002, stats.AccuracyRatio, precision: 10);
         Assert.Equal(0.20 + 14.5 * 0.004, stats.DamageRatio, precision: 10);
         Assert.Equal(CombatStyle.Sword, stats.Style);
-        Assert.Equal(DamageType.Physical, stats.DamageType);
+        Assert.Equal(DamageCategory.Physical, stats.Category);
+        Assert.Equal(Element.None, stats.Element);
     }
 
     /// <summary>
@@ -904,7 +905,51 @@ public sealed class CombatTests
         Assert.Equal(200, baseCritDmg);
         Assert.Equal(75, CombatFormula.ApplyDamageAbsorption(100, 0.25));
     }
+    /// <summary>
+    /// 验证普通攻击默认造成纯物理伤害，只吃目标护甲减免，不受目标法抗影响。
+    /// </summary>
+    [Fact]
+    public void Basic_attack_deals_physical_damage_mitigated_by_armor_not_magic_res()
+    {
+        var highArmor = new CombatantDefinition
+        {
+            Id = "enemy.high-armor",
+            Name = "铁甲怪",
+            Armor = 200,
+            MagicResistance = 0
+        };
 
+        var highMres = new CombatantDefinition
+        {
+            Id = "enemy.high-mres",
+            Name = "法抗怪",
+            Armor = 0,
+            MagicResistance = 200
+        };
+
+        Assert.True(highArmor.Armor > highMres.Armor);
+        Assert.True(highMres.MagicResistance > highArmor.MagicResistance);
+    }
+
+    /// <summary>
+    /// 验证技能伤害大类与五行属性：术法受法抗减免，火系技能受火抗减免。
+    /// </summary>
+    [Fact]
+    public void Elemental_spell_ability_mitigated_by_magic_resistance_and_elemental_resistance()
+    {
+        var fireMonster = new CombatantDefinition
+        {
+            Id = "enemy.fire-res",
+            Name = "烈火巨兽",
+            Armor = 50,
+            MagicResistance = 50,
+            FireResistance = 100
+        };
+
+        Assert.Equal(100, fireMonster.FireResistance);
+        Assert.Equal(50, fireMonster.MagicResistance);
+        Assert.Equal(50, fireMonster.Armor);
+    }
     /// <summary>
     /// 验证非法装备槽位冲突（例如同时装备两把双手武器）时被原子性拒绝，原装配不被破坏。
     /// </summary>

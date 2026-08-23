@@ -1,15 +1,28 @@
 import { memo, useMemo } from 'react'
 import { formatNumber } from '../game/format'
 import type { CombatEncounterDefinition, CombatSpawnDefinition, CombatantDefinition } from '../game/types'
-import { useT, type TFunction } from '../i18n'
+import { useT } from '../i18n'
 import { FloatingTooltip } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
 
-// 已知伤害类型走 i18n；未知类型原样回显，保持对服务端新增类型的兼容。
-const DAMAGE_TYPES: readonly string[] = ['physical', 'water', 'nature', 'fire']
+const CATEGORY_NAMES: Record<string, string> = {
+  physical: '物理',
+  spell: '术法',
+}
 
-function damageTypeLabel(t: TFunction, value: string): string {
-  return DAMAGE_TYPES.includes(value) ? t(`combat.encounter.damageType.${value}`) : value
+const ELEMENT_NAMES: Record<string, string> = {
+  none: '无属性',
+  metal: '金行',
+  wood: '木行',
+  water: '水行',
+  fire: '火行',
+  earth: '土行',
+}
+
+function enemyTypeLabel(category: string, element: string): string {
+  const cat = CATEGORY_NAMES[category] || category
+  const elem = element && element !== 'none' ? ` · ${ELEMENT_NAMES[element] || element}` : ''
+  return `${cat}${elem}`
 }
 
 /**
@@ -45,7 +58,7 @@ const EnemyCard = memo(function EnemyCard({
         </div>
         <div>
           <strong>{enemy.name}</strong>
-          <span>{t('combat.encounter.experience', { type: damageTypeLabel(t, enemy.damageType), n: formatNumber(enemy.experience) })}</span>
+          <span>{t('combat.encounter.experience', { type: enemyTypeLabel(enemy.category, enemy.element), n: formatNumber(enemy.experience) })}</span>
         </div>
         {strength !== undefined && (
           <FloatingTooltip placement="top" title={t('combat.encounter.strengthTip')} tone="gold">

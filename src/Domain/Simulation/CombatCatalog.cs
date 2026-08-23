@@ -69,7 +69,8 @@ public static class CombatCatalog
             Id = definition.Id,
             Name = definition.Name,
             Style = definition.Style,
-            DamageType = definition.DamageType,
+            Category = definition.Category,
+            Element = definition.Element,
             CooldownMilliseconds = definition.CooldownMilliseconds,
             CastMilliseconds = definition.CastMilliseconds,
             ManaCost = definition.ManaCost,
@@ -160,9 +161,12 @@ public static class CombatCatalog
         double attackSpeed = 0;
         double evasion = 0;
         double armor = 0;
+        double magicResistance = 0;
+        double metalResistance = 0;
+        double woodResistance = 0;
         double waterResistance = 0;
-        double natureResistance = 0;
         double fireResistance = 0;
+        double earthResistance = 0;
         double tenacity = 0;
         double penetration = 0;
         double pierce = 0;
@@ -183,7 +187,8 @@ public static class CombatCatalog
         double cooldownReductionRatio = 0;
         var attackInterval = 0;
         CombatStyle? style = null;
-        DamageType? damageType = null;
+        DamageCategory? category = null;
+        Element? element = null;
 
         // 逐件装备累计基础属性与强化成长
         foreach (var equipped in equippedItems)
@@ -201,9 +206,12 @@ public static class CombatCatalog
             attackSpeed += stats.AttackSpeedRatio + multiplier * bonus.AttackSpeedRatio;
             evasion += stats.EvasionRatio + multiplier * bonus.EvasionRatio;
             armor += stats.Armor + multiplier * bonus.Armor;
+            magicResistance += stats.MagicResistance + multiplier * bonus.MagicResistance;
+            metalResistance += stats.MetalResistance + multiplier * bonus.MetalResistance;
+            woodResistance += stats.WoodResistance + multiplier * bonus.WoodResistance;
             waterResistance += stats.WaterResistance + multiplier * bonus.WaterResistance;
-            natureResistance += stats.NatureResistance + multiplier * bonus.NatureResistance;
             fireResistance += stats.FireResistance + multiplier * bonus.FireResistance;
+            earthResistance += stats.EarthResistance + multiplier * bonus.EarthResistance;
             tenacity += stats.Tenacity + multiplier * bonus.Tenacity;
             penetration += stats.PenetrationRatio + multiplier * bonus.PenetrationRatio;
             pierce += stats.PierceChance + multiplier * bonus.PierceChance;
@@ -226,7 +234,8 @@ public static class CombatCatalog
             {
                 attackInterval = stats.AttackIntervalMilliseconds;
                 style = stats.Style;
-                damageType = stats.DamageType;
+                category = stats.Category;
+                element = stats.Element;
             }
         }
 
@@ -236,9 +245,12 @@ public static class CombatCatalog
             attackSpeed,
             evasion,
             armor,
+            magicResistance,
+            metalResistance,
+            woodResistance,
             waterResistance,
-            natureResistance,
             fireResistance,
+            earthResistance,
             tenacity,
             penetration,
             Math.Clamp(pierce, 0, 1),
@@ -259,7 +271,8 @@ public static class CombatCatalog
             Math.Max(0, cooldownReductionRatio),
             attackInterval,
             style,
-            damageType);
+            category,
+            element);
     }
 
     /// <summary>

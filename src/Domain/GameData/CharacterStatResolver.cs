@@ -128,18 +128,26 @@ public static class CharacterStatResolver
         double armor = request.Armor ?? (request.Floor ? Math.Floor(rawArmor) : Math.Round(rawArmor, 2));
 
         var baseMRes = expected.MagicResistance > 0 ? expected.MagicResistance : expected.Armor;
+        var magicResWeight = GetW(["magicResistance", "mres"], 1.0);
+        var metalResWeight = GetW(["metalResistance", "mres", "magicResistance"], 1.0);
+        var woodResWeight = GetW(["woodResistance", "natureResistance", "mres", "magicResistance"], 1.0);
         var waterResWeight = GetW(["waterResistance", "mres", "magicResistance"], 1.0);
-        var natureResWeight = GetW(["natureResistance", "mres", "magicResistance"], 1.0);
         var fireResWeight = GetW(["fireResistance", "mres", "magicResistance"], 1.0);
+        var earthResWeight = GetW(["earthResistance", "mres", "magicResistance"], 1.0);
 
+        var rawMagicRes = baseMRes * magicResWeight * statMultiplier;
+        var rawMetalRes = baseMRes * metalResWeight * statMultiplier;
+        var rawWoodRes = baseMRes * woodResWeight * statMultiplier;
         var rawWaterRes = baseMRes * waterResWeight * statMultiplier;
-        var rawNatureRes = baseMRes * natureResWeight * statMultiplier;
         var rawFireRes = baseMRes * fireResWeight * statMultiplier;
+        var rawEarthRes = baseMRes * earthResWeight * statMultiplier;
 
+        double magicResistance = request.MagicResistance ?? (request.Floor ? Math.Floor(rawMagicRes) : Math.Round(rawMagicRes, 2));
+        double metalResistance = request.MetalResistance ?? (request.Floor ? Math.Floor(rawMetalRes) : Math.Round(rawMetalRes, 2));
+        double woodResistance = request.WoodResistance ?? (request.Floor ? Math.Floor(rawWoodRes) : Math.Round(rawWoodRes, 2));
         double waterResistance = request.WaterResistance ?? (request.Floor ? Math.Floor(rawWaterRes) : Math.Round(rawWaterRes, 2));
-        double natureResistance = request.NatureResistance ?? (request.Floor ? Math.Floor(rawNatureRes) : Math.Round(rawNatureRes, 2));
         double fireResistance = request.FireResistance ?? (request.Floor ? Math.Floor(rawFireRes) : Math.Round(rawFireRes, 2));
-
+        double earthResistance = request.EarthResistance ?? (request.Floor ? Math.Floor(rawEarthRes) : Math.Round(rawEarthRes, 2));
         // 4. 命中与闪避 (权重缺省默认为 1.0)
         var hitWeight = GetW(["hit", "accuracyRating", "accuracy"], 1.0);
         var evaWeight = GetW(["eva", "evasionRating", "evasion"], 1.0);
@@ -183,9 +191,12 @@ public static class CharacterStatResolver
             MaxDamage: maxDamage,
             DefensiveMaxDamage: defensiveMaxDamage,
             Armor: armor,
+            MagicResistance: magicResistance,
+            MetalResistance: metalResistance,
+            WoodResistance: woodResistance,
             WaterResistance: waterResistance,
-            NatureResistance: natureResistance,
             FireResistance: fireResistance,
+            EarthResistance: earthResistance,
             AccuracyRating: accuracyRating,
             EvasionRating: evasionRating,
             CriticalRating: criticalRating,
@@ -207,7 +218,8 @@ public static class CharacterStatResolver
         int level,
         UnitRank rank = UnitRank.Minion,
         CombatStyle style = CombatStyle.Body,
-        DamageType damageType = DamageType.Physical,
+        DamageCategory category = DamageCategory.Physical,
+        Element element = Element.None,
         IReadOnlyDictionary<string, double>? weights = null,
         bool floor = true,
         int tier = 0) =>
@@ -217,7 +229,8 @@ public static class CharacterStatResolver
             Tier = tier,
             Rank = rank,
             Style = style,
-            DamageType = damageType,
+            Category = category,
+            Element = element,
             Weights = weights,
             Floor = floor
         });
@@ -229,9 +242,10 @@ public static class CharacterStatResolver
         int level,
         string? rank,
         CombatStyle style = CombatStyle.Body,
-        DamageType damageType = DamageType.Physical,
+        DamageCategory category = DamageCategory.Physical,
+        Element element = Element.None,
         IReadOnlyDictionary<string, double>? weights = null,
         bool floor = true,
         int tier = 0) =>
-        Resolve(level, TryParseRank(rank, out var parsed) ? parsed : UnitRank.Minion, style, damageType, weights, floor, tier);
+        Resolve(level, TryParseRank(rank, out var parsed) ? parsed : UnitRank.Minion, style, category, element, weights, floor, tier);
 }

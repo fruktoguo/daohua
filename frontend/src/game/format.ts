@@ -101,7 +101,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   }
   return {
     title: ability.name,
-    badge: `${ability.style} · ${ability.damageType}`,
+    badge: `${ability.category} · ${ability.element}`,
     description: ability.effectType === 'heal'
       ? t('game.abilityDesc.heal', { target })
       : t('game.abilityDesc.effect', { target }),

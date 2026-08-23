@@ -30,7 +30,8 @@ public sealed class DataBudgetResolverTests
             Id: "ability.custom-slash",
             Name: "自定义剑招",
             Style: CombatStyle.Sword,
-            DamageType: DamageType.Physical,
+            Category: DamageCategory.Physical,
+            Element: Element.None,
             CooldownMilliseconds: 10000,
             CastMilliseconds: 500,
             ManaCostRatio: 10,
@@ -45,6 +46,8 @@ public sealed class DataBudgetResolverTests
         Assert.Equal("ability.custom-slash", definition.Id);
         Assert.Equal("自定义剑招", definition.Name);
         Assert.Equal(CombatStyle.Sword, definition.Style);
+        Assert.Equal(DamageCategory.Physical, definition.Category);
+        Assert.Equal(Element.None, definition.Element);
         Assert.Equal(1.75, definition.DamageRatio);
         Assert.Equal(40, definition.FlatDamage);
         Assert.Equal(0.25, definition.StunChance);
@@ -118,7 +121,7 @@ public sealed class DataBudgetResolverTests
         // weaken: 100 * 0.20 * 0.003 = 0.06
         Assert.Equal(50.0, definition.Stats.Armor, precision: 2);
         Assert.Equal(12.0, definition.Stats.WaterResistance, precision: 2);
-        Assert.Equal(12.0, definition.Stats.NatureResistance, precision: 2);
+        Assert.Equal(12.0, definition.Stats.WoodResistance, precision: 2);
         Assert.Equal(12.0, definition.Stats.FireResistance, precision: 2);
         Assert.Equal(0.06, definition.Stats.WeakenRatio, precision: 3);
 

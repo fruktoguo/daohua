@@ -25,7 +25,8 @@ public sealed record AbilityConfig(
     string Id,
     string Name,
     CombatStyle Style = CombatStyle.FiveElements,
-    DamageType DamageType = DamageType.Nature,
+    DamageCategory Category = DamageCategory.Physical,
+    Element Element = Element.None,
     int CooldownMilliseconds = 0,
     int CastMilliseconds = 0,
     double ManaCostRatio = 0,
@@ -72,7 +73,8 @@ public sealed record EquipmentConfig(
     IReadOnlyDictionary<string, double>? Weights = null,
     int AttackIntervalMilliseconds = 0,
     CombatStyle? Style = null,
-    DamageType? DamageType = null);
+    DamageCategory? Category = null,
+    Element? Element = null);
 
 /// <summary>
 /// 消耗品增益效果配置，支持显式属性或由强度权重推导。
@@ -143,7 +145,8 @@ public sealed record CombatantConfig(
     string Name,
     CharacterVisualDefinition? Visual = null,
     CombatStyle Style = CombatStyle.Body,
-    DamageType DamageType = DamageType.Physical,
+    DamageCategory Category = DamageCategory.Physical,
+    Element Element = Element.None,
     int Level = 1,
     int Tier = 1,
     UnitRank Rank = UnitRank.Minion,
@@ -156,9 +159,12 @@ public sealed record CombatantConfig(
     long? MaxDamage = null,
     long? DefensiveMaxDamage = null,
     double? Armor = null,
+    double? MagicResistance = null,
+    double? MetalResistance = null,
+    double? WoodResistance = null,
     double? WaterResistance = null,
-    double? NatureResistance = null,
     double? FireResistance = null,
+    double? EarthResistance = null,
     double Tenacity = 0,
     double PierceChance = 0,
     double CurseRatio = 0,
@@ -238,7 +244,8 @@ public sealed record CharacterStatRequest
     public int Tier { get; init; } = 0;
     public UnitRank Rank { get; init; } = UnitRank.Minion;
     public CombatStyle Style { get; init; } = CombatStyle.Body;
-    public DamageType DamageType { get; init; } = DamageType.Physical;
+    public DamageCategory Category { get; init; } = DamageCategory.Physical;
+    public Element Element { get; init; } = Element.None;
     public IReadOnlyDictionary<string, double>? Weights { get; init; }
     public bool Floor { get; init; } = true;
     public double? StatMultiplier { get; init; }
@@ -249,9 +256,12 @@ public sealed record CharacterStatRequest
     public long? MaxDamage { get; init; }
     public long? DefensiveMaxDamage { get; init; }
     public double? Armor { get; init; }
+    public double? MagicResistance { get; init; }
+    public double? MetalResistance { get; init; }
+    public double? WoodResistance { get; init; }
     public double? WaterResistance { get; init; }
-    public double? NatureResistance { get; init; }
     public double? FireResistance { get; init; }
+    public double? EarthResistance { get; init; }
     public double? AccuracyRating { get; init; }
     public double? EvasionRating { get; init; }
     public double? CriticalRating { get; init; }
@@ -271,9 +281,12 @@ public sealed record ResolvedCharacterStats(
     long MaxDamage,
     long DefensiveMaxDamage,
     double Armor,
+    double MagicResistance,
+    double MetalResistance,
+    double WoodResistance,
     double WaterResistance,
-    double NatureResistance,
     double FireResistance,
+    double EarthResistance,
     double AccuracyRating,
     double EvasionRating,
     double CriticalRating,

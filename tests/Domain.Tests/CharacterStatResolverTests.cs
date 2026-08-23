@@ -37,7 +37,7 @@ public sealed class CharacterStatResolverTests
         Assert.True(stats.DefensiveMaxDamage > 0, "DefensiveMaxDamage 必须大于 0");
         Assert.True(stats.Armor > 0, "Armor 必须大于 0");
         Assert.True(stats.WaterResistance > 0, "WaterResistance 必须大于 0 (全1权重基准)");
-        Assert.True(stats.NatureResistance > 0, "NatureResistance 必须大于 0 (全1权重基准)");
+        Assert.True(stats.WoodResistance > 0, "WoodResistance 必须大于 0 (全1权重基准)");
         Assert.True(stats.FireResistance > 0, "FireResistance 必须大于 0 (全1权重基准)");
         Assert.True(stats.AccuracyRating > 0, "AccuracyRating 必须大于 0");
         Assert.True(stats.EvasionRating > 0, "EvasionRating 必须大于 0");

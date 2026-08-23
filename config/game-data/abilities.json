@@ -3,7 +3,6 @@
     "id": "ability.heavy-slash",
     "name": "重斩",
     "style": "sword",
-    "damageType": "physical",
     "cooldownMilliseconds": 18000,
     "castMilliseconds": 1000,
     "manaCostRatio": 10.0,
@@ -40,13 +39,14 @@
         "buffId": null
       }
     ],
-    "tier": 1
+    "tier": 1,
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "ability.chain-strike",
     "name": "连环",
     "style": "sword",
-    "damageType": "physical",
     "cooldownMilliseconds": 16000,
     "castMilliseconds": 1000,
     "manaCostRatio": 10.0,
@@ -83,13 +83,14 @@
         "buffId": null
       }
     ],
-    "tier": 1
+    "tier": 1,
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "ability.palm-lightning",
     "name": "掌心雷",
     "style": "fiveElements",
-    "damageType": "fire",
     "cooldownMilliseconds": 0,
     "castMilliseconds": 2000,
     "manaCostRatio": 4.0,
@@ -126,13 +127,14 @@
         "buffId": null
       }
     ],
-    "tier": 1
+    "tier": 1,
+    "category": "spell",
+    "element": "fire"
   },
   {
     "id": "ability.blazing-blast",
     "name": "轰炎",
     "style": "fiveElements",
-    "damageType": "fire",
     "cooldownMilliseconds": 24000,
     "castMilliseconds": 3000,
     "manaCostRatio": 10.0,
@@ -169,13 +171,14 @@
         "buffId": null
       }
     ],
-    "tier": 1
+    "tier": 1,
+    "category": "spell",
+    "element": "fire"
   },
   {
     "id": "ability.taunt",
     "name": "嘲讽",
     "style": "body",
-    "damageType": "physical",
     "cooldownMilliseconds": 55000,
     "castMilliseconds": 200,
     "manaCostRatio": 20.0,
@@ -212,13 +215,14 @@
         "buffId": null
       }
     ],
-    "tier": 1
+    "tier": 1,
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "ability.heavy-clouds",
     "name": "重云",
     "style": "sword",
-    "damageType": "physical",
     "cooldownMilliseconds": 24000,
     "castMilliseconds": 2000,
     "manaCostRatio": 40.0,
@@ -255,13 +259,14 @@
         "buffId": null
       }
     ],
-    "tier": 2
+    "tier": 2,
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "ability.qingping-melody",
     "name": "清平乐",
     "style": "fiveElements",
-    "damageType": "nature",
     "cooldownMilliseconds": 30000,
     "castMilliseconds": 500,
     "manaCostRatio": 10.0,
@@ -298,13 +303,14 @@
         "buffId": null
       }
     ],
-    "tier": 2
+    "tier": 2,
+    "category": "spell",
+    "element": "wood"
   },
   {
     "id": "ability.lightning-attraction",
     "name": "雷光引",
     "style": "fiveElements",
-    "damageType": "fire",
     "cooldownMilliseconds": 28000,
     "castMilliseconds": 2000,
     "manaCostRatio": 20.0,
@@ -341,13 +347,14 @@
         "buffId": null
       }
     ],
-    "tier": 2
+    "tier": 2,
+    "category": "spell",
+    "element": "fire"
   },
   {
     "id": "ability.pozhen-melody",
     "name": "破阵子",
     "style": "talisman",
-    "damageType": "physical",
     "cooldownMilliseconds": 60000,
     "castMilliseconds": 5000,
     "manaCostRatio": 50.0,
@@ -384,13 +391,14 @@
         "buffId": null
       }
     ],
-    "tier": 2
+    "tier": 2,
+    "category": "spell",
+    "element": "none"
   },
   {
     "id": "ability.star-piercer",
     "name": "贯星",
     "style": "sword",
-    "damageType": "physical",
     "cooldownMilliseconds": 36000,
     "castMilliseconds": 2000,
     "manaCostRatio": 30.0,
@@ -427,6 +435,8 @@
         "buffId": null
       }
     ],
-    "tier": 2
+    "tier": 2,
+    "category": "physical",
+    "element": "none"
   }
 ]

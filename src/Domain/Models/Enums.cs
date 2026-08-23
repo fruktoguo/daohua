@@ -47,19 +47,35 @@ public enum CombatStyle
 }
 
 /// <summary>
-/// 伤害属性类型枚举，参与五行克制与抗性减免计算。
+/// 伤害大类枚举，决定攻击力加成基础池与第一道防御结算（护甲 vs 法抗）。
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum DamageType
+public enum DamageCategory
 {
-    /// <summary>物理/纯内劲伤害。</summary>
+    /// <summary>物理伤害，受物理攻击力加成，吃目标物理护甲（Armor）减免。</summary>
     Physical = 0,
-    /// <summary>水系/冰系灵力伤害。</summary>
-    Water = 1,
-    /// <summary>木系/自然灵力伤害。</summary>
-    Nature = 2,
-    /// <summary>火系/炎阳灵力伤害。</summary>
-    Fire = 3
+    /// <summary>术法伤害，受术法攻击力加成，吃目标法术抗性（MagicResistance）减免。</summary>
+    Spell = 1
+}
+
+/// <summary>
+/// 五行与元气属性枚举，决定攻方五行增伤与守方五行减免/抗性。
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum Element
+{
+    /// <summary>无属性（纯粹内劲/白板术法），不触发五行增减伤。</summary>
+    None = 0,
+    /// <summary>金系属性，锐利贯穿。</summary>
+    Metal = 1,
+    /// <summary>木系属性，生生不息、自然毒素。</summary>
+    Wood = 2,
+    /// <summary>水系属性，冰霜阴柔、冻结缓速。</summary>
+    Water = 3,
+    /// <summary>火系属性，灼热炎阳、爆发爆裂。</summary>
+    Fire = 4,
+    /// <summary>土系属性，厚重沉稳、碎石重压。</summary>
+    Earth = 5
 }
 
 /// <summary>

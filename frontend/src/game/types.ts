@@ -42,9 +42,14 @@ export type CombatActionKind = 'attack' | 'cast' | 'control' | 'wait' | 'respawn
 export type CombatStyle = 'sword' | 'blade' | 'talisman' | 'five-elements' | 'body'
 
 /**
- * 伤害属性类型：物理 (physical)、水/冰系 (water)、自然/木系 (nature)、火系 (fire)
+ * 伤害大类：物理 (physical)、术法 (spell)
  */
-export type DamageType = 'physical' | 'water' | 'nature' | 'fire'
+export type DamageCategory = 'physical' | 'spell'
+
+/**
+ * 五行属性类型：无属性 (none)、金 (metal)、木 (wood)、水 (water)、火 (fire)、土 (earth)
+ */
+export type Element = 'none' | 'metal' | 'wood' | 'water' | 'fire' | 'earth'
 
 /**
  * 物品基础形态大类：材料 (material)、消耗品 (consumable)、货币 (currency)、资源 (resource)、装备 (equipment)
@@ -371,11 +376,15 @@ export interface CombatAttributes {
   maxDamage: number
   evasionRating: number
   armor: number
+  magicResistance: number
+  metalResistance: number
+  woodResistance: number
   waterResistance: number
-  natureResistance: number
   fireResistance: number
+  earthResistance: number
   style: CombatStyle
-  damageType: DamageType
+  category: DamageCategory
+  element: Element
   tenacity: number
   hpRegenPerTenSeconds: number
   mpRegenPerTenSeconds: number
@@ -537,7 +546,8 @@ export interface CombatAbilityDefinition {
   abilityId: string
   name: string
   style: CombatStyle
-  damageType: DamageType
+  category: DamageCategory
+  element: Element
   cooldownMilliseconds: number
   castMilliseconds: number
   manaCost: number
@@ -576,7 +586,8 @@ export interface CombatantDefinition {
   name: string
   visual: CharacterVisual
   style: CombatStyle
-  damageType: DamageType
+  category: DamageCategory
+  element: Element
   rank?: UnitRank
   maxHitpoints: number
   maxManapoints: number
@@ -585,9 +596,12 @@ export interface CombatantDefinition {
   evasionRating: number
   maxDamage: number
   armor: number
+  magicResistance: number
+  metalResistance: number
+  woodResistance: number
   waterResistance: number
-  natureResistance: number
   fireResistance: number
+  earthResistance: number
   tenacity: number
   pierceChance: number
   curseRatio: number
@@ -660,7 +674,8 @@ export interface CombatEquipmentStats {
   damageAbsorptionRatio: number
   attackIntervalMilliseconds: number
   style?: CombatStyle | null
-  damageType?: DamageType | null
+  category?: DamageCategory | null
+  element?: Element | null
 }
 
 /**

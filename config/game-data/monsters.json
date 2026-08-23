@@ -8,7 +8,6 @@
       "poster": null
     },
     "style": "body",
-    "damageType": "physical",
     "level": 1,
     "tier": 1,
     "rank": "minion",
@@ -31,7 +30,9 @@
       }
     ],
     "rareDropTable": [],
-    "skills": []
+    "skills": [],
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "enemy.wood-spirit",
@@ -42,7 +43,6 @@
       "poster": null
     },
     "style": "fiveElements",
-    "damageType": "nature",
     "level": 3,
     "tier": 1,
     "rank": "minion",
@@ -85,7 +85,9 @@
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ]
+    ],
+    "category": "spell",
+    "element": "wood"
   },
   {
     "id": "enemy.fire-spirit",
@@ -96,7 +98,6 @@
       "poster": null
     },
     "style": "fiveElements",
-    "damageType": "fire",
     "level": 5,
     "tier": 1,
     "rank": "minion",
@@ -139,7 +140,9 @@
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ]
+    ],
+    "category": "spell",
+    "element": "fire"
   },
   {
     "id": "enemy.demon-ape",
@@ -150,7 +153,6 @@
       "poster": null
     },
     "style": "sword",
-    "damageType": "physical",
     "level": 8,
     "tier": 1,
     "rank": "elite",
@@ -201,7 +203,9 @@
         "level": 1,
         "triggerHpRatio": 0.9
       }
-    ]
+    ],
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "enemy.armored-bear",
@@ -212,7 +216,6 @@
       "poster": null
     },
     "style": "body",
-    "damageType": "physical",
     "level": 10,
     "tier": 1,
     "rank": "elite",
@@ -278,7 +281,9 @@
         "level": 1,
         "triggerHpRatio": 0.8
       }
-    ]
+    ],
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "enemy.chang-tiger",
@@ -289,7 +294,6 @@
       "poster": null
     },
     "style": "blade",
-    "damageType": "physical",
     "level": 12,
     "tier": 1,
     "rank": "boss",
@@ -380,7 +384,9 @@
         "level": 1,
         "triggerHpRatio": 0.4
       }
-    ]
+    ],
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "enemy.rift-wolf",
@@ -391,7 +397,6 @@
       "poster": null
     },
     "style": "sword",
-    "damageType": "physical",
     "level": 14,
     "tier": 2,
     "rank": "minion",
@@ -433,7 +438,9 @@
         "level": 1,
         "triggerHpRatio": 0.85
       }
-    ]
+    ],
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "enemy.star-flame-crow",
@@ -444,7 +451,6 @@
       "poster": null
     },
     "style": "fiveElements",
-    "damageType": "fire",
     "level": 16,
     "tier": 2,
     "rank": "minion",
@@ -499,7 +505,9 @@
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ]
+    ],
+    "category": "spell",
+    "element": "fire"
   },
   {
     "id": "enemy.plunder-cultivator",
@@ -510,7 +518,6 @@
       "poster": null
     },
     "style": "talisman",
-    "damageType": "nature",
     "level": 18,
     "tier": 2,
     "rank": "minion",
@@ -553,7 +560,9 @@
         "level": 1,
         "triggerHpRatio": 0.85
       }
-    ]
+    ],
+    "category": "spell",
+    "element": "wood"
   },
   {
     "id": "enemy.blade-corpse",
@@ -564,7 +573,6 @@
       "poster": null
     },
     "style": "blade",
-    "damageType": "physical",
     "level": 20,
     "tier": 2,
     "rank": "elite",
@@ -630,7 +638,9 @@
         "level": 1,
         "triggerHpRatio": 0.5
       }
-    ]
+    ],
+    "category": "physical",
+    "element": "none"
   },
   {
     "id": "enemy.fallen-devil-priest",
@@ -641,7 +651,6 @@
       "poster": null
     },
     "style": "fiveElements",
-    "damageType": "nature",
     "level": 22,
     "tier": 2,
     "rank": "elite",
@@ -702,7 +711,9 @@
         "level": 1,
         "triggerHpRatio": 0.6
       }
-    ]
+    ],
+    "category": "spell",
+    "element": "wood"
   },
   {
     "id": "enemy.falling-star-beast",
@@ -713,7 +724,6 @@
       "poster": null
     },
     "style": "blade",
-    "damageType": "physical",
     "level": 24,
     "tier": 2,
     "rank": "boss",
@@ -809,6 +819,8 @@
         "level": 1,
         "triggerHpRatio": 0.3
       }
-    ]
+    ],
+    "category": "physical",
+    "element": "none"
   }
 ]

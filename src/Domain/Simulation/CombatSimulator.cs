@@ -83,11 +83,15 @@ public static partial class CombatSimulator
             player.MaxDamage,
             player.EvasionRating,
             player.Armor,
+            player.MagicResistance,
+            player.MetalResistance,
+            player.WoodResistance,
             player.WaterResistance,
-            player.NatureResistance,
             player.FireResistance,
+            player.EarthResistance,
             player.Style,
-            player.DamageType,
+            player.Category,
+            player.Element,
             player.Tenacity,
             player.HpRegenPerTenSeconds,
             player.MpRegenPerTenSeconds,
@@ -504,12 +508,14 @@ public static partial class CombatSimulator
             : baseDmg * (1.0 + attackBonus);
         var maxDamage = scaledAttack * Math.Max(0.01, 1.0 + damageRatio);
 
-        // 4. 双抗 (体魄 +% 物理护甲，经脉 +% 术法抗性；装备为加法底座)
+        // 4. 双抗与五行抗性 (体魄 +% 物理护甲，经脉 +% 术法抗性与五行抗性；装备为加法底座)
         var armor = (basePool.BaseArmor + equipment.Armor) * (1.0 + staminaBonus);
+        var magicResistance = (basePool.BaseMagicResistance + equipment.MagicResistance) * (1.0 + intelligenceBonus);
+        var metalResistance = (basePool.BaseMagicResistance + equipment.MetalResistance) * (1.0 + intelligenceBonus);
+        var woodResistance = (basePool.BaseMagicResistance + equipment.WoodResistance) * (1.0 + intelligenceBonus);
         var waterResistance = (basePool.BaseMagicResistance + equipment.WaterResistance) * (1.0 + intelligenceBonus);
-        var natureResistance = (basePool.BaseMagicResistance + equipment.NatureResistance) * (1.0 + intelligenceBonus);
         var fireResistance = (basePool.BaseMagicResistance + equipment.FireResistance) * (1.0 + intelligenceBonus);
-
+        var earthResistance = (basePool.BaseMagicResistance + equipment.EarthResistance) * (1.0 + intelligenceBonus);
         // 5. 破招与拆招 (力道 +% 破招，根骨 +% 化解 + 身法 +% 化解)
         var breakRating = (basePool.BaseBreak + loadout.BreakRating + equipment.BreakRating) * (1.0 + attackBonus);
         var parryRating = (basePool.BaseParry + loadout.ParryRating + equipment.ParryRating) * (1.0 + defenseBonus + talismanBonus);
@@ -547,11 +553,15 @@ public static partial class CombatSimulator
             maxDamage,
             evasion,
             armor,
+            magicResistance,
+            metalResistance,
+            woodResistance,
             waterResistance,
-            natureResistance,
             fireResistance,
+            earthResistance,
             combatStyle,
-            equipment.DamageType ?? DamageType.Physical,
+            equipment.Category ?? DamageCategory.Physical,
+            equipment.Element ?? Element.None,
             null,
             Math.Max(0, loadout.Tenacity + equipment.Tenacity),
             hpRegen,
@@ -598,11 +608,15 @@ public static partial class CombatSimulator
             definition.MaxDamage * Math.Max(0.01, 1 + enrageRatio + furyRatio - weakenRatio),
             definition.DefensiveMaxDamage,
             definition.Armor,
+            definition.MagicResistance,
+            definition.MetalResistance,
+            definition.WoodResistance,
             definition.WaterResistance,
-            definition.NatureResistance,
             definition.FireResistance,
+            definition.EarthResistance,
             definition.Style,
-            definition.DamageType,
+            definition.Category,
+            definition.Element,
             definition,
             Math.Max(0, definition.Tenacity),
             Math.Max(0, definition.HpRegenPerTenSeconds),
@@ -722,11 +736,14 @@ public static partial class CombatSimulator
         var skillIntensity = Math.Max(1.0, source.SkillIntensity);
         var amplifiedDouble = (rolled * Math.Max(0, damageRatio) + flatDamage) * skillIntensity + armorDamage;
 
-        // 4. 抗性穿透与动态抗性平方减伤公式
-        var damageType = ability?.DamageType ?? source.DamageType;
+        // 4. 第一层：大类防御（物理护甲 vs 术法抗性）减免
+        var category = ability?.Category ?? source.Category;
+        var element = ability?.Element ?? source.Element;
         var pierceChance = Math.Clamp(source.PierceChance + (ability?.PierceChance ?? 0), 0, 1);
         var pierced = pierceChance > 0 && random.NextDouble() < pierceChance;
-        var baseResistance = pierced ? 0 : GetResistance(target, damageType);
+        var baseResistance = pierced
+            ? 0
+            : (category == DamageCategory.Spell ? target.MagicResistance : target.Armor);
         var effectiveResistance = baseResistance * (isParry ? CombatConstants.ParrySuccessEffectMultiplier : 1.0);
         var penetrationRatio = Math.Max(0, source.PenetrationRatio + (ability?.PenetrationRatio ?? 0));
         var kFactor = Math.Max(1.0, source.DynamicResistanceFactorK);
@@ -741,17 +758,28 @@ public static partial class CombatSimulator
             kFactor,
             CombatConstants.DefaultDamageBaseFactor);
 
-        // 5. 暴击 vs 免爆 统一对抗判定 (规约 §7.3) 与伤害放大
+        // 5. 第二层：五行属性增伤与五行抗性减免
+        var afterElement = (double)mitigated;
+        if (element != Element.None)
+        {
+            var elementResistance = GetElementResistance(target, element);
+            var elementMitigation = elementResistance > 0
+                ? elementResistance / (elementResistance + 100.0 * kFactor)
+                : 0.0;
+            afterElement = mitigated * Math.Max(0.0, 1.0 - elementMitigation);
+        }
+
+        // 6. 暴击 vs 免爆 统一对抗判定 (规约 §7.3) 与伤害放大
         var criticalChance = CombatFormula.CalculateCritContestRate(effectiveCrit, target.CriticalAvoidanceRating);
         var isCritical = source.CriticalDamageRatio > 0
             && criticalChance > 0
             && random.NextDouble() < criticalChance;
         var critMultiplier = CombatConstants.BaseCriticalDamageMultiplier + source.CriticalDamageRatio;
         var withCrit = isCritical
-            ? mitigated * critMultiplier
-            : (double)mitigated;
+            ? afterElement * critMultiplier
+            : afterElement;
 
-        // 6. 易伤、减伤与伤害吸收
+        // 7. 易伤、减伤与伤害吸收
         var withDamageTaken = withCrit * Math.Max(0, 1 + target.DamageTakenRatio);
         var absorbed = CombatFormula.ApplyDamageAbsorption(
             withDamageTaken,
@@ -760,7 +788,7 @@ public static partial class CombatSimulator
             ? long.MaxValue
             : Math.Max(0, (long)Math.Ceiling(absorbed));
 
-        // 7. 吸血与汲取
+        // 8. 吸血与汲取
         var drainRatio = ability is null
             ? source.LifeStealRatio
             : source.HpDrainRatio + ability.HpDrainRatio;
@@ -770,14 +798,16 @@ public static partial class CombatSimulator
         return new CombatResolution(damage, 0, true, drainHealing, pierced, isCritical);
     }
 
-    private static double GetResistance(CombatStats target, DamageType damageType)
+    private static double GetElementResistance(CombatStats target, Element element)
     {
-        return damageType switch
+        return element switch
         {
-            DamageType.Water => target.WaterResistance,
-            DamageType.Nature => target.NatureResistance,
-            DamageType.Fire => target.FireResistance,
-            _ => target.Armor
+            Element.Metal => target.MetalResistance,
+            Element.Wood => target.WoodResistance,
+            Element.Water => target.WaterResistance,
+            Element.Fire => target.FireResistance,
+            Element.Earth => target.EarthResistance,
+            _ => 0
         };
     }
 
@@ -1482,11 +1512,15 @@ public static partial class CombatSimulator
         double MaxDamage,
         double EvasionRating,
         double Armor,
+        double MagicResistance,
+        double MetalResistance,
+        double WoodResistance,
         double WaterResistance,
-        double NatureResistance,
         double FireResistance,
+        double EarthResistance,
         CombatStyle Style,
-        DamageType DamageType,
+        DamageCategory Category,
+        Element Element,
         CombatantDefinition? Definition,
         double Tenacity,
         double HpRegenPerTenSeconds,
