@@ -5,37 +5,13 @@
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "damageRatio": 0.2,
-      "accuracyRatio": 0.1,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "sword",
-      "category": "physical",
-      "element": "none"
+    "attackIntervalMilliseconds": 2400,
+    "baseStatRatios": {
+      "physicalAttack": 0.2
+    },
+    "flatStats": {
+      "physicalAttack": 10,
+      "accuracy": 10
     }
   },
   {
@@ -44,37 +20,17 @@
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "damageRatio": 0.1,
-      "armor": 0.14,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "blade",
-      "category": "physical",
-      "element": "none"
+    "attackIntervalMilliseconds": 3000,
+    "baseStatRatios": {
+      "physicalAttack": 0.1,
+      "physicalArmor": 0.14
+    },
+    "flatStats": {
+      "physicalAttack": 8,
+      "physicalArmor": 8
+    },
+    "specialMechanics": {
+      "threatRatio": 2.0
     }
   },
   {
@@ -83,37 +39,12 @@
     "slot": "head",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "armor": 0.1,
-      "accuracyRatio": 0.06,
-      "damageRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "physicalArmor": 0.1
+    },
+    "flatStats": {
+      "maxHitpoints": 6,
+      "accuracy": 6
     }
   },
   {
@@ -122,37 +53,12 @@
     "slot": "armor",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "armor": 0.2,
-      "damageAbsorptionRatio": 0.1,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "physicalArmor": 0.2
+    },
+    "flatStats": {
+      "maxHitpoints": 10,
+      "physicalArmor": 10
     }
   },
   {
@@ -161,37 +67,12 @@
     "slot": "legs",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "armor": 0.1,
-      "tenacity": 6.0,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "physicalArmor": 0.1
+    },
+    "flatStats": {
+      "physicalArmor": 6,
+      "maxHitpoints": 6
     }
   },
   {
@@ -200,37 +81,12 @@
     "slot": "boots",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "evasionRatio": 0.1,
-      "actionSpeedRatio": 0.06,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "evasion": 0.1
+    },
+    "flatStats": {
+      "evasion": 6,
+      "maxHitpoints": 6
     }
   },
   {
@@ -239,37 +95,12 @@
     "slot": "trinket",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "damageRatio": 0.1,
+    "baseStatRatios": {
+      "physicalAttack": 0.1
+    },
+    "flatStats": {
       "criticalChance": 0.04,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+      "hitpointRegen": 2
     }
   },
   {
@@ -278,37 +109,13 @@
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "damageRatio": 0.2,
-      "accuracyRatio": 0.1,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "fiveElements",
-      "category": "spell",
-      "element": "wood"
+    "attackIntervalMilliseconds": 2400,
+    "baseStatRatios": {
+      "spellAttack": 0.2
+    },
+    "flatStats": {
+      "spellAttack": 10,
+      "accuracy": 10
     }
   },
   {
@@ -317,37 +124,16 @@
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "damageRatio": 0.14,
-      "skillIntensity": 0.5,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "fiveElements",
-      "category": "spell",
-      "element": "water"
+    "attackIntervalMilliseconds": 2800,
+    "baseStatRatios": {
+      "spellAttack": 0.14
+    },
+    "flatStats": {
+      "spellAttack": 8,
+      "manapointRegen": 2
+    },
+    "specialMechanics": {
+      "healingBonusRatio": 0.5
     }
   },
   {
@@ -356,38 +142,12 @@
     "slot": "head",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "woodResistance": 0.0,
-      "accuracyRatio": 0.06,
-      "damageRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.1
+    "baseStatRatios": {
+      "spellResistance": 0.1
+    },
+    "flatStats": {
+      "maxManapoints": 6,
+      "accuracy": 6
     }
   },
   {
@@ -396,38 +156,12 @@
     "slot": "armor",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "woodResistance": 0.0,
-      "damageAbsorptionRatio": 0.1,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.2
+    "baseStatRatios": {
+      "spellResistance": 0.2
+    },
+    "flatStats": {
+      "maxManapoints": 10,
+      "spellResistance": 10
     }
   },
   {
@@ -436,38 +170,12 @@
     "slot": "legs",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "woodResistance": 0.0,
-      "tenacity": 6.0,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.1
+    "baseStatRatios": {
+      "spellResistance": 0.1
+    },
+    "flatStats": {
+      "spellResistance": 6,
+      "maxManapoints": 6
     }
   },
   {
@@ -476,37 +184,12 @@
     "slot": "boots",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "evasionRatio": 0.1,
-      "actionSpeedRatio": 0.06,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "evasion": 0.1
+    },
+    "flatStats": {
+      "evasion": 6,
+      "maxManapoints": 6
     }
   },
   {
@@ -515,38 +198,12 @@
     "slot": "trinket",
     "tier": 1,
     "quality": 1,
-    "stats": {
-      "damageRatio": 0.1,
-      "woodResistance": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.04
+    "baseStatRatios": {
+      "spellAttack": 0.1
+    },
+    "flatStats": {
+      "spellResistance": 4,
+      "manapointRegen": 2
     }
   },
   {
@@ -555,37 +212,13 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "damageRatio": 0.28,
-      "accuracyRatio": 0.14,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "sword",
-      "category": "physical",
-      "element": "none"
+    "attackIntervalMilliseconds": 2400,
+    "baseStatRatios": {
+      "physicalAttack": 0.28
+    },
+    "flatStats": {
+      "physicalAttack": 14,
+      "accuracy": 14
     }
   },
   {
@@ -594,37 +227,17 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "damageRatio": 0.14,
-      "armor": 0.2,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "blade",
-      "category": "physical",
-      "element": "none"
+    "attackIntervalMilliseconds": 3000,
+    "baseStatRatios": {
+      "physicalAttack": 0.14,
+      "physicalArmor": 0.2
+    },
+    "flatStats": {
+      "physicalAttack": 11,
+      "physicalArmor": 11
+    },
+    "specialMechanics": {
+      "threatRatio": 3.0
     }
   },
   {
@@ -633,37 +246,12 @@
     "slot": "head",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "armor": 0.16,
-      "accuracyRatio": 0.08,
-      "damageRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "physicalArmor": 0.16
+    },
+    "flatStats": {
+      "maxHitpoints": 8,
+      "accuracy": 8
     }
   },
   {
@@ -672,37 +260,12 @@
     "slot": "armor",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "armor": 0.28,
-      "damageAbsorptionRatio": 0.14,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "physicalArmor": 0.28
+    },
+    "flatStats": {
+      "maxHitpoints": 14,
+      "physicalArmor": 14
     }
   },
   {
@@ -711,37 +274,12 @@
     "slot": "legs",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "armor": 0.16,
-      "tenacity": 8.0,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "physicalArmor": 0.16
+    },
+    "flatStats": {
+      "physicalArmor": 8,
+      "maxHitpoints": 8
     }
   },
   {
@@ -750,37 +288,12 @@
     "slot": "boots",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "evasionRatio": 0.16,
-      "actionSpeedRatio": 0.08,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "evasion": 0.16
+    },
+    "flatStats": {
+      "evasion": 8,
+      "maxHitpoints": 8
     }
   },
   {
@@ -789,37 +302,12 @@
     "slot": "trinket",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "damageRatio": 0.16,
+    "baseStatRatios": {
+      "physicalAttack": 0.16
+    },
+    "flatStats": {
       "criticalChance": 0.04,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+      "hitpointRegen": 3
     }
   },
   {
@@ -828,37 +316,13 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "damageRatio": 0.28,
-      "accuracyRatio": 0.14,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "fiveElements",
-      "category": "spell",
-      "element": "wood"
+    "attackIntervalMilliseconds": 2400,
+    "baseStatRatios": {
+      "spellAttack": 0.28
+    },
+    "flatStats": {
+      "spellAttack": 14,
+      "accuracy": 14
     }
   },
   {
@@ -867,37 +331,16 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "damageRatio": 0.18,
-      "skillIntensity": 0.5,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": "fiveElements",
-      "category": "spell",
-      "element": "water"
+    "attackIntervalMilliseconds": 2800,
+    "baseStatRatios": {
+      "spellAttack": 0.18
+    },
+    "flatStats": {
+      "spellAttack": 12,
+      "manapointRegen": 3
+    },
+    "specialMechanics": {
+      "healingBonusRatio": 0.5
     }
   },
   {
@@ -906,38 +349,12 @@
     "slot": "head",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "woodResistance": 0.0,
-      "accuracyRatio": 0.08,
-      "damageRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.16
+    "baseStatRatios": {
+      "spellResistance": 0.16
+    },
+    "flatStats": {
+      "maxManapoints": 8,
+      "accuracy": 8
     }
   },
   {
@@ -946,38 +363,12 @@
     "slot": "armor",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "woodResistance": 0.0,
-      "damageAbsorptionRatio": 0.14,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.28
+    "baseStatRatios": {
+      "spellResistance": 0.28
+    },
+    "flatStats": {
+      "maxManapoints": 14,
+      "spellResistance": 14
     }
   },
   {
@@ -986,38 +377,12 @@
     "slot": "legs",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "woodResistance": 0.0,
-      "tenacity": 8.0,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.16
+    "baseStatRatios": {
+      "spellResistance": 0.16
+    },
+    "flatStats": {
+      "spellResistance": 8,
+      "maxManapoints": 8
     }
   },
   {
@@ -1026,37 +391,12 @@
     "slot": "boots",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "evasionRatio": 0.16,
-      "actionSpeedRatio": 0.08,
-      "damageRatio": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "woodResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null
+    "baseStatRatios": {
+      "evasion": 0.16
+    },
+    "flatStats": {
+      "evasion": 8,
+      "maxManapoints": 8
     }
   },
   {
@@ -1065,38 +405,12 @@
     "slot": "trinket",
     "tier": 2,
     "quality": 2,
-    "stats": {
-      "damageRatio": 0.16,
-      "woodResistance": 0.0,
-      "accuracyRatio": 0.0,
-      "attackSpeedRatio": 0.0,
-      "evasionRatio": 0.0,
-      "armor": 0.0,
-      "waterResistance": 0.0,
-      "fireResistance": 0.0,
-      "tenacity": 0.0,
-      "penetrationRatio": 0.0,
-      "pierceChance": 0.0,
-      "curseRatio": 0.0,
-      "furyRatio": 0.0,
-      "weakenRatio": 0.0,
-      "lifeStealRatio": 0.0,
-      "armorDamageRatio": 0.0,
-      "hpDrainRatio": 0.0,
-      "criticalChance": 0.0,
-      "criticalDamageRatio": 0.0,
-      "criticalAvoidance": 0.0,
-      "damageAbsorptionRatio": 0.0,
-      "breakRating": 0.0,
-      "parryRating": 0.0,
-      "skillIntensity": 0.0,
-      "actionSpeedRatio": 0.0,
-      "cooldownReductionRatio": 0.0,
-      "attackIntervalMilliseconds": 0,
-      "style": null,
-      "category": null,
-      "element": null,
-      "magicResistance": 0.04
+    "baseStatRatios": {
+      "spellAttack": 0.16
+    },
+    "flatStats": {
+      "spellResistance": 4,
+      "manapointRegen": 3
     }
   }
 ]

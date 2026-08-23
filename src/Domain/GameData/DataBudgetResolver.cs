@@ -190,14 +190,75 @@ public static class DataBudgetResolver
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        var hasWeights = config.Weights is { Count: > 0 };
-        var slotWeight = GetEquipmentSlotWeight(config.Slot);
-        var totalBudget = config.Intensity ?? config.Budget ?? (hasWeights
-            ? GetTierBaseBudget(config.Tier) * GetQualityMultiplier(config.Quality) * slotWeight * 5.0
-            : 0);
+        EquipmentCombatStats stats;
+        if (config.Stats != null)
+        {
+            stats = config.Stats;
+        }
+        else if (config.BaseStatRatios != null || config.FlatStats != null || config.SpecialMechanics != null)
+        {
+            var ratios = config.BaseStatRatios ?? System.Collections.Frozen.FrozenDictionary<string, double>.Empty;
+            var flats = config.FlatStats ?? System.Collections.Frozen.FrozenDictionary<string, double>.Empty;
+            var special = config.SpecialMechanics ?? System.Collections.Frozen.FrozenDictionary<string, double>.Empty;
 
-        var normalizedWeights = NormalizeWeights(config.Weights);
-        var stats = config.Stats ?? ResolveEquipmentStats(totalBudget, normalizedWeights, config.AttackIntervalMilliseconds, config.Style, config.Category, config.Element);
+            double damageRatio = ratios.GetValueOrDefault("physicalAttack", 0.0)
+                + ratios.GetValueOrDefault("spellAttack", 0.0)
+                + ratios.GetValueOrDefault("damage", 0.0);
+            double armorRatio = ratios.GetValueOrDefault("physicalArmor", 0.0)
+                + ratios.GetValueOrDefault("armor", 0.0);
+            double spellResRatio = ratios.GetValueOrDefault("spellResistance", 0.0)
+                + ratios.GetValueOrDefault("mr", 0.0);
+            double accuracyRatio = ratios.GetValueOrDefault("accuracy", 0.0)
+                + ratios.GetValueOrDefault("hit", 0.0);
+            double evasionRatio = ratios.GetValueOrDefault("evasion", 0.0)
+                + ratios.GetValueOrDefault("eva", 0.0);
+            double criticalChance = ratios.GetValueOrDefault("criticalChance", 0.0)
+                + flats.GetValueOrDefault("criticalChance", 0.0);
+            double skillIntensity = special.GetValueOrDefault("healingBonusRatio", 0.0);
+
+            stats = new EquipmentCombatStats(
+                AccuracyRatio: accuracyRatio,
+                DamageRatio: damageRatio,
+                AttackSpeedRatio: 0.0,
+                EvasionRatio: evasionRatio,
+                Armor: armorRatio,
+                MagicResistance: spellResRatio,
+                MetalResistance: spellResRatio,
+                WoodResistance: spellResRatio,
+                WaterResistance: spellResRatio,
+                FireResistance: spellResRatio,
+                EarthResistance: spellResRatio,
+                Tenacity: flats.GetValueOrDefault("tenacity", 0.0),
+                PenetrationRatio: 0.0,
+                PierceChance: 0.0,
+                CurseRatio: 0.0,
+                FuryRatio: 0.0,
+                WeakenRatio: 0.0,
+                LifeStealRatio: 0.0,
+                ArmorDamageRatio: 0.0,
+                HpDrainRatio: 0.0,
+                CriticalChance: criticalChance,
+                CriticalDamageRatio: 0.0,
+                CriticalAvoidance: 0.0,
+                DamageAbsorptionRatio: ratios.GetValueOrDefault("damageAbsorption", 0.0),
+                BreakRating: 0.0,
+                ParryRating: 0.0,
+                SkillIntensity: skillIntensity,
+                ActionSpeedRatio: ratios.GetValueOrDefault("actionSpeed", 0.0),
+                CooldownReductionRatio: ratios.GetValueOrDefault("cooldownReduction", 0.0),
+                AttackIntervalMilliseconds: config.AttackIntervalMilliseconds,
+                Style: config.Style,
+                Category: config.Category,
+                Element: config.Element);
+        }
+        else
+        {
+            var slotWeight = GetEquipmentSlotWeight(config.Slot);
+            var totalBudget = config.Intensity ?? config.Budget ?? (
+                GetTierBaseBudget(config.Tier) * GetQualityMultiplier(config.Quality) * slotWeight * 5.0);
+            var normalizedWeights = NormalizeWeights(config.Weights);
+            stats = ResolveEquipmentStats(totalBudget, normalizedWeights, config.AttackIntervalMilliseconds, config.Style, config.Category, config.Element);
+        }
 
         // 如果未显式提供强化成长，自动按 50 级均摊（+20 级刚好获得 +40% 翻倍成长当量）
         var enhancementBonus = config.EnhancementBonus ?? new EquipmentCombatStats(
@@ -244,6 +305,48 @@ public static class DataBudgetResolver
             Stats = stats,
             EnhancementBonus = enhancementBonus
         };
+    }
+
+    /// <summary>
+    /// 正向核算装备配置的实际总预算点数（设计审计辅助工具）。
+    /// 规则：基础14属性百分比值 * 100，固定值属性 1:1，自动回复属性 1点消耗4预算。
+    /// </summary>
+    /// <param name="config">装备配置。</param>
+    /// <returns>计算出的正向总预算点数。</returns>
+    public static double CalculateEquipmentBudget(EquipmentConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        double budget = 0.0;
+
+        if (config.BaseStatRatios != null)
+        {
+            foreach (var (_, val) in config.BaseStatRatios)
+            {
+                budget += val * 100.0;
+            }
+        }
+
+        if (config.FlatStats != null)
+        {
+            foreach (var (stat, val) in config.FlatStats)
+            {
+                if (stat is "hitpointRegen" or "manapointRegen" or "hpRegen" or "mpRegen")
+                {
+                    budget += val * 4.0;
+                }
+                else if (stat is "criticalChance" or "crit")
+                {
+                    // 暴击率 0.04 -> 4 点预算
+                    budget += val <= 1.0 ? val * 100.0 : val;
+                }
+                else
+                {
+                    budget += val;
+                }
+            }
+        }
+
+        return budget;
     }
 
     /// <summary>

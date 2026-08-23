@@ -876,11 +876,11 @@ public sealed class CombatTests
             EnhancementLevel = 10
         }]);
 
-        Assert.Equal(0.10 + 14.5 * 0.002, stats.AccuracyRatio, precision: 10);
+        Assert.Equal(0.0, stats.AccuracyRatio);
         Assert.Equal(0.20 + 14.5 * 0.004, stats.DamageRatio, precision: 10);
-        Assert.Equal(CombatStyle.Sword, stats.Style);
-        Assert.Equal(DamageCategory.Physical, stats.Category);
-        Assert.Equal(Element.None, stats.Element);
+        Assert.Null(stats.Style);
+        Assert.Null(stats.Category);
+        Assert.Null(stats.Element);
     }
 
     /// <summary>

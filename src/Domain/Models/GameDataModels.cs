@@ -58,7 +58,7 @@ public sealed record AbilityConfig(
     int Tier = 1);
 
 /// <summary>
-/// 装备的配置数据传输对象，支持直接填写显式 Stats 或通过 intensity + weights 自动解算。
+/// 装备的配置数据传输对象，支持三段区间结构（BaseStatRatios 14属性百分比、FlatStats 固定值、SpecialMechanics 特殊机制）或显式 Stats/权重。
 /// </summary>
 public sealed record EquipmentConfig(
     string Id,
@@ -66,16 +66,18 @@ public sealed record EquipmentConfig(
     EquipmentSlot Slot = EquipmentSlot.Weapon,
     int Tier = 1,
     int Quality = 1,
-    double? Intensity = null,
-    double? Budget = null,
-    EquipmentCombatStats? Stats = null,
-    EquipmentCombatStats? EnhancementBonus = null,
-    IReadOnlyDictionary<string, double>? Weights = null,
-    int AttackIntervalMilliseconds = 0,
     CombatStyle? Style = null,
     DamageCategory? Category = null,
-    Element? Element = null);
-
+    Element? Element = null,
+    int AttackIntervalMilliseconds = 0,
+    IReadOnlyDictionary<string, double>? BaseStatRatios = null,
+    IReadOnlyDictionary<string, double>? FlatStats = null,
+    IReadOnlyDictionary<string, double>? SpecialMechanics = null,
+    EquipmentCombatStats? Stats = null,
+    EquipmentCombatStats? EnhancementBonus = null,
+    double? Intensity = null,
+    double? Budget = null,
+    IReadOnlyDictionary<string, double>? Weights = null);
 /// <summary>
 /// 消耗品增益效果配置，支持显式属性或由强度权重推导。
 /// </summary>
