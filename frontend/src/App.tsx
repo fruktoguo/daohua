@@ -836,8 +836,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         {filteredActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
         {filteredActions.length === 0 && <p className="location-action-empty">{t('app.crafting.empty')}</p>}
       </div>
-
-      {craftingMode === 'alchemy' && <AutoUse type="alchemy" />}
+      <AutoUse type="alchemy" />
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )

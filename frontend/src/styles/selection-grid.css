@@ -446,10 +446,11 @@
   min-width: 0;
   grid-template-columns: repeat(3, minmax(190px, 1fr));
   gap: 6px;
-  margin-top: 6px;
+  margin-top: auto;
   overflow-x: auto;
-  padding-top: 5px;
+  padding-top: 8px;
   border-top: 1px solid var(--gold-faint);
+  flex-shrink: 0;
 }
 
 .skill-page {
@@ -461,6 +462,10 @@
   overflow: hidden;
 }
 
+.skill-page .panel-header {
+  flex-shrink: 0;
+}
+
 .skill-page .action-cards,
 .skill-page .action-sections {
   min-height: 0;
@@ -468,6 +473,12 @@
   align-content: start;
   overflow-y: auto;
   padding-right: 4px;
+  margin-bottom: 6px;
+}
+
+.skill-page .auto-use-tray {
+  flex-shrink: 0;
+  margin-top: auto;
 }
 
 .slot-group {
