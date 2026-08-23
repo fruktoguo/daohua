@@ -29,6 +29,10 @@ public static class PacketKinds
     public const string Command = "command";
     /// <summary>指令执行确认与回执包。</summary>
     public const string Ack = "ack";
+    /// <summary>应用层心跳探测包。</summary>
+    public const string Ping = "ping";
+    /// <summary>应用层心跳回执包。</summary>
+    public const string Pong = "pong";
     /// <summary>异常或错误信息包。</summary>
     public const string Error = "error";
 }
@@ -263,10 +267,6 @@ public sealed record CombatAttributesDto(
     double HpRegenPerTenSeconds,
     double MpRegenPerTenSeconds,
     double PenetrationRatio,
-    double PierceChance,
-    double CurseRatio,
-    double FuryRatio,
-    double WeakenRatio,
     double LifeStealRatio,
     double ArmorDamageRatio,
     double HpDrainRatio,
@@ -438,7 +438,6 @@ public sealed record CombatAbilityDto(
     double HealingRatioLevelBonus = 0,
     double FlatHealingLevelBonus = 0,
     string TargetType = "enemy",
-    double PierceChance = 0,
     double ArmorDamageRatio = 0,
     double HpDrainRatio = 0);
 
@@ -459,10 +458,6 @@ public sealed record EquipmentCombatStatsDto(
     double EarthResistance = 0,
     double Tenacity = 0,
     double PenetrationRatio = 0,
-    double PierceChance = 0,
-    double CurseRatio = 0,
-    double FuryRatio = 0,
-    double WeakenRatio = 0,
     double LifeStealRatio = 0,
     double ArmorDamageRatio = 0,
     double HpDrainRatio = 0,
@@ -524,10 +519,6 @@ public sealed record CombatantDto(
     double FireResistance,
     double EarthResistance,
     double Tenacity,
-    double PierceChance,
-    double CurseRatio,
-    double FuryRatio,
-    double WeakenRatio,
     double LifeStealRatio,
     double ArmorDamageRatio,
     double HpDrainRatio,
@@ -537,7 +528,6 @@ public sealed record CombatantDto(
     double DamageAbsorptionRatio,
     double HpRegenPerTenSeconds,
     double MpRegenPerTenSeconds,
-    int EnrageTimeMilliseconds,
     long Experience,
     IReadOnlyList<string> AbilityIds);
 

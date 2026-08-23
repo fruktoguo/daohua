@@ -182,6 +182,7 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
   const fillRef = useRef<HTMLElement>(null)
   const animationRef = useRef<Animation | null>(null)
   const serverTimeUnixMilliseconds = useGameStore(state => state.serverTimeUnixMilliseconds)
+  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
   const anchorRef = useRef<{
     signature: string
     elapsed: number
@@ -203,10 +204,12 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
     const now = performance.now()
     const duration = Math.max(1, action.durationMilliseconds)
     const relativeElapsed = Math.max(0, Math.min(duration, action.elapsedMilliseconds))
-    const localClockOffset = Math.abs(serverTimeUnixMilliseconds - Date.now())
-    const canUseAbsoluteDeadline = action.completesAtUnixMilliseconds != null && localClockOffset <= 5_000
-    const remainingAtRender = canUseAbsoluteDeadline
-      ? Math.max(0, Math.min(duration, action.completesAtUnixMilliseconds! - Date.now()))
+    const clientDateNowAtSync = Date.now() - Math.max(0, performance.now() - lastSyncPerformanceTime)
+    const estimatedClockSkew = serverTimeUnixMilliseconds - clientDateNowAtSync
+    const estimatedServerNow = Date.now() + estimatedClockSkew
+    const hasAbsoluteDeadline = action.completesAtUnixMilliseconds != null
+    const remainingAtRender = hasAbsoluteDeadline
+      ? Math.max(0, Math.min(duration, action.completesAtUnixMilliseconds! - estimatedServerNow))
       : Math.max(0, duration - relativeElapsed)
     const elapsed = duration - remainingAtRender
     const signature = `${action.name}|${action.kind}|${duration}`
@@ -234,6 +237,7 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
     action?.elapsedMilliseconds,
     action?.kind,
     action?.name,
+    lastSyncPerformanceTime,
     serverTimeUnixMilliseconds,
   ])
 
@@ -259,6 +263,7 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
   const t = useT()
   const badgeRef = useRef<HTMLSpanElement>(null)
   const serverTimeUnixMilliseconds = useGameStore(state => state.serverTimeUnixMilliseconds)
+  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
 
   useLayoutEffect(() => {
     const badge = badgeRef.current
@@ -283,16 +288,18 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
       baseName = t('combat.arena.basicAttack')
     }
     const relativeElapsed = Math.max(0, Math.min(duration, action.elapsedMilliseconds))
-    const localClockOffset = Math.abs(serverTimeUnixMilliseconds - Date.now())
-    const canUseAbsoluteDeadline = action.completesAtUnixMilliseconds != null && localClockOffset <= 5_000
+    const clientDateNowAtSync = Date.now() - Math.max(0, performance.now() - lastSyncPerformanceTime)
+    const estimatedClockSkew = serverTimeUnixMilliseconds - clientDateNowAtSync
+    const hasAbsoluteDeadline = action.completesAtUnixMilliseconds != null
     const startPerfTime = performance.now()
-    const initialRemaining = canUseAbsoluteDeadline
-      ? Math.max(0, Math.min(duration, action.completesAtUnixMilliseconds! - Date.now()))
+    const initialRemaining = hasAbsoluteDeadline
+      ? Math.max(0, Math.min(duration, action.completesAtUnixMilliseconds! - (Date.now() + estimatedClockSkew)))
       : Math.max(0, duration - relativeElapsed)
 
     const tick = () => {
-      const currentRemaining = canUseAbsoluteDeadline
-        ? Math.max(0, action.completesAtUnixMilliseconds! - Date.now())
+      const estimatedServerNow = Date.now() + estimatedClockSkew
+      const currentRemaining = hasAbsoluteDeadline
+        ? Math.max(0, action.completesAtUnixMilliseconds! - estimatedServerNow)
         : Math.max(0, initialRemaining - (performance.now() - startPerfTime))
 
       const remainingSeconds = Math.max(0, currentRemaining / 1000)
@@ -316,9 +323,10 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
     action?.durationMilliseconds,
     action?.elapsedMilliseconds,
     action?.name,
+    lastSyncPerformanceTime,
     role,
-    t,
     serverTimeUnixMilliseconds,
+    t,
   ])
 
   return <span className="arena-action-badge" ref={badgeRef} style={{ display: 'none' }} />

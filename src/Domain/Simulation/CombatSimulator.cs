@@ -23,8 +23,6 @@ public static partial class CombatSimulator
     private const int RegenTickMilliseconds = 5_000;
     private const int ConsumableRecoveryTickMilliseconds = 5_000;
     private const int DamageOverTimeTickMilliseconds = 3_000;
-    private const int DefaultEnrageTickMilliseconds = 60_000;
-    private const int CombatModifierDurationMilliseconds = 15_000;
     private const long InfiniteTime = long.MaxValue / 4;
 
     /// <summary>
@@ -48,7 +46,7 @@ public static partial class CombatSimulator
         ArgumentNullException.ThrowIfNull(loadout);
         ArgumentNullException.ThrowIfNull(activeBuffs);
         var buffs = CreateBuffRuntime(activeBuffs, at);
-        var player = BuildPlayerStats(loadout, buffs, new CombatModifierRuntime(), 0, spirit);
+        var player = BuildPlayerStats(loadout, buffs, 0, spirit);
         return new CombatPlayerState(
             Math.Clamp(hitpoints ?? player.MaxHitpoints, 0, player.MaxHitpoints),
             player.MaxHitpoints,
@@ -74,7 +72,7 @@ public static partial class CombatSimulator
         ArgumentNullException.ThrowIfNull(loadout);
         ArgumentNullException.ThrowIfNull(activeBuffs);
         var buffs = CreateBuffRuntime(activeBuffs, at);
-        var player = BuildPlayerStats(loadout, buffs, new CombatModifierRuntime(), 0, spirit);
+        var player = BuildPlayerStats(loadout, buffs, 0, spirit);
         return new CombatAttributeState(
             player.MaxHitpoints,
             player.MaxManapoints,
@@ -96,10 +94,6 @@ public static partial class CombatSimulator
             player.HpRegenPerTenSeconds,
             player.MpRegenPerTenSeconds,
             player.PenetrationRatio,
-            player.PierceChance,
-            player.CurseRatio,
-            player.FuryRatio,
-            player.WeakenRatio,
             player.LifeStealRatio,
             player.ArmorDamageRatio,
             player.HpDrainRatio,
@@ -108,6 +102,12 @@ public static partial class CombatSimulator
             player.CriticalDamageRatio,
             player.CriticalAvoidance,
             player.DamageAbsorptionRatio,
+            BreakRating: player.BreakRating,
+            ParryRating: player.ParryRating,
+            SkillIntensity: player.SkillIntensity,
+            DynamicResistanceFactorK: player.DynamicResistanceFactorK,
+            ActionSpeedReductionRatio: player.ActionSpeedReductionRatio,
+            CooldownReductionRatio: player.CooldownReductionRatio,
             CriticalRating: player.CriticalRating,
             CriticalAvoidanceRating: player.CriticalAvoidanceRating);
     }
@@ -461,19 +461,15 @@ public static partial class CombatSimulator
     private static CombatStats BuildPlayerStats(
         CombatLoadout loadout,
         IReadOnlyDictionary<string, BuffRuntime> buffs,
-        CombatModifierRuntime modifiers,
         long now,
         long spirit = 0)
     {
         var basePool = CombatFormula.CalculateBaseAttributes(spirit);
         var equipment = CombatCatalog.AggregateEquipmentStats(loadout.Equipment);
         var attackRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.AttackLevelRatio)
-            + equipment.AccuracyRatio
-            + modifiers.FuryStacks * (loadout.FuryRatio + equipment.FuryRatio);
+            + equipment.AccuracyRatio;
         var damageRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.DamageRatio)
-            + equipment.DamageRatio
-            + modifiers.FuryStacks * (loadout.FuryRatio + equipment.FuryRatio)
-            - modifiers.WeakenStacks * modifiers.WeakenRatioPerStack;
+            + equipment.DamageRatio;
         var attackSpeedRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.AttackSpeedRatio)
             + equipment.AttackSpeedRatio;
         var stamina = Math.Max(10, loadout.StaminaLevel);
@@ -567,14 +563,10 @@ public static partial class CombatSimulator
             hpRegen,
             mpRegen,
             Math.Max(0, loadout.PenetrationRatio + equipment.PenetrationRatio),
-            Math.Clamp(loadout.PierceChance + equipment.PierceChance, 0, 1),
-            Math.Max(0, loadout.CurseRatio + equipment.CurseRatio),
-            Math.Max(0, loadout.FuryRatio + equipment.FuryRatio),
-            Math.Max(0, loadout.WeakenRatio + equipment.WeakenRatio),
             Math.Max(0, loadout.LifeStealRatio + equipment.LifeStealRatio),
             Math.Max(0, loadout.ArmorDamageRatio + equipment.ArmorDamageRatio),
             Math.Max(0, loadout.HpDrainRatio + equipment.HpDrainRatio),
-            Math.Max(0, modifiers.CurseStacks * modifiers.CurseRatioPerStack),
+            0,
             criticalChance,
             critDamageRatio,
             criticalAvoidance,
@@ -592,20 +584,14 @@ public static partial class CombatSimulator
     }
 
     private static CombatStats BuildEnemyStats(
-        CombatantDefinition definition,
-        int enrageStacks,
-        CombatEncounterDefinition encounter,
-        CombatModifierRuntime modifiers)
+        CombatantDefinition definition)
     {
-        var enrageRatio = Math.Max(0, enrageStacks) * Math.Max(0, encounter.EnrageRatioPerStack);
-        var furyRatio = modifiers.FuryStacks * Math.Max(0, definition.FuryRatio);
-        var weakenRatio = modifiers.WeakenStacks * modifiers.WeakenRatioPerStack;
         return new CombatStats(
             definition.MaxHitpoints,
             definition.MaxManapoints,
             definition.AttackIntervalMilliseconds,
-            definition.AccuracyRating * Math.Max(0.01, 1 + enrageRatio + furyRatio),
-            definition.MaxDamage * Math.Max(0.01, 1 + enrageRatio + furyRatio - weakenRatio),
+            definition.AccuracyRating,
+            definition.MaxDamage,
             definition.DefensiveMaxDamage,
             definition.Armor,
             definition.MagicResistance,
@@ -622,14 +608,10 @@ public static partial class CombatSimulator
             Math.Max(0, definition.HpRegenPerTenSeconds),
             Math.Max(0, definition.MpRegenPerTenSeconds),
             0,
-            Math.Clamp(definition.PierceChance, 0, 1),
-            Math.Max(0, definition.CurseRatio),
-            Math.Max(0, definition.FuryRatio),
-            Math.Max(0, definition.WeakenRatio),
             Math.Max(0, definition.LifeStealRatio),
             Math.Max(0, definition.ArmorDamageRatio),
             Math.Max(0, definition.HpDrainRatio),
-            Math.Max(0, modifiers.CurseStacks * modifiers.CurseRatioPerStack),
+            0,
             Math.Clamp(definition.CriticalChance, 0, 1),
             Math.Max(0, definition.CriticalDamageRatio),
             Math.Clamp(definition.CriticalAvoidance, 0, 1),
@@ -739,11 +721,7 @@ public static partial class CombatSimulator
         // 4. 第一层：大类防御（物理护甲 vs 术法抗性）减免
         var category = ability?.Category ?? source.Category;
         var element = ability?.Element ?? source.Element;
-        var pierceChance = Math.Clamp(source.PierceChance + (ability?.PierceChance ?? 0), 0, 1);
-        var pierced = pierceChance > 0 && random.NextDouble() < pierceChance;
-        var baseResistance = pierced
-            ? 0
-            : (category == DamageCategory.Spell ? target.MagicResistance : target.Armor);
+        var baseResistance = category == DamageCategory.Spell ? target.MagicResistance : target.Armor;
         var effectiveResistance = baseResistance * (isParry ? CombatConstants.ParrySuccessEffectMultiplier : 1.0);
         var penetrationRatio = Math.Max(0, source.PenetrationRatio + (ability?.PenetrationRatio ?? 0));
         var kFactor = Math.Max(1.0, source.DynamicResistanceFactorK);
@@ -795,7 +773,7 @@ public static partial class CombatSimulator
         var drainHealing = damage > 0 && drainRatio > 0
             ? Math.Max(0, (long)Math.Floor(damage * drainRatio))
             : 0;
-        return new CombatResolution(damage, 0, true, drainHealing, pierced, isCritical);
+        return new CombatResolution(damage, 0, true, drainHealing, isCritical);
     }
 
     private static double GetElementResistance(CombatStats target, Element element)
@@ -1045,44 +1023,6 @@ public static partial class CombatSimulator
         return next;
     }
 
-    private static bool ApplyCombatModifierEffects(
-        CombatStats source,
-        CombatStats target,
-        CombatModifierRuntime sourceModifiers,
-        CombatModifierRuntime targetModifiers,
-        bool didHit,
-        long now,
-        IList<string> events)
-    {
-        var changed = false;
-        if (source.FuryRatio > 0)
-        {
-            var before = sourceModifiers.FuryStacks;
-            sourceModifiers.ApplyFury(didHit, source.FuryRatio, now, CombatModifierDurationMilliseconds);
-            var furyChanged = Math.Abs(before - sourceModifiers.FuryStacks) > 0.000_001;
-            changed |= furyChanged;
-            if (furyChanged)
-            {
-                AddEvent(events, $"沸血：{sourceModifiers.FuryStacks:0.##} 层");
-            }
-        }
-
-        if (didHit && source.CurseRatio > 0)
-        {
-            targetModifiers.ApplyCurse(source.CurseRatio, now, CombatModifierDurationMilliseconds);
-            changed = true;
-            AddEvent(events, $"蚀心：{targetModifiers.CurseStacks} 层");
-        }
-
-        if (target.WeakenRatio > 0)
-        {
-            sourceModifiers.ApplyWeaken(target.WeakenRatio, now, CombatModifierDurationMilliseconds);
-            changed = true;
-            AddEvent(events, $"衰弱：{sourceModifiers.WeakenStacks} 层");
-        }
-
-        return changed;
-    }
 
     private static void ApplyControlEffects(
         CombatAbilityDefinition ability,
@@ -1298,108 +1238,6 @@ public static partial class CombatSimulator
         public long ExpiresAtMilliseconds { get; set; }
     }
 
-    /// <summary>
-    /// 战斗内短时词缀状态。每个方向独立维护，死亡/重生时清空；15 秒刷新边界与公开模拟器一致。
-    /// </summary>
-    private sealed class CombatModifierRuntime
-    {
-        public double FuryStacks { get; private set; }
-        public int CurseStacks { get; private set; }
-        public int WeakenStacks { get; private set; }
-        public double CurseRatioPerStack { get; private set; }
-        public double WeakenRatioPerStack { get; private set; }
-        public long NextExpirationAt { get; private set; } = InfiniteTime;
-
-        private long FuryUntil { get; set; }
-        private long CurseUntil { get; set; }
-        private long WeakenUntil { get; set; }
-
-        public void ApplyFury(bool didHit, double ratio, long now, int durationMilliseconds)
-        {
-            FuryStacks = didHit
-                ? Math.Min(5, FuryStacks + 1)
-                : FuryStacks / 2;
-            if (FuryStacks <= 0)
-            {
-                FuryStacks = 0;
-                FuryUntil = 0;
-            }
-            else
-            {
-                FuryUntil = checked(now + Math.Max(1, durationMilliseconds));
-            }
-
-            RecalculateNextExpiration(now);
-        }
-
-        public void ApplyCurse(double ratio, long now, int durationMilliseconds)
-        {
-            CurseStacks = Math.Min(5, CurseStacks + 1);
-            CurseRatioPerStack = Math.Max(CurseRatioPerStack, Math.Max(0, ratio));
-            CurseUntil = checked(now + Math.Max(1, durationMilliseconds));
-            RecalculateNextExpiration(now);
-        }
-
-        public void ApplyWeaken(double ratio, long now, int durationMilliseconds)
-        {
-            WeakenStacks = Math.Min(5, WeakenStacks + 1);
-            WeakenRatioPerStack = Math.Max(WeakenRatioPerStack, Math.Max(0, ratio));
-            WeakenUntil = checked(now + Math.Max(1, durationMilliseconds));
-            RecalculateNextExpiration(now);
-        }
-
-        public bool Expire(long now)
-        {
-            var changed = false;
-            if (FuryUntil > 0 && FuryUntil <= now)
-            {
-                FuryUntil = 0;
-                FuryStacks = 0;
-                changed = true;
-            }
-
-            if (CurseUntil > 0 && CurseUntil <= now)
-            {
-                CurseUntil = 0;
-                CurseStacks = 0;
-                CurseRatioPerStack = 0;
-                changed = true;
-            }
-
-            if (WeakenUntil > 0 && WeakenUntil <= now)
-            {
-                WeakenUntil = 0;
-                WeakenStacks = 0;
-                WeakenRatioPerStack = 0;
-                changed = true;
-            }
-
-            RecalculateNextExpiration(now);
-            return changed;
-        }
-
-        public void Clear()
-        {
-            FuryStacks = 0;
-            CurseStacks = 0;
-            WeakenStacks = 0;
-            CurseRatioPerStack = 0;
-            WeakenRatioPerStack = 0;
-            FuryUntil = 0;
-            CurseUntil = 0;
-            WeakenUntil = 0;
-            NextExpirationAt = InfiniteTime;
-        }
-
-        private void RecalculateNextExpiration(long now)
-        {
-            NextExpirationAt = InfiniteTime;
-            if (FuryUntil > now) NextExpirationAt = Math.Min(NextExpirationAt, FuryUntil);
-            if (CurseUntil > now) NextExpirationAt = Math.Min(NextExpirationAt, CurseUntil);
-            if (WeakenUntil > now) NextExpirationAt = Math.Min(NextExpirationAt, WeakenUntil);
-        }
-    }
-
     private sealed class CombatControlRuntime
     {
         public long StunUntil { get; private set; }
@@ -1526,10 +1364,6 @@ public static partial class CombatSimulator
         double HpRegenPerTenSeconds,
         double MpRegenPerTenSeconds,
         double PenetrationRatio,
-        double PierceChance,
-        double CurseRatio,
-        double FuryRatio,
-        double WeakenRatio,
         double LifeStealRatio,
         double ArmorDamageRatio,
         double HpDrainRatio,
@@ -1554,7 +1388,6 @@ public static partial class CombatSimulator
         long Healing,
         bool DidHit = false,
         long DrainHealing = 0,
-        bool Pierced = false,
         bool IsCritical = false);
 
     private struct DeterministicRandom

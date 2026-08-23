@@ -30,21 +30,51 @@ function getEndpoint(playerId: string, account?: string, name?: string): string 
 export class GameClient {
   private socket: WebSocket | null = null
   private reconnectTimer: number | undefined
+  private heartbeatTimer: number | undefined
   private requestSequence = 0
   private disposed = false
   private reconnectDelay = 500
   private catalogAbortController: AbortController | null = null
-  private immediateFailures = 0
   private stoppedByRejection = false
 
   playerId = getStoredAccount()?.playerId ?? ''
   account = getStoredAccount()?.account ?? ''
   characterName = getStoredAccount()?.name ?? ''
 
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer !== undefined) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = undefined
+    }
+  }
+
+  private startHeartbeat(): void {
+    this.stopHeartbeat()
+    this.heartbeatTimer = window.setInterval(() => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        const pingPacket: Packet = {
+          kind: 'ping',
+          requestId: `${this.playerId.slice(0, 8)}-ping-${++this.requestSequence}`,
+          sequence: 0,
+          payload: { timestamp: Date.now() },
+        }
+        this.socket.send(new TextEncoder().encode(JSON.stringify(pingPacket)))
+      }
+    }, 25_000)
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer !== undefined) {
+      window.clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = undefined
+    }
+  }
+
   /**
    * 启动游戏网络连接
    */
   connect(): void {
+    this.clearReconnectTimer()
     const accountInfo = getStoredAccount()
     if (!accountInfo) {
       useGameStore.getState().setConnection('offline')
@@ -54,7 +84,6 @@ export class GameClient {
     this.account = accountInfo.account
     this.characterName = accountInfo.name
     this.disposed = false
-    this.immediateFailures = 0
     this.stoppedByRejection = false
     this.reconnectDelay = 500
     void gameLogService.activate(this.playerId)
@@ -69,14 +98,12 @@ export class GameClient {
   }
 
   /**
-   * 释放客户端资源并优雅关闭 WebSocket
+   * 释放网络连接与后台轮询资源
    */
   dispose(): void {
     this.disposed = true
-    if (this.reconnectTimer !== undefined) {
-      window.clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = undefined
-    }
+    this.clearReconnectTimer()
+    this.stopHeartbeat()
     this.socket?.close(1000, '客户端断开')
     this.socket = null
     this.catalogAbortController?.abort()
@@ -85,56 +112,64 @@ export class GameClient {
     useGameStore.getState().setConnection('offline')
   }
 
-  /** 用户保存新访问令牌后调用；仅在因鉴权被拒而停止重连时立即恢复连接。 */
+  /**
+   * 当检测到版本空洞或断层时触发重拉全量快照
+   */
+  requestSnapshotOrResync(): void {
+    if (this.disposed) return
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      this.socket.close(1000, '版本断层，重拉快照')
+    } else {
+      this.open()
+    }
+  }
+
+  /**
+   * 通知访问令牌已变更（用户在设置中填入新 Token 时唤醒重试）
+   */
   notifyAccessTokenChanged(): void {
     if (this.disposed || !this.stoppedByRejection) return
     this.stoppedByRejection = false
-    this.immediateFailures = 0
     this.reconnectDelay = 500
     this.open()
   }
 
   /**
-   * 向服务端发送业务操作命令 (Command Packet)
-   * @param command 命令名称（如 'enqueue_action', 'set_combat_loadout' 等）
-   * @param payload 命令参数载荷
-   * @returns 是否成功发出
+   * 向服务端发送业务操作指令
    */
-  sendCommand(command: string, payload: unknown): boolean {
+  sendCommand<T extends object>(type: string, payload: T): boolean {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
+      useGameStore.getState().setNotice(getT()('common.notice.reconnecting'))
       return false
     }
-
-    const requestId = `${this.playerId.slice(0, 8)}-${++this.requestSequence}`
     const packet: Packet = {
       kind: 'command',
-      requestId,
+      requestId: `${this.playerId.slice(0, 8)}-${type}-${++this.requestSequence}`,
       sequence: 0,
-      payload: { command, payload },
+      payload: {
+        type,
+        ...payload,
+      },
     }
-    const bytes = new TextEncoder().encode(JSON.stringify(packet))
-    this.socket.send(bytes)
+    this.socket.send(new TextEncoder().encode(JSON.stringify(packet)))
     return true
   }
 
   /**
-   * 内部打开 WebSocket 连接并配置事件监听
+   * 打开底层 WebSocket 连接
    */
   private open(): void {
+    this.clearReconnectTimer()
     if (this.disposed || !this.playerId) return
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
-    const attemptStartedAt = Date.now()
-    let openedThisSocket = false
     const socket = new WebSocket(getEndpoint(this.playerId, this.account, this.characterName))
     socket.binaryType = 'arraybuffer'
     this.socket = socket
 
     socket.addEventListener('open', () => {
-      openedThisSocket = true
       this.reconnectDelay = 500
-      this.immediateFailures = 0
       useGameStore.getState().setConnection('online')
+      this.startHeartbeat()
       void this.loadCatalogs()
       this.sendHello()
     })
@@ -144,19 +179,19 @@ export class GameClient {
     socket.addEventListener('error', () => {
       // close 事件负责统一重连，避免重复提示和重复刷新。
     })
-    socket.addEventListener('close', () => {
+    socket.addEventListener('close', (event) => {
+      this.stopHeartbeat()
       if (this.socket === socket) this.socket = null
       if (this.disposed) return
-      // 从未 open 且快速失败，通常是服务端拒绝了令牌；连续多次后停止自动重连，
-      // 等待用户在设置中保存新令牌后再恢复，避免无限循环撞墙。
-      const failedFastWithoutOpen = !openedThisSocket && Date.now() - attemptStartedAt < 2000
-      if (failedFastWithoutOpen) this.immediateFailures += 1
-      else this.immediateFailures = 0
-      if (failedFastWithoutOpen && this.immediateFailures >= 3) {
+
+      // 检查 WebSocket close code 精准熔断认证/权限错误 (1008 或 4001~4004)
+      const isAuthFailure = event.code === 1008 || (event.code >= 4001 && event.code <= 4004)
+      if (isAuthFailure) {
         this.stoppedByRejection = true
         useGameStore.getState().setConnection('offline')
         return
       }
+
       useGameStore.getState().setConnection('reconnecting')
       const delay = this.reconnectDelay
       this.reconnectDelay = Math.min(8000, this.reconnectDelay * 2)
@@ -249,6 +284,10 @@ export class GameClient {
       case 'ack': {
         const ack = packet.payload as AckPayload
         useGameStore.getState().setNotice(ack.message)
+        break
+      }
+      case 'pong': {
+        // 心跳回执，静默确认
         break
       }
       case 'error': {

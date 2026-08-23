@@ -952,7 +952,8 @@ public static class SimulationEngine
     public static SimulationResult AdvanceTo(
         PlayerState state,
         DateTimeOffset targetTime,
-        int maxTransitions = SimulationConstants.MaxTransitionsPerAdvance)
+        int maxTransitions = SimulationConstants.MaxTransitionsPerAdvance,
+        TimeSpan? maxOfflineDuration = null)
     {
         ArgumentNullException.ThrowIfNull(state);
         var target = NormalizeTime(targetTime);
@@ -968,6 +969,12 @@ public static class SimulationEngine
             state.LastSimulatedAt = target;
             return new SimulationResult(DirtySections.None, 0, 0, []);
         }
+
+        // 施加最大离线时间跨度截断，防止无限长时间补算
+        var effectiveMaxOffline = maxOfflineDuration ?? SimulationConstants.DefaultMaxOfflineDuration;
+        var rawDuration = target - cursor;
+        var duration = TimeSpan.FromMilliseconds(Math.Min(rawDuration.TotalMilliseconds, effectiveMaxOffline.TotalMilliseconds));
+        target = cursor + duration;
 
         var dirty = DirtySections.None;
         var events = new List<string>();
@@ -1071,7 +1078,8 @@ public static class SimulationEngine
                 continue;
             }
 
-            var durationMilliseconds = checked((long)Math.Max(0, current.DurationSeconds) * 1_000);
+            // 单次任务最终耗时保底 0.1 秒（100ms），杜绝 1ms 碎片推进空转风暴，同时保持内部事件边界推进
+            var durationMilliseconds = checked((long)Math.Max(100, Math.Max(0.1, current.DurationSeconds) * 1_000));
             if (current.ProgressMilliseconds <= 0 && current.ProgressSeconds > 0)
             {
                 current.ProgressMilliseconds = checked((long)current.ProgressSeconds * 1_000);
@@ -1195,7 +1203,7 @@ public static class SimulationEngine
         }
         else
         {
-            var durationMilliseconds = checked((long)Math.Max(0, GetDurationSeconds(current, definition)) * 1_000);
+            var durationMilliseconds = checked((long)Math.Max(100, Math.Max(0.1, GetDurationSeconds(current, definition)) * 1_000));
             var progressMilliseconds = current.ProgressMilliseconds > 0
                 ? current.ProgressMilliseconds
                 : checked((long)Math.Max(0, current.ProgressSeconds) * 1_000);
@@ -1912,7 +1920,7 @@ public static class SimulationEngine
                 ActionType.Alchemy => GetAlchemyOutputMultiplier(state, state.LastSimulatedAt) * autoUseMultiplier,
                 _ => 1.0
             };
-            var amount = multiplier == 1.0
+            var amount = Math.Abs(multiplier - 1.0) < 1e-9
                 ? output.Value
                 : Math.Max(1, (long)Math.Ceiling(output.Value * multiplier));
             state.Inventory.Add(output.Key, amount);
@@ -2484,11 +2492,7 @@ public static class SimulationEngine
     private static bool NormalizeCombatEffectRatios(CombatLoadout combat)
     {
         var changed = false;
-        changed |= AssignNormalizedRatio(combat.PierceChance, 1, value => combat.PierceChance = value);
         changed |= AssignNormalizedRatio(combat.PenetrationRatio, 1_000, value => combat.PenetrationRatio = value);
-        changed |= AssignNormalizedRatio(combat.CurseRatio, 10, value => combat.CurseRatio = value);
-        changed |= AssignNormalizedRatio(combat.FuryRatio, 10, value => combat.FuryRatio = value);
-        changed |= AssignNormalizedRatio(combat.WeakenRatio, 10, value => combat.WeakenRatio = value);
         changed |= AssignNormalizedRatio(combat.LifeStealRatio, 10, value => combat.LifeStealRatio = value);
         changed |= AssignNormalizedRatio(combat.ArmorDamageRatio, 10, value => combat.ArmorDamageRatio = value);
         changed |= AssignNormalizedRatio(combat.HpDrainRatio, 10, value => combat.HpDrainRatio = value);

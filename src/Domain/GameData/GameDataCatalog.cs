@@ -213,10 +213,6 @@ public static class GameDataCatalog
             ExperiencePerWin = config.ExperiencePerWin ?? 0L,
             SpiritMinPerWin = config.SpiritMinPerWin ?? 0L,
             SpiritMaxPerWin = config.SpiritMaxPerWin ?? 0L,
-            EnrageTimeMilliseconds = config.EnrageTimeMilliseconds ?? 180000,
-            EnrageTickMilliseconds = config.EnrageTickMilliseconds ?? 60000,
-            MaxEnrageStacks = config.MaxEnrageStacks ?? 10,
-            EnrageRatioPerStack = config.EnrageRatioPerStack ?? 0.1,
             DropTable = config.DropTable ?? [],
             RareDropTable = config.RareDropTable ?? []
         };
@@ -241,6 +237,10 @@ public static class GameDataCatalog
         foreach (var action in actions.Values)
         {
             if (action.DurationSeconds < 0) throw Invalid("行动", action.Id, "durationSeconds 不能为负数");
+            if (action.ExecutionKind != ActionExecutionKind.CombatEncounter && action.DurationSeconds < 0.1)
+            {
+                throw Invalid("行动", action.Id, "非战斗行动 durationSeconds 必须大于 0 且不低于 0.1 秒");
+            }
             if (action.CombatEncounterId is { Length: > 0 } encounterId && !encounters.ContainsKey(encounterId))
             {
                 throw Invalid("行动", action.Id, $"引用了未知遭遇 {encounterId}");
@@ -249,6 +249,13 @@ public static class GameDataCatalog
             {
                 if (!items.ContainsKey(itemId)) throw Invalid("行动", action.Id, $"引用了未知物品 {itemId}");
             }
+        }
+
+        foreach (var ability in abilities.Values)
+        {
+            if (ability.CooldownMilliseconds < 0) throw Invalid("技能", ability.Id, "cooldownMilliseconds 不能为负数");
+            if (ability.CastMilliseconds < 0) throw Invalid("技能", ability.Id, "castMilliseconds 不能为负数");
+            if (ability.DamageOverTimeTickMilliseconds <= 0) throw Invalid("技能", ability.Id, "damageOverTimeTickMilliseconds 必须大于 0");
         }
 
         foreach (var monster in monsters.Values)
@@ -268,6 +275,7 @@ public static class GameDataCatalog
         foreach (var encounter in encounters.Values)
         {
             if (encounter.SearchMilliseconds <= 0) throw Invalid("遭遇", encounter.Id, "searchMilliseconds 必须大于 0");
+            if (encounter.RespawnMilliseconds <= 0) throw Invalid("遭遇", encounter.Id, "respawnMilliseconds 必须大于 0");
             if (encounter.PlayerRespawnMilliseconds <= 0) throw Invalid("遭遇", encounter.Id, "playerRespawnMilliseconds 必须大于 0");
             if (encounter.RandomSpawns.Any(spawn => spawn.Weight <= 0 || spawn.Strength <= 0))
             {

@@ -111,7 +111,7 @@ public sealed class DataBudgetResolverTests
             {
                 ["armor"] = 0.50,
                 ["allResistance"] = 0.30,
-                ["weakenRatio"] = 0.20
+                ["damageabsorption"] = 0.20
             });
 
         var definition = DataBudgetResolver.ResolveEquipment(config);
@@ -123,12 +123,12 @@ public sealed class DataBudgetResolverTests
         Assert.Equal(12.0, definition.Stats.WaterResistance, precision: 2);
         Assert.Equal(12.0, definition.Stats.WoodResistance, precision: 2);
         Assert.Equal(12.0, definition.Stats.FireResistance, precision: 2);
-        Assert.Equal(0.06, definition.Stats.WeakenRatio, precision: 3);
+        Assert.Equal(0.1, definition.Stats.DamageAbsorptionRatio, precision: 3);
 
         // 自动生成的强化增量应为 Stats / 50.0
         Assert.Equal(1.0, definition.EnhancementBonus.Armor, precision: 2);
         Assert.Equal(0.24, definition.EnhancementBonus.WaterResistance, precision: 3);
-        Assert.Equal(0.0012, definition.EnhancementBonus.WeakenRatio, precision: 4);
+        Assert.Equal(0.002, definition.EnhancementBonus.DamageAbsorptionRatio, precision: 4);
     }
 
     /// <summary>

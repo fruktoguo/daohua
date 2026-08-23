@@ -51,8 +51,8 @@ export function useSmoothProgressRef({
       if (!isRunning) {
         currentSec = baseProgress
       } else if (isInfinite && duration > 0) {
-        // 无限循环模式下进度取模
-        currentSec = (baseProgress + elapsed) % duration
+        // 无限循环模式下进度取模（消除负数取模异常）
+        currentSec = ((baseProgress + elapsed) % duration + duration) % duration
       } else {
         currentSec = Math.min(duration, Math.max(0, baseProgress + elapsed))
       }

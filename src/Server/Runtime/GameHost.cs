@@ -509,8 +509,9 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
                     {
                         SimulationEngine.SetPresence(state, PresenceMode.IdleOffline, _clock.UtcNow);
                     }
+                    _lastPlayerAccess[session.PlayerId] = _clock.UtcNow;
 
-                    return EvictPlayerToColdSnapshot(session.PlayerId) ?? ToSnapshotRecord(state);
+                    return (YuoSnapshotRecord?)null;
                 }, CancellationToken.None);
 
                 if (record is not null)
@@ -714,9 +715,18 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         PlayerPatchDto? patch = null;
         PlayerSnapshotDto? snapshot = null;
         YuoSnapshotRecord? record = null;
+        var marketRollback = _marketRuntime.Coordinator.CreateRollbackSnapshot();
+        Dictionary<string, long>? inventoryBackup = null;
+        long versionBackup = 0;
+        DirtySections dirtyBackup = DirtySections.None;
+
         var result = await ExecuteOnOwnerAsync(_ =>
         {
             var state = GetState(playerId);
+            inventoryBackup = new Dictionary<string, long>(state.Inventory.Items, StringComparer.Ordinal);
+            versionBackup = state.Version;
+            dirtyBackup = state.DirtySections;
+
             var placement = _marketRuntime.Coordinator.Place(state, request);
             if (placement.Success)
             {
@@ -728,7 +738,28 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         }, cancellationToken);
 
         if (!result.Success) return MarketCommandOutcome.From(result, snapshot);
-        await PersistPlayerAndMarketAsync(playerId, patch, snapshot, record, cancellationToken);
+        try
+        {
+            await PersistPlayerAndMarketAsync(playerId, patch, snapshot, record, cancellationToken);
+        }
+        catch
+        {
+            _marketRuntime.Coordinator.RestoreRollbackSnapshot(marketRollback);
+            await ExecuteOnOwnerAsync(_ =>
+            {
+                var state = GetState(playerId);
+                state.Inventory.Items.Clear();
+                foreach (var kvp in inventoryBackup!)
+                {
+                    state.Inventory.Items[kvp.Key] = kvp.Value;
+                }
+                state.Version = versionBackup;
+                state.DirtySections = dirtyBackup;
+                return true;
+            }, CancellationToken.None);
+            throw;
+        }
+
         _scheduleSignal.Pulse();
         return MarketCommandOutcome.From(result, snapshot);
     }
@@ -756,9 +787,18 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         PlayerPatchDto? patch = null;
         PlayerSnapshotDto? snapshot = null;
         YuoSnapshotRecord? record = null;
+        var marketRollback = _marketRuntime.Coordinator.CreateRollbackSnapshot();
+        Dictionary<string, long>? inventoryBackup = null;
+        long versionBackup = 0;
+        DirtySections dirtyBackup = DirtySections.None;
+
         var result = await ExecuteOnOwnerAsync(_ =>
         {
             var state = GetState(playerId);
+            inventoryBackup = new Dictionary<string, long>(state.Inventory.Items, StringComparer.Ordinal);
+            versionBackup = state.Version;
+            dirtyBackup = state.DirtySections;
+
             var cancellation = _marketRuntime.Coordinator.Cancel(state, orderId);
             if (cancellation.Success)
             {
@@ -770,7 +810,28 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         }, cancellationToken);
 
         if (!result.Success) return MarketCommandOutcome.From(result, snapshot);
-        await PersistPlayerAndMarketAsync(playerId, patch, snapshot, record, cancellationToken);
+        try
+        {
+            await PersistPlayerAndMarketAsync(playerId, patch, snapshot, record, cancellationToken);
+        }
+        catch
+        {
+            _marketRuntime.Coordinator.RestoreRollbackSnapshot(marketRollback);
+            await ExecuteOnOwnerAsync(_ =>
+            {
+                var state = GetState(playerId);
+                state.Inventory.Items.Clear();
+                foreach (var kvp in inventoryBackup!)
+                {
+                    state.Inventory.Items[kvp.Key] = kvp.Value;
+                }
+                state.Version = versionBackup;
+                state.DirtySections = dirtyBackup;
+                return true;
+            }, CancellationToken.None);
+            throw;
+        }
+
         _scheduleSignal.Pulse();
         return MarketCommandOutcome.From(result, snapshot);
     }
@@ -792,9 +853,18 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         PlayerPatchDto? patch = null;
         PlayerSnapshotDto? snapshot = null;
         YuoSnapshotRecord? record = null;
+        var marketRollback = _marketRuntime.Coordinator.CreateRollbackSnapshot();
+        Dictionary<string, long>? inventoryBackup = null;
+        long versionBackup = 0;
+        DirtySections dirtyBackup = DirtySections.None;
+
         var changed = await ExecuteOnOwnerAsync(_ =>
         {
             var state = GetState(playerId);
+            inventoryBackup = new Dictionary<string, long>(state.Inventory.Items, StringComparer.Ordinal);
+            versionBackup = state.Version;
+            dirtyBackup = state.DirtySections;
+
             var claimed = _marketRuntime.Coordinator.Claim(state);
             if (claimed)
             {
@@ -810,10 +880,37 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
             return MarketCommandOutcome.Failed("NOTHING_TO_CLAIM", "当前没有待领取的市场资产。");
         }
 
-        await PersistPlayerAndMarketAsync(playerId, patch, snapshot, record, cancellationToken);
+        try
+        {
+            await PersistPlayerAndMarketAsync(playerId, patch, snapshot, record, cancellationToken);
+        }
+        catch
+        {
+            _marketRuntime.Coordinator.RestoreRollbackSnapshot(marketRollback);
+            await ExecuteOnOwnerAsync(_ =>
+            {
+                var state = GetState(playerId);
+                state.Inventory.Items.Clear();
+                foreach (var kvp in inventoryBackup!)
+                {
+                    state.Inventory.Items[kvp.Key] = kvp.Value;
+                }
+                state.Version = versionBackup;
+                state.DirtySections = dirtyBackup;
+                return true;
+            }, CancellationToken.None);
+            throw;
+        }
+
         _scheduleSignal.Pulse();
         return MarketCommandOutcome.Ok("市场资产已领取。", snapshot);
     }
+
+    /// <summary>
+    /// 提取玩家市场资产（别名快捷调用）。
+    /// </summary>
+    public Task<MarketCommandOutcome> ClaimMarketAsync(Guid playerId, CancellationToken cancellationToken) =>
+        ClaimMarketAssetsAsync(playerId, cancellationToken);
 
     /// <summary>
     /// 快进指定玩家的模拟时间（调试接口或离线补算用），执行确定性推演并保存快照。
@@ -876,34 +973,56 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         var updates = await ExecuteOnOwnerAsync(_ =>
         {
             var results = new List<PlayerUpdate>();
-            foreach (var playerId in TakeDuePlayers(now))
+            var duePlayers = TakeDuePlayers(now);
+            var batchStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            var maxBatchDuration = TimeSpan.FromMilliseconds(50);
+
+            for (var i = 0; i < duePlayers.Count; i++)
             {
+                var playerId = duePlayers[i];
                 if (!_players.TryGetValue(playerId, out var entity)) continue;
                 var state = entity.GetComponent<PlayerComponent>().State;
 
                 var simulation = SimulationEngine.AdvanceTo(state, now);
                 var sections = state.DirtySections | simulation.DirtySections;
                 ScheduleNextTransition(state);
-                if (sections == DirtySections.None) continue;
-
-                var patch = StateMapper.ToPatch(state, sections, now);
-                byte[]? snapshotPacket = null;
-                if (HasSessionNeedingResync(state.PlayerId))
+                if (sections != DirtySections.None)
                 {
-                    snapshotPacket = PacketCodec.Encode(
-                        PacketKinds.Snapshot,
-                        string.Empty,
-                        NextPacketSequence(),
-                        StateMapper.ToSnapshot(state, now));
+                    var patch = StateMapper.ToPatch(state, sections, now);
+                    byte[]? snapshotPacket = null;
+                    if (HasSessionNeedingResync(state.PlayerId))
+                    {
+                        snapshotPacket = PacketCodec.Encode(
+                            PacketKinds.Snapshot,
+                            string.Empty,
+                            NextPacketSequence(),
+                            StateMapper.ToSnapshot(state, now));
+                    }
+
+                    results.Add(new PlayerUpdate(
+                        state.PlayerId,
+                        PacketCodec.Encode(PacketKinds.Delta, string.Empty, NextPacketSequence(), patch),
+                        snapshotPacket,
+                        simulation.CompletedActions > 0 ? ToSnapshotRecord(state) : null));
+                    state.PendingEvents.Clear();
+                    state.DirtySections = DirtySections.None;
                 }
 
-                results.Add(new PlayerUpdate(
-                    state.PlayerId,
-                    PacketCodec.Encode(PacketKinds.Delta, string.Empty, NextPacketSequence(), patch),
-                    snapshotPacket,
-                    simulation.CompletedActions > 0 ? ToSnapshotRecord(state) : null));
-                state.PendingEvents.Clear();
-                state.DirtySections = DirtySections.None;
+                // 批次推演耗时保护与熔断：若执行超过 50ms，暂停本批次剩余推演，重新入队调度并让出 Fiber
+                if (i + 1 < duePlayers.Count && System.Diagnostics.Stopwatch.GetElapsedTime(batchStart) > maxBatchDuration)
+                {
+                    for (var j = i + 1; j < duePlayers.Count; j++)
+                    {
+                        var remId = duePlayers[j];
+                        if (_players.TryGetValue(remId, out var remEntity))
+                        {
+                            var remState = remEntity.GetComponent<PlayerComponent>().State;
+                            ScheduleNextTransition(remState);
+                        }
+                    }
+                    _scheduleSignal.Pulse();
+                    break;
+                }
             }
 
             return results;

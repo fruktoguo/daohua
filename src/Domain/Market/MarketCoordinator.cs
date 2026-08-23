@@ -62,6 +62,24 @@ public sealed class MarketCoordinator
     }
 
     /// <summary>
+    /// 创建当前市场引擎与协调器的全量轻量状态回滚镜像。
+    /// </summary>
+    public MarketRollbackSnapshot CreateRollbackSnapshot()
+    {
+        return new MarketRollbackSnapshot(_engine.ExportState(), ExportState());
+    }
+
+    /// <summary>
+    /// 在数据库持久化失败时回滚恢复市场引擎与协调器的状态。
+    /// </summary>
+    public void RestoreRollbackSnapshot(MarketRollbackSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        _engine.RestoreState(snapshot.EngineState);
+        RestoreState(snapshot.CoordinatorState);
+    }
+
+    /// <summary>
     /// 恢复玩家资产冻结和待领取结算。恢复前必须先恢复订单簿，以便校验每个冻结对应活动订单。
     /// </summary>
     /// <param name="state">待恢复的市场协调器快照。</param>
@@ -490,3 +508,10 @@ public sealed class MarketCoordinator
 
     private readonly record struct PendingItemKey(MarketInstrument Instrument);
 }
+
+/// <summary>
+/// 市场引擎与协调器的全量轻量状态回滚快照。
+/// </summary>
+public sealed record MarketRollbackSnapshot(
+    MarketEngineState EngineState,
+    MarketCoordinatorState CoordinatorState);

@@ -163,8 +163,6 @@ public sealed record CombatAbilityDefinition
     /// <summary>技能命中吸血比例。</summary>
     public double HpDrainRatio { get; init; }
 
-    /// <summary>无视防御的穿透一击概率。</summary>
-    public double PierceChance { get; init; }
 
     /// <summary>默认血量触发阈值比例。</summary>
     public double TriggerHpRatio { get; init; } = 1.0;
@@ -240,17 +238,6 @@ public sealed record CombatantDefinition
     /// <summary>韧性/异常状态抗性。</summary>
     public double Tenacity { get; init; }
 
-    /// <summary>贯穿/破甲一击概率。</summary>
-    public double PierceChance { get; init; }
-
-    /// <summary>诅咒增伤倍率。</summary>
-    public double CurseRatio { get; init; }
-
-    /// <summary>狂暴增伤倍率。</summary>
-    public double FuryRatio { get; init; }
-
-    /// <summary>虚弱减伤倍率。</summary>
-    public double WeakenRatio { get; init; }
 
     /// <summary>普攻生命偷取比例。</summary>
     public double LifeStealRatio { get; init; }
@@ -304,10 +291,6 @@ public sealed record CombatantDefinition
     public double HpRegenPerTenSeconds { get; init; }
 
     /// <summary>每 10 秒法力回复量。</summary>
-    public double MpRegenPerTenSeconds { get; init; }
-
-    /// <summary>狂暴狂热倒计时（毫秒，超时后进入狂暴增伤）。</summary>
-    public double EnrageTimeMilliseconds { get; init; }
 
     /// <summary>攻击修炼等级。</summary>
     public double AttackLevel { get; init; } = 1.0;
@@ -410,18 +393,6 @@ public sealed record CombatEncounterDefinition
 
     /// <summary>通关单场胜利掉落灵石上限。</summary>
     public double SpiritMaxPerWin { get; init; }
-
-    /// <summary>战斗超时狂暴时间阈值（毫秒）。</summary>
-    public double EnrageTimeMilliseconds { get; init; } = 180000.0;
-
-    /// <summary>狂暴层数增加间隔（毫秒）。</summary>
-    public double EnrageTickMilliseconds { get; init; } = 60000.0;
-
-    /// <summary>最大狂暴叠加层数。</summary>
-    public int MaxEnrageStacks { get; init; } = 10;
-
-    /// <summary>每层狂暴攻击提升比例。</summary>
-    public double EnrageRatioPerStack { get; init; } = 0.10;
 
     /// <summary>副本全局常规掉落表。</summary>
     public ImmutableArray<CombatDropDefinition> DropTable { get; init; } = [];

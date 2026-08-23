@@ -5,23 +5,11 @@ import { useT } from '../i18n'
 import { FloatingTooltip } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
 
-const CATEGORY_NAMES: Record<string, string> = {
-  physical: '物理',
-  spell: '术法',
-}
-
-const ELEMENT_NAMES: Record<string, string> = {
-  none: '无属性',
-  metal: '金行',
-  wood: '木行',
-  water: '水行',
-  fire: '火行',
-  earth: '土行',
-}
-
-function enemyTypeLabel(category: string, element: string): string {
-  const cat = CATEGORY_NAMES[category] || category
-  const elem = element && element !== 'none' ? ` · ${ELEMENT_NAMES[element] || element}` : ''
+function getEnemyTypeLabel(category: string, element: string, t: ReturnType<typeof useT>): string {
+  const catKey = `combat.encounter.damageCategory.${category}` as const
+  const elemKey = `combat.encounter.element.${element}` as const
+  const cat = t(catKey) || category
+  const elem = element && element !== 'none' ? ` · ${t(elemKey) || element}` : ''
   return `${cat}${elem}`
 }
 
@@ -58,7 +46,7 @@ const EnemyCard = memo(function EnemyCard({
         </div>
         <div>
           <strong>{enemy.name}</strong>
-          <span>{t('combat.encounter.experience', { type: enemyTypeLabel(enemy.category, enemy.element), n: formatNumber(enemy.experience) })}</span>
+          <span>{t('combat.encounter.experience', { type: getEnemyTypeLabel(enemy.category, enemy.element, t), n: formatNumber(enemy.experience) })}</span>
         </div>
         {strength !== undefined && (
           <FloatingTooltip placement="top" title={t('combat.encounter.strengthTip')} tone="gold">

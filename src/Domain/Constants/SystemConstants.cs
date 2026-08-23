@@ -34,8 +34,10 @@ public static class CombatLimits
 /// </summary>
 public static class SimulationConstants
 {
-    /// <summary>单次快进推进状态机最大跳转次数上限（防止死循环）。</summary>
-    public const int MaxTransitionsPerAdvance = 2_000_000;
+    /// <summary>玩家默认最大离线挂机补偿结算时长（48 小时，可通过配置/属性扩展）。</summary>
+    public static readonly TimeSpan DefaultMaxOfflineDuration = TimeSpan.FromHours(48);
+    /// <summary>单次快进推进状态机最大跳转次数上限（防止死循环与单 Fiber 阻塞）。</summary>
+    public const int MaxTransitionsPerAdvance = 50_000;
     /// <summary>玩家内存中保留的最近事件日志最大条数。</summary>
     public const int EventLogLimit = 40;
     /// <summary>离线结算时单次批量聚合待处理事件日志上限。</summary>

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { gameClient } from '../network/gameClient'
 import { resolveActionDefinitions } from './ids'
 import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
@@ -291,8 +292,19 @@ export const useGameStore = create<GameStore>((set) => ({
     world: snapshot.world ?? initial.world!,
   }),
   applyPatch: (patch) => set((state) => {
-    // 丢弃版本过旧的乱序补丁
-    if (patch.version < state.version) return state
+    // 1. 若尚未接收到服务端全量快照，则拒绝应用增量包
+    if (!state.hasReceivedSnapshot) {
+      return state
+    }
+    // 2. 丢弃版本过旧或重复的乱序补丁
+    if (patch.version <= state.version) return state
+    // 3. 版本连续性校验：若出现版本断层 (patch.version > state.version + 1)，触发全量快照重拉
+    if (patch.version > state.version + 1) {
+      queueMicrotask(() => {
+        gameClient.requestSnapshotOrResync()
+      })
+      return state
+    }
     const queue = patch.queue ? normalizeQueue(patch.queue) : (patch.queueProgress
       ? {
           ...state.queue,

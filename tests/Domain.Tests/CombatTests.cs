@@ -18,7 +18,7 @@ public sealed class CombatTests
 
     /// <summary>
     /// 验证各项基础战斗公式的基准曲线形态：
-    /// 包含命中率对抗、抗性减伤、攻击间隔换算、生命/灵力回复、狂暴层数累加、控制抗性衰减及百分比计算。
+    /// 包含命中率对抗、抗性减伤、攻击间隔换算、生命/灵力回复、控制抗性衰减及百分比计算。
     /// </summary>
     [Fact]
     public void Combat_formulas_match_reference_shapes()
@@ -29,9 +29,6 @@ public sealed class CombatTests
         Assert.Equal(3_000, CombatFormula.CalculateAttackIntervalMilliseconds(3_000, 0));
         Assert.True(CombatFormula.CalculateAttackIntervalMilliseconds(3_000, 0.5) < 3_000);
         Assert.Equal(1, CombatFormula.CalculateRegeneration(110, 0.01));
-        Assert.Equal(0, CombatFormula.CalculateEnrageStacks(179_999, 180_000));
-        Assert.Equal(1, CombatFormula.CalculateEnrageStacks(180_000, 180_000));
-        Assert.Equal(10, CombatFormula.CalculateEnrageStacks(9_000_000, 180_000));
         Assert.Equal(0.7, CombatFormula.CalculateControlChance(0.7, 0), precision: 10);
         Assert.Equal(0.35, CombatFormula.CalculateControlChance(0.7, 100), precision: 10);
         Assert.Equal(0.7, CombatFormula.CalculateControlChance(0.7, double.PositiveInfinity), precision: 10);
@@ -162,6 +159,8 @@ public sealed class CombatTests
     {
         var state = SimulationEngine.CreateDefaultState(Guid.Parse("11111111-1111-1111-1111-111111111111"), now: Baseline);
         state.Combat.AttackLevel = 1_000_000;
+        state.Combat.DefenseLevel = 1_000_000;
+        state.Combat.StaminaLevel = 1_000_000;
         state.Combat.IntelligenceLevel = 1_000_000;
         state.Combat.SwordsmanshipLevel = 1_000_000;
         state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.HeavySlash;
@@ -229,7 +228,6 @@ public sealed class CombatTests
         Assert.Equal(firstResult.DroppedQuantity, secondResult.DroppedQuantity);
         Assert.Equal(firstResult.ConsumedItems, secondResult.ConsumedItems);
         Assert.Equal(firstResult.Events, secondResult.Events);
-        Assert.Equal(firstResult.MaxEnrageStacks, secondResult.MaxEnrageStacks);
         Assert.Equal(firstResult.HitpointsRegenerated, secondResult.HitpointsRegenerated);
         Assert.Equal(firstResult.ManapointsRegenerated, secondResult.ManapointsRegenerated);
         Assert.Equal(firstResult.HitpointsRecoveredFromConsumables, secondResult.HitpointsRecoveredFromConsumables);

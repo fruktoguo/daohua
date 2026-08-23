@@ -178,10 +178,6 @@ static CombatEncounterConfig ToEncounterConfig(CombatEncounterDefinition encount
     ExperiencePerWin: encounter.ExperiencePerWin > 0 ? encounter.ExperiencePerWin : null,
     SpiritMinPerWin: encounter.SpiritMinPerWin > 0 ? encounter.SpiritMinPerWin : null,
     SpiritMaxPerWin: encounter.SpiritMaxPerWin > 0 ? encounter.SpiritMaxPerWin : null,
-    EnrageTimeMilliseconds: encounter.EnrageTimeMilliseconds != 180000 ? encounter.EnrageTimeMilliseconds : null,
-    EnrageTickMilliseconds: encounter.EnrageTickMilliseconds != 60000 ? encounter.EnrageTickMilliseconds : null,
-    MaxEnrageStacks: encounter.MaxEnrageStacks != 10 ? encounter.MaxEnrageStacks : null,
-    EnrageRatioPerStack: Math.Abs(encounter.EnrageRatioPerStack - 0.1) > 0.001 ? encounter.EnrageRatioPerStack : null,
     DropTable: encounter.DropTable.Count > 0 ? encounter.DropTable : null,
     RareDropTable: encounter.RareDropTable.Count > 0 ? encounter.RareDropTable : null);
 
@@ -266,7 +262,6 @@ static AbilityConfig ToAbilityConfig(CombatAbilityDefinition ability) => new(
     PenetrationRatio: ability.PenetrationRatio > 0 ? ability.PenetrationRatio : null,
     ArmorDamageRatio: ability.ArmorDamageRatio > 0 ? ability.ArmorDamageRatio : null,
     HpDrainRatio: ability.HpDrainRatio > 0 ? ability.HpDrainRatio : null,
-    PierceChance: ability.PierceChance > 0 ? ability.PierceChance : null,
     TriggerHpRatio: Math.Abs(ability.TriggerHpRatio - 1.0) > 0.001 ? ability.TriggerHpRatio : null,
     DefaultTriggers: ability.DefaultTriggers.Count > 0 ? ability.DefaultTriggers : null,
     Tier: null);

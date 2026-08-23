@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import type { NearbyMonsterDefinition } from '../game/types'
+import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingPopover, FloatingInfoCard } from './FloatingPopover'
 
 // 地点/NPC/建筑/怪物名称来自服务端数据，面板框架文本走 i18n。
@@ -12,20 +13,24 @@ function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
   isElite?: boolean
   isBoss?: boolean
 }): React.JSX.Element {
-  const mark = isBoss ? '魁' : isElite ? '精' : (monster.visualSource || '兽')
+  const t = useT()
+  const mark = isBoss ? t('combat.nearby.markBoss') : isElite ? t('combat.nearby.markElite') : (monster.visualSource || t('combat.nearby.markMonster'))
   const cardClassName = `nearby-card ${isBoss ? 'is-boss' : isElite ? 'is-elite' : 'is-monster'}`
+  const rankLabel = monster.rank === 'boss' ? t('combat.nearby.rankBoss') : monster.rank === 'elite' ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
+  const rankDesc = monster.rank === 'boss' ? t('combat.nearby.rankDescBoss') : monster.rank === 'elite' ? t('combat.nearby.rankDescElite') : t('combat.nearby.rankDescMonster')
+  const summaryType = isBoss ? t('combat.nearby.titleBoss') : isElite ? t('combat.nearby.titleElite') : t('combat.nearby.titleMonster')
 
   const details = [
-    { label: '等级', value: `Lv.${monster.level}` },
-    { label: '位阶', value: monster.rank === 'boss' ? '妖王' : monster.rank === 'elite' ? '精英' : '妖兽' },
-    { label: '消耗预算', value: `${monster.budgetCost}` },
-    { label: '气血上限', value: `${monster.maxHitpoints}` },
-    { label: '攻击威能', value: `${monster.maxDamage}` },
-    { label: '护甲抗性', value: `${monster.armor}` },
+    { label: t('combat.nearby.statLevel'), value: `Lv.${monster.level}` },
+    { label: t('combat.nearby.statRank'), value: rankLabel },
+    { label: t('combat.nearby.statBudget'), value: `${monster.budgetCost}` },
+    { label: t('combat.nearby.statMaxHp'), value: `${monster.maxHitpoints}` },
+    { label: t('combat.nearby.statMaxDamage'), value: `${monster.maxDamage}` },
+    { label: t('combat.nearby.statArmor'), value: `${monster.armor}` },
   ]
 
   if (intervalHint) {
-    details.unshift({ label: '遭遇周期', value: intervalHint })
+    details.unshift({ label: t('combat.nearby.statInterval'), value: intervalHint })
   }
 
   return (
@@ -35,23 +40,30 @@ function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
       content={
         <FloatingInfoCard
           title={monster.name}
-          badge={monster.rank === 'boss' ? '妖王' : monster.rank === 'elite' ? '精英' : '妖兽'}
+          badge={rankLabel}
           badgeTone={monster.rank === 'boss' ? 'danger' : monster.rank === 'elite' ? 'purple' : 'gold'}
-          subtitle={`Lv.${monster.level} · 阶位 ${monster.tier}`}
-          description={`栖息于此地的${monster.rank === 'boss' ? '绝世妖王' : monster.rank === 'elite' ? '精英大妖' : '寻常妖兽'}，战力消耗预算 ${monster.budgetCost}。`}
+          subtitle={t('combat.nearby.monsterSubtitle', { level: monster.level, tier: monster.tier })}
+          description={t('combat.nearby.monsterDescription', { rankDesc, budget: monster.budgetCost })}
           stats={details}
         />
       }
     >
       <article className={cardClassName}>
-        <span className="nearby-mark">{mark}</span>
+        <span className="nearby-mark">
+          <CharacterAvatar
+            actorId={monster.monsterId}
+            fallback={mark}
+            name={monster.name}
+            role="enemy"
+          />
+        </span>
         <div>
           <div className="nearby-monster-title">
             <strong>{monster.name}</strong>
             <span className="nearby-level-badge">Lv.{monster.level}</span>
           </div>
           <p>
-            {isBoss ? '关底领主' : isElite ? '精英强敌' : '普通生灵'} · 预算 {monster.budgetCost}
+            {t('combat.nearby.monsterSummary', { type: summaryType, budget: monster.budgetCost })}
           </p>
           {intervalHint && <small className="nearby-interval-hint">{intervalHint}</small>}
         </div>

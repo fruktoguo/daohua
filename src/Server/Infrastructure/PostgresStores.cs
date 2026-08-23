@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS persistence_outbox (
     payload BYTEA NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+) WITH (autovacuum_vacuum_scale_factor = 0.01, autovacuum_vacuum_cost_limit = 1000);
 
 CREATE TABLE IF NOT EXISTS persistence_outbox_ack (
     id SMALLINT PRIMARY KEY CHECK (id = 1),

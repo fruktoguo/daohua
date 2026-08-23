@@ -191,7 +191,6 @@ public static class StateMapper
             definition.HealingRatioLevelBonus,
             definition.FlatHealingLevelBonus,
             ToWire(definition.TargetType),
-            definition.PierceChance,
             definition.ArmorDamageRatio,
             definition.HpDrainRatio);
     }
@@ -336,10 +335,6 @@ public static class StateMapper
         definition.FireResistance,
         definition.EarthResistance,
         definition.Tenacity,
-        definition.PierceChance,
-        definition.CurseRatio,
-        definition.FuryRatio,
-        definition.WeakenRatio,
         definition.LifeStealRatio,
         definition.ArmorDamageRatio,
         definition.HpDrainRatio,
@@ -349,7 +344,6 @@ public static class StateMapper
         definition.DamageAbsorptionRatio,
         definition.HpRegenPerTenSeconds,
         definition.MpRegenPerTenSeconds,
-        definition.EnrageTimeMilliseconds,
         definition.Experience,
         definition.Abilities.Select(ability => ability.Id).ToArray());
 
@@ -372,10 +366,6 @@ public static class StateMapper
         stats.EarthResistance,
         stats.Tenacity,
         stats.PenetrationRatio,
-        stats.PierceChance,
-        stats.CurseRatio,
-        stats.FuryRatio,
-        stats.WeakenRatio,
         stats.LifeStealRatio,
         stats.ArmorDamageRatio,
         stats.HpDrainRatio,
@@ -645,10 +635,6 @@ public static class StateMapper
             attributes.HpRegenPerTenSeconds,
             attributes.MpRegenPerTenSeconds,
             attributes.PenetrationRatio,
-            attributes.PierceChance,
-            attributes.CurseRatio,
-            attributes.FuryRatio,
-            attributes.WeakenRatio,
             attributes.LifeStealRatio,
             attributes.ArmorDamageRatio,
             attributes.HpDrainRatio,

@@ -60,9 +60,8 @@ public static partial class CombatSimulator
         var recoveries = new List<RecoveryRuntime>();
         var damageOverTimes = new List<GroupDamageOverTimeRuntime>();
         var playerControl = new CombatControlRuntime();
-        var playerModifiers = new CombatModifierRuntime();
         var events = new List<string>(capacity: 24);
-        var player = BuildPlayerStats(loadout, buffs, playerModifiers, 0, playerSpirit);
+        var player = BuildPlayerStats(loadout, buffs, 0, playerSpirit);
         var playerHitpoints = Math.Clamp(initialPlayerState?.Hitpoints ?? player.MaxHitpoints, 0, player.MaxHitpoints);
         var playerManapoints = Math.Clamp(initialPlayerState?.Manapoints ?? player.MaxManapoints, 0, player.MaxManapoints);
         var playerDead = false;
@@ -74,7 +73,6 @@ public static partial class CombatSimulator
         CombatAbilityDefinition? pendingPlayerAbility = null;
         var pendingPlayerAbilityIndex = -1;
         var nextRegenTick = (long)RegenTickMilliseconds;
-        var nextEnrageTick = GetNextEnrageTick(encounter, 0);
         var encounterRespawnAt = InfiniteTime;
         var encounterDefeated = false;
         var nextConsumableUse = new long[Math.Max(0, loadout.ConsumableSlots.Count)];
@@ -130,7 +128,6 @@ public static partial class CombatSimulator
         long hitpointsRecoveredFromAbilities = 0;
         var droppedItems = new Dictionary<string, long>(StringComparer.Ordinal);
         Dictionary<string, long>? rareDroppedItems = null;
-        var maxEnrageStacks = 0;
         var now = 0L;
         var lastProcessedAt = -1L;
         var processedEvents = 0;
@@ -199,7 +196,6 @@ public static partial class CombatSimulator
             enemy.PendingAbility = null;
             enemy.PendingAbilityIndex = -1;
             enemy.Control.Clear();
-            enemy.Modifiers.Clear();
             damageOverTimes.RemoveAll(dot => ReferenceEquals(dot.TargetEnemy, enemy));
             enemiesDefeated++;
             GrantEnemyRewards(enemy);
@@ -235,7 +231,6 @@ public static partial class CombatSimulator
             recoveries.Clear();
             damageOverTimes.RemoveAll(dot => dot.TargetsPlayer);
             playerControl.Clear();
-            playerModifiers.Clear();
             playerRespawnAt = checked(now + Math.Max(1, encounter.PlayerRespawnMilliseconds));
             nextPlayerAction = playerRespawnAt;
             playerActionName = "调息复起";
@@ -282,12 +277,10 @@ public static partial class CombatSimulator
                 playerDead ? playerRespawnAt : InfiniteTime,
                 encounterDefeated ? encounterRespawnAt : InfiniteTime,
                 nextRegenTick,
-                nextEnrageTick,
                 GetNextConsumableEventTime(currentTime, nextConsumableUse),
                 GetNextRecoveryEventTime(currentTime, recoveries),
                 GetNextGroupDamageOverTimeEventTime(currentTime, damageOverTimes),
-                GetNextGroupControlEventTime(currentTime, playerControl, enemies),
-                GetNextGroupModifierEventTime(currentTime, playerModifiers, enemies));
+                GetNextGroupControlEventTime(currentTime, playerControl, enemies));
         }
 
         while ((!stopAfterFirstOutcome || outcomeMilliseconds is null)
@@ -303,7 +296,6 @@ public static partial class CombatSimulator
             var nextRecovery = GetNextRecoveryEventTime(now, recoveries);
             var nextDamageOverTime = GetNextGroupDamageOverTimeEventTime(now, damageOverTimes);
             var nextControlExpiration = GetNextGroupControlEventTime(now, playerControl, enemies);
-            var nextModifierExpiration = GetNextGroupModifierEventTime(now, playerModifiers, enemies);
             var next = GetNextEventAt(now);
 
             if (next > durationMilliseconds || next < now) break;
@@ -314,24 +306,13 @@ public static partial class CombatSimulator
                     + $"玩家行动={nextPlayerAction}, 敌人行动={nextEnemyAction}, "
                     + $"玩家复活={nextPlayerRespawn}, 敌群刷新={nextEncounterRespawn}, "
                     + $"恢复={nextRecovery}, 持续伤害={nextDamageOverTime}, "
-                    + $"控制={nextControlExpiration}, 词缀={nextModifierExpiration}。");
+                    + $"控制={nextControlExpiration}。");
             }
             now = next;
             lastProcessedAt = now;
 
-            if (playerModifiers.Expire(now))
-            {
-                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
-                AddEvent(events, "战斗状态消退：自身词缀层数已更新");
-            }
-
             foreach (var enemy in enemies.Where(enemy => !enemy.IsDefeated))
             {
-                if (enemy.Modifiers.Expire(now))
-                {
-                    enemy.RebuildStats(encounter);
-                    AddEvent(events, $"战斗状态消退：{{{{enemy:{enemy.Definition.Id}|{enemy.Definition.Name}}}}} 的词缀层数已更新");
-                }
 
                 if (enemy.Control.Expire(now) && enemy.PendingAbility is null)
                 {
@@ -361,8 +342,7 @@ public static partial class CombatSimulator
                 recoveries.Clear();
                 damageOverTimes.RemoveAll(dot => dot.TargetsPlayer);
                 playerControl.Clear();
-                playerModifiers.Clear();
-                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
+                player = BuildPlayerStats(loadout, buffs, now, playerSpirit);
                 playerHitpoints = player.MaxHitpoints;
                 playerManapoints = player.MaxManapoints;
                 for (var i = 0; i < abilityReadyAt.Length; i++)
@@ -396,7 +376,6 @@ public static partial class CombatSimulator
                 playerActionName = "灵击";
                 playerActionKind = CombatActionKind.Attack;
                 playerActionStartedAt = now;
-                nextEnrageTick = GetNextEnrageTick(encounter, now);
                 encounters++;
                 AddEvent(events, $"新的敌群进入 {{{{encounter:{encounter.Id}|{encounter.Name}}}}}");
             }
@@ -433,25 +412,6 @@ public static partial class CombatSimulator
                 nextRegenTick = checked(now + RegenTickMilliseconds);
             }
 
-            if (now >= nextEnrageTick)
-            {
-                foreach (var enemy in enemies.Where(enemy => !enemy.IsDefeated))
-                {
-                    var enrageTime = enemy.Definition.EnrageTimeMilliseconds > 0
-                        ? enemy.Definition.EnrageTimeMilliseconds
-                        : Math.Max(1, encounter.EnrageTimeMilliseconds);
-                    var nextStacks = CombatFormula.CalculateEnrageStacks(
-                        Math.Max(0, now - enemy.SpawnedAt),
-                        enrageTime,
-                        Math.Max(0, encounter.MaxEnrageStacks));
-                    if (nextStacks == enemy.EnrageStacks) continue;
-                    enemy.EnrageStacks = nextStacks;
-                    maxEnrageStacks = Math.Max(maxEnrageStacks, nextStacks);
-                    enemy.RebuildStats(encounter);
-                }
-
-                nextEnrageTick = GetNextEnrageTick(encounter, now);
-            }
 
             var nextRecoveryTick = GetNextRecoveryEventTime(now, recoveries);
             if (!playerDead && now >= nextRecoveryTick)
@@ -555,7 +515,7 @@ public static partial class CombatSimulator
                 events,
                 playerControl,
                 target.Control);
-            player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
+            player = BuildPlayerStats(loadout, buffs, now, playerSpirit);
 
             if (nextPlayerAction == now && !playerControl.IsStunned(now))
             {
@@ -635,20 +595,7 @@ public static partial class CombatSimulator
                                     : $"{{{{ability:{ability.Id}|{ability.Name}}}}}未能命中 {{{{enemy:{currentTarget.Definition.Id}|{currentTarget.Definition.Name}}}}}" );
                             }
                             ApplyPlayerHealing(resolution);
-                            if (resolution.Pierced) AddEvent(events, "破阵触发：本次攻击无视目标抗性");
 
-                            if (ApplyCombatModifierEffects(
-                                    player,
-                                    currentTarget.Stats,
-                                    playerModifiers,
-                                    currentTarget.Modifiers,
-                                    resolution.DidHit,
-                                    now,
-                                    events))
-                            {
-                                player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
-                                currentTarget.RebuildStats(encounter);
-                            }
 
                             if (ability is not null && resolution.Damage > 0)
                             {
@@ -779,20 +726,6 @@ public static partial class CombatSimulator
                     enemy.Hitpoints = Math.Min(enemy.Stats.MaxHitpoints, checked(enemy.Hitpoints + enemyResolution.DrainHealing));
                 }
 
-                if (enemyAbility?.EffectType != CombatAbilityEffectType.Heal
-                    && ApplyCombatModifierEffects(
-                        enemy.Stats,
-                        player,
-                        enemy.Modifiers,
-                        playerModifiers,
-                        enemyResolution.DidHit,
-                        now,
-                        events))
-                {
-                    enemy.RebuildStats(encounter);
-                    player = BuildPlayerStats(loadout, buffs, playerModifiers, now, playerSpirit);
-                }
-
                 if (enemyAbility is not null && enemyResolution.Damage > 0)
                 {
                     ScheduleGroupDamageOverTime(damageOverTimes, enemyAbility, enemyResolution.Damage, null, now);
@@ -853,8 +786,7 @@ public static partial class CombatSimulator
                 enemy.Stats.MaxHitpoints,
                 enemy.Manapoints,
                 enemy.Stats.MaxManapoints,
-                enemy.IsDefeated,
-                enemy.EnrageStacks))
+                enemy.IsDefeated))
             .ToArray();
         var activeEnemy = enemies
             .Where(enemy => !enemy.IsDefeated)
@@ -879,7 +811,6 @@ public static partial class CombatSimulator
             consumedItems,
             applications,
             events,
-            maxEnrageStacks,
             hitpointsRegenerated,
             manapointsRegenerated,
             processedEvents,
@@ -1090,19 +1021,6 @@ public static partial class CombatSimulator
         return next > now ? next : InfiniteTime;
     }
 
-    private static long GetNextGroupModifierEventTime(
-        long now,
-        CombatModifierRuntime playerModifiers,
-        IReadOnlyList<GroupEnemyRuntime> enemies)
-    {
-        var next = playerModifiers.NextExpirationAt;
-        foreach (var enemy in enemies)
-        {
-            if (!enemy.IsDefeated) next = Math.Min(next, enemy.Modifiers.NextExpirationAt);
-        }
-        return next > now ? next : InfiniteTime;
-    }
-
     private static long GetNextGroupDamageOverTimeEventTime(
         long now,
         IReadOnlyList<GroupDamageOverTimeRuntime> damageOverTimes)
@@ -1115,13 +1033,6 @@ public static partial class CombatSimulator
         return next;
     }
 
-    private static long GetNextEnrageTick(CombatEncounterDefinition encounter, long now)
-    {
-        var interval = encounter.EnrageTickMilliseconds <= 0
-            ? DefaultEnrageTickMilliseconds
-            : encounter.EnrageTickMilliseconds;
-        return checked(now + Math.Max(1, interval));
-    }
 
     private static void ScheduleGroupDamageOverTime(
         ICollection<GroupDamageOverTimeRuntime> damageOverTimes,
@@ -1156,7 +1067,7 @@ public static partial class CombatSimulator
             Slot = slot;
             Definition = definition;
             SpawnedAt = spawnedAt;
-            Stats = BuildEnemyStats(definition, 0, encounter, Modifiers);
+            Stats = BuildEnemyStats(definition);
             Hitpoints = Stats.MaxHitpoints;
             Manapoints = Stats.MaxManapoints;
             NextActionAt = spawnedAt;
@@ -1178,16 +1089,14 @@ public static partial class CombatSimulator
         public CombatActionKind ActionKind { get; set; }
         public long ActionStartedAt { get; set; }
         public bool IsDefeated { get; set; }
-        public int EnrageStacks { get; set; }
         public long[] AbilityReadyAt { get; }
         public CombatControlRuntime Control { get; } = new();
-        public CombatModifierRuntime Modifiers { get; } = new();
         public CombatAbilityDefinition? PendingAbility { get; set; }
         public int PendingAbilityIndex { get; set; } = -1;
 
-        public void RebuildStats(CombatEncounterDefinition encounter)
+        public void RebuildStats()
         {
-            Stats = BuildEnemyStats(Definition, EnrageStacks, encounter, Modifiers);
+            Stats = BuildEnemyStats(Definition);
         }
     }
 

@@ -52,7 +52,6 @@ public sealed record AbilityConfig(
     double? PenetrationRatio = null,
     double? ArmorDamageRatio = null,
     double? HpDrainRatio = null,
-    double? PierceChance = null,
     double? TriggerHpRatio = null,
     IReadOnlyList<CombatTrigger>? DefaultTriggers = null,
     int? Tier = null);
@@ -169,10 +168,6 @@ public sealed record CombatantConfig(
     double? FireResistance = null,
     double? EarthResistance = null,
     double? Tenacity = null,
-    double? PierceChance = null,
-    double? CurseRatio = null,
-    double? FuryRatio = null,
-    double? WeakenRatio = null,
     double? LifeStealRatio = null,
     double? ArmorDamageRatio = null,
     double? HpDrainRatio = null,
@@ -185,7 +180,6 @@ public sealed record CombatantConfig(
     double? MpRegen = null,
     double? HpRegenPerTenSeconds = null,
     double? MpRegenPerTenSeconds = null,
-    int? EnrageTimeMilliseconds = null,
     double? ExperienceMultiplier = null,
     long? Experience = null,
     long? SpiritMin = null,
@@ -230,10 +224,6 @@ public sealed record CombatEncounterConfig(
     long? ExperiencePerWin = null,
     long? SpiritMinPerWin = null,
     long? SpiritMaxPerWin = null,
-    int? EnrageTimeMilliseconds = null,
-    int? EnrageTickMilliseconds = null,
-    int? MaxEnrageStacks = null,
-    double? EnrageRatioPerStack = null,
     IReadOnlyList<CombatDropDefinition>? DropTable = null,
     IReadOnlyList<CombatDropDefinition>? RareDropTable = null);
 

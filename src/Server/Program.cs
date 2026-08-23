@@ -207,6 +207,7 @@ builder.Services.AddSingleton<AccessControl>();
 if (durableOutboxEnabled)
 {
     builder.Services.AddHostedService<PersistenceReplayHostedService>();
+    builder.Services.AddHostedService<OutboxReconciliationHostedService>();
 }
 builder.Services.AddHostedService<PersistenceHostedService>();
 builder.Services.AddHostedService(serviceProvider =>

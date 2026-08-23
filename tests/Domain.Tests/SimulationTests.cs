@@ -68,7 +68,11 @@ public sealed class SimulationEngineTests
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
         state.Queue.Entries.Clear();
         state.Queue.LoopEnabled = false;
-        SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
+        state.Queue.Entries.Add(new QueuedAction
+        {
+            ActionId = ActionIds.GatherHerbs,
+            DurationSeconds = 8
+        });
 
         SimulationEngine.AdvanceTo(state, Baseline);
         var deadline = SimulationEngine.GetNextTransitionAt(state);
@@ -682,11 +686,12 @@ public sealed class SimulationEngineTests
 
         SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(8));
 
-        Assert.Equal(0, state.Inventory.Get(ItemIds.GatheringIncense));
-        Assert.Equal(5, state.Inventory.Get(ItemIds.SpiritHerb));
+        Assert.Equal(1, state.Inventory.Get(ItemIds.GatheringIncense));
+        // 采药基础产出 3，两槽位寻灵香 1.5x * 1.5x = 2.25x 乘算后为 6.75 -> 向上取整为 7
+        Assert.Equal(7, state.Inventory.Get(ItemIds.SpiritHerb));
         Assert.Equal(
             2,
-            state.StructuredEventLog.Count(entry => entry.Template.Contains("自动使用", StringComparison.Ordinal)));
+            state.StructuredEventLog.Count(entry => entry.Template.Contains("使用", StringComparison.Ordinal)));
     }
 
     /// <summary>
@@ -779,7 +784,7 @@ public sealed class SimulationEngineTests
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), "离线修士", Baseline);
         state.PresenceMode = PresenceMode.FullyOffline;
 
-        var result = SimulationEngine.AdvanceTo(state, Baseline.AddDays(7));
+        var result = SimulationEngine.AdvanceTo(state, Baseline.AddDays(7), maxOfflineDuration: TimeSpan.FromDays(7));
 
         Assert.Equal(0, result.CompletedActions);
         Assert.Equal(0, state.Stats.CompletedActions);

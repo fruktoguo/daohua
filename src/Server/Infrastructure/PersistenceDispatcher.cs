@@ -8,6 +8,8 @@
 // ==============================================================================
 
 using YuoCore.Persistence;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Server.Infrastructure;
 
@@ -94,6 +96,10 @@ public sealed class PersistenceDispatcher : IPersistenceQueue
     {
         ArgumentNullException.ThrowIfNull(commands);
         if (commands.Count == 0) return;
+
+        // 快照合并去重：同一批次中同一主键快照只保留最后一份最新快照，减轻 Outbox 与数据库压力
+        commands = CoalesceSnapshots(commands);
+
         if (_batchOutbox is not null)
         {
             var sequences = await _batchOutbox.AppendBatchAsync(commands, cancellationToken).ConfigureAwait(false);
@@ -121,6 +127,49 @@ public sealed class PersistenceDispatcher : IPersistenceQueue
     public YuoPersistenceQueueStats GetStats() => _queue.GetStats();
 
     public void Complete() => _queue.TryComplete();
+
+    private static IReadOnlyList<YuoPersistenceCommand> CoalesceSnapshots(IReadOnlyList<YuoPersistenceCommand> commands)
+    {
+        if (commands.Count <= 1) return commands;
+        var hasDuplicates = false;
+        var seen = new HashSet<(string Kind, string Id)>();
+        for (var i = commands.Count - 1; i >= 0; i--)
+        {
+            if (commands[i] is SaveSnapshotCommand snap)
+            {
+                var key = (snap.Snapshot.Kind, snap.Snapshot.Id);
+                if (!seen.Add(key))
+                {
+                    hasDuplicates = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasDuplicates) return commands;
+
+        var result = new List<YuoPersistenceCommand>(commands.Count);
+        var added = new HashSet<(string Kind, string Id)>();
+        for (var i = commands.Count - 1; i >= 0; i--)
+        {
+            var cmd = commands[i];
+            if (cmd is SaveSnapshotCommand snap)
+            {
+                var key = (snap.Snapshot.Kind, snap.Snapshot.Id);
+                if (added.Add(key))
+                {
+                    result.Add(cmd);
+                }
+            }
+            else
+            {
+                result.Add(cmd);
+            }
+        }
+
+        result.Reverse();
+        return result;
+    }
 }
 
 /// <summary>
@@ -143,4 +192,58 @@ public sealed class PersistenceReplayHostedService(
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Durable outbox 空闲重放后台服务。
+/// <para>
+/// 正常启动重放只能覆盖进程重启前的未确认记录；运行期如果请求取消恰好发生在
+/// outbox 追加成功之后、内存队列入队或 ack 之前，数据库会留下少量未确认快照。
+/// 本服务在持久化队列连续空闲后小批量重放这些记录，保证无需重启也能最终收敛。
+/// </para>
+/// </summary>
+public sealed class OutboxReconciliationHostedService(
+    YuoDurablePersistenceQueue durableQueue,
+    YuoPersistenceQueue queue,
+    ILogger<OutboxReconciliationHostedService> logger) : BackgroundService
+{
+    private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan RequiredIdle = TimeSpan.FromSeconds(30);
+    private const int ReplayBatchSize = 1024;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var idleSince = DateTimeOffset.MinValue;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await Task.Delay(CheckInterval, stoppingToken).ConfigureAwait(false);
+            var stats = queue.GetStats();
+            if (stats.PendingCount != 0 || stats.TotalEnqueued != stats.TotalDequeued)
+            {
+                idleSince = DateTimeOffset.MinValue;
+                continue;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (idleSince == DateTimeOffset.MinValue)
+            {
+                idleSince = now;
+                continue;
+            }
+
+            if (now - idleSince < RequiredIdle)
+            {
+                continue;
+            }
+
+            var replayed = await durableQueue
+                .ReplayPendingAsync(ReplayBatchSize, stoppingToken)
+                .ConfigureAwait(false);
+            if (replayed > 0)
+            {
+                logger.LogInformation("空闲重放 {Count} 条未确认 outbox 命令", replayed);
+                idleSince = DateTimeOffset.MinValue;
+            }
+        }
+    }
 }

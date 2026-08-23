@@ -167,16 +167,8 @@ public sealed class CombatLoadout
     public double Tenacity { get; set; }
     /// <summary>当前穿戴的装备列表（装备 ID 与强化等级）。</summary>
     public List<EquippedItem> Equipment { get; set; } = [];
-    /// <summary>贯穿破甲几率。</summary>
-    public double PierceChance { get; set; }
     /// <summary>防御穿透比例。</summary>
     public double PenetrationRatio { get; set; }
-    /// <summary>诅咒增伤倍率。</summary>
-    public double CurseRatio { get; set; }
-    /// <summary>狂暴增伤倍率。</summary>
-    public double FuryRatio { get; set; }
-    /// <summary>虚弱减伤倍率。</summary>
-    public double WeakenRatio { get; set; }
     /// <summary>普攻吸血比例。</summary>
     public double LifeStealRatio { get; set; }
     /// <summary>护甲加成伤害比例。</summary>
@@ -237,11 +229,7 @@ public sealed class CombatLoadout
             MpRegenPerTenSeconds = MpRegenPerTenSeconds,
             Tenacity = Tenacity,
             Equipment = Equipment?.Select(item => item.Clone()).ToList() ?? [],
-            PierceChance = PierceChance,
             PenetrationRatio = PenetrationRatio,
-            CurseRatio = CurseRatio,
-            FuryRatio = FuryRatio,
-            WeakenRatio = WeakenRatio,
             LifeStealRatio = LifeStealRatio,
             ArmorDamageRatio = ArmorDamageRatio,
             HpDrainRatio = HpDrainRatio,

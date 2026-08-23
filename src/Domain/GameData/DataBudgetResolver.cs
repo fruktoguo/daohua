@@ -175,7 +175,6 @@ public static class DataBudgetResolver
             PenetrationRatio = config.PenetrationRatio ?? 0.0,
             ArmorDamageRatio = config.ArmorDamageRatio ?? 0.0,
             HpDrainRatio = config.HpDrainRatio ?? 0.0,
-            PierceChance = config.PierceChance ?? 0.0,
             TriggerHpRatio = config.TriggerHpRatio ?? 1.0,
             DefaultTriggers = config.DefaultTriggers ?? []
         };
@@ -231,10 +230,6 @@ public static class DataBudgetResolver
                 EarthResistance: 0.0,
                 Tenacity: flats.GetValueOrDefault("tenacity", 0.0),
                 PenetrationRatio: 0.0,
-                PierceChance: 0.0,
-                CurseRatio: 0.0,
-                FuryRatio: 0.0,
-                WeakenRatio: 0.0,
                 LifeStealRatio: 0.0,
                 ArmorDamageRatio: 0.0,
                 HpDrainRatio: 0.0,
@@ -277,10 +272,6 @@ public static class DataBudgetResolver
             EarthResistance: stats.EarthResistance / 50.0,
             Tenacity: stats.Tenacity / 50.0,
             PenetrationRatio: stats.PenetrationRatio / 50.0,
-            PierceChance: stats.PierceChance / 50.0,
-            CurseRatio: stats.CurseRatio / 50.0,
-            FuryRatio: stats.FuryRatio / 50.0,
-            WeakenRatio: stats.WeakenRatio / 50.0,
             LifeStealRatio: stats.LifeStealRatio / 50.0,
             ArmorDamageRatio: stats.ArmorDamageRatio / 50.0,
             HpDrainRatio: stats.HpDrainRatio / 50.0,
@@ -577,7 +568,7 @@ public static class DataBudgetResolver
         if (weights.TryGetValue("criticalavoidance", out var wCritAvoid) || weights.TryGetValue("critavoid", out wCritAvoid))
             criticalAvoidance = Math.Clamp(totalBudget * wCritAvoid * 0.005, 0, 1);
 
-        if (weights.TryGetValue("damageabsorptionratio", out var wAbsorb) || weights.TryGetValue("absorption", out wAbsorb))
+        if (weights.TryGetValue("damageabsorptionratio", out var wAbsorb) || weights.TryGetValue("damageabsorption", out wAbsorb) || weights.TryGetValue("absorption", out wAbsorb))
             damageAbsorption = Math.Clamp(totalBudget * wAbsorb * 0.005, 0, 1);
 
         return new EquipmentCombatStats(
@@ -594,10 +585,6 @@ public static class DataBudgetResolver
             EarthResistance: earthResistance,
             Tenacity: tenacity,
             PenetrationRatio: penetration,
-            PierceChance: pierce,
-            CurseRatio: curse,
-            FuryRatio: fury,
-            WeakenRatio: weaken,
             LifeStealRatio: lifeSteal,
             ArmorDamageRatio: armorDamage,
             HpDrainRatio: hpDrain,
@@ -605,6 +592,11 @@ public static class DataBudgetResolver
             CriticalDamageRatio: criticalDamageRatio,
             CriticalAvoidance: criticalAvoidance,
             DamageAbsorptionRatio: damageAbsorption,
+            BreakRating: 0.0,
+            ParryRating: 0.0,
+            SkillIntensity: 0.0,
+            ActionSpeedRatio: 0.0,
+            CooldownReductionRatio: 0.0,
             AttackIntervalMilliseconds: attackIntervalMilliseconds,
             Style: style,
             Category: category,
@@ -742,7 +734,6 @@ public static class DataBudgetResolver
                         PenetrationRatio = baseAbility.PenetrationRatio,
                         ArmorDamageRatio = baseAbility.ArmorDamageRatio,
                         HpDrainRatio = baseAbility.HpDrainRatio,
-                        PierceChance = baseAbility.PierceChance,
                         TriggerHpRatio = skill.TriggerHpRatio is > 0 ? skill.TriggerHpRatio.Value : baseAbility.TriggerHpRatio,
                         DefaultTriggers = baseAbility.DefaultTriggers
                     });
@@ -775,10 +766,6 @@ public static class DataBudgetResolver
             FireResistance = stats.FireResistance,
             EarthResistance = stats.EarthResistance,
             Tenacity = config.Tenacity ?? 0.0,
-            PierceChance = config.PierceChance ?? 0.0,
-            CurseRatio = config.CurseRatio ?? 0.0,
-            FuryRatio = config.FuryRatio ?? 0.0,
-            WeakenRatio = config.WeakenRatio ?? 0.0,
             LifeStealRatio = config.LifeStealRatio ?? 0.0,
             ArmorDamageRatio = config.ArmorDamageRatio ?? 0.0,
             HpDrainRatio = config.HpDrainRatio ?? 0.0,
@@ -797,7 +784,6 @@ public static class DataBudgetResolver
             MpRegen = stats.MpRegen,
             HpRegenPerTenSeconds = config.HpRegenPerTenSeconds ?? 0.0,
             MpRegenPerTenSeconds = config.MpRegenPerTenSeconds ?? 0.0,
-            EnrageTimeMilliseconds = config.EnrageTimeMilliseconds ?? 0,
             AttackLevel = level,
             Tier = tier,
             Rank = rank,

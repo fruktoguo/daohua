@@ -238,25 +238,45 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         await _persistGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var revision = checked(_revision + 1);
-            var ledger = new MarketLedgerState(
-                LedgerSchemaVersion,
-                revision,
-                Engine.ExportState(),
-                Coordinator.ExportState());
-            if (ledger.Engine.Books.Any(book => !_topology.Owns(book.Instrument)))
+            const int maxRetries = 3;
+            var attempt = 0;
+            while (true)
             {
-                throw new InvalidOperationException("当前市场内存状态包含不属于本实例主分片的订单簿。");
-            }
+                attempt++;
+                var revision = checked(_revision + 1);
+                var ledger = new MarketLedgerState(
+                    LedgerSchemaVersion,
+                    revision,
+                    Engine.ExportState(),
+                    Coordinator.ExportState());
+                if (ledger.Engine.Books.Any(book => !_topology.Owns(book.Instrument)))
+                {
+                    throw new InvalidOperationException("当前市场内存状态包含不属于本实例主分片的订单簿。");
+                }
 
-            await _ledgerStore.CommitAsync(
-                _topology,
-                _revision,
-                ledger,
-                playerSnapshot,
-                cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref _revision, revision);
-            return revision;
+                try
+                {
+                    await _ledgerStore.CommitAsync(
+                        _topology,
+                        _revision,
+                        ledger,
+                        playerSnapshot,
+                        cancellationToken).ConfigureAwait(false);
+                    Interlocked.Exchange(ref _revision, revision);
+                    return revision;
+                }
+                catch (MarketLedgerConcurrencyException ex) when (attempt < maxRetries)
+                {
+                    _logger.LogWarning(
+                        "市场账本提交发生 CAS 版本冲突 (期望 {Expected}, 实际 {Actual})，正在进行第 {Attempt}/{MaxRetries} 次重试",
+                        ex.ExpectedRevision,
+                        ex.ActualRevision,
+                        attempt,
+                        maxRetries);
+                    Interlocked.Exchange(ref _revision, ex.ActualRevision);
+                    await Task.Delay(TimeSpan.FromMilliseconds(50 * Math.Pow(2, attempt - 1)), cancellationToken).ConfigureAwait(false);
+                }
+            }
         }
         finally
         {

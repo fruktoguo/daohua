@@ -226,8 +226,6 @@ public sealed class CombatAbilityDefinition
     public double ArmorDamageRatio { get; init; }
     /// <summary>技能命中吸血比例。</summary>
     public double HpDrainRatio { get; init; }
-    /// <summary>无视防御的穿透一击概率。</summary>
-    public double PierceChance { get; init; }
     /// <summary>默认血量触发阈值比例。</summary>
     public double TriggerHpRatio { get; init; } = 1;
     /// <summary>技能默认配置的触发规则列表。</summary>
@@ -281,14 +279,6 @@ public sealed class CombatantDefinition
     public double EarthResistance { get; init; }
     /// <summary>韧性/异常状态抗性。</summary>
     public double Tenacity { get; init; }
-    /// <summary>贯穿/破甲一击概率。</summary>
-    public double PierceChance { get; init; }
-    /// <summary>诅咒增伤倍率。</summary>
-    public double CurseRatio { get; init; }
-    /// <summary>狂暴增伤倍率。</summary>
-    public double FuryRatio { get; init; }
-    /// <summary>虚弱减伤倍率。</summary>
-    public double WeakenRatio { get; init; }
     /// <summary>普攻生命偷取比例。</summary>
     public double LifeStealRatio { get; init; }
     /// <summary>护甲加成伤害比例。</summary>
@@ -325,8 +315,6 @@ public sealed class CombatantDefinition
     public double HpRegenPerTenSeconds { get; init; } = 0.0;
     /// <summary>每 10 秒法力回复量。</summary>
     public double MpRegenPerTenSeconds { get; init; } = 0.0;
-    /// <summary>狂暴狂热倒计时（毫秒，超时后进入狂暴增伤）。</summary>
-    public int EnrageTimeMilliseconds { get; init; }
     /// <summary>阶位品级。</summary>
     public int Tier { get; init; } = 1;
     /// <summary>实体位阶（普通、精英、Boss等）。</summary>
@@ -399,10 +387,6 @@ public sealed record EquipmentCombatStats(
     double EarthResistance = 0,
     double Tenacity = 0,
     double PenetrationRatio = 0,
-    double PierceChance = 0,
-    double CurseRatio = 0,
-    double FuryRatio = 0,
-    double WeakenRatio = 0,
     double LifeStealRatio = 0,
     double ArmorDamageRatio = 0,
     double HpDrainRatio = 0,
@@ -486,14 +470,6 @@ public sealed class CombatEncounterDefinition
     public long SpiritMinPerWin { get; init; }
     /// <summary>通关单场胜利掉落灵石上限。</summary>
     public long SpiritMaxPerWin { get; init; }
-    /// <summary>战斗超时狂暴时间阈值（毫秒）。</summary>
-    public int EnrageTimeMilliseconds { get; init; } = 180_000;
-    /// <summary>狂暴层数增加间隔（毫秒）。</summary>
-    public int EnrageTickMilliseconds { get; init; } = 60_000;
-    /// <summary>最大狂暴叠加层数。</summary>
-    public int MaxEnrageStacks { get; init; } = 10;
-    /// <summary>每层狂暴攻击提升比例。</summary>
-    public double EnrageRatioPerStack { get; init; } = 0.10;
     /// <summary>副本全局常规掉落表。</summary>
     public IReadOnlyList<CombatDropDefinition> DropTable { get; init; } = [];
     /// <summary>副本全局稀有掉落表。</summary>
@@ -516,7 +492,7 @@ public sealed record CombatBuffApplication(
     long ExpiresAfterMilliseconds);
 
 /// <summary>
-/// 战斗中单个敌怪的即时生命与狂暴状态。
+/// 战斗中单个敌怪的即时生命与存活状态。
 /// </summary>
 public sealed record CombatEnemyState(
     int Slot,
@@ -526,8 +502,7 @@ public sealed record CombatEnemyState(
     long MaxHitpoints,
     long Manapoints,
     long MaxManapoints,
-    bool IsDefeated,
-    int EnrageStacks);
+    bool IsDefeated);
 
 /// <summary>
 /// 战斗中玩家角色的即时生命与存活状态。
@@ -563,10 +538,6 @@ public sealed record CombatAttributeState(
     double HpRegenPerTenSeconds,
     double MpRegenPerTenSeconds,
     double PenetrationRatio,
-    double PierceChance,
-    double CurseRatio,
-    double FuryRatio,
-    double WeakenRatio,
     double LifeStealRatio,
     double ArmorDamageRatio,
     double HpDrainRatio,
@@ -610,7 +581,6 @@ public sealed record CombatRunResult(
     IReadOnlyDictionary<string, long> ConsumedItems,
     IReadOnlyList<CombatBuffApplication> BuffApplications,
     IReadOnlyList<string> Events,
-    int MaxEnrageStacks = 0,
     long HitpointsRegenerated = 0,
     long ManapointsRegenerated = 0,
     int ProcessedEvents = 0,

@@ -96,7 +96,6 @@ public static class CombatCatalog
             PenetrationRatio = definition.PenetrationRatio,
             ArmorDamageRatio = definition.ArmorDamageRatio,
             HpDrainRatio = definition.HpDrainRatio,
-            PierceChance = definition.PierceChance,
             TriggerHpRatio = definition.TriggerHpRatio,
             DefaultTriggers = definition.DefaultTriggers
         };
@@ -169,10 +168,6 @@ public static class CombatCatalog
         double earthResistance = 0;
         double tenacity = 0;
         double penetration = 0;
-        double pierce = 0;
-        double curse = 0;
-        double fury = 0;
-        double weaken = 0;
         double lifeSteal = 0;
         double armorDamage = 0;
         double hpDrain = 0;
@@ -190,14 +185,21 @@ public static class CombatCatalog
         DamageCategory? category = null;
         Element? element = null;
 
-        // 逐件装备累计基础属性与强化成长
-        foreach (var equipped in equippedItems)
-        {
-            if (!TryGetEquipment(equipped.ItemId, out var definition))
+        // 统一按 Slot 枚举值升序做稳定排序后再遍历，确保流派/元素覆盖具有跨端重放确定性
+        var sortedEquipped = equippedItems
+            .Select(equipped =>
             {
-                throw new KeyNotFoundException($"未知战斗装备: {equipped.ItemId}");
-            }
+                if (!TryGetEquipment(equipped.ItemId, out var definition))
+                {
+                    throw new KeyNotFoundException($"未知战斗装备: {equipped.ItemId}");
+                }
+                return (Equipped: equipped, Definition: definition);
+            })
+            .OrderBy(x => (int)x.Definition.Slot);
 
+        // 逐件装备累计基础属性与强化成长
+        foreach (var (equipped, definition) in sortedEquipped)
+        {
             var multiplier = GetEnhancementTotalBonusMultiplier(equipped.EnhancementLevel);
             var stats = definition.Stats;
             var bonus = definition.EnhancementBonus;
@@ -214,10 +216,6 @@ public static class CombatCatalog
             earthResistance += stats.EarthResistance + multiplier * bonus.EarthResistance;
             tenacity += stats.Tenacity + multiplier * bonus.Tenacity;
             penetration += stats.PenetrationRatio + multiplier * bonus.PenetrationRatio;
-            pierce += stats.PierceChance + multiplier * bonus.PierceChance;
-            curse += stats.CurseRatio + multiplier * bonus.CurseRatio;
-            fury += stats.FuryRatio + multiplier * bonus.FuryRatio;
-            weaken += stats.WeakenRatio + multiplier * bonus.WeakenRatio;
             lifeSteal += stats.LifeStealRatio + multiplier * bonus.LifeStealRatio;
             armorDamage += stats.ArmorDamageRatio + multiplier * bonus.ArmorDamageRatio;
             hpDrain += stats.HpDrainRatio + multiplier * bonus.HpDrainRatio;
@@ -253,10 +251,6 @@ public static class CombatCatalog
             earthResistance,
             tenacity,
             penetration,
-            Math.Clamp(pierce, 0, 1),
-            Math.Max(0, curse),
-            Math.Max(0, fury),
-            Math.Max(0, weaken),
             Math.Max(0, lifeSteal),
             Math.Max(0, armorDamage),
             Math.Max(0, hpDrain),

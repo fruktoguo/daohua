@@ -87,26 +87,6 @@ public static class CombatFormula
                 / (1 + Math.Max(-0.99, attackSpeedRatio))));
     }
 
-    /// <summary>
-    /// 根据战斗已持续时间计算敌怪累加的狂暴层数。
-    /// </summary>
-    /// <param name="encounterElapsedMilliseconds">当前战斗已进行毫秒数。</param>
-    /// <param name="enrageTimeMilliseconds">单层狂暴增加的间隔时间。</param>
-    /// <param name="maxStacks">最大狂暴层数上限（默认 10）。</param>
-    /// <returns>当前狂暴层数。</returns>
-    public static int CalculateEnrageStacks(
-        long encounterElapsedMilliseconds,
-        int enrageTimeMilliseconds,
-        int maxStacks = 10)
-    {
-        if (encounterElapsedMilliseconds < 0) throw new ArgumentOutOfRangeException(nameof(encounterElapsedMilliseconds));
-        if (enrageTimeMilliseconds <= 0) throw new ArgumentOutOfRangeException(nameof(enrageTimeMilliseconds));
-        if (maxStacks < 0) throw new ArgumentOutOfRangeException(nameof(maxStacks));
-
-        return Math.Min(
-            maxStacks,
-            checked((int)(encounterElapsedMilliseconds / enrageTimeMilliseconds)));
-    }
 
     /// <summary>
     /// 计算固定比例回复的资源点数（如按最大上限百分比回复）。

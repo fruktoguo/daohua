@@ -85,15 +85,9 @@
       "usableInActionTypes": [
         "exploration"
       ],
-      "gatheringMultiplier": 1.5,
-      "buffs": [
-        {
-          "buffId": "buff.gathering-blessing",
-          "name": "寻灵专注",
-          "durationSeconds": 120,
-          "gatheringOutputMultiplier": 1.5
-        }
-      ]
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "gatheringMultiplier": 1.5
     }
   },
   {
@@ -107,15 +101,9 @@
       "usableInActionTypes": [
         "alchemy"
       ],
-      "alchemyMultiplier": 1.25,
-      "buffs": [
-        {
-          "buffId": "buff.alchemy-focus",
-          "name": "地火凝神",
-          "durationSeconds": 120,
-          "alchemyOutputMultiplier": 1.25
-        }
-      ]
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "alchemyMultiplier": 1.25
     }
   }
 ]

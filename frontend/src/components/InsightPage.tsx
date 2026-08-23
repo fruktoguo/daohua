@@ -16,7 +16,7 @@ import {
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
-import { DEFAULT_PLAYER_AVATAR_SRC } from '../game/avatarStore'
+import { CharacterAvatar } from './CharacterAvatar'
 
 /** 内视四大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
@@ -41,7 +41,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<InsightTab>('roots')
   const [rootsSubTab, setRootsSubTab] = useState<RootsSubTab>('sixDimensions')
 
+  const playerId = useGameStore(state => state.playerId)
   const name = useGameStore(state => state.name)
+  const visual = useGameStore(state => state.visual)
   const stats = useGameStore(state => state.stats)
   const isPendingBreakthrough = useGameStore(state => state.isPendingBreakthrough)
   const loadout = useGameStore(state => state.combat)
@@ -240,11 +242,12 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
       <header className="panel-header insight-page-header">
         <div className="insight-hero">
           <div className="insight-avatar-stage">
-            <img
-              alt={name}
+            <CharacterAvatar
+              actorId={playerId}
               className="insight-avatar-img"
-              draggable={false}
-              src={DEFAULT_PLAYER_AVATAR_SRC}
+              name={name}
+              role="player"
+              visual={visual}
             />
           </div>
           <div className="insight-hero-info">

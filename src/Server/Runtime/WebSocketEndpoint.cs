@@ -179,6 +179,16 @@ public static class WebSocketEndpoint
                 continue;
             }
 
+            if (packet.Kind == PacketKinds.Ping)
+            {
+                session.TryEnqueue(PacketCodec.Encode(
+                    PacketKinds.Pong,
+                    packet.RequestId,
+                    gameHost.SimulationRevision,
+                    new AckDto(true, "OK", "pong", DateTimeOffset.UtcNow.ToUnixTimeSeconds())));
+                continue;
+            }
+
             var outcome = await gameHost.HandleCommandAsync(session.PlayerId, packet, cancellationToken);
             session.TryEnqueue(PacketCodec.Encode(
                 PacketKinds.Ack,

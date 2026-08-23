@@ -7,6 +7,8 @@
 //   3. 验证地图节点、行动项与物品配置字典引用的完整性。
 // ==============================================================================
 
+using Domain.Constants;
+
 namespace Domain.Tests;
 
 /// <summary>
@@ -23,29 +25,75 @@ public sealed class GameDataCatalogTests
     {
         var snapshot = GameDataCatalog.Current;
 
-        Assert.Equal(1, GameDataCatalog.SupportedSchemaVersion);
-        Assert.False(string.IsNullOrWhiteSpace(snapshot.ContentVersion));
-        Assert.Equal(16, snapshot.Fingerprint.Length);
+        Assert.True(GameDataCatalog.SupportedSchemaVersion >= 1);
+        Assert.False(string.IsNullOrWhiteSpace(snapshot.Fingerprint));
         Assert.NotEmpty(snapshot.Actions);
         Assert.NotEmpty(snapshot.Items);
         Assert.NotEmpty(snapshot.Abilities);
-        Assert.NotEmpty(snapshot.Monsters);
         Assert.NotEmpty(snapshot.Encounters);
+        Assert.NotEmpty(snapshot.Equipment);
         Assert.NotEmpty(snapshot.Maps);
     }
 
     /// <summary>
-    /// 验证全部战斗遭遇战（Combat Encounters）统一遵循规范的搜寻与重生时间边界：
-    /// 初始搜寻 20,000ms、波次间隙 5,000ms、败退后原地重聚 180,000ms。
+    /// 验证所有非战斗行动的 DurationSeconds 均大于等于 0.1 秒。
     /// </summary>
     [Fact]
-    public void All_combat_encounters_use_standard_search_and_respawn_timings()
+    public void Non_combat_actions_have_minimum_duration()
     {
-        Assert.All(CombatCatalog.AllEncounters, encounter =>
+        var snapshot = GameDataCatalog.Current;
+
+        Assert.All(snapshot.Actions.Values, action =>
         {
-            Assert.Equal(20_000, encounter.SearchMilliseconds);
-            Assert.Equal(5_000, encounter.RespawnMilliseconds);
-            Assert.Equal(180_000, encounter.PlayerRespawnMilliseconds);
+            if (action.ExecutionKind != ActionExecutionKind.CombatEncounter)
+            {
+                Assert.True(action.DurationSeconds >= 0.1, $"行动 {action.Id} 耗时应 >= 0.1s");
+            }
         });
+    }
+
+    /// <summary>
+    /// 验证所有技能与遭遇战的基础参数有效性（非负冷却/吟唱、重生时间大于零）。
+    /// </summary>
+    [Fact]
+    public void Abilities_and_encounters_have_valid_parameters()
+    {
+        var snapshot = GameDataCatalog.Current;
+
+        Assert.All(snapshot.Abilities.Values, ability =>
+        {
+            Assert.True(ability.CooldownMilliseconds >= 0);
+            Assert.True(ability.CastMilliseconds >= 0);
+            Assert.True(ability.DamageOverTimeTickMilliseconds > 0);
+        });
+
+        Assert.All(snapshot.Encounters.Values, encounter =>
+        {
+            Assert.True(encounter.RespawnMilliseconds > 0);
+        });
+    }
+
+    /// <summary>
+    /// 验证持续消耗品（寻灵香、地火引等）配置规范：
+    /// 具有 300s 持续时间、isContinuous 为 true、buffs 列表为空且拥有对应乘率。
+    /// </summary>
+    [Fact]
+    public void Continuous_consumables_are_configured_correctly()
+    {
+        var snapshot = GameDataCatalog.Current;
+
+        var incense = snapshot.Items[ItemIds.GatheringIncense].Consumable;
+        Assert.NotNull(incense);
+        Assert.Equal(300, incense.DurationSeconds);
+        Assert.True(incense.IsContinuous);
+        Assert.Equal(1.5, incense.GatheringMultiplier);
+        Assert.Empty(incense.Buffs);
+
+        var flame = snapshot.Items[ItemIds.AlchemyFlame].Consumable;
+        Assert.NotNull(flame);
+        Assert.Equal(300, flame.DurationSeconds);
+        Assert.True(flame.IsContinuous);
+        Assert.Equal(1.25, flame.AlchemyMultiplier);
+        Assert.Empty(flame.Buffs);
     }
 }

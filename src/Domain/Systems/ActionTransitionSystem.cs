@@ -348,7 +348,8 @@ public sealed class ActionTransitionSystem : YuoSystem<ActionQueueComponent>, IA
     public static SimulationResult AdvanceEntityTo(
         YuoEntity entity,
         DateTimeOffset targetTime,
-        int maxTransitions = SimulationConstants.MaxTransitionsPerAdvance)
+        int maxTransitions = SimulationConstants.MaxTransitionsPerAdvance,
+        TimeSpan? maxOfflineDuration = null)
     {
         ArgumentNullException.ThrowIfNull(entity);
         if (!entity.TryGetComponent<ActionQueueComponent>(out var queue))
@@ -368,6 +369,12 @@ public sealed class ActionTransitionSystem : YuoSystem<ActionQueueComponent>, IA
             cultivation.LastSimulatedAt = targetTime;
             return new SimulationResult(DirtySections.None, 0, 0, []);
         }
+
+        // 施加最大离线时间跨度截断，防止无限长时间补算
+        var effectiveMaxOffline = maxOfflineDuration ?? SimulationConstants.DefaultMaxOfflineDuration;
+        var rawDuration = targetTime - cursor;
+        var duration = TimeSpan.FromMilliseconds(Math.Min(rawDuration.TotalMilliseconds, effectiveMaxOffline.TotalMilliseconds));
+        targetTime = cursor + duration;
 
         var completedActions = 0;
         var transitions = 0;
