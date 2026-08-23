@@ -97,7 +97,8 @@ public sealed class GameHost : IAsyncDisposable, IDisposable
         IPersistenceQueue persistenceQueue,
         MarketRuntime marketRuntime,
         SimulationScheduleSignal scheduleSignal,
-        SimulationClock clock)
+        SimulationClock clock,
+        ILogger<GameHost>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(shardOptions);
         ArgumentNullException.ThrowIfNull(snapshotStore);
@@ -111,7 +112,8 @@ public sealed class GameHost : IAsyncDisposable, IDisposable
                 persistenceQueue,
                 marketRuntime,
                 scheduleSignal,
-                clock))
+                clock,
+                logger))
             .ToArray();
     }
 
@@ -327,6 +329,7 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
     private long _entitySequence = 10_000;
     private long _transitionGeneration;
     private int _loadedPlayerCount;
+    private readonly ILogger<GameHost>? _logger;
     private bool _disposed;
 
     /// <summary>
@@ -339,7 +342,8 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         IPersistenceQueue persistenceQueue,
         MarketRuntime marketRuntime,
         SimulationScheduleSignal scheduleSignal,
-        SimulationClock clock)
+        SimulationClock clock,
+        ILogger<GameHost>? logger = null)
     {
         if (shardIndex < 0) throw new ArgumentOutOfRangeException(nameof(shardIndex));
         _shardIndex = shardIndex;
@@ -350,10 +354,11 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         _marketRuntime = marketRuntime;
         _scheduleSignal = scheduleSignal;
         _clock = clock;
+        _logger = logger;
         _fiber = _runtime.Fibers.CreateFiber(new YuoFiberOptions
         {
             Id = shardIndex + 1,
-            Name = $"-PlayerShard-{shardIndex}",
+            Name = $"PlayerShard-{shardIndex}",
             SetWorldAsDefault = false,
             MaxMailboxMessagesPerTick = 100_000
         });
@@ -1166,7 +1171,34 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
         _lastPlayerAccess[playerId] = now;
         if (_knownPlayers.ContainsKey(playerId)) return;
         var stored = await _snapshotStore.LoadAsync("player", playerId.ToString("D"), cancellationToken);
-        var restored = stored is null ? null : StateSerializer.Deserialize(stored.Payload, GameDataCatalog.Current.Fingerprint);
+        PlayerState? restored = null;
+        if (stored is not null)
+        {
+            try
+            {
+                var (reconciledState, report) = StateSerializer.DeserializeAndReconcile(
+                    stored.Payload,
+                    GameDataCatalog.Current);
+                restored = reconciledState;
+                if (report.HasChanges)
+                {
+                    _logger?.LogWarning(
+                        "[快照自愈] 玩家 {PlayerId} ({Name}) 快照数据基于历史配表，已执行容错清洗自愈: {Summary}",
+                        playerId,
+                        restored.Name,
+                        report.ToSummaryString());
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(
+                    ex,
+                    "[快照损坏] 玩家 {PlayerId} 快照载荷解析失败，已安全回退为初始新角色: {Message}",
+                    playerId,
+                    ex.Message);
+                restored = null;
+            }
+        }
 
         await ExecuteOnOwnerAsync(fiber =>
         {
@@ -1232,7 +1264,16 @@ internal sealed class PlayerShardHost : IAsyncDisposable, IDisposable
             throw new KeyNotFoundException($"玩家不存在: {playerId:D}");
         }
 
-        var state = StateSerializer.Deserialize(payload, GameDataCatalog.Current.Fingerprint);
+        var (state, report) = StateSerializer.DeserializeAndReconcile(payload, GameDataCatalog.Current);
+        if (report.HasChanges)
+        {
+            _logger?.LogWarning(
+                "[冷快照自愈] 玩家 {PlayerId} ({Name}) 冷快照基于历史配表，已执行容错清洗自愈: {Summary}",
+                playerId,
+                state.Name,
+                report.ToSummaryString());
+        }
+
         SimulationEngine.NormalizeState(state);
         if (state.PresenceMode != PresenceMode.FullyOffline)
         {

@@ -218,4 +218,46 @@ public sealed class StateSerializerEnvelopeTests
         var exName = Assert.Throws<InvalidDataException>(() => StateSerializer.DeserializeEnvelope(bytesName));
         Assert.Contains("玩家名称为空", exName.Message);
     }
+
+    [Fact]
+    public void DeserializeAndReconcile_WithExpiredFingerprint_CleansInvalidDataAndPreservesValidState()
+    {
+        var state = new PlayerState
+        {
+            PlayerId = Guid.NewGuid(),
+            Name = "自愈测试修士",
+            Account = "reconcile_test",
+            SequenceId = 100,
+            Version = 5,
+            LastSimulatedAt = DateTimeOffset.UtcNow
+        };
+
+        var validItemId = GameDataCatalog.Current.Items.Keys.First();
+        state.Inventory.Items[validItemId] = 88;
+        state.Inventory.Items["item_obsolete_shard_999"] = 12;
+
+        var envelope = new SnapshotEnvelope(
+            SnapshotSchemaVersion: SnapshotEnvelope.CurrentSchemaVersion,
+            GameDataFingerprint: "expired_old_fp_123",
+            PlayerStateVersion: 5,
+            SequenceId: 100,
+            LastSimulatedAt: state.LastSimulatedAt,
+            Payload: state);
+
+        var bytes = StateSerializer.SerializeEnvelope(envelope);
+
+        // 默认严格反序列化会拒绝
+        Assert.Throws<InvalidDataException>(() => StateSerializer.Deserialize(bytes));
+
+        // 自愈反序列化应成功并清洗失效物品
+        var (restored, report) = StateSerializer.DeserializeAndReconcile(bytes);
+
+        Assert.NotNull(restored);
+        Assert.True(report.HasChanges);
+        Assert.True(report.FingerprintMismatched);
+        Assert.Equal(1, report.RemovedInventoryItems);
+        Assert.Equal(88L, restored.Inventory.Items[validItemId]);
+        Assert.False(restored.Inventory.Items.ContainsKey("item_obsolete_shard_999"));
+    }
 }
+

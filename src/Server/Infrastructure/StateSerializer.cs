@@ -64,9 +64,13 @@ public static class StateSerializer
     /// </summary>
     /// <param name="payload">快照二进制载荷。</param>
     /// <param name="expectedFingerprint">期望匹配的游戏数据指纹，为 null 时比对当前静态数据指纹。</param>
+    /// <param name="allowFingerprintMismatch">是否允许指纹不一致（用于自愈反序列化）。</param>
     /// <returns>校验通过的快照信封。</returns>
     /// <exception cref="InvalidDataException">快照为空、Schema 版本不兼容、指纹不匹配或载荷损坏时抛出。</exception>
-    public static SnapshotEnvelope DeserializeEnvelope(ReadOnlyMemory<byte> payload, string? expectedFingerprint = null)
+    public static SnapshotEnvelope DeserializeEnvelope(
+        ReadOnlyMemory<byte> payload,
+        string? expectedFingerprint = null,
+        bool allowFingerprintMismatch = false)
     {
         if (payload.IsEmpty)
         {
@@ -95,7 +99,7 @@ public static class StateSerializer
         }
 
         var targetFingerprint = expectedFingerprint ?? GameDataCatalog.Current.Fingerprint;
-        if (!string.Equals(envelope.GameDataFingerprint, targetFingerprint, StringComparison.Ordinal))
+        if (!allowFingerprintMismatch && !string.Equals(envelope.GameDataFingerprint, targetFingerprint, StringComparison.Ordinal))
         {
             throw new InvalidDataException(
                 $"游戏数据指纹不一致: 快照指纹 '{envelope.GameDataFingerprint}'，当前系统指纹 '{targetFingerprint}'。");
@@ -158,6 +162,26 @@ public static class StateSerializer
     public static PlayerState Deserialize(ReadOnlyMemory<byte> payload, string? expectedFingerprint = null)
     {
         return DeserializeEnvelope(payload, expectedFingerprint).Payload;
+    }
+
+    /// <summary>
+    /// 从快照 JSON 字节载荷反序列化并校验，若指纹不匹配或存在孤立引用则基于指定配表快照执行容错自愈清洗。
+    /// </summary>
+    /// <param name="payload">快照二进制载荷。</param>
+    /// <param name="catalog">当前游戏静态配表快照，默认读取 GameDataCatalog.Current。</param>
+    /// <returns>反序列化并自愈清洗后的玩家状态与自愈报告。</returns>
+    public static (PlayerState State, Domain.Simulation.ReconciliationReport Report) DeserializeAndReconcile(
+        ReadOnlyMemory<byte> payload,
+        GameDataCatalogSnapshot? catalog = null)
+    {
+        var targetCatalog = catalog ?? GameDataCatalog.Current;
+        var envelope = DeserializeEnvelope(payload, allowFingerprintMismatch: true);
+        var report = Domain.Simulation.PlayerStateReconciler.Reconcile(
+            envelope.Payload,
+            targetCatalog,
+            envelope.GameDataFingerprint);
+
+        return (envelope.Payload, report);
     }
 }
 
