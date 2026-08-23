@@ -7,7 +7,7 @@ import { CombatEncounterPanel } from './components/CombatEncounterPanel'
 import { EffectTooltipTarget } from './components/EffectTooltip'
 import { FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
-import { ItemCard, ItemReference } from './components/ItemDisplay'
+import { ItemCard, ItemReference, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
@@ -954,7 +954,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       const grade = resolveItemGrade(eq.tier)
       const qualityLabel = grade.label
       const rarity = grade.rarity
-      return { tierLabel, qualityLabel, rarity }
+      return { tierLabel, qualityLabel, rarity, itemDef: undefined }
     }
     const it = itemCatalog.find(i => i.itemId === primaryOutputId)
     if (it) {
@@ -962,12 +962,12 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       const grade = resolveItemGrade(it.tier)
       const qualityLabel = grade.label
       const rarity = grade.rarity
-      return { tierLabel, qualityLabel, rarity }
+      return { tierLabel, qualityLabel, rarity, itemDef: it }
     }
     return null
   }, [isCrafting, primaryOutputId, equipmentCatalog, itemCatalog])
 
-  return (
+  const cardButton = (
     <button
       aria-haspopup="dialog"
       className={`action-card${isCrafting ? ' action-card--crafting' : ''}`}
@@ -989,6 +989,20 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       <span className="action-card-chevron" aria-hidden="true">›</span>
     </button>
   )
+
+  if (isCrafting && primaryOutputId) {
+    return (
+      <ItemTooltipTarget
+        definition={meta?.itemDef}
+        displayContents
+        itemId={primaryOutputId}
+      >
+        {cardButton}
+      </ItemTooltipTarget>
+    )
+  }
+
+  return cardButton
 })
 
 /**

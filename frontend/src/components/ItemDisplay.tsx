@@ -24,6 +24,8 @@ interface ItemTooltipTargetProps {
   definition?: ItemDefinition
   /** 键盘焦点 tab 索引 */
   tabIndex?: number
+  /** 是否使用 CSS display: contents 消除外层包裹容器布局影响 */
+  displayContents?: boolean
 }
 
 /** 物品网格方块 Props */
@@ -93,6 +95,7 @@ export function ItemTooltipTarget({
   metadata: metadataOverride,
   definition,
   tabIndex = 0,
+  displayContents,
 }: ItemTooltipTargetProps): React.JSX.Element {
   const t = useT()
   const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
@@ -146,6 +149,7 @@ export function ItemTooltipTarget({
     <FloatingPopover
       asideCards={asideCards.length > 0 ? asideCards : undefined}
       closeDelay={120}
+      displayContents={displayContents}
       content={
         <FloatingInfoCard
           badge={metadata.rarityLabel}
