@@ -270,6 +270,11 @@ public static class DataBudgetResolver
             consumable = new ConsumableDefinition
             {
                 UsableInActionTypes = consConfig.UsableInActionTypes,
+                DurationSeconds = consConfig.DurationSeconds,
+                IsContinuous = consConfig.IsContinuous || consConfig.DurationSeconds > 0,
+                CultivationMultiplier = consConfig.CultivationMultiplier > 0 ? consConfig.CultivationMultiplier : 1.0,
+                GatheringMultiplier = consConfig.GatheringMultiplier > 0 ? consConfig.GatheringMultiplier : 1.0,
+                AlchemyMultiplier = consConfig.AlchemyMultiplier > 0 ? consConfig.AlchemyMultiplier : 1.0,
                 CooldownSeconds = consConfig.CooldownSeconds,
                 RecoverySeconds = consConfig.RecoverySeconds,
                 TriggerHpRatio = consConfig.TriggerHpRatio,

@@ -102,8 +102,8 @@ public sealed class WorldTests
         Assert.True(SimulationEngine.Enqueue(state, ActionIds.DrawQi).Success);
         SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(10));
 
-        Assert.Equal(13, state.Inventory.Get(ItemIds.Qi));
-        Assert.Equal(13, state.Stats.Qi);
+        Assert.Equal(1, state.Inventory.Get(ItemIds.Qi));
+        Assert.Equal(1, state.Stats.Qi);
     }
 
     /// <summary>

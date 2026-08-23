@@ -808,18 +808,23 @@ public sealed class CombatTests
     public void Manual_item_use_reuses_catalog_buff_and_inventory_rules()
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
-        state.Inventory.Add(ItemIds.QiGatheringPill, 2);
+        state.Inventory.Add(ItemIds.GatheringIncense, 2);
 
         var result = SimulationEngine.UseItem(
             state,
-            ItemIds.QiGatheringPill,
-            ActionType.Cultivation,
+            ItemIds.GatheringIncense,
+            ActionType.Exploration,
             2);
 
         Assert.True(result.Success);
-        Assert.Equal(0, state.Inventory.Get(ItemIds.QiGatheringPill));
-        Assert.Equal(2, Assert.Single(state.Buffs).Stacks);
-        Assert.Equal(1.5, state.Buffs[0].QiGainMultiplier);
+        Assert.Equal(0, state.Inventory.Get(ItemIds.GatheringIncense));
+        Assert.Single(state.Buffs);
+
+        // 持续消耗品（如引气丹）禁止手动使用，必须装配至自动使用槽位
+        state.Inventory.Add(ItemIds.QiGatheringPill, 1);
+        var pillResult = SimulationEngine.UseItem(state, ItemIds.QiGatheringPill, ActionType.Cultivation, 1);
+        Assert.False(pillResult.Success);
+        Assert.Equal("ITEM_REQUIRES_SLOT", pillResult.Code);
     }
 
     /// <summary>

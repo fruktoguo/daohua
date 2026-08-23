@@ -403,6 +403,7 @@ public static class StateMapper
                     slot.ItemId,
                     slot.Quantity,
                     slot.Enabled,
+                    slot.RemainingDurationSeconds,
                     (slot.Triggers ?? []).Select(ToTrigger).ToArray()))
                 .ToArray(),
             StringComparer.Ordinal);

@@ -13,7 +13,7 @@
   {
     "id": "item.qi-gathering-pill",
     "name": "引气丹",
-    "description": "修炼时自动服用，临时提高引气效率。",
+    "description": "修炼时放入消耗品槽位，持续提供 30% 修炼效果加成。",
     "kind": "consumable",
     "category": "丹药",
     "tier": 1,
@@ -23,27 +23,16 @@
       "usableInActionTypes": [
         "cultivation"
       ],
+      "durationSeconds": 300,
+      "isContinuous": true,
+      "cultivationMultiplier": 1.3,
       "cooldownSeconds": 0,
       "recoverySeconds": 0,
       "triggerHpRatio": 0.6,
       "triggerAtCombatStart": false,
       "hitpointRestore": 0,
       "manapointRestore": 0,
-      "buffs": [
-        {
-          "buffId": "buff.qi-gathering",
-          "name": "引气增益",
-          "durationSeconds": 60,
-          "stackable": true,
-          "maxStacks": 5,
-          "qiGainMultiplier": 1.25,
-          "attackLevelRatio": 0,
-          "damageRatio": 0,
-          "attackSpeedRatio": 0,
-          "gatheringOutputMultiplier": 1,
-          "alchemyOutputMultiplier": 1
-        }
-      ],
+      "buffs": [],
       "defaultCombatTriggers": []
     }
   },

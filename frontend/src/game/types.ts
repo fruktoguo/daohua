@@ -245,6 +245,8 @@ export interface AutoUseSlot {
   quantity: number
   /** 是否启用 */
   enabled: boolean
+  /** 已开启的持续消耗品剩余有效秒数（银河奶牛式） */
+  remainingDurationSeconds?: number
   /** 触发判定条件列表 */
   triggers?: CombatTrigger[]
 }

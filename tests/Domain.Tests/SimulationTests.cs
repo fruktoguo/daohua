@@ -94,13 +94,102 @@ public sealed class SimulationEngineTests
         Assert.Equal(3, state.Stats.HerbsCollected);
         Assert.Equal(1, state.Stats.PillsCrafted);
         Assert.Equal(1, state.Stats.CultivationCycles);
-        Assert.Equal(13, state.Stats.Qi);
+        Assert.Equal(1, state.Stats.Qi);
         Assert.Equal(state.Stats.Qi, state.Inventory.Get(ItemIds.Qi));
         Assert.Equal(0, state.Inventory.Get(ItemIds.SpiritHerb));
         Assert.Equal(0, state.Inventory.Get(ItemIds.QiGatheringPill));
-        Assert.Single(state.Buffs);
+        // 引气丹已转为银河奶牛持续消耗品，非 Buff 类型
+        Assert.Empty(state.Buffs);
+        // 持续 300 秒，完成 1 次 10 秒引气后，剩余 290 秒持续时间
+        Assert.Equal(290.0, state.Queue.AutoUseSlots[ActionType.Cultivation][0].RemainingDurationSeconds);
         Assert.Equal(3, state.Queue.Entries.Count);
         Assert.Equal(ActionIds.GatherHerbs, state.Queue.Entries[0].ActionId);
+    }
+
+    /// <summary>
+    /// 验证银河奶牛式持续消耗品：按动作实际执行耗时精准扣除剩余时间，不切换槽位则永久保留。
+    /// </summary>
+    [Fact]
+    public void Continuous_consumable_deducts_actual_action_duration_and_retains_remaining_time()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.Entries.Clear();
+        state.Inventory.Add(ItemIds.QiGatheringPill, 1);
+        state.Queue.AutoUseSlots[ActionType.Cultivation][0] = new AutoUseSlot
+        {
+            ItemId = ItemIds.QiGatheringPill,
+            Enabled = true,
+            RemainingDurationSeconds = 0.0
+        };
+
+        // 第一次引气（10秒）：消耗 1 个引气丹充能 300s，完成 1 次引气扣 10s，剩余 290s
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.DrawQi).Success);
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(10));
+
+        var slot = state.Queue.AutoUseSlots[ActionType.Cultivation][0];
+        Assert.Equal(290.0, slot.RemainingDurationSeconds);
+        Assert.Equal(0, state.Inventory.Get(ItemIds.QiGatheringPill));
+        Assert.Equal(1, state.Stats.Qi);
+        Assert.Equal(13.0, state.Stats.Spirit); // 10 * 1.30 = 13 修为
+
+        // 第二次引气（10秒）：无需新物品，直接扣除 10s，剩余 280s
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.DrawQi).Success);
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(20));
+
+        Assert.Equal(280.0, slot.RemainingDurationSeconds);
+        Assert.Equal(2, state.Stats.Qi);
+        Assert.Equal(26.0, state.Stats.Spirit); // 累加 13 修为
+    }
+
+    /// <summary>
+    /// 验证持续消耗品透支免单规则：剩余持续时间不足单次动作所需耗时时，直接消耗完当前物品并免除不足时长。
+    /// </summary>
+    [Fact]
+    public void Continuous_consumable_overdraft_clears_without_negative_and_grants_full_bonus()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.Entries.Clear();
+        state.Inventory.Items.Remove(ItemIds.QiGatheringPill);
+        // 槽位仅剩 3 秒持续时间，而引气入体需 10 秒
+        state.Queue.AutoUseSlots[ActionType.Cultivation][0] = new AutoUseSlot
+        {
+            ItemId = ItemIds.QiGatheringPill,
+            Enabled = true,
+            RemainingDurationSeconds = 3.0
+        };
+
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.DrawQi).Success);
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(10));
+
+        var slot = state.Queue.AutoUseSlots[ActionType.Cultivation][0];
+        // 透支扣除后归零（免单，少的时间不倒扣）
+        Assert.Equal(0.0, slot.RemainingDurationSeconds);
+        // 本次仍享受完整的 30% 修炼加成（13 修为 + 1 灵力）
+        Assert.Equal(1, state.Stats.Qi);
+        Assert.Equal(13.0, state.Stats.Spirit);
+    }
+
+    /// <summary>
+    /// 验证切换槽位惩罚规则：已启用并消耗部分的持续消耗品，在切换或卸下槽位时直接扣除作废，剩余时间清空。
+    /// </summary>
+    [Fact]
+    public void Continuous_consumable_switching_slot_forfeits_in_progress_item()
+    {
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.AutoUseSlots[ActionType.Cultivation][0] = new AutoUseSlot
+        {
+            ItemId = ItemIds.QiGatheringPill,
+            Enabled = true,
+            RemainingDurationSeconds = 180.0 // 已消耗 120s，剩余 180s
+        };
+
+        // 切换为空槽或更换其他物品
+        var result = SimulationEngine.SetAutoUse(state, ActionType.Cultivation, null, 1, false, slotIndex: 0);
+        Assert.True(result.Success);
+
+        var slot = state.Queue.AutoUseSlots[ActionType.Cultivation][0];
+        Assert.Null(slot.ItemId);
+        Assert.Equal(0.0, slot.RemainingDurationSeconds);
     }
 
     /// <summary>

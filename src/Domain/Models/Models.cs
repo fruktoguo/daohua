@@ -308,6 +308,8 @@ public sealed class AutoUseSlot
     public int Quantity { get; set; } = 1;
     /// <summary>是否开启自动触发。</summary>
     public bool Enabled { get; set; }
+    /// <summary>当前开封的 1 件持续消耗品剩余有效动作持续时间（秒，银河奶牛式）。</summary>
+    public double RemainingDurationSeconds { get; set; }
     /// <summary>触发条件规则列表。</summary>
     public List<CombatTrigger>? Triggers { get; set; }
 
@@ -319,6 +321,7 @@ public sealed class AutoUseSlot
             ItemId = ItemId,
             Quantity = Quantity,
             Enabled = Enabled,
+            RemainingDurationSeconds = RemainingDurationSeconds,
             Triggers = Triggers?.Select(trigger => trigger.Clone()).ToList()
         };
     }

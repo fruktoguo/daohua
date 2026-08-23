@@ -97,6 +97,11 @@ public sealed record BuffEffectConfig(
 /// </summary>
 public sealed record ConsumableConfig(
     IReadOnlySet<ActionType> UsableInActionTypes,
+    double DurationSeconds = 0,
+    bool IsContinuous = false,
+    double CultivationMultiplier = 1.0,
+    double GatheringMultiplier = 1.0,
+    double AlchemyMultiplier = 1.0,
     int CooldownSeconds = 0,
     int RecoverySeconds = 0,
     double TriggerHpRatio = 0.6,

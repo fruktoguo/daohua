@@ -120,11 +120,13 @@ public sealed record QueueEntryDto(
 /// <param name="ItemId">绑定的物品 ID。</param>
 /// <param name="Quantity">单次触发使用的数量。</param>
 /// <param name="Enabled">是否启用该槽位自动触发。</param>
+/// <param name="RemainingDurationSeconds">已开启的持续消耗品剩余有效秒数（银河奶牛式）。</param>
 /// <param name="Triggers">触发条件规则列表。</param>
 public sealed record AutoUseSlotDto(
     string? ItemId,
     int Quantity,
     bool Enabled,
+    double RemainingDurationSeconds = 0.0,
     IReadOnlyList<CombatTriggerDto>? Triggers = null);
 
 /// <summary>

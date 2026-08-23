@@ -62,6 +62,21 @@ public sealed record ConsumableDefinition
     /// <summary>允许在哪些动作类型执行期间使用（修炼/探索/炼丹/战斗）。</summary>
     public required FrozenSet<ActionType> UsableInActionTypes { get; init; }
 
+    /// <summary>单件物品提供的有效动作持续时间（秒，银河奶牛式按动作耗时扣除）。</summary>
+    public double DurationSeconds { get; init; }
+
+    /// <summary>是否为银河奶牛式持续消耗品。</summary>
+    public bool IsContinuous { get; init; }
+
+    /// <summary>修炼效果加成倍率（如 1.30 表示增加 30% 修炼收益）。</summary>
+    public double CultivationMultiplier { get; init; } = 1.0;
+
+    /// <summary>采集探索产出倍率修正。</summary>
+    public double GatheringMultiplier { get; init; } = 1.0;
+
+    /// <summary>炼丹产出倍率修正。</summary>
+    public double AlchemyMultiplier { get; init; } = 1.0;
+
     /// <summary>常规动作中的使用冷却时间（秒）。</summary>
     public double CooldownSeconds { get; init; }
 

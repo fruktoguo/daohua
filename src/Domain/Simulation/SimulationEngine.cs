@@ -564,14 +564,23 @@ public static class SimulationEngine
             return CommandResult.Ok("自动使用槽无需更新。");
         }
 
+        // 银河奶牛式规则：若更换了槽位物品或卸下，已开启使用的消耗品剩余时间直接作废清零（已扣除物品不退回）
+        var remaining = currentSlot.ItemId == itemId ? currentSlot.RemainingDurationSeconds : 0.0;
+        if (currentSlot.ItemId != itemId && currentSlot.RemainingDurationSeconds > 0 && !string.IsNullOrWhiteSpace(currentSlot.ItemId))
+        {
+            var oldName = ItemCatalog.TryGet(currentSlot.ItemId, out var oldItem) ? oldItem.Name : currentSlot.ItemId;
+            AddEvent(state, $"切换自动使用槽，已开启的 {{{{item:{currentSlot.ItemId}|{oldName}}}}} 剩余时间作废");
+        }
+
         slots[slotIndex] = new AutoUseSlot
         {
             ItemId = itemId,
             Quantity = quantity,
             Enabled = enabled && !string.IsNullOrWhiteSpace(itemId),
+            RemainingDurationSeconds = remaining,
             Triggers = normalizedTriggers
         };
-        Touch(state, DirtySections.Queue);
+        Touch(state, DirtySections.Queue | DirtySections.Events);
         return CommandResult.Ok("自动使用槽已更新。");
     }
 
@@ -600,6 +609,11 @@ public static class SimulationEngine
             || !item.Consumable.UsableInActionTypes.Contains(actionType))
         {
             return CommandResult.Fail("ITEM_NOT_SUPPORTED", "该物品不能用于当前行动类型。");
+        }
+
+        if (item.Consumable.DurationSeconds > 0 || item.Consumable.IsContinuous)
+        {
+            return CommandResult.Fail("ITEM_REQUIRES_SLOT", "持续性物品请装配至对应行动分类的自动使用槽位中生效。");
         }
 
         if (item.Consumable.Buffs.Count == 0
@@ -1835,21 +1849,8 @@ public static class SimulationEngine
             state.Inventory.Add(input.Key, -input.Value);
         }
 
-        if (definition.Type is ActionType.Exploration or ActionType.Alchemy)
-        {
-            var consumed = ConsumeAutoUseItems(state, definition.Type, state.LastSimulatedAt);
-            if (consumed.Count > 0)
-            {
-                dirty |= DirtySections.Inventory | DirtySections.Buffs;
-                foreach (var (itemId, quantity) in consumed)
-                {
-                    var itemName = ItemCatalog.TryGet(itemId, out var usedItem)
-                        ? usedItem.Name
-                        : itemId;
-                    AddEvent(state, $"{definition.Name}自动使用 {{{{item:{itemId}|{itemName}}}}} × {quantity}");
-                }
-            }
-        }
+        var actionDuration = definition.DurationSeconds > 0 ? definition.DurationSeconds : 1.0;
+        var autoUseMultiplier = ProcessAutoUseItemsForAction(state, definition.Type, actionDuration, state.LastSimulatedAt, ref dirty);
 
         foreach (var output in definition.Outputs)
         {
@@ -1860,11 +1861,11 @@ public static class SimulationEngine
 
             var multiplier = definition.Type switch
             {
-                ActionType.Exploration => GetGatheringOutputMultiplier(state, state.LastSimulatedAt),
-                ActionType.Alchemy => GetAlchemyOutputMultiplier(state, state.LastSimulatedAt),
-                _ => 1
+                ActionType.Exploration => GetGatheringOutputMultiplier(state, state.LastSimulatedAt) * autoUseMultiplier,
+                ActionType.Alchemy => GetAlchemyOutputMultiplier(state, state.LastSimulatedAt) * autoUseMultiplier,
+                _ => 1.0
             };
-            var amount = multiplier == 1
+            var amount = multiplier == 1.0
                 ? output.Value
                 : Math.Max(1, (long)Math.Ceiling(output.Value * multiplier));
             state.Inventory.Add(output.Key, amount);
@@ -1877,36 +1878,32 @@ public static class SimulationEngine
                     state,
                     definition,
                     ItemIds.SpiritHerb,
-                    GetGatheringOutputMultiplier(state, state.LastSimulatedAt));
+                    GetGatheringOutputMultiplier(state, state.LastSimulatedAt) * autoUseMultiplier);
                 break;
             case ActionType.Alchemy:
                 state.Stats.PillsCrafted += GetProducedAmount(
                     state,
                     definition,
                     ItemIds.QiGatheringPill,
-                    GetAlchemyOutputMultiplier(state, state.LastSimulatedAt));
+                    GetAlchemyOutputMultiplier(state, state.LastSimulatedAt) * autoUseMultiplier);
                 break;
             case ActionType.Cultivation:
-                var consumedPills = ConsumeAutoUseItems(state, ActionType.Cultivation, state.LastSimulatedAt);
-                if (consumedPills.Count > 0)
-                {
-                    dirty |= DirtySections.Inventory | DirtySections.Buffs;
-                    foreach (var (itemId, quantity) in consumedPills)
-                    {
-                        var itemName = ItemCatalog.TryGet(itemId, out var usedItem)
-                            ? usedItem.Name
-                            : itemId;
-                        AddEvent(state, $"修炼自动服用 {{{{item:{itemId}|{itemName}}}}} × {quantity}");
-                    }
-                }
+                var buffMultiplier = GetQiGainMultiplier(state, state.LastSimulatedAt);
+                var totalCultivationMultiplier = buffMultiplier * autoUseMultiplier;
 
-                var multiplier = GetQiGainMultiplier(state, state.LastSimulatedAt);
-                var baseQi = definition.Outputs.GetValueOrDefault(ItemIds.Qi);
-                var qiGain = (long)Math.Round(baseQi * multiplier, MidpointRounding.AwayFromZero);
-                state.Inventory.Add(ItemIds.Qi, qiGain);
+                // 引气入体效果：获得 10 修为，1 灵力（受持续消耗品引气丹等加成）
+                var baseExp = 10.0;
+                var baseQi = definition.Outputs.GetValueOrDefault(ItemIds.Qi, 1L);
+                if (baseQi <= 0) baseQi = 1;
+
+                var finalExp = baseExp * totalCultivationMultiplier;
+                var finalQi = (long)Math.Round(baseQi * totalCultivationMultiplier, MidpointRounding.AwayFromZero);
+                if (finalQi < 1 && totalCultivationMultiplier > 0) finalQi = 1;
+
+                state.Inventory.Add(ItemIds.Qi, finalQi);
                 state.Stats.CultivationCycles++;
-                state.Stats.Qi += qiGain;
-                var (actualSpiritGain, foundationGain, foundationConsumed) = AddCultivationSpirit(state, 1);
+                state.Stats.Qi += finalQi;
+                var (actualSpiritGain, foundationGain, foundationConsumed) = AddCultivationSpirit(state, finalExp);
                 if (foundationGain > 0)
                 {
                     AddEvent(state, $"当前境界已满，运转吐纳将修为转化为 {foundationGain:F0} 点道基底蕴");
@@ -1958,6 +1955,90 @@ public static class SimulationEngine
         }
 
         state.Queue.Entries.RemoveAt(0);
+    }
+
+    private static double ProcessAutoUseItemsForAction(
+        PlayerState state,
+        ActionType actionType,
+        double actionDurationSeconds,
+        DateTimeOffset now,
+        ref DirtySections dirty)
+    {
+        var multiplier = 1.0;
+        if (!state.Queue.AutoUseSlots.TryGetValue(actionType, out var slots) || slots is null)
+        {
+            return multiplier;
+        }
+
+        foreach (var slot in slots)
+        {
+            if (slot is null
+                || !slot.Enabled
+                || string.IsNullOrWhiteSpace(slot.ItemId)
+                || !ItemCatalog.TryGet(slot.ItemId, out var item)
+                || item.Consumable is null
+                || !item.Consumable.UsableInActionTypes.Contains(actionType))
+            {
+                continue;
+            }
+
+            var cons = item.Consumable;
+            if (cons.DurationSeconds > 0 || cons.IsContinuous)
+            {
+                // 银河奶牛式持续消耗品
+                // 1. 若剩余时间不足 0，且背包有货，扣除 1 个并充能完整持续时间
+                if (slot.RemainingDurationSeconds <= 0.0)
+                {
+                    if (state.Inventory.Get(slot.ItemId) >= 1)
+                    {
+                        state.Inventory.Add(slot.ItemId, -1);
+                        slot.RemainingDurationSeconds = cons.DurationSeconds;
+                        dirty |= DirtySections.Inventory | DirtySections.Queue;
+                        AddEvent(state, $"使用 {{{{item:{item.Id}|{item.Name}}}}}，持续 {cons.DurationSeconds:F0} 秒");
+                    }
+                }
+
+                // 2. 若槽位处于有效状态（RemainingDurationSeconds > 0）
+                if (slot.RemainingDurationSeconds > 0.0)
+                {
+                    var itemMult = actionType switch
+                    {
+                        ActionType.Cultivation => cons.CultivationMultiplier,
+                        ActionType.Exploration => cons.GatheringMultiplier,
+                        ActionType.Alchemy => cons.AlchemyMultiplier,
+                        _ => 1.0
+                    };
+                    if (itemMult > 0)
+                    {
+                        multiplier *= itemMult;
+                    }
+
+                    // 3. 动作完成，扣除本次动作实际耗时
+                    slot.RemainingDurationSeconds -= actionDurationSeconds;
+                    dirty |= DirtySections.Queue;
+
+                    // 4. 若透支/耗尽，直接归零（不足部分免单）
+                    if (slot.RemainingDurationSeconds <= 0.0)
+                    {
+                        slot.RemainingDurationSeconds = 0.0;
+                        AddEvent(state, $"{{{{item:{item.Id}|{item.Name}}}}} 持续时间已耗尽");
+                    }
+                }
+            }
+            else
+            {
+                // 传统即时/Buff型消耗品
+                if (state.Inventory.Get(slot.ItemId) >= slot.Quantity)
+                {
+                    state.Inventory.Add(slot.ItemId, -slot.Quantity);
+                    ApplyBuffEffects(state, item, slot.Quantity, now);
+                    dirty |= DirtySections.Inventory | DirtySections.Buffs;
+                    AddEvent(state, $"自动使用 {{{{item:{item.Id}|{item.Name}}}}} × {slot.Quantity}");
+                }
+            }
+        }
+
+        return multiplier;
     }
 
     private static List<(string ItemId, int Quantity)> ConsumeAutoUseItems(
