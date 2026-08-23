@@ -322,7 +322,6 @@
   z-index: 5;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  transition: left 0.8s linear, top 0.8s linear;
 }
 
 .world-player-marker-anchor {

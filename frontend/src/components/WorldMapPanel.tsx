@@ -145,6 +145,150 @@ function planShortestTravel(
 
   return null
 }
+/**
+ * 实时计算并插值玩家在地图上的精准动态坐标 (60fps 平滑移动)
+ */
+function usePlayerDisplayPosition(
+  map: WorldMapDefinition | undefined,
+  world: WorldState,
+  activeTravel: { status: string; progressSeconds: number; durationSeconds: number; travelPathEdgeIds?: string[] | null } | undefined,
+): { x: number; y: number } {
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: world.x, y: world.y })
+
+  const stateRef = useRef({
+    map,
+    world,
+    activeTravel,
+    lastProgressSec: activeTravel?.progressSeconds ?? 0,
+    lastUpdateMs: performance.now(),
+  })
+
+  useEffect(() => {
+    const prev = stateRef.current
+    const now = performance.now()
+    const progressChanged = prev.activeTravel?.progressSeconds !== activeTravel?.progressSeconds
+    stateRef.current = {
+      map,
+      world,
+      activeTravel,
+      lastProgressSec: activeTravel?.progressSeconds ?? 0,
+      lastUpdateMs: progressChanged ? now : prev.lastUpdateMs,
+    }
+  }, [map, world, activeTravel])
+
+  useEffect(() => {
+    let animId: number
+
+    const tick = () => {
+      const { map: currMap, world: currWorld, activeTravel: currTravel, lastProgressSec, lastUpdateMs } = stateRef.current
+
+      if (!currMap) {
+        animId = requestAnimationFrame(tick)
+        return
+      }
+
+      // 1. 正在移动中：沿着旅行路径平滑插值
+      if (
+        currTravel &&
+        currTravel.status === 'running' &&
+        currTravel.durationSeconds > 0 &&
+        currTravel.travelPathEdgeIds &&
+        currTravel.travelPathEdgeIds.length > 0
+      ) {
+        const now = performance.now()
+        const elapsedSinceUpdateSec = (now - lastUpdateMs) / 1000
+        const currentElapsedSec = Math.min(currTravel.durationSeconds, lastProgressSec + elapsedSinceUpdateSec)
+
+        let remainingSec = currentElapsedSec
+        let currentCoord: { x: number; y: number } | null = null
+        let currentNodeId: string | null = currWorld.nodeId
+
+        for (let i = 0; i < currTravel.travelPathEdgeIds.length; i++) {
+          const edgeId = currTravel.travelPathEdgeIds[i]
+          const edge = currMap.edges.find(e => e.edgeId === edgeId)
+          if (!edge) continue
+
+          let fromId = edge.fromNodeId
+          let toId = edge.toNodeId
+          if (currentNodeId && currentNodeId === edge.toNodeId) {
+            fromId = edge.toNodeId
+            toId = edge.fromNodeId
+          }
+          currentNodeId = toId
+
+          const fromNode = currMap.nodes.find(n => n.nodeId === fromId)
+          const toNode = currMap.nodes.find(n => n.nodeId === toId)
+          if (!fromNode || !toNode) continue
+
+          const edgeDuration = edge.durationSeconds
+          if (remainingSec <= edgeDuration || i === currTravel.travelPathEdgeIds.length - 1) {
+            const ratio = edgeDuration > 0 ? Math.min(1, Math.max(0, remainingSec / edgeDuration)) : 1
+            currentCoord = {
+              x: fromNode.x + (toNode.x - fromNode.x) * ratio,
+              y: fromNode.y + (toNode.y - fromNode.y) * ratio,
+            }
+            break
+          } else {
+            remainingSec -= edgeDuration
+          }
+        }
+
+        if (currentCoord) {
+          setPos(prev => {
+            if (Math.abs(prev.x - currentCoord!.x) < 0.005 && Math.abs(prev.y - currentCoord!.y) < 0.005) return prev
+            return currentCoord!
+          })
+          animId = requestAnimationFrame(tick)
+          return
+        }
+      }
+
+      // 2. 驻留在地点处
+      if (currWorld.nodeId) {
+        const node = currMap.nodes.find(n => n.nodeId === currWorld.nodeId)
+        if (node) {
+          setPos(prev => {
+            if (prev.x === node.x && prev.y === node.y) return prev
+            return { x: node.x, y: node.y }
+          })
+        } else {
+          setPos(prev => {
+            if (prev.x === currWorld.x && prev.y === currWorld.y) return prev
+            return { x: currWorld.x, y: currWorld.y }
+          })
+        }
+      } else if (currWorld.edgeId) {
+        // 处于单线段中间
+        const edge = currMap.edges.find(e => e.edgeId === currWorld.edgeId)
+        if (edge) {
+          const fromNode = currMap.nodes.find(n => n.nodeId === edge.fromNodeId)
+          const toNode = currMap.nodes.find(n => n.nodeId === edge.toNodeId)
+          if (fromNode && toNode) {
+            const ratio = Math.max(0, Math.min(1, currWorld.edgeProgress))
+            const calculatedX = fromNode.x + (toNode.x - fromNode.x) * ratio
+            const calculatedY = fromNode.y + (toNode.y - fromNode.y) * ratio
+            setPos(prev => {
+              if (Math.abs(prev.x - calculatedX) < 0.005 && Math.abs(prev.y - calculatedY) < 0.005) return prev
+              return { x: calculatedX, y: calculatedY }
+            })
+          }
+        }
+      } else {
+        setPos(prev => {
+          if (prev.x === currWorld.x && prev.y === currWorld.y) return prev
+          return { x: currWorld.x, y: currWorld.y }
+        })
+      }
+
+      animId = requestAnimationFrame(tick)
+    }
+
+    animId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(animId)
+  }, [])
+
+  return pos
+}
 // 地图节点/地点名称与描述来自服务端数据，仅面板框架文本与 aria 描述模板走 i18n。
 
 /**
@@ -168,6 +312,8 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
   const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
+  const playerPos = usePlayerDisplayPosition(map, world, activeTravel)
+
   // 视口拖拽漫游与缩放状态
   const stageRef = useRef<HTMLDivElement>(null)
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -183,7 +329,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     targetNodeId: string | null
   } | null>(null)
 
-  // 居中聚焦到玩家当前所在位置（在节点驻留时居中地点，在移动时居中路径当前坐标）
+  // 居中聚焦到玩家当前所在位置（在节点驻留时居中地点，在移动时居中路径当前动态坐标）
   const centerOnPlayer = useCallback((targetZoom?: number) => {
     const stage = stageRef.current
     if (!stage) return
@@ -192,15 +338,14 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     if (!stageW || !stageH) return
 
     const z = targetZoom ?? zoom
-    const playerPxX = (world.x / 100) * stageW
-    const playerPxY = (world.y / 100) * stageH
+    const playerPxX = (playerPos.x / 100) * stageW
+    const playerPxY = (playerPos.y / 100) * stageH
 
     setPan({
       x: Math.round(stageW / 2 - playerPxX * z),
       y: Math.round(stageH / 2 - playerPxY * z),
     })
-  }, [world.x, world.y, zoom])
-
+  }, [playerPos.x, playerPos.y, zoom])
   // 打开地图或视口初始化时，默认将玩家当前位置居中
   const hasAutoCenteredRef = useRef<boolean>(false)
   useEffect(() => {
@@ -453,7 +598,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
           className="world-map-canvas"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: '50% 50%',
+            transformOrigin: '0 0',
           }}
         >
           {/* SVG 路径与距离标注（像素渲染，100% 正常字形比例） */}
@@ -528,8 +673,8 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
             aria-label={t('combat.map.playerMarkerAria', { name: world.locationName })}
             className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}`}
             style={{
-              left: `${world.x}%`,
-              top: `${world.y}%`,
+              left: `${playerPos.x}%`,
+              top: `${playerPos.y}%`,
             }}
             title={world.locationName}
           >
