@@ -44,8 +44,6 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       rarityLabel: grade.label,
       level: tier,
       description: t('market.itemFallback.description'),
-      source: t('market.itemFallback.source'),
-      usage: t('market.itemFallback.usage'),
     }
   }
   return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)

@@ -37,11 +37,11 @@ export const marketZh = {
     },
     // 未注册物品的兜底说明文本（label/category 仍取服务端数据）。
     itemFallback: {
-      description: '坊市可交易物品。',
-      source: '坊市',
-      usage: '可在坊市挂牌交易。',
-      catalogSource: '物品目录',
-      usableFor: '可用于{category}行动。',
+      description: '修仙界流转的物件。',
+      source: '',
+      usage: '',
+      catalogSource: '',
+      usableFor: '',
     },
     side: {
       sell: '出售',
@@ -137,10 +137,6 @@ export const marketZh = {
       category: '品类',
       level: '等阶',
       held: '持有',
-      source: '产出',
-      usageMark: '用途',
-      usageTitle: '使用法门',
-      sourcePrefix: '来源：{source}',
       quantityMark: '量',
       quantityTitle: '储量详查',
       exactQuantity: '精确数量',

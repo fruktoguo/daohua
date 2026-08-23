@@ -4,7 +4,7 @@ import { useGameStore } from '../game/gameStore'
 import { resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { getT, useT } from '../i18n'
 import type { CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
-import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
+import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { ValueText } from './ValueText'
 import { UnitNumber } from './UnitNumber'
 
@@ -83,9 +83,9 @@ function rarityToTone(rarity: ItemRarity): FloatingTone {
  * 物品悬浮气泡包裹组件 (ItemTooltipTarget)
  *
  * 鼠标悬停展示修仙风物品卡片气泡：
- * 1. 顶部展示物品品阶徽章 (rarityLabel)、名称与来源出处；
- * 2. 中部展示恢复效果、冷却时间、丹药增益或装备攻防特殊词缀 (describeItemEffects / describeEquipmentEffects)；
- * 3. 底部展示持存数量、品阶等统计键值对，以及用途副气泡 (asideCards)。
+ * 1. 顶部展示物品品阶徽章 (rarityLabel) 与名称；
+ * 2. 中部展示纯背景故事描述、恢复效果、冷却时间、丹药增益或装备攻防特殊词缀 (describeItemEffects / describeEquipmentEffects)；
+ * 3. 底部展示品类、等阶、持存数量等基础属性统计键值对。
  */
 export function ItemTooltipTarget({
   itemId,
@@ -128,26 +128,11 @@ export function ItemTooltipTarget({
       tone: 'gold',
     })
   }
-  if (metadata.source) {
-    stats.push({ label: t('market.tooltip.source'), value: metadata.source, tone: 'jade' })
-  }
-
-  // 附属卡片：额外用途说明或特殊词条
-  const asideCards: FloatingAsideCard[] = []
-  if (metadata.usage) {
-    asideCards.push({
-      mark: t('market.tooltip.usageMark'),
-      title: t('market.tooltip.usageTitle'),
-      tone: 'qi',
-      lines: [metadata.usage],
-    })
-  }
 
   const tone = rarityToTone(metadata.rarity)
 
   return (
     <FloatingPopover
-      asideCards={asideCards.length > 0 ? asideCards : undefined}
       closeDelay={120}
       displayContents={displayContents}
       content={
@@ -159,7 +144,6 @@ export function ItemTooltipTarget({
             <ValueText className="effect-value-capsule" key={line} text={line} />
           ))}
           stats={stats}
-          subtitle={metadata.source ? t('market.tooltip.sourcePrefix', { source: metadata.source }) : undefined}
           title={metadata.label}
         />
       }

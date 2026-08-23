@@ -48,8 +48,8 @@ interface ItemGridPickerProps {
   emptyLabel?: string
 }
 
-// 未注册物品的兜底元数据：名称/品类/描述保留服务端数据，来源与用途走 market 域词典。
-function fallbackMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
+// 未注册物品的兜底元数据：名称/品类/描述保留服务端数据。
+function fallbackMetadata(item: ItemPickerEntry, _t: TFunction): ItemMetadata {
   const tier = Math.max(1, item.tier)
   const grade = resolveItemGrade(tier)
   return {
@@ -61,8 +61,6 @@ function fallbackMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
     rarityLabel: grade.label,
     level: tier,
     description: item.description,
-    source: t('market.itemFallback.catalogSource'),
-    usage: t('market.itemFallback.usableFor', { category: item.category }),
   }
 }
 

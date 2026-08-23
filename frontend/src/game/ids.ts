@@ -150,10 +150,10 @@ export interface ItemMetadata {
   level?: number
   /** 详细描述 */
   description: string
-  /** 产出来源 */
-  source: string
-  /** 用途说明 */
-  usage: string
+  /** 产出来源（可选） */
+  source?: string
+  /** 用途说明（可选） */
+  usage?: string
 }
 
 /**
@@ -282,7 +282,5 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
     rarityLabel: t(`game.rarityLabel.${core.rarityLabelOverride ?? core.rarity}`),
     level: core.level,
     description: t(`game.item.${itemId}.description`),
-    source: t(`game.item.${itemId}.source`),
-    usage: t(`game.item.${itemId}.usage`),
   }
 }

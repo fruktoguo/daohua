@@ -2,6 +2,7 @@
   {
     "id": "equipment.qingfeng-sword",
     "name": "青锋剑",
+    "description": "青钢淬火锻造的三尺长剑，剑身青光如秋水澄澈。",
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
@@ -17,6 +18,7 @@
   {
     "id": "equipment.pishan-blade",
     "name": "劈山刀",
+    "description": "沉重坚实的山林朴刀，刀背厚重，刀锋刃口雪亮。",
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
@@ -36,6 +38,7 @@
   {
     "id": "equipment.shufa-scarf",
     "name": "束发巾",
+    "description": "以细密麻布缝制的行脚束发头巾，简朴干练。",
     "slot": "head",
     "tier": 1,
     "quality": 1,
@@ -50,6 +53,7 @@
   {
     "id": "equipment.baina-armor",
     "name": "百衲甲",
+    "description": "多层坚韧粗布与兽皮拼接缝制的护身短甲，结实耐磨。",
     "slot": "armor",
     "tier": 1,
     "quality": 1,
@@ -64,6 +68,7 @@
   {
     "id": "equipment.zhakou-pants",
     "name": "扎口裤",
+    "description": "下摆收口绑扎的武行布裤，便于翻山越岭与近身搏击。",
     "slot": "legs",
     "tier": 1,
     "quality": 1,
@@ -78,6 +83,7 @@
   {
     "id": "equipment.xingshan-boots",
     "name": "行山靴",
+    "description": "鹿皮底厚麻短靴，靴帮结实，行走山林落足无声。",
     "slot": "boots",
     "tier": 1,
     "quality": 1,
@@ -92,6 +98,7 @@
   {
     "id": "equipment.shouya-pendant",
     "name": "兽牙坠",
+    "description": "以凶兽獠牙穿系而成的粗犷项坠，野性十足。",
     "slot": "trinket",
     "tier": 1,
     "quality": 1,
@@ -106,6 +113,7 @@
   {
     "id": "equipment.jiujie-staff",
     "name": "九节杖",
+    "description": "老山竹根削成的九节法杖，通体油亮光滑。",
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
@@ -121,6 +129,7 @@
   {
     "id": "equipment.suxin-zither",
     "name": "素心琴",
+    "description": "以山中老桐木制成的七弦古琴，音质清越素雅。",
     "slot": "weapon",
     "tier": 1,
     "quality": 1,
@@ -139,6 +148,7 @@
   {
     "id": "equipment.hunyuan-scarf",
     "name": "混元巾",
+    "description": "道家修士常戴的素色道巾，轻柔透气。",
     "slot": "head",
     "tier": 1,
     "quality": 1,
@@ -153,6 +163,7 @@
   {
     "id": "equipment.suma-robe",
     "name": "素麻袍",
+    "description": "以粗麻纺织的宽松道袍，宽袖飘逸，不染俗尘。",
     "slot": "armor",
     "tier": 1,
     "quality": 1,
@@ -167,6 +178,7 @@
   {
     "id": "equipment.xingqi-pants",
     "name": "行气裤",
+    "description": "宽大舒适的练功长裤，透气吸汗，利于周天行气。",
     "slot": "legs",
     "tier": 1,
     "quality": 1,
@@ -181,6 +193,7 @@
   {
     "id": "equipment.shifang-shoes",
     "name": "十方鞋",
+    "description": "云游道人常穿的十方布鞋，鞋底轻软舒适。",
     "slot": "boots",
     "tier": 1,
     "quality": 1,
@@ -195,6 +208,7 @@
   {
     "id": "equipment.taomu-talisman",
     "name": "桃木符",
+    "description": "百年阳坡桃木雕刻而成的辟邪木符，散发着草木幽香。",
     "slot": "trinket",
     "tier": 1,
     "quality": 1,
@@ -209,6 +223,7 @@
   {
     "id": "equipment.pogang-sword",
     "name": "破罡剑",
+    "description": "融入赤铜精淬炼的锋锐灵剑，剑芒吞吐，能破护体罡气。",
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
@@ -224,6 +239,7 @@
   {
     "id": "equipment.zhansha-blade",
     "name": "斩煞刀",
+    "description": "百炼铁融合赤铜打造的厚重大刀，刀身隐泛暗红血槽。",
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
@@ -243,6 +259,7 @@
   {
     "id": "equipment.chijin-helmet",
     "name": "赤金盔",
+    "description": "赤金铜精打磨而成的全护铁盔，金光内敛，威风凛凛。",
     "slot": "head",
     "tier": 2,
     "quality": 2,
@@ -257,6 +274,7 @@
   {
     "id": "equipment.yulin-armor",
     "name": "鱼鳞甲",
+    "description": "片片赤铜精锁扣编缀而成的战甲，宛如赤色龙鳞覆盖。",
     "slot": "armor",
     "tier": 2,
     "quality": 2,
@@ -271,6 +289,7 @@
   {
     "id": "equipment.tazhen-greaves",
     "name": "踏阵胫",
+    "description": "厚重的金属护腿胫甲，线条硬朗，坚不可摧。",
     "slot": "legs",
     "tier": 2,
     "quality": 2,
@@ -285,6 +304,7 @@
   {
     "id": "equipment.tashan-boots",
     "name": "踏山靴",
+    "description": "外衬赤铜甲片的战将重靴，踏地沉稳如山。",
     "slot": "boots",
     "tier": 2,
     "quality": 2,
@@ -299,6 +319,7 @@
   {
     "id": "equipment.chiwen-ring",
     "name": "赤纹戒",
+    "description": "赤红铜精打磨而成的指环，戒面铭刻着古朴赤龙纹样。",
     "slot": "trinket",
     "tier": 2,
     "quality": 2,
@@ -313,6 +334,7 @@
   {
     "id": "equipment.chaoyuan-staff",
     "name": "朝元杖",
+    "description": "引灵松树芯雕琢的长杖，杖头盘旋如祥云聚顶。",
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
@@ -328,6 +350,7 @@
   {
     "id": "equipment.songfeng-zither",
     "name": "松风琴",
+    "description": "千年引灵松精雕而成的古琴，抚弦宛如松涛阵阵。",
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
@@ -346,6 +369,7 @@
   {
     "id": "equipment.ziwu-crown",
     "name": "子午冠",
+    "description": "灵松晶雕刻打磨的青玉道冠，玉色温润清透。",
     "slot": "head",
     "tier": 2,
     "quality": 2,
@@ -360,6 +384,7 @@
   {
     "id": "equipment.pichen-shirt",
     "name": "辟尘衫",
+    "description": "混纺火羽与灵蚕丝织就的轻薄法衣，光洁如新，尘垢不沾。",
     "slot": "armor",
     "tier": 2,
     "quality": 2,
@@ -374,6 +399,7 @@
   {
     "id": "equipment.liuyun-skirt",
     "name": "流云裳",
+    "description": "如流云般轻盈飘逸的羽丝下裳，随风而动。",
     "slot": "legs",
     "tier": 2,
     "quality": 2,
@@ -388,6 +414,7 @@
   {
     "id": "equipment.bichen-shoes",
     "name": "避尘履",
+    "description": "灵羽为底、云丝为面的法靴，步履轻盈如踏云霄。",
     "slot": "boots",
     "tier": 2,
     "quality": 2,
@@ -402,6 +429,7 @@
   {
     "id": "equipment.juling-pendant",
     "name": "聚灵佩",
+    "description": "青翠灵松晶雕琢而成的通灵玉佩，常年萦绕着淡淡清气。",
     "slot": "trinket",
     "tier": 2,
     "quality": 2,

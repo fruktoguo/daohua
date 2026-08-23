@@ -107,11 +107,14 @@ public static class GameDataCatalog
         {
             if (!items.ContainsKey(eq.Id))
             {
+                var desc = equipmentConfigs.TryGetValue(eq.Id, out var eqCfg) && !string.IsNullOrWhiteSpace(eqCfg.Description)
+                    ? eqCfg.Description
+                    : ResolveEquipmentDescription(eq.Id, eq.Name);
                 items[eq.Id] = new ItemDefinition
                 {
                     Id = eq.Id,
                     Name = eq.Name,
-                    Description = $"【{eq.Name}】品阶：{eq.Tier}阶装备，槽位：{eq.Slot}。",
+                    Description = desc,
                     Kind = ItemKind.Equipment,
                     Category = ItemCategory.Equipment,
                     Tier = eq.Tier,
@@ -403,6 +406,39 @@ public static class GameDataCatalog
         }
         return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant()[..16];
     }
+
+    private static string ResolveEquipmentDescription(string id, string name) => id switch
+    {
+        "equipment.qingfeng-sword" => "青钢淬火锻造的三尺长剑，剑身青光如秋水澄澈。",
+        "equipment.pishan-blade" => "沉重坚实的山林朴刀，刀背厚重，刀锋刃口雪亮。",
+        "equipment.shufa-scarf" => "以细密麻布缝制的行脚束发头巾，简朴干练。",
+        "equipment.baina-armor" => "多层坚韧粗布与兽皮拼接缝制的护身短甲，结实耐磨。",
+        "equipment.zhakou-pants" => "下摆收口绑扎的武行布裤，便于翻山越岭与近身搏击。",
+        "equipment.xingshan-boots" => "鹿皮底厚麻短靴，靴帮结实，行走山林落足无声。",
+        "equipment.shouya-pendant" => "以凶兽獠牙穿系而成的粗犷项坠，野性十足。",
+        "equipment.jiujie-staff" => "老山竹根削成的九节法杖，通体油亮光滑。",
+        "equipment.suxin-zither" => "以山中老桐木制成的七弦古琴，音质清越素雅。",
+        "equipment.hunyuan-scarf" => "道家修士常戴的素色道巾，轻柔透气。",
+        "equipment.suma-robe" => "以粗麻纺织的宽松道袍，宽袖飘逸，不染俗尘。",
+        "equipment.xingqi-pants" => "宽大舒适的练功长裤，透气吸汗，利于周天行气。",
+        "equipment.shifang-shoes" => "云游道人常穿的十方布鞋，鞋底轻软舒适。",
+        "equipment.taomu-talisman" => "百年阳坡桃木雕刻而成的辟邪木符，散发着草木幽香。",
+        "equipment.pogang-sword" => "融入赤铜精淬炼的锋锐灵剑，剑芒吞吐，能破护体罡气。",
+        "equipment.zhansha-blade" => "百炼铁融合赤铜打造的厚重大刀，刀身隐泛暗红血槽。",
+        "equipment.chijin-helmet" => "赤金铜精打磨而成的全护铁盔，金光内敛，威风凛凛。",
+        "equipment.yulin-armor" => "片片赤铜精锁扣编缀而成的战甲，宛如赤色龙鳞覆盖。",
+        "equipment.tazhen-greaves" => "厚重的金属护腿胫甲，线条硬朗，坚不可摧。",
+        "equipment.tashan-boots" => "外衬赤铜甲片的战将重靴，踏地沉稳如山。",
+        "equipment.chiwen-ring" => "赤红铜精打磨而成的指环，戒面铭刻着古朴赤龙纹样。",
+        "equipment.chaoyuan-staff" => "引灵松树芯雕琢的长杖，杖头盘旋如祥云聚顶。",
+        "equipment.songfeng-zither" => "千年引灵松精雕而成的古琴，抚弦宛如松涛阵阵。",
+        "equipment.ziwu-crown" => "灵松晶雕刻打磨的青玉道冠，玉色温润清透。",
+        "equipment.pichen-shirt" => "混纺火羽与灵蚕丝织就的轻薄法衣，光洁如新，尘垢不沾。",
+        "equipment.liuyun-skirt" => "如流云般轻盈飘逸的羽丝下裳，随风而动。",
+        "equipment.bichen-shoes" => "灵羽为底、云丝为面的法靴，步履轻盈如踏云霄。",
+        "equipment.juling-pendant" => "青翠灵松晶雕琢而成的通灵玉佩，常年萦绕着淡淡清气。",
+        _ => $"修仙界流传的{name}。"
+    };
 
     private static JsonSerializerOptions CreateJsonOptions()
     {
