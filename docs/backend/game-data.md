@@ -6,13 +6,13 @@
 
 - **`expected-attributes.json`**：**全境界阶位数值底座、标准期望面板、特殊属性与战斗模拟产出基准**。
 - `manifest.json`：结构版本和内容版本。
-- `actions.json`：行动、耗时、输入、输出和可用地点。
-- `items.json`：物品、消耗品、恢复、Buff 和使用条件。
-- `abilities.json`：技能、消耗、冷却、倍率、控制和特殊效果数值。
-- `equipment.json`：装备基础属性和强化成长。
-- `monsters.json`：怪物属性、技能引用、掉落和角色表现。
-- `encounters.json`：首次寻怪、击杀后重新搜寻、生成权重、首领轮次和玩家复活时间。
-- `maps.json`：地图、节点、连线、NPC、建筑、行动入口和节点遭遇池；实际战斗怪物必须从当前节点的 `encounterIds` 选择。
+- `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。
+- `equipment/`：武器、防具与饰品（`weapons.json`, `armors.json`, `accessories.json`）。
+- `abilities/`：物理武技与术法神通（`physical_abilities.json`, `spell_abilities.json`）。
+- `monsters/`：各阶位普通妖兽、精英与首领（`tier1_minions.json`, `tier1_elites_bosses.json`, `tier2_minions.json`, `tier2_elites_bosses.json`）。
+- `encounters/`：各区域遭遇生态与怪物波次（`tier1_encounters.json`, `tier2_encounters.json`）。
+- `maps/`：世界大地图与节点网络（`qingyun_mountain.json`, `xingyun_realm.json`）。
+- `actions/`：玩家修炼、采集、精炼、炼丹、锻造与历练行动（`cultivation.json`, `gathering.json`, `crafting.json`, `alchemy.json`, `forging.json`, `combat.json`, `world.json`）。
 
 服务启动时会一次性加载并校验全部文件，再构建不可变目录快照。事件结算不读取磁盘。任意重复 ID、未知引用、非法掉落概率、无效地图连线或不兼容结构版本都会阻止启动。
 

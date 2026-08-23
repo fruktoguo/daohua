@@ -1,0 +1,232 @@
+[
+  {
+    "id": "enemy.blade-corpse",
+    "name": "残刃尸煞",
+    "visual": {
+      "renderer": "text",
+      "source": "煞"
+    },
+    "style": "blade",
+    "level": 20,
+    "tier": 2,
+    "rank": "elite",
+    "budgetCost": 80,
+    "weights": {
+      "hp": 0.84,
+      "mp": 1.23,
+      "ad": 1.04,
+      "armor": 1.02,
+      "mres": 0.68,
+      "hit": 0.96,
+      "eva": 0.89,
+      "break": 1.11,
+      "parry": 1.11
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.broken-blade",
+        "dropChance": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.heavy-clouds",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-clouds",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.heavy-clouds",
+        "level": 1,
+        "triggerHpRatio": 0.75
+      },
+      {
+        "abilityId": "ability.taunt",
+        "level": 1,
+        "triggerHpRatio": 0.5
+      }
+    ]
+  },
+  {
+    "id": "enemy.fallen-devil-priest",
+    "name": "坠魔祭司",
+    "visual": {
+      "renderer": "text",
+      "source": "祭"
+    },
+    "style": "fiveElements",
+    "category": "spell",
+    "element": "wood",
+    "level": 22,
+    "tier": 2,
+    "rank": "elite",
+    "budgetCost": 90,
+    "weights": {
+      "hp": 0.8,
+      "mp": 1.48,
+      "ap": 2.03,
+      "armor": 0.82,
+      "mres": 0.96,
+      "hit": 0.89,
+      "eva": 0.98
+    },
+    "dropTable": [
+      {
+        "itemId": "item.soul-talisman",
+        "dropChance": 1.0,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.sha-bone",
+        "dropChance": 0.1,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.qingping-melody",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.qingping-melody",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.palm-lightning",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.pozhen-melody",
+        "level": 1,
+        "triggerHpRatio": 0.8
+      },
+      {
+        "abilityId": "ability.qingping-melody",
+        "level": 1,
+        "triggerHpRatio": 0.6
+      }
+    ]
+  },
+  {
+    "id": "enemy.falling-star-beast",
+    "name": "坠星兽",
+    "visual": {
+      "renderer": "text",
+      "source": "星"
+    },
+    "style": "blade",
+    "level": 24,
+    "tier": 2,
+    "rank": "boss",
+    "budgetCost": 200,
+    "weights": {
+      "hp": 0.67,
+      "mp": 2.36,
+      "ad": 1.04,
+      "armor": 1.04,
+      "mres": 0.82,
+      "hit": 1.0,
+      "eva": 1.06,
+      "break": 1.24,
+      "parry": 1.24
+    },
+    "dropTable": [
+      {
+        "itemId": "item.beast-fang",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.fire-feather",
+        "dropChance": 1.0,
+        "minQuantity": 2,
+        "maxQuantity": 2
+      },
+      {
+        "itemId": "item.demon-core",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.meteor-fragment",
+        "dropChance": 0.01,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.star-piercer",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.star-piercer",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.tome.heavy-clouds",
+        "dropChance": 0.001,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      },
+      {
+        "itemId": "item.fragment.heavy-clouds",
+        "dropChance": 0.02,
+        "minQuantity": 1,
+        "maxQuantity": 1
+      }
+    ],
+    "skills": [
+      {
+        "abilityId": "ability.heavy-slash",
+        "level": 1,
+        "triggerHpRatio": 1.0
+      },
+      {
+        "abilityId": "ability.chain-strike",
+        "level": 1,
+        "triggerHpRatio": 0.8
+      },
+      {
+        "abilityId": "ability.heavy-clouds",
+        "level": 1,
+        "triggerHpRatio": 0.5
+      },
+      {
+        "abilityId": "ability.star-piercer",
+        "level": 1,
+        "triggerHpRatio": 0.3
+      }
+    ]
+  }
+]

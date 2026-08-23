@@ -1,0 +1,113 @@
+[
+  {
+    "id": "ability.heavy-slash",
+    "name": "重斩",
+    "style": "sword",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 18000,
+    "castMilliseconds": 1000,
+    "manaCostRatio": 10.0,
+    "damageRatio": 1.8,
+    "flatDamage": 20,
+    "defaultTriggers": [
+      {
+        "dependency": "targetEnemy",
+        "condition": "currentHitpoints",
+        "comparator": "greaterThanOrEqual",
+        "value": 1.0,
+        "buffId": null
+      }
+    ]
+  },
+  {
+    "id": "ability.chain-strike",
+    "name": "连环",
+    "style": "sword",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 16000,
+    "castMilliseconds": 1000,
+    "manaCostRatio": 10.0,
+    "damageRatio": 1.0,
+    "flatDamage": 15,
+    "defaultTriggers": [
+      {
+        "dependency": "targetEnemy",
+        "condition": "currentHitpoints",
+        "comparator": "greaterThanOrEqual",
+        "value": 1.0,
+        "buffId": null
+      }
+    ]
+  },
+  {
+    "id": "ability.taunt",
+    "name": "嘲讽",
+    "style": "body",
+    "tier": 1,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 55000,
+    "castMilliseconds": 200,
+    "manaCostRatio": 20.0,
+    "targetType": "self",
+    "damageRatio": 0.0,
+    "defaultTriggers": [
+      {
+        "dependency": "self",
+        "condition": "currentHitpoints",
+        "comparator": "greaterThanOrEqual",
+        "value": 1.0,
+        "buffId": null
+      }
+    ]
+  },
+  {
+    "id": "ability.heavy-clouds",
+    "name": "重云",
+    "style": "sword",
+    "tier": 2,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 24000,
+    "castMilliseconds": 2000,
+    "manaCostRatio": 40.0,
+    "targetType": "allEnemies",
+    "damageRatio": 1.2,
+    "flatDamage": 40,
+    "defaultTriggers": [
+      {
+        "dependency": "targetEnemy",
+        "condition": "currentHitpoints",
+        "comparator": "greaterThanOrEqual",
+        "value": 1.0,
+        "buffId": null
+      }
+    ]
+  },
+  {
+    "id": "ability.star-piercer",
+    "name": "贯星",
+    "style": "sword",
+    "tier": 2,
+    "category": "physical",
+    "element": "none",
+    "cooldownMilliseconds": 36000,
+    "castMilliseconds": 2000,
+    "manaCostRatio": 30.0,
+    "damageRatio": 3.0,
+    "flatDamage": 50,
+    "defaultTriggers": [
+      {
+        "dependency": "targetEnemy",
+        "condition": "currentHitpoints",
+        "comparator": "greaterThanOrEqual",
+        "value": 1.0,
+        "buffId": null
+      }
+    ]
+  }
+]

@@ -59,37 +59,5 @@
       "enemy.chang-tiger"
     ],
     "battlesPerBoss": 20
-  },
-  {
-    "id": "encounter.twilight-valley",
-    "name": "坠星天坑",
-    "minBudget": 60,
-    "maxBudget": 150,
-    "randomSpawns": [
-      {
-        "enemyId": "enemy.rift-wolf",
-        "weight": 3,
-        "strength": 30
-      },
-      {
-        "enemyId": "enemy.star-flame-crow",
-        "weight": 2,
-        "strength": 35
-      },
-      {
-        "enemyId": "enemy.plunder-cultivator",
-        "weight": 2,
-        "strength": 40
-      }
-    ],
-    "maxTotalStrength": 150,
-    "eliteEnemyIds": [
-      "enemy.blade-corpse",
-      "enemy.fallen-devil-priest"
-    ],
-    "bossEnemyIds": [
-      "enemy.falling-star-beast"
-    ],
-    "battlesPerBoss": 20
   }
 ]

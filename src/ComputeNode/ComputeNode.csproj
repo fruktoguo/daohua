@@ -13,8 +13,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="../../config/game-data/*.json">
-      <Link>config/game-data/%(Filename)%(Extension)</Link>
+    <Content Include="../../config/game-data/**/*.json">
+      <Link>config/game-data/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

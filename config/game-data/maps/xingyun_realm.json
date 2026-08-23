@@ -1,0 +1,220 @@
+[
+  {
+    "id": "map.starfall-domain",
+    "name": "星陨异境",
+    "description": "天穹被天外陨星撕裂的狂暴异界。焦土散发着荧光煞气，草木扭曲变异，乃是叩开仙门、踏入真正修仙界的试炼凶地。",
+    "backgroundSeed": 91402,
+    "nodes": [
+      {
+        "id": "node.astral-rift",
+        "name": "裂天界隙",
+        "description": "天空撕裂出幽紫裂痕的界域边缘，罡风呼啸，是踏入星陨异境的起点。",
+        "x": 15,
+        "y": 50,
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildings": [
+          {
+            "id": "building.astral-monolith",
+            "name": "断裂界碑",
+            "kind": "building",
+            "description": "古修立下的界域警示石碑，已被紫雷劈裂。",
+            "effect": "界域边界"
+          }
+        ]
+      },
+      {
+        "id": "node.carrion-tomb",
+        "name": "腐生古冢",
+        "description": "古修残骨与腐朽道袍堆叠之地，死气深重，吸纳死气伴生的伴灵花在此妖艳绽放。",
+        "x": 32,
+        "y": 75,
+        "availableActionIds": [
+          "explore.gather-banling-flower"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildings": [
+          {
+            "id": "building.carrion-monument",
+            "name": "残破古冢",
+            "kind": "building",
+            "description": "被盗掘一空的古修墓穴，死气萦绕。",
+            "effect": "伴灵花采摘点"
+          }
+        ]
+      },
+      {
+        "id": "node.scorched-pines",
+        "name": "畸木焦林",
+        "description": "被天外星火烧焦的黑木林，枝干扭曲如人肢，吸收星煞之气的引灵松在此生长。",
+        "x": 35,
+        "y": 25,
+        "availableActionIds": [
+          "explore.chop-yinlingsong"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildings": [
+          {
+            "id": "building.scorched-branches",
+            "name": "枯焦残木",
+            "kind": "building",
+            "description": "焦黑如碳的古树桩，散发淡淡异香。",
+            "effect": "引灵松采伐点"
+          }
+        ]
+      },
+      {
+        "id": "node.fluorite-abyss",
+        "name": "荧石铜渊",
+        "description": "裂谷深处散发着幽绿荧光与滚烫地热的矿脉，伴生有高温赤铜矿石。",
+        "x": 60,
+        "y": 80,
+        "availableActionIds": [
+          "explore.mine-crimson-copper"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildings": [
+          {
+            "id": "building.copper-chasm",
+            "name": "荧光地缝",
+            "kind": "building",
+            "description": "滚烫矿石裸露的岩层裂隙。",
+            "effect": "赤铜开采点"
+          }
+        ]
+      },
+      {
+        "id": "node.blood-pool",
+        "name": "冥煞血池",
+        "description": "地脉煞气汇聚而成的污血潭，掠灵邪修与嗜血妖物在此祭炼魔煞法器。",
+        "x": 55,
+        "y": 45,
+        "cultivationMultiplier": 0.8,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildings": [
+          {
+            "id": "building.blood-altar",
+            "name": "白骨血坛",
+            "kind": "building",
+            "description": "用修士头骨垒砌的邪法祭台。",
+            "effect": "邪修巢穴"
+          }
+        ]
+      },
+      {
+        "id": "node.bone-pit",
+        "name": "白骨荒坑",
+        "description": "古战场万人坑遗迹，煞气化形为残刃尸煞与尸兵，四处游荡游猎生者。",
+        "x": 75,
+        "y": 65,
+        "cultivationMultiplier": 0.8,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildings": [
+          {
+            "id": "building.bone-mound",
+            "name": "乱刃骨堆",
+            "kind": "building",
+            "description": "无数锈蚀断刃插在骨堆之上。",
+            "effect": "尸煞巢穴"
+          }
+        ]
+      },
+      {
+        "id": "node.meteor-crater",
+        "name": "坠星天坑",
+        "description": "天外陨星坠落砸出的万丈巨坑，核心星核灼烧万物，坠星异兽盘踞在此。",
+        "x": 88,
+        "y": 35,
+        "cultivationMultiplier": 0.7,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "buildings": [
+          {
+            "id": "building.star-core",
+            "name": "陨星核心",
+            "kind": "building",
+            "description": "散发灼热星芒的天外奇石，异兽盘踞其上。",
+            "effect": "关底领主巢穴"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge.rift-tomb",
+        "fromNodeId": "node.astral-rift",
+        "toNodeId": "node.carrion-tomb",
+        "durationSeconds": 12
+      },
+      {
+        "id": "edge.rift-pines",
+        "fromNodeId": "node.astral-rift",
+        "toNodeId": "node.scorched-pines",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.tomb-abyss",
+        "fromNodeId": "node.carrion-tomb",
+        "toNodeId": "node.fluorite-abyss",
+        "durationSeconds": 15
+      },
+      {
+        "id": "edge.pines-blood",
+        "fromNodeId": "node.scorched-pines",
+        "toNodeId": "node.blood-pool",
+        "durationSeconds": 13
+      },
+      {
+        "id": "edge.tomb-blood",
+        "fromNodeId": "node.carrion-tomb",
+        "toNodeId": "node.blood-pool",
+        "durationSeconds": 16
+      },
+      {
+        "id": "edge.abyss-bone",
+        "fromNodeId": "node.fluorite-abyss",
+        "toNodeId": "node.bone-pit",
+        "durationSeconds": 11
+      },
+      {
+        "id": "edge.blood-bone",
+        "fromNodeId": "node.blood-pool",
+        "toNodeId": "node.bone-pit",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.pines-crater",
+        "fromNodeId": "node.scorched-pines",
+        "toNodeId": "node.meteor-crater",
+        "durationSeconds": 18
+      },
+      {
+        "id": "edge.bone-crater",
+        "fromNodeId": "node.bone-pit",
+        "toNodeId": "node.meteor-crater",
+        "durationSeconds": 16
+      }
+    ]
+  }
+]

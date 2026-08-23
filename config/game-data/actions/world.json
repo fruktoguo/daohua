@@ -1,0 +1,11 @@
+[
+  {
+    "id": "world.travel",
+    "name": "赶路",
+    "description": "沿已规划的山道前往目标地点。",
+    "type": "exploration",
+    "durationSeconds": 1,
+    "executionKind": "travel",
+    "hiddenFromCatalog": true
+  }
+]

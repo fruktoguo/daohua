@@ -1,0 +1,38 @@
+[
+  {
+    "id": "combat.hunt-qi-beast",
+    "name": "山门试炼",
+    "description": "在山门或险峰要道磨砺武艺道法，驱赶林间灵物并接受守山试炼。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.twilight-pass",
+    "availableNodeIds": [
+      "node.yunxi-village",
+      "node.shuyu-brook",
+      "node.herb-valley",
+      "node.peach-forest",
+      "node.rock-beach",
+      "node.cloud-gate",
+      "node.cloud-peak"
+    ]
+  },
+  {
+    "id": "combat.sweep-twilight-valley",
+    "name": "清剿 坠星异境",
+    "description": "深入异象肆虐的坠星禁区，迎战妖狼、火鸦与变异尸煞，直面坠星异兽。",
+    "type": "combat",
+    "durationSeconds": 0,
+    "executionKind": "combatEncounter",
+    "combatEncounterId": "encounter.twilight-valley",
+    "availableNodeIds": [
+      "node.astral-rift",
+      "node.carrion-tomb",
+      "node.scorched-pines",
+      "node.fluorite-abyss",
+      "node.blood-pool",
+      "node.bone-pit",
+      "node.meteor-crater"
+    ]
+  }
+]

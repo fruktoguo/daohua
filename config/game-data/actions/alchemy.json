@@ -1,0 +1,57 @@
+[
+  {
+    "id": "alchemy.refine-qi-pill",
+    "name": "引气丹",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 12,
+    "inputs": {
+      "item.ningxue-grass": 3
+    },
+    "outputs": {
+      "item.qi-gathering-pill": 1
+    }
+  },
+  {
+    "id": "alchemy.refine-zhixue-powder",
+    "name": "止血散",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.herb-essence": 1,
+      "item.ningxue-grass": 1
+    },
+    "outputs": {
+      "item.zhixue-powder": 1
+    }
+  },
+  {
+    "id": "alchemy.refine-shunqi-pill",
+    "name": "顺气丸",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.herb-essence": 1,
+      "item.banling-flower": 1
+    },
+    "outputs": {
+      "item.shunqi-pill": 1
+    }
+  },
+  {
+    "id": "alchemy.refine-tongmai-pill",
+    "name": "通脉丹",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.banling-essence": 2,
+      "item.demon-core": 1
+    },
+    "outputs": {
+      "item.tongmai-pill": 1
+    }
+  }
+]

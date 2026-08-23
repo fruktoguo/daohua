@@ -58,11 +58,36 @@ var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
 };
 options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 
-await WriteAsync("manifest.json", new GameDataManifest(1, "2026.08.10.2"));
-await WriteAsync("actions.json", ActionCatalog.AllIncludingHidden.Select(ToActionConfig).ToArray());
-await WriteAsync("items.json", ItemCatalog.All.Select(ToItemConfig).ToArray());
-await WriteAsync("abilities.json", CombatCatalog.AllAbilities.Select(ToAbilityConfig).ToArray());
-await WriteAsync("equipment.json", CombatCatalog.AllEquipment.Select(ToEquipmentConfig).ToArray());
+await WriteAsync("manifest.json", new GameDataManifest(1, "2026.08.10.3"));
+
+// 1. 行动分类导出
+var actions = ActionCatalog.AllIncludingHidden.ToArray();
+await WriteAsync("actions/cultivation.json", actions.Where(a => a.Type == ActionType.Cultivation).Select(ToActionConfig).ToArray());
+await WriteAsync("actions/gathering.json", actions.Where(a => a.Id.StartsWith("explore.")).Select(ToActionConfig).ToArray());
+await WriteAsync("actions/crafting.json", actions.Where(a => a.Id.StartsWith("craft.")).Select(ToActionConfig).ToArray());
+await WriteAsync("actions/alchemy.json", actions.Where(a => a.Id.StartsWith("alchemy.")).Select(ToActionConfig).ToArray());
+await WriteAsync("actions/forging.json", actions.Where(a => a.Id.StartsWith("forge.")).Select(ToActionConfig).ToArray());
+await WriteAsync("actions/combat.json", actions.Where(a => a.Type == ActionType.Combat || a.Id.StartsWith("combat.")).Select(ToActionConfig).ToArray());
+await WriteAsync("actions/world.json", actions.Where(a => a.Id == "world.travel").Select(ToActionConfig).ToArray());
+
+// 2. 物品分类导出
+var items = ItemCatalog.All.ToArray();
+await WriteAsync("items/materials.json", items.Where(i => i.Kind == ItemKind.Material || i.Kind == ItemKind.Currency || i.Id.StartsWith("currency.")).Select(ToItemConfig).ToArray());
+await WriteAsync("items/pills.json", items.Where(i => i.Kind == ItemKind.Consumable && i.Category != ItemCategory.Manual).Select(ToItemConfig).ToArray());
+await WriteAsync("items/manuals.json", items.Where(i => i.Category == ItemCategory.Manual || i.Id.Contains(".tome.") || i.Id.Contains(".fragment.")).Select(ToItemConfig).ToArray());
+
+// 3. 技能分类导出
+var abilities = CombatCatalog.AllAbilities.ToArray();
+await WriteAsync("abilities/physical_abilities.json", abilities.Where(a => a.Category == DamageCategory.Physical).Select(ToAbilityConfig).ToArray());
+await WriteAsync("abilities/spell_abilities.json", abilities.Where(a => a.Category == DamageCategory.Spell).Select(ToAbilityConfig).ToArray());
+
+// 4. 装备分类导出
+var equipment = CombatCatalog.AllEquipment.ToArray();
+await WriteAsync("equipment/weapons.json", equipment.Where(e => e.Slot is EquipmentSlot.Weapon or EquipmentSlot.TwoHand).Select(ToEquipmentConfig).ToArray());
+await WriteAsync("equipment/armors.json", equipment.Where(e => e.Slot is EquipmentSlot.Armor or EquipmentSlot.Head or EquipmentSlot.Legs or EquipmentSlot.Boots or EquipmentSlot.OffHand).Select(ToEquipmentConfig).ToArray());
+await WriteAsync("equipment/accessories.json", equipment.Where(e => e.Slot is EquipmentSlot.Ring or EquipmentSlot.Neck or EquipmentSlot.Trinket or EquipmentSlot.Talisman).Select(ToEquipmentConfig).ToArray());
+
+// 5. 怪物分类导出
 var encounters = CombatCatalog.AllEncounters.ToArray();
 var monsters = encounters
     .SelectMany(encounter => new[] { encounter.Enemy }
@@ -73,9 +98,19 @@ var monsters = encounters
     .OrderBy(monster => monster.Id, StringComparer.Ordinal)
     .Select(ToCombatantConfig)
     .ToArray();
-await WriteAsync("monsters.json", monsters);
-await WriteAsync("encounters.json", encounters.Select(ToEncounterConfig).ToArray());
-await WriteAsync("maps.json", WorldCatalog.All.Select(ToMapConfig).ToArray());
+await WriteAsync("monsters/tier1_minions.json", monsters.Where(m => (m.Tier ?? 1) == 1 && m.Rank == null).ToArray());
+await WriteAsync("monsters/tier1_elites_bosses.json", monsters.Where(m => (m.Tier ?? 1) == 1 && m.Rank != null).ToArray());
+await WriteAsync("monsters/tier2_minions.json", monsters.Where(m => m.Tier == 2 && m.Rank == null).ToArray());
+await WriteAsync("monsters/tier2_elites_bosses.json", monsters.Where(m => m.Tier == 2 && m.Rank != null).ToArray());
+
+// 6. 遭遇分类导出
+await WriteAsync("encounters/tier1_encounters.json", encounters.Where(e => !e.Id.Contains("valley") && !e.Id.Contains("starfall")).Select(ToEncounterConfig).ToArray());
+await WriteAsync("encounters/tier2_encounters.json", encounters.Where(e => e.Id.Contains("valley") || e.Id.Contains("starfall")).Select(ToEncounterConfig).ToArray());
+
+// 7. 地图分类导出
+var maps = WorldCatalog.All.ToArray();
+await WriteAsync("maps/qingyun_mountain.json", maps.Where(m => m.Id.Contains("qingyun")).Select(ToMapConfig).ToArray());
+await WriteAsync("maps/xingyun_realm.json", maps.Where(m => !m.Id.Contains("qingyun")).Select(ToMapConfig).ToArray());
 
 Console.WriteLine($"游戏数据已导出到 {outputDirectory}");
 return 0;
@@ -83,9 +118,14 @@ return 0;
 /// <summary>
 /// 将配置对象序列化为格式化 JSON 文件并写入磁盘。
 /// </summary>
-async Task WriteAsync<T>(string fileName, T value)
+async Task WriteAsync<T>(string relativePath, T value)
 {
-    var path = Path.Combine(outputDirectory, fileName);
+    var path = Path.Combine(outputDirectory, relativePath);
+    var dir = Path.GetDirectoryName(path);
+    if (!string.IsNullOrEmpty(dir))
+    {
+        Directory.CreateDirectory(dir);
+    }
     await using var stream = File.Create(path);
     await JsonSerializer.SerializeAsync(stream, value, options);
     await stream.WriteAsync("\n"u8.ToArray());

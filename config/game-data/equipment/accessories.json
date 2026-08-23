@@ -1,0 +1,58 @@
+[
+  {
+    "id": "equipment.shouya-pendant",
+    "name": "兽牙坠",
+    "description": "以凶兽獠牙穿系而成的粗犷项坠，野性十足。",
+    "slot": "trinket",
+    "baseStatRatios": {
+      "physicalAttack": 0.1
+    },
+    "flatStats": {
+      "criticalChance": 0.04,
+      "hitpointRegen": 2
+    }
+  },
+  {
+    "id": "equipment.taomu-talisman",
+    "name": "桃木符",
+    "description": "百年阳坡桃木雕刻而成的辟邪木符，散发着草木幽香。",
+    "slot": "trinket",
+    "baseStatRatios": {
+      "spellAttack": 0.1
+    },
+    "flatStats": {
+      "spellResistance": 4,
+      "manapointRegen": 2
+    }
+  },
+  {
+    "id": "equipment.chiwen-ring",
+    "name": "赤纹戒",
+    "description": "赤红铜精打磨而成的指环，戒面铭刻着古朴赤龙纹样。",
+    "slot": "trinket",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "physicalAttack": 0.16
+    },
+    "flatStats": {
+      "criticalChance": 0.04,
+      "hitpointRegen": 3
+    }
+  },
+  {
+    "id": "equipment.juling-pendant",
+    "name": "聚灵佩",
+    "description": "青翠灵松晶雕琢而成的通灵玉佩，常年萦绕着淡淡清气。",
+    "slot": "trinket",
+    "tier": 2,
+    "quality": 2,
+    "baseStatRatios": {
+      "spellAttack": 0.16
+    },
+    "flatStats": {
+      "spellResistance": 4,
+      "manapointRegen": 3
+    }
+  }
+]

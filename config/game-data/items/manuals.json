@@ -1,0 +1,332 @@
+[
+  {
+    "id": "item.tome.heavy-slash",
+    "name": "《重斩秘籍》",
+    "description": "古朴厚重的蓝皮线装册页，字迹苍劲凌厉，隐有破空刀意。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.heavy-slash",
+    "name": "《重斩·残卷》",
+    "description": "边缘焦黑的古籍残页，墨迹斑驳但笔力沉雄。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.chain-strike",
+    "name": "《连环秘籍》",
+    "description": "记录连绵发力法门的武道典籍，图谱招式如水银泻地。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.chain-strike",
+    "name": "《连环·残卷》",
+    "description": "字迹略显模糊的招式图谱残篇，依稀可见连绵招法痕迹。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.palm-lightning",
+    "name": "《掌心雷秘籍》",
+    "description": "以雷击木皮为封面的道门符诀典籍，字里行间隐有电芒跃动。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.palm-lightning",
+    "name": "《掌心雷·残卷》",
+    "description": "残缺不全的引雷符诀断页，抚之微有麻酥触感。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.blazing-blast",
+    "name": "《轰炎秘籍》",
+    "description": "绘有炽烈火纹的朱红古卷，卷轴触手灼热。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.blazing-blast",
+    "name": "《轰炎·残卷》",
+    "description": "带有星火焦痕的火法残片，残存着微弱的热力。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.taunt",
+    "name": "《嘲讽秘籍》",
+    "description": "记载引敌锁神之术的杂家古册，言语乖张奇诡。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 100,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.taunt",
+    "name": "《嘲讽·残卷》",
+    "description": "撕裂破损的书页碎屑，绘着神态夸张的引敌图谱。",
+    "kind": "consumable",
+    "category": "manual",
+    "sellPrice": 10,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.heavy-clouds",
+    "name": "《重云秘籍》",
+    "description": "封皮如云海翻涌的玄妙道卷，内页以云篆古字书就。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.heavy-clouds",
+    "name": "《重云·残卷》",
+    "description": "轻薄如烟云的道法残页，字迹若隐若现。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.qingping-melody",
+    "name": "《清平乐秘籍》",
+    "description": "娟秀工整的琴谱仙卷，翻阅间隐有空灵琴音绕梁。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.qingping-melody",
+    "name": "《清平乐·残卷》",
+    "description": "残缺的五音宫商琴谱残片，墨色淡雅清丽。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.lightning-attraction",
+    "name": "《雷光引秘籍》",
+    "description": "紫绫包边的上乘雷法真经，通篇流转着纯正的九霄雷意。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.lightning-attraction",
+    "name": "《雷光引·残卷》",
+    "description": "被电芒烧蚀半角的高阶雷经残页，雷纹隐现。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.pozhen-melody",
+    "name": "《破阵子秘籍》",
+    "description": "铁划银钩写就的金戈战曲秘本，翻之顿觉杀伐之气扑面。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.pozhen-melody",
+    "name": "《破阵子·残卷》",
+    "description": "染有点点干涸血迹的战曲谱篇残页，杀气逼人。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.tome.star-piercer",
+    "name": "《贯星秘籍》",
+    "description": "以银丝装订的天阶箭道真解，星芒内蕴，锋芒毕露。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 250,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  },
+  {
+    "id": "item.fragment.star-piercer",
+    "name": "《贯星·残卷》",
+    "description": "带有星辰荧光的道法残页，纸质坚硬似玉。",
+    "kind": "consumable",
+    "category": "manual",
+    "tier": 2,
+    "sellPrice": 25,
+    "consumable": {
+      "usableInActionTypes": [
+        "cultivation",
+        "exploration",
+        "alchemy",
+        "combat"
+      ]
+    }
+  }
+]

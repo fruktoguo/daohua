@@ -1,0 +1,223 @@
+[
+  {
+    "id": "item.ningxue-grass",
+    "name": "凝血草",
+    "description": "生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。",
+    "kind": "material",
+    "category": "herb",
+    "sellPrice": 5
+  },
+  {
+    "id": "item.peach-wood",
+    "name": "桃木",
+    "description": "向阳坡地采伐的百年老木，木质坚致密实，隐泛淡淡纯阳辟邪之意。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 5
+  },
+  {
+    "id": "item.dark-iron",
+    "name": "乌铁",
+    "description": "深山老矿采掘出的未淬原铁，色沉如墨，质地沉重坚硬。",
+    "kind": "material",
+    "category": "mineral",
+    "sellPrice": 5
+  },
+  {
+    "id": "item.beast-hide",
+    "name": "兽皮",
+    "description": "凡间野兽异变后留下的粗糙兽皮，皮质坚韧厚密。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 6
+  },
+  {
+    "id": "item.beast-bone",
+    "name": "兽骨",
+    "description": "山野猛兽身上的坚硬兽骨，骨质密实惨白。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 6
+  },
+  {
+    "id": "item.morning-dew",
+    "name": "晨露",
+    "description": "破晓清晨凝结于山涧草木叶尖的无根甘露，清澈明净，不染尘埃。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 8
+  },
+  {
+    "id": "item.broken-spirit-core",
+    "name": "破碎灵核",
+    "description": "初具灵机的精怪异兽体内残留的微弱灵核碎屑，晶芒微弱。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 12
+  },
+  {
+    "id": "item.demon-dan",
+    "name": "妖丹",
+    "description": "深山凶兽体内凝结而成的浑浊兽丹，表面隐现血色煞纹。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 50
+  },
+  {
+    "id": "item.sha-fang",
+    "name": "煞齿",
+    "description": "凶兽口中浸透血气的森白尖齿，锋刃如匕，透着阵阵森冷凶煞。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 50
+  },
+  {
+    "id": "item.banling-flower",
+    "name": "伴灵花",
+    "description": "生长在悬崖灵泉旁的幽蓝野花，花瓣常年吞吐微光，暗香浮动。",
+    "kind": "material",
+    "category": "herb",
+    "tier": 2,
+    "sellPrice": 15
+  },
+  {
+    "id": "item.yinlingsong-wood",
+    "name": "引灵松",
+    "description": "扎根于绝壁云海间的苍劲古松，松针苍翠，自生引聚清风灵韵之势。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 15
+  },
+  {
+    "id": "item.crimson-copper",
+    "name": "赤铜",
+    "description": "伴生于灵脉浅层的赤红矿石，触手温热，断面隐现熔岩纹理。",
+    "kind": "material",
+    "category": "mineral",
+    "tier": 2,
+    "sellPrice": 15
+  },
+  {
+    "id": "item.beast-fang",
+    "name": "兽牙",
+    "description": "荒野妖狼口中脱落的锋锐利齿，尖端坚硬如铁。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 18
+  },
+  {
+    "id": "item.fire-feather",
+    "name": "火羽",
+    "description": "灵禽异鸟身上的赤红翎羽，羽丝流转着点点火光星芒。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 18
+  },
+  {
+    "id": "item.soul-talisman",
+    "name": "残魄灵符",
+    "description": "残破泛黄的古旧符纸，朱砂符印斑驳，仍隐有灵力回荡。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 20
+  },
+  {
+    "id": "item.broken-blade",
+    "name": "残刃",
+    "description": "战场遗迹中出土的古战断刃，虽缺锋芒，却自有一股肃杀戾气。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 60
+  },
+  {
+    "id": "item.sha-bone",
+    "name": "煞骨",
+    "description": "历经魔煞侵蚀的苍黑异骨，触之刺骨冰寒。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 60
+  },
+  {
+    "id": "item.demon-core",
+    "name": "妖核",
+    "description": "异种古兽心脉凝成的晶核，内里流转着狂暴深邃的星陨灵息。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 150
+  },
+  {
+    "id": "item.meteor-fragment",
+    "name": "陨星破片",
+    "description": "自九天星穹坠落的大地陨铁碎片，表面布满星火熔铸的焦痕。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 150
+  },
+  {
+    "id": "item.refined-iron",
+    "name": "百炼铁",
+    "description": "经凡火千锤百炼去除凡浊的原铁精料，铁质匀密坚固。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 18
+  },
+  {
+    "id": "item.peach-wood-crystal",
+    "name": "桃木晶",
+    "description": "自百年老桃木中淬炼凝结的琥珀状灵晶，木香淡雅，通体晶莹。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 18
+  },
+  {
+    "id": "item.herb-essence",
+    "name": "草木精华",
+    "description": "萃取百草朝露精粹而成的碧绿药露，香气清纯，生机内蕴。",
+    "kind": "material",
+    "category": "material",
+    "sellPrice": 20
+  },
+  {
+    "id": "item.refined-copper",
+    "name": "赤铜精",
+    "description": "赤铜经地火淬炼出的赤金铜精，光泽流转，致密纯正。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 50
+  },
+  {
+    "id": "item.spirit-pine-crystal",
+    "name": "灵松晶",
+    "description": "引灵松树芯灵髓凝出的青翠松晶，晶莹透亮，内含一缕清灵松风。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 50
+  },
+  {
+    "id": "item.banling-essence",
+    "name": "伴灵精华",
+    "description": "伴灵花与山泉淬炼出的幽蓝清液，纯澈剔透，灵机盎然。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 55
+  },
+  {
+    "id": "currency.spirit-stone",
+    "name": "灵石",
+    "description": "蕴含纯净天地灵气的六角晶石，光华内敛。",
+    "kind": "currency",
+    "category": "currency",
+    "sellPrice": 1
+  }
+]

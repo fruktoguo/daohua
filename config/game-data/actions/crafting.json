@@ -1,0 +1,82 @@
+[
+  {
+    "id": "craft.refine-iron",
+    "name": "百炼铁",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.dark-iron": 3
+    },
+    "outputs": {
+      "item.refined-iron": 1
+    }
+  },
+  {
+    "id": "craft.refine-peach-wood-crystal",
+    "name": "桃木晶",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood": 3
+    },
+    "outputs": {
+      "item.peach-wood-crystal": 1
+    }
+  },
+  {
+    "id": "craft.extract-herb-essence",
+    "name": "草木精华",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.ningxue-grass": 2,
+      "item.morning-dew": 1
+    },
+    "outputs": {
+      "item.herb-essence": 1
+    }
+  },
+  {
+    "id": "craft.refine-copper",
+    "name": "赤铜精",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.crimson-copper": 3
+    },
+    "outputs": {
+      "item.refined-copper": 1
+    }
+  },
+  {
+    "id": "craft.refine-spirit-pine-crystal",
+    "name": "灵松晶",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.yinlingsong-wood": 3
+    },
+    "outputs": {
+      "item.spirit-pine-crystal": 1
+    }
+  },
+  {
+    "id": "craft.extract-banling-essence",
+    "name": "伴灵精华",
+    "description": "",
+    "type": "alchemy",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.banling-flower": 2,
+      "item.morning-dew": 1
+    },
+    "outputs": {
+      "item.banling-essence": 1
+    }
+  }
+]
