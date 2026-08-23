@@ -8,6 +8,7 @@ import {
   PercentValue,
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
   BASELINE_COMBAT_ATTRIBUTES,
+  getCumulativeExpForLevel,
   calculateRootLevelAndProgress,
   calculateRealmInfo,
   calculateRealmProgress,
@@ -63,16 +64,16 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     const consciousnessLevel = Math.floor(Math.max(10, loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识 10
     const agilityLevel = Math.floor(Math.max(10, loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法 10
 
-    // 格式化经验进度：例如 5800/2.71万
+    // 格式化经验进度：当前等级初始 0 经验，升级所需经验 = 下一级累计经验 - 当前级累计经验 (例如 0/2.71万)
     const getProgress = (level: number) => {
-      const totalExp = 100.0 * Math.pow(Math.max(1.0, level) - 1.0, 3.0) + (level * 580.0)
-      const res = calculateRootLevelAndProgress(totalExp)
-      const cur = formatNumber(Math.floor(res.currentProgress))
-      const req = formatNumber(Math.floor(res.levelRequirement))
+      const baseExp = getCumulativeExpForLevel(level)
+      const nextExp = getCumulativeExpForLevel(level + 1.0)
+      const req = Math.max(1, Math.floor(nextExp - baseExp))
+      const cur = 0
       return {
-        current: Math.floor(res.currentProgress),
-        max: Math.floor(res.levelRequirement),
-        text: `${cur}/${req}`,
+        current: cur,
+        max: req,
+        text: `${formatNumber(cur)}/${formatNumber(req)}`,
       }
     }
 
