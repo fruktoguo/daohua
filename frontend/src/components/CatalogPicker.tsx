@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { resolveItemCategoryLabel } from '../game/ids'
 import { useT } from '../i18n'
 import { EffectTooltipTarget, type EffectTooltipContent } from './EffectTooltip'
 import { Modal } from './Modal'
@@ -72,10 +73,13 @@ export function CatalogPicker({
   // 根据关键字对标题、副标题与分类进行即时过滤
   const visibleOptions = useMemo(() => {
     if (!normalizedQuery) return options
-    return options.filter(option => `${option.label} ${option.subtitle ?? ''} ${option.category ?? ''}`
-      .toLocaleLowerCase('zh-CN')
-      .includes(normalizedQuery))
-  }, [normalizedQuery, options])
+    return options.filter(option => {
+      const catLabel = resolveItemCategoryLabel(option.category, t)
+      return `${option.label} ${option.subtitle ?? ''} ${option.category ?? ''} ${catLabel}`
+        .toLocaleLowerCase('zh-CN')
+        .includes(normalizedQuery)
+    })
+  }, [normalizedQuery, options, t])
 
   // 打开弹窗时清空上一次的搜索关键字
   useEffect(() => {
@@ -128,7 +132,7 @@ export function CatalogPicker({
             role="option"
             type="button"
           >
-            {option.category && <span className="catalog-picker-corner catalog-picker-corner--top-left">{option.category}</span>}
+            {option.category && <span className="catalog-picker-corner catalog-picker-corner--top-left">{resolveItemCategoryLabel(option.category, t)}</span>}
             {value === option.id && <span className="catalog-picker-corner catalog-picker-corner--top-right" aria-label={t('market.picker.selectedAria')}>{t('market.picker.selectedTag')}</span>}
             <span className="catalog-picker-copy">
               <strong>{option.label}</strong>

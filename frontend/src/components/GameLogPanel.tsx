@@ -1,5 +1,5 @@
 import { memo, useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { describeAbility, formatNumber } from '../game/format'
+import { DAMAGE_CATEGORY_NAMES, ELEMENT_NAMES, describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
@@ -81,8 +81,8 @@ function EnemyReference({
 
   if (encounter || enemy) {
     const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = []
-    if (enemy?.category) stats.push({ label: '大类', value: enemy.category, tone: 'gold' })
-    if (enemy?.element && enemy.element !== 'none') stats.push({ label: '五行', value: enemy.element, tone: 'purple' })
+    if (enemy?.category) stats.push({ label: '大类', value: DAMAGE_CATEGORY_NAMES[enemy.category] ?? enemy.category, tone: 'gold' })
+    if (enemy?.element && enemy.element !== 'none') stats.push({ label: '五行', value: ELEMENT_NAMES[enemy.element] ?? enemy.element, tone: 'purple' })
     if (enemy?.maxHitpoints) stats.push({ label: '气血', value: formatNumber(enemy.maxHitpoints), tone: 'danger' })
     if (enemy?.maxManapoints) stats.push({ label: '真元', value: formatNumber(enemy.maxManapoints), tone: 'qi' })
 

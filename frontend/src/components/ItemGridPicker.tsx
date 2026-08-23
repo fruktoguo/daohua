@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useId, useMemo, useState } from 'react'
 import { formatNumber } from '../game/format'
-import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
 import { useT, type TFunction } from '../i18n'
 import type { ItemDefinition } from '../game/types'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
@@ -49,14 +49,14 @@ interface ItemGridPickerProps {
 }
 
 // 未注册物品的兜底元数据：名称/品类/描述保留服务端数据。
-function fallbackMetadata(item: ItemPickerEntry, _t: TFunction): ItemMetadata {
+function fallbackMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
   const tier = Math.max(1, item.tier)
   const grade = resolveItemGrade(tier)
   return {
     label: item.name,
     glyph: item.name.slice(0, 1),
     tone: 'gold',
-    category: item.category,
+    category: resolveItemCategoryLabel(item.category, t),
     rarity: grade.rarity,
     rarityLabel: grade.label,
     level: tier,
@@ -70,7 +70,7 @@ function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
   return withItemGrade({
     ...registered,
     label: item.name || registered.label,
-    category: item.category || registered.category,
+    category: resolveItemCategoryLabel(item.category || registered.category, t),
     level: item.tier > 0 ? item.tier : registered.level,
     description: item.description || registered.description,
   }, item.tier > 0 ? item.tier : registered.level ?? 1)
@@ -108,7 +108,7 @@ function ItemGridCell({
       >
         <ItemTile
           amount={item.amount}
-          category={item.category}
+          category={resolveItemCategoryLabel(item.category, t)}
           className="item-grid-picker-cell"
           level={metadata.level}
           name={item.name}
@@ -141,10 +141,13 @@ export function ItemGridPicker({
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
   const visibleItems = useMemo(() => {
     if (!normalizedQuery) return items
-    return items.filter(item => `${item.name} ${item.category} ${item.description}`
-      .toLocaleLowerCase('zh-CN')
-      .includes(normalizedQuery))
-  }, [items, normalizedQuery])
+    return items.filter(item => {
+      const catLabel = resolveItemCategoryLabel(item.category, t)
+      return `${item.name} ${item.category} ${catLabel} ${item.description}`
+        .toLocaleLowerCase('zh-CN')
+        .includes(normalizedQuery)
+    })
+  }, [items, normalizedQuery, t])
 
   useEffect(() => {
     if (open) setQuery('')
@@ -271,7 +274,7 @@ export function ItemUseSlot({
         >
           <ItemTile
             amount={item.amount}
-            category={item.category}
+            category={resolveItemCategoryLabel(item.category, t)}
             className="item-use-slot-cell"
             level={metadata.level}
             name={item.name}

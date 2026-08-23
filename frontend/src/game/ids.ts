@@ -1,4 +1,4 @@
-import { getT } from '../i18n'
+import { getT, type TFunction } from '../i18n'
 import type { ActionDefinition, ActionType } from './types'
 
 /**
@@ -160,10 +160,33 @@ export interface ItemMetadata {
  * 物品分类多语言键枚举
  */
 export type ItemCategoryKey =
-  | 'material' | 'pill' | 'currency' | 'resource' | 'spiritFood' | 'spiritDrink'
-  | 'talisman' | 'loot' | 'rareLoot' | 'manualFragment' | 'explorationSupply'
-  | 'alchemySupply' | 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket'
-  | 'mainHandImplement' | 'twoHandImplement'
+  | 'general' | 'material' | 'herb' | 'mineral' | 'pill' | 'food' | 'drink'
+  | 'talisman' | 'manual' | 'equipment' | 'chest' | 'currency' | 'resource'
+  | 'spiritFood' | 'spiritDrink' | 'loot' | 'rareLoot' | 'manualFragment'
+  | 'explorationSupply' | 'alchemySupply' | 'weapon' | 'head' | 'armor'
+  | 'legs' | 'boots' | 'trinket' | 'mainHandImplement' | 'twoHandImplement'
+
+/**
+ * 解析物品分类的多语言显示文本
+ * @param category 分类键名或原始文本
+ * @param t 可选的本地化函数（默认取全局 getT）
+ */
+export function resolveItemCategoryLabel(category?: string | null, t?: TFunction): string {
+  if (!category) return (t ?? getT())('game.category.general')
+  const fn = t ?? getT()
+  const key = `game.category.${category}`
+  const translated = fn(key)
+  if (translated !== key) {
+    return translated
+  }
+  const lower = category.toLowerCase()
+  const lowerKey = `game.category.${lower}`
+  const lowerTranslated = fn(lowerKey)
+  if (lowerTranslated !== lowerKey) {
+    return lowerTranslated
+  }
+  return category
+}
 
 /**
  * 物品元数据纯数据核心
@@ -276,7 +299,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
     label: t(`game.item.${itemId}.label`),
     glyph: core.glyph,
     tone: core.tone,
-    category: t(`game.category.${core.category}`),
+    category: resolveItemCategoryLabel(core.category, t),
     rarity: core.rarity,
     rarityLabel: t(`game.rarityLabel.${core.rarityLabelOverride ?? core.rarity}`),
     level: core.level,

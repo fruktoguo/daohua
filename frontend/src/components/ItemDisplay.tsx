@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react'
 import { describeCombatTrigger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { resolveItemCategoryLabel, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { getT, useT } from '../i18n'
 import type { CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
@@ -47,13 +47,14 @@ interface ItemTileProps {
 }
 
 function fallbackMetadata(itemId: string): ItemMetadata {
+  const t = getT()
   return {
     label: itemId,
     glyph: '·',
     tone: 'gold',
-    category: '物品',
+    category: resolveItemCategoryLabel(undefined, t),
     rarity: 'mundane',
-    rarityLabel: '未知',
+    rarityLabel: t('game.grade.mundane'),
     description: '',
     source: '',
     usage: '',
@@ -103,7 +104,7 @@ export function ItemTooltipTarget({
     ? {
         ...baseMetadata,
         label: definition.name,
-        category: definition.category,
+        category: resolveItemCategoryLabel(definition.category, t),
         level: definition.tier,
         description: definition.description,
       }
@@ -116,7 +117,7 @@ export function ItemTooltipTarget({
   const effectLines = [...describeItemEffects(definition), ...describeEquipmentEffects(equipment)]
 
   const stats: { label: string; value: ReactNode; tone?: FloatingTone }[] = [
-    { label: t('market.tooltip.category'), value: metadata.category, tone: 'muted' },
+    { label: t('market.tooltip.category'), value: resolveItemCategoryLabel(metadata.category, t), tone: 'muted' },
   ]
   if (metadata.level !== undefined) {
     stats.push({ label: t('market.tooltip.level'), value: `Lv. ${formatNumber(metadata.level)}`, tone: 'gold' })
@@ -343,12 +344,13 @@ export function ItemTile({
   name,
   rarity,
 }: ItemTileProps): React.JSX.Element {
+  const categoryLabel = resolveItemCategoryLabel(category)
   const bottomRight =
     bottomRightLabel ??
     (amount === undefined ? null : <UnitNumber disableTooltip prefix="×" value={amount} />)
   return (
     <span className={`item-tile ${className}`.trim()} data-rarity={rarity}>
-      <span className="item-type-ribbon" aria-hidden="true"><span>{category}</span></span>
+      <span className="item-type-ribbon" aria-hidden="true"><span>{categoryLabel}</span></span>
       {level !== undefined && (
         <span className="item-corner item-corner--top-right">
           Lv. <UnitNumber disableTooltip value={level} />
@@ -367,7 +369,7 @@ export function ItemTile({
  */
 export function ItemCard({ item, definition }: { item: InventoryItem; definition?: ItemDefinition }): React.JSX.Element {
   // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
-  useT()
+  const t = useT()
   const meta = resolveItemMetadata(item.itemId)
   const metadata = withItemGrade(
     meta ?? fallbackMetadata(item.itemId),
@@ -377,7 +379,7 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
     <ItemTooltipTarget amount={item.amount} className="inventory-item-anchor" definition={definition} itemId={item.itemId} metadata={metadata}>
       <ItemTile
         amount={item.amount}
-        category={item.category}
+        category={resolveItemCategoryLabel(item.category, t)}
         className="inventory-cell"
         level={metadata.level}
         name={item.name}

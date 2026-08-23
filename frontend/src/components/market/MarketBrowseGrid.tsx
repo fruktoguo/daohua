@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react'
 import { formatNumber } from '../../game/format'
-import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
@@ -16,14 +16,17 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: item.name.slice(0, 1),
       tone: 'gold',
-      category: item.category,
+      category: resolveItemCategoryLabel(item.category, t),
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
       description: t('market.itemFallback.description'),
     }
   }
-  return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
+  return withItemGrade({
+    ...registered,
+    category: resolveItemCategoryLabel(registered.category, t),
+  }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
 /** 坊市可交易物品网格浏览 Props */
@@ -54,15 +57,16 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const categories = useMemo(
-    () => [...new Set(instruments.map(item => item.category))].sort((left, right) => left.localeCompare(right, 'zh-CN')),
-    [instruments],
+    () => [...new Set(instruments.map(item => resolveItemCategoryLabel(item.category, t)))].sort((left, right) => left.localeCompare(right, 'zh-CN')),
+    [instruments, t],
   )
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
   const visibleItems = useMemo(() => instruments.filter(item => {
-    if (category !== null && item.category !== category) return false
+    const catLabel = resolveItemCategoryLabel(item.category, t)
+    if (category !== null && catLabel !== category && item.category !== category) return false
     if (!normalizedQuery) return true
-    return `${item.name} ${item.category}`.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
-  }), [category, instruments, normalizedQuery])
+    return `${item.name} ${item.category} ${catLabel}`.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
+  }), [category, instruments, normalizedQuery, t])
 
   return (
     <div className="market-browse">
@@ -118,7 +122,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               >
                 <ItemTile
                   amount={amount}
-                  category={item.category}
+                  category={resolveItemCategoryLabel(item.category, t)}
                   className="inventory-cell"
                   level={metadata.level}
                   name={item.name}

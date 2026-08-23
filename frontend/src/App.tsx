@@ -19,10 +19,10 @@ import { WorldMapPanel } from './components/WorldMapPanel'
 import { SettingsPage } from './components/SettingsPage'
 import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
-import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
+import { describeAbility, formatAbilityCategory, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemGrade, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
@@ -869,11 +869,11 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
         itemId: item.itemId,
         name: item.name,
         description: item.description,
-        category: item.category,
+        category: resolveItemCategoryLabel(item.category, t),
         tier: item.tier,
         amount: itemAmount(inventory, item.itemId),
         definition: item,
-      })), [inventory, itemCatalog, type])
+      })), [inventory, itemCatalog, t, type])
 
   const updateSlot = useCallback((index: number, itemId: string | null) => {
     gameClient.sendCommand('set_auto_use', {
@@ -899,7 +899,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
             itemId: selectedDefinition.itemId,
             name: selectedDefinition.name,
             description: selectedDefinition.description,
-            category: selectedDefinition.category,
+            category: resolveItemCategoryLabel(selectedDefinition.category, t),
             tier: selectedDefinition.tier,
             amount: itemAmount(inventory, selectedDefinition.itemId),
             definition: selectedDefinition,
@@ -1323,7 +1323,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
     id: ability.abilityId,
     label: ability.name,
     subtitle: t('app.combatPanel.abilitySubtitle', { mana: Math.round(ability.manaCost), cast: (ability.castMilliseconds / 1000).toFixed(1) }),
-    category: `${ability.category} · ${ability.element}`,
+    category: formatAbilityCategory(ability.category, ability.element),
     tone: ability.effectType === 'heal' ? 'green' : 'violet',
     tooltip: describeAbility(ability, 1),
   }))
@@ -1333,7 +1333,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
         itemId: item.itemId,
         name: item.name,
         description: item.description,
-        category: item.category,
+        category: resolveItemCategoryLabel(item.category, t),
         tier: item.tier,
         amount: itemAmount(inventory, item.itemId),
         definition: item,
@@ -1373,7 +1373,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                 itemId: selectedDefinition.itemId,
                 name: selectedDefinition.name,
                 description: selectedDefinition.description,
-                category: selectedDefinition.category,
+                category: resolveItemCategoryLabel(selectedDefinition.category, t),
                 tier: selectedDefinition.tier,
                 amount: itemAmount(inventory, selectedDefinition.itemId),
                 definition: selectedDefinition,

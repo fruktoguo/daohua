@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { getT, useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
@@ -21,14 +21,17 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: item.name.slice(0, 1),
       tone: 'gold',
-      category: item.category,
+      category: resolveItemCategoryLabel(item.category, t),
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
       description: t('market.itemFallback.description'),
     }
   }
-  return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
+  return withItemGrade({
+    ...registered,
+    category: resolveItemCategoryLabel(registered.category, t),
+  }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
 /** 挂单交易模态弹窗 Props */
@@ -171,14 +174,14 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             {side === 'sell' ? t('market.placeSell') : t('market.placeBuy')}
           </span>
           <h2 id={titleId}>{instrument.name}</h2>
-          <span className="market-order-modal-category">{instrument.category} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
+          <span className="market-order-modal-category">{resolveItemCategoryLabel(instrument.category, t)} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
         </div>
       </header>
 
       <div className="market-order-modal-item-preview">
         <ItemTile
           amount={selectedAmount}
-          category={instrument.category}
+          category={resolveItemCategoryLabel(instrument.category, t)}
           className="inventory-cell"
           level={metadata.level}
           name={instrument.name}

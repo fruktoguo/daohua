@@ -101,12 +101,32 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   }
   return {
     title: ability.name,
-    badge: `${ability.category} · ${ability.element}`,
+    badge: formatAbilityCategory(ability.category, ability.element),
     description: ability.effectType === 'heal'
       ? t('game.abilityDesc.heal', { target })
       : t('game.abilityDesc.effect', { target }),
     lines,
   }
+}
+
+export const DAMAGE_CATEGORY_NAMES: Record<string, string> = {
+  physical: '物理',
+  spell: '术法',
+}
+
+export const ELEMENT_NAMES: Record<string, string> = {
+  none: '无属性',
+  metal: '金行',
+  wood: '木行',
+  water: '水行',
+  fire: '火行',
+  earth: '土行',
+}
+
+export function formatAbilityCategory(category?: string, element?: string): string {
+  const cat = (category && DAMAGE_CATEGORY_NAMES[category]) || category || '物理'
+  const elem = element && element !== 'none' ? ` · ${(ELEMENT_NAMES[element] || element)}` : ''
+  return `${cat}${elem}`
 }
 
 const numberFormatters = new Map<string, Intl.NumberFormat>()

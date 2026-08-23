@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatNumber } from '../game/format'
-import { resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
 import { getT, useT, type TFunction } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketMetrics, MarketOrder } from '../game/types'
@@ -39,14 +39,17 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: item.name.slice(0, 1),
       tone: 'gold',
-      category: item.category,
+      category: resolveItemCategoryLabel(item.category, t),
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
       description: t('market.itemFallback.description'),
     }
   }
-  return withItemGrade(registered, item.tier > 0 ? item.tier : registered.level ?? 1)
+  return withItemGrade({
+    ...registered,
+    category: resolveItemCategoryLabel(registered.category, t),
+  }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
 /**
@@ -77,8 +80,12 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
         definition: item,
       }))
     return tradable
-      .sort((left, right) => left.category.localeCompare(right.category, 'zh-CN') || left.name.localeCompare(right.name, 'zh-CN'))
-  }, [catalog])
+      .sort((left, right) => {
+        const leftCat = resolveItemCategoryLabel(left.category, t)
+        const rightCat = resolveItemCategoryLabel(right.category, t)
+        return leftCat.localeCompare(rightCat, 'zh-CN') || left.name.localeCompare(right.name, 'zh-CN')
+      })
+  }, [catalog, t])
 
   const [activeTab, setActiveTab] = useState<MarketTab>('browse')
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -266,7 +273,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                     <div className="market-detail-item-card">
                       <ItemTile
                         amount={selectedAmount}
-                        category={selected.category}
+                        category={resolveItemCategoryLabel(selected.category, t)}
                         className="inventory-cell"
                         level={getMetadata(selected, t).level}
                         name={selected.name}
