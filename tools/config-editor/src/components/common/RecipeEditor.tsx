@@ -1,6 +1,6 @@
 // ==============================================================================
 // 文件名称: RecipeEditor.tsx
-// 主要职责: 行动配方配置器（输入消耗 / 输出产出），道具通过下拉搜索选择
+// 主要职责: 现代扁平化配方消耗/产出配置组件
 // ==============================================================================
 
 import { useState } from 'react';
@@ -43,14 +43,14 @@ export function RecipeEditor({
   };
 
   return (
-    <div className={`p-3 bg-[#10151c] border border-zinc-800 rounded-lg flex flex-col gap-2.5 ${className}`}>
+    <div className={`p-4 bg-zinc-900/60 border border-zinc-800/80 rounded-xl flex flex-col gap-3 ${className}`}>
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-zinc-200 flex items-center gap-2">
-          <span>{label}</span>
-          <span className="px-1.5 py-0.2 text-[10px] bg-zinc-800 text-zinc-400 rounded">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold text-zinc-200 tracking-tight">{label}</label>
+          <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-zinc-800 text-zinc-400">
             {currentEntries.length} 种道具
           </span>
-        </label>
+        </div>
         {description && <span className="text-[11px] text-zinc-500">{description}</span>}
       </div>
 
@@ -58,9 +58,9 @@ export function RecipeEditor({
         {currentEntries.map(([itemId, amount]) => (
           <div
             key={itemId}
-            className="p-2 bg-[#141b24] border border-zinc-700/60 rounded flex items-center justify-between gap-3 text-xs"
+            className="p-2.5 bg-zinc-900/90 border border-zinc-800 rounded-lg flex items-center justify-between gap-3 text-xs hover:border-zinc-700 transition-colors"
           >
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[180px]">
               <ReferenceSelect
                 kind="item"
                 value={itemId}
@@ -83,28 +83,28 @@ export function RecipeEditor({
                 min={1}
                 value={amount}
                 onChange={e => handleUpdateAmount(itemId, parseInt(e.target.value) || 1)}
-                className="w-20 bg-[#0e131a] border border-zinc-700 focus:border-cyan-500 rounded px-2 py-1 text-xs text-right font-mono text-zinc-100 outline-none"
+                className="w-20 bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-md px-2.5 py-1 text-xs text-right font-mono text-zinc-100 outline-none"
               />
               <button
                 type="button"
                 onClick={() => handleRemove(itemId)}
-                className="text-zinc-400 hover:text-red-400 p-1 hover:bg-zinc-800 rounded"
+                className="text-zinc-500 hover:text-rose-400 p-1 hover:bg-zinc-800 rounded transition-colors text-sm leading-none"
                 title="删除此项"
               >
-                ×
+                ✕
               </button>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/80">
+      <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/60">
         <div className="flex-1">
           <ReferenceSelect
             kind="item"
             value={newSelectedItemId}
             onChange={setNewSelectedItemId}
-            placeholder="+ 选择要添加的道具..."
+            placeholder="+ 选择要添加的配方道具..."
             allowClear={true}
           />
         </div>
@@ -112,7 +112,7 @@ export function RecipeEditor({
           type="button"
           disabled={!newSelectedItemId}
           onClick={handleAdd}
-          className="px-3 py-1.5 bg-cyan-950 hover:bg-cyan-900 border border-cyan-800 disabled:opacity-40 text-cyan-200 text-xs rounded transition-colors"
+          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-medium text-xs rounded-lg transition-colors shadow-sm"
         >
           添加
         </button>

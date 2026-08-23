@@ -1,6 +1,6 @@
 // ==============================================================================
 // 文件名称: CombatTriggerEditor.tsx
-// 主要职责: 战斗触发器列表配置器，支持条件、阈值与动作全部下拉选择
+// 主要职责: 现代扁平化战斗触发策略配置组件
 // ==============================================================================
 
 import type { CombatTrigger } from '../../types/config';
@@ -50,35 +50,38 @@ export function CombatTriggerEditor({
   };
 
   return (
-    <div className={`p-3 bg-[#10151c] border border-zinc-800 rounded-lg flex flex-col gap-2.5 ${className}`}>
+    <div className={`p-4 bg-zinc-900/60 border border-zinc-800/80 rounded-xl flex flex-col gap-3 ${className}`}>
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-zinc-200 flex items-center gap-2">
-          <span>{label}</span>
-          <span className="px-1.5 py-0.2 text-[10px] bg-zinc-800 text-zinc-400 rounded">
-            {currentTriggers.length} 条战斗策略
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold text-zinc-200 tracking-tight">{label}</label>
+          <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-zinc-800 text-zinc-400">
+            {currentTriggers.length} 条策略
           </span>
-        </label>
+        </div>
         {description && <span className="text-[11px] text-zinc-500">{description}</span>}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2.5">
         {currentTriggers.map((trig, idx) => (
           <div
             key={idx}
-            className="p-2.5 bg-[#141b24] border border-zinc-700/60 rounded-md flex flex-col gap-2 text-xs"
+            className="p-3.5 bg-zinc-900/90 border border-zinc-800 rounded-lg flex flex-col gap-2.5 text-xs hover:border-zinc-700 transition-colors"
           >
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-zinc-300">策略 #{idx + 1}</span>
+              <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                <span>策略 #{idx + 1}</span>
+              </span>
               <button
                 type="button"
                 onClick={() => handleRemove(idx)}
-                className="text-zinc-400 hover:text-red-400 p-1 hover:bg-zinc-800 rounded"
+                className="text-zinc-500 hover:text-rose-400 p-1 hover:bg-zinc-800 rounded transition-colors text-sm leading-none"
               >
-                删除此条
+                ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <EnumSelect
                 label="触发条件"
                 value={trig.condition}
@@ -109,17 +112,17 @@ export function CombatTriggerEditor({
             {trig.action === 'useAbility' && (
               <ReferenceSelect
                 kind="ability"
-                label="指定目标神通技能"
+                label="指定神通技能"
                 value={trig.targetAbilityId}
                 onChange={id => handleUpdate(idx, { targetAbilityId: id })}
-                placeholder="默认使用自身技能或指定技能..."
+                placeholder="默认使用自身神通或指定技能..."
               />
             )}
 
             {trig.action === 'useItem' && (
               <ReferenceSelect
                 kind="item"
-                label="指定消耗品道具"
+                label="指定消耗品灵丹"
                 value={trig.targetItemId}
                 onChange={id => handleUpdate(idx, { targetItemId: id })}
                 placeholder="选择要服食的丹药/道具..."
@@ -132,9 +135,9 @@ export function CombatTriggerEditor({
       <button
         type="button"
         onClick={handleAdd}
-        className="w-full py-1.5 bg-[#141b24] hover:bg-zinc-800 border border-dashed border-zinc-700 text-xs text-zinc-400 hover:text-cyan-300 rounded transition-colors"
+        className="w-full py-2 bg-zinc-900/40 hover:bg-zinc-800/80 border border-dashed border-zinc-700 text-xs font-medium text-zinc-400 hover:text-indigo-300 rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5"
       >
-        + 添加战斗触发条件
+        <span>+ 添加战斗触发条件</span>
       </button>
     </div>
   );

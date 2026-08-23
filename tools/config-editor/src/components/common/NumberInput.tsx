@@ -1,9 +1,7 @@
 // ==============================================================================
 // 文件名称: NumberInput.tsx
-// 主要职责: 专有数值输入框组件，支持步进、清空为 null/默认、浮点数与单位后缀
+// 主要职责: 现代扁平化数值步进输入组件，提供平滑步进、内嵌单位 Badge 与极简交互
 // ==============================================================================
-
-import React from 'react';
 
 interface NumberInputProps {
   label?: string;
@@ -28,47 +26,78 @@ export function NumberInput({
   max,
   step = 1,
   unit,
-  placeholder = '默认 / 未设置',
+  placeholder = '0',
   className = '',
   disabled = false
 }: NumberInputProps) {
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    if (raw === '' || raw === null || raw === undefined) {
-      onChange(undefined);
-      return;
-    }
-    const parsed = parseFloat(raw);
-    if (!isNaN(parsed)) {
-      onChange(parsed);
-    }
+  const currentVal = value ?? '';
+
+  const handleStep = (delta: number) => {
+    if (disabled) return;
+    const base = value ?? 0;
+    const next = Number((base + delta * step).toFixed(4));
+    if (min !== undefined && next < min) return onChange(min);
+    if (max !== undefined && next > max) return onChange(max);
+    onChange(next);
   };
 
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
       {label && (
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-zinc-300">{label}</label>
-          {description && <span className="text-[11px] text-zinc-500">{description}</span>}
+          <label className="text-xs font-medium text-zinc-300 tracking-tight">{label}</label>
+          {description && <span className="text-[11px] text-zinc-500 font-normal">{description}</span>}
         </div>
       )}
-      <div className="relative flex items-center">
+      <div className="relative flex items-center group">
         <input
           type="number"
-          value={value === null || value === undefined ? '' : value}
-          onChange={handleChange}
           min={min}
           max={max}
           step={step}
+          value={currentVal}
           placeholder={placeholder}
           disabled={disabled}
-          className="w-full bg-[#121820] border border-zinc-700/80 hover:border-zinc-500 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 text-sm text-zinc-100 rounded px-3 py-1.5 font-mono transition-colors outline-none disabled:opacity-50"
+          onChange={e => {
+            const raw = e.target.value;
+            if (raw === '') {
+              onChange(undefined);
+            } else {
+              const num = parseFloat(raw);
+              onChange(isNaN(num) ? undefined : num);
+            }
+          }}
+          className={`w-full bg-zinc-900/90 border border-zinc-800 hover:border-zinc-700 focus:border-indigo-500/80 focus:ring-2 focus:ring-indigo-500/20 text-sm font-mono text-zinc-100 rounded-lg px-3 py-1.5 transition-all duration-150 outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+            unit ? 'pr-16' : 'pr-8'
+          }`}
         />
-        {unit && (
-          <span className="absolute right-3 text-xs text-zinc-400 font-medium pointer-events-none">
-            {unit}
-          </span>
-        )}
+
+        {/* 右侧单位与微调 */}
+        <div className="absolute right-1.5 flex items-center gap-1">
+          {unit && (
+            <span className="px-1.5 py-0.5 text-[10px] font-mono text-zinc-400 bg-zinc-800/80 rounded border border-zinc-700/50 select-none">
+              {unit}
+            </span>
+          )}
+          <div className="flex flex-col opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => handleStep(1)}
+              className="text-zinc-500 hover:text-zinc-200 text-[9px] leading-3 p-0.5 hover:bg-zinc-800 rounded"
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => handleStep(-1)}
+              className="text-zinc-500 hover:text-zinc-200 text-[9px] leading-3 p-0.5 hover:bg-zinc-800 rounded"
+            >
+              ▼
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

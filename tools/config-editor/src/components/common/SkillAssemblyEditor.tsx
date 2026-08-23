@@ -1,6 +1,6 @@
 // ==============================================================================
 // 文件名称: SkillAssemblyEditor.tsx
-// 主要职责: 怪物技能装配配置器，支持技能下拉选择、技能等级与血线触发比例
+// 主要职责: 现代扁平化精怪神通技能装配配置组件
 // ==============================================================================
 
 import type { MonsterSkillConfig } from '../../types/config';
@@ -41,14 +41,14 @@ export function SkillAssemblyEditor({
   };
 
   return (
-    <div className={`p-3 bg-[#10151c] border border-zinc-800 rounded-lg flex flex-col gap-2.5 ${className}`}>
+    <div className={`p-4 bg-zinc-900/60 border border-zinc-800/80 rounded-xl flex flex-col gap-3 ${className}`}>
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-zinc-200 flex items-center gap-2">
-          <span>{label}</span>
-          <span className="px-1.5 py-0.2 text-[10px] bg-zinc-800 text-zinc-400 rounded">
-            已装配 {currentSkills.length} 门神通
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold text-zinc-200 tracking-tight">{label}</label>
+          <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-zinc-800 text-zinc-400">
+            {currentSkills.length} 门神通
           </span>
-        </label>
+        </div>
         {description && <span className="text-[11px] text-zinc-500">{description}</span>}
       </div>
 
@@ -56,7 +56,7 @@ export function SkillAssemblyEditor({
         {currentSkills.map((sk, idx) => (
           <div
             key={idx}
-            className="p-2.5 bg-[#141b24] border border-zinc-700/60 rounded-md flex flex-col md:flex-row items-start md:items-center gap-3 text-xs"
+            className="p-3 bg-zinc-900/90 border border-zinc-800 rounded-lg flex flex-col md:flex-row items-start md:items-center gap-3 text-xs hover:border-zinc-700 transition-colors"
           >
             <div className="flex-1 w-full min-w-[200px]">
               <ReferenceSelect
@@ -81,23 +81,23 @@ export function SkillAssemblyEditor({
 
               <div className="w-28">
                 <NumberInput
-                  label="触发血线(≤HP%)"
+                  label="释放血线 (≤HP%)"
                   value={sk.triggerHpRatio ?? 1.0}
                   onChange={v => handleUpdate(idx, { triggerHpRatio: v })}
                   step={0.05}
                   min={0}
                   max={1}
-                  unit="倍"
+                  unit="×"
                 />
               </div>
 
               <button
                 type="button"
                 onClick={() => handleRemove(idx)}
-                className="mt-4 p-1.5 text-zinc-400 hover:text-red-400 hover:bg-zinc-800 rounded text-sm"
+                className="mt-4 p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 rounded-md transition-colors text-sm leading-none"
                 title="移除此技能"
               >
-                ×
+                ✕
               </button>
             </div>
           </div>
@@ -107,9 +107,9 @@ export function SkillAssemblyEditor({
       <button
         type="button"
         onClick={handleAdd}
-        className="w-full py-1.5 bg-[#141b24] hover:bg-zinc-800 border border-dashed border-zinc-700 text-xs text-zinc-400 hover:text-cyan-300 rounded transition-colors"
+        className="w-full py-2 bg-zinc-900/40 hover:bg-zinc-800/80 border border-dashed border-zinc-700 text-xs font-medium text-zinc-400 hover:text-indigo-300 rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5"
       >
-        + 装配新神通技能
+        <span>+ 装配新神通技能</span>
       </button>
     </div>
   );

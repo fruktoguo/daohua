@@ -1,6 +1,6 @@
 // ==============================================================================
 // 文件名称: Header.tsx
-// 主要职责: 顶部操作工具栏，支持一键保存、批量写盘、放弃修改、快照备份与全局校验
+// 主要职责: 现代扁平化配置编辑器顶栏工具栏，支持快捷键提示、状态指示灯与批量保存
 // ==============================================================================
 
 import { useState } from 'react';
@@ -40,54 +40,68 @@ export function Header() {
 
   return (
     <>
-      <header className="h-14 bg-[#0e131a] border-b border-zinc-800 px-6 flex items-center justify-between shrink-0 select-none">
-        {/* 左侧文件标识 */}
+      <header className="h-13 bg-zinc-950 border-b border-zinc-800/80 px-6 flex items-center justify-between shrink-0 select-none">
+        {/* 左侧文件标识与保存状态 */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-500 font-mono">当前编辑:</span>
-            <span className="text-sm font-bold text-zinc-200 font-mono">{activeFile}</span>
+            <span className="text-xs text-zinc-500 font-mono">File:</span>
+            <span className="text-xs font-semibold text-zinc-100 font-mono bg-zinc-900 px-2.5 py-1 rounded-md border border-zinc-800">
+              {activeFile}
+            </span>
           </div>
 
           {isCurrentDirty ? (
-            <span className="px-2 py-0.5 text-[11px] rounded bg-amber-950/80 text-amber-300 border border-amber-800 font-medium">
-              未保存
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span>未保存改动</span>
             </span>
           ) : (
-            <span className="px-2 py-0.5 text-[11px] rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800">
-              已同步
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-medium rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>已与磁盘同步</span>
             </span>
           )}
         </div>
 
-        {/* 右侧全局操作 */}
-        <div className="flex items-center gap-2.5">
-          {/* 校验报告按钮 */}
+        {/* 右侧全局操作按钮组 */}
+        <div className="flex items-center gap-2">
+          {/* 全局完整性校验状态按钮 */}
           <button
             type="button"
             onClick={() => setIsValidatorOpen(true)}
-            className={`px-3 py-1.5 text-xs rounded border transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-all duration-150 flex items-center gap-1.5 ${
               validationErrors.length > 0
-                ? 'bg-red-950/40 border-red-800 text-red-300 hover:bg-red-900/40'
-                : 'bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-zinc-700'
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-300 hover:bg-rose-500/20'
+                : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
             }`}
           >
-            <span>{validationErrors.length === 0 ? '✓ 全局校验正常' : `⚠ ${validationErrors.length} 处引用问题`}</span>
+            {validationErrors.length === 0 ? (
+              <>
+                <span className="text-emerald-400 text-xs">✓</span>
+                <span>数据校验正常</span>
+              </>
+            ) : (
+              <>
+                <span className="text-rose-400 text-xs">⚠</span>
+                <span>{validationErrors.length} 处外键告警</span>
+              </>
+            )}
           </button>
 
           {/* 原始 JSON 预览 */}
           <button
             type="button"
             onClick={() => setIsJsonModalOpen(true)}
-            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200 rounded transition-colors"
+            className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-300 hover:text-zinc-100 rounded-lg transition-colors"
           >
-            查看原始 JSON
+            JSON 源码
           </button>
 
           {/* 数据备份 */}
           <button
             type="button"
             onClick={triggerBackup}
-            className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200 rounded transition-colors"
+            className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-300 hover:text-zinc-100 rounded-lg transition-colors"
             title="创建配置文件快照备份"
           >
             快照备份
@@ -100,7 +114,7 @@ export function Header() {
               if (dirtyFiles.size > 0 && !confirm('重载将丢弃所有未保存的改动，确定要重载吗？')) return;
               reloadAllConfigs();
             }}
-            className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-200 rounded"
+            className="px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-400 hover:text-zinc-200 rounded-lg transition-colors"
             title="从磁盘重新加载全量配置"
           >
             ↻
@@ -111,20 +125,23 @@ export function Header() {
             <button
               type="button"
               onClick={resetCurrentFile}
-              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 text-xs rounded transition-colors"
+              className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-rose-300 text-xs font-medium rounded-lg transition-colors"
             >
-              放弃本文件修改
+              放弃修改
             </button>
           )}
 
-          {/* 保存当前单文件 */}
+          {/* 保存当前文件 */}
           <button
             type="button"
             disabled={saving || !isCurrentDirty}
             onClick={handleSaveCurrent}
-            className="px-3 py-1.5 bg-cyan-950 hover:bg-cyan-900 border border-cyan-800 disabled:opacity-40 text-cyan-200 text-xs font-medium rounded transition-colors"
+            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white text-xs font-semibold rounded-lg transition-all duration-150 shadow-sm flex items-center gap-1.5"
           >
-            {saving ? '保存中...' : '保存当前文件'}
+            <span>{saving ? '保存中...' : '保存'}</span>
+            <kbd className="hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-mono rounded bg-indigo-800 text-indigo-200">
+              Ctrl+S
+            </kbd>
           </button>
 
           {/* 保存全部修改 */}
@@ -133,7 +150,7 @@ export function Header() {
               type="button"
               disabled={saving}
               onClick={handleSaveAll}
-              className="px-3.5 py-1.5 bg-emerald-900 hover:bg-emerald-800 border border-emerald-700 text-emerald-100 text-xs font-bold rounded shadow-lg shadow-emerald-950/40 transition-colors"
+              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/40 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-950/40 transition-colors"
             >
               保存全部 ({dirtyFiles.size})
             </button>

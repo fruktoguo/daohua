@@ -1,6 +1,6 @@
 // ==============================================================================
 // 文件名称: AbilitiesEditor.tsx
-// 主要职责: abilities.json 专属编辑器，支持流派/元素/伤害大类过滤、数值成长与控制机制配置
+// 主要职责: 现代扁平化 abilities.json 专属编辑器，支持流派/元素过滤、成长与 Dot/控制
 // ==============================================================================
 
 import { useState, useMemo } from 'react';
@@ -76,7 +76,7 @@ export function AbilitiesEditor() {
     const cloned: AbilityConfig = {
       ...JSON.parse(JSON.stringify(currentAbility)),
       id: clonedId,
-      name: `${currentAbility.name} (复制)`
+      name: `${currentAbility.name} (副本)`
     };
     updateConfig('abilities.json', prev => [cloned, ...prev]);
     setSelectedId(clonedId);
@@ -93,48 +93,50 @@ export function AbilitiesEditor() {
   return (
     <div className="flex-1 flex overflow-hidden h-full">
       {/* 左侧列表栏 */}
-      <div className="w-80 border-r border-zinc-800 bg-[#0e131a] flex flex-col shrink-0">
-        <div className="p-3 border-b border-zinc-800 flex flex-col gap-2">
+      <div className="w-80 border-r border-zinc-800/80 bg-zinc-950 flex flex-col shrink-0 select-none">
+        <div className="p-3.5 border-b border-zinc-800/80 flex flex-col gap-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-zinc-300">神通列表 ({filteredAbilities.length})</span>
             <button
               type="button"
               onClick={handleAdd}
-              className="px-2 py-0.5 bg-cyan-950 hover:bg-cyan-900 border border-cyan-800 text-cyan-300 text-xs rounded transition-colors"
+              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-lg transition-colors shadow-sm"
             >
-              + 新增神通
+              + 新增
             </button>
           </div>
 
-          <input
-            type="text"
-            placeholder="搜索名称 / ID..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full bg-[#141b24] border border-zinc-700/80 rounded px-2.5 py-1 text-xs text-zinc-100 placeholder-zinc-500 outline-none"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="搜索名称 / ID..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 outline-none transition-all"
+            />
+          </div>
 
           <div className="flex flex-wrap gap-1">
             <button
               type="button"
               onClick={() => setFilterStyle('all')}
-              className={`px-2 py-0.5 text-[11px] rounded ${
+              className={`px-2 py-0.5 text-[11px] font-medium rounded-md transition-all ${
                 filterStyle === 'all'
-                  ? 'bg-zinc-700 text-zinc-100 font-medium'
-                  : 'text-zinc-400 hover:bg-zinc-800'
+                  ? 'bg-zinc-800 text-zinc-100'
+                  : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              全部流派
+              全流派
             </button>
             {COMBAT_STYLES.map(s => (
               <button
                 key={s.value}
                 type="button"
                 onClick={() => setFilterStyle(s.value)}
-                className={`px-2 py-0.5 text-[11px] rounded ${
+                className={`px-2 py-0.5 text-[11px] font-medium rounded-md transition-all ${
                   filterStyle === s.value
-                    ? 'bg-indigo-900 text-indigo-200 font-medium'
-                    : 'text-zinc-400 hover:bg-zinc-800'
+                    ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                    : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
                 {s.label.split(' ')[0]}
@@ -142,14 +144,14 @@ export function AbilitiesEditor() {
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5 pt-1">
-            <span className="text-[11px] text-zinc-500">伤害大类:</span>
+          <div className="flex items-center gap-2 pt-0.5">
+            <span className="text-[11px] text-zinc-500 font-medium shrink-0">伤害大类:</span>
             <select
               value={filterCategory}
               onChange={e => setFilterCategory(e.target.value)}
-              className="flex-1 bg-[#141b24] border border-zinc-700 text-[11px] text-zinc-300 rounded px-2 py-0.5"
+              className="w-full bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-300 rounded-md px-2 py-1 outline-none focus:border-indigo-500"
             >
-              <option value="all">全部大类</option>
+              <option value="all">全部大类 (物理 / 术法)</option>
               {DAMAGE_CATEGORIES.map(c => (
                 <option key={c.value} value={c.value}>
                   {c.label.split(' ')[0]}
@@ -160,7 +162,7 @@ export function AbilitiesEditor() {
         </div>
 
         {/* 列表项 */}
-        <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/40">
+        <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/40 p-1.5">
           {filteredAbilities.map(ab => {
             const isSelected = ab.id === currentAbility?.id;
             const styleOpt = COMBAT_STYLES.find(s => s.value === ab.style);
@@ -168,18 +170,18 @@ export function AbilitiesEditor() {
               <div
                 key={ab.id}
                 onClick={() => setSelectedId(ab.id)}
-                className={`p-2.5 cursor-pointer flex flex-col gap-1 transition-colors ${
+                className={`p-3 rounded-xl cursor-pointer flex flex-col gap-1 transition-all duration-150 ${
                   isSelected
-                    ? 'bg-indigo-950/60 border-l-2 border-indigo-400'
-                    : 'hover:bg-[#141b24]'
+                    ? 'bg-zinc-900 border border-zinc-700/80 shadow-sm'
+                    : 'hover:bg-zinc-900/50 border border-transparent'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className={`text-xs font-medium truncate ${isSelected ? 'text-indigo-200' : 'text-zinc-200'}`}>
+                  <span className={`text-xs font-semibold truncate ${isSelected ? 'text-white' : 'text-zinc-200'}`}>
                     {ab.name}
                   </span>
                   {styleOpt && (
-                    <span className={`px-1.5 py-0.2 text-[10px] rounded border ${styleOpt.badgeColor}`}>
+                    <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full border ${styleOpt.badgeColor}`}>
                       {styleOpt.label.split(' ')[0]}
                     </span>
                   )}
@@ -196,107 +198,110 @@ export function AbilitiesEditor() {
 
       {/* 右侧详细编辑表单 */}
       {currentAbility ? (
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 bg-[#0b0f14]">
+        <div className="flex-1 overflow-y-auto p-8 flex flex-col gap-6 bg-zinc-950">
           {/* 顶部操作 */}
-          <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-            <div>
-              <h2 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-                <span>{currentAbility.name}</span>
-                <span className="text-xs text-zinc-500 font-mono font-normal">({currentAbility.id})</span>
-              </h2>
+          <div className="flex items-center justify-between pb-4 border-b border-zinc-800/80">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-zinc-100 tracking-tight">{currentAbility.name}</h2>
+              <span className="text-xs text-zinc-500 font-mono bg-zinc-900 px-2.5 py-0.5 rounded-md border border-zinc-800">
+                {currentAbility.id}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleClone}
-                className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200 rounded"
+                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-300 rounded-lg transition-colors"
               >
                 克隆复制
               </button>
               <button
                 type="button"
                 onClick={handleDelete}
-                className="px-2.5 py-1 bg-red-950/50 hover:bg-red-900/60 border border-red-800 text-xs text-red-300 rounded"
+                className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-medium text-rose-300 rounded-lg transition-colors"
               >
                 删除
               </button>
             </div>
           </div>
 
-          {/* 基础类型与流派 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-[#10151c] border border-zinc-800 rounded-lg">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-zinc-300">唯一标识符 (ID)</label>
-              <input
-                type="text"
-                value={currentAbility.id}
-                onChange={e => handleUpdate({ id: e.target.value })}
-                className="w-full bg-[#121820] border border-zinc-700/80 focus:border-cyan-500 rounded px-3 py-1.5 font-mono text-sm text-zinc-100"
+          {/* 基础类型与流派卡片 */}
+          <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">道统与分类</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-300 tracking-tight">唯一标识符 (ID)</label>
+                <input
+                  type="text"
+                  value={currentAbility.id}
+                  onChange={e => handleUpdate({ id: e.target.value })}
+                  className="w-full bg-zinc-900/90 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 font-mono text-sm text-zinc-100 outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-300 tracking-tight">神通名称 (Name)</label>
+                <input
+                  type="text"
+                  value={currentAbility.name || ''}
+                  onChange={e => handleUpdate({ name: e.target.value })}
+                  className="w-full bg-zinc-900/90 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-sm font-semibold text-zinc-100 outline-none"
+                />
+              </div>
+
+              <EnumSelect
+                label="道统流派 (Style)"
+                value={currentAbility.style}
+                options={COMBAT_STYLES}
+                onChange={v => handleUpdate({ style: v || 'fiveElements' })}
+                allowClear={false}
+              />
+
+              <EnumSelect
+                label="伤害大类 (Category)"
+                value={currentAbility.category}
+                options={DAMAGE_CATEGORIES}
+                onChange={v => handleUpdate({ category: v || 'magic' })}
+                allowClear={false}
+              />
+
+              <EnumSelect
+                label="五行属性 (Element)"
+                value={currentAbility.element}
+                options={ELEMENTS}
+                onChange={v => handleUpdate({ element: v || 'none' })}
+                allowClear={false}
+              />
+
+              <EnumSelect
+                label="阶位设计 (Tier)"
+                value={currentAbility.tier}
+                options={TIER_OPTIONS}
+                onChange={v => handleUpdate({ tier: v })}
+              />
+
+              <EnumSelect
+                label="效果类型 (EffectType)"
+                value={currentAbility.effectType}
+                options={COMBAT_ABILITY_EFFECT_TYPES}
+                onChange={v => handleUpdate({ effectType: v })}
+              />
+
+              <EnumSelect
+                label="目标类型 (TargetType)"
+                value={currentAbility.targetType}
+                options={COMBAT_ABILITY_TARGET_TYPES}
+                onChange={v => handleUpdate({ targetType: v })}
               />
             </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-zinc-300">技能名称 (Name)</label>
-              <input
-                type="text"
-                value={currentAbility.name || ''}
-                onChange={e => handleUpdate({ name: e.target.value })}
-                className="w-full bg-[#121820] border border-zinc-700/80 focus:border-cyan-500 rounded px-3 py-1.5 text-sm text-zinc-100 font-medium"
-              />
-            </div>
-
-            <EnumSelect
-              label="道统流派 (Style)"
-              value={currentAbility.style}
-              options={COMBAT_STYLES}
-              onChange={v => handleUpdate({ style: v || 'fiveElements' })}
-              allowClear={false}
-            />
-
-            <EnumSelect
-              label="伤害大类 (Category)"
-              value={currentAbility.category}
-              options={DAMAGE_CATEGORIES}
-              onChange={v => handleUpdate({ category: v || 'magic' })}
-              allowClear={false}
-            />
-
-            <EnumSelect
-              label="五行属性 (Element)"
-              value={currentAbility.element}
-              options={ELEMENTS}
-              onChange={v => handleUpdate({ element: v || 'none' })}
-              allowClear={false}
-            />
-
-            <EnumSelect
-              label="技能阶位设计 (Tier)"
-              value={currentAbility.tier}
-              options={TIER_OPTIONS}
-              onChange={v => handleUpdate({ tier: v })}
-            />
-
-            <EnumSelect
-              label="效果类型 (EffectType)"
-              value={currentAbility.effectType}
-              options={COMBAT_ABILITY_EFFECT_TYPES}
-              onChange={v => handleUpdate({ effectType: v })}
-            />
-
-            <EnumSelect
-              label="目标类型 (TargetType)"
-              value={currentAbility.targetType}
-              options={COMBAT_ABILITY_TARGET_TYPES}
-              onChange={v => handleUpdate({ targetType: v })}
-            />
           </div>
 
-          {/* 施法、冷却与真元消耗 */}
-          <div className="p-4 bg-[#10151c] border border-zinc-800 rounded-lg flex flex-col gap-4">
-            <h3 className="text-sm font-semibold text-zinc-200">施法节奏与灵力消耗</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 施法、冷却与真元消耗卡片 */}
+          <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">施法节奏与灵力消耗</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <NumberInput
-                label="施法前摇/吟唱 (CastMilliseconds)"
+                label="施法吟唱 (CastMilliseconds)"
                 description="受角色动作加速(ATR)缩减"
                 value={currentAbility.castMilliseconds}
                 onChange={v => handleUpdate({ castMilliseconds: v })}
@@ -306,7 +311,7 @@ export function AbilitiesEditor() {
               />
 
               <NumberInput
-                label="技能冷却时间 (CooldownMilliseconds)"
+                label="冷却时间 (CooldownMilliseconds)"
                 description="受角色冷却缩减(CDR)缩减"
                 value={currentAbility.cooldownMilliseconds}
                 onChange={v => handleUpdate({ cooldownMilliseconds: v })}
@@ -317,7 +322,7 @@ export function AbilitiesEditor() {
 
               <NumberInput
                 label="灵力消耗系数 (ManaCostRatio)"
-                description="1.0 = 阶位基准最大灵力的 1%"
+                description="1.0 = 阶位基准 1% MP"
                 value={currentAbility.manaCostRatio}
                 onChange={v => handleUpdate({ manaCostRatio: v })}
                 step={0.5}
@@ -326,7 +331,7 @@ export function AbilitiesEditor() {
 
               <NumberInput
                 label="释放血线阈值 (TriggerHpRatio)"
-                description="低于此生命比例才自动释放"
+                description="低于此比例自动释放"
                 value={currentAbility.triggerHpRatio}
                 onChange={v => handleUpdate({ triggerHpRatio: v })}
                 step={0.05}
@@ -337,13 +342,13 @@ export function AbilitiesEditor() {
             </div>
           </div>
 
-          {/* 直接伤害与治疗 */}
-          <div className="p-4 bg-[#10151c] border border-zinc-800 rounded-lg flex flex-col gap-4">
-            <h3 className="text-sm font-semibold text-zinc-200">直接伤害与治疗加成</h3>
+          {/* 直接伤害与治疗卡片 */}
+          <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">直接伤害与治疗加成</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <NumberInput
                 label="伤害倍率 (DamageRatio)"
-                description="1.0 为 100% 攻击力"
+                description="1.0 为 100% 攻伤"
                 value={currentAbility.damageRatio}
                 onChange={v => handleUpdate({ damageRatio: v })}
                 step={0.05}
@@ -404,9 +409,9 @@ export function AbilitiesEditor() {
             </div>
           </div>
 
-          {/* 持续伤害 (Dot) 与控制异常机制 */}
-          <div className="p-4 bg-[#10151c] border border-zinc-800 rounded-lg flex flex-col gap-4">
-            <h3 className="text-sm font-semibold text-zinc-200">持续伤害 (Dot) 与控制/特殊异常</h3>
+          {/* 持续伤害 (Dot) 与控制异常卡片 */}
+          <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Dot 持续伤害与控制/异常机制</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <NumberInput
                 label="Dot 持续伤害倍率"
@@ -425,7 +430,7 @@ export function AbilitiesEditor() {
               />
 
               <NumberInput
-                label="Dot 触发跳字间隔 (ms)"
+                label="Dot 跳字间隔 (ms)"
                 value={currentAbility.damageOverTimeTickMilliseconds}
                 onChange={v => handleUpdate({ damageOverTimeTickMilliseconds: v })}
                 step={500}
@@ -516,7 +521,7 @@ export function AbilitiesEditor() {
 
           {/* 默认触发策略 */}
           <CombatTriggerEditor
-            label="神通默认释放触发策略 (DefaultTriggers)"
+            label="神通默认释放策略 (DefaultTriggers)"
             description="战斗中该技能的自动释放策略"
             triggers={currentAbility.defaultTriggers}
             onChange={triggers => handleUpdate({ defaultTriggers: triggers })}

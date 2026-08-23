@@ -1,6 +1,6 @@
 // ==============================================================================
 // 文件名称: BooleanSelect.tsx
-// 主要职责: 布尔值专用下拉框组件（是/否/默认未指定）
+// 主要职责: 现代扁平分段控制器 (Segmented Switch) 布尔值组件，支持三态平滑切换
 // ==============================================================================
 
 interface BooleanSelectProps {
@@ -21,9 +21,9 @@ export function BooleanSelect({
   description,
   value,
   onChange,
-  trueLabel = '是 (true)',
-  falseLabel = '否 (false)',
-  clearLabel = '— 默认未指定 (null) —',
+  trueLabel = 'True (是)',
+  falseLabel = 'False (否)',
+  clearLabel = '默认缺省',
   allowClear = true,
   className = '',
   disabled = false
@@ -32,43 +32,55 @@ export function BooleanSelect({
     <div className={`flex flex-col gap-1.5 ${className}`}>
       {label && (
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-zinc-300 flex items-center gap-1.5">
-            {label}
-            {value === true && (
-              <span className="px-1.5 py-0.2 text-[10px] rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
-                TRUE
-              </span>
-            )}
-            {value === false && (
-              <span className="px-1.5 py-0.2 text-[10px] rounded bg-red-950 text-red-300 border border-red-800">
-                FALSE
-              </span>
-            )}
-          </label>
-          {description && <span className="text-[11px] text-zinc-500">{description}</span>}
+          <label className="text-xs font-medium text-zinc-300 tracking-tight">{label}</label>
+          {description && <span className="text-[11px] text-zinc-500 font-normal">{description}</span>}
         </div>
       )}
-      <div className="relative">
-        <select
-          value={value === true ? 'true' : value === false ? 'false' : ''}
-          onChange={e => {
-            const val = e.target.value;
-            if (val === 'true') onChange(true);
-            else if (val === 'false') onChange(false);
-            else onChange(undefined);
-          }}
+
+      {/* 现代极简扁平分段开关 */}
+      <div className="flex items-center p-0.5 bg-zinc-900 border border-zinc-800 rounded-lg min-h-[34px]">
+        {allowClear && (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(undefined)}
+            className={`flex-1 py-1 px-2 text-xs font-medium rounded-md transition-all duration-150 text-center truncate ${
+              value === undefined || value === null
+                ? 'bg-zinc-800 text-zinc-200 shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {clearLabel}
+          </button>
+        )}
+
+        <button
+          type="button"
           disabled={disabled}
-          className="w-full bg-[#121820] border border-zinc-700/80 hover:border-zinc-500 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 text-sm text-zinc-100 rounded px-3 py-1.5 transition-colors appearance-none cursor-pointer disabled:opacity-50 pr-8"
+          onClick={() => onChange(true)}
+          className={`flex-1 py-1 px-2 text-xs font-medium rounded-md transition-all duration-150 text-center flex items-center justify-center gap-1 truncate ${
+            value === true
+              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
+          }`}
         >
-          {allowClear && <option value="">{clearLabel}</option>}
-          <option value="true" className="bg-[#121820] text-emerald-300">{trueLabel}</option>
-          <option value="false" className="bg-[#121820] text-red-300">{falseLabel}</option>
-        </select>
-        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-zinc-400">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
+          <span className={`w-1.5 h-1.5 rounded-full ${value === true ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+          <span>{trueLabel}</span>
+        </button>
+
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(false)}
+          className={`flex-1 py-1 px-2 text-xs font-medium rounded-md transition-all duration-150 text-center flex items-center justify-center gap-1 truncate ${
+            value === false
+              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30 shadow-sm'
+              : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          <span className={`w-1.5 h-1.5 rounded-full ${value === false ? 'bg-rose-400' : 'bg-zinc-600'}`} />
+          <span>{falseLabel}</span>
+        </button>
       </div>
     </div>
   );

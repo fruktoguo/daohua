@@ -1,6 +1,6 @@
 // ==============================================================================
 // 文件名称: StatDictEditor.tsx
-// 主要职责: 属性字典配置器，提供属性名下拉选择框与数值输入，支持 BaseStatRatios/FlatStats
+// 主要职责: 现代扁平化属性字典编辑器，支持 14 维基准与机制属性字典配置
 // ==============================================================================
 
 import { useState } from 'react';
@@ -51,14 +51,14 @@ export function StatDictEditor({
   };
 
   return (
-    <div className={`p-3 bg-[#10151c] border border-zinc-800 rounded-lg flex flex-col gap-2.5 ${className}`}>
+    <div className={`p-4 bg-zinc-900/60 border border-zinc-800/80 rounded-xl flex flex-col gap-3 ${className}`}>
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold text-zinc-200 flex items-center gap-2">
-          <span>{label}</span>
-          <span className="px-1.5 py-0.2 text-[10px] bg-zinc-800 text-zinc-400 rounded">
-            已配置 {currentEntries.length} 项
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold text-zinc-200 tracking-tight">{label}</label>
+          <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-zinc-800 text-zinc-400">
+            {currentEntries.length} 项
           </span>
-        </label>
+        </div>
         {description && <span className="text-[11px] text-zinc-500">{description}</span>}
       </div>
 
@@ -70,14 +70,14 @@ export function StatDictEditor({
             return (
               <div
                 key={key}
-                className="flex items-center justify-between gap-2 p-1.5 bg-[#141b24] border border-zinc-700/60 rounded text-xs"
+                className="flex items-center justify-between gap-2 p-2 bg-zinc-900/90 border border-zinc-800 rounded-lg text-xs hover:border-zinc-700 transition-colors"
               >
                 <div className="flex flex-col flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 truncate">
                     <span className="font-medium text-zinc-200">
                       {meta ? meta.label : key}
                     </span>
-                    <span className="font-mono text-[10px] text-zinc-400">({key})</span>
+                    <span className="font-mono text-[10px] text-zinc-500">({key})</span>
                   </div>
                   {meta?.description && (
                     <span className="text-[10px] text-zinc-500 truncate">{meta.description}</span>
@@ -91,10 +91,10 @@ export function StatDictEditor({
                       step={step}
                       value={val}
                       onChange={e => handleUpdateValue(key, parseFloat(e.target.value) || 0)}
-                      className="w-24 bg-[#0e131a] border border-zinc-700 focus:border-cyan-500 rounded px-2 py-1 text-xs text-right font-mono text-zinc-100 outline-none pr-6"
+                      className="w-24 bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-md px-2.5 py-1 text-xs text-right font-mono text-zinc-100 outline-none pr-6"
                     />
                     {unit && (
-                      <span className="absolute right-2 text-[10px] text-zinc-500 pointer-events-none">
+                      <span className="absolute right-2 text-[10px] text-zinc-500 font-mono pointer-events-none">
                         {unit}
                       </span>
                     )}
@@ -103,10 +103,10 @@ export function StatDictEditor({
                   <button
                     type="button"
                     onClick={() => handleRemove(key)}
-                    className="text-zinc-500 hover:text-red-400 px-1.5 py-1 rounded hover:bg-zinc-800"
+                    className="text-zinc-500 hover:text-rose-400 p-1 rounded hover:bg-zinc-800 transition-colors text-sm leading-none"
                     title="删除此属性"
                   >
-                    ×
+                    ✕
                   </button>
                 </div>
               </div>
@@ -114,20 +114,20 @@ export function StatDictEditor({
           })}
         </div>
       ) : (
-        <div className="text-center py-2 text-xs text-zinc-600 italic">
+        <div className="text-center py-3 text-xs text-zinc-500 italic">
           尚未配置任何属性条目
         </div>
       )}
 
-      {/* 添加新属性下拉选择器 */}
+      {/* 添加新属性下拉框 */}
       {availableStats.length > 0 && (
-        <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/80">
+        <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/60">
           <select
             value={selectedNewStat}
             onChange={e => setSelectedNewStat(e.target.value)}
-            className="flex-1 bg-[#141b24] border border-zinc-700/80 text-xs text-zinc-300 rounded px-2.5 py-1 outline-none"
+            className="flex-1 bg-zinc-900 border border-zinc-800 text-xs text-zinc-300 rounded-lg px-3 py-1.5 outline-none hover:border-zinc-700 focus:border-indigo-500"
           >
-            <option value="">— 选择要添加的属性项 —</option>
+            <option value="">+ 选择要添加的属性项...</option>
             {availableStats.map(s => (
               <option key={s.key} value={s.key}>
                 {s.label} ({s.key})
@@ -138,9 +138,9 @@ export function StatDictEditor({
             type="button"
             disabled={!selectedNewStat}
             onClick={handleAdd}
-            className="px-3 py-1 bg-cyan-950 hover:bg-cyan-900 border border-cyan-800 disabled:opacity-40 text-cyan-200 text-xs rounded transition-colors"
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-medium text-xs rounded-lg transition-colors shadow-sm"
           >
-            + 添加
+            添加
           </button>
         </div>
       )}
