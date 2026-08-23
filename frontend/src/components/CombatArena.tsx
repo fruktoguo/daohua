@@ -772,7 +772,7 @@ function ArenaLifeGoalCard({
   const actionName = queueEntry?.actionName || actionDef?.name || t('combat.life.fallbackActionName')
   const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
   const remainingRepeats = queueEntry?.remainingRepeats ?? 0
-  const repeats = isInfinite ? -1 : remainingRepeats + 1
+  const repeats = isInfinite ? -1 : remainingRepeats
 
   // 目标产物分析
   const outputs = actionDef?.outputs || {}

@@ -760,6 +760,7 @@ export function FloatingTooltip({
   size = 'auto',
   width,
   disabled,
+  displayContents,
 }: {
   title: ReactNode
   children: ReactNode
@@ -768,6 +769,7 @@ export function FloatingTooltip({
   size?: FloatingSize
   width?: number | string
   disabled?: boolean
+  displayContents?: boolean
 }): React.JSX.Element {
   if (!title || disabled) return <>{children}</>
 
@@ -776,6 +778,7 @@ export function FloatingTooltip({
       className={`daohua-floating-tooltip-simple daohua-floating-tooltip--${tone}`}
       closeDelay={60}
       content={<div className="daohua-floating-tooltip-text">{title}</div>}
+      displayContents={displayContents}
       gap={6}
       interactive={false}
       openDelay={100}

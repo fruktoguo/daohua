@@ -740,33 +740,48 @@ input[type="checkbox"] {
   min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: end;
-  gap: 4px;
+  gap: 6px;
+  height: 100%;
+}
+
+.qc-upcoming > .daohua-floating-trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  align-items: end;
 }
 
 .qc-next {
   display: flex;
-  height: 65%;
+  width: 100%;
+  height: 24px;
   min-width: 0;
-  min-height: 0;
+  min-height: 24px;
+  max-height: 24px;
+  box-sizing: border-box;
   overflow: hidden;
   align-items: center;
   gap: 6px;
-  padding: 1px 6px;
+  padding: 0 6px;
   border: 1px solid var(--gold-faint);
   color: var(--text);
   background: rgba(14, 12, 7, 0.7);
   opacity: 0.58;
   font-size: 11px;
-  transition: opacity 0.2s ease;
+  transition: opacity 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .qc-next:hover {
   opacity: 0.9;
+  border-color: var(--gold-bright);
+  background: rgba(22, 19, 11, 0.85);
 }
 
 .qc-next .item-glyph {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .qc-next-text {
@@ -775,17 +790,19 @@ input[type="checkbox"] {
   flex: 1;
   align-items: center;
   justify-content: space-between;
-  gap: 5px;
+  gap: 6px;
   line-height: 1;
 }
 
 .qc-next-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .qc-next-repeats {
+  flex-shrink: 0;
   font-size: 10px;
 }
 

@@ -101,8 +101,7 @@ function actionDescription(entry: QueueEntry): string {
 
 function formatRepeatsLabel(remainingRepeats: number, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (remainingRepeats < 0) return t('app.queue.repeatsInfinite')
-  if (remainingRepeats === 0) return t('app.queue.repeatsOnce')
-  return t('app.queue.repeatsCount', { n: remainingRepeats + 1 })
+  return t('app.queue.repeatsCount', { n: remainingRepeats })
 }
 
 /**
@@ -332,7 +331,13 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
 
       <div className="qc-upcoming" aria-label={t('app.queue.upcomingAria')}>
         {upcoming.map(entry => (
-          <FloatingTooltip key={entry.entryId} placement="bottom" title={actionDescription(entry)} tone="gold">
+          <FloatingTooltip
+            displayContents
+            key={entry.entryId}
+            placement="bottom"
+            title={actionDescription(entry)}
+            tone="gold"
+          >
             <div className="qc-next">
               <span className={`item-glyph tone-${ACTION_TAB_META[entry.type].accent}`} aria-hidden="true">
                 <Icon name={entry.type} />
