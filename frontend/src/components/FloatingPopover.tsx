@@ -443,10 +443,25 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       [handleToggle, isOpen, setOpen]
     )
 
+    const getEffectiveAnchorElement = useCallback((): HTMLElement | null => {
+      if (!anchorRef.current) return null
+      const el: HTMLElement = anchorRef.current
+      if (displayContents && el.firstElementChild) {
+        return el.firstElementChild as HTMLElement
+      }
+      const rect = el.getBoundingClientRect()
+      if ((rect.width === 0 || rect.height === 0) && el.firstElementChild) {
+        return el.firstElementChild as HTMLElement
+      }
+      return el
+    }, [displayContents])
+
     // 精确重新计算并更新位置
     const updatePosition = useCallback(() => {
       if (!isOpen || !anchorRef.current || !floatingRef.current) return
-      const anchorRect = anchorRef.current.getBoundingClientRect()
+      const targetAnchor = getEffectiveAnchorElement()
+      if (!targetAnchor) return
+      const anchorRect = targetAnchor.getBoundingClientRect()
       const floatingRect = floatingRef.current.getBoundingClientRect()
       const result = computeSafeFloatingPosition(anchorRect, floatingRect, placement, {
         gap,
@@ -462,7 +477,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         }
         return result
       })
-    }, [gap, isOpen, padding, placement])
+    }, [gap, getEffectiveAnchorElement, isOpen, padding, placement])
 
     useLayoutEffect(() => {
       if (isOpen) {
@@ -497,8 +512,9 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
           updatePosition()
         })
         resizeObserver.observe(floatingRef.current)
-        if (anchorRef.current) {
-          resizeObserver.observe(anchorRef.current)
+        const targetAnchor = getEffectiveAnchorElement()
+        if (targetAnchor) {
+          resizeObserver.observe(targetAnchor)
         }
       }
 
