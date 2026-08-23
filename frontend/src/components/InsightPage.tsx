@@ -127,9 +127,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         level: consciousnessLevel,
         progress: getProgress(consciousnessLevel),
         bonuses: [
-          { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'purple' as PillTone },
+          { value: `+${Math.floor(consciousnessLevel * 2)}%`, tone: 'purple' as PillTone },
           { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
-          { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'purple' as PillTone },
         ],
       },
       {
