@@ -1,8 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
+import type { WorldMapDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
-
+import { Modal } from './Modal'
 /** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
   from: { x: number; y: number },
@@ -11,6 +12,138 @@ function getEdgeDistance(
   return Math.hypot(to.x - from.x, to.y - from.y)
 }
 
+/** 路径规划计算结果 */
+interface PathPlanResult {
+  /** 最短路径总耗时（秒） */
+  totalDurationSeconds: number
+  /** 途经的节点名称链 */
+  pathNodeNames: string[]
+  /** 途经的路径边 ID 列表 */
+  pathEdgeIds: string[]
+}
+
+/**
+ * 使用 Dijkstra 算法精确规划当前玩家位置到目标地点的最短路径与耗时
+ */
+function planShortestTravel(
+  map: WorldMapDefinition,
+  world: WorldState,
+  targetNodeId: string,
+): PathPlanResult | null {
+  if (!map || !targetNodeId) return null
+  const targetNode = map.nodes.find(n => n.nodeId === targetNodeId)
+  if (!targetNode) return null
+
+  // 单源 Dijkstra 核心
+  const dijkstra = (startId: string) => {
+    const dist = new Map<string, number>()
+    const prev = new Map<string, { nodeId: string; edgeId: string } | null>()
+    const unvisited = new Set<string>()
+
+    for (const node of map.nodes) {
+      dist.set(node.nodeId, Infinity)
+      prev.set(node.nodeId, null)
+      unvisited.add(node.nodeId)
+    }
+    dist.set(startId, 0)
+
+    while (unvisited.size > 0) {
+      let u: string | null = null
+      let minDist = Infinity
+      for (const node of unvisited) {
+        const d = dist.get(node) ?? Infinity
+        if (d < minDist) {
+          minDist = d
+          u = node
+        }
+      }
+      if (u === null || minDist === Infinity) break
+      if (u === targetNodeId) break
+
+      unvisited.delete(u)
+
+      for (const edge of map.edges) {
+        let v: string | null = null
+        if (edge.fromNodeId === u) {
+          v = edge.toNodeId
+        } else if (edge.toNodeId === u) {
+          v = edge.fromNodeId
+        }
+
+        if (v && unvisited.has(v)) {
+          const alt = minDist + edge.durationSeconds
+          if (alt < (dist.get(v) ?? Infinity)) {
+            dist.set(v, alt)
+            prev.set(v, { nodeId: u, edgeId: edge.edgeId })
+          }
+        }
+      }
+    }
+
+    return { dist, prev }
+  }
+
+  const buildResult = (
+    _startId: string,
+    initialDelaySeconds: number,
+    prev: Map<string, { nodeId: string; edgeId: string } | null>,
+    totalDist: number,
+  ): PathPlanResult => {
+    const nodeNames: string[] = []
+    const edgeIds: string[] = []
+    let curr: string | null = targetNodeId
+
+    while (curr !== null) {
+      const nodeObj = map.nodes.find(n => n.nodeId === curr)
+      if (nodeObj) nodeNames.unshift(nodeObj.name)
+      const p = prev.get(curr)
+      if (p) {
+        edgeIds.unshift(p.edgeId)
+        curr = p.nodeId
+      } else {
+        break
+      }
+    }
+
+    return {
+      totalDurationSeconds: Math.ceil(totalDist + initialDelaySeconds),
+      pathNodeNames: nodeNames,
+      pathEdgeIds: edgeIds,
+    }
+  }
+
+  if (world.nodeId) {
+    if (world.nodeId === targetNodeId) {
+      return { totalDurationSeconds: 0, pathNodeNames: [targetNode.name], pathEdgeIds: [] }
+    }
+    const { dist, prev } = dijkstra(world.nodeId)
+    const targetDist = dist.get(targetNodeId)
+    if (targetDist === undefined || targetDist === Infinity) return null
+    return buildResult(world.nodeId, 0, prev, targetDist)
+  }
+
+  if (world.edgeId) {
+    const currentEdge = map.edges.find(e => e.edgeId === world.edgeId)
+    if (currentEdge) {
+      const progress = Math.max(0, Math.min(1, world.edgeProgress))
+      const reverseDelay = currentEdge.durationSeconds * progress
+      const res1 = dijkstra(currentEdge.fromNodeId)
+      const dist1 = (res1.dist.get(targetNodeId) ?? Infinity) + reverseDelay
+
+      const forwardDelay = currentEdge.durationSeconds * (1 - progress)
+      const res2 = dijkstra(currentEdge.toNodeId)
+      const dist2 = (res2.dist.get(targetNodeId) ?? Infinity) + forwardDelay
+
+      if (dist2 <= dist1 && dist2 < Infinity) {
+        return buildResult(currentEdge.toNodeId, forwardDelay, res2.prev, res2.dist.get(targetNodeId)!)
+      } else if (dist1 < Infinity) {
+        return buildResult(currentEdge.fromNodeId, reverseDelay, res1.prev, res1.dist.get(targetNodeId)!)
+      }
+    }
+  }
+
+  return null
+}
 // 地图节点/地点名称与描述来自服务端数据，仅面板框架文本与 aria 描述模板走 i18n。
 
 /**
@@ -28,12 +161,12 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const maps = useGameStore(state => state.maps)
   const world = useGameStore(state => state.world)
   const actions = useGameStore(state => state.actions)
-  const encounters = useGameStore(state => state.encounters)
+  const items = useGameStore(state => state.items)
   const queue = useGameStore(state => state.queue.entries)
   const map = maps.find(item => item.mapId === world.mapId)
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
-
+  const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
   // 视口拖拽漫游与缩放状态
   const stageRef = useRef<HTMLDivElement>(null)
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -207,14 +340,52 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   if (!map) {
     return <div className="world-map-loading">{t('combat.map.loading')}</div>
   }
+  // 1. 提取该地点的产出资源（来自开放采集/生产行动 outputs）
+  const nodeResources = useMemo(() => {
+    if (!selectedNode) return []
+    const list: { itemId: string; name: string; quantity: number }[] = []
+    const seen = new Set<string>()
 
-  const selectedActions = selectedNode?.availableActionIds
-    .map(actionId => actions.find(action => action.id === actionId)?.name ?? actionId) ?? []
-  const selectedEncounters = selectedNode?.encounterIds
-    .map(encounterId => encounters.find(encounter => encounter.encounterId === encounterId)?.name ?? encounterId) ?? []
+    for (const actionId of selectedNode.availableActionIds) {
+      const action = actions.find(a => a.id === actionId)
+      if (!action || !action.outputs) continue
+      for (const [itemId, qty] of Object.entries(action.outputs)) {
+        if (seen.has(itemId)) continue
+        seen.add(itemId)
+        const itemDef = items.find(i => i.itemId === itemId)
+        list.push({
+          itemId,
+          name: itemDef?.name ?? itemId,
+          quantity: qty,
+        })
+      }
+    }
+    return list
+  }, [selectedNode, actions, items])
+
+  // 2. 提取该地点的栖息生灵（普通/精英/领主）
+  const nodeMonsters = useMemo(() => {
+    if (!selectedNode) return { normal: [], elite: [], boss: [] }
+    return {
+      normal: selectedNode.monsters ?? [],
+      elite: selectedNode.eliteEnemies ?? [],
+      boss: selectedNode.bossEnemies ?? [],
+    }
+  }, [selectedNode])
+
+  // 3. 提取该地点的地标与建筑设施
+  const nodeBuildings = useMemo(() => {
+    return selectedNode?.buildings ?? []
+  }, [selectedNode])
+
+  // 4. 计算当前位置到选中地点的最短路径规划
+  const plannedTravel = useMemo(() => {
+    if (!map || !selectedNodeId) return null
+    return planShortestTravel(map, world, selectedNodeId)
+  }, [map, world, selectedNodeId])
+
   const atSelectedNode = selectedNode?.nodeId === world.nodeId
   const travellingToSelected = selectedNode?.nodeId === activeTravel?.travelDestinationNodeId
-
   return (
     <div className="world-map-layout">
       <section
@@ -395,38 +566,190 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
         </div>
         {selectedNode ? (
           <>
-            <header>
-              <span>{t('combat.map.nodeHeading')}</span>
-              <h3>{selectedNode.name}</h3>
+            <header className="world-location-header">
+              <div className="world-location-title-row">
+                <span className="world-node-badge">{t('combat.map.nodeHeading')}</span>
+                <h3>{selectedNode.name}</h3>
+              </div>
               <p>{selectedNode.description}</p>
             </header>
+
             <dl className="world-location-stats">
-              <div><dt>{t('combat.map.cultivationEfficiency')}</dt><dd>{Math.round(selectedNode.cultivationMultiplier * 100)}%</dd></div>
-              <div><dt>{t('combat.map.availableActions')}</dt><dd>{selectedActions.length}</dd></div>
-              <div><dt>{t('combat.map.encounterCount')}</dt><dd>{selectedEncounters.length}</dd></div>
+              <div>
+                <dt>{t('combat.map.cultivationEfficiency')}</dt>
+                <dd className={selectedNode.cultivationMultiplier > 1 ? 'text-gold' : ''}>
+                  {Math.round(selectedNode.cultivationMultiplier * 100)}%
+                </dd>
+              </div>
+              <div>
+                <dt>{t('combat.map.resourcesHeading')}</dt>
+                <dd>{nodeResources.length}</dd>
+              </div>
+              <div>
+                <dt>{t('combat.map.monstersHeading')}</dt>
+                <dd>{nodeMonsters.normal.length + nodeMonsters.elite.length + nodeMonsters.boss.length}</dd>
+              </div>
             </dl>
-            <div className="world-location-tags">
-              {selectedActions.map(name => <span key={name}>{name}</span>)}
-              {selectedEncounters.map(name => <span className="is-danger" key={name}>{name}</span>)}
-              {selectedActions.length === 0 && selectedEncounters.length === 0 && <span>{t('combat.map.noActions')}</span>}
+
+            <div className="world-location-sections">
+              {/* 1. 产出资源 */}
+              <div className="world-eco-block">
+                <div className="world-eco-title">
+                  <span className="eco-icon">🌿</span>
+                  <strong>{t('combat.map.resourcesHeading')}</strong>
+                </div>
+                <div className="world-eco-content">
+                  {nodeResources.map(res => (
+                    <span className="world-resource-pill" key={res.itemId}>
+                      {res.name}
+                      {res.quantity > 1 && <small>×{res.quantity}</small>}
+                    </span>
+                  ))}
+                  {nodeResources.length === 0 && (
+                    <span className="world-eco-empty">{t('combat.map.noResources')}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* 2. 栖息生灵 */}
+              <div className="world-eco-block">
+                <div className="world-eco-title">
+                  <span className="eco-icon">🐾</span>
+                  <strong>{t('combat.map.monstersHeading')}</strong>
+                </div>
+                <div className="world-eco-content">
+                  {nodeMonsters.normal.map(monster => (
+                    <span className="world-monster-pill" key={monster.monsterId}>
+                      {monster.name}
+                    </span>
+                  ))}
+                  {nodeMonsters.elite.map(monster => (
+                    <span className="world-monster-pill is-elite" key={monster.monsterId}>
+                      <small className="monster-rank-tag">精</small>
+                      {monster.name}
+                    </span>
+                  ))}
+                  {nodeMonsters.boss.map(monster => (
+                    <span className="world-monster-pill is-boss" key={monster.monsterId}>
+                      <small className="monster-rank-tag">魁</small>
+                      {monster.name}
+                    </span>
+                  ))}
+                  {nodeMonsters.normal.length === 0 && nodeMonsters.elite.length === 0 && nodeMonsters.boss.length === 0 && (
+                    <span className="world-eco-empty">{t('combat.map.noMonsters')}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. 地标建筑 */}
+              <div className="world-eco-block">
+                <div className="world-eco-title">
+                  <span className="eco-icon">🏛️</span>
+                  <strong>{t('combat.map.buildingsHeading')}</strong>
+                </div>
+                <div className="world-eco-content">
+                  {nodeBuildings.map(b => (
+                    <div className="world-building-card" key={b.entityId} title={b.description}>
+                      <strong>{b.name}</strong>
+                      {b.effect && <small>{b.effect}</small>}
+                    </div>
+                  ))}
+                  {nodeBuildings.length === 0 && (
+                    <span className="world-eco-empty">{t('combat.map.noBuildings')}</span>
+                  )}
+                </div>
+              </div>
             </div>
+
+            {/* 赶路操作按钮 */}
             <div className="world-location-actions">
               <button
+                className="confirm-primary world-travel-btn"
                 disabled={atSelectedNode || travellingToSelected}
-                onClick={() => gameClient.sendCommand('travel_to', { destinationNodeId: selectedNode.nodeId })}
+                onClick={() => setTravelModalOpen(true)}
                 type="button"
-              >{atSelectedNode ? t('combat.map.atNode') : travellingToSelected ? t('combat.map.travelling') : t('combat.map.planTravel')}</button>
+              >
+                {atSelectedNode ? t('combat.map.atNode') : travellingToSelected ? t('combat.map.travelling') : t('combat.map.planTravel')}
+              </button>
               {activeTravel && (
                 <button
                   className="danger"
                   onClick={() => gameClient.sendCommand('remove_action', { entryId: activeTravel.entryId })}
                   type="button"
-                >{t('combat.map.stopTravel')}</button>
+                >
+                  {t('combat.map.stopTravel')}
+                </button>
               )}
             </div>
           </>
-        ) : <p>{t('combat.map.selectPrompt')}</p>}
+        ) : (
+          <p>{t('combat.map.selectPrompt')}</p>
+        )}
       </aside>
+
+      {/* 启程前往确认弹窗 */}
+      {selectedNode && (
+        <Modal
+          labelledBy="travel-confirm-modal-title"
+          onClose={() => setTravelModalOpen(false)}
+          open={travelModalOpen}
+          size="small"
+        >
+          <div className="travel-confirm-dialog">
+            <h3 id="travel-confirm-modal-title">
+              {t('combat.map.travelConfirmTitle', { name: selectedNode.name })}
+            </h3>
+
+            <div className="travel-confirm-body">
+              <div className="travel-confirm-row">
+                <span>{t('combat.map.travelOrigin')}</span>
+                <strong>{world.locationName}</strong>
+              </div>
+              <div className="travel-confirm-row">
+                <span>{t('combat.map.travelDestination')}</span>
+                <strong className="travel-highlight-dest">{selectedNode.name}</strong>
+              </div>
+              <div className="travel-confirm-row">
+                <span>{t('combat.map.travelEstimatedTime')}</span>
+                <strong className="travel-highlight-time">{plannedTravel?.totalDurationSeconds ?? 0} 秒</strong>
+              </div>
+              {plannedTravel && plannedTravel.pathNodeNames.length > 1 && (
+                <div className="travel-route-section">
+                  <span>{t('combat.map.travelRoute')}</span>
+                  <div className="travel-route-chain">
+                    {plannedTravel.pathNodeNames.map((nodeName, idx) => (
+                      <span className={`travel-route-node${idx === plannedTravel.pathNodeNames.length - 1 ? ' is-dest' : ''}`} key={idx}>
+                        {nodeName}
+                        {idx < plannedTravel.pathNodeNames.length - 1 && <span className="travel-route-arrow">→</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <p className="travel-confirm-prompt">{t('combat.map.travelConfirmPrompt')}</p>
+            </div>
+
+            <div className="travel-confirm-actions">
+              <button
+                onClick={() => setTravelModalOpen(false)}
+                type="button"
+              >
+                {t('combat.map.travelCancelBtn')}
+              </button>
+              <button
+                className="confirm-primary"
+                onClick={() => {
+                  gameClient.sendCommand('travel_to', { destinationNodeId: selectedNode.nodeId })
+                  setTravelModalOpen(false)
+                }}
+                type="button"
+              >
+                {t('combat.map.travelConfirmBtn')}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 })

@@ -475,27 +475,240 @@
   font-size: 12px;
 }
 
-.world-location-tags {
+.world-location-title-row {
   display: flex;
-  align-content: flex-start;
-  gap: 5px;
-  flex: 1;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-.world-location-tags span {
-  height: fit-content;
-  padding: 3px 7px;
-  border: 1px solid rgba(114, 169, 140, 0.38);
-  color: #9ec9b3;
+.world-node-badge {
+  padding: 1px 6px;
+  border: 1px solid rgba(201, 180, 109, 0.4);
+  border-radius: 2px;
+  color: var(--gold-bright);
+  font-size: 10px;
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.world-location-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.world-eco-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.world-eco-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.world-eco-title .eco-icon {
+  font-size: 12px;
+}
+
+.world-eco-content {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.world-resource-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgba(114, 169, 140, 0.45);
+  border-radius: 3px;
+  background: rgba(114, 169, 140, 0.1);
+  color: #a8d5be;
+  font-size: 11px;
+}
+
+.world-resource-pill small {
+  color: var(--gold-bright);
   font-size: 10px;
 }
 
-.world-location-tags span.is-danger {
-  border-color: rgba(200, 82, 63, 0.46);
-  color: #df8d7e;
+.world-monster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgba(200, 82, 63, 0.35);
+  border-radius: 3px;
+  background: rgba(200, 82, 63, 0.08);
+  color: #df9e92;
+  font-size: 11px;
 }
 
+.world-monster-pill.is-elite {
+  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(168, 85, 247, 0.12);
+  color: #d8b4fe;
+}
+
+.world-monster-pill.is-boss {
+  border-color: rgba(234, 179, 8, 0.6);
+  background: rgba(234, 179, 8, 0.15);
+  color: #fef08a;
+  font-weight: 500;
+}
+
+.monster-rank-tag {
+  padding: 0 3px;
+  border-radius: 2px;
+  font-size: 9px;
+  line-height: 1.3;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.world-building-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid rgba(201, 180, 109, 0.2);
+  border-radius: 3px;
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.world-building-card strong {
+  color: var(--gold-bright);
+  font-size: 11px;
+}
+
+.world-building-card small {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.world-eco-empty {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-style: italic;
+}
+
+.world-travel-btn {
+  width: 100%;
+  min-height: 36px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 启程前往确认弹窗 */
+.travel-confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px;
+}
+
+.travel-confirm-dialog h3 {
+  margin: 0;
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 18px;
+  border-bottom: 1px solid var(--gold-faint);
+  padding-bottom: 10px;
+}
+
+.travel-confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.travel-confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.travel-confirm-row span {
+  color: var(--text-dim);
+}
+
+.travel-highlight-dest {
+  color: var(--gold-bright);
+  font-size: 13px;
+}
+
+.travel-highlight-time {
+  color: #38bdf8;
+  font-size: 13px;
+}
+
+.travel-route-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(201, 180, 109, 0.15);
+}
+
+.travel-route-section > span {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.travel-route-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.travel-route-node {
+  color: var(--text);
+}
+
+.travel-route-node.is-dest {
+  color: var(--gold-bright);
+  font-weight: 500;
+}
+
+.travel-route-arrow {
+  margin-left: 4px;
+  color: var(--text-dim);
+}
+
+.travel-confirm-prompt {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.travel-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.travel-confirm-actions button {
+  min-width: 80px;
+  min-height: 32px;
+}
 .world-location-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
