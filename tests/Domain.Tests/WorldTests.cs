@@ -25,14 +25,14 @@ public sealed class WorldTests
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
         state.Queue.Entries.Clear();
 
-        var result = SimulationEngine.TravelTo(state, WorldNodeIds.TwilightPass);
+        var result = SimulationEngine.TravelTo(state, WorldNodeIds.CloudGate);
 
         Assert.True(result.Success);
         var travel = Assert.Single(state.Queue.Entries);
         Assert.Equal(ActionIds.WorldTravel, travel.ActionId);
-        Assert.Equal(37, travel.DurationSeconds);
+        Assert.Equal(24, travel.DurationSeconds);
         Assert.Equal(
-            ["edge.herb-spring", "edge.spring-twilight"],
+            ["edge.village-tea", "edge.tea-gate"],
             travel.TravelPlan!.Segments.Select(segment => segment.EdgeId).ToArray());
     }
 
@@ -44,22 +44,22 @@ public sealed class WorldTests
     {
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
         state.Queue.Entries.Clear();
-        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.TwilightPass).Success);
+        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.CloudGate).Success);
 
-        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(10));
+        SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(6));
 
         var activeTravel = Assert.Single(state.Queue.Entries);
         Assert.Null(state.World.NodeId);
-        Assert.Equal("edge.herb-spring", state.World.EdgeId);
-        Assert.Equal(10d / 18d, state.World.EdgeProgress, precision: 6);
+        Assert.Equal("edge.village-tea", state.World.EdgeId);
+        Assert.Equal(6d / 12d, state.World.EdgeProgress, precision: 6);
         Assert.True(SimulationEngine.Remove(state, activeTravel.EntryId).Success);
         Assert.Empty(state.Queue.Entries);
         Assert.Null(state.World.NodeId);
-        Assert.Equal(10d / 18d, state.World.EdgeProgress, precision: 6);
+        Assert.Equal(6d / 12d, state.World.EdgeProgress, precision: 6);
 
-        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.HerbVale).Success);
+        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.YunxiVillage).Success);
         var returnTravel = Assert.Single(state.Queue.Entries);
-        Assert.Equal(10, returnTravel.DurationSeconds);
+        Assert.Equal(6, returnTravel.DurationSeconds);
         Assert.Equal(0, returnTravel.TravelPlan!.Segments[0].EndProgress);
     }
 
@@ -72,15 +72,15 @@ public sealed class WorldTests
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
         state.Queue.Entries.Clear();
         state.PresenceMode = PresenceMode.IdleOffline;
-        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.CloudMarket).Success);
+        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.TeaHouse).Success);
 
         var result = SimulationEngine.AdvanceTo(state, Baseline.AddHours(1));
 
-        Assert.Equal(WorldNodeIds.CloudMarket, state.World.NodeId);
+        Assert.Equal(WorldNodeIds.TeaHouse, state.World.NodeId);
         Assert.Null(state.World.EdgeId);
         Assert.Empty(state.Queue.Entries);
         Assert.Equal(1, result.CompletedActions);
-        Assert.Contains(result.Events, entry => entry == $"arrived:{WorldNodeIds.CloudMarket}");
+        Assert.Contains(result.Events, entry => entry == $"arrived:{WorldNodeIds.TeaHouse}");
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ public sealed class WorldTests
         Assert.False(blocked.Success);
         Assert.Equal("ACTION_UNAVAILABLE_HERE", blocked.Code);
 
-        state.World.NodeId = WorldNodeIds.SpiritSpring;
+        state.World.NodeId = WorldNodeIds.CloudPeak;
         Assert.True(SimulationEngine.Enqueue(state, ActionIds.DrawQi).Success);
         SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(10));
 
@@ -115,12 +115,12 @@ public sealed class WorldTests
         var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
         SimulationEngine.Enqueue(state, ActionIds.GatherHerbs);
         var originalCount = state.Queue.Entries.Count;
-        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.CloudMarket).Success);
-        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.SunsetRidge).Success);
+        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.TeaHouse).Success);
+        Assert.True(SimulationEngine.TravelTo(state, WorldNodeIds.PeachForest).Success);
 
         Assert.Equal(originalCount + 1, state.Queue.Entries.Count);
         Assert.Equal(ActionIds.WorldTravel, state.Queue.Entries[0].ActionId);
-        Assert.Equal(WorldNodeIds.SunsetRidge, state.Queue.Entries[0].TravelPlan!.DestinationNodeId);
+        Assert.Equal(WorldNodeIds.PeachForest, state.Queue.Entries[0].TravelPlan!.DestinationNodeId);
         Assert.Single(state.Queue.Entries, entry => entry.TravelPlan is not null);
     }
 }

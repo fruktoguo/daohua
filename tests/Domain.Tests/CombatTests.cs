@@ -1217,7 +1217,8 @@ public sealed class CombatTests
                 EnhancementLevel = 7
             }
         ];
-        state.World.NodeId = WorldNodeIds.TwilightPass;
+        state.World.MapId = "map.starfall-domain";
+        state.World.NodeId = "node.meteor-crater";
         SimulationEngine.Enqueue(state, ActionIds.SweepTwilightValley, -1);
 
         var result = SimulationEngine.AdvanceTo(state, Baseline.AddHours(1));
@@ -1248,7 +1249,8 @@ public sealed class CombatTests
             state.Combat.DefenseLevel = 1_000;
             state.Combat.AbilitySlots[0].AbilityId = CombatAbilityIds.BlazingBlast;
             state.Combat.AbilitySlots[0].Level = 100;
-            state.World.NodeId = WorldNodeIds.TwilightPass;
+            state.World.MapId = "map.starfall-domain";
+            state.World.NodeId = "node.meteor-crater";
             SimulationEngine.Enqueue(state, ActionIds.SweepTwilightValley, -1);
         }
 

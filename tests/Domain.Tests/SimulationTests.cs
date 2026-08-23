@@ -219,7 +219,7 @@ public sealed class SimulationEngineTests
         Assert.Equal(3, state.StructuredEventLog.Count);
         Assert.Equal([1L, 2L, 3L], state.StructuredEventLog.Select(entry => entry.Sequence));
         Assert.Equal(Baseline, state.StructuredEventLog[0].OccurredAt);
-        Assert.Contains("{{action:explore.gather-ningxue-grass|采集凝血草}}", state.StructuredEventLog[2].Template, StringComparison.Ordinal);
+        Assert.Contains("{{action:explore.gather-ningxue-grass|采摘 凝血草}}", state.StructuredEventLog[2].Template, StringComparison.Ordinal);
     }
 
     /// <summary>

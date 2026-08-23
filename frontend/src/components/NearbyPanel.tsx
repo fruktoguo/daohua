@@ -116,24 +116,6 @@ export const NearbyPanel = memo(function NearbyPanel(): React.JSX.Element {
         </div>
       </section>
 
-      {/* 人物 NPC */}
-      <section className="nearby-section">
-        <h4>{t('combat.nearby.npcsHeading')}</h4>
-        <div className="nearby-grid">
-          {world.npcs.map(entity => (
-            <article className="nearby-card" key={entity.entityId}>
-              <span className="nearby-mark">{t('combat.nearby.markNpc')}</span>
-              <div>
-                <strong>{entity.name}</strong>
-                <p>{entity.description}</p>
-                <small>{entity.effect}</small>
-              </div>
-            </article>
-          ))}
-          {world.npcs.length === 0 && <p className="nearby-empty">{t('combat.nearby.noNpcs')}</p>}
-        </div>
-      </section>
-
       {/* 建筑设施 */}
       <section className="nearby-section">
         <h4>{t('combat.nearby.buildingsHeading')}</h4>

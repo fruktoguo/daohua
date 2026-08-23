@@ -116,21 +116,21 @@ public static class WorldMapIds
 /// </summary>
 public static class WorldNodeIds
 {
-    /// <summary>百草幽谷。</summary>
-    public const string HerbVale = "node.herb-vale";
-    /// <summary>云海天门。</summary>
+    /// <summary>云溪村（故事起源）。</summary>
+    public const string YunxiVillage = "node.yunxi-village";
+    /// <summary>漱玉溪。</summary>
+    public const string ShuyuBrook = "node.shuyu-brook";
+    /// <summary>百草谷。</summary>
+    public const string HerbValley = "node.herb-valley";
+    /// <summary>落霞桃林。</summary>
+    public const string PeachForest = "node.peach-forest";
+    /// <summary>清石水滩。</summary>
+    public const string RockBeach = "node.rock-beach";
+    /// <summary>望云茶肆。</summary>
+    public const string TeaHouse = "node.tea-house";
+    /// <summary>青云山门。</summary>
     public const string CloudGate = "node.cloud-gate";
-    /// <summary>灵泉灵脉。</summary>
-    public const string SpiritSpring = "node.spirit-spring";
-    /// <summary>落霞危崖。</summary>
-    public const string SunsetRidge = "node.sunset-ridge";
-    /// <summary>暮光古隘。</summary>
-    public const string TwilightPass = "node.twilight-pass";
-    /// <summary>玄石灵矿。</summary>
-    public const string StoneVein = "node.stone-vein";
-    /// <summary>云端坊市。</summary>
-    public const string CloudMarket = "node.cloud-market";
-    /// <summary>上古祭台。</summary>
-    public const string AncientTerrace = "node.ancient-terrace";
+    /// <summary>云巅草庐。</summary>
+    public const string CloudPeak = "node.cloud-peak";
 }
 

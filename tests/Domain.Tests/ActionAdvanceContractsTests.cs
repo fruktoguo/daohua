@@ -57,7 +57,7 @@ public sealed class ActionAdvanceContractsTests
                 },
                 World = new ActionWorldDelta
                 {
-                    TargetNodeId = WorldNodeIds.HerbVale,
+                    TargetNodeId = WorldNodeIds.YunxiVillage,
                     EdgeProgress = 0.75
                 }
             },
@@ -98,7 +98,7 @@ public sealed class ActionAdvanceContractsTests
         Assert.Equal(-25.0, deserialized.Delta.CombatResources.HitpointsDelta);
         Assert.Equal(10.0, deserialized.Delta.CombatResources.ManapointsDelta);
         Assert.Equal(0.5, deserialized.Delta.CombatResources.HitpointRemainder);
-        Assert.Equal(WorldNodeIds.HerbVale, deserialized.Delta.World?.TargetNodeId);
+        Assert.Equal(WorldNodeIds.YunxiVillage, deserialized.Delta.World?.TargetNodeId);
         Assert.Equal(0.75, deserialized.Delta.World?.EdgeProgress);
 
         // 验证结构化事件
@@ -195,7 +195,7 @@ public sealed class ActionAdvanceContractsTests
             Target = Baseline.AddSeconds(10),
             ProgressMilliseconds = 2000,
             CurrentMapId = WorldMapIds.QingyunMountains,
-            CurrentNodeId = WorldNodeIds.HerbVale,
+            CurrentNodeId = WorldNodeIds.YunxiVillage,
             AvailableInventory = new Dictionary<string, double> { [ItemIds.Spirit] = 50 }.ToFrozenDictionary(StringComparer.Ordinal)
         };
 
@@ -207,7 +207,7 @@ public sealed class ActionAdvanceContractsTests
         Assert.Equal(Baseline.AddSeconds(10), context.Target);
         Assert.Equal(2000, context.ProgressMilliseconds);
         Assert.Equal(WorldMapIds.QingyunMountains, context.CurrentMapId);
-        Assert.Equal(WorldNodeIds.HerbVale, context.CurrentNodeId);
+        Assert.Equal(WorldNodeIds.YunxiVillage, context.CurrentNodeId);
         Assert.Equal(50, context.AvailableInventory[ItemIds.Spirit]);
     }
 

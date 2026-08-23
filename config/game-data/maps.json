@@ -1,114 +1,167 @@
 [
   {
     "id": "map.qingyun-mountains",
-    "name": "青云山脉",
-    "description": "灵脉、山谷和古道交错的入门地域。不同地点会改变可用行动、妖兽遭遇和修炼环境。",
+    "name": "青云仙山",
+    "description": "青云宗庇护之下的入门修真福地。山脚炊烟、清溪灵草，山道茶肆坊市，山顶绝顶草庐俯瞰红尘茫茫云海。",
     "backgroundSeed": 73021,
     "nodes": [
       {
-        "id": "node.herb-vale",
-        "name": "青岚药谷",
-        "description": "低阶灵草沿溪谷生长，是初入修行者最稳定的采集地。",
-        "x": 13,
-        "y": 63,
-        "cultivationMultiplier": 1,
+        "id": "node.yunxi-village",
+        "name": "云溪村",
+        "description": "炊烟袅袅的宁静山村，溪水穿村而过，老槐树与古井见证一代代求道者的启程。",
+        "x": 20,
+        "y": 65,
         "availableActionIds": [
+          "cultivation.draw-qi",
           "explore.gather-ningxue-grass",
           "combat.hunt-qi-beast"
         ],
         "encounterIds": [
           "encounter.qi-beast"
         ],
-        "npcs": [
-          {
-            "id": "npc.herbalist-lin",
-            "name": "采药人林伯",
-            "kind": "npc",
-            "description": "熟悉药谷路径的老采药人。",
-            "effect": "后续可提供采集委托"
-          }
-        ],
-        "buildings": []
-      },
-      {
-        "id": "node.cloud-gate",
-        "name": "青云山门",
-        "description": "连接药谷、灵泉和西岭的山门，也是低阶修士的聚集处。",
-        "x": 31,
-        "y": 39,
-        "cultivationMultiplier": 1,
-        "availableActionIds": [
-          "combat.hunt-qi-beast"
-        ],
-        "encounterIds": [
-          "encounter.qi-beast"
-        ],
-        "npcs": [
-          {
-            "id": "npc.gate-disciple",
-            "name": "守山弟子",
-            "kind": "npc",
-            "description": "负责记录进出山门的修士。",
-            "effect": "山门附近不会出现高阶妖兽"
-          }
-        ],
+        "npcs": [],
         "buildings": [
           {
-            "id": "building.qingyun-gate",
-            "name": "青云山门",
+            "id": "building.old-well",
+            "name": "村中古井",
             "kind": "building",
-            "description": "覆盖整条古道的防护阵基。",
-            "effect": "区域内受袭概率降低"
+            "description": "水质甘冽的青石老井，井旁常有村民汲水闲谈。",
+            "effect": "故事起点"
+          },
+          {
+            "id": "building.locust-tree",
+            "name": "百年古槐",
+            "kind": "building",
+            "description": "枝繁叶茂的古槐树，遮蔽半个村口。",
+            "effect": "遮阳纳凉"
           }
         ]
       },
       {
-        "id": "node.spirit-spring",
-        "name": "澄心灵泉",
-        "description": "泉眼不断逸散精纯灵气，适合吐纳与稳固周天。",
-        "x": 49,
-        "y": 57,
-        "cultivationMultiplier": 1.25,
+        "id": "node.shuyu-brook",
+        "name": "漱玉溪",
+        "description": "清澈见底的山涧溪流，鹅卵石如玉，破晓时分灵木上的露水最为纯净。",
+        "x": 12,
+        "y": 82,
+        "cultivationMultiplier": 1,
         "availableActionIds": [
           "explore.collect-morning-dew"
         ],
-        "encounterIds": [],
-        "npcs": [
-          {
-            "id": "npc.spring-meditator",
-            "name": "静修道人",
-            "kind": "npc",
-            "description": "常年在泉边静坐，对外界少有回应。",
-            "effect": "提示灵泉修炼增益"
-          }
+        "encounterIds": [
+          "encounter.qi-beast"
         ],
-        "buildings": []
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.shuyu-stones",
+            "name": "漱玉跳岩",
+            "kind": "building",
+            "description": "溪水中的垫脚青石，晨曦露水在此汇聚凝结。",
+            "effect": "晨露采集点"
+          }
+        ]
       },
       {
-        "id": "node.sunset-ridge",
-        "name": "落霞西岭",
-        "description": "山势开阔却常有聚气兽徘徊，适合低阶斗法历练。",
-        "x": 36,
-        "y": 17,
+        "id": "node.herb-valley",
+        "name": "百草谷",
+        "description": "背阴潮湿的山谷中野生草木繁茂，药香扑鼻，自生低阶灵草。",
+        "x": 10,
+        "y": 45,
         "cultivationMultiplier": 1,
         "availableActionIds": [
-          "combat.hunt-qi-beast"
+          "explore.gather-ningxue-grass"
+        ],
+        "encounterIds": [
+          "encounter.qi-beast"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.herb-rack",
+            "name": "晾药竹架",
+            "kind": "building",
+            "description": "依山谷搭建的草药晾晒竹架，药香四溢。",
+            "effect": "灵草采摘点"
+          }
+        ]
+      },
+      {
+        "id": "node.peach-forest",
+        "name": "落霞桃林",
+        "description": "阳坡之上漫山桃花盛开，古桃木枝干苍劲，蕴含微弱纯阳灵气。",
+        "x": 38,
+        "y": 78,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "explore.chop-peach-wood"
         ],
         "encounterIds": [
           "encounter.sunset-ridge"
         ],
         "npcs": [],
-        "buildings": []
+        "buildings": [
+          {
+            "id": "building.peach-bridge",
+            "name": "断木古桥",
+            "kind": "building",
+            "description": "由坚韧老桃木干搭建的便桥，横跨桃林幽涧。",
+            "effect": "桃木采伐点"
+          }
+        ]
       },
       {
-        "id": "node.twilight-pass",
-        "name": "暮影关",
-        "description": "通往暮影谷的狭窄关口，谷中妖物会成群出现。",
-        "x": 68,
-        "y": 20,
+        "id": "node.rock-beach",
+        "name": "清石水滩",
+        "description": "溪水冲刷出的露天砂石滩，裸露的山岩中可见沉重致密的乌铁矿石。",
+        "x": 35,
+        "y": 92,
         "cultivationMultiplier": 1,
         "availableActionIds": [
-          "combat.sweep-twilight-valley"
+          "explore.mine-dark-iron"
+        ],
+        "encounterIds": [
+          "encounter.sunset-ridge"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.mining-shed",
+            "name": "淘石草棚",
+            "kind": "building",
+            "description": "堆放采矿锤镐与碎石料的粗陋草棚。",
+            "effect": "乌铁开采点"
+          }
+        ]
+      },
+      {
+        "id": "node.tea-house",
+        "name": "望云茶肆",
+        "description": "山道转折处的草棚茶摊，过路散修在此歇脚喝茶、互通有无，灵市交易活跃。",
+        "x": 45,
+        "y": 48,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [],
+        "encounterIds": [],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.tea-shed",
+            "name": "望云茶棚",
+            "kind": "building",
+            "description": "沿山道搭建的常驻交易茶棚。",
+            "effect": "灵市集散地"
+          }
+        ]
+      },
+      {
+        "id": "node.cloud-gate",
+        "name": "青云山门",
+        "description": "白玉石牌坊高耸入云，连接凡尘与仙门，宗门守山灵兽护佑试炼。",
+        "x": 60,
+        "y": 30,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "combat.hunt-qi-beast"
         ],
         "encounterIds": [
           "encounter.twilight-pass"
@@ -116,71 +169,217 @@
         "npcs": [],
         "buildings": [
           {
-            "id": "building.twilight-watchtower",
-            "name": "暮影哨塔",
+            "id": "building.qingyun-arch",
+            "name": "白玉山门牌坊",
             "kind": "building",
-            "description": "观察谷内妖气变化的旧哨塔。",
-            "effect": "显示暮影谷敌群情报"
+            "description": "没入云雾中的高耸白玉牌坊，刻有青云道纹。",
+            "effect": "山门历练试炼场"
           }
         ]
       },
       {
-        "id": "node.stone-vein",
-        "name": "玄岩矿脉",
-        "description": "裸露的山体中可见玄铁纹路，后续会开放采矿行动。",
-        "x": 84,
-        "y": 55,
-        "cultivationMultiplier": 1,
+        "id": "node.cloud-peak",
+        "name": "云巅草庐",
+        "description": "青云仙山极巅之所，没入茫茫云海之上。老道闲坐崖边抚琴观云，俯瞰人间万家灯火。",
+        "x": 82,
+        "y": 15,
+        "cultivationMultiplier": 1.25,
         "availableActionIds": [
-          "explore.mine-dark-iron"
+          "cultivation.draw-qi",
+          "combat.hunt-qi-beast"
         ],
-        "encounterIds": [],
+        "encounterIds": [
+          "encounter.twilight-pass"
+        ],
         "npcs": [],
         "buildings": [
           {
-            "id": "building.abandoned-mine",
-            "name": "废弃矿架",
+            "id": "building.peak-cottage",
+            "name": "绝顶道庐",
             "kind": "building",
-            "description": "旧矿道入口仍残留可修复的木制矿架。",
-            "effect": "后续玩家建筑槽位"
+            "description": "依悬崖古松而建的简朴茅庐，俯瞰茫茫云海与人间烟火。",
+            "effect": "吐纳修炼效果提升 25%"
+          },
+          {
+            "id": "building.zither-terrace",
+            "name": "抚琴石台",
+            "kind": "building",
+            "description": "崖边突出的平整青石，常有清风抚松。",
+            "effect": "静心悟道"
           }
         ]
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge.village-shuyu",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.shuyu-brook",
+        "durationSeconds": 8
       },
       {
-        "id": "node.cloud-market",
-        "name": "流云集",
-        "description": "山中散修交换物资的集市，灵市功能在此最为活跃。",
-        "x": 61,
-        "y": 82,
+        "id": "edge.village-herb",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.herb-valley",
+        "durationSeconds": 10
+      },
+      {
+        "id": "edge.village-peach",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.peach-forest",
+        "durationSeconds": 9
+      },
+      {
+        "id": "edge.village-tea",
+        "fromNodeId": "node.yunxi-village",
+        "toNodeId": "node.tea-house",
+        "durationSeconds": 12
+      },
+      {
+        "id": "edge.shuyu-rock",
+        "fromNodeId": "node.shuyu-brook",
+        "toNodeId": "node.rock-beach",
+        "durationSeconds": 11
+      },
+      {
+        "id": "edge.peach-rock",
+        "fromNodeId": "node.peach-forest",
+        "toNodeId": "node.rock-beach",
+        "durationSeconds": 7
+      },
+      {
+        "id": "edge.herb-tea",
+        "fromNodeId": "node.herb-valley",
+        "toNodeId": "node.tea-house",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.peach-tea",
+        "fromNodeId": "node.peach-forest",
+        "toNodeId": "node.tea-house",
+        "durationSeconds": 10
+      },
+      {
+        "id": "edge.tea-gate",
+        "fromNodeId": "node.tea-house",
+        "toNodeId": "node.cloud-gate",
+        "durationSeconds": 12
+      },
+      {
+        "id": "edge.gate-peak",
+        "fromNodeId": "node.cloud-gate",
+        "toNodeId": "node.cloud-peak",
+        "durationSeconds": 15
+      }
+    ]
+  },
+  {
+    "id": "map.starfall-domain",
+    "name": "星陨异境",
+    "description": "天穹被天外陨星撕裂的狂暴异界。焦土散发着荧光煞气，草木扭曲变异，乃是叩开仙门、踏入真正修仙界的试炼凶地。",
+    "backgroundSeed": 91402,
+    "nodes": [
+      {
+        "id": "node.astral-rift",
+        "name": "裂天界隙",
+        "description": "天空撕裂出幽紫裂痕的界域边缘，罡风呼啸，是踏入星陨异境的起点。",
+        "x": 15,
+        "y": 50,
         "cultivationMultiplier": 1,
         "availableActionIds": [],
-        "encounterIds": [],
-        "npcs": [
-          {
-            "id": "npc.market-broker",
-            "name": "灵市牙人",
-            "kind": "npc",
-            "description": "替往来修士整理挂牌与交割。",
-            "effect": "后续降低本地市场手续费"
-          }
+        "encounterIds": [
+          "encounter.twilight-valley"
         ],
+        "npcs": [],
         "buildings": [
           {
-            "id": "building.cloud-market",
-            "name": "流云集市",
+            "id": "building.astral-monolith",
+            "name": "断裂界碑",
             "kind": "building",
-            "description": "沿山道搭建的常驻交易棚。",
-            "effect": "提供灵市访问"
+            "description": "古修立下的界域警示石碑，已被紫雷劈裂。",
+            "effect": "界域边界"
           }
         ]
       },
       {
-        "id": "node.ancient-terrace",
-        "name": "观星古台",
-        "description": "残破石台位于群峰之间，夜间可感应更活跃的天地灵机。",
-        "x": 88,
-        "y": 26,
-        "cultivationMultiplier": 1.12,
+        "id": "node.carrion-tomb",
+        "name": "腐生古冢",
+        "description": "古修残骨与腐朽道袍堆叠之地，死气深重，吸纳死气伴生的伴灵花在此妖艳绽放。",
+        "x": 32,
+        "y": 75,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "explore.gather-banling-flower"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.carrion-monument",
+            "name": "残破古冢",
+            "kind": "building",
+            "description": "被盗掘一空的古修墓穴，死气萦绕。",
+            "effect": "伴灵花采摘点"
+          }
+        ]
+      },
+      {
+        "id": "node.scorched-pines",
+        "name": "畸木焦林",
+        "description": "被天外星火烧焦的黑木林，枝干扭曲如人肢，吸收星煞之气的引灵松在此生长。",
+        "x": 35,
+        "y": 25,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "explore.chop-yinlingsong"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.scorched-branches",
+            "name": "枯焦残木",
+            "kind": "building",
+            "description": "焦黑如碳的古树桩，散发淡淡异香。",
+            "effect": "引灵松采伐点"
+          }
+        ]
+      },
+      {
+        "id": "node.fluorite-abyss",
+        "name": "荧石铜渊",
+        "description": "裂谷深处散发着幽绿荧光与滚烫地热的矿脉，伴生有高温赤铜矿石。",
+        "x": 60,
+        "y": 80,
+        "cultivationMultiplier": 1,
+        "availableActionIds": [
+          "explore.mine-crimson-copper"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.copper-chasm",
+            "name": "荧光地缝",
+            "kind": "building",
+            "description": "滚烫矿石裸露的岩层裂隙。",
+            "effect": "赤铜开采点"
+          }
+        ]
+      },
+      {
+        "id": "node.blood-pool",
+        "name": "冥煞血池",
+        "description": "地脉煞气汇聚而成的污血潭，掠灵邪修与嗜血妖物在此祭炼魔煞法器。",
+        "x": 55,
+        "y": 45,
+        "cultivationMultiplier": 0.8,
         "availableActionIds": [
           "combat.sweep-twilight-valley"
         ],
@@ -188,75 +387,119 @@
           "encounter.twilight-valley"
         ],
         "npcs": [],
-        "buildings": []
+        "buildings": [
+          {
+            "id": "building.blood-altar",
+            "name": "白骨血坛",
+            "kind": "building",
+            "description": "用修士头骨垒砌的邪法祭台。",
+            "effect": "邪修巢穴"
+          }
+        ]
+      },
+      {
+        "id": "node.bone-pit",
+        "name": "白骨荒坑",
+        "description": "古战场万人坑遗迹，煞气化形为残刃尸煞与尸兵，四处游荡游猎生者。",
+        "x": 75,
+        "y": 65,
+        "cultivationMultiplier": 0.8,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.bone-mound",
+            "name": "乱刃骨堆",
+            "kind": "building",
+            "description": "无数锈蚀断刃插在骨堆之上。",
+            "effect": "尸煞巢穴"
+          }
+        ]
+      },
+      {
+        "id": "node.meteor-crater",
+        "name": "坠星天坑",
+        "description": "天外陨星坠落砸出的万丈巨坑，核心星核灼烧万物，坠星异兽盘踞在此。",
+        "x": 88,
+        "y": 35,
+        "cultivationMultiplier": 0.7,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
+        "encounterIds": [
+          "encounter.twilight-valley"
+        ],
+        "npcs": [],
+        "buildings": [
+          {
+            "id": "building.star-core",
+            "name": "陨星核心",
+            "kind": "building",
+            "description": "散发灼热星芒的天外奇石，异兽盘踞其上。",
+            "effect": "关底领主巢穴"
+          }
+        ]
       }
     ],
     "edges": [
       {
-        "id": "edge.herb-gate",
-        "fromNodeId": "node.herb-vale",
-        "toNodeId": "node.cloud-gate",
-        "durationSeconds": 14
-      },
-      {
-        "id": "edge.herb-spring",
-        "fromNodeId": "node.herb-vale",
-        "toNodeId": "node.spirit-spring",
-        "durationSeconds": 18
-      },
-      {
-        "id": "edge.gate-spring",
-        "fromNodeId": "node.cloud-gate",
-        "toNodeId": "node.spirit-spring",
-        "durationSeconds": 11
-      },
-      {
-        "id": "edge.gate-sunset",
-        "fromNodeId": "node.cloud-gate",
-        "toNodeId": "node.sunset-ridge",
-        "durationSeconds": 9
-      },
-      {
-        "id": "edge.sunset-twilight",
-        "fromNodeId": "node.sunset-ridge",
-        "toNodeId": "node.twilight-pass",
-        "durationSeconds": 17
-      },
-      {
-        "id": "edge.spring-twilight",
-        "fromNodeId": "node.spirit-spring",
-        "toNodeId": "node.twilight-pass",
-        "durationSeconds": 19
-      },
-      {
-        "id": "edge.spring-market",
-        "fromNodeId": "node.spirit-spring",
-        "toNodeId": "node.cloud-market",
-        "durationSeconds": 13
-      },
-      {
-        "id": "edge.market-stone",
-        "fromNodeId": "node.cloud-market",
-        "toNodeId": "node.stone-vein",
+        "id": "edge.rift-tomb",
+        "fromNodeId": "node.astral-rift",
+        "toNodeId": "node.carrion-tomb",
         "durationSeconds": 12
       },
       {
-        "id": "edge.twilight-stone",
-        "fromNodeId": "node.twilight-pass",
-        "toNodeId": "node.stone-vein",
-        "durationSeconds": 18
+        "id": "edge.rift-pines",
+        "fromNodeId": "node.astral-rift",
+        "toNodeId": "node.scorched-pines",
+        "durationSeconds": 14
       },
       {
-        "id": "edge.twilight-terrace",
-        "fromNodeId": "node.twilight-pass",
-        "toNodeId": "node.ancient-terrace",
+        "id": "edge.tomb-abyss",
+        "fromNodeId": "node.carrion-tomb",
+        "toNodeId": "node.fluorite-abyss",
+        "durationSeconds": 15
+      },
+      {
+        "id": "edge.pines-blood",
+        "fromNodeId": "node.scorched-pines",
+        "toNodeId": "node.blood-pool",
         "durationSeconds": 13
       },
       {
-        "id": "edge.stone-terrace",
-        "fromNodeId": "node.stone-vein",
-        "toNodeId": "node.ancient-terrace",
-        "durationSeconds": 15
+        "id": "edge.tomb-blood",
+        "fromNodeId": "node.carrion-tomb",
+        "toNodeId": "node.blood-pool",
+        "durationSeconds": 16
+      },
+      {
+        "id": "edge.abyss-bone",
+        "fromNodeId": "node.fluorite-abyss",
+        "toNodeId": "node.bone-pit",
+        "durationSeconds": 11
+      },
+      {
+        "id": "edge.blood-bone",
+        "fromNodeId": "node.blood-pool",
+        "toNodeId": "node.bone-pit",
+        "durationSeconds": 14
+      },
+      {
+        "id": "edge.pines-crater",
+        "fromNodeId": "node.scorched-pines",
+        "toNodeId": "node.meteor-crater",
+        "durationSeconds": 18
+      },
+      {
+        "id": "edge.bone-crater",
+        "fromNodeId": "node.bone-pit",
+        "toNodeId": "node.meteor-crater",
+        "durationSeconds": 16
       }
     ]
   }

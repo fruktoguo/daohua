@@ -1,7 +1,7 @@
 [
   {
     "id": "encounter.qi-beast",
-    "name": "青岚后山",
+    "name": "溪谷林间",
     "minBudget": 15,
     "maxBudget": 45,
     "eliteInterval": 0,
@@ -30,7 +30,7 @@
   },
   {
     "id": "encounter.sunset-ridge",
-    "name": "西岭荒野",
+    "name": "桃林坡石",
     "minBudget": 20,
     "maxBudget": 65,
     "eliteInterval": 5,
@@ -66,7 +66,7 @@
   },
   {
     "id": "encounter.twilight-pass",
-    "name": "暮影隘口",
+    "name": "山门试炼",
     "minBudget": 35,
     "maxBudget": 80,
     "eliteInterval": 5,
@@ -104,7 +104,7 @@
   },
   {
     "id": "encounter.twilight-valley",
-    "name": "坠星裂谷",
+    "name": "坠星天坑",
     "minBudget": 60,
     "maxBudget": 150,
     "eliteInterval": 5,

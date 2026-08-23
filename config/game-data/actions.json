@@ -14,14 +14,15 @@
   },
   {
     "id": "explore.gather-ningxue-grass",
-    "name": "采集凝血草",
-    "description": "在深山崖壁与背阴草丛中采摘暗红的凝血草。",
+    "name": "采摘 凝血草",
+    "description": "在幽深背阴的百草谷采摘暗红的凡阶凝血草。",
     "type": "exploration",
     "durationSeconds": 8,
     "executionKind": "timed",
     "combatEncounterId": null,
     "availableNodeIds": [
-      "node.herb-vale"
+      "node.yunxi-village",
+      "node.herb-valley"
     ],
     "hiddenFromCatalog": false,
     "inputs": {},
@@ -31,13 +32,15 @@
   },
   {
     "id": "explore.chop-peach-wood",
-    "name": "采伐桃木",
-    "description": "在向阳山坡砍伐百年凡阶桃木。",
+    "name": "采伐 桃木",
+    "description": "在落霞阳坡采伐带有微弱纯阳灵气的坚韧古桃木。",
     "type": "exploration",
     "durationSeconds": 6,
     "executionKind": "timed",
     "combatEncounterId": null,
-    "availableNodeIds": [],
+    "availableNodeIds": [
+      "node.peach-forest"
+    ],
     "hiddenFromCatalog": false,
     "inputs": {},
     "outputs": {
@@ -46,14 +49,14 @@
   },
   {
     "id": "explore.mine-dark-iron",
-    "name": "开采乌铁",
-    "description": "在深山老矿采掘未淬原矿乌铁石。",
+    "name": "挖掘 乌铁矿",
+    "description": "在清石水滩露天砂石层中开采沉重致密的乌铁原矿。",
     "type": "exploration",
     "durationSeconds": 6,
     "executionKind": "timed",
     "combatEncounterId": null,
     "availableNodeIds": [
-      "node.stone-vein"
+      "node.rock-beach"
     ],
     "hiddenFromCatalog": false,
     "inputs": {},
@@ -63,14 +66,14 @@
   },
   {
     "id": "explore.collect-morning-dew",
-    "name": "汲取晨露",
-    "description": "于清晨破晓时分汲取灵木叶尖凝结的无根甘露。",
+    "name": "收集 晨露",
+    "description": "破晓时分在漱玉溪边草木叶尖汲取纯净无根晨露。",
     "type": "exploration",
     "durationSeconds": 6,
     "executionKind": "timed",
     "combatEncounterId": null,
     "availableNodeIds": [
-      "node.spirit-spring"
+      "node.shuyu-brook"
     ],
     "hiddenFromCatalog": false,
     "inputs": {},
@@ -80,13 +83,15 @@
   },
   {
     "id": "explore.gather-banling-flower",
-    "name": "采集伴灵花",
-    "description": "在仙门外围悬崖灵泉旁寻觅并采摘伴灵花。",
+    "name": "采摘 伴灵花",
+    "description": "在腐生古冢死气聚集处采摘吸纳死气伴生的伴灵异花。",
     "type": "exploration",
     "durationSeconds": 8,
     "executionKind": "timed",
     "combatEncounterId": null,
-    "availableNodeIds": [],
+    "availableNodeIds": [
+      "node.carrion-tomb"
+    ],
     "hiddenFromCatalog": false,
     "inputs": {},
     "outputs": {
@@ -95,13 +100,15 @@
   },
   {
     "id": "explore.chop-yinlingsong",
-    "name": "采伐引灵松",
-    "description": "在绝壁悬崖采伐聚气引风的引灵松木。",
+    "name": "采伐 引灵松",
+    "description": "在畸木焦林采伐吸收星火异气的坚韧引灵松。",
     "type": "exploration",
     "durationSeconds": 8,
     "executionKind": "timed",
     "combatEncounterId": null,
-    "availableNodeIds": [],
+    "availableNodeIds": [
+      "node.scorched-pines"
+    ],
     "hiddenFromCatalog": false,
     "inputs": {},
     "outputs": {
@@ -110,13 +117,15 @@
   },
   {
     "id": "explore.mine-crimson-copper",
-    "name": "开采赤铜",
-    "description": "在浅层灵脉矿脉开采导气赤铜矿石。",
+    "name": "开采 赤铜矿",
+    "description": "在荧石铜渊地底深处开采滚烫温热的赤铜矿石。",
     "type": "exploration",
     "durationSeconds": 8,
     "executionKind": "timed",
     "combatEncounterId": null,
-    "availableNodeIds": [],
+    "availableNodeIds": [
+      "node.fluorite-abyss"
+    ],
     "hiddenFromCatalog": false,
     "inputs": {},
     "outputs": {
@@ -818,16 +827,20 @@
   },
   {
     "id": "combat.hunt-qi-beast",
-    "name": "历练聚气兽",
-    "description": "在灵脉外围迎战聚气兽，获取灵核与战斗经验。",
+    "name": "山门试炼",
+    "description": "在山门或险峰要道磨砺武艺道法，驱赶林间灵物并接受守山试炼。",
     "type": "combat",
     "durationSeconds": 0,
     "executionKind": "combatEncounter",
-    "combatEncounterId": "encounter.qi-beast",
+    "combatEncounterId": "encounter.twilight-pass",
     "availableNodeIds": [
-      "node.herb-vale",
+      "node.yunxi-village",
+      "node.shuyu-brook",
+      "node.herb-valley",
+      "node.peach-forest",
+      "node.rock-beach",
       "node.cloud-gate",
-      "node.sunset-ridge"
+      "node.cloud-peak"
     ],
     "hiddenFromCatalog": false,
     "inputs": {},
@@ -835,15 +848,20 @@
   },
   {
     "id": "combat.sweep-twilight-valley",
-    "name": "清剿暮影谷",
-    "description": "深入高阶暮影战区，每轮会按强度生成一至三名敌人，每十场遭遇一次谷主。",
+    "name": "清剿 坠星异境",
+    "description": "深入异象肆虐的坠星禁区，迎战妖狼、火鸦与变异尸煞，直面坠星异兽。",
     "type": "combat",
     "durationSeconds": 0,
     "executionKind": "combatEncounter",
     "combatEncounterId": "encounter.twilight-valley",
     "availableNodeIds": [
-      "node.twilight-pass",
-      "node.ancient-terrace"
+      "node.astral-rift",
+      "node.carrion-tomb",
+      "node.scorched-pines",
+      "node.fluorite-abyss",
+      "node.blood-pool",
+      "node.bone-pit",
+      "node.meteor-crater"
     ],
     "hiddenFromCatalog": false,
     "inputs": {},

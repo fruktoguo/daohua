@@ -259,12 +259,12 @@ public sealed class ProtocolTests
         var bytes = PacketCodec.EncodeCommand(
             "travel-1",
             "travel_to",
-            new TravelToRequest("node.twilight-pass"));
+            new TravelToRequest(WorldNodeIds.CloudGate));
 
         Assert.True(PacketCodec.TryDecode(bytes, out var packet));
         Assert.Equal("travel_to", packet.Payload.GetProperty("command").GetString());
         Assert.Equal(
-            "node.twilight-pass",
+            WorldNodeIds.CloudGate,
             packet.Payload.GetProperty("payload").GetProperty("destinationNodeId").GetString());
     }
 

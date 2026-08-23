@@ -122,7 +122,7 @@ public static class WorldCatalog
             return changed;
         }
 
-        world.NodeId = WorldNodeIds.HerbVale;
+        world.NodeId = WorldNodeIds.YunxiVillage;
         world.EdgeId = null;
         world.EdgeProgress = 0;
         return true;

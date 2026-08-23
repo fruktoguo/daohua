@@ -422,7 +422,7 @@ public sealed class ActionTransitionSystemTests
             Travel = new TravelPlan
             {
                 MapId = WorldMapIds.QingyunMountains,
-                DestinationNodeId = WorldNodeIds.HerbVale
+                DestinationNodeId = WorldNodeIds.YunxiVillage
             }
         };
         queue.Entries.Add(entry);
@@ -453,7 +453,7 @@ public sealed class ActionTransitionSystemTests
                 World = new ActionWorldDelta
                 {
                     TargetMapId = WorldMapIds.QingyunMountains,
-                    TargetNodeId = WorldNodeIds.CloudMarket
+                    TargetNodeId = WorldNodeIds.TeaHouse
                 }
             }
         };
@@ -466,7 +466,7 @@ public sealed class ActionTransitionSystemTests
         Assert.Equal(2, newBuff.Stacks);
 
         // 验证 WorldDelta 作用于 Travel 与脏标记
-        Assert.Equal(WorldNodeIds.CloudMarket, entry.Travel?.DestinationNodeId);
+        Assert.Equal(WorldNodeIds.TeaHouse, entry.Travel?.DestinationNodeId);
         Assert.True(dirty.IsDirty(DirtySections.World));
         Assert.True(dirty.IsDirty(DirtySections.Buffs));
 

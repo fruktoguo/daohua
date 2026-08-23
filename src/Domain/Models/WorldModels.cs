@@ -16,7 +16,7 @@ public sealed class WorldState
     /// <summary>当前所处的世界地图 ID。</summary>
     public string MapId { get; set; } = WorldMapIds.QingyunMountains;
     /// <summary>当前停驻的地图节点 ID（若在移动中则为起步节点或目标节点）。</summary>
-    public string? NodeId { get; set; } = WorldNodeIds.HerbVale;
+    public string? NodeId { get; set; } = WorldNodeIds.YunxiVillage;
     /// <summary>当前正在途经的路径边 ID（若停留在节点处则为 null）。</summary>
     public string? EdgeId { get; set; }
     /// <summary>当前边上的移动进度比例（0.0 ~ 1.0）。</summary>
