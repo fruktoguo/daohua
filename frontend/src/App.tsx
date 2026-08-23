@@ -724,7 +724,6 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   const worldNodeId = useGameStore(state => state.world.nodeId)
 
   const craftingMode = useUiStore(state => state.craftingMode)
-  const setCraftingMode = useUiStore(state => state.setCraftingMode)
   const alchemySubTab = useUiStore(state => state.alchemySubTab)
   const setAlchemySubTab = useUiStore(state => state.setAlchemySubTab)
   const forgingSubTab = useUiStore(state => state.forgingSubTab)
@@ -790,31 +789,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   return (
     <section className="panel skill-page crafting-page" hidden={hidden}>
       <header className="panel-header crafting-page-header">
-        <div className="crafting-header-main">
-          <h2>{t('app.nav.crafting')}</h2>
-          <div className="crafting-mode-tabs" role="tablist">
-            <button
-              aria-selected={craftingMode === 'alchemy'}
-              className={`crafting-mode-btn${craftingMode === 'alchemy' ? ' active' : ''}`}
-              onClick={() => setCraftingMode('alchemy')}
-              role="tab"
-              type="button"
-            >
-              <Icon name="alchemy" />
-              <span>{t('app.crafting.alchemy')}</span>
-            </button>
-            <button
-              aria-selected={craftingMode === 'forging'}
-              className={`crafting-mode-btn${craftingMode === 'forging' ? ' active' : ''}`}
-              onClick={() => setCraftingMode('forging')}
-              role="tab"
-              type="button"
-            >
-              <Icon name="forging" />
-              <span>{t('app.crafting.forging')}</span>
-            </button>
-          </div>
-        </div>
+        <h2>{t(`app.crafting.${craftingMode}`)}</h2>
 
         {/* 顶部子选项卡 */}
         {craftingMode === 'alchemy' ? (
