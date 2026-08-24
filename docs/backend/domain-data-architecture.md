@@ -1,6 +1,6 @@
 # 道化太初 · 服务端领域数据架构与 YuoCore ECS 规约
 
-本文档定义《道化太初》服务端的领域模型设计、数据类型规范以及与 `YuoCore` 引擎深度结合的架构标准。旨在解决传统贫血模型、巨型单体 State、手写深拷贝地狱以及“伪 ECS”退化问题，建立高性能、低 GC、确定性、高扩展性的商业级数据层。
+本文档定义《道化太初》服务端的领域模型设计、数据类型规范以及与 `YuoCore` 引擎深度结合的架构标准。旨在解决传统贫血模型、巨型单体 State、手写深拷贝地狱以及“伪 ECS”退化问题，建立可测量性能、确定性、高扩展性的商业级数据层。当前处于本地开发/内测阶段，数据模型、快照、Protocol 和部署拓扑采用一次性切换，不设计历史兼容层；任务队列的时间、战斗幂等和快照细节以《任务队列系统与组件设计方案（深化版）》为准。
 
 ---
 
@@ -15,7 +15,7 @@
 │ 1. 实体非线程安全：Entity/Component 永远只被当前 Fiber 的 YuoWorld 独占访问 │
 │ 2. 并行粒度是 Fiber：多个 Fiber（分片）并行 Tick，Fiber 内部单线程零锁 ECS │
 │ 3. 跨 Fiber 边界走 Actor：外部请求/跨服通信投递 Actor 消息，不直接碰 Entity  │
-│ 4. 逻辑由 YuoSystem<T1..Tn> 驱动：声明式自动注入所需组件，消除冗余 Query   │
+│ 4. 逻辑由唯一过渡 System 驱动：声明式注入组件，执行器只返回确定性结果       │
 │ 5. 状态同步与持久化解耦：通过 StateSync 提取脏组件，通过 Persistence 异步落库 │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -50,27 +50,30 @@
 - **规范**：
   - 继承自 `YuoCore.Ecs.YuoComponent`。
   - 拆分巨型单体 `PlayerState`，按子域独立拆分：
-    - `InventoryComponent`：背包物品字典与存取逻辑。
+    - `InventoryComponent`：背包物品字典；资产变更由唯一过渡系统原子应用。
     - `ActionQueueComponent`：挂机动作队列与推进状态。
     - `CultivationComponent`：灵气、境界与突破状态。
     - `CombatResourcesComponent`：当前生命、灵力与技能冷却。
     - `WorldPositionComponent`：大地图节点与寻路边。
     - `PlayerStatsComponent`：生涯统计数据。
     - `SyncDirtyComponent`：集中追踪组件脏段掩码。
-  - **数值类型统一**：遵循 `AGENTS.md` 规则 7，所有数值、属性、时长一律统一使用 `double` 类型，杜绝 `long`/`int`/`double` 混用导致的小数余量补丁。
+  - **命名规约（前缀与后缀分界）**：
+    - **业务子项与静态执行器采用帕斯卡前缀法**：`Task*`（如 `TaskBase`, `TaskGathering`）、`Executor*`（如 `ExecutorGathering`），便于 IDE 自动补全极速聚类；
+    - **ECS 核心基座保留自然后缀法**：实体组件统一以 `*Component` 结尾，调度系统统一以 `*System` 结尾。
+  - **数值边界明确**：属性、收益、倍率和玩法时长遵循 `AGENTS.md` 的 `double` 规范；ID、版本、序列、事件计数和毫秒阶段游标属于离散技术字段，直接使用整数或强类型表示，禁止隐式转换和为旧格式增加兼容字段。
 
 ### 3. 第三层：业务推进与事件系统（`src/Domain/Systems/`）
 - **职责**：驱动游戏世界状态的离散事件跃迁（DES）与瞬时计算。
 - **规范**：
-  - **自定义 SystemTag 事件机制**：定义业务事件标签（如 `IActionComplete : ISystemTag`、`IActionStart`、`IBreakthroughSuccess`）。
-  - **到期精准派发**：调度器在 10 秒到期时直接调用 `YuoWorld.RunSystem<IActionComplete>(playerEntity)`，由 YuoWorld 自动匹配并触发所有实现了该 Tag 的多泛型系统（如 `GatheringActionCompleteSystem : YuoSystem<ActionQueueComponent, InventoryComponent>, IActionComplete`）。
+  - **自定义 SystemTag 事件机制**：定义唯一到期标签 `IActionTransitionDue : ISystemTag`；其他业务事件只作为过渡系统内部产生的结果，不得各自拥有队列推进权。
+  - **到期精准派发**：调度器到达状态推导的截止时间后调用 `YuoWorld.RunSystem<IActionTransitionDue>(playerEntity)`，由 `ActionTransitionSystem` 统一调用 `Executor*` 并原子应用 `ActionDelta`。
   - 单线程无锁执行，由所属 Fiber 驱动。
 
 ### 4. 第四层：持久化快照（`src/Domain/Snapshots/` & `src/Server/Persistence/`）
 - **职责**：实现数据库异步安全落盘与跨节点冷计算传输。
 - **规范**：
-  - **彻底废除手写深拷贝 `Clone()`**：禁止在状态类上手写繁琐易漏的深拷贝代码。
-  - **投影式快照**：在 Fiber 安全点通过 `SnapshotMapper` 将 `YuoEntity` 组件数据瞬时投影为不可变 `PlayerSnapshot` 记录，或直接流式序列化丢入 `YuoCore.Persistence` 异步队列。
+  - **快照不保存运行时引用**：禁止把 Entity、World、Fiber、Timer、Channel、委托和缓存索引写入快照。
+  - **当前版本投影式快照**：在 Fiber 安全点通过 `SnapshotMapper` 生成包含当前 `SnapshotSchemaVersion`、状态版本、`LastSimulatedAt` 和 `GameDataFingerprint` 的不可变载荷；错误版本直接拒绝，不提供历史迁移，再写入带版本 CAS 的 `YuoCore.Persistence` 异步队列；不宣称零拷贝，必须先验证载荷独立性。
 
 ---
 

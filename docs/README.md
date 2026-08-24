@@ -28,6 +28,7 @@ docs/
 | 文档 | 定位 |
 | --- | --- |
 | [character-core-design.md](design/character-core-design.md) | **角色核心设计文档 (Character Core Design)**：统一常驻修仙者实体哲学、多维生命体征、跨行为状态连续穿透、Buff/Debuff 统一时间轴衰减、1 HP 濒死复苏、动作互锁与服务端 ECS 架构映射。 |
+| [ecs-architecture-and-evolution-plan.md](design/ecs-architecture-and-evolution-plan.md) | **领域聚合ECS架构重构与演进规划**：7大领域聚合粗粒度组件体系、全量 double 精度收敛、增量步进 O(1) 战斗状态机、通用三态词缀 Buff 管道与事前体征准入拦截。 |
 | [master-design.md](design/master-design.md) | **全景主设计总纲 (Master GDD)**：全域最高权威设计总纲，融汇数值底座、装备技能、持续消耗品、战斗引擎、大世界生态、世界观剧情、UI交互系统、服务端ECS架构与运维容量。 |
 | [master-design.html](design/master-design.html) | **全景主设计总纲·单文件修仙沉浸查看器**：独立离线单文件网页，无需开发服务，双击即开，内置暗墨玄石古典美学、大纲导航、实时搜索、数学公式与动态 MD 载入。 |
 | [initial-design.md](design/initial-design.md) | 系统设计总纲：商业化界面与数值规则、行动队列、复活与战斗边界等核心设计约定。 |

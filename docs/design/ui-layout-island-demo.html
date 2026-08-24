@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>道化太初 · 现行实际界面与美学优化方案实时对比演示</title>
+  <style>
+    /* ==========================================================================
+       1. 现行实际游戏官方样式基准 (1:1 复制自 src/styles.css)
+       ========================================================================== */
+    :root {
+      color: #e9e3d2;
+      background: #070604;
+      font-family: "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, SimSun, serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --bg: #070604;
+      --bg-raised: #0e0c07;
+      --panel: #0e0c07;
+      --gold: #c9b46d;
+      --gold-bright: #e8d69a;
+      --gold-dim: #6e6038;
+      --gold-faint: rgba(201, 180, 109, 0.16);
+      --text: #e9e3d2;
+      --text-dim: rgba(233, 227, 210, 0.56);
+      --jade: #72a98c;
+      --qi: #75a9ad;
+      --danger: #c8523f;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --sidebar-width: 250px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body, #root {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      min-width: 320px;
+      overflow: hidden;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 700px at 50% -10%, #14110a 0%, transparent 60%),
+        radial-gradient(900px 600px at 50% 115%, #100d07 0%, transparent 55%),
+        var(--bg);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before,
+    body::after {
+      position: fixed;
+      z-index: 0;
+      width: 280px;
+      height: 280px;
+      pointer-events: none;
+      opacity: 0.05;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200' fill='none' stroke='%23c9b46d' stroke-width='2'%3E%3Ccircle cx='80' cy='90' r='18'/%3E%3Ccircle cx='80' cy='90' r='30'/%3E%3Ccircle cx='80' cy='90' r='42'/%3E%3Ccircle cx='80' cy='90' r='54'/%3E%3Cpath d='M134 90L196 90M122 118L180 132M122 62L180 48'/%3E%3C/svg%3E") no-repeat center / contain;
+      content: "";
+    }
+
+    body::before { top: -40px; right: -30px; }
+    body::after { bottom: -50px; left: -40px; transform: rotate(160deg); }
+
+    button, input, select {
+      color: inherit;
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    button {
+      position: relative;
+      overflow: hidden;
+      padding: 5px 10px;
+      border: 1px solid var(--gold-dim);
+      border-radius: 0;
+      color: var(--gold);
+      background: rgba(201, 180, 109, 0.05);
+      cursor: pointer;
+      transition: color 0.25s var(--ease), border-color 0.25s var(--ease), background 0.25s var(--ease);
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--gold);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, 0.09);
+    }
+
+    button:disabled {
+      cursor: default;
+      opacity: 0.35;
+    }
+
+    /* 现行游戏主骨架 */
+    .app {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      width: 100%;
+      height: 100vh;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .motes {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .motes i {
+      position: absolute;
+      bottom: -12px;
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(232, 214, 154, 0.85), rgba(232, 214, 154, 0) 70%);
+      opacity: 0;
+      animation: mote-rise 13s linear infinite;
+    }
+
+    .motes i:nth-child(1) { left: 8%; animation-duration: 14s; }
+    .motes i:nth-child(2) { left: 26%; width: 3px; height: 3px; animation-delay: 4s; animation-duration: 16s; }
+    .motes i:nth-child(3) { left: 45%; animation-delay: 7.5s; animation-duration: 12s; }
+    .motes i:nth-child(4) { left: 63%; width: 3px; height: 3px; animation-delay: 2s; animation-duration: 15s; }
+    .motes i:nth-child(5) { left: 80%; animation-delay: 6s; }
+    .motes i:nth-child(6) { left: 93%; width: 3px; height: 3px; animation-delay: 9s; animation-duration: 17s; }
+
+    @keyframes mote-rise {
+      0% { opacity: 0; transform: translate(0, 0); }
+      10% { opacity: 0.5; }
+      50% { opacity: 0.28; transform: translate(12px, -52vh); }
+      90% { opacity: 0.12; }
+      100% { opacity: 0; transform: translate(-6px, -106vh); }
+    }
+
+    /* 现行经典金石面板 (带金石古角与双重边框) */
+    .panel {
+      position: relative;
+      padding: 12px;
+      border: 1px solid var(--gold-dim);
+      border-radius: 0;
+      background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44' fill='none' stroke='%23c9b46d' stroke-width='2.2'%3E%3Cpath d='M9 42L2 42L2 2L42 2L42 9'/%3E%3Cpath d='M8 34L8 8L34 8' stroke='%236e6038' stroke-width='1'/%3E%3Crect x='0.4' y='0.4' width='3.2' height='3.2' transform='rotate(45 2 2)' fill='%23e8d69a' stroke='none'/%3E%3C/svg%3E") left -2px top -2px / 44px 44px no-repeat,
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 56' fill='none' stroke='%23a8955a' stroke-width='1.6'%3E%3Cpath d='M46 2L54 2L54 54L2 54L2 46'/%3E%3C/svg%3E") right -2px bottom -2px / 56px 56px no-repeat,
+        radial-gradient(140% 100% at 50% 0%, rgba(201, 180, 109, 0.05), transparent 55%),
+        var(--panel);
+      box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.6),
+        0 12px 32px rgba(0, 0, 0, 0.5),
+        inset 0 0 0 5px var(--panel),
+        inset 0 0 0 6px var(--gold-faint),
+        inset 0 0 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .panel-header {
+      position: relative;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      flex-wrap: wrap;
+    }
+
+    .panel-header::after {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 1px;
+      background: linear-gradient(90deg, var(--gold-dim), rgba(201, 180, 109, 0.12) 70%, transparent);
+      content: "";
+    }
+
+    .panel-header::before {
+      position: absolute;
+      bottom: -3px;
+      left: 0;
+      z-index: 1;
+      width: 7px;
+      height: 7px;
+      background: var(--gold);
+      box-shadow: 0 0 8px rgba(201, 180, 109, 0.55);
+      transform: rotate(45deg);
+      content: "";
+    }
+
+    .panel-header h2 {
+      margin: 0;
+      color: var(--gold);
+      font-family: "Kaiti SC", STKaiti, KaiTi, "Noto Serif SC", serif;
+      font-size: 18px;
+      font-weight: 400;
+      text-shadow: 0 0 18px rgba(201, 180, 109, 0.2);
+    }
+
+    /* 现行顶栏 (Topbar 85px) */
+    .topbar {
+      position: relative;
+      z-index: 20;
+      display: grid;
+      height: 85px;
+      min-height: 85px;
+      max-height: 85px;
+      min-width: 0;
+      flex-shrink: 0;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 9px 12px 15px 12px;
+      border-bottom: 1px solid var(--gold-dim);
+      background: rgba(7, 6, 4, 0.95);
+      box-shadow: 0 1px 14px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(6px);
+    }
+
+    .player-block {
+      display: flex;
+      min-width: 0;
+      width: 100%;
+      height: 100%;
+      align-items: center;
+      padding-right: 12px;
+      border-right: 1px solid var(--gold-faint);
+      cursor: pointer;
+    }
+
+    .player-info {
+      display: flex;
+      min-width: 0;
+      width: 100%;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .player-line {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .player-name {
+      max-width: 130px;
+      overflow: hidden;
+      color: var(--text);
+      font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+      font-size: 15px;
+      text-overflow: ellipsis;
+    }
+
+    .realm-badge {
+      padding: 1px 8px;
+      border: 1px solid var(--gold-dim);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, 0.07);
+      font-size: 11px;
+    }
+
+    .connection-dot {
+      width: 7px;
+      height: 7px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      background: var(--text-dim);
+    }
+
+    .connection-dot--online {
+      background: var(--jade);
+      box-shadow: 0 0 8px rgba(114, 169, 140, 0.8);
+    }
+
+    /* 现行冰魄灵池进度条 (带有 45 度菱形裁切与寒芒光尖) */
+    .realm-progress {
+      position: relative;
+      width: 100%;
+      height: 15px;
+      margin-top: 3px;
+      clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      background: repeating-linear-gradient(135deg, rgba(8, 14, 24, 0.95) 0 12px, rgba(14, 26, 42, 0.95) 12px 13px);
+      box-shadow: 0 0 8px rgba(14, 165, 233, 0.2), inset 0 1px 4px rgba(0, 0, 0, 0.85);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+
+    .realm-progress i {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 47%;
+      background: linear-gradient(90deg, #0c4a6e, #0284c7 35%, #0ea5e9 65%, #38bdf8 88%, #bae6fd 100%);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.55);
+    }
+
+    .realm-progress i::after {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 3px;
+      background: #ffffff;
+      box-shadow: 0 0 6px #ffffff, 0 0 12px rgba(186, 230, 253, 0.95);
+      content: "";
+    }
+
+    .realm-progress span {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1;
+      color: #f0f9ff;
+      font-size: 10px;
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: 0.6px;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 2px #000, 0 0 4px #000, 0 0 8px rgba(56, 189, 248, 0.75);
+    }
+
+    /* 现行队列中心 (QueueCenter) */
+    .queue-center {
+      position: relative;
+      display: grid;
+      width: min(100%, 920px);
+      min-width: 0;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+      align-items: stretch;
+      gap: 9px;
+    }
+
+    .qc-current-stage {
+      position: relative;
+      height: 60px;
+      min-width: 0;
+      min-height: 60px;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    @property --gold-angle {
+      syntax: "<angle>";
+      initial-value: 0deg;
+      inherits: false;
+    }
+
+    .qc-current {
+      position: relative;
+      display: flex;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 10px;
+      background:
+        linear-gradient(115deg, rgba(117, 169, 173, 0.055), transparent 38%),
+        linear-gradient(270deg, rgba(201, 180, 109, 0.045), transparent 42%),
+        #0a0805;
+      box-shadow: inset 0 1px 0 rgba(233, 227, 210, 0.04);
+    }
+
+    .qc-current::before {
+      position: absolute;
+      inset: -1px;
+      padding: 1px;
+      pointer-events: none;
+      background: conic-gradient(from var(--gold-angle), rgba(201, 180, 109, 0.1) 0deg 245deg, var(--gold-bright) 300deg, var(--gold) 320deg, rgba(201, 180, 109, 0.1) 360deg);
+      animation: gold-spin 3.6s linear infinite;
+      content: "";
+      mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      mask-composite: exclude;
+    }
+
+    @keyframes gold-spin {
+      to { --gold-angle: 360deg; }
+    }
+
+    .action-glyph {
+      display: inline-grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid var(--gold-dim);
+      color: var(--gold);
+      background: rgba(201, 180, 109, 0.06);
+    }
+
+    .action-glyph svg { width: 22px; height: 22px; }
+
+    .qc-main {
+      display: flex;
+      height: 48px;
+      min-width: 0;
+      flex: 1;
+      flex-direction: column;
+      gap: 5px;
+      justify-content: center;
+    }
+
+    .qc-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      white-space: nowrap;
+    }
+
+    .qc-title strong {
+      font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+      font-size: 14px;
+      font-weight: 400;
+      color: var(--text);
+    }
+
+    .qc-repeats {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .progress {
+      position: relative;
+      height: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(110, 96, 56, 0.62);
+      background: linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(201, 180, 109, 0.035)), #090805;
+      box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.85);
+    }
+
+    .progress-fill {
+      position: absolute;
+      inset: 2px;
+      width: 60%;
+      background: linear-gradient(90deg, #426c63, #72a98c 48%, #c9b46d 82%, #e8d69a);
+      box-shadow: 0 0 9px rgba(114, 169, 140, 0.36);
+    }
+
+    .progress-fill::before {
+      position: absolute;
+      top: 0; bottom: 0; left: 0; width: 30%;
+      background: linear-gradient(105deg, transparent 0 24%, rgba(255, 250, 220, 0.46) 48%, transparent 72% 100%);
+      animation: qi-flow 1.25s linear infinite;
+      content: "";
+    }
+
+    @keyframes qi-flow {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(400%); }
+    }
+
+    .qc-upcoming {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: end;
+      gap: 6px;
+      height: 100%;
+    }
+
+    .qc-next {
+      display: flex;
+      height: 24px;
+      align-items: center;
+      gap: 6px;
+      padding: 0 6px;
+      border: 1px solid var(--gold-faint);
+      color: var(--text);
+      background: rgba(14, 12, 7, 0.7);
+      opacity: 0.58;
+      font-size: 11px;
+    }
+
+    .qc-controls {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      align-self: center;
+    }
+
+    .loop-toggle {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+
+    .buff-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .buff-chip {
+      position: relative;
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid var(--gold-dim);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, 0.07);
+      cursor: pointer;
+    }
+
+    .buff-stack {
+      position: absolute;
+      right: -5px;
+      bottom: -5px;
+      min-width: 15px;
+      height: 15px;
+      padding: 0 3px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--gold);
+      color: #0a0805;
+      background: var(--gold-bright);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    /* 现行三栏布局 (app-body) */
+    .app-body {
+      display: grid;
+      min-height: 0;
+      flex: 1;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr) minmax(340px, 380px);
+      gap: 12px;
+      padding: 12px;
+    }
+
+    /* 左侧导航 (Sidebar) */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 10px;
+    }
+
+    .sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      background: transparent;
+      font-size: 13px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+    }
+
+    .nav-item:hover {
+      border-color: var(--gold-dim);
+      color: var(--text);
+      background: rgba(201, 180, 109, 0.04);
+    }
+
+    .nav-item.active {
+      border-color: var(--gold);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, 0.1);
+      box-shadow: inset 0 0 10px rgba(201, 180, 109, 0.15);
+    }
+
+    .nav-glyph {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .nav-glyph svg { width: 100%; height: 100%; }
+
+    /* 中央视窗 (Center Column) */
+    .center-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .main-content {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .skill-page {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .action-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .action-card {
+      padding: 12px;
+      border: 1px solid rgba(201, 180, 109, 0.22);
+      background: rgba(14, 12, 7, 0.6);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .action-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .action-card-title {
+      font-size: 15px;
+      color: var(--gold-bright);
+      font-weight: 600;
+    }
+
+    .action-card-desc {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .action-yield-preview {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(201, 180, 109, 0.1);
+    }
+
+    .action-yield-preview strong {
+      color: var(--qi);
+    }
+
+    /* 底栏日志 (Desktop Log) */
+    .desktop-log {
+      height: 150px;
+      min-height: 150px;
+    }
+
+    .game-log-panel {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 8px;
+    }
+
+    .log-filter-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+      border-bottom: 1px solid rgba(201, 180, 109, 0.15);
+      padding-bottom: 4px;
+    }
+
+    .log-filter-btn {
+      padding: 2px 8px;
+      font-size: 11px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+    }
+
+    .log-filter-btn.active {
+      border-color: var(--gold-dim);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, 0.08);
+    }
+
+    .log-messages {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      font-family: Arial, sans-serif;
+    }
+
+    .log-row {
+      display: flex;
+      gap: 8px;
+      line-height: 1.4;
+    }
+
+    .log-row .time { color: var(--text-dim); opacity: 0.6; font-size: 11px; }
+    .log-row.cultivation .msg { color: var(--qi); }
+    .log-row.combat .msg { color: #f28b82; }
+    .log-row.loot .msg { color: var(--gold-bright); }
+
+    /* 右侧战备栏 (Right Sidebar Panel) */
+    .right-sidebar-panel {
+      display: flex;
+      min-height: 100%;
+      flex-direction: column;
+      padding: 10px;
+    }
+
+    .right-sidebar-header {
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--gold-dim);
+      padding-bottom: 8px;
+    }
+
+    .right-sidebar-nav {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .right-sidebar-tab-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border: 1px solid rgba(201, 180, 109, 0.22);
+      border-radius: 4px;
+      background: rgba(14, 16, 18, 0.72);
+      color: var(--text-dim);
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .right-sidebar-tab-btn.is-active {
+      border-color: var(--gold);
+      color: #fff;
+      background: linear-gradient(180deg, rgba(201, 180, 109, 0.22) 0%, rgba(20, 24, 28, 0.95) 100%);
+      box-shadow: 0 0 12px rgba(201, 180, 109, 0.25);
+    }
+
+    .right-sidebar-tab-glyph {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      background: rgba(0, 0, 0, 0.4);
+      color: var(--gold-bright);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .right-sidebar-body {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 储物袋物品网格 */
+    .inventory-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .item-card {
+      aspect-ratio: 1;
+      background: rgba(18, 16, 11, 0.7);
+      border: 1px solid var(--gold-dim);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .item-card:hover {
+      border-color: var(--gold);
+      background: rgba(30, 26, 17, 0.85);
+    }
+
+    .item-card-icon { font-size: 22px; }
+    .item-card-amount {
+      position: absolute;
+      bottom: 2px;
+      right: 4px;
+      font-size: 11px;
+      color: var(--gold-bright);
+      font-family: Arial, sans-serif;
+    }
+
+    /* 装备 3 列虚影舞台 (Equipment Stage) */
+    .equipment-stage {
+      display: grid;
+      grid-template-columns: 1fr 1.2fr 1fr;
+      gap: 8px;
+      align-items: center;
+      min-height: 280px;
+    }
+
+    .equip-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .equip-slot-box {
+      border: 1px solid var(--gold-dim);
+      padding: 6px;
+      background: rgba(0, 0, 0, 0.3);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+    }
+
+    .equip-center-silhouette {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--gold-dim);
+    }
+
+    .equip-center-silhouette svg {
+      width: 70px;
+      height: 160px;
+      opacity: 0.75;
+    }
+
+    /* ==========================================================================
+       2. 优化项样式增量类 (Optimization Feature Classes)
+       ========================================================================== */
+
+    /* 优化项 1: 【浑天太极八卦行动盘】(opt-huntian-dial) */
+    .opt-huntian-dial .qc-current {
+      border-radius: 26px;
+      padding: 4px 12px 4px 6px;
+      background: rgba(10, 8, 5, 0.88);
+      border: 1px solid rgba(201, 180, 109, 0.35);
+      box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.8), 0 0 12px rgba(201, 180, 109, 0.15);
+    }
+    .opt-huntian-dial .qc-current::before { display: none; }
+    .opt-huntian-dial .action-glyph {
+      border-radius: 50%;
+      border-color: var(--gold);
+      animation: opt-rotate 16s linear infinite;
+      box-shadow: 0 0 8px rgba(201, 180, 109, 0.3);
+    }
+    @keyframes opt-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* 优化项 2: 【去线框微光悬浮岛屿】(opt-floating-islands) */
+    .opt-floating-islands .app-body {
+      gap: 14px;
+      padding: 14px;
+    }
+    .opt-floating-islands .panel {
+      border-radius: 8px;
+      border: 1px solid rgba(201, 180, 109, 0.22);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65), 0 0 1px rgba(201, 180, 109, 0.3);
+    }
+    .opt-floating-islands .topbar {
+      margin: 10px 14px 0 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(201, 180, 109, 0.22);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+    }
+
+    /* 优化项 3: 【灵气浮游微粒基底】(opt-ambient-canvas) */
+    #ambient-canvas {
+      display: none;
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .opt-ambient-canvas #ambient-canvas { display: block; }
+    .opt-ambient-canvas .motes { display: none; }
+
+    /* 优化项 4: 【左右侧边栏弹性收折】(opt-collapsible-sidebars) */
+    .opt-collapsible-sidebars .sidebar.is-collapsed {
+      width: 64px !important;
+      min-width: 64px !important;
+    }
+    .opt-collapsible-sidebars .sidebar.is-collapsed .nav-text {
+      display: none;
+    }
+    .opt-collapsible-sidebars .right-column.is-collapsed {
+      width: 0 !important;
+      min-width: 0 !important;
+      overflow: hidden;
+      padding: 0;
+      margin: 0;
+      opacity: 0;
+    }
+    .sidebar-collapse-btn {
+      display: none;
+      margin-top: auto;
+      padding: 6px;
+      font-size: 11px;
+      text-align: center;
+      border-top: 1px solid var(--gold-faint);
+    }
+    .opt-collapsible-sidebars .sidebar-collapse-btn { display: block; }
+
+    /* 优化项 5: 【底栏水墨日志走马灯收展】(opt-compact-log) */
+    .opt-compact-log .desktop-log.is-collapsed {
+      height: 36px;
+      min-height: 36px;
+    }
+    .opt-compact-log .desktop-log.is-collapsed .log-messages {
+      display: none;
+    }
+    .log-compact-marquee {
+      display: none;
+      font-size: 12px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .opt-compact-log .desktop-log.is-collapsed .log-compact-marquee {
+      display: block;
+    }
+
+    /* ==========================================================================
+       3. 悬浮优化项调控台 (Optimization Switcher Toolbar)
+       ========================================================================== */
+    .opt-switcher-panel {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 1000;
+      background: rgba(14, 12, 7, 0.96);
+      border: 1px solid var(--gold);
+      border-radius: 8px;
+      padding: 12px 14px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.9), 0 0 20px rgba(201, 180, 109, 0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 290px;
+      backdrop-filter: blur(12px);
+    }
+
+    .opt-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(201, 180, 109, 0.2);
+      padding-bottom: 6px;
+    }
+
+    .opt-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--gold-bright);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .opt-toggles {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .opt-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 3px 0;
+    }
+
+    .opt-item:hover {
+      color: var(--text);
+    }
+
+    .opt-item input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: var(--gold);
+    }
+
+    .opt-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+      border-top: 1px solid rgba(201, 180, 109, 0.15);
+      padding-top: 8px;
+    }
+
+    .opt-action-btn {
+      flex: 1;
+      padding: 4px 6px;
+      font-size: 11px;
+      border: 1px solid var(--gold-dim);
+      background: rgba(201, 180, 109, 0.08);
+      color: var(--gold-bright);
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .opt-action-btn:hover {
+      background: var(--gold);
+      color: #070604;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 灵气浮游微粒 Canvas (优化项 3) -->
+  <canvas id="ambient-canvas"></canvas>
+
+  <!-- 游戏主容器 -->
+  <div class="app" id="appRoot">
+    
+    <!-- 现行原版背景微粒 -->
+    <div class="motes"><i/><i/><i/><i/><i/><i/></div>
+
+    <!-- 顶栏 (TopBar) -->
+    <header class="topbar">
+      <!-- 玩家信息块 -->
+      <div class="player-block" onclick="switchMainTab('insight')">
+        <div class="player-info">
+          <div class="player-line">
+            <strong class="player-name">太初散人</strong>
+            <span class="realm-badge">练气期·三层 [武]</span>
+            <span class="connection-dot connection-dot--online" title="在线 · 凝神入定"></span>
+          </div>
+          <div class="realm-progress" title="当前灵池进度: 1,420 / 3,000 灵气">
+            <i></i>
+            <span>1,420 / 3,000 (47%)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 行动队列总控中心 (QueueCenter) -->
+      <div class="queue-center">
+        <div class="qc-current-stage">
+          <div class="qc-current">
+            <span class="action-glyph">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4.5c2 2.4 2 6.2 0 8.6-2-2.4-2-6.2 0-8.6Z"/><path d="M4.8 8.8c3 .3 5.4 2.4 6.1 5.4-3.2-.2-5.7-2.3-6.1-5.4Z"/><path d="M19.2 8.8c-3 .3-5.4 2.4-6.1 5.4 3.2-.2 5.7-2.3 6.1-5.4Z"/><path d="M3.5 15.5c2.6 2.8 5.4 4 8.5 4s5.9-1.2 8.5-4"/></svg>
+            </span>
+            <div class="qc-main">
+              <div class="qc-title">
+                <strong id="qcActionTitle">引气入体</strong>
+                <span class="qc-repeats">无限</span>
+              </div>
+              <div class="progress">
+                <div class="progress-fill" id="qcProgressFill">
+                  <i></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="qc-upcoming">
+          <div class="qc-next">
+            <span class="action-glyph" style="width: 16px; height: 16px; border: none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="17.5" cy="6" r="2.2"/><path d="M3 19 9.5 7l4.5 7 2.5-3.5L21 19H3Z"/></svg>
+            </span>
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">采摘 凝血草</span>
+            <span style="color: var(--text-dim); font-size: 10px;">×5</span>
+          </div>
+          <div class="qc-next">
+            <span class="action-glyph" style="width: 16px; height: 16px; border: none;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8.5 10V7.5M15.5 10V7.5"/><path d="M5.5 10.5h13v3.5a6.5 6.5 0 0 1-13 0v-3.5Z"/></svg>
+            </span>
+            <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">炼制 凝气散</span>
+            <span style="color: var(--text-dim); font-size: 10px;">×3</span>
+          </div>
+        </div>
+
+        <div class="qc-controls">
+          <label class="loop-toggle">
+            <input type="checkbox" checked /> 循环
+          </label>
+          <button type="button" style="padding: 2px 7px; font-size: 11px;">队列 3 ▾</button>
+        </div>
+      </div>
+
+      <!-- 增益状态栏 (BuffBar) -->
+      <div class="buff-bar">
+        <div class="buff-chip" title="凝气散：灵气产出 +15%">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 16a4.2 4.2 0 0 1-.6-8.3 5.2 5.2 0 0 1 10-1.3A3.8 3.8 0 0 1 17.5 16H7Z"/></svg>
+          <span class="buff-stack">1</span>
+        </div>
+        <div class="buff-chip" title="落霞谷灵地加成：修炼 +20%">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2.5 18.5 8 12 21.5 5.5 8 12 2.5Z"/><path d="M5.5 8h13M12 2.5 9.5 8 12 21.5"/></svg>
+          <span class="buff-stack" style="background: var(--jade); color: #fff;">地</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 三栏主体 (App Body) -->
+    <div class="app-body">
+
+      <!-- 左侧导航 (Sidebar) -->
+      <aside class="sidebar panel" id="sidebarNav">
+        <nav class="sidebar-nav">
+          <button class="nav-item active" onclick="switchMainTab('cultivation', this)">
+            <span class="nav-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4.5c2 2.4 2 6.2 0 8.6-2-2.4-2-6.2 0-8.6Z"/><path d="M4.8 8.8c3 .3 5.4 2.4 6.1 5.4-3.2-.2-5.7-2.3-6.1-5.4Z"/><path d="M19.2 8.8c-3 .3-5.4 2.4-6.1 5.4 3.2-.2 5.7-2.3 6.1-5.4Z"/><path d="M3.5 15.5c2.6 2.8 5.4 4 8.5 4s5.9-1.2 8.5-4"/></svg></span>
+            <span class="nav-text">修炼</span>
+          </button>
+          <button class="nav-item" onclick="switchMainTab('insight', this)">
+            <span class="nav-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg></span>
+            <span class="nav-text">洞悉</span>
+          </button>
+          <button class="nav-item" onclick="switchMainTab('exploration', this)">
+            <span class="nav-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="17.5" cy="6" r="2.2"/><path d="M3 19 9.5 7l4.5 7 2.5-3.5L21 19H3Z"/></svg></span>
+            <span class="nav-text">历练</span>
+          </button>
+          <button class="nav-item" onclick="switchMainTab('crafting', this)">
+            <span class="nav-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8.5 10V7.5M15.5 10V7.5"/><path d="M5.5 10.5h13v3.5a6.5 6.5 0 0 1-13 0v-3.5Z"/><path d="M9 21v-2M15 21v-2"/></svg></span>
+            <span class="nav-text">技艺</span>
+          </button>
+          <button class="nav-item" onclick="switchMainTab('map', this)">
+            <span class="nav-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"/><path d="M9 3v15M15 6v15"/></svg></span>
+            <span class="nav-text">大地图</span>
+          </button>
+          <button class="nav-item" onclick="switchMainTab('combat', this)">
+            <span class="nav-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m5 4 15 15M19 4 4 19"/><path d="m7 7 3-3 3 3M17 17l-3 3-3-3"/></svg></span>
+            <span class="nav-text">历练战况</span>
+          </button>
+          <button class="nav-item" onclick="switchMainTab('market', this)">
+            <span class="nav-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8.5h16M6 8.5V20h12V8.5"/><path d="m5 4h14l1 4.5H4L5 4Z"/><path d="M9 12h6M9 15.5h6"/></svg></span>
+            <span class="nav-text">坊市</span>
+          </button>
+        </nav>
+        <button class="sidebar-collapse-btn" onclick="toggleSidebarCollapse()">
+          <span id="sidebarToggleText">◀ 收起导航</span>
+        </button>
+      </aside>
+
+      <!-- 中央主视窗 (Center Column) -->
+      <div class="center-column">
+        <main class="main-content">
+          
+          <!-- 修炼面板 (Cultivation) -->
+          <section class="panel skill-page" id="tab-cultivation">
+            <header class="panel-header">
+              <h2>修炼</h2>
+              <span style="font-size: 11px; color: var(--text-dim);">当前灵地：青云门 · 落霞谷</span>
+            </header>
+            <div class="action-cards">
+              <div class="action-card">
+                <div class="action-card-header">
+                  <span class="action-card-title">引气入体</span>
+                  <span style="font-size: 11px; color: var(--jade);">● 正在进行</span>
+                </div>
+                <p class="action-card-desc">纳天地至纯灵气入体，涤荡经脉，洗涤凡胎。</p>
+                <div class="action-yield-preview">
+                  <span>基础产出: <strong>+12 灵气/次</strong></span>
+                  <span>灵地加成: <strong>+20%</strong></span>
+                  <span>预计收益: <strong style="color: var(--gold-bright);">+14.4 灵气/次 (耗时 3.0s)</strong></span>
+                </div>
+                <button type="button" style="align-self: flex-start;">正在执行</button>
+              </div>
+
+              <div class="action-card">
+                <div class="action-card-header">
+                  <span class="action-card-title">搬运周天</span>
+                  <span style="font-size: 11px; color: var(--text-dim);">需练气四层</span>
+                </div>
+                <p class="action-card-desc">运转大周天心法，凝练真元法力。</p>
+                <button type="button" disabled style="align-self: flex-start;">未解锁</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 洞悉面板 (Insight) -->
+          <section class="panel skill-page" id="tab-insight" style="display: none;">
+            <header class="panel-header">
+              <h2>洞悉根基</h2>
+            </header>
+            <div class="action-cards">
+              <div class="action-card">
+                <span class="action-card-title">六维属性</span>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 12px; margin-top: 6px;">
+                  <div>根骨: <strong style="color: var(--gold);">14</strong></div>
+                  <div>灵性: <strong style="color: var(--qi);">18</strong></div>
+                  <div>悟性: <strong style="color: var(--gold);">22</strong></div>
+                  <div>神识: <strong style="color: var(--text);">12</strong></div>
+                  <div>身法: <strong style="color: var(--jade);">15</strong></div>
+                  <div>机缘: <strong style="color: var(--gold);">10</strong></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 历练面板 (Exploration) -->
+          <section class="panel skill-page" id="tab-exploration" style="display: none;">
+            <header class="panel-header">
+              <h2>历练</h2>
+              <span style="font-size: 11px; color: var(--jade);">落霞谷</span>
+            </header>
+            <div class="action-cards">
+              <div class="action-card">
+                <div class="action-card-header">
+                  <span class="action-card-title">采摘 凝血草</span>
+                </div>
+                <p class="action-card-desc">采集山涧灵草，用于炼制灵丹。</p>
+                <button type="button" style="align-self: flex-start;" onclick="startExplore('采摘 凝血草')">开始采集</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- 其他预留面板 -->
+          <section class="panel skill-page" id="tab-crafting" style="display: none;">
+            <header class="panel-header"><h2>百工技艺 (炼丹 / 炼器)</h2></header>
+            <p style="color: var(--text-dim); font-size: 12px;">丹炉温热，可炼制凝气散、止血粉。</p>
+          </section>
+          <section class="panel skill-page" id="tab-map" style="display: none;">
+            <header class="panel-header"><h2>修仙大地图</h2></header>
+            <p style="color: var(--text-dim); font-size: 12px;">青云宗 ↔ 落霞谷 ↔ 坠星林渊 ↔ 凡尘坊市</p>
+          </section>
+          <section class="panel skill-page" id="tab-combat" style="display: none;">
+            <header class="panel-header"><h2>历练战况对决</h2></header>
+            <p style="color: var(--text-dim); font-size: 12px;">九宫格战场对峙与战备技能释放序列。</p>
+          </section>
+          <section class="panel skill-page" id="tab-market" style="display: none;">
+            <header class="panel-header"><h2>太虚坊市</h2></header>
+            <p style="color: var(--text-dim); font-size: 12px;">全服修士挂单与点对点撮合账本。</p>
+          </section>
+
+        </main>
+
+        <!-- 底栏日志 (Desktop Log) -->
+        <div class="desktop-log" id="desktopLogArea">
+          <section class="panel game-log-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="log-filter-tabs">
+                <button class="log-filter-btn active">全部</button>
+                <button class="log-filter-btn">战斗</button>
+                <button class="log-filter-btn">修炼</button>
+                <button class="log-filter-btn">历练</button>
+              </div>
+              <button onclick="toggleLogCollapse()" style="font-size: 10px; padding: 1px 4px;">收展 ▴</button>
+            </div>
+            
+            <!-- 走马灯单行模式 (优化项 5) -->
+            <div class="log-compact-marquee" id="logMarqueeText">
+              [18:47:12] 引气入体运转完成，获得修为 +14.4 灵气
+            </div>
+
+            <!-- 完整日志流 -->
+            <div class="log-messages" id="logMessages">
+              <div class="log-row cultivation">
+                <span class="time">[18:47:12]</span>
+                <span class="msg">引气入体运转完成，获得修为 +14.4 灵气 (灵地加成 +20%)</span>
+              </div>
+              <div class="log-row loot">
+                <span class="time">[18:46:50]</span>
+                <span class="msg">采摘得 【凝血草】×2，已存入储物袋</span>
+              </div>
+              <div class="log-row combat">
+                <span class="time">[18:45:18]</span>
+                <span class="msg">遭遇幽林狼，发动【庚金剑气】造成 42 点伤害，战斗胜利！</span>
+              </div>
+            </div>
+          </section>
+        </div>
+
+      </div>
+
+      <!-- 右侧战备栏 (Right Column) -->
+      <aside class="right-column" id="rightColumn">
+        <section class="panel right-sidebar-panel">
+          <header class="right-sidebar-header">
+            <nav class="right-sidebar-nav">
+              <button class="right-sidebar-tab-btn is-active" onclick="switchRightTab('bag', this)">
+                <span class="right-sidebar-tab-glyph">袋</span>
+                <span>储物袋</span>
+              </button>
+              <button class="right-sidebar-tab-btn" onclick="switchRightTab('equip', this)">
+                <span class="right-sidebar-tab-glyph">装</span>
+                <span>装备</span>
+              </button>
+              <button class="right-sidebar-tab-btn" onclick="switchRightTab('art', this)">
+                <span class="right-sidebar-tab-glyph">功</span>
+                <span>功法</span>
+              </button>
+            </nav>
+          </header>
+
+          <div class="right-sidebar-body">
+            
+            <!-- 储物袋 Tab -->
+            <div id="right-bag" class="inventory-grid">
+              <div class="item-card" title="凝血草">
+                <span class="item-card-icon">🌿</span>
+                <span class="item-card-amount">24</span>
+              </div>
+              <div class="item-card" title="下品灵石">
+                <span class="item-card-icon">💎</span>
+                <span class="item-card-amount">1280</span>
+              </div>
+              <div class="item-card" title="凝气散">
+                <span class="item-card-icon">💊</span>
+                <span class="item-card-amount">6</span>
+              </div>
+              <div class="item-card" title="乌铁玄剑">
+                <span class="item-card-icon">🗡️</span>
+                <span class="item-card-amount">1</span>
+              </div>
+              <div class="item-card"></div>
+              <div class="item-card"></div>
+              <div class="item-card"></div>
+              <div class="item-card"></div>
+            </div>
+
+            <!-- 装备 Tab -->
+            <div id="right-equip" class="equipment-stage" style="display: none;">
+              <div class="equip-col">
+                <div class="equip-slot-box"><span>🗡️</span><span>乌铁玄剑</span></div>
+                <div class="equip-slot-box"><span>👘</span><span>青云道袍</span></div>
+                <div class="equip-slot-box"><span>🥾</span><span>踏云履</span></div>
+              </div>
+              <div class="equip-center-silhouette">
+                <!-- 纯净矢量修士虚影 -->
+                <svg viewBox="0 0 100 200" fill="currentColor">
+                  <path d="M50 20 a15 15 0 1 0 0.001 0 Z M35 60 L65 60 L75 140 L25 140 Z M30 145 L45 190 L55 190 L70 145 Z" opacity="0.6"/>
+                </svg>
+              </div>
+              <div class="equip-col">
+                <div class="equip-slot-box"><span>💍</span><span>纳灵戒</span></div>
+                <div class="equip-slot-box"><span>📿</span><span>清心佩</span></div>
+                <div class="equip-slot-box"><span>👑</span><span>玄阳冠</span></div>
+              </div>
+            </div>
+
+            <!-- 功法 Tab -->
+            <div id="right-art" style="display: none; flex-direction: column; gap: 8px;">
+              <div class="action-card" style="padding: 8px;">
+                <span style="font-size: 11px; color: var(--gold);">【本命心法】</span>
+                <div style="font-size: 13px; font-weight: bold; color: var(--gold-bright);">太初吐纳诀</div>
+              </div>
+              <div class="action-card" style="padding: 8px;">
+                <span style="font-size: 11px; color: var(--qi);">【主动术法】</span>
+                <div style="font-size: 13px; font-weight: bold;">庚金剑气</div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+      </aside>
+
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       4. 右下角优化项切换调控面板 (Optimization Controls)
+       ========================================================================== -->
+  <div class="opt-switcher-panel">
+    <div class="opt-header">
+      <span class="opt-title">⚙️ 界面优化项实时调控</span>
+      <span style="font-size: 10px; color: var(--text-dim);">可自由组合勾选</span>
+    </div>
+
+    <div class="opt-toggles">
+      <label class="opt-item">
+        <span>1. 浑天太极八卦行动盘</span>
+        <input type="checkbox" id="toggle-huntian" onchange="toggleOptClass('opt-huntian-dial', this.checked)" />
+      </label>
+      <label class="opt-item">
+        <span>2. 去线框微光悬浮岛屿</span>
+        <input type="checkbox" id="toggle-islands" onchange="toggleOptClass('opt-floating-islands', this.checked)" />
+      </label>
+      <label class="opt-item">
+        <span>3. 灵气浮游微粒 Canvas 基底</span>
+        <input type="checkbox" id="toggle-ambient" onchange="toggleOptClass('opt-ambient-canvas', this.checked)" />
+      </label>
+      <label class="opt-item">
+        <span>4. 左右侧边栏弹性收折</span>
+        <input type="checkbox" id="toggle-sidebars" onchange="toggleOptClass('opt-collapsible-sidebars', this.checked)" />
+      </label>
+      <label class="opt-item">
+        <span>5. 底栏水墨日志走马灯收展</span>
+        <input type="checkbox" id="toggle-log" onchange="toggleOptClass('opt-compact-log', this.checked)" />
+      </label>
+    </div>
+
+    <div class="opt-actions">
+      <button class="opt-action-btn" onclick="setPreset('baseline')">恢复实际基准</button>
+      <button class="opt-action-btn" onclick="setPreset('all')">一键开启全部</button>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       5. 原型交互与微粒驱动引擎 (Script Engine)
+       ========================================================================== */ -->
+  <script>
+    /* 5.1 优化项类切换 */
+    const appRoot = document.getElementById('appRoot');
+    function toggleOptClass(className, enable) {
+      if (enable) {
+        appRoot.classList.add(className);
+      } else {
+        appRoot.classList.remove(className);
+      }
+    }
+
+    /* 5.2 预设一键切换 */
+    function setPreset(mode) {
+      const isAll = mode === 'all';
+      const toggles = [
+        { id: 'toggle-huntian', cls: 'opt-huntian-dial' },
+        { id: 'toggle-islands', cls: 'opt-floating-islands' },
+        { id: 'toggle-ambient', cls: 'opt-ambient-canvas' },
+        { id: 'toggle-sidebars', cls: 'opt-collapsible-sidebars' },
+        { id: 'toggle-log', cls: 'opt-compact-log' },
+      ];
+      toggles.forEach(t => {
+        const checkbox = document.getElementById(t.id);
+        checkbox.checked = isAll;
+        toggleOptClass(t.cls, isAll);
+      });
+    }
+
+    /* 5.3 灵气 Canvas 微粒引擎 */
+    const canvas = document.getElementById('ambient-canvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    const particles = [];
+
+    function resizeCanvas() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    class QiMote {
+      constructor() { this.reset(); }
+      reset() {
+        this.x = Math.random() * width;
+        this.y = height + Math.random() * 30;
+        this.size = Math.random() * 2 + 0.8;
+        this.speedY = Math.random() * 0.4 + 0.2;
+        this.speedX = (Math.random() - 0.5) * 0.2;
+        this.opacity = Math.random() * 0.6 + 0.2;
+        this.color = Math.random() > 0.4 ? '201, 180, 109' : '117, 169, 173';
+      }
+      update() {
+        this.y -= this.speedY;
+        this.x += this.speedX;
+        if (this.y < -10) this.reset();
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${this.color}, ${this.opacity})`;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = `rgba(${this.color}, 0.6)`;
+        ctx.fill();
+      }
+    }
+    for (let i = 0; i < 40; i++) {
+      const p = new QiMote();
+      p.y = Math.random() * height;
+      particles.push(p);
+    }
+    function animateParticles() {
+      ctx.clearRect(0, 0, width, height);
+      particles.forEach(p => { p.update(); p.draw(); });
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+    /* 5.4 主 Tab 切换 */
+    function switchMainTab(tabKey, btn) {
+      document.querySelectorAll('.skill-page').forEach(p => p.style.display = 'none');
+      const target = document.getElementById(`tab-${tabKey}`);
+      if (target) target.style.display = 'flex';
+
+      if (btn) {
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+    }
+
+    /* 5.5 右栏战备 Tab 切换 */
+    function switchRightTab(tab, btn) {
+      document.querySelectorAll('.right-sidebar-tab-btn').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+
+      document.getElementById('right-bag').style.display = tab === 'bag' ? 'grid' : 'none';
+      document.getElementById('right-equip').style.display = tab === 'equip' ? 'grid' : 'none';
+      document.getElementById('right-art').style.display = tab === 'art' ? 'flex' : 'none';
+    }
+
+    /* 5.6 侧边栏收折 */
+    function toggleSidebarCollapse() {
+      const sidebar = document.getElementById('sidebarNav');
+      sidebar.classList.toggle('is-collapsed');
+      document.getElementById('sidebarToggleText').textContent = sidebar.classList.contains('is-collapsed') ? '▶' : '◀ 收起导航';
+    }
+
+    /* 5.7 日志收折 */
+    function toggleLogCollapse() {
+      const log = document.getElementById('desktopLogArea');
+      log.classList.toggle('is-collapsed');
+    }
+
+    /* 5.8 动态进度与日志注入 */
+    let pVal = 30;
+    const pFill = document.getElementById('qcProgressFill');
+    setInterval(() => {
+      pVal += 2;
+      if (pVal > 100) {
+        pVal = 0;
+        addLog('引气入体大周天运转完成，修为 +14.4 灵气', 'cultivation');
+      }
+      pFill.style.width = `${pVal}%`;
+    }, 100);
+
+    function addLog(msg, type) {
+      const logMessages = document.getElementById('logMessages');
+      const logMarquee = document.getElementById('logMarqueeText');
+      const time = new Date().toTimeString().split(' ')[0];
+      
+      const row = document.createElement('div');
+      row.className = `log-row ${type}`;
+      row.innerHTML = `<span class="time">[${time}]</span><span class="msg">${msg}</span>`;
+      logMessages.prepend(row);
+
+      logMarquee.textContent = `[${time}] ${msg}`;
+    }
+
+    function startExplore(name) {
+      document.getElementById('qcActionTitle').textContent = name;
+      pVal = 0;
+      addLog(`开始执行历练行动：【${name}】`, 'loot');
+    }
+  </script>
+</body>
+</html>
