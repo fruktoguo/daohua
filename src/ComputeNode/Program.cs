@@ -39,12 +39,14 @@ else if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCOR
 builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
 
-var app = builder.Build();
+// 计算节点令牌是 /internal/compute 接口的安全边界，必须在启动时显式配置。
 var token = builder.Configuration["ComputeNode:Token"];
 if (string.IsNullOrWhiteSpace(token))
 {
-    app.Logger.LogWarning("未配置 ComputeNode:Token，计算节点只建议在本机开发使用");
+    throw new InvalidOperationException("未配置 ComputeNode:Token：该令牌是内部计算节点的安全边界，拒绝在无鉴权状态下启动。");
 }
+
+var app = builder.Build();
 
 /// <summary>
 /// 计算节点健康检查端点（返回当前加载的游戏数据版本与指纹）。
@@ -115,9 +117,8 @@ string ResolveGameDataPath(string contentRoot, string configuredPath)
 /// <summary>
 /// 校验请求头中的 X-Compute-Token。
 /// </summary>
-bool IsTokenValid(HttpRequest request, string? configuredToken)
+bool IsTokenValid(HttpRequest request, string configuredToken)
 {
-    if (string.IsNullOrWhiteSpace(configuredToken)) return true;
     var supplied = request.Headers["X-Compute-Token"].FirstOrDefault();
     return !string.IsNullOrWhiteSpace(supplied)
         && CryptographicEquals(supplied, configuredToken);

@@ -332,6 +332,7 @@ app.MapPost("/api/auth/register", async (
     RegisterAccountRequest request,
     IAccountStore accountStore,
     GameHost gameHost,
+    HttpContext httpContext,
     CancellationToken cancellationToken) =>
 {
     var result = await accountStore.RegisterAsync(
@@ -351,6 +352,7 @@ app.MapPost("/api/auth/register", async (
             result.SequenceId,
             result.CreatedAt ?? DateTimeOffset.UtcNow,
             cancellationToken);
+        StampPlayerCookie(httpContext, playerId);
     }
 
     return Results.Ok(new AuthResponse(
@@ -365,9 +367,14 @@ app.MapPost("/api/auth/register", async (
 app.MapPost("/api/auth/login", async (
     LoginAccountRequest request,
     IAccountStore accountStore,
+    HttpContext httpContext,
     CancellationToken cancellationToken) =>
 {
     var result = await accountStore.LoginAsync(request.Account, request.Password, cancellationToken);
+    if (result.Success && result.PlayerId is Guid playerId)
+    {
+        StampPlayerCookie(httpContext, playerId);
+    }
     return Results.Ok(new AuthResponse(
         result.Success,
         result.Account,
@@ -654,6 +661,23 @@ app.MapFallback("/api/{**path}", () => Results.NotFound(new
 }));
 app.MapFallbackToFile("index.html");
 
+
+/// <summary>
+/// 注册/登录成功时写入玩家身份容灾 Cookie。原由 WS 升级前写入，现收敛到身份建立层——
+/// WebSocket 升级完成后响应头已发出，无法再 Set-Cookie。
+/// </summary>
+static void StampPlayerCookie(HttpContext context, Guid playerId)
+{
+    context.Response.Cookies.Append("daohua_player_id", playerId.ToString("D"), new CookieOptions
+    {
+        Path = "/",
+        MaxAge = TimeSpan.FromDays(3650),
+        SameSite = SameSiteMode.Lax,
+        Secure = context.Request.IsHttps,
+        HttpOnly = false,
+        IsEssential = true
+    });
+}
 app.Run();
 
 /// <summary>

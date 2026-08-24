@@ -30,6 +30,10 @@ public static class WebSocketEndpoint
     private const int ReceiveBufferSize = 8 * 1024;
     private const int MaxMessageSize = 64 * 1024;
 
+    /// <summary>认证失败专用应用层关闭码（4000~4999 应用可自定义区间），前端按 1008/4001~4004 精准熔断。</summary>
+    private const int AuthCloseInvalidToken = 4001;
+    private const int AuthCloseInvalidPlayerId = 4002;
+
     /// <summary>
     /// 处理 HTTP 到 WebSocket 升级请求并托管会话完整生命周期。
     /// </summary>
@@ -45,32 +49,24 @@ public static class WebSocketEndpoint
         var gameHost = context.RequestServices.GetRequiredService<GameHost>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("WebSocket");
         var accessControl = context.RequestServices.GetRequiredService<AccessControl>();
-        // playerId 即权限：解析失败直接拒绝，绝不回退到固定玩家，防止公网访客借未知参数接管默认账号。
+        // 先完成协议升级再校验身份：浏览器对升级前拒绝只会报 1006，无法区分认证失败与网络抖动；
+        // 升级后以应用层关闭码(4001/4002)下发，前端据此精准熔断，不再无限重连。
+        using var socket = await context.WebSockets.AcceptWebSocketAsync();
+
+        // playerId 即权限：解析失败直接关闭，绝不回退到固定玩家，防止公网访客借未知参数接管默认账号。
         if (!Guid.TryParse(context.Request.Query["playerId"], out var playerId))
         {
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsync("playerId invalid.");
+            await CloseWithAuthCodeAsync(socket, AuthCloseInvalidPlayerId, "playerId 无效。");
             return;
         }
         if (!accessControl.IsValid(context.Request.Query["token"]))
         {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsync("缺少或错误的访问令牌。");
+            await CloseWithAuthCodeAsync(socket, AuthCloseInvalidToken, "缺少或错误的访问令牌。");
             return;
         }
+
         var playerName = SanitizePlayerName(context.Request.Query["name"].FirstOrDefault());
         var account = SanitizePlayerName(context.Request.Query["account"].FirstOrDefault()) ?? playerName;
-        context.Response.Cookies.Append("daohua_player_id", playerId.ToString("D"), new CookieOptions
-        {
-            Path = "/",
-            MaxAge = TimeSpan.FromDays(3650),
-            SameSite = SameSiteMode.Lax,
-            Secure = context.Request.IsHttps,
-            HttpOnly = false,
-            IsEssential = true
-        });
-
-        using var socket = await context.WebSockets.AcceptWebSocketAsync();
         using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         Session? session = null;
 
@@ -129,6 +125,22 @@ public static class WebSocketEndpoint
         if (string.IsNullOrWhiteSpace(rawName)) return null;
         var sanitized = new string(rawName.Trim().Where(ch => !char.IsControl(ch)).Take(32).ToArray());
         return sanitized.Length == 0 ? null : sanitized;
+    }
+
+    /// <summary>
+    /// 以认证失败应用层关闭码优雅关闭连接；对端已断开等关闭握手异常时直接中止。
+    /// </summary>
+    private static async Task CloseWithAuthCodeAsync(WebSocket socket, int closeCode, string reason)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await socket.CloseAsync((WebSocketCloseStatus)closeCode, reason, cts.Token);
+        }
+        catch (WebSocketException)
+        {
+            socket.Abort();
+        }
     }
 
     /// <summary>
