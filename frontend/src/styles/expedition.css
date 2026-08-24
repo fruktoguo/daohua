@@ -2564,8 +2564,8 @@
 }
 
 .combat-slot-tray {
-  --item-slot-size: clamp(69px, 4.8vw, 79px);
-  --item-tile-size: calc(var(--item-slot-size) - 16px);
+  --item-slot-size: 64px;
+  --item-tile-size: 64px;
   display: grid;
   width: 100%;
   min-width: 100%;
@@ -2746,9 +2746,9 @@
   }
 
   .combat-slot-tray {
-    --item-slot-size: 69px;
-    --item-tile-size: 53px;
-    min-width: 760px;
+    --item-slot-size: 64px;
+    --item-tile-size: 64px;
+    min-width: 720px;
   }
 
   .combat-trigger-row {
