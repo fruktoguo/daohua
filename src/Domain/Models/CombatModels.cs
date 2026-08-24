@@ -489,7 +489,8 @@ public sealed record CombatBuffApplication(
     double DamageRatio,
     double AttackSpeedRatio,
     string SourceItemId,
-    long ExpiresAfterMilliseconds);
+    long ExpiresAfterMilliseconds,
+    IReadOnlyDictionary<string, double>? Modifiers = null);
 
 /// <summary>
 /// 战斗中单个敌怪的即时生命与存活状态。

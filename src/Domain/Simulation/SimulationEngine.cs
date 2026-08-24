@@ -1779,20 +1779,7 @@ public static class SimulationEngine
         state.CombatResources.Manapoints = Math.Clamp(player.Manapoints, 0, player.MaxManapoints);
     }
 
-    private static BuffState CloneCombatBuff(BuffState buff) => new()
-    {
-        BuffId = buff.BuffId,
-        Name = buff.Name,
-        Stacks = buff.Stacks,
-        QiGainMultiplier = buff.QiGainMultiplier,
-        AttackLevelRatio = buff.AttackLevelRatio,
-        DamageRatio = buff.DamageRatio,
-        AttackSpeedRatio = buff.AttackSpeedRatio,
-        GatheringOutputMultiplier = buff.GatheringOutputMultiplier,
-        AlchemyOutputMultiplier = buff.AlchemyOutputMultiplier,
-        SourceItemId = buff.SourceItemId,
-        ExpiresAt = buff.ExpiresAt
-    };
+    private static BuffState CloneCombatBuff(BuffState buff) => buff.Clone();
 
     private static int CalculateCombatSearchMilliseconds(
         CombatEncounterDefinition encounter,
@@ -2294,7 +2281,7 @@ public static class SimulationEngine
         var existing = state.Buffs.FirstOrDefault(buff => buff.BuffId == application.BuffId);
         if (existing is null)
         {
-            state.Buffs.Add(new BuffState
+            var buff = new BuffState
             {
                 BuffId = application.BuffId,
                 Name = application.Name,
@@ -2305,7 +2292,15 @@ public static class SimulationEngine
                 AttackSpeedRatio = application.AttackSpeedRatio,
                 SourceItemId = application.SourceItemId,
                 ExpiresAt = now.AddMilliseconds(application.ExpiresAfterMilliseconds)
-            });
+            };
+            if (application.Modifiers is { Count: > 0 } mods)
+            {
+                foreach (var (k, v) in mods)
+                {
+                    buff.SetModifier(k, v);
+                }
+            }
+            state.Buffs.Add(buff);
             return;
         }
 
@@ -2316,6 +2311,13 @@ public static class SimulationEngine
         existing.AttackSpeedRatio = application.AttackSpeedRatio;
         existing.SourceItemId = application.SourceItemId;
         existing.ExpiresAt = now.AddMilliseconds(application.ExpiresAfterMilliseconds);
+        if (application.Modifiers is { Count: > 0 } updateMods)
+        {
+            foreach (var (k, v) in updateMods)
+            {
+                existing.SetModifier(k, v);
+            }
+        }
     }
 
     private static bool CanStartAction(
@@ -2582,34 +2584,27 @@ public static class SimulationEngine
 
     private static double GetQiGainMultiplier(PlayerState state, DateTimeOffset now)
     {
-        var buffMultiplier = state.Buffs
-            .Where(buff => buff.ExpiresAt > now)
-            .Select(buff => buff.QiGainMultiplier)
-            .DefaultIfEmpty(1)
-            .Max();
+        var buffMultiplier = BuffEvaluator.GetMaxMultiplier(state.Buffs, now, Domain.Constants.StatKeys.QiGain, 1.0);
         return buffMultiplier * WorldCatalog.GetCultivationMultiplier(state.World);
     }
 
     private static double GetGatheringOutputMultiplier(PlayerState state, DateTimeOffset now)
     {
-        return state.Buffs
-            .Where(buff => buff.ExpiresAt > now)
-            .Select(buff => buff.GatheringOutputMultiplier)
-            .Where(multiplier => multiplier > 0)
-            .DefaultIfEmpty(1)
-            .Max();
+        return BuffEvaluator.GetMaxMultiplier(state.Buffs, now, Domain.Constants.StatKeys.GatheringOutput, 1.0);
     }
 
     private static double GetAlchemyOutputMultiplier(PlayerState state, DateTimeOffset now)
     {
-        return state.Buffs
-            .Where(buff => buff.ExpiresAt > now)
-            .Select(buff => buff.AlchemyOutputMultiplier)
-            .Where(multiplier => multiplier > 0)
-            .DefaultIfEmpty(1)
-            .Max();
+        return BuffEvaluator.GetMaxMultiplier(state.Buffs, now, Domain.Constants.StatKeys.AlchemyOutput, 1.0);
     }
 
+    /// <summary>
+    /// 获取当前生效中的大世界移动速度倍率（受神行符、疾风丹等 StatKeys.MovementSpeed 增益加成）。
+    /// </summary>
+    public static double GetTravelSpeedMultiplier(PlayerState state, DateTimeOffset now)
+    {
+        return BuffEvaluator.GetMaxMultiplier(state.Buffs, now, Domain.Constants.StatKeys.MovementSpeed, 1.0);
+    }
     private static long GetProducedAmount(
         PlayerState state,
         ActionDefinition definition,

@@ -496,6 +496,7 @@ export interface Buff {
   gatheringOutputMultiplier?: number
   alchemyOutputMultiplier?: number
   sourceItemId?: string | null
+  modifiers?: Record<string, number> | null
 }
 
 /**

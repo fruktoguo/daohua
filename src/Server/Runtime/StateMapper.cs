@@ -729,7 +729,8 @@ public static class StateMapper
             buff.AttackSpeedRatio,
             buff.GatheringOutputMultiplier,
             buff.AlchemyOutputMultiplier,
-            buff.SourceItemId)).ToArray();
+            buff.SourceItemId,
+            buff.Modifiers.Count > 0 ? buff.Modifiers : null)).ToArray();
     }
 
     private static IReadOnlyList<LogEventDto> ToLogEvents(IReadOnlyList<LogEvent> events)

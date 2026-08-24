@@ -198,20 +198,7 @@ public sealed class BattleSnapshot
         ConfigFingerprint = ConfigFingerprint
     };
 
-    private static BuffState CloneBuff(BuffState buff) => new()
-    {
-        BuffId = buff.BuffId,
-        Name = buff.Name,
-        Stacks = buff.Stacks,
-        QiGainMultiplier = buff.QiGainMultiplier,
-        AttackLevelRatio = buff.AttackLevelRatio,
-        DamageRatio = buff.DamageRatio,
-        AttackSpeedRatio = buff.AttackSpeedRatio,
-        GatheringOutputMultiplier = buff.GatheringOutputMultiplier,
-        AlchemyOutputMultiplier = buff.AlchemyOutputMultiplier,
-        SourceItemId = buff.SourceItemId,
-        ExpiresAt = buff.ExpiresAt
-    };
+    private static BuffState CloneBuff(BuffState buff) => buff.Clone();
 }
 
 /// <summary>
@@ -394,26 +381,81 @@ public sealed class BuffState
 {
     /// <summary>Buff 原型 ID。</summary>
     public required string BuffId { get; set; }
+
     /// <summary>Buff 显示名称。</summary>
     public required string Name { get; set; }
+
     /// <summary>当前叠加层数。</summary>
     public int Stacks { get; set; } = 1;
-    /// <summary>灵气吸纳倍率修正。</summary>
-    public double QiGainMultiplier { get; set; } = 1;
-    /// <summary>攻击等级加成比例。</summary>
-    public double AttackLevelRatio { get; set; }
-    /// <summary>伤害加成比例。</summary>
-    public double DamageRatio { get; set; }
-    /// <summary>攻速加成比例。</summary>
-    public double AttackSpeedRatio { get; set; }
-    /// <summary>采集产出倍率修正。</summary>
-    public double GatheringOutputMultiplier { get; set; } = 1;
-    /// <summary>炼丹产出倍率修正。</summary>
-    public double AlchemyOutputMultiplier { get; set; } = 1;
+
+    /// <summary>通用属性修饰器字典（属性键 -> 加成数值/倍率）。</summary>
+    public Dictionary<string, double> Modifiers { get; set; } = new(StringComparer.Ordinal);
+
     /// <summary>施加该 Buff 的来源物品 ID（若有）。</summary>
     public string? SourceItemId { get; set; }
+
     /// <summary>Buff 到期时间戳。</summary>
     public DateTimeOffset ExpiresAt { get; set; }
+
+    /// <summary>获取指定属性的修饰数值（若未显式配置则返回默认值）。</summary>
+    public double GetModifier(string statKey, double defaultValue = 0.0) =>
+        Modifiers.TryGetValue(statKey, out var value) ? value : defaultValue;
+
+    /// <summary>设置指定属性的修饰数值。</summary>
+    public void SetModifier(string statKey, double value) => Modifiers[statKey] = value;
+
+    /// <summary>灵气吸纳倍率修正。</summary>
+    public double QiGainMultiplier
+    {
+        get => GetModifier(Domain.Constants.StatKeys.QiGain, 1.0);
+        set => SetModifier(Domain.Constants.StatKeys.QiGain, value);
+    }
+
+    /// <summary>攻击等级加成比例。</summary>
+    public double AttackLevelRatio
+    {
+        get => GetModifier(Domain.Constants.StatKeys.AttackLevelRatio, 0.0);
+        set => SetModifier(Domain.Constants.StatKeys.AttackLevelRatio, value);
+    }
+
+    /// <summary>伤害加成比例。</summary>
+    public double DamageRatio
+    {
+        get => GetModifier(Domain.Constants.StatKeys.DamageRatio, 0.0);
+        set => SetModifier(Domain.Constants.StatKeys.DamageRatio, value);
+    }
+
+    /// <summary>攻速加成比例。</summary>
+    public double AttackSpeedRatio
+    {
+        get => GetModifier(Domain.Constants.StatKeys.AttackSpeedRatio, 0.0);
+        set => SetModifier(Domain.Constants.StatKeys.AttackSpeedRatio, value);
+    }
+
+    /// <summary>采集产出倍率修正。</summary>
+    public double GatheringOutputMultiplier
+    {
+        get => GetModifier(Domain.Constants.StatKeys.GatheringOutput, 1.0);
+        set => SetModifier(Domain.Constants.StatKeys.GatheringOutput, value);
+    }
+
+    /// <summary>炼丹产出倍率修正。</summary>
+    public double AlchemyOutputMultiplier
+    {
+        get => GetModifier(Domain.Constants.StatKeys.AlchemyOutput, 1.0);
+        set => SetModifier(Domain.Constants.StatKeys.AlchemyOutput, value);
+    }
+
+    /// <summary>深克隆 Buff 状态对象。</summary>
+    public BuffState Clone() => new()
+    {
+        BuffId = BuffId,
+        Name = Name,
+        Stacks = Stacks,
+        Modifiers = new Dictionary<string, double>(Modifiers, StringComparer.Ordinal),
+        SourceItemId = SourceItemId,
+        ExpiresAt = ExpiresAt
+    };
 }
 
 /// <summary>
@@ -555,20 +597,7 @@ public sealed class PlayerState
                     pair => pair.Value.Select(slot => slot.Clone()).ToList())
             },
             Inventory = new InventoryState { Items = new Dictionary<string, long>(Inventory.Items, StringComparer.Ordinal) },
-            Buffs = Buffs.Select(buff => new BuffState
-            {
-                BuffId = buff.BuffId,
-                Name = buff.Name,
-                Stacks = buff.Stacks,
-                QiGainMultiplier = buff.QiGainMultiplier,
-                AttackLevelRatio = buff.AttackLevelRatio,
-                DamageRatio = buff.DamageRatio,
-                AttackSpeedRatio = buff.AttackSpeedRatio,
-                GatheringOutputMultiplier = buff.GatheringOutputMultiplier,
-                AlchemyOutputMultiplier = buff.AlchemyOutputMultiplier,
-                SourceItemId = buff.SourceItemId,
-                ExpiresAt = buff.ExpiresAt
-            }).ToList(),
+            Buffs = Buffs.Select(buff => buff.Clone()).ToList(),
             Combat = Combat.Clone(),
             CombatResources = CombatResources?.Clone() ?? new CombatResourceState(),
             World = World.Clone(),

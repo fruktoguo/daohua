@@ -774,7 +774,8 @@ public static partial class CombatSimulator
                 buff.DamageRatio,
                 buff.AttackSpeedRatio,
                 buff.SourceItemId!,
-                buff.ExpiresAtMilliseconds - simulatedMilliseconds))
+                buff.ExpiresAtMilliseconds - simulatedMilliseconds,
+                buff.Modifiers))
             .ToArray();
         var finalEnemies = enemies
             .OrderBy(enemy => enemy.Slot)

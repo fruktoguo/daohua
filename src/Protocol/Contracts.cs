@@ -371,7 +371,8 @@ public sealed record BuffDto(
     double AttackSpeedRatio = 0,
     double GatheringOutputMultiplier = 1,
     double AlchemyOutputMultiplier = 1,
-    string? SourceItemId = null);
+    string? SourceItemId = null,
+    IReadOnlyDictionary<string, double>? Modifiers = null);
 
 /// <summary>
 /// 玩家生涯累计与统计数据传输对象。

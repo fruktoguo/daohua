@@ -452,7 +452,8 @@ public static partial class CombatSimulator
                 buff.DamageRatio,
                 buff.AttackSpeedRatio,
                 buff.SourceItemId,
-                remaining);
+                remaining,
+                buff.Modifiers);
         }
 
         return result;
@@ -466,11 +467,13 @@ public static partial class CombatSimulator
     {
         var basePool = CombatFormula.CalculateBaseAttributes(spirit);
         var equipment = CombatCatalog.AggregateEquipmentStats(loadout.Equipment);
-        var attackRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.AttackLevelRatio)
+        var activeBuffList = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).ToList();
+        var attackRatio = activeBuffList.Sum(buff => buff.AttackLevelRatio * buff.Stacks)
+            + activeBuffList.Sum(buff => buff.GetModifier(Domain.Constants.StatKeys.AccuracyRatio, 0.0) * buff.Stacks)
             + equipment.AccuracyRatio;
-        var damageRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.DamageRatio)
+        var damageRatio = activeBuffList.Sum(buff => buff.DamageRatio * buff.Stacks)
             + equipment.DamageRatio;
-        var attackSpeedRatio = buffs.Values.Where(buff => buff.ExpiresAtMilliseconds > now).Sum(buff => buff.AttackSpeedRatio)
+        var attackSpeedRatio = activeBuffList.Sum(buff => buff.AttackSpeedRatio * buff.Stacks)
             + equipment.AttackSpeedRatio;
         var stamina = Math.Max(10, loadout.StaminaLevel);
         var intelligence = Math.Max(10, loadout.IntelligenceLevel);
@@ -1212,16 +1215,20 @@ public static partial class CombatSimulator
             double damageRatio,
             double attackSpeedRatio,
             string? sourceItemId,
-            long expiresAtMilliseconds)
+            long expiresAtMilliseconds,
+            IReadOnlyDictionary<string, double>? modifiers = null)
         {
             BuffId = buffId;
             Name = name;
             Stacks = stacks;
             MaxStacks = maxStacks;
-            QiGainMultiplier = qiGainMultiplier;
-            AttackLevelRatio = attackLevelRatio;
-            DamageRatio = damageRatio;
-            AttackSpeedRatio = attackSpeedRatio;
+            Modifiers = modifiers is not null
+                ? new Dictionary<string, double>(modifiers, StringComparer.Ordinal)
+                : new Dictionary<string, double>(StringComparer.Ordinal);
+            if (qiGainMultiplier != 1.0) Modifiers[Domain.Constants.StatKeys.QiGain] = qiGainMultiplier;
+            if (attackLevelRatio != 0.0) Modifiers[Domain.Constants.StatKeys.AttackLevelRatio] = attackLevelRatio;
+            if (damageRatio != 0.0) Modifiers[Domain.Constants.StatKeys.DamageRatio] = damageRatio;
+            if (attackSpeedRatio != 0.0) Modifiers[Domain.Constants.StatKeys.AttackSpeedRatio] = attackSpeedRatio;
             SourceItemId = sourceItemId;
             ExpiresAtMilliseconds = expiresAtMilliseconds;
         }
@@ -1230,12 +1237,17 @@ public static partial class CombatSimulator
         public string Name { get; }
         public int Stacks { get; set; }
         public int MaxStacks { get; }
-        public double QiGainMultiplier { get; }
-        public double AttackLevelRatio { get; }
-        public double DamageRatio { get; }
-        public double AttackSpeedRatio { get; }
+        public Dictionary<string, double> Modifiers { get; }
         public string? SourceItemId { get; }
         public long ExpiresAtMilliseconds { get; set; }
+
+        public double GetModifier(string statKey, double defaultValue = 0.0) =>
+            Modifiers.TryGetValue(statKey, out var value) ? value : defaultValue;
+
+        public double QiGainMultiplier => GetModifier(Domain.Constants.StatKeys.QiGain, 1.0);
+        public double AttackLevelRatio => GetModifier(Domain.Constants.StatKeys.AttackLevelRatio, 0.0);
+        public double DamageRatio => GetModifier(Domain.Constants.StatKeys.DamageRatio, 0.0);
+        public double AttackSpeedRatio => GetModifier(Domain.Constants.StatKeys.AttackSpeedRatio, 0.0);
     }
 
     private sealed class CombatControlRuntime
