@@ -192,7 +192,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const actionSpeedPercent = PercentValue.nonLinear(actionSpeedPoints)
   const cooldownSpeedPercent = PercentValue.nonLinear(BASELINE_COMBAT_ATTRIBUTES.percentPoints)
   const manaCostReductionPercent = PercentValue.nonLinear(BASELINE_COMBAT_ATTRIBUTES.percentPoints)
-  const damageBoostPercent = PercentValue.linear((attributes?.furyRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0)
   const damageReductionPercent = PercentValue.linear((attributes?.damageAbsorptionRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0)
   const armorPenPercent = PercentValue.linear((attributes?.penetrationRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0)
   const magicPenPercent = PercentValue.linear((attributes?.penetrationRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0)
@@ -572,7 +571,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
 
                 {/* 第 2 排：增伤减伤与穿透 */}
                 <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.damageBoost')} value={damageBoostPercent.format()} tone="gold" tooltip={t('insight.combat.damageBoostTooltip')} />
                   <PillStatLabel label={t('insight.combat.damageReduction')} value={damageReductionPercent.format()} tone="emerald" tooltip={t('insight.combat.damageReductionTooltip')} />
                   <PillStatLabel label={t('insight.combat.armorPen')} value={armorPenPercent.format()} tone="bronze" tooltip={t('insight.combat.armorPenTooltip')} />
                   <PillStatLabel label={t('insight.combat.magicPen')} value={magicPenPercent.format()} tone="violet" tooltip={t('insight.combat.magicPenTooltip')} />

@@ -1266,14 +1266,10 @@ export const CombatArena = memo(function CombatArena({
     [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
     [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
     [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
-    [t('combat.special.pierceChance'), combatAttributes?.pierceChance ?? 0, 'percent'],
     [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
     [t('combat.special.criticalDamage'), combatAttributes?.criticalDamageRatio ?? 0, 'percent'],
     [t('combat.special.criticalAvoidance'), combatAttributes?.criticalAvoidance ?? 0, 'percent'],
     [t('combat.special.damageAbsorption'), combatAttributes?.damageAbsorptionRatio ?? 0, 'percent'],
-    [t('combat.special.curse'), combatAttributes?.curseRatio ?? 0, 'percent'],
-    [t('combat.special.fury'), combatAttributes?.furyRatio ?? 0, 'percent'],
-    [t('combat.special.weaken'), combatAttributes?.weakenRatio ?? 0, 'percent'],
     [t('combat.special.lifeSteal'), combatAttributes?.lifeStealRatio ?? 0, 'percent'],
     [t('combat.special.armorDamage'), combatAttributes?.armorDamageRatio ?? 0, 'percent'],
     [t('combat.special.hpDrain'), combatAttributes?.hpDrainRatio ?? 0, 'percent'],
@@ -1314,10 +1310,6 @@ export const CombatArena = memo(function CombatArena({
     [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
     [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
     [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
-    [t('combat.special.pierceChance'), enemyDefinition?.pierceChance ?? 0, 'percent'],
-    [t('combat.special.curse'), enemyDefinition?.curseRatio ?? 0, 'percent'],
-    [t('combat.special.fury'), enemyDefinition?.furyRatio ?? 0, 'percent'],
-    [t('combat.special.weaken'), enemyDefinition?.weakenRatio ?? 0, 'percent'],
     [t('combat.special.lifeSteal'), enemyDefinition?.lifeStealRatio ?? 0, 'percent'],
     [t('combat.special.armorDamage'), enemyDefinition?.armorDamageRatio ?? 0, 'percent'],
     [t('combat.special.hpDrain'), enemyDefinition?.hpDrainRatio ?? 0, 'percent'],
@@ -1325,10 +1317,8 @@ export const CombatArena = memo(function CombatArena({
     [t('combat.special.criticalDamage'), enemyDefinition?.criticalDamageRatio ?? 0, 'percent'],
     [t('combat.special.criticalAvoidance'), enemyDefinition?.criticalAvoidance ?? 0, 'percent'],
     [t('combat.special.damageAbsorption'), enemyDefinition?.damageAbsorptionRatio ?? 0, 'percent'],
-    [t('combat.special.enragePeriod'), enemyDefinition?.enrageTimeMilliseconds ?? 0, 'milliseconds'],
   ]
   const enemySpecialRows = enemySpecialCandidates
-    .filter(([, value]) => Math.abs(value) > 0.000001)
     .map(([label, value, kind]) => ({
       label,
       value: kind === 'percent'

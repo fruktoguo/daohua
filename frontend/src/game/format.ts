@@ -63,9 +63,6 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   if ((ability.penetrationRatio ?? 0) !== 0) {
     lines.push(t('game.abilityDesc.penetration', { n: abilityPercent(ability.penetrationRatio) }))
   }
-  if ((ability.pierceChance ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.pierceChance', { n: abilityPercent(ability.pierceChance ?? 0) }))
-  }
   if ((ability.armorDamageRatio ?? 0) !== 0) {
     lines.push(t('game.abilityDesc.armorDamage', { n: abilityPercent(ability.armorDamageRatio ?? 0) }))
   }

@@ -252,7 +252,6 @@ export const gameZh = {
       damage: '伤害 {ratio} + {flat}',
       healing: '治疗 {ratio} + {flat}',
       penetration: '抗性穿透 {n}',
-      pierceChance: '穿透概率 {n}',
       armorDamage: '护甲增伤 {n}',
       hpDrain: '生命汲取 {n}',
       dot: '持续伤害 {ratio}，持续 {duration} 秒',

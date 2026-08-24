@@ -114,14 +114,10 @@ export const combatZh = {
       hpRegen: '生命恢复',
       mpRegen: '灵力恢复',
       penetration: '抗性穿透',
-      pierceChance: '穿透概率',
       criticalChance: '暴击率',
       criticalDamage: '暴击增伤',
       criticalAvoidance: '免暴率',
       damageAbsorption: '伤害吸收',
-      curse: '蚀心',
-      fury: '沸血',
-      weaken: '衰弱',
       lifeSteal: '生命偷取',
       armorDamage: '护甲增伤',
       hpDrain: '生命汲取',
@@ -130,7 +126,6 @@ export const combatZh = {
       dropQuantity: '掉落数量',
       rareFind: '稀有发现',
       searchSpeed: '重寻速度',
-      enragePeriod: '狂暴周期',
     },
     // 敌情面板
     encounter: {

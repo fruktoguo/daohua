@@ -153,8 +153,6 @@ export const insightZh = {
       cooldownSpeedTooltip: '加快技能冷却恢复\n公式：缩减率 = 点数 / (点数 + 100)',
       manaCostReduction: '灵力减耗',
       manaCostReductionTooltip: '降低施法与技能的灵力消耗',
-      damageBoost: '伤害增加',
-      damageBoostTooltip: '提升最终造成的伤害',
       damageReduction: '伤害减免',
       damageReductionTooltip: '降低最终受到的伤害',
       armorPen: '护甲穿透',
