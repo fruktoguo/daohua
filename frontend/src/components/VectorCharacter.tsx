@@ -24,22 +24,21 @@ export function resolveCharacterKind(role: 'player' | 'enemy', id?: string | nul
   const normalizedId = (id ?? '').toLowerCase()
   const normalizedName = (name ?? '').toLowerCase()
 
-  if (normalizedId.includes('valley-master') || normalizedName.includes('谷主')) {
+  if (normalizedId.includes('valley-master') || normalizedName.includes('谷主') || normalizedId.includes('falling-star-beast') || normalizedName.includes('异兽')) {
     return 'twilight-valley-master'
   }
-  if (normalizedId.includes('moon-demon') || normalizedName.includes('啸月') || normalizedName.includes('妖修')) {
+  if (normalizedId.includes('moon-demon') || normalizedName.includes('啸月') || normalizedId.includes('rift-wolf') || normalizedName.includes('狼') || normalizedName.includes('妖修')) {
     return 'twilight-moon-demon'
   }
-  if (normalizedId.includes('blood-cultivator') || normalizedName.includes('血影') || normalizedName.includes('邪修')) {
+  if (normalizedId.includes('blood-cultivator') || normalizedId.includes('plunder-cultivator') || normalizedId.includes('priest') || normalizedName.includes('邪修') || normalizedName.includes('劫修') || normalizedName.includes('祭司')) {
     return 'twilight-blood-cultivator'
   }
   if (normalizedId.includes('corpse') || normalizedName.includes('阴尸') || normalizedName.includes('尸')) {
     return 'twilight-corpse'
   }
-  if (normalizedId.includes('qi-beast') || normalizedName.includes('聚气') || normalizedName.includes('灵兽') || normalizedName.includes('兽')) {
+  if (normalizedId.includes('rabbit') || normalizedId.includes('ape') || normalizedId.includes('bear') || normalizedId.includes('tiger') || normalizedId.includes('crow') || normalizedId.includes('spirit') || normalizedId.includes('qi-beast') || normalizedName.includes('兔') || normalizedName.includes('猿') || normalizedName.includes('熊') || normalizedName.includes('虎') || normalizedName.includes('精') || normalizedName.includes('兽')) {
     return 'qi-beast'
   }
-
   return role === 'enemy' ? 'default-enemy' : 'default-ally'
 }
 
