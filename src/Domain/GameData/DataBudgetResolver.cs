@@ -100,9 +100,9 @@ public static class DataBudgetResolver
     /// <returns>部位预算权重比例。</returns>
     public static double GetEquipmentSlotWeight(EquipmentSlot slot) => slot switch
     {
-        EquipmentSlot.TwoHand => 0.35,
-        EquipmentSlot.Weapon or EquipmentSlot.Armor => 0.20,
-        _ => 0.15
+        EquipmentSlot.Weapon or EquipmentSlot.Armor => 1.4 / 6.0,
+        EquipmentSlot.Head or EquipmentSlot.Legs or EquipmentSlot.Boots or EquipmentSlot.Trinket => 0.8 / 6.0,
+        _ => 0.8 / 6.0
     };
 
     /// <summary>

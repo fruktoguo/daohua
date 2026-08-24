@@ -732,6 +732,7 @@ export interface CombatLoadout {
   tenacity?: number
   equipment?: EquippedItem[]
   learnedAbilityIds?: string[]
+  abilityExperiences?: Record<string, number>
 }
 
 /**

@@ -125,14 +125,23 @@
 
 ## 7. 战斗伤害与对抗计算公式
 
-### 7.1 动态抗性非线性平方减伤公式
-战斗伤害计算统一采用动态抗性平方穿甲公式（详见 [`combat-benchmark-model.md`](./combat-benchmark-model.md)）：
-$$\text{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \mathbf{RES} \times K + 1.0} \times (\text{是否暴击} ? \text{CritMultiplier} : 1.0)$$
+### 7.1 两层动态抗性非线性减伤公式
+战斗伤害计算统一采用**大类抗性平方穿甲** + **第二层五行属性抗性百分比减免**两层减伤模型：
 
-- **动态抗性系数 $K$**：随境界阶位动态成长（T1 为 `1.0`，T2 为 `2.0`，直至 T12 为 `12.0`，详见基准表）。
-- **基础常数**：常量为 `1.0`。
-- **有效抗性 ($\mathbf{RES}$)**：计算穿透比例后实际起效的物理护甲或术法抗性。
-- **公式特性**：单发原始伤害越高，天然穿甲能力越强；法系凭借超大 AP 具备极强天然破防优势。
+1. **第一层：大类抗性非线性平方减伤（护甲 / 法抗）**：
+   $$\text{DamageAfterCategory} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \mathbf{RES} \times K + 1.0}$$
+   - **动态抗性系数 $K$**：随境界阶位动态成长（T1 为 `1.0`，T2 为 `2.0`，直至 T12 为 `12.0`，详见基准表）。
+   - **有效抗性 ($\mathbf{RES}$)**：计算穿透比例后实际起效的大类抗性。物理伤害对应守方护甲（`Armor`），术法伤害对应守方法抗（`MagicResistance`）。
+   - **公式特性**：单发原始伤害越高，天然穿甲能力越强；法系凭借超大 AP 具备极强天然破防优势。
+
+2. **第二层：五行属性抗性百分比减免（金木水火土）**：
+   当攻击或技能携带具体五行属性（非 `Element.None`）时，依据守方对应五行抗性计算二次减免：
+   $$\text{Mitigation} = \frac{\text{ElementRes}}{\text{ElementRes} + 100.0 \times K}$$
+   $$\text{DamageAfterElement} = \text{DamageAfterCategory} \times \max(0.0, 1.0 - \text{Mitigation})$$
+   若攻击为无属性（`Element.None`），则直接跳过第二层减免（$\text{DamageAfterElement} = \text{DamageAfterCategory}$）。
+
+3. **暴击判定与最终伤害**：
+   $$\text{实际伤害} = \text{DamageAfterElement} \times (\text{是否暴击} ? \text{CritMultiplier} : 1.0)$$
 ### 7.2 技能消耗换算
 技能配置的消耗数值经独立方法 `CalculateManaCost` 换算：
 $$\text{最终灵力消耗} = \text{基础消耗} \times 10$$
@@ -198,11 +207,20 @@ $$\text{最终灵力消耗} = \text{基础消耗} \times 10$$
 1. **移除战斗边界重置**：单场遭遇结束、战胜单只怪物、跨多波遭遇推进、进入新战斗时，严格保留玩家当前的实际生命与灵力残值，绝不在进入或结束战斗时回满。
 2. **移除脱战无故回满**：取消战斗队列、手动移出战斗、切换到生活/采集/打坐行动时，存活玩家保持当前血蓝脱离战斗。
 
-### 9.2 持续自然自动回复 (每 5 秒完整属性)
+### 9.2 持续自然自动回复与协议字段换算 (每 5 秒完整属性)
 角色在挂机、探索、炼丹、打坐、赶路及战斗各阶段均持续享受自然自动回复：
-- **回复周期**：固定为**每 5 秒**结算一次（`RegenTickMilliseconds = 5_000`）；
+- **底层回复周期**：固定为**每 5 秒**结算一次（`RegenTickMilliseconds = 5_000`）；
 - **生命自然回复 (`HpRegen`)**：角色每 5 秒回复的生命点数（基准为最大生命上限的 2%，保底 1 点，体魄资质与装备直接增幅此值）；
 - **灵力自然回复 (`MpRegen`)**：角色每 5 秒回复的灵力点数（基准为最大灵力上限的 2%，保底 1 点，经脉资质与装备直接增幅此值）。
+
+#### 底层 5 秒自然回复与协议 10 秒字段换算关系
+- **协议与模型属性规范**：协议及客户端属性模型中暴露的 `HpRegenPerTenSeconds` 与 `MpRegenPerTenSeconds` 为 **10 秒时间窗口**的回复比例（标准基线为生命 4%、灵力 2%）。
+- **换算公式**：
+  - 在 5 秒离散推进与战斗 Tick 结算时，若实体解析配置了固定的 `HpRegen` / `MpRegen` 点数，优先直接采用；
+  - 若按比率计算，则 5 秒单 Tick 回复点数等于 10 秒比率折半：
+    $$\text{HpRegen (单Tick 5s)} = \text{MaxHitpoints} \times \frac{\text{HpRegenPerTenSeconds}}{2}$$
+    $$\text{MpRegen (单Tick 5s)} = \text{MaxManapoints} \times \frac{\text{MpRegenPerTenSeconds}}{2}$$
+- 客户端展示与服务端计算口径严格保持这一 1:2 的周期换算映射。
 ### 9.3 死亡状态下的资源回复规则
 当角色生命值归零（$\text{Hitpoints} \le 0$）进入死亡状态（如处于战斗死亡倒计时或历练死亡阶段等待复活读条）：
 1. **生命值保持为 0**：未完成复活前不产生任何自然回血，生命值严格保持 0。

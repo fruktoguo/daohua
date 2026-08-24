@@ -101,7 +101,7 @@
   - **首位核心主修心法（Internal Core）**：决定角色的灵气周天运转模式、属性转化倍率与基础回气速率；
   - **动态扩展神通槽位（Active Spells）**：随境界提升逐步解锁的战斗与辅助主动法术序列。
 - **六大装备部位（Six Equipment Slots）**：
-  - `MainHand`（主手神兵）、`OffHand`（副手灵宝）、`Head`（道冠/冠冕）、`Chest`（法袍/宝甲）、`Arms`（护腕/法镯）、`Feet`（履靴/行云履）。
+  - `weapon`（武器/神兵）、`head`（头部/道冠）、`armor`（衣服/宝甲）、`legs`（下装/胫甲）、`boots`（鞋履/行云履）、`trinket`（饰品/法宝灵佩）。
   - 各部位遵循严格的数值预算守恒模型，提供基础属性、元素抗性与附加词缀。
 - **生活技艺工具槽位（Artisan Tool Slots）**：
   - 预留药锄、灵火鼎、探矿罗盘等生活生产专属工具，直接赋能采集与生产行为。
@@ -203,7 +203,7 @@
  │                       服务端分片宿主 (PlayerShardHost)                   │
  │   • 单写者调度 Fiber (YuoFiber)：独占调度，单线程串行处理，彻底消除并发写竞争 │
  │   • 在线实体映射：_players[playerId] -> YuoEntity                        │
- │   • 冷快照 LRU 缓存：_coldSnapshots[playerId] -> byte[] (最多 20,000 份) │
+│   • 冷快照 LRU 缓存：每个分片独立维护 20,000 份冷快照 (_coldSnapshots[playerId] -> byte[]) │
  └────────────────────────────────────┬────────────────────────────────────┘
                                       │ 持有并驱动
                                       ▼
@@ -234,14 +234,14 @@
 - `SimulationEngine.AdvanceTo(state, targetTime)` 是世界状态演进的唯一入口；
 - 引擎按离散事件边界切分时间片，在推进循环中统一执行：
   1. `ExpireBuffs(state, cursor)`：推进并失效到期 Buff；
-  2. 动作推进与状态转移（根据动作类型分发至 `ExecutorAction`、`CombatSimulator` 或位移处理）；
+  2. 动作推进与状态转移（根据动作类型由 SimulationEngine 执行挂机产出结算、CombatSimulator 战斗模拟或位移处理）；
   3. `RegenerateResources(state, cursor, dt)`：依据全属性底盘结算自然气血与灵力回复；
   4. 产出结算与脏标记汇总。
 
 ### 5.3 运行时层：`PlayerShardHost` + `YuoFiber`
 
 - **单写者并发模型（Single-Writer）**：每个玩家在内存中分配给固定的 `PlayerShardHost`，其所有指令与状态演进严格在专属 `YuoFiber` 上单线程排队执行，从根本上杜绝了多线程并发读写导致的“状态撕裂”；
-- **冷热无缝切换**：玩家离线后移出活跃内存，状态以紧凑二进制快照存入 LRU 缓存并异步刷入 PostgreSQL。玩家重连时，从快照恢复并由 `SimulationEngine` 补算至当前时刻，状态与一直在线完全无差。
+- **冷热无缝切换**：玩家离线后移出活跃内存，状态以紧凑二进制快照存入 LRU 缓存（每个 `PlayerShardHost` 分片独立维护 20,000 份内存冷快照）并异步刷入 PostgreSQL。玩家重连时，从快照恢复并由 `SimulationEngine` 补算至当前时刻，状态与一直在线完全无差。
 
 ### 5.4 网络层：`StateMapper` 增量同步
 

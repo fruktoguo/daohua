@@ -31,7 +31,7 @@
 - 生产发布者已执行 `docker login ccr.ccs.tencentyun.com`。
 - 远端 root Docker 也必须登录私有 CCR；凭据只能通过 `docker login --password-stdin` 安装，不得写入仓库或部署脚本。
 - SSH 别名 `yuohira` 可登录且具备免交互 `sudo`。
-- 生产 `/opt/daohua/daohua.env` 必须设置 `DB_PASSWORD`；可选设置 `ACCESS_TOKEN`、`DISTRIBUTED_COMPUTE_ENABLED`、`COMPUTE_NODE_ENDPOINTS`、`COMPUTE_TOKEN`。
+- 生产 `/opt/daohua/daohua.env` 必须设置 `DB_PASSWORD` 与 `ACCESS_TOKEN`（访问令牌，生产部署强制必填前置项）；可选设置 `DISTRIBUTED_COMPUTE_ENABLED`、`COMPUTE_NODE_ENDPOINTS`、`COMPUTE_TOKEN`。
 
 首次克隆必须初始化依赖：
 
@@ -122,7 +122,7 @@ scripts/docker-build-prod.sh --push-existing
 scripts/docker-build-prod.sh \
   --allow-dirty \
   --release-tag bootstrap-YYYYMMDDTHHMMSSZ
-node scripts/smoke-production.mjs http://127.0.0.1:15128
+node scripts/smoke-production.mjs http://127.0.0.1:5128
 scripts/docker-build-prod.sh \
   --allow-dirty \
   --release-tag bootstrap-YYYYMMDDTHHMMSSZ \
@@ -143,7 +143,7 @@ scripts/deploy-prod.sh \
 脚本会执行以下操作：
 
 1. 只读检查远端 `sudo`、Docker 和 Compose。
-2. 校验 `/opt/daohua/daohua.env` 已设置 `DB_PASSWORD`。
+2. 校验 `/opt/daohua/daohua.env` 已设置 `DB_PASSWORD` 与 `ACCESS_TOKEN`。
 3. 安装 `/opt/daohua/compose.prod.yaml`、更新器、数据库备份脚本和 systemd timer。
 4. 拉取指定镜像并等待 PostgreSQL 与应用容器健康。
 5. 启用 `daohua-ccr-auto-update.timer` 和 `daohua-db-backup.timer`。
@@ -246,13 +246,13 @@ scripts/deploy-prod.sh \
 ssh yuohira 'sudo systemctl enable --now daohua-ccr-auto-update.timer'
 ```
 
-## 访问令牌（可选）
+## 访问令牌（生产部署强制必填）
 
-当前客户端只用本地 UUID 标识玩家，`playerId` 即权限：知道 ID 就能读取该玩家快照，并以下单、撤单、领取市场资产。服务端提供可选共享访问令牌，为公网部署增加最低门槛：
+当前客户端只用本地 UUID 标识玩家，`playerId` 即权限：知道 ID 就能读取该玩家快照，并以下单、撤单、领取市场资产。服务端要求在生产环境中**强制配置共享访问令牌（`ACCESS_TOKEN`）**作为部署前置项，为公网部署增加防护门槛：
 
-- 配置 `Server:AccessToken`（环境变量 `Server__AccessToken`）后，`/ws`、`GET /api/players/{id}` 与三个市场写接口都要求携带令牌：HTTP 使用 `X-Access-Token` 请求头，WebSocket 使用 query 参数 `token`；缺失或不匹配返回 401。
-- 未配置时不启用鉴权，行为与历史版本一致；启动日志会输出 Warning：`未配置 Server:AccessToken，玩家级接口无鉴权，仅建议本地开发使用`。
-
+- 配置 `Server:AccessToken`（环境变量 `Server__AccessToken`）后，`/ws`、`GET /api/players/{id}`、三个市场写接口与玩家挂单列表查询 `GET /api/players/{id}/market/orders` 都要求携带令牌：HTTP 使用 `X-Access-Token` 请求头，缺失或不匹配返回 401；WebSocket 使用 query 参数 `token`，握手成功后以应用层关闭码关闭（4001 令牌无效 / 4002 playerId 无效），客户端据 close code 熔断。
+- 单笔订单查询 `GET /api/market/orders/{orderId}` 为公开只读：只暴露订单簿本身的成交状态，不提供按玩家枚举挂单的能力，无需令牌。
+- 本地开发未配置时（不启用鉴权），启动日志会输出 Warning：`未配置 Server:AccessToken，玩家级接口无鉴权，仅建议本地开发使用`；生产环境禁止空令牌上线。
 生成强随机令牌：
 
 ```bash

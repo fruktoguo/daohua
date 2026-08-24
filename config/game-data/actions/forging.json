@@ -203,7 +203,8 @@
     "durationSeconds": 25,
     "inputs": {
       "item.refined-copper": 7,
-      "item.beast-fang": 1
+      "item.beast-fang": 1,
+      "equipment.qingfeng-sword": 2
     },
     "outputs": {
       "equipment.pogang-sword": 1
@@ -217,7 +218,8 @@
     "durationSeconds": 25,
     "inputs": {
       "item.refined-copper": 7,
-      "item.beast-fang": 1
+      "item.beast-fang": 1,
+      "equipment.pishan-blade": 2
     },
     "outputs": {
       "equipment.zhansha-blade": 1
@@ -231,7 +233,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
-      "item.beast-fang": 1
+      "item.beast-fang": 1,
+      "equipment.shufa-scarf": 2
     },
     "outputs": {
       "equipment.chijin-helmet": 1
@@ -245,7 +248,8 @@
     "durationSeconds": 25,
     "inputs": {
       "item.refined-copper": 7,
-      "item.beast-fang": 1
+      "item.beast-fang": 1,
+      "equipment.baina-armor": 2
     },
     "outputs": {
       "equipment.yulin-armor": 1
@@ -259,7 +263,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
-      "item.beast-fang": 1
+      "item.beast-fang": 1,
+      "equipment.zhakou-pants": 2
     },
     "outputs": {
       "equipment.tazhen-greaves": 1
@@ -273,7 +278,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
-      "item.beast-fang": 1
+      "item.beast-fang": 1,
+      "equipment.xingshan-boots": 2
     },
     "outputs": {
       "equipment.tashan-boots": 1
@@ -287,7 +293,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
-      "item.beast-fang": 1
+      "item.beast-fang": 1,
+      "equipment.shouya-pendant": 2
     },
     "outputs": {
       "equipment.chiwen-ring": 1
@@ -301,7 +308,8 @@
     "durationSeconds": 25,
     "inputs": {
       "item.spirit-pine-crystal": 7,
-      "item.soul-talisman": 1
+      "item.soul-talisman": 1,
+      "equipment.jiujie-staff": 2
     },
     "outputs": {
       "equipment.chaoyuan-staff": 1
@@ -315,7 +323,8 @@
     "durationSeconds": 25,
     "inputs": {
       "item.spirit-pine-crystal": 7,
-      "item.soul-talisman": 1
+      "item.soul-talisman": 1,
+      "equipment.suxin-zither": 2
     },
     "outputs": {
       "equipment.songfeng-zither": 1
@@ -329,7 +338,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,
-      "item.soul-talisman": 1
+      "item.soul-talisman": 1,
+      "equipment.hunyuan-scarf": 2
     },
     "outputs": {
       "equipment.ziwu-crown": 1
@@ -343,7 +353,8 @@
     "durationSeconds": 25,
     "inputs": {
       "item.spirit-pine-crystal": 7,
-      "item.fire-feather": 1
+      "item.fire-feather": 1,
+      "equipment.suma-robe": 2
     },
     "outputs": {
       "equipment.pichen-shirt": 1
@@ -357,7 +368,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,
-      "item.fire-feather": 1
+      "item.fire-feather": 1,
+      "equipment.xingqi-pants": 2
     },
     "outputs": {
       "equipment.liuyun-skirt": 1
@@ -371,7 +383,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,
-      "item.fire-feather": 1
+      "item.fire-feather": 1,
+      "equipment.shifang-shoes": 2
     },
     "outputs": {
       "equipment.bichen-shoes": 1
@@ -385,7 +398,8 @@
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,
-      "item.soul-talisman": 1
+      "item.soul-talisman": 1,
+      "equipment.taomu-talisman": 2
     },
     "outputs": {
       "equipment.juling-pendant": 1

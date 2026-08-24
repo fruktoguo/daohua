@@ -67,7 +67,6 @@ interface NpcDefinition {
 每个怪物除了具备既定的阶位（`Tier`）、层次（`Rank`）与属性权重外，**必须配置单体消耗预算 `budgetCost`（对应灵狐的 Quality 质量点数）**。
 
 #### 数据结构定义（`MonsterConfig`）：
-```json
 {
   "id": "enemy.demonized-rabbit",
   "name": "魔化野兔",
@@ -75,8 +74,8 @@ interface NpcDefinition {
   "rank": "minion",
   "budgetCost": 15,
   "style": "body",
-  "damageType": "physical",
-  "attackIntervalMilliseconds": 1000,
+  "category": "physical",
+  "element": "none",
   "weights": {
     "hp": 1.15,
     "ad": 1.0,
@@ -86,7 +85,7 @@ interface NpcDefinition {
   },
   "dropTable": [
     {
-      "itemId": "item.qi-beast-core",
+      "itemId": "item.beast-hide",
       "dropChance": 1.0,
       "minQuantity": 1,
       "maxQuantity": 1
@@ -94,7 +93,6 @@ interface NpcDefinition {
   ],
   "rareDropTable": []
 }
-```
 
 #### 典型预算消耗梯度基准：
 | 怪物层次 (`Rank`) | 消耗预算 (`budgetCost`) | 典型代表 | 战力定位 |
@@ -106,17 +104,22 @@ interface NpcDefinition {
 
 ---
 
-## 3. 地图与遭遇配置 Schema
+## 3. 地图 (Maps) 与遭遇 (Encounters) 解耦架构
 
-### 3.1 地图生灵生态原则（特色化分布）
+### 3.1 架构解耦设计理念
+系统将**世界地理拓扑（Maps）**与**战斗遭遇生态（Encounters）**完全解耦，分别存储于 `config/game-data/maps/` 与 `config/game-data/encounters/`：
+1. **地图配置 (`maps/`) 聚焦地理拓扑与设施**：定义大世界节点坐标（`x`, `y`）、背景设定、开放的生活/采集行动（`availableActionIds`）、场景常驻建筑（`buildings`）与 NPC，并通过 `encounterIds` 弱引用战斗遭遇；
+2. **遭遇配置 (`encounters/`) 聚焦战力预算与怪群生成**：定义遭遇的质量预算区间 `[minBudget, maxBudget]`、怪群随机抽取权重表（`randomSpawns`）、精英怪池（`eliteEnemyIds`）与领主怪池（`bossEnemyIds`）；
+3. **解耦优势**：同一套战斗遭遇与怪物生态可被多个地理节点复用，地图节点亦可独立挂载多种遭遇副本，数值调整与地图绘制互不干扰。
+
+### 3.2 地图生灵生态原则（特色化分布）
 - **按地理风貌分布 1~3 种怪物**：同阶（如 T1）怪物不需要全部挤在同一张地图内。每个地图节点根据其地理环境、五行属性与剧情风貌分配 1~3 种契合的怪物即可（灵活可配，不强制多怪）。
   - **青岚药谷 (`node.herb-vale`)**：草木繁茂之地，主要栖息【木灵】（或木灵 + 偶尔出没的野兔）；
   - **落霞西岭 (`node.sunset-ridge`)**：开阔山岭，主要出没【魔化野兔】与【重甲蛮熊】；
   - **暮影关 (`node.twilight-pass`)**：阴煞险关，主要出没【火灵】、【通臂魔猿】与关底【伥鬼妖虎】；
   - **澄心灵泉 (`node.spirit-spring`)**：静修灵泉，可仅出没水系生灵或作为清修少怪之地。
 
-### 3.2 配置结构示例
-地图配置文件 `maps.json` 整合地点属性、NPC 列表、怪物生态池以及危险度与预算参数：
+### 3.3 地图与遭遇配置结构示例
 
 ```json
 [

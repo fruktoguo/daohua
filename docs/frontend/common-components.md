@@ -94,10 +94,12 @@
 - **适用场景**：
   - **通用全屏居中遮罩弹窗**（基于 React Portal 顶层挂载、Focus 焦点锁定陷阱、ESC 键响应、三种标准尺寸 `small`/`medium`/`large`） -> `Modal`
   - **二次确认 / 高危操作对话框**（重置、遗忘功法、摧毁物品、批量购买等，带取消/确认与高危危险样式） -> `ConfirmDialog`
+  - **战斗技能触发条件编辑器弹窗**（目标依赖、气血/真元阈值与状态比较、最多 4 条逻辑与条件） -> `CombatTriggerEditor`
 - **组件源码**：
   - [`frontend/src/components/Modal.tsx`](../../frontend/src/components/Modal.tsx)
   - [`frontend/src/components/ConfirmDialog.tsx`](../../frontend/src/components/ConfirmDialog.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`)
+  - [`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`, `.combat-trigger-editor`)
 
 ---
 
@@ -201,8 +203,41 @@
 
 - **适用场景**：
   - **右侧多 Tab 顶层容器**（聚合储物袋、装备、功法三大核心面板，支持平滑切换） -> `RightSidebar`
-  - **功法神通面板**（4 个斗法技能槽位的冷却/触发器/等级调整 + 全部已学功法秘籍目录列表） -> `AbilitiesPanel`
+  - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级调整 + 全部已学功法秘籍目录列表） -> `AbilitiesPanel`
 - **组件源码**：
   - [`frontend/src/components/RightSidebar.tsx`](../../frontend/src/components/RightSidebar.tsx)
   - [`frontend/src/components/AbilitiesPanel.tsx`](../../frontend/src/components/AbilitiesPanel.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.right-sidebar-panel`, `.abilities-view-panel`)
+---
+
+## 19. 功法与效果悬浮气泡 (Effect Tooltip)
+
+- **适用场景**：
+  - 功法、词条、Buff/效果说明的 Hover 悬浮卡片（主标题 + 可选徽章 + 效果简述 + 详细词条行，词条行自动经 `ValueText` 做数值高亮） -> `EffectTooltipTarget`
+  - 未提供 content 时自动降级为原生包裹 span，不产生额外 Popover 容器开销；`CatalogPicker` 目录选择弹窗已复用该组件展示条目提示。
+- **组件源码**：[`frontend/src/components/EffectTooltip.tsx`](../../frontend/src/components/EffectTooltip.tsx)
+
+---
+
+## 20. 全局错误边界 (Error Boundary)
+
+- **适用场景**：
+  - React 子树渲染异常的全局兜底（捕获渲染期错误并展示降级界面，避免整页白屏）；已在 [`main.tsx`](../../frontend/src/main.tsx) 根级挂载，无需重复包裹。 -> `ErrorBoundary`
+- **组件源码**：[`frontend/src/components/ErrorBoundary.tsx`](../../frontend/src/components/ErrorBoundary.tsx)
+
+---
+
+## 21. 原生矢量修仙立绘 (Vector Character)
+
+- **适用场景**：
+  - 缺少高清立绘资源时的纯 SVG 矢量人物/妖兽法相兜底渲染（`CharacterAvatar` 三级降级链路的中间层，见 §16；支持 `isDead` 阵亡置灰）。 -> `VectorCharacter`
+- **组件源码**：[`frontend/src/components/VectorCharacter.tsx`](../../frontend/src/components/VectorCharacter.tsx)
+
+---
+
+## 22. 战斗技能触发条件编辑器 (Combat Trigger Editor)
+
+- **适用场景**：
+  - 战斗技能槽位自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
+- **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.trigger-rule-row`)

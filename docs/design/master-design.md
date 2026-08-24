@@ -205,7 +205,7 @@ $$\text{每级强化增量} = \frac{\text{白板基础属性}}{50.0} \quad (\tex
   - **百炼铁** (乌铁×3 $\to$ T1 物理主料)、**桃木晶** (桃木×3 $\to$ T1 术法主料)、**草木精华** (凝血草×2 + 晨露×1 $\to$ T1 丹药基底)；
   - **赤铜精** (赤铜×3 $\to$ T2 物理主料)、**灵松晶** (引灵松×3 $\to$ T2 术法主料)、**伴灵精华** (伴灵花×2 + 晨露×1 $\to$ T2 丹药基底)。
 - **丹药库 (4种)**：
-  - **引气丹** (`item.qi-gathering-pill`): 草木精华×1 + 破碎灵核×1 | 持续 300s | **+30% 修炼收益**（引气入体 10修为 $\to$ 13修为，1灵力 $\to$ 1.3灵力）
+  - **引气丹** (`item.qi-gathering-pill`): 凝血草×3 | 持续 300s | **+30% 修炼收益**（引气入体 10 Exp $\to$ 13 Exp，10 MP $\to$ 13 MP）
   - **止血散** (`item.zhixue-powder`): 草木精华×1 + 凝血草×1 | 60s/30s CD | 生命回复 +2 + 100% 生命回复增幅
   - **顺气丸** (`item.shunqi-pill`): 草木精华×1 + 伴灵花×1 | 60s/30s CD | 灵力回复 +1 + 100% 灵力回复增幅
   - **通脉丹** (`item.tongmai-pill`): 伴灵精华×2 + 妖核(Boss)×1 | 持续 300s | **+50% 修炼收益**
@@ -214,12 +214,23 @@ $$\text{每级强化增量} = \frac{\text{白板基础属性}}{50.0} \quad (\tex
 
 # 第六篇 战斗引擎、减伤公式与状态常驻规约
 
-## 6.1 动态抗性非线性平方减伤公式
-$$\mathbf{实际伤害} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \mathbf{RES} \times K + 1.0} \times (\text{是否暴击} ? \text{CritMultiplier} : 1.0)$$
+## 6.1 两层动态抗性非线性减伤公式
 
-- **动态抗性系数 $K$**：随境界阶位线性递增（T1 $K=1.0$, T2 $K=2.0$, ..., T12 $K=12.0$）。
-- **天然穿甲特性**：单发原始伤害（$\text{RawDamage}$）越高，穿透减伤比例越强；法修凭借 2.0x 超大 AP 拥有极强的天然破防优势。
+战斗伤害采用**大类抗性平方穿甲** + **五行属性抗性百分比减免**两层减伤模型：
 
+1. **第一层：大类抗性非线性平方减伤（护甲 / 法抗）**：
+   $$\text{DamageAfterCategory} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \mathbf{RES} \times K + 1.0}$$
+   - **有效抗性 $\mathbf{RES}$**：物理伤害根据守方物理护甲（`Armor`）计算；术法伤害根据守方法术抗性（`MagicResistance`）计算。
+   - **动态抗性系数 $K$**：随境界阶位线性递增（T1 $K=1.0$, T2 $K=2.0$, ..., T12 $K=12.0$）。
+   - **天然穿甲特性**：单发原始伤害（$\text{RawDamage}$）越高，穿透减伤比例越强；法修凭借 2.0x 超大 AP 拥有极强的天然破防优势。
+
+2. **第二层：五行属性抗性减免（金木水火土）**：
+   当技能携带具体五行属性时（非 `Element.None`），依据守方对应五行抗性计算二次减免：
+   $$\text{Mitigation} = \frac{\text{ElementRes}}{\text{ElementRes} + 100.0 \times K}$$
+   $$\text{DamageAfterElement} = \text{DamageAfterCategory} \times \max(0.0, 1.0 - \text{Mitigation})$$
+
+3. **最终伤害与暴击放大**：
+   $$\mathbf{实际伤害} = \text{DamageAfterElement} \times (\text{是否暴击} ? \text{CritMultiplier} : 1.0)$$
 ## 6.2 三大对抗除法概率公式 (常数 $K = 100.0$)
 1. **闪避 vs 命中对抗 (先判定是否被闪避)**：
    攻击发起时优先判定守方是否成功闪避：
@@ -344,19 +355,19 @@ flowchart TD
 ## 11.1 四层数据架构体系
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│ 1. 策划静态配置 (Definitions)   │ 只读不可变、启动加载、FrozenDictionary   │
+│ 1. 策划静态配置 (GameData 解析) │ 只读不可变、启动加载、FrozenDictionary   │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 2. 运行时领域组件 (YuoComponents) │ 单 Fiber 独占所有权、高频变动、脏标记驱动 │
+│ 2. 运行时领域组件 (PlayerComponent) │ 实体挂载聚合组件，单 Fiber 独占单写者     │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 3. 纯业务逻辑系统 (YuoSystems)   │ 多泛型注入、确定性单线程 Tick             │
+│ 3. 纯业务逻辑系统 (SimulationEngine) │ 纯函数离散事件模拟推进、100% 确定性      │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 4. 持久化与快照 (Snapshots/DTO)   │ 异步落盘、冷计算传输、不可变流式投影     │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-## 11.2 单一过渡系统与静态执行器模式
-- **调度入口唯一**：服务端调度器在状态推导的截止时间唤醒 `YuoWorld.RunSystem<IActionTransitionDue>(playerEntity)`。
-- **唯一过渡协调者**：`ActionTransitionSystem` 是唯一有权推进队列和原子修改组件的系统；它调用静态纯函数 `ExecutorGathering`、`ExecutorCultivation`、`ExecutorAlchemy`、`ExecutorCombat`，获取 `ActionDelta` 并集中应用与标记 `SyncDirtyComponent`。
+## 11.2 纯函数离散模拟引擎与单写者架构
+- **单一真源推进**：所有挂机时间、产物结算与战斗模拟严格以 `SimulationEngine.AdvanceTo(state, now)` 为唯一真源，杜绝任何第二套执行器或过渡调度系统。
+- **领域聚合零损耗**：实体挂载单体聚合组件 `PlayerComponent`（内含 `PlayerState` 的 7 大领域切片），高频 Tick 时直接走内存指针偏移，零反射、零哈希查找。
 - **无锁 Fiber 并发**：单进程内按 CPU 逻辑核心数划分 `PlayerShard-N` Fiber；Fiber 内部串行无锁，跨 Fiber 走 Actor 消息与 Saga 补偿，杜绝多重分布式大锁。
 
 ---

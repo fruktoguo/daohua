@@ -172,7 +172,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     ? (attributes.style === 'five-elements' ? attributes.maxDamage : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
     : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
   const armor: number = Math.floor(Math.max(0.0, attributes?.armor ?? (basePool.baseArmor * (1.0 + staminaBonus))))
-  const magicRes: number = Math.floor(Math.max(0.0, attributes?.waterResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus))))
+  const magicRes: number = Math.floor(Math.max(0.0, attributes?.magicResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus))))
   const accuracy: number = Math.floor(attributes?.accuracyRating ?? (basePool.baseAccuracy * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
   const evasion: number = Math.floor(attributes?.evasionRating ?? (basePool.baseEvasion * (1.0 + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
   const critPoint: number = Math.floor(attributes ? (attributes.criticalRating ?? attributes.criticalChance * 100.0) : (basePool.baseCrit * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
