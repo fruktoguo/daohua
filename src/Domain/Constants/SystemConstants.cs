@@ -15,8 +15,8 @@ namespace Domain.Constants;
 /// </summary>
 public static class CombatLimits
 {
-    /// <summary>主动技能装备槽位上限（4格）。</summary>
-    public const int AbilitySlotCount = 4;
+    /// <summary>主动与心法技能装备槽位上限（5格：首位内功+后续4格术法，支持动态扩展）。</summary>
+    public const int AbilitySlotCount = 5;
     /// <summary>战斗消耗品快捷槽位上限（3格）。</summary>
     public const int ConsumableSlotCount = 3;
     /// <summary>自动使用物品槽位上限（3格）。</summary>

@@ -40,7 +40,7 @@ const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
  * 功法神通管理面板 (AbilitiesPanel)
  *
  * 核心特性：
- * 1. 【斗法装配槽】：4 个战斗功法槽位，支持功法选择、等级调整、释放条件触发器与实时冷却进度；
+ * 1. 【横排动态装配槽】：横排排布功法槽位，首格固定为「内功」（心法/本命功法），后续格为「术法」（神通技法），支持后续任意动态扩增；
  * 2. 【已学功法总览】：收拢展示修士已习得的全部功法秘籍，支持查看详细词条、五行属性、灵力消耗与装配状态。
  */
 export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element {
@@ -109,36 +109,66 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     ? combat.abilitySlots[activePickerSlotIndex]?.abilityId ?? null
     : null
 
+  const isPickingInternal = activePickerSlotIndex === 0
   const pickerTitle = activePickerSlotIndex !== null
-    ? t('app.abilitiesPanel.chooseAbilityTitle', { slot: activePickerSlotIndex + 1 })
+    ? isPickingInternal
+      ? t('app.abilitiesPanel.chooseInternalTitle')
+      : t('app.abilitiesPanel.chooseSpellTitle', { slot: activePickerSlotIndex })
     : ''
+
+  const slotCount = combat.abilitySlots.length
 
   return (
     <div className="abilities-view-panel">
-      {/* 上部：斗法装配槽 */}
+      {/* 上部：斗法横排装配槽 */}
       <section className="abilities-section abilities-loadout-section">
         <div className="abilities-section-header">
           <span className="abilities-section-title">{t('app.abilitiesPanel.equippedSlotsTitle')}</span>
-          <span className="abilities-section-count">4 槽位</span>
+          <span className="abilities-section-count">
+            {t('app.abilitiesPanel.equippedCount', { count: slotCount })}
+          </span>
         </div>
 
-        <div className="abilities-slot-grid">
+        <div className="abilities-slot-row">
           {combat.abilitySlots.map((slot, index) => {
+            const isInternal = index === 0
             const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
             const remainingCooldown = ability ? (abilityCooldowns[ability.abilityId] ?? 0) : 0
+
+            const slotTypeTag = isInternal
+              ? t('app.abilitiesPanel.slotInternal')
+              : t('app.abilitiesPanel.slotSpell', { n: index })
+
+            const ribbonLabel = isInternal
+              ? t('app.combatPanel.internalRibbon')
+              : t('app.combatPanel.spellRibbon')
+
+            const emptyBtnLabel = isInternal
+              ? t('app.abilitiesPanel.chooseInternal')
+              : t('app.abilitiesPanel.chooseSpell')
+
+            const slotAriaLabel = ability
+              ? t('app.combatPanel.currentAbilityAria', { name: ability.name })
+              : isInternal
+                ? t('app.combatPanel.chooseInternalSlotAria')
+                : t('app.combatPanel.chooseSpellSlotAria', { slot: index })
 
             const slotContent = (
               <>
                 <button
-                  aria-label={ability ? t('app.combatPanel.currentAbilityAria', { name: ability.name }) : t('app.combatPanel.chooseAbilitySlotAria', { slot: index + 1 })}
-                  className={`combat-ability-slot${ability ? '' : ' combat-ability-slot--empty'}`}
+                  aria-label={slotAriaLabel}
+                  className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
                   onClick={() => setActivePickerSlotIndex(index)}
                   type="button"
                 >
+                  <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
+                    {slotTypeTag}
+                  </span>
+
                   {ability ? (
-                    <span className="item-tile combat-ability-cell" data-rarity="mystic">
+                    <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
                       <span className="item-type-ribbon" aria-hidden="true">
-                        <span>{t('app.combatPanel.abilityRibbon')}</span>
+                        <span>{ribbonLabel}</span>
                       </span>
                       <strong className="item-tile-name">{ability.name}</strong>
                       <span className="item-corner item-corner--bottom-right">
@@ -153,8 +183,8 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                     </span>
                   ) : (
                     <span className="abilities-empty-slot-btn">
-                      <span className="abilities-slot-idx">#{index + 1}</span>
-                      <span>{t('app.abilitiesPanel.chooseAbility')}</span>
+                      <span className="abilities-slot-plus">+</span>
+                      <span className="abilities-slot-empty-text">{emptyBtnLabel}</span>
                     </span>
                   )}
                 </button>
@@ -194,7 +224,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
             )
 
             return (
-              <div className="abilities-slot-card" key={index}>
+              <div className={`abilities-slot-card${isInternal ? ' is-internal' : ''}`} key={index}>
                 {ability ? (
                   <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, slot.level)} tabIndex={-1}>
                     {slotContent}
@@ -256,8 +286,10 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                       </div>
                     </div>
                     {equippedIndex !== null && (
-                      <span className="abilities-equipped-badge">
-                        槽位 {equippedIndex + 1}
+                      <span className={`abilities-equipped-badge${equippedIndex === 0 ? ' is-internal' : ''}`}>
+                        {equippedIndex === 0
+                          ? t('app.abilitiesPanel.equippedInternalBadge')
+                          : t('app.abilitiesPanel.equippedSpellBadge', { slot: equippedIndex })}
                       </span>
                     )}
                   </div>
@@ -291,7 +323,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
           onClose={() => setEditingTriggerSlotIndex(null)}
           onSave={saveTriggers}
           open
-          title={`功法槽 ${editingTriggerSlotIndex + 1}`}
+          title={`${editingTriggerSlotIndex === 0 ? t('app.abilitiesPanel.slotInternalBadge') : t('app.abilitiesPanel.slotSpell', { n: editingTriggerSlotIndex })} 触发条件`}
         />
       )}
     </div>

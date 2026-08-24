@@ -1346,9 +1346,8 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
       ? combat.abilitySlots[pickerTarget.index]?.abilityId ?? null
       : combat.consumableSlots[pickerTarget.index]?.itemId ?? null
   const pickerTitle = pickerTarget?.kind === 'ability'
-      ? t('app.combatPanel.chooseAbilityTitle', { slot: ((pickerTarget?.index ?? 0) + 1) })
+      ? (pickerTarget.index === 0 ? t('app.combatPanel.chooseInternalTitle') : t('app.combatPanel.chooseSpellTitle', { slot: pickerTarget.index }))
       : t('app.combatPanel.chooseConsumableTitle', { slot: ((pickerTarget?.index ?? 0) + 1) })
-
   const selectPickerValue = (value: string | null) => {
     if (!pickerTarget) return
     if (pickerTarget.kind === 'ability') {
@@ -1405,18 +1404,37 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
           <span className="slot-group-label">{t('app.combatPanel.abilitiesGroup')}</span>
           <div className="combat-slot-grid combat-slot-grid--abilities">
             {combat.abilitySlots.map((slot, index) => {
+              const isInternal = index === 0
               const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
+              const slotTypeTag = isInternal
+                ? t('app.combatPanel.slotInternal')
+                : t('app.combatPanel.slotSpell', { n: index })
+              const ribbonLabel = isInternal
+                ? t('app.combatPanel.internalRibbon')
+                : t('app.combatPanel.spellRibbon')
+              const emptyBtnLabel = isInternal
+                ? t('app.combatPanel.chooseInternal')
+                : t('app.combatPanel.chooseSpell')
+              const slotAriaLabel = ability
+                ? t('app.combatPanel.currentAbilityAria', { name: ability.name })
+                : isInternal
+                  ? t('app.combatPanel.chooseInternalSlotAria')
+                  : t('app.combatPanel.chooseSpellSlotAria', { slot: index })
+
               const slotContent = (
                 <>
                   <button
-                    aria-label={ability ? t('app.combatPanel.currentAbilityAria', { name: ability.name }) : t('app.combatPanel.chooseAbilitySlotAria', { slot: index + 1 })}
-                    className={`combat-ability-slot${ability ? '' : ' combat-ability-slot--empty'}`}
+                    aria-label={slotAriaLabel}
+                    className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
                     onClick={() => setPickerTarget({ kind: 'ability', index })}
                     type="button"
                   >
+                    <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
+                      {slotTypeTag}
+                    </span>
                     {ability ? (
-                      <span className="item-tile combat-ability-cell" data-rarity="mystic">
-                        <span className="item-type-ribbon" aria-hidden="true"><span>{t('app.combatPanel.abilityRibbon')}</span></span>
+                      <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
+                        <span className="item-type-ribbon" aria-hidden="true"><span>{ribbonLabel}</span></span>
                         <strong className="item-tile-name">{ability.name}</strong>
                         <span className="item-corner item-corner--bottom-right">{t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}</span>
                         {(abilityCooldowns[ability.abilityId] ?? 0) > 0 && (
@@ -1426,7 +1444,12 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                           />
                         )}
                       </span>
-                    ) : <span>{t('app.combatPanel.chooseAbility')}</span>}
+                    ) : (
+                      <span className="abilities-empty-slot-btn">
+                        <span className="abilities-slot-plus">+</span>
+                        <span className="abilities-slot-empty-text">{emptyBtnLabel}</span>
+                      </span>
+                    )}
                   </button>
                   {ability && (
                     <>

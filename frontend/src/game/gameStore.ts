@@ -102,7 +102,7 @@ interface GameStore {
 }
 
 const AUTO_USE_SLOT_COUNT = 3
-const COMBAT_ABILITY_SLOT_COUNT = 4
+const COMBAT_ABILITY_SLOT_COUNT = 5
 const COMBAT_CONSUMABLE_SLOT_COUNT = 3
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
 
@@ -202,7 +202,8 @@ function normalizeQueue(queue: PlayerSnapshot['queue']): PlayerSnapshot['queue']
 function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['combat'] {
   if (!combat) return combat
   const abilitySlots = Array.isArray(combat.abilitySlots) ? combat.abilitySlots : []
-  const normalizedAbilitySlots = Array.from({ length: COMBAT_ABILITY_SLOT_COUNT }, (_, index) => ({
+  const targetSlotCount = Math.max(COMBAT_ABILITY_SLOT_COUNT, abilitySlots.length)
+  const normalizedAbilitySlots = Array.from({ length: targetSlotCount }, (_, index) => ({
     abilityId: abilitySlots[index]?.abilityId ?? null,
     level: Math.max(1, abilitySlots[index]?.level ?? 1),
     triggers: abilitySlots[index]?.triggers ?? [],

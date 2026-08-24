@@ -4533,16 +4533,53 @@ input[type="checkbox"] {
   color: var(--text-muted);
 }
 
-.abilities-slot-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+.abilities-slot-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  scrollbar-width: thin;
 }
 
 .abilities-slot-card {
+  flex: 0 0 110px;
+  min-width: 110px;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+}
+
+.abilities-slot-card.is-internal {
+  border-color: rgba(201, 180, 109, 0.4);
+}
+
+.abilities-slot-tag-badge {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 3;
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+
+.abilities-slot-tag-badge.is-internal {
+  color: var(--gold-bright);
+  border: 1px solid rgba(201, 180, 109, 0.4);
+  background: rgba(36, 28, 10, 0.9);
+}
+
+.combat-ability-slot.is-internal-slot {
+  border-color: rgba(201, 180, 109, 0.35);
+  background: linear-gradient(180deg, rgba(30, 24, 12, 0.6) 0%, rgba(10, 12, 14, 0.9) 100%);
+  box-shadow: inset 0 0 16px rgba(201, 180, 109, 0.1);
+}
+
+.combat-ability-slot.is-internal-slot:hover {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 14px rgba(201, 180, 109, 0.35);
 }
 
 .abilities-empty-slot-btn {
@@ -4550,10 +4587,20 @@ input[type="checkbox"] {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 2px;
   min-height: 80px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.abilities-slot-plus {
+  font-size: 16px;
+  color: rgba(201, 180, 109, 0.5);
+}
+
+.abilities-slot-empty-text {
+  font-size: 10px;
+  color: var(--text-dim);
 }
 
 .abilities-slot-idx {
@@ -4562,7 +4609,6 @@ input[type="checkbox"] {
   color: var(--gold-dim);
   opacity: 0.6;
 }
-
 .abilities-list {
   display: flex;
   flex-direction: column;

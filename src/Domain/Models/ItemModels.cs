@@ -207,9 +207,9 @@ public sealed class CombatLoadout
     public List<string> LearnedAbilityIds { get; set; } = [];
     /// <summary>玩家当前已领悟功法的经验值字典（AbilityId -> 累计经验值）。</summary>
     public Dictionary<string, double> AbilityExperiences { get; set; } = new(StringComparer.Ordinal);
-    /// <summary>4 个固定战斗技能装备槽位。</summary>
+    /// <summary>战斗与心法功法装备槽位（默认 5 格：首格内功 + 4 格术法，支持后续动态扩展）。</summary>
     public List<CombatAbilitySlot> AbilitySlots { get; set; } =
-    [new(), new(), new(), new()];
+    [new(), new(), new(), new(), new()];
     /// <summary>3 个固定战斗消耗品快捷槽位。</summary>
     public List<ConsumableSlot> ConsumableSlots { get; set; } =
     [new(), new(), new()];
