@@ -64,17 +64,23 @@ if (!html.includes('id="root"')) {
 
 const wsUrl = new URL('/ws', baseUrl)
 wsUrl.protocol = baseUrl.protocol === 'https:' ? 'wss:' : 'ws:'
-const playerId = crypto.randomUUID()
+// 身份固化：使用固定烟测账号（可用 SMOKE_PLAYER_ID 覆盖），账号幂等性由服务端
+// EnsurePlayerAsync 保证，重复运行不会新建账号。
+const playerId = process.env.SMOKE_PLAYER_ID || '5e0f6a2c-9b1d-4c7e-8a3f-2d4b6c8e0a11'
 wsUrl.searchParams.set('playerId', playerId)
 wsUrl.searchParams.set('name', '部署烟测')
-
+if (process.env.SMOKE_ACCESS_TOKEN) {
+  // 可选访问令牌：仅在设置 SMOKE_ACCESS_TOKEN 时附带，服务端校验 query 的 token 参数。
+  wsUrl.searchParams.set('token', process.env.SMOKE_ACCESS_TOKEN)
+}
 const firstPacket = await new Promise((resolve, reject) => {
   const socket = new WebSocket(wsUrl)
+  // 首包已收妥（或已因错误失败）标记：避免后续 close 事件覆盖既有结论。
+  let settled = false
   const timeout = setTimeout(() => {
     socket.close()
     reject(new Error('WebSocket 烟测超时。'))
   }, timeoutMs)
-
   socket.addEventListener('open', () => {
     socket.send(JSON.stringify({
       kind: 'hello',
@@ -91,18 +97,31 @@ const firstPacket = await new Promise((resolve, reject) => {
           ? await event.data.text()
           : new TextDecoder().decode(event.data)
       const packet = JSON.parse(value)
+      settled = true
       clearTimeout(timeout)
       socket.close(1000, '烟测完成')
       resolve(packet)
     } catch (error) {
+      settled = true
       clearTimeout(timeout)
       socket.close()
       reject(error)
     }
   })
   socket.addEventListener('error', () => {
-    clearTimeout(timeout)
-    reject(new Error('WebSocket 连接失败。'))
+    if (!settled) {
+      settled = true
+      clearTimeout(timeout)
+      reject(new Error('WebSocket 连接失败。'))
+    }
+  })
+  // 未收到首包前连接被服务端关闭（如令牌校验失败）：立即失败并携带关闭码，不再等满超时。
+  socket.addEventListener('close', event => {
+    if (!settled) {
+      settled = true
+      clearTimeout(timeout)
+      reject(new Error(`WebSocket 在收到首包前被关闭，关闭码: ${event.code}`))
+    }
   })
 })
 
@@ -115,7 +134,6 @@ console.log(JSON.stringify({
   version: health.version,
   gameDataVersion: health.gameDataVersion,
   gameDataFingerprint: health.gameDataFingerprint,
-  loadedPlayerCount: ready.loadedPlayerCount,
   actionCount: actions.length,
   webSocketFirstPacket: firstPacket.kind,
 }, null, 2))

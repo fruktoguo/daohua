@@ -7,7 +7,7 @@ xx.yuohira.com {
 	@probe path /actuator/* /wp-* /docker-compose* /config.xml
 	respond @probe 404
 
-	@private path /api/metrics /api/debug/*
+	@private path /api/metrics /api/debug/* /readyz
 	respond @private 404
 
 	header {

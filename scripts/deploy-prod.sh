@@ -168,8 +168,20 @@ printf '==> 核对远端容器和回环健康端点\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
   sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-app
-  curl --fail --silent --show-error http://127.0.0.1:15128/readyz
-  printf '\n'
+  # /readyz 能力位校验（职责自公网烟测移交至此）：四项存储能力声明必须逐项匹配。
+  local_ready=\"\$(curl --fail --silent --show-error http://127.0.0.1:15128/readyz)\"
+  for expected in \
+    '\"snapshotProvider\"[: ]*\"postgres\"' \
+    '\"marketProvider\"[: ]*\"postgres\"' \
+    '\"scaleOutReady\"[: ]*true' \
+    '\"zeroDowntimeReady\"[: ]*false'
+  do
+    if ! printf '%s' \"\$local_ready\" | grep -oqE \"\$expected\"; then
+      printf '/readyz 能力位校验失败，缺少或不符合: %s\n' \"\$expected\" >&2
+      exit 1
+    fi
+  done
+  printf '%s\n' \"\$local_ready\"
   sudo systemctl is-enabled daohua-ccr-auto-update.timer
   sudo systemctl is-active daohua-ccr-auto-update.timer
 "
