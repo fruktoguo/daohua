@@ -22,3 +22,5 @@ Dockerfile*
 compose*.yaml
 deploy
 scripts
+.vscode
+.idea
