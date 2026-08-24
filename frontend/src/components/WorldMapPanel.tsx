@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
-import type { WorldMapDefinition, WorldState } from '../game/types'
+import type { TravelSegment, WorldMapDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { FloatingTooltip } from './FloatingPopover'
@@ -151,7 +151,13 @@ function planShortestTravel(
 function usePlayerDisplayPosition(
   map: WorldMapDefinition | undefined,
   world: WorldState,
-  activeTravel: { status: string; progressSeconds: number; durationSeconds: number; travelPathEdgeIds?: string[] | null } | undefined,
+  activeTravel: {
+    status: string
+    progressSeconds: number
+    durationSeconds: number
+    travelPathEdgeIds?: string[] | null
+    travelSegments?: TravelSegment[] | null
+  } | undefined,
 ): { x: number; y: number } {
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: world.x, y: world.y })
 
@@ -167,15 +173,15 @@ function usePlayerDisplayPosition(
     const prev = stateRef.current
     const now = performance.now()
     const progressChanged = prev.activeTravel?.progressSeconds !== activeTravel?.progressSeconds
+    const travelChanged = prev.activeTravel !== activeTravel
     stateRef.current = {
       map,
       world,
       activeTravel,
       lastProgressSec: activeTravel?.progressSeconds ?? 0,
-      lastUpdateMs: progressChanged ? now : prev.lastUpdateMs,
+      lastUpdateMs: progressChanged || travelChanged ? now : prev.lastUpdateMs,
     }
   }, [map, world, activeTravel])
-
   useEffect(() => {
     let animId: number
 
@@ -191,9 +197,7 @@ function usePlayerDisplayPosition(
       if (
         currTravel &&
         currTravel.status === 'running' &&
-        currTravel.durationSeconds > 0 &&
-        currTravel.travelPathEdgeIds &&
-        currTravel.travelPathEdgeIds.length > 0
+        currTravel.durationSeconds > 0
       ) {
         const now = performance.now()
         const elapsedSinceUpdateSec = (now - lastUpdateMs) / 1000
@@ -201,35 +205,66 @@ function usePlayerDisplayPosition(
 
         let remainingSec = currentElapsedSec
         let currentCoord: { x: number; y: number } | null = null
-        let currentNodeId: string | null = currWorld.nodeId
 
-        for (let i = 0; i < currTravel.travelPathEdgeIds.length; i++) {
-          const edgeId = currTravel.travelPathEdgeIds[i]
-          const edge = currMap.edges.find(e => e.edgeId === edgeId)
-          if (!edge) continue
+        // 优先使用后端权威下发的 travelSegments（精准支持半路启程、逆向行走与多路段长途移动）
+        if (currTravel.travelSegments && currTravel.travelSegments.length > 0) {
+          for (let i = 0; i < currTravel.travelSegments.length; i++) {
+            const seg = currTravel.travelSegments[i]
+            const edge = currMap.edges.find(e => e.edgeId === seg.edgeId)
+            if (!edge) continue
 
-          let fromId = edge.fromNodeId
-          let toId = edge.toNodeId
-          if (currentNodeId && currentNodeId === edge.toNodeId) {
-            fromId = edge.toNodeId
-            toId = edge.fromNodeId
-          }
-          currentNodeId = toId
+            const fromNode = currMap.nodes.find(n => n.nodeId === edge.fromNodeId)
+            const toNode = currMap.nodes.find(n => n.nodeId === edge.toNodeId)
+            if (!fromNode || !toNode) continue
 
-          const fromNode = currMap.nodes.find(n => n.nodeId === fromId)
-          const toNode = currMap.nodes.find(n => n.nodeId === toId)
-          if (!fromNode || !toNode) continue
+            const startX = fromNode.x + (toNode.x - fromNode.x) * seg.startProgress
+            const startY = fromNode.y + (toNode.y - fromNode.y) * seg.startProgress
+            const endX = fromNode.x + (toNode.x - fromNode.x) * seg.endProgress
+            const endY = fromNode.y + (toNode.y - fromNode.y) * seg.endProgress
 
-          const edgeDuration = edge.durationSeconds
-          if (remainingSec <= edgeDuration || i === currTravel.travelPathEdgeIds.length - 1) {
-            const ratio = edgeDuration > 0 ? Math.min(1, Math.max(0, remainingSec / edgeDuration)) : 1
-            currentCoord = {
-              x: fromNode.x + (toNode.x - fromNode.x) * ratio,
-              y: fromNode.y + (toNode.y - fromNode.y) * ratio,
+            const segDuration = seg.durationSeconds
+            if (remainingSec <= segDuration || i === currTravel.travelSegments.length - 1) {
+              const ratio = segDuration > 0 ? Math.min(1, Math.max(0, remainingSec / segDuration)) : 1
+              currentCoord = {
+                x: startX + (endX - startX) * ratio,
+                y: startY + (endY - startY) * ratio,
+              }
+              break
+            } else {
+              remainingSec -= segDuration
             }
-            break
-          } else {
-            remainingSec -= edgeDuration
+          }
+        } else if (currTravel.travelPathEdgeIds && currTravel.travelPathEdgeIds.length > 0) {
+          // 备用兼容分支：当无 segments 时使用边列表
+          let currentNodeId: string | null = currWorld.nodeId
+          for (let i = 0; i < currTravel.travelPathEdgeIds.length; i++) {
+            const edgeId = currTravel.travelPathEdgeIds[i]
+            const edge = currMap.edges.find(e => e.edgeId === edgeId)
+            if (!edge) continue
+
+            let fromId = edge.fromNodeId
+            let toId = edge.toNodeId
+            if (currentNodeId && currentNodeId === edge.toNodeId) {
+              fromId = edge.toNodeId
+              toId = edge.fromNodeId
+            }
+            currentNodeId = toId
+
+            const fromNode = currMap.nodes.find(n => n.nodeId === fromId)
+            const toNode = currMap.nodes.find(n => n.nodeId === toId)
+            if (!fromNode || !toNode) continue
+
+            const edgeDuration = edge.durationSeconds
+            if (remainingSec <= edgeDuration || i === currTravel.travelPathEdgeIds.length - 1) {
+              const ratio = edgeDuration > 0 ? Math.min(1, Math.max(0, remainingSec / edgeDuration)) : 1
+              currentCoord = {
+                x: fromNode.x + (toNode.x - fromNode.x) * ratio,
+                y: fromNode.y + (toNode.y - fromNode.y) * ratio,
+              }
+              break
+            } else {
+              remainingSec -= edgeDuration
+            }
           }
         }
 

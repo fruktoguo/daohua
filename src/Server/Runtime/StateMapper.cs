@@ -321,6 +321,7 @@ public static class StateMapper
         ToWire(definition.Style),
         ToWire(definition.Category),
         ToWire(definition.Element),
+        ToWire(definition.Rank),
         definition.MaxHitpoints,
         definition.MaxManapoints,
         definition.AttackIntervalMilliseconds,
@@ -400,7 +401,8 @@ public static class StateMapper
                 ToWire(definition.ExecutionKind),
                 travelPlan?.DestinationNodeId,
                 travelPlan?.Segments.Select(segment => segment.EdgeId).ToArray(),
-                ToExpeditionProgress(state, entry, definition));
+                ToExpeditionProgress(state, entry, definition),
+                travelPlan?.Segments.Select(s => new TravelSegmentDto(s.EdgeId, s.StartProgress, s.EndProgress, s.DurationSeconds)).ToArray());
         }).ToArray();
 
         var slots = queue.AutoUseSlots.ToDictionary(

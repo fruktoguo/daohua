@@ -236,9 +236,21 @@ export interface QueueEntry {
   travelDestinationNodeId?: string | null
   /** 移动经过的路径边 ID 列表 */
   travelPathEdgeIds?: string[] | null
+  /** 移动路段进度详情列表 */
+  travelSegments?: TravelSegment[] | null
   /** 远征/遭遇战执行进度 */
   expedition?: ExpeditionProgress | null
 }
+/**
+ * 旅行移动路段数据
+ */
+export interface TravelSegment {
+  edgeId: string
+  startProgress: number
+  endProgress: number
+  durationSeconds: number
+}
+
 
 /**
  * 自动消耗品槽位配置
@@ -389,10 +401,6 @@ export interface CombatAttributes {
   hpRegenPerTenSeconds: number
   mpRegenPerTenSeconds: number
   penetrationRatio: number
-  pierceChance: number
-  curseRatio: number
-  furyRatio: number
-  weakenRatio: number
   lifeStealRatio: number
   armorDamageRatio: number
   hpDrainRatio: number
@@ -574,7 +582,6 @@ export interface CombatAbilityDefinition {
   healingRatioLevelBonus?: number
   flatHealingLevelBonus?: number
   targetType?: CombatAbilityTargetType
-  pierceChance?: number
   armorDamageRatio?: number
   hpDrainRatio?: number
 }
@@ -604,10 +611,6 @@ export interface CombatantDefinition {
   fireResistance: number
   earthResistance: number
   tenacity: number
-  pierceChance: number
-  curseRatio: number
-  furyRatio: number
-  weakenRatio: number
   lifeStealRatio: number
   armorDamageRatio: number
   hpDrainRatio: number
@@ -617,7 +620,6 @@ export interface CombatantDefinition {
   damageAbsorptionRatio: number
   hpRegenPerTenSeconds: number
   mpRegenPerTenSeconds: number
-  enrageTimeMilliseconds: number
   experience: number
   abilityIds: string[]
 }
@@ -665,10 +667,6 @@ export interface CombatEquipmentStats {
   earthResistance: number
   tenacity: number
   penetrationRatio: number
-  pierceChance: number
-  curseRatio: number
-  furyRatio: number
-  weakenRatio: number
   lifeStealRatio: number
   armorDamageRatio: number
   hpDrainRatio: number

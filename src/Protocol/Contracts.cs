@@ -104,6 +104,7 @@ public sealed record ActionDto(
 /// <param name="TravelDestinationNodeId">旅行目的地节点 ID（若为移动动作）。</param>
 /// <param name="TravelPathEdgeIds">移动路径上的边 ID 列表。</param>
 /// <param name="Expedition">历练/战斗推进状态（若包含实时历练）。</param>
+/// <param name="TravelSegments">移动路段进度详情列表（若为移动动作）。</param>
 public sealed record QueueEntryDto(
     string EntryId,
     string ActionId,
@@ -116,8 +117,21 @@ public sealed record QueueEntryDto(
     string ExecutionKind = "timed",
     string? TravelDestinationNodeId = null,
     IReadOnlyList<string>? TravelPathEdgeIds = null,
-    ExpeditionProgressDto? Expedition = null);
+    ExpeditionProgressDto? Expedition = null,
+    IReadOnlyList<TravelSegmentDto>? TravelSegments = null);
 
+/// <summary>
+/// 旅行移动路段数据传输对象。
+/// </summary>
+/// <param name="EdgeId">世界地图边 ID。</param>
+/// <param name="StartProgress">路段起始进度（0.0 ~ 1.0）。</param>
+/// <param name="EndProgress">路段目标进度（0.0 ~ 1.0）。</param>
+/// <param name="DurationSeconds">路段耗时（秒）。</param>
+public sealed record TravelSegmentDto(
+    string EdgeId,
+    double StartProgress,
+    double EndProgress,
+    int DurationSeconds);
 /// <summary>
 /// 自动使用物品/消耗品槽位配置传输对象。
 /// </summary>
@@ -506,6 +520,7 @@ public sealed record CombatantDto(
     string Style,
     string Category,
     string Element,
+    string Rank,
     long MaxHitpoints,
     long MaxManapoints,
     int AttackIntervalMilliseconds,

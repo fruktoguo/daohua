@@ -302,4 +302,43 @@ public sealed class ProtocolTests
         Assert.False(serializedWorld.TryGetProperty("nodeId", out _));
         Assert.False(packet.Payload.TryGetProperty("queue", out _));
     }
+
+    /// <summary>
+    /// 验证队列行动中旅行移动路段详情（TravelSegments）的序列化与下发正确性。
+    /// </summary>
+    [Fact]
+    public void Queue_entry_serializes_travel_segments_correctly()
+    {
+        var segments = new List<TravelSegmentDto>
+        {
+            new("edge.village-tea", 0.5, 1.0, 6),
+            new("edge.tea-gate", 0.0, 1.0, 12)
+        };
+        var entry = new QueueEntryDto(
+            "entry-1",
+            "world.travel",
+            "赶往云门关",
+            "movement",
+            "running",
+            0,
+            18,
+            1,
+            "travel",
+            WorldNodeIds.CloudGate,
+            ["edge.village-tea", "edge.tea-gate"],
+            TravelSegments: segments);
+
+        var queue = new QueueDto([entry], false, new Dictionary<string, IReadOnlyList<AutoUseSlotDto>>());
+        var patch = new PlayerPatchDto(Guid.NewGuid().ToString("D"), 1, 1000, Queue: queue);
+        var bytes = PacketCodec.Encode(PacketKinds.Delta, string.Empty, 1, patch);
+
+        Assert.True(PacketCodec.TryDecode(bytes, out var packet));
+        var serializedEntry = packet.Payload.GetProperty("queue").GetProperty("entries")[0];
+        var serializedSegments = serializedEntry.GetProperty("travelSegments");
+        Assert.Equal(2, serializedSegments.GetArrayLength());
+        Assert.Equal("edge.village-tea", serializedSegments[0].GetProperty("edgeId").GetString());
+        Assert.Equal(0.5, serializedSegments[0].GetProperty("startProgress").GetDouble());
+        Assert.Equal(1.0, serializedSegments[0].GetProperty("endProgress").GetDouble());
+        Assert.Equal(6, serializedSegments[0].GetProperty("durationSeconds").GetInt32());
+    }
 }
