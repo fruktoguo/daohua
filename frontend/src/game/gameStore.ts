@@ -345,13 +345,25 @@ export const useGameStore = create<GameStore>((set) => ({
     }
   }),
   resetGameStore: () => set({
+    playerId: initial.playerId,
+    name: initial.name,
+    account: initial.name,
+    sequenceId: 0,
+    createdAtUnixSeconds: initial.serverTimeUnixSeconds,
+    renameCooldownSeconds: 0,
+    visual: initial.visual,
+    version: 0,
     hasReceivedSnapshot: false,
     connection: 'offline',
     notice: null,
     queue: initial.queue,
     inventory: initial.inventory,
-    buffs: [],
+    buffs: initial.buffs,
     stats: initial.stats,
+    combat: initial.combat,
+    combatResources: initial.combatResources,
+    combatAttributes: initial.combatAttributes,
+    world: initial.world!,
   }),
 }))
 

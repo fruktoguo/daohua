@@ -7428,3 +7428,59 @@ input[type="checkbox"] {
   color: var(--text);
 }
 
+/* 错误边界与自愈面板 */
+.error-boundary-card {
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.error-boundary-extra {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--gold-faint);
+  font-size: 12px;
+}
+
+.error-details-toggle,
+.error-copy-btn {
+  background: none;
+  border: none;
+  color: var(--gold-dim);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 12px;
+  transition: color 0.2s ease;
+}
+
+.error-details-toggle:hover,
+.error-copy-btn:hover {
+  color: var(--gold-bright);
+}
+
+.error-stack-container {
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--gold-faint);
+  border-radius: 4px;
+  max-height: 200px;
+  overflow: auto;
+  text-align: left;
+}
+
+.error-stack-text {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #fca5a5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+

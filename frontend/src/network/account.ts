@@ -56,6 +56,11 @@ function setCookiePlayerId(playerId: string): void {
   if (typeof document === 'undefined') return
   document.cookie = `${COOKIE_PLAYER_ID_KEY}=${encodeURIComponent(playerId)}; Path=/; Max-Age=315360000; SameSite=Lax`
 }
+function isValidAccountString(str?: string | null): boolean {
+  if (!str) return false
+  const trimmed = str.trim()
+  return Boolean(trimmed && trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '[object Object]')
+}
 
 /**
  * 从 localStorage 读取历史上登录过的全部账号列表
@@ -66,7 +71,16 @@ function loadSavedAccounts(): StoredAccountInfo[] {
     const raw = window.localStorage.getItem(STORAGE_SAVED_ACCOUNTS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((a): a is StoredAccountInfo =>
+      Boolean(
+        a &&
+        typeof a === 'object' &&
+        isValidAccountString(a.account) &&
+        isValidAccountString(a.playerId) &&
+        typeof a.name === 'string',
+      ),
+    )
   } catch {
     return []
   }
@@ -89,11 +103,11 @@ function getInitialAccount(): StoredAccountInfo | null {
   const name = window.localStorage.getItem(STORAGE_CHAR_NAME_KEY)?.trim()
   const playerId = window.localStorage.getItem(STORAGE_PLAYER_ID_KEY)?.trim() || getCookiePlayerId()
 
-  if (account && playerId) {
+  if (isValidAccountString(account) && isValidAccountString(playerId)) {
     return {
-      account,
-      name: name || account,
-      playerId,
+      account: account!,
+      name: (isValidAccountString(name) ? name : account)!,
+      playerId: playerId!,
       lastLoginAt: Date.now(),
     }
   }
@@ -318,4 +332,29 @@ export function getStoredAccount(): StoredAccountInfo | null {
  */
 export function clearStoredAccount(): void {
   useAccountStore.getState().logout()
+}
+
+/**
+ * 清理所有本地道化太初相关的持久化缓存（用于自愈与数据损坏修复）
+ */
+export function resetAllLocalData(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      const keysToRemove: string[] = []
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i)
+        if (key && (key.startsWith('daohua') || key.includes('daohua'))) {
+          keysToRemove.push(key)
+        }
+      }
+      keysToRemove.forEach(k => window.localStorage.removeItem(k))
+    } catch {
+      // localStorage 异常容错
+    }
+    if (typeof document !== 'undefined') {
+      document.cookie = `${COOKIE_PLAYER_ID_KEY}=; Path=/; Max-Age=0; SameSite=Lax`
+    }
+  }
+  useGameStore.getState().resetGameStore()
+  useAccountStore.setState({ currentAccount: null, savedAccounts: [] })
 }

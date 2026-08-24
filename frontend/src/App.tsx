@@ -1751,7 +1751,7 @@ export default function App(): React.JSX.Element {
   }
 
   if (!hasReceivedSnapshot) {
-    if (connection === 'connecting') {
+    if (connection === 'connecting' || connection === 'reconnecting' || connection === 'online') {
       return <ConnectingPage onCancel={logout} />
     }
     return <ConnectionErrorPage onRetry={() => gameClient.connect()} onLogout={logout} />

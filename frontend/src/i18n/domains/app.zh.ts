@@ -335,5 +335,15 @@ export const appZh = {
       errorFormat: '道号仅支持中文、字母、数字和下划线，不支持特殊字符',
       errorSame: '新道号不能与当前道号相同',
     },
+    // 错误边界与异常自愈
+    errorBoundary: {
+      title: '灵台受扰 · 仙境暂隐',
+      subtitle: '遭遇未知的道韵紊乱，界面显化中断。此异常已被拦截，您的道体修为不受影响。',
+      detailsLabel: '查看紊乱真象 (错误堆栈)',
+      reRenderBtn: '尝试重新显化',
+      resetCacheBtn: '清理本地损坏缓存并重启',
+      copyErrorBtn: '复制紊乱符印',
+      copiedNotice: '已复制故障信息到剪贴板',
+    },
   },
 }
