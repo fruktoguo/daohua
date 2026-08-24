@@ -1945,18 +1945,19 @@ public static class SimulationEngine
                 var buffMultiplier = GetQiGainMultiplier(state, state.LastSimulatedAt);
                 var totalCultivationMultiplier = buffMultiplier * autoUseMultiplier;
 
-                // 引气入体效果：获得 10 修为，1 灵力（受持续消耗品引气丹等加成）
+                // 引气入体效果：获得 10 修为，增加 10 点灵力（战斗资源，受持续消耗品引气丹等加成）
                 var baseExp = 10.0;
-                var baseQi = definition.Outputs.GetValueOrDefault(ItemIds.Qi, 1L);
-                if (baseQi <= 0) baseQi = 1;
+                var baseMp = 10.0;
 
                 var finalExp = baseExp * totalCultivationMultiplier;
-                var finalQi = (long)Math.Round(baseQi * totalCultivationMultiplier, MidpointRounding.AwayFromZero);
-                if (finalQi < 1 && totalCultivationMultiplier > 0) finalQi = 1;
+                var finalMpGain = (long)Math.Round(baseMp * totalCultivationMultiplier, MidpointRounding.AwayFromZero);
+                if (finalMpGain < 1 && totalCultivationMultiplier > 0) finalMpGain = 1;
 
-                state.Inventory.Add(ItemIds.Qi, finalQi);
+                EnsureCombatResources(state, state.LastSimulatedAt);
+                var attributes = CombatSimulator.CreatePlayerAttributes(state.Combat, state.Buffs, state.LastSimulatedAt, state.Stats.Spirit);
+                state.CombatResources.Manapoints = Math.Clamp(state.CombatResources.Manapoints + finalMpGain, 0, attributes.MaxManapoints);
+
                 state.Stats.CultivationCycles++;
-                state.Stats.Qi += finalQi;
                 var (actualSpiritGain, foundationGain, foundationConsumed) = AddCultivationSpirit(state, finalExp);
                 if (foundationGain > 0)
                 {
@@ -1966,7 +1967,7 @@ public static class SimulationEngine
                 {
                     AddEvent(state, $"底蕴化生，获 3 倍修为加速 (+{actualSpiritGain:F0} 修为，消耗 {foundationConsumed:F0} 点底蕴)");
                 }
-                dirty |= DirtySections.Stats;
+                dirty |= DirtySections.Stats | DirtySections.Combat;
                 break;
             case ActionType.Combat:
                 CompleteCombatAction(

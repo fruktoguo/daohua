@@ -16,7 +16,6 @@ using System.Collections.Frozen;
 using Domain.Common;
 using Domain.Components;
 using Domain.Constants;
-using Domain.Definitions;
 using Domain.Models;
 using Domain.Simulation;
 using Domain.Systems;
@@ -338,7 +337,7 @@ public sealed class ActionTransitionSystemTests
         Assert.False(completeResult.Capped);
         Assert.Equal(1, completeResult.CompletedActions);
         Assert.Equal(0, queue.Current.ProgressMilliseconds);
-        Assert.True(cultivation.Qi > 0);
+        Assert.True(cultivation.FoundationExp > 0);
         Assert.Equal(Baseline.AddSeconds(10), cultivation.LastSimulatedAt);
 
         // 3. 验证步数预算（maxTransitions）：限制步数为 1
@@ -510,7 +509,7 @@ public sealed class ActionTransitionSystemTests
         Assert.Equal(2, result.CompletedActions);
         Assert.Equal(2, queue.Count);
         Assert.True(inventory.Get(ItemIds.SpiritHerb) > 0);
-        Assert.True(cultivation.Qi > 0);
+        Assert.True(cultivation.FoundationExp > 0);
         Assert.Equal(Baseline.AddSeconds(20), cultivation.LastSimulatedAt);
     }
 
@@ -545,6 +544,6 @@ public sealed class ActionTransitionSystemTests
 
         Assert.True(result.ReachedTarget);
         Assert.Equal(1, result.CompletedActions);
-        Assert.True(cultivation.Qi > 0);
+        Assert.True(cultivation.FoundationExp > 0);
     }
 }

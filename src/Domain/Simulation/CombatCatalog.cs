@@ -77,7 +77,7 @@ public static class CombatCatalog
             EffectType = definition.EffectType,
             TargetType = definition.TargetType,
             DamageRatio = definition.DamageRatio + levelOffset * definition.DamageRatioLevelBonus,
-            FlatDamage = Math.Max(0, (long)Math.Floor(definition.FlatDamage + levelOffset * definition.FlatDamageLevelBonus)),
+            FlatDamage = Math.Max(0, Math.Floor(definition.FlatDamage + levelOffset * definition.FlatDamageLevelBonus)),
             DamageRatioLevelBonus = definition.DamageRatioLevelBonus,
             FlatDamageLevelBonus = definition.FlatDamageLevelBonus,
             HealingRatio = definition.HealingRatio + levelOffset * definition.HealingRatioLevelBonus,

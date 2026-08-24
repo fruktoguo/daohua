@@ -72,7 +72,7 @@ public sealed class ConsumableDefinition
     /// <summary>炼丹产出倍率修正。</summary>
     public double AlchemyMultiplier { get; init; } = 1.0;
     /// <summary>常规动作中的使用冷却时间（秒）。</summary>
-    public int CooldownSeconds { get; init; }
+    public double CooldownSeconds { get; init; }
     /// <summary>使用后额外调息/恢复时间（秒）。</summary>
     public int RecoverySeconds { get; init; }
     /// <summary>战斗中自动使用的默认血量百分比阈值。</summary>

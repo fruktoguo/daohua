@@ -156,7 +156,7 @@ public static class DataBudgetResolver
             EffectType = config.EffectType ?? CombatAbilityEffectType.Damage,
             TargetType = config.TargetType ?? CombatAbilityTargetType.Enemy,
             DamageRatio = config.DamageRatio ?? 1.0,
-            FlatDamage = config.FlatDamage ?? 0L,
+            FlatDamage = config.FlatDamage ?? 0,
             DamageRatioLevelBonus = config.DamageRatioLevelBonus ?? 0.0,
             FlatDamageLevelBonus = config.FlatDamageLevelBonus ?? 0.0,
             HealingRatio = config.HealingRatio ?? 0.0,

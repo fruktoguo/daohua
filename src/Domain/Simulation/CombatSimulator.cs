@@ -337,7 +337,7 @@ public static partial class CombatSimulator
                     ref manapointsRecoveredFromConsumables,
                     events))
             {
-                nextConsumableUse[index] = checked(now + Math.Max(1, item.Consumable.CooldownSeconds * 1_000L));
+                nextConsumableUse[index] = checked(now + Math.Max(1, (long)Math.Round(item.Consumable.CooldownSeconds * 1_000)));
             }
         }
     }
@@ -1065,7 +1065,7 @@ public static partial class CombatSimulator
         return random.NextDouble() < CombatFormula.CalculateControlChance(baseChance, targetTenacity);
     }
 
-    private static string FormatDuration(int milliseconds)
+    private static string FormatDuration(double milliseconds)
     {
         return $"{milliseconds / 1_000d:0.##}秒";
     }
@@ -1267,10 +1267,10 @@ public static partial class CombatSimulator
         public bool WasBlindExpiredAt(long now) => BlindExpiredAt == now;
         public bool WasSilenceExpiredAt(long now) => SilenceExpiredAt == now;
 
-        public void ApplyStun(long now, int durationMilliseconds)
+        public void ApplyStun(long now, double durationMilliseconds)
         {
             StunExpiredAt = 0;
-            StunUntil = Math.Max(StunUntil, checked(now + Math.Max(1, durationMilliseconds)));
+            StunUntil = Math.Max(StunUntil, checked(now + Math.Max(1, (long)Math.Round(durationMilliseconds))));
             NextExpirationAt = Math.Min(NextExpirationAt, StunUntil);
         }
 

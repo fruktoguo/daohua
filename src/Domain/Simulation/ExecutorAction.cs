@@ -93,7 +93,7 @@ public static class ExecutorAction
             switch (definition.Type)
             {
                 case ActionType.Cultivation:
-                    result.Delta.Stats.QiDelta += 1.0;
+                    result.Delta.CombatResources.ManapointsDelta += 10.0;
                     result.Delta.Stats.FoundationExpDelta += 10.0;
                     result.Delta.Stats.CultivationCyclesDelta += 1;
                     break;

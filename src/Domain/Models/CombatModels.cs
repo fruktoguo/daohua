@@ -189,7 +189,7 @@ public sealed class CombatAbilityDefinition
     /// <summary>基础伤害倍率。</summary>
     public double DamageRatio { get; init; } = 1;
     /// <summary>基础固定附加伤害。</summary>
-    public long FlatDamage { get; init; }
+    public double FlatDamage { get; init; }
     /// <summary>每级技能附加伤害倍率成长。</summary>
     public double DamageRatioLevelBonus { get; init; }
     /// <summary>每级技能附加固定伤害成长。</summary>

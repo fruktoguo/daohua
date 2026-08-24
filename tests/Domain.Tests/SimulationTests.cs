@@ -60,6 +60,32 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
+    /// 验证引气入体基础效果：获得 10 修为，增加 10 点战斗资源灵力，且绝不产出灵气物品。
+    /// </summary>
+    [Fact]
+    public void DrawQi_grants_10_cultivation_and_10_combat_manapoints_without_granting_qi_item()
+    {
+        var idleState = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        idleState.Queue.Entries.Clear();
+        idleState.CombatResources.Manapoints = 0;
+        SimulationEngine.AdvanceTo(idleState, Baseline.AddSeconds(10));
+        var naturalMpRegen = idleState.CombatResources.Manapoints;
+
+        var state = SimulationEngine.CreateDefaultState(Guid.NewGuid(), now: Baseline);
+        state.Queue.Entries.Clear();
+        state.CombatResources.Manapoints = 0;
+
+        Assert.True(SimulationEngine.Enqueue(state, ActionIds.DrawQi).Success);
+        var result = SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(10));
+
+        Assert.Equal(1, result.CompletedActions);
+        Assert.Equal(10.0, state.Stats.Spirit);
+        Assert.Equal(naturalMpRegen + 10, state.CombatResources.Manapoints);
+        Assert.Equal(0, state.Inventory.Get(ItemIds.Qi));
+        Assert.Equal(1, state.Stats.CultivationCycles);
+    }
+
+    /// <summary>
     /// 验证定时行动在微步推进时保留毫秒级进度，并在到达确切截止时间边界时精准触发完成。
     /// </summary>
     [Fact]
@@ -112,8 +138,7 @@ public sealed class SimulationEngineTests
         Assert.Equal(3, state.Stats.HerbsCollected);
         Assert.Equal(1, state.Stats.PillsCrafted);
         Assert.Equal(1, state.Stats.CultivationCycles);
-        Assert.Equal(1, state.Stats.Qi);
-        Assert.Equal(state.Stats.Qi, state.Inventory.Get(ItemIds.Qi));
+        Assert.Equal(0, state.Inventory.Get(ItemIds.Qi));
         Assert.Equal(0, state.Inventory.Get(ItemIds.SpiritHerb));
         Assert.Equal(0, state.Inventory.Get(ItemIds.QiGatheringPill));
         // 引气丹已转为银河奶牛持续消耗品，非 Buff 类型
@@ -147,7 +172,7 @@ public sealed class SimulationEngineTests
         var slot = state.Queue.AutoUseSlots[ActionType.Cultivation][0];
         Assert.Equal(290.0, slot.RemainingDurationSeconds);
         Assert.Equal(0, state.Inventory.Get(ItemIds.QiGatheringPill));
-        Assert.Equal(1, state.Stats.Qi);
+        Assert.Equal(1, state.Stats.CultivationCycles);
         Assert.Equal(13.0, state.Stats.Spirit); // 10 * 1.30 = 13 修为
 
         // 第二次引气（10秒）：无需新物品，直接扣除 10s，剩余 280s
@@ -155,7 +180,7 @@ public sealed class SimulationEngineTests
         SimulationEngine.AdvanceTo(state, Baseline.AddSeconds(20));
 
         Assert.Equal(280.0, slot.RemainingDurationSeconds);
-        Assert.Equal(2, state.Stats.Qi);
+        Assert.Equal(2, state.Stats.CultivationCycles);
         Assert.Equal(26.0, state.Stats.Spirit); // 累加 13 修为
     }
 
@@ -182,8 +207,8 @@ public sealed class SimulationEngineTests
         var slot = state.Queue.AutoUseSlots[ActionType.Cultivation][0];
         // 透支扣除后归零（免单，少的时间不倒扣）
         Assert.Equal(0.0, slot.RemainingDurationSeconds);
-        // 本次仍享受完整的 30% 修炼加成（13 修为 + 1 灵力）
-        Assert.Equal(1, state.Stats.Qi);
+        // 本次仍享受完整的 30% 修炼加成（13 修为 + 13 灵力）
+        Assert.Equal(1, state.Stats.CultivationCycles);
         Assert.Equal(13.0, state.Stats.Spirit);
     }
 
