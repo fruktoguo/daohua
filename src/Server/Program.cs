@@ -594,8 +594,16 @@ app.MapGet("/api/players/{playerId:guid}/market/orders", (
     HttpRequest httpRequest,
     HttpResponse httpResponse,
     MarketEngine market,
-    MarketRuntime marketRuntime) =>
+    MarketRuntime marketRuntime,
+    AccessControl accessControl) =>
 {
+    if (!accessControl.IsValid(httpRequest.Headers["X-Access-Token"]))
+    {
+        return Results.Json(
+            new { code = "UNAUTHORIZED", message = "缺少或错误的访问令牌。" },
+            statusCode: StatusCodes.Status401Unauthorized);
+    }
+
     var normalizedLimit = Math.Clamp(limit ?? 100, 1, 500);
     var etag = HttpCaching.CreateWeakTag(
         "market-orders",

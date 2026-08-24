@@ -58,6 +58,12 @@ public static class MarketReadLoadScenario
             Timeout = TimeSpan.FromSeconds(15)
         };
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        var accessToken = Environment.GetEnvironmentVariable("DAOHUA_MARKET_TOKEN");
+        if (!string.IsNullOrEmpty(accessToken))
+        {
+            // 已配置令牌时附带鉴权头；未配置则保持对未鉴权目标的兼容。
+            client.DefaultRequestHeaders.Add("X-Access-Token", accessToken);
+        }
 
         var serverMetricsBefore = await ReadServerMetricsAsync(client);
         var startedAt = Stopwatch.GetTimestamp();
