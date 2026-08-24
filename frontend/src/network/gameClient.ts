@@ -142,13 +142,13 @@ export class GameClient {
       useGameStore.getState().setNotice(getT()('common.notice.reconnecting'))
       return false
     }
-    const packet: Packet = {
+    const packet: Packet<{ command: string; payload: T }> = {
       kind: 'command',
       requestId: `${this.playerId.slice(0, 8)}-${type}-${++this.requestSequence}`,
       sequence: 0,
       payload: {
-        type,
-        ...payload,
+        command: type,
+        payload,
       },
     }
     this.socket.send(new TextEncoder().encode(JSON.stringify(packet)))

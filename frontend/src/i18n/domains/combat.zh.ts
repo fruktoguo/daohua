@@ -58,6 +58,18 @@ export const combatZh = {
       stopCultivation: '终止吐纳',
       stopAction: '终止行动',
     },
+    // 赶路/移动总目标卡
+    travel: {
+      tag: '御风而行',
+      fallbackActionName: '赶路',
+      badgeMoving: '移动中',
+      destination: '目标地点：',
+      totalDistance: '规划路程：',
+      travelledDistance: '已行路程：',
+      distanceUnit: '里',
+      roundProgress: '赶路进度 {current}s / {duration}s ({percent}%)',
+      stopTravel: '终止赶路',
+    },
     // 空闲状态卡
     idle: {
       sigil: '道',

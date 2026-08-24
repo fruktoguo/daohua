@@ -14,6 +14,12 @@ export interface UseSmoothProgressOptions {
   textRef?: RefObject<HTMLElement | null>
   /** 自定义进度文字格式化函数 */
   textFormat?: (currentSec: number, duration: number, percent: number) => string
+  /** 百分比文字元素的 DOM 引用 (例如 <strong>{percent}%</strong>) */
+  percentRef?: RefObject<HTMLElement | null>
+  /** 附加元数据元素的 DOM 引用 (例如 <span>路程 x / y 里</span>) */
+  metaRef?: RefObject<HTMLElement | null>
+  /** 自定义元数据文字格式化函数 */
+  metaFormat?: (currentSec: number, duration: number, ratio: number, percent: number) => string
 }
 
 /**
@@ -31,6 +37,9 @@ export function useSmoothProgressRef({
   fillRef,
   textRef,
   textFormat,
+  percentRef,
+  metaRef,
+  metaFormat,
 }: UseSmoothProgressOptions): void {
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
 
@@ -70,6 +79,12 @@ export function useSmoothProgressRef({
           textRef.current.textContent = `${Math.floor(currentSec)}s / ${duration}s`
         }
       }
+      if (percentRef?.current) {
+        percentRef.current.textContent = `${percent}%`
+      }
+      if (metaRef?.current && metaFormat) {
+        metaRef.current.textContent = metaFormat(currentSec, duration, ratio, percent)
+      }
 
       if (isRunning) {
         frameId = requestAnimationFrame(tick)
@@ -88,5 +103,8 @@ export function useSmoothProgressRef({
     fillRef,
     textRef,
     textFormat,
+    percentRef,
+    metaRef,
+    metaFormat,
   ])
 }

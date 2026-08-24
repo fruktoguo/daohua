@@ -32,7 +32,7 @@ import { gameClient } from './network/gameClient'
 import { useAccountStore } from './network/account'
 import { initUiScale } from './utils/uiScale'
 import { useUiStore, type TabId, type AlchemySubTab, type ForgingSubTab } from './uiStore'
-import { useT } from './i18n'
+import { useT, getT } from './i18n'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 const EMPTY_CONSUMABLE_COOLDOWNS: ReadonlyArray<number> = Object.freeze([])
@@ -151,21 +151,62 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
   const expedition = entry.expedition
   if (!expedition || entry.type === 'combat') return null
 
-  const phaseEntry: QueueEntry = {
+  const fillRef = useRef<HTMLDivElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+  const metaRef = useRef<HTMLSpanElement>(null)
+  const percentRef = useRef<HTMLElement>(null)
+
+  const isTravel = expedition.phase === 'travel'
+  const totalDist = expedition.totalDistance ?? 0
+
+  const phaseEntry: QueueEntry = useMemo(() => ({
     ...entry,
     progressSeconds: expedition.elapsedSeconds,
     durationSeconds: expedition.durationSeconds,
-  }
-  const percent = Math.round(Math.max(0, Math.min(1, expedition.progress)) * 100)
+  }), [entry, expedition.elapsedSeconds, expedition.durationSeconds])
+
+  useSmoothProgressRef({
+    entry: phaseEntry,
+    fillRef,
+    textRef,
+    percentRef,
+    metaRef,
+    metaFormat: (_currentSec, _dur, ratio) => {
+      if (isTravel) {
+        const curDist = Math.min(totalDist, Math.max(0, ratio * totalDist))
+        return getT()('app.queue.travelProgress', { current: curDist.toFixed(1), total: totalDist.toFixed(1) })
+      }
+      return getT()('app.queue.searchTarget', { name: expedition.enemyName ?? '妖兽' })
+    },
+  })
+
+  const initialRatio = phaseEntry.durationSeconds > 0
+    ? Math.min(1, Math.max(0, phaseEntry.progressSeconds / phaseEntry.durationSeconds))
+    : 0
+  const initialPercent = Math.round(initialRatio * 100)
+  const initialDist = isTravel ? Math.min(totalDist, Math.max(0, initialRatio * totalDist)) : 0
+
   return (
     <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
       <div className="qc-expedition-meta">
-        <span>{expedition.phase === 'travel'
-          ? t('app.queue.travelProgress', { current: (expedition.travelledDistance ?? 0).toFixed(1), total: (expedition.totalDistance ?? 0).toFixed(1) })
-          : t('app.queue.searchTarget', { name: expedition.enemyName ?? '妖兽' })}</span>
-        <strong>{percent}%</strong>
+        <span ref={metaRef}>
+          {isTravel
+            ? t('app.queue.travelProgress', { current: initialDist.toFixed(1), total: totalDist.toFixed(1) })
+            : t('app.queue.searchTarget', { name: expedition.enemyName ?? '妖兽' })}
+        </span>
+        <strong ref={percentRef}>{initialPercent}%</strong>
       </div>
-      <SmoothProgressBar entry={phaseEntry} />
+      <div
+        aria-label={`${initialPercent}%`}
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={initialPercent}
+        className="progress"
+        role="progressbar"
+      >
+        <div className="progress-fill" ref={fillRef} style={{ transform: `scaleX(${initialRatio})` }}><i /></div>
+        <span className="progress-text" ref={textRef}>{Math.floor(phaseEntry.progressSeconds)}s / {phaseEntry.durationSeconds}s</span>
+      </div>
     </div>
   )
 })
@@ -180,6 +221,53 @@ function getCombatPhaseLabel(phase: string | undefined, t: (key: string) => stri
   }
 }
 
+const CombatActionPhaseProgress = memo(function CombatActionPhaseProgress({
+  entry,
+  phase,
+}: {
+  entry: QueueEntry
+  phase: string
+}): React.JSX.Element {
+  const t = useT()
+  const fillRef = useRef<HTMLDivElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+  const percentRef = useRef<HTMLElement>(null)
+
+  useSmoothProgressRef({
+    entry,
+    fillRef,
+    textRef,
+    percentRef,
+  })
+
+  const initialRatio = entry.durationSeconds > 0
+    ? Math.min(1, Math.max(0, entry.progressSeconds / entry.durationSeconds))
+    : 0
+  const initialPercent = Math.round(initialRatio * 100)
+
+  return (
+    <div className={`queue-combat-state queue-combat-state--${phase}`}>
+      <div className={`qc-expedition qc-expedition--${phase}`}>
+        <div className="qc-expedition-meta">
+          <span>{getCombatPhaseLabel(phase, t)}</span>
+          <strong ref={percentRef}>{initialPercent}%</strong>
+        </div>
+        <div
+          aria-label={`${initialPercent}%`}
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={initialPercent}
+          className="progress"
+          role="progressbar"
+        >
+          <div className="progress-fill" ref={fillRef} style={{ transform: `scaleX(${initialRatio})` }}><i /></div>
+          <span className="progress-text" ref={textRef}>{Math.floor(entry.progressSeconds)}s / {entry.durationSeconds}s</span>
+        </div>
+      </div>
+    </div>
+  )
+})
+
 /**
  * 战斗中顶部紧凑血量条与行动进度展示组件
  */
@@ -192,18 +280,7 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
       progressSeconds: expedition.elapsedSeconds,
       durationSeconds: expedition.durationSeconds,
     }
-    const percent = Math.round(Math.max(0, Math.min(1, expedition.progress)) * 100)
-    return (
-      <div className={`queue-combat-state queue-combat-state--${expedition.phase}`}>
-        <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
-          <div className="qc-expedition-meta">
-            <span>{getCombatPhaseLabel(expedition.phase, t)}</span>
-            <strong>{percent}%</strong>
-          </div>
-          <SmoothProgressBar entry={phaseEntry} />
-        </div>
-      </div>
-    )
+    return <CombatActionPhaseProgress entry={phaseEntry} phase={expedition.phase} />
   }
 
   const playerMax = Math.max(1, expedition?.playerMaxHitpoints ?? 1)

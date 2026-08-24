@@ -889,6 +889,116 @@ function ArenaLifeGoalCard({
 }
 
 /**
+ * 赶路/移动总目标与里程卡片 (ArenaTravelCard)
+ */
+function ArenaTravelCard({
+  queueEntry,
+  onStop,
+}: {
+  /** 当前正在执行的队列条目 */
+  queueEntry?: QueueEntry | null
+  /** 中止当前赶路行动回调 */
+  onStop?: () => void
+}): React.JSX.Element {
+  const t = useT()
+  const expedition = queueEntry?.expedition
+  const actionName = queueEntry?.actionName || t('combat.travel.fallbackActionName')
+  const destinationName = actionName.startsWith('赶往') ? actionName.slice(2).trim() : actionName
+  const totalDistance = expedition?.totalDistance ?? 0
+  const duration = Math.max(1, expedition?.durationSeconds || queueEntry?.durationSeconds || 1)
+  const progressSec = expedition?.elapsedSeconds || queueEntry?.progressSeconds || 0
+
+  // 进度条 DOM 引用与全局帧级统一同步
+  const barRef = useRef<HTMLDivElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+  const curDistRef = useRef<HTMLElement>(null)
+
+  const phaseEntry: QueueEntry | null = queueEntry ? {
+    ...queueEntry,
+    progressSeconds: progressSec,
+    durationSeconds: duration,
+  } : null
+
+  useSmoothProgressRef({
+    entry: phaseEntry,
+    fillRef: barRef,
+    textRef: textRef,
+    metaRef: curDistRef,
+    metaFormat: (_sec, _dur, ratio) => {
+      const cur = Math.min(totalDistance, Math.max(0, ratio * totalDistance))
+      return `${cur.toFixed(1)} ${getT()('combat.travel.distanceUnit')}`
+    },
+    textFormat: (currentSec, dur, pct) => getT()('combat.travel.roundProgress', {
+      current: currentSec.toFixed(1),
+      duration: formatNumber(dur),
+      percent: formatNumber(pct),
+    }),
+  })
+
+  const initialRatio = duration > 0 ? Math.min(1, Math.max(0, progressSec / duration)) : 0
+  const initialCurDist = Math.min(totalDistance, Math.max(0, initialRatio * totalDistance))
+
+  return (
+    <div className="arena-life-card arena-travel-card">
+      <header className="arena-life-header">
+        <span className="arena-life-tag arena-travel-tag">{t('combat.travel.tag')}</span>
+        <strong className="arena-life-action-name">{actionName}</strong>
+      </header>
+
+      <div className="arena-life-body">
+        <div className="arena-life-icon-box arena-life-icon-box--travel">
+          <span className="arena-life-glyph">🧭</span>
+          <span className="arena-life-count-badge">{t('combat.travel.badgeMoving')}</span>
+        </div>
+
+        <div className="arena-life-meta">
+          <div className="arena-life-target-title">
+            <span>{t('combat.travel.destination')}</span>
+            <strong className="tone-gold">{destinationName}</strong>
+          </div>
+          <div className="arena-life-target-total">
+            <span>{t('combat.travel.totalDistance')}</span>
+            <strong className="tone-bright">
+              {totalDistance.toFixed(1)} {t('combat.travel.distanceUnit')}
+            </strong>
+          </div>
+          <div className="arena-life-subinfo">
+            <span>{t('combat.travel.travelledDistance')}</span>
+            <strong className="tone-gold" ref={curDistRef}>
+              {initialCurDist.toFixed(1)} {t('combat.travel.distanceUnit')}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      <footer className="arena-life-footer">
+        <div className="arena-life-progress-bar">
+          <div
+            className="arena-life-progress-fill arena-travel-progress-fill"
+            ref={barRef}
+            style={{ transform: `scaleX(${initialRatio})` }}
+          >
+            <i />
+          </div>
+          <span className="arena-life-progress-text" ref={textRef}>
+            {t('combat.travel.roundProgress', {
+              current: progressSec.toFixed(1),
+              duration: formatNumber(duration),
+              percent: formatNumber(Math.round(initialRatio * 100)),
+            })}
+          </span>
+        </div>
+        {onStop && (
+          <button className="arena-life-stop-btn danger" onClick={onStop} type="button">
+            {t('combat.travel.stopTravel')}
+          </button>
+        )}
+      </footer>
+    </div>
+  )
+}
+
+/**
  * 战场空闲待机提示卡片 (ArenaIdleCard)
  */
 function ArenaIdleCard(): React.JSX.Element {
@@ -1052,7 +1162,8 @@ export const CombatArena = memo(function CombatArena({
 
   const current = queue[0] ?? null
   const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
-  const isLifeAction = current !== null && !isCombat
+  const isTravel = current !== null && (current.executionKind === 'travel' || current.expedition?.phase === 'travel' || current.actionId === 'world.travel')
+  const isLifeAction = current !== null && !isCombat && !isTravel
   const expedition = isCombat ? current.expedition : null
   const activeAction = current ? actions.find(action => action.id === current.actionId) : null
   const activeEncounterId = expedition?.encounterId ?? activeAction?.combatEncounterId
@@ -1071,16 +1182,18 @@ export const CombatArena = memo(function CombatArena({
   const playerMaxMp = expedition?.playerMaxManapoints ?? combatResources?.maxManapoints ?? fallbackMaxMp
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
-  const phase = expedition?.phase ?? (isLifeAction ? 'life-action' : 'idle')
+  const phase = expedition?.phase ?? (isTravel ? 'travel' : isLifeAction ? 'life-action' : 'idle')
   const enemyVisible = isCombat && (phase === 'combat' || ((expedition?.enemyHitpoints ?? 0) > 0))
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (isCombat) {
       return expedition?.playerAction ?? null
     }
-    if (isLifeAction && current) {
-      const durMs = Math.max(1, current.durationSeconds * 1000)
-      const baseElMs = Math.max(0, current.progressSeconds * 1000)
+    if ((isLifeAction || isTravel) && current) {
+      const durSec = (isTravel && current.expedition?.durationSeconds) ? current.expedition.durationSeconds : current.durationSeconds
+      const durMs = Math.max(1, durSec * 1000)
+      const baseElSec = (isTravel && current.expedition?.elapsedSeconds !== undefined) ? current.expedition.elapsedSeconds : current.progressSeconds
+      const baseElMs = Math.max(0, baseElSec * 1000)
       const isRunning = current.status === 'running'
       const elapsedSinceSync = isRunning ? Math.max(0, performance.now() - lastSyncPerformanceTime) : 0
       const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
@@ -1093,7 +1206,7 @@ export const CombatArena = memo(function CombatArena({
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, lastSyncPerformanceTime])
+  }, [current, expedition, isCombat, isLifeAction, isTravel, lastSyncPerformanceTime])
 
   const enemyRef = useRef<EnemyDisplayState>({
     actorKey: 'enemy:idle',
@@ -1309,6 +1422,11 @@ export const CombatArena = memo(function CombatArena({
                 ))}
               </div>
             )
+          ) : isTravel ? (
+            <ArenaTravelCard
+              onStop={() => gameClient.sendCommand('remove_action', { entryId: current.entryId })}
+              queueEntry={current}
+            />
           ) : isLifeAction ? (
             <ArenaLifeGoalCard
               actionDef={activeAction}

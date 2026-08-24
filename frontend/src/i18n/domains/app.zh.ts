@@ -62,7 +62,7 @@ export const appZh = {
       upcomingAria: '后续行动',
       loop: '循环',
       queueButton: '队列 {count} {arrow}',
-      blocked: '缺少材料',
+      blocked: '资源不足',
       running: '进行中',
       moveUpAria: '上移行动',
       moveUpTitle: '上移',

@@ -2458,6 +2458,12 @@
   border-radius: 2px;
 }
 
+.arena-travel-tag {
+  color: #6ee7b7;
+  background: rgba(110, 231, 183, 0.12);
+  border: 1px solid rgba(110, 231, 183, 0.35);
+}
+
 .arena-life-action-name {
   color: var(--gold-bright);
   font-size: 13px;
@@ -2483,6 +2489,12 @@
   border: 1px solid var(--gold);
   background: radial-gradient(circle, rgba(201, 180, 109, 0.18), rgba(0, 0, 0, 0.5));
   box-shadow: 0 0 12px rgba(201, 180, 109, 0.2);
+}
+
+.arena-life-icon-box--travel {
+  border-color: rgba(94, 185, 230, 0.7);
+  background: radial-gradient(circle, rgba(94, 185, 230, 0.2), rgba(0, 0, 0, 0.5));
+  box-shadow: 0 0 12px rgba(94, 185, 230, 0.25);
 }
 
 .arena-life-glyph {
@@ -2589,6 +2601,10 @@
   transform: scaleX(0);
   transform-origin: left center;
   will-change: transform;
+}
+
+.arena-travel-progress-fill {
+  background: linear-gradient(90deg, #1e40af, #0284c7 45%, #38bdf8 80%, #bae6fd);
 }
 
 .arena-life-progress-fill::before {
