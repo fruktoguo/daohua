@@ -21,7 +21,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-BACKEND_PID=""
+BACKEND_SUPERVISOR_PID=""
 FRONTEND_PID=""
 
 kill_tree() {
@@ -41,19 +41,19 @@ cleanup() {
   trap - SIGINT SIGTERM EXIT
   SHUTTING_DOWN=1
   printf '\n==> 正在停止前后端服务...\n'
-  if [[ -n "$FRONTEND_PID" ]]; then
+  if [[ -n "${FRONTEND_PID:-}" ]]; then
     kill_tree "$FRONTEND_PID" TERM
   fi
-  if [[ -n "$BACKEND_SUPERVISOR_PID" ]]; then
+  if [[ -n "${BACKEND_SUPERVISOR_PID:-}" ]]; then
     # 对 dev-hot 守护进程整棵进程树发 TERM；守护进程会先优雅停止服务端
     # （保存市场账本并释放写者租约）再退出。
     kill_tree "$BACKEND_SUPERVISOR_PID" TERM
   fi
   sleep 2
-  if [[ -n "$FRONTEND_PID" ]]; then
+  if [[ -n "${FRONTEND_PID:-}" ]]; then
     kill_tree "$FRONTEND_PID" KILL
   fi
-  if [[ -n "$BACKEND_SUPERVISOR_PID" ]]; then
+  if [[ -n "${BACKEND_SUPERVISOR_PID:-}" ]]; then
     kill_tree "$BACKEND_SUPERVISOR_PID" KILL
   fi
   wait 2>/dev/null || true
@@ -127,7 +127,7 @@ fi
 
 # 7. 启动前端（不打开浏览器）
 printf '==> 启动前端开发服务器 (http://127.0.0.1:15172)...\n'
-npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open --force &
+npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open &
 FRONTEND_PID=$!
 
 printf '\n'
