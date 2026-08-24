@@ -52,6 +52,7 @@ public static class SimulationEngine
             PresenceMode = PresenceMode.Online
         };
 
+        EnsureCombatResources(state, timestamp);
         AddEvent(state, "仙缘初辟，踏入道途。");
         return state;
     }
@@ -250,6 +251,17 @@ public static class SimulationEngine
             if (slot.Triggers is not null) continue;
             slot.Triggers = [];
             combatChanged = true;
+        }
+
+        if (state.CombatResources is null)
+        {
+            state.CombatResources = new CombatResourceState();
+            combatChanged = true;
+        }
+        else
+        {
+            state.CombatResources.AbilityCooldowns ??= new(StringComparer.Ordinal);
+            state.CombatResources.ConsumableSlotCooldowns ??= [];
         }
 
         if (state.CombatEncounterCompletions is null)
@@ -1579,7 +1591,7 @@ public static class SimulationEngine
             current.CombatExpedition = CreateCombatExpedition(definition);
             state.Queue.Entries.RemoveAt(0);
             state.Queue.Entries.Add(current);
-            EnsureCombatResources(state, completedAt);
+            EnsureAliveAfterLeavingCombat(state, completedAt);
         }
         else
         {
