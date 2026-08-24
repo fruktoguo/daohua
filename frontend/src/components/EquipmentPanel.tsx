@@ -13,20 +13,18 @@ import { calculateRealmInfo } from '../game/combatConstants'
 interface SlotConfig {
   slot: EquipmentSlot
   labelKey: 'slotHead' | 'slotArmor' | 'slotLegs' | 'slotWeapon' | 'slotTrinket' | 'slotBoots'
-  watermark: string
-  iconText: string
 }
 
 const LEFT_SLOTS: readonly SlotConfig[] = [
-  { slot: 'head', labelKey: 'slotHead', watermark: '冠', iconText: '头' },
-  { slot: 'armor', labelKey: 'slotArmor', watermark: '甲', iconText: '衣' },
-  { slot: 'legs', labelKey: 'slotLegs', watermark: '腿', iconText: '腿' },
+  { slot: 'head', labelKey: 'slotHead' },
+  { slot: 'armor', labelKey: 'slotArmor' },
+  { slot: 'legs', labelKey: 'slotLegs' },
 ]
 
 const RIGHT_SLOTS: readonly SlotConfig[] = [
-  { slot: 'weapon', labelKey: 'slotWeapon', watermark: '武', iconText: '武' },
-  { slot: 'trinket', labelKey: 'slotTrinket', watermark: '佩', iconText: '佩' },
-  { slot: 'boots', labelKey: 'slotBoots', watermark: '履', iconText: '鞋' },
+  { slot: 'weapon', labelKey: 'slotWeapon' },
+  { slot: 'trinket', labelKey: 'slotTrinket' },
+  { slot: 'boots', labelKey: 'slotBoots' },
 ]
 
 const ALL_SLOTS = [...LEFT_SLOTS, ...RIGHT_SLOTS]
@@ -90,7 +88,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
           <span className="equipment-slot-badge">{slotName}</span>
           <ItemTile
             category={resolveItemCategoryLabel(definition.category, t)}
-            className="equipment-tile"
+            className="inventory-cell"
             level={metadata.level}
             name={displayName}
             rarity={metadata.rarity}
@@ -105,14 +103,9 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
       className="equipment-slot-btn is-empty"
       onClick={onClick}
       type="button"
-      aria-label={`${slotName} - ${t('app.equipmentPanel.emptySlot')}`}
+      aria-label={slotName}
     >
-      <span className="equipment-slot-watermark" aria-hidden="true">{config.watermark}</span>
-      <div className="equipment-slot-empty-content">
-        <span className="equipment-slot-tag">{slotName}</span>
-        <span className="equipment-slot-plus">+</span>
-        <span className="equipment-slot-hint">{t('app.equipmentPanel.emptySlot')}</span>
-      </div>
+      <span className="equipment-slot-empty-label">{slotName}</span>
     </button>
   )
 })
@@ -297,28 +290,19 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
       <div className="equipment-tools-section">
         <div className="equipment-tools-header">
           <span className="equipment-tools-title">{t('app.equipmentPanel.toolsTitle')}</span>
-          <span className="equipment-tools-badge">{t('app.equipmentPanel.toolExpandable')}</span>
         </div>
         <div className="equipment-tools-grid">
-          <div className="equipment-tool-slot is-expandable" title={t('app.equipmentPanel.toolExpandableHint')}>
-            <span className="equipment-tool-icon">⛏️</span>
-            <span className="equipment-tool-label">{t('app.equipmentPanel.toolMining')}</span>
-            <span className="equipment-tool-status">{t('app.equipmentPanel.toolExpandable')}</span>
+          <div className="equipment-tool-slot is-empty">
+            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolMining')}</span>
           </div>
-          <div className="equipment-tool-slot is-expandable" title={t('app.equipmentPanel.toolExpandableHint')}>
-            <span className="equipment-tool-icon">🪓</span>
-            <span className="equipment-tool-label">{t('app.equipmentPanel.toolLogging')}</span>
-            <span className="equipment-tool-status">{t('app.equipmentPanel.toolExpandable')}</span>
+          <div className="equipment-tool-slot is-empty">
+            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolLogging')}</span>
           </div>
-          <div className="equipment-tool-slot is-expandable" title={t('app.equipmentPanel.toolExpandableHint')}>
-            <span className="equipment-tool-icon">🏺</span>
-            <span className="equipment-tool-label">{t('app.equipmentPanel.toolAlchemy')}</span>
-            <span className="equipment-tool-status">{t('app.equipmentPanel.toolExpandable')}</span>
+          <div className="equipment-tool-slot is-empty">
+            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolAlchemy')}</span>
           </div>
-          <div className="equipment-tool-slot is-expandable" title={t('app.equipmentPanel.toolExpandableHint')}>
-            <span className="equipment-tool-icon">🔨</span>
-            <span className="equipment-tool-label">{t('app.equipmentPanel.toolForging')}</span>
-            <span className="equipment-tool-status">{t('app.equipmentPanel.toolExpandable')}</span>
+          <div className="equipment-tool-slot is-empty">
+            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolForging')}</span>
           </div>
         </div>
       </div>

@@ -118,9 +118,115 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
 
   const slotCount = combat.abilitySlots.length
 
+  const internalSlot = combat.abilitySlots[0]
+  const spellSlots = combat.abilitySlots.slice(1)
+
+  const renderSlot = (slot: typeof combat.abilitySlots[0], index: number) => {
+    const isInternal = index === 0
+    const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
+    const remainingCooldown = ability ? (abilityCooldowns[ability.abilityId] ?? 0) : 0
+
+    const slotTypeTag = isInternal
+      ? t('app.abilitiesPanel.slotInternal')
+      : t('app.abilitiesPanel.slotSpell', { n: index })
+
+    const ribbonLabel = isInternal
+      ? t('app.combatPanel.internalRibbon')
+      : t('app.combatPanel.spellRibbon')
+
+    const emptyBtnLabel = isInternal
+      ? t('app.abilitiesPanel.slotInternal')
+      : t('app.abilitiesPanel.slotSpell', { n: index })
+
+    const slotAriaLabel = ability
+      ? t('app.combatPanel.currentAbilityAria', { name: ability.name })
+      : isInternal
+        ? t('app.combatPanel.chooseInternalSlotAria')
+        : t('app.combatPanel.chooseSpellSlotAria', { slot: index })
+
+    const slotContent = (
+      <>
+        <button
+          aria-label={slotAriaLabel}
+          className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
+          onClick={() => setActivePickerSlotIndex(index)}
+          type="button"
+        >
+          <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
+            {slotTypeTag}
+          </span>
+
+          {ability ? (
+            <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
+              <span className="item-type-ribbon" aria-hidden="true">
+                <span>{ribbonLabel}</span>
+              </span>
+              <strong className="item-tile-name">{ability.name}</strong>
+              <span className="item-corner item-corner--bottom-right">
+                {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}
+              </span>
+              {remainingCooldown > 0 && (
+                <AbilityCooldownOverlay
+                  remainingMilliseconds={remainingCooldown}
+                  totalMilliseconds={ability.cooldownMilliseconds}
+                />
+              )}
+            </span>
+          ) : (
+            <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
+          )}
+        </button>
+
+        {ability && (
+          <div className="combat-ability-slot-actions">
+            <span className="combat-ability-level-control" onClick={e => e.stopPropagation()}>
+              <span aria-hidden="true">Lv.</span>
+              <input
+                aria-label={t('app.combatPanel.levelAria', { name: ability.name })}
+                className="combat-ability-level-input"
+                max={100}
+                min={1}
+                onChange={event => update({
+                  abilitySlots: combat.abilitySlots.map((current, slotIndex) => (
+                    slotIndex === index
+                      ? { ...current, level: Math.max(1, Math.min(100, Number(event.target.value) || 1)) }
+                      : current
+                  )),
+                })}
+                type="number"
+                value={slot.level}
+              />
+            </span>
+            <button
+              aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
+              className="item-slot-inline-action item-slot-inline-action--condition"
+              onClick={() => setEditingTriggerSlotIndex(index)}
+              title={t('app.combatPanel.editTriggersTitle')}
+              type="button"
+            >
+              {t('app.combatPanel.triggerConditionBtn', { count: (slot.triggers?.length ?? 0) > 0 ? (slot.triggers?.length ?? 0) : '' })}
+            </button>
+          </div>
+        )}
+      </>
+    )
+
+    return (
+      <div className={`abilities-slot-card${isInternal ? ' is-internal' : ''}`} key={index}>
+        {ability ? (
+          <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, slot.level)} tabIndex={-1}>
+            {slotContent}
+          </EffectTooltipTarget>
+        ) : (
+          <span className="combat-ability-slot-shell">{slotContent}</span>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="abilities-view-panel">
-      {/* 上部：斗法横排装配槽 */}
+      {/* 上部：斗法装配槽（第一排内功，第二排术法多行换行） */}
       <section className="abilities-section abilities-loadout-section">
         <div className="abilities-section-header">
           <span className="abilities-section-title">{t('app.abilitiesPanel.equippedSlotsTitle')}</span>
@@ -129,116 +235,28 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
           </span>
         </div>
 
-        <div className="abilities-slot-row">
-          {combat.abilitySlots.map((slot, index) => {
-            const isInternal = index === 0
-            const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
-            const remainingCooldown = ability ? (abilityCooldowns[ability.abilityId] ?? 0) : 0
+        {/* 第一排：内功心法 */}
+        <div className="abilities-group-row abilities-group-row--internal">
+          <div className="abilities-group-header">
+            <span className="abilities-group-label">{t('app.abilitiesPanel.slotInternal')}</span>
+          </div>
+          <div className="abilities-group-slots">
+            {internalSlot && renderSlot(internalSlot, 0)}
+          </div>
+        </div>
 
-            const slotTypeTag = isInternal
-              ? t('app.abilitiesPanel.slotInternal')
-              : t('app.abilitiesPanel.slotSpell', { n: index })
-
-            const ribbonLabel = isInternal
-              ? t('app.combatPanel.internalRibbon')
-              : t('app.combatPanel.spellRibbon')
-
-            const emptyBtnLabel = isInternal
-              ? t('app.abilitiesPanel.chooseInternal')
-              : t('app.abilitiesPanel.chooseSpell')
-
-            const slotAriaLabel = ability
-              ? t('app.combatPanel.currentAbilityAria', { name: ability.name })
-              : isInternal
-                ? t('app.combatPanel.chooseInternalSlotAria')
-                : t('app.combatPanel.chooseSpellSlotAria', { slot: index })
-
-            const slotContent = (
-              <>
-                <button
-                  aria-label={slotAriaLabel}
-                  className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
-                  onClick={() => setActivePickerSlotIndex(index)}
-                  type="button"
-                >
-                  <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
-                    {slotTypeTag}
-                  </span>
-
-                  {ability ? (
-                    <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
-                      <span className="item-type-ribbon" aria-hidden="true">
-                        <span>{ribbonLabel}</span>
-                      </span>
-                      <strong className="item-tile-name">{ability.name}</strong>
-                      <span className="item-corner item-corner--bottom-right">
-                        {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}
-                      </span>
-                      {remainingCooldown > 0 && (
-                        <AbilityCooldownOverlay
-                          remainingMilliseconds={remainingCooldown}
-                          totalMilliseconds={ability.cooldownMilliseconds}
-                        />
-                      )}
-                    </span>
-                  ) : (
-                    <span className="abilities-empty-slot-btn">
-                      <span className="abilities-slot-plus">+</span>
-                      <span className="abilities-slot-empty-text">{emptyBtnLabel}</span>
-                    </span>
-                  )}
-                </button>
-
-                {ability && (
-                  <div className="combat-ability-slot-actions">
-                    <span className="combat-ability-level-control" onClick={e => e.stopPropagation()}>
-                      <span aria-hidden="true">Lv.</span>
-                      <input
-                        aria-label={t('app.combatPanel.levelAria', { name: ability.name })}
-                        className="combat-ability-level-input"
-                        max={100}
-                        min={1}
-                        onChange={event => update({
-                          abilitySlots: combat.abilitySlots.map((current, slotIndex) => (
-                            slotIndex === index
-                              ? { ...current, level: Math.max(1, Math.min(100, Number(event.target.value) || 1)) }
-                              : current
-                          )),
-                        })}
-                        type="number"
-                        value={slot.level}
-                      />
-                    </span>
-                    <button
-                      aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
-                      className="item-slot-inline-action item-slot-inline-action--condition"
-                      onClick={() => setEditingTriggerSlotIndex(index)}
-                      title={t('app.combatPanel.editTriggersTitle')}
-                      type="button"
-                    >
-                      {t('app.combatPanel.triggerConditionBtn', { count: (slot.triggers?.length ?? 0) > 0 ? (slot.triggers?.length ?? 0) : '' })}
-                    </button>
-                  </div>
-                )}
-              </>
-            )
-
-            return (
-              <div className={`abilities-slot-card${isInternal ? ' is-internal' : ''}`} key={index}>
-                {ability ? (
-                  <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, slot.level)} tabIndex={-1}>
-                    {slotContent}
-                  </EffectTooltipTarget>
-                ) : (
-                  <span className="combat-ability-slot-shell">{slotContent}</span>
-                )}
-              </div>
-            )
-          })}
+        {/* 第二排：神通术法（多槽位自动折行） */}
+        <div className="abilities-group-row abilities-group-row--spells">
+          <div className="abilities-group-header">
+            <span className="abilities-group-label">{t('app.combatPanel.spellRibbon')}</span>
+          </div>
+          <div className="abilities-group-slots abilities-group-slots--wrap">
+            {spellSlots.map((slot, i) => renderSlot(slot, i + 1))}
+          </div>
         </div>
       </section>
 
-      {/* 下部：已学功法秘籍目录 */}
+      {/* 下部：已学功法秘籍目录（去除冗余提示文本） */}
       <section className="abilities-section abilities-catalog-section">
         <div className="abilities-section-header">
           <span className="abilities-section-title">{t('app.abilitiesPanel.learnedAbilitiesTitle')}</span>
@@ -265,25 +283,10 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                 >
                   <div className={`abilities-card ${equippedIndex !== null ? 'is-equipped' : ''}`}>
                     <div className="abilities-card-main">
-                      <div className="abilities-card-title-row">
-                        <strong className="abilities-card-name">{ability.name}</strong>
-                        <span className={`abilities-card-tag tone-${ability.effectType === 'heal' ? 'green' : 'violet'}`}>
-                          {formatAbilityCategory(ability.category, ability.element)}
-                        </span>
-                      </div>
-                      <div className="abilities-card-meta">
-                        <span className="abilities-card-stat">
-                          {t('app.abilitiesPanel.manaCost', { mana: Math.round(ability.manaCost) })}
-                        </span>
-                        <span className="abilities-card-sep">·</span>
-                        <span className="abilities-card-stat">
-                          {t('app.abilitiesPanel.castTime', { cast: (ability.castMilliseconds / 1000).toFixed(1) })}
-                        </span>
-                        <span className="abilities-card-sep">·</span>
-                        <span className="abilities-card-stat">
-                          {t('app.abilitiesPanel.cooldown', { cd: (ability.cooldownMilliseconds / 1000).toFixed(1) })}
-                        </span>
-                      </div>
+                      <strong className="abilities-card-name">{ability.name}</strong>
+                      <span className={`abilities-card-tag tone-${ability.effectType === 'heal' ? 'green' : 'violet'}`}>
+                        {formatAbilityCategory(ability.category, ability.element)}
+                      </span>
                     </div>
                     {equippedIndex !== null && (
                       <span className={`abilities-equipped-badge${equippedIndex === 0 ? ' is-internal' : ''}`}>

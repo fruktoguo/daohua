@@ -1089,16 +1089,6 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
             <span className="action-badge action-badge--cultivation-qi">
               +{yieldPreview.cultivation.boostedQi} 灵力
             </span>
-            {yieldPreview.cultivation.totalMultiplier > 1.0 && (
-              <span className="action-badge action-badge--bonus">
-                +{Math.round((yieldPreview.cultivation.totalMultiplier - 1.0) * 100)}%
-              </span>
-            )}
-            {yieldPreview.cultivation.isPendingBreakthrough ? (
-              <span className="action-badge action-badge--pending">圆满待突破</span>
-            ) : yieldPreview.cultivation.hasFoundationAcceleration ? (
-              <span className="action-badge action-badge--foundation">底蕴加速×3</span>
-            ) : null}
           </div>
         ) : isCrafting && meta ? (
            <div className="action-card-badges">
@@ -1169,6 +1159,17 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     stats,
   }), [action, inventory, items, autoUseSlots, buffs, world, stats])
 
+  const rateBonuses = useMemo(
+    () => yieldPreview.bonuses.filter(b => b.type !== 'foundation'),
+    [yieldPreview.bonuses]
+  )
+  const totalMultiplier = yieldPreview.totalMultiplier
+  const totalPercent = Math.round((totalMultiplier - 1.0) * 100)
+  const hasRateBonus = rateBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
+  const hasFoundation = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.hasFoundationAcceleration)
+  const isPending = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.isPendingBreakthrough)
+  const hasBonuses = hasRateBonus || hasFoundation || isPending
+
   const inputs = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
   const titleId = `action-modal-title-${action.id}`
   const startsImmediately = action.executionKind === 'combat-encounter'
@@ -1206,36 +1207,14 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                     <strong className="action-stat-pill-value">
                       +{yieldPreview.cultivation.boostedExp.toFixed(0)}
                     </strong>
-                    {yieldPreview.cultivation.totalMultiplier > 1.0 && (
-                      <span className="action-stat-pill-bonus">
-                        (+{Math.round((yieldPreview.cultivation.totalMultiplier - 1.0) * 100)}%)
-                      </span>
-                    )}
                   </span>
                   <span className="action-stat-pill action-stat-pill--qi">
                     <span className="action-stat-pill-label">{t('app.action.qi')}</span>
                     <strong className="action-stat-pill-value">
                       +{yieldPreview.cultivation.boostedQi}
                     </strong>
-                    {yieldPreview.cultivation.totalMultiplier > 1.0 && (
-                      <span className="action-stat-pill-bonus">
-                        (+{Math.round((yieldPreview.cultivation.totalMultiplier - 1.0) * 100)}%)
-                      </span>
-                    )}
                   </span>
                 </div>
-                {yieldPreview.cultivation.isPendingBreakthrough ? (
-                  <div className="action-notice-badge action-notice-badge--pending">
-                    <span>⚠️ {t('app.action.pendingBreakthroughNote')}</span>
-                  </div>
-                ) : yieldPreview.cultivation.hasFoundationAcceleration ? (
-                  <div className="action-notice-badge action-notice-badge--foundation">
-                    <span>✨ {t('app.action.foundationAccelerationTip', {
-                      consumed: yieldPreview.cultivation.foundationConsumed.toFixed(0),
-                      gain: yieldPreview.cultivation.actualExpGain.toFixed(0),
-                    })}</span>
-                  </div>
-                ) : null}
               </div>
             ) : yieldPreview.itemOutputs.length > 0 ? (
               yieldPreview.itemOutputs.map(output => (
@@ -1251,16 +1230,60 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           </dd>
         </div>
 
-        {yieldPreview.bonuses.length > 0 && (
+        {hasBonuses && (
           <div>
-            <dt>{t('app.action.activeBonuses')}</dt>
+            <dt>{t('app.action.totalBonus')}</dt>
             <dd className="action-bonuses-container">
-              {yieldPreview.bonuses.map((bonus, idx) => (
-                <span className={`action-bonus-pill action-bonus-pill--${bonus.type}`} key={idx} title={bonus.description}>
-                  <span className="action-bonus-pill-source">{bonus.sourceName}</span>
-                  <strong className="action-bonus-pill-tag">{bonus.tag}</strong>
-                </span>
-              ))}
+              {hasRateBonus && (
+                <FloatingTooltip
+                  placement="top"
+                  tone="gold"
+                  title={
+                    <div className="action-bonus-tooltip-content">
+                      <div className="action-bonus-tooltip-title">{t('app.action.bonusBreakdownTitle')}</div>
+                      <div className="action-bonus-tooltip-list">
+                        {rateBonuses.map((bonus, idx) => (
+                          <div className="action-bonus-tooltip-row" key={idx}>
+                            <span className="action-bonus-tooltip-name">{bonus.sourceName}</span>
+                            <strong className="action-bonus-tooltip-tag">{bonus.tag}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  }
+                >
+                  <span className="action-bonus-pill action-bonus-pill--total">
+                    <span className="action-bonus-pill-source">{t('app.action.totalBonus')}</span>
+                    <strong className="action-bonus-pill-tag">
+                      {totalPercent >= 0 ? `+${totalPercent}%` : `${totalPercent}%`}
+                    </strong>
+                  </span>
+                </FloatingTooltip>
+              )}
+
+              {hasFoundation && (
+                <FloatingTooltip
+                  placement="top"
+                  tone="purple"
+                  title={t('app.action.foundationAccelerationDesc')}
+                >
+                  <span className="action-bonus-pill action-bonus-pill--foundation">
+                    <span className="action-bonus-pill-source">{t('app.action.foundationAccelerationTag')}</span>
+                  </span>
+                </FloatingTooltip>
+              )}
+
+              {isPending && (
+                <FloatingTooltip
+                  placement="top"
+                  tone="gold"
+                  title={t('app.action.pendingBreakthroughDesc')}
+                >
+                  <span className="action-bonus-pill action-bonus-pill--pending">
+                    <span className="action-bonus-pill-source">{t('app.action.pendingBreakthroughTag')}</span>
+                  </span>
+                </FloatingTooltip>
+              )}
             </dd>
           </div>
         )}
@@ -1522,10 +1545,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                         )}
                       </span>
                     ) : (
-                      <span className="abilities-empty-slot-btn">
-                        <span className="abilities-slot-plus">+</span>
-                        <span className="abilities-slot-empty-text">{emptyBtnLabel}</span>
-                      </span>
+                      <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
                     )}
                   </button>
                   {ability && (

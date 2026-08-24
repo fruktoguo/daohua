@@ -32,13 +32,12 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
 interface TabConfig {
   id: RightColumnTab
   labelKey: 'inventory' | 'equipment' | 'abilities'
-  iconText: string
 }
 
 const TABS: readonly TabConfig[] = [
-  { id: 'inventory', labelKey: 'inventory', iconText: '袋' },
-  { id: 'equipment', labelKey: 'equipment', iconText: '装' },
-  { id: 'abilities', labelKey: 'abilities', iconText: '功' },
+  { id: 'inventory', labelKey: 'inventory' },
+  { id: 'equipment', labelKey: 'equipment' },
+  { id: 'abilities', labelKey: 'abilities' },
 ]
 
 /**
@@ -67,7 +66,6 @@ export const RightSidebar = memo(function RightSidebar({ className = '' }: { cla
                 onClick={() => setRightColumnTab(tab.id)}
                 type="button"
               >
-                <span aria-hidden="true" className="right-sidebar-tab-glyph">{tab.iconText}</span>
                 <span className="right-sidebar-tab-label">{t(`app.rightTab.${tab.labelKey}`)}</span>
               </button>
             )

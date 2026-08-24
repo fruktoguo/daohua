@@ -259,7 +259,7 @@ input[type="checkbox"] {
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) minmax(340px, 400px);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) minmax(380px, 440px);
   gap: 12px;
   padding: 12px;
 }
@@ -3226,6 +3226,13 @@ input[type="checkbox"] {
   border: 1px solid transparent;
 }
 
+.action-bonus-pill--total {
+  background: rgba(224, 181, 67, 0.12);
+  border-color: rgba(224, 181, 67, 0.35);
+  color: var(--gold-bright);
+  cursor: default;
+}
+
 .action-bonus-pill--pill {
   background: rgba(34, 197, 94, 0.1);
   border-color: rgba(34, 197, 94, 0.25);
@@ -3245,9 +3252,56 @@ input[type="checkbox"] {
 }
 
 .action-bonus-pill--foundation {
-  background: rgba(168, 85, 247, 0.1);
-  border-color: rgba(168, 85, 247, 0.25);
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.35);
   color: #d8b4fe;
+  cursor: default;
+}
+
+.action-bonus-pill--pending {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  cursor: default;
+}
+
+.action-bonus-tooltip-content {
+  min-width: 140px;
+  padding: 2px 0;
+}
+
+.action-bonus-tooltip-title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--gold-bright);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.action-bonus-tooltip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-bonus-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-bright);
+}
+
+.action-bonus-tooltip-name {
+  color: var(--text-dim);
+}
+
+.action-bonus-tooltip-tag {
+  color: var(--gold-bright);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .action-bonus-pill strong {
@@ -4124,8 +4178,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 7px 10px;
+  padding: 8px 12px;
   border: 1px solid rgba(201, 180, 109, 0.22);
   border-radius: 4px;
   background: rgba(14, 16, 18, 0.72);
@@ -4136,6 +4189,7 @@ input[type="checkbox"] {
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
+  text-align: center;
 }
 
 .right-sidebar-tab-btn:hover {
@@ -4153,23 +4207,8 @@ input[type="checkbox"] {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
-.right-sidebar-tab-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.4);
-  color: var(--gold-bright);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.right-sidebar-tab-btn.is-active .right-sidebar-tab-glyph {
-  background: var(--gold-dim);
-  color: #0b0d0e;
+.right-sidebar-tab-label {
+  letter-spacing: 0.5px;
 }
 
 .right-sidebar-body {
@@ -4199,11 +4238,11 @@ input[type="checkbox"] {
 .equipment-stage {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1.3fr 1fr;
+  grid-template-columns: var(--item-slot-size, 64px) 1fr var(--item-slot-size, 64px);
   align-items: center;
   gap: 10px;
-  min-height: 310px;
-  padding: 12px 6px;
+  min-height: 280px;
+  padding: 12px 10px;
   border: 1px solid rgba(201, 180, 109, 0.16);
   border-radius: 4px;
   background:
@@ -4218,27 +4257,29 @@ input[type="checkbox"] {
   flex-direction: column;
   gap: 10px;
   z-index: 2;
+  width: var(--item-slot-size, 64px);
 }
 
 .equipment-slot-anchor {
   display: block;
-  width: 100%;
+  width: var(--item-slot-size, 64px);
+  height: var(--item-slot-size, 64px);
 }
 
 .equipment-slot-btn {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 84px;
-  padding: 6px;
-  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  width: var(--item-slot-size, 64px);
+  height: var(--item-slot-size, 64px);
+  min-height: var(--item-slot-size, 64px);
+  padding: 0;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.22s ease;
   user-select: none;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .equipment-slot-btn.is-empty {
@@ -4255,48 +4296,14 @@ input[type="checkbox"] {
   transform: translateY(-1px);
 }
 
-.equipment-slot-watermark {
-  position: absolute;
+.equipment-slot-empty-label {
   font-family: var(--font-kaiti, serif);
-  font-size: 42px;
-  font-weight: 900;
-  color: rgba(201, 180, 109, 0.07);
-  pointer-events: none;
-  user-select: none;
-  z-index: 0;
-}
-
-.equipment-slot-empty-content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.equipment-slot-tag {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 400;
   color: var(--gold-dim);
-  letter-spacing: 1px;
-}
-
-.equipment-slot-plus {
-  font-size: 18px;
-  line-height: 1;
-  color: rgba(201, 180, 109, 0.4);
-  transition: color 0.2s ease, transform 0.2s ease;
-}
-
-.equipment-slot-btn.is-empty:hover .equipment-slot-plus {
-  color: var(--gold-bright);
-  transform: scale(1.2);
-}
-
-.equipment-slot-hint {
-  font-size: 10px;
-  color: var(--text-muted);
+  letter-spacing: 0.5px;
+  text-align: center;
+  pointer-events: none;
 }
 
 .equipment-slot-btn.is-equipped {
@@ -4325,8 +4332,9 @@ input[type="checkbox"] {
 }
 
 .equipment-tile {
-  width: 100%;
-  min-height: 84px;
+  width: var(--item-slot-size, 64px);
+  height: var(--item-slot-size, 64px);
+  min-height: var(--item-slot-size, 64px);
 }
 
 /* 角色虚影居中展示 */
@@ -4439,66 +4447,40 @@ input[type="checkbox"] {
   color: var(--text-dim);
 }
 
-.equipment-tools-badge {
-  padding: 2px 6px;
-  border: 1px solid rgba(201, 180, 109, 0.25);
-  border-radius: 3px;
-  background: rgba(201, 180, 109, 0.08);
-  color: var(--gold-dim);
-  font-size: 10px;
-}
-
 .equipment-tools-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, var(--item-slot-size, 64px));
   gap: 8px;
+  justify-content: center;
 }
 
 .equipment-tool-slot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  min-height: 66px;
-  padding: 6px 4px;
-  border: 1px dashed rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  width: var(--item-slot-size, 64px);
+  height: var(--item-slot-size, 64px);
+  min-height: var(--item-slot-size, 64px);
+  padding: 0;
+  border: 1px dashed rgba(201, 180, 109, 0.28);
+  border-radius: 6px;
   background: rgba(16, 20, 24, 0.5);
-  cursor: help;
   transition: all 0.2s ease;
   user-select: none;
+  box-sizing: border-box;
 }
 
 .equipment-tool-slot:hover {
-  border-color: rgba(201, 180, 109, 0.4);
+  border-color: rgba(201, 180, 109, 0.5);
   background: rgba(24, 30, 36, 0.75);
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 
-.equipment-tool-icon {
-  font-size: 18px;
-  line-height: 1;
-  filter: grayscale(0.5) opacity(0.7);
-}
-
-.equipment-tool-slot:hover .equipment-tool-icon {
-  filter: none;
-  transform: scale(1.1);
-  transition: transform 0.2s ease;
-}
-
-.equipment-tool-label {
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-dim);
+.equipment-tool-empty-label {
+  font-family: var(--font-kaiti, serif);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--gold-dim);
   text-align: center;
-  white-space: nowrap;
-}
-
-.equipment-tool-status {
-  font-size: 9px;
-  color: var(--text-muted);
+  letter-spacing: 0.5px;
 }
 
 /* ---------------- 功法面板 (AbilitiesPanel) ---------------- */
@@ -4508,7 +4490,7 @@ input[type="checkbox"] {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .abilities-section {
@@ -4538,23 +4520,44 @@ input[type="checkbox"] {
   color: var(--text-muted);
 }
 
-.abilities-slot-row {
+.abilities-group-row {
   display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding: 4px 2px 8px;
-  scrollbar-width: thin;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.abilities-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.abilities-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gold-dim);
+  letter-spacing: 0.5px;
+}
+
+.abilities-group-slots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.abilities-group-slots--wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 .abilities-slot-card {
-  flex: 0 0 110px;
-  min-width: 110px;
-  display: flex;
-  flex-direction: column;
-}
-
-.abilities-slot-card.is-internal {
-  border-color: rgba(201, 180, 109, 0.4);
+  width: var(--item-slot-size, 64px);
+  height: var(--item-slot-size, 64px);
+  position: relative;
+  display: grid;
+  place-items: center;
 }
 
 .abilities-slot-tag-badge {
@@ -4562,11 +4565,11 @@ input[type="checkbox"] {
   top: 2px;
   left: 2px;
   z-index: 3;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 2px;
   background: rgba(0, 0, 0, 0.7);
   color: var(--text-dim);
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.5px;
 }
 
@@ -4587,44 +4590,25 @@ input[type="checkbox"] {
   box-shadow: 0 0 14px rgba(201, 180, 109, 0.35);
 }
 
-.abilities-empty-slot-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  min-height: 80px;
-  color: var(--text-muted);
-  font-size: 11px;
-}
-
-.abilities-slot-plus {
-  font-size: 16px;
-  color: rgba(201, 180, 109, 0.5);
-}
-
-.abilities-slot-empty-text {
-  font-size: 10px;
-  color: var(--text-dim);
-}
-
-.abilities-slot-idx {
-  font-size: 10px;
-  font-weight: 700;
+.abilities-slot-empty-label {
+  font-family: var(--font-kaiti, serif);
+  font-size: 12px;
   color: var(--gold-dim);
-  opacity: 0.6;
+  text-align: center;
+  letter-spacing: 0.5px;
 }
+
 .abilities-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 380px;
+  gap: 6px;
+  max-height: 340px;
   overflow-y: auto;
   padding-right: 2px;
 }
 
 .abilities-empty-state {
-  padding: 24px 12px;
+  padding: 20px 12px;
   text-align: center;
   color: var(--text-muted);
   font-size: 12px;
@@ -4641,7 +4625,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 9px 12px;
+  padding: 7px 10px;
   border: 1px solid rgba(201, 180, 109, 0.18);
   border-radius: 4px;
   background: rgba(14, 18, 22, 0.68);
@@ -4664,15 +4648,9 @@ input[type="checkbox"] {
 
 .abilities-card-main {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.abilities-card-title-row {
-  display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .abilities-card-name {
@@ -4699,14 +4677,6 @@ input[type="checkbox"] {
   color: #6ee7b7;
   background: rgba(110, 231, 183, 0.1);
   border-color: rgba(110, 231, 183, 0.3);
-}
-
-.abilities-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--text-dim);
 }
 
 .abilities-card-sep {
@@ -5146,7 +5116,7 @@ input[type="checkbox"] {
   }
 
   .app-body {
-    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) 350px;
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr) 380px;
   }
 
   .topbar {
