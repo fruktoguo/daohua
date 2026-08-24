@@ -103,3 +103,4 @@ services:
 
 volumes:
   daohua-postgres:
+    name: daohua_daohua-postgres

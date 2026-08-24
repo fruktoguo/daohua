@@ -15,7 +15,7 @@
  * 环境变量支持:
  *   - SERVER_PROJECT: 服务端工程文件路径（默认 src/Server/Server.csproj）
  *   - SERVER_DEV_RESTART_DEBOUNCE_MS: 变更防抖毫秒数（默认 60000）
- *   - SERVER_DEV_STOP_TIMEOUT_MS: 优雅停止超时毫秒数（默认 20000）
+ *   - SERVER_DEV_STOP_TIMEOUT_MS: 优雅停止超时毫秒数（默认 30000；生产 stop_grace_period 为 90s，dev 取 1/3 折中——存档与释放市场写者租约通常远快于此，又避免卡死拖慢迭代）
  * ==============================================================================
  */
 
@@ -36,7 +36,7 @@ const debounceMs = parseNonNegativeInteger(
 );
 const gracefulStopTimeoutMs = parseNonNegativeInteger(
   process.env.SERVER_DEV_STOP_TIMEOUT_MS,
-  20_000,
+  30_000,
 );
 
 let shuttingDown = false;

@@ -7,7 +7,7 @@
 #   1. 工作区状态检查: 默认拒绝 dirty worktree 构建正式镜像，确保镜像与 Git Commit 严格对应（可通过 --allow-dirty 覆盖排障）；
 #   2. 自动生成标签: 根据当前 Git Commit 生成不可变唯一版本标签（sha-<hash:12>）与移动标签（默认为 prod）；
 #   3. OCI 元数据注入: 注入构建时间 (BUILD_DATE)、版本号 (BUILD_VERSION)、Git Commit (VCS_REF)；
-#   4. 多阶段跨平台构建: 使用 Docker Buildx 构建指定架构（默认 linux/amd64）的最小化轻量镜像；
+#   4. 平台白名单构建: 使用 Docker Buildx 构建 linux/amd64 架构的最小化轻量镜像，DOCKER_PLATFORM 覆盖为其他平台时立即报错退出；
 #   5. 镜像推送控制: 默认仅本机构建，传入 --push 时才会同步推送至腾讯云 CCR (ccr.ccs.tencentyun.com)；
 #   6. 幂等复用推送: 支持 --push-existing 参数，直接推送本机已通过烟测验收的现有镜像，避免二次构建引起的内容漂移。
 #
@@ -35,6 +35,11 @@ PUSH=0
 BUILD=1
 PULL=1
 ALLOW_DIRTY=0
+
+if [[ "$PLATFORM" != "linux/amd64" ]]; then
+  printf '错误: DOCKER_PLATFORM 仅支持 linux/amd64（当前值: %s），生产镜像统一构建 amd64 架构。\n' "$PLATFORM" >&2
+  exit 1
+fi
 
 usage() {
   printf '%s\n' \

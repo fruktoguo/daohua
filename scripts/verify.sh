@@ -8,9 +8,10 @@
 #   2. 执行 npm ci 严格安装前端锁定依赖；
 #   3. 执行 .NET 解决方案 Release 配置完整构建（slnx）；
 #   4. 运行领域规则与协议门禁测试（tests/Domain.Tests）；
-#   5. 运行游戏配置数据完整性校验工具（DataTool validate）；
-#   6. 运行 2c4g/40g 生产容量与性能门禁压测（LoadTests capacity-target）；
-#   7. 执行前端 TypeScript 静态类型检查与 Vite 生产打包构建。
+#   5. 运行服务端测试（tests/Server.Tests）；
+#   6. 运行游戏配置数据完整性校验工具（DataTool validate）；
+#   7. 运行 2c4g/40g 生产容量与性能门禁压测（LoadTests capacity-target）；
+#   8. 执行前端 TypeScript 静态类型检查与 Vite 生产打包构建。
 #
 # 使用场景:
 #   - 提交代码前或 CI 阶段作为最小必要完整验证门禁；
@@ -35,6 +36,13 @@ dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
 
 printf '==> 领域测试\n'
 dotnet test tests/Domain.Tests/Domain.Tests.csproj \
+  --configuration Release \
+  --no-build \
+  --disable-build-servers \
+  --nologo
+
+printf '==> 服务端测试\n'
+dotnet test tests/Server.Tests/Server.Tests.csproj \
   --configuration Release \
   --no-build \
   --disable-build-servers \

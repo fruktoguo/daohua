@@ -7,8 +7,8 @@
 #   1. 远端前置环境检查: 验证远端 SSH 连通性、Docker 与 Docker Compose 运行时就绪；
 #   2. CCR 镜像权限验证: 验证远端是否具备拉取指定版本镜像权限；
 #   3. 同步生产资产: 创建安全临时目录，上传 Compose、Caddy、备份脚本及 systemd 配置文件；
-#   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置 PostgreSQL 密钥；
-#   5. 安装资产与触发更新: 将资产安装到 /opt/daohua，触发 ccr-auto-update.sh 进行沙箱预检与平滑更新；
+#   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置 PostgreSQL 密钥与非空 ACCESS_TOKEN；
+#   5. 安装资产与触发更新: 将资产安装到 /opt/daohua，显式指定 --image 时固化 APP_IMAGE 后触发 ccr-auto-update.sh 平滑更新；
 #   6. systemd 服务与定时器配置: 启用并启动 CCR 自动更新 timer 与数据库备份 timer；
 #   7. Caddy 反向代理部署: 可选校验并无缝热重载 Caddy 站点配置 (xx.yuohira.com.caddy)；
 #   8. 服务就绪与公网烟测: 检查容器健康与回环 /readyz 端点，执行公网 HTTPS/WebSocket 烟测。
@@ -26,6 +26,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${SSH_HOST:-yuohira}"
 IMAGE="${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+IMAGE_EXPLICIT=0
 INSTALL_CADDY=1
 RUN_PUBLIC_SMOKE=1
 REMOTE_TMP=""
@@ -50,6 +51,7 @@ while (($# > 0)); do
       ;;
     --image)
       IMAGE="${2:?--image 缺少值}"
+      IMAGE_EXPLICIT=1
       shift 2
       ;;
     --skip-caddy)
@@ -122,8 +124,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
     printf "缺少 /opt/daohua/daohua.env，请设置 DB_PASSWORD。\n" >&2
     exit 1
   fi
-  if ! sudo grep -q "^DB_PASSWORD=" /opt/daohua/daohua.env; then
-    printf "缺少 DB_PASSWORD，PostgreSQL 无法启动。\n" >&2
+  if ! sudo grep -Eq "^ACCESS_TOKEN=..+" /opt/daohua/daohua.env; then
+    printf "缺少非空 ACCESS_TOKEN，公网将允许任意 playerId 接管角色。\n" >&2
     exit 1
   fi
 '
@@ -140,6 +142,13 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.timer' /etc/systemd/system/daohua-db-backup.timer
   sudo systemctl daemon-reload
   sudo rm -f /opt/daohua/failed-image.id
+  if [[ $IMAGE_EXPLICIT == 1 ]]; then
+    if sudo grep -q '^APP_IMAGE=' /opt/daohua/daohua.env; then
+      sudo sed -i "s|^APP_IMAGE=.*|APP_IMAGE=$IMAGE|" /opt/daohua/daohua.env
+    else
+      printf 'APP_IMAGE=%s\n' '$IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
+    fi
+  fi
   sudo env APP_IMAGE='$IMAGE' /opt/daohua/ccr-auto-update.sh
   sudo systemctl enable --now daohua-ccr-auto-update.timer
   sudo systemctl enable --now daohua-db-backup.timer
