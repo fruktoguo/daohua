@@ -4,7 +4,7 @@ import { getAccessToken } from './access_token'
 /**
  * 获取 HTTP API 请求基准地址（同源优先，支持环境变量覆盖）
  */
-function getHttpBase(): string {
+export function getHttpBase(): string {
   const configuredApi = import.meta.env.VITE_API_URL as string | undefined
   if (configuredApi) return configuredApi.replace(/\/$/, '')
 

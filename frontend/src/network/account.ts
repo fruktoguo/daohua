@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { gameClient } from './gameClient'
+import { getHttpBase } from './apiClient'
 import { useGameStore } from '../game/gameStore'
 
 /**
@@ -126,7 +127,7 @@ export async function requestRegister(
   password: string,
   characterName?: string,
 ): Promise<AuthResponseDto> {
-  const url = `${window.location.origin}/api/auth/register`
+  const url = `${getHttpBase()}/api/auth/register`
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -151,7 +152,7 @@ export async function requestLogin(
   account: string,
   password: string,
 ): Promise<AuthResponseDto> {
-  const url = `${window.location.origin}/api/auth/login`
+  const url = `${getHttpBase()}/api/auth/login`
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
