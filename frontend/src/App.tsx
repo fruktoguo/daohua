@@ -7,7 +7,7 @@ import { CombatEncounterPanel } from './components/CombatEncounterPanel'
 import { EffectTooltipTarget } from './components/EffectTooltip'
 import { FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
-import { ItemCard, ItemReference, ItemTooltipTarget } from './components/ItemDisplay'
+import { ItemReference, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
@@ -19,6 +19,7 @@ import { WorldMapPanel } from './components/WorldMapPanel'
 import { SettingsPage } from './components/SettingsPage'
 import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
+import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatAbilityCategory, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
@@ -1647,30 +1648,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
   )
 })
 
-/**
- * 储物袋（背包）物品网格展示面板
- */
-const InventoryPanel = memo(function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
-  const t = useT()
-  const inventory = useGameStore(state => state.inventory)
-  const itemCatalog = useGameStore(state => state.items)
-  const visibleItems = inventory.filter(item => item.amount > 0)
 
-  return (
-    <section className={`panel inventory-panel ${className}`.trim()}>
-      <header className="panel-header"><h2>{t('app.inventory.title')}</h2></header>
-      <div className="inventory-grid">
-        {visibleItems.map(item => (
-          <ItemCard
-            definition={itemCatalog.find(definition => definition.itemId === item.itemId)}
-            item={item}
-            key={item.itemId}
-          />
-        ))}
-      </div>
-    </section>
-  )
-})
 
 const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'map' | 'combat' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
@@ -1772,12 +1750,12 @@ export default function App(): React.JSX.Element {
             <CombatDetailsPage hidden={activeTab !== 'combat'} />
             {activeTab === 'market' && <MarketPage />}
             {activeTab === 'settings' && <SettingsPage />}
-            {activeTab === 'inventory' && <InventoryPanel className="mobile-tab" />}
+            {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
             {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" />}
           </main>
           <div className="desktop-log">{!mobileLayout && <GameLogPanel />}</div>
         </div>
-        <aside className="right-column"><InventoryPanel /></aside>
+        <aside className="right-column"><RightSidebar /></aside>
       </div>
       <BottomNav />
       <Notice />

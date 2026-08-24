@@ -162,9 +162,51 @@ export const appZh = {
       chooseConsumableTitle: '选择战斗物品 · 槽 {slot}',
       abilitySubtitle: 'Lv. 1 · {mana} 灵力 · {cast}s 施法',
     },
+    // 右侧栏 Tab 切换
+    rightTab: {
+      inventory: '储物袋',
+      equipment: '装备',
+      abilities: '功法',
+      tabAria: '右侧功能切换',
+    },
+    // 装备面板
+    equipmentPanel: {
+      title: '本命装配',
+      slotHead: '头部',
+      slotArmor: '衣服',
+      slotLegs: '腿部',
+      slotWeapon: '武器',
+      slotTrinket: '饰品',
+      slotBoots: '鞋履',
+      emptySlot: '空置',
+      unequip: '卸下装备',
+      chooseEquipmentTitle: '选择装备 · {slot}',
+      noEquipmentForSlot: '储物袋中暂无适合该部位的装备',
+      toolsTitle: '技艺法宝 · 待扩展',
+      toolMining: '采矿法具',
+      toolLogging: '伐木法具',
+      toolAlchemy: '炼丹鼎炉',
+      toolForging: '锻造器锤',
+      toolExpandable: '待扩展',
+      toolExpandableHint: '后续版本开放生活技艺与本命工具法宝装备',
+    },
+    // 功法面板
+    abilitiesPanel: {
+      title: '功法神通',
+      equippedSlotsTitle: '斗法装配槽',
+      learnedAbilitiesTitle: '已习得功法',
+      noLearnedAbilities: '暂未习得任何功法秘籍，可通过历练、奇遇或宗门兑换秘籍研习',
+      manaCost: '{mana} 灵力',
+      castTime: '{cast}s 施法',
+      cooldown: '{cd}s 冷却',
+      chooseAbility: '选择功法',
+      chooseAbilityTitle: '选择功法 · 槽位 {slot}',
+      learnedCount: '已习得 {count} 门功法',
+      levelLabel: 'Lv.{level}',
+    },
     // 背包面板
     inventory: {
-      title: '背包',
+      title: '储物袋',
     },
     // 错误与无法解析提示
     messages: {

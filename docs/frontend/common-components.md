@@ -74,7 +74,7 @@
   - **物品网格选择弹窗**（支持搜索、分类筛选、物品图元网格排列、空态选项、数量/品质高亮） -> `ItemGridPicker`
   - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板） -> `CatalogPicker`
 - **组件源码**：
-  - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx)
+  - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx) (含 `ItemUseSlot` 消耗品槽位组件，支持与技能/物品冷却完全一致的持续消耗品旋转填充倒计时遮罩 `item-slot-duration-overlay`)
   - [`frontend/src/components/CatalogPicker.tsx`](../../frontend/src/components/CatalogPicker.tsx)
 - **样式文件**：[`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)
 
@@ -172,3 +172,37 @@
   - [`frontend/src/components/ConnectingPage.tsx`](../../frontend/src/components/ConnectingPage.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.rename-modal`, `.login-screen`, `.connecting-screen`, `.error-screen`)
 
+---
+
+## 16. 通用角色与妖兽立绘形象组件 (CharacterAvatar)
+
+- **适用场景**：
+  - **后缀无关智能形象加载**：仅需传入角色/妖兽标识 `actorId`（如 `demonized-rabbit`、`wood-spirit`、`fire-spirit`、`player`），组件自动在 WebP / PNG / SVG 格式间无缝回退加载。
+  - **敌方左右镜像自适应**：支持 `isFlipped` 属性，敌方在战场卡片与属性详情模态窗（`CharacterAttributeModal`）中自动水平镜像翻转（`scaleX(-1)`）。
+  - **三级优雅降级**：高清透明立绘图 (WebP/PNG/SVG) -> 原生纯 SVG 矢量修仙法相 (`VectorCharacter`) -> 单字徽章。
+  - **阵亡状态置灰**：支持 `isDead` 状态半透明与灰度滤镜。
+- **组件源码**：[`frontend/src/components/CharacterAvatar.tsx`](../../frontend/src/components/CharacterAvatar.tsx)
+- **状态与解析引擎**：[`frontend/src/game/avatarStore.ts`](../../frontend/src/game/avatarStore.ts)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.character-avatar`, `.character-attribute-avatar-stage`), [`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.arena-avatar .character-avatar`)
+
+---
+
+## 17. 角色虚影装备阵列与技艺工具面板 (Equipment & Phantom Stage)
+
+- **适用场景**：
+  - **角色虚影与六部位装备环绕**：中间展示修士角色立绘虚影与灵光法阵，左三（头部/衣服/腿部）右三（武器/饰品/鞋靴）竖排对称排列，支持穿脱交互与网格拾取 -> `EquipmentPanel`
+  - **技艺生活工具扩展槽位**：底部排布 4 个预留技艺工具法宝槽位（采矿/伐木/炼丹/炼器）。
+- **组件源码**：[`frontend/src/components/EquipmentPanel.tsx`](../../frontend/src/components/EquipmentPanel.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.equipment-view-panel`, `.equipment-stage`, `.equipment-slot-btn`)
+
+---
+
+## 18. 右侧多 Tab 容器与功法神通面板 (Right Sidebar & Abilities Panel)
+
+- **适用场景**：
+  - **右侧多 Tab 顶层容器**（聚合储物袋、装备、功法三大核心面板，支持平滑切换） -> `RightSidebar`
+  - **功法神通面板**（4 个斗法技能槽位的冷却/触发器/等级调整 + 全部已学功法秘籍目录列表） -> `AbilitiesPanel`
+- **组件源码**：
+  - [`frontend/src/components/RightSidebar.tsx`](../../frontend/src/components/RightSidebar.tsx)
+  - [`frontend/src/components/AbilitiesPanel.tsx`](../../frontend/src/components/AbilitiesPanel.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.right-sidebar-panel`, `.abilities-view-panel`)

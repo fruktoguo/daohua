@@ -24,6 +24,8 @@ export type AlchemySubTab = 'cultivation' | 'combat' | 'extraction'
 /** 炼器顶部子选项卡：六大装备部位 */
 export type ForgingSubTab = 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket'
 
+/** 右侧主栏顶层子选项卡：储物袋 vs 装备 vs 功法 */
+export type RightColumnTab = 'inventory' | 'equipment' | 'abilities'
 /**
  * UI 视图切换状态机接口
  */
@@ -48,6 +50,10 @@ interface UiStore {
   forgingSubTab: ForgingSubTab
   /** 切换炼器子分类 */
   setForgingSubTab: (tab: ForgingSubTab) => void
+  /** 右侧主栏当前激活的子选项卡 */
+  rightColumnTab: RightColumnTab
+  /** 切换右侧主栏子选项卡 */
+  setRightColumnTab: (tab: RightColumnTab) => void
 }
 
 /**
@@ -72,4 +78,6 @@ export const useUiStore = create<UiStore>(set => ({
   setAlchemySubTab: alchemySubTab => set({ alchemySubTab }),
   forgingSubTab: 'weapon',
   setForgingSubTab: forgingSubTab => set({ forgingSubTab }),
+  rightColumnTab: 'inventory',
+  setRightColumnTab: rightColumnTab => set({ rightColumnTab }),
 }))
