@@ -34,7 +34,7 @@ export function QueueCenter() {
                 {current.remainingRepeats < 0 ? '∞' : `×${current.remainingRepeats}`}
               </span>
               {current.status === 'blocked' ? (
-                <span className="badge badge-danger">缺少材料</span>
+                <span className="badge badge-danger">资源不足</span>
               ) : (
                 <span className="badge">进行中</span>
               )}
@@ -103,7 +103,7 @@ export function QueueCenter() {
                       <span className="queue-repeats">
                         {entry.remainingRepeats < 0 ? '∞' : `×${entry.remainingRepeats}`}
                       </span>
-                      {entry.status === 'blocked' && <span className="badge badge-danger">缺少材料</span>}
+                      {entry.status === 'blocked' && <span className="badge badge-danger">资源不足</span>}
                       {index === 0 && entry.status === 'running' && <span className="badge">进行中</span>}
                     </div>
                     <div className="queue-sub">{definition.description}</div>
