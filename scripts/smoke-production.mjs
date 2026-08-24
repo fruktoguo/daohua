@@ -5,11 +5,19 @@
  *
  * 核心检查项:
  *   1. /healthz 端点: 校验服务健康状态为 ok，核对游戏数据版本 (gameDataVersion) 与数据指纹；
- *   2. /readyz 端点: 校验就绪状态为 ready，断言 PostgreSQL 快照与市场账本存储提供方声明；
- *   3. /api/actions: 校验基础静态行动目录接口返回非空行动列表；
- *   4. / 首页入口: 校验前端 HTML 页面可达且包含 root 挂载点 (`id="root"`)；
- *   5. /ws WebSocket 握手: 创建真实客户端连接，发送 hello 登录握手包，验证接收首包（snapshot / ack / delta）；
- *   6. 结构化输出: 打印测试通过的关键版本、行动数与数据指纹信息。
+ *   2. /api/actions: 校验基础静态行动目录接口返回非空行动列表；
+ *   3. / 首页入口: 校验前端 HTML 页面可达且包含 root 挂载点 (`id="root"`)；
+ *   4. /ws WebSocket 握手: 创建真实客户端连接，发送 hello 登录握手包，验证接收首包
+ *      （snapshot / ack / delta）；未收到首包前连接被服务端关闭则立即失败并携带关闭码。
+ *
+ * 说明: /readyz 已从公网烟测中移除（公网侧返回 404），其能力位校验由 scripts/deploy-prod.sh
+ *       的容器内回环检查承担。
+ *
+ * 环境变量:
+ *   SMOKE_PLAYER_ID: 固定烟测账号 ID（缺省使用下方内置常量 UUID；账号幂等性由服务端
+ *                    EnsurePlayerAsync 保证，不再每次运行新建账号）；
+ *   SMOKE_ACCESS_TOKEN: 可选访问令牌，注入 WS 连接 query 的 token 参数（未设置时不附带）；
+ *   SMOKE_TIMEOUT_MS: 单请求与 WebSocket 首包等待超时毫秒数。
  *
  * 使用方式:
  *   node scripts/smoke-production.mjs [目标服务基础URL]
@@ -39,21 +47,13 @@ async function fetchChecked(path, expectedContentType) {
 }
 
 const health = await (await fetchChecked('/healthz', 'application/json')).json()
-const ready = await (await fetchChecked('/readyz', 'application/json')).json()
 const actions = await (await fetchChecked('/api/actions', 'application/json')).json()
 const html = await (await fetchChecked('/', 'text/html')).text()
-
-if (health.status !== 'ok' || ready.status !== 'ready') {
+if (health.status !== 'ok') {
   throw new Error('健康状态不符合预期。')
 }
 if (!health.gameDataVersion || !health.gameDataFingerprint) {
   throw new Error('健康端点缺少游戏数据版本或指纹。')
-}
-if (ready.deployment?.snapshotProvider !== 'postgres'
-    || ready.deployment?.marketProvider !== 'postgres'
-    || ready.deployment?.scaleOutReady !== true
-    || ready.deployment?.zeroDowntimeReady !== false) {
-  throw new Error('当前生产存储能力声明与 PostgreSQL 目标不一致。')
 }
 if (!Array.isArray(actions) || actions.length === 0) {
   throw new Error('行动目录为空。')
