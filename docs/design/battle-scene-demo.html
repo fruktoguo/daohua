@@ -1,0 +1,1849 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="道化太初战斗场景纯 HTML 快速验证 Demo">
+  <title>道化太初 · 战斗场景 Demo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080806;
+      --bg-deep: #050504;
+      --panel: #100f0a;
+      --panel-raised: #15130d;
+      --panel-soft: rgba(18, 17, 11, .86);
+      --line: #4b4326;
+      --line-soft: rgba(201, 180, 109, .18);
+      --line-faint: rgba(201, 180, 109, .08);
+      --gold: #bdab64;
+      --gold-bright: #e6d694;
+      --gold-dim: #75683b;
+      --text: #ded9c7;
+      --text-soft: #a6a08c;
+      --text-dim: #6f6a59;
+      --blue: #149fd6;
+      --blue-soft: #43bde1;
+      --jade: #18bd8a;
+      --jade-bright: #55e0ad;
+      --red: #d84b46;
+      --red-bright: #f07169;
+      --purple: #9d70d5;
+      --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, SimSun, serif;
+      --font-sans: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+      --ease: cubic-bezier(.22, 1, .36, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      min-width: 960px;
+      min-height: 600px;
+      color: var(--text);
+      background:
+        radial-gradient(1050px 470px at 52% -18%, rgba(120, 101, 42, .11), transparent 68%),
+        radial-gradient(900px 500px at 48% 120%, rgba(57, 70, 52, .07), transparent 72%),
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, .012) 0 1px, transparent 1px 4px),
+        var(--bg);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      line-height: 1.35;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    button,
+    select,
+    input {
+      color: inherit;
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 0;
+      cursor: pointer;
+    }
+
+    .demo {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      width: 100vw;
+      height: 100vh;
+      grid-template-rows: 68px minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .demo::before,
+    .demo::after {
+      position: absolute;
+      z-index: -1;
+      width: 340px;
+      height: 340px;
+      border: 1px solid rgba(201, 180, 109, .045);
+      content: "";
+      pointer-events: none;
+      transform: rotate(45deg);
+    }
+
+    .demo::before {
+      top: -250px;
+      right: -110px;
+      box-shadow: 0 0 0 18px rgba(201, 180, 109, .018), 0 0 0 36px rgba(201, 180, 109, .012);
+    }
+
+    .demo::after {
+      bottom: -260px;
+      left: -135px;
+      box-shadow: 0 0 0 18px rgba(201, 180, 109, .018), 0 0 0 36px rgba(201, 180, 109, .012);
+    }
+
+    .topbar {
+      position: relative;
+      z-index: 10;
+      display: grid;
+      min-width: 0;
+      grid-template-columns: 192px minmax(320px, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 14px 8px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 7, 5, .97);
+      box-shadow: 0 5px 22px rgba(0, 0, 0, .38);
+    }
+
+    .player-summary {
+      display: grid;
+      min-width: 0;
+      height: 100%;
+      align-content: center;
+      gap: 4px;
+      padding-right: 10px;
+      border-right: 1px solid var(--line-faint);
+    }
+
+    .player-title-line,
+    .queue-title-line,
+    .top-actions,
+    .check-line,
+    .select-line {
+      display: flex;
+      align-items: center;
+    }
+
+    .player-title-line {
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .player-name {
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 14px;
+    }
+
+    .realm-pill,
+    .small-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 17px;
+      padding: 0 7px;
+      border: 1px solid var(--gold-dim);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, .08);
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .connection-dot {
+      width: 6px;
+      height: 6px;
+      margin-left: auto;
+      border-radius: 50%;
+      background: var(--jade);
+      box-shadow: 0 0 9px rgba(85, 224, 173, .85);
+    }
+
+    .progress-frame {
+      position: relative;
+      height: 12px;
+      clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+      border: 1px solid rgba(61, 151, 207, .46);
+      background: repeating-linear-gradient(135deg, rgba(9, 17, 27, .95) 0 10px, rgba(14, 27, 42, .95) 10px 11px);
+      box-shadow: inset 0 1px 4px rgba(0, 0, 0, .86), 0 0 7px rgba(14, 165, 233, .13);
+      overflow: hidden;
+    }
+
+    .progress-frame>i {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 0%;
+      background: linear-gradient(90deg, #0d4b6d, #087db1 55%, #44bde2);
+      box-shadow: 0 0 8px rgba(61, 189, 230, .4);
+    }
+
+    .progress-frame>span {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      color: #d5e8ee;
+      font-size: 9px;
+      line-height: 1;
+      text-shadow: 0 1px 3px #000;
+    }
+
+    .queue-center {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    .queue-card {
+      display: grid;
+      width: min(430px, 100%);
+      min-width: 300px;
+      grid-template-columns: 29px minmax(0, 1fr);
+      align-items: center;
+      gap: 8px;
+    }
+
+    .queue-glyph {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border: 1px solid var(--gold-dim);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, .045);
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .queue-meta {
+      display: grid;
+      min-width: 0;
+      gap: 3px;
+    }
+
+    .queue-title-line {
+      gap: 7px;
+      min-width: 0;
+      color: var(--text-soft);
+      font-family: var(--font-serif);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .queue-title-line strong {
+      overflow: hidden;
+      color: var(--text);
+      font-weight: 400;
+      text-overflow: ellipsis;
+    }
+
+    .queue-title-line .small-pill {
+      height: 15px;
+      padding: 0 5px;
+      border-color: rgba(201, 180, 109, .35);
+      color: var(--gold);
+      font-family: var(--font-sans);
+      font-size: 9px;
+    }
+
+    .queue-progress-line {
+      display: grid;
+      grid-template-columns: 80px 1fr 43px;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-dim);
+      font-family: Arial, sans-serif;
+      font-size: 9px;
+    }
+
+    .queue-thin-bar {
+      position: relative;
+      height: 6px;
+      border: 1px solid rgba(201, 180, 109, .19);
+      background: rgba(0, 0, 0, .55);
+      overflow: hidden;
+    }
+
+    .queue-thin-bar i {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      background: linear-gradient(90deg, #8d302e, var(--red-bright));
+      transform-origin: left;
+    }
+
+    .top-actions {
+      justify-content: flex-end;
+      gap: 9px;
+      color: var(--text-dim);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .check-line {
+      gap: 5px;
+      cursor: pointer;
+    }
+
+    .check-line input {
+      width: 11px;
+      height: 11px;
+      margin: 0;
+      accent-color: var(--gold);
+    }
+
+    .queue-select {
+      height: 24px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      outline: 0;
+      color: var(--gold-bright);
+      background: #121108;
+      font-size: 10px;
+    }
+
+    .workspace {
+      display: grid;
+      min-width: 0;
+      min-height: 0;
+      grid-template-columns: 192px minmax(0, 1fr) 338px;
+      gap: 8px;
+      padding: 7px 9px 9px;
+    }
+
+    .frame {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(135deg, rgba(201, 180, 109, .035), transparent 22%),
+        linear-gradient(315deg, rgba(201, 180, 109, .02), transparent 28%),
+        var(--panel);
+      box-shadow:
+        inset 0 0 0 4px rgba(7, 6, 4, .72),
+        inset 0 0 0 5px rgba(201, 180, 109, .055),
+        inset 0 0 36px rgba(0, 0, 0, .6),
+        0 0 0 1px rgba(0, 0, 0, .8);
+    }
+
+    .frame::before,
+    .frame::after {
+      position: absolute;
+      z-index: 3;
+      width: 12px;
+      height: 12px;
+      border-color: rgba(201, 180, 109, .55);
+      content: "";
+      pointer-events: none;
+    }
+
+    .frame::before {
+      top: 3px;
+      left: 3px;
+      border-top: 1px solid;
+      border-left: 1px solid;
+    }
+
+    .frame::after {
+      right: 3px;
+      bottom: 3px;
+      border-right: 1px solid;
+      border-bottom: 1px solid;
+    }
+
+    .nav-panel {
+      display: flex;
+      min-height: 0;
+      flex-direction: column;
+      padding: 12px 10px 10px;
+      overflow: hidden;
+    }
+
+    .nav-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .nav-item {
+      position: relative;
+      display: grid;
+      min-height: 35px;
+      grid-template-columns: 25px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 7px;
+      border: 1px solid transparent;
+      color: var(--text);
+      background: transparent;
+      text-align: left;
+      transition: border-color .2s var(--ease), background .2s var(--ease), color .2s var(--ease);
+    }
+
+    .nav-item:hover {
+      border-color: var(--line-soft);
+      background: rgba(201, 180, 109, .055);
+    }
+
+    .nav-item.is-active {
+      border-color: rgba(201, 180, 109, .2);
+      color: var(--gold-bright);
+      background: linear-gradient(90deg, rgba(201, 180, 109, .13), rgba(201, 180, 109, .025));
+      box-shadow: inset 2px 0 0 var(--gold-bright), inset 7px 0 12px rgba(201, 180, 109, .07);
+    }
+
+    .nav-icon {
+      display: grid;
+      width: 25px;
+      height: 25px;
+      place-items: center;
+      border: 1px solid var(--gold-dim);
+      color: var(--gold);
+      background: rgba(201, 180, 109, .05);
+    }
+
+    .nav-item.is-active .nav-icon {
+      border-color: var(--gold);
+      box-shadow: 0 0 9px rgba(201, 180, 109, .22);
+    }
+
+    .nav-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.25;
+    }
+
+    .nav-label {
+      font-family: var(--font-serif);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .nav-arrow {
+      color: var(--gold-dim);
+      font-family: Arial, sans-serif;
+      font-size: 13px;
+    }
+
+    .nav-item.is-active .nav-arrow {
+      color: var(--gold-bright);
+    }
+
+    .nav-spacer {
+      flex: 1;
+      min-height: 20px;
+    }
+
+    .nav-settings {
+      border-top: 1px solid var(--line-faint);
+      padding-top: 8px;
+    }
+
+    .center-column {
+      display: grid;
+      min-width: 0;
+      min-height: 0;
+      grid-template-rows: minmax(0, 1fr) 214px;
+      gap: 10px;
+    }
+
+    .battle-frame {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: 49px minmax(0, 1fr) 56px;
+      overflow: hidden;
+    }
+
+    .section-heading {
+      position: relative;
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      padding: 0 11px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(201, 180, 109, .022);
+    }
+
+    .section-heading::after {
+      position: absolute;
+      right: 0;
+      bottom: -1px;
+      left: 0;
+      height: 1px;
+      background: linear-gradient(90deg, var(--gold-dim), rgba(201, 180, 109, .12) 58%, transparent);
+      content: "";
+    }
+
+    .section-heading::before {
+      width: 7px;
+      height: 7px;
+      margin-right: 8px;
+      background: var(--gold);
+      box-shadow: 0 0 8px rgba(201, 180, 109, .48);
+      content: "";
+      transform: rotate(45deg);
+    }
+
+    .section-heading h1 {
+      color: var(--gold-bright);
+      font-family: var(--font-serif);
+      font-size: 14px;
+      font-weight: 400;
+    }
+
+    .section-heading .heading-note {
+      margin-left: auto;
+      color: var(--text-dim);
+      font-size: 10px;
+    }
+
+    .battle-field {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      background:
+        radial-gradient(360px 190px at 50% 54%, rgba(28, 33, 28, .13), transparent 72%),
+        linear-gradient(90deg, rgba(15, 40, 43, .08), transparent 44%, rgba(57, 25, 24, .07)),
+        repeating-linear-gradient(0deg, transparent 0 39px, rgba(201, 180, 109, .025) 39px 40px),
+        repeating-linear-gradient(90deg, transparent 0 39px, rgba(201, 180, 109, .025) 39px 40px),
+        #080a09;
+    }
+
+    .battle-field::before {
+      position: absolute;
+      inset: 20px;
+      border: 1px solid rgba(201, 180, 109, .035);
+      content: "";
+      pointer-events: none;
+    }
+
+    .battle-field::after {
+      position: absolute;
+      top: 8%;
+      bottom: 8%;
+      left: 50%;
+      width: 1px;
+      background: linear-gradient(180deg, transparent, rgba(201, 180, 109, .11) 20%, rgba(201, 180, 109, .24) 50%, rgba(201, 180, 109, .11) 80%, transparent);
+      content: "";
+      pointer-events: none;
+    }
+
+    .battle-haze {
+      position: absolute;
+      inset: 0;
+      opacity: .28;
+      background:
+        radial-gradient(ellipse at 25% 55%, rgba(45, 113, 104, .08), transparent 30%),
+        radial-gradient(ellipse at 75% 55%, rgba(135, 57, 52, .08), transparent 30%);
+      pointer-events: none;
+    }
+
+    .battle-mark {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 190px;
+      height: 190px;
+      border: 1px solid rgba(201, 180, 109, .025);
+      opacity: .65;
+      transform: translate(-50%, -50%) rotate(45deg);
+      pointer-events: none;
+    }
+
+    .battle-mark::before,
+    .battle-mark::after {
+      position: absolute;
+      inset: 17px;
+      border: 1px solid rgba(201, 180, 109, .025);
+      content: "";
+    }
+
+    .battle-mark::after {
+      inset: 45px;
+      border-color: rgba(201, 180, 109, .045);
+    }
+
+    .combatant {
+      position: absolute;
+      z-index: 4;
+      top: 51%;
+      display: flex;
+      width: 102px;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+      transition: filter .22s var(--ease), transform .22s var(--ease);
+    }
+
+    .combatant.player {
+      left: 41%;
+    }
+
+    .combatant.enemy {
+      left: 59%;
+    }
+
+    .combatant:hover {
+      filter: drop-shadow(0 0 9px rgba(201, 180, 109, .34));
+      transform: translate(-50%, -50%) scale(1.045);
+    }
+
+    .combatant.is-hit {
+      animation: hit-shake .34s ease-out both;
+    }
+
+    .combatant-name {
+      max-width: 100%;
+      overflow: hidden;
+      color: #e8e2d2;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .4px;
+      text-align: center;
+      text-overflow: ellipsis;
+      text-shadow: 0 1px 4px #000;
+      white-space: nowrap;
+    }
+
+    .combatant-stats {
+      display: grid;
+      width: 74px;
+      gap: 3px;
+    }
+
+    .meter {
+      position: relative;
+      height: 5px;
+      border: 1px solid rgba(201, 180, 109, .12);
+      background: rgba(0, 0, 0, .66);
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, .9);
+      overflow: hidden;
+    }
+
+    .meter>i {
+      position: absolute;
+      inset: 0 auto 0 0;
+      display: block;
+      width: 100%;
+      transform-origin: left;
+      transition: width .28s var(--ease);
+    }
+
+    .meter.hp>i {
+      background: linear-gradient(90deg, #0878a9, var(--blue-soft));
+      box-shadow: 0 0 5px rgba(20, 159, 214, .44);
+    }
+
+    .enemy .meter.hp>i {
+      background: linear-gradient(90deg, #128b80, #30d1b1);
+      box-shadow: 0 0 5px rgba(48, 209, 177, .35);
+    }
+
+    .meter.mp>i {
+      background: linear-gradient(90deg, #0d6ba6, #37a9dc);
+    }
+
+    .meter-value {
+      position: absolute;
+      top: -13px;
+      left: 50%;
+      color: rgba(229, 225, 209, .76);
+      font-family: Arial, sans-serif;
+      font-size: 8px;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .avatar-stage {
+      position: relative;
+      display: grid;
+      width: 86px;
+      height: 104px;
+      place-items: center;
+      margin-top: 9px;
+    }
+
+    .avatar-stage::after {
+      position: absolute;
+      right: 9px;
+      bottom: 4px;
+      left: 9px;
+      height: 13px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(0, 0, 0, .74), transparent 70%);
+      content: "";
+      filter: blur(2px);
+      pointer-events: none;
+    }
+
+    .avatar-stage img {
+      position: relative;
+      z-index: 1;
+      width: 84px;
+      height: 102px;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .player .avatar-stage img {
+      filter: brightness(.17) grayscale(1) contrast(1.25) drop-shadow(0 0 4px rgba(5, 10, 10, .65));
+      opacity: .78;
+      transform: scale(.78);
+    }
+
+    .enemy .avatar-stage img {
+      filter: drop-shadow(0 0 7px rgba(16, 188, 140, .18));
+      transform: scale(.72) scaleX(-1);
+    }
+
+    .combatant.is-hit .avatar-stage::before {
+      position: absolute;
+      z-index: 2;
+      inset: 8px;
+      border: 1px solid rgba(255, 236, 191, .86);
+      box-shadow: 0 0 16px rgba(235, 85, 55, .7), inset 0 0 12px rgba(235, 85, 55, .38);
+      content: "";
+      animation: hit-flash .34s ease-out both;
+      pointer-events: none;
+    }
+
+    .action-line {
+      display: grid;
+      width: 74px;
+      gap: 3px;
+      margin-top: 1px;
+    }
+
+    .action-meter {
+      position: relative;
+      height: 5px;
+      border: 1px solid rgba(201, 180, 109, .17);
+      background: rgba(0, 0, 0, .75);
+      overflow: hidden;
+    }
+
+    .action-meter>i {
+      display: block;
+      width: 88%;
+      height: 100%;
+      background: linear-gradient(90deg, #0b7b62, var(--jade-bright));
+      box-shadow: 0 0 7px rgba(24, 189, 138, .35);
+      transform-origin: left;
+    }
+
+    .enemy .action-meter>i {
+      width: 100%;
+      background: linear-gradient(90deg, #9e2c2b, var(--red-bright));
+      box-shadow: 0 0 6px rgba(216, 75, 70, .25);
+    }
+
+    .action-label {
+      min-height: 10px;
+      color: var(--jade-bright);
+      font-family: var(--font-serif);
+      font-size: 8px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .enemy .action-label {
+      visibility: hidden;
+    }
+
+    .quickbar {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      min-width: 0;
+      align-items: stretch;
+      border-top: 1px solid var(--line-soft);
+      background: linear-gradient(180deg, rgba(17, 16, 10, .96), rgba(8, 8, 6, .98));
+      overflow: hidden;
+    }
+
+    .quick-group {
+      display: flex;
+      min-width: 0;
+      align-items: stretch;
+      border-right: 1px solid var(--line-faint);
+    }
+
+    .quick-group-label {
+      display: grid;
+      width: 30px;
+      place-items: center;
+      border-right: 1px solid var(--line-faint);
+      color: var(--gold-dim);
+      font-family: var(--font-serif);
+      font-size: 9px;
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+    }
+
+    .quick-slot {
+      position: relative;
+      display: grid;
+      width: 72px;
+      min-width: 48px;
+      place-items: center;
+      align-content: center;
+      gap: 3px;
+      padding: 3px 5px;
+      border-right: 1px dotted rgba(201, 180, 109, .14);
+      color: var(--text-dim);
+      background: rgba(201, 180, 109, .008);
+      font-size: 9px;
+      text-align: center;
+      transition: color .18s ease, background .18s ease, border-color .18s ease;
+    }
+
+    .quick-slot:hover,
+    .quick-slot.is-active {
+      z-index: 1;
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, .08);
+      box-shadow: inset 0 0 13px rgba(201, 180, 109, .07);
+    }
+
+    .quick-slot .slot-index {
+      position: absolute;
+      top: 3px;
+      left: 5px;
+      color: var(--gold-dim);
+      font-family: Arial, sans-serif;
+      font-size: 8px;
+    }
+
+    .quick-slot .slot-glyph {
+      display: grid;
+      width: 18px;
+      height: 18px;
+      place-items: center;
+      border: 1px solid rgba(201, 180, 109, .26);
+      color: var(--gold);
+      font-family: var(--font-serif);
+      font-size: 10px;
+    }
+
+    .quick-slot small {
+      color: inherit;
+      font-size: 9px;
+      white-space: nowrap;
+    }
+
+    .quick-slot.skill .slot-glyph {
+      border-color: rgba(157, 112, 213, .5);
+      color: #c8a8ee;
+    }
+
+    .quick-slot.skill.is-internal .slot-glyph {
+      border-color: rgba(201, 180, 109, .6);
+      color: var(--gold-bright);
+    }
+
+    .stop-action {
+      position: absolute;
+      right: 8px;
+      bottom: 10px;
+      z-index: 8;
+      padding: 5px 9px;
+      border: 1px solid rgba(216, 75, 70, .52);
+      color: var(--red-bright);
+      background: rgba(42, 17, 15, .76);
+      font-family: var(--font-serif);
+      font-size: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .34);
+      transition: background .18s ease, border-color .18s ease, color .18s ease;
+    }
+
+    .stop-action:hover {
+      border-color: var(--red-bright);
+      color: #ffd0c8;
+      background: rgba(102, 31, 28, .65);
+    }
+
+    .log-frame {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: 28px minmax(0, 1fr);
+      padding: 7px 11px 8px;
+      overflow: hidden;
+    }
+
+    .log-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-bottom: 1px solid var(--line-faint);
+    }
+
+    .log-tab {
+      height: 22px;
+      padding: 0 8px;
+      color: var(--text-dim);
+      background: transparent;
+      font-family: var(--font-serif);
+      font-size: 11px;
+    }
+
+    .log-tab.is-active {
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, .08);
+    }
+
+    .log-status {
+      width: 6px;
+      height: 6px;
+      margin-left: auto;
+      border-radius: 50%;
+      background: var(--jade);
+      box-shadow: 0 0 8px rgba(85, 224, 173, .75);
+    }
+
+    .log-list {
+      min-height: 0;
+      padding: 6px 0 0;
+      overflow: auto;
+      color: var(--text-soft);
+      font-size: 10px;
+      list-style: none;
+      scrollbar-color: rgba(201, 180, 109, .25) transparent;
+      scrollbar-width: thin;
+    }
+
+    .log-row {
+      display: grid;
+      min-height: 19px;
+      grid-template-columns: 91px minmax(0, 1fr);
+      align-items: baseline;
+      gap: 8px;
+      padding: 1px 5px;
+      border-bottom: 1px solid rgba(201, 180, 109, .025);
+      white-space: nowrap;
+    }
+
+    .log-time {
+      color: #77725f;
+      font-family: Arial, sans-serif;
+      font-size: 8px;
+      letter-spacing: .15px;
+    }
+
+    .log-message {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .log-chip {
+      display: inline-block;
+      margin: 0 2px;
+      padding: 0 4px;
+      border: 1px solid rgba(216, 75, 70, .45);
+      border-radius: 8px;
+      color: var(--red-bright);
+      background: rgba(120, 38, 34, .2);
+      line-height: 15px;
+    }
+
+    .log-chip.jade {
+      border-color: rgba(24, 189, 138, .42);
+      color: var(--jade-bright);
+      background: rgba(24, 189, 138, .11);
+    }
+
+    .log-chip.gold {
+      border-color: rgba(201, 180, 109, .43);
+      color: var(--gold-bright);
+      background: rgba(201, 180, 109, .1);
+    }
+
+    .right-panel {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: 38px minmax(0, 1fr);
+      padding: 8px;
+      overflow: hidden;
+    }
+
+    .right-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .right-tab {
+      min-width: 0;
+      padding: 4px 3px;
+      border: 1px solid rgba(201, 180, 109, .16);
+      color: var(--text-dim);
+      background: rgba(7, 7, 5, .56);
+      font-family: var(--font-serif);
+      font-size: 11px;
+      transition: color .18s ease, border-color .18s ease, background .18s ease;
+    }
+
+    .right-tab:hover {
+      border-color: var(--gold-dim);
+      color: var(--text);
+    }
+
+    .right-tab.is-active {
+      border-color: var(--gold);
+      color: #fff6d2;
+      background: linear-gradient(180deg, rgba(201, 180, 109, .18), rgba(30, 26, 13, .85));
+      box-shadow: inset 0 1px 0 rgba(232, 214, 154, .25), 0 0 9px rgba(201, 180, 109, .1);
+    }
+
+    .right-body {
+      position: relative;
+      min-height: 0;
+      overflow: hidden auto;
+      scrollbar-color: rgba(201, 180, 109, .25) transparent;
+      scrollbar-width: thin;
+    }
+
+    .right-view {
+      display: none;
+      min-height: 100%;
+      padding: 10px 1px 6px;
+    }
+
+    .right-view.is-active {
+      display: block;
+    }
+
+    .item-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, 58px);
+      align-content: start;
+      gap: 8px;
+    }
+
+    .item-card {
+      position: relative;
+      display: grid;
+      width: 58px;
+      height: 58px;
+      place-items: center;
+      align-content: center;
+      gap: 2px;
+      border: 1px solid rgba(201, 180, 109, .25);
+      color: var(--text);
+      background:
+        linear-gradient(135deg, rgba(201, 180, 109, .08), transparent 45%),
+        rgba(10, 10, 8, .86);
+      box-shadow: inset 0 0 14px rgba(0, 0, 0, .5);
+      font-size: 9px;
+      text-align: center;
+    }
+
+    .item-card:hover {
+      border-color: var(--gold);
+      color: var(--gold-bright);
+    }
+
+    .item-card .item-level {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      color: var(--text-dim);
+      font-family: Arial, sans-serif;
+      font-size: 8px;
+    }
+
+    .item-card .item-glyph {
+      color: #b7b0a2;
+      font-family: var(--font-serif);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .item-card .item-count {
+      color: var(--text-soft);
+      font-family: Arial, sans-serif;
+      font-size: 8px;
+    }
+
+    .empty-note {
+      margin-top: 12px;
+      color: var(--text-dim);
+      font-family: var(--font-serif);
+      font-size: 10px;
+      opacity: .72;
+    }
+
+    .equipment-stage {
+      display: grid;
+      min-height: 300px;
+      grid-template-columns: 58px 1fr 58px;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 7px;
+      border: 1px solid var(--line-faint);
+      background: radial-gradient(ellipse at center, rgba(33, 48, 50, .17), transparent 72%), rgba(4, 5, 5, .52);
+    }
+
+    .equipment-col {
+      display: grid;
+      gap: 9px;
+    }
+
+    .equip-slot {
+      display: grid;
+      width: 56px;
+      height: 56px;
+      place-items: center;
+      border: 1px dashed rgba(201, 180, 109, .25);
+      color: var(--gold-dim);
+      background: rgba(201, 180, 109, .025);
+      font-family: var(--font-serif);
+      font-size: 10px;
+    }
+
+    .equip-avatar {
+      display: grid;
+      place-items: center;
+      min-height: 230px;
+      border: 1px solid rgba(201, 180, 109, .08);
+      background: radial-gradient(ellipse, rgba(38, 50, 53, .25), transparent 72%);
+    }
+
+    .equip-avatar img {
+      width: 130px;
+      height: 170px;
+      object-fit: contain;
+      filter: brightness(.28) grayscale(1);
+      opacity: .72;
+    }
+
+    .ability-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .ability-card {
+      display: grid;
+      grid-template-columns: 34px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      min-height: 47px;
+      padding: 5px 7px;
+      border: 1px solid rgba(201, 180, 109, .16);
+      background: rgba(8, 8, 6, .62);
+    }
+
+    .ability-icon {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border: 1px solid rgba(157, 112, 213, .48);
+      color: #c8a8ee;
+      font-family: var(--font-serif);
+      font-size: 14px;
+    }
+
+    .ability-info strong {
+      display: block;
+      color: var(--text);
+      font-family: var(--font-serif);
+      font-size: 11px;
+      font-weight: 400;
+    }
+
+    .ability-info small {
+      color: var(--text-dim);
+      font-size: 9px;
+    }
+
+    .ability-level {
+      color: var(--gold);
+      font-family: Arial, sans-serif;
+      font-size: 9px;
+    }
+
+    .inspector {
+      position: absolute;
+      z-index: 20;
+      top: 50%;
+      left: 50%;
+      display: none;
+      width: 210px;
+      padding: 11px;
+      border: 1px solid var(--gold);
+      background: rgba(14, 12, 8, .97);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, .7), inset 0 0 20px rgba(201, 180, 109, .06);
+      transform: translate(-50%, -50%);
+    }
+
+    .inspector.is-open {
+      display: block;
+      animation: inspector-in .18s var(--ease) both;
+    }
+
+    .inspector-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .inspector-header strong {
+      color: var(--gold-bright);
+      font-family: var(--font-serif);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    .inspector-close {
+      padding: 0 4px;
+      color: var(--text-dim);
+      background: transparent;
+      font-size: 15px;
+    }
+
+    .inspector-close:hover {
+      color: var(--gold-bright);
+    }
+
+    .inspector-grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 5px 12px;
+      color: var(--text-soft);
+      font-size: 10px;
+    }
+
+    .inspector-grid dd {
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      text-align: right;
+    }
+
+    .toast {
+      position: absolute;
+      z-index: 40;
+      right: 18px;
+      bottom: 15px;
+      max-width: 320px;
+      padding: 7px 11px;
+      border: 1px solid var(--gold-dim);
+      color: var(--gold-bright);
+      background: rgba(18, 15, 8, .95);
+      box-shadow: 0 6px 22px rgba(0, 0, 0, .5);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(7px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    .toast.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .demo-note {
+      display: none;
+    }
+
+    @keyframes hit-shake {
+
+      0%,
+      100% {
+        transform: translate(-50%, -50%);
+      }
+
+      28% {
+        transform: translate(calc(-50% - 7px), -50%);
+      }
+
+      55% {
+        transform: translate(calc(-50% + 5px), -50%);
+      }
+
+      78% {
+        transform: translate(calc(-50% - 2px), -50%);
+      }
+    }
+
+    @keyframes hit-flash {
+      0% {
+        opacity: 0;
+        transform: scale(.65) rotate(0);
+      }
+
+      20% {
+        opacity: 1;
+      }
+
+      100% {
+        opacity: 0;
+        transform: scale(1.25) rotate(32deg);
+      }
+    }
+
+    @keyframes inspector-in {
+      from {
+        opacity: 0;
+        transform: translate(-50%, -47%) scale(.97);
+      }
+
+      to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+      }
+    }
+
+    @media (max-width: 1260px) {
+      body {
+        min-width: 820px;
+      }
+
+      .workspace {
+        grid-template-columns: 164px minmax(0, 1fr) 286px;
+      }
+
+      .topbar {
+        grid-template-columns: 164px minmax(280px, 1fr) auto;
+      }
+
+      .quick-slot {
+        width: 61px;
+      }
+
+      .quick-group-label {
+        width: 25px;
+        font-size: 8px;
+      }
+
+      .right-tab {
+        font-size: 10px;
+      }
+    }
+
+    @media (max-width: 980px) {
+      body {
+        min-width: 0;
+        overflow: auto;
+      }
+
+      .demo {
+        min-width: 760px;
+        min-height: 600px;
+      }
+
+      .workspace {
+        grid-template-columns: 136px minmax(0, 1fr) 240px;
+        padding-right: 6px;
+        padding-left: 6px;
+      }
+
+      .topbar {
+        grid-template-columns: 136px minmax(260px, 1fr) auto;
+        padding-right: 8px;
+        padding-left: 8px;
+      }
+
+      .player-name {
+        font-size: 12px;
+      }
+
+      .nav-label {
+        font-size: 11px;
+      }
+
+      .nav-item {
+        grid-template-columns: 22px 1fr;
+      }
+
+      .nav-arrow {
+        display: none;
+      }
+
+      .nav-icon {
+        width: 22px;
+        height: 22px;
+      }
+
+      .nav-icon svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .quick-slot {
+        width: 53px;
+        padding-right: 2px;
+        padding-left: 2px;
+      }
+
+      .quick-slot small {
+        font-size: 8px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="demo" id="demo">
+    <span class="demo-note">STATIC COMBAT SCENE · HTML DEMO</span>
+
+    <header class="topbar">
+      <section class="player-summary" aria-label="玩家状态">
+        <div class="player-title-line">
+          <span class="player-name">少侠</span>
+          <span class="realm-pill">凡俗</span>
+          <span class="realm-pill">易筋</span>
+          <span class="connection-dot" aria-label="已连接"></span>
+        </div>
+        <div class="progress-frame" aria-label="修为进度">
+          <i></i>
+          <span>0 / 2万 (0%)</span>
+        </div>
+      </section>
+
+      <section class="queue-center" aria-label="当前行动">
+        <div class="queue-card">
+          <span class="queue-glyph" aria-hidden="true">×</span>
+          <div class="queue-meta">
+            <div class="queue-title-line">
+              <strong>山门试炼</strong>
+              <span class="small-pill">战斗中</span>
+            </div>
+            <div class="queue-progress-line">
+              <span>灵力</span>
+              <span class="queue-thin-bar"><i></i></span>
+              <span>360 / 360</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="top-actions">
+        <label class="check-line"><input id="loopCheck" type="checkbox" checked> 循环</label>
+        <select class="queue-select" aria-label="行动队列">
+          <option>队列 1</option>
+          <option>队列 2</option>
+          <option>队列 3</option>
+        </select>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="frame nav-panel" aria-label="主导航">
+        <nav class="nav-list">
+          <button class="nav-item" data-nav="内视" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8.5"></circle>
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path>
+              </svg></span>
+            <span class="nav-label">内视</span><span class="nav-arrow"></span>
+          </button>
+          <button class="nav-item" data-nav="坊市" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <path d="M5 8h14v12H5z"></path>
+                <path d="M7 8V5h10v3M8 12h8M8 16h5"></path>
+              </svg></span>
+            <span class="nav-label">坊市</span><span class="nav-arrow"></span>
+          </button>
+          <button class="nav-item" data-nav="修炼" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <path d="M12 4c2 2.5 2 5.7 0 8.5C10 9.7 10 6.5 12 4Z"></path>
+                <path d="M5 9c3 .3 5.3 2.2 6 5.3C7.8 14 5.4 12.2 5 9ZM19 9c-3 .3-5.3 2.2-6 5.3 3.2 0 5.6-2.1 6-5.3Z">
+                </path>
+                <path d="M4 16c2.4 2.2 5 3.2 8 3.2s5.6-1 8-3.2"></path>
+              </svg></span>
+            <span class="nav-label">修炼</span><span class="nav-arrow"></span>
+          </button>
+          <button class="nav-item" data-nav="历练" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <path d="m3 19 6.5-11 4.2 6.2 2.8-4.1L21 19H3Z"></path>
+                <circle cx="17.5" cy="6" r="2"></circle>
+              </svg></span>
+            <span class="nav-label">历练</span><span class="nav-arrow"></span>
+          </button>
+          <button class="nav-item" data-nav="技艺" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <path d="m15 5 4 4M14 6l4 4M13 7 4 16a2.1 2.1 0 0 0 3 3l9-9"></path>
+                <path d="m16 4 2-1 3 3-1 2"></path>
+              </svg></span>
+            <span class="nav-label">技艺</span><span class="nav-arrow">›</span>
+          </button>
+          <button class="nav-item" data-nav="地图" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z"></path>
+                <path d="M9 3v15M15 6v15"></path>
+              </svg></span>
+            <span class="nav-label">地图</span><span class="nav-arrow"></span>
+          </button>
+          <button class="nav-item is-active" data-nav="详情" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <path d="m5 4 15 15M19 4 4 19"></path>
+                <path d="m7 7 3-3 3 3M17 17l-3 3-3-3"></path>
+              </svg></span>
+            <span class="nav-label">详情</span><span class="nav-arrow"></span>
+          </button>
+        </nav>
+        <div class="nav-spacer"></div>
+        <div class="nav-settings">
+          <button class="nav-item" data-nav="设置" type="button">
+            <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path
+                  d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M18.4 5.6l-1.9 1.9M7.5 16.5l-1.9 1.9">
+                </path>
+              </svg></span>
+            <span class="nav-label">设置</span><span class="nav-arrow"></span>
+          </button>
+        </div>
+      </aside>
+
+      <section class="center-column">
+        <section class="frame battle-frame" aria-label="战斗场景">
+          <header class="section-heading">
+            <h1>详情</h1>
+            <span class="heading-note">山门试炼 · 实时战况</span>
+          </header>
+
+          <div class="battle-field" id="battleField">
+            <div class="battle-haze"></div>
+            <div class="battle-mark" aria-hidden="true"></div>
+
+            <article class="combatant player" id="playerCombatant" data-actor="小妖" tabindex="0" aria-label="查看小妖属性">
+              <strong class="combatant-name">小妖</strong>
+              <div class="combatant-stats">
+                <div class="meter hp"><i style="width:100%"></i><span class="meter-value">0 / 150</span></div>
+                <div class="meter mp"><i style="width:100%"></i><span class="meter-value">70 / 70</span></div>
+              </div>
+              <div class="avatar-stage">
+                <img src="../../frontend/public/avatars/player.svg" alt="小妖">
+              </div>
+              <div class="action-line">
+                <div class="action-meter"><i id="playerActionFill"></i></div>
+                <span class="action-label" id="playerActionLabel">调息回复 88.8s</span>
+              </div>
+            </article>
+
+            <article class="combatant enemy" id="enemyCombatant" data-actor="木灵" tabindex="0" aria-label="查看木灵属性">
+              <strong class="combatant-name">木灵</strong>
+              <div class="combatant-stats">
+                <div class="meter hp"><i id="enemyHpFill" style="width:100%"></i><span class="meter-value"
+                    id="enemyHpValue">360 / 360</span></div>
+                <div class="meter mp"><i style="width:100%"></i><span class="meter-value">32 / 60</span></div>
+              </div>
+              <div class="avatar-stage">
+                <img src="../../frontend/public/avatars/wood-spirit.webp" alt="木灵">
+              </div>
+              <div class="action-line">
+                <div class="action-meter"><i></i></div>
+                <span class="action-label">敌方行动</span>
+              </div>
+            </article>
+
+            <section class="inspector" id="inspector" aria-live="polite">
+              <header class="inspector-header">
+                <strong id="inspectorTitle">小妖</strong>
+                <button class="inspector-close" id="inspectorClose" type="button" aria-label="关闭">×</button>
+              </header>
+              <dl class="inspector-grid" id="inspectorGrid"></dl>
+            </section>
+
+            <button class="stop-action" id="stopAction" type="button">终止当前行动（山门试炼）</button>
+          </div>
+
+          <footer class="quickbar" aria-label="战斗快捷栏">
+            <div class="quick-group">
+              <span class="quick-group-label">消耗品</span>
+              <button class="quick-slot" data-action="丹药" type="button"><span class="slot-index">1</span><span
+                  class="slot-glyph">丹</span><small>选择物品</small></button>
+              <button class="quick-slot" data-action="符箓" type="button"><span class="slot-index">2</span><span
+                  class="slot-glyph">符</span><small>选择物品</small></button>
+              <button class="quick-slot" data-action="法宝" type="button"><span class="slot-index">3</span><span
+                  class="slot-glyph">宝</span><small>选择物品</small></button>
+            </div>
+            <div class="quick-group">
+              <span class="quick-group-label">通用消耗品</span>
+              <button class="quick-slot" data-action="恢复" type="button"><span class="slot-index">1</span><span
+                  class="slot-glyph">气</span><small>选择物品</small></button>
+              <button class="quick-slot" data-action="回元" type="button"><span class="slot-index">2</span><span
+                  class="slot-glyph">元</span><small>选择物品</small></button>
+              <button class="quick-slot" data-action="护体" type="button"><span class="slot-index">3</span><span
+                  class="slot-glyph">盾</span><small>选择物品</small></button>
+            </div>
+            <div class="quick-group">
+              <span class="quick-group-label">功法</span>
+              <button class="quick-slot skill is-internal" data-action="青木诀" type="button"><span
+                  class="slot-index">内功</span><span class="slot-glyph">木</span><small>青木诀</small></button>
+              <button class="quick-slot skill" data-action="掌心雷" type="button"><span class="slot-index">术法 1</span><span
+                  class="slot-glyph">雷</span><small>掌心雷</small></button>
+              <button class="quick-slot skill" data-action="清平乐" type="button"><span class="slot-index">术法 2</span><span
+                  class="slot-glyph">音</span><small>清平乐</small></button>
+              <button class="quick-slot skill" data-action="木遁" type="button"><span class="slot-index">术法 3</span><span
+                  class="slot-glyph">遁</span><small>选择功法</small></button>
+              <button class="quick-slot skill" data-action="回春" type="button"><span class="slot-index">术法 4</span><span
+                  class="slot-glyph">生</span><small>选择功法</small></button>
+            </div>
+          </footer>
+        </section>
+
+        <section class="frame log-frame" aria-label="战斗日志">
+          <div class="log-tabs" role="tablist">
+            <button class="log-tab is-active" type="button" role="tab">日志</button>
+            <button class="log-tab" type="button" role="tab">聊天</button>
+            <span class="log-status" aria-label="日志已保存"></span>
+          </div>
+          <ol class="log-list" id="logList">
+            <li class="log-row"><time class="log-time">08-25 19:04:42</time><span class="log-message">战斗：灵击命中 <b
+                  class="log-chip">木灵</b>，造成 <b class="log-chip">5</b> 点伤害</span></li>
+            <li class="log-row"><time class="log-time">08-25 19:04:43</time><span class="log-message">战斗：灵击命中 <b
+                  class="log-chip">木灵</b>，造成 <b class="log-chip">3</b> 点伤害</span></li>
+            <li class="log-row"><time class="log-time">08-25 19:04:44</time><span class="log-message">战斗：灵击命中 <b
+                  class="log-chip">木灵</b>，造成 <b class="log-chip">5</b> 点伤害</span></li>
+            <li class="log-row"><time class="log-time">08-25 19:04:45</time><span class="log-message">战斗：<b
+                  class="log-chip">木灵</b>施展 <b class="log-chip jade">掌心雷</b>，造成 <b class="log-chip">10</b> 点伤害</span>
+            </li>
+            <li class="log-row"><time class="log-time">08-25 19:04:46</time><span class="log-message">战斗：灵击命中 <b
+                  class="log-chip">木灵</b>，造成 <b class="log-chip">2</b> 点伤害</span></li>
+            <li class="log-row"><time class="log-time">08-25 19:04:47</time><span class="log-message">战斗：灵击命中 <b
+                  class="log-chip">木灵</b>，造成 <b class="log-chip">2</b> 点伤害</span></li>
+            <li class="log-row"><time class="log-time">08-25 19:04:48</time><span class="log-message">战斗：<b
+                  class="log-chip">木灵</b>施展 <b class="log-chip jade">掌心雷</b>，造成 <b class="log-chip">10</b> 点伤害</span>
+            </li>
+            <li class="log-row"><time class="log-time">08-25 19:04:49</time><span class="log-message">战斗：在 <b
+                  class="log-chip gold">寒谷林间</b> 中暂时收退</span></li>
+          </ol>
+        </section>
+      </section>
+
+      <aside class="frame right-panel" aria-label="物品与功法面板">
+        <nav class="right-tabs" role="tablist" aria-label="右侧面板标签">
+          <button class="right-tab is-active" data-tab="inventory" type="button" role="tab">储物袋</button>
+          <button class="right-tab" data-tab="equipment" type="button" role="tab">装备</button>
+          <button class="right-tab" data-tab="abilities" type="button" role="tab">功法</button>
+        </nav>
+        <div class="right-body">
+          <section class="right-view is-active" data-view="inventory" role="tabpanel">
+            <div class="item-grid">
+              <button class="item-card" data-action="梧木" type="button">
+                <span class="item-level">Lv.1</span>
+                <span class="item-glyph">梧</span>
+                <span>梧木</span>
+                <span class="item-count">×1.19万</span>
+              </button>
+            </div>
+            <p class="empty-note">储物袋中暂无其他可用物品</p>
+          </section>
+
+          <section class="right-view" data-view="equipment" role="tabpanel">
+            <div class="equipment-stage">
+              <div class="equipment-col">
+                <button class="equip-slot" type="button">头</button>
+                <button class="equip-slot" type="button">衣</button>
+                <button class="equip-slot" type="button">腿</button>
+              </div>
+              <div class="equip-avatar"><img src="../../frontend/public/avatars/player.svg" alt="角色装备虚影"></div>
+              <div class="equipment-col">
+                <button class="equip-slot" type="button">剑</button>
+                <button class="equip-slot" type="button">饰</button>
+                <button class="equip-slot" type="button">靴</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="right-view" data-view="abilities" role="tabpanel">
+            <div class="ability-list">
+              <button class="ability-card" data-action="青木诀" type="button"><span class="ability-icon">木</span><span
+                  class="ability-info"><strong>青木诀</strong><small>内功 · 持续恢复</small></span><span
+                  class="ability-level">Lv.1</span></button>
+              <button class="ability-card" data-action="掌心雷" type="button"><span class="ability-icon">雷</span><span
+                  class="ability-info"><strong>掌心雷</strong><small>术法 · 木灵伤害</small></span><span
+                  class="ability-level">Lv.1</span></button>
+              <button class="ability-card" data-action="清平乐" type="button"><span class="ability-icon">音</span><span
+                  class="ability-info"><strong>清平乐</strong><small>术法 · 乙木回春</small></span><span
+                  class="ability-level">Lv.1</span></button>
+            </div>
+          </section>
+        </div>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+
+  <script>
+    (() => {
+      const logList = document.getElementById('logList');
+      const toast = document.getElementById('toast');
+      const enemy = document.getElementById('enemyCombatant');
+      const enemyHpFill = document.getElementById('enemyHpFill');
+      const enemyHpValue = document.getElementById('enemyHpValue');
+      const playerActionFill = document.getElementById('playerActionFill');
+      const playerActionLabel = document.getElementById('playerActionLabel');
+      const stopAction = document.getElementById('stopAction');
+      const inspector = document.getElementById('inspector');
+      const inspectorTitle = document.getElementById('inspectorTitle');
+      const inspectorGrid = document.getElementById('inspectorGrid');
+      let enemyHp = 360;
+      let actionProgress = 0.88;
+      let actionStopped = false;
+      let logSequence = 50;
+      let toastTimer = 0;
+
+      const actorStats = {
+        小妖: [['气血', '0 / 150'], ['灵力', '70 / 70'], ['境界', '凡俗 · 易筋'], ['状态', '调息中']],
+        木灵: [['气血', '360 / 360'], ['灵力', '32 / 60'], ['属性', '木 · 灵体'], ['状态', '战斗中']],
+      };
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add('is-visible');
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => toast.classList.remove('is-visible'), 1600);
+      }
+
+      function appendLog(message, tone = '') {
+        const row = document.createElement('li');
+        row.className = 'log-row';
+        const seconds = String(logSequence++ % 60).padStart(2, '0');
+        row.innerHTML = `<time class="log-time">08-25 19:05:${seconds}</time><span class="log-message">${message}</span>`;
+        if (tone) row.dataset.tone = tone;
+        logList.appendChild(row);
+        logList.scrollTop = logList.scrollHeight;
+      }
+
+      function openInspector(actor) {
+        inspectorTitle.textContent = actor;
+        inspectorGrid.innerHTML = actorStats[actor].map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('');
+        inspector.classList.add('is-open');
+      }
+
+      function closeInspector() {
+        inspector.classList.remove('is-open');
+      }
+
+      function performAction(action) {
+        document.querySelectorAll('.quick-slot.is-active, .item-card.is-active, .ability-card.is-active').forEach((element) => element.classList.remove('is-active'));
+        document.querySelectorAll(`[data-action="${CSS.escape(action)}"]`).forEach((element) => element.classList.add('is-active'));
+        if (action === '梧木') {
+          showToast('已查看物品：梧木');
+          appendLog('物品：查看 <b class="log-chip gold">梧木</b>，库存 ×1.19万');
+          return;
+        }
+        const damage = action === '掌心雷' ? 10 : action === '清平乐' || action === '回春' ? 0 : action === '青木诀' ? 2 : 5;
+        if (damage > 0) {
+          enemyHp = Math.max(0, enemyHp - damage);
+          enemyHpFill.style.width = `${(enemyHp / 360) * 100}%`;
+          enemyHpValue.textContent = `${enemyHp} / 360`;
+          enemy.classList.remove('is-hit');
+          void enemy.offsetWidth;
+          enemy.classList.add('is-hit');
+          appendLog(`战斗：<b class="log-chip jade">${action}</b>命中 <b class="log-chip">木灵</b>，造成 <b class="log-chip">${damage}</b> 点伤害`);
+          showToast(`${action} · 造成 ${damage} 点伤害`);
+          if (enemyHp === 0) {
+            appendLog('战斗：<b class="log-chip">木灵</b>气血归零，等待重新遭遇');
+            showToast('木灵已倒下 · 点击终止行动可复位');
+          }
+        } else {
+          actionProgress = Math.min(1, actionProgress + .08);
+          appendLog(`战斗：施展 <b class="log-chip jade">${action}</b>，行动条获得灵气响应`);
+          showToast(`${action} · 灵气流转`);
+        }
+      }
+
+      document.querySelectorAll('.nav-item').forEach((button) => {
+        button.addEventListener('click', () => {
+          document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('is-active'));
+          button.classList.add('is-active');
+          appendLog(`界面：切换至 <b class="log-chip gold">${button.dataset.nav}</b>`);
+          showToast(`已切换：${button.dataset.nav}`);
+        });
+      });
+
+      document.querySelectorAll('.right-tab').forEach((button) => {
+        button.addEventListener('click', () => {
+          const tab = button.dataset.tab;
+          document.querySelectorAll('.right-tab').forEach((item) => item.classList.toggle('is-active', item === button));
+          document.querySelectorAll('.right-view').forEach((view) => view.classList.toggle('is-active', view.dataset.view === tab));
+        });
+      });
+
+      document.querySelectorAll('[data-action]').forEach((element) => {
+        element.addEventListener('click', () => performAction(element.dataset.action));
+      });
+
+      document.getElementById('playerCombatant').addEventListener('click', () => openInspector('小妖'));
+      document.getElementById('enemyCombatant').addEventListener('click', () => openInspector('木灵'));
+      document.getElementById('inspectorClose').addEventListener('click', closeInspector);
+      document.getElementById('battleField').addEventListener('click', (event) => {
+        if (event.target === event.currentTarget) closeInspector();
+      });
+
+      stopAction.addEventListener('click', () => {
+        actionStopped = !actionStopped;
+        stopAction.textContent = actionStopped ? '继续当前行动（山门试炼）' : '终止当前行动（山门试炼）';
+        playerActionLabel.textContent = actionStopped ? '行动已暂停' : '调息回复 88.8s';
+        appendLog(actionStopped ? '队列：已终止当前行动 <b class="log-chip">山门试炼</b>' : '队列：继续执行 <b class="log-chip jade">山门试炼</b>');
+        showToast(actionStopped ? '当前行动已终止' : '当前行动已继续');
+      });
+
+      document.querySelectorAll('.log-tab').forEach((button) => {
+        button.addEventListener('click', () => {
+          document.querySelectorAll('.log-tab').forEach((item) => item.classList.toggle('is-active', item === button));
+          if (button.textContent === '聊天') showToast('聊天频道暂为演示占位');
+        });
+      });
+
+      function animateAction() {
+        if (!actionStopped) {
+          actionProgress += 0.00023;
+          if (actionProgress > 1) actionProgress = 0.14;
+          playerActionFill.style.width = `${actionProgress * 100}%`;
+          const remain = Math.max(0, (1 - actionProgress) * 88.8).toFixed(1);
+          playerActionLabel.textContent = `调息回复 ${remain}s`;
+        }
+        window.requestAnimationFrame(animateAction);
+      }
+
+      document.getElementById('loopCheck').addEventListener('change', (event) => {
+        appendLog(`队列：循环执行已${event.target.checked ? '开启' : '关闭'}`);
+      });
+
+      animateAction();
+    })();
+  </script>
+</body>
+
+</html>
