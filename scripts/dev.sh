@@ -140,5 +140,11 @@ printf '  ----------------------------------------------------\n'
 printf '====================================================\n\n'
 
 # 挂起等待监督循环或前端退出；任一退出即触发 cleanup 停止全部服务
-wait -n "$BACKEND_SUPERVISOR_PID" "$FRONTEND_PID" 2>/dev/null || true
+# 兼容 macOS 自带 Bash 3.2 (不支持 wait -n) 与 Linux Bash 4.3+
+if ! wait -n "$BACKEND_SUPERVISOR_PID" "$FRONTEND_PID" 2>/dev/null; then
+  while kill -0 "$BACKEND_SUPERVISOR_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null; do
+    sleep 1 &
+    wait $! 2>/dev/null || true
+  done
+fi
 
