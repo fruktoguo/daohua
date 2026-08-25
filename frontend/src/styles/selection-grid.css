@@ -507,11 +507,25 @@
 
 .auto-use-slots,
 .combat-slot-grid {
-  display: grid;
-  grid-template-columns: repeat(3, var(--item-slot-size));
+  display: flex;
+  flex-direction: row;
+  align-items: center;
   justify-content: center;
   gap: 4px;
   padding-top: 0;
+  flex-wrap: nowrap;
+  min-width: max-content;
+}
+
+.combat-slot-grid--abilities {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-top: 0;
+  flex-wrap: nowrap;
+  min-width: max-content;
 }
 
 .auto-use-slot,
@@ -521,12 +535,10 @@
   height: var(--item-slot-size);
   min-width: var(--item-slot-size);
   min-height: var(--item-slot-size);
+  flex: 0 0 var(--item-slot-size);
+  flex-shrink: 0;
   place-items: center;
   aspect-ratio: 1 / 1;
-}
-
-.combat-slot-grid--abilities {
-  grid-template-columns: repeat(4, var(--item-slot-size));
 }
 
 .combat-ability-slot {

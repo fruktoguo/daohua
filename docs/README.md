@@ -35,6 +35,12 @@ docs/
 | [combat-design.md](design/combat-design.md) | 战斗数值与内视设计规约：`double` 数值类型架构、六维根基换算、抗性减伤与对抗公式。 |
 | [player-expected-attributes-model.md](design/player-expected-attributes-model.md) | 境界阶位体系与基准玩家期望属性量化模型（由脚本生成，勿手改数值表）。 |
 | [combat-benchmark-model.md](design/combat-benchmark-model.md) | 战斗基准模拟与关卡产出期望模型：全 12 阶单人与组队效率基准（由脚本生成，勿手改数值表）。 |
+| [generic-map-and-encounter-system.md](design/generic-map-and-encounter-system.md) | **通用地图架构、生物与质量预算遇怪系统设计规范**：摒弃纯战斗地图、确立"通用世界地点"模型，节点生态聚合体（行动体系、NPC 与怪物）与质量预算驱动的遇怪生成。 |
+| [sustained-consumable-system.md](design/sustained-consumable-system.md) | **动作耗时分摊持续消耗品机制设计规范**：立即/持续消耗品分类、按动作实际耗时扣减持续时间、槽位持久化、透支结算与切换惩罚，以及引气入体与引气丹数值基线。 |
+| [early-game-skills-design.md](design/early-game-skills-design.md) | 前期技能设计草案（已废弃）：历史草案，其中虚构技能与流派矩阵已废除；真实技能配置以 `config/game-data/abilities/` 为唯一真源。 |
+| [milky-way-idle-mapping.md](design/milky-way-idle-mapping.md) | 历史外部参考文档（已废除）：记录外部游戏借称与非修仙机制的清理结论；正式权威规则以 `master-design.md` 为唯一真源。 |
+| [ui-layout-island-demo.html](design/ui-layout-island-demo.html) | **现行实际界面与美学优化方案实时对比演示**：独立离线单文件网页，1:1 复制现行样式基准并叠加美学优化项，双击即开。 |
+| [battle-scene-demo.html](design/battle-scene-demo.html) | **战斗场景纯 HTML 实机画面 Demo**：对齐当前战斗截图的离线单文件快速验证页，复用角色图像资产并提供基础战斗交互。 |
 
 生成链路：`scripts/generate-combat-benchmark.py` 动态刷新 `player-expected-attributes-model.md`、`combat-benchmark-model.md` 与 `config/game-data/expected-attributes.json`；修改数值模型应改脚本后重新生成，不直接编辑生成产物中的数值表。
 
@@ -46,6 +52,7 @@ docs/
 | [logic-development-guide.md](backend/logic-development-guide.md) | 服务端业务逻辑开发指南：基于 YuoCore ECS 的 Component、System、ActorHandler 开发 SOP 与红线。 |
 | [game-data.md](backend/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |
 | [performance-baseline.md](backend/performance-baseline.md) | 首轮性能基线：在线、离线挂机、市场场景实测数据与相对回归口径。 |
+| [player-data-migration-and-reconciliation.md](backend/player-data-migration-and-reconciliation.md) | 玩家存档版本迁移与容错自愈架构规约：链式数据迁移管道（商业化长线规划）与 `PlayerStateReconciler` 运行时容错自愈的双重防线体系。 |
 
 ## frontend/ — 前端规范
 

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
-import { CatalogPicker } from './components/CatalogPicker'
+import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
@@ -20,7 +20,7 @@ import { SettingsPage } from './components/SettingsPage'
 import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
 import { RightSidebar } from './components/RightSidebar'
-import { describeAbility, formatAbilityCategory, formatChineseSplitNumber, formatProgressText } from './game/format'
+import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
 import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata } from './game/ids'
@@ -1419,15 +1419,10 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
     }
   }
 
-  const learnedAbilityIds = new Set(combat.learnedAbilityIds ?? [])
-  const abilityOptions = abilities.filter(ability => learnedAbilityIds.has(ability.abilityId)).map(ability => ({
-    id: ability.abilityId,
-    label: ability.name,
-    subtitle: t('app.combatPanel.abilitySubtitle', { mana: Math.round(ability.manaCost), cast: (ability.castMilliseconds / 1000).toFixed(1) }),
-    category: formatAbilityCategory(ability.category, ability.element),
-    tone: ability.effectType === 'heal' ? 'green' : 'violet',
-    tooltip: describeAbility(ability, 1),
-  }))
+  const learnedAbilityIds = useMemo(() => new Set(combat.learnedAbilityIds ?? []), [combat.learnedAbilityIds])
+  const learnedAbilities = useMemo(() => {
+    return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
+  }, [abilities, learnedAbilityIds])
   const consumableItems = itemCatalog
       .filter(item => item.usableActionTypes.includes('combat') && itemAmount(inventory, item.itemId) > 0)
       .map(item => ({
@@ -1439,7 +1434,6 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
         amount: itemAmount(inventory, item.itemId),
         definition: item,
       }))
-  const pickerOptions = pickerTarget?.kind === 'ability' ? abilityOptions : []
   const pickerValue = pickerTarget === null
     ? null
     : pickerTarget.kind === 'ability'
@@ -1593,12 +1587,13 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
         </section>
       </div>
 
-      <CatalogPicker
+      <AbilityGridPicker
+        abilities={learnedAbilities}
         allowEmpty
         onClose={() => setPickerTarget(null)}
         onSelect={selectPickerValue}
         open={pickerTarget?.kind === 'ability'}
-        options={pickerOptions}
+        slotIndex={pickerTarget?.index}
         title={pickerTitle}
         value={pickerValue}
       />

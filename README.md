@@ -14,8 +14,10 @@
 - `frontend`：React 19、Zustand 和 Vite 前端；包含行动、背包、日志、战斗配置、灵市盘口、下单和挂单管理页面。
 - `config/game-data`：地图、怪物、技能、物品、装备、遭遇和行动的版本化 JSON 配置。
 - `docs/`：项目文档，导航索引见 `docs/README.md`。
-  - `docs/design/`：游戏与数值设计——初步设计总纲、战斗数值规约、境界阶位与期望属性模型、战斗基准与产出模型、游戏数据架构、性能基线、Milky Way Idle 玩法映射参考。
+  - `docs/design/`：游戏与数值设计——初步设计总纲、战斗数值规约、境界阶位与期望属性模型、战斗基准与产出模型、Milky Way Idle 玩法映射参考。
   - `docs/frontend/`：前端规范——公共组件与统一模板速查手册、悬浮提示与浮层专项设计。
+  - `docs/backend/`：服务端开发与架构——领域数据架构、YuoCore 逻辑开发指南、游戏数据配置管线、性能基线。
+  - `docs/tasks/`：任务详情——各任务的独立需求分析、设计方案、子任务拆解与时间日志（总览看板见 `docs/tasks.md`）。
   - `docs/ops/`：部署运维——生产构建、CCR 发布、服务器更新与回滚。
   - `docs/world/`：世界观与剧情——设定总览、世界观、章节剧情与地图设计。
 
@@ -84,8 +86,8 @@ npm run dev
 ## 构建与测试
 
 ```bash
-dotnet build slnx --disable-build-servers --nologo
-dotnet test slnx --no-build --disable-build-servers --nologo
+dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
+dotnet test Game.slnx --no-build --configuration Release --disable-build-servers --nologo
 npm --prefix frontend run build
 ```
 

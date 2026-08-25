@@ -4,7 +4,7 @@ import { describeAbility, formatAbilityCategory } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
 import type { CombatTrigger } from '../game/types'
-import { CatalogPicker, type CatalogPickerOption } from './CatalogPicker'
+import { AbilityGridPicker } from './AbilityGridPicker'
 import { CombatTriggerEditor } from './CombatTriggerEditor'
 import { EffectTooltipTarget } from './EffectTooltip'
 
@@ -83,21 +83,6 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const learnedAbilities = useMemo(() => {
     return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
   }, [abilities, learnedAbilityIds])
-
-  // 选项列表（供 CatalogPicker 使用）
-  const pickerOptions = useMemo<CatalogPickerOption[]>(() => {
-    return learnedAbilities.map(ability => ({
-      id: ability.abilityId,
-      label: ability.name,
-      subtitle: t('app.combatPanel.abilitySubtitle', {
-        mana: Math.round(ability.manaCost),
-        cast: (ability.castMilliseconds / 1000).toFixed(1),
-      }),
-      category: formatAbilityCategory(ability.category, ability.element),
-      tone: ability.effectType === 'heal' ? 'green' : 'violet',
-      tooltip: describeAbility(ability, 1),
-    }))
-  }, [learnedAbilities, t])
 
   // 检查某个功法当前装备在哪个槽位
   const getEquippedSlotIndex = (abilityId: string): number | null => {
@@ -303,8 +288,9 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         </div>
       </section>
 
-      {/* 功法挑选弹窗 */}
-      <CatalogPicker
+      {/* 功法挑选网格弹窗 */}
+      <AbilityGridPicker
+        abilities={learnedAbilities}
         allowEmpty
         onClose={() => setActivePickerSlotIndex(null)}
         onSelect={value => {
@@ -314,7 +300,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
           setActivePickerSlotIndex(null)
         }}
         open={activePickerSlotIndex !== null}
-        options={pickerOptions}
+        slotIndex={activePickerSlotIndex ?? undefined}
         title={pickerTitle}
         value={currentPickerValue}
       />

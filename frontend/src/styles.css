@@ -2120,22 +2120,11 @@ input[type="checkbox"] {
   min-width: 92px;
 }
 
-.combat-slot-section {
-  margin-top: 10px;
-}
-
 .combat-slot-heading {
   display: block;
   margin-bottom: 2px;
   color: var(--text-dim);
   font-size: 10px;
-}
-
-.combat-slot-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 16px 14px;
-  padding-top: 11px;
 }
 
 .combat-slot-card {
@@ -2579,8 +2568,8 @@ input[type="checkbox"] {
 }
 
 .item-grid-picker-modal {
-  width: min(96vw, 920px);
-  max-height: min(90dvh, 820px);
+  width: min(94vw, 520px);
+  max-height: min(85dvh, 600px);
   overflow: hidden;
 }
 
@@ -4537,6 +4526,13 @@ input[type="checkbox"] {
   font-weight: 600;
   color: var(--gold-dim);
   letter-spacing: 0.5px;
+}
+
+.abilities-loadout-slots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .abilities-group-slots {

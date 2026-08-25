@@ -44,6 +44,8 @@ export interface CultivationYieldDetail {
 export interface ActionYieldPreview {
   /** 是否为修炼动作 */
   isCultivation: boolean
+  /** 综合加成倍率 */
+  totalMultiplier: number
   /** 修炼专属详情 */
   cultivation?: CultivationYieldDetail
   /** 普通物品产出预览（包含加成） */
@@ -186,7 +188,7 @@ export function calculateActionYieldPreview({
   let cultivationDetail: CultivationYieldDetail | undefined
   if (isCultivation) {
     const baseExp = 10.0
-    const baseQi = Math.max(1, action.outputs?.['resource.qi'] ?? 1)
+    const baseQi = 10.0
 
     const boostedExp = baseExp * totalMultiplier
     const boostedQi = Math.max(1, Math.round(baseQi * totalMultiplier))
@@ -257,6 +259,7 @@ export function calculateActionYieldPreview({
 
   return {
     isCultivation,
+    totalMultiplier,
     cultivation: cultivationDetail,
     itemOutputs,
     bonuses,

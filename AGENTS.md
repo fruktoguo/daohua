@@ -28,8 +28,9 @@
 Protocol <- Domain <- Server
                                  <- LoadTests
                                  <- ComputeNode
-Domain -> YuoCore.Abstractions + YuoCore.Ecs
-Server -> YuoCore.Persistence + YuoCore.Runtime + PostgreSQL/Npgsql
+                                 <- DataTool
+Domain -> YuoCore.Ecs
+Server -> YuoCore.Persistence + YuoCore.Runtime + YuoCore.Ecs + PostgreSQL/Npgsql
 ```
 
 禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
