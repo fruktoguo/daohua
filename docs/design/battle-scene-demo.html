@@ -9,30 +9,32 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #080806;
-      --bg-deep: #050504;
-      --panel: #100f0a;
-      --panel-raised: #15130d;
-      --panel-soft: rgba(18, 17, 11, .86);
-      --line: #4b4326;
-      --line-soft: rgba(201, 180, 109, .18);
-      --line-faint: rgba(201, 180, 109, .08);
-      --gold: #bdab64;
-      --gold-bright: #e6d694;
-      --gold-dim: #75683b;
-      --text: #ded9c7;
-      --text-soft: #a6a08c;
-      --text-dim: #6f6a59;
-      --blue: #149fd6;
-      --blue-soft: #43bde1;
-      --jade: #18bd8a;
-      --jade-bright: #55e0ad;
-      --red: #d84b46;
-      --red-bright: #f07169;
-      --purple: #9d70d5;
+      --bg: #070604;
+      --bg-deep: #050403;
+      --panel: #0e0c07;
+      --panel-raised: #0e0c07;
+      --panel-soft: rgba(8, 11, 9, .95);
+      --line: #6e6038;
+      --line-soft: rgba(201, 180, 109, .16);
+      --line-faint: rgba(201, 180, 109, .16);
+      --gold: #c9b46d;
+      --gold-bright: #e8d69a;
+      --gold-dim: #6e6038;
+      --gold-faint: rgba(201, 180, 109, .16);
+      --text: #e9e3d2;
+      --text-soft: rgba(233, 227, 210, .76);
+      --text-dim: rgba(233, 227, 210, .56);
+      --jade: #72a98c;
+      --jade-bright: #10b981;
+      --qi: #75a9ad;
+      --blue: #0284c7;
+      --blue-soft: #38bdf8;
+      --red: #c8523f;
+      --red-bright: #ef4444;
+      --purple: #a855f7;
       --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, SimSun, serif;
-      --font-sans: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
-      --ease: cubic-bezier(.22, 1, .36, 1);
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Rounded", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     * {
@@ -53,13 +55,12 @@
       min-height: 600px;
       color: var(--text);
       background:
-        radial-gradient(1050px 470px at 52% -18%, rgba(120, 101, 42, .11), transparent 68%),
-        radial-gradient(900px 500px at 48% 120%, rgba(57, 70, 52, .07), transparent 72%),
-        repeating-linear-gradient(0deg, rgba(255, 255, 255, .012) 0 1px, transparent 1px 4px),
+        radial-gradient(1200px 700px at 50% -10%, #14110a 0%, transparent 60%),
+        radial-gradient(900px 600px at 50% 115%, #100d07 0%, transparent 55%),
         var(--bg);
-      font-family: var(--font-sans);
-      font-size: 12px;
-      line-height: 1.35;
+      font-family: var(--font-serif);
+      font-size: 14px;
+      line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
     }
@@ -523,31 +524,40 @@
 
     .battle-field {
       position: relative;
+      display: grid;
+      height: 100%;
       min-height: 0;
-      overflow: hidden;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: center;
+      justify-content: center;
+      gap: clamp(12px, 3vw, 36px);
+      padding: 10px clamp(12px, 3vw, 28px) 8px;
+      overflow: visible;
       background:
-        radial-gradient(360px 190px at 50% 54%, rgba(28, 33, 28, .13), transparent 72%),
-        linear-gradient(90deg, rgba(15, 40, 43, .08), transparent 44%, rgba(57, 25, 24, .07)),
-        repeating-linear-gradient(0deg, transparent 0 39px, rgba(201, 180, 109, .025) 39px 40px),
-        repeating-linear-gradient(90deg, transparent 0 39px, rgba(201, 180, 109, .025) 39px 40px),
-        #080a09;
+        linear-gradient(rgba(201, 180, 109, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(201, 180, 109, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(53, 82, 71, .08), transparent 42%, rgba(117, 44, 39, .08)),
+        rgba(6, 7, 6, .82);
+      background-size: 24px 24px, 24px 24px, auto, auto;
     }
 
     .battle-field::before {
       position: absolute;
-      inset: 20px;
-      border: 1px solid rgba(201, 180, 109, .035);
+      z-index: 1;
+      inset: 7px;
+      border: 1px solid rgba(201, 180, 109, .08);
       content: "";
       pointer-events: none;
     }
 
     .battle-field::after {
       position: absolute;
+      z-index: 1;
       top: 8%;
       bottom: 8%;
       left: 50%;
       width: 1px;
-      background: linear-gradient(180deg, transparent, rgba(201, 180, 109, .11) 20%, rgba(201, 180, 109, .24) 50%, rgba(201, 180, 109, .11) 80%, transparent);
+      background: linear-gradient(180deg, transparent, rgba(201, 180, 109, .25) 20%, rgba(201, 180, 109, .5) 50%, rgba(201, 180, 109, .25) 80%, transparent);
       content: "";
       pointer-events: none;
     }
@@ -588,25 +598,39 @@
     }
 
     .combatant {
+      --arena-hit-return: 3px;
+      --arena-hit-settle: -2px;
+      --arena-hit-shift: -7px;
       position: absolute;
       z-index: 4;
       top: 51%;
       display: flex;
-      width: 102px;
+      width: 96px;
       flex-direction: column;
+      gap: 3px;
       align-items: center;
-      gap: 4px;
+      justify-content: center;
+      overflow: visible;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      box-shadow: none;
+      padding: 0;
       cursor: pointer;
       transform: translate(-50%, -50%);
-      transition: filter .22s var(--ease), transform .22s var(--ease);
+      flex-shrink: 0;
     }
 
     .combatant.player {
       left: 41%;
+      --arena-hit-return: 3px;
     }
 
     .combatant.enemy {
       left: 59%;
+      --arena-hit-return: -3px;
+      --arena-hit-settle: 2px;
+      --arena-hit-shift: 7px;
     }
 
     .combatant:hover {
@@ -615,211 +639,269 @@
     }
 
     .combatant.is-hit {
-      animation: hit-shake .34s ease-out both;
+      animation: hit-shake .34s cubic-bezier(.2, .82, .24, 1) both;
     }
 
     .combatant-name {
       max-width: 100%;
       overflow: hidden;
-      color: #e8e2d2;
+      color: var(--text);
+      font-family: var(--font-sans);
       font-size: 11px;
       font-weight: 700;
-      letter-spacing: .4px;
+      line-height: 1.2;
+      letter-spacing: .5px;
       text-align: center;
       text-overflow: ellipsis;
-      text-shadow: 0 1px 4px #000;
+      text-shadow: 0 1px 3px rgba(0, 0, 0, .95);
       white-space: nowrap;
     }
 
     .combatant-stats {
-      display: grid;
-      width: 74px;
-      gap: 3px;
+      display: flex;
+      width: 100%;
+      min-width: 0;
+      flex-direction: column;
+      gap: 7px;
+      overflow: visible;
     }
 
     .meter {
       position: relative;
-      height: 5px;
-      border: 1px solid rgba(201, 180, 109, .12);
-      background: rgba(0, 0, 0, .66);
-      box-shadow: inset 0 1px 2px rgba(0, 0, 0, .9);
-      overflow: hidden;
+      display: block;
+      width: 100%;
+      min-width: 0;
+      height: 6px;
+      overflow: visible;
+      border: 1px solid #000;
+      background: #090b10;
+      box-shadow: none;
+      transform: skewX(-20deg);
     }
 
     .meter>i {
       position: absolute;
-      inset: 0 auto 0 0;
+      inset: 0;
       display: block;
       width: 100%;
-      transform-origin: left;
-      transition: width .28s var(--ease);
-    }
-
-    .meter.hp>i {
-      background: linear-gradient(90deg, #0878a9, var(--blue-soft));
-      box-shadow: 0 0 5px rgba(20, 159, 214, .44);
-    }
-
-    .enemy .meter.hp>i {
-      background: linear-gradient(90deg, #128b80, #30d1b1);
-      box-shadow: 0 0 5px rgba(48, 209, 177, .35);
+      height: 100%;
+      overflow: hidden;
+      background: linear-gradient(90deg, #059669 0%, #10b981 100%);
+      transform-origin: left center;
+      transition: width .18s cubic-bezier(.18, .8, .28, 1);
     }
 
     .meter.mp>i {
-      background: linear-gradient(90deg, #0d6ba6, #37a9dc);
+      background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
     }
 
     .meter-value {
       position: absolute;
-      top: -13px;
+      z-index: 3;
+      top: 50%;
       left: 50%;
-      color: rgba(229, 225, 209, .76);
-      font-family: Arial, sans-serif;
-      font-size: 8px;
-      transform: translateX(-50%);
+      color: #fff;
+      font-family: var(--font-sans);
+      font-size: 9.5px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      letter-spacing: .3px;
+      text-shadow: 0 0 2px #000, 1px 1px 0 #090a0f, -1px -1px 0 #090a0f;
+      transform: translate(-50%, -50%) skewX(20deg);
       white-space: nowrap;
       pointer-events: none;
     }
 
-    .avatar-stage {
+    .avatar-stage,
+    .arena-avatar-stage {
       position: relative;
-      display: grid;
-      width: 86px;
-      height: 104px;
-      place-items: center;
-      margin-top: 9px;
+      display: flex;
+      width: 90px;
+      height: 120px;
+      min-width: 90px;
+      min-height: 120px;
+      max-width: 90px;
+      max-height: 120px;
+      aspect-ratio: 3 / 4;
+      align-items: center;
+      justify-content: center;
+      overflow: visible;
+      margin: 0 auto;
+      transform-origin: 50% 75%;
+      flex-shrink: 0;
     }
 
     .avatar-stage::after {
-      position: absolute;
-      right: 9px;
-      bottom: 4px;
-      left: 9px;
-      height: 13px;
-      border-radius: 50%;
-      background: radial-gradient(ellipse, rgba(0, 0, 0, .74), transparent 70%);
-      content: "";
-      filter: blur(2px);
-      pointer-events: none;
+      display: none;
     }
 
-    .avatar-stage img {
+    .avatar-stage img,
+    .arena-avatar img,
+    .arena-avatar-img {
       position: relative;
       z-index: 1;
-      width: 84px;
-      height: 102px;
+      width: 90px;
+      height: 120px;
+      max-width: 90px;
+      max-height: 120px;
       object-fit: contain;
+      filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .45));
       user-select: none;
       -webkit-user-drag: none;
+      transition: transform .2s ease, filter .2s ease;
     }
 
-    .player .avatar-stage img {
-      filter: brightness(.17) grayscale(1) contrast(1.25) drop-shadow(0 0 4px rgba(5, 10, 10, .65));
-      opacity: .78;
-      transform: scale(.78);
+    .combatant:hover .avatar-stage img {
+      transform: scale(1.08);
+      filter: drop-shadow(0 4px 10px rgba(201, 180, 109, .5));
     }
 
-    .enemy .avatar-stage img {
-      filter: drop-shadow(0 0 7px rgba(16, 188, 140, .18));
-      transform: scale(.72) scaleX(-1);
+    .combatant.enemy .avatar-stage img {
+      transform: scaleX(-1);
+    }
+
+    .combatant.enemy:hover .avatar-stage img {
+      transform: scaleX(-1) scale(1.08);
     }
 
     .combatant.is-hit .avatar-stage::before {
       position: absolute;
-      z-index: 2;
-      inset: 8px;
-      border: 1px solid rgba(255, 236, 191, .86);
-      box-shadow: 0 0 16px rgba(235, 85, 55, .7), inset 0 0 12px rgba(235, 85, 55, .38);
+      z-index: 3;
+      inset: -20px;
+      border-radius: 50%;
+      background: radial-gradient(ellipse at center, rgba(255, 244, 220, .85) 0%, rgba(255, 110, 60, .45) 45%, transparent 70%);
       content: "";
       animation: hit-flash .34s ease-out both;
       pointer-events: none;
     }
 
     .action-line {
-      display: grid;
-      width: 74px;
-      gap: 3px;
-      margin-top: 1px;
+      position: relative;
+      display: block;
+      width: 100%;
+      margin-top: 3px;
     }
 
     .action-meter {
       position: relative;
-      height: 5px;
-      border: 1px solid rgba(201, 180, 109, .17);
-      background: rgba(0, 0, 0, .75);
-      overflow: hidden;
+      display: flex;
+      width: 100%;
+      height: 6px;
+      align-items: center;
+      justify-content: center;
+      transform: skewX(-20deg);
+      border: 1px solid #000;
+      background: #090b10;
+      box-shadow: none;
+      overflow: visible;
     }
 
     .action-meter>i {
+      position: absolute;
+      inset: 0;
       display: block;
       width: 88%;
       height: 100%;
-      background: linear-gradient(90deg, #0b7b62, var(--jade-bright));
-      box-shadow: 0 0 7px rgba(24, 189, 138, .35);
-      transform-origin: left;
+      overflow: hidden;
+      background: linear-gradient(90deg, #059669 0%, #10b981 100%);
+      transform-origin: left center;
     }
 
-    .enemy .action-meter>i {
+    .combatant.enemy .action-meter>i {
       width: 100%;
-      background: linear-gradient(90deg, #9e2c2b, var(--red-bright));
-      box-shadow: 0 0 6px rgba(216, 75, 70, .25);
+      background: linear-gradient(90deg, #dc2626 0%, #ef4444 100%);
     }
 
     .action-label {
-      min-height: 10px;
-      color: var(--jade-bright);
-      font-family: var(--font-serif);
-      font-size: 8px;
-      text-align: center;
+      position: absolute;
+      z-index: 3;
+      top: 50%;
+      left: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      color: #fef08a;
+      font-family: var(--font-sans);
+      font-size: 9.5px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: .5px;
       white-space: nowrap;
+      pointer-events: none;
+      text-shadow: 0 0 2px #000, 1px 1px 0 #090a0f, -1px -1px 0 #090a0f;
+      transform: translate(-50%, -105%) skewX(20deg);
     }
 
-    .enemy .action-label {
+    .combatant.enemy .action-label {
       visibility: hidden;
     }
 
     .quickbar {
       position: relative;
       z-index: 5;
-      display: flex;
+      display: grid;
       min-width: 0;
+      grid-template-columns: 1fr 1fr 2fr;
       align-items: stretch;
-      border-top: 1px solid var(--line-soft);
-      background: linear-gradient(180deg, rgba(17, 16, 10, .96), rgba(8, 8, 6, .98));
+      border-top: 1px solid rgba(205, 133, 77, .28);
+      background: transparent;
       overflow: hidden;
     }
 
     .quick-group {
+      position: relative;
       display: flex;
       min-width: 0;
-      align-items: stretch;
-      border-right: 1px solid var(--line-faint);
+      width: 100%;
+      height: 100%;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px 0 20px;
+      border-right: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+
+    .quick-group+.quick-group {
+      border-left: 1px solid var(--gold-faint);
     }
 
     .quick-group-label {
-      display: grid;
-      width: 30px;
-      place-items: center;
-      border-right: 1px solid var(--line-faint);
-      color: var(--gold-dim);
-      font-family: var(--font-serif);
-      font-size: 9px;
+      position: absolute;
+      top: 50%;
+      left: 6px;
+      display: block;
+      width: 1em;
+      height: auto;
+      padding: 0;
+      color: var(--text-dim);
+      font-family: var(--font-sans);
+      font-size: 10px;
+      line-height: 1;
+      letter-spacing: 2px;
       writing-mode: vertical-rl;
       text-orientation: upright;
+      transform: translateY(-50%);
+      user-select: none;
+      pointer-events: none;
     }
 
     .quick-slot {
       position: relative;
       display: grid;
-      width: 72px;
-      min-width: 48px;
+      width: 64px;
+      min-width: 64px;
+      height: 100%;
       place-items: center;
       align-content: center;
       gap: 3px;
       padding: 3px 5px;
       border-right: 1px dotted rgba(201, 180, 109, .14);
       color: var(--text-dim);
-      background: rgba(201, 180, 109, .008);
+      background: transparent;
       font-size: 9px;
       text-align: center;
       transition: color .18s ease, background .18s ease, border-color .18s ease;
@@ -1532,24 +1614,27 @@
       </aside>
 
       <section class="center-column">
-        <section class="frame battle-frame" aria-label="战斗场景">
-          <header class="section-heading">
+        <section class="frame battle-frame combat-arena-shell" aria-label="战斗场景">
+          <header class="section-heading combat-arena-toolbar">
             <h1>详情</h1>
             <span class="heading-note">山门试炼 · 实时战况</span>
           </header>
 
-          <div class="battle-field" id="battleField">
+          <div class="battle-field combat-arena-field combat-arena-field--combat" id="battleField">
             <div class="battle-haze"></div>
             <div class="battle-mark" aria-hidden="true"></div>
 
-            <article class="combatant player" id="playerCombatant" data-actor="小妖" tabindex="0" aria-label="查看小妖属性">
+            <article class="combatant arena-actor arena-actor--player player" id="playerCombatant" data-actor="小妖"
+              tabindex="0" aria-label="查看小妖属性">
               <strong class="combatant-name">小妖</strong>
               <div class="combatant-stats">
                 <div class="meter hp"><i style="width:100%"></i><span class="meter-value">0 / 150</span></div>
                 <div class="meter mp"><i style="width:100%"></i><span class="meter-value">70 / 70</span></div>
               </div>
-              <div class="avatar-stage">
-                <img src="../../frontend/public/avatars/player.svg" alt="小妖">
+              <div class="avatar-stage arena-avatar-stage">
+                <div class="arena-avatar">
+                  <img class="arena-avatar-img" src="../../frontend/public/avatars/player.svg" alt="小妖">
+                </div>
               </div>
               <div class="action-line">
                 <div class="action-meter"><i id="playerActionFill"></i></div>
@@ -1557,15 +1642,18 @@
               </div>
             </article>
 
-            <article class="combatant enemy" id="enemyCombatant" data-actor="木灵" tabindex="0" aria-label="查看木灵属性">
+            <article class="combatant arena-actor arena-actor--enemy enemy" id="enemyCombatant" data-actor="木灵"
+              tabindex="0" aria-label="查看木灵属性">
               <strong class="combatant-name">木灵</strong>
               <div class="combatant-stats">
                 <div class="meter hp"><i id="enemyHpFill" style="width:100%"></i><span class="meter-value"
                     id="enemyHpValue">360 / 360</span></div>
                 <div class="meter mp"><i style="width:100%"></i><span class="meter-value">32 / 60</span></div>
               </div>
-              <div class="avatar-stage">
-                <img src="../../frontend/public/avatars/wood-spirit.webp" alt="木灵">
+              <div class="avatar-stage arena-avatar-stage">
+                <div class="arena-avatar">
+                  <img class="arena-avatar-img" src="../../frontend/public/avatars/wood-spirit.webp" alt="木灵">
+                </div>
               </div>
               <div class="action-line">
                 <div class="action-meter"><i></i></div>
