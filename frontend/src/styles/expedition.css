@@ -2566,14 +2566,16 @@
 .combat-slot-tray {
   --item-slot-size: 64px;
   --item-tile-size: 64px;
-  display: grid;
+  display: flex;
   width: 100%;
-  min-width: 100%;
-  grid-template-columns: 1fr 1fr 2fr;
+  min-width: 0;
   align-items: stretch;
   gap: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
   padding: 0;
+  scrollbar-width: thin;
 }
 
 .combat-slot-section {
@@ -2583,7 +2585,9 @@
   align-items: center;
   justify-content: center;
   min-width: 0;
-  width: 100%;
+  width: max-content;
+  min-width: max-content;
+  flex: 0 0 max-content;
   height: 100%;
   margin: 0;
   padding: 0 6px 0 20px;
@@ -2591,7 +2595,7 @@
   border-bottom: 0;
   border-left: 0;
   background: transparent;
-  overflow-x: auto;
+  overflow-x: visible;
   overflow-y: hidden;
   scrollbar-width: thin;
 }
@@ -2652,7 +2656,7 @@
 }
 
 .combat-slot-tray .slot-group:last-child {
-  min-width: 0;
+  min-width: max-content;
 }
 
 @media (max-width: 1200px) {
@@ -2752,7 +2756,7 @@
   .combat-slot-tray {
     --item-slot-size: 64px;
     --item-tile-size: 64px;
-    min-width: 720px;
+    min-width: 0;
   }
 
   .combat-trigger-row {
