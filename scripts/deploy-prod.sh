@@ -130,10 +130,22 @@ scp -q \
   "$ROOT_DIR/deploy/compose.prod.yaml" \
   "$ROOT_DIR/deploy/ccr-auto-update.sh" \
   "$ROOT_DIR/deploy/backup.sh" \
+  "$ROOT_DIR/deploy/base-backup.sh" \
+  "$ROOT_DIR/deploy/pitr-restore.sh" \
+  "$ROOT_DIR/deploy/verify-backup.sh" \
+  "$ROOT_DIR/deploy/wal-archive.sh" \
+  "$ROOT_DIR/deploy/market-ledger-archive.sh" \
+  "$ROOT_DIR/deploy/postgres-wal-archive.sh" \
   "$ROOT_DIR/deploy/daohua-ccr-auto-update.service" \
   "$ROOT_DIR/deploy/daohua-ccr-auto-update.timer" \
   "$ROOT_DIR/deploy/daohua-db-backup.service" \
   "$ROOT_DIR/deploy/daohua-db-backup.timer" \
+  "$ROOT_DIR/deploy/daohua-base-backup.service" \
+  "$ROOT_DIR/deploy/daohua-base-backup.timer" \
+  "$ROOT_DIR/deploy/daohua-ledger-archive.service" \
+  "$ROOT_DIR/deploy/daohua-ledger-archive.timer" \
+  "$ROOT_DIR/deploy/daohua-wal-archive.service" \
+  "$ROOT_DIR/deploy/daohua-wal-archive.timer" \
   "$ROOT_DIR/deploy/install-caddy.sh" \
   "$ROOT_DIR/deploy/xx.yuohira.com.caddy" \
   "${REMOTE_HOST}:${REMOTE_TMP}/"
@@ -155,13 +167,26 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
 ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
   sudo install -d -m 0755 /opt/daohua
+  sudo install -d -m 0700 -o 70 -g 70 /opt/daohua/wal-archive
   sudo install -m 0644 '$REMOTE_TMP/compose.prod.yaml' /opt/daohua/compose.prod.yaml
   sudo install -m 0755 '$REMOTE_TMP/ccr-auto-update.sh' /opt/daohua/ccr-auto-update.sh
   sudo install -m 0755 '$REMOTE_TMP/backup.sh' /opt/daohua/backup.sh
+  sudo install -m 0755 '$REMOTE_TMP/base-backup.sh' /opt/daohua/base-backup.sh
+  sudo install -m 0755 '$REMOTE_TMP/pitr-restore.sh' /opt/daohua/pitr-restore.sh
+  sudo install -m 0755 '$REMOTE_TMP/verify-backup.sh' /opt/daohua/verify-backup.sh
+  sudo install -m 0755 '$REMOTE_TMP/wal-archive.sh' /opt/daohua/wal-archive.sh
+  sudo install -m 0755 '$REMOTE_TMP/market-ledger-archive.sh' /opt/daohua/market-ledger-archive.sh
+  sudo install -m 0755 '$REMOTE_TMP/postgres-wal-archive.sh' /opt/daohua/postgres-wal-archive.sh
   sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.service' /etc/systemd/system/daohua-ccr-auto-update.service
   sudo install -m 0644 '$REMOTE_TMP/daohua-ccr-auto-update.timer' /etc/systemd/system/daohua-ccr-auto-update.timer
   sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.service' /etc/systemd/system/daohua-db-backup.service
   sudo install -m 0644 '$REMOTE_TMP/daohua-db-backup.timer' /etc/systemd/system/daohua-db-backup.timer
+  sudo install -m 0644 '$REMOTE_TMP/daohua-base-backup.service' /etc/systemd/system/daohua-base-backup.service
+  sudo install -m 0644 '$REMOTE_TMP/daohua-base-backup.timer' /etc/systemd/system/daohua-base-backup.timer
+  sudo install -m 0644 '$REMOTE_TMP/daohua-ledger-archive.service' /etc/systemd/system/daohua-ledger-archive.service
+  sudo install -m 0644 '$REMOTE_TMP/daohua-ledger-archive.timer' /etc/systemd/system/daohua-ledger-archive.timer
+  sudo install -m 0644 '$REMOTE_TMP/daohua-wal-archive.service' /etc/systemd/system/daohua-wal-archive.service
+  sudo install -m 0644 '$REMOTE_TMP/daohua-wal-archive.timer' /etc/systemd/system/daohua-wal-archive.timer
   sudo systemctl daemon-reload
   sudo rm -f /opt/daohua/failed-image.id
   if [[ $IMAGE_EXPLICIT == 1 ]]; then
@@ -174,6 +199,9 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
   sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' /opt/daohua/ccr-auto-update.sh
   sudo systemctl enable --now daohua-ccr-auto-update.timer
   sudo systemctl enable --now daohua-db-backup.timer
+  sudo systemctl enable --now daohua-base-backup.timer
+  sudo systemctl enable --now daohua-ledger-archive.timer
+  sudo systemctl enable --now daohua-wal-archive.timer
 "
 
 if [[ "$INSTALL_CADDY" == "1" ]]; then

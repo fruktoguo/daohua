@@ -33,6 +33,9 @@ services:
       - synchronous_commit=on
       - -c
       - wal_compression=on
+      - archive_mode=on
+      - archive_timeout=300s
+      - archive_command=/usr/local/bin/postgres-wal-archive.sh %p %f
       - -c
       - checkpoint_timeout=15min
       - -c
@@ -47,6 +50,8 @@ services:
       - autovacuum_max_workers=2
     volumes:
       - daohua-postgres:/var/lib/postgresql/data
+      - ${WAL_ARCHIVE_DIR:-./temp/wal-archive}:/var/lib/postgresql/wal-archive
+      - ./deploy/postgres-wal-archive.sh:/usr/local/bin/postgres-wal-archive.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U daohua -d daohua"]
       interval: 10s
