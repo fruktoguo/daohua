@@ -41,6 +41,23 @@ public sealed class PlayerRuntimeTests
         Assert.Single(repository.Receipts);
     }
 
+    [Fact]
+    public async Task LostPlayerOwnershipFailsClosed()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = new FakeStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, Guid.NewGuid(), "租约测试", DateTimeOffset.UtcNow),
+            new StoredHead(playerId, 0, 1, DateTimeOffset.UtcNow, string.Empty, string.Empty, DateTimeOffset.UtcNow),
+            new Dictionary<string, StoredSection>(), []));
+        var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            GameDataCatalog.BuiltIn, NullLogger<PlayerRuntime>.Instance, ownership: new LostOwnershipStore());
+
+        var result = await runtime.ExecuteAsync(playerId, "player.presence", JsonSerializer.SerializeToElement(new { presence = "online" }));
+
+        Assert.False(result.Success);
+        Assert.Equal("PLAYER_OWNERSHIP_LOST", result.Code);
+    }
+
     private sealed class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository
     {
         public List<SectionWrite> Enqueued { get; } = [];
@@ -68,5 +85,12 @@ public sealed class PlayerRuntimeTests
     private sealed class NoopEconomyRepository : IEconomyTransactionStore
     {
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default) => ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload));
+    }
+
+    private sealed class LostOwnershipStore : IPlayerOwnershipStore
+    {
+        public ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(true);
+        public ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
+        public ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 }

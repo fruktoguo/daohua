@@ -105,6 +105,14 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_player_actions_due ON game.player_action_queue(next_due_at) WHERE next_due_at IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS game.player_runtime_leases (
+        player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        owner_instance_id uuid NOT NULL,
+        lease_until timestamptz NOT NULL,
+        renewed_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_player_runtime_leases_expiry ON game.player_runtime_leases(lease_until);
+
     CREATE TABLE IF NOT EXISTS game.player_projection (
         player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
         realm_rank double precision NOT NULL DEFAULT 0,
@@ -218,6 +226,15 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_market_trades_time ON market.trades(traded_at DESC);
     CREATE INDEX IF NOT EXISTS ix_market_trades_partition ON market.trades(partition_id, traded_at DESC);
+
+    CREATE TABLE IF NOT EXISTS market.settlement_claims (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        request_id uuid NOT NULL,
+        settled_trade_count integer NOT NULL CHECK (settled_trade_count >= 0),
+        claimed_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, request_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_settlement_claims_player_time ON market.settlement_claims(player_id, claimed_at DESC);
 
     CREATE TABLE IF NOT EXISTS platform.section_flush_queue (
         player_id uuid NOT NULL REFERENCES identity.players(player_id),

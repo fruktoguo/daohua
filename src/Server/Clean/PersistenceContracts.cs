@@ -162,6 +162,19 @@ public interface ICommandReceiptStore
     ValueTask<int> PruneExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 玩家权威运行时租约。它不是路由器，而是跨实例写入的安全闸门：未持有租约的实例必须拒绝执行。
+/// </summary>
+public interface IPlayerOwnershipStore
+{
+    ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default);
+    ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default);
+    ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default);
+}
+
+public sealed class PlayerOwnershipLostException(Guid playerId)
+    : InvalidOperationException($"玩家运行时租约已失效 player={playerId:D}");
+
 public interface IOutboxRepository
 {
     ValueTask AppendAsync(
@@ -244,6 +257,7 @@ public sealed record MarketFillInput(
     DateTimeOffset? TradedAt = null);
 
 public sealed record MarketCommitResult(Guid OrderId, bool Applied, bool AlreadyCommitted, IReadOnlyList<Guid> TradeIds);
+public sealed record SettlementClaimResult(Guid PlayerId, Guid RequestId, int SettledTradeCount, DateTimeOffset ClaimedAt, bool AlreadyClaimed);
 
 public interface IMarketTransactionStore
 {

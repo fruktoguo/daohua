@@ -78,6 +78,7 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<IAccountRepository, PostgresAccountRepository>();
     builder.Services.AddSingleton<IAssetBalanceRepository, PostgresAssetRepository>();
     builder.Services.AddSingleton<IEconomyTransactionStore, PostgresEconomyRepository>();
+    builder.Services.AddSingleton<IPlayerOwnershipStore, PostgresPlayerOwnershipRepository>();
     builder.Services.AddSingleton<PostgresMarketRepository>();
     builder.Services.AddSingleton<IMarketTransactionStore>(sp => sp.GetRequiredService<PostgresMarketRepository>());
     builder.Services.AddSingleton<MarketRuntime>();

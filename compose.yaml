@@ -2,7 +2,8 @@ name: daohua-local
 
 services:
   db:
-    image: postgres:18-alpine
+    # 本地现有数据卷由 PostgreSQL 17 初始化；主版本升级必须走 pg_upgrade/逻辑恢复，不能直接替换镜像。
+    image: postgres:17-alpine
     container_name: daohua-local-db
     init: true
     restart: unless-stopped
@@ -33,8 +34,11 @@ services:
       - synchronous_commit=on
       - -c
       - wal_compression=on
+      - -c
       - archive_mode=on
+      - -c
       - archive_timeout=300s
+      - -c
       - archive_command=/usr/local/bin/postgres-wal-archive.sh %p %f
       - -c
       - checkpoint_timeout=15min

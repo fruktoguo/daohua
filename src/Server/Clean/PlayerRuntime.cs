@@ -34,10 +34,13 @@ public sealed class PlayerRuntime(
     GameDataCatalog gameData,
     ILogger<PlayerRuntime> logger,
     MarketRuntime? marketRuntime = null,
-    ICommandReceiptStore? commandReceipts = null)
+    ICommandReceiptStore? commandReceipts = null,
+    IPlayerOwnershipStore? ownership = null) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<Guid, Lazy<Task<PlayerActor>>> _actors = new();
     private readonly ActionCatalog _actions = gameData.Actions;
+    private readonly Guid _ownerInstanceId = Guid.NewGuid();
+    private readonly TimeSpan _ownershipLease = TimeSpan.FromSeconds(45);
 
     public int LoadedCount => _actors.Count;
 
@@ -93,10 +96,23 @@ public sealed class PlayerRuntime(
         await actor.DisposeAsync();
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var playerId in _actors.Keys.ToArray())
+        {
+            try { await RemoveAsync(playerId, flush: true, CancellationToken.None); }
+            catch (Exception exception) { logger.LogError(exception, "玩家运行时关闭时释放失败 player={PlayerId}", playerId); }
+        }
+    }
+
     private async Task<PlayerActor> CreateActorAsync(Guid playerId, CancellationToken cancellationToken)
     {
-        var bundle = await repository.LoadAsync(playerId, cancellationToken)
-            ?? throw new InvalidOperationException($"玩家 {playerId} 不存在。");
+        if (ownership is not null && !await ownership.AcquireAsync(playerId, _ownerInstanceId, _ownershipLease, cancellationToken))
+            throw new PlayerOwnershipLostException(playerId);
+        try
+        {
+            var bundle = await repository.LoadAsync(playerId, cancellationToken)
+                ?? throw new InvalidOperationException($"玩家 {playerId} 不存在。");
         PlayerAggregate aggregate;
         if (bundle.Head.StateVersion == 0 && bundle.Sections.Count == 0)
         {
@@ -113,14 +129,20 @@ public sealed class PlayerRuntime(
             aggregate = PlayerAggregate.Restore(state);
             aggregate.SetPresence(PresenceState.Online);
         }
-        var balances = await assetRepository.LoadBalancesAsync(playerId, cancellationToken);
-        var wallet = new AssetWallet(new PlayerId(playerId));
-        wallet.Restore(balances.Select(balance => new AssetBalance(
-            new PlayerId(balance.PlayerId),
-            new AssetKey(new ItemId(balance.AssetId), balance.Variant),
-            balance.Quantity,
-            balance.Version)));
-        return new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, logger, marketRuntime, commandReceipts);
+            var balances = await assetRepository.LoadBalancesAsync(playerId, cancellationToken);
+            var wallet = new AssetWallet(new PlayerId(playerId));
+            wallet.Restore(balances.Select(balance => new AssetBalance(
+                new PlayerId(balance.PlayerId),
+                new AssetKey(new ItemId(balance.AssetId), balance.Variant),
+                balance.Quantity,
+                balance.Version)));
+            return new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease);
+        }
+        catch
+        {
+            if (ownership is not null) await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None);
+            throw;
+        }
     }
 
     private static Guid? TryReadRequestId(JsonElement payload)
@@ -146,6 +168,9 @@ public sealed class PlayerRuntime(
         private readonly ILogger logger;
         private readonly MarketRuntime? marketRuntime;
         private readonly ICommandReceiptStore? commandReceipts;
+        private readonly IPlayerOwnershipStore? ownership;
+        private readonly Guid ownerInstanceId;
+        private readonly TimeSpan ownershipLease;
         private readonly SemaphoreSlim _gate = new(1, 1);
         private readonly Dictionary<string, DateTimeOffset> _dirtyAt = new(StringComparer.Ordinal);
         private readonly Dictionary<Guid, (string Command, string PayloadHash)> _recentRequests = new();
@@ -167,7 +192,10 @@ public sealed class PlayerRuntime(
             ActionCatalog actions,
             ILogger logger,
             MarketRuntime? marketRuntime,
-            ICommandReceiptStore? commandReceipts)
+            ICommandReceiptStore? commandReceipts,
+            IPlayerOwnershipStore? ownership,
+            Guid ownerInstanceId,
+            TimeSpan ownershipLease)
         {
             this.aggregate = aggregate;
             this.bundle = bundle;
@@ -179,6 +207,9 @@ public sealed class PlayerRuntime(
             this.logger = logger;
             this.marketRuntime = marketRuntime;
             this.commandReceipts = commandReceipts;
+            this.ownership = ownership;
+            this.ownerInstanceId = ownerInstanceId;
+            this.ownershipLease = ownershipLease;
             _sectionVersions = bundle.Sections.ToDictionary(x => x.Key, x => x.Value.StateVersion, StringComparer.Ordinal);
             _logicalVersion = Math.Max(0, aggregate.StateVersion);
             foreach (var section in aggregate.DirtySections) _dirtyAt[SectionCodec.ToStorageKind(section)] = DateTimeOffset.UtcNow;
@@ -209,6 +240,8 @@ public sealed class PlayerRuntime(
             try
             {
                 if (_disposed) throw new ObjectDisposedException(nameof(PlayerActor));
+                if (ownership is not null && !await ownership.RenewAsync(aggregate.PlayerId.Value, ownerInstanceId, ownershipLease, cancellationToken))
+                    throw new PlayerOwnershipLostException(aggregate.PlayerId.Value);
                 if (string.IsNullOrWhiteSpace(command) || command.Length > 96)
                     return Fail("INVALID_COMMAND", "命令名称无效。");
                 if (requestId.HasValue)
@@ -360,6 +393,10 @@ public sealed class PlayerRuntime(
                     }
                     case "market.claim":
                     {
+                        if (marketRuntime is null) return Fail("MARKET_UNAVAILABLE", "市场运行时未装配。");
+                        if (marketRuntime.PartitionCount != 1) return Fail("MARKET_CLAIM_UNAVAILABLE", "多市场分片尚未提供跨分片结算领取路由。");
+                        if (!requestId.HasValue) return Fail("INVALID_REQUEST_ID", "领取结算必须提供请求 ID。");
+                        await marketRuntime.ClaimSettlementAsync(aggregate.PlayerId, requestId.Value, cancellationToken);
                         await ReloadWalletAsync(cancellationToken);
                         break;
                     }
@@ -488,6 +525,10 @@ public sealed class PlayerRuntime(
             {
                 return Fail("MARKET_LEASE_LOST", "市场分片写者租约已失效。");
             }
+            catch (PlayerOwnershipLostException)
+            {
+                return Fail("PLAYER_OWNERSHIP_LOST", "玩家当前由其他服务实例持有，请稍后重试。");
+            }
             catch (JsonException ex)
             {
                 return Fail("INVALID_PAYLOAD", ex.Message);
@@ -500,6 +541,8 @@ public sealed class PlayerRuntime(
             await _gate.WaitAsync(cancellationToken);
             try
             {
+                if (ownership is not null && !await ownership.RenewAsync(aggregate.PlayerId.Value, ownerInstanceId, ownershipLease, cancellationToken))
+                    throw new PlayerOwnershipLostException(aggregate.PlayerId.Value);
                 var dirty = aggregate.DirtySections;
                 if (dirty.Count == 0 && _pendingReceipts.Count == 0) return;
                 var now = DateTimeOffset.UtcNow;
@@ -563,7 +606,7 @@ public sealed class PlayerRuntime(
         private static bool ShouldPersistReceipt(string command) => command is
             "action.enqueue" or "action.remove" or
             "queue.configure" or "queue.move" or "queue.auto_use.configure" or
-            "loadout.replace" or "progression.breakthrough" or "world.travel" or "player.rename";
+            "loadout.replace" or "progression.breakthrough" or "world.travel" or "player.rename" or "market.claim";
 
         private async ValueTask ReloadWalletAsync(CancellationToken cancellationToken)
         {
@@ -676,7 +719,12 @@ public sealed class PlayerRuntime(
                 .ToArray();
         }
 
-        public ValueTask DisposeAsync() { _disposed = true; _gate.Dispose(); return ValueTask.CompletedTask; }
+        public async ValueTask DisposeAsync()
+        {
+            _disposed = true;
+            _gate.Dispose();
+            if (ownership is not null) await ownership.ReleaseAsync(aggregate.PlayerId.Value, ownerInstanceId, CancellationToken.None);
+        }
     }
 }
 

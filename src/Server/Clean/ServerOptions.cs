@@ -23,6 +23,7 @@ public sealed record ServerOptions(
     public TimeSpan AuditRetention { get; init; } = TimeSpan.FromDays(30);
     public TimeSpan ComputeJobRetention { get; init; } = TimeSpan.FromDays(7);
     public TimeSpan DataProtectionKeyRetention { get; init; } = TimeSpan.FromDays(180);
+    public TimeSpan SettlementClaimRetention { get; init; } = TimeSpan.FromDays(30);
 
     public static ServerOptions From(IConfiguration configuration)
     {
@@ -49,6 +50,7 @@ public sealed record ServerOptions(
         var auditRetentionDays = configuration.GetValue("Storage:AuditRetentionDays", 30);
         var computeRetentionDays = configuration.GetValue("Storage:ComputeJobRetentionDays", 7);
         var dataProtectionRetentionDays = configuration.GetValue("Storage:DataProtectionKeyRetentionDays", 180);
+        var settlementClaimRetentionDays = configuration.GetValue("Storage:SettlementClaimRetentionDays", 30);
 
         if (batchSize is < 1 or > 10_000) throw new InvalidOperationException("Storage:SectionFlushBatchSize 必须在 1..10000。");
         if (flushIntervalMs is < 100 or > 60_000) throw new InvalidOperationException("Storage:SectionFlushIntervalMilliseconds 必须在 100..60000。");
@@ -66,6 +68,7 @@ public sealed record ServerOptions(
         if (auditRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:AuditRetentionDays 必须在 1..3650。");
         if (computeRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:ComputeJobRetentionDays 必须在 1..3650。");
         if (dataProtectionRetentionDays is < 30 or > 3650) throw new InvalidOperationException("Storage:DataProtectionKeyRetentionDays 必须在 30..3650。");
+        if (settlementClaimRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SettlementClaimRetentionDays 必须在 1..3650。");
 
         return new ServerOptions(
             configuration["Service:Name"] ?? "daohua",
@@ -87,7 +90,8 @@ public sealed record ServerOptions(
             SessionRetention = TimeSpan.FromDays(sessionRetentionDays),
             AuditRetention = TimeSpan.FromDays(auditRetentionDays),
             ComputeJobRetention = TimeSpan.FromDays(computeRetentionDays),
-            DataProtectionKeyRetention = TimeSpan.FromDays(dataProtectionRetentionDays)
+            DataProtectionKeyRetention = TimeSpan.FromDays(dataProtectionRetentionDays),
+            SettlementClaimRetention = TimeSpan.FromDays(settlementClaimRetentionDays)
         };
     }
 }

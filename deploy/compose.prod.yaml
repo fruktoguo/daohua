@@ -31,8 +31,11 @@ services:
       - synchronous_commit=on
       - -c
       - wal_compression=on
+      - -c
       - archive_mode=on
+      - -c
       - archive_timeout=300s
+      - -c
       - archive_command=/usr/local/bin/postgres-wal-archive.sh %p %f
       - -c
       - checkpoint_timeout=15min

@@ -12,6 +12,77 @@ public sealed class PostgresMarketRepository(
     private static readonly string CoinsAsset = "spirit";
     public NpgsqlDataSource DataSource => dataSource;
 
+    /// <summary>
+    /// 结算采用成交即入账，claim 不是再次发钱，而是持久化玩家对已入账结算的确认游标。
+    /// 这样客户端重复点击不会重复发放资产，同时保留可审计的领取动作。
+    /// </summary>
+    public async ValueTask<SettlementClaimResult> ClaimSettlementAsync(Guid playerId, Guid requestId, CancellationToken cancellationToken = default)
+    {
+        if (playerId == Guid.Empty || requestId == Guid.Empty) throw new ArgumentException("结算领取标识无效。", nameof(playerId));
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using (var existing = new NpgsqlCommand("""
+            SELECT settled_trade_count, claimed_at
+            FROM market.settlement_claims
+            WHERE player_id = $1 AND request_id = $2
+            FOR SHARE
+            """, connection, transaction))
+        {
+            existing.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            existing.Parameters.Add(new NpgsqlParameter { Value = requestId });
+            await using var reader = await existing.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var existingCount = reader.GetInt32(0);
+                var claimedAt = reader.GetFieldValue<DateTimeOffset>(1);
+                await reader.DisposeAsync();
+                await transaction.CommitAsync(cancellationToken);
+                return new SettlementClaimResult(playerId, requestId, existingCount, claimedAt, true);
+            }
+        }
+
+        var previous = DateTimeOffset.MinValue;
+        await using (var cursor = new NpgsqlCommand("""
+            SELECT claimed_at
+            FROM market.settlement_claims
+            WHERE player_id = $1
+            ORDER BY claimed_at DESC
+            LIMIT 1
+            FOR UPDATE
+            """, connection, transaction))
+        {
+            cursor.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            var value = await cursor.ExecuteScalarAsync(cancellationToken);
+            if (value is DateTimeOffset timestamp) previous = timestamp;
+        }
+
+        int settlementCount;
+        await using (var countCommand = new NpgsqlCommand("""
+            SELECT count(*)::int
+            FROM market.trades
+            WHERE traded_at > $2 AND (buyer_id = $1 OR seller_id = $1)
+            """, connection, transaction))
+        {
+            countCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            countCommand.Parameters.Add(new NpgsqlParameter { Value = previous });
+            settlementCount = (int)(await countCommand.ExecuteScalarAsync(cancellationToken) ?? 0);
+        }
+        await using (var insert = new NpgsqlCommand("""
+            INSERT INTO market.settlement_claims(player_id, request_id, settled_trade_count, claimed_at)
+            VALUES ($1, $2, $3, $4)
+            """, connection, transaction))
+        {
+            insert.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            insert.Parameters.Add(new NpgsqlParameter { Value = requestId });
+            insert.Parameters.Add(new NpgsqlParameter { Value = settlementCount });
+            insert.Parameters.Add(new NpgsqlParameter { Value = now });
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return new SettlementClaimResult(playerId, requestId, settlementCount, now, false);
+    }
+
     public async ValueTask<IReadOnlyList<StoredMarketOrder>> LoadActiveOrdersAsync(CancellationToken cancellationToken = default)
     {
         var orders = new List<StoredMarketOrder>();

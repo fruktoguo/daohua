@@ -18,6 +18,7 @@ public sealed class PostgresRetentionRepository(
         var auditBefore = now - options.AuditRetention;
         var computeBefore = now - options.ComputeJobRetention;
         var keysBefore = now - options.DataProtectionKeyRetention;
+        var claimsBefore = now - options.SettlementClaimRetention;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -58,12 +59,19 @@ public sealed class PostgresRetentionRepository(
             ORDER BY expires_at
             LIMIT $2
             """, "DELETE FROM identity.data_protection_keys k USING ({0}) doomed WHERE k.key_id = doomed.key_id", keysBefore, cancellationToken);
+        var deletedClaims = await DeleteBatchAsync(connection, transaction, """
+            SELECT player_id, request_id
+            FROM market.settlement_claims
+            WHERE claimed_at < $1
+            ORDER BY claimed_at
+            LIMIT $2
+            """, "DELETE FROM market.settlement_claims c USING ({0}) doomed WHERE c.player_id = doomed.player_id AND c.request_id = doomed.request_id", claimsBefore, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys);
+        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims);
         if (result.Total > 0)
-            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys}",
-                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys);
+            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims}",
+                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims);
         return result;
     }
 
@@ -90,9 +98,10 @@ public sealed record RetentionResult(
     int Sessions,
     int Audit,
     int ComputeJobs,
-    int DataProtectionKeys)
+    int DataProtectionKeys,
+    int SettlementClaims)
 {
-    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys;
+    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims;
 }
 
 public sealed class PostgresRetentionWorker(

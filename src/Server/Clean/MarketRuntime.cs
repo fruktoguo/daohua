@@ -133,6 +133,14 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         return ToDomainOrder(stored, instrument);
     }
 
+    public ValueTask<SettlementClaimResult> ClaimSettlementAsync(PlayerId playerId, Guid requestId, CancellationToken cancellationToken = default)
+    {
+        if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
+        if (PartitionCount != 1)
+            throw new InvalidOperationException("多市场分片尚未提供跨分片结算领取路由，当前请求已拒绝。");
+        return _store.ClaimSettlementAsync(playerId.Value, requestId, cancellationToken);
+    }
+
     public MarketRuntimeMetrics GetMetrics() => new(
         PartitionCount,
         ActiveOrderCount,
