@@ -1,4 +1,4 @@
-import { memo, useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { DAMAGE_CATEGORY_NAMES, ELEMENT_NAMES, describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
@@ -167,59 +167,23 @@ const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.J
  *
  * 核心机制与交互：
  * 1. 订阅全局 gameLogService 状态快照 (useSyncExternalStore)；
- * 2. 自动贴底滚动：当玩家未向上滚动翻查历史时，新日志产生自动滑动到最新行；
- * 3. 向上滚动懒加载：滑动到顶部触碰阈值时异步向服务端拉取更早的历史日志；
- * 4. 新日志计数悬浮：向上浏览历史时提示“回到底部 (N条新动态)”按钮。
+ * 2. 自动贴底滚动：当玩家未向上滚动翻查当前缓冲时，新日志产生自动滑动到最新行；
+ * 3. 仅展示当前会话内存环形缓冲，不提供历史网络查询或本地持久化。
  */
 export function GameLogPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const t = useT()
   const logState = useSyncExternalStore(gameLogService.subscribe, gameLogService.getSnapshot)
   const [tab, setTab] = useState<'log' | 'chat'>('log')
-  const [history, setHistory] = useState<readonly GameLogEntry[] | null>(null)
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  const [reachedStart, setReachedStart] = useState(false)
-  const historyReceivedCount = useRef(0)
   const listRef = useRef<HTMLOListElement>(null)
-  const scrollToBottom = useRef(true)
-  const loadingHistoryRef = useRef(false)
-  const visibleEntries = (history ?? logState.latest).slice(-100)
-  const unseenCount = history === null ? 0 : Math.max(0, logState.receivedCount - historyReceivedCount.current)
+  const stickToBottom = useRef(true)
+  const visibleEntries = logState.latest.slice(-100)
 
   useLayoutEffect(() => {
     const list = listRef.current
-    if (!list || tab !== 'log' || (history !== null && !scrollToBottom.current)) return
+    if (!list || tab !== 'log' || !stickToBottom.current) return
     list.scrollTop = list.scrollHeight
-    scrollToBottom.current = false
-  }, [history, logState.revision, tab])
-
-  const showLatest = useCallback(() => {
-    setHistory(null)
-    setReachedStart(false)
-    scrollToBottom.current = true
-  }, [])
-
-  const loadOlder = useCallback(async (entries: readonly GameLogEntry[]) => {
-    if (loadingHistoryRef.current || reachedStart || !logState.playerId || entries.length === 0) return
-    loadingHistoryRef.current = true
-    setLoadingHistory(true)
-    try {
-      const first = entries[0]
-      const older = await gameLogService.loadBefore(logState.playerId, {
-        timestampMs: first.timestampMs,
-        sequence: first.sequence,
-      })
-      if (older.length === 0) {
-        setReachedStart(true)
-      } else {
-        setHistory(older)
-        historyReceivedCount.current = logState.receivedCount
-        scrollToBottom.current = true
-      }
-    } finally {
-      loadingHistoryRef.current = false
-      setLoadingHistory(false)
-    }
-  }, [logState.playerId, logState.receivedCount, reachedStart])
+    stickToBottom.current = false
+  }, [logState.revision, tab])
 
   return (
     <section className={`panel log-panel ${className}`.trim()}>
@@ -231,28 +195,16 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
           className={`log-storage-status log-storage-status--${logState.persistence}`}
           title={logState.persistence === 'memory' ? t('combat.log.memoryOnlyTitle') : t('combat.log.saved')}
         />
-        {history !== null && (
-          <button className="log-latest-button" onClick={showLatest} type="button">
-            {unseenCount > 0 ? t('combat.log.latestWithCount', { n: formatNumber(unseenCount) }) : t('combat.log.backToLatest')}
-          </button>
-        )}
       </div>
       {tab === 'log' ? (
         <ol
           className="event-log"
           onScroll={event => {
             const list = event.currentTarget
-            const awayFromBottom = list.scrollHeight - list.scrollTop - list.clientHeight >= 32
-            if (awayFromBottom && history === null) {
-              setHistory(logState.latest)
-              historyReceivedCount.current = logState.receivedCount
-            }
-            if (list.scrollTop <= 24) void loadOlder(history ?? logState.latest)
+            stickToBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 32
           }}
           ref={listRef}
         >
-          {loadingHistory && <li className="log-state-row">{t('combat.log.loadingOlder')}</li>}
-          {reachedStart && <li className="log-state-row">{t('combat.log.reachedStart')}</li>}
           {visibleEntries.map(entry => <LogRow entry={entry} key={entry.id} />)}
         </ol>
       ) : <div className="chat-placeholder">{t('combat.log.chatUnavailable')}</div>}

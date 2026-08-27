@@ -288,7 +288,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               {(isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.spirit ?? 0) > 0)) && (
                 <button
                   className="insight-breakthrough-btn"
-                  onClick={() => gameClient.sendCommand('breakthrough', {})}
+                  onClick={() => gameClient.sendCommand('progression.breakthrough', {})}
                   type="button"
                 >
                   {t('insight.breakthroughBtn')}

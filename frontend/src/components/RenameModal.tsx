@@ -18,7 +18,7 @@ const NAME_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
 /**
  * 修改修士道号模态窗组件 (RenameModal)
  *
- * 具备实时格式与长度校验，向服务端发送 rename 指令并在成功时关闭弹窗。
+ * 具备实时格式与长度校验，向服务端发送 player.rename 指令并在成功时关闭弹窗。
  */
 export const RenameModal = memo(function RenameModal({ open, onClose }: RenameModalProps): React.JSX.Element | null {
   const t = useT()
@@ -29,7 +29,7 @@ export const RenameModal = memo(function RenameModal({ open, onClose }: RenameMo
   const validate = (value: string): string | null => {
     const trimmed = value.trim()
     if (!trimmed) return t('app.rename.errorEmpty')
-    if (trimmed.length < 2 || trimmed.length > 12) return t('app.rename.errorLength')
+    if (trimmed.length < 1 || trimmed.length > 64) return t('app.rename.errorLength')
     if (!NAME_REGEX.test(trimmed)) return t('app.rename.errorFormat')
     if (trimmed === currentName) return t('app.rename.errorSame')
     return null
@@ -49,7 +49,7 @@ export const RenameModal = memo(function RenameModal({ open, onClose }: RenameMo
       return
     }
     const trimmed = draft.trim()
-    const sent = gameClient.sendCommand('rename', { name: trimmed })
+    const sent = gameClient.sendCommand('player.rename', { displayName: trimmed })
     if (sent) {
       onClose()
     }

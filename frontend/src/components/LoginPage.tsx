@@ -11,8 +11,8 @@ interface LoginPageProps {
 /** 认证模式：登录或注册 */
 type AuthMode = 'login' | 'register'
 
-/** 账号字符格式校验规则（汉字、英文字母、数字与下划线） */
-const ACCOUNT_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
+/** 账号字符格式校验规则（服务端登录键只允许 ASCII 字母、数字与下划线） */
+const ACCOUNT_REGEX = /^[a-zA-Z0-9_]+$/
 /** 道号字符格式校验规则 */
 const NAME_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
 
@@ -109,7 +109,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
       setError(t('app.login.errorEmptyAccount'))
       return
     }
-    if (cleanAcc.length < 2 || cleanAcc.length > 20) {
+    if (cleanAcc.length < 3 || cleanAcc.length > 32) {
       setError(t('app.login.errorAccountLength'))
       return
     }
@@ -117,7 +117,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
       setError(t('app.login.errorAccountFormat'))
       return
     }
-    if (cleanName.length < 2 || cleanName.length > 12) {
+    if (cleanName.length < 1 || cleanName.length > 64) {
       setError(t('app.login.errorNameLength'))
       return
     }
@@ -125,7 +125,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
       setError(t('app.login.errorNameFormat'))
       return
     }
-    if (!regPassword || regPassword.length < 6 || regPassword.length > 32) {
+    if (!regPassword || regPassword.length < 12 || regPassword.length > 256) {
       setError(t('app.login.errorPasswordLength'))
       return
     }

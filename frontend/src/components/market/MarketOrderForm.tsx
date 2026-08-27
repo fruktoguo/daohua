@@ -76,7 +76,7 @@ interface MarketOrderFormProps {
 /**
  * 坊市限价挂单表单嵌入组件 (MarketOrderForm)
  *
- * 处理单笔挂单的价格归一化校验、灵石/背包上限计算与向服务端发送 market_place 交易指令。
+ * 处理单笔挂单的价格归一化校验、灵石/背包上限计算与向服务端发送 market.place 交易指令。
  */
 export const MarketOrderForm = memo(function MarketOrderForm({
   side,
@@ -137,7 +137,7 @@ export const MarketOrderForm = memo(function MarketOrderForm({
     }
 
     const orderId = `market-${crypto.randomUUID()}`
-    if (!gameClient.sendCommand('market_place', {
+    if (!gameClient.sendCommand('market.place', {
       orderId,
       itemId,
       side,

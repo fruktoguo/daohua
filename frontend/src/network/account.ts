@@ -1,361 +1,250 @@
 import { create } from 'zustand'
-import { gameClient } from './gameClient'
-import { getHttpBase } from './apiClient'
 import { useGameStore } from '../game/gameStore'
+import { requestJson } from './apiClient'
+import { gameClient } from './gameClient'
+import { setSessionAccount } from './sessionState'
 
-/**
- * 存储在本地的已登录账号凭据信息
- */
+/** 浏览器仅保存非敏感的账号显示信息；认证凭据永远由 HttpOnly Cookie 持有。 */
 export interface StoredAccountInfo {
-  /** 账号名 */
-  account: string
-  /** 角色名称 */
-  name: string
-  /** 绑定的角色唯一 UUID (playerId) */
+  accountId: string
   playerId: string
-  /** 角色编号 */
-  sequenceId?: number
-  /** 最近登录时间戳（毫秒） */
-  lastLoginAt?: number
+  account: string
+  name: string
+  lastLoginAt: number
 }
 
-/**
- * 鉴权接口 (注册/登录) 返回的数据传输对象 (DTO)
- */
 export interface AuthResponseDto {
   success: boolean
-  account?: string | null
-  characterName?: string | null
-  playerId?: string | null
-  sequenceId?: number
-  message?: string | null
+  accountId?: string
+  playerId?: string
+  account?: string
+  displayName?: string
+  /** 兼容 UI 组件使用的语义别名，线上响应只由 displayName 填充。 */
+  characterName?: string
+  message?: string
 }
 
-const STORAGE_ACCOUNT_KEY = 'daohua_account'
-const STORAGE_CHAR_NAME_KEY = 'daohua_character_name'
-const STORAGE_PLAYER_ID_KEY = 'daohua-player-id'
-const STORAGE_SAVED_ACCOUNTS_KEY = 'daohua_saved_accounts_list'
-const COOKIE_PLAYER_ID_KEY = 'daohua_player_id'
-
-/**
- * 从 Cookie 中读取当前 playerId（作为 localStorage 的备选容灾）
- */
-function getCookiePlayerId(): string | null {
-  if (typeof document === 'undefined') return null
-  const cookieValue = document.cookie
-    .split(';')
-    .map(part => part.trim())
-    .find(part => part.startsWith(`${COOKIE_PLAYER_ID_KEY}=`))
-    ?.slice(COOKIE_PLAYER_ID_KEY.length + 1)
-  return cookieValue ? decodeURIComponent(cookieValue) : null
+interface ServerAuthDto {
+  accountId: string
+  playerId: string
+  account: string
+  displayName: string
 }
 
-/**
- * 将 playerId 写入持久化 Cookie (10年有效期)
- */
-function setCookiePlayerId(playerId: string): void {
-  if (typeof document === 'undefined') return
-  document.cookie = `${COOKIE_PLAYER_ID_KEY}=${encodeURIComponent(playerId)}; Path=/; Max-Age=315360000; SameSite=Lax`
-}
-function isValidAccountString(str?: string | null): boolean {
-  if (!str) return false
-  const trimmed = str.trim()
-  return Boolean(trimmed && trimmed !== 'undefined' && trimmed !== 'null' && trimmed !== '[object Object]')
+const CURRENT_ACCOUNT_KEY = 'daohua.account.v1'
+const SAVED_ACCOUNTS_KEY = 'daohua.accounts.v1'
+
+function isAccount(value: unknown): value is StoredAccountInfo {
+  if (value === null || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  return typeof row.accountId === 'string'
+    && typeof row.playerId === 'string'
+    && typeof row.account === 'string'
+    && typeof row.name === 'string'
+    && row.accountId.length > 0
+    && row.playerId.length > 0
 }
 
-/**
- * 从 localStorage 读取历史上登录过的全部账号列表
- */
-function loadSavedAccounts(): StoredAccountInfo[] {
-  if (typeof window === 'undefined') return []
+function loadJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
   try {
-    const raw = window.localStorage.getItem(STORAGE_SAVED_ACCOUNTS_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((a): a is StoredAccountInfo =>
-      Boolean(
-        a &&
-        typeof a === 'object' &&
-        isValidAccountString(a.account) &&
-        isValidAccountString(a.playerId) &&
-        typeof a.name === 'string',
-      ),
-    )
+    const value: unknown = JSON.parse(window.localStorage.getItem(key) ?? 'null')
+    return value as T
   } catch {
-    return []
+    return fallback
   }
 }
 
-/**
- * 将已保存的账号列表序列化持久化至 localStorage
- */
-function persistSavedAccounts(list: StoredAccountInfo[]): void {
+function loadCurrentAccount(): StoredAccountInfo | null {
+  const value = loadJson<unknown>(CURRENT_ACCOUNT_KEY, null)
+  return isAccount(value) ? value : null
+}
+
+function loadSavedAccounts(): StoredAccountInfo[] {
+  const value = loadJson<unknown>(SAVED_ACCOUNTS_KEY, [])
+  return Array.isArray(value) ? value.filter(isAccount) : []
+}
+
+function persistAccount(account: StoredAccountInfo | null): void {
   if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_SAVED_ACCOUNTS_KEY, JSON.stringify(list))
-}
-
-/**
- * 初始化时从 localStorage/Cookie 恢复当前账号会话
- */
-function getInitialAccount(): StoredAccountInfo | null {
-  if (typeof window === 'undefined') return null
-  const account = window.localStorage.getItem(STORAGE_ACCOUNT_KEY)?.trim()
-  const name = window.localStorage.getItem(STORAGE_CHAR_NAME_KEY)?.trim()
-  const playerId = window.localStorage.getItem(STORAGE_PLAYER_ID_KEY)?.trim() || getCookiePlayerId()
-
-  if (isValidAccountString(account) && isValidAccountString(playerId)) {
-    return {
-      account: account!,
-      name: (isValidAccountString(name) ? name : account)!,
-      playerId: playerId!,
-      lastLoginAt: Date.now(),
-    }
+  try {
+    if (account) window.localStorage.setItem(CURRENT_ACCOUNT_KEY, JSON.stringify(account))
+    else window.localStorage.removeItem(CURRENT_ACCOUNT_KEY)
+  } catch {
+    // 私密模式或存储配额不足时，认证仍由 HttpOnly Cookie 维持。
   }
-
-  return null
 }
 
-/**
- * 向服务端发起账号注册 HTTP POST 请求
- * @param account 注册账号
- * @param password 登录密码
- * @param characterName 初始道号（可选）
- */
-export async function requestRegister(
-  account: string,
-  password: string,
-  characterName?: string,
-): Promise<AuthResponseDto> {
-  const url = `${getHttpBase()}/api/auth/register`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      account: account.trim(),
-      password,
-      characterName: characterName?.trim() || undefined,
-    }),
-  })
-  if (!res.ok) {
-    return { success: false, message: `服务器响应异常 (${res.status})` }
+function persistSavedAccounts(accounts: readonly StoredAccountInfo[]): void {
+  if (typeof window === 'undefined') return
+  try { window.localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(accounts)) } catch { /* 非关键显示缓存 */ }
+}
+
+function authSuccess(dto: ServerAuthDto): AuthResponseDto {
+  return {
+    success: true,
+    accountId: dto.accountId,
+    playerId: dto.playerId,
+    account: dto.account,
+    displayName: dto.displayName,
+    characterName: dto.displayName,
   }
-  return (await res.json()) as AuthResponseDto
 }
 
-/**
- * 向服务端发起账号登录 HTTP POST 请求
- * @param account 登录账号
- * @param password 登录密码
- */
-export async function requestLogin(
-  account: string,
-  password: string,
-): Promise<AuthResponseDto> {
-  const url = `${getHttpBase()}/api/auth/login`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      account: account.trim(),
-      password,
-    }),
-  })
-  if (!res.ok) {
-    return { success: false, message: `服务器响应异常 (${res.status})` }
+function authFailure(error: unknown): AuthResponseDto {
+  return { success: false, message: error instanceof TypeError ? undefined : error instanceof Error ? error.message : undefined }
+}
+
+export async function requestRegister(account: string, password: string, displayName?: string): Promise<AuthResponseDto> {
+  try {
+    const dto = await requestJson<ServerAuthDto>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ account: account.trim(), password, displayName: displayName?.trim() || null }),
+    })
+    return authSuccess(dto)
+  } catch (error) {
+    return authFailure(error)
   }
-  return (await res.json()) as AuthResponseDto
 }
 
-/**
- * 账号管理状态机接口
- */
+export async function requestLogin(account: string, password: string): Promise<AuthResponseDto> {
+  try {
+    const dto = await requestJson<ServerAuthDto>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ account: account.trim(), password }),
+    })
+    return authSuccess(dto)
+  } catch (error) {
+    return authFailure(error)
+  }
+}
+
+export async function requestSession(): Promise<AuthResponseDto> {
+  try {
+    const dto = await requestJson<ServerAuthDto>('/api/v1/auth/session')
+    return authSuccess(dto)
+  } catch {
+    return { success: false }
+  }
+}
+
 interface AccountStore {
-  /** 当前登录的账号信息（为 null 时处于未登录状态） */
   currentAccount: StoredAccountInfo | null
-  /** 本地记录的历史账号列表 */
   savedAccounts: StoredAccountInfo[]
-  /** 账号密码登录 */
+  sessionChecked: boolean
   loginWithAuth: (account: string, password: string) => Promise<AuthResponseDto>
-  /** 账号密码注册并自动登录 */
-  registerWithAuth: (account: string, password: string, characterName?: string) => Promise<AuthResponseDto>
-  /** 退出当前账号（清理会话并断开 WebSocket） */
+  registerWithAuth: (account: string, password: string, displayName?: string) => Promise<AuthResponseDto>
+  restoreSession: () => Promise<boolean>
   logout: () => void
-  /** 从历史账号列表中移除指定账号 */
   removeSavedAccount: (account: string) => void
-  /** 更新当前账号对应的角色名 */
   updateCharacterName: (newName: string) => void
 }
 
-/**
- * 账号管理全局状态机
- * 负责账号登录注册状态流转、历史账号列表管理以及角色名更新
- */
+function accountFromResponse(response: AuthResponseDto): StoredAccountInfo {
+  if (!response.accountId || !response.playerId || !response.account) throw new Error('认证响应缺少身份字段。')
+  return {
+    accountId: response.accountId,
+    playerId: response.playerId,
+    account: response.account,
+    name: response.displayName || response.characterName || response.account,
+    lastLoginAt: Date.now(),
+  }
+}
+
+function rememberAccount(account: StoredAccountInfo, existing: readonly StoredAccountInfo[]): StoredAccountInfo[] {
+  const result = [account, ...existing.filter(item => item.account !== account.account)]
+  persistAccount(account)
+  persistSavedAccounts(result)
+  return result
+}
+
 export const useAccountStore = create<AccountStore>((set, get) => ({
-  currentAccount: getInitialAccount(),
+  currentAccount: loadCurrentAccount(),
   savedAccounts: loadSavedAccounts(),
+  sessionChecked: false,
 
-  loginWithAuth: async (account: string, password: string) => {
-    const res = await requestLogin(account, password)
-    if (!res.success || !res.playerId || !res.account) {
-      return res
-    }
-
-    const cleanAccount = res.account
-    const cleanName = res.characterName || cleanAccount
-    const playerId = res.playerId
-    const sequenceId = res.sequenceId
-
-    // 持久化存储到 localStorage 和 Cookie
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_ACCOUNT_KEY, cleanAccount)
-      window.localStorage.setItem(STORAGE_CHAR_NAME_KEY, cleanName)
-      window.localStorage.setItem(STORAGE_PLAYER_ID_KEY, playerId)
-      setCookiePlayerId(playerId)
-    }
-
-    const info: StoredAccountInfo = {
-      account: cleanAccount,
-      name: cleanName,
-      playerId,
-      sequenceId,
-      lastLoginAt: Date.now(),
-    }
-
-    const filtered = get().savedAccounts.filter(
-      a => a.account.toLowerCase() !== cleanAccount.toLowerCase(),
-    )
-    const updatedList = [info, ...filtered]
-    persistSavedAccounts(updatedList)
-
-    set({
-      currentAccount: info,
-      savedAccounts: updatedList,
-    })
-
-    // 登录成功后立即连接 WebSocket
+  loginWithAuth: async (account, password) => {
+    const response = await requestLogin(account, password)
+    if (!response.success) return response
+    const info = accountFromResponse(response)
+    setSessionAccount(info)
+    set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
     gameClient.connect()
-    return res
+    return response
   },
 
-  registerWithAuth: async (account: string, password: string, characterName?: string) => {
-    const res = await requestRegister(account, password, characterName)
-    if (!res.success || !res.playerId || !res.account) {
-      return res
-    }
-
-    const cleanAccount = res.account
-    const cleanName = res.characterName || cleanAccount
-    const playerId = res.playerId
-    const sequenceId = res.sequenceId
-
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_ACCOUNT_KEY, cleanAccount)
-      window.localStorage.setItem(STORAGE_CHAR_NAME_KEY, cleanName)
-      window.localStorage.setItem(STORAGE_PLAYER_ID_KEY, playerId)
-      setCookiePlayerId(playerId)
-    }
-
-    const info: StoredAccountInfo = {
-      account: cleanAccount,
-      name: cleanName,
-      playerId,
-      sequenceId,
-      lastLoginAt: Date.now(),
-    }
-
-    const filtered = get().savedAccounts.filter(
-      a => a.account.toLowerCase() !== cleanAccount.toLowerCase(),
-    )
-    const updatedList = [info, ...filtered]
-    persistSavedAccounts(updatedList)
-
-    set({
-      currentAccount: info,
-      savedAccounts: updatedList,
-    })
-
-    // 注册成功后自动连接 WebSocket
+  registerWithAuth: async (account, password, displayName) => {
+    const response = await requestRegister(account, password, displayName)
+    if (!response.success) return response
+    const info = accountFromResponse(response)
+    setSessionAccount(info)
+    set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
     gameClient.connect()
-    return res
+    return response
+  },
+
+  restoreSession: async () => {
+    const response = await requestSession()
+    if (!response.success) {
+      setSessionAccount(null)
+      set({ currentAccount: null, sessionChecked: true })
+      persistAccount(null)
+      return false
+    }
+    const info = accountFromResponse(response)
+    setSessionAccount(info)
+    set({ currentAccount: info, savedAccounts: rememberAccount(info, get().savedAccounts), sessionChecked: true })
+    gameClient.connect()
+    return true
   },
 
   logout: () => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(STORAGE_ACCOUNT_KEY)
-      window.localStorage.removeItem(STORAGE_CHAR_NAME_KEY)
-      window.localStorage.removeItem(STORAGE_PLAYER_ID_KEY)
-      if (typeof document !== 'undefined') {
-        document.cookie = `${COOKIE_PLAYER_ID_KEY}=; Path=/; Max-Age=0; SameSite=Lax`
-      }
-    }
-
-    set({ currentAccount: null })
+    void requestJson('/api/v1/auth/logout', { method: 'POST' }).catch(() => undefined)
+    persistAccount(null)
+    setSessionAccount(null)
+    set({ currentAccount: null, sessionChecked: true })
     gameClient.dispose()
     useGameStore.getState().resetGameStore()
   },
 
-  removeSavedAccount: (account: string) => {
-    const updated = get().savedAccounts.filter(
-      a => a.account.toLowerCase() !== account.trim().toLowerCase(),
-    )
+  removeSavedAccount: account => {
+    const updated = get().savedAccounts.filter(item => item.account !== account.trim())
     persistSavedAccounts(updated)
     set({ savedAccounts: updated })
   },
 
-  updateCharacterName: (newName: string) => {
+  updateCharacterName: name => {
     const current = get().currentAccount
     if (!current) return
-    const cleanName = newName.trim()
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_CHAR_NAME_KEY, cleanName)
-    }
-    const updatedCurrent = { ...current, name: cleanName }
-    const updatedSaved = get().savedAccounts.map(a =>
-      a.account.toLowerCase() === current.account.toLowerCase()
-        ? { ...a, name: cleanName }
-        : a,
-    )
+    const updatedCurrent = { ...current, name: name.trim() }
+    const updatedSaved = get().savedAccounts.map(item => item.account === current.account ? updatedCurrent : item)
+    persistAccount(updatedCurrent)
     persistSavedAccounts(updatedSaved)
+    setSessionAccount(updatedCurrent)
     set({ currentAccount: updatedCurrent, savedAccounts: updatedSaved })
   },
 }))
 
-/**
- * 同步获取当前保存的账号信息
- */
+setSessionAccount(useAccountStore.getState().currentAccount)
+
 export function getStoredAccount(): StoredAccountInfo | null {
   return useAccountStore.getState().currentAccount
 }
 
-/**
- * 清除当前登录状态（登出）
- */
 export function clearStoredAccount(): void {
   useAccountStore.getState().logout()
 }
 
-/**
- * 清理所有本地道化太初相关的持久化缓存（用于自愈与数据损坏修复）
- */
+/** 清理本应用浏览器缓存；不触碰服务端资产和会话以外的站点数据。 */
 export function resetAllLocalData(): void {
   if (typeof window !== 'undefined') {
     try {
-      const keysToRemove: string[] = []
-      for (let i = 0; i < window.localStorage.length; i++) {
-        const key = window.localStorage.key(i)
-        if (key && (key.startsWith('daohua') || key.includes('daohua'))) {
-          keysToRemove.push(key)
-        }
-      }
-      keysToRemove.forEach(k => window.localStorage.removeItem(k))
-    } catch {
-      // localStorage 异常容错
-    }
-    if (typeof document !== 'undefined') {
-      document.cookie = `${COOKIE_PLAYER_ID_KEY}=; Path=/; Max-Age=0; SameSite=Lax`
-    }
+      window.localStorage.removeItem(CURRENT_ACCOUNT_KEY)
+      window.localStorage.removeItem(SAVED_ACCOUNTS_KEY)
+    } catch { /* 非关键显示缓存 */ }
   }
+  gameClient.dispose()
+  useAccountStore.setState({ currentAccount: null, savedAccounts: [], sessionChecked: true })
+  setSessionAccount(null)
   useGameStore.getState().resetGameStore()
-  useAccountStore.setState({ currentAccount: null, savedAccounts: [] })
 }

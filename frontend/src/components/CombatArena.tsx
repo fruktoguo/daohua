@@ -1414,13 +1414,13 @@ export const CombatArena = memo(function CombatArena({
             )
           ) : isTravel ? (
             <ArenaTravelCard
-              onStop={() => gameClient.sendCommand('remove_action', { entryId: current.entryId })}
+              onStop={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
               queueEntry={current}
             />
           ) : isLifeAction ? (
             <ArenaLifeGoalCard
               actionDef={activeAction}
-              onStop={() => gameClient.sendCommand('remove_action', { entryId: current.entryId })}
+              onStop={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
               queueEntry={current}
             />
           ) : (
@@ -1433,7 +1433,7 @@ export const CombatArena = memo(function CombatArena({
         {current ? (
           <button
             className="danger"
-            onClick={() => gameClient.sendCommand('remove_action', { entryId: current.entryId })}
+            onClick={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
             type="button"
           >
             {t('combat.arena.stopCurrent', { name: current.actionName })}

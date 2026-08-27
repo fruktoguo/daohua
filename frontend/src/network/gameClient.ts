@@ -1,45 +1,49 @@
 import { useGameStore } from '../game/gameStore'
-import type { AckPayload, ErrorPayload, Packet, PlayerPatch, PlayerSnapshot } from '../game/types'
 import { getT } from '../i18n'
-import { gameLogService } from '../logging/gameLogService'
-import { getAccessToken } from './access_token'
-import { clearStoredAccount, getStoredAccount } from './account'
-import { fetchActionDefinitions, fetchCombatAbilities, fetchCombatEncounters, fetchCombatEquipment, fetchItemDefinitions, fetchWorldMaps } from './apiClient'
+import { clearStoredAccount } from './account'
+import {
+  createRequestId,
+  decodeEnvelope,
+  decodeJsonPayload,
+  encodeJsonEnvelope,
+  type CommandResultDto,
+  type ErrorDto,
+  type HelloResponse,
+  type PlayerSnapshotDeltaDto,
+  type PlayerSnapshotDto,
+  WireMessageType,
+} from './protocol'
+import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
+import { getSessionAccount } from './sessionState'
 
-const decoder = new TextDecoder()
+const APP_VERSION = String(import.meta.env.VITE_APP_VERSION ?? 'dev')
 
-/**
- * 构造带有玩家标识、账号与访问令牌的 WebSocket 连接地址
- */
-function getEndpoint(playerId: string, account?: string, name?: string): string {
+function getEndpoint(): string {
   const configured = import.meta.env.VITE_WS_URL as string | undefined
-  const fallback = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
-  const endpoint = new URL(configured || fallback)
-  endpoint.searchParams.set('playerId', playerId)
-  if (account) endpoint.searchParams.set('account', account)
-  endpoint.searchParams.set('name', name || account || '无名修士')
-  const token = getAccessToken()
-  if (token) endpoint.searchParams.set('token', token)
-  return endpoint.toString()
+  if (configured) return configured
+  return `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws`
 }
 
 /**
- * 道化太初核心 WebSocket 游戏客户端
- * 负责维护与服务端的长连接、断线指数退避重连、静态目录加载、双向心跳与二进制/JSON 数据包流转
+ * wire.v1 游戏客户端。
+ *
+ * 连接只继承 HttpOnly 会话 Cookie，不接受 URL 中的 playerId、token 或角色名。
+ * 所有上行命令都通过 DHW1 二进制信封发送；服务端推送的状态只接受新的
+ * PlayerSnapshotDto/PlayerSnapshotDeltaDto，不再尝试解析旧 JSON 包结构。
  */
 export class GameClient {
   private socket: WebSocket | null = null
   private reconnectTimer: number | undefined
   private heartbeatTimer: number | undefined
-  private requestSequence = 0
   private disposed = false
   private reconnectDelay = 500
-  private catalogAbortController: AbortController | null = null
-  private stoppedByRejection = false
+  private lastServerSequence = 0
+  private outboundSequence = 0
+  private readonly pendingRequests = new Set<string>()
 
-  playerId = getStoredAccount()?.playerId ?? ''
-  account = getStoredAccount()?.account ?? ''
-  characterName = getStoredAccount()?.name ?? ''
+  playerId = getSessionAccount()?.playerId ?? ''
+  account = getSessionAccount()?.account ?? ''
+  characterName = getSessionAccount()?.name ?? ''
 
   private clearReconnectTimer(): void {
     if (this.reconnectTimer !== undefined) {
@@ -51,14 +55,11 @@ export class GameClient {
   private startHeartbeat(): void {
     this.stopHeartbeat()
     this.heartbeatTimer = window.setInterval(() => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-        const pingPacket: Packet = {
-          kind: 'ping',
-          requestId: `${this.playerId.slice(0, 8)}-ping-${++this.requestSequence}`,
-          sequence: 0,
-          payload: { timestamp: Date.now() },
-        }
-        this.socket.send(new TextEncoder().encode(JSON.stringify(pingPacket)))
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
+      try {
+        this.socket.send(encodeJsonEnvelope(WireMessageType.Ping, createRequestId(), this.nextOutboundSequence(), { clientTime: Date.now() }))
+      } catch {
+        // 发送失败由 WebSocket close 事件统一处理。
       }
     }, 25_000)
   }
@@ -70,99 +71,88 @@ export class GameClient {
     }
   }
 
-  /**
-   * 启动游戏网络连接
-   */
   connect(): void {
     this.clearReconnectTimer()
-    const accountInfo = getStoredAccount()
+    const accountInfo = getSessionAccount()
     if (!accountInfo) {
       useGameStore.getState().setConnection('offline')
       return
     }
+    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
     this.playerId = accountInfo.playerId
     this.account = accountInfo.account
     this.characterName = accountInfo.name
     this.disposed = false
-    this.stoppedByRejection = false
     this.reconnectDelay = 500
-    void gameLogService.activate(this.playerId)
+    this.outboundSequence = 0
+    this.lastServerSequence = 0
+    this.pendingRequests.clear()
     this.open()
   }
 
-  /**
-   * 退出登录并清理账号
-   */
   logout(): void {
     clearStoredAccount()
   }
 
-  /**
-   * 释放网络连接与后台轮询资源
-   */
   dispose(): void {
     this.disposed = true
     this.clearReconnectTimer()
     this.stopHeartbeat()
-    this.socket?.close(1000, '客户端断开')
+    const socket = this.socket
     this.socket = null
-    this.catalogAbortController?.abort()
-    this.catalogAbortController = null
-    void gameLogService.flush()
+    if (socket && socket.readyState === WebSocket.OPEN) socket.close(1000, '客户端断开')
     useGameStore.getState().setConnection('offline')
   }
 
-  /**
-   * 当检测到版本空洞或断层时触发重拉全量快照
-   */
   requestSnapshotOrResync(): void {
     if (this.disposed) return
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.close(1000, '版本断层，重拉快照')
+    const socket = this.socket
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close(1000, '协议序列断层，重新建立快照')
     } else {
       this.open()
     }
   }
 
-  /**
-   * 通知访问令牌已变更（用户在设置中填入新 Token 时唤醒重试）
-   */
+  /** 认证改为 HttpOnly Cookie 后不再处理访问令牌，仅作为显式重连入口保留。 */
   notifyAccessTokenChanged(): void {
-    if (this.disposed || !this.stoppedByRejection) return
-    this.stoppedByRejection = false
-    this.reconnectDelay = 500
-    this.open()
+    if (!this.disposed) this.requestSnapshotOrResync()
   }
 
-  /**
-   * 向服务端发送业务操作指令
-   */
-  sendCommand<T extends object>(type: string, payload: T): boolean {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      useGameStore.getState().setNotice(getT()('common.notice.reconnecting'))
+  /** 发送新的通用命令信封；命令名和载荷由 wire.v1 直接定义。 */
+  sendCommand<T extends object>(command: string, payload: T): boolean {
+    if (!command || command.length > 96) {
+      useGameStore.getState().setNotice(getT()('common.net.invalidCommand'))
       return false
     }
-    const packet: Packet<{ command: string; payload: T }> = {
-      kind: 'command',
-      requestId: `${this.playerId.slice(0, 8)}-${type}-${++this.requestSequence}`,
-      sequence: 0,
-      payload: {
-        command: type,
-        payload,
-      },
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
+      return false
     }
-    this.socket.send(new TextEncoder().encode(JSON.stringify(packet)))
-    return true
+    const requestId = createRequestId()
+    const commandPayload = command === 'action.enqueue' ? { ...payload, requestId } : payload
+    const expectedStateVersion = useGameStore.getState().version
+    try {
+      socket.send(encodeJsonEnvelope(WireMessageType.Command, requestId, this.nextOutboundSequence(), {
+        requestId,
+        command,
+        payload: commandPayload,
+        expectedStateVersion,
+      }))
+      this.pendingRequests.add(requestId)
+      return true
+    } catch {
+      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
+      return false
+    }
   }
 
-  /**
-   * 打开底层 WebSocket 连接
-   */
   private open(): void {
     this.clearReconnectTimer()
-    if (this.disposed || !this.playerId) return
+    if (this.disposed || !getSessionAccount()) return
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
-    const socket = new WebSocket(getEndpoint(this.playerId, this.account, this.characterName))
+    const socket = new WebSocket(getEndpoint())
     socket.binaryType = 'arraybuffer'
     this.socket = socket
 
@@ -170,136 +160,124 @@ export class GameClient {
       this.reconnectDelay = 500
       useGameStore.getState().setConnection('online')
       this.startHeartbeat()
-      void this.loadCatalogs()
       this.sendHello()
     })
-    socket.addEventListener('message', (event) => {
+    socket.addEventListener('message', event => {
       void this.handleMessage(event.data)
     })
     socket.addEventListener('error', () => {
-      // close 事件负责统一重连，避免重复提示和重复刷新。
+      // close 事件统一重连，避免重复提示。
     })
-    socket.addEventListener('close', (event) => {
+    socket.addEventListener('close', event => {
       this.stopHeartbeat()
       if (this.socket === socket) this.socket = null
       if (this.disposed) return
-
-      // 检查 WebSocket close code 精准熔断认证/权限错误 (1008 或 4001~4004)
-      const isAuthFailure = event.code === 1008 || (event.code >= 4001 && event.code <= 4004)
-      if (isAuthFailure) {
-        this.stoppedByRejection = true
+      const authFailure = event.code === 1008 || (event.code >= 4001 && event.code <= 4004)
+      if (authFailure) {
         useGameStore.getState().setConnection('offline')
+        useGameStore.getState().setNotice(getT()('common.net.sessionExpired'))
         return
       }
-
       useGameStore.getState().setConnection('reconnecting')
       const delay = this.reconnectDelay
-      this.reconnectDelay = Math.min(8000, this.reconnectDelay * 2)
+      this.reconnectDelay = Math.min(8_000, this.reconnectDelay * 2)
       this.reconnectTimer = window.setTimeout(() => this.open(), delay)
     })
   }
 
-  /**
-   * 连接建立后异步并发拉取最新的各类静态数据目录
-   */
-  private async loadCatalogs(): Promise<void> {
-    this.catalogAbortController?.abort()
-    const controller = new AbortController()
-    this.catalogAbortController = controller
-    try {
-      const [actions, items, abilities, equipment, encounters, maps] = await Promise.all([
-        fetchActionDefinitions(controller.signal),
-        fetchItemDefinitions(controller.signal),
-        fetchCombatAbilities(controller.signal),
-        fetchCombatEquipment(controller.signal),
-        fetchCombatEncounters(controller.signal),
-        fetchWorldMaps(controller.signal),
-      ])
-      if (!controller.signal.aborted) {
-        if (actions.length > 0) useGameStore.getState().setActions(actions)
-        if (items.length > 0) useGameStore.getState().setItems(items)
-        if (abilities.length > 0) useGameStore.getState().setAbilities(abilities)
-        if (equipment.length > 0) useGameStore.getState().setEquipment(equipment)
-        if (encounters.length > 0) useGameStore.getState().setEncounters(encounters)
-        if (maps.length > 0) useGameStore.getState().setMaps(maps)
-      }
-    } catch {
-      // 服务端尚未启动时保留静态目录，WebSocket 建立后仍可正常预览。
-    } finally {
-      if (this.catalogAbortController === controller) this.catalogAbortController = null
-    }
-  }
-
-  /**
-   * 向服务端发送初始 Hello 握手包
-   */
   private sendHello(): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return
-    const packet: Packet = {
-      kind: 'hello',
-      requestId: `${this.playerId.slice(0, 8)}-hello-${++this.requestSequence}`,
-      sequence: 0,
-      payload: {},
-    }
-    this.socket.send(new TextEncoder().encode(JSON.stringify(packet)))
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    socket.send(encodeJsonEnvelope(WireMessageType.Hello, createRequestId(), this.nextOutboundSequence(), {
+      clientVersion: APP_VERSION,
+      gameDataFingerprint: null,
+    }))
   }
 
-  /**
-   * 处理服务端下发的 WebSocket 消息包
-   */
+  private nextOutboundSequence(): number {
+    const next = this.outboundSequence + 1
+    if (!Number.isSafeInteger(next)) throw new Error('客户端协议序列号耗尽。')
+    this.outboundSequence = next
+    return next
+  }
+
   private async handleMessage(data: unknown): Promise<void> {
-    const bytes = data instanceof Blob
-      ? new Uint8Array(await data.arrayBuffer())
-      : data instanceof ArrayBuffer
-        ? new Uint8Array(data)
-        : new TextEncoder().encode(String(data))
-    let packet: Packet
-    try {
-      packet = JSON.parse(decoder.decode(bytes)) as Packet
-    } catch {
-      useGameStore.getState().setNotice('收到无法解析的数据包。')
+    let bytes: Uint8Array
+    if (data instanceof ArrayBuffer) bytes = new Uint8Array(data)
+    else if (data instanceof Blob) bytes = new Uint8Array(await data.arrayBuffer())
+    else {
+      useGameStore.getState().setNotice(getT()('app.login.errorNetworkFailed'))
       return
     }
 
-    switch (packet.kind) {
-      case 'snapshot':
-      {
-        const snapshot = packet.payload as PlayerSnapshot
-        gameLogService.ingestSnapshot(
-          snapshot.playerId,
-          snapshot.logEvents,
-        )
-        useGameStore.getState().applySnapshot(snapshot)
-        break
-      }
-      case 'delta':
-      {
-        const patch = packet.payload as PlayerPatch
-        if (patch.eventBatch && patch.eventBatch.length > 0) {
-          gameLogService.ingestBatch(patch.playerId, patch.eventBatch)
+    try {
+      const envelope = decodeEnvelope(bytes)
+      if (envelope.sequence < this.lastServerSequence && envelope.messageType !== WireMessageType.Pong) return
+      this.lastServerSequence = Math.max(this.lastServerSequence, envelope.sequence)
+
+      switch (envelope.messageType) {
+        case WireMessageType.HelloAck: {
+          const hello = decodeJsonPayload<HelloResponse>(envelope)
+          if (hello.protocolVersion !== 1) throw new Error('服务端协议版本不匹配。')
+          break
         }
-        useGameStore.getState().applyPatch(patch)
-        break
+        case WireMessageType.Snapshot: {
+          const dto = decodeJsonPayload<PlayerSnapshotDto>(envelope)
+          const snapshot = await decodePlayerSnapshotDto(dto, this.account)
+          useGameStore.getState().applySnapshot(snapshot)
+          break
+        }
+        case WireMessageType.SnapshotDelta: {
+          const dto = decodeJsonPayload<PlayerSnapshotDeltaDto>(envelope)
+          const current = useGameStore.getState().toSnapshotView()
+          const patch = await decodePlayerSnapshotDeltaDto(dto, current)
+          useGameStore.getState().applyPatch(patch)
+          break
+        }
+        case WireMessageType.CommandResult: {
+          const result = decodeJsonPayload<CommandResultDto>(envelope)
+          if (result.requestId !== envelope.requestId || !this.pendingRequests.delete(result.requestId)) return
+          if (isPlayerSnapshotDto(result.payload)) {
+            const snapshot = await decodePlayerSnapshotDto(result.payload, this.account)
+            useGameStore.getState().applySnapshot(snapshot)
+          }
+          if (result.message) useGameStore.getState().setNotice(result.message)
+          break
+        }
+        case WireMessageType.ActionResult:
+          // ActionIntent 的专用回执只确认排队结果；权威状态随后由 snapshot/delta 推送。
+          break
+        case WireMessageType.Error: {
+          const error = decodeJsonPayload<ErrorDto>(envelope)
+          if (error.requestId) this.pendingRequests.delete(error.requestId)
+          useGameStore.getState().setNotice(error.message || error.code)
+          break
+        }
+        case WireMessageType.Pong:
+        case WireMessageType.AssetView:
+        case WireMessageType.MarketBook:
+        case WireMessageType.MarketOrder:
+        case WireMessageType.ComputeAdvanceRequest:
+        case WireMessageType.ComputeAdvanceResponse:
+          break
+        default:
+          throw new Error('收到未知协议消息。')
       }
-      case 'ack': {
-        const ack = packet.payload as AckPayload
-        useGameStore.getState().setNotice(ack.message)
-        break
-      }
-      case 'pong': {
-        // 心跳回执，静默确认
-        break
-      }
-      case 'error': {
-        const error = packet.payload as ErrorPayload
-        useGameStore.getState().setNotice(error.message)
-        break
-      }
-      default:
-        break
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '协议包解析失败。'
+      useGameStore.getState().setNotice(message)
+      this.requestSnapshotOrResync()
     }
   }
 }
 
-/** 全局单例游戏网络客户端 */
 export const gameClient = new GameClient()
+
+function isPlayerSnapshotDto(value: unknown): value is PlayerSnapshotDto {
+  if (value === null || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  return typeof row.playerId === 'string'
+    && typeof row.displayName === 'string'
+    && Array.isArray(row.sections)
+    && Array.isArray(row.assets)
+}

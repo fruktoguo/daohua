@@ -215,7 +215,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
       })
     }
 
-    gameClient.sendCommand('set_combat_loadout', {
+    gameClient.sendCommand('loadout.replace', {
       ...combat,
       equipment: nextEquipped,
     })

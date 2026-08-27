@@ -15,6 +15,8 @@ export const commonZh = {
     net: {
       queueOffline: '连接尚未建立，操作将在重连后可用。',
       tokenRejected: '连接被服务端拒绝，请检查访问令牌设置',
+      invalidCommand: '操作格式无效。',
+      sessionExpired: '登录会话已失效，请重新登录。',
     },
   },
 }

@@ -835,7 +835,8 @@ export interface WorldState {
 }
 
 /**
- * 玩家全量快照 (PlayerSnapshot) - 服务端下发的权威完整状态
+ * 玩家 UI 投影（由 wire.v1 PlayerSnapshotDto 的 section 载荷解码得到）。
+ * 该类型只服务于 React 渲染，不作为网络或持久化契约。
  */
 export interface PlayerSnapshot {
   /** 玩家唯一 ID */
@@ -858,8 +859,6 @@ export interface PlayerSnapshot {
   buffs: Buff[]
   /** 历史统计数据 */
   stats: Stats
-  /** 最近日志事件列表 */
-  logEvents?: LogEvent[]
   /** 战斗装配数据 */
   combat?: CombatLoadout
   /** 实时战斗资源 */
@@ -883,7 +882,7 @@ export interface PlayerSnapshot {
 }
 
 /**
- * 玩家增量补丁 (PlayerPatch) - 用于局部轻量同步
+ * 玩家 UI 增量投影（由 wire.v1 PlayerSnapshotDeltaDto 解码得到）。
  */
 export interface PlayerPatch {
   playerId: string
@@ -896,7 +895,6 @@ export interface PlayerPatch {
   buffs?: Buff[]
   stats?: Stats
   queueProgress?: QueueProgress
-  eventBatch?: LogEvent[]
   combat?: CombatLoadout
   combatResources?: CombatResourceState
   combatAttributes?: CombatAttributes
@@ -908,38 +906,6 @@ export interface PlayerPatch {
   sequenceId?: number
   createdAtUnixSeconds?: number
   renameCooldownSeconds?: number
-}
-
-/**
- * 前后端 WebSocket 传输协议通用封包结构
- */
-export interface Packet<T = unknown> {
-  /** 包体类型（如 'snapshot', 'delta', 'command', 'hello', 'ack', 'error'） */
-  kind: string
-  /** 请求唯一追溯 ID */
-  requestId: string
-  /** 消息序号 */
-  sequence: number
-  /** 承载的业务负载数据 */
-  payload: T
-}
-
-/**
- * 命令操作确认响应负载
- */
-export interface AckPayload {
-  success: boolean
-  code: string
-  message: string
-  serverTimeUnixSeconds: number
-}
-
-/**
- * 业务错误响应负载
- */
-export interface ErrorPayload {
-  code: string
-  message: string
 }
 
 /**

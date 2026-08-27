@@ -21,8 +21,8 @@ interface MarketOwnOrdersProps {
  *
  * 核心功能与交互流程：
  * 1. 活跃挂单列表：展示每笔订单的买卖方向、标的名称、挂单单价、未成交余量、订单状态（挂单中 / 部分成交）与过期时间；
- * 2. 撤单交互：点击 × 按钮向服务端发送 market_cancel 撤回指定订单并解冻资产；
- * 3. 结算提取 (Claim)：点击“提取结算”向服务端发送 market_claim 指令提取成交收入与退还押金；
+ * 2. 撤单交互：点击 × 按钮向服务端发送 market.cancel 撤回指定订单并解冻资产；
+ * 3. 结算提取 (Claim)：点击“提取结算”向服务端发送 market.claim 指令提取成交收入与退还押金；
  * 4. 底部展示全服累计成交量、撮合笔数及卖家 2% 印花税率说明。
  */
 export const MarketOwnOrders = memo(function MarketOwnOrders({
@@ -34,7 +34,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
   const catalog = useGameStore(state => state.items)
   const setNotice = useGameStore(state => state.setNotice)
   const cancelOrder = useCallback((orderId: string) => {
-    if (!gameClient.sendCommand('market_cancel', { orderId })) return
+    if (!gameClient.sendCommand('market.cancel', { orderId })) return
     setNotice(getT()('market.notice.cancelSubmitted'))
     window.setTimeout(onChanged, 120)
   }, [onChanged, setNotice])
@@ -43,7 +43,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
     <div className="market-own-panel">
       <div className="market-own-toolbar">
         <span className="market-toolbar-label">{t('market.activeOrdersTotal', { count: formatNumber(orders.length) })}</span>
-        <button className="market-claim" onClick={() => gameClient.sendCommand('market_claim', {})} type="button">{t('market.claimSettlement')}</button>
+      <button className="market-claim" onClick={() => gameClient.sendCommand('market.claim', {})} type="button">{t('market.claimSettlement')}</button>
       </div>
       <section className="market-own-orders">
         {orders.length === 0

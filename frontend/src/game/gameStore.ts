@@ -97,6 +97,8 @@ interface GameStore {
   applySnapshot: (snapshot: PlayerSnapshot) => void
   /** 应用服务端增量补丁 (Delta Patch) */
   applyPatch: (patch: PlayerPatch) => void
+  /** 导出当前 UI 投影，供 wire.v1 增量解码器合并变更 section。 */
+  toSnapshotView: () => PlayerSnapshot
   /** 重置游戏状态至离线初始值（登出时调用） */
   resetGameStore: () => void
 }
@@ -229,7 +231,7 @@ function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['comb
 /**
  * 游戏核心全局 Zustand 状态机
  */
-export const useGameStore = create<GameStore>((set) => ({
+export const useGameStore = create<GameStore>((set, get) => ({
   playerId: initial.playerId,
   name: initial.name,
   account: initial.name,
@@ -344,6 +346,31 @@ export const useGameStore = create<GameStore>((set) => ({
       world: patch.world ?? state.world,
     }
   }),
+  toSnapshotView: () => {
+    const state = get()
+    return {
+      playerId: state.playerId,
+      name: state.name,
+      account: state.account,
+      sequenceId: state.sequenceId,
+      createdAtUnixSeconds: state.createdAtUnixSeconds,
+      renameCooldownSeconds: state.renameCooldownSeconds,
+      visual: state.visual,
+      version: state.version,
+      serverTimeUnixSeconds: state.serverTimeUnixSeconds,
+      serverTimeUnixMilliseconds: state.serverTimeUnixMilliseconds,
+      presenceMode: state.presenceMode,
+      isPendingBreakthrough: state.isPendingBreakthrough,
+      queue: state.queue,
+      inventory: state.inventory,
+      buffs: state.buffs,
+      stats: state.stats,
+      combat: state.combat,
+      combatResources: state.combatResources,
+      combatAttributes: state.combatAttributes,
+      world: state.world,
+    }
+  },
   resetGameStore: () => set({
     playerId: initial.playerId,
     name: initial.name,

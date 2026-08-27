@@ -844,7 +844,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
                 {activeTravel && (
                   <button
                     className="danger world-stop-btn"
-                    onClick={() => gameClient.sendCommand('remove_action', { entryId: activeTravel.entryId })}
+                    onClick={() => gameClient.sendCommand('action.remove', { actionInstanceId: activeTravel.entryId })}
                     type="button"
                   >
                     {t('combat.map.stopTravel')}
@@ -910,7 +910,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
               <button
                 className="confirm-primary"
                 onClick={() => {
-                  gameClient.sendCommand('travel_to', { destinationNodeId: selectedNode.nodeId })
+                  gameClient.sendCommand('world.travel', { targetNodeId: selectedNode.nodeId })
                   setTravelModalOpen(false)
                 }}
                 type="button"

@@ -425,7 +425,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
         <label className="loop-toggle">
           <input
             checked={queue.loopEnabled}
-            onChange={event => gameClient.sendCommand('set_loop', { enabled: event.target.checked })}
+            onChange={event => gameClient.sendCommand('queue.configure', { loopEnabled: event.target.checked })}
             type="checkbox"
           />
           {t('app.queue.loop')}
@@ -467,14 +467,14 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                   <button
                     aria-label={t('app.queue.moveUpAria')}
                     disabled={index === 0}
-                    onClick={() => gameClient.sendCommand('move_action', { entryId: entry.entryId, direction: -1 })}
+                    onClick={() => gameClient.sendCommand('queue.move', { actionInstanceId: entry.entryId, direction: -1 })}
                     title={t('app.queue.moveUpTitle')}
                     type="button"
                   >↑</button>
                   <button
                     aria-label={t('app.queue.moveDownAria')}
                     disabled={index === queue.entries.length - 1}
-                    onClick={() => gameClient.sendCommand('move_action', { entryId: entry.entryId, direction: 1 })}
+                    onClick={() => gameClient.sendCommand('queue.move', { actionInstanceId: entry.entryId, direction: 1 })}
                     title={t('app.queue.moveDownTitle')}
                     type="button"
                   >↓</button>
@@ -497,7 +497,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
         description={pendingRemoval ? t('app.queue.removeConfirmDesc', { name: pendingRemoval.actionName }) : ''}
         onClose={() => setPendingRemoval(null)}
         onConfirm={() => {
-          if (pendingRemoval) gameClient.sendCommand('remove_action', { entryId: pendingRemoval.entryId })
+          if (pendingRemoval) gameClient.sendCommand('action.remove', { actionInstanceId: pendingRemoval.entryId })
         }}
         open={pendingRemoval !== null}
         title={t('app.queue.removeConfirmTitle')}
@@ -954,7 +954,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       })), [inventory, itemCatalog, t, type])
 
   const updateSlot = useCallback((index: number, itemId: string | null) => {
-    gameClient.sendCommand('set_auto_use', {
+    gameClient.sendCommand('queue.auto_use.configure', {
       actionType: type,
       slotIndex: index,
       itemId,
@@ -1313,8 +1313,11 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
       <button
         className="action-modal-submit"
         onClick={() => {
-          const command = startsImmediately ? 'start_combat' : 'enqueue_action'
-          if (gameClient.sendCommand(command, { actionId: action.id, repeats })) {
+          if (gameClient.sendCommand('action.enqueue', {
+            actionId: action.id,
+            repeatCount: repeats,
+            immediate: startsImmediately,
+          })) {
             onClose()
             if (action.type === 'combat' || startsImmediately) {
               useUiStore.getState().setActiveTab('combat')
@@ -1392,7 +1395,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   if (!combat) return null
 
   const update = (patch: Partial<typeof combat>) => {
-    gameClient.sendCommand('set_combat_loadout', { ...combat, ...patch })
+    gameClient.sendCommand('loadout.replace', { ...combat, ...patch })
   }
   const withConsumable = (index: number, itemId: string | null) => combat.consumableSlots.map((slot, slotIndex) => (
     slotIndex === index
@@ -1828,15 +1831,19 @@ export default function App(): React.JSX.Element {
   const connection = useGameStore(state => state.connection)
   const hasReceivedSnapshot = useGameStore(state => state.hasReceivedSnapshot)
   const currentAccount = useAccountStore(state => state.currentAccount)
+  const sessionChecked = useAccountStore(state => state.sessionChecked)
+  const restoreSession = useAccountStore(state => state.restoreSession)
   const logout = useAccountStore(state => state.logout)
 
   useEffect(() => {
     initUiScale()
-    if (currentAccount) {
-      gameClient.connect()
-    }
+    void restoreSession()
     return () => gameClient.dispose()
-  }, [currentAccount])
+  }, [restoreSession])
+
+  useEffect(() => {
+    if (sessionChecked && currentAccount) gameClient.connect()
+  }, [currentAccount, sessionChecked])
 
   if (!currentAccount) {
     return <LoginPage />

@@ -58,7 +58,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   if (!combat) return <div className="abilities-panel-empty">{t('common.emptyData')}</div>
 
   const update = (patch: Partial<typeof combat>) => {
-    gameClient.sendCommand('set_combat_loadout', { ...combat, ...patch })
+    gameClient.sendCommand('loadout.replace', { ...combat, ...patch })
   }
 
   const withAbility = (index: number, abilityId: string | null) => combat.abilitySlots.map((slot, slotIndex) => (
