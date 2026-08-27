@@ -1302,7 +1302,6 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
       <div className="repeat-row">
         <span>{t('app.action.repeats')}</span>
         <QuantitySelector
-          allowInfinity
           ariaLabel={t('app.action.repeatsAria')}
           max={1000}
           onChange={setRepeats}
