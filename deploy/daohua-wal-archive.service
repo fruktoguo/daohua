@@ -1,0 +1,14 @@
+[Unit]
+Description=道化 PostgreSQL WAL 归档巡检与轮转
+After=docker.service daohua-db-backup.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c '/opt/daohua/wal-archive.sh verify && /opt/daohua/wal-archive.sh prune'
+User=root
+Group=root
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

@@ -1,0 +1,11 @@
+[Unit]
+Description=每小时执行道化 PostgreSQL WAL 归档巡检
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+Unit=daohua-wal-archive.service
+
+[Install]
+WantedBy=timers.target
