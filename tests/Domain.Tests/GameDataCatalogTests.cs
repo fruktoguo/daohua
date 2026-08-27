@@ -28,6 +28,8 @@ public sealed class GameDataCatalogTests
         var catalog = GameDataCatalog.LoadEmbedded();
         Assert.NotEmpty(catalog.Actions.All);
         Assert.NotEmpty(catalog.Items);
+        Assert.NotEmpty(catalog.Maps);
+        Assert.NotEmpty(catalog.Encounters);
         Assert.False(string.IsNullOrWhiteSpace(catalog.Fingerprint));
     }
 }

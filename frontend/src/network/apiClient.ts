@@ -1,4 +1,4 @@
-import type { MarketBook, MarketMetrics, MarketOrder } from '../game/types'
+import type { CombatEncounterDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** HTTP API 只使用同源或显式配置的 v1 地址，认证由 HttpOnly Cookie 承担。 */
@@ -9,6 +9,17 @@ export function getHttpBase(): string {
 
 export function getApiUrl(path: string): string {
   return `${getHttpBase()}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
+  maps: WorldMapDefinition[]
+  encounters: CombatEncounterDefinition[]
+}> {
+  const [maps, encounters] = await Promise.all([
+    requestJson<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal }),
+    requestJson<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal }),
+  ])
+  return { maps, encounters }
 }
 
 function parseNumericVariant(value: string | null, fallback: number): number {

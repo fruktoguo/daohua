@@ -18,7 +18,8 @@ public sealed record SimulationResult(
     IReadOnlyList<SimulationEvent> Events,
     long StateVersion)
 {
-    public bool Changed => ElapsedSeconds > 0 || CompletedRepeats > 0 || AssetDeltas.Count > 0;
+    /// <summary>只把玩家可见/可恢复状态变化视为变更；空队列推进时不广播、不制造落盘版本。</summary>
+    public bool Changed => CompletedRepeats > 0 || AssetDeltas.Count > 0 || Events.Count > 0;
 }
 
 /// <summary>
@@ -84,7 +85,8 @@ public static class SimulationEngine
 
         player.LastSimulatedAt = target;
         if (remainingSeconds < 0) throw new DomainException(DomainErrorCode.InvariantViolation, "模拟时间出现负余量。");
-        if (completedRepeats > 0 || (target - from).TotalSeconds > 0)
+        // 空队列只更新内存中的时钟，不递增状态版本，也不标记 section，避免每秒产生无意义的磁盘写入。
+        if (transitions > 0)
         {
             player.StateVersion = checked(player.StateVersion + 1);
             player.MarkDirty(PlayerSectionKind.Progression);

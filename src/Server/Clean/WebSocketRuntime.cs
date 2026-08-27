@@ -63,6 +63,13 @@ public static class WebSocketEndpoint
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var token = linked.Token;
+        ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot) => QueueJsonAsync(
+            session,
+            WireMessageType.SnapshotDelta,
+            Guid.NewGuid(),
+            ProtocolSnapshotMapper.ToDelta(snapshot, gameData.Fingerprint),
+            token);
+        runtime.SnapshotUpdated += OnSnapshotUpdated;
         try
         {
             var sendTask = SendLoopAsync(socket, session, token);
@@ -82,6 +89,7 @@ public static class WebSocketEndpoint
         }
         finally
         {
+            runtime.SnapshotUpdated -= OnSnapshotUpdated;
             registry.Remove(playerId, session);
             await runtime.RemoveAsync(playerId, true, CancellationToken.None);
         }

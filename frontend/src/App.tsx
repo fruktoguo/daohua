@@ -30,6 +30,7 @@ import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
 import { gameClient } from './network/gameClient'
 import { useAccountStore } from './network/account'
+import { fetchGameCatalog } from './network/apiClient'
 import { initUiScale } from './utils/uiScale'
 import { useUiStore, type TabId, type AlchemySubTab, type ForgingSubTab } from './uiStore'
 import { useT, getT } from './i18n'
@@ -1843,6 +1844,22 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (sessionChecked && currentAccount) gameClient.connect()
   }, [currentAccount, sessionChecked])
+
+  useEffect(() => {
+    if (!currentAccount) return undefined
+    const controller = new AbortController()
+    void fetchGameCatalog(controller.signal)
+      .then(catalog => {
+        useGameStore.getState().setMaps(catalog.maps)
+        useGameStore.getState().setEncounters(catalog.encounters)
+      })
+      .catch(error => {
+        if (!controller.signal.aborted) {
+          useGameStore.getState().setNotice(error instanceof Error ? `游戏目录加载失败：${error.message}` : '游戏目录加载失败。')
+        }
+      })
+    return () => controller.abort()
+  }, [currentAccount])
 
   if (!currentAccount) {
     return <LoginPage />

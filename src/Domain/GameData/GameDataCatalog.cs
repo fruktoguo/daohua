@@ -107,7 +107,10 @@ public sealed class GameDataCatalog
         string contentVersion,
         string fingerprint,
         ActionCatalog actions,
-        IReadOnlyDictionary<ItemId, ItemDefinition>? items = null)
+        IReadOnlyDictionary<ItemId, ItemDefinition>? items = null,
+        IReadOnlyList<JsonElement>? maps = null,
+        IReadOnlyList<JsonElement>? encounters = null,
+        IReadOnlyDictionary<string, JsonElement>? monsters = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -115,12 +118,22 @@ public sealed class GameDataCatalog
         Fingerprint = fingerprint;
         Actions = actions ?? throw new ArgumentNullException(nameof(actions));
         Items = NormalizeItems(items);
+        Maps = maps?.Select(value => value.Clone()).ToArray() ?? [];
+        Encounters = encounters?.Select(value => value.Clone()).ToArray() ?? [];
+        Monsters = monsters?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)
+            ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
     }
 
     public string ContentVersion { get; }
     public string Fingerprint { get; }
     public ActionCatalog Actions { get; }
     public IReadOnlyDictionary<ItemId, ItemDefinition> Items { get; }
+    /// <summary>地图原始定义由宿主映射为协议 DTO；领域只负责持有经过资源解析的不可变 JSON 值。</summary>
+    public IReadOnlyList<JsonElement> Maps { get; }
+    /// <summary>遭遇原始定义由宿主映射为协议 DTO。</summary>
+    public IReadOnlyList<JsonElement> Encounters { get; }
+    /// <summary>怪物原始定义，用于解析遭遇中的 enemyId 引用。</summary>
+    public IReadOnlyDictionary<string, JsonElement> Monsters { get; }
 
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);
 
@@ -130,6 +143,9 @@ public sealed class GameDataCatalog
         ArgumentNullException.ThrowIfNull(jsonDocuments);
         var actions = new List<ActionDefinition>();
         var items = new Dictionary<ItemId, ItemDefinition>();
+        var maps = new List<JsonElement>();
+        var encounters = new List<JsonElement>();
+        var monsters = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var contentVersion = "unknown";
         var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var bytes in jsonDocuments)
@@ -153,6 +169,18 @@ public sealed class GameDataCatalog
                     var definition = ParseItem(entry, id);
                     items.Add(definition.Id, definition);
                 }
+                else if (id.StartsWith("map.", StringComparison.Ordinal))
+                {
+                    maps.Add(entry.Clone());
+                }
+                else if (id.StartsWith("encounter.", StringComparison.Ordinal))
+                {
+                    encounters.Add(entry.Clone());
+                }
+                else if (id.StartsWith("enemy.", StringComparison.Ordinal))
+                {
+                    monsters.Add(id, entry.Clone());
+                }
                 else if (entry.TryGetProperty("durationSeconds", out _))
                 {
                     actions.Add(ParseAction(entry, id));
@@ -160,7 +188,7 @@ public sealed class GameDataCatalog
             }
         }
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
-        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items);
+        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters);
     }
 
     public static GameDataCatalog LoadEmbedded(Assembly? assembly = null)

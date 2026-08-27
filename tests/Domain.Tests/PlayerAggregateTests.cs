@@ -51,6 +51,20 @@ public sealed class PlayerAggregateTests
     }
 
     [Fact]
+    public void EmptyQueueClockAdvanceDoesNotCreateStateVersion()
+    {
+        var created = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var player = PlayerAggregate.Restore(created.ExportState());
+        var version = player.StateVersion;
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(60), ActionCatalog.Default);
+
+        Assert.Equal(version, player.StateVersion);
+        Assert.False(result.Changed);
+        Assert.Empty(player.DirtySections);
+    }
+
+    [Fact]
     public void RestoreFromReplacesMutableStateButKeepsIdentity()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");

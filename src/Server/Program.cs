@@ -110,6 +110,7 @@ builder.Services.AddHostedService<PostgresRetentionWorker>();
 if (processRole == ServerProcessRole.Api)
 {
     builder.Services.AddHostedService<PlayerFlushHostedService>();
+    builder.Services.AddHostedService<PlayerSimulationHostedService>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MarketRuntime>());
 }
 
@@ -186,6 +187,16 @@ if (processRole == ServerProcessRole.Api)
                 sellPrice = item.SellPrice,
                 isTradable = item.IsTradable
             }));
+    });
+    catalog.MapGet("/maps", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        return Results.Ok(StaticGameCatalogMapper.Maps(gameData));
+    });
+    catalog.MapGet("/encounters", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        return Results.Ok(StaticGameCatalogMapper.Encounters(gameData));
     });
 
     var auth = app.MapGroup("/api/v1/auth");

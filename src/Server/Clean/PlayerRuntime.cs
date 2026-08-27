@@ -43,6 +43,7 @@ public sealed class PlayerRuntime(
     private readonly TimeSpan _ownershipLease = TimeSpan.FromSeconds(45);
 
     public int LoadedCount => _actors.Count;
+    public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
 
     public async ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
@@ -78,6 +79,20 @@ public sealed class PlayerRuntime(
         {
             if (!entry.Value.IsValueCreated) continue;
             await (await entry.Value.Value).FlushAsync(force, cancellationToken);
+        }
+    }
+
+    /// <summary>推进当前已加载玩家的确定性模拟；只在状态实际变化时向在线会话广播增量。</summary>
+    public async ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
+    {
+        foreach (var entry in _actors)
+        {
+            if (!entry.Value.IsValueCreated) continue;
+            var actor = await entry.Value.Value;
+            var result = await actor.AdvanceSimulationAsync(target, cancellationToken);
+            if (result?.Simulation?.Changed != true) continue;
+            var handler = SnapshotUpdated;
+            if (handler is not null) await handler(result.Snapshot);
         }
     }
 
@@ -136,7 +151,9 @@ public sealed class PlayerRuntime(
                 new AssetKey(new ItemId(balance.AssetId), balance.Variant),
                 balance.Quantity,
                 balance.Version)));
-            return new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease);
+            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease);
+            await actor.AdvanceSimulationAsync(DateTimeOffset.UtcNow, cancellationToken);
+            return actor;
         }
         catch
         {
@@ -536,6 +553,13 @@ public sealed class PlayerRuntime(
             finally { _gate.Release(); }
         }
 
+        public async ValueTask<PlayerCommandResult?> AdvanceSimulationAsync(DateTimeOffset target, CancellationToken cancellationToken)
+        {
+            var payload = JsonSerializer.SerializeToElement(new { targetTime = target }, ServerJson.Options);
+            var result = await ExecuteAsync("simulation.advance", payload, 0, null, cancellationToken);
+            return result.Simulation is null ? null : result;
+        }
+
         public async ValueTask FlushAsync(bool force, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken);
@@ -742,6 +766,26 @@ public sealed class PlayerFlushHostedService(PlayerRuntime runtime, ServerOption
             {
                 if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家 section 刷新失败。");
                 await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+            }
+        }
+    }
+}
+
+/// <summary>在线玩家模拟时钟。推进只发生在内存单写者内，section 仍按低频批次落盘。</summary>
+public sealed class PlayerSimulationHostedService(PlayerRuntime runtime, ILogger<PlayerSimulationHostedService> logger) : BackgroundService
+{
+    private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            try { await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow, stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家模拟推进失败。");
             }
         }
     }
