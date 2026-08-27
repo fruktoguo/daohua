@@ -43,7 +43,6 @@ export class GameClient {
 
   playerId = getSessionAccount()?.playerId ?? ''
   account = getSessionAccount()?.account ?? ''
-  characterName = getSessionAccount()?.name ?? ''
 
   private clearReconnectTimer(): void {
     if (this.reconnectTimer !== undefined) {
@@ -81,7 +80,6 @@ export class GameClient {
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
     this.playerId = accountInfo.playerId
     this.account = accountInfo.account
-    this.characterName = accountInfo.name
     this.disposed = false
     this.reconnectDelay = 500
     this.outboundSequence = 0
@@ -100,23 +98,18 @@ export class GameClient {
     this.stopHeartbeat()
     const socket = this.socket
     this.socket = null
-    if (socket && socket.readyState === WebSocket.OPEN) socket.close(1000, '客户端断开')
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) socket.close(1000, '客户端断开')
     useGameStore.getState().setConnection('offline')
   }
 
   requestSnapshotOrResync(): void {
     if (this.disposed) return
     const socket = this.socket
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
       socket.close(1000, '协议序列断层，重新建立快照')
     } else {
       this.open()
     }
-  }
-
-  /** 认证改为 HttpOnly Cookie 后不再处理访问令牌，仅作为显式重连入口保留。 */
-  notifyAccessTokenChanged(): void {
-    if (!this.disposed) this.requestSnapshotOrResync()
   }
 
   /** 发送新的通用命令信封；命令名和载荷由 wire.v1 直接定义。 */
@@ -131,7 +124,7 @@ export class GameClient {
       return false
     }
     const requestId = createRequestId()
-    const commandPayload = command === 'action.enqueue' ? { ...payload, requestId } : payload
+    const commandPayload = { ...payload, requestId }
     const expectedStateVersion = useGameStore.getState().version
     try {
       socket.send(encodeJsonEnvelope(WireMessageType.Command, requestId, this.nextOutboundSequence(), {
@@ -151,26 +144,34 @@ export class GameClient {
   private open(): void {
     this.clearReconnectTimer()
     if (this.disposed || !getSessionAccount()) return
+    this.outboundSequence = 0
+    this.lastServerSequence = 0
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
     const socket = new WebSocket(getEndpoint())
     socket.binaryType = 'arraybuffer'
     this.socket = socket
 
     socket.addEventListener('open', () => {
+      if (this.disposed || this.socket !== socket) {
+        socket.close(1000, '客户端已停止')
+        return
+      }
       this.reconnectDelay = 500
       useGameStore.getState().setConnection('online')
       this.startHeartbeat()
       this.sendHello()
     })
     socket.addEventListener('message', event => {
-      void this.handleMessage(event.data)
+      void this.handleMessage(event.data, socket)
     })
     socket.addEventListener('error', () => {
       // close 事件统一重连，避免重复提示。
     })
     socket.addEventListener('close', event => {
       this.stopHeartbeat()
-      if (this.socket === socket) this.socket = null
+      if (this.socket !== socket) return
+      this.socket = null
+      this.pendingRequests.clear()
       if (this.disposed) return
       const authFailure = event.code === 1008 || (event.code >= 4001 && event.code <= 4004)
       if (authFailure) {
@@ -201,7 +202,8 @@ export class GameClient {
     return next
   }
 
-  private async handleMessage(data: unknown): Promise<void> {
+  private async handleMessage(data: unknown, sourceSocket: WebSocket): Promise<void> {
+    if (this.socket !== sourceSocket) return
     let bytes: Uint8Array
     if (data instanceof ArrayBuffer) bytes = new Uint8Array(data)
     else if (data instanceof Blob) bytes = new Uint8Array(await data.arrayBuffer())
@@ -209,11 +211,12 @@ export class GameClient {
       useGameStore.getState().setNotice(getT()('app.login.errorNetworkFailed'))
       return
     }
+    if (this.socket !== sourceSocket) return
 
     try {
       const envelope = decodeEnvelope(bytes)
-      if (envelope.sequence < this.lastServerSequence && envelope.messageType !== WireMessageType.Pong) return
-      this.lastServerSequence = Math.max(this.lastServerSequence, envelope.sequence)
+      if (envelope.sequence <= this.lastServerSequence) return
+      this.lastServerSequence = envelope.sequence
 
       switch (envelope.messageType) {
         case WireMessageType.HelloAck: {

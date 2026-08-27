@@ -19,8 +19,6 @@ export interface AuthResponseDto {
   playerId?: string
   account?: string
   displayName?: string
-  /** 兼容 UI 组件使用的语义别名，线上响应只由 displayName 填充。 */
-  characterName?: string
   message?: string
 }
 
@@ -87,7 +85,6 @@ function authSuccess(dto: ServerAuthDto): AuthResponseDto {
     playerId: dto.playerId,
     account: dto.account,
     displayName: dto.displayName,
-    characterName: dto.displayName,
   }
 }
 
@@ -137,7 +134,7 @@ interface AccountStore {
   restoreSession: () => Promise<boolean>
   logout: () => void
   removeSavedAccount: (account: string) => void
-  updateCharacterName: (newName: string) => void
+  updateDisplayName: (newName: string) => void
 }
 
 function accountFromResponse(response: AuthResponseDto): StoredAccountInfo {
@@ -146,7 +143,7 @@ function accountFromResponse(response: AuthResponseDto): StoredAccountInfo {
     accountId: response.accountId,
     playerId: response.playerId,
     account: response.account,
-    name: response.displayName || response.characterName || response.account,
+    name: response.displayName || response.account,
     lastLoginAt: Date.now(),
   }
 }
@@ -213,7 +210,7 @@ export const useAccountStore = create<AccountStore>((set, get) => ({
     set({ savedAccounts: updated })
   },
 
-  updateCharacterName: name => {
+  updateDisplayName: name => {
     const current = get().currentAccount
     if (!current) return
     const updatedCurrent = { ...current, name: name.trim() }

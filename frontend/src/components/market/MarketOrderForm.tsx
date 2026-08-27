@@ -136,14 +136,14 @@ export const MarketOrderForm = memo(function MarketOrderForm({
       return
     }
 
-    const orderId = `market-${crypto.randomUUID()}`
+    const orderId = crypto.randomUUID()
     if (!gameClient.sendCommand('market.place', {
       orderId,
       itemId,
       side,
       price: parsedPrice,
       quantity: parsedQuantity,
-      enhancementLevel: 0,
+      variant: null,
     })) return
     setNotice(getT()('market.notice.orderSubmitted'))
     window.setTimeout(onPlaced, 120)

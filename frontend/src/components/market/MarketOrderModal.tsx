@@ -137,14 +137,14 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       return
     }
 
-    const orderId = `market-${crypto.randomUUID()}`
+    const orderId = crypto.randomUUID()
     const success = gameClient.sendCommand('market.place', {
       orderId,
       itemId: instrument.itemId,
       side,
       price: numPrice,
       quantity: numQuantity,
-      enhancementLevel: 0,
+      variant: null,
     })
 
     if (success) {

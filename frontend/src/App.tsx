@@ -1316,7 +1316,6 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           if (gameClient.sendCommand('action.enqueue', {
             actionId: action.id,
             repeatCount: repeats,
-            immediate: startsImmediately,
           })) {
             onClose()
             if (action.type === 'combat' || startsImmediately) {

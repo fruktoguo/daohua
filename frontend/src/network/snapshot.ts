@@ -20,10 +20,18 @@ import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerS
 type JsonObject = Record<string, unknown>
 
 const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
-const EMPTY_SLOT: AutoUseSlot = { itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] }
+const REQUIRED_SNAPSHOT_SECTIONS = ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue'] as const
 
 function object(value: unknown): JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {}
+}
+
+function requiredObject(value: unknown, name: string): JsonObject {
+  const result = object(value)
+  if (Object.keys(result).length === 0) {
+    throw new Error(`${name} section 载荷必须是对象。`)
+  }
+  return result
 }
 
 function stringValue(value: unknown, fallback = ''): string {
@@ -42,11 +50,12 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-/** System.Text.Json 序列化 record struct ID 时可能是字符串或 { value } 对象；协议映射统一取稳定文本值。 */
-function identifierValue(value: unknown): string {
-  if (typeof value === 'string') return value
+/** wire.v1 section 中的 Domain record struct ID 统一以 { value } 形式序列化。 */
+function identifierValue(value: unknown, name = '标识'): string {
   const candidate = object(value)
-  return stringValue(candidate.value)
+  const result = stringValue(candidate.value)
+  if (!result) throw new Error(`${name}载荷无效。`)
+  return result
 }
 
 function base64ToBytes(value: string): Uint8Array {
@@ -58,38 +67,32 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes
 }
 
-interface BrotliStreamConstructor {
-  new (format: string): TransformStream<Uint8Array, Uint8Array>
-}
-
 async function decodeSectionPayload(section: PlayerSectionDto): Promise<unknown> {
+  if (section.codec !== 'json') throw new Error(`不支持的 wire.v1 section codec: ${section.codec}`)
   const encoded = base64ToBytes(section.payloadBase64)
-  if (section.storedBytes > 0 && encoded.byteLength !== section.storedBytes) {
+  if (section.storedBytes <= 0 || encoded.byteLength !== section.storedBytes) {
     throw new Error(`section ${section.section} 存储长度校验失败。`)
   }
-  let raw = encoded
-  if (section.codec === 'br-json') {
-    const ctor = (globalThis as unknown as { DecompressionStream?: BrotliStreamConstructor }).DecompressionStream
-    if (!ctor) throw new Error('当前浏览器不支持 br-json section 解码。')
-    const stream = new Blob([encoded.slice().buffer as ArrayBuffer]).stream().pipeThrough(new ctor('br'))
-    raw = new Uint8Array(await new Response(stream).arrayBuffer())
-  } else if (section.codec !== 'json') {
-    throw new Error(`不支持的 section codec: ${section.codec}`)
-  }
-  if (section.rawBytes > 0 && raw.byteLength !== section.rawBytes) {
+  const raw = encoded
+  if (section.rawBytes <= 0 || raw.byteLength !== section.rawBytes) {
     throw new Error(`section ${section.section} 原始长度校验失败。`)
   }
-  if (section.checksum) {
-    const digest = await crypto.subtle.digest('SHA-256', raw.slice().buffer as ArrayBuffer)
-    const checksum = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
-    if (checksum !== section.checksum.toLowerCase()) throw new Error(`section ${section.section} 校验和不匹配。`)
-  }
+  if (!/^[0-9a-f]{64}$/i.test(section.checksum)) throw new Error(`section ${section.section} 校验和格式无效。`)
+  const digest = await crypto.subtle.digest('SHA-256', raw.slice().buffer as ArrayBuffer)
+  const checksum = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+  if (checksum !== section.checksum.toLowerCase()) throw new Error(`section ${section.section} 校验和不匹配。`)
   const text = new TextDecoder().decode(raw)
   return JSON.parse(text) as unknown
 }
 
 async function decodeSections(sections: readonly PlayerSectionDto[]): Promise<Map<string, unknown>> {
+  if (!Array.isArray(sections)) throw new Error('玩家 section 列表无效。')
+  const names = new Set<string>()
   for (const section of sections) {
+    if (!section || typeof section.section !== 'string' || section.section.length === 0 || names.has(section.section)) {
+      throw new Error('玩家 section 标识重复或为空。')
+    }
+    names.add(section.section)
     if (section.schemaVersion !== 1) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
   }
   const decoded = await Promise.all(sections.map(async section => [section.section, await decodeSectionPayload(section)] as const))
@@ -98,51 +101,77 @@ async function decodeSections(sections: readonly PlayerSectionDto[]): Promise<Ma
 
 async function verifyHeadChecksum(dto: PlayerSnapshotDto): Promise<void> {
   const expected = dto.head.checksum?.toLowerCase()
-  if (!expected) return
-  const encoded = dto.sections.map(section => base64ToBytes(section.payloadBase64))
-  const total = encoded.reduce((size, bytes) => size + bytes.byteLength, 0)
-  const joined = new Uint8Array(total)
-  let offset = 0
-  for (const bytes of encoded) {
-    joined.set(bytes, offset)
-    offset += bytes.byteLength
-  }
-  const digest = await crypto.subtle.digest('SHA-256', joined.slice().buffer as ArrayBuffer)
+  if (!expected || !/^[0-9a-f]{64}$/.test(expected)) throw new Error('玩家快照头校验和缺失或格式无效。')
+  const canonical = dto.sections
+    .slice()
+    .sort((left, right) => left.section.localeCompare(right.section))
+    .map(section => `${section.section}:${section.sectionVersion}:${section.checksum}`)
+    .join('|')
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical).buffer as ArrayBuffer)
   const actual = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
   if (actual !== expected) throw new Error('玩家快照头校验和不匹配。')
 }
 
 function mapPresence(value: unknown): PlayerSnapshot['presenceMode'] {
-  if (typeof value === 'string') {
-    if (value === 'online') return 'online'
-    if (value === 'suspended') return 'idle-offline'
-    if (value === 'offline') return 'fully-offline'
-  }
-  if (numberValue(value) === 1) return 'online'
-  if (numberValue(value) === 2) return 'idle-offline'
-  return 'fully-offline'
+  if (value === 0) return 'fully-offline'
+  if (value === 1) return 'online'
+  if (value === 2) return 'idle-offline'
+  throw new Error('玩家 presence 枚举值无效。')
+}
+
+function emptySlot(): AutoUseSlot {
+  return { itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] }
 }
 
 function defaultAutoUseSlots(): QueueState['autoUseSlots'] {
-  return Object.fromEntries(ACTION_TYPES.map(type => [type, Array.from({ length: 3 }, () => ({ ...EMPTY_SLOT }))])) as QueueState['autoUseSlots']
+  return Object.fromEntries(ACTION_TYPES.map(type => [type, Array.from({ length: 3 }, emptySlot)])) as QueueState['autoUseSlots']
 }
 
-function mapQueue(value: unknown): QueueState {
+function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
+  if (!Array.isArray(value)) throw new Error('settings.autoUseSlots 必须是数组。')
+  const autoUseSlots = defaultAutoUseSlots()
+  for (const raw of arrayValue(value)) {
+    const slot = object(raw)
+    if (Object.keys(slot).length === 0) throw new Error('settings.autoUseSlots 中存在无效槽位。')
+    const actionType = stringValue(slot.actionType) as ActionType
+    const slotIndex = numberValue(slot.slotIndex, -1)
+    if (!ACTION_TYPES.includes(actionType) || !Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= 3) continue
+    if ((slot.itemId !== null && typeof slot.itemId !== 'string') || typeof slot.quantity !== 'number' || !Number.isFinite(slot.quantity) || slot.quantity <= 0 || typeof slot.enabled !== 'boolean') {
+      throw new Error('settings.autoUseSlots 槽位字段无效。')
+    }
+    autoUseSlots[actionType][slotIndex] = {
+      itemId: slot.itemId || null,
+      quantity: Math.max(1, slot.quantity),
+      enabled: slot.enabled,
+      remainingDurationSeconds: 0,
+      triggers: [],
+    }
+  }
+  return autoUseSlots
+}
+
+function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState): QueueState {
+  if (!Array.isArray(value)) throw new Error('action_queue section 载荷必须是数组。')
+  if (settingsValue && (typeof settingsValue.loopEnabled !== 'boolean' || !Array.isArray(settingsValue.autoUseSlots))) {
+    throw new Error('settings section 循环或自动使用字段无效。')
+  }
   const entries = arrayValue(value).map(item => {
     const row = object(item)
     const intent = object(row.intent)
-    const actionId = identifierValue(intent.actionId) || stringValue(row.actionId, 'cultivation.draw-qi')
+    const actionId = identifierValue(intent.actionId, '行动 actionId')
     const definition = resolveActionDefinition(actionId)
     const statusRaw = row.status
-    const status = statusRaw === 1 || statusRaw === 'running' ? 'running' : statusRaw === 2 || statusRaw === 'blocked' ? 'blocked' : 'queued'
+    const status = statusRaw === 0 ? 'queued' : statusRaw === 1 ? 'running' : statusRaw === 2 ? 'blocked' : (() => { throw new Error(`行动 ${actionId} 状态无效。`) })()
+    const entryId = stringValue(row.id)
+    if (!entryId) throw new Error(`行动 ${actionId} 缺少实例 ID。`)
     const entry: QueueEntry = {
-      entryId: identifierValue(row.id) || stringValue(row.entryId),
+      entryId,
       actionId,
       actionName: definition?.name ?? actionId,
       type: definition?.type ?? 'cultivation',
       status,
       progressSeconds: numberValue(row.progressSeconds),
-      durationSeconds: definition?.durationSeconds ?? numberValue(row.durationSeconds),
+      durationSeconds: definition?.durationSeconds ?? 0,
       remainingRepeats: numberValue(row.remainingRepeats, numberValue(intent.repeatCount, 1)),
       executionKind: definition?.executionKind,
       travelDestinationNodeId: stringValue(intent.targetNodeId) || null,
@@ -151,8 +180,12 @@ function mapQueue(value: unknown): QueueState {
       expedition: null,
     }
     return entry
-  }).filter(entry => Boolean(entry.entryId))
-  return { entries, loopEnabled: true, autoUseSlots: defaultAutoUseSlots() }
+  })
+  return {
+    entries,
+    loopEnabled: settingsValue ? booleanValue(settingsValue.loopEnabled, true) : (base?.loopEnabled ?? true),
+    autoUseSlots: settingsValue ? mapAutoUseSlots(settingsValue.autoUseSlots) : (base?.autoUseSlots ?? defaultAutoUseSlots()),
+  }
 }
 
 function mapStats(value: unknown): Stats {
@@ -174,29 +207,8 @@ function mapStats(value: unknown): Stats {
   }
 }
 
-function mapCombat(value: unknown): { loadout: CombatLoadout; resources: CombatResourceState; attributes: CombatAttributes } {
+function mapCombat(value: unknown): { resources: CombatResourceState; attributes: CombatAttributes } {
   const row = object(value)
-  const loadout: CombatLoadout = {
-    staminaLevel: numberValue(row.staminaLevel, 1),
-    intelligenceLevel: numberValue(row.intelligenceLevel, 1),
-    attackLevel: numberValue(row.attackLevel, 1),
-    defenseLevel: numberValue(row.defenseLevel, 1),
-    swordsmanshipLevel: numberValue(row.swordsmanshipLevel, 1),
-    talismanLevel: numberValue(row.talismanLevel, 1),
-    abilitySlots: arrayValue(row.abilitySlots).map(slot => {
-      const item = object(slot)
-      return { abilityId: identifierValue(item.abilityId) || null, level: Math.max(1, numberValue(item.level, 1)), triggers: [] }
-    }),
-    consumableSlots: arrayValue(row.consumableSlots).map(slot => {
-      const item = object(slot)
-      return { itemId: stringValue(item.itemId) || null, quantity: Math.max(1, numberValue(item.quantity, 1)), enabled: booleanValue(item.enabled), triggers: [] }
-    }),
-    equipment: arrayValue(row.equipment).map(item => {
-      const entry = object(item)
-      return { itemId: stringValue(entry.itemId), enhancementLevel: numberValue(entry.enhancementLevel) }
-    }).filter(item => Boolean(item.itemId)),
-    learnedAbilityIds: arrayValue(row.learnedAbilities ?? row.learnedAbilityIds).map(identifierValue).filter(Boolean),
-  }
   const hitpoints = numberValue(row.hitpoints, 100)
   const maxHitpoints = numberValue(row.maxHitpoints, 100)
   const manapoints = numberValue(row.manapoints, 100)
@@ -232,7 +244,28 @@ function mapCombat(value: unknown): { loadout: CombatLoadout; resources: CombatR
     criticalAvoidance: 0,
     damageAbsorptionRatio: 0,
   }
-  return { loadout, resources, attributes }
+  return { resources, attributes }
+}
+
+function mapLoadout(value: unknown): CombatLoadout {
+  const row = object(value)
+  if (!Array.isArray(row.learnedAbilities) || !Array.isArray(row.equippedItemIds)) {
+    throw new Error('loadout section 载荷字段无效。')
+  }
+  const learnedAbilityIds = arrayValue(row.learnedAbilities).map(value => identifierValue(value, '功法 ID'))
+  const equippedItemIds = arrayValue(row.equippedItemIds).map(value => identifierValue(value, '装备 ID'))
+  return {
+    staminaLevel: 1,
+    intelligenceLevel: 1,
+    attackLevel: 1,
+    defenseLevel: 1,
+    swordsmanshipLevel: 1,
+    talismanLevel: 1,
+    abilitySlots: learnedAbilityIds.map(abilityId => ({ abilityId, level: 1, triggers: [] })),
+    consumableSlots: [],
+    equipment: equippedItemIds.map(itemId => ({ itemId, enhancementLevel: 0 })),
+    learnedAbilityIds,
+  }
 }
 
 function mapWorld(value: unknown): WorldState {
@@ -255,9 +288,11 @@ function mapWorld(value: unknown): WorldState {
 }
 
 function mapBuffs(value: unknown): Buff[] {
+  if (!Array.isArray(value)) throw new Error('buffs section 载荷必须是数组。')
   return arrayValue(value).map(item => {
     const row = object(item)
     const buffId = stringValue(row.buffId)
+    if (!buffId) throw new Error('buffs section 中存在无效 buffId。')
     return {
       buffId,
       name: stringValue(row.name, buffId),
@@ -272,31 +307,35 @@ function mapBuffs(value: unknown): Buff[] {
       sourceItemId: stringValue(row.sourceItemId) || null,
       modifiers: object(row.modifiers) as Record<string, number>,
     }
-  }).filter(buff => Boolean(buff.buffId))
+  })
 }
 
-function mapAssets(assets: readonly AssetBalanceDto[]): InventoryItem[] {
-  return assets
-    .filter(asset => Number.isFinite(asset.quantity) && asset.quantity !== 0)
-    .map(asset => {
-      const metadata = resolveItemMetadata(asset.assetId)
-      return {
-        itemId: asset.assetId,
-        name: metadata?.label ?? asset.assetId,
-        category: metadata?.category ?? 'general',
-        amount: asset.quantity,
-        tone: metadata?.tone ?? 'gray',
-        glyph: metadata?.glyph ?? '◈',
-        tier: metadata?.level ?? 1,
-        description: metadata?.description,
-        isTradable: true,
-      }
-    })
+function mapAsset(asset: AssetBalanceDto): InventoryItem {
+  if (!asset || typeof asset.assetId !== 'string' || asset.assetId.length === 0 || !Number.isFinite(asset.quantity) || asset.quantity < 0) {
+    throw new Error('玩家资产余额载荷无效。')
+  }
+  const metadata = resolveItemMetadata(asset.assetId)
+  return {
+    itemId: asset.assetId,
+    name: metadata?.label ?? asset.assetId,
+    category: metadata?.category ?? 'general',
+    amount: asset.quantity,
+    tone: metadata?.tone ?? 'gray',
+    glyph: metadata?.glyph ?? '◈',
+    tier: metadata?.level ?? 1,
+    description: metadata?.description,
+    isTradable: true,
+  }
 }
 
-function seconds(iso: string, fallback: number): number {
+function mapAssets(assets: readonly AssetBalanceDto[], includeZero = false): InventoryItem[] {
+  return assets.map(mapAsset).filter(asset => includeZero || asset.amount !== 0)
+}
+
+function seconds(iso: string): number {
   const parsed = Date.parse(iso)
-  return Number.isFinite(parsed) ? parsed / 1000 : fallback
+  if (!Number.isFinite(parsed)) throw new Error('玩家快照时间戳无效。')
+  return parsed / 1000
 }
 
 function visualFor(name: string): CharacterVisual {
@@ -306,14 +345,25 @@ function visualFor(name: string): CharacterVisual {
 export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = ''): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   if (!dto.head || dto.head.schemaVersion !== 1) throw new Error('玩家快照 schema 版本不受支持。')
+  if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== dto.stateVersion) throw new Error('玩家快照头与主体版本不一致。')
+  if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
+  if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')
   await verifyHeadChecksum(dto)
-  const sections = await decodeSections(dto.sections ?? [])
-  const settings = object(sections.get('settings'))
-  const progression = sections.get('progression')
-  const world = mapWorld(sections.get('world'))
-  const combat = mapCombat(sections.get('combat'))
-  const name = dto.displayName || '修士'
-  const serverTime = seconds(dto.lastSimulatedAt, Date.now() / 1000)
+  const sections = await decodeSections(dto.sections)
+  for (const section of REQUIRED_SNAPSHOT_SECTIONS) {
+    if (!sections.has(section)) throw new Error(`玩家快照缺少 ${section} section。`)
+  }
+  const settingsEnvelope = requiredObject(sections.get('settings'), 'settings')
+  const settings = requiredObject(settingsEnvelope.settings, 'settings.settings')
+  const progression = requiredObject(sections.get('progression'), 'progression')
+  const world = mapWorld(requiredObject(sections.get('world'), 'world'))
+  const combat = mapCombat(requiredObject(sections.get('combat'), 'combat'))
+  const loadout = mapLoadout(requiredObject(sections.get('loadout'), 'loadout'))
+  if (!Array.isArray(sections.get('buffs')) || !Array.isArray(sections.get('action_queue'))) {
+    throw new Error('玩家快照 buffs/action_queue section 载荷无效。')
+  }
+  const name = dto.displayName
+  const serverTime = seconds(dto.lastSimulatedAt)
   return {
     playerId: dto.playerId,
     name,
@@ -322,12 +372,12 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
     serverTimeUnixSeconds: serverTime,
     serverTimeUnixMilliseconds: serverTime * 1000,
     createdAtUnixSeconds: serverTime,
-    presenceMode: mapPresence(settings.presence),
-    queue: mapQueue(sections.get('action_queue')),
-    inventory: mapAssets(dto.assets ?? []),
+    presenceMode: mapPresence(settingsEnvelope.presence),
+    queue: mapQueue(sections.get('action_queue'), settings),
+    inventory: mapAssets(dto.assets),
     buffs: mapBuffs(sections.get('buffs')),
     stats: mapStats(progression),
-    combat: combat.loadout,
+    combat: loadout,
     combatResources: combat.resources,
     combatAttributes: combat.attributes,
     visual: visualFor(name),
@@ -342,29 +392,33 @@ export async function decodePlayerSnapshotDeltaDto(
   current: PlayerSnapshot,
 ): Promise<PlayerPatch> {
   if (!dto || dto.playerId !== current.playerId) throw new Error('玩家增量快照归属不一致。')
-  const sections = await decodeSections(dto.changedSections ?? [])
+  if (!Array.isArray(dto.changedSections)) throw new Error('玩家增量 section 列表无效。')
+  const sections = await decodeSections(dto.changedSections)
   const patch: PlayerPatch = {
     playerId: dto.playerId,
     version: dto.stateVersion,
     serverTimeUnixSeconds: current.serverTimeUnixSeconds,
   }
-  if (sections.has('settings')) {
-    const settings = object(sections.get('settings'))
-    patch.presenceMode = mapPresence(settings.presence)
+  const settingsEnvelope = sections.has('settings') ? requiredObject(sections.get('settings'), 'settings') : undefined
+  const settings = settingsEnvelope ? requiredObject(settingsEnvelope.settings, 'settings.settings') : undefined
+  if (settingsEnvelope && settings) {
+    patch.presenceMode = mapPresence(settingsEnvelope.presence)
+    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
   }
   if (sections.has('progression')) patch.stats = mapStats(sections.get('progression'))
   if (sections.has('world')) patch.world = mapWorld(sections.get('world'))
   if (sections.has('combat')) {
     const combat = mapCombat(sections.get('combat'))
-    patch.combat = combat.loadout
     patch.combatResources = combat.resources
     patch.combatAttributes = combat.attributes
   }
+  if (sections.has('loadout')) patch.combat = mapLoadout(sections.get('loadout'))
   if (sections.has('buffs')) patch.buffs = mapBuffs(sections.get('buffs'))
-  if (sections.has('action_queue')) patch.queue = mapQueue(sections.get('action_queue'))
-  if (dto.changedAssets) {
-    const changed = new Map(mapAssets(dto.changedAssets).map(item => [item.itemId, item]))
-    patch.inventory = current.inventory.filter(item => !changed.has(item.itemId)).concat(Array.from(changed.values()))
+  if (sections.has('action_queue')) patch.queue = mapQueue(sections.get('action_queue'), settings, current.queue)
+  if (dto.changedAssets !== null && dto.changedAssets !== undefined) {
+    if (!Array.isArray(dto.changedAssets)) throw new Error('玩家资产增量载荷无效。')
+    const changed = new Map(mapAssets(dto.changedAssets, true).map(item => [item.itemId, item]))
+    patch.inventory = current.inventory.filter(item => !changed.has(item.itemId)).concat(Array.from(changed.values()).filter(item => item.amount !== 0))
   }
   return patch
 }

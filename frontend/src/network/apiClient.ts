@@ -1,4 +1,5 @@
 import type { MarketBook, MarketMetrics, MarketOrder } from '../game/types'
+import { createRequestId } from './protocol'
 
 /** HTTP API 只使用同源或显式配置的 v1 地址，认证由 HttpOnly Cookie 承担。 */
 export function getHttpBase(): string {
@@ -8,6 +9,12 @@ export function getHttpBase(): string {
 
 export function getApiUrl(path: string): string {
   return `${getHttpBase()}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+function parseNumericVariant(value: string | null, fallback: number): number {
+  if (value === null) return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
 }
 
 export interface ProblemDetailsLike {
@@ -47,24 +54,27 @@ export function postPlayerCommand<TPayload extends object, TResult = unknown>(
   playerId: string,
   command: string,
   payload: TPayload,
+  expectedStateVersion = 0,
+  requestId = createRequestId(),
 ): Promise<TResult> {
   return requestJson<TResult>(`/api/v1/players/${encodeURIComponent(playerId)}/commands`, {
     method: 'POST',
-    body: JSON.stringify({ command, payload }),
+    body: JSON.stringify({
+      requestId,
+      command,
+      payload: { ...payload, requestId },
+      expectedStateVersion,
+    }),
   })
 }
 
 interface MarketBookDto {
-  assetId?: string
-  itemId?: string
-  variant?: string | null
-  enhancementLevel?: number
+  assetId: string
+  variant: string | null
   asks: MarketBook['asks']
   bids: MarketBook['bids']
-  activeOrderCount?: number
-  version?: number
-  sequence?: number
-  capturedAt?: string
+  version: number
+  capturedAt: string
 }
 
 export async function fetchMarketBook(
@@ -76,72 +86,79 @@ export async function fetchMarketBook(
   const query = new URLSearchParams({ assetId: itemId, variant: String(enhancementLevel), depth: String(depth) })
   const dto = await requestJson<MarketBookDto>(`/api/v1/market/book?${query.toString()}`, { signal })
   return {
-    itemId: dto.itemId ?? dto.assetId ?? itemId,
-    enhancementLevel: dto.enhancementLevel ?? enhancementLevel,
-    asks: dto.asks ?? [],
-    bids: dto.bids ?? [],
-    activeOrderCount: dto.activeOrderCount ?? 0,
-    sequence: dto.sequence ?? dto.version ?? 0,
+    itemId: dto.assetId,
+    enhancementLevel: parseNumericVariant(dto.variant, enhancementLevel),
+    asks: dto.asks,
+    bids: dto.bids,
+    activeOrderCount: dto.asks.reduce((count, level) => count + level.orderCount, 0)
+      + dto.bids.reduce((count, level) => count + level.orderCount, 0),
+    sequence: dto.version,
   }
 }
 
 interface MarketMetricsDto {
-  shardCount?: number
-  activeOrderCount?: number
-  placementCount?: number
-  matchCount?: number
-  cancelCount?: number
-  rejectedCount?: number
-  tradedQuantity?: number
-  tradedGrossAmount?: number
+  partitionCount: number
+  activeOrderCount: number
+  placementCount: number
+  matchCount: number
+  cancelCount: number
+  rejectedCount: number
 }
 
 export async function fetchMarketMetrics(signal?: AbortSignal): Promise<MarketMetrics> {
   const dto = await requestJson<MarketMetricsDto>('/api/v1/market/metrics', { signal })
   return {
-    shardCount: dto.shardCount ?? 1,
-    activeOrderCount: dto.activeOrderCount ?? 0,
-    placementCount: dto.placementCount ?? 0,
-    matchCount: dto.matchCount ?? 0,
-    cancelCount: dto.cancelCount ?? 0,
-    rejectedCount: dto.rejectedCount ?? 0,
-    tradedQuantity: dto.tradedQuantity ?? 0,
-    tradedGrossAmount: dto.tradedGrossAmount ?? 0,
+    shardCount: dto.partitionCount,
+    activeOrderCount: dto.activeOrderCount,
+    placementCount: dto.placementCount,
+    matchCount: dto.matchCount,
+    cancelCount: dto.cancelCount,
+    rejectedCount: dto.rejectedCount,
+    tradedQuantity: 0,
+    tradedGrossAmount: 0,
   }
 }
 
+type MarketOrderStatusWire = 'active' | 'partially_filled' | 'filled' | 'cancelled' | 'expired'
+
 interface MarketOrderDto {
   orderId: string
-  ownerId?: string
-  itemId?: string
-  assetId?: string
-  variant?: string | null
-  enhancementLevel?: number
-  side: MarketOrder['side']
+  ownerId: string
+  assetId: string
+  variant: string | null
+  side: 'buy' | 'sell'
   price: number
   originalQuantity: number
   remainingQuantity: number
-  filledQuantity?: number
-  status: MarketOrder['status']
+  status: MarketOrderStatusWire
   sequence: number
   createdAt: string
-  expiresAt?: string
+}
+
+function mapMarketOrderStatus(status: MarketOrderStatusWire): MarketOrder['status'] {
+  switch (status) {
+    case 'active': return 'active'
+    case 'partially_filled': return 'partially-filled'
+    case 'filled': return 'filled'
+    case 'cancelled': return 'cancelled'
+    case 'expired': return 'expired'
+  }
 }
 
 export async function fetchMarketOrders(playerId: string, signal?: AbortSignal): Promise<MarketOrder[]> {
   const rows = await requestJson<MarketOrderDto[]>(`/api/v1/players/${encodeURIComponent(playerId)}/market/orders`, { signal })
   return rows.map(row => ({
     orderId: row.orderId,
-    itemId: row.itemId ?? row.assetId ?? '',
-    enhancementLevel: row.enhancementLevel ?? Number(row.variant ?? 0),
+    itemId: row.assetId,
+    enhancementLevel: parseNumericVariant(row.variant, 0),
     side: row.side,
     price: row.price,
     originalQuantity: row.originalQuantity,
     remainingQuantity: row.remainingQuantity,
-    filledQuantity: row.filledQuantity ?? Math.max(0, row.originalQuantity - row.remainingQuantity),
-    status: row.status,
+    filledQuantity: Math.max(0, row.originalQuantity - row.remainingQuantity),
+    status: mapMarketOrderStatus(row.status),
     sequence: row.sequence,
     createdAt: row.createdAt,
-    expiresAt: row.expiresAt ?? row.createdAt,
+    expiresAt: row.createdAt,
   }))
 }
