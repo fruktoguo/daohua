@@ -1,222 +1,199 @@
-// ==============================================================================
-// 文件名称: Program.cs
-// 主要职责: 分布式冷挂机确定性计算节点的应用程序入口与轻量 HTTP 宿主。
-// 核心逻辑 / 定义内容:
-//   1. 初始化 ASP.NET Core Minimal API 宿主并加载只读游戏配置数据 (GameData)。
-//   2. 暴露 /healthz 健康检查端点，报告计算节点状态、配置版本与数据指纹。
-//   3. 暴露 /internal/compute/advance-batch 内部批处理接口，安全校验 Token 后执行确定性离线模拟 (SimulationEngine.AdvanceTo)。
-//   4. 采用无状态纯计算设计，不直连生产数据库、不持有在线玩家权威状态。
-// ==============================================================================
-
-using System.Text.Json;
-using Domain.GameData;
-using Domain.Models;
-using Domain.Simulation;
+using DaoHua.ComputeNode;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 加载游戏配置数据与指纹校验
-var configuredGameDataDirectory = builder.Configuration["GameData:Directory"];
-var gameData = string.IsNullOrWhiteSpace(configuredGameDataDirectory)
-    ? GameDataCatalog.Current
-    : GameDataCatalog.LoadFromDirectory(ResolveGameDataPath(builder.Environment.ContentRootPath, configuredGameDataDirectory));
-var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+builder.WebHost.ConfigureKestrel(options =>
 {
-    WriteIndented = false
-};
+    options.AddServerHeader = false;
+    options.Limits.MaxRequestBodySize = ComputeContract.MaxBatchBytes;
+    options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(30);
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);
+});
 
-// 配置服务监听端点（默认 http://127.0.0.1:5129）
-var configuredUrls = builder.Configuration["ComputeNode:Urls"];
+var configuredUrls = builder.Configuration["ComputeNode:Urls"]
+                    ?? Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_URLS");
 if (!string.IsNullOrWhiteSpace(configuredUrls))
 {
     builder.WebHost.UseUrls(configuredUrls);
 }
 else if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
-    builder.WebHost.UseUrls("http://127.0.0.1:5129");
+    builder.WebHost.UseUrls("http://0.0.0.0:8090");
 }
 
-builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+builder.Services.AddSingleton(new JsonSerializerOptions(JsonSerializerDefaults.Web)
+{
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    WriteIndented = false,
+    MaxDepth = 32
+});
+builder.Services.AddSingleton<GameDataFingerprint>();
+builder.Services.AddSingleton<DeterministicBatchEngine>();
+builder.Services.AddSingleton<ComputeMetrics>();
 
-// 计算节点令牌是 /internal/compute 接口的安全边界，必须在启动时显式配置。
-var token = builder.Configuration["ComputeNode:Token"];
+var token = builder.Configuration["ComputeNode:Token"]
+            ?? Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_TOKEN");
 if (string.IsNullOrWhiteSpace(token))
 {
-    throw new InvalidOperationException("未配置 ComputeNode:Token：该令牌是内部计算节点的安全边界，拒绝在无鉴权状态下启动。");
+    throw new InvalidOperationException(
+        "未配置 ComputeNode:Token/DAOHUA_COMPUTE_TOKEN。ComputeNode 必须在显式内部鉴权下启动。");
 }
 
-var app = builder.Build();
+var maxJobs = Math.Clamp(
+    builder.Configuration.GetValue("ComputeNode:MaxJobsPerBatch", ComputeContract.DefaultMaxJobs),
+    1,
+    ComputeContract.HardMaxJobs);
+var maxConcurrentBatches = Math.Clamp(
+    builder.Configuration.GetValue("ComputeNode:MaxConcurrentBatches", Math.Max(1, Environment.ProcessorCount)),
+    1,
+    64);
+var batchGate = new SemaphoreSlim(maxConcurrentBatches, maxConcurrentBatches);
 
-/// <summary>
-/// 计算节点健康检查端点（返回当前加载的游戏数据版本与指纹）。
-/// </summary>
+var app = builder.Build();
+var fingerprint = app.Services.GetRequiredService<GameDataFingerprint>();
+var metrics = app.Services.GetRequiredService<ComputeMetrics>();
+var engine = app.Services.GetRequiredService<DeterministicBatchEngine>();
+
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+        await Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "计算节点内部错误",
+            detail: "计算节点未能完成请求；请通过 traceId 查询内部日志。",
+            extensions: new Dictionary<string, object?>
+            {
+                ["traceId"] = context.TraceIdentifier
+            }).ExecuteAsync(context);
+    });
+});
+
 app.MapGet("/healthz", () => Results.Ok(new
 {
     status = "ok",
     service = "daohua-compute-node",
-    gameDataVersion = gameData.ContentVersion,
-    gameDataFingerprint = gameData.Fingerprint
+    contractVersion = ComputeContract.Version,
+    gameDataFingerprint = fingerprint.Value,
+    maxJobsPerBatch = maxJobs,
+    maxBatchBytes = ComputeContract.MaxBatchBytes
 }));
 
-/// <summary>
-/// 内部批处理冷计算端点：校验 Token、反序列化玩家快照、执行确定性时间快进并返回新快照。
-/// </summary>
-app.MapPost("/internal/compute/advance-batch", (
-    HttpRequest httpRequest,
-    AdvanceBatchRequest request,
-    CancellationToken cancellationToken) =>
+app.MapGet("/readyz", () => Results.Ok(new
 {
-    if (!IsTokenValid(httpRequest, token))
+    status = "ready",
+    service = "daohua-compute-node",
+    contractVersion = ComputeContract.Version,
+    gameDataFingerprint = fingerprint.Value,
+    activeBatches = metrics.ActiveBatches,
+    completedJobs = metrics.CompletedJobs,
+    failedJobs = metrics.FailedJobs
+}));
+
+app.MapPost("/internal/v1/compute/advance-batch", async (
+    HttpRequest request,
+    AdvanceBatchRequest batch,
+    CancellationToken cancellationToken,
+    ILoggerFactory loggerFactory) =>
+{
+    if (!TokenValidator.IsValid(request, token))
     {
-        return Results.Json(
-            new { code = "UNAUTHORIZED", message = "缺少或错误的计算节点令牌。" },
-            statusCode: StatusCodes.Status401Unauthorized);
+        metrics.RecordUnauthorized();
+        return Results.Problem(
+            statusCode: StatusCodes.Status401Unauthorized,
+            title: "未授权的计算节点请求",
+            detail: "需要有效的内部计算令牌。",
+            extensions: new Dictionary<string, object?>
+            {
+                ["traceId"] = request.HttpContext.TraceIdentifier
+            });
     }
 
-    if (request.Jobs is null || request.Jobs.Count == 0 || request.Jobs.Count > 256)
+    if (!await batchGate.WaitAsync(TimeSpan.Zero, cancellationToken))
     {
-        return Results.BadRequest(new { code = "INVALID_BATCH", message = "批次必须包含 1 到 256 个任务。" });
+        metrics.RecordRejected();
+        return Results.Problem(
+            statusCode: StatusCodes.Status429TooManyRequests,
+            title: "计算节点繁忙",
+            detail: "当前批处理并发已达到上限，请稍后重试。",
+            extensions: new Dictionary<string, object?>
+            {
+                ["retryAfterMilliseconds"] = 250
+            });
     }
 
-    var results = new List<AdvanceJobResult>(request.Jobs.Count);
-    foreach (var job in request.Jobs)
+    var started = Stopwatch.GetTimestamp();
+    metrics.BeginBatch();
+    try
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        results.Add(AdvanceJob(job));
-    }
+        var validation = ComputeContract.Validate(batch, maxJobs);
+        if (validation is not null)
+        {
+            metrics.RecordFailedBatch();
+            return Results.BadRequest(validation);
+        }
 
-    return Results.Ok(new AdvanceBatchResponse(results, gameData.Fingerprint));
+        if (!string.IsNullOrWhiteSpace(batch.GameDataFingerprint)
+            && !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(batch.GameDataFingerprint),
+                Encoding.UTF8.GetBytes(fingerprint.Value)))
+        {
+            metrics.RecordFailedBatch();
+            return Results.Conflict(new
+            {
+                code = "GAME_DATA_FINGERPRINT_MISMATCH",
+                expected = fingerprint.Value,
+                actual = batch.GameDataFingerprint,
+                traceId = request.HttpContext.TraceIdentifier
+            });
+        }
+
+        var results = new List<AdvanceJobResult>(batch.Jobs.Count);
+        foreach (var job in batch.Jobs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = engine.Advance(job, fingerprint.Value);
+            results.Add(result);
+            if (result.Success) metrics.RecordCompletedJob();
+            else metrics.RecordFailedJob();
+        }
+
+        metrics.RecordCompletedBatch(Stopwatch.GetElapsedTime(started));
+        return Results.Ok(new AdvanceBatchResponse(
+            ComputeContract.Version,
+            fingerprint.Value,
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            results));
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    {
+        metrics.RecordCancelledBatch();
+        throw;
+    }
+    catch (Exception exception)
+    {
+        metrics.RecordFailedBatch();
+        loggerFactory.CreateLogger("ComputeNode.Batch").LogError(
+            exception,
+            "批处理执行失败，traceId={TraceId}",
+            request.HttpContext.TraceIdentifier);
+        return Results.Problem(
+            statusCode: StatusCodes.Status500InternalServerError,
+            title: "批处理执行失败",
+            detail: "计算节点未能完成批处理。",
+            extensions: new Dictionary<string, object?>
+            {
+                ["traceId"] = request.HttpContext.TraceIdentifier
+            });
+    }
+    finally
+    {
+        metrics.EndBatch();
+        batchGate.Release();
+    }
 });
 
 app.Run();
-
-/// <summary>
-/// 探测并解析游戏数据目录物理路径。
-/// </summary>
-string ResolveGameDataPath(string contentRoot, string configuredPath)
-{
-    if (Path.IsPathRooted(configuredPath)) return configuredPath;
-    var candidates = new[]
-    {
-        Path.Combine(contentRoot, configuredPath),
-        Path.Combine(contentRoot, "../../", configuredPath),
-        Path.Combine(Directory.GetCurrentDirectory(), configuredPath),
-        Path.Combine(AppContext.BaseDirectory, configuredPath)
-    };
-    foreach (var candidate in candidates)
-    {
-        if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "manifest.json")))
-        {
-            return Path.GetFullPath(candidate);
-        }
-    }
-    return Path.GetFullPath(Path.Combine(contentRoot, configuredPath));
-}
-
-/// <summary>
-/// 校验请求头中的 X-Compute-Token。
-/// </summary>
-bool IsTokenValid(HttpRequest request, string configuredToken)
-{
-    var supplied = request.Headers["X-Compute-Token"].FirstOrDefault();
-    return !string.IsNullOrWhiteSpace(supplied)
-        && CryptographicEquals(supplied, configuredToken);
-}
-
-/// <summary>
-/// 恒定时间比较两个字符串，防止时序侧信道攻击。
-/// </summary>
-bool CryptographicEquals(string left, string right)
-{
-    var leftBytes = System.Text.Encoding.UTF8.GetBytes(left);
-    var rightBytes = System.Text.Encoding.UTF8.GetBytes(right);
-    return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(leftBytes, rightBytes);
-}
-
-/// <summary>
-/// 执行单个玩家快照的确定性模拟快进。
-/// </summary>
-AdvanceJobResult AdvanceJob(AdvanceJobRequest job)
-{
-    if (job.JobId == Guid.Empty || job.PlayerId == Guid.Empty || string.IsNullOrWhiteSpace(job.PayloadBase64))
-    {
-        return AdvanceJobResult.Fail(job.JobId, job.PlayerId, "INVALID_JOB", "计算任务缺少必要字段。");
-    }
-
-    try
-    {
-        var target = DateTimeOffset.FromUnixTimeMilliseconds(job.TargetUnixMilliseconds);
-        var payload = Convert.FromBase64String(job.PayloadBase64);
-        var state = JsonSerializer.Deserialize<PlayerState>(payload, jsonOptions);
-        if (state is null || state.PlayerId != job.PlayerId)
-        {
-            return AdvanceJobResult.Fail(job.JobId, job.PlayerId, "INVALID_SNAPSHOT", "玩家快照为空或玩家 ID 不匹配。");
-        }
-
-        SimulationEngine.NormalizeState(state);
-        var report = SimulationEngine.AdvanceTo(state, target);
-        state.PendingEvents.Clear();
-        state.DirtySections = DirtySections.None;
-        var advancedPayload = JsonSerializer.SerializeToUtf8Bytes(state, jsonOptions);
-        return AdvanceJobResult.Ok(
-            job.JobId,
-            job.PlayerId,
-            Convert.ToBase64String(advancedPayload),
-            report.CompletedActions,
-            report.TransitionCount,
-            report.CombatEvents);
-    }
-    catch (Exception exception) when (exception is FormatException or JsonException or InvalidOperationException or ArgumentException)
-    {
-        return AdvanceJobResult.Fail(job.JobId, job.PlayerId, "ADVANCE_FAILED", exception.Message);
-    }
-}
-
-/// <summary>
-/// 批处理任务请求。
-/// </summary>
-public sealed record AdvanceBatchRequest(IReadOnlyList<AdvanceJobRequest> Jobs);
-
-/// <summary>
-/// 单个玩家快照计算任务。
-/// </summary>
-public sealed record AdvanceJobRequest(
-    Guid JobId,
-    Guid PlayerId,
-    string PayloadBase64,
-    long TargetUnixMilliseconds);
-
-/// <summary>
-/// 批处理任务响应。
-/// </summary>
-public sealed record AdvanceBatchResponse(
-    IReadOnlyList<AdvanceJobResult> Jobs,
-    string GameDataFingerprint);
-
-/// <summary>
-/// 单个玩家快照计算结果。
-/// </summary>
-public sealed record AdvanceJobResult(
-    Guid JobId,
-    Guid PlayerId,
-    bool Success,
-    string? PayloadBase64,
-    int CompletedActions,
-    int Transitions,
-    int CombatEvents,
-    string? ErrorCode,
-    string? ErrorMessage)
-{
-    public static AdvanceJobResult Ok(
-        Guid jobId,
-        Guid playerId,
-        string payloadBase64,
-        int completedActions,
-        int transitions,
-        int combatEvents) =>
-        new(jobId, playerId, true, payloadBase64, completedActions, transitions, combatEvents, null, null);
-
-    public static AdvanceJobResult Fail(Guid jobId, Guid playerId, string errorCode, string errorMessage) =>
-        new(jobId, playerId, false, null, 0, 0, 0, errorCode, errorMessage);
-}

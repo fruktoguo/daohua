@@ -4,12 +4,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>LoadTests</AssemblyName>
-    <RootNamespace>LoadTests</RootNamespace>
+    <AssemblyName>DaoHua.LoadTests</AssemblyName>
+    <RootNamespace>DaoHua.LoadTests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- 压测工具只依赖公开 HTTP/WS 与 PostgreSQL；不引用生产 Server、ECS 或旧协议。 -->
   <ItemGroup>
-    <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 </Project>

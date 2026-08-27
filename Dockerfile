@@ -10,52 +10,36 @@ ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --registry="${NPM_CONFIG_REGISTRY}" --ignore-scripts --no-audit --no-fund
 COPY frontend/ ./
+COPY scripts/export-i18n-csv.mjs /src/scripts/export-i18n-csv.mjs
 RUN npm run build
 
-FROM ${DOTNET_SDK_IMAGE} AS server-build
+FROM ${DOTNET_SDK_IMAGE} AS dotnet-build
 WORKDIR /src
 ARG BUILD_VERSION=dev
 COPY global.json ./
-COPY src/Domain/Domain.csproj src/Domain/
-COPY src/Protocol/Protocol.csproj src/Protocol/
-COPY src/Server/Server.csproj src/Server/
-COPY src/ComputeNode/ComputeNode.csproj src/ComputeNode/
-COPY config/game-data/ config/game-data/
-COPY vendor/YuoCore/README.md vendor/YuoCore/README.md
-COPY vendor/YuoCore/src/Directory.Build.props vendor/YuoCore/src/Directory.Build.props
-COPY vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj vendor/YuoCore/src/YuoCore.Abstractions/
-COPY vendor/YuoCore/src/YuoCore.Analyzers/YuoCore.Analyzers.csproj vendor/YuoCore/src/YuoCore.Analyzers/
-COPY vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj vendor/YuoCore/src/YuoCore.Ecs/
-COPY vendor/YuoCore/src/YuoCore.Persistence/YuoCore.Persistence.csproj vendor/YuoCore/src/YuoCore.Persistence/
-COPY vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj vendor/YuoCore/src/YuoCore.Runtime/
+# 直接复制新基线源码；.dockerignore 排除 bin/obj、运行数据、旧文档和 secrets。
+COPY src/ ./src/
+COPY config/game-data/ ./config/game-data/
+COPY vendor/YuoCore/src/ ./vendor/YuoCore/src/
 RUN dotnet restore src/Server/Server.csproj --nologo \
     && dotnet restore src/ComputeNode/ComputeNode.csproj --nologo
-COPY src/Domain/ src/Domain/
-COPY src/Protocol/ src/Protocol/
-COPY src/ComputeNode/ src/ComputeNode/
-COPY src/Server/ src/Server/
-COPY config/game-data/ config/game-data/
-COPY vendor/YuoCore/src/ vendor/YuoCore/src/
 RUN dotnet publish src/Server/Server.csproj \
     --configuration Release \
     --no-restore \
-    --output /app/publish \
+    --output /out/server \
     --nologo \
     -p:ContinuousIntegrationBuild=true \
     -p:InformationalVersion="${BUILD_VERSION}"
 RUN dotnet publish src/ComputeNode/ComputeNode.csproj \
     --configuration Release \
     --no-restore \
-    --output /app/compute \
+    --output /out/compute \
     --nologo \
     -p:ContinuousIntegrationBuild=true \
     -p:InformationalVersion="${BUILD_VERSION}"
-COPY --from=frontend-build /src/frontend/dist/ /app/publish/wwwroot/
-RUN test ! -d /app/publish/data \
-    || ! find /app/publish/data -type f -print -quit | grep -q .
 
-FROM ${DOTNET_RUNTIME_IMAGE} AS runtime
-RUN apk add --no-cache curl icu-libs krb5-libs tzdata \
+FROM ${DOTNET_RUNTIME_IMAGE} AS runtime-base
+RUN apk add --no-cache curl icu-libs tzdata \
     && addgroup -S -g 10001 daohua \
     && adduser -S -D -H -u 10001 -G daohua daohua
 WORKDIR /app
@@ -63,17 +47,31 @@ ARG BUILD_DATE=unknown
 ARG BUILD_VERSION=dev
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.title="道化太初" \
-      org.opencontainers.image.description="道化太初 Web 与游戏服务端" \
+      org.opencontainers.image.description="道化太初商业级游戏服务" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.version="${BUILD_VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}"
-COPY --from=server-build --chown=10001:10001 /app/publish/ ./
-COPY --from=server-build --chown=10001:10001 /app/compute/ /app/compute/
-ENV ASPNETCORE_ENVIRONMENT=Production \
-    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
+    ASPNETCORE_ENVIRONMENT=Production
 USER 10001:10001
-EXPOSE 8080
 STOPSIGNAL SIGTERM
+
+FROM runtime-base AS server-runtime
+COPY --from=dotnet-build --chown=10001:10001 /out/server/ ./
+COPY --from=frontend-build --chown=10001:10001 /src/frontend/dist/ ./wwwroot/
+RUN test ! -d /app/data || ! find /app/data -type f -print -quit | grep -q .
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl --fail --silent --show-error http://127.0.0.1:8080/readyz >/dev/null || exit 1
+    CMD curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null || exit 1
 ENTRYPOINT ["dotnet", "Server.dll"]
+
+FROM runtime-base AS compute-runtime
+COPY --from=dotnet-build --chown=10001:10001 /out/compute/ ./
+RUN test ! -d /app/data || ! find /app/data -type f -print -quit | grep -q .
+EXPOSE 8090
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl --fail --silent --show-error http://127.0.0.1:8090/healthz >/dev/null || exit 1
+ENTRYPOINT ["dotnet", "DaoHua.ComputeNode.dll"]
+
+# 默认目标为主服务；Compose 的计算节点显式选择 compute-runtime。
+FROM server-runtime

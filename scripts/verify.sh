@@ -1,22 +1,5 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# 脚本名称: verify.sh
-# 主要职责: 全量代码构建、领域规则、数据配置与容量性能门禁本地全自动验证
-#
-# 核心验证流程:
-#   1. 校验 YuoCore Git submodule 是否已正确初始化；
-#   2. 执行 npm ci 严格安装前端锁定依赖；
-#   3. 执行 .NET 解决方案 Release 配置完整构建（slnx）；
-#   4. 运行领域规则与协议门禁测试（tests/Domain.Tests）；
-#   5. 运行服务端测试（tests/Server.Tests）；
-#   6. 运行游戏配置数据完整性校验工具（DataTool validate）；
-#   7. 运行 2c4g/40g 生产容量与性能门禁压测（LoadTests capacity-target）；
-#   8. 执行前端 TypeScript 静态类型检查与 Vite 生产打包构建。
-#
-# 使用场景:
-#   - 提交代码前或 CI 阶段作为最小必要完整验证门禁；
-#   - 任何涉及领域、协议、配置或前端重大改动后的回归测试。
-# ==============================================================================
+# 新基线最小充分门禁：代码、领域/服务测试、真实 PostgreSQL/WAL 容量、前端和 Compose 配置。
 
 set -Eeuo pipefail
 
@@ -28,41 +11,69 @@ if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   exit 1
 fi
 
-printf '==> 安装前端锁定依赖\n'
-npm --prefix frontend ci
+printf '%s\n' '==> 检查真实工具链'
+dotnet --version
+node --version
+npm --version
 
-printf '==> Release 构建\n'
+printf '%s\n' '==> 安装前端锁定依赖'
+npm --prefix frontend ci --ignore-scripts --no-audit --no-fund
+
+printf '%s\n' '==> Release 构建'
 dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
 
-printf '==> 领域测试\n'
-dotnet test tests/Domain.Tests/Domain.Tests.csproj \
-  --configuration Release \
-  --no-build \
-  --disable-build-servers \
-  --nologo
+if [[ -f tests/Domain.Tests/Domain.Tests.csproj ]]; then
+  printf '%s\n' '==> 领域测试'
+  dotnet test tests/Domain.Tests/Domain.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+fi
+if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
+  printf '%s\n' '==> 服务端测试'
+  dotnet test tests/Server.Tests/Server.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+fi
+if [[ -f src/DataTool/DataTool.csproj ]]; then
+  printf '%s\n' '==> 游戏数据校验'
+  dotnet run --project src/DataTool/DataTool.csproj --configuration Release --no-build -- validate config/game-data
+fi
 
-printf '==> 服务端测试\n'
-dotnet test tests/Server.Tests/Server.Tests.csproj \
-  --configuration Release \
-  --no-build \
-  --disable-build-servers \
-  --nologo
+printf '%s\n' '==> 校验 Compose 配置'
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  docker compose -f compose.yaml config >/dev/null
+  DB_PASSWORD=verify-db-password \
+  APP_IMAGE=daohua:verify \
+  COMPUTE_IMAGE=daohua-compute:verify \
+  COMPUTE_TOKEN=verify-compute-token \
+    docker compose -f deploy/compose.prod.yaml config --quiet
+else
+  printf '%s\n' 'Docker 不可用，跳过 Compose 运行时检查。'
+fi
 
-printf '==> 游戏数据校验\n'
-dotnet run --project src/DataTool/DataTool.csproj \
-  --configuration Release \
-  --no-build \
-  -- \
-  validate config/game-data
+printf '%s\n' '==> 启动本地 PostgreSQL（若尚未运行）'
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PORT="${DB_PORT:-5432}"
+if ! (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    docker compose -f compose.yaml up -d db
+    for _ in {1..60}; do
+      if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then break; fi
+      sleep 1
+    done
+  fi
+fi
 
-printf '==> 2c4g/40g 容量目标门禁\n'
-dotnet run --project src/LoadTests/LoadTests.csproj \
-  --configuration Release \
-  --no-build \
-  -- \
-  --scenario capacity-target
+if [[ -f src/LoadTests/LoadTests.csproj ]]; then
+  printf '%s\n' '==> 2c4g/40g 容量目标门禁（真实 PostgreSQL/WAL）'
+  dotnet run --project src/LoadTests/LoadTests.csproj --configuration Release --no-build -- \
+    --scenario capacity-target \
+    --require-database \
+    --database "${DAOHUA_DATABASE_URL:-Host=${DB_HOST};Port=${DB_PORT};Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=16;Timeout=5;Command Timeout=30}"
+fi
 
-printf '==> 前端类型检查与构建\n'
+printf '%s\n' '==> 前端类型检查与生产构建'
 npm --prefix frontend run build
 
-printf '全部验证完成。\n'
+if [[ "${VERIFY_DOCKER:-0}" == "1" ]]; then
+  printf '%s\n' '==> 生产镜像构建（VERIFY_DOCKER=1）'
+  scripts/docker-build-prod.sh --allow-dirty --no-pull --release-tag verify
+fi
+
+printf '%s\n' '全部验证完成。'

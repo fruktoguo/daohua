@@ -1,39 +1,18 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# 脚本名称: ccr-auto-update.sh
-# 主要职责: 生产服务器 CCR 镜像自动检测、沙箱预检更新与故障自动回滚守护
-#
-# 核心更新流程与安全防线:
-#   1. 排他防重执行: 获取 /run/lock/daohua-ccr-auto-update.lock 非阻塞锁，避免重叠并发；
-#   2. 镜像拉取与比对: 拉取目标 CCR 镜像 (默认为 prod 标签)，比对新旧镜像 ID，若无变化则直接退出；
-#   3. 失败镜像黑名单: 若当前候选镜像此前健康检查失败 (failed-image.id)，在 CCR 出现更新版本前不重复尝试；
-#   4. 沙箱环境预检 (Preflight):
-#      - 启动独立的隔离临时网络、临时数据库 (daohua-preflight-db) 与只读容器 (daohua-preflight)；
-#      - 验证数据库引导、/healthz 健康检查与 /api/actions 接口返回；
-#      - 预检失败则清理临时资源并记录失败 ID，不影响线上运行容器；
-#   5. 上线更新与自动回滚:
-#      - 备份当前运行镜像为 daohua-rollback:previous；
-#      - 重建并启动正式 app 容器；
-#      - 若 120 秒内未达健康状态，自动触发向后回滚至上一稳定镜像版本。
-#
-# 运行方式:
-#   - 通常由 systemd 定时器 (daohua-ccr-auto-update.timer) 每分钟轮询执行。
-# ==============================================================================
+# daohua 生产镜像自动更新：Server 与 ComputeNode 成对校验、健康检查失败自动回滚。
+# 只替换容器，不触碰 PostgreSQL 数据卷；不会安装 Redis 或写入业务数据。
 
 set -Eeuo pipefail
 
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/daohua}"
-COMPOSE_FILE="${DEPLOY_DIR}/compose.prod.yaml"
-ENV_FILE="${DEPLOY_DIR}/daohua.env"
-IMAGE="${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+COMPOSE_FILE="${COMPOSE_FILE:-${DEPLOY_DIR}/compose.prod.yaml}"
+ENV_FILE="${ENV_FILE:-${DEPLOY_DIR}/daohua.env}"
+APP_IMAGE="${APP_IMAGE:-}"
+COMPUTE_IMAGE="${COMPUTE_IMAGE:-}"
 CONTAINER_NAME="daohua-app"
-PREFLIGHT_CONTAINER_NAME="daohua-preflight"
-PREFLIGHT_DB_CONTAINER_NAME="daohua-preflight-db"
-PREFLIGHT_DB_VOLUME="daohua-preflight-postgres"
-PREFLIGHT_NETWORK="daohua-preflight-net"
-FAILED_IMAGE_FILE="${DEPLOY_DIR}/failed-image.id"
-LOCK_FILE="/run/lock/daohua-ccr-auto-update.lock"
-
+COMPUTE_CONTAINER_NAME="daohua-compute"
+FAILED_IMAGE_FILE="${FAILED_IMAGE_FILE:-${DEPLOY_DIR}/failed-image.id}"
+LOCK_FILE="${LOCK_FILE:-/run/lock/daohua-ccr-auto-update.lock}"
 
 compose() {
   if [[ -f "$ENV_FILE" ]]; then
@@ -43,6 +22,38 @@ compose() {
   fi
 }
 
+derive_compute_image() {
+  local image="$1"
+  if [[ "$image" == *"/daohua:"* ]]; then
+    printf '%s\n' "${image/daohua:/daohua-compute:}"
+  elif [[ "$image" == daohua:* ]]; then
+    printf '%s\n' "${image/daohua:/daohua-compute:}"
+  else
+    return 1
+  fi
+}
+
+requested_app_image="${APP_IMAGE:-}"
+requested_compute_image="${COMPUTE_IMAGE:-}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
+APP_IMAGE="${requested_app_image:-${APP_IMAGE:-${APP_IMAGE_FILE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}}}"
+COMPUTE_IMAGE="${requested_compute_image:-${COMPUTE_IMAGE:-}}"
+if [[ -z "$COMPUTE_IMAGE" ]]; then
+  COMPUTE_IMAGE="$(derive_compute_image "$APP_IMAGE")"
+fi
+
+[[ -f "$COMPOSE_FILE" ]] || { printf '缺少生产 Compose 文件: %s\n' "$COMPOSE_FILE" >&2; exit 1; }
+[[ "$APP_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ && "$COMPUTE_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]] || {
+  printf '镜像引用包含非法字符。\n' >&2
+  exit 1
+}
+
+mkdir -p "$(dirname "$LOCK_FILE")"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   printf '已有更新任务正在执行，跳过本轮。\n'
@@ -50,154 +61,84 @@ if ! flock -n 9; then
 fi
 
 wait_healthy() {
+  local container="$1"
   local attempt state
   for attempt in {1..60}; do
-    state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-    if [[ "$state" == "healthy" ]]; then
-      return 0
-    fi
-    if [[ "$state" == "exited" || "$state" == "dead" ]]; then
-      return 1
-    fi
+    state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+    if [[ "$state" == healthy ]]; then return 0; fi
+    if [[ "$state" == exited || "$state" == dead ]]; then return 1; fi
     sleep 2
   done
   return 1
 }
 
-cleanup_preflight() {
-  docker rm --force "$PREFLIGHT_CONTAINER_NAME" "$PREFLIGHT_DB_CONTAINER_NAME" >/dev/null 2>&1 || true
-  docker network rm "$PREFLIGHT_NETWORK" >/dev/null 2>&1 || true
-  docker volume rm --force "$PREFLIGHT_DB_VOLUME" >/dev/null 2>&1 || true
-}
-
-preflight_image() {
-  local image="$1"
-  local attempt state
-  cleanup_preflight
-  docker network create "$PREFLIGHT_NETWORK" >/dev/null
-  docker volume create "$PREFLIGHT_DB_VOLUME" >/dev/null
-  docker run --detach \
-    --name "$PREFLIGHT_DB_CONTAINER_NAME" \
-    --network "$PREFLIGHT_NETWORK" \
-    --mount "type=volume,src=$PREFLIGHT_DB_VOLUME,dst=/var/lib/postgresql/data" \
-    --shm-size 64m \
-    --env POSTGRES_DB=daohua \
-    --env POSTGRES_USER=daohua \
-    --env POSTGRES_PASSWORD=daohua-preflight \
-    --env PGDATA=/var/lib/postgresql/data/pgdata \
-    postgres:17-alpine >/dev/null
-
-  for attempt in {1..45}; do
-    if docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daohua -d daohua >/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
-  if ! docker exec "$PREFLIGHT_DB_CONTAINER_NAME" pg_isready -U daohua -d daohua >/dev/null 2>&1; then
-    docker logs --tail 100 "$PREFLIGHT_DB_CONTAINER_NAME" >&2 2>/dev/null || true
-    cleanup_preflight
-    return 1
-  fi
-
-  docker run --detach \
-    --name "$PREFLIGHT_CONTAINER_NAME" \
-    --network "$PREFLIGHT_NETWORK" \
-    --read-only \
-    --tmpfs /tmp:size=32m,mode=1777 \
-    --cap-drop ALL \
-    --security-opt no-new-privileges:true \
-    --pids-limit 128 \
-    --memory 512m \
-    --cpus 0.50 \
-    --env ASPNETCORE_ENVIRONMENT=Production \
-    --env Storage__Provider=postgres \
-    --env Storage__ConnectionString='Host=daohua-preflight-db;Port=5432;Database=daohua;Username=daohua;Password=daohua-preflight;Maximum Pool Size=4;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30' \
-    --env Storage__DurableOutboxEnabled=true \
-    --env Storage__EnableSchemaBootstrap=true \
-    --env Market__LedgerProvider=postgres \
-    --env Market__PartitionCount=1 \
-    --env Market__PartitionId=0 \
-    "$image" >/dev/null
-
-  for attempt in {1..45}; do
-    state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$PREFLIGHT_CONTAINER_NAME" 2>/dev/null || true)"
-    if [[ "$state" == "healthy" ]]; then
-      docker exec "$PREFLIGHT_CONTAINER_NAME" curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null
-      docker exec "$PREFLIGHT_CONTAINER_NAME" curl --fail --silent --show-error http://127.0.0.1:8080/api/actions >/dev/null
-      cleanup_preflight
-      return 0
-    fi
-    if [[ "$state" == "exited" || "$state" == "dead" ]]; then
-      break
-    fi
+wait_ready() {
+  local attempt
+  for attempt in {1..30}; do
+    if curl --fail --silent --show-error http://127.0.0.1:15128/readyz >/dev/null 2>&1; then return 0; fi
     sleep 2
   done
-
-  docker logs --tail 100 "$PREFLIGHT_CONTAINER_NAME" >&2 2>/dev/null || true
-  docker logs --tail 100 "$PREFLIGHT_DB_CONTAINER_NAME" >&2 2>/dev/null || true
-  cleanup_preflight
   return 1
 }
 
-deploy_image() {
-  local image="$1"
-  APP_IMAGE="$image" compose up \
+deploy_pair() {
+  local app_image="$1" compute_image="$2"
+  APP_IMAGE="$app_image" COMPUTE_IMAGE="$compute_image" compose up \
     --detach \
     --force-recreate \
-    app
-  wait_healthy
+    app compute-node
+  wait_healthy "$COMPUTE_CONTAINER_NAME"
+  wait_healthy "$CONTAINER_NAME"
+  wait_ready
 }
 
-if [[ ! -f "$COMPOSE_FILE" ]]; then
-  printf '缺少生产 Compose 文件: %s\n' "$COMPOSE_FILE" >&2
-  exit 1
-fi
+docker pull "$APP_IMAGE" >/dev/null
+docker pull "$COMPUTE_IMAGE" >/dev/null
+candidate_app_id="$(docker image inspect --format '{{.Id}}' "$APP_IMAGE")"
+candidate_compute_id="$(docker image inspect --format '{{.Id}}' "$COMPUTE_IMAGE")"
+running_app_id="$(docker inspect --format '{{.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
+running_compute_id="$(docker inspect --format '{{.Image}}' "$COMPUTE_CONTAINER_NAME" 2>/dev/null || true)"
+candidate_marker="${candidate_app_id}|${candidate_compute_id}"
 
-docker pull "$IMAGE"
-candidate_id="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
-running_id="$(docker inspect --format '{{.Image}}' "$CONTAINER_NAME" 2>/dev/null || true)"
-
-if [[ "$candidate_id" == "$running_id" ]]; then
-  printf '运行镜像已是最新版本: %s\n' "$candidate_id"
+if [[ "$candidate_app_id" == "$running_app_id" && "$candidate_compute_id" == "$running_compute_id" ]]; then
+  printf 'Server 与 ComputeNode 均已是最新版本: %s\n' "$candidate_marker"
   exit 0
 fi
-if [[ -f "$FAILED_IMAGE_FILE" && "$(<"$FAILED_IMAGE_FILE")" == "$candidate_id" ]]; then
-  printf '候选镜像此前健康检查失败，等待 CCR 出现新镜像: %s\n' "$candidate_id" >&2
+if [[ -f "$FAILED_IMAGE_FILE" && "$(<"$FAILED_IMAGE_FILE")" == "$candidate_marker" ]]; then
+  printf '候选镜像此前健康检查失败，等待 CCR 出现新版本: %s\n' "$candidate_marker" >&2
   exit 0
 fi
 
-printf '对候选镜像执行隔离预热与配置校验: %s\n' "$candidate_id"
-if ! preflight_image "$IMAGE"; then
-  printf '%s\n' "$candidate_id" >"$FAILED_IMAGE_FILE"
-  printf '候选镜像预热失败，当前正式容器保持不变。\n' >&2
-  exit 1
+rollback_app_image=""
+rollback_compute_image=""
+if [[ -n "$running_app_id" ]]; then
+  rollback_app_image="daohua-rollback:app-previous"
+  docker tag "$running_app_id" "$rollback_app_image"
+fi
+if [[ -n "$running_compute_id" ]]; then
+  rollback_compute_image="daohua-rollback:compute-previous"
+  docker tag "$running_compute_id" "$rollback_compute_image"
 fi
 
-rollback_image=""
-if [[ -n "$running_id" ]]; then
-  rollback_image="daohua-rollback:previous"
-  docker tag "$running_id" "$rollback_image"
-fi
-
-printf '发现新镜像，开始更新: %s -> %s\n' "${running_id:-none}" "$candidate_id"
-if deploy_image "$IMAGE"; then
+printf '发现新镜像，开始成对更新: %s\n' "$candidate_marker"
+if deploy_pair "$APP_IMAGE" "$COMPUTE_IMAGE"; then
   rm -f "$FAILED_IMAGE_FILE"
-  printf '镜像更新成功: %s\n' "$candidate_id"
+  printf '镜像更新成功: %s\n' "$candidate_marker"
   exit 0
 fi
 
-printf '%s\n' "$candidate_id" >"$FAILED_IMAGE_FILE"
-printf '新镜像健康检查失败。\n' >&2
+printf '%s\n' "$candidate_marker" >"$FAILED_IMAGE_FILE"
+printf '新镜像健康检查失败，开始回滚。\n' >&2
 docker logs --tail 100 "$CONTAINER_NAME" >&2 2>/dev/null || true
-if [[ -z "$rollback_image" ]]; then
-  printf '没有可用的上一镜像，无法自动回滚。\n' >&2
+docker logs --tail 100 "$COMPUTE_CONTAINER_NAME" >&2 2>/dev/null || true
+if [[ -z "$rollback_app_image" || -z "$rollback_compute_image" ]]; then
+  printf '没有完整的上一版本 Server/ComputeNode 镜像，无法自动回滚。\n' >&2
   exit 1
 fi
 
-printf '开始回滚到上一镜像: %s\n' "$running_id" >&2
-if ! deploy_image "$rollback_image"; then
+if ! deploy_pair "$rollback_app_image" "$rollback_compute_image"; then
   printf '自动回滚失败，需要立即人工处理。\n' >&2
   exit 1
 fi
-printf '已回滚到上一镜像；失败版本在 CCR 变化前不会再次尝试。\n' >&2
+printf '已回滚到上一版本；失败版本在 CCR 变化前不会再次尝试。\n' >&2
 exit 1

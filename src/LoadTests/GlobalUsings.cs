@@ -1,11 +1,12 @@
-// ==============================================================================
-// 文件名称: GlobalUsings.cs
-// 主要职责: 压测模块全局命名空间隐式引用声明。
-// 核心逻辑 / 定义内容:
-//   1. 隐式全局引用 Domain.Constants 常量模块。
-//   2. 隐式全局引用 Domain.Models 模型与枚举模块。
-// ==============================================================================
-
-global using Domain.Constants;
-global using Domain.Models;
-
+global using System.Buffers;
+global using System.Collections.Concurrent;
+global using System.Diagnostics;
+global using System.Net;
+global using System.Net.Http.Headers;
+global using System.Net.WebSockets;
+global using System.Security.Cryptography;
+global using System.Text;
+global using System.Text.Json;
+global using Npgsql;
+global using NpgsqlTypes;
+global using Protocol;

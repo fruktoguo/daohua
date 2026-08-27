@@ -6,7 +6,7 @@ import { create } from 'zustand'
  * - 'cultivation': 修炼（吐纳）
  * - 'exploration': 历练（当前地点特殊行动与妖兽历练）
  * - 'crafting': 技艺（炼丹与炼器）
- * - 'alchemy': 炼丹（兼容别名，自动重定向至技艺/炼丹）
+ * - 'alchemy': 炼丹入口（映射至技艺/炼丹）
  * - 'map': 地图（包含地图与附近子选项卡）
  * - 'combat': 详情（战斗对决现场与战备装配详情）
  * - 'market': 坊市交易行

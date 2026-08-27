@@ -1,717 +1,182 @@
-// ==============================================================================
-// 文件名称: OrderBook.cs
-// 主要职责: 单一交易品种的纯内存撮合订单簿，实现价格优先、时间优先的撮合与挂单管理。
-// 核心逻辑 / 定义内容:
-//   1. 维护买单盘口（Bids）与卖单盘口（Asks）的双向有序价格深度队列。
-//   2. 执行买入/卖出限价单的立即撮合结算与未成交挂单入簿。
-//   3. 订单主动撤单、到期淘汰（ExpireOrders）与盘口深度快照聚合。
-//   4. 订单簿全量状态快照导出与崩溃恢复。
-// ==============================================================================
-
-using Domain.Models;
-
-
 namespace Domain.Market;
 
-/// <summary>
-/// 单一品种订单簿。实例本身不加锁，必须由所属市场分片串行调用，以保证撮合路径无全局锁。
-/// </summary>
+/// <summary>单品种内存订单簿；数据库是权威账本，本类只负责确定性撮合投影。</summary>
 public sealed class OrderBook
 {
-    private readonly MarketInstrument _instrument;
-    private readonly Func<string, double> _taxRateResolver;
-    private readonly Func<string, long> _vendorPriceResolver;
-    private readonly Action<string>? _terminalOrderCallback;
-    private readonly int _maxTerminalHistory;
-    private readonly SortedDictionary<long, LinkedList<MutableOrder>> _asks = new();
-    private readonly SortedDictionary<long, LinkedList<MutableOrder>> _bids =
-        new(Comparer<long>.Create((left, right) => right.CompareTo(left)));
-    private readonly SortedDictionary<long, HashSet<MutableOrder>> _expirationSchedule = [];
-    private readonly Dictionary<string, MutableOrder> _orders = new(StringComparer.Ordinal);
-    private readonly Queue<string> _terminalOrderIds = new();
+    private readonly Dictionary<OrderId, MarketOrder> _orders = [];
     private long _sequence;
-    private long _activeOrderCount;
-    private long _placementCount;
-    private long _matchCount;
-    private long _cancelCount;
-    private long _rejectedCount;
-    private long _tradedQuantity;
-    private long _tradedGrossAmount;
+    private long _version;
 
-    public OrderBook(
-        MarketInstrument instrument,
-        Func<string, double>? taxRateResolver = null,
-        int maxTerminalHistory = 10_000,
-        Action<string>? terminalOrderCallback = null,
-        Func<string, long>? vendorPriceResolver = null)
+    public OrderBook(MarketInstrument instrument)
     {
-        if (!instrument.IsValid) throw new ArgumentException("市场品种无效。", nameof(instrument));
-        if (maxTerminalHistory is < 0 or > 1_000_000)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maxTerminalHistory));
-        }
-        _instrument = instrument;
-        _taxRateResolver = taxRateResolver ?? MarketTaxPolicy.GetSellerTaxRate;
-        _vendorPriceResolver = vendorPriceResolver ?? GetCatalogVendorPrice;
-        _maxTerminalHistory = maxTerminalHistory;
-        _terminalOrderCallback = terminalOrderCallback;
+        if (!instrument.ItemId.IsValid) throw new DomainException(DomainErrorCode.InvalidArgument, "市场品种无效。");
+        Instrument = instrument;
     }
 
-    /// <summary>当前订单簿对应的交易品种。</summary>
-    public MarketInstrument Instrument => _instrument;
-    /// <summary>当前订单簿递增序列号。</summary>
-    public long Sequence => _sequence;
-    /// <summary>当前活动委托订单数。</summary>
-    public long ActiveOrderCount => _activeOrderCount;
-    /// <summary>累计挂单请求次数。</summary>
-    public long PlacementCount => _placementCount;
-    /// <summary>累计撮合成交笔数。</summary>
-    public long MatchCount => _matchCount;
-    /// <summary>累计主动撤单次数。</summary>
-    public long CancelCount => _cancelCount;
-    /// <summary>累计拒绝非法订单次数。</summary>
-    public long RejectedCount => _rejectedCount;
-    /// <summary>累计成交物品总件数。</summary>
-    public long TradedQuantity => _tradedQuantity;
-    /// <summary>累计成交总灵石流水金额。</summary>
-    public long TradedGrossAmount => _tradedGrossAmount;
+    public MarketInstrument Instrument { get; }
+    public long Version => _version;
+    public IReadOnlyCollection<MarketOrder> ActiveOrders => _orders.Values.Where(IsActive).ToArray();
+    public bool TryGet(OrderId orderId, out MarketOrder order) => _orders.TryGetValue(orderId, out order!);
 
-    /// <summary>
-    /// 导出当前订单簿的持久化快照（包含全部活动订单与序列指标）。
-    /// </summary>
-    /// <returns>订单簿快照对象。</returns>
-    public MarketBookState ExportState()
+    /// <summary>从数据库当前活动订单重建内存投影；只导入，不触发撮合或资产变更。</summary>
+    public void Restore(IEnumerable<MarketOrder> orders, long version = 0)
     {
-        return new MarketBookState(
-            _instrument,
-            _orders.Values
-                .Where(order => order.Node is not null)
-                .OrderBy(order => order.Sequence)
-                .Select(order => new MarketOrderSnapshot(
-                    order.OrderId,
-                    order.OwnerId,
-                    order.Instrument,
-                    order.Side,
-                    order.Price,
-                    order.OriginalQuantity,
-                    order.RemainingQuantity,
-                    order.Status,
-                    order.Sequence,
-                    order.CreatedAt,
-                    order.ExpiresAt))
-                .ToArray(),
-            _sequence,
-            _placementCount,
-            _matchCount,
-            _cancelCount,
-            _rejectedCount,
-            _tradedQuantity,
-            _tradedGrossAmount);
-    }
-
-    /// <summary>
-    /// 从账本恢复活动订单。恢复只接受非终态订单，并按原始序列重建同价 FIFO。
-    /// </summary>
-    /// <param name="state">待恢复的订单簿快照。</param>
-    public void RestoreState(MarketBookState state)
-    {
-        ArgumentNullException.ThrowIfNull(state);
-        if (state.Instrument != _instrument)
-        {
-            throw new InvalidDataException("订单簿品种与市场快照不一致。");
-        }
-
-        _asks.Clear();
-        _bids.Clear();
-        _expirationSchedule.Clear();
+        ArgumentNullException.ThrowIfNull(orders);
+        if (version < 0) throw new DomainException(DomainErrorCode.InvalidArgument, "盘口版本不能为负数。");
+        var imported = orders.OrderBy(order => order.Sequence).ToArray();
+        var ids = new HashSet<OrderId>();
+        var sequences = new HashSet<long>();
         _orders.Clear();
-        _terminalOrderIds.Clear();
         _sequence = 0;
-        _activeOrderCount = 0;
-        _placementCount = state.PlacementCount;
-        _matchCount = state.MatchCount;
-        _cancelCount = state.CancelCount;
-        _rejectedCount = state.RejectedCount;
-        _tradedQuantity = state.TradedQuantity;
-        _tradedGrossAmount = state.TradedGrossAmount;
-
-        if (_placementCount < 0 || _matchCount < 0 || _cancelCount < 0 || _rejectedCount < 0
-            || _tradedQuantity < 0 || _tradedGrossAmount < 0 || state.Sequence < 0)
+        foreach (var order in imported)
         {
-            throw new InvalidDataException("市场累计指标不能为负数。");
-        }
-
-        var orders = state.ActiveOrders ?? throw new InvalidDataException("市场活动订单不能为空。");
-        var seenIds = new HashSet<string>(StringComparer.Ordinal);
-        var seenSequences = new HashSet<long>();
-        foreach (var snapshot in orders.OrderBy(order => order.Sequence))
-        {
-            if (snapshot.Instrument != _instrument
-                || string.IsNullOrWhiteSpace(snapshot.OrderId)
-                || snapshot.OwnerId == Guid.Empty
-                || snapshot.Price <= 0
-                || snapshot.OriginalQuantity <= 0
-                || snapshot.RemainingQuantity <= 0
-                || snapshot.RemainingQuantity > snapshot.OriginalQuantity
-                || snapshot.Sequence <= 0
-                || !Enum.IsDefined(snapshot.Side)
-                || snapshot.Status is MarketOrderStatus.Filled
-                    or MarketOrderStatus.Cancelled
-                    or MarketOrderStatus.Expired
-                || !seenIds.Add(snapshot.OrderId)
-                || !seenSequences.Add(snapshot.Sequence))
-            {
-                throw new InvalidDataException("市场活动订单快照无效。");
-            }
-
-            var expectedStatus = snapshot.RemainingQuantity == snapshot.OriginalQuantity
-                ? MarketOrderStatus.Active
-                : MarketOrderStatus.PartiallyFilled;
-            if (snapshot.Status != expectedStatus)
-            {
-                throw new InvalidDataException("市场订单状态与剩余数量不一致。");
-            }
-
-            DateTimeOffset createdAt;
-            DateTimeOffset expiresAt;
-            try
-            {
-                createdAt = NormalizeCreatedAt(snapshot.CreatedAt, snapshot.ExpiresAt);
-                expiresAt = NormalizeExpiresAt(createdAt, snapshot.ExpiresAt);
-            }
-            catch (ArgumentOutOfRangeException exception)
-            {
-                throw new InvalidDataException("市场订单时间范围无效。", exception);
-            }
-
-            if (expiresAt <= createdAt)
-            {
-                throw new InvalidDataException("市场订单到期时间必须晚于创建时间。");
-            }
-
-            var order = new MutableOrder(
-                snapshot.OrderId,
-                snapshot.OwnerId,
-                snapshot.Instrument,
-                snapshot.Side,
-                snapshot.Price,
-                snapshot.OriginalQuantity,
-                snapshot.Sequence,
-                createdAt)
-            {
-                RemainingQuantity = snapshot.RemainingQuantity,
-                Status = snapshot.Status,
-                ExpiresAt = expiresAt
-            };
+            if (order.Instrument != Instrument || order.OrderId.IsEmpty || order.OwnerId.IsEmpty ||
+                !double.IsFinite(order.Price) || order.Price <= 0 || !double.IsFinite(order.OriginalQuantity) || order.OriginalQuantity <= 0 ||
+                !double.IsFinite(order.RemainingQuantity) || order.RemainingQuantity <= 0 || order.RemainingQuantity > order.OriginalQuantity ||
+                order.Sequence <= 0 || !ids.Add(order.OrderId) || !sequences.Add(order.Sequence) || !IsActive(order))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "活动订单快照无效。");
             _orders.Add(order.OrderId, order);
-            AddRestingOrder(order);
             _sequence = Math.Max(_sequence, order.Sequence);
         }
-
-        if (state.Sequence < _sequence)
-        {
-            throw new InvalidDataException("市场订单序列不能小于活动订单序列。");
-        }
-
-        _sequence = state.Sequence;
+        if (version < _sequence) throw new DomainException(DomainErrorCode.InvalidArgument, "盘口版本不能小于订单序列。");
+        _version = version;
     }
 
-    /// <summary>
-    /// 处理新订单挂牌，并对对手盘进行价格/时间优先（Price-Time Priority FIFO）撮合。
-    /// </summary>
-    /// <param name="request">挂单请求。</param>
-    /// <returns>挂单与撮合成交结果。</returns>
-    public MarketPlacementResult Place(MarketOrderRequest request)
+    public PlacementResult Place(PlaceOrderRequest request)
     {
-        _placementCount++;
-        if (!Validate(request, out var errorCode, out var errorMessage))
-        {
-            _rejectedCount++;
-            return MarketPlacementResult.Fail(errorCode, errorMessage);
-        }
+        if (request.OrderId.IsEmpty || request.OwnerId.IsEmpty || !request.IdempotencyKey.IsValid ||
+            !double.IsFinite(request.Price) || request.Price <= 0 || !double.IsFinite(request.Quantity) || request.Quantity <= 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "订单参数无效。");
+        if (!Enum.IsDefined(request.Side))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "订单方向无效。");
+        if (request.Instrument != Instrument)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "订单品种与订单簿不一致。");
+        if (!_orders.TryAdd(request.OrderId, new MarketOrder(
+                request.OrderId,
+                request.OwnerId,
+                request.Instrument,
+                request.Side,
+                request.Price,
+                request.Quantity,
+                request.Quantity,
+                checked(++_sequence),
+                request.CreatedAt.ToUniversalTime(),
+                null,
+                MarketOrderStatus.Active)))
+            throw new DomainException(DomainErrorCode.Duplicate, "订单标识已存在。");
 
-        double sellerTaxRate;
-        try
-        {
-            sellerTaxRate = _taxRateResolver(_instrument.ItemId);
-        }
-        catch (Exception exception) when (exception is ArgumentException or ArithmeticException or InvalidOperationException)
-        {
-            _rejectedCount++;
-            return MarketPlacementResult.Fail(MarketResultCode.InvalidTaxPolicy, "市场税率配置无效。");
-        }
-
-        if (!double.IsFinite(sellerTaxRate) || sellerTaxRate is < 0 or >= 1)
-        {
-            _rejectedCount++;
-            return MarketPlacementResult.Fail(MarketResultCode.InvalidTaxPolicy, "市场税率配置无效。");
-        }
-
-        var order = new MutableOrder(
-            request.OrderId,
-            request.OwnerId,
-            request.Instrument,
-            request.Side,
-            request.Price,
-            request.Quantity,
-            checked(++_sequence),
-            request.CreatedAt ?? DateTimeOffset.UtcNow);
-        _orders.Add(order.OrderId, order);
+        var incoming = _orders[request.OrderId];
         var fills = new List<MarketFill>();
-        var opposite = request.Side == MarketSide.Buy ? _asks : _bids;
-
-        while (order.RemainingQuantity > 0 && opposite.Count > 0)
+        foreach (var makerSnapshot in MatchingCandidates(incoming).ToArray())
         {
-            var bestLevel = opposite.First();
-            var bestPrice = bestLevel.Key;
-            if (!Crosses(request.Side, request.Price, bestPrice)) break;
-
-            var makerNode = bestLevel.Value.First!;
-            var maker = makerNode.Value;
-            var quantity = Math.Min(order.RemainingQuantity, maker.RemainingQuantity);
-            var grossAmount = checked(bestPrice * quantity);
-            var sellerProceeds = MarketTaxPolicy.CalculateSellerProceeds(
-                grossAmount,
-                sellerTaxRate);
-            var buyer = request.Side == MarketSide.Buy ? order : maker;
-            var seller = request.Side == MarketSide.Sell ? order : maker;
+            if (incoming.RemainingQuantity <= 0) break;
+            var maker = makerSnapshot;
+            if (maker.OwnerId == incoming.OwnerId) continue;
+            var quantity = Math.Min(incoming.RemainingQuantity, maker.RemainingQuantity);
+            var price = maker.Price;
+            var buyer = incoming.Side == MarketSide.Buy ? incoming : maker;
+            var seller = incoming.Side == MarketSide.Sell ? incoming : maker;
             fills.Add(new MarketFill(
-                order.OrderId,
-                maker.OrderId,
+                TransactionId.New(),
+                buyer.OrderId,
+                seller.OrderId,
                 buyer.OwnerId,
                 seller.OwnerId,
-                _instrument,
-                bestPrice,
+                Instrument,
+                price,
                 quantity,
-                grossAmount,
-                sellerProceeds,
-                checked(grossAmount - sellerProceeds)));
-
-            order.RemainingQuantity -= quantity;
-            maker.RemainingQuantity -= quantity;
-            maker.Status = maker.RemainingQuantity == 0
-                ? MarketOrderStatus.Filled
-                : MarketOrderStatus.PartiallyFilled;
-            if (maker.RemainingQuantity == 0)
+                request.CreatedAt.ToUniversalTime()));
+            incoming = incoming with
             {
-                bestLevel.Value.Remove(makerNode);
-                maker.Node = null;
-                UnscheduleExpiration(maker);
-                _activeOrderCount--;
-                RecordTerminal(maker);
-                if (bestLevel.Value.Count == 0) opposite.Remove(bestPrice);
-            }
-
-            _matchCount++;
-            _tradedQuantity = checked(_tradedQuantity + quantity);
-            _tradedGrossAmount = checked(_tradedGrossAmount + grossAmount);
+                RemainingQuantity = Math.Max(0, incoming.RemainingQuantity - quantity),
+                Status = incoming.RemainingQuantity - quantity <= 1e-12 ? MarketOrderStatus.Filled : MarketOrderStatus.PartiallyFilled
+            };
+            maker = maker with
+            {
+                RemainingQuantity = Math.Max(0, maker.RemainingQuantity - quantity),
+                Status = maker.RemainingQuantity - quantity <= 1e-12 ? MarketOrderStatus.Filled : MarketOrderStatus.PartiallyFilled
+            };
+            _orders[incoming.OrderId] = incoming;
+            _orders[maker.OrderId] = maker;
         }
 
-        order.Status = order.RemainingQuantity == 0
-            ? MarketOrderStatus.Filled
-            : order.FilledQuantity > 0
-                ? MarketOrderStatus.PartiallyFilled
-                : MarketOrderStatus.Active;
-        if (order.RemainingQuantity > 0)
-        {
-            AddRestingOrder(order);
-        }
-        else
-        {
-            RecordTerminal(order);
-        }
-        TrimTerminalHistory();
-
-        return new MarketPlacementResult(
-            true,
-            MarketResultCode.Ok,
-            fills.Count == 0 ? "订单已进入订单簿。" : "订单已撮合。",
-            ToView(order),
-            fills);
+        _orders[request.OrderId] = incoming;
+        if (incoming.RemainingQuantity <= 1e-12) _orders[request.OrderId] = incoming with { RemainingQuantity = 0, Status = MarketOrderStatus.Filled };
+        _version = checked(_version + 1);
+        return new PlacementResult(_orders[request.OrderId], fills, _version);
     }
 
-    /// <summary>
-    /// 低频清理已过期挂牌。调用方应在市场分片锁内调用，避免把时间判断放入撮合循环。
-    /// </summary>
-    /// <param name="now">当前时间戳。</param>
-    /// <returns>已过期的订单视图列表。</returns>
-    public IReadOnlyList<MarketOrderView> Expire(DateTimeOffset now)
+    public CancellationResult Cancel(OrderId orderId, PlayerId ownerId)
     {
-        var expired = new List<MutableOrder>();
-        var nowTicks = now.ToUniversalTime().UtcTicks;
-        while (_expirationSchedule.Count > 0)
-        {
-            var next = _expirationSchedule.First();
-            if (next.Key > nowTicks) break;
-            _expirationSchedule.Remove(next.Key);
-            expired.AddRange(next.Value.Where(order => order.Node is not null));
-        }
-        if (expired.Count == 0) return [];
-
-        foreach (var order in expired.OrderBy(order => order.Sequence))
-        {
-            var levels = order.Side == MarketSide.Buy ? _bids : _asks;
-            if (order.Node is not null && levels.TryGetValue(order.Price, out var level))
-            {
-                level.Remove(order.Node);
-                if (level.Count == 0) levels.Remove(order.Price);
-            }
-
-            order.Node = null;
-            order.Status = MarketOrderStatus.Expired;
-            _activeOrderCount--;
-            RecordTerminal(order);
-        }
-
-        TrimTerminalHistory();
-        return expired.OrderBy(order => order.Sequence).Select(ToView).ToArray();
-    }
-
-    /// <summary>
-    /// 从盘口撤销指定属于该玩家的活动订单。
-    /// </summary>
-    /// <param name="orderId">订单 ID。</param>
-    /// <param name="ownerId">所有者玩家 GUID。</param>
-    /// <returns>撤单结果。</returns>
-    public MarketCancellationResult Cancel(string orderId, Guid ownerId)
-    {
-        if (string.IsNullOrWhiteSpace(orderId) || !_orders.TryGetValue(orderId, out var order))
-        {
-            return MarketCancellationResult.Fail(MarketResultCode.OrderNotFound, "订单不存在。");
-        }
-
+        if (!_orders.TryGetValue(orderId, out var order))
+            throw new DomainException(DomainErrorCode.NotFound, "订单不存在。");
         if (order.OwnerId != ownerId)
+            throw new DomainException(DomainErrorCode.Conflict, "只能撤销自己的订单。");
+        if (!IsActive(order))
         {
-            return MarketCancellationResult.Fail(MarketResultCode.OrderForbidden, "只能撤销自己的订单。");
+            if (order.Status == MarketOrderStatus.Cancelled) return new CancellationResult(order, _version);
+            throw new DomainException(DomainErrorCode.InvalidTransition, "订单已处于终态。");
         }
-
-        if (order.Status is MarketOrderStatus.Filled
-            or MarketOrderStatus.Cancelled
-            or MarketOrderStatus.Expired)
-        {
-            return MarketCancellationResult.Fail(MarketResultCode.OrderNotActive, "订单已经结束。");
-        }
-
-        if (order.Node is not null)
-        {
-            var levels = order.Side == MarketSide.Buy ? _bids : _asks;
-            var level = levels[order.Price];
-            level.Remove(order.Node);
-            if (level.Count == 0) levels.Remove(order.Price);
-            order.Node = null;
-            UnscheduleExpiration(order);
-        }
-
-        order.Status = MarketOrderStatus.Cancelled;
-        _activeOrderCount--;
-        _cancelCount++;
-        RecordTerminal(order);
-        TrimTerminalHistory();
-        return new MarketCancellationResult(true, MarketResultCode.Ok, "订单已撤销。", ToView(order));
+        order = order with { Status = MarketOrderStatus.Cancelled };
+        _orders[orderId] = order;
+        _version = checked(_version + 1);
+        return new CancellationResult(order, _version);
     }
 
-    /// <summary>
-    /// 尝试在订单簿内查找指定订单 ID 的订单视图。
-    /// </summary>
-    /// <param name="orderId">订单 ID。</param>
-    /// <param name="order">输出订单视图。</param>
-    /// <returns>找到返回 true，否则返回 false。</returns>
-    public bool TryGetOrder(string orderId, out MarketOrderView? order)
+    public IReadOnlyList<MarketOrder> Expire(DateTimeOffset now)
     {
-        if (_orders.TryGetValue(orderId, out var found))
-        {
-            order = ToView(found);
-            return true;
-        }
-
-        order = null;
-        return false;
-    }
-
-    /// <summary>
-    /// 生成该品种当前买卖盘口前 N 档深度的只读快照。
-    /// </summary>
-    /// <param name="depth">最大档位深度限制。</param>
-    /// <returns>盘口深度快照。</returns>
-    public MarketBookSnapshot Snapshot(int depth = 20)
-    {
-        var normalizedDepth = Math.Clamp(depth, 1, 100);
-        return new MarketBookSnapshot(
-            _instrument,
-            ToLevels(_asks, normalizedDepth),
-            ToLevels(_bids, normalizedDepth),
-            _activeOrderCount,
-            _sequence);
-    }
-
-
-    private void AddRestingOrder(MutableOrder order)
-    {
-        var levels = order.Side == MarketSide.Buy ? _bids : _asks;
-        if (!levels.TryGetValue(order.Price, out var level))
-        {
-            level = new LinkedList<MutableOrder>();
-            levels.Add(order.Price, level);
-        }
-
-        order.Node = level.AddLast(order);
-        ScheduleExpiration(order);
-        _activeOrderCount++;
-    }
-
-    private void ScheduleExpiration(MutableOrder order)
-    {
-        var expirationTicks = order.ExpiresAt.UtcTicks;
-        if (!_expirationSchedule.TryGetValue(expirationTicks, out var orders))
-        {
-            orders = [];
-            _expirationSchedule.Add(expirationTicks, orders);
-        }
-
-        orders.Add(order);
-    }
-
-    private void UnscheduleExpiration(MutableOrder order)
-    {
-        var expirationTicks = order.ExpiresAt.UtcTicks;
-        if (!_expirationSchedule.TryGetValue(expirationTicks, out var orders)) return;
-        orders.Remove(order);
-        if (orders.Count == 0) _expirationSchedule.Remove(expirationTicks);
-    }
-
-    private void RecordTerminal(MutableOrder order)
-    {
-        if (order.Node is not null) return;
-        if (_maxTerminalHistory > 0)
-        {
-            _terminalOrderIds.Enqueue(order.OrderId);
-        }
-        _terminalOrderCallback?.Invoke(order.OrderId);
-    }
-
-    private void TrimTerminalHistory()
-    {
-        while (_terminalOrderIds.Count > _maxTerminalHistory)
-        {
-            var orderId = _terminalOrderIds.Dequeue();
-            if (_orders.TryGetValue(orderId, out var order)
-                && order.Node is null
-                && order.Status is MarketOrderStatus.Filled
-                    or MarketOrderStatus.Cancelled
-                    or MarketOrderStatus.Expired)
-            {
-                _orders.Remove(orderId);
-            }
-        }
-    }
-
-    private bool Validate(
-        MarketOrderRequest request,
-        out MarketResultCode errorCode,
-        out string errorMessage)
-    {
-        if (request is null)
-        {
-            errorCode = MarketResultCode.InvalidRequest;
-            errorMessage = "订单参数不能为空。";
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(request.OrderId))
-        {
-            errorCode = MarketResultCode.InvalidOrderId;
-            errorMessage = "订单 ID 不能为空。";
-            return false;
-        }
-
-        if (_orders.ContainsKey(request.OrderId))
-        {
-            errorCode = MarketResultCode.DuplicateOrderId;
-            errorMessage = "订单 ID 已存在。";
-            return false;
-        }
-
-        if (request.OwnerId == Guid.Empty)
-        {
-            errorCode = MarketResultCode.InvalidRequest;
-            errorMessage = "订单所有者无效。";
-            return false;
-        }
-
-        if (request.Instrument != _instrument)
-        {
-            errorCode = MarketResultCode.InvalidInstrument;
-            errorMessage = "订单品种与当前订单簿不匹配。";
-            return false;
-        }
-
-        if (!Enum.IsDefined(request.Side) || request.Price <= 0 || request.Quantity <= 0)
-        {
-            errorCode = MarketResultCode.InvalidRequest;
-            errorMessage = "订单方向、价格和数量必须有效。";
-            return false;
-        }
-
-        if (request.CreatedAt is { } createdAt
-            && createdAt.ToUniversalTime() > DateTimeOffset.MaxValue - MarketPricePolicy.ListingLifetime)
-        {
-            errorCode = MarketResultCode.InvalidCreatedAt;
-            errorMessage = "订单创建时间超出支持范围。";
-            return false;
-        }
-
-        long vendorPrice;
-        try
-        {
-            vendorPrice = _vendorPriceResolver(request.Instrument.ItemId);
-        }
-        catch (Exception exception) when (exception is ArgumentException or ArithmeticException or InvalidOperationException)
-        {
-            errorCode = MarketResultCode.InvalidVendorPrice;
-            errorMessage = "物品商店回收价配置无效。";
-            return false;
-        }
-
-        if (vendorPrice < 0)
-        {
-            errorCode = MarketResultCode.InvalidVendorPrice;
-            errorMessage = "物品商店回收价配置无效。";
-            return false;
-        }
-
-        if (request.Price < Math.Max(MarketPricePolicy.AbsoluteMinimumPrice, vendorPrice))
-        {
-            errorCode = MarketResultCode.PriceBelowVendor;
-            errorMessage = "挂牌价格不能低于物品商店回收价。";
-            return false;
-        }
-
-        if (!MarketPricePolicy.IsValid(request.Price, vendorPrice))
-        {
-            errorCode = MarketResultCode.InvalidPriceIncrement;
-            errorMessage = "挂牌价格不符合当前价格档位。";
-            return false;
-        }
-
-        try
-        {
-            _ = checked(request.Price * request.Quantity);
-        }
-        catch (OverflowException)
-        {
-            errorCode = MarketResultCode.OrderTooLarge;
-            errorMessage = "订单金额超出支持范围。";
-            return false;
-        }
-
-        errorCode = MarketResultCode.Ok;
-        errorMessage = string.Empty;
-        return true;
-    }
-
-    private static long GetCatalogVendorPrice(string itemId)
-    {
-        return Domain.Simulation.ItemCatalog.TryGet(itemId, out var definition)
-            ? definition.SellPrice
-            : 0;
-    }
-
-    private static DateTimeOffset NormalizeCreatedAt(
-        DateTimeOffset createdAt,
-        DateTimeOffset expiresAt)
-    {
-        if (createdAt != default) return createdAt.ToUniversalTime();
-        if (expiresAt != default)
-        {
-            return expiresAt.ToUniversalTime() - MarketPricePolicy.ListingLifetime;
-        }
-
-        // 兼容没有时间字段的旧账本：从恢复时刻开始计算新的有效期，避免旧订单因
-        // 缺少元数据被立即退回或永久占用库存。
-        return DateTimeOffset.UtcNow;
-    }
-
-    private static DateTimeOffset NormalizeExpiresAt(
-        DateTimeOffset createdAt,
-        DateTimeOffset expiresAt)
-    {
-        if (expiresAt != default) return expiresAt.ToUniversalTime();
-        return createdAt.ToUniversalTime() + MarketPricePolicy.ListingLifetime;
-    }
-
-    private static bool Crosses(MarketSide incomingSide, long incomingPrice, long makerPrice)
-    {
-        return incomingSide == MarketSide.Buy
-            ? makerPrice <= incomingPrice
-            : makerPrice >= incomingPrice;
-    }
-
-    private static IReadOnlyList<MarketLevel> ToLevels(
-        SortedDictionary<long, LinkedList<MutableOrder>> levels,
-        int depth)
-    {
-        return levels
-            .Take(depth)
-            .Select(pair => new MarketLevel(
-                pair.Key,
-                pair.Value.Sum(order => order.RemainingQuantity),
-                pair.Value.Count))
+        var timestamp = now.ToUniversalTime();
+        var expired = _orders.Values
+            .Where(order => IsActive(order) && order.ExpiresAt is not null && order.ExpiresAt <= timestamp)
+            .OrderBy(order => order.Sequence)
             .ToArray();
+        foreach (var order in expired) _orders[order.OrderId] = order with { Status = MarketOrderStatus.Expired };
+        if (expired.Length > 0) _version = checked(_version + 1);
+        return expired;
     }
 
-    private static MarketOrderView ToView(MutableOrder order)
+    public OrderBookSnapshot Snapshot(int depth = 20, DateTimeOffset? now = null)
     {
-        return new MarketOrderView(
-            order.OrderId,
-            order.OwnerId,
-            order.Instrument,
-            order.Side,
-            order.Price,
-            order.OriginalQuantity,
-            order.RemainingQuantity,
-            order.FilledQuantity,
-            order.Status,
-            order.Sequence,
-            order.CreatedAt,
-            order.ExpiresAt);
+        if (depth is < 1 or > 200) throw new DomainException(DomainErrorCode.InvalidArgument, "盘口深度必须在 1 到 200 之间。");
+        static IReadOnlyList<MarketLevel> Levels(IEnumerable<MarketOrder> orders, int depth) => orders
+            .GroupBy(order => order.Price)
+            .OrderBy(group => group.Key)
+            .Take(depth)
+            .Select(group => new MarketLevel(group.Key, group.Sum(order => order.RemainingQuantity), group.Count()))
+            .ToArray();
+        var asks = Levels(_orders.Values.Where(order => IsActive(order) && order.Side == MarketSide.Sell), depth);
+        var bids = _orders.Values.Where(order => IsActive(order) && order.Side == MarketSide.Buy)
+            .GroupBy(order => order.Price)
+            .OrderByDescending(group => group.Key)
+            .Take(depth)
+            .Select(group => new MarketLevel(group.Key, group.Sum(order => order.RemainingQuantity), group.Count()))
+            .ToArray();
+        return new OrderBookSnapshot(Instrument, asks, bids, _version, (now ?? DateTimeOffset.UtcNow).ToUniversalTime());
     }
 
-    private sealed class MutableOrder
+    public IReadOnlyList<MarketOrder> OrdersByOwner(PlayerId ownerId, int limit = 100)
     {
-        public MutableOrder(
-            string orderId,
-            Guid ownerId,
-            MarketInstrument instrument,
-            MarketSide side,
-            long price,
-            long quantity,
-            long sequence,
-            DateTimeOffset createdAt)
-        {
-            OrderId = orderId;
-            OwnerId = ownerId;
-            Instrument = instrument;
-            Side = side;
-            Price = price;
-            OriginalQuantity = quantity;
-            RemainingQuantity = quantity;
-            Sequence = sequence;
-            CreatedAt = createdAt.ToUniversalTime();
-            ExpiresAt = CreatedAt + MarketPricePolicy.ListingLifetime;
-        }
-
-        public string OrderId { get; }
-        public Guid OwnerId { get; }
-        public MarketInstrument Instrument { get; }
-        public MarketSide Side { get; }
-        public long Price { get; }
-        public long OriginalQuantity { get; }
-        public long RemainingQuantity { get; set; }
-        public long FilledQuantity => OriginalQuantity - RemainingQuantity;
-        public MarketOrderStatus Status { get; set; }
-        public long Sequence { get; }
-        public DateTimeOffset CreatedAt { get; }
-        public DateTimeOffset ExpiresAt { get; set; }
-        public LinkedListNode<MutableOrder>? Node { get; set; }
+        if (ownerId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "玩家标识不能为空。");
+        if (limit is < 1 or > 1000) throw new DomainException(DomainErrorCode.InvalidArgument, "订单查询上限无效。");
+        return _orders.Values.Where(order => order.OwnerId == ownerId && IsActive(order)).OrderByDescending(order => order.Sequence).Take(limit).ToArray();
     }
+
+    public IReadOnlyList<MarketOrder> ExportActiveOrders() => _orders.Values.Where(IsActive).OrderBy(order => order.Sequence).ToArray();
+
+    private IEnumerable<MarketOrder> MatchingCandidates(MarketOrder incoming)
+    {
+        var opposite = incoming.Side == MarketSide.Buy ? MarketSide.Sell : MarketSide.Buy;
+        var candidates = _orders.Values.Where(order => IsActive(order) && order.Side == opposite && Crosses(incoming, order));
+        return incoming.Side == MarketSide.Buy
+            ? candidates.OrderBy(order => order.Price).ThenBy(order => order.Sequence)
+            : candidates.OrderByDescending(order => order.Price).ThenBy(order => order.Sequence);
+    }
+
+    private static bool Crosses(MarketOrder incoming, MarketOrder maker) => incoming.Side == MarketSide.Buy
+        ? maker.Price <= incoming.Price
+        : maker.Price >= incoming.Price;
+
+    private static bool IsActive(MarketOrder order) =>
+        (order.Status is MarketOrderStatus.Active or MarketOrderStatus.PartiallyFilled)
+        && order.RemainingQuantity > 1e-12;
 }

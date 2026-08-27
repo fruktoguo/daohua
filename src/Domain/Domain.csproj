@@ -5,18 +5,19 @@
     <Nullable>enable</Nullable>
     <AssemblyName>Domain</AssemblyName>
     <RootNamespace>Domain</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Protocol/Protocol.csproj" />
     <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
     <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="../../config/game-data/**/*.json">
-      <Link>GameData/Defaults/%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <LogicalName>Domain.GameData.Defaults.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+      <Link>Catalog/Defaults/%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <LogicalName>Domain.Catalog.Defaults.%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 </Project>

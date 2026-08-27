@@ -1,51 +1,46 @@
-// ==============================================================================
-// 文件名称: Program.cs
-// 主要职责: 负载与容量压测工具的控制台启动入口与场景调度器。
-// 核心逻辑 / 定义内容:
-//   1. 解析命令行输入参数并分发调度对应的压测场景（在线长连接、离线挂机、灵市撮合/查询/过期、容量门禁等）。
-//   2. 统一捕获压测运行结果并格式化输出 JSON 测试报告。
-//   3. 根据压测错误数与指标是否达标设置进程退出码。
-// ==============================================================================
+namespace DaoHua.LoadTests;
 
-using System.Text.Json;
-
-namespace LoadTests;
-
-/// <summary>
-/// 负载与容量压测控制台入口程序，负责解析命令行参数、分发压测场景并输出标准化 JSON 压测报告。
-/// </summary>
 public static class Program
 {
-    /// <summary>
-    /// 压测命令行主执行入口：
-    /// 1. 解析命令行选项并匹配目标压测场景（在线长连接、离线挂机、多怪战斗、灵市撮合/查询/过期、2c4g容量门禁）；
-    /// 2. 调度执行场景并捕获运行耗时、网络收发、内存与 CPU 指标；
-    /// 3. 输出格式化 JSON 报告，发生错误时返回非零退出码。
-    /// </summary>
-    public static async Task Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
-        var options = LoadTestOptions.Parse(args);
-        var report = options.Scenario switch
+        LoadTestOptions options;
+        try
         {
-            "online" => await OnlineLoadScenario.RunAsync(options),
-            "idle-offline" => OfflineSimulationScenario.Run(options, fullyOffline: false),
-            "combat-offline" => OfflineSimulationScenario.Run(options, fullyOffline: false, includeCombat: true),
-            "fully-offline" => OfflineSimulationScenario.Run(options, fullyOffline: true),
-            "market" => MarketLoadScenario.Run(options),
-            "market-read" => await MarketReadLoadScenario.RunAsync(options),
-            "market-expiry" => MarketExpiryLoadScenario.Run(options),
-            "capacity-target" => CapacityTargetScenario.Run(options),
-            _ => throw new ArgumentException($"未知场景: {options.Scenario}")
-        };
+            options = LoadTestOptions.Parse(args);
+        }
+        catch (Exception exception) when (exception is ArgumentException or UriFormatException)
+        {
+            Console.Error.WriteLine($"参数错误: {exception.Message}");
+            return 2;
+        }
 
-        if (report.Errors > 0)
+        LoadTestReport report;
+        try
         {
-            Environment.ExitCode = 1;
+            report = options.Scenario switch
+            {
+                "capacity-target" => await CapacityTargetScenario.RunAsync(options),
+                "postgres" => await CapacityTargetScenario.RunPostgresOnlyAsync(options),
+                "compute" => await ComputeLoadScenario.RunAsync(options),
+                "websocket" => await WebSocketLoadScenario.RunAsync(options),
+                "http-read" => await HttpReadLoadScenario.RunAsync(options),
+                _ => throw new ArgumentException($"未知场景: {options.Scenario}")
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            report = LoadTestReport.Failure(options.Scenario, "压测被取消。");
+        }
+        catch (Exception exception)
+        {
+            report = LoadTestReport.Failure(options.Scenario, exception.Message);
         }
 
         Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
             WriteIndented = true
         }));
+        return report.GatePassed && report.Errors == 0 ? 0 : 1;
     }
 }

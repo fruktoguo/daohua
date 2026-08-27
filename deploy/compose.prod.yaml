@@ -2,7 +2,7 @@ name: daohua
 
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     container_name: daohua-db
     init: true
     restart: unless-stopped
@@ -16,23 +16,33 @@ services:
       - -c
       - max_connections=50
       - -c
-      - shared_buffers=256MB
+      - shared_buffers=512MB
       - -c
-      - effective_cache_size=1536MB
+      - effective_cache_size=2GB
       - -c
-      - work_mem=8MB
+      - work_mem=4MB
       - -c
       - maintenance_work_mem=128MB
       - -c
+      - fsync=on
+      - -c
+      - full_page_writes=on
+      - -c
+      - synchronous_commit=on
+      - -c
+      - wal_compression=on
+      - -c
+      - checkpoint_timeout=15min
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
       - max_wal_size=1GB
       - -c
-      - min_wal_size=80MB
+      - min_wal_size=128MB
       - -c
-      - wal_keep_size=64MB
+      - autovacuum=on
       - -c
       - autovacuum_max_workers=2
-      - -c
-      - autovacuum_vacuum_scale_factor=0.05
     volumes:
       - daohua-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -42,9 +52,9 @@ services:
       retries: 6
       start_period: 20s
     shm_size: 256m
-    pids_limit: 256
     cpus: "${DB_CPUS:-0.75}"
     mem_limit: ${DB_MEM_LIMIT:-1g}
+    pids_limit: 256
     ulimits:
       nofile:
         soft: 65536
@@ -52,47 +62,54 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: 20m
+        max-size: 10m
         max-file: "5"
 
   app:
-    image: ${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}
+    image: ${APP_IMAGE:?需要指定不可变 APP_IMAGE}
     container_name: daohua-app
     init: true
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      compute-node:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${APP_PORT:-15128}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      Storage__Provider: postgres
-      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DB_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
-      Storage__DurableOutboxEnabled: "true"
-      Storage__PersistenceQueueCapacity: "65536"
+      ASPNETCORE_URLS: http://+:8080
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:?需要在 /opt/daohua/daohua.env 设置 DB_PASSWORD};Maximum Pool Size=32;Minimum Pool Size=2;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "true"
-      Market__LedgerProvider: postgres
-      Market__PartitionCount: "1"
-      Market__PartitionId: "0"
-      Market__TradeRetentionDays: "14"
-      DistributedCompute__Enabled: ${DISTRIBUTED_COMPUTE_ENABLED:-false}
-      DistributedCompute__NodeEndpoints: ${COMPUTE_NODE_ENDPOINTS:-}
-      DistributedCompute__Token: ${COMPUTE_TOKEN:-}
-      DistributedCompute__BatchSize: ${COMPUTE_BATCH_SIZE:-64}
-      DistributedCompute__MinimumIdleLagSeconds: ${COMPUTE_MIN_IDLE_LAG_SECONDS:-300}
-      # 可选共享访问令牌；空默认不启用，来源 /opt/daohua/daohua.env。
-      Server__AccessToken: ${ACCESS_TOKEN:-}
+      Storage__SchemaVersion: "1"
+      Storage__SectionFlushBatchSize: "256"
+      Storage__SectionFlushIntervalMilliseconds: "1000"
+      Storage__SectionFlushLeaseSeconds: "30"
+      Storage__OutboxBatchSize: "128"
+      Storage__OutboxPollIntervalMilliseconds: "1000"
+      Storage__RetentionBatchSize: "256"
+      Storage__DeliveredOutboxRetentionDays: "7"
+      Storage__SessionRetentionDays: "7"
+      Storage__AuditRetentionDays: "30"
+      Storage__ComputeJobRetentionDays: "7"
+      Storage__DataProtectionKeyRetentionDays: "180"
+      Server__MaxWebSocketMessageBytes: "1048576"
+      Server__WebSocketOutboundCapacity: "256"
+      Auth__SessionLifetimeDays: "30"
+      Market__PartitionCount: "${MARKET_PARTITION_COUNT:-1}"
+      Market__PartitionId: "${MARKET_PARTITION_ID:-0}"
+      ComputeNode__Enabled: "${COMPUTE_NODE_ENABLED:-true}"
+      ComputeNode__Endpoints: http://compute-node:8090
+      ComputeNode__Token: ${COMPUTE_TOKEN:?需要设置 COMPUTE_TOKEN}
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    pids_limit: ${APP_PIDS_LIMIT:-2048}
-    cpus: "${APP_CPUS:-2.00}"
-    mem_limit: ${APP_MEM_LIMIT:-2g}
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: ${APP_PIDS_LIMIT:-1024}
+    cpus: "${APP_CPUS:-1.00}"
+    mem_limit: ${APP_MEM_LIMIT:-1536m}
     ulimits:
       nofile:
         soft: 65536
@@ -107,8 +124,81 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: 20m
+        max-size: 10m
         max-file: "5"
+
+  compute-node:
+    image: ${COMPUTE_IMAGE:?需要指定不可变 COMPUTE_IMAGE}
+    container_name: daohua-compute
+    init: true
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8090
+      ComputeNode__Urls: http://+:8090
+      ComputeNode__Token: ${COMPUTE_TOKEN:?需要设置 COMPUTE_TOKEN}
+      ComputeNode__MaxJobsPerBatch: "${COMPUTE_MAX_JOBS_PER_BATCH:-128}"
+      ComputeNode__MaxConcurrentBatches: "${COMPUTE_MAX_CONCURRENT_BATCHES:-2}"
+      GameData__Directory: /app/config/game-data
+    expose:
+      - "8090"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    cpus: "${COMPUTE_CPUS:-0.25}"
+    mem_limit: ${COMPUTE_MEM_LIMIT:-512m}
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8090/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
+
+  persistence-worker:
+    profiles: ["worker"]
+    image: ${APP_IMAGE:?需要指定不可变 APP_IMAGE}
+    container_name: daohua-persistence-worker
+    init: true
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["dotnet", "Server.dll", "--role", "persistence-worker"]
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://127.0.0.1:8081
+      DAOHUA_PROCESS_ROLE: persistence-worker
+      Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:?需要设置 DB_PASSWORD};Maximum Pool Size=16;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
+      Storage__EnableSchemaBootstrap: "false"
+      Storage__SchemaVersion: "1"
+      Storage__SectionFlushBatchSize: "256"
+      Storage__SectionFlushIntervalMilliseconds: "1000"
+      Storage__SectionFlushLeaseSeconds: "30"
+      Storage__OutboxBatchSize: "128"
+      Storage__OutboxPollIntervalMilliseconds: "1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    cpus: "${WORKER_CPUS:-0.50}"
+    mem_limit: ${WORKER_MEM_LIMIT:-512m}
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "3"
 
 volumes:
   daohua-postgres:
+    name: daohua_daohua-postgres

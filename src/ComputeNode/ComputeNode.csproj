@@ -3,15 +3,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>ComputeNode</AssemblyName>
-    <RootNamespace>ComputeNode</RootNamespace>
+    <AssemblyName>DaoHua.ComputeNode</AssemblyName>
+    <RootNamespace>DaoHua.ComputeNode</RootNamespace>
     <IsPackable>false</IsPackable>
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="../Domain/Domain.csproj" />
-  </ItemGroup>
-
+  <!-- ComputeNode 是无状态、无数据库权限的冷挂机计算进程；不依赖 Domain、Server 或旧存档类型。 -->
   <ItemGroup>
     <Content Include="../../config/game-data/**/*.json">
       <Link>config/game-data/%(RecursiveDir)%(Filename)%(Extension)</Link>

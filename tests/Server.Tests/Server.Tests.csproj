@@ -16,6 +16,5 @@
     <ProjectReference Include="../../src/Server/Server.csproj" />
     <ProjectReference Include="../../src/Domain/Domain.csproj" />
     <ProjectReference Include="../../src/Protocol/Protocol.csproj" />
-    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Persistence/YuoCore.Persistence.csproj" />
   </ItemGroup>
 </Project>

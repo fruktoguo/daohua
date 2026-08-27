@@ -1,0 +1,358 @@
+namespace Server.Clean;
+
+/// <summary>schema v1 的一次性建库脚本。所有对象位于新命名空间，不读取旧原型表。</summary>
+public static class PostgresSchema
+{
+    public const int Version = 1;
+
+    public const string Sql = """
+    CREATE SCHEMA IF NOT EXISTS identity;
+    CREATE SCHEMA IF NOT EXISTS game;
+    CREATE SCHEMA IF NOT EXISTS economy;
+    CREATE SCHEMA IF NOT EXISTS market;
+    CREATE SCHEMA IF NOT EXISTS platform;
+
+    CREATE TABLE IF NOT EXISTS identity.accounts (
+        account_id uuid PRIMARY KEY,
+        login_normalized varchar(128) NOT NULL UNIQUE,
+        password_hash bytea NOT NULL,
+        password_salt bytea NOT NULL,
+        password_iterations integer NOT NULL CHECK (password_iterations >= 100000),
+        status smallint NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2)),
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS identity.players (
+        player_id uuid PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES identity.accounts(account_id),
+        display_name varchar(64) NOT NULL,
+        display_name_normalized varchar(128) NOT NULL UNIQUE,
+        created_at timestamptz NOT NULL,
+        last_seen_at timestamptz NOT NULL,
+        status smallint NOT NULL DEFAULT 1 CHECK (status IN (0, 1, 2))
+    );
+    CREATE INDEX IF NOT EXISTS ix_players_account ON identity.players(account_id);
+
+    CREATE TABLE IF NOT EXISTS identity.auth_sessions (
+        session_id uuid PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES identity.accounts(account_id),
+        token_hash bytea NOT NULL UNIQUE,
+        issued_at timestamptz NOT NULL,
+        expires_at timestamptz NOT NULL,
+        last_used_at timestamptz NOT NULL,
+        revoked_at timestamptz NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_auth_sessions_active ON identity.auth_sessions(token_hash, expires_at) WHERE revoked_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS identity.audit_events (
+        event_id uuid PRIMARY KEY,
+        actor_id uuid NULL,
+        event_type varchar(96) NOT NULL,
+        target_id uuid NULL,
+        payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+        occurred_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_audit_events_occurred ON identity.audit_events(occurred_at DESC);
+
+    CREATE TABLE IF NOT EXISTS identity.data_protection_keys (
+        key_id uuid PRIMARY KEY,
+        friendly_name varchar(256) NULL,
+        xml_payload text NOT NULL,
+        created_at timestamptz NOT NULL,
+        expires_at timestamptz NULL,
+        CHECK (octet_length(xml_payload) <= 1048576),
+        CHECK (expires_at IS NULL OR expires_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS ix_data_protection_keys_created ON identity.data_protection_keys(created_at);
+    CREATE INDEX IF NOT EXISTS ix_data_protection_keys_expiry ON identity.data_protection_keys(expires_at);
+
+    CREATE TABLE IF NOT EXISTS game.player_state_heads (
+        player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        state_version bigint NOT NULL CHECK (state_version > 0),
+        schema_version integer NOT NULL CHECK (schema_version > 0),
+        last_simulated_at timestamptz NOT NULL,
+        game_data_fingerprint varchar(128) NOT NULL,
+        checksum char(64) NOT NULL,
+        updated_at timestamptz NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS game.player_state_sections (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        section_kind varchar(32) NOT NULL,
+        section_version bigint NOT NULL CHECK (section_version > 0),
+        schema_version integer NOT NULL CHECK (schema_version > 0),
+        codec varchar(32) NOT NULL,
+        payload bytea NOT NULL,
+        raw_bytes integer NOT NULL CHECK (raw_bytes > 0),
+        stored_bytes integer NOT NULL CHECK (stored_bytes > 0),
+        checksum char(64) NOT NULL,
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, section_kind)
+    );
+
+    CREATE TABLE IF NOT EXISTS game.player_action_queue (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        slot smallint NOT NULL CHECK (slot >= 0 AND slot < 256),
+        action_id varchar(128) NOT NULL,
+        action_payload bytea NOT NULL,
+        action_version bigint NOT NULL CHECK (action_version > 0),
+        status varchar(32) NOT NULL,
+        next_due_at timestamptz NULL,
+        idempotency_key varchar(200) NOT NULL,
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, slot)
+    );
+    CREATE INDEX IF NOT EXISTS ix_player_actions_due ON game.player_action_queue(next_due_at) WHERE next_due_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS game.player_projection (
+        player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        realm_rank double precision NOT NULL DEFAULT 0,
+        current_node_id varchar(128) NULL,
+        presence varchar(32) NOT NULL DEFAULT 'offline',
+        last_active_at timestamptz NOT NULL,
+        projection_version bigint NOT NULL DEFAULT 1,
+        updated_at timestamptz NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS economy.player_asset_balances (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        asset_id varchar(128) NOT NULL,
+        variant varchar(128) NOT NULL DEFAULT '',
+        quantity double precision NOT NULL CHECK (quantity >= 0 AND quantity = quantity),
+        version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, asset_id, variant)
+    );
+
+    CREATE TABLE IF NOT EXISTS economy.player_asset_instances (
+        instance_id uuid PRIMARY KEY,
+        owner_player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        definition_id varchar(128) NOT NULL,
+        state jsonb NOT NULL DEFAULT '{}'::jsonb,
+        version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_asset_instances_owner ON economy.player_asset_instances(owner_player_id);
+
+    CREATE TABLE IF NOT EXISTS economy.transactions (
+        transaction_id uuid PRIMARY KEY,
+        idempotency_key varchar(200) NOT NULL UNIQUE,
+        request_hash char(64) NOT NULL,
+        transaction_type varchar(96) NOT NULL,
+        actor_id uuid NOT NULL,
+        result_payload bytea NOT NULL DEFAULT ''::bytea,
+        created_at timestamptz NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS economy.transaction_lines (
+        transaction_id uuid NOT NULL REFERENCES economy.transactions(transaction_id),
+        line_no smallint NOT NULL CHECK (line_no >= 0),
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        asset_id varchar(128) NOT NULL,
+        variant varchar(128) NOT NULL DEFAULT '',
+        instance_id uuid NULL,
+        delta double precision NOT NULL CHECK (delta = delta),
+        PRIMARY KEY (transaction_id, line_no)
+    );
+    CREATE INDEX IF NOT EXISTS ix_transaction_lines_player ON economy.transaction_lines(player_id, asset_id, variant);
+
+    CREATE TABLE IF NOT EXISTS economy.reservations (
+        reservation_id uuid PRIMARY KEY,
+        order_id uuid NOT NULL UNIQUE,
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        asset_id varchar(128) NOT NULL,
+        variant varchar(128) NOT NULL DEFAULT '',
+        instance_id uuid NULL REFERENCES economy.player_asset_instances(instance_id),
+        side varchar(8) NOT NULL CHECK (side IN ('buy', 'sell')),
+        quantity double precision NOT NULL CHECK (quantity >= 0 AND quantity = quantity AND quantity < 'Infinity'::double precision),
+        reserved_value double precision NOT NULL CHECK (reserved_value >= 0),
+        status varchar(32) NOT NULL,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_reservations_player ON economy.reservations(player_id, status);
+
+    CREATE TABLE IF NOT EXISTS market.partition_leases (
+        partition_id integer PRIMARY KEY CHECK (partition_id >= 0),
+        owner_instance_id uuid NOT NULL,
+        fence_token bigint NOT NULL CHECK (fence_token > 0),
+        expires_at timestamptz NOT NULL,
+        renewed_at timestamptz NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS market.orders (
+        order_id uuid PRIMARY KEY,
+        partition_id integer NOT NULL CHECK (partition_id >= 0),
+        owner_player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        side varchar(8) NOT NULL CHECK (side IN ('buy', 'sell')),
+        asset_id varchar(128) NOT NULL,
+        variant varchar(128) NOT NULL DEFAULT '',
+        price double precision NOT NULL CHECK (price > 0 AND price = price AND price < 'Infinity'::double precision),
+        quantity double precision NOT NULL CHECK (quantity > 0 AND quantity = quantity AND quantity < 'Infinity'::double precision),
+        filled_quantity double precision NOT NULL DEFAULT 0 CHECK (filled_quantity >= 0 AND filled_quantity = filled_quantity AND filled_quantity <= quantity),
+        status varchar(24) NOT NULL CHECK (status IN ('active', 'partially_filled', 'filled', 'cancelled', 'expired')),
+        version bigint NOT NULL DEFAULT 1 CHECK (version > 0),
+        sequence bigint NOT NULL,
+        idempotency_key varchar(200) NOT NULL UNIQUE,
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_market_orders_book ON market.orders(partition_id, asset_id, variant, status, side, price, sequence);
+    CREATE INDEX IF NOT EXISTS ix_market_orders_owner ON market.orders(owner_player_id, status);
+
+    CREATE TABLE IF NOT EXISTS market.trades (
+        trade_id uuid PRIMARY KEY,
+        partition_id integer NOT NULL,
+        buy_order_id uuid NOT NULL REFERENCES market.orders(order_id),
+        sell_order_id uuid NOT NULL REFERENCES market.orders(order_id),
+        buyer_id uuid NOT NULL REFERENCES identity.players(player_id),
+        seller_id uuid NOT NULL REFERENCES identity.players(player_id),
+        asset_id varchar(128) NOT NULL,
+        variant varchar(128) NOT NULL DEFAULT '',
+        price double precision NOT NULL CHECK (price > 0 AND price = price AND price < 'Infinity'::double precision),
+        quantity double precision NOT NULL CHECK (quantity > 0 AND quantity = quantity AND quantity < 'Infinity'::double precision),
+        seller_tax double precision NOT NULL CHECK (seller_tax >= 0 AND seller_tax = seller_tax AND seller_tax < 'Infinity'::double precision),
+        traded_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_market_trades_time ON market.trades(traded_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_market_trades_partition ON market.trades(partition_id, traded_at DESC);
+
+    CREATE TABLE IF NOT EXISTS platform.section_flush_queue (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        section_kind varchar(32) NOT NULL,
+        state_version bigint NOT NULL CHECK (state_version > 0),
+        schema_version integer NOT NULL CHECK (schema_version > 0),
+        codec varchar(32) NOT NULL,
+        payload bytea NOT NULL,
+        raw_bytes integer NOT NULL CHECK (raw_bytes > 0),
+        checksum char(64) NOT NULL,
+        game_data_fingerprint varchar(128) NOT NULL DEFAULT '',
+        last_simulated_at timestamptz NULL,
+        attempts integer NOT NULL DEFAULT 0,
+        next_attempt_at timestamptz NOT NULL,
+        lease_until timestamptz NULL,
+        lease_token uuid NULL,
+        last_error varchar(512) NULL,
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, section_kind)
+    );
+    CREATE INDEX IF NOT EXISTS ix_section_flush_ready ON platform.section_flush_queue(next_attempt_at, lease_until);
+
+    CREATE TABLE IF NOT EXISTS platform.integration_outbox (
+        outbox_id uuid PRIMARY KEY,
+        aggregate_type varchar(64) NOT NULL,
+        aggregate_id uuid NOT NULL,
+        event_type varchar(96) NOT NULL,
+        payload bytea NOT NULL,
+        occurred_at timestamptz NOT NULL,
+        attempts integer NOT NULL DEFAULT 0,
+        visible_at timestamptz NOT NULL,
+        lease_until timestamptz NULL,
+        lease_token uuid NULL,
+        delivered_at timestamptz NULL,
+        last_error varchar(512) NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_outbox_ready ON platform.integration_outbox(visible_at, lease_until) WHERE delivered_at IS NULL;
+
+    CREATE TABLE IF NOT EXISTS platform.command_receipts (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        request_id uuid NOT NULL,
+        command varchar(96) NOT NULL,
+        payload_hash char(64) NOT NULL CHECK (length(payload_hash) = 64),
+        result_payload bytea NOT NULL,
+        state_version bigint NOT NULL CHECK (state_version >= 0),
+        created_at timestamptz NOT NULL,
+        expires_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, request_id)
+    );
+    CREATE INDEX IF NOT EXISTS ix_command_receipts_expiry ON platform.command_receipts(expires_at);
+
+    CREATE TABLE IF NOT EXISTS platform.compute_jobs (
+        job_id uuid PRIMARY KEY,
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        target_time timestamptz NOT NULL,
+        status varchar(24) NOT NULL,
+        input_payload bytea NOT NULL,
+        output_payload bytea NULL,
+        lease_until timestamptz NULL,
+        attempts integer NOT NULL DEFAULT 0,
+        updated_at timestamptz NOT NULL,
+        created_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_compute_jobs_ready ON platform.compute_jobs(status, target_time);
+    CREATE INDEX IF NOT EXISTS ix_compute_jobs_retention ON platform.compute_jobs(status, updated_at);
+
+    CREATE TABLE IF NOT EXISTS platform.schema_version (
+        version integer PRIMARY KEY,
+        applied_at timestamptz NOT NULL
+    );
+    INSERT INTO platform.schema_version(version, applied_at)
+    VALUES (1, now()) ON CONFLICT (version) DO NOTHING;
+    """;
+}
+
+/// <summary>
+/// 在宿主构建认证与请求管线之前完成 schema v1 的建立/校验。
+/// Data Protection 的 key ring 依赖同一张 PostgreSQL 表，因此不能把首次建库
+/// 延后到 HostedService 启动阶段，否则首个请求可能先触发 42P01。
+/// </summary>
+public static class PostgresSchemaBootstrap
+{
+    public static async Task EnsureAsync(
+        NpgsqlDataSource dataSource,
+        bool enableBootstrap,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dataSource);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (enableBootstrap)
+        {
+            await using var command = new NpgsqlCommand(PostgresSchema.Sql, connection)
+            {
+                CommandTimeout = 60
+            };
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await VerifyAsync(connection, cancellationToken);
+    }
+
+    public static async Task VerifyAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        await using var command = new NpgsqlCommand("""
+            SELECT version
+            FROM platform.schema_version
+            ORDER BY version DESC
+            LIMIT 1
+            """, connection)
+        {
+            CommandTimeout = 15
+        };
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        if (value is not int version || version != PostgresSchema.Version)
+            throw new InvalidOperationException($"PostgreSQL schema 版本不匹配，要求 v{PostgresSchema.Version}。请在本地开发阶段重新初始化数据库，不提供历史 migration。");
+    }
+}
+
+public sealed class PostgresSchemaHostedService(
+    NpgsqlDataSource dataSource,
+    ServerOptions options,
+    ILogger<PostgresSchemaHostedService> logger) : IHostedService
+{
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await PostgresSchemaBootstrap.VerifyAsync(connection, cancellationToken);
+        if (!options.EnableSchemaBootstrap)
+            logger.LogInformation("PostgreSQL schema bootstrap 已关闭，已校验 schema v{Version}。", PostgresSchema.Version);
+        else
+            logger.LogInformation("PostgreSQL schema v{Version} 已就绪。", PostgresSchema.Version);
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}

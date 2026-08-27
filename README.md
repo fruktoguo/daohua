@@ -1,191 +1,167 @@
 # 道化太初
 
-基于 YuoCore 的 C# 服务端行动队列放置游戏原型。当前已经打通“采集草药 → 炼制引气丹 → 自动服丹引气入体”的首个完整循环，并提供 PostgreSQL 商业级落盘、可选远程冷挂机计算节点、真实 WebSocket 在线压测、离线挂机快进压测和 2c4g/40g 容量门禁。
+这是《道化太初》的内部开发基线。当前版本按 clean-room 方式从零建立领域、协议、运行时、PostgreSQL schema、前端连接层和部署拓扑；旧存档、旧 API、旧 WebSocket 包、旧表和旧组件模型不属于本版本的运行约束，也没有历史兼容层。
 
-## 目录
+## 最终架构
 
-- `src/Domain`：纯领域模型、行动目录、确定性快进算法、权威地图/寻路/边中位置、支持多敌人/首领/群体目标/功法/消耗品/持续伤害/控制与韧性修正的战斗事件模拟器、分片市场订单簿和可恢复账本模型。
-- `src/DataTool`：游戏数据配置导出和跨文件完整性校验工具。
-- `src/Protocol`：服务端、浏览器和压测共用的数据包契约。
-- `src/Server`：ASP.NET Core、YuoCore Fiber/ECS、WebSocket 和持久化。
-- `src/ComputeNode`：可通过 FRP 暴露给主服务调用的高延迟冷挂机补算节点；只处理离线快照，不持有权威状态。
-- `src/LoadTests`：在线、离线、完全离线和市场并发负载模拟器。
-- `tests/Domain.Tests`：循环、材料阻塞、快进一致性、战斗和市场测试。
-- `frontend`：React 19、Zustand 和 Vite 前端；包含行动、背包、日志、战斗配置、灵市盘口、下单和挂单管理页面。
-- `config/game-data`：地图、怪物、技能、物品、装备、遭遇和行动的版本化 JSON 配置。
-- `docs/`：项目文档，导航索引见 `docs/README.md`。
-  - `docs/design/`：游戏与数值设计——初步设计总纲、战斗数值规约、境界阶位与期望属性模型、战斗基准与产出模型、Milky Way Idle 玩法映射参考。
-  - `docs/frontend/`：前端规范——公共组件与统一模板速查手册、悬浮提示与浮层专项设计。
-  - `docs/backend/`：服务端开发与架构——领域数据架构、YuoCore 逻辑开发指南、游戏数据配置管线、性能基线。
-  - `docs/tasks/`：任务详情——各任务的独立需求分析、设计方案、子任务拆解与时间日志（总览看板见 `docs/tasks.md`）。
-  - `docs/ops/`：部署运维——生产构建、CCR 发布、服务器更新与回滚。
-  - `docs/world/`：世界观与剧情——设定总览、世界观、章节剧情与地图设计。
+```text
+浏览器
+  └─ 同源 HTTPS / DHW1 WebSocket
+       └─ daohua API（ASP.NET Core 10）
+            ├─ 玩家单写者内存聚合
+            ├─ WebSocket 状态投影
+            ├─ 资产与市场 PostgreSQL 事务
+            ├─ latest-only section 刷盘 Worker
+            └─ 可选 ComputeNode 客户端（冷挂机补算）
+                 └─ PostgreSQL 18（唯一 durable 真源）
+```
+
+核心原则：
+
+- 玩家在线时由单写者持有完整领域聚合；数据库不是每个字段一次一行，而是共享表中的少量稳定 section。
+- 玩家状态分为 `progression`、`world`、`combat`、`buffs`、`loadout`、`settings`、`action_queue` 七个 section。每个玩家对应共享表中的七行最新值，不建立“每个玩家一张表”。
+- 普通模拟只在内存推进，脏 section 以 15 秒合并窗口写入 `platform.section_flush_queue`；同一玩家/section 永远只有一条待写记录，不保存逐 Tick 历史。
+- 资产余额、唯一物品、订单冻结、成交、退款和幂等事务由 PostgreSQL 关系模型负责，并在一个事务内提交。
+- WebSocket 帧、心跳、战斗伤害明细和聊天消息不落盘。前端日志只有当前页面内的 100 条内存环形缓冲。
+- Redis 不在基线中。选型依据和未来准入门槛见 [`docs/backend/commercial-persistence-architecture.md`](docs/backend/commercial-persistence-architecture.md)。
+
+目标主机按 `2c4g/40g` 预算设计：5000+ 注册账号、100+ 持续网络收发、500+ 峰值收发和 2000+ 冷挂机补算。容量目标是门禁，不是未经实测的性能承诺。
+
+## 目录边界
+
+- `src/Domain`：纯领域模型、确定性模拟、战斗、世界和市场订单簿；不依赖 ASP.NET Core、数据库或浏览器。
+- `src/Protocol`：HTTP/WebSocket/ComputeNode 共用的纯数据协议；不暴露 ECS、Fiber、数据库对象。
+- `src/Server`：ASP.NET Core 宿主、Cookie 会话、WebSocket、PostgreSQL 适配、市场写者和后台 Worker。
+- `src/ComputeNode`：无状态的高延迟冷挂机批处理节点；没有生产数据库权限。
+- `src/LoadTests`：独立容量与跨边界负载工具，不作为生产依赖。
+- `src/DataTool`：游戏数据 JSON 校验与指纹工具。
+- `frontend`：唯一正式 React/Vite 前端。
+- `tests/Domain.Tests`、`tests/Server.Tests`：领域、协议、编解码和运行时回归门禁。
+- `config/game-data`：版本化游戏数据；运行时通过内嵌资源加载并校验指纹。
+- `data`：运行数据目录（如本地工具需要），不进 Git、不进镜像。
+- `vendor/YuoCore`：固定版本 submodule；本任务不修改其内容。
 
 ## 本地运行
 
-要求：.NET SDK 10、Node.js 22 或以上。首次克隆先初始化固定版本的 YuoCore submodule：
+环境要求：.NET SDK 10、Node.js 22、npm、Docker Engine/Compose/Buildx。首次克隆后执行：
 
 ```bash
 git submodule update --init --recursive
+npm --prefix frontend ci
 ```
 
-前后端一起开发时推荐使用 `scripts/dev.sh`：服务端由 `scripts/dev-hot.mjs` 守护，源码变更进入
-60 秒防抖静默期（期间有新变更则刷新等待），静默期满先 `dotnet build`——编译失败保持旧进程继续运行，
-成功才优雅重启服务端；服务端进程异常退出时按退避自动拉起。防抖时长可用环境变量
-`SERVER_DEV_RESTART_DEBOUNCE_MS` 调整（设为 0 表示立即重建）。前端仍为 Vite 热更新。
+先启动 PostgreSQL（只会使用显式命名卷 `daohua_daohua-postgres`）：
 
 ```bash
-scripts/dev.sh
+docker compose -f compose.yaml up -d db
 ```
 
-启动服务端：
+本地直接启动 API：
 
 ```bash
+Storage__ConnectionString='Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=daohua-local-dev;Maximum Pool Size=32;Timeout=5;Command Timeout=30' \
+Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj
 ```
 
-开发服务固定监听 `127.0.0.1:5128`，存档写入仓库根目录 `data`。需要使用与生产一致的只读根文件系统、非 root 用户和 durable outbox 时，使用固定入口：
+默认监听 `http://127.0.0.1:5128`。首次使用新数据库时会创建 schema v1；本项目不提供旧 schema migration。若本地 schema 与当前基线不一致，应在确认数据无需保留后重新初始化本地数据库。
+
+启动正式前端：
 
 ```bash
-scripts/dev-service.sh up
+npm --prefix frontend run dev
 ```
 
-该入口使用显式命名卷 `daohua_daohua-postgres`，重新构建不会更换数据库卷，也不会在端口占用时静默切换到其他端口。
+Vite 默认监听 `http://127.0.0.1:15172`，把 `/api` 和 `/ws` 代理到 `127.0.0.1:5128`。浏览器认证使用服务端 `HttpOnly` Cookie；前端 localStorage 只保存非敏感的账号显示信息和 UI 偏好，不保存 token、玩家快照、日志或消息历史。
 
-服务端默认监听 `http://127.0.0.1:5128`，WebSocket 地址为 `ws://127.0.0.1:5128/ws`。
+## HTTP 与 WebSocket
 
-在线行动采用事件截止时间调度，不设置固定 Tick。服务端使用单调时间轴直接等待下一次攻击、施法、持续效果、搜索、复活或行动完成的精确毫秒边界；即使线程因操作系统调度稍晚唤醒，领域结算仍按原定边界顺序补算，不会把延迟累积到下一次行动。快照检查点、冷玩家回收和市场过期维护由独立后台调度器执行，不参与游戏时间推进。协议同时下发行动的绝对完成时刻，前端行动条按该时刻线性显示。
+当前 HTTP 前缀为 `/api/v1`：
 
-服务端直跑也必须连接 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库。
+- `/api/v1/meta`：协议、schema 和游戏数据指纹。
+- `/api/v1/catalog/actions`、`/api/v1/catalog/items`：带 ETag 的只读目录。
+- `/api/v1/auth/register`、`/api/v1/auth/login`、`/api/v1/auth/logout`、`/api/v1/auth/session`：账号和会话。
+- `/api/v1/players/{playerId}`：授权后的完整玩家快照。
+- `/api/v1/players/{playerId}/commands`：带 `requestId`、`expectedStateVersion` 的通用命令入口。
+- `/api/v1/market/book`、`/api/v1/market/metrics`、`/api/v1/players/{playerId}/market/orders`：市场读模型。
+
+实时通道是固定版本 `DHW1 / protocol.v1` 二进制信封，包含协议版本、消息类型、请求 ID、单调序列号、编码标识和载荷长度。当前浏览器载荷使用 JSON；PostgreSQL section 使用 JSON，载荷超过阈值时使用 Brotli `br-json`。未知版本、编码、长度、序列或文本帧直接拒绝，不尝试解析旧包格式。
+
+## 冷挂机计算节点
+
+`ComputeNode` 只接受带 `X-Compute-Token` 的内部批处理 HTTP 请求，验证契约版本、配置指纹、任务数量和载荷大小后执行无状态确定性补算。它不接受公网业务流量，不处理账号、在线连接、市场写入，也不持有 PostgreSQL 凭据。
 
 ```bash
-Storage__Provider=postgres \
-Storage__ConnectionString='Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=<密码>' \
-Market__LedgerProvider=postgres \
-dotnet run --project src/Server/Server.csproj
-```
-
-远程冷挂机计算节点可在个人设备上运行，并通过 FRP 暴露给主服务。节点只接受主服务提交的离线快照批处理，不连接生产数据库、不处理在线会话：
-
-```bash
-ComputeNode__Token=<共享令牌> \
+ComputeNode__Token='<内部随机令牌>' \
 ComputeNode__Urls=http://127.0.0.1:5129 \
 dotnet run --project src/ComputeNode/ComputeNode.csproj
 ```
 
-启动前端：
+正式部署时，ComputeNode 应放在独立网络边界；主服务只把可验证的批处理载荷发送给它，结果仍由主服务校验后写回 PostgreSQL。
+
+## 构建、测试与容量门禁
+
+最小完整门禁：
 
 ```bash
-cd frontend
-npm install
-npm run dev
-```
-
-浏览器固定打开 `http://127.0.0.1:15172`。Vite 使用 `strictPort`，端口被占用时直接报错，不再静默换端口；同源 `/api` 和 `/ws` 代理到 `127.0.0.1:5128`。玩家 UUID 同时保存在同主机 Cookie 与当前 origin 的 `localStorage`，开发端口变化时仍优先复用同一个玩家身份；如需连接其他服务端，设置 `VITE_API_URL` 或 `VITE_WS_URL`。
-
-## 构建与测试
-
-```bash
-dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
-dotnet test Game.slnx --no-build --configuration Release --disable-build-servers --nologo
+dotnet build Game.slnx -c Release --disable-build-servers --nologo
+dotnet test tests/Domain.Tests/Domain.Tests.csproj -c Release --no-build --disable-build-servers --nologo
+dotnet test tests/Server.Tests/Server.Tests.csproj -c Release --no-build --disable-build-servers --nologo
 npm --prefix frontend run build
+dotnet run --project src/DataTool/DataTool.csproj -c Release -- validate config/game-data --strict
 ```
 
-也可以运行统一验证入口：
+统一入口：
 
 ```bash
 scripts/verify.sh
 ```
 
-2c4g/40g 容量目标门禁：
+容量场景：
 
 ```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario capacity-target
+dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
+  --scenario capacity-target --require-database
 ```
 
-单独校验游戏数据：
+单独运行真实 WebSocket 或 HTTP 读压测：
 
 ```bash
-dotnet run --project src/DataTool/DataTool.csproj -- \
-  validate config/game-data
+dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
+  --scenario websocket --players 100 --duration-seconds 30 \
+  --url ws://127.0.0.1:5128/ws
+
+dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
+  --scenario http-read --players 500 --duration-seconds 30 \
+  --url http://127.0.0.1:5128
+```
+
+`scripts/smoke-production.mjs` 验证健康、就绪、同源静态入口（容器模式）和 WebSocket 首帧。直接从源码启动 API 时如果没有 `wwwroot`，可用 `SMOKE_REQUIRE_STATIC=0` 只验证 API/WS 边界：
+
+```bash
+SMOKE_REQUIRE_STATIC=0 node scripts/smoke-production.mjs http://127.0.0.1:5128
 ```
 
 ## Docker 与生产部署
 
-本地运行生产同构镜像：
+生产镜像由多阶段 Dockerfile 构建，只包含发布产物和前端 `dist`，以固定 UID `10001`、只读根文件系统和 `/tmp` tmpfs 运行：
 
 ```bash
-docker compose up -d --build
+docker compose -f compose.yaml up -d --build
 node scripts/smoke-production.mjs http://127.0.0.1:5128
+docker compose -f compose.yaml down
 ```
 
-项目提供 CCR 不可变版本和 `prod` 标签发布、PostgreSQL 主存储、整点自动备份轮转、服务器定时更新、失败回滚、持久卷及 `xx.yuohira.com` Caddy 配置。完整流程、运维命令和当前分布式边界见 `docs/ops/deployment.md`。
+正式 CCR 发布、服务器更新、备份、Caddy、回滚和持久卷规则见 [`docs/ops/deployment.md`](docs/ops/deployment.md)。完整持久化与 Redis ADR 见 [`docs/backend/commercial-persistence-architecture.md`](docs/backend/commercial-persistence-architecture.md)。
 
-## 性能场景
+生产发布前必须确认：
 
-在线场景会建立真实 `ClientWebSocket`，并用生产 `PacketCodec` 发送相同节奏的命令包：
+- 工作区已提交且通过 Release 构建、领域/服务端测试、前端构建和容量门禁；
+- Server 与 ComputeNode 使用 `linux/amd64` 不可变镜像标签，并保留 `prod` 移动标签；
+- PostgreSQL 卷 `daohua_daohua-postgres` 未被替换，备份归档和 SHA-256 校验可恢复；
+- Caddy 配置已 `caddy validate`，公网只暴露 HTTPS、HTTP API 和 WebSocket；
+- 应用日志、WAL、队列和备份均有硬上限，禁止把 WebSocket/聊天/战斗 Tick 变成持久化日志。
 
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario online --players 500 --duration-seconds 60 \
-  --url ws://127.0.0.1:5128/ws --connect-concurrency 64
-```
+## 开发阶段兼容边界
 
-一万名离线挂机玩家补算一小时：
-
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario idle-offline --players 10000 --duration-seconds 3600
-```
-
-一万名历练玩家补算一小时暮影谷多敌人战斗行动：
-
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario combat-offline --players 10000 --duration-seconds 3600
-```
-
-十万名完全离线玩家进行账号规模与排行榜聚合基线测试：
-
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario fully-offline --players 100000 --duration-seconds 3600
-```
-
-市场订单簿并发基线（`players` 为订单总数）：
-
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario market --players 100000 --duration-seconds 1
-```
-
-500 人按正式灵市页面节奏读取盘口、个人挂单和市场指标：
-
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario market-read --players 500 --duration-seconds 15 \
-  --url ws://127.0.0.1:5128/ws --connect-concurrency 64
-```
-
-十万条过期挂牌的时间索引回收基线：
-
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario market-expiry --players 100000 --duration-seconds 1
-```
-
-2c4g/40g 容量门禁（5000+ 注册账号、500 高峰命令包体、2000 冷挂机补算）：
-
-```bash
-dotnet run --project src/LoadTests/LoadTests.csproj -- \
-  --scenario capacity-target
-```
-
-目录接口：`GET /api/actions`、`GET /api/items`、`GET /api/world/maps`、`GET /api/combat/abilities`、`GET /api/combat/equipment`、`GET /api/combat/encounters`。地图移动通过 WebSocket `travel_to` 发送目标节点；服务端规划完整路线并以一个队首行动推进，停止时保留边中位置。战斗配置通过 WebSocket `set_combat_loadout` 更新，支持 4 个功法槽、3 个通用消耗品槽、法器与 0-20 级强化、绝对值与百分比触发条件，以及按 `100 / (100 + tenacity)` 修正控制命中率的韧性字段。盘口接口：`GET /api/market/book?itemId=item.spirit-herb&enhancementLevel=0&depth=20`；市场写接口为 `POST /api/players/{playerId}/market/orders`、`DELETE /api/players/{playerId}/market/orders/{orderId}`、`POST /api/players/{playerId}/market/claim`，WebSocket 对应命令为 `market_place`、`market_cancel`、`market_claim`。市场账本在 PostgreSQL 中通过 revision CAS、advisory lock 和主分片拓扑持久化；玩家快照可与市场账本在同一事务内提交。
-
-所有场景输出 JSON，包含耗时、CPU 时间、托管内存、工作集、收发字节、帧数、行动结算数、错误数和服务端队列指标。`combat-offline` 还统计战斗事件、完成遭遇、敌人击杀、胜负和离线待推送日志；`market-read` 直接请求正式 HTTP 端点，并分别统计完整响应、`304`、头部/正文大小和 P50/P95/P99。
-
-地图、怪物、技能、物品、装备、遭遇和行动已经从业务代码迁移到 `config/game-data`。服务启动时会校验结构版本、重复 ID、跨文件引用和数值范围，并把内容版本与配置指纹暴露到健康端点。生命归零只会让该玩家进入 180 秒复活状态，不会结束当前波次、重置怪物或扣减战斗次数；死亡玩家不能行动或成为攻击目标，组队成员和召唤物可继续推进同一场战斗。复活时恢复满生命和满灵力，并重置技能与物品冷却；玩家主动重新开始历练也会回满资源并建立全新的战斗时间轴。战斗中的技能和物品冷却由服务端权威模拟投影到客户端槽位倒计时。
-
-无会话玩家在 30 秒无访问后会转为序列化冷快照，重连时按同一离线快进入口恢复；这只释放 ECS 聚合，不改变账号快照或行动队列。生产同构模式下 durable outbox、玩家快照和市场账本落在 PostgreSQL；市场挂牌按官方公开规则保留 30 天，以订单簿时间索引分钟级回收并返还冻结资产。远程计算节点只批量补算落后的离线快照，成功后由主服务回写权威 PostgreSQL 快照。
+本版本是内部开发阶段的唯一新基线。不会新增旧数据迁移器、双读双写、旧 DTO、legacy flag、旧字段回填、旧 API 别名或旧协议 fallback。需要改变 schema、快照或部署拓扑时，直接同步代码、测试、文档和全新本地数据库。

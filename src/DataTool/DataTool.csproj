@@ -4,11 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>DataTool</AssemblyName>
-    <RootNamespace>DataTool</RootNamespace>
+    <AssemblyName>DaoHua.DataTool</AssemblyName>
+    <RootNamespace>DaoHua.DataTool</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="../Domain/Domain.csproj" />
-  </ItemGroup>
 </Project>

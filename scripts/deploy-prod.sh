@@ -5,9 +5,9 @@
 #
 # 核心发布流程:
 #   1. 远端前置环境检查: 验证远端 SSH 连通性、Docker 与 Docker Compose 运行时就绪；
-#   2. CCR 镜像权限验证: 验证远端是否具备拉取指定版本镜像权限；
+#   2. CCR 镜像权限验证: 验证远端是否具备拉取 Server/ComputeNode 成对镜像权限；
 #   3. 同步生产资产: 创建安全临时目录，上传 Compose、Caddy、备份脚本及 systemd 配置文件；
-#   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置 PostgreSQL 密钥与非空 ACCESS_TOKEN；
+#   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置 PostgreSQL 与 ComputeNode 密钥；
 #   5. 安装资产与触发更新: 将资产安装到 /opt/daohua，显式指定 --image 时固化 APP_IMAGE 后触发 ccr-auto-update.sh 平滑更新；
 #   6. systemd 服务与定时器配置: 启用并启动 CCR 自动更新 timer 与数据库备份 timer；
 #   7. Caddy 反向代理部署: 可选校验并无缝热重载 Caddy 站点配置 (xx.yuohira.com.caddy)；
@@ -26,7 +26,9 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REMOTE_HOST="${SSH_HOST:-yuohira}"
 IMAGE="${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}"
+COMPUTE_IMAGE="${COMPUTE_IMAGE:-}"
 IMAGE_EXPLICIT=0
+COMPUTE_IMAGE_EXPLICIT=0
 INSTALL_CADDY=1
 RUN_PUBLIC_SMOKE=1
 REMOTE_TMP=""
@@ -38,6 +40,7 @@ usage() {
     '选项：' \
     '  --host HOST       SSH 主机，默认 yuohira' \
     '  --image IMAGE     首次部署的 CCR 镜像，默认 prod' \
+    '  --compute-image IMAGE  指定 ComputeNode 镜像（默认按 Server 镜像名推导）' \
     '  --skip-caddy      不修改远端 Caddy' \
     '  --skip-smoke      不执行公网 HTTP/WebSocket 烟测' \
     '  -h, --help        显示帮助'
@@ -52,6 +55,11 @@ while (($# > 0)); do
     --image)
       IMAGE="${2:?--image 缺少值}"
       IMAGE_EXPLICIT=1
+      shift 2
+      ;;
+    --compute-image)
+      COMPUTE_IMAGE="${2:?--compute-image 缺少值}"
+      COMPUTE_IMAGE_EXPLICIT=1
       shift 2
       ;;
     --skip-caddy)
@@ -82,6 +90,20 @@ if [[ ! "$IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]]; then
   printf '镜像引用包含非法字符: %s\n' "$IMAGE" >&2
   exit 1
 fi
+if [[ -z "$COMPUTE_IMAGE" ]]; then
+  if [[ "$IMAGE" == *"/daohua:"* ]]; then
+    COMPUTE_IMAGE="${IMAGE/daohua:/daohua-compute:}"
+  elif [[ "$IMAGE" == daohua:* ]]; then
+    COMPUTE_IMAGE="${IMAGE/daohua:/daohua-compute:}"
+  else
+    printf '无法从 Server 镜像推导 ComputeNode 镜像，请显式传入 --compute-image。\n' >&2
+    exit 1
+  fi
+fi
+if [[ ! "$COMPUTE_IMAGE" =~ ^[A-Za-z0-9._/:@-]+$ ]]; then
+  printf 'ComputeNode 镜像引用包含非法字符: %s\n' "$COMPUTE_IMAGE" >&2
+  exit 1
+fi
 
 cleanup() {
   if [[ -n "$REMOTE_TMP" && "$REMOTE_TMP" == /tmp/daohua-deploy.* ]]; then
@@ -95,7 +117,7 @@ ssh -o BatchMode=yes "$REMOTE_HOST" \
   'sudo -n true && sudo docker info >/dev/null && sudo docker compose version >/dev/null'
 
 printf '==> 验证远端 CCR 拉取权限\n'
-ssh -o BatchMode=yes "$REMOTE_HOST" "sudo docker pull '$IMAGE' >/dev/null"
+ssh -o BatchMode=yes "$REMOTE_HOST" "sudo docker pull '$IMAGE' >/dev/null && sudo docker pull '$COMPUTE_IMAGE' >/dev/null"
 
 REMOTE_TMP="$(ssh -o BatchMode=yes "$REMOTE_HOST" 'mktemp -d /tmp/daohua-deploy.XXXXXX')"
 if [[ "$REMOTE_TMP" != /tmp/daohua-deploy.* ]]; then
@@ -124,8 +146,8 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
     printf "缺少 /opt/daohua/daohua.env，请设置 DB_PASSWORD。\n" >&2
     exit 1
   fi
-  if ! sudo grep -Eq "^ACCESS_TOKEN=..+" /opt/daohua/daohua.env; then
-    printf "缺少非空 ACCESS_TOKEN，公网将允许任意 playerId 接管角色。\n" >&2
+  if ! sudo grep -Eq "^COMPUTE_TOKEN=..+" /opt/daohua/daohua.env; then
+    printf "缺少非空 COMPUTE_TOKEN，拒绝启动内部 ComputeNode。\n" >&2
     exit 1
   fi
 '
@@ -149,7 +171,7 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
       printf 'APP_IMAGE=%s\n' '$IMAGE' | sudo tee -a /opt/daohua/daohua.env >/dev/null
     fi
   fi
-  sudo env APP_IMAGE='$IMAGE' /opt/daohua/ccr-auto-update.sh
+  sudo env APP_IMAGE='$IMAGE' COMPUTE_IMAGE='$COMPUTE_IMAGE' /opt/daohua/ccr-auto-update.sh
   sudo systemctl enable --now daohua-ccr-auto-update.timer
   sudo systemctl enable --now daohua-db-backup.timer
 "
@@ -168,19 +190,13 @@ printf '==> 核对远端容器和回环健康端点\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
   sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-app
-  # /readyz 能力位校验（职责自公网烟测移交至此）：四项存储能力声明必须逐项匹配。
+  sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-compute
+  # /readyz 只校验服务就绪，不依赖旧存储能力字段。
   local_ready=\"\$(curl --fail --silent --show-error http://127.0.0.1:15128/readyz)\"
-  for expected in \
-    '\"snapshotProvider\"[: ]*\"postgres\"' \
-    '\"marketProvider\"[: ]*\"postgres\"' \
-    '\"scaleOutReady\"[: ]*true' \
-    '\"zeroDowntimeReady\"[: ]*false'
-  do
-    if ! printf '%s' \"\$local_ready\" | grep -oqE \"\$expected\"; then
-      printf '/readyz 能力位校验失败，缺少或不符合: %s\n' \"\$expected\" >&2
-      exit 1
-    fi
-  done
+  if ! printf '%s' \"\$local_ready\" | grep -oqE '\"status\"[[:space:]]*:[[:space:]]*\"(ok|ready)\"'; then
+    printf '/readyz 未返回 ok/ready: %s\n' \"\$local_ready\" >&2
+    exit 1
+  fi
   printf '%s\n' \"\$local_ready\"
   sudo systemctl is-enabled daohua-ccr-auto-update.timer
   sudo systemctl is-active daohua-ccr-auto-update.timer

@@ -1,11 +1,9 @@
-// ==============================================================================
-// 文件名称: GlobalUsings.cs
-// 主要职责: 领域层全局命名空间隐式引用声明。
-// 核心逻辑 / 定义内容:
-//   1. 隐式全局引用 Domain.Constants 常量模块。
-//   2. 隐式全局引用 Domain.Models 模型与枚举模块。
-// ==============================================================================
-
-global using Domain.Constants;
-global using Domain.Models;
-
+// 领域层只暴露纯业务类型；不得引用宿主、数据库、网络或浏览器实现。
+global using System.Collections.ObjectModel;
+global using Domain.Common;
+global using Domain.Combat;
+global using Domain.Economy;
+global using Domain.GameData;
+global using Domain.Market;
+global using Domain.Player;
+global using Domain.World;

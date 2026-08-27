@@ -235,7 +235,7 @@ function usePlayerDisplayPosition(
             }
           }
         } else if (currTravel.travelPathEdgeIds && currTravel.travelPathEdgeIds.length > 0) {
-          // 备用兼容分支：当无 segments 时使用边列表
+          // 当服务端未展开 segments 时，按权威边列表计算当前路径位置
           let currentNodeId: string | null = currWorld.nodeId
           for (let i = 0; i < currTravel.travelPathEdgeIds.length; i++) {
             const edgeId = currTravel.travelPathEdgeIds[i]

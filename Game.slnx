@@ -9,6 +9,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Domain.Tests/Domain.Tests.csproj" />
+    <Project Path="tests/Server.Tests/Server.Tests.csproj" />
   </Folder>
   <Project Path="vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
   <Project Path="vendor/YuoCore/src/YuoCore.Analyzers/YuoCore.Analyzers.csproj" />
