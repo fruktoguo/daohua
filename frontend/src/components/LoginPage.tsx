@@ -125,7 +125,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
       setError(t('app.login.errorNameFormat'))
       return
     }
-    if (!regPassword || regPassword.length < 12 || regPassword.length > 256) {
+    if (!regPassword || regPassword.length < 6 || regPassword.length > 24) {
       setError(t('app.login.errorPasswordLength'))
       return
     }
@@ -324,6 +324,8 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
                   id="reg-pwd-input"
                   className="login-input"
                   type="password"
+                  minLength={6}
+                  maxLength={24}
                   placeholder={t('app.login.regPasswordPlaceholder')}
                   value={regPassword}
                   onChange={e => {
@@ -341,6 +343,8 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
                   id="reg-confirm-pwd-input"
                   className="login-input"
                   type="password"
+                  minLength={6}
+                  maxLength={24}
                   placeholder={t('app.login.regConfirmPasswordPlaceholder')}
                   value={regConfirmPassword}
                   onChange={e => {

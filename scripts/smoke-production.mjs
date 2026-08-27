@@ -96,7 +96,7 @@ async function getWebSocketAuthHeaders() {
 
   const account = process.env.SMOKE_ACCOUNT || 'smoke_probe'
   const password = process.env.SMOKE_PASSWORD || 'Daohua-Smoke-Only-Change-Me-2026!'
-  if (!/^[a-zA-Z0-9_]{3,32}$/.test(account) || password.length < 12) {
+  if (!/^[a-zA-Z0-9_]{3,32}$/.test(account) || password.length < 6 || password.length > 24) {
     throw new Error('SMOKE_ACCOUNT/SMOKE_PASSWORD 不符合账号鉴权要求。')
   }
 

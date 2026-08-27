@@ -38,6 +38,8 @@ public sealed class PostgresAccountRepository(
     ServerOptions options,
     ILogger<PostgresAccountRepository> logger) : IAccountRepository
 {
+    public const int MinPasswordLength = 6;
+    public const int MaxPasswordLength = 24;
     private const int Pbkdf2Iterations = 600_000;
     private static readonly Regex AccountPattern = new("^[a-zA-Z0-9_]{3,32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -51,8 +53,8 @@ public sealed class PostgresAccountRepository(
         var normalizedName = NormalizeDisplayName(displayName, normalizedAccount);
         if (!AccountPattern.IsMatch(normalizedAccount))
             return FailureRegistration("INVALID_ACCOUNT", "账号须为 3-32 位字母、数字或下划线。");
-        if (string.IsNullOrEmpty(password) || password.Length is < 12 or > 256)
-            return FailureRegistration("INVALID_PASSWORD", "密码长度须在 12-256 个字符之间。");
+        if (string.IsNullOrEmpty(password) || password.Length is < MinPasswordLength or > MaxPasswordLength)
+            return FailureRegistration("INVALID_PASSWORD", $"密码长度须在 {MinPasswordLength}-{MaxPasswordLength} 个字符之间。");
         if (normalizedName.Length is < 1 or > 64)
             return FailureRegistration("INVALID_DISPLAY_NAME", "角色名长度无效。");
 
