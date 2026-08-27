@@ -89,8 +89,9 @@ public sealed class PlayerRuntime(
         {
             if (!entry.Value.IsValueCreated) continue;
             var actor = await entry.Value.Value;
+            var beforeVersion = actor.Snapshot().StateVersion;
             var result = await actor.AdvanceSimulationAsync(target, cancellationToken);
-            if (result?.Simulation?.Changed != true) continue;
+            if (result is null || result.Snapshot.StateVersion <= beforeVersion) continue;
             var handler = SnapshotUpdated;
             if (handler is not null) await handler(result.Snapshot);
         }
