@@ -41,7 +41,7 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
 fi
-APP_IMAGE="${requested_app_image:-${APP_IMAGE:-${APP_IMAGE_FILE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}}}"
+APP_IMAGE="${requested_app_image:-${APP_IMAGE:-ccr.ccs.tencentyun.com/yuohira/daohua:prod}}"
 COMPUTE_IMAGE="${requested_compute_image:-${COMPUTE_IMAGE:-}}"
 if [[ -z "$COMPUTE_IMAGE" ]]; then
   COMPUTE_IMAGE="$(derive_compute_image "$APP_IMAGE")"

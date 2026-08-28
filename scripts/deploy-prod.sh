@@ -162,6 +162,10 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
     printf "缺少非空 COMPUTE_TOKEN，拒绝启动内部 ComputeNode。\n" >&2
     exit 1
   fi
+  if ! sudo grep -Eq "^DB_PASSWORD=.{12,}" /opt/daohua/daohua.env; then
+    printf "缺少 DB_PASSWORD 或长度不足 12 位，拒绝部署。\n" >&2
+    exit 1
+  fi
 '
 
 ssh -o BatchMode=yes "$REMOTE_HOST" "
