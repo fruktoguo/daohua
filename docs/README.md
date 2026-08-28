@@ -39,7 +39,7 @@ docs/
 | [sustained-consumable-system.md](design/sustained-consumable-system.md) | **动作耗时分摊持续消耗品机制设计规范**：立即/持续消耗品分类、按动作实际耗时扣减持续时间、槽位持久化、透支结算与切换惩罚，以及引气入体与引气丹数值基线。 |
 | [early-game-skills-design.md](design/early-game-skills-design.md) | 前期技能设计草案（已废弃）：历史草案，其中虚构技能与流派矩阵已废除；真实技能配置以 `config/game-data/abilities/` 为唯一真源。 |
 | [milky-way-idle-mapping.md](design/milky-way-idle-mapping.md) | 历史外部参考文档（已废除）：记录外部游戏借称与非修仙机制的清理结论；正式权威规则以 `master-design.md` 为唯一真源。 |
-| [ui-layout-island-demo.html](design/ui-layout-island-demo.html) | **现行实际界面与美学优化方案实时对比演示**：独立离线单文件网页，1:1 复制现行样式基准并叠加美学优化项，双击即开。 |
+| `ui-layout-island-demo.html` | 历史界面演示，已从 clean-room 基线移除，不作为当前开发入口。 |
 | [battle-scene-demo.html](design/battle-scene-demo.html) | **战斗场景纯 HTML 实机画面 Demo**：对齐当前战斗截图的离线单文件快速验证页，复用角色图像资产并提供基础战斗交互。 |
 
 生成链路：`scripts/generate-combat-benchmark.py` 动态刷新 `player-expected-attributes-model.md`、`combat-benchmark-model.md` 与 `config/game-data/expected-attributes.json`；修改数值模型应改脚本后重新生成，不直接编辑生成产物中的数值表。
@@ -48,6 +48,7 @@ docs/
 
 | 文档 | 定位 |
 | --- | --- |
+| [commercial-persistence-architecture.md](backend/commercial-persistence-architecture.md) | **商业级持久化最终架构（清零历史包袱）与 Redis 选型决策**：共享表与 section 快照、资产/市场事务、latest-only 队列、容量/恢复边界，以及 Redis 的不引入条件。该文档是持久化目标方案唯一权威。 |
 | [domain-data-architecture.md](backend/domain-data-architecture.md) | 服务端领域数据架构与 YuoCore ECS 规约：四层架构体系、细粒度组件与强类型 ID。 |
 | [logic-development-guide.md](backend/logic-development-guide.md) | 服务端业务逻辑开发指南：基于 YuoCore ECS 的 Component、System、ActorHandler 开发 SOP 与红线。 |
 | [game-data.md](backend/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |

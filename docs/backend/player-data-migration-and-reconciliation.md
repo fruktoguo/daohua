@@ -1,8 +1,10 @@
 # 玩家存档版本迁移与容错自愈架构规约
 
+> **文档状态（2026-08-27）**：本文是正式运营后的历史/未来运营参考，不属于当前 clean-room v1 的运行契约。当前内测直接建立 schema v1，不实现旧格式迁移、双读双写、兼容 DTO 或 fallback；唯一现行目标方案见 [`commercial-persistence-architecture.md`](commercial-persistence-architecture.md)。
+
 本文档定义《道化太初》在正式商业运营与本地开发全生命周期中，**玩家存档数据演进、版本链式迁移（Data Migration）与容错自愈（Self-Healing Reconciliation）** 的顶层设计与技术规约。
 
-> **当前阶段约束（硬规则）**：当前项目处于**本地开发与内测阶段**，严格遵守 `AGENTS.md` 规则 3 的兼容清零铁律。**本地开发阶段不设计、不实现任何历史兼容路径**，旧数据、旧快照、旧数据库 schema 均可直接废弃、改表与清空；本文档第一部分中的 `IPlayerMigrator` 链式迁移管道属于**未来商业化正式运营后的长线技术规划**。在当前阶段，主控生效的是**第二道防线（`PlayerStateReconciler` 运行时容错自愈与指纹刷新）**，禁止在本地代码中提前堆砌复杂的 Migration Runner。
+> **当前阶段约束（硬规则）**：当前项目处于**本地开发与内测阶段**，严格遵守 `AGENTS.md` 的兼容清零铁律。**本地开发阶段不设计、不实现任何历史兼容路径**，旧数据、旧快照、旧数据库 schema 均可直接废弃、改表与清空。本文中的 `IPlayerMigrator`、`PlayerStateReconciler` 与链式迁移图仅描述未来商业化运营可能采用的运维工具，当前代码不注册、不调用，也不作为玩家加载的第二道运行时防线。
 
 ---
 

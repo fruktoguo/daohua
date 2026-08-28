@@ -80,7 +80,7 @@ Vite 默认监听 `http://127.0.0.1:15172`，把 `/api` 和 `/ws` 代理到 `127
 
 - `/api/v1/meta`：协议、schema 和游戏数据指纹。
 - `/api/v1/catalog/actions`、`/api/v1/catalog/items`：带 ETag 的只读目录。
-- `/api/v1/auth/register`、`/api/v1/auth/login`、`/api/v1/auth/logout`、`/api/v1/auth/session`：账号和会话。
+- `/api/v1/auth/register`、`/api/v1/auth/login`、`/api/v1/auth/logout`、`/api/v1/auth/session`：账号和会话；内测密码长度为 6-24 个字符。
 - `/api/v1/players/{playerId}`：授权后的完整玩家快照。
 - `/api/v1/players/{playerId}/commands`：带 `requestId`、`expectedStateVersion` 的通用命令入口。
 - `/api/v1/market/book`、`/api/v1/market/metrics`、`/api/v1/players/{playerId}/market/orders`：市场读模型。
