@@ -103,10 +103,10 @@ interface AvatarStore {
 /**
  * 玩家道貌形象全局状态
  */
-export const useAvatarStore = create<AvatarStore>(() => ({
+export const useAvatarStore = create<AvatarStore>((set, get) => ({
   avatarId: 'default',
-  setAvatarId: () => {},
-  getAvatarSrc: () => DEFAULT_PLAYER_AVATAR_SRC,
+  setAvatarId: (avatarId: PlayerAvatarId) => set({ avatarId }),
+  getAvatarSrc: () => getPlayerAvatarSrc(get().avatarId),
 }))
 
 /**
