@@ -73,4 +73,24 @@ public sealed class ProtocolTests
         // 序列化→反序列化→再序列化后键与值完全一致。
         Assert.Equal(json, JsonSerializer.Serialize(parsed, ProtocolJson.Options));
     }
+
+    [Fact]
+    public void LogBatchRoundTripsCorrectly()
+    {
+        var logBatch = new LogBatchDto([
+            new LogEventDto(1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "获得灵草 {{item:herb.spirit-grass|伴灵草}} ×1"),
+            new LogEventDto(2, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "击败妖兽 {{enemy:enemy.rift-wolf|裂隙魔狼}}")
+        ]);
+
+        var envelope = WireEnvelope.Json(WireMessageType.LogBatch, Guid.NewGuid(), 10, logBatch);
+        var bytes = WireEnvelopeCodec.Encode(envelope);
+        var decoded = WireEnvelopeCodec.Decode(bytes);
+
+        Assert.Equal(WireMessageType.LogBatch, decoded.MessageType);
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<LogBatchDto>(decoded, out var parsed));
+        Assert.NotNull(parsed);
+        Assert.Equal(2, parsed.Events.Count);
+        Assert.Equal(1, parsed.Events[0].Sequence);
+        Assert.Equal(2, parsed.Events[1].Sequence);
+    }
 }
