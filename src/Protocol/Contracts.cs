@@ -29,7 +29,9 @@ public enum WireMessageType : byte
     /// <summary>通用玩家命令；具体业务命令由 command 字段分发。</summary>
     Command = 15,
     /// <summary>通用玩家命令回执。</summary>
-    CommandResult = 16
+    CommandResult = 16,
+    /// <summary>服务端推送的战报/系统日志事件批次（仅 WS 下行）。</summary>
+    LogBatch = 17
 }
 
 public enum WireCodec : byte
@@ -277,3 +279,10 @@ public sealed record ComputeAdvanceResponseDto(
     string? ErrorMessage = null);
 
 public sealed record ErrorDto(string Code, string Message, string? RequestId = null);
+
+/// <summary>战报/系统日志事件；template 采用前端引用语法 {{kind:id|label|extra}}，前端仅做解析渲染。</summary>
+public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template);
+
+/// <summary>日志事件批次载荷，按 sequence 单调递增推送。</summary>
+public sealed record LogBatchDto(IReadOnlyList<LogEventDto> Events);
+
