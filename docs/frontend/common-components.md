@@ -244,12 +244,14 @@
 
 ---
 
-## 23. 纯净行动卡片与等阶角标 (Action Card & Corner Badge)
+## 23. 纯净行动卡片与品质等阶角标 (Action Card & Capsule Level Badge)
 
 - **适用场景**：
-  - 修炼、炼丹、炼器、采集与历练等交互行动的纯净微型展示卡片（严格遵循“只显示名称与图标，不堆砌详情或数值”规范，右上角自带 `Lv.` 等阶角标，点击唤起对应配置/执行弹窗） -> `ActionCard`
-  - 等阶由 `resolveActionLevel` 统一解析（优先取产出物品/装备等阶、战斗遭遇等阶或消耗材料等阶）。
+  - 修炼、炼丹、炼器、采集与历练等交互行动的纯净微型展示卡片（标准每行 4 个网格排布，严格遵循“只显示名称，不展示多余图标或详情”规范，右上角复用标准 `item-corner item-corner--top-right` 内部胶囊角标，整张卡片与角标受 `data-rarity` 品质色彩驱动，点击唤起对应配置/执行弹窗） -> `ActionCard`
+  - **真实等级换算**：未指定显式等级时，由 `convertTierToLevel` 统一将品阶换算为等级（1阶->1级，2阶->18级，3阶->30级，N阶->`18 + (N - 2) * 12` 级）。
+  - **品质色彩联动**：由 `resolveActionRarity` 依据产出物/装备/遭遇解析品质色调（`mundane`/`spirit`/`mystic`/`earth`/`heaven`等），驱动边框微光与背景着色。
 - **组件源码**：[`frontend/src/App.tsx`](../../frontend/src/App.tsx)
-- **等阶解算引擎**：[`frontend/src/game/ids.ts`](../../frontend/src/game/ids.ts)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.action-cards`, `.action-card`, `.action-card-corner`)
+- **等级与品质解算引擎**：[`frontend/src/game/ids.ts`](../../frontend/src/game/ids.ts)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.action-cards`, `.action-card`, `.item-corner--top-right`)
+
 

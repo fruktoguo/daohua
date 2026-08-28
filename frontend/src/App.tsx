@@ -23,7 +23,7 @@ import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveActionLevel, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
@@ -1024,7 +1024,7 @@ const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX
 })
 
 /**
- * 单个行动卡片组件（纯净形态：仅显示名称与右上角 Lv. 角标，点击打开行动配置与执行弹窗）
+ * 单个行动卡片组件（纯净形态：仅显示名称与右上角 Lv. 胶囊角标，品质色彩渲染整张卡片）
  */
 const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
@@ -1034,6 +1034,11 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
 
   const level = useMemo(
     () => resolveActionLevel(action, itemCatalog, equipmentCatalog, encounters),
+    [action, itemCatalog, equipmentCatalog, encounters]
+  )
+
+  const rarity = useMemo(
+    () => resolveActionRarity(action, itemCatalog, equipmentCatalog, encounters),
     [action, itemCatalog, equipmentCatalog, encounters]
   )
 
@@ -1047,14 +1052,12 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
     <button
       aria-haspopup="dialog"
       className={`action-card${isCrafting ? ' action-card--crafting' : ''}`}
+      data-rarity={rarity}
       onClick={() => onOpen(action)}
       type="button"
     >
-      <span className="item-corner item-corner--top-right action-card-corner">
-        Lv.{level}
-      </span>
-      <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true">
-        <Icon name={action.type} />
+      <span className="item-corner item-corner--top-right">
+        Lv. <UnitNumber disableTooltip value={level} />
       </span>
       <strong className="action-card-name">{action.name}</strong>
     </button>

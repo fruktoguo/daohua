@@ -96,12 +96,22 @@ export function resolveActionDefinitions(): ActionDefinition[] {
 }
 
 /**
- * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的等阶/等级 (LV)
+ * 将品阶 (Tier) 换算为修士/物品等级 (Level)
+ * 1阶 -> 1级, 2阶 -> 18级, 3阶 -> 30级, N阶(>=2) -> 18 + (N - 2) * 12 级
+ */
+export function convertTierToLevel(tier = 1): number {
+  const t = Math.max(1, Math.floor(tier))
+  if (t <= 1) return 1
+  return 18 + (t - 2) * 12
+}
+
+/**
+ * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的真实等级 (Level)
  * 优先级：
- * 1. 首个产出物品/装备的等阶 (tier / level)
- * 2. 战斗遭遇 (combatEncounterId) 对应的等阶
- * 3. 输入消耗材料的最大等阶
- * 4. 默认 1 阶
+ * 1. 产出物品/装备的显式等级或通过品阶换算得到的等级
+ * 2. 战斗遭遇 (combatEncounterId) 对应的等级
+ * 3. 输入消耗材料的最大等级
+ * 4. 默认 1 级
  */
 export function resolveActionLevel(
   action: ActionDefinition,
@@ -112,35 +122,80 @@ export function resolveActionLevel(
   if (action.outputs) {
     for (const outId of Object.keys(action.outputs)) {
       const eq = equipment?.find(e => e.equipmentId === outId)
-      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return Math.floor(eq.tier)
+      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return convertTierToLevel(eq.tier)
       const it = items?.find(i => i.itemId === outId)
-      if (it && typeof it.tier === 'number' && it.tier > 0) return Math.floor(it.tier)
+      if (it && typeof it.tier === 'number' && it.tier > 0) return convertTierToLevel(it.tier)
       const meta = ITEM_META_CORES[outId]
-      if (meta?.level && meta.level > 0) return Math.floor(meta.level)
+      if (meta?.level && meta.level > 0) {
+        return meta.level > 2 ? meta.level : convertTierToLevel(meta.level)
+      }
     }
   }
 
   if (action.combatEncounterId) {
     const enc = encounters?.find(e => e.encounterId === action.combatEncounterId)
-    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return Math.floor(enc.tier)
-    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return 2
-    return 1
+    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return convertTierToLevel(enc.tier)
+    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return convertTierToLevel(2)
+    return convertTierToLevel(1)
   }
 
   if (action.inputs) {
-    let maxLevel = 1
+    let maxTier = 1
     for (const inId of Object.keys(action.inputs)) {
       const eq = equipment?.find(e => e.equipmentId === inId)
-      if (eq && typeof eq.tier === 'number' && eq.tier > maxLevel) maxLevel = Math.floor(eq.tier)
+      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
       const it = items?.find(i => i.itemId === inId)
-      if (it && typeof it.tier === 'number' && it.tier > maxLevel) maxLevel = Math.floor(it.tier)
+      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
       const meta = ITEM_META_CORES[inId]
-      if (meta?.level && meta.level > maxLevel) maxLevel = Math.floor(meta.level)
+      if (meta?.level && meta.level > maxTier) maxTier = meta.level
     }
-    if (maxLevel > 1) return maxLevel
+    if (maxTier > 1) return convertTierToLevel(maxTier)
   }
 
   return 1
+}
+
+/**
+ * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的品质 (Rarity)
+ */
+export function resolveActionRarity(
+  action: ActionDefinition,
+  items?: ReadonlyArray<{ itemId: string; tier?: number }>,
+  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
+  encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
+): ItemRarity {
+  if (action.outputs) {
+    for (const outId of Object.keys(action.outputs)) {
+      const meta = ITEM_META_CORES[outId]
+      if (meta?.rarity) return meta.rarity
+      const eq = equipment?.find(e => e.equipmentId === outId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return resolveItemGrade(eq.tier).rarity
+      const it = items?.find(i => i.itemId === outId)
+      if (it && typeof it.tier === 'number' && it.tier > 0) return resolveItemGrade(it.tier).rarity
+    }
+  }
+
+  if (action.combatEncounterId) {
+    const enc = encounters?.find(e => e.encounterId === action.combatEncounterId)
+    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return resolveItemGrade(enc.tier).rarity
+    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return 'spirit'
+    return 'mundane'
+  }
+
+  if (action.inputs) {
+    let maxTier = 1
+    for (const inId of Object.keys(action.inputs)) {
+      const meta = ITEM_META_CORES[inId]
+      if (meta?.rarity) return meta.rarity
+      const eq = equipment?.find(e => e.equipmentId === inId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
+      const it = items?.find(i => i.itemId === inId)
+      if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
+    }
+    if (maxTier > 1) return resolveItemGrade(maxTier).rarity
+  }
+
+  return 'mundane'
 }
 
 /**

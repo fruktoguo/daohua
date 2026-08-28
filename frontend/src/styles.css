@@ -2691,7 +2691,7 @@ input[type="checkbox"] {
 
 .action-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -2710,7 +2710,7 @@ input[type="checkbox"] {
 
 .action-group-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 .crafting-page-header {
@@ -2787,27 +2787,80 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 46px;
+  min-height: 44px;
   gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--gold-faint);
+  padding: 7px 32px 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--item-accent, var(--gold-faint)) 45%, transparent);
   border-radius: 4px;
   color: var(--text);
-  background: rgba(201, 180, 109, 0.035);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--item-surface, rgba(201, 180, 109, 0.05)) 40%, transparent), transparent 75%),
+    rgba(12, 11, 9, 0.85);
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.35);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, transform 0.15s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, transform 0.15s ease;
 }
 
 .action-card--crafting {
-  min-height: 46px;
-  padding: 6px 10px;
+  min-height: 44px;
+  padding: 7px 32px 7px 10px;
+}
+
+.action-card[data-rarity="mundane"] {
+  --item-accent: rgb(139, 143, 149);
+  --item-glow: rgba(139, 143, 149, 0.26);
+  --item-surface: rgba(139, 143, 149, 0.14);
+}
+
+.action-card[data-rarity="yellow"] {
+  --item-accent: rgb(69, 179, 107);
+  --item-glow: rgba(69, 179, 107, 0.3);
+  --item-surface: rgba(69, 179, 107, 0.17);
+}
+
+.action-card[data-rarity="mystic"] {
+  --item-accent: rgb(79, 143, 216);
+  --item-glow: rgba(79, 143, 216, 0.32);
+  --item-surface: rgba(79, 143, 216, 0.18);
+}
+
+.action-card[data-rarity="earth"] {
+  --item-accent: rgb(123, 97, 209);
+  --item-glow: rgba(123, 97, 209, 0.34);
+  --item-surface: rgba(123, 97, 209, 0.2);
+}
+
+.action-card[data-rarity="heaven"] {
+  --item-accent: rgb(226, 138, 46);
+  --item-glow: rgba(226, 138, 46, 0.35);
+  --item-surface: rgba(226, 138, 46, 0.2);
+}
+
+.action-card[data-rarity="spirit"] {
+  --item-accent: rgb(37, 184, 216);
+  --item-glow: rgba(37, 184, 216, 0.35);
+  --item-surface: rgba(37, 184, 216, 0.2);
+}
+
+.action-card[data-rarity="saint"] {
+  --item-accent: rgb(217, 74, 74);
+  --item-glow: rgba(217, 74, 74, 0.38);
+  --item-surface: rgba(217, 74, 74, 0.21);
+}
+
+.action-card[data-rarity="emperor"] {
+  --item-accent: rgb(236, 86, 72);
+  --item-glow: rgba(236, 86, 72, 0.44);
+  --item-surface: rgba(236, 86, 72, 0.22);
 }
 
 .action-card:hover {
-  border-color: var(--gold);
-  background: rgba(201, 180, 109, 0.09);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 10px rgba(201, 180, 109, 0.12);
+  border-color: var(--item-accent, var(--gold));
+  box-shadow:
+    0 0 12px var(--item-glow, rgba(201, 180, 109, 0.3)),
+    0 4px 12px rgba(0, 0, 0, 0.5),
+    inset 0 0 16px rgba(0, 0, 0, 0.2);
   transform: translateY(-1px);
 }
 
@@ -2819,7 +2872,7 @@ input[type="checkbox"] {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  color: var(--gold);
+  color: var(--item-accent, var(--gold));
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 14px;
   font-weight: 500;
@@ -2827,32 +2880,28 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
-.action-card-corner {
-  position: absolute;
-  top: -6px;
-  right: -4px;
-  z-index: 2;
+.action-card .item-corner {
+  max-width: calc(100% - 10px);
   padding: 1px 5px;
   font-size: 9px;
-  font-family: Arial, sans-serif;
-  font-variant-numeric: tabular-nums;
   line-height: 1.2;
-  border: 1px solid color-mix(in srgb, var(--gold) 55%, transparent);
-  border-radius: 999px;
-  color: var(--gold-bright);
-  background: rgba(7, 8, 6, 0.95);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), 0 0 5px rgba(201, 180, 109, 0.2);
-  pointer-events: none;
+  border-color: color-mix(in srgb, var(--item-accent, var(--gold-dim)) 66%, transparent);
+  color: var(--item-accent, var(--gold-bright));
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.6),
+    0 0 5px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 30%, transparent);
+  transition: filter 0.18s ease, transform 0.18s ease;
 }
 
-.action-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  font-size: 16px;
+.action-card .item-corner--top-right {
+  top: 3px;
+  right: 4px;
+  transform-origin: top right;
+}
+
+.action-card:is(:hover, :focus-visible, :focus-within) .item-corner--top-right {
+  filter: brightness(1.15) drop-shadow(0 0 4px var(--item-glow, rgba(201, 180, 109, 0.4)));
+  transform: scale(1.05);
 }
 
 .modal-backdrop {
@@ -5067,7 +5116,7 @@ input[type="checkbox"] {
 
   .action-cards,
   .action-group-list {
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -5274,20 +5323,14 @@ input[type="checkbox"] {
 
   .action-cards,
   .action-group-list {
-    grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
   }
 
   .action-card {
-    min-height: 42px;
-    padding: 5px 8px;
-    gap: 6px;
-  }
-
-  .action-glyph {
-    width: 24px;
-    height: 24px;
-    font-size: 14px;
+    min-height: 40px;
+    padding: 5px 28px 5px 8px;
+    gap: 4px;
   }
 
   .action-card-name {
