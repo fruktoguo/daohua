@@ -1873,6 +1873,12 @@ export default function App(): React.JSX.Element {
         useGameStore.getState().setActions(localizedActions)
         useGameStore.getState().setMaps(catalog.maps)
         useGameStore.getState().setEncounters(catalog.encounters)
+        if (catalog.items && catalog.items.length > 0) {
+          useGameStore.getState().setItems(catalog.items)
+        }
+        if (catalog.equipment && catalog.equipment.length > 0) {
+          useGameStore.getState().setEquipment(catalog.equipment)
+        }
       })
       .catch(error => {
         if (!controller.signal.aborted) {

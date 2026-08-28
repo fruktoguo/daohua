@@ -6,6 +6,136 @@ namespace Server.Clean;
 /// <summary>把内嵌游戏数据映射为前端稳定读取的静态目录 DTO。</summary>
 public static class StaticGameCatalogMapper
 {
+    public static IReadOnlyList<object> Items(GameDataCatalog catalog) => catalog.RawItems.Values
+        .OrderBy(item => ReadString(item, "id"), StringComparer.Ordinal)
+        .Select(item =>
+        {
+            var id = ReadString(item, "id");
+            var name = ReadString(item, "name", id);
+            var desc = ReadString(item, "description");
+            var kind = ReadString(item, "kind", "material");
+            var category = ReadString(item, "category", "material");
+            var tier = ReadInt(item, "tier", 1);
+            var sellPrice = ReadDouble(item, "sellPrice", 0);
+            var isTradable = ReadBool(item, "isTradable", true);
+
+            var consumable = item.TryGetProperty("consumable", out var cons) && cons.ValueKind == JsonValueKind.Object ? cons : default;
+            var hasConsumable = consumable.ValueKind == JsonValueKind.Object;
+
+            var usableActionTypes = hasConsumable ? ReadStringArray(consumable, "usableInActionTypes") : [];
+            var durationSeconds = hasConsumable ? ReadDouble(consumable, "durationSeconds", 0) : 0;
+            var isContinuous = hasConsumable && ReadBool(consumable, "isContinuous", false);
+            var cultivationMultiplier = hasConsumable ? ReadDouble(consumable, "cultivationMultiplier", 1) : 1;
+            var gatheringMultiplier = hasConsumable ? ReadDouble(consumable, "gatheringMultiplier", 1) : 1;
+            var alchemyMultiplier = hasConsumable ? ReadDouble(consumable, "alchemyMultiplier", 1) : 1;
+            var cooldownSeconds = hasConsumable ? ReadDouble(consumable, "cooldownSeconds", 0) : 0;
+            var recoverySeconds = hasConsumable ? ReadDouble(consumable, "recoverySeconds", 0) : 0;
+            var hitpointRestore = hasConsumable ? ReadDouble(consumable, "hitpointRestore", 0) : 0;
+            var manapointRestore = hasConsumable ? ReadDouble(consumable, "manapointRestore", 0) : 0;
+            var triggerHpRatio = hasConsumable ? ReadDouble(consumable, "triggerHpRatio", 0) : 0;
+            var triggerAtCombatStart = hasConsumable && ReadBool(consumable, "triggerAtCombatStart", false);
+
+            var buffEffects = hasConsumable && consumable.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array
+                ? buffsArray.EnumerateArray().Select(b => new
+                {
+                    name = ReadString(b, "name", ReadString(b, "buffId", "增益")),
+                    durationSeconds = ReadDouble(b, "durationSeconds", 0),
+                    maxStacks = ReadInt(b, "maxStacks", 1),
+                    qiGainMultiplier = ReadDouble(b, "qiGainMultiplier", 1),
+                    attackLevelRatio = ReadDouble(b, "attackLevelRatio", 0),
+                    damageRatio = ReadDouble(b, "damageRatio", 0),
+                    attackSpeedRatio = ReadDouble(b, "attackSpeedRatio", 0),
+                    gatheringOutputMultiplier = ReadDouble(b, "gatheringOutputMultiplier", 1),
+                    alchemyOutputMultiplier = ReadDouble(b, "alchemyOutputMultiplier", 1)
+                }).ToArray()
+                : [];
+
+            return (object)new
+            {
+                itemId = id,
+                name,
+                description = desc,
+                kind,
+                category,
+                tier,
+                sellPrice,
+                isTradable,
+                usableActionTypes,
+                durationSeconds,
+                isContinuous,
+                cultivationMultiplier,
+                gatheringMultiplier,
+                alchemyMultiplier,
+                cooldownSeconds,
+                recoverySeconds,
+                hitpointRestore,
+                manapointRestore,
+                triggerHpRatio,
+                triggerAtCombatStart,
+                buffEffects
+            };
+        }).ToArray();
+
+    public static IReadOnlyList<object> Equipments(GameDataCatalog catalog) => catalog.RawEquipments.Values
+        .OrderBy(eq => ReadString(eq, "id"), StringComparer.Ordinal)
+        .Select(eq =>
+        {
+            var id = ReadString(eq, "id");
+            var name = ReadString(eq, "name", id);
+            var desc = ReadString(eq, "description");
+            var slot = ReadString(eq, "slot", "weapon");
+            var tier = ReadInt(eq, "tier", 1);
+            var attackIntervalMilliseconds = ReadDouble(eq, "attackIntervalMilliseconds", 2400);
+
+            var baseStatRatios = eq.TryGetProperty("baseStatRatios", out var bsr) && bsr.ValueKind == JsonValueKind.Object
+                ? bsr.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
+                : new Dictionary<string, double>();
+
+            var flatStats = eq.TryGetProperty("flatStats", out var fs) && fs.ValueKind == JsonValueKind.Object
+                ? fs.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
+                : new Dictionary<string, double>();
+
+            var specialMechanics = eq.TryGetProperty("specialMechanics", out var sm) && sm.ValueKind == JsonValueKind.Object
+                ? sm.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
+                : new Dictionary<string, double>();
+
+            var enhancementBonus = eq.TryGetProperty("enhancementBonus", out var eb) && eb.ValueKind == JsonValueKind.Object
+                ? eb.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
+                : new Dictionary<string, double>();
+
+            return (object)new
+            {
+                equipmentId = id,
+                name,
+                description = desc,
+                slot,
+                tier,
+                attackIntervalMilliseconds,
+                baseStatRatios,
+                flatStats,
+                specialMechanics,
+                enhancementBonus,
+                stats = new
+                {
+                    damageRatio = baseStatRatios.GetValueOrDefault("damage", baseStatRatios.GetValueOrDefault("physicalAttack", 0)),
+                    accuracyRatio = baseStatRatios.GetValueOrDefault("accuracy", 0),
+                    attackSpeedRatio = baseStatRatios.GetValueOrDefault("actionSpeed", 0),
+                    evasionRatio = baseStatRatios.GetValueOrDefault("evasion", 0),
+                    armor = baseStatRatios.GetValueOrDefault("physicalArmor", baseStatRatios.GetValueOrDefault("armor", 0)),
+                    magicResistance = baseStatRatios.GetValueOrDefault("spellResistance", baseStatRatios.GetValueOrDefault("mr", 0)),
+                    tenacity = flatStats.GetValueOrDefault("tenacity", 0),
+                    penetrationRatio = 0d,
+                    lifeStealRatio = 0d,
+                    armorDamageRatio = 0d,
+                    hpDrainRatio = 0d,
+                    criticalChance = baseStatRatios.GetValueOrDefault("criticalChance", flatStats.GetValueOrDefault("criticalChance", 0)),
+                    criticalDamageRatio = baseStatRatios.GetValueOrDefault("criticalDamage", 1.5),
+                    criticalAvoidance = 0d,
+                    damageAbsorptionRatio = baseStatRatios.GetValueOrDefault("damageAbsorption", 0)
+                }
+            };
+        }).ToArray();
+
     public static IReadOnlyList<object> Maps(GameDataCatalog catalog) => catalog.Maps
         .OrderBy(map => ReadString(map, "id"), StringComparer.Ordinal)
         .Select(map => new
@@ -151,5 +281,6 @@ public static class StaticGameCatalogMapper
     private static double ReadDouble(JsonElement value, string property, double fallback = 0) => value.TryGetProperty(property, out var child) && child.TryGetDouble(out var parsed) ? parsed : fallback;
     private static double? ReadDoubleNullable(JsonElement value, string property) => value.TryGetProperty(property, out var child) && child.TryGetDouble(out var parsed) ? parsed : null;
     private static int ReadInt(JsonElement value, string property, int fallback) => value.TryGetProperty(property, out var child) && child.TryGetInt32(out var parsed) ? parsed : fallback;
+    private static bool ReadBool(JsonElement value, string property, bool fallback = false) => value.TryGetProperty(property, out var child) && (child.ValueKind == JsonValueKind.True || child.ValueKind == JsonValueKind.False) ? child.GetBoolean() : fallback;
     private static string NormalizeEnum(string value) => value.Replace('_', '-').Replace("fiveElements", "five-elements", StringComparison.Ordinal).Replace("playerMirror", "player-mirror", StringComparison.Ordinal);
 }

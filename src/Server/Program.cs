@@ -179,16 +179,12 @@ if (processRole == ServerProcessRole.Api)
     catalog.MapGet("/items", (HttpContext context, GameDataCatalog gameData) =>
     {
         ApplyCatalogHeaders(context, gameData.Fingerprint);
-        return Results.Ok(gameData.Items.Values
-            .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
-            .Select(item => new
-            {
-                itemId = item.Id.Value,
-                name = item.Name,
-                description = item.Description,
-                sellPrice = item.SellPrice,
-                isTradable = item.IsTradable
-            }));
+        return Results.Ok(StaticGameCatalogMapper.Items(gameData));
+    });
+    catalog.MapGet("/equipment", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        return Results.Ok(StaticGameCatalogMapper.Equipments(gameData));
     });
     catalog.MapGet("/maps", (HttpContext context, GameDataCatalog gameData) =>
     {

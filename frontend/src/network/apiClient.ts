@@ -1,4 +1,4 @@
-import type { ActionDefinition, CombatEncounterDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
+import type { ActionDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -18,13 +18,17 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   actions: ActionDefinition[]
   maps: WorldMapDefinition[]
   encounters: CombatEncounterDefinition[]
+  items: ItemDefinition[]
+  equipment: CombatEquipmentDefinition[]
 }> {
-  const [actions, maps, encounters] = await Promise.all([
+  const [actions, maps, encounters, items, equipment] = await Promise.all([
     requestJson<ActionDefinition[]>('/api/v1/catalog/actions', { signal }),
     requestJson<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal }),
     requestJson<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal }),
+    requestJson<ItemDefinition[]>('/api/v1/catalog/items', { signal }).catch(() => [] as ItemDefinition[]),
+    requestJson<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', { signal }).catch(() => [] as CombatEquipmentDefinition[]),
   ])
-  return { actions, maps, encounters }
+  return { actions, maps, encounters, items, equipment }
 }
 
 function parseNumericVariant(value: string | null, fallback: number): number {

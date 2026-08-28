@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo } from 'react'
 import { describeCombatTrigger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { convertTierToLevel, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { convertTierToLevel, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { getT, useT } from '../i18n'
 import type { Buff, CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
@@ -112,8 +112,8 @@ export function ItemTooltipTarget({
   const itemCatalog = useGameStore((state) => state.items)
   const equipmentCatalog = useGameStore((state) => state.equipment)
 
-  const itemDef = itemDefOverride ?? itemCatalog.find((i) => i.itemId === itemId)
-  const eqDef = eqDefOverride ?? equipmentCatalog.find((e) => e.equipmentId === itemId)
+  const itemDef = itemDefOverride ?? itemCatalog.find((i) => i.itemId === itemId) ?? resolveDefaultItemDefinition(itemId)
+  const eqDef = eqDefOverride ?? equipmentCatalog.find((e) => e.equipmentId === itemId) ?? resolveDefaultEquipmentDefinition(itemId)
 
   const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const rawMetadata = itemDef
