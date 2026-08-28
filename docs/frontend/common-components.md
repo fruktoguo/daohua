@@ -241,3 +241,15 @@
   - 战斗技能槽位自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
 - **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.trigger-rule-row`)
+
+---
+
+## 23. 纯净行动卡片与等阶角标 (Action Card & Corner Badge)
+
+- **适用场景**：
+  - 修炼、炼丹、炼器、采集与历练等交互行动的纯净微型展示卡片（严格遵循“只显示名称与图标，不堆砌详情或数值”规范，右上角自带 `Lv.` 等阶角标，点击唤起对应配置/执行弹窗） -> `ActionCard`
+  - 等阶由 `resolveActionLevel` 统一解析（优先取产出物品/装备等阶、战斗遭遇等阶或消耗材料等阶）。
+- **组件源码**：[`frontend/src/App.tsx`](../../frontend/src/App.tsx)
+- **等阶解算引擎**：[`frontend/src/game/ids.ts`](../../frontend/src/game/ids.ts)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.action-cards`, `.action-card`, `.action-card-corner`)
+

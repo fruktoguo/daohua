@@ -23,7 +23,7 @@ import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveActionLevel, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
@@ -1024,53 +1024,24 @@ const AutoUse = memo(function AutoUse({ type }: { type: ActionType }): React.JSX
 })
 
 /**
- * 单个行动卡片组件（点击打开行动配置与执行弹窗）
+ * 单个行动卡片组件（纯净形态：仅显示名称与右上角 Lv. 角标，点击打开行动配置与执行弹窗）
  */
 const ActionCard = memo(function ActionCard({ action, onOpen }: { action: ActionDefinition; onOpen: (action: ActionDefinition) => void }): React.JSX.Element {
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
-  const isCultivation = action.type === 'cultivation'
   const itemCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
-  const inventory = useGameStore(state => state.inventory)
-  const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
-  const buffs = useGameStore(state => state.buffs)
-  const world = useGameStore(state => state.world)
-  const stats = useGameStore(state => state.stats)
+  const encounters = useGameStore(state => state.encounters)
 
-  const yieldPreview = useMemo(() => {
-    if (!isCultivation && !isCrafting) return null
-    return calculateActionYieldPreview({
-      action,
-      inventory,
-      items: itemCatalog,
-      autoUseSlots,
-      buffs,
-      world,
-      stats,
-    })
-  }, [action, isCultivation, isCrafting, inventory, itemCatalog, autoUseSlots, buffs, world, stats])
+  const level = useMemo(
+    () => resolveActionLevel(action, itemCatalog, equipmentCatalog, encounters),
+    [action, itemCatalog, equipmentCatalog, encounters]
+  )
 
   const primaryOutputId = useMemo(() => Object.keys(action.outputs || {})[0] ?? null, [action.outputs])
-
-  const meta = useMemo(() => {
-    const eq = equipmentCatalog.find(e => e.equipmentId === primaryOutputId)
-    if (eq) {
-      const tierLabel = `${eq.tier}阶`
-      const grade = resolveItemGrade(eq.tier)
-      const qualityLabel = grade.label
-      const rarity = grade.rarity
-      return { tierLabel, qualityLabel, rarity, itemDef: undefined }
-    }
-    const it = itemCatalog.find(i => i.itemId === primaryOutputId)
-    if (it) {
-      const tierLabel = `${it.tier}阶`
-      const grade = resolveItemGrade(it.tier)
-      const qualityLabel = grade.label
-      const rarity = grade.rarity
-      return { tierLabel, qualityLabel, rarity, itemDef: it }
-    }
-    return null
-  }, [primaryOutputId, equipmentCatalog, itemCatalog])
+  const itemDef = useMemo(() => {
+    if (!primaryOutputId) return undefined
+    return itemCatalog.find(i => i.itemId === primaryOutputId)
+  }, [primaryOutputId, itemCatalog])
 
   const cardButton = (
     <button
@@ -1079,45 +1050,30 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       onClick={() => onOpen(action)}
       type="button"
     >
-      <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true"><Icon name={action.type} /></span>
-      <span className="action-card-copy">
-        <strong>{action.name}</strong>
-        {isCultivation && yieldPreview?.cultivation ? (
-          <div className="action-card-badges">
-            <span className="action-badge action-badge--cultivation-exp">
-              +{yieldPreview.cultivation.boostedExp.toFixed(0)} 修为
-            </span>
-            <span className="action-badge action-badge--cultivation-qi">
-              +{yieldPreview.cultivation.boostedQi} 灵力
-            </span>
-          </div>
-        ) : isCrafting && meta ? (
-           <div className="action-card-badges">
-             <span className="action-badge action-badge--tier">{meta.tierLabel}</span>
-             <span className={`action-badge action-badge--quality item-badge-rarity-${meta.rarity}`}>{meta.qualityLabel}</span>
-           </div>
-         ) : action.description ? (
-           <span>{action.description}</span>
-         ) : null}
-       </span>
-       <span className="action-card-chevron" aria-hidden="true">›</span>
-     </button>
-   )
+      <span className="item-corner item-corner--top-right action-card-corner">
+        Lv.{level}
+      </span>
+      <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true">
+        <Icon name={action.type} />
+      </span>
+      <strong className="action-card-name">{action.name}</strong>
+    </button>
+  )
 
-   if (isCrafting && primaryOutputId) {
-     return (
-       <ItemTooltipTarget
-         definition={meta?.itemDef}
-         displayContents
-         itemId={primaryOutputId}
-       >
-         {cardButton}
-       </ItemTooltipTarget>
-     )
-   }
+  if (isCrafting && primaryOutputId) {
+    return (
+      <ItemTooltipTarget
+        definition={itemDef}
+        displayContents
+        itemId={primaryOutputId}
+      >
+        {cardButton}
+      </ItemTooltipTarget>
+    )
+  }
 
-   return cardButton
- })
+  return cardButton
+})
 
 /**
  * 行动详情弹窗中的单个材料消耗/产出条目

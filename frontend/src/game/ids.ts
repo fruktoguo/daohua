@@ -96,6 +96,54 @@ export function resolveActionDefinitions(): ActionDefinition[] {
 }
 
 /**
+ * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的等阶/等级 (LV)
+ * 优先级：
+ * 1. 首个产出物品/装备的等阶 (tier / level)
+ * 2. 战斗遭遇 (combatEncounterId) 对应的等阶
+ * 3. 输入消耗材料的最大等阶
+ * 4. 默认 1 阶
+ */
+export function resolveActionLevel(
+  action: ActionDefinition,
+  items?: ReadonlyArray<{ itemId: string; tier?: number }>,
+  equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
+  encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
+): number {
+  if (action.outputs) {
+    for (const outId of Object.keys(action.outputs)) {
+      const eq = equipment?.find(e => e.equipmentId === outId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > 0) return Math.floor(eq.tier)
+      const it = items?.find(i => i.itemId === outId)
+      if (it && typeof it.tier === 'number' && it.tier > 0) return Math.floor(it.tier)
+      const meta = ITEM_META_CORES[outId]
+      if (meta?.level && meta.level > 0) return Math.floor(meta.level)
+    }
+  }
+
+  if (action.combatEncounterId) {
+    const enc = encounters?.find(e => e.encounterId === action.combatEncounterId)
+    if (enc && typeof enc.tier === 'number' && enc.tier > 0) return Math.floor(enc.tier)
+    if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return 2
+    return 1
+  }
+
+  if (action.inputs) {
+    let maxLevel = 1
+    for (const inId of Object.keys(action.inputs)) {
+      const eq = equipment?.find(e => e.equipmentId === inId)
+      if (eq && typeof eq.tier === 'number' && eq.tier > maxLevel) maxLevel = Math.floor(eq.tier)
+      const it = items?.find(i => i.itemId === inId)
+      if (it && typeof it.tier === 'number' && it.tier > maxLevel) maxLevel = Math.floor(it.tier)
+      const meta = ITEM_META_CORES[inId]
+      if (meta?.level && meta.level > maxLevel) maxLevel = Math.floor(meta.level)
+    }
+    if (maxLevel > 1) return maxLevel
+  }
+
+  return 1
+}
+
+/**
  * 各行动类型对应的 UI 图标符号与主题色
  */
 // 页签仅保留非文本元数据；label 统一经 actionTabLabel() 走 i18n。
