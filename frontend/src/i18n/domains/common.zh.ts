@@ -17,6 +17,7 @@ export const commonZh = {
       tokenRejected: '连接被服务端拒绝，请检查访问令牌设置',
       invalidCommand: '操作格式无效。',
       sessionExpired: '登录会话已失效，请重新登录。',
+      parseUnstable: '协议数据持续异常，已重置连接以恢复同步。',
     },
   },
 }

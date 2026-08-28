@@ -355,6 +355,15 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const [zoom, setZoom] = useState<number>(1)
   const [isDragging, setIsDragging] = useState<boolean>(false)
   const isDraggingRef = useRef<boolean>(false)
+  // zoom/pan 的 ref 镜像：供非 passive 原生 wheel 监听读取最新视口状态，避免把副作用塞进 setState updater。
+  const zoomRef = useRef(zoom)
+  const panRef = useRef(pan)
+  useEffect(() => {
+    zoomRef.current = zoom
+  }, [zoom])
+  useEffect(() => {
+    panRef.current = pan
+  }, [pan])
   const dragStartRef = useRef<{
     clientX: number
     clientY: number
@@ -363,6 +372,35 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     moved: boolean
     targetNodeId: string | null
   } | null>(null)
+
+  // 滚轮缩放：React 合成 onWheel 挂在根节点上是 passive 的，preventDefault 无效；
+  // 必须在容器上挂非 passive 的原生 wheel 监听才能真正阻止页面同时滚动。
+  useEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault()
+      const rect = stage.getBoundingClientRect()
+      const mouseX = event.clientX - rect.left
+      const mouseY = event.clientY - rect.top
+
+      const zoomFactor = event.deltaY < 0 ? 1.12 : 0.89
+      const prevZoom = zoomRef.current
+      const nextZoom = Math.min(1.8, Math.max(0.6, prevZoom * zoomFactor))
+      if (nextZoom === prevZoom) return
+
+      // 以鼠标位置为锚点缩放：先求指针下的世界坐标，再反推新的平移量。
+      const worldX = (mouseX - panRef.current.x) / prevZoom
+      const worldY = (mouseY - panRef.current.y) / prevZoom
+      setZoom(nextZoom)
+      setPan({
+        x: mouseX - worldX * nextZoom,
+        y: mouseY - worldY * nextZoom,
+      })
+    }
+    stage.addEventListener('wheel', onWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', onWheel)
+  }, [])
 
   // 居中聚焦到玩家当前所在位置（在节点驻留时居中地点，在移动时居中路径当前动态坐标）
   const centerOnPlayer = useCallback((targetZoom?: number) => {
@@ -499,28 +537,6 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     }
   }, [])
 
-  // 滚轮缩放支持
-  const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    const stage = stageRef.current
-    if (!stage) return
-    const rect = stage.getBoundingClientRect()
-    const mouseX = e.clientX - rect.left
-    const mouseY = e.clientY - rect.top
-
-    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89
-    setZoom(prevZoom => {
-      const nextZoom = Math.min(1.8, Math.max(0.6, prevZoom * zoomFactor))
-      const worldX = (mouseX - pan.x) / prevZoom
-      const worldY = (mouseY - pan.y) / prevZoom
-      setPan({
-        x: mouseX - worldX * nextZoom,
-        y: mouseY - worldY * nextZoom,
-      })
-      return nextZoom
-    })
-  }, [pan.x, pan.y])
-
   // 1. 提取该地点的产出资源（来自开放采集/生产行动 outputs）
   const nodeResources = useMemo(() => {
     if (!selectedNode) return []
@@ -581,7 +597,6 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onWheel={handleWheel}
         ref={stageRef}
       >
         {/* 浮动操作快捷栏 */}

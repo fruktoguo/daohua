@@ -193,16 +193,16 @@ export function calculateActionYieldPreview({
     const boostedExp = baseExp * totalMultiplier
     const boostedQi = Math.max(1, Math.round(baseQi * totalMultiplier))
 
-    // 境界与底蕴判定
+    // 境界判定；服务端突破时 Experience 清零且无独立道基底蕴字段，
+    // "底蕴化生加速"属于前端虚构机制，已移除。
     const spirit = stats?.spirit ?? 0
-    const foundationExp = stats?.foundationExp ?? 0
     const realmProgress = calculateRealmProgress(spirit)
     const expToCap = realmProgress.expToNext - realmProgress.currentLayerExp
     const isPendingBreakthrough = realmProgress.expToNext > 0 && expToCap <= 0.0001 && spirit > 0
 
-    let hasFoundationAcceleration = false
-    let foundationConsumed = 0
-    let actualExpGain = boostedExp
+    const hasFoundationAcceleration = false
+    const foundationConsumed = 0
+    const actualExpGain = boostedExp
 
     if (isPendingBreakthrough) {
       // 境界圆满待突破
@@ -211,19 +211,6 @@ export function calculateActionYieldPreview({
         tag: '底蕴转化',
         type: 'foundation',
         description: '当前境界待突破，修炼所得修为将 100% 转化为道基底蕴',
-      })
-    } else if (foundationExp > 0) {
-      // 底蕴化生：消耗等额底蕴，享受 3 倍修为加速（最多消耗 2 * boostedExp）
-      const maxBonus = boostedExp * 2.0
-      foundationConsumed = Math.min(foundationExp, maxBonus)
-      actualExpGain = boostedExp + foundationConsumed
-      hasFoundationAcceleration = true
-
-      bonuses.push({
-        sourceName: '底蕴化生',
-        tag: '3倍加速',
-        type: 'foundation',
-        description: `消耗 ${foundationConsumed.toFixed(0)} 点道基底蕴，本次实际获得 ${actualExpGain.toFixed(0)} 点修为`,
       })
     }
 

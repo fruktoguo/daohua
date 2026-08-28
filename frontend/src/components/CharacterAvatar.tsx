@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { getAvatarCandidateUrls } from '../game/avatarStore'
 import type { CharacterVisual } from '../game/types'
 import { resolveCharacterKind, VectorCharacter } from './VectorCharacter'
@@ -71,6 +71,11 @@ export const CharacterAvatar = memo(function CharacterAvatar({
 
   // 当前尝试加载的候选索引
   const [candidateIndex, setCandidateIndex] = useState(0)
+
+  // 候选列表变化（切换角色/敌人）时重置回退索引，避免从已耗尽的索引直接降级到错误立绘。
+  useEffect(() => {
+    setCandidateIndex(0)
+  }, [candidates])
 
   const currentSrc = candidates[candidateIndex] ?? null
   const hasExhaustedCandidates = candidateIndex >= candidates.length

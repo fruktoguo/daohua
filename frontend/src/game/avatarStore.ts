@@ -100,18 +100,40 @@ interface AvatarStore {
   getAvatarSrc: () => string
 }
 
+/** 形象选择的本地持久化键，命名与账号/语言等既有存储键风格一致。 */
+const AVATAR_STORAGE_KEY = 'daohua.avatar.v1'
+
+/** 从 localStorage 读取上次选择的形象；存储不可用或值非法时回退默认。 */
+function readStoredAvatarId(): PlayerAvatarId {
+  try {
+    const stored = window.localStorage.getItem(AVATAR_STORAGE_KEY)
+    if (stored && AVATAR_OPTIONS.some(option => option.id === stored)) return stored as PlayerAvatarId
+  } catch {
+    // 隐私模式等 localStorage 不可用场景：静默回退默认形象。
+  }
+  return 'default'
+}
+
 /**
  * 玩家道貌形象全局状态
  */
 export const useAvatarStore = create<AvatarStore>((set, get) => ({
-  avatarId: 'default',
-  setAvatarId: (avatarId: PlayerAvatarId) => set({ avatarId }),
+  avatarId: readStoredAvatarId(),
+  setAvatarId: (avatarId: PlayerAvatarId) => {
+    set({ avatarId })
+    try {
+      window.localStorage.setItem(AVATAR_STORAGE_KEY, avatarId)
+    } catch {
+      // 持久化失败仅影响下次启动的默认选择，不阻断当前会话。
+    }
+  },
   getAvatarSrc: () => getPlayerAvatarSrc(get().avatarId),
 }))
 
 /**
  * 获取指定或当前形象资源地址
  */
-export function getPlayerAvatarSrc(_avatarId?: PlayerAvatarId | string | null): string {
-  return DEFAULT_PLAYER_AVATAR_SRC
+export function getPlayerAvatarSrc(avatarId?: PlayerAvatarId | string | null): string {
+  const id = (avatarId ?? useAvatarStore.getState().avatarId) as PlayerAvatarId
+  return AVATAR_OPTIONS.find(option => option.id === id)?.src ?? DEFAULT_PLAYER_AVATAR_SRC
 }

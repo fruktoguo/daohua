@@ -433,7 +433,7 @@ export function formatUnitNumber(
   value: number | bigint | string,
   options?: FormatUnitOptions
 ): string {
-  const { maxDecimals = 2, roundMode = 'floor', padDecimals = false } = options ?? {}
+  const { maxDecimals = 2, maxDigits = 6, roundMode = 'floor', padDecimals = false } = options ?? {}
 
   const num = typeof value === 'number' ? value : Number(value)
   if (isNaN(num)) return '0'
@@ -445,7 +445,7 @@ export function formatUnitNumber(
 
   // 小于 10000，直接展示数值
   if (absVal < 10000) {
-    const formatted = roundToMaxDecimals(absVal, maxDecimals, roundMode, padDecimals)
+    const formatted = formatWithinDigitLimit(absVal, maxDecimals, maxDigits, roundMode, padDecimals)
     return `${isNeg ? '-' : ''}${formatted}`
   }
 
@@ -458,18 +458,55 @@ export function formatUnitNumber(
   }
 
   let scaled = absVal / scale
-  let formatted = roundToMaxDecimals(scaled, maxDecimals, roundMode, padDecimals)
+  let formatted = formatWithinDigitLimit(scaled, maxDecimals, maxDigits, roundMode, padDecimals)
 
   // 检查进位是否达到 10000（例如 9999.996 万进位为 1 亿）
   if (Number(formatted) >= 10000 && unitIndex < CHINESE_SECTION_UNITS.length - 1) {
     unitIndex++
     scale *= 10000
     scaled = absVal / scale
-    formatted = roundToMaxDecimals(scaled, maxDecimals, roundMode, padDecimals)
+    formatted = formatWithinDigitLimit(scaled, maxDecimals, maxDigits, roundMode, padDecimals)
+  }
+
+  // 降精度后整数位数仍超出上限：继续进位到更大的万进制单位；已到最大单位时尽力而为。
+  while (countNumericDigits(formatted) > maxDigits && unitIndex < CHINESE_SECTION_UNITS.length - 1) {
+    unitIndex++
+    scale *= 10000
+    scaled = absVal / scale
+    formatted = formatWithinDigitLimit(scaled, 0, maxDigits, roundMode, padDecimals)
   }
 
   const unitSymbol = CHINESE_SECTION_UNITS[unitIndex]
   return `${isNeg ? '-' : ''}${formatted}${unitSymbol}`
+}
+
+/** 统计格式化文本中的数字字符数（不含符号、小数点与中文单位后缀） */
+function countNumericDigits(text: string): number {
+  let count = 0
+  for (const char of text) {
+    if (char >= '0' && char <= '9') count += 1
+  }
+  return count
+}
+
+/**
+ * 在数字位数上限内格式化：先按 maxDecimals 取整，若数字位数超出 maxDigits 则逐位降低小数精度。
+ * maxDigits 不小于默认输出位数时输出与直接取整完全一致，保证既有调用点行为不变。
+ */
+function formatWithinDigitLimit(
+  val: number,
+  maxDecimals: number,
+  maxDigits: number,
+  roundMode: 'round' | 'floor' | 'ceil',
+  padDecimals: boolean,
+): string {
+  let decimals = maxDecimals
+  let formatted = roundToMaxDecimals(val, decimals, roundMode, padDecimals)
+  while (countNumericDigits(formatted) > maxDigits && decimals > 0) {
+    decimals -= 1
+    formatted = roundToMaxDecimals(val, decimals, roundMode, padDecimals)
+  }
+  return formatted
 }
 
 

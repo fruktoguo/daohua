@@ -20,6 +20,15 @@ import { getSessionAccount } from './sessionState'
 
 const APP_VERSION = String(import.meta.env.VITE_APP_VERSION ?? 'dev')
 
+/** 时间窗内连续解析失败达到该帧数时，触发一次快照重建（resync）。 */
+const PARSE_FAILURE_RESYNC_THRESHOLD = 5
+/** 时间窗内连续解析失败达到该帧数时，断开并交给指数退避重连。 */
+const PARSE_FAILURE_FATAL_COUNT = 20
+/** 解析失败计数的滑动时间窗长度。 */
+const PARSE_FAILURE_WINDOW_MS = 30_000
+/** 同类解析错误提示的节流间隔，避免坏帧连发刷屏。 */
+const PARSE_FAILURE_NOTICE_THROTTLE_MS = 4_000
+
 function getEndpoint(): string {
   const configured = import.meta.env.VITE_WS_URL as string | undefined
   if (configured) return configured
@@ -41,6 +50,11 @@ export class GameClient {
   private reconnectDelay = 500
   private lastServerSequence = 0
   private outboundSequence = 0
+  private parseFailureCount = 0
+  private parseFailureWindowStart = 0
+  private parseFailureResynced = false
+  private lastParseErrorKey = ''
+  private lastParseErrorAt = 0
   private readonly pendingRequests = new Set<string>()
 
   playerId = getSessionAccount()?.playerId ?? ''
@@ -238,6 +252,8 @@ export class GameClient {
       const envelope = decodeEnvelope(bytes)
       if (envelope.sequence <= this.lastServerSequence) return
       this.lastServerSequence = envelope.sequence
+      // 帧结构解析成功即视为连接恢复健康，清空解析失败计数。
+      this.resetParseFailureState()
 
       switch (envelope.messageType) {
         case WireMessageType.HelloAck: {
@@ -295,8 +311,44 @@ export class GameClient {
           throw new Error('收到未知协议消息。')
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : '协议包解析失败。'
+      // 解析失败不主动断开：丢弃该帧，仅按阈值渐进升级（提示 -> resync -> 断开重连），
+      // 避免坏帧与"close -> 重连 -> 再失败"形成无限循环。
+      this.handleParseFailure(error)
+    }
+  }
+
+  private resetParseFailureState(): void {
+    this.parseFailureCount = 0
+    this.parseFailureWindowStart = 0
+    this.parseFailureResynced = false
+    this.lastParseErrorKey = ''
+  }
+
+  private handleParseFailure(error: unknown): void {
+    const now = Date.now()
+    if (now - this.parseFailureWindowStart > PARSE_FAILURE_WINDOW_MS) {
+      this.parseFailureWindowStart = now
+      this.parseFailureCount = 0
+      this.parseFailureResynced = false
+    }
+    this.parseFailureCount += 1
+
+    const message = error instanceof Error ? error.message : '协议包解析失败。'
+    if (message !== this.lastParseErrorKey || now - this.lastParseErrorAt > PARSE_FAILURE_NOTICE_THROTTLE_MS) {
+      this.lastParseErrorKey = message
+      this.lastParseErrorAt = now
       useGameStore.getState().setNotice(message)
+    }
+
+    if (this.parseFailureCount >= PARSE_FAILURE_FATAL_COUNT) {
+      this.resetParseFailureState()
+      useGameStore.getState().setNotice(getT()('common.net.parseUnstable'))
+      // close 事件统一进入指数退避重连路径，重连成功后若仍有好帧到达即恢复。
+      this.socket?.close(1000, '协议解析持续失败，重建连接')
+      return
+    }
+    if (this.parseFailureCount >= PARSE_FAILURE_RESYNC_THRESHOLD && !this.parseFailureResynced) {
+      this.parseFailureResynced = true
       this.requestSnapshotOrResync()
     }
   }

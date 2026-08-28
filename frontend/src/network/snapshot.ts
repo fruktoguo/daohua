@@ -57,8 +57,9 @@ function arrayValue(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-/** wire.v1 section 中的 Domain record struct ID 统一以 { value } 形式序列化。 */
+/** wire.v1 section 中的 Domain record struct ID 统一以 { value } 形式或纯字符串形式序列化。 */
 function identifierValue(value: unknown, name = '标识'): string {
+  if (typeof value === 'string' && value.length > 0) return value
   const candidate = object(value)
   const result = stringValue(candidate.value)
   if (!result) throw new Error(`${name}载荷无效。`)
@@ -199,8 +200,9 @@ function mapStats(value: unknown): Stats {
   const row = object(value)
   return {
     qi: numberValue(row.qi),
+    // 服务端 progression 只有一个经验字段 Experience（突破时清零），即境界修为 spirit；
+    // 不存在独立的道基底蕴字段，foundationExp 保持未定义。
     spirit: numberValue(row.experience),
-    foundationExp: numberValue(row.experience),
     herbsCollected: numberValue(row.herbsCollected),
     pillsCrafted: numberValue(row.pillsCrafted),
     cultivationCycles: numberValue(row.cultivationCycles),

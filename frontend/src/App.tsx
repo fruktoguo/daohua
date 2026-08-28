@@ -1408,6 +1408,11 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
     index: number
   } | null>(null)
   const [pickerTarget, setPickerTarget] = useState<CombatPickerTarget | null>(null)
+  // hooks 必须在早退之前调用：combat 在 undefined 与对象间切换时保持 hook 数量稳定。
+  const learnedAbilityIds = useMemo(() => new Set(combat?.learnedAbilityIds ?? []), [combat?.learnedAbilityIds])
+  const learnedAbilities = useMemo(() => {
+    return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
+  }, [abilities, learnedAbilityIds])
   if (!combat) return null
 
   const update = (patch: Partial<typeof combat>) => {
@@ -1438,10 +1443,6 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
     }
   }
 
-  const learnedAbilityIds = useMemo(() => new Set(combat.learnedAbilityIds ?? []), [combat.learnedAbilityIds])
-  const learnedAbilities = useMemo(() => {
-    return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
-  }, [abilities, learnedAbilityIds])
   const consumableItems = itemCatalog
       .filter(item => item.usableActionTypes.includes('combat') && itemAmount(inventory, item.itemId) > 0)
       .map(item => ({

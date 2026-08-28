@@ -358,12 +358,14 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
   const circleRef = useRef<SVGCircleElement>(null)
-  const initialDurationRef = useRef<number>(Math.max(10, remaining))
-
-  if (remaining > initialDurationRef.current) {
-    initialDurationRef.current = remaining
-  }
-  const total = initialDurationRef.current
+  // 环形倒计时基准：服务端同步到该 buff（到期时间变化）时，以同步时刻的剩余时间重建基准，
+  // 使 buff 被刷新为更长或更短的持续时间时比例都保持真实。
+  const [baseDuration, setBaseDuration] = useState(() => Math.max(10, remaining))
+  useEffect(() => {
+    const syncedRemaining = buff.expiresAtUnixSeconds - useGameStore.getState().serverTimeUnixSeconds
+    setBaseDuration(Math.max(10, Math.max(0, syncedRemaining)))
+  }, [buff.expiresAtUnixSeconds])
+  const total = baseDuration
 
   // 效果说明与单字图标（说明文案与字形均随语言切换）
   let tone: 'qi' | 'jade' | 'purple' | 'danger' | 'gold' = 'gold'
