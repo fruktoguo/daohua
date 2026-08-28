@@ -27,6 +27,7 @@ export const WireMessageType = {
   ComputeAdvanceResponse: 14,
   Command: 15,
   CommandResult: 16,
+  LogBatch: 17,
 } as const
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
 
@@ -142,6 +143,16 @@ export interface ErrorDto {
   requestId?: string | null
 }
 
+export interface LogEventDto {
+  sequence: number
+  timestampUnixMilliseconds: number
+  template: string
+}
+
+export interface LogBatchDto {
+  events: LogEventDto[]
+}
+
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
@@ -181,7 +192,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.CommandResult
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.LogBatch
 }
 
 function isWireCodec(value: number): value is WireCodec {

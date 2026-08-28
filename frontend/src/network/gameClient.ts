@@ -1,5 +1,6 @@
 import { useGameStore } from '../game/gameStore'
 import { getT } from '../i18n'
+import { gameLogService } from '../logging/gameLogService'
 import { clearStoredAccount } from './account'
 import {
   createRequestId,
@@ -9,6 +10,7 @@ import {
   type CommandResultDto,
   type ErrorDto,
   type HelloResponse,
+  type LogBatchDto,
   type PlayerSnapshotDeltaDto,
   type PlayerSnapshotDto,
   WireMessageType,
@@ -273,6 +275,13 @@ export class GameClient {
           const error = decodeJsonPayload<ErrorDto>(envelope)
           if (error.requestId) this.pendingRequests.delete(error.requestId)
           useGameStore.getState().setNotice(error.message || error.code)
+          break
+        }
+        case WireMessageType.LogBatch: {
+          const batch = decodeJsonPayload<LogBatchDto>(envelope)
+          if (batch?.events && Array.isArray(batch.events) && batch.events.length > 0) {
+            gameLogService.ingestBatch(this.playerId, batch.events)
+          }
           break
         }
         case WireMessageType.Pong:
