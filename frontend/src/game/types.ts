@@ -469,15 +469,26 @@ export interface ItemDefinition {
  * 物品附加 Buff 效果定义
  */
 export interface ItemBuffEffectDefinition {
+  buffId?: string
   name: string
   durationSeconds: number
   maxStacks: number
-  qiGainMultiplier: number
-  attackLevelRatio: number
-  damageRatio: number
-  attackSpeedRatio: number
-  gatheringOutputMultiplier: number
-  alchemyOutputMultiplier: number
+  description?: string
+  qiGainMultiplier?: number
+  attackLevelRatio?: number
+  damageRatio?: number
+  attackSpeedRatio?: number
+  hpRegen?: number
+  mpRegen?: number
+  damageAbsorptionRatio?: number
+  armor?: number
+  magicResistance?: number
+  criticalChance?: number
+  criticalDamageRatio?: number
+  tenacity?: number
+  gatheringOutputMultiplier?: number
+  alchemyOutputMultiplier?: number
+  modifiers?: Record<string, number>
 }
 
 /**

@@ -38,13 +38,23 @@ public static class StaticGameCatalogMapper
             var buffEffects = hasConsumable && consumable.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array
                 ? buffsArray.EnumerateArray().Select(b => new
                 {
+                    buffId = ReadString(b, "buffId"),
                     name = ReadString(b, "name", ReadString(b, "buffId", "增益")),
                     durationSeconds = ReadDouble(b, "durationSeconds", 0),
                     maxStacks = ReadInt(b, "maxStacks", 1),
+                    description = ReadString(b, "description"),
                     qiGainMultiplier = ReadDouble(b, "qiGainMultiplier", 1),
                     attackLevelRatio = ReadDouble(b, "attackLevelRatio", 0),
                     damageRatio = ReadDouble(b, "damageRatio", 0),
                     attackSpeedRatio = ReadDouble(b, "attackSpeedRatio", 0),
+                    hpRegen = ReadDouble(b, "hpRegen", 0),
+                    mpRegen = ReadDouble(b, "mpRegen", 0),
+                    damageAbsorptionRatio = ReadDouble(b, "damageAbsorptionRatio", 0),
+                    armor = ReadDouble(b, "armor", 0),
+                    magicResistance = ReadDouble(b, "magicResistance", 0),
+                    criticalChance = ReadDouble(b, "criticalChance", 0),
+                    criticalDamageRatio = ReadDouble(b, "criticalDamageRatio", 0),
+                    tenacity = ReadDouble(b, "tenacity", 0),
                     gatheringOutputMultiplier = ReadDouble(b, "gatheringOutputMultiplier", 1),
                     alchemyOutputMultiplier = ReadDouble(b, "alchemyOutputMultiplier", 1)
                 }).ToArray()

@@ -31,7 +31,9 @@
         {
           "buffId": "buff.zhixue",
           "name": "止血散·回春",
-          "durationSeconds": 30
+          "durationSeconds": 30,
+          "hpRegen": 12,
+          "damageAbsorptionRatio": 0.05
         }
       ]
     }
@@ -52,7 +54,9 @@
         {
           "buffId": "buff.shunqi",
           "name": "顺气丸·凝神",
-          "durationSeconds": 30
+          "durationSeconds": 30,
+          "mpRegen": 8,
+          "attackSpeedRatio": 0.05
         }
       ]
     }

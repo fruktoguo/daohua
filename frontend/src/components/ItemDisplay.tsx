@@ -214,7 +214,8 @@ function signedPercent(value: number): string {
   return `${percent > 0 ? '+' : ''}${percent}%`
 }
 
-function multiplierPercent(value: number): string | null {
+function multiplierPercent(value?: number | null): string | null {
+  if (value === undefined || value === null) return null
   const delta = value - 1
   return Math.abs(delta) < 0.000001 ? null : signedPercent(delta)
 }
@@ -256,6 +257,117 @@ function describeItemEffects(definition?: ItemDefinition): string[] {
 }
 
 /**
+ * 通用 Buff 数值效果行解析器
+ * 能够将任意 Buff 定义、配置或运行时实例中的所有属性字段解析为格式化中文词条
+ */
+export function describeBuffEffectLines(buff: {
+  buffId?: string | null
+  name?: string
+  description?: string
+  hpRegen?: number
+  mpRegen?: number
+  damageAbsorptionRatio?: number
+  damageRatio?: number
+  attackSpeedRatio?: number
+  attackLevelRatio?: number
+  armor?: number
+  magicResistance?: number
+  criticalChance?: number
+  criticalDamageRatio?: number
+  tenacity?: number
+  qiGainMultiplier?: number
+  gatheringOutputMultiplier?: number
+  alchemyOutputMultiplier?: number
+  modifiers?: Record<string, number> | null
+}): string[] {
+  const t = getT()
+  const lines: string[] = []
+
+  // 1. 每秒回复
+  if (buff.hpRegen && buff.hpRegen > 0) {
+    lines.push(`每秒气血回复 +${formatNumber(buff.hpRegen)}`)
+  }
+  if (buff.mpRegen && buff.mpRegen > 0) {
+    lines.push(`每秒灵力回复 +${formatNumber(buff.mpRegen)}`)
+  }
+
+  // 2. 伤害与减伤
+  if (buff.damageAbsorptionRatio && buff.damageAbsorptionRatio !== 0) {
+    lines.push(`受击伤害减免 +${Math.round(buff.damageAbsorptionRatio * 100)}%`)
+  }
+  if (buff.damageRatio && buff.damageRatio !== 0) {
+    lines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
+  }
+
+  // 3. 攻速与命中闪避
+  if (buff.attackSpeedRatio && buff.attackSpeedRatio !== 0) {
+    lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
+  }
+  if (buff.attackLevelRatio && buff.attackLevelRatio !== 0) {
+    lines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
+  }
+
+  // 4. 防御与抗性
+  if (buff.armor && buff.armor !== 0) {
+    lines.push(`物理护甲 +${formatNumber(buff.armor)}`)
+  }
+  if (buff.magicResistance && buff.magicResistance !== 0) {
+    lines.push(`法术抗性 +${formatNumber(buff.magicResistance)}`)
+  }
+
+  // 5. 暴击与韧性
+  if (buff.criticalChance && buff.criticalChance !== 0) {
+    lines.push(`暴击率 +${Math.round(buff.criticalChance * 100)}%`)
+  }
+  if (buff.criticalDamageRatio && buff.criticalDamageRatio > 1.5) {
+    lines.push(`暴击伤害 +${Math.round((buff.criticalDamageRatio - 1.5) * 100)}%`)
+  }
+  if (buff.tenacity && buff.tenacity !== 0) {
+    lines.push(`控制韧性 +${formatNumber(buff.tenacity)}`)
+  }
+
+  // 6. 修炼与技艺收益
+  const qi = multiplierPercent(buff.qiGainMultiplier)
+  if (qi) lines.push(t('market.effect.qiGainBonus', { value: qi }))
+
+  const gathering = multiplierPercent(buff.gatheringOutputMultiplier)
+  if (gathering) lines.push(t('market.effect.gatheringOutput', { value: gathering }))
+
+  const alchemy = multiplierPercent(buff.alchemyOutputMultiplier)
+  if (alchemy) lines.push(t('market.effect.alchemyOutput', { value: alchemy }))
+
+  // 7. 自定义修饰器字典
+  if (buff.modifiers) {
+    for (const [modKey, modVal] of Object.entries(buff.modifiers)) {
+      if (modVal !== 0) {
+        lines.push(`${modKey}: ${signedPercent(modVal)}`)
+      }
+    }
+  }
+
+  // 8. 若尚未解析出任何行，但有明确的 buffId，尝试从内建已知效果表中查询具体效果
+  if (lines.length === 0 && buff.buffId) {
+    const KNOWN_BUFF_EFFECTS: Record<string, string[]> = {
+      'buff.zhixue': ['每秒气血回复 +12', '受击伤害减免 +5%'],
+      'buff.shunqi': ['每秒灵力回复 +8', '施法攻速 +5%'],
+      'buff.qiGathering': ['修炼效率 +30%'],
+      'buff.tongmai': ['修炼效率 +50%'],
+    }
+    const known = KNOWN_BUFF_EFFECTS[buff.buffId]
+    if (known && known.length > 0) {
+      lines.push(...known)
+    }
+  }
+
+  // 9. 若有描述文本
+  if (lines.length === 0 && buff.description) {
+    lines.push(buff.description)
+  }
+
+  return lines
+}
+
+/**
  * 提取丹药与消耗品的持续增益 Buff 效果，构造为独立的附属气泡卡片 (Aside Cards)
  */
 export function resolveItemAsideCards(
@@ -278,8 +390,8 @@ export function resolveItemAsideCards(
     }
     cards.push({
       id: `aside-cultivation-${definition.itemId}`,
-      mark: t('market.aside.cultivationBuff'),
-      title: definition.name || fallbackName || t('market.aside.cultivationBuff'),
+      mark: t('market.aside.buff'),
+      title: definition.name || fallbackName || t('market.aside.buff'),
       tone: 'qi',
       lines,
     })
@@ -297,8 +409,8 @@ export function resolveItemAsideCards(
     }
     cards.push({
       id: `aside-gathering-${definition.itemId}`,
-      mark: t('market.aside.gatheringBuff'),
-      title: definition.name || fallbackName || t('market.aside.gatheringBuff'),
+      mark: t('market.aside.buff'),
+      title: definition.name || fallbackName || t('market.aside.buff'),
       tone: 'jade',
       lines,
     })
@@ -316,8 +428,8 @@ export function resolveItemAsideCards(
     }
     cards.push({
       id: `aside-alchemy-${definition.itemId}`,
-      mark: t('market.aside.alchemyBuff'),
-      title: definition.name || fallbackName || t('market.aside.alchemyBuff'),
+      mark: t('market.aside.buff'),
+      title: definition.name || fallbackName || t('market.aside.buff'),
       tone: 'gold',
       lines,
     })
@@ -325,16 +437,7 @@ export function resolveItemAsideCards(
 
   // 4. 战斗丹药附带的 Buff 效果 (如止血散、顺气丸)
   for (const buff of definition.buffEffects ?? []) {
-    const buffLines: string[] = []
-    const qi = multiplierPercent(buff.qiGainMultiplier)
-    const gathering = multiplierPercent(buff.gatheringOutputMultiplier)
-    const alchemy = multiplierPercent(buff.alchemyOutputMultiplier)
-    if (qi) buffLines.push(t('market.effect.qiGainBonus', { value: qi }))
-    if (buff.attackLevelRatio !== 0) buffLines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
-    if (buff.damageRatio !== 0) buffLines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
-    if (buff.attackSpeedRatio !== 0) buffLines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
-    if (gathering) buffLines.push(t('market.effect.gatheringOutput', { value: gathering }))
-    if (alchemy) buffLines.push(t('market.effect.alchemyOutput', { value: alchemy }))
+    const buffLines = describeBuffEffectLines(buff)
 
     const subParts: string[] = []
     if (buff.durationSeconds > 0) {
@@ -346,11 +449,11 @@ export function resolveItemAsideCards(
 
     cards.push({
       id: `aside-buff-${buff.name}`,
-      mark: t('market.aside.pillBuff'),
+      mark: t('market.aside.buff'),
       title: buff.name,
       subtitle: subParts.length > 0 ? subParts.join(' · ') : undefined,
       tone: 'gold',
-      lines: buffLines.length > 0 ? buffLines : [t('app.buff.combatBuff')],
+      lines: buffLines.length > 0 ? buffLines : ['持续生效增益'],
     })
   }
 
@@ -504,7 +607,7 @@ export function resolveEquipmentAsideCards(
     if (lines.length > 0) {
       cards.push({
         id: `aside-equip-special-${equipment.equipmentId}`,
-        mark: t('market.aside.specialMechanic'),
+        mark: t('market.aside.buff'),
         title: `${equipment.name}·特技`,
         tone: 'gold',
         lines,
@@ -524,31 +627,7 @@ export function createBuffAsideCard(
   mark?: string
 ): FloatingAsideCard {
   const t = getT()
-  const lines: string[] = []
-  const qi = multiplierPercent(buff.qiGainMultiplier)
-  const gathering = multiplierPercent(buff.gatheringOutputMultiplier ?? 1)
-  const alchemy = multiplierPercent(buff.alchemyOutputMultiplier ?? 1)
-
-  if (qi) lines.push(t('market.effect.qiGainBonus', { value: qi }))
-  if (buff.damageRatio && buff.damageRatio !== 0) {
-    lines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
-  }
-  if (buff.attackLevelRatio && buff.attackLevelRatio !== 0) {
-    lines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
-  }
-  if (buff.attackSpeedRatio && buff.attackSpeedRatio !== 0) {
-    lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
-  }
-  if (gathering) lines.push(t('market.effect.gatheringOutput', { value: gathering }))
-  if (alchemy) lines.push(t('market.effect.alchemyOutput', { value: alchemy }))
-
-  if (buff.modifiers) {
-    for (const [modKey, modVal] of Object.entries(buff.modifiers)) {
-      if (modVal !== 0) {
-        lines.push(`${modKey}: ${signedPercent(modVal)}`)
-      }
-    }
-  }
+  const lines = describeBuffEffectLines(buff)
 
   const isDebuff =
     (buff.damageRatio !== undefined && buff.damageRatio < 0) ||
@@ -564,7 +643,7 @@ export function createBuffAsideCard(
     title: buff.name,
     subtitle: buff.stacks > 1 ? t('market.aside.maxStacks', { stacks: formatNumber(buff.stacks) }) : undefined,
     tone,
-    lines: lines.length > 0 ? lines : [t('app.buff.combatBuff')],
+    lines: lines.length > 0 ? lines : ['持续生效增益'],
   }
 }
 
