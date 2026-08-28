@@ -191,8 +191,6 @@ public sealed class PostgresMarketRepository(
         ValidateOrder(order);
         if (order.PartitionId != options.MarketPartitionId)
             throw new ArgumentException("订单分片与当前市场写者不一致。", nameof(order));
-        if (order.PartitionId != options.MarketPartitionId)
-            throw new ArgumentException("订单分片与当前写者不一致。", nameof(order));
         if (fenceToken <= 0) throw new ArgumentOutOfRangeException(nameof(fenceToken));
         if (fills is null || fills.Count > 256)
             throw new ArgumentException("单次成交数量超过上限。", nameof(fills));

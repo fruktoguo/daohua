@@ -209,6 +209,7 @@ public static class PostgresSchema
     );
     CREATE INDEX IF NOT EXISTS ix_market_orders_book ON market.orders(partition_id, asset_id, variant, status, side, price, sequence);
     CREATE INDEX IF NOT EXISTS ix_market_orders_owner ON market.orders(owner_player_id, status);
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_market_orders_partition_sequence ON market.orders(partition_id, sequence);
 
     CREATE TABLE IF NOT EXISTS market.trades (
         trade_id uuid PRIMARY KEY,

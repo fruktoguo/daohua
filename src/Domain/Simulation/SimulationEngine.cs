@@ -27,6 +27,12 @@ public static class SimulationEngine
     public const int CurrentSchemaVersion = 1;
     public const int MaxTransitionsPerAdvance = 100_000;
 
+    /// <summary>整秒量化的贴整容差：吸收 0.1 这类二进制无法精确表示的秒数在累加中的尾差。</summary>
+    private const double SecondQuantizationEpsilon = 1e-9;
+
+    /// <summary>单次连续奖励可施加的整秒上限：正常推进远低于该值，越界说明配表或时钟已破坏，快速失败避免巨量循环。</summary>
+    private const double MaxWholeSecondsPerApply = 1_000_000_000;
+
     public static SimulationResult AdvanceTo(
         PlayerAggregate player,
         DateTimeOffset target,
@@ -57,15 +63,23 @@ public static class SimulationEngine
             var duration = definition.DurationSeconds;
             if (duration <= 0)
             {
-                CompleteRepeat(player, action, definition, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), deltas, events, ref completedActions, ref completedRepeats);
+                // 开发期容错自愈：Enqueue 拒绝“-1 且时长≤0”，但配表热更可能把存量行动时长改为 0，
+                // 队头空转会耗尽转换上限并让玩家永久卡死。此处移出失效行动并留事件证据，继续推进后续行动。
+                player.RemoveAction(action.Id, incrementVersion: false);
+                events.Add(new SimulationEvent(
+                    from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                    "action.invalid-dropped",
+                    $"行动 {definition.Name} 的时长配置无效（{duration:0.######} 秒），已自动移出队列。",
+                    definition.Id));
                 continue;
             }
 
             var needed = Math.Max(0, duration - action.ProgressSeconds);
             var step = Math.Min(remainingSeconds, needed);
-            action.ProgressSeconds += step;
             remainingSeconds -= step;
-            ApplyContinuousReward(player, definition, step);
+            var wholeSeconds = QuantizeElapsedSeconds(player, step);
+            action.ProgressSeconds += wholeSeconds;
+            ApplyContinuousReward(player, definition, wholeSeconds);
             if (step > 0)
             {
                 player.MarkDirty(definition.Kind switch
@@ -98,23 +112,50 @@ public static class SimulationEngine
         return new SimulationResult(player.PlayerId, from, target, (target - from).TotalSeconds, completedActions, completedRepeats, assetDeltas, events, player.StateVersion, transitions > 0);
     }
 
-    private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, double seconds)
+    /// <summary>
+    /// 把任意切分的模拟秒数累进持久化进位余数（carry）并取整整秒。
+    /// 1e-9 量级贴整后再向下取整，使“一次推进 N 秒”与“逐秒推进 N 次”产生完全相同的整秒序列，
+    /// 连续奖励的浮点操作序列因此位级一致；余数保留到下次推进。
+    /// </summary>
+    private static long QuantizeElapsedSeconds(PlayerAggregate player, double seconds)
     {
-        if (seconds <= 0) return;
+        if (seconds <= 0) return 0;
+        var carry = player.Progression.SimulationCarrySeconds + seconds;
+        var nearest = Math.Round(carry);
+        if (Math.Abs(carry - nearest) <= SecondQuantizationEpsilon) carry = nearest;
+        var floorSeconds = Math.Floor(carry);
+        player.Progression.SimulationCarrySeconds = carry - floorSeconds;
+        if (floorSeconds > MaxWholeSecondsPerApply)
+            throw new DomainException(DomainErrorCode.InvariantViolation, "单次模拟整秒数超出可推进范围。");
+        return (long)floorSeconds;
+    }
+
+    private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds)
+    {
+        if (wholeSeconds <= 0) return;
+        // 溢出预检查沿用“先校验后变更”语义：rate * 整秒数越界时不得污染任何进度数值。
+        var seconds = (double)wholeSeconds;
         if (definition.QiPerSecond > 0)
         {
-            var amount = definition.QiPerSecond * seconds;
-            if (!double.IsFinite(amount) || !double.IsFinite(player.Progression.Qi + amount) || !double.IsFinite(player.Progression.LifetimeQi + amount))
+            var rate = definition.QiPerSecond;
+            var total = rate * seconds;
+            if (!double.IsFinite(total) || !double.IsFinite(player.Progression.Qi + total) || !double.IsFinite(player.Progression.LifetimeQi + total))
                 throw new DomainException(DomainErrorCode.InvariantViolation, "气运奖励超出数值范围。");
-            player.Progression.Qi += amount;
-            player.Progression.LifetimeQi += amount;
+            // 逐整秒累加，与在线逐秒推进保持完全相同的浮点操作序列。
+            for (var i = 0; i < wholeSeconds; i++)
+            {
+                player.Progression.Qi += rate;
+                player.Progression.LifetimeQi += rate;
+            }
         }
         if (definition.ExperiencePerSecond > 0)
         {
-            var amount = definition.ExperiencePerSecond * seconds;
-            if (!double.IsFinite(amount) || !double.IsFinite(player.Progression.Experience + amount))
+            var rate = definition.ExperiencePerSecond;
+            var total = rate * seconds;
+            if (!double.IsFinite(total) || !double.IsFinite(player.Progression.Experience + total))
                 throw new DomainException(DomainErrorCode.InvariantViolation, "经验奖励超出数值范围。");
-            player.Progression.Experience += amount;
+            for (var i = 0; i < wholeSeconds; i++)
+                player.Progression.Experience += rate;
         }
         if (!double.IsFinite(player.Progression.Qi) || !double.IsFinite(player.Progression.LifetimeQi) || !double.IsFinite(player.Progression.Experience))
             throw new DomainException(DomainErrorCode.InvariantViolation, "模拟后的玩家进度数值无效。");

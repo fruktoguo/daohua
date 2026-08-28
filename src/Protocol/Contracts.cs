@@ -140,6 +140,42 @@ public static class ProtocolJson
     };
 }
 
+/// <summary>
+/// string→double 参数字典转换器：线上键格式保持 camelCase（与 DictionaryKeyPolicy 写侧行为一致），
+/// 读侧对键做 camelCase 归一化。DictionaryKeyPolicy 仅在写侧生效，直接回传的键会归一化对齐，
+/// 修复序列化→反序列化→再序列化键不一致的 round-trip 不对称。
+/// </summary>
+public sealed class CamelCaseKeyDoubleDictionaryConverter : JsonConverter<IReadOnlyDictionary<string, double>>
+{
+    public override IReadOnlyDictionary<string, double>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return null;
+        if (reader.TokenType != JsonTokenType.StartObject)
+            throw new JsonException("参数字典载荷必须是 JSON 对象。");
+        var values = new Dictionary<string, double>();
+        while (reader.Read())
+        {
+            if (reader.TokenType == JsonTokenType.EndObject) return values;
+            if (reader.TokenType != JsonTokenType.PropertyName)
+                throw new JsonException("参数字典载荷出现未知 token。");
+            var key = reader.GetString()!;
+            reader.Read();
+            if (reader.TokenType != JsonTokenType.Number)
+                throw new JsonException($"参数 {key} 的值必须是数字。");
+            values[JsonNamingPolicy.CamelCase.ConvertName(key)] = reader.GetDouble();
+        }
+        throw new JsonException("参数字典对象未闭合。");
+    }
+
+    public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<string, double> value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        foreach (var pair in value)
+            writer.WriteNumber(JsonNamingPolicy.CamelCase.ConvertName(pair.Key), pair.Value);
+        writer.WriteEndObject();
+    }
+}
+
 public sealed record HelloRequest(string ClientVersion, string? GameDataFingerprint = null);
 public sealed record HelloResponse(string ServerVersion, ushort ProtocolVersion, string GameDataFingerprint, long ServerSequence);
 
@@ -183,7 +219,7 @@ public sealed record ActionIntentRequest(
     string ActionId,
     double RepeatCount = 1,
     string? TargetNodeId = null,
-    IReadOnlyDictionary<string, double>? Parameters = null);
+    [property: JsonConverter(typeof(CamelCaseKeyDoubleDictionaryConverter))] IReadOnlyDictionary<string, double>? Parameters = null);
 
 public sealed record ActionIntentResponse(
     string RequestId,

@@ -56,4 +56,19 @@ public sealed class EconomyTests
         Assert.Throws<DomainException>(() => wallet.Credit(new AssetKey(new ItemId("")), 1, "grant"));
         Assert.Throws<DomainException>(() => wallet.Credit(new AssetKey(new ItemId("item.x")), double.NaN, "grant"));
     }
+
+    [Fact]
+    public void ApplyZeroDeltaIsNoOp()
+    {
+        var playerId = PlayerId.New();
+        var wallet = new AssetWallet(playerId);
+        var asset = new AssetKey(new ItemId("item.spirit-stone"));
+
+        wallet.Apply(new AssetDelta(playerId, asset, 0, "noop"));
+        Assert.Equal(0, wallet.Get(asset));
+
+        wallet.Credit(asset, 5, "grant");
+        wallet.Apply(new AssetDelta(playerId, asset, 0, "noop"));
+        Assert.Equal(5, wallet.Get(asset));
+    }
 }

@@ -70,6 +70,8 @@ public sealed class AssetWallet
     public void Apply(AssetDelta delta)
     {
         if (delta.PlayerId != PlayerId) throw new DomainException(DomainErrorCode.InvalidArgument, "资产玩家与钱包不一致。");
+        // 零增量是与 1e-12 清零逻辑配套的合法语义，不产生任何账目变更。
+        if (delta.QuantityDelta == 0) return;
         if (delta.QuantityDelta > 0) Credit(delta.Asset, delta.QuantityDelta, delta.Reason);
         else Debit(delta.Asset, -delta.QuantityDelta, delta.Reason);
     }

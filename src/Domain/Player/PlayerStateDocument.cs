@@ -27,7 +27,8 @@ public sealed record PlayerProgressionState(
     double Qi,
     double Experience,
     double LifetimeQi,
-    double CompletedActions);
+    double CompletedActions,
+    double SimulationCarrySeconds = 0);
 
 public sealed record PlayerWorldStateDocument(
     string NodeId,
@@ -69,7 +70,7 @@ public sealed partial class PlayerAggregate
         Presence,
         StateVersion,
         GameDataFingerprint,
-        new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions),
+        new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds),
         new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed),
         new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense),
         Buffs.Active.ToArray(),
@@ -97,6 +98,7 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.Experience) || state.Progression.Experience < 0 ||
             !double.IsFinite(state.Progression.LifetimeQi) || state.Progression.LifetimeQi < 0 ||
             !double.IsFinite(state.Progression.CompletedActions) || state.Progression.CompletedActions < 0 ||
+            !double.IsFinite(state.Progression.SimulationCarrySeconds) || state.Progression.SimulationCarrySeconds < 0 ||
             !double.IsFinite(state.World.X) || !double.IsFinite(state.World.Y) || !double.IsFinite(state.World.ExplorationSeed) ||
             !double.IsFinite(state.Combat.Hitpoints) || state.Combat.Hitpoints < 0 ||
             !double.IsFinite(state.Combat.MaxHitpoints) || state.Combat.MaxHitpoints <= 0 || state.Combat.Hitpoints > state.Combat.MaxHitpoints ||
@@ -120,6 +122,7 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.Experience = state.Progression.Experience;
         aggregate.Progression.LifetimeQi = state.Progression.LifetimeQi;
         aggregate.Progression.CompletedActions = state.Progression.CompletedActions;
+        aggregate.Progression.SimulationCarrySeconds = state.Progression.SimulationCarrySeconds;
         aggregate.World.NodeId = state.World.NodeId;
         aggregate.World.X = state.World.X;
         aggregate.World.Y = state.World.Y;
@@ -144,22 +147,26 @@ public sealed partial class PlayerAggregate
         foreach (var actionState in state.Actions)
         {
             var intent = actionState?.Intent;
-            var repeatCountValid = intent is not null && double.IsFinite(intent.RepeatCount)
-                && (intent.RepeatCount == -1 || intent.RepeatCount is >= 1 and <= 1_000_000);
-            var remainingRepeatsValid = actionState is not null && double.IsFinite(actionState.RemainingRepeats)
-                && (actionState.RemainingRepeats == -1 || actionState.RemainingRepeats > 0);
             if (actionState is null || intent is null || actionState.Id == Guid.Empty || !actionIds.Add(actionState.Id) || !intent.ActionId.IsValid ||
-                !repeatCountValid ||
                 !Enum.IsDefined(actionState.Status) ||
                 (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128)) ||
                 (intent.Parameters is not null && intent.Parameters.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value))) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
-                !remainingRepeatsValid ||
                 !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
+            // 开发期容错自愈：旧版本曾允许非整数 RepeatCount 入队，递减后 RemainingRepeats 会落入 (0,1) 或负数区间，
+            // 造成 "== 0" 永不成立的事实无限行动。此处对非整数值向下取整修正；负值不参与取整，避免翻转为 -1 无限语义；
+            // 修正后仍无效（含已耗尽为 0）的行动按自愈规约安全出队，不阻断整个存档恢复。
+            var repeatCount = intent.RepeatCount == -1 || intent.RepeatCount <= 0 ? intent.RepeatCount : Math.Floor(intent.RepeatCount);
+            var remainingRepeats = actionState.RemainingRepeats == -1 || actionState.RemainingRepeats <= 0
+                ? actionState.RemainingRepeats
+                : Math.Floor(actionState.RemainingRepeats);
+            var repeatCountValid = double.IsFinite(repeatCount) && (repeatCount == -1 || repeatCount is >= 1 and <= 1_000_000);
+            var remainingRepeatsValid = double.IsFinite(remainingRepeats) && (remainingRepeats == -1 || remainingRepeats >= 1);
+            if (!repeatCountValid || !remainingRepeatsValid) continue;
             var normalizedIntent = new ActionIntent(
                 intent.ActionId,
-                intent.RepeatCount,
+                repeatCount,
                 intent.TargetNodeId,
                 intent.Parameters is null
                     ? null
@@ -168,7 +175,7 @@ public sealed partial class PlayerAggregate
             {
                 Status = actionState.Status,
                 ProgressSeconds = actionState.ProgressSeconds,
-                RemainingRepeats = actionState.RemainingRepeats,
+                RemainingRepeats = remainingRepeats,
                 CompletedRepeats = actionState.CompletedRepeats
             };
             aggregate._actions.Add(action);
@@ -197,6 +204,7 @@ public sealed partial class PlayerAggregate
         Progression.Experience = restored.Progression.Experience;
         Progression.LifetimeQi = restored.Progression.LifetimeQi;
         Progression.CompletedActions = restored.Progression.CompletedActions;
+        Progression.SimulationCarrySeconds = restored.Progression.SimulationCarrySeconds;
         World.NodeId = restored.World.NodeId;
         World.X = restored.World.X;
         World.Y = restored.World.Y;

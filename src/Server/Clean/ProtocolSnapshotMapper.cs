@@ -55,10 +55,25 @@ public static class ProtocolSnapshotMapper
             assets);
     }
 
-    public static PlayerSnapshotDeltaDto ToDelta(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog? gameData = null)
+    public static PlayerSnapshotDeltaDto ToDelta(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog? gameData = null, IReadOnlyList<AssetBalanceDto>? changedAssets = null)
     {
         var snapshot = ToSnapshot(runtime, gameDataFingerprint, gameData);
-        return new PlayerSnapshotDeltaDto(snapshot.PlayerId, snapshot.StateVersion, snapshot.Sections);
+        return new PlayerSnapshotDeltaDto(snapshot.PlayerId, snapshot.StateVersion, snapshot.Sections, changedAssets);
+    }
+
+    /// <summary>对比上次推送基线，返回余额发生变化的品种当前余额；无基线时返回当前全量。</summary>
+    public static IReadOnlyList<AssetBalanceDto> DiffAssets(IReadOnlyList<AssetBalanceDto>? previous, IReadOnlyList<AssetBalanceDto> current)
+    {
+        if (previous is null || previous.Count == 0) return current;
+        var baseline = new Dictionary<(string AssetId, string? Variant), double>(previous.Count);
+        foreach (var asset in previous) baseline[(asset.AssetId, asset.Variant)] = asset.Quantity;
+        List<AssetBalanceDto>? changed = null;
+        foreach (var asset in current)
+        {
+            if (baseline.TryGetValue((asset.AssetId, asset.Variant), out var quantity) && quantity == asset.Quantity) continue;
+            (changed ??= []).Add(asset);
+        }
+        return changed ?? [];
     }
 
     private static IEnumerable<(string Kind, object Value)> EnumerateSections(PlayerAggregateState state, GameDataCatalog? gameData)

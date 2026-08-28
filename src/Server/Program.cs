@@ -256,7 +256,16 @@ if (processRole == ServerProcessRole.Api)
             || request.Command.Length > 96 || request.ExpectedStateVersion < 0
             || request.Payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
             return Results.BadRequest(Problem(400, "INVALID_COMMAND", "命令信封无效。"));
-        var result = await runtime.ExecuteAsync(playerId, request.Command, request.Payload, request.ExpectedStateVersion, requestId, ct);
+        PlayerCommandResult result;
+        try
+        {
+            result = await runtime.ExecuteAsync(playerId, request.Command, request.Payload, request.ExpectedStateVersion, requestId, ct);
+        }
+        catch (ObjectDisposedException)
+        {
+            // actor 已随 WebSocket 会话销毁：把释放竞态映射为明确领域错误，而不是 500。
+            return Results.Json(Problem(409, "SESSION_CLOSED", "玩家会话已关闭，请重新连接。"), statusCode: 409);
+        }
         var dto = ToCommandResult(requestId, result, gameData);
         return result.Success
             ? Results.Ok(dto)

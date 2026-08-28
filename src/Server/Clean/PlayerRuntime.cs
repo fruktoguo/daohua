@@ -22,7 +22,8 @@ public sealed record PlayerCommandResult(
     string Code,
     string Message,
     PlayerRuntimeSnapshot Snapshot,
-    SimulationResult? Simulation = null);
+    SimulationResult? Simulation = null,
+    IReadOnlyList<LogEventDto>? LogEvents = null);
 
 /// <summary>
 /// 在线玩家单写者运行时：内存持有完整领域聚合，跨边界只交换消息和 section 载荷。
@@ -41,36 +42,74 @@ public sealed class PlayerRuntime(
     private readonly ActionCatalog _actions = gameData.Actions;
     private readonly Guid _ownerInstanceId = Guid.NewGuid();
     private readonly TimeSpan _ownershipLease = TimeSpan.FromSeconds(45);
+    private readonly ConcurrentDictionary<Guid, PlayerLogBuffer> _logBuffers = new();
+
+    /// <summary>每玩家战报日志环形缓冲容量：保留最近 200 条用于重连回放。</summary>
+    private const int LogBufferCapacity = 200;
 
     public int LoadedCount => _actors.Count;
     public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
 
+    /// <summary>玩家战报日志批次推送；参数为玩家 ID 与本批日志，订阅者必须按玩家过滤。</summary>
+    public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
+
     public async ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         if (playerId == Guid.Empty) throw new ArgumentException("PlayerId 不能为空。", nameof(playerId));
-        var lazy = _actors.GetOrAdd(playerId, id => new Lazy<Task<PlayerActor>>(() => CreateActorAsync(id, cancellationToken), LazyThreadSafetyMode.ExecutionAndPublication));
-        try { return (await lazy.Value).Snapshot(); }
-        catch { _actors.TryRemove(playerId, out _); throw; }
+        var actor = await GetOrAddActorAsync(playerId, cancellationToken);
+        return await actor.SnapshotAsync(cancellationToken);
     }
 
-    public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, CancellationToken cancellationToken = default)
-    {
-        var lazy = _actors.GetOrAdd(playerId, id => new Lazy<Task<PlayerActor>>(() => CreateActorAsync(id, cancellationToken), LazyThreadSafetyMode.ExecutionAndPublication));
-        return await (await lazy.Value).ExecuteAsync(command, payload, expectedStateVersion: 0, TryReadRequestId(payload), cancellationToken);
-    }
+    public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, CancellationToken cancellationToken = default)
+        => ExecuteCoreAsync(playerId, command, payload, 0, TryReadRequestId(payload), cancellationToken);
 
     /// <summary>在玩家单写者锁内校验期望版本，避免 HTTP/WS 先读后写的竞态。</summary>
-    public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, CancellationToken cancellationToken = default)
-    {
-        var lazy = _actors.GetOrAdd(playerId, id => new Lazy<Task<PlayerActor>>(() => CreateActorAsync(id, cancellationToken), LazyThreadSafetyMode.ExecutionAndPublication));
-        return await (await lazy.Value).ExecuteAsync(command, payload, expectedStateVersion, TryReadRequestId(payload), cancellationToken);
-    }
+    public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, CancellationToken cancellationToken = default)
+        => ExecuteCoreAsync(playerId, command, payload, expectedStateVersion, TryReadRequestId(payload), cancellationToken);
 
-    public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
+    public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
     {
         if (requestId == Guid.Empty) throw new ArgumentException("RequestId 不能为空。", nameof(requestId));
-        var lazy = _actors.GetOrAdd(playerId, id => new Lazy<Task<PlayerActor>>(() => CreateActorAsync(id, cancellationToken), LazyThreadSafetyMode.ExecutionAndPublication));
-        return await (await lazy.Value).ExecuteAsync(command, payload, expectedStateVersion, requestId, cancellationToken);
+        return ExecuteCoreAsync(playerId, command, payload, expectedStateVersion, requestId, cancellationToken);
+    }
+
+    private async ValueTask<PlayerCommandResult> ExecuteCoreAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, Guid? requestId, CancellationToken cancellationToken)
+    {
+        var actor = await GetOrAddActorAsync(playerId, cancellationToken);
+        var result = await actor.ExecuteAsync(command, payload, expectedStateVersion, requestId, cancellationToken);
+        // 所有权失效的清理必须在命令返回后、锁外执行：在锁内触发释放会让同链路的
+        // 下一条命令撞上已销毁的信号量。失效后后续命令走重新加载或拿到明确失败。
+        if (result.Code == "PLAYER_OWNERSHIP_LOST") EvictOwnershipLostActor(playerId, actor);
+        // 日志推送在单写者锁外进行，慢客户端不能反向阻塞命令与模拟推进。
+        await EmitLogBatchAsync(playerId, result.LogEvents);
+        return result;
+    }
+
+    private async ValueTask<PlayerActor> GetOrAddActorAsync(Guid playerId, CancellationToken cancellationToken)
+    {
+        // Lazy 工厂固定使用 CancellationToken.None：actor 创建与初始模拟推进不能被首个调用者的
+        // 请求取消连带中断；调用方 token 只用于等待已缓存的任务。
+        var lazy = _actors.GetOrAdd(playerId, id => new Lazy<Task<PlayerActor>>(() => CreateActorAsync(id, CancellationToken.None), LazyThreadSafetyMode.ExecutionAndPublication));
+        return await AwaitActorAsync(playerId, lazy, cancellationToken);
+    }
+
+    private async ValueTask<PlayerActor> AwaitActorAsync(Guid playerId, Lazy<Task<PlayerActor>> lazy, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await lazy.Value.WaitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 等待被取消不代表创建失败：任务可能仍在执行，保留条目避免重复创建。
+            throw;
+        }
+        catch
+        {
+            // 创建失败必须移除缓存的失败条目，否则该玩家后续所有命令会永久重放同一异常直到重启。
+            _actors.TryRemove(new KeyValuePair<Guid, Lazy<Task<PlayerActor>>>(playerId, lazy));
+            throw;
+        }
     }
 
     public async ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default)
@@ -78,7 +117,8 @@ public sealed class PlayerRuntime(
         foreach (var entry in _actors)
         {
             if (!entry.Value.IsValueCreated) continue;
-            await (await entry.Value.Value).FlushAsync(force, cancellationToken);
+            var actor = await AwaitActorAsync(entry.Key, entry.Value, cancellationToken);
+            await actor.FlushAsync(force, cancellationToken);
         }
     }
 
@@ -88,10 +128,18 @@ public sealed class PlayerRuntime(
         foreach (var entry in _actors)
         {
             if (!entry.Value.IsValueCreated) continue;
-            var actor = await entry.Value.Value;
-            var beforeVersion = actor.Snapshot().StateVersion;
+            var actor = await AwaitActorAsync(entry.Key, entry.Value, cancellationToken);
+            var beforeVersion = (await actor.SnapshotAsync(cancellationToken)).StateVersion;
             var result = await actor.AdvanceSimulationAsync(target, cancellationToken);
-            if (result is null || result.Snapshot.StateVersion <= beforeVersion) continue;
+            if (result is null) continue;
+            // 模拟推进同样会撞上所有权失效：从缓存清除并继续推进其余玩家。
+            if (result.Code == "PLAYER_OWNERSHIP_LOST")
+            {
+                EvictOwnershipLostActor(entry.Key, actor);
+                continue;
+            }
+            await EmitLogBatchAsync(entry.Key, result.LogEvents);
+            if (result.Snapshot.StateVersion <= beforeVersion) continue;
             var handler = SnapshotUpdated;
             if (handler is not null) await handler(result.Snapshot);
         }
@@ -100,13 +148,14 @@ public sealed class PlayerRuntime(
     public async ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default)
     {
         if (!_actors.TryGetValue(playerId, out var lazy) || !lazy.IsValueCreated) return;
-        await (await lazy.Value).FlushAsync(force, cancellationToken);
+        var actor = await AwaitActorAsync(playerId, lazy, cancellationToken);
+        await actor.FlushAsync(force, cancellationToken);
     }
 
     public async ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
     {
         if (!_actors.TryGetValue(playerId, out var lazy) || !lazy.IsValueCreated) return;
-        var actor = await lazy.Value;
+        var actor = await AwaitActorAsync(playerId, lazy, cancellationToken);
         if (flush) await actor.FlushAsync(true, cancellationToken);
         _actors.TryRemove(new KeyValuePair<Guid, Lazy<Task<PlayerActor>>>(playerId, lazy));
         await actor.DisposeAsync();
@@ -152,8 +201,11 @@ public sealed class PlayerRuntime(
                 new AssetKey(new ItemId(balance.AssetId), balance.Variant),
                 balance.Quantity,
                 balance.Version)));
-            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease);
-            await actor.AdvanceSimulationAsync(DateTimeOffset.UtcNow, cancellationToken);
+            var logBuffer = _logBuffers.GetOrAdd(playerId, _ => new PlayerLogBuffer(LogBufferCapacity));
+            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, gameData, logBuffer, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease);
+            var advanced = await actor.AdvanceSimulationAsync(DateTimeOffset.UtcNow, cancellationToken);
+            // 创建时的初始推进可能结算离线行动，产生的战报日志同样在锁外推送。
+            await EmitLogBatchAsync(playerId, advanced?.LogEvents);
             return actor;
         }
         catch
@@ -162,6 +214,43 @@ public sealed class PlayerRuntime(
             throw;
         }
     }
+
+    /// <summary>所有权已转移到其他实例：把 actor 移出缓存并在锁外异步释放，
+    /// 已解析到旧 actor 的并发命令会拿到明确的会话关闭错误，后续命令走重新加载。</summary>
+    private void EvictOwnershipLostActor(Guid playerId, PlayerActor actor)
+    {
+        if (_actors.TryGetValue(playerId, out var lazy)
+            && lazy.IsValueCreated
+            && lazy.Value.Status == TaskStatus.RanToCompletion
+            && ReferenceEquals(lazy.Value.Result, actor)
+            && _actors.TryRemove(new KeyValuePair<Guid, Lazy<Task<PlayerActor>>>(playerId, lazy)))
+        {
+            _ = ReleaseActorQuietlyAsync(playerId, actor);
+        }
+    }
+
+    private async Task ReleaseActorQuietlyAsync(Guid playerId, PlayerActor actor)
+    {
+        try
+        {
+            await actor.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "所有权丢失后释放玩家 actor 失败 player={PlayerId}", playerId);
+        }
+    }
+
+    private async ValueTask EmitLogBatchAsync(Guid playerId, IReadOnlyList<LogEventDto>? events)
+    {
+        if (events is not { Count: > 0 }) return;
+        var handler = LogBatchEmitted;
+        if (handler is not null) await handler(playerId, events);
+    }
+
+    /// <summary>读取玩家最近战报日志（用于重连回放）；缓冲在进程生命周期内保留。</summary>
+    public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) =>
+        _logBuffers.TryGetValue(playerId, out var buffer) ? buffer.SnapshotRecent() : [];
 
     private static Guid? TryReadRequestId(JsonElement payload)
     {
@@ -183,6 +272,8 @@ public sealed class PlayerRuntime(
         private readonly IPlayerStateRepository repository;
         private readonly IEconomyTransactionStore economy;
         private readonly ActionCatalog actions;
+        private readonly GameDataCatalog gameData;
+        private readonly PlayerLogBuffer logBuffer;
         private readonly ILogger logger;
         private readonly MarketRuntime? marketRuntime;
         private readonly ICommandReceiptStore? commandReceipts;
@@ -199,6 +290,7 @@ public sealed class PlayerRuntime(
         private long _logicalVersion;
         private bool _walletReloadRequired;
         private bool _disposed;
+        private int _disposeStarted;
 
         public PlayerActor(
             PlayerAggregate aggregate,
@@ -208,6 +300,8 @@ public sealed class PlayerRuntime(
             IPlayerStateRepository repository,
             IEconomyTransactionStore economy,
             ActionCatalog actions,
+            GameDataCatalog gameData,
+            PlayerLogBuffer logBuffer,
             ILogger logger,
             MarketRuntime? marketRuntime,
             ICommandReceiptStore? commandReceipts,
@@ -222,6 +316,8 @@ public sealed class PlayerRuntime(
             this.repository = repository;
             this.economy = economy;
             this.actions = actions;
+            this.gameData = gameData;
+            this.logBuffer = logBuffer;
             this.logger = logger;
             this.marketRuntime = marketRuntime;
             this.commandReceipts = commandReceipts;
@@ -233,7 +329,16 @@ public sealed class PlayerRuntime(
             foreach (var section in aggregate.DirtySections) _dirtyAt[SectionCodec.ToStorageKind(section)] = DateTimeOffset.UtcNow;
         }
 
-        public PlayerRuntimeSnapshot Snapshot() => new(
+        /// <summary>加锁读取快照；仅供未持有单写者锁的外部路径调用，锁内路径必须使用无锁 Snapshot()。</summary>
+        public async ValueTask<PlayerRuntimeSnapshot> SnapshotAsync(CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try { return Snapshot(); }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>无锁快照投影；调用方必须已持有单写者锁。</summary>
+        private PlayerRuntimeSnapshot Snapshot() => new(
             aggregate.PlayerId.Value,
             aggregate.AccountId.Value.ToString("D"),
             aggregate.DisplayName,
@@ -529,7 +634,11 @@ public sealed class PlayerRuntime(
                             createdAt.AddMinutes(30)));
                     }
                 }
-                return new PlayerCommandResult(true, "OK", "命令已提交。", Snapshot(), simulation);
+                // 锁内只完成模板映射与缓冲写入；网络推送由外层在锁外触发。
+                IReadOnlyList<LogEventDto>? logEvents = null;
+                if (simulation is { Events.Count: > 0 })
+                    logEvents = SimulationLogMapper.ToLogEvents(simulation.Events, gameData, logBuffer);
+                return new PlayerCommandResult(true, "OK", "命令已提交。", Snapshot(), simulation, logEvents);
             }
             catch (DomainException ex)
             {
@@ -545,6 +654,8 @@ public sealed class PlayerRuntime(
             }
             catch (PlayerOwnershipLostException)
             {
+                // 所有权已丢失后无法在本实例恢复：返回明确错误，缓存清理由运行时在
+                // 命令返回后、锁外执行（见 ExecuteCoreAsync），不在锁内触发释放或标记销毁。
                 return Fail("PLAYER_OWNERSHIP_LOST", "玩家当前由其他服务实例持有，请稍后重试。");
             }
             catch (JsonException ex)
@@ -567,7 +678,12 @@ public sealed class PlayerRuntime(
             try
             {
                 if (ownership is not null && !await ownership.RenewAsync(aggregate.PlayerId.Value, ownerInstanceId, ownershipLease, cancellationToken))
-                    throw new PlayerOwnershipLostException(aggregate.PlayerId.Value);
+                {
+                    // 所有权已转移给其他实例：本实例内存脏状态不再权威，跳过本次刷盘；
+                    // actor 由运行时在下一次命令或推进时失效移除，durable 队列中已入队的写不受影响。
+                    logger.LogError("所有权已丢失，跳过玩家刷盘 player={PlayerId}", aggregate.PlayerId.Value);
+                    return;
+                }
                 var dirty = aggregate.DirtySections;
                 if (dirty.Count == 0 && _pendingReceipts.Count == 0) return;
                 var now = DateTimeOffset.UtcNow;
@@ -746,10 +862,38 @@ public sealed class PlayerRuntime(
 
         public async ValueTask DisposeAsync()
         {
+            // 所有权丢失清理与会话移除可能并发触发释放，幂等退出。
+            if (Interlocked.Exchange(ref _disposeStarted, 1) == 1) return;
             _disposed = true;
+            // 先等待在途命令完成再销毁信号量，避免并发命令在已释放的 SemaphoreSlim 上抛 ObjectDisposedException。
+            await _gate.WaitAsync(CancellationToken.None);
             _gate.Dispose();
             if (ownership is not null) await ownership.ReleaseAsync(aggregate.PlayerId.Value, ownerInstanceId, CancellationToken.None);
         }
+    }
+}
+
+/// <summary>每玩家战报日志环形缓冲与单调递增 sequence；仅进程内存，不持久化。</summary>
+public sealed class PlayerLogBuffer(int capacity)
+{
+    private readonly object _lock = new();
+    private readonly Queue<LogEventDto> _events = new();
+    private long _sequence;
+
+    public long NextSequence() => Interlocked.Increment(ref _sequence);
+
+    public void Append(LogEventDto logEvent)
+    {
+        lock (_lock)
+        {
+            _events.Enqueue(logEvent);
+            while (_events.Count > capacity) _events.Dequeue();
+        }
+    }
+
+    public IReadOnlyList<LogEventDto> SnapshotRecent()
+    {
+        lock (_lock) return _events.ToArray();
     }
 }
 

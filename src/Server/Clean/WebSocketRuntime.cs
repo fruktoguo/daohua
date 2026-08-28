@@ -11,6 +11,7 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
         SingleWriter = false
     });
     private long _outboundSequence;
+    private IReadOnlyList<AssetBalanceDto>? _lastPushedAssets;
 
     public Guid PlayerId { get; } = playerId;
     public ChannelReader<byte[]> Outbound => _outbound.Reader;
@@ -18,6 +19,14 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken) => _outbound.Writer.WriteAsync(packet, cancellationToken);
     public bool TrySend(byte[] packet) => _outbound.Writer.TryWrite(packet);
     public void Complete() => _outbound.Writer.TryComplete();
+
+    /// <summary>记录本次推送的资产并返回上次基线；增量回调由模拟循环串行驱动，无需加锁。</summary>
+    public IReadOnlyList<AssetBalanceDto>? ExchangeAssetBaseline(IReadOnlyList<AssetBalanceDto> current)
+    {
+        var previous = _lastPushedAssets;
+        _lastPushedAssets = current;
+        return previous;
+    }
 }
 
 public sealed class SessionRegistry
@@ -68,9 +77,13 @@ public static class WebSocketEndpoint
             session,
             WireMessageType.SnapshotDelta,
             Guid.NewGuid(),
-            ProtocolSnapshotMapper.ToDelta(snapshot, gameData.Fingerprint, gameData),
+            BuildDelta(session, snapshot, gameData),
             token);
+        ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events) => eventPlayerId != session.PlayerId
+            ? ValueTask.CompletedTask
+            : QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(events), token);
         runtime.SnapshotUpdated += OnSnapshotUpdated;
+        runtime.LogBatchEmitted += OnLogBatchEmitted;
         try
         {
             var sendTask = SendLoopAsync(socket, session, token);
@@ -91,11 +104,20 @@ public static class WebSocketEndpoint
         finally
         {
             runtime.SnapshotUpdated -= OnSnapshotUpdated;
+            runtime.LogBatchEmitted -= OnLogBatchEmitted;
             registry.Remove(playerId, session);
             // 关闭连接时使用独立取消令牌：请求已断开并不应中断权威状态刷盘。
             // 若数据库暂时不可用，RemoveAsync 保留 actor 与脏标记，后台 flush worker 会继续重试。
             await runtime.RemoveAsync(playerId, true, CancellationToken.None);
         }
+    }
+
+    /// <summary>构建增量：以会话上次推送的资产为基线对比，携带余额发生变化的品种。</summary>
+    private static PlayerSnapshotDeltaDto BuildDelta(WebSocketSession session, PlayerRuntimeSnapshot snapshot, Domain.GameData.GameDataCatalog gameData)
+    {
+        var current = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData);
+        var changedAssets = ProtocolSnapshotMapper.DiffAssets(session.ExchangeAssetBaseline(current.Assets), current.Assets);
+        return new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, current.Sections, changedAssets.Count == 0 ? null : changedAssets);
     }
 
     private static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T payload) =>
@@ -173,7 +195,13 @@ public static class WebSocketEndpoint
                         await session.SendAsync(EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
                             new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence)), cancellationToken);
                         var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
-                        await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData), cancellationToken);
+                        var initialSnapshot = ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData);
+                        await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
+                        session.ExchangeAssetBaseline(initialSnapshot.Assets);
+                        // 重连回放：把环形缓冲内的最近战报一次性补发给本会话。
+                        var recentLogs = runtime.GetRecentLogEvents(session.PlayerId);
+                        if (recentLogs.Count > 0)
+                            await QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(recentLogs), cancellationToken);
                         handshaken = true;
                         break;
                     case WireMessageType.Ping:
@@ -201,7 +229,17 @@ public static class WebSocketEndpoint
                             continue;
                         }
                         var actionPayload = JsonSerializer.SerializeToElement(action, ProtocolJson.Options);
-                        var actionResult = await runtime.ExecuteAsync(session.PlayerId, "action.enqueue", actionPayload, 0, Guid.Parse(action.RequestId), cancellationToken);
+                        PlayerCommandResult actionResult;
+                        try
+                        {
+                            actionResult = await runtime.ExecuteAsync(session.PlayerId, "action.enqueue", actionPayload, 0, Guid.Parse(action.RequestId), cancellationToken);
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // actor 已随旧会话销毁：返回明确错误，后续命令会触发重新加载。
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("SESSION_CLOSED", "玩家会话已关闭，请重新连接。"), cancellationToken);
+                            continue;
+                        }
                         var actionResponse = new ActionIntentResponse(
                             action.RequestId,
                             actionResult.Snapshot.State.Actions.LastOrDefault()?.Id.ToString("D") ?? string.Empty,
@@ -229,7 +267,17 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_COMMAND", "通用命令标识、名称或期望版本无效。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
-                        var commandResult = await runtime.ExecuteAsync(session.PlayerId, commandEnvelope.Command, commandEnvelope.Payload, commandEnvelope.ExpectedStateVersion, commandRequestId, cancellationToken);
+                        PlayerCommandResult commandResult;
+                        try
+                        {
+                            commandResult = await runtime.ExecuteAsync(session.PlayerId, commandEnvelope.Command, commandEnvelope.Payload, commandEnvelope.ExpectedStateVersion, commandRequestId, cancellationToken);
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // actor 已随旧会话销毁：返回明确错误，后续命令会触发重新加载。
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("SESSION_CLOSED", "玩家会话已关闭，请重新连接。"), cancellationToken);
+                            continue;
+                        }
                         var commandDto = new CommandResultDto(
                             commandEnvelope.RequestId,
                             commandResult.Success,
@@ -258,10 +306,10 @@ public static class WebSocketEndpoint
         CancellationToken cancellationToken)
     {
         var packet = EncodeJson(messageType, requestId, session.NextOutboundSequence(), payload);
-        // Snapshot 增量属于可重建的实时提示，慢客户端不能反向阻塞玩家模拟/持久化。
-        // 队列已满时丢弃该增量，客户端可通过下一次命令响应或重连重新获取完整快照；
+        // Snapshot 增量与战报日志属于可丢弃的实时推送，慢客户端不能反向阻塞玩家模拟/持久化。
+        // 队列已满时丢弃该帧，客户端可通过下一次命令响应或重连重新获取完整快照与最近日志；
         // 命令结果、错误和握手响应仍保留等待语义，确保关键协议不静默丢失。
-        if (messageType == WireMessageType.SnapshotDelta)
+        if (messageType is WireMessageType.SnapshotDelta or WireMessageType.LogBatch)
         {
             session.TrySend(packet);
             return ValueTask.CompletedTask;

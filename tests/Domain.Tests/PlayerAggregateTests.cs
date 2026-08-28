@@ -119,6 +119,33 @@ public sealed class PlayerAggregateTests
     }
 
     [Fact]
+    public void EnqueueRejectsNonIntegerRepeatCount()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+
+        var error = Assert.Throws<DomainException>(() => player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionCatalog.Default));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    [Fact]
+    public void RestoreHealsNonIntegerRepeatCountsFromLegacySnapshots()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var healable = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionQueueStatus.Pending, 0, 1.5, 0);
+        var exhausted = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionQueueStatus.Pending, 0, 0.5, 2);
+        var negative = new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi"), 2.5), Baseline, ActionQueueStatus.Pending, 0, -0.5, 3);
+        var state = player.ExportState() with { Actions = [healable, exhausted, negative] };
+
+        var restored = PlayerAggregate.Restore(state);
+
+        // 非整数向下取整自愈；已耗尽（取整后为 0）与负值（不得翻转为 -1 无限语义）的行动安全出队。
+        var action = Assert.Single(restored.Actions);
+        Assert.Equal(2, action.Intent.RepeatCount);
+        Assert.Equal(1, action.RemainingRepeats);
+    }
+
+    [Fact]
     public void EnqueueCopiesMutableIntentParameters()
     {
         var parameters = new Dictionary<string, double> { ["power"] = 1 };

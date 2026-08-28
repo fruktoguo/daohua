@@ -58,4 +58,19 @@ public sealed class ProtocolTests
             new CommandResultDto("req-1", true, "OK", "accepted", 8));
         Assert.Equal(WireMessageType.CommandResult, WireEnvelopeCodec.Decode(WireEnvelopeCodec.Encode(resultEnvelope)).MessageType);
     }
+
+    [Fact]
+    public void ActionIntentParametersRoundTripKeepsCamelCaseKeys()
+    {
+        var request = new ActionIntentRequest("req-1", "cultivation.draw-qi", 1, null, new Dictionary<string, double> { ["MaxPower"] = 5 });
+
+        var json = JsonSerializer.Serialize(request, ProtocolJson.Options);
+        Assert.Contains("\"maxPower\":5", json);
+
+        var parsed = JsonSerializer.Deserialize<ActionIntentRequest>(json, ProtocolJson.Options)!;
+        Assert.Equal(5, parsed.Parameters!["maxPower"]);
+
+        // 序列化→反序列化→再序列化后键与值完全一致。
+        Assert.Equal(json, JsonSerializer.Serialize(parsed, ProtocolJson.Options));
+    }
 }

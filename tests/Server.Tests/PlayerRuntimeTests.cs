@@ -58,11 +58,29 @@ public sealed class PlayerRuntimeTests
         Assert.Equal("PLAYER_OWNERSHIP_LOST", result.Code);
     }
 
-    private sealed class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository
+    [Fact]
+    public async Task FailedActorCreationIsRemovedAndRetriedOnNextCommand()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = new FlakyStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, Guid.NewGuid(), "重试测试", DateTimeOffset.UtcNow),
+            new StoredHead(playerId, 0, 1, DateTimeOffset.UtcNow, string.Empty, string.Empty, DateTimeOffset.UtcNow),
+            new Dictionary<string, StoredSection>(), []));
+        var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            GameDataCatalog.BuiltIn, NullLogger<PlayerRuntime>.Instance);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.LoadAsync(playerId).AsTask());
+        Assert.Equal(0, runtime.LoadedCount);
+
+        var snapshot = await runtime.LoadAsync(playerId);
+        Assert.Equal(playerId, snapshot.PlayerId);
+    }
+
+    private class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository
     {
         public List<SectionWrite> Enqueued { get; } = [];
         public List<CommandReceipt> Receipts { get; } = [];
-        public ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.FromResult<PlayerStateBundle?>(bundle);
+        public virtual ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.FromResult<PlayerStateBundle?>(bundle);
         public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default)
         {
             Enqueued.AddRange(sections);
@@ -75,6 +93,16 @@ public sealed class PlayerRuntimeTests
             return ValueTask.CompletedTask;
         }
         public ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(new FlushBatchResult(0, 0, 0, TimeSpan.Zero));
+    }
+
+    /// <summary>首次读取抛瞬时数据库错误，模拟 actor 创建失败。</summary>
+    private sealed class FlakyStateRepository(PlayerStateBundle bundle) : FakeStateRepository(bundle)
+    {
+        private int _calls;
+        public override ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) =>
+            ++_calls == 1
+                ? throw new InvalidOperationException("数据库暂不可用。")
+                : base.LoadAsync(playerId, cancellationToken);
     }
 
     private sealed class EmptyAssetRepository : IAssetBalanceRepository

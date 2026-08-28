@@ -14,6 +14,9 @@ public sealed class PlayerProgression
     public double Experience { get; set; }
     public double LifetimeQi { get; set; }
     public double CompletedActions { get; set; }
+
+    /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
+    public double SimulationCarrySeconds { get; set; }
 }
 
 public sealed class PlayerWorldState
@@ -203,8 +206,10 @@ public sealed partial class PlayerAggregate
     public QueuedAction Enqueue(ActionIntent intent, DateTimeOffset now, ActionCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        // RepeatCount 必须为整数（-1 除外）：非整数递减后会落入负数区间，"== 0" 出队条件永不成立，形成事实上的无限行动。
         if (intent is null || !intent.ActionId.IsValid || !double.IsFinite(intent.RepeatCount)
-            || (intent.RepeatCount != -1 && (intent.RepeatCount < 1 || intent.RepeatCount > 1_000_000)))
+            || (intent.RepeatCount != -1 && (intent.RepeatCount < 1 || intent.RepeatCount > 1_000_000
+                || intent.RepeatCount != Math.Floor(intent.RepeatCount))))
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
         if (_actions.Count >= MaxActionQueueLength)
             throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");

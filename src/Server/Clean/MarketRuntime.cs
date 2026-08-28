@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Common;
 using Domain.Market;
 
@@ -6,6 +7,10 @@ namespace Server.Clean;
 /// <summary>市场分片运行时：内存 OrderBook 是盘口投影，PostgreSQL 事务是订单与资产权威。</summary>
 public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 {
+    /// <summary>瞬态数据库错误的有界重试：3 次，50-200ms 线性退避。</summary>
+    private const int TransientRetryAttempts = 3;
+    private static readonly int[] TransientRetryBackoffMilliseconds = [50, 120, 200];
+
     private readonly PostgresMarketRepository _store;
     private readonly ServerOptions _options;
     private readonly ILogger<MarketRuntime> _logger;
@@ -159,7 +164,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
         if (PartitionCount != 1)
             throw new InvalidOperationException("多市场分片尚未提供跨分片结算领取路由，当前请求已拒绝。");
-        return _store.ClaimSettlementAsync(playerId.Value, requestId, cancellationToken);
+        return WithTransientRetryAsync(token => _store.ClaimSettlementAsync(playerId.Value, requestId, token), cancellationToken);
     }
 
     public MarketRuntimeMetrics GetMetrics() => new(
@@ -170,7 +175,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         Interlocked.Read(ref _cancelCount),
         Interlocked.Read(ref _rejectedCount));
 
-    public async ValueTask<PlacementResult> PlaceAsync(PlaceOrderRequest request, CancellationToken cancellationToken = default)
+    public ValueTask<PlacementResult> PlaceAsync(PlaceOrderRequest request, CancellationToken cancellationToken = default) =>
+        WithTransientRetryAsync(token => PlaceCoreAsync(request, token), cancellationToken);
+
+    private async ValueTask<PlacementResult> PlaceCoreAsync(PlaceOrderRequest request, CancellationToken cancellationToken)
     {
         EnsureReady(request.Instrument);
         await _gate.WaitAsync(cancellationToken);
@@ -265,7 +273,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         finally { _gate.Release(); }
     }
 
-    public async ValueTask<CancellationResult> CancelAsync(OrderId orderId, PlayerId ownerId, MarketInstrument instrument, string idempotencyKey, CancellationToken cancellationToken = default)
+    public ValueTask<CancellationResult> CancelAsync(OrderId orderId, PlayerId ownerId, MarketInstrument instrument, string idempotencyKey, CancellationToken cancellationToken = default) =>
+        WithTransientRetryAsync(token => CancelCoreAsync(orderId, ownerId, instrument, idempotencyKey, token), cancellationToken);
+
+    private async ValueTask<CancellationResult> CancelCoreAsync(OrderId orderId, PlayerId ownerId, MarketInstrument instrument, string idempotencyKey, CancellationToken cancellationToken)
     {
         EnsureReady(instrument);
         await _gate.WaitAsync(cancellationToken);
@@ -322,6 +333,34 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         _ => false
     };
 
+    /// <summary>瞬态数据库错误的有界重试；挂单/撤单/结算均按幂等键设计，重放安全。</summary>
+    private async ValueTask<T> WithTransientRetryAsync<T>(Func<CancellationToken, ValueTask<T>> operation, CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await operation(cancellationToken);
+            }
+            catch (Exception exception) when (IsTransientDatabaseError(exception) && !cancellationToken.IsCancellationRequested)
+            {
+                if (attempt >= TransientRetryAttempts) throw;
+                _logger.LogWarning(exception, "市场分片瞬态数据库错误 partition={PartitionId} attempt={Attempt}/{MaxAttempts}，退避后重试",
+                    PartitionId, attempt, TransientRetryAttempts);
+                await Task.Delay(TransientRetryBackoffMilliseconds[attempt - 1], cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>可重试的瞬态数据库错误：序列化冲突、死锁、连接与超时类；schema/约束错误不在其列。</summary>
+    private static bool IsTransientDatabaseError(Exception exception) => exception switch
+    {
+        OperationCanceledException => false,
+        PostgresException { SqlState: "40001" or "40P01" or "57P01" or "57P02" or "57P03" or "53300" or "57014" } => true,
+        NpgsqlException { InnerException: TimeoutException or SocketException or IOException } => true,
+        _ => false
+    };
+
     private void EnsureReady(MarketInstrument instrument)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
@@ -369,7 +408,19 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
-            catch (Exception ex) { _logger.LogError(ex, "市场租约续租失败 partition={PartitionId}", PartitionId); _ready = false; return; }
+            catch (PostgresException ex) when (ex.SqlState is "42P01" or "42703" or "3F000")
+            {
+                // schema/配置级错误无法靠重试恢复：保持 fail-fast，停止市场写入。
+                _ready = false;
+                _logger.LogCritical(ex, "市场租约续租遇到不可恢复的数据库错误 partition={PartitionId}", PartitionId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                // 瞬态数据库故障不应让分片永久停摆：记录后下一轮继续续租；若租约真正过期，
+                // 交易路径的 EnsureLeaseAsync 会以 MarketLeaseLostException fail-fast。
+                _logger.LogError(ex, "市场租约续租失败 partition={PartitionId}，等待下一轮重试", PartitionId);
+            }
         }
     }
 
