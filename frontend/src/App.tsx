@@ -780,13 +780,14 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   )
 })
 
-const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyCultivation' | 'alchemyCombat' | 'alchemyExtraction' }> = [
+const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyExtraction' | 'alchemyCultivation' | 'alchemyCombat' }> = [
+  { id: 'extraction', labelKey: 'alchemyExtraction' },
   { id: 'cultivation', labelKey: 'alchemyCultivation' },
   { id: 'combat', labelKey: 'alchemyCombat' },
-  { id: 'extraction', labelKey: 'alchemyExtraction' },
 ]
 
-const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' }> = [
+const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefining' | 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' }> = [
+  { id: 'refining', labelKey: 'forgeRefining' },
   { id: 'weapon', labelKey: 'forgeWeapon' },
   { id: 'head', labelKey: 'forgeHead' },
   { id: 'armor', labelKey: 'forgeArmor' },
@@ -830,32 +831,46 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   // 当前模式与当前子选项卡下的行动列表过滤
   const filteredActions = useMemo(() => {
     if (craftingMode === 'alchemy') {
-      if (alchemySubTab === 'cultivation') {
-        // 修炼：引气丹、通脉丹
+      if (alchemySubTab === 'extraction') {
+        // 提炼：草木精华、伴灵精华等纯药材提炼（排除锻造精炼）
+        return availableActions.filter(a =>
+          (a.id === 'craft.extract-herb-essence' ||
+           a.id === 'craft.extract-banling-essence' ||
+           a.id.startsWith('craft.extract-') ||
+           a.id.includes('essence') ||
+           a.id.includes('extract')) &&
+          !a.id.startsWith('craft.refine-')
+        )
+      } else if (alchemySubTab === 'cultivation') {
+        // 修炼丹药：引气丹、通脉丹
         return availableActions.filter(a =>
           a.id === 'alchemy.refine-qi-pill' ||
           a.id === 'alchemy.refine-tongmai-pill' ||
           (a.type === 'alchemy' && !a.id.includes('zhixue') && !a.id.includes('shunqi') && !a.id.startsWith('craft.extract-') && !a.id.startsWith('forge.') && !a.id.startsWith('craft.refine-'))
         )
-      } else if (alchemySubTab === 'combat') {
-        // 斗法：止血散、顺气丸
+      } else {
+        // 斗法药剂：止血散、顺气丸
         return availableActions.filter(a =>
           a.id === 'alchemy.refine-zhixue-powder' ||
           a.id === 'alchemy.refine-shunqi-pill' ||
           a.id.includes('zhixue') ||
           a.id.includes('shunqi')
         )
-      } else {
-        // 提炼：草木精华、伴灵精华及其他药材/灵材萃炼
-        return availableActions.filter(a =>
-          a.id === 'craft.extract-herb-essence' ||
-          a.id === 'craft.extract-banling-essence' ||
-          a.id.startsWith('craft.extract-') ||
-          a.id.startsWith('craft.refine-')
-        )
       }
     } else {
-      // 炼器：武器、头部、衣服、腿部、鞋履、饰品
+      // 炼器：精炼、武器、头部、衣服、腿部、鞋履、饰品
+      if (forgingSubTab === 'refining') {
+        // 精炼：百炼铁、桃木晶、赤铜精、灵松晶等锻造灵材精炼
+        return availableActions.filter(a =>
+          a.id === 'craft.refine-iron' ||
+          a.id === 'craft.refine-peach-wood-crystal' ||
+          a.id === 'craft.refine-copper' ||
+          a.id === 'craft.refine-spirit-pine-crystal' ||
+          a.id.startsWith('craft.refine-') ||
+          (a.id.startsWith('craft.') && !a.id.startsWith('craft.extract-'))
+        )
+      }
+
       return availableActions.filter(a => {
         const outputIds = Object.keys(a.outputs || {})
         for (const outId of outputIds) {

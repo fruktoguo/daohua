@@ -19,10 +19,10 @@ export type TabId = 'insight' | 'market' | 'cultivation' | 'exploration' | 'craf
 /** 技艺当前模式：炼丹 vs 炼器 */
 export type CraftingMode = 'alchemy' | 'forging'
 
-/** 炼丹顶部子选项卡：修炼丹药 vs 斗法药剂 vs 材料提炼 */
-export type AlchemySubTab = 'cultivation' | 'combat' | 'extraction'
-/** 炼器顶部子选项卡：六大装备部位 */
-export type ForgingSubTab = 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket'
+/** 炼丹顶部子选项卡：提炼 vs 修炼丹药 vs 斗法药剂 */
+export type AlchemySubTab = 'extraction' | 'cultivation' | 'combat'
+/** 炼器顶部子选项卡：精炼 vs 六大装备部位 */
+export type ForgingSubTab = 'refining' | 'weapon' | 'head' | 'armor' | 'legs' | 'boots' | 'trinket'
 
 /** 右侧主栏顶层子选项卡：储物袋 vs 装备 vs 功法 */
 export type RightColumnTab = 'inventory' | 'equipment' | 'abilities'
@@ -46,7 +46,7 @@ interface UiStore {
   alchemySubTab: AlchemySubTab
   /** 切换炼丹子分类 */
   setAlchemySubTab: (tab: AlchemySubTab) => void
-  /** 炼器顶部当前子分类（六大部位） */
+  /** 炼器顶部当前子分类（精炼及六大部位） */
   forgingSubTab: ForgingSubTab
   /** 切换炼器子分类 */
   setForgingSubTab: (tab: ForgingSubTab) => void
@@ -63,20 +63,23 @@ export const useUiStore = create<UiStore>(set => ({
   activeTab: 'exploration',
   setActiveTab: activeTab => {
     if (activeTab === 'alchemy') {
-      set({ activeTab: 'crafting', craftingMode: 'alchemy', craftingNavExpanded: true })
+      set({ activeTab: 'crafting', craftingMode: 'alchemy', craftingNavExpanded: true, alchemySubTab: 'extraction' })
     } else {
       set({ activeTab })
     }
   },
   craftingMode: 'alchemy',
-  setCraftingMode: craftingMode => set({ craftingMode }),
+  setCraftingMode: craftingMode => set({
+    craftingMode,
+    ...(craftingMode === 'alchemy' ? { alchemySubTab: 'extraction' } : { forgingSubTab: 'refining' }),
+  }),
   craftingNavExpanded: false,
   setCraftingNavExpanded: expanded => set(state => ({
     craftingNavExpanded: typeof expanded === 'function' ? expanded(state.craftingNavExpanded) : expanded,
   })),
-  alchemySubTab: 'cultivation',
+  alchemySubTab: 'extraction',
   setAlchemySubTab: alchemySubTab => set({ alchemySubTab }),
-  forgingSubTab: 'weapon',
+  forgingSubTab: 'refining',
   setForgingSubTab: forgingSubTab => set({ forgingSubTab }),
   rightColumnTab: 'inventory',
   setRightColumnTab: rightColumnTab => set({ rightColumnTab }),
