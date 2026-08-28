@@ -97,20 +97,32 @@ fi
 # 3. 检查并准备 PostgreSQL 数据库
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
-if ! (echo > /dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+db_ready() {
+  (echo > /dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null
+}
+
+if ! db_ready; then
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     printf '==> 检测到 PostgreSQL (%s:%s) 未就绪，自动通过 Docker Compose 启动本地数据库...\n' "$DB_HOST" "$DB_PORT"
-    docker compose up -d db
+    if ! docker compose up -d db; then
+      printf '错误: Docker Compose 无法启动本地 PostgreSQL (%s:%s)。\n' "$DB_HOST" "$DB_PORT" >&2
+      exit 1
+    fi
     printf '==> 等待 PostgreSQL 数据库就绪...\n'
     for _ in {1..30}; do
-      if (echo > /dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+      if db_ready; then
         break
       fi
       sleep 0.5
     done
   else
-    printf '警告: 本地 PostgreSQL 未在 %s:%s 运行，且 Docker 不可用。\n' "$DB_HOST" "$DB_PORT" >&2
+    printf '错误: 本地 PostgreSQL 未在 %s:%s 运行，且 Docker 不可用。\n' "$DB_HOST" "$DB_PORT" >&2
   fi
+fi
+
+if ! db_ready; then
+  printf '错误: PostgreSQL 仍未就绪 (%s:%s)，已停止启动流程。\n' "$DB_HOST" "$DB_PORT" >&2
+  exit 1
 fi
 
 # 4. 检查端口占用
