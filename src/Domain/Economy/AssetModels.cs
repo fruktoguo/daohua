@@ -89,12 +89,13 @@ public sealed class AssetWallet
 
     private AssetBalance Apply(AssetKey asset, double delta, string reason)
     {
-        if (!double.IsFinite(delta) || string.IsNullOrWhiteSpace(reason))
+        if (!asset.ItemId.IsValid || asset.Variant is null || asset.Variant.Length > 128 || !double.IsFinite(delta) || delta == 0 || string.IsNullOrWhiteSpace(reason))
             throw new DomainException(DomainErrorCode.InvalidArgument, "资产变化无效。");
         var current = _balances.TryGetValue(asset, out var existing)
             ? existing
             : new AssetBalance(PlayerId, asset, 0, 0);
         var quantity = current.Quantity + delta;
+        if (!double.IsFinite(quantity)) throw new DomainException(DomainErrorCode.InvariantViolation, $"资产 {asset} 数量超出数值范围。");
         if (quantity < -1e-12) throw new DomainException(DomainErrorCode.InsufficientBalance, $"资产 {asset} 余额不足。");
         quantity = Math.Abs(quantity) < 1e-12 ? 0 : quantity;
         var next = current with { Quantity = quantity, Version = checked(current.Version + 1) };
@@ -118,22 +119,62 @@ public enum EconomyTransactionType : byte
     AdminAdjustment = 4
 }
 
-public sealed record EconomyTransaction(
-    TransactionId TransactionId,
-    IdempotencyKey IdempotencyKey,
-    EconomyTransactionType Type,
-    PlayerId ActorId,
-    DateTimeOffset CreatedAt,
-    IReadOnlyList<EconomyTransactionLine> Lines,
-    string? ExternalEventType = null)
+public sealed record EconomyTransaction
 {
+    public EconomyTransaction(
+        TransactionId transactionId,
+        IdempotencyKey idempotencyKey,
+        EconomyTransactionType type,
+        PlayerId actorId,
+        DateTimeOffset createdAt,
+        IReadOnlyList<EconomyTransactionLine> lines,
+        string? externalEventType = null)
+    {
+        if (transactionId.IsEmpty || !idempotencyKey.IsValid || actorId.IsEmpty || !Enum.IsDefined(type))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "经济事务头无效。");
+        ArgumentNullException.ThrowIfNull(lines);
+        if (lines.Count == 0 || lines.Any(line => line is null))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "经济事务至少需要一条明细。");
+        var lineNumbers = new HashSet<int>();
+        foreach (var line in lines)
+        {
+            if (line.LineNumber <= 0 || !lineNumbers.Add(line.LineNumber) || line.PlayerId.IsEmpty ||
+                !line.Asset.ItemId.IsValid || line.Asset.Variant is null || line.Asset.Variant.Length > 128 ||
+                !double.IsFinite(line.Delta) || Math.Abs(line.Delta) < 1e-12)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "经济事务明细无效。");
+        }
+        TransactionId = transactionId;
+        IdempotencyKey = idempotencyKey;
+        Type = type;
+        ActorId = actorId;
+        CreatedAt = createdAt.ToUniversalTime();
+        Lines = lines.ToArray();
+        ExternalEventType = externalEventType;
+    }
+
+    public TransactionId TransactionId { get; }
+    public IdempotencyKey IdempotencyKey { get; }
+    public EconomyTransactionType Type { get; }
+    public PlayerId ActorId { get; }
+    public DateTimeOffset CreatedAt { get; }
+    public IReadOnlyList<EconomyTransactionLine> Lines { get; }
+    public string? ExternalEventType { get; }
 }
 
-public sealed record EconomyTransactionLine(
-    int LineNumber,
-    PlayerId PlayerId,
-    AssetKey Asset,
-    double Delta,
-    InstanceId? InstanceId = null)
+public sealed record EconomyTransactionLine
 {
+    public EconomyTransactionLine(int lineNumber, PlayerId playerId, AssetKey asset, double delta, InstanceId? instanceId = null)
+    {
+        LineNumber = lineNumber;
+        PlayerId = playerId;
+        Asset = asset;
+        Delta = delta;
+        InstanceId = instanceId;
+    }
+
+    public int LineNumber { get; }
+    public PlayerId PlayerId { get; }
+    public AssetKey Asset { get; }
+    public double Delta { get; }
+    public InstanceId? InstanceId { get; }
 }

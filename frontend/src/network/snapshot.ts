@@ -42,6 +42,13 @@ function numberValue(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function stateVersionValue(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name}状态版本无效。`)
+  }
+  return value
+}
+
 function booleanValue(value: unknown, fallback = false): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
@@ -344,8 +351,9 @@ function visualFor(name: string): CharacterVisual {
 
 export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = ''): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
+  const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
   if (!dto.head || dto.head.schemaVersion !== 1) throw new Error('玩家快照 schema 版本不受支持。')
-  if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== dto.stateVersion) throw new Error('玩家快照头与主体版本不一致。')
+  if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')
   await verifyHeadChecksum(dto)
@@ -368,7 +376,7 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
     playerId: dto.playerId,
     name,
     account,
-    version: Math.max(0, dto.stateVersion),
+    version: stateVersion,
     serverTimeUnixSeconds: serverTime,
     serverTimeUnixMilliseconds: serverTime * 1000,
     createdAtUnixSeconds: serverTime,
@@ -392,11 +400,12 @@ export async function decodePlayerSnapshotDeltaDto(
   current: PlayerSnapshot,
 ): Promise<PlayerPatch> {
   if (!dto || dto.playerId !== current.playerId) throw new Error('玩家增量快照归属不一致。')
+  const stateVersion = stateVersionValue(dto.stateVersion, '玩家增量快照')
   if (!Array.isArray(dto.changedSections)) throw new Error('玩家增量 section 列表无效。')
   const sections = await decodeSections(dto.changedSections)
   const patch: PlayerPatch = {
     playerId: dto.playerId,
-    version: dto.stateVersion,
+    version: stateVersion,
     serverTimeUnixSeconds: current.serverTimeUnixSeconds,
   }
   const settingsEnvelope = sections.has('settings') ? requiredObject(sections.get('settings'), 'settings') : undefined

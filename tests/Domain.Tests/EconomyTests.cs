@@ -31,4 +31,29 @@ public sealed class EconomyTests
         var transaction = new EconomyTransaction(TransactionId.New(), new IdempotencyKey("req-1"), EconomyTransactionType.AdminAdjustment, player, DateTimeOffset.UtcNow, lines);
         Assert.Equal(2, transaction.Lines.Count);
     }
+
+    [Fact]
+    public void EconomyTransactionRejectsDuplicateOrZeroLines()
+    {
+        var player = PlayerId.New();
+        var asset = new AssetKey(new ItemId("item.spirit-stone"));
+        var lines = new[]
+        {
+            new EconomyTransactionLine(1, player, asset, -1),
+            new EconomyTransactionLine(1, player, asset, 1)
+        };
+
+        var error = Assert.Throws<DomainException>(() => new EconomyTransaction(TransactionId.New(), new IdempotencyKey("req-duplicate"), EconomyTransactionType.AdminAdjustment, player, DateTimeOffset.UtcNow, lines));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    [Fact]
+    public void WalletRejectsInvalidAssetAndNonFiniteQuantity()
+    {
+        var wallet = new AssetWallet(PlayerId.New());
+
+        Assert.Throws<DomainException>(() => wallet.Credit(new AssetKey(new ItemId("")), 1, "grant"));
+        Assert.Throws<DomainException>(() => wallet.Credit(new AssetKey(new ItemId("item.x")), double.NaN, "grant"));
+    }
 }

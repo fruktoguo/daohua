@@ -16,11 +16,8 @@ public sealed record SimulationResult(
     double CompletedRepeats,
     IReadOnlyList<AssetDelta> AssetDeltas,
     IReadOnlyList<SimulationEvent> Events,
-    long StateVersion)
-{
-    /// <summary>只把玩家可见/可恢复状态变化视为变更；空队列推进时不广播、不制造落盘版本。</summary>
-    public bool Changed => CompletedRepeats > 0 || AssetDeltas.Count > 0 || Events.Count > 0;
-}
+    long StateVersion,
+    bool Changed);
 
 /// <summary>
 /// 唯一确定性快进入口。算法按行动完成边界推进，不按离线秒数写历史事件。
@@ -98,7 +95,7 @@ public static class SimulationEngine
             .OrderBy(pair => pair.Key.Value, StringComparer.Ordinal)
             .Select(pair => new AssetDelta(player.PlayerId, new AssetKey(pair.Key), pair.Value, "simulation"))
             .ToArray();
-        return new SimulationResult(player.PlayerId, from, target, (target - from).TotalSeconds, completedActions, completedRepeats, assetDeltas, events, player.StateVersion);
+        return new SimulationResult(player.PlayerId, from, target, (target - from).TotalSeconds, completedActions, completedRepeats, assetDeltas, events, player.StateVersion, transitions > 0);
     }
 
     private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, double seconds)
@@ -107,10 +104,20 @@ public static class SimulationEngine
         if (definition.QiPerSecond > 0)
         {
             var amount = definition.QiPerSecond * seconds;
+            if (!double.IsFinite(amount) || !double.IsFinite(player.Progression.Qi + amount) || !double.IsFinite(player.Progression.LifetimeQi + amount))
+                throw new DomainException(DomainErrorCode.InvariantViolation, "气运奖励超出数值范围。");
             player.Progression.Qi += amount;
             player.Progression.LifetimeQi += amount;
         }
-        if (definition.ExperiencePerSecond > 0) player.Progression.Experience += definition.ExperiencePerSecond * seconds;
+        if (definition.ExperiencePerSecond > 0)
+        {
+            var amount = definition.ExperiencePerSecond * seconds;
+            if (!double.IsFinite(amount) || !double.IsFinite(player.Progression.Experience + amount))
+                throw new DomainException(DomainErrorCode.InvariantViolation, "经验奖励超出数值范围。");
+            player.Progression.Experience += amount;
+        }
+        if (!double.IsFinite(player.Progression.Qi) || !double.IsFinite(player.Progression.LifetimeQi) || !double.IsFinite(player.Progression.Experience))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "模拟后的玩家进度数值无效。");
     }
 
     private static void CompleteRepeat(
@@ -150,6 +157,9 @@ public static class SimulationEngine
     {
         if (!item.IsValid || !double.IsFinite(amount))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动资源增量无效。");
-        deltas[item] = deltas.TryGetValue(item, out var current) ? current + amount : amount;
+        var next = deltas.TryGetValue(item, out var current) ? current + amount : amount;
+        if (!double.IsFinite(next))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "行动资源累计增量超出数值范围。");
+        deltas[item] = next;
     }
 }

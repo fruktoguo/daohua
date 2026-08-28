@@ -68,7 +68,9 @@ builder.Services.AddSingleton(options);
 // schema 必须先于 Data Protection/认证服务解析，避免首次请求在建表 HostedService
 // 之前触发 key ring 查询。worker 角色在 bootstrap 关闭时也会 fail-fast 校验版本。
 var dataSource = NpgsqlDataSource.Create(options.ConnectionString);
-await PostgresSchemaBootstrap.EnsureAsync(dataSource, options.EnableSchemaBootstrap, CancellationToken.None);
+// 启动阶段数据库不可达时快速失败，避免容器探针长期卡在 starting 状态且无法自动恢复。
+using (var bootstrapTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
+    await PostgresSchemaBootstrap.EnsureAsync(dataSource, options.EnableSchemaBootstrap, bootstrapTimeout.Token);
 builder.Services.AddSingleton(dataSource);
 
 if (processRole == ServerProcessRole.Api)
@@ -421,6 +423,8 @@ static void ApplyCatalogHeaders(HttpContext context, string fingerprint)
 static async Task WriteHealthResponse(HttpContext context, HealthReport report)
 {
     context.Response.ContentType = "application/json; charset=utf-8";
+    context.Response.Headers.CacheControl = "no-store, no-cache, max-age=0";
+    context.Response.Headers.Pragma = "no-cache";
     var status = report.Status == HealthStatus.Healthy ? "ok" : report.Status == HealthStatus.Degraded ? "degraded" : "unhealthy";
     await JsonSerializer.SerializeAsync(context.Response.Body, new
     {

@@ -65,6 +65,20 @@ public sealed class PlayerAggregateTests
     }
 
     [Fact]
+    public void PartialActionAdvanceIsReportedAsChanged()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, ActionCatalog.Default);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), ActionCatalog.Default);
+
+        Assert.True(result.Changed);
+        Assert.Equal(0, result.CompletedRepeats);
+        Assert.Equal(1, player.Actions[0].ProgressSeconds);
+        Assert.Equal(1, player.Progression.Qi);
+    }
+
+    [Fact]
     public void InfiniteActionKeepsQueueEntryAfterCompletedRounds()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
@@ -89,6 +103,74 @@ public sealed class PlayerAggregateTests
         var action = Assert.Single(restored.Actions);
         Assert.Equal(-1, action.Intent.RepeatCount);
         Assert.Equal(-1, action.RemainingRepeats);
+    }
+
+    [Fact]
+    public void InfiniteZeroDurationActionIsRejected()
+    {
+        var instant = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.instant"), "瞬时", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>())
+        ]);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+
+        var error = Assert.Throws<DomainException>(() => player.Enqueue(new ActionIntent(new ActionId("test.instant"), -1), Baseline, instant));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    [Fact]
+    public void EnqueueCopiesMutableIntentParameters()
+    {
+        var parameters = new Dictionary<string, double> { ["power"] = 1 };
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var action = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 1, Parameters: parameters), Baseline, ActionCatalog.Default);
+
+        parameters["power"] = 99;
+
+        Assert.Equal(1, action.Intent.Parameters!["power"]);
+    }
+
+    [Fact]
+    public void RestoreRejectsUndefinedActionStatus()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var state = player.ExportState() with
+        {
+            Actions = [new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, (ActionQueueStatus)99, 0, 1, 0)]
+        };
+
+        var error = Assert.Throws<DomainException>(() => PlayerAggregate.Restore(state));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    [Fact]
+    public void RestoreRejectsDuplicateActionIds()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var id = Guid.NewGuid();
+        var action = new QueuedActionState(id, new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, ActionQueueStatus.Pending, 0, 1, 0);
+        var state = player.ExportState() with { Actions = [action, action] };
+
+        var error = Assert.Throws<DomainException>(() => PlayerAggregate.Restore(state));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
+
+    [Fact]
+    public void SimulationRejectsNonFiniteRewardBeforeMutatingProgress()
+    {
+        var catalog = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.overflow"), "溢出", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), double.MaxValue)
+        ]);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("test.overflow")), Baseline, catalog);
+
+        var error = Assert.Throws<DomainException>(() => SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog));
+
+        Assert.Equal(DomainErrorCode.InvariantViolation, error.Code);
+        Assert.Equal(0, player.Progression.Qi);
+        Assert.Equal(Baseline, player.LastSimulatedAt);
     }
 
     [Fact]

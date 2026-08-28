@@ -46,4 +46,16 @@ public sealed class MarketTests
         Assert.Equal(placed.IncomingOrder.OrderId, restored.ActiveOrders.Single().OrderId);
         Assert.Equal(placed.BookVersion, restored.Version);
     }
+
+    [Fact]
+    public void RestoreRejectsInvalidStatusAndSequence()
+    {
+        var instrument = new MarketInstrument(new ItemId("item.ningxue-grass"));
+        var restored = new OrderBook(instrument);
+        var invalid = new MarketOrder(OrderId.New(), PlayerId.New(), instrument, MarketSide.Sell, 1, 1, 1, 1, DateTimeOffset.UtcNow, null, (MarketOrderStatus)99);
+
+        var error = Assert.Throws<DomainException>(() => restored.Restore([invalid], version: 1));
+
+        Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
+    }
 }

@@ -214,7 +214,17 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动参数无效。");
         if (!catalog.Contains(intent.ActionId))
             throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
-        var action = new QueuedAction(Guid.NewGuid(), intent, now);
+        var definition = catalog.Get(intent.ActionId);
+        if (intent.RepeatCount == -1 && definition.DurationSeconds <= 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "无限重复行动必须具有正时长，避免模拟无法推进。");
+        var normalizedIntent = new ActionIntent(
+            intent.ActionId,
+            intent.RepeatCount,
+            intent.TargetNodeId,
+            intent.Parameters is null
+                ? null
+                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)));
+        var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now);
         _actions.Add(action);
         Touch(PlayerSectionKind.ActionQueue);
         return action;

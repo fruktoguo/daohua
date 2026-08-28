@@ -70,6 +70,17 @@ export class GameClient {
     }
   }
 
+  private scheduleReconnect(): void {
+    if (this.disposed || this.reconnectTimer !== undefined) return
+    useGameStore.getState().setConnection('reconnecting')
+    const delay = this.reconnectDelay
+    this.reconnectDelay = Math.min(8_000, this.reconnectDelay * 2)
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = undefined
+      this.open()
+    }, delay)
+  }
+
   connect(): void {
     this.clearReconnectTimer()
     const accountInfo = getSessionAccount()
@@ -147,7 +158,14 @@ export class GameClient {
     this.outboundSequence = 0
     this.lastServerSequence = 0
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
-    const socket = new WebSocket(getEndpoint())
+    let socket: WebSocket
+    try {
+      socket = new WebSocket(getEndpoint())
+    } catch {
+      // 配置错误或浏览器拒绝建立连接时，转入与 close 事件相同的退避路径。
+      this.scheduleReconnect()
+      return
+    }
     socket.binaryType = 'arraybuffer'
     this.socket = socket
 
@@ -179,20 +197,21 @@ export class GameClient {
         useGameStore.getState().setNotice(getT()('common.net.sessionExpired'))
         return
       }
-      useGameStore.getState().setConnection('reconnecting')
-      const delay = this.reconnectDelay
-      this.reconnectDelay = Math.min(8_000, this.reconnectDelay * 2)
-      this.reconnectTimer = window.setTimeout(() => this.open(), delay)
+      this.scheduleReconnect()
     })
   }
 
   private sendHello(): void {
     const socket = this.socket
     if (!socket || socket.readyState !== WebSocket.OPEN) return
-    socket.send(encodeJsonEnvelope(WireMessageType.Hello, createRequestId(), this.nextOutboundSequence(), {
-      clientVersion: APP_VERSION,
-      gameDataFingerprint: null,
-    }))
+    try {
+      socket.send(encodeJsonEnvelope(WireMessageType.Hello, createRequestId(), this.nextOutboundSequence(), {
+        clientVersion: APP_VERSION,
+        gameDataFingerprint: null,
+      }))
+    } catch {
+      socket.close(1011, '握手发送失败')
+    }
   }
 
   private nextOutboundSequence(): number {

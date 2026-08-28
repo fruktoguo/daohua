@@ -16,6 +16,7 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     public ChannelReader<byte[]> Outbound => _outbound.Reader;
     public long NextOutboundSequence() => Interlocked.Increment(ref _outboundSequence);
     public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken) => _outbound.Writer.WriteAsync(packet, cancellationToken);
+    public bool TrySend(byte[] packet) => _outbound.Writer.TryWrite(packet);
     public void Complete() => _outbound.Writer.TryComplete();
 }
 
@@ -91,6 +92,8 @@ public static class WebSocketEndpoint
         {
             runtime.SnapshotUpdated -= OnSnapshotUpdated;
             registry.Remove(playerId, session);
+            // 关闭连接时使用独立取消令牌：请求已断开并不应中断权威状态刷盘。
+            // 若数据库暂时不可用，RemoveAsync 保留 actor 与脏标记，后台 flush worker 会继续重试。
             await runtime.RemoveAsync(playerId, true, CancellationToken.None);
         }
     }
@@ -252,6 +255,17 @@ public static class WebSocketEndpoint
         WireMessageType messageType,
         Guid requestId,
         T payload,
-        CancellationToken cancellationToken) =>
-        session.SendAsync(EncodeJson(messageType, requestId, session.NextOutboundSequence(), payload), cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var packet = EncodeJson(messageType, requestId, session.NextOutboundSequence(), payload);
+        // Snapshot 增量属于可重建的实时提示，慢客户端不能反向阻塞玩家模拟/持久化。
+        // 队列已满时丢弃该增量，客户端可通过下一次命令响应或重连重新获取完整快照；
+        // 命令结果、错误和握手响应仍保留等待语义，确保关键协议不静默丢失。
+        if (messageType == WireMessageType.SnapshotDelta)
+        {
+            session.TrySend(packet);
+            return ValueTask.CompletedTask;
+        }
+        return session.SendAsync(packet, cancellationToken);
+    }
 }

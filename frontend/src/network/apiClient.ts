@@ -1,6 +1,9 @@
 import type { ActionDefinition, CombatEncounterDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
+/** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
+const REQUEST_TIMEOUT_MS = 15_000
+
 /** HTTP API 只使用同源或显式配置的 v1 地址，认证由 HttpOnly Cookie 承担。 */
 export function getHttpBase(): string {
   const configured = import.meta.env.VITE_API_URL as string | undefined
@@ -52,15 +55,35 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
   if (init.body !== undefined && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
-  const response = await fetch(getApiUrl(path), {
-    ...init,
-    headers,
-    credentials: 'include',
-    cache: init.method && init.method !== 'GET' ? 'no-store' : 'no-cache',
-  })
-  if (!response.ok) throw await parseError(response)
-  if (response.status === 204) return undefined as T
-  return response.json() as Promise<T>
+  const controller = new AbortController()
+  let timedOut = false
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
+  const forwardAbort = () => controller.abort()
+  if (init.signal) {
+    if (init.signal.aborted) controller.abort()
+    else init.signal.addEventListener('abort', forwardAbort, { once: true })
+  }
+  try {
+    const response = await fetch(getApiUrl(path), {
+      ...init,
+      signal: controller.signal,
+      headers,
+      credentials: 'include',
+      cache: init.method && init.method !== 'GET' ? 'no-store' : 'no-cache',
+    })
+    if (!response.ok) throw await parseError(response)
+    if (response.status === 204) return undefined as T
+    return response.json() as Promise<T>
+  } catch (error) {
+    if (timedOut) throw new Error('网络请求超时，请稍后重试。')
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+    init.signal?.removeEventListener('abort', forwardAbort)
+  }
 }
 
 export function postPlayerCommand<TPayload extends object, TResult = unknown>(

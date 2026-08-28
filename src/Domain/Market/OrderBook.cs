@@ -9,7 +9,8 @@ public sealed class OrderBook
 
     public OrderBook(MarketInstrument instrument)
     {
-        if (!instrument.ItemId.IsValid) throw new DomainException(DomainErrorCode.InvalidArgument, "市场品种无效。");
+        if (!instrument.ItemId.IsValid || instrument.Variant is null || instrument.Variant.Length > 128)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "市场品种无效。");
         Instrument = instrument;
     }
 
@@ -31,6 +32,7 @@ public sealed class OrderBook
         foreach (var order in imported)
         {
             if (order.Instrument != Instrument || order.OrderId.IsEmpty || order.OwnerId.IsEmpty ||
+                !Enum.IsDefined(order.Side) || !Enum.IsDefined(order.Status) ||
                 !double.IsFinite(order.Price) || order.Price <= 0 || !double.IsFinite(order.OriginalQuantity) || order.OriginalQuantity <= 0 ||
                 !double.IsFinite(order.RemainingQuantity) || order.RemainingQuantity <= 0 || order.RemainingQuantity > order.OriginalQuantity ||
                 order.Sequence <= 0 || !ids.Add(order.OrderId) || !sequences.Add(order.Sequence) || !IsActive(order))

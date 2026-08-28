@@ -140,22 +140,31 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.AutoUseSlots.AddRange(state.Settings.AutoUseSlots ?? []);
         if (state.Actions.Count > MaxActionQueueLength)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
+        var actionIds = new HashSet<Guid>();
         foreach (var actionState in state.Actions)
         {
-            var repeatCountValid = double.IsFinite(actionState?.Intent.RepeatCount ?? double.NaN)
-                && (actionState!.Intent.RepeatCount == -1
-                    || actionState.Intent.RepeatCount is >= 1 and <= 1_000_000);
-            var remainingRepeatsValid = double.IsFinite(actionState?.RemainingRepeats ?? double.NaN)
-                && (actionState!.RemainingRepeats == -1 || actionState.RemainingRepeats > 0);
-            if (actionState is null || actionState.Id == Guid.Empty || !actionState.Intent.ActionId.IsValid ||
+            var intent = actionState?.Intent;
+            var repeatCountValid = intent is not null && double.IsFinite(intent.RepeatCount)
+                && (intent.RepeatCount == -1 || intent.RepeatCount is >= 1 and <= 1_000_000);
+            var remainingRepeatsValid = actionState is not null && double.IsFinite(actionState.RemainingRepeats)
+                && (actionState.RemainingRepeats == -1 || actionState.RemainingRepeats > 0);
+            if (actionState is null || intent is null || actionState.Id == Guid.Empty || !actionIds.Add(actionState.Id) || !intent.ActionId.IsValid ||
                 !repeatCountValid ||
-                (actionState.Intent.TargetNodeId is not null && (actionState.Intent.TargetNodeId.Length == 0 || actionState.Intent.TargetNodeId.Length > 128)) ||
-                (actionState.Intent.Parameters is not null && actionState.Intent.Parameters.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value))) ||
+                !Enum.IsDefined(actionState.Status) ||
+                (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128)) ||
+                (intent.Parameters is not null && intent.Parameters.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value))) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
                 !remainingRepeatsValid ||
                 !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
-            var action = new QueuedAction(actionState.Id, actionState.Intent, actionState.EnqueuedAt)
+            var normalizedIntent = new ActionIntent(
+                intent.ActionId,
+                intent.RepeatCount,
+                intent.TargetNodeId,
+                intent.Parameters is null
+                    ? null
+                    : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)));
+            var action = new QueuedAction(actionState.Id, normalizedIntent, actionState.EnqueuedAt)
             {
                 Status = actionState.Status,
                 ProgressSeconds = actionState.ProgressSeconds,

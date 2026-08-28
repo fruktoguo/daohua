@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { useGameStore } from './gameStore'
 import type { QueueEntry } from './types'
 
@@ -42,6 +42,11 @@ export function useSmoothProgressRef({
   metaFormat,
 }: UseSmoothProgressOptions): void {
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
+  // 调用方通常在渲染中创建格式化闭包；用 ref 读取最新回调，避免每次父组件更新都重启 RAF。
+  const textFormatRef = useRef(textFormat)
+  const metaFormatRef = useRef(metaFormat)
+  textFormatRef.current = textFormat
+  metaFormatRef.current = metaFormat
 
   useEffect(() => {
     if (!entry) return
@@ -73,8 +78,8 @@ export function useSmoothProgressRef({
         fillRef.current.style.transform = `scaleX(${ratio})`
       }
       if (textRef?.current) {
-        if (textFormat) {
-          textRef.current.textContent = textFormat(currentSec, duration, percent)
+        if (textFormatRef.current) {
+          textRef.current.textContent = textFormatRef.current(currentSec, duration, percent)
         } else {
           textRef.current.textContent = `${Math.floor(currentSec)}s / ${duration}s`
         }
@@ -82,8 +87,8 @@ export function useSmoothProgressRef({
       if (percentRef?.current) {
         percentRef.current.textContent = `${percent}%`
       }
-      if (metaRef?.current && metaFormat) {
-        metaRef.current.textContent = metaFormat(currentSec, duration, ratio, percent)
+      if (metaRef?.current && metaFormatRef.current) {
+        metaRef.current.textContent = metaFormatRef.current(currentSec, duration, ratio, percent)
       }
 
       if (isRunning) {
@@ -102,9 +107,7 @@ export function useSmoothProgressRef({
     lastSyncPerformanceTime,
     fillRef,
     textRef,
-    textFormat,
     percentRef,
     metaRef,
-    metaFormat,
   ])
 }
