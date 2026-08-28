@@ -126,6 +126,8 @@ docker compose down
   - **繁多业务子类型采用帕斯卡前缀法（PascalCase Prefix）**：任务数据类统一使用 `Task*`（如 `TaskBase`, `TaskGathering`, `TaskCultivation`, `TaskAlchemy`, `TaskCombat`, `TaskTravel`），静态执行器统一使用 `Executor*`（如 `ExecutorGathering`, `ExecutorCultivation`, `ExecutorAlchemy`, `ExecutorCombat`, `ExecutorTravel`），便于 IDE 极速自动补全与文件树聚类。
   - **ECS 核心基座保留经典自然后缀法（Natural Suffix）**：实体数据组件一律以 `*Component` 结尾（如 `ActionQueueComponent`, `InventoryComponent`, `CultivationComponent`, `CombatResourcesComponent`, `PlayerStatsComponent`, `SyncDirtyComponent`），调度系统一律以 `*System` 结尾（如 `ActionExecutionSystem`），保持语义自然通顺。
 - 确定性快进的在线、离线挂机和重连结果必须保持一致。
+- **行动队列与无限循环不变量**：行动队列中 `RemainingRepeats == -1`（或负值代表无限重复）在任何 `AdvanceTo` / `AdvanceBy` 模拟推进与单轮结算完成后，**绝对不得自动出队**；只有正数次数递减至 0、玩家显式取消或资源前置条件断绝时方可移出队列。协议与前端选择器必须完整支持 `-1` 无限循环语义。
+- **协议快照映射与配表透传**：`ProtocolSnapshotMapper` 转换快照与增量 DTO 时必须显式透传当前激活的 `GameDataCatalog`，以保证动作指纹与动态实体上下文完整一致，禁止脱离配表单独伪造协议载荷。
 - 不得为性能优化改变战斗结果、掉落、市场撮合、队列完成边界或快照语义。
 - ECS/Fiber 所有权必须遵守 YuoCore 约束；跨 Fiber/进程访问不得直接持有 Entity。
 - 玩家快照写回失败必须保留可恢复证据；不得为了降噪降低持久化错误等级。
