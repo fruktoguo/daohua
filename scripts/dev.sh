@@ -24,6 +24,26 @@ cd "$ROOT_DIR"
 BACKEND_SUPERVISOR_PID=""
 FRONTEND_PID=""
 
+port_in_use() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -H -ltn "sport = :${port}" 2>/dev/null | grep -q .
+    return $?
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | grep -q .
+    return $?
+  fi
+  return 1
+}
+
+port_pids() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | tr '\n' ' '
+  fi
+}
+
 kill_tree() {
   local pid="$1"
   local sig="${2:-TERM}"
@@ -94,13 +114,13 @@ if ! (echo > /dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
 fi
 
 # 4. 检查端口占用
-if ss -H -ltn 'sport = :5128' 2>/dev/null | grep -q .; then
-  printf '错误: 端口 127.0.0.1:5128 已被占用，请先停止冲突进程。\n' >&2
+if port_in_use 5128; then
+  printf '错误: 端口 127.0.0.1:5128 已被占用 (PID: %s)，请先停止冲突进程。\n' "$(port_pids 5128)" >&2
   exit 1
 fi
 
-if ss -H -ltn 'sport = :15172' 2>/dev/null | grep -q .; then
-  printf '错误: 端口 127.0.0.1:15172 已被占用，请先停止冲突进程。\n' >&2
+if port_in_use 15172; then
+  printf '错误: 端口 127.0.0.1:15172 已被占用 (PID: %s)，请先停止冲突进程。\n' "$(port_pids 15172)" >&2
   exit 1
 fi
 
@@ -122,7 +142,8 @@ for _ in {1..120}; do
 done
 
 if [[ "$BACKEND_READY" -ne 1 ]]; then
-  printf '警告: 服务端就绪等待超时，继续启动前端...\n' >&2
+  printf '错误: 服务端未能在等待窗口内就绪，已停止启动流程。\n' >&2
+  exit 1
 fi
 
 # 7. 启动前端（不打开浏览器）
@@ -147,4 +168,3 @@ if ! wait -n "$BACKEND_SUPERVISOR_PID" "$FRONTEND_PID" 2>/dev/null; then
     wait $! 2>/dev/null || true
   done
 fi
-
