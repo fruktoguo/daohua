@@ -828,12 +828,17 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       && (!action.availableNodeIds?.length || (worldNodeId !== null && action.availableNodeIds.includes(worldNodeId)))
   )), [actions, worldNodeId])
 
-  // 当前模式与当前子选项卡下的行动列表过滤
+  const itemCatalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
+  const encounters = useGameStore(state => state.encounters)
+
+  // 当前模式与当前子选项卡下的行动列表过滤与等级升序排列
   const filteredActions = useMemo(() => {
+    let list: ActionDefinition[] = []
     if (craftingMode === 'alchemy') {
       if (alchemySubTab === 'extraction') {
         // 提炼：草木精华、伴灵精华等纯药材提炼（排除锻造精炼）
-        return availableActions.filter(a =>
+        list = availableActions.filter(a =>
           (a.id === 'craft.extract-herb-essence' ||
            a.id === 'craft.extract-banling-essence' ||
            a.id.startsWith('craft.extract-') ||
@@ -843,14 +848,14 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         )
       } else if (alchemySubTab === 'cultivation') {
         // 修炼丹药：引气丹、通脉丹
-        return availableActions.filter(a =>
+        list = availableActions.filter(a =>
           a.id === 'alchemy.refine-qi-pill' ||
           a.id === 'alchemy.refine-tongmai-pill' ||
           (a.type === 'alchemy' && !a.id.includes('zhixue') && !a.id.includes('shunqi') && !a.id.startsWith('craft.extract-') && !a.id.startsWith('forge.') && !a.id.startsWith('craft.refine-'))
         )
       } else {
         // 斗法药剂：止血散、顺气丸
-        return availableActions.filter(a =>
+        list = availableActions.filter(a =>
           a.id === 'alchemy.refine-zhixue-powder' ||
           a.id === 'alchemy.refine-shunqi-pill' ||
           a.id.includes('zhixue') ||
@@ -861,7 +866,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       // 炼器：精炼、武器、头部、衣服、腿部、鞋履、饰品
       if (forgingSubTab === 'refining') {
         // 精炼：百炼铁、桃木晶、赤铜精、灵松晶等锻造灵材精炼
-        return availableActions.filter(a =>
+        list = availableActions.filter(a =>
           a.id === 'craft.refine-iron' ||
           a.id === 'craft.refine-peach-wood-crystal' ||
           a.id === 'craft.refine-copper' ||
@@ -869,24 +874,32 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
           a.id.startsWith('craft.refine-') ||
           (a.id.startsWith('craft.') && !a.id.startsWith('craft.extract-'))
         )
+      } else {
+        list = availableActions.filter(a => {
+          const outputIds = Object.keys(a.outputs || {})
+          for (const outId of outputIds) {
+            const slot = equipmentSlotMap[outId]
+            if (slot === forgingSubTab) return true
+          }
+          if (forgingSubTab === 'weapon' && (a.id.includes('sword') || a.id.includes('blade') || a.id.includes('staff') || a.id.includes('zither'))) return true
+          if (forgingSubTab === 'head' && (a.id.includes('scarf') || a.id.includes('helmet') || a.id.includes('crown'))) return true
+          if (forgingSubTab === 'armor' && (a.id.includes('armor') || a.id.includes('robe') || a.id.includes('shirt'))) return true
+          if (forgingSubTab === 'legs' && (a.id.includes('pants') || a.id.includes('greaves') || a.id.includes('skirt'))) return true
+          if (forgingSubTab === 'boots' && (a.id.includes('boots') || a.id.includes('shoes'))) return true
+          if (forgingSubTab === 'trinket' && (a.id.includes('pendant') || a.id.includes('talisman') || a.id.includes('ring'))) return true
+          return false
+        })
       }
-
-      return availableActions.filter(a => {
-        const outputIds = Object.keys(a.outputs || {})
-        for (const outId of outputIds) {
-          const slot = equipmentSlotMap[outId]
-          if (slot === forgingSubTab) return true
-        }
-        if (forgingSubTab === 'weapon' && (a.id.includes('sword') || a.id.includes('blade') || a.id.includes('staff') || a.id.includes('zither'))) return true
-        if (forgingSubTab === 'head' && (a.id.includes('scarf') || a.id.includes('helmet') || a.id.includes('crown'))) return true
-        if (forgingSubTab === 'armor' && (a.id.includes('armor') || a.id.includes('robe') || a.id.includes('shirt'))) return true
-        if (forgingSubTab === 'legs' && (a.id.includes('pants') || a.id.includes('greaves') || a.id.includes('skirt'))) return true
-        if (forgingSubTab === 'boots' && (a.id.includes('boots') || a.id.includes('shoes'))) return true
-        if (forgingSubTab === 'trinket' && (a.id.includes('pendant') || a.id.includes('talisman') || a.id.includes('ring'))) return true
-        return false
-      })
     }
-  }, [availableActions, craftingMode, alchemySubTab, forgingSubTab, equipmentSlotMap])
+
+    // 严格按真实等级升序排序（低等级在前，高等级在后），等级相同时按 ID 稳定排列
+    return [...list].sort((a, b) => {
+      const levelA = resolveActionLevel(a, itemCatalog, equipmentCatalog, encounters)
+      const levelB = resolveActionLevel(b, itemCatalog, equipmentCatalog, encounters)
+      if (levelA !== levelB) return levelA - levelB
+      return a.id.localeCompare(b.id)
+    })
+  }, [availableActions, craftingMode, alchemySubTab, forgingSubTab, equipmentSlotMap, itemCatalog, equipmentCatalog, encounters])
 
   return (
     <section className="panel skill-page crafting-page" hidden={hidden}>
@@ -1081,8 +1094,8 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   if (isCrafting && primaryOutputId) {
     return (
       <ItemTooltipTarget
+        className="action-card-tooltip-wrapper"
         definition={itemDef}
-        displayContents
         itemId={primaryOutputId}
       >
         {cardButton}

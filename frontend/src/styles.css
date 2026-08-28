@@ -2782,6 +2782,12 @@ input[type="checkbox"] {
   font-weight: normal;
 }
 
+.action-card-tooltip-wrapper {
+  display: flex !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
 .action-card {
   position: relative;
   display: flex;

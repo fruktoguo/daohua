@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react'
 import { describeCombatTrigger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { resolveItemCategoryLabel, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { convertTierToLevel, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { getT, useT } from '../i18n'
 import type { CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
@@ -94,27 +94,47 @@ export function ItemTooltipTarget({
   children,
   className = '',
   metadata: metadataOverride,
-  definition,
+  definition: itemDefOverride,
   tabIndex = 0,
   displayContents,
 }: ItemTooltipTargetProps): React.JSX.Element {
   const t = useT()
+  const itemCatalog = useGameStore((state) => state.items)
+  const equipmentCatalog = useGameStore((state) => state.equipment)
+
+  const itemDef = itemDefOverride ?? itemCatalog.find((i) => i.itemId === itemId)
+  const eqDef = equipmentCatalog.find((e) => e.equipmentId === itemId)
+
   const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
-  const rawMetadata = definition
+  const rawMetadata = itemDef
     ? {
         ...baseMetadata,
-        label: definition.name,
-        category: resolveItemCategoryLabel(definition.category, t),
-        level: definition.tier,
-        description: definition.description,
+        label: itemDef.name || baseMetadata.label,
+        category: resolveItemCategoryLabel(itemDef.category, t),
+        level: itemDef.tier ?? baseMetadata.level,
+        description: itemDef.description || baseMetadata.description,
+      }
+    : eqDef
+    ? {
+        ...baseMetadata,
+        label: eqDef.name || baseMetadata.label,
+        category: resolveItemCategoryLabel(eqDef.slot, t),
+        level: eqDef.tier ?? baseMetadata.level,
       }
     : baseMetadata
-  const metadata =
-    rawMetadata.level === undefined ? rawMetadata : withItemGrade(rawMetadata, rawMetadata.level)
-  const equipment = useGameStore((state) =>
-    state.equipment.find((entry) => entry.equipmentId === itemId)
-  )
-  const effectLines = [...describeItemEffects(definition), ...describeEquipmentEffects(equipment)]
+
+  const tier = rawMetadata.level ?? (eqDef?.tier || itemDef?.tier || 1)
+  const grade = resolveItemGrade(tier)
+  const levelNumber = convertTierToLevel(tier)
+
+  const metadata: ItemMetadata = {
+    ...rawMetadata,
+    rarity: grade.rarity,
+    rarityLabel: grade.label,
+    level: levelNumber,
+  }
+
+  const effectLines = [...describeItemEffects(itemDef), ...describeEquipmentEffects(eqDef)]
 
   const stats: { label: string; value: ReactNode; tone?: FloatingTone }[] = [
     { label: t('market.tooltip.category'), value: resolveItemCategoryLabel(metadata.category, t), tone: 'muted' },
@@ -182,6 +202,18 @@ function describeItemEffects(definition?: ItemDefinition): string[] {
   if (definition.recoverySeconds > 0) lines.push(t('market.effect.recoveryDuration', { seconds: formatNumber(definition.recoverySeconds) }))
   if (definition.cooldownSeconds > 0) lines.push(t('market.effect.cooldown', { seconds: formatNumber(definition.cooldownSeconds) }))
   if (definition.triggerAtCombatStart) lines.push(t('market.effect.useAtCombatStart'))
+  if (definition.cultivationMultiplier && definition.cultivationMultiplier > 1) {
+    lines.push(`修炼效率 +${Math.round((definition.cultivationMultiplier - 1) * 100)}%`)
+  }
+  if (definition.gatheringMultiplier && definition.gatheringMultiplier > 1) {
+    lines.push(`采集产出 +${Math.round((definition.gatheringMultiplier - 1) * 100)}%`)
+  }
+  if (definition.alchemyMultiplier && definition.alchemyMultiplier > 1) {
+    lines.push(`炼丹产出 +${Math.round((definition.alchemyMultiplier - 1) * 100)}%`)
+  }
+  if (definition.durationSeconds && definition.durationSeconds > 0) {
+    lines.push(`持续生效 ${formatNumber(definition.durationSeconds)}秒`)
+  }
   for (const trigger of definition.defaultCombatTriggers ?? []) lines.push(t('market.effect.defaultCondition', { trigger: describeCombatTrigger(trigger) }))
   if (
     (definition.defaultCombatTriggers?.length ?? 0) === 0 &&
