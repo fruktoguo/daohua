@@ -125,7 +125,7 @@ public static class SimulationEngine
     {
         action.ProgressSeconds = 0;
         action.CompletedRepeats += 1;
-        action.RemainingRepeats -= 1;
+        if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
         completedActions += 1;
         completedRepeats += 1;
         foreach (var (item, quantity) in definition.Outputs) AddDelta(deltas, item, quantity);
@@ -139,7 +139,8 @@ public static class SimulationEngine
             definition.Name,
             definition.Id,
             definition.Outputs));
-        if (action.RemainingRepeats <= 0)
+        // -1 表示无限行动：每轮完成后保留队列项并继续下一轮。
+        if (action.RemainingRepeats == 0)
         {
             player.RemoveAction(action.Id, incrementVersion: false);
         }

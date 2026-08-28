@@ -1148,7 +1148,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const stats = useGameStore(state => state.stats)
   const encounter = useGameStore(state => state.encounters.find(item => item.encounterId === action.combatEncounterId))
   const queueLength = useGameStore(state => state.queue.entries.length)
-  const [repeats, setRepeats] = useState(1)
+  const [repeats, setRepeats] = useState(-1)
 
   const yieldPreview = useMemo(() => calculateActionYieldPreview({
     action,
@@ -1302,6 +1302,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
       <div className="repeat-row">
         <span>{t('app.action.repeats')}</span>
         <QuantitySelector
+          allowInfinity
           ariaLabel={t('app.action.repeatsAria')}
           max={1000}
           onChange={setRepeats}
@@ -1849,6 +1850,11 @@ export default function App(): React.JSX.Element {
     const controller = new AbortController()
     void fetchGameCatalog(controller.signal)
       .then(catalog => {
+        const localizedActions = catalog.actions.map(action => {
+          const fallback = resolveActionDefinition(action.id)
+          return fallback ? { ...action, name: fallback.name, description: fallback.description } : action
+        })
+        useGameStore.getState().setActions(localizedActions)
         useGameStore.getState().setMaps(catalog.maps)
         useGameStore.getState().setEncounters(catalog.encounters)
       })

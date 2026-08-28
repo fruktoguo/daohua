@@ -249,7 +249,7 @@ if (processRole == ServerProcessRole.Api)
     {
         if (!IsPlayer(user, playerId)) return Results.Forbid();
         var snapshot = await runtime.LoadAsync(playerId, ct);
-        return Results.Ok(ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint));
+        return Results.Ok(ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData));
     });
     players.MapPost("/{playerId:guid}/commands", async (Guid playerId, CommandEnvelopeDto request, ClaimsPrincipal user, PlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
     {
@@ -259,7 +259,7 @@ if (processRole == ServerProcessRole.Api)
             || request.Payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
             return Results.BadRequest(Problem(400, "INVALID_COMMAND", "命令信封无效。"));
         var result = await runtime.ExecuteAsync(playerId, request.Command, request.Payload, request.ExpectedStateVersion, requestId, ct);
-        var dto = ToCommandResult(requestId, result, gameData.Fingerprint);
+        var dto = ToCommandResult(requestId, result, gameData);
         return result.Success
             ? Results.Ok(dto)
             : Results.Json(dto, statusCode: result.Code == "STATE_VERSION_CONFLICT" ? 409 : 400);
@@ -390,14 +390,14 @@ static ProblemDetails Problem(int status, string title, string detail) => new()
     Detail = detail
 };
 
-static CommandResultDto ToCommandResult(Guid requestId, PlayerCommandResult result, string fingerprint) =>
+static CommandResultDto ToCommandResult(Guid requestId, PlayerCommandResult result, GameDataCatalog gameData) =>
     new(
         requestId.ToString("D"),
         result.Success,
         result.Code,
         result.Message,
         result.Snapshot.StateVersion,
-        JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, fingerprint), ProtocolJson.Options));
+        JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
 
 static void StampSessionCookie(HttpContext context, string token, TimeSpan lifetime)
 {

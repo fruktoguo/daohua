@@ -67,7 +67,7 @@ public static class WebSocketEndpoint
             session,
             WireMessageType.SnapshotDelta,
             Guid.NewGuid(),
-            ProtocolSnapshotMapper.ToDelta(snapshot, gameData.Fingerprint),
+            ProtocolSnapshotMapper.ToDelta(snapshot, gameData.Fingerprint, gameData),
             token);
         runtime.SnapshotUpdated += OnSnapshotUpdated;
         try
@@ -170,7 +170,7 @@ public static class WebSocketEndpoint
                         await session.SendAsync(EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
                             new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence)), cancellationToken);
                         var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
-                        await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint), cancellationToken);
+                        await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData), cancellationToken);
                         handshaken = true;
                         break;
                     case WireMessageType.Ping:
@@ -233,7 +233,7 @@ public static class WebSocketEndpoint
                             commandResult.Code,
                             commandResult.Message,
                             commandResult.Snapshot.StateVersion,
-                            JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(commandResult.Snapshot, gameData.Fingerprint), ProtocolJson.Options));
+                            JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(commandResult.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
                         await QueueJsonAsync(session, WireMessageType.CommandResult, envelope.RequestId, commandDto, cancellationToken);
                         break;
                     default:

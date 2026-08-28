@@ -65,6 +65,20 @@ public sealed class PlayerAggregateTests
     }
 
     [Fact]
+    public void InfiniteActionKeepsQueueEntryAfterCompletedRounds()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var action = player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), Baseline, ActionCatalog.Default);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(17), ActionCatalog.Default);
+
+        Assert.Equal(2, result.CompletedRepeats);
+        Assert.Single(player.Actions);
+        Assert.Equal(action.Id, player.Actions[0].Id);
+        Assert.Equal(-1, player.Actions[0].RemainingRepeats);
+    }
+
+    [Fact]
     public void RestoreFromReplacesMutableStateButKeepsIdentity()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");

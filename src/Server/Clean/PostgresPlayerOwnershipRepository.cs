@@ -31,13 +31,15 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
 
     public async ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
     {
+        // ownerInstanceId 每次进程启动都会重新生成；即使本机时钟跳变导致 lease_until 已过期，
+        // 只要期间没有其他实例接管（ownerInstanceId 仍匹配），当前实例可以原子续租恢复。
         Validate(playerId, ownerInstanceId, lease);
         var now = DateTimeOffset.UtcNow;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             UPDATE game.player_runtime_leases
             SET lease_until = $1, renewed_at = $2
-            WHERE player_id = $3 AND owner_instance_id = $4 AND lease_until > $2
+            WHERE player_id = $3 AND owner_instance_id = $4
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = now.Add(lease) });
         command.Parameters.Add(new NpgsqlParameter { Value = now });

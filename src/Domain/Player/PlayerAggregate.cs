@@ -203,7 +203,8 @@ public sealed partial class PlayerAggregate
     public QueuedAction Enqueue(ActionIntent intent, DateTimeOffset now, ActionCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(catalog);
-        if (intent is null || !intent.ActionId.IsValid || !double.IsFinite(intent.RepeatCount) || intent.RepeatCount < 1 || intent.RepeatCount > 1_000_000)
+        if (intent is null || !intent.ActionId.IsValid || !double.IsFinite(intent.RepeatCount)
+            || (intent.RepeatCount != -1 && (intent.RepeatCount < 1 || intent.RepeatCount > 1_000_000)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
         if (_actions.Count >= MaxActionQueueLength)
             throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
