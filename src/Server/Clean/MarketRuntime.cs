@@ -37,8 +37,29 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        if (!await _store.AcquireLeaseAsync(_ownerInstanceId, cancellationToken))
-            throw new InvalidOperationException($"无法取得市场分片 {_options.MarketPartitionId} 写者租约。");
+        const int maxAcquireAttempts = 40;
+        var acquired = false;
+        for (var attempt = 1; attempt <= maxAcquireAttempts; attempt++)
+        {
+            if (await _store.AcquireLeaseAsync(_ownerInstanceId, cancellationToken))
+            {
+                acquired = true;
+                break;
+            }
+
+            if (attempt < maxAcquireAttempts)
+            {
+                _logger.LogWarning(
+                    "市场分片租约暂不可用 partition={PartitionId} attempt={Attempt}/{MaxAttempts}，等待旧实例租约自然过期",
+                    _options.MarketPartitionId,
+                    attempt,
+                    maxAcquireAttempts);
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            }
+        }
+
+        if (!acquired)
+            throw new InvalidOperationException($"无法取得市场分片 {_options.MarketPartitionId} 写者租约：已有实例持续持有租约。");
         try
         {
             // 当前存储实现返回 fence 的 API 在租约表中单调递增；读取最新值用于每次事务 fencing。

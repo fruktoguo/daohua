@@ -79,6 +79,19 @@ public sealed class PlayerAggregateTests
     }
 
     [Fact]
+    public void RestoreKeepsInfiniteActionState()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), Baseline, ActionCatalog.Default);
+
+        var restored = PlayerAggregate.Restore(player.ExportState());
+
+        var action = Assert.Single(restored.Actions);
+        Assert.Equal(-1, action.Intent.RepeatCount);
+        Assert.Equal(-1, action.RemainingRepeats);
+    }
+
+    [Fact]
     public void RestoreFromReplacesMutableStateButKeepsIdentity()
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");

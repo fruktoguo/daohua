@@ -142,12 +142,17 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
         foreach (var actionState in state.Actions)
         {
+            var repeatCountValid = double.IsFinite(actionState?.Intent.RepeatCount ?? double.NaN)
+                && (actionState!.Intent.RepeatCount == -1
+                    || actionState.Intent.RepeatCount is >= 1 and <= 1_000_000);
+            var remainingRepeatsValid = double.IsFinite(actionState?.RemainingRepeats ?? double.NaN)
+                && (actionState!.RemainingRepeats == -1 || actionState.RemainingRepeats > 0);
             if (actionState is null || actionState.Id == Guid.Empty || !actionState.Intent.ActionId.IsValid ||
-                !double.IsFinite(actionState.Intent.RepeatCount) || actionState.Intent.RepeatCount < 1 ||
+                !repeatCountValid ||
                 (actionState.Intent.TargetNodeId is not null && (actionState.Intent.TargetNodeId.Length == 0 || actionState.Intent.TargetNodeId.Length > 128)) ||
                 (actionState.Intent.Parameters is not null && actionState.Intent.Parameters.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value))) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
-                !double.IsFinite(actionState.RemainingRepeats) || actionState.RemainingRepeats <= 0 ||
+                !remainingRepeatsValid ||
                 !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
             var action = new QueuedAction(actionState.Id, actionState.Intent, actionState.EnqueuedAt)
