@@ -83,7 +83,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const bestAsk = book?.asks[0]?.price
   const bestBid = book?.bids[0]?.price
   const selectedAmount = instrument ? (inventory.find(item => item.itemId === instrument.itemId)?.amount ?? 0) : 0
-  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit')?.amount ?? 0
+  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone')?.amount ?? 0
 
   const parsedPrice = Number.parseInt(price, 10)
   const effectivePrice = Number.isSafeInteger(parsedPrice) && parsedPrice >= vendorPrice ? parsedPrice : minimumPrice

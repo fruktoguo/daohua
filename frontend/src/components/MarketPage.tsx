@@ -203,7 +203,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const refresh = useCallback(() => refreshRef.current?.(), [])
   const selected = instruments.find(item => item.itemId === selectedItemId) ?? null
   const selectedAmount = selected ? (inventory.find(item => item.itemId === selected.itemId)?.amount ?? 0) : 0
-  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit')?.amount ?? 0
+  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone')?.amount ?? 0
 
   return (
     <section className="panel market-page">

@@ -9,7 +9,7 @@ public sealed class PostgresMarketRepository(
     ServerOptions options,
     ILogger<PostgresMarketRepository> logger) : IMarketTransactionStore
 {
-    private static readonly string CoinsAsset = "spirit";
+    private static readonly string CoinsAsset = "currency.spirit-stone";
     public NpgsqlDataSource DataSource => dataSource;
 
     /// <summary>
