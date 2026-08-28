@@ -8,8 +8,6 @@ import { useT } from '../i18n'
 /** 每个槽位最多 4 条触发条件，与服务端 CombatLimits.TriggerCountPerSlot 保持一致。 */
 const MAX_TRIGGERS = 4
 
-const STATUS_COMPARATORS = ['is-active', 'is-inactive'] as const
-
 /**
  * 战斗技能触发条件编辑器 Props
  */
@@ -57,13 +55,16 @@ export function CombatTriggerEditor({
     if (open) setTriggers(cloneTriggers(initialTriggers))
   }, [initialTriggers, open])
 
+  const isStatusCondition = (condition: string) => condition.endsWith('-status')
+  const isPercentage = (condition: string) => condition.includes('percentage')
+
   // 条件切换时重置比较符与数值，避免残留“已生效 + 数值 1”这类非法组合。
   const updateTrigger = (index: number, patch: Partial<CombatTrigger>) => {
     setTriggers(current => current.map((trigger, triggerIndex) => {
       if (triggerIndex !== index) return trigger
       const next = { ...trigger, ...patch }
       if (patch.condition !== undefined && patch.condition !== trigger.condition) {
-        next.comparator = STATUS_COMPARATORS.includes(next.condition as typeof STATUS_COMPARATORS[number])
+        next.comparator = isStatusCondition(next.condition)
           ? 'is-active'
           : 'greater-than-equal'
         next.value = 0
@@ -77,9 +78,6 @@ export function CombatTriggerEditor({
   const summary = useMemo(() => (
     triggers.map(trigger => describeCombatTrigger(trigger)).join(t('combat.trigger.summarySeparator'))
   ), [t, triggers])
-
-  const statusCondition = (condition: string) => condition.endsWith('-status')
-  const isPercentage = (condition: string) => condition.includes('percentage')
 
   return (
     <Modal open={open} labelledBy={titleId} onClose={onClose} size="large" className="combat-trigger-modal">
@@ -100,7 +98,7 @@ export function CombatTriggerEditor({
             <p className="combat-trigger-empty">{t('game.trigger.editor.empty')}</p>
           )}
           {triggers.map((trigger, index) => {
-            const numeric = !statusCondition(trigger.condition)
+            const numeric = !isStatusCondition(trigger.condition)
             const percentage = isPercentage(trigger.condition)
             return (
               <section className="combat-trigger-card" key={index}>
