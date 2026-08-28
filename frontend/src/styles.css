@@ -2512,25 +2512,7 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
-.item-tile[data-rarity="mundane"] {
-  --item-accent: rgba(164, 161, 151, 0.42);
-  --item-surface: rgba(164, 161, 151, 0.08);
-}
-
-.item-tile[data-rarity="spirit"] {
-  --item-accent: rgba(114, 169, 140, 0.62);
-  --item-surface: rgba(114, 169, 140, 0.11);
-}
-
-.item-tile[data-rarity="mystic"] {
-  --item-accent: rgba(117, 169, 173, 0.66);
-  --item-surface: rgba(117, 169, 173, 0.12);
-}
-
-.item-tile[data-rarity="heaven"] {
-  --item-accent: rgba(201, 180, 109, 0.72);
-  --item-surface: rgba(201, 180, 109, 0.12);
-}
+/* 品阶 8 阶色彩由 selection-grid.css 统一收拢管理（参考 daojie-yusheng 规范） */
 
 .item-use-slot:hover .item-tile,
 .item-use-slot:focus-visible .item-tile,
