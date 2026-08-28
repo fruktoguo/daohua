@@ -5,7 +5,7 @@ import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
 import { EffectTooltipTarget } from './components/EffectTooltip'
-import { FloatingTooltip } from './components/FloatingPopover'
+import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
 import { ItemReference, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
@@ -522,40 +522,69 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
     <div className="buff-bar" aria-label={t('app.buff.barAria')}>
       {buffs.map(buff => {
         const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
+        const desc = buff.qiGainMultiplier > 1
+          ? `灵气收益 +${Math.round((buff.qiGainMultiplier - 1) * 100)}%`
+          : buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1
+            ? `灵草产出 +${Math.round((buff.gatheringOutputMultiplier - 1) * 100)}%`
+            : buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1
+              ? `丹药产出 +${Math.round((buff.alchemyOutputMultiplier - 1) * 100)}%`
+              : buff.damageRatio && buff.damageRatio > 0
+                ? `术式伤害 +${Math.round(buff.damageRatio * 100)}%`
+                : buff.attackSpeedRatio && buff.attackSpeedRatio > 0
+                  ? `攻速 +${Math.round(buff.attackSpeedRatio * 100)}%`
+                  : t('app.buff.combatBuff')
+
         return (
-          <span className="buff-chip" key={buff.buffId}>
-            <Icon name="buff" />
-            <span className="buff-stack" aria-label={t('app.buff.stackAria', { n: buff.stacks })}>{buff.stacks}</span>
-            <span className="buff-tip">
-              {buff.name} · {buff.qiGainMultiplier > 1
-                ? <>灵气收益 <em>+{Math.round((buff.qiGainMultiplier - 1) * 100)}%</em></>
-                : buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1
-                  ? <>灵草产出 <em>+{Math.round((buff.gatheringOutputMultiplier - 1) * 100)}%</em></>
-                  : buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1
-                    ? <>丹药产出 <em>+{Math.round((buff.alchemyOutputMultiplier - 1) * 100)}%</em></>
-                : buff.damageRatio && buff.damageRatio > 0
-                  ? <>术式伤害 <em>+{Math.round(buff.damageRatio * 100)}%</em></>
-                  : buff.attackSpeedRatio && buff.attackSpeedRatio > 0
-                    ? <>攻速 <em>+{Math.round(buff.attackSpeedRatio * 100)}%</em></>
-                    : t('app.buff.combatBuff')}<br />
-              <span className="buff-timer">{t('app.buff.remainingStacks', { remaining, stacks: buff.stacks })}</span>
+          <FloatingPopover
+            closeDelay={80}
+            content={
+              <FloatingInfoCard
+                badge={t('app.buff.stackAria', { n: buff.stacks })}
+                badgeTone="gold"
+                description={desc}
+                subtitle={t('app.buff.remainingStacks', { remaining, stacks: buff.stacks })}
+                title={buff.name}
+              />
+            }
+            interactive={false}
+            key={buff.buffId}
+            openDelay={60}
+            placement="bottom"
+            size="small"
+          >
+            <span className="buff-chip">
+              <Icon name="buff" />
+              <span className="buff-stack" aria-label={t('app.buff.stackAria', { n: buff.stacks })}>{buff.stacks}</span>
             </span>
-          </span>
+          </FloatingPopover>
         )
       })}
       {hasLocationEffect && (
-        <span className="buff-chip buff-chip--location">
-          <Icon name="spirit" />
-          <span className="buff-stack" aria-label={t('app.buff.locationStackAria')}>{t('app.buff.locationMark')}</span>
-          <span className="buff-tip">
-            {t('app.buff.locationEfficiency', {
-              name: world.locationName,
-              sign: world.cultivationMultiplier > 1 ? '+' : '',
-              percent: Math.round((world.cultivationMultiplier - 1) * 100),
-            })}<br />
-            <span className="buff-timer">{t('app.buff.locationOnly')}</span>
+        <FloatingPopover
+          closeDelay={80}
+          content={
+            <FloatingInfoCard
+              badge={t('app.buff.locationMark')}
+              badgeTone="qi"
+              description={t('app.buff.locationEfficiency', {
+                name: world.locationName,
+                sign: world.cultivationMultiplier > 1 ? '+' : '',
+                percent: Math.round((world.cultivationMultiplier - 1) * 100),
+              })}
+              subtitle={t('app.buff.locationOnly')}
+              title={world.locationName}
+            />
+          }
+          interactive={false}
+          openDelay={60}
+          placement="bottom"
+          size="small"
+        >
+          <span className="buff-chip buff-chip--location">
+            <Icon name="spirit" />
+            <span className="buff-stack" aria-label={t('app.buff.locationStackAria')}>{t('app.buff.locationMark')}</span>
           </span>
-        </span>
+        </FloatingPopover>
       )}
     </div>
   )

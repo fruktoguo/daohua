@@ -40,12 +40,14 @@ interface EquipmentSlotCardProps {
   config: SlotConfig
   equippedItem?: EquippedItem
   definition?: ItemDefinition
+  equipmentDef?: CombatEquipmentDefinition
   onClick: () => void
 }
 const EquipmentSlotCard = memo(function EquipmentSlotCard({
   config,
   equippedItem,
   definition,
+  equipmentDef,
   onClick,
 }: EquipmentSlotCardProps): React.JSX.Element {
   const t = useT()
@@ -76,6 +78,8 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
       <ItemTooltipTarget
         className="equipment-slot-anchor"
         definition={definition}
+        equipmentDefinition={equipmentDef}
+        enhancementLevel={equippedItem.enhancementLevel}
         itemId={equippedItem.itemId}
         metadata={metadata}
       >
@@ -241,6 +245,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
               <EquipmentSlotCard
                 config={config}
                 definition={data?.definition}
+                equipmentDef={data?.equipmentDef}
                 equippedItem={data?.item}
                 key={config.slot}
                 onClick={() => setActivePickingSlot(config)}
@@ -277,6 +282,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
               <EquipmentSlotCard
                 config={config}
                 definition={data?.definition}
+                equipmentDef={data?.equipmentDef}
                 equippedItem={data?.item}
                 key={config.slot}
                 onClick={() => setActivePickingSlot(config)}

@@ -1,15 +1,15 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { describeCombatTrigger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { convertTierToLevel, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { getT, useT } from '../i18n'
-import type { CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
-import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
+import type { Buff, CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
+import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { ValueText } from './ValueText'
 import { UnitNumber } from './UnitNumber'
 
 /** 物品悬浮提示气泡触发器 Props */
-interface ItemTooltipTargetProps {
+export interface ItemTooltipTargetProps {
   /** 物品唯一 ID */
   itemId: string
   /** 拥有/涉及数量 */
@@ -22,14 +22,20 @@ interface ItemTooltipTargetProps {
   metadata?: ItemMetadata
   /** 服务端原始物品定义 */
   definition?: ItemDefinition
+  /** 服务端装备定义 */
+  equipmentDefinition?: CombatEquipmentDefinition
+  /** 装备强化等级（如 +3） */
+  enhancementLevel?: number
   /** 键盘焦点 tab 索引 */
   tabIndex?: number
   /** 是否使用 CSS display: contents 消除外层包裹容器布局影响 */
   displayContents?: boolean
+  /** 额外附属卡片群 */
+  extraAsideCards?: readonly FloatingAsideCard[]
 }
 
 /** 物品网格方块 Props */
-interface ItemTileProps {
+export interface ItemTileProps {
   /** 显示数量（位于右下角） */
   amount?: number
   /** 右下角自定义标签（覆盖默认数量） */
@@ -83,10 +89,11 @@ function rarityToTone(rarity: ItemRarity): FloatingTone {
 /**
  * 物品悬浮气泡包裹组件 (ItemTooltipTarget)
  *
- * 鼠标悬停展示修仙风物品卡片气泡：
- * 1. 顶部展示物品品阶徽章 (rarityLabel) 与名称；
- * 2. 中部展示纯背景故事描述、恢复效果、冷却时间、丹药增益或装备攻防特殊词缀 (describeItemEffects / describeEquipmentEffects)；
- * 3. 底部展示品类、等阶、持存数量等基础属性统计键值对。
+ * 鼠标悬停展示修仙风物品卡片气泡体系：
+ * 1. 【主卡片 (300px)】：展示物品/装备品阶徽章、名称、背景故事描述、即时回血回蓝、冷却、装备攻防基础数值与品类/等阶；
+ * 2. 【专属 Buff 附属卡片窗口 (220px)】：若为丹药附带持续 Buff，或修炼/采集/炼丹持续加成，在右侧独立展开附属面板；
+ * 3. 【特殊机制附属卡片窗口 (220px)】：若装备带有特殊机制/特技，在右侧独立展开特殊机制副面板；
+ * 4. 【数量副气泡】：若传入 amount，自动在右侧并排展示独立的数量副气泡。
  */
 export function ItemTooltipTarget({
   itemId,
@@ -95,15 +102,18 @@ export function ItemTooltipTarget({
   className = '',
   metadata: metadataOverride,
   definition: itemDefOverride,
+  equipmentDefinition: eqDefOverride,
+  enhancementLevel = 0,
   tabIndex = 0,
   displayContents,
+  extraAsideCards,
 }: ItemTooltipTargetProps): React.JSX.Element {
   const t = useT()
   const itemCatalog = useGameStore((state) => state.items)
   const equipmentCatalog = useGameStore((state) => state.equipment)
 
   const itemDef = itemDefOverride ?? itemCatalog.find((i) => i.itemId === itemId)
-  const eqDef = equipmentCatalog.find((e) => e.equipmentId === itemId)
+  const eqDef = eqDefOverride ?? equipmentCatalog.find((e) => e.equipmentId === itemId)
 
   const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const rawMetadata = itemDef
@@ -134,7 +144,11 @@ export function ItemTooltipTarget({
     level: levelNumber,
   }
 
-  const effectLines = [...describeItemEffects(itemDef), ...describeEquipmentEffects(eqDef)]
+  // 主卡片只展示直接基础效果与攻防数值，Buff 与特殊机制解耦至 Aside 附属卡片群
+  const effectLines = [
+    ...describeItemEffects(itemDef),
+    ...describeEquipmentEffects(eqDef, enhancementLevel),
+  ]
 
   const stats: { label: string; value: ReactNode; tone?: FloatingTone }[] = [
     { label: t('market.tooltip.category'), value: resolveItemCategoryLabel(metadata.category, t), tone: 'muted' },
@@ -152,8 +166,21 @@ export function ItemTooltipTarget({
 
   const tone = rarityToTone(metadata.rarity)
 
+  // 附属卡片群：解析丹药 Buff、装备特殊机制与传入的副卡片
+  const asideCards = useMemo<FloatingAsideCard[]>(() => {
+    const list: FloatingAsideCard[] = []
+    const itemAsides = resolveItemAsideCards(itemDef, metadata.label)
+    const equipAsides = resolveEquipmentAsideCards(eqDef)
+    list.push(...itemAsides, ...equipAsides)
+    if (extraAsideCards && extraAsideCards.length > 0) {
+      list.push(...extraAsideCards)
+    }
+    return list
+  }, [itemDef, eqDef, metadata.label, extraAsideCards])
+
   return (
     <FloatingPopover
+      asideCards={asideCards.length > 0 ? asideCards : undefined}
       closeDelay={120}
       displayContents={displayContents}
       content={
@@ -192,29 +219,32 @@ function multiplierPercent(value: number): string | null {
   return Math.abs(delta) < 0.000001 ? null : signedPercent(delta)
 }
 
+/**
+ * 提取丹药/消耗品的直接主干效果（留在主卡片）
+ * 包含即时回血、即时回蓝、冷却时长、使用条件等
+ */
 function describeItemEffects(definition?: ItemDefinition): string[] {
   if (!definition) return []
-  // 非渲染辅助路径：词条行由调用方组件的重渲染携带语言切换。
   const t = getT()
   const lines: string[] = []
-  if (definition.hitpointRestore > 0) lines.push(t('market.effect.restoreHp', { value: formatNumber(definition.hitpointRestore) }))
-  if (definition.manapointRestore > 0) lines.push(t('market.effect.restoreMp', { value: formatNumber(definition.manapointRestore) }))
-  if (definition.recoverySeconds > 0) lines.push(t('market.effect.recoveryDuration', { seconds: formatNumber(definition.recoverySeconds) }))
-  if (definition.cooldownSeconds > 0) lines.push(t('market.effect.cooldown', { seconds: formatNumber(definition.cooldownSeconds) }))
-  if (definition.triggerAtCombatStart) lines.push(t('market.effect.useAtCombatStart'))
-  if (definition.cultivationMultiplier && definition.cultivationMultiplier > 1) {
-    lines.push(`修炼效率 +${Math.round((definition.cultivationMultiplier - 1) * 100)}%`)
+  if (definition.hitpointRestore > 0) {
+    lines.push(t('market.effect.restoreHp', { value: formatNumber(definition.hitpointRestore) }))
   }
-  if (definition.gatheringMultiplier && definition.gatheringMultiplier > 1) {
-    lines.push(`采集产出 +${Math.round((definition.gatheringMultiplier - 1) * 100)}%`)
+  if (definition.manapointRestore > 0) {
+    lines.push(t('market.effect.restoreMp', { value: formatNumber(definition.manapointRestore) }))
   }
-  if (definition.alchemyMultiplier && definition.alchemyMultiplier > 1) {
-    lines.push(`炼丹产出 +${Math.round((definition.alchemyMultiplier - 1) * 100)}%`)
+  if (definition.recoverySeconds > 0) {
+    lines.push(t('market.effect.recoveryDuration', { seconds: formatNumber(definition.recoverySeconds) }))
   }
-  if (definition.durationSeconds && definition.durationSeconds > 0) {
-    lines.push(`持续生效 ${formatNumber(definition.durationSeconds)}秒`)
+  if (definition.cooldownSeconds > 0) {
+    lines.push(t('market.effect.cooldown', { seconds: formatNumber(definition.cooldownSeconds) }))
   }
-  for (const trigger of definition.defaultCombatTriggers ?? []) lines.push(t('market.effect.defaultCondition', { trigger: describeCombatTrigger(trigger) }))
+  if (definition.triggerAtCombatStart) {
+    lines.push(t('market.effect.useAtCombatStart'))
+  }
+  for (const trigger of definition.defaultCombatTriggers ?? []) {
+    lines.push(t('market.effect.defaultCondition', { trigger: describeCombatTrigger(trigger) }))
+  }
   if (
     (definition.defaultCombatTriggers?.length ?? 0) === 0 &&
     (definition.hitpointRestore > 0 || definition.manapointRestore > 0) &&
@@ -222,29 +252,118 @@ function describeItemEffects(definition?: ItemDefinition): string[] {
   ) {
     lines.push(t('market.effect.autoUseBelowHp', { percent: formatNumber(Math.round(definition.triggerHpRatio * 100)) }))
   }
-  for (const buff of definition.buffEffects ?? []) {
-    const heading = [
-      buff.name,
-      buff.durationSeconds > 0 ? t('market.effect.secondsShort', { seconds: formatNumber(buff.durationSeconds) }) : '',
-      buff.maxStacks > 1 ? t('market.effect.maxStacks', { stacks: formatNumber(buff.maxStacks) }) : '',
-    ]
-      .filter(Boolean)
-      .join(' · ')
-    if (heading) lines.push(heading)
-    const qi = multiplierPercent(buff.qiGainMultiplier)
-    const gathering = multiplierPercent(buff.gatheringOutputMultiplier)
-    const alchemy = multiplierPercent(buff.alchemyOutputMultiplier)
-    if (qi) lines.push(t('market.effect.qiGainBonus', { value: qi }))
-    if (buff.attackLevelRatio !== 0) lines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
-    if (buff.damageRatio !== 0) lines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
-    if (buff.attackSpeedRatio !== 0) lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
-    if (gathering) lines.push(t('market.effect.gatheringOutput', { value: gathering }))
-    if (alchemy) lines.push(t('market.effect.alchemyOutput', { value: alchemy }))
-  }
   return lines
 }
 
-function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string[] {
+/**
+ * 提取丹药与消耗品的持续增益 Buff 效果，构造为独立的附属气泡卡片 (Aside Cards)
+ */
+export function resolveItemAsideCards(
+  definition?: ItemDefinition,
+  fallbackName?: string
+): FloatingAsideCard[] {
+  if (!definition) return []
+  const t = getT()
+  const cards: FloatingAsideCard[] = []
+
+  // 1. 修炼丹药/持续消耗品效果 (如引气丹、通脉丹)
+  if (definition.cultivationMultiplier && definition.cultivationMultiplier > 1) {
+    const lines: string[] = [
+      t('market.aside.cultivationSpeed', {
+        value: `+${Math.round((definition.cultivationMultiplier - 1) * 100)}%`,
+      }),
+    ]
+    if (definition.durationSeconds && definition.durationSeconds > 0) {
+      lines.push(t('market.aside.duration', { seconds: formatNumber(definition.durationSeconds) }))
+    }
+    cards.push({
+      id: `aside-cultivation-${definition.itemId}`,
+      mark: t('market.aside.cultivationBuff'),
+      title: definition.name || fallbackName || t('market.aside.cultivationBuff'),
+      tone: 'qi',
+      lines,
+    })
+  }
+
+  // 2. 采集产出加成 (如寻灵香)
+  if (definition.gatheringMultiplier && definition.gatheringMultiplier > 1) {
+    const lines: string[] = [
+      t('market.aside.gatheringOutput', {
+        value: `+${Math.round((definition.gatheringMultiplier - 1) * 100)}%`,
+      }),
+    ]
+    if (definition.durationSeconds && definition.durationSeconds > 0) {
+      lines.push(t('market.aside.duration', { seconds: formatNumber(definition.durationSeconds) }))
+    }
+    cards.push({
+      id: `aside-gathering-${definition.itemId}`,
+      mark: t('market.aside.gatheringBuff'),
+      title: definition.name || fallbackName || t('market.aside.gatheringBuff'),
+      tone: 'jade',
+      lines,
+    })
+  }
+
+  // 3. 炼丹产出加成 (如地火引)
+  if (definition.alchemyMultiplier && definition.alchemyMultiplier > 1) {
+    const lines: string[] = [
+      t('market.aside.alchemyOutput', {
+        value: `+${Math.round((definition.alchemyMultiplier - 1) * 100)}%`,
+      }),
+    ]
+    if (definition.durationSeconds && definition.durationSeconds > 0) {
+      lines.push(t('market.aside.duration', { seconds: formatNumber(definition.durationSeconds) }))
+    }
+    cards.push({
+      id: `aside-alchemy-${definition.itemId}`,
+      mark: t('market.aside.alchemyBuff'),
+      title: definition.name || fallbackName || t('market.aside.alchemyBuff'),
+      tone: 'gold',
+      lines,
+    })
+  }
+
+  // 4. 战斗丹药附带的 Buff 效果 (如止血散、顺气丸)
+  for (const buff of definition.buffEffects ?? []) {
+    const buffLines: string[] = []
+    const qi = multiplierPercent(buff.qiGainMultiplier)
+    const gathering = multiplierPercent(buff.gatheringOutputMultiplier)
+    const alchemy = multiplierPercent(buff.alchemyOutputMultiplier)
+    if (qi) buffLines.push(t('market.effect.qiGainBonus', { value: qi }))
+    if (buff.attackLevelRatio !== 0) buffLines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
+    if (buff.damageRatio !== 0) buffLines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
+    if (buff.attackSpeedRatio !== 0) buffLines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
+    if (gathering) buffLines.push(t('market.effect.gatheringOutput', { value: gathering }))
+    if (alchemy) buffLines.push(t('market.effect.alchemyOutput', { value: alchemy }))
+
+    const subParts: string[] = []
+    if (buff.durationSeconds > 0) {
+      subParts.push(t('market.aside.duration', { seconds: formatNumber(buff.durationSeconds) }))
+    }
+    if (buff.maxStacks > 1) {
+      subParts.push(t('market.aside.maxStacks', { stacks: formatNumber(buff.maxStacks) }))
+    }
+
+    cards.push({
+      id: `aside-buff-${buff.name}`,
+      mark: t('market.aside.pillBuff'),
+      title: buff.name,
+      subtitle: subParts.length > 0 ? subParts.join(' · ') : undefined,
+      tone: 'gold',
+      lines: buffLines.length > 0 ? buffLines : [t('app.buff.combatBuff')],
+    })
+  }
+
+  return cards
+}
+
+/**
+ * 提取装备的主干攻防数值与强化加成（留在主卡片）
+ */
+function describeEquipmentEffects(
+  equipment?: CombatEquipmentDefinition,
+  enhancementLevel = 0
+): string[] {
   if (!equipment) return []
   const t = getT()
   const lines: string[] = []
@@ -289,16 +408,16 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
     tenacity: '韧性',
   }
 
-  const specialLabels: Record<string, (val: number) => string> = {
-    threatRatio: (val) => `额外威胁值 +${Math.round(val * 100)}%`,
-    healingBonusRatio: (val) => `额外治疗提升 +${Math.round(val * 100)}%`,
-  }
-
   const hasStructured = Boolean(
     (equipment.baseStatRatios && Object.keys(equipment.baseStatRatios).length > 0) ||
-    (equipment.flatStats && Object.keys(equipment.flatStats).length > 0) ||
-    (equipment.specialMechanics && Object.keys(equipment.specialMechanics).length > 0)
+    (equipment.flatStats && Object.keys(equipment.flatStats).length > 0)
   )
+
+  // 攻击间隔（若存在）
+  const attackIntervalMs = (equipment as unknown as { attackIntervalMilliseconds?: number }).attackIntervalMilliseconds
+  if (attackIntervalMs && attackIntervalMs > 0) {
+    lines.push(t('market.stat.attackInterval', { seconds: (attackIntervalMs / 1000).toFixed(2) }))
+  }
 
   if (hasStructured) {
     if (equipment.baseStatRatios) {
@@ -316,16 +435,17 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
           if (key === 'criticalChance' && val <= 1.0) {
             lines.push(`${label} +${formatNumber(val * 100)}%`)
           } else {
-            lines.push(`${label} +${formatNumber(val)}`)
+            // 计算强化带来的加成
+            const bonusPerLevel = equipment.enhancementBonus
+              ? (equipment.enhancementBonus as unknown as Record<string, number>)[key] ?? 0
+              : 0
+            const totalBonus = bonusPerLevel * enhancementLevel
+            if (totalBonus > 0) {
+              lines.push(`${label} +${formatNumber(val)} (+${formatNumber(totalBonus)})`)
+            } else {
+              lines.push(`${label} +${formatNumber(val)}`)
+            }
           }
-        }
-      }
-    }
-    if (equipment.specialMechanics) {
-      for (const [key, val] of Object.entries(equipment.specialMechanics)) {
-        if (val !== 0) {
-          const describer = specialLabels[key]
-          lines.push(describer ? describer(val) : `${key}: +${val}`)
         }
       }
     }
@@ -356,6 +476,96 @@ function describeEquipmentEffects(equipment?: CombatEquipmentDefinition): string
   addPercent(t('market.stat.critAvoidance'), stats.criticalAvoidance)
   addPercent(t('market.stat.damageAbsorption'), stats.damageAbsorptionRatio)
   return lines
+}
+
+/**
+ * 提取装备的特殊机制与词缀 Buff，构造为独立的附属气泡卡片 (Aside Cards)
+ */
+export function resolveEquipmentAsideCards(
+  equipment?: CombatEquipmentDefinition
+): FloatingAsideCard[] {
+  if (!equipment) return []
+  const t = getT()
+  const cards: FloatingAsideCard[] = []
+
+  const specialLabels: Record<string, (val: number) => string> = {
+    threatRatio: (val) => `额外威胁值 +${Math.round(val * 100)}%`,
+    healingBonusRatio: (val) => `额外治疗提升 +${Math.round(val * 100)}%`,
+  }
+
+  if (equipment.specialMechanics && Object.keys(equipment.specialMechanics).length > 0) {
+    const lines: string[] = []
+    for (const [key, val] of Object.entries(equipment.specialMechanics)) {
+      if (val !== 0) {
+        const describer = specialLabels[key]
+        lines.push(describer ? describer(val) : `${key}: +${val}`)
+      }
+    }
+    if (lines.length > 0) {
+      cards.push({
+        id: `aside-equip-special-${equipment.equipmentId}`,
+        mark: t('market.aside.specialMechanic'),
+        title: `${equipment.name}·特技`,
+        tone: 'gold',
+        lines,
+      })
+    }
+  }
+
+  return cards
+}
+
+/**
+ * 通用 Buff / Debuff 附属卡片构造工具
+ * 能够将任意实时 Buff 实例转化为标准统一的 FloatingAsideCard
+ */
+export function createBuffAsideCard(
+  buff: Buff,
+  mark?: string
+): FloatingAsideCard {
+  const t = getT()
+  const lines: string[] = []
+  const qi = multiplierPercent(buff.qiGainMultiplier)
+  const gathering = multiplierPercent(buff.gatheringOutputMultiplier ?? 1)
+  const alchemy = multiplierPercent(buff.alchemyOutputMultiplier ?? 1)
+
+  if (qi) lines.push(t('market.effect.qiGainBonus', { value: qi }))
+  if (buff.damageRatio && buff.damageRatio !== 0) {
+    lines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
+  }
+  if (buff.attackLevelRatio && buff.attackLevelRatio !== 0) {
+    lines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
+  }
+  if (buff.attackSpeedRatio && buff.attackSpeedRatio !== 0) {
+    lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
+  }
+  if (gathering) lines.push(t('market.effect.gatheringOutput', { value: gathering }))
+  if (alchemy) lines.push(t('market.effect.alchemyOutput', { value: alchemy }))
+
+  if (buff.modifiers) {
+    for (const [modKey, modVal] of Object.entries(buff.modifiers)) {
+      if (modVal !== 0) {
+        lines.push(`${modKey}: ${signedPercent(modVal)}`)
+      }
+    }
+  }
+
+  const isDebuff =
+    (buff.damageRatio !== undefined && buff.damageRatio < 0) ||
+    (buff.attackSpeedRatio !== undefined && buff.attackSpeedRatio < 0) ||
+    (buff.qiGainMultiplier !== undefined && buff.qiGainMultiplier < 1)
+
+  const tone: FloatingTone = isDebuff ? 'danger' : 'gold'
+  const resolvedMark = mark ?? (isDebuff ? t('market.aside.debuff') : t('market.aside.buff'))
+
+  return {
+    id: `aside-active-buff-${buff.buffId}`,
+    mark: resolvedMark,
+    title: buff.name,
+    subtitle: buff.stacks > 1 ? t('market.aside.maxStacks', { stacks: formatNumber(buff.stacks) }) : undefined,
+    tone,
+    lines: lines.length > 0 ? lines : [t('app.buff.combatBuff')],
+  }
 }
 
 /**
