@@ -135,7 +135,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
 
   const [activePickingSlot, setActivePickingSlot] = useState<SlotConfig | null>(null)
 
-  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
+  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
 
   const equippedList = combat?.equipment ?? []
 

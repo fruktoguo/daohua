@@ -600,8 +600,8 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   const connection = useGameStore(state => state.connection)
   const presence = useGameStore(state => state.presenceMode)
   const setActiveTab = useUiStore(state => state.setActiveTab)
-  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0), [stats.spirit])
-  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
+  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
+  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
   const connectionText = connection === 'online'
     ? t('app.topbar.connected')
     : connection === 'connecting'

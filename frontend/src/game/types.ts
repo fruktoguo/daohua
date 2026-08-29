@@ -522,6 +522,7 @@ export interface Buff {
  * 角色历史累计统计数据
  */
 export interface Stats {
+  realmLevel?: number
   qi: number
   spirit: number
   foundationExp?: number

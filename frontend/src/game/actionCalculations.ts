@@ -196,7 +196,7 @@ export function calculateActionYieldPreview({
     // 境界判定；服务端突破时 Experience 清零且无独立道基底蕴字段，
     // "底蕴化生加速"属于前端虚构机制，已移除。
     const spirit = stats?.spirit ?? 0
-    const realmProgress = calculateRealmProgress(spirit)
+    const realmProgress = calculateRealmProgress(spirit, stats?.realmLevel)
     const expToCap = realmProgress.expToNext - realmProgress.currentLayerExp
     const isPendingBreakthrough = realmProgress.expToNext > 0 && expToCap <= 0.0001 && spirit > 0
 

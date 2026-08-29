@@ -52,8 +52,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const buffs = useGameStore(state => state.buffs)
 
   // 境界计算体系 (大境界 · 位阶 · 小境界)
-  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0), [stats.spirit])
-  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0), [stats.spirit])
+  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
+  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
 
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
   // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
@@ -155,7 +155,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   ])
 
   // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
-  const basePool = useMemo(() => calculateBaseAttributes(stats.spirit ?? 0), [stats.spirit])
+  const basePool = useMemo(() => calculateBaseAttributes(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
 
   // 1. 基础战斗属性 (固定数值类型，全部向下取整)
   // 当 attributes 存在时使用实时数值；未推送时以 basePool 为底座应用六维加成

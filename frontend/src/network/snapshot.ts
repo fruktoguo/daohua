@@ -199,6 +199,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
 function mapStats(value: unknown): Stats {
   const row = object(value)
   return {
+    realmLevel: numberValue(row.realmLevel, 1),
     qi: numberValue(row.qi),
     // 服务端 progression 只有一个经验字段 Experience（突破时清零），即境界修为 spirit；
     // 不存在独立的道基底蕴字段，foundationExp 保持未定义。
