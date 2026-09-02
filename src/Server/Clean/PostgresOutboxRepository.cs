@@ -46,7 +46,7 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         command.Parameters.Add(new NpgsqlParameter { Value = aggregateType });
         command.Parameters.Add(new NpgsqlParameter { Value = aggregateId });
         command.Parameters.Add(new NpgsqlParameter { Value = eventType });
-        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = payload.ToArray() });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = payload });
         command.Parameters.Add(new NpgsqlParameter { Value = occurredAt });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

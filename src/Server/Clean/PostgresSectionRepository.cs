@@ -274,42 +274,48 @@ public sealed class PostgresSectionRepository(
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        foreach (var section in sections)
+        if (sections.Count > 0)
         {
-            await using var command = new NpgsqlCommand("""
-                INSERT INTO platform.section_flush_queue
-                    (player_id, section_kind, state_version, schema_version, codec, payload,
-                     raw_bytes, checksum, game_data_fingerprint, last_simulated_at,
-                     attempts, next_attempt_at, lease_until, lease_token, last_error, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $10, NULL, NULL, NULL, $10)
-                ON CONFLICT (player_id, section_kind) DO UPDATE SET
-                    state_version = EXCLUDED.state_version,
-                    schema_version = EXCLUDED.schema_version,
-                    codec = EXCLUDED.codec,
-                    payload = EXCLUDED.payload,
-                    raw_bytes = EXCLUDED.raw_bytes,
-                    checksum = EXCLUDED.checksum,
-                    game_data_fingerprint = EXCLUDED.game_data_fingerprint,
-                    last_simulated_at = EXCLUDED.last_simulated_at,
-                    attempts = 0,
-                    next_attempt_at = EXCLUDED.next_attempt_at,
-                    lease_until = NULL,
-                    lease_token = NULL,
-                    last_error = NULL,
-                    updated_at = EXCLUDED.updated_at
-                WHERE EXCLUDED.state_version > platform.section_flush_queue.state_version
-                """, connection, transaction);
-            command.Parameters.Add(new NpgsqlParameter { Value = section.PlayerId });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.SectionKind });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.StateVersion });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.SchemaVersion });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.Codec });
-            command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = section.Payload.ToArray() });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.RawBytes });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.Checksum });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.GameDataFingerprint ?? string.Empty });
-            command.Parameters.Add(new NpgsqlParameter { Value = section.LastSimulatedAt ?? section.UpdatedAt });
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await using var batch = connection.CreateBatch();
+            batch.Transaction = transaction;
+            foreach (var section in sections)
+            {
+                var batchCommand = new NpgsqlBatchCommand("""
+                    INSERT INTO platform.section_flush_queue
+                        (player_id, section_kind, state_version, schema_version, codec, payload,
+                         raw_bytes, checksum, game_data_fingerprint, last_simulated_at,
+                         attempts, next_attempt_at, lease_until, lease_token, last_error, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $10, NULL, NULL, NULL, $10)
+                    ON CONFLICT (player_id, section_kind) DO UPDATE SET
+                        state_version = EXCLUDED.state_version,
+                        schema_version = EXCLUDED.schema_version,
+                        codec = EXCLUDED.codec,
+                        payload = EXCLUDED.payload,
+                        raw_bytes = EXCLUDED.raw_bytes,
+                        checksum = EXCLUDED.checksum,
+                        game_data_fingerprint = EXCLUDED.game_data_fingerprint,
+                        last_simulated_at = EXCLUDED.last_simulated_at,
+                        attempts = 0,
+                        next_attempt_at = EXCLUDED.next_attempt_at,
+                        lease_until = NULL,
+                        lease_token = NULL,
+                        last_error = NULL,
+                        updated_at = EXCLUDED.updated_at
+                    WHERE EXCLUDED.state_version > platform.section_flush_queue.state_version
+                    """);
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.PlayerId });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.SectionKind });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.StateVersion });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.SchemaVersion });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.Codec });
+                batchCommand.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = section.Payload });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.RawBytes });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.Checksum });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.GameDataFingerprint ?? string.Empty });
+                batchCommand.Parameters.Add(new NpgsqlParameter { Value = section.LastSimulatedAt ?? section.UpdatedAt });
+                batch.BatchCommands.Add(batchCommand);
+            }
+            await batch.ExecuteNonQueryAsync(cancellationToken);
         }
 
         foreach (var receipt in receipts)
@@ -506,38 +512,76 @@ public sealed class PostgresSectionRepository(
         }
 
         var checkpoints = await ReadSectionChecksumsAsync(connection, transaction, first.PlayerId, cancellationToken);
-        var hasCompleteState = PlayerSectionKinds.All.All(kind => checkpoints.Any(value => value.SectionKind == kind));
+        var hasCompleteState = true;
+        foreach (var kind in PlayerSectionKinds.All)
+        {
+            var found = false;
+            for (var j = 0; j < checkpoints.Count; j++)
+            {
+                if (checkpoints[j].SectionKind == kind)
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                hasCompleteState = false;
+                break;
+            }
+        }
+
         if (hasCompleteState)
         {
-            var headChecksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|', checkpoints
-                .OrderBy(value => value.SectionKind, StringComparer.Ordinal)
-                .Select(value => $"{value.SectionKind}:{value.SectionVersion}:{value.Checksum}"))))).ToLowerInvariant();
-            var maxSectionVersion = checkpoints.Max(value => value.SectionVersion);
-            var metadata = items
-                .Where(item => item.StateVersion == maxSectionVersion)
-                .OrderByDescending(item => item.UpdatedAt)
-                .ToArray();
-            var fingerprints = metadata
-                .Select(item => item.GameDataFingerprint)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
-            if (fingerprints.Length > 1)
-                throw new InvalidDataException("同一玩家状态版本携带了冲突的游戏数据指纹。");
+            var builder = new StringBuilder();
+            var maxSectionVersion = 0L;
+            for (var i = 0; i < checkpoints.Count; i++)
+            {
+                var cp = checkpoints[i];
+                if (cp.SectionVersion > maxSectionVersion) maxSectionVersion = cp.SectionVersion;
+                if (i > 0) builder.Append('|');
+                builder.Append(cp.SectionKind).Append(':').Append(cp.SectionVersion).Append(':').Append(cp.Checksum);
+            }
+
+            var utf8Bytes = Encoding.UTF8.GetBytes(builder.ToString());
+            var headChecksum = Convert.ToHexStringLower(SHA256.HashData(utf8Bytes));
+
+            var metadata = new List<FlushQueueItem>();
+            string? firstFingerprint = null;
+            DateTimeOffset? maxSimulatedAt = null;
+            for (var i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                if (item.StateVersion == maxSectionVersion)
+                {
+                    metadata.Add(item);
+                    if (!string.IsNullOrWhiteSpace(item.GameDataFingerprint))
+                    {
+                        if (firstFingerprint is null)
+                        {
+                            firstFingerprint = item.GameDataFingerprint;
+                        }
+                        else if (!string.Equals(firstFingerprint, item.GameDataFingerprint, StringComparison.Ordinal))
+                        {
+                            throw new InvalidDataException("同一玩家状态版本携带了冲突的游戏数据指纹。");
+                        }
+                    }
+                    if (item.LastSimulatedAt is not null)
+                    {
+                        if (maxSimulatedAt is null || item.LastSimulatedAt.Value > maxSimulatedAt.Value)
+                            maxSimulatedAt = item.LastSimulatedAt.Value;
+                    }
+                }
+            }
+
             // 旧 worker 可能只提交了较低版本 section；没有当前最高版本的元数据时，
             // 保留数据库已有 head，避免把 last_simulated_at/指纹回拨。
             var existingHead = await ReadHeadMetadataAsync(connection, transaction, first.PlayerId, cancellationToken);
-            var fingerprint = metadata.Select(item => item.GameDataFingerprint).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
-                ?? existingHead?.GameDataFingerprint;
-            var lastSimulatedAt = metadata
-                .Select(item => item.LastSimulatedAt)
-                .Where(value => value is not null)
-                .Select(value => value!.Value)
-                .DefaultIfEmpty(existingHead?.LastSimulatedAt ?? first.UpdatedAt)
-                .Max();
+            var fingerprint = firstFingerprint ?? existingHead?.GameDataFingerprint;
+            var lastSimulatedAt = maxSimulatedAt ?? existingHead?.LastSimulatedAt ?? first.UpdatedAt;
             if (string.IsNullOrWhiteSpace(fingerprint) && existingHead is null)
                 throw new InvalidDataException("完整 section 缺少游戏数据指纹，无法建立提交头。");
-            if (metadata.Length == 0 && existingHead is null)
+            if (metadata.Count == 0 && existingHead is null)
                 throw new InvalidDataException("完整 section 缺少当前版本元数据，无法建立提交头。");
             var headVersion = Math.Max(maxSectionVersion, existingHead?.StateVersion ?? 0);
             await using (var command = new NpgsqlCommand("""
