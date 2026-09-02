@@ -688,24 +688,69 @@ public sealed class PlayerRuntime(
                 if (dirty.Count == 0 && _pendingReceipts.Count == 0) return;
                 var now = DateTimeOffset.UtcNow;
                 var receiptPending = _pendingReceipts.Count > 0;
-                var eligible = receiptPending
-                    ? dirty.ToArray()
-                    : dirty.Where(section =>
-                        force
-                        || !_dirtyAt.TryGetValue(SectionCodec.ToStorageKind(section), out var at)
-                        || now - at >= TimeSpan.FromSeconds(15)).ToArray();
+                var eligibleAll = receiptPending || force;
+                PlayerSectionKind[] eligible;
+                if (eligibleAll)
+                {
+                    eligible = dirty.Count == 0 ? [] : dirty.ToArray();
+                }
+                else
+                {
+                    var list = new List<PlayerSectionKind>(dirty.Count);
+                    foreach (var section in dirty)
+                    {
+                        if (!_dirtyAt.TryGetValue(SectionCodec.ToStorageKind(section), out var at) || now - at >= TimeSpan.FromSeconds(15))
+                        {
+                            list.Add(section);
+                        }
+                    }
+                    eligible = list.Count == 0 ? [] : list.ToArray();
+                }
+
                 // 需要跨重连去重的低频写命令必须把本次所有脏 section 与 receipt
                 // 一起进入 durable queue，避免回执先落盘而其他状态仍停留在内存。
                 if (eligible.Length == 0 && dirty.Count > 0 && !receiptPending) return;
 
                 // EncodeAggregate consumes all dirty flags; restore flags for sections not yet eligible.
                 var encoded = SectionCodec.EncodeAggregate(aggregate, now, Math.Max(1, _logicalVersion));
-                var writes = encoded.Where(write => eligible.Contains(SectionCodec.FromStorageKind(write.SectionKind))).ToArray();
-                foreach (var write in encoded.Where(write => !eligible.Contains(SectionCodec.FromStorageKind(write.SectionKind)))) aggregate.MarkDirty(SectionCodec.FromStorageKind(write.SectionKind));
-                if (writes.Length == 0 && _pendingReceipts.Count == 0) return;
+                IReadOnlyList<SectionWrite> writes;
+                if (eligibleAll || eligible.Length == encoded.Count)
+                {
+                    writes = encoded;
+                }
+                else
+                {
+                    var filteredWrites = new List<SectionWrite>(encoded.Count);
+                    for (var i = 0; i < encoded.Count; i++)
+                    {
+                        var write = encoded[i];
+                        var kind = SectionCodec.FromStorageKind(write.SectionKind);
+                        var isEligible = false;
+                        for (var j = 0; j < eligible.Length; j++)
+                        {
+                            if (eligible[j] == kind)
+                            {
+                                isEligible = true;
+                                break;
+                            }
+                        }
+
+                        if (isEligible)
+                        {
+                            filteredWrites.Add(write);
+                        }
+                        else
+                        {
+                            aggregate.MarkDirty(kind);
+                        }
+                    }
+                    writes = filteredWrites;
+                }
+
+                if (writes.Count == 0 && _pendingReceipts.Count == 0) return;
                 try
                 {
-                    await repository.EnqueueSectionsAsync(writes, _pendingReceipts.ToArray(), cancellationToken);
+                    await repository.EnqueueSectionsAsync(writes, _pendingReceipts.Count == 0 ? [] : _pendingReceipts.ToArray(), cancellationToken);
                 }
                 catch
                 {
