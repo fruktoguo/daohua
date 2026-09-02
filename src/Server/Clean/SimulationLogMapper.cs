@@ -40,18 +40,28 @@ public static class SimulationLogMapper
             .Append('|')
             .Append(simulationEvent.Message)
             .Append("}}");
-        if (simulationEvent.ItemDeltas is not { Count: > 0 }) return builder.ToString();
+        if (simulationEvent.ItemDeltas is not { Count: > 0 } deltas) return builder.ToString();
         builder.Append("，获得 ");
-        var first = true;
-        foreach (var pair in simulationEvent.ItemDeltas.OrderBy(p => p.Key.Value, StringComparer.Ordinal))
+
+        var items = new KeyValuePair<ItemId, double>[deltas.Count];
+        var idx = 0;
+        foreach (var kv in deltas) items[idx++] = kv;
+        if (items.Length > 1)
         {
+            Array.Sort(items, static (a, b) => string.CompareOrdinal(a.Key.Value, b.Key.Value));
+        }
+
+        var first = true;
+        for (var i = 0; i < items.Length; i++)
+        {
+            var pair = items[i];
             if (!first) builder.Append('、');
             builder.Append("{{item:")
                 .Append(pair.Key.Value)
                 .Append('|')
                 .Append(ItemName(gameData, pair.Key))
                 .Append('|')
-                .Append(pair.Value.ToString("0.######", CultureInfo.InvariantCulture))
+                .AppendFormat(CultureInfo.InvariantCulture, "{0:0.######}", pair.Value)
                 .Append("}}");
             first = false;
         }
