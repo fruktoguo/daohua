@@ -2,6 +2,13 @@ using Protocol;
 
 namespace Server.Clean;
 
+/// <summary>
+/// 单个客户端 WebSocket 连接会话封装。
+/// 核心机制：
+/// 1. 使用有界通道（BoundedChannel）管理下行数据包，避免网络慢客户端造成服务端内存无限膨胀；
+/// 2. 线程安全递增下行 Sequence 帧序号；
+/// 3. 维护上次推送的资产余额基线，用于增量计算（DiffAssets）。
+/// </summary>
 public sealed class WebSocketSession(Guid playerId, int capacity)
 {
     private readonly Channel<byte[]> _outbound = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(capacity)
@@ -13,11 +20,17 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     private long _outboundSequence;
     private IReadOnlyList<AssetBalanceDto>? _lastPushedAssets;
 
+    /// <summary>会话绑定的修仙者角色 ID</summary>
     public Guid PlayerId { get; } = playerId;
+    /// <summary>下行消息输出通道读取端</summary>
     public ChannelReader<byte[]> Outbound => _outbound.Reader;
+    /// <summary>获取并递增下一个下行信封帧序列号</summary>
     public long NextOutboundSequence() => Interlocked.Increment(ref _outboundSequence);
+    /// <summary>向输出通道异步投递待发送的数据包（满时等待背压）</summary>
     public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken) => _outbound.Writer.WriteAsync(packet, cancellationToken);
+    /// <summary>尝试非阻塞投递数据包</summary>
     public bool TrySend(byte[] packet) => _outbound.Writer.TryWrite(packet);
+    /// <summary>标记输出通道完成并关闭</summary>
     public void Complete() => _outbound.Writer.TryComplete();
 
     /// <summary>记录本次推送的资产并返回上次基线；增量回调由模拟循环串行驱动，无需加锁。</summary>
@@ -29,6 +42,10 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     }
 }
 
+/// <summary>
+/// 在线 WebSocket 会话注册表。
+/// 保证同一玩家角色同时只能存在一个活跃连接，后到连接将排他拒绝或踢出。
+/// </summary>
 public sealed class SessionRegistry
 {
     private readonly ConcurrentDictionary<Guid, WebSocketSession> _sessions = new();
@@ -41,6 +58,10 @@ public sealed class SessionRegistry
     }
 }
 
+/// <summary>
+/// WebSocket 通信端点处理器。
+/// 负责协议升级、握手认证、收发双工管道与异常恢复。
+/// </summary>
 public static class WebSocketEndpoint
 {
     public static async Task HandleAsync(HttpContext context)

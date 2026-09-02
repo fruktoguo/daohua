@@ -1,5 +1,13 @@
 namespace Domain.Simulation;
 
+/// <summary>
+/// 快进模拟推进过程中触发的关键业务事件（如单轮行动完成、掉落产生、失效行动自动移除等）。
+/// </summary>
+/// <param name="At">事件发生时间（UTC）</param>
+/// <param name="Code">事件分类代码</param>
+/// <param name="Message">事件日志文本</param>
+/// <param name="ActionId">触发事件的行动定义 ID</param>
+/// <param name="ItemDeltas">产出或消耗的物品变动明细</param>
 public sealed record SimulationEvent(
     DateTimeOffset At,
     string Code,
@@ -7,6 +15,10 @@ public sealed record SimulationEvent(
     ActionId? ActionId = null,
     IReadOnlyDictionary<ItemId, double>? ItemDeltas = null);
 
+/// <summary>
+/// 模拟引擎单次推进的完整结算结果。
+/// 包含时间跨度、推进轮次、物品资产流水变动以及是否引起聚合状态演进。
+/// </summary>
 public sealed record SimulationResult(
     PlayerId PlayerId,
     DateTimeOffset From,
@@ -20,11 +32,18 @@ public sealed record SimulationResult(
     bool Changed);
 
 /// <summary>
-/// 唯一确定性快进入口。算法按行动完成边界推进，不按离线秒数写历史事件。
+/// 角色行为与挂机离线收益的唯一确定性快进入口引擎。
+/// 核心设计原则：
+/// 1. 离线挂机和在线逐秒推进的计算结果必须位级一致（Bitwise Deterministic）；
+/// 2. 算法按“行动完成边界”跳步推进，杜绝按离线时间无脑逐秒生成历史事件；
+/// 3. 行动队列中 RemainingRepeats == -1 为无限循环，每轮结算后绝不出队；
+/// 4. 连续奖励（灵气/经验）通过整秒量化余数（SimulationCarrySeconds）精确进位。
 /// </summary>
 public static class SimulationEngine
 {
+    /// <summary>当前模拟模式版本</summary>
     public const int CurrentSchemaVersion = 1;
+    /// <summary>单次快进计算的最大状态转移步数上限，防止异常输入或配置死循环卡死主服务</summary>
     public const int MaxTransitionsPerAdvance = 100_000;
 
     /// <summary>整秒量化的贴整容差：吸收 0.1 这类二进制无法精确表示的秒数在累加中的尾差。</summary>
@@ -33,6 +52,13 @@ public static class SimulationEngine
     /// <summary>单次连续奖励可施加的整秒上限：正常推进远低于该值，越界说明配表或时钟已破坏，快速失败避免巨量循环。</summary>
     private const double MaxWholeSecondsPerApply = 1_000_000_000;
 
+    /// <summary>
+    /// 将玩家聚合状态从 LastSimulatedAt 确定性推进至目标时间 target。
+    /// </summary>
+    /// <param name="player">角色聚合实例（在此方法中直接就地更新）</param>
+    /// <param name="target">推进截止目标时刻（必须不早于 player.LastSimulatedAt）</param>
+    /// <param name="catalog">生效的动作配表目录</param>
+    /// <returns>包含资产变动与事件明细的模拟结算结果</returns>
     public static SimulationResult AdvanceTo(
         PlayerAggregate player,
         DateTimeOffset target,
@@ -169,6 +195,10 @@ public static class SimulationEngine
         return (long)floorSeconds;
     }
 
+    /// <summary>
+    /// 结算行动持续产生的被动收益（如打坐产生的灵气、探索积累的历练经验）。
+    /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致。
+    /// </summary>
     private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds)
     {
         if (wholeSeconds <= 0) return;
@@ -200,6 +230,11 @@ public static class SimulationEngine
             throw new DomainException(DomainErrorCode.InvariantViolation, "模拟后的玩家进度数值无效。");
     }
 
+    /// <summary>
+    /// 单轮行动耗时走满时的结算处理。
+    /// 扣除输入材料、发放输出产物、扣减剩余次数，若次数归零则移出队列；
+    /// 若为 -1（无限重复）则绝对保留队列项供下一轮循环。
+    /// </summary>
     private static void CompleteRepeat(
         PlayerAggregate player,
         QueuedAction action,
@@ -231,13 +266,16 @@ public static class SimulationEngine
             definition.Name,
             definition.Id,
             definition.Outputs));
-        // -1 表示无限行动：每轮完成后保留队列项并继续下一轮。
+        // -1 表示无限行动：每轮完成后保留队列项并继续下一轮；仅在严格递减至 0 时出队。
         if (action.RemainingRepeats == 0)
         {
             player.RemoveAction(action.Id, incrementVersion: false);
         }
     }
 
+    /// <summary>
+    /// 累计资产变动差额并执行有限性校验。
+    /// </summary>
     private static void AddDelta(Dictionary<ItemId, double> deltas, ItemId item, double amount)
     {
         if (!item.IsValid || !double.IsFinite(amount))

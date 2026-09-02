@@ -1,36 +1,59 @@
 /**
- * daohua wire.v1 客户端协议。
+ * 道化太初客户端二进制信封协议（DHW1 = DaoHua Wire v1）。
  *
- * 传输层只有一个固定的 DHW1 二进制信封；业务载荷当前使用 JSON 编码，
- * 这样可以在协议字段冻结的同时保持浏览器端可诊断性。任何未知版本、消息
- * 类型、编码或长度都会被拒绝，不尝试解析旧的 JSON 包格式。
+ * 核心机制：
+ * 1. 报头固定 36 字节：Magic(4B) + Version(2B) + Type(1B) + Codec(1B) + RequestId(16B) + Sequence(8B) + PayloadLength(4B)；
+ * 2. 大端序（Big Endian）数字打包，.NET Guid 混合端序转换以保证跨平台/语言 UUID 标识绝对一致；
+ * 3. 业务载荷当前统一使用 UTF-8 JSON 编码，兼顾高性能与浏览器端 DevTools 可观测性。
  */
 
+/** 当前信封协议版本 */
 export const PROTOCOL_VERSION = 1 as const
+/** 单帧最大允许字节数（1MB） */
 export const MAX_FRAME_BYTES = 1_048_576
+/** 二进制信封定长报头字节数 */
 export const WIRE_HEADER_BYTES = 36
 
+/** 信封消息类型枚举，与服务端 WireMessageType 严格一致 */
 export const WireMessageType = {
+  /** 客户端初次握手问候 */
   Hello: 1,
+  /** 服务端握手确认与指纹应答 */
   HelloAck: 2,
+  /** 全量快照下发 */
   Snapshot: 3,
+  /** 增量快照下发 */
   SnapshotDelta: 4,
+  /** 行动意图请求 */
   ActionIntent: 5,
+  /** 行动意图响应 */
   ActionResult: 6,
+  /** 资产视图同步 */
   AssetView: 7,
+  /** 坊市盘口深度 */
   MarketBook: 8,
+  /** 坊市挂单操作 */
   MarketOrder: 9,
+  /** 通用协议错误 */
   Error: 10,
+  /** 心跳探活 Ping */
   Ping: 11,
+  /** 心跳应答 Pong */
   Pong: 12,
+  /** 调度冷挂机计算请求 */
   ComputeAdvanceRequest: 13,
+  /** 计算节点补算应答 */
   ComputeAdvanceResponse: 14,
+  /** 通用玩家指令 */
   Command: 15,
+  /** 通用玩家指令执行回执 */
   CommandResult: 16,
+  /** 战报日志事件批次推送 */
   LogBatch: 17,
 } as const
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
 
+/** 载荷编码格式枚举 */
 export const WireCodec = {
   None: 0,
   Json: 1,
@@ -38,6 +61,7 @@ export const WireCodec = {
 } as const
 export type WireCodec = (typeof WireCodec)[keyof typeof WireCodec]
 
+/** 解码后的统一网络信封结构 */
 export interface WireEnvelope {
   protocolVersion: number
   messageType: WireMessageType

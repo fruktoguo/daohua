@@ -1,11 +1,17 @@
 namespace DaoHua.ComputeNode;
 
 /// <summary>
-/// 对 section 载荷执行与时间相关、可重复的基础快进。
-/// 领域规则由主服务 Domain 提供；节点只负责无状态地处理已编码 section，绝不持有玩家真源。
+/// 确定性离线挂机批量补算引擎。
+/// 架构边界：
+/// 1. 节点只运行确定性纯计算，无状态、不持有任何数据库读写权限；
+/// 2. 接收来自主服务的已编码 Section 快照与离线时间跨度，推导生成推进后的 Section 载荷；
+/// 3. 输出的新状态版本号与校验和必须能够被主服务的 CAS 机制无缝校验并落盘。
 /// </summary>
 public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
 {
+    /// <summary>
+    /// 对离线任务批次执行确定性时间快进推演。
+    /// </summary>
     public AdvanceJobResult Advance(AdvanceJobRequest job, string gameDataFingerprint)
     {
         try

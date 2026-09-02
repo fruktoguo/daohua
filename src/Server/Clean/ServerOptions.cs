@@ -1,6 +1,9 @@
 namespace Server.Clean;
 
-/// <summary>新宿主的唯一运行配置；所有值在启动时完成边界校验。</summary>
+/// <summary>
+/// 服务端宿主统一运行时配置模型。
+/// 所有字段均在应用启动阶段完成严格的取值范围与有效性校验，快速失败。
+/// </summary>
 public sealed record ServerOptions(
     string ServiceName,
     string ConnectionString,
@@ -16,15 +19,27 @@ public sealed record ServerOptions(
     int MarketPartitionId,
     bool EnableSchemaBootstrap)
 {
+    /// <summary>进程运行角色（API、Worker 或全部）</summary>
     public ServerProcessRole ProcessRole { get; init; } = ServerProcessRole.Api;
+    /// <summary>历史过期数据单次清理批次大小</summary>
     public int RetentionBatchSize { get; init; } = 256;
+    /// <summary>已投递的 Outbox 消息保留期限</summary>
     public TimeSpan DeliveredOutboxRetention { get; init; } = TimeSpan.FromDays(7);
+    /// <summary>会话凭据最长保留期限</summary>
     public TimeSpan SessionRetention { get; init; } = TimeSpan.FromDays(7);
+    /// <summary>审计日志最长保留期限</summary>
     public TimeSpan AuditRetention { get; init; } = TimeSpan.FromDays(30);
+    /// <summary>离线补算任务记录保留期限</summary>
     public TimeSpan ComputeJobRetention { get; init; } = TimeSpan.FromDays(7);
+    /// <summary>ASP.NET 数据保护密钥保留期限</summary>
     public TimeSpan DataProtectionKeyRetention { get; init; } = TimeSpan.FromDays(180);
+    /// <summary>坊市结算认领凭证保留期限</summary>
     public TimeSpan SettlementClaimRetention { get; init; } = TimeSpan.FromDays(30);
 
+    /// <summary>
+    /// 从 IConfiguration 绑定并校验全量服务端配置。
+    /// 校验失败时抛出 InvalidOperationException 阻止服务启动。
+    /// </summary>
     public static ServerOptions From(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(configuration);

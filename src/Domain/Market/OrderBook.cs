@@ -1,6 +1,12 @@
 namespace Domain.Market;
 
-/// <summary>单品种内存订单簿；数据库是权威账本，本类只负责确定性撮合投影。</summary>
+/// <summary>
+/// 单交易标的物（Instrument）内存订单簿。
+/// 核心原则：
+/// 1. 采用“价格优先、时间优先”（Price-Time Priority）严格确定性撮合；
+/// 2. 数据库 PostgreSQL 作为权威账本落盘，本类作为单 Fiber Actor 内部的快速撮合与盘口投影；
+/// 3. 禁止在领域层持有连接或直接扣减外部数据库。
+/// </summary>
 public sealed class OrderBook
 {
     private readonly Dictionary<OrderId, MarketOrder> _orders = [];
@@ -14,8 +20,11 @@ public sealed class OrderBook
         Instrument = instrument;
     }
 
+    /// <summary>当前订单簿所挂钩的交易标的</summary>
     public MarketInstrument Instrument { get; }
+    /// <summary>订单簿单调演进版本号</summary>
     public long Version => _version;
+    /// <summary>当前全部处于活跃挂牌排队状态的订单列表</summary>
     public IReadOnlyCollection<MarketOrder> ActiveOrders
     {
         get
@@ -28,6 +37,7 @@ public sealed class OrderBook
             return active;
         }
     }
+    /// <summary>按订单 ID 尝试查找订单实体</summary>
     public bool TryGet(OrderId orderId, out MarketOrder order) => _orders.TryGetValue(orderId, out order!);
 
     /// <summary>从数据库当前活动订单重建内存投影；只导入，不触发撮合或资产变更。</summary>
@@ -58,6 +68,10 @@ public sealed class OrderBook
         _version = version;
     }
 
+    /// <summary>
+    /// 提交挂单并立即执行撮合（Taker 吃单）。
+    /// 若有交叉价格对手单，按价格优先、时间优先依次成交；未完全成交部分作为 Maker 保留在货架上。
+    /// </summary>
     public PlacementResult Place(PlaceOrderRequest request)
     {
         if (request.OrderId.IsEmpty || request.OwnerId.IsEmpty || !request.IdempotencyKey.IsValid ||
@@ -88,6 +102,7 @@ public sealed class OrderBook
         {
             if (incoming.RemainingQuantity <= 0) break;
             var maker = candidates[i];
+            // 自成交防护：同一玩家的订单禁止撮合互刷
             if (maker.OwnerId == incoming.OwnerId) continue;
             var quantity = Math.Min(incoming.RemainingQuantity, maker.RemainingQuantity);
             var price = maker.Price;
@@ -123,6 +138,9 @@ public sealed class OrderBook
         return new PlacementResult(_orders[request.OrderId], fills, _version);
     }
 
+    /// <summary>
+    /// 主动撤销未完全成交的挂单。
+    /// </summary>
     public CancellationResult Cancel(OrderId orderId, PlayerId ownerId)
     {
         if (!_orders.TryGetValue(orderId, out var order))
@@ -140,6 +158,9 @@ public sealed class OrderBook
         return new CancellationResult(order, _version);
     }
 
+    /// <summary>
+    /// 定期下架超过截止时间的过期挂单。
+    /// </summary>
     public IReadOnlyList<MarketOrder> Expire(DateTimeOffset now)
     {
         var timestamp = now.ToUniversalTime();
@@ -162,6 +183,10 @@ public sealed class OrderBook
         return expired;
     }
 
+    /// <summary>
+    /// 生成买卖盘指定档位深度的聚合快照（Asks 升序、Bids 降序）。
+    /// 采用单趟遍历字典聚合与数组排序，消除多重 LINQ GroupBy 产生的大量闭包分配。
+    /// </summary>
     public OrderBookSnapshot Snapshot(int depth = 20, DateTimeOffset? now = null)
     {
         if (depth is < 1 or > 200) throw new DomainException(DomainErrorCode.InvalidArgument, "盘口深度必须在 1 到 200 之间。");
@@ -210,6 +235,9 @@ public sealed class OrderBook
         return new OrderBookSnapshot(Instrument, asks, bids, _version, (now ?? DateTimeOffset.UtcNow).ToUniversalTime());
     }
 
+    /// <summary>
+    /// 查询指定玩家名下的活动挂单列表（按创建时序逆序排列）。
+    /// </summary>
     public IReadOnlyList<MarketOrder> OrdersByOwner(PlayerId ownerId, int limit = 100)
     {
         if (ownerId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "玩家标识不能为空。");
@@ -227,6 +255,9 @@ public sealed class OrderBook
         return list;
     }
 
+    /// <summary>
+    /// 导出当前全部活动排队订单（供持久化刷盘或校验）。
+    /// </summary>
     public IReadOnlyList<MarketOrder> ExportActiveOrders()
     {
         var active = new List<MarketOrder>(_orders.Count);
@@ -238,6 +269,9 @@ public sealed class OrderBook
         return active;
     }
 
+    /// <summary>
+    /// 筛选并按价格优先、时间优先排列符合撮合交叉条件的候选对手单。
+    /// </summary>
     private List<MarketOrder> MatchingCandidates(MarketOrder incoming)
     {
         var opposite = incoming.Side == MarketSide.Buy ? MarketSide.Sell : MarketSide.Buy;
@@ -252,6 +286,7 @@ public sealed class OrderBook
 
         if (incoming.Side == MarketSide.Buy)
         {
+            // 买入吃单：卖方挂单价格最低者优先；同价按时间序列（Sequence）最早者优先
             candidates.Sort(static (a, b) =>
             {
                 var cmp = a.Price.CompareTo(b.Price);
@@ -260,6 +295,7 @@ public sealed class OrderBook
         }
         else
         {
+            // 卖出吃单：买方挂单出价最高者优先；同价按时间序列（Sequence）最早者优先
             candidates.Sort(static (a, b) =>
             {
                 var cmp = b.Price.CompareTo(a.Price);
@@ -270,11 +306,17 @@ public sealed class OrderBook
         return candidates;
     }
 
+    /// <summary>
+    /// 判定进场订单与挂牌单价格是否形成交叉成交区间。
+    /// 买单价格 >= 卖单价格，或卖单价格 <= 买单价格。
+    /// </summary>
     private static bool Crosses(MarketOrder incoming, MarketOrder maker) => incoming.Side == MarketSide.Buy
         ? maker.Price <= incoming.Price
         : maker.Price >= incoming.Price;
 
+    /// <summary>判定订单是否属于有效挂牌中（未撤销未完成且剩余数量大于容差）</summary>
     private static bool IsActive(MarketOrder order) =>
         (order.Status is MarketOrderStatus.Active or MarketOrderStatus.PartiallyFilled)
         && order.RemainingQuantity > 1e-12;
 }
+

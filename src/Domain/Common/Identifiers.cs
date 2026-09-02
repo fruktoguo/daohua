@@ -6,6 +6,7 @@ public interface IIdentifier
     string Value { get; }
 }
 
+/// <summary>用户账号标识，对应认证鉴权主体，跨角色唯一。</summary>
 public readonly record struct AccountId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
@@ -14,6 +15,7 @@ public readonly record struct AccountId(Guid Value) : IIdentifier
     public override string ToString() => Value.ToString("N");
 }
 
+/// <summary>修仙者角色聚合唯一标识，对应单 Fiber 运行时与独立存档生命周期。</summary>
 public readonly record struct PlayerId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
@@ -22,6 +24,7 @@ public readonly record struct PlayerId(Guid Value) : IIdentifier
     public override string ToString() => Value.ToString("N");
 }
 
+/// <summary>配表动作/行动定义标识（如采集、修炼、炼丹、探索等）。</summary>
 public readonly record struct ActionId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
@@ -29,6 +32,7 @@ public readonly record struct ActionId(string Value) : IIdentifier
     public override string ToString() => Value ?? string.Empty;
 }
 
+/// <summary>配表道具/物品类型唯一标识（如灵石、草药、丹药、装备模板）。</summary>
 public readonly record struct ItemId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
@@ -36,6 +40,7 @@ public readonly record struct ItemId(string Value) : IIdentifier
     public override string ToString() => Value ?? string.Empty;
 }
 
+/// <summary>功法/术法/神通定义唯一标识。</summary>
 public readonly record struct AbilityId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
@@ -43,6 +48,7 @@ public readonly record struct AbilityId(string Value) : IIdentifier
     public override string ToString() => Value ?? string.Empty;
 }
 
+/// <summary>非同质化物品（如独立属性装备、动态法宝）的唯一实例标识。</summary>
 public readonly record struct InstanceId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
@@ -51,6 +57,7 @@ public readonly record struct InstanceId(Guid Value) : IIdentifier
     public override string ToString() => Value.ToString("N");
 }
 
+/// <summary>坊市交易挂单唯一标识，在订单簿撮合与落盘时唯一索引。</summary>
 public readonly record struct OrderId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
@@ -59,6 +66,7 @@ public readonly record struct OrderId(Guid Value) : IIdentifier
     public override string ToString() => Value.ToString("N");
 }
 
+/// <summary>经济账本资产变动流水唯一标识，用于对账与双分录凭证。</summary>
 public readonly record struct TransactionId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
@@ -67,6 +75,7 @@ public readonly record struct TransactionId(Guid Value) : IIdentifier
     public override string ToString() => Value.ToString("N");
 }
 
+/// <summary>资产预扣结/冻结租约标识（如挂单冻结灵石、制造锁定材料）。</summary>
 public readonly record struct ReservationId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
@@ -75,6 +84,7 @@ public readonly record struct ReservationId(Guid Value) : IIdentifier
     public override string ToString() => Value.ToString("N");
 }
 
+/// <summary>后台补算或批处理作业调度任务标识。</summary>
 public readonly record struct JobId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
@@ -83,9 +93,11 @@ public readonly record struct JobId(Guid Value) : IIdentifier
     public override string ToString() => Value.ToString("N");
 }
 
+/// <summary>客户端指令幂等键，防止网络抖动与重复重试导致动作二次结算。</summary>
 public readonly record struct IdempotencyKey(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 200;
     public override string ToString() => Value ?? string.Empty;
 }
+

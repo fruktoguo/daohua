@@ -52,6 +52,7 @@ public sealed record SectionWrite(
     }
 }
 
+/// <summary>持久化头元数据，用于跨实例与版本 CAS</summary>
 public sealed record PlayerStateHead(
     Guid PlayerId,
     long StateVersion,
@@ -61,12 +62,14 @@ public sealed record PlayerStateHead(
     string Checksum,
     DateTimeOffset UpdatedAt);
 
+/// <summary>玩家不可变基础身份信息</summary>
 public sealed record PlayerIdentity(
     Guid PlayerId,
     Guid AccountId,
     string DisplayName,
     DateTimeOffset CreatedAt);
 
+/// <summary>数据库中存储的单个分段载荷行映射</summary>
 public sealed record StoredSection(
     Guid PlayerId,
     string SectionKind,
@@ -78,12 +81,14 @@ public sealed record StoredSection(
     string Checksum,
     DateTimeOffset UpdatedAt);
 
+/// <summary>聚合读取时从数据库加载出的完整数据绑定包</summary>
 public sealed record PlayerStateBundle(
     PlayerIdentity Identity,
     PlayerStateHead Head,
     IReadOnlyDictionary<string, StoredSection> Sections,
     IReadOnlyList<StoredAction> Actions);
 
+/// <summary>数据库持久化的行动队列项</summary>
 public sealed record StoredAction(
     Guid PlayerId,
     int Slot,
@@ -94,6 +99,7 @@ public sealed record StoredAction(
     DateTimeOffset? NextDueAt,
     string IdempotencyKey);
 
+/// <summary>分段异步刷盘工作队列中的待处理项</summary>
 public sealed record FlushQueueItem(
     Guid PlayerId,
     string SectionKind,
@@ -120,8 +126,10 @@ public sealed record FlushQueueItem(
     }
 }
 
+/// <summary>异步刷盘批处理统计结果</summary>
 public sealed record FlushBatchResult(int Claimed, int Applied, int Failed, TimeSpan Duration);
 
+/// <summary>指令幂等执行回执，记录特定 RequestId 的执行指纹与版本</summary>
 public sealed record CommandReceipt(
     Guid PlayerId,
     Guid RequestId,
@@ -131,6 +139,7 @@ public sealed record CommandReceipt(
     DateTimeOffset CreatedAt,
     DateTimeOffset ExpiresAt);
 
+/// <summary>事务发件箱（Transactional Outbox）待投递消息模型</summary>
 public sealed record OutboxMessage(
     Guid OutboxId,
     string AggregateType,
@@ -142,6 +151,7 @@ public sealed record OutboxMessage(
     DateTimeOffset VisibleAt,
     Guid LeaseToken);
 
+/// <summary>玩家状态仓储接口：负责分段入队与异步流水线批量刷盘</summary>
 public interface IPlayerStateRepository
 {
     ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default);
@@ -156,6 +166,7 @@ public interface IPlayerStateRepository
     ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default);
 }
 
+/// <summary>客户端指令幂等回执存储边界</summary>
 public interface ICommandReceiptStore
 {
     ValueTask<CommandReceipt?> FindAsync(Guid playerId, Guid requestId, CancellationToken cancellationToken = default);

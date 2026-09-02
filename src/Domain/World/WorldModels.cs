@@ -1,5 +1,6 @@
 namespace Domain.World;
 
+/// <summary>世界地图节点（如宗门、村落、秘境洞府、灵脉矿区）。</summary>
 public sealed record WorldNode(string Id, string Name, double X, double Y)
 {
     public static WorldNode Create(string id, string name, double x, double y)
@@ -10,6 +11,7 @@ public sealed record WorldNode(string Id, string Name, double X, double Y)
     }
 }
 
+/// <summary>世界两节点间的连通路径（有向边），包含空间物理距离与通行耗时。</summary>
 public sealed record WorldEdge(string Id, string FromNodeId, string ToNodeId, double Distance, double TravelSeconds)
 {
     public static WorldEdge Create(string id, string fromNodeId, string toNodeId, double distance, double travelSeconds)
@@ -21,6 +23,9 @@ public sealed record WorldEdge(string Id, string FromNodeId, string ToNodeId, do
     }
 }
 
+/// <summary>
+/// 纯内存世界拓扑图，提供邻接表管理与 Dijkstra 最短时间路径规划。
+/// </summary>
 public sealed class WorldGraph
 {
     private readonly Dictionary<string, WorldNode> _nodes = new(StringComparer.Ordinal);
@@ -30,6 +35,7 @@ public sealed class WorldGraph
     public IReadOnlyCollection<WorldNode> Nodes => _nodes.Values;
     public IReadOnlyCollection<WorldEdge> Edges => _edges.Values;
 
+    /// <summary>向世界图中注册节点</summary>
     public void AddNode(WorldNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -37,6 +43,9 @@ public sealed class WorldGraph
         _outgoing[node.Id] = [];
     }
 
+    /// <summary>
+    /// 向世界图中注册有向边，并按边 ID 维护出边的稳定顺序，消除寻路时的无序震荡。
+    /// </summary>
     public void AddEdge(WorldEdge edge)
     {
         ArgumentNullException.ThrowIfNull(edge);
@@ -48,6 +57,9 @@ public sealed class WorldGraph
         list.Sort(static (a, b) => string.CompareOrdinal(a.Id, b.Id));
     }
 
+    /// <summary>
+    /// 使用带优先队列的 Dijkstra 算法规划从起点到终点的最短耗时路径。
+    /// </summary>
     public TravelPlan Plan(string fromNodeId, string toNodeId)
     {
         if (!_nodes.ContainsKey(fromNodeId) || !_nodes.ContainsKey(toNodeId)) throw new DomainException(DomainErrorCode.NotFound, "起点或终点不存在。");
@@ -90,11 +102,14 @@ public sealed class WorldGraph
         return new TravelPlan(fromNodeId, toNodeId, edgeIds, totalTravelSeconds, totalDistance);
     }
 
+    /// <summary>根据 ID 查找指定世界边</summary>
     public WorldEdge GetEdge(string id) => _edges.TryGetValue(id, out var edge) ? edge : throw new DomainException(DomainErrorCode.NotFound, $"世界边不存在：{id}。");
 }
 
+/// <summary>世界漫游路径方案，记录有序的边列表与总耗时/总里程。</summary>
 public sealed record TravelPlan(string FromNodeId, string ToNodeId, IReadOnlyList<string> EdgeIds, double TotalTravelSeconds, double TotalDistance);
 
+/// <summary>角色沿路径行进过程中的动态进度状态机。</summary>
 public sealed class TravelProgress
 {
     public TravelProgress(TravelPlan plan)
@@ -102,13 +117,19 @@ public sealed class TravelProgress
         Plan = plan ?? throw new ArgumentNullException(nameof(plan));
     }
 
+    /// <summary>所依附的路径规划方案</summary>
     public TravelPlan Plan { get; }
+    /// <summary>已完全走过的边段数量</summary>
     public int CompletedEdges { get; internal set; }
+    /// <summary>当前所在边段内已推进的耗时秒数</summary>
     public double CurrentEdgeElapsedSeconds { get; internal set; }
+    /// <summary>整个路径累计已推进的总耗时秒数</summary>
     public double ElapsedSeconds { get; internal set; }
+    /// <summary>是否已抵达最终终点</summary>
     public bool Completed => CompletedEdges >= Plan.EdgeIds.Count;
 }
 
+/// <summary>路径行进单步推进结果帧。</summary>
 public sealed record TravelAdvanceResult(
     string CurrentNodeId,
     double ElapsedSeconds,
@@ -116,8 +137,14 @@ public sealed record TravelAdvanceResult(
     bool Completed,
     int CompletedEdges);
 
+/// <summary>
+/// 纯确定性路径漫游步进引擎。
+/// </summary>
 public static class TravelEngine
 {
+    /// <summary>
+    /// 推进角色旅行进度 deltaSeconds 秒，逐边更新当前所在节点与完成标志。
+    /// </summary>
     public static TravelAdvanceResult Advance(WorldGraph graph, TravelProgress progress, double deltaSeconds)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -147,3 +174,4 @@ public static class TravelEngine
         return new TravelAdvanceResult(current, progress.ElapsedSeconds, distance, progress.Completed, progress.CompletedEdges);
     }
 }
+

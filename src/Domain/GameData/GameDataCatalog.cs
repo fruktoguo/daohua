@@ -4,15 +4,25 @@ using System.Text.Json;
 
 namespace Domain.GameData;
 
+/// <summary>行动行为类型分类</summary>
 public enum ActionKind : byte
 {
+    /// <summary>打坐修行/纳气纳灵</summary>
     Cultivation = 0,
+    /// <summary>大千世界探索与采集草药矿石</summary>
     Exploration = 1,
+    /// <summary>开炉炼丹/炼器精炼</summary>
     Alchemy = 2,
+    /// <summary>野外或秘境战斗交锋</summary>
     Combat = 3,
+    /// <summary>御剑漫游/跨地图长途迁跃</summary>
     Travel = 4
 }
 
+/// <summary>
+/// 单个行动的静态配表定义。
+/// 包含单轮时长、材料消耗、产物掉落与持续性属性收益率。
+/// </summary>
 public sealed record ActionDefinition(
     ActionId Id,
     string Name,
@@ -26,6 +36,9 @@ public sealed record ActionDefinition(
 {
 }
 
+/// <summary>
+/// 道具/物品静态配表定义。
+/// </summary>
 public sealed record ItemDefinition(
     ItemId Id,
     string Name,
@@ -61,13 +74,18 @@ public sealed class ActionCatalog
         _definitions = new ReadOnlyDictionary<ActionId, ActionDefinition>(map);
     }
 
+    /// <summary>全部已加载行动列表</summary>
     public IReadOnlyCollection<ActionDefinition> All => _definitions.Values.ToArray();
+    /// <summary>检查是否包含指定行动</summary>
     public bool Contains(ActionId id) => _definitions.ContainsKey(id);
+    /// <summary>尝试根据 ID 获取行动定义</summary>
     public bool TryGet(ActionId id, out ActionDefinition definition) => _definitions.TryGetValue(id, out definition!);
+    /// <summary>获取行动定义；未找到时抛出 NotFound 领域异常</summary>
     public ActionDefinition Get(ActionId id) => _definitions.TryGetValue(id, out var definition)
         ? definition
         : throw new DomainException(DomainErrorCode.NotFound, $"行动 {id} 不存在。");
 
+    /// <summary>内置默认基础行动集（引气入体、采药、炼丹）</summary>
     public static ActionCatalog Default { get; } = new(
     [
         new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1.0, 0.25),
@@ -99,6 +117,10 @@ public sealed class ActionCatalog
     }
 }
 
+/// <summary>
+/// 全局游戏静态配表只读目录。
+/// 包含版本号、SHA-256 数据指纹、行动/道具/地图/怪物/装备不可变数据，确保服务端与客户端数据同构。
+/// </summary>
 public sealed class GameDataCatalog
 {
     public const int CurrentSchemaVersion = 1;
@@ -130,9 +152,13 @@ public sealed class GameDataCatalog
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
     }
 
+    /// <summary>配表版本标签</summary>
     public string ContentVersion { get; }
+    /// <summary>配表内容 SHA-256 十六进制前16位指纹，用于网络握手对齐与热更检测</summary>
     public string Fingerprint { get; }
+    /// <summary>行动目录</summary>
     public ActionCatalog Actions { get; }
+    /// <summary>道具目录</summary>
     public IReadOnlyDictionary<ItemId, ItemDefinition> Items { get; }
     /// <summary>地图原始定义由宿主映射为协议 DTO；领域只负责持有经过资源解析的不可变 JSON 值。</summary>
     public IReadOnlyList<JsonElement> Maps { get; }
@@ -145,9 +171,12 @@ public sealed class GameDataCatalog
     /// <summary>装备原始定义，用于宿主映射为全功能装备配置 DTO。</summary>
     public IReadOnlyDictionary<string, JsonElement> RawEquipments { get; }
 
+    /// <summary>内置单例兜底配表</summary>
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);
 
-    /// <summary>从纯字节资源解析最小稳定目录；文件系统、数据库均由宿主负责读取。</summary>
+    /// <summary>
+    /// 从原始 JSON 字节流集合解析构建不可变游戏配表目录，并实时计算 SHA-256 数据指纹。
+    /// </summary>
     public static GameDataCatalog Parse(IEnumerable<ReadOnlyMemory<byte>> jsonDocuments)
     {
         ArgumentNullException.ThrowIfNull(jsonDocuments);
@@ -208,6 +237,9 @@ public sealed class GameDataCatalog
         return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments);
     }
 
+    /// <summary>
+    /// 从当前程序集嵌入的 .json 资源中反射加载完整游戏数据。
+    /// </summary>
     public static GameDataCatalog LoadEmbedded(Assembly? assembly = null)
     {
         assembly ??= typeof(GameDataCatalog).Assembly;
@@ -225,6 +257,7 @@ public sealed class GameDataCatalog
         return Parse(resources);
     }
 
+    /// <summary>从 JSON 对象提取并解析行动定义（ActionDefinition）</summary>
     private static ActionDefinition ParseAction(JsonElement entry, string id)
     {
         var kind = entry.TryGetProperty("type", out var type)
@@ -239,6 +272,7 @@ public sealed class GameDataCatalog
         return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, kind == ActionKind.Cultivation ? 1 : 0, kind == ActionKind.Cultivation ? 0.25 : 0, nodes);
     }
 
+    /// <summary>从 JSON 对象提取并解析道具定义（ItemDefinition）</summary>
     private static ItemDefinition ParseItem(JsonElement entry, string id)
     {
         var name = entry.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() ?? id : id;
@@ -248,6 +282,7 @@ public sealed class GameDataCatalog
         return new ItemDefinition(new ItemId(id), name, description, tradable, price);
     }
 
+    /// <summary>解析消耗/产出等数量字典</summary>
     private static Dictionary<ItemId, double> ParseQuantities(JsonElement entry, string property)
     {
         var values = new Dictionary<ItemId, double>();

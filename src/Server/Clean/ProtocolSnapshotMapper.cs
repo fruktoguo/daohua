@@ -4,9 +4,16 @@ using Protocol;
 
 namespace Server.Clean;
 
-/// <summary>把领域运行时投影为稳定的 Protocol DTO；不把 PlayerAggregate 或数据库类型暴露给网络。</summary>
+/// <summary>
+/// 协议快照映射器：将内部领域运行时状态投影为公开稳定的 Protocol DTO。
+/// 严禁把 ECS Entity、Fiber、数据库模型或未授权内部异常直接暴露给网络客户端。
+/// </summary>
 public static class ProtocolSnapshotMapper
 {
+    /// <summary>
+    /// 将玩家运行时快照（PlayerRuntimeSnapshot）转换为公开的全量快照 DTO。
+    /// 自动结合激活的 GameDataCatalog 透传地图与节点动态生态。
+    /// </summary>
     public static PlayerSnapshotDto ToSnapshot(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog? gameData = null)
     {
         var state = runtime.State;
@@ -76,6 +83,7 @@ public static class ProtocolSnapshotMapper
             assets);
     }
 
+    /// <summary>构造增量快照 DTO（仅携带受影响的变更分段与资产变更）</summary>
     public static PlayerSnapshotDeltaDto ToDelta(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog? gameData = null, IReadOnlyList<AssetBalanceDto>? changedAssets = null)
     {
         var snapshot = ToSnapshot(runtime, gameDataFingerprint, gameData);

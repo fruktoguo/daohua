@@ -1,19 +1,31 @@
 namespace Domain.Combat;
 
+/// <summary>战斗伤害类型划分</summary>
 public enum CombatDamageKind : byte
 {
+    /// <summary>肉身物理打击</summary>
     Physical = 0,
+    /// <summary>玄门道法神通打击</summary>
     Spell = 1
 }
 
+/// <summary>战斗最终胜负裁决状态</summary>
 public enum CombatOutcome : byte
 {
+    /// <summary>战斗仍在持续交锋中</summary>
     Running = 0,
+    /// <summary>玩家击败敌人获胜</summary>
     PlayerWon = 1,
+    /// <summary>敌人击溃玩家获胜</summary>
     EnemyWon = 2,
+    /// <summary>双方同归于尽或超时平局</summary>
     Draw = 3
 }
 
+/// <summary>
+/// 战斗单位静态属性规格。
+/// 所有属性计算统一使用 double 精度。
+/// </summary>
 public sealed record CombatantStats(
     double MaxHitpoints,
     double AttackPower,
@@ -40,6 +52,9 @@ public sealed record CombatantStats(
     }
 }
 
+/// <summary>
+/// 战斗交锋中的单位动态运行时状态（维护当前气血与下一次出手时刻）。
+/// </summary>
 public sealed class CombatantState
 {
     public CombatantState(string id, CombatantStats stats)
@@ -50,14 +65,23 @@ public sealed class CombatantState
         Hitpoints = stats.MaxHitpoints;
     }
 
+    /// <summary>战斗者标识（如 player 或 enemy）</summary>
     public string Id { get; }
+    /// <summary>战斗静态属性面板</summary>
     public CombatantStats Stats { get; }
+    /// <summary>当前剩余气血值</summary>
     public double Hitpoints { get; internal set; }
+    /// <summary>下一次普通攻击或出手的预定战斗时间（秒）</summary>
     public double NextAttackAtSeconds { get; internal set; }
+    /// <summary>累计出手攻击次数</summary>
     public double AttackCount { get; internal set; }
+    /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
 }
 
+/// <summary>
+/// 单场战斗遭遇战状态聚合。
+/// </summary>
 public sealed class CombatEncounterState
 {
     private CombatEncounterState(string encounterId, long seed, CombatantState player, CombatantState enemy)
@@ -68,14 +92,24 @@ public sealed class CombatEncounterState
         Enemy = enemy;
     }
 
+    /// <summary>遭遇战唯一标识</summary>
     public string EncounterId { get; }
+    /// <summary>战斗伪随机数种子（用于命中/暴击等确定性复现）</summary>
     public long Seed { get; }
+    /// <summary>当前战斗已推进的总时间（秒）</summary>
     public double ElapsedSeconds { get; internal set; }
+    /// <summary>玩家方战斗单位</summary>
     public CombatantState Player { get; }
+    /// <summary>敌方对峙单位</summary>
     public CombatantState Enemy { get; }
+    /// <summary>当前对决胜负裁决</summary>
     public CombatOutcome Outcome { get; internal set; } = CombatOutcome.Running;
+    /// <summary>状态转换序号（递增帧号）</summary>
     public double Sequence { get; internal set; }
 
+    /// <summary>
+    /// 初始化开启一场新的战斗遭遇
+    /// </summary>
     public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, CombatantStats enemy)
     {
         if (string.IsNullOrWhiteSpace(encounterId) || encounterId.Length > 128)
@@ -85,6 +119,9 @@ public sealed class CombatEncounterState
     }
 }
 
+/// <summary>
+/// 战斗单次攻击/受创事件明细。
+/// </summary>
 public sealed record CombatEvent(
     double AtSeconds,
     string AttackerId,
@@ -94,6 +131,9 @@ public sealed record CombatEvent(
     CombatDamageKind DamageKind,
     double TargetHitpointsAfter);
 
+/// <summary>
+/// 战斗步进切片结算结果帧。
+/// </summary>
 public sealed record CombatAdvanceResult(
     string EncounterId,
     double FromSeconds,
@@ -102,11 +142,18 @@ public sealed record CombatAdvanceResult(
     IReadOnlyList<CombatEvent> Events,
     double Sequence);
 
-/// <summary>无随机全局状态的确定性战斗推进器；同一输入必得同一事件序列。</summary>
+/// <summary>
+/// 无外部随机副作用的确定性战斗推进引擎。
+/// 相同的初始属性与时间推进必得完全一致的伤害和事件序列，供客户端预测回放与服务端权威核验。
+/// </summary>
 public static class DeterministicCombatEngine
 {
+    /// <summary>单次推进最多产出的战斗事件上限，防止攻速异常引发死循环</summary>
     public const int MaxEventsPerAdvance = 100_000;
 
+    /// <summary>
+    /// 将战斗状态推进至指定的 targetSeconds 目标时刻。
+    /// </summary>
     public static CombatAdvanceResult AdvanceTo(CombatEncounterState encounter, double targetSeconds)
     {
         ArgumentNullException.ThrowIfNull(encounter);
@@ -143,6 +190,11 @@ public static class DeterministicCombatEngine
         return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome, (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence);
     }
 
+    /// <summary>
+    /// 结算单次普攻动作。
+    /// 命中对抗：Accuracy >= Evasion 时命中。
+    /// 减伤公式：标准双曲减伤 100 / (100 + Defense)。
+    /// </summary>
     private static void ResolveAttack(CombatantState attacker, CombatantState target, double at, ref List<CombatEvent>? events)
     {
         if (!attacker.IsAlive || !target.IsAlive) return;
@@ -155,6 +207,9 @@ public static class DeterministicCombatEngine
         events.Add(new CombatEvent(at, attacker.Id, target.Id, damage, hit, attacker.Stats.DamageKind, target.Hitpoints));
     }
 
+    /// <summary>
+    /// 根据交战双方存活状态更新战局结果。
+    /// </summary>
     private static void UpdateOutcome(CombatEncounterState encounter)
     {
         encounter.Outcome = (encounter.Player.IsAlive, encounter.Enemy.IsAlive) switch
@@ -166,3 +221,4 @@ public static class DeterministicCombatEngine
         };
     }
 }
+

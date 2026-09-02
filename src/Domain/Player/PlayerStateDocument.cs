@@ -1,7 +1,8 @@
 namespace Domain.Player;
 
 /// <summary>
-/// 跨进程/持久化使用的纯数据文档。它不包含 Entity、Fiber、网络连接或存储句柄。
+/// 跨进程、跨网络或持久化落库使用的纯数据快照文档。
+/// 严格遵循纯数据传输（POCO），不包含 Entity、Fiber、网络连接或存储句柄。
 /// </summary>
 public sealed record PlayerAggregateState(
     PlayerId PlayerId,
@@ -22,6 +23,7 @@ public sealed record PlayerAggregateState(
     IReadOnlyList<QueuedActionState> Actions,
     IReadOnlyList<ItemId>? EquippedItemIds = null);
 
+/// <summary>境界与修为进度的离线/持久化快照 DTO</summary>
 public sealed record PlayerProgressionState(
     int RealmLevel,
     double Qi,
@@ -30,12 +32,14 @@ public sealed record PlayerProgressionState(
     double CompletedActions,
     double SimulationCarrySeconds = 0);
 
+/// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
     string NodeId,
     double X,
     double Y,
     double ExplorationSeed);
 
+/// <summary>战斗属性数值快照 DTO</summary>
 public sealed record PlayerCombatStateDocument(
     double Hitpoints,
     double MaxHitpoints,
@@ -44,12 +48,14 @@ public sealed record PlayerCombatStateDocument(
     double AttackPower,
     double Defense);
 
+/// <summary>客户端设置与快捷自动使用配置快照 DTO</summary>
 public sealed record PlayerSettingsStateDocument(
     string Locale,
     bool NotificationsEnabled,
     bool LoopEnabled = true,
     IReadOnlyList<AutoUseSlotState>? AutoUseSlots = null);
 
+/// <summary>行动项状态快照 DTO，记录进度与剩余轮次</summary>
 public sealed record QueuedActionState(
     Guid Id,
     ActionIntent Intent,
@@ -61,6 +67,10 @@ public sealed record QueuedActionState(
 
 public sealed partial class PlayerAggregate
 {
+    /// <summary>
+    /// 将当前可变领域聚合导出为不可变的纯数据快照文档。
+    /// 经过零闭包与空数组单例复用优化，降低高频快照导出的 GC 压力。
+    /// </summary>
     public PlayerAggregateState ExportState()
     {
         QueuedActionState[] actions;
@@ -98,6 +108,10 @@ public sealed partial class PlayerAggregate
             Loadout.EquippedItemIds.Count == 0 ? [] : Loadout.EquippedItemIds.ToArray());
     }
 
+    /// <summary>
+    /// 从持久化纯数据快照还原出全新的可变角色聚合实例。
+    /// 执行严格的业务不变量核验（数值有限性、非负约束、界限范围），并对历史浮点重复次数执行容错自愈。
+    /// </summary>
     public static PlayerAggregate Restore(PlayerAggregateState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -203,8 +217,9 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 将已验证的 canonical 状态写回当前聚合，用于同一 actor 内的失败回滚或一致性恢复。
-    /// 玩家/账号创建信息不可被替换，所有可变 section、行动队列和版本游标会被完整覆盖。
+    /// 将已验证的标准（canonical）快照全量刷入当前可变聚合实例。
+    /// 适用于单 Fiber Actor 内事务失败回滚或收到外部权威状态重同步。
+    /// 玩家/账号创建信息（PlayerId、AccountId、CreatedAt）严格不可变，其余可变分段与行动队列全部覆盖。
     /// </summary>
     public void RestoreFrom(PlayerAggregateState state)
     {
@@ -253,6 +268,10 @@ public sealed partial class PlayerAggregate
         _sectionVersion = restored._sectionVersion;
     }
 
+    /// <summary>
+    /// 检验动态参数字典的合法性（键非空且不超过64字符，值必须是有效有限浮点数）。
+    /// 采用普通循环代替 LINQ Any，消除高频参数校验中的闭包分配。
+    /// </summary>
     private static bool HasInvalidParameters(IReadOnlyDictionary<string, double>? parameters)
     {
         if (parameters is null) return false;
@@ -264,3 +283,4 @@ public sealed partial class PlayerAggregate
         return false;
     }
 }
+

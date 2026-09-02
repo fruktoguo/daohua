@@ -1,3 +1,11 @@
+/**
+ * 道化太初客户端快照解码与校验引擎。
+ *
+ * 核心安全与完整性职责：
+ * 1. 对服务端下发的 Base64 编码 Section 载荷执行 SHA-256 完整性哈希校验；
+ * 2. 严格核对 Snapshot 头校验和（Head Checksum），防止数据篡改或网络坏帧；
+ * 3. 将扁平的分段载荷（Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue）及资产钱包投影为前端响应式 PlayerSnapshot 与 PlayerPatch。
+ */
 import { resolveActionDefinition, resolveItemMetadata } from '../game/ids'
 import type {
   ActionType,
@@ -352,6 +360,14 @@ function visualFor(name: string): CharacterVisual {
   return { renderer: 'text', source: name.slice(0, 1) || '修' }
 }
 
+/**
+ * 解码并严格校验服务端下发的全量玩家快照 DTO。
+ * 流程：
+ * 1. 校验基础字段存在性与版本匹配；
+ * 2. 校验整体 Head Checksum 摘要；
+ * 3. 并行解码并逐段校验各 Section 的 SHA-256 校验和；
+ * 4. 解析转换为前端 PlayerSnapshot 完整聚合状态。
+ */
 export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = ''): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
@@ -398,6 +414,10 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
   }
 }
 
+/**
+ * 解码服务端下发的增量快照补丁 DTO。
+ * 只反序列化本次发生变更的 Section 与资产差量，生成轻量级的 PlayerPatch 对象供状态机就地合入。
+ */
 export async function decodePlayerSnapshotDeltaDto(
   dto: PlayerSnapshotDeltaDto,
   current: PlayerSnapshot,

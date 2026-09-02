@@ -46,6 +46,11 @@ const VISIBLE_LOG_LIMIT = 100
 const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location|ability|encounter|enemy):([^|{}]+)\|([^{}|]+)(?:\|([^{}]+))?}}/g
 const TRAILING_AMOUNT_PATTERN = /^\s*[×x*]\s*(\d+)/
 
+/**
+ * 战报与传音日志模板分词解析器。
+ * 将服务端下发的语义模板字符串（如 `获得 {{item:ningxue-grass|凝血草|3}}`）
+ * 解析为富文本分词列表（LogSegment），供 UI 渲染带交互悬浮卡片的道具标签或地点链接。
+ */
 export function parseLogTemplate(template: string): readonly LogSegment[] {
   const segments: LogSegment[] = []
   let lastIndex = 0
@@ -99,6 +104,10 @@ function eventToStored(playerId: string, event: LogEvent): StoredGameLog {
   }
 }
 
+/**
+ * 战报与传音道历全局单例服务。
+ * 纯内存维护最近 100 条日志，提供响应式订阅能力（对外暴露 subscribe 与 getSnapshot）。
+ */
 class GameLogService {
   private readonly listeners = new Set<() => void>()
   private snapshot: GameLogSnapshot = { playerId: null, latest: [], revision: 0, receivedCount: 0, persistence: 'memory' }

@@ -7,6 +7,10 @@ using Protocol;
 
 namespace Server.Clean;
 
+/// <summary>
+/// 角色运行时只读快照。
+/// 包含内存聚合不可变状态、数据库持久化排队动作与当前资产钱包余额。
+/// </summary>
 public sealed record PlayerRuntimeSnapshot(
     Guid PlayerId,
     string AccountId,
@@ -17,6 +21,10 @@ public sealed record PlayerRuntimeSnapshot(
     IReadOnlyList<StoredAction> Actions,
     IReadOnlyList<AssetBalanceRecord> Assets);
 
+/// <summary>
+/// 玩家指令执行回执契约包。
+/// 包含执行成功标志、领域/协议错误代码、执行后最新快照以及产生的战报日志。
+/// </summary>
 public sealed record PlayerCommandResult(
     bool Success,
     string Code,
@@ -27,6 +35,7 @@ public sealed record PlayerCommandResult(
 
 /// <summary>
 /// 在线玩家单写者运行时：内存持有完整领域聚合，跨边界只交换消息和 section 载荷。
+/// 每个活跃角色对应一个单线程串行的 PlayerActor，由本地信号量保证指令与模拟推进的严格有序性。
 /// </summary>
 public sealed class PlayerRuntime(
     IPlayerStateRepository repository,
@@ -47,12 +56,15 @@ public sealed class PlayerRuntime(
     /// <summary>每玩家战报日志环形缓冲容量：保留最近 200 条用于重连回放。</summary>
     private const int LogBufferCapacity = 200;
 
+    /// <summary>当前已加载并在内存中活跃的玩家 Actor 实例数</summary>
     public int LoadedCount => _actors.Count;
+    /// <summary>快照更新事件广播（供 WebSocket 推送订阅）</summary>
     public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
 
     /// <summary>玩家战报日志批次推送；参数为玩家 ID 与本批日志，订阅者必须按玩家过滤。</summary>
     public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
 
+    /// <summary>加载并获取指定玩家的最新运行时快照</summary>
     public async ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         if (playerId == Guid.Empty) throw new ArgumentException("PlayerId 不能为空。", nameof(playerId));

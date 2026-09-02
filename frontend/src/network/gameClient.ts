@@ -36,11 +36,12 @@ function getEndpoint(): string {
 }
 
 /**
- * wire.v1 游戏客户端。
+ * 道化太初客户端核心网络管理器（基于 wire.v1 二进制信封）。
  *
- * 连接只继承 HttpOnly 会话 Cookie，不接受 URL 中的 playerId、token 或角色名。
- * 所有上行命令都通过 DHW1 二进制信封发送；服务端推送的状态只接受新的
- * PlayerSnapshotDto/PlayerSnapshotDeltaDto，不再尝试解析旧 JSON 包结构。
+ * 核心架构原则：
+ * 1. 鉴权通过 HttpOnly 会话 Cookie 维护，URL 中绝不携带 token 或明文密码；
+ * 2. 状态下发只接受全量 SnapshotDto 或增量 SnapshotDeltaDto；
+ * 3. 具备指数退避自动重连（500ms -> 8000ms）、心跳探活（25s Ping）与解析异常自愈重建机制。
  */
 export class GameClient {
   private socket: WebSocket | null = null
@@ -57,7 +58,9 @@ export class GameClient {
   private lastParseErrorAt = 0
   private readonly pendingRequests = new Set<string>()
 
+  /** 当前登录的角色 ID */
   playerId = getSessionAccount()?.playerId ?? ''
+  /** 当前登录的账号名 */
   account = getSessionAccount()?.account ?? ''
 
   private clearReconnectTimer(): void {

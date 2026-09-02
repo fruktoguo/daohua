@@ -6,17 +6,28 @@ using DomainSectionKind = Domain.Player.PlayerSectionKind;
 namespace Server.Clean;
 
 /// <summary>
-/// Section 编解码边界。载荷格式是 Server 与 Domain 之间唯一需要约定的存档边界；
-/// 运行时对象绝不直接交给数据库序列化。
+/// 角色分段（Section）编解码边界适配器。
+/// 职责：
+/// 1. 将内存对象序列化为稳定 JSON 字节流，并计算 SHA-256 小写校验和；
+/// 2. 当数据体积超过阈值（512B）且能有效降低体积时，自适应启用 Brotli 压缩；
+/// 3. 是 Server 宿主与 Domain 领域层及数据库存储之间唯一需要约定的存档落盘边界。
 /// </summary>
 public static class SectionCodec
 {
+    /// <summary>当前分段编解码模式版本</summary>
     public const int CurrentSchemaVersion = 1;
+    /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
+    /// <summary>Brotli 压缩 JSON 编码标识</summary>
     public const string BrotliJson = "br-json";
+    /// <summary>自适应启用压缩的体积阈值（512 字节）</summary>
     private const int CompressionThreshold = 512;
+    /// <summary>单分段最大允许原始字节数（4MB）</summary>
     private const int MaxRawBytes = 4 * 1024 * 1024;
 
+    /// <summary>
+    /// 对指定分段载荷执行 JSON 序列化、校验和计算及自适应 Brotli 压缩。
+    /// </summary>
     public static SectionWrite Encode(
         Guid playerId,
         string sectionKind,
