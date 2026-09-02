@@ -19,9 +19,8 @@ function formatLogTime(timestampMs: number): string {
  *
  * 鼠标悬停展示功法详细效果、伤害加成与冷却机制气泡。
  */
-function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
-  const abilities = useGameStore((state) => state.abilities)
-  const ability = abilities.find((entry) => entry.abilityId === abilityId)
+const AbilityReference = memo(function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
+  const ability = useGameStore((state) => state.abilities.find((entry) => entry.abilityId === abilityId))
 
   if (!ability) {
     return (
@@ -57,14 +56,14 @@ function AbilityReference({ abilityId, label }: { abilityId: string; label: stri
       {label}
     </FloatingPopover>
   )
-}
+})
 
 /**
  * 战报中的妖兽/敌方遭遇引用组件 (EnemyReference)
  *
  * 悬停展示敌怪流派、属性、气血真元等面板数据。
  */
-function EnemyReference({
+const EnemyReference = memo(function EnemyReference({
   enemyId,
   kind,
   label,
@@ -73,9 +72,10 @@ function EnemyReference({
   kind: 'enemy' | 'encounter'
   label: string
 }): React.JSX.Element {
-  const encounters = useGameStore((state) => state.encounters)
-  const encounter = encounters.find(
-    (entry) => entry.encounterId === enemyId || entry.enemy?.enemyId === enemyId
+  const encounter = useGameStore((state) =>
+    state.encounters.find(
+      (entry) => entry.encounterId === enemyId || entry.enemy?.enemyId === enemyId
+    )
   )
   const enemy = encounter?.enemy
 
@@ -115,14 +115,14 @@ function EnemyReference({
       <span className={`log-reference log-reference--${kind}`}>{label}</span>
     </FloatingTooltip>
   )
-}
+})
 
 /**
  * 日志单条分段内容解析分发组件 (LogContent)
  *
  * 识别文本、物品掉落、功法施放、妖兽击败等分段类型并附加富文本高亮与交互气泡。
  */
-function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
+const LogContent = memo(function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
   if (segment.type === 'text') return <ValueText className="log-value-capsule" text={segment.value} />
   if (segment.kind === 'item') {
     return (
@@ -145,7 +145,7 @@ function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
       {segment.label}
     </span>
   )
-}
+})
 
 /**
  * 单行游戏日志展示组件 (LogRow)

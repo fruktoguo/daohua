@@ -7,7 +7,7 @@ import { FloatingPopover, FloatingInfoCard } from './FloatingPopover'
 
 // 地点/NPC/建筑/怪物名称来自服务端数据，面板框架文本走 i18n。
 
-function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
+const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
   monster: NearbyMonsterDefinition
   intervalHint?: string
   isElite?: boolean
@@ -70,7 +70,7 @@ function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
       </article>
     </FloatingPopover>
   )
-}
+})
 
 /**
  * 附近同域修士、生灵生态、NPC 与灵地建筑列表面板 (NearbyPanel)
