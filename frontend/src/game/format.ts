@@ -253,6 +253,22 @@ export interface ParsedNumericParts {
  * 将任意数值/大数解析为符号、整数部分、小数部分
  */
 export function parseNumericParts(value: number | bigint | string): ParsedNumericParts {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value === 0) {
+      return { sign: '', intStr: '0', decStr: '', isZero: true }
+    }
+    const isNeg = value < 0
+    const absVal = isNeg ? -value : value
+    if (Number.isInteger(absVal) && absVal < 1e15) {
+      return {
+        sign: isNeg ? '-' : '',
+        intStr: String(absVal),
+        decStr: '',
+        isZero: false,
+      }
+    }
+  }
+
   if (typeof value === 'bigint') {
     const isNeg = value < 0n
     const absBig = isNeg ? -value : value
@@ -433,6 +449,10 @@ export function formatUnitNumber(
   value: number | bigint | string,
   options?: FormatUnitOptions
 ): string {
+  if (options === undefined && typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 10000) {
+    return String(value)
+  }
+
   const { maxDecimals = 2, maxDigits = 6, roundMode = 'floor', padDecimals = false } = options ?? {}
 
   const num = typeof value === 'number' ? value : Number(value)
