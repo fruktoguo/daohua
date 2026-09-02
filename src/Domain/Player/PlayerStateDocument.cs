@@ -61,24 +61,42 @@ public sealed record QueuedActionState(
 
 public sealed partial class PlayerAggregate
 {
-    public PlayerAggregateState ExportState() => new(
-        PlayerId,
-        AccountId,
-        DisplayName,
-        CreatedAt,
-        LastSimulatedAt,
-        Presence,
-        StateVersion,
-        GameDataFingerprint,
-        new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds),
-        new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed),
-        new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense),
-        Buffs.Active.ToArray(),
-        Loadout.EquippedInstances.ToArray(),
-        Loadout.LearnedAbilities.ToArray(),
-        new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled, Settings.AutoUseSlots.ToArray()),
-        _actions.Select(action => new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats)).ToArray(),
-        Loadout.EquippedItemIds.ToArray());
+    public PlayerAggregateState ExportState()
+    {
+        QueuedActionState[] actions;
+        if (_actions.Count == 0)
+        {
+            actions = [];
+        }
+        else
+        {
+            actions = new QueuedActionState[_actions.Count];
+            for (var i = 0; i < _actions.Count; i++)
+            {
+                var action = _actions[i];
+                actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats);
+            }
+        }
+
+        return new(
+            PlayerId,
+            AccountId,
+            DisplayName,
+            CreatedAt,
+            LastSimulatedAt,
+            Presence,
+            StateVersion,
+            GameDataFingerprint,
+            new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds),
+            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed),
+            new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense),
+            Buffs.Active.Count == 0 ? [] : Buffs.Active.ToArray(),
+            Loadout.EquippedInstances.Count == 0 ? [] : Loadout.EquippedInstances.ToArray(),
+            Loadout.LearnedAbilities.Count == 0 ? [] : Loadout.LearnedAbilities.ToArray(),
+            new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled, Settings.AutoUseSlots.Count == 0 ? [] : Settings.AutoUseSlots.ToArray()),
+            actions,
+            Loadout.EquippedItemIds.Count == 0 ? [] : Loadout.EquippedItemIds.ToArray());
+    }
 
     public static PlayerAggregate Restore(PlayerAggregateState state)
     {
@@ -150,7 +168,7 @@ public sealed partial class PlayerAggregate
             if (actionState is null || intent is null || actionState.Id == Guid.Empty || !actionIds.Add(actionState.Id) || !intent.ActionId.IsValid ||
                 !Enum.IsDefined(actionState.Status) ||
                 (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128)) ||
-                (intent.Parameters is not null && intent.Parameters.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value))) ||
+                HasInvalidParameters(intent.Parameters) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
                 !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
@@ -229,8 +247,20 @@ public sealed partial class PlayerAggregate
         Settings.AutoUseSlots.Clear();
         Settings.AutoUseSlots.AddRange(restored.Settings.AutoUseSlots);
         _actions.Clear();
-        _actions.AddRange(restored._actions.Select(action => action.Clone()));
+        for (var i = 0; i < restored._actions.Count; i++)
+            _actions.Add(restored._actions[i].Clone());
         _dirtySections.Clear();
         _sectionVersion = restored._sectionVersion;
+    }
+
+    private static bool HasInvalidParameters(IReadOnlyDictionary<string, double>? parameters)
+    {
+        if (parameters is null) return false;
+        foreach (var (key, value) in parameters)
+        {
+            if (string.IsNullOrWhiteSpace(key) || key.Length > 64 || !double.IsFinite(value))
+                return true;
+        }
+        return false;
     }
 }
