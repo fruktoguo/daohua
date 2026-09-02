@@ -43,7 +43,9 @@ public sealed class WorldGraph
         if (!_nodes.ContainsKey(edge.FromNodeId) || !_nodes.ContainsKey(edge.ToNodeId))
             throw new DomainException(DomainErrorCode.NotFound, "世界边引用了不存在的节点。");
         if (!_edges.TryAdd(edge.Id, edge)) throw new DomainException(DomainErrorCode.Duplicate, $"世界边已存在：{edge.Id}。");
-        _outgoing[edge.FromNodeId].Add(edge);
+        var list = _outgoing[edge.FromNodeId];
+        list.Add(edge);
+        list.Sort(static (a, b) => string.CompareOrdinal(a.Id, b.Id));
     }
 
     public TravelPlan Plan(string fromNodeId, string toNodeId)
@@ -58,8 +60,10 @@ public sealed class WorldGraph
         {
             if (current == toNodeId) break;
             if (currentDistance > distance[current] + 1e-12) continue;
-            foreach (var edge in _outgoing[current].OrderBy(edge => edge.Id, StringComparer.Ordinal))
+            var edgeList = _outgoing[current];
+            for (var i = 0; i < edgeList.Count; i++)
             {
+                var edge = edgeList[i];
                 var nextDistance = currentDistance + edge.TravelSeconds;
                 if (!distance.TryGetValue(edge.ToNodeId, out var known) || nextDistance < known - 1e-12)
                 {
@@ -73,7 +77,17 @@ public sealed class WorldGraph
         var edges = new List<WorldEdge>();
         for (var current = toNodeId; current != fromNodeId; current = previous[current].FromNodeId) edges.Add(previous[current]);
         edges.Reverse();
-        return new TravelPlan(fromNodeId, toNodeId, edges.Select(edge => edge.Id).ToArray(), edges.Sum(edge => edge.TravelSeconds), edges.Sum(edge => edge.Distance));
+        var edgeIds = new string[edges.Count];
+        var totalTravelSeconds = 0d;
+        var totalDistance = 0d;
+        for (var i = 0; i < edges.Count; i++)
+        {
+            var edge = edges[i];
+            edgeIds[i] = edge.Id;
+            totalTravelSeconds += edge.TravelSeconds;
+            totalDistance += edge.Distance;
+        }
+        return new TravelPlan(fromNodeId, toNodeId, edgeIds, totalTravelSeconds, totalDistance);
     }
 
     public WorldEdge GetEdge(string id) => _edges.TryGetValue(id, out var edge) ? edge : throw new DomainException(DomainErrorCode.NotFound, $"世界边不存在：{id}。");
