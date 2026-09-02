@@ -93,4 +93,21 @@ public sealed class ProtocolTests
         Assert.Equal(1, parsed.Events[0].Sequence);
         Assert.Equal(2, parsed.Events[1].Sequence);
     }
+
+    [Fact]
+    public void EncodeJsonProducesExactEquivalentFrameWithoutIntermediateAllocation()
+    {
+        var requestId = Guid.NewGuid();
+        var hello = new HelloRequest("client-perf", "catalog-perf");
+        var directBytes = WireEnvelopeCodec.EncodeJson(WireMessageType.Hello, requestId, 99, hello);
+        var traditionalBytes = WireEnvelopeCodec.Encode(WireEnvelope.Json(WireMessageType.Hello, requestId, 99, hello));
+
+        Assert.Equal(traditionalBytes, directBytes);
+        Assert.True(WireEnvelopeCodec.TryDecode(directBytes, out var decoded));
+        Assert.Equal(WireMessageType.Hello, decoded.MessageType);
+        Assert.Equal(requestId, decoded.RequestId);
+        Assert.Equal(99, decoded.Sequence);
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<HelloRequest>(decoded, out var parsed));
+        Assert.Equal("client-perf", parsed!.ClientVersion);
+    }
 }

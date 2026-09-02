@@ -93,6 +93,39 @@ public static class WireEnvelopeCodec
         return output;
     }
 
+    public static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T value, ushort version = ProtocolConstants.CurrentVersion)
+    {
+        if (version != ProtocolConstants.CurrentVersion
+            || !Enum.IsDefined(messageType)
+            || requestId == Guid.Empty
+            || sequence < 0)
+        {
+            throw new ProtocolException("协议帧参数无效。");
+        }
+
+        var bufferWriter = new System.Buffers.ArrayBufferWriter<byte>(512);
+        bufferWriter.Advance(HeaderBytes);
+        using (var jsonWriter = new Utf8JsonWriter(bufferWriter))
+        {
+            JsonSerializer.Serialize(jsonWriter, value, ProtocolJson.Options);
+        }
+
+        var payloadLength = bufferWriter.WrittenCount - HeaderBytes;
+        if (payloadLength > ProtocolConstants.MaxFrameBytes)
+            throw new ProtocolException("协议帧超过最大大小。");
+
+        var output = new byte[bufferWriter.WrittenCount];
+        BinaryPrimitives.WriteUInt32BigEndian(output.AsSpan(0, 4), Magic);
+        BinaryPrimitives.WriteUInt16BigEndian(output.AsSpan(4, 2), version);
+        output[6] = (byte)messageType;
+        output[7] = (byte)WireCodec.Json;
+        requestId.TryWriteBytes(output.AsSpan(8, 16));
+        BinaryPrimitives.WriteInt64BigEndian(output.AsSpan(24, 8), sequence);
+        BinaryPrimitives.WriteInt32BigEndian(output.AsSpan(32, 4), payloadLength);
+        bufferWriter.WrittenSpan[HeaderBytes..].CopyTo(output.AsSpan(HeaderBytes));
+        return output;
+    }
+
     public static bool TryDecode(ReadOnlySpan<byte> bytes, out WireEnvelope envelope)
     {
         envelope = default;

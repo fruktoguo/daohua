@@ -121,7 +121,7 @@ public static class WebSocketEndpoint
     }
 
     private static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T payload) =>
-        WireEnvelopeCodec.Encode(WireEnvelope.Json(messageType, requestId, Math.Max(0, sequence), payload));
+        WireEnvelopeCodec.EncodeJson(messageType, requestId, Math.Max(0, sequence), payload);
 
     private static async Task SendLoopAsync(WebSocket socket, WebSocketSession session, CancellationToken cancellationToken)
     {
