@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo } from 'react'
 import { describeCombatTrigger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { convertTierToLevel, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { getT, useT } from '../i18n'
 import type { Buff, CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
@@ -112,8 +112,8 @@ export function ItemTooltipTarget({
   const itemCatalog = useGameStore((state) => state.items)
   const equipmentCatalog = useGameStore((state) => state.equipment)
 
-  const itemDef = itemDefOverride ?? itemCatalog.find((i) => i.itemId === itemId) ?? resolveDefaultItemDefinition(itemId)
-  const eqDef = eqDefOverride ?? equipmentCatalog.find((e) => e.equipmentId === itemId) ?? resolveDefaultEquipmentDefinition(itemId)
+  const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
+  const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
 
   const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
   const rawMetadata = itemDef
@@ -730,7 +730,7 @@ export function ItemReference({
   // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
   useT()
   const metadata = resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
-  const definition = useGameStore((state) => state.items.find((item) => item.itemId === itemId))
+  const definition = useGameStore((state) => findItemInCatalog(state.items, itemId))
   const displayLabel = label ?? metadata.label
   const tone = rarityToTone(metadata.rarity)
 

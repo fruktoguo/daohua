@@ -10,6 +10,22 @@ namespace Server.Clean;
 /// </summary>
 public static class ProtocolSnapshotMapper
 {
+    /// <summary>对单个分段载荷执行规范化 JSON 序列化并生成 PlayerSectionDto。</summary>
+    public static PlayerSectionDto EncodeSection(Guid playerId, string kind, long stateVersion, object value, DateTimeOffset updatedAt)
+    {
+        var encoded = SectionCodec.Encode(playerId, kind, Math.Max(1, stateVersion), value, updatedAt, compress: false);
+        return new PlayerSectionDto(
+            kind,
+            encoded.StateVersion,
+            encoded.SchemaVersion,
+            encoded.Codec,
+            Convert.ToBase64String(encoded.Payload.Span),
+            encoded.RawBytes,
+            encoded.StoredBytes,
+            encoded.Checksum,
+            encoded.UpdatedAt);
+    }
+
     /// <summary>
     /// 将玩家运行时快照（PlayerRuntimeSnapshot）转换为公开的全量快照 DTO。
     /// 自动结合激活的 GameDataCatalog 透传地图与节点动态生态。
@@ -22,17 +38,7 @@ public static class ProtocolSnapshotMapper
         {
             // WebSocket v1 的浏览器载荷保持 JSON；Brotli 只用于 PostgreSQL section，避免
             // 客户端依赖不一致的 Brotli WASM/浏览器实现。
-            var encoded = SectionCodec.Encode(runtime.PlayerId, kind, Math.Max(1, runtime.StateVersion), value, runtime.LastSimulatedAt, compress: false);
-            sections.Add(new PlayerSectionDto(
-                kind,
-                encoded.StateVersion,
-                encoded.SchemaVersion,
-                encoded.Codec,
-                Convert.ToBase64String(encoded.Payload.Span),
-                encoded.RawBytes,
-                encoded.StoredBytes,
-                encoded.Checksum,
-                encoded.UpdatedAt));
+            sections.Add(EncodeSection(runtime.PlayerId, kind, runtime.StateVersion, value, runtime.LastSimulatedAt));
         }
 
         sections.Sort(static (a, b) => string.CompareOrdinal(a.Section, b.Section));
@@ -84,10 +90,43 @@ public static class ProtocolSnapshotMapper
     }
 
     /// <summary>构造增量快照 DTO（仅携带受影响的变更分段与资产变更）</summary>
+    public static PlayerSnapshotDeltaDto ToDelta(
+        PlayerRuntimeSnapshot runtime,
+        string gameDataFingerprint,
+        GameDataCatalog? gameData = null,
+        IReadOnlyDictionary<string, string>? previousSectionChecksums = null,
+        IReadOnlyList<AssetBalanceDto>? previousAssets = null)
+    {
+        var snapshot = ToSnapshot(runtime, gameDataFingerprint, gameData);
+        var changedSections = DiffSections(previousSectionChecksums, snapshot.Sections);
+        var changedAssets = DiffAssets(previousAssets, snapshot.Assets);
+        return new PlayerSnapshotDeltaDto(
+            snapshot.PlayerId,
+            snapshot.StateVersion,
+            changedSections,
+            changedAssets.Count == 0 ? null : changedAssets);
+    }
+
+    /// <summary>构造增量快照 DTO（兼容旧调用签名）</summary>
     public static PlayerSnapshotDeltaDto ToDelta(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog? gameData = null, IReadOnlyList<AssetBalanceDto>? changedAssets = null)
     {
         var snapshot = ToSnapshot(runtime, gameDataFingerprint, gameData);
         return new PlayerSnapshotDeltaDto(snapshot.PlayerId, snapshot.StateVersion, snapshot.Sections, changedAssets);
+    }
+
+    /// <summary>对比上次推送基线，返回校验和发生变化的分段；无基线时返回全部当前分段。</summary>
+    public static IReadOnlyList<PlayerSectionDto> DiffSections(IReadOnlyDictionary<string, string>? previousChecksums, IReadOnlyList<PlayerSectionDto> current)
+    {
+        if (previousChecksums is null || previousChecksums.Count == 0) return current;
+        List<PlayerSectionDto>? changed = null;
+        for (var i = 0; i < current.Count; i++)
+        {
+            var section = current[i];
+            if (previousChecksums.TryGetValue(section.Section, out var prevChecksum) && string.Equals(prevChecksum, section.Checksum, StringComparison.Ordinal))
+                continue;
+            (changed ??= new List<PlayerSectionDto>(current.Count)).Add(section);
+        }
+        return changed ?? [];
     }
 
     /// <summary>对比上次推送基线，返回余额发生变化的品种当前余额；无基线时返回当前全量。</summary>

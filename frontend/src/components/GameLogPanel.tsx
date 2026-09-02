@@ -1,6 +1,7 @@
 import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { DAMAGE_CATEGORY_NAMES, ELEMENT_NAMES, describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
+import { findAbilityInCatalog, findEncounterInCatalog } from '../game/ids'
 import { useT } from '../i18n'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
 import { ItemReference } from './ItemDisplay'
@@ -20,7 +21,7 @@ function formatLogTime(timestampMs: number): string {
  * 鼠标悬停展示功法详细效果、伤害加成与冷却机制气泡。
  */
 const AbilityReference = memo(function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
-  const ability = useGameStore((state) => state.abilities.find((entry) => entry.abilityId === abilityId))
+  const ability = useGameStore((state) => findAbilityInCatalog(state.abilities, abilityId))
 
   if (!ability) {
     return (
@@ -72,11 +73,7 @@ const EnemyReference = memo(function EnemyReference({
   kind: 'enemy' | 'encounter'
   label: string
 }): React.JSX.Element {
-  const encounter = useGameStore((state) =>
-    state.encounters.find(
-      (entry) => entry.encounterId === enemyId || entry.enemy?.enemyId === enemyId
-    )
-  )
+  const encounter = useGameStore((state) => findEncounterInCatalog(state.encounters, enemyId))
   const enemy = encounter?.enemy
 
   if (encounter || enemy) {

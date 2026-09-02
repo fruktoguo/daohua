@@ -141,7 +141,6 @@ public sealed class PlayerRuntime(
         {
             if (!entry.Value.IsValueCreated) continue;
             var actor = await AwaitActorAsync(entry.Key, entry.Value, cancellationToken);
-            var beforeVersion = (await actor.SnapshotAsync(cancellationToken)).StateVersion;
             var result = await actor.AdvanceSimulationAsync(target, cancellationToken);
             if (result is null) continue;
             // 模拟推进同样会撞上所有权失效：从缓存清除并继续推进其余玩家。
@@ -151,7 +150,7 @@ public sealed class PlayerRuntime(
                 continue;
             }
             await EmitLogBatchAsync(entry.Key, result.LogEvents);
-            if (result.Snapshot.StateVersion <= beforeVersion) continue;
+            if (result.Simulation is not { Changed: true }) continue;
             var handler = SnapshotUpdated;
             if (handler is not null) await handler(result.Snapshot);
         }

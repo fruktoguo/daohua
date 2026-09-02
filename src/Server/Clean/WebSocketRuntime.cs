@@ -19,6 +19,7 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     });
     private long _outboundSequence;
     private IReadOnlyList<AssetBalanceDto>? _lastPushedAssets;
+    private Dictionary<string, string>? _lastPushedSectionChecksums;
 
     /// <summary>会话绑定的修仙者角色 ID</summary>
     public Guid PlayerId { get; } = playerId;
@@ -38,6 +39,19 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     {
         var previous = _lastPushedAssets;
         _lastPushedAssets = current;
+        return previous;
+    }
+
+    /// <summary>记录本次推送的分段校验和并返回上次基线；增量回调由模拟循环串行驱动，无需加锁。</summary>
+    public IReadOnlyDictionary<string, string>? ExchangeSectionBaseline(IReadOnlyList<PlayerSectionDto> current)
+    {
+        var previous = _lastPushedSectionChecksums;
+        var map = new Dictionary<string, string>(current.Count, StringComparer.Ordinal);
+        for (var i = 0; i < current.Count; i++)
+        {
+            map[current[i].Section] = current[i].Checksum;
+        }
+        _lastPushedSectionChecksums = map;
         return previous;
     }
 }
@@ -94,12 +108,16 @@ public static class WebSocketEndpoint
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var token = linked.Token;
-        ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot) => QueueJsonAsync(
-            session,
-            WireMessageType.SnapshotDelta,
-            Guid.NewGuid(),
-            BuildDelta(session, snapshot, gameData),
-            token);
+        ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot)
+        {
+            if (snapshot.PlayerId != session.PlayerId) return ValueTask.CompletedTask;
+            return QueueJsonAsync(
+                session,
+                WireMessageType.SnapshotDelta,
+                Guid.NewGuid(),
+                BuildDelta(session, snapshot, gameData),
+                token);
+        }
         ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events) => eventPlayerId != session.PlayerId
             ? ValueTask.CompletedTask
             : QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(events), token);
@@ -133,12 +151,13 @@ public static class WebSocketEndpoint
         }
     }
 
-    /// <summary>构建增量：以会话上次推送的资产为基线对比，携带余额发生变化的品种。</summary>
+    /// <summary>构建增量：以会话上次推送的分段与资产为基线对比，仅携带发生变化的分段与资产品种。</summary>
     private static PlayerSnapshotDeltaDto BuildDelta(WebSocketSession session, PlayerRuntimeSnapshot snapshot, Domain.GameData.GameDataCatalog gameData)
     {
         var current = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData);
+        var changedSections = ProtocolSnapshotMapper.DiffSections(session.ExchangeSectionBaseline(current.Sections), current.Sections);
         var changedAssets = ProtocolSnapshotMapper.DiffAssets(session.ExchangeAssetBaseline(current.Assets), current.Assets);
-        return new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, current.Sections, changedAssets.Count == 0 ? null : changedAssets);
+        return new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, changedSections, changedAssets.Count == 0 ? null : changedAssets);
     }
 
     private static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T payload) =>
@@ -219,6 +238,7 @@ public static class WebSocketEndpoint
                         var initialSnapshot = ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData);
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
                         session.ExchangeAssetBaseline(initialSnapshot.Assets);
+                        session.ExchangeSectionBaseline(initialSnapshot.Sections);
                         // 重连回放：把环形缓冲内的最近战报一次性补发给本会话。
                         var recentLogs = runtime.GetRecentLogEvents(session.PlayerId);
                         if (recentLogs.Count > 0)

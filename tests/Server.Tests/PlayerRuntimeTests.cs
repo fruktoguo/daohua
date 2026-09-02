@@ -76,6 +76,44 @@ public sealed class PlayerRuntimeTests
         Assert.Equal(playerId, snapshot.PlayerId);
     }
 
+    [Fact]
+    public async Task AdvanceAllAsync_EmitsSnapshotUpdatedOnlyWhenSimulationChanges()
+    {
+        var playerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var repository = new FakeStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, accountId, "模拟推进测试", DateTimeOffset.UtcNow),
+            new StoredHead(playerId, 0, 1, DateTimeOffset.UtcNow, string.Empty, string.Empty, DateTimeOffset.UtcNow),
+            new Dictionary<string, StoredSection>(),
+            []));
+        var runtime = new PlayerRuntime(
+            repository,
+            new EmptyAssetRepository(),
+            new NoopEconomyRepository(),
+            GameDataCatalog.BuiltIn,
+            NullLogger<PlayerRuntime>.Instance);
+
+        var pushedSnapshots = new List<PlayerRuntimeSnapshot>();
+        runtime.SnapshotUpdated += snapshot =>
+        {
+            pushedSnapshots.Add(snapshot);
+            return ValueTask.CompletedTask;
+        };
+
+        // 1. 无行动排队时推进 -> 不触发 SnapshotUpdated
+        await runtime.LoadAsync(playerId);
+        await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow.AddSeconds(1));
+        Assert.Empty(pushedSnapshots);
+
+        // 2. 排队行动后推进 -> 触发 SnapshotUpdated 且仅包含该玩家
+        var payload = JsonSerializer.SerializeToElement(new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", 5), ProtocolJson.Options);
+        await runtime.ExecuteAsync(playerId, "action.enqueue", payload);
+
+        await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow.AddSeconds(5));
+        Assert.Single(pushedSnapshots);
+        Assert.Equal(playerId, pushedSnapshots[0].PlayerId);
+    }
+
     private class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository
     {
         public List<SectionWrite> Enqueued { get; } = [];

@@ -16,13 +16,17 @@ public static class SimulationLogMapper
 {
     /// <summary>
     /// 将确定性推进产生的领域模拟事件集合转换为带单调递增 Sequence 的战报日志 DTO，并写入环形缓冲区。
+    /// 当事件数量超过 bufferCapacity (默认 200) 时，仅格式化并保留最新的 bufferCapacity 条日志，消除超量事件的 GC 尖峰。
     /// </summary>
-    public static IReadOnlyList<LogEventDto> ToLogEvents(IReadOnlyList<SimulationEvent> events, GameDataCatalog gameData, PlayerLogBuffer buffer)
+    public static IReadOnlyList<LogEventDto> ToLogEvents(IReadOnlyList<SimulationEvent> events, GameDataCatalog gameData, PlayerLogBuffer buffer, int bufferCapacity = 200)
     {
         if (events.Count == 0) return [];
-        var result = new List<LogEventDto>(events.Count);
-        foreach (var simulationEvent in events)
+        var startIndex = Math.Max(0, events.Count - bufferCapacity);
+        var count = events.Count - startIndex;
+        var result = new List<LogEventDto>(count);
+        for (var i = startIndex; i < events.Count; i++)
         {
+            var simulationEvent = events[i];
             var logEvent = new LogEventDto(
                 buffer.NextSequence(),
                 simulationEvent.At.ToUnixTimeMilliseconds(),

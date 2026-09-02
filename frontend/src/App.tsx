@@ -23,7 +23,7 @@ import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, findAbilityInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
@@ -596,12 +596,13 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
 const TopBar = memo(function TopBar(): React.JSX.Element {
   const t = useT()
   const name = useGameStore(state => state.name)
-  const stats = useGameStore(state => state.stats)
+  const spirit = useGameStore(state => state.stats.spirit)
+  const realmLevel = useGameStore(state => state.stats.realmLevel)
   const connection = useGameStore(state => state.connection)
   const presence = useGameStore(state => state.presenceMode)
   const setActiveTab = useUiStore(state => state.setActiveTab)
-  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
-  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
+  const realmProgress = useMemo(() => calculateRealmProgress(spirit ?? 0, realmLevel), [realmLevel, spirit])
+  const realmInfo = useMemo(() => calculateRealmInfo(spirit ?? 0, realmLevel), [realmLevel, spirit])
   const connectionText = connection === 'online'
     ? t('app.topbar.connected')
     : connection === 'connecting'
@@ -643,7 +644,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
             title={
               <div className="unit-number-tooltip-inline">
                 <span className="unit-number-tooltip-label">{t('app.topbar.totalSpirit')}</span>
-                <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(stats.spirit)}</strong>
+                <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(spirit)}</strong>
               </div>
             }
             tone="qi"
@@ -921,10 +922,16 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       }
     }
 
+    // 预计算所有候选行动的真实等级，将 O(N log N) 冗余解析降为 O(N) 线性预查
+    const actionLevelMap = new Map<string, number>()
+    for (const action of list) {
+      actionLevelMap.set(action.id, resolveActionLevel(action, itemCatalog, equipmentCatalog, encounters))
+    }
+
     // 严格按真实等级升序排序（低等级在前，高等级在后），等级相同时按 ID 稳定排列
     return [...list].sort((a, b) => {
-      const levelA = resolveActionLevel(a, itemCatalog, equipmentCatalog, encounters)
-      const levelB = resolveActionLevel(b, itemCatalog, equipmentCatalog, encounters)
+      const levelA = actionLevelMap.get(a.id) ?? 1
+      const levelB = actionLevelMap.get(b.id) ?? 1
       if (levelA !== levelB) return levelA - levelB
       return a.id.localeCompare(b.id)
     })
@@ -1029,7 +1036,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       <div className="auto-use-slots">
         {slots.map((slot, index) => {
           const selectedDefinition = slot.itemId
-            ? itemCatalog.find(item => item.itemId === slot.itemId) ?? null
+            ? findItemInCatalog(itemCatalog, slot.itemId) ?? null
             : null
           const selectedItem = selectedDefinition ? {
             itemId: selectedDefinition.itemId,
@@ -1102,7 +1109,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   const primaryOutputId = useMemo(() => Object.keys(action.outputs || {})[0] ?? null, [action.outputs])
   const itemDef = useMemo(() => {
     if (!primaryOutputId) return undefined
-    return itemCatalog.find(i => i.itemId === primaryOutputId)
+    return findItemInCatalog(itemCatalog, primaryOutputId)
   }, [primaryOutputId, itemCatalog])
 
   const cardButton = (
@@ -1162,7 +1169,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const buffs = useGameStore(state => state.buffs)
   const world = useGameStore(state => state.world)
   const stats = useGameStore(state => state.stats)
-  const encounter = useGameStore(state => state.encounters.find(item => item.encounterId === action.combatEncounterId))
+  const encounter = useGameStore(state => action.combatEncounterId ? findEncounterInCatalog(state.encounters, action.combatEncounterId) : undefined)
   const queueLength = useGameStore(state => state.queue.entries.length)
   const [repeats, setRepeats] = useState(-1)
 
@@ -1481,7 +1488,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
           <div className="combat-slot-grid">
             {combat.consumableSlots.map((slot, index) => {
               const selectedDefinition = slot.itemId
-                ? itemCatalog.find(item => item.itemId === slot.itemId) ?? null
+                ? findItemInCatalog(itemCatalog, slot.itemId) ?? null
                 : null
               const selectedItem = selectedDefinition && slot.itemId ? {
                 itemId: selectedDefinition.itemId,
@@ -1519,7 +1526,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
           <div className="combat-slot-grid combat-slot-grid--abilities">
             {combat.abilitySlots.map((slot, index) => {
               const isInternal = index === 0
-              const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
+              const ability = slot.abilityId ? findAbilityInCatalog(abilities, slot.abilityId) : undefined
               const slotTypeTag = isInternal
                 ? t('app.combatPanel.slotInternal')
                 : t('app.combatPanel.slotSpell', { n: index })
@@ -1750,7 +1757,7 @@ const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JS
         </nav>
       </header>
       <div className="expedition-content">
-        {activeSubTab === 'map' && <WorldMapPanel />}
+        {activeSubTab === 'map' && <WorldMapPanel hidden={hidden} />}
         {activeSubTab === 'nearby' && <NearbyPanel />}
       </div>
     </section>

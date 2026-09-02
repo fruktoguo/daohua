@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { resolveItemMetadata } from '../game/ids'
+import { findEncounterInCatalog, findItemInCatalog, resolveItemMetadata } from '../game/ids'
 import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionProgress, QueueEntry } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
@@ -794,7 +794,7 @@ function ArenaLifeGoalCard({
   const totalTargetDisplay = isInfinite ? '∞' : formatNumber(primaryAmountPerBatch * repeats)
 
   const itemMeta = primaryItemId ? resolveItemMetadata(primaryItemId) : null
-  const itemDefinition = primaryItemId ? itemCatalog.find(i => i.itemId === primaryItemId) : null
+  const itemDefinition = primaryItemId ? findItemInCatalog(itemCatalog, primaryItemId) : null
   const itemName = itemDefinition?.name || itemMeta?.label || (isCultivation ? t('combat.life.qiName') : t('combat.life.fallbackItemName'))
   const itemGlyph = itemMeta?.glyph || (isAlchemy ? '⚗️' : isCultivation ? '☯' : '🌿')
   const itemTone = itemMeta?.tone || 'gold'
@@ -853,7 +853,7 @@ function ArenaLifeGoalCard({
             <span className="arena-life-inputs-label">{t('combat.life.inputsLabel')}</span>
             <div className="arena-life-inputs-list">
               {inputEntries.map(([inId, inAmt]) => {
-                const inDef = itemCatalog.find(i => i.itemId === inId)
+                const inDef = findItemInCatalog(itemCatalog, inId)
                 const inMeta = resolveItemMetadata(inId)
                 const inName = inDef?.name || inMeta?.label || inId
                 return (
@@ -1170,7 +1170,7 @@ export const CombatArena = memo(function CombatArena({
   const activeAction = current ? actions.find(action => action.id === current.actionId) : null
   const activeEncounterId = expedition?.encounterId ?? activeAction?.combatEncounterId
   const activeEncounter = activeEncounterId
-    ? encounters.find(encounter => encounter.encounterId === activeEncounterId)
+    ? findEncounterInCatalog(encounters, activeEncounterId)
     : null
 
   const availableActions = useMemo(() => actions.filter(action => (
@@ -1242,95 +1242,109 @@ export const CombatArena = memo(function CombatArena({
     }
   }
   const enemy = enemyRef.current
-  const playerBaseRows: AttributeRow[] = [
-    { label: t('combat.attr.hp'), value: `${formatNumber(playerHp)} / ${formatNumber(playerMaxHp)}` },
-    { label: t('combat.attr.mp'), value: `${formatNumber(playerMp)} / ${formatNumber(playerMaxMp)}` },
-    { label: t('combat.attr.stamina'), value: formatNumber(Math.max(10, combat?.staminaLevel ?? 10)) },
-    { label: t('combat.attr.meridian'), value: formatNumber(Math.max(10, combat?.intelligenceLevel ?? 10)) },
-    { label: t('combat.attr.defense'), value: formatNumber(Math.max(10, combat?.defenseLevel ?? 10)) },
-    { label: t('combat.attr.attack'), value: formatNumber(Math.max(10, combat?.attackLevel ?? 10)) },
-    { label: t('combat.attr.divineSense'), value: formatNumber(Math.max(10, combat?.swordsmanshipLevel ?? 10)) },
-    { label: t('combat.attr.movement'), value: formatNumber(Math.max(10, combat?.talismanLevel ?? 10)) },
-    { label: t('combat.attr.power'), value: formatNumber(combatAttributes?.maxDamage ?? 0) },
-    { label: t('combat.attr.accuracy'), value: formatNumber(combatAttributes?.accuracyRating ?? 0) },
-    { label: t('combat.attr.evasion'), value: formatNumber(combatAttributes?.evasionRating ?? 0) },
-    { label: t('combat.attr.armor'), value: formatNumber(combatAttributes?.armor ?? 0) },
-    { label: t('combat.attr.magicRes'), value: formatNumber(combatAttributes?.magicResistance ?? 0) },
-    { label: t('combat.attr.metalRes'), value: formatNumber(combatAttributes?.metalResistance ?? 0) },
-    { label: t('combat.attr.woodRes'), value: formatNumber(combatAttributes?.woodResistance ?? 0) },
-    { label: t('combat.attr.waterRes'), value: formatNumber(combatAttributes?.waterResistance ?? 0) },
-    { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
-    { label: t('combat.attr.earthRes'), value: formatNumber(combatAttributes?.earthResistance ?? 0) },
-    { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
-  ]
-  const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen' | 'ratio_regen']> = [
-    [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
-    [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
-    [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
-    [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
-    [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
-    [t('combat.special.criticalDamage'), combatAttributes?.criticalDamageRatio ?? 0, 'percent'],
-    [t('combat.special.criticalAvoidance'), combatAttributes?.criticalAvoidance ?? 0, 'percent'],
-    [t('combat.special.damageAbsorption'), combatAttributes?.damageAbsorptionRatio ?? 0, 'percent'],
-    [t('combat.special.lifeSteal'), combatAttributes?.lifeStealRatio ?? 0, 'percent'],
-    [t('combat.special.armorDamage'), combatAttributes?.armorDamageRatio ?? 0, 'percent'],
-    [t('combat.special.hpDrain'), combatAttributes?.hpDrainRatio ?? 0, 'percent'],
-    [t('combat.special.damageTaken'), combatAttributes?.damageTakenRatio ?? 0, 'percent'],
-    [t('combat.special.dropRate'), combat?.combatDropRate ?? 0, 'percent'],
-    [t('combat.special.dropQuantity'), combat?.combatDropQuantity ?? 0, 'percent'],
-    [t('combat.special.rareFind'), combat?.combatRareFind ?? 0, 'percent'],
-    [t('combat.special.searchSpeed'), combat?.searchSpeedRatio ?? 0, 'percent'],
-  ]
-  const playerSpecialRows = playerSpecialCandidates
-    .filter(([, value]) => Math.abs(value) > 0.000001)
-    .map(([label, value, kind]) => ({
-      label,
-      value: kind === 'percent'
-        ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
-        : kind === 'regen'
-          ? `+${formatNumber(value)} / 10s`
-          : kind === 'ratio_regen'
-            ? `+${Math.round(value * 1000) / 10}% / 10s`
-            : formatNumber(value),
-    }))
-  const enemyBaseRows: AttributeRow[] = [
-    { label: t('combat.attr.hp'), value: `${formatNumber(enemy.hp)} / ${formatNumber(enemy.maxHp)}` },
-    { label: t('combat.attr.mp'), value: `${formatNumber(enemy.mp)} / ${formatNumber(enemy.maxMp)}` },
-    { label: t('combat.attr.accuracy'), value: formatNumber(enemyDefinition?.accuracyRating ?? 0) },
-    { label: t('combat.attr.evasion'), value: formatNumber(enemyDefinition?.evasionRating ?? 0) },
-    { label: t('combat.attr.maxDamage'), value: formatNumber(enemyDefinition?.maxDamage ?? 0) },
-    { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
-    { label: t('combat.attr.armor'), value: formatNumber(enemyDefinition?.armor ?? 0) },
-    { label: t('combat.attr.magicRes'), value: formatNumber(enemyDefinition?.magicResistance ?? 0) },
-    { label: t('combat.attr.metalRes'), value: formatNumber(enemyDefinition?.metalResistance ?? 0) },
-    { label: t('combat.attr.woodRes'), value: formatNumber(enemyDefinition?.woodResistance ?? 0) },
-    { label: t('combat.attr.waterRes'), value: formatNumber(enemyDefinition?.waterResistance ?? 0) },
-    { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
-    { label: t('combat.attr.earthRes'), value: formatNumber(enemyDefinition?.earthResistance ?? 0) },
-  ]
-  const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'ratio_regen']> = [
-    [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
-    [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
-    [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
-    [t('combat.special.lifeSteal'), enemyDefinition?.lifeStealRatio ?? 0, 'percent'],
-    [t('combat.special.armorDamage'), enemyDefinition?.armorDamageRatio ?? 0, 'percent'],
-    [t('combat.special.hpDrain'), enemyDefinition?.hpDrainRatio ?? 0, 'percent'],
-    [t('combat.special.criticalChance'), enemyDefinition?.criticalChance ?? 0, 'percent'],
-    [t('combat.special.criticalDamage'), enemyDefinition?.criticalDamageRatio ?? 0, 'percent'],
-    [t('combat.special.criticalAvoidance'), enemyDefinition?.criticalAvoidance ?? 0, 'percent'],
-    [t('combat.special.damageAbsorption'), enemyDefinition?.damageAbsorptionRatio ?? 0, 'percent'],
-  ]
-  const enemySpecialRows = enemySpecialCandidates
-    .map(([label, value, kind]) => ({
-      label,
-      value: kind === 'percent'
-        ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
-        : kind === 'ratio_regen'
-          ? `+${Math.round(value * 1000) / 10}% / 10s`
-          : kind === 'milliseconds'
-            ? t('combat.attr.seconds', { n: formatNumber(value / 1000) })
-            : formatNumber(value),
-    }))
+
+  // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时惰性计算攻防与抗性属性数组，彻底消除战斗每帧的冗余数组分配
+  const { baseRows, specialRows } = useMemo(() => {
+    if (inspectedActor === null) {
+      return { baseRows: [], specialRows: [] }
+    }
+
+    if (inspectedActor === 'enemy') {
+      const enemyBaseRows: AttributeRow[] = [
+        { label: t('combat.attr.hp'), value: `${formatNumber(enemy.hp)} / ${formatNumber(enemy.maxHp)}` },
+        { label: t('combat.attr.mp'), value: `${formatNumber(enemy.mp)} / ${formatNumber(enemy.maxMp)}` },
+        { label: t('combat.attr.accuracy'), value: formatNumber(enemyDefinition?.accuracyRating ?? 0) },
+        { label: t('combat.attr.evasion'), value: formatNumber(enemyDefinition?.evasionRating ?? 0) },
+        { label: t('combat.attr.maxDamage'), value: formatNumber(enemyDefinition?.maxDamage ?? 0) },
+        { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
+        { label: t('combat.attr.armor'), value: formatNumber(enemyDefinition?.armor ?? 0) },
+        { label: t('combat.attr.magicRes'), value: formatNumber(enemyDefinition?.magicResistance ?? 0) },
+        { label: t('combat.attr.metalRes'), value: formatNumber(enemyDefinition?.metalResistance ?? 0) },
+        { label: t('combat.attr.woodRes'), value: formatNumber(enemyDefinition?.woodResistance ?? 0) },
+        { label: t('combat.attr.waterRes'), value: formatNumber(enemyDefinition?.waterResistance ?? 0) },
+        { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
+        { label: t('combat.attr.earthRes'), value: formatNumber(enemyDefinition?.earthResistance ?? 0) },
+      ]
+      const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'ratio_regen']> = [
+        [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
+        [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+        [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+        [t('combat.special.lifeSteal'), enemyDefinition?.lifeStealRatio ?? 0, 'percent'],
+        [t('combat.special.armorDamage'), enemyDefinition?.armorDamageRatio ?? 0, 'percent'],
+        [t('combat.special.hpDrain'), enemyDefinition?.hpDrainRatio ?? 0, 'percent'],
+        [t('combat.special.criticalChance'), enemyDefinition?.criticalChance ?? 0, 'percent'],
+        [t('combat.special.criticalDamage'), enemyDefinition?.criticalDamageRatio ?? 0, 'percent'],
+        [t('combat.special.criticalAvoidance'), enemyDefinition?.criticalAvoidance ?? 0, 'percent'],
+        [t('combat.special.damageAbsorption'), enemyDefinition?.damageAbsorptionRatio ?? 0, 'percent'],
+      ]
+      const enemySpecialRows = enemySpecialCandidates
+        .map(([label, value, kind]) => ({
+          label,
+          value: kind === 'percent'
+            ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
+            : kind === 'ratio_regen'
+              ? `+${Math.round(value * 1000) / 10}% / 10s`
+              : kind === 'milliseconds'
+                ? t('combat.attr.seconds', { n: formatNumber(value / 1000) })
+                : formatNumber(value),
+        }))
+      return { baseRows: enemyBaseRows, specialRows: enemySpecialRows }
+    }
+
+    const playerBaseRows: AttributeRow[] = [
+      { label: t('combat.attr.hp'), value: `${formatNumber(playerHp)} / ${formatNumber(playerMaxHp)}` },
+      { label: t('combat.attr.mp'), value: `${formatNumber(playerMp)} / ${formatNumber(playerMaxMp)}` },
+      { label: t('combat.attr.stamina'), value: formatNumber(Math.max(10, combat?.staminaLevel ?? 10)) },
+      { label: t('combat.attr.meridian'), value: formatNumber(Math.max(10, combat?.intelligenceLevel ?? 10)) },
+      { label: t('combat.attr.defense'), value: formatNumber(Math.max(10, combat?.defenseLevel ?? 10)) },
+      { label: t('combat.attr.attack'), value: formatNumber(Math.max(10, combat?.attackLevel ?? 10)) },
+      { label: t('combat.attr.divineSense'), value: formatNumber(Math.max(10, combat?.swordsmanshipLevel ?? 10)) },
+      { label: t('combat.attr.movement'), value: formatNumber(Math.max(10, combat?.talismanLevel ?? 10)) },
+      { label: t('combat.attr.power'), value: formatNumber(combatAttributes?.maxDamage ?? 0) },
+      { label: t('combat.attr.accuracy'), value: formatNumber(combatAttributes?.accuracyRating ?? 0) },
+      { label: t('combat.attr.evasion'), value: formatNumber(combatAttributes?.evasionRating ?? 0) },
+      { label: t('combat.attr.armor'), value: formatNumber(combatAttributes?.armor ?? 0) },
+      { label: t('combat.attr.magicRes'), value: formatNumber(combatAttributes?.magicResistance ?? 0) },
+      { label: t('combat.attr.metalRes'), value: formatNumber(combatAttributes?.metalResistance ?? 0) },
+      { label: t('combat.attr.woodRes'), value: formatNumber(combatAttributes?.woodResistance ?? 0) },
+      { label: t('combat.attr.waterRes'), value: formatNumber(combatAttributes?.waterResistance ?? 0) },
+      { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
+      { label: t('combat.attr.earthRes'), value: formatNumber(combatAttributes?.earthResistance ?? 0) },
+      { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
+    ]
+    const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen' | 'ratio_regen']> = [
+      [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
+      [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+      [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+      [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
+      [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
+      [t('combat.special.criticalDamage'), combatAttributes?.criticalDamageRatio ?? 0, 'percent'],
+      [t('combat.special.criticalAvoidance'), combatAttributes?.criticalAvoidance ?? 0, 'percent'],
+      [t('combat.special.damageAbsorption'), combatAttributes?.damageAbsorptionRatio ?? 0, 'percent'],
+      [t('combat.special.lifeSteal'), combatAttributes?.lifeStealRatio ?? 0, 'percent'],
+      [t('combat.special.armorDamage'), combatAttributes?.armorDamageRatio ?? 0, 'percent'],
+      [t('combat.special.hpDrain'), combatAttributes?.hpDrainRatio ?? 0, 'percent'],
+      [t('combat.special.damageTaken'), combatAttributes?.damageTakenRatio ?? 0, 'percent'],
+      [t('combat.special.dropRate'), combat?.combatDropRate ?? 0, 'percent'],
+      [t('combat.special.dropQuantity'), combat?.combatDropQuantity ?? 0, 'percent'],
+      [t('combat.special.rareFind'), combat?.combatRareFind ?? 0, 'percent'],
+      [t('combat.special.searchSpeed'), combat?.searchSpeedRatio ?? 0, 'percent'],
+    ]
+    const playerSpecialRows = playerSpecialCandidates
+      .filter(([, value]) => Math.abs(value) > 0.000001)
+      .map(([label, value, kind]) => ({
+        label,
+        value: kind === 'percent'
+          ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
+          : kind === 'regen'
+            ? `+${formatNumber(value)} / 10s`
+            : kind === 'ratio_regen'
+              ? `+${Math.round(value * 1000) / 10}% / 10s`
+              : formatNumber(value),
+      }))
+
+    return { baseRows: playerBaseRows, specialRows: playerSpecialRows }
+  }, [inspectedActor, enemy, enemyDefinition, playerHp, playerMaxHp, playerMp, playerMaxMp, combat, combatAttributes, t])
 
   return (
     <div className="combat-arena-shell">
@@ -1450,13 +1464,13 @@ export const CombatArena = memo(function CombatArena({
       </div>
       <CharacterAttributeModal
         actorId={inspectedActor === 'enemy' ? (expedition?.enemyId ?? activeEncounter?.enemy?.enemyId ?? activeEncounterId) : 'player'}
-        baseRows={inspectedActor === 'enemy' ? enemyBaseRows : playerBaseRows}
+        baseRows={baseRows}
         buffs={inspectedActor === 'player' ? buffs : []}
         name={inspectedActor === 'enemy' ? enemy.name : playerName}
         onClose={() => setInspectedActor(null)}
         open={inspectedActor !== null}
         role={inspectedActor ?? 'player'}
-        specialRows={inspectedActor === 'enemy' ? enemySpecialRows : playerSpecialRows}
+        specialRows={specialRows}
         title={inspectedActor === 'enemy' ? enemy.name : playerName}
         visual={inspectedActor === 'enemy' ? enemy.visual : null}
       />

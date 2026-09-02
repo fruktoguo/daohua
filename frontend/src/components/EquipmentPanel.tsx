@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from 'react'
 import { gameClient } from '../network/gameClient'
 import { useGameStore } from '../game/gameStore'
-import { resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../game/ids'
+import { findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../game/ids'
 import { useT } from '../i18n'
 import type { CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../game/types'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -127,7 +127,8 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   const t = useT()
   const playerName = useGameStore(state => state.name)
   const visual = useGameStore(state => state.visual)
-  const stats = useGameStore(state => state.stats)
+  const spirit = useGameStore(state => state.stats.spirit)
+  const realmLevel = useGameStore(state => state.stats.realmLevel)
   const combat = useGameStore(state => state.combat)
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
@@ -135,7 +136,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
 
   const [activePickingSlot, setActivePickingSlot] = useState<SlotConfig | null>(null)
 
-  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
+  const realmInfo = useMemo(() => calculateRealmInfo(spirit ?? 0, realmLevel), [realmLevel, spirit])
 
   const equippedList = combat?.equipment ?? []
 
@@ -143,9 +144,9 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   const slotEquippedMap = useMemo(() => {
     const map = new Map<EquipmentSlot, { item: EquippedItem; definition?: ItemDefinition; equipmentDef?: CombatEquipmentDefinition }>()
     for (const eq of equippedList) {
-      const eqDef = equipmentCatalog.find(e => e.equipmentId === eq.itemId)
+      const eqDef = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
       if (!eqDef) continue
-      const itemDef = itemCatalog.find(i => i.itemId === eq.itemId)
+      const itemDef = findItemInCatalog(itemCatalog, eq.itemId)
 
       for (const config of ALL_SLOTS) {
         if (isSlotMatch(eqDef.slot, config.slot)) {
@@ -166,10 +167,10 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     const matchingInventoryItems: ItemPickerEntry[] = []
     for (const inv of inventory) {
       if (inv.amount <= 0) continue
-      const eqDef = equipmentCatalog.find(e => e.equipmentId === inv.itemId)
+      const eqDef = findEquipmentInCatalog(equipmentCatalog, inv.itemId)
       if (!eqDef || !isSlotMatch(eqDef.slot, targetSlot)) continue
 
-      const itemDef = itemCatalog.find(i => i.itemId === inv.itemId)
+      const itemDef = findItemInCatalog(itemCatalog, inv.itemId)
       matchingInventoryItems.push({
         itemId: inv.itemId,
         name: inv.name,
@@ -206,7 +207,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
 
     // 过滤掉当前部位已穿戴的装备
     const nextEquipped = (combat.equipment ?? []).filter(eq => {
-      const eqDef = equipmentCatalog.find(e => e.equipmentId === eq.itemId)
+      const eqDef = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
       if (!eqDef) return true
       return !isSlotMatch(eqDef.slot, targetSlot)
     })

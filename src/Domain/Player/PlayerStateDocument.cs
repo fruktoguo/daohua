@@ -67,9 +67,16 @@ public sealed record QueuedActionState(
 
 public sealed partial class PlayerAggregate
 {
+    private ActiveBuff[]? _cachedBuffs;
+    private InstanceId[]? _cachedEquippedInstances;
+    private AbilityId[]? _cachedLearnedAbilities;
+    private ItemId[]? _cachedEquippedItemIds;
+    private AutoUseSlotState[]? _cachedAutoUseSlots;
+    private PlayerSettingsStateDocument? _cachedSettingsDoc;
+
     /// <summary>
     /// 将当前可变领域聚合导出为不可变的纯数据快照文档。
-    /// 经过零闭包与空数组单例复用优化，降低高频快照导出的 GC 压力。
+    /// 经过零闭包与空数组/未脏分段单例复用优化，降低高频快照导出的 GC 压力。
     /// </summary>
     public PlayerAggregateState ExportState()
     {
@@ -100,12 +107,105 @@ public sealed partial class PlayerAggregate
             new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed),
             new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense),
-            Buffs.Active.Count == 0 ? [] : Buffs.Active.ToArray(),
-            Loadout.EquippedInstances.Count == 0 ? [] : Loadout.EquippedInstances.ToArray(),
-            Loadout.LearnedAbilities.Count == 0 ? [] : Loadout.LearnedAbilities.ToArray(),
-            new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled, Settings.AutoUseSlots.Count == 0 ? [] : Settings.AutoUseSlots.ToArray()),
+            GetCachedBuffs(),
+            GetCachedEquippedInstances(),
+            GetCachedLearnedAbilities(),
+            GetCachedSettings(),
             actions,
-            Loadout.EquippedItemIds.Count == 0 ? [] : Loadout.EquippedItemIds.ToArray());
+            GetCachedEquippedItemIds());
+    }
+
+    private ActiveBuff[] GetCachedBuffs()
+    {
+        if (Buffs.Active.Count == 0) return [];
+        if (_cachedBuffs is not null && _cachedBuffs.Length == Buffs.Active.Count)
+        {
+            var same = true;
+            for (var i = 0; i < _cachedBuffs.Length; i++)
+            {
+                if (_cachedBuffs[i] != Buffs.Active[i]) { same = false; break; }
+            }
+            if (same) return _cachedBuffs;
+        }
+        return _cachedBuffs = Buffs.Active.ToArray();
+    }
+
+    private InstanceId[] GetCachedEquippedInstances()
+    {
+        if (Loadout.EquippedInstances.Count == 0) return [];
+        if (_cachedEquippedInstances is not null && _cachedEquippedInstances.Length == Loadout.EquippedInstances.Count)
+        {
+            var same = true;
+            for (var i = 0; i < _cachedEquippedInstances.Length; i++)
+            {
+                if (_cachedEquippedInstances[i] != Loadout.EquippedInstances[i]) { same = false; break; }
+            }
+            if (same) return _cachedEquippedInstances;
+        }
+        return _cachedEquippedInstances = Loadout.EquippedInstances.ToArray();
+    }
+
+    private AbilityId[] GetCachedLearnedAbilities()
+    {
+        if (Loadout.LearnedAbilities.Count == 0) return [];
+        if (_cachedLearnedAbilities is not null && _cachedLearnedAbilities.Length == Loadout.LearnedAbilities.Count)
+        {
+            var same = true;
+            for (var i = 0; i < _cachedLearnedAbilities.Length; i++)
+            {
+                if (_cachedLearnedAbilities[i] != Loadout.LearnedAbilities[i]) { same = false; break; }
+            }
+            if (same) return _cachedLearnedAbilities;
+        }
+        return _cachedLearnedAbilities = Loadout.LearnedAbilities.ToArray();
+    }
+
+    private ItemId[] GetCachedEquippedItemIds()
+    {
+        if (Loadout.EquippedItemIds.Count == 0) return [];
+        if (_cachedEquippedItemIds is not null && _cachedEquippedItemIds.Length == Loadout.EquippedItemIds.Count)
+        {
+            var same = true;
+            for (var i = 0; i < _cachedEquippedItemIds.Length; i++)
+            {
+                if (_cachedEquippedItemIds[i] != Loadout.EquippedItemIds[i]) { same = false; break; }
+            }
+            if (same) return _cachedEquippedItemIds;
+        }
+        return _cachedEquippedItemIds = Loadout.EquippedItemIds.ToArray();
+    }
+
+    private PlayerSettingsStateDocument GetCachedSettings()
+    {
+        var slots = GetCachedAutoUseSlots();
+        if (_cachedSettingsDoc is not null
+            && _cachedSettingsDoc.Locale == Settings.Locale
+            && _cachedSettingsDoc.NotificationsEnabled == Settings.NotificationsEnabled
+            && _cachedSettingsDoc.LoopEnabled == Settings.LoopEnabled
+            && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
+        {
+            return _cachedSettingsDoc;
+        }
+        return _cachedSettingsDoc = new PlayerSettingsStateDocument(
+            Settings.Locale,
+            Settings.NotificationsEnabled,
+            Settings.LoopEnabled,
+            slots);
+    }
+
+    private AutoUseSlotState[] GetCachedAutoUseSlots()
+    {
+        if (Settings.AutoUseSlots.Count == 0) return [];
+        if (_cachedAutoUseSlots is not null && _cachedAutoUseSlots.Length == Settings.AutoUseSlots.Count)
+        {
+            var same = true;
+            for (var i = 0; i < _cachedAutoUseSlots.Length; i++)
+            {
+                if (_cachedAutoUseSlots[i] != Settings.AutoUseSlots[i]) { same = false; break; }
+            }
+            if (same) return _cachedAutoUseSlots;
+        }
+        return _cachedAutoUseSlots = Settings.AutoUseSlots.ToArray();
     }
 
     /// <summary>

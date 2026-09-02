@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
+import { findItemInCatalog } from '../game/ids'
 import type { TravelSegment, WorldMapDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
@@ -146,7 +147,7 @@ function planShortestTravel(
   return null
 }
 /**
- * 实时计算并插值玩家在地图上的精准动态坐标 (60fps 平滑移动)
+ * 实时计算并插值玩家在地图上的精准动态坐标（DOM Ref 直操位移，零 React Re-render 负担）
  */
 function usePlayerDisplayPosition(
   map: WorldMapDefinition | undefined,
@@ -158,13 +159,19 @@ function usePlayerDisplayPosition(
     travelPathEdgeIds?: string[] | null
     travelSegments?: TravelSegment[] | null
   } | undefined,
-): { x: number; y: number } {
-  const [pos, setPos] = useState<{ x: number; y: number }>({ x: world.x, y: world.y })
+  hidden = false,
+): {
+  playerPosRef: React.RefObject<{ x: number; y: number }>
+  markerRef: React.RefObject<HTMLDivElement | null>
+} {
+  const markerRef = useRef<HTMLDivElement>(null)
+  const playerPosRef = useRef<{ x: number; y: number }>({ x: world.x, y: world.y })
 
   const stateRef = useRef({
     map,
     world,
     activeTravel,
+    hidden,
     lastProgressSec: activeTravel?.progressSeconds ?? 0,
     lastUpdateMs: performance.now(),
   })
@@ -178,20 +185,18 @@ function usePlayerDisplayPosition(
       map,
       world,
       activeTravel,
+      hidden,
       lastProgressSec: activeTravel?.progressSeconds ?? 0,
       lastUpdateMs: progressChanged || travelChanged ? now : prev.lastUpdateMs,
     }
-  }, [map, world, activeTravel])
+  }, [map, world, activeTravel, hidden])
+
   useEffect(() => {
-    let animId: number
+    let animId: number | null = null
 
-    const tick = () => {
+    const computeCurrentCoord = (): { x: number; y: number } => {
       const { map: currMap, world: currWorld, activeTravel: currTravel, lastProgressSec, lastUpdateMs } = stateRef.current
-
-      if (!currMap) {
-        animId = requestAnimationFrame(tick)
-        return
-      }
+      if (!currMap) return { x: currWorld.x, y: currWorld.y }
 
       // 1. 正在移动中：沿着旅行路径平滑插值
       if (
@@ -204,7 +209,6 @@ function usePlayerDisplayPosition(
         const currentElapsedSec = Math.min(currTravel.durationSeconds, lastProgressSec + elapsedSinceUpdateSec)
 
         let remainingSec = currentElapsedSec
-        let currentCoord: { x: number; y: number } | null = null
 
         // 优先使用后端权威下发的 travelSegments（精准支持半路启程、逆向行走与多路段长途移动）
         if (currTravel.travelSegments && currTravel.travelSegments.length > 0) {
@@ -225,11 +229,10 @@ function usePlayerDisplayPosition(
             const segDuration = seg.durationSeconds
             if (remainingSec <= segDuration || i === currTravel.travelSegments.length - 1) {
               const ratio = segDuration > 0 ? Math.min(1, Math.max(0, remainingSec / segDuration)) : 1
-              currentCoord = {
+              return {
                 x: startX + (endX - startX) * ratio,
                 y: startY + (endY - startY) * ratio,
               }
-              break
             } else {
               remainingSec -= segDuration
             }
@@ -257,24 +260,14 @@ function usePlayerDisplayPosition(
             const edgeDuration = edge.durationSeconds
             if (remainingSec <= edgeDuration || i === currTravel.travelPathEdgeIds.length - 1) {
               const ratio = edgeDuration > 0 ? Math.min(1, Math.max(0, remainingSec / edgeDuration)) : 1
-              currentCoord = {
+              return {
                 x: fromNode.x + (toNode.x - fromNode.x) * ratio,
                 y: fromNode.y + (toNode.y - fromNode.y) * ratio,
               }
-              break
             } else {
               remainingSec -= edgeDuration
             }
           }
-        }
-
-        if (currentCoord) {
-          setPos(prev => {
-            if (Math.abs(prev.x - currentCoord!.x) < 0.005 && Math.abs(prev.y - currentCoord!.y) < 0.005) return prev
-            return currentCoord!
-          })
-          animId = requestAnimationFrame(tick)
-          return
         }
       }
 
@@ -282,16 +275,9 @@ function usePlayerDisplayPosition(
       if (currWorld.nodeId) {
         const node = currMap.nodes.find(n => n.nodeId === currWorld.nodeId)
         if (node) {
-          setPos(prev => {
-            if (prev.x === node.x && prev.y === node.y) return prev
-            return { x: node.x, y: node.y }
-          })
-        } else {
-          setPos(prev => {
-            if (prev.x === currWorld.x && prev.y === currWorld.y) return prev
-            return { x: currWorld.x, y: currWorld.y }
-          })
+          return { x: node.x, y: node.y }
         }
+        return { x: currWorld.x, y: currWorld.y }
       } else if (currWorld.edgeId) {
         // 处于单线段中间
         const edge = currMap.edges.find(e => e.edgeId === currWorld.edgeId)
@@ -300,29 +286,77 @@ function usePlayerDisplayPosition(
           const toNode = currMap.nodes.find(n => n.nodeId === edge.toNodeId)
           if (fromNode && toNode) {
             const ratio = Math.max(0, Math.min(1, currWorld.edgeProgress))
-            const calculatedX = fromNode.x + (toNode.x - fromNode.x) * ratio
-            const calculatedY = fromNode.y + (toNode.y - fromNode.y) * ratio
-            setPos(prev => {
-              if (Math.abs(prev.x - calculatedX) < 0.005 && Math.abs(prev.y - calculatedY) < 0.005) return prev
-              return { x: calculatedX, y: calculatedY }
-            })
+            return {
+              x: fromNode.x + (toNode.x - fromNode.x) * ratio,
+              y: fromNode.y + (toNode.y - fromNode.y) * ratio,
+            }
           }
         }
-      } else {
-        setPos(prev => {
-          if (prev.x === currWorld.x && prev.y === currWorld.y) return prev
-          return { x: currWorld.x, y: currWorld.y }
-        })
       }
 
-      animId = requestAnimationFrame(tick)
+      return { x: currWorld.x, y: currWorld.y }
     }
 
-    animId = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(animId)
-  }, [])
+    const syncDom = (coord: { x: number; y: number }) => {
+      playerPosRef.current = coord
+      if (markerRef.current) {
+        markerRef.current.style.left = `${coord.x}%`
+        markerRef.current.style.top = `${coord.y}%`
+      }
+    }
 
-  return pos
+    const tick = () => {
+      if (stateRef.current.hidden || document.hidden) {
+        animId = null
+        return
+      }
+
+      const coord = computeCurrentCoord()
+      syncDom(coord)
+
+      const isTravelling = stateRef.current.activeTravel?.status === 'running' && (stateRef.current.activeTravel?.durationSeconds ?? 0) > 0
+      if (isTravelling) {
+        animId = requestAnimationFrame(tick)
+      } else {
+        animId = null
+      }
+    }
+
+    const startOrSync = () => {
+      if (animId !== null) {
+        cancelAnimationFrame(animId)
+        animId = null
+      }
+
+      if (stateRef.current.hidden || document.hidden) {
+        return
+      }
+
+      const isTravelling = stateRef.current.activeTravel?.status === 'running' && (stateRef.current.activeTravel?.durationSeconds ?? 0) > 0
+      if (isTravelling) {
+        animId = requestAnimationFrame(tick)
+      } else {
+        const coord = computeCurrentCoord()
+        syncDom(coord)
+      }
+    }
+
+    const onVisibilityChange = () => {
+      startOrSync()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    startOrSync()
+
+    return () => {
+      if (animId !== null) {
+        cancelAnimationFrame(animId)
+      }
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [map, world, activeTravel, hidden])
+
+  return { playerPosRef, markerRef }
 }
 // 地图节点/地点名称与描述来自服务端数据，仅面板框架文本与 aria 描述模板走 i18n。
 
@@ -336,7 +370,7 @@ function usePlayerDisplayPosition(
  * 4. 可靠节点交互：区分平移漫游与地点点击，支持一键精准选中地点并查看详情；
  * 5. 宽域连线交互：宽达 28px 的平滑 Hitbox，支持清晰路况 Hover 与路线高亮 (is-planned)。
  */
-export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
+export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { hidden?: boolean } = {}): React.JSX.Element {
   const t = useT()
   const maps = useGameStore(state => state.maps)
   const world = useGameStore(state => state.world)
@@ -347,7 +381,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
   const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
-  const playerPos = usePlayerDisplayPosition(map, world, activeTravel)
+  const { playerPosRef, markerRef } = usePlayerDisplayPosition(map, world, activeTravel, hidden)
 
   // 视口拖拽漫游与缩放状态
   const stageRef = useRef<HTMLDivElement>(null)
@@ -411,14 +445,15 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
     if (!stageW || !stageH) return
 
     const z = targetZoom ?? zoom
-    const playerPxX = (playerPos.x / 100) * stageW
-    const playerPxY = (playerPos.y / 100) * stageH
+    const pos = playerPosRef.current
+    const playerPxX = (pos.x / 100) * stageW
+    const playerPxY = (pos.y / 100) * stageH
 
     setPan({
       x: Math.round(stageW / 2 - playerPxX * z),
       y: Math.round(stageH / 2 - playerPxY * z),
     })
-  }, [playerPos.x, playerPos.y, zoom])
+  }, [zoom])
   // 打开地图或视口初始化时，默认将玩家当前位置居中
   const hasAutoCenteredRef = useRef<boolean>(false)
   useEffect(() => {
@@ -549,7 +584,7 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
       for (const [itemId, qty] of Object.entries(action.outputs)) {
         if (seen.has(itemId)) continue
         seen.add(itemId)
-        const itemDef = items.find(i => i.itemId === itemId)
+        const itemDef = findItemInCatalog(items, itemId)
         list.push({
           itemId,
           name: itemDef?.name ?? itemId,
@@ -722,9 +757,10 @@ export const WorldMapPanel = memo(function WorldMapPanel(): React.JSX.Element {
           <div
             aria-label={t('combat.map.playerMarkerAria', { name: world.locationName })}
             className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}`}
+            ref={markerRef}
             style={{
-              left: `${playerPos.x}%`,
-              top: `${playerPos.y}%`,
+              left: `${playerPosRef.current.x}%`,
+              top: `${playerPosRef.current.y}%`,
             }}
             title={world.locationName}
           >

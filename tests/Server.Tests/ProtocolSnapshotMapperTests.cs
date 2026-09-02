@@ -38,4 +38,35 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Empty(ProtocolSnapshotMapper.DiffAssets(current, current));
         Assert.Equal(current.Count, ProtocolSnapshotMapper.DiffAssets(null, current).Count);
     }
+
+    [Fact]
+    public void DiffSections_CarriesOnlySectionsWithModifiedChecksum()
+    {
+        var section1 = new PlayerSectionDto("progression", 1, 1, "json", "payload1", 10, 10, "checksum_prog_1", DateTimeOffset.UtcNow);
+        var section2 = new PlayerSectionDto("world", 1, 1, "json", "payload2", 10, 10, "checksum_world_1", DateTimeOffset.UtcNow);
+        var sections = new List<PlayerSectionDto> { section1, section2 };
+
+        // Baseline has same checksum for world, different for progression
+        var baseline = new Dictionary<string, string>
+        {
+            ["progression"] = "checksum_prog_old",
+            ["world"] = "checksum_world_1"
+        };
+
+        var diff = ProtocolSnapshotMapper.DiffSections(baseline, sections);
+        Assert.Single(diff);
+        Assert.Equal("progression", diff[0].Section);
+
+        // Baseline identical -> empty diff
+        var identicalBaseline = new Dictionary<string, string>
+        {
+            ["progression"] = "checksum_prog_1",
+            ["world"] = "checksum_world_1"
+        };
+        Assert.Empty(ProtocolSnapshotMapper.DiffSections(identicalBaseline, sections));
+
+        // Baseline null or empty -> all sections returned
+        Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(null, sections).Count);
+        Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(new Dictionary<string, string>(), sections).Count);
+    }
 }

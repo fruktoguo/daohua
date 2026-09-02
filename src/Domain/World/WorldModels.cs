@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Domain.World;
 
 /// <summary>世界地图节点（如宗门、村落、秘境洞府、灵脉矿区）。</summary>
@@ -31,6 +33,7 @@ public sealed class WorldGraph
     private readonly Dictionary<string, WorldNode> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, WorldEdge> _edges = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<WorldEdge>> _outgoing = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<(string, string), TravelPlan> _planCache = new();
 
     public IReadOnlyCollection<WorldNode> Nodes => _nodes.Values;
     public IReadOnlyCollection<WorldEdge> Edges => _edges.Values;
@@ -41,6 +44,7 @@ public sealed class WorldGraph
         ArgumentNullException.ThrowIfNull(node);
         if (!_nodes.TryAdd(node.Id, node)) throw new DomainException(DomainErrorCode.Duplicate, $"节点已存在：{node.Id}。");
         _outgoing[node.Id] = [];
+        _planCache.Clear();
     }
 
     /// <summary>
@@ -55,15 +59,19 @@ public sealed class WorldGraph
         var list = _outgoing[edge.FromNodeId];
         list.Add(edge);
         list.Sort(static (a, b) => string.CompareOrdinal(a.Id, b.Id));
+        _planCache.Clear();
     }
 
     /// <summary>
     /// 使用带优先队列的 Dijkstra 算法规划从起点到终点的最短耗时路径。
+    /// 内部维护只读记忆化路径缓存，使高频重复寻路达到 O(1) 查表与零堆分配。
     /// </summary>
     public TravelPlan Plan(string fromNodeId, string toNodeId)
     {
         if (!_nodes.ContainsKey(fromNodeId) || !_nodes.ContainsKey(toNodeId)) throw new DomainException(DomainErrorCode.NotFound, "起点或终点不存在。");
         if (fromNodeId == toNodeId) return new TravelPlan(fromNodeId, toNodeId, [], 0, 0);
+        if (_planCache.TryGetValue((fromNodeId, toNodeId), out var cached)) return cached;
+
         var distance = new Dictionary<string, double>(StringComparer.Ordinal) { [fromNodeId] = 0 };
         var previous = new Dictionary<string, WorldEdge>(StringComparer.Ordinal);
         var queue = new PriorityQueue<string, double>();
@@ -99,7 +107,9 @@ public sealed class WorldGraph
             totalTravelSeconds += edge.TravelSeconds;
             totalDistance += edge.Distance;
         }
-        return new TravelPlan(fromNodeId, toNodeId, edgeIds, totalTravelSeconds, totalDistance);
+        var plan = new TravelPlan(fromNodeId, toNodeId, edgeIds, totalTravelSeconds, totalDistance);
+        _planCache.TryAdd((fromNodeId, toNodeId), plan);
+        return plan;
     }
 
     /// <summary>根据 ID 查找指定世界边</summary>

@@ -66,6 +66,42 @@ public sealed class SimulationLogMapperTests
         Assert.Equal("完成行动 {{action:a|行动}}", decoded.Events[0].Template);
     }
 
+    [Fact]
+    public void SimulationLogMapper_100kEvents_TruncatesToBufferCapacityAndAvoidsMemoryBlowup()
+    {
+        var gameData = BuildCatalog();
+        var buffer = new PlayerLogBuffer(200);
+        var baseTime = DateTimeOffset.UtcNow;
+
+        // 构造 100,000 个仿真事件
+        const int eventCount = 100_000;
+        var events = new List<SimulationEvent>(eventCount);
+        for (var i = 0; i < eventCount; i++)
+        {
+            events.Add(new SimulationEvent(
+                baseTime.AddSeconds(i),
+                "action.completed",
+                $"吐纳_{i}",
+                new ActionId("cultivation.draw-qi")));
+        }
+
+        var beforeAlloc = GC.GetAllocatedBytesForCurrentThread();
+        var logEvents = SimulationLogMapper.ToLogEvents(events, gameData, buffer, bufferCapacity: 200);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - beforeAlloc;
+
+        // 断言：只格式化并返回最新的 200 条日志
+        Assert.Equal(200, logEvents.Count);
+        Assert.Equal(200, buffer.SnapshotRecent().Count);
+
+        // 验证序号与最新事件对应
+        Assert.Equal(1, logEvents[0].Sequence);
+        Assert.Equal(200, logEvents[199].Sequence);
+        Assert.Equal("完成行动 {{action:cultivation.draw-qi|吐纳_99999}}", logEvents[199].Template);
+
+        // 验证内存分配在极小范围内（仅 200 个 DTO 和字符串，分配小于 200KB）
+        Assert.True(allocated < 200 * 1024, $"100k 事件处理分配内存过大: {allocated} bytes");
+    }
+
     private static GameDataCatalog BuildCatalog()
     {
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal)

@@ -71,12 +71,14 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   },
 ]
 
+const ACTION_CORE_MAP = new Map<string, ActionDefinitionCore>(ACTION_DEFINITION_CORES.map(c => [c.id, c]))
+
 /**
  * 解析单个行动的完整定义（注入当前语言的名称和描述）
  * @param id 行动唯一标识符
  */
 export function resolveActionDefinition(id: string): ActionDefinition | undefined {
-  const core = ACTION_DEFINITION_CORES.find(action => action.id === id)
+  const core = ACTION_CORE_MAP.get(id)
   if (!core) return undefined
   const t = getT()
   return {
@@ -105,6 +107,105 @@ export function convertTierToLevel(tier = 1): number {
   return 18 + (t - 2) * 12
 }
 
+let cachedItemsRef: ReadonlyArray<{ itemId: string }> | null = null
+let cachedItemMap: Map<string, { itemId: string }> = new Map()
+
+/**
+ * 获取物品目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getItemMap<T extends { itemId: string }>(items: readonly T[]): Map<string, T> {
+  if (items === cachedItemsRef) return cachedItemMap as Map<string, T>
+  cachedItemsRef = items
+  const map = new Map<string, T>()
+  for (const item of items) {
+    map.set(item.itemId, item)
+  }
+  cachedItemMap = map as Map<string, { itemId: string }>
+  return map
+}
+
+let cachedEquipmentRef: ReadonlyArray<{ equipmentId: string }> | null = null
+let cachedEquipmentMap: Map<string, { equipmentId: string }> = new Map()
+
+/**
+ * 获取装备目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getEquipmentMap<T extends { equipmentId: string }>(equipment: readonly T[]): Map<string, T> {
+  if (equipment === cachedEquipmentRef) return cachedEquipmentMap as Map<string, T>
+  cachedEquipmentRef = equipment
+  const map = new Map<string, T>()
+  for (const eq of equipment) {
+    map.set(eq.equipmentId, eq)
+  }
+  cachedEquipmentMap = map as Map<string, { equipmentId: string }>
+  return map
+}
+
+let cachedAbilitiesRef: ReadonlyArray<{ abilityId: string }> | null = null
+let cachedAbilityMap: Map<string, { abilityId: string }> = new Map()
+
+/**
+ * 获取功法技能目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getAbilityMap<T extends { abilityId: string }>(abilities: readonly T[]): Map<string, T> {
+  if (abilities === cachedAbilitiesRef) return cachedAbilityMap as Map<string, T>
+  cachedAbilitiesRef = abilities
+  const map = new Map<string, T>()
+  for (const ab of abilities) {
+    map.set(ab.abilityId, ab)
+  }
+  cachedAbilityMap = map as Map<string, { abilityId: string }>
+  return map
+}
+
+let cachedEncountersRef: ReadonlyArray<{ encounterId: string; enemy?: { enemyId: string } }> | null = null
+let cachedEncounterMap: Map<string, { encounterId: string; enemy?: { enemyId: string } }> = new Map()
+
+/**
+ * 获取战斗遭遇目录的 O(1) 字典映射（支持 encounterId 与 enemy.enemyId 双向索引）
+ */
+export function getEncounterMap<T extends { encounterId: string; enemy?: { enemyId: string } }>(encounters: readonly T[]): Map<string, T> {
+  if (encounters === cachedEncountersRef) return cachedEncounterMap as Map<string, T>
+  cachedEncountersRef = encounters
+  const map = new Map<string, T>()
+  for (const enc of encounters) {
+    map.set(enc.encounterId, enc)
+    if (enc.enemy?.enemyId) {
+      map.set(enc.enemy.enemyId, enc)
+    }
+  }
+  cachedEncounterMap = map as Map<string, { encounterId: string; enemy?: { enemyId: string } }>
+  return map
+}
+
+/**
+ * 在物品目录中 O(1) 高效查找物品定义
+ */
+export function findItemInCatalog<T extends { itemId: string }>(items: readonly T[], itemId: string): T | undefined {
+  return getItemMap(items).get(itemId)
+}
+
+/**
+ * 在装备目录中 O(1) 高效查找装备定义
+ */
+export function findEquipmentInCatalog<T extends { equipmentId: string }>(equipment: readonly T[], equipmentId: string): T | undefined {
+  return getEquipmentMap(equipment).get(equipmentId)
+}
+
+/**
+ * 在功法目录中 O(1) 高效查找技能定义
+ */
+export function findAbilityInCatalog<T extends { abilityId: string }>(abilities: readonly T[], abilityId: string): T | undefined {
+  return getAbilityMap(abilities).get(abilityId)
+}
+
+/**
+ * 在遭遇目录中 O(1) 高效查找遭遇/敌怪定义
+ */
+export function findEncounterInCatalog<T extends { encounterId: string; enemy?: { enemyId: string } }>(encounters: readonly T[], encounterOrEnemyId: string): T | undefined {
+  return getEncounterMap(encounters).get(encounterOrEnemyId)
+}
+
 /**
  * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的真实等级 (Level)
  * 优先级：
@@ -119,11 +220,15 @@ export function resolveActionLevel(
   equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
   encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
 ): number {
+  const eqMap = equipment ? getEquipmentMap(equipment) : null
+  const itMap = items ? getItemMap(items) : null
+  const encMap = encounters ? getEncounterMap(encounters) : null
+
   if (action.outputs) {
     for (const outId of Object.keys(action.outputs)) {
-      const eq = equipment?.find(e => e.equipmentId === outId)
+      const eq = eqMap?.get(outId)
       if (eq && typeof eq.tier === 'number' && eq.tier > 0) return convertTierToLevel(eq.tier)
-      const it = items?.find(i => i.itemId === outId)
+      const it = itMap?.get(outId)
       if (it && typeof it.tier === 'number' && it.tier > 0) return convertTierToLevel(it.tier)
       const meta = ITEM_META_CORES[outId]
       if (meta?.level && meta.level > 0) {
@@ -133,7 +238,7 @@ export function resolveActionLevel(
   }
 
   if (action.combatEncounterId) {
-    const enc = encounters?.find(e => e.encounterId === action.combatEncounterId)
+    const enc = encMap?.get(action.combatEncounterId)
     if (enc && typeof enc.tier === 'number' && enc.tier > 0) return convertTierToLevel(enc.tier)
     if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return convertTierToLevel(2)
     return convertTierToLevel(1)
@@ -142,9 +247,9 @@ export function resolveActionLevel(
   if (action.inputs) {
     let maxTier = 1
     for (const inId of Object.keys(action.inputs)) {
-      const eq = equipment?.find(e => e.equipmentId === inId)
+      const eq = eqMap?.get(inId)
       if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
-      const it = items?.find(i => i.itemId === inId)
+      const it = itMap?.get(inId)
       if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
       const meta = ITEM_META_CORES[inId]
       if (meta?.level && meta.level > maxTier) maxTier = meta.level
@@ -164,19 +269,23 @@ export function resolveActionRarity(
   equipment?: ReadonlyArray<{ equipmentId: string; tier?: number }>,
   encounters?: ReadonlyArray<{ encounterId: string; tier?: number }>
 ): ItemRarity {
+  const eqMap = equipment ? getEquipmentMap(equipment) : null
+  const itMap = items ? getItemMap(items) : null
+  const encMap = encounters ? getEncounterMap(encounters) : null
+
   if (action.outputs) {
     for (const outId of Object.keys(action.outputs)) {
       const meta = ITEM_META_CORES[outId]
       if (meta?.rarity) return meta.rarity
-      const eq = equipment?.find(e => e.equipmentId === outId)
+      const eq = eqMap?.get(outId)
       if (eq && typeof eq.tier === 'number' && eq.tier > 0) return resolveItemGrade(eq.tier).rarity
-      const it = items?.find(i => i.itemId === outId)
+      const it = itMap?.get(outId)
       if (it && typeof it.tier === 'number' && it.tier > 0) return resolveItemGrade(it.tier).rarity
     }
   }
 
   if (action.combatEncounterId) {
-    const enc = encounters?.find(e => e.encounterId === action.combatEncounterId)
+    const enc = encMap?.get(action.combatEncounterId)
     if (enc && typeof enc.tier === 'number' && enc.tier > 0) return resolveItemGrade(enc.tier).rarity
     if (action.combatEncounterId.includes('valley') || action.combatEncounterId.includes('tier2')) return 'spirit'
     return 'mundane'
@@ -187,9 +296,9 @@ export function resolveActionRarity(
     for (const inId of Object.keys(action.inputs)) {
       const meta = ITEM_META_CORES[inId]
       if (meta?.rarity) return meta.rarity
-      const eq = equipment?.find(e => e.equipmentId === inId)
+      const eq = eqMap?.get(inId)
       if (eq && typeof eq.tier === 'number' && eq.tier > maxTier) maxTier = eq.tier
-      const it = items?.find(i => i.itemId === inId)
+      const it = itMap?.get(inId)
       if (it && typeof it.tier === 'number' && it.tier > maxTier) maxTier = it.tier
     }
     if (maxTier > 1) return resolveItemGrade(maxTier).rarity
@@ -752,3 +861,13 @@ export function resolveDefaultEquipmentDefinition(equipmentId: string): CombatEq
     specialMechanics: def.specialMechanics,
   }
 }
+
+/** 静态基础物品定义字典 */
+export const ITEM_MAP: Readonly<Record<string, Partial<ItemDefinition>>> = DEFAULT_ITEM_DEFINITIONS
+
+/** 静态基础装备定义字典 */
+export const EQUIPMENT_MAP: Readonly<Record<string, Partial<CombatEquipmentDefinition>>> = DEFAULT_EQUIPMENT_DEFINITIONS
+
+/** 静态基础物品元数据字典 */
+export const ITEM_META_MAP: Readonly<Record<string, ItemMetaCore>> = ITEM_META_CORES
+
