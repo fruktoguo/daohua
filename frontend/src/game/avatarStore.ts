@@ -47,12 +47,17 @@ export function normalizeAvatarId(id?: string | null): string {
   return clean
 }
 
+const AVATAR_URL_CACHE = new Map<string, readonly string[]>()
+
 /**
  * 根据 ID 智能生成多格式回退候选 URL 列表 (优先 WebP -> PNG -> SVG)
  */
-export function getAvatarCandidateUrls(rawId?: string | null): string[] {
+export function getAvatarCandidateUrls(rawId?: string | null): readonly string[] {
   const id = normalizeAvatarId(rawId)
   if (!id) return [DEFAULT_PLAYER_AVATAR_SRC]
+
+  const cached = AVATAR_URL_CACHE.get(id)
+  if (cached) return cached
 
   const registered = REGISTERED_AVATAR_MAP[id]
   const candidates: string[] = []
@@ -70,6 +75,7 @@ export function getAvatarCandidateUrls(rawId?: string | null): string[] {
     }
   }
 
+  AVATAR_URL_CACHE.set(id, candidates)
   return candidates
 }
 

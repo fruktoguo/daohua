@@ -157,8 +157,8 @@ export function calculateActionYieldPreview({
 
   // 3. 状态增益 (Buffs)
   let buffMultiplier = 1.0
-  const activeBuffs = buffs.filter(b => b.expiresAtUnixSeconds > nowUnixSeconds)
-  for (const buff of activeBuffs) {
+  for (const buff of buffs) {
+    if (buff.expiresAtUnixSeconds <= nowUnixSeconds) continue
     let bMult = 1.0
     if (isCultivation && buff.qiGainMultiplier && buff.qiGainMultiplier > 0) {
       bMult = buff.qiGainMultiplier
