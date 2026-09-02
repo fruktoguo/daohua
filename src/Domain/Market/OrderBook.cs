@@ -16,7 +16,18 @@ public sealed class OrderBook
 
     public MarketInstrument Instrument { get; }
     public long Version => _version;
-    public IReadOnlyCollection<MarketOrder> ActiveOrders => _orders.Values.Where(IsActive).ToArray();
+    public IReadOnlyCollection<MarketOrder> ActiveOrders
+    {
+        get
+        {
+            var active = new List<MarketOrder>(_orders.Count);
+            foreach (var order in _orders.Values)
+            {
+                if (IsActive(order)) active.Add(order);
+            }
+            return active;
+        }
+    }
     public bool TryGet(OrderId orderId, out MarketOrder order) => _orders.TryGetValue(orderId, out order!);
 
     /// <summary>从数据库当前活动订单重建内存投影；只导入，不触发撮合或资产变更。</summary>
@@ -24,12 +35,15 @@ public sealed class OrderBook
     {
         ArgumentNullException.ThrowIfNull(orders);
         if (version < 0) throw new DomainException(DomainErrorCode.InvalidArgument, "盘口版本不能为负数。");
-        var imported = orders.OrderBy(order => order.Sequence).ToArray();
+        var imported = orders as IList<MarketOrder> ?? orders.ToList();
+        var sorted = new MarketOrder[imported.Count];
+        for (var i = 0; i < imported.Count; i++) sorted[i] = imported[i];
+        Array.Sort(sorted, static (a, b) => a.Sequence.CompareTo(b.Sequence));
         var ids = new HashSet<OrderId>();
         var sequences = new HashSet<long>();
         _orders.Clear();
         _sequence = 0;
-        foreach (var order in imported)
+        foreach (var order in sorted)
         {
             if (order.Instrument != Instrument || order.OrderId.IsEmpty || order.OwnerId.IsEmpty ||
                 !Enum.IsDefined(order.Side) || !Enum.IsDefined(order.Status) ||
@@ -69,10 +83,11 @@ public sealed class OrderBook
 
         var incoming = _orders[request.OrderId];
         var fills = new List<MarketFill>();
-        foreach (var makerSnapshot in MatchingCandidates(incoming).ToArray())
+        var candidates = MatchingCandidates(incoming);
+        for (var i = 0; i < candidates.Count; i++)
         {
             if (incoming.RemainingQuantity <= 0) break;
-            var maker = makerSnapshot;
+            var maker = candidates[i];
             if (maker.OwnerId == incoming.OwnerId) continue;
             var quantity = Math.Min(incoming.RemainingQuantity, maker.RemainingQuantity);
             var price = maker.Price;
@@ -128,31 +143,70 @@ public sealed class OrderBook
     public IReadOnlyList<MarketOrder> Expire(DateTimeOffset now)
     {
         var timestamp = now.ToUniversalTime();
-        var expired = _orders.Values
-            .Where(order => IsActive(order) && order.ExpiresAt is not null && order.ExpiresAt <= timestamp)
-            .OrderBy(order => order.Sequence)
-            .ToArray();
-        foreach (var order in expired) _orders[order.OrderId] = order with { Status = MarketOrderStatus.Expired };
-        if (expired.Length > 0) _version = checked(_version + 1);
+        var expired = new List<MarketOrder>();
+        foreach (var order in _orders.Values)
+        {
+            if (IsActive(order) && order.ExpiresAt is not null && order.ExpiresAt <= timestamp)
+            {
+                expired.Add(order);
+            }
+        }
+        if (expired.Count == 0) return [];
+        expired.Sort(static (a, b) => a.Sequence.CompareTo(b.Sequence));
+        for (var i = 0; i < expired.Count; i++)
+        {
+            var order = expired[i];
+            _orders[order.OrderId] = order with { Status = MarketOrderStatus.Expired };
+        }
+        _version = checked(_version + 1);
         return expired;
     }
 
     public OrderBookSnapshot Snapshot(int depth = 20, DateTimeOffset? now = null)
     {
         if (depth is < 1 or > 200) throw new DomainException(DomainErrorCode.InvalidArgument, "盘口深度必须在 1 到 200 之间。");
-        static IReadOnlyList<MarketLevel> Levels(IEnumerable<MarketOrder> orders, int depth) => orders
-            .GroupBy(order => order.Price)
-            .OrderBy(group => group.Key)
-            .Take(depth)
-            .Select(group => new MarketLevel(group.Key, group.Sum(order => order.RemainingQuantity), group.Count()))
-            .ToArray();
-        var asks = Levels(_orders.Values.Where(order => IsActive(order) && order.Side == MarketSide.Sell), depth);
-        var bids = _orders.Values.Where(order => IsActive(order) && order.Side == MarketSide.Buy)
-            .GroupBy(order => order.Price)
-            .OrderByDescending(group => group.Key)
-            .Take(depth)
-            .Select(group => new MarketLevel(group.Key, group.Sum(order => order.RemainingQuantity), group.Count()))
-            .ToArray();
+        var askMap = new Dictionary<double, (double Quantity, int Count)>();
+        var bidMap = new Dictionary<double, (double Quantity, int Count)>();
+
+        foreach (var order in _orders.Values)
+        {
+            if (!IsActive(order)) continue;
+            var targetMap = order.Side == MarketSide.Sell ? askMap : bidMap;
+            if (targetMap.TryGetValue(order.Price, out var current))
+            {
+                targetMap[order.Price] = (current.Quantity + order.RemainingQuantity, current.Count + 1);
+            }
+            else
+            {
+                targetMap[order.Price] = (order.RemainingQuantity, 1);
+            }
+        }
+
+        var askPrices = new double[askMap.Count];
+        askMap.Keys.CopyTo(askPrices, 0);
+        Array.Sort(askPrices);
+        var askCount = Math.Min(depth, askPrices.Length);
+        var asks = new MarketLevel[askCount];
+        for (var i = 0; i < askCount; i++)
+        {
+            var price = askPrices[i];
+            var (qty, count) = askMap[price];
+            asks[i] = new MarketLevel(price, qty, count);
+        }
+
+        var bidPrices = new double[bidMap.Count];
+        bidMap.Keys.CopyTo(bidPrices, 0);
+        Array.Sort(bidPrices);
+        Array.Reverse(bidPrices);
+        var bidCount = Math.Min(depth, bidPrices.Length);
+        var bids = new MarketLevel[bidCount];
+        for (var i = 0; i < bidCount; i++)
+        {
+            var price = bidPrices[i];
+            var (qty, count) = bidMap[price];
+            bids[i] = new MarketLevel(price, qty, count);
+        }
+
         return new OrderBookSnapshot(Instrument, asks, bids, _version, (now ?? DateTimeOffset.UtcNow).ToUniversalTime());
     }
 
@@ -160,18 +214,60 @@ public sealed class OrderBook
     {
         if (ownerId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "玩家标识不能为空。");
         if (limit is < 1 or > 1000) throw new DomainException(DomainErrorCode.InvalidArgument, "订单查询上限无效。");
-        return _orders.Values.Where(order => order.OwnerId == ownerId && IsActive(order)).OrderByDescending(order => order.Sequence).Take(limit).ToArray();
+        var list = new List<MarketOrder>();
+        foreach (var order in _orders.Values)
+        {
+            if (order.OwnerId == ownerId && IsActive(order))
+            {
+                list.Add(order);
+            }
+        }
+        list.Sort(static (a, b) => b.Sequence.CompareTo(a.Sequence));
+        if (list.Count > limit) list.RemoveRange(limit, list.Count - limit);
+        return list;
     }
 
-    public IReadOnlyList<MarketOrder> ExportActiveOrders() => _orders.Values.Where(IsActive).OrderBy(order => order.Sequence).ToArray();
+    public IReadOnlyList<MarketOrder> ExportActiveOrders()
+    {
+        var active = new List<MarketOrder>(_orders.Count);
+        foreach (var order in _orders.Values)
+        {
+            if (IsActive(order)) active.Add(order);
+        }
+        active.Sort(static (a, b) => a.Sequence.CompareTo(b.Sequence));
+        return active;
+    }
 
-    private IEnumerable<MarketOrder> MatchingCandidates(MarketOrder incoming)
+    private List<MarketOrder> MatchingCandidates(MarketOrder incoming)
     {
         var opposite = incoming.Side == MarketSide.Buy ? MarketSide.Sell : MarketSide.Buy;
-        var candidates = _orders.Values.Where(order => IsActive(order) && order.Side == opposite && Crosses(incoming, order));
-        return incoming.Side == MarketSide.Buy
-            ? candidates.OrderBy(order => order.Price).ThenBy(order => order.Sequence)
-            : candidates.OrderByDescending(order => order.Price).ThenBy(order => order.Sequence);
+        var candidates = new List<MarketOrder>();
+        foreach (var order in _orders.Values)
+        {
+            if (IsActive(order) && order.Side == opposite && Crosses(incoming, order))
+            {
+                candidates.Add(order);
+            }
+        }
+
+        if (incoming.Side == MarketSide.Buy)
+        {
+            candidates.Sort(static (a, b) =>
+            {
+                var cmp = a.Price.CompareTo(b.Price);
+                return cmp != 0 ? cmp : a.Sequence.CompareTo(b.Sequence);
+            });
+        }
+        else
+        {
+            candidates.Sort(static (a, b) =>
+            {
+                var cmp = b.Price.CompareTo(a.Price);
+                return cmp != 0 ? cmp : a.Sequence.CompareTo(b.Sequence);
+            });
+        }
+
+        return candidates;
     }
 
     private static bool Crosses(MarketOrder incoming, MarketOrder maker) => incoming.Side == MarketSide.Buy
