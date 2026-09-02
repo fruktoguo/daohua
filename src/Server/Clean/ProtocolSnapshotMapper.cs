@@ -21,15 +21,23 @@ public static class ProtocolSnapshotMapper
                 encoded.StateVersion,
                 encoded.SchemaVersion,
                 encoded.Codec,
-                Convert.ToBase64String(encoded.Payload.ToArray()),
+                Convert.ToBase64String(encoded.Payload.Span),
                 encoded.RawBytes,
                 encoded.StoredBytes,
                 encoded.Checksum,
                 encoded.UpdatedAt));
         }
-        var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|', sections
-            .OrderBy(section => section.Section, StringComparer.Ordinal)
-            .Select(section => $"{section.Section}:{section.SectionVersion}:{section.Checksum}"))))).ToLowerInvariant();
+
+        sections.Sort(static (a, b) => string.CompareOrdinal(a.Section, b.Section));
+        var sb = new StringBuilder(sections.Count * 96);
+        for (var i = 0; i < sections.Count; i++)
+        {
+            if (i > 0) sb.Append('|');
+            var s = sections[i];
+            sb.Append(s.Section).Append(':').Append(s.SectionVersion).Append(':').Append(s.Checksum);
+        }
+        var checksum = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
+
         var head = new PlayerHeadDto(
             runtime.PlayerId.ToString("D"),
             runtime.StateVersion,
@@ -38,13 +46,26 @@ public static class ProtocolSnapshotMapper
             gameDataFingerprint,
             checksum,
             DateTimeOffset.UtcNow);
-        var assets = runtime.Assets
-            .Select(asset => new AssetBalanceDto(
-                asset.AssetId,
-                string.IsNullOrEmpty(asset.Variant) ? null : asset.Variant,
-                asset.Quantity,
-                asset.Version))
-            .ToArray();
+
+        AssetBalanceDto[] assets;
+        if (runtime.Assets.Count == 0)
+        {
+            assets = [];
+        }
+        else
+        {
+            assets = new AssetBalanceDto[runtime.Assets.Count];
+            for (var i = 0; i < runtime.Assets.Count; i++)
+            {
+                var asset = runtime.Assets[i];
+                assets[i] = new AssetBalanceDto(
+                    asset.AssetId,
+                    string.IsNullOrEmpty(asset.Variant) ? null : asset.Variant,
+                    asset.Quantity,
+                    asset.Version);
+            }
+        }
+
         return new PlayerSnapshotDto(
             runtime.PlayerId.ToString("D"),
             runtime.DisplayName,
@@ -89,15 +110,36 @@ public static class ProtocolSnapshotMapper
 
     private static object ToWorldSection(PlayerWorldStateDocument world, GameDataCatalog? gameData)
     {
-        var map = gameData?.Maps.FirstOrDefault(candidate =>
-            candidate.TryGetProperty("nodes", out var nodes)
-            && nodes.ValueKind == JsonValueKind.Array
-            && nodes.EnumerateArray().Any(node => ReadString(node, "id") == world.NodeId)) ?? default;
-        var hasMap = map.ValueKind == JsonValueKind.Object;
-        var node = hasMap && map.TryGetProperty("nodes", out var mapNodes)
-            ? mapNodes.EnumerateArray().FirstOrDefault(candidate => ReadString(candidate, "id") == world.NodeId)
-            : default;
-        var hasNode = node.ValueKind == JsonValueKind.Object;
+        var hasMap = false;
+        var hasNode = false;
+        var map = default(JsonElement);
+        var node = default(JsonElement);
+
+        if (gameData?.Maps is not null)
+        {
+            for (var i = 0; i < gameData.Maps.Count; i++)
+            {
+                var candidate = gameData.Maps[i];
+                if (candidate.ValueKind == JsonValueKind.Object
+                    && candidate.TryGetProperty("nodes", out var candidateNodes)
+                    && candidateNodes.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var n in candidateNodes.EnumerateArray())
+                    {
+                        if (ReadString(n, "id") == world.NodeId)
+                        {
+                            map = candidate;
+                            hasMap = true;
+                            node = n;
+                            hasNode = true;
+                            break;
+                        }
+                    }
+                    if (hasNode) break;
+                }
+            }
+        }
+
         var x = hasNode ? ReadDouble(node, "x", world.X) : world.X;
         var y = hasNode ? ReadDouble(node, "y", world.Y) : world.Y;
         return new
@@ -124,19 +166,43 @@ public static class ProtocolSnapshotMapper
         };
     }
 
-    private static object[] ReadEntities(JsonElement value, string property) => ReadArray(value, property).Select(entity => new
+    private static object[] ReadEntities(JsonElement value, string property)
     {
-        entityId = ReadString(entity, "id"),
-        name = ReadString(entity, "name"),
-        kind = ReadString(entity, "kind", "building"),
-        description = ReadString(entity, "description"),
-        effect = ReadString(entity, "effect")
-    }).Cast<object>().ToArray();
+        if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(property, out var child) || child.ValueKind != JsonValueKind.Array)
+            return [];
+        var count = child.GetArrayLength();
+        if (count == 0) return [];
+        var result = new object[count];
+        var i = 0;
+        foreach (var entity in child.EnumerateArray())
+        {
+            result[i++] = new
+            {
+                entityId = ReadString(entity, "id"),
+                name = ReadString(entity, "name"),
+                kind = ReadString(entity, "kind", "building"),
+                description = ReadString(entity, "description"),
+                effect = ReadString(entity, "effect")
+            };
+        }
+        return result;
+    }
 
-    private static JsonElement[] ReadArray(JsonElement value, string property) => value.ValueKind == JsonValueKind.Object
-        && value.TryGetProperty(property, out var child) && child.ValueKind == JsonValueKind.Array
-        ? child.EnumerateArray().Select(item => item.Clone()).ToArray() : [];
-    private static string[] ReadStringArray(JsonElement value, string property) => ReadArray(value, property).Select(item => item.GetString() ?? string.Empty).Where(item => item.Length > 0).ToArray();
+    private static string[] ReadStringArray(JsonElement value, string property)
+    {
+        if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(property, out var child) || child.ValueKind != JsonValueKind.Array)
+            return [];
+        var count = child.GetArrayLength();
+        if (count == 0) return [];
+        var list = new List<string>(count);
+        foreach (var item in child.EnumerateArray())
+        {
+            var str = item.GetString();
+            if (!string.IsNullOrEmpty(str)) list.Add(str);
+        }
+        return list.ToArray();
+    }
+
     private static string ReadString(JsonElement value, string property, string fallback = "") => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var child) && child.ValueKind == JsonValueKind.String ? child.GetString() ?? fallback : fallback;
     private static double ReadDouble(JsonElement value, string property, double fallback = 0) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var child) && child.TryGetDouble(out var parsed) ? parsed : fallback;
     private static double? ReadDoubleNullable(JsonElement value, string property) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var child) && child.TryGetDouble(out var parsed) ? parsed : null;

@@ -353,7 +353,14 @@ public sealed partial class PlayerAggregate
 
     public IReadOnlyList<PlayerSectionKind> ConsumeDirtySections()
     {
-        var values = _dirtySections.OrderBy(value => value).ToArray();
+        if (_dirtySections.Count == 0)
+        {
+            return [];
+        }
+
+        var values = new PlayerSectionKind[_dirtySections.Count];
+        _dirtySections.CopyTo(values);
+        Array.Sort(values);
         _dirtySections.Clear();
         return values;
     }

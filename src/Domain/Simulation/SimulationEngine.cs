@@ -49,8 +49,8 @@ public static class SimulationEngine
         var completedActions = 0d;
         var completedRepeats = 0d;
         var transitions = 0;
-        var deltas = new Dictionary<ItemId, double>();
-        var events = new List<SimulationEvent>();
+        Dictionary<ItemId, double>? deltas = null;
+        List<SimulationEvent>? events = null;
 
         while (remainingSeconds > 0 && player.Actions.Count > 0)
         {
@@ -66,6 +66,7 @@ public static class SimulationEngine
                 // 开发期容错自愈：Enqueue 拒绝“-1 且时长≤0”，但配表热更可能把存量行动时长改为 0，
                 // 队头空转会耗尽转换上限并让玩家永久卡死。此处移出失效行动并留事件证据，继续推进后续行动。
                 player.RemoveAction(action.Id, incrementVersion: false);
+                events ??= new List<SimulationEvent>();
                 events.Add(new SimulationEvent(
                     from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
                     "action.invalid-dropped",
@@ -91,7 +92,7 @@ public static class SimulationEngine
                 });
             }
             if (action.ProgressSeconds + 1e-9 < duration) break;
-            CompleteRepeat(player, action, definition, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), deltas, events, ref completedActions, ref completedRepeats);
+            CompleteRepeat(player, action, definition, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events, ref completedActions, ref completedRepeats);
         }
 
         player.LastSimulatedAt = target;
@@ -104,12 +105,50 @@ public static class SimulationEngine
             player.MarkDirty(PlayerSectionKind.ActionQueue);
         }
 
-        var assetDeltas = deltas
-            .Where(pair => Math.Abs(pair.Value) > 1e-12)
-            .OrderBy(pair => pair.Key.Value, StringComparer.Ordinal)
-            .Select(pair => new AssetDelta(player.PlayerId, new AssetKey(pair.Key), pair.Value, "simulation"))
-            .ToArray();
-        return new SimulationResult(player.PlayerId, from, target, (target - from).TotalSeconds, completedActions, completedRepeats, assetDeltas, events, player.StateVersion, transitions > 0);
+        AssetDelta[] assetDeltas;
+        if (deltas is null || deltas.Count == 0)
+        {
+            assetDeltas = [];
+        }
+        else
+        {
+            var validDeltas = new List<KeyValuePair<ItemId, double>>(deltas.Count);
+            foreach (var pair in deltas)
+            {
+                if (Math.Abs(pair.Value) > 1e-12)
+                {
+                    validDeltas.Add(pair);
+                }
+            }
+
+            if (validDeltas.Count == 0)
+            {
+                assetDeltas = [];
+            }
+            else
+            {
+                validDeltas.Sort(static (a, b) => string.CompareOrdinal(a.Key.Value, b.Key.Value));
+                assetDeltas = new AssetDelta[validDeltas.Count];
+                var playerId = player.PlayerId;
+                for (var i = 0; i < validDeltas.Count; i++)
+                {
+                    var pair = validDeltas[i];
+                    assetDeltas[i] = new AssetDelta(playerId, new AssetKey(pair.Key), pair.Value, "simulation");
+                }
+            }
+        }
+
+        return new SimulationResult(
+            player.PlayerId,
+            from,
+            target,
+            (target - from).TotalSeconds,
+            completedActions,
+            completedRepeats,
+            assetDeltas,
+            (IReadOnlyList<SimulationEvent>?)events ?? [],
+            player.StateVersion,
+            transitions > 0);
     }
 
     /// <summary>
@@ -166,8 +205,8 @@ public static class SimulationEngine
         QueuedAction action,
         ActionDefinition definition,
         DateTimeOffset target,
-        IDictionary<ItemId, double> deltas,
-        List<SimulationEvent> events,
+        ref Dictionary<ItemId, double>? deltas,
+        ref List<SimulationEvent>? events,
         ref double completedActions,
         ref double completedRepeats)
     {
@@ -176,11 +215,16 @@ public static class SimulationEngine
         if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
         completedActions += 1;
         completedRepeats += 1;
-        foreach (var (item, quantity) in definition.Outputs) AddDelta(deltas, item, quantity);
-        foreach (var (item, quantity) in definition.Inputs) AddDelta(deltas, item, -quantity);
+        if (definition.Outputs.Count > 0 || definition.Inputs.Count > 0)
+        {
+            deltas ??= new Dictionary<ItemId, double>();
+            foreach (var (item, quantity) in definition.Outputs) AddDelta(deltas, item, quantity);
+            foreach (var (item, quantity) in definition.Inputs) AddDelta(deltas, item, -quantity);
+        }
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
+        events ??= new List<SimulationEvent>();
         events.Add(new SimulationEvent(
             target,
             "action.completed",
@@ -194,7 +238,7 @@ public static class SimulationEngine
         }
     }
 
-    private static void AddDelta(IDictionary<ItemId, double> deltas, ItemId item, double amount)
+    private static void AddDelta(Dictionary<ItemId, double> deltas, ItemId item, double amount)
     {
         if (!item.IsValid || !double.IsFinite(amount))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动资源增量无效。");

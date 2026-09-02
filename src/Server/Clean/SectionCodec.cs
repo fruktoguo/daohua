@@ -30,7 +30,7 @@ public static class SectionCodec
         var raw = JsonSerializer.SerializeToUtf8Bytes(payload, ServerJson.Options);
         if (raw.Length == 0 || raw.Length > MaxRawBytes)
             throw new InvalidDataException("section 原始载荷超过大小上限。");
-        var checksum = Convert.ToHexString(SHA256.HashData(raw)).ToLowerInvariant();
+        var checksum = Convert.ToHexStringLower(SHA256.HashData(raw));
         var encoded = raw;
         var codec = RawJson;
         if (compress && raw.Length >= CompressionThreshold)
@@ -74,9 +74,15 @@ public static class SectionCodec
             throw new InvalidDataException($"section {section.SectionKind} 原始载荷超过大小上限。");
         if (raw.Length != section.RawBytes)
             throw new InvalidDataException($"section {section.SectionKind} 原始长度不匹配。");
-        var checksum = Convert.ToHexString(SHA256.HashData(raw)).ToLowerInvariant();
-        if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(checksum), Encoding.ASCII.GetBytes(section.Checksum)))
+        var checksum = Convert.ToHexStringLower(SHA256.HashData(raw));
+        Span<byte> computedBytes = stackalloc byte[64];
+        Span<byte> expectedBytes = stackalloc byte[64];
+        if (Encoding.ASCII.GetBytes(checksum, computedBytes) != 64
+            || Encoding.ASCII.GetBytes(section.Checksum, expectedBytes) != 64
+            || !CryptographicOperations.FixedTimeEquals(computedBytes, expectedBytes))
+        {
             throw new InvalidDataException($"section {section.SectionKind} 校验和不匹配。");
+        }
         return JsonSerializer.Deserialize<T>(raw, ServerJson.Options)
             ?? throw new InvalidDataException($"section {section.SectionKind} 载荷为空。");
     }
@@ -158,8 +164,14 @@ public static class SectionCodec
         if (bundle.Sections.Values.Any(section => section.PlayerId != bundle.Identity.PlayerId || section.StateVersion > head.StateVersion))
             throw new InvalidDataException("玩家 section 版本或归属无效。");
         var computedHeadChecksum = ComputeHeadChecksum(bundle.Sections.Values);
-        if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(computedHeadChecksum), Encoding.ASCII.GetBytes(head.Checksum)))
+        Span<byte> computedHeadBytes = stackalloc byte[64];
+        Span<byte> expectedHeadBytes = stackalloc byte[64];
+        if (Encoding.ASCII.GetBytes(computedHeadChecksum, computedHeadBytes) != 64
+            || Encoding.ASCII.GetBytes(head.Checksum, expectedHeadBytes) != 64
+            || !CryptographicOperations.FixedTimeEquals(computedHeadBytes, expectedHeadBytes))
+        {
             throw new InvalidDataException("玩家持久化头校验和不匹配。");
+        }
 
         var progression = Decode<Domain.Player.PlayerProgressionState>(bundle.Sections[PlayerSectionKinds.Progression]);
         var world = Decode<Domain.Player.PlayerWorldStateDocument>(bundle.Sections[PlayerSectionKinds.World]);
@@ -215,10 +227,18 @@ public static class SectionCodec
     public static string ComputeHeadChecksum(IEnumerable<StoredSection> sections)
     {
         ArgumentNullException.ThrowIfNull(sections);
-        var canonical = string.Join('|', sections
-            .OrderBy(section => section.SectionKind, StringComparer.Ordinal)
-            .Select(section => $"{section.SectionKind}:{section.StateVersion}:{section.Checksum}"));
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+        var list = sections as IList<StoredSection> ?? sections.ToList();
+        var sorted = new StoredSection[list.Count];
+        for (var i = 0; i < list.Count; i++) sorted[i] = list[i];
+        Array.Sort(sorted, static (a, b) => string.CompareOrdinal(a.SectionKind, b.SectionKind));
+        var sb = new StringBuilder(sorted.Length * 96);
+        for (var i = 0; i < sorted.Length; i++)
+        {
+            if (i > 0) sb.Append('|');
+            var s = sorted[i];
+            sb.Append(s.SectionKind).Append(':').Append(s.StateVersion).Append(':').Append(s.Checksum);
+        }
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     }
 
     private sealed record LoadoutDocument(
