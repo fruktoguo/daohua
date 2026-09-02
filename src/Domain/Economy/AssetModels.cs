@@ -134,23 +134,25 @@ public sealed record EconomyTransaction
     {
         if (transactionId.IsEmpty || !idempotencyKey.IsValid || actorId.IsEmpty || !Enum.IsDefined(type))
             throw new DomainException(DomainErrorCode.InvalidArgument, "经济事务头无效。");
-        ArgumentNullException.ThrowIfNull(lines);
-        if (lines.Count == 0 || lines.Any(line => line is null))
+        if (lines.Count == 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "经济事务至少需要一条明细。");
         var lineNumbers = new HashSet<int>();
-        foreach (var line in lines)
+        var copied = new EconomyTransactionLine[lines.Count];
+        for (var i = 0; i < lines.Count; i++)
         {
-            if (line.LineNumber <= 0 || !lineNumbers.Add(line.LineNumber) || line.PlayerId.IsEmpty ||
+            var line = lines[i];
+            if (line is null || line.LineNumber <= 0 || !lineNumbers.Add(line.LineNumber) || line.PlayerId.IsEmpty ||
                 !line.Asset.ItemId.IsValid || line.Asset.Variant is null || line.Asset.Variant.Length > 128 ||
                 !double.IsFinite(line.Delta) || Math.Abs(line.Delta) < 1e-12)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "经济事务明细无效。");
+            copied[i] = line;
         }
         TransactionId = transactionId;
         IdempotencyKey = idempotencyKey;
         Type = type;
         ActorId = actorId;
         CreatedAt = createdAt.ToUniversalTime();
-        Lines = lines.ToArray();
+        Lines = copied;
         ExternalEventType = externalEventType;
     }
 
