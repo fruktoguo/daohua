@@ -113,7 +113,7 @@ public static class DeterministicCombatEngine
         if (!double.IsFinite(targetSeconds) || targetSeconds < encounter.ElapsedSeconds)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗目标时间无效。");
         var from = encounter.ElapsedSeconds;
-        var events = new List<CombatEvent>();
+        List<CombatEvent>? events = null;
         var eventCount = 0;
         while (encounter.Outcome == CombatOutcome.Running && encounter.ElapsedSeconds < targetSeconds - 1e-12)
         {
@@ -129,21 +129,21 @@ public static class DeterministicCombatEngine
             encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, next);
             if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
             {
-                ResolveAttack(encounter.Player, encounter.Enemy, encounter.ElapsedSeconds, events);
+                ResolveAttack(encounter.Player, encounter.Enemy, encounter.ElapsedSeconds, ref events);
                 encounter.Player.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Player.Stats.AttackIntervalSeconds;
             }
             if (encounter.Enemy.IsAlive && encounter.Enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
             {
-                ResolveAttack(encounter.Enemy, encounter.Player, encounter.ElapsedSeconds, events);
+                ResolveAttack(encounter.Enemy, encounter.Player, encounter.ElapsedSeconds, ref events);
                 encounter.Enemy.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Enemy.Stats.AttackIntervalSeconds;
             }
             encounter.Sequence += 1;
             UpdateOutcome(encounter);
         }
-        return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome, events, encounter.Sequence);
+        return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome, (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence);
     }
 
-    private static void ResolveAttack(CombatantState attacker, CombatantState target, double at, List<CombatEvent> events)
+    private static void ResolveAttack(CombatantState attacker, CombatantState target, double at, ref List<CombatEvent>? events)
     {
         if (!attacker.IsAlive || !target.IsAlive) return;
         var hit = attacker.Stats.Accuracy + 1e-12 >= target.Stats.Evasion;
@@ -151,6 +151,7 @@ public static class DeterministicCombatEngine
         var damage = hit ? Math.Max(0, attacker.Stats.AttackPower * mitigation) : 0;
         target.Hitpoints = Math.Max(0, target.Hitpoints - damage);
         attacker.AttackCount += 1;
+        events ??= new List<CombatEvent>();
         events.Add(new CombatEvent(at, attacker.Id, target.Id, damage, hit, attacker.Stats.DamageKind, target.Hitpoints));
     }
 
