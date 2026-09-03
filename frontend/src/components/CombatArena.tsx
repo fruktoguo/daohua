@@ -806,8 +806,6 @@ function ArenaLifeGoalCard({
   // 进度条 DOM 引用与全局帧级统一同步
   const barRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
-  const duration = Math.max(1, queueEntry?.durationSeconds || actionDef?.durationSeconds || 10)
-  const progressSec = queueEntry?.progressSeconds || 0
 
   useSmoothProgressRef({
     entry: queueEntry,
@@ -815,8 +813,6 @@ function ArenaLifeGoalCard({
     textRef: textRef,
     textFormat: (currentSec, dur, pct) => getT()('combat.life.roundProgress', { current: currentSec.toFixed(1), duration: formatNumber(dur), percent: formatNumber(pct) }),
   })
-
-  const initialRatio = duration > 0 ? Math.min(1, Math.max(0, progressSec / duration)) : 0
 
   return (
     <div className="arena-life-card">
@@ -872,13 +868,10 @@ function ArenaLifeGoalCard({
           <div
             className="arena-life-progress-fill"
             ref={barRef}
-            style={{ transform: `scaleX(${initialRatio})` }}
           >
             <i />
           </div>
-          <span className="arena-life-progress-text" ref={textRef}>
-            {t('combat.life.roundProgress', { current: progressSec.toFixed(1), duration: formatNumber(duration), percent: formatNumber(Math.round(initialRatio * 100)) })}
-          </span>
+          <span className="arena-life-progress-text" ref={textRef} />
         </div>
         {onStop && (
           <button className="arena-life-stop-btn danger" onClick={onStop} type="button">
@@ -978,17 +971,10 @@ function ArenaTravelCard({
           <div
             className="arena-life-progress-fill arena-travel-progress-fill"
             ref={barRef}
-            style={{ transform: `scaleX(${initialRatio})` }}
           >
             <i />
           </div>
-          <span className="arena-life-progress-text" ref={textRef}>
-            {t('combat.travel.roundProgress', {
-              current: progressSec.toFixed(1),
-              duration: formatNumber(duration),
-              percent: formatNumber(Math.round(initialRatio * 100)),
-            })}
-          </span>
+          <span className="arena-life-progress-text" ref={textRef} />
         </div>
         {onStop && (
           <button className="arena-life-stop-btn danger" onClick={onStop} type="button">

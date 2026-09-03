@@ -125,21 +125,16 @@ const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: Qu
     textRef,
   })
 
-  const initialRatio = entry.durationSeconds > 0
-    ? Math.min(1, Math.max(0, entry.progressSeconds / entry.durationSeconds))
-    : 0
-
   return (
     <div
-      aria-label={`${Math.round(initialRatio * 100)}%`}
+      aria-label="进度"
       aria-valuemax={100}
       aria-valuemin={0}
-      aria-valuenow={Math.round(initialRatio * 100)}
       className="progress"
       role="progressbar"
     >
-      <div className="progress-fill" ref={fillRef} style={{ transform: `scaleX(${initialRatio})` }}><i /></div>
-      <span className="progress-text" ref={textRef}>{Math.floor(entry.progressSeconds)}s / {entry.durationSeconds}s</span>
+      <div className="progress-fill" ref={fillRef}><i /></div>
+      <span className="progress-text" ref={textRef} />
     </div>
   )
 })
@@ -181,32 +176,25 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
     },
   })
 
-  const initialRatio = phaseEntry.durationSeconds > 0
-    ? Math.min(1, Math.max(0, phaseEntry.progressSeconds / phaseEntry.durationSeconds))
-    : 0
-  const initialPercent = Math.round(initialRatio * 100)
-  const initialDist = isTravel ? Math.min(totalDist, Math.max(0, initialRatio * totalDist)) : 0
-
   return (
     <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
       <div className="qc-expedition-meta">
         <span ref={metaRef}>
           {isTravel
-            ? t('app.queue.travelProgress', { current: initialDist.toFixed(1), total: totalDist.toFixed(1) })
+            ? t('app.queue.travelProgress', { current: '0.0', total: totalDist.toFixed(1) })
             : t('app.queue.searchTarget', { name: expedition.enemyName ?? '妖兽' })}
         </span>
-        <strong ref={percentRef}>{initialPercent}%</strong>
+        <strong ref={percentRef} />
       </div>
       <div
-        aria-label={`${initialPercent}%`}
+        aria-label="远征进度"
         aria-valuemax={100}
         aria-valuemin={0}
-        aria-valuenow={initialPercent}
         className="progress"
         role="progressbar"
       >
-        <div className="progress-fill" ref={fillRef} style={{ transform: `scaleX(${initialRatio})` }}><i /></div>
-        <span className="progress-text" ref={textRef}>{Math.floor(phaseEntry.progressSeconds)}s / {phaseEntry.durationSeconds}s</span>
+        <div className="progress-fill" ref={fillRef}><i /></div>
+        <span className="progress-text" ref={textRef} />
       </div>
     </div>
   )
@@ -241,28 +229,22 @@ const CombatActionPhaseProgress = memo(function CombatActionPhaseProgress({
     percentRef,
   })
 
-  const initialRatio = entry.durationSeconds > 0
-    ? Math.min(1, Math.max(0, entry.progressSeconds / entry.durationSeconds))
-    : 0
-  const initialPercent = Math.round(initialRatio * 100)
-
   return (
     <div className={`queue-combat-state queue-combat-state--${phase}`}>
       <div className={`qc-expedition qc-expedition--${phase}`}>
         <div className="qc-expedition-meta">
           <span>{getCombatPhaseLabel(phase, t)}</span>
-          <strong ref={percentRef}>{initialPercent}%</strong>
+          <strong ref={percentRef} />
         </div>
         <div
-          aria-label={`${initialPercent}%`}
+          aria-label={getCombatPhaseLabel(phase, t)}
           aria-valuemax={100}
           aria-valuemin={0}
-          aria-valuenow={initialPercent}
           className="progress"
           role="progressbar"
         >
-          <div className="progress-fill" ref={fillRef} style={{ transform: `scaleX(${initialRatio})` }}><i /></div>
-          <span className="progress-text" ref={textRef}>{Math.floor(entry.progressSeconds)}s / {entry.durationSeconds}s</span>
+          <div className="progress-fill" ref={fillRef}><i /></div>
+          <span className="progress-text" ref={textRef} />
         </div>
       </div>
     </div>

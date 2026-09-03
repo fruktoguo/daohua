@@ -39,6 +39,8 @@ interface GameStore {
   serverTimeUnixMilliseconds: number
   /** 上次收到服务端同步包时的客户端 performance.now() 时间戳（用于平滑进度插值） */
   lastSyncPerformanceTime: number
+  /** 上次收到行动队列专属同步包时的客户端 performance.now() 时间戳（避免非队列 patch 干扰进度） */
+  lastQueueSyncPerformanceTime: number
   /** 玩家在线/离线补算模式 */
   presenceMode: PlayerSnapshot['presenceMode']
   /** 是否处于突破待确认状态 */
@@ -243,6 +245,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   serverTimeUnixSeconds: initial.serverTimeUnixSeconds,
   serverTimeUnixMilliseconds: initial.serverTimeUnixMilliseconds ?? initial.serverTimeUnixSeconds * 1000,
   lastSyncPerformanceTime: performance.now(),
+  lastQueueSyncPerformanceTime: performance.now(),
   presenceMode: initial.presenceMode,
   isPendingBreakthrough: false,
   hasReceivedSnapshot: false,
@@ -273,6 +276,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   applySnapshot: (snapshot) => set((state) => {
     // 全量快照也可能因命令回执/重连竞态晚到；禁止旧版本回写覆盖当前权威状态。
     if (state.hasReceivedSnapshot && snapshot.version < state.version) return state
+    const now = performance.now()
     return {
       playerId: snapshot.playerId,
       name: snapshot.name,
@@ -285,7 +289,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       version: snapshot.version,
       serverTimeUnixSeconds: snapshot.serverTimeUnixSeconds,
       serverTimeUnixMilliseconds: snapshot.serverTimeUnixMilliseconds ?? snapshot.serverTimeUnixSeconds * 1000,
-      lastSyncPerformanceTime: performance.now(),
+      lastSyncPerformanceTime: now,
+      lastQueueSyncPerformanceTime: now,
       presenceMode: snapshot.presenceMode,
       isPendingBreakthrough: snapshot.isPendingBreakthrough ?? false,
       queue: normalizeQueue(snapshot.queue),
@@ -312,6 +317,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })
       return state
     }
+    const hasQueueUpdate = Boolean(patch.queue || patch.queueProgress)
+    const now = performance.now()
     const queue = patch.queue ? normalizeQueue(patch.queue) : (patch.queueProgress
       ? {
           ...state.queue,
@@ -337,7 +344,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       version: patch.version,
       serverTimeUnixSeconds: patch.serverTimeUnixSeconds,
       serverTimeUnixMilliseconds: patch.serverTimeUnixMilliseconds ?? patch.serverTimeUnixSeconds * 1000,
-      lastSyncPerformanceTime: performance.now(),
+      lastSyncPerformanceTime: now,
+      lastQueueSyncPerformanceTime: hasQueueUpdate ? now : state.lastQueueSyncPerformanceTime,
       presenceMode: patch.presenceMode ?? state.presenceMode,
       isPendingBreakthrough: patch.isPendingBreakthrough ?? state.isPendingBreakthrough,
       queue,
