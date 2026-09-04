@@ -1553,6 +1553,36 @@ input[type="checkbox"] {
   background: rgba(114, 169, 140, 0.08);
 }
 
+/* 连续完全重复日志的乘数微光小胶囊（如 × 3） */
+.log-repeat-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  line-height: 1;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: Consolas, "SFMono-Regular", monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.12);
+  border: 1px solid rgba(201, 180, 109, 0.4);
+  box-shadow: 0 0 6px rgba(201, 180, 109, 0.1);
+  vertical-align: middle;
+  user-select: none;
+  cursor: default;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.log-repeat-capsule:hover {
+  background: rgba(201, 180, 109, 0.22);
+  border-color: rgba(201, 180, 109, 0.7);
+  box-shadow: 0 0 8px rgba(201, 180, 109, 0.25);
+}
+
 /* 复合物品引用胶囊（类似内视风格，包含胶囊标签与高亮数量下划线） */
 .item-reference-compound {
   display: inline-flex;

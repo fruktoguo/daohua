@@ -24,6 +24,10 @@ export interface StoredGameLog {
 
 export interface GameLogEntry extends StoredGameLog {
   segments: readonly LogSegment[]
+  /** 连续相同模板日志的重复发生次数，默认为 1 */
+  count: number
+  /** 该条重复日志最新一次发生的时间戳（毫秒） */
+  latestTimestampMs: number
 }
 
 /** 日志只保留当前页面内的短环形缓冲，永不写入 IndexedDB、localStorage 或服务端历史表。 */
@@ -86,8 +90,37 @@ export function parseLogTemplate(template: string): readonly LogSegment[] {
   return segments.length > 0 ? segments : [{ type: 'text', value: template }]
 }
 
+/**
+ * 将连续相同语义模板（template）的日志合并折叠。
+ * 紧邻且 template 完全相同的日志将合并为单条 GameLogEntry，
+ * 累计 count 并在 latestTimestampMs 记录最近触发时间戳。
+ */
+export function collapseLogEntries(entries: readonly StoredGameLog[]): GameLogEntry[] {
+  const collapsed: GameLogEntry[] = []
+  for (const entry of entries) {
+    const last = collapsed[collapsed.length - 1]
+    if (last && last.template === entry.template) {
+      last.count += 1
+      last.latestTimestampMs = Math.max(last.latestTimestampMs, entry.timestampMs)
+    } else {
+      collapsed.push({
+        ...entry,
+        segments: parseLogTemplate(entry.template),
+        count: 1,
+        latestTimestampMs: entry.timestampMs,
+      })
+    }
+  }
+  return collapsed
+}
+
 function materialize(entry: StoredGameLog): GameLogEntry {
-  return { ...entry, segments: parseLogTemplate(entry.template) }
+  return {
+    ...entry,
+    segments: parseLogTemplate(entry.template),
+    count: 1,
+    latestTimestampMs: entry.timestampMs,
+  }
 }
 
 function compare(left: StoredGameLog, right: StoredGameLog): number {
@@ -106,11 +139,14 @@ function eventToStored(playerId: string, event: LogEvent): StoredGameLog {
 
 /**
  * 战报与传音道历全局单例服务。
- * 纯内存维护最近 100 条日志，提供响应式订阅能力（对外暴露 subscribe 与 getSnapshot）。
+ * 纯内存维护最近 100 条折叠后的日志，提供响应式订阅能力（对外暴露 subscribe 与 getSnapshot）。
+ * 连续完全相同（template 一致）的日志自动合并递增 count，不挤占历史缓冲。
  */
 class GameLogService {
   private readonly listeners = new Set<() => void>()
   private snapshot: GameLogSnapshot = { playerId: null, latest: [], revision: 0, receivedCount: 0, persistence: 'memory' }
+  private collapsedEntries: GameLogEntry[] = []
+  private seenIds = new Set<string>()
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -121,6 +157,8 @@ class GameLogService {
 
   activate(playerId: string): void {
     if (this.snapshot.playerId === playerId) return
+    this.collapsedEntries = []
+    this.seenIds.clear()
     this.snapshot = { playerId, latest: [], revision: this.snapshot.revision + 1, receivedCount: 0, persistence: 'memory' }
     this.notify()
   }
@@ -145,14 +183,38 @@ class GameLogService {
   private ingest(playerId: string, additions: readonly StoredGameLog[]): void {
     if (additions.length === 0) return
     if (this.snapshot.playerId !== playerId) this.activate(playerId)
-    const byId = new Map(this.snapshot.latest.map(entry => [entry.id, entry]))
+
+    const sortedAdditions = additions.slice().sort(compare)
     let received = 0
-    for (const entry of additions) {
-      if (!byId.has(entry.id)) received += 1
-      byId.set(entry.id, materialize(entry))
+
+    for (const entry of sortedAdditions) {
+      if (this.seenIds.has(entry.id)) continue
+      this.seenIds.add(entry.id)
+      received += 1
+
+      const last = this.collapsedEntries[this.collapsedEntries.length - 1]
+      if (last && last.template === entry.template) {
+        last.count += 1
+        last.latestTimestampMs = Math.max(last.latestTimestampMs, entry.timestampMs)
+      } else {
+        this.collapsedEntries.push(materialize(entry))
+        if (this.collapsedEntries.length > VISIBLE_LOG_LIMIT) {
+          this.collapsedEntries.shift()
+        }
+      }
     }
-    const latest = Array.from(byId.values()).sort(compare).slice(-VISIBLE_LOG_LIMIT)
-    this.snapshot = { ...this.snapshot, latest, revision: this.snapshot.revision + 1, receivedCount: this.snapshot.receivedCount + received }
+
+    if (this.seenIds.size > 2000) {
+      const idsArray = Array.from(this.seenIds)
+      this.seenIds = new Set(idsArray.slice(-1000))
+    }
+
+    this.snapshot = {
+      ...this.snapshot,
+      latest: this.collapsedEntries.slice(),
+      revision: this.snapshot.revision + 1,
+      receivedCount: this.snapshot.receivedCount + received,
+    }
     this.notify()
   }
 

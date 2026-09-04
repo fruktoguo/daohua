@@ -146,14 +146,34 @@ const LogContent = memo(function LogContent({ segment }: { segment: LogSegment }
 
 /**
  * 单行游戏日志展示组件 (LogRow)
+ *
+ * 当日志为连续完全重复项（count > 1）时，在尾部展示金石微光乘数小胶囊形如 `× 3`。
  */
 const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.JSX.Element {
-  const displayTime = formatLogTime(entry.timestampMs)
+  const t = useT()
+  const displayTime = formatLogTime(entry.latestTimestampMs ?? entry.timestampMs)
+  const isRepeated = entry.count > 1
+  const repeatTitle = isRepeated
+    ? t('combat.log.repeatTooltip', {
+        count: entry.count,
+        first: formatLogTime(entry.timestampMs),
+        latest: displayTime,
+      })
+    : undefined
+
   return (
     <li>
-      <time dateTime={new Date(entry.timestampMs).toISOString()}>{displayTime}</time>
+      <time dateTime={new Date(entry.latestTimestampMs ?? entry.timestampMs).toISOString()}>{displayTime}</time>
       <span className="log-message">
         {entry.segments.map((segment, index) => <LogContent key={`${entry.id}-${index}`} segment={segment} />)}
+        {isRepeated && (
+          <span
+            className="log-repeat-capsule"
+            title={repeatTitle}
+          >
+            × {entry.count}
+          </span>
+        )}
       </span>
     </li>
   )

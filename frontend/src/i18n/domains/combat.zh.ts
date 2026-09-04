@@ -249,6 +249,7 @@ export const combatZh = {
       loadingOlder: '正在读取更早记录…',
       reachedStart: '已到最早记录',
       chatUnavailable: '聊天频道尚未开放',
+      repeatTooltip: '连续发生 {count} 次 (首发: {first} 末次: {latest})',
     },
     // 触发条件编辑器（依赖/条件/比较器枚举展示复用 game.trigger.*，不在此重复）
     trigger: {
