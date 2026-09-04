@@ -91,3 +91,36 @@ test('gameLogService 单例服务：增量接收连续重复项合并递增与�
   assert.equal(snapshot.latest.length, 2)
   assert.equal(snapshot.latest[0].count, 5)
 })
+
+test('gameLogService: 200 条相同日志合并后严格只占 1 条历史记录槽位，完整保留之前的历史记录', () => {
+  const playerId = 'test-player-history-' + Date.now()
+  gameLogService.activate(playerId)
+
+  // 1. 先写入 10 条不同的历史事件
+  for (let i = 1; i <= 10; i++) {
+    gameLogService.ingestBatch(playerId, [
+      { sequence: i, timestampUnixMilliseconds: 1000 + i * 10, template: `历史日志_${i}` }
+    ])
+  }
+  let snapshot = gameLogService.getSnapshot()
+  assert.equal(snapshot.latest.length, 10)
+
+  // 2. 模拟连续涌入 200 条完全相同的采草日志
+  const repeated = []
+  for (let i = 11; i <= 210; i++) {
+    repeated.push({
+      sequence: i,
+      timestampUnixMilliseconds: 2000 + i * 10,
+      template: '获得 {{item:ningxue-grass|凝血草|1}}',
+    })
+  }
+  gameLogService.ingestBatch(playerId, repeated)
+
+  snapshot = gameLogService.getSnapshot()
+  // 3. 核心断言：这 200 条相同日志合并后只占 1 条槽位，加上之前的 10 条，总共只有 11 条！
+  assert.equal(snapshot.latest.length, 11)
+  assert.equal(snapshot.latest[0].template, '历史日志_1')
+  assert.equal(snapshot.latest[10].count, 200)
+  assert.equal(snapshot.latest[10].latestTimestampMs, 2000 + 210 * 10)
+})
+

@@ -102,6 +102,63 @@ public sealed class SimulationLogMapperTests
         Assert.True(allocated < 200 * 1024, $"100k 事件处理分配内存过大: {allocated} bytes");
     }
 
+    [Fact]
+    public void ToLogEvents_200IdenticalEvents_CollapsesToSingleEntryWithCountAndOccupiesSingleBufferSlot()
+    {
+        var gameData = BuildCatalog();
+        var buffer = new PlayerLogBuffer(200);
+        var baseTime = DateTimeOffset.UtcNow;
+
+        // 构造 200 个完全相同的采集事件
+        var events = new List<SimulationEvent>(200);
+        for (var i = 0; i < 200; i++)
+        {
+            events.Add(new SimulationEvent(
+                baseTime.AddSeconds(i),
+                "action.completed",
+                "采集灵草",
+                new ActionId("gather.spirit-grass"),
+                new Dictionary<ItemId, double> { [new ItemId("item.spirit-grass")] = 1 }));
+        }
+
+        var logEvents = SimulationLogMapper.ToLogEvents(events, gameData, buffer, bufferCapacity: 200);
+
+        // 断言：200 条相同事件合并为 1 条，Count 为 200
+        Assert.Single(logEvents);
+        Assert.Equal(200, logEvents[0].Count);
+
+        // 关键断言：在最大历史记录为 200 的缓冲区中，200 条合并后依然只占 1 条！
+        var snapshot = buffer.SnapshotRecent();
+        Assert.Single(snapshot);
+        Assert.Equal(200, snapshot[0].Count);
+    }
+
+    [Fact]
+    public void PlayerLogBuffer_IdenticalEventsAcrossBatches_OccupiesSingleSlotAndPreservesPreviousHistory()
+    {
+        var buffer = new PlayerLogBuffer(200);
+
+        // 1. 先写入 10 条不同的历史事件
+        for (var i = 0; i < 10; i++)
+        {
+            buffer.Append(new LogEventDto(buffer.NextSequence(), 1000 + i, $"历史日志_{i}"));
+        }
+        Assert.Equal(10, buffer.SnapshotRecent().Count);
+
+        // 2. 连续追加 200 条相同的采集日志
+        for (var i = 0; i < 200; i++)
+        {
+            buffer.Append(new LogEventDto(buffer.NextSequence(), 2000 + i, "获得伴灵草", 1));
+        }
+
+        // 3. 断言：这 200 条相同日志合并后只占 1 条，之前的 10 条历史日志完好保留，总计 11 条！
+        var snapshot = buffer.SnapshotRecent();
+        Assert.Equal(11, snapshot.Count);
+        Assert.Equal("历史日志_0", snapshot[0].Template);
+        Assert.Equal("获得伴灵草", snapshot[10].Template);
+        Assert.Equal(200, snapshot[10].Count);
+    }
+
     private static GameDataCatalog BuildCatalog()
     {
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal)

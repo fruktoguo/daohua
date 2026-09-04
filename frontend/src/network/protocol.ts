@@ -171,6 +171,7 @@ export interface LogEventDto {
   sequence: number
   timestampUnixMilliseconds: number
   template: string
+  count?: number
 }
 
 export interface LogBatchDto {

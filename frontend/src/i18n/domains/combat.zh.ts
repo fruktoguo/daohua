@@ -242,7 +242,7 @@ export const combatZh = {
       tabLog: '日志',
       tabChat: '聊天',
       memoryOnly: '日志仅保留在内存',
-      memoryOnlyTitle: '本地存储不可用，当前仅保留最近 100 条',
+      memoryOnlyTitle: '本地存储不可用，当前仅保留最近 200 条',
       saved: '日志已在本地保存',
       latestWithCount: '最新 +{n}',
       backToLatest: '回到最新',

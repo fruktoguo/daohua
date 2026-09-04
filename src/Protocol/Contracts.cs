@@ -413,8 +413,8 @@ public sealed record ComputeAdvanceResponseDto(
 /// <summary>通用协议级错误信息 DTO</summary>
 public sealed record ErrorDto(string Code, string Message, string? RequestId = null);
 
-/// <summary>战报/系统日志事件；template 采用前端引用语法 {{kind:id|label|extra}}，前端仅做解析渲染。</summary>
-public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template);
+/// <summary>战报/系统日志事件；template 采用前端引用语法 {{kind:id|label|extra}}，前端仅做解析渲染。Count 表示连续相同模板的合并次数。</summary>
+public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template, int Count = 1);
 
 /// <summary>日志事件批次载荷，按 sequence 单调递增推送。</summary>
 public sealed record LogBatchDto(IReadOnlyList<LogEventDto> Events);

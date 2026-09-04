@@ -193,7 +193,7 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
   const [tab, setTab] = useState<'log' | 'chat'>('log')
   const listRef = useRef<HTMLOListElement>(null)
   const stickToBottom = useRef(true)
-  const visibleEntries = logState.latest.slice(-100)
+  const visibleEntries = logState.latest.slice(-200)
 
   // 贴底标记只由用户滚动行为决定：effect 一旦自行清零，当列表尚无滚动条（会话初期日志不足一屏）
   // 时程序化滚动不会触发 scroll 事件，标记永久停在 false，此后新日志再也不会自动贴底。

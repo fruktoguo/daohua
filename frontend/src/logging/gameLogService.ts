@@ -20,6 +20,7 @@ export interface StoredGameLog {
   timestampMs: number
   sequence: number
   template: string
+  count?: number
 }
 
 export interface GameLogEntry extends StoredGameLog {
@@ -46,7 +47,7 @@ export interface GameLogCursor {
   sequence: number
 }
 
-const VISIBLE_LOG_LIMIT = 100
+const VISIBLE_LOG_LIMIT = 200
 const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location|ability|encounter|enemy):([^|{}]+)\|([^{}|]+)(?:\|([^{}]+))?}}/g
 const TRAILING_AMOUNT_PATTERN = /^\s*[×x*]\s*(\d+)/
 
@@ -94,19 +95,21 @@ export function parseLogTemplate(template: string): readonly LogSegment[] {
  * 将连续相同语义模板（template）的日志合并折叠。
  * 紧邻且 template 完全相同的日志将合并为单条 GameLogEntry，
  * 累计 count 并在 latestTimestampMs 记录最近触发时间戳。
+ * 无论合并多少条，在最大历史记录中均只占 1 个槽位。
  */
 export function collapseLogEntries(entries: readonly StoredGameLog[]): GameLogEntry[] {
   const collapsed: GameLogEntry[] = []
   for (const entry of entries) {
+    const entryCount = typeof entry.count === 'number' && entry.count > 0 ? entry.count : 1
     const last = collapsed[collapsed.length - 1]
     if (last && last.template === entry.template) {
-      last.count += 1
+      last.count += entryCount
       last.latestTimestampMs = Math.max(last.latestTimestampMs, entry.timestampMs)
     } else {
       collapsed.push({
         ...entry,
         segments: parseLogTemplate(entry.template),
-        count: 1,
+        count: entryCount,
         latestTimestampMs: entry.timestampMs,
       })
     }
@@ -115,10 +118,11 @@ export function collapseLogEntries(entries: readonly StoredGameLog[]): GameLogEn
 }
 
 function materialize(entry: StoredGameLog): GameLogEntry {
+  const count = typeof entry.count === 'number' && entry.count > 0 ? entry.count : 1
   return {
     ...entry,
     segments: parseLogTemplate(entry.template),
-    count: 1,
+    count,
     latestTimestampMs: entry.timestampMs,
   }
 }
@@ -134,6 +138,7 @@ function eventToStored(playerId: string, event: LogEvent): StoredGameLog {
     timestampMs: event.timestampUnixMilliseconds,
     sequence: event.sequence,
     template: event.template,
+    count: event.count ?? 1,
   }
 }
 

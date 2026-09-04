@@ -498,6 +498,7 @@ export interface LogEvent {
   sequence: number
   timestampUnixMilliseconds: number
   template: string
+  count?: number
 }
 
 /**

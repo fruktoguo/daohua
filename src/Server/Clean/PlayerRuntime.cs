@@ -929,11 +929,11 @@ public sealed class PlayerRuntime(
     }
 }
 
-/// <summary>每玩家战报日志环形缓冲与单调递增 sequence；仅进程内存，不持久化。</summary>
+/// <summary>每玩家战报日志环形缓冲与单调递增 sequence；仅进程内存，不持久化。连续完全相同模板日志自动合并且仅占用 1 条容量配额。</summary>
 public sealed class PlayerLogBuffer(int capacity)
 {
     private readonly object _lock = new();
-    private readonly Queue<LogEventDto> _events = new();
+    private readonly List<LogEventDto> _events = [];
     private long _sequence;
 
     public long NextSequence() => Interlocked.Increment(ref _sequence);
@@ -942,8 +942,23 @@ public sealed class PlayerLogBuffer(int capacity)
     {
         lock (_lock)
         {
-            _events.Enqueue(logEvent);
-            while (_events.Count > capacity) _events.Dequeue();
+            if (_events.Count > 0 && _events[^1].Template == logEvent.Template)
+            {
+                var last = _events[^1];
+                _events[^1] = last with
+                {
+                    Sequence = logEvent.Sequence,
+                    TimestampUnixMilliseconds = Math.Max(last.TimestampUnixMilliseconds, logEvent.TimestampUnixMilliseconds),
+                    Count = last.Count + logEvent.Count
+                };
+                return;
+            }
+
+            _events.Add(logEvent);
+            while (_events.Count > capacity)
+            {
+                _events.RemoveAt(0);
+            }
         }
     }
 

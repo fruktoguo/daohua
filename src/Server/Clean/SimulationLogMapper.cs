@@ -22,18 +22,39 @@ public static class SimulationLogMapper
     {
         if (events.Count == 0) return [];
         var startIndex = Math.Max(0, events.Count - bufferCapacity);
-        var count = events.Count - startIndex;
-        var result = new List<LogEventDto>(count);
+        var result = new List<LogEventDto>();
         for (var i = startIndex; i < events.Count; i++)
         {
             var simulationEvent = events[i];
-            var logEvent = new LogEventDto(
-                buffer.NextSequence(),
-                simulationEvent.At.ToUnixTimeMilliseconds(),
-                ToTemplate(simulationEvent, gameData));
-            buffer.Append(logEvent);
-            result.Add(logEvent);
+            var template = ToTemplate(simulationEvent, gameData);
+            var timestamp = simulationEvent.At.ToUnixTimeMilliseconds();
+
+            if (result.Count > 0 && result[^1].Template == template)
+            {
+                var last = result[^1];
+                result[^1] = last with
+                {
+                    Sequence = buffer.NextSequence(),
+                    TimestampUnixMilliseconds = Math.Max(last.TimestampUnixMilliseconds, timestamp),
+                    Count = last.Count + 1
+                };
+            }
+            else
+            {
+                var logEvent = new LogEventDto(
+                    buffer.NextSequence(),
+                    timestamp,
+                    template,
+                    1);
+                result.Add(logEvent);
+            }
         }
+
+        for (var i = 0; i < result.Count; i++)
+        {
+            buffer.Append(result[i]);
+        }
+
         return result;
     }
 
