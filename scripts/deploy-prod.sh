@@ -158,12 +158,16 @@ ssh -o BatchMode=yes "$REMOTE_HOST" '
     printf "缺少 /opt/daohua/daohua.env，请设置 DB_PASSWORD。\n" >&2
     exit 1
   fi
-  if ! sudo grep -Eq "^COMPUTE_TOKEN=..+" /opt/daohua/daohua.env; then
-    printf "缺少非空 COMPUTE_TOKEN，拒绝启动内部 ComputeNode。\n" >&2
+  if ! sudo grep -Eq "^COMPUTE_TOKEN=[^[:space:]#]{24,}$" /opt/daohua/daohua.env; then
+    printf "COMPUTE_TOKEN 必须是至少 24 个字符且不含空白或注释字符，拒绝部署。\n" >&2
     exit 1
   fi
-  if ! sudo grep -Eq "^DB_PASSWORD=.{12,}" /opt/daohua/daohua.env; then
-    printf "缺少 DB_PASSWORD 或长度不足 12 位，拒绝部署。\n" >&2
+  if ! sudo grep -Eq "^DB_PASSWORD=[^[:space:]#]{24,}$" /opt/daohua/daohua.env; then
+    printf "DB_PASSWORD 必须是至少 24 个字符且不含空白或注释字符，拒绝部署。\n" >&2
+    exit 1
+  fi
+  if sudo grep -Eq "^(DB_PASSWORD|COMPUTE_TOKEN)=(change-me|replace-me|password|secret|verify-)" /opt/daohua/daohua.env; then
+    printf "生产环境变量仍使用明显占位值，拒绝部署。\n" >&2
     exit 1
   fi
 '
@@ -221,8 +225,14 @@ fi
 printf '==> 核对远端容器和回环健康端点\n'
 ssh -o BatchMode=yes "$REMOTE_HOST" "
   set -Eeuo pipefail
+  app_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-app)\"
+  compute_health=\"\$(sudo docker inspect --format '{{.State.Health.Status}}' daohua-compute)\"
   sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-app
   sudo docker inspect --format 'image={{.Config.Image}} id={{.Image}} health={{.State.Health.Status}}' daohua-compute
+  if [[ "\$app_health" != healthy || "\$compute_health" != healthy ]]; then
+    printf '容器健康检查未通过: app=%s compute=%s\n' "\$app_health" "\$compute_health" >&2
+    exit 1
+  fi
   # /readyz 只校验服务就绪，不依赖旧存储能力字段。
   local_ready=\"\$(curl --fail --silent --show-error http://127.0.0.1:15128/readyz)\"
   if ! printf '%s' \"\$local_ready\" | grep -oqE '\"status\"[[:space:]]*:[[:space:]]*\"(ok|ready)\"'; then

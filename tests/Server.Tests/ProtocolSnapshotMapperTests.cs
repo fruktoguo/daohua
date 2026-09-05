@@ -40,6 +40,19 @@ public sealed class ProtocolSnapshotMapperTests
     }
 
     [Fact]
+    public void DiffAssets_EmitsZeroBalanceForRemovedAsset()
+    {
+        var baseline = new List<AssetBalanceDto> { new("spirit", null, 100, 7) };
+
+        var changed = ProtocolSnapshotMapper.DiffAssets(baseline, []);
+
+        var removed = Assert.Single(changed);
+        Assert.Equal("spirit", removed.AssetId);
+        Assert.Equal(0, removed.Quantity);
+        Assert.Equal(7, removed.Version);
+    }
+
+    [Fact]
     public void DiffSections_CarriesOnlySectionsWithModifiedChecksum()
     {
         var section1 = new PlayerSectionDto("progression", 1, 1, "json", "payload1", 10, 10, "checksum_prog_1", DateTimeOffset.UtcNow);

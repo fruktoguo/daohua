@@ -145,21 +145,19 @@ const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: Qu
 const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element | null {
   const t = useT()
   const expedition = entry.expedition
-  if (!expedition || entry.type === 'combat') return null
-
   const fillRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
   const metaRef = useRef<HTMLSpanElement>(null)
   const percentRef = useRef<HTMLElement>(null)
 
-  const isTravel = expedition.phase === 'travel'
-  const totalDist = expedition.totalDistance ?? 0
+  const isTravel = expedition?.phase === 'travel'
+  const totalDist = expedition?.totalDistance ?? 0
 
   const phaseEntry: QueueEntry = useMemo(() => ({
     ...entry,
-    progressSeconds: expedition.elapsedSeconds,
-    durationSeconds: expedition.durationSeconds,
-  }), [entry, expedition.elapsedSeconds, expedition.durationSeconds])
+    progressSeconds: expedition?.elapsedSeconds ?? 0,
+    durationSeconds: expedition?.durationSeconds ?? 1,
+  }), [entry, expedition?.elapsedSeconds, expedition?.durationSeconds])
 
   useSmoothProgressRef({
     entry: phaseEntry,
@@ -172,10 +170,11 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
         const curDist = Math.min(totalDist, Math.max(0, ratio * totalDist))
         return getT()('app.queue.travelProgress', { current: curDist.toFixed(1), total: totalDist.toFixed(1) })
       }
-      return getT()('app.queue.searchTarget', { name: expedition.enemyName ?? '妖兽' })
+        return getT()('app.queue.searchTarget', { name: expedition?.enemyName ?? '妖兽' })
     },
   })
 
+  if (!expedition || entry.type === 'combat') return null
   return (
     <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
       <div className="qc-expedition-meta">

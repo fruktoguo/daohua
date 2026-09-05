@@ -133,13 +133,22 @@ public static class ProtocolSnapshotMapper
     public static IReadOnlyList<AssetBalanceDto> DiffAssets(IReadOnlyList<AssetBalanceDto>? previous, IReadOnlyList<AssetBalanceDto> current)
     {
         if (previous is null || previous.Count == 0) return current;
-        var baseline = new Dictionary<(string AssetId, string? Variant), double>(previous.Count);
-        foreach (var asset in previous) baseline[(asset.AssetId, asset.Variant)] = asset.Quantity;
+        var baseline = new Dictionary<(string AssetId, string? Variant), AssetBalanceDto>(previous.Count);
+        foreach (var asset in previous) baseline[(asset.AssetId, asset.Variant)] = asset;
+        var currentKeys = new HashSet<(string AssetId, string? Variant)>();
         List<AssetBalanceDto>? changed = null;
         foreach (var asset in current)
         {
-            if (baseline.TryGetValue((asset.AssetId, asset.Variant), out var quantity) && quantity == asset.Quantity) continue;
+            var key = (asset.AssetId, asset.Variant);
+            currentKeys.Add(key);
+            if (baseline.TryGetValue(key, out var prior) && prior.Quantity == asset.Quantity) continue;
             (changed ??= []).Add(asset);
+        }
+        // 余额归零后，领域钱包会移除该品种；显式发送零余额才能让浏览器删除旧库存项。
+        foreach (var (key, prior) in baseline)
+        {
+            if (currentKeys.Contains(key)) continue;
+            (changed ??= []).Add(prior with { Quantity = 0 });
         }
         return changed ?? [];
     }

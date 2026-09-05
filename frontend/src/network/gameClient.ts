@@ -56,7 +56,8 @@ export class GameClient {
   private parseFailureResynced = false
   private lastParseErrorKey = ''
   private lastParseErrorAt = 0
-  private readonly pendingRequests = new Set<string>()
+  private readonly pendingRequests = new Map<string, number>()
+  private static readonly REQUEST_TIMEOUT_MS = 15_000
 
   /** 当前登录的角色 ID */
   playerId = getSessionAccount()?.playerId ?? ''
@@ -114,11 +115,12 @@ export class GameClient {
     this.reconnectDelay = 500
     this.outboundSequence = 0
     this.lastServerSequence = 0
-    this.pendingRequests.clear()
+    this.clearPendingRequests()
     this.open()
   }
 
   logout(): void {
+    this.dispose()
     clearStoredAccount()
   }
 
@@ -126,6 +128,7 @@ export class GameClient {
     this.disposed = true
     this.clearReconnectTimer()
     this.stopHeartbeat()
+    this.clearPendingRequests()
     const socket = this.socket
     this.socket = null
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) socket.close(1000, '客户端断开')
@@ -163,7 +166,10 @@ export class GameClient {
         payload: commandPayload,
         expectedStateVersion,
       }))
-      this.pendingRequests.add(requestId)
+      this.pendingRequests.set(requestId, window.setTimeout(() => {
+        if (!this.pendingRequests.delete(requestId)) return
+        useGameStore.getState().setNotice(getT()('common.net.requestTimeout'))
+      }, GameClient.REQUEST_TIMEOUT_MS))
       return true
     } catch {
       useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
@@ -208,7 +214,7 @@ export class GameClient {
       this.stopHeartbeat()
       if (this.socket !== socket) return
       this.socket = null
-      this.pendingRequests.clear()
+      this.clearPendingRequests()
       if (this.disposed) return
       const authFailure = event.code === 1008 || (event.code >= 4001 && event.code <= 4004)
       if (authFailure) {
@@ -218,6 +224,11 @@ export class GameClient {
       }
       this.scheduleReconnect()
     })
+  }
+
+  private clearPendingRequests(): void {
+    for (const timer of this.pendingRequests.values()) window.clearTimeout(timer)
+    this.pendingRequests.clear()
   }
 
   private sendHello(): void {
@@ -279,7 +290,11 @@ export class GameClient {
         }
         case WireMessageType.CommandResult: {
           const result = decodeJsonPayload<CommandResultDto>(envelope)
-          if (result.requestId !== envelope.requestId || !this.pendingRequests.delete(result.requestId)) return
+          if (result.requestId !== envelope.requestId) return
+          const timer = this.pendingRequests.get(result.requestId)
+          if (timer === undefined) return
+          window.clearTimeout(timer)
+          this.pendingRequests.delete(result.requestId)
           if (isPlayerSnapshotDto(result.payload)) {
             const snapshot = await decodePlayerSnapshotDto(result.payload, this.account)
             useGameStore.getState().applySnapshot(snapshot)
@@ -292,7 +307,11 @@ export class GameClient {
           break
         case WireMessageType.Error: {
           const error = decodeJsonPayload<ErrorDto>(envelope)
-          if (error.requestId) this.pendingRequests.delete(error.requestId)
+          if (error.requestId) {
+            const timer = this.pendingRequests.get(error.requestId)
+            if (timer !== undefined) window.clearTimeout(timer)
+            this.pendingRequests.delete(error.requestId)
+          }
           useGameStore.getState().setNotice(error.message || error.code)
           break
         }

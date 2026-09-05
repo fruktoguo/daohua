@@ -19,7 +19,7 @@ compose() {
   if [[ -f "$ENV_FILE" ]]; then docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; else docker compose -f "$COMPOSE_FILE" "$@"; fi
 }
 
-latest_dump="$(find "$BACKUP_DIR/hourly" "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly" -type f -name '*.dump' -print 2>/dev/null | sort | tail -n 1 || true)"
+latest_dump="$(find "$BACKUP_DIR/hourly" "$BACKUP_DIR/daily" "$BACKUP_DIR/weekly" -type f -name '*.dump' -printf '%T@ %p\n' 2>/dev/null | sort -nr | sed -n '1s/^[^ ]* //p' || true)"
 [[ -n "$latest_dump" ]] || { printf '没有找到 custom dump 备份。\n' >&2; exit 1; }
 dump_sha="${latest_dump}.sha256"
 if [[ ! -f "$dump_sha" ]]; then
@@ -46,7 +46,8 @@ if [[ -n "$latest_base" ]]; then
     pg_verifybackup /var/lib/postgresql/data
   printf '物理 base backup 校验通过: %s\n' "$latest_base"
 else
-  printf '警告：尚未生成物理 base backup，PITR 尚未具备恢复基线。\n' >&2
+  printf '缺少物理 base backup，PITR 尚未具备可验证的恢复基线。\n' >&2
+  exit 1
 fi
 
 "${DEPLOY_DIR}/wal-archive.sh" verify
