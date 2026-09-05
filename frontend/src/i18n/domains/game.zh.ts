@@ -76,8 +76,8 @@ export const gameZh = {
       'explore.mine-dark-iron': { name: '挖掘 乌铁矿', description: '在清石水滩露天砂石层中开采沉重致密的乌铁原矿。' },
       'alchemy.refine-qi-pill': { name: '引气丹', description: '以凝血草与清澈晨露炼制而成的基础引气灵丹，可略微加快吐纳效率。' },
       'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝血草炼制而成的凡阶止血散剂，可迅速闭合寻常外伤创口。' },
-      'combat.hunt-qi-beast': { name: '山门试炼', description: '在山门或险峰要道磨砺武艺道法，驱赶林间灵物并接受守山试炼。' },
-      'combat.sweep-twilight-valley': { name: '清剿 坠星异境', description: '深入异象肆虐的坠星禁区，迎战妖狼、火鸦与变异尸煞，直面坠星异兽。' },
+      'combat.hunt-qi-beast': { name: '讨伐 青云仙山', description: '在青云仙山各处搜寻妖兽踪迹，迎战山野灵物与守山妖兽。' },
+      'combat.sweep-twilight-valley': { name: '讨伐 星陨异境', description: '深入星陨异境搜寻妖兽踪迹，迎战妖狼、火鸦与变异尸煞。' },
     },
     item: {
       'item.ningxue-grass': { label: '凝血草', description: '生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。' },

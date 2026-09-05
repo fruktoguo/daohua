@@ -200,6 +200,8 @@ export interface ActionDefinition {
   durationSeconds: number
   /** 特殊执行类型（如 'combat-encounter'） */
   executionKind?: ActionExecutionKind
+  /** 是否仅供服务端/队列内部使用，不在玩家行动目录中展示 */
+  hiddenFromCatalog?: boolean
   /** 关联的战斗遭遇 ID */
   combatEncounterId?: string
   /** 消耗材料物品与数量映射 */

@@ -171,6 +171,7 @@ if (processRole == ServerProcessRole.Api)
                     ActionKind.Travel => "travel",
                     _ => "timed"
                 },
+                hiddenFromCatalog = action.HiddenFromCatalog,
                 inputs = action.Inputs.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
                 outputs = action.Outputs.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
                 availableNodeIds = action.AllowedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray()

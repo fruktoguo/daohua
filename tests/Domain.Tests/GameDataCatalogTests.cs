@@ -14,12 +14,14 @@ public sealed class GameDataCatalogTests
     public void JsonResourcesProduceStableFingerprintAndDefinitions()
     {
         var manifest = "{\"schemaVersion\":1,\"contentVersion\":\"test-1\"}"u8.ToArray();
-        var actions = "[{\"id\":\"cultivation.test\",\"name\":\"测试\",\"type\":\"cultivation\",\"durationSeconds\":2}]"u8.ToArray();
+        var actions = "[{\"id\":\"world.travel\",\"name\":\"赶路\",\"type\":\"travel\",\"durationSeconds\":1,\"hiddenFromCatalog\":true}]"u8.ToArray();
         var first = GameDataCatalog.Parse([manifest, actions]);
         var second = GameDataCatalog.Parse([manifest, actions]);
         Assert.Equal(first.Fingerprint, second.Fingerprint);
         Assert.Equal("test-1", first.ContentVersion);
-        Assert.True(first.Actions.Contains(new ActionId("cultivation.test")));
+        var travel = first.Actions.Get(new ActionId("world.travel"));
+        Assert.True(travel.HiddenFromCatalog);
+        Assert.Equal(ActionKind.Travel, travel.Kind);
     }
 
     [Fact]

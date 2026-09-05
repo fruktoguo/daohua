@@ -1667,7 +1667,9 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
 
   const visibleActions = useMemo(() => actions.filter(action => (
-    (action.type === 'exploration' || action.type === 'combat')
+    !action.hiddenFromCatalog
+      && action.executionKind !== 'travel'
+      && (action.type === 'exploration' || action.type === 'combat')
       && (!action.availableNodeIds?.length || (worldNodeId !== null && action.availableNodeIds.includes(worldNodeId)))
   )), [actions, worldNodeId])
 

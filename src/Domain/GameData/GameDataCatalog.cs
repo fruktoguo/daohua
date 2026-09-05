@@ -32,7 +32,8 @@ public sealed record ActionDefinition(
     IReadOnlyDictionary<ItemId, double> Outputs,
     double QiPerSecond = 0,
     double ExperiencePerSecond = 0,
-    IReadOnlySet<string>? AllowedNodeIds = null)
+    IReadOnlySet<string>? AllowedNodeIds = null,
+    bool HiddenFromCatalog = false)
 {
 }
 
@@ -269,7 +270,9 @@ public sealed class GameDataCatalog
             ? new HashSet<string>(nodeArray.EnumerateArray().Select(value => value.GetString() ?? string.Empty).Where(value => value.Length > 0), StringComparer.Ordinal)
             : null;
         var duration = entry.TryGetProperty("durationSeconds", out var durationProperty) ? durationProperty.GetDouble() : 0;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, kind == ActionKind.Cultivation ? 1 : 0, kind == ActionKind.Cultivation ? 0.25 : 0, nodes);
+        var hiddenFromCatalog = entry.TryGetProperty("hiddenFromCatalog", out var hiddenProperty)
+            && hiddenProperty.ValueKind == JsonValueKind.True;
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, kind == ActionKind.Cultivation ? 1 : 0, kind == ActionKind.Cultivation ? 0.25 : 0, nodes, hiddenFromCatalog);
     }
 
     /// <summary>从 JSON 对象提取并解析道具定义（ItemDefinition）</summary>
