@@ -149,7 +149,9 @@ check_and_resolve_game_data_fingerprint() {
       return results;
     }
     const files = listFiles(path.resolve("config/game-data"));
-    files.sort((a, b) => a.rel.localeCompare(b.rel));
+    // .NET 的 StringComparer.Ordinal 按 UTF-16 码元排序；localeCompare 会受系统语言环境影响，
+    // 在 macOS 与 Linux 上可能得到不同顺序，进而让启动脚本和服务端计算出不同指纹。
+    files.sort((a, b) => a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0);
     const hash = crypto.createHash("sha256");
     for (const f of files) hash.update(fs.readFileSync(f.full));
     process.stdout.write(hash.digest("hex").slice(0, 16).toLowerCase());
@@ -201,12 +203,24 @@ check_and_resolve_game_data_fingerprint() {
   case "$choice" in
     1|wipe|clear)
       printf '==> 正在清空本地测试数据...\n'
-      docker compose exec -T db psql -U "${DB_USER:-daohua}" -d "${DB_NAME:-daohua}" -c "TRUNCATE TABLE identity.accounts, platform.section_flush_queue, platform.command_receipts, platform.integration_outbox CASCADE;" >/dev/null 2>&1 || true
+      if ! docker compose -f compose.yaml exec -T db psql -v ON_ERROR_STOP=1 -U "${DB_USER:-daohua}" -d "${DB_NAME:-daohua}" -c "TRUNCATE TABLE identity.accounts, platform.section_flush_queue, platform.command_receipts, platform.integration_outbox CASCADE;" >/dev/null 2>&1; then
+        printf '错误: 清空本地测试数据失败，已停止启动流程。\n' >&2
+        return 1
+      fi
       printf '==> 本地测试数据已清空。进入前端重新注册/登录将自动生成纯净初始角色。\n'
       ;;
     2|align|force)
       printf '==> 正在将旧存档指纹强行刷平为 %s...\n' "$current_fingerprint"
-      docker compose exec -T db psql -U "${DB_USER:-daohua}" -d "${DB_NAME:-daohua}" -c "UPDATE game.player_state_heads SET game_data_fingerprint = '${current_fingerprint}'; UPDATE platform.section_flush_queue SET game_data_fingerprint = '${current_fingerprint}';" >/dev/null 2>&1 || true
+      if ! docker compose -f compose.yaml exec -T db psql -v ON_ERROR_STOP=1 -U "${DB_USER:-daohua}" -d "${DB_NAME:-daohua}" -c "UPDATE game.player_state_heads SET game_data_fingerprint = '${current_fingerprint}'; UPDATE platform.section_flush_queue SET game_data_fingerprint = '${current_fingerprint}';" >/dev/null 2>&1; then
+        printf '错误: 刷新存档指纹失败，已停止启动流程。\n' >&2
+        return 1
+      fi
+      local remaining_mismatches
+      remaining_mismatches=$(docker compose -f compose.yaml exec -T db psql -v ON_ERROR_STOP=1 -U "${DB_USER:-daohua}" -d "${DB_NAME:-daohua}" -t -A -c "SELECT count(*) FROM game.player_state_heads WHERE game_data_fingerprint <> '${current_fingerprint}';" 2>/dev/null | tr -d '[:space:]')
+      if [[ "$remaining_mismatches" != "0" ]]; then
+        printf '错误: 仍有 %s 条存档指纹未同步，已停止启动流程。\n' "$remaining_mismatches" >&2
+        return 1
+      fi
       printf '==> 旧存档指纹已强行更新完毕。\n'
       ;;
     3|skip|ignore)
@@ -218,7 +232,10 @@ check_and_resolve_game_data_fingerprint() {
       ;;
     *)
       printf '==> 未知输入 [%s]，默认执行 [1] 直接清空本地测试数据...\n' "$choice"
-      docker compose exec -T db psql -U "${DB_USER:-daohua}" -d "${DB_NAME:-daohua}" -c "TRUNCATE TABLE identity.accounts, platform.section_flush_queue, platform.command_receipts, platform.integration_outbox CASCADE;" >/dev/null 2>&1 || true
+      if ! docker compose -f compose.yaml exec -T db psql -v ON_ERROR_STOP=1 -U "${DB_USER:-daohua}" -d "${DB_NAME:-daohua}" -c "TRUNCATE TABLE identity.accounts, platform.section_flush_queue, platform.command_receipts, platform.integration_outbox CASCADE;" >/dev/null 2>&1; then
+        printf '错误: 清空本地测试数据失败，已停止启动流程。\n' >&2
+        return 1
+      fi
       printf '==> 本地测试数据已清空。\n'
       ;;
   esac
