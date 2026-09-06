@@ -21,7 +21,7 @@ public enum ActionKind : byte
 
 /// <summary>
 /// 单个行动的静态配表定义。
-/// 包含单轮时长、材料消耗、产物掉落与持续性属性收益率。
+/// 包含单轮时长、材料消耗、产物掉落、持续灵力收益与单轮完成经验。
 /// </summary>
 public sealed record ActionDefinition(
     ActionId Id,
@@ -31,7 +31,7 @@ public sealed record ActionDefinition(
     IReadOnlyDictionary<ItemId, double> Inputs,
     IReadOnlyDictionary<ItemId, double> Outputs,
     double QiPerSecond = 0,
-    double ExperiencePerSecond = 0,
+    double ExperiencePerRepeat = 0,
     IReadOnlySet<string>? AllowedNodeIds = null,
     bool HiddenFromCatalog = false)
 {
@@ -89,7 +89,7 @@ public sealed class ActionCatalog
     /// <summary>内置默认基础行动集（引气入体、采药、炼丹）</summary>
     public static ActionCatalog Default { get; } = new(
     [
-        new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1.0, 0.25),
+        new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1.0, 10.0),
         new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 }),
         new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 }, new Dictionary<ItemId, double> { [new ItemId("item.qi-gathering-pill")] = 1 })
     ]);
@@ -100,7 +100,7 @@ public sealed class ActionCatalog
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动定义无效。");
         if (!double.IsFinite(definition.DurationSeconds) || definition.DurationSeconds < 0 ||
             !double.IsFinite(definition.QiPerSecond) || definition.QiPerSecond < 0 ||
-            !double.IsFinite(definition.ExperiencePerSecond) || definition.ExperiencePerSecond < 0)
+            !double.IsFinite(definition.ExperiencePerRepeat) || definition.ExperiencePerRepeat < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的数值无效。");
     }
 
@@ -270,9 +270,15 @@ public sealed class GameDataCatalog
             ? new HashSet<string>(nodeArray.EnumerateArray().Select(value => value.GetString() ?? string.Empty).Where(value => value.Length > 0), StringComparer.Ordinal)
             : null;
         var duration = entry.TryGetProperty("durationSeconds", out var durationProperty) ? durationProperty.GetDouble() : 0;
+        var qiPerSecond = entry.TryGetProperty("qiPerSecond", out var qiProperty)
+            ? qiProperty.GetDouble()
+            : kind == ActionKind.Cultivation ? 1 : 0;
+        var experiencePerRepeat = entry.TryGetProperty("experiencePerRepeat", out var experienceProperty)
+            ? experienceProperty.GetDouble()
+            : kind == ActionKind.Cultivation ? 10 : 0;
         var hiddenFromCatalog = entry.TryGetProperty("hiddenFromCatalog", out var hiddenProperty)
             && hiddenProperty.ValueKind == JsonValueKind.True;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, kind == ActionKind.Cultivation ? 1 : 0, kind == ActionKind.Cultivation ? 0.25 : 0, nodes, hiddenFromCatalog);
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, qiPerSecond, experiencePerRepeat, nodes, hiddenFromCatalog);
     }
 
     /// <summary>从 JSON 对象提取并解析道具定义（ItemDefinition）</summary>

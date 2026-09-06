@@ -4,6 +4,8 @@
     "name": "引气入体",
     "description": "吐纳天地灵气，滋养气血经络，积累灵力与修为。",
     "type": "cultivation",
-    "durationSeconds": 10
+    "durationSeconds": 10,
+    "qiPerSecond": 1,
+    "experiencePerRepeat": 10
   }
 ]

@@ -31,6 +31,30 @@ public sealed class SimulationEngineTests
     }
 
     [Fact]
+    public void CultivationExperienceIsGrantedOnlyWhenRepeatCompletes()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("甲");
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(9), catalog.Actions);
+        Assert.Equal(9, player.Progression.Qi);
+        Assert.Equal(0, player.Progression.Experience);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog.Actions);
+        Assert.Equal(10, player.Progression.Qi);
+        Assert.Equal(10, player.Progression.Experience);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(19), catalog.Actions);
+        Assert.Equal(19, player.Progression.Qi);
+        Assert.Equal(10, player.Progression.Experience);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog.Actions);
+        Assert.Equal(20, player.Progression.Qi);
+        Assert.Equal(20, player.Progression.Experience);
+    }
+
+    [Fact]
     public void FractionalSecondSplitMatchesWholeSecondBitwise()
     {
         var single = CreatePlayer("甲");

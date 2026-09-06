@@ -37,7 +37,7 @@ public sealed record SimulationResult(
 /// 1. 离线挂机和在线逐秒推进的计算结果必须位级一致（Bitwise Deterministic）；
 /// 2. 算法按“行动完成边界”跳步推进，杜绝按离线时间无脑逐秒生成历史事件；
 /// 3. 行动队列中 RemainingRepeats == -1 为无限循环，每轮结算后绝不出队；
-/// 4. 连续奖励（灵气/经验）通过整秒量化余数（SimulationCarrySeconds）精确进位。
+/// 4. 持续灵力奖励通过整秒量化余数（SimulationCarrySeconds）精确进位，经验仅在单轮完成时结算。
 /// </summary>
 public static class SimulationEngine
 {
@@ -196,7 +196,7 @@ public static class SimulationEngine
     }
 
     /// <summary>
-    /// 结算行动持续产生的被动收益（如打坐产生的灵气、探索积累的历练经验）。
+    /// 结算行动持续产生的被动收益（当前仅包括修炼产生的灵力）。
     /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致。
     /// </summary>
     private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds)
@@ -217,22 +217,13 @@ public static class SimulationEngine
                 player.Progression.LifetimeQi += rate;
             }
         }
-        if (definition.ExperiencePerSecond > 0)
-        {
-            var rate = definition.ExperiencePerSecond;
-            var total = rate * seconds;
-            if (!double.IsFinite(total) || !double.IsFinite(player.Progression.Experience + total))
-                throw new DomainException(DomainErrorCode.InvariantViolation, "经验奖励超出数值范围。");
-            for (var i = 0; i < wholeSeconds; i++)
-                player.Progression.Experience += rate;
-        }
-        if (!double.IsFinite(player.Progression.Qi) || !double.IsFinite(player.Progression.LifetimeQi) || !double.IsFinite(player.Progression.Experience))
+        if (!double.IsFinite(player.Progression.Qi) || !double.IsFinite(player.Progression.LifetimeQi))
             throw new DomainException(DomainErrorCode.InvariantViolation, "模拟后的玩家进度数值无效。");
     }
 
     /// <summary>
     /// 单轮行动耗时走满时的结算处理。
-    /// 扣除输入材料、发放输出产物、扣减剩余次数，若次数归零则移出队列；
+    /// 发放单轮经验、扣除输入材料、发放输出产物、扣减剩余次数，若次数归零则移出队列；
     /// 若为 -1（无限重复）则绝对保留队列项供下一轮循环。
     /// </summary>
     private static void CompleteRepeat(
@@ -245,6 +236,9 @@ public static class SimulationEngine
         ref double completedActions,
         ref double completedRepeats)
     {
+        var nextExperience = player.Progression.Experience + definition.ExperiencePerRepeat;
+        if (!double.IsFinite(nextExperience))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "经验奖励超出数值范围。");
         action.ProgressSeconds = 0;
         action.CompletedRepeats += 1;
         if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
@@ -256,6 +250,7 @@ public static class SimulationEngine
             foreach (var (item, quantity) in definition.Outputs) AddDelta(deltas, item, quantity);
             foreach (var (item, quantity) in definition.Inputs) AddDelta(deltas, item, -quantity);
         }
+        player.Progression.Experience = nextExperience;
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
