@@ -66,6 +66,8 @@ dotnet run --project src/Server/Server.csproj
 
 默认监听 `http://127.0.0.1:5128`。首次使用新数据库时会创建 schema v1；本项目不提供旧 schema migration。若本地 schema 与当前基线不一致，应在确认数据无需保留后重新初始化本地数据库。
 
+同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回；只有 schema 版本变化才需要重新初始化本地数据库。
+
 启动正式前端：
 
 ```bash

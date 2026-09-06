@@ -1,3 +1,4 @@
+using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -112,6 +113,65 @@ public sealed class PlayerRuntimeTests
         await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow.AddSeconds(5));
         Assert.Single(pushedSnapshots);
         Assert.Equal(playerId, pushedSnapshots[0].PlayerId);
+    }
+
+    [Fact]
+    public async Task CatalogFingerprintChange_RebindsStoredStateInsteadOfRejectingSession()
+    {
+        const string storedFingerprint = "catalog-old";
+        const string currentFingerprint = "catalog-current";
+        var playerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var persisted = PlayerAggregate.Create(
+            new PlayerId(playerId),
+            new AccountId(accountId),
+            "配表切换测试",
+            createdAt,
+            storedFingerprint);
+        persisted.SetPresence(PresenceState.Offline);
+        var storedAt = DateTimeOffset.UtcNow;
+        var writes = Server.Clean.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
+        var sections = writes.ToDictionary(
+            write => write.SectionKind,
+            write => new StoredSection(
+                write.PlayerId,
+                write.SectionKind,
+                write.StateVersion,
+                write.SchemaVersion,
+                write.Codec,
+                write.Payload.ToArray(),
+                write.RawBytes,
+                write.Checksum,
+                write.UpdatedAt),
+            StringComparer.Ordinal);
+        var repository = new FakeStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, accountId, "配表切换测试", createdAt),
+            new StoredHead(
+                playerId,
+                persisted.StateVersion,
+                Server.Clean.SectionCodec.CurrentSchemaVersion,
+                persisted.LastSimulatedAt,
+                storedFingerprint,
+                Server.Clean.SectionCodec.ComputeHeadChecksum(sections.Values),
+                storedAt),
+            sections,
+            []));
+        var runtime = new PlayerRuntime(
+            repository,
+            new EmptyAssetRepository(),
+            new NoopEconomyRepository(),
+            new GameDataCatalog("test-2", currentFingerprint, ActionCatalog.Default),
+            NullLogger<PlayerRuntime>.Instance);
+
+        var snapshot = await runtime.LoadAsync(playerId);
+        await runtime.FlushAllAsync(true);
+
+        Assert.Equal(currentFingerprint, snapshot.State.GameDataFingerprint);
+        Assert.True(snapshot.StateVersion > persisted.StateVersion);
+        Assert.Contains(repository.Enqueued, write =>
+            write.SectionKind == PlayerSectionKinds.Settings
+            && write.GameDataFingerprint == currentFingerprint);
     }
 
     private class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository

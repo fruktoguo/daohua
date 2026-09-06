@@ -281,6 +281,20 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
+    /// 将玩家状态绑定到当前游戏数据版本。配表指纹不是存档 schema；变化时仅推进状态版本，
+    /// 并借 Settings 分段携带新的头元数据写回持久化层。
+    /// </summary>
+    public bool RebindGameDataFingerprint(string gameDataFingerprint)
+    {
+        if (string.IsNullOrWhiteSpace(gameDataFingerprint))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "游戏数据指纹不能为空。");
+        if (string.Equals(GameDataFingerprint, gameDataFingerprint, StringComparison.Ordinal)) return false;
+        GameDataFingerprint = gameDataFingerprint;
+        Touch(PlayerSectionKind.Settings);
+        return true;
+    }
+
+    /// <summary>
     /// 修改道号/角色显示名。
     /// </summary>
     public void Rename(string displayName)

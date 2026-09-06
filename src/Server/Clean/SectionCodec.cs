@@ -157,7 +157,11 @@ public static class SectionCodec
         return result;
     }
 
-    public static DomainState DecodeAggregate(PlayerStateBundle bundle, string expectedFingerprint)
+    /// <summary>
+    /// 解码当前 schema 的玩家状态。配表指纹仅记录该状态上次运行时使用的内容版本，
+    /// 不参与存档结构兼容判断；结构不兼容统一由 SchemaVersion 明确拒绝。
+    /// </summary>
+    public static DomainState DecodeAggregate(PlayerStateBundle bundle)
     {
         ArgumentNullException.ThrowIfNull(bundle);
         var head = bundle.Head;
@@ -166,8 +170,6 @@ public static class SectionCodec
         if (string.IsNullOrWhiteSpace(head.GameDataFingerprint))
             throw new InvalidDataException("玩家持久化头缺少游戏数据指纹。");
         var fingerprint = head.GameDataFingerprint;
-        if (!string.IsNullOrWhiteSpace(expectedFingerprint) && !string.Equals(expectedFingerprint, head.GameDataFingerprint, StringComparison.Ordinal))
-            throw new InvalidDataException("游戏数据指纹不一致。");
 
         var required = PlayerSectionKinds.All;
         if (bundle.Sections.Count != required.Count || required.Any(key => !bundle.Sections.ContainsKey(key)) || bundle.Sections.Keys.Any(key => !required.Contains(key)))

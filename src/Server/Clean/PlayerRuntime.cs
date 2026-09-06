@@ -201,8 +201,17 @@ public sealed class PlayerRuntime(
         }
         else
         {
-            var state = SectionCodec.DecodeAggregate(bundle, gameData.Fingerprint);
+            var state = SectionCodec.DecodeAggregate(bundle);
             aggregate = PlayerAggregate.Restore(state);
+            var previousFingerprint = aggregate.GameDataFingerprint;
+            if (aggregate.RebindGameDataFingerprint(gameData.Fingerprint))
+            {
+                logger.LogInformation(
+                    "玩家存档已切换到当前游戏数据版本 player={PlayerId} previousFingerprint={PreviousFingerprint} currentFingerprint={CurrentFingerprint}",
+                    playerId,
+                    previousFingerprint,
+                    gameData.Fingerprint);
+            }
             aggregate.SetPresence(PresenceState.Online);
         }
             var balances = await assetRepository.LoadBalancesAsync(playerId, cancellationToken);
