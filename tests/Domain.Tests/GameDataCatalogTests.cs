@@ -34,4 +34,17 @@ public sealed class GameDataCatalogTests
         Assert.NotEmpty(catalog.Encounters);
         Assert.False(string.IsNullOrWhiteSpace(catalog.Fingerprint));
     }
+
+    [Fact]
+    public void EmbeddedCatalogParsesSustainedConsumableEffects()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+
+        var pill = catalog.Items[new ItemId("item.qi-gathering-pill")];
+        var consumable = Assert.IsType<ConsumableDefinition>(pill.Consumable);
+        Assert.True(consumable.IsContinuous);
+        Assert.Equal(300d, consumable.DurationSeconds);
+        Assert.Equal(1.3d, consumable.CultivationMultiplier);
+        Assert.Contains(ActionKind.Cultivation, consumable.UsableInActionKinds);
+    }
 }

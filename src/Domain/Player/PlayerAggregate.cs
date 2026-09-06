@@ -121,7 +121,8 @@ public sealed record AutoUseSlotState(
     int SlotIndex,
     string? ItemId,
     double Quantity,
-    bool Enabled);
+    bool Enabled,
+    double RemainingDurationSeconds = 0);
 
 /// <summary>
 /// 行动项在队列中的调度状态。
@@ -451,7 +452,13 @@ public sealed partial class PlayerAggregate
             || !double.IsFinite(quantity) || quantity <= 0 || quantity > 1_000_000)
             throw new DomainException(DomainErrorCode.InvalidArgument, "自动使用配置无效。");
         var index = Settings.AutoUseSlots.FindIndex(slot => slot.ActionType == actionType && slot.SlotIndex == slotIndex);
-        var value = new AutoUseSlotState(actionType, slotIndex, itemId, quantity, enabled && !string.IsNullOrWhiteSpace(itemId));
+        var normalizedEnabled = enabled && !string.IsNullOrWhiteSpace(itemId);
+        var remainingDurationSeconds = index >= 0
+            && normalizedEnabled
+            && string.Equals(Settings.AutoUseSlots[index].ItemId, itemId, StringComparison.Ordinal)
+                ? Settings.AutoUseSlots[index].RemainingDurationSeconds
+                : 0d;
+        var value = new AutoUseSlotState(actionType, slotIndex, itemId, quantity, normalizedEnabled, remainingDurationSeconds);
         if (index >= 0 && Settings.AutoUseSlots[index] == value) return;
         if (index >= 0) Settings.AutoUseSlots[index] = value;
         else Settings.AutoUseSlots.Add(value);

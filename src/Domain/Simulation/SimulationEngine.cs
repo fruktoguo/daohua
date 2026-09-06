@@ -63,9 +63,29 @@ public static class SimulationEngine
         PlayerAggregate player,
         DateTimeOffset target,
         ActionCatalog? catalog = null)
+        => AdvanceToCore(player, target, catalog ?? ActionCatalog.Default, null, null);
+
+    /// <summary>使用完整游戏配表推进行动，包含持续消耗品的权威倍率与库存扣减。</summary>
+    public static SimulationResult AdvanceTo(
+        PlayerAggregate player,
+        DateTimeOffset target,
+        GameDataCatalog gameData,
+        AssetWallet? assetBalances = null)
+    {
+        ArgumentNullException.ThrowIfNull(gameData);
+        if (assetBalances is not null && assetBalances.PlayerId != player.PlayerId)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "资产余额与模拟玩家不一致。");
+        return AdvanceToCore(player, target, gameData.Actions, gameData, assetBalances);
+    }
+
+    private static SimulationResult AdvanceToCore(
+        PlayerAggregate player,
+        DateTimeOffset target,
+        ActionCatalog catalog,
+        GameDataCatalog? gameData,
+        AssetWallet? assetBalances)
     {
         ArgumentNullException.ThrowIfNull(player);
-        catalog ??= ActionCatalog.Default;
         target = target.ToUniversalTime();
         if (target < player.LastSimulatedAt)
             throw new DomainException(DomainErrorCode.InvalidArgument, "目标时间不能早于玩家上次模拟时间。");
@@ -85,6 +105,8 @@ public static class SimulationEngine
 
             var action = player.Actions[0];
             var definition = catalog.Get(action.Intent.ActionId);
+            var isActionStart = action.ProgressSeconds <= SecondQuantizationEpsilon
+                && player.Progression.SimulationCarrySeconds <= SecondQuantizationEpsilon;
             action.Status = ActionQueueStatus.Running;
             var duration = definition.DurationSeconds;
             if (duration <= 0)
@@ -101,12 +123,22 @@ public static class SimulationEngine
                 continue;
             }
 
+            var actionAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
+            var autoUseMultiplier = PrepareSustainedAutoUse(
+                player,
+                definition,
+                isActionStart,
+                gameData,
+                assetBalances,
+                actionAt,
+                ref deltas,
+                ref events);
             var needed = Math.Max(0, duration - action.ProgressSeconds);
             var step = Math.Min(remainingSeconds, needed);
             remainingSeconds -= step;
             var wholeSeconds = QuantizeElapsedSeconds(player, step);
             action.ProgressSeconds += wholeSeconds;
-            ApplyContinuousReward(player, definition, wholeSeconds);
+            ApplyContinuousReward(player, definition, wholeSeconds, autoUseMultiplier);
             if (step > 0)
             {
                 player.MarkDirty(definition.Kind switch
@@ -118,7 +150,7 @@ public static class SimulationEngine
                 });
             }
             if (action.ProgressSeconds + 1e-9 < duration) break;
-            CompleteRepeat(player, action, definition, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events, ref completedActions, ref completedRepeats);
+            CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events, ref completedActions, ref completedRepeats);
         }
 
         player.LastSimulatedAt = target;
@@ -199,16 +231,16 @@ public static class SimulationEngine
     /// 结算行动持续产生的被动收益（当前仅包括修炼产生的灵力）。
     /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致。
     /// </summary>
-    private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds)
+    private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds, double multiplier)
     {
         if (wholeSeconds <= 0) return;
         // 溢出预检查沿用“先校验后变更”语义：rate * 整秒数越界时不得污染任何进度数值。
         var seconds = (double)wholeSeconds;
         if (definition.QiPerSecond > 0)
         {
-            var rate = definition.QiPerSecond;
+            var rate = definition.QiPerSecond * multiplier;
             var total = rate * seconds;
-            if (!double.IsFinite(total) || !double.IsFinite(player.Progression.Qi + total) || !double.IsFinite(player.Progression.LifetimeQi + total))
+            if (!double.IsFinite(rate) || !double.IsFinite(total) || !double.IsFinite(player.Progression.Qi + total) || !double.IsFinite(player.Progression.LifetimeQi + total))
                 throw new DomainException(DomainErrorCode.InvariantViolation, "气运奖励超出数值范围。");
             // 逐整秒累加，与在线逐秒推进保持完全相同的浮点操作序列。
             for (var i = 0; i < wholeSeconds; i++)
@@ -230,14 +262,17 @@ public static class SimulationEngine
         PlayerAggregate player,
         QueuedAction action,
         ActionDefinition definition,
+        double autoUseMultiplier,
+        GameDataCatalog? gameData,
         DateTimeOffset target,
         ref Dictionary<ItemId, double>? deltas,
         ref List<SimulationEvent>? events,
         ref double completedActions,
         ref double completedRepeats)
     {
-        var nextExperience = player.Progression.Experience + definition.ExperiencePerRepeat;
-        if (!double.IsFinite(nextExperience))
+        var experienceGain = definition.ExperiencePerRepeat * autoUseMultiplier;
+        var nextExperience = player.Progression.Experience + experienceGain;
+        if (!double.IsFinite(experienceGain) || !double.IsFinite(nextExperience))
             throw new DomainException(DomainErrorCode.InvariantViolation, "经验奖励超出数值范围。");
         action.ProgressSeconds = 0;
         action.CompletedRepeats += 1;
@@ -247,9 +282,11 @@ public static class SimulationEngine
         if (definition.Outputs.Count > 0 || definition.Inputs.Count > 0)
         {
             deltas ??= new Dictionary<ItemId, double>();
-            foreach (var (item, quantity) in definition.Outputs) AddDelta(deltas, item, quantity);
+            foreach (var (item, quantity) in definition.Outputs)
+                AddDelta(deltas, item, ScaleOutput(quantity, autoUseMultiplier));
             foreach (var (item, quantity) in definition.Inputs) AddDelta(deltas, item, -quantity);
         }
+        CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
         player.Progression.Experience = nextExperience;
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
@@ -266,6 +303,120 @@ public static class SimulationEngine
         {
             player.RemoveAction(action.Id, incrementVersion: false);
         }
+    }
+
+    private static double PrepareSustainedAutoUse(
+        PlayerAggregate player,
+        ActionDefinition definition,
+        bool isActionStart,
+        GameDataCatalog? gameData,
+        AssetWallet? assetBalances,
+        DateTimeOffset at,
+        ref Dictionary<ItemId, double>? deltas,
+        ref List<SimulationEvent>? events)
+    {
+        if (gameData is null || player.Settings.AutoUseSlots.Count == 0) return 1d;
+        var multiplier = 1d;
+        for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
+        {
+            var slot = player.Settings.AutoUseSlots[i];
+            if (!TryGetSustainedConsumable(slot, definition.Kind, gameData, out var item, out var consumable)) continue;
+
+            if (slot.RemainingDurationSeconds > consumable.DurationSeconds)
+            {
+                slot = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
+                player.Settings.AutoUseSlots[i] = slot;
+                player.MarkDirty(PlayerSectionKind.Settings);
+            }
+            if (isActionStart && slot.RemainingDurationSeconds <= 0)
+            {
+                var available = assetBalances?.Get(new AssetKey(item.Id)) ?? 0d;
+                if (deltas is not null && deltas.TryGetValue(item.Id, out var pendingDelta)) available += pendingDelta;
+                if (available + 1e-12 >= 1d)
+                {
+                    AddDelta(deltas ??= new Dictionary<ItemId, double>(), item.Id, -1d);
+                    slot = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
+                    player.Settings.AutoUseSlots[i] = slot;
+                    player.MarkDirty(PlayerSectionKind.Settings);
+                    events ??= new List<SimulationEvent>();
+                    events.Add(new SimulationEvent(
+                        at,
+                        "auto-use.activated",
+                        $"自动使用 {item.Name}，可生效 {consumable.DurationSeconds:0.######} 秒。",
+                        definition.Id,
+                        new Dictionary<ItemId, double> { [item.Id] = -1d }));
+                }
+            }
+            if (slot.RemainingDurationSeconds <= 0) continue;
+            var itemMultiplier = consumable.GetMultiplier(definition.Kind);
+            multiplier *= itemMultiplier;
+            if (!double.IsFinite(multiplier) || multiplier <= 0)
+                throw new DomainException(DomainErrorCode.InvariantViolation, "持续消耗品倍率无效。");
+        }
+        return multiplier;
+    }
+
+    private static void CompleteSustainedAutoUse(
+        PlayerAggregate player,
+        ActionDefinition definition,
+        GameDataCatalog? gameData,
+        DateTimeOffset at,
+        ref List<SimulationEvent>? events)
+    {
+        if (gameData is null || player.Settings.AutoUseSlots.Count == 0) return;
+        for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
+        {
+            var slot = player.Settings.AutoUseSlots[i];
+            if (!TryGetSustainedConsumable(slot, definition.Kind, gameData, out var item, out _)
+                || slot.RemainingDurationSeconds <= 0)
+                continue;
+            var remaining = Math.Max(0d, slot.RemainingDurationSeconds - definition.DurationSeconds);
+            player.Settings.AutoUseSlots[i] = slot with { RemainingDurationSeconds = remaining };
+            player.MarkDirty(PlayerSectionKind.Settings);
+            if (remaining > 0) continue;
+            events ??= new List<SimulationEvent>();
+            events.Add(new SimulationEvent(
+                at,
+                "auto-use.depleted",
+                $"{item.Name} 的持续时间已耗尽。",
+                definition.Id));
+        }
+    }
+
+    private static bool TryGetSustainedConsumable(
+        AutoUseSlotState slot,
+        ActionKind actionKind,
+        GameDataCatalog gameData,
+        out ItemDefinition item,
+        out ConsumableDefinition consumable)
+    {
+        item = null!;
+        consumable = null!;
+        if (!slot.Enabled || string.IsNullOrWhiteSpace(slot.ItemId) || !MatchesActionType(slot.ActionType, actionKind)) return false;
+        var itemId = new ItemId(slot.ItemId);
+        if (!itemId.IsValid || !gameData.Items.TryGetValue(itemId, out item!)) return false;
+        consumable = item.Consumable!;
+        return consumable is { IsContinuous: true, DurationSeconds: > 0 }
+            && consumable.UsableInActionKinds.Contains(actionKind);
+    }
+
+    private static bool MatchesActionType(string actionType, ActionKind kind) => kind switch
+    {
+        ActionKind.Cultivation => string.Equals(actionType, "cultivation", StringComparison.OrdinalIgnoreCase),
+        ActionKind.Exploration => string.Equals(actionType, "exploration", StringComparison.OrdinalIgnoreCase),
+        ActionKind.Alchemy => string.Equals(actionType, "alchemy", StringComparison.OrdinalIgnoreCase),
+        ActionKind.Combat => string.Equals(actionType, "combat", StringComparison.OrdinalIgnoreCase),
+        ActionKind.Travel => string.Equals(actionType, "travel", StringComparison.OrdinalIgnoreCase),
+        _ => false
+    };
+
+    private static double ScaleOutput(double quantity, double multiplier)
+    {
+        if (multiplier == 1d) return quantity;
+        var scaled = Math.Ceiling(quantity * multiplier);
+        if (!double.IsFinite(scaled))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "行动产出倍率结算超出数值范围。");
+        return Math.Max(1d, scaled);
     }
 
     /// <summary>

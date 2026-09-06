@@ -44,6 +44,36 @@ public sealed class SectionCodecTests
     }
 
     [Fact]
+    public void SettingsSectionAlwaysSerializesRemainingDurationAndLegacySlotsDefaultToZero()
+    {
+        var aggregate = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()), "槽位序列化", DateTimeOffset.UtcNow, "fp");
+        aggregate.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 1, true);
+        var settingsWrite = CleanSectionCodec.EncodeAggregate(aggregate, DateTimeOffset.UtcNow, 1)
+            .Single(write => write.SectionKind == PlayerSectionKinds.Settings);
+        var stored = new StoredSection(
+            settingsWrite.PlayerId,
+            settingsWrite.SectionKind,
+            settingsWrite.StateVersion,
+            settingsWrite.SchemaVersion,
+            settingsWrite.Codec,
+            settingsWrite.Payload.ToArray(),
+            settingsWrite.RawBytes,
+            settingsWrite.Checksum,
+            settingsWrite.UpdatedAt);
+
+        var payload = CleanSectionCodec.Decode<JsonElement>(stored);
+        var slot = payload.GetProperty("autoUseSlots")[0];
+        Assert.True(slot.TryGetProperty("remainingDurationSeconds", out var remaining));
+        Assert.Equal(0d, remaining.GetDouble());
+
+        var legacy = JsonSerializer.Deserialize<AutoUseSlotState>(
+            "{\"actionType\":\"cultivation\",\"slotIndex\":0,\"itemId\":\"item.qi-gathering-pill\",\"quantity\":1,\"enabled\":true}",
+            ServerJson.Options);
+        Assert.NotNull(legacy);
+        Assert.Equal(0d, legacy.RemainingDurationSeconds);
+    }
+
+    [Fact]
     public void SectionWrite_RejectsUnsupportedCodecAndOversizedPayload()
     {
         var playerId = Guid.NewGuid();

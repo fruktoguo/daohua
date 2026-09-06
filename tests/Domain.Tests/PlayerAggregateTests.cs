@@ -22,6 +22,27 @@ public sealed class PlayerAggregateTests
     }
 
     [Fact]
+    public void AutoUseRemainingDurationPersistsAndClearsWhenDisabledOrSwitched()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "丹药槽", Baseline, "catalog-a");
+        player.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 1, true);
+        player.Settings.AutoUseSlots[0] = player.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 180d };
+
+        var restored = PlayerAggregate.Restore(player.ExportState());
+        Assert.Equal(180d, Assert.Single(restored.Settings.AutoUseSlots).RemainingDurationSeconds);
+
+        restored.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 2, true);
+        Assert.Equal(180d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+
+        restored.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 2, false);
+        Assert.Equal(0d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+
+        restored.Settings.AutoUseSlots[0] = restored.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 30d };
+        restored.ConfigureAutoUse("cultivation", 0, "item.tongmai-pill", 1, true);
+        Assert.Equal(0d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+    }
+
+    [Fact]
     public void AdvanceToIsDeterministicForSameInput()
     {
         var first = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");

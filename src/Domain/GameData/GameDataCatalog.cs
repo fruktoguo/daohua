@@ -37,6 +37,24 @@ public sealed record ActionDefinition(
 {
 }
 
+/// <summary>持续/自动消耗品对各行动类型提供的权威效果定义。</summary>
+public sealed record ConsumableDefinition(
+    IReadOnlySet<ActionKind> UsableInActionKinds,
+    double DurationSeconds = 0,
+    bool IsContinuous = false,
+    double CultivationMultiplier = 1,
+    double GatheringMultiplier = 1,
+    double AlchemyMultiplier = 1)
+{
+    public double GetMultiplier(ActionKind kind) => kind switch
+    {
+        ActionKind.Cultivation => CultivationMultiplier,
+        ActionKind.Exploration => GatheringMultiplier,
+        ActionKind.Alchemy => AlchemyMultiplier,
+        _ => 1d
+    };
+}
+
 /// <summary>
 /// 道具/物品静态配表定义。
 /// </summary>
@@ -45,7 +63,8 @@ public sealed record ItemDefinition(
     string Name,
     string Description,
     bool IsTradable = true,
-    double SellPrice = 0)
+    double SellPrice = 0,
+    ConsumableDefinition? Consumable = null)
 {
 }
 
@@ -288,7 +307,21 @@ public sealed class GameDataCatalog
         var description = entry.TryGetProperty("description", out var descriptionProperty) ? descriptionProperty.GetString() ?? string.Empty : string.Empty;
         var price = entry.TryGetProperty("sellPrice", out var priceProperty) && priceProperty.TryGetDouble(out var parsed) ? parsed : 0;
         var tradable = !entry.TryGetProperty("isTradable", out var tradableProperty) || tradableProperty.GetBoolean();
-        return new ItemDefinition(new ItemId(id), name, description, tradable, price);
+        ConsumableDefinition? consumable = null;
+        if (entry.TryGetProperty("consumable", out var consumableProperty) && consumableProperty.ValueKind == JsonValueKind.Object)
+        {
+            var usableKinds = new HashSet<ActionKind>();
+            foreach (var value in ReadStringArray(consumableProperty, "usableInActionTypes"))
+                usableKinds.Add(ParseExplicitKind(value));
+            consumable = new ConsumableDefinition(
+                new ReadOnlySet<ActionKind>(usableKinds),
+                ReadDouble(consumableProperty, "durationSeconds"),
+                ReadBool(consumableProperty, "isContinuous"),
+                ReadDouble(consumableProperty, "cultivationMultiplier", 1),
+                ReadDouble(consumableProperty, "gatheringMultiplier", 1),
+                ReadDouble(consumableProperty, "alchemyMultiplier", 1));
+        }
+        return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable);
     }
 
     /// <summary>解析消耗/产出等数量字典</summary>
@@ -309,14 +342,52 @@ public sealed class GameDataCatalog
         _ => ActionKind.Exploration
     };
 
+    private static ActionKind ParseExplicitKind(string value) => value.ToLowerInvariant() switch
+    {
+        "cultivation" => ActionKind.Cultivation,
+        "exploration" => ActionKind.Exploration,
+        "alchemy" => ActionKind.Alchemy,
+        "combat" => ActionKind.Combat,
+        "travel" => ActionKind.Travel,
+        _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品适用行动类型无效：{value}。")
+    };
+
+    private static double ReadDouble(JsonElement value, string property, double fallback = 0) =>
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.TryGetDouble(out var parsed)
+            ? parsed : fallback;
+
+    private static bool ReadBool(JsonElement value, string property, bool fallback = false) =>
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element)
+            ? element.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => fallback
+            }
+            : fallback;
+
+    private static string[] ReadStringArray(JsonElement value, string property) =>
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.Array
+            ? element.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString() ?? string.Empty).Where(item => item.Length > 0).ToArray()
+            : [];
+
     private static ReadOnlyDictionary<ItemId, ItemDefinition> NormalizeItems(IReadOnlyDictionary<ItemId, ItemDefinition>? items)
     {
         var normalized = new Dictionary<ItemId, ItemDefinition>();
         if (items is null) return new ReadOnlyDictionary<ItemId, ItemDefinition>(normalized);
         foreach (var (id, definition) in items)
         {
+            var consumable = definition.Consumable;
             if (id != definition.Id || !id.IsValid || string.IsNullOrWhiteSpace(definition.Name) || definition.Name.Length > 128 ||
-                !double.IsFinite(definition.SellPrice) || definition.SellPrice < 0)
+                !double.IsFinite(definition.SellPrice) || definition.SellPrice < 0 ||
+                consumable is not null && (
+                    consumable.UsableInActionKinds is null || consumable.UsableInActionKinds.Any(kind => !Enum.IsDefined(kind)) ||
+                    !double.IsFinite(consumable.DurationSeconds) || consumable.DurationSeconds < 0 ||
+                    consumable.IsContinuous && consumable.DurationSeconds <= 0 ||
+                    !double.IsFinite(consumable.CultivationMultiplier) || consumable.CultivationMultiplier <= 0 ||
+                    !double.IsFinite(consumable.GatheringMultiplier) || consumable.GatheringMultiplier <= 0 ||
+                    !double.IsFinite(consumable.AlchemyMultiplier) || consumable.AlchemyMultiplier <= 0))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "物品定义无效。");
             if (!normalized.TryAdd(id, definition)) throw new DomainException(DomainErrorCode.Duplicate, $"重复物品定义：{id}。");
         }

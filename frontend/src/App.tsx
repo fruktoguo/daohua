@@ -984,6 +984,10 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
 }): React.JSX.Element {
   const t = useT()
   const slots = useGameStore(state => state.queue.autoUseSlots[type])
+  const activeEntry = useGameStore(state => {
+    const current = state.queue.entries[0]
+    return current?.type === type ? current : null
+  })
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
@@ -1031,6 +1035,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
           return (
             <div className="auto-use-slot" key={index}>
               <ItemUseSlot
+                activeEntry={activeEntry}
                 item={selectedItem}
                 remainingDurationSeconds={slot.remainingDurationSeconds}
                 totalDurationSeconds={selectedDefinition?.durationSeconds}

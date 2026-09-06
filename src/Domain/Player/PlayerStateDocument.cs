@@ -247,6 +247,7 @@ public sealed partial class PlayerAggregate
             || state.LearnedAbilities.Any(ability => !ability.IsValid)
             || (state.Settings.AutoUseSlots ?? []).Any(slot => slot is null || string.IsNullOrWhiteSpace(slot.ActionType)
                 || slot.ActionType.Length > 32 || slot.SlotIndex is < 0 or > 15 || !double.IsFinite(slot.Quantity) || slot.Quantity <= 0
+                || !double.IsFinite(slot.RemainingDurationSeconds) || slot.RemainingDurationSeconds < 0
                 || (slot.ItemId is not null && (slot.ItemId.Length == 0 || slot.ItemId.Length > 128))))
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家装配或设置 section 无效。");
         aggregate.Progression.RealmLevel = state.Progression.RealmLevel;

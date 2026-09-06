@@ -1,8 +1,9 @@
-import { type ReactNode, useEffect, useId, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { formatNumber } from '../game/format'
 import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
+import { useGameStore } from '../game/gameStore'
 import { useT, type TFunction } from '../i18n'
-import type { ItemDefinition } from '../game/types'
+import type { ItemDefinition, QueueEntry } from '../game/types'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { Modal } from './Modal'
 
@@ -206,6 +207,60 @@ export function ItemGridPicker({
 }
 
 /**
+ * 持续消耗品动作时间倒计时遮罩。
+ * 服务端只在整轮完成时扣减权威剩余时间；当前轮通过行动进度平滑推导显示值，暂停时不会继续流逝。
+ */
+function SustainedDurationOverlay({
+  activeEntry,
+  remainingDurationSeconds,
+  totalDurationSeconds,
+}: {
+  activeEntry?: QueueEntry | null
+  remainingDurationSeconds: number
+  totalDurationSeconds: number
+}): React.JSX.Element {
+  const overlayRef = useRef<HTMLSpanElement>(null)
+  const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
+
+  useLayoutEffect(() => {
+    const overlay = overlayRef.current
+    if (!overlay) return
+    const total = Math.max(1, totalDurationSeconds)
+    const actionDuration = Math.max(0, activeEntry?.durationSeconds ?? 0)
+    const baseProgress = Math.max(0, activeEntry?.progressSeconds ?? 0)
+    const isRunning = activeEntry?.status === 'running' && actionDuration > 0
+    let frameId: number | undefined
+
+    const update = () => {
+      const elapsed = isRunning
+        ? Math.max(0, (performance.now() - lastQueueSyncPerformanceTime) / 1000)
+        : 0
+      const currentActionProgress = Math.min(actionDuration, baseProgress + elapsed)
+      const remaining = Math.max(0, remainingDurationSeconds - currentActionProgress)
+      overlay.style.setProperty('--cooldown-ratio', String(Math.min(1, remaining / total)))
+      overlay.textContent = `${Math.ceil(remaining)}s`
+      if (isRunning && currentActionProgress < actionDuration) frameId = window.requestAnimationFrame(update)
+    }
+
+    update()
+    return () => {
+      if (frameId !== undefined) window.cancelAnimationFrame(frameId)
+    }
+  }, [
+    activeEntry?.durationSeconds,
+    activeEntry?.entryId,
+    activeEntry?.progressSeconds,
+    activeEntry?.remainingRepeats,
+    activeEntry?.status,
+    lastQueueSyncPerformanceTime,
+    remainingDurationSeconds,
+    totalDurationSeconds,
+  ])
+
+  return <span aria-hidden="true" className="combat-ability-cooldown item-slot-duration-overlay" ref={overlayRef} />
+}
+
+/**
  * 物品装配/快捷使用槽位组件 (ItemUseSlot)
  *
  * 渲染单个技能栏/丹药槽位的物品方块：
@@ -214,6 +269,7 @@ export function ItemGridPicker({
  * 3. 支持触发条件编辑按钮入口 (onCondition)，展示当前配置的条件数量。
  */
 export function ItemUseSlot({
+  activeEntry,
   cooldownOverlay,
   conditionCount = 0,
   item,
@@ -222,6 +278,8 @@ export function ItemUseSlot({
   onClick,
   onCondition,
 }: {
+  /** 当前实际执行同类行动；用于平滑推导本轮动作时间消耗 */
+  activeEntry?: QueueEntry | null
   /** 冷却动画或倒计时蒙层节点 */
   cooldownOverlay?: ReactNode
   /** 已配置的战斗触发条件数量 */
@@ -252,9 +310,6 @@ export function ItemUseSlot({
     ? totalDurationSeconds
     : (item.definition?.durationSeconds ?? 0)
   const isContinuousActive = remainingDurationSeconds > 0
-  const progressRatio = effectiveTotal > 0
-    ? Math.min(100, Math.max(0, (remainingDurationSeconds / effectiveTotal) * 100))
-    : 0
 
   return (
     <ItemTooltipTarget
@@ -282,16 +337,11 @@ export function ItemUseSlot({
           />
         </button>
         {isContinuousActive && !cooldownOverlay && (
-          <span
-            className="combat-ability-cooldown item-slot-duration-overlay"
-            style={{
-              ['--cooldown-ratio' as string]: String(
-                progressRatio > 0 ? Math.min(1, progressRatio / 100) : 0
-              ),
-            }}
-          >
-            {Math.ceil(remainingDurationSeconds)}s
-          </span>
+          <SustainedDurationOverlay
+            activeEntry={activeEntry}
+            remainingDurationSeconds={remainingDurationSeconds}
+            totalDurationSeconds={effectiveTotal}
+          />
         )}
         {cooldownOverlay}
         {onCondition && (

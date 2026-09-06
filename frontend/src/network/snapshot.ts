@@ -50,6 +50,13 @@ function numberValue(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function finiteNumber(value: unknown, name: string, minimum = 0): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum) {
+    throw new Error(`${name}必须是有限且不小于 ${minimum} 的数值。`)
+  }
+  return value
+}
+
 function stateVersionValue(value: unknown, name: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name}状态版本无效。`)
@@ -155,11 +162,15 @@ function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
     if ((slot.itemId !== null && typeof slot.itemId !== 'string') || typeof slot.quantity !== 'number' || !Number.isFinite(slot.quantity) || slot.quantity <= 0 || typeof slot.enabled !== 'boolean') {
       throw new Error('settings.autoUseSlots 槽位字段无效。')
     }
+    const remainingDurationSeconds = finiteNumber(
+      slot.remainingDurationSeconds,
+      `settings.autoUseSlots[${actionType}:${slotIndex}].remainingDurationSeconds`,
+    )
     autoUseSlots[actionType][slotIndex] = {
       itemId: slot.itemId || null,
       quantity: Math.max(1, slot.quantity),
       enabled: slot.enabled,
-      remainingDurationSeconds: 0,
+      remainingDurationSeconds,
       triggers: [],
     }
   }

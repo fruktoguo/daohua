@@ -552,6 +552,7 @@ public sealed class PlayerRuntime(
                     }
                     case "simulation.advance":
                     {
+                        await EnsureWalletFreshAsync(cancellationToken);
                         var before = aggregate.ExportState();
                         var walletBefore = wallet.Balances.ToArray();
                         var dirtyBefore = aggregate.DirtySections.ToArray();
@@ -562,7 +563,8 @@ public sealed class PlayerRuntime(
                         var economyCommitted = false;
                         try
                         {
-                            simulation = SimulationEngine.AdvanceTo(aggregate, target, actions);
+                            // 持续消耗品需要完整配表；钱包仅作开封库存判断，实际扣减仍随 AssetDeltas 原子提交。
+                            simulation = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet);
                             if (simulation.AssetDeltas.Count > 0)
                             {
                                 var transaction = new EconomyTransactionRequest(

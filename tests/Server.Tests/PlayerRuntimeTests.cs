@@ -174,6 +174,89 @@ public sealed class PlayerRuntimeTests
             && write.GameDataFingerprint == currentFingerprint);
     }
 
+    [Fact]
+    public async Task SimulationAdvanceCommitsSustainedPillDebitWithAuthoritativeState()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "持久事务");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.qi-gathering-pill", "", 1d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var runtime = new PlayerRuntime(repository, assets, economy, GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+
+        await runtime.LoadAsync(playerId);
+        await runtime.ExecuteAsync(playerId, "queue.auto_use.configure", JsonSerializer.SerializeToElement(new
+        {
+            actionType = "cultivation",
+            slotIndex = 0,
+            itemId = "item.qi-gathering-pill",
+            quantity = 1,
+            enabled = true
+        }));
+        var enqueued = await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options));
+
+        var result = await runtime.ExecuteAsync(playerId, "simulation.advance", JsonSerializer.SerializeToElement(new
+        {
+            targetTime = enqueued.Snapshot.LastSimulatedAt.AddSeconds(10)
+        }));
+
+        Assert.True(result.Success);
+        Assert.Equal(13d, result.Snapshot.State.Progression.Qi, 10);
+        Assert.Equal(13d, result.Snapshot.State.Progression.Experience, 10);
+        Assert.Equal(290d, Assert.Single(result.Snapshot.State.Settings.AutoUseSlots!).RemainingDurationSeconds);
+        Assert.Equal(0d, Assert.Single(result.Snapshot.Assets).Quantity);
+        var transaction = Assert.Single(economy.Requests);
+        var debit = Assert.Single(transaction.Deltas);
+        Assert.Equal("item.qi-gathering-pill", debit.AssetId);
+        Assert.Equal(-1d, debit.Delta);
+    }
+
+    [Fact]
+    public async Task FailedEconomyCommitRollsBackPillDurationAndCultivationProgress()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "回滚事务");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.qi-gathering-pill", "", 1d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: false);
+        var runtime = new PlayerRuntime(repository, assets, economy, GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+
+        await runtime.LoadAsync(playerId);
+        await runtime.ExecuteAsync(playerId, "queue.auto_use.configure", JsonSerializer.SerializeToElement(new
+        {
+            actionType = "cultivation",
+            slotIndex = 0,
+            itemId = "item.qi-gathering-pill",
+            quantity = 1,
+            enabled = true
+        }));
+        var before = await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ExecuteAsync(
+            playerId,
+            "simulation.advance",
+            JsonSerializer.SerializeToElement(new { targetTime = before.Snapshot.LastSimulatedAt.AddSeconds(10) })).AsTask());
+        var after = await runtime.LoadAsync(playerId);
+
+        Assert.Equal(before.Snapshot.LastSimulatedAt, after.LastSimulatedAt);
+        Assert.Equal(before.Snapshot.State.Progression.Qi, after.State.Progression.Qi);
+        Assert.Equal(before.Snapshot.State.Progression.Experience, after.State.Progression.Experience);
+        Assert.Equal(0d, Assert.Single(after.State.Settings.AutoUseSlots!).RemainingDurationSeconds);
+        Assert.Equal(0d, Assert.Single(after.State.Actions).ProgressSeconds);
+        Assert.Equal(1d, Assert.Single(after.Assets).Quantity);
+        Assert.Single(economy.Requests);
+    }
+
+    private static FakeStateRepository CreateEmptyPlayerRepository(Guid playerId, string name)
+    {
+        var createdAt = DateTimeOffset.UtcNow;
+        return new FakeStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, Guid.NewGuid(), name, createdAt),
+            new StoredHead(playerId, 0, 1, createdAt, string.Empty, string.Empty, createdAt),
+            new Dictionary<string, StoredSection>(),
+            []));
+    }
+
     private class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository
     {
         public List<SectionWrite> Enqueued { get; } = [];
@@ -206,6 +289,47 @@ public sealed class PlayerRuntimeTests
     private sealed class EmptyAssetRepository : IAssetBalanceRepository
     {
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>([]);
+    }
+
+    private sealed class MutableAssetRepository(params AssetBalanceRecord[] initial) : IAssetBalanceRepository
+    {
+        private readonly Dictionary<(Guid PlayerId, string AssetId, string Variant), AssetBalanceRecord> _balances =
+            initial.ToDictionary(balance => (balance.PlayerId, balance.AssetId, balance.Variant));
+
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(_balances.Values.Where(balance => balance.PlayerId == playerId).ToArray());
+
+        public void Apply(EconomyTransactionRequest request)
+        {
+            foreach (var delta in request.Deltas)
+            {
+                var key = (delta.PlayerId, delta.AssetId, delta.Variant);
+                var current = _balances.TryGetValue(key, out var balance)
+                    ? balance
+                    : new AssetBalanceRecord(delta.PlayerId, delta.AssetId, delta.Variant, 0d, 0);
+                var quantity = current.Quantity + delta.Delta;
+                if (quantity < -1e-12) throw new InvalidOperationException("测试资产余额不足。");
+                _balances[key] = current with { Quantity = Math.Max(0d, quantity), Version = current.Version + 1 };
+            }
+        }
+    }
+
+    private sealed class RecordingEconomyRepository(MutableAssetRepository assets, bool apply) : IEconomyTransactionStore
+    {
+        public List<EconomyTransactionRequest> Requests { get; } = [];
+
+        public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            if (apply) assets.Apply(request);
+            return ValueTask.FromResult(new EconomyTransactionResult(
+                request.TransactionId,
+                request.IdempotencyKey,
+                apply,
+                false,
+                DateTimeOffset.UtcNow,
+                request.ResultPayload));
+        }
     }
 
     private sealed class NoopEconomyRepository : IEconomyTransactionStore

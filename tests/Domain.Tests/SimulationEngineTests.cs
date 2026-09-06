@@ -55,6 +55,129 @@ public sealed class SimulationEngineTests
     }
 
     [Fact]
+    public void SustainedCultivationConsumableMatchesOfflineAndPerSecondAdvance()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var single = CreatePlayer("整段");
+        var split = CreatePlayer("逐秒");
+        var pill = new ItemId("item.qi-gathering-pill");
+        var singleWallet = CreateWallet(single, (pill, 1d));
+        var splitWallet = CreateWallet(split, (pill, 1d));
+        single.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        split.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        single.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
+        split.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
+
+        var singleResult = SimulationEngine.AdvanceTo(single, Baseline.AddSeconds(20), catalog, singleWallet);
+        foreach (var delta in singleResult.AssetDeltas) singleWallet.Apply(delta);
+        for (var second = 1; second <= 20; second++)
+        {
+            var result = SimulationEngine.AdvanceTo(split, Baseline.AddSeconds(second), catalog, splitWallet);
+            foreach (var delta in result.AssetDeltas) splitWallet.Apply(delta);
+        }
+
+        Assert.Equal(26d, single.Progression.Qi, 10);
+        Assert.Equal(26d, single.Progression.Experience, 10);
+        Assert.Equal(single.Progression.Qi, split.Progression.Qi);
+        Assert.Equal(single.Progression.Experience, split.Progression.Experience);
+        Assert.Equal(280d, Assert.Single(single.Settings.AutoUseSlots).RemainingDurationSeconds);
+        Assert.Equal(280d, Assert.Single(split.Settings.AutoUseSlots).RemainingDurationSeconds);
+        Assert.Equal(0d, singleWallet.Get(new AssetKey(pill)));
+        Assert.Equal(0d, splitWallet.Get(new AssetKey(pill)));
+        var debit = Assert.Single(singleResult.AssetDeltas);
+        Assert.Equal(pill, debit.Asset.ItemId);
+        Assert.Equal(-1d, debit.QuantityDelta);
+    }
+
+    [Fact]
+    public void SustainedConsumableOverdraftBuffsCurrentRepeatThenRequiresNextItem()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("透支");
+        player.ConfigureAutoUse("cultivation", 0, "item.qi-gathering-pill", 1, true);
+        player.Settings.AutoUseSlots[0] = player.Settings.AutoUseSlots[0] with { RemainingDurationSeconds = 3d };
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog, CreateWallet(player));
+
+        Assert.Empty(result.AssetDeltas);
+        Assert.Equal(23d, player.Progression.Qi, 10);
+        Assert.Equal(23d, player.Progression.Experience, 10);
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+        Assert.Single(result.Events, entry => entry.Code == "auto-use.depleted");
+    }
+
+    [Fact]
+    public void SustainedConsumableDoesNotActivateMidActionAfterStockArrives()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("中途补货");
+        var pill = new ItemId("item.qi-gathering-pill");
+        var wallet = CreateWallet(player);
+        player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
+
+        var firstHalf = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(0.5), catalog, wallet);
+        wallet.Credit(new AssetKey(pill), 1, "test grant");
+        var secondHalf = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog, wallet);
+
+        Assert.Empty(firstHalf.AssetDeltas);
+        Assert.Empty(secondHalf.AssetDeltas);
+        Assert.Equal(1d, player.Progression.Qi);
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+
+        var next = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(11), catalog, wallet);
+        Assert.Contains(next.AssetDeltas, delta => delta.Asset.ItemId == pill && delta.QuantityDelta == -1d);
+        Assert.Equal(11.3d, player.Progression.Qi, 10);
+        Assert.Equal(300d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+    }
+
+    [Fact]
+    public void SustainedExplorationAndAlchemyOutputsUseCeilingMultiplier()
+    {
+        var gatheringIncense = new ItemId("item.test-incense");
+        var alchemyFlame = new ItemId("item.test-flame");
+        var herb = new ItemId("item.test-herb");
+        var pill = new ItemId("item.test-pill");
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.gather"), "采集", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [herb] = 3 }),
+            new ActionDefinition(new ActionId("test.alchemy"), "炼制", ActionKind.Alchemy, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [pill] = 1 })
+        ]);
+        var catalog = new GameDataCatalog(
+            "test",
+            "test",
+            actions,
+            new Dictionary<ItemId, ItemDefinition>
+            {
+                [gatheringIncense] = new(gatheringIncense, "寻灵香", "", Consumable: new ConsumableDefinition(new HashSet<ActionKind> { ActionKind.Exploration }, 300, true, GatheringMultiplier: 1.5)),
+                [alchemyFlame] = new(alchemyFlame, "地火引", "", Consumable: new ConsumableDefinition(new HashSet<ActionKind> { ActionKind.Alchemy }, 300, true, AlchemyMultiplier: 1.25))
+            });
+        var player = CreatePlayer("产出");
+        var wallet = CreateWallet(player, (gatheringIncense, 1d), (alchemyFlame, 1d));
+        player.ConfigureAutoUse("exploration", 0, gatheringIncense.Value, 1, true);
+        player.ConfigureAutoUse("alchemy", 0, alchemyFlame.Value, 1, true);
+        player.Enqueue(new ActionIntent(new ActionId("test.gather")), Baseline, actions);
+        player.Enqueue(new ActionIntent(new ActionId("test.alchemy")), Baseline, actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), catalog, wallet);
+        var deltas = result.AssetDeltas.ToDictionary(delta => delta.Asset.ItemId, delta => delta.QuantityDelta);
+
+        Assert.Equal(5d, deltas[herb]);
+        Assert.Equal(2d, deltas[pill]);
+        Assert.Equal(-1d, deltas[gatheringIncense]);
+        Assert.Equal(-1d, deltas[alchemyFlame]);
+        Assert.Equal(298d, player.Settings.AutoUseSlots.Single(slot => slot.ActionType == "exploration").RemainingDurationSeconds);
+        Assert.Equal(298d, player.Settings.AutoUseSlots.Single(slot => slot.ActionType == "alchemy").RemainingDurationSeconds);
+    }
+
+    private static AssetWallet CreateWallet(PlayerAggregate player, params (ItemId ItemId, double Quantity)[] balances)
+    {
+        var wallet = new AssetWallet(player.PlayerId);
+        wallet.Restore(balances.Select(balance => new AssetBalance(player.PlayerId, new AssetKey(balance.ItemId), balance.Quantity, 0)));
+        return wallet;
+    }
+
+    [Fact]
     public void FractionalSecondSplitMatchesWholeSecondBitwise()
     {
         var single = CreatePlayer("甲");
