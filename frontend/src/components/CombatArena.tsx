@@ -1081,25 +1081,32 @@ function CharacterAttributeModal({
  */
 function resolveEnemyDefinition(
   enemyName: string,
+  enemyId: string | null | undefined,
   activeEncounter: CombatEncounterDefinition | null | undefined,
   encounters: readonly CombatEncounterDefinition[]
 ): CombatantDefinition | null {
-  if (!enemyName && !activeEncounter) return null
-  if (activeEncounter) {
-    if (activeEncounter.enemy?.name === enemyName) {
-      return activeEncounter.enemy
+  if (!enemyName && !enemyId && !activeEncounter) return null
+  const findInEncounter = (encounter: CombatEncounterDefinition): CombatantDefinition | null => {
+    if (enemyId) {
+      if (encounter.enemy?.enemyId === enemyId) return encounter.enemy
+      const bossById = encounter.bossEnemies?.find(b => b.enemyId === enemyId)
+      if (bossById) return bossById
+      const spawnById = encounter.randomSpawns?.find(s => s.enemy?.enemyId === enemyId)
+      if (spawnById) return spawnById.enemy
     }
-    const boss = activeEncounter.bossEnemies?.find(b => b.name === enemyName)
+    if (encounter.enemy?.name === enemyName) return encounter.enemy
+    const boss = encounter.bossEnemies?.find(b => b.name === enemyName)
     if (boss) return boss
-    const spawn = activeEncounter.randomSpawns?.find(s => s.enemy?.name === enemyName)
-    if (spawn) return spawn.enemy
+    const spawn = encounter.randomSpawns?.find(s => s.enemy?.name === enemyName)
+    return spawn?.enemy ?? null
+  }
+  if (activeEncounter) {
+    const match = findInEncounter(activeEncounter)
+    if (match) return match
   }
   for (const enc of encounters) {
-    if (enc.enemy?.name === enemyName) return enc.enemy
-    const boss = enc.bossEnemies?.find(b => b.name === enemyName)
-    if (boss) return boss
-    const spawn = enc.randomSpawns?.find(s => s.enemy?.name === enemyName)
-    if (spawn) return spawn.enemy
+    const match = findInEncounter(enc)
+    if (match) return match
   }
   return activeEncounter?.enemy ?? null
 }
@@ -1208,11 +1215,11 @@ export const CombatArena = memo(function CombatArena({
     visual: null,
   })
 
-  const enemyName = expedition?.enemyName ?? activeEncounter?.enemy?.name ?? t('combat.arena.unknownEnemy')
   const enemyDefinition = useMemo(
-    () => resolveEnemyDefinition(enemyName, activeEncounter, encounters),
-    [enemyName, activeEncounter, encounters]
+    () => resolveEnemyDefinition(expedition?.enemyName ?? '', expedition?.enemyId, activeEncounter, encounters),
+    [activeEncounter, encounters, expedition?.enemyId, expedition?.enemyName]
   )
+  const enemyName = expedition?.enemyName ?? enemyDefinition?.name ?? activeEncounter?.enemy?.name ?? t('combat.arena.unknownEnemy')
 
   if (enemyVisible) {
     enemyRef.current = {

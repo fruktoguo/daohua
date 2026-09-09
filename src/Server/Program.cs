@@ -165,12 +165,13 @@ if (processRole == ServerProcessRole.Api)
                 description = string.Empty,
                 type = action.Kind.ToString().ToLowerInvariant(),
                 durationSeconds = action.DurationSeconds,
-                executionKind = action.Kind switch
+                executionKind = action.ExecutionKind switch
                 {
-                    ActionKind.Combat => "combat-encounter",
-                    ActionKind.Travel => "travel",
+                    ActionExecutionKind.CombatEncounter => "combat-encounter",
+                    ActionExecutionKind.Travel => "travel",
                     _ => "timed"
                 },
+                combatEncounterId = action.CombatEncounterId,
                 hiddenFromCatalog = action.HiddenFromCatalog,
                 inputs = action.Inputs.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
                 outputs = action.Outputs.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),

@@ -563,7 +563,7 @@ public sealed class PlayerRuntime(
                         var economyCommitted = false;
                         try
                         {
-                            // 持续消耗品需要完整配表；钱包仅作开封库存判断，实际扣减仍随 AssetDeltas 原子提交。
+                            // 战斗遭遇与持续消耗品都需要完整配表；钱包仅作开封库存判断，实际扣减仍随 AssetDeltas 原子提交。
                             simulation = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet);
                             if (simulation.AssetDeltas.Count > 0)
                             {

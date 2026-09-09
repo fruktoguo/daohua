@@ -19,7 +19,7 @@
 核心原则：
 
 - 玩家在线时由单写者持有完整领域聚合；数据库不是每个字段一次一行，而是共享表中的少量稳定 section。
-- 玩家状态分为 `progression`、`world`、`combat`、`buffs`、`loadout`、`settings`、`action_queue` 七个 section。每个玩家对应共享表中的七行最新值，不建立“每个玩家一张表”。
+- 玩家状态分为 `progression`、`world`、`combat`、`buffs`、`loadout`、`settings`、`action_queue` 七个 section。每个玩家对应共享表中的七行最新值，不建立“每个玩家一张表”。`action_queue` 中的讨伐行动保存搜寻/战斗阶段和确定性战斗标量，`durationSeconds=0` 仅表示由战斗状态机推进，不会被普通计时器丢弃。
 - 普通模拟只在内存推进，脏 section 以 15 秒合并窗口写入 `platform.section_flush_queue`；同一玩家/section 永远只有一条待写记录，不保存逐 Tick 历史。
 - 资产余额、唯一物品、订单冻结、成交、退款和幂等事务由 PostgreSQL 关系模型负责，并在一个事务内提交。
 - WebSocket 帧、心跳、战斗伤害明细和聊天消息不落盘。前端日志只有当前页面内的 100 条内存环形缓冲。

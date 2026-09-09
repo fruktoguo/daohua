@@ -63,7 +63,8 @@ public sealed record QueuedActionState(
     ActionQueueStatus Status,
     double ProgressSeconds,
     double RemainingRepeats,
-    double CompletedRepeats);
+    double CompletedRepeats,
+    CombatExpeditionState? Expedition = null);
 
 public sealed partial class PlayerAggregate
 {
@@ -91,7 +92,7 @@ public sealed partial class PlayerAggregate
             for (var i = 0; i < _actions.Count; i++)
             {
                 var action = _actions[i];
-                actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats);
+                actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition);
             }
         }
 
@@ -285,7 +286,8 @@ public sealed partial class PlayerAggregate
                 (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128)) ||
                 HasInvalidParameters(intent.Parameters) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
-                !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0)
+                !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0 ||
+                actionState.Expedition is { IsValid: false })
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
             // 开发期容错自愈：旧版本曾允许非整数 RepeatCount 入队，递减后 RemainingRepeats 会落入 (0,1) 或负数区间，
             // 造成 "== 0" 永不成立的事实无限行动。此处对非整数值向下取整修正；负值不参与取整，避免翻转为 -1 无限语义；
@@ -297,6 +299,12 @@ public sealed partial class PlayerAggregate
             var repeatCountValid = double.IsFinite(repeatCount) && (repeatCount == -1 || repeatCount is >= 1 and <= 1_000_000);
             var remainingRepeatsValid = double.IsFinite(remainingRepeats) && (remainingRepeats == -1 || remainingRepeats >= 1);
             if (!repeatCountValid || !remainingRepeatsValid) continue;
+            if (actionState.Expedition is { } expedition
+                && ((expedition.Phase == CombatExpeditionPhase.Combat
+                        && Math.Abs(actionState.ProgressSeconds) > 1e-9)
+                    || (expedition.Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search
+                        && Math.Abs(actionState.ProgressSeconds - expedition.PhaseElapsedSeconds) > 1e-9)))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "战斗行动进度与远征阶段不一致。");
             var normalizedIntent = new ActionIntent(
                 intent.ActionId,
                 repeatCount,
@@ -309,7 +317,8 @@ public sealed partial class PlayerAggregate
                 Status = actionState.Status,
                 ProgressSeconds = actionState.ProgressSeconds,
                 RemainingRepeats = remainingRepeats,
-                CompletedRepeats = actionState.CompletedRepeats
+                CompletedRepeats = actionState.CompletedRepeats,
+                Expedition = actionState.Expedition
             };
             aggregate._actions.Add(action);
         }
@@ -384,4 +393,3 @@ public sealed partial class PlayerAggregate
         return false;
     }
 }
-

@@ -117,6 +117,54 @@ public sealed class CombatEncounterState
         if (player is null || enemy is null) throw new ArgumentNullException(player is null ? nameof(player) : nameof(enemy));
         return new CombatEncounterState(encounterId, seed, new CombatantState("player", player), new CombatantState("enemy", enemy));
     }
+
+    /// <summary>从持久化标量恢复一场遭遇战。</summary>
+    public static CombatEncounterState Restore(
+        string encounterId,
+        long seed,
+        CombatantStats player,
+        CombatantStats enemy,
+        double elapsedSeconds,
+        double playerHitpoints,
+        double enemyHitpoints,
+        double playerNextAttackAtSeconds,
+        double enemyNextAttackAtSeconds,
+        double playerAttackCount,
+        double enemyAttackCount,
+        CombatOutcome outcome,
+        double sequence = 0)
+    {
+        var encounter = Start(encounterId, seed, player, enemy);
+        if (!double.IsFinite(elapsedSeconds) || elapsedSeconds < 0
+            || !double.IsFinite(playerHitpoints) || playerHitpoints < 0 || playerHitpoints > player.MaxHitpoints
+            || !double.IsFinite(enemyHitpoints) || enemyHitpoints < 0 || enemyHitpoints > enemy.MaxHitpoints
+            || !double.IsFinite(playerNextAttackAtSeconds) || playerNextAttackAtSeconds < 0
+            || !double.IsFinite(enemyNextAttackAtSeconds) || enemyNextAttackAtSeconds < 0
+            || !double.IsFinite(playerAttackCount) || playerAttackCount < 0
+            || !double.IsFinite(enemyAttackCount) || enemyAttackCount < 0
+            || !double.IsFinite(sequence) || sequence < 0
+            || !Enum.IsDefined(outcome))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗状态无效。");
+        encounter.ElapsedSeconds = elapsedSeconds;
+        encounter.Player.Hitpoints = playerHitpoints;
+        encounter.Enemy.Hitpoints = enemyHitpoints;
+        encounter.Player.NextAttackAtSeconds = playerNextAttackAtSeconds;
+        encounter.Enemy.NextAttackAtSeconds = enemyNextAttackAtSeconds;
+        encounter.Player.AttackCount = playerAttackCount;
+        encounter.Enemy.AttackCount = enemyAttackCount;
+        encounter.Outcome = outcome;
+        encounter.Sequence = sequence;
+        var expectedOutcome = (encounter.Player.IsAlive, encounter.Enemy.IsAlive) switch
+        {
+            (true, true) => CombatOutcome.Running,
+            (true, false) => CombatOutcome.PlayerWon,
+            (false, true) => CombatOutcome.EnemyWon,
+            _ => CombatOutcome.Draw
+        };
+        if (outcome != expectedOutcome)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗结果与生命状态不一致。");
+        return encounter;
+    }
 }
 
 /// <summary>
@@ -141,6 +189,57 @@ public sealed record CombatAdvanceResult(
     CombatOutcome Outcome,
     IReadOnlyList<CombatEvent> Events,
     double Sequence);
+
+/// <summary>妖兽试炼远征阶段；状态会随行动队列一同持久化。</summary>
+public enum CombatExpeditionPhase : byte
+{
+    /// <summary>首次搜寻遭遇目标</summary>
+    InitialSearch = 0,
+    /// <summary>击败上一场敌人后搜寻下一场遭遇</summary>
+    Search = 1,
+    /// <summary>与当前敌人交战</summary>
+    Combat = 2
+}
+
+/// <summary>
+/// 可持久化的妖兽试炼远征状态。
+/// 只保存确定性恢复所需的标量，不保存 CombatEncounterState 引用。
+/// </summary>
+public sealed record CombatExpeditionState(
+    string EncounterId,
+    CombatExpeditionPhase Phase,
+    double PhaseElapsedSeconds,
+    double PhaseDurationSeconds,
+    long Seed,
+    string? EnemyId,
+    double BattleElapsedSeconds,
+    double PlayerHitpoints,
+    double EnemyHitpoints,
+    double PlayerNextAttackAtSeconds,
+    double EnemyNextAttackAtSeconds,
+    double PlayerAttackCount,
+    double EnemyAttackCount,
+    CombatOutcome Outcome)
+{
+    /// <summary>校验远征状态是否满足持久化不变量。</summary>
+    public bool IsValid => !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
+        && Enum.IsDefined(Phase)
+        && double.IsFinite(PhaseElapsedSeconds) && PhaseElapsedSeconds >= 0
+        && double.IsFinite(PhaseDurationSeconds) && (Phase == CombatExpeditionPhase.Combat ? PhaseDurationSeconds >= 0 : PhaseDurationSeconds > 0)
+        && (Phase == CombatExpeditionPhase.Combat || PhaseElapsedSeconds <= PhaseDurationSeconds + 1e-9)
+        && double.IsFinite(BattleElapsedSeconds) && BattleElapsedSeconds >= 0
+        && double.IsFinite(PlayerHitpoints) && PlayerHitpoints >= 0
+        && double.IsFinite(EnemyHitpoints) && EnemyHitpoints >= 0
+        && double.IsFinite(PlayerNextAttackAtSeconds) && PlayerNextAttackAtSeconds >= 0
+        && double.IsFinite(EnemyNextAttackAtSeconds) && EnemyNextAttackAtSeconds >= 0
+        && double.IsFinite(PlayerAttackCount) && PlayerAttackCount >= 0
+        && double.IsFinite(EnemyAttackCount) && EnemyAttackCount >= 0
+        && Enum.IsDefined(Outcome)
+        && (EnemyId is null || (EnemyId.Length > 0 && EnemyId.Length <= 128))
+        && (Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search
+            ? Outcome == CombatOutcome.Running && EnemyId is null
+            : EnemyId is not null && PhaseElapsedSeconds <= 1e-9);
+}
 
 /// <summary>
 /// 无外部随机副作用的确定性战斗推进引擎。
@@ -221,4 +320,3 @@ public static class DeterministicCombatEngine
         };
     }
 }
-

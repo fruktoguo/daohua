@@ -19,6 +19,17 @@ public enum ActionKind : byte
     Travel = 4
 }
 
+/// <summary>行动在模拟器中的执行方式。</summary>
+public enum ActionExecutionKind : byte
+{
+    /// <summary>按单轮时长结算的普通行动</summary>
+    Timed = 0,
+    /// <summary>包含搜寻与战斗状态机的遭遇行动</summary>
+    CombatEncounter = 1,
+    /// <summary>跨世界节点移动行动</summary>
+    Travel = 2
+}
+
 /// <summary>
 /// 单个行动的静态配表定义。
 /// 包含单轮时长、材料消耗、产物掉落、持续灵力收益与单轮完成经验。
@@ -33,7 +44,9 @@ public sealed record ActionDefinition(
     double QiPerSecond = 0,
     double ExperiencePerRepeat = 0,
     IReadOnlySet<string>? AllowedNodeIds = null,
-    bool HiddenFromCatalog = false)
+    bool HiddenFromCatalog = false,
+    ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
+    string? CombatEncounterId = null)
 {
 }
 
@@ -121,6 +134,10 @@ public sealed class ActionCatalog
             !double.IsFinite(definition.QiPerSecond) || definition.QiPerSecond < 0 ||
             !double.IsFinite(definition.ExperiencePerRepeat) || definition.ExperiencePerRepeat < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的数值无效。");
+        if (!Enum.IsDefined(definition.ExecutionKind)
+            || (definition.ExecutionKind == ActionExecutionKind.CombatEncounter
+                && string.IsNullOrWhiteSpace(definition.CombatEncounterId)))
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的执行元数据无效。");
     }
 
     private static ReadOnlyDictionary<ItemId, double> NormalizeQuantities(IReadOnlyDictionary<ItemId, double>? values, string label)
@@ -154,7 +171,9 @@ public sealed class GameDataCatalog
         IReadOnlyList<JsonElement>? encounters = null,
         IReadOnlyDictionary<string, JsonElement>? monsters = null,
         IReadOnlyDictionary<string, JsonElement>? rawItems = null,
-        IReadOnlyDictionary<string, JsonElement>? rawEquipments = null)
+        IReadOnlyDictionary<string, JsonElement>? rawEquipments = null,
+        IReadOnlyDictionary<string, CombatMonsterDefinition>? combatMonsters = null,
+        IReadOnlyDictionary<string, CombatEncounterDefinition>? combatEncounters = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -170,6 +189,15 @@ public sealed class GameDataCatalog
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         RawEquipments = rawEquipments?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters);
+        CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
+        foreach (var action in Actions.All)
+        {
+            if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
+                && (string.IsNullOrWhiteSpace(action.CombatEncounterId)
+                    || !CombatEncounters.ContainsKey(action.CombatEncounterId)))
+                throw new DomainException(DomainErrorCode.NotFound, $"行动 {action.Id} 关联的遭遇不存在。");
+        }
     }
 
     /// <summary>配表版本标签</summary>
@@ -190,6 +218,10 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<string, JsonElement> RawItems { get; }
     /// <summary>装备原始定义，用于宿主映射为全功能装备配置 DTO。</summary>
     public IReadOnlyDictionary<string, JsonElement> RawEquipments { get; }
+    /// <summary>已解析的怪物战斗定义，键为 enemy ID。</summary>
+    public IReadOnlyDictionary<string, CombatMonsterDefinition> CombatMonsters { get; }
+    /// <summary>已解析的遭遇战定义，键为 encounter ID。</summary>
+    public IReadOnlyDictionary<string, CombatEncounterDefinition> CombatEncounters { get; }
 
     /// <summary>内置单例兜底配表</summary>
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);
@@ -297,7 +329,32 @@ public sealed class GameDataCatalog
             : kind == ActionKind.Cultivation ? 10 : 0;
         var hiddenFromCatalog = entry.TryGetProperty("hiddenFromCatalog", out var hiddenProperty)
             && hiddenProperty.ValueKind == JsonValueKind.True;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, qiPerSecond, experiencePerRepeat, nodes, hiddenFromCatalog);
+        var executionKind = ParseExecutionKind(entry, kind);
+        var combatEncounterId = entry.TryGetProperty("combatEncounterId", out var encounter)
+            && encounter.ValueKind == JsonValueKind.String
+            ? encounter.GetString()
+            : null;
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, qiPerSecond, experiencePerRepeat, nodes, hiddenFromCatalog, executionKind, combatEncounterId);
+    }
+
+    private static ActionExecutionKind ParseExecutionKind(JsonElement entry, ActionKind kind)
+    {
+        if (entry.TryGetProperty("executionKind", out var value) && value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString()?.ToLowerInvariant() switch
+            {
+                "combatencounter" or "combat-encounter" => ActionExecutionKind.CombatEncounter,
+                "travel" => ActionExecutionKind.Travel,
+                "timed" => ActionExecutionKind.Timed,
+                _ => throw new DomainException(DomainErrorCode.InvalidArgument, "行动执行类型无效。")
+            };
+        }
+        return kind switch
+        {
+            ActionKind.Combat => ActionExecutionKind.CombatEncounter,
+            ActionKind.Travel => ActionExecutionKind.Travel,
+            _ => ActionExecutionKind.Timed
+        };
     }
 
     /// <summary>从 JSON 对象提取并解析道具定义（ItemDefinition）</summary>
@@ -352,6 +409,68 @@ public sealed class GameDataCatalog
         _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品适用行动类型无效：{value}。")
     };
 
+    private static Dictionary<string, CombatMonsterDefinition> ParseMonsterDefinitions(IReadOnlyDictionary<string, JsonElement> raw)
+    {
+        var result = new Dictionary<string, CombatMonsterDefinition>(StringComparer.Ordinal);
+        foreach (var (id, value) in raw)
+        {
+            var budget = ReadDouble(value, "budgetCost", 1);
+            var weights = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("weights", out var weightsValue) && weightsValue.ValueKind == JsonValueKind.Object
+                ? weightsValue : default;
+            var hpWeight = ReadDouble(weights, "hp", 1);
+            var attackWeight = ReadDouble(weights, "ad", 1);
+            var armorWeight = ReadDouble(weights, "armor", 1);
+            var maxHitpoints = ReadDouble(value, "maxHitpoints", budget * 10 * hpWeight);
+            var attackPower = ReadDouble(value, "maxDamage", budget * attackWeight);
+            var defense = ReadDouble(value, "armor", budget * 0.1 * armorWeight);
+            var interval = ReadDouble(value, "attackIntervalMilliseconds", 2_000) / 1_000d;
+            var accuracy = ReadDouble(value, "accuracyRating", ReadDouble(weights, "hit", 1));
+            var evasion = ReadDouble(value, "evasionRating", ReadDouble(weights, "eva", 0));
+            var damageKind = string.Equals(ReadString(value, "category", "physical"), "spell", StringComparison.OrdinalIgnoreCase)
+                ? CombatDamageKind.Spell : CombatDamageKind.Physical;
+            var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
+                ? dropValue.EnumerateArray().Select(drop => new CombatDropDefinition(
+                    new ItemId(ReadString(drop, "itemId")),
+                    ReadDouble(drop, "dropChance", 0),
+                    ReadDouble(drop, "minQuantity", 0),
+                    ReadDouble(drop, "maxQuantity", 0))).ToArray()
+                : [];
+            var stats = CombatantStats.Create(maxHitpoints, attackPower, defense, interval, accuracy, evasion, damageKind);
+            result[id] = new CombatMonsterDefinition(id, ReadString(value, "name", id), budget, stats, drops);
+        }
+        return result;
+    }
+
+    private static Dictionary<string, CombatEncounterDefinition> ParseEncounterDefinitions(
+        IReadOnlyList<JsonElement> raw,
+        IReadOnlyDictionary<string, CombatMonsterDefinition> monsters)
+    {
+        var result = new Dictionary<string, CombatEncounterDefinition>(StringComparer.Ordinal);
+        foreach (var value in raw)
+        {
+            var id = ReadString(value, "id");
+            var spawns = ReadArray(value, "randomSpawns").Select(spawn => new CombatSpawnDefinition(
+                ReadString(spawn, "enemyId"), ReadDouble(spawn, "weight", 1), ReadDouble(spawn, "strength", 1))).ToArray();
+            foreach (var spawn in spawns)
+                if (!monsters.ContainsKey(spawn.EnemyId)) throw new DomainException(DomainErrorCode.NotFound, $"遭遇 {id} 引用了不存在的怪物 {spawn.EnemyId}。");
+            var searchSeconds = ReadDouble(value, "searchMilliseconds", 5_000) / 1_000d;
+            var respawnSeconds = ReadDouble(value, "respawnMilliseconds", 5_000) / 1_000d;
+            var playerRespawnSeconds = ReadDouble(value, "playerRespawnMilliseconds", 5_000) / 1_000d;
+            if (string.IsNullOrWhiteSpace(id) || spawns.Length == 0 || searchSeconds <= 0 || respawnSeconds <= 0 || playerRespawnSeconds <= 0)
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"遭遇 {id} 配置无效。");
+            result[id] = new CombatEncounterDefinition(
+                id, ReadString(value, "name", id), ReadDouble(value, "minBudget", 0), ReadDouble(value, "maxBudget", 0),
+                ReadDouble(value, "maxTotalStrength", ReadDouble(value, "maxBudget", 0)), searchSeconds, respawnSeconds,
+                playerRespawnSeconds, spawns, ReadStringArray(value, "eliteEnemyIds"), ReadStringArray(value, "bossEnemyIds"),
+                ReadInt(value, "battlesPerBoss", 0));
+        }
+        return result;
+    }
+
+    private static string ReadString(JsonElement value, string property, string fallback = "") =>
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString() ?? fallback : fallback;
+
     private static double ReadDouble(JsonElement value, string property, double fallback = 0) =>
         value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.TryGetDouble(out var parsed)
             ? parsed : fallback;
@@ -366,11 +485,17 @@ public sealed class GameDataCatalog
             }
             : fallback;
 
-    private static string[] ReadStringArray(JsonElement value, string property) =>
+    private static int ReadInt(JsonElement value, string property, int fallback = 0) =>
+        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.TryGetInt32(out var parsed)
+            ? parsed : fallback;
+
+    private static JsonElement[] ReadArray(JsonElement value, string property) =>
         value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.Array
-            ? element.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String)
-                .Select(item => item.GetString() ?? string.Empty).Where(item => item.Length > 0).ToArray()
-            : [];
+            ? element.EnumerateArray().ToArray() : [];
+
+    private static string[] ReadStringArray(JsonElement value, string property) =>
+        ReadArray(value, property).Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString() ?? string.Empty).Where(item => item.Length > 0).ToArray();
 
     private static ReadOnlyDictionary<ItemId, ItemDefinition> NormalizeItems(IReadOnlyDictionary<ItemId, ItemDefinition>? items)
     {

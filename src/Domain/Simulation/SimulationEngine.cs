@@ -65,7 +65,7 @@ public static class SimulationEngine
         ActionCatalog? catalog = null)
         => AdvanceToCore(player, target, catalog ?? ActionCatalog.Default, null, null);
 
-    /// <summary>使用完整游戏配表推进行动，包含持续消耗品的权威倍率与库存扣减。</summary>
+    /// <summary>使用完整游戏配表推进行动，包含战斗遭遇、持续消耗品与怪物属性。</summary>
     public static SimulationResult AdvanceTo(
         PlayerAggregate player,
         DateTimeOffset target,
@@ -100,14 +100,26 @@ public static class SimulationEngine
 
         while (remainingSeconds > 0 && player.Actions.Count > 0)
         {
+            var action = player.Actions[0];
+            // 阻塞项是明确的停泊状态。它不能被本次推进重新标记为 Running，
+            // 否则战斗失败等不消费时间的结果会在队头空转直到转换上限。
+            if (action.Status == ActionQueueStatus.Blocked)
+                break;
             if (++transitions > MaxTransitionsPerAdvance)
                 throw new DomainException(DomainErrorCode.InvariantViolation, "单次模拟超过最大状态转换数。");
 
-            var action = player.Actions[0];
             var definition = catalog.Get(action.Intent.ActionId);
             var isActionStart = action.ProgressSeconds <= SecondQuantizationEpsilon
                 && player.Progression.SimulationCarrySeconds <= SecondQuantizationEpsilon;
             action.Status = ActionQueueStatus.Running;
+            if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
+            {
+                if (gameData is null)
+                    throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
+                AdvanceCombatAction(player, action, definition, gameData, from, target, ref remainingSeconds,
+                    ref deltas, ref events, ref completedActions, ref completedRepeats);
+                continue;
+            }
             var duration = definition.DurationSeconds;
             if (duration <= 0)
             {
@@ -207,6 +219,255 @@ public static class SimulationEngine
             (IReadOnlyList<SimulationEvent>?)events ?? [],
             player.StateVersion,
             transitions > 0);
+    }
+
+    /// <summary>
+    /// 推进一个战斗遭遇行动。每次调用至少消耗搜寻或战斗时间；阶段切换后由外层循环继续推进，
+    /// 从而避免 durationSeconds=0 的战斗行动进入普通计时器并被自愈删除。
+    /// </summary>
+    private static void AdvanceCombatAction(
+        PlayerAggregate player,
+        QueuedAction action,
+        ActionDefinition definition,
+        GameDataCatalog gameData,
+        DateTimeOffset from,
+        DateTimeOffset target,
+        ref double remainingSeconds,
+        ref Dictionary<ItemId, double>? deltas,
+        ref List<SimulationEvent>? events,
+        ref double completedActions,
+        ref double completedRepeats)
+    {
+        if (string.IsNullOrWhiteSpace(definition.CombatEncounterId)
+            || !gameData.CombatEncounters.TryGetValue(definition.CombatEncounterId, out var encounter))
+            throw new DomainException(DomainErrorCode.NotFound, $"战斗行动 {definition.Id} 关联的遭遇不存在。");
+
+        var expedition = action.Expedition;
+        if (expedition is null)
+        {
+            expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.InitialSearch);
+            action.Expedition = expedition;
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.search.started", $"开始搜寻：{encounter.Name}。", definition.Id);
+        }
+
+        if (!expedition.IsValid)
+            throw new DomainException(DomainErrorCode.InvariantViolation, $"行动 {definition.Id} 的战斗远征状态无效。");
+
+        var phaseRemaining = Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
+        if (expedition.Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search)
+        {
+            var step = Math.Min(remainingSeconds, phaseRemaining);
+            if (step <= 0)
+                throw new DomainException(DomainErrorCode.InvariantViolation, "战斗搜寻阶段没有可推进的时间。");
+            remainingSeconds -= step;
+            var updated = expedition with
+            {
+                PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + step
+            };
+            action.ProgressSeconds = updated.PhaseElapsedSeconds;
+            action.Expedition = updated;
+            if (updated.PhaseElapsedSeconds + 1e-9 < updated.PhaseDurationSeconds) return;
+
+            var seed = updated.Seed;
+            if (!TrySelectMonster(encounter, gameData.CombatMonsters, seed, out var monster))
+                throw new DomainException(DomainErrorCode.NotFound, $"遭遇 {encounter.Id} 没有可用敌人。");
+            var battle = CombatEncounterState.Start(
+                encounter.Id,
+                seed,
+                CombatantStats.Create(player.Combat.MaxHitpoints, player.Combat.AttackPower, player.Combat.Defense, 2),
+                monster.Stats);
+            battle.Player.Hitpoints = Math.Clamp(player.Combat.Hitpoints, 0, player.Combat.MaxHitpoints);
+            var combatState = ToExpeditionState(battle, updated with
+            {
+                Phase = CombatExpeditionPhase.Combat,
+                PhaseElapsedSeconds = 0,
+                PhaseDurationSeconds = 0,
+                EnemyId = monster.Id,
+                EnemyHitpoints = monster.Stats.MaxHitpoints,
+                Outcome = CombatOutcome.Running
+            });
+            action.ProgressSeconds = 0;
+            action.Expedition = combatState;
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.started", $"遭遇妖兽：{monster.Name}。", definition.Id);
+            return;
+        }
+
+        if (expedition.Phase != CombatExpeditionPhase.Combat || string.IsNullOrWhiteSpace(expedition.EnemyId)
+            || !gameData.CombatMonsters.TryGetValue(expedition.EnemyId, out var currentMonster))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "战斗远征敌人状态无效。");
+
+        var battleState = CombatEncounterState.Restore(
+            encounter.Id,
+            expedition.Seed,
+            CombatantStats.Create(player.Combat.MaxHitpoints, player.Combat.AttackPower, player.Combat.Defense, 2),
+            currentMonster.Stats,
+            expedition.BattleElapsedSeconds,
+            expedition.PlayerHitpoints,
+            expedition.EnemyHitpoints,
+            expedition.PlayerNextAttackAtSeconds,
+            expedition.EnemyNextAttackAtSeconds,
+            expedition.PlayerAttackCount,
+            expedition.EnemyAttackCount,
+            expedition.Outcome,
+            expedition.PlayerAttackCount + expedition.EnemyAttackCount);
+        var battleFrom = battleState.ElapsedSeconds;
+        var actionElapsedBeforeCombat = (target - from).TotalSeconds - remainingSeconds;
+        var battleTo = battleFrom + remainingSeconds;
+        var combatResult = DeterministicCombatEngine.AdvanceTo(battleState, battleTo);
+        var consumed = Math.Max(0, battleState.ElapsedSeconds - battleFrom);
+        remainingSeconds -= consumed;
+        player.Combat.Hitpoints = battleState.Player.Hitpoints;
+        // 战斗中气血是独立持久化分段；仅标记行动队列会导致重连后回退到旧气血。
+        player.MarkDirty(PlayerSectionKind.Combat);
+        var updatedBattle = ToExpeditionState(battleState, expedition with
+        {
+            PhaseElapsedSeconds = Math.Min(expedition.PhaseDurationSeconds, expedition.PhaseElapsedSeconds + consumed),
+            BattleElapsedSeconds = battleState.ElapsedSeconds,
+            PlayerHitpoints = battleState.Player.Hitpoints,
+            EnemyHitpoints = battleState.Enemy.Hitpoints,
+            PlayerNextAttackAtSeconds = battleState.Player.NextAttackAtSeconds,
+            EnemyNextAttackAtSeconds = battleState.Enemy.NextAttackAtSeconds,
+            PlayerAttackCount = battleState.Player.AttackCount,
+            EnemyAttackCount = battleState.Enemy.AttackCount,
+            Outcome = combatResult.Outcome
+        });
+        action.Expedition = updatedBattle;
+        action.ProgressSeconds = updatedBattle.PhaseElapsedSeconds;
+        foreach (var combatEvent in combatResult.Events)
+        {
+            var attacker = combatEvent.AttackerId == "player" ? "你" : currentMonster.Name;
+            var targetName = combatEvent.TargetId == "player" ? "你" : currentMonster.Name;
+            var eventAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom));
+            AddCombatEventAt(ref events, eventAt,
+                "combat.attack", $"{attacker}{(combatEvent.Hit ? $"命中{targetName}，造成 {combatEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
+        }
+        if (combatResult.Outcome == CombatOutcome.Running) return;
+        if (combatResult.Outcome != CombatOutcome.PlayerWon)
+        {
+            action.Status = ActionQueueStatus.Blocked;
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{currentMonster.Name}。", definition.Id);
+            return;
+        }
+
+        completedActions += 1;
+        completedRepeats += 1;
+        action.CompletedRepeats += 1;
+        player.Progression.CompletedActions += 1;
+        player.MarkDirty(PlayerSectionKind.Progression);
+        player.MarkDirty(PlayerSectionKind.Combat);
+        player.MarkDirty(PlayerSectionKind.ActionQueue);
+        ApplyCombatRewards(player, currentMonster, updatedBattle.Seed, ref deltas);
+        AddCombatEvent(ref events, from, target, remainingSeconds, "combat.won", $"讨伐成功：{currentMonster.Name}。", definition.Id);
+        if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
+        if (action.RemainingRepeats == 0)
+        {
+            player.RemoveAction(action.Id, incrementVersion: false);
+            return;
+        }
+        action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, NextSeed(updatedBattle.Seed));
+        action.ProgressSeconds = 0;
+    }
+
+    private static CombatExpeditionState CreateSearchState(
+        PlayerAggregate player,
+        QueuedAction action,
+        CombatEncounterDefinition encounter,
+        CombatExpeditionPhase phase,
+        long? seed = null) => new(
+        encounter.Id,
+        phase,
+        0,
+        phase == CombatExpeditionPhase.InitialSearch ? encounter.SearchSeconds : encounter.RespawnSeconds,
+        seed ?? CreateSeed(encounter.Id, action.CompletedRepeats),
+        null,
+        0,
+        player.Combat.Hitpoints,
+        0,
+        0,
+        0,
+        0,
+        0,
+        CombatOutcome.Running);
+
+    private static CombatExpeditionState ToExpeditionState(CombatEncounterState battle, CombatExpeditionState template) => template with
+    {
+        BattleElapsedSeconds = battle.ElapsedSeconds,
+        PlayerHitpoints = battle.Player.Hitpoints,
+        EnemyHitpoints = battle.Enemy.Hitpoints,
+        PlayerNextAttackAtSeconds = battle.Player.NextAttackAtSeconds,
+        EnemyNextAttackAtSeconds = battle.Enemy.NextAttackAtSeconds,
+        PlayerAttackCount = battle.Player.AttackCount,
+        EnemyAttackCount = battle.Enemy.AttackCount,
+        Outcome = battle.Outcome
+    };
+
+    private static bool TrySelectMonster(
+        CombatEncounterDefinition encounter,
+        IReadOnlyDictionary<string, CombatMonsterDefinition> monsters,
+        long seed,
+        out CombatMonsterDefinition monster)
+    {
+        var candidates = encounter.RandomSpawns.Where(spawn => monsters.ContainsKey(spawn.EnemyId) && spawn.Weight > 0).ToArray();
+        if (candidates.Length == 0) { monster = null!; return false; }
+        var total = candidates.Sum(spawn => spawn.Weight);
+        var ticket = (unchecked((ulong)seed) % 1_000_000UL) / 1_000_000d * total;
+        foreach (var candidate in candidates)
+        {
+            if (ticket < candidate.Weight) { monster = monsters[candidate.EnemyId]; return true; }
+            ticket -= candidate.Weight;
+        }
+        monster = monsters[candidates[^1].EnemyId];
+        return true;
+    }
+
+    private static void ApplyCombatRewards(PlayerAggregate player, CombatMonsterDefinition monster, long seed, ref Dictionary<ItemId, double>? deltas)
+    {
+        if (monster.DropTable.Count == 0) return;
+        foreach (var drop in monster.DropTable)
+        {
+            if (!drop.ItemId.IsValid || drop.MinQuantity <= 0 || drop.MaxQuantity < drop.MinQuantity || drop.DropChance <= 0) continue;
+            var roll = (unchecked((ulong)NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
+            seed = NextSeed(seed);
+            if (roll > drop.DropChance) continue;
+            var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity) * roll);
+            AddDelta(deltas ??= new Dictionary<ItemId, double>(), drop.ItemId, Math.Max(drop.MinQuantity, quantity));
+        }
+    }
+
+    private static void AddCombatEvent(ref List<SimulationEvent>? events, DateTimeOffset from, DateTimeOffset target, double remainingSeconds, string code, string message, ActionId actionId)
+    {
+        events ??= new List<SimulationEvent>();
+        var elapsed = Math.Max(0, (target - from).TotalSeconds - remainingSeconds);
+        AddCombatEventAt(ref events, from.AddSeconds(elapsed), code, message, actionId);
+    }
+
+    private static void AddCombatEventAt(ref List<SimulationEvent>? events, DateTimeOffset at, string code, string message, ActionId actionId)
+    {
+        events ??= new List<SimulationEvent>();
+        events.Add(new SimulationEvent(at, code, message, actionId));
+    }
+
+    private static long CreateSeed(string encounterId, double completedRepeats)
+    {
+        unchecked
+        {
+            ulong hash = 14695981039346656037UL;
+            foreach (var character in encounterId) { hash ^= character; hash *= 1099511628211UL; }
+            hash ^= (ulong)BitConverter.DoubleToInt64Bits(completedRepeats);
+            return (long)hash;
+        }
+    }
+
+    private static long NextSeed(long seed)
+    {
+        unchecked
+        {
+            var value = (ulong)seed;
+            value ^= value << 13;
+            value ^= value >> 7;
+            value ^= value << 17;
+            return (long)value;
+        }
     }
 
     /// <summary>

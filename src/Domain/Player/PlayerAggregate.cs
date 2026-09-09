@@ -180,6 +180,8 @@ public sealed class QueuedAction
     public double RemainingRepeats { get; internal set; }
     /// <summary>已成功完成的轮次计数</summary>
     public double CompletedRepeats { get; internal set; }
+    /// <summary>战斗行动当前远征阶段；普通行动保持为空。</summary>
+    public CombatExpeditionState? Expedition { get; internal set; }
 
     /// <summary>深拷贝当前行动状态副本</summary>
     public QueuedAction Clone() => new(Id, Intent, EnqueuedAt)
@@ -187,7 +189,8 @@ public sealed class QueuedAction
         Status = Status,
         ProgressSeconds = ProgressSeconds,
         RemainingRepeats = RemainingRepeats,
-        CompletedRepeats = CompletedRepeats
+        CompletedRepeats = CompletedRepeats,
+        Expedition = Expedition
     };
 }
 
@@ -332,7 +335,11 @@ public sealed partial class PlayerAggregate
         if (!catalog.Contains(intent.ActionId))
             throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
         var definition = catalog.Get(intent.ActionId);
-        if (intent.RepeatCount == -1 && definition.DurationSeconds <= 0)
+        // 专用执行器（当前为战斗遭遇）不使用普通行动时长，而是由自身阶段时钟推进。
+        // 只有普通计时行动的无限循环才必须拒绝零时长，避免模拟器无法消耗时间。
+        if (intent.RepeatCount == -1
+            && definition.DurationSeconds <= 0
+            && definition.ExecutionKind != ActionExecutionKind.CombatEncounter)
             throw new DomainException(DomainErrorCode.InvalidArgument, "无限重复行动必须具有正时长，避免模拟无法推进。");
         var normalizedIntent = new ActionIntent(
             intent.ActionId,

@@ -15,6 +15,8 @@ import type {
   CombatAttributes,
   CombatLoadout,
   CombatResourceState,
+  ExpeditionPhase,
+  ExpeditionProgress,
   InventoryItem,
   PlayerPatch,
   PlayerSnapshot,
@@ -55,6 +57,17 @@ function finiteNumber(value: unknown, name: string, minimum = 0): number {
     throw new Error(`${name}必须是有限且不小于 ${minimum} 的数值。`)
   }
   return value
+}
+
+function finiteValue(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${name}必须是有限数值。`)
+  return value
+}
+
+function finiteInteger(value: unknown, name: string, minimum = 0): number {
+  const result = finiteNumber(value, name, minimum)
+  if (!Number.isSafeInteger(result)) throw new Error(`${name}必须是安全整数。`)
+  return result
 }
 
 function stateVersionValue(value: unknown, name: string): number {
@@ -150,6 +163,86 @@ function defaultAutoUseSlots(): QueueState['autoUseSlots'] {
   return Object.fromEntries(ACTION_TYPES.map(type => [type, Array.from({ length: 3 }, emptySlot)])) as QueueState['autoUseSlots']
 }
 
+function mapExpeditionPhase(value: unknown): ExpeditionPhase {
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) throw new Error('战斗远征 phase 枚举值无效。')
+    switch (value) {
+      case 0: return 'initial-search'
+      case 1: return 'search'
+      case 2: return 'combat'
+      default: throw new Error('战斗远征 phase 枚举值无效。')
+    }
+  }
+  if (typeof value !== 'string') throw new Error('战斗远征 phase 字段无效。')
+  switch (value.trim().toLowerCase().replaceAll('_', '-')) {
+    case '0':
+    case 'initialsearch':
+    case 'initial-search': return 'initial-search'
+    case '1':
+    case 'search': return 'search'
+    case '2':
+    case 'combat': return 'combat'
+    default: throw new Error('战斗远征 phase 字段无效。')
+  }
+}
+
+function optionalString(value: unknown, name: string): string | null {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'string' || value.length === 0 || value.length > 128) {
+    throw new Error(`${name}字段无效。`)
+  }
+  return value
+}
+
+function mapExecutionKind(value: unknown, fallback?: QueueEntry['executionKind']): QueueEntry['executionKind'] {
+  if (value === null || value === undefined) return fallback
+  if (typeof value !== 'string') throw new Error('行动 executionKind 字段无效。')
+  switch (value.trim().toLowerCase().replaceAll('_', '-')) {
+    case 'timed': return 'timed'
+    case 'travel': return 'travel'
+    case 'combat-encounter':
+    case 'combatencounter': return 'combat-encounter'
+    default: throw new Error('行动 executionKind 字段无效。')
+  }
+}
+
+function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
+  const row = object(value)
+  if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的战斗远征载荷无效。`)
+  const encounterId = identifierValue(row.encounterId, `行动 ${actionId} 的 encounterId`)
+  const phase = mapExpeditionPhase(row.phase)
+  const elapsedSeconds = finiteNumber(row.phaseElapsedSeconds, `行动 ${actionId} 的 phaseElapsedSeconds`)
+  const durationSeconds = finiteNumber(
+    row.phaseDurationSeconds,
+    `行动 ${actionId} 的 phaseDurationSeconds`,
+    phase === 'combat' ? 0 : Number.MIN_VALUE,
+  )
+  if (phase !== 'combat' && elapsedSeconds > durationSeconds + 1e-9) throw new Error(`行动 ${actionId} 的战斗远征阶段进度超出范围。`)
+  const playerHitpoints = finiteNumber(row.playerHitpoints, `行动 ${actionId} 的 playerHitpoints`)
+  const enemyHitpoints = finiteNumber(row.enemyHitpoints, `行动 ${actionId} 的 enemyHitpoints`)
+
+  // 这些标量用于恢复/审计，即使当前界面不直接展示，也必须拒绝坏值，避免把损坏快照继续传播。
+  finiteValue(row.seed, `行动 ${actionId} 的 seed`)
+  finiteNumber(row.battleElapsedSeconds, `行动 ${actionId} 的 battleElapsedSeconds`)
+  finiteNumber(row.playerNextAttackAtSeconds, `行动 ${actionId} 的 playerNextAttackAtSeconds`)
+  finiteNumber(row.enemyNextAttackAtSeconds, `行动 ${actionId} 的 enemyNextAttackAtSeconds`)
+  finiteNumber(row.playerAttackCount, `行动 ${actionId} 的 playerAttackCount`)
+  finiteNumber(row.enemyAttackCount, `行动 ${actionId} 的 enemyAttackCount`)
+  const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 outcome`)
+  if (outcome > 3) throw new Error(`行动 ${actionId} 的 outcome 枚举值无效。`)
+
+  return {
+    phase,
+    progress: durationSeconds > 0 ? Math.max(0, Math.min(1, elapsedSeconds / durationSeconds)) : 0,
+    elapsedSeconds,
+    durationSeconds,
+    playerHitpoints,
+    enemyHitpoints,
+    enemyId: optionalString(row.enemyId, `行动 ${actionId} 的 enemyId`),
+    encounterId,
+  }
+}
+
 function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
   if (!Array.isArray(value)) throw new Error('settings.autoUseSlots 必须是数组。')
   const autoUseSlots = defaultAutoUseSlots()
@@ -191,6 +284,16 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     const status = statusRaw === 0 ? 'queued' : statusRaw === 1 ? 'running' : statusRaw === 2 ? 'blocked' : (() => { throw new Error(`行动 ${actionId} 状态无效。`) })()
     const entryId = stringValue(row.id)
     if (!entryId) throw new Error(`行动 ${actionId} 缺少实例 ID。`)
+    const expedition = row.expedition === null || row.expedition === undefined
+      ? null
+      : mapExpedition(row.expedition, actionId)
+    const executionKind = mapExecutionKind(
+      row.executionKind,
+      definition?.executionKind ?? (expedition ? 'combat-encounter' : undefined),
+    )
+    const combatEncounterId = row.combatEncounterId === undefined
+      ? definition?.combatEncounterId ?? expedition?.encounterId ?? null
+      : optionalString(row.combatEncounterId, `行动 ${actionId} 的 combatEncounterId`)
     const entry: QueueEntry = {
       entryId,
       actionId,
@@ -200,11 +303,12 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       progressSeconds: numberValue(row.progressSeconds),
       durationSeconds: definition?.durationSeconds ?? 0,
       remainingRepeats: numberValue(row.remainingRepeats, numberValue(intent.repeatCount, 1)),
-      executionKind: definition?.executionKind,
+      executionKind,
+      combatEncounterId,
       travelDestinationNodeId: stringValue(intent.targetNodeId) || null,
       travelPathEdgeIds: null,
       travelSegments: null,
-      expedition: null,
+      expedition,
     }
     return entry
   })

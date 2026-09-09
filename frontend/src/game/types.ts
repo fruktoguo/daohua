@@ -234,6 +234,8 @@ export interface QueueEntry {
   remainingRepeats: number
   /** 执行类型 */
   executionKind?: ActionExecutionKind
+  /** 关联的战斗遭遇 ID */
+  combatEncounterId?: string | null
   /** 跨节点移动目标节点 ID */
   travelDestinationNodeId?: string | null
   /** 移动经过的路径边 ID 列表 */
