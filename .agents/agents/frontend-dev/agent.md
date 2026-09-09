@@ -23,3 +23,7 @@ model: inherit
 5. **类型安全与构建门禁**：
    - 不得使用 `any` 绕过检查，保持严格 TypeScript 类型契约。
    - 每次修改后必须运行并通过 `npm --prefix frontend run build`。
+6. **Store 行为落地红线**：
+   - 严禁在状态管理器（Zustand、React Context 等）中声明仅有空函数体 `() => {}` 的虚空方法。任何对外暴露的操作方法必须具备实际的状态流转、数据变更或明确的报错抛出，防止伪实现静默吞没调用。
+7. **i18n 词条闭环**：
+   - UI 代码中每引入一个新的 `t('...')` 国际化键名，必须同步在 `frontend/public/locales/template.csv` 及主语言词典中定义；禁止残留未录入模板的裸露键名。

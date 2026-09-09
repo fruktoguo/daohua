@@ -133,6 +133,7 @@ docker compose down
 - 玩家快照写回失败必须保留可恢复证据；不得为了降噪降低持久化错误等级。
 - 健康端点不得泄露 token、连接串、玩家数据或内部异常。
 - CORS 只允许配置的完整来源；禁止恢复任意来源加凭据的组合。
+- **协议信封强对齐与往返门禁**：服务端在 `Protocol` 或 `Server` 增改 `WireMessageType`、信封结构或数据包协议时，必须在同一次提交中同步对齐前端 `frontend/src/` 中的枚举与解析逻辑，并补充端到端反序列化或信封编解码往返单测，严禁单边提交未对齐的信封类型引发客户端断连循环。
 
 ## 8. 前端规则
 
@@ -142,6 +143,8 @@ docker compose down
 - 不削弱 TypeScript 检查，不引入无必要的全局状态或网络重试层。
 - API、WebSocket 和 UI 状态的错误必须可见且可恢复，不能无限静默重连。
 - 桌面和移动端都必须避免文本溢出、控件重叠和动态内容引发布局跳动。
+- **Store 行为落地红线**：禁止在状态管理器（Zustand、React Context 等）中声明仅有空函数体 `() => {}` 的虚空方法。任何对外暴露的操作方法必须具备实际的状态流转、数据变更或明确的报错抛出，防止伪实现静默吞没调用。
+- **i18n 词条闭环**：UI 代码中每引入一个新的 `t('...')` 国际化键名，必须同步在 `frontend/public/locales/template.csv` 及主语言词典中定义；禁止残留未录入模板的裸露键名。
 - **公共组件与统一模板强制收拢**：
   - 前端开发前，**必须先阅读前端公共组件文档 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**，检索是否存在可复用的公共组件或统一模板（如 Hover 提示、复合 Label、境界徽章、模态弹窗、网格选择器等），禁止随意重新自制相似样式或重复实现。
   - 凡是将任何前端部分收拢走统一模板（如 hoverinfo、label、badge、picker 等），**必须同步登记写入 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**。
