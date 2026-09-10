@@ -442,7 +442,23 @@
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 3px #000;
   pointer-events: none;
-  overflow: hidden;
+  /* 必须 visible：外圈淡金虚线弧是挂在本元素 ::after 上、画到槽位之外的；
+     遮罩自身背景与文字仍由 border-radius 收圆角，不需要 overflow 裁剪。 */
+  overflow: visible;
+}
+
+/* 外圈淡金虚线弧：与扇形同起点（12 点）、同方向（顺时针）、同角度。
+   可见范围复用与扇形完全一致的 conic 公式做遮罩，因此逐帧天然同步，无需额外 JS。
+   虚线本身用 border dashed 交给浏览器绘制，避开了纯 CSS 无法画“虚线弧”的限制。 */
+.item-slot-duration-overlay::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  border: 1px dashed color-mix(in srgb, var(--gold-bright) 72%, transparent);
+  border-radius: 12px;
+  pointer-events: none;
+  -webkit-mask-image: conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), #000 0);
+  mask-image: conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), #000 0);
 }
 
 .item-use-slot.item-use-slot--continuous-active .item-slot-duration-overlay {
