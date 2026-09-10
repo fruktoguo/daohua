@@ -117,6 +117,27 @@ public sealed class SimulationEngineTests
     }
 
     [Fact]
+    public void SustainedConsumableActivatesWhenSimulationCarryIsNonZero()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("进位残差");
+        var pill = new ItemId("item.qi-gathering-pill");
+        var wallet = CreateWallet(player, (pill, 1d));
+        player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
+        // 离线补算会留下非零的亚秒进位余数，它属于全局浮点残差，不得参与“动作开始扣件”的判定。
+        player.Progression.SimulationCarrySeconds = 0.6965839999875751d;
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog, wallet);
+        foreach (var delta in result.AssetDeltas) wallet.Apply(delta);
+
+        Assert.Equal(0.6965839999875751d, player.Progression.SimulationCarrySeconds, 9);
+        Assert.Equal(280d, Assert.Single(player.Settings.AutoUseSlots).RemainingDurationSeconds);
+        Assert.Equal(0d, wallet.Get(new AssetKey(pill)));
+        Assert.Equal(-1d, Assert.Single(result.AssetDeltas).QuantityDelta);
+    }
+
+    [Fact]
     public void SustainedConsumableOverdraftBuffsCurrentRepeatThenRequiresNextItem()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
@@ -135,7 +156,7 @@ public sealed class SimulationEngineTests
     }
 
     [Fact]
-    public void SustainedConsumableDoesNotActivateMidActionAfterStockArrives()
+    public void SustainedConsumableDoesNotActivateAfterCycleHasAwardedSeconds()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("中途补货");
@@ -144,17 +165,18 @@ public sealed class SimulationEngineTests
         player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
-        var firstHalf = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(0.5), catalog, wallet);
+        // 本轮已结算过整秒收益（进度 1 秒），中途补货只能等下一轮周期起点，不得追溯激活。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog, wallet);
         wallet.Credit(new AssetKey(pill), 1, "test grant");
-        var secondHalf = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog, wallet);
+        var midCycle = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet);
 
-        Assert.Empty(firstHalf.AssetDeltas);
-        Assert.Empty(secondHalf.AssetDeltas);
-        Assert.Equal(1d, player.Progression.Qi);
+        Assert.Empty(midCycle.AssetDeltas);
+        Assert.Equal(5d, player.Progression.Qi);
         Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
 
-        var next = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(11), catalog, wallet);
-        Assert.Contains(next.AssetDeltas, delta => delta.Asset.ItemId == pill && delta.QuantityDelta == -1d);
+        // 下一轮周期起点扣件，且本轮整段收益吃到倍率。
+        var nextCycle = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(11), catalog, wallet);
+        Assert.Contains(nextCycle.AssetDeltas, delta => delta.Asset.ItemId == pill && delta.QuantityDelta == -1d);
         Assert.Equal(11.3d, player.Progression.Qi, 10);
         Assert.Equal(300d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }

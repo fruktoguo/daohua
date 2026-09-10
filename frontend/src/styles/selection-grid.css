@@ -413,7 +413,10 @@
   transform: none;
 }
 
-/* 持续消耗品剩余时间旋转填充遮罩与倒计时数字（与技能/物品冷却完全一致） */
+/* 持续消耗品剩余时间旋转填充遮罩与倒计时数字。
+   注意：本规则必须由 Element 独占，禁止在元素上再挂 combat-ability-cooldown。
+   后者定义在 styles/expedition.css，会在 main.tsx 中后于本文件加载；两者选择器权重相同，
+   同挂时后加载者胜出，会把 color 与 background（含扇形起点角）整段覆盖回战斗冷却样式。 */
 .item-slot-duration-overlay {
   --cooldown-ratio: 1;
   --duration-accent: #d9f7ed;

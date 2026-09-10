@@ -257,7 +257,10 @@ function SustainedDurationOverlay({
     totalDurationSeconds,
   ])
 
-  return <span aria-hidden="true" className="combat-ability-cooldown item-slot-duration-overlay" ref={overlayRef} />
+  // 不复用 combat-ability-cooldown：该类规则定义在 styles/expedition.css 中且在 main.tsx 里后于
+  // styles/selection-grid.css 加载，二者对同一元素等权重同名，会静默覆盖本遮罩的颜色与扇形起点。
+  // 7px 圆角与溢出裁剪已由 styles.css 的 `.combat-ability-cooldown, .item-slot-duration-overlay` 分组规则统一提供。
+  return <span aria-hidden="true" className="item-slot-duration-overlay" ref={overlayRef} />
 }
 
 /**

@@ -109,8 +109,12 @@ public static class SimulationEngine
                 throw new DomainException(DomainErrorCode.InvariantViolation, "单次模拟超过最大状态转换数。");
 
             var definition = catalog.Get(action.Intent.ActionId);
-            var isActionStart = action.ProgressSeconds <= SecondQuantizationEpsilon
-                && player.Progression.SimulationCarrySeconds <= SecondQuantizationEpsilon;
+            // 行动周期起点的唯一判据是行动自身进度归零：此时本轮尚未结算任何整秒收益，
+            // 持续消耗品在这一点扣件才能让本轮整段收益都吃到倍率；若已结算过整秒则等下一轮。
+            // 严禁再叠加 SimulationCarrySeconds 之类的全局浮点状态：该进位余数只记录亚秒残差，
+            // 在整秒序列上保持不变且没有任何重置点，一旦因离线补算变成非零就会让本判定恒为 false，
+            // 导致“动作开始扣件”永不触发、持续消耗品永久失效。
+            var isActionStart = action.ProgressSeconds <= SecondQuantizationEpsilon;
             action.Status = ActionQueueStatus.Running;
             if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
             {
