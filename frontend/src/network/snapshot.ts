@@ -252,7 +252,9 @@ function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
     const actionType = stringValue(slot.actionType) as ActionType
     const slotIndex = numberValue(slot.slotIndex, -1)
     if (!ACTION_TYPES.includes(actionType) || !Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= 3) continue
-    if ((slot.itemId !== null && typeof slot.itemId !== 'string') || typeof slot.quantity !== 'number' || !Number.isFinite(slot.quantity) || slot.quantity <= 0 || typeof slot.enabled !== 'boolean') {
+    // 服务端以 JsonIgnoreCondition.WhenWritingNull 序列化，未指定物品时可空 itemId 会被整键省略，
+    // 因此缺失与 null 必须视为同一语义（未配置物品），而非坏数据。
+    if ((slot.itemId !== null && slot.itemId !== undefined && typeof slot.itemId !== 'string') || typeof slot.quantity !== 'number' || !Number.isFinite(slot.quantity) || slot.quantity <= 0 || typeof slot.enabled !== 'boolean') {
       throw new Error('settings.autoUseSlots 槽位字段无效。')
     }
     const remainingDurationSeconds = finiteNumber(
