@@ -220,6 +220,7 @@ function SustainedDurationOverlay({
   totalDurationSeconds: number
 }): React.JSX.Element {
   const overlayRef = useRef<HTMLSpanElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
 
   useLayoutEffect(() => {
@@ -238,7 +239,9 @@ function SustainedDurationOverlay({
       const currentActionProgress = Math.min(actionDuration, baseProgress + elapsed)
       const remaining = Math.max(0, remainingDurationSeconds - currentActionProgress)
       overlay.style.setProperty('--cooldown-ratio', String(Math.min(1, remaining / total)))
-      overlay.textContent = `${Math.ceil(remaining)}s`
+      // 只写数字子元素的 textContent：遮罩自身还要承载外圈虚线弧的嵌套层，
+      // 直接写遮罩的 textContent 会连子元素一并清空。
+      if (textRef.current) textRef.current.textContent = `${Math.ceil(remaining)}s`
       if (isRunning && currentActionProgress < actionDuration) frameId = window.requestAnimationFrame(update)
     }
 
@@ -260,7 +263,14 @@ function SustainedDurationOverlay({
   // 不复用 combat-ability-cooldown：该类规则定义在 styles/expedition.css 中且在 main.tsx 里后于
   // styles/selection-grid.css 加载，二者对同一元素等权重同名，会静默覆盖本遮罩的颜色与扇形起点。
   // 7px 圆角与溢出裁剪已由 styles.css 的 `.combat-ability-cooldown, .item-slot-duration-overlay` 分组规则统一提供。
-  return <span aria-hidden="true" className="item-slot-duration-overlay" ref={overlayRef} />
+  // 数字与「外圈流动虚线弧」拆成两个子元素：外圈需要「扇形裁剪 × 虚线相位」两道遮罩叠加，
+  // 用嵌套元素各自持有遮罩即可天然取交集，无需依赖 mask-composite，也保证虚线绝不越出扇形范围。
+  return (
+    <span aria-hidden="true" className="item-slot-duration-overlay" ref={overlayRef}>
+      <span className="item-slot-duration-text" ref={textRef} />
+      <span className="item-slot-duration-ring" />
+    </span>
+  )
 }
 
 /**

@@ -22,14 +22,16 @@ const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
 }): React.JSX.Element | null {
   if (remainingMilliseconds <= 0 || totalMilliseconds <= 0) return null
   const ratio = Math.max(0, Math.min(1, remainingMilliseconds / totalMilliseconds))
-  const degrees = Math.round(ratio * 360)
   const remainingSeconds = (remainingMilliseconds / 1000).toFixed(1)
 
+  // 必须透传 --cooldown-ratio：遮罩的扇形完全由该变量驱动，其缺省值为 1，
+  // 漏传会让整块瓦片被暗区盖满，冷却期间技能图标与名称完全不可读。
+  // 原先写入的 --duration-sweep 在任何样式表中都没有消费者（已删除）。
   return (
     <span
       aria-hidden="true"
-      className="item-slot-duration-overlay item-slot-duration-overlay--cooling"
-      style={{ '--duration-sweep': `${degrees}deg` } as React.CSSProperties}
+      className="item-slot-duration-overlay"
+      style={{ '--cooldown-ratio': ratio } as React.CSSProperties}
     >
       <span className="item-slot-duration-text">{remainingSeconds}s</span>
     </span>

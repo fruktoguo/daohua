@@ -429,9 +429,13 @@
   display: grid;
   place-items: center;
   color: var(--duration-accent);
+  /* 暗区浓度刻意压到 0.5 左右：持续消耗品的 ratio 从 1 开始，蒙层在生效初期几乎覆盖整块瓦片，
+     若沿用 0.86 会把物品图标与名称彻底糊住（“物品信息完全看不清”）。
+     现在剩余区仍与已流逝区形成清晰的明暗分界，同时保底看清是哪个物品。
+     调浓会牺牲可读性，调稀会削弱剩余时长对比，改动此值需同时回看两种状态。 */
   background:
-    conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), rgba(8, 15, 17, 0.86) 0),
-    linear-gradient(rgba(7, 12, 13, 0.2), rgba(7, 12, 13, 0.2));
+    conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), rgba(8, 15, 17, 0.5) 0),
+    linear-gradient(rgba(7, 12, 13, 0.1), rgba(7, 12, 13, 0.1));
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--duration-accent) 78%, transparent),
     inset 0 0 12px color-mix(in srgb, var(--duration-accent) 18%, transparent);
@@ -443,29 +447,60 @@
   text-shadow: 0 1px 3px #000;
   pointer-events: none;
   /* 保持 visible：圆角已由 border-radius 完成，本就不需要 overflow 裁剪；
-     同时避免把挂在 ::after 上的外圈虚线弧静默裁掉。 */
+     同时避免把外扩 1px 的 .item-slot-duration-ring 静默裁掉。 */
   overflow: visible;
 }
 
+/* 倒计时数字。类名与 AbilitiesPanel 的技能冷却蒙层共用，两边都是蒙层里唯一的文本子元素。 */
+.item-slot-duration-text {
+  position: relative;
+  z-index: 1;
+}
+
+/* --ring-phase 必须注册成 <angle> 才会被逐帧插值，否则 @keyframes 对它只是跳变、看不出流动。 */
+@property --ring-phase {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
 /* 外圈淡金虚线弧：与扇形同起点（12 点）、同方向（顺时针）、同角度，
-   并与瓦片自身边框完全重合（inset 0 + 7px 圆角对齐 .item-tile 的 border/radius，
-   2px 虚线由外缘向内压住那 1px 实线）。
-   可见范围复用与扇形完全一致的 conic 公式做遮罩，因此逐帧天然同步，无需额外 JS。
-   虚线本身用 border dashed 交给浏览器绘制，避开了纯 CSS 无法画“虚线弧”的限制。
-   动态只做透明度呼吸，不触碰 conic 遮罩，所以弧长“范围”恒定不变。 */
-.item-slot-duration-overlay::after {
-  content: '';
+   并比瓦片自身边框整体外扩 1px（inset -1px + 8px 圆角，与 .item-tile 的 1px/7px 边框同心）。
+   拆成两层是为了叠加两道遮罩且互不干扰：
+   1) 本层负责「扇形范围」——复用与遮罩背景完全一致的 conic 公式，因此逐帧天然同步；
+   2) 其 ::before 负责「虚线相位」——由 repeating-conic-gradient 加 --ring-phase 旋转出流动效果。
+   嵌套元素各自的遮罩按交集合成，所以虚线永远只出现在扇形内；若改成在同一元素上用
+   mask-composite 叠两道遮罩，一旦该属性不被支持就会退化成并集，虚线会跑到扇形之外。 */
+.item-slot-duration-ring {
   position: absolute;
-  inset: 0;
-  border: 2px dashed color-mix(in srgb, var(--gold-bright) 88%, transparent);
-  border-radius: 7px;
+  inset: -1px;
+  border-radius: 8px;
   pointer-events: none;
   -webkit-mask-image: conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), #000 0);
   mask-image: conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), #000 0);
-  animation: item-slot-duration-ring-pulse 2.6s ease-in-out infinite;
+}
+
+/* 虚线相位：10deg 实 + 8deg 虚，周期 18deg 可整分 360deg，旋转一周首尾无缝。
+   纯 CSS 无法滚动 border: dashed 的虚线相位，因此这里用实线 border + 旋转遮罩图案来造虚线。
+   角速度恒定，四边虚线速度一致，仅圆角处因离圆心更远而弧长略长。 */
+.item-slot-duration-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 2px solid color-mix(in srgb, var(--gold-bright) 88%, transparent);
+  border-radius: inherit;
+  -webkit-mask-image: repeating-conic-gradient(from var(--ring-phase, 0deg), #000 0deg 10deg, transparent 10deg 18deg);
+  mask-image: repeating-conic-gradient(from var(--ring-phase, 0deg), #000 0deg 10deg, transparent 10deg 18deg);
+  animation:
+    item-slot-duration-ring-flow 3s linear infinite,
+    item-slot-duration-ring-pulse 2.6s ease-in-out infinite;
 }
 
 /* 全局 @media (prefers-reduced-motion: reduce) 已把 animation-duration 压到 0.01ms，无需在此重复兜底。 */
+@keyframes item-slot-duration-ring-flow {
+  to { --ring-phase: 360deg; }
+}
+
 @keyframes item-slot-duration-ring-pulse {
   0%,
   100% { opacity: 0.62; }
