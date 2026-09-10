@@ -320,7 +320,10 @@ export function ItemUseSlot({
       metadata={metadata}
       tabIndex={-1}
     >
-      <span className={`item-use-slot-shell${depleted ? ' is-depleted' : ''}${isContinuousActive ? ' is-continuous-active' : ''}`}>
+      <span
+        className={`item-use-slot-shell${depleted ? ' is-depleted' : ''}${isContinuousActive ? ' is-continuous-active' : ''}`}
+        data-rarity={metadata.rarity}
+      >
         <button
           aria-label={t('market.picker.currentItem', { name: depleted ? `${item.name}${t('market.picker.insufficientAmount')}` : item.name })}
           className={`item-use-slot${depleted ? ' item-use-slot--depleted' : ''}${isContinuousActive ? ' item-use-slot--continuous-active' : ''}`}

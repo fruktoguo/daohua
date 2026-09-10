@@ -90,6 +90,33 @@ public sealed class SimulationEngineTests
     }
 
     [Fact]
+    public void SustainedConsumableDurationIsPreservedWhileActionQueueIsIdle()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("闲置保留");
+        var pill = new ItemId("item.qi-gathering-pill");
+        var wallet = CreateWallet(player, (pill, 1d));
+        player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, catalog.Actions);
+
+        var first = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet);
+        foreach (var delta in first.AssetDeltas) wallet.Apply(delta);
+        Assert.Equal(0d, wallet.Get(new AssetKey(pill)));
+        Assert.Equal(290d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+        Assert.Empty(player.Actions);
+
+        // 没有行动时推进墙钟不应消耗持续时间。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(100), catalog, wallet);
+        Assert.Equal(290d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline.AddSeconds(100), catalog.Actions);
+        var resumed = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(110), catalog, wallet);
+        Assert.Empty(resumed.AssetDeltas);
+        Assert.Equal(26d, player.Progression.Qi, 10);
+        Assert.Equal(280d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+    }
+
+    [Fact]
     public void SustainedConsumableOverdraftBuffsCurrentRepeatThenRequiresNextItem()
     {
         var catalog = GameDataCatalog.LoadEmbedded();

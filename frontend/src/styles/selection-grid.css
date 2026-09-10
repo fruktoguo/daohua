@@ -136,9 +136,10 @@
 }
 
 .item-tile[data-rarity="mundane"] {
-  --item-accent: rgb(139, 143, 149);
-  --item-glow: rgba(139, 143, 149, 0.26);
-  --item-surface: rgba(139, 143, 149, 0.14);
+  --item-accent: rgb(194, 207, 220);
+  --item-glow: rgba(194, 207, 220, 0.42);
+  --item-surface: rgba(194, 207, 220, 0.2);
+  border-width: 1.5px;
 }
 
 .item-tile[data-rarity="yellow"] {
@@ -415,15 +416,19 @@
 /* 持续消耗品剩余时间旋转填充遮罩与倒计时数字（与技能/物品冷却完全一致） */
 .item-slot-duration-overlay {
   --cooldown-ratio: 1;
+  --duration-accent: #d9f7ed;
   position: absolute;
   z-index: 5;
   inset: 0;
   display: grid;
   place-items: center;
-  color: #f2ead2;
+  color: var(--duration-accent);
   background:
-    conic-gradient(from 0turn, rgba(4, 5, 5, 0.82) calc(var(--cooldown-ratio) * 1turn), transparent 0),
-    rgba(4, 5, 5, 0.28);
+    conic-gradient(from -0.25turn, rgba(8, 15, 17, 0.86) calc(var(--cooldown-ratio) * 1turn), transparent 0),
+    linear-gradient(rgba(7, 12, 13, 0.2), rgba(7, 12, 13, 0.2));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--duration-accent) 78%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--duration-accent) 18%, transparent);
   border-radius: 7px;
   font-family: Arial, sans-serif;
   font-size: 13px;
@@ -432,6 +437,14 @@
   text-shadow: 0 1px 3px #000;
   pointer-events: none;
   overflow: hidden;
+}
+
+.item-use-slot.item-use-slot--continuous-active .item-slot-duration-overlay {
+  --duration-accent: #bfffe8;
+}
+
+.item-use-slot-shell[data-rarity="mundane"] .item-slot-duration-overlay {
+  --duration-accent: #e8f4ff;
 }
 
 .item-use-slot-shell.is-continuous-active {
