@@ -414,6 +414,9 @@
 }
 
 /* 持续消耗品剩余时间旋转填充遮罩与倒计时数字。
+   扇形约定：起点为 12 点方向，边界顺时针扫过（右 → 下 → 左），暗区代表剩余时长。
+   因此暗区必须锚定在 1turn 一侧、由 (1 - 剩余比) 起算；若写成
+   `conic-gradient(from 0turn, 暗色 calc(ratio * 1turn), transparent 0)` 则边界会逆时针倒扫。
    注意：本规则必须由 Element 独占，禁止在元素上再挂 combat-ability-cooldown。
    后者定义在 styles/expedition.css，会在 main.tsx 中后于本文件加载；两者选择器权重相同，
    同挂时后加载者胜出，会把 color 与 background（含扇形起点角）整段覆盖回战斗冷却样式。 */
@@ -427,7 +430,7 @@
   place-items: center;
   color: var(--duration-accent);
   background:
-    conic-gradient(from -0.25turn, rgba(8, 15, 17, 0.86) calc(var(--cooldown-ratio) * 1turn), transparent 0),
+    conic-gradient(from 0turn, transparent calc((1 - var(--cooldown-ratio)) * 1turn), rgba(8, 15, 17, 0.86) 0),
     linear-gradient(rgba(7, 12, 13, 0.2), rgba(7, 12, 13, 0.2));
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--duration-accent) 78%, transparent),
