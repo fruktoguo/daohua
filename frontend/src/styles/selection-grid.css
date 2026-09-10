@@ -482,7 +482,8 @@
 
 /* 虚线相位：10deg 实 + 8deg 虚，周期 18deg 可整分 360deg，旋转一周首尾无缝。
    纯 CSS 无法滚动 border: dashed 的虚线相位，因此这里用实线 border + 旋转遮罩图案来造虚线。
-   角速度恒定，四边虚线速度一致，仅圆角处因离圆心更远而弧长略长。 */
+   角速度恒定，四边虚线速度一致，仅圆角处因离圆心更远而弧长略长。
+   6s/圈（60deg/s）是体感值：3s 偏快像走马灯，再慢则失去「流动」暗示，改这个数只影响观感不影响弧长范围。 */
 .item-slot-duration-ring::before {
   content: '';
   position: absolute;
@@ -492,7 +493,7 @@
   -webkit-mask-image: repeating-conic-gradient(from var(--ring-phase, 0deg), #000 0deg 10deg, transparent 10deg 18deg);
   mask-image: repeating-conic-gradient(from var(--ring-phase, 0deg), #000 0deg 10deg, transparent 10deg 18deg);
   animation:
-    item-slot-duration-ring-flow 3s linear infinite,
+    item-slot-duration-ring-flow 6s linear infinite,
     item-slot-duration-ring-pulse 2.6s ease-in-out infinite;
 }
 
