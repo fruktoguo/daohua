@@ -1,3 +1,5 @@
+using Domain.World;
+
 namespace Domain.Player;
 
 /// <summary>
@@ -37,7 +39,9 @@ public sealed record PlayerWorldStateDocument(
     string NodeId,
     double X,
     double Y,
-    double ExplorationSeed);
+    double ExplorationSeed,
+    string? EdgeId = null,
+    double EdgeProgress = 0);
 
 /// <summary>战斗属性数值快照 DTO</summary>
 public sealed record PlayerCombatStateDocument(
@@ -64,7 +68,8 @@ public sealed record QueuedActionState(
     double ProgressSeconds,
     double RemainingRepeats,
     double CompletedRepeats,
-    CombatExpeditionState? Expedition = null);
+    CombatExpeditionState? Expedition = null,
+    TravelActionState? Travel = null);
 
 public sealed partial class PlayerAggregate
 {
@@ -92,7 +97,7 @@ public sealed partial class PlayerAggregate
             for (var i = 0; i < _actions.Count; i++)
             {
                 var action = _actions[i];
-                actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition);
+                actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel);
             }
         }
 
@@ -106,7 +111,7 @@ public sealed partial class PlayerAggregate
             StateVersion,
             GameDataFingerprint,
             new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds),
-            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed),
+            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress),
             new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense),
             GetCachedBuffs(),
             GetCachedEquippedInstances(),
@@ -233,6 +238,7 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.CompletedActions) || state.Progression.CompletedActions < 0 ||
             !double.IsFinite(state.Progression.SimulationCarrySeconds) || state.Progression.SimulationCarrySeconds < 0 ||
             !double.IsFinite(state.World.X) || !double.IsFinite(state.World.Y) || !double.IsFinite(state.World.ExplorationSeed) ||
+            !double.IsFinite(state.World.EdgeProgress) || state.World.EdgeProgress < 0 || state.World.EdgeProgress > 1 ||
             !double.IsFinite(state.Combat.Hitpoints) || state.Combat.Hitpoints < 0 ||
             !double.IsFinite(state.Combat.MaxHitpoints) || state.Combat.MaxHitpoints <= 0 || state.Combat.Hitpoints > state.Combat.MaxHitpoints ||
             !double.IsFinite(state.Combat.Manapoints) || state.Combat.Manapoints < 0 ||
@@ -241,6 +247,7 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Combat.Defense) || state.Combat.Defense < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家数值状态无效。");
         if (state.Progression.RealmLevel < 1 || string.IsNullOrWhiteSpace(state.World.NodeId) || state.World.NodeId.Length > 128
+            || (state.World.EdgeId is not null && (state.World.EdgeId.Length == 0 || state.World.EdgeId.Length > 128))
             || string.IsNullOrWhiteSpace(state.Settings.Locale) || state.Settings.Locale.Length > 32)
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家基础 section 标识无效。");
         if (state.EquippedInstances.Any(item => item.IsEmpty)
@@ -258,6 +265,8 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.CompletedActions = state.Progression.CompletedActions;
         aggregate.Progression.SimulationCarrySeconds = state.Progression.SimulationCarrySeconds;
         aggregate.World.NodeId = state.World.NodeId;
+        aggregate.World.EdgeId = state.World.EdgeId;
+        aggregate.World.EdgeProgress = state.World.EdgeProgress;
         aggregate.World.X = state.World.X;
         aggregate.World.Y = state.World.Y;
         aggregate.World.ExplorationSeed = state.World.ExplorationSeed;
@@ -287,7 +296,8 @@ public sealed partial class PlayerAggregate
                 HasInvalidParameters(intent.Parameters) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
                 !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0 ||
-                actionState.Expedition is { IsValid: false })
+                actionState.Expedition is { IsValid: false } ||
+                actionState.Travel is { IsValid: false })
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动状态无效。");
             // 开发期容错自愈：旧版本曾允许非整数 RepeatCount 入队，递减后 RemainingRepeats 会落入 (0,1) 或负数区间，
             // 造成 "== 0" 永不成立的事实无限行动。此处对非整数值向下取整修正；负值不参与取整，避免翻转为 -1 无限语义；
@@ -318,7 +328,8 @@ public sealed partial class PlayerAggregate
                 ProgressSeconds = actionState.ProgressSeconds,
                 RemainingRepeats = remainingRepeats,
                 CompletedRepeats = actionState.CompletedRepeats,
-                Expedition = actionState.Expedition
+                Expedition = actionState.Expedition,
+                Travel = actionState.Travel
             };
             aggregate._actions.Add(action);
         }
@@ -349,6 +360,8 @@ public sealed partial class PlayerAggregate
         Progression.CompletedActions = restored.Progression.CompletedActions;
         Progression.SimulationCarrySeconds = restored.Progression.SimulationCarrySeconds;
         World.NodeId = restored.World.NodeId;
+        World.EdgeId = restored.World.EdgeId;
+        World.EdgeProgress = restored.World.EdgeProgress;
         World.X = restored.World.X;
         World.Y = restored.World.Y;
         World.ExplorationSeed = restored.World.ExplorationSeed;

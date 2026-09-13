@@ -247,6 +247,60 @@ public sealed class PlayerRuntimeTests
         Assert.Single(economy.Requests);
     }
 
+    [Fact]
+    public async Task WorldTravelCommandEnqueuesPriorityActionAndSuspendsCurrent()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "移动测试");
+        var assets = new MutableAssetRepository();
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var runtime = new PlayerRuntime(repository, assets, economy, catalog, NullLogger<PlayerRuntime>.Instance);
+
+        await runtime.LoadAsync(playerId);
+
+        // 1. 先入队一个正在进行的修炼行动
+        var enqueueResult = await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options));
+        Assert.True(enqueueResult.Success);
+        Assert.Single(enqueueResult.Snapshot.State.Actions);
+
+        // 2. 模拟推进 3 秒，确保修炼处于运行状态且有一定进度
+        var advanceResult = await runtime.ExecuteAsync(playerId, "simulation.advance", JsonSerializer.SerializeToElement(new
+        {
+            targetTime = enqueueResult.Snapshot.LastSimulatedAt.AddSeconds(3)
+        }));
+        Assert.True(advanceResult.Success);
+        Assert.Equal(3d, advanceResult.Snapshot.State.Actions[0].ProgressSeconds, 5);
+
+        // 3. 发送 world.travel 移动指令，目标为青云山门
+        var travelResult = await runtime.ExecuteAsync(playerId, "world.travel", JsonSerializer.SerializeToElement(new
+        {
+            targetNodeId = "node.cloud-gate"
+        }));
+        Assert.True(travelResult.Success);
+
+        // 验证队列：移动插在首位，原修炼被挂起
+        var actions = travelResult.Snapshot.State.Actions;
+        Assert.Equal(2, actions.Count);
+        Assert.Equal("world.travel", actions[0].Intent.ActionId.Value);
+        Assert.NotNull(actions[0].Travel);
+        Assert.Equal("node.cloud-gate", actions[0].Travel!.TargetNodeId);
+        Assert.NotEmpty(actions[0].Travel!.Segments);
+
+        Assert.Equal("cultivation.draw-qi", actions[1].Intent.ActionId.Value);
+        Assert.Equal(3d, actions[1].ProgressSeconds, 5);
+
+        // 4. 取消移动行动 (action.remove)
+        var removeResult = await runtime.ExecuteAsync(playerId, "action.remove", JsonSerializer.SerializeToElement(new
+        {
+            actionInstanceId = actions[0].Id
+        }));
+        Assert.True(removeResult.Success);
+        Assert.Single(removeResult.Snapshot.State.Actions);
+        Assert.Equal("cultivation.draw-qi", removeResult.Snapshot.State.Actions[0].Intent.ActionId.Value);
+    }
+
     private static FakeStateRepository CreateEmptyPlayerRepository(Guid playerId, string name)
     {
         var createdAt = DateTimeOffset.UtcNow;

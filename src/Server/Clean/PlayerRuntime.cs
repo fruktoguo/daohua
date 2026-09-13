@@ -3,6 +3,7 @@ using Domain.Simulation;
 using Domain.GameData;
 using Domain.Common;
 using Domain.Economy;
+using Domain.World;
 using Protocol;
 
 namespace Server.Clean;
@@ -501,11 +502,49 @@ public sealed class PlayerRuntime(
                     }
                     case "world.travel":
                     {
-                        var nodeId = payload.TryGetProperty("targetNodeId", out var targetNode) ? targetNode.GetString() : null;
-                        var x = payload.TryGetProperty("x", out var xElement) && xElement.TryGetDouble(out var parsedX) ? parsedX : aggregate.World.X;
-                        var y = payload.TryGetProperty("y", out var yElement) && yElement.TryGetDouble(out var parsedY) ? parsedY : aggregate.World.Y;
-                        aggregate.TravelTo(nodeId ?? string.Empty, x, y);
-                        TouchDirtyOnly();
+                        var targetNodeId = payload.TryGetProperty("targetNodeId", out var targetNode) ? targetNode.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(targetNodeId))
+                            return Fail("INVALID_TARGET", "目标世界节点无效。");
+                        targetNodeId = targetNodeId.Trim();
+
+                        var worldGraph = gameData.WorldGraph;
+                        if (!worldGraph.ContainsNode(targetNodeId))
+                            return Fail("NODE_NOT_FOUND", $"目标世界节点不存在：{targetNodeId}。");
+
+                        // 若已经在目标节点且未处于边上，直接成功
+                        if (string.Equals(aggregate.World.NodeId, targetNodeId, StringComparison.Ordinal)
+                            && string.IsNullOrWhiteSpace(aggregate.World.EdgeId))
+                        {
+                            TouchDirtyOnly();
+                            break;
+                        }
+
+                        // 从当前位置（包含处于某条边中间的情况）规划到达 targetNodeId 的最短路径
+                        var plan = worldGraph.PlanFromPosition(
+                            aggregate.World.EdgeId,
+                            aggregate.World.EdgeProgress,
+                            aggregate.World.NodeId,
+                            targetNodeId);
+
+                        if (plan.Segments.Count == 0 && plan.TotalTravelSeconds <= 0)
+                        {
+                            if (worldGraph.TryGetNode(targetNodeId, out var targetNodeObj))
+                            {
+                                aggregate.TravelTo(targetNodeId, targetNodeObj.X, targetNodeObj.Y);
+                            }
+                            TouchDirtyOnly();
+                            break;
+                        }
+
+                        var travelState = new TravelActionState(
+                            targetNodeId,
+                            plan.TotalTravelSeconds,
+                            plan.EdgeIds,
+                            plan.Segments);
+
+                        var travelIntent = new ActionIntent(new ActionId("world.travel"), 1, targetNodeId);
+                        aggregate.EnqueuePriority(travelIntent, DateTimeOffset.UtcNow, actions, travelState);
+                        Touch();
                         break;
                     }
                     case "market.place":

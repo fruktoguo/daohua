@@ -1,3 +1,5 @@
+using Domain.World;
+
 namespace Domain.Simulation;
 
 /// <summary>
@@ -122,6 +124,12 @@ public static class SimulationEngine
                     throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
                 AdvanceCombatAction(player, action, definition, gameData, from, target, ref remainingSeconds,
                     ref deltas, ref events, ref completedActions, ref completedRepeats);
+                continue;
+            }
+            if (definition.ExecutionKind == ActionExecutionKind.Travel)
+            {
+                AdvanceTravelAction(player, action, definition, gameData, from, target, ref remainingSeconds,
+                    ref events, ref completedActions, ref completedRepeats);
                 continue;
             }
             var duration = definition.DurationSeconds;
@@ -449,6 +457,173 @@ public static class SimulationEngine
     {
         events ??= new List<SimulationEvent>();
         events.Add(new SimulationEvent(at, code, message, actionId));
+    }
+
+    /// <summary>
+    /// 纯确定性推进移动行动。逐边段平滑累积行进进度与坐标插值，并在抵达终点时完成结算出队与触发到达事件。
+    /// </summary>
+    private static void AdvanceTravelAction(
+        PlayerAggregate player,
+        QueuedAction action,
+        ActionDefinition definition,
+        GameDataCatalog? gameData,
+        DateTimeOffset from,
+        DateTimeOffset target,
+        ref double remainingSeconds,
+        ref List<SimulationEvent>? events,
+        ref double completedActions,
+        ref double completedRepeats)
+    {
+        var worldGraph = gameData?.WorldGraph;
+        var travel = action.Travel;
+
+        // 如果 travel 状态为空，基于当前玩家位置和意图目标节点进行自愈规划
+        if (travel is null)
+        {
+            var targetNodeId = action.Intent.TargetNodeId ?? player.World.NodeId;
+            if (worldGraph is not null && worldGraph.ContainsNode(targetNodeId))
+            {
+                var plan = worldGraph.PlanFromPosition(
+                    player.World.EdgeId,
+                    player.World.EdgeProgress,
+                    player.World.NodeId,
+                    targetNodeId);
+                travel = new TravelActionState(
+                    targetNodeId,
+                    plan.TotalTravelSeconds,
+                    plan.EdgeIds,
+                    plan.Segments);
+                action.Travel = travel;
+            }
+            else
+            {
+                player.RemoveAction(action.Id, incrementVersion: false);
+                events ??= new List<SimulationEvent>();
+                events.Add(new SimulationEvent(
+                    from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                    "action.invalid-dropped",
+                    $"移动行动 {definition.Name} 目标节点无效，已自动移出队列。",
+                    definition.Id));
+                return;
+            }
+        }
+
+        if (travel.TotalDurationSeconds <= 0 || travel.Segments.Count == 0)
+        {
+            FinishTravel(player, action, definition, travel, from, target, ref remainingSeconds,
+                ref events, ref completedActions, ref completedRepeats, worldGraph);
+            return;
+        }
+
+        var travelRemaining = Math.Max(0, travel.TotalDurationSeconds - travel.ProgressSeconds);
+        var step = Math.Min(remainingSeconds, travelRemaining);
+        if (step <= 0)
+        {
+            FinishTravel(player, action, definition, travel, from, target, ref remainingSeconds,
+                ref events, ref completedActions, ref completedRepeats, worldGraph);
+            return;
+        }
+
+        remainingSeconds -= step;
+
+        var segIndex = travel.CurrentSegmentIndex;
+        var segElapsed = travel.SegmentElapsedSeconds;
+        var progressSec = travel.ProgressSeconds;
+        var toAdvance = step;
+
+        while (toAdvance > 0 && segIndex < travel.Segments.Count)
+        {
+            var seg = travel.Segments[segIndex];
+            var segRemaining = Math.Max(0, seg.DurationSeconds - segElapsed);
+            var segStep = Math.Min(toAdvance, segRemaining);
+            segElapsed += segStep;
+            progressSec += segStep;
+            toAdvance -= segStep;
+
+            if (segElapsed + 1e-9 >= seg.DurationSeconds)
+            {
+                segIndex++;
+                segElapsed = 0;
+            }
+        }
+
+        action.ProgressSeconds = progressSec;
+        action.Travel = travel with
+        {
+            CurrentSegmentIndex = segIndex,
+            SegmentElapsedSeconds = segElapsed,
+            ProgressSeconds = progressSec
+        };
+
+        if (segIndex < travel.Segments.Count)
+        {
+            var currentSeg = travel.Segments[segIndex];
+            var segRatio = currentSeg.DurationSeconds > 0
+                ? Math.Clamp(segElapsed / currentSeg.DurationSeconds, 0, 1)
+                : 1d;
+            var edgeProg = currentSeg.StartProgress + (currentSeg.EndProgress - currentSeg.StartProgress) * segRatio;
+            player.World.EdgeId = currentSeg.EdgeId;
+            player.World.EdgeProgress = Math.Clamp(edgeProg, 0, 1);
+
+            if (worldGraph is not null && worldGraph.TryGetEdge(currentSeg.EdgeId, out var edgeObj))
+            {
+                if (worldGraph.TryGetNode(edgeObj.FromNodeId, out var fromNode)
+                    && worldGraph.TryGetNode(edgeObj.ToNodeId, out var toNode))
+                {
+                    player.World.X = fromNode.X + (toNode.X - fromNode.X) * player.World.EdgeProgress;
+                    player.World.Y = fromNode.Y + (toNode.Y - fromNode.Y) * player.World.EdgeProgress;
+                }
+            }
+
+            player.MarkDirty(PlayerSectionKind.World);
+            player.MarkDirty(PlayerSectionKind.ActionQueue);
+        }
+        else
+        {
+            FinishTravel(player, action, definition, travel, from, target, ref remainingSeconds,
+                ref events, ref completedActions, ref completedRepeats, worldGraph);
+        }
+    }
+
+    private static void FinishTravel(
+        PlayerAggregate player,
+        QueuedAction action,
+        ActionDefinition definition,
+        TravelActionState travel,
+        DateTimeOffset from,
+        DateTimeOffset target,
+        ref double remainingSeconds,
+        ref List<SimulationEvent>? events,
+        ref double completedActions,
+        ref double completedRepeats,
+        WorldGraph? worldGraph)
+    {
+        player.World.NodeId = travel.TargetNodeId;
+        player.World.EdgeId = null;
+        player.World.EdgeProgress = 0;
+
+        var nodeName = travel.TargetNodeId;
+        if (worldGraph is not null && worldGraph.TryGetNode(travel.TargetNodeId, out var targetNode))
+        {
+            player.World.X = targetNode.X;
+            player.World.Y = targetNode.Y;
+            nodeName = targetNode.Name;
+        }
+
+        player.MarkDirty(PlayerSectionKind.World);
+        player.RemoveAction(action.Id, incrementVersion: false);
+        player.MarkDirty(PlayerSectionKind.ActionQueue);
+
+        completedActions += 1;
+        completedRepeats += 1;
+
+        var arrivalTime = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
+        events ??= new List<SimulationEvent>();
+        events.Add(new SimulationEvent(
+            arrivalTime,
+            "world.arrived",
+            $"已抵达地点：{nodeName}。",
+            definition.Id));
     }
 
     private static long CreateSeed(string encounterId, double completedRepeats)

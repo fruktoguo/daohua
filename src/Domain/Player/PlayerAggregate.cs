@@ -1,3 +1,5 @@
+using Domain.World;
+
 namespace Domain.Player;
 
 /// <summary>
@@ -41,9 +43,13 @@ public sealed class PlayerWorldState
 {
     /// <summary>当前所在世界地图节点 ID</summary>
     public string NodeId { get; set; } = "node.yunxi-village";
-    /// <summary>节点内局部坐标 X</summary>
+    /// <summary>当前正在通行的世界边 ID（未处于边上时为空）</summary>
+    public string? EdgeId { get; set; }
+    /// <summary>当前在边上的归一化行进进度 [0, 1]</summary>
+    public double EdgeProgress { get; set; }
+    /// <summary>节点内或边上插值坐标 X</summary>
     public double X { get; set; }
-    /// <summary>节点内局部坐标 Y</summary>
+    /// <summary>节点内或边上插值坐标 Y</summary>
     public double Y { get; set; }
     /// <summary>迷雾探索与随机掉落种子</summary>
     public double ExplorationSeed { get; set; }
@@ -182,6 +188,8 @@ public sealed class QueuedAction
     public double CompletedRepeats { get; internal set; }
     /// <summary>战斗行动当前远征阶段；普通行动保持为空。</summary>
     public CombatExpeditionState? Expedition { get; internal set; }
+    /// <summary>移动行动当前路径与路段行进状态；普通行动保持为空。</summary>
+    public TravelActionState? Travel { get; internal set; }
 
     /// <summary>深拷贝当前行动状态副本</summary>
     public QueuedAction Clone() => new(Id, Intent, EnqueuedAt)
@@ -190,7 +198,8 @@ public sealed class QueuedAction
         ProgressSeconds = ProgressSeconds,
         RemainingRepeats = RemainingRepeats,
         CompletedRepeats = CompletedRepeats,
-        Expedition = Expedition
+        Expedition = Expedition,
+        Travel = Travel
     };
 }
 
@@ -355,6 +364,60 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
+    /// 高优先级插入行动到队列首位（Index 0），专用于 world.travel 移动行动。
+    /// 原队首正在执行的行动保留已有进度挂起（状态置为 Pending），待移动完成后自动继续。
+    /// 若队列中已有旧的同类行动（如 world.travel），则先行移出替换。
+    /// </summary>
+    public QueuedAction EnqueuePriority(
+        ActionIntent intent,
+        DateTimeOffset now,
+        ActionCatalog catalog,
+        TravelActionState? travel = null)
+    {
+        ArgumentNullException.ThrowIfNull(catalog);
+        if (intent is null || !intent.ActionId.IsValid)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
+        if (!catalog.Contains(intent.ActionId))
+            throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
+
+        // 移除现存的同类行动（保持 world.travel 唯一）
+        for (var i = _actions.Count - 1; i >= 0; i--)
+        {
+            if (_actions[i].Intent.ActionId == intent.ActionId)
+            {
+                _actions.RemoveAt(i);
+            }
+        }
+
+        if (_actions.Count >= MaxActionQueueLength)
+            throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
+
+        // 原首位行动若正在运行，挂起为 Pending，已有 ProgressSeconds 完整保留
+        if (_actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Running)
+        {
+            _actions[0].Status = ActionQueueStatus.Pending;
+        }
+
+        var normalizedIntent = new ActionIntent(
+            intent.ActionId,
+            1,
+            intent.TargetNodeId,
+            intent.Parameters is null
+                ? null
+                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)));
+
+        var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now)
+        {
+            Travel = travel,
+            Status = ActionQueueStatus.Pending
+        };
+
+        _actions.Insert(0, action);
+        Touch(PlayerSectionKind.ActionQueue);
+        return action;
+    }
+
+    /// <summary>
     /// 从队列中显式取消/移除指定行动实例。
     /// </summary>
     public bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true)
@@ -413,8 +476,12 @@ public sealed partial class PlayerAggregate
         if (string.IsNullOrWhiteSpace(nodeId) || nodeId.Length > 128 || !double.IsFinite(x) || !double.IsFinite(y))
             throw new DomainException(DomainErrorCode.InvalidArgument, "目标世界节点无效。");
         var normalized = nodeId.Trim();
-        if (string.Equals(World.NodeId, normalized, StringComparison.Ordinal) && World.X == x && World.Y == y) return;
+        if (string.Equals(World.NodeId, normalized, StringComparison.Ordinal)
+            && string.IsNullOrWhiteSpace(World.EdgeId)
+            && World.X == x && World.Y == y) return;
         World.NodeId = normalized;
+        World.EdgeId = null;
+        World.EdgeProgress = 0;
         World.X = x;
         World.Y = y;
         Touch(PlayerSectionKind.World);

@@ -161,7 +161,55 @@ public static class ProtocolSnapshotMapper
         yield return (PlayerSectionKinds.Buffs, state.Buffs);
         yield return (PlayerSectionKinds.Loadout, new { state.EquippedInstances, state.EquippedItemIds, state.LearnedAbilities });
         yield return (PlayerSectionKinds.Settings, new { state.Settings, state.Presence });
-        yield return (PlayerSectionKinds.ActionQueue, state.Actions);
+        yield return (PlayerSectionKinds.ActionQueue, ToActionQueueSection(state.Actions, gameData));
+    }
+
+    private static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData)
+    {
+        if (actions is null || actions.Count == 0) return [];
+        var result = new object[actions.Count];
+        for (var i = 0; i < actions.Count; i++)
+        {
+            var action = actions[i];
+            var def = gameData?.Actions.Contains(action.Intent.ActionId) == true
+                ? gameData.Actions.Get(action.Intent.ActionId)
+                : null;
+            var executionKind = def?.ExecutionKind switch
+            {
+                ActionExecutionKind.CombatEncounter => "combat-encounter",
+                ActionExecutionKind.Travel => "travel",
+                _ => "timed"
+            };
+            var durationSeconds = action.Travel is not null
+                ? action.Travel.TotalDurationSeconds
+                : (def?.DurationSeconds ?? 0);
+
+            result[i] = new
+            {
+                id = action.Id,
+                intent = action.Intent,
+                enqueuedAt = action.EnqueuedAt,
+                status = (byte)action.Status,
+                progressSeconds = action.ProgressSeconds,
+                durationSeconds,
+                remainingRepeats = action.RemainingRepeats,
+                completedRepeats = action.CompletedRepeats,
+                executionKind,
+                combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
+                expedition = action.Expedition,
+                travel = action.Travel,
+                travelDestinationNodeId = action.Travel?.TargetNodeId ?? action.Intent.TargetNodeId,
+                travelPathEdgeIds = action.Travel?.PathEdgeIds,
+                travelSegments = action.Travel?.Segments.Select(s => new
+                {
+                    edgeId = s.EdgeId,
+                    startProgress = s.StartProgress,
+                    endProgress = s.EndProgress,
+                    durationSeconds = s.DurationSeconds
+                })
+            };
+        }
+        return result;
     }
 
     private static object ToWorldSection(PlayerWorldStateDocument world, GameDataCatalog? gameData)
@@ -196,22 +244,26 @@ public static class ProtocolSnapshotMapper
             }
         }
 
-        var x = hasNode ? ReadDouble(node, "x", world.X) : world.X;
-        var y = hasNode ? ReadDouble(node, "y", world.Y) : world.Y;
+        var edgeId = world.EdgeId;
+        var edgeProgress = world.EdgeProgress;
+        var x = !string.IsNullOrWhiteSpace(edgeId) ? world.X : (hasNode ? ReadDouble(node, "x", world.X) : world.X);
+        var y = !string.IsNullOrWhiteSpace(edgeId) ? world.Y : (hasNode ? ReadDouble(node, "y", world.Y) : world.Y);
         return new
         {
             mapId = hasMap ? ReadString(map, "id", "map.qingyun-mountains") : "map.qingyun-mountains",
-            nodeId = world.NodeId,
-            edgeId = (string?)null,
-            edgeProgress = 0d,
+            nodeId = !string.IsNullOrWhiteSpace(edgeId) ? null : world.NodeId,
+            edgeId,
+            edgeProgress,
             x,
             y,
-            locationName = hasNode ? ReadString(node, "name", world.NodeId) : world.NodeId,
+            locationName = !string.IsNullOrWhiteSpace(edgeId)
+                ? "旅途中"
+                : (hasNode ? ReadString(node, "name", world.NodeId) : world.NodeId),
             cultivationMultiplier = hasNode ? ReadDouble(node, "cultivationMultiplier", 1) : 1d,
-            availableActionIds = ReadStringArray(node, "availableActionIds"),
-            encounterIds = ReadStringArray(node, "encounterIds"),
-            npcs = ReadEntities(node, "npcs"),
-            buildings = ReadEntities(node, "buildings"),
+            availableActionIds = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<string>() : ReadStringArray(node, "availableActionIds"),
+            encounterIds = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<string>() : ReadStringArray(node, "encounterIds"),
+            npcs = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "npcs"),
+            buildings = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "buildings"),
             minBudget = ReadDoubleNullable(node, "minBudget"),
             maxBudget = ReadDoubleNullable(node, "maxBudget"),
             eliteInterval = ReadDoubleNullable(node, "eliteInterval"),

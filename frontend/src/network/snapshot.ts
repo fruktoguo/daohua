@@ -23,6 +23,7 @@ import type {
   QueueEntry,
   QueueState,
   Stats,
+  TravelSegment,
   WorldState,
 } from '../game/types'
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
@@ -272,6 +273,23 @@ function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
   return autoUseSlots
 }
 
+function mapTravelSegments(value: unknown): TravelSegment[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const segments: TravelSegment[] = []
+  for (const item of value) {
+    const s = object(item)
+    const edgeId = stringValue(s.edgeId)
+    if (!edgeId) continue
+    segments.push({
+      edgeId,
+      startProgress: numberValue(s.startProgress, 0),
+      endProgress: numberValue(s.endProgress, 1),
+      durationSeconds: numberValue(s.durationSeconds, 0),
+    })
+  }
+  return segments.length > 0 ? segments : null
+}
+
 function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState): QueueState {
   if (!Array.isArray(value)) throw new Error('action_queue section 载荷必须是数组。')
   if (settingsValue && (typeof settingsValue.loopEnabled !== 'boolean' || !Array.isArray(settingsValue.autoUseSlots))) {
@@ -296,6 +314,16 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     const combatEncounterId = row.combatEncounterId === undefined
       ? definition?.combatEncounterId ?? expedition?.encounterId ?? null
       : optionalString(row.combatEncounterId, `行动 ${actionId} 的 combatEncounterId`)
+    const durationSeconds = typeof row.durationSeconds === 'number' && Number.isFinite(row.durationSeconds) && row.durationSeconds >= 0
+      ? row.durationSeconds
+      : (definition?.durationSeconds ?? 0)
+    const travelDestinationNodeId = typeof row.travelDestinationNodeId === 'string' && row.travelDestinationNodeId.length > 0
+      ? row.travelDestinationNodeId
+      : (stringValue(intent.targetNodeId) || null)
+    const travelPathEdgeIds = Array.isArray(row.travelPathEdgeIds)
+      ? row.travelPathEdgeIds.map(id => stringValue(id)).filter(id => id.length > 0)
+      : null
+    const travelSegments = mapTravelSegments(row.travelSegments)
     const entry: QueueEntry = {
       entryId,
       actionId,
@@ -303,13 +331,13 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       type: definition?.type ?? 'cultivation',
       status,
       progressSeconds: numberValue(row.progressSeconds),
-      durationSeconds: definition?.durationSeconds ?? 0,
+      durationSeconds,
       remainingRepeats: numberValue(row.remainingRepeats, numberValue(intent.repeatCount, 1)),
       executionKind,
       combatEncounterId,
-      travelDestinationNodeId: stringValue(intent.targetNodeId) || null,
-      travelPathEdgeIds: null,
-      travelSegments: null,
+      travelDestinationNodeId,
+      travelPathEdgeIds,
+      travelSegments,
       expedition,
     }
     return entry
@@ -405,15 +433,17 @@ function mapLoadout(value: unknown): CombatLoadout {
 
 function mapWorld(value: unknown): WorldState {
   const row = object(value)
-  const nodeId = stringValue(row.nodeId, 'node.yunxi-village')
+  const edgeId = typeof row.edgeId === 'string' && row.edgeId.length > 0 ? row.edgeId : null
+  const nodeId = edgeId ? null : (typeof row.nodeId === 'string' && row.nodeId.length > 0 ? row.nodeId : 'node.yunxi-village')
+  const edgeProgress = numberValue(row.edgeProgress, 0)
   return {
     mapId: stringValue(row.mapId, 'map.qingyun-mountains'),
     nodeId,
-    edgeId: null,
-    edgeProgress: 0,
+    edgeId,
+    edgeProgress,
     x: numberValue(row.x, 20),
     y: numberValue(row.y, 65),
-    locationName: stringValue(row.locationName, nodeId),
+    locationName: stringValue(row.locationName, nodeId ?? '旅途中'),
     cultivationMultiplier: numberValue(row.cultivationMultiplier, 1),
     availableActionIds: [],
     encounterIds: [],

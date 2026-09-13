@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Domain.World;
 
 namespace Domain.GameData;
 
@@ -118,12 +119,13 @@ public sealed class ActionCatalog
         ? definition
         : throw new DomainException(DomainErrorCode.NotFound, $"行动 {id} 不存在。");
 
-    /// <summary>内置默认基础行动集（引气入体、采药、炼丹）</summary>
+    /// <summary>内置默认基础行动集（引气入体、采药、炼丹、移动赶路）</summary>
     public static ActionCatalog Default { get; } = new(
     [
         new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1.0, 10.0),
         new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 }),
-        new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 }, new Dictionary<ItemId, double> { [new ItemId("item.qi-gathering-pill")] = 1 })
+        new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 }, new Dictionary<ItemId, double> { [new ItemId("item.qi-gathering-pill")] = 1 }),
+        new(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 0, 0, null, true, ActionExecutionKind.Travel)
     ]);
 
     private static void Validate(ActionDefinition definition)
@@ -173,7 +175,8 @@ public sealed class GameDataCatalog
         IReadOnlyDictionary<string, JsonElement>? rawItems = null,
         IReadOnlyDictionary<string, JsonElement>? rawEquipments = null,
         IReadOnlyDictionary<string, CombatMonsterDefinition>? combatMonsters = null,
-        IReadOnlyDictionary<string, CombatEncounterDefinition>? combatEncounters = null)
+        IReadOnlyDictionary<string, CombatEncounterDefinition>? combatEncounters = null,
+        WorldGraph? worldGraph = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -191,6 +194,7 @@ public sealed class GameDataCatalog
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
+        WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
         foreach (var action in Actions.All)
         {
             if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
@@ -210,6 +214,8 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<ItemId, ItemDefinition> Items { get; }
     /// <summary>地图原始定义由宿主映射为协议 DTO；领域只负责持有经过资源解析的不可变 JSON 值。</summary>
     public IReadOnlyList<JsonElement> Maps { get; }
+    /// <summary>由配表 Maps 解析构建的世界拓扑图</summary>
+    public WorldGraph WorldGraph { get; }
     /// <summary>遭遇原始定义由宿主映射为协议 DTO。</summary>
     public IReadOnlyList<JsonElement> Encounters { get; }
     /// <summary>怪物原始定义，用于解析遭遇中的 enemyId 引用。</summary>
@@ -517,5 +523,64 @@ public sealed class GameDataCatalog
             if (!normalized.TryAdd(id, definition)) throw new DomainException(DomainErrorCode.Duplicate, $"重复物品定义：{id}。");
         }
         return new ReadOnlyDictionary<ItemId, ItemDefinition>(normalized);
+    }
+
+    private static WorldGraph BuildWorldGraph(IReadOnlyList<JsonElement> maps)
+    {
+        var graph = new WorldGraph();
+        if (maps is null || maps.Count == 0) return graph;
+
+        for (var m = 0; m < maps.Count; m++)
+        {
+            var map = maps[m];
+            if (map.ValueKind != JsonValueKind.Object) continue;
+
+            if (map.TryGetProperty("nodes", out var nodesElement) && nodesElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var n in nodesElement.EnumerateArray())
+                {
+                    if (n.ValueKind != JsonValueKind.Object) continue;
+                    var id = n.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                    var name = n.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : id;
+                    var x = n.TryGetProperty("x", out var xProp) && xProp.TryGetDouble(out var px) ? px : 0;
+                    var y = n.TryGetProperty("y", out var yProp) && yProp.TryGetDouble(out var py) ? py : 0;
+                    if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name)) continue;
+                    if (!graph.ContainsNode(id))
+                    {
+                        graph.AddNode(WorldNode.Create(id, name, x, y));
+                    }
+                }
+            }
+
+            if (map.TryGetProperty("edges", out var edgesElement) && edgesElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in edgesElement.EnumerateArray())
+                {
+                    if (e.ValueKind != JsonValueKind.Object) continue;
+                    var id = e.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                    var from = e.TryGetProperty("fromNodeId", out var fromProp) ? fromProp.GetString() : null;
+                    var to = e.TryGetProperty("toNodeId", out var toProp) ? toProp.GetString() : null;
+                    var duration = e.TryGetProperty("durationSeconds", out var dProp) && dProp.TryGetDouble(out var pd) ? pd : 1;
+                    if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)) continue;
+                    if (duration <= 0) duration = 1;
+
+                    var distance = duration;
+                    if (graph.TryGetNode(from, out var fromNode) && graph.TryGetNode(to, out var toNode))
+                    {
+                        var dx = toNode.X - fromNode.X;
+                        var dy = toNode.Y - fromNode.Y;
+                        var euc = Math.Sqrt(dx * dx + dy * dy);
+                        if (euc > 0 && double.IsFinite(euc)) distance = euc;
+                    }
+
+                    if (!graph.ContainsEdge(id))
+                    {
+                        graph.AddUndirectedEdge(WorldEdge.Create(id, from, to, distance, duration));
+                    }
+                }
+            }
+        }
+
+        return graph;
     }
 }
