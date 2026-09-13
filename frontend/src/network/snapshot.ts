@@ -300,6 +300,8 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     const intent = object(row.intent)
     const actionId = identifierValue(intent.actionId, '行动 actionId')
     const definition = resolveActionDefinition(actionId)
+    const serverActionName = optionalString(row.actionName, `行动 ${actionId} 的 actionName`)
+    const serverActionType = optionalString(row.actionType, `行动 ${actionId} 的 actionType`)
     const statusRaw = row.status
     const status = statusRaw === 0 ? 'queued' : statusRaw === 1 ? 'running' : statusRaw === 2 ? 'blocked' : (() => { throw new Error(`行动 ${actionId} 状态无效。`) })()
     const entryId = stringValue(row.id)
@@ -324,11 +326,13 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       ? row.travelPathEdgeIds.map(id => stringValue(id)).filter(id => id.length > 0)
       : null
     const travelSegments = mapTravelSegments(row.travelSegments)
+    const actionName = serverActionName || definition?.name || actionId
+    const type = definition?.type || (ACTION_TYPES.includes(serverActionType as ActionType) ? (serverActionType as ActionType) : undefined) || 'cultivation'
     const entry: QueueEntry = {
       entryId,
       actionId,
-      actionName: definition?.name ?? actionId,
-      type: definition?.type ?? 'cultivation',
+      actionName,
+      type,
       status,
       progressSeconds: numberValue(row.progressSeconds),
       durationSeconds,

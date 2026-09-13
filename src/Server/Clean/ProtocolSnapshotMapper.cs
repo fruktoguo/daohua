@@ -164,7 +164,7 @@ public static class ProtocolSnapshotMapper
         yield return (PlayerSectionKinds.ActionQueue, ToActionQueueSection(state.Actions, gameData));
     }
 
-    private static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData)
+    public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData)
     {
         if (actions is null || actions.Count == 0) return [];
         var result = new object[actions.Count];
@@ -183,11 +183,15 @@ public static class ProtocolSnapshotMapper
             var durationSeconds = action.Travel is not null
                 ? action.Travel.TotalDurationSeconds
                 : (def?.DurationSeconds ?? 0);
+            var actionName = def?.Name ?? (action.Travel is not null ? "赶路" : null);
+            var actionType = (def?.Kind ?? (action.Travel is not null ? ActionKind.Travel : ActionKind.Cultivation)).ToString().ToLowerInvariant();
 
             result[i] = new
             {
                 id = action.Id,
                 intent = action.Intent,
+                actionName,
+                actionType,
                 enqueuedAt = action.EnqueuedAt,
                 status = (byte)action.Status,
                 progressSeconds = action.ProgressSeconds,

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { gameClient } from '../network/gameClient'
-import { resolveActionDefinitions } from './ids'
+import { findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
 import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
 /**
@@ -267,7 +267,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
   notice: null,
   setConnection: (connection) => set({ connection }),
   setNotice: (notice) => set({ notice }),
-  setActions: (actions) => set({ actions }),
+  setActions: (actions) => {
+    registerCatalogActions(actions)
+    set((state) => {
+      let entriesChanged = false
+      const updatedEntries = state.queue.entries.map(entry => {
+        if (!entry.actionName || entry.actionName === entry.actionId) {
+          const def = findActionInCatalog(actions, entry.actionId) ?? resolveActionDefinition(entry.actionId)
+          if (def && (def.name !== entry.actionName || def.type !== entry.type)) {
+            entriesChanged = true
+            return {
+              ...entry,
+              actionName: def.name || entry.actionName,
+              type: def.type || entry.type,
+            }
+          }
+        }
+        return entry
+      })
+
+      return {
+        actions,
+        queue: entriesChanged ? { ...state.queue, entries: updatedEntries } : state.queue,
+      }
+    })
+  },
   setItems: (items) => set({ items }),
   setAbilities: (abilities) => set({ abilities }),
   setEncounters: (encounters) => set({ encounters }),

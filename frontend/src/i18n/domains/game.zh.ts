@@ -70,12 +70,68 @@ export const gameZh = {
       currency: '通宝',
     },
     action: {
+      // 修炼
       'cultivation.draw-qi': { name: '引气入体', description: '吐纳周天，凝聚一缕灵气，增长修为与灵力。' },
+
+      // 采集
       'explore.gather-ningxue-grass': { name: '采摘 凝血草', description: '在幽深背阴的百草谷采摘暗红的凡阶凝血草。' },
       'explore.chop-peach-wood': { name: '采伐 桃木', description: '在落霞阳坡采伐带有微弱纯阳灵气的坚韧古桃木。' },
       'explore.mine-dark-iron': { name: '挖掘 乌铁矿', description: '在清石水滩露天砂石层中开采沉重致密的乌铁原矿。' },
+      'explore.collect-morning-dew': { name: '收集 晨露', description: '破晓时分在漱玉溪边草木叶尖汲取纯净无根晨露。' },
+      'explore.gather-banling-flower': { name: '采摘 伴灵花', description: '在腐生古冢死气聚集处采摘吸纳死气伴生的伴灵异花。' },
+      'explore.chop-yinlingsong': { name: '采伐 引灵松', description: '在畸木焦林采伐吸收星火异气的坚韧引灵松。' },
+      'explore.mine-crimson-copper': { name: '开采 赤铜矿', description: '在荧石铜渊地底深处开采滚烫温热的赤铜矿石。' },
+
+      // 赶路
+      'world.travel': { name: '赶路', description: '沿已规划的山道前往目标地点。' },
+
+      // 炼丹
       'alchemy.refine-qi-pill': { name: '引气丹', description: '以凝血草与清澈晨露炼制而成的基础引气灵丹，可略微加快吐纳效率。' },
       'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝血草炼制而成的凡阶止血散剂，可迅速闭合寻常外伤创口。' },
+      'alchemy.refine-shunqi-pill': { name: '顺气丸', description: '以草木精华与伴灵花炼制的调息灵丸，可抚平体内翻涌气血，加速灵力恢复。' },
+      'alchemy.refine-tongmai-pill': { name: '通脉丹', description: '以伴灵精华与妖核淬炼而成的通脉灵丹，药力直透经络百骸，大益周天行气。' },
+
+      // 精炼加工
+      'craft.refine-iron': { name: '百炼铁', description: '千锤百炼去除凡火杂质，精炼高纯乌铁。' },
+      'craft.refine-peach-wood-crystal': { name: '桃木晶', description: '萃取百年桃木纯阳精华凝聚为晶。' },
+      'craft.extract-herb-essence': { name: '草木精华', description: '融合凝血草与清晨甘露萃取的草木生机精华。' },
+      'craft.refine-copper': { name: '赤铜精', description: '地火精炼赤铜矿石，去除顽石杂质。' },
+      'craft.refine-spirit-pine-crystal': { name: '灵松晶', description: '淬炼引灵松木凝结的青翠树芯灵晶。' },
+      'craft.extract-banling-essence': { name: '伴灵精华', description: '萃取伴灵花幽蓝灵机与清晨甘露融炼的纯净灵液。' },
+
+      // 锻造装备 (一阶)
+      'forge.qingfeng-sword': { name: '青锋剑', description: '以百炼铁与兽骨精铸的三尺长剑，剑身青光澄澈。' },
+      'forge.pishan-blade': { name: '劈山刀', description: '以百炼铁与兽骨打造的厚重朴刀，势大力沉。' },
+      'forge.shufa-scarf': { name: '束发巾', description: '以百炼铁与兽皮编织的武行束发头巾，简朴干练。' },
+      'forge.baina-armor': { name: '百衲甲', description: '以百炼铁与兽皮拼接缝制的护身短甲，结实耐磨。' },
+      'forge.zhakou-pants': { name: '扎口裤', description: '以百炼铁与兽皮剪裁的利落劲装短裤，便于翻山越岭。' },
+      'forge.xingshan-boots': { name: '行山靴', description: '以百炼铁与兽皮制成的行山短靴，行走落足无声。' },
+      'forge.shouya-pendant': { name: '兽牙坠', description: '以百炼铁穿系凶兽尖牙制成的项坠，野性十足。' },
+      'forge.jiujie-staff': { name: '九节杖', description: '以桃木晶与破碎灵核炼制的道家法杖，通体温润。' },
+      'forge.suxin-zither': { name: '素心琴', description: '以桃木晶与破碎灵核制成的七弦古琴，音质清越素雅。' },
+      'forge.hunyuan-scarf': { name: '混元巾', description: '以桃木晶与破碎灵核炼制的静心道巾，轻柔透气。' },
+      'forge.suma-robe': { name: '素麻袍', description: '以桃木晶与兽皮编织的宽松道袍，宽袖飘逸。' },
+      'forge.xingqi-pants': { name: '行气裤', description: '以桃木晶与兽皮缝制的练功长裤，利于周天行气。' },
+      'forge.shifang-shoes': { name: '十方鞋', description: '以桃木晶与兽皮纳制的轻便道鞋，鞋底轻软舒适。' },
+      'forge.taomu-talisman': { name: '桃木符', description: '以桃木晶与破碎灵核雕琢的辟邪木符，草木幽香内蕴。' },
+
+      // 锻造装备 (二阶)
+      'forge.pogang-sword': { name: '破罡剑', description: '融入赤铜精与兽牙重铸青锋剑而成的破罡利刃。' },
+      'forge.zhansha-blade': { name: '斩煞刀', description: '融入赤铜精与兽牙重铸劈山刀而成的煞气重刀。' },
+      'forge.chijin-helmet': { name: '赤金盔', description: '以赤铜精与兽牙重铸束发巾打造的金光护盔。' },
+      'forge.yulin-armor': { name: '鱼鳞甲', description: '以赤铜精与兽牙重铸百衲甲编缀而成的赤铜鳞甲。' },
+      'forge.tazhen-greaves': { name: '踏阵胫', description: '以赤铜精与兽牙重铸扎口裤打造的防冲撞胫甲。' },
+      'forge.tashan-boots': { name: '踏山靴', description: '以赤铜精与兽牙重铸行山靴打造的沉稳重靴。' },
+      'forge.chiwen-ring': { name: '赤纹戒', description: '以赤铜精与兽牙重铸兽牙坠炼制的灵戒。' },
+      'forge.chaoyuan-staff': { name: '朝元杖', description: '以灵松晶与残魄灵符重铸九节杖升华的祥云长杖。' },
+      'forge.songfeng-zither': { name: '松风琴', description: '以灵松晶与残魄灵符重铸素心琴升华的幽林松风琴。' },
+      'forge.ziwu-crown': { name: '子午冠', description: '以灵松晶与残魄灵符重铸混元巾炼制的玉质道冠。' },
+      'forge.pichen-shirt': { name: '辟尘衫', description: '以灵松晶与火羽重铸素麻袍织就的不染法衣。' },
+      'forge.liuyun-skirt': { name: '流云裳', description: '以灵松晶与火羽重铸行气裤织就的飘逸下裳。' },
+      'forge.bichen-shoes': { name: '避尘履', description: '以灵松晶与火羽重铸十方鞋制成的乘风法履。' },
+      'forge.juling-pendant': { name: '聚灵佩', description: '以灵松晶与残魄灵符重铸桃木符雕琢的聚灵玉佩。' },
+
+      // 讨伐战斗
       'combat.hunt-qi-beast': { name: '讨伐 青云仙山', description: '在青云仙山各处搜寻妖兽踪迹，迎战山野灵物与守山妖兽。' },
       'combat.sweep-twilight-valley': { name: '讨伐 星陨异境', description: '深入星陨异境搜寻妖兽踪迹，迎战妖狼、火鸦与变异尸煞。' },
     },

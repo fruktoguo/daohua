@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { findEncounterInCatalog, findItemInCatalog, resolveItemMetadata } from '../game/ids'
+import { findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
 import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionProgress, QueueEntry } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
@@ -13,6 +13,14 @@ import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { BASELINE_COMBAT_ATTRIBUTES } from '../game/combatConstants'
 import { CharacterAvatar } from './CharacterAvatar'
+
+function resolveQueueEntryDisplayName(entry: QueueEntry | null | undefined, fallback?: string): string {
+  if (!entry) return fallback || ''
+  if (entry.actionName && entry.actionName !== entry.actionId) {
+    return entry.actionName
+  }
+  return resolveActionDefinition(entry.actionId)?.name || entry.actionName || fallback || ''
+}
 
 /** 资源条数值变动特效记录（跳字与血条破裂碎片） */
 interface ResourceEffect {
@@ -780,7 +788,7 @@ function ArenaLifeGoalCard({
   const isExploration = queueEntry?.type === 'exploration'
 
   const title = isAlchemy ? t('combat.life.titleAlchemy') : isCultivation ? t('combat.life.titleCultivation') : isExploration ? t('combat.life.titleExploration') : t('combat.life.titleDefault')
-  const actionName = queueEntry?.actionName || actionDef?.name || t('combat.life.fallbackActionName')
+  const actionName = resolveQueueEntryDisplayName(queueEntry, actionDef?.name) || actionDef?.name || t('combat.life.fallbackActionName')
   const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
   const remainingRepeats = queueEntry?.remainingRepeats ?? 0
   const repeats = isInfinite ? -1 : remainingRepeats
@@ -897,7 +905,7 @@ function ArenaTravelCard({
 }): React.JSX.Element {
   const t = useT()
   const expedition = queueEntry?.expedition
-  const actionName = queueEntry?.actionName || t('combat.travel.fallbackActionName')
+  const actionName = resolveQueueEntryDisplayName(queueEntry, t('combat.travel.fallbackActionName'))
   const destinationName = actionName.startsWith('赶往') ? actionName.slice(2).trim() : actionName
   const totalDistance = expedition?.totalDistance ?? 0
   const duration = Math.max(1, expedition?.durationSeconds || queueEntry?.durationSeconds || 1)
@@ -1194,7 +1202,7 @@ export const CombatArena = memo(function CombatArena({
       const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
       return {
         kind: 'cast',
-        name: current.actionName,
+        name: resolveQueueEntryDisplayName(current, current.actionName),
         durationMilliseconds: durMs,
         elapsedMilliseconds: currentElMs,
         completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - currentElMs),
@@ -1445,7 +1453,7 @@ export const CombatArena = memo(function CombatArena({
             onClick={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
             type="button"
           >
-            {t('combat.arena.stopCurrent', { name: current.actionName })}
+            {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName) })}
           </button>
         ) : availableActions.length > 0 ? (
           availableActions.map(action => (

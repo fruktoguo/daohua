@@ -17,75 +17,156 @@ export type ActionDefinitionCore = Omit<ActionDefinition, 'name' | 'description'
  * 静态兜底行动核心定义列表
  */
 const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
-  {
-    id: 'cultivation.draw-qi',
-    type: 'cultivation',
-    durationSeconds: 10,
-    outputs: {},
-  },
-  {
-    id: 'explore.gather-ningxue-grass',
-    type: 'exploration',
-    durationSeconds: 8,
-    outputs: { 'item.ningxue-grass': 3 },
-  },
-  {
-    id: 'explore.chop-peach-wood',
-    type: 'exploration',
-    durationSeconds: 6,
-    outputs: { 'item.peach-wood': 1 },
-  },
-  {
-    id: 'explore.mine-dark-iron',
-    type: 'exploration',
-    durationSeconds: 6,
-    outputs: { 'item.dark-iron': 1 },
-  },
-  {
-    id: 'alchemy.refine-qi-pill',
-    type: 'alchemy',
-    durationSeconds: 12,
-    inputs: { 'item.ningxue-grass': 3, 'item.morning-dew': 1 },
-    outputs: { 'item.qi-gathering-pill': 1 },
-  },
-  {
-    id: 'alchemy.refine-zhixue-powder',
-    type: 'alchemy',
-    durationSeconds: 10,
-    inputs: { 'item.ningxue-grass': 2 },
-    outputs: { 'item.zhixue-powder': 1 },
-  },
-  {
-    id: 'combat.hunt-qi-beast',
-    type: 'combat',
-    durationSeconds: 0,
-    executionKind: 'combat-encounter',
-    combatEncounterId: 'encounter.twilight-pass',
-  },
-  {
-    id: 'combat.sweep-twilight-valley',
-    type: 'combat',
-    durationSeconds: 0,
-    executionKind: 'combat-encounter',
-    combatEncounterId: 'encounter.twilight-valley',
-  },
+  // 修炼
+  { id: 'cultivation.draw-qi', type: 'cultivation', durationSeconds: 10, outputs: {} },
+
+  // 采集
+  { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, outputs: { 'item.ningxue-grass': 3 } },
+  { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, outputs: { 'item.peach-wood': 1 } },
+  { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, outputs: { 'item.dark-iron': 1 } },
+  { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, outputs: { 'item.morning-dew': 1 } },
+  { id: 'explore.gather-banling-flower', type: 'exploration', durationSeconds: 8, outputs: { 'item.banling-flower': 1 } },
+  { id: 'explore.chop-yinlingsong', type: 'exploration', durationSeconds: 8, outputs: { 'item.yinlingsong-wood': 1 } },
+  { id: 'explore.mine-crimson-copper', type: 'exploration', durationSeconds: 8, outputs: { 'item.crimson-copper': 1 } },
+
+  // 赶路
+  { id: 'world.travel', type: 'exploration', durationSeconds: 1, executionKind: 'travel', hiddenFromCatalog: true },
+
+  // 炼丹
+  { id: 'alchemy.refine-qi-pill', type: 'alchemy', durationSeconds: 12, inputs: { 'item.ningxue-grass': 3, 'item.morning-dew': 1 }, outputs: { 'item.qi-gathering-pill': 1 } },
+  { id: 'alchemy.refine-zhixue-powder', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2 }, outputs: { 'item.zhixue-powder': 1 } },
+  { id: 'alchemy.refine-shunqi-pill', type: 'alchemy', durationSeconds: 10, inputs: { 'item.herb-essence': 1, 'item.banling-flower': 1 }, outputs: { 'item.shunqi-pill': 1 } },
+  { id: 'alchemy.refine-tongmai-pill', type: 'alchemy', durationSeconds: 20, inputs: { 'item.banling-essence': 2, 'item.demon-core': 1 }, outputs: { 'item.tongmai-pill': 1 } },
+
+  // 精炼加工
+  { id: 'craft.refine-iron', type: 'alchemy', durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, outputs: { 'item.refined-iron': 1 } },
+  { id: 'craft.refine-peach-wood-crystal', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood': 3 }, outputs: { 'item.peach-wood-crystal': 1 } },
+  { id: 'craft.extract-herb-essence', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2, 'item.morning-dew': 1 }, outputs: { 'item.herb-essence': 1 } },
+  { id: 'craft.refine-copper', type: 'alchemy', durationSeconds: 15, inputs: { 'item.crimson-copper': 3 }, outputs: { 'item.refined-copper': 1 } },
+  { id: 'craft.refine-spirit-pine-crystal', type: 'alchemy', durationSeconds: 15, inputs: { 'item.yinlingsong-wood': 3 }, outputs: { 'item.spirit-pine-crystal': 1 } },
+  { id: 'craft.extract-banling-essence', type: 'alchemy', durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, outputs: { 'item.banling-essence': 1 } },
+
+  // 讨伐战斗
+  { id: 'combat.hunt-qi-beast', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-pass' },
+  { id: 'combat.sweep-twilight-valley', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-valley' },
+
+  // 锻造装备 (一阶)
+  { id: 'forge.qingfeng-sword', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, outputs: { 'equipment.qingfeng-sword': 1 } },
+  { id: 'forge.pishan-blade', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, outputs: { 'equipment.pishan-blade': 1 } },
+  { id: 'forge.shufa-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.shufa-scarf': 1 } },
+  { id: 'forge.baina-armor', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-hide': 1 }, outputs: { 'equipment.baina-armor': 1 } },
+  { id: 'forge.zhakou-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.zhakou-pants': 1 } },
+  { id: 'forge.xingshan-boots', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.xingshan-boots': 1 } },
+  { id: 'forge.shouya-pendant', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-bone': 1 }, outputs: { 'equipment.shouya-pendant': 1 } },
+  { id: 'forge.jiujie-staff', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.jiujie-staff': 1 } },
+  { id: 'forge.suxin-zither', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.suxin-zither': 1 } },
+  { id: 'forge.hunyuan-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.hunyuan-scarf': 1 } },
+  { id: 'forge.suma-robe', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.beast-hide': 1 }, outputs: { 'equipment.suma-robe': 1 } },
+  { id: 'forge.xingqi-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.xingqi-pants': 1 } },
+  { id: 'forge.shifang-shoes', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.shifang-shoes': 1 } },
+  { id: 'forge.taomu-talisman', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.taomu-talisman': 1 } },
+
+  // 锻造装备 (二阶)
+  { id: 'forge.pogang-sword', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.qingfeng-sword': 2 }, outputs: { 'equipment.pogang-sword': 1 } },
+  { id: 'forge.zhansha-blade', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.pishan-blade': 2 }, outputs: { 'equipment.zhansha-blade': 1 } },
+  { id: 'forge.chijin-helmet', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shufa-scarf': 2 }, outputs: { 'equipment.chijin-helmet': 1 } },
+  { id: 'forge.yulin-armor', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.baina-armor': 2 }, outputs: { 'equipment.yulin-armor': 1 } },
+  { id: 'forge.tazhen-greaves', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.zhakou-pants': 2 }, outputs: { 'equipment.tazhen-greaves': 1 } },
+  { id: 'forge.tashan-boots', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.xingshan-boots': 2 }, outputs: { 'equipment.tashan-boots': 1 } },
+  { id: 'forge.chiwen-ring', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shouya-pendant': 2 }, outputs: { 'equipment.chiwen-ring': 1 } },
+  { id: 'forge.chaoyuan-staff', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.jiujie-staff': 2 }, outputs: { 'equipment.chaoyuan-staff': 1 } },
+  { id: 'forge.songfeng-zither', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.suxin-zither': 2 }, outputs: { 'equipment.songfeng-zither': 1 } },
+  { id: 'forge.ziwu-crown', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.hunyuan-scarf': 2 }, outputs: { 'equipment.ziwu-crown': 1 } },
+  { id: 'forge.pichen-shirt', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.fire-feather': 1, 'equipment.suma-robe': 2 }, outputs: { 'equipment.pichen-shirt': 1 } },
+  { id: 'forge.liuyun-skirt', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.xingqi-pants': 2 }, outputs: { 'equipment.liuyun-skirt': 1 } },
+  { id: 'forge.bichen-shoes', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.shifang-shoes': 2 }, outputs: { 'equipment.bichen-shoes': 1 } },
+  { id: 'forge.juling-pendant', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.taomu-talisman': 2 }, outputs: { 'equipment.juling-pendant': 1 } },
 ]
 
 const ACTION_CORE_MAP = new Map<string, ActionDefinitionCore>(ACTION_DEFINITION_CORES.map(c => [c.id, c]))
 
+/** 动态配表行动字典缓存（在服务端目录拉取后注册） */
+const dynamicActionsMap = new Map<string, ActionDefinition>()
+
+/**
+ * 注册从服务端 Catalog 拉取的动态行动定义
+ */
+export function registerCatalogActions(actions: readonly ActionDefinition[]): void {
+  for (const action of actions) {
+    dynamicActionsMap.set(action.id, action)
+  }
+}
+
+let cachedActionsRef: ReadonlyArray<ActionDefinition> | null = null
+let cachedActionMap: Map<string, ActionDefinition> = new Map()
+
+/**
+ * 获取行动目录的 O(1) 字典映射（基于数组引用的快照级缓存）
+ */
+export function getActionMap<T extends ActionDefinition>(actions: readonly T[]): Map<string, T> {
+  if (actions === cachedActionsRef) return cachedActionMap as Map<string, T>
+  cachedActionsRef = actions
+  const map = new Map<string, T>()
+  for (const action of actions) {
+    map.set(action.id, action)
+  }
+  cachedActionMap = map as Map<string, ActionDefinition>
+  return map
+}
+
+/**
+ * 在行动目录中 O(1) 高效查找行动定义
+ */
+export function findActionInCatalog(actions: readonly ActionDefinition[], actionId: string): ActionDefinition | undefined {
+  return getActionMap(actions).get(actionId)
+}
+
 /**
  * 解析单个行动的完整定义（注入当前语言的名称和描述）
+ * 优先级：
+ * 1. 动态 catalog actions (结合当前 i18n 覆盖或配表名)
+ * 2. 静态 ACTION_CORE_MAP 兜底 (结合当前 i18n)
+ * 3. 仅通过 i18n 键兜底构建
  * @param id 行动唯一标识符
  */
 export function resolveActionDefinition(id: string): ActionDefinition | undefined {
-  const core = ACTION_CORE_MAP.get(id)
-  if (!core) return undefined
   const t = getT()
-  return {
-    ...core,
-    name: t(`game.action.${id}.name`),
-    description: t(`game.action.${id}.description`),
+  const nameKey = `game.action.${id}.name`
+  const descKey = `game.action.${id}.description`
+  const translatedName = t(nameKey)
+  const translatedDesc = t(descKey)
+  const hasI18nName = translatedName !== nameKey
+  const hasI18nDesc = translatedDesc !== descKey
+
+  const dynamic = dynamicActionsMap.get(id)
+  if (dynamic) {
+    return {
+      ...dynamic,
+      name: hasI18nName ? translatedName : (dynamic.name || id),
+      description: hasI18nDesc ? translatedDesc : (dynamic.description || ''),
+    }
   }
+
+  const core = ACTION_CORE_MAP.get(id)
+  if (core) {
+    return {
+      ...core,
+      name: hasI18nName ? translatedName : core.id,
+      description: hasI18nDesc ? translatedDesc : '',
+    }
+  }
+
+  if (hasI18nName) {
+    return {
+      id,
+      name: translatedName,
+      description: hasI18nDesc ? translatedDesc : '',
+      type: 'cultivation',
+      durationSeconds: 0,
+    }
+  }
+
+  return undefined
 }
 
 /**

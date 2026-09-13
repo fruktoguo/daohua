@@ -23,8 +23,9 @@ import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, findAbilityInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
+import { resolveItemIconUrl } from './game/itemIcons'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
@@ -89,8 +90,17 @@ function itemAmount(inventory: InventoryItem[], itemId: string): number {
   return inventory.find(item => item.itemId === itemId)?.amount ?? 0
 }
 
-function actionDescription(entry: QueueEntry): string {
-  return resolveActionDefinition(entry.actionId)?.description ?? entry.actionName
+function resolveQueueEntryName(entry: QueueEntry, actions?: readonly ActionDefinition[]): string {
+  if (entry.actionName && entry.actionName !== entry.actionId) {
+    return entry.actionName
+  }
+  const def = (actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId)
+  return def?.name || entry.actionName || entry.actionId
+}
+
+function actionDescription(entry: QueueEntry, actions?: readonly ActionDefinition[]): string {
+  const def = (actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId)
+  return def?.description ?? resolveQueueEntryName(entry, actions)
 }
 
 function formatRepeatsLabel(remainingRepeats: number, t: (key: string, params?: Record<string, string | number>) => string): string {
@@ -313,7 +323,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
       </span>
       <div className="qc-main">
         <div className="qc-title">
-          <strong>{entry.actionName}</strong>
+          <strong>{resolveQueueEntryName(entry)}</strong>
           <span className="qc-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
           {(entry.status === 'blocked' || phaseLabel) && (
             <span className={entry.status === 'blocked' ? 'badge badge-danger' : 'badge'}>
@@ -395,7 +405,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 <Icon name={entry.type} />
               </span>
               <div className="qc-next-text">
-                <span className="qc-next-name">{entry.actionName}</span>
+                <span className="qc-next-name">{resolveQueueEntryName(entry)}</span>
                 <span className="qc-next-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
               </div>
             </div>
@@ -438,12 +448,12 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 </span>
                 <div className="queue-main">
                   <div className="queue-title">
-                    <span className="queue-name">{entry.actionName}</span>
+                    <span className="queue-name">{resolveQueueEntryName(entry)}</span>
                     <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
                     {entry.status === 'blocked' && <span className="badge badge-danger">{t('app.queue.blocked')}</span>}
                     {index === 0 && entry.status === 'running' && <span className="badge">{t('app.queue.running')}</span>}
                   </div>
-                  {actionDescription(entry) && actionDescription(entry) !== entry.actionName ? <div className="queue-sub">{actionDescription(entry)}</div> : null}
+                  {actionDescription(entry) && actionDescription(entry) !== resolveQueueEntryName(entry) ? <div className="queue-sub">{actionDescription(entry)}</div> : null}
                 </div>
                 <div className="queue-actions">
                   <button
@@ -462,7 +472,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                   >↓</button>
                   <button
                     aria-label={t('app.queue.removeAria')}
-                    className="danger"
+                    className="queue-remove"
                     onClick={() => setPendingRemoval(entry)}
                     title={t('app.queue.removeTitle')}
                     type="button"
@@ -476,7 +486,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
       <ConfirmDialog
         confirmLabel={t('app.queue.removeConfirmBtn')}
         danger
-        description={pendingRemoval ? t('app.queue.removeConfirmDesc', { name: pendingRemoval.actionName }) : ''}
+        description={pendingRemoval ? t('app.queue.removeConfirmDesc', { name: resolveQueueEntryName(pendingRemoval) }) : ''}
         onClose={() => setPendingRemoval(null)}
         onConfirm={() => {
           if (pendingRemoval) gameClient.sendCommand('action.remove', { actionInstanceId: pendingRemoval.entryId })
