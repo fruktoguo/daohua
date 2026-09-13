@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { formatNumber } from '../game/format'
 import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
 import { getT, useT, type TFunction } from '../i18n'
 import { useGameStore } from '../game/gameStore'
@@ -29,8 +28,23 @@ const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
   { id: 'orders' },
 ]
 
-// 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
+// 未注册物品与装备的坊市兜底元数据
 function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
+    const tier = Math.max(1, item.tier)
+    const grade = resolveItemGrade(tier)
+    return {
+      label: item.name,
+      glyph: '⚔️',
+      tone: 'gold',
+      category: resolveItemCategoryLabel(item.subCategory || item.category, t),
+      rarity: grade.rarity,
+      rarityLabel: grade.label,
+      level: tier,
+      description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
+    }
+  }
+
   const registered = resolveItemMetadata(item.itemId)
   if (!registered) {
     const tier = Math.max(1, item.tier)
@@ -65,11 +79,12 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
 export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const t = useT()
   const catalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
   const playerId = useGameStore(state => state.playerId)
   const inventory = useGameStore(state => state.inventory)
 
   const instruments = useMemo<MarketInstrument[]>(() => {
-    const tradable = catalog
+    const tradableItems: MarketInstrument[] = catalog
       .filter(item => item.isTradable)
       .map(item => ({
         itemId: item.itemId,
@@ -79,13 +94,23 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
         sellPrice: item.sellPrice,
         definition: item,
       }))
-    return tradable
-      .sort((left, right) => {
-        const leftCat = resolveItemCategoryLabel(left.category, t)
-        const rightCat = resolveItemCategoryLabel(right.category, t)
-        return leftCat.localeCompare(rightCat, 'zh-CN') || left.name.localeCompare(right.name, 'zh-CN')
-      })
-  }, [catalog, t])
+
+    const tradableEquipments: MarketInstrument[] = (equipmentCatalog ?? []).map(eq => ({
+      itemId: eq.equipmentId,
+      name: eq.name,
+      category: 'equipment',
+      subCategory: eq.slot,
+      tier: eq.tier,
+      sellPrice: 0,
+      equipmentDefinition: eq,
+    }))
+
+    return [...tradableItems, ...tradableEquipments].sort((left, right) => {
+      const leftCat = resolveItemCategoryLabel(left.category, t)
+      const rightCat = resolveItemCategoryLabel(right.category, t)
+      return leftCat.localeCompare(rightCat, 'zh-CN') || left.name.localeCompare(right.name, 'zh-CN')
+    })
+  }, [catalog, equipmentCatalog, t])
 
   const [activeTab, setActiveTab] = useState<MarketTab>('browse')
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -203,8 +228,6 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const refresh = useCallback(() => refreshRef.current?.(), [])
   const selected = instruments.find(item => item.itemId === selectedItemId) ?? null
   const selectedAmount = selected ? (inventory.find(item => item.itemId === selected.itemId)?.amount ?? 0) : 0
-  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone')?.amount ?? 0
-
   return (
     <section className="panel market-page">
       <header className="panel-header market-header">
@@ -221,25 +244,19 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
             >{t(`market.tab.${tab.id}`)}</button>
           ))}
         </nav>
-        <button aria-label={t('market.refreshBook')} className="market-refresh" disabled={loading} onClick={refresh} title={t('market.refreshBook')} type="button">↻</button>
+        <div className="market-header-actions">
+          {error ? (
+            <span className="market-header-status is-error" role="status" title={error}>
+              {error}
+            </span>
+          ) : loading ? (
+            <span className="market-header-status is-loading" role="status">
+              {t('market.syncing')}
+            </span>
+          ) : null}
+          <button aria-label={t('market.refreshBook')} className="market-refresh" disabled={loading} onClick={refresh} title={t('market.refreshBook')} type="button">↻</button>
+        </div>
       </header>
-
-      <div className="market-status-row">
-        <span className="market-toolbar-label">
-          {activeTab === 'orders'
-            ? t('market.activeOrdersCount', { count: formatNumber(orders.length) })
-            : selected
-              ? t('market.instrumentBook', { name: selected.name })
-              : t('market.tradableCount', { count: formatNumber(instruments.length) })}
-        </span>
-        <span className={`market-status${error ? ' is-error' : ''}`} role="status">
-          {error ?? (loading
-            ? t('market.syncing')
-            : (selected && book
-              ? t('market.bookSequence', { sequence: formatNumber(book.sequence) })
-              : t('market.spiritAmount', { amount: formatNumber(spiritAmount) })))}
-        </span>
-      </div>
 
       <div className="market-tab-content">
         {activeTab === 'browse' && (
@@ -267,14 +284,16 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                     amount={selectedAmount}
                     className="market-detail-tooltip"
                     definition={selected.definition}
+                    equipmentDefinition={selected.equipmentDefinition}
                     itemId={selected.itemId}
                     metadata={getMetadata(selected, t)}
                   >
                     <div className="market-detail-item-card">
                       <ItemTile
                         amount={selectedAmount}
-                        category={resolveItemCategoryLabel(selected.category, t)}
+                        category={resolveItemCategoryLabel(selected.subCategory || selected.category, t)}
                         className="inventory-cell"
+                        itemId={selected.itemId}
                         level={getMetadata(selected, t).level}
                         name={selected.name}
                         rarity={getMetadata(selected, t).rarity}

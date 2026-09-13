@@ -3,7 +3,7 @@ import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
 import { getT, useT } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
-import type { ItemDefinition, MarketBook } from '../../game/types'
+import type { CombatEquipmentDefinition, ItemDefinition, MarketBook } from '../../game/types'
 import { gameClient } from '../../network/gameClient'
 
 /**
@@ -16,12 +16,16 @@ export interface MarketInstrument {
   name: string
   /** 物品品类 */
   category: string
+  /** 子品类 (可选，如装备 slot 或材料细分类别) */
+  subCategory?: string
   /** 物品等阶/品阶 */
   tier: number
   /** 系统商店回收底价 (Vendor Price) */
   sellPrice: number
-  /** 服务端原始物品定义 */
-  definition: ItemDefinition
+  /** 服务端原始物品定义 (道具/材料) */
+  definition?: ItemDefinition
+  /** 服务端原始装备定义 (装备) */
+  equipmentDefinition?: CombatEquipmentDefinition
 }
 
 /**

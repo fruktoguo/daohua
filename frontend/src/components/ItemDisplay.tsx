@@ -1,9 +1,10 @@
 import { type ReactNode, useMemo } from 'react'
-import { describeCombatTrigger, formatNumber } from '../game/format'
+import { describeAbility, describeCombatTrigger, formatAbilityCategory, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
-import type { Buff, CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
+import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { UnitNumber } from './UnitNumber'
@@ -44,9 +45,11 @@ export interface ItemTileProps {
   category: string
   /** 外部样式类名 */
   className: string
+  /** 物品唯一 ID：命中图标资源时整块瓦片改用图片渲染，未命中则回退为文本名称 */
+  itemId?: string
   /** 物品等阶/品级（展示在右上角） */
   level?: number
-  /** 物品名称 */
+  /** 物品名称（无图标时的兜底文本，同时作为图片替代文本） */
   name: string
   /** 稀有度品质（决定边框与背景光效） */
   rarity: ItemRarity
@@ -111,6 +114,7 @@ export function ItemTooltipTarget({
   const t = useT()
   const itemCatalog = useGameStore((state) => state.items)
   const equipmentCatalog = useGameStore((state) => state.equipment)
+  const abilitiesCatalog = useGameStore((state) => state.abilities)
 
   const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
   const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
@@ -166,17 +170,23 @@ export function ItemTooltipTarget({
 
   const tone = rarityToTone(metadata.rarity)
 
-  // 附属卡片群：解析丹药 Buff、装备特殊机制与传入的副卡片
+  // 附属卡片群：解析丹药 Buff、装备特殊机制、功法技能参悟与传入的副卡片
   const asideCards = useMemo<FloatingAsideCard[]>(() => {
     const list: FloatingAsideCard[] = []
     const itemAsides = resolveItemAsideCards(itemDef, metadata.label)
     const equipAsides = resolveEquipmentAsideCards(eqDef)
     list.push(...itemAsides, ...equipAsides)
+    if (!itemAsides.some(c => c.id?.startsWith('aside-manual-'))) {
+      const manualAside = resolveManualAsideCard(itemId, itemDef?.category ?? metadata.category, abilitiesCatalog)
+      if (manualAside) {
+        list.push(manualAside)
+      }
+    }
     if (extraAsideCards && extraAsideCards.length > 0) {
       list.push(...extraAsideCards)
     }
     return list
-  }, [itemDef, eqDef, metadata.label, extraAsideCards])
+  }, [itemDef, eqDef, itemId, metadata.category, abilitiesCatalog, metadata.label, extraAsideCards])
 
   return (
     <FloatingPopover
@@ -191,6 +201,7 @@ export function ItemTooltipTarget({
           lines={effectLines}
           stats={stats}
           title={metadata.label}
+          titleIcon={resolveItemIconUrl(itemId)}
         />
       }
       gap={8}
@@ -495,7 +506,75 @@ export function resolveItemAsideCards(
     })
   }
 
+  // 5. 功法秘籍/残卷战技参悟
+  const manualAside = resolveManualAsideCard(definition.itemId, definition.category)
+  if (manualAside) {
+    cards.push(manualAside)
+  }
+
   return cards
+}
+
+const COMBAT_STYLE_NAMES: Record<string, string> = {
+  sword: '剑道',
+  blade: '刀法',
+  talisman: '符箓',
+  'five-elements': '五行',
+  body: '体魄',
+}
+
+/**
+ * 功法秘籍/残卷副卡片解析：将秘籍全本或残卷关联的战技技能数据提取为联动展示的副卡片
+ */
+export function resolveManualAsideCard(
+  itemId: string,
+  category?: string,
+  abilities?: readonly CombatAbilityDefinition[]
+): FloatingAsideCard | null {
+  const isTome = itemId.startsWith('item.tome.')
+  const isFragment = itemId.startsWith('item.fragment.')
+  const isManual = isTome || isFragment || category === 'manual' || category === 'manualFragment'
+  if (!isManual) return null
+
+  let abilityId: string
+  if (isTome) {
+    abilityId = `ability.${itemId.slice('item.tome.'.length)}`
+  } else if (isFragment) {
+    abilityId = `ability.${itemId.slice('item.fragment.'.length)}`
+  } else if (itemId.startsWith('item.')) {
+    abilityId = `ability.${itemId.slice('item.'.length)}`
+  } else {
+    abilityId = `ability.${itemId}`
+  }
+
+  const abilityList = abilities ?? useGameStore.getState().abilities
+  const ability = abilityList.find((a) => a.abilityId === abilityId)
+  if (!ability) return null
+
+  const t = getT()
+  const abilityInfo = describeAbility(ability, 1)
+  const isFrag = isFragment || category === 'manualFragment'
+  const mark = isFrag
+    ? (t('market.aside.fragmentComprehension') || '残卷参悟')
+    : (t('market.aside.tomeComprehension') || '秘籍参悟')
+
+  const styleLabel = ability.style ? (COMBAT_STYLE_NAMES[ability.style] ?? ability.style) : ''
+  const categoryLabel = formatAbilityCategory(ability.category, ability.element)
+  const subtitle = styleLabel ? `${styleLabel} · ${categoryLabel}` : categoryLabel
+
+  const lines = [...abilityInfo.lines]
+  if (ability.triggerHpRatio && ability.triggerHpRatio > 0 && !lines.some((l) => l.includes('生命低于'))) {
+    lines.push(t('market.effect.autoUseBelowHp', { percent: Math.round(ability.triggerHpRatio * 100) }))
+  }
+
+  return {
+    id: `aside-manual-${ability.abilityId}`,
+    mark,
+    title: ability.name,
+    subtitle,
+    tone: 'qi',
+    lines,
+  }
 }
 
 /**
@@ -827,17 +906,20 @@ export function createBuffAsideCard(
  * 物品标准卡片瓦片组件 (ItemTile)
  *
  * 紧凑的修仙网格方块：左上角品类丝带、右上角等阶 Lv、中间名称与右下角拥有数量。
+ * 若该物品 ID 已配备图标资源，中间的文本名称会被图标整块替换；未配备时保持文本渲染。
  */
 export function ItemTile({
   amount,
   bottomRightLabel,
   category,
   className,
+  itemId,
   level,
   name,
   rarity,
 }: ItemTileProps): React.JSX.Element {
   const categoryLabel = resolveItemCategoryLabel(category)
+  const iconUrl = resolveItemIconUrl(itemId)
   const bottomRight =
     bottomRightLabel ??
     (amount === undefined ? null : <UnitNumber disableTooltip prefix="×" value={amount} />)
@@ -849,7 +931,9 @@ export function ItemTile({
           Lv. <UnitNumber disableTooltip value={level} />
         </span>
       )}
-      <strong className="item-tile-name">{name}</strong>
+      {iconUrl
+        ? <img alt={name} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+        : <strong className="item-tile-name">{name}</strong>}
       {bottomRight !== null && <span className="item-corner item-corner--bottom-right">{bottomRight}</span>}
     </span>
   )
@@ -874,6 +958,7 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
         amount={item.amount}
         category={resolveItemCategoryLabel(item.category, t)}
         className="inventory-cell"
+        itemId={item.itemId}
         level={metadata.level}
         name={item.name}
         rarity={metadata.rarity}
@@ -883,10 +968,31 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
 }
 
 /**
+ * 物品小图标 (ItemIcon)
+ *
+ * 物品 ID 配有图标资源时渲染一枚内联小图标；没有图标时**不渲染任何节点**（由调用方回退文本）。
+ * 用于行内文本、列表行等不适合放整块瓦片的位置。
+ */
+export function ItemIcon({
+  itemId,
+  className = 'item-reference-icon',
+}: {
+  /** 物品唯一 ID */
+  itemId: string
+  /** 外部样式类名（默认与行内物品引用共用一套尺寸） */
+  className?: string
+}): React.JSX.Element | null {
+  const url = resolveItemIconUrl(itemId)
+  if (!url) return null
+  return <img alt="" aria-hidden="true" className={className} draggable={false} src={url} />
+}
+
+/**
  * 文本行内物品引用胶囊组件 (ItemReference)
  *
  * 用于日志、任务描述、制造需求等行内文本中引用特定物品，
  * 点击/悬停弹出完整物品气泡，并显示品质对应的主题色下划线与数量。
+ * 物品配有图标时在名称前额外渲染一枚行内小图标。
  */
 export function ItemReference({
   itemId,
@@ -918,6 +1024,7 @@ export function ItemReference({
         definition={definition}
         itemId={itemId}
       >
+        <ItemIcon itemId={itemId} />
         <span className="capsule-label">{displayLabel}</span>
         <span className="underlined-value">
           × <UnitNumber disableTooltip value={amount} />
@@ -933,6 +1040,7 @@ export function ItemReference({
       definition={definition}
       itemId={itemId}
     >
+      <ItemIcon itemId={itemId} />
       {displayLabel}
     </ItemTooltipTarget>
   )

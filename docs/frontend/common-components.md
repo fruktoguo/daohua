@@ -12,8 +12,11 @@
 - **适用场景**：
   - 极简单行/短文文字悬浮提示，移走即消，点击穿透底层（0 阻碍） -> `FloatingTooltip`
   - 标准法宝、装备、物品、功法、属性说明卡片（含品质色、境界徽章、属性键值网格、词条、副卡片组合） -> `FloatingInfoCard` / `FloatingPopover`
+  - **装备/道具属性加成修仙色系统一收拢**：装备与道具悬浮卡片中的属性加成条目统一收拢为 `PillBonusLabel`，通过 `STAT_TONE_MAP` 字典与内视属性面板（`InsightPage`）中的修仙色彩（`PillTone`）完全对齐（赤红物攻、靛紫法攻、翡翠绿气血、灵气青灵力、青铜护甲、紫罗兰抗性、天蓝命中、水绿闪避、道金暴击、玄岩灰免暴韧性、琥珀橙破招、银白化解等），避免原先因 `+` 加号统归为粉红色产生的歧义与误导。
+  - **攻击间隔规则收拢**：修仙规则中装备不具备“攻击间隔”属性，服务端配表映射与前端悬浮展示已彻底移除。
   - **通用独立数量副气泡联动**：传入 `quantity={amount}` 属性，自动在主卡片旁附加独立的数量副气泡（标题为「数量」，内容为中文四位分段「具体数值」）。
   - **通用 Buff / Debuff / 特殊机制附属副气泡窗口 (Aside Cards)**：支持将丹药持续 Buff、修炼/技艺效率加成、装备特殊机制/词缀以及角色身上生效的 Buff/Debuff 自动解析为独立的副气泡卡片窗口，并排挂载联动展示（`resolveItemAsideCards`, `resolveEquipmentAsideCards`, `createBuffAsideCard`）。
+  - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成包含伤害系数、威能、前摇、冷却、灵力消耗与触发条件的 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingMenu`, `FloatingMenuItem`, `FloatingMenuGroup`, `FloatingMenuDivider`
 - **组件源码**：[`frontend/src/components/FloatingPopover.tsx`](../../frontend/src/components/FloatingPopover.tsx)
 - **样式文件**：[`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css)
@@ -54,7 +57,8 @@
 
 - **适用场景**：
   - 面板主分类下的二级切换栏（如内视根基下的「六维」与「基础」切换，采用紧凑暗墨胶囊按键与金色微光高亮）。
-- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`
+  - **坊市多级分类子导航 (`MarketBrowseGrid`)**：在一级主 Tab（全部/材料/装备/丹药/功法）下方，复用 `.insight-sub-tabs` 与 `.insight-sub-tab-btn` 展示对应二级子分类（材料细分矿石/药材/通用材料；装备细分武器/防具/饰品；功法细分秘籍全本/招式残卷）。
+- **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-sub-tabs`)
 
 ---
@@ -63,13 +67,40 @@
 
 - **适用场景**：
   - 行囊、掉落、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
+  - **图标（有图用图、无图回退文本）**：传入资源 ID 即可。该资源在
+    `frontend/src/assets/items/<资源ID>.{webp,png}` 有图时，`ItemTile` 用图片整块替换中间的文本名称；
+    没有图时自动保持原文本渲染。行内文本/列表行等不适合放整块方块的场合，改用
+    `ItemIcon`（无图时不渲染任何节点）。新增图标只需往该目录丢文件，无需维护清单 -> `ItemIcon`, `resolveItemIconUrl`
+    - 资源 ID 即配表 `id`，覆盖 **物品/材料（`item.*`、`currency.*`）、装备（`equipment.*`）、功法战技（`ability.*`）** 三类。
+    - **功法战技是例外，必须显式接线**：物品与装备的 ID 会作为 `itemId` 流经既有展示位而自动生效，
+      而战技面板走的是 `ability.name`，需调用方自己传 `ability.abilityId`
+      （接入点：`AbilitiesPanel` 装配槽瓦片 + 已学功法列表，`AbilityGridPicker` 网格瓦片，`App.tsx` 战斗面板槽位）。
+    - `.webp` 为运行时资源，**全项目只保留这一档：64×64**（由 `art/` 切图管线产出，脚本默认参数即 64）；
+      `.png` 为早期历史图片，现已全部转出为 WebP 并移出该目录。注册表仍同时认两种后缀，同名时 `.webp` 优先。
+    - **资产分层约定**：非运行时位置只留**原始分辨率** —— AI 原图在 `art/source/`，
+      另有 26 张早期图标的**唯一高清副本**在 `art/legacy_128/`（其原图在本机已不存在，不可删）。
+      切图中间档（256 工程母版）**不常驻**，需要时由 `art/sheets.json` 一条命令重建。
+      详见 [`TASK-20260913-06.md`](../tasks/TASK-20260913-06.md)。
+    - **编码档位**：**降色 256 + 无损 WebP**（`--web-palette 256 --web-lossless`）。
+      90 张合计 **168.1 KB**：同口径下比原先的有损 q90（267.2 KB）**小 37%**，可见像素 RGB 还高 4.13 dB。
+      有损 WebP 会把**边缘半透明像素的 RGB** 带偏（表现为轮廓发白、整体褪色发灰），降色 + 无损没有这个毛病。
+      换编码档位前先读 [`TASK-20260913-07.md`](../tasks/TASK-20260913-07.md) 的实测对照表。
+  - **图标渲染统一关闭线性插值（`image-rendering: pixelated`）**：三处图标 `<img>` 都用最近邻缩放，
+    保留像素质感（改动前是浏览器默认双线性，会发虚）。位置：
+    `.item-tile-icon`（[`selection-grid.css`](../../frontend/src/styles/selection-grid.css)）、
+    `.item-reference-icon`（[`styles.css`](../../frontend/src/styles.css)，16px）、
+    `.daohua-floating-card-title-icon`（[`floating-popover.css`](../../frontend/src/styles/floating-popover.css)，24px）。
+    瓦片绘制区固定为 52px，故 64×64 源在 DPR1 是**缩小** 0.81×、在 DPR2 是**放大** 1.63× —— 两种密度均已实测无走样。
+    **但若源图升到 ≥128px，缩小倍率会明显变大（DPR1 约 2.46×），届时必须重新实测这三处。**
   - **多气泡联动、Buff/特殊机制副窗口与独立数量气泡**：
     - 主卡片展示品阶、基础说明、即时回血回蓝、冷却时长与装备基础攻防；
     - 丹药持续 Buff、修炼/技艺效率加成提取为独立的 `[丹药增益]` / `[修炼增益]` 副卡片窗口；
     - 装备特殊机制提取为独立的 `[特殊机制]` 副卡片窗口；
     - 数量副气泡并排联动（标题为「数量」，内容为中文四位分段「具体数值」）。
 - **组件源码**：[`frontend/src/components/ItemDisplay.tsx`](../../frontend/src/components/ItemDisplay.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-badge-rarity-*`), [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) (搜索 `.daohua-floating-aside-*`)
+- **图标注册表**：[`frontend/src/game/itemIcons.ts`](../../frontend/src/game/itemIcons.ts)（构建期 `import.meta.glob` 扫描 `frontend/src/assets/items/` 的 `*.png` 与 `*.webp`，去扩展名的文件名即资源 ID）
+- **构建约定**：[`frontend/vite.config.ts`](../../frontend/vite.config.ts) 的 `assetsInlineLimit` 对 `assets/items/` 下的资源返回 `false`（禁止内联成 base64）。原因：注册表是 eager 全量引用，默认 4KB 内联会让入口 JS 随图标数量线性膨胀（实测 64 张约 +240KB base64）。
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-reference-icon`, `.item-badge-rarity-*`), [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.item-tile-icon`), [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) (搜索 `.daohua-floating-aside-*`, `.daohua-floating-card-title-icon`)
 
 ---
 

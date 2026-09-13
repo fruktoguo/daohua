@@ -13,6 +13,20 @@ import { getMarketPriceIncrement, normalizeMarketPrice } from './MarketOrderForm
 
 // 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
 function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
+    const tier = Math.max(1, item.tier)
+    const grade = resolveItemGrade(tier)
+    return {
+      label: item.name,
+      glyph: '⚔️',
+      tone: 'gold',
+      category: resolveItemCategoryLabel(item.subCategory || item.category, t),
+      rarity: grade.rarity,
+      rarityLabel: grade.label,
+      level: tier,
+      description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
+    }
+  }
   const registered = resolveItemMetadata(item.itemId)
   if (!registered) {
     const tier = Math.max(1, item.tier)
@@ -174,15 +188,16 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             {side === 'sell' ? t('market.placeSell') : t('market.placeBuy')}
           </span>
           <h2 id={titleId}>{instrument.name}</h2>
-          <span className="market-order-modal-category">{resolveItemCategoryLabel(instrument.category, t)} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
+          <span className="market-order-modal-category">{resolveItemCategoryLabel(instrument.subCategory || instrument.category, t)} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
         </div>
       </header>
 
       <div className="market-order-modal-item-preview">
         <ItemTile
           amount={selectedAmount}
-          category={resolveItemCategoryLabel(instrument.category, t)}
+          category={resolveItemCategoryLabel(instrument.subCategory || instrument.category, t)}
           className="inventory-cell"
+          itemId={instrument.itemId}
           level={metadata.level}
           name={instrument.name}
           rarity={metadata.rarity}

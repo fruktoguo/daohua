@@ -6,8 +6,23 @@ import { useGameStore } from '../../game/gameStore'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import type { MarketInstrument } from './MarketOrderForm'
 
-// 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
+// 未注册物品与装备的坊市兜底元数据
 function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
+    const tier = Math.max(1, item.tier)
+    const grade = resolveItemGrade(tier)
+    return {
+      label: item.name,
+      glyph: '⚔️',
+      tone: 'gold',
+      category: resolveItemCategoryLabel(item.subCategory || item.category, t),
+      rarity: grade.rarity,
+      rarityLabel: grade.label,
+      level: tier,
+      description: item.equipmentDefinition ? '' : t('market.itemFallback.description'),
+    }
+  }
+
   const registered = resolveItemMetadata(item.itemId)
   if (!registered) {
     const tier = Math.max(1, item.tier)
@@ -29,6 +44,125 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
+/** 一级主 Tab 分类类型 */
+type PrimaryCategory = 'all' | 'material' | 'equipment' | 'pill' | 'manual'
+
+interface TabConfig<T extends string> {
+  id: T
+  labelKey: string
+  fallback: string
+}
+
+const PRIMARY_TABS: ReadonlyArray<TabConfig<PrimaryCategory>> = [
+  { id: 'all', labelKey: 'market.browse.cat.all', fallback: '全部' },
+  { id: 'material', labelKey: 'market.browse.cat.material', fallback: '材料' },
+  { id: 'equipment', labelKey: 'market.browse.cat.equipment', fallback: '装备' },
+  { id: 'pill', labelKey: 'market.browse.cat.pill', fallback: '丹药' },
+  { id: 'manual', labelKey: 'market.browse.cat.manual', fallback: '功法' },
+]
+
+type MaterialSubCategory = 'all' | 'mineral' | 'herb' | 'other'
+type EquipmentSubCategory = 'all' | 'weapon' | 'armor' | 'trinket'
+type ManualSubCategory = 'all' | 'tome' | 'fragment'
+
+const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
+  { id: 'all', labelKey: 'market.browse.sub.allMaterial', fallback: '全部材料' },
+  { id: 'mineral', labelKey: 'market.browse.sub.mineral', fallback: '矿石' },
+  { id: 'herb', labelKey: 'market.browse.sub.herb', fallback: '药材' },
+  { id: 'other', labelKey: 'market.browse.sub.otherMaterial', fallback: '通用材料' },
+]
+
+const EQUIPMENT_SUB_TABS: ReadonlyArray<TabConfig<EquipmentSubCategory>> = [
+  { id: 'all', labelKey: 'market.browse.sub.allEquipment', fallback: '全部装备' },
+  { id: 'weapon', labelKey: 'market.browse.sub.weapon', fallback: '武器' },
+  { id: 'armor', labelKey: 'market.browse.sub.armor', fallback: '防具' },
+  { id: 'trinket', labelKey: 'market.browse.sub.trinket', fallback: '饰品' },
+]
+
+const MANUAL_SUB_TABS: ReadonlyArray<TabConfig<ManualSubCategory>> = [
+  { id: 'all', labelKey: 'market.browse.sub.allManual', fallback: '全部功法' },
+  { id: 'tome', labelKey: 'market.browse.sub.tome', fallback: '秘籍全本' },
+  { id: 'fragment', labelKey: 'market.browse.sub.fragment', fallback: '招式残卷' },
+]
+
+const ARMOR_SLOTS = new Set(['head', 'armor', 'legs', 'boots'])
+const TRINKET_SLOTS = new Set(['trinket', 'ring', 'neck', 'talisman'])
+const WEAPON_SLOTS = new Set(['weapon', 'two-hand', 'off-hand'])
+
+function isMaterial(item: MarketInstrument): boolean {
+  return (
+    item.category === 'material' ||
+    item.category === 'herb' ||
+    item.category === 'mineral' ||
+    item.definition?.kind === 'material'
+  )
+}
+
+function isEquipment(item: MarketInstrument): boolean {
+  return (
+    item.category === 'equipment' ||
+    !!item.equipmentDefinition ||
+    item.itemId.startsWith('equipment.')
+  )
+}
+
+function isPill(item: MarketInstrument): boolean {
+  return (
+    item.category === 'pill' ||
+    item.definition?.category === 'pill'
+  )
+}
+
+function isManual(item: MarketInstrument): boolean {
+  return (
+    item.category === 'manual' ||
+    item.category === 'manualFragment' ||
+    item.itemId.startsWith('item.tome.') ||
+    item.itemId.startsWith('item.fragment.')
+  )
+}
+
+function matchesCategory(
+  item: MarketInstrument,
+  primary: PrimaryCategory,
+  sub: string
+): boolean {
+  switch (primary) {
+    case 'all':
+      return true
+
+    case 'material': {
+      if (!isMaterial(item)) return false
+      if (sub === 'all') return true
+      if (sub === 'mineral') return item.category === 'mineral'
+      if (sub === 'herb') return item.category === 'herb'
+      if (sub === 'other') return item.category !== 'mineral' && item.category !== 'herb'
+      return true
+    }
+
+    case 'equipment': {
+      if (!isEquipment(item)) return false
+      if (sub === 'all') return true
+      const slot = item.subCategory || item.equipmentDefinition?.slot || ''
+      if (sub === 'weapon') return WEAPON_SLOTS.has(slot) || slot === '' || slot === 'weapon'
+      if (sub === 'armor') return ARMOR_SLOTS.has(slot)
+      if (sub === 'trinket') return TRINKET_SLOTS.has(slot)
+      return true
+    }
+
+    case 'pill':
+      return isPill(item)
+
+    case 'manual': {
+      if (!isManual(item)) return false
+      if (sub === 'all') return true
+      if (sub === 'tome') return item.itemId.startsWith('item.tome.')
+      if (sub === 'fragment') return item.itemId.startsWith('item.fragment.') || item.category === 'manualFragment'
+      return true
+    }
+  }
+}
+
 /** 坊市可交易物品网格浏览 Props */
 interface MarketBrowseGridProps {
   /** 全部可交易标的列表 */
@@ -40,12 +174,7 @@ interface MarketBrowseGridProps {
 }
 
 /**
- * 坊市标的网格检索与分类浏览组件 (MarketBrowseGrid)
- *
- * 核心功能：
- * 1. 分类胶囊标签栏 (Category Chips)：支持快速按“丹药”、“灵材”、“法宝”等品类筛选；
- * 2. 实时名称检索输入框；
- * 3. 物品网格卡片与背包持存数量悬浮气泡查看。
+ * 坊市标的网格检索与多级分类浏览组件 (MarketBrowseGrid)
  */
 export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   instruments,
@@ -55,37 +184,52 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<string | null>(null)
-  const categories = useMemo(
-    () => [...new Set(instruments.map(item => resolveItemCategoryLabel(item.category, t)))].sort((left, right) => left.localeCompare(right, 'zh-CN')),
-    [instruments, t],
-  )
+  const [primaryTab, setPrimaryTab] = useState<PrimaryCategory>('all')
+  const [subCategory, setSubCategory] = useState<string>('all')
+
+  const handlePrimaryTabChange = (newPrimary: PrimaryCategory) => {
+    setPrimaryTab(newPrimary)
+    setSubCategory('all')
+  }
+
+  const subTabs = useMemo(() => {
+    switch (primaryTab) {
+      case 'material':
+        return MATERIAL_SUB_TABS
+      case 'equipment':
+        return EQUIPMENT_SUB_TABS
+      case 'manual':
+        return MANUAL_SUB_TABS
+      default:
+        return []
+    }
+  }, [primaryTab])
+
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
   const visibleItems = useMemo(() => instruments.filter(item => {
-    const catLabel = resolveItemCategoryLabel(item.category, t)
-    if (category !== null && catLabel !== category && item.category !== category) return false
+    if (!matchesCategory(item, primaryTab, subCategory)) return false
     if (!normalizedQuery) return true
-    return `${item.name} ${item.category} ${catLabel}`.toLocaleLowerCase('zh-CN').includes(normalizedQuery)
-  }), [category, instruments, normalizedQuery, t])
+    const catLabel = resolveItemCategoryLabel(item.subCategory || item.category, t)
+    const primaryCatLabel = resolveItemCategoryLabel(item.category, t)
+    const searchTarget = `${item.name} ${item.itemId} ${item.category} ${item.subCategory ?? ''} ${catLabel} ${primaryCatLabel}`.toLocaleLowerCase('zh-CN')
+    return searchTarget.includes(normalizedQuery)
+  }), [instruments, primaryTab, subCategory, normalizedQuery, t])
 
   return (
     <div className="market-browse">
       <div className="market-browse-toolbar">
-        <div className="market-category-chips" role="group" aria-label={t('market.browse.filterCategoryAria')}>
-          <button
-            aria-pressed={category === null}
-            className={category === null ? 'active' : ''}
-            onClick={() => setCategory(null)}
-            type="button"
-          >{t('market.browse.categoryAll')}</button>
-          {categories.map(name => (
+        <div className="market-category-chips" role="tablist" aria-label={t('market.browse.filterCategoryAria')}>
+          {PRIMARY_TABS.map(tab => (
             <button
-              aria-pressed={category === name}
-              className={category === name ? 'active' : ''}
-              key={name}
-              onClick={() => setCategory(current => current === name ? null : name)}
+              aria-selected={primaryTab === tab.id}
+              className={primaryTab === tab.id ? 'active' : ''}
+              key={tab.id}
+              onClick={() => handlePrimaryTabChange(tab.id)}
+              role="tab"
               type="button"
-            >{name}</button>
+            >
+              {t(tab.labelKey) || tab.fallback}
+            </button>
           ))}
         </div>
         <input
@@ -97,6 +241,24 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
           value={query}
         />
       </div>
+
+      {subTabs.length > 0 && (
+        <div className="insight-sub-tabs market-sub-tabs" role="tablist" aria-label={t('market.browse.filterSubCategoryAria')}>
+          {subTabs.map(sub => (
+            <button
+              aria-selected={subCategory === sub.id}
+              className={`insight-sub-tab-btn${subCategory === sub.id ? ' active' : ''}`}
+              key={sub.id}
+              onClick={() => setSubCategory(sub.id)}
+              role="tab"
+              type="button"
+            >
+              {t(sub.labelKey) || sub.fallback}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="market-browse-grid" role="listbox" aria-label={t('market.browse.gridAria')}>
         {visibleItems.map(item => {
           const metadata = getMetadata(item, t)
@@ -107,6 +269,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               amount={amount}
               className="market-browse-tooltip"
               definition={item.definition}
+              equipmentDefinition={item.equipmentDefinition}
               itemId={item.itemId}
               key={item.itemId}
               metadata={metadata}
@@ -122,8 +285,9 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               >
                 <ItemTile
                   amount={amount}
-                  category={resolveItemCategoryLabel(item.category, t)}
+                  category={resolveItemCategoryLabel(item.subCategory || item.category, t)}
                   className="inventory-cell"
+                  itemId={item.itemId}
                   level={metadata.level}
                   name={item.name}
                   rarity={metadata.rarity}

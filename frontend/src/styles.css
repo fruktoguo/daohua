@@ -3432,14 +3432,34 @@ input[type="checkbox"] {
   background: rgba(201, 180, 109, 0.14);
 }
 
-.market-status-row {
+.market-header-actions {
   display: flex;
-  min-height: 22px;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  flex-shrink: 0;
+  gap: 8px;
+}
+
+.market-header-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+  background: rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+}
+
+.market-header-status.is-loading {
+  color: var(--gold-bright);
+  border-color: rgba(201, 180, 109, 0.4);
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.market-header-status.is-error {
+  color: #e89a8c;
+  border-color: rgba(232, 154, 140, 0.4);
+  background: rgba(232, 154, 140, 0.08);
 }
 
 .market-tab-content {
@@ -3464,20 +3484,6 @@ input[type="checkbox"] {
 .market-toolbar-label {
   color: var(--text-dim);
   font-size: 11px;
-}
-
-.market-status {
-  min-height: 22px;
-  align-content: center;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.market-status.is-error {
-  color: #e89a8c;
 }
 
 .market-browse {
@@ -3528,6 +3534,11 @@ input[type="checkbox"] {
   font-size: 11px;
 }
 
+.market-sub-tabs {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+}
+
 .market-browse-grid {
   display: grid;
   flex: 1;
@@ -3535,6 +3546,9 @@ input[type="checkbox"] {
   max-height: 100%;
   overflow-y: auto;
   padding: 12px 6px 8px;
+  align-content: start;
+  align-items: start;
+  grid-auto-rows: var(--item-slot-size);
 }
 
 .market-browse-tooltip {
@@ -4748,7 +4762,27 @@ input[type="checkbox"] {
 
 .item-reference {
   display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--gold-bright);
+}
+
+/*
+ * 行内物品小图标：与文字同高、基线微调，缺图时该节点不渲染（见 ItemIcon）。
+ * image-rendering: pixelated 与瓦片图标保持一致（见 selection-grid.css 的 .item-tile-icon）：
+ * 这里源图 32px 缩到 16px 是**缩小 2 倍的整数比**，最近邻表现为边缘更硬挺、不糊，
+ * 代价是细节被抽样省略；若行内小图显得破碎，把这一行去掉即可单独回退。
+ */
+.item-reference-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 3px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  image-rendering: pixelated;
+  vertical-align: -0.2em;
+  pointer-events: none;
+  user-select: none;
 }
 
 .item-tooltip {
@@ -5544,10 +5578,6 @@ input[type="checkbox"] {
 
   .market-instrument-picker {
     min-width: 0;
-  }
-
-  .market-status {
-    display: none;
   }
 
   .market-summary {
