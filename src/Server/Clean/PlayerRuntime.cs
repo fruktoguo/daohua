@@ -434,6 +434,15 @@ public sealed class PlayerRuntime(
                     case "action.remove":
                     {
                         if (!payload.TryGetProperty("actionInstanceId", out var id) || !Guid.TryParse(id.GetString(), out var actionId)) return Fail("INVALID_ACTION_ID", "行动实例 ID 无效。");
+                        if (aggregate.Actions.Count > 0 && aggregate.Actions[0].Id == actionId)
+                        {
+                            var now = DateTimeOffset.UtcNow;
+                            if (now > aggregate.LastSimulatedAt)
+                            {
+                                var preAdvanceSim = await AdvanceSimulationInternalAsync(now, cancellationToken);
+                                if (preAdvanceSim.Changed) simulation = preAdvanceSim;
+                            }
+                        }
                         if (!aggregate.RemoveAction(actionId)) return Fail("ACTION_NOT_FOUND", "行动不存在。");
                         Touch();
                         break;
@@ -452,6 +461,12 @@ public sealed class PlayerRuntime(
                             || !payload.TryGetProperty("direction", out var directionElement)
                             || !directionElement.TryGetInt32(out var direction))
                             return Fail("INVALID_PAYLOAD", "行动移动参数无效。");
+                        var now = DateTimeOffset.UtcNow;
+                        if (now > aggregate.LastSimulatedAt)
+                        {
+                            var preAdvanceSim = await AdvanceSimulationInternalAsync(now, cancellationToken);
+                            if (preAdvanceSim.Changed) simulation = preAdvanceSim;
+                        }
                         if (!aggregate.MoveAction(actionInstanceId, direction)) return Fail("ACTION_NOT_FOUND", "行动不存在或已在边界位置。");
                         TouchDirtyOnly();
                         break;
@@ -511,10 +526,26 @@ public sealed class PlayerRuntime(
                         if (!worldGraph.ContainsNode(targetNodeId))
                             return Fail("NODE_NOT_FOUND", $"目标世界节点不存在：{targetNodeId}。");
 
-                        // 若已经在目标节点且未处于边上，直接成功
+                        // 在入队移动前，先将玩家当前进度推进到 UtcNow，确保原行动已流逝的时间不被移动行动挪用
+                        var now = DateTimeOffset.UtcNow;
+                        if (now > aggregate.LastSimulatedAt)
+                        {
+                            var preAdvanceSim = await AdvanceSimulationInternalAsync(now, cancellationToken);
+                            if (preAdvanceSim.Changed) simulation = preAdvanceSim;
+                        }
+
+                        // 若已经在目标节点且未处于边上，直接成功，并清除任何残留的同类移动行动
                         if (string.Equals(aggregate.World.NodeId, targetNodeId, StringComparison.Ordinal)
                             && string.IsNullOrWhiteSpace(aggregate.World.EdgeId))
                         {
+                            for (var i = 0; i < aggregate.Actions.Count; i++)
+                            {
+                                if (aggregate.Actions[i].Intent.ActionId.Value == "world.travel")
+                                {
+                                    aggregate.RemoveAction(aggregate.Actions[i].Id);
+                                    break;
+                                }
+                            }
                             TouchDirtyOnly();
                             break;
                         }
@@ -528,6 +559,14 @@ public sealed class PlayerRuntime(
 
                         if (plan.Segments.Count == 0 && plan.TotalTravelSeconds <= 0)
                         {
+                            for (var i = 0; i < aggregate.Actions.Count; i++)
+                            {
+                                if (aggregate.Actions[i].Intent.ActionId.Value == "world.travel")
+                                {
+                                    aggregate.RemoveAction(aggregate.Actions[i].Id);
+                                    break;
+                                }
+                            }
                             if (worldGraph.TryGetNode(targetNodeId, out var targetNodeObj))
                             {
                                 aggregate.TravelTo(targetNodeId, targetNodeObj.X, targetNodeObj.Y);
@@ -542,8 +581,9 @@ public sealed class PlayerRuntime(
                             plan.EdgeIds,
                             plan.Segments);
 
+                        var travelEnqueuedAt = aggregate.LastSimulatedAt > now ? aggregate.LastSimulatedAt : now;
                         var travelIntent = new ActionIntent(new ActionId("world.travel"), 1, targetNodeId);
-                        aggregate.EnqueuePriority(travelIntent, DateTimeOffset.UtcNow, actions, travelState);
+                        aggregate.EnqueuePriority(travelIntent, travelEnqueuedAt, actions, travelState);
                         Touch();
                         break;
                     }
@@ -591,76 +631,9 @@ public sealed class PlayerRuntime(
                     }
                     case "simulation.advance":
                     {
-                        await EnsureWalletFreshAsync(cancellationToken);
-                        var before = aggregate.ExportState();
-                        var walletBefore = wallet.Balances.ToArray();
-                        var dirtyBefore = aggregate.DirtySections.ToArray();
-                        var dirtyAtBefore = _dirtyAt.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-                        var logicalVersionBefore = _logicalVersion;
                         var target = payload.TryGetProperty("targetTime", out var targetElement) && targetElement.TryGetDateTimeOffset(out var parsed)
                             ? parsed : DateTimeOffset.UtcNow;
-                        var economyCommitted = false;
-                        try
-                        {
-                            // 战斗遭遇与持续消耗品都需要完整配表；钱包仅作开封库存判断，实际扣减仍随 AssetDeltas 原子提交。
-                            simulation = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet);
-                            if (simulation.AssetDeltas.Count > 0)
-                            {
-                                var transaction = new EconomyTransactionRequest(
-                                    Guid.NewGuid(),
-                                    $"simulation:{aggregate.PlayerId.Value:D}:{simulation.StateVersion}:{simulation.To.ToUnixTimeMilliseconds()}",
-                                    "simulation.reward",
-                                    aggregate.PlayerId.Value,
-                                    simulation.AssetDeltas.Select(delta => new Server.Clean.AssetDelta(
-                                        delta.PlayerId.Value,
-                                        delta.Asset.ItemId.Value,
-                                        delta.Asset.Variant,
-                                        delta.QuantityDelta)).ToArray(),
-                                    simulation.To,
-                                    JsonSerializer.SerializeToUtf8Bytes(new { simulation.StateVersion, simulation.To }));
-                                var committed = await economy.CommitAsync(transaction, cancellationToken);
-                                if (!committed.Applied)
-                                    throw new InvalidOperationException("模拟资产事务未提交。");
-                                economyCommitted = true;
-                                try
-                                {
-                                    await ReloadWalletAsync(cancellationToken);
-                                }
-                                catch (Exception reloadException)
-                                {
-                                    // 资产事务已 durable commit，不能回滚 LastSimulatedAt，否则下一次目标时间
-                                    // 会把同一段奖励再次结算。保留聚合进度，标记钱包待刷新；后续资产命令
-                                    // 会先强制从 PostgreSQL 读取，期间尽量用本地 delta 保持界面可见值。
-                                    _walletReloadRequired = true;
-                                    foreach (var delta in simulation.AssetDeltas)
-                                    {
-                                        try { wallet.Apply(delta); }
-                                        catch (Exception applyException)
-                                        {
-                                            if (_walletErrorLog.TryAcquire())
-                                                logger.LogError(applyException, "模拟资产已提交但本地钱包无法应用 delta，等待下次刷新 player={PlayerId}", aggregate.PlayerId.Value);
-                                            break;
-                                        }
-                                    }
-                                    if (reloadException is not OperationCanceledException)
-                                    {
-                                        if (_walletErrorLog.TryAcquire())
-                                            logger.LogError(reloadException, "模拟资产已提交但钱包刷新失败 player={PlayerId}", aggregate.PlayerId.Value);
-                                    }
-                                    if (reloadException is OperationCanceledException) throw;
-                                }
-                            }
-                            _logicalVersion = Math.Max(_logicalVersion, aggregate.StateVersion);
-                            TouchDirtyOnly();
-                        }
-                        catch
-                        {
-                            if (!economyCommitted)
-                            {
-                                RestoreSimulationState(before, walletBefore, dirtyBefore, dirtyAtBefore, logicalVersionBefore);
-                            }
-                            throw;
-                        }
+                        simulation = await AdvanceSimulationInternalAsync(target, cancellationToken);
                         break;
                     }
                     case "player.presence":
@@ -724,6 +697,79 @@ public sealed class PlayerRuntime(
                 return Fail("INVALID_PAYLOAD", ex.Message);
             }
             finally { _gate.Release(); }
+        }
+
+        private async ValueTask<SimulationResult> AdvanceSimulationInternalAsync(DateTimeOffset target, CancellationToken cancellationToken)
+        {
+            await EnsureWalletFreshAsync(cancellationToken);
+            var before = aggregate.ExportState();
+            var walletBefore = wallet.Balances.ToArray();
+            var dirtyBefore = aggregate.DirtySections.ToArray();
+            var dirtyAtBefore = _dirtyAt.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+            var logicalVersionBefore = _logicalVersion;
+            var economyCommitted = false;
+            try
+            {
+                // 战斗遭遇与持续消耗品都需要完整配表；钱包仅作开封库存判断，实际扣减仍随 AssetDeltas 原子提交。
+                var result = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet);
+                if (result.AssetDeltas.Count > 0)
+                {
+                    var transaction = new EconomyTransactionRequest(
+                        Guid.NewGuid(),
+                        $"simulation:{aggregate.PlayerId.Value:D}:{result.StateVersion}:{result.To.ToUnixTimeMilliseconds()}",
+                        "simulation.reward",
+                        aggregate.PlayerId.Value,
+                        result.AssetDeltas.Select(delta => new Server.Clean.AssetDelta(
+                            delta.PlayerId.Value,
+                            delta.Asset.ItemId.Value,
+                            delta.Asset.Variant,
+                            delta.QuantityDelta)).ToArray(),
+                        result.To,
+                        JsonSerializer.SerializeToUtf8Bytes(new { result.StateVersion, result.To }));
+                    var committed = await economy.CommitAsync(transaction, cancellationToken);
+                    if (!committed.Applied)
+                        throw new InvalidOperationException("模拟资产事务未提交。");
+                    economyCommitted = true;
+                    try
+                    {
+                        await ReloadWalletAsync(cancellationToken);
+                    }
+                    catch (Exception reloadException)
+                    {
+                        // 资产事务已 durable commit，不能回滚 LastSimulatedAt，否则下一次目标时间
+                        // 会把同一段奖励再次结算。保留聚合进度，标记钱包待刷新；后续资产命令
+                        // 会先强制从 PostgreSQL 读取，期间尽量用本地 delta 保持界面可见值。
+                        _walletReloadRequired = true;
+                        foreach (var delta in result.AssetDeltas)
+                        {
+                            try { wallet.Apply(delta); }
+                            catch (Exception applyException)
+                            {
+                                if (_walletErrorLog.TryAcquire())
+                                    logger.LogError(applyException, "模拟资产已提交但本地钱包无法应用 delta，等待下次刷新 player={PlayerId}", aggregate.PlayerId.Value);
+                                break;
+                            }
+                        }
+                        if (reloadException is not OperationCanceledException)
+                        {
+                            if (_walletErrorLog.TryAcquire())
+                                logger.LogError(reloadException, "模拟资产已提交但钱包刷新失败 player={PlayerId}", aggregate.PlayerId.Value);
+                        }
+                        if (reloadException is OperationCanceledException) throw;
+                    }
+                }
+                _logicalVersion = Math.Max(_logicalVersion, aggregate.StateVersion);
+                TouchDirtyOnly();
+                return result;
+            }
+            catch
+            {
+                if (!economyCommitted)
+                {
+                    RestoreSimulationState(before, walletBefore, dirtyBefore, dirtyAtBefore, logicalVersionBefore);
+                }
+                throw;
+            }
         }
 
         public async ValueTask<PlayerCommandResult?> AdvanceSimulationAsync(DateTimeOffset target, CancellationToken cancellationToken)

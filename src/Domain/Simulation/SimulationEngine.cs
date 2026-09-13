@@ -179,6 +179,10 @@ public static class SimulationEngine
 
         player.LastSimulatedAt = target;
         if (remainingSeconds < 0) throw new DomainException(DomainErrorCode.InvariantViolation, "模拟时间出现负余量。");
+        if (player.Actions.Count > 0 && player.Actions[0].Status == ActionQueueStatus.Pending)
+        {
+            player.Actions[0].Status = ActionQueueStatus.Running;
+        }
         // 空队列只更新内存中的时钟，不递增状态版本，也不标记 section，避免每秒产生无意义的磁盘写入。
         if (transitions > 0)
         {
@@ -483,17 +487,31 @@ public static class SimulationEngine
             var targetNodeId = action.Intent.TargetNodeId ?? player.World.NodeId;
             if (worldGraph is not null && worldGraph.ContainsNode(targetNodeId))
             {
-                var plan = worldGraph.PlanFromPosition(
-                    player.World.EdgeId,
-                    player.World.EdgeProgress,
-                    player.World.NodeId,
-                    targetNodeId);
-                travel = new TravelActionState(
-                    targetNodeId,
-                    plan.TotalTravelSeconds,
-                    plan.EdgeIds,
-                    plan.Segments);
-                action.Travel = travel;
+                try
+                {
+                    var plan = worldGraph.PlanFromPosition(
+                        player.World.EdgeId,
+                        player.World.EdgeProgress,
+                        player.World.NodeId,
+                        targetNodeId);
+                    travel = new TravelActionState(
+                        targetNodeId,
+                        plan.TotalTravelSeconds,
+                        plan.EdgeIds,
+                        plan.Segments);
+                    action.Travel = travel;
+                }
+                catch (DomainException)
+                {
+                    player.RemoveAction(action.Id, incrementVersion: false);
+                    events ??= new List<SimulationEvent>();
+                    events.Add(new SimulationEvent(
+                        from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
+                        "action.invalid-dropped",
+                        $"移动行动 {definition.Name} 无法到达目标地点，已自动移出队列。",
+                        definition.Id));
+                    return;
+                }
             }
             else
             {
@@ -612,10 +630,16 @@ public static class SimulationEngine
 
         player.MarkDirty(PlayerSectionKind.World);
         player.RemoveAction(action.Id, incrementVersion: false);
+        if (player.Actions.Count > 0 && player.Actions[0].Status == ActionQueueStatus.Pending)
+        {
+            player.Actions[0].Status = ActionQueueStatus.Running;
+        }
         player.MarkDirty(PlayerSectionKind.ActionQueue);
 
         completedActions += 1;
         completedRepeats += 1;
+        player.Progression.CompletedActions += 1;
+        player.MarkDirty(PlayerSectionKind.Progression);
 
         var arrivalTime = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
         events ??= new List<SimulationEvent>();

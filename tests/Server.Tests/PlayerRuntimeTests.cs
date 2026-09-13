@@ -299,6 +299,65 @@ public sealed class PlayerRuntimeTests
         Assert.True(removeResult.Success);
         Assert.Single(removeResult.Snapshot.State.Actions);
         Assert.Equal("cultivation.draw-qi", removeResult.Snapshot.State.Actions[0].Intent.ActionId.Value);
+        Assert.Equal(ActionQueueStatus.Running, removeResult.Snapshot.State.Actions[0].Status);
+    }
+
+    [Fact]
+    public async Task WorldTravelToCurrentNodeAtRestDoesNotAddActionAndMidTravelReturnsToOrigin()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "原地测试");
+        var assets = new MutableAssetRepository();
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var runtime = new PlayerRuntime(repository, assets, economy, catalog, NullLogger<PlayerRuntime>.Instance);
+
+        await runtime.LoadAsync(playerId);
+
+        // 1. 入队修炼
+        await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options));
+
+        // 2. 角色原本静止在云溪村，点击当前节点云溪村，不应加入移动行动，保持单项修炼
+        var stayResult = await runtime.ExecuteAsync(playerId, "world.travel", JsonSerializer.SerializeToElement(new
+        {
+            targetNodeId = "node.yunxi-village"
+        }));
+        Assert.True(stayResult.Success);
+        Assert.Single(stayResult.Snapshot.State.Actions);
+        Assert.Equal("cultivation.draw-qi", stayResult.Snapshot.State.Actions[0].Intent.ActionId.Value);
+        Assert.Equal(ActionQueueStatus.Running, stayResult.Snapshot.State.Actions[0].Status);
+
+        // 3. 发起移动前往青云山门
+        var travelResult = await runtime.ExecuteAsync(playerId, "world.travel", JsonSerializer.SerializeToElement(new
+        {
+            targetNodeId = "node.cloud-gate"
+        }));
+        Assert.True(travelResult.Success);
+        Assert.Equal(2, travelResult.Snapshot.State.Actions.Count);
+        Assert.Equal("world.travel", travelResult.Snapshot.State.Actions[0].Intent.ActionId.Value);
+
+        // 4. 行走半途点击出发地云溪村，应当规划折返路线前往云溪村
+        var returnResult = await runtime.ExecuteAsync(playerId, "world.travel", JsonSerializer.SerializeToElement(new
+        {
+            targetNodeId = "node.yunxi-village"
+        }));
+        Assert.True(returnResult.Success);
+        Assert.Equal(2, returnResult.Snapshot.State.Actions.Count);
+        Assert.Equal("world.travel", returnResult.Snapshot.State.Actions[0].Intent.ActionId.Value);
+        Assert.Equal("node.yunxi-village", returnResult.Snapshot.State.Actions[0].Travel!.TargetNodeId);
+
+        // 5. 模拟推进完成折返，抵达云溪村后自动出队并恢复修炼
+        var advanceResult = await runtime.ExecuteAsync(playerId, "simulation.advance", JsonSerializer.SerializeToElement(new
+        {
+            targetTime = returnResult.Snapshot.LastSimulatedAt.AddSeconds(10)
+        }));
+        Assert.True(advanceResult.Success);
+        Assert.Equal("node.yunxi-village", advanceResult.Snapshot.State.World.NodeId);
+        Assert.Null(advanceResult.Snapshot.State.World.EdgeId);
+        Assert.Single(advanceResult.Snapshot.State.Actions);
+        Assert.Equal("cultivation.draw-qi", advanceResult.Snapshot.State.Actions[0].Intent.ActionId.Value);
+        Assert.Equal(ActionQueueStatus.Running, advanceResult.Snapshot.State.Actions[0].Status);
     }
 
     private static FakeStateRepository CreateEmptyPlayerRepository(Guid playerId, string name)

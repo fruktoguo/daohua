@@ -409,7 +409,7 @@ public sealed partial class PlayerAggregate
         var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now)
         {
             Travel = travel,
-            Status = ActionQueueStatus.Pending
+            Status = ActionQueueStatus.Running
         };
 
         _actions.Insert(0, action);
@@ -419,18 +419,24 @@ public sealed partial class PlayerAggregate
 
     /// <summary>
     /// 从队列中显式取消/移除指定行动实例。
+    /// 若移除的是队首正在运行的行动，后续排队的挂起行动立即激活为运行中。
     /// </summary>
     public bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true)
     {
         var index = _actions.FindIndex(action => action.Id == actionInstanceId);
         if (index < 0) return false;
         _actions.RemoveAt(index);
+        if (index == 0 && _actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Pending)
+        {
+            _actions[0].Status = ActionQueueStatus.Running;
+        }
         if (incrementVersion) Touch(PlayerSectionKind.ActionQueue);
         return true;
     }
 
     /// <summary>
     /// 调整队列中某项行动的执行次序（-1 向上移一位，1 向下移一位）。
+    /// 调序后严格维护不变量：仅队首（Index 0）允许为运行中状态，其余项降为排队中。
     /// </summary>
     public bool MoveAction(Guid actionInstanceId, int direction)
     {
@@ -441,6 +447,14 @@ public sealed partial class PlayerAggregate
         if (index < 0) return false;
         if (target < 0 || target >= _actions.Count) return false;
         (_actions[index], _actions[target]) = (_actions[target], _actions[index]);
+        if (_actions.Count > 0)
+        {
+            if (_actions[0].Status == ActionQueueStatus.Pending) _actions[0].Status = ActionQueueStatus.Running;
+            for (var i = 1; i < _actions.Count; i++)
+            {
+                if (_actions[i].Status == ActionQueueStatus.Running) _actions[i].Status = ActionQueueStatus.Pending;
+            }
+        }
         Touch(PlayerSectionKind.ActionQueue);
         return true;
     }

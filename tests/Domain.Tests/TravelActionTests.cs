@@ -3,6 +3,7 @@ using Domain.GameData;
 using Domain.Player;
 using Domain.Simulation;
 using Domain.World;
+using System.Text.Json;
 using Xunit;
 
 namespace Domain.Tests;
@@ -123,7 +124,7 @@ public sealed class TravelActionTests
         var secondAction = player.Actions[1];
 
         Assert.Equal("world.travel", firstAction.Intent.ActionId.Value);
-        Assert.Equal(ActionQueueStatus.Pending, firstAction.Status);
+        Assert.Equal(ActionQueueStatus.Running, firstAction.Status);
         Assert.NotNull(firstAction.Travel);
         Assert.Equal("node.cloud-gate", firstAction.Travel.TargetNodeId);
 
@@ -254,5 +255,113 @@ public sealed class TravelActionTests
         Assert.NotNull(returnPlan);
         Assert.NotEmpty(returnPlan.Segments);
         Assert.Equal("node.yunxi-village", returnPlan.ToNodeId);
+    }
+
+    [Fact]
+    public void PingPongTurnaroundMidEdgeSimulatesAndCalculatesPreciseSegments()
+    {
+        var graph = new WorldGraph();
+        graph.AddNode(WorldNode.Create("n1", "一", 0, 0));
+        graph.AddNode(WorldNode.Create("n2", "二", 10, 0));
+        graph.AddNode(WorldNode.Create("n3", "三", 20, 0));
+        graph.AddUndirectedEdge(WorldEdge.Create("e12", "n1", "n2", 10, 10));
+        graph.AddUndirectedEdge(WorldEdge.Create("e23", "n2", "n3", 10, 10));
+
+        var player = CreatePlayer("令狐冲");
+        player.World.NodeId = "n1";
+
+        var actionCatalog = new ActionCatalog(
+        [
+            new ActionDefinition(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1,
+                new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 0, 0, null, true, ActionExecutionKind.Travel)
+        ]);
+        var gameData = new GameDataCatalog("v1", "fp1", actionCatalog, worldGraph: graph);
+
+        // 1. 从 n1 前往 n2
+        var plan1 = graph.PlanFromPosition(null, 0, "n1", "n2");
+        var travel1 = new TravelActionState("n2", plan1.TotalTravelSeconds, plan1.EdgeIds, plan1.Segments);
+        player.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, "n2"), Baseline, actionCatalog, travel1);
+
+        // 推进 4 秒：位于 e12 进度 0.4
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), gameData);
+        Assert.Equal("e12", player.World.EdgeId);
+        Assert.Equal(0.4, player.World.EdgeProgress, 4);
+
+        // 2. 乒乓改向：决定折返回 n1
+        var planReverse = graph.PlanFromPosition(player.World.EdgeId, player.World.EdgeProgress, player.World.NodeId, "n1");
+        Assert.Single(planReverse.Segments);
+        Assert.Equal(0.4, planReverse.Segments[0].StartProgress, 4);
+        Assert.Equal(0.0, planReverse.Segments[0].EndProgress, 4);
+        Assert.Equal(4.0, planReverse.TotalTravelSeconds, 4);
+
+        var travelReverse = new TravelActionState("n1", planReverse.TotalTravelSeconds, planReverse.EdgeIds, planReverse.Segments);
+        player.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, "n1"), Baseline.AddSeconds(4), actionCatalog, travelReverse);
+
+        // 推进 2 秒向 n1 行进：位于 e12 进度 0.2
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6), gameData);
+        Assert.Equal("e12", player.World.EdgeId);
+        Assert.Equal(0.2, player.World.EdgeProgress, 4);
+
+        // 3. 乒乓再改向：决定直接去 n3
+        var planForwardTo3 = graph.PlanFromPosition(player.World.EdgeId, player.World.EdgeProgress, player.World.NodeId, "n3");
+        Assert.Equal(2, planForwardTo3.Segments.Count);
+        Assert.Equal("e12", planForwardTo3.Segments[0].EdgeId);
+        Assert.Equal(0.2, planForwardTo3.Segments[0].StartProgress, 4);
+        Assert.Equal(1.0, planForwardTo3.Segments[0].EndProgress, 4);
+        Assert.Equal(8.0, planForwardTo3.Segments[0].DurationSeconds, 4);
+
+        Assert.Equal("e23", planForwardTo3.Segments[1].EdgeId);
+        Assert.Equal(10.0, planForwardTo3.Segments[1].DurationSeconds, 4);
+        Assert.Equal(18.0, planForwardTo3.TotalTravelSeconds, 4);
+
+        var travelTo3 = new TravelActionState("n3", planForwardTo3.TotalTravelSeconds, planForwardTo3.EdgeIds, planForwardTo3.Segments);
+        player.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, "n3"), Baseline.AddSeconds(6), actionCatalog, travelTo3);
+
+        // 推进 18 秒完成全部移动抵达 n3
+        var finalSim = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(24), gameData);
+        Assert.Equal("n3", player.World.NodeId);
+        Assert.Null(player.World.EdgeId);
+        Assert.Equal(0, player.World.EdgeProgress);
+        Assert.Contains(finalSim.Events, e => e.Code == "world.arrived");
+        Assert.Empty(player.Actions);
+    }
+
+    [Fact]
+    public void LargeOfflineJumpCompletesTravelAndAdvancesFullBacklog()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var player = CreatePlayer("石破天");
+
+        // 队列先放一个修炼行动 (10s/次，无限循环 -1)
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
+
+        // 插入移动行动 (从云溪村到青云山门)
+        var plan = catalog.WorldGraph.PlanFromPosition(player.World.EdgeId, player.World.EdgeProgress, player.World.NodeId, "node.cloud-gate");
+        var travelState = new TravelActionState("node.cloud-gate", plan.TotalTravelSeconds, plan.EdgeIds, plan.Segments);
+        player.EnqueuePriority(new ActionIntent(new ActionId("world.travel"), 1, "node.cloud-gate"), Baseline, catalog.Actions, travelState);
+
+        var travelDuration = plan.TotalTravelSeconds;
+        Assert.True(travelDuration > 0);
+
+        // 离线跳跃：一次性推进 travelDuration + 1000 秒 (修炼 100 轮)
+        var totalOfflineJumpSeconds = travelDuration + 1000;
+        var simResult = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(totalOfflineJumpSeconds), catalog);
+
+        // 移动已完成抵达终点
+        Assert.Equal("node.cloud-gate", player.World.NodeId);
+        Assert.Null(player.World.EdgeId);
+        Assert.Equal(0, player.World.EdgeProgress);
+        Assert.Contains(simResult.Events, e => e.Code == "world.arrived");
+
+        // 队列中只剩修炼，且完成了 100 轮
+        Assert.Single(player.Actions);
+        var runningAction = player.Actions[0];
+        Assert.Equal("cultivation.draw-qi", runningAction.Intent.ActionId.Value);
+        Assert.Equal(ActionQueueStatus.Running, runningAction.Status);
+        Assert.Equal(100, runningAction.CompletedRepeats);
+        Assert.Equal(0.0, runningAction.ProgressSeconds, 4);
+
+        // 总计完成行动数：1 次移动 + 100 次修炼 = 101
+        Assert.Equal(101, player.Progression.CompletedActions);
     }
 }
