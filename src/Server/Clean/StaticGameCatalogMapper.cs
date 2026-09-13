@@ -95,7 +95,6 @@ public static class StaticGameCatalogMapper
             var desc = ReadString(eq, "description");
             var slot = ReadString(eq, "slot", "weapon");
             var tier = ReadInt(eq, "tier", 1);
-            var attackIntervalMilliseconds = ReadDouble(eq, "attackIntervalMilliseconds", 2400);
 
             var baseStatRatios = eq.TryGetProperty("baseStatRatios", out var bsr) && bsr.ValueKind == JsonValueKind.Object
                 ? bsr.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
@@ -120,7 +119,6 @@ public static class StaticGameCatalogMapper
                 description = desc,
                 slot,
                 tier,
-                attackIntervalMilliseconds,
                 baseStatRatios,
                 flatStats,
                 specialMechanics,

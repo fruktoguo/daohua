@@ -4,7 +4,6 @@
     "name": "青锋剑",
     "description": "青钢淬火锻造的三尺长剑，剑身青光如秋水澄澈。",
     "slot": "weapon",
-    "attackIntervalMilliseconds": 2400,
     "baseStatRatios": {
       "physicalAttack": 0.2
     },
@@ -18,7 +17,6 @@
     "name": "劈山刀",
     "description": "沉重坚实的山林朴刀，刀背厚重，刀锋刃口雪亮。",
     "slot": "weapon",
-    "attackIntervalMilliseconds": 3000,
     "baseStatRatios": {
       "physicalAttack": 0.1,
       "physicalArmor": 0.14
@@ -28,7 +26,7 @@
       "physicalArmor": 8
     },
     "specialMechanics": {
-      "threatRatio": 2.0
+      "threatRatio": 2
     }
   },
   {
@@ -36,7 +34,6 @@
     "name": "九节杖",
     "description": "老山竹根削成的九节法杖，通体油亮光滑。",
     "slot": "weapon",
-    "attackIntervalMilliseconds": 2400,
     "baseStatRatios": {
       "spellAttack": 0.2
     },
@@ -50,7 +47,6 @@
     "name": "素心琴",
     "description": "以山中老桐木制成的七弦古琴，音质清越素雅。",
     "slot": "weapon",
-    "attackIntervalMilliseconds": 2800,
     "baseStatRatios": {
       "spellAttack": 0.14
     },
@@ -69,7 +65,6 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "attackIntervalMilliseconds": 2400,
     "baseStatRatios": {
       "physicalAttack": 0.28
     },
@@ -85,7 +80,6 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "attackIntervalMilliseconds": 3000,
     "baseStatRatios": {
       "physicalAttack": 0.14,
       "physicalArmor": 0.2
@@ -95,7 +89,7 @@
       "physicalArmor": 11
     },
     "specialMechanics": {
-      "threatRatio": 3.0
+      "threatRatio": 3
     }
   },
   {
@@ -105,7 +99,6 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "attackIntervalMilliseconds": 2400,
     "baseStatRatios": {
       "spellAttack": 0.28
     },
@@ -121,7 +114,6 @@
     "slot": "weapon",
     "tier": 2,
     "quality": 2,
-    "attackIntervalMilliseconds": 2800,
     "baseStatRatios": {
       "spellAttack": 0.18
     },

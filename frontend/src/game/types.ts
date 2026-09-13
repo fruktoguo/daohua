@@ -691,7 +691,7 @@ export interface CombatEquipmentStats {
   criticalDamageRatio: number
   criticalAvoidance: number
   damageAbsorptionRatio: number
-  attackIntervalMilliseconds: number
+  attackIntervalMilliseconds?: number
   style?: CombatStyle | null
   category?: DamageCategory | null
   element?: Element | null

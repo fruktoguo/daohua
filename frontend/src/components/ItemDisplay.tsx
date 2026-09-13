@@ -5,7 +5,7 @@ import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveD
 import { getT, useT } from '../i18n'
 import type { Buff, CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
-import { ValueText } from './ValueText'
+import { PillBonusLabel, type PillTone } from './PillLabel'
 import { UnitNumber } from './UnitNumber'
 
 /** 物品悬浮提示气泡触发器 Props */
@@ -188,9 +188,7 @@ export function ItemTooltipTarget({
           badge={metadata.rarityLabel}
           badgeTone={tone}
           description={metadata.description}
-          lines={effectLines.map((line) => (
-            <ValueText className="effect-value-capsule" key={line} text={line} />
-          ))}
+          lines={effectLines}
           stats={stats}
           title={metadata.label}
         />
@@ -224,34 +222,74 @@ function multiplierPercent(value?: number | null): string | null {
  * 提取丹药/消耗品的直接主干效果（留在主卡片）
  * 包含即时回血、即时回蓝、冷却时长、使用条件等
  */
-function describeItemEffects(definition?: ItemDefinition): string[] {
+function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
   if (!definition) return []
   const t = getT()
-  const lines: string[] = []
+  const lines: ReactNode[] = []
   if (definition.hitpointRestore > 0) {
-    lines.push(t('market.effect.restoreHp', { value: formatNumber(definition.hitpointRestore) }))
+    lines.push(
+      <PillBonusLabel
+        key="item-hp"
+        label="即时恢复气血"
+        tone="emerald"
+        value={`+${formatNumber(definition.hitpointRestore)}`}
+      />
+    )
   }
   if (definition.manapointRestore > 0) {
-    lines.push(t('market.effect.restoreMp', { value: formatNumber(definition.manapointRestore) }))
+    lines.push(
+      <PillBonusLabel
+        key="item-mp"
+        label="即时恢复灵力"
+        tone="cyan"
+        value={`+${formatNumber(definition.manapointRestore)}`}
+      />
+    )
   }
   if (definition.recoverySeconds > 0) {
-    lines.push(t('market.effect.recoveryDuration', { seconds: formatNumber(definition.recoverySeconds) }))
+    lines.push(
+      <PillBonusLabel
+        key="item-duration"
+        label="药效持续时间"
+        tone="teal"
+        value={`${formatNumber(definition.recoverySeconds)}s`}
+      />
+    )
   }
   if (definition.cooldownSeconds > 0) {
-    lines.push(t('market.effect.cooldown', { seconds: formatNumber(definition.cooldownSeconds) }))
+    lines.push(
+      <PillBonusLabel
+        key="item-cd"
+        label="调息冷却时间"
+        tone="slate"
+        value={`${formatNumber(definition.cooldownSeconds)}s`}
+      />
+    )
   }
   if (definition.triggerAtCombatStart) {
-    lines.push(t('market.effect.useAtCombatStart'))
+    lines.push(
+      <span className="daohua-floating-card-line-text" key="item-trigger-start">
+        {t('market.effect.useAtCombatStart')}
+      </span>
+    )
   }
   for (const trigger of definition.defaultCombatTriggers ?? []) {
-    lines.push(t('market.effect.defaultCondition', { trigger: describeCombatTrigger(trigger) }))
+    lines.push(
+      <span className="daohua-floating-card-line-text" key={`trigger-${trigger.condition}`}>
+        {describeCombatTrigger(trigger)}
+      </span>
+    )
   }
   if (
     (definition.defaultCombatTriggers?.length ?? 0) === 0 &&
     (definition.hitpointRestore > 0 || definition.manapointRestore > 0) &&
     definition.triggerHpRatio > 0
   ) {
-    lines.push(t('market.effect.autoUseBelowHp', { percent: formatNumber(Math.round(definition.triggerHpRatio * 100)) }))
+    lines.push(
+      <span className="daohua-floating-card-line-text" key="item-auto-use">
+        {t('market.effect.autoUseBelowHp', { percent: formatNumber(Math.round(definition.triggerHpRatio * 100)) })}
+      </span>
+    )
   }
   return lines
 }
@@ -461,15 +499,117 @@ export function resolveItemAsideCards(
 }
 
 /**
+ * 装备与战斗属性到修仙色彩主题（PillTone）的标准对应字典
+ * 严格与内视属性面板（InsightPage）保持完全一致：
+ * - 物理攻击/威能/吸血/威胁 -> crimson（赤红）
+ * - 术法攻击 -> indigo（靛紫）
+ * - 生命上限/生命回复/伤害减免 -> emerald（翡翠绿）
+ * - 灵力上限/灵力回复/冷却缩减 -> cyan（灵气青）
+ * - 物理护甲/护甲穿透 -> bronze（青铜）
+ * - 术法抗性/法术穿透 -> violet（紫罗兰）
+ * - 命中 -> sky（天蓝）
+ * - 闪避/施法攻速 -> teal（水绿）
+ * - 暴击率/暴击伤害 -> gold（道金）
+ * - 免暴/韧性 -> slate（玄岩灰）
+ * - 破招 -> amber（琥珀橙）
+ * - 化解 -> silver（银白）
+ * - 五行克制 -> 金 gold / 木 emerald / 水 cyan / 火 amber / 土 bronze
+ */
+export const STAT_TONE_MAP: Record<string, PillTone> = {
+  // 物理攻击类 (赤红)
+  physicalAttack: 'crimson',
+  physAtk: 'crimson',
+  damage: 'crimson',
+  damageRatio: 'crimson',
+  lifeStealRatio: 'crimson',
+  hpDrainRatio: 'crimson',
+  threatRatio: 'crimson',
+  threatBonus: 'crimson',
+
+  // 术法攻击类 (靛紫)
+  spellAttack: 'indigo',
+  spellAtk: 'indigo',
+
+  // 生命类 (翡翠绿)
+  maxHitpoints: 'emerald',
+  hp: 'emerald',
+  hitpointRegen: 'emerald',
+  hpRegen: 'emerald',
+  healingBonusRatio: 'emerald',
+  damageAbsorption: 'emerald',
+  damageAbsorptionRatio: 'emerald',
+  damageReduction: 'emerald',
+
+  // 灵力类 (灵气青)
+  maxManapoints: 'cyan',
+  mp: 'cyan',
+  manapointRegen: 'cyan',
+  mpRegen: 'cyan',
+  cooldownReduction: 'cyan',
+  cooldownSpeed: 'cyan',
+  manaCostReduction: 'cyan',
+
+  // 物理护甲与穿透 (青铜)
+  physicalArmor: 'bronze',
+  armor: 'bronze',
+  penetrationRatio: 'bronze',
+  armorDamageRatio: 'bronze',
+  armorPen: 'bronze',
+
+  // 术法抗性与法穿 (紫罗兰)
+  spellResistance: 'violet',
+  mr: 'violet',
+  magicResistance: 'violet',
+  magicRes: 'violet',
+  magicPen: 'violet',
+
+  // 命中 (天蓝)
+  accuracy: 'sky',
+  hit: 'sky',
+  accuracyRatio: 'sky',
+
+  // 闪避与攻速 (水绿)
+  evasion: 'teal',
+  eva: 'teal',
+  evasionRatio: 'teal',
+  actionSpeed: 'teal',
+  attackSpeedRatio: 'teal',
+
+  // 暴击体系 (道金)
+  criticalChance: 'gold',
+  crit: 'gold',
+  criticalDamage: 'gold',
+  criticalDamageRatio: 'gold',
+
+  // 免暴与韧性 (玄岩灰)
+  criticalAvoidance: 'slate',
+  critAvoid: 'slate',
+  tenacity: 'slate',
+
+  // 破招 (琥珀橙)
+  parryBreak: 'amber',
+
+  // 化解 (银白)
+  parryResolve: 'silver',
+
+  // 五行抗性
+  metalResistance: 'gold',
+  woodResistance: 'emerald',
+  waterResistance: 'cyan',
+  fireResistance: 'amber',
+  earthResistance: 'bronze',
+}
+
+/**
  * 提取装备的主干攻防数值与强化加成（留在主卡片）
  */
 function describeEquipmentEffects(
   equipment?: CombatEquipmentDefinition,
   enhancementLevel = 0
-): string[] {
+): ReactNode[] {
   if (!equipment) return []
   const t = getT()
-  const lines: string[] = []
+  const lines: ReactNode[] = []
 
   const ratioLabels: Record<string, string> = {
     physicalAttack: '物理攻击',
@@ -516,18 +656,22 @@ function describeEquipmentEffects(
     (equipment.flatStats && Object.keys(equipment.flatStats).length > 0)
   )
 
-  // 攻击间隔（若存在）
-  const attackIntervalMs = (equipment as unknown as { attackIntervalMilliseconds?: number }).attackIntervalMilliseconds
-  if (attackIntervalMs && attackIntervalMs > 0) {
-    lines.push(t('market.stat.attackInterval', { seconds: (attackIntervalMs / 1000).toFixed(2) }))
-  }
+  // ⚠️ 彻底移除攻击间隔展示逻辑（修仙规则中装备不带攻击间隔属性）
 
   if (hasStructured) {
     if (equipment.baseStatRatios) {
       for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
         if (val !== 0) {
           const label = ratioLabels[key] ?? key
-          lines.push(`${label} ${signedPercent(val)}`)
+          const tone = STAT_TONE_MAP[key] ?? 'default'
+          lines.push(
+            <PillBonusLabel
+              key={`ratio-${key}`}
+              label={label}
+              tone={tone}
+              value={signedPercent(val)}
+            />
+          )
         }
       }
     }
@@ -535,19 +679,31 @@ function describeEquipmentEffects(
       for (const [key, val] of Object.entries(equipment.flatStats)) {
         if (val !== 0) {
           const label = flatLabels[key] ?? key
+          const tone = STAT_TONE_MAP[key] ?? 'default'
           if (key === 'criticalChance' && val <= 1.0) {
-            lines.push(`${label} +${formatNumber(val * 100)}%`)
+            lines.push(
+              <PillBonusLabel
+                key={`flat-${key}`}
+                label={label}
+                tone={tone}
+                value={`+${formatNumber(val * 100)}%`}
+              />
+            )
           } else {
             // 计算强化带来的加成
             const bonusPerLevel = equipment.enhancementBonus
               ? (equipment.enhancementBonus as unknown as Record<string, number>)[key] ?? 0
               : 0
             const totalBonus = bonusPerLevel * enhancementLevel
-            if (totalBonus > 0) {
-              lines.push(`${label} +${formatNumber(val)} (+${formatNumber(totalBonus)})`)
-            } else {
-              lines.push(`${label} +${formatNumber(val)}`)
-            }
+            lines.push(
+              <PillBonusLabel
+                key={`flat-${key}`}
+                label={label}
+                suffix={totalBonus > 0 ? ` (+${formatNumber(totalBonus)})` : undefined}
+                tone={tone}
+                value={`+${formatNumber(val)}`}
+              />
+            )
           }
         }
       }
@@ -557,27 +713,47 @@ function describeEquipmentEffects(
 
   // 兜底回退：当没有结构化字段时读取 stats
   const stats = equipment.stats
-  const addPercent = (label: string, value: number) => {
-    if (value !== 0) lines.push(`${label} ${signedPercent(value)}`)
+  const addPercent = (key: string, label: string, value: number) => {
+    if (value !== 0) {
+      const tone = STAT_TONE_MAP[key] ?? 'default'
+      lines.push(
+        <PillBonusLabel
+          key={`stat-${key}`}
+          label={label}
+          tone={tone}
+          value={signedPercent(value)}
+        />
+      )
+    }
   }
-  const addNumber = (label: string, value: number) => {
-    if (value !== 0) lines.push(`${label} ${formatNumber(value)}`)
+  const addNumber = (key: string, label: string, value: number) => {
+    if (value !== 0) {
+      const tone = STAT_TONE_MAP[key] ?? 'default'
+      lines.push(
+        <PillBonusLabel
+          key={`stat-${key}`}
+          label={label}
+          tone={tone}
+          value={`+${formatNumber(value)}`}
+        />
+      )
+    }
   }
-  addPercent(t('market.stat.damage'), stats.damageRatio)
-  addPercent(t('market.stat.accuracy'), stats.accuracyRatio)
-  addPercent(t('market.stat.attackSpeed'), stats.attackSpeedRatio)
-  addPercent(t('market.stat.evasion'), stats.evasionRatio)
-  addPercent(t('market.stat.armor'), stats.armor)
-  addPercent(t('market.stat.magicRes'), stats.magicResistance)
-  addNumber(t('market.stat.tenacity'), stats.tenacity)
-  addPercent(t('market.stat.penetration'), stats.penetrationRatio)
-  addPercent(t('market.stat.lifeSteal'), stats.lifeStealRatio)
-  addPercent(t('market.stat.armorDamage'), stats.armorDamageRatio)
-  addPercent(t('market.stat.hpDrain'), stats.hpDrainRatio)
-  addPercent(t('market.stat.critChance'), stats.criticalChance)
-  addPercent(t('market.stat.critDamage'), stats.criticalDamageRatio)
-  addPercent(t('market.stat.critAvoidance'), stats.criticalAvoidance)
-  addPercent(t('market.stat.damageAbsorption'), stats.damageAbsorptionRatio)
+  addPercent('damageRatio', t('market.stat.damage'), stats.damageRatio)
+  addPercent('accuracyRatio', t('market.stat.accuracy'), stats.accuracyRatio)
+  addPercent('attackSpeedRatio', t('market.stat.attackSpeed'), stats.attackSpeedRatio)
+  addPercent('evasionRatio', t('market.stat.evasion'), stats.evasionRatio)
+  addPercent('armor', t('market.stat.armor'), stats.armor)
+  addPercent('magicResistance', t('market.stat.magicRes'), stats.magicResistance)
+  addNumber('tenacity', t('market.stat.tenacity'), stats.tenacity)
+  addPercent('penetrationRatio', t('market.stat.penetration'), stats.penetrationRatio)
+  addPercent('lifeStealRatio', t('market.stat.lifeSteal'), stats.lifeStealRatio)
+  addPercent('armorDamageRatio', t('market.stat.armorDamage'), stats.armorDamageRatio)
+  addPercent('hpDrainRatio', t('market.stat.hpDrain'), stats.hpDrainRatio)
+  addPercent('criticalChance', t('market.stat.critChance'), stats.criticalChance)
+  addPercent('criticalDamageRatio', t('market.stat.critDamage'), stats.criticalDamageRatio)
+  addPercent('criticalAvoidance', t('market.stat.critAvoidance'), stats.criticalAvoidance)
+  addPercent('damageAbsorptionRatio', t('market.stat.damageAbsorption'), stats.damageAbsorptionRatio)
   return lines
 }
 

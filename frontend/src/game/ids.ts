@@ -574,7 +574,6 @@ const EMPTY_EQUIP_STATS: CombatEquipmentStats = {
   criticalDamageRatio: 1.5,
   criticalAvoidance: 0,
   damageAbsorptionRatio: 0,
-  attackIntervalMilliseconds: 2400,
 }
 
 const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {

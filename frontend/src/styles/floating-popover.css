@@ -491,6 +491,18 @@
   font-weight: bold;
 }
 
+/* 复合加成标签专属紧凑对齐：隐藏前置点并消除左侧内边距 */
+.daohua-floating-card-line-item:has(.compound-bonus-label),
+.daohua-floating-card-line-item--bonus {
+  padding-left: 0;
+  line-height: 1.25;
+}
+
+.daohua-floating-card-line-item:has(.compound-bonus-label)::before,
+.daohua-floating-card-line-item--bonus::before {
+  display: none;
+}
+
 /* 底部操作区 */
 .daohua-floating-card-footer {
   margin-top: 2px;
