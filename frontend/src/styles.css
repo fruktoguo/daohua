@@ -3549,12 +3549,19 @@ input[type="checkbox"] {
   align-content: start;
   align-items: start;
   grid-auto-rows: var(--item-slot-size);
+  contain: paint;
+}
+
+.market-browse-grid.is-scrolling {
+  pointer-events: none;
 }
 
 .market-browse-tooltip {
   display: block;
   min-width: 0;
   width: 100%;
+  content-visibility: auto;
+  contain-intrinsic-size: var(--item-slot-size) var(--item-slot-size);
 }
 
 .market-browse-card {

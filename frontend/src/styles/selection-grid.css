@@ -14,6 +14,19 @@
   grid-auto-rows: var(--item-slot-size);
 }
 
+.market-browse-grid {
+  contain: paint;
+}
+
+.market-browse-grid.is-scrolling {
+  pointer-events: none;
+}
+
+.market-browse-tooltip {
+  content-visibility: auto;
+  contain-intrinsic-size: var(--item-slot-size) var(--item-slot-size);
+}
+
 :is(
   .inventory-item-anchor,
   .item-grid-picker-tooltip,

@@ -6,7 +6,6 @@ import React, {
   useId,
   useImperativeHandle,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -295,8 +294,8 @@ export interface FloatingPopoverProps {
   style?: CSSProperties
   /** tabIndex */
   tabIndex?: number
-  /** 附属气泡列表（支持多气泡同时显示组合） */
-  asideCards?: readonly FloatingAsideCard[]
+  /** 附属气泡列表（支持多气泡同时显示组合，支持数组或惰性计算函数） */
+  asideCards?: readonly FloatingAsideCard[] | (() => readonly FloatingAsideCard[])
   /** 可选关联数值：若提供，自动生成独立的数量详细副气泡（标题：数量，内容：具体数值） */
   quantity?: number | bigint | string
   /** 数量副气泡标题，默认 '数量' */
@@ -637,123 +636,121 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
 
     const portalRoot = typeof document !== 'undefined' ? getOrCreateFloatingPortalRoot() : null
 
-    // 组合多气泡渲染 (主气泡 + 附属气泡群，自动集成 quantity 独立数量副气泡)
-    const mergedAsideCards = useMemo<FloatingAsideCard[]>(() => {
-      const list: FloatingAsideCard[] = asideCards ? [...asideCards] : []
+    let floatingElement: ReactNode = null
+
+    // 仅在浮层实际展开且挂载节点存在时，才进行内容求值、附属卡片构建与 Portal 挂载（彻底懒求值）
+    if (isOpen && portalRoot) {
+      const resolvedAsideCards = typeof asideCards === 'function' ? asideCards() : asideCards
+      const mergedAsideCards: FloatingAsideCard[] = resolvedAsideCards ? [...resolvedAsideCards] : []
       if (quantity !== undefined) {
-        list.unshift(createQuantityAsideCard(quantity, quantityTitle ?? '数量'))
+        mergedAsideCards.unshift(createQuantityAsideCard(quantity, quantityTitle ?? '数量'))
       }
-      return list
-    }, [asideCards, quantity, quantityTitle])
+      const hasAside = mergedAsideCards.length > 0
 
-    const hasAside = mergedAsideCards.length > 0
+      const renderedContentNode =
+        typeof content === 'function' ? content({ close: () => setOpen(false) }) : content
 
-    const renderedContentNode =
-      typeof content === 'function' ? content({ close: () => setOpen(false) }) : content
+      const customCardStyle: CSSProperties = {}
+      if (width !== undefined) {
+        customCardStyle.width = typeof width === 'number' ? `${width}px` : width
+      }
 
-    const customCardStyle: CSSProperties = {}
-    if (width !== undefined) {
-      customCardStyle.width = typeof width === 'number' ? `${width}px` : width
-    }
+      floatingElement = createPortal(
+        <FloatingContext.Provider value={{ close: () => setOpen(false) }}>
+          <div
+            className={`daohua-floating-layer ${hasAside ? 'daohua-floating-layer--composite' : ''} ${
+              interactive ? 'daohua-floating-layer--interactive' : 'daohua-floating-layer--passthrough'
+            }`}
+            data-placement={pos.actualPlacement}
+            id={id}
+            onClick={handleFloatingContentClick}
+            onMouseEnter={handleFloatingMouseEnter}
+            onMouseLeave={handleFloatingMouseLeave}
+            ref={floatingRef}
+            style={{
+              position: 'fixed',
+              left: `${pos.left}px`,
+              top: `${pos.top}px`,
+              zIndex: 10000,
+              ...style,
+            }}
+          >
+            {/* 主气泡面板 */}
+            <div
+              className={`daohua-floating-card daohua-floating-card--main daohua-floating-card--${size} ${className}`.trim()}
+              role="tooltip"
+              style={customCardStyle}
+            >
+              {/* 四角修仙古典折角装饰 */}
+              <span className="daohua-floating-corner daohua-floating-corner--tl" />
+              <span className="daohua-floating-corner daohua-floating-corner--tr" />
+              <span className="daohua-floating-corner daohua-floating-corner--bl" />
+              <span className="daohua-floating-corner daohua-floating-corner--br" />
 
-    const floatingElement =
-      isOpen && portalRoot
-        ? createPortal(
-            <FloatingContext.Provider value={{ close: () => setOpen(false) }}>
-              <div
-                className={`daohua-floating-layer ${hasAside ? 'daohua-floating-layer--composite' : ''} ${
-                  interactive ? 'daohua-floating-layer--interactive' : 'daohua-floating-layer--passthrough'
-                }`}
-                data-placement={pos.actualPlacement}
-                id={id}
-                onClick={handleFloatingContentClick}
-                onMouseEnter={handleFloatingMouseEnter}
-                onMouseLeave={handleFloatingMouseLeave}
-                ref={floatingRef}
-                style={{
-                  position: 'fixed',
-                  left: `${pos.left}px`,
-                  top: `${pos.top}px`,
-                  zIndex: 10000,
-                  ...style,
-                }}
-              >
-                {/* 主气泡面板 */}
-                <div
-                  className={`daohua-floating-card daohua-floating-card--main daohua-floating-card--${size} ${className}`.trim()}
-                  role="tooltip"
-                  style={customCardStyle}
-                >
-                  {/* 四角修仙古典折角装饰 */}
-                  <span className="daohua-floating-corner daohua-floating-corner--tl" />
-                  <span className="daohua-floating-corner daohua-floating-corner--tr" />
-                  <span className="daohua-floating-corner daohua-floating-corner--bl" />
-                  <span className="daohua-floating-corner daohua-floating-corner--br" />
+              {/* 顶部金华流光线 */}
+              <div className="daohua-floating-shimmer-bar" />
 
-                  {/* 顶部金华流光线 */}
-                  <div className="daohua-floating-shimmer-bar" />
+              {/* 卡片主体内容 */}
+              <div className="daohua-floating-body">{renderedContentNode}</div>
+            </div>
 
-                  {/* 卡片主体内容 */}
-                  <div className="daohua-floating-body">{renderedContentNode}</div>
-                </div>
+            {/* 附属卡片气泡群（支持多气泡联动组合） */}
+            {hasAside && (
+              <div className="daohua-floating-aside-group">
+                {mergedAsideCards.map((aside, idx) => (
+                  <div
+                    className={`daohua-floating-card daohua-floating-aside-card daohua-floating-aside-card--${
+                      aside.tone ?? 'gold'
+                    }`}
+                    data-aside-id={aside.id}
+                    key={aside.id ?? `${aside.title}-${idx}`}
+                  >
+                    <span className="daohua-floating-corner daohua-floating-corner--tl" />
+                    <span className="daohua-floating-corner daohua-floating-corner--tr" />
+                    <span className="daohua-floating-corner daohua-floating-corner--bl" />
+                    <span className="daohua-floating-corner daohua-floating-corner--br" />
 
-                {/* 附属卡片气泡群（支持多气泡联动组合） */}
-                {hasAside && (
-                  <div className="daohua-floating-aside-group">
-                    {mergedAsideCards.map((aside, idx) => (
-                      <div
-                        className={`daohua-floating-card daohua-floating-aside-card daohua-floating-aside-card--${
-                          aside.tone ?? 'gold'
-                        }`}
-                        data-aside-id={aside.id}
-                        key={aside.id ?? `${aside.title}-${idx}`}
-                      >
-                        <span className="daohua-floating-corner daohua-floating-corner--tl" />
-                        <span className="daohua-floating-corner daohua-floating-corner--tr" />
-                        <span className="daohua-floating-corner daohua-floating-corner--bl" />
-                        <span className="daohua-floating-corner daohua-floating-corner--br" />
-
-                        {aside.isSingleRow ? (
-                          <div className="daohua-floating-aside-single-row">
-                            <strong className="daohua-floating-aside-title">{aside.title}</strong>
-                            <span className="daohua-floating-aside-val">
-                              {aside.lines?.[0] ?? aside.subtitle ?? ''}
-                            </span>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="daohua-floating-aside-head">
-                              {aside.mark && (
-                                <span className="daohua-floating-aside-mark">{aside.mark}</span>
-                              )}
-                              <strong className="daohua-floating-aside-title">{aside.title}</strong>
-                              {aside.subtitle && (
-                                <span className="daohua-floating-aside-sub">{aside.subtitle}</span>
-                              )}
-                            </div>
-
-                            {aside.lines && aside.lines.length > 0 && (
-                              <ul className="daohua-floating-aside-lines">
-                                {aside.lines.map((line, lineIdx) => (
-                                  <li key={lineIdx}>{line}</li>
-                                ))}
-                              </ul>
-                            )}
-
-                            {aside.content && (
-                              <div className="daohua-floating-aside-custom">{aside.content}</div>
-                            )}
-                          </>
-                        )}
+                    {aside.isSingleRow ? (
+                      <div className="daohua-floating-aside-single-row">
+                        <strong className="daohua-floating-aside-title">{aside.title}</strong>
+                        <span className="daohua-floating-aside-val">
+                          {aside.lines?.[0] ?? aside.subtitle ?? ''}
+                        </span>
                       </div>
-                    ))}
+                    ) : (
+                      <>
+                        <div className="daohua-floating-aside-head">
+                          {aside.mark && (
+                            <span className="daohua-floating-aside-mark">{aside.mark}</span>
+                          )}
+                          <strong className="daohua-floating-aside-title">{aside.title}</strong>
+                          {aside.subtitle && (
+                            <span className="daohua-floating-aside-sub">{aside.subtitle}</span>
+                          )}
+                        </div>
+
+                        {aside.lines && aside.lines.length > 0 && (
+                          <ul className="daohua-floating-aside-lines">
+                            {aside.lines.map((line, lineIdx) => (
+                              <li key={lineIdx}>{line}</li>
+                            ))}
+                          </ul>
+                        )}
+
+                        {aside.content && (
+                          <div className="daohua-floating-aside-custom">{aside.content}</div>
+                        )}
+                      </>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
-            </FloatingContext.Provider>,
-            portalRoot
-          )
-        : null
+            )}
+          </div>
+        </FloatingContext.Provider>,
+        portalRoot
+      )
+    }
 
     return (
       <>
@@ -814,6 +811,8 @@ export function FloatingTooltip({
  */
 export interface FloatingInfoCardProps {
   title: ReactNode
+  /** 标题左侧图标地址（物品类卡片传入物品图标，缺省时不渲染） */
+  titleIcon?: string
   badge?: ReactNode
   badgeTone?: FloatingTone
   subtitle?: ReactNode
@@ -831,6 +830,7 @@ export interface FloatingInfoCardProps {
 
 export function FloatingInfoCard({
   title,
+  titleIcon,
   badge,
   badgeTone = 'gold',
   subtitle,
@@ -845,7 +845,12 @@ export function FloatingInfoCard({
       {/* 头部区 */}
       <header className="daohua-floating-card-header">
         <div className="daohua-floating-card-title-row">
-          <strong className="daohua-floating-card-title">{title}</strong>
+          <span className="daohua-floating-card-title-group">
+            {titleIcon && (
+              <img alt="" aria-hidden="true" className="daohua-floating-card-title-icon" draggable={false} src={titleIcon} />
+            )}
+            <strong className="daohua-floating-card-title">{title}</strong>
+          </span>
           {badge && (
             <span className={`daohua-floating-badge daohua-floating-badge--${badgeTone}`}>
               {badge}

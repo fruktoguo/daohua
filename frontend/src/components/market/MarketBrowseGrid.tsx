@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatNumber } from '../../game/format'
 import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { useT, type TFunction } from '../../i18n'
@@ -163,6 +163,63 @@ function matchesCategory(
   }
 }
 
+/** 坊市可交易标的单个卡片 Props */
+interface MarketBrowseCardItemProps {
+  item: MarketInstrument
+  amount: number
+  selected: boolean
+  onSelect: (itemId: string) => void
+  openDelay?: number
+}
+
+/** 隔离后的单个坊市标的卡片（memo 避免 80+ 个格子联级重绘） */
+const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
+  item,
+  amount,
+  selected,
+  onSelect,
+  openDelay = 150,
+}: MarketBrowseCardItemProps): React.JSX.Element {
+  const t = useT()
+  const metadata = useMemo(() => getMetadata(item, t), [item, t])
+
+  const handleClick = useCallback(() => {
+    onSelect(item.itemId)
+  }, [item.itemId, onSelect])
+
+  return (
+    <ItemTooltipTarget
+      amount={amount}
+      className="market-browse-tooltip"
+      definition={item.definition}
+      equipmentDefinition={item.equipmentDefinition}
+      itemId={item.itemId}
+      metadata={metadata}
+      openDelay={openDelay}
+      tabIndex={-1}
+    >
+      <button
+        aria-label={t('market.browse.itemOwned', { name: item.name, count: formatNumber(amount) })}
+        aria-selected={selected}
+        className={`market-browse-card${selected ? ' is-selected' : ''}`}
+        onClick={handleClick}
+        role="option"
+        type="button"
+      >
+        <ItemTile
+          amount={amount}
+          category={resolveItemCategoryLabel(item.subCategory || item.category, t)}
+          className="inventory-cell"
+          itemId={item.itemId}
+          level={metadata.level}
+          name={item.name}
+          rarity={metadata.rarity}
+        />
+      </button>
+    </ItemTooltipTarget>
+  )
+})
+
 /** 坊市可交易物品网格浏览 Props */
 interface MarketBrowseGridProps {
   /** 全部可交易标的列表 */
@@ -186,6 +243,35 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const [query, setQuery] = useState('')
   const [primaryTab, setPrimaryTab] = useState<PrimaryCategory>('all')
   const [subCategory, setSubCategory] = useState<string>('all')
+
+  // 1. 滚动抑制状态与防抖计时器
+  const [isScrolling, setIsScrolling] = useState(false)
+  const scrollTimerRef = useRef<number | null>(null)
+
+  const handleScroll = useCallback(() => {
+    setIsScrolling(true)
+    if (scrollTimerRef.current !== null) {
+      window.clearTimeout(scrollTimerRef.current)
+    }
+    scrollTimerRef.current = window.setTimeout(() => {
+      setIsScrolling(false)
+      scrollTimerRef.current = null
+    }, 100)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimerRef.current !== null) {
+        window.clearTimeout(scrollTimerRef.current)
+      }
+    }
+  }, [])
+
+  // 2. 背包字典 O(1) 映射，避免每次渲染 80 * N 线性扫描
+  const inventoryMap = useMemo(
+    () => new Map(inventory.map(entry => [entry.itemId, entry.amount])),
+    [inventory]
+  )
 
   const handlePrimaryTabChange = (newPrimary: PrimaryCategory) => {
     setPrimaryTab(newPrimary)
@@ -259,43 +345,22 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
         </div>
       )}
 
-      <div className="market-browse-grid" role="listbox" aria-label={t('market.browse.gridAria')}>
-        {visibleItems.map(item => {
-          const metadata = getMetadata(item, t)
-          const amount = inventory.find(entry => entry.itemId === item.itemId)?.amount ?? 0
-          const selected = value === item.itemId
-          return (
-            <ItemTooltipTarget
-              amount={amount}
-              className="market-browse-tooltip"
-              definition={item.definition}
-              equipmentDefinition={item.equipmentDefinition}
-              itemId={item.itemId}
-              key={item.itemId}
-              metadata={metadata}
-              tabIndex={-1}
-            >
-              <button
-                aria-label={t('market.browse.itemOwned', { name: item.name, count: formatNumber(amount) })}
-                aria-selected={selected}
-                className={`market-browse-card${selected ? ' is-selected' : ''}`}
-                onClick={() => onSelect(item.itemId)}
-                role="option"
-                type="button"
-              >
-                <ItemTile
-                  amount={amount}
-                  category={resolveItemCategoryLabel(item.subCategory || item.category, t)}
-                  className="inventory-cell"
-                  itemId={item.itemId}
-                  level={metadata.level}
-                  name={item.name}
-                  rarity={metadata.rarity}
-                />
-              </button>
-            </ItemTooltipTarget>
-          )
-        })}
+      <div
+        aria-label={t('market.browse.gridAria')}
+        className={`market-browse-grid${isScrolling ? ' is-scrolling' : ''}`}
+        onScroll={handleScroll}
+        role="listbox"
+      >
+        {visibleItems.map(item => (
+          <MarketBrowseCardItem
+            amount={inventoryMap.get(item.itemId) ?? 0}
+            item={item}
+            key={item.itemId}
+            onSelect={onSelect}
+            openDelay={150}
+            selected={value === item.itemId}
+          />
+        ))}
       </div>
       {visibleItems.length === 0 && <p className="market-browse-empty">{t('market.browse.noMatch')}</p>}
     </div>

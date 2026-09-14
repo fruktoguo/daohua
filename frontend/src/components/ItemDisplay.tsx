@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo } from 'react'
+import { type ReactNode, useCallback } from 'react'
 import { describeAbility, describeCombatTrigger, formatAbilityCategory, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
@@ -33,6 +33,8 @@ export interface ItemTooltipTargetProps {
   displayContents?: boolean
   /** 额外附属卡片群 */
   extraAsideCards?: readonly FloatingAsideCard[]
+  /** 鼠标悬停展开延时 (ms)，默认 60ms */
+  openDelay?: number
 }
 
 /** 物品网格方块 Props */
@@ -98,23 +100,26 @@ function rarityToTone(rarity: ItemRarity): FloatingTone {
  * 3. 【特殊机制附属卡片窗口 (220px)】：若装备带有特殊机制/特技，在右侧独立展开特殊机制副面板；
  * 4. 【数量副气泡】：若传入 amount，自动在右侧并排展示独立的数量副气泡。
  */
-export function ItemTooltipTarget({
+interface ItemTooltipCardContentProps {
+  itemId: string
+  amount?: number
+  metadataOverride?: ItemMetadata
+  itemDefOverride?: ItemDefinition
+  eqDefOverride?: CombatEquipmentDefinition
+  enhancementLevel?: number
+}
+
+function ItemTooltipCardContent({
   itemId,
   amount,
-  children,
-  className = '',
-  metadata: metadataOverride,
-  definition: itemDefOverride,
-  equipmentDefinition: eqDefOverride,
+  metadataOverride,
+  itemDefOverride,
+  eqDefOverride,
   enhancementLevel = 0,
-  tabIndex = 0,
-  displayContents,
-  extraAsideCards,
-}: ItemTooltipTargetProps): React.JSX.Element {
+}: ItemTooltipCardContentProps): React.JSX.Element {
   const t = useT()
   const itemCatalog = useGameStore((state) => state.items)
   const equipmentCatalog = useGameStore((state) => state.equipment)
-  const abilitiesCatalog = useGameStore((state) => state.abilities)
 
   const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
   const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
@@ -170,43 +175,123 @@ export function ItemTooltipTarget({
 
   const tone = rarityToTone(metadata.rarity)
 
-  // 附属卡片群：解析丹药 Buff、装备特殊机制、功法技能参悟与传入的副卡片
-  const asideCards = useMemo<FloatingAsideCard[]>(() => {
-    const list: FloatingAsideCard[] = []
-    const itemAsides = resolveItemAsideCards(itemDef, metadata.label)
-    const equipAsides = resolveEquipmentAsideCards(eqDef)
-    list.push(...itemAsides, ...equipAsides)
-    if (!itemAsides.some(c => c.id?.startsWith('aside-manual-'))) {
-      const manualAside = resolveManualAsideCard(itemId, itemDef?.category ?? metadata.category, abilitiesCatalog)
-      if (manualAside) {
-        list.push(manualAside)
+  return (
+    <FloatingInfoCard
+      badge={metadata.rarityLabel}
+      badgeTone={tone}
+      description={metadata.description}
+      lines={effectLines}
+      stats={stats}
+      title={metadata.label}
+      titleIcon={resolveItemIconUrl(itemId)}
+    />
+  )
+}
+
+function resolveItemTooltipAsideCards(
+  itemId: string,
+  metadataOverride?: ItemMetadata,
+  itemDefOverride?: ItemDefinition,
+  eqDefOverride?: CombatEquipmentDefinition,
+  extraAsideCards?: readonly FloatingAsideCard[]
+): FloatingAsideCard[] {
+  const store = useGameStore.getState()
+  const itemCatalog = store.items
+  const equipmentCatalog = store.equipment
+  const abilitiesCatalog = store.abilities
+
+  const itemDef = itemDefOverride ?? findItemInCatalog(itemCatalog, itemId) ?? resolveDefaultItemDefinition(itemId)
+  const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
+
+  const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
+  const rawMetadata = itemDef
+    ? {
+        ...baseMetadata,
+        label: itemDef.name || baseMetadata.label,
+        category: itemDef.category ?? baseMetadata.category,
       }
+    : eqDef
+    ? {
+        ...baseMetadata,
+        label: eqDef.name || baseMetadata.label,
+        category: eqDef.slot ?? baseMetadata.category,
+      }
+    : baseMetadata
+
+  const list: FloatingAsideCard[] = []
+  const itemAsides = resolveItemAsideCards(itemDef, rawMetadata.label)
+  const equipAsides = resolveEquipmentAsideCards(eqDef)
+  list.push(...itemAsides, ...equipAsides)
+  if (!itemAsides.some(c => c.id?.startsWith('aside-manual-'))) {
+    const manualAside = resolveManualAsideCard(itemId, rawMetadata.category, abilitiesCatalog)
+    if (manualAside) {
+      list.push(manualAside)
     }
-    if (extraAsideCards && extraAsideCards.length > 0) {
-      list.push(...extraAsideCards)
-    }
-    return list
-  }, [itemDef, eqDef, itemId, metadata.category, abilitiesCatalog, metadata.label, extraAsideCards])
+  }
+  if (extraAsideCards && extraAsideCards.length > 0) {
+    list.push(...extraAsideCards)
+  }
+  return list
+}
+
+/**
+ * 物品悬浮气泡包裹组件 (ItemTooltipTarget)
+ *
+ * 鼠标悬停展示修仙风物品卡片气泡体系：
+ * 1. 【主卡片 (300px)】：展示物品/装备品阶徽章、名称、背景故事描述、即时回血回蓝、冷却、装备攻防基础数值与品类/等阶；
+ * 2. 【专属 Buff 附属卡片窗口 (220px)】：若为丹药附带持续 Buff，或修炼/采集/炼丹持续加成，在右侧独立展开附属面板；
+ * 3. 【特殊机制附属卡片窗口 (220px)】：若装备带有特殊机制/特技，在右侧独立展开特殊机制副面板；
+ * 4. 【数量副气泡】：若传入 amount，自动在右侧并排展示独立的数量副气泡。
+ */
+export function ItemTooltipTarget({
+  itemId,
+  amount,
+  children,
+  className = '',
+  metadata: metadataOverride,
+  definition: itemDefOverride,
+  equipmentDefinition: eqDefOverride,
+  enhancementLevel = 0,
+  tabIndex = 0,
+  displayContents,
+  extraAsideCards,
+  openDelay = 60,
+}: ItemTooltipTargetProps): React.JSX.Element {
+  const renderContent = useCallback(
+    () => (
+      <ItemTooltipCardContent
+        amount={amount}
+        enhancementLevel={enhancementLevel}
+        eqDefOverride={eqDefOverride}
+        itemDefOverride={itemDefOverride}
+        itemId={itemId}
+        metadataOverride={metadataOverride}
+      />
+    ),
+    [amount, enhancementLevel, eqDefOverride, itemDefOverride, itemId, metadataOverride]
+  )
+
+  const renderAsideCards = useCallback(
+    () =>
+      resolveItemTooltipAsideCards(
+        itemId,
+        metadataOverride,
+        itemDefOverride,
+        eqDefOverride,
+        extraAsideCards
+      ),
+    [itemId, metadataOverride, itemDefOverride, eqDefOverride, extraAsideCards]
+  )
 
   return (
     <FloatingPopover
-      asideCards={asideCards.length > 0 ? asideCards : undefined}
+      asideCards={renderAsideCards}
       closeDelay={120}
+      content={renderContent}
       displayContents={displayContents}
-      content={
-        <FloatingInfoCard
-          badge={metadata.rarityLabel}
-          badgeTone={tone}
-          description={metadata.description}
-          lines={effectLines}
-          stats={stats}
-          title={metadata.label}
-          titleIcon={resolveItemIconUrl(itemId)}
-        />
-      }
       gap={8}
       interactive={false}
-      openDelay={60}
+      openDelay={openDelay}
       placement="bottom"
       quantity={amount}
       tabIndex={tabIndex}
