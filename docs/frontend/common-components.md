@@ -18,7 +18,7 @@
   - **通用 Buff / Debuff / 特殊机制附属副气泡窗口 (Aside Cards)**：支持将丹药持续 Buff、修炼/技艺效率加成、装备特殊机制/词缀以及角色身上生效的 Buff/Debuff 自动解析为独立的副气泡卡片窗口，并排挂载联动展示（`resolveItemAsideCards`, `resolveEquipmentAsideCards`, `createBuffAsideCard`）。
   - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成包含伤害系数、威能、前摇、冷却、灵力消耗与触发条件的 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。
   - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`）与视口渲染裁剪（`content-visibility: auto`），彻底消除滚动期间的高频 Hover 风暴与 Layout Thrashing。
-  - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingMenu`, `FloatingMenuItem`, `FloatingMenuGroup`, `FloatingMenuDivider`
+  - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
 - **组件源码**：[`frontend/src/components/FloatingPopover.tsx`](../../frontend/src/components/FloatingPopover.tsx)
 - **样式文件**：[`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css)
 - **专项设计规范**：[`floating-popover.md`](./floating-popover.md)
@@ -171,7 +171,7 @@
 - **词典结构与多语言架构**：
   - **中文 TS 强类型源**：[`frontend/src/i18n/domains/`](../../frontend/src/i18n/domains/) 按业务域维护 `<域>.zh.ts`（common/app/insight/market/combat/game 六域，根键互不重叠），聚合入口 [`locales/zh-CN.ts`](../../frontend/src/i18n/locales/zh-CN.ts) 作为全量 `Messages` 与点路径 `TranslationKey` 静态类型基准与首屏零延迟内置源。
   - **全自动生成翻译模板**：前端执行 `npm run dev` 或 `npm run build` 时，全自动从中文 TS 源生成最新 [`frontend/public/locales/template.csv`](../../frontend/public/locales/template.csv)（`key,zh_source,translation`），供外部/社区翻译对照。
-  - **外语 CSV 动态扩展**：支持直接在 [`frontend/public/locales/`](../../frontend/public/locales/) 放入第三方 CSV 语言包（如 `ja-JP.csv`），前端按需异步拉取并缓存，未命中或加载中无缝回退至中文树状词典。
+  - **外语 CSV 动态扩展**：支持直接在 [`frontend/public/locales/`](../../frontend/public/locales/) 放入第三方 CSV 语言包（如 `ja-JP.csv`），构建时自动注册并显示到设置页，前端按需异步拉取并缓存；新增文件后需重新构建。空翻译或加载中回退至中文树状词典。
 - **约定**：跨页面高频词只入 `common` 域（confirm/cancel/close 等），页面域不得重复定义；服务端下发的游戏内容（物品名、行动名、日志模板等协议数据）不走前端 i18n
 
 ---

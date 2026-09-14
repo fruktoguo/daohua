@@ -50,7 +50,7 @@ git submodule update --init --recursive
 npm --prefix frontend ci
 ```
 
-先启动 PostgreSQL（只会使用显式命名卷 `daohua_daohua-postgres`）：
+先启动 PostgreSQL 18（本地使用独立命名卷 `daohua-local-postgres18`，原 PostgreSQL 17 卷保留）：
 
 ```bash
 docker compose -f compose.yaml up -d db

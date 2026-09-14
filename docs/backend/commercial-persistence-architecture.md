@@ -158,11 +158,19 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 | 表 | 关键字段 | 约束与用途 |
 | --- | --- | --- |
-| market.orders | order_id, partition_id, owner_player_id, side, asset_id, price, quantity, filled_quantity, status, version | 活跃订单规范化存储；索引按 (partition_id, status, price, created_at)；不保存整本订单簿 Blob。 |
+| market.orders | order_id, partition_id, owner_player_id, side, asset_id, variant, price, quantity, filled_quantity, status, version, sequence, expires_at | 活跃订单规范化存储；盘口索引为 (partition_id, asset_id, variant, status, side, price, sequence)，另有活动订单到期索引；不保存整本订单簿 Blob。 |
 | market.partition_leases | partition_id, owner_instance_id, fence_token, expires_at, renewed_at | 每个市场分片单写者租约；每次写入校验 fence token，旧实例即使网络恢复也不能继续写。 |
-| market.trades | trade_id, partition_id, buy_order_id, sell_order_id, buyer_id, seller_id, asset_id, price, quantity, traded_at | 追加不可变流水；按月 RANGE 分区，热数据短留、冷数据远端压缩归档。 |
+| market.trades | trade_id, partition_id, buy_order_id, sell_order_id, buyer_id, seller_id, asset_id, price, quantity, seller_tax, traded_at | 追加不可变流水；当前热表是普通表，按月分区属于归档表方案，不能把热表描述为已分区。 |
 
 盘口内存投影可以在启动时从 market.orders 重建；投影损坏或清空不影响资产真相。只有订单冻结、成交、退款和手续费等事务成功后，内存盘口才推进对应版本。
+
+2026-09-14 实现：每笔成交向卖方收取成交总额的 2%，以 `double` 点数存入 `seller_tax`，卖方收入为总额减税额，不取整。订单创建后 30 天到期，`expires_at` 持久化；启动恢复、每 10 秒维护与挂单/撤单前清理到期单。到期时以冻结记录实际余量退回灵石或物品，订单置 `expired`、冻结释放、退款流水在同一事务提交。退款失败保持原订单和冻结；重复处理使用绑定玩家与订单的幂等键。
+
+成交立即入账；领取只保存 `market.settlement_claims` 确认游标，不再次转账。`deploy/market-ledger-archive.sh` 维护按月 RANGE 分区的归档表，热表与归档表应区分描述。
+
+该结构使用 schema v2，一次性初始化新库；不提供 v1 的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。
+
+唯一装备实例交易尚未实现：现有 `item_instances` 与 reservation 的 `instance_id` 仅为 DDL 设计，当前交易按可堆叠资产和 variant 结算，不能宣称已支持唯一装备冻结、转移和退款。
 
 ### 5. platform：持久化工作与外部副作用
 
@@ -253,7 +261,7 @@ game.player_state_heads.state_version 是玩家的持久化提交头。一次刷
 
 - 每个 partition_id 只有一个逻辑写者。
 - 租约通过 PostgreSQL 行和 fence_token 管理；续租失败或 fence 不匹配立即拒绝写入。
-- 事务内固定锁顺序：分片租约 → 订单行 → 资产余额/实例 → 账本流水，避免死锁。
+- 市场事务使用 Serializable 隔离和分片租约行锁与 fence 校验；成交锁定双方订单与冻结，余额变更和流水同事务落库。现有 `version` 记录修订次数，不是额外的 revision CAS 条件。并发序列化冲突由既有有界重试处理。
 - 订单簿是内存投影；重启时由活跃订单和未完成冻结重建。
 - 不用 Redis/Redlock 保护资产。分布式锁即使存在，也不能替代数据库约束和事务。
 

@@ -43,7 +43,7 @@ Server -> YuoCore.Persistence + YuoCore.Runtime + YuoCore.Ecs + PostgreSQL/Npgsq
 - 本地开发可以直接破坏代码和数据结构；只有实际操作远程/生产数据时才执行备份、审批和可恢复性检查，这属于数据安全要求，不得反向变成代码兼容层。
 - 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
 - 主存储固定为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；应用容器不挂载数据卷。
-- 市场账本使用 PostgreSQL revision CAS 与 advisory lock；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
+- 市场账本使用 PostgreSQL Serializable 事务、行锁及带 fence 的分区租约；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
 - 远程个人设备只能作为高延迟冷挂机计算节点，通过 `ComputeNode` 的内部 HTTP 批处理接口被主服务调用；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。
 - `/api/debug/*` 只能在 `Development` 环境存在；生产 Caddy 还必须显式拦截 debug 和 metrics 路径。
@@ -202,7 +202,7 @@ scripts/docker-build-prod.sh --push
 - `daohua-ccr-auto-update.timer` 每分钟检查 `prod`；镜像 ID 未变化时不得重建容器。
 - 新镜像未通过健康检查时必须自动回滚，并记录失败镜像 ID；同一失败版本不得循环重试。
 - 更新不得删除、重建或改名 `daohua_daohua-postgres` 卷。
-- 当前进程内在线玩家已按 `Runtime:PlayerShardCount` 多 Fiber 分片，数据库已支持市场主分片分布式租约；跨进程玩家分片所有权和红绿无停机仍未完成，正常更新依靠 WebSocket 自动重连、PostgreSQL outbox 和单实例 app 优雅替换恢复。
+- 当前进程内在线玩家由 PlayerRuntime 按玩家串行处理，数据库使用市场分区租约及 fence；当前没有 `Runtime:PlayerShardCount` 配置；跨进程玩家分片所有权和红绿无停机仍未完成，正常更新依靠 WebSocket 自动重连、PostgreSQL outbox 和单实例 app 优雅替换恢复。
 - 回滚前先停用自动更新 timer，使用已验证的不可变镜像，验证完成后再决定是否恢复 timer。
 
 ## 13. Caddy 规则

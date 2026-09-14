@@ -78,7 +78,7 @@ public sealed class PlayerComponent : YuoComponent
    - 若队列中有进行中的动作（打坐、采集、炼丹、赶路），按时间片推进进度；
    - 到达耗时边界时结算产出（如引气入体 10s 获得 10.0 修为与 10.0 灵力）；
    - 扣减剩余次数，若全部完成且开启循环则克隆入队，否则出队；
-3. **战斗遭遇推进**：若处于历练/遭遇状态，调用 `CombatSimulator` / `CombatGroupSimulator` 执行确定性战斗回合推演与 5 秒自然回复；
+3. **战斗遭遇推进**：若处于历练/遭遇状态，调用 `CombatSimulator` / `CombatGroupSimulator` 执行确定性战斗回合推演与配置属性驱动的自然回复；回复基础值由基础属性表提供，不在代码中按上限乘 2%，结算周期仍待讨论（见 [战斗规约 §9.2](../design/combat-design.md#92-自然回复属性由基础属性表配置)）；
 4. **脏标记标记**：变更时更新 `state.DirtySections` 并记录事件日志。
 
 ---

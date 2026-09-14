@@ -235,7 +235,7 @@
 - 引擎按离散事件边界切分时间片，在推进循环中统一执行：
   1. `ExpireBuffs(state, cursor)`：推进并失效到期 Buff；
   2. 动作推进与状态转移（根据动作类型由 SimulationEngine 执行挂机产出结算、CombatSimulator 战斗模拟或位移处理）；
-  3. `RegenerateResources(state, cursor, dt)`：依据全属性底盘结算自然气血与灵力回复；
+  3. `RegenerateResources(state, cursor, dt)`：读取基础属性表及明确加成计算后的回复属性，结算自然气血与灵力回复；不得由生命/灵力上限按固定比例生成回复值，周期口径见 [战斗规约 §9.2](./combat-design.md#92-自然回复属性由基础属性表配置)；
   4. 产出结算与脏标记汇总。
 
 ### 5.3 运行时层：`PlayerShardHost` + `YuoFiber`

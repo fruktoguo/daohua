@@ -54,7 +54,7 @@
     - `Queue`：挂机动作队列、循环标记与推进游标（`ActionQueueState`）；
     - `Cultivation`：灵气储备、境界阶位与持续 Buff 列表（`CultivationState`）；
     - `CombatResources`：当前生命、灵力与技能/消耗品冷却（`CombatResourcesState`）；
-    - `Stats`：生涯统计数据与灵石持有（`PlayerStatsState`）；
+    - `Stats`：生涯统计数据（`PlayerStatsState`）；灵石以 `economy.player_asset_balances` 为权威，运行时只保留余额投影；
     - `World`：大地图所处节点与寻路状态（`WorldState`）；
     - `DirtySections`：集中追踪当前帧发生变更的子域位掩码。
   - **数值边界明确**：属性、收益、倍率和玩法时长遵循 `AGENTS.md` 的 `double` 规范；ID、版本、序列、事件计数和毫秒阶段游标属于离散技术字段，直接使用整数或强类型表示。
@@ -155,7 +155,7 @@ public sealed record MarketOrder(
 - **撤单与结算**：由市场 Actor 发送结算结果给对应玩家 Actor，异步入账，杜绝跨进程分布式锁。
 
 ### 3. 持久化原子性（Durable Outbox & Version CAS）
-- 玩家快照与市场账本持久化利用 PostgreSQL Revision CAS 与 Durable Outbox，保证崩溃恢复不丢单、不重放。
+- 玩家 section 使用版本条件更新与 Durable Outbox；市场账本使用 Serializable 事务、租约行锁与 fence token，订单、冻结、余额和流水原子提交。市场的 `version` 是修订记录，不是独立的 revision CAS 比较入口。
 
 ---
 
@@ -196,11 +196,9 @@ src/Domain/
 │   └── PlayerStateReconciler.cs                     # 状态对齐与重构
 │
 └── Market/                  # 交易子域（盘口、撮合引擎、订单账本）
-    ├── MarketEngine.cs
+    ├── MarketModels.cs
     ├── OrderBook.cs
-    ├── MarketPartitioner.cs
-    ├── MarketPricePolicy.cs
-    └── MarketCoordinator.cs
+    └── MarketPartitioner.cs
 ```
 ---
 

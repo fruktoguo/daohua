@@ -7,7 +7,20 @@
 
 服务端已将 ASP.NET Core 的逐请求结果日志降到 `Warning`，压测保留应用异常与市场账本日志，避免框架日志 I/O 污染收发和撮合指标。
 
-## 0. 2c4g/40g 容量目标门禁
+## 当前重测入口（2026-09-14）
+
+本文以下数字和原始命令均为 2026-08-06 历史证据，不代表当前实现已通过相同负载。旧 `online`、`idle-offline` 等场景及历史 debug 端点已删除；保留原始命令用于追溯，不应直接执行或为重跑恢复旧接口。
+
+当前支持 `capacity-target`、`websocket`、`http-read`、`compute`、`postgres`，参数以 `src/LoadTests/LoadTestOptions.cs` 为准。实际 PostgreSQL 容量门禁使用 `scripts/capacity-target.sh`；跨网络采样先启动本地服务，再执行：
+
+```bash
+dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- --scenario websocket --players 500 --duration-seconds 30 --require-server --url ws://127.0.0.1:5128/ws
+dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- --scenario http-read --players 500 --duration-seconds 30 --require-server --url http://127.0.0.1:5128
+```
+
+新结果应独立记录日期、提交、环境和原始输出，不覆盖下方历史数据。当前指标接口为需认证的 `/api/v1/metrics` 与 `/api/v1/market/metrics`，生产 Caddy 拦截公网访问；旧 `/api/metrics` 仅为历史记录。
+
+## 0. 2c4g/40g 容量目标门禁（历史样本）
 
 命令：
 

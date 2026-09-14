@@ -34,7 +34,7 @@ npm --prefix frontend ci
 
 ## 本地运行与验证
 
-启动 PostgreSQL（只使用显式卷 `daohua_daohua-postgres`）：
+启动 PostgreSQL 18（本地使用独立卷 `daohua-local-postgres18`，不修改原卷）：
 
 ```bash
 docker compose -f compose.yaml up -d db
@@ -48,7 +48,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v1 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。
+API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v2 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。v2 为市场订单增加持久化到期时间，本地旧库需重新初始化，不提供历史迁移；已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
 
 启动正式前端：
 
@@ -102,7 +102,7 @@ scripts/docker-build-prod.sh --push-existing
 ```bash
 scripts/deploy-prod.sh \
   --image ccr.ccs.tencentyun.com/yuohira/daohua:sha-<commit前12位> \
-  --compute-image ccr.ccs.tencentyun.com/yuohira/daohua:compute-sha-<commit前12位>
+  --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute:sha-<commit前12位>
 ```
 
 脚本会只读检查远端 Docker/Compose/权限，校验 `DB_PASSWORD` 与 `COMPUTE_TOKEN`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对镜像，验证 `/healthz`、`/readyz` 后才替换应用。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
@@ -152,3 +152,27 @@ sudo /opt/daohua/pitr-restore.sh \
 ## 兼容边界
 
 本部署基线是一次性重写后的唯一版本。不存在旧 schema migration、双读双写、legacy DTO、旧 API 别名、旧 WebSocket fallback 或共享 `ACCESS_TOKEN`。schema、协议或部署拓扑改变时，直接同步代码、测试、文档并重新初始化本地数据库。
+
+## 本地 PostgreSQL 18 与权限验收
+
+本地 `compose.yaml` 使用 PostgreSQL 18 和 `daohua-local-postgres18` 新卷。旧 `daohua_daohua-postgres` 卷保留，生产卷名不变；切换前先停止本地旧数据库容器，确认没有仍依赖它的开发进程。新卷不恢复历史开发数据，也不添加旧 schema 兼容层。
+
+本地首次以初始化账号启动服务完成 schema 创建后，停止 API，执行 `scripts/init-local-db-roles.sh`。该脚本只能连接固定的 `daohua-local-db`，创建下列不可登录权限组：
+
+| 权限组 | 实际用途 |
+| --- | --- |
+| `daohua_bootstrap` | schema 和表所有者，仅初始化/结构维护使用 |
+| `daohua_api` | API、市场事务与当前内置后台 worker 的 DML，无 schema DDL 权限 |
+| `daohua_worker` | section 刷盘、outbox 投递和 retention，不读取账号密码或资产余额 |
+| `daohua_archive` | 只读删两个热流水表，在对应 schema 创建归档月分区 |
+| `daohua_metrics` | PostgreSQL 统计视图，不授予业务表读取权限 |
+
+用本地管理员通过交互式 `psql` 创建独立登录角色，并 `GRANT daohua_api TO <本地API登录角色>`，密码通过 `\password` 交互设置；worker 等进程按对应组授权。应用连接串使用该登录角色，并设置 `Storage__EnableSchemaBootstrap=false`。不要给运行账号授予 bootstrap 组。现有 Compose 的开发管理员连接仅供初次建库与普通本地开发；权限验收必须使用独立角色覆盖连接串，不能把默认管理员连接当作权限隔离已启用的证据。
+
+该方案未修改生产登录账号、密码、表所有权或部署配置。生产切换须先备份、明确授权，再使用对应登录角色运行及验证。归档组应以自身角色首次创建归档表；已有归档表的所有权处理属于单独受控操作。
+
+`/healthz` 返回 `status`、`service`、`version` 和检查状态；`/readyz` 检查 PostgreSQL 可达性与 API 市场运行时就绪状态，schema 版本在启动阶段校验。响应不返回内部异常或连接串。Caddy 模板拦截 `/api/metrics`、`/api/v1/metrics`、`/api/v1/market/metrics`、`/api/debug/*` 和 `/readyz`；接口自身的认证仍保留。
+
+基础属性目录 `GET /api/v1/catalog/base-attributes` 返回当前配表境界锚点，复用目录 ETag 与缓存策略；前端不得自行按生命上限计算回复。
+
+技能目录 `GET /api/v1/catalog/abilities` 返回当前技能配表及前端协议字段；`manaCost` 已按战斗规约换算为实际灵力点数，前端直接显示，不再次乘倍率。默认触发条件与装配协议统一使用 kebab-case。目录包含设计配置，无伤害、治疗等已实现效果的技能不能装配；技能吟唱、冷却与施放计数属于战斗持久化状态。
