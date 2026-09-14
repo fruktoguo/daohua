@@ -1,6 +1,20 @@
 {
   "version": "1.0.0",
   "description": "道化太初标准玩家期望属性矩阵与反推基准配置",
+  "baseAttributeAnchors": [
+    { "level": 1, "hp": 100, "mp": 50, "ad": 10, "ap": 5, "armor": 10, "mr": 0, "acc": 1, "eva": 1, "crit": 1, "cavoid": 1, "breakPt": 1, "parry": 1, "hpRegen": 2, "mpRegen": 1 },
+    { "level": 18, "hp": 232, "mp": 90, "ad": 15, "ap": 7, "armor": 13, "mr": 0, "acc": 3, "eva": 1, "crit": 1, "cavoid": 1, "breakPt": 1, "parry": 1, "hpRegen": 4.64, "mpRegen": 1.8 },
+    { "level": 30, "hp": 472, "mp": 570, "ad": 30, "ap": 27, "armor": 23, "mr": 14, "acc": 7, "eva": 4, "crit": 3, "cavoid": 2, "breakPt": 2, "parry": 2, "hpRegen": 9.44, "mpRegen": 11.4 },
+    { "level": 42, "hp": 1108, "mp": 1402, "ad": 62, "ap": 67, "armor": 46, "mr": 41, "acc": 12, "eva": 8, "crit": 6, "cavoid": 4, "breakPt": 4, "parry": 4, "hpRegen": 22.16, "mpRegen": 28.04 },
+    { "level": 54, "hp": 2164, "mp": 2770, "ad": 116, "ap": 133, "armor": 83, "mr": 85, "acc": 19, "eva": 15, "crit": 13, "cavoid": 8, "breakPt": 7, "parry": 7, "hpRegen": 43.28, "mpRegen": 55.4 },
+    { "level": 66, "hp": 4624, "mp": 4234, "ad": 196, "ap": 232, "armor": 138, "mr": 152, "acc": 28, "eva": 24, "crit": 22, "cavoid": 14, "breakPt": 13, "parry": 12, "hpRegen": 92.48, "mpRegen": 84.68 },
+    { "level": 78, "hp": 8056, "mp": 6282, "ad": 308, "ap": 369, "armor": 214, "mr": 246, "acc": 39, "eva": 35, "crit": 33, "cavoid": 25, "breakPt": 23, "parry": 20, "hpRegen": 161.12, "mpRegen": 125.64 },
+    { "level": 90, "hp": 11644, "mp": 8586, "ad": 430, "ap": 517, "armor": 297, "mr": 347, "acc": 50, "eva": 46, "crit": 44, "cavoid": 36, "breakPt": 34, "parry": 30, "hpRegen": 232.88, "mpRegen": 171.72 },
+    { "level": 102, "hp": 16360, "mp": 11618, "ad": 590, "ap": 712, "armor": 406, "mr": 480, "acc": 65, "eva": 61, "crit": 59, "cavoid": 50, "breakPt": 48, "parry": 44, "hpRegen": 327.2, "mpRegen": 232.36 },
+    { "level": 114, "hp": 22372, "mp": 15474, "ad": 794, "ap": 961, "armor": 545, "mr": 650, "acc": 84, "eva": 79, "crit": 77, "cavoid": 68, "breakPt": 66, "parry": 62, "hpRegen": 447.44, "mpRegen": 309.48 },
+    { "level": 126, "hp": 29824, "mp": 20258, "ad": 1047, "ap": 1270, "armor": 717, "mr": 860, "acc": 107, "eva": 102, "crit": 100, "cavoid": 91, "breakPt": 89, "parry": 84, "hpRegen": 596.48, "mpRegen": 405.16 },
+    { "level": 127, "hp": 38872, "mp": 26066, "ad": 1354, "ap": 1645, "armor": 927, "mr": 1116, "acc": 135, "eva": 130, "crit": 128, "cavoid": 119, "breakPt": 116, "parry": 111, "hpRegen": 777.44, "mpRegen": 521.32 }
+  ],
   "fourMultiplierFormula": "FinalStat = BaseFlat * (1 + Root%) * (1 + Equip%) * (1 + Buff%)",
   "rules": {
     "rootScalingFormula": "Root% = Level * 0.03 (每级 3%)",

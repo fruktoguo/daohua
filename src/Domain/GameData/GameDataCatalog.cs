@@ -176,7 +176,9 @@ public sealed class GameDataCatalog
         IReadOnlyDictionary<string, JsonElement>? rawEquipments = null,
         IReadOnlyDictionary<string, CombatMonsterDefinition>? combatMonsters = null,
         IReadOnlyDictionary<string, CombatEncounterDefinition>? combatEncounters = null,
-        WorldGraph? worldGraph = null)
+        WorldGraph? worldGraph = null,
+        BaseAttributeCatalog? baseAttributes = null,
+        IReadOnlyDictionary<string, JsonElement>? abilities = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -195,6 +197,8 @@ public sealed class GameDataCatalog
         CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
         WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
+        BaseAttributes = baseAttributes;
+        Abilities = abilities ?? new Dictionary<string, JsonElement>();
         foreach (var action in Actions.All)
         {
             if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
@@ -228,6 +232,8 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<string, CombatMonsterDefinition> CombatMonsters { get; }
     /// <summary>已解析的遭遇战定义，键为 encounter ID。</summary>
     public IReadOnlyDictionary<string, CombatEncounterDefinition> CombatEncounters { get; }
+    public BaseAttributeCatalog? BaseAttributes { get; }
+    public IReadOnlyDictionary<string, JsonElement> Abilities { get; }
 
     /// <summary>内置单例兜底配表</summary>
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);
@@ -245,12 +251,16 @@ public sealed class GameDataCatalog
         var monsters = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var rawEquipments = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        var abilities = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        BaseAttributeCatalog? baseAttributes = null;
         var contentVersion = "unknown";
         var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var bytes in jsonDocuments)
         {
             digest.AppendData(bytes.Span);
             using var document = JsonDocument.Parse(bytes.ToArray());
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("baseAttributeAnchors", out var anchors))
+                baseAttributes = BaseAttributeCatalog.Parse(anchors);
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("contentVersion", out var version))
             {
                 contentVersion = version.GetString() ?? contentVersion;
@@ -268,6 +278,10 @@ public sealed class GameDataCatalog
                     var definition = ParseItem(entry, id);
                     items.Add(definition.Id, definition);
                     rawItems.TryAdd(id, entry.Clone());
+                }
+                else if (id.StartsWith("ability.", StringComparison.Ordinal))
+                {
+                    abilities.Add(id, entry.Clone());
                 }
                 else if (id.StartsWith("equipment.", StringComparison.Ordinal))
                 {
@@ -292,7 +306,7 @@ public sealed class GameDataCatalog
             }
         }
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
-        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments);
+        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, abilities: abilities);
     }
 
     /// <summary>
@@ -441,7 +455,18 @@ public sealed class GameDataCatalog
                     ReadDouble(drop, "minQuantity", 0),
                     ReadDouble(drop, "maxQuantity", 0))).ToArray()
                 : [];
-            var stats = CombatantStats.Create(maxHitpoints, attackPower, defense, interval, accuracy, evasion, damageKind);
+            var stats = CombatantStats.Create(maxHitpoints, attackPower, defense, interval, accuracy, evasion, damageKind) with
+            {
+                MagicResistance = ReadDouble(value, "magicResistance", budget * 0.1 * ReadDouble(weights, "mr", 0)),
+                ResistanceScale = ReadDouble(value, "tier", 1),
+                Critical = ReadDouble(value, "criticalRating", ReadDouble(weights, "crit", 0)),
+                CriticalResistance = ReadDouble(value, "criticalAvoidanceRating", ReadDouble(weights, "cavoid", 0)),
+                BreakPower = ReadDouble(weights, "breakPt", 0), ParryResolve = ReadDouble(weights, "parry", 0),
+                Element = Enum.Parse<CombatElement>(ReadString(value, "element", "none"), true),
+                MetalResistance = ReadDouble(value, "metalResistance", 0), WoodResistance = ReadDouble(value, "woodResistance", 0),
+                WaterResistance = ReadDouble(value, "waterResistance", 0), FireResistance = ReadDouble(value, "fireResistance", 0),
+                EarthResistance = ReadDouble(value, "earthResistance", 0)
+            };
             result[id] = new CombatMonsterDefinition(id, ReadString(value, "name", id), budget, stats, drops);
         }
         return result;
@@ -461,7 +486,7 @@ public sealed class GameDataCatalog
                 if (!monsters.ContainsKey(spawn.EnemyId)) throw new DomainException(DomainErrorCode.NotFound, $"遭遇 {id} 引用了不存在的怪物 {spawn.EnemyId}。");
             var searchSeconds = ReadDouble(value, "searchMilliseconds", 5_000) / 1_000d;
             var respawnSeconds = ReadDouble(value, "respawnMilliseconds", 5_000) / 1_000d;
-            var playerRespawnSeconds = ReadDouble(value, "playerRespawnMilliseconds", 5_000) / 1_000d;
+            var playerRespawnSeconds = ReadDouble(value, "playerRespawnMilliseconds", 180_000) / 1_000d;
             if (string.IsNullOrWhiteSpace(id) || spawns.Length == 0 || searchSeconds <= 0 || respawnSeconds <= 0 || playerRespawnSeconds <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"遭遇 {id} 配置无效。");
             result[id] = new CombatEncounterDefinition(

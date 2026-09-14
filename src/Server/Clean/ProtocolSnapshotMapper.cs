@@ -1,5 +1,6 @@
 using Domain.Player;
 using Domain.GameData;
+using Domain.Combat;
 using Protocol;
 
 namespace Server.Clean;
@@ -30,7 +31,7 @@ public static class ProtocolSnapshotMapper
     /// 将玩家运行时快照（PlayerRuntimeSnapshot）转换为公开的全量快照 DTO。
     /// 自动结合激活的 GameDataCatalog 透传地图与节点动态生态。
     /// </summary>
-    public static PlayerSnapshotDto ToSnapshot(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog? gameData = null)
+    public static PlayerSnapshotDto ToSnapshot(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog gameData)
     {
         var state = runtime.State;
         var sections = new List<PlayerSectionDto>(7);
@@ -93,7 +94,7 @@ public static class ProtocolSnapshotMapper
     public static PlayerSnapshotDeltaDto ToDelta(
         PlayerRuntimeSnapshot runtime,
         string gameDataFingerprint,
-        GameDataCatalog? gameData = null,
+        GameDataCatalog gameData,
         IReadOnlyDictionary<string, string>? previousSectionChecksums = null,
         IReadOnlyList<AssetBalanceDto>? previousAssets = null)
     {
@@ -103,15 +104,9 @@ public static class ProtocolSnapshotMapper
         return new PlayerSnapshotDeltaDto(
             snapshot.PlayerId,
             snapshot.StateVersion,
+            snapshot.LastSimulatedAt,
             changedSections,
             changedAssets.Count == 0 ? null : changedAssets);
-    }
-
-    /// <summary>构造增量快照 DTO（兼容旧调用签名）</summary>
-    public static PlayerSnapshotDeltaDto ToDelta(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog? gameData = null, IReadOnlyList<AssetBalanceDto>? changedAssets = null)
-    {
-        var snapshot = ToSnapshot(runtime, gameDataFingerprint, gameData);
-        return new PlayerSnapshotDeltaDto(snapshot.PlayerId, snapshot.StateVersion, snapshot.Sections, changedAssets);
     }
 
     /// <summary>对比上次推送基线，返回校验和发生变化的分段；无基线时返回全部当前分段。</summary>
@@ -157,11 +152,52 @@ public static class ProtocolSnapshotMapper
     {
         yield return (PlayerSectionKinds.Progression, state.Progression);
         yield return (PlayerSectionKinds.World, ToWorldSection(state.World, gameData));
-        yield return (PlayerSectionKinds.Combat, state.Combat);
-        yield return (PlayerSectionKinds.Buffs, state.Buffs);
-        yield return (PlayerSectionKinds.Loadout, new { state.EquippedInstances, state.EquippedItemIds, state.LearnedAbilities });
+        yield return (PlayerSectionKinds.Combat, ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")));
+        yield return (PlayerSectionKinds.Buffs, state.Buffs.Select(buff => new
+        {
+            buff.BuffId, buff.ExpiresAtUnixSeconds, buff.Stacks, buff.Name, buff.SourceItemId,
+            qiGainMultiplier = 1d, attackLevelRatio = 0d, damageRatio = 0d, buff.AttackSpeedRatio,
+            gatheringOutputMultiplier = 1d, alchemyOutputMultiplier = 1d,
+            modifiers = new { buff.HpRegen, buff.MpRegen, buff.DamageAbsorptionRatio, buff.AttackSpeedRatio }
+        }).ToArray());
+        yield return (PlayerSectionKinds.Loadout, ToLoadoutSection(state));
         yield return (PlayerSectionKinds.Settings, new { state.Settings, state.Presence });
         yield return (PlayerSectionKinds.ActionQueue, ToActionQueueSection(state.Actions, gameData));
+    }
+
+    private static object ToLoadoutSection(PlayerAggregateState state) => new
+    {
+        state.Loadout.CoreAttributes,
+        state.Loadout.AbilitySlots,
+        state.Loadout.Equipment,
+        learnedAbilityIds = state.LearnedAbilities.Select(id => id.Value).ToArray(),
+        consumableSlots = (state.Settings.AutoUseSlots ?? []).Where(slot => slot.ActionType == "combat")
+            .OrderBy(slot => slot.SlotIndex).Select(slot => new
+            {
+                slot.ItemId, slot.Quantity, slot.Enabled, triggers = Array.Empty<object>()
+            }).ToArray()
+    };
+
+    private static object ToCombatSection(PlayerAggregateState state, GameDataCatalog catalog)
+    {
+        var a = PlayerAttributeResolver.Resolve(state, catalog);
+        return new
+        {
+            hitpoints = Math.Min(state.Combat.Hitpoints, a.MaxHitpoints), a.MaxHitpoints,
+            manapoints = Math.Min(state.Combat.Manapoints, a.MaxManapoints), a.MaxManapoints,
+            attributes = new
+            {
+                a.MaxHitpoints, a.MaxManapoints, attackIntervalMilliseconds = a.AttackIntervalSeconds * 1000,
+                accuracyRating = a.Accuracy, maxDamage = a.PhysicalAttack, evasionRating = a.Evasion,
+                a.Armor, a.MagicResistance, a.MetalResistance, a.WoodResistance, a.WaterResistance,
+                a.FireResistance, a.EarthResistance, style = "sword", category = "physical", element = "none",
+                tenacity = 0d, hpRegenPerFiveSeconds = a.HpRegen, mpRegenPerFiveSeconds = a.MpRegen,
+                penetrationRatio = 0d, lifeStealRatio = 0d, armorDamageRatio = 0d, hpDrainRatio = 0d,
+                damageTakenRatio = 0d, criticalChance = a.Critical / (a.Critical + 100),
+                criticalDamageRatio = 1.5, criticalAvoidance = a.CriticalAvoidance / (a.CriticalAvoidance + 100),
+                criticalRating = a.Critical, criticalAvoidanceRating = a.CriticalAvoidance, a.DamageAbsorptionRatio
+            }
+        };
     }
 
     public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData)

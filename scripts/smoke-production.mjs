@@ -18,6 +18,7 @@ const runWebSocket = process.env.SMOKE_RUN_WEBSOCKET !== '0'
 async function main() {
   const health = await fetchJson('/healthz')
   if (health.status !== 'ok') throw new Error('健康状态不符合预期。')
+  if (typeof health.version !== 'string' || health.version.length === 0) throw new Error('健康端点缺少版本信息。')
   const ready = await fetchJson('/readyz')
   if (!['ok', 'ready'].includes(ready.status)) throw new Error('就绪状态不符合预期。')
   if (requireStatic) {

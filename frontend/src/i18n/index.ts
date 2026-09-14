@@ -10,7 +10,12 @@ import { useCallback } from 'react'
 import { create } from 'zustand'
 import { zhCN, type Messages } from './locales/zh-CN'
 
-export const LOCALES = ['zh-CN'] as const
+// 构建时只注册实际存在的语言包；模板本身不是可选语言。
+const localeFiles = import.meta.glob(['/public/locales/*.csv', '!/public/locales/template.csv'], { query: '?url', import: 'default' })
+export const LOCALES: readonly string[] = ['zh-CN', ...Object.keys(localeFiles)
+  .map(path => path.split('/').at(-1)!.slice(0, -4))
+  .filter(locale => locale !== 'template' && locale !== 'zh-CN')
+  .sort()]
 export type Locale = (typeof LOCALES)[number] | (string & {})
 export type { Messages }
 
@@ -45,6 +50,7 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
 
     let field = ''
     if (csvText[cursor] === '"') {
+      let closed = false
       cursor++ // 跳过起始双引号
       while (cursor < length) {
         if (csvText[cursor] === '"') {
@@ -53,6 +59,7 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
             cursor += 2
           } else {
             cursor++ // 闭合双引号
+            closed = true
             break
           }
         } else {
@@ -60,6 +67,7 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
           cursor++
         }
       }
+      if (!closed) throw new Error('语言包 CSV 引号未闭合。')
       while (cursor < length && (csvText[cursor] === ' ' || csvText[cursor] === '\t')) {
         cursor++
       }
@@ -82,6 +90,8 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
       } else {
         cursor++
       }
+    } else {
+      throw new Error('语言包 CSV 字段分隔符无效。')
     }
 
     return { value: field, isLastInRecord, isEof: cursor >= length }
@@ -108,7 +118,7 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
     }
 
     const k = keyField.value.trim()
-    if (k) {
+    if (k && valField.value.trim()) {
       result[k] = valField.value
     }
   }
@@ -118,6 +128,7 @@ export function parseCsvToMap(csvText: string): Record<string, string> {
 
 /** 动态异步加载外部 CSV 语言包 */
 export async function loadLocale(locale: Locale): Promise<void> {
+  if (!isLocale(locale)) throw new Error(`未注册的语言包：${locale}`)
   if (locale === 'zh-CN' || CSV_CACHE[locale]) return
   if (LOADING_PROMISES[locale]) return LOADING_PROMISES[locale]
 
@@ -130,7 +141,7 @@ export async function loadLocale(locale: Locale): Promise<void> {
       const text = await res.text()
       CSV_CACHE[locale] = parseCsvToMap(text)
     } catch (err) {
-      console.warn(`[i18n] 加载语言包 "${locale}" 失败，将回退至中文:`, err)
+      throw new Error(`语言包 ${locale} 加载失败。`, { cause: err })
     } finally {
       delete LOADING_PROMISES[locale]
     }
@@ -160,6 +171,7 @@ function applyDocumentLocale(locale: Locale): void {
 interface I18nState {
   locale: Locale
   loadedLocale: Locale
+  error: string | null
   setLocale: (locale: Locale) => Promise<void>
 }
 
@@ -167,6 +179,7 @@ const initialLocale = detectLocale()
 
 export const useI18nStore = create<I18nState>((set, get) => ({
   locale: initialLocale,
+  error: null,
   loadedLocale: initialLocale === 'zh-CN' ? 'zh-CN' : (CSV_CACHE[initialLocale] ? initialLocale : 'zh-CN'),
   setLocale: async locale => {
     if (!isLocale(locale)) return
@@ -176,10 +189,15 @@ export const useI18nStore = create<I18nState>((set, get) => ({
       // 持久化失败不阻断本次切换。
     }
     applyDocumentLocale(locale)
-    set({ locale })
+    set({ locale, error: null })
 
     if (locale !== 'zh-CN' && !CSV_CACHE[locale]) {
-      await loadLocale(locale)
+      try {
+        await loadLocale(locale)
+      } catch (error) {
+        if (get().locale === locale) set({ loadedLocale: 'zh-CN', error: (error as Error).message })
+        return
+      }
     }
     if (get().locale === locale) {
       set({ loadedLocale: locale })
@@ -195,6 +213,8 @@ if (initialLocale !== 'zh-CN') {
     if (useI18nStore.getState().locale === initialLocale) {
       useI18nStore.setState({ loadedLocale: initialLocale })
     }
+  }).catch(error => {
+    if (useI18nStore.getState().locale === initialLocale) useI18nStore.setState({ error: (error as Error).message })
   })
 }
 

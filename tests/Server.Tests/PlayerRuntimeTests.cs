@@ -13,6 +13,29 @@ namespace Server.Tests;
 public sealed class PlayerRuntimeTests
 {
     [Fact]
+    public async Task LoadoutCannotGrantUnlearnedAbilities()
+    {
+        var playerId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var repository = new FakeStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, Guid.NewGuid(), "装配权限", now),
+            new StoredHead(playerId, 0, 2, now, string.Empty, string.Empty, now),
+            new Dictionary<string, StoredSection>(), []));
+        var catalog = GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
+            [{"id":"ability.test","style":"sword","category":"physical","element":"none","damageRatio":1,"flatDamage":1,"cooldownMilliseconds":1000,"castMilliseconds":1000,"manaCostRatio":0}]
+            """)]);
+        await using var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(), catalog,
+            NullLogger<PlayerRuntime>.Instance);
+        var result = await runtime.ExecuteAsync(playerId, "loadout.replace", JsonSerializer.SerializeToElement(new
+        {
+            equipment = Array.Empty<object>(), learnedAbilityIds = new[] { "ability.test" },
+            abilitySlots = new[] { new { abilityId = "ability.test", level = 99, triggers = Array.Empty<object>() } }
+        }));
+        Assert.False(result.Success);
+        Assert.Empty(result.Snapshot.State.LearnedAbilities);
+    }
+
+    [Fact]
     public async Task NewPlayerCommandIsSerializedThroughSingleWriterAndFlushQueue()
     {
         var playerId = Guid.NewGuid();

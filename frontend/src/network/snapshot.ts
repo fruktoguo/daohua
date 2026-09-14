@@ -15,6 +15,7 @@ import type {
   CombatAttributes,
   CombatLoadout,
   CombatResourceState,
+  CombatTrigger,
   ExpeditionPhase,
   ExpeditionProgress,
   InventoryItem,
@@ -130,7 +131,7 @@ async function decodeSections(sections: readonly PlayerSectionDto[]): Promise<Ma
       throw new Error('玩家 section 标识重复或为空。')
     }
     names.add(section.section)
-    if (section.schemaVersion !== 1) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
+    if (section.schemaVersion !== 2) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
   }
   const decoded = await Promise.all(sections.map(async section => [section.section, await decodeSectionPayload(section)] as const))
   return new Map(decoded)
@@ -171,6 +172,7 @@ function mapExpeditionPhase(value: unknown): ExpeditionPhase {
       case 0: return 'initial-search'
       case 1: return 'search'
       case 2: return 'combat'
+      case 3: return 'respawn'
       default: throw new Error('战斗远征 phase 枚举值无效。')
     }
   }
@@ -183,6 +185,9 @@ function mapExpeditionPhase(value: unknown): ExpeditionPhase {
     case 'search': return 'search'
     case '2':
     case 'combat': return 'combat'
+    case '3':
+    case 'respawn':
+    case 'respawning': return 'respawn'
     default: throw new Error('战斗远征 phase 字段无效。')
   }
 }
@@ -361,78 +366,112 @@ function mapStats(value: unknown): Stats {
     // 服务端 progression 只有一个经验字段 Experience（突破时清零），即境界修为 spirit；
     // 不存在独立的道基底蕴字段，foundationExp 保持未定义。
     spirit: numberValue(row.experience),
-    herbsCollected: numberValue(row.herbsCollected),
-    pillsCrafted: numberValue(row.pillsCrafted),
-    cultivationCycles: numberValue(row.cultivationCycles),
     completedActions: numberValue(row.completedActions),
-    blockedActions: numberValue(row.blockedActions),
-    combatWins: numberValue(row.combatWins),
-    combatLosses: numberValue(row.combatLosses),
-    combatExperience: numberValue(row.combatExperience),
-    combatDamageDealt: numberValue(row.combatDamageDealt),
-    combatDamageTaken: numberValue(row.combatDamageTaken),
   }
+}
+
+function enumValue<T extends string>(value: unknown, values: readonly T[], name: string): T {
+  if (typeof value !== 'string' || !values.includes(value as T)) throw new Error(`${name} 枚举无效。`)
+  return value as T
 }
 
 function mapCombat(value: unknown): { resources: CombatResourceState; attributes: CombatAttributes } {
-  const row = object(value)
-  const hitpoints = numberValue(row.hitpoints, 100)
-  const maxHitpoints = numberValue(row.maxHitpoints, 100)
-  const manapoints = numberValue(row.manapoints, 100)
-  const maxManapoints = numberValue(row.maxManapoints, 100)
-  const resources: CombatResourceState = { hitpoints, maxHitpoints, manapoints, maxManapoints }
+  const row = requiredObject(value, 'combat')
+  const source = requiredObject(row.attributes, 'combat.attributes')
+  const numericKeys = [
+    'maxHitpoints', 'maxManapoints', 'attackIntervalMilliseconds', 'accuracyRating', 'maxDamage',
+    'evasionRating', 'armor', 'magicResistance', 'metalResistance', 'woodResistance', 'waterResistance',
+    'fireResistance', 'earthResistance', 'tenacity', 'hpRegenPerFiveSeconds', 'mpRegenPerFiveSeconds',
+    'penetrationRatio', 'lifeStealRatio', 'armorDamageRatio', 'hpDrainRatio', 'damageTakenRatio',
+    'criticalChance', 'criticalDamageRatio', 'criticalAvoidance', 'damageAbsorptionRatio',
+    'criticalRating', 'criticalAvoidanceRating',
+  ] as const
+  const numbers = Object.fromEntries(numericKeys.map(key => [key, finiteValue(source[key], `combat.attributes.${key}`)])) as Pick<CombatAttributes, typeof numericKeys[number]>
   const attributes: CombatAttributes = {
-    maxHitpoints,
-    maxManapoints,
-    attackIntervalMilliseconds: 1000,
-    accuracyRating: 0,
-    maxDamage: numberValue(row.attackPower, 10),
-    evasionRating: 0,
-    armor: numberValue(row.defense, 10),
-    magicResistance: 0,
-    metalResistance: 0,
-    woodResistance: 0,
-    waterResistance: 0,
-    fireResistance: 0,
-    earthResistance: 0,
-    style: 'sword',
-    category: 'physical',
-    element: 'none',
-    tenacity: 0,
-    hpRegenPerTenSeconds: 0,
-    mpRegenPerTenSeconds: 0,
-    penetrationRatio: 0,
-    lifeStealRatio: 0,
-    armorDamageRatio: 0,
-    hpDrainRatio: 0,
-    damageTakenRatio: 0,
-    criticalChance: 0,
-    criticalDamageRatio: 1.5,
-    criticalAvoidance: 0,
-    damageAbsorptionRatio: 0,
+    ...numbers,
+    style: enumValue(source.style, ['sword', 'blade', 'talisman', 'five-elements', 'body'], 'combat.style'),
+    category: enumValue(source.category, ['physical', 'spell'], 'combat.category'),
+    element: enumValue(source.element, ['none', 'metal', 'wood', 'water', 'fire', 'earth'], 'combat.element'),
   }
-  return { resources, attributes }
+  return {
+    resources: {
+      hitpoints: finiteNumber(row.hitpoints, 'combat.hitpoints'),
+      manapoints: finiteNumber(row.manapoints, 'combat.manapoints'),
+      maxHitpoints: attributes.maxHitpoints,
+      maxManapoints: attributes.maxManapoints,
+    },
+    attributes,
+  }
+}
+
+function mapTriggers(value: unknown): CombatTrigger[] {
+  if (!Array.isArray(value)) throw new Error('战斗触发条件必须是数组。')
+  return value.map(item => {
+    const row = requiredObject(item, 'trigger')
+    return {
+      dependency: enumValue(row.dependency, ['self', 'target-enemy', 'ally-lowest-hp', 'ally-highest-hp', 'enemy-lowest-hp', 'enemy-highest-hp'], 'trigger.dependency'),
+      condition: enumValue(row.condition, ['current-hp', 'current-mana', 'missing-hp', 'missing-mana', 'current-hp-percentage', 'missing-hp-percentage', 'current-mana-percentage', 'missing-mana-percentage', 'buff-stacks', 'stun-status', 'blind-status', 'silence-status'], 'trigger.condition'),
+      comparator: enumValue(row.comparator, ['less-than-equal', 'greater-than-equal', 'is-active', 'is-inactive', 'less-than', 'greater-than'], 'trigger.comparator'),
+      value: finiteValue(row.value, 'trigger.value'),
+      buffId: optionalString(row.buffId, 'trigger.buffId'),
+    }
+  })
 }
 
 function mapLoadout(value: unknown): CombatLoadout {
-  const row = object(value)
-  if (!Array.isArray(row.learnedAbilities) || !Array.isArray(row.equippedItemIds)) {
-    throw new Error('loadout section 载荷字段无效。')
+  const row = requiredObject(value, 'loadout')
+  const core = requiredObject(row.coreAttributes, 'loadout.coreAttributes')
+  if (!Array.isArray(row.abilitySlots) || !Array.isArray(row.equipment) || !Array.isArray(row.consumableSlots)) {
+    throw new Error('loadout section 槽位载荷无效。')
   }
-  const learnedAbilityIds = arrayValue(row.learnedAbilities).map(value => identifierValue(value, '功法 ID'))
-  const equippedItemIds = arrayValue(row.equippedItemIds).map(value => identifierValue(value, '装备 ID'))
   return {
-    staminaLevel: 1,
-    intelligenceLevel: 1,
-    attackLevel: 1,
-    defenseLevel: 1,
-    swordsmanshipLevel: 1,
-    talismanLevel: 1,
-    abilitySlots: learnedAbilityIds.map(abilityId => ({ abilityId, level: 1, triggers: [] })),
-    consumableSlots: [],
-    equipment: equippedItemIds.map(itemId => ({ itemId, enhancementLevel: 0 })),
-    learnedAbilityIds,
+    staminaLevel: finiteNumber(core.staminaLevel, 'loadout.staminaLevel'),
+    intelligenceLevel: finiteNumber(core.intelligenceLevel, 'loadout.intelligenceLevel'),
+    attackLevel: finiteNumber(core.attackLevel, 'loadout.attackLevel'),
+    defenseLevel: finiteNumber(core.defenseLevel, 'loadout.defenseLevel'),
+    swordsmanshipLevel: finiteNumber(core.swordsmanshipLevel, 'loadout.swordsmanshipLevel'),
+    talismanLevel: finiteNumber(core.talismanLevel, 'loadout.talismanLevel'),
+    abilitySlots: row.abilitySlots.map(item => {
+      const slot = requiredObject(item, 'loadout.abilitySlot')
+      return { abilityId: optionalString(slot.abilityId, 'abilitySlot.abilityId'), level: finiteNumber(slot.level, 'abilitySlot.level'), triggers: mapTriggers(slot.triggers) }
+    }),
+    consumableSlots: row.consumableSlots.map(item => {
+      const slot = requiredObject(item, 'loadout.consumableSlot')
+      if (typeof slot.enabled !== 'boolean') throw new Error('consumableSlot.enabled 无效。')
+      return { itemId: optionalString(slot.itemId, 'consumableSlot.itemId'), quantity: finiteNumber(slot.quantity, 'consumableSlot.quantity'), enabled: slot.enabled, triggers: mapTriggers(slot.triggers) }
+    }),
+    equipment: row.equipment.map(item => {
+      const equipment = requiredObject(item, 'loadout.equipment')
+      return { itemId: identifierValue(equipment.itemId, 'equipment.itemId'), enhancementLevel: finiteNumber(equipment.enhancementLevel, 'equipment.enhancementLevel') }
+    }),
+    learnedAbilityIds: requiredStrings(row.learnedAbilityIds, 'loadout.learnedAbilityIds'),
   }
+}
+
+function requiredStrings(value: unknown, name: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${name} 必须是数组。`)
+  return value.map(item => {
+    if (typeof item !== 'string' || !item) throw new Error(`${name} 包含无效标识。`)
+    return item
+  })
+}
+
+function mapNearbyEntities(value: unknown): WorldState['npcs'] {
+  if (!Array.isArray(value)) throw new Error('world 周边实体必须是数组。')
+  return value.map(item => {
+    const row = requiredObject(item, 'world 实体')
+    const kind = row.kind
+    if (kind !== 'npc' && kind !== 'building' && kind !== 'portal' && kind !== 'resource-node') {
+      throw new Error('world 实体 kind 无效。')
+    }
+    return {
+      entityId: identifierValue(row.entityId, 'world 实体 ID'),
+      name: stringValue(row.name),
+      kind,
+      description: stringValue(row.description),
+      effect: stringValue(row.effect),
+    }
+  })
 }
 
 function mapWorld(value: unknown): WorldState {
@@ -449,10 +488,10 @@ function mapWorld(value: unknown): WorldState {
     y: numberValue(row.y, 65),
     locationName: stringValue(row.locationName, nodeId ?? '旅途中'),
     cultivationMultiplier: numberValue(row.cultivationMultiplier, 1),
-    availableActionIds: [],
-    encounterIds: [],
-    npcs: [],
-    buildings: [],
+    availableActionIds: requiredStrings(row.availableActionIds, 'world.availableActionIds'),
+    encounterIds: requiredStrings(row.encounterIds, 'world.encounterIds'),
+    npcs: mapNearbyEntities(row.npcs),
+    buildings: mapNearbyEntities(row.buildings),
   }
 }
 
@@ -464,17 +503,17 @@ function mapBuffs(value: unknown): Buff[] {
     if (!buffId) throw new Error('buffs section 中存在无效 buffId。')
     return {
       buffId,
-      name: stringValue(row.name, buffId),
-      stacks: numberValue(row.stacks, 1),
-      qiGainMultiplier: numberValue(row.qiGainMultiplier, 1),
-      expiresAtUnixSeconds: numberValue(row.expiresAtUnixSeconds),
-      attackLevelRatio: numberValue(row.attackLevelRatio),
-      damageRatio: numberValue(row.damageRatio),
-      attackSpeedRatio: numberValue(row.attackSpeedRatio),
-      gatheringOutputMultiplier: numberValue(row.gatheringOutputMultiplier, 1),
-      alchemyOutputMultiplier: numberValue(row.alchemyOutputMultiplier, 1),
+      name: identifierValue(row.name, 'buff.name'),
+      stacks: finiteNumber(row.stacks, 'buff.stacks'),
+      qiGainMultiplier: finiteNumber(row.qiGainMultiplier, 'buff.qiGainMultiplier'),
+      expiresAtUnixSeconds: finiteNumber(row.expiresAtUnixSeconds, 'buff.expiresAtUnixSeconds'),
+      attackLevelRatio: finiteValue(row.attackLevelRatio, 'buff.attackLevelRatio'),
+      damageRatio: finiteValue(row.damageRatio, 'buff.damageRatio'),
+      attackSpeedRatio: finiteValue(row.attackSpeedRatio, 'buff.attackSpeedRatio'),
+      gatheringOutputMultiplier: finiteNumber(row.gatheringOutputMultiplier, 'buff.gatheringOutputMultiplier'),
+      alchemyOutputMultiplier: finiteNumber(row.alchemyOutputMultiplier, 'buff.alchemyOutputMultiplier'),
       sourceItemId: stringValue(row.sourceItemId) || null,
-      modifiers: object(row.modifiers) as Record<string, number>,
+      modifiers: Object.fromEntries(Object.entries(object(row.modifiers)).map(([key, value]) => [key, finiteValue(value, `buff.modifiers.${key}`)])),
     }
   })
 }
@@ -522,7 +561,7 @@ function visualFor(name: string): CharacterVisual {
 export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = ''): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
-  if (!dto.head || dto.head.schemaVersion !== 1) throw new Error('玩家快照 schema 版本不受支持。')
+  if (!dto.head || dto.head.schemaVersion !== 2) throw new Error('玩家快照 schema 版本不受支持。')
   if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')
@@ -577,10 +616,17 @@ export async function decodePlayerSnapshotDeltaDto(
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家增量快照')
   if (!Array.isArray(dto.changedSections)) throw new Error('玩家增量 section 列表无效。')
   const sections = await decodeSections(dto.changedSections)
+  // 服务端权威时刻必须随每个增量刷新：行动倒计时与进度条以「服务端时刻 + 本地流逝」推算，
+  // 若沿用上一次全量快照的时间戳，估算时钟偏移会随页面停留时长线性累积。
+  // 每个增量必须提供可信的新时间锚点，缺失即协议错误。
+  const simulatedAt = optionalString(dto.lastSimulatedAt, '玩家增量快照 lastSimulatedAt')
+  if (simulatedAt === null) throw new Error('玩家增量快照缺少 lastSimulatedAt。')
+  const serverTime = seconds(simulatedAt)
   const patch: PlayerPatch = {
     playerId: dto.playerId,
     version: stateVersion,
-    serverTimeUnixSeconds: current.serverTimeUnixSeconds,
+    serverTimeUnixSeconds: serverTime,
+    serverTimeUnixMilliseconds: serverTime * 1000,
   }
   const settingsEnvelope = sections.has('settings') ? requiredObject(sections.get('settings'), 'settings') : undefined
   const settings = settingsEnvelope ? requiredObject(settingsEnvelope.settings, 'settings.settings') : undefined

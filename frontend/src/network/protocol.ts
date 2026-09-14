@@ -125,6 +125,8 @@ export interface PlayerSnapshotDto {
 export interface PlayerSnapshotDeltaDto {
   playerId: string
   stateVersion: number
+  /** 本次增量的服务端权威模拟时刻，用于校准前端服务端时钟锚点 */
+  lastSimulatedAt?: string
   changedSections: PlayerSectionDto[]
   changedAssets?: AssetBalanceDto[] | null
 }

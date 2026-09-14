@@ -427,6 +427,10 @@ public sealed class PlayerRuntime(
                             ?? throw new JsonException("行动请求为空。");
                         if (!Guid.TryParse(request.RequestId, out _)) return Fail("INVALID_REQUEST_ID", "请求 ID 无效。");
                         var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount, request.TargetNodeId, request.Parameters);
+                        var actionDefinition = actions.Get(intent.ActionId);
+                        if (actionDefinition.AllowedNodeIds is { Count: > 0 }
+                            && (aggregate.World.EdgeId is not null || !actionDefinition.AllowedNodeIds.Contains(aggregate.World.NodeId)))
+                            return Fail("WRONG_LOCATION", "当前位置不允许执行该行动。");
                         aggregate.Enqueue(intent, DateTimeOffset.UtcNow, actions);
                         Touch();
                         break;
@@ -478,35 +482,64 @@ public sealed class PlayerRuntime(
                         var itemId = payload.TryGetProperty("itemId", out var itemElement) && itemElement.ValueKind != JsonValueKind.Null ? itemElement.GetString() : null;
                         var quantity = payload.TryGetProperty("quantity", out var quantityElement) && quantityElement.TryGetDouble(out var parsedQuantity) ? parsedQuantity : 1d;
                         var enabled = payload.TryGetProperty("enabled", out var enabledElement) && enabledElement.ValueKind == JsonValueKind.True;
+                        if (!Enum.TryParse<ActionKind>(actionType, true, out var slotKind))
+                            return Fail("INVALID_ACTION_TYPE", "自动使用行动类型无效。");
+                        if (itemId is not null && (!gameData.Items.TryGetValue(new ItemId(itemId), out var slotItem)
+                            || slotItem.Consumable is null || !slotItem.Consumable.UsableInActionKinds.Contains(slotKind)))
+                            return Fail("INVALID_CONSUMABLE", "物品不适用于该自动使用槽。");
                         aggregate.ConfigureAutoUse(actionType ?? string.Empty, slotIndex, itemId, quantity, enabled);
                         TouchDirtyOnly();
                         break;
                     }
                     case "loadout.replace":
                     {
-                        var instanceIds = ReadGuidList(payload, "equippedInstances");
-                        var itemIds = ReadItemIdList(payload, "equippedItemIds");
-                        if (payload.TryGetProperty("equipment", out var equipment) && equipment.ValueKind == JsonValueKind.Array)
-                        {
-                            foreach (var entry in equipment.EnumerateArray())
-                            {
-                                if (entry.ValueKind != JsonValueKind.Object || !entry.TryGetProperty("itemId", out var item)) continue;
-                                var value = item.GetString();
-                                if (!string.IsNullOrWhiteSpace(value)) itemIds.Add(new ItemId(value));
-                            }
-                        }
-                        var learned = ReadAbilityIdList(payload, "learnedAbilityIds");
-                        if (payload.TryGetProperty("abilitySlots", out var abilitySlots) && abilitySlots.ValueKind == JsonValueKind.Array)
-                        {
-                            foreach (var entry in abilitySlots.EnumerateArray())
-                            {
-                                if (entry.ValueKind != JsonValueKind.Object || !entry.TryGetProperty("abilityId", out var ability)) continue;
-                                var value = ability.ValueKind == JsonValueKind.Null ? null : ability.GetString();
-                                if (!string.IsNullOrWhiteSpace(value)) learned.Add(new AbilityId(value));
-                            }
-                        }
-                        aggregate.ReplaceLoadout(instanceIds.Select(id => new InstanceId(id)), learned, itemIds);
+                        LoadoutCommand.Apply(payload, aggregate, wallet, gameData);
                         TouchDirtyOnly();
+                        break;
+                    }
+                    case "ability.learn":
+                    {
+                        if (!requestId.HasValue) return Fail("INVALID_REQUEST_ID", "学习功法必须提供请求 ID。");
+                        var itemId = payload.TryGetProperty("itemId", out var manualElement) && manualElement.ValueKind == JsonValueKind.String
+                            ? manualElement.GetString() : null;
+                        if (itemId is null || !itemId.StartsWith("item.tome.", StringComparison.Ordinal)
+                            || !gameData.RawItems.ContainsKey(itemId))
+                            return Fail("INVALID_MANUAL", "请选择完整功法秘籍。");
+                        var abilityId = new AbilityId("ability." + itemId["item.tome.".Length..]);
+                        if (!gameData.Abilities.ContainsKey(abilityId.Value)) return Fail("INVALID_ABILITY", "秘籍对应功法不存在。");
+                        await EnsureWalletFreshAsync(cancellationToken);
+                        var before = aggregate.ExportState();
+                        var walletBefore = wallet.Balances.ToArray();
+                        var dirtyBefore = aggregate.DirtySections.ToArray();
+                        var dirtyAtBefore = _dirtyAt.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+                        var logicalBefore = _logicalVersion;
+                        var committed = false;
+                        try
+                        {
+                            aggregate.LearnAbility(abilityId);
+                            var now = DateTimeOffset.UtcNow;
+                            var version = Math.Max(_logicalVersion + 1, aggregate.StateVersion);
+                            var writes = SectionCodec.EncodeAggregate(aggregate, now, version);
+                            var receipt = new CommandReceipt(aggregate.PlayerId.Value, requestId.Value, command, payloadHash, version, now, now.AddMinutes(30));
+                            var result = await economy.CommitAsync(new EconomyTransactionRequest(
+                                requestId.Value, $"ability-learn:{aggregate.PlayerId.Value:D}:{requestId.Value:D}", command,
+                                aggregate.PlayerId.Value, [new(aggregate.PlayerId.Value, itemId, string.Empty, -1)], now,
+                                JsonSerializer.SerializeToUtf8Bytes(new { abilityId = abilityId.Value }), writes, [receipt]), cancellationToken);
+                            if (!result.Applied) throw new InvalidOperationException("秘籍学习事务未提交。");
+                            committed = true;
+                            _logicalVersion = version;
+                            foreach (var write in writes)
+                            {
+                                _sectionVersions[write.SectionKind] = write.StateVersion;
+                                _dirtyAt.Remove(write.SectionKind);
+                            }
+                            await RefreshWalletAfterDurableMutationAsync(cancellationToken);
+                        }
+                        catch
+                        {
+                            if (!committed) RestoreSimulationState(before, walletBefore, dirtyBefore, dirtyAtBefore, logicalBefore);
+                            throw;
+                        }
                         break;
                     }
                     case "progression.breakthrough":
@@ -899,7 +932,7 @@ public sealed class PlayerRuntime(
         private static bool ShouldPersistReceipt(string command) => command is
             "action.enqueue" or "action.remove" or
             "queue.configure" or "queue.move" or "queue.auto_use.configure" or
-            "loadout.replace" or "progression.breakthrough" or "world.travel" or "player.rename" or "market.claim";
+            "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or "player.rename" or "market.claim";
 
         private async ValueTask ReloadWalletAsync(CancellationToken cancellationToken)
         {

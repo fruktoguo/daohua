@@ -14,8 +14,8 @@ namespace Server.Clean;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本</summary>
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>当前分段编解码模式版本；v2：战斗分段加入回复余量、技能状态与已学功法，旧 v1 存档按本地开发清零规则直接拒绝。</summary>
+    public const int CurrentSchemaVersion = 2;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -143,7 +143,7 @@ public static class SectionCodec
                 DomainSectionKind.World => state.World,
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
-                DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities),
+                DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
                 DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoUseSlots ?? [], state.Presence),
                 DomainSectionKind.ActionQueue => state.Actions,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -210,6 +210,7 @@ public static class SectionCodec
             loadout.LearnedAbilities,
             new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoUseSlots),
             actions,
+            loadout.State,
             loadout.EquippedItemIds);
     }
 
@@ -257,7 +258,8 @@ public static class SectionCodec
     private sealed record LoadoutDocument(
         IReadOnlyList<Domain.Common.InstanceId> EquippedInstances,
         IReadOnlyList<Domain.Common.ItemId> EquippedItemIds,
-        IReadOnlyList<Domain.Common.AbilityId> LearnedAbilities);
+        IReadOnlyList<Domain.Common.AbilityId> LearnedAbilities,
+        PlayerLoadoutDocument State);
     private sealed record SettingsDocument(
         string Locale,
         bool NotificationsEnabled,

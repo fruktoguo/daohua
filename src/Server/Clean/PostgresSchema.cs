@@ -1,9 +1,9 @@
 namespace Server.Clean;
 
-/// <summary>schema v1 的一次性建库脚本。所有对象位于新命名空间，不读取旧原型表。</summary>
+/// <summary>schema v2 的一次性建库脚本，不迁移旧库。</summary>
 public static class PostgresSchema
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     public const string Sql = """
     CREATE SCHEMA IF NOT EXISTS identity;
@@ -205,9 +205,11 @@ public static class PostgresSchema
         sequence bigint NOT NULL,
         idempotency_key varchar(200) NOT NULL UNIQUE,
         created_at timestamptz NOT NULL,
+        expires_at timestamptz NOT NULL CHECK (expires_at > created_at),
         updated_at timestamptz NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ix_market_orders_book ON market.orders(partition_id, asset_id, variant, status, side, price, sequence);
+    CREATE INDEX IF NOT EXISTS ix_market_orders_expiration ON market.orders(partition_id, expires_at) WHERE status IN ('active', 'partially_filled');
     CREATE INDEX IF NOT EXISTS ix_market_orders_owner ON market.orders(owner_player_id, status);
     CREATE UNIQUE INDEX IF NOT EXISTS ux_market_orders_partition_sequence ON market.orders(partition_id, sequence);
 
@@ -307,12 +309,12 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (1, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (2, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 
 /// <summary>
-/// 在宿主构建认证与请求管线之前完成 schema v1 的建立/校验。
+/// 在宿主构建认证与请求管线之前完成 schema v2 的建立/校验。
 /// Data Protection 的 key ring 依赖同一张 PostgreSQL 表，因此不能把首次建库
 /// 延后到 HostedService 启动阶段，否则首个请求可能先触发 42P01。
 /// </summary>
@@ -327,6 +329,12 @@ public static class PostgresSchemaBootstrap
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         if (enableBootstrap)
         {
+            // 已有库必须先通过版本门禁，避免 IF NOT EXISTS 把旧表误标为当前结构。
+            await using (var existing = new NpgsqlCommand("SELECT to_regclass('platform.schema_version') IS NOT NULL", connection))
+            {
+                if (await existing.ExecuteScalarAsync(cancellationToken) is true)
+                    await VerifyAsync(connection, cancellationToken);
+            }
             await using var command = new NpgsqlCommand(PostgresSchema.Sql, connection)
             {
                 CommandTimeout = 60

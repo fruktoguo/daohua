@@ -12,9 +12,9 @@
     "flatDamage": 10,
     "defaultTriggers": [
       {
-        "dependency": "targetEnemy",
-        "condition": "currentHitpoints",
-        "comparator": "greaterThanOrEqual",
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than-equal",
         "value": 1.0,
         "buffId": null
       }
@@ -35,9 +35,9 @@
     "flatDamage": 20,
     "defaultTriggers": [
       {
-        "dependency": "targetEnemy",
-        "condition": "currentHitpoints",
-        "comparator": "greaterThanOrEqual",
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than-equal",
         "value": 1.0,
         "buffId": null
       }
@@ -61,8 +61,8 @@
     "defaultTriggers": [
       {
         "dependency": "self",
-        "condition": "missingHitpoints",
-        "comparator": "greaterThanOrEqual",
+        "condition": "missing-hp",
+        "comparator": "greater-than-equal",
         "value": 1.0,
         "buffId": null
       }
@@ -83,9 +83,9 @@
     "flatDamage": 10,
     "defaultTriggers": [
       {
-        "dependency": "targetEnemy",
-        "condition": "currentHitpoints",
-        "comparator": "greaterThanOrEqual",
+        "dependency": "target-enemy",
+        "condition": "current-hp",
+        "comparator": "greater-than-equal",
         "value": 1.0,
         "buffId": null
       }
@@ -106,8 +106,8 @@
     "defaultTriggers": [
       {
         "dependency": "self",
-        "condition": "currentHitpoints",
-        "comparator": "greaterThanOrEqual",
+        "condition": "current-hp",
+        "comparator": "greater-than-equal",
         "value": 1.0,
         "buffId": null
       }

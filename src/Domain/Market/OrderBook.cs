@@ -91,7 +91,7 @@ public sealed class OrderBook
                 request.Quantity,
                 checked(++_sequence),
                 request.CreatedAt.ToUniversalTime(),
-                null,
+                request.CreatedAt.ToUniversalTime().AddDays(30),
                 MarketOrderStatus.Active)))
             throw new DomainException(DomainErrorCode.Duplicate, "订单标识已存在。");
 
@@ -278,7 +278,7 @@ public sealed class OrderBook
         var candidates = new List<MarketOrder>();
         foreach (var order in _orders.Values)
         {
-            if (IsActive(order) && order.Side == opposite && Crosses(incoming, order))
+            if (IsActive(order) && order.Side == opposite && (order.ExpiresAt is null || order.ExpiresAt > incoming.CreatedAt) && Crosses(incoming, order))
             {
                 candidates.Add(order);
             }

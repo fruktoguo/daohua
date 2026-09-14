@@ -72,6 +72,8 @@ public sealed class PlayerCombatState
     public double AttackPower { get; set; } = 10;
     /// <summary>基础防御护甲</summary>
     public double Defense { get; set; } = 10;
+    public double RegenCarrySeconds { get; set; }
+    public PlayerCombatSkillState Skills { get; set; } = PlayerCombatSkillState.Empty;
 }
 
 /// <summary>
@@ -89,12 +91,14 @@ public sealed class PlayerBuffState
 /// <param name="BuffId">配表 Buff 唯一标识</param>
 /// <param name="ExpiresAtUnixSeconds">过期时间戳（Unix 秒）</param>
 /// <param name="Stacks">当前叠加层数</param>
-public sealed record ActiveBuff(string BuffId, double ExpiresAtUnixSeconds, double Stacks = 1);
+public sealed record ActiveBuff(string BuffId, double ExpiresAtUnixSeconds, double Stacks = 1,
+    string Name = "", string? SourceItemId = null, double HpRegen = 0, double MpRegen = 0,
+    double AttackSpeedRatio = 0, double DamageAbsorptionRatio = 0);
 
 /// <summary>
 /// 角色装备配置与已习得功法。
 /// </summary>
-public sealed class PlayerLoadoutState
+public sealed partial class PlayerLoadoutState
 {
     /// <summary>当前穿戴的非同质化独立装备实例 ID</summary>
     public List<InstanceId> EquippedInstances { get; } = [];
@@ -128,7 +132,8 @@ public sealed record AutoUseSlotState(
     string? ItemId,
     double Quantity,
     bool Enabled,
-    double RemainingDurationSeconds = 0);
+    double RemainingDurationSeconds = 0,
+    double CooldownUntilUnixSeconds = 0);
 
 /// <summary>
 /// 行动项在队列中的调度状态。
@@ -425,6 +430,11 @@ public sealed partial class PlayerAggregate
     {
         var index = _actions.FindIndex(action => action.Id == actionInstanceId);
         if (index < 0) return false;
+        if (_actions[index].Expedition is not null && Combat.Hitpoints <= 0)
+        {
+            Combat.Hitpoints = 1;
+            MarkDirty(PlayerSectionKind.Combat);
+        }
         _actions.RemoveAt(index);
         if (index == 0 && _actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Pending)
         {
@@ -598,6 +608,8 @@ public sealed partial class PlayerAggregate
         Loadout.LearnedAbilities.AddRange(learned);
         Loadout.EquippedItemIds.Clear();
         Loadout.EquippedItemIds.AddRange(itemIds);
+        Loadout.Equipment.Clear();
+        Loadout.Equipment.AddRange(itemIds.Select(id => new PlayerEquipmentSlot(id.Value, 0)));
         Touch(PlayerSectionKind.Loadout);
     }
 
@@ -619,7 +631,8 @@ public sealed partial class PlayerAggregate
             && string.Equals(Settings.AutoUseSlots[index].ItemId, itemId, StringComparison.Ordinal)
                 ? Settings.AutoUseSlots[index].RemainingDurationSeconds
                 : 0d;
-        var value = new AutoUseSlotState(actionType, slotIndex, itemId, quantity, normalizedEnabled, remainingDurationSeconds);
+        var cooldown = index >= 0 ? Settings.AutoUseSlots[index].CooldownUntilUnixSeconds : 0;
+        var value = new AutoUseSlotState(actionType, slotIndex, itemId, quantity, normalizedEnabled, remainingDurationSeconds, cooldown);
         if (index >= 0 && Settings.AutoUseSlots[index] == value) return;
         if (index >= 0) Settings.AutoUseSlots[index] = value;
         else Settings.AutoUseSlots.Add(value);

@@ -29,7 +29,7 @@ export type ActionExecutionKind = 'timed' | 'combat-encounter' | 'travel'
  * - 'search': 战后搜寻下一波敌人
  * - 'combat': 战斗交锋中
  */
-export type ExpeditionPhase = 'none' | 'travel' | 'initial-search' | 'search' | 'combat'
+export type ExpeditionPhase = 'none' | 'travel' | 'initial-search' | 'search' | 'combat' | 'respawn'
 
 /**
  * 实时战斗动作类型：攻击 (attack)、施法 (cast)、控制 (control)、等待/调息 (wait)、复活读条 (respawn)
@@ -402,8 +402,8 @@ export interface CombatAttributes {
   category: DamageCategory
   element: Element
   tenacity: number
-  hpRegenPerTenSeconds: number
-  mpRegenPerTenSeconds: number
+  hpRegenPerFiveSeconds: number
+  mpRegenPerFiveSeconds: number
   penetrationRatio: number
   lifeStealRatio: number
   armorDamageRatio: number
@@ -531,11 +531,11 @@ export interface Stats {
   qi: number
   spirit: number
   foundationExp?: number
-  herbsCollected: number
-  pillsCrafted: number
-  cultivationCycles: number
+  herbsCollected?: number
+  pillsCrafted?: number
+  cultivationCycles?: number
   completedActions: number
-  blockedActions: number
+  blockedActions?: number
   combatWins?: number
   combatLosses?: number
   combatExperience?: number
@@ -635,8 +635,8 @@ export interface CombatantDefinition {
   criticalDamageRatio: number
   criticalAvoidance: number
   damageAbsorptionRatio: number
-  hpRegenPerTenSeconds: number
-  mpRegenPerTenSeconds: number
+  hpRegenPerFiveSeconds: number
+  mpRegenPerFiveSeconds: number
   experience: number
   abilityIds: string[]
 }

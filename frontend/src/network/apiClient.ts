@@ -1,4 +1,5 @@
-import type { ActionDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
+import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
+import type { ActionDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -20,15 +21,19 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   encounters: CombatEncounterDefinition[]
   items: ItemDefinition[]
   equipment: CombatEquipmentDefinition[]
+  abilities: CombatAbilityDefinition[]
 }> {
-  const [actions, maps, encounters, items, equipment] = await Promise.all([
+  const [actions, maps, encounters, items, equipment, baseAttributes, abilities] = await Promise.all([
     requestJson<ActionDefinition[]>('/api/v1/catalog/actions', { signal }),
     requestJson<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal }),
     requestJson<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal }),
     requestJson<ItemDefinition[]>('/api/v1/catalog/items', { signal }).catch(() => [] as ItemDefinition[]),
-    requestJson<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', { signal }).catch(() => [] as CombatEquipmentDefinition[]),
+    requestJson<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', { signal }),
+    requestJson<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', { signal }),
+    requestJson<CombatAbilityDefinition[]>('/api/v1/catalog/abilities', { signal }),
   ])
-  return { actions, maps, encounters, items, equipment }
+  registerBaseAttributeAnchors(baseAttributes)
+  return { actions, maps, encounters, items, equipment, abilities }
 }
 
 function parseNumericVariant(value: string | null, fallback: number): number {

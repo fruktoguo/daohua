@@ -96,6 +96,8 @@ public sealed class PostgresEconomyRepository(
             await line.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await PostgresSectionRepository.EnqueueInTransactionAsync(connection, transaction,
+            request.Sections ?? [], request.Receipts ?? [], cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         logger.LogDebug("资产事务提交 transactionId={TransactionId} lines={Lines}", request.TransactionId, request.Deltas.Count);
         return new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, occurredAt, request.ResultPayload);
@@ -175,6 +177,9 @@ public sealed class PostgresEconomyRepository(
             .Append(request.TransactionType).Append('\n')
             .Append(request.ActorId.ToString("D")).Append('\n')
             .Append(Convert.ToHexString(SHA256.HashData(request.ResultPayload.Span)).ToLowerInvariant()).Append('\n');
+        foreach (var section in (request.Sections ?? []).OrderBy(section => section.SectionKind, StringComparer.Ordinal))
+            canonical.Append(section.PlayerId).Append('|').Append(section.SectionKind).Append('|')
+                .Append(section.StateVersion).Append('|').Append(section.Checksum).Append('\n');
         foreach (var delta in deltas
                      .OrderBy(value => value.PlayerId)
                      .ThenBy(value => value.AssetId, StringComparer.Ordinal)

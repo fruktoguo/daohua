@@ -23,6 +23,7 @@ public sealed record PlayerAggregateState(
     IReadOnlyList<AbilityId> LearnedAbilities,
     PlayerSettingsStateDocument Settings,
     IReadOnlyList<QueuedActionState> Actions,
+    PlayerLoadoutDocument Loadout,
     IReadOnlyList<ItemId>? EquippedItemIds = null);
 
 /// <summary>境界与修为进度的离线/持久化快照 DTO</summary>
@@ -50,7 +51,11 @@ public sealed record PlayerCombatStateDocument(
     double Manapoints,
     double MaxManapoints,
     double AttackPower,
-    double Defense);
+    double Defense,
+    double RegenCarrySeconds = 0)
+{
+    public PlayerCombatSkillState Skills { get; init; } = PlayerCombatSkillState.Empty;
+}
 
 /// <summary>客户端设置与快捷自动使用配置快照 DTO</summary>
 public sealed record PlayerSettingsStateDocument(
@@ -112,12 +117,13 @@ public sealed partial class PlayerAggregate
             GameDataFingerprint,
             new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress),
-            new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense),
+            new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense, Combat.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
             GetCachedEquippedInstances(),
             GetCachedLearnedAbilities(),
             GetCachedSettings(),
             actions,
+            Loadout.Export(),
             GetCachedEquippedItemIds());
     }
 
@@ -276,10 +282,17 @@ public sealed partial class PlayerAggregate
         aggregate.Combat.MaxManapoints = state.Combat.MaxManapoints;
         aggregate.Combat.AttackPower = state.Combat.AttackPower;
         aggregate.Combat.Defense = state.Combat.Defense;
+        if (!double.IsFinite(state.Combat.RegenCarrySeconds) || state.Combat.RegenCarrySeconds < 0 || state.Combat.RegenCarrySeconds >= 5)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "回复时钟余量无效。");
+        aggregate.Combat.RegenCarrySeconds = state.Combat.RegenCarrySeconds;
+        if (state.Combat.Skills is null || !state.Combat.Skills.IsValid)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技能时钟状态无效。");
+        aggregate.Combat.Skills = state.Combat.Skills;
         aggregate.Buffs.Active.AddRange(state.Buffs);
         aggregate.Loadout.EquippedInstances.AddRange(state.EquippedInstances);
         aggregate.Loadout.EquippedItemIds.AddRange(state.EquippedItemIds ?? []);
         aggregate.Loadout.LearnedAbilities.AddRange(state.LearnedAbilities);
+        aggregate.Loadout.Restore(state.Loadout);
         aggregate.Settings.Locale = state.Settings.Locale;
         aggregate.Settings.NotificationsEnabled = state.Settings.NotificationsEnabled;
         aggregate.Settings.LoopEnabled = state.Settings.LoopEnabled;
@@ -371,6 +384,8 @@ public sealed partial class PlayerAggregate
         Combat.MaxManapoints = restored.Combat.MaxManapoints;
         Combat.AttackPower = restored.Combat.AttackPower;
         Combat.Defense = restored.Combat.Defense;
+        Combat.RegenCarrySeconds = restored.Combat.RegenCarrySeconds;
+        Combat.Skills = restored.Combat.Skills;
         Buffs.Active.Clear();
         Buffs.Active.AddRange(restored.Buffs.Active);
         Loadout.EquippedInstances.Clear();
@@ -379,6 +394,7 @@ public sealed partial class PlayerAggregate
         Loadout.EquippedItemIds.AddRange(restored.Loadout.EquippedItemIds);
         Loadout.LearnedAbilities.Clear();
         Loadout.LearnedAbilities.AddRange(restored.Loadout.LearnedAbilities);
+        Loadout.Restore(restored.Loadout.Export());
         Settings.Locale = restored.Settings.Locale;
         Settings.NotificationsEnabled = restored.Settings.NotificationsEnabled;
         Settings.LoopEnabled = restored.Settings.LoopEnabled;

@@ -2,8 +2,8 @@ name: daohua-local
 
 services:
   db:
-    # 本地现有数据卷由 PostgreSQL 17 初始化；主版本升级必须走 pg_upgrade/逻辑恢复，不能直接替换镜像。
-    image: postgres:17-alpine
+    # PostgreSQL 18 使用独立本地卷；原 PostgreSQL 17 卷保留，不自动升级或删除。
+    image: postgres:18-alpine
     container_name: daohua-local-db
     init: true
     restart: unless-stopped
@@ -183,7 +183,7 @@ services:
         max-size: 5m
         max-file: "3"
 
-  # 默认 app 已内置 SectionFlushWorker；此服务仅在 Server 支持 process role 后按 profile 启用。
+  # 默认 app 已内置 SectionFlushWorker；独立 worker 可通过 profile 启用。
   persistence-worker:
     profiles: ["worker"]
     image: daohua:local
@@ -222,4 +222,4 @@ services:
 
 volumes:
   daohua-postgres:
-    name: daohua_daohua-postgres
+    name: daohua-local-postgres18

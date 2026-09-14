@@ -76,6 +76,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 var restored = group.Select(stored => ToDomainOrder(stored, group.Key)).ToArray();
                 book.Restore(restored, restored.Max(order => order.Sequence));
             }
+            await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, cancellationToken);
             _ready = true;
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _renewTask = RenewLeaseLoopAsync(_lifetime.Token);
@@ -184,6 +185,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, cancellationToken);
             OrderBook book;
             MarketOrder? existingOrder = null;
             lock (_booksGate)
@@ -232,7 +234,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 fill.Instrument.Variant,
                 fill.Price,
                 fill.Quantity,
-                0d,
+                fill.Price * fill.Quantity * 0.02d,
                 fill.TradedAt)).ToArray();
             var committed = await _store.CommitPlacementAsync(input, fills, _fenceToken, cancellationToken);
             if (!committed.Applied)
@@ -282,6 +284,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            await ExpireOrdersCoreAsync(DateTimeOffset.UtcNow, cancellationToken);
             OrderBook book;
             bool hasInMemory;
             lock (_booksGate)
@@ -381,6 +384,21 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         return value is long token && token > 0 ? token : throw new InvalidOperationException("市场租约 fence token 无效。");
     }
 
+    // 调用方持有写门闩；先提交退款事实，再删除盘口，失败时保留数据库可恢复状态。
+    private async Task ExpireOrdersCoreAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        foreach (var book in _books.Values)
+        {
+            MarketOrder[] due;
+            lock (_booksGate) due = book.ActiveOrders.Where(order => order.ExpiresAt <= now).ToArray();
+            if (due.Length == 0) continue;
+            foreach (var order in due)
+                if (!await _store.ExpireAsync(order.OrderId.Value, order.OwnerId.Value, _fenceToken, now, cancellationToken))
+                    throw new InvalidOperationException("市场到期退款事务未提交。");
+            lock (_booksGate) book.Expire(now);
+        }
+    }
+
     private async Task RenewLeaseLoopAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -406,6 +424,15 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                     _logger.LogCritical("市场分片租约丢失 partition={PartitionId} fence={FenceToken}", PartitionId, _fenceToken);
                     return;
                 }
+                await _gate.WaitAsync(cancellationToken);
+                try { await ExpireOrdersCoreAsync(now, cancellationToken); }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    _ready = false;
+                    _logger.LogCritical(exception, "市场到期退款失败 partition={PartitionId}，停止写入并等待重启恢复", PartitionId);
+                    return;
+                }
+                finally { _gate.Release(); }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
             catch (PostgresException ex) when (ex.SqlState is "42P01" or "42703" or "3F000")
@@ -453,7 +480,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         Math.Max(0d, stored.Quantity - stored.FilledQuantity),
         stored.Sequence,
         stored.CreatedAt,
-        null,
+        stored.ExpiresAt,
         stored.Status switch
         {
             "active" => MarketOrderStatus.Active,

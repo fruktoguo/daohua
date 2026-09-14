@@ -274,6 +274,15 @@ public sealed class PostgresSectionRepository(
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await EnqueueInTransactionAsync(connection, transaction, sections, receipts, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    internal static async ValueTask EnqueueInTransactionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken)
+    {
+        foreach (var section in sections) section.Validate();
+        foreach (var receipt in receipts) ValidateReceipt(receipt);
         if (sections.Count > 0)
         {
             await using var batch = connection.CreateBatch();
@@ -352,7 +361,6 @@ public sealed class PostgresSectionRepository(
             }
         }
 
-        await transaction.CommitAsync(cancellationToken);
     }
 
     private static void ValidateReceipt(CommandReceipt receipt)

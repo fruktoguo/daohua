@@ -753,20 +753,35 @@ export interface BaseAttributePool {
 /**
  * 境界各关键等级锚点基础数值表（用于不同境界等级区间的线性插值计算）
  */
-const BASE_FLAT_ANCHORS = [
-  { level: 1,   hp: 100,   mp: 50,    ad: 10,   ap: 5,    armor: 10,  mr: 0,    acc: 1,   eva: 1,   crit: 1,   cavoid: 1,  breakPt: 1,   parry: 1 },
-  { level: 18,  hp: 232,   mp: 90,    ad: 15,   ap: 7,    armor: 13,  mr: 0,    acc: 3,   eva: 1,   crit: 1,   cavoid: 1,  breakPt: 1,   parry: 1 },
-  { level: 30,  hp: 472,   mp: 570,   ad: 30,   ap: 27,   armor: 23,  mr: 14,   acc: 7,   eva: 4,   crit: 3,   cavoid: 2,  breakPt: 2,   parry: 2 },
-  { level: 42,  hp: 1108,  mp: 1402,  ad: 62,   ap: 67,   armor: 46,  mr: 41,   acc: 12,  eva: 8,   crit: 6,   cavoid: 4,  breakPt: 4,   parry: 4 },
-  { level: 54,  hp: 2164,  mp: 2770,  ad: 116,  ap: 133,  armor: 83,  mr: 85,   acc: 19,  eva: 15,  crit: 13,  cavoid: 8,  breakPt: 7,   parry: 7 },
-  { level: 66,  hp: 4624,  mp: 4234,  ad: 196,  ap: 232,  armor: 138, mr: 152,  acc: 28,  eva: 24,  crit: 22,  cavoid: 14, breakPt: 13,  parry: 12 },
-  { level: 78,  hp: 8056,  mp: 6282,  ad: 308,  ap: 369,  armor: 214, mr: 246,  acc: 39,  eva: 35,  crit: 33,  cavoid: 25, breakPt: 23,  parry: 20 },
-  { level: 90,  hp: 11644, mp: 8586,  ad: 430,  ap: 517,  armor: 297, mr: 347,  acc: 50,  eva: 46,  crit: 44,  cavoid: 36, breakPt: 34,  parry: 30 },
-  { level: 102, hp: 16360, mp: 11618, ad: 590,  ap: 712,  armor: 406, mr: 480,  acc: 65,  eva: 61,  crit: 59,  cavoid: 50, breakPt: 48,  parry: 44 },
-  { level: 114, hp: 22372, mp: 15474, ad: 794,  ap: 961,  armor: 545, mr: 650,  acc: 84,  eva: 79,  crit: 77,  cavoid: 68, breakPt: 66,  parry: 62 },
-  { level: 126, hp: 29824, mp: 20258, ad: 1047, ap: 1270, armor: 717, mr: 860,  acc: 107, eva: 102, crit: 100, cavoid: 91, breakPt: 89,  parry: 84 },
-  { level: 127, hp: 38872, mp: 26066, ad: 1354, ap: 1645, armor: 927, mr: 1116, acc: 135, eva: 130, crit: 128, cavoid: 119,breakPt: 116, parry: 111 },
-]
+export interface BaseAttributeAnchor {
+  level: number
+  hp: number
+  mp: number
+  ad: number
+  ap: number
+  armor: number
+  mr: number
+  acc: number
+  eva: number
+  crit: number
+  cavoid: number
+  breakPt: number
+  parry: number
+  hpRegen: number
+  mpRegen: number
+}
+
+let BASE_FLAT_ANCHORS: readonly BaseAttributeAnchor[] = []
+
+export function registerBaseAttributeAnchors(anchors: readonly BaseAttributeAnchor[]): void {
+  const fields = ['level', 'hp', 'mp', 'ad', 'ap', 'armor', 'mr', 'acc', 'eva', 'crit', 'cavoid', 'breakPt', 'parry', 'hpRegen', 'mpRegen'] as const
+  if (!Array.isArray(anchors) || anchors.length === 0 || anchors.some((anchor, index) =>
+    fields.some(field => typeof anchor[field] !== 'number' || !Number.isFinite(anchor[field]) || anchor[field] < 0)
+    || (index > 0 && anchor.level <= anchors[index - 1].level))) {
+    throw new Error('基础属性目录锚点无效。')
+  }
+  BASE_FLAT_ANCHORS = anchors
+}
 
 /**
  * 根据角色累计修为与显式境界等级计算基础战斗属性池（通过分段线性插值）
@@ -775,6 +790,7 @@ const BASE_FLAT_ANCHORS = [
  * @returns 角色当前境界对应的基础属性池
  */
 export function calculateBaseAttributes(spirit = 0, explicitRealmLevel?: number): BaseAttributePool {
+  if (BASE_FLAT_ANCHORS.length === 0) throw new Error('基础属性目录尚未加载。')
   const progress = calculateRealmProgress(spirit, explicitRealmLevel)
   const level = Math.max(1.0, progress.totalLevel)
   let tier = 1
@@ -819,9 +835,9 @@ export function calculateBaseAttributes(spirit = 0, explicitRealmLevel?: number)
   const baseBreak = Math.floor(low.breakPt + (high.breakPt - low.breakPt) * t)
   const baseParry = Math.floor(low.parry + (high.parry - low.parry) * t)
 
-  // 基础生命回复与灵力回复固定为每 5 秒 2% 基础上限，向下取整（保底 1.0）
-  const baseHpRegen = Math.max(1, Math.floor(baseHp * 0.02))
-  const baseMpRegen = Math.max(1, Math.floor(baseMp * 0.02))
+  // 回复点数和其他属性一样由目录提供，不按生命或灵力上限反算。
+  const baseHpRegen = low.hpRegen + (high.hpRegen - low.hpRegen) * t
+  const baseMpRegen = low.mpRegen + (high.mpRegen - low.mpRegen) * t
 
   return {
     level,

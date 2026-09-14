@@ -9,6 +9,9 @@ public enum CombatDamageKind : byte
     Spell = 1
 }
 
+/// <summary>攻击携带的五行属性；无属性攻击跳过五行减免。</summary>
+public enum CombatElement : byte { None, Metal, Wood, Water, Fire, Earth }
+
 /// <summary>战斗最终胜负裁决状态</summary>
 public enum CombatOutcome : byte
 {
@@ -35,6 +38,38 @@ public sealed record CombatantStats(
     double Evasion = 0,
     CombatDamageKind DamageKind = CombatDamageKind.Physical)
 {
+    public double MagicResistance { get; init; }
+    public double ResistanceScale { get; init; } = 1;
+    public double PhysicalPenetrationPercent { get; init; }
+    public double MagicPenetrationPercent { get; init; }
+    public double Critical { get; init; }
+    public double CriticalResistance { get; init; }
+    public double CriticalMultiplier { get; init; } = 1.5;
+    public double BreakPower { get; init; }
+    public double ParryResolve { get; init; }
+    public CombatElement Element { get; init; }
+    public double MetalResistance { get; init; }
+    public double WoodResistance { get; init; }
+    public double WaterResistance { get; init; }
+    public double FireResistance { get; init; }
+    public double EarthResistance { get; init; }
+
+    internal void Validate()
+    {
+        double[] nonnegative = [AttackPower, Defense, Accuracy, Evasion, MagicResistance,
+            Critical, CriticalResistance, BreakPower, ParryResolve, MetalResistance,
+            WoodResistance, WaterResistance, FireResistance, EarthResistance];
+        if (nonnegative.Any(value => !double.IsFinite(value) || value < 0)
+            || !double.IsFinite(MaxHitpoints) || MaxHitpoints <= 0
+            || !double.IsFinite(AttackIntervalSeconds) || AttackIntervalSeconds <= 0
+            || !double.IsFinite(ResistanceScale) || ResistanceScale <= 0
+            || !double.IsFinite(CriticalMultiplier) || CriticalMultiplier < 1
+            || !double.IsFinite(PhysicalPenetrationPercent) || PhysicalPenetrationPercent is < 0 or > 100
+            || !double.IsFinite(MagicPenetrationPercent) || MagicPenetrationPercent is < 0 or > 100
+            || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
+    }
+
     public static CombatantStats Create(
         double maxHitpoints,
         double attackPower,
@@ -62,6 +97,7 @@ public sealed class CombatantState
         if (string.IsNullOrWhiteSpace(id) || id.Length > 128) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗单位标识无效。");
         Id = id;
         Stats = stats ?? throw new ArgumentNullException(nameof(stats));
+        stats.Validate();
         Hitpoints = stats.MaxHitpoints;
     }
 
@@ -177,7 +213,12 @@ public sealed record CombatEvent(
     double Damage,
     bool Hit,
     CombatDamageKind DamageKind,
-    double TargetHitpointsAfter);
+    double TargetHitpointsAfter)
+{
+    public bool Critical { get; init; }
+    public bool Break { get; init; }
+    public bool Parried { get; init; }
+}
 
 /// <summary>
 /// 战斗步进切片结算结果帧。
@@ -198,7 +239,8 @@ public enum CombatExpeditionPhase : byte
     /// <summary>击败上一场敌人后搜寻下一场遭遇</summary>
     Search = 1,
     /// <summary>与当前敌人交战</summary>
-    Combat = 2
+    Combat = 2,
+    Respawning = 3
 }
 
 /// <summary>
@@ -219,7 +261,9 @@ public sealed record CombatExpeditionState(
     double EnemyNextAttackAtSeconds,
     double PlayerAttackCount,
     double EnemyAttackCount,
-    CombatOutcome Outcome)
+    CombatOutcome Outcome,
+    int WaveNumber = 1,
+    IReadOnlyList<string>? WaveEnemyIds = null)
 {
     /// <summary>校验远征状态是否满足持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
@@ -236,7 +280,9 @@ public sealed record CombatExpeditionState(
         && double.IsFinite(EnemyAttackCount) && EnemyAttackCount >= 0
         && Enum.IsDefined(Outcome)
         && (EnemyId is null || (EnemyId.Length > 0 && EnemyId.Length <= 128))
-        && (Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search
+        && WaveNumber >= 1
+        && (WaveEnemyIds is null || (WaveEnemyIds.Count <= 4 && WaveEnemyIds.All(id => !string.IsNullOrWhiteSpace(id) && id.Length <= 128)))
+        && (Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search or CombatExpeditionPhase.Respawning
             ? Outcome == CombatOutcome.Running && EnemyId is null
             : EnemyId is not null && PhaseElapsedSeconds <= 1e-9);
 }
@@ -247,6 +293,16 @@ public sealed record CombatExpeditionState(
 /// </summary>
 public static class DeterministicCombatEngine
 {
+    /// <summary>技能复用普攻对抗与减伤公式，独立施放计数不改变普通攻击随机流。</summary>
+    public static CombatEvent ResolveAbilityAttack(CombatEncounterState encounter, CombatantStats stats, double castCount)
+    {
+        var caster = new CombatantState("player", stats) { Hitpoints = encounter.Player.Hitpoints, AttackCount = castCount };
+        List<CombatEvent>? events = null;
+        ResolveAttack(caster, encounter.Enemy, encounter.Seed, 2, encounter.ElapsedSeconds, ref events);
+        UpdateOutcome(encounter);
+        return events![0];
+    }
+
     /// <summary>单次推进最多产出的战斗事件上限，防止攻速异常引发死循环</summary>
     public const int MaxEventsPerAdvance = 100_000;
 
@@ -275,12 +331,12 @@ public static class DeterministicCombatEngine
             encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, next);
             if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
             {
-                ResolveAttack(encounter.Player, encounter.Enemy, encounter.ElapsedSeconds, ref events);
+                ResolveAttack(encounter.Player, encounter.Enemy, encounter.Seed, 0, encounter.ElapsedSeconds, ref events);
                 encounter.Player.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Player.Stats.AttackIntervalSeconds;
             }
             if (encounter.Enemy.IsAlive && encounter.Enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
             {
-                ResolveAttack(encounter.Enemy, encounter.Player, encounter.ElapsedSeconds, ref events);
+                ResolveAttack(encounter.Enemy, encounter.Player, encounter.Seed, 1, encounter.ElapsedSeconds, ref events);
                 encounter.Enemy.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Enemy.Stats.AttackIntervalSeconds;
             }
             encounter.Sequence += 1;
@@ -289,21 +345,59 @@ public static class DeterministicCombatEngine
         return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome, (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence);
     }
 
-    /// <summary>
-    /// 结算单次普攻动作。
-    /// 命中对抗：Accuracy >= Evasion 时命中。
-    /// 减伤公式：标准双曲减伤 100 / (100 + Defense)。
-    /// </summary>
-    private static void ResolveAttack(CombatantState attacker, CombatantState target, double at, ref List<CombatEvent>? events)
+    /// <summary>按破拆招、闪避、暴击和两层抗性顺序结算，抽样仅依赖已持久化的种子与出手序号。</summary>
+    private static void ResolveAttack(CombatantState attacker, CombatantState target, long seed, ulong side, double at, ref List<CombatEvent>? events)
     {
         if (!attacker.IsAlive || !target.IsAlive) return;
-        var hit = attacker.Stats.Accuracy + 1e-12 >= target.Stats.Evasion;
-        var mitigation = 100d / (100d + target.Stats.Defense);
-        var damage = hit ? Math.Max(0, attacker.Stats.AttackPower * mitigation) : 0;
+        var attack = attacker.Stats;
+        var defense = target.Stats;
+        var contestRoll = Roll(seed, side, attacker.AttackCount, 0);
+        var broken = attack.BreakPower > defense.ParryResolve
+            && contestRoll < attack.BreakPower / (attack.BreakPower + defense.ParryResolve + 100);
+        var parried = defense.ParryResolve > attack.BreakPower
+            && contestRoll < defense.ParryResolve / (defense.ParryResolve + attack.BreakPower + 100);
+        var accuracy = attack.Accuracy * (broken ? 2 : 1);
+        var evasion = defense.Evasion * (parried ? 2 : 1);
+        var hit = Roll(seed, side, attacker.AttackCount, 1) >= evasion / (evasion + accuracy + 100);
+        var criticalPoints = attack.Critical * (broken ? 2 : 1);
+        var critical = hit && Roll(seed, side, attacker.AttackCount, 2)
+            < criticalPoints / (criticalPoints + defense.CriticalResistance + 100);
+        var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
+        var penetration = attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalPenetrationPercent : attack.MagicPenetrationPercent;
+        resistance *= (parried ? 2 : 1) * (1 - penetration / 100);
+        // 等价于 RawDamage² / (RawDamage + RES × K + 1)，先除后乘避免平方中间值溢出。
+        var damage = hit ? attack.AttackPower * (attack.AttackPower / (attack.AttackPower + resistance * defense.ResistanceScale + 1)) : 0;
+        var elementResistance = attack.Element switch
+        {
+            CombatElement.Metal => defense.MetalResistance,
+            CombatElement.Wood => defense.WoodResistance,
+            CombatElement.Water => defense.WaterResistance,
+            CombatElement.Fire => defense.FireResistance,
+            CombatElement.Earth => defense.EarthResistance,
+            _ => 0
+        };
+        if (attack.Element != CombatElement.None)
+            damage *= 1 - elementResistance / (elementResistance + 100 * defense.ResistanceScale);
+        if (critical) damage *= attack.CriticalMultiplier;
         target.Hitpoints = Math.Max(0, target.Hitpoints - damage);
         attacker.AttackCount += 1;
         events ??= new List<CombatEvent>();
-        events.Add(new CombatEvent(at, attacker.Id, target.Id, damage, hit, attacker.Stats.DamageKind, target.Hitpoints));
+        events.Add(new CombatEvent(at, attacker.Id, target.Id, damage, hit, attack.DamageKind, target.Hitpoints)
+        { Critical = critical, Break = broken, Parried = parried });
+    }
+
+    private static double Roll(long seed, ulong side, double attackCount, ulong channel)
+    {
+        // SplitMix64 混合固定计数器；各判定使用独立通道，切片与恢复不会改变随机流。
+        unchecked
+        {
+            var value = (ulong)seed ^ ((ulong)BitConverter.DoubleToInt64Bits(attackCount) * 0x9E3779B97F4A7C15UL)
+                ^ ((side + 1) * 0xD1B54A32D192ED03UL) ^ ((channel + 1) * 0x94D049BB133111EBUL);
+            value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
+            value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
+            value ^= value >> 31;
+            return (value >> 11) * (1d / 9007199254740992d);
+        }
     }
 
     /// <summary>

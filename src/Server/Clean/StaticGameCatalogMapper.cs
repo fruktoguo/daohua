@@ -242,13 +242,13 @@ public static class StaticGameCatalogMapper
             category = NormalizeEnum(ReadString(monster, "category", "physical")),
             element = NormalizeEnum(ReadString(monster, "element", "none")),
             rank = NormalizeEnum(ReadString(monster, "rank", "normal")),
-            maxHitpoints = Math.Max(1, ReadDouble(monster, "maxHitpoints", ReadDouble(monster, "budgetCost", 1) * 10)),
+            maxHitpoints = catalog.CombatMonsters[id].Stats.MaxHitpoints,
             maxManapoints = Math.Max(0, ReadDouble(monster, "maxManapoints", 0)),
-            attackIntervalMilliseconds = Math.Max(100, ReadDouble(monster, "attackIntervalMilliseconds", 2_000)),
-            accuracyRating = ReadDouble(monster, "accuracyRating", 1),
-            evasionRating = ReadDouble(monster, "evasionRating", 0),
-            maxDamage = Math.Max(0, ReadDouble(monster, "maxDamage", ReadDouble(monster, "budgetCost", 1))),
-            armor = Math.Max(0, ReadDouble(monster, "armor", 0)),
+            attackIntervalMilliseconds = catalog.CombatMonsters[id].Stats.AttackIntervalSeconds * 1000,
+            accuracyRating = catalog.CombatMonsters[id].Stats.Accuracy,
+            evasionRating = catalog.CombatMonsters[id].Stats.Evasion,
+            maxDamage = catalog.CombatMonsters[id].Stats.AttackPower,
+            armor = catalog.CombatMonsters[id].Stats.Defense,
             magicResistance = Math.Max(0, ReadDouble(monster, "magicResistance", 0)),
             metalResistance = Math.Max(0, ReadDouble(monster, "metalResistance", 0)),
             woodResistance = Math.Max(0, ReadDouble(monster, "woodResistance", 0)),
@@ -263,8 +263,8 @@ public static class StaticGameCatalogMapper
             criticalDamageRatio = ReadDouble(monster, "criticalDamageRatio", 1.5),
             criticalAvoidance = ReadDouble(monster, "criticalAvoidance", 0),
             damageAbsorptionRatio = ReadDouble(monster, "damageAbsorptionRatio", 0),
-            hpRegenPerTenSeconds = ReadDouble(monster, "hpRegenPerTenSeconds", 0),
-            mpRegenPerTenSeconds = ReadDouble(monster, "mpRegenPerTenSeconds", 0),
+            hpRegenPerFiveSeconds = ReadDouble(monster, "hpRegen", 0),
+            mpRegenPerFiveSeconds = ReadDouble(monster, "mpRegen", 0),
             experience = ReadDouble(monster, "experience", ReadDouble(monster, "budgetCost", 1)),
             abilityIds = ReadArray(monster, "skills").Select(skill => ReadString(skill, "abilityId")).Where(id => id.Length > 0).ToArray()
         }
@@ -276,7 +276,7 @@ public static class StaticGameCatalogMapper
         maxHitpoints = 1d, maxManapoints = 0d, attackIntervalMilliseconds = 2_000d, accuracyRating = 1d, evasionRating = 0d, maxDamage = 0d,
         armor = 0d, magicResistance = 0d, metalResistance = 0d, woodResistance = 0d, waterResistance = 0d, fireResistance = 0d, earthResistance = 0d,
         tenacity = 0d, lifeStealRatio = 0d, armorDamageRatio = 0d, hpDrainRatio = 0d, criticalChance = 0d, criticalDamageRatio = 1.5d,
-        criticalAvoidance = 0d, damageAbsorptionRatio = 0d, hpRegenPerTenSeconds = 0d, mpRegenPerTenSeconds = 0d, experience = 0d, abilityIds = Array.Empty<string>()
+        criticalAvoidance = 0d, damageAbsorptionRatio = 0d, hpRegenPerFiveSeconds = 0d, mpRegenPerFiveSeconds = 0d, experience = 0d, abilityIds = Array.Empty<string>()
     };
 
     private static bool IsMonsterInRank(GameDataCatalog catalog, string id, string rank) => catalog.Monsters.TryGetValue(id, out var monster)

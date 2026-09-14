@@ -151,13 +151,16 @@ public static class WebSocketEndpoint
         }
     }
 
-    /// <summary>构建增量：以会话上次推送的分段与资产为基线对比，仅携带发生变化的分段与资产品种。</summary>
+    /// <summary>
+    /// 构建增量：以会话上次推送的分段与资产为基线对比，仅携带发生变化的分段与资产品种。
+    /// 同时携带权威模拟时刻 LastSimulatedAt，供浏览器在两次全量快照之间校准服务端时钟。
+    /// </summary>
     private static PlayerSnapshotDeltaDto BuildDelta(WebSocketSession session, PlayerRuntimeSnapshot snapshot, Domain.GameData.GameDataCatalog gameData)
     {
         var current = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData);
         var changedSections = ProtocolSnapshotMapper.DiffSections(session.ExchangeSectionBaseline(current.Sections), current.Sections);
         var changedAssets = ProtocolSnapshotMapper.DiffAssets(session.ExchangeAssetBaseline(current.Assets), current.Assets);
-        return new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, changedSections, changedAssets.Count == 0 ? null : changedAssets);
+        return new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, current.LastSimulatedAt, changedSections, changedAssets.Count == 0 ? null : changedAssets);
     }
 
     private static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T payload) =>

@@ -227,7 +227,9 @@ public sealed record EconomyTransactionRequest(
     Guid ActorId,
     IReadOnlyList<AssetDelta> Deltas,
     DateTimeOffset? OccurredAt = null,
-    ReadOnlyMemory<byte> ResultPayload = default);
+    ReadOnlyMemory<byte> ResultPayload = default,
+    IReadOnlyList<SectionWrite>? Sections = null,
+    IReadOnlyList<CommandReceipt>? Receipts = null);
 
 public sealed record EconomyTransactionResult(
     Guid TransactionId,
@@ -292,4 +294,5 @@ public sealed record StoredMarketOrder(
     double FilledQuantity,
     string Status,
     long Sequence,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset ExpiresAt);

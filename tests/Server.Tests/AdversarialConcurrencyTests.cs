@@ -71,7 +71,7 @@ public sealed class AdversarialConcurrencyTests
                 var current = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData);
                 var changedSections = ProtocolSnapshotMapper.DiffSections(session.ExchangeSectionBaseline(current.Sections), current.Sections);
                 var changedAssets = ProtocolSnapshotMapper.DiffAssets(session.ExchangeAssetBaseline(current.Assets), current.Assets);
-                var delta = new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, changedSections, changedAssets.Count == 0 ? null : changedAssets);
+                var delta = new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, current.LastSimulatedAt, changedSections, changedAssets.Count == 0 ? null : changedAssets);
                 var envelope = WireEnvelope.Json(
                     WireMessageType.SnapshotDelta,
                     Guid.NewGuid(),

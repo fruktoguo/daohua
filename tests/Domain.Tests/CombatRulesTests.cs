@@ -1,0 +1,45 @@
+namespace Domain.Tests;
+
+public sealed class CombatRulesTests
+{
+    [Theory]
+    [InlineData(CombatDamageKind.Physical, CombatElement.None, 100d * 100 / 121)]
+    [InlineData(CombatDamageKind.Spell, CombatElement.Fire, 100d * 100 / 181 * 0.5)]
+    public void DamageUsesMatchingCategoryPenetrationRealmAndElement(
+        CombatDamageKind kind, CombatElement element, double expected)
+    {
+        var attacker = CombatantStats.Create(1000, 100, 0, 1, damageKind: kind) with
+        { PhysicalPenetrationPercent = 50, Element = element };
+        var defender = CombatantStats.Create(1000, 0, 20, 1) with
+        { MagicResistance = 40, ResistanceScale = 2, FireResistance = 200 };
+        var state = CombatEncounterState.Start("formula", 42, attacker, defender);
+        var hit = DeterministicCombatEngine.AdvanceTo(state, 0.1).Events[0];
+        Assert.True(hit.Hit);
+        Assert.Equal(expected, hit.Damage, 10);
+    }
+
+    [Fact]
+    public void RandomCombatSurvivesSlicingAndRestoreWithoutChangingEvents()
+    {
+        var player = CombatantStats.Create(1000000, 80, 20, 0.7, 30, 90) with
+        { Critical = 150, BreakPower = 90, ParryResolve = 5 };
+        var enemy = player with { BreakPower = 10, ParryResolve = 180 };
+        var whole = CombatEncounterState.Start("replay", 123, player, enemy);
+        var split = CombatEncounterState.Start("replay", 123, player, enemy);
+        var expected = DeterministicCombatEngine.AdvanceTo(whole, 120).Events;
+        var first = DeterministicCombatEngine.AdvanceTo(split, 13.2).Events;
+        var restored = CombatEncounterState.Restore("replay", split.Seed, player, enemy,
+            split.ElapsedSeconds, split.Player.Hitpoints, split.Enemy.Hitpoints,
+            split.Player.NextAttackAtSeconds, split.Enemy.NextAttackAtSeconds,
+            split.Player.AttackCount, split.Enemy.AttackCount, split.Outcome, split.Sequence);
+        var second = DeterministicCombatEngine.AdvanceTo(restored, 120).Events;
+        Assert.Equal(expected, first.Concat(second));
+        Assert.Contains(expected, attack => !attack.Hit);
+        Assert.Contains(expected, attack => attack.Critical);
+        Assert.Contains(expected, attack => attack.Break);
+        Assert.Contains(expected, attack => attack.Parried);
+        Assert.Equal(whole.Player.Hitpoints, restored.Player.Hitpoints);
+        var differentSeed = CombatEncounterState.Start("replay", 124, player, enemy);
+        Assert.NotEqual(expected[0], DeterministicCombatEngine.AdvanceTo(differentSeed, 120).Events[0]);
+    }
+}

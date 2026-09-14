@@ -19,7 +19,7 @@ public sealed class ProtocolSnapshotMapperTests
         var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId), "映射测试", DateTimeOffset.UtcNow, "fp");
         var state = aggregate.ExportState();
         var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 1, aggregate.LastSimulatedAt, state, [], []);
-        var dto = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp");
+        var dto = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", GameDataCatalog.BuiltIn);
         Assert.Equal(playerId.ToString("D"), dto.PlayerId);
         Assert.Equal("映射测试", dto.DisplayName);
         Assert.Equal(7, dto.Sections.Count);
@@ -40,6 +40,30 @@ public sealed class ProtocolSnapshotMapperTests
         // 余额与基线一致时不产生变更；无基线时回退为全量。
         Assert.Empty(ProtocolSnapshotMapper.DiffAssets(current, current));
         Assert.Equal(current.Count, ProtocolSnapshotMapper.DiffAssets(null, current).Count);
+    }
+
+    /// <summary>
+    /// 增量快照必须随帧下发服务端权威模拟时刻，并能在信封编解码往返后保持毫秒精度。
+    /// 浏览器以「服务端时刻 + 本地单调流逝」推算行动倒计时与进度条；该字段缺失会让时钟锚点
+    /// 停留在最后一次全量快照，剩余时间被高估且偏移随页面停留时长线性累积，永不回正。
+    /// </summary>
+    [Fact]
+    public void Delta_CarriesAuthoritativeSimulatedAtThroughWireRoundtrip()
+    {
+        var playerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId), "增量映射测试", DateTimeOffset.UtcNow, "fp");
+        var simulatedAt = aggregate.LastSimulatedAt;
+        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 2, simulatedAt, aggregate.ExportState(), [], []);
+
+        var delta = ProtocolSnapshotMapper.ToDelta(runtime, "fp", GameDataCatalog.BuiltIn);
+        Assert.Equal(simulatedAt, delta.LastSimulatedAt);
+
+        var frame = WireEnvelopeCodec.EncodeJson(WireMessageType.SnapshotDelta, Guid.NewGuid(), 1, delta);
+        var envelope = WireEnvelopeCodec.Decode(frame);
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<PlayerSnapshotDeltaDto>(envelope, out var decoded));
+        Assert.Equal(simulatedAt.ToUniversalTime().ToUnixTimeMilliseconds(), decoded!.LastSimulatedAt.ToUnixTimeMilliseconds());
+        Assert.Contains("lastSimulatedAt", System.Text.Encoding.UTF8.GetString(envelope.Payload.Span));
     }
 
     [Fact]

@@ -144,10 +144,9 @@ public sealed class QueueLoopTests
     }
 
     [Fact]
-    public void QueueLoop_RotatesBlockedActionToTail_WhenMultipleActionsExist()
+    public void QueueLoop_WaitsForRespawnWithoutCompletingOrRotatingDefeatedAction()
     {
-        // 当队列开启循环且有多个行动时，若首项受阻（如战斗失败变为 Blocked），能够轮换到队尾并继续推进下一个可用行动；
-        // 若全受阻则安全停泊退出。
+        // 死亡是战斗内部等待阶段，不是完成或材料受阻，队列必须保持当前行动。
         var combatActionId = new ActionId("combat.boss");
         var qiActionId = new ActionId("cultivation.draw-qi");
         var actions = new ActionCatalog([
@@ -160,7 +159,7 @@ public sealed class QueueLoopTests
         ]);
         var monster = new CombatMonsterDefinition("enemy.boss", "妖皇", 100, CombatantStats.Create(10_000, 10_000, 0, 1), []);
         var encounter = new CombatEncounterDefinition(
-            "encounter.boss", "妖皇巢穴", 1, 1, 1, 1, 1, 1,
+            "encounter.boss", "妖皇巢穴", 100, 100, 1, 1, 1, 180,
             [new CombatSpawnDefinition("enemy.boss", 1, 1)], [], [], 0);
         var catalog = new GameDataCatalog("boss-test", "boss-test", actions,
             combatEncounters: new Dictionary<string, CombatEncounterDefinition> { ["encounter.boss"] = encounter },
@@ -172,25 +171,24 @@ public sealed class QueueLoopTests
         player.Enqueue(new ActionIntent(combatActionId, 1), Baseline, actions);
         player.Enqueue(new ActionIntent(qiActionId, 1), Baseline, actions);
 
-        // 阶段一：首项战斗失败变 Blocked，轮转到队尾，推进第 2 项吐纳（耗时 2 秒）
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(4), catalog);
 
         Assert.Contains(result.Events, e => e.Code == "combat.lost");
         Assert.Equal(2, player.Actions.Count);
-        // 吐纳行动完成一轮后又轮换回队尾，或者战斗项留在队尾保持 Blocked
-        var blockedAction = player.Actions.Single(a => a.Intent.ActionId == combatActionId);
-        Assert.Equal(ActionQueueStatus.Blocked, blockedAction.Status);
-        Assert.True(player.Progression.CompletedActions >= 1);
-
-        // 阶段二：全受阻安全停泊退出验证
-        // 将吐纳行动也替换为一个必定失败的战斗行动
-        player.RemoveAction(player.Actions.First(a => a.Intent.ActionId == qiActionId).Id);
-        player.Enqueue(new ActionIntent(combatActionId, 1), Baseline.AddSeconds(4), actions);
-
-        // 此时两项均为打不过的妖皇，推进 10 秒应安全停泊退出，绝不因无限轮换抛出 InvariantViolation
-        var halted = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(14), catalog);
-
+        var combat = player.Actions[0];
+        Assert.Equal(combatActionId, combat.Intent.ActionId);
+        Assert.Equal(CombatExpeditionPhase.Respawning, combat.Expedition!.Phase);
+        Assert.Equal(ActionQueueStatus.Pending, player.Actions[1].Status);
+        Assert.Equal(0, player.Progression.CompletedActions);
+        var boundary = player.LastSimulatedAt.AddSeconds(combat.Expedition.PhaseDurationSeconds - combat.Expedition.PhaseElapsedSeconds);
+        SimulationEngine.AdvanceTo(player, boundary.AddMilliseconds(-1), catalog);
+        Assert.Equal(0, player.Combat.Hitpoints);
+        var resumed = SimulationEngine.AdvanceTo(player, boundary, catalog);
+        Assert.Contains(resumed.Events, e => e.Code == "combat.respawned");
+        Assert.Equal(player.Combat.MaxHitpoints, player.Combat.Hitpoints);
         Assert.Equal(2, player.Actions.Count);
-        Assert.All(player.Actions, a => Assert.Equal(ActionQueueStatus.Blocked, a.Status));
+        Assert.Equal(combat.Id, player.Actions[0].Id);
+        Assert.Equal(1, combat.RemainingRepeats);
+        Assert.Equal(0, player.Progression.CompletedActions);
     }
 }

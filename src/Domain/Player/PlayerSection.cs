@@ -48,8 +48,8 @@ public sealed record PlayerStateHead(
     string Checksum,
     DateTimeOffset UpdatedAt)
 {
-    /// <summary>当前头结构模式版本</summary>
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>当前头结构模式版本；v2：战斗分段加入回复余量、技能状态与已学功法。</summary>
+    public const int CurrentSchemaVersion = 2;
 }
 
 /// <summary>
@@ -69,7 +69,7 @@ public sealed record PlayerSectionSnapshot(
     DateTimeOffset UpdatedAt)
 {
     /// <summary>当前分段数据结构模式版本</summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 }
 
 /// <summary>

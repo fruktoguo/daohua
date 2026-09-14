@@ -292,10 +292,15 @@ public sealed record PlayerSnapshotDto(
     IReadOnlyList<PlayerSectionDto> Sections,
     IReadOnlyList<AssetBalanceDto> Assets);
 
-/// <summary>玩家增量快照 DTO（仅携带本次变更的分段与受影响资产）</summary>
+/// <summary>
+/// 玩家增量快照 DTO（仅携带本次变更的分段与受影响资产）。
+/// LastSimulatedAt 必须随每个增量下发：浏览器以「服务端权威时刻 + 本地单调流逝」推算进度，
+/// 缺少该字段会让服务端时钟锚点停留在最后一次全量快照，倒计时与进度条偏移会随时间线性累积。
+/// </summary>
 public sealed record PlayerSnapshotDeltaDto(
     string PlayerId,
     long StateVersion,
+    DateTimeOffset LastSimulatedAt,
     IReadOnlyList<PlayerSectionDto> ChangedSections,
     IReadOnlyList<AssetBalanceDto>? ChangedAssets = null);
 

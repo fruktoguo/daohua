@@ -1,5 +1,6 @@
 using System.Net;
 using System.Reflection;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
@@ -125,12 +126,12 @@ app.UseForwardedHeaders();
 app.MapHealthChecks("/healthz", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("live"),
-    ResponseWriter = WriteHealthResponse
+    ResponseWriter = (context, report) => WriteHealthResponse(context, report, releaseVersion)
 });
 app.MapHealthChecks("/readyz", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
-    ResponseWriter = WriteHealthResponse
+    ResponseWriter = (context, report) => WriteHealthResponse(context, report, releaseVersion)
 });
 
 if (processRole == ServerProcessRole.Api)
@@ -153,6 +154,18 @@ if (processRole == ServerProcessRole.Api)
     }));
 
     var catalog = app.MapGroup("/api/v1/catalog");
+    catalog.MapGet("/abilities", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        var result = gameData.Abilities.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => ToAbilityDto(pair.Key, pair.Value)).ToArray();
+        return Results.Ok(result);
+    });
+    catalog.MapGet("/base-attributes", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        return Results.Ok(gameData.BaseAttributes!.Anchors);
+    });
     catalog.MapGet("/actions", (HttpContext context, GameDataCatalog gameData) =>
     {
         ApplyCatalogHeaders(context, gameData.Fingerprint);
@@ -427,7 +440,26 @@ static void ApplyCatalogHeaders(HttpContext context, string fingerprint)
     context.Response.Headers.CacheControl = "public,max-age=300,stale-while-revalidate=60";
 }
 
-static async Task WriteHealthResponse(HttpContext context, HealthReport report)
+static object ToAbilityDto(string id, JsonElement raw)
+{
+    var node = JsonNode.Parse(raw.GetRawText())!.AsObject();
+    node["abilityId"] = id;
+    if (node["style"] is JsonValue style)
+        node["style"] = style.GetValue<string>() switch { "fiveElements" => "five-elements", _ => style.GetValue<string>() };
+    node["manaCost"] = (node["manaCostRatio"]?.GetValue<double>() ?? 0) * 10;
+    node.Remove("manaCostRatio");
+    node["cooldownMilliseconds"] ??= 0;
+    node["castMilliseconds"] ??= 0;
+    node["flatDamage"] ??= 0;
+    node["damageRatio"] ??= 0;
+    node["penetrationRatio"] ??= 0;
+    node["triggerHpRatio"] ??= 0;
+    if (node["targetType"] is JsonValue target)
+        node["targetType"] = target.GetValue<string>() switch { "allEnemies" => "all-enemies", "allAllies" => "all-allies", "lowestHitpointsAlly" => "lowest-hp-ally", "self" => "self", _ => "enemy" };
+    return node;
+}
+
+static async Task WriteHealthResponse(HttpContext context, HealthReport report, string version)
 {
     context.Response.ContentType = "application/json; charset=utf-8";
     context.Response.Headers.CacheControl = "no-store, no-cache, max-age=0";
@@ -437,6 +469,7 @@ static async Task WriteHealthResponse(HttpContext context, HealthReport report)
     {
         status,
         service = "daohua",
+        version,
         checks = report.Entries.ToDictionary(entry => entry.Key, entry => entry.Value.Status.ToString().ToLowerInvariant(), StringComparer.Ordinal)
     }, ProtocolJson.Options, context.RequestAborted);
 }

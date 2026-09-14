@@ -37,7 +37,7 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     [Fact]
-    public void DefeatedCombatActionBlocksWithoutSpinningTheQueue()
+    public void DefeatedCombatActionRestoresAndResumesAtConfiguredRespawnBoundary()
     {
         var catalog = CreateCatalog(enemyHitpoints: 1_000, enemyAttackPower: 1_000);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
@@ -46,9 +46,53 @@ public sealed class CombatExpeditionSimulationTests
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3), catalog);
 
         var action = Assert.Single(player.Actions);
-        Assert.Equal(ActionQueueStatus.Blocked, action.Status);
+        Assert.Equal(ActionQueueStatus.Running, action.Status);
+        Assert.Equal(CombatExpeditionPhase.Respawning, action.Expedition!.Phase);
         Assert.Equal(0, player.Combat.Hitpoints);
         Assert.Contains(result.Events, entry => entry.Code == "combat.lost");
+        var remaining = action.Expedition.PhaseDurationSeconds - action.Expedition.PhaseElapsedSeconds;
+        Assert.Equal(180, action.Expedition.PhaseDurationSeconds);
+        var restored = PlayerAggregate.Restore(player.ExportState());
+        var boundary = player.LastSimulatedAt.AddSeconds(remaining);
+        SimulationEngine.AdvanceTo(player, boundary.AddMilliseconds(-1), catalog);
+        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Equal(CombatExpeditionPhase.Respawning, action.Expedition.Phase);
+        var respawned = SimulationEngine.AdvanceTo(player, boundary, catalog);
+        SimulationEngine.AdvanceTo(restored, boundary, catalog);
+        Assert.Contains(respawned.Events, entry => entry.Code == "combat.respawned");
+        Assert.Equal(player.Combat.MaxHitpoints, player.Combat.Hitpoints);
+        Assert.Equal(player.Combat.MaxManapoints, player.Combat.Manapoints);
+        Assert.Equal(CombatExpeditionPhase.Search, action.Expedition.Phase);
+        Assert.Equal(-1, action.RemainingRepeats);
+        Assert.Equal(0, action.CompletedRepeats);
+        Assert.Equal(action.Expedition, restored.Actions[0].Expedition);
+    }
+
+    [Fact]
+    public void CombatWaveFightsMonstersBackToBackAndCountsOneRepeatPerWave()
+    {
+        var catalog = CreateWaveCatalog();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog);
+        var events = new List<(string Code, string Message)>(result.Events.Select(entry => (entry.Code, entry.Message)));
+        var action = Assert.Single(player.Actions);
+        Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition!.Phase);
+        Assert.Equal(1, action.Expedition.WaveNumber);
+
+        // 逐步推进直到本波三只全部讨伐成功；同波内不允许重新进入搜寻阶段。
+        var guard = 0;
+        while (events.Count(entry => entry.Code == "combat.won") < 3 && guard++ < 120)
+        {
+            result = SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(0.5), catalog);
+            events.AddRange(result.Events.Select(entry => (entry.Code, entry.Message)));
+        }
+
+        Assert.Equal(3, events.Count(entry => entry.Code == "combat.won"));
+        Assert.Equal(2, events.Count(entry => entry.Code == "combat.wave.next"));
+        Assert.Equal(1, player.Actions[0].CompletedRepeats);
+        Assert.Equal(2, player.Actions[0].Expedition!.WaveNumber);
     }
 
     [Fact]
@@ -75,6 +119,47 @@ public sealed class CombatExpeditionSimulationTests
 
         Assert.Throws<DomainException>(() => CombatEncounterState.Restore(
             "encounter.test", 1, stats, stats, 0, 10, 0, 0, 0, 0, 0, CombatOutcome.Running));
+    }
+
+    private static GameDataCatalog CreateWaveCatalog()
+    {
+        var actionId = new ActionId("combat.test");
+        var actions = new ActionCatalog([
+            new ActionDefinition(
+                actionId,
+                "讨伐测试",
+                ActionKind.Combat,
+                0,
+                new Dictionary<ItemId, double>(),
+                new Dictionary<ItemId, double>(),
+                ExecutionKind: ActionExecutionKind.CombatEncounter,
+                CombatEncounterId: "encounter.wave")
+        ]);
+        var monster = new CombatMonsterDefinition(
+            "enemy.wave",
+            "波次妖兽",
+            10,
+            CombatantStats.Create(1, 0, 0, 2),
+            []);
+        var encounter = new CombatEncounterDefinition(
+            "encounter.wave",
+            "波次遭遇",
+            30,
+            30,
+            30,
+            1,
+            1,
+            180,
+            [new CombatSpawnDefinition("enemy.wave", 1, 1)],
+            [],
+            [],
+            0);
+        return new GameDataCatalog(
+            "wave-1",
+            "wave-fingerprint",
+            actions,
+            combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter });
     }
 
     private static GameDataCatalog CreateCatalog(double enemyHitpoints, double enemyAttackPower)
@@ -105,7 +190,7 @@ public sealed class CombatExpeditionSimulationTests
             1,
             1,
             1,
-            1,
+            180,
             [new CombatSpawnDefinition("enemy.test", 1, 1)],
             [],
             [],

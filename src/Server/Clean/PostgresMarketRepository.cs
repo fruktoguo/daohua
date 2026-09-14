@@ -89,7 +89,7 @@ public sealed class PostgresMarketRepository(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             SELECT order_id, owner_player_id, asset_id, variant, side, price, quantity,
-                   filled_quantity, status, sequence, created_at
+                   filled_quantity, status, sequence, created_at, expires_at
             FROM market.orders
             WHERE partition_id = $1 AND status IN ('active', 'partially_filled')
             ORDER BY sequence
@@ -100,7 +100,7 @@ public sealed class PostgresMarketRepository(
         {
             orders.Add(new StoredMarketOrder(
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
-                reader.GetDouble(5), reader.GetDouble(6), reader.GetDouble(7), reader.GetString(8), reader.GetInt64(9), reader.GetFieldValue<DateTimeOffset>(10)));
+                reader.GetDouble(5), reader.GetDouble(6), reader.GetDouble(7), reader.GetString(8), reader.GetInt64(9), reader.GetFieldValue<DateTimeOffset>(10), reader.GetFieldValue<DateTimeOffset>(11)));
         }
         return orders;
     }
@@ -115,7 +115,7 @@ public sealed class PostgresMarketRepository(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             SELECT order_id, owner_player_id, asset_id, variant, side, price, quantity,
-                   filled_quantity, status, sequence, created_at
+                   filled_quantity, status, sequence, created_at, expires_at
             FROM market.orders
             WHERE partition_id = $1 AND asset_id = $2 AND variant = $3
               AND status IN ('active', 'partially_filled')
@@ -129,7 +129,7 @@ public sealed class PostgresMarketRepository(
         {
             orders.Add(new StoredMarketOrder(
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
-                reader.GetDouble(5), reader.GetDouble(6), reader.GetDouble(7), reader.GetString(8), reader.GetInt64(9), reader.GetFieldValue<DateTimeOffset>(10)));
+                reader.GetDouble(5), reader.GetDouble(6), reader.GetDouble(7), reader.GetString(8), reader.GetInt64(9), reader.GetFieldValue<DateTimeOffset>(10), reader.GetFieldValue<DateTimeOffset>(11)));
         }
         return orders;
     }
@@ -140,7 +140,7 @@ public sealed class PostgresMarketRepository(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             SELECT order_id, owner_player_id, asset_id, variant, side, price, quantity,
-                   filled_quantity, status, sequence, created_at
+                   filled_quantity, status, sequence, created_at, expires_at
             FROM market.orders
             WHERE order_id = $1 AND partition_id = $2
             """, connection);
@@ -150,7 +150,7 @@ public sealed class PostgresMarketRepository(
         return await reader.ReadAsync(cancellationToken)
             ? new StoredMarketOrder(
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
-                reader.GetDouble(5), reader.GetDouble(6), reader.GetDouble(7), reader.GetString(8), reader.GetInt64(9), reader.GetFieldValue<DateTimeOffset>(10))
+                reader.GetDouble(5), reader.GetDouble(6), reader.GetDouble(7), reader.GetString(8), reader.GetInt64(9), reader.GetFieldValue<DateTimeOffset>(10), reader.GetFieldValue<DateTimeOffset>(11))
             : null;
     }
 
@@ -271,7 +271,7 @@ public sealed class PostgresMarketRepository(
         return new MarketCommitResult(order.OrderId, true, false, tradeIds);
     }
 
-    public async ValueTask<bool> CancelAsync(
+    public ValueTask<bool> CancelAsync(
         Guid orderId,
         Guid ownerPlayerId,
         int partitionId,
@@ -279,10 +279,21 @@ public sealed class PostgresMarketRepository(
         string idempotencyKey,
         CancellationToken cancellationToken = default)
     {
+        return CloseOrderAsync(orderId, ownerPlayerId, partitionId, fenceToken, idempotencyKey, null, cancellationToken);
+    }
+
+    public ValueTask<bool> ExpireAsync(Guid orderId, Guid ownerPlayerId, long fenceToken, DateTimeOffset cutoff, CancellationToken cancellationToken = default) =>
+        CloseOrderAsync(orderId, ownerPlayerId, options.MarketPartitionId, fenceToken,
+            $"market-expire:{ownerPlayerId:D}:{orderId:D}", cutoff, cancellationToken);
+
+    private async ValueTask<bool> CloseOrderAsync(Guid orderId, Guid ownerPlayerId, int partitionId, long fenceToken,
+        string idempotencyKey, DateTimeOffset? expirationCutoff, CancellationToken cancellationToken)
+    {
         if (orderId == Guid.Empty || ownerPlayerId == Guid.Empty || string.IsNullOrWhiteSpace(idempotencyKey)) return false;
         if (partitionId != options.MarketPartitionId)
             throw new ArgumentException("撤单分片与当前写者不一致。", nameof(partitionId));
-        var canonicalIdempotencyKey = $"market-cancel:{ownerPlayerId:D}:{orderId:D}";
+        var operation = expirationCutoff.HasValue ? "expire" : "cancel";
+        var canonicalIdempotencyKey = $"market-{operation}:{ownerPlayerId:D}:{orderId:D}";
         if (!string.Equals(idempotencyKey, canonicalIdempotencyKey, StringComparison.Ordinal))
             throw new ArgumentException("撤单幂等键必须绑定当前玩家和订单。", nameof(idempotencyKey));
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -294,7 +305,7 @@ public sealed class PostgresMarketRepository(
             return true;
         }
         await using var order = new NpgsqlCommand("""
-            SELECT owner_player_id, side, asset_id, variant, status
+            SELECT owner_player_id, side, asset_id, variant, status, expires_at
             FROM market.orders WHERE order_id = $1 AND partition_id = $2 FOR UPDATE
             """, connection, transaction);
         order.Parameters.Add(new NpgsqlParameter { Value = orderId });
@@ -305,6 +316,7 @@ public sealed class PostgresMarketRepository(
         var variant = string.Empty;
         var status = string.Empty;
         var orderFound = false;
+        DateTimeOffset expiresAt = default;
         await using (var reader = await order.ExecuteReaderAsync(cancellationToken))
         {
             if (await reader.ReadAsync(cancellationToken))
@@ -315,6 +327,7 @@ public sealed class PostgresMarketRepository(
                 assetId = reader.GetString(2);
                 variant = reader.GetString(3);
                 status = reader.GetString(4);
+                expiresAt = reader.GetFieldValue<DateTimeOffset>(5);
             }
         }
         if (!orderFound)
@@ -322,7 +335,8 @@ public sealed class PostgresMarketRepository(
             await transaction.RollbackAsync(cancellationToken);
             return false;
         }
-        if (orderOwnerId != ownerPlayerId || status is not ("active" or "partially_filled"))
+        if (orderOwnerId != ownerPlayerId || status is not ("active" or "partially_filled")
+            || (expirationCutoff.HasValue && expiresAt > expirationCutoff.Value))
         {
             await transaction.RollbackAsync(cancellationToken);
             return false;
@@ -345,9 +359,10 @@ public sealed class PostgresMarketRepository(
             [new AssetDelta(ownerPlayerId, releaseAsset, releaseVariant, releaseAmount)],
             DateTimeOffset.UtcNow,
             cancellationToken);
-        await using (var update = new NpgsqlCommand("UPDATE market.orders SET status = 'cancelled', version = version + 1, updated_at = now() WHERE order_id = $1", connection, transaction))
+        await using (var update = new NpgsqlCommand("UPDATE market.orders SET status = $2, version = version + 1, updated_at = now() WHERE order_id = $1", connection, transaction))
         {
             update.Parameters.Add(new NpgsqlParameter { Value = orderId });
+            update.Parameters.Add(new NpgsqlParameter { Value = expirationCutoff.HasValue ? "expired" : "cancelled" });
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
         await using (var reservation = new NpgsqlCommand("UPDATE economy.reservations SET status = 'released', updated_at = now() WHERE order_id = $1 AND status = 'active'", connection, transaction))
@@ -377,9 +392,9 @@ public sealed class PostgresMarketRepository(
         await using var command = new NpgsqlCommand("""
             INSERT INTO market.orders
                 (order_id, partition_id, owner_player_id, side, asset_id, variant, price,
-                 quantity, filled_quantity, status, sequence, idempotency_key, created_at, updated_at)
+                 quantity, filled_quantity, status, sequence, idempotency_key, created_at, updated_at, expires_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 'active',
-                    (SELECT COALESCE(max(sequence), 0) + 1 FROM market.orders WHERE partition_id = $2), $9, $10, $10)
+                    (SELECT COALESCE(max(sequence), 0) + 1 FROM market.orders WHERE partition_id = $2), $9, $10, $10, $11)
             ON CONFLICT DO NOTHING
             RETURNING order_id
             """, connection, transaction);
@@ -393,6 +408,7 @@ public sealed class PostgresMarketRepository(
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = order.Quantity });
         command.Parameters.Add(new NpgsqlParameter { Value = order.IdempotencyKey });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
+        command.Parameters.Add(new NpgsqlParameter { Value = now.AddDays(30) });
         return await command.ExecuteScalarAsync(cancellationToken) is Guid;
     }
 
