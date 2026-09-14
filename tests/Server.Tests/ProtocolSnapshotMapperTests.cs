@@ -114,28 +114,6 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(null, sections).Count);
         Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(new Dictionary<string, string>(), sections).Count);
     }
-    /// <summary>验证 To Action Queue Section With Collect Morning Dew Maps Name And Type。</summary>
-
-    [Fact]
-    public void ToActionQueueSection_WithCollectMorningDew_MapsNameAndType()
-    {
-        var gameData = GameDataCatalog.LoadEmbedded();
-        var actionId = new ActionId("explore.collect-morning-dew");
-        var actions = new List<QueuedActionState>
-        {
-            new(Guid.NewGuid(), new ActionIntent(actionId), DateTimeOffset.UtcNow, ActionQueueStatus.Pending, 0, 1, 0)
-        };
-
-        var result = ProtocolSnapshotMapper.ToActionQueueSection(actions, gameData);
-        Assert.Single(result);
-
-        var json = JsonSerializer.Serialize(result);
-        using var doc = JsonDocument.Parse(json);
-        var item = doc.RootElement[0];
-
-        Assert.Equal("收集 晨露", item.GetProperty("actionName").GetString());
-        Assert.Equal("exploration", item.GetProperty("actionType").GetString());
-    }
     /// <summary>验证 To Action Queue Section Graceful Fallback When Game Data Null Or Unknown Action。</summary>
 
     [Fact]

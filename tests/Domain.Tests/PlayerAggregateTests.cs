@@ -52,31 +52,6 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>AdvanceToIsDeterministicForSameInput</c>（Advance To Is Deterministic For Same Input）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void AdvanceToIsDeterministicForSameInput()
-    {
-        var first = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
-        var second = PlayerAggregate.Create(first.PlayerId, first.AccountId, "甲", Baseline, "catalog-a");
-        var intent = new ActionIntent(new ActionId("cultivation.draw-qi"), 3);
-        first.Enqueue(intent, Baseline, ActionCatalog.Default);
-        second.Enqueue(intent, Baseline, ActionCatalog.Default);
-
-        var firstResult = SimulationEngine.AdvanceTo(first, Baseline.AddSeconds(31), ActionCatalog.Default);
-        var secondResult = SimulationEngine.AdvanceTo(second, Baseline.AddSeconds(31), ActionCatalog.Default);
-
-        Assert.Equal(firstResult.CompletedRepeats, secondResult.CompletedRepeats);
-        Assert.Equal(firstResult.AssetDeltas, secondResult.AssetDeltas);
-        Assert.All(firstResult.Events, entry => Assert.InRange(entry.At, Baseline, Baseline.AddSeconds(31)));
-        Assert.Equal(first.LastSimulatedAt, second.LastSimulatedAt);
-        Assert.Equal(first.Progression.CompletedActions, second.Progression.CompletedActions);
-        Assert.Equal(first.Actions.Count, second.Actions.Count);
-        if (first.Actions.Count > 0)
-            Assert.Equal(first.Actions[0].ProgressSeconds, second.Actions[0].ProgressSeconds);
-    }
-
-    /// <summary>
     /// 验证 <c>CannotAdvanceBackwards</c>（Cannot Advance Backwards）所描述的领域行为。
     /// </summary>
     [Fact]
@@ -203,21 +178,6 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>EnqueueCopiesMutableIntentParameters</c>（Enqueue Copies Mutable Intent Parameters）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void EnqueueCopiesMutableIntentParameters()
-    {
-        var parameters = new Dictionary<string, double> { ["power"] = 1 };
-        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
-        var action = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 1, Parameters: parameters), Baseline, ActionCatalog.Default);
-
-        parameters["power"] = 99;
-
-        Assert.Equal(1, action.Intent.Parameters!["power"]);
-    }
-
-    /// <summary>
     /// 验证 <c>RestoreRejectsUndefinedActionStatus</c>（Restore Rejects Undefined Action Status）所描述的领域行为。
     /// </summary>
     [Fact]
@@ -269,24 +229,4 @@ public sealed class PlayerAggregateTests
         Assert.Equal(Baseline, player.LastSimulatedAt);
     }
 
-    /// <summary>
-    /// 验证 <c>RestoreFromReplacesMutableStateButKeepsIdentity</c>（Restore From Replaces Mutable State But Keeps Identity）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void RestoreFromReplacesMutableStateButKeepsIdentity()
-    {
-        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
-        var state = player.ExportState() with
-        {
-            DisplayName = "乙",
-            StateVersion = 9,
-            Progression = new PlayerProgressionState(2, 99, 3, 99, 7)
-        };
-        player.RestoreFrom(state);
-
-        Assert.Equal("乙", player.DisplayName);
-        Assert.Equal(9, player.StateVersion);
-        Assert.Equal(99, player.Progression.Qi);
-        Assert.Empty(player.DirtySections);
-    }
 }

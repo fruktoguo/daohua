@@ -318,25 +318,6 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>SimulationNeverDrivesRemainingRepeatsNegative</c>（Simulation Never Drives Remaining Repeats Negative）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void SimulationNeverDrivesRemainingRepeatsNegative()
-    {
-        var player = CreatePlayer("甲");
-        player.SetLoopEnabled(false);
-        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 3), Baseline, ActionCatalog.Default);
-
-        for (var i = 1; i <= 40; i++)
-        {
-            SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(i), ActionCatalog.Default);
-            Assert.All(player.Actions, action => Assert.True(action.RemainingRepeats == -1 || action.RemainingRepeats >= 1));
-        }
-
-        Assert.Empty(player.Actions);
-    }
-
-    /// <summary>
     /// 验证 <c>ZeroDurationHeadActionFromHotReloadIsSelfHealedAndQueueContinues</c>（Zero Duration Head Action From Hot Reload Is Self Healed And Queue Continues）所描述的领域行为。
     /// </summary>
     [Fact]

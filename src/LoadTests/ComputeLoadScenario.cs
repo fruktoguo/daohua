@@ -7,45 +7,6 @@ namespace DaoHua.LoadTests;
 public static class ComputeLoadScenario
 {
     /// <summary>
-    /// 执行计算负载场景并将结果封装为压测报告。
-    /// </summary>
-    /// <param name="options">压测选项。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>压测报告。</returns>
-    public static async Task<LoadTestReport> RunAsync(LoadTestOptions options, CancellationToken cancellationToken = default)
-    {
-        var result = await RunLocalAsync(options.Players, cancellationToken);
-        var process = Process.GetCurrentProcess();
-        process.Refresh();
-        var gatePassed = result.ElapsedMilliseconds <= CapacityTargetScenario.ColdComputeBudgetMilliseconds
-                         && result.Errors == 0;
-        return new LoadTestReport(
-            "loadtest.v1",
-            "compute",
-            options.Players,
-            options.DurationSeconds,
-            result.ElapsedMilliseconds,
-            result.CpuMilliseconds,
-            result.ManagedBytesBefore,
-            result.ManagedBytesAfter,
-            process.WorkingSet64,
-            0,
-            0,
-            0,
-            0,
-            result.Errors,
-            gatePassed,
-            new Dictionary<string, object?>
-            {
-                ["completedPlayers"] = result.CompletedPlayers,
-                ["checksum"] = result.Checksum,
-                ["actions"] = result.CompletedActions,
-                ["transitions"] = result.Transitions
-            },
-            []);
-    }
-
-    /// <summary>
     /// 在本地并行模拟指定数量的玩家补算。
     /// </summary>
     /// <param name="players">玩家数量。</param>

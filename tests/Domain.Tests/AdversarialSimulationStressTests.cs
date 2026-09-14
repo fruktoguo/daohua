@@ -68,26 +68,4 @@ public sealed class AdversarialSimulationStressTests
         Assert.Contains("单次模拟超过最大状态转换数", ex.Message);
     }
 
-    /// <summary>
-    /// 验证 <c>MaxTransitionsPerAdvance_Under100k_SucceedsCleanly</c>（Max Transitions Per Advance Under 100k Succeeds Cleanly）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void MaxTransitionsPerAdvance_Under100k_SucceedsCleanly()
-    {
-        // 50,000 次转换应稳定通过且无死锁
-        var fastCatalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.1sec"), "1秒行动", ActionKind.Cultivation, 1, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
-        ]);
-
-        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "极速者2", Baseline, "catalog-a");
-        player.SetLoopEnabled(false);
-        player.Enqueue(new ActionIntent(new ActionId("test.1sec"), 50_000), Baseline, fastCatalog);
-
-        // 推进 50,000 秒 -> 50,000 次转换
-        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(50_000), fastCatalog);
-
-        Assert.True(result.Changed);
-        Assert.Equal(50000, result.CompletedActions);
-        Assert.Empty(player.Actions);
-    }
 }

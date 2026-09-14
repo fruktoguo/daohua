@@ -123,49 +123,6 @@ public static class CapacityTargetScenario
     }
 
     /// <summary>
-    /// 仅执行 PostgreSQL 容量探测。
-    /// </summary>
-    /// <param name="options">压测选项。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>PostgreSQL 压测报告。</returns>
-    public static async Task<LoadTestReport> RunPostgresOnlyAsync(
-        LoadTestOptions options,
-        CancellationToken cancellationToken = default)
-    {
-        var process = Process.GetCurrentProcess();
-        var managedBefore = GC.GetTotalMemory(forceFullCollection: true);
-        var cpuBefore = process.TotalProcessorTime;
-        var started = Stopwatch.GetTimestamp();
-        try
-        {
-            var result = await PostgresCapacityProbe.RunAsync(options, cancellationToken);
-            process.Refresh();
-            return new LoadTestReport(
-                "loadtest.v1",
-                "postgres",
-                RegisteredAccountTarget,
-                options.StateChangeSeconds,
-                Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                (process.TotalProcessorTime - cpuBefore).TotalMilliseconds,
-                managedBefore,
-                GC.GetTotalMemory(forceFullCollection: false),
-                process.WorkingSet64,
-                0,
-                0,
-                0,
-                0,
-                result.DataBytes > DataDiskBudgetBytes || result.WalBytes > WalBudgetBytes ? 1 : 0,
-                result.DataBytes <= DataDiskBudgetBytes && result.WalBytes <= WalBudgetBytes,
-                new Dictionary<string, object?> { ["postgres"] = result },
-                []);
-        }
-        catch (Exception exception) when (exception is NpgsqlException or TimeoutException or InvalidOperationException)
-        {
-            return LoadTestReport.Failure("postgres", exception.Message);
-        }
-    }
-
-    /// <summary>
     /// 账号与 section 的存储估算。
     /// </summary>
     /// <param name="AccountBytes">账号表估算字节数。</param>

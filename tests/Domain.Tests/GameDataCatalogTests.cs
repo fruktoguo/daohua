@@ -6,14 +6,21 @@ namespace Domain.Tests;
 public sealed class GameDataCatalogTests
 {
     /// <summary>
-    /// 验证 <c>BuiltInCatalogIsValid</c>（Built In Catalog Is Valid）所描述的领域行为。
+    /// 验证内置目录与嵌入资源加载均非空且包含核心行动。
     /// </summary>
     [Fact]
-    public void BuiltInCatalogIsValid()
+    public void BuiltInAndEmbeddedCatalogsAreValid()
     {
-        var catalog = GameDataCatalog.BuiltIn;
-        Assert.NotEmpty(catalog.Actions.All);
-        Assert.Contains(catalog.Actions.All, action => action.Id.Value == "cultivation.draw-qi");
+        var builtIn = GameDataCatalog.BuiltIn;
+        Assert.NotEmpty(builtIn.Actions.All);
+        Assert.Contains(builtIn.Actions.All, action => action.Id.Value == "cultivation.draw-qi");
+
+        var embedded = GameDataCatalog.LoadEmbedded();
+        Assert.NotEmpty(embedded.Actions.All);
+        Assert.NotEmpty(embedded.Items);
+        Assert.NotEmpty(embedded.Maps);
+        Assert.NotEmpty(embedded.Encounters);
+        Assert.False(string.IsNullOrWhiteSpace(embedded.Fingerprint));
     }
 
     /// <summary>
@@ -31,20 +38,6 @@ public sealed class GameDataCatalogTests
         var travel = first.Actions.Get(new ActionId("world.travel"));
         Assert.True(travel.HiddenFromCatalog);
         Assert.Equal(ActionKind.Travel, travel.Kind);
-    }
-
-    /// <summary>
-    /// 验证 <c>EmbeddedCatalogCanBeLoadedByHost</c>（Embedded Catalog Can Be Loaded By Host）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void EmbeddedCatalogCanBeLoadedByHost()
-    {
-        var catalog = GameDataCatalog.LoadEmbedded();
-        Assert.NotEmpty(catalog.Actions.All);
-        Assert.NotEmpty(catalog.Items);
-        Assert.NotEmpty(catalog.Maps);
-        Assert.NotEmpty(catalog.Encounters);
-        Assert.False(string.IsNullOrWhiteSpace(catalog.Fingerprint));
     }
 
     /// <summary>

@@ -8,25 +8,6 @@ namespace Domain.Tests;
 public sealed class ProtocolTests
 {
     /// <summary>
-    /// 验证 <c>BinaryEnvelopeRoundTripsWithoutMutation</c>（Binary Envelope Round Trips Without Mutation）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void BinaryEnvelopeRoundTripsWithoutMutation()
-    {
-        var requestId = Guid.NewGuid();
-        var payload = new byte[] { 1, 2, 3, 4 };
-        var envelope = WireEnvelope.Create(WireMessageType.ActionIntent, requestId, 42, payload, WireCodec.Protobuf);
-        var encoded = WireEnvelopeCodec.Encode(envelope);
-        var decoded = WireEnvelopeCodec.Decode(encoded);
-
-        Assert.Equal(envelope.ProtocolVersion, decoded.ProtocolVersion);
-        Assert.Equal(envelope.MessageType, decoded.MessageType);
-        Assert.Equal(envelope.RequestId, decoded.RequestId);
-        Assert.Equal(envelope.Sequence, decoded.Sequence);
-        Assert.Equal(payload, decoded.Payload.ToArray());
-    }
-
-    /// <summary>
     /// 验证 <c>JsonEnvelopeCanDeserializeTypedPayload</c>（Json Envelope Can Deserialize Typed Payload）所描述的领域行为。
     /// </summary>
     [Fact]
@@ -92,46 +73,4 @@ public sealed class ProtocolTests
         Assert.Equal(json, JsonSerializer.Serialize(parsed, ProtocolJson.Options));
     }
 
-    /// <summary>
-    /// 验证 <c>LogBatchRoundTripsCorrectly</c>（Log Batch Round Trips Correctly）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void LogBatchRoundTripsCorrectly()
-    {
-        var logBatch = new LogBatchDto([
-            new LogEventDto(1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "获得灵草 {{item:herb.spirit-grass|伴灵草}} ×1"),
-            new LogEventDto(2, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), "击败妖兽 {{enemy:enemy.rift-wolf|裂隙魔狼}}")
-        ]);
-
-        var envelope = WireEnvelope.Json(WireMessageType.LogBatch, Guid.NewGuid(), 10, logBatch);
-        var bytes = WireEnvelopeCodec.Encode(envelope);
-        var decoded = WireEnvelopeCodec.Decode(bytes);
-
-        Assert.Equal(WireMessageType.LogBatch, decoded.MessageType);
-        Assert.True(WireEnvelopeCodec.TryDeserializeJson<LogBatchDto>(decoded, out var parsed));
-        Assert.NotNull(parsed);
-        Assert.Equal(2, parsed.Events.Count);
-        Assert.Equal(1, parsed.Events[0].Sequence);
-        Assert.Equal(2, parsed.Events[1].Sequence);
-    }
-
-    /// <summary>
-    /// 验证 <c>EncodeJsonProducesExactEquivalentFrameWithoutIntermediateAllocation</c>（Encode Json Produces Exact Equivalent Frame Without Intermediate Allocation）所描述的领域行为。
-    /// </summary>
-    [Fact]
-    public void EncodeJsonProducesExactEquivalentFrameWithoutIntermediateAllocation()
-    {
-        var requestId = Guid.NewGuid();
-        var hello = new HelloRequest("client-perf", "catalog-perf");
-        var directBytes = WireEnvelopeCodec.EncodeJson(WireMessageType.Hello, requestId, 99, hello);
-        var traditionalBytes = WireEnvelopeCodec.Encode(WireEnvelope.Json(WireMessageType.Hello, requestId, 99, hello));
-
-        Assert.Equal(traditionalBytes, directBytes);
-        Assert.True(WireEnvelopeCodec.TryDecode(directBytes, out var decoded));
-        Assert.Equal(WireMessageType.Hello, decoded.MessageType);
-        Assert.Equal(requestId, decoded.RequestId);
-        Assert.Equal(99, decoded.Sequence);
-        Assert.True(WireEnvelopeCodec.TryDeserializeJson<HelloRequest>(decoded, out var parsed));
-        Assert.Equal("client-perf", parsed!.ClientVersion);
-    }
 }

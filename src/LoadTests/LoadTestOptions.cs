@@ -55,14 +55,10 @@ public sealed record LoadTestOptions(
         var scenario = values.GetValueOrDefault("scenario", "capacity-target").Trim().ToLowerInvariant();
         var defaultPlayers = scenario switch
         {
-            "websocket" => 100,
-            "http-read" => 500,
-            "compute" => 2_000,
-            "postgres" => 5_000,
             "capacity-target" => 5_000,
             _ => throw new ArgumentException($"未知场景: {scenario}")
         };
-        var defaultDuration = scenario is "websocket" or "http-read" ? 30 : 1;
+        var defaultDuration = 1;
         var defaultConnection = Environment.GetEnvironmentVariable("DAOHUA_DATABASE_URL")
                                 ?? "Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=daohua-local-dev;Maximum Pool Size=16;Timeout=5;Command Timeout=30";
         return new LoadTestOptions(
