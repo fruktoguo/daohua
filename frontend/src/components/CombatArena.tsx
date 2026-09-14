@@ -306,8 +306,10 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
 
     const tick = () => {
       const estimatedServerNow = Date.now() + estimatedClockSkew
+      // 本轮剩余时长以本轮时长 duration 为上界：绝对截止时间戳与本地估算时钟都可能因同步间隔出现偏差，
+      // 但「剩余不得超过本轮时长」是行动条本身的语义不变量，越界即说明估算时钟不可信。
       const currentRemaining = hasAbsoluteDeadline
-        ? Math.max(0, action.completesAtUnixMilliseconds! - estimatedServerNow)
+        ? Math.max(0, Math.min(duration, action.completesAtUnixMilliseconds! - estimatedServerNow))
         : Math.max(0, initialRemaining - (performance.now() - startPerfTime))
 
       const remainingSeconds = Math.max(0, currentRemaining / 1000)
@@ -537,7 +539,7 @@ function ArenaPhaseState({ expedition }: { expedition: ExpeditionProgress }): Re
   const t = useT()
   const isInitialSearch = expedition.phase === 'initial-search'
 
-  const title = isInitialSearch
+  const title = expedition.phase === 'respawn' ? t('combat.arena.phaseDeath') : isInitialSearch
     ? t('combat.arena.phaseSearch')
     : t('combat.arena.phaseHunt')
 
@@ -1159,7 +1161,9 @@ export const CombatArena = memo(function CombatArena({
   const encounters = useGameStore(state => state.encounters)
   const world = useGameStore(state => state.world)
   const queue = useGameStore(state => state.queue.entries)
-  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
+  // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
+  // 否则角色行动条与右侧行动卡片会因「非队列补丁」（入灵气、掉落等）产生 0~1 秒的显示差。
+  const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
   const [inspectedActor, setInspectedActor] = useState<'player' | 'enemy' | null>(null)
   const t = useT()
 
@@ -1198,7 +1202,7 @@ export const CombatArena = memo(function CombatArena({
       const baseElSec = (isTravel && current.expedition?.elapsedSeconds !== undefined) ? current.expedition.elapsedSeconds : current.progressSeconds
       const baseElMs = Math.max(0, baseElSec * 1000)
       const isRunning = current.status === 'running'
-      const elapsedSinceSync = isRunning ? Math.max(0, performance.now() - lastSyncPerformanceTime) : 0
+      const elapsedSinceSync = isRunning ? Math.max(0, performance.now() - lastQueueSyncPerformanceTime) : 0
       const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
       return {
         kind: 'cast',
@@ -1209,7 +1213,7 @@ export const CombatArena = memo(function CombatArena({
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, isTravel, lastSyncPerformanceTime])
+  }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime])
 
   const enemyRef = useRef<EnemyDisplayState>({
     actorKey: 'enemy:idle',
@@ -1266,10 +1270,10 @@ export const CombatArena = memo(function CombatArena({
         { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
         { label: t('combat.attr.earthRes'), value: formatNumber(enemyDefinition?.earthResistance ?? 0) },
       ]
-      const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'ratio_regen']> = [
+      const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'regen']> = [
         [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
-        [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
-        [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+        [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerFiveSeconds ?? 0, 'regen'],
+        [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerFiveSeconds ?? 0, 'regen'],
         [t('combat.special.lifeSteal'), enemyDefinition?.lifeStealRatio ?? 0, 'percent'],
         [t('combat.special.armorDamage'), enemyDefinition?.armorDamageRatio ?? 0, 'percent'],
         [t('combat.special.hpDrain'), enemyDefinition?.hpDrainRatio ?? 0, 'percent'],
@@ -1283,8 +1287,8 @@ export const CombatArena = memo(function CombatArena({
           label,
           value: kind === 'percent'
             ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
-            : kind === 'ratio_regen'
-              ? `+${Math.round(value * 1000) / 10}% / 10s`
+            : kind === 'regen'
+              ? `+${formatNumber(value)} / 5s`
               : kind === 'milliseconds'
                 ? t('combat.attr.seconds', { n: formatNumber(value / 1000) })
                 : formatNumber(value),
@@ -1295,12 +1299,12 @@ export const CombatArena = memo(function CombatArena({
     const playerBaseRows: AttributeRow[] = [
       { label: t('combat.attr.hp'), value: `${formatNumber(playerHp)} / ${formatNumber(playerMaxHp)}` },
       { label: t('combat.attr.mp'), value: `${formatNumber(playerMp)} / ${formatNumber(playerMaxMp)}` },
-      { label: t('combat.attr.stamina'), value: formatNumber(Math.max(10, combat?.staminaLevel ?? 10)) },
-      { label: t('combat.attr.meridian'), value: formatNumber(Math.max(10, combat?.intelligenceLevel ?? 10)) },
-      { label: t('combat.attr.defense'), value: formatNumber(Math.max(10, combat?.defenseLevel ?? 10)) },
-      { label: t('combat.attr.attack'), value: formatNumber(Math.max(10, combat?.attackLevel ?? 10)) },
-      { label: t('combat.attr.divineSense'), value: formatNumber(Math.max(10, combat?.swordsmanshipLevel ?? 10)) },
-      { label: t('combat.attr.movement'), value: formatNumber(Math.max(10, combat?.talismanLevel ?? 10)) },
+      { label: t('combat.attr.stamina'), value: formatNumber(combat?.staminaLevel ?? 0) },
+      { label: t('combat.attr.meridian'), value: formatNumber(combat?.intelligenceLevel ?? 0) },
+      { label: t('combat.attr.defense'), value: formatNumber(combat?.defenseLevel ?? 0) },
+      { label: t('combat.attr.attack'), value: formatNumber(combat?.attackLevel ?? 0) },
+      { label: t('combat.attr.divineSense'), value: formatNumber(combat?.swordsmanshipLevel ?? 0) },
+      { label: t('combat.attr.movement'), value: formatNumber(combat?.talismanLevel ?? 0) },
       { label: t('combat.attr.power'), value: formatNumber(combatAttributes?.maxDamage ?? 0) },
       { label: t('combat.attr.accuracy'), value: formatNumber(combatAttributes?.accuracyRating ?? 0) },
       { label: t('combat.attr.evasion'), value: formatNumber(combatAttributes?.evasionRating ?? 0) },
@@ -1313,10 +1317,10 @@ export const CombatArena = memo(function CombatArena({
       { label: t('combat.attr.earthRes'), value: formatNumber(combatAttributes?.earthResistance ?? 0) },
       { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
     ]
-    const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen' | 'ratio_regen']> = [
+    const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen']> = [
       [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
-      [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerTenSeconds ?? 0, 'ratio_regen'],
-      [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerTenSeconds ?? 0, 'ratio_regen'],
+      [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerFiveSeconds ?? 0, 'regen'],
+      [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerFiveSeconds ?? 0, 'regen'],
       [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
       [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
       [t('combat.special.criticalDamage'), combatAttributes?.criticalDamageRatio ?? 0, 'percent'],
@@ -1338,10 +1342,8 @@ export const CombatArena = memo(function CombatArena({
         value: kind === 'percent'
           ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
           : kind === 'regen'
-            ? `+${formatNumber(value)} / 10s`
-            : kind === 'ratio_regen'
-              ? `+${Math.round(value * 1000) / 10}% / 10s`
-              : formatNumber(value),
+            ? `+${formatNumber(value)} / 5s`
+            : formatNumber(value),
       }))
 
     return { baseRows: playerBaseRows, specialRows: playerSpecialRows }
@@ -1384,7 +1386,7 @@ export const CombatArena = memo(function CombatArena({
         </div>
 
         {/* 战场居中浮层：仅在搜寻敌人阶段展示 */}
-        {isCombat && (phase === 'initial-search' || phase === 'search') && expedition && (
+        {isCombat && (phase === 'initial-search' || phase === 'search' || phase === 'respawn') && expedition && (
           <div className="arena-center-stage">
             <ArenaPhaseState expedition={expedition} />
           </div>

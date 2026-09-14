@@ -1523,6 +1523,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
             {combat.abilitySlots.map((slot, index) => {
               const isInternal = index === 0
               const ability = slot.abilityId ? findAbilityInCatalog(abilities, slot.abilityId) : undefined
+              const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
               const slotTypeTag = isInternal
                 ? t('app.combatPanel.slotInternal')
                 : t('app.combatPanel.slotSpell', { n: index })
@@ -1552,7 +1553,9 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                     {ability ? (
                       <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
                         <span className="item-type-ribbon" aria-hidden="true"><span>{ribbonLabel}</span></span>
-                        <strong className="item-tile-name">{ability.name}</strong>
+                        {abilityIconUrl
+                          ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
+                          : <strong className="item-tile-name">{ability.name}</strong>}
                         <span className="item-corner item-corner--bottom-right">{t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}</span>
                         {(abilityCooldowns[ability.abilityId] ?? 0) > 0 && (
                           <AbilityCooldownOverlay
@@ -1856,6 +1859,9 @@ export default function App(): React.JSX.Element {
   const sessionChecked = useAccountStore(state => state.sessionChecked)
   const restoreSession = useAccountStore(state => state.restoreSession)
   const logout = useAccountStore(state => state.logout)
+  const [catalogAttempt, setCatalogAttempt] = useState(0)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [catalogReady, setCatalogReady] = useState(false)
 
   useEffect(() => {
     initUiScale()
@@ -1864,12 +1870,10 @@ export default function App(): React.JSX.Element {
   }, [restoreSession])
 
   useEffect(() => {
-    if (sessionChecked && currentAccount) gameClient.connect()
-  }, [currentAccount, sessionChecked])
-
-  useEffect(() => {
-    if (!currentAccount) return undefined
+    if (!sessionChecked || !currentAccount) return undefined
     const controller = new AbortController()
+    setCatalogError(null)
+    setCatalogReady(false)
     void fetchGameCatalog(controller.signal)
       .then(catalog => {
         const localizedActions = catalog.actions.map(action => {
@@ -1879,24 +1883,34 @@ export default function App(): React.JSX.Element {
         useGameStore.getState().setActions(localizedActions)
         useGameStore.getState().setMaps(catalog.maps)
         useGameStore.getState().setEncounters(catalog.encounters)
+        useGameStore.getState().setAbilities(catalog.abilities)
         if (catalog.items && catalog.items.length > 0) {
           useGameStore.getState().setItems(catalog.items)
         }
         if (catalog.equipment && catalog.equipment.length > 0) {
           useGameStore.getState().setEquipment(catalog.equipment)
         }
+        setCatalogReady(true)
+        gameClient.connect()
       })
       .catch(error => {
         if (!controller.signal.aborted) {
+          setCatalogError(error instanceof Error ? error.message : '游戏目录加载失败。')
           useGameStore.getState().setNotice(error instanceof Error ? `游戏目录加载失败：${error.message}` : '游戏目录加载失败。')
         }
       })
     return () => controller.abort()
-  }, [currentAccount])
+  }, [currentAccount, sessionChecked, catalogAttempt])
 
   if (!currentAccount) {
     return <LoginPage />
   }
+
+  if (catalogError) {
+    return <ConnectionErrorPage message={catalogError} onRetry={() => setCatalogAttempt(attempt => attempt + 1)} onLogout={logout} />
+  }
+
+  if (!catalogReady) return <ConnectingPage onCancel={logout} />
 
   if (!hasReceivedSnapshot) {
     if (connection === 'connecting' || connection === 'reconnecting' || connection === 'online') {

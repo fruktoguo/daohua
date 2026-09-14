@@ -2,11 +2,13 @@ import { memo, useMemo, useState } from 'react'
 import { gameClient } from '../network/gameClient'
 import { describeAbility, formatAbilityCategory } from '../game/format'
 import { useGameStore } from '../game/gameStore'
+import { resolveItemIconUrl } from '../game/itemIcons'
 import { useT } from '../i18n'
 import type { CombatTrigger } from '../game/types'
 import { AbilityGridPicker } from './AbilityGridPicker'
 import { CombatTriggerEditor } from './CombatTriggerEditor'
 import { EffectTooltipTarget } from './EffectTooltip'
+import { ItemIcon } from './ItemDisplay'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
@@ -49,6 +51,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const t = useT()
   const combat = useGameStore(state => state.combat)
   const abilities = useGameStore(state => state.abilities)
+  const inventory = useGameStore(state => state.inventory)
   const abilityCooldowns = useGameStore(
     state => state.queue.entries[0]?.expedition?.abilityCooldownMilliseconds
       ?? state.combatResources?.abilityCooldownMilliseconds,
@@ -112,6 +115,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     const isInternal = index === 0
     const ability = abilities.find(entry => entry.abilityId === slot.abilityId)
     const remainingCooldown = ability ? (abilityCooldowns[ability.abilityId] ?? 0) : 0
+    const abilityIconUrl = resolveItemIconUrl(ability?.abilityId)
 
     const slotTypeTag = isInternal
       ? t('app.abilitiesPanel.slotInternal')
@@ -148,7 +152,9 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
               <span className="item-type-ribbon" aria-hidden="true">
                 <span>{ribbonLabel}</span>
               </span>
-              <strong className="item-tile-name">{ability.name}</strong>
+              {abilityIconUrl
+                ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
+                : <strong className="item-tile-name">{ability.name}</strong>}
               <span className="item-corner item-corner--bottom-right">
                 {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}
               </span>
@@ -253,6 +259,14 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         </div>
 
         <div className="abilities-list">
+          {inventory.filter(item => item.amount >= 1 && item.itemId.startsWith('item.tome.')
+            && !learnedAbilityIds.has(`ability.${item.itemId.slice('item.tome.'.length)}`)).map(item => (
+            <button key={item.itemId} type="button" className="abilities-card"
+              onClick={() => gameClient.sendCommand('ability.learn', { itemId: item.itemId })}>
+              <ItemIcon itemId={item.itemId} />
+              {t('app.abilitiesPanel.learnManual', { name: item.name })}
+            </button>
+          ))}
           {learnedAbilities.length === 0 ? (
             <div className="abilities-empty-state">
               <p>{t('app.abilitiesPanel.noLearnedAbilities')}</p>
@@ -270,7 +284,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                 >
                   <div className={`abilities-card ${equippedIndex !== null ? 'is-equipped' : ''}`}>
                     <div className="abilities-card-main">
-                      <strong className="abilities-card-name">{ability.name}</strong>
+                      <strong className="abilities-card-name"><ItemIcon itemId={ability.abilityId} />{ability.name}</strong>
                       <span className={`abilities-card-tag tone-${ability.effectType === 'heal' ? 'green' : 'violet'}`}>
                         {formatAbilityCategory(ability.category, ability.element)}
                       </span>

@@ -47,6 +47,7 @@ export const ConnectingPage = memo(function ConnectingPage({ onCancel }: Connect
 
 /** 连接异常重试页面 Props */
 interface ConnectionErrorPageProps {
+  message?: string
   /** 点击重试连接回调 */
   onRetry?: () => void
   /** 点击切换道号/登出回调 */
@@ -58,11 +59,11 @@ interface ConnectionErrorPageProps {
  *
  * 展示断连警示图标与说明文案，提供一键重新连接 (Retry) 与切换账号 (Switch Account) 选项。
  */
-export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, onLogout }: ConnectionErrorPageProps): React.JSX.Element {
+export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, onLogout, message }: ConnectionErrorPageProps): React.JSX.Element {
   const t = useT()
   const handleRetry = () => {
-    gameClient.connect()
-    onRetry?.()
+    if (onRetry) onRetry()
+    else gameClient.connect()
   }
 
   const handleLogout = () => {
@@ -81,7 +82,7 @@ export const ConnectionErrorPage = memo(function ConnectionErrorPage({ onRetry, 
         </div>
         <h2 className="status-title">{t('app.connect.errorTitle')}</h2>
         <p className="status-subtitle">
-          {t('app.connect.errorSubtitle')}
+          {message ?? t('app.connect.errorSubtitle')}
         </p>
         <div className="status-actions">
           <button type="button" className="status-btn primary" onClick={handleRetry}>

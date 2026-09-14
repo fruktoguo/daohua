@@ -111,6 +111,7 @@ function ItemGridCell({
           amount={item.amount}
           category={resolveItemCategoryLabel(item.category, t)}
           className="item-grid-picker-cell"
+          itemId={item.itemId}
           level={metadata.level}
           name={item.name}
           rarity={metadata.rarity}
@@ -347,6 +348,7 @@ export function ItemUseSlot({
             amount={item.amount}
             category={resolveItemCategoryLabel(item.category, t)}
             className="item-use-slot-cell"
+            itemId={item.itemId}
             level={metadata.level}
             name={item.name}
             rarity={metadata.rarity}

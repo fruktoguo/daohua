@@ -209,6 +209,7 @@ export const appZh = {
     },
     // 功法面板
     abilitiesPanel: {
+      learnManual: '参悟 {name}',
       title: '功法神通',
       equippedSlotsTitle: '斗法装配槽',
       learnedAbilitiesTitle: '已习得功法',

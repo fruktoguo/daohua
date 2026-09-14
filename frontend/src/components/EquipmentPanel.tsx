@@ -93,6 +93,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
           <ItemTile
             category={resolveItemCategoryLabel(definition.category, t)}
             className="inventory-cell"
+            itemId={equippedItem.itemId}
             level={metadata.level}
             name={displayName}
             rarity={metadata.rarity}

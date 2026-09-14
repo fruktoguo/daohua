@@ -4,7 +4,7 @@ import { RenameModal } from './RenameModal'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { getUiScale, setUiScale } from '../utils/uiScale'
-import { useI18nStore, useT } from '../i18n'
+import { LOCALES, useI18nStore, useT } from '../i18n'
 import { AVATAR_OPTIONS, useAvatarStore } from '../game/avatarStore'
 
 /** 设置页面 Tab 分类（账号信息与显示偏好） */
@@ -61,6 +61,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
 
   const locale = useI18nStore(state => state.locale)
   const setLocale = useI18nStore(state => state.setLocale)
+  const localeError = useI18nStore(state => state.error)
 
   const avatarId = useAvatarStore(state => state.avatarId)
   const setAvatarId = useAvatarStore(state => state.setAvatarId)
@@ -245,10 +246,9 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
 
           <div className="settings-block">
             <h3>{t('app.settings.languageHeading')}</h3>
+            {localeError && <p role="alert">{localeError}</p>}
             <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
-              {[
-                { code: 'zh-CN' as const, label: '简体中文 (内置)' },
-              ].map(loc => (
+              {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? '简体中文 (内置)' : code })).map(loc => (
                 <button
                   key={loc.code}
                   aria-pressed={locale === loc.code}

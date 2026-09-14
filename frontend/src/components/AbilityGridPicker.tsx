@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { describeAbility, formatAbilityCategory } from '../game/format'
+import { resolveItemIconUrl } from '../game/itemIcons'
 import { useT } from '../i18n'
 import type { CombatAbilityDefinition } from '../game/types'
 import { EffectTooltipTarget } from './EffectTooltip'
@@ -106,6 +107,7 @@ export function AbilityGridPicker({
         )}
         {visibleAbilities.map(ability => {
           const isSelected = value === ability.abilityId
+          const iconUrl = resolveItemIconUrl(ability.abilityId)
           return (
             <EffectTooltipTarget
               className="item-grid-picker-tooltip"
@@ -127,7 +129,9 @@ export function AbilityGridPicker({
                   <span aria-hidden="true" className="item-type-ribbon">
                     <span>{ribbonLabel}</span>
                   </span>
-                  <strong className="item-tile-name">{ability.name}</strong>
+                  {iconUrl
+                    ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+                    : <strong className="item-tile-name">{ability.name}</strong>}
                   <span className="item-corner item-corner--bottom-right">
                     {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}
                   </span>

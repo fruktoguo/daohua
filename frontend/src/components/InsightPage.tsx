@@ -180,14 +180,12 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const parryBreakPoint: number = Math.floor(basePool.baseBreak * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
   const parryResolvePoint: number = Math.floor(basePool.baseParry * (1.0 + boneBonus + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
 
-  // 生命回复与灵力回复 (固定值属性，每 5 秒回复量，全部向下取整)
-  // 服务端 HpRegenPerTenSeconds 是比率 (如 0.044 = 每 10 秒回复 maxHp 的 4.4%)
-  // 实际每 5 秒回复量 = maxHp * ratio / 2
-  const hpRegenTotal = Math.floor(attributes ? (maxHp * attributes.hpRegenPerTenSeconds / 2.0) : (basePool.baseHpRegen * (1.0 + staminaBonus)))
-  const mpRegenTotal = Math.floor(attributes ? (maxMp * attributes.mpRegenPerTenSeconds / 2.0) : (basePool.baseMpRegen * (1.0 + intelligenceBonus)))
+  // 服务端直接提供每 5 秒的回复点数，展示不乘上限、不添加取整或保底。
+  const hpRegenTotal = attributes?.hpRegenPerFiveSeconds ?? basePool.baseHpRegen
+  const mpRegenTotal = attributes?.mpRegenPerFiveSeconds ?? basePool.baseMpRegen
 
   // 2. 特殊战斗属性 (统一百分比类型 PercentValue，内部均为 double 点数)
-  const critDamagePercent = PercentValue.linear((attributes?.criticalDamageRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0 + 150.0)
+  const critDamagePercent = PercentValue.linear((attributes?.criticalDamageRatio ?? 1.5) * 100.0)
   const actionSpeedPoints = 0.0 // 默认 0.0 点
   const actionSpeedPercent = PercentValue.nonLinear(actionSpeedPoints)
   const cooldownSpeedPercent = PercentValue.nonLinear(BASELINE_COMBAT_ATTRIBUTES.percentPoints)
@@ -502,7 +500,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
                   label={t('insight.foundation.daoFoundation')}
-                  value={Math.floor(stats.foundationExp ?? 0)}
+                  value={stats.foundationExp === undefined ? t('common.emptyData') : Math.floor(stats.foundationExp)}
                   tone="gold"
                   tooltip={t('insight.foundation.daoFoundationTooltip')}
                   tooltipTone="gold"
@@ -512,7 +510,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
                   label={t('insight.foundation.combatExp')}
-                  value={Math.floor(stats.combatExperience ?? 0)}
+                  value={stats.combatExperience === undefined ? t('common.emptyData') : Math.floor(stats.combatExperience)}
                   tone="qi"
                   tooltip={t('insight.foundation.combatExpTooltip')}
                   tooltipTone="qi"
@@ -627,22 +625,22 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupAdventure')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.totalMonsters')} value={biographyData.totalMonsters} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
+                <PillStatLabel label={t('insight.bio.totalMonsters')} value={stats.combatEnemiesDefeated === undefined ? t('common.emptyData') : biographyData.totalMonsters} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupRivalry')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.playersDefeated')} value={biographyData.playersDefeated} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
-                <PillStatLabel label={t('insight.bio.totalDefeats')} value={biographyData.totalDefeats} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
+                <PillStatLabel label={t('insight.bio.playersDefeated')} value={stats.combatPlayersDefeated === undefined ? t('common.emptyData') : biographyData.playersDefeated} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
+                <PillStatLabel label={t('insight.bio.totalDefeats')} value={stats.combatLosses === undefined ? t('common.emptyData') : biographyData.totalDefeats} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupCultivation')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.cultivation')} value={t('insight.bio.cultivationValue', { hours: formatNumber(biographyData.cultivationHours) })} tone="gold" tooltip={t('insight.bio.cultivationTooltip', { seconds: formatNumber(biographyData.cultivationSeconds) })} />
+                <PillStatLabel label={t('insight.bio.cultivation')} value={stats.cultivationCycles === undefined ? t('common.emptyData') : t('insight.bio.cultivationValue', { hours: formatNumber(biographyData.cultivationHours) })} tone="gold" />
               </div>
             </div>
           </div>
