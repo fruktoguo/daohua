@@ -9,3 +9,7 @@
 *.tsx text eol=lf
 *.yaml text eol=lf
 Dockerfile text eol=lf
+
+# 美术资源为二进制，禁止任何行尾转换（防止 PNG/WebP 被当文本处理而损坏）
+*.png binary
+*.webp binary
