@@ -242,28 +242,24 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
 
-  // 1. 接入跨界面常驻的坊市状态中心
+  // 1. 接入跨界面常驻的坊市状态中心（仅订阅必要属性，高频 scrollTop 不订阅以实现滚动零重绘）
   const primaryTab = useMarketStore(state => state.primaryTab)
   const setPrimaryTab = useMarketStore(state => state.setPrimaryTab)
   const subCategory = useMarketStore(state => state.subCategory)
   const setSubCategory = useMarketStore(state => state.setSubCategory)
   const query = useMarketStore(state => state.query)
   const setQuery = useMarketStore(state => state.setQuery)
-  const savedScrollTop = useMarketStore(state => state.scrollTop)
-  const setScrollTop = useMarketStore(state => state.setScrollTop)
 
   // 2. 滚动容器 Ref 与位置无损恢复控制
   const gridRef = useRef<HTMLDivElement>(null)
-  const isRestoringScrollRef = useRef(false)
   const [isScrolling, setIsScrolling] = useState(false)
   const scrollTimerRef = useRef<number | null>(null)
 
   const handleScroll = useCallback(() => {
-    if (isRestoringScrollRef.current) return
-    setIsScrolling(true)
     if (gridRef.current) {
-      setScrollTop(gridRef.current.scrollTop)
+      useMarketStore.getState().setScrollTop(gridRef.current.scrollTop)
     }
+    setIsScrolling(true)
     if (scrollTimerRef.current !== null) {
       window.clearTimeout(scrollTimerRef.current)
     }
@@ -271,20 +267,15 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
       setIsScrolling(false)
       scrollTimerRef.current = null
     }, 100)
-  }, [setScrollTop])
+  }, [])
 
-  // 挂载时瞬时平滑恢复之前的滚动位置（0 抖动）
+  // 挂载时瞬时平滑恢复之前的滚动位置（0 抖动、零多余重绘）
   useLayoutEffect(() => {
-    if (gridRef.current && savedScrollTop > 0) {
-      isRestoringScrollRef.current = true
-      gridRef.current.scrollTop = savedScrollTop
-      const raf = requestAnimationFrame(() => {
-        isRestoringScrollRef.current = false
-      })
-      return () => cancelAnimationFrame(raf)
+    const savedTop = useMarketStore.getState().scrollTop
+    if (gridRef.current && savedTop > 0) {
+      gridRef.current.scrollTop = savedTop
     }
-    return undefined
-  }, [savedScrollTop])
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -302,6 +293,23 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 
   const handlePrimaryTabChange = (newPrimary: PrimaryCategory) => {
     setPrimaryTab(newPrimary)
+    if (gridRef.current) {
+      gridRef.current.scrollTop = 0
+    }
+  }
+
+  const handleSubCategoryChange = (newSub: string) => {
+    setSubCategory(newSub)
+    if (gridRef.current) {
+      gridRef.current.scrollTop = 0
+    }
+  }
+
+  const handleQueryChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(event.target.value)
+    if (gridRef.current) {
+      gridRef.current.scrollTop = 0
+    }
   }
 
   const subTabs = useMemo(() => {
@@ -347,7 +355,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
         <input
           aria-label={t('market.browse.searchItems')}
           autoComplete="off"
-          onChange={event => setQuery(event.target.value)}
+          onChange={handleQueryChange}
           placeholder={t('market.browse.searchItems')}
           type="search"
           value={query}
@@ -361,7 +369,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
               aria-selected={subCategory === sub.id}
               className={`insight-sub-tab-btn${subCategory === sub.id ? ' active' : ''}`}
               key={sub.id}
-              onClick={() => setSubCategory(sub.id)}
+              onClick={() => handleSubCategoryChange(sub.id)}
               role="tab"
               type="button"
             >
