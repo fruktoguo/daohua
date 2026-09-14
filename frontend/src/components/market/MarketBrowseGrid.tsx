@@ -1,8 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { formatNumber } from '../../game/format'
 import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
+import { useMarketStore, type MarketPrimaryCategory } from '../../game/marketStore'
 import { ItemTile, ItemTooltipTarget } from '../ItemDisplay'
 import type { MarketInstrument } from './MarketOrderForm'
 
@@ -45,7 +46,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
 }
 
 /** 一级主 Tab 分类类型 */
-type PrimaryCategory = 'all' | 'material' | 'equipment' | 'pill' | 'manual'
+type PrimaryCategory = MarketPrimaryCategory
 
 interface TabConfig<T extends string> {
   id: T
@@ -240,16 +241,29 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 }: MarketBrowseGridProps): React.JSX.Element {
   const t = useT()
   const inventory = useGameStore(state => state.inventory)
-  const [query, setQuery] = useState('')
-  const [primaryTab, setPrimaryTab] = useState<PrimaryCategory>('all')
-  const [subCategory, setSubCategory] = useState<string>('all')
 
-  // 1. 滚动抑制状态与防抖计时器
+  // 1. 接入跨界面常驻的坊市状态中心
+  const primaryTab = useMarketStore(state => state.primaryTab)
+  const setPrimaryTab = useMarketStore(state => state.setPrimaryTab)
+  const subCategory = useMarketStore(state => state.subCategory)
+  const setSubCategory = useMarketStore(state => state.setSubCategory)
+  const query = useMarketStore(state => state.query)
+  const setQuery = useMarketStore(state => state.setQuery)
+  const savedScrollTop = useMarketStore(state => state.scrollTop)
+  const setScrollTop = useMarketStore(state => state.setScrollTop)
+
+  // 2. 滚动容器 Ref 与位置无损恢复控制
+  const gridRef = useRef<HTMLDivElement>(null)
+  const isRestoringScrollRef = useRef(false)
   const [isScrolling, setIsScrolling] = useState(false)
   const scrollTimerRef = useRef<number | null>(null)
 
   const handleScroll = useCallback(() => {
+    if (isRestoringScrollRef.current) return
     setIsScrolling(true)
+    if (gridRef.current) {
+      setScrollTop(gridRef.current.scrollTop)
+    }
     if (scrollTimerRef.current !== null) {
       window.clearTimeout(scrollTimerRef.current)
     }
@@ -257,7 +271,20 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
       setIsScrolling(false)
       scrollTimerRef.current = null
     }, 100)
-  }, [])
+  }, [setScrollTop])
+
+  // 挂载时瞬时平滑恢复之前的滚动位置（0 抖动）
+  useLayoutEffect(() => {
+    if (gridRef.current && savedScrollTop > 0) {
+      isRestoringScrollRef.current = true
+      gridRef.current.scrollTop = savedScrollTop
+      const raf = requestAnimationFrame(() => {
+        isRestoringScrollRef.current = false
+      })
+      return () => cancelAnimationFrame(raf)
+    }
+    return undefined
+  }, [savedScrollTop])
 
   useEffect(() => {
     return () => {
@@ -267,7 +294,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
     }
   }, [])
 
-  // 2. 背包字典 O(1) 映射，避免每次渲染 80 * N 线性扫描
+  // 3. 背包字典 O(1) 映射，避免每次渲染 80 * N 线性扫描
   const inventoryMap = useMemo(
     () => new Map(inventory.map(entry => [entry.itemId, entry.amount])),
     [inventory]
@@ -275,7 +302,6 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 
   const handlePrimaryTabChange = (newPrimary: PrimaryCategory) => {
     setPrimaryTab(newPrimary)
-    setSubCategory('all')
   }
 
   const subTabs = useMemo(() => {
@@ -349,6 +375,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
         aria-label={t('market.browse.gridAria')}
         className={`market-browse-grid${isScrolling ? ' is-scrolling' : ''}`}
         onScroll={handleScroll}
+        ref={gridRef}
         role="listbox"
       >
         {visibleItems.map(item => (

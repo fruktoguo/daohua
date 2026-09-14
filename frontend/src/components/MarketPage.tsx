@@ -3,6 +3,7 @@ import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withIt
 import { getT, useT, type TFunction } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketMetrics, MarketOrder } from '../game/types'
+import { useMarketStore, type MarketTab } from '../game/marketStore'
 import { fetchMarketBook, fetchMarketMetrics, fetchMarketOrders } from '../network/apiClient'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { MarketBookPanel } from './market/MarketBookPanel'
@@ -19,9 +20,6 @@ const ORDERS_REFRESH_INTERVAL_MS = 5_000
 const METRICS_REFRESH_INTERVAL_MS = 10_000
 /** 盘口深度展示档位数 */
 const BOOK_DEPTH = 20
-
-/** 坊市 Tab 页面分类 */
-type MarketTab = 'browse' | 'orders'
 
 const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
   { id: 'browse' },
@@ -112,8 +110,10 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
     })
   }, [catalog, equipmentCatalog, t])
 
-  const [activeTab, setActiveTab] = useState<MarketTab>('browse')
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const activeTab = useMarketStore(state => state.activeTab)
+  const setActiveTab = useMarketStore(state => state.setActiveTab)
+  const selectedItemId = useMarketStore(state => state.selectedItemId)
+  const setSelectedItemId = useMarketStore(state => state.setSelectedItemId)
   const [orderModalSide, setOrderModalSide] = useState<'sell' | 'buy' | null>(null)
   const [book, setBook] = useState<MarketBook | null>(null)
   const [metrics, setMetrics] = useState<MarketMetrics | null>(null)
