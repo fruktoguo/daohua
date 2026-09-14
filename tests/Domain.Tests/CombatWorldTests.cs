@@ -1,7 +1,13 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 战斗世界测试：战斗推进确定性与旅行规划最短路径回归。
+/// </summary>
 public sealed class CombatWorldTests
 {
+    /// <summary>
+    /// 验证 <c>CombatAdvanceIsDeterministicAndStopsAtDeath</c>（Combat Advance Is Deterministic And Stops At Death）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CombatAdvanceIsDeterministicAndStopsAtDeath()
     {
@@ -19,6 +25,9 @@ public sealed class CombatWorldTests
         Assert.Equal(0, first.Enemy.Hitpoints);
     }
 
+    /// <summary>
+    /// 验证 <c>TravelPlannerUsesShortestDeterministicPath</c>（Travel Planner Uses Shortest Deterministic Path）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void TravelPlannerUsesShortestDeterministicPath()
     {

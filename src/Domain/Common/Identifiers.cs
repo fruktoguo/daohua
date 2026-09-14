@@ -10,8 +10,17 @@ public interface IIdentifier
 public readonly record struct AccountId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public static AccountId New() => new(Guid.NewGuid());
+    /// <summary>获取或设置 是否为空 的值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -19,8 +28,17 @@ public readonly record struct AccountId(Guid Value) : IIdentifier
 public readonly record struct PlayerId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public static PlayerId New() => new(Guid.NewGuid());
+    /// <summary>获取或设置 是否为空 的值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -28,7 +46,12 @@ public readonly record struct PlayerId(Guid Value) : IIdentifier
 public readonly record struct ActionId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
+    /// <summary>获取或设置 是否有效 的值。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 128;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value ?? string.Empty;
 }
 
@@ -36,7 +59,12 @@ public readonly record struct ActionId(string Value) : IIdentifier
 public readonly record struct ItemId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
+    /// <summary>获取或设置 是否有效 的值。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 128;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value ?? string.Empty;
 }
 
@@ -44,7 +72,12 @@ public readonly record struct ItemId(string Value) : IIdentifier
 public readonly record struct AbilityId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
+    /// <summary>获取或设置 是否有效 的值。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 128;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value ?? string.Empty;
 }
 
@@ -52,8 +85,17 @@ public readonly record struct AbilityId(string Value) : IIdentifier
 public readonly record struct InstanceId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public static InstanceId New() => new(Guid.NewGuid());
+    /// <summary>获取或设置 是否为空 的值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -61,8 +103,17 @@ public readonly record struct InstanceId(Guid Value) : IIdentifier
 public readonly record struct OrderId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public static OrderId New() => new(Guid.NewGuid());
+    /// <summary>获取或设置 是否为空 的值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -70,8 +121,17 @@ public readonly record struct OrderId(Guid Value) : IIdentifier
 public readonly record struct TransactionId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public static TransactionId New() => new(Guid.NewGuid());
+    /// <summary>获取或设置 是否为空 的值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -79,8 +139,17 @@ public readonly record struct TransactionId(Guid Value) : IIdentifier
 public readonly record struct ReservationId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public static ReservationId New() => new(Guid.NewGuid());
+    /// <summary>获取或设置 是否为空 的值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -88,8 +157,17 @@ public readonly record struct ReservationId(Guid Value) : IIdentifier
 public readonly record struct JobId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public static JobId New() => new(Guid.NewGuid());
+    /// <summary>获取或设置 是否为空 的值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -97,7 +175,12 @@ public readonly record struct JobId(Guid Value) : IIdentifier
 public readonly record struct IdempotencyKey(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
+    /// <summary>获取或设置 是否有效 的值。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 200;
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => Value ?? string.Empty;
 }
 

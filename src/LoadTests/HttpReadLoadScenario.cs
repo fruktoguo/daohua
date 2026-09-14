@@ -1,7 +1,17 @@
 namespace DaoHua.LoadTests;
 
+/// <summary>
+/// HTTP 只读市场订单簿压测场景。
+/// 使用 GET 请求访问市场接口，统计延迟、吞吐与成功率。
+/// </summary>
 public static class HttpReadLoadScenario
 {
+    /// <summary>
+    /// 执行 HTTP 只读负载场景。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>压测报告。</returns>
     public static async Task<LoadTestReport> RunAsync(LoadTestOptions options, CancellationToken cancellationToken = default)
     {
         var process = Process.GetCurrentProcess();
@@ -106,6 +116,11 @@ public static class HttpReadLoadScenario
             warnings.Distinct().Take(20).ToArray());
     }
 
+    /// <summary>
+    /// 将 ws/wss/http/https 地址统一转换为 HTTP/HTTPS 基准地址。
+    /// </summary>
+    /// <param name="configured">原始地址。</param>
+    /// <returns>转换后的 HTTP 基准 <see cref="Uri"/>。</returns>
     private static Uri ToHttpBase(Uri configured)
     {
         var builder = new UriBuilder(configured)
@@ -123,6 +138,12 @@ public static class HttpReadLoadScenario
         return builder.Uri;
     }
 
+    /// <summary>
+    /// 计算给定分位数的延迟值。
+    /// </summary>
+    /// <param name="values">已排序的延迟数组。</param>
+    /// <param name="quantile">分位数，范围 0 到 1。</param>
+    /// <returns>对应分位数的延迟值（毫秒）。</returns>
     private static double Percentile(double[] values, double quantile)
     {
         if (values.Length == 0) return 0;

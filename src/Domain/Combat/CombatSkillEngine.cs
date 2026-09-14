@@ -2,13 +2,17 @@ using System.Text.Json;
 
 namespace Domain.Combat;
 
+/// <summary>战斗技能冷却 的领域定义。</summary>
 public sealed record CombatSkillCooldown(string AbilityId, double RemainingSeconds);
+/// <summary>玩家战斗技能状态 的领域定义。</summary>
 public sealed record PlayerCombatSkillState(
     IReadOnlyList<CombatSkillCooldown> Cooldowns, string? CastingAbilityId,
     double CastRemainingSeconds, double CastCount)
 {
+    /// <summary>获取或设置 为空 的值。</summary>
     public static PlayerCombatSkillState Empty { get; } = new([], null, 0, 0);
 
+    /// <summary>获取或设置 是否有效 的值。</summary>
     public bool IsValid => Cooldowns is not null && Cooldowns.All(value => !string.IsNullOrWhiteSpace(value.AbilityId)
         && double.IsFinite(value.RemainingSeconds) && value.RemainingSeconds > 0)
         && Cooldowns.Select(value => value.AbilityId).Distinct(StringComparer.Ordinal).Count() == Cooldowns.Count
@@ -17,16 +21,27 @@ public sealed record PlayerCombatSkillState(
         && double.IsFinite(CastCount) && CastCount >= 0;
 }
 
+/// <summary>战斗技能事件 的领域定义。</summary>
 public sealed record CombatSkillEvent(string AbilityId, double AtSeconds, double Damage, double Healing, bool Hit, bool Critical);
+/// <summary>战斗技能推进结果 的领域定义。</summary>
 public sealed record CombatSkillAdvanceResult(PlayerCombatSkillState State, IReadOnlyList<CombatSkillEvent> Events);
 
 /// <summary>单敌战斗技能调度；宿主在普通攻击、技能完成、回复等最近边界推进，禁止跨过尚未处理的技能边界。</summary>
 public static class CombatSkillEngine
 {
+    /// <summary>
+    /// 执行 下一次Boundary秒 操作。
+    /// </summary>
+    /// <param name="state">state 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static double NextBoundarySeconds(PlayerCombatSkillState state)
         => state.CastingAbilityId is not null ? state.CastRemainingSeconds
             : state.Cooldowns.Select(value => value.RemainingSeconds).DefaultIfEmpty(double.PositiveInfinity).Min();
 
+    /// <summary>
+    /// 执行 校验功法/神通 操作。
+    /// </summary>
+    /// <param name="ability">ability 参数。</param>
     public static void ValidateAbility(JsonElement ability)
     {
         var healing = Text(ability, "effectType") == "heal";
@@ -48,6 +63,10 @@ public static class CombatSkillEngine
             foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger);
     }
 
+    /// <summary>
+    /// 执行 校验Trigger 操作。
+    /// </summary>
+    /// <param name="trigger">trigger 参数。</param>
     public static void ValidateTrigger(JsonElement trigger)
     {
         var dependency = Text(trigger, "dependency");
@@ -70,6 +89,16 @@ public static class CombatSkillEngine
     public static PlayerCombatSkillState AdvanceIdle(PlayerCombatSkillState state, double seconds)
         => Tick(state, seconds) with { CastingAbilityId = null, CastRemainingSeconds = 0 };
 
+    /// <summary>
+    /// 执行 推进 操作。
+    /// </summary>
+    /// <param name="player">player 参数。</param>
+    /// <param name="catalog">catalog 参数。</param>
+    /// <param name="encounter">encounter 参数。</param>
+    /// <param name="attributes">attributes 参数。</param>
+    /// <param name="state">state 参数。</param>
+    /// <param name="seconds">seconds 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static CombatSkillAdvanceResult Advance(PlayerAggregate player, GameDataCatalog catalog,
         CombatEncounterState encounter, PlayerAttributes attributes, PlayerCombatSkillState state, double seconds)
     {

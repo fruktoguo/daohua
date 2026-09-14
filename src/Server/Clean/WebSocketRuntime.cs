@@ -63,8 +63,21 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
 public sealed class SessionRegistry
 {
     private readonly ConcurrentDictionary<Guid, WebSocketSession> _sessions = new();
+    /// <summary>
+    /// 获取 Count。
+    /// </summary>
     public int Count => _sessions.Count;
+    /// <summary>
+    /// 尝试Add。
+    /// </summary>
+    /// <param name="session">参数 session。</param>
+    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
     public bool TryAdd(WebSocketSession session) => _sessions.TryAdd(session.PlayerId, session);
+    /// <summary>
+    /// 执行Remove。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="session">参数 session。</param>
     public void Remove(Guid playerId, WebSocketSession session)
     {
         ((ICollection<KeyValuePair<Guid, WebSocketSession>>)_sessions).Remove(new(playerId, session));
@@ -78,6 +91,10 @@ public sealed class SessionRegistry
 /// </summary>
 public static class WebSocketEndpoint
 {
+    /// <summary>
+    /// 处理Async（异步）。
+    /// </summary>
+    /// <param name="context">HTTP 请求上下文。</param>
     public static async Task HandleAsync(HttpContext context)
     {
         if (!context.WebSockets.IsWebSocketRequest)

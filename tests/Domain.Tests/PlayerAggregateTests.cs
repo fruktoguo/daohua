@@ -1,9 +1,15 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 玩家聚合测试：快照往返、队列推进、重复次数与状态恢复的约束回归。
+/// </summary>
 public sealed class PlayerAggregateTests
 {
     private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// 验证 <c>RestoreRoundTripKeepsStateAndQueue</c>（Restore Round Trip Keeps State And Queue）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreRoundTripKeepsStateAndQueue()
     {
@@ -21,6 +27,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(player.Actions[0].ProgressSeconds, restored.Actions[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>AutoUseRemainingDurationPersistsAndClearsWhenDisabledOrSwitched</c>（Auto Use Remaining Duration Persists And Clears When Disabled Or Switched）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void AutoUseRemainingDurationPersistsAndClearsWhenDisabledOrSwitched()
     {
@@ -42,6 +51,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(0d, restored.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>AdvanceToIsDeterministicForSameInput</c>（Advance To Is Deterministic For Same Input）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void AdvanceToIsDeterministicForSameInput()
     {
@@ -64,6 +76,9 @@ public sealed class PlayerAggregateTests
             Assert.Equal(first.Actions[0].ProgressSeconds, second.Actions[0].ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>CannotAdvanceBackwards</c>（Cannot Advance Backwards）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CannotAdvanceBackwards()
     {
@@ -71,6 +86,9 @@ public sealed class PlayerAggregateTests
         Assert.Throws<DomainException>(() => SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(-1), ActionCatalog.Default));
     }
 
+    /// <summary>
+    /// 验证 <c>EmptyQueueClockAdvanceDoesNotCreateStateVersion</c>（Empty Queue Clock Advance Does Not Create State Version）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void EmptyQueueClockAdvanceDoesNotCreateStateVersion()
     {
@@ -85,6 +103,9 @@ public sealed class PlayerAggregateTests
         Assert.Empty(player.DirtySections);
     }
 
+    /// <summary>
+    /// 验证 <c>PartialActionAdvanceIsReportedAsChanged</c>（Partial Action Advance Is Reported As Changed）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void PartialActionAdvanceIsReportedAsChanged()
     {
@@ -99,6 +120,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(1, player.Progression.Qi);
     }
 
+    /// <summary>
+    /// 验证 <c>InfiniteActionKeepsQueueEntryAfterCompletedRounds</c>（Infinite Action Keeps Queue Entry After Completed Rounds）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void InfiniteActionKeepsQueueEntryAfterCompletedRounds()
     {
@@ -113,6 +137,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(-1, player.Actions[0].RemainingRepeats);
     }
 
+    /// <summary>
+    /// 验证 <c>RestoreKeepsInfiniteActionState</c>（Restore Keeps Infinite Action State）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreKeepsInfiniteActionState()
     {
@@ -126,6 +153,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(-1, action.RemainingRepeats);
     }
 
+    /// <summary>
+    /// 验证 <c>InfiniteZeroDurationActionIsRejected</c>（Infinite Zero Duration Action Is Rejected）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void InfiniteZeroDurationActionIsRejected()
     {
@@ -139,6 +169,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
     }
 
+    /// <summary>
+    /// 验证 <c>EnqueueRejectsNonIntegerRepeatCount</c>（Enqueue Rejects Non Integer Repeat Count）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void EnqueueRejectsNonIntegerRepeatCount()
     {
@@ -149,6 +182,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
     }
 
+    /// <summary>
+    /// 验证 <c>RestoreHealsNonIntegerRepeatCountsFromLegacySnapshots</c>（Restore Heals Non Integer Repeat Counts From Legacy Snapshots）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreHealsNonIntegerRepeatCountsFromLegacySnapshots()
     {
@@ -166,6 +202,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(1, action.RemainingRepeats);
     }
 
+    /// <summary>
+    /// 验证 <c>EnqueueCopiesMutableIntentParameters</c>（Enqueue Copies Mutable Intent Parameters）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void EnqueueCopiesMutableIntentParameters()
     {
@@ -178,6 +217,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(1, action.Intent.Parameters!["power"]);
     }
 
+    /// <summary>
+    /// 验证 <c>RestoreRejectsUndefinedActionStatus</c>（Restore Rejects Undefined Action Status）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreRejectsUndefinedActionStatus()
     {
@@ -192,6 +234,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
     }
 
+    /// <summary>
+    /// 验证 <c>RestoreRejectsDuplicateActionIds</c>（Restore Rejects Duplicate Action Ids）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreRejectsDuplicateActionIds()
     {
@@ -205,6 +250,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
     }
 
+    /// <summary>
+    /// 验证 <c>SimulationRejectsNonFiniteRewardBeforeMutatingProgress</c>（Simulation Rejects Non Finite Reward Before Mutating Progress）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SimulationRejectsNonFiniteRewardBeforeMutatingProgress()
     {
@@ -221,6 +269,9 @@ public sealed class PlayerAggregateTests
         Assert.Equal(Baseline, player.LastSimulatedAt);
     }
 
+    /// <summary>
+    /// 验证 <c>RestoreFromReplacesMutableStateButKeepsIdentity</c>（Restore From Replaces Mutable State But Keeps Identity）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreFromReplacesMutableStateButKeepsIdentity()
     {

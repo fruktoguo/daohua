@@ -8,8 +8,10 @@ using CleanSectionCodec = Server.Clean.SectionCodec;
 
 namespace Server.Tests;
 
+/// <summary>包含针对 Section Codec Tests 的测试用例与断言集合。</summary>
 public sealed class SectionCodecTests
 {
+    /// <summary>验证 Large Payload Uses Brotli And Round Trips With Checksum。</summary>
     [Fact]
     public void LargePayload_UsesBrotliAndRoundTripsWithChecksum()
     {
@@ -22,6 +24,7 @@ public sealed class SectionCodecTests
         var restored = CleanSectionCodec.Decode<Dictionary<string, JsonElement>>(stored);
         Assert.Equal(42d, restored["value"].GetDouble());
     }
+    /// <summary>验证 Tampered Payload Is Rejected。</summary>
 
     [Fact]
     public void TamperedPayload_IsRejected()
@@ -32,6 +35,7 @@ public sealed class SectionCodecTests
         var stored = new StoredSection(encoded.PlayerId, encoded.SectionKind, encoded.StateVersion, encoded.SchemaVersion, encoded.Codec, payload, encoded.RawBytes, encoded.Checksum, encoded.UpdatedAt);
         Assert.Throws<InvalidDataException>(() => CleanSectionCodec.Decode<JsonElement>(stored));
     }
+    /// <summary>验证 Aggregate Encoding Emits Only Domain Dirty Sections。</summary>
 
     [Fact]
     public void AggregateEncoding_EmitsOnlyDomainDirtySections()
@@ -42,6 +46,7 @@ public sealed class SectionCodecTests
         Assert.Contains(sections, section => section.SectionKind == PlayerSectionKinds.ActionQueue);
         Assert.All(sections, section => Assert.Equal("fp", section.GameDataFingerprint));
     }
+    /// <summary>验证 Settings Section Always Serializes Remaining Duration And Legacy Slots Default To Zero。</summary>
 
     [Fact]
     public void SettingsSectionAlwaysSerializesRemainingDurationAndLegacySlotsDefaultToZero()
@@ -72,6 +77,7 @@ public sealed class SectionCodecTests
         Assert.NotNull(legacy);
         Assert.Equal(0d, legacy.RemainingDurationSeconds);
     }
+    /// <summary>验证 Section Write Rejects Unsupported Codec And Oversized Payload。</summary>
 
     [Fact]
     public void SectionWrite_RejectsUnsupportedCodecAndOversizedPayload()
@@ -99,6 +105,7 @@ public sealed class SectionCodecTests
             new string('a', 64),
             now).Validate());
     }
+    /// <summary>验证 Flush Queue Item Requires Lease When Applying。</summary>
 
     [Fact]
     public void FlushQueueItem_RequiresLeaseWhenApplying()

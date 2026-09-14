@@ -8,6 +8,9 @@ using Xunit;
 
 namespace Domain.Tests;
 
+/// <summary>
+/// 旅行行动测试：世界图路径规划、中途边处理、优先级挂起、取消折返与大步离线推进。
+/// </summary>
 public sealed class TravelActionTests
 {
     private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -15,6 +18,9 @@ public sealed class TravelActionTests
     private static PlayerAggregate CreatePlayer(string name) =>
         PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
 
+    /// <summary>
+    /// 验证 <c>WorldGraphPlansUndirectedMultiHopPathWithCorrectSegments</c>（World Graph Plans Undirected Multi Hop Path With Correct Segments）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void WorldGraphPlansUndirectedMultiHopPathWithCorrectSegments()
     {
@@ -48,6 +54,9 @@ public sealed class TravelActionTests
         Assert.Equal(0.0, plan.Segments[1].EndProgress);
     }
 
+    /// <summary>
+    /// 验证 <c>PlanFromPositionHandlesMidEdgeForwardAndReverseCorrectly</c>（Plan From Position Handles Mid Edge Forward And Reverse Correctly）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void PlanFromPositionHandlesMidEdgeForwardAndReverseCorrectly()
     {
@@ -84,6 +93,9 @@ public sealed class TravelActionTests
         Assert.Equal(8.0, planReverse.TotalTravelSeconds, precision: 4);
     }
 
+    /// <summary>
+    /// 验证 <c>PriorityTravelSuspendsCurrentRunningActionAndPreservesProgress</c>（Priority Travel Suspends Current Running Action And Preserves Progress）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void PriorityTravelSuspendsCurrentRunningActionAndPreservesProgress()
     {
@@ -133,6 +145,9 @@ public sealed class TravelActionTests
         Assert.Equal(4.0, secondAction.ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>TravelSimulationAdvancesPositionFinishesAndResumesSuspendedAction</c>（Travel Simulation Advances Position Finishes And Resumes Suspended Action）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void TravelSimulationAdvancesPositionFinishesAndResumesSuspendedAction()
     {
@@ -203,6 +218,9 @@ public sealed class TravelActionTests
         Assert.Equal(5.0, resumedAction.ProgressSeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>CancelTravelLeavesPlayerAtCurrentEdgePositionAndAllowsRePlanning</c>（Cancel Travel Leaves Player At Current Edge Position And Allows Re Planning）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CancelTravelLeavesPlayerAtCurrentEdgePositionAndAllowsRePlanning()
     {
@@ -257,6 +275,9 @@ public sealed class TravelActionTests
         Assert.Equal("node.yunxi-village", returnPlan.ToNodeId);
     }
 
+    /// <summary>
+    /// 验证 <c>PingPongTurnaroundMidEdgeSimulatesAndCalculatesPreciseSegments</c>（Ping Pong Turnaround Mid Edge Simulates And Calculates Precise Segments）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void PingPongTurnaroundMidEdgeSimulatesAndCalculatesPreciseSegments()
     {
@@ -326,6 +347,9 @@ public sealed class TravelActionTests
         Assert.Empty(player.Actions);
     }
 
+    /// <summary>
+    /// 验证 <c>LargeOfflineJumpCompletesTravelAndAdvancesFullBacklog</c>（Large Offline Jump Completes Travel And Advances Full Backlog）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void LargeOfflineJumpCompletesTravelAndAdvancesFullBacklog()
     {

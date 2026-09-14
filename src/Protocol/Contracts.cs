@@ -71,6 +71,12 @@ public enum WireCodec : byte
 /// 报头共 36 字节：Magic(4B) + Version(2B) + Type(1B) + Codec(1B) + RequestId(16B) + Sequence(8B) + PayloadLength(4B)。
 /// 领域层不感知该类型，由传输边界层按 Codec 解释。
 /// </summary>
+/// <param name="ProtocolVersion">协议版本号</param>
+/// <param name="MessageType">信封消息类型</param>
+/// <param name="RequestId">请求唯一标识</param>
+/// <param name="Sequence">单调递增序列号</param>
+/// <param name="Codec">有效载荷编码格式</param>
+/// <param name="Payload">序列化后的有效载荷字节</param>
 public readonly record struct WireEnvelope(
     ushort ProtocolVersion,
     WireMessageType MessageType,
@@ -79,11 +85,30 @@ public readonly record struct WireEnvelope(
     WireCodec Codec,
     ReadOnlyMemory<byte> Payload)
 {
+    /// <summary>
+    /// 创建并校验 <see cref="WireEnvelope"/> 实例。
+    /// </summary>
+    /// <param name="messageType">信封消息类型</param>
+    /// <param name="requestId">请求唯一标识</param>
+    /// <param name="sequence">单调递增序列号</param>
+    /// <param name="payload">序列化后的有效载荷字节</param>
+    /// <param name="codec">有效载荷编码格式，默认为 JSON</param>
+    /// <param name="version">协议版本号，默认为当前主版本</param>
+    /// <returns>构造完成的 <see cref="WireEnvelope"/> 实例</returns>
+    /// <exception cref="ProtocolException">协议帧参数无效时抛出</exception>
     public static WireEnvelope Create(WireMessageType messageType, Guid requestId, long sequence, ReadOnlyMemory<byte> payload, WireCodec codec = WireCodec.Json, ushort version = ProtocolConstants.CurrentVersion) =>
         version == 0 || !Enum.IsDefined(messageType) || !Enum.IsDefined(codec) || requestId == Guid.Empty || sequence < 0 || payload.Length > ProtocolConstants.MaxFrameBytes
             ? throw new ProtocolException("协议帧参数无效。")
             : new(version, messageType, requestId, sequence, codec, payload);
 
+    /// <summary>
+    /// 使用 JSON 序列化值并创建 <see cref="WireEnvelope"/>。
+    /// </summary>
+    /// <param name="messageType">信封消息类型</param>
+    /// <param name="requestId">请求唯一标识</param>
+    /// <param name="sequence">单调递增序列号</param>
+    /// <param name="value">需要 JSON 序列化的业务对象</param>
+    /// <returns>JSON 编码后的 <see cref="WireEnvelope"/> 实例</returns>
     public static WireEnvelope Json<T>(WireMessageType messageType, Guid requestId, long sequence, T value)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(value, ProtocolJson.Options);
@@ -92,6 +117,8 @@ public readonly record struct WireEnvelope(
 }
 
 
+/// <summary>协议异常，用于协议参数校验或编解码失败场景。</summary>
+/// <param name="message">异常消息</param>
 public sealed class ProtocolException(string message) : Exception(message);
 
 /// <summary>
@@ -104,7 +131,10 @@ public static class WireEnvelopeCodec
     private const uint Magic = 0x44485731; // DHW1
     private const int HeaderBytes = 4 + 2 + 1 + 1 + 16 + 8 + 4;
 
-    /// <summary>将 WireEnvelope 结构打包为完整的网络二进制字节数组</summary>
+    /// <summary>将 <see cref="WireEnvelope"/> 结构打包为完整的网络二进制字节数组</summary>
+    /// <param name="envelope">待编码的信封实例</param>
+    /// <returns>包含 36 字节报头和负载的完整字节数组</returns>
+    /// <exception cref="ProtocolException">协议帧参数无效时抛出</exception>
     public static byte[] Encode(in WireEnvelope envelope)
     {
         if (envelope.ProtocolVersion != ProtocolConstants.CurrentVersion
@@ -133,6 +163,13 @@ public static class WireEnvelopeCodec
     /// 高性能下发路径：在单次缓冲区内直接就地序列化 JSON 并预留报头空间，
     /// 消除先 JsonSerializer.SerializeToUtf8Bytes 再二次包装产生的双重内存堆分配。
     /// </summary>
+    /// <param name="messageType">信封消息类型</param>
+    /// <param name="requestId">请求唯一标识</param>
+    /// <param name="sequence">单调递增序列号</param>
+    /// <param name="value">需要 JSON 序列化的业务对象</param>
+    /// <param name="version">协议版本号，默认为当前主版本</param>
+    /// <returns>JSON 编码后的完整字节数组</returns>
+    /// <exception cref="ProtocolException">协议帧参数无效或超过最大帧大小时抛出</exception>
     public static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T value, ushort version = ProtocolConstants.CurrentVersion)
     {
         if (version != ProtocolConstants.CurrentVersion
@@ -167,8 +204,11 @@ public static class WireEnvelopeCodec
     }
 
     /// <summary>
-    /// 尝试从字节流解析二进制协议帧；格式非法或魔数不匹配时返回 false，不抛异常
+    /// 尝试从字节流解析二进制协议帧；格式非法或魔数不匹配时返回 false，不抛异常。
     /// </summary>
+    /// <param name="bytes">待解析的二进制数据</param>
+    /// <param name="envelope">解析成功时输出的 <see cref="WireEnvelope"/> 实例</param>
+    /// <returns>解析成功返回 true，否则返回 false</returns>
     public static bool TryDecode(ReadOnlySpan<byte> bytes, out WireEnvelope envelope)
     {
         envelope = default;
@@ -186,11 +226,21 @@ public static class WireEnvelopeCodec
         return true;
     }
 
-    /// <summary>解码二进制帧，失败时抛出 ProtocolException</summary>
+    /// <summary>
+    /// 解码二进制帧，失败时抛出 <see cref="ProtocolException"/>。
+    /// </summary>
+    /// <param name="bytes">待解码的二进制数据</param>
+    /// <returns>解析后的 <see cref="WireEnvelope"/> 实例</returns>
+    /// <exception cref="ProtocolException">协议帧格式无效时抛出</exception>
     public static WireEnvelope Decode(ReadOnlySpan<byte> bytes) =>
         TryDecode(bytes, out var envelope) ? envelope : throw new ProtocolException("协议帧格式无效。");
 
-    /// <summary>反序列化信封内的 JSON 有效载荷为强类型对象</summary>
+    /// <summary>
+    /// 反序列化信封内的 JSON 有效载荷为强类型对象。
+    /// </summary>
+    /// <param name="envelope">包含 JSON 负载的信封</param>
+    /// <param name="value">反序列化成功时输出的强类型对象</param>
+    /// <returns>反序列化成功返回 true，否则返回 false</returns>
     public static bool TryDeserializeJson<T>(in WireEnvelope envelope, out T? value)
     {
         value = default;
@@ -210,6 +260,7 @@ public static class WireEnvelopeCodec
 /// <summary>网络传输统一 JSON 序列化选项（小驼峰命名、忽略 null 属性）</summary>
 public static class ProtocolJson
 {
+    /// <summary>获取协议层共享的 JSON 序列化选项</summary>
     public static JsonSerializerOptions Options { get; } = new(JsonSerializerDefaults.Web)
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -226,6 +277,14 @@ public static class ProtocolJson
 /// </summary>
 public sealed class CamelCaseKeyDoubleDictionaryConverter : JsonConverter<IReadOnlyDictionary<string, double>>
 {
+    /// <summary>
+    /// 读取 JSON 对象，将键统一归一化为 camelCase 后构建 double 参数字典。
+    /// </summary>
+    /// <param name="reader">UTF-8 JSON 读取器</param>
+    /// <param name="typeToConvert">目标转换类型</param>
+    /// <param name="options">当前序列化选项</param>
+    /// <returns>归一化后的只读参数字典；若 JSON 为 null 则返回 null</returns>
+    /// <exception cref="JsonException">JSON 格式或值类型非法时抛出</exception>
     public override IReadOnlyDictionary<string, double>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null) return null;
@@ -246,6 +305,12 @@ public sealed class CamelCaseKeyDoubleDictionaryConverter : JsonConverter<IReadO
         throw new JsonException("参数字典对象未闭合。");
     }
 
+    /// <summary>
+    /// 将 double 参数字典的键统一转换为 camelCase 后写入 JSON 对象。
+    /// </summary>
+    /// <param name="writer">UTF-8 JSON 写入器</param>
+    /// <param name="value">待写入的只读参数字典</param>
+    /// <param name="options">当前序列化选项</param>
     public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<string, double> value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
@@ -256,11 +321,24 @@ public sealed class CamelCaseKeyDoubleDictionaryConverter : JsonConverter<IReadO
 }
 
 /// <summary>握手问候请求载荷</summary>
+/// <param name="ClientVersion">客户端版本号</param>
+/// <param name="GameDataFingerprint">游戏数据指纹，可选</param>
 public sealed record HelloRequest(string ClientVersion, string? GameDataFingerprint = null);
 /// <summary>握手问候应答载荷</summary>
+/// <param name="ServerVersion">服务端版本号</param>
+/// <param name="ProtocolVersion">协议版本号</param>
+/// <param name="GameDataFingerprint">游戏数据指纹</param>
+/// <param name="ServerSequence">服务端当前序列号</param>
 public sealed record HelloResponse(string ServerVersion, ushort ProtocolVersion, string GameDataFingerprint, long ServerSequence);
 
 /// <summary>玩家持久化头 DTO</summary>
+/// <param name="PlayerId">玩家唯一标识</param>
+/// <param name="StateVersion">状态版本号</param>
+/// <param name="SchemaVersion">分段 schema 版本号</param>
+/// <param name="LastSimulatedAt">最近一次模拟推进时间</param>
+/// <param name="GameDataFingerprint">游戏数据指纹</param>
+/// <param name="Checksum">数据校验和</param>
+/// <param name="UpdatedAt">头信息更新时间</param>
 public sealed record PlayerHeadDto(
     string PlayerId,
     long StateVersion,
@@ -271,6 +349,15 @@ public sealed record PlayerHeadDto(
     DateTimeOffset UpdatedAt);
 
 /// <summary>玩家分段快照载荷 DTO</summary>
+/// <param name="Section">分段标识名</param>
+/// <param name="SectionVersion">分段数据版本号</param>
+/// <param name="SchemaVersion">分段 schema 版本号</param>
+/// <param name="Codec">负载编码格式</param>
+/// <param name="PayloadBase64">Base64 编码的原始负载</param>
+/// <param name="RawBytes">原始未压缩字节数</param>
+/// <param name="StoredBytes">存储压缩字节数</param>
+/// <param name="Checksum">数据校验和</param>
+/// <param name="UpdatedAt">分段更新时间</param>
 public sealed record PlayerSectionDto(
     string Section,
     long SectionVersion,
@@ -283,6 +370,13 @@ public sealed record PlayerSectionDto(
     DateTimeOffset UpdatedAt);
 
 /// <summary>玩家全量快照 DTO（包含全部分段及资产钱包列表）</summary>
+/// <param name="PlayerId">玩家唯一标识</param>
+/// <param name="DisplayName">展示名称</param>
+/// <param name="LastSimulatedAt">最近一次模拟推进时间</param>
+/// <param name="StateVersion">状态版本号</param>
+/// <param name="Head">玩家持久化头</param>
+/// <param name="Sections">全部分段快照列表</param>
+/// <param name="Assets">资产钱包列表</param>
 public sealed record PlayerSnapshotDto(
     string PlayerId,
     string DisplayName,
@@ -297,6 +391,11 @@ public sealed record PlayerSnapshotDto(
 /// LastSimulatedAt 必须随每个增量下发：浏览器以「服务端权威时刻 + 本地单调流逝」推算进度，
 /// 缺少该字段会让服务端时钟锚点停留在最后一次全量快照，倒计时与进度条偏移会随时间线性累积。
 /// </summary>
+/// <param name="PlayerId">玩家唯一标识</param>
+/// <param name="StateVersion">状态版本号</param>
+/// <param name="LastSimulatedAt">最近一次模拟推进时间</param>
+/// <param name="ChangedSections">本次变更的分段快照列表</param>
+/// <param name="ChangedAssets">本次变更的资产余额列表，可选</param>
 public sealed record PlayerSnapshotDeltaDto(
     string PlayerId,
     long StateVersion,
@@ -305,6 +404,11 @@ public sealed record PlayerSnapshotDeltaDto(
     IReadOnlyList<AssetBalanceDto>? ChangedAssets = null);
 
 /// <summary>行动排队意图请求 DTO</summary>
+/// <param name="RequestId">请求唯一标识，客户端幂等键</param>
+/// <param name="ActionId">行动配置 ID</param>
+/// <param name="RepeatCount">重复执行次数，默认为 1</param>
+/// <param name="TargetNodeId">目标节点标识，可选</param>
+/// <param name="Parameters">额外参数字典，可选</param>
 public sealed record ActionIntentRequest(
     string RequestId,
     string ActionId,
@@ -313,6 +417,11 @@ public sealed record ActionIntentRequest(
     [property: JsonConverter(typeof(CamelCaseKeyDoubleDictionaryConverter))] IReadOnlyDictionary<string, double>? Parameters = null);
 
 /// <summary>行动排队意图应答 DTO</summary>
+/// <param name="RequestId">请求唯一标识</param>
+/// <param name="ActionInstanceId">行动实例标识</param>
+/// <param name="ActionId">行动配置 ID</param>
+/// <param name="EnqueuedAt">入队时间</param>
+/// <param name="RemainingRepeats">剩余重复次数</param>
 public sealed record ActionIntentResponse(
     string RequestId,
     string ActionInstanceId,
@@ -324,6 +433,10 @@ public sealed record ActionIntentResponse(
 /// WebSocket/HTTP 共用的玩家命令载荷。信封已经提供 RequestId 时，载荷中的 RequestId 仍需一致，
 /// 以便 JSON 日志、重试和客户端幂等键在脱离信封后仍可追踪。
 /// </summary>
+/// <param name="RequestId">请求唯一标识，客户端幂等键</param>
+/// <param name="Command">命令名称</param>
+/// <param name="Payload">命令 JSON 载荷</param>
+/// <param name="ExpectedStateVersion">期望服务端状态版本，默认为 0</param>
 public sealed record CommandEnvelopeDto(
     string RequestId,
     string Command,
@@ -331,6 +444,12 @@ public sealed record CommandEnvelopeDto(
     long ExpectedStateVersion = 0);
 
 /// <summary>通用命令回执；失败时不返回内部异常或存储细节。</summary>
+/// <param name="RequestId">请求唯一标识</param>
+/// <param name="Succeeded">命令是否执行成功</param>
+/// <param name="Code">业务结果代码</param>
+/// <param name="Message">可展示给用户的提示消息</param>
+/// <param name="StateVersion">服务端当前状态版本</param>
+/// <param name="Payload">附加结果 JSON 载荷，可选</param>
 public sealed record CommandResultDto(
     string RequestId,
     bool Succeeded,
@@ -340,11 +459,27 @@ public sealed record CommandResultDto(
     JsonElement? Payload = null);
 
 /// <summary>资产持有余额传输 DTO</summary>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体，可选</param>
+/// <param name="Quantity">当前持有数量</param>
+/// <param name="Version">资产版本号</param>
 public sealed record AssetBalanceDto(string AssetId, string? Variant, double Quantity, long Version);
 /// <summary>资产变动差量传输 DTO</summary>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体，可选</param>
+/// <param name="QuantityDelta">数量变动值</param>
+/// <param name="Reason">变动原因</param>
+/// <param name="InstanceId">关联实例标识，可选</param>
 public sealed record AssetDeltaDto(string AssetId, string? Variant, double QuantityDelta, string Reason, string? InstanceId = null);
 
 /// <summary>坊市挂单操作请求 DTO</summary>
+/// <param name="RequestId">请求唯一标识</param>
+/// <param name="OrderId">订单唯一标识</param>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体，可选</param>
+/// <param name="Side">买卖方向（Buy/Sell）</param>
+/// <param name="Price">挂单单价</param>
+/// <param name="Quantity">挂单数量</param>
 public sealed record MarketOrderRequestDto(
     string RequestId,
     string OrderId,
@@ -355,6 +490,17 @@ public sealed record MarketOrderRequestDto(
     double Quantity);
 
 /// <summary>坊市订单详情传输 DTO</summary>
+/// <param name="OrderId">订单唯一标识</param>
+/// <param name="OwnerId">挂单者玩家标识</param>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体，可选</param>
+/// <param name="Side">买卖方向</param>
+/// <param name="Price">挂单单价</param>
+/// <param name="OriginalQuantity">原始挂单数量</param>
+/// <param name="RemainingQuantity">剩余未成交数量</param>
+/// <param name="Status">订单状态</param>
+/// <param name="Sequence">订单序列号</param>
+/// <param name="CreatedAt">创建时间</param>
 public sealed record MarketOrderDto(
     string OrderId,
     string OwnerId,
@@ -369,6 +515,16 @@ public sealed record MarketOrderDto(
     DateTimeOffset CreatedAt);
 
 /// <summary>坊市撮合成交明细 DTO</summary>
+/// <param name="TradeId">成交唯一标识</param>
+/// <param name="BuyOrderId">买入订单标识</param>
+/// <param name="SellOrderId">卖出订单标识</param>
+/// <param name="BuyerId">买方玩家标识</param>
+/// <param name="SellerId">卖方玩家标识</param>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体，可选</param>
+/// <param name="Price">成交价</param>
+/// <param name="Quantity">成交数量</param>
+/// <param name="TradedAt">成交时间</param>
 public sealed record MarketFillDto(
     string TradeId,
     string BuyOrderId,
@@ -382,6 +538,12 @@ public sealed record MarketFillDto(
     DateTimeOffset TradedAt);
 
 /// <summary>坊市盘口深度传输 DTO</summary>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体，可选</param>
+/// <param name="Asks">卖方档位列表</param>
+/// <param name="Bids">买方档位列表</param>
+/// <param name="Version">盘口版本号</param>
+/// <param name="CapturedAt">快照捕获时间</param>
 public sealed record MarketBookDto(
     string AssetId,
     string? Variant,
@@ -391,9 +553,18 @@ public sealed record MarketBookDto(
     DateTimeOffset CapturedAt);
 
 /// <summary>盘口单一价格档位明细 DTO</summary>
+/// <param name="Price">档位价格</param>
+/// <param name="Quantity">该价格累计数量</param>
+/// <param name="OrderCount">该价格订单数</param>
 public sealed record MarketLevelDto(double Price, double Quantity, int OrderCount);
 
 /// <summary>调度冷挂机计算节点进行确定性离线补算请求 DTO</summary>
+/// <param name="JobId">任务唯一标识</param>
+/// <param name="PlayerId">玩家唯一标识</param>
+/// <param name="From">补算起始时间</param>
+/// <param name="To">补算结束时间</param>
+/// <param name="StatePayloadBase64">Base64 编码的玩家状态负载</param>
+/// <param name="GameDataFingerprint">游戏数据指纹</param>
 public sealed record ComputeAdvanceRequestDto(
     string JobId,
     string PlayerId,
@@ -403,6 +574,16 @@ public sealed record ComputeAdvanceRequestDto(
     string GameDataFingerprint);
 
 /// <summary>计算节点补算完成响应 DTO</summary>
+/// <param name="JobId">任务唯一标识</param>
+/// <param name="Succeeded">补算是否成功</param>
+/// <param name="PlayerId">玩家唯一标识</param>
+/// <param name="From">补算起始时间</param>
+/// <param name="To">补算结束时间</param>
+/// <param name="StatePayloadBase64">Base64 编码的新状态负载</param>
+/// <param name="AssetDeltas">补算产生的资产变动列表</param>
+/// <param name="Events">补算期间触发的事件列表</param>
+/// <param name="ErrorCode">错误码，仅在失败时有值</param>
+/// <param name="ErrorMessage">可读错误消息，仅在失败时有值</param>
 public sealed record ComputeAdvanceResponseDto(
     string JobId,
     bool Succeeded,
@@ -416,11 +597,19 @@ public sealed record ComputeAdvanceResponseDto(
     string? ErrorMessage = null);
 
 /// <summary>通用协议级错误信息 DTO</summary>
+/// <param name="Code">错误代码</param>
+/// <param name="Message">可读错误消息</param>
+/// <param name="RequestId">关联请求标识，可选</param>
 public sealed record ErrorDto(string Code, string Message, string? RequestId = null);
 
 /// <summary>战报/系统日志事件；template 采用前端引用语法 {{kind:id|label|extra}}，前端仅做解析渲染。Count 表示连续相同模板的合并次数。</summary>
+/// <param name="Sequence">事件序列号</param>
+/// <param name="TimestampUnixMilliseconds">事件时间戳（Unix 毫秒）</param>
+/// <param name="Template">前端模板字符串</param>
+/// <param name="Count">连续相同模板合并次数，默认为 1</param>
 public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template, int Count = 1);
 
 /// <summary>日志事件批次载荷，按 sequence 单调递增推送。</summary>
+/// <param name="Events">日志事件列表</param>
 public sealed record LogBatchDto(IReadOnlyList<LogEventDto> Events);
 

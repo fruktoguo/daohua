@@ -1,7 +1,13 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 经济测试：钱包余额、交易流水、资产有效性与零增量幂等性。
+/// </summary>
 public sealed class EconomyTests
 {
+    /// <summary>
+    /// 验证 <c>WalletEnforcesNonNegativeBalanceAndVersions</c>（Wallet Enforces Non Negative Balance And Versions）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void WalletEnforcesNonNegativeBalanceAndVersions()
     {
@@ -18,6 +24,9 @@ public sealed class EconomyTests
         Assert.Throws<DomainException>(() => wallet.Debit(asset, 8, "overspend"));
     }
 
+    /// <summary>
+    /// 验证 <c>TransactionLinesRequireUniquePositiveLineNumbers</c>（Transaction Lines Require Unique Positive Line Numbers）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void TransactionLinesRequireUniquePositiveLineNumbers()
     {
@@ -32,6 +41,9 @@ public sealed class EconomyTests
         Assert.Equal(2, transaction.Lines.Count);
     }
 
+    /// <summary>
+    /// 验证 <c>EconomyTransactionRejectsDuplicateOrZeroLines</c>（Economy Transaction Rejects Duplicate Or Zero Lines）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void EconomyTransactionRejectsDuplicateOrZeroLines()
     {
@@ -48,6 +60,9 @@ public sealed class EconomyTests
         Assert.Equal(DomainErrorCode.InvalidArgument, error.Code);
     }
 
+    /// <summary>
+    /// 验证 <c>WalletRejectsInvalidAssetAndNonFiniteQuantity</c>（Wallet Rejects Invalid Asset And Non Finite Quantity）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void WalletRejectsInvalidAssetAndNonFiniteQuantity()
     {
@@ -57,6 +72,9 @@ public sealed class EconomyTests
         Assert.Throws<DomainException>(() => wallet.Credit(new AssetKey(new ItemId("item.x")), double.NaN, "grant"));
     }
 
+    /// <summary>
+    /// 验证 <c>ApplyZeroDeltaIsNoOp</c>（Apply Zero Delta Is No Op）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void ApplyZeroDeltaIsNoOp()
     {

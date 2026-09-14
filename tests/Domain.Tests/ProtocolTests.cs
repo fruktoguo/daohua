@@ -2,8 +2,14 @@ using System.Text.Json;
 
 namespace Domain.Tests;
 
+/// <summary>
+/// 协议测试：二进制/JSON 信封、通用命令、行动意图参数与日志批次的编解码往返。
+/// </summary>
 public sealed class ProtocolTests
 {
+    /// <summary>
+    /// 验证 <c>BinaryEnvelopeRoundTripsWithoutMutation</c>（Binary Envelope Round Trips Without Mutation）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void BinaryEnvelopeRoundTripsWithoutMutation()
     {
@@ -20,6 +26,9 @@ public sealed class ProtocolTests
         Assert.Equal(payload, decoded.Payload.ToArray());
     }
 
+    /// <summary>
+    /// 验证 <c>JsonEnvelopeCanDeserializeTypedPayload</c>（Json Envelope Can Deserialize Typed Payload）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void JsonEnvelopeCanDeserializeTypedPayload()
     {
@@ -30,12 +39,18 @@ public sealed class ProtocolTests
         Assert.Equal("catalog-a", request.GameDataFingerprint);
     }
 
+    /// <summary>
+    /// 验证 <c>DecoderRejectsTruncatedFrame</c>（Decoder Rejects Truncated Frame）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void DecoderRejectsTruncatedFrame()
     {
         Assert.False(WireEnvelopeCodec.TryDecode(new byte[8], out _));
     }
 
+    /// <summary>
+    /// 验证 <c>GenericCommandUsesStableMessageTypeAndJsonPayload</c>（Generic Command Uses Stable Message Type And Json Payload）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void GenericCommandUsesStableMessageTypeAndJsonPayload()
     {
@@ -59,6 +74,9 @@ public sealed class ProtocolTests
         Assert.Equal(WireMessageType.CommandResult, WireEnvelopeCodec.Decode(WireEnvelopeCodec.Encode(resultEnvelope)).MessageType);
     }
 
+    /// <summary>
+    /// 验证 <c>ActionIntentParametersRoundTripKeepsCamelCaseKeys</c>（Action Intent Parameters Round Trip Keeps Camel Case Keys）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void ActionIntentParametersRoundTripKeepsCamelCaseKeys()
     {
@@ -74,6 +92,9 @@ public sealed class ProtocolTests
         Assert.Equal(json, JsonSerializer.Serialize(parsed, ProtocolJson.Options));
     }
 
+    /// <summary>
+    /// 验证 <c>LogBatchRoundTripsCorrectly</c>（Log Batch Round Trips Correctly）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void LogBatchRoundTripsCorrectly()
     {
@@ -94,6 +115,9 @@ public sealed class ProtocolTests
         Assert.Equal(2, parsed.Events[1].Sequence);
     }
 
+    /// <summary>
+    /// 验证 <c>EncodeJsonProducesExactEquivalentFrameWithoutIntermediateAllocation</c>（Encode Json Produces Exact Equivalent Frame Without Intermediate Allocation）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void EncodeJsonProducesExactEquivalentFrameWithoutIntermediateAllocation()
     {

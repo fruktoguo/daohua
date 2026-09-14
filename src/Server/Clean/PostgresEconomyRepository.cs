@@ -5,6 +5,12 @@ public sealed class PostgresEconomyRepository(
     NpgsqlDataSource dataSource,
     ILogger<PostgresEconomyRepository> logger) : IEconomyTransactionStore
 {
+    /// <summary>
+    /// 执行CommitAsync（异步）。
+    /// </summary>
+    /// <param name="request">请求数据传输对象。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 EconomyTransactionResult。</returns>
     public async ValueTask<EconomyTransactionResult> CommitAsync(
         EconomyTransactionRequest request,
         CancellationToken cancellationToken = default)
@@ -194,12 +200,27 @@ public sealed class PostgresEconomyRepository(
     }
 }
 
+/// <summary>
+/// 表示 EconomyInsufficientBalanceException 类。
+/// </summary>
+/// <param name="delta">参数 delta。</param>
+/// <param name="available">参数 available。</param>
 public sealed class EconomyInsufficientBalanceException(AssetDelta delta, double available)
     : InvalidOperationException($"资产余额不足 player={delta.PlayerId} asset={delta.AssetId} variant={delta.Variant} available={available} requestedDelta={delta.Delta}")
 {
+    /// <summary>
+    /// 获取或设置 Delta。
+    /// </summary>
     public AssetDelta Delta { get; } = delta;
+    /// <summary>
+    /// 获取 Available。
+    /// </summary>
     public double Available { get; } = available;
 }
 
+/// <summary>
+/// 表示 EconomyIdempotencyConflictException 类。
+/// </summary>
+/// <param name="idempotencyKey">参数 idempotencyKey。</param>
 public sealed class EconomyIdempotencyConflictException(string idempotencyKey)
     : InvalidOperationException($"资产事务幂等键已绑定其他请求 idempotencyKey={idempotencyKey}");

@@ -4,6 +4,7 @@ using Domain.Player;
 
 namespace Domain.Combat;
 
+/// <summary>玩家属性 的领域定义。</summary>
 public sealed record PlayerAttributes(
     double MaxHitpoints, double MaxManapoints, double PhysicalAttack, double SpellAttack,
     double Armor, double MagicResistance, double Accuracy, double Evasion,
@@ -11,12 +12,22 @@ public sealed record PlayerAttributes(
     double HpRegen, double MpRegen, double AttackIntervalSeconds,
     double DamageAbsorptionRatio = 0)
 {
+    /// <summary>获取或设置 金抗性 的值。</summary>
     public double MetalResistance { get; init; }
+    /// <summary>获取或设置 木抗性 的值。</summary>
     public double WoodResistance { get; init; }
+    /// <summary>获取或设置 水抗性 的值。</summary>
     public double WaterResistance { get; init; }
+    /// <summary>获取或设置 火抗性 的值。</summary>
     public double FireResistance { get; init; }
+    /// <summary>获取或设置 土抗性 的值。</summary>
     public double EarthResistance { get; init; }
+    /// <summary>获取或设置 抗性倍率 的值。</summary>
     public double ResistanceScale { get; init; } = 1;
+    /// <summary>
+    /// 执行 转换为战斗者 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public CombatantStats ToCombatant() => CombatantStats.Create(MaxHitpoints, PhysicalAttack, Armor,
         AttackIntervalSeconds, Accuracy, Evasion) with
         { MagicResistance = MagicResistance, Critical = Critical, CriticalResistance = CriticalAvoidance,
@@ -28,9 +39,21 @@ public sealed record PlayerAttributes(
 /// <summary>战斗和面板共用属性计算；各项回复只读取对应配置列。</summary>
 public static class PlayerAttributeResolver
 {
+    /// <summary>
+    /// 执行 结算 操作。
+    /// </summary>
+    /// <param name="state">state 参数。</param>
+    /// <param name="catalog">catalog 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static PlayerAttributes Resolve(PlayerAggregateState state, GameDataCatalog catalog)
         => Resolve(state.Progression.RealmLevel, state.EquippedItemIds ?? [], state.Loadout, state.Buffs, state.Combat, catalog);
 
+    /// <summary>
+    /// 执行 结算 操作。
+    /// </summary>
+    /// <param name="player">player 参数。</param>
+    /// <param name="catalog">catalog 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static PlayerAttributes Resolve(PlayerAggregate player, GameDataCatalog catalog)
         => Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
             new(player.Combat.Hitpoints, player.Combat.MaxHitpoints, player.Combat.Manapoints,
@@ -100,6 +123,12 @@ public static class PlayerAttributeResolver
         }
     }
 
+    /// <summary>
+    /// 执行 Apply 操作。
+    /// </summary>
+    /// <param name="player">player 参数。</param>
+    /// <param name="catalog">catalog 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static PlayerAttributes Apply(PlayerAggregate player, GameDataCatalog catalog)
     {
         var attributes = Resolve(player, catalog);

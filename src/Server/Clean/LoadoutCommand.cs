@@ -8,6 +8,13 @@ namespace Server.Clean;
 /// <summary>客户端只能装配自己持有的装备与已经习得的功法，不能修改成长数据。</summary>
 internal static class LoadoutCommand
 {
+    /// <summary>
+    /// 执行Apply。
+    /// </summary>
+    /// <param name="payload">命令载荷。</param>
+    /// <param name="player">参数 player。</param>
+    /// <param name="wallet">参数 wallet。</param>
+    /// <param name="catalog">参数 catalog。</param>
     public static void Apply(JsonElement payload, PlayerAggregate player, AssetWallet wallet, GameDataCatalog catalog)
     {
         try { ApplyValidated(payload, player, wallet, catalog); }

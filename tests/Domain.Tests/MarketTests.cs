@@ -1,7 +1,13 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 市场测试：价格时间优先撮合、所有权撤单、恢复投影与版本锁定不变量。
+/// </summary>
 public sealed class MarketTests
 {
+    /// <summary>
+    /// 验证 <c>PriceTimePriorityProducesDeterministicFill</c>（Price Time Priority Produces Deterministic Fill）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void PriceTimePriorityProducesDeterministicFill()
     {
@@ -20,6 +26,9 @@ public sealed class MarketTests
         Assert.Equal(1, active.RemainingQuantity);
     }
 
+    /// <summary>
+    /// 验证 <c>OwnerCannotCancelAnotherPlayersOrder</c>（Owner Cannot Cancel Another Players Order）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void OwnerCannotCancelAnotherPlayersOrder()
     {
@@ -31,6 +40,9 @@ public sealed class MarketTests
         Assert.Throws<DomainException>(() => book.Cancel(order.OrderId, PlayerId.New()));
     }
 
+    /// <summary>
+    /// 验证 <c>RestoreRebuildsProjectionWithoutMatching</c>（Restore Rebuilds Projection Without Matching）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreRebuildsProjectionWithoutMatching()
     {
@@ -47,6 +59,9 @@ public sealed class MarketTests
         Assert.Equal(placed.BookVersion, restored.Version);
     }
 
+    /// <summary>
+    /// 验证 <c>RestoreRejectsInvalidStatusAndSequence</c>（Restore Rejects Invalid Status And Sequence）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RestoreRejectsInvalidStatusAndSequence()
     {

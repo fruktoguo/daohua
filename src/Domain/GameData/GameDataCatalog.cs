@@ -60,6 +60,11 @@ public sealed record ConsumableDefinition(
     double GatheringMultiplier = 1,
     double AlchemyMultiplier = 1)
 {
+    /// <summary>
+    /// 执行 获取倍率 操作。
+    /// </summary>
+    /// <param name="kind">kind 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public double GetMultiplier(ActionKind kind) => kind switch
     {
         ActionKind.Cultivation => CultivationMultiplier,
@@ -87,6 +92,10 @@ public sealed class ActionCatalog
 {
     private readonly IReadOnlyDictionary<ActionId, ActionDefinition> _definitions;
 
+    /// <summary>
+    /// 初始化 行动目录。
+    /// </summary>
+    /// <param name="definitions">definitions 参数。</param>
     public ActionCatalog(IEnumerable<ActionDefinition> definitions)
     {
         ArgumentNullException.ThrowIfNull(definitions);
@@ -162,8 +171,26 @@ public sealed class ActionCatalog
 /// </summary>
 public sealed class GameDataCatalog
 {
+    /// <summary>当前Schema版本 常量。</summary>
     public const int CurrentSchemaVersion = 1;
 
+    /// <summary>
+    /// 初始化 GameData目录。
+    /// </summary>
+    /// <param name="contentVersion">contentVersion 参数。</param>
+    /// <param name="fingerprint">fingerprint 参数。</param>
+    /// <param name="actions">actions 参数。</param>
+    /// <param name="items">items 参数。</param>
+    /// <param name="maps">maps 参数。</param>
+    /// <param name="encounters">encounters 参数。</param>
+    /// <param name="monsters">monsters 参数。</param>
+    /// <param name="rawItems">rawItems 参数。</param>
+    /// <param name="rawEquipments">rawEquipments 参数。</param>
+    /// <param name="combatMonsters">combatMonsters 参数。</param>
+    /// <param name="combatEncounters">combatEncounters 参数。</param>
+    /// <param name="worldGraph">worldGraph 参数。</param>
+    /// <param name="baseAttributes">baseAttributes 参数。</param>
+    /// <param name="abilities">abilities 参数。</param>
     public GameDataCatalog(
         string contentVersion,
         string fingerprint,
@@ -232,6 +259,7 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<string, CombatMonsterDefinition> CombatMonsters { get; }
     /// <summary>已解析的遭遇战定义，键为 encounter ID。</summary>
     public IReadOnlyDictionary<string, CombatEncounterDefinition> CombatEncounters { get; }
+    /// <summary>获取或设置 基础属性 的值。</summary>
     public BaseAttributeCatalog? BaseAttributes { get; }
     public IReadOnlyDictionary<string, JsonElement> Abilities { get; }
 

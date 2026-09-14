@@ -474,6 +474,20 @@ static async Task WriteHealthResponse(HttpContext context, HealthReport report, 
     }, ProtocolJson.Options, context.RequestAborted);
 }
 
+/// <summary>
+/// 表示 RegisterRequest 记录。
+/// </summary>
+/// <param name="Account">参数 Account。</param>
+/// <param name="Password">参数 Password。</param>
+/// <param name="DisplayName">参数 DisplayName。</param>
 public sealed record RegisterRequest(string Account, string Password, string? DisplayName = null);
+/// <summary>
+/// 表示 LoginRequest 记录。
+/// </summary>
+/// <param name="Account">参数 Account。</param>
+/// <param name="Password">参数 Password。</param>
 public sealed record LoginRequest(string Account, string Password);
+/// <summary>
+/// 表示 Program 类。
+/// </summary>
 public partial class Program;

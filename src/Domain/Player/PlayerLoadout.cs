@@ -2,27 +2,41 @@ using System.Text.Json;
 
 namespace Domain.Player;
 
+/// <summary>玩家Core属性 的领域定义。</summary>
 public sealed record PlayerCoreAttributes(
     double StaminaLevel = 10, double IntelligenceLevel = 10, double AttackLevel = 10,
     double DefenseLevel = 10, double SwordsmanshipLevel = 10, double TalismanLevel = 10);
 
+/// <summary>玩家功法/神通槽位 的领域定义。</summary>
 public sealed record PlayerAbilitySlot(string? AbilityId, double Level, IReadOnlyList<JsonElement> Triggers);
+/// <summary>玩家Equipment槽位 的领域定义。</summary>
 public sealed record PlayerEquipmentSlot(string ItemId, double EnhancementLevel);
+/// <summary>玩家装备配置文档 的领域定义。</summary>
 public sealed record PlayerLoadoutDocument(
     PlayerCoreAttributes CoreAttributes,
     IReadOnlyList<PlayerAbilitySlot> AbilitySlots,
     IReadOnlyList<PlayerEquipmentSlot> Equipment);
 
+/// <summary>玩家装备配置状态 的领域定义。</summary>
 public sealed partial class PlayerLoadoutState
 {
+    /// <summary>获取或设置 Core属性 的值。</summary>
     public PlayerCoreAttributes CoreAttributes { get; internal set; } = new();
     public List<PlayerAbilitySlot> AbilitySlots { get; } = [];
     public List<PlayerEquipmentSlot> Equipment { get; } = [];
 
+    /// <summary>
+    /// 执行 Export 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     internal PlayerLoadoutDocument Export() => new(CoreAttributes,
         AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }).ToArray(),
         Equipment.ToArray());
 
+    /// <summary>
+    /// 执行 恢复 操作。
+    /// </summary>
+    /// <param name="document">document 参数。</param>
     internal void Restore(PlayerLoadoutDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -43,8 +57,13 @@ public sealed partial class PlayerLoadoutState
     }
 }
 
+/// <summary>玩家聚合 的领域定义。</summary>
 public sealed partial class PlayerAggregate
 {
+    /// <summary>
+    /// 执行 习得功法/神通 操作。
+    /// </summary>
+    /// <param name="abilityId">abilityId 参数。</param>
     public void LearnAbility(AbilityId abilityId)
     {
         if (!abilityId.IsValid || Loadout.LearnedAbilities.Contains(abilityId))

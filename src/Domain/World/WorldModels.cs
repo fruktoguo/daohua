@@ -6,6 +6,14 @@ namespace Domain.World;
 /// <summary>世界地图节点（如宗门、村落、秘境洞府、灵脉矿区）。</summary>
 public sealed record WorldNode(string Id, string Name, double X, double Y)
 {
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <param name="id">id 参数。</param>
+    /// <param name="name">name 参数。</param>
+    /// <param name="x">x 参数。</param>
+    /// <param name="y">y 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static WorldNode Create(string id, string name, double x, double y)
     {
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name) || !double.IsFinite(x) || !double.IsFinite(y))
@@ -17,6 +25,15 @@ public sealed record WorldNode(string Id, string Name, double X, double Y)
 /// <summary>世界两节点间的连通路径（有向/无向边），包含空间物理距离与通行耗时。</summary>
 public sealed record WorldEdge(string Id, string FromNodeId, string ToNodeId, double Distance, double TravelSeconds)
 {
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <param name="id">id 参数。</param>
+    /// <param name="fromNodeId">fromNodeId 参数。</param>
+    /// <param name="toNodeId">toNodeId 参数。</param>
+    /// <param name="distance">distance 参数。</param>
+    /// <param name="travelSeconds">travelSeconds 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static WorldEdge Create(string id, string fromNodeId, string toNodeId, double distance, double travelSeconds)
     {
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(fromNodeId) || string.IsNullOrWhiteSpace(toNodeId) ||
@@ -38,6 +55,7 @@ public sealed record TravelSegment(
     double EndProgress,
     double DurationSeconds)
 {
+    /// <summary>获取或设置 是否有效 的值。</summary>
     public bool IsValid =>
         !string.IsNullOrWhiteSpace(EdgeId) &&
         !string.IsNullOrWhiteSpace(FromNodeId) &&
@@ -57,6 +75,7 @@ public sealed record TravelActionState(
     double SegmentElapsedSeconds = 0,
     double ProgressSeconds = 0)
 {
+    /// <summary>获取或设置 是否有效 的值。</summary>
     public bool IsValid =>
         !string.IsNullOrWhiteSpace(TargetNodeId) &&
         double.IsFinite(TotalDurationSeconds) && TotalDurationSeconds >= 0 &&
@@ -282,6 +301,10 @@ public sealed record TravelPlan(
 /// <summary>角色沿路径行进过程中的动态进度状态机。</summary>
 public sealed class TravelProgress
 {
+    /// <summary>
+    /// 初始化 游历/移动进度。
+    /// </summary>
+    /// <param name="plan">plan 参数。</param>
     public TravelProgress(TravelPlan plan)
     {
         Plan = plan ?? throw new ArgumentNullException(nameof(plan));

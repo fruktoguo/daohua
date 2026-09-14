@@ -200,6 +200,12 @@ public static class ProtocolSnapshotMapper
         };
     }
 
+    /// <summary>
+    /// 转换为ActionQueueSection。
+    /// </summary>
+    /// <param name="actions">参数 actions。</param>
+    /// <param name="gameData">游戏数据目录。</param>
+    /// <returns>返回 object[] 类型的结果。</returns>
     public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData)
     {
         if (actions is null || actions.Count == 0) return [];

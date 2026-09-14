@@ -3,10 +3,16 @@ using System.Text.Json;
 
 namespace Domain.Tests;
 
+/// <summary>
+/// 资源模拟测试：配置回复跨恢复一致性与资源耗尽后的已结算产出。
+/// </summary>
 public sealed class ResourceSimulationTests
 {
     private static readonly DateTimeOffset Baseline = new(2026, 9, 14, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// 验证 <c>ConfiguredRegenCarriesAcrossRestoreAndMatchesOfflineAdvancement</c>（Configured Regen Carries Across Restore And Matches Offline Advancement）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void ConfiguredRegenCarriesAcrossRestoreAndMatchesOfflineAdvancement()
     {
@@ -42,6 +48,9 @@ public sealed class ResourceSimulationTests
         Assert.Equal(2, online.Combat.RegenCarrySeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>ResourceExhaustionKeepsSettledOutputAndAllowsFollowingAction</c>（Resource Exhaustion Keeps Settled Output And Allows Following Action）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void ResourceExhaustionKeepsSettledOutputAndAllowsFollowingAction()
     {

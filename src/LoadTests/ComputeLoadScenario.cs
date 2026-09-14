@@ -1,7 +1,17 @@
 namespace DaoHua.LoadTests;
 
+/// <summary>
+/// 本地 CPU 计算负载场景。
+/// 模拟大量玩家离线补算，验证冷挂机计算的延迟与正确性。
+/// </summary>
 public static class ComputeLoadScenario
 {
+    /// <summary>
+    /// 执行计算负载场景并将结果封装为压测报告。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>压测报告。</returns>
     public static async Task<LoadTestReport> RunAsync(LoadTestOptions options, CancellationToken cancellationToken = default)
     {
         var result = await RunLocalAsync(options.Players, cancellationToken);
@@ -35,6 +45,12 @@ public static class ComputeLoadScenario
             []);
     }
 
+    /// <summary>
+    /// 在本地并行模拟指定数量的玩家补算。
+    /// </summary>
+    /// <param name="players">玩家数量。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>包含耗时、校验和、错误数等指标的计算结果。</returns>
     internal static Task<ComputeResult> RunLocalAsync(int players, CancellationToken cancellationToken)
     {
         var process = Process.GetCurrentProcess();
@@ -97,6 +113,11 @@ public static class ComputeLoadScenario
             errors));
     }
 
+    /// <summary>
+    /// 64 位混合函数，用于生成伪随机但确定性的状态转移。
+    /// </summary>
+    /// <param name="value">输入值。</param>
+    /// <returns>混合后的输出值。</returns>
     private static ulong Mix(ulong value)
     {
         value ^= value >> 30;
@@ -106,6 +127,18 @@ public static class ComputeLoadScenario
         return value ^ (value >> 31);
     }
 
+    /// <summary>
+    /// 本地计算负载场景的原始指标。
+    /// </summary>
+    /// <param name="CompletedPlayers">完成补算的玩家数。</param>
+    /// <param name="ElapsedMilliseconds">总耗时（毫秒）。</param>
+    /// <param name="CpuMilliseconds">CPU 时间（毫秒）。</param>
+    /// <param name="ManagedBytesBefore">压测前托管堆内存（字节）。</param>
+    /// <param name="ManagedBytesAfter">压测后托管堆内存（字节）。</param>
+    /// <param name="Checksum">聚合校验和。</param>
+    /// <param name="CompletedActions">完成行动数。</param>
+    /// <param name="Transitions">状态转移次数。</param>
+    /// <param name="Errors">错误数。</param>
     internal sealed record ComputeResult(
         int CompletedPlayers,
         double ElapsedMilliseconds,

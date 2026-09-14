@@ -1,9 +1,19 @@
 namespace Server.Clean;
 
+/// <summary>
+/// 表示 PostgresHealthCheck 类。
+/// </summary>
+/// <param name="dataSource">PostgreSQL 数据源。</param>
 public sealed class PostgresHealthCheck(NpgsqlDataSource dataSource) : IHealthCheck
 {
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// 执行CheckHealthAsync（异步）。
+    /// </summary>
+    /// <param name="context">HTTP 请求上下文。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 HealthCheckResult。</returns>
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

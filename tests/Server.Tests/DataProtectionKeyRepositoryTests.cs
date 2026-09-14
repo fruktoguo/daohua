@@ -4,8 +4,10 @@ using Xunit;
 
 namespace Server.Tests;
 
+/// <summary>包含针对 Data Protection Key Repository Tests 的测试用例与断言集合。</summary>
 public sealed class DataProtectionKeyRepositoryTests
 {
+    /// <summary>验证 Key Xml Metadata Is Parsed And Invalid Id Rejected。</summary>
     [Fact]
     public void KeyXmlMetadata_IsParsedAndInvalidIdRejected()
     {

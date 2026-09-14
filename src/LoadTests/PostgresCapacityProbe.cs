@@ -6,6 +6,13 @@ namespace DaoHua.LoadTests;
 /// </summary>
 internal static class PostgresCapacityProbe
 {
+    /// <summary>
+    /// 在临时 schema 中创建账号、section 与刷新队列表，并执行批量写入与最新值冲刷，
+    /// 最后估算数据与 WAL 占用。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>PostgreSQL 探测结果。</returns>
     public static async Task<PostgresProbeResult> RunAsync(
         LoadTestOptions options,
         CancellationToken cancellationToken)
@@ -69,6 +76,13 @@ internal static class PostgresCapacityProbe
         }
     }
 
+    /// <summary>
+    /// 在指定 schema 中创建账号、section 与刷新队列表。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="schema">已转义的 schema 名称。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示建表完成的任务。</returns>
     private static async Task CreateTablesAsync(
         NpgsqlConnection connection,
         string schema,
@@ -102,6 +116,13 @@ internal static class PostgresCapacityProbe
         await ExecuteAsync(connection, sql, cancellationToken);
     }
 
+    /// <summary>
+    /// 使用 COPY BINARY 批量导入测试账号。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="schema">已转义的 schema 名称。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示导入完成的任务。</returns>
     private static async Task CopyAccountsAsync(
         NpgsqlConnection connection,
         string schema,
@@ -122,6 +143,13 @@ internal static class PostgresCapacityProbe
         await importer.CompleteAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 使用 COPY BINARY 批量导入测试 section 数据。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="schema">已转义的 schema 名称。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示导入完成的任务。</returns>
     private static async Task CopySectionsAsync(
         NpgsqlConnection connection,
         string schema,
@@ -149,6 +177,14 @@ internal static class PostgresCapacityProbe
         await importer.CompleteAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 模拟 latest-only Worker 的 upsert 行为，将状态变更写入刷新队列。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="schema">已转义的 schema 名称。</param>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>入队行数。</returns>
     private static async Task<long> EnqueueLatestOnlyAsync(
         NpgsqlConnection connection,
         string schema,
@@ -190,6 +226,13 @@ internal static class PostgresCapacityProbe
         return count;
     }
 
+    /// <summary>
+    /// 按时间顺序将刷新队列中的行批量 upsert 到 section 表并删除已处理队列行。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="schema">已转义的 schema 名称。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>已冲刷行数。</returns>
     private static async Task<long> FlushQueueAsync(
         NpgsqlConnection connection,
         string schema,
@@ -278,6 +321,13 @@ internal static class PostgresCapacityProbe
         return flushed;
     }
 
+    /// <summary>
+    /// 查询指定 schema 下所有表与索引的总占用字节数。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="schema">原始 schema 名称。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>总字节数。</returns>
     private static async Task<long> RelationSizeAsync(
         NpgsqlConnection connection,
         string schema,
@@ -294,6 +344,14 @@ internal static class PostgresCapacityProbe
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
     }
 
+    /// <summary>
+    /// 计算两个 PostgreSQL WAL LSN 之间的字节差值。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="before">起始 LSN。</param>
+    /// <param name="after">结束 LSN。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>WAL 增长字节数。</returns>
     private static async Task<long> WalDifferenceAsync(
         NpgsqlConnection connection,
         string before,
@@ -307,6 +365,13 @@ internal static class PostgresCapacityProbe
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
     }
 
+    /// <summary>
+    /// 执行无返回 SQL。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="sql">SQL 文本。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>表示执行完成的任务。</returns>
     private static async Task ExecuteAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -314,6 +379,13 @@ internal static class PostgresCapacityProbe
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 执行 SQL 并以字符串形式返回标量结果。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="sql">SQL 文本。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>标量字符串。</returns>
     private static async Task<string> ScalarStringAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -322,6 +394,13 @@ internal static class PostgresCapacityProbe
                ?? string.Empty;
     }
 
+    /// <summary>
+    /// 执行 SQL 并以长整型形式返回标量结果。
+    /// </summary>
+    /// <param name="connection">数据库连接。</param>
+    /// <param name="sql">SQL 文本。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>标量长整型。</returns>
     private static async Task<long> ScalarLongAsync(NpgsqlConnection connection, string sql, CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
@@ -329,8 +408,18 @@ internal static class PostgresCapacityProbe
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
     }
 
+    /// <summary>
+    /// 将标识符转义为 PostgreSQL 引用形式。
+    /// </summary>
+    /// <param name="value">原始标识符。</param>
+    /// <returns>转义后的引用字符串。</returns>
     private static string QuoteIdentifier(string value) => "\"" + value.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
 
+    /// <summary>
+    /// 基于索引生成容量探测用的测试账号 ID。
+    /// </summary>
+    /// <param name="index">玩家索引。</param>
+    /// <returns>生成的测试 <see cref="Guid"/>。</returns>
     private static Guid CapacityTargetScenarioTestId(int index)
     {
         Span<byte> bytes = stackalloc byte[16];
@@ -339,6 +428,12 @@ internal static class PostgresCapacityProbe
         return new Guid(bytes);
     }
 
+    /// <summary>
+    /// 生成用于 PostgreSQL 探测的 synthetic 测试载荷。
+    /// </summary>
+    /// <param name="index">玩家索引。</param>
+    /// <param name="kind">section 类型。</param>
+    /// <returns>UTF-8 JSON 字节。</returns>
     private static byte[] CapacityTargetScenarioPayload(int index, string kind) =>
         JsonSerializer.SerializeToUtf8Bytes(new
         {
@@ -349,9 +444,28 @@ internal static class PostgresCapacityProbe
             values = new[] { index % 101, index % 37, index % 13 }
         });
 
+    /// <summary>
+    /// 刷新队列中的一行数据。
+    /// </summary>
+    /// <param name="PlayerId">玩家 ID。</param>
+    /// <param name="SectionKind">section 类型。</param>
+    /// <param name="StateVersion">状态版本。</param>
+    /// <param name="Payload">载荷。</param>
     private sealed record QueueRow(Guid PlayerId, string SectionKind, long StateVersion, byte[] Payload);
 }
 
+/// <summary>
+/// PostgreSQL 容量探测结果。
+/// </summary>
+/// <param name="Schema">探测使用的临时 schema 名称。</param>
+/// <param name="AccountCount">导入账号数。</param>
+/// <param name="SectionCount">导入 section 数。</param>
+/// <param name="QueueUpserts">刷新队列 upsert 数。</param>
+/// <param name="QueueRowsFlushed">已冲刷队列行数。</param>
+/// <param name="RemainingQueueRows">剩余队列行数。</param>
+/// <param name="DataBytes">数据表占用字节数。</param>
+/// <param name="WalBytes">WAL 增长字节数。</param>
+/// <param name="ElapsedMilliseconds">探测耗时（毫秒）。</param>
 internal sealed record PostgresProbeResult(
     string Schema,
     long AccountCount,

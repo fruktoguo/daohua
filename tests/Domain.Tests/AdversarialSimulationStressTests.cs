@@ -13,6 +13,9 @@ public sealed class AdversarialSimulationStressTests
 {
     private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// 验证 <c>LongOfflineSimulation_24Hours_ExecutesDeterministicallyWithoutOverflow</c>（Long Offline Simulation 24Hours Executes Deterministically Without Overflow）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void LongOfflineSimulation_24Hours_ExecutesDeterministicallyWithoutOverflow()
     {
@@ -43,6 +46,9 @@ public sealed class AdversarialSimulationStressTests
         Assert.True(allocated < 10 * 1024 * 1024, $"24小时快进内存分配超标: {allocated} bytes");
     }
 
+    /// <summary>
+    /// 验证 <c>MaxTransitionsPerAdvance_BoundaryProtectionEnforced</c>（Max Transitions Per Advance Boundary Protection Enforced）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void MaxTransitionsPerAdvance_BoundaryProtectionEnforced()
     {
@@ -62,6 +68,9 @@ public sealed class AdversarialSimulationStressTests
         Assert.Contains("单次模拟超过最大状态转换数", ex.Message);
     }
 
+    /// <summary>
+    /// 验证 <c>MaxTransitionsPerAdvance_Under100k_SucceedsCleanly</c>（Max Transitions Per Advance Under 100k Succeeds Cleanly）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void MaxTransitionsPerAdvance_Under100k_SucceedsCleanly()
     {

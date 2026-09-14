@@ -6,6 +6,13 @@ namespace Server.Clean;
 /// </summary>
 public sealed class PostgresCommandReceiptRepository(NpgsqlDataSource dataSource) : ICommandReceiptStore
 {
+    /// <summary>
+    /// 执行FindAsync（异步）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="requestId">请求唯一标识。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 CommandReceipt?。</returns>
     public async ValueTask<CommandReceipt?> FindAsync(
         Guid playerId,
         Guid requestId,
@@ -28,6 +35,12 @@ public sealed class PostgresCommandReceiptRepository(NpgsqlDataSource dataSource
             : null;
     }
 
+    /// <summary>
+    /// 执行PruneExpiredAsync（异步）。
+    /// </summary>
+    /// <param name="now">参数 now。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 int。</returns>
     public async ValueTask<int> PruneExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -38,6 +51,11 @@ public sealed class PostgresCommandReceiptRepository(NpgsqlDataSource dataSource
     }
 }
 
+/// <summary>
+/// 表示 CommandReceiptCleanupWorker 类。
+/// </summary>
+/// <param name="receipts">参数 receipts。</param>
+/// <param name="logger">日志记录器。</param>
 public sealed class CommandReceiptCleanupWorker(
     ICommandReceiptStore receipts,
     ILogger<CommandReceiptCleanupWorker> logger) : BackgroundService

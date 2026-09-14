@@ -6,6 +6,11 @@ namespace Server.Clean;
 /// <summary>把内嵌游戏数据映射为前端稳定读取的静态目录 DTO。</summary>
 public static class StaticGameCatalogMapper
 {
+    /// <summary>
+    /// 执行Items。
+    /// </summary>
+    /// <param name="catalog">参数 catalog。</param>
+    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
     public static IReadOnlyList<object> Items(GameDataCatalog catalog) => catalog.RawItems.Values
         .OrderBy(item => ReadString(item, "id"), StringComparer.Ordinal)
         .Select(item =>
@@ -86,6 +91,11 @@ public static class StaticGameCatalogMapper
             };
         }).ToArray();
 
+    /// <summary>
+    /// 执行Equipments。
+    /// </summary>
+    /// <param name="catalog">参数 catalog。</param>
+    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
     public static IReadOnlyList<object> Equipments(GameDataCatalog catalog) => catalog.RawEquipments.Values
         .OrderBy(eq => ReadString(eq, "id"), StringComparer.Ordinal)
         .Select(eq =>
@@ -144,6 +154,11 @@ public static class StaticGameCatalogMapper
             };
         }).ToArray();
 
+    /// <summary>
+    /// 映射s。
+    /// </summary>
+    /// <param name="catalog">参数 catalog。</param>
+    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
     public static IReadOnlyList<object> Maps(GameDataCatalog catalog) => catalog.Maps
         .OrderBy(map => ReadString(map, "id"), StringComparer.Ordinal)
         .Select(map => new
@@ -162,6 +177,11 @@ public static class StaticGameCatalogMapper
             }).ToArray()
         }).Cast<object>().ToArray();
 
+    /// <summary>
+    /// 执行Encounters。
+    /// </summary>
+    /// <param name="catalog">参数 catalog。</param>
+    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
     public static IReadOnlyList<object> Encounters(GameDataCatalog catalog) => catalog.Encounters
         .OrderBy(encounter => ReadString(encounter, "id"), StringComparer.Ordinal)
         .Select(encounter =>

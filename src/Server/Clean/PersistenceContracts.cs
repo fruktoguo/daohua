@@ -3,19 +3,48 @@ namespace Server.Clean;
 /// <summary>玩家状态 section 的稳定命名空间。新增 section 只需增加新键，不修改既有载荷。</summary>
 public static class PlayerSectionKinds
 {
+    /// <summary>
+    /// 表示常量 Progression。
+    /// </summary>
     public const string Progression = "progression";
+    /// <summary>
+    /// 表示常量 World。
+    /// </summary>
     public const string World = "world";
+    /// <summary>
+    /// 表示常量 Combat。
+    /// </summary>
     public const string Combat = "combat";
+    /// <summary>
+    /// 表示常量 Buffs。
+    /// </summary>
     public const string Buffs = "buffs";
+    /// <summary>
+    /// 表示常量 Loadout。
+    /// </summary>
     public const string Loadout = "loadout";
+    /// <summary>
+    /// 表示常量 Settings。
+    /// </summary>
     public const string Settings = "settings";
+    /// <summary>
+    /// 表示常量 ActionQueue。
+    /// </summary>
     public const string ActionQueue = "action_queue";
 
+    /// <summary>
+    /// 表示只读字段 All。
+    /// </summary>
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue
     };
 
+    /// <summary>
+    /// 判断是否为Valid。
+    /// </summary>
+    /// <param name="value">参数 value。</param>
+    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
     public static bool IsValid(string value) => All.Contains(value);
 }
 
@@ -33,8 +62,14 @@ public sealed record SectionWrite(
     string GameDataFingerprint = "",
     DateTimeOffset? LastSimulatedAt = null)
 {
+    /// <summary>
+    /// 获取 StoredBytes。
+    /// </summary>
     public int StoredBytes => Payload.Length;
 
+    /// <summary>
+    /// 执行Validate。
+    /// </summary>
     public void Validate()
     {
         if (PlayerId == Guid.Empty) throw new ArgumentException("PlayerId 不能为空。", nameof(PlayerId));
@@ -116,6 +151,10 @@ public sealed record FlushQueueItem(
     string GameDataFingerprint = "",
     DateTimeOffset? LastSimulatedAt = null)
 {
+    /// <summary>
+    /// 执行Validate。
+    /// </summary>
+    /// <param name="requireLease">参数 requireLease。</param>
     public void Validate(bool requireLease = false)
     {
         new SectionWrite(PlayerId, SectionKind, StateVersion, SchemaVersion, Codec, Payload, RawBytes, Checksum, UpdatedAt, GameDataFingerprint, LastSimulatedAt).Validate();
@@ -183,9 +222,16 @@ public interface IPlayerOwnershipStore
     ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 表示 PlayerOwnershipLostException 类。
+/// </summary>
+/// <param name="playerId">玩家唯一标识。</param>
 public sealed class PlayerOwnershipLostException(Guid playerId)
     : InvalidOperationException($"玩家运行时租约已失效 player={playerId:D}");
 
+/// <summary>
+/// 表示 IOutboxRepository 接口。
+/// </summary>
 public interface IOutboxRepository
 {
     ValueTask AppendAsync(
@@ -203,6 +249,13 @@ public interface IOutboxRepository
     ValueTask ReleaseAsync(Guid outboxId, Guid leaseToken, string error, TimeSpan retryAfter, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 表示 AssetDelta 记录。
+/// </summary>
+/// <param name="PlayerId">参数 PlayerId。</param>
+/// <param name="AssetId">参数 AssetId。</param>
+/// <param name="Variant">参数 Variant。</param>
+/// <param name="Delta">参数 Delta。</param>
 public sealed record AssetDelta(Guid PlayerId, string AssetId, string Variant, double Delta);
 
 /// <summary>只读资产余额查询边界。余额写入仍然只能经过 IEconomyTransactionStore。</summary>
@@ -213,6 +266,14 @@ public interface IAssetBalanceRepository
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 表示 AssetBalanceRecord 记录。
+/// </summary>
+/// <param name="PlayerId">参数 PlayerId。</param>
+/// <param name="AssetId">参数 AssetId。</param>
+/// <param name="Variant">参数 Variant。</param>
+/// <param name="Quantity">参数 Quantity。</param>
+/// <param name="Version">参数 Version。</param>
 public sealed record AssetBalanceRecord(
     Guid PlayerId,
     string AssetId,
@@ -220,6 +281,18 @@ public sealed record AssetBalanceRecord(
     double Quantity,
     long Version);
 
+/// <summary>
+/// 表示 EconomyTransactionRequest 记录。
+/// </summary>
+/// <param name="TransactionId">参数 TransactionId。</param>
+/// <param name="IdempotencyKey">参数 IdempotencyKey。</param>
+/// <param name="TransactionType">参数 TransactionType。</param>
+/// <param name="ActorId">参数 ActorId。</param>
+/// <param name="Deltas">参数 Deltas。</param>
+/// <param name="OccurredAt">参数 OccurredAt。</param>
+/// <param name="ResultPayload">参数 ResultPayload。</param>
+/// <param name="Sections">参数 Sections。</param>
+/// <param name="Receipts">参数 Receipts。</param>
 public sealed record EconomyTransactionRequest(
     Guid TransactionId,
     string IdempotencyKey,
@@ -231,6 +304,15 @@ public sealed record EconomyTransactionRequest(
     IReadOnlyList<SectionWrite>? Sections = null,
     IReadOnlyList<CommandReceipt>? Receipts = null);
 
+/// <summary>
+/// 表示 EconomyTransactionResult 记录。
+/// </summary>
+/// <param name="TransactionId">参数 TransactionId。</param>
+/// <param name="IdempotencyKey">参数 IdempotencyKey。</param>
+/// <param name="Applied">参数 Applied。</param>
+/// <param name="AlreadyCommitted">参数 AlreadyCommitted。</param>
+/// <param name="CommittedAt">参数 CommittedAt。</param>
+/// <param name="ResultPayload">参数 ResultPayload。</param>
 public sealed record EconomyTransactionResult(
     Guid TransactionId,
     string IdempotencyKey,
@@ -239,11 +321,27 @@ public sealed record EconomyTransactionResult(
     DateTimeOffset CommittedAt,
     ReadOnlyMemory<byte> ResultPayload);
 
+/// <summary>
+/// 表示 IEconomyTransactionStore 接口。
+/// </summary>
 public interface IEconomyTransactionStore
 {
     ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 表示 MarketOrderInput 记录。
+/// </summary>
+/// <param name="OrderId">参数 OrderId。</param>
+/// <param name="PartitionId">参数 PartitionId。</param>
+/// <param name="OwnerPlayerId">参数 OwnerPlayerId。</param>
+/// <param name="Side">参数 Side。</param>
+/// <param name="AssetId">参数 AssetId。</param>
+/// <param name="Variant">参数 Variant。</param>
+/// <param name="Price">参数 Price。</param>
+/// <param name="Quantity">参数 Quantity。</param>
+/// <param name="IdempotencyKey">参数 IdempotencyKey。</param>
+/// <param name="CreatedAt">参数 CreatedAt。</param>
 public sealed record MarketOrderInput(
     Guid OrderId,
     int PartitionId,
@@ -256,6 +354,20 @@ public sealed record MarketOrderInput(
     string IdempotencyKey,
     DateTimeOffset? CreatedAt = null);
 
+/// <summary>
+/// 表示 MarketFillInput 记录。
+/// </summary>
+/// <param name="TradeId">参数 TradeId。</param>
+/// <param name="BuyOrderId">参数 BuyOrderId。</param>
+/// <param name="SellOrderId">参数 SellOrderId。</param>
+/// <param name="BuyerId">参数 BuyerId。</param>
+/// <param name="SellerId">参数 SellerId。</param>
+/// <param name="AssetId">参数 AssetId。</param>
+/// <param name="Variant">参数 Variant。</param>
+/// <param name="Price">参数 Price。</param>
+/// <param name="Quantity">参数 Quantity。</param>
+/// <param name="SellerTax">参数 SellerTax。</param>
+/// <param name="TradedAt">参数 TradedAt。</param>
 public sealed record MarketFillInput(
     Guid TradeId,
     Guid BuyOrderId,
@@ -269,9 +381,27 @@ public sealed record MarketFillInput(
     double SellerTax,
     DateTimeOffset? TradedAt = null);
 
+/// <summary>
+/// 表示 MarketCommitResult 记录。
+/// </summary>
+/// <param name="OrderId">参数 OrderId。</param>
+/// <param name="Applied">参数 Applied。</param>
+/// <param name="AlreadyCommitted">参数 AlreadyCommitted。</param>
+/// <param name="TradeIds">参数 TradeIds。</param>
 public sealed record MarketCommitResult(Guid OrderId, bool Applied, bool AlreadyCommitted, IReadOnlyList<Guid> TradeIds);
+/// <summary>
+/// 表示 SettlementClaimResult 记录。
+/// </summary>
+/// <param name="PlayerId">参数 PlayerId。</param>
+/// <param name="RequestId">参数 RequestId。</param>
+/// <param name="SettledTradeCount">参数 SettledTradeCount。</param>
+/// <param name="ClaimedAt">参数 ClaimedAt。</param>
+/// <param name="AlreadyClaimed">参数 AlreadyClaimed。</param>
 public sealed record SettlementClaimResult(Guid PlayerId, Guid RequestId, int SettledTradeCount, DateTimeOffset ClaimedAt, bool AlreadyClaimed);
 
+/// <summary>
+/// 表示 IMarketTransactionStore 接口。
+/// </summary>
 public interface IMarketTransactionStore
 {
     ValueTask<MarketCommitResult> CommitPlacementAsync(
@@ -283,6 +413,21 @@ public interface IMarketTransactionStore
     ValueTask<bool> CancelAsync(Guid orderId, Guid ownerPlayerId, int partitionId, long fenceToken, string idempotencyKey, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 表示 StoredMarketOrder 记录。
+/// </summary>
+/// <param name="OrderId">参数 OrderId。</param>
+/// <param name="OwnerPlayerId">参数 OwnerPlayerId。</param>
+/// <param name="AssetId">参数 AssetId。</param>
+/// <param name="Variant">参数 Variant。</param>
+/// <param name="Side">参数 Side。</param>
+/// <param name="Price">参数 Price。</param>
+/// <param name="Quantity">参数 Quantity。</param>
+/// <param name="FilledQuantity">参数 FilledQuantity。</param>
+/// <param name="Status">参数 Status。</param>
+/// <param name="Sequence">参数 Sequence。</param>
+/// <param name="CreatedAt">参数 CreatedAt。</param>
+/// <param name="ExpiresAt">参数 ExpiresAt。</param>
 public sealed record StoredMarketOrder(
     Guid OrderId,
     Guid OwnerPlayerId,

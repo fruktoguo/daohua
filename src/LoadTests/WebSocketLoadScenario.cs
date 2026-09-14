@@ -6,6 +6,12 @@ namespace DaoHua.LoadTests;
 /// </summary>
 public static class WebSocketLoadScenario
 {
+    /// <summary>
+    /// 执行 WebSocket 负载压测。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>WebSocket 压测报告。</returns>
     public static async Task<LoadTestReport> RunAsync(LoadTestOptions options, CancellationToken cancellationToken = default)
     {
         var process = Process.GetCurrentProcess();
@@ -137,6 +143,11 @@ public static class WebSocketLoadScenario
             warnings.Distinct().Take(20).ToArray());
     }
 
+    /// <summary>
+    /// 基于索引生成 WebSocket 压测的玩家 ID。
+    /// </summary>
+    /// <param name="index">玩家索引。</param>
+    /// <returns>生成的测试 <see cref="Guid"/>。</returns>
     private static Guid CapacityTargetScenarioPlayerId(int index)
     {
         Span<byte> bytes = stackalloc byte[16];
@@ -145,16 +156,32 @@ public static class WebSocketLoadScenario
         return new Guid(bytes);
     }
 
+    /// <summary>
+    /// WebSocket 压测客户端。
+    /// </summary>
     private sealed class LoadClient : IAsyncDisposable
     {
+        /// <summary>底层 WebSocket 连接。</summary>
         private readonly ClientWebSocket _socket = new();
+        /// <summary>连接目标地址。</summary>
         private readonly Uri _endpoint;
+        /// <summary>已发送字节数。</summary>
         private long _sentBytes;
+        /// <summary>已接收字节数。</summary>
         private long _receivedBytes;
+        /// <summary>已发送帧数。</summary>
         private long _sentFrames;
+        /// <summary>已接收帧数。</summary>
         private long _receivedFrames;
+        /// <summary>错误计数。</summary>
         private int _errors;
 
+        /// <summary>
+        /// 初始化客户端并配置鉴权 Cookie 或 Bearer 头。
+        /// </summary>
+        /// <param name="playerId">玩家 ID。</param>
+        /// <param name="configuredUri">配置地址。</param>
+        /// <param name="sessionToken">会话令牌，可为 <see langword="null"/>。</param>
         public LoadClient(Guid playerId, Uri configuredUri, string? sessionToken)
         {
             PlayerId = playerId;
@@ -168,15 +195,30 @@ public static class WebSocketLoadScenario
             }
         }
 
+        /// <summary>获取玩家 ID。</summary>
         public Guid PlayerId { get; }
+        /// <summary>获取错误计数。</summary>
         public int Errors => Volatile.Read(ref _errors);
+        /// <summary>获取已发送字节数。</summary>
         public long SentBytes => Volatile.Read(ref _sentBytes);
+        /// <summary>获取已接收字节数。</summary>
         public long ReceivedBytes => Volatile.Read(ref _receivedBytes);
+        /// <summary>获取已发送帧数。</summary>
         public long SentFrames => Volatile.Read(ref _sentFrames);
+        /// <summary>获取已接收帧数。</summary>
         public long ReceivedFrames => Volatile.Read(ref _receivedFrames);
 
+        /// <summary>
+        /// 生成下一个请求 ID。
+        /// </summary>
+        /// <returns>新的请求标识。</returns>
         public string NextRequestId() => Guid.NewGuid().ToString("D");
 
+        /// <summary>
+        /// 建立 WebSocket 连接并发送 Hello 请求。
+        /// </summary>
+        /// <param name="cancellationToken">取消令牌。</param>
+        /// <returns>表示连接建立的任务。</returns>
         public async Task ConnectAsync(CancellationToken cancellationToken)
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -185,6 +227,12 @@ public static class WebSocketLoadScenario
             await SendAsync(WireEnvelope.Hello(NextRequestId(), PlayerId), timeout.Token);
         }
 
+        /// <summary>
+        /// 发送二进制载荷。
+        /// </summary>
+        /// <param name="payload">要发送的字节。</param>
+        /// <param name="cancellationToken">取消令牌。</param>
+        /// <returns>表示发送完成的任务。</returns>
         public async Task SendAsync(byte[] payload, CancellationToken cancellationToken)
         {
             await _socket.SendAsync(payload, WebSocketMessageType.Binary, true, cancellationToken);
@@ -192,6 +240,11 @@ public static class WebSocketLoadScenario
             Interlocked.Increment(ref _sentFrames);
         }
 
+        /// <summary>
+        /// 循环接收消息直到连接关闭或取消。
+        /// </summary>
+        /// <param name="cancellationToken">取消令牌。</param>
+        /// <returns>表示接收循环的任务。</returns>
         public async Task ReceiveLoopAsync(CancellationToken cancellationToken)
         {
             var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
@@ -215,6 +268,10 @@ public static class WebSocketLoadScenario
             }
         }
 
+        /// <summary>
+        /// 正常关闭 WebSocket 连接。
+        /// </summary>
+        /// <returns>表示关闭操作的任务。</returns>
         public async Task CloseAsync()
         {
             if (_socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
@@ -231,12 +288,21 @@ public static class WebSocketLoadScenario
             }
         }
 
+        /// <summary>
+        /// 释放底层 WebSocket 资源。
+        /// </summary>
+        /// <returns>表示释放完成的任务。</returns>
         public ValueTask DisposeAsync()
         {
             _socket.Dispose();
             return ValueTask.CompletedTask;
         }
 
+        /// <summary>
+        /// 将 http/https 地址转换为 ws/wss 地址。
+        /// </summary>
+        /// <param name="configured">配置地址。</param>
+        /// <returns>WebSocket 地址。</returns>
         private static Uri ToWebSocketUri(Uri configured)
         {
             var builder = new UriBuilder(configured)
@@ -256,14 +322,29 @@ public static class WebSocketLoadScenario
         }
     }
 
+    /// <summary>
+    /// wire.v1 调试协议包编码辅助类。
+    /// </summary>
     private static class WireEnvelope
     {
+        /// <summary>
+        /// 编码 Hello 请求包。
+        /// </summary>
+        /// <param name="requestId">请求 ID。</param>
+        /// <param name="playerId">玩家 ID。</param>
+        /// <returns>编码后的二进制包。</returns>
         public static byte[] Hello(string requestId, Guid playerId)
         {
             var request = new HelloRequest("daohua-loadtests");
             return Encode(WireMessageType.Hello, Guid.Parse(requestId), request);
         }
 
+        /// <summary>
+        /// 编码一个玩家在线命令包。
+        /// </summary>
+        /// <param name="requestId">请求 ID。</param>
+        /// <param name="second">当前秒数，用于生成递增逻辑时间。</param>
+        /// <returns>编码后的二进制包。</returns>
         public static byte[] Command(string requestId, int second)
         {
             var envelope = Protocol.WireEnvelope.Json(
@@ -278,10 +359,21 @@ public static class WebSocketLoadScenario
             return WireEnvelopeCodec.Encode(envelope);
         }
 
+        /// <summary>
+        /// 将通用载荷编码为 wire.v1 二进制包。
+        /// </summary>
+        /// <param name="type">消息类型。</param>
+        /// <param name="requestId">请求 ID。</param>
+        /// <param name="payload">载荷对象。</param>
+        /// <returns>编码后的二进制包。</returns>
         private static byte[] Encode(WireMessageType type, Guid requestId, object payload) =>
             WireEnvelopeCodec.Encode(Protocol.WireEnvelope.Json(type, requestId, 1, payload));
     }
 
+    /// <summary>
+    /// 从环境变量加载以逗号分隔的会话令牌列表。
+    /// </summary>
+    /// <returns>会话令牌数组。</returns>
     private static string[] LoadSessionTokens()
     {
         var raw = Environment.GetEnvironmentVariable("DAOHUA_LOADTEST_SESSION_TOKENS")

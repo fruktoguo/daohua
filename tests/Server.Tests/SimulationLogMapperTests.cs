@@ -8,8 +8,10 @@ using Xunit;
 
 namespace Server.Tests;
 
+/// <summary>包含针对 Simulation Log Mapper Tests 的测试用例与断言集合。</summary>
 public sealed class SimulationLogMapperTests
 {
+    /// <summary>验证 Action Completed With Outputs Maps To Template With Item References。</summary>
     [Fact]
     public void ActionCompletedWithOutputs_MapsToTemplateWithItemReferences()
     {
@@ -31,6 +33,7 @@ public sealed class SimulationLogMapperTests
         Assert.Equal("完成行动 {{action:gather.spirit-grass|采集灵草}}，获得 {{item:item.spirit-grass|灵草|2.5}}", events[0].Template);
         Assert.Single(buffer.SnapshotRecent());
     }
+    /// <summary>验证 Action Completed Without Outputs Omits Reward Section And Unknown Code Falls Back To Message。</summary>
 
     [Fact]
     public void ActionCompletedWithoutOutputs_OmitsRewardSectionAndUnknownCodeFallsBackToMessage()
@@ -48,6 +51,7 @@ public sealed class SimulationLogMapperTests
         Assert.Equal("自定义事件文本", events[1].Template);
         Assert.Equal(2, events[1].Sequence);
     }
+    /// <summary>验证 Log Batch Dto Serializes Camel Case And Round Trips。</summary>
 
     [Fact]
     public void LogBatchDto_SerializesCamelCaseAndRoundTrips()
@@ -65,6 +69,7 @@ public sealed class SimulationLogMapperTests
         Assert.Equal(3, decoded.Events[0].Sequence);
         Assert.Equal("完成行动 {{action:a|行动}}", decoded.Events[0].Template);
     }
+    /// <summary>验证 Simulation Log Mapper 100k Events Truncates To Buffer Capacity And Avoids Memory Blowup。</summary>
 
     [Fact]
     public void SimulationLogMapper_100kEvents_TruncatesToBufferCapacityAndAvoidsMemoryBlowup()
@@ -101,6 +106,7 @@ public sealed class SimulationLogMapperTests
         // 验证内存分配在极小范围内（仅 200 个 DTO 和字符串，分配小于 200KB）
         Assert.True(allocated < 200 * 1024, $"100k 事件处理分配内存过大: {allocated} bytes");
     }
+    /// <summary>验证 To Log Events 200 Identical Events Collapses To Single Entry With Count And Occupies Single Buffer Slot。</summary>
 
     [Fact]
     public void ToLogEvents_200IdenticalEvents_CollapsesToSingleEntryWithCountAndOccupiesSingleBufferSlot()
@@ -132,6 +138,7 @@ public sealed class SimulationLogMapperTests
         Assert.Single(snapshot);
         Assert.Equal(200, snapshot[0].Count);
     }
+    /// <summary>验证 Player Log Buffer Identical Events Across Batches Occupies Single Slot And Preserves Previous History。</summary>
 
     [Fact]
     public void PlayerLogBuffer_IdenticalEventsAcrossBatches_OccupiesSingleSlotAndPreservesPreviousHistory()
@@ -159,6 +166,8 @@ public sealed class SimulationLogMapperTests
         Assert.Equal(200, snapshot[10].Count);
     }
 
+    /// <summary>执行 Build Catalog。</summary>
+    /// <returns>返回操作结果。</returns>
     private static GameDataCatalog BuildCatalog()
     {
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal)

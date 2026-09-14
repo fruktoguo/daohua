@@ -111,14 +111,29 @@ public sealed record ServerOptions(
     }
 }
 
+/// <summary>
+/// 表示 ServerProcessRole 枚举。
+/// </summary>
 public enum ServerProcessRole : byte
 {
+    /// <summary>
+    /// 表示 Api。
+    /// </summary>
     Api = 0,
+    /// <summary>
+    /// 表示 PersistenceWorker。
+    /// </summary>
     PersistenceWorker = 1
 }
 
+/// <summary>
+/// 提供 ServerJson 相关功能的静态容器。
+/// </summary>
 public static class ServerJson
 {
+    /// <summary>
+    /// 表示只读字段 Options。
+    /// </summary>
     public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,

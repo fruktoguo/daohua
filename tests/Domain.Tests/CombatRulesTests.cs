@@ -1,7 +1,16 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 战斗规则测试：伤害公式、穿透、元素克制、随机切片与状态恢复回归。
+/// </summary>
 public sealed class CombatRulesTests
 {
+    /// <summary>
+    /// 验证 <c>DamageUsesMatchingCategoryPenetrationRealmAndElement</c>（Damage Uses Matching Category Penetration Realm And Element）所描述的领域行为。
+    /// </summary>
+    /// <param name="kind">伤害种类。</param>
+    /// <param name="element">元素类型。</param>
+    /// <param name="expected">预期计算值。</param>
     [Theory]
     [InlineData(CombatDamageKind.Physical, CombatElement.None, 100d * 100 / 121)]
     [InlineData(CombatDamageKind.Spell, CombatElement.Fire, 100d * 100 / 181 * 0.5)]
@@ -18,6 +27,9 @@ public sealed class CombatRulesTests
         Assert.Equal(expected, hit.Damage, 10);
     }
 
+    /// <summary>
+    /// 验证 <c>RandomCombatSurvivesSlicingAndRestoreWithoutChangingEvents</c>（Random Combat Survives Slicing And Restore Without Changing Events）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RandomCombatSurvivesSlicingAndRestoreWithoutChangingEvents()
     {

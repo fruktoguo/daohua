@@ -72,7 +72,9 @@ public sealed class PlayerCombatState
     public double AttackPower { get; set; } = 10;
     /// <summary>基础防御护甲</summary>
     public double Defense { get; set; } = 10;
+    /// <summary>获取或设置 回复进位秒 的值。</summary>
     public double RegenCarrySeconds { get; set; }
+    /// <summary>获取或设置 Skills 的值。</summary>
     public PlayerCombatSkillState Skills { get; set; } = PlayerCombatSkillState.Empty;
 }
 
@@ -168,6 +170,12 @@ public sealed record ActionIntent(
 /// </summary>
 public sealed class QueuedAction
 {
+    /// <summary>
+    /// 初始化 排队中行动。
+    /// </summary>
+    /// <param name="id">id 参数。</param>
+    /// <param name="intent">intent 参数。</param>
+    /// <param name="enqueuedAt">enqueuedAt 参数。</param>
     public QueuedAction(Guid id, ActionIntent intent, DateTimeOffset enqueuedAt)
     {
         if (id == Guid.Empty) throw new DomainException(DomainErrorCode.InvalidArgument, "行动实例标识不能为空。");
@@ -213,6 +221,7 @@ public sealed class QueuedAction
 /// </summary>
 public sealed partial class PlayerAggregate
 {
+    /// <summary>最大行动队列长度 常量。</summary>
     public const int MaxActionQueueLength = 256;
     private readonly List<QueuedAction> _actions = [];
     private readonly HashSet<PlayerSectionKind> _dirtySections = [];
@@ -244,19 +253,33 @@ public sealed partial class PlayerAggregate
         _dirtySectionsView = new ReadOnlySet<PlayerSectionKind>(_dirtySections);
     }
 
+    /// <summary>获取或设置 玩家标识 的值。</summary>
     public PlayerId PlayerId { get; }
+    /// <summary>获取或设置 账号标识 的值。</summary>
     public AccountId AccountId { get; }
+    /// <summary>获取或设置 显示名称 的值。</summary>
     public string DisplayName { get; private set; }
+    /// <summary>获取或设置 Created在 的值。</summary>
     public DateTimeOffset CreatedAt { get; }
+    /// <summary>获取或设置 上次已模拟在 的值。</summary>
     public DateTimeOffset LastSimulatedAt { get; internal set; }
+    /// <summary>获取或设置 在线状态 的值。</summary>
     public PresenceState Presence { get; private set; } = PresenceState.Offline;
+    /// <summary>获取或设置 状态版本 的值。</summary>
     public long StateVersion { get; internal set; }
+    /// <summary>获取或设置 GameData指纹 的值。</summary>
     public string GameDataFingerprint { get; private set; }
+    /// <summary>获取或设置 修为进度 的值。</summary>
     public PlayerProgression Progression { get; } = new();
+    /// <summary>获取或设置 世界 的值。</summary>
     public PlayerWorldState World { get; } = new();
+    /// <summary>获取或设置 战斗 的值。</summary>
     public PlayerCombatState Combat { get; } = new();
+    /// <summary>获取或设置 Buffs 的值。</summary>
     public PlayerBuffState Buffs { get; } = new();
+    /// <summary>获取或设置 装备配置 的值。</summary>
     public PlayerLoadoutState Loadout { get; } = new();
+    /// <summary>获取或设置 设置 的值。</summary>
     public PlayerSettingsState Settings { get; } = new();
     public IReadOnlyList<QueuedAction> Actions => _actionsView;
     public IReadOnlySet<PlayerSectionKind> DirtySections => _dirtySectionsView;

@@ -9,6 +9,10 @@ internal sealed class LogThrottle(TimeSpan interval)
     private readonly long _intervalTicks = interval > TimeSpan.Zero ? interval.Ticks : TimeSpan.TicksPerMinute;
     private long _nextAllowedUtcTicks;
 
+    /// <summary>
+    /// 尝试Acquire。
+    /// </summary>
+    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
     public bool TryAcquire()
     {
         var now = DateTimeOffset.UtcNow.Ticks;

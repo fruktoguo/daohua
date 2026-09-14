@@ -1,7 +1,13 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 市场过期测试：30 天边界与恢复后剩余量的处理。
+/// </summary>
 public sealed class MarketExpirationTests
 {
+    /// <summary>
+    /// 验证 <c>ThirtyDayBoundaryExcludesExpiredMakerAndPreservesRestoredRemainder</c>（Thirty Day Boundary Excludes Expired Maker And Preserves Restored Remainder）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void ThirtyDayBoundaryExcludesExpiredMakerAndPreservesRestoredRemainder()
     {

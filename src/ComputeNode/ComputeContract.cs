@@ -6,14 +6,27 @@ namespace DaoHua.ComputeNode;
 /// </summary>
 public static class ComputeContract
 {
+    /// <summary>当前支持的契约版本字符串。</summary>
     public const string Version = "compute.v1";
+    /// <summary>内部鉴权令牌的 HTTP 请求头名称。</summary>
     public const string TokenHeader = "X-Compute-Token";
+    /// <summary>默认每批次最大任务数。</summary>
     public const int DefaultMaxJobs = 128;
+    /// <summary>每批次任务数的绝对上限。</summary>
     public const int HardMaxJobs = 256;
+    /// <summary>单个批次请求体的最大字节数。</summary>
     public const long MaxBatchBytes = 16L * 1024 * 1024;
+    /// <summary>每个任务允许包含的最大 section 数量。</summary>
     public const int MaxSectionsPerJob = 32;
+    /// <summary>单个 section 载荷解压后的最大字节数。</summary>
     public const int MaxPayloadBytesPerSection = 512 * 1024;
 
+    /// <summary>
+    /// 校验整个离线批处理请求是否满足契约与大小限制。
+    /// </summary>
+    /// <param name="batch">批次请求。</param>
+    /// <param name="maxJobs">当前配置的单批次最大任务数。</param>
+    /// <returns>若校验通过返回 <see langword="null"/>；否则返回包含错误码与消息的对象。</returns>
     public static object? Validate(AdvanceBatchRequest? batch, int maxJobs)
     {
         if (batch is null)
@@ -46,6 +59,11 @@ public static class ComputeContract
         return null;
     }
 
+    /// <summary>
+    /// 校验单个任务请求、section 集合与时间范围是否合法。
+    /// </summary>
+    /// <param name="job">单个任务请求。</param>
+    /// <returns>若校验通过返回 <see langword="null"/>；否则返回错误对象。</returns>
     private static object? ValidateJob(AdvanceJobRequest? job)
     {
         if (job is null || job.JobId == Guid.Empty || job.PlayerId == Guid.Empty)
@@ -102,11 +120,28 @@ public static class ComputeContract
     }
 }
 
+/// <summary>
+/// 批次推进请求。
+/// </summary>
+/// <param name="ContractVersion">请求方使用的契约版本。</param>
+/// <param name="GameDataFingerprint">请求方感知的游戏数据指纹，可选。</param>
+/// <param name="Jobs">待推进的离线任务列表。</param>
 public sealed record AdvanceBatchRequest(
     string ContractVersion,
     string? GameDataFingerprint,
     IReadOnlyList<AdvanceJobRequest> Jobs);
 
+/// <summary>
+/// 单个离线任务推进请求。
+/// </summary>
+/// <param name="JobId">任务唯一标识。</param>
+/// <param name="PlayerId">玩家唯一标识。</param>
+/// <param name="SourceStateVersion">源状态版本号。</param>
+/// <param name="FromUnixMilliseconds">起始时间戳（毫秒）。</param>
+/// <param name="TargetUnixMilliseconds">目标时间戳（毫秒）。</param>
+/// <param name="Sections">待推进的状态 section 载荷列表。</param>
+/// <param name="Actions">可选的行动意图列表。</param>
+/// <param name="IdempotencyKey">可选的幂等键。</param>
 public sealed record AdvanceJobRequest(
     Guid JobId,
     Guid PlayerId,
@@ -117,6 +152,14 @@ public sealed record AdvanceJobRequest(
     IReadOnlyList<ActionIntent>? Actions = null,
     string? IdempotencyKey = null);
 
+/// <summary>
+/// 单个状态 section 载荷。
+/// </summary>
+/// <param name="Kind">section 类型标识。</param>
+/// <param name="Version">section 当前版本号。</param>
+/// <param name="Codec">载荷编码，支持 identity 与 brotli。</param>
+/// <param name="PayloadBase64">Base64 编码的载荷。</param>
+/// <param name="Checksum">原始载荷的 SHA256 校验和。</param>
 public sealed record SectionPayload(
     string Kind,
     long Version,
@@ -124,17 +167,43 @@ public sealed record SectionPayload(
     string PayloadBase64,
     string Checksum);
 
+/// <summary>
+/// 离线阶段要执行的行动意图。
+/// </summary>
+/// <param name="ActionId">行动标识。</param>
+/// <param name="DurationSeconds">单次行动持续时间（秒）。</param>
+/// <param name="RepeatCount">重复次数，默认为 1。</param>
 public sealed record ActionIntent(
     string ActionId,
     double DurationSeconds,
     int RepeatCount = 1);
 
+/// <summary>
+/// 批次推进响应。
+/// </summary>
+/// <param name="ContractVersion">实际使用的契约版本。</param>
+/// <param name="GameDataFingerprint">计算节点当前游戏数据指纹。</param>
+/// <param name="ServerTimeUnixMilliseconds">服务端响应时间戳（毫秒）。</param>
+/// <param name="Jobs">每个任务的推进结果。</param>
 public sealed record AdvanceBatchResponse(
     string ContractVersion,
     string GameDataFingerprint,
     long ServerTimeUnixMilliseconds,
     IReadOnlyList<AdvanceJobResult> Jobs);
 
+/// <summary>
+/// 单个任务的推进结果。
+/// </summary>
+/// <param name="JobId">任务唯一标识。</param>
+/// <param name="PlayerId">玩家唯一标识。</param>
+/// <param name="Success">是否推进成功。</param>
+/// <param name="SourceStateVersion">源状态版本号。</param>
+/// <param name="TargetStateVersion">目标状态版本号。</param>
+/// <param name="Sections">推进后的 section 载荷，失败时为 <see langword="null"/>。</param>
+/// <param name="Metrics">推进计算指标，失败时为 <see langword="null"/>。</param>
+/// <param name="ErrorCode">错误码，成功时为 <see langword="null"/>。</param>
+/// <param name="ErrorMessage">错误消息，成功时为 <see langword="null"/>。</param>
+/// <param name="Retryable">失败结果是否可重试。</param>
 public sealed record AdvanceJobResult(
     Guid JobId,
     Guid PlayerId,
@@ -147,6 +216,14 @@ public sealed record AdvanceJobResult(
     string? ErrorMessage,
     bool Retryable)
 {
+    /// <summary>
+    /// 构造一个表示失败的推进结果。
+    /// </summary>
+    /// <param name="job">原始任务请求。</param>
+    /// <param name="code">错误码。</param>
+    /// <param name="message">错误消息。</param>
+    /// <param name="retryable">失败是否可重试，默认为 <see langword="false"/>。</param>
+    /// <returns>失败的推进结果实例。</returns>
     public static AdvanceJobResult Failed(
         AdvanceJobRequest job,
         string code,
@@ -156,6 +233,14 @@ public sealed record AdvanceJobResult(
             null, null, code, message, retryable);
 }
 
+/// <summary>
+/// 推进计算指标。
+/// </summary>
+/// <param name="ElapsedMilliseconds">推进耗时（毫秒）。</param>
+/// <param name="CompletedActions">完成的行动数。</param>
+/// <param name="SectionCount">输出的 section 数量。</param>
+/// <param name="InputBytes">输入总字节数。</param>
+/// <param name="OutputBytes">输出总字节数。</param>
 public sealed record ComputeAdvanceMetrics(
     long ElapsedMilliseconds,
     long CompletedActions,

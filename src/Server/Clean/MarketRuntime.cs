@@ -28,6 +28,12 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private long _rejectedCount;
     private readonly LogThrottle _persistenceErrorLog = new(TimeSpan.FromMinutes(1));
 
+    /// <summary>
+    /// 初始化 MarketRuntime 的新实例。
+    /// </summary>
+    /// <param name="store">参数 store。</param>
+    /// <param name="options">服务端配置选项。</param>
+    /// <param name="logger">日志记录器。</param>
     public MarketRuntime(PostgresMarketRepository store, ServerOptions options, ILogger<MarketRuntime> logger)
     {
         _store = store;
@@ -35,11 +41,27 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         _logger = logger;
     }
 
+    /// <summary>
+    /// 获取 IsReady。
+    /// </summary>
     public bool IsReady => _ready;
+    /// <summary>
+    /// 获取 PartitionId。
+    /// </summary>
     public int PartitionId => _options.MarketPartitionId;
+    /// <summary>
+    /// 获取 PartitionCount。
+    /// </summary>
     public int PartitionCount => _options.MarketPartitionCount;
+    /// <summary>
+    /// 获取 Algorithm。
+    /// </summary>
     public string Algorithm => MarketPartitioner.Algorithm;
 
+    /// <summary>
+    /// 启动Async（异步）。
+    /// </summary>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         const int maxAcquireAttempts = 40;
@@ -90,6 +112,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 停止Async（异步）。
+    /// </summary>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _ready = false;
@@ -124,8 +150,19 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 执行Owns。
+    /// </summary>
+    /// <param name="instrument">市场品种。</param>
+    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
     public bool Owns(MarketInstrument instrument) => MarketPartitioner.GetPartition(instrument, PartitionCount) == PartitionId;
 
+    /// <summary>
+    /// 获取Book。
+    /// </summary>
+    /// <param name="instrument">市场品种。</param>
+    /// <param name="depth">深度。</param>
+    /// <returns>返回 OrderBookSnapshot 类型的结果。</returns>
     public OrderBookSnapshot GetBook(MarketInstrument instrument, int depth = 20)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
@@ -136,6 +173,12 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 获取Orders。
+    /// </summary>
+    /// <param name="ownerId">参数 ownerId。</param>
+    /// <param name="limit">限制数量。</param>
+    /// <returns>返回 IReadOnlyList&lt;MarketOrder&gt; 类型的结果。</returns>
     public IReadOnlyList<MarketOrder> GetOrders(PlayerId ownerId, int limit = 100)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
@@ -145,6 +188,13 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 获取OrderAsync（异步）。
+    /// </summary>
+    /// <param name="orderId">参数 orderId。</param>
+    /// <param name="ownerId">参数 ownerId。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 MarketOrder?。</returns>
     public async ValueTask<MarketOrder?> GetOrderAsync(Guid orderId, PlayerId ownerId, CancellationToken cancellationToken = default)
     {
         if (orderId == Guid.Empty || ownerId.IsEmpty) return null;
@@ -160,6 +210,13 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         return ToDomainOrder(stored, instrument);
     }
 
+    /// <summary>
+    /// 执行ClaimSettlementAsync（异步）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="requestId">请求唯一标识。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 SettlementClaimResult。</returns>
     public ValueTask<SettlementClaimResult> ClaimSettlementAsync(PlayerId playerId, Guid requestId, CancellationToken cancellationToken = default)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
@@ -168,6 +225,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         return WithTransientRetryAsync(token => _store.ClaimSettlementAsync(playerId.Value, requestId, token), cancellationToken);
     }
 
+    /// <summary>
+    /// 获取Metrics。
+    /// </summary>
+    /// <returns>返回 MarketRuntimeMetrics 类型的结果。</returns>
     public MarketRuntimeMetrics GetMetrics() => new(
         PartitionCount,
         ActiveOrderCount,
@@ -176,6 +237,12 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         Interlocked.Read(ref _cancelCount),
         Interlocked.Read(ref _rejectedCount));
 
+    /// <summary>
+    /// 提交Async（异步）。
+    /// </summary>
+    /// <param name="request">请求数据传输对象。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 PlacementResult。</returns>
     public ValueTask<PlacementResult> PlaceAsync(PlaceOrderRequest request, CancellationToken cancellationToken = default) =>
         WithTransientRetryAsync(token => PlaceCoreAsync(request, token), cancellationToken);
 
@@ -275,6 +342,15 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         finally { _gate.Release(); }
     }
 
+    /// <summary>
+    /// 取消Async（异步）。
+    /// </summary>
+    /// <param name="orderId">参数 orderId。</param>
+    /// <param name="ownerId">参数 ownerId。</param>
+    /// <param name="instrument">市场品种。</param>
+    /// <param name="idempotencyKey">参数 idempotencyKey。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 CancellationResult。</returns>
     public ValueTask<CancellationResult> CancelAsync(OrderId orderId, PlayerId ownerId, MarketInstrument instrument, string idempotencyKey, CancellationToken cancellationToken = default) =>
         WithTransientRetryAsync(token => CancelCoreAsync(orderId, ownerId, instrument, idempotencyKey, token), cancellationToken);
 
@@ -451,6 +527,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// 执行DisposeAsync（异步）。
+    /// </summary>
     public ValueTask DisposeAsync()
     {
         _gate.Dispose();
@@ -492,6 +571,15 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         });
 }
 
+/// <summary>
+/// 表示 MarketRuntimeMetrics 记录。
+/// </summary>
+/// <param name="PartitionCount">参数 PartitionCount。</param>
+/// <param name="ActiveOrderCount">参数 ActiveOrderCount。</param>
+/// <param name="PlacementCount">参数 PlacementCount。</param>
+/// <param name="MatchCount">参数 MatchCount。</param>
+/// <param name="CancelCount">参数 CancelCount。</param>
+/// <param name="RejectedCount">参数 RejectedCount。</param>
 public sealed record MarketRuntimeMetrics(
     int PartitionCount,
     int ActiveOrderCount,

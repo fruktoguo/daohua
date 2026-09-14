@@ -1,5 +1,8 @@
 namespace Server.Clean;
 
+/// <summary>
+/// 表示 IIntegrationEventDispatcher 接口。
+/// </summary>
 public interface IIntegrationEventDispatcher
 {
     ValueTask<bool> DispatchAsync(OutboxMessage message, CancellationToken cancellationToken = default);
@@ -10,6 +13,12 @@ public sealed class UnconfiguredIntegrationEventDispatcher(ILogger<UnconfiguredI
 {
     private readonly ConcurrentDictionary<string, byte> _warnedEventTypes = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// 执行DispatchAsync（异步）。
+    /// </summary>
+    /// <param name="message">参数 message。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 bool。</returns>
     public ValueTask<bool> DispatchAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
         // outbox 是可靠队列，不应因为未配置下游而每轮 poll 重复写 warning；
@@ -22,8 +31,23 @@ public sealed class UnconfiguredIntegrationEventDispatcher(ILogger<UnconfiguredI
     }
 }
 
+/// <summary>
+/// 表示 PostgresOutboxRepository 类。
+/// </summary>
+/// <param name="dataSource">PostgreSQL 数据源。</param>
 public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOutboxRepository
 {
+    /// <summary>
+    /// 执行AppendAsync（异步）。
+    /// </summary>
+    /// <param name="connection">参数 connection。</param>
+    /// <param name="transaction">参数 transaction。</param>
+    /// <param name="aggregateId">参数 aggregateId。</param>
+    /// <param name="aggregateType">参数 aggregateType。</param>
+    /// <param name="eventType">参数 eventType。</param>
+    /// <param name="payload">命令载荷。</param>
+    /// <param name="occurredAt">参数 occurredAt。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask AppendAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -51,6 +75,13 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 执行ClaimAsync（异步）。
+    /// </summary>
+    /// <param name="maxRows">参数 maxRows。</param>
+    /// <param name="lease">租约信息。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 IReadOnlyList&lt;OutboxMessage。</returns>
     public async ValueTask<IReadOnlyList<OutboxMessage>> ClaimAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default)
     {
         if (maxRows <= 0) return [];
@@ -92,6 +123,12 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         return result;
     }
 
+    /// <summary>
+    /// 执行MarkDeliveredAsync（异步）。
+    /// </summary>
+    /// <param name="outboxId">参数 outboxId。</param>
+    /// <param name="leaseToken">参数 leaseToken。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask MarkDeliveredAsync(Guid outboxId, Guid leaseToken, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -105,6 +142,14 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 执行ReleaseAsync（异步）。
+    /// </summary>
+    /// <param name="outboxId">参数 outboxId。</param>
+    /// <param name="leaseToken">参数 leaseToken。</param>
+    /// <param name="error">参数 error。</param>
+    /// <param name="retryAfter">参数 retryAfter。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask ReleaseAsync(Guid outboxId, Guid leaseToken, string error, TimeSpan retryAfter, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -121,6 +166,13 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
     }
 }
 
+/// <summary>
+/// 表示 OutboxWorker 类。
+/// </summary>
+/// <param name="repository">参数 repository。</param>
+/// <param name="dispatcher">参数 dispatcher。</param>
+/// <param name="options">服务端配置选项。</param>
+/// <param name="logger">日志记录器。</param>
 public sealed class OutboxWorker(
     IOutboxRepository repository,
     IIntegrationEventDispatcher dispatcher,

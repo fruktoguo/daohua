@@ -1,7 +1,13 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 游戏数据编目测试：内置目录有效性、JSON 指纹、嵌入资源与持续消耗品效果解析。
+/// </summary>
 public sealed class GameDataCatalogTests
 {
+    /// <summary>
+    /// 验证 <c>BuiltInCatalogIsValid</c>（Built In Catalog Is Valid）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void BuiltInCatalogIsValid()
     {
@@ -10,6 +16,9 @@ public sealed class GameDataCatalogTests
         Assert.Contains(catalog.Actions.All, action => action.Id.Value == "cultivation.draw-qi");
     }
 
+    /// <summary>
+    /// 验证 <c>JsonResourcesProduceStableFingerprintAndDefinitions</c>（Json Resources Produce Stable Fingerprint And Definitions）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void JsonResourcesProduceStableFingerprintAndDefinitions()
     {
@@ -24,6 +33,9 @@ public sealed class GameDataCatalogTests
         Assert.Equal(ActionKind.Travel, travel.Kind);
     }
 
+    /// <summary>
+    /// 验证 <c>EmbeddedCatalogCanBeLoadedByHost</c>（Embedded Catalog Can Be Loaded By Host）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void EmbeddedCatalogCanBeLoadedByHost()
     {
@@ -35,6 +47,9 @@ public sealed class GameDataCatalogTests
         Assert.False(string.IsNullOrWhiteSpace(catalog.Fingerprint));
     }
 
+    /// <summary>
+    /// 验证 <c>EmbeddedCatalogParsesSustainedConsumableEffects</c>（Embedded Catalog Parses Sustained Consumable Effects）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void EmbeddedCatalogParsesSustainedConsumableEffects()
     {

@@ -12,6 +12,9 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
     /// <summary>
     /// 对离线任务批次执行确定性时间快进推演。
     /// </summary>
+    /// <param name="job">单个离线任务请求。</param>
+    /// <param name="gameDataFingerprint">当前游戏数据指纹。</param>
+    /// <returns>任务推进结果。</returns>
     public AdvanceJobResult Advance(AdvanceJobRequest job, string gameDataFingerprint)
     {
         try
@@ -78,6 +81,11 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         }
     }
 
+    /// <summary>
+    /// 解码并校验单个 section 载荷。
+    /// </summary>
+    /// <param name="section">原始 section 载荷。</param>
+    /// <returns>解码后的原始字节。</returns>
     private byte[] Decode(SectionPayload section)
     {
         var encoded = Convert.FromBase64String(section.PayloadBase64);
@@ -107,6 +115,12 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         return decoded;
     }
 
+    /// <summary>
+    /// 使用指定编码对输出载荷进行编码。
+    /// </summary>
+    /// <param name="codec">目标编码。</param>
+    /// <param name="payload">原始载荷字节。</param>
+    /// <returns>编码后的字节。</returns>
     private static byte[] Encode(string codec, byte[] payload) => codec switch
     {
         "identity" => payload,
@@ -114,6 +128,16 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         _ => throw new NotSupportedException($"不支持 section 编码: {codec}")
     };
 
+    /// <summary>
+    /// 对 JSON 格式的 section 注入模拟时间、完成行动数、配置指纹等元数据。
+    /// 非 JSON 二进制 section 将原样返回。
+    /// </summary>
+    /// <param name="kind">section 类型。</param>
+    /// <param name="input">原始载荷字节。</param>
+    /// <param name="job">所属任务请求。</param>
+    /// <param name="completedActions">计算得到的完成行动数。</param>
+    /// <param name="gameDataFingerprint">当前游戏数据指纹。</param>
+    /// <returns>推进后的 JSON 字节或原始字节。</returns>
     private byte[] AdvanceJson(
         string kind,
         byte[] input,
@@ -140,6 +164,12 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         return JsonSerializer.SerializeToUtf8Bytes(node, jsonOptions);
     }
 
+    /// <summary>
+    /// 根据行动意图与可用时长，统计可以完成的行动总数。
+    /// </summary>
+    /// <param name="actions">行动意图列表，可为 <see langword="null"/>。</param>
+    /// <param name="elapsedMilliseconds">可用模拟时长（毫秒）。</param>
+    /// <returns>可完成的行动总数。</returns>
     private static long CountCompletedActions(IReadOnlyList<ActionIntent>? actions, long elapsedMilliseconds)
     {
         if (actions is null || actions.Count == 0 || elapsedMilliseconds <= 0) return 0;
@@ -156,6 +186,11 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         return total;
     }
 
+    /// <summary>
+    /// 使用 Brotli 解压 section 载荷。
+    /// </summary>
+    /// <param name="input">压缩后的字节。</param>
+    /// <returns>解压后的字节。</returns>
     private static byte[] DecompressBrotli(byte[] input)
     {
         using var source = new MemoryStream(input, writable: false);
@@ -180,6 +215,11 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         return output.ToArray();
     }
 
+    /// <summary>
+    /// 使用 Brotli 压缩 section 载荷。
+    /// </summary>
+    /// <param name="input">原始字节。</param>
+    /// <returns>压缩后的字节。</returns>
     private static byte[] CompressBrotli(byte[] input)
     {
         using var output = new MemoryStream();

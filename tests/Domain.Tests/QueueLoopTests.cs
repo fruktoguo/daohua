@@ -18,6 +18,9 @@ public sealed class QueueLoopTests
     private static PlayerAggregate CreatePlayer(string name) =>
         PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
 
+    /// <summary>
+    /// 验证 <c>QueueLoop_RepeatsSingleActionIndefinitely_WhenLoopEnabled</c>（Queue Loop Repeats Single Action Indefinitely When Loop Enabled）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void QueueLoop_RepeatsSingleActionIndefinitely_WhenLoopEnabled()
     {
@@ -43,6 +46,9 @@ public sealed class QueueLoopTests
         Assert.Equal(2, player.Progression.CompletedActions);
     }
 
+    /// <summary>
+    /// 验证 <c>QueueLoop_CyclesMultipleActionsInOrder_WhenLoopEnabled</c>（Queue Loop Cycles Multiple Actions In Order When Loop Enabled）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void QueueLoop_CyclesMultipleActionsInOrder_WhenLoopEnabled()
     {
@@ -86,6 +92,9 @@ public sealed class QueueLoopTests
         Assert.Equal(3, player.Progression.CompletedActions);
     }
 
+    /// <summary>
+    /// 验证 <c>QueueLoop_RemovesActionDirectly_WhenLoopDisabled</c>（Queue Loop Removes Action Directly When Loop Disabled）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void QueueLoop_RemovesActionDirectly_WhenLoopDisabled()
     {
@@ -109,6 +118,9 @@ public sealed class QueueLoopTests
         Assert.Empty(player.Actions);
     }
 
+    /// <summary>
+    /// 验证 <c>QueueLoop_DoesNotLoopTravelAction_EvenWhenLoopEnabled</c>（Queue Loop Does Not Loop Travel Action Even When Loop Enabled）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void QueueLoop_DoesNotLoopTravelAction_EvenWhenLoopEnabled()
     {
@@ -143,6 +155,9 @@ public sealed class QueueLoopTests
         Assert.Empty(player.Actions); // 关键门禁：到达后直接出队，绝不出队重入
     }
 
+    /// <summary>
+    /// 验证 <c>QueueLoop_WaitsForRespawnWithoutCompletingOrRotatingDefeatedAction</c>（Queue Loop Waits For Respawn Without Completing Or Rotating Defeated Action）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void QueueLoop_WaitsForRespawnWithoutCompletingOrRotatingDefeatedAction()
     {

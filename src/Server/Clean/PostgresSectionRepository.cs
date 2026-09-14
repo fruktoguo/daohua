@@ -8,6 +8,12 @@ public sealed class PostgresSectionRepository(
     ILogger<PostgresSectionRepository> logger) : IPlayerStateRepository
 {
     private readonly LogThrottle _flushErrorLog = new(TimeSpan.FromMinutes(1));
+    /// <summary>
+    /// 加载Async（异步）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 PlayerStateBundle?。</returns>
     public async ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -258,11 +264,22 @@ public sealed class PostgresSectionRepository(
             $"action:{action.Id:D}")).ToArray();
     }
 
+    /// <summary>
+    /// 执行EnqueueSectionsAsync（异步）。
+    /// </summary>
+    /// <param name="sections">参数 sections。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask EnqueueSectionsAsync(
         IReadOnlyCollection<SectionWrite> sections,
         CancellationToken cancellationToken = default)
         => await EnqueueSectionsAsync(sections, [], cancellationToken);
 
+    /// <summary>
+    /// 执行EnqueueSectionsAsync（异步）。
+    /// </summary>
+    /// <param name="sections">参数 sections。</param>
+    /// <param name="receipts">参数 receipts。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask EnqueueSectionsAsync(
         IReadOnlyCollection<SectionWrite> sections,
         IReadOnlyCollection<CommandReceipt> receipts,
@@ -278,6 +295,14 @@ public sealed class PostgresSectionRepository(
         await transaction.CommitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 执行EnqueueInTransactionAsync（异步）。
+    /// </summary>
+    /// <param name="connection">参数 connection。</param>
+    /// <param name="transaction">参数 transaction。</param>
+    /// <param name="sections">参数 sections。</param>
+    /// <param name="receipts">参数 receipts。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     internal static async ValueTask EnqueueInTransactionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken)
     {
@@ -372,6 +397,13 @@ public sealed class PostgresSectionRepository(
             throw new ArgumentException("命令回执参数无效。", nameof(receipt));
     }
 
+    /// <summary>
+    /// 落盘PendingAsync（异步）。
+    /// </summary>
+    /// <param name="maxRows">参数 maxRows。</param>
+    /// <param name="lease">租约信息。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 FlushBatchResult。</returns>
     public async ValueTask<FlushBatchResult> FlushPendingAsync(
         int maxRows,
         TimeSpan lease,
@@ -642,8 +674,20 @@ public sealed class PostgresSectionRepository(
             throw new InvalidDataException("section 队列 schema 版本不受支持。");
     }
 
+    /// <summary>
+    /// 表示 SectionCheckpoint 记录。
+    /// </summary>
+    /// <param name="SectionKind">参数 SectionKind。</param>
+    /// <param name="SectionVersion">参数 SectionVersion。</param>
+    /// <param name="Checksum">参数 Checksum。</param>
     private sealed record SectionCheckpoint(string SectionKind, long SectionVersion, string Checksum);
 
+    /// <summary>
+    /// 表示 HeadMetadata 记录。
+    /// </summary>
+    /// <param name="StateVersion">参数 StateVersion。</param>
+    /// <param name="LastSimulatedAt">参数 LastSimulatedAt。</param>
+    /// <param name="GameDataFingerprint">参数 GameDataFingerprint。</param>
     private sealed record HeadMetadata(long StateVersion, DateTimeOffset LastSimulatedAt, string GameDataFingerprint);
 
     private static async Task<IReadOnlyList<SectionCheckpoint>> ReadSectionChecksumsAsync(

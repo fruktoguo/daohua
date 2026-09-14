@@ -1,18 +1,39 @@
 namespace DaoHua.LoadTests;
 
+/// <summary>
+/// 容量目标综合压测场景。
+/// 结合账号存储估算、网络峰值估算、本地计算与 PostgreSQL 真实探测，
+/// 验证 2c4g-40g 预算下的容量目标。
+/// </summary>
 public static class CapacityTargetScenario
 {
+    /// <summary>目标注册账号数。</summary>
     public const int RegisteredAccountTarget = 5_000;
+    /// <summary>目标持续在线并发玩家数。</summary>
     public const int SustainedNetworkTarget = 100;
+    /// <summary>目标峰值网络并发玩家数。</summary>
     public const int PeakNetworkTarget = 500;
+    /// <summary>目标冷挂机同时补算玩家数。</summary>
     public const int ColdComputeTarget = 2_000;
+    /// <summary>数据盘容量预算（字节）。</summary>
     public const long DataDiskBudgetBytes = 12L * 1024 * 1024 * 1024;
+    /// <summary>WAL 容量预算（字节）。</summary>
     public const long WalBudgetBytes = 2L * 1024 * 1024 * 1024;
+    /// <summary>本地日志容量预算（字节）。</summary>
     public const long LocalLogBudgetBytes = 100L * 1024 * 1024;
+    /// <summary>峰值网络带宽预算（字节/秒）。</summary>
     public const long PeakNetworkBudgetBytesPerSecond = 512L * 1024;
+    /// <summary>冷挂机补算时间预算（毫秒）。</summary>
     public const double ColdComputeBudgetMilliseconds = 30_000;
+    /// <summary>进程工作集内存预算（字节）。</summary>
     public const long ProcessWorkingSetBudgetBytes = 768L * 1024 * 1024;
 
+    /// <summary>
+    /// 执行完整的容量目标压测。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>容量目标压测报告。</returns>
     public static async Task<LoadTestReport> RunAsync(LoadTestOptions options, CancellationToken cancellationToken = default)
     {
         var process = Process.GetCurrentProcess();
@@ -101,6 +122,12 @@ public static class CapacityTargetScenario
             warnings);
     }
 
+    /// <summary>
+    /// 仅执行 PostgreSQL 容量探测。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>PostgreSQL 压测报告。</returns>
     public static async Task<LoadTestReport> RunPostgresOnlyAsync(
         LoadTestOptions options,
         CancellationToken cancellationToken = default)
@@ -138,6 +165,14 @@ public static class CapacityTargetScenario
         }
     }
 
+    /// <summary>
+    /// 账号与 section 的存储估算。
+    /// </summary>
+    /// <param name="AccountBytes">账号表估算字节数。</param>
+    /// <param name="SectionBytes">玩家状态 section 估算字节数。</param>
+    /// <param name="QueueBytes">队列估算字节数。</param>
+    /// <param name="EstimatedBytes">总估算字节数。</param>
+    /// <param name="AverageSectionBytes">平均每个 section 字节数。</param>
     private sealed record SyntheticStorageEstimate(
         long AccountBytes,
         long SectionBytes,
@@ -145,13 +180,28 @@ public static class CapacityTargetScenario
         long EstimatedBytes,
         long AverageSectionBytes);
 
+    /// <summary>
+    /// 峰值网络带宽估算。
+    /// </summary>
+    /// <param name="BytesPerSecond">峰值每秒字节数。</param>
+    /// <param name="AverageMessageBytes">平均每条消息字节数。</param>
+    /// <param name="PeakPlayers">峰值玩家数。</param>
     private sealed record SyntheticNetworkEstimate(
         long BytesPerSecond,
         long AverageMessageBytes,
         int PeakPlayers);
 
+    /// <summary>
+    /// 容量估算辅助方法。
+    /// 基于目标玩家数生成确定性的 synthetic 数据并估算存储与网络。
+    /// </summary>
     private static class CapacitySynthetic
     {
+        /// <summary>
+        /// 估算目标账号数的总存储占用。
+        /// </summary>
+        /// <param name="players">玩家数。</param>
+        /// <returns>存储估算结果。</returns>
         public static SyntheticStorageEstimate EstimateStorage(int players)
         {
             long sectionBytes = 0;
@@ -174,6 +224,11 @@ public static class CapacityTargetScenario
                 sectionBytes / (long)players / SectionKinds.Length);
         }
 
+        /// <summary>
+        /// 估算峰值网络带宽。
+        /// </summary>
+        /// <param name="players">峰值玩家数。</param>
+        /// <returns>网络估算结果。</returns>
         public static SyntheticNetworkEstimate EstimatePeakNetwork(int players)
         {
             long total = 0;
@@ -185,6 +240,12 @@ public static class CapacityTargetScenario
             return new SyntheticNetworkEstimate(total, total / players, players);
         }
 
+        /// <summary>
+        /// 生成指定玩家与 section 类型的 synthetic JSON 载荷。
+        /// </summary>
+        /// <param name="index">玩家索引。</param>
+        /// <param name="kind">section 类型。</param>
+        /// <returns>UTF-8 编码的 JSON 字节。</returns>
         public static byte[] CreatePayload(int index, string kind)
         {
             var payload = JsonSerializer.SerializeToUtf8Bytes(new
@@ -199,6 +260,11 @@ public static class CapacityTargetScenario
             return payload;
         }
 
+        /// <summary>
+        /// 基于索引生成确定性的测试玩家 ID。
+        /// </summary>
+        /// <param name="index">玩家索引。</param>
+        /// <returns>生成的测试 <see cref="Guid"/>。</returns>
         public static Guid DeterministicId(int index)
         {
             Span<byte> bytes = stackalloc byte[16];
@@ -208,6 +274,7 @@ public static class CapacityTargetScenario
         }
     }
 
+    /// <summary>用于 synthetic 估算的 section 类型列表。</summary>
     internal static readonly string[] SectionKinds =
     [
         "progression",

@@ -4,8 +4,10 @@ using Xunit;
 
 namespace Server.Tests;
 
+/// <summary>包含针对 Wire Envelope Tests 的测试用例与断言集合。</summary>
 public sealed class WireEnvelopeTests
 {
+    /// <summary>验证 Binary Envelope Round Trips Json Payload。</summary>
     [Fact]
     public void BinaryEnvelope_RoundTripsJsonPayload()
     {
@@ -20,6 +22,7 @@ public sealed class WireEnvelopeTests
         Assert.NotNull(command);
         Assert.Equal("player.presence", command!.Command);
     }
+    /// <summary>验证 Binary Envelope Rejects Tampering And Oversize Frames。</summary>
 
     [Fact]
     public void BinaryEnvelope_RejectsTamperingAndOversizeFrames()

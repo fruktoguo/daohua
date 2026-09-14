@@ -5,6 +5,14 @@ namespace Domain.Combat;
 /// <summary>按遭遇预算生成确定性的单波怪物列表；战斗引擎仍逐只交战。</summary>
 public static class EncounterWaveSelector
 {
+    /// <summary>
+    /// 执行 Select 操作。
+    /// </summary>
+    /// <param name="encounter">encounter 参数。</param>
+    /// <param name="monsters">monsters 参数。</param>
+    /// <param name="seed">seed 参数。</param>
+    /// <param name="waveNumber">waveNumber 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static IReadOnlyList<CombatMonsterDefinition> Select(CombatEncounterDefinition encounter,
         IReadOnlyDictionary<string, CombatMonsterDefinition> monsters, long seed, int waveNumber)
     {

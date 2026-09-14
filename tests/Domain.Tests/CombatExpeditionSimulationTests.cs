@@ -1,9 +1,15 @@
 namespace Domain.Tests;
 
+/// <summary>
+/// 战斗远征模拟测试：无限/有限战斗、波次推进、失败恢复与状态往返。
+/// </summary>
 public sealed class CombatExpeditionSimulationTests
 {
     private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// 验证 <c>InfiniteCombatActionCanBeEnqueuedAndKeepsRunningState</c>（Infinite Combat Action Can Be Enqueued And Keeps Running State）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void InfiniteCombatActionCanBeEnqueuedAndKeepsRunningState()
     {
@@ -21,6 +27,9 @@ public sealed class CombatExpeditionSimulationTests
         Assert.NotNull(player.Actions[0].Expedition);
     }
 
+    /// <summary>
+    /// 验证 <c>FiniteCombatActionIsRemovedAfterWinningEncounter</c>（Finite Combat Action Is Removed After Winning Encounter）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void FiniteCombatActionIsRemovedAfterWinningEncounter()
     {
@@ -36,6 +45,9 @@ public sealed class CombatExpeditionSimulationTests
         Assert.Equal(1, player.Progression.CompletedActions);
     }
 
+    /// <summary>
+    /// 验证 <c>DefeatedCombatActionRestoresAndResumesAtConfiguredRespawnBoundary</c>（Defeated Combat Action Restores And Resumes At Configured Respawn Boundary）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void DefeatedCombatActionRestoresAndResumesAtConfiguredRespawnBoundary()
     {
@@ -68,6 +80,9 @@ public sealed class CombatExpeditionSimulationTests
         Assert.Equal(action.Expedition, restored.Actions[0].Expedition);
     }
 
+    /// <summary>
+    /// 验证 <c>CombatWaveFightsMonstersBackToBackAndCountsOneRepeatPerWave</c>（Combat Wave Fights Monsters Back To Back And Counts One Repeat Per Wave）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CombatWaveFightsMonstersBackToBackAndCountsOneRepeatPerWave()
     {
@@ -95,6 +110,9 @@ public sealed class CombatExpeditionSimulationTests
         Assert.Equal(2, player.Actions[0].Expedition!.WaveNumber);
     }
 
+    /// <summary>
+    /// 验证 <c>CombatExpeditionStateRoundTripsAndContinuesDeterministically</c>（Combat Expedition State Round Trips And Continues Deterministically）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CombatExpeditionStateRoundTripsAndContinuesDeterministically()
     {
@@ -112,6 +130,9 @@ public sealed class CombatExpeditionSimulationTests
         Assert.Equal(player.Actions[0].Expedition, restored.Actions[0].Expedition);
     }
 
+    /// <summary>
+    /// 验证 <c>CombatRestoreRejectsOutcomeThatDoesNotMatchHitpoints</c>（Combat Restore Rejects Outcome That Does Not Match Hitpoints）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CombatRestoreRejectsOutcomeThatDoesNotMatchHitpoints()
     {

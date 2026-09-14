@@ -5,6 +5,10 @@ namespace Domain.Economy;
 /// </summary>
 public readonly record struct AssetKey(ItemId ItemId, string Variant = "")
 {
+    /// <summary>
+    /// 执行 转换为字符串 操作。
+    /// </summary>
+    /// <returns>返回处理结果。</returns>
     public override string ToString() => string.IsNullOrEmpty(Variant) ? ItemId.ToString() : $"{ItemId}:{Variant}";
 }
 
@@ -65,6 +69,10 @@ public sealed class AssetWallet
 {
     private readonly Dictionary<AssetKey, AssetBalance> _balances = [];
 
+    /// <summary>
+    /// 初始化 资产钱包。
+    /// </summary>
+    /// <param name="playerId">playerId 参数。</param>
     public AssetWallet(PlayerId playerId)
     {
         if (playerId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "钱包玩家不能为空。");
@@ -164,6 +172,16 @@ public enum EconomyTransactionType : byte
 /// </summary>
 public sealed record EconomyTransaction
 {
+    /// <summary>
+    /// 初始化 经济Transaction。
+    /// </summary>
+    /// <param name="transactionId">transactionId 参数。</param>
+    /// <param name="idempotencyKey">idempotencyKey 参数。</param>
+    /// <param name="type">type 参数。</param>
+    /// <param name="actorId">actorId 参数。</param>
+    /// <param name="createdAt">createdAt 参数。</param>
+    /// <param name="lines">lines 参数。</param>
+    /// <param name="externalEventType">externalEventType 参数。</param>
     public EconomyTransaction(
         TransactionId transactionId,
         IdempotencyKey idempotencyKey,
@@ -218,6 +236,14 @@ public sealed record EconomyTransaction
 /// </summary>
 public sealed record EconomyTransactionLine
 {
+    /// <summary>
+    /// 初始化 经济TransactionLine。
+    /// </summary>
+    /// <param name="lineNumber">lineNumber 参数。</param>
+    /// <param name="playerId">playerId 参数。</param>
+    /// <param name="asset">asset 参数。</param>
+    /// <param name="delta">delta 参数。</param>
+    /// <param name="instanceId">instanceId 参数。</param>
     public EconomyTransactionLine(int lineNumber, PlayerId playerId, AssetKey asset, double delta, InstanceId? instanceId = null)
     {
         LineNumber = lineNumber;

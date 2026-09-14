@@ -10,7 +10,21 @@ public enum CombatDamageKind : byte
 }
 
 /// <summary>攻击携带的五行属性；无属性攻击跳过五行减免。</summary>
-public enum CombatElement : byte { None, Metal, Wood, Water, Fire, Earth }
+public enum CombatElement : byte
+{
+    /// <summary>无属性。</summary>
+    None,
+    /// <summary>金属性。</summary>
+    Metal,
+    /// <summary>木属性。</summary>
+    Wood,
+    /// <summary>水属性。</summary>
+    Water,
+    /// <summary>火属性。</summary>
+    Fire,
+    /// <summary>土属性。</summary>
+    Earth
+}
 
 /// <summary>战斗最终胜负裁决状态</summary>
 public enum CombatOutcome : byte
@@ -38,22 +52,38 @@ public sealed record CombatantStats(
     double Evasion = 0,
     CombatDamageKind DamageKind = CombatDamageKind.Physical)
 {
+    /// <summary>获取或设置 法术抗性 的值。</summary>
     public double MagicResistance { get; init; }
+    /// <summary>获取或设置 抗性倍率 的值。</summary>
     public double ResistanceScale { get; init; } = 1;
+    /// <summary>获取或设置 物理穿透百分比 的值。</summary>
     public double PhysicalPenetrationPercent { get; init; }
+    /// <summary>获取或设置 法术穿透百分比 的值。</summary>
     public double MagicPenetrationPercent { get; init; }
+    /// <summary>获取或设置 暴击 的值。</summary>
     public double Critical { get; init; }
+    /// <summary>获取或设置 暴击抗性 的值。</summary>
     public double CriticalResistance { get; init; }
+    /// <summary>获取或设置 暴击倍率 的值。</summary>
     public double CriticalMultiplier { get; init; } = 1.5;
+    /// <summary>获取或设置 破防威力 的值。</summary>
     public double BreakPower { get; init; }
+    /// <summary>获取或设置 招架结算 的值。</summary>
     public double ParryResolve { get; init; }
+    /// <summary>获取或设置 五行 的值。</summary>
     public CombatElement Element { get; init; }
+    /// <summary>获取或设置 金抗性 的值。</summary>
     public double MetalResistance { get; init; }
+    /// <summary>获取或设置 木抗性 的值。</summary>
     public double WoodResistance { get; init; }
+    /// <summary>获取或设置 水抗性 的值。</summary>
     public double WaterResistance { get; init; }
+    /// <summary>获取或设置 火抗性 的值。</summary>
     public double FireResistance { get; init; }
+    /// <summary>获取或设置 土抗性 的值。</summary>
     public double EarthResistance { get; init; }
 
+    /// <summary>执行 校验 操作。</summary>
     internal void Validate()
     {
         double[] nonnegative = [AttackPower, Defense, Accuracy, Evasion, MagicResistance,
@@ -70,6 +100,17 @@ public sealed record CombatantStats(
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
     }
 
+    /// <summary>
+    /// 执行 创建 操作。
+    /// </summary>
+    /// <param name="maxHitpoints">maxHitpoints 参数。</param>
+    /// <param name="attackPower">attackPower 参数。</param>
+    /// <param name="defense">defense 参数。</param>
+    /// <param name="attackIntervalSeconds">attackIntervalSeconds 参数。</param>
+    /// <param name="accuracy">accuracy 参数。</param>
+    /// <param name="evasion">evasion 参数。</param>
+    /// <param name="damageKind">damageKind 参数。</param>
+    /// <returns>返回处理结果。</returns>
     public static CombatantStats Create(
         double maxHitpoints,
         double attackPower,
@@ -92,6 +133,11 @@ public sealed record CombatantStats(
 /// </summary>
 public sealed class CombatantState
 {
+    /// <summary>
+    /// 初始化 战斗者状态。
+    /// </summary>
+    /// <param name="id">id 参数。</param>
+    /// <param name="stats">stats 参数。</param>
     public CombatantState(string id, CombatantStats stats)
     {
         if (string.IsNullOrWhiteSpace(id) || id.Length > 128) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗单位标识无效。");
@@ -215,8 +261,11 @@ public sealed record CombatEvent(
     CombatDamageKind DamageKind,
     double TargetHitpointsAfter)
 {
+    /// <summary>获取或设置 暴击 的值。</summary>
     public bool Critical { get; init; }
+    /// <summary>获取或设置 破防 的值。</summary>
     public bool Break { get; init; }
+    /// <summary>获取或设置 被招架 的值。</summary>
     public bool Parried { get; init; }
 }
 
@@ -240,6 +289,7 @@ public enum CombatExpeditionPhase : byte
     Search = 1,
     /// <summary>与当前敌人交战</summary>
     Combat = 2,
+    /// <summary>重生中。</summary>
     Respawning = 3
 }
 

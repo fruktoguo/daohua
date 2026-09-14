@@ -73,6 +73,14 @@ public sealed class PlayerRuntime(
         return await actor.SnapshotAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// 执行Async（异步）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="command">命令名称。</param>
+    /// <param name="payload">命令载荷。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 PlayerCommandResult。</returns>
     public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, CancellationToken cancellationToken = default)
         => ExecuteCoreAsync(playerId, command, payload, 0, TryReadRequestId(payload), cancellationToken);
 
@@ -80,6 +88,16 @@ public sealed class PlayerRuntime(
     public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, CancellationToken cancellationToken = default)
         => ExecuteCoreAsync(playerId, command, payload, expectedStateVersion, TryReadRequestId(payload), cancellationToken);
 
+    /// <summary>
+    /// 执行Async（异步）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="command">命令名称。</param>
+    /// <param name="payload">命令载荷。</param>
+    /// <param name="expectedStateVersion">期望的状态版本。</param>
+    /// <param name="requestId">请求唯一标识。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 PlayerCommandResult。</returns>
     public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
     {
         if (requestId == Guid.Empty) throw new ArgumentException("RequestId 不能为空。", nameof(requestId));
@@ -125,6 +143,11 @@ public sealed class PlayerRuntime(
         }
     }
 
+    /// <summary>
+    /// 落盘AllAsync（异步）。
+    /// </summary>
+    /// <param name="force">参数 force。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default)
     {
         foreach (var entry in _actors)
@@ -157,6 +180,12 @@ public sealed class PlayerRuntime(
         }
     }
 
+    /// <summary>
+    /// 落盘Async（异步）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="force">参数 force。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default)
     {
         if (!_actors.TryGetValue(playerId, out var lazy) || !lazy.IsValueCreated) return;
@@ -164,6 +193,12 @@ public sealed class PlayerRuntime(
         await actor.FlushAsync(force, cancellationToken);
     }
 
+    /// <summary>
+    /// 移除Async（异步）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="flush">参数 flush。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
     {
         if (!_actors.TryGetValue(playerId, out var lazy) || !lazy.IsValueCreated) return;
@@ -173,6 +208,9 @@ public sealed class PlayerRuntime(
         await actor.DisposeAsync();
     }
 
+    /// <summary>
+    /// 执行DisposeAsync（异步）。
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         foreach (var playerId in _actors.Keys.ToArray())
@@ -284,6 +322,9 @@ public sealed class PlayerRuntime(
             : null;
     }
 
+    /// <summary>
+    /// 表示 PlayerActor 类。
+    /// </summary>
     private sealed class PlayerActor : IAsyncDisposable
     {
         private readonly PlayerAggregate aggregate;
@@ -313,6 +354,24 @@ public sealed class PlayerRuntime(
         private bool _disposed;
         private int _disposeStarted;
 
+        /// <summary>
+        /// 初始化 PlayerActor 的新实例。
+        /// </summary>
+        /// <param name="aggregate">参数 aggregate。</param>
+        /// <param name="bundle">参数 bundle。</param>
+        /// <param name="wallet">参数 wallet。</param>
+        /// <param name="assetRepository">参数 assetRepository。</param>
+        /// <param name="repository">参数 repository。</param>
+        /// <param name="economy">参数 economy。</param>
+        /// <param name="actions">参数 actions。</param>
+        /// <param name="gameData">游戏数据目录。</param>
+        /// <param name="logBuffer">参数 logBuffer。</param>
+        /// <param name="logger">日志记录器。</param>
+        /// <param name="marketRuntime">市场运行时。</param>
+        /// <param name="commandReceipts">参数 commandReceipts。</param>
+        /// <param name="ownership">参数 ownership。</param>
+        /// <param name="ownerInstanceId">参数 ownerInstanceId。</param>
+        /// <param name="ownershipLease">参数 ownershipLease。</param>
         public PlayerActor(
             PlayerAggregate aggregate,
             PlayerStateBundle bundle,
@@ -378,6 +437,15 @@ public sealed class PlayerRuntime(
                     balance.Version))
                 .ToArray());
 
+        /// <summary>
+        /// 执行Async（异步）。
+        /// </summary>
+        /// <param name="command">命令名称。</param>
+        /// <param name="payload">命令载荷。</param>
+        /// <param name="expectedStateVersion">期望的状态版本。</param>
+        /// <param name="requestId">请求唯一标识。</param>
+        /// <param name="cancellationToken">取消操作的标记。</param>
+        /// <returns>异步操作结果，包含 PlayerCommandResult。</returns>
         public async ValueTask<PlayerCommandResult> ExecuteAsync(string command, JsonElement payload, long expectedStateVersion, Guid? requestId, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken);
@@ -805,6 +873,12 @@ public sealed class PlayerRuntime(
             }
         }
 
+        /// <summary>
+        /// 推进SimulationAsync（异步）。
+        /// </summary>
+        /// <param name="target">参数 target。</param>
+        /// <param name="cancellationToken">取消操作的标记。</param>
+        /// <returns>异步操作结果，包含 PlayerCommandResult?。</returns>
         public async ValueTask<PlayerCommandResult?> AdvanceSimulationAsync(DateTimeOffset target, CancellationToken cancellationToken)
         {
             var payload = JsonSerializer.SerializeToElement(new { targetTime = target }, ServerJson.Options);
@@ -812,6 +886,11 @@ public sealed class PlayerRuntime(
             return result.Simulation is null ? null : result;
         }
 
+        /// <summary>
+        /// 落盘Async（异步）。
+        /// </summary>
+        /// <param name="force">参数 force。</param>
+        /// <param name="cancellationToken">取消操作的标记。</param>
         public async ValueTask FlushAsync(bool force, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken);
@@ -1045,6 +1124,9 @@ public sealed class PlayerRuntime(
                 .ToArray();
         }
 
+        /// <summary>
+        /// 执行DisposeAsync（异步）。
+        /// </summary>
         public async ValueTask DisposeAsync()
         {
             // 所有权丢失清理与会话移除可能并发触发释放，幂等退出。
@@ -1065,8 +1147,16 @@ public sealed class PlayerLogBuffer(int capacity)
     private readonly List<LogEventDto> _events = [];
     private long _sequence;
 
+    /// <summary>
+    /// 执行NextSequence。
+    /// </summary>
+    /// <returns>返回 long 类型的结果。</returns>
     public long NextSequence() => Interlocked.Increment(ref _sequence);
 
+    /// <summary>
+    /// 执行Append。
+    /// </summary>
+    /// <param name="logEvent">参数 logEvent。</param>
     public void Append(LogEventDto logEvent)
     {
         lock (_lock)
@@ -1091,12 +1181,22 @@ public sealed class PlayerLogBuffer(int capacity)
         }
     }
 
+    /// <summary>
+    /// 执行SnapshotRecent。
+    /// </summary>
+    /// <returns>返回 IReadOnlyList&lt;LogEventDto&gt; 类型的结果。</returns>
     public IReadOnlyList<LogEventDto> SnapshotRecent()
     {
         lock (_lock) return _events.ToArray();
     }
 }
 
+/// <summary>
+/// 表示 PlayerFlushHostedService 类。
+/// </summary>
+/// <param name="runtime">玩家运行时。</param>
+/// <param name="options">服务端配置选项。</param>
+/// <param name="logger">日志记录器。</param>
 public sealed class PlayerFlushHostedService(PlayerRuntime runtime, ServerOptions options, ILogger<PlayerFlushHostedService> logger) : BackgroundService
 {
     private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));

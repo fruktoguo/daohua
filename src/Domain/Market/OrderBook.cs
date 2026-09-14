@@ -13,6 +13,10 @@ public sealed class OrderBook
     private long _sequence;
     private long _version;
 
+    /// <summary>
+    /// 初始化 订单账本。
+    /// </summary>
+    /// <param name="instrument">instrument 参数。</param>
     public OrderBook(MarketInstrument instrument)
     {
         if (!instrument.ItemId.IsValid || instrument.Variant is null || instrument.Variant.Length > 128)

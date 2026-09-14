@@ -2,6 +2,9 @@ using Domain.Combat;
 using Domain.GameData;
 
 namespace Domain.Tests;
+/// <summary>
+/// 遭遇波次选择器测试。
+/// </summary>
 public sealed class EncounterWaveSelectorTests
 {
     [Fact] public void SameSeedAndWaveAreDeterministicAndSpecialIntervalsAreHonored()

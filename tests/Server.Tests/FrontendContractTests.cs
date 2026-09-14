@@ -9,8 +9,11 @@ using Xunit;
 
 namespace Server.Tests;
 
+/// <summary>包含针对 Frontend Contract Tests 的测试用例与断言集合。</summary>
 public sealed class FrontendContractTests
 {
+    /// <summary>验证 Real Mapper Snapshot Decodes In Frontend And Loadout Restores。</summary>
+    /// <returns>表示异步操作的任务。</returns>
     [Fact]
     public async Task RealMapperSnapshotDecodesInFrontendAndLoadoutRestores()
     {

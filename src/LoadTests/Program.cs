@@ -1,7 +1,15 @@
 namespace DaoHua.LoadTests;
 
+/// <summary>
+/// 压测工具入口。
+/// </summary>
 public static class Program
 {
+    /// <summary>
+    /// 压测程序主入口。
+    /// </summary>
+    /// <param name="args">命令行参数。</param>
+    /// <returns>进程退出码；门禁通过返回 0，否则返回 1，参数错误返回 2。</returns>
     public static async Task<int> Main(string[] args)
     {
         LoadTestOptions options;

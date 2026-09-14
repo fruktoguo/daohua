@@ -2,8 +2,14 @@ using System.Text.Json;
 
 namespace Domain.Tests;
 
+/// <summary>
+/// 战斗技能测试：施法恢复、冷却阻止、治疗效果与无效技能拒绝。
+/// </summary>
 public sealed class CombatSkillTests
 {
+    /// <summary>
+    /// 验证 <c>CastRestoreChargesManaOnceAndCooldownPreventsRecast</c>（Cast Restore Charges Mana Once And Cooldown Prevents Recast）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CastRestoreChargesManaOnceAndCooldownPreventsRecast()
     {
@@ -26,6 +32,9 @@ public sealed class CombatSkillTests
         Assert.Null(CombatSkillEngine.Advance(player, catalog, encounter, attributes, completed.State, 0).State.CastingAbilityId);
     }
 
+    /// <summary>
+    /// 验证 <c>HealingRespectsTriggerAndCapsHealthAndNoEffectAbilitiesAreRejected</c>（Healing Respects Trigger And Caps Health And No Effect Abilities Are Rejected）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void HealingRespectsTriggerAndCapsHealthAndNoEffectAbilitiesAreRejected()
     {

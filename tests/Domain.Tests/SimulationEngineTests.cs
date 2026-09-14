@@ -8,6 +8,9 @@ public sealed class SimulationEngineTests
     private static PlayerAggregate CreatePlayer(string name) =>
         PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
 
+    /// <summary>
+    /// 验证 <c>SingleAdvanceMatchesPerSecondSplitBitwise</c>（Single Advance Matches Per Second Split Bitwise）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SingleAdvanceMatchesPerSecondSplitBitwise()
     {
@@ -30,6 +33,9 @@ public sealed class SimulationEngineTests
         Assert.True(single.Progression.SimulationCarrySeconds == split.Progression.SimulationCarrySeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>CultivationExperienceIsGrantedOnlyWhenRepeatCompletes</c>（Cultivation Experience Is Granted Only When Repeat Completes）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void CultivationExperienceIsGrantedOnlyWhenRepeatCompletes()
     {
@@ -54,6 +60,9 @@ public sealed class SimulationEngineTests
         Assert.Equal(20, player.Progression.Experience);
     }
 
+    /// <summary>
+    /// 验证 <c>SustainedCultivationConsumableMatchesOfflineAndPerSecondAdvance</c>（Sustained Cultivation Consumable Matches Offline And Per Second Advance）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SustainedCultivationConsumableMatchesOfflineAndPerSecondAdvance()
     {
@@ -89,6 +98,9 @@ public sealed class SimulationEngineTests
         Assert.Equal(-1d, debit.QuantityDelta);
     }
 
+    /// <summary>
+    /// 验证 <c>SustainedConsumableDurationIsPreservedWhileActionQueueIsIdle</c>（Sustained Consumable Duration Is Preserved While Action Queue Is Idle）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SustainedConsumableDurationIsPreservedWhileActionQueueIsIdle()
     {
@@ -117,6 +129,9 @@ public sealed class SimulationEngineTests
         Assert.Equal(280d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>SustainedConsumableActivatesWhenSimulationCarryIsNonZero</c>（Sustained Consumable Activates When Simulation Carry Is Non Zero）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SustainedConsumableActivatesWhenSimulationCarryIsNonZero()
     {
@@ -138,6 +153,9 @@ public sealed class SimulationEngineTests
         Assert.Equal(-1d, Assert.Single(result.AssetDeltas).QuantityDelta);
     }
 
+    /// <summary>
+    /// 验证 <c>SustainedConsumableOverdraftBuffsCurrentRepeatThenRequiresNextItem</c>（Sustained Consumable Overdraft Buffs Current Repeat Then Requires Next Item）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SustainedConsumableOverdraftBuffsCurrentRepeatThenRequiresNextItem()
     {
@@ -156,6 +174,9 @@ public sealed class SimulationEngineTests
         Assert.Single(result.Events, entry => entry.Code == "auto-use.depleted");
     }
 
+    /// <summary>
+    /// 验证 <c>SustainedConsumableDoesNotActivateAfterCycleHasAwardedSeconds</c>（Sustained Consumable Does Not Activate After Cycle Has Awarded Seconds）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SustainedConsumableDoesNotActivateAfterCycleHasAwardedSeconds()
     {
@@ -182,6 +203,9 @@ public sealed class SimulationEngineTests
         Assert.Equal(300d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>SustainedExplorationAndAlchemyOutputsUseCeilingMultiplier</c>（Sustained Exploration And Alchemy Outputs Use Ceiling Multiplier）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SustainedExplorationAndAlchemyOutputsUseCeilingMultiplier()
     {
@@ -227,6 +251,9 @@ public sealed class SimulationEngineTests
         return wallet;
     }
 
+    /// <summary>
+    /// 验证 <c>FractionalSecondSplitMatchesWholeSecondBitwise</c>（Fractional Second Split Matches Whole Second Bitwise）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void FractionalSecondSplitMatchesWholeSecondBitwise()
     {
@@ -246,6 +273,9 @@ public sealed class SimulationEngineTests
         Assert.Equal(0, split.Progression.SimulationCarrySeconds);
     }
 
+    /// <summary>
+    /// 验证 <c>InfiniteActionStaysQueuedUnderBothSplitStyles</c>（Infinite Action Stays Queued Under Both Split Styles）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void InfiniteActionStaysQueuedUnderBothSplitStyles()
     {
@@ -266,6 +296,9 @@ public sealed class SimulationEngineTests
         Assert.True(single.Progression.Qi == split.Progression.Qi);
     }
 
+    /// <summary>
+    /// 验证 <c>RewardCarryPersistsAcrossSnapshotRoundTrip</c>（Reward Carry Persists Across Snapshot Round Trip）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void RewardCarryPersistsAcrossSnapshotRoundTrip()
     {
@@ -284,6 +317,9 @@ public sealed class SimulationEngineTests
         Assert.True(restored.Progression.Qi == 1.0, $"半秒余数应合并为一个整秒：{restored.Progression.Qi:R}");
     }
 
+    /// <summary>
+    /// 验证 <c>SimulationNeverDrivesRemainingRepeatsNegative</c>（Simulation Never Drives Remaining Repeats Negative）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void SimulationNeverDrivesRemainingRepeatsNegative()
     {
@@ -300,6 +336,9 @@ public sealed class SimulationEngineTests
         Assert.Empty(player.Actions);
     }
 
+    /// <summary>
+    /// 验证 <c>ZeroDurationHeadActionFromHotReloadIsSelfHealedAndQueueContinues</c>（Zero Duration Head Action From Hot Reload Is Self Healed And Queue Continues）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void ZeroDurationHeadActionFromHotReloadIsSelfHealedAndQueueContinues()
     {
@@ -326,6 +365,9 @@ public sealed class SimulationEngineTests
         Assert.True(player.Progression.Qi == 2.0, $"只有有效行动应累积修为：{player.Progression.Qi:R}");
     }
 
+    /// <summary>
+    /// 验证 <c>LegalZeroDurationFiniteActionIsSelfHealedInsteadOfSpinning</c>（Legal Zero Duration Finite Action Is Self Healed Instead Of Spinning）所描述的领域行为。
+    /// </summary>
     [Fact]
     public void LegalZeroDurationFiniteActionIsSelfHealedInsteadOfSpinning()
     {

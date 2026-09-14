@@ -2,6 +2,17 @@ using System.Text.RegularExpressions;
 
 namespace Server.Clean;
 
+/// <summary>
+/// 表示 AccountRegistrationResult 记录。
+/// </summary>
+/// <param name="Success">参数 Success。</param>
+/// <param name="AccountId">参数 AccountId。</param>
+/// <param name="PlayerId">参数 PlayerId。</param>
+/// <param name="Account">参数 Account。</param>
+/// <param name="DisplayName">参数 DisplayName。</param>
+/// <param name="ErrorCode">参数 ErrorCode。</param>
+/// <param name="Message">参数 Message。</param>
+/// <param name="SessionToken">参数 SessionToken。</param>
 public sealed record AccountRegistrationResult(
     bool Success,
     Guid? AccountId,
@@ -12,6 +23,17 @@ public sealed record AccountRegistrationResult(
     string? Message,
     string? SessionToken = null);
 
+/// <summary>
+/// 表示 AccountLoginResult 记录。
+/// </summary>
+/// <param name="Success">参数 Success。</param>
+/// <param name="AccountId">参数 AccountId。</param>
+/// <param name="PlayerId">参数 PlayerId。</param>
+/// <param name="Account">参数 Account。</param>
+/// <param name="DisplayName">参数 DisplayName。</param>
+/// <param name="ErrorCode">参数 ErrorCode。</param>
+/// <param name="Message">参数 Message。</param>
+/// <param name="SessionToken">参数 SessionToken。</param>
 public sealed record AccountLoginResult(
     bool Success,
     Guid? AccountId,
@@ -22,6 +44,9 @@ public sealed record AccountLoginResult(
     string? Message,
     string? SessionToken = null);
 
+/// <summary>
+/// 表示 IAccountRepository 接口。
+/// </summary>
 public interface IAccountRepository
 {
     ValueTask<AccountRegistrationResult> RegisterAsync(string account, string password, string? displayName, CancellationToken cancellationToken = default);
@@ -30,6 +55,13 @@ public interface IAccountRepository
     ValueTask RevokeSessionAsync(string token, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// 表示 SessionIdentity 记录。
+/// </summary>
+/// <param name="AccountId">参数 AccountId。</param>
+/// <param name="PlayerId">参数 PlayerId。</param>
+/// <param name="Account">参数 Account。</param>
+/// <param name="DisplayName">参数 DisplayName。</param>
 public sealed record SessionIdentity(Guid AccountId, Guid PlayerId, string Account, string DisplayName);
 
 /// <summary>账号与会话的关系存储；密码明文和 token 明文永不入库。</summary>
@@ -38,11 +70,25 @@ public sealed class PostgresAccountRepository(
     ServerOptions options,
     ILogger<PostgresAccountRepository> logger) : IAccountRepository
 {
+    /// <summary>
+    /// 表示常量 MinPasswordLength。
+    /// </summary>
     public const int MinPasswordLength = 6;
+    /// <summary>
+    /// 表示常量 MaxPasswordLength。
+    /// </summary>
     public const int MaxPasswordLength = 24;
     private const int Pbkdf2Iterations = 600_000;
     private static readonly Regex AccountPattern = new("^[a-zA-Z0-9_]{3,32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// 注册Async（异步）。
+    /// </summary>
+    /// <param name="account">账号名。</param>
+    /// <param name="password">密码。</param>
+    /// <param name="displayName">显示名称。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 AccountRegistrationResult。</returns>
     public async ValueTask<AccountRegistrationResult> RegisterAsync(
         string account,
         string password,
@@ -115,6 +161,13 @@ public sealed class PostgresAccountRepository(
         return new AccountRegistrationResult(true, accountId, playerId, normalizedAccount, normalizedName, null, null, sessionToken);
     }
 
+    /// <summary>
+    /// 登录Async（异步）。
+    /// </summary>
+    /// <param name="account">账号名。</param>
+    /// <param name="password">密码。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 AccountLoginResult。</returns>
     public async ValueTask<AccountLoginResult> LoginAsync(
         string account,
         string password,
@@ -159,6 +212,12 @@ public sealed class PostgresAccountRepository(
         return new AccountLoginResult(true, accountId, playerId, normalizedAccount, name, null, null, token);
     }
 
+    /// <summary>
+    /// 执行ValidateSessionAsync（异步）。
+    /// </summary>
+    /// <param name="token">会话令牌。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 SessionIdentity?。</returns>
     public async ValueTask<SessionIdentity?> ValidateSessionAsync(string token, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
@@ -181,6 +240,11 @@ public sealed class PostgresAccountRepository(
             : null;
     }
 
+    /// <summary>
+    /// 执行RevokeSessionAsync（异步）。
+    /// </summary>
+    /// <param name="token">会话令牌。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async ValueTask RevokeSessionAsync(string token, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return;

@@ -3,8 +3,10 @@ using Xunit;
 
 namespace Server.Tests;
 
+/// <summary>包含针对 Postgres Schema Tests 的测试用例与断言集合。</summary>
 public sealed class PostgresSchemaTests
 {
+    /// <summary>验证 Schema V1 Contains Authoritative Tables And Latest Only Queue。</summary>
     [Fact]
     public void SchemaV1_ContainsAuthoritativeTablesAndLatestOnlyQueue()
     {

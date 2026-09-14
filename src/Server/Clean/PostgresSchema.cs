@@ -3,8 +3,14 @@ namespace Server.Clean;
 /// <summary>schema v2 的一次性建库脚本，不迁移旧库。</summary>
 public static class PostgresSchema
 {
+    /// <summary>
+    /// 表示常量 Version。
+    /// </summary>
     public const int Version = 2;
 
+    /// <summary>
+    /// 表示常量 Sql。
+    /// </summary>
     public const string Sql = """
     CREATE SCHEMA IF NOT EXISTS identity;
     CREATE SCHEMA IF NOT EXISTS game;
@@ -320,6 +326,12 @@ public static class PostgresSchema
 /// </summary>
 public static class PostgresSchemaBootstrap
 {
+    /// <summary>
+    /// 确保Async（异步）。
+    /// </summary>
+    /// <param name="dataSource">PostgreSQL 数据源。</param>
+    /// <param name="enableBootstrap">参数 enableBootstrap。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public static async Task EnsureAsync(
         NpgsqlDataSource dataSource,
         bool enableBootstrap,
@@ -345,6 +357,11 @@ public static class PostgresSchemaBootstrap
         await VerifyAsync(connection, cancellationToken);
     }
 
+    /// <summary>
+    /// 执行VerifyAsync（异步）。
+    /// </summary>
+    /// <param name="connection">参数 connection。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public static async Task VerifyAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken = default)
@@ -365,11 +382,21 @@ public static class PostgresSchemaBootstrap
     }
 }
 
+/// <summary>
+/// 表示 PostgresSchemaHostedService 类。
+/// </summary>
+/// <param name="dataSource">PostgreSQL 数据源。</param>
+/// <param name="options">服务端配置选项。</param>
+/// <param name="logger">日志记录器。</param>
 public sealed class PostgresSchemaHostedService(
     NpgsqlDataSource dataSource,
     ServerOptions options,
     ILogger<PostgresSchemaHostedService> logger) : IHostedService
 {
+    /// <summary>
+    /// 启动Async（异步）。
+    /// </summary>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -380,5 +407,9 @@ public sealed class PostgresSchemaHostedService(
             logger.LogInformation("PostgreSQL schema v{Version} 已就绪。", PostgresSchema.Version);
     }
 
+    /// <summary>
+    /// 停止Async（异步）。
+    /// </summary>
+    /// <param name="cancellationToken">取消操作的标记。</param>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

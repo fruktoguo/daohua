@@ -125,6 +125,16 @@ static IEnumerable<JsonElement> EnumerateObjects(JsonElement element)
     }
 }
 
+/// <summary>游戏数据校验结果 DTO</summary>
+/// <param name="ContractVersion">结果契约版本</param>
+/// <param name="Directory">被校验目录名称</param>
+/// <param name="Files">扫描到的 JSON 文件数量</param>
+/// <param name="ObjectCount">顶层 JSON 对象数量</param>
+/// <param name="ArrayCount">顶层 JSON 数组数量</param>
+/// <param name="IdCount">全局唯一 id 数量</param>
+/// <param name="Fingerprint">目录内容 SHA256 前 16 位指纹</param>
+/// <param name="Strict">是否启用严格模式</param>
+/// <param name="ValidatedAt">校验完成时间</param>
 file sealed record ValidationResult(
     string ContractVersion,
     string Directory,
@@ -136,4 +146,6 @@ file sealed record ValidationResult(
     bool Strict,
     DateTimeOffset ValidatedAt);
 
+/// <summary>游戏数据校验失败异常</summary>
+/// <param name="message">异常消息</param>
 file sealed class DataValidationException(string message) : Exception(message);

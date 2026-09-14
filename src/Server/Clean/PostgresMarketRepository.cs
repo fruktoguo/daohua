@@ -10,6 +10,9 @@ public sealed class PostgresMarketRepository(
     ILogger<PostgresMarketRepository> logger) : IMarketTransactionStore
 {
     private static readonly string CoinsAsset = "currency.spirit-stone";
+    /// <summary>
+    /// 获取 DataSource。
+    /// </summary>
     public NpgsqlDataSource DataSource => dataSource;
 
     /// <summary>
@@ -83,6 +86,11 @@ public sealed class PostgresMarketRepository(
         return new SettlementClaimResult(playerId, requestId, settlementCount, now, false);
     }
 
+    /// <summary>
+    /// 加载ActiveOrdersAsync（异步）。
+    /// </summary>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 IReadOnlyList&lt;StoredMarketOrder。</returns>
     public async ValueTask<IReadOnlyList<StoredMarketOrder>> LoadActiveOrdersAsync(CancellationToken cancellationToken = default)
     {
         var orders = new List<StoredMarketOrder>();
@@ -105,6 +113,12 @@ public sealed class PostgresMarketRepository(
         return orders;
     }
 
+    /// <summary>
+    /// 加载ActiveOrdersAsync（异步）。
+    /// </summary>
+    /// <param name="instrument">市场品种。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 IReadOnlyList&lt;StoredMarketOrder。</returns>
     public async ValueTask<IReadOnlyList<StoredMarketOrder>> LoadActiveOrdersAsync(
         MarketInstrument instrument,
         CancellationToken cancellationToken = default)
@@ -134,6 +148,12 @@ public sealed class PostgresMarketRepository(
         return orders;
     }
 
+    /// <summary>
+    /// 加载OrderAsync（异步）。
+    /// </summary>
+    /// <param name="orderId">参数 orderId。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 StoredMarketOrder?。</returns>
     public async ValueTask<StoredMarketOrder?> LoadOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         if (orderId == Guid.Empty) return null;
@@ -154,6 +174,12 @@ public sealed class PostgresMarketRepository(
             : null;
     }
 
+    /// <summary>
+    /// 执行AcquireLeaseAsync（异步）。
+    /// </summary>
+    /// <param name="ownerInstanceId">参数 ownerInstanceId。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 bool。</returns>
     public async ValueTask<bool> AcquireLeaseAsync(Guid ownerInstanceId, CancellationToken cancellationToken = default)
     {
         if (ownerInstanceId == Guid.Empty) throw new ArgumentException("ownerInstanceId 不能为空。", nameof(ownerInstanceId));
@@ -182,6 +208,14 @@ public sealed class PostgresMarketRepository(
         return value is long;
     }
 
+    /// <summary>
+    /// 执行CommitPlacementAsync（异步）。
+    /// </summary>
+    /// <param name="order">市场订单。</param>
+    /// <param name="fills">参数 fills。</param>
+    /// <param name="fenceToken">参数 fenceToken。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 MarketCommitResult。</returns>
     public async ValueTask<MarketCommitResult> CommitPlacementAsync(
         MarketOrderInput order,
         IReadOnlyList<MarketFillInput> fills,
@@ -271,6 +305,16 @@ public sealed class PostgresMarketRepository(
         return new MarketCommitResult(order.OrderId, true, false, tradeIds);
     }
 
+    /// <summary>
+    /// 取消Async（异步）。
+    /// </summary>
+    /// <param name="orderId">参数 orderId。</param>
+    /// <param name="ownerPlayerId">参数 ownerPlayerId。</param>
+    /// <param name="partitionId">分片标识。</param>
+    /// <param name="fenceToken">参数 fenceToken。</param>
+    /// <param name="idempotencyKey">参数 idempotencyKey。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 bool。</returns>
     public ValueTask<bool> CancelAsync(
         Guid orderId,
         Guid ownerPlayerId,
@@ -282,6 +326,15 @@ public sealed class PostgresMarketRepository(
         return CloseOrderAsync(orderId, ownerPlayerId, partitionId, fenceToken, idempotencyKey, null, cancellationToken);
     }
 
+    /// <summary>
+    /// 执行ExpireAsync（异步）。
+    /// </summary>
+    /// <param name="orderId">参数 orderId。</param>
+    /// <param name="ownerPlayerId">参数 ownerPlayerId。</param>
+    /// <param name="fenceToken">参数 fenceToken。</param>
+    /// <param name="cutoff">参数 cutoff。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <returns>异步操作结果，包含 bool。</returns>
     public ValueTask<bool> ExpireAsync(Guid orderId, Guid ownerPlayerId, long fenceToken, DateTimeOffset cutoff, CancellationToken cancellationToken = default) =>
         CloseOrderAsync(orderId, ownerPlayerId, options.MarketPartitionId, fenceToken,
             $"market-expire:{ownerPlayerId:D}:{orderId:D}", cutoff, cancellationToken);
@@ -832,5 +885,10 @@ public sealed class PostgresMarketRepository(
     }
 }
 
+/// <summary>
+/// 表示 MarketLeaseLostException 类。
+/// </summary>
+/// <param name="partitionId">分片标识。</param>
+/// <param name="fenceToken">参数 fenceToken。</param>
 public sealed class MarketLeaseLostException(int partitionId, long fenceToken)
     : InvalidOperationException($"市场分片租约已失效 partition={partitionId} fence={fenceToken}");

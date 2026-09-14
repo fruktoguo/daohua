@@ -9,8 +9,10 @@ using Xunit;
 
 namespace Server.Tests;
 
+/// <summary>包含针对 Protocol Snapshot Mapper Tests 的测试用例与断言集合。</summary>
 public sealed class ProtocolSnapshotMapperTests
 {
+    /// <summary>验证 Snapshot Mapper Emits Protocol Dto Without Domain Runtime Objects。</summary>
     [Fact]
     public void SnapshotMapper_EmitsProtocolDtoWithoutDomainRuntimeObjects()
     {
@@ -25,6 +27,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(7, dto.Sections.Count);
         Assert.All(dto.Sections, section => Assert.False(string.IsNullOrWhiteSpace(section.PayloadBase64)));
     }
+    /// <summary>验证 To Delta Carries Only Changed Assets Against Baseline。</summary>
 
     [Fact]
     public void ToDelta_CarriesOnlyChangedAssetsAgainstBaseline()
@@ -65,6 +68,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(simulatedAt.ToUniversalTime().ToUnixTimeMilliseconds(), decoded!.LastSimulatedAt.ToUnixTimeMilliseconds());
         Assert.Contains("lastSimulatedAt", System.Text.Encoding.UTF8.GetString(envelope.Payload.Span));
     }
+    /// <summary>验证 Diff Assets Emits Zero Balance For Removed Asset。</summary>
 
     [Fact]
     public void DiffAssets_EmitsZeroBalanceForRemovedAsset()
@@ -78,6 +82,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(0, removed.Quantity);
         Assert.Equal(7, removed.Version);
     }
+    /// <summary>验证 Diff Sections Carries Only Sections With Modified Checksum。</summary>
 
     [Fact]
     public void DiffSections_CarriesOnlySectionsWithModifiedChecksum()
@@ -109,6 +114,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(null, sections).Count);
         Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(new Dictionary<string, string>(), sections).Count);
     }
+    /// <summary>验证 To Action Queue Section With Collect Morning Dew Maps Name And Type。</summary>
 
     [Fact]
     public void ToActionQueueSection_WithCollectMorningDew_MapsNameAndType()
@@ -130,6 +136,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal("收集 晨露", item.GetProperty("actionName").GetString());
         Assert.Equal("exploration", item.GetProperty("actionType").GetString());
     }
+    /// <summary>验证 To Action Queue Section Graceful Fallback When Game Data Null Or Unknown Action。</summary>
 
     [Fact]
     public void ToActionQueueSection_GracefulFallback_WhenGameDataNullOrUnknownAction()
@@ -168,6 +175,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal("赶路", item1Unknown.GetProperty("actionName").GetString());
         Assert.Equal("travel", item1Unknown.GetProperty("actionType").GetString());
     }
+    /// <summary>验证 To Snapshot Action Queue Section Includes Action Name And Type。</summary>
 
     [Fact]
     public void ToSnapshot_ActionQueueSection_IncludesActionNameAndType()
