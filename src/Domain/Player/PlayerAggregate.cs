@@ -470,6 +470,79 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
+    /// 完成或根据循环设置重新入队队首行动。
+    /// 若启用全局循环且行动非一次性移动（world.travel），则重置其重复次数与耗时进度后追加至队尾；
+    /// 否则直接移出队列。若队列仍有待执行项，激活新队首。
+    /// </summary>
+    public QueuedAction? CompleteOrRequeueHeadAction(Guid actionId, DateTimeOffset now)
+    {
+        var index = _actions.FindIndex(action => action.Id == actionId);
+        if (index < 0) return null;
+        var current = _actions[index];
+        _actions.RemoveAt(index);
+
+        var isLoopable = Settings.LoopEnabled && current.Intent.ActionId.Value != "world.travel";
+        QueuedAction? requeued = null;
+        if (isLoopable)
+        {
+            var repeats = current.Intent.RepeatCount > 0 ? current.Intent.RepeatCount : 1;
+            requeued = new QueuedAction(Guid.NewGuid(), current.Intent, now)
+            {
+                RemainingRepeats = repeats,
+                CompletedRepeats = 0,
+                ProgressSeconds = 0,
+                Status = _actions.Count == 0 ? ActionQueueStatus.Running : ActionQueueStatus.Pending,
+                Travel = null,
+                Expedition = null
+            };
+            _actions.Add(requeued);
+        }
+
+        if (_actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Pending)
+        {
+            _actions[0].Status = ActionQueueStatus.Running;
+        }
+
+        Touch(PlayerSectionKind.ActionQueue);
+        return isLoopable ? requeued : null;
+    }
+
+    /// <summary>
+    /// 将指定行动实例轮转到队列末尾（用于队列无限循环调度或受阻行动换位）。
+    /// 轮转后严格维护不变量：新的队首若为 Pending 则置为 Running，原行动若为 Running 则置为 Pending（Blocked 则保持 Blocked）。
+    /// </summary>
+    public bool RotateActionToTail(Guid actionInstanceId)
+    {
+        var index = _actions.FindIndex(action => action.Id == actionInstanceId);
+        if (index < 0 || _actions.Count <= 1) return false;
+
+        var action = _actions[index];
+        _actions.RemoveAt(index);
+        if (action.Status == ActionQueueStatus.Running)
+        {
+            action.Status = ActionQueueStatus.Pending;
+        }
+        _actions.Add(action);
+
+        if (_actions[0].Status == ActionQueueStatus.Pending)
+        {
+            _actions[0].Status = ActionQueueStatus.Running;
+        }
+
+        Touch(PlayerSectionKind.ActionQueue);
+        return true;
+    }
+
+    /// <summary>
+    /// 轮转队首行动至队尾。当队首被阻断且队列有多项行动时轮换，以便后续未阻断行动得到调度。
+    /// </summary>
+    public bool RotateHeadAction()
+    {
+        if (_actions.Count <= 1) return false;
+        return RotateActionToTail(_actions[0].Id);
+    }
+
+    /// <summary>
     /// 突破至下一境界阶层。重置当前阶层灵气与经验，推进 Progression 脏标记。
     /// </summary>
     public void Breakthrough()

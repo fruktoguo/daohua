@@ -26,6 +26,7 @@ public sealed class CombatExpeditionSimulationTests
     {
         var catalog = CreateCatalog(enemyHitpoints: 1, enemyAttackPower: 0);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.SetLoopEnabled(false);
 
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), 1), Baseline, catalog.Actions);
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog);

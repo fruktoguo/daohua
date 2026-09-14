@@ -94,6 +94,7 @@ public sealed class SimulationEngineTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("闲置保留");
+        player.SetLoopEnabled(false);
         var pill = new ItemId("item.qi-gathering-pill");
         var wallet = CreateWallet(player, (pill, 1d));
         player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
@@ -287,6 +288,7 @@ public sealed class SimulationEngineTests
     public void SimulationNeverDrivesRemainingRepeatsNegative()
     {
         var player = CreatePlayer("甲");
+        player.SetLoopEnabled(false);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 3), Baseline, ActionCatalog.Default);
 
         for (var i = 1; i <= 40; i++)
@@ -311,6 +313,7 @@ public sealed class SimulationEngineTests
             new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
         ]);
         var player = CreatePlayer("甲");
+        player.SetLoopEnabled(false);
         player.Enqueue(new ActionIntent(new ActionId("test.broken"), -1), Baseline, enqueueCatalog);
         player.Enqueue(new ActionIntent(new ActionId("test.valid"), 1), Baseline, enqueueCatalog);
 
@@ -332,6 +335,7 @@ public sealed class SimulationEngineTests
             new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
         ]);
         var player = CreatePlayer("甲");
+        player.SetLoopEnabled(false);
         player.Enqueue(new ActionIntent(new ActionId("test.instant"), 1_000_000), Baseline, catalog);
         player.Enqueue(new ActionIntent(new ActionId("test.valid"), 1), Baseline, catalog);
 

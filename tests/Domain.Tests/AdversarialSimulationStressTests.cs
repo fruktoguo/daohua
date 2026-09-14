@@ -71,6 +71,7 @@ public sealed class AdversarialSimulationStressTests
         ]);
 
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "极速者2", Baseline, "catalog-a");
+        player.SetLoopEnabled(false);
         player.Enqueue(new ActionIntent(new ActionId("test.1sec"), 50_000), Baseline, fastCatalog);
 
         // 推进 50,000 秒 -> 50,000 次转换

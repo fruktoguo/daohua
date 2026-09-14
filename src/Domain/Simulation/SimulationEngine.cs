@@ -100,13 +100,27 @@ public static class SimulationEngine
         Dictionary<ItemId, double>? deltas = null;
         List<SimulationEvent>? events = null;
 
+        var blockedActions = new HashSet<Guid>();
         while (remainingSeconds > 0 && player.Actions.Count > 0)
         {
             var action = player.Actions[0];
             // 阻塞项是明确的停泊状态。它不能被本次推进重新标记为 Running，
             // 否则战斗失败等不消费时间的结果会在队头空转直到转换上限。
             if (action.Status == ActionQueueStatus.Blocked)
+            {
+                if (player.Settings.LoopEnabled && player.Actions.Count > 1)
+                {
+                    if (player.Actions.All(a => a.Status == ActionQueueStatus.Blocked))
+                    {
+                        break;
+                    }
+                    player.RotateActionToTail(action.Id);
+                    if (++transitions > MaxTransitionsPerAdvance)
+                        throw new DomainException(DomainErrorCode.InvariantViolation, "单次模拟超过最大状态转换数。");
+                    continue;
+                }
                 break;
+            }
             if (++transitions > MaxTransitionsPerAdvance)
                 throw new DomainException(DomainErrorCode.InvariantViolation, "单次模拟超过最大状态转换数。");
 
@@ -293,6 +307,16 @@ public static class SimulationEngine
                 CombatantStats.Create(player.Combat.MaxHitpoints, player.Combat.AttackPower, player.Combat.Defense, 2),
                 monster.Stats);
             battle.Player.Hitpoints = Math.Clamp(player.Combat.Hitpoints, 0, player.Combat.MaxHitpoints);
+            if (battle.Player.Hitpoints <= 0)
+            {
+                action.Status = ActionQueueStatus.Blocked;
+                AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"气血衰竭，无法迎战：{monster.Name}。", definition.Id);
+                if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !player.Actions.All(a => a.Status == ActionQueueStatus.Blocked))
+                {
+                    player.RotateActionToTail(action.Id);
+                }
+                return;
+            }
             var combatState = ToExpeditionState(battle, updated with
             {
                 Phase = CombatExpeditionPhase.Combat,
@@ -362,6 +386,10 @@ public static class SimulationEngine
         {
             action.Status = ActionQueueStatus.Blocked;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{currentMonster.Name}。", definition.Id);
+            if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !player.Actions.All(a => a.Status == ActionQueueStatus.Blocked))
+            {
+                player.RotateActionToTail(action.Id);
+            }
             return;
         }
 
@@ -377,6 +405,17 @@ public static class SimulationEngine
         if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
         if (action.RemainingRepeats == 0)
         {
+            if (player.Settings.LoopEnabled)
+            {
+                action.RemainingRepeats = action.Intent.RepeatCount;
+                action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, NextSeed(updatedBattle.Seed));
+                action.ProgressSeconds = 0;
+                if (player.Actions.Count > 1)
+                {
+                    player.RotateActionToTail(action.Id);
+                }
+                return;
+            }
             player.RemoveAction(action.Id, incrementVersion: false);
             return;
         }
@@ -762,10 +801,22 @@ public static class SimulationEngine
             definition.Name,
             definition.Id,
             definition.Outputs));
-        // -1 表示无限行动：每轮完成后保留队列项并继续下一轮；仅在严格递减至 0 时出队。
+        // -1 表示无限行动：每轮完成后保留队列项并继续下一轮；仅在严格递减至 0 时出队或循环重入。
         if (action.RemainingRepeats == 0)
         {
-            player.RemoveAction(action.Id, incrementVersion: false);
+            if (player.Settings.LoopEnabled && definition.ExecutionKind != ActionExecutionKind.Travel)
+            {
+                action.RemainingRepeats = action.Intent.RepeatCount;
+                action.ProgressSeconds = 0;
+                if (player.Actions.Count > 1)
+                {
+                    player.RotateActionToTail(action.Id);
+                }
+            }
+            else
+            {
+                player.RemoveAction(action.Id, incrementVersion: false);
+            }
         }
     }
 
