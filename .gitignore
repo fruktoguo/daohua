@@ -21,6 +21,9 @@ data/
 **/data/snapshots/
 **/data/outbox/
 
+# 美术切图管线的中间产物（由 art/sheets.json 可完全重建，母版与运行资源才是交付物）
+art/_build/
+
 # 本地环境变量和凭据
 .env
 .env.*
@@ -35,3 +38,6 @@ Thumbs.db
 *.tmp
 *.pid
 temp/
+
+# 本地 Agent 记忆与工作区（含内部运维笔记，不入库）
+.workbuddy/

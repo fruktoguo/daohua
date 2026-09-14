@@ -12,6 +12,7 @@ data
 **/data/**
 docs
 frontend-sim
+art
 tests
 temp
 .env
