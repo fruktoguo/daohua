@@ -80,3 +80,43 @@ public sealed class BaseAttributeCatalog
         return Math.Max(1, tier);
     }
 }
+
+/// <summary>
+/// 境界修为与寿元配置：expToNext 为本层升至下一级所需修为（Lv.127 封顶为 0），
+/// lifespanYearsByTier 为 T1~T12 阶位寿元上限（年）。
+/// </summary>
+public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IReadOnlyList<double> LifespanYearsByTier)
+{
+    /// <summary>最大境界等级（expToNext 长度）。</summary>
+    public int MaxLevel => ExpToNext.Count;
+
+    /// <summary>当前层升至下一级所需修为；已满级返回 0。</summary>
+    public double ExpCapFor(int realmLevel)
+        => realmLevel >= 1 && realmLevel <= ExpToNext.Count ? ExpToNext[realmLevel - 1] : 0;
+
+    /// <summary>阶位对应寿元上限（年）；越界取末档。</summary>
+    public double LifespanYearsFor(int tier)
+        => LifespanYearsByTier.Count == 0 ? 0
+            : LifespanYearsByTier[Math.Clamp(tier, 1, LifespanYearsByTier.Count) - 1];
+
+    /// <summary>
+    /// 执行 Parse 操作。
+    /// </summary>
+    /// <param name="value">realmProgression JSON 对象。</param>
+    /// <returns>返回处理结果。</returns>
+    public static RealmProgressionCatalog Parse(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object
+            || !value.TryGetProperty("expToNext", out var exp) || exp.ValueKind != JsonValueKind.Array
+            || !value.TryGetProperty("lifespanYearsByTier", out var lifespan) || lifespan.ValueKind != JsonValueKind.Array)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "境界进度配置无效。");
+        var expToNext = exp.EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        var lifespanYears = lifespan.EnumerateArray().Select(e => e.GetDouble()).ToArray();
+        if (expToNext.Length == 0 || lifespanYears.Length == 0
+            || expToNext.Any(v => !double.IsFinite(v) || v < 0)
+            || expToNext.Take(expToNext.Length - 1).Any(v => v <= 0)
+            || lifespanYears.Any(v => !double.IsFinite(v) || v <= 0))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "境界进度配置数值无效。");
+        return new RealmProgressionCatalog(expToNext, lifespanYears);
+    }
+}

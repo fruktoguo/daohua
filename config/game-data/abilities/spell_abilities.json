@@ -18,7 +18,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 4.0
+    "manaCost": 4.0,
+    "rootAttribute": "intelligence"
   },
   {
     "id": "ability.blazing-blast",
@@ -41,7 +42,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 10.0
+    "manaCost": 10.0,
+    "rootAttribute": "intelligence"
   },
   {
     "id": "ability.qingping-melody",
@@ -66,7 +68,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 10.0
+    "manaCost": 10.0,
+    "rootAttribute": "intelligence"
   },
   {
     "id": "ability.lightning-attraction",
@@ -89,7 +92,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 20.0
+    "manaCost": 20.0,
+    "rootAttribute": "intelligence"
   },
   {
     "id": "ability.pozhen-melody",
@@ -116,6 +120,7 @@
         "buffId": null
       }
     ],
-    "manaCost": 50.0
+    "manaCost": 50.0,
+    "rootAttribute": "talisman"
   }
 ]

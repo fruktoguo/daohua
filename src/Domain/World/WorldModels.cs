@@ -6,6 +6,9 @@ namespace Domain.World;
 /// <summary>世界地图节点（如宗门、村落、秘境洞府、灵脉矿区）。</summary>
 public sealed record WorldNode(string Id, string Name, double X, double Y)
 {
+    /// <summary>节点栖息生态引用的遭遇 ID 列表；战斗行动按当前节点解析实际遭遇。</summary>
+    public IReadOnlyList<string> EncounterIds { get; init; } = [];
+
     /// <summary>
     /// 执行 创建 操作。
     /// </summary>
@@ -13,12 +16,16 @@ public sealed record WorldNode(string Id, string Name, double X, double Y)
     /// <param name="name">name 参数。</param>
     /// <param name="x">x 参数。</param>
     /// <param name="y">y 参数。</param>
+    /// <param name="encounterIds">节点生态遭遇 ID 列表，可为空。</param>
     /// <returns>返回处理结果。</returns>
-    public static WorldNode Create(string id, string name, double x, double y)
+    public static WorldNode Create(string id, string name, double x, double y, IReadOnlyList<string>? encounterIds = null)
     {
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name) || !double.IsFinite(x) || !double.IsFinite(y))
             throw new DomainException(DomainErrorCode.InvalidArgument, "世界节点无效。");
-        return new WorldNode(id.Trim(), name.Trim(), x, y);
+        return new WorldNode(id.Trim(), name.Trim(), x, y)
+        {
+            EncounterIds = encounterIds ?? []
+        };
     }
 }
 

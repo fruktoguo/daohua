@@ -21,7 +21,9 @@ public enum PlayerSectionKind : byte
     /// <summary>玩家个人偏好设置（语言、通知、循环模式、快捷自动使用槽位）</summary>
     Settings = 6,
     /// <summary>正在排队与执行中的行动队列（支持进度与重复次数）</summary>
-    ActionQueue = 7
+    ActionQueue = 7,
+    /// <summary>斗法玩法状态：遭遇计数、失败冷却、暂存区与战斗收益记录</summary>
+    Duel = 8
 }
 
 /// <summary>
@@ -48,8 +50,8 @@ public sealed record PlayerStateHead(
     string Checksum,
     DateTimeOffset UpdatedAt)
 {
-    /// <summary>当前头结构模式版本；v2：战斗分段加入回复余量、技能状态与已学功法。</summary>
-    public const int CurrentSchemaVersion = 2;
+    /// <summary>当前头结构模式版本；v3：新增斗法分段（duel）。</summary>
+    public const int CurrentSchemaVersion = 3;
 }
 
 /// <summary>
@@ -68,8 +70,8 @@ public sealed record PlayerSectionSnapshot(
     string Checksum,
     DateTimeOffset UpdatedAt)
 {
-    /// <summary>当前分段数据结构模式版本</summary>
-    public const int CurrentSchemaVersion = 2;
+    /// <summary>当前分段数据结构模式版本；v3：新增斗法分段（duel）。</summary>
+    public const int CurrentSchemaVersion = 3;
 }
 
 /// <summary>

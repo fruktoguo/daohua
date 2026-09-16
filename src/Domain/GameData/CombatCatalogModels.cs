@@ -20,7 +20,7 @@ public enum CombatMonsterRank : byte
     Boss = 2
 }
 
-/// <summary>怪物战斗静态属性、品阶、随战技能与掉落配表。</summary>
+/// <summary>怪物战斗静态属性、品阶、随战技能、掉落配表与击杀奖励（修为/底蕴/六维经验）。</summary>
 public sealed record CombatMonsterDefinition(
     string Id,
     string Name,
@@ -29,7 +29,10 @@ public sealed record CombatMonsterDefinition(
     CombatMonsterRank Rank,
     CombatantStats Stats,
     IReadOnlyList<CombatDropDefinition> DropTable,
-    IReadOnlyList<MonsterSkillSlot> Skills);
+    IReadOnlyList<MonsterSkillSlot> Skills,
+    double QiReward = 0,
+    double ExperienceReward = 0,
+    double RootExpReward = 0);
 
 /// <summary>遭遇中的随机刷怪候选及预算权重。</summary>
 public sealed record CombatSpawnDefinition(

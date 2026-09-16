@@ -73,19 +73,21 @@ public static class SimulationEngine
         PlayerAggregate player,
         DateTimeOffset target,
         GameDataCatalog gameData,
-        AssetWallet? assetBalances = null)
+        AssetWallet? assetBalances = null,
+        DuelAdvanceOptions? duel = null)
     {
         ArgumentNullException.ThrowIfNull(gameData);
         if (assetBalances is not null && assetBalances.PlayerId != player.PlayerId)
             throw new DomainException(DomainErrorCode.InvalidArgument, "资产余额与模拟玩家不一致。");
-        return AdvanceWithResources(player, target, gameData, assetBalances);
+        return AdvanceWithResources(player, target, gameData, assetBalances, duel);
     }
 
     private static SimulationResult AdvanceWithResources(PlayerAggregate player, DateTimeOffset target,
-        GameDataCatalog gameData, AssetWallet? assets)
+        GameDataCatalog gameData, AssetWallet? assets, DuelAdvanceOptions? duel)
     {
         var from = player.LastSimulatedAt;
         if (target < from) throw new DomainException(DomainErrorCode.InvalidArgument, "目标时间不能倒退。");
+        player.DuelSettingsTuning = gameData.Duel;
         var wallet = new AssetWallet(player.PlayerId);
         if (assets is not null) wallet.Restore(assets.Balances);
         var deltas = new Dictionary<AssetKey, double>();
@@ -115,7 +117,19 @@ public static class SimulationEngine
                 var untilCooldown = slot.CooldownUntilUnixSeconds - now.ToUnixTimeMilliseconds() / 1000d;
                 if (slot.Enabled && untilCooldown > 1e-9) step = Math.Min(step, untilCooldown);
             }
-            var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet);
+            var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet, duel);
+            var stagedSettled = player.SettleStagedItems(now.AddSeconds(step).ToUnixTimeMilliseconds() / 1000d,
+                gameData.Duel.StagedSettleSeconds);
+            foreach (var settledItem in stagedSettled)
+            {
+                var settledDelta = new AssetDelta(player.PlayerId, new AssetKey(new ItemId(settledItem.ItemId)), settledItem.Quantity, "simulation");
+                wallet.Apply(settledDelta);
+                deltas[settledDelta.Asset] = deltas.GetValueOrDefault(settledDelta.Asset) + settledDelta.QuantityDelta;
+                var settledItemId = new ItemId(settledItem.ItemId);
+                events.Add(new SimulationEvent(now.AddSeconds(step), "duel.staged-settled",
+                    $"暂存物品入账：{gameData.Items.GetValueOrDefault(settledItemId)?.Name ?? settledItem.ItemId} ×{settledItem.Quantity:0.##}。", null,
+                    new Dictionary<ItemId, double> { [settledItemId] = settledItem.Quantity }));
+            }
             if (player.Actions.Count == 0 || player.Actions[0].Expedition?.Phase != CombatExpeditionPhase.Combat)
             {
                 var skills = player.Combat.Skills;
@@ -232,7 +246,8 @@ public static class SimulationEngine
         DateTimeOffset target,
         ActionCatalog catalog,
         GameDataCatalog? gameData,
-        AssetWallet? assetBalances)
+        AssetWallet? assetBalances,
+        DuelAdvanceOptions? duel = null)
     {
         ArgumentNullException.ThrowIfNull(player);
         target = target.ToUniversalTime();
@@ -251,6 +266,9 @@ public static class SimulationEngine
         while (remainingSeconds > 0 && player.Actions.Count > 0)
         {
             var action = player.Actions[0];
+            // 收益账本与队首行动绑定：队首切换（完成/移除/调序/插队）时旧账本立即归档。
+            if (player.Duel.CurrentReport is { } boundReport && boundReport.ActionInstanceId != action.Id)
+                player.ArchiveCurrentReport(from.AddSeconds((target - from).TotalSeconds - remainingSeconds));
             // 阻塞项是明确的停泊状态。它不能被本次推进重新标记为 Running，
             // 否则战斗失败等不消费时间的结果会在队头空转直到转换上限。
             if (action.Status == ActionQueueStatus.Blocked)
@@ -302,7 +320,7 @@ public static class SimulationEngine
             {
                 if (gameData is null)
                     throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
-                AdvanceCombatAction(player, action, definition, gameData, from, target, ref remainingSeconds,
+                AdvanceCombatAction(player, action, definition, gameData, duel, from, target, ref remainingSeconds,
                     ref deltas, ref events, ref completedActions, ref completedRepeats);
                 continue;
             }
@@ -347,7 +365,7 @@ public static class SimulationEngine
             // 生平修炼时长只统计修炼类行动的实际推进秒数。
             if (definition.Kind == ActionKind.Cultivation && wholeSeconds > 0)
                 player.Progression.CultivationSeconds += wholeSeconds;
-            ApplyContinuousReward(player, definition, wholeSeconds, autoUseMultiplier);
+            ApplyContinuousReward(player, definition, wholeSeconds, autoUseMultiplier, gameData);
             if (step > 0)
             {
                 player.MarkDirty(definition.Kind switch
@@ -362,6 +380,8 @@ public static class SimulationEngine
             CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events, ref completedActions, ref completedRepeats);
         }
 
+        // 道龄随模拟时间自然流逝；Progression 仅在发生实际状态转移时标脏，避免空队列每秒刷盘。
+        player.Progression.AgeSeconds += (target - from).TotalSeconds;
         player.LastSimulatedAt = target;
         if (remainingSeconds < 0) throw new DomainException(DomainErrorCode.InvariantViolation, "模拟时间出现负余量。");
         if (player.Actions.Count > 0 && player.Actions[0].Status == ActionQueueStatus.Pending)
@@ -431,6 +451,7 @@ public static class SimulationEngine
         QueuedAction action,
         ActionDefinition definition,
         GameDataCatalog gameData,
+        DuelAdvanceOptions? duel,
         DateTimeOffset from,
         DateTimeOffset target,
         ref double remainingSeconds,
@@ -439,20 +460,53 @@ public static class SimulationEngine
         ref double completedActions,
         ref double completedRepeats)
     {
-        if (string.IsNullOrWhiteSpace(definition.CombatEncounterId)
-            || !gameData.CombatEncounters.TryGetValue(definition.CombatEncounterId, out var encounter))
-            throw new DomainException(DomainErrorCode.NotFound, $"战斗行动 {definition.Id} 关联的遭遇不存在。");
-
+        CombatEncounterDefinition encounter;
         var expedition = action.Expedition;
         if (expedition is null)
         {
+            encounter = ResolveCombatEncounter(player, action, definition, gameData);
+            // 新战斗行动会话开始：重建本次行动收益账本。
+            player.BeginBattleReport(action.Id, definition.Id, definition.Name,
+                from.AddSeconds((target - from).TotalSeconds - remainingSeconds));
             expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.InitialSearch, gameData);
             action.Expedition = expedition;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.search.started", $"开始搜寻：{encounter.Name}。", definition.Id);
         }
+        else if (!gameData.CombatEncounters.TryGetValue(expedition.EncounterId, out encounter!))
+        {
+            throw new DomainException(DomainErrorCode.NotFound, $"远征状态引用的遭遇 {expedition.EncounterId} 不存在。");
+        }
 
         if (!expedition.IsValid)
             throw new DomainException(DomainErrorCode.InvariantViolation, $"行动 {definition.Id} 的战斗远征状态无效。");
+
+        if (expedition.Phase == CombatExpeditionPhase.Duel)
+        {
+            AdvanceDuelPlayback(player, action, definition, encounter, gameData, from, target,
+                ref remainingSeconds, ref deltas, ref events);
+            return;
+        }
+
+        if (expedition.Phase == CombatExpeditionPhase.DuelPending)
+        {
+            if (duel?.MatchingEnabled == true)
+            {
+                // 匹配等待不消耗战斗时间：整段剩余时间记为等待，由撮合运行时在下一拍完成挂载。
+                action.Expedition = expedition with { PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + remainingSeconds };
+                action.ProgressSeconds = action.Expedition.PhaseElapsedSeconds;
+                remainingSeconds = 0;
+                return;
+            }
+            // 离线补算等无撮合路径：保留遭遇计数，回退为正常波次入口。
+            expedition = expedition with
+            {
+                Phase = CombatExpeditionPhase.Search,
+                PhaseElapsedSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
+                PhaseDurationSeconds = Math.Max(expedition.PhaseElapsedSeconds, 1e-9),
+                DuelSeekFailed = true
+            };
+            action.Expedition = expedition;
+        }
 
         var phaseRemaining = Math.Max(0, expedition.PhaseDurationSeconds - expedition.PhaseElapsedSeconds);
         if (expedition.Phase == CombatExpeditionPhase.Respawning)
@@ -477,7 +531,8 @@ public static class SimulationEngine
         if (expedition.Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search)
         {
             var step = Math.Min(remainingSeconds, phaseRemaining);
-            if (step <= 0)
+            // DuelSeekFailed 的搜寻态是撮合失败回退出的「已完成搜寻」入口，phaseRemaining 为 0 属正常。
+            if (step <= 0 && !expedition.DuelSeekFailed)
                 throw new DomainException(DomainErrorCode.InvariantViolation, "战斗搜寻阶段没有可推进的时间。");
             remainingSeconds -= step;
             var updated = expedition with
@@ -489,6 +544,38 @@ public static class SimulationEngine
             if (updated.PhaseElapsedSeconds + 1e-9 < updated.PhaseDurationSeconds) return;
 
             var seed = updated.Seed;
+            // 斗法入场判定：勾选斗法且不在失败冷却中时，每次进入战斗先判定遭遇计数。
+            var duelSettings = gameData.Duel;
+            if (action.Intent.PvpEnabled)
+            {
+                var entryAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+                if (player.Duel.CooldownUntilUnixSeconds <= entryAtUnix)
+                {
+                    var chargesBefore = player.Duel.EncounterCharges;
+                    var chargeRoll = (unchecked((ulong)NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
+                    if (chargeRoll < duelSettings.EncounterChancePerBattle)
+                    {
+                        player.Duel.EncounterCharges += 1;
+                        player.MarkDirty(PlayerSectionKind.Duel);
+                        AddCombatEvent(ref events, from, target, remainingSeconds, "duel.charge", "心血来潮：斗法遭遇感应 +1。", definition.Id);
+                    }
+                    // 计数大于 0 时进入匹配等待（以判定前计数为准，本波新增的计数留给下次入场）。
+                    if (chargesBefore > 0 && !updated.DuelSeekFailed && duel?.MatchingEnabled == true)
+                    {
+                        action.Expedition = updated with
+                        {
+                            Phase = CombatExpeditionPhase.DuelPending,
+                            PhaseElapsedSeconds = 0,
+                            PhaseDurationSeconds = 0,
+                            DuelSeekFailed = false
+                        };
+                        action.ProgressSeconds = 0;
+                        AddCombatEvent(ref events, from, target, remainingSeconds, "duel.seeking", "斗法感应触发，正在匹配旗鼓相当的对手……", definition.Id);
+                        return;
+                    }
+                }
+            }
+
             // 按遭遇预算与波次生成确定性的本波怪物阵容，同波全体敌人同场交战。
             var wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters, seed, updated.WaveNumber);
             var battle = CombatEncounterState.Start(
@@ -516,7 +603,8 @@ public static class SimulationEngine
                 Phase = CombatExpeditionPhase.Combat,
                 PhaseElapsedSeconds = 0,
                 PhaseDurationSeconds = 0,
-                Outcome = CombatOutcome.Running
+                Outcome = CombatOutcome.Running,
+                DuelSeekFailed = false
             });
             action.ProgressSeconds = 0;
             action.Expedition = combatState;
@@ -602,12 +690,14 @@ public static class SimulationEngine
             return;
         }
 
-        // 波次清空才结算掉落与完成一次重复；逐只发放并计入生平斩妖。
+        // 波次清空才结算掉落与完成一次重复；逐只发放击杀奖励并计入生平斩妖。
+        var pvpEnabled = action.Intent.PvpEnabled;
+        var killAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         var killSeed = updatedBattle.Seed;
         foreach (var enemy in waveEnemies)
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
-            ApplyCombatRewards(player, monster, killSeed, ref deltas);
+            ApplyCombatRewards(player, monster, killSeed, pvpEnabled, killAtUnix, gameData, ref deltas);
             killSeed = NextSeed(killSeed);
             switch (monster.Rank)
             {
@@ -616,6 +706,7 @@ public static class SimulationEngine
                 default: player.Progression.NormalKills += 1; break;
             }
         }
+        player.MarkDirty(PlayerSectionKind.Loadout);
         player.MarkDirty(PlayerSectionKind.Progression);
         AddCombatEvent(ref events, from, target, remainingSeconds, "combat.won",
             $"讨伐成功：{string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name))}。", definition.Id);
@@ -648,6 +739,135 @@ public static class SimulationEngine
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
             gameData, NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1);
         action.ProgressSeconds = 0;
+    }
+
+    /// <summary>
+    /// 斗法剧本回放推进：结果在撮合时已确定性锁定，本相位只按时间轴回放事件并结算归属。
+    /// 战斗期间任何配置修改不影响剧本；玩家主动结束行动走 ApplyDuelForfeit 判负路径。
+    /// </summary>
+    private static void AdvanceDuelPlayback(
+        PlayerAggregate player,
+        QueuedAction action,
+        ActionDefinition definition,
+        CombatEncounterDefinition encounter,
+        GameDataCatalog gameData,
+        DateTimeOffset from,
+        DateTimeOffset target,
+        ref double remainingSeconds,
+        ref Dictionary<ItemId, double>? deltas,
+        ref List<SimulationEvent>? events)
+    {
+        var expedition = action.Expedition!;
+        var playback = expedition.Duel ?? throw new DomainException(DomainErrorCode.InvariantViolation, "斗法回放载荷缺失。");
+        var elapsedBefore = (target - from).TotalSeconds - remainingSeconds;
+        var step = playback.Resolved ? 0 : Math.Min(remainingSeconds, Math.Max(0, playback.DurationSeconds - expedition.BattleElapsedSeconds));
+        remainingSeconds -= step;
+        var playbackTo = Math.Min(expedition.BattleElapsedSeconds + step, playback.DurationSeconds);
+        var cursor = (int)playback.EventCursor;
+        var viewerHp = expedition.PlayerHitpoints;
+        var opponentHp = playback.OpponentHitpoints;
+        // 回放游标前的事件已全部应用过；游标到 playbackTo 之间的事件逐条应用并写日志。
+        for (var i = cursor; i < playback.Events.Count; i++)
+        {
+            var duelEvent = playback.Events[i];
+            if (duelEvent.AtSeconds > playbackTo + 1e-9) break;
+            cursor = i + 1;
+            var targetIsViewer = duelEvent.TargetIsInitiator == playback.ViewerIsInitiator;
+            if (targetIsViewer) viewerHp = duelEvent.TargetHitpointsAfter;
+            else opponentHp = duelEvent.TargetHitpointsAfter;
+            var attacker = duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator ? "你" : playback.OpponentName;
+            var targetName = targetIsViewer ? "你" : playback.OpponentName;
+            AddCombatEventAt(ref events, from.AddSeconds(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)),
+                "combat.attack", $"{attacker}{(duelEvent.Hit ? $"命中{targetName}，造成 {duelEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
+        }
+        var updated = expedition with
+        {
+            BattleElapsedSeconds = playbackTo,
+            PlayerHitpoints = viewerHp,
+            Duel = playback with { EventCursor = cursor, OpponentHitpoints = opponentHp }
+        };
+        action.Expedition = updated;
+        player.Combat.Hitpoints = Math.Clamp(viewerHp, 0, player.Combat.MaxHitpoints);
+        player.MarkDirty(PlayerSectionKind.Combat);
+        player.MarkDirty(PlayerSectionKind.ActionQueue);
+        if (!playback.Resolved && playbackTo + 1e-9 < playback.DurationSeconds) return;
+
+        // 回放结束（或已裁决标记）：结算斗法归属。
+        var now = from.AddSeconds(elapsedBefore + Math.Max(0, playbackTo - expedition.BattleElapsedSeconds));
+        var nowUnix = now.ToUnixTimeMilliseconds() / 1000d;
+        var duelSettings = gameData.Duel;
+        var report = player.Duel.CurrentReport;
+        player.Duel.ActiveDuelId = null;
+        switch (playback.ViewerOutcome)
+        {
+            case CombatOutcome.PlayerWon:
+                foreach (var spoils in playback.OpponentStagedSnapshot)
+                {
+                    var spoilsId = new ItemId(spoils.ItemId);
+                    AddDelta(deltas ??= new Dictionary<ItemId, double>(), spoilsId, spoils.Quantity);
+                    report?.AddItem(spoilsId, spoils.Quantity);
+                }
+                if (report is not null) report.DuelWins += 1;
+                AddCombatEvent(ref events, from, target, remainingSeconds, "duel.won",
+                    playback.Forfeited
+                        ? $"斗法获胜：{playback.OpponentName} 弃战离去，其暂存物品尽数落袋。"
+                        : $"斗法获胜：击败 {playback.OpponentName}，缴获其暂存物品。", definition.Id);
+                action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
+                    gameData, NextSeed(expedition.Seed), waveNumber: 1);
+                break;
+            case CombatOutcome.EnemyWon:
+                // 弃战路径（ApplyDuelForfeit）已即时记账暂存移除、冷却与败绩，回放落点不再重复结算。
+                if (!playback.Forfeited)
+                {
+                    player.RemoveStagedItems(playback.SelfStagedSnapshot);
+                    player.Duel.CooldownUntilUnixSeconds = nowUnix + duelSettings.DefeatCooldownSeconds;
+                    if (report is not null) report.DuelLosses += 1;
+                    player.Progression.TotalDefeats += 1;
+                }
+                AddCombatEvent(ref events, from, target, remainingSeconds, "duel.lost",
+                    playback.Forfeited
+                        ? $"斗法弃战：你已结束斗法行动，暂存物品被 {playback.OpponentName} 取走。"
+                        : $"斗法落败：{playback.OpponentName} 取走了你的暂存物品，一小时内不再进入斗法。", definition.Id);
+                action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
+                    gameData, NextSeed(expedition.Seed), waveNumber: 1) with
+                { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
+                player.Combat.Hitpoints = 0;
+                break;
+            default:
+                AddCombatEvent(ref events, from, target, remainingSeconds, "duel.draw",
+                    $"斗法平局：与 {playback.OpponentName} 战成平手。", definition.Id);
+                action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
+                    gameData, NextSeed(expedition.Seed), waveNumber: 1);
+                break;
+        }
+        player.MarkDirty(PlayerSectionKind.Duel);
+        player.MarkDirty(PlayerSectionKind.Progression);
+        action.ProgressSeconds = 0;
+    }
+
+    /// <summary>
+    /// 解析战斗行动在当前节点实际应战的遭遇：玩家位于已登记生态遭遇的节点时，
+    /// 按确定性种子从节点 encounterIds 中抽取；节点无生态或行进中则回退行动钉死的 combatEncounterId。
+    /// </summary>
+    private static CombatEncounterDefinition ResolveCombatEncounter(
+        PlayerAggregate player,
+        QueuedAction action,
+        ActionDefinition definition,
+        GameDataCatalog gameData)
+    {
+        var encounterId = definition.CombatEncounterId;
+        if (string.IsNullOrWhiteSpace(player.World.EdgeId)
+            && gameData.WorldGraph.TryGetNode(player.World.NodeId, out var node)
+            && node.EncounterIds.Count > 0)
+        {
+            var pool = node.EncounterIds;
+            var index = pool.Count == 1 ? 0 : (int)((ulong)CreateSeed(definition.Id.Value, action.CompletedRepeats) % (ulong)pool.Count);
+            encounterId = pool[index];
+        }
+        if (string.IsNullOrWhiteSpace(encounterId)
+            || !gameData.CombatEncounters.TryGetValue(encounterId, out var encounter))
+            throw new DomainException(DomainErrorCode.NotFound, $"战斗行动 {definition.Id} 在节点 {player.World.NodeId} 无可用遭遇。");
+        return encounter;
     }
 
     private static CombatExpeditionState CreateSearchState(
@@ -694,18 +914,103 @@ public static class SimulationEngine
             enemy.UsedSkillMask, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints)).ToArray()
     };
 
-    private static void ApplyCombatRewards(PlayerAggregate player, CombatMonsterDefinition monster, long seed, ref Dictionary<ItemId, double>? deltas)
+    /// <summary>
+    /// 击杀单只怪物的全部奖励：修为、底蕴、六维经验与掉落。
+    /// 斗法开启时掉落爆率乘以配置加成、掉落物进入暂存区；所有收益计入当前战斗账本。
+    /// </summary>
+    private static void ApplyCombatRewards(
+        PlayerAggregate player,
+        CombatMonsterDefinition monster,
+        long seed,
+        bool pvpEnabled,
+        double killAtUnixSeconds,
+        GameDataCatalog gameData,
+        ref Dictionary<ItemId, double>? deltas)
     {
-        if (monster.DropTable.Count == 0) return;
+        var report = player.Duel.CurrentReport;
+        if (monster.QiReward > 0)
+        {
+            player.Progression.Qi += monster.QiReward;
+            player.Progression.LifetimeQi += monster.QiReward;
+            if (report is not null) report.Qi += monster.QiReward;
+        }
+        if (monster.ExperienceReward > 0)
+        {
+            var cappedExpReward = CapExperience(player, monster.ExperienceReward, gameData);
+            player.Progression.Experience += cappedExpReward;
+            if (report is not null) report.Experience += cappedExpReward;
+        }
+        if (monster.RootExpReward > 0)
+            DistributeRootExp(player, monster.RootExpReward, gameData, report);
+        var dropBonus = pvpEnabled ? PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear) : 1;
         foreach (var drop in monster.DropTable)
         {
             if (!drop.ItemId.IsValid || drop.MinQuantity <= 0 || drop.MaxQuantity < drop.MinQuantity || drop.DropChance <= 0) continue;
             var roll = (unchecked((ulong)NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
             seed = NextSeed(seed);
-            if (roll > drop.DropChance) continue;
+            if (roll > Math.Min(1, drop.DropChance * dropBonus)) continue;
             var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity) * roll);
-            AddDelta(deltas ??= new Dictionary<ItemId, double>(), drop.ItemId, Math.Max(drop.MinQuantity, quantity));
+            quantity = Math.Max(drop.MinQuantity, quantity);
+            if (pvpEnabled)
+            {
+                // 斗法期间掉落进入暂存区：入账延迟与归属由暂存结算/斗法结算决定。
+                player.StageItem(drop.ItemId, quantity, killAtUnixSeconds);
+            }
+            else
+            {
+                AddDelta(deltas ??= new Dictionary<ItemId, double>(), drop.ItemId, quantity);
+                report?.AddItem(drop.ItemId, quantity);
+            }
         }
+    }
+
+    /// <summary>
+    /// 六维经验分配：按已装备功法槽位的 rootAttribute 集合均分；
+    /// 无功法或功法未声明归属维度时六维平均分配。
+    /// </summary>
+    private static void DistributeRootExp(PlayerAggregate player, double amount, GameDataCatalog gameData, PlayerBattleReport? report)
+    {
+        var targets = new HashSet<CoreAspectKind>();
+        var anySlot = false;
+        foreach (var slot in player.Loadout.AbilitySlots)
+        {
+            if (slot.AbilityId is null) continue;
+            anySlot = true;
+            if (TryParseCoreAspect(slot.AbilityId, gameData, out var attribute))
+                targets.Add(attribute);
+            else
+            {
+                // 功法未声明归属维度视为全修：覆盖全部六维。
+                targets.UnionWith(Enum.GetValues<CoreAspectKind>());
+            }
+        }
+        if (!anySlot || targets.Count == 0)
+            targets.UnionWith(Enum.GetValues<CoreAspectKind>());
+        var share = amount / targets.Count;
+        var core = player.Loadout.CoreAttributes;
+        foreach (var attribute in targets)
+        {
+            core = attribute switch
+            {
+                CoreAspectKind.Stamina => core with { StaminaExp = core.StaminaExp + share },
+                CoreAspectKind.Intelligence => core with { IntelligenceExp = core.IntelligenceExp + share },
+                CoreAspectKind.Attack => core with { AttackExp = core.AttackExp + share },
+                CoreAspectKind.Defense => core with { DefenseExp = core.DefenseExp + share },
+                CoreAspectKind.Swordsmanship => core with { SwordsmanshipExp = core.SwordsmanshipExp + share },
+                _ => core with { TalismanExp = core.TalismanExp + share }
+            };
+            report?.RootExp.Add(attribute, share);
+        }
+        player.Loadout.CoreAttributes = core;
+    }
+
+    private static bool TryParseCoreAspect(string abilityId, GameDataCatalog catalog, out CoreAspectKind attribute)
+    {
+        attribute = default;
+        if (!catalog.Abilities.TryGetValue(abilityId, out var ability)
+            || !ability.TryGetProperty("rootAttribute", out var property) || property.ValueKind != JsonValueKind.String)
+            return false;
+        return Enum.TryParse(property.GetString(), true, out attribute) && Enum.IsDefined(attribute);
     }
 
     private static void AddCombatEvent(ref List<SimulationEvent>? events, DateTimeOffset from, DateTimeOffset target, double remainingSeconds, string code, string message, ActionId actionId)
@@ -950,13 +1255,27 @@ public static class SimulationEngine
     }
 
     /// <summary>
+    /// 修为经验入账截断：触及本层瓶颈（expToNext）后锁定增长待突破，满级（cap≤0）恒锁定。
+    /// </summary>
+    private static double CapExperience(PlayerAggregate player, double gain, GameDataCatalog? gameData)
+    {
+        var realm = gameData?.RealmProgression;
+        if (realm is null) return gain;
+        var cap = realm.ExpCapFor(player.Progression.RealmLevel);
+        if (cap <= 0) return 0;
+        return Math.Max(0, Math.Min(cap - player.Progression.Experience, gain));
+    }
+
+    /// <summary>
     /// 结算行动声明的按秒收益（per=second 的修为/灵力/气血/经验等持续通道）。
     /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致；
     /// 灵力与气血按聚合内已刷新的属性上限逐秒截断。
     /// </summary>
-    private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds, double multiplier)
+    private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds, double multiplier, GameDataCatalog? gameData)
     {
         if (wholeSeconds <= 0) return;
+        var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel);
+        var realmConfigured = gameData?.RealmProgression is not null;
         // 溢出预检查沿用“先校验后变更”语义：rate * 整秒数越界时不得污染任何进度数值。
         var seconds = (double)wholeSeconds;
         var combatTouched = false;
@@ -984,8 +1303,11 @@ public static class SimulationEngine
                 case ActionYieldKind.Experience:
                     if (!double.IsFinite(player.Progression.Experience + total))
                         throw new DomainException(DomainErrorCode.InvariantViolation, "经验收益超出数值范围。");
+                    // 修为触及本层瓶颈后锁定增长，待突破后方可继续累积；满级（cap<=0）恒锁定。
                     for (var i = 0; i < wholeSeconds; i++)
-                        player.Progression.Experience += rate;
+                        player.Progression.Experience = realmConfigured
+                            ? Math.Min(expCap ?? 0, player.Progression.Experience + rate)
+                            : player.Progression.Experience + rate;
                     progressionTouched = true;
                     break;
                 case ActionYieldKind.Mana:
@@ -1041,7 +1363,7 @@ public static class SimulationEngine
                 case ActionYieldKind.Hitpoints: hitpointGain += amount; break;
             }
         }
-        var nextExperience = player.Progression.Experience + experienceGain;
+        var nextExperience = player.Progression.Experience + CapExperience(player, experienceGain, gameData);
         if (!double.IsFinite(qiGain) || !double.IsFinite(experienceGain) || !double.IsFinite(manaGain) || !double.IsFinite(hitpointGain)
             || !double.IsFinite(player.Progression.Qi + qiGain) || !double.IsFinite(player.Progression.LifetimeQi + qiGain)
             || !double.IsFinite(nextExperience))

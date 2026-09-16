@@ -64,7 +64,10 @@
         "level": 1,
         "triggerHpRatio": 0.5
       }
-    ]
+    ],
+    "qiReward": 10,
+    "experienceReward": 10,
+    "rootExpReward": 10
   },
   {
     "id": "enemy.fallen-devil-priest",
@@ -131,7 +134,10 @@
         "level": 1,
         "triggerHpRatio": 0.6
       }
-    ]
+    ],
+    "qiReward": 10,
+    "experienceReward": 10,
+    "rootExpReward": 10
   },
   {
     "id": "enemy.falling-star-beast",
@@ -227,6 +233,9 @@
         "level": 1,
         "triggerHpRatio": 0.3
       }
-    ]
+    ],
+    "qiReward": 10,
+    "experienceReward": 10,
+    "rootExpReward": 10
   }
 ]

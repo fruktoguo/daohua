@@ -21,7 +21,10 @@
         "minQuantity": 1,
         "maxQuantity": 1
       }
-    ]
+    ],
+    "qiReward": 10,
+    "experienceReward": 10,
+    "rootExpReward": 10
   },
   {
     "id": "enemy.wood-spirit",
@@ -71,7 +74,10 @@
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ]
+    ],
+    "qiReward": 10,
+    "experienceReward": 10,
+    "rootExpReward": 10
   },
   {
     "id": "enemy.fire-spirit",
@@ -121,6 +127,9 @@
         "level": 1,
         "triggerHpRatio": 1.0
       }
-    ]
+    ],
+    "qiReward": 10,
+    "experienceReward": 10,
+    "rootExpReward": 10
   }
 ]

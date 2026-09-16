@@ -19,7 +19,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 10.0
+    "manaCost": 10.0,
+    "rootAttribute": "swordsmanship"
   },
   {
     "id": "ability.chain-strike",
@@ -41,7 +42,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 10.0
+    "manaCost": 10.0,
+    "rootAttribute": "swordsmanship"
   },
   {
     "id": "ability.taunt",
@@ -65,7 +67,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 20.0
+    "manaCost": 20.0,
+    "rootAttribute": "stamina"
   },
   {
     "id": "ability.heavy-clouds",
@@ -88,7 +91,8 @@
         "buffId": null
       }
     ],
-    "manaCost": 40.0
+    "manaCost": 40.0,
+    "rootAttribute": "swordsmanship"
   },
   {
     "id": "ability.star-piercer",
@@ -110,6 +114,7 @@
         "buffId": null
       }
     ],
-    "manaCost": 30.0
+    "manaCost": 30.0,
+    "rootAttribute": "swordsmanship"
   }
 ]

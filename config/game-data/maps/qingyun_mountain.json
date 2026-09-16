@@ -9,6 +9,15 @@
         "id": "node.yunxi-village",
         "name": "云溪村",
         "description": "炊烟袅袅的宁静山村，溪水穿村而过，老槐树与古井见证一代代求道者的启程。",
+        "npcs": [
+          {
+            "id": "npc.gate-disciple",
+            "name": "守山弟子",
+            "kind": "npc",
+            "description": "村口木栅旁登记来往行人的年轻弟子。",
+            "effect": "集里有规矩，北井夜里别去，西岭入夜前回来。"
+          }
+        ],
         "x": 20,
         "y": 65,
         "availableActionIds": [
@@ -62,6 +71,15 @@
         "id": "node.herb-valley",
         "name": "百草谷",
         "description": "背阴潮湿的山谷中野生草木繁茂，药香扑鼻，自生低阶灵草。",
+        "npcs": [
+          {
+            "id": "npc.herbalist-lin",
+            "name": "采药人林伯",
+            "kind": "npc",
+            "description": "青岚药谷的老采药人，熟悉药谷每一条路，知道哪片坡的草壮。",
+            "effect": "采药先认炁，认炁先认地。"
+          }
+        ],
         "x": 10,
         "y": 45,
         "availableActionIds": [
@@ -130,6 +148,15 @@
         "description": "山道转折处的草棚茶摊，过路散修在此歇脚喝茶、互通有无，灵市交易活跃。",
         "x": 45,
         "y": 48,
+        "npcs": [
+          {
+            "id": "npc.market-broker",
+            "name": "灵市牙人",
+            "kind": "npc",
+            "description": "替往来散修整理挂牌与交割的牙人，不问来路，也不问去处。",
+            "effect": "坊市挂单中介"
+          }
+        ],
         "buildings": [
           {
             "id": "building.tea-shed",
@@ -168,6 +195,15 @@
         "description": "青云仙山极巅之所，没入茫茫云海之上。老道闲坐崖边抚琴观云，俯瞰人间万家灯火。",
         "x": 82,
         "y": 15,
+        "npcs": [
+          {
+            "id": "npc.peak-elder",
+            "name": "抚琴老道",
+            "kind": "npc",
+            "description": "闲坐崖边抚琴观云的老道，俯瞰人间万家灯火，少与来客攀谈。",
+            "effect": "静观云海"
+          }
+        ],
         "cultivationMultiplier": 1.25,
         "availableActionIds": [
           "cultivation.draw-qi",

@@ -1,0 +1,10 @@
+{
+  "id": "duel.settings",
+  "encounterChancePerBattle": 0.005,
+  "powerBandRatio": 0.3,
+  "defeatCooldownSeconds": 3600,
+  "stagedSettleSeconds": 1200,
+  "dropChanceBonusPercent": 20,
+  "maxDuelSeconds": 300,
+  "maxBattleReports": 10
+}

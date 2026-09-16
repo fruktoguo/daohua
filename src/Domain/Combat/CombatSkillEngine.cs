@@ -144,7 +144,8 @@ public static class CombatSkillEngine
     {
         var id = state.CastingAbilityId!;
         var ability = catalog.Abilities[id];
-        var level = slotLevel ?? player.Loadout.AbilitySlots.FirstOrDefault(slot => slot.AbilityId == id)?.Level ?? 1;
+        var level = slotLevel ?? player.Loadout.AbilitySlots.FirstOrDefault(slot => slot.AbilityId == id)?.Level
+            ?? player.AbilityLevelFor(new Domain.Common.AbilityId(id));
         // 等级成长：伤害/治疗倍率每级 +0.6%，固定数值每级 +1.0%。
         var ratioBonus = 1 + (level - 1) * 0.006;
         var flatBonus = 1 + (level - 1) * 0.01;

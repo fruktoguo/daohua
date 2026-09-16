@@ -303,7 +303,9 @@ public sealed class GameDataCatalog
         IReadOnlyDictionary<string, CombatEncounterDefinition>? combatEncounters = null,
         WorldGraph? worldGraph = null,
         BaseAttributeCatalog? baseAttributes = null,
-        IReadOnlyDictionary<string, JsonElement>? abilities = null)
+        IReadOnlyDictionary<string, JsonElement>? abilities = null,
+        DuelSettings? duel = null,
+        RealmProgressionCatalog? realmProgression = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -320,10 +322,12 @@ public sealed class GameDataCatalog
         RawEquipments = rawEquipments?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         Abilities = abilities ?? new Dictionary<string, JsonElement>();
+        Duel = duel ?? DuelSettings.Default;
         CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, baseAttributes, Abilities);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
         WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
         BaseAttributes = baseAttributes;
+        RealmProgression = realmProgression;
         foreach (var action in Actions.All)
         {
             if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
@@ -360,6 +364,10 @@ public sealed class GameDataCatalog
     /// <summary>获取或设置 基础属性 的值。</summary>
     public BaseAttributeCatalog? BaseAttributes { get; }
     public IReadOnlyDictionary<string, JsonElement> Abilities { get; }
+    /// <summary>斗法玩法全局调参（duel.json）。</summary>
+    public DuelSettings Duel { get; }
+    /// <summary>境界修为上限与寿元配置；expected-attributes 未提供时为 null（内置兜底目录无境界进度）。</summary>
+    public RealmProgressionCatalog? RealmProgression { get; }
 
     /// <summary>内置单例兜底配表</summary>
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);
@@ -378,7 +386,9 @@ public sealed class GameDataCatalog
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var rawEquipments = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var abilities = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        DuelSettings? duel = null;
         BaseAttributeCatalog? baseAttributes = null;
+        RealmProgressionCatalog? realmProgression = null;
         var contentVersion = "unknown";
         var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         foreach (var bytes in jsonDocuments)
@@ -387,6 +397,8 @@ public sealed class GameDataCatalog
             using var document = JsonDocument.Parse(bytes.ToArray());
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("baseAttributeAnchors", out var anchors))
                 baseAttributes = BaseAttributeCatalog.Parse(anchors);
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("realmProgression", out var progression))
+                realmProgression = RealmProgressionCatalog.Parse(progression);
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("contentVersion", out var version))
             {
                 contentVersion = version.GetString() ?? contentVersion;
@@ -425,6 +437,10 @@ public sealed class GameDataCatalog
                 {
                     monsters.Add(id, entry.Clone());
                 }
+                else if (id.StartsWith("duel.", StringComparison.Ordinal))
+                {
+                    duel = DuelSettings.Parse(entry);
+                }
                 else if (entry.TryGetProperty("durationSeconds", out _))
                 {
                     actions.Add(ParseAction(entry, id));
@@ -432,7 +448,7 @@ public sealed class GameDataCatalog
             }
         }
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
-        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, abilities: abilities);
+        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression);
     }
 
     /// <summary>
@@ -693,7 +709,13 @@ public sealed class GameDataCatalog
                 FireResistance = Weight("fireResistance") is var fire && fire != 1 ? fire * 10 : 0,
                 EarthResistance = Weight("earthResistance") is var earth && earth != 1 ? earth * 10 : 0
             };
-            result[id] = new CombatMonsterDefinition(id, ReadString(value, "name", id), budget, level, rank, stats, drops, skills);
+            var qiReward = ReadDouble(value, "qiReward", 0);
+            var experienceReward = ReadDouble(value, "experienceReward", 0);
+            var rootExpReward = ReadDouble(value, "rootExpReward", 0);
+            if (qiReward < 0 || experienceReward < 0 || rootExpReward < 0)
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 的击杀奖励不能为负。");
+            result[id] = new CombatMonsterDefinition(id, ReadString(value, "name", id), budget, level, rank, stats, drops, skills,
+                qiReward, experienceReward, rootExpReward);
         }
         return result;
     }
@@ -781,6 +803,7 @@ public sealed class GameDataCatalog
         var graph = new WorldGraph();
         if (maps is null || maps.Count == 0) return graph;
 
+        // 先全量登记节点，再解析边：允许跨图边引用另一张地图中后加载的节点。
         for (var m = 0; m < maps.Count; m++)
         {
             var map = maps[m];
@@ -798,10 +821,23 @@ public sealed class GameDataCatalog
                     if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name)) continue;
                     if (!graph.ContainsNode(id))
                     {
-                        graph.AddNode(WorldNode.Create(id, name, x, y));
+                        var encounterIds = n.TryGetProperty("encounterIds", out var encProp) && encProp.ValueKind == JsonValueKind.Array
+                            ? encProp.EnumerateArray()
+                                .Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : null)
+                                .Where(e => !string.IsNullOrWhiteSpace(e))
+                                .Select(e => e!.Trim())
+                                .ToArray()
+                            : [];
+                        graph.AddNode(WorldNode.Create(id, name, x, y, encounterIds));
                     }
                 }
             }
+        }
+
+        for (var m = 0; m < maps.Count; m++)
+        {
+            var map = maps[m];
+            if (map.ValueKind != JsonValueKind.Object) continue;
 
             if (map.TryGetProperty("edges", out var edgesElement) && edgesElement.ValueKind == JsonValueKind.Array)
             {

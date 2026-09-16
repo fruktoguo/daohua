@@ -11,6 +11,9 @@
         "description": "天空撕裂出幽紫裂痕的界域边缘，罡风呼啸，是踏入星陨异境的起点。",
         "x": 15,
         "y": 50,
+        "availableActionIds": [
+          "combat.sweep-twilight-valley"
+        ],
         "encounterIds": [
           "encounter.twilight-valley"
         ],
@@ -161,6 +164,12 @@
       }
     ],
     "edges": [
+      {
+        "id": "edge.peak-rift",
+        "fromNodeId": "node.cloud-peak",
+        "toNodeId": "node.astral-rift",
+        "durationSeconds": 60
+      },
       {
         "id": "edge.rift-tomb",
         "fromNodeId": "node.astral-rift",

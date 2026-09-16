@@ -24,6 +24,7 @@ public sealed record PlayerAggregateState(
     PlayerSettingsStateDocument Settings,
     IReadOnlyList<QueuedActionState> Actions,
     PlayerLoadoutDocument Loadout,
+    PlayerDuelStateDocument Duel,
     IReadOnlyList<ItemId>? EquippedItemIds = null);
 
 /// <summary>境界与修为进度的离线/持久化快照 DTO</summary>
@@ -38,7 +39,8 @@ public sealed record PlayerProgressionState(
     double EliteKills = 0,
     double BossKills = 0,
     double TotalDefeats = 0,
-    double CultivationSeconds = 0);
+    double CultivationSeconds = 0,
+    double AgeSeconds = 0);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -68,7 +70,8 @@ public sealed record PlayerSettingsStateDocument(
     string Locale,
     bool NotificationsEnabled,
     bool LoopEnabled = true,
-    IReadOnlyList<AutoUseSlotState>? AutoUseSlots = null);
+    IReadOnlyList<AutoUseSlotState>? AutoUseSlots = null,
+    double RenameCooldownUntilUnixSeconds = 0);
 
 /// <summary>行动项状态快照 DTO，记录进度与剩余轮次</summary>
 public sealed record QueuedActionState(
@@ -123,7 +126,7 @@ public sealed partial class PlayerAggregate
             StateVersion,
             GameDataFingerprint,
             new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds,
-                Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds),
+                Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress),
             new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense, Combat.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
@@ -132,8 +135,25 @@ public sealed partial class PlayerAggregate
             GetCachedSettings(),
             actions,
             Loadout.Export(),
+            ExportDuel(),
             GetCachedEquippedItemIds());
     }
+
+    private static PlayerBattleReportDocument ExportReport(PlayerBattleReport report) => new(
+        report.ReportId, report.ActionId, report.ActionName,
+        report.StartedAtUnixSeconds, report.EndedAtUnixSeconds,
+        report.Qi, report.Experience,
+        new PlayerRootExpDocument(report.RootExp.Stamina, report.RootExp.Intelligence, report.RootExp.Attack,
+            report.RootExp.Defense, report.RootExp.Swordsmanship, report.RootExp.Talisman),
+        report.Items.ToArray(), report.DuelWins, report.DuelLosses);
+
+    private PlayerDuelStateDocument ExportDuel() => new(
+        Duel.EncounterCharges,
+        Duel.CooldownUntilUnixSeconds,
+        Duel.ActiveDuelId,
+        Duel.StagedItems.ToArray(),
+        Duel.CurrentReport is null ? null : ExportReport(Duel.CurrentReport),
+        Duel.Reports.Select(ExportReport).ToArray());
 
     private ActiveBuff[] GetCachedBuffs()
     {
@@ -202,6 +222,7 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.Locale == Settings.Locale
             && _cachedSettingsDoc.NotificationsEnabled == Settings.NotificationsEnabled
             && _cachedSettingsDoc.LoopEnabled == Settings.LoopEnabled
+            && _cachedSettingsDoc.RenameCooldownUntilUnixSeconds == Settings.RenameCooldownUntilUnixSeconds
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
         {
             return _cachedSettingsDoc;
@@ -210,7 +231,8 @@ public sealed partial class PlayerAggregate
             Settings.Locale,
             Settings.NotificationsEnabled,
             Settings.LoopEnabled,
-            slots);
+            slots,
+            Settings.RenameCooldownUntilUnixSeconds);
     }
 
     private AutoUseSlotState[] GetCachedAutoUseSlots()
@@ -256,6 +278,7 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.BossKills) || state.Progression.BossKills < 0 ||
             !double.IsFinite(state.Progression.TotalDefeats) || state.Progression.TotalDefeats < 0 ||
             !double.IsFinite(state.Progression.CultivationSeconds) || state.Progression.CultivationSeconds < 0 ||
+            !double.IsFinite(state.Progression.AgeSeconds) || state.Progression.AgeSeconds < 0 ||
             !double.IsFinite(state.World.X) || !double.IsFinite(state.World.Y) || !double.IsFinite(state.World.ExplorationSeed) ||
             !double.IsFinite(state.World.EdgeProgress) || state.World.EdgeProgress < 0 || state.World.EdgeProgress > 1 ||
             !double.IsFinite(state.Combat.Hitpoints) || state.Combat.Hitpoints < 0 ||
@@ -269,11 +292,12 @@ public sealed partial class PlayerAggregate
             || (state.World.EdgeId is not null && (state.World.EdgeId.Length == 0 || state.World.EdgeId.Length > 128))
             || string.IsNullOrWhiteSpace(state.Settings.Locale) || state.Settings.Locale.Length > 32)
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家基础 section 标识无效。");
+        if (state.Duel is null || !IsValidDuelDocument(state.Duel))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "玩家斗法分段无效。");
         if (state.EquippedInstances.Any(item => item.IsEmpty)
-            || (state.EquippedItemIds ?? []).Any(item => !item.IsValid)
-            || state.LearnedAbilities.Any(ability => !ability.IsValid)
             || (state.Settings.AutoUseSlots ?? []).Any(slot => slot is null || string.IsNullOrWhiteSpace(slot.ActionType)
-                || slot.ActionType.Length > 32 || slot.SlotIndex is < 0 or > 15 || !double.IsFinite(slot.Quantity) || slot.Quantity <= 0
+                || slot.ActionType.Length > 32 || slot.SlotIndex is < 0 || slot.SlotIndex > AutoUseSlotState.MaxSlotIndex
+                || !double.IsFinite(slot.Quantity) || slot.Quantity <= 0
                 || !double.IsFinite(slot.RemainingDurationSeconds) || slot.RemainingDurationSeconds < 0
                 || (slot.ItemId is not null && (slot.ItemId.Length == 0 || slot.ItemId.Length > 128))))
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家装配或设置 section 无效。");
@@ -288,6 +312,7 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.BossKills = state.Progression.BossKills;
         aggregate.Progression.TotalDefeats = state.Progression.TotalDefeats;
         aggregate.Progression.CultivationSeconds = state.Progression.CultivationSeconds;
+        aggregate.Progression.AgeSeconds = state.Progression.AgeSeconds;
         aggregate.World.NodeId = state.World.NodeId;
         aggregate.World.EdgeId = state.World.EdgeId;
         aggregate.World.EdgeProgress = state.World.EdgeProgress;
@@ -311,9 +336,11 @@ public sealed partial class PlayerAggregate
         aggregate.Loadout.EquippedItemIds.AddRange(state.EquippedItemIds ?? []);
         aggregate.Loadout.LearnedAbilities.AddRange(state.LearnedAbilities);
         aggregate.Loadout.Restore(state.Loadout);
+        aggregate.RestoreDuel(state.Duel);
         aggregate.Settings.Locale = state.Settings.Locale;
         aggregate.Settings.NotificationsEnabled = state.Settings.NotificationsEnabled;
         aggregate.Settings.LoopEnabled = state.Settings.LoopEnabled;
+        aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
         aggregate.Settings.AutoUseSlots.AddRange(state.Settings.AutoUseSlots ?? []);
         if (state.Actions.Count > MaxActionQueueLength)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
@@ -352,7 +379,8 @@ public sealed partial class PlayerAggregate
                 intent.TargetNodeId,
                 intent.Parameters is null
                     ? null
-                    : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)));
+                    : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
+                intent.PvpEnabled);
             var action = new QueuedAction(actionState.Id, normalizedIntent, actionState.EnqueuedAt)
             {
                 Status = actionState.Status,
@@ -395,6 +423,7 @@ public sealed partial class PlayerAggregate
         Progression.BossKills = restored.Progression.BossKills;
         Progression.TotalDefeats = restored.Progression.TotalDefeats;
         Progression.CultivationSeconds = restored.Progression.CultivationSeconds;
+        Progression.AgeSeconds = restored.Progression.AgeSeconds;
         World.NodeId = restored.World.NodeId;
         World.EdgeId = restored.World.EdgeId;
         World.EdgeProgress = restored.World.EdgeProgress;
@@ -418,9 +447,11 @@ public sealed partial class PlayerAggregate
         Loadout.LearnedAbilities.Clear();
         Loadout.LearnedAbilities.AddRange(restored.Loadout.LearnedAbilities);
         Loadout.Restore(restored.Loadout.Export());
+        RestoreDuel(restored.ExportDuel());
         Settings.Locale = restored.Settings.Locale;
         Settings.NotificationsEnabled = restored.Settings.NotificationsEnabled;
         Settings.LoopEnabled = restored.Settings.LoopEnabled;
+        Settings.RenameCooldownUntilUnixSeconds = restored.Settings.RenameCooldownUntilUnixSeconds;
         Settings.AutoUseSlots.Clear();
         Settings.AutoUseSlots.AddRange(restored.Settings.AutoUseSlots);
         _actions.Clear();
@@ -429,6 +460,74 @@ public sealed partial class PlayerAggregate
         _dirtySections.Clear();
         _sectionVersion = restored._sectionVersion;
     }
+
+    private void RestoreDuel(PlayerDuelStateDocument document)
+    {
+        Duel.EncounterCharges = document.EncounterCharges;
+        Duel.CooldownUntilUnixSeconds = document.CooldownUntilUnixSeconds;
+        Duel.ActiveDuelId = document.ActiveDuelId;
+        Duel.StagedItems.Clear();
+        Duel.StagedItems.AddRange(document.StagedItems);
+        Duel.CurrentReport = document.CurrentReport is null ? null : ImportReport(document.CurrentReport);
+        Duel.Reports.Clear();
+        Duel.Reports.AddRange(document.Reports.Select(ImportReport));
+    }
+
+    private static PlayerBattleReport ImportReport(PlayerBattleReportDocument document)
+    {
+        var report = new PlayerBattleReport
+        {
+            ReportId = document.ReportId,
+            ActionInstanceId = Guid.TryParse(document.ReportId, out var guid) ? guid : Guid.Empty,
+            ActionId = document.ActionId,
+            ActionName = document.ActionName,
+            StartedAtUnixSeconds = document.StartedAtUnixSeconds,
+            EndedAtUnixSeconds = document.EndedAtUnixSeconds,
+            Qi = document.Qi,
+            Experience = document.Experience,
+            DuelWins = document.DuelWins,
+            DuelLosses = document.DuelLosses,
+            RootExp =
+            {
+                Stamina = document.RootExp.Stamina,
+                Intelligence = document.RootExp.Intelligence,
+                Attack = document.RootExp.Attack,
+                Defense = document.RootExp.Defense,
+                Swordsmanship = document.RootExp.Swordsmanship,
+                Talisman = document.RootExp.Talisman
+            }
+        };
+        report.Items.AddRange(document.Items);
+        return report;
+    }
+
+    private static bool IsValidReportDocument(PlayerBattleReportDocument? report)
+        => report is null || (!string.IsNullOrWhiteSpace(report.ReportId) && report.ReportId.Length <= 64
+            && !string.IsNullOrWhiteSpace(report.ActionId) && report.ActionId.Length <= 128
+            && (report.ActionName?.Length ?? 0) <= 128
+            && double.IsFinite(report.StartedAtUnixSeconds) && report.StartedAtUnixSeconds >= 0
+            && double.IsFinite(report.EndedAtUnixSeconds) && report.EndedAtUnixSeconds >= 0
+            && double.IsFinite(report.Qi) && report.Qi >= 0
+            && double.IsFinite(report.Experience) && report.Experience >= 0
+            && report.RootExp is not null
+            && new[] { report.RootExp.Stamina, report.RootExp.Intelligence, report.RootExp.Attack,
+                report.RootExp.Defense, report.RootExp.Swordsmanship, report.RootExp.Talisman }
+                .All(value => double.IsFinite(value) && value >= 0)
+            && report.Items is not null && report.Items.Count <= 512
+            && report.Items.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)
+                && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0)
+            && double.IsFinite(report.DuelWins) && report.DuelWins >= 0
+            && double.IsFinite(report.DuelLosses) && report.DuelLosses >= 0);
+
+    private static bool IsValidDuelDocument(PlayerDuelStateDocument document)
+        => double.IsFinite(document.EncounterCharges) && document.EncounterCharges >= 0
+            && double.IsFinite(document.CooldownUntilUnixSeconds) && document.CooldownUntilUnixSeconds >= 0
+            && (document.ActiveDuelId is null || document.ActiveDuelId.Length is > 0 and <= 64)
+            && document.StagedItems is not null && document.StagedItems.Count <= 512
+            && document.StagedItems.All(item => item is not null && item.IsValid)
+            && IsValidReportDocument(document.CurrentReport)
+            && document.Reports is not null && document.Reports.Count <= 100
+            && document.Reports.All(report => report is not null && IsValidReportDocument(report));
 
     /// <summary>
     /// 检验动态参数字典的合法性（键非空且不超过64字符，值必须是有效有限浮点数）。

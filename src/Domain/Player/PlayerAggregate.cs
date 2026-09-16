@@ -41,6 +41,8 @@ public sealed class PlayerProgression
     public double TotalDefeats { get; set; }
     /// <summary>生平修炼时长累计（秒）</summary>
     public double CultivationSeconds { get; set; }
+    /// <summary>道龄（已流逝寿元，秒）；随模拟时间自然累积，寿元上限由境界阶位配表决定。</summary>
+    public double AgeSeconds { get; set; }
 
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
     public double SimulationCarrySeconds { get; set; }
@@ -134,6 +136,8 @@ public sealed class PlayerSettingsState
     public bool LoopEnabled { get; set; } = true;
     /// <summary>各行动类型绑定的丹药/补给品自动使用槽位配置</summary>
     public List<AutoUseSlotState> AutoUseSlots { get; } = [];
+    /// <summary>改名冷却截止时刻（Unix 秒）；0 表示未冷却。</summary>
+    public double RenameCooldownUntilUnixSeconds { get; set; }
 }
 
 /// <summary>
@@ -146,7 +150,11 @@ public sealed record AutoUseSlotState(
     double Quantity,
     bool Enabled,
     double RemainingDurationSeconds = 0,
-    double CooldownUntilUnixSeconds = 0);
+    double CooldownUntilUnixSeconds = 0)
+{
+    /// <summary>每种行动类型的自动使用槽位数；与前端槽位网格（每类 3 槽）保持一致。</summary>
+    public const int MaxSlotIndex = 2;
+}
 
 /// <summary>
 /// 行动项在队列中的调度状态。
@@ -168,11 +176,13 @@ public enum ActionQueueStatus : byte
 /// <param name="RepeatCount">计划执行次数；特殊值 -1 代表无限循环直至手动取消</param>
 /// <param name="TargetNodeId">指定世界节点（如跨地图移动或定向采集）</param>
 /// <param name="Parameters">动态参数字典（如配方 ID、目标词条等）</param>
+/// <param name="PvpEnabled">斗法开关：仅对战斗遭遇行动生效；开启后参与斗法遭遇计数与撮合</param>
 public sealed record ActionIntent(
     ActionId ActionId,
     double RepeatCount = 1,
     string? TargetNodeId = null,
-    IReadOnlyDictionary<string, double>? Parameters = null)
+    IReadOnlyDictionary<string, double>? Parameters = null,
+    bool PvpEnabled = false)
 {
 }
 
@@ -317,6 +327,7 @@ public sealed partial class PlayerAggregate
         aggregate.MarkDirty(PlayerSectionKind.Loadout);
         aggregate.MarkDirty(PlayerSectionKind.Settings);
         aggregate.MarkDirty(PlayerSectionKind.ActionQueue);
+        aggregate.MarkDirty(PlayerSectionKind.Duel);
         return aggregate;
     }
 
@@ -346,16 +357,36 @@ public sealed partial class PlayerAggregate
         return true;
     }
 
+    /// <summary>道号允许字符：字母、数字、下划线与中文间隔号；长度 2~12。</summary>
+    private static readonly System.Text.RegularExpressions.Regex DisplayNamePattern =
+        new(@"^[\p{L}\p{N}_·]{2,12}$", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    /// <summary>改名冷却时长：24 小时。</summary>
+    public static readonly TimeSpan RenameCooldown = TimeSpan.FromHours(24);
+
     /// <summary>
-    /// 修改道号/角色显示名。
+    /// 无副作用校验改名前置：同名视为合法空操作；否则校验字符规则与 24 小时冷却。
+    /// 名称唯一性由宿主通过 identity.players.display_name_normalized 唯一索引保证。
     /// </summary>
-    public void Rename(string displayName)
+    public void EnsureCanRename(string displayName, DateTimeOffset now)
     {
-        if (string.IsNullOrWhiteSpace(displayName) || displayName.Trim().Length > 64)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "玩家名称无效。");
-        var normalized = displayName.Trim();
+        var normalized = displayName?.Trim() ?? string.Empty;
+        if (string.Equals(DisplayName, normalized, StringComparison.Ordinal)) return;
+        if (!DisplayNamePattern.IsMatch(normalized))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "道号须为 2-12 个字符，且仅含文字、数字、下划线或间隔号。");
+        if (now.ToUnixTimeSeconds() < Settings.RenameCooldownUntilUnixSeconds)
+            throw new DomainException(DomainErrorCode.Conflict, "改名冷却中，请稍后再试。");
+    }
+
+    /// <summary>
+    /// 修改道号/角色显示名。校验 2~12 字符与无特殊字符规则，并施加 24 小时改名冷却。
+    /// </summary>
+    public void Rename(string displayName, DateTimeOffset now)
+    {
+        var normalized = displayName?.Trim() ?? string.Empty;
+        EnsureCanRename(normalized, now);
         if (string.Equals(DisplayName, normalized, StringComparison.Ordinal)) return;
         DisplayName = normalized;
+        Settings.RenameCooldownUntilUnixSeconds = now.Add(RenameCooldown).ToUnixTimeSeconds();
         Touch(PlayerSectionKind.Settings);
     }
 
@@ -395,7 +426,8 @@ public sealed partial class PlayerAggregate
             intent.TargetNodeId,
             intent.Parameters is null
                 ? null
-                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)));
+                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
+            intent.PvpEnabled);
         var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now);
         _actions.Add(action);
         Touch(PlayerSectionKind.ActionQueue);
@@ -443,7 +475,8 @@ public sealed partial class PlayerAggregate
             intent.TargetNodeId,
             intent.Parameters is null
                 ? null
-                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)));
+                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
+            intent.PvpEnabled);
 
         var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now)
         {
@@ -587,12 +620,21 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 突破至下一境界阶层。重置当前阶层灵气与经验，推进 Progression 脏标记。
+    /// 突破至下一境界阶层。要求当前修为触及配表瓶颈（Experience ≥ expToNext），
+    /// 突破后重置当前阶层灵气与修为，推进 Progression 脏标记。
     /// </summary>
-    public void Breakthrough()
+    public void Breakthrough(Domain.GameData.RealmProgressionCatalog? realm)
     {
         if (Progression.RealmLevel < 1)
             throw new DomainException(DomainErrorCode.InvariantViolation, "当前境界状态无效。");
+        if (realm is not null)
+        {
+            var cap = realm.ExpCapFor(Progression.RealmLevel);
+            if (cap <= 0)
+                throw new DomainException(DomainErrorCode.Conflict, "已至最高境界，无可突破。");
+            if (Progression.Experience < cap - 1e-9)
+                throw new DomainException(DomainErrorCode.Conflict, "修为未满，尚未触及瓶颈。");
+        }
         Progression.RealmLevel = checked(Progression.RealmLevel + 1);
         Progression.Qi = 0;
         Progression.Experience = 0;
@@ -654,7 +696,7 @@ public sealed partial class PlayerAggregate
     {
         actionType = actionType?.Trim() ?? string.Empty;
         itemId = itemId?.Trim();
-        if (string.IsNullOrWhiteSpace(actionType) || actionType.Length > 32 || slotIndex is < 0 or > 15
+        if (string.IsNullOrWhiteSpace(actionType) || actionType.Length > 32 || slotIndex is < 0 || slotIndex > AutoUseSlotState.MaxSlotIndex
             || (itemId is not null && (itemId.Length == 0 || itemId.Length > 128))
             || !double.IsFinite(quantity) || quantity <= 0 || quantity > 1_000_000)
             throw new DomainException(DomainErrorCode.InvalidArgument, "自动使用配置无效。");

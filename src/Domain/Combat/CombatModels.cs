@@ -145,8 +145,13 @@ public sealed record CombatantStats(
     }
 }
 
-/// <summary>怪物随战携带的技能槽：配表技能 JSON + 触发血量比例阈值。</summary>
-public sealed record MonsterSkillSlot(JsonElement Ability, double Level = 1, double TriggerHpRatio = 1);
+/// <summary>
+/// 战斗单位随战携带的技能槽：配表技能 JSON + 触发血量比例阈值。
+/// Triggers 非空时表示斗法玩家镜像技能：改用配表触发条件判定、按冷却可重复施放；
+/// 为空时为怪物一次性技能：气血比例触发且整场仅施放一次。
+/// </summary>
+public sealed record MonsterSkillSlot(JsonElement Ability, double Level = 1, double TriggerHpRatio = 1,
+    IReadOnlyList<JsonElement>? Triggers = null);
 
 /// <summary>战斗单位生成模板：静态属性 + 可选技能槽。</summary>
 public sealed record CombatantTemplate(CombatantStats Stats, IReadOnlyList<MonsterSkillSlot>? Skills = null);
@@ -199,6 +204,10 @@ public sealed class CombatantState
     public double BonusAbsorptionPoints { get; internal set; }
     /// <summary>已施放技能的位掩码（每位对应 Skills 下标，单场各触发一次）。</summary>
     public long UsedSkillMask { get; internal set; }
+    /// <summary>斗法镜像技能的逐槽冷却就绪时刻；怪物一次性技能不使用。仅剧本推演内存态，不持久化。</summary>
+    public double[]? SkillCooldownUntil { get; internal set; }
+    /// <summary>斗法镜像技能累计施放计数，作为确定性抽样的独立计数器。</summary>
+    public double SkillCastCount { get; internal set; }
     /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
     /// <summary>参与目标抽取的有效威胁值。</summary>
@@ -264,16 +273,25 @@ public sealed class CombatEncounterState
 
     /// <summary>开启一场多敌方单位的战斗遭遇。</summary>
     public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, IReadOnlyList<CombatantTemplate> enemies)
+        => Start(encounterId, seed, new CombatantTemplate(player), enemies);
+
+    /// <summary>开启一场玩家方携带技能模板的遭遇（斗法剧本双方镜像同构）。</summary>
+    public static CombatEncounterState Start(string encounterId, long seed, CombatantTemplate player, IReadOnlyList<CombatantTemplate> enemies)
     {
         if (string.IsNullOrWhiteSpace(encounterId) || encounterId.Length > 128)
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇标识无效。");
         ArgumentNullException.ThrowIfNull(player);
+        if (player.Stats is null)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇玩家模板无效。");
         if (enemies is null || enemies.Count == 0 || enemies.Any(template => template?.Stats is null))
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇敌方阵容无效。");
         var states = new CombatantState[enemies.Count];
         for (var i = 0; i < enemies.Count; i++)
             states[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
-        return new CombatEncounterState(encounterId, seed, new CombatantState("player", player), states);
+        var playerState = new CombatantState("player", player.Stats, player.Skills);
+        if (player.Skills is { Count: > 0 } playerSkills && playerSkills.Any(slot => slot.Triggers is not null))
+            playerState.SkillCooldownUntil = new double[playerSkills.Count];
+        return new CombatEncounterState(encounterId, seed, playerState, states);
     }
 
     /// <summary>从持久化快照恢复一场多敌遭遇战。</summary>
@@ -384,7 +402,11 @@ public enum CombatExpeditionPhase : byte
     /// <summary>与当前敌人交战</summary>
     Combat = 2,
     /// <summary>重生中。</summary>
-    Respawning = 3
+    Respawning = 3,
+    /// <summary>斗法匹配等待中：由运行时撮合挂载对手，期间不消耗战斗时间。</summary>
+    DuelPending = 4,
+    /// <summary>斗法剧本回放中：战斗结果已确定性锁定，按时间轴逐事件回放。</summary>
+    Duel = 5
 }
 
 /// <summary>远征波次中单个敌人的可持久化战斗快照。</summary>
@@ -419,12 +441,17 @@ public sealed record CombatExpeditionState(
     int WaveNumber = 1,
     IReadOnlyList<ExpeditionEnemyState>? Enemies = null)
 {
+    /// <summary>斗法回放载荷；Phase == Duel 时必须非空，其余相位必须为 null。</summary>
+    public DuelPlaybackState? Duel { get; init; }
+    /// <summary>本波入场前斗法撮合已失败标记：避免匹配失败后下一场战斗反复进入等待。</summary>
+    public bool DuelSeekFailed { get; init; }
+
     /// <summary>校验远征状态是否满足持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
         && Enum.IsDefined(Phase)
         && double.IsFinite(PhaseElapsedSeconds) && PhaseElapsedSeconds >= 0
-        && double.IsFinite(PhaseDurationSeconds) && (Phase == CombatExpeditionPhase.Combat ? PhaseDurationSeconds >= 0 : PhaseDurationSeconds > 0)
-        && (Phase == CombatExpeditionPhase.Combat || PhaseElapsedSeconds <= PhaseDurationSeconds + 1e-9)
+        && double.IsFinite(PhaseDurationSeconds) && (Phase is CombatExpeditionPhase.Combat or CombatExpeditionPhase.DuelPending or CombatExpeditionPhase.Duel ? PhaseDurationSeconds >= 0 : PhaseDurationSeconds > 0)
+        && (Phase is CombatExpeditionPhase.Combat or CombatExpeditionPhase.DuelPending or CombatExpeditionPhase.Duel || PhaseElapsedSeconds <= PhaseDurationSeconds + 1e-9)
         && double.IsFinite(BattleElapsedSeconds) && BattleElapsedSeconds >= 0
         && double.IsFinite(PlayerHitpoints) && PlayerHitpoints >= 0
         && double.IsFinite(PlayerManapoints) && PlayerManapoints >= 0
@@ -441,9 +468,17 @@ public sealed record CombatExpeditionState(
             && double.IsFinite(enemy.AttackCount) && enemy.AttackCount >= 0
             && double.IsFinite(enemy.Threat) && enemy.Threat >= 0
             && enemy.UsedSkillMask >= 0)))
-        && (Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search or CombatExpeditionPhase.Respawning
-            ? Outcome == CombatOutcome.Running && (Enemies is null || Enemies.Count == 0)
-            : Enemies is { Count: > 0 } && PhaseElapsedSeconds <= 1e-9);
+        && Phase switch
+        {
+            CombatExpeditionPhase.DuelPending => Outcome == CombatOutcome.Running
+                && (Enemies is null || Enemies.Count == 0) && Duel is null,
+            CombatExpeditionPhase.Duel => Outcome == CombatOutcome.Running
+                && Duel is { } duel && duel.IsValid
+                && (Enemies is null || Enemies.Count == 0) && PhaseElapsedSeconds <= 1e-9,
+            CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search or CombatExpeditionPhase.Respawning
+                => Outcome == CombatOutcome.Running && (Enemies is null || Enemies.Count == 0) && Duel is null,
+            _ => Enemies is { Count: > 0 } && PhaseElapsedSeconds <= 1e-9 && Duel is null
+        };
 }
 
 /// <summary>
@@ -482,9 +517,7 @@ public static class DeterministicCombatEngine
             encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, next);
             if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
             {
-                var target = SelectEnemyTarget(encounter, encounter.Player.AttackCount, 3);
-                if (target is not null)
-                    ResolveAttack(encounter.Player, target, encounter.Seed, 0, encounter.ElapsedSeconds, ref events);
+                PlayerAct(encounter, ref events);
                 encounter.Player.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Player.Stats.AttackIntervalSeconds;
             }
             for (var i = 0; i < encounter.Enemies.Count; i++)
@@ -559,27 +592,70 @@ public static class DeterministicCombatEngine
         return events![0];
     }
 
-    /// <summary>敌方出手：优先检查血量比例触发的随战技能，否则普通攻击。</summary>
+    /// <summary>玩家方出手：斗法剧本中优先结算镜像技能，否则普通攻击。</summary>
+    private static void PlayerAct(CombatEncounterState encounter, ref List<CombatEvent>? events)
+    {
+        var player = encounter.Player;
+        var target = SelectEnemyTarget(encounter, player.AttackCount, 3);
+        if (TryCastSkill(encounter, player, PlayerAllies(encounter), encounter.Enemies, target, 0, ref events))
+            return;
+        if (target is not null)
+            ResolveAttack(player, target, encounter.Seed, 0, encounter.ElapsedSeconds, ref events);
+    }
+
+    private static IReadOnlyList<CombatantState> PlayerAllies(CombatEncounterState encounter)
+        => [encounter.Player];
+
+    /// <summary>敌方出手：优先检查随战技能（一次性血量触发或可重复镜像技能），否则普通攻击。</summary>
     private static void EnemyAct(CombatEncounterState encounter, CombatantState enemy, int index, ref List<CombatEvent>? events)
     {
-        var skills = enemy.Skills;
-        if (skills.Count > 0 && enemy.Stats.MaxHitpoints > 0)
-        {
-            var hpRatio = enemy.Hitpoints / enemy.Stats.MaxHitpoints;
-            for (var i = 0; i < skills.Count; i++)
-            {
-                if ((enemy.UsedSkillMask & (1L << i)) != 0) continue;
-                var slot = skills[i];
-                if (hpRatio > slot.TriggerHpRatio) continue;
-                if (CastEnemySkill(encounter, enemy, slot, i, index, ref events)) return;
-                break;
-            }
-        }
+        if (TryCastSkill(encounter, enemy, encounter.Enemies, [encounter.Player], encounter.Player, (ulong)(1 + index), ref events))
+            return;
         ResolveAttack(enemy, encounter.Player, encounter.Seed, (ulong)(1 + index), encounter.ElapsedSeconds, ref events);
     }
 
-    /// <summary>敌方技能施放：伤害/治疗/嘲讽/群体增益统一复用同构结算管线。</summary>
-    private static bool CastEnemySkill(CombatEncounterState encounter, CombatantState caster, MonsterSkillSlot slot, int slotIndex, int enemyIndex, ref List<CombatEvent>? events)
+    /// <summary>
+    /// 统一技能施放检查：怪物槽位走「气血比例一次性触发」语义（UsedSkillMask）；
+    /// 斗法镜像槽位（Triggers 非空）走「配表触发条件 + 冷却重复施放」语义（SkillCooldownUntil）。
+    /// </summary>
+    private static bool TryCastSkill(CombatEncounterState encounter, CombatantState caster,
+        IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents, CombatantState? target,
+        ulong side, ref List<CombatEvent>? events)
+    {
+        var skills = caster.Skills;
+        if (skills.Count == 0 || caster.Stats.MaxHitpoints <= 0) return false;
+        for (var i = 0; i < skills.Count; i++)
+        {
+            var slot = skills[i];
+            if (slot.Triggers is { } triggers)
+            {
+                var cooldowns = caster.SkillCooldownUntil ??= new double[skills.Count];
+                if (cooldowns[i] > encounter.ElapsedSeconds + 1e-12) continue;
+                if (target is null || !DuelTriggerEvaluator.MatchesAll(triggers, caster, target, allies, opponents)) continue;
+                if (!CastSkill(encounter, caster, allies, target, slot, i, side, ref events)) continue;
+                // 吟唱时间折算进冷却：镜像技能即时生效，下一次施放不早于 吟唱+冷却 之和。
+                var cooldown = Math.Max(1,
+                    AbilityNumber(slot.Ability, "castMilliseconds") / 1000d + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d);
+                cooldowns[i] = encounter.ElapsedSeconds + cooldown;
+                return true;
+            }
+            if ((caster.UsedSkillMask & (1L << i)) != 0) continue;
+            var hpRatio = caster.Hitpoints / caster.Stats.MaxHitpoints;
+            if (hpRatio > slot.TriggerHpRatio) continue;
+            if (CastSkill(encounter, caster, allies, target ?? caster, slot, i, side, ref events))
+            {
+                caster.UsedSkillMask |= 1L << i;
+                return true;
+            }
+            break;
+        }
+        return false;
+    }
+
+    /// <summary>技能施放：伤害/治疗/嘲讽/群体增益统一复用同构结算管线；怪物与斗法镜像共用。</summary>
+    private static bool CastSkill(CombatEncounterState encounter, CombatantState caster,
+        IReadOnlyList<CombatantState> allies, CombatantState target, MonsterSkillSlot slot, int slotIndex,
+        ulong side, ref List<CombatEvent>? events)
     {
         var ability = slot.Ability;
         var manaCost = ability.TryGetProperty("manaCost", out var costProperty) && costProperty.TryGetDouble(out var cost) ? cost : 0;
@@ -588,15 +664,17 @@ public static class DeterministicCombatEngine
             if (caster.Manapoints < manaCost) return false;
             caster.Manapoints -= manaCost;
         }
-        caster.UsedSkillMask |= 1L << slotIndex;
         var spell = AbilityText(ability, "category") == "spell";
         var attackBase = spell ? caster.Stats.SpellAttack : caster.Stats.AttackPower;
         var id = AbilityText(ability, "id") ?? string.Empty;
+        var ratioBonus = 1 + (slot.Level - 1) * 0.006;
+        var flatBonus = 1 + (slot.Level - 1) * 0.01;
         if (AbilityText(ability, "effectType") == "heal")
         {
-            var ally = encounter.Enemies.Where(unit => unit.IsAlive).OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).First();
+            var ally = allies.Where(unit => unit.IsAlive).OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).First();
             var healing = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints,
-                attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "healingRatio") + AbilityNumber(ability, "flatHealing"));
+                attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "healingRatio") * ratioBonus
+                    + AbilityNumber(ability, "flatHealing") * flatBonus);
             ally.Hitpoints += healing;
             events ??= new List<CombatEvent>();
             events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, ally.Id, 0, true,
@@ -607,7 +685,7 @@ public static class DeterministicCombatEngine
         {
             var absorption = buff.TryGetProperty("damageAbsorptionRatio", out var absorb) && absorb.TryGetDouble(out var absorbPoints) ? absorbPoints * 100 : 0;
             var threatBonus = buff.TryGetProperty("threatRatio", out var threat) && threat.TryGetDouble(out var threatBuff) ? threatBuff : 0;
-            foreach (var ally in encounter.Enemies.Where(unit => unit.IsAlive))
+            foreach (var ally in allies.Where(unit => unit.IsAlive))
             {
                 ally.BonusAbsorptionPoints += absorption;
                 ally.ThreatRatioBonus += threatBonus;
@@ -628,12 +706,16 @@ public static class DeterministicCombatEngine
         }
         var stats = caster.Stats with
         {
-            AttackPower = attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "damageRatio") + AbilityNumber(ability, "flatDamage"),
+            AttackPower = attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "damageRatio") * ratioBonus
+                + AbilityNumber(ability, "flatDamage") * flatBonus,
             BasicAttackRatio = 1,
             DamageKind = spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
             Element = AbilityElement(ability)
         };
-        ResolveAttack(caster, encounter.Player, encounter.Seed, (ulong)(1 + enemyIndex), encounter.ElapsedSeconds, ref events, stats, slotIndex + 1);
+        // 一次性怪物技能以槽位序号为抽样计数；可重复镜像技能以累计施放数为计数。
+        var count = slot.Triggers is not null ? caster.SkillCastCount + 1 : slotIndex + 1;
+        ResolveAttack(caster, target, encounter.Seed, side, encounter.ElapsedSeconds, ref events, stats, count);
+        caster.SkillCastCount += 1;
         return true;
     }
 
