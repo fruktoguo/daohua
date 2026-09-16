@@ -146,7 +146,10 @@ public static class SimulationEngine
                 if (player.Combat.Hitpoints > 0)
                     player.Combat.Hitpoints = Math.Min(attributes.MaxHitpoints, player.Combat.Hitpoints + attributes.HpRegen);
                 player.Combat.Manapoints = Math.Min(attributes.MaxManapoints, player.Combat.Manapoints + attributes.MpRegen);
-                if (player.Actions.Count > 0 && player.Actions[0].Expedition is { Phase: CombatExpeditionPhase.Combat } expedition)
+                // 远征 PlayerHitpoints 是权威气血的展示镜像：搜寻/复活等非交战相位同样需要
+                // 跟上自然回复，否则前端在脱战期间显示冻结的旧血量，下次开战才跳变。
+                if (player.Actions.Count > 0 && player.Actions[0].Expedition is { } expedition
+                    && expedition.PlayerHitpoints != player.Combat.Hitpoints)
                     player.Actions[0].Expedition = expedition with { PlayerHitpoints = player.Combat.Hitpoints };
                 if (player.Combat.Hitpoints != hitpoints || player.Combat.Manapoints != manapoints)
                 {
@@ -918,35 +921,70 @@ public static class SimulationEngine
     }
 
     /// <summary>
-    /// 结算行动持续产生的被动收益（当前仅包括修炼产生的灵力）。
-    /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致。
+    /// 结算行动声明的按秒收益（per=second 的修为/灵力/气血/经验等持续通道）。
+    /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致；
+    /// 灵力与气血按聚合内已刷新的属性上限逐秒截断。
     /// </summary>
     private static void ApplyContinuousReward(PlayerAggregate player, ActionDefinition definition, long wholeSeconds, double multiplier)
     {
         if (wholeSeconds <= 0) return;
         // 溢出预检查沿用“先校验后变更”语义：rate * 整秒数越界时不得污染任何进度数值。
         var seconds = (double)wholeSeconds;
-        if (definition.QiPerSecond > 0)
+        var combatTouched = false;
+        var progressionTouched = false;
+        foreach (var yield in definition.Yields)
         {
-            var rate = definition.QiPerSecond * multiplier;
+            if (yield.Period != ActionYieldPeriod.PerSecond) continue;
+            var rate = yield.Amount * multiplier;
             var total = rate * seconds;
-            if (!double.IsFinite(rate) || !double.IsFinite(total) || !double.IsFinite(player.Progression.Qi + total) || !double.IsFinite(player.Progression.LifetimeQi + total))
-                throw new DomainException(DomainErrorCode.InvariantViolation, "气运奖励超出数值范围。");
-            // 逐整秒累加，与在线逐秒推进保持完全相同的浮点操作序列。
-            for (var i = 0; i < wholeSeconds; i++)
+            if (!double.IsFinite(rate) || !double.IsFinite(total))
+                throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
+            switch (yield.Kind)
             {
-                player.Progression.Qi += rate;
-                player.Progression.LifetimeQi += rate;
+                case ActionYieldKind.Qi:
+                    if (!double.IsFinite(player.Progression.Qi + total) || !double.IsFinite(player.Progression.LifetimeQi + total))
+                        throw new DomainException(DomainErrorCode.InvariantViolation, "修为收益超出数值范围。");
+                    // 逐整秒累加，与在线逐秒推进保持完全相同的浮点操作序列。
+                    for (var i = 0; i < wholeSeconds; i++)
+                    {
+                        player.Progression.Qi += rate;
+                        player.Progression.LifetimeQi += rate;
+                    }
+                    progressionTouched = true;
+                    break;
+                case ActionYieldKind.Experience:
+                    if (!double.IsFinite(player.Progression.Experience + total))
+                        throw new DomainException(DomainErrorCode.InvariantViolation, "经验收益超出数值范围。");
+                    for (var i = 0; i < wholeSeconds; i++)
+                        player.Progression.Experience += rate;
+                    progressionTouched = true;
+                    break;
+                case ActionYieldKind.Mana:
+                    // 满值时跳过逐秒循环，避免大额离线补算在已饱和资源上空转。
+                    if (player.Combat.Manapoints >= player.Combat.MaxManapoints) break;
+                    for (var i = 0; i < wholeSeconds && player.Combat.Manapoints < player.Combat.MaxManapoints; i++)
+                        player.Combat.Manapoints = Math.Min(player.Combat.MaxManapoints, player.Combat.Manapoints + rate);
+                    combatTouched = true;
+                    break;
+                case ActionYieldKind.Hitpoints:
+                    if (player.Combat.Hitpoints >= player.Combat.MaxHitpoints) break;
+                    for (var i = 0; i < wholeSeconds && player.Combat.Hitpoints < player.Combat.MaxHitpoints; i++)
+                        player.Combat.Hitpoints = Math.Min(player.Combat.MaxHitpoints, player.Combat.Hitpoints + rate);
+                    combatTouched = true;
+                    break;
             }
         }
-        if (!double.IsFinite(player.Progression.Qi) || !double.IsFinite(player.Progression.LifetimeQi))
+        if (combatTouched) player.MarkDirty(PlayerSectionKind.Combat);
+        if (progressionTouched) player.MarkDirty(PlayerSectionKind.Progression);
+        if (!double.IsFinite(player.Progression.Qi) || !double.IsFinite(player.Progression.LifetimeQi)
+            || !double.IsFinite(player.Progression.Experience))
             throw new DomainException(DomainErrorCode.InvariantViolation, "模拟后的玩家进度数值无效。");
     }
 
     /// <summary>
     /// 单轮行动耗时走满时的结算处理。
-    /// 发放单轮经验、扣除输入材料、发放输出产物、扣减剩余次数，若次数归零则移出队列；
-    /// 若为 -1（无限重复）则绝对保留队列项供下一轮循环。
+    /// 逐条结算配表声明的按轮收益（修为/灵力/气血/经验/物品/Buff）、扣除输入材料、扣减剩余次数，
+    /// 若次数归零则移出队列；若为 -1（无限重复）则绝对保留队列项供下一轮循环。
     /// </summary>
     private static void CompleteRepeat(
         PlayerAggregate player,
@@ -960,34 +998,79 @@ public static class SimulationEngine
         ref double completedActions,
         ref double completedRepeats)
     {
-        var experienceGain = definition.ExperiencePerRepeat * autoUseMultiplier;
+        // 先汇总数值型收益并完成有限性校验，再统一落账，沿用“先校验后变更”语义。
+        double qiGain = 0, experienceGain = 0, manaGain = 0, hitpointGain = 0;
+        foreach (var yield in definition.Yields)
+        {
+            if (yield.Period != ActionYieldPeriod.PerRepeat) continue;
+            var amount = yield.Amount * autoUseMultiplier;
+            switch (yield.Kind)
+            {
+                case ActionYieldKind.Qi: qiGain += amount; break;
+                case ActionYieldKind.Experience: experienceGain += amount; break;
+                case ActionYieldKind.Mana: manaGain += amount; break;
+                case ActionYieldKind.Hitpoints: hitpointGain += amount; break;
+            }
+        }
         var nextExperience = player.Progression.Experience + experienceGain;
-        if (!double.IsFinite(experienceGain) || !double.IsFinite(nextExperience))
-            throw new DomainException(DomainErrorCode.InvariantViolation, "经验奖励超出数值范围。");
+        if (!double.IsFinite(qiGain) || !double.IsFinite(experienceGain) || !double.IsFinite(manaGain) || !double.IsFinite(hitpointGain)
+            || !double.IsFinite(player.Progression.Qi + qiGain) || !double.IsFinite(player.Progression.LifetimeQi + qiGain)
+            || !double.IsFinite(nextExperience))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
         action.ProgressSeconds = 0;
         action.CompletedRepeats += 1;
         if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
         completedActions += 1;
         completedRepeats += 1;
-        if (definition.Outputs.Count > 0 || definition.Inputs.Count > 0)
+        Dictionary<ItemId, double>? itemRewards = null;
+        var buffTouched = false;
+        foreach (var yield in definition.Yields)
+        {
+            if (yield.Period != ActionYieldPeriod.PerRepeat) continue;
+            switch (yield.Kind)
+            {
+                case ActionYieldKind.Item:
+                    deltas ??= new Dictionary<ItemId, double>();
+                    var scaled = ScaleOutput(yield.Amount, autoUseMultiplier);
+                    AddDelta(deltas, yield.Item!.Value, scaled);
+                    (itemRewards ??= new Dictionary<ItemId, double>())[yield.Item.Value] =
+                        itemRewards.GetValueOrDefault(yield.Item.Value) + scaled;
+                    break;
+                case ActionYieldKind.Buff:
+                    var grant = yield.Buff!;
+                    player.Buffs.Active.RemoveAll(buff => buff.BuffId == grant.BuffId);
+                    player.Buffs.Active.Add(new ActiveBuff(grant.BuffId,
+                        target.ToUnixTimeMilliseconds() / 1000d + grant.DurationSeconds, yield.Amount,
+                        grant.Name, null, grant.HpRegen, grant.MpRegen, grant.AttackSpeedRatio, grant.DamageAbsorptionRatio));
+                    buffTouched = true;
+                    break;
+            }
+        }
+        foreach (var (item, quantity) in definition.Inputs)
         {
             deltas ??= new Dictionary<ItemId, double>();
-            foreach (var (item, quantity) in definition.Outputs)
-                AddDelta(deltas, item, ScaleOutput(quantity, autoUseMultiplier));
-            foreach (var (item, quantity) in definition.Inputs) AddDelta(deltas, item, -quantity);
+            AddDelta(deltas, item, -quantity);
         }
         CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
+        player.Progression.Qi += qiGain;
+        player.Progression.LifetimeQi += qiGain;
         player.Progression.Experience = nextExperience;
+        if (manaGain != 0)
+            player.Combat.Manapoints = Math.Min(player.Combat.MaxManapoints, player.Combat.Manapoints + manaGain);
+        if (hitpointGain != 0)
+            player.Combat.Hitpoints = Math.Min(player.Combat.MaxHitpoints, player.Combat.Hitpoints + hitpointGain);
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
+        if (manaGain != 0 || hitpointGain != 0) player.MarkDirty(PlayerSectionKind.Combat);
+        if (buffTouched) player.MarkDirty(PlayerSectionKind.Buffs);
         events ??= new List<SimulationEvent>();
         events.Add(new SimulationEvent(
             target,
             "action.completed",
             definition.Name,
             definition.Id,
-            definition.Outputs));
+            itemRewards));
         // -1 表示无限行动：每轮完成后保留队列项并继续下一轮；仅在严格递减至 0 时出队或循环重入。
         if (action.RemainingRepeats == 0)
         {

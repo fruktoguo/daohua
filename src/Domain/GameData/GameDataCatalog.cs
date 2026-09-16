@@ -33,7 +33,7 @@ public enum ActionExecutionKind : byte
 
 /// <summary>
 /// 单个行动的静态配表定义。
-/// 包含单轮时长、材料消耗、产物掉落、持续灵力收益与单轮完成经验。
+/// 包含单轮时长、材料消耗与声明式收益列表；收益类型与行动类别无关，由配表逐项声明。
 /// </summary>
 public sealed record ActionDefinition(
     ActionId Id,
@@ -41,15 +41,64 @@ public sealed record ActionDefinition(
     ActionKind Kind,
     double DurationSeconds,
     IReadOnlyDictionary<ItemId, double> Inputs,
-    IReadOnlyDictionary<ItemId, double> Outputs,
-    double QiPerSecond = 0,
-    double ExperiencePerRepeat = 0,
+    IReadOnlyList<ActionYield> Yields,
     IReadOnlySet<string>? AllowedNodeIds = null,
     bool HiddenFromCatalog = false,
     ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
     string? CombatEncounterId = null)
 {
 }
+
+/// <summary>
+/// 行动收益类别。收益入账通道由类别唯一决定，与行动所属 ActionKind 无耦合。
+/// </summary>
+public enum ActionYieldKind : byte
+{
+    /// <summary>修为：境界推进资源，累加 Progression.Qi 与 LifetimeQi</summary>
+    Qi = 0,
+    /// <summary>灵力：战斗资源，累加 Combat.Manapoints 并按上限截断</summary>
+    Mana = 1,
+    /// <summary>气血：累加 Combat.Hitpoints 并按上限截断</summary>
+    Hitpoints = 2,
+    /// <summary>历练经验：累加 Progression.Experience</summary>
+    Experience = 3,
+    /// <summary>物品：按 Item 进入资产流水</summary>
+    Item = 4,
+    /// <summary>Buff：按 Buff 授权规格写入 Buffs.Active</summary>
+    Buff = 5
+}
+
+/// <summary>行动收益结算频率。</summary>
+public enum ActionYieldPeriod : byte
+{
+    /// <summary>按推进的整秒逐秒结算（持续速率）</summary>
+    PerSecond = 0,
+    /// <summary>按单轮行动完成时一次性结算</summary>
+    PerRepeat = 1
+}
+
+/// <summary>
+/// Buff 收益的授权规格，字段含义与 ActiveBuff 修饰器一致。
+/// </summary>
+public sealed record ActionBuffGrant(
+    string BuffId,
+    string Name,
+    double DurationSeconds,
+    double HpRegen = 0,
+    double MpRegen = 0,
+    double AttackSpeedRatio = 0,
+    double DamageAbsorptionRatio = 0);
+
+/// <summary>
+/// 单条行动收益声明：Kind 决定入账通道，Period 决定按秒或按轮结算。
+/// Item 类别必须携带合法 ItemId；Buff 类别必须携带完整授权规格，Amount 表示叠加层数。
+/// </summary>
+public sealed record ActionYield(
+    ActionYieldKind Kind,
+    ActionYieldPeriod Period,
+    double Amount,
+    ItemId? Item = null,
+    ActionBuffGrant? Buff = null);
 
 /// <summary>持续/自动消耗品对各行动类型提供的权威效果定义。</summary>
 public sealed record ConsumableDefinition(
@@ -106,7 +155,7 @@ public sealed class ActionCatalog
             var normalized = definition with
             {
                 Inputs = NormalizeQuantities(definition.Inputs, "输入"),
-                Outputs = NormalizeQuantities(definition.Outputs, "输出"),
+                Yields = NormalizeYields(definition.Yields, definition.Id),
                 AllowedNodeIds = definition.AllowedNodeIds is null
                     ? null
                     : new HashSet<string>(definition.AllowedNodeIds.Where(value => !string.IsNullOrWhiteSpace(value)), StringComparer.Ordinal)
@@ -131,24 +180,72 @@ public sealed class ActionCatalog
     /// <summary>内置默认基础行动集（引气入体、采药、炼丹、移动赶路）</summary>
     public static ActionCatalog Default { get; } = new(
     [
-        new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1.0, 10.0),
-        new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 }),
-        new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 }, new Dictionary<ItemId, double> { [new ItemId("item.qi-gathering-pill")] = 1 }),
-        new(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 0, 0, null, true, ActionExecutionKind.Travel)
+        new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(),
+        [
+            new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1.0),
+            new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 1.0),
+            new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10.0)
+        ]),
+        new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
+        [
+            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, new ItemId("item.ningxue-grass"))
+        ]),
+        new(new ActionId("alchemy.refine-qi-pill"), "炼制引气丹", ActionKind.Alchemy, 12, new Dictionary<ItemId, double> { [new ItemId("item.ningxue-grass")] = 3 },
+        [
+            new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, new ItemId("item.qi-gathering-pill"))
+        ]),
+        new(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1, new Dictionary<ItemId, double>(), [], null, true, ActionExecutionKind.Travel)
     ]);
 
     private static void Validate(ActionDefinition definition)
     {
         if (!definition.Id.IsValid || string.IsNullOrWhiteSpace(definition.Name) || definition.Name.Length > 128)
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动定义无效。");
-        if (!double.IsFinite(definition.DurationSeconds) || definition.DurationSeconds < 0 ||
-            !double.IsFinite(definition.QiPerSecond) || definition.QiPerSecond < 0 ||
-            !double.IsFinite(definition.ExperiencePerRepeat) || definition.ExperiencePerRepeat < 0)
+        if (!double.IsFinite(definition.DurationSeconds) || definition.DurationSeconds < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的数值无效。");
         if (!Enum.IsDefined(definition.ExecutionKind)
             || (definition.ExecutionKind == ActionExecutionKind.CombatEncounter
                 && string.IsNullOrWhiteSpace(definition.CombatEncounterId)))
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的执行元数据无效。");
+    }
+
+    /// <summary>
+    /// 校验并规范化行动收益列表：数值必须为正有限数，物品/Buff 只能按轮结算，
+    /// 资源类收益不得携带实体标识，同通道同目标重复声明直接拒绝。
+    /// </summary>
+    private static List<ActionYield> NormalizeYields(IReadOnlyList<ActionYield>? yields, ActionId actionId)
+    {
+        if (yields is null || yields.Count == 0) return [];
+        var normalized = new List<ActionYield>(yields.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var yield in yields)
+        {
+            if (!Enum.IsDefined(yield.Kind) || !Enum.IsDefined(yield.Period)
+                || !double.IsFinite(yield.Amount) || yield.Amount <= 0)
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益数值无效。");
+            var key = yield.Kind switch
+            {
+                ActionYieldKind.Item => yield.Item is { IsValid: true } item && yield.Buff is null
+                        && yield.Period == ActionYieldPeriod.PerRepeat
+                    ? $"item:{item.Value}"
+                    : throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的物品收益必须按轮结算并携带合法物品 ID。"),
+                ActionYieldKind.Buff => yield.Buff is { } grant && yield.Item is null
+                        && yield.Period == ActionYieldPeriod.PerRepeat
+                        && grant.BuffId is { Length: > 0 and <= 128 } && grant.Name is { Length: > 0 and <= 128 }
+                        && double.IsFinite(grant.DurationSeconds) && grant.DurationSeconds > 0
+                        && double.IsFinite(grant.HpRegen) && double.IsFinite(grant.MpRegen)
+                        && double.IsFinite(grant.AttackSpeedRatio) && double.IsFinite(grant.DamageAbsorptionRatio)
+                    ? $"buff:{grant.BuffId}"
+                    : throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的 Buff 收益必须按轮结算并携带完整授权规格。"),
+                _ => yield.Item is null && yield.Buff is null
+                    ? $"resource:{yield.Kind}:{yield.Period}"
+                    : throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的资源收益不得携带实体标识。")
+            };
+            if (!seen.Add(key))
+                throw new DomainException(DomainErrorCode.Duplicate, $"行动 {actionId} 的收益声明重复。");
+            normalized.Add(yield);
+        }
+        return normalized;
     }
 
     private static ReadOnlyDictionary<ItemId, double> NormalizeQuantities(IReadOnlyDictionary<ItemId, double>? values, string label)
@@ -364,17 +461,11 @@ public sealed class GameDataCatalog
             ? ParseKind(type.GetString())
             : ActionKind.Exploration;
         var inputs = ParseQuantities(entry, "inputs");
-        var outputs = ParseQuantities(entry, "outputs");
+        var yields = ParseYields(entry, id);
         var nodes = entry.TryGetProperty("availableNodeIds", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array
             ? new HashSet<string>(nodeArray.EnumerateArray().Select(value => value.GetString() ?? string.Empty).Where(value => value.Length > 0), StringComparer.Ordinal)
             : null;
         var duration = entry.TryGetProperty("durationSeconds", out var durationProperty) ? durationProperty.GetDouble() : 0;
-        var qiPerSecond = entry.TryGetProperty("qiPerSecond", out var qiProperty)
-            ? qiProperty.GetDouble()
-            : kind == ActionKind.Cultivation ? 1 : 0;
-        var experiencePerRepeat = entry.TryGetProperty("experiencePerRepeat", out var experienceProperty)
-            ? experienceProperty.GetDouble()
-            : kind == ActionKind.Cultivation ? 10 : 0;
         var hiddenFromCatalog = entry.TryGetProperty("hiddenFromCatalog", out var hiddenProperty)
             && hiddenProperty.ValueKind == JsonValueKind.True;
         var executionKind = ParseExecutionKind(entry, kind);
@@ -382,7 +473,65 @@ public sealed class GameDataCatalog
             && encounter.ValueKind == JsonValueKind.String
             ? encounter.GetString()
             : null;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, outputs, qiPerSecond, experiencePerRepeat, nodes, hiddenFromCatalog, executionKind, combatEncounterId);
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId);
+    }
+
+    /// <summary>
+    /// 解析行动声明式收益列表（yields）。未知收益类型或结算频率直接拒绝配置，
+    /// 数值与结构约束由 ActionCatalog.NormalizeYields 统一校验。
+    /// </summary>
+    private static List<ActionYield> ParseYields(JsonElement entry, string actionId)
+    {
+        if (!entry.TryGetProperty("yields", out var array) || array.ValueKind != JsonValueKind.Array)
+            return [];
+        var yields = new List<ActionYield>();
+        foreach (var element in array.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益配置必须为对象。");
+            var kindText = element.TryGetProperty("kind", out var kindProperty) ? kindProperty.GetString() : null;
+            var kind = kindText?.ToLowerInvariant() switch
+            {
+                "qi" => ActionYieldKind.Qi,
+                "mana" => ActionYieldKind.Mana,
+                "hitpoints" => ActionYieldKind.Hitpoints,
+                "experience" => ActionYieldKind.Experience,
+                "item" => ActionYieldKind.Item,
+                "buff" => ActionYieldKind.Buff,
+                _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益类型无效：{kindText ?? "缺失"}。")
+            };
+            var perText = element.TryGetProperty("per", out var perProperty) ? perProperty.GetString() : null;
+            var period = perText?.ToLowerInvariant() switch
+            {
+                "second" => ActionYieldPeriod.PerSecond,
+                "repeat" => ActionYieldPeriod.PerRepeat,
+                _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益结算频率无效：{perText ?? "缺失"}。")
+            };
+            var amount = element.TryGetProperty("amount", out var amountProperty) && amountProperty.TryGetDouble(out var parsed) ? parsed : 0;
+            if (kind == ActionYieldKind.Item)
+            {
+                var itemId = element.TryGetProperty("id", out var itemIdProperty) ? itemIdProperty.GetString() : null;
+                yields.Add(new(kind, period, amount, new ItemId(itemId ?? string.Empty)));
+                continue;
+            }
+            if (kind == ActionYieldKind.Buff)
+            {
+                var buffId = element.TryGetProperty("id", out var buffIdProperty) ? buffIdProperty.GetString() : null;
+                var buffName = element.TryGetProperty("name", out var buffNameProperty) ? buffNameProperty.GetString() : null;
+                var durationSeconds = ReadDouble(element, "durationSeconds");
+                double ReadModifier(string key) => element.TryGetProperty("modifiers", out var modifiers)
+                    && modifiers.ValueKind == JsonValueKind.Object
+                    && modifiers.TryGetProperty(key, out var value) && value.TryGetDouble(out var number)
+                    ? number : 0;
+                yields.Add(new(kind, period, amount, null, new ActionBuffGrant(
+                    buffId ?? string.Empty, buffName ?? string.Empty, durationSeconds,
+                    ReadModifier("hpRegen"), ReadModifier("mpRegen"),
+                    ReadModifier("attackSpeedRatio"), ReadModifier("damageAbsorptionRatio"))));
+                continue;
+            }
+            yields.Add(new(kind, period, amount));
+        }
+        return yields;
     }
 
     private static ActionExecutionKind ParseExecutionKind(JsonElement entry, ActionKind kind)

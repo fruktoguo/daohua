@@ -214,8 +214,8 @@ public sealed class SimulationEngineTests
         var herb = new ItemId("item.test-herb");
         var pill = new ItemId("item.test-pill");
         var actions = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.gather"), "采集", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [herb] = 3 }),
-            new ActionDefinition(new ActionId("test.alchemy"), "炼制", ActionKind.Alchemy, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [pill] = 1 })
+            new ActionDefinition(new ActionId("test.gather"), "采集", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 3, herb)]),
+            new ActionDefinition(new ActionId("test.alchemy"), "炼制", ActionKind.Alchemy, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, pill)])
         ]);
         var catalog = new GameDataCatalog(
             "test",
@@ -325,12 +325,12 @@ public sealed class SimulationEngineTests
     {
         // 入队时目录时长合法，配表热更后变为 0：存量 -1 行动在推进时按自愈规约移出队列。
         var enqueueCatalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1),
-            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
+            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)]),
+            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var hotCatalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 0, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1),
-            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
+            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 0, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)]),
+            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var player = CreatePlayer("甲");
         player.SetLoopEnabled(false);
@@ -354,8 +354,8 @@ public sealed class SimulationEngineTests
     {
         // 合法配置 duration=0 + 有限大 RepeatCount：入队不受限，推进时同样自愈而不是空转到转换上限。
         var catalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.instant"), "瞬时行动", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>()),
-            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
+            new ActionDefinition(new ActionId("test.instant"), "瞬时行动", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), []),
+            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var player = CreatePlayer("甲");
         player.SetLoopEnabled(false);
@@ -368,5 +368,149 @@ public sealed class SimulationEngineTests
         Assert.Single(result.Events, entry => entry.Code == "action.invalid-dropped");
         Assert.Equal(1, result.CompletedRepeats);
         Assert.True(player.Progression.Qi == 2.0);
+    }
+
+    /// <summary>
+    /// 验证 <c>ManaYieldPerSecondCreditsCombatResourceNotProgression</c>：灵力收益必须入账 Combat.Manapoints
+    /// 并按上限截断，不得写入修为；且整段推进与逐秒推进位级一致。
+    /// </summary>
+    [Fact]
+    public void ManaYieldPerSecondCreditsCombatResourceNotProgression()
+    {
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.mana-spring"), "引灵", ActionKind.Cultivation, 60,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerSecond, 2)])
+        ]);
+        var single = CreatePlayer("整段");
+        var split = CreatePlayer("逐秒");
+        single.Combat.Manapoints = 50;
+        split.Combat.Manapoints = 50;
+        single.Enqueue(new ActionIntent(new ActionId("test.mana-spring"), -1), Baseline, actions);
+        split.Enqueue(new ActionIntent(new ActionId("test.mana-spring"), -1), Baseline, actions);
+
+        SimulationEngine.AdvanceTo(single, Baseline.AddSeconds(40), actions);
+        for (var i = 1; i <= 40; i++) SimulationEngine.AdvanceTo(split, Baseline.AddSeconds(i), actions);
+
+        Assert.Equal(100, single.Combat.Manapoints); // 50 + 2*40 = 130 → 上限截断为 100
+        Assert.Equal(0, single.Progression.Qi);
+        Assert.Equal(0, single.Progression.LifetimeQi);
+        Assert.True(single.Combat.Manapoints == split.Combat.Manapoints,
+            $"灵力位级不一致：{single.Combat.Manapoints:R} != {split.Combat.Manapoints:R}");
+    }
+
+    /// <summary>
+    /// 验证 <c>MixedYieldsSettleIndependentlyOnRepeatCompletion</c>：同一行动的多种收益
+    /// 按声明通道独立入账（修为/灵力/物品/Buff/经验互不串位）。
+    /// </summary>
+    [Fact]
+    public void MixedYieldsSettleIndependentlyOnRepeatCompletion()
+    {
+        var herb = new ItemId("item.test-herb");
+        var actions = new ActionCatalog([
+            new ActionDefinition(new ActionId("test.mixed"), "复合收益", ActionKind.Exploration, 2,
+                new Dictionary<ItemId, double>(),
+                [
+                    new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerRepeat, 5),
+                    new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 10),
+                    new ActionYield(ActionYieldKind.Hitpoints, ActionYieldPeriod.PerRepeat, 7),
+                    new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 3),
+                    new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, herb),
+                    new ActionYield(ActionYieldKind.Buff, ActionYieldPeriod.PerRepeat, 2, null,
+                        new ActionBuffGrant("buff.focus", "凝神", 60, HpRegen: 2))
+                ])
+        ]);
+        var player = CreatePlayer("甲");
+        player.Combat.Manapoints = 50;
+        player.Combat.Hitpoints = 50;
+        player.Enqueue(new ActionIntent(new ActionId("test.mixed"), 1), Baseline, actions);
+
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), actions);
+
+        Assert.Equal(5, player.Progression.Qi);
+        Assert.Equal(5, player.Progression.LifetimeQi);
+        Assert.Equal(3, player.Progression.Experience);
+        Assert.Equal(60, player.Combat.Manapoints);
+        Assert.Equal(57, player.Combat.Hitpoints);
+        var buff = Assert.Single(player.Buffs.Active);
+        Assert.Equal("buff.focus", buff.BuffId);
+        Assert.Equal(2, buff.Stacks);
+        Assert.Equal(2, buff.HpRegen);
+        Assert.Equal(60, buff.ExpiresAtUnixSeconds - Baseline.AddSeconds(2).ToUnixTimeMilliseconds() / 1000d, 6);
+        var delta = Assert.Single(result.AssetDeltas);
+        Assert.Equal(herb, delta.Asset.ItemId);
+        Assert.Equal(1, delta.QuantityDelta);
+    }
+
+    /// <summary>
+    /// 验证 <c>InvalidYieldDeclarationsAreRejected</c>：非法收益配置在目录装载期拒绝而非静默忽略。
+    /// </summary>
+    [Fact]
+    public void InvalidYieldDeclarationsAreRejected()
+    {
+        var herb = new ItemId("item.test-herb");
+        // 物品按秒结算 → 拒绝
+        Assert.Throws<DomainException>(() => new ActionCatalog([
+            new ActionDefinition(new ActionId("test.bad1"), "x", ActionKind.Exploration, 1,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerSecond, 1, herb)])
+        ]));
+        // 负值收益 → 拒绝
+        Assert.Throws<DomainException>(() => new ActionCatalog([
+            new ActionDefinition(new ActionId("test.bad2"), "x", ActionKind.Exploration, 1,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, -1)])
+        ]));
+        // 资源收益携带实体标识 → 拒绝
+        Assert.Throws<DomainException>(() => new ActionCatalog([
+            new ActionDefinition(new ActionId("test.bad3"), "x", ActionKind.Exploration, 1,
+                new Dictionary<ItemId, double>(),
+                [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1, herb)])
+        ]));
+        // 同通道同频率重复声明 → 拒绝
+        Assert.Throws<DomainException>(() => new ActionCatalog([
+            new ActionDefinition(new ActionId("test.bad4"), "x", ActionKind.Exploration, 1,
+                new Dictionary<ItemId, double>(),
+                [
+                    new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1),
+                    new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 2)
+                ])
+        ]));
+    }
+
+    /// <summary>
+    /// 验证 <c>YieldsJsonRoundTripsThroughConfigParser</c>：配表 JSON 的 yields 声明
+    /// 经 GameDataCatalog.Parse 正确解析为强类型收益模型。
+    /// </summary>
+    [Fact]
+    public void YieldsJsonRoundTripsThroughConfigParser()
+    {
+        var actions = """
+            [{"id":"test.parsed","name":"解析","type":"cultivation","durationSeconds":4,
+              "yields":[
+                {"kind":"mana","per":"second","amount":0.5},
+                {"kind":"item","per":"repeat","id":"item.test-herb","amount":2},
+                {"kind":"buff","per":"repeat","id":"buff.calm","name":"入定","amount":1,"durationSeconds":30,
+                 "modifiers":{"hpRegen":1.5,"attackSpeedRatio":0.1}}]}]
+            """u8.ToArray();
+        var catalog = GameDataCatalog.Parse([actions]);
+
+        var definition = catalog.Actions.Get(new ActionId("test.parsed"));
+        Assert.Equal(3, definition.Yields.Count);
+        Assert.Equal(new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerSecond, 0.5), definition.Yields[0]);
+        Assert.Equal(new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 2, new ItemId("item.test-herb")), definition.Yields[1]);
+        var grant = definition.Yields[2].Buff;
+        Assert.NotNull(grant);
+        Assert.Equal("buff.calm", grant.BuffId);
+        Assert.Equal("入定", grant.Name);
+        Assert.Equal(30, grant.DurationSeconds);
+        Assert.Equal(1.5, grant.HpRegen);
+        Assert.Equal(0.1, grant.AttackSpeedRatio);
+
+        // 未知收益类型与非法频率必须在解析期直接拒绝。
+        Assert.Throws<DomainException>(() => GameDataCatalog.Parse(
+            ["[{\"id\":\"test.x\",\"durationSeconds\":1,\"yields\":[{\"kind\":\"spirit\",\"per\":\"repeat\",\"amount\":1}]}]"u8.ToArray()]));
+        Assert.Throws<DomainException>(() => GameDataCatalog.Parse(
+            ["[{\"id\":\"test.x\",\"durationSeconds\":1,\"yields\":[{\"kind\":\"qi\",\"per\":\"hour\",\"amount\":1}]}]"u8.ToArray()]));
     }
 }

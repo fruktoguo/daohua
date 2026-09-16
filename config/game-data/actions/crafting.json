@@ -8,9 +8,14 @@
     "inputs": {
       "item.dark-iron": 3
     },
-    "outputs": {
-      "item.refined-iron": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.refined-iron",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "craft.refine-peach-wood-crystal",
@@ -21,9 +26,14 @@
     "inputs": {
       "item.peach-wood": 3
     },
-    "outputs": {
-      "item.peach-wood-crystal": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.peach-wood-crystal",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "craft.extract-herb-essence",
@@ -35,9 +45,14 @@
       "item.ningxue-grass": 2,
       "item.morning-dew": 1
     },
-    "outputs": {
-      "item.herb-essence": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.herb-essence",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "craft.refine-copper",
@@ -48,9 +63,14 @@
     "inputs": {
       "item.crimson-copper": 3
     },
-    "outputs": {
-      "item.refined-copper": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.refined-copper",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "craft.refine-spirit-pine-crystal",
@@ -61,9 +81,14 @@
     "inputs": {
       "item.yinlingsong-wood": 3
     },
-    "outputs": {
-      "item.spirit-pine-crystal": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.spirit-pine-crystal",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "craft.extract-banling-essence",
@@ -75,8 +100,13 @@
       "item.banling-flower": 2,
       "item.morning-dew": 1
     },
-    "outputs": {
-      "item.banling-essence": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.banling-essence",
+        "amount": 1
+      }
+    ]
   }
 ]

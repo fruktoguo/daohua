@@ -9,9 +9,14 @@
       "node.yunxi-village",
       "node.herb-valley"
     ],
-    "outputs": {
-      "item.ningxue-grass": 3
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.ningxue-grass",
+        "amount": 3
+      }
+    ]
   },
   {
     "id": "explore.chop-peach-wood",
@@ -22,9 +27,14 @@
     "availableNodeIds": [
       "node.peach-forest"
     ],
-    "outputs": {
-      "item.peach-wood": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.peach-wood",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "explore.mine-dark-iron",
@@ -35,9 +45,14 @@
     "availableNodeIds": [
       "node.rock-beach"
     ],
-    "outputs": {
-      "item.dark-iron": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.dark-iron",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "explore.collect-morning-dew",
@@ -48,9 +63,14 @@
     "availableNodeIds": [
       "node.shuyu-brook"
     ],
-    "outputs": {
-      "item.morning-dew": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.morning-dew",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "explore.gather-banling-flower",
@@ -61,9 +81,14 @@
     "availableNodeIds": [
       "node.carrion-tomb"
     ],
-    "outputs": {
-      "item.banling-flower": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.banling-flower",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "explore.chop-yinlingsong",
@@ -74,9 +99,14 @@
     "availableNodeIds": [
       "node.scorched-pines"
     ],
-    "outputs": {
-      "item.yinlingsong-wood": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.yinlingsong-wood",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "explore.mine-crimson-copper",
@@ -87,8 +117,13 @@
     "availableNodeIds": [
       "node.fluorite-abyss"
     ],
-    "outputs": {
-      "item.crimson-copper": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.crimson-copper",
+        "amount": 1
+      }
+    ]
   }
 ]

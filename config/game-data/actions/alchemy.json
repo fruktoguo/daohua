@@ -8,9 +8,14 @@
     "inputs": {
       "item.ningxue-grass": 3
     },
-    "outputs": {
-      "item.qi-gathering-pill": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.qi-gathering-pill",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "alchemy.refine-zhixue-powder",
@@ -22,9 +27,14 @@
       "item.herb-essence": 1,
       "item.ningxue-grass": 1
     },
-    "outputs": {
-      "item.zhixue-powder": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.zhixue-powder",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "alchemy.refine-shunqi-pill",
@@ -36,9 +46,14 @@
       "item.herb-essence": 1,
       "item.banling-flower": 1
     },
-    "outputs": {
-      "item.shunqi-pill": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.shunqi-pill",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "alchemy.refine-tongmai-pill",
@@ -50,8 +65,13 @@
       "item.banling-essence": 2,
       "item.demon-core": 1
     },
-    "outputs": {
-      "item.tongmai-pill": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "item.tongmai-pill",
+        "amount": 1
+      }
+    ]
   }
 ]

@@ -55,8 +55,8 @@ public sealed class QueueLoopTests
         // 多个不同任务（采集 1 次 2 秒 + 吐纳 1 次 3 秒）在 Settings.LoopEnabled = true 时，依次交替循环执行
         var herb = new ItemId("item.herb");
         var actions = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.gather"), "采药", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [herb] = 1 }),
-            new ActionDefinition(new ActionId("test.draw-qi"), "吐纳", ActionKind.Cultivation, 3, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
+            new ActionDefinition(new ActionId("test.gather"), "采药", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, herb)]),
+            new ActionDefinition(new ActionId("test.draw-qi"), "吐纳", ActionKind.Cultivation, 3, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var catalog = new GameDataCatalog("test", "test", actions, new Dictionary<ItemId, ItemDefinition>());
 
@@ -132,7 +132,7 @@ public sealed class QueueLoopTests
 
         var actionCatalog = new ActionCatalog([
             new ActionDefinition(new ActionId("world.travel"), "移动", ActionKind.Exploration, 0,
-                new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(),
+                new Dictionary<ItemId, double>(), [],
                 ExecutionKind: ActionExecutionKind.Travel)
         ]);
         var gameData = new GameDataCatalog("travel", "travel", actionCatalog, worldGraph: graph);
@@ -166,11 +166,11 @@ public sealed class QueueLoopTests
         var qiActionId = new ActionId("cultivation.draw-qi");
         var actions = new ActionCatalog([
             new ActionDefinition(combatActionId, "强力妖兽", ActionKind.Combat, 0,
-                new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(),
+                new Dictionary<ItemId, double>(), [],
                 ExecutionKind: ActionExecutionKind.CombatEncounter,
                 CombatEncounterId: "encounter.boss"),
             new ActionDefinition(qiActionId, "吐纳", ActionKind.Cultivation, 2,
-                new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
+                new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var monster = new CombatMonsterDefinition("enemy.boss", "妖皇", 100, CombatantStats.Create(10_000, 10_000, 0, 1), []);
         var encounter = new CombatEncounterDefinition(

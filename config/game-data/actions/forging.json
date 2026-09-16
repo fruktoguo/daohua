@@ -9,9 +9,14 @@
       "item.refined-iron": 7,
       "item.beast-bone": 1
     },
-    "outputs": {
-      "equipment.qingfeng-sword": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.qingfeng-sword",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.pishan-blade",
@@ -23,9 +28,14 @@
       "item.refined-iron": 7,
       "item.beast-bone": 1
     },
-    "outputs": {
-      "equipment.pishan-blade": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.pishan-blade",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.shufa-scarf",
@@ -37,9 +47,14 @@
       "item.refined-iron": 5,
       "item.beast-hide": 1
     },
-    "outputs": {
-      "equipment.shufa-scarf": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.shufa-scarf",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.baina-armor",
@@ -51,9 +66,14 @@
       "item.refined-iron": 7,
       "item.beast-hide": 1
     },
-    "outputs": {
-      "equipment.baina-armor": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.baina-armor",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.zhakou-pants",
@@ -65,9 +85,14 @@
       "item.refined-iron": 5,
       "item.beast-hide": 1
     },
-    "outputs": {
-      "equipment.zhakou-pants": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.zhakou-pants",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.xingshan-boots",
@@ -79,9 +104,14 @@
       "item.refined-iron": 5,
       "item.beast-hide": 1
     },
-    "outputs": {
-      "equipment.xingshan-boots": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xingshan-boots",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.shouya-pendant",
@@ -93,9 +123,14 @@
       "item.refined-iron": 5,
       "item.beast-bone": 1
     },
-    "outputs": {
-      "equipment.shouya-pendant": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.shouya-pendant",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.jiujie-staff",
@@ -107,9 +142,14 @@
       "item.peach-wood-crystal": 7,
       "item.broken-spirit-core": 1
     },
-    "outputs": {
-      "equipment.jiujie-staff": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.jiujie-staff",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.suxin-zither",
@@ -121,9 +161,14 @@
       "item.peach-wood-crystal": 7,
       "item.broken-spirit-core": 1
     },
-    "outputs": {
-      "equipment.suxin-zither": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.suxin-zither",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.hunyuan-scarf",
@@ -135,9 +180,14 @@
       "item.peach-wood-crystal": 5,
       "item.broken-spirit-core": 1
     },
-    "outputs": {
-      "equipment.hunyuan-scarf": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.hunyuan-scarf",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.suma-robe",
@@ -149,9 +199,14 @@
       "item.peach-wood-crystal": 7,
       "item.beast-hide": 1
     },
-    "outputs": {
-      "equipment.suma-robe": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.suma-robe",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.xingqi-pants",
@@ -163,9 +218,14 @@
       "item.peach-wood-crystal": 5,
       "item.beast-hide": 1
     },
-    "outputs": {
-      "equipment.xingqi-pants": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.xingqi-pants",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.shifang-shoes",
@@ -177,9 +237,14 @@
       "item.peach-wood-crystal": 5,
       "item.beast-hide": 1
     },
-    "outputs": {
-      "equipment.shifang-shoes": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.shifang-shoes",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.taomu-talisman",
@@ -191,9 +256,14 @@
       "item.peach-wood-crystal": 5,
       "item.broken-spirit-core": 1
     },
-    "outputs": {
-      "equipment.taomu-talisman": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.taomu-talisman",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.pogang-sword",
@@ -206,9 +276,14 @@
       "item.beast-fang": 1,
       "equipment.qingfeng-sword": 2
     },
-    "outputs": {
-      "equipment.pogang-sword": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.pogang-sword",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.zhansha-blade",
@@ -221,9 +296,14 @@
       "item.beast-fang": 1,
       "equipment.pishan-blade": 2
     },
-    "outputs": {
-      "equipment.zhansha-blade": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.zhansha-blade",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.chijin-helmet",
@@ -236,9 +316,14 @@
       "item.beast-fang": 1,
       "equipment.shufa-scarf": 2
     },
-    "outputs": {
-      "equipment.chijin-helmet": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.chijin-helmet",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.yulin-armor",
@@ -251,9 +336,14 @@
       "item.beast-fang": 1,
       "equipment.baina-armor": 2
     },
-    "outputs": {
-      "equipment.yulin-armor": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.yulin-armor",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.tazhen-greaves",
@@ -266,9 +356,14 @@
       "item.beast-fang": 1,
       "equipment.zhakou-pants": 2
     },
-    "outputs": {
-      "equipment.tazhen-greaves": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tazhen-greaves",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.tashan-boots",
@@ -281,9 +376,14 @@
       "item.beast-fang": 1,
       "equipment.xingshan-boots": 2
     },
-    "outputs": {
-      "equipment.tashan-boots": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tashan-boots",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.chiwen-ring",
@@ -296,9 +396,14 @@
       "item.beast-fang": 1,
       "equipment.shouya-pendant": 2
     },
-    "outputs": {
-      "equipment.chiwen-ring": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.chiwen-ring",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.chaoyuan-staff",
@@ -311,9 +416,14 @@
       "item.soul-talisman": 1,
       "equipment.jiujie-staff": 2
     },
-    "outputs": {
-      "equipment.chaoyuan-staff": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.chaoyuan-staff",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.songfeng-zither",
@@ -326,9 +436,14 @@
       "item.soul-talisman": 1,
       "equipment.suxin-zither": 2
     },
-    "outputs": {
-      "equipment.songfeng-zither": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.songfeng-zither",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.ziwu-crown",
@@ -341,9 +456,14 @@
       "item.soul-talisman": 1,
       "equipment.hunyuan-scarf": 2
     },
-    "outputs": {
-      "equipment.ziwu-crown": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.ziwu-crown",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.pichen-shirt",
@@ -356,9 +476,14 @@
       "item.fire-feather": 1,
       "equipment.suma-robe": 2
     },
-    "outputs": {
-      "equipment.pichen-shirt": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.pichen-shirt",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.liuyun-skirt",
@@ -371,9 +496,14 @@
       "item.fire-feather": 1,
       "equipment.xingqi-pants": 2
     },
-    "outputs": {
-      "equipment.liuyun-skirt": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.liuyun-skirt",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.bichen-shoes",
@@ -386,9 +516,14 @@
       "item.fire-feather": 1,
       "equipment.shifang-shoes": 2
     },
-    "outputs": {
-      "equipment.bichen-shoes": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.bichen-shoes",
+        "amount": 1
+      }
+    ]
   },
   {
     "id": "forge.juling-pendant",
@@ -401,8 +536,13 @@
       "item.soul-talisman": 1,
       "equipment.taomu-talisman": 2
     },
-    "outputs": {
-      "equipment.juling-pendant": 1
-    }
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.juling-pendant",
+        "amount": 1
+      }
+    ]
   }
 ]

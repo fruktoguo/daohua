@@ -54,7 +54,7 @@ public sealed class AdversarialSimulationStressTests
     {
         // 模拟 1 秒一次的行动，在单次 AdvanceTo 中推进 120,000 秒 (> 100,000 次转换限制) 时必须快速失败
         var fastCatalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.1sec"), "1秒行动", ActionKind.Cultivation, 1, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 1)
+            new ActionDefinition(new ActionId("test.1sec"), "1秒行动", ActionKind.Cultivation, 1, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
         ]);
 
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "极速者", Baseline, "catalog-a");

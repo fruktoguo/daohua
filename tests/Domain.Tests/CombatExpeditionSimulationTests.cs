@@ -131,6 +131,28 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
+    /// 验证 <c>RegenSyncsExpeditionHitpointsDuringSearchPhase</c>（Regen Syncs Expedition Hitpoints During Search Phase）所描述的领域行为。
+    /// 搜寻相位（玩家视角的脱战状态）下权威气血按周期回复时，远征镜像血量必须同步，
+    /// 否则界面显示冻结在上次战斗结束时的旧值。
+    /// </summary>
+    [Fact]
+    public void RegenSyncsExpeditionHitpointsDuringSearchPhase()
+    {
+        var attributes = new BaseAttributeCatalog([new(1, 1000, 100, 10, 0, 0, 0, 100, 0, 0, 0, 0, 0, 7, 3)]);
+        var catalog = CreateCatalog(enemyHitpoints: 1, enemyAttackPower: 0, searchSeconds: 30, baseAttributes: attributes);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.Combat.Hitpoints = 10;
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(12), catalog);
+
+        var action = Assert.Single(player.Actions);
+        Assert.Equal(CombatExpeditionPhase.InitialSearch, action.Expedition!.Phase);
+        Assert.True(player.Combat.Hitpoints > 10);
+        Assert.Equal(player.Combat.Hitpoints, action.Expedition.PlayerHitpoints);
+    }
+
+    /// <summary>
     /// 验证 <c>CombatRestoreRejectsOutcomeThatDoesNotMatchHitpoints</c>（Combat Restore Rejects Outcome That Does Not Match Hitpoints）所描述的领域行为。
     /// </summary>
     [Fact]
@@ -152,7 +174,7 @@ public sealed class CombatExpeditionSimulationTests
                 ActionKind.Combat,
                 0,
                 new Dictionary<ItemId, double>(),
-                new Dictionary<ItemId, double>(),
+                [],
                 ExecutionKind: ActionExecutionKind.CombatEncounter,
                 CombatEncounterId: "encounter.wave")
         ]);
@@ -183,7 +205,8 @@ public sealed class CombatExpeditionSimulationTests
             combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter });
     }
 
-    private static GameDataCatalog CreateCatalog(double enemyHitpoints, double enemyAttackPower)
+    private static GameDataCatalog CreateCatalog(double enemyHitpoints, double enemyAttackPower,
+        double searchSeconds = 1, BaseAttributeCatalog? baseAttributes = null)
     {
         var actionId = new ActionId("combat.test");
         var actions = new ActionCatalog([
@@ -193,7 +216,7 @@ public sealed class CombatExpeditionSimulationTests
                 ActionKind.Combat,
                 0,
                 new Dictionary<ItemId, double>(),
-                new Dictionary<ItemId, double>(),
+                [],
                 ExecutionKind: ActionExecutionKind.CombatEncounter,
                 CombatEncounterId: "encounter.test")
         ]);
@@ -209,7 +232,7 @@ public sealed class CombatExpeditionSimulationTests
             1,
             1,
             1,
-            1,
+            searchSeconds,
             1,
             180,
             [new CombatSpawnDefinition("enemy.test", 1, 1)],
@@ -221,6 +244,7 @@ public sealed class CombatExpeditionSimulationTests
             "test-fingerprint",
             actions,
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
-            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter });
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },
+            baseAttributes: baseAttributes);
     }
 }

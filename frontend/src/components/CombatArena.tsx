@@ -795,12 +795,10 @@ function ArenaLifeGoalCard({
   const remainingRepeats = queueEntry?.remainingRepeats ?? 0
   const repeats = isInfinite ? -1 : remainingRepeats
 
-  // 目标产物分析
-  const outputs = actionDef?.outputs || {}
-  const outputEntries = Object.entries(outputs)
-  const primaryOutput = outputEntries[0]
-  const primaryItemId = primaryOutput ? primaryOutput[0] : null
-  const primaryAmountPerBatch = primaryOutput ? primaryOutput[1] : 1
+  // 目标产物分析（取 yields 中首个物品收益）
+  const primaryYield = actionDef?.yields?.find(yieldEntry => yieldEntry.kind === 'item' && yieldEntry.id)
+  const primaryItemId = primaryYield?.id ?? null
+  const primaryAmountPerBatch = primaryYield?.amount ?? 1
   const totalTargetDisplay = isInfinite ? '∞' : formatNumber(primaryAmountPerBatch * repeats)
 
   const itemMeta = primaryItemId ? resolveItemMetadata(primaryItemId) : null

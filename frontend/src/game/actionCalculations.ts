@@ -2,8 +2,11 @@
  * 行动产出、持续消耗品加成与动态加成解算器
  */
 
-import type { ActionDefinition, ActionType, AutoUseSlot, Buff, InventoryItem, ItemDefinition, Stats } from './types'
+import type { ActionDefinition, ActionType, ActionYieldPeriod, AutoUseSlot, Buff, InventoryItem, ItemDefinition, Stats } from './types'
 import { calculateRealmProgress } from './combatConstants'
+
+/** 非物品、非增益的资源类收益类别（修为/灵力/气血/历练经验） */
+export type ResourceYieldKind = 'qi' | 'mana' | 'hitpoints' | 'experience'
 
 export interface ActiveBonusDetail {
   /** 加成源名称（如 '引气丹' / '青岚山谷' / '吐纳增益'） */
@@ -19,26 +22,8 @@ export interface ActiveBonusDetail {
 }
 
 export interface CultivationYieldDetail {
-  /** 基础修为 */
-  baseExp: number
-  /** 加成后修为（不含底蕴消耗） */
-  boostedExp: number
-  /** 基础灵力 */
-  baseQi: number
-  /** 加成后灵力 */
-  boostedQi: number
-  /** 综合加成乘率 */
-  totalMultiplier: number
-  /** 是否拥有道基底蕴并可消耗加速 */
-  hasFoundationAcceleration: boolean
-  /** 预计消耗底蕴点数 */
-  foundationConsumed: number
-  /** 底蕴加速后实际总修为获得 */
-  actualExpGain: number
   /** 当前境界是否已圆满待突破（修为转为底蕴） */
   isPendingBreakthrough: boolean
-  /** 生效加成明细列表 */
-  bonuses: ActiveBonusDetail[]
 }
 
 export interface ActionYieldPreview {
@@ -48,12 +33,27 @@ export interface ActionYieldPreview {
   totalMultiplier: number
   /** 修炼专属详情 */
   cultivation?: CultivationYieldDetail
-  /** 普通物品产出预览（包含加成） */
+  /** 物品产出预览（按 yields 中 kind === 'item' 聚合，包含加成） */
   itemOutputs: Array<{
     itemId: string
     baseAmount: number
     finalAmount: number
     multiplier: number
+  }>
+  /** 资源类收益预览（修为/灵力/气血/历练经验，包含加成） */
+  resourceYields: Array<{
+    kind: ResourceYieldKind
+    per: ActionYieldPeriod
+    baseAmount: number
+    finalAmount: number
+    multiplier: number
+  }>
+  /** 增益状态收益预览（透传服务端配置，不参与加成倍率） */
+  buffYields: Array<{
+    buffId: string
+    name: string
+    durationSeconds: number
+    stacks: number
   }>
   /** 生效加成明细列表 */
   bonuses: ActiveBonusDetail[]
@@ -184,25 +184,13 @@ export function calculateActionYieldPreview({
   // 综合倍率
   const totalMultiplier = autoUseMultiplier * worldMultiplier * buffMultiplier
 
-  // 4. 修炼专属产出解算
+  // 4. 修炼专属境界判定（产出数值统一由 yields 驱动）
   let cultivationDetail: CultivationYieldDetail | undefined
   if (isCultivation) {
-    const baseExp = 10.0
-    const baseQi = 10.0
-
-    const boostedExp = baseExp * totalMultiplier
-    const boostedQi = Math.max(1, Math.round(baseQi * totalMultiplier))
-
-    // 境界判定；服务端突破时 Experience 清零且无独立道基底蕴字段，
-    // "底蕴化生加速"属于前端虚构机制，已移除。
     const spirit = stats?.spirit ?? 0
     const realmProgress = calculateRealmProgress(spirit, stats?.realmLevel)
     const expToCap = realmProgress.expToNext - realmProgress.currentLayerExp
     const isPendingBreakthrough = realmProgress.expToNext > 0 && expToCap <= 0.0001 && spirit > 0
-
-    const hasFoundationAcceleration = false
-    const foundationConsumed = 0
-    const actualExpGain = boostedExp
 
     if (isPendingBreakthrough) {
       // 境界圆满待突破
@@ -214,41 +202,67 @@ export function calculateActionYieldPreview({
       })
     }
 
-    cultivationDetail = {
-      baseExp,
-      boostedExp,
-      baseQi,
-      boostedQi,
-      totalMultiplier,
-      hasFoundationAcceleration,
-      foundationConsumed,
-      actualExpGain,
-      isPendingBreakthrough,
-      bonuses,
+    cultivationDetail = { isPendingBreakthrough }
+  }
+
+  // 5. 收益解算：物品按 id 聚合，资源类收益同步应用综合倍率，增益收益原样透传
+  const itemAmountMap = new Map<string, number>()
+  const resourceYields: ActionYieldPreview['resourceYields'] = []
+  const buffYields: ActionYieldPreview['buffYields'] = []
+  for (const yieldEntry of action.yields ?? []) {
+    switch (yieldEntry.kind) {
+      case 'item': {
+        if (!yieldEntry.id) break
+        itemAmountMap.set(yieldEntry.id, (itemAmountMap.get(yieldEntry.id) ?? 0) + yieldEntry.amount)
+        break
+      }
+      case 'qi':
+      case 'mana':
+      case 'hitpoints':
+      case 'experience': {
+        const baseAmount = yieldEntry.amount
+        resourceYields.push({
+          kind: yieldEntry.kind,
+          per: yieldEntry.per,
+          baseAmount,
+          finalAmount: baseAmount * totalMultiplier,
+          multiplier: totalMultiplier,
+        })
+        break
+      }
+      case 'buff': {
+        if (!yieldEntry.id) break
+        buffYields.push({
+          buffId: yieldEntry.id,
+          name: yieldEntry.name ?? yieldEntry.id,
+          durationSeconds: yieldEntry.durationSeconds ?? 0,
+          stacks: yieldEntry.amount,
+        })
+        break
+      }
     }
   }
 
-  // 5. 普通物品产出解算
-  const itemOutputs = Object.entries(action.outputs ?? {})
-    .filter(([itemId]) => itemId !== 'resource.qi')
-    .map(([itemId, baseAmount]) => {
-      const multiplier = totalMultiplier
-      const finalAmount = multiplier === 1.0
-        ? baseAmount
-        : Math.max(1, Math.ceil(baseAmount * multiplier))
-      return {
-        itemId,
-        baseAmount,
-        finalAmount,
-        multiplier,
-      }
-    })
+  const itemOutputs = Array.from(itemAmountMap.entries()).map(([itemId, baseAmount]) => {
+    const multiplier = totalMultiplier
+    const finalAmount = multiplier === 1.0
+      ? baseAmount
+      : Math.max(1, Math.ceil(baseAmount * multiplier))
+    return {
+      itemId,
+      baseAmount,
+      finalAmount,
+      multiplier,
+    }
+  })
 
   return {
     isCultivation,
     totalMultiplier,
     cultivation: cultivationDetail,
     itemOutputs,
+    resourceYields,
+    buffYields,
     bonuses,
     baseDurationSeconds,
     actualDurationSeconds: baseDurationSeconds,

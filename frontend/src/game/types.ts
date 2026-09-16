@@ -185,6 +185,37 @@ export type CombatAbilityTargetType =
   | 'lowest-hp-ally'
 
 /**
+ * 行动收益类别：修为 (qi)、灵力/战斗蓝 (mana)、气血 (hitpoints)、历练经验 (experience)、物品产出 (item)、增益状态 (buff)
+ */
+export type ActionYieldKind = 'qi' | 'mana' | 'hitpoints' | 'experience' | 'item' | 'buff'
+
+/**
+ * 收益结算周期：持续速率 (second) / 单轮完成结算 (repeat)
+ */
+export type ActionYieldPeriod = 'second' | 'repeat'
+
+/**
+ * 行动单条收益定义（服务端目录 yields 协议字段）
+ * id/name/durationSeconds/modifiers 仅 item/buff 类别有值，其余为 null
+ */
+export interface ActionYield {
+  /** 收益类别 */
+  kind: ActionYieldKind
+  /** 结算周期：second 为每秒持续速率，repeat 为每轮完成结算 */
+  per: ActionYieldPeriod
+  /** 收益数量（item 为物品件数，buff 为叠加层数，其余为点数/速率） */
+  amount: number
+  /** 物品 ID 或 BuffId（仅 item/buff 有值） */
+  id?: string | null
+  /** Buff 显示名称（仅 buff 有值） */
+  name?: string | null
+  /** Buff 持续秒数（仅 buff 有值） */
+  durationSeconds?: number | null
+  /** Buff 修正属性表（仅 buff 有值） */
+  modifiers?: Record<string, number> | null
+}
+
+/**
  * 行动定义配置接口（描述某个行动的耗时、产出与消耗规则）
  */
 export interface ActionDefinition {
@@ -206,8 +237,8 @@ export interface ActionDefinition {
   combatEncounterId?: string
   /** 消耗材料物品与数量映射 */
   inputs?: Record<string, number>
-  /** 产出资源/物品与数量映射 */
-  outputs?: Record<string, number>
+  /** 行动收益列表（修为/灵力/气血/历练经验/物品/增益） */
+  yields?: ActionYield[]
   /** 允许执行该行动的地图节点 ID 列表 */
   availableNodeIds?: string[]
 }

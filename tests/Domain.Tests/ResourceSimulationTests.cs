@@ -59,8 +59,8 @@ public sealed class ResourceSimulationTests
         var craft = new ActionId("test.craft");
         var gather = new ActionId("test.gather");
         var actions = new ActionCatalog([
-            new(craft, "加工", ActionKind.Exploration, 2, new Dictionary<ItemId, double> { [material] = 1 }, new Dictionary<ItemId, double> { [output] = 1 }),
-            new(gather, "采集", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double> { [material] = 1 })
+            new(craft, "加工", ActionKind.Exploration, 2, new Dictionary<ItemId, double> { [material] = 1 }, [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, output)]),
+            new(gather, "采集", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, material)])
         ]);
         var catalog = new GameDataCatalog("test", "test", actions);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "材料", Baseline, "test");

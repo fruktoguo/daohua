@@ -294,7 +294,7 @@ public sealed class TravelActionTests
         var actionCatalog = new ActionCatalog(
         [
             new ActionDefinition(new ActionId("world.travel"), "赶路", ActionKind.Travel, 1,
-                new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), 0, 0, null, true, ActionExecutionKind.Travel)
+                new Dictionary<ItemId, double>(), [], null, true, ActionExecutionKind.Travel)
         ]);
         var gameData = new GameDataCatalog("v1", "fp1", actionCatalog, worldGraph: graph);
 

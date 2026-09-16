@@ -135,7 +135,7 @@ public sealed class PlayerAggregateTests
     public void InfiniteZeroDurationActionIsRejected()
     {
         var instant = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.instant"), "瞬时", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>())
+            new ActionDefinition(new ActionId("test.instant"), "瞬时", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), [])
         ]);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
 
@@ -217,7 +217,7 @@ public sealed class PlayerAggregateTests
     public void SimulationRejectsNonFiniteRewardBeforeMutatingProgress()
     {
         var catalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.overflow"), "溢出", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), new Dictionary<ItemId, double>(), double.MaxValue)
+            new ActionDefinition(new ActionId("test.overflow"), "溢出", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, double.MaxValue)])
         ]);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
         player.Enqueue(new ActionIntent(new ActionId("test.overflow")), Baseline, catalog);

@@ -18,69 +18,75 @@ export type ActionDefinitionCore = Omit<ActionDefinition, 'name' | 'description'
  */
 const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   // 修炼
-  { id: 'cultivation.draw-qi', type: 'cultivation', durationSeconds: 10, outputs: {} },
+  {
+    id: 'cultivation.draw-qi', type: 'cultivation', durationSeconds: 10, yields: [
+      { kind: 'qi', per: 'second', amount: 1 },
+      { kind: 'mana', per: 'repeat', amount: 1 },
+      { kind: 'experience', per: 'repeat', amount: 10 },
+    ],
+  },
 
   // 采集
-  { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, outputs: { 'item.ningxue-grass': 3 } },
-  { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, outputs: { 'item.peach-wood': 1 } },
-  { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, outputs: { 'item.dark-iron': 1 } },
-  { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, outputs: { 'item.morning-dew': 1 } },
-  { id: 'explore.gather-banling-flower', type: 'exploration', durationSeconds: 8, outputs: { 'item.banling-flower': 1 } },
-  { id: 'explore.chop-yinlingsong', type: 'exploration', durationSeconds: 8, outputs: { 'item.yinlingsong-wood': 1 } },
-  { id: 'explore.mine-crimson-copper', type: 'exploration', durationSeconds: 8, outputs: { 'item.crimson-copper': 1 } },
+  { id: 'explore.gather-ningxue-grass', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.ningxue-grass', amount: 3 }] },
+  { id: 'explore.chop-peach-wood', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood', amount: 1 }] },
+  { id: 'explore.mine-dark-iron', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.dark-iron', amount: 1 }] },
+  { id: 'explore.collect-morning-dew', type: 'exploration', durationSeconds: 6, yields: [{ kind: 'item', per: 'repeat', id: 'item.morning-dew', amount: 1 }] },
+  { id: 'explore.gather-banling-flower', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-flower', amount: 1 }] },
+  { id: 'explore.chop-yinlingsong', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.yinlingsong-wood', amount: 1 }] },
+  { id: 'explore.mine-crimson-copper', type: 'exploration', durationSeconds: 8, yields: [{ kind: 'item', per: 'repeat', id: 'item.crimson-copper', amount: 1 }] },
 
   // 赶路
-  { id: 'world.travel', type: 'exploration', durationSeconds: 1, executionKind: 'travel', hiddenFromCatalog: true },
+  { id: 'world.travel', type: 'exploration', durationSeconds: 1, executionKind: 'travel', hiddenFromCatalog: true, yields: [] },
 
   // 炼丹
-  { id: 'alchemy.refine-qi-pill', type: 'alchemy', durationSeconds: 12, inputs: { 'item.ningxue-grass': 3, 'item.morning-dew': 1 }, outputs: { 'item.qi-gathering-pill': 1 } },
-  { id: 'alchemy.refine-zhixue-powder', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2 }, outputs: { 'item.zhixue-powder': 1 } },
-  { id: 'alchemy.refine-shunqi-pill', type: 'alchemy', durationSeconds: 10, inputs: { 'item.herb-essence': 1, 'item.banling-flower': 1 }, outputs: { 'item.shunqi-pill': 1 } },
-  { id: 'alchemy.refine-tongmai-pill', type: 'alchemy', durationSeconds: 20, inputs: { 'item.banling-essence': 2, 'item.demon-core': 1 }, outputs: { 'item.tongmai-pill': 1 } },
+  { id: 'alchemy.refine-qi-pill', type: 'alchemy', durationSeconds: 12, inputs: { 'item.ningxue-grass': 3, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.qi-gathering-pill', amount: 1 }] },
+  { id: 'alchemy.refine-zhixue-powder', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.zhixue-powder', amount: 1 }] },
+  { id: 'alchemy.refine-shunqi-pill', type: 'alchemy', durationSeconds: 10, inputs: { 'item.herb-essence': 1, 'item.banling-flower': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.shunqi-pill', amount: 1 }] },
+  { id: 'alchemy.refine-tongmai-pill', type: 'alchemy', durationSeconds: 20, inputs: { 'item.banling-essence': 2, 'item.demon-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.tongmai-pill', amount: 1 }] },
 
   // 精炼加工
-  { id: 'craft.refine-iron', type: 'alchemy', durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, outputs: { 'item.refined-iron': 1 } },
-  { id: 'craft.refine-peach-wood-crystal', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood': 3 }, outputs: { 'item.peach-wood-crystal': 1 } },
-  { id: 'craft.extract-herb-essence', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2, 'item.morning-dew': 1 }, outputs: { 'item.herb-essence': 1 } },
-  { id: 'craft.refine-copper', type: 'alchemy', durationSeconds: 15, inputs: { 'item.crimson-copper': 3 }, outputs: { 'item.refined-copper': 1 } },
-  { id: 'craft.refine-spirit-pine-crystal', type: 'alchemy', durationSeconds: 15, inputs: { 'item.yinlingsong-wood': 3 }, outputs: { 'item.spirit-pine-crystal': 1 } },
-  { id: 'craft.extract-banling-essence', type: 'alchemy', durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, outputs: { 'item.banling-essence': 1 } },
+  { id: 'craft.refine-iron', type: 'alchemy', durationSeconds: 10, inputs: { 'item.dark-iron': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-iron', amount: 1 }] },
+  { id: 'craft.refine-peach-wood-crystal', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.peach-wood-crystal', amount: 1 }] },
+  { id: 'craft.extract-herb-essence', type: 'alchemy', durationSeconds: 10, inputs: { 'item.ningxue-grass': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.herb-essence', amount: 1 }] },
+  { id: 'craft.refine-copper', type: 'alchemy', durationSeconds: 15, inputs: { 'item.crimson-copper': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.refined-copper', amount: 1 }] },
+  { id: 'craft.refine-spirit-pine-crystal', type: 'alchemy', durationSeconds: 15, inputs: { 'item.yinlingsong-wood': 3 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.spirit-pine-crystal', amount: 1 }] },
+  { id: 'craft.extract-banling-essence', type: 'alchemy', durationSeconds: 15, inputs: { 'item.banling-flower': 2, 'item.morning-dew': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'item.banling-essence', amount: 1 }] },
 
   // 讨伐战斗
   { id: 'combat.hunt-qi-beast', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-pass' },
   { id: 'combat.sweep-twilight-valley', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-valley' },
 
   // 锻造装备 (一阶)
-  { id: 'forge.qingfeng-sword', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, outputs: { 'equipment.qingfeng-sword': 1 } },
-  { id: 'forge.pishan-blade', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, outputs: { 'equipment.pishan-blade': 1 } },
-  { id: 'forge.shufa-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.shufa-scarf': 1 } },
-  { id: 'forge.baina-armor', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-hide': 1 }, outputs: { 'equipment.baina-armor': 1 } },
-  { id: 'forge.zhakou-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.zhakou-pants': 1 } },
-  { id: 'forge.xingshan-boots', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.xingshan-boots': 1 } },
-  { id: 'forge.shouya-pendant', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-bone': 1 }, outputs: { 'equipment.shouya-pendant': 1 } },
-  { id: 'forge.jiujie-staff', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.jiujie-staff': 1 } },
-  { id: 'forge.suxin-zither', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.suxin-zither': 1 } },
-  { id: 'forge.hunyuan-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.hunyuan-scarf': 1 } },
-  { id: 'forge.suma-robe', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.beast-hide': 1 }, outputs: { 'equipment.suma-robe': 1 } },
-  { id: 'forge.xingqi-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.xingqi-pants': 1 } },
-  { id: 'forge.shifang-shoes', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, outputs: { 'equipment.shifang-shoes': 1 } },
-  { id: 'forge.taomu-talisman', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, outputs: { 'equipment.taomu-talisman': 1 } },
+  { id: 'forge.qingfeng-sword', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.qingfeng-sword', amount: 1 }] },
+  { id: 'forge.pishan-blade', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pishan-blade', amount: 1 }] },
+  { id: 'forge.shufa-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.shufa-scarf', amount: 1 }] },
+  { id: 'forge.baina-armor', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.baina-armor', amount: 1 }] },
+  { id: 'forge.zhakou-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.zhakou-pants', amount: 1 }] },
+  { id: 'forge.xingshan-boots', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.xingshan-boots', amount: 1 }] },
+  { id: 'forge.shouya-pendant', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.shouya-pendant', amount: 1 }] },
+  { id: 'forge.jiujie-staff', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.jiujie-staff', amount: 1 }] },
+  { id: 'forge.suxin-zither', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.suxin-zither', amount: 1 }] },
+  { id: 'forge.hunyuan-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.hunyuan-scarf', amount: 1 }] },
+  { id: 'forge.suma-robe', type: 'alchemy', durationSeconds: 15, inputs: { 'item.peach-wood-crystal': 7, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.suma-robe', amount: 1 }] },
+  { id: 'forge.xingqi-pants', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.xingqi-pants', amount: 1 }] },
+  { id: 'forge.shifang-shoes', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.shifang-shoes', amount: 1 }] },
+  { id: 'forge.taomu-talisman', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.taomu-talisman', amount: 1 }] },
 
   // 锻造装备 (二阶)
-  { id: 'forge.pogang-sword', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.qingfeng-sword': 2 }, outputs: { 'equipment.pogang-sword': 1 } },
-  { id: 'forge.zhansha-blade', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.pishan-blade': 2 }, outputs: { 'equipment.zhansha-blade': 1 } },
-  { id: 'forge.chijin-helmet', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shufa-scarf': 2 }, outputs: { 'equipment.chijin-helmet': 1 } },
-  { id: 'forge.yulin-armor', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.baina-armor': 2 }, outputs: { 'equipment.yulin-armor': 1 } },
-  { id: 'forge.tazhen-greaves', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.zhakou-pants': 2 }, outputs: { 'equipment.tazhen-greaves': 1 } },
-  { id: 'forge.tashan-boots', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.xingshan-boots': 2 }, outputs: { 'equipment.tashan-boots': 1 } },
-  { id: 'forge.chiwen-ring', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shouya-pendant': 2 }, outputs: { 'equipment.chiwen-ring': 1 } },
-  { id: 'forge.chaoyuan-staff', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.jiujie-staff': 2 }, outputs: { 'equipment.chaoyuan-staff': 1 } },
-  { id: 'forge.songfeng-zither', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.suxin-zither': 2 }, outputs: { 'equipment.songfeng-zither': 1 } },
-  { id: 'forge.ziwu-crown', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.hunyuan-scarf': 2 }, outputs: { 'equipment.ziwu-crown': 1 } },
-  { id: 'forge.pichen-shirt', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.fire-feather': 1, 'equipment.suma-robe': 2 }, outputs: { 'equipment.pichen-shirt': 1 } },
-  { id: 'forge.liuyun-skirt', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.xingqi-pants': 2 }, outputs: { 'equipment.liuyun-skirt': 1 } },
-  { id: 'forge.bichen-shoes', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.shifang-shoes': 2 }, outputs: { 'equipment.bichen-shoes': 1 } },
-  { id: 'forge.juling-pendant', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.taomu-talisman': 2 }, outputs: { 'equipment.juling-pendant': 1 } },
+  { id: 'forge.pogang-sword', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.qingfeng-sword': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pogang-sword', amount: 1 }] },
+  { id: 'forge.zhansha-blade', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.pishan-blade': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.zhansha-blade', amount: 1 }] },
+  { id: 'forge.chijin-helmet', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shufa-scarf': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.chijin-helmet', amount: 1 }] },
+  { id: 'forge.yulin-armor', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.baina-armor': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.yulin-armor', amount: 1 }] },
+  { id: 'forge.tazhen-greaves', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.zhakou-pants': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tazhen-greaves', amount: 1 }] },
+  { id: 'forge.tashan-boots', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.xingshan-boots': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tashan-boots', amount: 1 }] },
+  { id: 'forge.chiwen-ring', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shouya-pendant': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.chiwen-ring', amount: 1 }] },
+  { id: 'forge.chaoyuan-staff', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.jiujie-staff': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.chaoyuan-staff', amount: 1 }] },
+  { id: 'forge.songfeng-zither', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.soul-talisman': 1, 'equipment.suxin-zither': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.songfeng-zither', amount: 1 }] },
+  { id: 'forge.ziwu-crown', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.hunyuan-scarf': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.ziwu-crown', amount: 1 }] },
+  { id: 'forge.pichen-shirt', type: 'alchemy', durationSeconds: 25, inputs: { 'item.spirit-pine-crystal': 7, 'item.fire-feather': 1, 'equipment.suma-robe': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pichen-shirt', amount: 1 }] },
+  { id: 'forge.liuyun-skirt', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.xingqi-pants': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.liuyun-skirt', amount: 1 }] },
+  { id: 'forge.bichen-shoes', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.shifang-shoes': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.bichen-shoes', amount: 1 }] },
+  { id: 'forge.juling-pendant', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.taomu-talisman': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.juling-pendant', amount: 1 }] },
 ]
 
 const ACTION_CORE_MAP = new Map<string, ActionDefinitionCore>(ACTION_DEFINITION_CORES.map(c => [c.id, c]))
@@ -305,8 +311,10 @@ export function resolveActionLevel(
   const itMap = items ? getItemMap(items) : null
   const encMap = encounters ? getEncounterMap(encounters) : null
 
-  if (action.outputs) {
-    for (const outId of Object.keys(action.outputs)) {
+  if (action.yields) {
+    for (const yieldEntry of action.yields) {
+      if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
+      const outId = yieldEntry.id
       const eq = eqMap?.get(outId)
       if (eq && typeof eq.tier === 'number' && eq.tier > 0) return convertTierToLevel(eq.tier)
       const it = itMap?.get(outId)
@@ -354,8 +362,10 @@ export function resolveActionRarity(
   const itMap = items ? getItemMap(items) : null
   const encMap = encounters ? getEncounterMap(encounters) : null
 
-  if (action.outputs) {
-    for (const outId of Object.keys(action.outputs)) {
+  if (action.yields) {
+    for (const yieldEntry of action.yields) {
+      if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
+      const outId = yieldEntry.id
       const meta = ITEM_META_CORES[outId]
       if (meta?.rarity) return meta.rarity
       const eq = eqMap?.get(outId)

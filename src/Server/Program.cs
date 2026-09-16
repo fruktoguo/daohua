@@ -187,7 +187,22 @@ if (processRole == ServerProcessRole.Api)
                 combatEncounterId = action.CombatEncounterId,
                 hiddenFromCatalog = action.HiddenFromCatalog,
                 inputs = action.Inputs.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
-                outputs = action.Outputs.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
+                yields = action.Yields.Select(entry => new
+                {
+                    kind = entry.Kind.ToString().ToLowerInvariant(),
+                    per = entry.Period == ActionYieldPeriod.PerRepeat ? "repeat" : "second",
+                    amount = entry.Amount,
+                    id = entry.Item?.Value ?? entry.Buff?.BuffId,
+                    name = entry.Buff?.Name,
+                    durationSeconds = entry.Buff?.DurationSeconds,
+                    modifiers = entry.Buff is null ? null : new
+                    {
+                        hpRegen = entry.Buff.HpRegen,
+                        mpRegen = entry.Buff.MpRegen,
+                        attackSpeedRatio = entry.Buff.AttackSpeedRatio,
+                        damageAbsorptionRatio = entry.Buff.DamageAbsorptionRatio
+                    }
+                }).ToArray(),
                 availableNodeIds = action.AllowedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray()
             }));
     });

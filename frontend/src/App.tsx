@@ -897,9 +897,9 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         )
       } else {
         list = availableActions.filter(a => {
-          const outputIds = Object.keys(a.outputs || {})
-          for (const outId of outputIds) {
-            const slot = equipmentSlotMap[outId]
+          for (const yieldEntry of a.yields ?? []) {
+            if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
+            const slot = equipmentSlotMap[yieldEntry.id]
             if (slot === forgingSubTab) return true
           }
           if (forgingSubTab === 'weapon' && (a.id.includes('sword') || a.id.includes('blade') || a.id.includes('staff') || a.id.includes('zither'))) return true
@@ -1102,7 +1102,10 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
     [action, itemCatalog, equipmentCatalog, encounters]
   )
 
-  const primaryOutputId = useMemo(() => Object.keys(action.outputs || {})[0] ?? null, [action.outputs])
+  const primaryOutputId = useMemo(
+    () => action.yields?.find(yieldEntry => yieldEntry.kind === 'item' && yieldEntry.id)?.id ?? null,
+    [action.yields]
+  )
   const itemDef = useMemo(() => {
     if (!primaryOutputId) return undefined
     return findItemInCatalog(itemCatalog, primaryOutputId)
@@ -1186,13 +1189,13 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const totalMultiplier = yieldPreview.totalMultiplier
   const totalPercent = Math.round((totalMultiplier - 1.0) * 100)
   const hasRateBonus = rateBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
-  const hasFoundation = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.hasFoundationAcceleration)
   const isPending = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.isPendingBreakthrough)
-  const hasBonuses = hasRateBonus || hasFoundation || isPending
+  const hasBonuses = hasRateBonus || isPending
 
   const inputs = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
   const titleId = `action-modal-title-${action.id}`
   const startsImmediately = action.executionKind === 'combat-encounter'
+  const hasYields = (action.yields?.length ?? 0) > 0
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
   return (
     <Modal className="action-modal" labelledBy={titleId} onClose={onClose} open size="medium">
@@ -1216,39 +1219,39 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
             />
           ))}</dd>
         </div>
-        <div>
-          <dt>{t('app.action.outputs')}</dt>
-          <dd>
-            {action.type === 'cultivation' && yieldPreview.cultivation ? (
-              <div className="action-cultivation-output-group">
-                <div className="action-cultivation-stats">
-                  <span className="action-stat-pill action-stat-pill--exp">
-                    <span className="action-stat-pill-label">{t('app.action.spirit')}</span>
-                    <strong className="action-stat-pill-value">
-                      +{yieldPreview.cultivation.boostedExp.toFixed(0)}
-                    </strong>
-                  </span>
-                  <span className="action-stat-pill action-stat-pill--qi">
-                    <span className="action-stat-pill-label">{t('app.action.qi')}</span>
-                    <strong className="action-stat-pill-value">
-                      +{yieldPreview.cultivation.boostedQi}
-                    </strong>
-                  </span>
-                </div>
-              </div>
-            ) : yieldPreview.itemOutputs.length > 0 ? (
-              yieldPreview.itemOutputs.map(output => (
+        {(hasYields || startsImmediately) && (
+          <div>
+            <dt>{t('app.action.outputs')}</dt>
+            <dd>
+              {yieldPreview.resourceYields.map((entry, index) => (
+                <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={`${entry.kind}-${index}`}>
+                  <span className="action-stat-pill-label">{t(`app.action.yieldKind.${entry.kind}`)}</span>
+                  <strong className="action-stat-pill-value">
+                    +<UnitNumber disableTooltip value={entry.finalAmount} />{entry.per === 'second' ? t('app.action.yieldPerSecond') : t('app.action.yieldPerRepeat')}
+                  </strong>
+                </span>
+              ))}
+              {yieldPreview.itemOutputs.map(output => (
                 <ActionDetailItem
                   amount={output.finalAmount}
                   itemId={output.itemId}
                   key={output.itemId}
                 />
-              ))
-            ) : (
-              <span className="action-detail-empty">{t('app.action.combatDrops')}</span>
-            )}
-          </dd>
-        </div>
+              ))}
+              {yieldPreview.buffYields.map(buff => (
+                <span className="action-stat-pill action-stat-pill--buff" key={buff.buffId}>
+                  <span className="action-stat-pill-label">{t('app.action.yieldKind.buff')}</span>
+                  <strong className="action-stat-pill-value">
+                    {t('app.action.yieldBuff', { name: buff.name, stacks: buff.stacks, duration: buff.durationSeconds })}
+                  </strong>
+                </span>
+              ))}
+              {!hasYields && startsImmediately && (
+                <span className="action-detail-empty">{t('app.action.combatDrops')}</span>
+              )}
+            </dd>
+          </div>
+        )}
 
         {hasBonuses && (
           <div>
@@ -1277,18 +1280,6 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                     <strong className="action-bonus-pill-tag">
                       {totalPercent >= 0 ? `+${totalPercent}%` : `${totalPercent}%`}
                     </strong>
-                  </span>
-                </FloatingTooltip>
-              )}
-
-              {hasFoundation && (
-                <FloatingTooltip
-                  placement="top"
-                  tone="purple"
-                  title={t('app.action.foundationAccelerationDesc')}
-                >
-                  <span className="action-bonus-pill action-bonus-pill--foundation">
-                    <span className="action-bonus-pill-source">{t('app.action.foundationAccelerationTag')}</span>
                   </span>
                 </FloatingTooltip>
               )}

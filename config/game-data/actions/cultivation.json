@@ -5,7 +5,22 @@
     "description": "吐纳天地灵气，滋养气血经络，积累灵力与修为。",
     "type": "cultivation",
     "durationSeconds": 10,
-    "qiPerSecond": 1,
-    "experiencePerRepeat": 10
+    "yields": [
+      {
+        "kind": "qi",
+        "per": "second",
+        "amount": 1
+      },
+      {
+        "kind": "mana",
+        "per": "repeat",
+        "amount": 1
+      },
+      {
+        "kind": "experience",
+        "per": "repeat",
+        "amount": 10
+      }
+    ]
   }
 ]

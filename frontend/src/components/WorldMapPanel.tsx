@@ -572,7 +572,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     }
   }, [])
 
-  // 1. 提取该地点的产出资源（来自开放采集/生产行动 outputs）
+  // 1. 提取该地点的产出资源（来自开放采集/生产行动 yields 中的物品收益）
   const nodeResources = useMemo(() => {
     if (!selectedNode) return []
     const list: { itemId: string; name: string; quantity: number }[] = []
@@ -580,15 +580,17 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
     for (const actionId of selectedNode.availableActionIds) {
       const action = actions.find(a => a.id === actionId)
-      if (!action || !action.outputs) continue
-      for (const [itemId, qty] of Object.entries(action.outputs)) {
+      if (!action?.yields) continue
+      for (const yieldEntry of action.yields) {
+        if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
+        const itemId = yieldEntry.id
         if (seen.has(itemId)) continue
         seen.add(itemId)
         const itemDef = findItemInCatalog(items, itemId)
         list.push({
           itemId,
           name: itemDef?.name ?? itemId,
-          quantity: qty,
+          quantity: yieldEntry.amount,
         })
       }
     }
