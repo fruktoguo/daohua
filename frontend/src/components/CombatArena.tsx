@@ -276,9 +276,9 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
   useLayoutEffect(() => {
     const badge = badgeRef.current
     if (!badge) return
-    // 怪物待机或无动作时：显示纯净空条，不渲染文字
-    if (!action || action.durationMilliseconds <= 0 || action.name === '待机' || !action.name.trim()) {
-      if (role === 'player' && action?.name === '调息中') {
+    // 待机/调息 (kind === 'wait') 或无动作时：敌方显示纯净空条，玩家具名等待显示调息文案
+    if (!action || action.durationMilliseconds <= 0 || action.kind === 'wait' || !action.name.trim()) {
+      if (role === 'player' && action?.kind === 'wait' && action.name.trim()) {
         badge.textContent = t('combat.arena.regenerating')
         badge.style.display = ''
       } else {
@@ -291,8 +291,9 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
     badge.style.display = ''
     let animationFrameId = 0
     const duration = Math.max(1, action.durationMilliseconds)
-    let baseName = action.name.replace(/回气$/, '').replace(/\s*\([\d.]+s\/[\d.]+s\)/, '').trim()
-    if (baseName === '灵击' || baseName === '攻击') {
+    // 基础攻击 (kind === 'attack') 统一显示本地化名称，其余直接展示服务端 wire 名称
+    let baseName = action.name.replace(/\s*\([\d.]+s\/[\d.]+s\)/, '').trim()
+    if (action.kind === 'attack') {
       baseName = t('combat.arena.basicAttack')
     }
     const relativeElapsed = Math.max(0, Math.min(duration, action.elapsedMilliseconds))
@@ -346,7 +347,7 @@ const ActionCountdownBadge = memo(function ActionCountdownBadge({
  * 角色行动条组合容器 (ArenaActionBar)
  */
 function ArenaActionBar({ action, role }: { action?: CombatActionState | null; role: 'player' | 'enemy' }): React.JSX.Element {
-  const isRevivalAction = action?.kind === 'respawn' || action?.name?.includes('复活') || action?.name?.includes('复起') || action?.name?.includes('还魂')
+  const isRevivalAction = action?.kind === 'respawn'
   const effectiveAction = role === 'enemy' && isRevivalAction ? null : action
   return (
     <div className={`arena-action-bar arena-action-bar--${role} arena-action-bar--${effectiveAction?.kind ?? 'wait'}`}>
@@ -906,7 +907,13 @@ function ArenaTravelCard({
   const t = useT()
   const expedition = queueEntry?.expedition
   const actionName = resolveQueueEntryDisplayName(queueEntry, t('combat.travel.fallbackActionName'))
-  const destinationName = actionName.startsWith('赶往') ? actionName.slice(2).trim() : actionName
+  // 目的地名称优先按 wire 字段 travelDestinationNodeId 从地图定义解析，不再解析中文前缀
+  const maps = useGameStore(state => state.maps)
+  const destinationNodeName = queueEntry?.travelDestinationNodeId
+    ? maps.find(m => m.nodes.some(n => n.nodeId === queueEntry.travelDestinationNodeId))
+        ?.nodes.find(n => n.nodeId === queueEntry.travelDestinationNodeId)?.name
+    : undefined
+  const destinationName = destinationNodeName ?? actionName
   const totalDistance = expedition?.totalDistance ?? 0
   const duration = Math.max(1, expedition?.durationSeconds || queueEntry?.durationSeconds || 1)
   const progressSec = expedition?.elapsedSeconds || queueEntry?.progressSeconds || 0
@@ -1121,6 +1128,7 @@ function resolveEnemyDefinition(
 
 interface EnemyDisplayState {
   actorKey: string
+  enemyId: string | null
   name: string
   seal: string
   hp: number
@@ -1129,6 +1137,7 @@ interface EnemyDisplayState {
   maxMp: number
   action?: CombatActionState | null
   visual?: CharacterVisual | null
+  definition?: CombatantDefinition | null
 }
 
 /**
@@ -1162,7 +1171,8 @@ export const CombatArena = memo(function CombatArena({
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
   // 否则角色行动条与右侧行动卡片会因「非队列补丁」（入灵气、掉落等）产生 0~1 秒的显示差。
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
-  const [inspectedActor, setInspectedActor] = useState<'player' | 'enemy' | null>(null)
+  // 详情弹窗目标：'player' 或 `enemy:{下标}`（同波多敌人逐只可查）。
+  const [inspectedActor, setInspectedActor] = useState<string | null>(null)
   const t = useT()
 
   const current = queue[0] ?? null
@@ -1188,7 +1198,61 @@ export const CombatArena = memo(function CombatArena({
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
   const phase = expedition?.phase ?? (isTravel ? 'travel' : isLifeAction ? 'life-action' : 'idle')
-  const enemyVisible = isCombat && (phase === 'combat' || ((expedition?.enemyHitpoints ?? 0) > 0))
+  const isDuelPhase = phase === 'duel' || phase === 'duel-pending'
+
+  // 同波多敌阵容：以 wire 下发的 enemies[] 快照为准，属性面板从遭遇配表反查定义。
+  // 斗法相位例外：对手为玩家队伍镜像，不走 enemies[]，以 expedition.duel 载荷合成单个对手卡片，
+  // 敌人名位置显示「斗法·对手道号」（duel-pending 显示「斗法感应中…」），血条布局不变。
+  const enemyEntries = useMemo<EnemyDisplayState[]>(() => {
+    if (expedition?.phase === 'duel' || expedition?.phase === 'duel-pending') {
+      const pending = expedition.phase === 'duel-pending'
+      const name = pending
+        ? t('combat.duel.sensing')
+        : t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
+      const maxHp = expedition.enemyMaxHitpoints ?? Math.max(1, expedition.enemyHitpoints ?? 1)
+      const maxMp = expedition.enemyMaxManapoints ?? Math.max(1, expedition.enemyManapoints ?? 1)
+      return [{
+        actorKey: `enemy:duel:${expedition.duel?.opponentName || 'pending'}`,
+        enemyId: null,
+        name,
+        seal: name.slice(0, 1),
+        // 感应阶段尚无对手实体：以满额资源条占位展示，避免落入阵亡置灰样式。
+        hp: pending ? maxHp : (expedition.enemyHitpoints ?? maxHp),
+        maxHp,
+        mp: pending ? maxMp : (expedition.enemyManapoints ?? maxMp),
+        maxMp,
+        action: expedition.enemyAction ?? null,
+        visual: null,
+        definition: null,
+      }]
+    }
+    const wave = expedition?.enemies ?? []
+    return wave.map((entry, index) => {
+      const definition = resolveEnemyDefinition('', entry.enemyId, activeEncounter, encounters)
+      const name = definition?.name ?? entry.enemyId
+      return {
+        actorKey: `enemy:${expedition?.waveNumber ?? 0}:${index}:${entry.enemyId}`,
+        enemyId: entry.enemyId,
+        name,
+        seal: name.slice(0, 1),
+        hp: entry.hitpoints,
+        maxHp: definition?.maxHitpoints ?? Math.max(1, entry.hitpoints),
+        mp: entry.manapoints,
+        maxMp: definition?.maxManapoints ?? Math.max(1, entry.manapoints),
+        action: null,
+        visual: definition?.visual ?? null,
+        definition,
+      }
+    })
+  }, [activeEncounter, encounters, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.enemyHitpoints, expedition?.enemyMaxHitpoints, expedition?.enemyManapoints, expedition?.enemyMaxManapoints, expedition?.enemyAction, t])
+
+  const inspectedEnemyIndex = inspectedActor?.startsWith('enemy:')
+    ? Number(inspectedActor.slice(6))
+    : null
+  const inspectedEnemy = inspectedEnemyIndex !== null && Number.isInteger(inspectedEnemyIndex)
+    ? enemyEntries[inspectedEnemyIndex] ?? null
+    : null
+  const enemyVisible = isCombat && (phase === 'combat' || isDuelPhase || enemyEntries.some(entry => entry.hp > 0))
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (isCombat) {
@@ -1213,38 +1277,12 @@ export const CombatArena = memo(function CombatArena({
     return null
   }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime])
 
-  const enemyRef = useRef<EnemyDisplayState>({
-    actorKey: 'enemy:idle',
-    name: '',
-    seal: '',
-    hp: 0,
-    maxHp: 1,
-    mp: 0,
-    maxMp: 1,
-    action: null,
-    visual: null,
-  })
-
-  const enemyDefinition = useMemo(
-    () => resolveEnemyDefinition(expedition?.enemyName ?? '', expedition?.enemyId, activeEncounter, encounters),
-    [activeEncounter, encounters, expedition?.enemyId, expedition?.enemyName]
-  )
-  const enemyName = expedition?.enemyName ?? enemyDefinition?.name ?? activeEncounter?.enemy?.name ?? t('combat.arena.unknownEnemy')
-
-  if (enemyVisible) {
-    enemyRef.current = {
-      actorKey: `enemy:${expedition?.battleSequence ?? 0}:${enemyName}`,
-      name: enemyName,
-      seal: enemyName.slice(0, 1),
-      hp: expedition?.enemyHitpoints ?? enemyDefinition?.maxHitpoints ?? activeEncounter?.enemy?.maxHitpoints ?? 0,
-      maxHp: expedition?.enemyMaxHitpoints ?? enemyDefinition?.maxHitpoints ?? activeEncounter?.enemy?.maxHitpoints ?? 1,
-      mp: expedition?.enemyManapoints ?? enemyDefinition?.maxManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 0,
-      maxMp: expedition?.enemyMaxManapoints ?? enemyDefinition?.maxManapoints ?? activeEncounter?.enemy?.maxManapoints ?? 1,
-      action: expedition?.enemyAction ?? null,
-      visual: enemyDefinition?.visual ?? activeEncounter?.enemy?.visual ?? null,
-    }
-  }
-  const enemy = enemyRef.current
+  // 详情弹窗当前敌人：默认为首个存活敌人。
+  const enemy = inspectedEnemy
+    ?? enemyEntries.find(entry => entry.hp > 0)
+    ?? enemyEntries[0]
+    ?? null
+  const enemyDefinition = enemy?.definition ?? null
 
   // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时惰性计算攻防与抗性属性数组，彻底消除战斗每帧的冗余数组分配
   const { baseRows, specialRows } = useMemo(() => {
@@ -1252,10 +1290,10 @@ export const CombatArena = memo(function CombatArena({
       return { baseRows: [], specialRows: [] }
     }
 
-    if (inspectedActor === 'enemy') {
+    if (inspectedEnemy) {
       const enemyBaseRows: AttributeRow[] = [
-        { label: t('combat.attr.hp'), value: `${formatNumber(enemy.hp)} / ${formatNumber(enemy.maxHp)}` },
-        { label: t('combat.attr.mp'), value: `${formatNumber(enemy.mp)} / ${formatNumber(enemy.maxMp)}` },
+        { label: t('combat.attr.hp'), value: `${formatNumber(enemy?.hp ?? 0)} / ${formatNumber(enemy?.maxHp ?? 1)}` },
+        { label: t('combat.attr.mp'), value: `${formatNumber(enemy?.mp ?? 0)} / ${formatNumber(enemy?.maxMp ?? 1)}` },
         { label: t('combat.attr.accuracy'), value: formatNumber(enemyDefinition?.accuracyRating ?? 0) },
         { label: t('combat.attr.evasion'), value: formatNumber(enemyDefinition?.evasionRating ?? 0) },
         { label: t('combat.attr.maxDamage'), value: formatNumber(enemyDefinition?.maxDamage ?? 0) },
@@ -1345,7 +1383,7 @@ export const CombatArena = memo(function CombatArena({
       }))
 
     return { baseRows: playerBaseRows, specialRows: playerSpecialRows }
-  }, [inspectedActor, enemy, enemyDefinition, playerHp, playerMaxHp, playerMp, playerMaxMp, combat, combatAttributes, t])
+  }, [inspectedActor, inspectedEnemy, enemy, enemyDefinition, playerHp, playerMaxHp, playerMp, playerMaxMp, combat, combatAttributes, t])
 
   return (
     <div className="combat-arena-shell">
@@ -1395,32 +1433,35 @@ export const CombatArena = memo(function CombatArena({
           {isCombat ? (
             enemyVisible ? (
               <div className="arena-formation arena-formation--enemies">
-                <div className="arena-slot arena-slot--occupied arena-slot--slot-1" key="enemy-slot-1">
-                  <ArenaActor
-                    action={enemy.action}
-                    actorId={expedition?.enemyId ?? activeEncounter?.enemy?.enemyId ?? activeEncounterId}
-                    actorKey={enemy.actorKey}
-                    compact
-                    hp={enemy.hp}
-                    maxHp={enemy.maxHp}
-                    maxMp={enemy.maxMp}
-                    mp={enemy.mp}
-                    name={enemy.name}
-                    onInspect={() => setInspectedActor('enemy')}
-                    role="enemy"
-                    seal={enemy.seal}
-                    visual={enemy.visual}
-                  />
-                </div>
+                {enemyEntries.map((entry, index) => (
+                  <div
+                    className={`arena-slot arena-slot--occupied arena-slot--slot-${index + 1}${entry.hp <= 0 ? ' arena-slot--slain' : ''}`}
+                    key={`enemy-slot-${index + 1}`}
+                  >
+                    <ArenaActor
+                      action={entry.action}
+                      actorId={entry.enemyId ?? activeEncounterId}
+                      actorKey={entry.actorKey}
+                      compact
+                      hp={entry.hp}
+                      maxHp={entry.maxHp}
+                      maxMp={entry.maxMp}
+                      mp={entry.mp}
+                      name={entry.name}
+                      onInspect={() => setInspectedActor(`enemy:${index}`)}
+                      role="enemy"
+                      seal={entry.seal}
+                      visual={entry.visual}
+                    />
+                  </div>
+                ))}
                 {/* 预留空槽维持九宫格与前中后排比例 */}
-                <div className="arena-slot arena-slot--empty arena-slot--slot-2" key="enemy-slot-2" />
-                <div className="arena-slot arena-slot--empty arena-slot--slot-3" key="enemy-slot-3" />
-                <div className="arena-slot arena-slot--empty arena-slot--slot-4" key="enemy-slot-4" />
-                <div className="arena-slot arena-slot--empty arena-slot--slot-5" key="enemy-slot-5" />
-                <div className="arena-slot arena-slot--empty arena-slot--slot-6" key="enemy-slot-6" />
-                <div className="arena-slot arena-slot--empty arena-slot--slot-7" key="enemy-slot-7" />
-                <div className="arena-slot arena-slot--empty arena-slot--slot-8" key="enemy-slot-8" />
-                <div className="arena-slot arena-slot--empty arena-slot--slot-9" key="enemy-slot-9" />
+                {Array.from({ length: Math.max(0, 9 - enemyEntries.length) }).map((_, i) => (
+                  <div
+                    className={`arena-slot arena-slot--empty arena-slot--slot-${enemyEntries.length + i + 1}`}
+                    key={`enemy-empty-${i}`}
+                  />
+                ))}
               </div>
             ) : (
               <div className="arena-formation arena-formation--enemies">
@@ -1464,16 +1505,16 @@ export const CombatArena = memo(function CombatArena({
         ) : null}
       </div>
       <CharacterAttributeModal
-        actorId={inspectedActor === 'enemy' ? (expedition?.enemyId ?? activeEncounter?.enemy?.enemyId ?? activeEncounterId) : 'player'}
+        actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
         baseRows={baseRows}
         buffs={inspectedActor === 'player' ? buffs : []}
-        name={inspectedActor === 'enemy' ? enemy.name : playerName}
+        name={inspectedEnemy?.name ?? playerName}
         onClose={() => setInspectedActor(null)}
         open={inspectedActor !== null}
-        role={inspectedActor ?? 'player'}
+        role={inspectedEnemy ? 'enemy' : 'player'}
         specialRows={specialRows}
-        title={inspectedActor === 'enemy' ? enemy.name : playerName}
-        visual={inspectedActor === 'enemy' ? enemy.visual : null}
+        title={inspectedEnemy?.name ?? playerName}
+        visual={inspectedEnemy?.visual ?? null}
       />
     </div>
   )

@@ -10,12 +10,16 @@ import { resolveActionDefinition, resolveItemMetadata } from '../game/ids'
 import type {
   ActionType,
   AutoUseSlot,
+  BattleReport,
   Buff,
   CharacterVisual,
   CombatAttributes,
   CombatLoadout,
   CombatResourceState,
   CombatTrigger,
+  DuelState,
+  ExpeditionDuel,
+  ExpeditionEnemy,
   ExpeditionPhase,
   ExpeditionProgress,
   InventoryItem,
@@ -32,7 +36,7 @@ import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerS
 type JsonObject = Record<string, unknown>
 
 const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
-const REQUIRED_SNAPSHOT_SECTIONS = ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue'] as const
+const REQUIRED_SNAPSHOT_SECTIONS = ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue', 'duel'] as const
 
 function object(value: unknown): JsonObject {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {}
@@ -173,6 +177,8 @@ function mapExpeditionPhase(value: unknown): ExpeditionPhase {
       case 1: return 'search'
       case 2: return 'combat'
       case 3: return 'respawn'
+      case 4: return 'duel-pending'
+      case 5: return 'duel'
       default: throw new Error('战斗远征 phase 枚举值无效。')
     }
   }
@@ -188,6 +194,11 @@ function mapExpeditionPhase(value: unknown): ExpeditionPhase {
     case '3':
     case 'respawn':
     case 'respawning': return 'respawn'
+    case '4':
+    case 'duelpending':
+    case 'duel-pending': return 'duel-pending'
+    case '5':
+    case 'duel': return 'duel'
     default: throw new Error('战斗远征 phase 字段无效。')
   }
 }
@@ -212,6 +223,21 @@ function mapExecutionKind(value: unknown, fallback?: QueueEntry['executionKind']
   }
 }
 
+/** 解析远征载荷中的斗法回放显示信息（expedition.duel，可缺省） */
+function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | null {
+  if (value === null || value === undefined) return null
+  const row = object(value)
+  if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的 duel 载荷无效。`)
+  const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 duel.outcome`)
+  if (outcome > 3) throw new Error(`行动 ${actionId} 的 duel.outcome 枚举值无效。`)
+  return {
+    opponentName: stringValue(row.opponentName),
+    isInitiator: booleanValue(row.isInitiator),
+    outcome,
+    resolved: booleanValue(row.resolved),
+  }
+}
+
 function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const row = object(value)
   if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的战斗远征载荷无效。`)
@@ -221,21 +247,40 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const durationSeconds = finiteNumber(
     row.phaseDurationSeconds,
     `行动 ${actionId} 的 phaseDurationSeconds`,
-    phase === 'combat' ? 0 : Number.MIN_VALUE,
+    phase === 'combat' || phase === 'duel' || phase === 'duel-pending' ? 0 : Number.MIN_VALUE,
   )
-  if (phase !== 'combat' && elapsedSeconds > durationSeconds + 1e-9) throw new Error(`行动 ${actionId} 的战斗远征阶段进度超出范围。`)
+  // 搜寻/重生为固定时长阶段，进度不得越界；combat/duel 由交战实况决定、duel-pending 等待撮合无确定上界，不做区间校验。
+  if ((phase === 'initial-search' || phase === 'search' || phase === 'respawn') && elapsedSeconds > durationSeconds + 1e-9) {
+    throw new Error(`行动 ${actionId} 的战斗远征阶段进度超出范围。`)
+  }
   const playerHitpoints = finiteNumber(row.playerHitpoints, `行动 ${actionId} 的 playerHitpoints`)
-  const enemyHitpoints = finiteNumber(row.enemyHitpoints, `行动 ${actionId} 的 enemyHitpoints`)
+  const playerManapoints = finiteNumber(row.playerManapoints, `行动 ${actionId} 的 playerManapoints`)
 
   // 这些标量用于恢复/审计，即使当前界面不直接展示，也必须拒绝坏值，避免把损坏快照继续传播。
   finiteValue(row.seed, `行动 ${actionId} 的 seed`)
   finiteNumber(row.battleElapsedSeconds, `行动 ${actionId} 的 battleElapsedSeconds`)
   finiteNumber(row.playerNextAttackAtSeconds, `行动 ${actionId} 的 playerNextAttackAtSeconds`)
-  finiteNumber(row.enemyNextAttackAtSeconds, `行动 ${actionId} 的 enemyNextAttackAtSeconds`)
   finiteNumber(row.playerAttackCount, `行动 ${actionId} 的 playerAttackCount`)
-  finiteNumber(row.enemyAttackCount, `行动 ${actionId} 的 enemyAttackCount`)
+  const playerThreat = finiteNumber(row.playerThreat, `行动 ${actionId} 的 playerThreat`)
+  const waveNumber = finiteInteger(row.waveNumber, `行动 ${actionId} 的 waveNumber`)
   const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 outcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 outcome 枚举值无效。`)
+
+  // 多敌同场：enemies 数组携带同波全体敌人的可持久化快照；搜寻/复活阶段为空。
+  const enemies: ExpeditionEnemy[] = (row.enemies === null || row.enemies === undefined ? [] : arrayValue(row.enemies))
+    .map((entry, index) => {
+      const enemy = object(entry)
+      const label = `行动 ${actionId} 的 enemies[${index}]`
+      return {
+        enemyId: identifierValue(enemy.enemyId, `${label}.enemyId`),
+        hitpoints: finiteNumber(enemy.hitpoints, `${label}.hitpoints`),
+        manapoints: finiteNumber(enemy.manapoints, `${label}.manapoints`),
+        nextAttackAtSeconds: finiteNumber(enemy.nextAttackAtSeconds, `${label}.nextAttackAtSeconds`),
+        attackCount: finiteNumber(enemy.attackCount, `${label}.attackCount`),
+        threat: finiteNumber(enemy.threat, `${label}.threat`),
+      }
+    })
+  const primary = enemies.find(enemy => enemy.hitpoints > 0) ?? enemies[0] ?? null
 
   return {
     phase,
@@ -243,9 +288,15 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     elapsedSeconds,
     durationSeconds,
     playerHitpoints,
-    enemyHitpoints,
-    enemyId: optionalString(row.enemyId, `行动 ${actionId} 的 enemyId`),
+    playerManapoints,
+    enemyHitpoints: primary?.hitpoints ?? 0,
+    enemyManapoints: primary?.manapoints ?? 0,
+    enemyId: primary?.enemyId ?? null,
+    enemies,
+    waveNumber,
+    playerThreat,
     encounterId,
+    duel: mapExpeditionDuel(row.duel, actionId),
   }
 }
 
@@ -348,6 +399,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       travelPathEdgeIds,
       travelSegments,
       expedition,
+      pvpEnabled: booleanValue(intent.pvpEnabled),
     }
     return entry
   })
@@ -431,6 +483,12 @@ function mapLoadout(value: unknown): CombatLoadout {
     defenseLevel: finiteNumber(core.defenseLevel, 'loadout.defenseLevel'),
     swordsmanshipLevel: finiteNumber(core.swordsmanshipLevel, 'loadout.swordsmanshipLevel'),
     talismanLevel: finiteNumber(core.talismanLevel, 'loadout.talismanLevel'),
+    staminaExp: numberValue(core.staminaExp),
+    intelligenceExp: numberValue(core.intelligenceExp),
+    attackExp: numberValue(core.attackExp),
+    defenseExp: numberValue(core.defenseExp),
+    swordsmanshipExp: numberValue(core.swordsmanshipExp),
+    talismanExp: numberValue(core.talismanExp),
     abilitySlots: row.abilitySlots.map(item => {
       const slot = requiredObject(item, 'loadout.abilitySlot')
       return { abilityId: optionalString(slot.abilityId, 'abilitySlot.abilityId'), level: finiteNumber(slot.level, 'abilitySlot.level'), triggers: mapTriggers(slot.triggers) }
@@ -518,6 +576,58 @@ function mapBuffs(value: unknown): Buff[] {
   })
 }
 
+function mapBattleReport(value: unknown, name: string): BattleReport {
+  const row = requiredObject(value, name)
+  const rootExp = object(row.rootExp)
+  return {
+    reportId: identifierValue(row.reportId, `${name}.reportId`),
+    actionId: stringValue(row.actionId),
+    actionName: stringValue(row.actionName),
+    startedAtUnixSeconds: finiteNumber(row.startedAtUnixSeconds, `${name}.startedAtUnixSeconds`),
+    endedAtUnixSeconds: finiteNumber(row.endedAtUnixSeconds, `${name}.endedAtUnixSeconds`),
+    qi: finiteValue(row.qi, `${name}.qi`),
+    experience: finiteValue(row.experience, `${name}.experience`),
+    rootExp: {
+      stamina: numberValue(rootExp.stamina),
+      intelligence: numberValue(rootExp.intelligence),
+      attack: numberValue(rootExp.attack),
+      defense: numberValue(rootExp.defense),
+      swordsmanship: numberValue(rootExp.swordsmanship),
+      talisman: numberValue(rootExp.talisman),
+    },
+    items: arrayValue(row.items).map((item, index) => {
+      const entry = object(item)
+      return {
+        itemId: identifierValue(entry.itemId, `${name}.items[${index}].itemId`),
+        quantity: finiteNumber(entry.quantity, `${name}.items[${index}].quantity`),
+      }
+    }),
+    duelWins: numberValue(row.duelWins),
+    duelLosses: numberValue(row.duelLosses),
+  }
+}
+
+function mapDuel(value: unknown): DuelState {
+  const row = requiredObject(value, 'duel')
+  return {
+    encounterCharges: finiteNumber(row.encounterCharges, 'duel.encounterCharges'),
+    cooldownUntilUnixSeconds: finiteNumber(row.cooldownUntilUnixSeconds, 'duel.cooldownUntilUnixSeconds'),
+    activeDuelId: optionalString(row.activeDuelId, 'duel.activeDuelId'),
+    stagedItems: arrayValue(row.stagedItems).map((item, index) => {
+      const entry = object(item)
+      return {
+        itemId: identifierValue(entry.itemId, `duel.stagedItems[${index}].itemId`),
+        quantity: finiteNumber(entry.quantity, `duel.stagedItems[${index}].quantity`),
+        acquiredAtUnixSeconds: finiteNumber(entry.acquiredAtUnixSeconds, `duel.stagedItems[${index}].acquiredAtUnixSeconds`),
+      }
+    }),
+    currentReport: row.currentReport === null || row.currentReport === undefined
+      ? null
+      : mapBattleReport(row.currentReport, 'duel.currentReport'),
+    reports: arrayValue(row.reports).map((item, index) => mapBattleReport(item, `duel.reports[${index}]`)),
+  }
+}
+
 function mapAsset(asset: AssetBalanceDto): InventoryItem {
   if (!asset || typeof asset.assetId !== 'string' || asset.assetId.length === 0 || !Number.isFinite(asset.quantity) || asset.quantity < 0) {
     throw new Error('玩家资产余额载荷无效。')
@@ -576,6 +686,7 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
   const world = mapWorld(requiredObject(sections.get('world'), 'world'))
   const combat = mapCombat(requiredObject(sections.get('combat'), 'combat'))
   const loadout = mapLoadout(requiredObject(sections.get('loadout'), 'loadout'))
+  const duel = mapDuel(sections.get('duel'))
   if (!Array.isArray(sections.get('buffs')) || !Array.isArray(sections.get('action_queue'))) {
     throw new Error('玩家快照 buffs/action_queue section 载荷无效。')
   }
@@ -599,6 +710,7 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
     combatAttributes: combat.attributes,
     visual: visualFor(name),
     world,
+    duel,
     isPendingBreakthrough: false,
     renameCooldownSeconds: 0,
   }
@@ -642,6 +754,7 @@ export async function decodePlayerSnapshotDeltaDto(
     patch.combatAttributes = combat.attributes
   }
   if (sections.has('loadout')) patch.combat = mapLoadout(sections.get('loadout'))
+  if (sections.has('duel')) patch.duel = mapDuel(sections.get('duel'))
   if (sections.has('buffs')) patch.buffs = mapBuffs(sections.get('buffs'))
   if (sections.has('action_queue')) patch.queue = mapQueue(sections.get('action_queue'), settings, current.queue)
   if (dto.changedAssets !== null && dto.changedAssets !== undefined) {

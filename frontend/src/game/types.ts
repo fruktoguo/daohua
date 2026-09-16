@@ -28,8 +28,10 @@ export type ActionExecutionKind = 'timed' | 'combat-encounter' | 'travel'
  * - 'initial-search': 初始搜寻敌人
  * - 'search': 战后搜寻下一波敌人
  * - 'combat': 战斗交锋中
+ * - 'duel-pending': 斗法撮合等待中
+ * - 'duel': 斗法脚本回放中
  */
-export type ExpeditionPhase = 'none' | 'travel' | 'initial-search' | 'search' | 'combat' | 'respawn'
+export type ExpeditionPhase = 'none' | 'travel' | 'initial-search' | 'search' | 'combat' | 'respawn' | 'duel-pending' | 'duel'
 
 /**
  * 实时战斗动作类型：攻击 (attack)、施法 (cast)、控制 (control)、等待/调息 (wait)、复活读条 (respawn)
@@ -275,6 +277,8 @@ export interface QueueEntry {
   travelSegments?: TravelSegment[] | null
   /** 远征/遭遇战执行进度 */
   expedition?: ExpeditionProgress | null
+  /** 是否勾选斗法（PVP 匹配），仅战斗遭遇行动有效 */
+  pvpEnabled: boolean
 }
 /**
  * 旅行移动路段数据
@@ -327,6 +331,24 @@ export interface QueueProgress {
 }
 
 /**
+ * 同波单个敌方单位的战斗快照（服务端 CombatExpeditionState.enemies[] 透传）
+ */
+export interface ExpeditionEnemy {
+  /** 配表怪物定义 ID */
+  enemyId: string
+  /** 当前气血 */
+  hitpoints: number
+  /** 当前灵力 */
+  manapoints: number
+  /** 下一次出手的战斗时刻（秒） */
+  nextAttackAtSeconds: number
+  /** 累计出手次数 */
+  attackCount: number
+  /** 累积威胁值 */
+  threat: number
+}
+
+/**
  * 远征探索与战斗实时进度结构
  */
 export interface ExpeditionProgress {
@@ -362,6 +384,12 @@ export interface ExpeditionProgress {
   enemyName?: string | null
   /** 敌人定义标识符 */
   enemyId?: string | null
+  /** 同波全体敌人快照（战斗中非空，按下标稳定排序） */
+  enemies?: ExpeditionEnemy[] | null
+  /** 当前波次序号 */
+  waveNumber?: number | null
+  /** 玩家累积威胁值 */
+  playerThreat?: number | null
   /** 当前活动描述 */
   activity?: string | null
   /** 玩家当前施法/攻击动作 */
@@ -378,6 +406,102 @@ export interface ExpeditionProgress {
   consumableCooldownMilliseconds?: number[] | null
   /** 遭遇战 ID */
   encounterId?: string | null
+  /** 斗法回放显示信息（仅 phase 为 duel / duel-pending 时可能下发） */
+  duel?: ExpeditionDuel | null
+}
+
+/**
+ * 斗法（PVP）暂存区物品条目：
+ * 勾选斗法的战斗行动期间，战斗掉落先入暂存区；
+ * acquiredAtUnixSeconds + 1200s 到期自动结算入钱包，斗法败北则全部归胜方。
+ */
+export interface DuelStagedItem {
+  /** 物品配置 ID */
+  itemId: string
+  /** 暂存数量 */
+  quantity: number
+  /** 进入暂存区的 Unix 秒时间戳 */
+  acquiredAtUnixSeconds: number
+}
+
+/**
+ * 单场战斗行动的六维经验入账集合
+ */
+export interface BattleReportRootExp {
+  stamina: number
+  intelligence: number
+  attack: number
+  defense: number
+  swordsmanship: number
+  talisman: number
+}
+
+/**
+ * 战报物品收益条目（按 itemId 聚合）
+ */
+export interface BattleReportItem {
+  itemId: string
+  quantity: number
+}
+
+/**
+ * 单场战斗行动收益战报（reportId = 行动实例 ID）
+ */
+export interface BattleReport {
+  /** 战报唯一 ID（行动实例 ID） */
+  reportId: string
+  /** 行动配置 ID */
+  actionId: string
+  /** 行动显示名快照 */
+  actionName: string
+  /** 行动开始 Unix 秒 */
+  startedAtUnixSeconds: number
+  /** 行动结束/归档 Unix 秒（进行中为 0） */
+  endedAtUnixSeconds: number
+  /** 修为入账量 */
+  qi: number
+  /** 底蕴（历练经验）入账量 */
+  experience: number
+  /** 六维经验入账量 */
+  rootExp: BattleReportRootExp
+  /** 物品收益列表 */
+  items: BattleReportItem[]
+  /** 本场行动内斗法胜场数 */
+  duelWins: number
+  /** 本场行动内斗法负场数 */
+  duelLosses: number
+}
+
+/**
+ * 斗法（PVP）分段状态（快照/增量 duel section 载荷）
+ */
+export interface DuelState {
+  /** 斗法遭遇计数（>0 时下次战斗可触发玩家匹配） */
+  encounterCharges: number
+  /** 斗法冷却截止 Unix 秒（败北后 1 小时不再进入斗法） */
+  cooldownUntilUnixSeconds: number
+  /** 进行中的斗法 ID（无则 null） */
+  activeDuelId: string | null
+  /** 暂存区物品列表 */
+  stagedItems: DuelStagedItem[]
+  /** 当前进行中的战斗行动战报 */
+  currentReport: BattleReport | null
+  /** 服务端保留的最近战报（最多 10 条） */
+  reports: BattleReport[]
+}
+
+/**
+ * 远征斗法回放显示信息（expedition.duel 载荷）
+ */
+export interface ExpeditionDuel {
+  /** 对手队伍道号 */
+  opponentName: string
+  /** 本方是否为斗法发起方 */
+  isInitiator: boolean
+  /** 斗法结果枚举：0 未决 / 1 胜 / 2 负 / 3 平 */
+  outcome: number
+  /** 是否已结算 */
+  resolved: boolean
 }
 
 /**
@@ -771,6 +895,13 @@ export interface CombatLoadout {
   defenseLevel: number
   swordsmanshipLevel: number
   talismanLevel: number
+  /** 六维累计经验（等级由服务端派生，缺省视为 0） */
+  staminaExp?: number
+  intelligenceExp?: number
+  attackExp?: number
+  defenseExp?: number
+  swordsmanshipExp?: number
+  talismanExp?: number
   abilitySlots: CombatAbilitySlot[]
   consumableSlots: ConsumableSlot[]
   combatDropRate?: number
@@ -917,6 +1048,8 @@ export interface PlayerSnapshot {
   visual?: CharacterVisual
   /** 当前所在大地图世界状态 */
   world?: WorldState
+  /** 斗法（PVP）与战斗收益战报状态 */
+  duel: DuelState
   /** 是否处于突破待决状态 */
   isPendingBreakthrough?: boolean
   /** 绑定的登录账号 */
@@ -948,6 +1081,7 @@ export interface PlayerPatch {
   combatAttributes?: CombatAttributes
   visual?: CharacterVisual
   world?: WorldState
+  duel?: DuelState
   isPendingBreakthrough?: boolean
   name?: string
   account?: string | null
