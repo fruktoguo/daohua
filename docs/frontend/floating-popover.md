@@ -27,25 +27,24 @@
 │  - Portal 顶层渲染 (#daohua-floating-root, z-index: 10000)   │
 │  - 智能视口边界安全计算 (Auto Flip + Viewport Clamp)             │
 │  - 双端事件分流 (Desktop Hover / Mobile Touch / Passthrough)  │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │                               │
-       ┌───────▼────────┐             ┌────────▼────────┐
-       │ FloatingTooltip│             │ FloatingInfoCard │
-       │ (轻量极简提示)  │             │ (修仙标准卡片)   │
-       └────────────────┘             └────────┬────────┘
-                                               │
-                                      ┌────────▼────────┐
-                                      │  FloatingMenu   │
-                                      │ (悬浮操作菜单)   │
-                                      └─────────────────┘
+│  - Aside 附属气泡群 + 数量副气泡联动排布 (asideCards/quantity) │
+└──────┬──────────────────┬───────────────────────┬───────────┘
+       │                  │                       │
+┌──────▼───────┐  ┌───────▼────────┐  ┌───────────▼────────────┐
+│FloatingTooltip│  │ FloatingInfoCard│  │ FloatingMenuItem      │
+│(轻量极简提示) │  │ (修仙标准卡片)  │  │ FloatingMenuGroup     │
+└──────────────┘  └────────────────┘  │ FloatingMenuDivider   │
+                                      │ (菜单内容子组件，      │
+                                      │  承载于 content 插槽)  │
+                                      └───────────────────────┘
 ```
 
 ### 2.1 组件职责
 
-1. **`FloatingPopover`**：基础通用浮层底座，负责定位计算、生命周期、Portal 挂载、多端事件与 Aside 附属气泡容器管理；
+1. **`FloatingPopover`**：基础通用浮层底座，负责定位计算、生命周期、Portal 挂载、多端事件与 Aside 附属气泡容器管理；**同时也是操作菜单的容器**——菜单没有独立的 `FloatingMenu` 组件，菜单内容通过 `content` 插槽承载 `FloatingMenuItem`/`FloatingMenuGroup`/`FloatingMenuDivider` 子组件渲染；
 2. **`FloatingTooltip`**：极简文字提示组件，默认配置 `interactive={false}`，鼠标与点击完全穿透底层，0 侵入；
-3. **`FloatingInfoCard`**：标准修仙信息卡片，内置道号/法宝标题、境界徽章、副标题、属性键值对网格、词条列表、使用说明及底部操作区；
-4. **`FloatingMenu` / `FloatingMenuItem` / `FloatingMenuGroup`**：用于右键/点击操作菜单，支持图标、快捷键、分割线与多种修仙色调。
+3. **`FloatingInfoCard`**：标准修仙信息卡片，内置道号/法宝标题、境界徽章、副标题、属性键值对网格、词条列表、使用说明及底部操作区；**注意 `asideCards` 是 `FloatingPopover` 的属性而非 `FloatingInfoCard` 的属性**，附属卡片由外层 Popover 容器统一排布；
+4. **`FloatingMenuItem` / `FloatingMenuGroup` / `FloatingMenuDivider`**：菜单内容子组件（菜单项、分组、分割线），仅作为 `FloatingPopover` 的 `content` 子节点使用，支持图标、快捷键与多种修仙色调。
 
 ---
 
@@ -159,7 +158,7 @@ import { FloatingTooltip } from './components/FloatingPopover'
 </FloatingTooltip>
 ```
 
-### 6.3 悬浮操作菜单 (FloatingMenu)
+### 6.3 悬浮操作菜单（FloatingPopover 承载菜单子组件）
 ```tsx
 import {
   FloatingPopover,

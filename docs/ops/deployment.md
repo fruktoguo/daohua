@@ -1,6 +1,6 @@
 # daohua 生产构建与部署
 
-本文只描述本次 clean-room 重写后的生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；本地 schema 不一致时直接重新初始化，不运行历史 migration。
+本文只描述本次 clean-room 重写后的生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v2，本地 schema 不一致时默认直接重新初始化。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 
 ## 拓扑与边界
 
@@ -11,7 +11,7 @@
                                                    +--> ComputeNode（内部 HTTP/Token，冷挂机）
 ```
 
-API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取得 `player_id`；客户端不能在 URL 或请求体中声明另一个玩家取得权限。内测账号密码长度为 6-24 个字符。ComputeNode 只接受 `X-Compute-Token`，不连接生产数据库、不处理账号和市场写入。
+API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取得 `player_id`；客户端不能在 URL 或请求体中声明另一个玩家取得权限。内测账号密码长度为 6-24 个字符。ComputeNode 优先接受 `X-Compute-Token` 头，缺失时回退接受 `Authorization: Bearer`；节点不连接生产数据库、不处理账号和市场写入。
 
 目标主机按 `2c4g/40g` 设计：5000+ 账号、100+ 持续连接、500+ 峰值收发和 2000+ 冷挂机补算。容量门禁见 `scripts/verify.sh` 与 `src/LoadTests`。
 
@@ -20,7 +20,7 @@ API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取
 - Ubuntu Server 24.04 LTS、linux/amd64。
 - .NET SDK 10、Node.js 22、npm、Docker Engine/Compose/Buildx。
 - 服务器 SSH 别名 `yuohira`，生产目录 `/opt/daohua`，Compose 项目名 `daohua`。
-- `/opt/daohua/daohua.env` 只保存 `DB_PASSWORD`、`COMPUTE_TOKEN`、`APP_IMAGE`、`COMPUTE_IMAGE`、`WAL_ARCHIVE_DIR` 等部署变量；不保存玩家 token、快照或日志。`WAL_ARCHIVE_DIR` 默认 `/opt/daohua/wal-archive`，必须位于独立持久磁盘并限制为 root/0600。
+- `/opt/daohua/daohua.env` 只保存 `DB_PASSWORD`、`COMPUTE_TOKEN`、`APP_IMAGE`、`COMPUTE_IMAGE`、`WAL_ARCHIVE_DIR` 等部署变量；不保存玩家 token、快照或日志。`WAL_ARCHIVE_DIR` 默认 `/opt/daohua/wal-archive`，必须位于独立持久磁盘；部署脚本以 `install -d -m 0700 -o 70 -g 70` 创建该目录（属主为容器内 postgres UID/GID 70），目录内 WAL 文件权限为 0600。
 - CCR 登录只允许 `docker login --password-stdin`，不得把 auth 配置写入仓库或镜像。
 
 首次克隆：
@@ -48,7 +48,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v2 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。v2 为市场订单增加持久化到期时间，本地旧库需重新初始化，不提供历史迁移；已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v2 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。v2 为市场订单增加持久化到期时间：空库由 `PostgresSchema.Sql` 直建 v2，本地旧库默认重新初始化；如需保留本地数据，可人工执行 `migrations/0001_v1_to_v2.sql` 等兼容性迁移脚本就地升级（该目录可整体删除，运行时无任何依赖）。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
 
 启动正式前端：
 
@@ -105,11 +105,11 @@ scripts/deploy-prod.sh \
   --compute-image ccr.ccs.tencentyun.com/yuohira/daohua-compute:sha-<commit前12位>
 ```
 
-脚本会只读检查远端 Docker/Compose/权限，校验 `DB_PASSWORD` 与 `COMPUTE_TOKEN`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对镜像，验证 `/healthz`、`/readyz` 后才替换应用。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
+脚本会只读检查远端 Docker/Compose/权限，校验 `DB_PASSWORD` 与 `COMPUTE_TOKEN`，安装 `/opt/daohua/compose.prod.yaml`、备份脚本和 systemd timer，拉取成对镜像后调用 `ccr-auto-update.sh`：`compose up --force-recreate` 先替换应用与计算节点容器，再依次等待容器 healthy 与回环 `/readyz`；`/healthz` 由镜像 HEALTHCHECK 与 Compose 健康检查覆盖，`deploy-prod.sh` 只直接 curl `/readyz`。应用端口只绑定 `127.0.0.1:15128`，公网入口由 `/etc/caddy/sites/daohua.caddy` 提供 HTTPS、压缩、安全头和 WebSocket 转发。
 
 部署同时启用 `daohua-db-backup.timer`（每小时逻辑备份）、`daohua-base-backup.timer`（每日物理基线）、`daohua-ledger-archive.timer`（每日流水分区归档）和 `daohua-wal-archive.timer`（每小时 WAL 巡检/轮转）。任一定时器失败都会保留 systemd journal 与原始归档文件，不能静默跳过。
 
-`daohua-ccr-auto-update.timer` 每分钟检查 `prod`：镜像 ID 未变化时不重建；候选镜像先健康预热，失败时保持当前实例并记录失败镜像 ID；成功后优雅替换，在线客户端通过 Cookie 会话和 WebSocket 自动重连恢复。
+`daohua-ccr-auto-update.timer` 每分钟检查 `prod`：Server 与 ComputeNode 镜像 ID 均未变化时不重建；替换前先把当前运行镜像标记为 `daohua-rollback:app-previous` / `daohua-rollback:compute-previous`，随后 `compose up --force-recreate` 先替换再 `wait_healthy`/`wait_ready`；任一环节失败即经回滚标签恢复上一版本，并把失败的 `app_id|compute_id` 组合 marker 写入 `/opt/daohua/failed-image.id`，CCR 出现新版本前不再重试该候选。成功后在线客户端通过 Cookie 会话和 WebSocket 自动重连恢复。
 
 查看状态：
 
@@ -139,7 +139,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 市场成交与审计属于长期权威流水，不由在线 retention worker 删除：`market-ledger-archive.sh` 每日把超过 90 天的 `market.trades` 和 `identity.audit_events` 按 UTC 月份在事务内移动到 `market.trades_archive_YYYYMM` / `identity.audit_events_archive_YYYYMM` 分区表；归档分区可独立 `pg_dump --table` 后上传对象存储，再按合规保留期删除。生产 `Storage__AuditRetentionDays=3650` 仅作最终兜底，不能替代分区归档。
 
-服务端每小时执行 `PostgresRetentionWorker`，小批量清理已投递 outbox、过期会话、旧审计事件、已结束冷挂机任务和过期 Data Protection key；每 10 分钟清理过期命令回执。它不会删除余额、订单、成交或未投递 outbox。Docker `json-file` 日志按 Compose 上限轮转，WebSocket/聊天/战斗 Tick 不写数据库。
+服务端每小时执行 `PostgresRetentionWorker`，小批量清理六类数据：已投递 outbox、过期会话、旧审计事件、已结束冷挂机任务、过期 Data Protection key，以及超过 `Storage:SettlementClaimRetentionDays`（默认 30 天）的 `market.settlement_claims`。过期命令回执不属于该 worker，由独立的 `CommandReceiptCleanupWorker` 每 10 分钟清理。两类 worker 都不会删除余额、订单、成交或未投递 outbox。Docker `json-file` 日志按 Compose 上限轮转，WebSocket/聊天/战斗 Tick 不写数据库。
 
 ## 健康与安全边界
 
@@ -151,7 +151,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 ## 兼容边界
 
-本部署基线是一次性重写后的唯一版本。不存在旧 schema migration、双读双写、legacy DTO、旧 API 别名、旧 WebSocket fallback 或共享 `ACCESS_TOKEN`。schema、协议或部署拓扑改变时，直接同步代码、测试、文档并重新初始化本地数据库。
+本部署基线是一次性重写后的唯一版本。空库永远由权威 `PostgresSchema.Sql` 直建当前 schema；唯一例外是 `migrations/` 兼容性迁移目录，仅供既有库由人工或运维流程显式执行就地升级，可整体删除且无任何运行时依赖。除此之外不存在双读双写、legacy DTO、旧 API 别名、旧 WebSocket fallback 或共享 `ACCESS_TOKEN`。schema、协议或部署拓扑改变时，直接同步代码、测试、文档并重新初始化本地数据库。
 
 ## 本地 PostgreSQL 18 与权限验收
 
@@ -171,7 +171,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 该方案未修改生产登录账号、密码、表所有权或部署配置。生产切换须先备份、明确授权，再使用对应登录角色运行及验证。归档组应以自身角色首次创建归档表；已有归档表的所有权处理属于单独受控操作。
 
-`/healthz` 返回 `status`、`service`、`version` 和检查状态；`/readyz` 检查 PostgreSQL 可达性与 API 市场运行时就绪状态，schema 版本在启动阶段校验。响应不返回内部异常或连接串。Caddy 模板拦截 `/api/metrics`、`/api/v1/metrics`、`/api/v1/market/metrics`、`/api/debug/*` 和 `/readyz`；接口自身的认证仍保留。
+`/healthz` 返回 `status`、`service`、`version` 和检查状态；`/readyz` 检查 PostgreSQL 可达性、schema 版本和市场分片租约（API 市场运行时就绪状态）。响应不返回内部异常或连接串。Caddy 模板拦截 `/api/metrics`、`/api/v1/metrics`、`/api/v1/market/metrics`、`/api/debug/*` 和 `/readyz`；接口自身的认证仍保留。
 
 基础属性目录 `GET /api/v1/catalog/base-attributes` 返回当前配表境界锚点，复用目录 ETag 与缓存策略；前端不得自行按生命上限计算回复。
 

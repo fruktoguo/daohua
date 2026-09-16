@@ -186,7 +186,7 @@ interface NpcDefinition {
 
 服务端在玩家完成每次寻怪倒计时（`Search` 阶段）后，调用确定性怪群生成算法：
 
-当前 `EncounterWaveSelector` 按种子从预算区间选取预算，普通怪只从剩余预算可容纳的候选中按权重抽取，每波最多 5 只；第 5 的倍数波优先精英，Boss 使用 `BattlesPerBoss`（缺省 20）且优先于精英。特殊怪先入波，再以最大预算扣除其成本填充护从；指定 Boss 自身成本可以高于普通波预算。成本读取怪物 `BudgetCost`，不以展示字段重算属性。下面流程图为设计示意，其三次失败抽取已由可容纳候选筛选取代。
+当前 `EncounterWaveSelector` 按种子从预算区间选取预算，普通怪只从剩余预算可容纳的候选中按权重抽取，每波最多 5 只；第 5 的倍数波优先精英，Boss 使用 `BattlesPerBoss`（缺省 20）且优先于精英。特殊怪先入波，再以最大预算扣除其成本填充护从；指定 Boss 自身成本可以高于普通波预算。成本读取怪物 `BudgetCost`，不以展示字段重算属性。候选为空（普通怪全部超预算且未抽到特殊怪）时保底塞入 1 只消耗预算最低的普通小怪。下面流程图为现行口径示意，原三次失败重抽设计已由可容纳候选筛选取代。
 
 该怪群列表由当前 1v1 引擎逐只推进，整波完成后才增加波次；这不等于同时多敌、仇恨分配或群攻目标选择已实现。
 
@@ -206,22 +206,19 @@ flowchart TD
     NormalRoll --> LoopExtract
     
     subgraph LoopExtract [质量预算扣减循环 (灵狐 Quality 算法)]
-        Init[初始化 failCount = 0, spawnedList = []] --> CheckLoop{failCount < 3 且<br/>remainBudget > 0 且<br/>数量 < 上限(如5只)?}
-        CheckLoop -- 是 --> RollMonster[从普通怪池按 weight 轮盘抽取候选怪物]
-        RollMonster --> CheckCost{candidate.budgetCost <= remainBudget ?}
-        CheckCost -- 是 (能塞下) --> AddMonster[将怪物加入 spawnedList<br/>remainBudget -= candidate.budgetCost<br/>failCount = 0]
-        CheckCost -- 否 (超预算) --> AddFail[failCount++]
-        AddMonster --> CheckLoop
-        AddFail --> CheckLoop
+        Filter[筛选 budgetCost <= remainBudget<br/>的可容纳候选池] --> HasCandidate{可容纳候选非空<br/>且 remainBudget > 0<br/>且数量 < 上限(5只)?}
+        HasCandidate -- 是 --> RollMonster[从可容纳候选按 weight 轮盘抽取]
+        RollMonster --> AddMonster[将怪物加入 spawnedList<br/>remainBudget -= candidate.budgetCost]
+        AddMonster --> Filter
     end
     
-    CheckLoop -- 否 (循环结束) --> CheckEmpty{spawnedList 是否为空?}
+    HasCandidate -- 否 (无可容纳候选或达上限) --> CheckEmpty{spawnedList 是否为空?}
     CheckEmpty -- 是 (保底) --> SafetyFallback[保底塞入 1 只消耗预算最低的普通小怪]
-    CheckEmpty -- 否 --> Finalize[生成 GroupEnemyRuntime 怪群列表]
+    CheckEmpty -- 否 --> Finalize[生成怪群列表]
     SafetyFallback --> Finalize
     SpawnBoss --> Finalize
     
-    Finalize --> BattleSnapshot[构建 BattleSnapshot 封存入场快照，进入 Combat 战斗]
+    Finalize --> BattleSnapshot[构建入场战斗状态，进入 Combat 战斗]
 ```
 
 ### 算法执行示例：
@@ -232,7 +229,7 @@ flowchart TD
   - 随机本场总预算 `remainBudget = 55`；
   - 第 1 次抽取：抽中【木灵】（`cost 25 <= 55`），加入阵容，`remainBudget = 30`；
   - 第 2 次抽取：抽中【木灵】（`cost 25 <= 30`），加入阵容，`remainBudget = 5`；
-  - 第 3~5 次抽取：抽中【木灵】（`cost 25 > 5`），连续 3 次超预算，循环终止；
+  - 再次筛选：【木灵】`cost 25 > 5`，可容纳候选为空，循环终止；
   - **本场阵容**：`[木灵, 木灵]`（根据预算生成 2 只木灵同场）。
 
 #### 示例 B：多怪复合地图（如落霞西岭，栖息野兔与蛮熊）

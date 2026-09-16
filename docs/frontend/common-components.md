@@ -101,7 +101,7 @@
 - **组件源码**：[`frontend/src/components/ItemDisplay.tsx`](../../frontend/src/components/ItemDisplay.tsx)
 - **图标注册表**：[`frontend/src/game/itemIcons.ts`](../../frontend/src/game/itemIcons.ts)（构建期 `import.meta.glob` 扫描 `frontend/src/assets/items/` 的 `*.png` 与 `*.webp`，去扩展名的文件名即资源 ID）
 - **构建约定**：[`frontend/vite.config.ts`](../../frontend/vite.config.ts) 的 `assetsInlineLimit` 对 `assets/items/` 下的资源返回 `false`（禁止内联成 base64）。原因：注册表是 eager 全量引用，默认 4KB 内联会让入口 JS 随图标数量线性膨胀（实测 64 张约 +240KB base64）。
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-reference-icon`, `.item-badge-rarity-*`), [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.item-tile-icon`), [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) (搜索 `.daohua-floating-aside-*`, `.daohua-floating-card-title-icon`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.item-tile`, `.item-reference-icon`, `.item-corner`), [`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css) (搜索 `.item-tile-icon`), [`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css) (搜索 `.daohua-floating-aside-*`, `.daohua-floating-card-title-icon`)
 
 ---
 
@@ -109,10 +109,12 @@
 
 - **适用场景**：
   - **物品网格选择弹窗**（支持搜索、分类筛选、物品图元网格排列、空态选项、数量/品质高亮） -> `ItemGridPicker`
-  - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板） -> `CatalogPicker`
+  - **功法/战技网格选择弹窗**（功法装配槽位选择，网格排列 + 冷却/装配状态标记） -> `AbilityGridPicker`
+  - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板；附带子导出 `PickerTrigger` 选择器触发按钮与 `ChoiceMenu` 下拉选项菜单，供触发条件编辑器等内嵌场景复用） -> `CatalogPicker`
 - **组件源码**：
   - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx) (含 `ItemUseSlot` 消耗品槽位组件，支持与技能/物品冷却完全一致的持续消耗品旋转填充倒计时遮罩 `item-slot-duration-overlay`)
-  - [`frontend/src/components/CatalogPicker.tsx`](../../frontend/src/components/CatalogPicker.tsx)
+  - [`frontend/src/components/AbilityGridPicker.tsx`](../../frontend/src/components/AbilityGridPicker.tsx)
+  - [`frontend/src/components/CatalogPicker.tsx`](../../frontend/src/components/CatalogPicker.tsx) (导出 `CatalogPicker` 主组件 + `PickerTrigger` / `ChoiceMenu` 子组件)
 - **样式文件**：[`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)
 
 ---
@@ -131,19 +133,18 @@
 - **适用场景**：
   - **通用全屏居中遮罩弹窗**（基于 React Portal 顶层挂载、Focus 焦点锁定陷阱、ESC 键响应、三种标准尺寸 `small`/`medium`/`large`） -> `Modal`
   - **二次确认 / 高危操作对话框**（重置、遗忘功法、摧毁物品、批量购买等，带取消/确认与高危危险样式） -> `ConfirmDialog`
-  - **战斗技能触发条件编辑器弹窗**（目标依赖、气血/真元阈值与状态比较、最多 4 条逻辑与条件） -> `CombatTriggerEditor`
+  - 战斗技能触发条件编辑器弹窗 `CombatTriggerEditor` 见 §22，此处不再重复登记。
 - **组件源码**：
   - [`frontend/src/components/Modal.tsx`](../../frontend/src/components/Modal.tsx)
   - [`frontend/src/components/ConfirmDialog.tsx`](../../frontend/src/components/ConfirmDialog.tsx)
-  - [`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`, `.combat-trigger-editor`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-backdrop`, `.modal-shell`, `.confirm-dialog`)
 
 ---
 
 ## 10. 状态动效与平滑进度 Hooks (Smooth Progress Hook)
 
 - **适用场景**：
-  - 战斗气血/真元条、行动倒计时平滑插值动画，防止卡顿跳跃 -> `useSmoothProgress`
+  - 战斗气血/真元条、行动倒计时平滑插值动画（DOM Ref 直写，零 React 重渲染），防止卡顿跳跃 -> `useSmoothProgressRef`
 - **源码路径**：[`frontend/src/game/useSmoothProgress.ts`](../../frontend/src/game/useSmoothProgress.ts)
 
 ---
@@ -210,7 +211,7 @@
   - [`frontend/src/components/RenameModal.tsx`](../../frontend/src/components/RenameModal.tsx)
   - [`frontend/src/components/LoginPage.tsx`](../../frontend/src/components/LoginPage.tsx)
   - [`frontend/src/components/ConnectingPage.tsx`](../../frontend/src/components/ConnectingPage.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.rename-modal`, `.login-screen`, `.connecting-screen`, `.error-screen`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.rename-modal`, `.login-screen`, `.status-screen`, `.status-card`)
 
 ---
 
@@ -278,7 +279,7 @@
 - **适用场景**：
   - 战斗技能槽位自动施放触发条件的编辑与配置弹窗（支持自身/敌方/队友目标依赖，气血/真元比例或固定阈值条件，生效/未生效状态比较，最多 4 条逻辑与规则约束） -> `CombatTriggerEditor`
 - **组件源码**：[`frontend/src/components/CombatTriggerEditor.tsx`](../../frontend/src/components/CombatTriggerEditor.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.trigger-rule-row`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-trigger-editor`, `.combat-trigger-card`, `.combat-trigger-fields`)
 
 ---
 

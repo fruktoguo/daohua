@@ -4,6 +4,20 @@
 > **更新时间**：2026-08-24  
 > **所属体系**：系统架构真源复查 / 摒弃过度设计与教条主义 / 架构现状与务实路线  
 > **适用范围**：`src/Domain` 核心领域、`src/Server` 运行时宿主、`src/Protocol` 协议 DTO
+>
+> **文档状态（2026-09-16 标注）**：本文是**历史架构推演稿**。文中 `PlayerState`/`PlayerComponent`/`YuoEntity`/`PlayerShardHost`/`CombatResourceState` 等类型属于旧对象模型；**现行实现为 `PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者模型**（`YuoCore` 基座引用保留待用，不构成运行时对象模型），现行架构规约以 [`../backend/domain-data-architecture.md`](../backend/domain-data-architecture.md) 为准。文中类型名按下表对照阅读，结论性判断仍然有效。
+
+### 现状对照表（历史类型名 → 现行实现）
+
+| 文中概念 | 现行对应 | 状态 |
+| --- | --- | --- |
+| `PlayerState` 聚合根（7 大子切片） | `PlayerAggregate` + `PlayerSectionKind` 七分段（Progression/World/Combat/Buffs/Loadout/Settings/ActionQueue） | ✅ 已落地（分段边界重划，资产走 `AssetWallet`+economy） |
+| `PlayerComponent` 挂载 `YuoEntity` | `PlayerRuntime` 内的 `PlayerActor` 持有 `PlayerAggregate`，`SemaphoreSlim` 串行 | ✅ 已落地（聚合单写者，非 ECS） |
+| `PlayerShardHost` Fiber 调度 | `PlayerRuntime` Actor 生命周期 + `game.player_runtime_leases` 租约 | ✅ 已落地 |
+| 纯函数快照推进（非 Tick 轮询） | `SimulationEngine.AdvanceTo` 离散推进 | ✅ 已落地 |
+| `CombatResourceState` long+Remainder 血蓝 | `PlayerCombatState` 全 `double` + `RegenCarrySeconds` 回复余量 | ✅ 已落地（口径改为全 double） |
+| `BuffState` 字段支撑丹药词缀 | `PlayerBuffState` + 持续消耗品机制 | ✅ 已落地 |
+| `CanStartAction` 体征前置校验（Hitpoints>0 等） | 行动入队前置门槛 | ⏳ 规划中（本文§2 仍为准入设计意图） |
 
 ---
 

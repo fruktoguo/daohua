@@ -18,13 +18,13 @@
 
 ## 2. 消耗品分类与生命周期模型
 
-游戏中所有可使用物品（`ItemKind.Consumable`）严格划分为两类：
+游戏中所有可使用物品（`kind: "consumable"`）按 `isContinuous` 字段严格划分为两类：
 
 ```mermaid
 graph TD
-    Item[物品 ItemDefinition] -->|Kind = Consumable| ConsumableType{消耗品类型 ConsumableType}
-    ConsumableType -->|Instant| InstantItem[立即消耗品]
-    ConsumableType -->|Continuous / Sustained| ContinuousItem[持续消耗品]
+    Item[物品 ItemDefinition] -->|"kind = consumable"| IsContinuous{持续标志 isContinuous}
+    IsContinuous -->|"isContinuous = false"| InstantItem[立即消耗品]
+    IsContinuous -->|"isContinuous = true"| ContinuousItem[持续消耗品]
 
     InstantItem --> InstantEffect[瞬发效果: 恢复生命/灵力/爆发伤害]
     InstantEffect --> InstantCD[进入独立冷却 Cooldown]
@@ -46,11 +46,11 @@ graph TD
 
 ### 2.2 持续消耗品 (Continuous / Sustained Consumable)
 - **定义**：用于增强特定动作效率或产出的持续性道具（如引气丹、寻灵香、地火引等）。
-- **核心属性**：
-  - `DurationSeconds`：单件物品提供的总有效动作持续时间（秒，如引气丹为 300 秒）。
-  - `UsableInActionTypes`：适用的动作分类集合（如 `ActionType.Cultivation`、`ActionType.Exploration` 等）。
-  - `Effects`：直接对该动作结算生效的加成修正（如 `CultivationEfficiencyMultiplier = 1.30`，即增加 30% 修炼效果），**不通过全局 Buff 列表与自然时间计时器流逝**。
-  - `Stackable = false`：同一槽位无法叠层，多槽位装配同种物品时按独立槽位依次结算或排他生效。
+- **核心属性**（字段名对齐实际 JSON schema）：
+  - `durationSeconds`：单件物品提供的总有效动作持续时间（秒，如引气丹为 300 秒）。
+  - `usableInActionTypes`：适用的动作分类集合（如 `cultivation`、`exploration`、`alchemy` 等）。
+  - 分类加成字段：直接对该动作结算生效的加成修正，按动作分类分别命名——`cultivationMultiplier`（修炼）、`gatheringMultiplier`（探索）、`alchemyMultiplier`（炼丹），如引气丹 `cultivationMultiplier = 1.3` 即增加 30% 修炼效果；**不通过全局 Buff 列表与自然时间计时器流逝**。
+  - **无叠层**：同一槽位固定单件效果、无法叠层，多槽位装配同种物品时按独立槽位依次结算或排他生效（不引入 `stackable` 字段）。
 
 ---
 
@@ -76,7 +76,7 @@ public sealed class AutoUseSlot
     /// </summary>
     public double RemainingDurationSeconds { get; set; }
 
-    /// <summary>触发条件规则列表（主要供战斗槽位或特殊条件使用）。</summary>
+    /// <summary>触发条件规则列表（主要供战斗槽位或特殊条件使用；正在落地）。</summary>
     public List<CombatTrigger>? Triggers { get; set; }
 }
 ```
@@ -87,6 +87,7 @@ public sealed class AutoUseSlot
 
 1. **实际动作耗时计算 (Actual Duration)**：
    $$\text{ActualDuration} = \frac{\text{BaseDurationSeconds}}{1.0 + \text{SpeedBonusRatio}}$$
+   （`SpeedBonus` 动作加速加成正在落地；当前无速度加成来源时 $\text{ActualDuration}$ 退化为 `BaseDurationSeconds`。）
    例如：引气入体基础耗时 10 秒。
    - 若无加成，$\text{ActualDuration} = 10.0$ 秒；
    - 若有加成使速度提高 100%，$\text{ActualDuration} = 5.0$ 秒。
@@ -95,13 +96,13 @@ public sealed class AutoUseSlot
    - 检查对应动作分类下的各个 `AutoUseSlot`：
      - 若槽位已配置 `ItemId` 且 `Enabled == true`：
        - 若 `RemainingDurationSeconds <= 0`：
-         - 检查玩家背包 `Inventory` 是否持有该物品且数量 $\ge 1$；
-         - 若持有：从背包扣除 1 个物品（`Inventory.Add(ItemId, -1)`），并将槽位 `RemainingDurationSeconds` 充能为该物品的完整 `DurationSeconds`（如 300.0 秒）；
+         - 检查玩家资产钱包（`AssetWallet`）是否持有该物品且数量 $\ge 1$；
+         - 若持有：从资产中扣除 1 个物品，并将槽位 `RemainingDurationSeconds` 充能为该物品的完整 `durationSeconds`（如 300.0 秒）；
          - 若不持有：槽位无法提供加成，跳过该槽位。
        - 若 `RemainingDurationSeconds > 0`：槽位当前处于激活生效状态。
 
 3. **收益加成结算**：
-   - 凡处于激活状态的持续消耗品，将其加成效果（如引气丹 `CultivationEfficiencyMultiplier = 1.30`）直接应用至本次动作的产出计算中：
+   - 凡处于激活状态的持续消耗品，将其加成效果（如引气丹 `cultivationMultiplier = 1.3`）直接应用至本次动作的产出计算中：
      $$\text{FinalQi} = \text{BaseQi} \times \prod \text{EfficiencyMultipliers}$$
      $$\text{FinalExp} = \text{BaseExp} \times \prod \text{EfficiencyMultipliers}$$
 
@@ -141,12 +142,12 @@ public sealed class AutoUseSlot
 | 属性 | 原配置 | 新配置标准 | 说明 |
 | :--- | :--- | :--- | :--- |
 | **物品 ID** | `item.qi-gathering-pill` | `item.qi-gathering-pill` | 保持稳定强类型 ID |
-| **物品形态** | 消耗品 (`ItemKind.Consumable`) | **持续消耗品** (`ConsumableType.Continuous`) | 动作耗时分摊持续消耗品 |
+| **物品形态** | 消耗品 (`kind: "consumable"`) | **持续消耗品** (`isContinuous: true`) | 动作耗时分摊持续消耗品 |
 | **适用动作** | `cultivation` | `cultivation` | 仅在修炼分类动作中生效 |
-| **单件总持续时间** | 60 秒 (Buff 形式) | **300 秒** (`DurationSeconds = 300.0`) | 相当于 30 次无加速引气周期 |
-| **叠层机制** | 可叠 5 层 | **无法叠层** (`Stackable = false`) | 每次生效固定单件效果 |
+| **单件总持续时间** | 60 秒 (Buff 形式) | **300 秒** (`durationSeconds = 300.0`) | 相当于 30 次无加速引气周期 |
+| **叠层机制** | 可叠 5 层 | **无法叠层**（无叠层字段，固定单件效果） | 每次生效固定单件效果 |
 | **效果机制** | 全局 BuffState 计时器 | **非 Buff 机制**，槽位即时生效 | 动作结算时直接加成 |
-| **数值效果** | 灵气倍率 1.25 | **增加 30% 修炼效果** (`1.30x`) | 修炼获得的修为与灵力均 $\times 1.30$ |
+| **数值效果** | 灵气倍率 1.25 | **增加 30% 修炼效果** (`cultivationMultiplier = 1.3`) | 修炼获得的修为与灵力均 $\times 1.30$ |
 | **单次引气获得 (带引气丹)** | — | **13 修为** ($10 \times 1.30$)<br>**1.3 灵力** ($1 \times 1.30$) | 数值统一 double 精度 |
 
 ---
@@ -167,7 +168,6 @@ public sealed class AutoUseSlot
 ## 6. 确定性与离线快进计算契约
 
 在离线挂机和断线重连确定性快进时：
-- 计算器根据推进的总动作次数 $N$ 与单次实际动作耗时 $T_{\text{action}}$ 进行批处理推进：
-  - 槽位中已有剩余时间 $R$ 最多可供 $K = \lceil R / T_{\text{action}} \rceil$ 次动作消耗。
-  - 耗尽后，若背包中有 $M$ 个备用物品，每个物品可提供 $C = \lfloor \text{Duration} / T_{\text{action}} \rfloor$ 次动作（最后一次不足则透支完结）。
-  - 无论是逐秒推进还是公式化批处理补算，物品消耗总数与最终获得的修为/灵力完全等价，保证绝对确定性。
+- **实际结算形态**：`SimulationEngine.AdvanceTo` 外层循环按 Buff 到期、消耗品冷却与自然回复等边界逐秒切片结算，逐片套用上述耗时扣减与充能规则，而非一次性公式化批处理。
+- **结果等价性**：逐秒切片与公式化批处理在数学上完全等价——槽位中已有剩余时间 $R$ 最多可供 $K = \lceil R / T_{\text{action}} \rceil$ 次动作消耗；耗尽后，若资产中仍有 $M$ 个备用物品，每个物品可提供 $C = \lfloor \text{Duration} / T_{\text{action}} \rfloor$ 次动作（最后一次不足则透支完结）。
+- 无论是逐秒推进还是离线快进补算，物品消耗总数与最终获得的修为/灵力完全等价，保证绝对确定性。

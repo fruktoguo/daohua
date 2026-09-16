@@ -74,10 +74,9 @@
 | :--- | :--- | :--- | :--- |
 | **当前气血** | `Hitpoints` | `double` | 玩家的生命底线。受战斗伤害、极恶环境侵蚀或特殊功法反噬损耗。脱战不自动回满；依靠自然回复属性、疗伤丹药或调息恢复；降至 0 即为力竭/阵亡。 |
 | **当前灵力/法力** | `Manapoints` | `double` | 玩家体内周天运转的灵气储备。施展神通、催动法宝、御剑飞天、开炉控火等一切超凡行为的能量消耗。脱战不自动回满，需通过打坐纳气或回灵丹药补充。 |
-| **气血高精度余量** | `HitpointRemainder` | `double` | 小数点后微量气血回复累加器。用于在低频/高频状态推演中保证气血计算无截断误差，逢 1 进位。 |
-| **灵力高精度余量** | `ManapointRemainder` | `double` | 小数点后微量灵力回复累加器。保证灵力回复计算的绝对守恒。 |
-| **神通绝对冷却** | `AbilityCooldowns` | `Dictionary<string, DateTimeOffset>` | 各已装配神通在时间轴上的绝对就绪时间戳，跨行动与脱战后持续倒计时，不受动作切换中断。 |
-| **消耗品槽位冷却**| `ConsumableSlotCooldowns` | `Dictionary<int, DateTimeOffset>` | 快捷栏与自动消耗品槽位的绝对冷却就绪时间戳。 |
+| **回复周期余量** | `PlayerCombatState.RegenCarrySeconds` | `double` | 自然回复周期内不足一次结算的累计秒数。用于在低频/高频状态推演中保证回复计算无截断误差；现行实现战斗体征字段全部为 `double`，不再使用 long+Remainder 整数进位。 |
+| **神通冷却** | `PlayerCombatSkillState.Cooldowns` | `IReadOnlyList<CombatSkillCooldown>` | 各已装配神通的剩余冷却秒数与吟唱状态，跨行动与脱战后持续倒计时，不受动作切换中断。 |
+| **消耗品槽位冷却**| `AutoUseSlotState.CooldownUntilUnixSeconds` | `double` | 各自动使用槽位的绝对冷却就绪时间戳（Unix 秒）。 |
 
 ### 2.2 修仙境界与修炼底蕴（Cultivation & Realm）
 
@@ -108,9 +107,8 @@
 
 ### 2.5 随身空间与大世界坐标（Spatial Presence & Storage）
 
-- **随身储物袋（InventoryState）**：角色随身携带的物品字典（`Dictionary<string, long>`），材料、丹药、法宝、战利品统一落入背包，支持全自动消耗与堆叠。
-- **灵石财富（Spirit）**：修仙界通用硬通货，随身持有，用于坊市交易、传送法阵消耗或阵法驱动。
-- **大世界驻留节点（WorldState）**：记录角色当前所处的地理节点（如“云来集”、“青云门山门”等），位移动作会真实改变该坐标。
+- **随身储物与灵石（AssetWallet + economy 关系表）**：材料、丹药、法宝、战利品与灵石等随身资产**不放入玩家聚合分段**，统一由运行时 `AssetWallet` 钱包视图 + `economy.player_asset_balances` / `economy.player_asset_instances` 关系表承载，支持全自动消耗、堆叠与事务内原子扣减。灵石为修仙界通用硬通货，用于坊市交易、传送法阵消耗或阵法驱动。
+- **大世界驻留节点（`PlayerWorldState`）**：记录角色当前所处的地理节点/边与坐标（如“云来集”、“青云门山门”等），位移动作会真实改变该坐标。
 
 ---
 
@@ -144,7 +142,7 @@
 ### 3.2 增益/减益（Buff/Debuff）的实体级统一定时衰减与多维共鸣
 
 - **实体级挂载**：所有 Buff（无论是服用灵丹、阵法加持、环境影响还是受到的诅咒中毒）统一挂载在角色的 `Buffs` 列表中，记录其绝对过期时间戳（`ExpiresAt`）。
-- **统一时间轴演进**：Buff 的生命周期由模拟时间推进驱动（`ExpireBuffs(state, now)`），在跨越移动、打坐、炼丹与战斗时**连续倒计时，绝不因动作切换而刷新或提前清除**。
+- **统一时间轴演进**：Buff 的生命周期由 `SimulationEngine.AdvanceTo` 模拟时间推进驱动，在跨越移动、打坐、炼丹与战斗时**连续倒计时，绝不因动作切换而刷新或提前清除**。
 - **多维跨界效能**：单一 Buff 具备穿透多系统的能力。例如：
   - 一枚兼具身法与攻速增益的灵丹，在跑图时缩短位移耗时，在进入战斗时则直接提升攻击频次；
   - 一种降低全属性的剧毒 Debuff，既在战斗中削弱输出，又在炼丹时降低成丹概率，在打坐时增加走火入魔风险。
@@ -154,10 +152,12 @@
 - **常规脱战继承**：战斗胜利或主动脱战时，角色的剩余气血、剩余灵力、技能冷却时间 1:1 原地写回 `CombatResources`，不予补满。
 - **阵亡与 1 HP 濒死复苏**：
   - 当角色在战斗或极端环境中气血降至 0（`Hitpoints <= 0`）判定为阵亡/力竭；
-  - 角色不会被销毁或硬性永久死亡，而是触发**脱战濒死复苏机制**：脱战后生命值自动恢复为 **1 点（1 HP）**，灵力保持不变（不回复）；
+  - 角色不会被销毁或硬性永久死亡，而是触发**脱战濒死复苏机制**：脱战后生命值自动恢复为 **1 点（1 HP）**；**灵力持续自然回复并保留**（死亡期间 MP 回复不中断，与 `master-design` §6.4 口径一致）；
   - 濒死状态下，高危险行动（如高阶秘境、斩妖历练）将因前置体征不足而受阻（Blocked），促使玩家安排休整或自动消耗补血药物。
 
 ### 3.4 秘境探索与切磋 PvP 的真实入场机制（Real-State Entrance for Dungeons & PvP）
+
+> **实现状态**：本节为**规划意图，尚未落地**。当前战斗为 `CombatExpeditionState` 远征状态机，`BattleSnapshot`、秘境与 PvP 在代码中均无实现；落地时必须遵守下列设计红线。
 
 - **无单独虚拟镜像**：后续拓展的秘境探索、宗门战或切磋对决（PvP），**严禁创建脱离主实体的“临时满状态克隆体”**；
 - **即时快照切片**：入场交锋时，系统基于角色的即时物理状态（当前 HP/MP、当前装备、当前生效 Buff）生成当前局的战斗快照（`BattleSnapshot`）；
@@ -180,12 +180,12 @@
 - **条件不满足时的阻断**：当队列头部动作因角色当前状态（如灵力不足、原料耗尽、重伤濒死）无法启动时，状态标记为 `ActionStatus.Blocked`。
 - **循环模式下的安全空转**：
   - 若开启队列循环（`LoopEnabled`），阻断的动作被安全移至队尾，尝试执行下一个可用动作；
-  - 若全部排队动作均受阻，队列进入**安全空转期**。在此期间，角色进入自然休整状态，持续享受生命与灵力自然回复（`RegenerateResources`），直至体征恢复或玩家介入调整。
+  - 若全部排队动作均受阻，队列进入**安全空转期**。在此期间，角色进入自然休整状态，持续享受生命与灵力自然回复，直至体征恢复或玩家介入调整。
 
 ### 4.3 四大动作类型自动消耗品槽位与银河奶牛式持续时间池
 
 为保障全常驻实体在无人值守时也能平滑维持生命体征与修炼增益，系统提供完善的消耗品自动使用体系：
-- **四大分类独立槽位**：修炼（`Cultivation`）、探索（`Exploration`）、炼丹（`Alchemy`）、战斗（`Combat`）各自拥有独立的 3 个自动消耗品槽位（`AutoUseSlot`）；
+- **四大分类独立槽位（4 类 × 3 槽）**：修炼（`Cultivation`）、探索（`Exploration`）、炼丹（`Alchemy`）、战斗（`Combat`）各自拥有独立的 3 个自动消耗品槽位（`AutoUseSlotState`）；
 - **持续消耗品 300s 动作时间池机制**：
   - 开启 1 瓶持续型丹药时，消耗 1 件物品并获得 **300 秒有效动作时长**（`RemainingDurationSeconds = 300.0`）；
   - 该时长仅在角色**实际执行对应类型动作时按秒精准扣除**；
@@ -196,56 +196,58 @@
 
 ## 5. 技术架构与系统落地映射（Technical Architecture & Implementation）
 
-在底层实现上，“统一常驻实体”由**纯领域聚合根 + 确定性离散事件引擎 + 单 Fiber 串行所有权**三层基座稳固支撑。
+在底层实现上，“统一常驻实体”由**纯领域聚合根 + 确定性离散事件引擎 + 专属 Actor 单写者所有权**三层基座稳固支撑。
 
 ```text
  ┌─────────────────────────────────────────────────────────────────────────┐
- │                       服务端分片宿主 (PlayerShardHost)                   │
- │   • 单写者调度 Fiber (YuoFiber)：独占调度，单线程串行处理，彻底消除并发写竞争 │
- │   • 在线实体映射：_players[playerId] -> YuoEntity                        │
-│   • 冷快照 LRU 缓存：每个分片独立维护 20,000 份冷快照 (_coldSnapshots[playerId] -> byte[]) │
+ │                    服务端运行时宿主 (PlayerRuntime)                      │
+ │   • 单写者调度 (PlayerActor + SemaphoreSlim)：独占调度，串行处理，        │
+ │     彻底消除并发写竞争；所有权经 game.player_runtime_leases 租约维持      │
+ │   • 在线聚合映射：playerId -> PlayerActor(持有 PlayerAggregate)           │
+ │   • 持久化：脏分段经 latest-only 刷盘队列异步写入 PostgreSQL              │
  └────────────────────────────────────┬────────────────────────────────────┘
                                       │ 持有并驱动
                                       ▼
  ┌─────────────────────────────────────────────────────────────────────────┐
- │                         领域聚合根 (PlayerState)                         │
+ │                      领域聚合根 (PlayerAggregate)                        │
  │   • POCO 纯数据模型，无任何外部框架/IO/数据库依赖                          │
- │   • 聚合全部子系统数据 (Combat, Buffs, Inventory, World, Queue, Stats)   │
- │   • 支持 100% 完整深克隆 (Clone) 与细粒度脏段追踪 (DirtySections)        │
+ │   • 按 PlayerSectionKind 七分段聚合                                      │
+ │     (Progression/World/Combat/Buffs/Loadout/Settings/ActionQueue)        │
+ │   • 资产走 AssetWallet+economy；细粒度脏段追踪 MarkDirty(PlayerSectionKind)│
  └────────────────────────────────────┬────────────────────────────────────┘
                                       │ 作为唯一输入输出
                                       ▼
  ┌─────────────────────────────────────────────────────────────────────────┐
  │               确定性模拟引擎 (SimulationEngine.AdvanceTo)               │
  │   • 时间片推进 (cursor -> target)，按行动完成边界/微步事件向前演进         │
- │   • 统一执行 ExpireBuffs、动作执行 (Executor*)、RegenerateResources      │
- │   • 产生增量事件日志 (PendingEvents) 与脏标记 (DirtySections)             │
+ │   • 统一执行 Buff 到期结算、行动推进结算、自然回复结算                     │
+ │   • 产生增量事件日志与脏分段标记 (DirtySections)                           │
  └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 5.1 领域层：`PlayerState` 聚合根
+### 5.1 领域层：`PlayerAggregate` 聚合根
 
-- `PlayerState`（定义于 `src/Domain/Models/Models.cs`）是角色全部状态的**唯一权威数据载体**；
-- 内部收敛了 `CombatResources`、`Buffs`、`Combat`、`Inventory`、`World`、`Queue`、`Stats` 等全部组件数据；
+- `PlayerAggregate`（定义于 `src/Domain/Player/PlayerAggregate.cs`）是角色全部状态的**唯一权威数据载体**；
+- 内部按 `PlayerSectionKind` 七分段收敛 `PlayerProgression`、`PlayerWorldState`、`PlayerCombatState`（含 `PlayerCombatSkillState`）、`PlayerBuffState`、`PlayerLoadoutState`、`PlayerSettingsState` 与行动队列；资产（灵石、物品、装备实例）不进聚合，统一由 `AssetWallet` + `economy.*` 关系表承载；
 - 纯 POCO 设计使得任何状态操作都可以被轻松单元测试、离线重放和确定性断言。
 
 ### 5.2 模拟层：`SimulationEngine` 确定性推进
 
-- `SimulationEngine.AdvanceTo(state, targetTime)` 是世界状态演进的唯一入口；
+- `SimulationEngine.AdvanceTo` 是世界状态演进的唯一入口；
 - 引擎按离散事件边界切分时间片，在推进循环中统一执行：
-  1. `ExpireBuffs(state, cursor)`：推进并失效到期 Buff；
-  2. 动作推进与状态转移（根据动作类型由 SimulationEngine 执行挂机产出结算、CombatSimulator 战斗模拟或位移处理）；
-  3. `RegenerateResources(state, cursor, dt)`：读取基础属性表及明确加成计算后的回复属性，结算自然气血与灵力回复；不得由生命/灵力上限按固定比例生成回复值，周期口径见 [战斗规约 §9.2](./combat-design.md#92-自然回复属性由基础属性表配置)；
-  4. 产出结算与脏标记汇总。
+  1. Buff 到期结算：推进并失效到期 Buff；
+  2. 行动推进与状态转移（根据行动类型由 SimulationEngine 执行挂机产出结算、战斗状态机推进或位移处理；技能施放由 `CombatSkillEngine` 结算）；
+  3. 自然回复结算：读取基础属性表及明确加成计算后的回复属性，结算自然气血与灵力回复；不得由生命/灵力上限按固定比例生成回复值，周期口径见 [战斗规约 §9.2](./combat-design.md#92-自然回复属性由基础属性表配置)；
+  4. 产出结算与脏分段标记汇总。
 
-### 5.3 运行时层：`PlayerShardHost` + `YuoFiber`
+### 5.3 运行时层：`PlayerRuntime` + `PlayerActor`
 
-- **单写者并发模型（Single-Writer）**：每个玩家在内存中分配给固定的 `PlayerShardHost`，其所有指令与状态演进严格在专属 `YuoFiber` 上单线程排队执行，从根本上杜绝了多线程并发读写导致的“状态撕裂”；
-- **冷热无缝切换**：玩家离线后移出活跃内存，状态以紧凑二进制快照存入 LRU 缓存（每个 `PlayerShardHost` 分片独立维护 20,000 份内存冷快照）并异步刷入 PostgreSQL。玩家重连时，从快照恢复并由 `SimulationEngine` 补算至当前时刻，状态与一直在线完全无差。
+- **单写者并发模型（Single-Writer）**：每个玩家在内存中由 `PlayerRuntime` 分配专属 `PlayerActor`，其所有指令与状态演进严格在 `SemaphoreSlim` 串行上下文内排队执行，从根本上杜绝了多线程并发读写导致的“状态撕裂”；
+- **冷热无缝切换**：玩家离线后 Actor 休眠，脏分段经 latest-only 刷盘队列异步写入 PostgreSQL section 表。玩家重连时，从 `PlayerStateHead` + 各 `PlayerSectionSnapshot` 恢复聚合并由 `SimulationEngine` 补算至当前时刻，状态与一直在线完全无差。
 
-### 5.4 网络层：`StateMapper` 增量同步
+### 5.4 网络层：`ProtocolSnapshotMapper` 增量同步
 
-- 服务端通过 `StateMapper.ToPatch(state, dirtySections, now)` 将演进产生的脏区位（`DirtySections`）打包为轻量级增量补丁 `PlayerPatchDto`；
+- 服务端通过 `ProtocolSnapshotMapper` 将演进产生的脏分段（`DirtySections`/`PlayerSectionKind`）打包为轻量级快照/增量 DTO（透传当前激活 `GameDataCatalog`）；
 - 前端仅针对发生变动的局部数据（如气血微调、Buff 列表变动、背包变动）进行响应式更新，绝不整体重建面板，确保高频状态流转下的流畅交互体验。
 
 ---
@@ -254,8 +256,8 @@
 
 为确保“统一常驻实体”核心哲学的长久纯粹性与系统健壮性，后续所有系统开发与玩法扩展必须严格遵守以下红线：
 
-1. **【严禁设立影子角色】**：任何新玩法（秘境、竞技场、帮派战、大世界事件等）不得为玩家创建独立的“临时战斗载荷”或“脱离主实体的副角色”，必须直接引用和修改主 `PlayerState`。
+1. **【严禁设立影子角色】**：任何新玩法（秘境、竞技场、帮派战、大世界事件等）不得为玩家创建独立的“临时战斗载荷”或“脱离主实体的副角色”，必须直接引用和修改主 `PlayerAggregate`。（注：秘境/竞技场/PvP 均为规划意图，尚未落地。）
 2. **【严禁跨玩法免费重置】**：严禁在进入或退出某个玩法时，私自执行“气血回满”、“灵力回满”、“重置所有技能冷却”等破坏状态连续性的破坏性操作。一切恢复必须有法可循（依赖丹药、打坐、技能或自然回复属性）。
-3. **【严禁使用浮点截断】**：所有与时间、资源、属性、收益率相关的计算与存储必须统一使用 `double` 精度，微量回复必须走 `Remainder` 余量累加机制，严禁因整数截断导致长期挂机收益丢失。
-4. **【闭环演进原则】**：任何新增的作用力（新动作类型、新环境效果、新交互机制），必须遵循“从 `PlayerState` 读取条件 -> 计算影响 -> 原地写回 `PlayerState` -> 标记 `DirtySections`”的标准闭环管线。
+3. **【严禁使用浮点截断】**：所有与时间、资源、属性、收益率相关的计算与存储必须统一使用 `double` 精度，微量回复必须走 `RegenCarrySeconds` 回复周期余量累加机制，严禁因整数截断导致长期挂机收益丢失。
+4. **【闭环演进原则】**：任何新增的作用力（新动作类型、新环境效果、新交互机制），必须遵循“从 `PlayerAggregate` 读取条件 -> 计算影响 -> 原地写回 `PlayerAggregate` -> `MarkDirty(PlayerSectionKind.Xxx)`”的标准闭环管线。
 5. **【确定性守恒】**：任何状态转移逻辑必须是纯函数的、无副作用的确定性计算，严禁在状态演进代码中调用系统随机数（必须使用确定性种子生成器）、系统时钟（必须使用传入的时间戳参数）或进行异步/外部 I/O 操作。

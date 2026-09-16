@@ -12,32 +12,37 @@
 ## 2. 项目权威边界
 
 - `src/Domain`：纯领域规则、确定性模拟、战斗、地图和市场模型；不得依赖 ASP.NET Core、Docker、数据库或浏览器实现。
-- `src/Protocol`：服务端、浏览器和压测共享的纯数据协议；不得暴露 ECS、Fiber、Actor 或存储实现对象。
+- `src/Protocol`：服务端、浏览器和压测共享的纯数据协议；不得暴露领域聚合、运行时所有权对象或存储实现对象。
 - `src/Server`：ASP.NET Core 宿主、WebSocket、运行时装配和持久化适配。
 - `src/ComputeNode`：可选高延迟冷挂机计算节点；只执行确定性补算，不持有玩家权威状态，不直接访问生产数据库。
 - `src/LoadTests`：负载场景，不是生产运行时依赖。
+- `src/DataTool`：游戏数据 JSON 校验与指纹工具；独立命令行项目，无项目引用。
 - `frontend`：唯一正式 React/Vite 前端。
 - `frontend-sim`：历史模拟与参考实现，不得作为正式入口或生产镜像来源。
 - `tests/Domain.Tests`：领域和协议回归门禁。
+- `tests/Server.Tests`：服务端装配、持久化与跨边界协议回归门禁。
+- `tools/`：本地开发辅助工具（`config-editor` 独立 Vite 应用、`combat-simulator.html`），不进入生产镜像。
+- `art/`：美术与图像资源源文件及图标清单。
+- `deploy/`：生产部署资产（`compose.prod.yaml`、systemd 单元、备份/归档/回滚脚本、Caddy 站点配置、PG 角色 SQL）。
 - `vendor/YuoCore`：固定版本的 Git submodule。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。
 - `data`：运行数据，不进入镜像，不提交 Git，不随代码发布覆盖。
 
-依赖方向必须保持：
+依赖方向必须保持（以各 `.csproj` 实际 `ProjectReference` 为准）：
 
 ```text
-Protocol <- Domain <- Server
-                                 <- LoadTests
-                                 <- ComputeNode
-                                 <- DataTool
-Domain -> YuoCore.Ecs
-Server -> YuoCore.Persistence + YuoCore.Runtime + YuoCore.Ecs + PostgreSQL/Npgsql
+Server -> Domain + Protocol + YuoCore(Abstractions/Ecs/Persistence/Runtime) + Npgsql
+Domain -> YuoCore.Abstractions + YuoCore.Ecs（基座引用保留待用，当前无 Entity/Fiber 运行时对象）
+Domain.Tests -> Domain + Protocol
+Server.Tests -> Server + Domain + Protocol
+LoadTests -> Protocol + Npgsql
+ComputeNode、DataTool -> 无项目引用（独立可执行进程/工具）
 ```
 
-禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
+Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
 
 ## 3. 当前生产架构与容量目标
 
-- 项目内部代表名统一使用 `daohua` / `` / `DAOHUA`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
+- 项目内部代表名统一使用 `daohua` / `DaoHua` / `DAOHUA`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
 - 当前内测阶段允许直接破坏历史数据、存档格式和部署拓扑兼容性；为了达成容量与落盘目标，可以直接改表、改快照和清空内测数据，但生产/远端真实数据操作仍必须先备份并获得明确许可。
 - **本地开发阶段兼容清零（硬规则）**：当前工作默认处于本地开发/内测阶段，不设计、不实现任何历史兼容路径。旧数据、旧快照、旧数据库 schema、旧 API/WebSocket 字段、旧协议、旧部署拓扑和旧组件模型均可直接废弃；禁止为了它们新增 migration runner、双读双写、兼容 DTO、legacy flag、fallback adapter、旧字段回填或过渡分支。允许一次性改表、改快照、删旧模型和清空本地数据。所谓“行为基线”只用于保护当前明确的业务结算语义，不等于保留历史格式或历史调用方式。
 - **兼容性迁移目录（唯一例外）**：数据库兼容性迁移脚本允许存在，但必须统一收拢在仓库根目录 `migrations/` 独立文件夹中（纯 SQL/脚本文件，命名 `NNNN_vX_to_vY.sql`），仅供既有库就地升级时由人工或运维流程显式执行。该目录必须满足**可整体删除**约束：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文；空库启动永远由权威 `PostgresSchema.Sql` 直建，删除 `migrations/` 后全新初始化行为完全不变。仍禁止在代码中实现 migration runner 或对迁移目录的运行时依赖。
@@ -47,8 +52,8 @@ Server -> YuoCore.Persistence + YuoCore.Runtime + YuoCore.Ecs + PostgreSQL/Npgsq
 - 市场账本使用 PostgreSQL Serializable 事务、行锁及带 fence 的分区租约；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
 - 远程个人设备只能作为高延迟冷挂机计算节点，通过 `ComputeNode` 的内部 HTTP 批处理接口被主服务调用；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。
-- `/api/debug/*` 只能在 `Development` 环境存在；生产 Caddy 还必须显式拦截 debug 和 metrics 路径。
-- 当前客户端使用本地 UUID 标识玩家，尚未形成商业账号鉴权。涉及充值、真实资产或开放注册前，必须先完成服务端身份认证、授权和审计。
+- 当前服务端不存在任何 `/api/debug/*` 或 `/api/metrics` 端点；任何 debug/metrics 端点只允许在 `Development` 环境存在，生产 Caddy 必须显式拦截对应路径（拦截规则已配置）。
+- 账号鉴权已落地：`/api/v1/auth/register|login|logout|session`，PBKDF2 密码哈希 + HttpOnly Cookie 会话 + 认证限流；客户端不再仅凭本地 UUID 标识玩家。该实现为内测口径——涉及充值、真实资产或开放注册前，必须先完成服务端身份认证、授权与审计的强化评审。
 
 ## 4. 修改前检查
 
@@ -94,15 +99,43 @@ Vite 将 `/api` 和 `/ws` 代理到 `127.0.0.1:5128`。只有连接外部后端�
 scripts/verify.sh
 ```
 
-生产同构容器验证：
+本地容器编排验证（根 `compose.yaml`，app 以 `Development` 运行，仅用于本地容器化行为排查）：
 
 ```bash
-docker compose up -d --build
+docker compose -f compose.yaml up -d --build
 node scripts/smoke-production.mjs http://127.0.0.1:5128
-docker compose down
+docker compose -f compose.yaml down
+```
+
+生产同构拓扑验证（真实生产编排为 `deploy/compose.prod.yaml`，要求预先构建好的不可变镜像；app 以 `Production` 运行，端口 `127.0.0.1:15128`）：
+
+```bash
+DB_PASSWORD='<本地验证口令>' APP_IMAGE='daohua:prod-verify' COMPUTE_IMAGE='daohua-compute:prod-verify' \
+COMPUTE_TOKEN='<本地验证令牌>' docker compose -f deploy/compose.prod.yaml up -d
+node scripts/smoke-production.mjs http://127.0.0.1:15128
+docker compose -f deploy/compose.prod.yaml down
 ```
 
 `docker compose down` 不得附带 `--volumes`，除非用户明确要求删除本地数据。
+
+常用脚本清单（`scripts/`，全部以仓库根目录为工作目录执行）：
+
+| 脚本 | 用途 |
+| --- | --- |
+| `verify.sh` | 最小完整门禁：工具链、Release 构建、领域/服务端测试、DataTool 校验、Compose 配置、本地 PostgreSQL 容量验证 |
+| `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite） |
+| `dev-hot.mjs` | C# 源码监听与后端平滑热重启（由 `dev.sh` 调用） |
+| `dev-service.sh` | 本地容器化同构环境管理：`up`/`restart`/`down`/`status`/`logs`/`smoke` |
+| `config-editor.sh` | 启动 `tools/config-editor` 可视化配表编辑器（127.0.0.1:5199） |
+| `capacity-target.sh` | 真实 PostgreSQL/WAL/latest-only Worker 容量门禁 |
+| `smoke-production.mjs` | 生产/容器烟测：健康、就绪、同源静态入口与 WebSocket 首帧 |
+| `check-frontend-contracts.mjs` | 前后端协议/契约一致性检查（被 `tests/Server.Tests` 调用） |
+| `export-i18n-csv.mjs` | 导出前端 i18n 词条模板 CSV |
+| `optimize-svg.mjs` | SVG 美术资源优化 |
+| `docker-build-prod.sh` | 生产镜像多阶段构建与 CCR 推送（`--push`/`--push-existing`） |
+| `deploy-prod.sh` | 生产服务器受控更新（`--image <不可变镜像>`） |
+| `install-ccr-auth.sh` | 服务器 CCR 登录态安装（`docker login --password-stdin`） |
+| `init-local-db-roles.sh` | 本地 PostgreSQL 角色初始化（对齐 `deploy/postgres-local-roles.sql`） |
 
 ## 6. 实现规则
 
@@ -113,7 +146,7 @@ docker compose down
 - 不用特殊 case 掩盖根因，不留下 debug 输出、临时代码、无说明 TODO 或无用文件。
 - 错误处理必须明确；不得静默吞掉持久化、结算、鉴权和部署异常。
 - 不随意修改公共 API、WebSocket 包结构、事件名、配置键和存档格式；但在当前本地开发阶段，如任务要求重构，可以一次性修改并同步全部调用点、文档和测试，禁止为了旧调用方保留兼容层。
-- **禁止过度防御式编程**：只在外部输入、跨边界数据、持久化载荷和明确的领域不变量处做必要校验。类型系统、状态机、单 Fiber 所有权已经保证的内部路径不得层层重复判空、重复校验、吞异常、静默回退、凭空填默认值或添加未经需求支持的兜底分支；内部不变量被破坏时应快速失败并保留清晰错误证据。
+- **禁止过度防御式编程**：只在外部输入、跨边界数据、持久化载荷和明确的领域不变量处做必要校验。类型系统、状态机、聚合单写者所有权已经保证的内部路径不得层层重复判空、重复校验、吞异常、静默回退、凭空填默认值或添加未经需求支持的兜底分支；内部不变量被破坏时应快速失败并保留清晰错误证据。
 - 不为假设中的未来需求提前增加抽象、配置开关、兼容分支、重试、缓存或降级路径；每个保护逻辑必须能指出真实故障边界、恢复动作和对应验证。
 - 内测阶段可破坏旧数据兼容；若变更数据格式或部署拓扑，必须同步更新 PostgreSQL schema、备份/恢复文档和容量门禁。
 - 新增依赖必须有明确收益，使用现有 package manager，并同步锁文件。
@@ -123,14 +156,15 @@ docker compose down
 
 - 服务端是行动、战斗、市场和资产结算的唯一权威来源。
 - 所有战斗、属性、收益率、计数与时长数值，计算和储存一律统一使用 `double` 类型（前端对应 `number` 即 double 精度），百分比类型内部也必须采用 `double` 点数。
-- **服务端类型命名规约（业务前缀法与 ECS 基座后缀法分界）**：
-  - **繁多业务子类型采用帕斯卡前缀法（PascalCase Prefix）**：任务数据类统一使用 `Task*`（如 `TaskBase`, `TaskGathering`, `TaskCultivation`, `TaskAlchemy`, `TaskCombat`, `TaskTravel`），静态执行器统一使用 `Executor*`（如 `ExecutorGathering`, `ExecutorCultivation`, `ExecutorAlchemy`, `ExecutorCombat`, `ExecutorTravel`），便于 IDE 极速自动补全与文件树聚类。
-  - **ECS 核心基座保留经典自然后缀法（Natural Suffix）**：实体数据组件一律以 `*Component` 结尾（如 `ActionQueueComponent`, `InventoryComponent`, `CultivationComponent`, `CombatResourcesComponent`, `PlayerStatsComponent`, `SyncDirtyComponent`），调度系统一律以 `*System` 结尾（如 `ActionExecutionSystem`），保持语义自然通顺。
+- **服务端类型命名规约（现行聚合模型）**：
+  - **繁多业务子类型采用帕斯卡前缀法（PascalCase Prefix）**：同族可枚举的业务子类型以业务名作为前缀聚合命名——玩家聚合分段族 `PlayerProgression` / `PlayerWorldState` / `PlayerCombatState` / `PlayerBuffState` / `PlayerLoadoutState` / `PlayerSettingsState` / `PlayerCombatSkillState`，分段枚举 `PlayerSectionKind`（`Progression`/`World`/`Combat`/`Buffs`/`Loadout`/`Settings`/`ActionQueue`），载荷与存储记录 `PlayerStateHead` / `PlayerSectionSnapshot` / `StoredSection` / `StoredAction` / `SectionFlushItem` / `AutoUseSlotState` 等，便于 IDE 极速自动补全与文件树聚类。
+  - **职责型核心类型保留自然后缀法（Natural Suffix）**：引擎与结算 `SimulationEngine` / `CombatSkillEngine`，选择与解算 `EncounterWaveSelector` / `PlayerAttributeResolver`，映射与编解码 `ProtocolSnapshotMapper` / `SectionCodec` / `MarketDtoMapper`，宿主单写者与运行时 `PlayerRuntime`（内含 `PlayerActor`）/ `MarketRuntime` / `WebSocketRuntime`，持久化适配 `Postgres*Repository`，后台任务 `*Worker` / `*HostedService`。
+  - **已废弃命名不得复用**：`Task*` 任务数据类、`Executor*` 静态执行器、`*Component`/`*System` ECS 基座后缀属于已被聚合模型取代的历史约定，新增代码不得使用。
 - 确定性快进的在线、离线挂机和重连结果必须保持一致。
-- **行动队列与无限循环不变量**：行动队列中 `RemainingRepeats == -1`（或负值代表无限重复）在任何 `AdvanceTo` / `AdvanceBy` 模拟推进与单轮结算完成后，**绝对不得自动出队**；只有正数次数递减至 0、玩家显式取消或资源前置条件断绝时方可移出队列。协议与前端选择器必须完整支持 `-1` 无限循环语义。
+- **行动队列与无限循环不变量**：行动队列中 `RemainingRepeats == -1`（或负值代表无限重复）在任何 `SimulationEngine.AdvanceTo` 模拟推进与单轮结算完成后，**绝对不得自动出队**；只有正数次数递减至 0、玩家显式取消或资源前置条件断绝时方可移出队列。协议与前端选择器必须完整支持 `-1` 无限循环语义。
 - **协议快照映射与配表透传**：`ProtocolSnapshotMapper` 转换快照与增量 DTO 时必须显式透传当前激活的 `GameDataCatalog`，以保证动作指纹与动态实体上下文完整一致，禁止脱离配表单独伪造协议载荷。
 - 不得为性能优化改变战斗结果、掉落、市场撮合、队列完成边界或快照语义。
-- ECS/Fiber 所有权必须遵守 YuoCore 约束；跨 Fiber/进程访问不得直接持有 Entity。
+- 玩家并发所有权模型为「`PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者」：同一玩家的命令与模拟推进在专属 Actor 内串行执行，跨边界访问不得直接持有聚合引用。`YuoCore`（Ecs/Persistence/Runtime）基座引用在项目文件中保留待用，当前不构成运行时对象模型；若未来启用 ECS/Fiber，所有权约束另行定义。
 - 玩家快照写回失败必须保留可恢复证据；不得为了降噪降低持久化错误等级。
 - 健康端点不得泄露 token、连接串、玩家数据或内部异常。
 - CORS 只允许配置的完整来源；禁止恢复任意来源加凭据的组合。

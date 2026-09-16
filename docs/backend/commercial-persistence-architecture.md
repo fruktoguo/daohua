@@ -2,7 +2,7 @@
 
 > **文档状态**：目标架构基线（2026-08-27）。
 >
-> **权威性**：本文件定义本次一次性 clean-room 重写采用的持久化、恢复、容量和中间件边界。现有代码、旧物理表、旧快照载荷、旧 outbox、旧市场账本、旧 API/WebSocket 字段和旧部署拓扑均不是本方案的兼容约束；实现时直接建立新的 schema v1、清空本地内测数据并删除旧模型。
+> **权威性**：本文件定义本次一次性 clean-room 重写采用的持久化、恢复、容量和中间件边界。现有代码、旧物理表、旧快照载荷、旧 outbox、旧市场账本、旧 API/WebSocket 字段和旧部署拓扑均不是本方案的兼容约束；实现直接建立当前 **schema v2**（`PostgresSchema.Version = 2`）、清空本地内测数据并删除旧模型。
 >
 > **重要说明**：本文是从业务不变量、故障模型、容量预算和运维成本重新推导出的方案。若最终选出的 PostgreSQL、.NET 或单写者模型与当前代码碰巧相同，只代表它们在约束下仍是最优解，不代表继承了旧表、旧载荷或旧调用链。项目既定的层级边界（`Domain` 纯领域、`Protocol` 纯协议、`Server` 宿主、`ComputeNode` 只做冷挂机补算）属于产品硬约束，不是历史兼容层。
 
@@ -44,7 +44,7 @@
 | 容量 | 在 `2c4g/40g` 主机上支持 5000+ 注册账号、100+ 持续收发、500+ 峰值收发和 2000+ 冷挂机补算。 |
 | 硬盘 | 不保存 WebSocket 帧、聊天消息、心跳、战斗 Tick、逐请求日志或每次状态变化历史；本地日志、WAL、队列和归档都有硬上限。 |
 | 扩展性 | section、资产、市场和外部副作用有独立边界；未来可以增加 section 或独立读模型，不需要重写整张玩家表。 |
-| 兼容性 | 当前内测直接采用新 schema v1 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支。 |
+| 兼容性 | 当前内测直接采用 schema v2 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级仅由 `migrations/` 独立 SQL 脚本人工显式执行。 |
 
 ### 2. 明确不在本次持久化范围的内容
 
@@ -62,8 +62,8 @@
 | --- | --- | --- |
 | 操作系统 | Ubuntu Server 24.04 LTS，linux/amd64 | 长期安全更新、容器生态成熟；目标镜像不携带运行数据。 |
 | Web/宿主 | .NET 10 / ASP.NET Core 10 / C# | 使用现代 WebApplication、内置健康检查、限流、ProblemDetails 和 Hosted Service；业务逻辑不放在 Endpoint 中。 |
-| 运行时所有权 | YuoCore ECS/Fiber 只负责领域实体所有权与分片调度 | 遵守项目 Domain → YuoCore.Ecs 边界；持久化 schema、队列和事务语义由本方案重新定义，不继承旧存储实现。 |
-| 在线并发模型 | 每个玩家分片一个单写者执行上下文，跨边界使用消息 | Tick 路径零数据库往返；同一玩家和同一市场分片只有一个逻辑写者。 |
+| 运行时所有权 | `PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者 | 同一玩家的命令与模拟推进在专属 Actor 内串行执行；`YuoCore` 基座引用保留待用，当前不构成运行时对象模型。 |
+| 在线并发模型 | 每个玩家一个单写者执行上下文，跨边界不直接持有聚合引用 | Tick 路径零数据库往返；同一玩家和同一市场分片只有一个逻辑写者。 |
 | 主数据库 | PostgreSQL 18.x（固定受支持的最新补丁版） | 事务、唯一约束、外键、行锁、分区、WAL、PITR 和成熟备份工具同时满足权威数据与小规模运维需求。 |
 | 数据访问 | Npgsql 10.x；热路径使用显式 SQL、批处理和 prepared statement | SQL、锁顺序、SKIP LOCKED、版本 CAS 和查询计划可审计；不让 ORM 在战斗/资产热路径隐式生成写放大。 |
 | 身份管理 | ASP.NET Core Authentication；需要完整账号生命周期时使用 Identity + PostgreSQL | 身份和权限使用独立 schema；游戏状态不依赖登录会话缓存。 |
@@ -131,7 +131,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 | identity.players | player_id, account_id, display_name_normalized, created_at, last_seen_at | account_id 外键；道号唯一索引；允许一个账号未来拥有多个角色。 |
 | identity.auth_sessions | session_id, account_id, expires_at, revoked_at, last_used_at | 只保存可撤销会话元数据和哈希，不保存访问令牌明文。 |
 | identity.data_protection_keys | key_id, xml_payload, created_at, expires_at | 供多实例 Cookie/Data Protection 使用；访问权限限制在 API/Worker 数据库角色，磁盘与备份由基础设施加密。 |
-| identity.audit_events | event_id, actor_id, event_type, target_id, payload, occurred_at | 仅记录登录安全、管理员操作和资产争议等稀疏事件；按月分区。 |
+| identity.audit_events | event_id, actor_id, event_type, target_id, payload, occurred_at | 普通表（非分区）；由登录、改名等安全敏感操作与管理员/资产争议事件稀疏写入；retention 按保留期小批量清理。 |
 
 ### 2. game：可恢复玩家状态
 
@@ -140,7 +140,8 @@ OTel/结构化日志 ───────────► 远端观测平台
 | game.player_state_heads | player_id, state_version, schema_version, last_simulated_at, game_data_fingerprint, checksum, updated_at | 每个玩家一行；保存当前提交头和恢复元数据，不保存巨型载荷。 |
 | game.player_state_sections | player_id, section_kind, section_version, schema_version, codec, payload, raw_bytes, stored_bytes, checksum, updated_at | 主键 (player_id, section_kind)；每个 section 一行；只保留最新版本。 |
 | game.player_action_queue | player_id, slot, action_id, action_payload, action_version, status, next_due_at, idempotency_key | 只保存当前待执行/进行中的行动；完成后删除或转为最新状态，不记录每个 Tick。 |
-| game.player_projection | player_id, realm_rank, current_node_id, presence, last_active_at, projection_version | 供列表、管理和冷挂机筛选的可重建投影；不是战斗真源。 |
+| game.player_runtime_leases | player_id, owner_instance_id, lease_until, renewed_at | 玩家运行时所有权租约：标识哪个宿主实例持有该玩家的 `PlayerActor` 单写者；命令执行前续租校验，防止多实例并发写同一聚合。 |
+| game.player_projection | player_id, realm_rank, current_node_id, presence, last_active_at, projection_version | 供在线状态展示、玩家列表、运营检索与冷挂机筛选的可重建读模型投影；由玩家提交路径顺带更新，不参与玩家真源提交，可随时从 section 重建。 |
 
 ### 3. economy：资产与不可变账本
 
@@ -170,14 +171,15 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 该结构使用 schema v2，一次性初始化新库；不提供 v1 的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。
 
-唯一装备实例交易尚未实现：现有 `item_instances` 与 reservation 的 `instance_id` 仅为 DDL 设计，当前交易按可堆叠资产和 variant 结算，不能宣称已支持唯一装备冻结、转移和退款。
+唯一装备实例交易尚未实现：现有 `economy.player_asset_instances` 与 reservation 的 `instance_id` 仅为 DDL 设计，当前交易按可堆叠资产和 variant 结算，不能宣称已支持唯一装备冻结、转移和退款。
 
 ### 5. platform：持久化工作与外部副作用
 
 | 表 | 关键字段 | 约束与用途 |
 | --- | --- | --- |
 | platform.section_flush_queue | player_id, section_kind, state_version, payload, codec, attempts, next_attempt_at, lease_until, updated_at | 主键 (player_id, section_kind)；UPSERT 覆盖旧待写值，绝不积累高频历史。 |
-| platform.integration_outbox | outbox_id, aggregate_id, event_type, payload, occurred_at, attempts, visible_at | 只承载邮件、支付回调、跨服务通知等外部可靠副作用；与业务事务同库提交。 |
+| platform.integration_outbox | outbox_id, aggregate_type, aggregate_id, event_type, payload, occurred_at, attempts, visible_at, lease_until, lease_token, delivered_at, last_error | 只承载需要可靠投递的外部副作用（当前由注册、市场成交等业务事务同库追加生产）；`OutboxWorker` 按租约批量领取、投递成功标记 `delivered_at`、失败退回并按 `visible_at` 重试。 |
+| platform.command_receipts | player_id, request_id, command, payload_hash, result_payload, state_version, created_at, expires_at | 持久化命令幂等回执：`(player_id, request_id)` 唯一，重放相同请求直接返回已存结果；由独立的 `CommandReceiptCleanupWorker` 按 `expires_at` 清理，不归 retention worker。 |
 | platform.compute_jobs | job_id, player_id, target_time, status, input_payload, output_payload, lease_until, updated_at | 冷挂机任务状态；成功任务短留，失败任务保留诊断窗口，结果可归档后删除。 |
 
 ---
@@ -211,7 +213,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 game.player_state_heads.state_version 是玩家的持久化提交头。一次刷盘批次包含一个单调递增的 state_version 和全部脏 section：
 
-1. owner Fiber 在安全点生成独立载荷；
+1. 玩家专属 `PlayerActor` 单写者在安全点生成独立载荷；
 2. 将每个脏 section UPSERT 到 platform.section_flush_queue；
 3. Worker 按玩家聚合领取队列行；
 4. 在一个 PostgreSQL 事务中写入 game.player_state_sections、更新 game.player_state_heads；列表投影只作为后续可重建读模型，不参与玩家真源提交；
@@ -324,7 +326,7 @@ platform.section_flush_queue 是 latest-only 状态队列：
 | Trace | 本地不落盘；正常采样 1%，错误/慢请求 100% | 远端短期保留 |
 | Metrics | 不写本地数据库 | 远端指标平台 |
 
-实现中的 `PostgresRetentionWorker` 每小时以小批量清理已投递 outbox、过期会话、过期命令回执、旧审计事件、已结束冷挂机任务和过期 Data Protection key。它不删除余额、订单、成交或未投递 outbox；`market.trades` 作为权威业务流水按备份/远端归档流程保留，不能把成交流水当作普通日志随意清空。
+实现中的 `PostgresRetentionWorker` 每小时以小批量清理六类数据：已投递 outbox、过期/已撤销会话、旧审计事件、已结束冷挂机任务、过期 Data Protection key、过期 `market.settlement_claims` 领取游标。过期命令回执 `platform.command_receipts` 由独立的 `CommandReceiptCleanupWorker` 按 `expires_at` 清理，不归属 retention worker。它不删除余额、订单、成交或未投递 outbox；`market.trades` 作为权威业务流水按备份/远端归档流程保留，不能把成交流水当作普通日志随意清空。
 
 ---
 
@@ -554,7 +556,7 @@ section 刷盘使用 latest-only 队列即可：
 - 内测账号密码长度统一限制为 6-24 个字符；密码仅以 PBKDF2 哈希、随机 salt 和迭代次数入库，绝不保存明文。
 - Cookie 使用 HttpOnly、Secure、合适的 SameSite 策略；WebSocket 握手继承认证上下文。
 - ComputeNode 使用内部 HTTP `X-Compute-Token` 和网络隔离；没有 PostgreSQL 凭据。生产若增加 mTLS，属于边界层增强，不改变节点无状态契约。
-- PostgreSQL 至少拆分 api_rw、worker_rw、archive_rw、metrics_ro 和 migration_admin 角色。
+- PostgreSQL 角色按 `deploy/postgres-local-roles.sql` 拆分为 `daohua_bootstrap`（schema 所有者、不可登录）、`daohua_api`、`daohua_worker`、`daohua_archive`、`daohua_metrics` 五个 NOLOGIN 权限组，由本地独立登录角色继承；不存在 migration_admin，schema 变更只由 bootstrap 路径或人工迁移脚本完成。
 
 ### 2. 协议版本
 
@@ -563,6 +565,7 @@ WebSocket envelope 固定包含：
 ~~~text
 protocol_version
 message_type
+codec
 request_id
 sequence
 payload
@@ -595,14 +598,14 @@ payload
 
 这是本次 clean-room 重写的一次性实施顺序，不保留旧路径：
 
-1. 冻结本文档的 schema v1、section 编号、Proto 字段和事务不变量。
+1. 冻结本文档的 schema v2、section 编号、协议字段和事务不变量。
 2. 新建 identity/game/economy/market/platform schema 与索引，清空本地旧数据。
 3. 删除旧的整玩家 Blob、旧市场账本 Blob、旧 outbox 适配和旧协议对象；实现新的 section/资产/市场/queue/outbox 适配。
-4. 在 owner Fiber 安全点接入 section 编码和 latest-only queue；Worker 以版本条件提交和删除。
+4. 在 `PlayerActor` 单写者安全点接入 section 编码和 latest-only queue；Worker 以版本条件提交和删除。
 5. 实现资产/市场同事务、幂等键、fence token、审计和错误证据。
 6. 接入 PostgreSQL WAL/pgBackRest/COS 归档，完成 PITR 和磁盘保护演练。
 7. 运行领域确定性测试、数据库集成测试、崩溃恢复、重复请求、并发成交、队列堆积、磁盘接近满和 capacity-target 门禁。
-8. 只有在上述门禁通过后，才把 schema v1 视为当前唯一生产基线；旧实现不再参与运行。
+8. 只有在上述门禁通过后，才把 schema v2 视为当前唯一生产基线；旧实现不再参与运行。
 
 ---
 

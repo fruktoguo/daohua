@@ -30,16 +30,19 @@
 ## 目录边界
 
 - `src/Domain`：纯领域模型、确定性模拟、战斗、世界和市场订单簿；不依赖 ASP.NET Core、数据库或浏览器。
-- `src/Protocol`：HTTP/WebSocket/ComputeNode 共用的纯数据协议；不暴露 ECS、Fiber、数据库对象。
+- `src/Protocol`：HTTP/WebSocket/ComputeNode 共用的纯数据协议；不暴露领域聚合、运行时所有权或数据库对象。
 - `src/Server`：ASP.NET Core 宿主、Cookie 会话、WebSocket、PostgreSQL 适配、市场写者和后台 Worker。
 - `src/ComputeNode`：无状态的高延迟冷挂机批处理节点；没有生产数据库权限。
 - `src/LoadTests`：独立容量与跨边界负载工具，不作为生产依赖。
 - `src/DataTool`：游戏数据 JSON 校验与指纹工具。
 - `frontend`：唯一正式 React/Vite 前端。
 - `tests/Domain.Tests`、`tests/Server.Tests`：领域、协议、编解码和运行时回归门禁。
-- `config/game-data`：版本化游戏数据；运行时通过内嵌资源加载并校验指纹。
+- `config/game-data`：版本化游戏数据；编译期内嵌为程序集资源，运行时经 `GameDataCatalog.LoadEmbedded` 加载并校验指纹。
+- `tools/`：本地开发辅助工具（`config-editor` 可视化配表编辑器、`combat-simulator.html`）。
+- `art/`：美术与图像资源源文件。
+- `deploy/`：生产部署资产（`compose.prod.yaml`、systemd 单元、备份/归档/回滚脚本、Caddy 站点配置）。
 - `data`：运行数据目录（如本地工具需要），不进 Git、不进镜像。
-- `vendor/YuoCore`：固定版本 submodule；本任务不修改其内容。
+- `vendor/YuoCore`：固定版本 submodule；基座引用保留待用，本任务不修改其内容。
 
 ## 本地运行
 
@@ -64,7 +67,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj
 ```
 
-默认监听 `http://127.0.0.1:5128`。首次使用新数据库时会创建 schema v1；本项目不提供旧 schema migration。若本地 schema 与当前基线不一致，应在确认数据无需保留后重新初始化本地数据库。
+默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v2**（`PostgresSchema.Version = 2`），启动时校验版本并拒绝旧 schema。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立 SQL 脚本（该目录可整体删除，全新初始化行为不变）。若本地 schema 与当前基线不一致，应在确认数据无需保留后重新初始化本地数据库。
 
 同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回；只有 schema 版本变化才需要重新初始化本地数据库。
 
@@ -81,7 +84,7 @@ Vite 默认监听 `http://127.0.0.1:15172`，把 `/api` 和 `/ws` 代理到 `127
 当前 HTTP 前缀为 `/api/v1`：
 
 - `/api/v1/meta`：协议、schema 和游戏数据指纹。
-- `/api/v1/catalog/actions`、`/api/v1/catalog/items`：带 ETag 的只读目录。
+- `/api/v1/catalog/actions`、`/api/v1/catalog/items`、`/api/v1/catalog/abilities`、`/api/v1/catalog/base-attributes`、`/api/v1/catalog/equipment`、`/api/v1/catalog/maps`、`/api/v1/catalog/encounters`：带 ETag（游戏数据指纹）的只读目录。
 - `/api/v1/auth/register`、`/api/v1/auth/login`、`/api/v1/auth/logout`、`/api/v1/auth/session`：账号和会话；内测密码长度为 6-24 个字符。
 - `/api/v1/players/{playerId}`：授权后的完整玩家快照。
 - `/api/v1/players/{playerId}/commands`：带 `requestId`、`expectedStateVersion` 的通用命令入口。
@@ -146,13 +149,15 @@ SMOKE_REQUIRE_STATIC=0 node scripts/smoke-production.mjs http://127.0.0.1:5128
 
 ## Docker 与生产部署
 
-生产镜像由多阶段 Dockerfile 构建，只包含发布产物和前端 `dist`，以固定 UID `10001`、只读根文件系统和 `/tmp` tmpfs 运行：
+生产镜像由多阶段 Dockerfile 构建，只包含发布产物和前端 `dist`，以固定 UID `10001`、只读根文件系统和 `/tmp` tmpfs 运行。根 `compose.yaml` 是本地开发编排（app 以 `Development` 运行），本地容器化验证：
 
 ```bash
 docker compose -f compose.yaml up -d --build
 node scripts/smoke-production.mjs http://127.0.0.1:5128
 docker compose -f compose.yaml down
 ```
+
+生产同构拓扑以 `deploy/compose.prod.yaml` 为准（`Production` 环境、独立 `compute-node` 与 `persistence-worker` 服务、端口 `127.0.0.1:15128`，要求预先构建的不可变镜像）。
 
 正式 CCR 发布、服务器更新、备份、Caddy、回滚和持久卷规则见 [`docs/ops/deployment.md`](docs/ops/deployment.md)。完整持久化与 Redis ADR 见 [`docs/backend/commercial-persistence-architecture.md`](docs/backend/commercial-persistence-architecture.md)。
 
