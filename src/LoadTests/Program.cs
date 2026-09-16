@@ -29,6 +29,10 @@ public static class Program
             report = options.Scenario switch
             {
                 "capacity-target" => await CapacityTargetScenario.RunAsync(options),
+                "websocket" => await WebSocketScenario.RunAsync(options),
+                "http-read" => await HttpReadScenario.RunAsync(options),
+                "compute" => await ComputeLoadScenario.RunReportAsync(options),
+                "postgres" => await PostgresCapacityProbe.RunReportAsync(options),
                 _ => throw new ArgumentException($"未知场景: {options.Scenario}")
             };
         }

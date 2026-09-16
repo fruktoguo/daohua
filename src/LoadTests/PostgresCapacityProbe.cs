@@ -7,6 +7,74 @@ namespace DaoHua.LoadTests;
 internal static class PostgresCapacityProbe
 {
     /// <summary>
+    /// 独立 postgres 场景入口：执行真实数据库探测并包装为结构化报告。
+    /// 与 capacity-target 的子探测不同，本场景下数据库不可达一律报告失败（等效 --require-database）。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>postgres 场景压测报告。</returns>
+    public static async Task<LoadTestReport> RunReportAsync(
+        LoadTestOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var process = Process.GetCurrentProcess();
+        process.Refresh();
+        var cpuBefore = process.TotalProcessorTime;
+        var managedBefore = GC.GetTotalMemory(forceFullCollection: true);
+        var started = Stopwatch.GetTimestamp();
+
+        PostgresProbeResult result;
+        try
+        {
+            result = await RunAsync(options, cancellationToken);
+        }
+        catch (Exception exception) when (exception is NpgsqlException or TimeoutException or InvalidOperationException)
+        {
+            return LoadTestReport.Failure("postgres", $"PostgreSQL 真实探测失败: {exception.Message}");
+        }
+
+        var warnings = new List<string>();
+        var errors = 0;
+        if (result.DataBytes > CapacityTargetScenario.DataDiskBudgetBytes) errors++;
+        if (result.WalBytes > CapacityTargetScenario.WalBudgetBytes) errors++;
+        if (result.RemainingQueueRows != 0)
+        {
+            errors++;
+            warnings.Add($"刷新队列残留 {result.RemainingQueueRows} 行未冲刷。");
+        }
+
+        var elapsed = Stopwatch.GetElapsedTime(started);
+        process.Refresh();
+        return new LoadTestReport(
+            "loadtest.v1",
+            "postgres",
+            options.Players,
+            options.StateChangeSeconds,
+            elapsed.TotalMilliseconds,
+            (process.TotalProcessorTime - cpuBefore).TotalMilliseconds,
+            managedBefore,
+            GC.GetTotalMemory(forceFullCollection: false),
+            process.WorkingSet64,
+            0,
+            result.DataBytes + result.WalBytes,
+            result.QueueUpserts,
+            result.QueueRowsFlushed,
+            errors,
+            errors == 0,
+            new Dictionary<string, object?>
+            {
+                ["postgres"] = result,
+                ["budget"] = new
+                {
+                    dataDiskBytes = CapacityTargetScenario.DataDiskBudgetBytes,
+                    walBytes = CapacityTargetScenario.WalBudgetBytes
+                },
+                ["note"] = "探测规模固定使用容量目标账号数（--players 仅记录在报告，不改变写入行数）。"
+            },
+            warnings);
+    }
+
+    /// <summary>
     /// 在临时 schema 中创建账号、section 与刷新队列表，并执行批量写入与最新值冲刷，
     /// 最后估算数据与 WAL 占用。
     /// </summary>

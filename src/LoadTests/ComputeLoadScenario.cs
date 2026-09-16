@@ -7,6 +7,58 @@ namespace DaoHua.LoadTests;
 public static class ComputeLoadScenario
 {
     /// <summary>
+    /// 独立 compute 场景入口：执行本地补算并包装为结构化报告。
+    /// 时间预算按玩家数相对容量目标（<see cref="CapacityTargetScenario.ColdComputeTarget"/>）线性缩放。
+    /// </summary>
+    /// <param name="options">压测选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>compute 场景压测报告。</returns>
+    internal static async Task<LoadTestReport> RunReportAsync(LoadTestOptions options, CancellationToken cancellationToken = default)
+    {
+        var process = Process.GetCurrentProcess();
+        process.Refresh();
+        var cpuBefore = process.TotalProcessorTime;
+        var started = Stopwatch.GetTimestamp();
+        var result = await RunLocalAsync(options.Players, cancellationToken);
+        var elapsed = Stopwatch.GetElapsedTime(started);
+        process.Refresh();
+
+        var budgetMilliseconds = CapacityTargetScenario.ColdComputeBudgetMilliseconds
+                                 * options.Players / CapacityTargetScenario.ColdComputeTarget;
+        var errors = result.Errors;
+        if (result.ElapsedMilliseconds > budgetMilliseconds) errors++;
+        if (result.CompletedPlayers != options.Players) errors++;
+
+        return new LoadTestReport(
+            "loadtest.v1",
+            "compute",
+            options.Players,
+            options.DurationSeconds,
+            elapsed.TotalMilliseconds,
+            (process.TotalProcessorTime - cpuBefore).TotalMilliseconds,
+            result.ManagedBytesBefore,
+            result.ManagedBytesAfter,
+            process.WorkingSet64,
+            0,
+            0,
+            result.Transitions,
+            result.CompletedActions,
+            errors,
+            errors == 0,
+            new Dictionary<string, object?>
+            {
+                ["compute"] = result,
+                ["budget"] = new
+                {
+                    coldComputeMilliseconds = Math.Round(budgetMilliseconds, 1),
+                    referencePlayers = CapacityTargetScenario.ColdComputeTarget,
+                    referenceBudgetMilliseconds = CapacityTargetScenario.ColdComputeBudgetMilliseconds
+                }
+            },
+            []);
+    }
+
+    /// <summary>
     /// 在本地并行模拟指定数量的玩家补算。
     /// </summary>
     /// <param name="players">玩家数量。</param>

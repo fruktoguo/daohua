@@ -64,9 +64,16 @@ static ValidationResult Validate(string directory, bool strict)
             });
             if (document.RootElement.ValueKind == JsonValueKind.Object) objectCount++;
             if (document.RootElement.ValueKind == JsonValueKind.Array) arrayCount++;
-            foreach (var element in EnumerateObjects(document.RootElement))
+            // 只对顶层定义条目做全局唯一性检查：嵌套对象里的 id 是引用键而非定义。
+            var topLevel = document.RootElement.ValueKind == JsonValueKind.Array
+                ? document.RootElement.EnumerateArray().Cast<JsonElement?>()
+                : document.RootElement.ValueKind == JsonValueKind.Object
+                    ? document.RootElement.EnumerateObject().Select(p => (JsonElement?)p.Value)
+                    : [];
+            foreach (var element in topLevel)
             {
-                if (!element.TryGetProperty("id", out var idElement)) continue;
+                if (element is not { ValueKind: JsonValueKind.Object } entry) continue;
+                if (!entry.TryGetProperty("id", out var idElement)) continue;
                 if (idElement.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(idElement.GetString()))
                     throw new DataValidationException($"{relative} 中 id 必须是非空字符串。");
                 var id = idElement.GetString()!;
@@ -94,6 +101,8 @@ static ValidationResult Validate(string directory, bool strict)
             throw new DataValidationException("manifest.json 根节点必须是对象。");
     }
 
+    ValidateReferences(directory);
+
     return new ValidationResult(
         "gamedata.v1",
         Path.GetFileName(directory),
@@ -104,6 +113,166 @@ static ValidationResult Validate(string directory, bool strict)
         Convert.ToHexString(fingerprint.GetHashAndReset()).ToLowerInvariant()[..16],
         strict,
         DateTimeOffset.UtcNow);
+}
+
+/// <summary>
+/// 语义校验：跨域引用完整性、数值范围与世界图连通性。
+/// 这些是真实错误而不是风格建议，因此无论是否 --strict 都强制执行。
+/// </summary>
+static void ValidateReferences(string directory)
+{
+    var monsters = CollectIds(directory, "monsters");
+    var encounters = CollectIds(directory, "encounters");
+    var actions = CollectIds(directory, "actions");
+    var abilities = CollectIds(directory, "abilities");
+    var items = CollectIds(directory, "items");
+    var nodeIds = new HashSet<string>(StringComparer.Ordinal);
+    var mapEdges = new List<(string From, string To, string File)>();
+
+    foreach (var file in JsonFiles(directory, "maps"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var map in Elements(doc.RootElement))
+        {
+            foreach (var node in Elements(Property(map, "nodes")))
+            {
+                var nodeId = Text(node, "id");
+                if (nodeId.Length > 0) nodeIds.Add(nodeId);
+                foreach (var id in StringArray(node, "encounterIds"))
+                    Require(encounters.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的遭遇 {id}。");
+                foreach (var id in StringArray(node, "availableActionIds"))
+                    Require(actions.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的行动 {id}。");
+            }
+            foreach (var edge in Elements(Property(map, "edges")))
+                mapEdges.Add((Text(edge, "fromNodeId"), Text(edge, "toNodeId"), Rel(directory, file)));
+        }
+    }
+
+    foreach (var (from, to, file) in mapEdges)
+    {
+        Require(nodeIds.Contains(from), $"{file} 边起点 {from} 不是已登记节点。");
+        Require(nodeIds.Contains(to), $"{file} 边终点 {to} 不是已登记节点。");
+    }
+
+    // 世界图连通性：所有节点必须能从起始村到达（无向边）。
+    if (nodeIds.Count > 0)
+    {
+        var adjacency = nodeIds.ToDictionary(id => id, _ => new List<string>(), StringComparer.Ordinal);
+        foreach (var (from, to, _) in mapEdges)
+        {
+            if (!adjacency.ContainsKey(from) || !adjacency.ContainsKey(to)) continue;
+            adjacency[from].Add(to);
+            adjacency[to].Add(from);
+        }
+        var start = nodeIds.Contains("node.yunxi-village") ? "node.yunxi-village" : nodeIds.Order(StringComparer.Ordinal).First();
+        var visited = new HashSet<string>(StringComparer.Ordinal) { start };
+        var queue = new Queue<string>([start]);
+        while (queue.Count > 0)
+        {
+            foreach (var next in adjacency[queue.Dequeue()])
+                if (visited.Add(next)) queue.Enqueue(next);
+        }
+        var unreachable = nodeIds.Where(id => !visited.Contains(id)).Order(StringComparer.Ordinal).ToArray();
+        Require(unreachable.Length == 0, $"存在不可达的世界节点: {string.Join(", ", unreachable)}。");
+    }
+
+    foreach (var file in JsonFiles(directory, "encounters"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var encounter in Elements(doc.RootElement))
+        {
+            var id = Text(encounter, "id");
+            var minBudget = Number(encounter, "minBudget", 0);
+            var maxBudget = Number(encounter, "maxBudget", 0);
+            Require(minBudget >= 0 && maxBudget >= minBudget, $"{Rel(directory, file)} 遭遇 {id} 的 minBudget/maxBudget 无效。");
+            foreach (var spawn in Elements(Property(encounter, "randomSpawns")))
+            {
+                Require(monsters.Contains(Text(spawn, "enemyId")), $"{Rel(directory, file)} 遭遇 {id} 引用了不存在的怪物 {Text(spawn, "enemyId")}。");
+                Require(Number(spawn, "weight", 0) > 0 && Number(spawn, "strength", 0) > 0, $"{Rel(directory, file)} 遭遇 {id} 的刷怪权重/强度必须为正数。");
+            }
+            foreach (var eid in StringArray(encounter, "eliteEnemyIds").Concat(StringArray(encounter, "bossEnemyIds")))
+                Require(monsters.Contains(eid), $"{Rel(directory, file)} 遭遇 {id} 引用了不存在的怪物 {eid}。");
+        }
+    }
+
+    foreach (var file in JsonFiles(directory, "monsters"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var monster in Elements(doc.RootElement))
+        {
+            var id = Text(monster, "id");
+            foreach (var skill in Elements(Property(monster, "skills")))
+            {
+                var abilityId = Text(skill, "abilityId");
+                Require(abilities.Contains(abilityId), $"{Rel(directory, file)} 怪物 {id} 引用了不存在的技能 {abilityId}。");
+            }
+            foreach (var drop in Elements(Property(monster, "dropTable")))
+            {
+                Require(items.Contains(Text(drop, "itemId")), $"{Rel(directory, file)} 怪物 {id} 掉落了不存在的物品 {Text(drop, "itemId")}。");
+                var chance = Number(drop, "dropChance", 1);
+                Require(chance > 0 && chance <= 1, $"{Rel(directory, file)} 怪物 {id} 掉落概率 {chance} 超出 (0,1]。");
+            }
+        }
+    }
+
+    foreach (var file in JsonFiles(directory, "actions"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var action in Elements(doc.RootElement))
+        {
+            var id = Text(action, "id");
+            var encounterId = Text(action, "combatEncounterId");
+            if (encounterId.Length > 0)
+                Require(encounters.Contains(encounterId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的遭遇 {encounterId}。");
+            foreach (var nodeId in StringArray(action, "availableNodeIds"))
+                Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的地图节点 {nodeId}。");
+        }
+    }
+}
+
+static HashSet<string> CollectIds(string directory, string subfolder)
+{
+    var ids = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var file in JsonFiles(directory, subfolder))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        // 只收集顶层定义条目的 id；嵌套 id 是引用键。
+        foreach (var element in Elements(doc.RootElement))
+        {
+            if (element.ValueKind == JsonValueKind.Object
+                && element.TryGetProperty("id", out var idElement)
+                && idElement.ValueKind == JsonValueKind.String)
+            {
+                var id = idElement.GetString();
+                if (!string.IsNullOrWhiteSpace(id)) ids.Add(id);
+            }
+        }
+    }
+    return ids;
+}
+
+static IEnumerable<string> JsonFiles(string directory, string subfolder)
+{
+    var path = Path.Combine(directory, subfolder);
+    return Directory.Exists(path)
+        ? Directory.EnumerateFiles(path, "*.json", SearchOption.AllDirectories).OrderBy(f => f, StringComparer.Ordinal)
+        : [];
+}
+
+static string Rel(string directory, string file) => Path.GetRelativePath(directory, file).Replace(Path.DirectorySeparatorChar, '/');
+static IEnumerable<JsonElement> Elements(JsonElement element) => element.ValueKind == JsonValueKind.Array ? element.EnumerateArray() : [];
+static JsonElement Property(JsonElement element, string name) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var child) ? child : default;
+static string Text(JsonElement element, string name) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var child) && child.ValueKind == JsonValueKind.String ? child.GetString() ?? string.Empty : string.Empty;
+static double Number(JsonElement element, string name, double fallback) => element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var child) && child.TryGetDouble(out var value) ? value : fallback;
+static IEnumerable<string> StringArray(JsonElement element, string name)
+{
+    if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty(name, out var child) || child.ValueKind != JsonValueKind.Array) yield break;
+    foreach (var item in child.EnumerateArray())
+        if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } text) yield return text;
+}
+static void Require(bool condition, string message)
+{
+    if (!condition) throw new DataValidationException(message);
 }
 
 static IEnumerable<JsonElement> EnumerateObjects(JsonElement element)

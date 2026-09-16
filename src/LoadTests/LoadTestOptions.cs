@@ -55,7 +55,11 @@ public sealed record LoadTestOptions(
         var scenario = values.GetValueOrDefault("scenario", "capacity-target").Trim().ToLowerInvariant();
         var defaultPlayers = scenario switch
         {
-            "capacity-target" => 5_000,
+            "capacity-target" => CapacityTargetScenario.RegisteredAccountTarget,
+            "websocket" => 100,
+            "http-read" => 500,
+            "compute" => CapacityTargetScenario.ColdComputeTarget,
+            "postgres" => CapacityTargetScenario.RegisteredAccountTarget,
             _ => throw new ArgumentException($"未知场景: {scenario}")
         };
         var defaultDuration = 1;
