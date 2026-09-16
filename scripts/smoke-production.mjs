@@ -2,6 +2,10 @@
  * daohua 新基线跨边界烟测。
  * 使用 Node 内置 net/tls 实现 WebSocket 握手与帧读写，不引入 ws 运行时依赖，
  * 可以正确携带 Cookie/Authorization，并且只使用固定烟测账号避免每次运行创建新账号。
+ *
+ * 鉴权优先级：SMOKE_COOKIE > SMOKE_SESSION_TOKEN > SMOKE_ACCOUNT/SMOKE_PASSWORD 登录注册。
+ * 默认烟测口令仅为本地/内测占位值，满足服务端 6-24 字符要求；对任何真实环境
+ * 必须通过 SMOKE_PASSWORD 注入专用口令，不得复用默认口令。
  */
 import crypto from 'node:crypto'
 import http from 'node:http'
@@ -96,7 +100,7 @@ async function getWebSocketAuthHeaders() {
   if (sessionToken) return { mode: 'bearer-session', headers: { Authorization: `Bearer ${sessionToken}` } }
 
   const account = process.env.SMOKE_ACCOUNT || 'smoke_probe'
-  const password = process.env.SMOKE_PASSWORD || 'Daohua-Smoke-Only-Change-Me-2026!'
+  const password = process.env.SMOKE_PASSWORD || 'Daohua-Smoke-2026!'
   if (!/^[a-zA-Z0-9_]{3,32}$/.test(account) || password.length < 6 || password.length > 24) {
     throw new Error('SMOKE_ACCOUNT/SMOKE_PASSWORD 不符合账号鉴权要求。')
   }

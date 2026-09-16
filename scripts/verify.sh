@@ -32,7 +32,7 @@ if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
 fi
 if [[ -f src/DataTool/DataTool.csproj ]]; then
   printf '%s\n' '==> 游戏数据校验'
-  dotnet run --project src/DataTool/DataTool.csproj --configuration Release --no-build -- validate config/game-data
+  dotnet run --project src/DataTool/DataTool.csproj --configuration Release --no-build -- validate config/game-data --strict
 fi
 
 printf '%s\n' '==> 校验 Compose 配置'

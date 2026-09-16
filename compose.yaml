@@ -92,7 +92,6 @@ services:
       ASPNETCORE_URLS: http://+:8080
       Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=32;Minimum Pool Size=2;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "true"
-      Storage__SchemaVersion: "1"
       Storage__SectionFlushBatchSize: "256"
       Storage__SectionFlushIntervalMilliseconds: "1000"
       Storage__SectionFlushLeaseSeconds: "30"
@@ -200,7 +199,6 @@ services:
       DAOHUA_PROCESS_ROLE: persistence-worker
       Storage__ConnectionString: Host=db;Port=5432;Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=16;Minimum Pool Size=1;Timeout=5;Command Timeout=30;Keepalive=30
       Storage__EnableSchemaBootstrap: "false"
-      Storage__SchemaVersion: "1"
       Storage__SectionFlushBatchSize: "256"
       Storage__SectionFlushIntervalMilliseconds: "1000"
       Storage__SectionFlushLeaseSeconds: "30"
