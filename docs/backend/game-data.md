@@ -51,7 +51,31 @@ flowchart TD
 
 ---
 
-## 4. 版本与发布
+## 4. 行动收益声明（`yields`）
+
+`actions/` 下的行动通过 `yields` 数组逐项声明产出收益。**收益类型与行动类别（`type`）完全解耦**：修炼行动可以产出灵力或 Buff，采集行动也可以产出修为或经验；同一行动允许声明多条收益。旧字段 `qiPerSecond`、`experiencePerRepeat`、`outputs` 已废弃，不存在类别默认收益。
+
+```json
+"yields": [
+  { "kind": "qi", "per": "second", "amount": 1 },
+  { "kind": "mana", "per": "repeat", "amount": 1 },
+  { "kind": "experience", "per": "repeat", "amount": 10 },
+  { "kind": "item", "per": "repeat", "id": "item.ningxue-grass", "amount": 3 },
+  { "kind": "buff", "per": "repeat", "id": "buff.x", "name": "凝神", "amount": 1,
+    "durationSeconds": 60, "modifiers": { "hpRegen": 2 } }
+]
+```
+
+- `kind`：`qi`（修为）｜`mana`（灵力，入账 `Combat.Manapoints`）｜`hitpoints`（气血）｜`experience`（历练经验）｜`item`（物品）｜`buff`（增益授权）。
+- `per`：`second`（按推进整秒逐秒结算，离线与在线位级一致）｜`repeat`（单轮完成时结算）。`item` 与 `buff` 仅允许 `repeat`。
+- `amount`：正有限数；`buff` 的 `amount` 表示叠加层数。
+- `item` 需携带合法 `id`；`buff` 需携带 `id`、`name`、`durationSeconds`（>0）与可选 `modifiers`（`hpRegen`/`mpRegen`/`attackSpeedRatio`/`damageAbsorptionRatio`）。资源类收益禁止携带实体标识字段。
+- 灵力与气血收益按当前属性上限截断；持续消耗品倍率作用于数值型收益，Buff 授权不受影响。
+- 输入材料仍由 `inputs` 声明，在单轮完成时扣除。
+
+---
+
+## 5. 版本与发布
 
 修改任何游戏数据时必须同步提升 `manifest.json` 的 `contentVersion`，并运行：
 
@@ -65,7 +89,7 @@ scripts/verify.sh
 
 ---
 
-## 5. 角色表现
+## 6. 角色表现
 
 角色与怪物使用统一的表现描述：
 

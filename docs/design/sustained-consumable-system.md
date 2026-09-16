@@ -133,7 +133,7 @@ public sealed class AutoUseSlot
 | **动作 ID** | `cultivation.draw-qi` | `cultivation.draw-qi` | 保持稳定强类型 ID |
 | **动作名称** | 引气入体 | 引气入体 | 炼气期核心基础吐纳 |
 | **基础耗时** | 10 秒 | **10 秒** (`10.0`s) | 确定性动作周期 |
-| **基础产出** | 10 灵气 (`resource.qi: 10`) | **10 修为** (`FoundationExp = 10.0`)<br>**1 灵力** (`Qi / Manapoints = 1.0`) | 明确区分修为积累与灵力资源 |
+| **基础产出** | 10 灵气 (`resource.qi: 10`) | **10 修为** + **1 灵力** + **10 历练经验** | 由行动 `yields` 声明：`qi` 每秒 1、`mana` 每轮 1、`experience` 每轮 10，明确区分修为积累、灵力资源与经验 |
 | **执行类型** | `timed` | `timed` | 定时循环动作 |
 
 ### 4.2 引气丹道具 (`item.qi-gathering-pill`)
