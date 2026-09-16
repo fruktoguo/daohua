@@ -112,3 +112,11 @@ scripts/verify.sh
 - `live2d`、`model3d`：为后续渲染器保留；当前客户端优先显示 `poster`，没有海报时回退到文本。
 
 协议只传渲染器类型与资源地址，不把 Live2D 或 3D 引擎对象写入领域模型。
+
+---
+
+## 7. 斗法与击杀收益配表字段
+
+- `duel.json`（`id = duel.settings`）：`encounterChancePerBattle`（每次进入战斗计数 +1 概率）、`powerBandRatio`（实力匹配 ± 带宽）、`defeatCooldownSeconds`（败北冷却）、`stagedSettleSeconds`（暂存入账延迟）、`dropChanceBonusPercent`（斗法爆率加成点数）、`maxDuelSeconds`（剧本超时判平）、`maxBattleReports`（战报归档上限）。所有斗法数值以该配表为唯一真源，禁止代码内硬编码。
+- 怪物 `monsters/*.json`：`qiReward`（修为）、`experienceReward`（底蕴）、`rootExpReward`（六维经验总量）为击杀结算字段，缺省为 0。
+- 功法 `abilities/*.json`：`rootAttribute` 声明六维归属（`stamina`/`intelligence`/`attack`/`defense`/`swordsmanship`/`talisman`），`rootExpReward` 按已装备功法槽位的归属集合均分；未声明或无功法时六维均分。

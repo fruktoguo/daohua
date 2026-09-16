@@ -141,7 +141,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 | game.player_state_sections | player_id, section_kind, section_version, schema_version, codec, payload, raw_bytes, stored_bytes, checksum, updated_at | 主键 (player_id, section_kind)；每个 section 一行；只保留最新版本。 |
 | game.player_action_queue | player_id, slot, action_id, action_payload, action_version, status, next_due_at, idempotency_key | 只保存当前待执行/进行中的行动；完成后删除或转为最新状态，不记录每个 Tick。 |
 | game.player_runtime_leases | player_id, owner_instance_id, lease_until, renewed_at | 玩家运行时所有权租约：标识哪个宿主实例持有该玩家的 `PlayerActor` 单写者；命令执行前续租校验，防止多实例并发写同一聚合。 |
-| game.player_projection | player_id, realm_rank, current_node_id, presence, last_active_at, projection_version | 供在线状态展示、玩家列表、运营检索与冷挂机筛选的可重建读模型投影；由玩家提交路径顺带更新，不参与玩家真源提交，可随时从 section 重建。 |
+| game.player_projection | player_id, realm_rank, current_node_id, presence, last_active_at, projection_version | 供在线状态展示、玩家列表、运营检索与冷挂机筛选的可重建读模型投影；由 section 刷盘提交事务（`PostgresSectionRepository.ApplyBatchAsync`）顺带 `INSERT ... ON CONFLICT (player_id) DO UPDATE` 维护，不参与玩家真源提交，可随时从 section 重建。presence 由 settings section 解码而来：玩家卸载/断线路径先把聚合 presence 落为 offline 再强刷，使投影可区分在线与可冷挂机玩家。 |
 
 ### 3. economy：资产与不可变账本
 
@@ -180,7 +180,14 @@ OTel/结构化日志 ───────────► 远端观测平台
 | platform.section_flush_queue | player_id, section_kind, state_version, payload, codec, attempts, next_attempt_at, lease_until, updated_at | 主键 (player_id, section_kind)；UPSERT 覆盖旧待写值，绝不积累高频历史。 |
 | platform.integration_outbox | outbox_id, aggregate_type, aggregate_id, event_type, payload, occurred_at, attempts, visible_at, lease_until, lease_token, delivered_at, last_error | 只承载需要可靠投递的外部副作用（当前由注册、市场成交等业务事务同库追加生产）；`OutboxWorker` 按租约批量领取、投递成功标记 `delivered_at`、失败退回并按 `visible_at` 重试。 |
 | platform.command_receipts | player_id, request_id, command, payload_hash, result_payload, state_version, created_at, expires_at | 持久化命令幂等回执：`(player_id, request_id)` 唯一，重放相同请求直接返回已存结果；由独立的 `CommandReceiptCleanupWorker` 按 `expires_at` 清理，不归 retention worker。 |
-| platform.compute_jobs | job_id, player_id, target_time, status, input_payload, output_payload, lease_until, updated_at | 冷挂机任务状态；成功任务短留，失败任务保留诊断窗口，结果可归档后删除。 |
+| platform.compute_jobs | job_id, player_id, target_time, status, input_payload, output_payload, lease_until, lease_token, next_attempt_at, last_error, attempts, updated_at | 冷挂机任务状态；status 取 pending/leased/succeeded/dead；同一玩家最多一个未完结任务由部分唯一索引 ux_compute_jobs_open 保证；成功任务短留，dead 任务保留诊断窗口，终态行由 retention worker 按 status+updated_at 清理。 |
+
+主服务 → ComputeNode 冷挂机派发链已实现，链路为：
+
+1. `ColdCatchUpWorker` 周期性扫描 `game.player_projection`（presence=offline、last_active_at 落在 48h 封顶窗口内、已过断线宽限、无存活运行时租约、无未完结任务），经 `IPlayerStateRepository.LoadAsync` 读取最新有效 section（含 durable 队列叠加），编码为 compute.v1 `AdvanceJobRequest` JSON 作为 input_payload 写入 `platform.compute_jobs`；job_id 由玩家与目标时刻确定性派生，重复入队走 upsert 去重。
+2. `ComputeDispatcherWorker` 以 `FOR UPDATE SKIP LOCKED` 批量领取到期任务（含租约过期的孤儿 leased 行），组装 `AdvanceBatchRequest` 携带 `X-Compute-Token` 与游戏数据指纹 POST 到 `ComputeNode:Endpoints`。
+3. 每个 `AdvanceJobResult` 成功时经 `PostgresSectionRepository.ApplyComputeResultAsync` 落库：先锁提交头并要求 `state_version == SourceStateVersion`，玩家已上线或版本漂移则整体丢弃结果并记日志，绝不覆盖在线写者；随后更新 section 与提交头（同一加锁顺序，与刷盘 worker 无死锁环）。
+4. 失败语义：节点返回 Retryable 失败或响应缺失按指数退避重试；载荷非法、输出污染等不可重试错误直接置 `dead`；HTTP/网络层失败按租约令牌整批退回 pending；领取次数超过 `ComputeNode:MaxAttempts` 一律 dead。`ComputeNode:Endpoints/Token` 未配置时派发器与扫描器安全停用，任务保留 pending，主服务不做内联补算。
 
 ---
 
@@ -397,7 +404,7 @@ section 写入量
 | 市场写者失联 | 租约到期后新实例取得更高 fence；旧实例写入被拒绝 | 不能只靠客户端或 Redis 锁判断所有权。 |
 | 磁盘接近满 | 进入容量保护模式，暂停非关键写放大任务并报警 | 不能删除权威状态换空间。 |
 | WAL/备份归档失败 | /readyz 反映降级，保留本地最小恢复窗口并立即报警 | 不能把“备份脚本执行过”当成可恢复证明。 |
-| ComputeNode 不可用 | 在线服务继续运行；冷挂机任务延期或回到主服务小批量补算 | 不能让远端节点直接写生产数据库。 |
+| ComputeNode 不可用 | 在线服务继续运行；冷挂机任务保留 pending 按退避等待节点恢复，主服务不做内联补算 | 不能让远端节点直接写生产数据库。 |
 
 每季度至少进行一次 PITR 恢复演练，并记录：目标时间点、恢复耗时、丢失窗口、校验行数、应用重连和市场重建结果。
 

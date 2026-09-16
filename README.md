@@ -129,17 +129,33 @@ dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
   --scenario capacity-target --require-database
 ```
 
+压测工具支持的场景：`capacity-target`（容量综合门禁）、`websocket`（真实 WS 连接与协议握手）、`http-read`（只读 HTTP 端点）、`compute`（本地冷挂机补算）、`postgres`（PostgreSQL/WAL 真实探测）。各场景参数语义以 `src/LoadTests/LoadTestOptions.cs` 为准。
+
 单独运行真实 WebSocket 或 HTTP 读压测：
 
 ```bash
 dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
   --scenario websocket --players 100 --duration-seconds 30 \
-  --url ws://127.0.0.1:5128/ws
+  --require-server --url ws://127.0.0.1:5128/ws
 
 dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
   --scenario http-read --players 500 --duration-seconds 30 \
   --url http://127.0.0.1:5128
 ```
+
+`websocket` 场景的 `--players` 表示并发连接数，`--concurrency` 只限制同时握手的连接数；`/ws` 端点要求 Cookie 会话，`--require-server` 会先为每个连接注册 `loadtest-ws-*` 压测账号（注册接口限流为每源 IP 12 次/分钟，超出部分自动降级为 `authMode=anonymous` 的 Upgrade 探测）。`http-read` 场景的实际并发由 `--concurrency` 决定，`--players` 仅记录在报告中。
+
+单独运行计算补算或数据库探测：
+
+```bash
+dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
+  --scenario compute --players 2000
+
+dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
+  --scenario postgres --database 'Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=daohua-local-dev'
+```
+
+`compute` 场景的 `--players` 表示补算玩家数，时间预算按 2000 人/30 秒线性缩放；`postgres` 场景在临时 schema 中探测，数据库不可达即报告失败。
 
 `scripts/smoke-production.mjs` 验证健康、就绪、同源静态入口（容器模式）和 WebSocket 首帧。直接从源码启动 API 时如果没有 `wwwroot`，可用 `SMOKE_REQUIRE_STATIC=0` 只验证 API/WS 边界：
 

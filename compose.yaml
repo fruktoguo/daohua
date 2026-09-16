@@ -204,6 +204,9 @@ services:
       Storage__SectionFlushLeaseSeconds: "30"
       Storage__OutboxBatchSize: "128"
       Storage__OutboxPollIntervalMilliseconds: "1000"
+      ComputeNode__Enabled: "true"
+      ComputeNode__Endpoints: http://compute-node:8090
+      ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=1777

@@ -149,6 +149,7 @@ src/Domain/
 │   ├── PlayerAggregate.cs   # 聚合根 + 各 PlayerXxxState 分段
 │   ├── PlayerSection.cs     # PlayerSectionKind / PlayerStateHead / PlayerSectionSnapshot / SectionFlushItem
 │   ├── PlayerLoadout.cs
+│   ├── PlayerDuel.cs        # 斗法分段：遭遇计数/冷却/暂存区/战报账本/预约-挂载-弃战
 │   └── PlayerStateDocument.cs # 分段持久化文档与恢复校验
 │
 ├── Simulation/              # 唯一确定性推进真源
@@ -156,6 +157,7 @@ src/Domain/
 │
 ├── Combat/                  # 战斗结算与面板解算
 │   ├── CombatModels.cs
+│   ├── DuelModels.cs        # 斗法剧本推演（DuelScriptEngine）与单视角回放状态
 │   ├── CombatSkillEngine.cs
 │   ├── EncounterWaveSelector.cs
 │   └── PlayerAttributeResolver.cs

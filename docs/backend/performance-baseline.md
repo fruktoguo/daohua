@@ -11,12 +11,14 @@
 
 本文以下数字和原始命令均为 2026-08-06 历史证据，不代表当前实现已通过相同负载。旧 `online`、`idle-offline` 等场景及历史 debug 端点已删除；保留原始命令用于追溯，不应直接执行或为重跑恢复旧接口。
 
-当前支持 `capacity-target`、`websocket`、`http-read`、`compute`、`postgres`，参数以 `src/LoadTests/LoadTestOptions.cs` 为准。实际 PostgreSQL 容量门禁使用 `scripts/capacity-target.sh`；跨网络采样先启动本地服务，再执行：
+当前支持 `capacity-target`、`websocket`、`http-read`、`compute`、`postgres`，参数以 `src/LoadTests/LoadTestOptions.cs` 为准。参数语义：`websocket` 的 `--players` 为并发连接数、`--concurrency` 为同时握手上限；`http-read` 的实际并发由 `--concurrency` 决定（`--players` 仅入报告）；`compute` 的 `--players` 为补算玩家数；`postgres` 的探测规模固定为容量目标账号数。实际 PostgreSQL 容量门禁使用 `scripts/capacity-target.sh`；跨网络采样先启动本地服务，再执行：
 
 ```bash
 dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- --scenario websocket --players 500 --duration-seconds 30 --require-server --url ws://127.0.0.1:5128/ws
 dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- --scenario http-read --players 500 --duration-seconds 30 --require-server --url http://127.0.0.1:5128
 ```
+
+`websocket --require-server` 会为每个连接注册 `loadtest-ws-*` 账号换取会话 Cookie；注册接口限流 12 次/分钟/源 IP，大规模连接数会触发 429 并把其余连接降级为 `authMode=anonymous` 的 Upgrade 可达性探测。`postgres` 场景数据库不可达即输出 Failure 报告。
 
 新结果应独立记录日期、提交、环境和原始输出，不覆盖下方历史数据。当前指标接口为需认证的 `/api/v1/metrics` 与 `/api/v1/market/metrics`，生产 Caddy 拦截公网访问；旧 `/api/metrics` 仅为历史记录。
 
