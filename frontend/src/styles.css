@@ -991,6 +991,13 @@ input[type="checkbox"] {
   background: rgba(200, 82, 63, 0.12);
 }
 
+/* 斗法（PVP）徽标 */
+.badge-duel {
+  border-color: rgba(148, 103, 189, 0.5);
+  color: #c9a2e8;
+  background: rgba(148, 103, 189, 0.14);
+}
+
 .queue-backdrop {
   position: fixed;
   inset: 0;
@@ -3347,6 +3354,58 @@ input[type="checkbox"] {
 .quantity-selector--compact input {
   width: 64px;
   flex: 0 0 64px;
+}
+
+/* 斗法勾选块：仅 combat-encounter 行动弹窗展示 */
+.duel-option {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 12px;
+  border: 1px solid rgba(148, 103, 189, 0.35);
+  background: rgba(148, 103, 189, 0.06);
+}
+
+.duel-option-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.duel-option-toggle input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #9467bd;
+}
+
+.duel-option-toggle strong {
+  color: #c9a2e8;
+  font-size: 13px;
+}
+
+.duel-option-desc {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.duel-option-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.duel-option-status .duel-cooldown {
+  color: #e89a8c;
 }
 
 .action-modal-submit {

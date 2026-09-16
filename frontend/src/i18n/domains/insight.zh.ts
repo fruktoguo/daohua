@@ -195,6 +195,9 @@ export const insightZh = {
       cultivation: '修炼',
       cultivationValue: '{hours} 时',
       cultivationTooltip: '潜心闭关修炼总时长（{seconds} 秒）',
+      lifespan: '寿元',
+      lifespanValue: '{age} / {lifespan} 岁',
+      lifespanTooltip: '当前年龄与寿元上限（年岁随时间自然流逝）',
     },
     badge: {
       levelBadge: '修为等阶 Lv.{level}',

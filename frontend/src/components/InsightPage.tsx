@@ -65,12 +65,13 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     const consciousnessLevel = Math.floor(Math.max(10, loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识 10
     const agilityLevel = Math.floor(Math.max(10, loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法 10
 
-    // 格式化经验进度：当前等级初始 0 经验，升级所需经验 = 下一级累计经验 - 当前级累计经验 (例如 0/2.71万)
-    const getProgress = (level: number) => {
+    // 格式化经验进度：升级所需经验 = 下一级累计经验 - 当前级累计经验；
+    // 当前经验 = loadout 下发的真实六维经验 - 当前级累计经验（缺省按 0 处理）。
+    const getProgress = (level: number, exp: number | undefined) => {
       const baseExp = getCumulativeExpForLevel(level)
       const nextExp = getCumulativeExpForLevel(level + 1.0)
       const req = Math.max(1, Math.floor(nextExp - baseExp))
-      const cur = 0
+      const cur = Math.min(req, Math.max(0, Math.floor((exp ?? 0) - baseExp)))
       return {
         current: cur,
         max: req,
@@ -83,7 +84,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'stamina',
         tone: 'emerald' as PillTone,
         level: staminaLevel,
-        progress: getProgress(staminaLevel),
+        progress: getProgress(staminaLevel, loadout?.staminaExp),
         bonuses: [
           { value: `+${Math.floor(staminaLevel)}%`, tone: 'emerald' as PillTone },
           { value: `+${Math.floor(staminaLevel)}%`, tone: 'bronze' as PillTone },
@@ -94,7 +95,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'meridians',
         tone: 'cyan' as PillTone,
         level: meridiansLevel,
-        progress: getProgress(meridiansLevel),
+        progress: getProgress(meridiansLevel, loadout?.intelligenceExp),
         bonuses: [
           { value: `+${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
           { value: `+${Math.floor(meridiansLevel)}%`, tone: 'violet' as PillTone },
@@ -105,7 +106,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'bone',
         tone: 'amber' as PillTone,
         level: boneLevel,
-        progress: getProgress(boneLevel),
+        progress: getProgress(boneLevel, loadout?.defenseExp),
         bonuses: [
           { value: `+${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
           { value: `+${Math.floor(boneLevel)}%`, tone: 'silver' as PillTone },
@@ -116,7 +117,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'strength',
         tone: 'crimson' as PillTone,
         level: strengthLevel,
-        progress: getProgress(strengthLevel),
+        progress: getProgress(strengthLevel, loadout?.attackExp),
         bonuses: [
           { value: `+${Math.floor(strengthLevel)}%`, tone: 'crimson' as PillTone },
           { value: `+${Math.floor(strengthLevel)}%`, tone: 'slate' as PillTone },
@@ -127,7 +128,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'consciousness',
         tone: 'purple' as PillTone,
         level: consciousnessLevel,
-        progress: getProgress(consciousnessLevel),
+        progress: getProgress(consciousnessLevel, loadout?.swordsmanshipExp),
         bonuses: [
           { value: `+${Math.floor(consciousnessLevel * 2)}%`, tone: 'purple' as PillTone },
           { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
@@ -137,7 +138,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'agility',
         tone: 'teal' as PillTone,
         level: agilityLevel,
-        progress: getProgress(agilityLevel),
+        progress: getProgress(agilityLevel, loadout?.talismanExp),
         bonuses: [
           { value: `+${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
           { value: `+${Math.floor(agilityLevel)}%`, tone: 'muted' as PillTone },
@@ -152,6 +153,12 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     loadout?.staminaLevel,
     loadout?.swordsmanshipLevel,
     loadout?.talismanLevel,
+    loadout?.attackExp,
+    loadout?.defenseExp,
+    loadout?.intelligenceExp,
+    loadout?.staminaExp,
+    loadout?.swordsmanshipExp,
+    loadout?.talismanExp,
   ])
 
   // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
@@ -211,12 +218,13 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const earthBoostPercent = PercentValue.linear(0.0)
   const earthReductionPercent = PercentValue.linear(0.0)
 
-  // 4. 生平记录 (斩妖为怪物击败数，破敌严格为击败玩家数，败走为败退次数，苦修为修炼时长，全部向下取整)
+  // 4. 生平记录 (斩妖为怪物击败数，破敌严格为斗法击败玩家数，败走为败退次数，苦修为修炼时长，全部向下取整)
+  const duel = useGameStore(state => state.duel)
   const biographyData = useMemo(() => {
     const totalMonsters: number = Math.floor(stats.combatEnemiesDefeated ?? 0.0)
-    const playersDefeated: number = Math.floor(stats.combatPlayersDefeated ?? 0.0)
+    const playersDefeated: number = Math.floor((duel?.reports ?? []).reduce((sum, report) => sum + report.duelWins, 0))
     const totalDefeats: number = Math.floor(stats.combatLosses ?? 0.0)
-    const cultivationSeconds: number = Math.floor((stats.cultivationCycles ?? 0.0) * 10.0)
+    const cultivationSeconds: number = Math.floor(stats.cultivationSeconds ?? 0.0)
     const cultivationHours: number = Math.floor(cultivationSeconds / 3600.0)
 
     return {
@@ -228,9 +236,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     }
   }, [
     stats.combatEnemiesDefeated,
-    stats.combatPlayersDefeated,
     stats.combatLosses,
-    stats.cultivationCycles,
+    stats.cultivationSeconds,
+    duel,
   ])
 
   return (
@@ -626,13 +634,16 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <h4 className="insight-pill-group-title">{t('insight.bio.groupAdventure')}</h4>
               <div className="insight-pill-group-items">
                 <PillStatLabel label={t('insight.bio.totalMonsters')} value={stats.combatEnemiesDefeated === undefined ? t('common.emptyData') : biographyData.totalMonsters} tone="crimson" tooltip={t('insight.bio.totalMonstersTooltip')} />
+                <PillStatLabel label={t('insight.bio.normalKills')} value={stats.normalKills === undefined ? t('common.emptyData') : Math.floor(stats.normalKills)} tone="bronze" tooltip={t('insight.bio.normalKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.eliteKills')} value={stats.eliteKills === undefined ? t('common.emptyData') : Math.floor(stats.eliteKills)} tone="gold" tooltip={t('insight.bio.eliteKillsTooltip')} />
+                <PillStatLabel label={t('insight.bio.bossKills')} value={stats.bossKills === undefined ? t('common.emptyData') : Math.floor(stats.bossKills)} tone="crimson" tooltip={t('insight.bio.bossKillsTooltip')} />
               </div>
             </div>
 
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupRivalry')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.playersDefeated')} value={stats.combatPlayersDefeated === undefined ? t('common.emptyData') : biographyData.playersDefeated} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
+                <PillStatLabel label={t('insight.bio.playersDefeated')} value={duel === undefined ? t('common.emptyData') : biographyData.playersDefeated} tone="emerald" tooltip={t('insight.bio.playersDefeatedTooltip')} />
                 <PillStatLabel label={t('insight.bio.totalDefeats')} value={stats.combatLosses === undefined ? t('common.emptyData') : biographyData.totalDefeats} tone="crimson" tooltip={t('insight.bio.totalDefeatsTooltip')} />
               </div>
             </div>
@@ -640,7 +651,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-pill-group">
               <h4 className="insight-pill-group-title">{t('insight.bio.groupCultivation')}</h4>
               <div className="insight-pill-group-items">
-                <PillStatLabel label={t('insight.bio.cultivation')} value={stats.cultivationCycles === undefined ? t('common.emptyData') : t('insight.bio.cultivationValue', { hours: formatNumber(biographyData.cultivationHours) })} tone="gold" />
+                <PillStatLabel label={t('insight.bio.cultivation')} value={stats.cultivationSeconds === undefined ? t('common.emptyData') : t('insight.bio.cultivationValue', { hours: formatNumber(biographyData.cultivationHours) })} tone="gold" />
+                <PillStatLabel label={t('insight.bio.lifespan')} value={stats.ageSeconds === undefined || stats.lifespanYears === undefined ? t('common.emptyData') : t('insight.bio.lifespanValue', { age: formatNumber(Math.floor(stats.ageSeconds / 31536000)), lifespan: formatNumber(Math.floor(stats.lifespanYears)) })} tone="emerald" tooltip={t('insight.bio.lifespanTooltip')} />
               </div>
             </div>
           </div>

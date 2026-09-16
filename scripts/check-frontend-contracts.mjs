@@ -27,7 +27,7 @@ try {
   }
   const bytes = Buffer.from(JSON.stringify(payload))
   const section = {
-    section: 'world', schemaVersion: 2, sectionVersion: 1, codec: 'json',
+    section: 'world', schemaVersion: 3, sectionVersion: 1, codec: 'json',
     payloadBase64: bytes.toString('base64'), storedBytes: bytes.length, rawBytes: bytes.length,
     checksum: createHash('sha256').update(bytes).digest('hex'),
   }

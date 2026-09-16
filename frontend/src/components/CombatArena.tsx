@@ -1209,17 +1209,20 @@ export const CombatArena = memo(function CombatArena({
       const name = pending
         ? t('combat.duel.sensing')
         : t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
-      const maxHp = expedition.enemyMaxHitpoints ?? Math.max(1, expedition.enemyHitpoints ?? 1)
-      const maxMp = expedition.enemyMaxManapoints ?? Math.max(1, expedition.enemyManapoints ?? 1)
+      const rawHp = expedition.enemyHitpoints ?? 0
+      const rawMp = expedition.enemyManapoints ?? 0
+      const maxHp = Math.max(1, expedition.enemyMaxHitpoints ?? 0, rawHp)
+      const maxMp = Math.max(1, expedition.enemyMaxManapoints ?? 0, rawMp)
       return [{
         actorKey: `enemy:duel:${expedition.duel?.opponentName || 'pending'}`,
         enemyId: null,
         name,
         seal: name.slice(0, 1),
-        // 感应阶段尚无对手实体：以满额资源条占位展示，避免落入阵亡置灰样式。
-        hp: pending ? maxHp : (expedition.enemyHitpoints ?? maxHp),
+        // 斗法相位不下发 enemies[] 镜像：无对手血条数据（或为 0）时以满额条占位，
+        // 避免落入阵亡置灰样式；实际落败由相位切换/日志表达，不在此处体现。
+        hp: rawHp > 0 ? rawHp : maxHp,
         maxHp,
-        mp: pending ? maxMp : (expedition.enemyManapoints ?? maxMp),
+        mp: rawMp > 0 ? rawMp : maxMp,
         maxMp,
         action: expedition.enemyAction ?? null,
         visual: null,

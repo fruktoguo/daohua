@@ -13,7 +13,7 @@ interface RenameModalProps {
 }
 
 /** 道号字符格式校验规则（2-12字符，支持汉字、英文字母、数字与下划线） */
-const NAME_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/
+const NAME_REGEX = /^[\p{L}\p{N}_·]{2,12}$/u
 
 /**
  * 修改修士道号模态窗组件 (RenameModal)
@@ -29,7 +29,7 @@ export const RenameModal = memo(function RenameModal({ open, onClose }: RenameMo
   const validate = (value: string): string | null => {
     const trimmed = value.trim()
     if (!trimmed) return t('app.rename.errorEmpty')
-    if (trimmed.length < 1 || trimmed.length > 64) return t('app.rename.errorLength')
+    if (trimmed.length < 2 || trimmed.length > 12) return t('app.rename.errorLength')
     if (!NAME_REGEX.test(trimmed)) return t('app.rename.errorFormat')
     if (trimmed === currentName) return t('app.rename.errorSame')
     return null

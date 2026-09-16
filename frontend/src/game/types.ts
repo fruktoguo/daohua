@@ -698,6 +698,12 @@ export interface Stats {
   combatDamageTaken?: number
   combatEnemiesDefeated?: number
   combatPlayersDefeated?: number
+  normalKills?: number
+  eliteKills?: number
+  bossKills?: number
+  cultivationSeconds?: number
+  ageSeconds?: number
+  lifespanYears?: number
 }
 
 /**
@@ -1160,6 +1166,6 @@ export interface MarketOrder {
   sequence: number
   /** 创建时间 ISO 字符串 */
   createdAt: string
-  /** 过期时间 ISO 字符串 */
-  expiresAt: string
+  /** 过期时间 ISO 字符串；无期限订单为 null */
+  expiresAt: string | null
 }

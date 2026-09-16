@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
+import { BattleReportPanel } from './components/BattleReportPanel'
 import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
@@ -1823,6 +1824,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
           <CombatArena onOpenAction={setSelectedAction} />
           <div className="expedition-duel-config">
             <CombatLoadoutPanel />
+            <BattleReportPanel />
           </div>
         </div>
       </div>

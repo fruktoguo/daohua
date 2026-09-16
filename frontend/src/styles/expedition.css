@@ -830,6 +830,10 @@
   border-color: rgba(117, 169, 173, 0.4);
 }
 
+.nearby-card.is-npc {
+  border-color: rgba(201, 180, 109, 0.42);
+}
+
 .nearby-card.is-monster {
   border-color: rgba(201, 180, 109, 0.3);
 }
@@ -2622,6 +2626,145 @@
   user-select: none;
   pointer-events: none;
   opacity: 0.85;
+}
+
+/* ===== 战斗收益战报面板（当前战报 / 斗法暂存区 / 近期历史） ===== */
+.battle-report-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(205, 133, 77, 0.28);
+  font-size: 12px;
+}
+
+.battle-report-title {
+  color: var(--gold-bright);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.battle-report-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.battle-report-body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.battle-report-current {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(201, 180, 109, 0.05);
+}
+
+.battle-report-current-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.battle-report-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-report-metrics strong {
+  color: var(--gold-bright);
+  font-weight: 600;
+}
+
+.battle-report-duel-record {
+  color: #c9a2e8;
+}
+
+.battle-report-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.battle-report-staged {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(148, 103, 189, 0.35);
+  background: rgba(148, 103, 189, 0.05);
+}
+
+.battle-report-staged-title,
+.battle-report-history-title {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+.battle-report-staged-list {
+  display: grid;
+  gap: 4px;
+}
+
+.battle-report-staged-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.battle-report-staged-item em {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-report-history {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.battle-report-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--gold-faint);
+}
+
+.battle-report-row > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.battle-report-row-time {
+  color: var(--text-dim);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-report-row .battle-report-metrics {
+  grid-column: 1 / -1;
 }
 
 .combat-trigger-row {

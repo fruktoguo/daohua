@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react'
 import { gameClient } from '../network/gameClient'
+import { calculateRootLevelAndProgress } from '../game/combatConstants'
 import { describeAbility, formatAbilityCategory } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { resolveItemIconUrl } from '../game/itemIcons'
@@ -83,6 +84,9 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   }
 
   const learnedAbilityIds = useMemo(() => new Set(combat.learnedAbilityIds ?? []), [combat.learnedAbilityIds])
+  const abilityExperiences = combat.abilityExperiences ?? {}
+  // 已习得技能的参悟等级由技能经验经立方曲线导出，与服务端 AbilityExpCurve 同式。
+  const abilityLevelFor = (abilityId: string) => calculateRootLevelAndProgress(abilityExperiences[abilityId] ?? 0).level
 
   // 获得已学功法定义列表
   const learnedAbilities = useMemo(() => {
@@ -177,12 +181,12 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
               <input
                 aria-label={t('app.combatPanel.levelAria', { name: ability.name })}
                 className="combat-ability-level-input"
-                max={100}
+                max={abilityLevelFor(ability.abilityId)}
                 min={1}
                 onChange={event => update({
                   abilitySlots: combat.abilitySlots.map((current, slotIndex) => (
                     slotIndex === index
-                      ? { ...current, level: Math.max(1, Math.min(100, Number(event.target.value) || 1)) }
+                      ? { ...current, level: Math.max(1, Math.min(abilityLevelFor(ability.abilityId), Number(event.target.value) || 1)) }
                       : current
                   )),
                 })}
@@ -259,8 +263,10 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         </div>
 
         <div className="abilities-list">
-          {inventory.filter(item => item.amount >= 1 && item.itemId.startsWith('item.tome.')
-            && !learnedAbilityIds.has(`ability.${item.itemId.slice('item.tome.'.length)}`)).map(item => (
+          {inventory.filter(item => item.amount >= 1
+            && (item.itemId.startsWith('item.tome.')
+              || (item.itemId.startsWith('item.fragment.')
+                && learnedAbilityIds.has(`ability.${item.itemId.slice('item.fragment.'.length)}`)))).map(item => (
             <button key={item.itemId} type="button" className="abilities-card"
               onClick={() => gameClient.sendCommand('ability.learn', { itemId: item.itemId })}>
               <ItemIcon itemId={item.itemId} />
@@ -274,7 +280,8 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
           ) : (
             learnedAbilities.map(ability => {
               const equippedIndex = getEquippedSlotIndex(ability.abilityId)
-              const tooltipContent = describeAbility(ability, 1)
+              const learnedLevel = abilityLevelFor(ability.abilityId)
+              const tooltipContent = describeAbility(ability, learnedLevel)
 
               return (
                 <EffectTooltipTarget
@@ -285,6 +292,9 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                   <div className={`abilities-card ${equippedIndex !== null ? 'is-equipped' : ''}`}>
                     <div className="abilities-card-main">
                       <strong className="abilities-card-name"><ItemIcon itemId={ability.abilityId} />{ability.name}</strong>
+                      <span className="abilities-card-tag tone-cyan">
+                        {t('game.abilityDesc.level', { n: learnedLevel })}
+                      </span>
                       <span className={`abilities-card-tag tone-${ability.effectType === 'heal' ? 'green' : 'violet'}`}>
                         {formatAbilityCategory(ability.category, ability.element)}
                       </span>

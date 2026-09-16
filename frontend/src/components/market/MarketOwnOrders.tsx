@@ -55,8 +55,8 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
                 <strong><ItemIcon itemId={order.itemId} />{catalog.find(item => item.itemId === order.itemId)?.name ?? order.itemId}</strong>
                 <span><UnitNumber value={order.price} /> × <UnitNumber value={order.remainingQuantity} /></span>
                 <span>{order.status === 'partially-filled' ? t('market.status.partiallyFilled') : t('market.status.open')}</span>
-                <time dateTime={order.expiresAt} title={t('market.createdAt', { time: new Date(order.createdAt).toLocaleString('zh-CN') })}>
-                  {t('market.expiresOn', { date: new Date(order.expiresAt).toLocaleDateString('zh-CN') })}
+                <time dateTime={order.expiresAt ?? order.createdAt} title={t('market.createdAt', { time: new Date(order.createdAt).toLocaleString('zh-CN') })}>
+                  {order.expiresAt ? t('market.expiresOn', { date: new Date(order.expiresAt).toLocaleDateString('zh-CN') }) : t('market.noExpiry')}
                 </time>
                 <button aria-label={t('market.cancelOrder')} onClick={() => cancelOrder(order.orderId)} title={t('market.cancelOrder')} type="button">×</button>
               </div>

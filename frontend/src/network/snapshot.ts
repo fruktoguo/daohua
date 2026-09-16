@@ -6,6 +6,7 @@
  * 2. 严格核对 Snapshot 头校验和（Head Checksum），防止数据篡改或网络坏帧；
  * 3. 将扁平的分段载荷（Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue）及资产钱包投影为前端响应式 PlayerSnapshot 与 PlayerPatch。
  */
+import { calculateRealmProgress } from '../game/combatConstants'
 import { resolveActionDefinition, resolveItemMetadata } from '../game/ids'
 import type {
   ActionType,
@@ -23,6 +24,7 @@ import type {
   ExpeditionPhase,
   ExpeditionProgress,
   InventoryItem,
+  NearbyMonsterDefinition,
   PlayerPatch,
   PlayerSnapshot,
   QueueEntry,
@@ -135,7 +137,7 @@ async function decodeSections(sections: readonly PlayerSectionDto[]): Promise<Ma
       throw new Error('玩家 section 标识重复或为空。')
     }
     names.add(section.section)
-    if (section.schemaVersion !== 2) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
+    if (section.schemaVersion !== 3) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
   }
   const decoded = await Promise.all(sections.map(async section => [section.section, await decodeSectionPayload(section)] as const))
   return new Map(decoded)
@@ -412,6 +414,9 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
 
 function mapStats(value: unknown): Stats {
   const row = object(value)
+  const normalKills = numberValue(row.normalKills)
+  const eliteKills = numberValue(row.eliteKills)
+  const bossKills = numberValue(row.bossKills)
   return {
     realmLevel: numberValue(row.realmLevel, 1),
     qi: numberValue(row.qi),
@@ -419,6 +424,14 @@ function mapStats(value: unknown): Stats {
     // 不存在独立的道基底蕴字段，foundationExp 保持未定义。
     spirit: numberValue(row.experience),
     completedActions: numberValue(row.completedActions),
+    normalKills,
+    eliteKills,
+    bossKills,
+    combatEnemiesDefeated: normalKills + eliteKills + bossKills,
+    combatLosses: numberValue(row.totalDefeats),
+    cultivationSeconds: numberValue(row.cultivationSeconds),
+    ageSeconds: numberValue(row.ageSeconds),
+    lifespanYears: numberValue(row.lifespanYears),
   }
 }
 
@@ -503,7 +516,18 @@ function mapLoadout(value: unknown): CombatLoadout {
       return { itemId: identifierValue(equipment.itemId, 'equipment.itemId'), enhancementLevel: finiteNumber(equipment.enhancementLevel, 'equipment.enhancementLevel') }
     }),
     learnedAbilityIds: requiredStrings(row.learnedAbilityIds, 'loadout.learnedAbilityIds'),
+    abilityExperiences: mapAbilityExperiences(row.abilityExperiences),
   }
+}
+
+function mapAbilityExperiences(value: unknown): Record<string, number> {
+  if (value === undefined || value === null) return {}
+  // 技能经验允许为空对象（未获取任何技能经验），不能用 requiredObject 的空对象校验。
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('loadout.abilityExperiences section 载荷必须是对象。')
+  const row = value as JsonObject
+  const result: Record<string, number> = {}
+  for (const [key, exp] of Object.entries(row)) result[key] = finiteNumber(exp, `loadout.abilityExperiences.${key}`)
+  return result
 }
 
 function requiredStrings(value: unknown, name: string): string[] {
@@ -532,6 +556,31 @@ function mapNearbyEntities(value: unknown): WorldState['npcs'] {
   })
 }
 
+function mapNearbyMonsters(value: unknown): NearbyMonsterDefinition[] {
+  if (!Array.isArray(value)) return []
+  return value.map(item => {
+    const row = requiredObject(item, 'world 栖息生灵')
+    return {
+      monsterId: identifierValue(row.monsterId, 'world 生灵 ID'),
+      name: stringValue(row.name),
+      level: numberValue(row.level, 1),
+      tier: numberValue(row.tier, 1),
+      rank: stringValue(row.rank, 'normal'),
+      budgetCost: numberValue(row.budgetCost, 0),
+      maxHitpoints: numberValue(row.maxHitpoints, 0),
+      maxDamage: numberValue(row.maxDamage, 0),
+      armor: numberValue(row.armor, 0),
+      drops: Array.isArray(row.drops) ? row.drops.filter((d): d is string => typeof d === 'string') : [],
+      visualSource: typeof row.visualSource === 'string' ? row.visualSource : null,
+      visualRenderer: typeof row.visualRenderer === 'string' ? row.visualRenderer : null,
+    }
+  })
+}
+
+function optionalWorldNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
 function mapWorld(value: unknown): WorldState {
   const row = object(value)
   const edgeId = typeof row.edgeId === 'string' && row.edgeId.length > 0 ? row.edgeId : null
@@ -550,6 +599,13 @@ function mapWorld(value: unknown): WorldState {
     encounterIds: requiredStrings(row.encounterIds, 'world.encounterIds'),
     npcs: mapNearbyEntities(row.npcs),
     buildings: mapNearbyEntities(row.buildings),
+    minBudget: optionalWorldNumber(row.minBudget),
+    maxBudget: optionalWorldNumber(row.maxBudget),
+    eliteInterval: optionalWorldNumber(row.eliteInterval),
+    bossInterval: optionalWorldNumber(row.bossInterval),
+    monsters: mapNearbyMonsters(row.monsters),
+    eliteEnemies: mapNearbyMonsters(row.eliteEnemies),
+    bossEnemies: mapNearbyMonsters(row.bossEnemies),
   }
 }
 
@@ -671,7 +727,7 @@ function visualFor(name: string): CharacterVisual {
 export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = ''): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
-  if (!dto.head || dto.head.schemaVersion !== 2) throw new Error('玩家快照 schema 版本不受支持。')
+  if (!dto.head || dto.head.schemaVersion !== 3) throw new Error('玩家快照 schema 版本不受支持。')
   if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')
@@ -692,6 +748,9 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
   }
   const name = dto.displayName
   const serverTime = seconds(dto.lastSimulatedAt)
+  const stats = mapStats(progression)
+  const statsRealm = calculateRealmProgress(stats.spirit, stats.realmLevel)
+  const renameCooldownUntil = numberValue(settings.renameCooldownUntilUnixSeconds)
   return {
     playerId: dto.playerId,
     name,
@@ -704,15 +763,15 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
     queue: mapQueue(sections.get('action_queue'), settings),
     inventory: mapAssets(dto.assets),
     buffs: mapBuffs(sections.get('buffs')),
-    stats: mapStats(progression),
+    stats,
     combat: loadout,
     combatResources: combat.resources,
     combatAttributes: combat.attributes,
     visual: visualFor(name),
     world,
     duel,
-    isPendingBreakthrough: false,
-    renameCooldownSeconds: 0,
+    isPendingBreakthrough: statsRealm.expToNext > 0 && statsRealm.expToNext - statsRealm.currentLayerExp <= 0.0001 && stats.spirit > 0,
+    renameCooldownSeconds: Math.max(0, renameCooldownUntil - serverTime),
   }
 }
 
@@ -745,8 +804,13 @@ export async function decodePlayerSnapshotDeltaDto(
   if (settingsEnvelope && settings) {
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
     patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)
   }
-  if (sections.has('progression')) patch.stats = mapStats(sections.get('progression'))
+  if (sections.has('progression')) {
+    patch.stats = mapStats(sections.get('progression'))
+    const realm = calculateRealmProgress(patch.stats.spirit, patch.stats.realmLevel)
+    patch.isPendingBreakthrough = realm.expToNext > 0 && realm.expToNext - realm.currentLayerExp <= 0.0001 && patch.stats.spirit > 0
+  }
   if (sections.has('world')) patch.world = mapWorld(sections.get('world'))
   if (sections.has('combat')) {
     const combat = mapCombat(sections.get('combat'))

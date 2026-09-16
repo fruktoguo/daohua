@@ -99,6 +99,7 @@ export const marketZh = {
     },
     createdAt: '创建于 {time}',
     expiresOn: '{date} 到期',
+    noExpiry: '长期有效',
     cancelOrder: '撤销订单',
     metricsTraded: '累计成交 {count}',
     metricsMatches: '撮合 {count}',

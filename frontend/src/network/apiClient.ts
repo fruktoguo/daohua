@@ -148,6 +148,8 @@ interface MarketMetricsDto {
   matchCount: number
   cancelCount: number
   rejectedCount: number
+  tradedQuantity: number
+  tradedGrossAmount: number
 }
 
 export async function fetchMarketMetrics(signal?: AbortSignal): Promise<MarketMetrics> {
@@ -159,8 +161,8 @@ export async function fetchMarketMetrics(signal?: AbortSignal): Promise<MarketMe
     matchCount: dto.matchCount,
     cancelCount: dto.cancelCount,
     rejectedCount: dto.rejectedCount,
-    tradedQuantity: 0,
-    tradedGrossAmount: 0,
+    tradedQuantity: dto.tradedQuantity,
+    tradedGrossAmount: dto.tradedGrossAmount,
   }
 }
 
@@ -178,6 +180,7 @@ interface MarketOrderDto {
   status: MarketOrderStatusWire
   sequence: number
   createdAt: string
+  expiresAt: string | null
 }
 
 function mapMarketOrderStatus(status: MarketOrderStatusWire): MarketOrder['status'] {
@@ -204,6 +207,6 @@ export async function fetchMarketOrders(playerId: string, signal?: AbortSignal):
     status: mapMarketOrderStatus(row.status),
     sequence: row.sequence,
     createdAt: row.createdAt,
-    expiresAt: row.createdAt,
+    expiresAt: row.expiresAt,
   }))
 }
