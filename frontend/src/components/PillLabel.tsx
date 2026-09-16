@@ -2,6 +2,7 @@ import React, { memo, type CSSProperties, type ReactNode } from 'react'
 import { FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
 import { UnitNumber } from './UnitNumber'
 import { formatChineseSplitNumber } from '../game/format'
+import { useT } from '../i18n'
 
 /**
  * 复合标签修仙色系主题
@@ -128,6 +129,7 @@ export const PillStatLabel = memo(function PillStatLabel({
   style,
   onClick,
 }: PillStatLabelProps): React.JSX.Element {
+  const t = useT()
   const ratio = progress ? Math.min(100, Math.max(0, (progress.current / Math.max(0.0001, progress.max)) * 100)) : 0
   const numericVal = quantity !== undefined ? quantity : (typeof value === 'number' ? value : undefined)
   const isNumeric = numericVal !== undefined
@@ -167,7 +169,7 @@ export const PillStatLabel = memo(function PillStatLabel({
           interactive={false}
           placement="top"
           quantity={numericVal}
-          quantityTitle={label || '数量'}
+          quantityTitle={label || undefined}
           trigger="hover"
         >
           {content}
@@ -185,7 +187,7 @@ export const PillStatLabel = memo(function PillStatLabel({
     const splitText = formatChineseSplitNumber(numericVal)
     const singleRowTooltip = (
       <div className="unit-number-tooltip-inline">
-        <span className="unit-number-tooltip-label">{label || '数量'}</span>
+        <span className="unit-number-tooltip-label">{label || t('common.quantity')}</span>
         <strong className="unit-number-tooltip-split">{splitText}</strong>
       </div>
     )
@@ -215,6 +217,7 @@ export const PillBonusLabel = memo(function PillBonusLabel({
   className = '',
   style,
 }: PillBonusLabelProps): React.JSX.Element {
+  const t = useT()
   const numericVal = quantity !== undefined ? quantity : (typeof value === 'number' ? value : undefined)
   const isNumeric = numericVal !== undefined
 
@@ -234,7 +237,7 @@ export const PillBonusLabel = memo(function PillBonusLabel({
           interactive={false}
           placement="top"
           quantity={numericVal}
-          quantityTitle={label || '数量'}
+          quantityTitle={label || undefined}
           trigger="hover"
         >
           {content}
@@ -252,7 +255,7 @@ export const PillBonusLabel = memo(function PillBonusLabel({
     const splitText = formatChineseSplitNumber(numericVal)
     const singleRowTooltip = (
       <div className="unit-number-tooltip-inline">
-        <span className="unit-number-tooltip-label">{label || '数量'}</span>
+        <span className="unit-number-tooltip-label">{label || t('common.quantity')}</span>
         <strong className="unit-number-tooltip-split">{splitText}</strong>
       </div>
     )

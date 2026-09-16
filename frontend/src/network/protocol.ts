@@ -137,6 +137,8 @@ export interface ActionIntentRequest {
   repeatCount?: number
   targetNodeId?: string | null
   parameters?: Record<string, number> | null
+  /** 是否勾选斗法（PVP 匹配），仅战斗遭遇行动有效 */
+  pvpEnabled?: boolean
 }
 
 export interface ActionIntentResponse {

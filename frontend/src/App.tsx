@@ -20,7 +20,7 @@ import { SettingsPage } from './components/SettingsPage'
 import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
 import { RightSidebar } from './components/RightSidebar'
-import { describeAbility, formatChineseSplitNumber, formatProgressText } from './game/format'
+import { describeAbility, formatChineseSplitNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
 import { ACTION_TAB_META, actionTabLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
@@ -105,7 +105,7 @@ function actionDescription(entry: QueueEntry, actions?: readonly ActionDefinitio
 
 function formatRepeatsLabel(remainingRepeats: number, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (remainingRepeats < 0) return t('app.queue.repeatsInfinite')
-  return t('app.queue.repeatsCount', { n: remainingRepeats })
+  return t('common.repeatsCount', { n: remainingRepeats })
 }
 
 /**
@@ -126,6 +126,7 @@ function useMobileLayout(): boolean {
  * 平滑进度条组件
  */
 const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: QueueEntry }): React.JSX.Element {
+  const t = useT()
   const fillRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
 
@@ -137,7 +138,7 @@ const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: Qu
 
   return (
     <div
-      aria-label="进度"
+      aria-label={t('app.queue.progressAria')}
       aria-valuemax={100}
       aria-valuemin={0}
       className="progress"
@@ -180,7 +181,7 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
         const curDist = Math.min(totalDist, Math.max(0, ratio * totalDist))
         return getT()('app.queue.travelProgress', { current: curDist.toFixed(1), total: totalDist.toFixed(1) })
       }
-        return getT()('app.queue.searchTarget', { name: expedition?.enemyName ?? '妖兽' })
+        return getT()('app.queue.searchTarget', { name: expedition?.enemyName ?? getT()('app.queue.defaultEnemy') })
     },
   })
 
@@ -191,12 +192,12 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
         <span ref={metaRef}>
           {isTravel
             ? t('app.queue.travelProgress', { current: '0.0', total: totalDist.toFixed(1) })
-            : t('app.queue.searchTarget', { name: expedition.enemyName ?? '妖兽' })}
+            : t('app.queue.searchTarget', { name: expedition.enemyName ?? t('app.queue.defaultEnemy') })}
         </span>
         <strong ref={percentRef} />
       </div>
       <div
-        aria-label="远征进度"
+        aria-label={t('app.queue.expeditionProgressAria')}
         aria-valuemax={100}
         aria-valuemin={0}
         className="progress"
@@ -215,6 +216,8 @@ function getCombatPhaseLabel(phase: string | undefined, t: (key: string) => stri
     case 'combat': return t('app.queue.phaseCombat')
     case 'search': return t('app.queue.phaseResearch')
     case 'death': return t('app.queue.phaseDeath')
+    case 'duel-pending': return t('app.queue.phaseDuelPending')
+    case 'duel': return t('app.queue.phaseDuel')
     default: return t('app.queue.phaseDefault')
   }
 }
@@ -266,7 +269,8 @@ const CombatActionPhaseProgress = memo(function CombatActionPhaseProgress({
 const CombatActionProgress = memo(function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element {
   const t = useT()
   const expedition = entry.expedition
-  if (expedition && expedition.phase !== 'combat') {
+  // 斗法回放相位同样展示双方实时气血；duel-pending 等其余阶段走通用相位进度。
+  if (expedition && expedition.phase !== 'combat' && expedition.phase !== 'duel') {
     const phaseEntry: QueueEntry = {
       ...entry,
       progressSeconds: expedition.elapsedSeconds,
@@ -330,6 +334,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
               {entry.status === 'blocked' ? t('app.queue.blocked') : phaseLabel}
             </span>
           )}
+          {entry.pvpEnabled && <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>}
         </div>
         {isCombatExpedition
           ? <CombatActionProgress entry={entry} />
@@ -452,6 +457,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                     <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
                     {entry.status === 'blocked' && <span className="badge badge-danger">{t('app.queue.blocked')}</span>}
                     {index === 0 && entry.status === 'running' && <span className="badge">{t('app.queue.running')}</span>}
+                    {entry.pvpEnabled && <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>}
                   </div>
                   {actionDescription(entry) && actionDescription(entry) !== resolveQueueEntryName(entry) ? <div className="queue-sub">{actionDescription(entry)}</div> : null}
                 </div>
@@ -514,15 +520,15 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
       {buffs.map(buff => {
         const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
         const desc = buff.qiGainMultiplier > 1
-          ? `灵气收益 +${Math.round((buff.qiGainMultiplier - 1) * 100)}%`
+          ? t('app.buff.qiGain', { percent: Math.round((buff.qiGainMultiplier - 1) * 100) })
           : buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1
-            ? `灵草产出 +${Math.round((buff.gatheringOutputMultiplier - 1) * 100)}%`
+            ? t('app.buff.gatheringOutput', { percent: Math.round((buff.gatheringOutputMultiplier - 1) * 100) })
             : buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1
-              ? `丹药产出 +${Math.round((buff.alchemyOutputMultiplier - 1) * 100)}%`
+              ? t('app.buff.alchemyOutput', { percent: Math.round((buff.alchemyOutputMultiplier - 1) * 100) })
               : buff.damageRatio && buff.damageRatio > 0
-                ? `术式伤害 +${Math.round(buff.damageRatio * 100)}%`
+                ? t('app.buff.damageRatio', { percent: Math.round(buff.damageRatio * 100) })
                 : buff.attackSpeedRatio && buff.attackSpeedRatio > 0
-                  ? `攻速 +${Math.round(buff.attackSpeedRatio * 100)}%`
+                  ? t('app.buff.attackSpeed', { percent: Math.round(buff.attackSpeedRatio * 100) })
                   : t('app.buff.combatBuff')
 
         return (
@@ -1170,7 +1176,12 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const stats = useGameStore(state => state.stats)
   const encounter = useGameStore(state => action.combatEncounterId ? findEncounterInCatalog(state.encounters, action.combatEncounterId) : undefined)
   const queueLength = useGameStore(state => state.queue.entries.length)
+  const duel = useGameStore(state => state.duel)
+  const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
+  const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
   const [repeats, setRepeats] = useState(-1)
+  const [pvpEnabled, setPvpEnabled] = useState(false)
+  const [, setClockTick] = useState(0)
 
   const yieldPreview = useMemo(() => calculateActionYieldPreview({
     action,
@@ -1197,6 +1208,14 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const startsImmediately = action.executionKind === 'combat-encounter'
   const hasYields = (action.yields?.length ?? 0) > 0
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
+  // 斗法冷却倒计时：以「服务端时刻 + 本地流逝」估算服务端当前时刻，仅冷却生效期间每秒重渲染。
+  const estimatedServerNow = serverTime + Math.max(0, performance.now() - lastSyncPerformanceTime) / 1000
+  const duelCooldownRemaining = Math.max(0, duel.cooldownUntilUnixSeconds - estimatedServerNow)
+  useEffect(() => {
+    if (!startsImmediately || duelCooldownRemaining <= 0) return undefined
+    const timer = window.setInterval(() => setClockTick(value => value + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [startsImmediately, duelCooldownRemaining > 0])
   return (
     <Modal className="action-modal" labelledBy={titleId} onClose={onClose} open size="medium">
       <header className="action-modal-header">
@@ -1309,6 +1328,32 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
 
       {encounter && <CombatEncounterPanel compact encounter={encounter} />}
 
+      {startsImmediately && (
+        <section className="duel-option" aria-label={t('app.action.duel.title')}>
+          <label className="duel-option-toggle">
+            <input
+              checked={pvpEnabled}
+              onChange={event => setPvpEnabled(event.target.checked)}
+              type="checkbox"
+            />
+            <strong>{t('app.action.duel.title')}</strong>
+            <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>
+          </label>
+          <ul className="duel-option-desc">
+            <li>{t('app.action.duel.descMatch')}</li>
+            <li>{t('app.action.duel.descDrop')}</li>
+            <li>{t('app.action.duel.descStaging')}</li>
+            <li>{t('app.action.duel.descPenalty')}</li>
+          </ul>
+          <div className="duel-option-status">
+            <span>{t('app.action.duel.charges', { n: duel.encounterCharges })}</span>
+            {duelCooldownRemaining > 0 && (
+              <span className="duel-cooldown">{t('app.action.duel.cooldown', { time: formatRemainingSeconds(duelCooldownRemaining) })}</span>
+            )}
+          </div>
+        </section>
+      )}
+
       <div className="repeat-row">
         <span>{t('app.action.repeats')}</span>
         <QuantitySelector
@@ -1327,6 +1372,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           if (gameClient.sendCommand('action.enqueue', {
             actionId: action.id,
             repeatCount: repeats,
+            pvpEnabled,
           })) {
             onClose()
             if (action.type === 'combat' || startsImmediately) {
@@ -1629,7 +1675,10 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
           onClose={() => setEditingTrigger(null)}
           onSave={saveTriggers}
           open
-          title={`${editingTrigger.kind === 'ability' ? '功法' : '物品'}槽 ${editingTrigger.index + 1}`}
+          title={t('app.combatPanel.triggerEditorTitle', {
+            kind: editingTrigger.kind === 'ability' ? t('app.rightTab.abilities') : t('app.action.yieldKind.item'),
+            n: editingTrigger.index + 1,
+          })}
         />
       )}
     </div>
@@ -1886,8 +1935,12 @@ export default function App(): React.JSX.Element {
       })
       .catch(error => {
         if (!controller.signal.aborted) {
-          setCatalogError(error instanceof Error ? error.message : '游戏目录加载失败。')
-          useGameStore.getState().setNotice(error instanceof Error ? `游戏目录加载失败：${error.message}` : '游戏目录加载失败。')
+          setCatalogError(error instanceof Error ? error.message : getT()('app.messages.catalogLoadFailed'))
+          useGameStore.getState().setNotice(
+            error instanceof Error
+              ? getT()('app.messages.catalogLoadFailedDetail', { message: error.message })
+              : getT()('app.messages.catalogLoadFailed')
+          )
         }
       })
     return () => controller.abort()

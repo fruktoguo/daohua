@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { gameClient } from '../network/gameClient'
 import { findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
+import { mergeBattleReportHistory } from './battleReportStore'
 import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
 /**
@@ -63,6 +64,8 @@ interface GameStore {
   combatAttributes: PlayerSnapshot['combatAttributes']
   /** 当前所在大地图节点与环境信息 */
   world: NonNullable<PlayerSnapshot['world']>
+  /** 斗法（PVP）与战斗收益战报状态 */
+  duel: PlayerSnapshot['duel']
   /** 全量行动目录（服务端下发或离线兜底） */
   actions: readonly ActionDefinition[]
   /** 全量物品目录 */
@@ -137,6 +140,14 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
       spirit: 0,
       foundationExp: 0,
       completedActions: 0,
+    },
+    duel: {
+      encounterCharges: 0,
+      cooldownUntilUnixSeconds: 0,
+      activeDuelId: null,
+      stagedItems: [],
+      currentReport: null,
+      reports: [],
     },
     world: {
       mapId: 'map.qingyun-mountains',
@@ -248,6 +259,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   combatResources: initial.combatResources,
   combatAttributes: initial.combatAttributes,
   world: initial.world!,
+  duel: initial.duel,
   actions: resolveActionDefinitions(),
   items: [],
   abilities: [],
@@ -288,11 +300,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setEncounters: (encounters) => set({ encounters }),
   setEquipment: (equipment) => set({ equipment }),
   setMaps: (maps) => set({ maps }),
-  applySnapshot: (snapshot) => set((state) => {
+  applySnapshot: (snapshot) => {
+    const state = get()
     // 全量快照也可能因命令回执/重连竞态晚到；禁止旧版本回写覆盖当前权威状态。
-    if (state.hasReceivedSnapshot && snapshot.version < state.version) return state
+    if (state.hasReceivedSnapshot && snapshot.version < state.version) return
+    // 每次应用含 duel 分段的快照后，将战报合并写入本地历史缓存（reportId 去重、倒序截断 50 条）。
+    mergeBattleReportHistory(snapshot.playerId, snapshot.duel)
     const now = performance.now()
-    return {
+    set({
       playerId: snapshot.playerId,
       name: snapshot.name,
       account: snapshot.account ?? snapshot.name,
@@ -316,22 +331,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combatResources: snapshot.combatResources,
       combatAttributes: snapshot.combatAttributes,
       world: snapshot.world ?? initial.world!,
-    }
-  }),
-  applyPatch: (patch) => set((state) => {
+      duel: snapshot.duel,
+    })
+  },
+  applyPatch: (patch) => {
+    const state = get()
     // 1. 若尚未接收到服务端全量快照，则拒绝应用增量包
     if (!state.hasReceivedSnapshot) {
-      return state
+      return
     }
     // 2. 丢弃版本过旧或重复的乱序补丁
-    if (patch.version <= state.version) return state
+    if (patch.version <= state.version) return
     // 3. 版本连续性校验：若出现版本断层 (patch.version > state.version + 1)，触发全量快照重拉
     if (patch.version > state.version + 1) {
       queueMicrotask(() => {
         gameClient.requestSnapshotOrResync()
       })
-      return state
+      return
     }
+    // 每次应用含 duel 分段的增量后，将战报合并写入本地历史缓存（reportId 去重、倒序截断 50 条）。
+    if (patch.duel) mergeBattleReportHistory(patch.playerId, patch.duel)
     const hasQueueUpdate = Boolean(patch.queue || patch.queueProgress)
     const now = performance.now()
     const queue = patch.queue ? normalizeQueue(patch.queue) : (patch.queueProgress
@@ -348,7 +367,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             : entry),
         }
       : state.queue)
-    return {
+    set({
       playerId: patch.playerId || state.playerId,
       name: patch.name ?? state.name,
       account: patch.account ?? state.account,
@@ -371,8 +390,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combatResources: patch.combatResources ?? state.combatResources,
       combatAttributes: patch.combatAttributes ?? state.combatAttributes,
       world: patch.world ?? state.world,
-    }
-  }),
+      duel: patch.duel ?? state.duel,
+    })
+  },
   toSnapshotView: () => {
     const state = get()
     return {
@@ -396,6 +416,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       combatResources: state.combatResources,
       combatAttributes: state.combatAttributes,
       world: state.world,
+      duel: state.duel,
     }
   },
   resetGameStore: () => set({
@@ -418,6 +439,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     combatResources: initial.combatResources,
     combatAttributes: initial.combatAttributes,
     world: initial.world!,
+    duel: initial.duel,
   }),
 }))
 

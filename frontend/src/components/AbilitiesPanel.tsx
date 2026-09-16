@@ -328,7 +328,11 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
           onClose={() => setEditingTriggerSlotIndex(null)}
           onSave={saveTriggers}
           open
-          title={`${editingTriggerSlotIndex === 0 ? t('app.abilitiesPanel.slotInternalBadge') : t('app.abilitiesPanel.slotSpell', { n: editingTriggerSlotIndex })} 触发条件`}
+          title={t('app.abilitiesPanel.triggerEditorTitle', {
+            slot: editingTriggerSlotIndex === 0
+              ? t('app.abilitiesPanel.slotInternalBadge')
+              : t('app.abilitiesPanel.slotSpell', { n: editingTriggerSlotIndex }),
+          })}
         />
       )}
     </div>

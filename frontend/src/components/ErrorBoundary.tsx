@@ -121,7 +121,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 className="error-details-toggle"
                 onClick={() => this.setState(prev => ({ showDetails: !prev.showDetails }))}
               >
-                {showDetails ? '▼ 收起紊乱真象' : '▶ ' + t('app.errorBoundary.detailsLabel')}
+                {showDetails
+                  ? `▼ ${t('app.errorBoundary.collapseDetails')}`
+                  : `▶ ${t('app.errorBoundary.detailsLabel')}`}
               </button>
 
               <button

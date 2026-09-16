@@ -106,23 +106,24 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   }
 }
 
-export const DAMAGE_CATEGORY_NAMES: Record<string, string> = {
-  physical: '物理',
-  spell: '术法',
-}
-
-export const ELEMENT_NAMES: Record<string, string> = {
-  none: '无属性',
-  metal: '金行',
-  wood: '木行',
-  water: '水行',
-  fire: '火行',
-  earth: '土行',
-}
-
+/**
+ * 伤害大类与五行标签格式化：统一走 i18n 键（combat.encounter.*），
+ * 未知值回退原始 wire 值，避免维护本地中文字典。
+ */
 export function formatAbilityCategory(category?: string, element?: string): string {
-  const cat = (category && DAMAGE_CATEGORY_NAMES[category]) || category || '物理'
-  const elem = element && element !== 'none' ? ` · ${(ELEMENT_NAMES[element] || element)}` : ''
+  const t = getT()
+  let cat = t('combat.encounter.damageCategory.physical')
+  if (category) {
+    const catKey = `combat.encounter.damageCategory.${category}`
+    const translated = t(catKey)
+    cat = translated !== catKey ? translated : category
+  }
+  let elem = ''
+  if (element && element !== 'none') {
+    const elemKey = `combat.encounter.element.${element}`
+    const translated = t(elemKey)
+    elem = ` · ${translated !== elemKey ? translated : element}`
+  }
   return `${cat}${elem}`
 }
 
@@ -174,7 +175,7 @@ export function formatProgressText(
   options?: FormatProgressOptions
 ): string {
   if (max <= 0) {
-    return options?.completedText ?? '已圆满 (100%)'
+    return options?.completedText ?? getT()('common.progressComplete')
   }
   const curStr = formatNumber(Math.max(0, current))
   const maxStr = formatNumber(max)
@@ -587,4 +588,19 @@ export function getUnitNumberInfo(
     splitText,
     standardText,
   }
+}
+
+/**
+ * 将剩余秒数格式化为本地化的时/分/秒短文本（如「1小时5分」「3分20秒」「42秒」）。
+ * 复用 app.settings.time* 词条；用于斗法冷却与暂存区到期倒计时等非渲染热点路径。
+ */
+export function formatRemainingSeconds(seconds: number): string {
+  const t = getT()
+  const total = Math.max(0, Math.floor(seconds))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  if (h > 0) return t('app.settings.timeHoursMinutes', { h, m })
+  if (m > 0) return t('app.settings.timeMinutesSeconds', { m, s })
+  return t('app.settings.timeSeconds', { s })
 }

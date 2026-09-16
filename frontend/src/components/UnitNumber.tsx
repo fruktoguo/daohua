@@ -4,6 +4,7 @@ import {
   formatChineseSplitNumber,
   formatUnitNumber,
 } from '../game/format'
+import { useT } from '../i18n'
 import type { PillTone } from './PillLabel'
 
 export interface UnitNumberProps {
@@ -64,6 +65,7 @@ export const UnitNumber = memo(function UnitNumber({
   style,
   onClick,
 }: UnitNumberProps): React.JSX.Element {
+  const t = useT()
   // 1. 紧凑展示文本 (例如 "9999.99万", "20亿", "5211")
   const compactText = formatUnitNumber(value, {
     maxDecimals,
@@ -76,7 +78,7 @@ export const UnitNumber = memo(function UnitNumber({
   const splitText = formatChineseSplitNumber(value)
 
   // 构建 Hover 提示内容 (严格保证单行展示：标题对应数量，然后显示具体数值，就只要这俩文本)
-  const titleText = tooltipLabel ?? '数量'
+  const titleText = tooltipLabel ?? t('common.quantity')
   const tooltipContent = customTooltip ?? (
     <div className="unit-number-tooltip-inline">
       <span className="unit-number-tooltip-label">{titleText}</span>

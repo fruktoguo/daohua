@@ -326,7 +326,7 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
     lines.push(
       <PillBonusLabel
         key="item-hp"
-        label="即时恢复气血"
+        label={t('market.effect.restoreHp')}
         tone="emerald"
         value={`+${formatNumber(definition.hitpointRestore)}`}
       />
@@ -336,7 +336,7 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
     lines.push(
       <PillBonusLabel
         key="item-mp"
-        label="即时恢复灵力"
+        label={t('market.effect.restoreMp')}
         tone="cyan"
         value={`+${formatNumber(definition.manapointRestore)}`}
       />
@@ -346,7 +346,7 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
     lines.push(
       <PillBonusLabel
         key="item-duration"
-        label="药效持续时间"
+        label={t('market.effect.recoveryDuration')}
         tone="teal"
         value={`${formatNumber(definition.recoverySeconds)}s`}
       />
@@ -356,7 +356,7 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
     lines.push(
       <PillBonusLabel
         key="item-cd"
-        label="调息冷却时间"
+        label={t('market.effect.cooldown')}
         tone="slate"
         value={`${formatNumber(definition.cooldownSeconds)}s`}
       />
@@ -419,15 +419,15 @@ export function describeBuffEffectLines(buff: {
 
   // 1. 每秒回复
   if (buff.hpRegen && buff.hpRegen > 0) {
-    lines.push(`每秒气血回复 +${formatNumber(buff.hpRegen)}`)
+    lines.push(t('market.effect.hpRegenPerSecond', { n: formatNumber(buff.hpRegen) }))
   }
   if (buff.mpRegen && buff.mpRegen > 0) {
-    lines.push(`每秒灵力回复 +${formatNumber(buff.mpRegen)}`)
+    lines.push(t('market.effect.mpRegenPerSecond', { n: formatNumber(buff.mpRegen) }))
   }
 
   // 2. 伤害与减伤
   if (buff.damageAbsorptionRatio && buff.damageAbsorptionRatio !== 0) {
-    lines.push(`受击伤害减免 +${Math.round(buff.damageAbsorptionRatio * 100)}%`)
+    lines.push(t('market.effect.damageReductionPct', { n: Math.round(buff.damageAbsorptionRatio * 100) }))
   }
   if (buff.damageRatio && buff.damageRatio !== 0) {
     lines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
@@ -443,21 +443,21 @@ export function describeBuffEffectLines(buff: {
 
   // 4. 防御与抗性
   if (buff.armor && buff.armor !== 0) {
-    lines.push(`物理护甲 +${formatNumber(buff.armor)}`)
+    lines.push(t('market.effect.armorFlat', { n: formatNumber(buff.armor) }))
   }
   if (buff.magicResistance && buff.magicResistance !== 0) {
-    lines.push(`法术抗性 +${formatNumber(buff.magicResistance)}`)
+    lines.push(t('market.effect.magicResFlat', { n: formatNumber(buff.magicResistance) }))
   }
 
   // 5. 暴击与韧性
   if (buff.criticalChance && buff.criticalChance !== 0) {
-    lines.push(`暴击率 +${Math.round(buff.criticalChance * 100)}%`)
+    lines.push(t('market.effect.critChancePct', { n: Math.round(buff.criticalChance * 100) }))
   }
   if (buff.criticalDamageRatio && buff.criticalDamageRatio > 1.5) {
-    lines.push(`暴击伤害 +${Math.round((buff.criticalDamageRatio - 1.5) * 100)}%`)
+    lines.push(t('market.effect.critDamagePct', { n: Math.round((buff.criticalDamageRatio - 1.5) * 100) }))
   }
   if (buff.tenacity && buff.tenacity !== 0) {
-    lines.push(`控制韧性 +${formatNumber(buff.tenacity)}`)
+    lines.push(t('market.effect.tenacityFlat', { n: formatNumber(buff.tenacity) }))
   }
 
   // 6. 修炼与技艺收益
@@ -479,17 +479,17 @@ export function describeBuffEffectLines(buff: {
     }
   }
 
-  // 8. 若尚未解析出任何行，但有明确的 buffId，尝试从内建已知效果表中查询具体效果
+  // 8. 若尚未解析出任何行，但有明确的 buffId，尝试从词典内建已知效果表中查询具体效果
   if (lines.length === 0 && buff.buffId) {
-    const KNOWN_BUFF_EFFECTS: Record<string, string[]> = {
-      'buff.zhixue': ['每秒气血回复 +12', '受击伤害减免 +5%'],
-      'buff.shunqi': ['每秒灵力回复 +8', '施法攻速 +5%'],
-      'buff.qiGathering': ['修炼效率 +30%'],
-      'buff.tongmai': ['修炼效率 +50%'],
+    const KNOWN_BUFF_EFFECT_KEYS: Record<string, string> = {
+      'buff.zhixue': 'market.effect.knownZhixue',
+      'buff.shunqi': 'market.effect.knownShunqi',
+      'buff.qiGathering': 'market.effect.knownQiGathering',
+      'buff.tongmai': 'market.effect.knownTongmai',
     }
-    const known = KNOWN_BUFF_EFFECTS[buff.buffId]
-    if (known && known.length > 0) {
-      lines.push(...known)
+    const knownKey = KNOWN_BUFF_EFFECT_KEYS[buff.buffId]
+    if (knownKey) {
+      lines.push(...t(knownKey).split('\n'))
     }
   }
 
@@ -587,7 +587,7 @@ export function resolveItemAsideCards(
       title: buff.name,
       subtitle: subParts.length > 0 ? subParts.join(' · ') : undefined,
       tone: 'gold',
-      lines: buffLines.length > 0 ? buffLines : ['持续生效增益'],
+      lines: buffLines.length > 0 ? buffLines : [t('market.effect.ongoing')],
     })
   }
 
@@ -598,14 +598,6 @@ export function resolveItemAsideCards(
   }
 
   return cards
-}
-
-const COMBAT_STYLE_NAMES: Record<string, string> = {
-  sword: '剑道',
-  blade: '刀法',
-  talisman: '符箓',
-  'five-elements': '五行',
-  body: '体魄',
 }
 
 /**
@@ -640,15 +632,22 @@ export function resolveManualAsideCard(
   const abilityInfo = describeAbility(ability, 1)
   const isFrag = isFragment || category === 'manualFragment'
   const mark = isFrag
-    ? (t('market.aside.fragmentComprehension') || '残卷参悟')
-    : (t('market.aside.tomeComprehension') || '秘籍参悟')
+    ? t('market.aside.fragmentComprehension')
+    : t('market.aside.tomeComprehension')
 
-  const styleLabel = ability.style ? (COMBAT_STYLE_NAMES[ability.style] ?? ability.style) : ''
+  const styleLabel = ability.style ? t(`game.abilityStyle.${ability.style}`) : ''
   const categoryLabel = formatAbilityCategory(ability.category, ability.element)
   const subtitle = styleLabel ? `${styleLabel} · ${categoryLabel}` : categoryLabel
 
   const lines = [...abilityInfo.lines]
-  if (ability.triggerHpRatio && ability.triggerHpRatio > 0 && !lines.some((l) => l.includes('生命低于'))) {
+  // 结构性去重：默认触发条件里已包含「自身生命低于阈值」时不再重复追加自动使用提示
+  const hasHpTrigger = (ability.defaultTriggers ?? []).some(
+    (tr) =>
+      tr.dependency === 'self' &&
+      tr.condition === 'current-hp-percentage' &&
+      (tr.comparator === 'less-than' || tr.comparator === 'less-than-equal')
+  )
+  if (ability.triggerHpRatio && ability.triggerHpRatio > 0 && !hasHpTrigger) {
     lines.push(t('market.effect.autoUseBelowHp', { percent: Math.round(ability.triggerHpRatio * 100) }))
   }
 
@@ -775,44 +774,45 @@ function describeEquipmentEffects(
   const t = getT()
   const lines: ReactNode[] = []
 
-  const ratioLabels: Record<string, string> = {
-    physicalAttack: '物理攻击',
-    spellAttack: '术法攻击',
-    damage: '攻击威能',
-    physicalArmor: '物理护甲',
-    armor: '物理护甲',
-    spellResistance: '法术抗性',
-    mr: '法术抗性',
-    accuracy: '命中',
-    hit: '命中',
-    evasion: '闪避',
-    eva: '闪避',
-    criticalChance: '暴击率',
-    criticalDamage: '暴击伤害',
-    damageAbsorption: '伤害减免',
-    actionSpeed: '施法攻速',
-    cooldownReduction: '冷却缩减',
+  // 属性 key -> i18n 词条键映射；未登记的新属性回退原始 wire key
+  const ratioLabelKeys: Record<string, string> = {
+    physicalAttack: 'market.stat.physicalAttack',
+    spellAttack: 'market.stat.spellAttack',
+    damage: 'market.stat.attackPower',
+    physicalArmor: 'market.stat.physicalArmor',
+    armor: 'market.stat.physicalArmor',
+    spellResistance: 'market.stat.spellResistance',
+    mr: 'market.stat.spellResistance',
+    accuracy: 'market.stat.accuracy',
+    hit: 'market.stat.accuracy',
+    evasion: 'market.stat.evasion',
+    eva: 'market.stat.evasion',
+    criticalChance: 'market.stat.critChance',
+    criticalDamage: 'market.stat.criticalDamage',
+    damageAbsorption: 'market.stat.damageReduction',
+    actionSpeed: 'market.stat.actionSpeed',
+    cooldownReduction: 'market.stat.cooldownReduction',
   }
 
-  const flatLabels: Record<string, string> = {
-    physicalAttack: '物理攻击',
-    spellAttack: '术法攻击',
-    accuracy: '命中',
-    evasion: '闪避',
-    maxHitpoints: '生命上限',
-    hp: '生命上限',
-    maxManapoints: '灵力上限',
-    mp: '灵力上限',
-    physicalArmor: '物理护甲',
-    armor: '物理护甲',
-    spellResistance: '法术抗性',
-    mr: '法术抗性',
-    hitpointRegen: '生命回复',
-    hpRegen: '生命回复',
-    manapointRegen: '灵力回复',
-    mpRegen: '灵力回复',
-    criticalChance: '暴击率',
-    tenacity: '韧性',
+  const flatLabelKeys: Record<string, string> = {
+    physicalAttack: 'market.stat.physicalAttack',
+    spellAttack: 'market.stat.spellAttack',
+    accuracy: 'market.stat.accuracy',
+    evasion: 'market.stat.evasion',
+    maxHitpoints: 'market.stat.maxHitpoints',
+    hp: 'market.stat.maxHitpoints',
+    maxManapoints: 'market.stat.maxManapoints',
+    mp: 'market.stat.maxManapoints',
+    physicalArmor: 'market.stat.physicalArmor',
+    armor: 'market.stat.physicalArmor',
+    spellResistance: 'market.stat.spellResistance',
+    mr: 'market.stat.spellResistance',
+    hitpointRegen: 'market.stat.hitpointRegen',
+    hpRegen: 'market.stat.hitpointRegen',
+    manapointRegen: 'market.stat.manapointRegen',
+    mpRegen: 'market.stat.manapointRegen',
+    criticalChance: 'market.stat.critChance',
+    tenacity: 'market.stat.resilience',
   }
 
   const hasStructured = Boolean(
@@ -826,7 +826,7 @@ function describeEquipmentEffects(
     if (equipment.baseStatRatios) {
       for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
         if (val !== 0) {
-          const label = ratioLabels[key] ?? key
+          const label = ratioLabelKeys[key] ? t(ratioLabelKeys[key]) : key
           const tone = STAT_TONE_MAP[key] ?? 'default'
           lines.push(
             <PillBonusLabel
@@ -842,7 +842,7 @@ function describeEquipmentEffects(
     if (equipment.flatStats) {
       for (const [key, val] of Object.entries(equipment.flatStats)) {
         if (val !== 0) {
-          const label = flatLabels[key] ?? key
+          const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
           const tone = STAT_TONE_MAP[key] ?? 'default'
           if (key === 'criticalChance' && val <= 1.0) {
             lines.push(
@@ -931,24 +931,24 @@ export function resolveEquipmentAsideCards(
   const t = getT()
   const cards: FloatingAsideCard[] = []
 
-  const specialLabels: Record<string, (val: number) => string> = {
-    threatRatio: (val) => `额外威胁值 +${Math.round(val * 100)}%`,
-    healingBonusRatio: (val) => `额外治疗提升 +${Math.round(val * 100)}%`,
+  const specialLabelKeys: Record<string, string> = {
+    threatRatio: 'market.effect.threatBonus',
+    healingBonusRatio: 'market.effect.healingBonus',
   }
 
   if (equipment.specialMechanics && Object.keys(equipment.specialMechanics).length > 0) {
     const lines: string[] = []
     for (const [key, val] of Object.entries(equipment.specialMechanics)) {
       if (val !== 0) {
-        const describer = specialLabels[key]
-        lines.push(describer ? describer(val) : `${key}: +${val}`)
+        const labelKey = specialLabelKeys[key]
+        lines.push(labelKey ? t(labelKey, { n: Math.round(val * 100) }) : `${key}: +${val}`)
       }
     }
     if (lines.length > 0) {
       cards.push({
         id: `aside-equip-special-${equipment.equipmentId}`,
         mark: t('market.aside.buff'),
-        title: `${equipment.name}·特技`,
+        title: t('market.effect.specialMechanicTitle', { name: equipment.name }),
         tone: 'gold',
         lines,
       })
@@ -983,7 +983,7 @@ export function createBuffAsideCard(
     title: buff.name,
     subtitle: buff.stacks > 1 ? t('market.aside.maxStacks', { stacks: formatNumber(buff.stacks) }) : undefined,
     tone,
-    lines: lines.length > 0 ? lines : ['持续生效增益'],
+    lines: lines.length > 0 ? lines : [t('market.effect.ongoing')],
   }
 }
 

@@ -194,7 +194,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                       <strong className="avatar-option-name">{t(opt.nameKey)}</strong>
                       <span className="avatar-option-desc">{t(opt.descKey)}</span>
                     </div>
-                    {isSelected && <span className="avatar-selected-tag">已选定</span>}
+                    {isSelected && <span className="avatar-selected-tag">{t('app.settings.avatarSelectedTag')}</span>}
                   </button>
                 )
               })}
@@ -248,7 +248,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
             <h3>{t('app.settings.languageHeading')}</h3>
             {localeError && <p role="alert">{localeError}</p>}
             <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
-              {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? '简体中文 (内置)' : code })).map(loc => (
+              {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? t('app.settings.localeBuiltin') : code })).map(loc => (
                 <button
                   key={loc.code}
                   aria-pressed={locale === loc.code}

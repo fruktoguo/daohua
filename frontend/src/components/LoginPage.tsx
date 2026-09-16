@@ -162,7 +162,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
         <h1 className="login-title">{t('app.login.gameTitle')}</h1>
         <p className="login-subtitle">{t('app.login.subtitle')}</p>
 
-        <div className="auth-tab-bar" role="tablist" aria-label="登录注册切换">
+        <div className="auth-tab-bar" role="tablist" aria-label={t('app.login.tabBarAria')}>
           <button
             type="button"
             role="tab"
@@ -297,7 +297,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
                     type="button"
                     className="random-name-btn"
                     onClick={handleRandomName}
-                    title="随机生成修仙道号"
+                    title={t('app.login.randomNameTitle')}
                   >
                     {t('app.login.randomNameBtn')}
                   </button>

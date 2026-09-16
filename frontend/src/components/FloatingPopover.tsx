@@ -15,6 +15,7 @@ import React, {
 import { createPortal } from 'react-dom'
 
 import { formatChineseSplitNumber } from '../game/format'
+import { getT } from '../i18n'
 
 /**
  * 悬浮位置偏好
@@ -71,7 +72,7 @@ export interface FloatingAsideCard {
  */
 function createQuantityAsideCard(
   quantity: number | bigint | string,
-  title = '数量'
+  title = getT()('common.quantity')
 ): FloatingAsideCard {
   return {
     id: 'quantity-aside-card',
@@ -298,7 +299,7 @@ export interface FloatingPopoverProps {
   asideCards?: readonly FloatingAsideCard[] | (() => readonly FloatingAsideCard[])
   /** 可选关联数值：若提供，自动生成独立的数量详细副气泡（标题：数量，内容：具体数值） */
   quantity?: number | bigint | string
-  /** 数量副气泡标题，默认 '数量' */
+  /** 数量副气泡标题，默认取 i18n 词条 common.quantity */
   quantityTitle?: string
 }
 
@@ -643,7 +644,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       const resolvedAsideCards = typeof asideCards === 'function' ? asideCards() : asideCards
       const mergedAsideCards: FloatingAsideCard[] = resolvedAsideCards ? [...resolvedAsideCards] : []
       if (quantity !== undefined) {
-        mergedAsideCards.unshift(createQuantityAsideCard(quantity, quantityTitle ?? '数量'))
+        mergedAsideCards.unshift(createQuantityAsideCard(quantity, quantityTitle))
       }
       const hasAside = mergedAsideCards.length > 0
 
@@ -823,8 +824,6 @@ export interface FloatingInfoCardProps {
   stats?: readonly { label: string; value: ReactNode; tone?: FloatingTone }[]
   /** 底部操作按钮或说明 */
   footer?: ReactNode
-  /** 附属气泡群（如装备词缀气泡、套装效果气泡等） */
-  asideCards?: readonly FloatingAsideCard[]
   className?: string
 }
 

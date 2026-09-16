@@ -1,5 +1,5 @@
 import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { DAMAGE_CATEGORY_NAMES, ELEMENT_NAMES, describeAbility, formatNumber } from '../game/format'
+import { describeAbility, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findEncounterInCatalog } from '../game/ids'
 import { useT } from '../i18n'
@@ -21,11 +21,12 @@ function formatLogTime(timestampMs: number): string {
  * 鼠标悬停展示功法详细效果、伤害加成与冷却机制气泡。
  */
 const AbilityReference = memo(function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
+  const t = useT()
   const ability = useGameStore((state) => findAbilityInCatalog(state.abilities, abilityId))
 
   if (!ability) {
     return (
-      <FloatingTooltip placement="top" title={`功法技能：${label}`} tone="qi">
+      <FloatingTooltip placement="top" title={t('combat.log.abilityTooltip', { label })} tone="qi">
         <span className="log-reference log-reference--ability">{label}</span>
       </FloatingTooltip>
     )
@@ -73,24 +74,29 @@ const EnemyReference = memo(function EnemyReference({
   kind: 'enemy' | 'encounter'
   label: string
 }): React.JSX.Element {
+  const t = useT()
   const encounter = useGameStore((state) => findEncounterInCatalog(state.encounters, enemyId))
   const enemy = encounter?.enemy
 
   if (encounter || enemy) {
     const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = []
-    if (enemy?.category) stats.push({ label: '大类', value: DAMAGE_CATEGORY_NAMES[enemy.category] ?? enemy.category, tone: 'gold' })
-    if (enemy?.element && enemy.element !== 'none') stats.push({ label: '五行', value: ELEMENT_NAMES[enemy.element] ?? enemy.element, tone: 'purple' })
-    if (enemy?.maxHitpoints) stats.push({ label: '气血', value: formatNumber(enemy.maxHitpoints), tone: 'danger' })
-    if (enemy?.maxManapoints) stats.push({ label: '真元', value: formatNumber(enemy.maxManapoints), tone: 'qi' })
+    if (enemy?.category) {
+      stats.push({ label: t('combat.log.statCategory'), value: t(`combat.encounter.damageCategory.${enemy.category}`), tone: 'gold' })
+    }
+    if (enemy?.element && enemy.element !== 'none') {
+      stats.push({ label: t('combat.log.statElement'), value: t(`combat.encounter.element.${enemy.element}`), tone: 'purple' })
+    }
+    if (enemy?.maxHitpoints) stats.push({ label: t('combat.log.statHp'), value: formatNumber(enemy.maxHitpoints), tone: 'danger' })
+    if (enemy?.maxManapoints) stats.push({ label: t('combat.log.statMp'), value: formatNumber(enemy.maxManapoints), tone: 'qi' })
 
     return (
       <FloatingPopover
         closeDelay={120}
         content={
           <FloatingInfoCard
-            badge={kind === 'encounter' ? '遭遇敌怪' : '妖兽敌人'}
+            badge={kind === 'encounter' ? t('combat.log.badgeEncounter') : t('combat.log.badgeEnemy')}
             badgeTone="gold"
-            description={encounter ? '出没于修仙界中的敌方遭遇。' : '战斗中的妖兽敌人。'}
+            description={encounter ? t('combat.log.descEncounter') : t('combat.log.descEnemy')}
             stats={stats.length > 0 ? stats : undefined}
             title={label || enemy?.name || encounter?.name || enemyId}
           />
@@ -108,7 +114,7 @@ const EnemyReference = memo(function EnemyReference({
   }
 
   return (
-    <FloatingTooltip placement="top" title={`妖兽敌怪：${label}`} tone="gold">
+    <FloatingTooltip placement="top" title={t('combat.log.enemyTooltip', { label })} tone="gold">
       <span className={`log-reference log-reference--${kind}`}>{label}</span>
     </FloatingTooltip>
   )

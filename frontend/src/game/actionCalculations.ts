@@ -4,6 +4,7 @@
 
 import type { ActionDefinition, ActionType, ActionYieldPeriod, AutoUseSlot, Buff, InventoryItem, ItemDefinition, Stats } from './types'
 import { calculateRealmProgress } from './combatConstants'
+import { getT } from '../i18n'
 
 /** 非物品、非增益的资源类收益类别（修为/灵力/气血/历练经验） */
 export type ResourceYieldKind = 'qi' | 'mana' | 'hitpoints' | 'experience'
@@ -95,6 +96,7 @@ export function calculateActionYieldPreview({
   world,
   stats,
 }: CalculateActionParams): ActionYieldPreview {
+  const t = getT()
   const isCultivation = action.type === 'cultivation'
   const actionType = action.type
   const baseDurationSeconds = action.durationSeconds || 10
@@ -133,7 +135,7 @@ export function calculateActionYieldPreview({
         tag: `+${percent}%`,
         type: 'pill',
         multiplier: itemMult,
-        description: `${itemDef.name}持续生效中，提供 +${percent}% 产出提升`,
+        description: t('app.action.bonusPillDesc', { name: itemDef.name, percent }),
       })
     }
   }
@@ -146,11 +148,11 @@ export function calculateActionYieldPreview({
       const diffPercent = Math.round((worldMultiplier - 1.0) * 100)
       const sign = diffPercent > 0 ? '+' : ''
       bonuses.push({
-        sourceName: world.locationName || '灵脉地势',
+        sourceName: world.locationName || t('app.action.bonusWorldSourceFallback'),
         tag: `${sign}${diffPercent}%`,
         type: 'world',
         multiplier: worldMultiplier,
-        description: `当前地点灵气浓郁度提供 ${sign}${diffPercent}% 修炼加成`,
+        description: t('app.action.bonusWorldDesc', { percent: `${sign}${diffPercent}%` }),
       })
     }
   }
@@ -176,7 +178,7 @@ export function calculateActionYieldPreview({
         tag: `+${percent}%`,
         type: 'buff',
         multiplier: bMult,
-        description: `状态增益【${buff.name}】提供 +${percent}% 效果`,
+        description: t('app.action.bonusBuffDesc', { name: buff.name, percent }),
       })
     }
   }
@@ -195,10 +197,10 @@ export function calculateActionYieldPreview({
     if (isPendingBreakthrough) {
       // 境界圆满待突破
       bonuses.push({
-        sourceName: '境界圆满',
-        tag: '底蕴转化',
+        sourceName: t('app.action.bonusFoundationSource'),
+        tag: t('app.action.bonusFoundationTag'),
         type: 'foundation',
-        description: '当前境界待突破，修炼所得修为将 100% 转化为道基底蕴',
+        description: t('app.action.bonusFoundationDesc'),
       })
     }
 

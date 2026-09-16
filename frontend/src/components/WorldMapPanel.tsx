@@ -810,7 +810,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               {nodeResources.length > 0 && (
                 <div className="world-eco-block">
                   <div className="world-eco-title">
-                    <span className="eco-label-name">资源</span>
+                    <span className="eco-label-name">{t('combat.map.resourcesHeading')}</span>
                   </div>
                   <div className="world-eco-content">
                     {nodeResources.map(res => (
@@ -827,7 +827,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               {(nodeMonsters.normal.length > 0 || nodeMonsters.elite.length > 0 || nodeMonsters.boss.length > 0) && (
                 <div className="world-eco-block">
                   <div className="world-eco-title">
-                    <span className="eco-label-name">怪物</span>
+                    <span className="eco-label-name">{t('combat.map.monstersHeading')}</span>
                   </div>
                   <div className="world-eco-content">
                     {nodeMonsters.normal.map(monster => (
@@ -837,13 +837,13 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                     ))}
                     {nodeMonsters.elite.map(monster => (
                       <span className="world-monster-pill is-elite" key={monster.monsterId}>
-                        <small className="monster-rank-tag">精</small>
+                        <small className="monster-rank-tag">{t('combat.nearby.markElite')}</small>
                         {monster.name}
                       </span>
                     ))}
                     {nodeMonsters.boss.map(monster => (
                       <span className="world-monster-pill is-boss" key={monster.monsterId}>
-                        <small className="monster-rank-tag">魁</small>
+                        <small className="monster-rank-tag">{t('combat.nearby.markBoss')}</small>
                         {monster.name}
                       </span>
                     ))}
@@ -855,7 +855,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               {nodeBuildings.length > 0 && (
                 <div className="world-eco-block">
                   <div className="world-eco-title">
-                    <span className="eco-label-name">地点</span>
+                    <span className="eco-label-name">{t('combat.map.buildingsHeading')}</span>
                   </div>
                   <div className="world-eco-content">
                     {nodeBuildings.map(b => (
@@ -891,8 +891,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                   type="button"
                 >
                   {travellingToSelected
-                    ? `⏳ 正在前往该地点途中...`
-                    : `🚶 前往该地点`}
+                    ? `⏳ ${t('combat.map.travelling')}`
+                    : `🚶 ${t('combat.map.planTravel')}`}
                 </button>
                 {activeTravel && (
                   <button
@@ -935,7 +935,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
               </div>
               <div className="travel-confirm-row">
                 <span>{t('combat.map.travelEstimatedTime')}</span>
-                <strong className="travel-highlight-time">{plannedTravel?.totalDurationSeconds ?? 0} 秒</strong>
+                <strong className="travel-highlight-time">{t('combat.attr.seconds', { n: plannedTravel?.totalDurationSeconds ?? 0 })}</strong>
               </div>
               {plannedTravel && plannedTravel.pathNodeNames.length > 1 && (
                 <div className="travel-route-section">

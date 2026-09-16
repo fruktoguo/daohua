@@ -9,15 +9,6 @@ export const gameZh = {
       combat: '详情',
       map: '地图',
     },
-    nav: {
-      insight: '内视',
-      market: '坊市',
-      map: '地图',
-      combat: '详情',
-      inventory: '背包',
-      log: '日志',
-      settings: '设置',
-    },
     grade: {
       mundane: '凡',
       yellow: '黄',
@@ -285,10 +276,12 @@ export const gameZh = {
         empty: '暂无条件。点击下方「添加条件」开始配置。',
       },
     },
-    unitTier: {
-      normal: '普通',
-      elite: '精英',
-      boss: '妖王',
+    abilityStyle: {
+      sword: '剑道',
+      blade: '刀法',
+      talisman: '符箓',
+      'five-elements': '五行',
+      body: '体魄',
     },
     abilityTarget: {
       'all-enemies': '敌方全体',
