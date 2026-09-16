@@ -1,4 +1,5 @@
 using Domain.Player;
+using Domain.Combat;
 using Domain.Simulation;
 using Domain.GameData;
 using Domain.Common;
@@ -46,7 +47,8 @@ public sealed class PlayerRuntime(
     ILogger<PlayerRuntime> logger,
     MarketRuntime? marketRuntime = null,
     ICommandReceiptStore? commandReceipts = null,
-    IPlayerOwnershipStore? ownership = null) : IAsyncDisposable
+    IPlayerOwnershipStore? ownership = null,
+    IAccountRepository? accounts = null) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<Guid, Lazy<Task<PlayerActor>>> _actors = new();
     private readonly ActionCatalog _actions = gameData.Actions;
@@ -111,9 +113,107 @@ public sealed class PlayerRuntime(
         // 所有权失效的清理必须在命令返回后、锁外执行：在锁内触发释放会让同链路的
         // 下一条命令撞上已销毁的信号量。失效后后续命令走重新加载或拿到明确失败。
         if (result.Code == "PLAYER_OWNERSHIP_LOST") EvictOwnershipLostActor(playerId, actor);
+        else
+        {
+            try
+            {
+                await RouteDuelForfeitsAsync(actor, cancellationToken);
+                await TryMatchDuelAsync(actor, cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                // actor 已在锁外释放：弃战通知与撮合随下次加载重试，不阻断本次命令回执。
+            }
+        }
         // 日志推送在单写者锁外进行，慢客户端不能反向阻塞命令与模拟推进。
         await EmitLogBatchAsync(playerId, result.LogEvents);
         return result;
+    }
+
+    /// <summary>
+    /// 斗法撮合：对处于匹配等待相位的寻求者，在已加载玩家中寻找实力 ±30% 带内的候选，
+    /// 双方先预约后挂载同一份确定性剧本；任一步失败全部回滚，无候选时退出等待转正常波次。
+    /// </summary>
+    private async ValueTask TryMatchDuelAsync(PlayerActor seeker, CancellationToken cancellationToken)
+    {
+        var seek = await seeker.ReadDuelPendingAsync(cancellationToken);
+        if (seek is null) return;
+        var band = gameData.Duel.PowerBandRatio;
+        var candidates = new List<PlayerActor>();
+        foreach (var entry in _actors)
+        {
+            if (!entry.Value.IsValueCreated) continue;
+            PlayerActor candidate;
+            try { candidate = await AwaitActorAsync(entry.Key, entry.Value, cancellationToken); }
+            catch { continue; }
+            if (ReferenceEquals(candidate, seeker)) continue;
+            var info = await candidate.ReadDuelCandidateAsync(cancellationToken);
+            if (info is null) continue;
+            if (info.Value.Power < seek.Value.Power * (1 - band) || info.Value.Power > seek.Value.Power * (1 + band)) continue;
+            candidates.Add(candidate);
+        }
+        if (candidates.Count == 0)
+        {
+            await seeker.AbortDuelSeekAsync(cancellationToken);
+            return;
+        }
+        var picked = candidates[Random.Shared.Next(candidates.Count)];
+        var duelId = Guid.NewGuid();
+        var initiatorMirror = await seeker.ReserveDuelAsync(duelId, cancellationToken);
+        if (initiatorMirror is null)
+        {
+            await seeker.AbortDuelSeekAsync(cancellationToken);
+            return;
+        }
+        var defenderMirror = await picked.ReserveDuelAsync(duelId, cancellationToken);
+        if (defenderMirror is null)
+        {
+            await seeker.ReleaseDuelReservationAsync(duelId, cancellationToken);
+            await seeker.AbortDuelSeekAsync(cancellationToken);
+            return;
+        }
+        var seed = BitConverter.ToInt64(SHA256.HashData(duelId.ToByteArray()));
+        var script = DuelScriptEngine.Resolve(initiatorMirror, defenderMirror, seed, gameData.Duel);
+        var duelIdText = duelId.ToString("N");
+        if (!await seeker.AttachDuelAsync(DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: true), cancellationToken))
+        {
+            await seeker.ReleaseDuelReservationAsync(duelId, cancellationToken);
+            await picked.ReleaseDuelReservationAsync(duelId, cancellationToken);
+            await seeker.AbortDuelSeekAsync(cancellationToken);
+            return;
+        }
+        if (!await picked.AttachDuelAsync(DuelPlaybackState.ForViewer(script, duelIdText, initiatorMirror, defenderMirror, viewerIsInitiator: false), cancellationToken))
+        {
+            await picked.ReleaseDuelReservationAsync(duelId, cancellationToken);
+            await seeker.DetachDuelAsync(duelId, cancellationToken);
+            return;
+        }
+        // 双方挂载成功立刻广播快照，应战方客户端即时看到斗法开打。
+        var handler = SnapshotUpdated;
+        if (handler is not null)
+        {
+            await handler(await seeker.SnapshotAsync(cancellationToken));
+            await handler(await picked.SnapshotAsync(cancellationToken));
+        }
+    }
+
+    /// <summary>把本侧弃战产生的对手判胜通知路由到对方 Actor，并即时广播双方快照。</summary>
+    private async ValueTask RouteDuelForfeitsAsync(PlayerActor actor, CancellationToken cancellationToken)
+    {
+        var forfeits = await actor.DrainDuelForfeitsAsync(cancellationToken);
+        if (forfeits.Count == 0) return;
+        var handler = SnapshotUpdated;
+        foreach (var (duelId, peerId) in forfeits)
+        {
+            if (peerId == Guid.Empty || !_actors.TryGetValue(peerId, out var peerLazy) || !peerLazy.IsValueCreated) continue;
+            PlayerActor peer;
+            try { peer = await AwaitActorAsync(peerId, peerLazy, cancellationToken); }
+            catch { continue; }
+            if (ReferenceEquals(peer, actor)) continue;
+            if (await peer.ApplyPeerForfeitAsync(duelId, cancellationToken) && handler is not null)
+                await handler(await peer.SnapshotAsync(cancellationToken));
+        }
+        if (handler is not null) await handler(await actor.SnapshotAsync(cancellationToken));
     }
 
     private async ValueTask<PlayerActor> GetOrAddActorAsync(Guid playerId, CancellationToken cancellationToken)
@@ -173,6 +273,16 @@ public sealed class PlayerRuntime(
                 EvictOwnershipLostActor(entry.Key, actor);
                 continue;
             }
+            // 搜寻完成进入匹配等待相位后由撮合器在本拍内完成挂接；弃战通知同样在锁外路由。
+            try
+            {
+                await RouteDuelForfeitsAsync(actor, cancellationToken);
+                await TryMatchDuelAsync(actor, cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                continue;
+            }
             await EmitLogBatchAsync(entry.Key, result.LogEvents);
             if (result.Simulation is not { Changed: true }) continue;
             var handler = SnapshotUpdated;
@@ -203,7 +313,8 @@ public sealed class PlayerRuntime(
     {
         if (!_actors.TryGetValue(playerId, out var lazy) || !lazy.IsValueCreated) return;
         var actor = await AwaitActorAsync(playerId, lazy, cancellationToken);
-        if (flush) await actor.FlushAsync(true, cancellationToken);
+        // 卸载即离线：先落 presence=offline 再强刷，player_projection 才能筛出可冷挂机玩家。
+        if (flush) await actor.MarkOfflineAndFlushAsync(cancellationToken);
         _actors.TryRemove(new KeyValuePair<Guid, Lazy<Task<PlayerActor>>>(playerId, lazy));
         await actor.DisposeAsync();
     }
@@ -261,7 +372,7 @@ public sealed class PlayerRuntime(
                 balance.Quantity,
                 balance.Version)));
             var logBuffer = _logBuffers.GetOrAdd(playerId, _ => new PlayerLogBuffer(LogBufferCapacity));
-            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, gameData, logBuffer, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease);
+            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, gameData, logBuffer, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease, accounts);
             var advanced = await actor.AdvanceSimulationAsync(DateTimeOffset.UtcNow, cancellationToken);
             // 创建时的初始推进可能结算离线行动，产生的战报日志同样在锁外推送。
             await EmitLogBatchAsync(playerId, advanced?.LogEvents);
@@ -340,9 +451,11 @@ public sealed class PlayerRuntime(
         private readonly MarketRuntime? marketRuntime;
         private readonly ICommandReceiptStore? commandReceipts;
         private readonly IPlayerOwnershipStore? ownership;
+        private readonly IAccountRepository? accounts;
         private readonly Guid ownerInstanceId;
         private readonly TimeSpan ownershipLease;
         private readonly SemaphoreSlim _gate = new(1, 1);
+        private readonly List<(Guid DuelId, Guid PeerId)> _pendingDuelForfeits = [];
         private readonly Dictionary<string, DateTimeOffset> _dirtyAt = new(StringComparer.Ordinal);
         private readonly Dictionary<Guid, (string Command, string PayloadHash)> _recentRequests = new();
         private readonly Queue<Guid> _recentRequestOrder = new();
@@ -387,7 +500,8 @@ public sealed class PlayerRuntime(
             ICommandReceiptStore? commandReceipts,
             IPlayerOwnershipStore? ownership,
             Guid ownerInstanceId,
-            TimeSpan ownershipLease)
+            TimeSpan ownershipLease,
+            IAccountRepository? accounts = null)
         {
             this.aggregate = aggregate;
             this.bundle = bundle;
@@ -402,6 +516,7 @@ public sealed class PlayerRuntime(
             this.marketRuntime = marketRuntime;
             this.commandReceipts = commandReceipts;
             this.ownership = ownership;
+            this.accounts = accounts;
             this.ownerInstanceId = ownerInstanceId;
             this.ownershipLease = ownershipLease;
             _sectionVersions = bundle.Sections.ToDictionary(x => x.Key, x => x.Value.StateVersion, StringComparer.Ordinal);
@@ -494,7 +609,7 @@ public sealed class PlayerRuntime(
                         var request = JsonSerializer.Deserialize<ActionIntentRequest>(payload.GetRawText(), ProtocolJson.Options)
                             ?? throw new JsonException("行动请求为空。");
                         if (!Guid.TryParse(request.RequestId, out _)) return Fail("INVALID_REQUEST_ID", "请求 ID 无效。");
-                        var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount, request.TargetNodeId, request.Parameters);
+                        var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount, request.TargetNodeId, request.Parameters, request.PvpEnabled);
                         var actionDefinition = actions.Get(intent.ActionId);
                         if (actionDefinition.AllowedNodeIds is { Count: > 0 }
                             && (aggregate.World.EdgeId is not null || !actionDefinition.AllowedNodeIds.Contains(aggregate.World.NodeId)))
@@ -515,6 +630,9 @@ public sealed class PlayerRuntime(
                                 if (preAdvanceSim.Changed) simulation = preAdvanceSim;
                             }
                         }
+                        // 移除队首斗法中的行动即弃战判负；通知在锁外路由给对手。
+                        if (aggregate.Actions.Count > 0 && aggregate.Actions[0].Id == actionId)
+                            TryForfeitActiveDuel();
                         if (!aggregate.RemoveAction(actionId)) return Fail("ACTION_NOT_FOUND", "行动不存在。");
                         Touch();
                         break;
@@ -539,6 +657,9 @@ public sealed class PlayerRuntime(
                             var preAdvanceSim = await AdvanceSimulationInternalAsync(now, cancellationToken);
                             if (preAdvanceSim.Changed) simulation = preAdvanceSim;
                         }
+                        // 把斗法中的队首行动挪下首位等于结束当前斗法行动，按弃战判负。
+                        if (aggregate.Actions.Count > 0 && aggregate.Actions[0].Id == actionInstanceId)
+                            TryForfeitActiveDuel();
                         if (!aggregate.MoveAction(actionInstanceId, direction)) return Fail("ACTION_NOT_FOUND", "行动不存在或已在边界位置。");
                         TouchDirtyOnly();
                         break;
@@ -570,11 +691,17 @@ public sealed class PlayerRuntime(
                         if (!requestId.HasValue) return Fail("INVALID_REQUEST_ID", "学习功法必须提供请求 ID。");
                         var itemId = payload.TryGetProperty("itemId", out var manualElement) && manualElement.ValueKind == JsonValueKind.String
                             ? manualElement.GetString() : null;
-                        if (itemId is null || !itemId.StartsWith("item.tome.", StringComparison.Ordinal)
-                            || !gameData.RawItems.ContainsKey(itemId))
-                            return Fail("INVALID_MANUAL", "请选择完整功法秘籍。");
-                        var abilityId = new AbilityId("ability." + itemId["item.tome.".Length..]);
+                        var isTome = itemId?.StartsWith("item.tome.", StringComparison.Ordinal) == true;
+                        var isFragment = itemId?.StartsWith("item.fragment.", StringComparison.Ordinal) == true;
+                        if (itemId is null || (!isTome && !isFragment) || !gameData.RawItems.ContainsKey(itemId))
+                            return Fail("INVALID_MANUAL", "请选择完整功法秘籍或残卷。");
+                        var prefix = isTome ? "item.tome." : "item.fragment.";
+                        var abilityId = new AbilityId("ability." + itemId[prefix.Length..]);
                         if (!gameData.Abilities.ContainsKey(abilityId.Value)) return Fail("INVALID_ABILITY", "秘籍对应功法不存在。");
+                        // 已习得秘籍复读 +10000 技能经验；残卷 +500 且要求已习得。
+                        var alreadyLearned = aggregate.Loadout.LearnedAbilities.Contains(abilityId);
+                        if (!isTome && !alreadyLearned)
+                            return Fail("ABILITY_NOT_LEARNED", "必须先习得对应功法才能研读残卷。");
                         await EnsureWalletFreshAsync(cancellationToken);
                         var before = aggregate.ExportState();
                         var walletBefore = wallet.Balances.ToArray();
@@ -584,7 +711,10 @@ public sealed class PlayerRuntime(
                         var committed = false;
                         try
                         {
-                            aggregate.LearnAbility(abilityId);
+                            if (alreadyLearned)
+                                aggregate.GrantAbilityExperience(abilityId, isTome ? 10_000 : 500);
+                            else
+                                aggregate.LearnAbility(abilityId);
                             var now = DateTimeOffset.UtcNow;
                             var version = Math.Max(_logicalVersion + 1, aggregate.StateVersion);
                             var writes = SectionCodec.EncodeAggregate(aggregate, now, version);
@@ -612,7 +742,7 @@ public sealed class PlayerRuntime(
                     }
                     case "progression.breakthrough":
                     {
-                        aggregate.Breakthrough();
+                        aggregate.Breakthrough(gameData.RealmProgression);
                         TouchDirtyOnly();
                         break;
                     }
@@ -682,6 +812,8 @@ public sealed class PlayerRuntime(
                             plan.EdgeIds,
                             plan.Segments);
 
+                        // 移动行动插队到队首会打断进行中的斗法，按弃战判负。
+                        TryForfeitActiveDuel();
                         var travelEnqueuedAt = aggregate.LastSimulatedAt > now ? aggregate.LastSimulatedAt : now;
                         var travelIntent = new ActionIntent(new ActionId("world.travel"), 1, targetNodeId);
                         aggregate.EnqueuePriority(travelIntent, travelEnqueuedAt, actions, travelState);
@@ -726,7 +858,14 @@ public sealed class PlayerRuntime(
                     case "player.rename":
                     {
                         var name = payload.TryGetProperty("displayName", out var nameElement) ? nameElement.GetString() : null;
-                        aggregate.Rename(name ?? string.Empty);
+                        var now = DateTimeOffset.UtcNow;
+                        // 先做无副作用的格式与冷却校验，再由唯一索引原子查重，最后才落聚合。
+                        aggregate.EnsureCanRename(name ?? string.Empty, now);
+                        if (accounts is not null
+                            && !string.Equals(aggregate.DisplayName, name?.Trim(), StringComparison.Ordinal)
+                            && !await accounts.RenamePlayerAsync(aggregate.PlayerId.Value, name!.Trim(), cancellationToken))
+                            return Fail("NAME_TAKEN", "该道号已被占用。");
+                        aggregate.Rename(name ?? string.Empty, now);
                         Touch();
                         break;
                     }
@@ -812,7 +951,8 @@ public sealed class PlayerRuntime(
             try
             {
                 // 战斗遭遇与持续消耗品都需要完整配表；钱包仅作开封库存判断，实际扣减仍随 AssetDeltas 原子提交。
-                var result = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet);
+                // 在线推进路径启用斗法撮合；离线补算（ComputeNode 等）不传该选项以保持确定性。
+                var result = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet, new DuelAdvanceOptions(MatchingEnabled: true));
                 if (result.AssetDeltas.Count > 0)
                 {
                     var transaction = new EconomyTransactionRequest(
@@ -884,6 +1024,25 @@ public sealed class PlayerRuntime(
             var payload = JsonSerializer.SerializeToElement(new { targetTime = target }, ServerJson.Options);
             var result = await ExecuteAsync("simulation.advance", payload, 0, null, cancellationToken);
             return result.Simulation is null ? null : result;
+        }
+
+        /// <summary>
+        /// 会话卸载路径：先把在线状态落为离线再强制刷盘，保证 player_projection 的
+        /// presence/last_active_at 能区分在线玩家与可冷挂机玩家。
+        /// 仅当当前为 Online 才改写，避免覆盖系统置下的 Suspended 状态。
+        /// </summary>
+        public async ValueTask MarkOfflineAndFlushAsync(CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                if (!_disposed && aggregate.Presence == PresenceState.Online)
+                    aggregate.SetPresence(PresenceState.Offline);
+                // 卸载前强制 Progression 落盘：道龄随空转时间累积但不标脏，需在此收口。
+                aggregate.MarkDirty(PlayerSectionKind.Progression);
+            }
+            finally { _gate.Release(); }
+            await FlushAsync(true, cancellationToken);
         }
 
         /// <summary>
@@ -988,6 +1147,111 @@ public sealed class PlayerRuntime(
                     _dirtyAt.Remove(write.SectionKind);
                 }
                 _pendingReceipts.Clear();
+            }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>斗法弃战：队首行动存在未裁决回放时判负记账，并把对手通知记入锁外路由队列。</summary>
+        private void TryForfeitActiveDuel()
+        {
+            if (aggregate.ApplyDuelForfeit(DateTimeOffset.UtcNow, gameData.Duel) is { } forfeit)
+                _pendingDuelForfeits.Add(forfeit);
+        }
+
+        /// <summary>取走并清空本侧产生的弃战通知（命令路径锁内记录、锁外由运行时路由）。</summary>
+        public async ValueTask<IReadOnlyList<(Guid DuelId, Guid PeerId)>> DrainDuelForfeitsAsync(CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                var list = _pendingDuelForfeits.ToArray();
+                _pendingDuelForfeits.Clear();
+                return list;
+            }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>撮合读取：队首处于斗法匹配等待相位时返回自身实力，否则 null。</summary>
+        public async ValueTask<(Guid PlayerId, double Power)?> ReadDuelPendingAsync(CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try { return aggregate.IsDuelPending ? (aggregate.PlayerId.Value, aggregate.DuelPower) : null; }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>撮合读取：满足斗法入场资格（勾选斗法、有遭遇计数、无冷却、无进行中斗法）时返回实力。</summary>
+        public async ValueTask<(Guid PlayerId, double Power)?> ReadDuelCandidateAsync(CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                return aggregate.CanJoinDuel(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d)
+                    ? (aggregate.PlayerId.Value, aggregate.DuelPower)
+                    : null;
+            }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>斗法预约：锁定进行中标识并消耗一点遭遇计数，成功时返回本侧开战镜像快照。</summary>
+        public async ValueTask<DuelCombatant?> ReserveDuelAsync(Guid duelId, CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                if (!aggregate.TryReserveDuel(duelId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d)) return null;
+                TouchDirtyOnly();
+                return aggregate.BuildDuelMirror(gameData);
+            }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>解除斗法预约：撮合中断回滚，归还遭遇计数。</summary>
+        public async ValueTask ReleaseDuelReservationAsync(Guid duelId, CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try { aggregate.ReleaseDuelReservation(duelId); TouchDirtyOnly(); }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>挂载斗法回放：把撮合产出的确定性剧本接入队首战斗远征（预约须先成功）。</summary>
+        public async ValueTask<bool> AttachDuelAsync(DuelPlaybackState playback, CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                aggregate.AttachDuel(playback);
+                TouchDirtyOnly();
+                return true;
+            }
+            catch (DomainException) { return false; }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>撤销斗法挂接：对手挂载失败时把本侧从 Duel 相位回滚为搜寻完成态。</summary>
+        public async ValueTask DetachDuelAsync(Guid duelId, CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try { aggregate.DetachDuel(duelId); TouchDirtyOnly(); }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>撮合无可用对手：退出匹配等待相位，本波转正常怪物波次。</summary>
+        public async ValueTask AbortDuelSeekAsync(CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try { aggregate.AbortDuelSeek(); TouchDirtyOnly(); }
+            finally { _gate.Release(); }
+        }
+
+        /// <summary>对手弃战通知：本地回放标记为已裁决胜利，下一拍推进结算缴获。</summary>
+        public async ValueTask<bool> ApplyPeerForfeitAsync(Guid duelId, CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                if (!aggregate.ApplyPeerForfeit(duelId)) return false;
+                TouchDirtyOnly();
+                return true;
             }
             finally { _gate.Release(); }
         }

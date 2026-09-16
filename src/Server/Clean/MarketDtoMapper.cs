@@ -32,7 +32,8 @@ public static class MarketDtoMapper
             _ => "unknown"
         },
         order.Sequence,
-        order.CreatedAt);
+        order.CreatedAt,
+        order.ExpiresAt);
 
     /// <summary>
     /// 转换为Placement。

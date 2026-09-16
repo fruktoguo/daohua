@@ -1,12 +1,12 @@
 namespace Server.Clean;
 
-/// <summary>schema v2 的一次性建库脚本，不迁移旧库。</summary>
+/// <summary>schema v3 的一次性建库脚本，不迁移旧库。</summary>
 public static class PostgresSchema
 {
     /// <summary>
     /// 表示常量 Version。
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     /// <summary>
     /// 表示常量 Sql。
@@ -303,19 +303,26 @@ public static class PostgresSchema
         input_payload bytea NOT NULL,
         output_payload bytea NULL,
         lease_until timestamptz NULL,
+        lease_token uuid NULL,
+        next_attempt_at timestamptz NULL,
+        last_error varchar(512) NULL,
         attempts integer NOT NULL DEFAULT 0,
         updated_at timestamptz NOT NULL,
         created_at timestamptz NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ix_compute_jobs_ready ON platform.compute_jobs(status, target_time);
     CREATE INDEX IF NOT EXISTS ix_compute_jobs_retention ON platform.compute_jobs(status, updated_at);
+    -- 同一玩家最多一个未完结冷挂机任务：pending/leased 期间重复入队走 upsert/忽略，
+    -- 防止同一玩家被并发派发到多个计算批次。
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_compute_jobs_open
+        ON platform.compute_jobs(player_id) WHERE status IN ('pending', 'leased');
 
     CREATE TABLE IF NOT EXISTS platform.schema_version (
         version integer PRIMARY KEY,
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (2, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (3, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 
@@ -378,7 +385,7 @@ public static class PostgresSchemaBootstrap
         };
         var value = await command.ExecuteScalarAsync(cancellationToken);
         if (value is not int version || version != PostgresSchema.Version)
-            throw new InvalidOperationException($"PostgreSQL schema 版本不匹配，要求 v{PostgresSchema.Version}。请在本地开发阶段重新初始化数据库，不提供历史 migration。");
+            throw new InvalidOperationException($"PostgreSQL schema 版本不匹配，要求 v{PostgresSchema.Version}。请重建数据库，或由运维显式执行 migrations/ 目录中的升级脚本。");
     }
 }
 

@@ -54,7 +54,7 @@ public sealed class PostgresRetentionRepository(
             SELECT job_id
             FROM platform.compute_jobs
             WHERE updated_at < $1
-              AND status IN ('succeeded', 'failed', 'cancelled')
+              AND status IN ('succeeded', 'failed', 'cancelled', 'dead')
             ORDER BY updated_at
             LIMIT $2
             """, "DELETE FROM platform.compute_jobs j USING ({0}) doomed WHERE j.job_id = doomed.job_id", computeBefore, cancellationToken);

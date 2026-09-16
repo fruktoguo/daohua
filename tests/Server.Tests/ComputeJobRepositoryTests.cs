@@ -1,0 +1,295 @@
+using Npgsql;
+using Server.Clean;
+using Xunit;
+
+namespace Server.Tests;
+
+/// <summary>
+/// platform.compute_jobs 仓库级回归：入队去重、租约领取、完成/失败终态、
+/// SKIP LOCKED 并发语义与冷挂机候选筛选。依赖 DAOHUA_MARKET_TEST_CONNECTION 指向的专用库。
+/// </summary>
+public sealed class ComputeJobRepositoryTests
+{
+    private const int MaxAttempts = 3;
+
+    /// <summary>派生 job_id 必须对相同输入确定、对不同输入区分。</summary>
+    [Fact]
+    public void DeriveJobIdIsDeterministicAndDistinct()
+    {
+        var player = Guid.NewGuid();
+        var first = PostgresComputeJobRepository.DeriveJobId(player, 1_700_000_000_000);
+        Assert.Equal(first, PostgresComputeJobRepository.DeriveJobId(player, 1_700_000_000_000));
+        Assert.NotEqual(first, PostgresComputeJobRepository.DeriveJobId(player, 1_700_000_000_001));
+        Assert.NotEqual(first, PostgresComputeJobRepository.DeriveJobId(Guid.NewGuid(), 1_700_000_000_000));
+    }
+
+    /// <summary>同一玩家的未完结任务去重：pending 行就地刷新而非重复入队。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task EnqueueDeduplicatesOpenJobPerPlayer()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        var payload = new byte[] { 1, 2, 3 };
+
+        Assert.Equal(ComputeEnqueueResult.Inserted,
+            await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow, payload));
+        Assert.Equal(ComputeEnqueueResult.Refreshed,
+            await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(5), new byte[] { 9 }));
+
+        Assert.Equal(1, await CountRowsAsync(source, player));
+        // 同玩家同目标时刻派生出相同 job_id：等价重复入队被跳过。
+        var target = DateTimeOffset.UtcNow.AddMinutes(9);
+        Assert.Equal(ComputeEnqueueResult.Refreshed, await jobs.EnqueueAsync(player, target, payload));
+        Assert.Equal(ComputeEnqueueResult.SkippedExisting, await jobs.EnqueueAsync(player, target, payload));
+        Assert.Equal(1, await CountRowsAsync(source, player));
+
+        // leased 行不打扰：拨回到期后领取，再次入队被跳过。
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET target_time = now() - interval '1 minute' WHERE player_id = $1",
+            player);
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        Assert.Contains(claims, claim => claim.PlayerId == player);
+        Assert.Equal(ComputeEnqueueResult.SkippedExisting,
+            await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(30), payload));
+    }
+
+    /// <summary>领取只拿到期 pending 与过期租约；活跃租约内的任务不可被重取。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ClaimDueRespectsLeaseAndSchedule()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var due = await SeedPlayerAsync(source);
+        var future = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(due, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        await jobs.EnqueueAsync(future, DateTimeOffset.UtcNow.AddHours(1), new byte[] { 1 });
+
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2));
+        var claim = Assert.Single(claims, entry => entry.PlayerId == due);
+        Assert.DoesNotContain(claims, entry => entry.PlayerId == future);
+        Assert.Equal(1, claim.Attempts);
+        Assert.NotEqual(Guid.Empty, claim.LeaseToken);
+
+        // 租约未到期：同一任务不可被重取。
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2)),
+            entry => entry.JobId == claim.JobId);
+
+        // 租约过期后孤儿行可被重取，attempts 继续累加。
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET lease_until = now() - interval '1 second' WHERE job_id = $1",
+            claim.JobId);
+        var orphan = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(2)),
+            entry => entry.JobId == claim.JobId);
+        Assert.Equal(2, orphan.Attempts);
+    }
+
+    /// <summary>完成必须匹配租约令牌；错误令牌不得篡改他人任务。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task CompleteRequiresMatchingLeaseToken()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.PlayerId == player);
+
+        Assert.False(await jobs.CompleteAsync(claim.JobId, Guid.NewGuid(), new byte[] { 2 }));
+        Assert.True(await jobs.CompleteAsync(claim.JobId, claim.LeaseToken, new byte[] { 2 }));
+        Assert.Equal("succeeded", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE job_id = $1", claim.JobId));
+        Assert.Equal(new byte[] { 2 }, (byte[])(await ScalarAsync(source,
+            "SELECT output_payload FROM platform.compute_jobs WHERE job_id = $1", claim.JobId))!);
+        // 已完结的任务不再被任何令牌更新，也不再被领取。
+        Assert.False(await jobs.CompleteAsync(claim.JobId, claim.LeaseToken, new byte[] { 3 }));
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.JobId == claim.JobId);
+    }
+
+    /// <summary>可重试失败退回 pending 并设重试闸门；不可重试与超上限进入 dead 终态。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task FailRetriesWithBackoffThenDead()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(player, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.PlayerId == player);
+
+        Assert.True(await jobs.FailAsync(claim.JobId, claim.LeaseToken, "节点超时",
+            retryable: true, TimeSpan.FromMinutes(10), MaxAttempts));
+        Assert.Equal("pending", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE job_id = $1", claim.JobId));
+        Assert.Equal("节点超时", await ScalarAsync(source,
+            "SELECT last_error FROM platform.compute_jobs WHERE job_id = $1", claim.JobId));
+        // 重试闸门未到期：暂不可领取。
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.JobId == claim.JobId);
+
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET next_attempt_at = now() - interval '1 second' WHERE job_id = $1",
+            claim.JobId);
+        var retry = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.JobId == claim.JobId);
+        Assert.Equal(2, retry.Attempts);
+
+        // 领取次数达到上限后即使可重试错误也直接 dead。
+        Assert.True(await jobs.FailAsync(retry.JobId, retry.LeaseToken, "再次失败",
+            retryable: true, TimeSpan.Zero, maxAttempts: 2));
+        Assert.Equal("dead", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE job_id = $1", claim.JobId));
+        Assert.DoesNotContain(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.JobId == claim.JobId);
+
+        // 不可重试错误直接 dead。
+        var other = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(other, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        var fatal = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.PlayerId == other);
+        Assert.True(await jobs.FailAsync(fatal.JobId, fatal.LeaseToken, "载荷非法",
+            retryable: false, TimeSpan.Zero, MaxAttempts));
+        Assert.Equal("dead", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE job_id = $1", fatal.JobId));
+    }
+
+    /// <summary>HTTP 层失败的整批释放：同令牌 leased 行统一退回 pending，超上限进 dead。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ReleaseLeaseRequeuesWholeBatch()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var first = await SeedPlayerAsync(source);
+        var second = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(first, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        await jobs.EnqueueAsync(second, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        Assert.Equal(2, claims.Count(entry => entry.PlayerId == first || entry.PlayerId == second));
+        var token = Assert.Single(claims.Where(entry => entry.PlayerId == first || entry.PlayerId == second)
+            .Select(entry => entry.LeaseToken).Distinct());
+
+        Assert.Equal(2, await jobs.ReleaseLeaseAsync(token, "连接重置",
+            TimeSpan.FromMinutes(1), MaxAttempts));
+        // 释放会清空租约字段并退回 pending；两条任务应可再次被领取。
+        Assert.Equal(2, (long)(await ScalarAsync(source,
+            "SELECT count(*) FROM platform.compute_jobs WHERE player_id IN ($1, $2) AND status = 'pending' AND lease_token IS NULL",
+            first, second))!);
+    }
+
+    /// <summary>SKIP LOCKED：被其他事务持有的行被跳过，未被锁的行仍可领取。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ClaimSkipsRowsLockedByAnotherTransaction()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var locked = await SeedPlayerAsync(source);
+        var free = await SeedPlayerAsync(source);
+        await jobs.EnqueueAsync(locked, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        await jobs.EnqueueAsync(free, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+
+        // 另一个事务对目标任务行加锁并保持未提交；领取器必须跳过它。
+        await using var locker = await source.OpenConnectionAsync();
+        await using var transaction = await locker.BeginTransactionAsync();
+        await using (var lockCommand = new NpgsqlCommand(
+            "SELECT job_id FROM platform.compute_jobs WHERE player_id = $1 FOR UPDATE", locker, transaction))
+        {
+            lockCommand.Parameters.Add(new NpgsqlParameter { Value = locked });
+            Assert.NotNull(await lockCommand.ExecuteScalarAsync());
+        }
+
+        var claims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        Assert.DoesNotContain(claims, entry => entry.PlayerId == locked);
+        Assert.Contains(claims, entry => entry.PlayerId == free);
+        await transaction.RollbackAsync();
+    }
+
+    /// <summary>冷挂机扫描只筛出离线、在窗口内、过宽限且无未完结任务/存活租约的玩家。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ScanColdPlayersFiltersPresenceWindowAndOpenJobs()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var minIdle = TimeSpan.FromMinutes(5);
+        var window = TimeSpan.FromHours(48);
+        var now = DateTimeOffset.UtcNow;
+
+        var eligible = await SeedPlayerAsync(source);
+        var online = await SeedPlayerAsync(source);
+        var tooOld = await SeedPlayerAsync(source);
+        var tooFresh = await SeedPlayerAsync(source);
+        var busy = await SeedPlayerAsync(source);
+        var leased = await SeedPlayerAsync(source);
+        var seeded = new HashSet<Guid> { eligible, online, tooOld, tooFresh, busy, leased };
+
+        await UpsertProjectionAsync(source, eligible, "offline", now.AddMinutes(-10));
+        await UpsertProjectionAsync(source, online, "online", now.AddMinutes(-10));
+        await UpsertProjectionAsync(source, tooOld, "offline", now.AddHours(-60));
+        await UpsertProjectionAsync(source, tooFresh, "offline", now.AddMinutes(-1));
+        await UpsertProjectionAsync(source, busy, "offline", now.AddMinutes(-10));
+        await UpsertProjectionAsync(source, leased, "offline", now.AddMinutes(-10));
+
+        // busy 已有未完结任务；leased 仍被运行时实例持有。
+        await jobs.EnqueueAsync(busy, now.AddMinutes(-1), new byte[] { 1 });
+        await SqlAsync(source,
+            "INSERT INTO game.player_runtime_leases VALUES ($1, $2, now() + interval '5 minutes', now())",
+            leased, Guid.NewGuid());
+
+        var candidates = await jobs.ScanColdPlayersAsync(minIdle, window, 64);
+        var picked = candidates.Select(candidate => candidate.PlayerId).ToHashSet();
+        Assert.Contains(eligible, picked);
+        Assert.DoesNotContain(picked, id => seeded.Contains(id) && id != eligible);
+    }
+
+    private static async Task<(NpgsqlDataSource Source, PostgresComputeJobRepository Repository)> OpenRepositoryAsync()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("DAOHUA_MARKET_TEST_CONNECTION")
+            ?? throw new InvalidOperationException("冷挂机仓库集成测试需要专用 PostgreSQL 库：DAOHUA_MARKET_TEST_CONNECTION。");
+        var source = NpgsqlDataSource.Create(connectionString);
+        // 多个集成测试类并行建库时 DDL 可能互相死锁，重试一次即可。
+        try { await SqlAsync(source, PostgresSchema.Sql); }
+        catch (PostgresException exception) when (exception.SqlState is "40P01" or "40001")
+        {
+            await SqlAsync(source, PostgresSchema.Sql);
+        }
+        return (source, new PostgresComputeJobRepository(source));
+    }
+
+    private static async Task<Guid> SeedPlayerAsync(NpgsqlDataSource source)
+    {
+        var playerId = Guid.NewGuid();
+        await SqlAsync(source,
+            "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())",
+            playerId, playerId.ToString());
+        await SqlAsync(source,
+            "INSERT INTO identity.players VALUES ($1,$1,$2,$2,now(),now(),1)",
+            playerId, playerId.ToString());
+        return playerId;
+    }
+
+    private static Task UpsertProjectionAsync(
+        NpgsqlDataSource source, Guid playerId, string presence, DateTimeOffset lastActiveAt) =>
+        SqlAsync(source, """
+            INSERT INTO game.player_projection
+                (player_id, realm_rank, current_node_id, presence, last_active_at, projection_version, updated_at)
+            VALUES ($1, 0, 'node.test', $2, $3, 1, now())
+            """, playerId, presence, lastActiveAt);
+
+    private static async Task<long> CountRowsAsync(NpgsqlDataSource source, Guid playerId) =>
+        (long)(await ScalarAsync(source,
+            "SELECT count(*) FROM platform.compute_jobs WHERE player_id = $1", playerId))!;
+
+    private static async Task<object?> ScalarAsync(NpgsqlDataSource source, string sql, params object[] values)
+    {
+        await using var command = source.CreateCommand(sql);
+        foreach (var value in values) command.Parameters.Add(new NpgsqlParameter { Value = value });
+        return await command.ExecuteScalarAsync();
+    }
+
+    private static async Task SqlAsync(NpgsqlDataSource source, string sql, params object[] values)
+    {
+        await using var command = source.CreateCommand(sql);
+        foreach (var value in values) command.Parameters.Add(new NpgsqlParameter { Value = value });
+        await command.ExecuteNonQueryAsync();
+    }
+}

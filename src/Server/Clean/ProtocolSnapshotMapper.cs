@@ -34,7 +34,7 @@ public static class ProtocolSnapshotMapper
     public static PlayerSnapshotDto ToSnapshot(PlayerRuntimeSnapshot runtime, string gameDataFingerprint, GameDataCatalog gameData)
     {
         var state = runtime.State;
-        var sections = new List<PlayerSectionDto>(7);
+        var sections = new List<PlayerSectionDto>(8);
         foreach (var (kind, value) in EnumerateSections(state, gameData))
         {
             // WebSocket v1 的浏览器载荷保持 JSON；Brotli 只用于 PostgreSQL section，避免
@@ -150,7 +150,16 @@ public static class ProtocolSnapshotMapper
 
     private static IEnumerable<(string Kind, object Value)> EnumerateSections(PlayerAggregateState state, GameDataCatalog? gameData)
     {
-        yield return (PlayerSectionKinds.Progression, state.Progression);
+        yield return (PlayerSectionKinds.Progression, new
+        {
+            state.Progression.RealmLevel, state.Progression.Qi, state.Progression.Experience, state.Progression.LifetimeQi,
+            state.Progression.CompletedActions, state.Progression.SimulationCarrySeconds,
+            state.Progression.NormalKills, state.Progression.EliteKills, state.Progression.BossKills,
+            state.Progression.TotalDefeats, state.Progression.CultivationSeconds, state.Progression.AgeSeconds,
+            lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
+                ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
+                : 0
+        });
         yield return (PlayerSectionKinds.World, ToWorldSection(state.World, gameData));
         yield return (PlayerSectionKinds.Combat, ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")));
         yield return (PlayerSectionKinds.Buffs, state.Buffs.Select(buff => new
@@ -163,6 +172,7 @@ public static class ProtocolSnapshotMapper
         yield return (PlayerSectionKinds.Loadout, ToLoadoutSection(state));
         yield return (PlayerSectionKinds.Settings, new { state.Settings, state.Presence });
         yield return (PlayerSectionKinds.ActionQueue, ToActionQueueSection(state.Actions, gameData));
+        yield return (PlayerSectionKinds.Duel, state.Duel);
     }
 
     private static object ToLoadoutSection(PlayerAggregateState state) => new
@@ -171,6 +181,7 @@ public static class ProtocolSnapshotMapper
         state.Loadout.AbilitySlots,
         state.Loadout.Equipment,
         learnedAbilityIds = state.LearnedAbilities.Select(id => id.Value).ToArray(),
+        abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>(),
         consumableSlots = (state.Settings.AutoUseSlots ?? []).Where(slot => slot.ActionType == "combat")
             .OrderBy(slot => slot.SlotIndex).Select(slot => new
             {
@@ -294,6 +305,34 @@ public static class ProtocolSnapshotMapper
         var edgeProgress = world.EdgeProgress;
         var x = !string.IsNullOrWhiteSpace(edgeId) ? world.X : (hasNode ? ReadDouble(node, "x", world.X) : world.X);
         var y = !string.IsNullOrWhiteSpace(edgeId) ? world.Y : (hasNode ? ReadDouble(node, "y", world.Y) : world.Y);
+
+        // 节点生态：遭遇池弱引用解析出栖息生灵与危险度区间，供 NearbyPanel 直接消费。
+        var onEdge = !string.IsNullOrWhiteSpace(edgeId);
+        var encounterIds = hasNode && !onEdge ? ReadStringArray(node, "encounterIds") : Array.Empty<string>();
+        var nodeEncounters = gameData is null
+            ? Array.Empty<JsonElement>()
+            : encounterIds
+                .Select(id => gameData.Encounters.FirstOrDefault(e => e.ValueKind == JsonValueKind.Object && ReadString(e, "id") == id))
+                .Where(e => e.ValueKind == JsonValueKind.Object)
+                .ToArray();
+        var normalIds = new List<string>();
+        var eliteIds = new List<string>();
+        var bossIds = new List<string>();
+        foreach (var e in nodeEncounters)
+        {
+            normalIds.AddRange(ReadArray(e, "randomSpawns").Select(s => ReadString(s, "enemyId")));
+            normalIds.AddRange(ReadStringArray(e, "normalEnemyIds"));
+            eliteIds.AddRange(ReadStringArray(e, "eliteEnemyIds"));
+            bossIds.AddRange(ReadStringArray(e, "bossEnemyIds"));
+        }
+        var minBudget = nodeEncounters.Select(e => ReadDouble(e, "minBudget", double.NaN))
+            .Where(double.IsFinite).DefaultIfEmpty().Min();
+        var maxBudget = nodeEncounters.Select(e => ReadDouble(e, "maxBudget", double.NaN))
+            .Where(double.IsFinite).DefaultIfEmpty().Max();
+        var eliteInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerElite", ReadDouble(e, "eliteInterval", double.NaN)))
+            .Where(double.IsFinite).DefaultIfEmpty().Min();
+        var bossInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerBoss", ReadDouble(e, "bossInterval", double.NaN)))
+            .Where(double.IsFinite).DefaultIfEmpty().Min();
         return new
         {
             mapId = hasMap ? ReadString(map, "id", "map.qingyun-mountains") : "map.qingyun-mountains",
@@ -307,18 +346,47 @@ public static class ProtocolSnapshotMapper
                 : (hasNode ? ReadString(node, "name", world.NodeId) : world.NodeId),
             cultivationMultiplier = hasNode ? ReadDouble(node, "cultivationMultiplier", 1) : 1d,
             availableActionIds = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<string>() : ReadStringArray(node, "availableActionIds"),
-            encounterIds = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<string>() : ReadStringArray(node, "encounterIds"),
+            encounterIds,
             npcs = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "npcs"),
             buildings = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "buildings"),
-            minBudget = ReadDoubleNullable(node, "minBudget"),
-            maxBudget = ReadDoubleNullable(node, "maxBudget"),
-            eliteInterval = ReadDoubleNullable(node, "eliteInterval"),
-            bossInterval = ReadDoubleNullable(node, "bossInterval"),
-            monsters = Array.Empty<object>(),
-            eliteEnemies = Array.Empty<object>(),
-            bossEnemies = Array.Empty<object>()
+            minBudget = double.IsFinite(minBudget) ? minBudget : (double?)null,
+            maxBudget = double.IsFinite(maxBudget) ? maxBudget : (double?)null,
+            eliteInterval = double.IsFinite(eliteInterval) ? eliteInterval : (double?)null,
+            bossInterval = double.IsFinite(bossInterval) ? bossInterval : (double?)null,
+            monsters = normalIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray(),
+            eliteEnemies = eliteIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray(),
+            bossEnemies = bossIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray()
         };
     }
+
+    /// <summary>把怪物配表条目投影为 NearbyPanel 消费的附近生灵 DTO。</summary>
+    private static object? ToNearbyMonster(GameDataCatalog? gameData, string id)
+    {
+        if (gameData is null || string.IsNullOrWhiteSpace(id)
+            || !gameData.Monsters.TryGetValue(id, out var monster)
+            || monster.ValueKind != JsonValueKind.Object)
+            return null;
+        gameData.CombatMonsters.TryGetValue(id, out var def);
+        var visual = monster.TryGetProperty("visual", out var v) && v.ValueKind == JsonValueKind.Object ? v : default;
+        return new
+        {
+            monsterId = id,
+            name = ReadString(monster, "name", id),
+            level = def?.Level ?? ReadDouble(monster, "level", 1),
+            tier = gameData.BaseAttributes?.TierAt(def?.Level ?? ReadDouble(monster, "level", 1)) ?? 1,
+            rank = ReadString(monster, "rank", "normal"),
+            budgetCost = ReadDouble(monster, "budgetCost", 1),
+            maxHitpoints = def?.Stats.MaxHitpoints ?? 0,
+            maxDamage = def?.Stats.AttackPower ?? 0,
+            armor = def?.Stats.Defense ?? 0,
+            drops = ReadArray(monster, "dropTable").Select(d => ReadString(d, "itemId")).Where(s => s.Length > 0).ToArray(),
+            visualSource = visual.ValueKind == JsonValueKind.Object ? ReadString(visual, "source") : null,
+            visualRenderer = visual.ValueKind == JsonValueKind.Object ? ReadString(visual, "renderer") : null
+        };
+    }
+
+    private static JsonElement[] ReadArray(JsonElement value, string property) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var child) && child.ValueKind == JsonValueKind.Array
+        ? child.EnumerateArray().Select(item => item.Clone()).ToArray() : [];
 
     private static object[] ReadEntities(JsonElement value, string property)
     {

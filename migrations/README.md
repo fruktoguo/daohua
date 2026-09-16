@@ -22,3 +22,4 @@
 | 文件 | 覆盖范围 |
 | :--- | :--- |
 | `0001_v1_to_v2.sql` | `market.orders` 增加 `expires_at`（存量回填 `created_at + 30天`）与过期索引，schema_version 写入 2 |
+| `0002_v2_to_v3.sql` | `platform.compute_jobs` 增加 `lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，schema_version 写入 3 |

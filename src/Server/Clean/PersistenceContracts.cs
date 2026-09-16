@@ -31,13 +31,17 @@ public static class PlayerSectionKinds
     /// 表示常量 ActionQueue。
     /// </summary>
     public const string ActionQueue = "action_queue";
+    /// <summary>
+    /// 表示常量 Duel（斗法：遭遇计数、冷却、暂存区与战斗收益记录）。
+    /// </summary>
+    public const string Duel = "duel";
 
     /// <summary>
     /// 表示只读字段 All。
     /// </summary>
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue
+        Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue, Duel
     };
 
     /// <summary>
@@ -411,6 +415,17 @@ public interface IMarketTransactionStore
         CancellationToken cancellationToken = default);
 
     ValueTask<bool> CancelAsync(Guid orderId, Guid ownerPlayerId, int partitionId, long fenceToken, string idempotencyKey, CancellationToken cancellationToken = default);
+}
+
+/// <summary>冷挂机计算结果落库结局。</summary>
+public enum ComputeApplyOutcome : byte
+{
+    /// <summary>结果已按目标版本写入 section 与提交头。</summary>
+    Applied = 0,
+    /// <summary>提交头已不在任务发起版本：结果被丢弃，不覆盖较新状态。</summary>
+    StaleVersion = 1,
+    /// <summary>玩家提交头不存在：结果无处安放。</summary>
+    MissingPlayer = 2
 }
 
 /// <summary>

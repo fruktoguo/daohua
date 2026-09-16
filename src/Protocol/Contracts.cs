@@ -409,12 +409,14 @@ public sealed record PlayerSnapshotDeltaDto(
 /// <param name="RepeatCount">重复执行次数，默认为 1</param>
 /// <param name="TargetNodeId">目标节点标识，可选</param>
 /// <param name="Parameters">额外参数字典，可选</param>
+/// <param name="PvpEnabled">斗法开关：玩家同意参与 PVP 匹配，仅对战斗遭遇行动生效</param>
 public sealed record ActionIntentRequest(
     string RequestId,
     string ActionId,
     double RepeatCount = 1,
     string? TargetNodeId = null,
-    [property: JsonConverter(typeof(CamelCaseKeyDoubleDictionaryConverter))] IReadOnlyDictionary<string, double>? Parameters = null);
+    [property: JsonConverter(typeof(CamelCaseKeyDoubleDictionaryConverter))] IReadOnlyDictionary<string, double>? Parameters = null,
+    bool PvpEnabled = false);
 
 /// <summary>行动排队意图应答 DTO</summary>
 /// <param name="RequestId">请求唯一标识</param>
@@ -501,6 +503,7 @@ public sealed record MarketOrderRequestDto(
 /// <param name="Status">订单状态</param>
 /// <param name="Sequence">订单序列号</param>
 /// <param name="CreatedAt">创建时间</param>
+/// <param name="ExpiresAt">到期时间；无期限订单为 null</param>
 public sealed record MarketOrderDto(
     string OrderId,
     string OwnerId,
@@ -512,7 +515,8 @@ public sealed record MarketOrderDto(
     double RemainingQuantity,
     string Status,
     long Sequence,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? ExpiresAt);
 
 /// <summary>坊市撮合成交明细 DTO</summary>
 /// <param name="TradeId">成交唯一标识</param>

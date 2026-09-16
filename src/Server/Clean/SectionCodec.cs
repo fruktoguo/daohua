@@ -14,8 +14,8 @@ namespace Server.Clean;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本；v2：战斗分段加入回复余量、技能状态与已学功法，旧 v1 存档按本地开发清零规则直接拒绝。</summary>
-    public const int CurrentSchemaVersion = 2;
+    /// <summary>当前分段编解码模式版本；v3：新增斗法分段（duel），旧存档按本地开发清零规则直接拒绝。</summary>
+    public const int CurrentSchemaVersion = 3;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -153,8 +153,9 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoUseSlots ?? [], state.Presence),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence),
                 DomainSectionKind.ActionQueue => state.Actions,
+                DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
             };
             result.Add(Encode(aggregate.PlayerId.Value, key, Math.Max(1, stateVersionOverride ?? state.StateVersion), value, updatedAt) with
@@ -202,6 +203,7 @@ public static class SectionCodec
         var loadout = Decode<LoadoutDocument>(bundle.Sections[PlayerSectionKinds.Loadout]);
         var settings = Decode<SettingsDocument>(bundle.Sections[PlayerSectionKinds.Settings]);
         var actions = Decode<List<QueuedActionState>>(bundle.Sections[PlayerSectionKinds.ActionQueue]);
+        var duel = Decode<Domain.Player.PlayerDuelStateDocument>(bundle.Sections[PlayerSectionKinds.Duel]);
         return new DomainState(
             new PlayerId(bundle.Identity.PlayerId),
             new AccountId(bundle.Identity.AccountId),
@@ -217,9 +219,10 @@ public static class SectionCodec
             buffs,
             loadout.EquippedInstances,
             loadout.LearnedAbilities,
-            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoUseSlots),
+            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds),
             actions,
             loadout.State,
+            duel,
             loadout.EquippedItemIds);
     }
 
@@ -237,6 +240,7 @@ public static class SectionCodec
         DomainSectionKind.Loadout => PlayerSectionKinds.Loadout,
         DomainSectionKind.Settings => PlayerSectionKinds.Settings,
         DomainSectionKind.ActionQueue => "action_queue",
+        DomainSectionKind.Duel => PlayerSectionKinds.Duel,
         _ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
     };
 
@@ -254,6 +258,7 @@ public static class SectionCodec
         PlayerSectionKinds.Loadout => DomainSectionKind.Loadout,
         PlayerSectionKinds.Settings => DomainSectionKind.Settings,
         "action_queue" => DomainSectionKind.ActionQueue,
+        PlayerSectionKinds.Duel => DomainSectionKind.Duel,
         _ => throw new InvalidDataException($"未知 section: {section}")
     };
 
@@ -304,5 +309,6 @@ public static class SectionCodec
         bool NotificationsEnabled,
         bool LoopEnabled,
         IReadOnlyList<AutoUseSlotState> AutoUseSlots,
+        double RenameCooldownUntilUnixSeconds,
         PresenceState Presence);
 }

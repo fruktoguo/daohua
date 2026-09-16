@@ -36,6 +36,35 @@ public sealed record ServerOptions(
     /// <summary>坊市结算认领凭证保留期限</summary>
     public TimeSpan SettlementClaimRetention { get; init; } = TimeSpan.FromDays(30);
 
+    /// <summary>是否启用主服务 → ComputeNode 冷挂机派发链</summary>
+    public bool ComputeNodeEnabled { get; init; }
+    /// <summary>ComputeNode 内部批处理端点列表（http/https 绝对地址，可多节点轮询）</summary>
+    public IReadOnlyList<string> ComputeNodeEndpoints { get; init; } = [];
+    /// <summary>内部计算令牌（X-Compute-Token）；只从配置/环境变量读取，绝不写入日志</summary>
+    public string? ComputeNodeToken { get; init; }
+    /// <summary>单次派发领取的最大任务数</summary>
+    public int ComputeBatchSize { get; init; } = 64;
+    /// <summary>派发轮询间隔</summary>
+    public TimeSpan ComputePollInterval { get; init; } = TimeSpan.FromSeconds(5);
+    /// <summary>compute_jobs 行租约时长</summary>
+    public TimeSpan ComputeLease { get; init; } = TimeSpan.FromMinutes(2);
+    /// <summary>单次批次 HTTP 请求超时</summary>
+    public TimeSpan ComputeRequestTimeout { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>任务最大领取次数；超过后进入 dead 终态保留诊断窗口</summary>
+    public int ComputeMaxAttempts { get; init; } = 5;
+    /// <summary>冷挂机扫描间隔</summary>
+    public TimeSpan ColdCatchUpInterval { get; init; } = TimeSpan.FromMinutes(1);
+    /// <summary>冷挂机单次扫描玩家上限</summary>
+    public int ColdCatchUpBatchSize { get; init; } = 128;
+    /// <summary>离线宽限与最小补算步长：断线不足该时长或上次模拟时间距今不足该时长不入队</summary>
+    public TimeSpan ColdCatchUpMinIdle { get; init; } = TimeSpan.FromMinutes(5);
+    /// <summary>冷挂机筛选窗口：只处理最近活跃不超过该时长的玩家（对齐 48 小时离线收益封顶）</summary>
+    public TimeSpan ColdCatchUpWindow { get; init; } = TimeSpan.FromHours(48);
+
+    /// <summary>派发链是否具备可运行配置（启用 + 至少一个端点 + 令牌齐备）</summary>
+    public bool ComputeNodeConfigured =>
+        ComputeNodeEnabled && ComputeNodeEndpoints.Count > 0 && !string.IsNullOrWhiteSpace(ComputeNodeToken);
+
     /// <summary>
     /// 从 IConfiguration 绑定并校验全量服务端配置。
     /// 校验失败时抛出 InvalidOperationException 阻止服务启动。
@@ -66,6 +95,19 @@ public sealed record ServerOptions(
         var computeRetentionDays = configuration.GetValue("Storage:ComputeJobRetentionDays", 7);
         var dataProtectionRetentionDays = configuration.GetValue("Storage:DataProtectionKeyRetentionDays", 180);
         var settlementClaimRetentionDays = configuration.GetValue("Storage:SettlementClaimRetentionDays", 30);
+        var computeEnabled = configuration.GetValue("ComputeNode:Enabled", true);
+        // Endpoints 同时兼容单字符串（; , 空白分隔）与数组配置节两种写法。
+        var computeEndpoints = ParseEndpoints(configuration.GetSection("ComputeNode:Endpoints"));
+        var computeToken = configuration["ComputeNode:Token"];
+        var computeBatchSize = configuration.GetValue("ComputeNode:BatchSize", 64);
+        var computePollMs = configuration.GetValue("ComputeNode:PollIntervalMilliseconds", 5_000);
+        var computeLeaseSeconds = configuration.GetValue("ComputeNode:LeaseSeconds", 120);
+        var computeTimeoutSeconds = configuration.GetValue("ComputeNode:RequestTimeoutSeconds", 30);
+        var computeMaxAttempts = configuration.GetValue("ComputeNode:MaxAttempts", 5);
+        var coldScanSeconds = configuration.GetValue("ComputeNode:ColdCatchUpIntervalSeconds", 60);
+        var coldBatchSize = configuration.GetValue("ComputeNode:ColdCatchUpBatchSize", 128);
+        var coldMinIdleMinutes = configuration.GetValue("ComputeNode:ColdCatchUpMinIdleMinutes", 5);
+        var coldWindowHours = configuration.GetValue("ComputeNode:ColdCatchUpWindowHours", 48);
 
         if (batchSize is < 1 or > 10_000) throw new InvalidOperationException("Storage:SectionFlushBatchSize 必须在 1..10000。");
         if (flushIntervalMs is < 100 or > 60_000) throw new InvalidOperationException("Storage:SectionFlushIntervalMilliseconds 必须在 100..60000。");
@@ -84,6 +126,22 @@ public sealed record ServerOptions(
         if (computeRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:ComputeJobRetentionDays 必须在 1..3650。");
         if (dataProtectionRetentionDays is < 30 or > 3650) throw new InvalidOperationException("Storage:DataProtectionKeyRetentionDays 必须在 30..3650。");
         if (settlementClaimRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SettlementClaimRetentionDays 必须在 1..3650。");
+        if (computeBatchSize is < 1 or > 256) throw new InvalidOperationException("ComputeNode:BatchSize 必须在 1..256。");
+        if (computePollMs is < 500 or > 300_000) throw new InvalidOperationException("ComputeNode:PollIntervalMilliseconds 必须在 500..300000。");
+        if (computeLeaseSeconds is < 10 or > 3600) throw new InvalidOperationException("ComputeNode:LeaseSeconds 必须在 10..3600。");
+        if (computeTimeoutSeconds is < 5 or > 600) throw new InvalidOperationException("ComputeNode:RequestTimeoutSeconds 必须在 5..600。");
+        if (computeMaxAttempts is < 1 or > 100) throw new InvalidOperationException("ComputeNode:MaxAttempts 必须在 1..100。");
+        if (coldScanSeconds is < 10 or > 86_400) throw new InvalidOperationException("ComputeNode:ColdCatchUpIntervalSeconds 必须在 10..86400。");
+        if (coldBatchSize is < 1 or > 2_000) throw new InvalidOperationException("ComputeNode:ColdCatchUpBatchSize 必须在 1..2000。");
+        if (coldMinIdleMinutes is < 1 or > 1440) throw new InvalidOperationException("ComputeNode:ColdCatchUpMinIdleMinutes 必须在 1..1440。");
+        if (coldWindowHours is < 1 or > 720) throw new InvalidOperationException("ComputeNode:ColdCatchUpWindowHours 必须在 1..720。");
+        if (computeToken is { Length: > 512 }) throw new InvalidOperationException("ComputeNode:Token 长度不能超过 512。");
+        foreach (var endpoint in computeEndpoints)
+        {
+            if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
+                || uri.Scheme is not ("http" or "https"))
+                throw new InvalidOperationException($"ComputeNode:Endpoints 含非法端点：{endpoint}。必须是 http/https 绝对地址。");
+        }
 
         return new ServerOptions(
             configuration["Service:Name"] ?? "daohua",
@@ -106,8 +164,41 @@ public sealed record ServerOptions(
             AuditRetention = TimeSpan.FromDays(auditRetentionDays),
             ComputeJobRetention = TimeSpan.FromDays(computeRetentionDays),
             DataProtectionKeyRetention = TimeSpan.FromDays(dataProtectionRetentionDays),
-            SettlementClaimRetention = TimeSpan.FromDays(settlementClaimRetentionDays)
+            SettlementClaimRetention = TimeSpan.FromDays(settlementClaimRetentionDays),
+            ComputeNodeEnabled = computeEnabled,
+            ComputeNodeEndpoints = computeEndpoints,
+            ComputeNodeToken = string.IsNullOrWhiteSpace(computeToken) ? null : computeToken.Trim(),
+            ComputeBatchSize = computeBatchSize,
+            ComputePollInterval = TimeSpan.FromMilliseconds(computePollMs),
+            ComputeLease = TimeSpan.FromSeconds(computeLeaseSeconds),
+            ComputeRequestTimeout = TimeSpan.FromSeconds(computeTimeoutSeconds),
+            ComputeMaxAttempts = computeMaxAttempts,
+            ColdCatchUpInterval = TimeSpan.FromSeconds(coldScanSeconds),
+            ColdCatchUpBatchSize = coldBatchSize,
+            ColdCatchUpMinIdle = TimeSpan.FromMinutes(coldMinIdleMinutes),
+            ColdCatchUpWindow = TimeSpan.FromHours(coldWindowHours)
         };
+    }
+
+    private static IReadOnlyList<string> ParseEndpoints(IConfigurationSection section)
+    {
+        var endpoints = new List<string>();
+        var children = section.GetChildren().ToList();
+        if (children.Count > 0)
+        {
+            foreach (var child in children)
+            {
+                if (!string.IsNullOrWhiteSpace(child.Value)) endpoints.Add(child.Value.Trim());
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(section.Value))
+        {
+            foreach (var part in section.Value.Split([';', ',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                endpoints.Add(part.Trim());
+            }
+        }
+        return endpoints;
     }
 }
 

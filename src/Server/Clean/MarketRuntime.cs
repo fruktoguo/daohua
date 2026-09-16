@@ -26,6 +26,8 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private long _matchCount;
     private long _cancelCount;
     private long _rejectedCount;
+    private double _tradedQuantity;
+    private double _tradedGrossAmount;
     private readonly LogThrottle _persistenceErrorLog = new(TimeSpan.FromMinutes(1));
 
     /// <summary>
@@ -235,7 +237,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         Interlocked.Read(ref _placementCount),
         Interlocked.Read(ref _matchCount),
         Interlocked.Read(ref _cancelCount),
-        Interlocked.Read(ref _rejectedCount));
+        Interlocked.Read(ref _rejectedCount),
+        Volatile.Read(ref _tradedQuantity),
+        Volatile.Read(ref _tradedGrossAmount));
 
     /// <summary>
     /// 提交Async（异步）。
@@ -324,6 +328,12 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             lock (_booksGate) book.Restore(working.ExportActiveOrders(), working.Version);
             Interlocked.Increment(ref _placementCount);
             Interlocked.Add(ref _matchCount, fills.Length);
+            if (fills.Length > 0)
+            {
+                // 成交统计为 double（无 Interlocked.Add 重载），此段已在 _booksGate 锁内串行，读侧用 Volatile.Read。
+                _tradedQuantity += fills.Sum(fill => fill.Quantity);
+                _tradedGrossAmount += fills.Sum(fill => fill.Quantity * fill.Price);
+            }
             return result;
         }
         catch (Exception exception) when (IsExpectedRequestFailure(exception))
@@ -586,4 +596,6 @@ public sealed record MarketRuntimeMetrics(
     long PlacementCount,
     long MatchCount,
     long CancelCount,
-    long RejectedCount);
+    long RejectedCount,
+    double TradedQuantity,
+    double TradedGrossAmount);

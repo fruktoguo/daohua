@@ -91,11 +91,13 @@ if (processRole == ServerProcessRole.Api)
 }
 
 // 两种进程都需要 section/outbox 存储；worker 只装配这两个后台消费边界。
-builder.Services.AddSingleton<IPlayerStateRepository, PostgresSectionRepository>();
+builder.Services.AddSingleton<PostgresSectionRepository>();
+builder.Services.AddSingleton<IPlayerStateRepository>(sp => sp.GetRequiredService<PostgresSectionRepository>());
 builder.Services.AddSingleton<IOutboxRepository, PostgresOutboxRepository>();
 builder.Services.AddSingleton<ICommandReceiptStore, PostgresCommandReceiptRepository>();
 builder.Services.AddSingleton<PostgresRetentionRepository>();
-builder.Services.AddSingleton<IIntegrationEventDispatcher, UnconfiguredIntegrationEventDispatcher>();
+builder.Services.AddSingleton<IIntegrationEventDispatcher, AuditIntegrationEventDispatcher>();
+builder.Services.AddComputeDispatch();
 builder.Services.AddHealthChecks()
     .AddCheck("process", () => HealthCheckResult.Healthy(), tags: ["live"])
     .AddCheck<PostgresHealthCheck>("postgres", tags: ["ready"]);

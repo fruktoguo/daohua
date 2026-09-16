@@ -501,6 +501,117 @@ public sealed class PostgresSectionRepository(
         return new FlushBatchResult(claimed.Count, applied, failed, stopwatch.Elapsed);
     }
 
+    /// <summary>
+    /// 冷挂机计算结果落库：仅当提交头仍是任务发起时的 sourceStateVersion 才写入，
+    /// 在线写者或其他补算已推进提交头时整体丢弃，保证远端结果绝不覆盖较新状态。
+    /// 与 ApplyBatchAsync 遵循同一加锁顺序（先提交头后 section 行）。
+    /// </summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="sourceStateVersion">任务发起时的提交头版本。</param>
+    /// <param name="targetStateVersion">推进后的目标版本。</param>
+    /// <param name="writes">节点回传并已完成线侧校验的 section 写入集。</param>
+    /// <param name="lastSimulatedAt">推进后的模拟时刻。</param>
+    /// <param name="gameDataFingerprint">本批使用的游戏数据指纹。</param>
+    /// <param name="cancellationToken">取消操作的标记。</param>
+    public async ValueTask<ComputeApplyOutcome> ApplyComputeResultAsync(
+        Guid playerId,
+        long sourceStateVersion,
+        long targetStateVersion,
+        IReadOnlyList<SectionWrite> writes,
+        DateTimeOffset lastSimulatedAt,
+        string gameDataFingerprint,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(writes);
+        if (writes.Count == 0 || targetStateVersion <= sourceStateVersion)
+            throw new ArgumentException("计算结果版本与载荷无效。");
+        foreach (var write in writes) write.Validate();
+
+        var now = DateTimeOffset.UtcNow;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        long headVersion;
+        await using (var headCommand = new NpgsqlCommand("""
+            SELECT state_version FROM game.player_state_heads WHERE player_id = $1 FOR UPDATE
+            """, connection, transaction))
+        {
+            headCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            var current = await headCommand.ExecuteScalarAsync(cancellationToken);
+            if (current is not long version)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return ComputeApplyOutcome.MissingPlayer;
+            }
+            headVersion = version;
+        }
+        if (headVersion != sourceStateVersion)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return ComputeApplyOutcome.StaleVersion;
+        }
+
+        foreach (var write in writes)
+        {
+            await using var command = new NpgsqlCommand("""
+                INSERT INTO game.player_state_sections
+                    (player_id, section_kind, section_version, schema_version, codec, payload,
+                     raw_bytes, stored_bytes, checksum, updated_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                ON CONFLICT (player_id, section_kind) DO UPDATE SET
+                    section_version = EXCLUDED.section_version,
+                    schema_version = EXCLUDED.schema_version,
+                    codec = EXCLUDED.codec,
+                    payload = EXCLUDED.payload,
+                    raw_bytes = EXCLUDED.raw_bytes,
+                    stored_bytes = EXCLUDED.stored_bytes,
+                    checksum = EXCLUDED.checksum,
+                    updated_at = EXCLUDED.updated_at
+                WHERE EXCLUDED.section_version > game.player_state_sections.section_version
+                """, connection, transaction);
+            command.Parameters.Add(new NpgsqlParameter { Value = write.PlayerId });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.SectionKind });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.StateVersion });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.SchemaVersion });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.Codec });
+            command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = write.Payload });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.RawBytes });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.Payload.Length });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.Checksum });
+            command.Parameters.Add(new NpgsqlParameter { Value = write.UpdatedAt });
+            var sectionApplied = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+            if (sectionApplied && write.SectionKind == PlayerSectionKinds.ActionQueue)
+            {
+                await ApplyActionQueueAsync(connection, transaction,
+                    new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
+                        write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt),
+                    cancellationToken);
+            }
+        }
+
+        var checkpoints = await ReadSectionChecksumsAsync(connection, transaction, playerId, cancellationToken);
+        var headChecksum = ComputeHeadChecksum(checkpoints, out _);
+        // 提交头条件更新兜底：行锁已保证串行，此处仍带版本谓词作为最后防线。
+        await using (var headUpdate = new NpgsqlCommand("""
+            UPDATE game.player_state_heads
+            SET state_version = $2, last_simulated_at = $3, game_data_fingerprint = $4,
+                checksum = $5, updated_at = $6
+            WHERE player_id = $1 AND state_version = $7
+            """, connection, transaction))
+        {
+            headUpdate.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            headUpdate.Parameters.Add(new NpgsqlParameter { Value = targetStateVersion });
+            headUpdate.Parameters.Add(new NpgsqlParameter { Value = lastSimulatedAt });
+            headUpdate.Parameters.Add(new NpgsqlParameter { Value = gameDataFingerprint });
+            headUpdate.Parameters.Add(new NpgsqlParameter { Value = headChecksum });
+            headUpdate.Parameters.Add(new NpgsqlParameter { Value = now });
+            headUpdate.Parameters.Add(new NpgsqlParameter { Value = sourceStateVersion });
+            if (await headUpdate.ExecuteNonQueryAsync(cancellationToken) == 0)
+                throw new InvalidOperationException("计算结果落库时提交头发生并发漂移。");
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return ComputeApplyOutcome.Applied;
+    }
+
     private static async Task ApplyBatchAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -510,6 +621,17 @@ public sealed class PostgresSectionRepository(
     {
         if (items.Count == 0) return;
         var first = items[0];
+        // 加锁顺序约定：任何玩家状态写者都必须先锁提交头再动 section 行。
+        // ApplyComputeResultAsync 同样遵循该顺序，两条写路径不会互相死锁。
+        await using (var headLock = new NpgsqlCommand("""
+            SELECT 1 FROM game.player_state_heads WHERE player_id = $1 FOR UPDATE
+            """, connection, transaction))
+        {
+            headLock.Parameters.Add(new NpgsqlParameter { Value = first.PlayerId });
+            await headLock.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var applied = new List<FlushQueueItem>(items.Count);
         foreach (var item in items)
         {
             if (item.PlayerId != first.PlayerId || item.StateVersion != first.StateVersion)
@@ -543,11 +665,15 @@ public sealed class PostgresSectionRepository(
             command.Parameters.Add(new NpgsqlParameter { Value = item.UpdatedAt });
             var sectionApplied = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
 
-            // 仅当这次 UPSERT 真正写入了更新版本时才重建关系型行动队列。
-            // PostgreSQL 的 ON CONFLICT ... WHERE 对旧版本返回 0，不能让旧载荷删除新队列。
-            if (sectionApplied && item.SectionKind == PlayerSectionKinds.ActionQueue)
+            if (sectionApplied)
             {
-                await ApplyActionQueueAsync(connection, transaction, item, cancellationToken);
+                applied.Add(item);
+                // 仅当这次 UPSERT 真正写入了更新版本时才重建关系型行动队列。
+                // PostgreSQL 的 ON CONFLICT ... WHERE 对旧版本返回 0，不能让旧载荷删除新队列。
+                if (item.SectionKind == PlayerSectionKinds.ActionQueue)
+                {
+                    await ApplyActionQueueAsync(connection, transaction, ToStoredSection(item), cancellationToken);
+                }
             }
         }
 
@@ -573,18 +699,7 @@ public sealed class PostgresSectionRepository(
 
         if (hasCompleteState)
         {
-            var builder = new StringBuilder();
-            var maxSectionVersion = 0L;
-            for (var i = 0; i < checkpoints.Count; i++)
-            {
-                var cp = checkpoints[i];
-                if (cp.SectionVersion > maxSectionVersion) maxSectionVersion = cp.SectionVersion;
-                if (i > 0) builder.Append('|');
-                builder.Append(cp.SectionKind).Append(':').Append(cp.SectionVersion).Append(':').Append(cp.Checksum);
-            }
-
-            var utf8Bytes = Encoding.UTF8.GetBytes(builder.ToString());
-            var headChecksum = Convert.ToHexStringLower(SHA256.HashData(utf8Bytes));
+            var headChecksum = ComputeHeadChecksum(checkpoints, out var maxSectionVersion);
 
             var metadata = new List<FlushQueueItem>();
             string? firstFingerprint = null;
@@ -651,6 +766,9 @@ public sealed class PostgresSectionRepository(
                 await command.ExecuteNonQueryAsync(cancellationToken);
             }
         }
+
+        // 读模型投影与真源提交同事务顺带维护；不参与一致性判定，可随时从 section 重建。
+        await UpsertProjectionAsync(connection, transaction, first.PlayerId, applied, now, cancellationToken);
 
         foreach (var item in items)
         {
@@ -733,15 +851,13 @@ public sealed class PostgresSectionRepository(
     private static async Task ApplyActionQueueAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        FlushQueueItem item,
+        StoredSection stored,
         CancellationToken cancellationToken)
     {
-        var stored = new StoredSection(item.PlayerId, item.SectionKind, item.StateVersion, item.SchemaVersion, item.Codec,
-            item.Payload, item.RawBytes, item.Checksum, item.UpdatedAt);
         var actions = SectionCodec.Decode<List<QueuedActionState>>(stored);
         await using (var delete = new NpgsqlCommand("DELETE FROM game.player_action_queue WHERE player_id = $1", connection, transaction))
         {
-            delete.Parameters.Add(new NpgsqlParameter { Value = item.PlayerId });
+            delete.Parameters.Add(new NpgsqlParameter { Value = stored.PlayerId });
             await delete.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -753,16 +869,119 @@ public sealed class PostgresSectionRepository(
                     (player_id, slot, action_id, action_payload, action_version, status, next_due_at, idempotency_key, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8)
                 """, connection, transaction);
-            insert.Parameters.Add(new NpgsqlParameter { Value = item.PlayerId });
+            insert.Parameters.Add(new NpgsqlParameter { Value = stored.PlayerId });
             insert.Parameters.Add(new NpgsqlParameter { Value = slot });
             insert.Parameters.Add(new NpgsqlParameter { Value = action.Intent.ActionId.Value });
             insert.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = JsonSerializer.SerializeToUtf8Bytes(action.Intent, ServerJson.Options) });
-            insert.Parameters.Add(new NpgsqlParameter { Value = item.StateVersion });
+            insert.Parameters.Add(new NpgsqlParameter { Value = stored.StateVersion });
             insert.Parameters.Add(new NpgsqlParameter { Value = action.Status.ToString().ToLowerInvariant() });
             insert.Parameters.Add(new NpgsqlParameter { Value = $"action:{action.Id:D}" });
-            insert.Parameters.Add(new NpgsqlParameter { Value = item.UpdatedAt });
+            insert.Parameters.Add(new NpgsqlParameter { Value = stored.UpdatedAt });
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private static StoredSection ToStoredSection(FlushQueueItem item) =>
+        new(item.PlayerId, item.SectionKind, item.StateVersion, item.SchemaVersion, item.Codec,
+            item.Payload, item.RawBytes, item.Checksum, item.UpdatedAt);
+
+    /// <summary>
+    /// 由 section 检查点重建提交头校验和；格式必须与 SectionCodec.ComputeHeadChecksum 完全一致。
+    /// </summary>
+    private static string ComputeHeadChecksum(IReadOnlyList<SectionCheckpoint> checkpoints, out long maxSectionVersion)
+    {
+        var builder = new StringBuilder(checkpoints.Count * 96);
+        maxSectionVersion = 0;
+        for (var i = 0; i < checkpoints.Count; i++)
+        {
+            var cp = checkpoints[i];
+            if (cp.SectionVersion > maxSectionVersion) maxSectionVersion = cp.SectionVersion;
+            if (i > 0) builder.Append('|');
+            builder.Append(cp.SectionKind).Append(':').Append(cp.SectionVersion).Append(':').Append(cp.Checksum);
+        }
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(builder.ToString())));
+    }
+
+    /// <summary>
+    /// 顺带维护 game.player_projection 读模型：只取本批真实写入的 section 中可投影的字段，
+    /// 未涉及的字段保留既有值；last_active_at 随每次真源提交刷新。
+    /// </summary>
+    private static async Task UpsertProjectionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid playerId,
+        IReadOnlyList<FlushQueueItem> applied,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        double? realmRank = null;
+        string? nodeId = null;
+        string? presence = null;
+        foreach (var item in applied)
+        {
+            switch (item.SectionKind)
+            {
+                case PlayerSectionKinds.Progression:
+                    realmRank = ReadProjectionDouble(item, "realmLevel");
+                    break;
+                case PlayerSectionKinds.World:
+                    nodeId = ReadProjectionString(item, "nodeId");
+                    break;
+                case PlayerSectionKinds.Settings:
+                    presence = ReadProjectionPresence(item);
+                    break;
+            }
+        }
+
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO game.player_projection
+                (player_id, realm_rank, current_node_id, presence, last_active_at, projection_version, updated_at)
+            VALUES ($1, COALESCE($2, 0), $3, COALESCE($4, 'offline'), $5, 1, $5)
+            ON CONFLICT (player_id) DO UPDATE SET
+                realm_rank = COALESCE($2, game.player_projection.realm_rank),
+                current_node_id = COALESCE($3, game.player_projection.current_node_id),
+                presence = COALESCE($4, game.player_projection.presence),
+                last_active_at = $5,
+                projection_version = game.player_projection.projection_version + 1,
+                updated_at = $5
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)realmRank ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)nodeId ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)presence ?? DBNull.Value });
+        command.Parameters.Add(new NpgsqlParameter { Value = now });
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static double? ReadProjectionDouble(FlushQueueItem item, string property)
+    {
+        using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
+        return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
+            ? value.GetDouble()
+            : null;
+    }
+
+    private static string? ReadProjectionString(FlushQueueItem item, string property)
+    {
+        using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
+        return document.RootElement.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private static string? ReadProjectionPresence(FlushQueueItem item)
+    {
+        using var document = JsonDocument.Parse(SectionCodec.DecodeRaw(item.Codec, item.Payload));
+        if (!document.RootElement.TryGetProperty("presence", out var value)) return null;
+        // PresenceState 以数值枚举持久化：0=offline 1=online 2=suspended。
+        var code = value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var parsed) ? parsed : -1;
+        return code switch
+        {
+            (int)PresenceState.Offline => "offline",
+            (int)PresenceState.Online => "online",
+            (int)PresenceState.Suspended => "suspended",
+            _ => null
+        };
     }
 
     private static async Task ReleaseClaimAsync(

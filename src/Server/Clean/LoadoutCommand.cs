@@ -60,7 +60,7 @@ internal static class LoadoutCommand
                 if (!catalog.Abilities.ContainsKey(id) || !player.Loadout.LearnedAbilities.Contains(new AbilityId(id)) || !ids.Add(id))
                     throw new DomainException(DomainErrorCode.InvalidArgument, "功法未习得或重复装配。");
                 Domain.Combat.CombatSkillEngine.ValidateAbility(catalog.Abilities[id]);
-                var learnedLevel = player.Loadout.AbilitySlots.FirstOrDefault(slot => slot.AbilityId == id)?.Level ?? 1;
+                var learnedLevel = player.AbilityLevelFor(new AbilityId(id));
                 if (level > learnedLevel)
                     throw new DomainException(DomainErrorCode.InvalidArgument, "装配等级超过已掌握等级。");
             }

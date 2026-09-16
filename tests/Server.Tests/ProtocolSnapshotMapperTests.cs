@@ -24,7 +24,7 @@ public sealed class ProtocolSnapshotMapperTests
         var dto = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", GameDataCatalog.BuiltIn);
         Assert.Equal(playerId.ToString("D"), dto.PlayerId);
         Assert.Equal("映射测试", dto.DisplayName);
-        Assert.Equal(7, dto.Sections.Count);
+        Assert.Equal(8, dto.Sections.Count);
         Assert.All(dto.Sections, section => Assert.False(string.IsNullOrWhiteSpace(section.PayloadBase64)));
     }
     /// <summary>验证 To Delta Carries Only Changed Assets Against Baseline。</summary>

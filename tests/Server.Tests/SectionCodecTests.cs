@@ -42,7 +42,7 @@ public sealed class SectionCodecTests
     {
         var aggregate = PlayerAggregate.Create(new PlayerId(Guid.NewGuid()), new AccountId(Guid.NewGuid()), "测试修士", DateTimeOffset.UtcNow, "fp");
         var sections = CleanSectionCodec.EncodeAggregate(aggregate, DateTimeOffset.UtcNow, 1);
-        Assert.Equal(7, sections.Count);
+        Assert.Equal(8, sections.Count);
         Assert.Contains(sections, section => section.SectionKind == PlayerSectionKinds.ActionQueue);
         Assert.All(sections, section => Assert.Equal("fp", section.GameDataFingerprint));
     }

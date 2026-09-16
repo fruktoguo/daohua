@@ -53,6 +53,8 @@ public interface IAccountRepository
     ValueTask<AccountLoginResult> LoginAsync(string account, string password, CancellationToken cancellationToken = default);
     ValueTask<SessionIdentity?> ValidateSessionAsync(string token, CancellationToken cancellationToken = default);
     ValueTask RevokeSessionAsync(string token, CancellationToken cancellationToken = default);
+    /// <summary>改写道号；display_name_normalized 唯一索引冲突时返回 false。</summary>
+    ValueTask<bool> RenamePlayerAsync(Guid playerId, string displayName, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -68,7 +70,8 @@ public sealed record SessionIdentity(Guid AccountId, Guid PlayerId, string Accou
 public sealed class PostgresAccountRepository(
     NpgsqlDataSource dataSource,
     ServerOptions options,
-    ILogger<PostgresAccountRepository> logger) : IAccountRepository
+    ILogger<PostgresAccountRepository> logger,
+    IOutboxRepository outbox) : IAccountRepository
 {
     /// <summary>
     /// 表示常量 MinPasswordLength。
@@ -149,6 +152,11 @@ public sealed class PostgresAccountRepository(
 
             await InsertSessionAsync(connection, transaction, accountId, sessionTokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
 
+            await outbox.AppendAsync(connection, transaction, accountId, "account",
+                "auth.account.registered",
+                JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId, account = normalizedAccount }),
+                now, cancellationToken);
+
             await transaction.CommitAsync(cancellationToken);
         }
         catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UniqueViolation)
@@ -208,7 +216,7 @@ public sealed class PostgresAccountRepository(
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var token = await CreateSessionAsync(accountId, options.SessionLifetime, cancellationToken);
+        var token = await CreateSessionAsync(accountId, playerId, options.SessionLifetime, cancellationToken);
         return new AccountLoginResult(true, accountId, playerId, normalizedAccount, name, null, null, token);
     }
 
@@ -250,12 +258,50 @@ public sealed class PostgresAccountRepository(
         if (string.IsNullOrWhiteSpace(token)) return;
         var tokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand("UPDATE identity.auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL", connection);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            "UPDATE identity.auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL RETURNING account_id",
+            connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = tokenHash });
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var revokedAccountId = await command.ExecuteScalarAsync(cancellationToken) as Guid?;
+        if (revokedAccountId.HasValue)
+        {
+            var now = DateTimeOffset.UtcNow;
+            await outbox.AppendAsync(connection, transaction, revokedAccountId.Value, "account",
+                "auth.account.logout",
+                JsonSerializer.SerializeToUtf8Bytes(new { accountId = revokedAccountId.Value }),
+                now, cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
     }
 
-    private async Task<string> CreateSessionAsync(Guid accountId, TimeSpan lifetime, CancellationToken cancellationToken)
+    /// <summary>
+    /// 原子改写道号并依赖 display_name_normalized 唯一索引完成查重；冲突返回 false。
+    /// </summary>
+    public async ValueTask<bool> RenamePlayerAsync(Guid playerId, string displayName, CancellationToken cancellationToken = default)
+    {
+        var normalized = displayName.Trim();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            await using var command = new NpgsqlCommand("""
+                UPDATE identity.players
+                SET display_name = $2, display_name_normalized = $3, last_seen_at = $4
+                WHERE player_id = $1
+                """, connection);
+            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            command.Parameters.Add(new NpgsqlParameter { Value = normalized });
+            command.Parameters.Add(new NpgsqlParameter { Value = NormalizeNameForLookup(normalized) });
+            command.Parameters.Add(new NpgsqlParameter { Value = DateTimeOffset.UtcNow });
+            return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UniqueViolation)
+        {
+            return false;
+        }
+    }
+
+    private async Task<string> CreateSessionAsync(Guid accountId, Guid playerId, TimeSpan lifetime, CancellationToken cancellationToken)
     {
         var token = CreateSessionToken();
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
@@ -263,6 +309,10 @@ public sealed class PostgresAccountRepository(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await InsertSessionAsync(connection, transaction, accountId, hash, now, now.Add(lifetime), cancellationToken);
+        await outbox.AppendAsync(connection, transaction, accountId, "account",
+            "auth.account.login",
+            JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId }),
+            now, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return token;
     }
