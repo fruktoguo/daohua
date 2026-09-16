@@ -22,11 +22,12 @@ public sealed record PlayerCombatSkillState(
 }
 
 /// <summary>战斗技能事件 的领域定义。</summary>
-public sealed record CombatSkillEvent(string AbilityId, double AtSeconds, double Damage, double Healing, bool Hit, bool Critical);
+public sealed record CombatSkillEvent(string AbilityId, double AtSeconds, double Damage, double Healing, bool Hit, bool Critical,
+    string? TargetId = null);
 /// <summary>战斗技能推进结果 的领域定义。</summary>
 public sealed record CombatSkillAdvanceResult(PlayerCombatSkillState State, IReadOnlyList<CombatSkillEvent> Events);
 
-/// <summary>单敌战斗技能调度；宿主在普通攻击、技能完成、回复等最近边界推进，禁止跨过尚未处理的技能边界。</summary>
+/// <summary>多敌战斗技能调度；宿主在普通攻击、技能完成、回复等最近边界推进，禁止跨过尚未处理的技能边界。</summary>
 public static class CombatSkillEngine
 {
     /// <summary>
@@ -49,15 +50,18 @@ public static class CombatSkillEngine
         var flat = Number(ability, healing ? "flatHealing" : "flatDamage");
         var cast = Number(ability, "castMilliseconds");
         var cooldown = Number(ability, "cooldownMilliseconds");
-        if (ratio < 0 || flat < 0 || ratio + flat <= 0 || cast < 0 || cooldown < 0 || cast + cooldown <= 0
-            || Number(ability, "manaCostRatio") < 0)
+        var target = Text(ability, "targetType");
+        var supportive = target is "self" or "lowestHitpointsAlly" or "allAllies";
+        var hasEffect = ratio + flat > 0 || healing || supportive && (Number(ability, "threatGain") > 0
+            || Number(ability, "threatRatio") > 0 || ability.TryGetProperty("buff", out _));
+        if (ratio < 0 || flat < 0 || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0
+            || Number(ability, "manaCost") < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能未配置可执行效果或有效施放周期。");
         if (Text(ability, "category") is not ("physical" or "spell")
             || !Enum.TryParse<CombatElement>(Text(ability, "element") ?? "none", true, out _))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能伤害类别或五行属性无效。");
-        var target = Text(ability, "targetType");
         if (healing ? target is not (null or "self" or "lowestHitpointsAlly" or "allAllies")
-            : target is not (null or "targetEnemy" or "allEnemies"))
+            : target is not (null or "targetEnemy" or "allEnemies" or "self" or "allAllies"))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能目标没有可执行效果。");
         if (ability.TryGetProperty("defaultTriggers", out var triggers))
             foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger);
@@ -116,16 +120,18 @@ public static class CombatSkillEngine
             {
                 if (slot.AbilityId is null || state.Cooldowns.Any(value => value.AbilityId == slot.AbilityId)) continue;
                 var ability = catalog.Abilities[slot.AbilityId];
-                var mana = Number(ability, "manaCostRatio") * 10;
+                var mana = Number(ability, "manaCost");
                 if (player.Combat.Manapoints < mana) continue;
                 var triggers = slot.Triggers.Count == 0
                     ? ability.GetProperty("defaultTriggers").EnumerateArray().ToArray() : slot.Triggers;
                 if (!triggers.All(trigger => Matches(trigger, player, encounter))) continue;
                 player.Combat.Manapoints -= mana;
                 player.MarkDirty(PlayerSectionKind.Combat);
-                state = state with { CastingAbilityId = slot.AbilityId, CastRemainingSeconds = Number(ability, "castMilliseconds") / 1000 };
-                if (state.CastRemainingSeconds == 0)
-                    state = Complete(player, catalog, encounter, attributes, state, events);
+                // 行动速度成长（ATR）按乘区缩短吟唱时间。
+                var castSeconds = Number(ability, "castMilliseconds") / 1000 * attributes.CastTimeFactor;
+                state = state with { CastingAbilityId = slot.AbilityId, CastRemainingSeconds = castSeconds };
+                if (state.CastRemainingSeconds <= 1e-9)
+                    state = Complete(player, catalog, encounter, attributes, state, events, slot.Level);
                 break;
             }
         }
@@ -133,36 +139,91 @@ public static class CombatSkillEngine
     }
 
     private static PlayerCombatSkillState Complete(PlayerAggregate player, GameDataCatalog catalog,
-        CombatEncounterState encounter, PlayerAttributes attributes, PlayerCombatSkillState state, List<CombatSkillEvent> events)
+        CombatEncounterState encounter, PlayerAttributes attributes, PlayerCombatSkillState state, List<CombatSkillEvent> events,
+        double? slotLevel = null)
     {
         var id = state.CastingAbilityId!;
         var ability = catalog.Abilities[id];
+        var level = slotLevel ?? player.Loadout.AbilitySlots.FirstOrDefault(slot => slot.AbilityId == id)?.Level ?? 1;
+        // 等级成长：伤害/治疗倍率每级 +0.6%，固定数值每级 +1.0%。
+        var ratioBonus = 1 + (level - 1) * 0.006;
+        var flatBonus = 1 + (level - 1) * 0.01;
         var spell = Text(ability, "category") == "spell";
         var attack = spell ? attributes.SpellAttack : attributes.PhysicalAttack;
+        var target = Text(ability, "targetType");
         if (Text(ability, "effectType") == "heal")
         {
             var healing = Math.Min(encounter.Player.Stats.MaxHitpoints - encounter.Player.Hitpoints,
-                attack * Number(ability, "healingRatio") + Number(ability, "flatHealing"));
+                attack * attributes.SkillIntensity * Number(ability, "healingRatio") * ratioBonus
+                + Number(ability, "flatHealing") * flatBonus);
             encounter.Player.Hitpoints += healing;
             player.Combat.Hitpoints = encounter.Player.Hitpoints;
-            events.Add(new(id, encounter.ElapsedSeconds, 0, healing, true, false));
+            events.Add(new(id, encounter.ElapsedSeconds, 0, healing, true, false, "player"));
+        }
+        else if (target is "self" or "allAllies"
+            && Number(ability, "damageRatio") + Number(ability, "flatDamage") <= 0)
+        {
+            ApplySupport(player, encounter, ability, id, events);
         }
         else
         {
             var stats = attributes.ToCombatant() with
             {
-                AttackPower = attack * Number(ability, "damageRatio") + Number(ability, "flatDamage"),
+                AttackPower = attack * attributes.SkillIntensity * Number(ability, "damageRatio") * ratioBonus
+                    + Number(ability, "flatDamage") * flatBonus,
+                BasicAttackRatio = 1,
                 DamageKind = spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
                 Element = Enum.Parse<CombatElement>(Text(ability, "element") ?? "none", true)
             };
-            var hit = DeterministicCombatEngine.ResolveAbilityAttack(encounter, stats, state.CastCount);
-            events.Add(new(id, encounter.ElapsedSeconds, hit.Damage, 0, hit.Hit, hit.Critical));
+            IReadOnlyList<CombatantState> targets;
+            var maxTargets = ability.TryGetProperty("maxTargets", out var maxTargetsProperty)
+                && maxTargetsProperty.TryGetInt32(out var parsed) ? parsed : 0;
+            if (target == "allEnemies")
+                targets = maxTargets > 0
+                    ? DeterministicCombatEngine.SelectEnemyTargets(encounter, maxTargets, state.CastCount, 8)
+                    : encounter.Enemies.Where(enemy => enemy.IsAlive).ToArray();
+            else
+            {
+                var picked = DeterministicCombatEngine.SelectEnemyTarget(encounter, state.CastCount, 4);
+                targets = picked is null ? [] : [picked];
+            }
+            foreach (var enemy in targets)
+            {
+                var hit = DeterministicCombatEngine.ResolveAbilityAttack(encounter, enemy, stats, state.CastCount);
+                events.Add(new(id, encounter.ElapsedSeconds, hit.Damage, 0, hit.Hit, hit.Critical, enemy.Id));
+            }
         }
         player.MarkDirty(PlayerSectionKind.Combat);
         var cooldowns = state.Cooldowns.Where(value => value.AbilityId != id).ToList();
-        var cooldown = Number(ability, "cooldownMilliseconds") / 1000;
+        // 冷却缩减（CDR）按乘区缩短技能 CD。
+        var cooldown = Number(ability, "cooldownMilliseconds") / 1000 * attributes.CooldownFactor;
         if (cooldown > 0) cooldowns.Add(new(id, cooldown));
         return new(cooldowns, null, 0, state.CastCount + 1);
+    }
+
+    /// <summary>支援类技能（嘲讽/全体增益）：不造成伤害，按配表授予威胁或战内 Buff。</summary>
+    private static void ApplySupport(PlayerAggregate player, CombatEncounterState encounter, JsonElement ability, string id, List<CombatSkillEvent> events)
+    {
+        var threatGain = Number(ability, "threatGain");
+        var threatRatio = Number(ability, "threatRatio");
+        var applied = false;
+        if (threatGain > 0) { encounter.Player.Threat += threatGain; applied = true; }
+        if (threatRatio > 0) { encounter.Player.ThreatRatioBonus += threatRatio; applied = true; }
+        if (ability.TryGetProperty("buff", out var buff) && buff.ValueKind == JsonValueKind.Object)
+        {
+            var buffId = Text(buff, "buffId") ?? $"ability-buff:{id}";
+            var duration = Number(buff, "durationSeconds");
+            var at = player.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
+            player.Buffs.Active.RemoveAll(current => current.BuffId == buffId);
+            player.Buffs.Active.Add(new(buffId, at + Math.Max(1, duration), 1,
+                Text(buff, "name") ?? id, null, Number(buff, "hpRegen"), Number(buff, "mpRegen"),
+                Number(buff, "attackSpeedRatio"), Number(buff, "damageAbsorptionRatio")));
+            player.MarkDirty(PlayerSectionKind.Buffs);
+            applied = true;
+        }
+        if (!applied)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "支援技能未配置可执行效果。");
+        events.Add(new(id, encounter.ElapsedSeconds, 0, 0, true, false, "player"));
     }
 
     private static PlayerCombatSkillState Tick(PlayerCombatSkillState state, double seconds)
@@ -180,7 +241,8 @@ public static class CombatSkillEngine
     private static bool Matches(JsonElement trigger, PlayerAggregate player, CombatEncounterState encounter)
     {
         var self = IsSelf(Text(trigger, "dependency"));
-        var unit = self ? encounter.Player : encounter.Enemy;
+        var enemy = encounter.PrimaryEnemy;
+        var unit = self || enemy is null ? encounter.Player : enemy;
         var hp = unit.Hitpoints;
         var maxHp = unit.Stats.MaxHitpoints;
         var mana = player.Combat.Manapoints;

@@ -33,7 +33,12 @@ public sealed record PlayerProgressionState(
     double Experience,
     double LifetimeQi,
     double CompletedActions,
-    double SimulationCarrySeconds = 0);
+    double SimulationCarrySeconds = 0,
+    double NormalKills = 0,
+    double EliteKills = 0,
+    double BossKills = 0,
+    double TotalDefeats = 0,
+    double CultivationSeconds = 0);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -117,7 +122,8 @@ public sealed partial class PlayerAggregate
             Presence,
             StateVersion,
             GameDataFingerprint,
-            new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds),
+            new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds,
+                Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress),
             new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense, Combat.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
@@ -245,6 +251,11 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.LifetimeQi) || state.Progression.LifetimeQi < 0 ||
             !double.IsFinite(state.Progression.CompletedActions) || state.Progression.CompletedActions < 0 ||
             !double.IsFinite(state.Progression.SimulationCarrySeconds) || state.Progression.SimulationCarrySeconds < 0 ||
+            !double.IsFinite(state.Progression.NormalKills) || state.Progression.NormalKills < 0 ||
+            !double.IsFinite(state.Progression.EliteKills) || state.Progression.EliteKills < 0 ||
+            !double.IsFinite(state.Progression.BossKills) || state.Progression.BossKills < 0 ||
+            !double.IsFinite(state.Progression.TotalDefeats) || state.Progression.TotalDefeats < 0 ||
+            !double.IsFinite(state.Progression.CultivationSeconds) || state.Progression.CultivationSeconds < 0 ||
             !double.IsFinite(state.World.X) || !double.IsFinite(state.World.Y) || !double.IsFinite(state.World.ExplorationSeed) ||
             !double.IsFinite(state.World.EdgeProgress) || state.World.EdgeProgress < 0 || state.World.EdgeProgress > 1 ||
             !double.IsFinite(state.Combat.Hitpoints) || state.Combat.Hitpoints < 0 ||
@@ -272,6 +283,11 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.LifetimeQi = state.Progression.LifetimeQi;
         aggregate.Progression.CompletedActions = state.Progression.CompletedActions;
         aggregate.Progression.SimulationCarrySeconds = state.Progression.SimulationCarrySeconds;
+        aggregate.Progression.NormalKills = state.Progression.NormalKills;
+        aggregate.Progression.EliteKills = state.Progression.EliteKills;
+        aggregate.Progression.BossKills = state.Progression.BossKills;
+        aggregate.Progression.TotalDefeats = state.Progression.TotalDefeats;
+        aggregate.Progression.CultivationSeconds = state.Progression.CultivationSeconds;
         aggregate.World.NodeId = state.World.NodeId;
         aggregate.World.EdgeId = state.World.EdgeId;
         aggregate.World.EdgeProgress = state.World.EdgeProgress;
@@ -374,6 +390,11 @@ public sealed partial class PlayerAggregate
         Progression.LifetimeQi = restored.Progression.LifetimeQi;
         Progression.CompletedActions = restored.Progression.CompletedActions;
         Progression.SimulationCarrySeconds = restored.Progression.SimulationCarrySeconds;
+        Progression.NormalKills = restored.Progression.NormalKills;
+        Progression.EliteKills = restored.Progression.EliteKills;
+        Progression.BossKills = restored.Progression.BossKills;
+        Progression.TotalDefeats = restored.Progression.TotalDefeats;
+        Progression.CultivationSeconds = restored.Progression.CultivationSeconds;
         World.NodeId = restored.World.NodeId;
         World.EdgeId = restored.World.EdgeId;
         World.EdgeProgress = restored.World.EdgeProgress;

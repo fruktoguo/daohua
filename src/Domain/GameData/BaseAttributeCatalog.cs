@@ -67,4 +67,16 @@ public sealed class BaseAttributeCatalog
             Mix(low.Crit, high.Crit), Mix(low.Cavoid, high.Cavoid), Mix(low.BreakPt, high.BreakPt),
             Mix(low.Parry, high.Parry), Mix(low.HpRegen, high.HpRegen), Mix(low.MpRegen, high.MpRegen));
     }
+
+    /// <summary>阶位 = 等级不超过给定等级的锚点个数（锚点即各阶位起始等级），T1 起步。</summary>
+    public int TierAt(double level)
+    {
+        var tier = 0;
+        foreach (var anchor in Anchors)
+        {
+            if (anchor.Level > level) break;
+            tier++;
+        }
+        return Math.Max(1, tier);
+    }
 }

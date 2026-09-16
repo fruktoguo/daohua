@@ -17,7 +17,8 @@ public sealed class CombatExpeditionSimulationTests
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
 
         var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
-        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog);
+        // 搜寻 1s + 首次普攻引导（攻击间隔 2s），3.5s 内恰好完成一波。
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3.5), catalog);
 
         Assert.True(result.Changed);
         Assert.Single(player.Actions);
@@ -38,7 +39,7 @@ public sealed class CombatExpeditionSimulationTests
         player.SetLoopEnabled(false);
 
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), 1), Baseline, catalog.Actions);
-        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog);
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3.5), catalog);
 
         Assert.Equal(1, result.CompletedRepeats);
         Assert.Empty(player.Actions);
@@ -81,10 +82,11 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>CombatWaveFightsMonstersBackToBackAndCountsOneRepeatPerWave</c>（Combat Wave Fights Monsters Back To Back And Counts One Repeat Per Wave）所描述的领域行为。
+    /// 验证 <c>CombatWaveFightsAllMonstersSimultaneouslyAndCountsOneRepeatPerWave</c>：同波全体敌人同场交战，
+    /// 清空整波才结算一次完成并推进到下一波。
     /// </summary>
     [Fact]
-    public void CombatWaveFightsMonstersBackToBackAndCountsOneRepeatPerWave()
+    public void CombatWaveFightsAllMonstersSimultaneouslyAndCountsOneRepeatPerWave()
     {
         var catalog = CreateWaveCatalog();
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
@@ -95,17 +97,18 @@ public sealed class CombatExpeditionSimulationTests
         var action = Assert.Single(player.Actions);
         Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition!.Phase);
         Assert.Equal(1, action.Expedition.WaveNumber);
+        // 固定 3 只普通怪的波次结构。
+        Assert.Equal(3, action.Expedition.Enemies!.Count);
 
-        // 逐步推进直到本波三只全部讨伐成功；同波内不允许重新进入搜寻阶段。
         var guard = 0;
-        while (events.Count(entry => entry.Code == "combat.won") < 3 && guard++ < 120)
+        while (events.Count(entry => entry.Code == "combat.won") < 1 && guard++ < 120)
         {
             result = SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(0.5), catalog);
             events.AddRange(result.Events.Select(entry => (entry.Code, entry.Message)));
         }
 
-        Assert.Equal(3, events.Count(entry => entry.Code == "combat.won"));
-        Assert.Equal(2, events.Count(entry => entry.Code == "combat.wave.next"));
+        Assert.Equal(1, events.Count(entry => entry.Code == "combat.won"));
+        Assert.Equal(3, player.Progression.NormalKills);
         Assert.Equal(1, player.Actions[0].CompletedRepeats);
         Assert.Equal(2, player.Actions[0].Expedition!.WaveNumber);
     }
@@ -127,7 +130,9 @@ public sealed class CombatExpeditionSimulationTests
 
         Assert.Equal(first.CompletedRepeats, second.CompletedRepeats);
         Assert.Equal(player.Combat.Hitpoints, restored.Combat.Hitpoints);
-        Assert.Equal(player.Actions[0].Expedition, restored.Actions[0].Expedition);
+        Assert.Equal(player.Actions[0].Expedition! with { Enemies = null },
+            restored.Actions[0].Expedition! with { Enemies = null });
+        Assert.Equal(player.Actions[0].Expedition!.Enemies, restored.Actions[0].Expedition!.Enemies);
     }
 
     /// <summary>
@@ -161,7 +166,11 @@ public sealed class CombatExpeditionSimulationTests
         var stats = CombatantStats.Create(10, 1, 0, 1);
 
         Assert.Throws<DomainException>(() => CombatEncounterState.Restore(
-            "encounter.test", 1, stats, stats, 0, 10, 0, 0, 0, 0, 0, CombatOutcome.Running));
+            "encounter.test", 1, stats,
+            new CombatantSnapshot(10, 0, 0, 0, 0),
+            [new CombatantTemplate(stats)],
+            [new CombatantSnapshot(0, 0, 0, 0, 0)],
+            0, CombatOutcome.Running));
     }
 
     private static GameDataCatalog CreateWaveCatalog()
@@ -182,7 +191,10 @@ public sealed class CombatExpeditionSimulationTests
             "enemy.wave",
             "波次妖兽",
             10,
+            1,
+            CombatMonsterRank.Minion,
             CombatantStats.Create(1, 0, 0, 2),
+            [],
             []);
         var encounter = new CombatEncounterDefinition(
             "encounter.wave",
@@ -224,7 +236,10 @@ public sealed class CombatExpeditionSimulationTests
             "enemy.test",
             "测试妖兽",
             1,
+            1,
+            CombatMonsterRank.Minion,
             CombatantStats.Create(enemyHitpoints, enemyAttackPower, 0, 2),
+            [],
             []);
         var encounter = new CombatEncounterDefinition(
             "encounter.test",

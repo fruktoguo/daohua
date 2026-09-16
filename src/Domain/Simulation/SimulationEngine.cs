@@ -92,7 +92,9 @@ public static class SimulationEngine
         var events = new List<SimulationEvent>();
         double actions = 0, repeats = 0;
         var changed = false;
-        while (player.LastSimulatedAt < target)
+        // 离线/挂起补算收益上限 48 小时：超出部分只推进模拟时钟与过期清理，不再产出行动收益。
+        var computeTarget = target - from > TimeSpan.FromHours(48) ? from.AddHours(48) : target;
+        while (player.LastSimulatedAt < computeTarget)
         {
             var now = player.LastSimulatedAt;
             var expired = player.Buffs.Active.RemoveAll(buff => buff.ExpiresAtUnixSeconds <= now.ToUnixTimeMilliseconds() / 1000d);
@@ -105,7 +107,7 @@ public static class SimulationEngine
                 deltas[delta.Asset] = deltas.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
             }
             var untilRegen = 5 - player.Combat.RegenCarrySeconds;
-            var step = Math.Min((target - now).TotalSeconds, untilRegen);
+            var step = Math.Min((computeTarget - now).TotalSeconds, untilRegen);
             if (player.Buffs.Active.Count > 0)
                 step = Math.Min(step, player.Buffs.Active.Min(buff => buff.ExpiresAtUnixSeconds) - now.ToUnixTimeMilliseconds() / 1000d);
             foreach (var slot in player.Settings.AutoUseSlots)
@@ -149,14 +151,29 @@ public static class SimulationEngine
                 // 远征 PlayerHitpoints 是权威气血的展示镜像：搜寻/复活等非交战相位同样需要
                 // 跟上自然回复，否则前端在脱战期间显示冻结的旧血量，下次开战才跳变。
                 if (player.Actions.Count > 0 && player.Actions[0].Expedition is { } expedition
-                    && expedition.PlayerHitpoints != player.Combat.Hitpoints)
-                    player.Actions[0].Expedition = expedition with { PlayerHitpoints = player.Combat.Hitpoints };
+                    && (expedition.PlayerHitpoints != player.Combat.Hitpoints
+                        || expedition.PlayerManapoints != player.Combat.Manapoints))
+                    player.Actions[0].Expedition = expedition with
+                    {
+                        PlayerHitpoints = player.Combat.Hitpoints,
+                        PlayerManapoints = player.Combat.Manapoints
+                    };
                 if (player.Combat.Hitpoints != hitpoints || player.Combat.Manapoints != manapoints)
                 {
                     player.MarkDirty(PlayerSectionKind.Combat);
                     changed = true;
                 }
             }
+        }
+        if (player.LastSimulatedAt < target)
+        {
+            // 跳过 48 小时上限外的尾段时间：清理过期增益并把时钟推进到真实目标，不结算收益。
+            var expired = player.Buffs.Active.RemoveAll(buff => buff.ExpiresAtUnixSeconds <= target.ToUnixTimeMilliseconds() / 1000d);
+            if (expired > 0) { player.MarkDirty(PlayerSectionKind.Buffs); changed = true; }
+            player.Combat.Skills = PlayerCombatSkillState.Empty;
+            player.LastSimulatedAt = target;
+            changed = true;
+            events.Add(new SimulationEvent(target, "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。", null));
         }
         if (changed) player.StateVersion = checked(player.StateVersion + 1);
         return new(player.PlayerId, from, target, (target - from).TotalSeconds, actions, repeats,
@@ -327,6 +344,9 @@ public static class SimulationEngine
             remainingSeconds -= step;
             var wholeSeconds = QuantizeElapsedSeconds(player, step);
             action.ProgressSeconds += wholeSeconds;
+            // 生平修炼时长只统计修炼类行动的实际推进秒数。
+            if (definition.Kind == ActionKind.Cultivation && wholeSeconds > 0)
+                player.Progression.CultivationSeconds += wholeSeconds;
             ApplyContinuousReward(player, definition, wholeSeconds, autoUseMultiplier);
             if (step > 0)
             {
@@ -426,7 +446,7 @@ public static class SimulationEngine
         var expedition = action.Expedition;
         if (expedition is null)
         {
-            expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.InitialSearch);
+            expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.InitialSearch, gameData);
             action.Expedition = expedition;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.search.started", $"开始搜寻：{encounter.Name}。", definition.Id);
         }
@@ -449,7 +469,7 @@ public static class SimulationEngine
                 player.Settings.AutoUseSlots[i] = player.Settings.AutoUseSlots[i] with { CooldownUntilUnixSeconds = 0 };
             player.MarkDirty(PlayerSectionKind.Settings);
             player.MarkDirty(PlayerSectionKind.Combat);
-            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, NextSeed(expedition.Seed));
+            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, NextSeed(expedition.Seed));
             action.ProgressSeconds = 0;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.respawned", "复活完成，气血与灵力恢复。", definition.Id);
             return;
@@ -469,19 +489,22 @@ public static class SimulationEngine
             if (updated.PhaseElapsedSeconds + 1e-9 < updated.PhaseDurationSeconds) return;
 
             var seed = updated.Seed;
-            // 按遭遇预算与波次生成确定性的本波怪物列表；同波余量在胜利后无缝续战。
+            // 按遭遇预算与波次生成确定性的本波怪物阵容，同波全体敌人同场交战。
             var wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters, seed, updated.WaveNumber);
-            var monster = wave[0];
             var battle = CombatEncounterState.Start(
                 encounter.Id,
                 seed,
                 PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
-                monster.Stats);
+                wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray());
+            for (var i = 0; i < wave.Count; i++)
+                battle.Enemies[i].DefinitionId = wave[i].Id;
             battle.Player.Hitpoints = Math.Clamp(player.Combat.Hitpoints, 0, player.Combat.MaxHitpoints);
+            battle.Player.Manapoints = Math.Clamp(player.Combat.Manapoints, 0, player.Combat.MaxManapoints);
+            var waveNames = string.Join("、", wave.Select(monster => monster.Name));
             if (battle.Player.Hitpoints <= 0)
             {
                 action.Status = ActionQueueStatus.Blocked;
-                AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"气血衰竭，无法迎战：{monster.Name}。", definition.Id);
+                AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"气血衰竭，无法迎战：{waveNames}。", definition.Id);
                 if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !player.Actions.All(a => a.Status == ActionQueueStatus.Blocked))
                 {
                     player.RotateActionToTail(action.Id);
@@ -493,40 +516,44 @@ public static class SimulationEngine
                 Phase = CombatExpeditionPhase.Combat,
                 PhaseElapsedSeconds = 0,
                 PhaseDurationSeconds = 0,
-                EnemyId = monster.Id,
-                EnemyHitpoints = monster.Stats.MaxHitpoints,
-                WaveEnemyIds = wave.Skip(1).Select(entry => entry.Id).ToArray(),
                 Outcome = CombatOutcome.Running
             });
             action.ProgressSeconds = 0;
             action.Expedition = combatState;
-            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.started", $"遭遇妖兽：{monster.Name}。", definition.Id);
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.started", $"遭遇妖兽：{waveNames}。", definition.Id);
             return;
         }
 
-        if (expedition.Phase != CombatExpeditionPhase.Combat || string.IsNullOrWhiteSpace(expedition.EnemyId)
-            || !gameData.CombatMonsters.TryGetValue(expedition.EnemyId, out var currentMonster))
+        if (expedition.Phase != CombatExpeditionPhase.Combat || expedition.Enemies is not { Count: > 0 } waveEnemies
+            || waveEnemies.Any(enemy => !gameData.CombatMonsters.ContainsKey(enemy.EnemyId)))
             throw new DomainException(DomainErrorCode.InvariantViolation, "战斗远征敌人状态无效。");
 
+        var templates = waveEnemies.Select(enemy =>
+        {
+            var monster = gameData.CombatMonsters[enemy.EnemyId];
+            return new CombatantTemplate(monster.Stats, monster.Skills);
+        }).ToArray();
         var battleState = CombatEncounterState.Restore(
             encounter.Id,
             expedition.Seed,
             PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
-            currentMonster.Stats,
+            new CombatantSnapshot(expedition.PlayerHitpoints, expedition.PlayerManapoints,
+                expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat),
+            templates,
+            waveEnemies.Select(enemy => new CombatantSnapshot(enemy.Hitpoints, enemy.Manapoints,
+                enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
+                enemy.UsedSkillMask, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints)).ToArray(),
             expedition.BattleElapsedSeconds,
-            expedition.PlayerHitpoints,
-            expedition.EnemyHitpoints,
-            expedition.PlayerNextAttackAtSeconds,
-            expedition.EnemyNextAttackAtSeconds,
-            expedition.PlayerAttackCount,
-            expedition.EnemyAttackCount,
             expedition.Outcome,
-            expedition.PlayerAttackCount + expedition.EnemyAttackCount);
+            expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.AttackCount));
+        for (var i = 0; i < waveEnemies.Count; i++)
+            battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
         var battleFrom = battleState.ElapsedSeconds;
         var actionElapsedBeforeCombat = (target - from).TotalSeconds - remainingSeconds;
         var attributes = PlayerAttributeResolver.Resolve(player, gameData);
         var skillStart = CombatSkillEngine.Advance(player, gameData, battleState, attributes, player.Combat.Skills, 0);
         player.Combat.Skills = skillStart.State;
+        battleState.Player.Manapoints = player.Combat.Manapoints;
         var battleTo = battleFrom + Math.Min(remainingSeconds, CombatSkillEngine.NextBoundarySeconds(player.Combat.Skills));
         var combatResult = DeterministicCombatEngine.AdvanceTo(battleState, battleTo);
         var consumed = Math.Max(0, battleState.ElapsedSeconds - battleFrom);
@@ -543,21 +570,19 @@ public static class SimulationEngine
         var updatedBattle = ToExpeditionState(battleState, expedition with
         {
             PhaseElapsedSeconds = Math.Min(expedition.PhaseDurationSeconds, expedition.PhaseElapsedSeconds + consumed),
-            BattleElapsedSeconds = battleState.ElapsedSeconds,
-            PlayerHitpoints = battleState.Player.Hitpoints,
-            EnemyHitpoints = battleState.Enemy.Hitpoints,
-            PlayerNextAttackAtSeconds = battleState.Player.NextAttackAtSeconds,
-            EnemyNextAttackAtSeconds = battleState.Enemy.NextAttackAtSeconds,
-            PlayerAttackCount = battleState.Player.AttackCount,
-            EnemyAttackCount = battleState.Enemy.AttackCount,
             Outcome = combatResult.Outcome
         });
         action.Expedition = updatedBattle;
         action.ProgressSeconds = updatedBattle.PhaseElapsedSeconds;
+        string NameOf(string combatantId) => combatantId == "player" ? "你"
+            : combatantId.StartsWith("enemy:", StringComparison.Ordinal)
+                && int.TryParse(combatantId[6..], out var enemyIndex) && enemyIndex >= 0 && enemyIndex < waveEnemies.Count
+                ? gameData.CombatMonsters[waveEnemies[enemyIndex].EnemyId].Name
+                : combatantId;
         foreach (var combatEvent in combatResult.Events)
         {
-            var attacker = combatEvent.AttackerId == "player" ? "你" : currentMonster.Name;
-            var targetName = combatEvent.TargetId == "player" ? "你" : currentMonster.Name;
+            var attacker = NameOf(combatEvent.AttackerId);
+            var targetName = NameOf(combatEvent.TargetId);
             var eventAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom));
             AddCombatEventAt(ref events, eventAt,
                 "combat.attack", $"{attacker}{(combatEvent.Hit ? $"命中{targetName}，造成 {combatEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
@@ -565,39 +590,35 @@ public static class SimulationEngine
         if (combatResult.Outcome == CombatOutcome.Running) return;
         if (combatResult.Outcome != CombatOutcome.PlayerWon)
         {
-            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, updatedBattle.Seed,
-                updatedBattle.WaveNumber) with
+            // 讨伐失败：计入生平败走，波次重置回第 1 波。
+            player.Progression.TotalDefeats += 1;
+            player.MarkDirty(PlayerSectionKind.Progression);
+            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, updatedBattle.Seed,
+                waveNumber: 1) with
             { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
             action.ProgressSeconds = 0;
-            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{currentMonster.Name}。", definition.Id);
+            var waveNames = string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name));
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{waveNames}。", definition.Id);
             return;
         }
 
-        // 每击杀都发放掉落；波次未清空时无缝续战下一只，波次清空才算完成一次重复。
-        ApplyCombatRewards(player, currentMonster, updatedBattle.Seed, ref deltas);
-        AddCombatEvent(ref events, from, target, remainingSeconds, "combat.won", $"讨伐成功：{currentMonster.Name}。", definition.Id);
-        var waveRemainder = updatedBattle.WaveEnemyIds ?? [];
-        if (waveRemainder.Count > 0)
+        // 波次清空才结算掉落与完成一次重复；逐只发放并计入生平斩妖。
+        var killSeed = updatedBattle.Seed;
+        foreach (var enemy in waveEnemies)
         {
-            if (!gameData.CombatMonsters.TryGetValue(waveRemainder[0], out var nextMonster))
-                throw new DomainException(DomainErrorCode.NotFound, $"波次怪物 {waveRemainder[0]} 未定义。");
-            action.Expedition = updatedBattle with
+            var monster = gameData.CombatMonsters[enemy.EnemyId];
+            ApplyCombatRewards(player, monster, killSeed, ref deltas);
+            killSeed = NextSeed(killSeed);
+            switch (monster.Rank)
             {
-                Seed = NextSeed(updatedBattle.Seed),
-                EnemyId = nextMonster.Id,
-                BattleElapsedSeconds = 0,
-                PlayerHitpoints = battleState.Player.Hitpoints,
-                EnemyHitpoints = nextMonster.Stats.MaxHitpoints,
-                PlayerNextAttackAtSeconds = 0,
-                EnemyNextAttackAtSeconds = 0,
-                PlayerAttackCount = 0,
-                EnemyAttackCount = 0,
-                WaveEnemyIds = waveRemainder.Skip(1).ToArray(),
-                Outcome = CombatOutcome.Running
-            };
-            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.wave.next", $"波次续战：{nextMonster.Name}。", definition.Id);
-            return;
+                case CombatMonsterRank.Elite: player.Progression.EliteKills += 1; break;
+                case CombatMonsterRank.Boss: player.Progression.BossKills += 1; break;
+                default: player.Progression.NormalKills += 1; break;
+            }
         }
+        player.MarkDirty(PlayerSectionKind.Progression);
+        AddCombatEvent(ref events, from, target, remainingSeconds, "combat.won",
+            $"讨伐成功：{string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name))}。", definition.Id);
 
         completedActions += 1;
         completedRepeats += 1;
@@ -613,7 +634,7 @@ public static class SimulationEngine
             {
                 action.RemainingRepeats = action.Intent.RepeatCount;
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    NextSeed(updatedBattle.Seed), waveNumber: 1);
+                    gameData, NextSeed(updatedBattle.Seed), waveNumber: 1);
                 action.ProgressSeconds = 0;
                 if (player.Actions.Count > 1)
                 {
@@ -625,7 +646,7 @@ public static class SimulationEngine
             return;
         }
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-            NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1);
+            gameData, NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1);
         action.ProgressSeconds = 0;
     }
 
@@ -634,35 +655,43 @@ public static class SimulationEngine
         QueuedAction action,
         CombatEncounterDefinition encounter,
         CombatExpeditionPhase phase,
+        GameDataCatalog? gameData,
         long? seed = null,
-        int waveNumber = 1) => new(
-        encounter.Id,
-        phase,
-        0,
-        phase == CombatExpeditionPhase.InitialSearch ? encounter.SearchSeconds : encounter.RespawnSeconds,
-        seed ?? CreateSeed(encounter.Id, action.CompletedRepeats),
-        null,
-        0,
-        player.Combat.Hitpoints,
-        0,
-        0,
-        0,
-        0,
-        0,
-        CombatOutcome.Running,
-        waveNumber,
-        null);
+        int waveNumber = 1)
+    {
+        // 搜寻等待时间随境界成长：Wait(Lv) = 5.0 - 2.5·x²，作用于遭遇基础搜寻秒数的乘区。
+        var delayFactor = gameData is not null ? PlayerAttributeResolver.Resolve(player, gameData).SearchDelayFactor : 1;
+        var duration = (phase == CombatExpeditionPhase.InitialSearch ? encounter.SearchSeconds : encounter.RespawnSeconds) * delayFactor;
+        return new(
+            encounter.Id,
+            phase,
+            0,
+            duration,
+            seed ?? CreateSeed(encounter.Id, action.CompletedRepeats),
+            0,
+            player.Combat.Hitpoints,
+            player.Combat.Manapoints,
+            0,
+            0,
+            0,
+            CombatOutcome.Running,
+            waveNumber,
+            null);
+    }
 
     private static CombatExpeditionState ToExpeditionState(CombatEncounterState battle, CombatExpeditionState template) => template with
     {
         BattleElapsedSeconds = battle.ElapsedSeconds,
         PlayerHitpoints = battle.Player.Hitpoints,
-        EnemyHitpoints = battle.Enemy.Hitpoints,
+        PlayerManapoints = battle.Player.Manapoints,
         PlayerNextAttackAtSeconds = battle.Player.NextAttackAtSeconds,
-        EnemyNextAttackAtSeconds = battle.Enemy.NextAttackAtSeconds,
         PlayerAttackCount = battle.Player.AttackCount,
-        EnemyAttackCount = battle.Enemy.AttackCount,
-        Outcome = battle.Outcome
+        PlayerThreat = battle.Player.Threat,
+        Outcome = battle.Outcome,
+        Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
+            enemy.DefinitionId ?? enemy.Id, enemy.Hitpoints, enemy.Manapoints,
+            enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
+            enemy.UsedSkillMask, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints)).ToArray()
     };
 
     private static void ApplyCombatRewards(PlayerAggregate player, CombatMonsterDefinition monster, long seed, ref Dictionary<ItemId, double>? deltas)
@@ -1041,7 +1070,8 @@ public static class SimulationEngine
                     player.Buffs.Active.RemoveAll(buff => buff.BuffId == grant.BuffId);
                     player.Buffs.Active.Add(new ActiveBuff(grant.BuffId,
                         target.ToUnixTimeMilliseconds() / 1000d + grant.DurationSeconds, yield.Amount,
-                        grant.Name, null, grant.HpRegen, grant.MpRegen, grant.AttackSpeedRatio, grant.DamageAbsorptionRatio));
+                        grant.Name, null, grant.HpRegen, grant.MpRegen, grant.AttackSpeedRatio, grant.DamageAbsorptionRatio,
+                        grant.StatRatios));
                     buffTouched = true;
                     break;
             }

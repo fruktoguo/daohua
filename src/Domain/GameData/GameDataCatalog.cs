@@ -87,7 +87,8 @@ public sealed record ActionBuffGrant(
     double HpRegen = 0,
     double MpRegen = 0,
     double AttackSpeedRatio = 0,
-    double DamageAbsorptionRatio = 0);
+    double DamageAbsorptionRatio = 0,
+    IReadOnlyDictionary<string, double>? StatRatios = null);
 
 /// <summary>
 /// 单条行动收益声明：Kind 决定入账通道，Period 决定按秒或按轮结算。
@@ -318,11 +319,11 @@ public sealed class GameDataCatalog
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         RawEquipments = rawEquipments?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters);
+        Abilities = abilities ?? new Dictionary<string, JsonElement>();
+        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, baseAttributes, Abilities);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
         WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
         BaseAttributes = baseAttributes;
-        Abilities = abilities ?? new Dictionary<string, JsonElement>();
         foreach (var action in Actions.All)
         {
             if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
@@ -523,10 +524,18 @@ public sealed class GameDataCatalog
                     && modifiers.ValueKind == JsonValueKind.Object
                     && modifiers.TryGetProperty(key, out var value) && value.TryGetDouble(out var number)
                     ? number : 0;
+                IReadOnlyDictionary<string, double>? statRatios = null;
+                if (element.TryGetProperty("modifiers", out var modifierObject)
+                    && modifierObject.ValueKind == JsonValueKind.Object
+                    && modifierObject.TryGetProperty("statRatios", out var ratioObject)
+                    && ratioObject.ValueKind == JsonValueKind.Object)
+                    statRatios = ratioObject.EnumerateObject()
+                        .Where(pair => pair.Value.TryGetDouble(out _))
+                        .ToDictionary(pair => pair.Name, pair => pair.Value.GetDouble(), StringComparer.Ordinal);
                 yields.Add(new(kind, period, amount, null, new ActionBuffGrant(
                     buffId ?? string.Empty, buffName ?? string.Empty, durationSeconds,
                     ReadModifier("hpRegen"), ReadModifier("mpRegen"),
-                    ReadModifier("attackSpeedRatio"), ReadModifier("damageAbsorptionRatio"))));
+                    ReadModifier("attackSpeedRatio"), ReadModifier("damageAbsorptionRatio"), statRatios)));
                 continue;
             }
             yields.Add(new(kind, period, amount));
@@ -606,7 +615,9 @@ public sealed class GameDataCatalog
         _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品适用行动类型无效：{value}。")
     };
 
-    private static Dictionary<string, CombatMonsterDefinition> ParseMonsterDefinitions(IReadOnlyDictionary<string, JsonElement> raw)
+    private static Dictionary<string, CombatMonsterDefinition> ParseMonsterDefinitions(
+        IReadOnlyDictionary<string, JsonElement> raw, BaseAttributeCatalog? baseAttributes,
+        IReadOnlyDictionary<string, JsonElement> abilities)
     {
         var result = new Dictionary<string, CombatMonsterDefinition>(StringComparer.Ordinal);
         foreach (var (id, value) in raw)
@@ -614,17 +625,30 @@ public sealed class GameDataCatalog
             var budget = ReadDouble(value, "budgetCost", 1);
             var weights = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("weights", out var weightsValue) && weightsValue.ValueKind == JsonValueKind.Object
                 ? weightsValue : default;
-            var hpWeight = ReadDouble(weights, "hp", 1);
-            var attackWeight = ReadDouble(weights, "ad", 1);
-            var armorWeight = ReadDouble(weights, "armor", 1);
-            var maxHitpoints = ReadDouble(value, "maxHitpoints", budget * 10 * hpWeight);
-            var attackPower = ReadDouble(value, "maxDamage", budget * attackWeight);
-            var defense = ReadDouble(value, "armor", budget * 0.1 * armorWeight);
-            var interval = ReadDouble(value, "attackIntervalMilliseconds", 2_000) / 1_000d;
-            var accuracy = ReadDouble(value, "accuracyRating", ReadDouble(weights, "hit", 1));
-            var evasion = ReadDouble(value, "evasionRating", ReadDouble(weights, "eva", 0));
-            var damageKind = string.Equals(ReadString(value, "category", "physical"), "spell", StringComparison.OrdinalIgnoreCase)
-                ? CombatDamageKind.Spell : CombatDamageKind.Physical;
+            double Weight(string key) => ReadDouble(weights, key, 1);
+            // 怪我同构建模：以同等级玩家基准属性锚点为底座，按品阶倍率 + 倾向权重派生全部战斗属性。
+            var level = ReadInt(value, "level", 1);
+            var anchor = baseAttributes?.At(level)
+                ?? new BaseAttributeAnchor(level, 100, 50, 10, 5, 10, 0, 1, 1, 1, 1, 1, 1, 2, 1);
+            var rank = ReadString(value, "rank", "minion").ToLowerInvariant() switch
+            {
+                "elite" => CombatMonsterRank.Elite,
+                "boss" => CombatMonsterRank.Boss,
+                _ => CombatMonsterRank.Minion
+            };
+            var attrMultiplier = rank switch { CombatMonsterRank.Elite => 1.2, CombatMonsterRank.Boss => 1.5, _ => 0.8 };
+            var hpMultiplier = rank switch { CombatMonsterRank.Elite => 5.0, CombatMonsterRank.Boss => 20.0, _ => 3.0 };
+            var progress = Math.Pow((Math.Clamp((double)level, 1, 127) - 1) / 126d, 2);
+            var actionFactor = 1 - 0.5 * progress;
+            var spell = string.Equals(ReadString(value, "category", "physical"), "spell", StringComparison.OrdinalIgnoreCase);
+            var interval = ReadDouble(value, "attackIntervalMilliseconds", 0) / 1_000d;
+            // 同构普攻节奏：物理系 1.0s 基准 ×(1-ATR)×(1-专属攻速加成)，术法系灵爆 2.0s 基准 ×(1-ATR)。
+            interval = interval > 0
+                ? interval * actionFactor * (spell ? 1 : actionFactor)
+                : spell ? 2 * actionFactor : actionFactor * actionFactor;
+            var ad = anchor.Ad * attrMultiplier * Weight("ad");
+            var ap = anchor.Ap * attrMultiplier * Weight("ap");
+            var tier = baseAttributes?.TierAt(level) ?? 1;
             var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
                 ? dropValue.EnumerateArray().Select(drop => new CombatDropDefinition(
                     new ItemId(ReadString(drop, "itemId")),
@@ -632,19 +656,44 @@ public sealed class GameDataCatalog
                     ReadDouble(drop, "minQuantity", 0),
                     ReadDouble(drop, "maxQuantity", 0))).ToArray()
                 : [];
-            var stats = CombatantStats.Create(maxHitpoints, attackPower, defense, interval, accuracy, evasion, damageKind) with
+            var skills = ReadArray(value, "skills").Select(skill =>
             {
-                MagicResistance = ReadDouble(value, "magicResistance", budget * 0.1 * ReadDouble(weights, "mr", 0)),
-                ResistanceScale = ReadDouble(value, "tier", 1),
-                Critical = ReadDouble(value, "criticalRating", ReadDouble(weights, "crit", 0)),
-                CriticalResistance = ReadDouble(value, "criticalAvoidanceRating", ReadDouble(weights, "cavoid", 0)),
-                BreakPower = ReadDouble(weights, "breakPt", 0), ParryResolve = ReadDouble(weights, "parry", 0),
+                var abilityId = ReadString(skill, "abilityId");
+                if (!abilities.TryGetValue(abilityId, out var ability))
+                    throw new DomainException(DomainErrorCode.NotFound, $"怪物 {id} 引用了不存在的技能 {abilityId}。");
+                return new MonsterSkillSlot(ability.Clone(), ReadDouble(skill, "level", 1), ReadDouble(skill, "triggerHpRatio", 1));
+            }).ToArray();
+            var skillIntensity = 1 + 0.3 * (tier - 1);
+            // 五行抗性权重按点数解释：weight × 10 写入对应抗性点数。
+            var stats = CombatantStats.Create(
+                anchor.Hp * hpMultiplier * Weight("hp"),
+                spell ? ap : ad,
+                anchor.Armor * attrMultiplier * Weight("armor"),
+                interval,
+                anchor.Acc * attrMultiplier * Weight("hit"),
+                anchor.Eva * attrMultiplier * Weight("eva"),
+                spell ? CombatDamageKind.Spell : CombatDamageKind.Physical) with
+            {
+                SpellAttack = ap,
+                MaxManapoints = anchor.Mp * attrMultiplier * Weight("mp"),
+                // 普攻倍率与玩家同构：物理系 1.0→2.0 AD，术法系灵爆 60%→258% AP。
+                BasicAttackRatio = spell ? 0.6 * skillIntensity : 1 + progress,
+                SkillIntensity = skillIntensity,
+                MagicResistance = anchor.Mr * attrMultiplier * Weight("mres"),
+                ResistanceScale = tier,
+                Critical = anchor.Crit * attrMultiplier * Weight("crit"),
+                CriticalResistance = anchor.Cavoid * attrMultiplier * Weight("cavoid"),
+                CriticalMultiplier = 1.5 + 3.5 * progress,
+                BreakPower = anchor.BreakPt * attrMultiplier * Weight("break"),
+                ParryResolve = anchor.Parry * attrMultiplier * Weight("parry"),
                 Element = Enum.Parse<CombatElement>(ReadString(value, "element", "none"), true),
-                MetalResistance = ReadDouble(value, "metalResistance", 0), WoodResistance = ReadDouble(value, "woodResistance", 0),
-                WaterResistance = ReadDouble(value, "waterResistance", 0), FireResistance = ReadDouble(value, "fireResistance", 0),
-                EarthResistance = ReadDouble(value, "earthResistance", 0)
+                MetalResistance = Weight("metalResistance") is var metal && metal != 1 ? metal * 10 : 0,
+                WoodResistance = Weight("woodResistance") is var wood && wood != 1 ? wood * 10 : 0,
+                WaterResistance = Weight("waterResistance") is var water && water != 1 ? water * 10 : 0,
+                FireResistance = Weight("fireResistance") is var fire && fire != 1 ? fire * 10 : 0,
+                EarthResistance = Weight("earthResistance") is var earth && earth != 1 ? earth * 10 : 0
             };
-            result[id] = new CombatMonsterDefinition(id, ReadString(value, "name", id), budget, stats, drops);
+            result[id] = new CombatMonsterDefinition(id, ReadString(value, "name", id), budget, level, rank, stats, drops, skills);
         }
         return result;
     }
@@ -670,7 +719,7 @@ public sealed class GameDataCatalog
                 id, ReadString(value, "name", id), ReadDouble(value, "minBudget", 0), ReadDouble(value, "maxBudget", 0),
                 ReadDouble(value, "maxTotalStrength", ReadDouble(value, "maxBudget", 0)), searchSeconds, respawnSeconds,
                 playerRespawnSeconds, spawns, ReadStringArray(value, "eliteEnemyIds"), ReadStringArray(value, "bossEnemyIds"),
-                ReadInt(value, "battlesPerBoss", 0));
+                ReadInt(value, "battlesPerBoss", 0), ReadInt(value, "battlesPerElite", ReadInt(value, "eliteInterval", 5)));
         }
         return result;
     }

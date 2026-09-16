@@ -461,8 +461,7 @@ static object ToAbilityDto(string id, JsonElement raw)
     node["abilityId"] = id;
     if (node["style"] is JsonValue style)
         node["style"] = style.GetValue<string>() switch { "fiveElements" => "five-elements", _ => style.GetValue<string>() };
-    node["manaCost"] = (node["manaCostRatio"]?.GetValue<double>() ?? 0) * 10;
-    node.Remove("manaCostRatio");
+    node["manaCost"] ??= 0;
     node["cooldownMilliseconds"] ??= 0;
     node["castMilliseconds"] ??= 0;
     node["flatDamage"] ??= 0;

@@ -172,7 +172,8 @@ public sealed class QueueLoopTests
             new ActionDefinition(qiActionId, "吐纳", ActionKind.Cultivation, 2,
                 new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
         ]);
-        var monster = new CombatMonsterDefinition("enemy.boss", "妖皇", 100, CombatantStats.Create(10_000, 10_000, 0, 1), []);
+        var monster = new CombatMonsterDefinition("enemy.boss", "妖皇", 100, 1, CombatMonsterRank.Boss,
+            CombatantStats.Create(10_000, 10_000, 0, 1), [], []);
         var encounter = new CombatEncounterDefinition(
             "encounter.boss", "妖皇巢穴", 100, 100, 1, 1, 1, 180,
             [new CombatSpawnDefinition("enemy.boss", 1, 1)], [], [], 0);

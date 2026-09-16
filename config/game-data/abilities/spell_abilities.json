@@ -7,7 +7,6 @@
     "category": "spell",
     "element": "fire",
     "castMilliseconds": 2000,
-    "manaCostRatio": 4.0,
     "damageRatio": 0.6,
     "flatDamage": 10,
     "defaultTriggers": [
@@ -18,7 +17,8 @@
         "value": 1.0,
         "buffId": null
       }
-    ]
+    ],
+    "manaCost": 4.0
   },
   {
     "id": "ability.blazing-blast",
@@ -29,7 +29,6 @@
     "element": "fire",
     "cooldownMilliseconds": 24000,
     "castMilliseconds": 3000,
-    "manaCostRatio": 10.0,
     "targetType": "allEnemies",
     "damageRatio": 1.0,
     "flatDamage": 20,
@@ -41,7 +40,8 @@
         "value": 1.0,
         "buffId": null
       }
-    ]
+    ],
+    "manaCost": 10.0
   },
   {
     "id": "ability.qingping-melody",
@@ -52,7 +52,6 @@
     "element": "wood",
     "cooldownMilliseconds": 30000,
     "castMilliseconds": 500,
-    "manaCostRatio": 10.0,
     "effectType": "heal",
     "targetType": "lowestHitpointsAlly",
     "damageRatio": 0.0,
@@ -66,7 +65,8 @@
         "value": 1.0,
         "buffId": null
       }
-    ]
+    ],
+    "manaCost": 10.0
   },
   {
     "id": "ability.lightning-attraction",
@@ -77,7 +77,6 @@
     "element": "fire",
     "cooldownMilliseconds": 28000,
     "castMilliseconds": 2000,
-    "manaCostRatio": 20.0,
     "targetType": "allEnemies",
     "damageRatio": 0.5,
     "flatDamage": 10,
@@ -89,7 +88,8 @@
         "value": 1.0,
         "buffId": null
       }
-    ]
+    ],
+    "manaCost": 20.0
   },
   {
     "id": "ability.pozhen-melody",
@@ -100,9 +100,13 @@
     "element": "none",
     "cooldownMilliseconds": 60000,
     "castMilliseconds": 5000,
-    "manaCostRatio": 50.0,
     "targetType": "allAllies",
     "damageRatio": 0.0,
+    "buff": {
+      "name": "破阵子",
+      "durationSeconds": 30.0,
+      "damageAbsorptionRatio": 0.15
+    },
     "defaultTriggers": [
       {
         "dependency": "self",
@@ -111,6 +115,7 @@
         "value": 1.0,
         "buffId": null
       }
-    ]
+    ],
+    "manaCost": 50.0
   }
 ]

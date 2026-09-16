@@ -25,7 +25,7 @@ public sealed class PlayerRuntimeTests
             new StoredHead(playerId, 0, 2, now, string.Empty, string.Empty, now),
             new Dictionary<string, StoredSection>(), []));
         var catalog = GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
-            [{"id":"ability.test","style":"sword","category":"physical","element":"none","damageRatio":1,"flatDamage":1,"cooldownMilliseconds":1000,"castMilliseconds":1000,"manaCostRatio":0}]
+            [{"id":"ability.test","style":"sword","category":"physical","element":"none","damageRatio":1,"flatDamage":1,"cooldownMilliseconds":1000,"castMilliseconds":1000,"manaCost":0}]
             """)]);
         await using var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(), catalog,
             NullLogger<PlayerRuntime>.Instance);

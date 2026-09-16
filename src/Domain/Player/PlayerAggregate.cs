@@ -31,6 +31,16 @@ public sealed class PlayerProgression
     public double LifetimeQi { get; set; }
     /// <summary>总计已完成的行动次数计数</summary>
     public double CompletedActions { get; set; }
+    /// <summary>生平斩妖：普通妖兽累计击杀数</summary>
+    public double NormalKills { get; set; }
+    /// <summary>生平斩妖：精英妖兽累计击杀数</summary>
+    public double EliteKills { get; set; }
+    /// <summary>生平斩妖：首领妖兽累计击杀数</summary>
+    public double BossKills { get; set; }
+    /// <summary>生平败走：战斗落败累计次数</summary>
+    public double TotalDefeats { get; set; }
+    /// <summary>生平修炼时长累计（秒）</summary>
+    public double CultivationSeconds { get; set; }
 
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
     public double SimulationCarrySeconds { get; set; }
@@ -95,7 +105,8 @@ public sealed class PlayerBuffState
 /// <param name="Stacks">当前叠加层数</param>
 public sealed record ActiveBuff(string BuffId, double ExpiresAtUnixSeconds, double Stacks = 1,
     string Name = "", string? SourceItemId = null, double HpRegen = 0, double MpRegen = 0,
-    double AttackSpeedRatio = 0, double DamageAbsorptionRatio = 0);
+    double AttackSpeedRatio = 0, double DamageAbsorptionRatio = 0,
+    IReadOnlyDictionary<string, double>? StatRatios = null);
 
 /// <summary>
 /// 角色装备配置与已习得功法。

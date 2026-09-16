@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Domain.Combat;
 
 /// <summary>战斗伤害类型划分</summary>
@@ -40,7 +42,7 @@ public enum CombatOutcome : byte
 }
 
 /// <summary>
-/// 战斗单位静态属性规格。
+/// 战斗单位静态属性规格；玩家与怪物共用同一套同构属性池。
 /// 所有属性计算统一使用 double 精度。
 /// </summary>
 public sealed record CombatantStats(
@@ -52,6 +54,18 @@ public sealed record CombatantStats(
     double Evasion = 0,
     CombatDamageKind DamageKind = CombatDamageKind.Physical)
 {
+    /// <summary>术法攻击（法术流派普攻与术法技能共用）。</summary>
+    public double SpellAttack { get; init; }
+    /// <summary>灵力上限；敌方技能耗蓝与玩家吟唱共用同构资源池。</summary>
+    public double MaxManapoints { get; init; }
+    /// <summary>普通攻击伤害倍率（物理强化平A或法术灵爆折算）。</summary>
+    public double BasicAttackRatio { get; init; } = 1;
+    /// <summary>技能强度乘区（SkillIntensity = 1 + (Tier-1) × 0.30）。</summary>
+    public double SkillIntensity { get; init; } = 1;
+    /// <summary>免伤点数（Linear 百分比点，正点降低承受伤害）。</summary>
+    public double DamageAbsorptionPoints { get; init; }
+    /// <summary>仇恨威胁加成（小数比率，+2.0 表示威胁放大 200%）。</summary>
+    public double ThreatRatio { get; init; }
     /// <summary>获取或设置 法术抗性 的值。</summary>
     public double MagicResistance { get; init; }
     /// <summary>获取或设置 抗性倍率 的值。</summary>
@@ -86,7 +100,7 @@ public sealed record CombatantStats(
     /// <summary>执行 校验 操作。</summary>
     internal void Validate()
     {
-        double[] nonnegative = [AttackPower, Defense, Accuracy, Evasion, MagicResistance,
+        double[] nonnegative = [AttackPower, SpellAttack, MaxManapoints, Defense, Accuracy, Evasion, MagicResistance,
             Critical, CriticalResistance, BreakPower, ParryResolve, MetalResistance,
             WoodResistance, WaterResistance, FireResistance, EarthResistance];
         if (nonnegative.Any(value => !double.IsFinite(value) || value < 0)
@@ -94,6 +108,9 @@ public sealed record CombatantStats(
             || !double.IsFinite(AttackIntervalSeconds) || AttackIntervalSeconds <= 0
             || !double.IsFinite(ResistanceScale) || ResistanceScale <= 0
             || !double.IsFinite(CriticalMultiplier) || CriticalMultiplier < 1
+            || !double.IsFinite(BasicAttackRatio) || BasicAttackRatio <= 0
+            || !double.IsFinite(SkillIntensity) || SkillIntensity <= 0
+            || !double.IsFinite(DamageAbsorptionPoints) || !double.IsFinite(ThreatRatio) || ThreatRatio < 0
             || !double.IsFinite(PhysicalPenetrationPercent) || PhysicalPenetrationPercent is < 0 or > 100
             || !double.IsFinite(MagicPenetrationPercent) || MagicPenetrationPercent is < 0 or > 100
             || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind))
@@ -128,8 +145,14 @@ public sealed record CombatantStats(
     }
 }
 
+/// <summary>怪物随战携带的技能槽：配表技能 JSON + 触发血量比例阈值。</summary>
+public sealed record MonsterSkillSlot(JsonElement Ability, double Level = 1, double TriggerHpRatio = 1);
+
+/// <summary>战斗单位生成模板：静态属性 + 可选技能槽。</summary>
+public sealed record CombatantTemplate(CombatantStats Stats, IReadOnlyList<MonsterSkillSlot>? Skills = null);
+
 /// <summary>
-/// 战斗交锋中的单位动态运行时状态（维护当前气血与下一次出手时刻）。
+/// 战斗交锋中的单位动态运行时状态（维护当前气血、灵力、威胁与下一次出手时刻）。
 /// </summary>
 public sealed class CombatantState
 {
@@ -138,40 +161,72 @@ public sealed class CombatantState
     /// </summary>
     /// <param name="id">id 参数。</param>
     /// <param name="stats">stats 参数。</param>
-    public CombatantState(string id, CombatantStats stats)
+    /// <param name="skills">skills 参数。</param>
+    public CombatantState(string id, CombatantStats stats, IReadOnlyList<MonsterSkillSlot>? skills = null)
     {
         if (string.IsNullOrWhiteSpace(id) || id.Length > 128) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗单位标识无效。");
         Id = id;
         Stats = stats ?? throw new ArgumentNullException(nameof(stats));
         stats.Validate();
         Hitpoints = stats.MaxHitpoints;
+        Manapoints = stats.MaxManapoints;
+        // 普攻引导：各单位首次出手需先完成一个完整攻击周期的蓄势，而非开战瞬发。
+        NextAttackAtSeconds = stats.AttackIntervalSeconds;
+        Skills = skills ?? [];
     }
 
-    /// <summary>战斗者标识（如 player 或 enemy）</summary>
+    /// <summary>战斗者标识（player 或 enemy:{index}）</summary>
     public string Id { get; }
+    /// <summary>配表怪物定义 ID（玩家为 null）。</summary>
+    public string? DefinitionId { get; internal set; }
     /// <summary>战斗静态属性面板</summary>
     public CombatantStats Stats { get; }
+    /// <summary>随战技能槽（敌方单位使用）。</summary>
+    public IReadOnlyList<MonsterSkillSlot> Skills { get; }
     /// <summary>当前剩余气血值</summary>
     public double Hitpoints { get; internal set; }
+    /// <summary>当前剩余灵力值</summary>
+    public double Manapoints { get; internal set; }
     /// <summary>下一次普通攻击或出手的预定战斗时间（秒）</summary>
     public double NextAttackAtSeconds { get; internal set; }
     /// <summary>累计出手攻击次数</summary>
     public double AttackCount { get; internal set; }
+    /// <summary>累积威胁值：本场对敌方全体造成的总伤害。</summary>
+    public double Threat { get; internal set; }
+    /// <summary>嘲讽/仇恨加成（小数比率）；有效威胁 = Threat × (1 + 加成)。</summary>
+    public double ThreatRatioBonus { get; internal set; }
+    /// <summary>战内临时免伤点数（如破阵子类全体增益）。</summary>
+    public double BonusAbsorptionPoints { get; internal set; }
+    /// <summary>已施放技能的位掩码（每位对应 Skills 下标，单场各触发一次）。</summary>
+    public long UsedSkillMask { get; internal set; }
     /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
+    /// <summary>参与目标抽取的有效威胁值。</summary>
+    public double EffectiveThreat => Threat * (1 + Math.Max(0, Stats.ThreatRatio + ThreatRatioBonus));
 }
 
+/// <summary>战斗单位可持久化的运行时快照。</summary>
+public sealed record CombatantSnapshot(
+    double Hitpoints,
+    double Manapoints,
+    double NextAttackAtSeconds,
+    double AttackCount,
+    double Threat,
+    long UsedSkillMask = 0,
+    double ThreatRatioBonus = 0,
+    double BonusAbsorptionPoints = 0);
+
 /// <summary>
-/// 单场战斗遭遇战状态聚合。
+/// 单场战斗遭遇战状态聚合：一名玩家对阵同波全体敌人。
 /// </summary>
 public sealed class CombatEncounterState
 {
-    private CombatEncounterState(string encounterId, long seed, CombatantState player, CombatantState enemy)
+    private CombatEncounterState(string encounterId, long seed, CombatantState player, IReadOnlyList<CombatantState> enemies)
     {
         EncounterId = encounterId;
         Seed = seed;
         Player = player;
-        Enemy = enemy;
+        Enemies = enemies;
     }
 
     /// <summary>遭遇战唯一标识</summary>
@@ -182,61 +237,70 @@ public sealed class CombatEncounterState
     public double ElapsedSeconds { get; internal set; }
     /// <summary>玩家方战斗单位</summary>
     public CombatantState Player { get; }
-    /// <summary>敌方对峙单位</summary>
-    public CombatantState Enemy { get; }
+    /// <summary>同波全体敌方单位（含已阵亡者，按下标稳定排序）。</summary>
+    public IReadOnlyList<CombatantState> Enemies { get; }
     /// <summary>当前对决胜负裁决</summary>
     public CombatOutcome Outcome { get; internal set; } = CombatOutcome.Running;
     /// <summary>状态转换序号（递增帧号）</summary>
     public double Sequence { get; internal set; }
+    /// <summary>玩家当前集火目标：存活敌人中有效威胁最高者。</summary>
+    public CombatantState? PrimaryEnemy
+    {
+        get
+        {
+            CombatantState? primary = null;
+            foreach (var enemy in Enemies)
+                if (enemy.IsAlive && (primary is null || enemy.EffectiveThreat > primary.EffectiveThreat))
+                    primary = enemy;
+            return primary;
+        }
+    }
 
     /// <summary>
     /// 初始化开启一场新的战斗遭遇
     /// </summary>
     public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, CombatantStats enemy)
+        => Start(encounterId, seed, player, [new CombatantTemplate(enemy)]);
+
+    /// <summary>开启一场多敌方单位的战斗遭遇。</summary>
+    public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, IReadOnlyList<CombatantTemplate> enemies)
     {
         if (string.IsNullOrWhiteSpace(encounterId) || encounterId.Length > 128)
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇标识无效。");
-        if (player is null || enemy is null) throw new ArgumentNullException(player is null ? nameof(player) : nameof(enemy));
-        return new CombatEncounterState(encounterId, seed, new CombatantState("player", player), new CombatantState("enemy", enemy));
+        ArgumentNullException.ThrowIfNull(player);
+        if (enemies is null || enemies.Count == 0 || enemies.Any(template => template?.Stats is null))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇敌方阵容无效。");
+        var states = new CombatantState[enemies.Count];
+        for (var i = 0; i < enemies.Count; i++)
+            states[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
+        return new CombatEncounterState(encounterId, seed, new CombatantState("player", player), states);
     }
 
-    /// <summary>从持久化标量恢复一场遭遇战。</summary>
+    /// <summary>从持久化快照恢复一场多敌遭遇战。</summary>
     public static CombatEncounterState Restore(
         string encounterId,
         long seed,
-        CombatantStats player,
-        CombatantStats enemy,
+        CombatantStats playerStats,
+        CombatantSnapshot player,
+        IReadOnlyList<CombatantTemplate> enemies,
+        IReadOnlyList<CombatantSnapshot> enemySnapshots,
         double elapsedSeconds,
-        double playerHitpoints,
-        double enemyHitpoints,
-        double playerNextAttackAtSeconds,
-        double enemyNextAttackAtSeconds,
-        double playerAttackCount,
-        double enemyAttackCount,
         CombatOutcome outcome,
         double sequence = 0)
     {
-        var encounter = Start(encounterId, seed, player, enemy);
-        if (!double.IsFinite(elapsedSeconds) || elapsedSeconds < 0
-            || !double.IsFinite(playerHitpoints) || playerHitpoints < 0 || playerHitpoints > player.MaxHitpoints
-            || !double.IsFinite(enemyHitpoints) || enemyHitpoints < 0 || enemyHitpoints > enemy.MaxHitpoints
-            || !double.IsFinite(playerNextAttackAtSeconds) || playerNextAttackAtSeconds < 0
-            || !double.IsFinite(enemyNextAttackAtSeconds) || enemyNextAttackAtSeconds < 0
-            || !double.IsFinite(playerAttackCount) || playerAttackCount < 0
-            || !double.IsFinite(enemyAttackCount) || enemyAttackCount < 0
+        var encounter = Start(encounterId, seed, playerStats, enemies);
+        if (enemySnapshots is null || enemySnapshots.Count != enemies.Count
+            || !double.IsFinite(elapsedSeconds) || elapsedSeconds < 0
             || !double.IsFinite(sequence) || sequence < 0
             || !Enum.IsDefined(outcome))
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗状态无效。");
+        ApplySnapshot(encounter.Player, player, playerStats.MaxHitpoints, playerStats.MaxManapoints);
+        for (var i = 0; i < enemies.Count; i++)
+            ApplySnapshot(encounter.Enemies[i], enemySnapshots[i], enemies[i].Stats.MaxHitpoints, enemies[i].Stats.MaxManapoints);
         encounter.ElapsedSeconds = elapsedSeconds;
-        encounter.Player.Hitpoints = playerHitpoints;
-        encounter.Enemy.Hitpoints = enemyHitpoints;
-        encounter.Player.NextAttackAtSeconds = playerNextAttackAtSeconds;
-        encounter.Enemy.NextAttackAtSeconds = enemyNextAttackAtSeconds;
-        encounter.Player.AttackCount = playerAttackCount;
-        encounter.Enemy.AttackCount = enemyAttackCount;
         encounter.Outcome = outcome;
         encounter.Sequence = sequence;
-        var expectedOutcome = (encounter.Player.IsAlive, encounter.Enemy.IsAlive) switch
+        var expectedOutcome = (encounter.Player.IsAlive, encounter.Enemies.Any(enemy => enemy.IsAlive)) switch
         {
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,
@@ -246,6 +310,32 @@ public sealed class CombatEncounterState
         if (outcome != expectedOutcome)
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗结果与生命状态不一致。");
         return encounter;
+    }
+
+    /// <summary>导出指定单位的可持久化快照。</summary>
+    public static CombatantSnapshot Snapshot(CombatantState state)
+        => new(state.Hitpoints, state.Manapoints, state.NextAttackAtSeconds, state.AttackCount,
+            state.Threat, state.UsedSkillMask, state.ThreatRatioBonus, state.BonusAbsorptionPoints);
+
+    private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
+    {
+        if (!double.IsFinite(snapshot.Hitpoints) || snapshot.Hitpoints < 0 || snapshot.Hitpoints > maxHitpoints
+            || !double.IsFinite(snapshot.Manapoints) || snapshot.Manapoints < 0 || snapshot.Manapoints > maxManapoints
+            || !double.IsFinite(snapshot.NextAttackAtSeconds) || snapshot.NextAttackAtSeconds < 0
+            || !double.IsFinite(snapshot.AttackCount) || snapshot.AttackCount < 0
+            || !double.IsFinite(snapshot.Threat) || snapshot.Threat < 0
+            || !double.IsFinite(snapshot.ThreatRatioBonus) || snapshot.ThreatRatioBonus < 0
+            || !double.IsFinite(snapshot.BonusAbsorptionPoints)
+            || snapshot.UsedSkillMask < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
+        state.Hitpoints = snapshot.Hitpoints;
+        state.Manapoints = snapshot.Manapoints;
+        state.NextAttackAtSeconds = snapshot.NextAttackAtSeconds;
+        state.AttackCount = snapshot.AttackCount;
+        state.Threat = snapshot.Threat;
+        state.ThreatRatioBonus = snapshot.ThreatRatioBonus;
+        state.BonusAbsorptionPoints = snapshot.BonusAbsorptionPoints;
+        state.UsedSkillMask = snapshot.UsedSkillMask;
     }
 }
 
@@ -267,6 +357,10 @@ public sealed record CombatEvent(
     public bool Break { get; init; }
     /// <summary>获取或设置 被招架 的值。</summary>
     public bool Parried { get; init; }
+    /// <summary>施放事件的技能 ID；普通攻击为空。</summary>
+    public string? AbilityId { get; init; }
+    /// <summary>施放事件的治疗量（伤害事件为 0）。</summary>
+    public double Healing { get; init; }
 }
 
 /// <summary>
@@ -293,6 +387,18 @@ public enum CombatExpeditionPhase : byte
     Respawning = 3
 }
 
+/// <summary>远征波次中单个敌人的可持久化战斗快照。</summary>
+public sealed record ExpeditionEnemyState(
+    string EnemyId,
+    double Hitpoints,
+    double Manapoints,
+    double NextAttackAtSeconds,
+    double AttackCount,
+    double Threat,
+    long UsedSkillMask = 0,
+    double ThreatRatioBonus = 0,
+    double BonusAbsorptionPoints = 0);
+
 /// <summary>
 /// 可持久化的妖兽试炼远征状态。
 /// 只保存确定性恢复所需的标量，不保存 CombatEncounterState 引用。
@@ -303,17 +409,15 @@ public sealed record CombatExpeditionState(
     double PhaseElapsedSeconds,
     double PhaseDurationSeconds,
     long Seed,
-    string? EnemyId,
     double BattleElapsedSeconds,
     double PlayerHitpoints,
-    double EnemyHitpoints,
+    double PlayerManapoints,
     double PlayerNextAttackAtSeconds,
-    double EnemyNextAttackAtSeconds,
     double PlayerAttackCount,
-    double EnemyAttackCount,
+    double PlayerThreat,
     CombatOutcome Outcome,
     int WaveNumber = 1,
-    IReadOnlyList<string>? WaveEnemyIds = null)
+    IReadOnlyList<ExpeditionEnemyState>? Enemies = null)
 {
     /// <summary>校验远征状态是否满足持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
@@ -323,18 +427,23 @@ public sealed record CombatExpeditionState(
         && (Phase == CombatExpeditionPhase.Combat || PhaseElapsedSeconds <= PhaseDurationSeconds + 1e-9)
         && double.IsFinite(BattleElapsedSeconds) && BattleElapsedSeconds >= 0
         && double.IsFinite(PlayerHitpoints) && PlayerHitpoints >= 0
-        && double.IsFinite(EnemyHitpoints) && EnemyHitpoints >= 0
+        && double.IsFinite(PlayerManapoints) && PlayerManapoints >= 0
         && double.IsFinite(PlayerNextAttackAtSeconds) && PlayerNextAttackAtSeconds >= 0
-        && double.IsFinite(EnemyNextAttackAtSeconds) && EnemyNextAttackAtSeconds >= 0
         && double.IsFinite(PlayerAttackCount) && PlayerAttackCount >= 0
-        && double.IsFinite(EnemyAttackCount) && EnemyAttackCount >= 0
+        && double.IsFinite(PlayerThreat) && PlayerThreat >= 0
         && Enum.IsDefined(Outcome)
-        && (EnemyId is null || (EnemyId.Length > 0 && EnemyId.Length <= 128))
         && WaveNumber >= 1
-        && (WaveEnemyIds is null || (WaveEnemyIds.Count <= 4 && WaveEnemyIds.All(id => !string.IsNullOrWhiteSpace(id) && id.Length <= 128)))
+        && (Enemies is null || (Enemies.Count <= 8 && Enemies.All(enemy => enemy is not null
+            && !string.IsNullOrWhiteSpace(enemy.EnemyId) && enemy.EnemyId.Length <= 128
+            && double.IsFinite(enemy.Hitpoints) && enemy.Hitpoints >= 0
+            && double.IsFinite(enemy.Manapoints) && enemy.Manapoints >= 0
+            && double.IsFinite(enemy.NextAttackAtSeconds) && enemy.NextAttackAtSeconds >= 0
+            && double.IsFinite(enemy.AttackCount) && enemy.AttackCount >= 0
+            && double.IsFinite(enemy.Threat) && enemy.Threat >= 0
+            && enemy.UsedSkillMask >= 0)))
         && (Phase is CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search or CombatExpeditionPhase.Respawning
-            ? Outcome == CombatOutcome.Running && EnemyId is null
-            : EnemyId is not null && PhaseElapsedSeconds <= 1e-9);
+            ? Outcome == CombatOutcome.Running && (Enemies is null || Enemies.Count == 0)
+            : Enemies is { Count: > 0 } && PhaseElapsedSeconds <= 1e-9);
 }
 
 /// <summary>
@@ -343,16 +452,6 @@ public sealed record CombatExpeditionState(
 /// </summary>
 public static class DeterministicCombatEngine
 {
-    /// <summary>技能复用普攻对抗与减伤公式，独立施放计数不改变普通攻击随机流。</summary>
-    public static CombatEvent ResolveAbilityAttack(CombatEncounterState encounter, CombatantStats stats, double castCount)
-    {
-        var caster = new CombatantState("player", stats) { Hitpoints = encounter.Player.Hitpoints, AttackCount = castCount };
-        List<CombatEvent>? events = null;
-        ResolveAttack(caster, encounter.Enemy, encounter.Seed, 2, encounter.ElapsedSeconds, ref events);
-        UpdateOutcome(encounter);
-        return events![0];
-    }
-
     /// <summary>单次推进最多产出的战斗事件上限，防止攻速异常引发死循环</summary>
     public const int MaxEventsPerAdvance = 100_000;
 
@@ -371,7 +470,9 @@ public static class DeterministicCombatEngine
         {
             if (++eventCount > MaxEventsPerAdvance)
                 throw new DomainException(DomainErrorCode.InvariantViolation, "战斗推进超过最大事件数。");
-            var next = Math.Min(encounter.Player.NextAttackAtSeconds, encounter.Enemy.NextAttackAtSeconds);
+            var next = encounter.Player.IsAlive ? encounter.Player.NextAttackAtSeconds : double.PositiveInfinity;
+            foreach (var enemy in encounter.Enemies)
+                if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
             if (!double.IsFinite(next)) throw new DomainException(DomainErrorCode.InvariantViolation, "战斗攻击时间无效。");
             if (next > targetSeconds)
             {
@@ -381,13 +482,19 @@ public static class DeterministicCombatEngine
             encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, next);
             if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
             {
-                ResolveAttack(encounter.Player, encounter.Enemy, encounter.Seed, 0, encounter.ElapsedSeconds, ref events);
+                var target = SelectEnemyTarget(encounter, encounter.Player.AttackCount, 3);
+                if (target is not null)
+                    ResolveAttack(encounter.Player, target, encounter.Seed, 0, encounter.ElapsedSeconds, ref events);
                 encounter.Player.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Player.Stats.AttackIntervalSeconds;
             }
-            if (encounter.Enemy.IsAlive && encounter.Enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+            for (var i = 0; i < encounter.Enemies.Count; i++)
             {
-                ResolveAttack(encounter.Enemy, encounter.Player, encounter.Seed, 1, encounter.ElapsedSeconds, ref events);
-                encounter.Enemy.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Enemy.Stats.AttackIntervalSeconds;
+                var enemy = encounter.Enemies[i];
+                if (enemy.IsAlive && enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                {
+                    EnemyAct(encounter, enemy, i, ref events);
+                    enemy.NextAttackAtSeconds = encounter.ElapsedSeconds + enemy.Stats.AttackIntervalSeconds;
+                }
             }
             encounter.Sequence += 1;
             UpdateOutcome(encounter);
@@ -395,28 +502,166 @@ public static class DeterministicCombatEngine
         return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome, (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence);
     }
 
+    /// <summary>按存活敌人有效威胁权重抽取玩家攻击目标；全零威胁退化为等概率。</summary>
+    public static CombatantState? SelectEnemyTarget(CombatEncounterState encounter, double attackerCount, ulong channel)
+    {
+        var alive = encounter.Enemies.Where(enemy => enemy.IsAlive).ToArray();
+        if (alive.Length == 0) return null;
+        if (alive.Length == 1) return alive[0];
+        var roll = Roll(encounter.Seed, 0, attackerCount, channel);
+        var total = alive.Sum(enemy => enemy.EffectiveThreat);
+        if (total <= 1e-12) return alive[(int)Math.Min(alive.Length - 1, (long)(roll * alive.Length))];
+        var ticket = roll * total;
+        foreach (var enemy in alive)
+        {
+            if (ticket < enemy.EffectiveThreat) return enemy;
+            ticket -= enemy.EffectiveThreat;
+        }
+        return alive[^1];
+    }
+
+    /// <summary>不可重复命中的多目标抽取：动态缩减概率池（Sequential Elimination）。</summary>
+    public static IReadOnlyList<CombatantState> SelectEnemyTargets(CombatEncounterState encounter, int maxTargets, double attackerCount, ulong channel)
+    {
+        var alive = encounter.Enemies.Where(enemy => enemy.IsAlive).ToList();
+        var result = new List<CombatantState>();
+        while (alive.Count > 0 && result.Count < maxTargets)
+        {
+            var roll = Roll(encounter.Seed, 0, attackerCount, channel + (ulong)result.Count);
+            var total = alive.Sum(enemy => enemy.EffectiveThreat);
+            CombatantState chosen;
+            if (total <= 1e-12)
+            {
+                chosen = alive[(int)Math.Min(alive.Count - 1, (long)(roll * alive.Count))];
+            }
+            else
+            {
+                var ticket = roll * total;
+                chosen = alive[^1];
+                foreach (var enemy in alive)
+                {
+                    if (ticket < enemy.EffectiveThreat) { chosen = enemy; break; }
+                    ticket -= enemy.EffectiveThreat;
+                }
+            }
+            alive.Remove(chosen);
+            result.Add(chosen);
+        }
+        return result;
+    }
+
+    /// <summary>技能复用普攻对抗与减伤公式；施放方威胁按实际伤害累积。</summary>
+    public static CombatEvent ResolveAbilityAttack(CombatEncounterState encounter, CombatantState target, CombatantStats stats, double castCount)
+    {
+        List<CombatEvent>? events = null;
+        ResolveAttack(encounter.Player, target, encounter.Seed, 2, encounter.ElapsedSeconds, ref events, stats, castCount);
+        UpdateOutcome(encounter);
+        return events![0];
+    }
+
+    /// <summary>敌方出手：优先检查血量比例触发的随战技能，否则普通攻击。</summary>
+    private static void EnemyAct(CombatEncounterState encounter, CombatantState enemy, int index, ref List<CombatEvent>? events)
+    {
+        var skills = enemy.Skills;
+        if (skills.Count > 0 && enemy.Stats.MaxHitpoints > 0)
+        {
+            var hpRatio = enemy.Hitpoints / enemy.Stats.MaxHitpoints;
+            for (var i = 0; i < skills.Count; i++)
+            {
+                if ((enemy.UsedSkillMask & (1L << i)) != 0) continue;
+                var slot = skills[i];
+                if (hpRatio > slot.TriggerHpRatio) continue;
+                if (CastEnemySkill(encounter, enemy, slot, i, index, ref events)) return;
+                break;
+            }
+        }
+        ResolveAttack(enemy, encounter.Player, encounter.Seed, (ulong)(1 + index), encounter.ElapsedSeconds, ref events);
+    }
+
+    /// <summary>敌方技能施放：伤害/治疗/嘲讽/群体增益统一复用同构结算管线。</summary>
+    private static bool CastEnemySkill(CombatEncounterState encounter, CombatantState caster, MonsterSkillSlot slot, int slotIndex, int enemyIndex, ref List<CombatEvent>? events)
+    {
+        var ability = slot.Ability;
+        var manaCost = ability.TryGetProperty("manaCost", out var costProperty) && costProperty.TryGetDouble(out var cost) ? cost : 0;
+        if (manaCost > 0)
+        {
+            if (caster.Manapoints < manaCost) return false;
+            caster.Manapoints -= manaCost;
+        }
+        caster.UsedSkillMask |= 1L << slotIndex;
+        var spell = AbilityText(ability, "category") == "spell";
+        var attackBase = spell ? caster.Stats.SpellAttack : caster.Stats.AttackPower;
+        var id = AbilityText(ability, "id") ?? string.Empty;
+        if (AbilityText(ability, "effectType") == "heal")
+        {
+            var ally = encounter.Enemies.Where(unit => unit.IsAlive).OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).First();
+            var healing = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints,
+                attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "healingRatio") + AbilityNumber(ability, "flatHealing"));
+            ally.Hitpoints += healing;
+            events ??= new List<CombatEvent>();
+            events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, ally.Id, 0, true,
+                spell ? CombatDamageKind.Spell : CombatDamageKind.Physical, ally.Hitpoints) { AbilityId = id, Healing = healing });
+            return true;
+        }
+        if (AbilityText(ability, "effectType") == "buff" && ability.TryGetProperty("buff", out var buff))
+        {
+            var absorption = buff.TryGetProperty("damageAbsorptionRatio", out var absorb) && absorb.TryGetDouble(out var absorbPoints) ? absorbPoints * 100 : 0;
+            var threatBonus = buff.TryGetProperty("threatRatio", out var threat) && threat.TryGetDouble(out var threatBuff) ? threatBuff : 0;
+            foreach (var ally in encounter.Enemies.Where(unit => unit.IsAlive))
+            {
+                ally.BonusAbsorptionPoints += absorption;
+                ally.ThreatRatioBonus += threatBonus;
+            }
+            events ??= new List<CombatEvent>();
+            events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, caster.Id, 0, true, CombatDamageKind.Spell, caster.Hitpoints) { AbilityId = id });
+            return true;
+        }
+        var threatGain = AbilityNumber(ability, "threatGain");
+        var threatRatio = AbilityNumber(ability, "threatRatio");
+        if (threatGain > 0 || threatRatio > 0 || AbilityText(ability, "targetType") == "self")
+        {
+            caster.Threat += threatGain;
+            caster.ThreatRatioBonus += threatRatio;
+            events ??= new List<CombatEvent>();
+            events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, caster.Id, 0, true, CombatDamageKind.Physical, caster.Hitpoints) { AbilityId = id });
+            return true;
+        }
+        var stats = caster.Stats with
+        {
+            AttackPower = attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "damageRatio") + AbilityNumber(ability, "flatDamage"),
+            BasicAttackRatio = 1,
+            DamageKind = spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
+            Element = AbilityElement(ability)
+        };
+        ResolveAttack(caster, encounter.Player, encounter.Seed, (ulong)(1 + enemyIndex), encounter.ElapsedSeconds, ref events, stats, slotIndex + 1);
+        return true;
+    }
+
     /// <summary>按破拆招、闪避、暴击和两层抗性顺序结算，抽样仅依赖已持久化的种子与出手序号。</summary>
-    private static void ResolveAttack(CombatantState attacker, CombatantState target, long seed, ulong side, double at, ref List<CombatEvent>? events)
+    private static void ResolveAttack(CombatantState attacker, CombatantState target, long seed, ulong side, double at,
+        ref List<CombatEvent>? events, CombatantStats? statsOverride = null, double? countOverride = null)
     {
         if (!attacker.IsAlive || !target.IsAlive) return;
-        var attack = attacker.Stats;
+        var attack = statsOverride ?? attacker.Stats;
         var defense = target.Stats;
-        var contestRoll = Roll(seed, side, attacker.AttackCount, 0);
+        var count = countOverride ?? attacker.AttackCount;
+        var contestRoll = Roll(seed, side, count, 0);
         var broken = attack.BreakPower > defense.ParryResolve
             && contestRoll < attack.BreakPower / (attack.BreakPower + defense.ParryResolve + 100);
         var parried = defense.ParryResolve > attack.BreakPower
             && contestRoll < defense.ParryResolve / (defense.ParryResolve + attack.BreakPower + 100);
         var accuracy = attack.Accuracy * (broken ? 2 : 1);
         var evasion = defense.Evasion * (parried ? 2 : 1);
-        var hit = Roll(seed, side, attacker.AttackCount, 1) >= evasion / (evasion + accuracy + 100);
+        var hit = Roll(seed, side, count, 1) >= evasion / (evasion + accuracy + 100);
         var criticalPoints = attack.Critical * (broken ? 2 : 1);
-        var critical = hit && Roll(seed, side, attacker.AttackCount, 2)
+        var critical = hit && Roll(seed, side, count, 2)
             < criticalPoints / (criticalPoints + defense.CriticalResistance + 100);
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
         var penetration = attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalPenetrationPercent : attack.MagicPenetrationPercent;
         resistance *= (parried ? 2 : 1) * (1 - penetration / 100);
+        var rawDamage = attack.AttackPower * attack.BasicAttackRatio;
         // 等价于 RawDamage² / (RawDamage + RES × K + 1)，先除后乘避免平方中间值溢出。
-        var damage = hit ? attack.AttackPower * (attack.AttackPower / (attack.AttackPower + resistance * defense.ResistanceScale + 1)) : 0;
+        var damage = hit ? rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1)) : 0;
         var elementResistance = attack.Element switch
         {
             CombatElement.Metal => defense.MetalResistance,
@@ -429,12 +674,24 @@ public static class DeterministicCombatEngine
         if (attack.Element != CombatElement.None)
             damage *= 1 - elementResistance / (elementResistance + 100 * defense.ResistanceScale);
         if (critical) damage *= attack.CriticalMultiplier;
+        // 免伤为负向 Linear 点数：+x 点 → 承受伤害 ×100/(100+x)，负点反向增伤。
+        damage *= PercentValue.Multiplier(-(defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints), PercentCurveMode.Linear);
         target.Hitpoints = Math.Max(0, target.Hitpoints - damage);
         attacker.AttackCount += 1;
+        attacker.Threat += damage;
         events ??= new List<CombatEvent>();
         events.Add(new CombatEvent(at, attacker.Id, target.Id, damage, hit, attack.DamageKind, target.Hitpoints)
         { Critical = critical, Break = broken, Parried = parried });
     }
+
+    private static string? AbilityText(JsonElement value, string key)
+        => value.TryGetProperty(key, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
+
+    private static double AbilityNumber(JsonElement value, string key)
+        => value.TryGetProperty(key, out var property) && property.TryGetDouble(out var number) ? number : 0;
+
+    private static CombatElement AbilityElement(JsonElement ability)
+        => Enum.TryParse<CombatElement>(AbilityText(ability, "element") ?? "none", true, out var element) ? element : CombatElement.None;
 
     private static double Roll(long seed, ulong side, double attackCount, ulong channel)
     {
@@ -455,7 +712,7 @@ public static class DeterministicCombatEngine
     /// </summary>
     private static void UpdateOutcome(CombatEncounterState encounter)
     {
-        encounter.Outcome = (encounter.Player.IsAlive, encounter.Enemy.IsAlive) switch
+        encounter.Outcome = (encounter.Player.IsAlive, encounter.Enemies.Any(enemy => enemy.IsAlive)) switch
         {
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,

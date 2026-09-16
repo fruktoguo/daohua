@@ -22,7 +22,8 @@ public sealed class CombatRulesTests
         var defender = CombatantStats.Create(1000, 0, 20, 1) with
         { MagicResistance = 40, ResistanceScale = 2, FireResistance = 200 };
         var state = CombatEncounterState.Start("formula", 42, attacker, defender);
-        var hit = DeterministicCombatEngine.AdvanceTo(state, 0.1).Events[0];
+        var hit = DeterministicCombatEngine.AdvanceTo(state, 1.01).Events[0];
+        Assert.Equal("player", hit.AttackerId);
         Assert.True(hit.Hit);
         Assert.Equal(expected, hit.Damage, 10);
     }
@@ -40,10 +41,11 @@ public sealed class CombatRulesTests
         var split = CombatEncounterState.Start("replay", 123, player, enemy);
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 120).Events;
         var first = DeterministicCombatEngine.AdvanceTo(split, 13.2).Events;
-        var restored = CombatEncounterState.Restore("replay", split.Seed, player, enemy,
-            split.ElapsedSeconds, split.Player.Hitpoints, split.Enemy.Hitpoints,
-            split.Player.NextAttackAtSeconds, split.Enemy.NextAttackAtSeconds,
-            split.Player.AttackCount, split.Enemy.AttackCount, split.Outcome, split.Sequence);
+        var restored = CombatEncounterState.Restore("replay", split.Seed, player,
+            CombatEncounterState.Snapshot(split.Player),
+            [new CombatantTemplate(enemy)],
+            [CombatEncounterState.Snapshot(split.Enemies[0])],
+            split.ElapsedSeconds, split.Outcome, split.Sequence);
         var second = DeterministicCombatEngine.AdvanceTo(restored, 120).Events;
         Assert.Equal(expected, first.Concat(second));
         Assert.Contains(expected, attack => !attack.Hit);
