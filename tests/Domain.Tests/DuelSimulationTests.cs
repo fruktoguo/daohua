@@ -201,7 +201,7 @@ public sealed class DuelSimulationTests
         Assert.Equal(10, report.RootExp.Total);
     }
 
-    /// <summary>新战斗行动会话重建账本并把旧账本归档，归档上限取配置 MaxBattleReports。</summary>
+    /// <summary>行动实例出队时归档其账本，归档上限取配置 MaxBattleReports。</summary>
     [Fact]
     public void BattleReportArchivesOnNewSessionAndCapsHistory()
     {
@@ -215,9 +215,9 @@ public sealed class DuelSimulationTests
             player.RemoveAction(action.Id);
         }
 
-        // 12 个会话产出 12 本账：11 本归档（按上限截断到 10），最后一本仍在 CurrentReport 待归档。
+        // 12 个会话产出 12 本账：实例出队即归档，按上限截断到 10 条。
         Assert.Equal(10, player.Duel.Reports.Count);
-        Assert.NotNull(player.Duel.CurrentReport);
+        Assert.Empty(player.Duel.ActionReports);
     }
 
     /// <summary>斗法分段状态经导出/恢复往返后保持一致。</summary>
