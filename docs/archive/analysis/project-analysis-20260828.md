@@ -1,7 +1,7 @@
 # 道化太初（daohua）全项目潜在问题分析报告
 
 - **生成时间**：2026-08-28 21:30:00
-- **任务编号**：[TASK-20260828-08](tasks/TASK-20260828-08.md)
+- **任务编号**：[TASK-20260828-08](../../tasks/TASK-20260828-08.md)
 - **分析方法**：4 路并行代码审计（服务端宿主 / 领域与协议 / 前端 / 基础设施），全部问题逐文件核实到代码行，不含猜测项。
 - **范围**：`src/Server`、`src/ComputeNode`、`src/LoadTests`、`src/Domain`、`src/Protocol`、`tests/Domain.Tests`、`frontend`、Dockerfile、compose、Caddy、`scripts/`、`deploy/`、数据库 schema、备份链路、`docs/ops/deployment.md`。
 

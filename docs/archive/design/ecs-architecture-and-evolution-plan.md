@@ -5,7 +5,7 @@
 > **所属体系**：系统架构真源复查 / 摒弃过度设计与教条主义 / 架构现状与务实路线  
 > **适用范围**：`src/Domain` 核心领域、`src/Server` 运行时宿主、`src/Protocol` 协议 DTO
 >
-> **文档状态（2026-09-16 标注）**：本文是**历史架构推演稿**。文中 `PlayerState`/`PlayerComponent`/`YuoEntity`/`PlayerShardHost`/`CombatResourceState` 等类型属于旧对象模型；**现行实现为 `PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者模型**（`YuoCore` 基座引用保留待用，不构成运行时对象模型），现行架构规约以 [`../backend/domain-data-architecture.md`](../backend/domain-data-architecture.md) 为准。文中类型名按下表对照阅读，结论性判断仍然有效。
+> **文档状态（2026-09-16 标注）**：本文是**历史架构推演稿**。文中 `PlayerState`/`PlayerComponent`/`YuoEntity`/`PlayerShardHost`/`CombatResourceState` 等类型属于旧对象模型；**现行实现为 `PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者模型**（`YuoCore` 基座引用保留待用，不构成运行时对象模型），现行架构规约以 [`../backend/domain-data-architecture.md`](../../backend/domain-data-architecture.md) 为准。文中类型名按下表对照阅读，结论性判断仍然有效。
 
 ### 现状对照表（历史类型名 → 现行实现）
 

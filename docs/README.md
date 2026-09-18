@@ -11,11 +11,12 @@ docs/
 ├── frontend/  前端规范（公共组件速查、专项交互设计）
 ├── ops/       部署与运维（构建、CCR 发布、服务器更新与回滚）
 ├── world/     世界观与剧情（设定真源、章节剧情、地图设计）
-├── audits/    一致性审计报告（文档与实现对照、历史复核摘要）
-├── 临时设计讨论/  临时草稿、脑暴记录与设计推演（非正式真源）
+├── future/    未来运营参考（非现行契约的长线规划文档）
+├── audits/    一致性审计与深度风险分析报告（只读证据库，非设计真源）
+├── archive/   历史归档（废弃设计稿、推演草案、时点性分析快照、排查日志）
+├── 临时设计讨论/  临时草稿、脑暴记录与设计推演（非正式真源，定稿后沉淀或归档）
 ├── tasks/     任务详情（各任务的独立需求分析、设计方案、子任务与时间日志）
-├── tasks.md   任务面板与开发进度看板（总览索引、状态看板与路线图）
-└── project-analysis-*.md  阶段性项目分析快照
+└── tasks.md   任务面板与开发进度看板（总览索引、状态看板与路线图）
 ```
 
 ## 任务面板
@@ -30,20 +31,16 @@ docs/
 
 | 文档 | 定位 |
 | --- | --- |
-| [character-core-design.md](design/character-core-design.md) | **角色核心设计文档 (Character Core Design)**：统一常驻修仙者实体哲学、多维生命体征、跨行为状态连续穿透、Buff/Debuff 统一时间轴衰减、1 HP 濒死复苏、动作互锁与服务端聚合架构映射。 |
-| [ecs-architecture-and-evolution-plan.md](design/ecs-architecture-and-evolution-plan.md) | **历史架构推演稿**：ECS/Fiber 领域聚合演进规划（现行实现为 `PlayerAggregate` 聚合单写者模型，现行架构以 `domain-data-architecture.md` 为准）。 |
 | [master-design.md](design/master-design.md) | **全景主设计总纲 (Master GDD)**：全域最高权威设计总纲，融汇数值底座、装备技能、持续消耗品、战斗引擎、大世界生态、世界观剧情、UI交互系统、服务端聚合架构与运维容量。 |
-| [master-design.html](design/master-design.html) | **全景主设计总纲·单文件修仙沉浸查看器**：独立离线单文件网页，无需开发服务，双击即开，内置暗墨玄石古典美学、大纲导航、实时搜索、数学公式与动态 MD 载入。 |
-| [initial-design.md](design/initial-design.md) | 系统设计总纲：商业化界面与数值规则、行动队列、复活与战斗边界等核心设计约定。 |
-| [combat-design.md](design/combat-design.md) | 战斗数值与内视设计规约：`double` 数值类型架构、六维根基换算、抗性减伤与对抗公式。 |
+| [master-design.html](design/master-design.html) | **全景主设计总纲·单文件修仙沉浸查看器**：独立离线单文件网页，无需开发服务，双击即开，内置暗墨玄石古典美学、大纲导航、实时搜索、数学公式与动态 MD 载入。内嵌数据为 `master-design.md` 的手工同步副本，改 md 后必须同步。 |
+| [character-core-design.md](design/character-core-design.md) | **角色连续性设计哲学**：统一常驻修仙者实体哲学、多维生命体征、跨行为状态连续穿透、Buff/Debuff 统一时间轴衰减、1 HP 濒死复苏、动作互锁。 |
+| [combat-design.md](design/combat-design.md) | 战斗数值与内视设计规约：`double` 数值类型架构、六维根基换算、抗性减伤与对抗公式、反应钩子管线与斗法规约。 |
 | [player-expected-attributes-model.md](design/player-expected-attributes-model.md) | 境界阶位体系与基准玩家期望属性量化模型（数值表为历史生成产物快照，手工同步维护）。 |
 | [combat-benchmark-model.md](design/combat-benchmark-model.md) | 战斗基准模拟与关卡产出期望模型：全 12 阶单人与组队效率基准（数值表为历史生成产物快照，手工同步维护）。 |
 | [generic-map-and-encounter-system.md](design/generic-map-and-encounter-system.md) | **通用地图架构、生物与质量预算遇怪系统设计规范**：摒弃纯战斗地图、确立"通用世界地点"模型，节点生态聚合体（行动体系、NPC 与怪物）与质量预算驱动的遇怪生成。 |
 | [node-building-system.md](design/node-building-system.md) | **节点公共建筑系统设计规范**：节点级公共建筑注册表（无建造者、同种一座、全民可建可填可升）、材料%/时间%双进度条、节点可建模板/自定义列表、效果 modifiers 与数值预算。 |
 | [action-statistics-system.md](design/action-statistics-system.md) | **行动统计系统设计规范**：战报泛化为三账本（行动实例 / 离线会话 / 每日 UTC+8 自然日），经验/物品得失/行动信息分段与记账点。 |
 | [sustained-consumable-system.md](design/sustained-consumable-system.md) | **动作耗时分摊持续消耗品机制设计规范**：立即/持续消耗品分类、按动作实际耗时扣减持续时间、槽位持久化、透支结算与切换惩罚，以及引气入体与引气丹数值基线。 |
-| [early-game-skills-design.md](design/early-game-skills-design.md) | 前期技能设计草案（已废弃）：历史草案，其中虚构技能与流派矩阵已废除；真实技能配置以 `config/game-data/abilities/` 为唯一真源。 |
-| [milky-way-idle-mapping.md](design/milky-way-idle-mapping.md) | 历史外部参考文档（已废除）：记录外部游戏借称与非修仙机制的清理结论；正式权威规则以 `master-design.md` 为唯一真源。 |
 | [battle-scene-demo.html](design/battle-scene-demo.html) | **战斗场景纯 HTML 实机画面 Demo**：对齐当前战斗截图的离线单文件快速验证页，复用角色图像资产并提供基础战斗交互。 |
 | [battle-effects-gallery.html](design/battle-effects-gallery.html) | **战斗特效画廊**：离线单文件特效预览页，用于战斗表现与词条效果的美术/交互走查。 |
 
@@ -54,11 +51,10 @@ docs/
 | 文档 | 定位 |
 | --- | --- |
 | [commercial-persistence-architecture.md](backend/commercial-persistence-architecture.md) | **商业级持久化最终架构（清零历史包袱）与 Redis 选型决策**：共享表与 section 快照、资产/市场事务、latest-only 队列、容量/恢复边界，以及 Redis 的不引入条件。该文档是持久化目标方案唯一权威。 |
-| [domain-data-architecture.md](backend/domain-data-architecture.md) | 服务端领域数据架构规约：`PlayerAggregate` 聚合 + `PlayerSectionKind` 七分段、`MarkDirty` 脏标记、`SectionCodec` 编解码与强类型 ID。 |
+| [domain-data-architecture.md](backend/domain-data-architecture.md) | 服务端领域数据架构规约：`PlayerAggregate` 聚合 + `PlayerSectionKind` 八分段、`MarkDirty` 脏标记、`SectionCodec` 编解码与强类型 ID。 |
 | [logic-development-guide.md](backend/logic-development-guide.md) | 服务端业务逻辑开发指南：基于 `PlayerAggregate` + `PlayerActor` 单写者的命令路由、`SimulationEngine` 推进与 `MarkDirty` 分段标记 SOP 与红线。 |
 | [game-data.md](backend/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |
-| [performance-baseline.md](backend/performance-baseline.md) | 首轮性能基线：在线、离线挂机、市场场景实测数据与相对回归口径。 |
-| [player-data-migration-and-reconciliation.md](backend/player-data-migration-and-reconciliation.md) | 玩家存档版本迁移与容错自愈架构规约：链式数据迁移管道（商业化长线规划）与 `PlayerStateReconciler` 运行时容错自愈的双重防线体系。 |
+| [performance-baseline.md](backend/performance-baseline.md) | 性能基线现行入口：当前支持的重测场景与参数口径；2026-08-06 历史样本已归档至 `archive/perf-baseline-20260806.md`。 |
 | [anti-multi-open.md](backend/anti-multi-open.md) | 防多开模块设计规约：标签页互斥 / 单账号互踢 / 设备指纹配额三道独立开关防线、准入裁决顺序、顶替会话安全拆除链与协议关闭码约定。 |
 
 ## frontend/ — 前端规范
@@ -74,23 +70,38 @@ docs/
 | --- | --- |
 | [deployment.md](ops/deployment.md) | 生产构建与部署：目标架构、CCR 不可变标签、服务器自动更新、持久卷、备份与回滚。 |
 
-## audits/ — 一致性审计
+## future/ — 未来运营参考
 
 | 文档 | 定位 |
 | --- | --- |
-| [audits/](audits/) | 文档与实现一致性审计报告与历史复核摘要（最新 `doc-vs-implementation-20260919.md`）；只读证据库，不作为设计真源。 |
+| [player-data-migration-and-reconciliation.md](future/player-data-migration-and-reconciliation.md) | 玩家存档版本迁移与容错自愈架构规约：链式数据迁移管道（商业化长线规划）与 `PlayerStateReconciler` 运行时容错自愈的双重防线体系。**未来运营参考，非现行契约**。 |
+
+## audits/ — 一致性审计与风险分析（只读证据库）
+
+| 文档 | 定位 |
+| --- | --- |
+| [deep-risk-analysis-20260919.md](audits/deep-risk-analysis-20260919.md) | **最新**：六路并行深度风险分析总报告（高10/中19/低23，含证据行号与处置优先级）。 |
+| [doc-vs-implementation-20260919.md](audits/doc-vs-implementation-20260919.md) | 文档与实现一致性审计（2026-09-19）。 |
+| [doc-vs-implementation-20260916.md](audits/doc-vs-implementation-20260916.md) | 文档与实现一致性审计（2026-09-16）。 |
+| [doc-vs-implementation-20260915.md](audits/doc-vs-implementation-20260915.md) | 文档与实现一致性审计（2026-09-15）。 |
+| [doc-vs-implementation-20260914.md](audits/doc-vs-implementation-20260914.md) | 文档与实现一致性审计（2026-09-14）。 |
+| [doc-vs-implementation-20260914-recheck.md](audits/doc-vs-implementation-20260914-recheck.md) | 2026-09-14 审计结论逐项复核。 |
+
+## archive/ — 历史归档
+
+| 文档 | 定位 |
+| --- | --- |
+| [analysis/](archive/analysis/) | 时点性项目分析快照：`project-analysis-20260828.md`、`project-analysis-20260910.md`、`project-analysis-20260915.md`，供追溯演进脉络。 |
+| [design/](archive/design/) | 废弃/被取代的设计稿：`initial-design.md`（v0.1 历史底稿，内容已由 master-design 吸收）、`ecs-architecture-and-evolution-plan.md`（ECS/Fiber 推演稿，已被聚合模型取代）、`early-game-skills-design.md`（废弃 stub，真源为 `config/game-data/abilities/`）、`milky-way-idle-mapping.md`（外部借称清理记录，已废除）。 |
+| [discussions/](archive/discussions/) | 已沉淀或废弃的临时设计草案：`任务队列系统与组件设计草案.md`、`全量物品重构与T1-T2设计草案.md`。 |
+| [perf-baseline-20260806.md](archive/perf-baseline-20260806.md) | 首轮性能基线历史样本：已删除场景（online/idle-offline 等）与已删除端点的原始数据，仅供追溯。 |
+| [BUGLOOP-20260829.md](archive/BUGLOOP-20260829.md) | 排查循环日志（历史调试记录）。 |
 
 ## 临时设计讨论/ — 草案与推演记录
 
 | 文档 | 定位 |
 | --- | --- |
-| [临时设计讨论/](临时设计讨论/) | 开发讨论中的临时草稿、脑暴记录与设计推演；定稿后沉淀至 design/backend/frontend，不作为正式真源。 |
-
-## project-analysis-*.md — 阶段性项目分析
-
-| 文档 | 定位 |
-| --- | --- |
-| [project-analysis-20260828.md](project-analysis-20260828.md)、[project-analysis-20260910.md](project-analysis-20260910.md)、[project-analysis-20260915.md](project-analysis-20260915.md) | 阶段性项目结构与实现分析快照，供追溯演进脉络。 |
+| [临时设计讨论/](临时设计讨论/) | 开发讨论中的临时草稿、脑暴记录与设计推演；定稿后沉淀至 design/backend/frontend，废弃后移入 `archive/discussions/`。当前仅含目录 README。 |
 
 ## world/ — 世界观与剧情
 
@@ -103,6 +114,6 @@ docs/
 
 ## 维护约定
 
-- 新增文档必须归入上述四类之一，并在本索引登记；跨类主题优先拆分归属，不建混合目录。
+- 新增文档必须归入上述目录之一，并在本索引登记；跨类主题优先拆分归属，不建混合目录。
 - 文档间引用一律使用相对路径，不使用 `file:///` 绝对路径。
 - 工程协作规则见仓库根目录 `AGENTS.md`；项目总览见根目录 `README.md`。

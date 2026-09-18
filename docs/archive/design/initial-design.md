@@ -4,7 +4,7 @@
 项目名称：道化太初  
 技术基线：YuoCore + .NET 10 + ASP.NET Core + React 19
 
-> **持久化权威性说明（2026-08-27）**：本文只定义玩法与交互边界；玩家存档、资产/市场事务、Outbox、日志/消息留存、容量与 Redis 选型统一以 [`docs/backend/commercial-persistence-architecture.md`](../backend/commercial-persistence-architecture.md) 为唯一目标方案。当前内测直接使用 clean-room schema v1，不实现任何旧存档、旧协议或旧组件兼容层。
+> **持久化权威性说明（2026-08-27）**：本文只定义玩法与交互边界；玩家存档、资产/市场事务、Outbox、日志/消息留存、容量与 Redis 选型统一以 [`docs/backend/commercial-persistence-architecture.md`](../../backend/commercial-persistence-architecture.md) 为唯一目标方案。当前内测直接使用 clean-room schema v1，不实现任何旧存档、旧协议或旧组件兼容层。
 
 ## 商业化界面与数值规则
 
