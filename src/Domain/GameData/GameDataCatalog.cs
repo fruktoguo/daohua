@@ -123,6 +123,25 @@ public sealed record ConsumableDefinition(
 }
 
 /// <summary>
+/// 玩家可建造建筑的静态配表定义。
+/// RequiredRealmLevel 为建造解锁所需境界等级；Group 为分组（production/combat/other）；
+/// Modifiers 为每级基准效果（Lv N 生效 = 基准 × N）；Materials 为一级基础材料清单（每级 ×1.1^(N-1)）。
+/// </summary>
+public sealed record BuildingDefinition(
+    string Id,
+    string Name,
+    string Description,
+    string Effect,
+    int RequiredRealmLevel = 1,
+    IReadOnlySet<string>? AvailableNodeIds = null,
+    string Group = World.NodeBuildingRules.GroupOther,
+    IReadOnlyList<Domain.World.BuildingMaterial>? Materials = null)
+{
+    /// <summary>每级基准效果；Lv N 生效 = 基准 × N。</summary>
+    public Domain.World.BuildingEffectSet Modifiers { get; init; } = Domain.World.BuildingEffectSet.Empty;
+}
+
+/// <summary>
 /// 道具/物品静态配表定义。
 /// </summary>
 public sealed record ItemDefinition(
@@ -301,7 +320,8 @@ public sealed class GameDataCatalog
         BaseAttributeCatalog? baseAttributes = null,
         IReadOnlyDictionary<string, JsonElement>? abilities = null,
         DuelSettings? duel = null,
-        RealmProgressionCatalog? realmProgression = null)
+        RealmProgressionCatalog? realmProgression = null,
+        IReadOnlyDictionary<string, BuildingDefinition>? buildings = null)
     {
         if (string.IsNullOrWhiteSpace(contentVersion)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容版本不能为空。");
         if (string.IsNullOrWhiteSpace(fingerprint)) throw new DomainException(DomainErrorCode.InvalidArgument, "内容指纹不能为空。");
@@ -324,6 +344,7 @@ public sealed class GameDataCatalog
         WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
         BaseAttributes = baseAttributes;
         RealmProgression = realmProgression;
+        Buildings = NormalizeBuildings(buildings);
         foreach (var action in Actions.All)
         {
             if (action.ExecutionKind == ActionExecutionKind.CombatEncounter
@@ -365,6 +386,8 @@ public sealed class GameDataCatalog
     public DuelSettings Duel { get; }
     /// <summary>境界修为上限与寿元配置；expected-attributes 未提供时为 null（内置兜底目录无境界进度）。</summary>
     public RealmProgressionCatalog? RealmProgression { get; }
+    /// <summary>玩家可建造建筑定义，键为 building ID。</summary>
+    public IReadOnlyDictionary<string, BuildingDefinition> Buildings { get; }
 
     /// <summary>内置单例兜底配表</summary>
     public static GameDataCatalog BuiltIn { get; } = new("builtin-1", "builtin", ActionCatalog.Default);
@@ -383,6 +406,7 @@ public sealed class GameDataCatalog
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var rawEquipments = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         var abilities = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        var buildings = new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal);
         DuelSettings? duel = null;
         BaseAttributeCatalog? baseAttributes = null;
         RealmProgressionCatalog? realmProgression = null;
@@ -438,6 +462,10 @@ public sealed class GameDataCatalog
                 {
                     duel = DuelSettings.Parse(entry);
                 }
+                else if (id.StartsWith("building.", StringComparison.Ordinal))
+                {
+                    buildings.Add(id, ParseBuilding(entry, id));
+                }
                 else if (entry.TryGetProperty("durationSeconds", out _))
                 {
                     actions.Add(ParseAction(entry, id));
@@ -445,7 +473,7 @@ public sealed class GameDataCatalog
             }
         }
         var fingerprint = Convert.ToHexString(digest.GetHashAndReset()).ToLowerInvariant()[..16];
-        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression);
+        return new GameDataCatalog(contentVersion, fingerprint, actions.Count == 0 ? ActionCatalog.Default : new ActionCatalog(actions), items, maps, encounters, monsters, rawItems, rawEquipments, baseAttributes: baseAttributes, abilities: abilities, duel: duel, realmProgression: realmProgression, buildings: buildings);
     }
 
     /// <summary>
@@ -466,6 +494,85 @@ public sealed class GameDataCatalog
                 return (ReadOnlyMemory<byte>)memory.ToArray();
             });
         return Parse(resources);
+    }
+
+    /// <summary>从 JSON 对象提取并解析玩家可建造建筑定义（BuildingDefinition）</summary>
+    private static BuildingDefinition ParseBuilding(JsonElement entry, string id)
+    {
+        var name = entry.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() ?? id : id;
+        var description = entry.TryGetProperty("description", out var descriptionProperty) ? descriptionProperty.GetString() ?? string.Empty : string.Empty;
+        var effect = entry.TryGetProperty("effect", out var effectProperty) ? effectProperty.GetString() ?? string.Empty : string.Empty;
+        var requiredRealmLevel = entry.TryGetProperty("requiredRealmLevel", out var realmProperty) && realmProperty.TryGetInt32(out var realm) ? realm : 1;
+        var group = entry.TryGetProperty("group", out var groupProperty) ? groupProperty.GetString() ?? World.NodeBuildingRules.GroupOther : World.NodeBuildingRules.GroupOther;
+        var nodes = entry.TryGetProperty("availableNodeIds", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array
+            ? new HashSet<string>(nodeArray.EnumerateArray().Select(value => value.GetString() ?? string.Empty).Where(value => value.Length > 0), StringComparer.Ordinal)
+            : null;
+        var modifiers = ParseBuildingModifiers(entry);
+        var materials = ParseBuildingMaterials(entry);
+        return new BuildingDefinition(id, name, description, effect, requiredRealmLevel, nodes, group, materials)
+        {
+            Modifiers = modifiers
+        };
+    }
+
+    /// <summary>解析建筑每级基准效果块（modifiers 对象，缺省全零）。</summary>
+    private static World.BuildingEffectSet ParseBuildingModifiers(JsonElement entry)
+    {
+        if (!entry.TryGetProperty("modifiers", out var block) || block.ValueKind != JsonValueKind.Object)
+            return World.BuildingEffectSet.Empty;
+        double Read(string key) => block.TryGetProperty(key, out var value) && value.TryGetDouble(out var number) && double.IsFinite(number) ? number : 0;
+        return new World.BuildingEffectSet(
+            Read("explorationSpeedRatio"),
+            Read("explorationOutputRatio"),
+            Read("alchemySpeedRatio"),
+            Read("alchemyOutputRatio"),
+            Read("cultivationOutputRatio"),
+            Read("combatHitpointRegen"),
+            Read("combatDamageReductionRatio"));
+    }
+
+    /// <summary>解析建筑一级基础材料清单（materials 数组，缺省为空）。</summary>
+    private static List<World.BuildingMaterial>? ParseBuildingMaterials(JsonElement entry)
+    {
+        if (!entry.TryGetProperty("materials", out var list) || list.ValueKind != JsonValueKind.Array) return null;
+        var materials = new List<World.BuildingMaterial>();
+        foreach (var item in list.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object) continue;
+            var itemId = item.TryGetProperty("itemId", out var idProperty) ? idProperty.GetString() : null;
+            var quantity = item.TryGetProperty("quantity", out var qtyProperty) && qtyProperty.TryGetDouble(out var qty) ? qty : 0;
+            if (string.IsNullOrWhiteSpace(itemId) || !double.IsFinite(quantity) || quantity <= 0) continue;
+            materials.Add(new World.BuildingMaterial(itemId.Trim(), quantity));
+        }
+        return materials.Count == 0 ? null : materials;
+    }
+
+    /// <summary>校验并规范化建筑定义表：标识/名称非空、境界门槛为正、节点引用去空白。</summary>
+    private static ReadOnlyDictionary<string, BuildingDefinition> NormalizeBuildings(IReadOnlyDictionary<string, BuildingDefinition>? buildings)
+    {
+        var normalized = new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal);
+        if (buildings is null) return new ReadOnlyDictionary<string, BuildingDefinition>(normalized);
+        foreach (var (id, definition) in buildings)
+        {
+            if (string.IsNullOrWhiteSpace(definition.Id) || definition.Id.Length > 128 || definition.Id != id
+                || string.IsNullOrWhiteSpace(definition.Name) || definition.Name.Length > 128
+                || definition.RequiredRealmLevel < 1
+                || definition.Group is not (World.NodeBuildingRules.GroupProduction or World.NodeBuildingRules.GroupCombat or World.NodeBuildingRules.GroupOther)
+                || (definition.Description?.Length ?? 0) > 1024 || (definition.Effect?.Length ?? 0) > 512
+                || (definition.Materials ?? []).Any(material => material is null
+                    || string.IsNullOrWhiteSpace(material.ItemId) || material.ItemId.Length > 128
+                    || !double.IsFinite(material.Quantity) || material.Quantity <= 0))
+                throw new DomainException(DomainErrorCode.InvalidArgument, $"建筑定义无效：{id}。");
+            normalized.Add(id, definition with
+            {
+                Description = definition.Description ?? string.Empty,
+                Effect = definition.Effect ?? string.Empty,
+                AvailableNodeIds = definition.AvailableNodeIds is null
+                    ? null
+                    : new HashSet<string>(definition.AvailableNodeIds.Where(value => !string.IsNullOrWhiteSpace(value)), StringComparer.Ordinal)
+            });
+        }
+        return new ReadOnlyDictionary<string, BuildingDefinition>(normalized);
     }
 
     /// <summary>从 JSON 对象提取并解析行动定义（ActionDefinition）</summary>
@@ -704,7 +811,12 @@ public sealed class GameDataCatalog
                 WoodResistance = Weight("woodResistance") is var wood && wood != 1 ? wood * 10 : 0,
                 WaterResistance = Weight("waterResistance") is var water && water != 1 ? water * 10 : 0,
                 FireResistance = Weight("fireResistance") is var fire && fire != 1 ? fire * 10 : 0,
-                EarthResistance = Weight("earthResistance") is var earth && earth != 1 ? earth * 10 : 0
+                EarthResistance = Weight("earthResistance") is var earth && earth != 1 ? earth * 10 : 0,
+                // 反应效果参数包：配表直接声明汲取/反弹强度，由钩子管线在结算中读取。
+                Effects = new CombatEffectProfile(
+                    ReadDouble(value, "hpDrainRatio"),
+                    ReadDouble(value, "mpDrainRatio"),
+                    ReadDouble(value, "damageReflectRatio"))
             };
             var qiReward = ReadDouble(value, "qiReward", 0);
             var experienceReward = ReadDouble(value, "experienceReward", 0);

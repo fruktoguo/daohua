@@ -182,7 +182,7 @@ public static class CombatSkillEngine
             }
             foreach (var enemy in targets)
             {
-                var hit = DeterministicCombatEngine.ResolveAbilityAttack(encounter, enemy, stats, state.CastCount);
+                var hit = DeterministicCombatEngine.ResolveAbilityAttack(encounter, enemy, stats, state.CastCount, id);
                 events.Add(new(id, encounter.ElapsedSeconds, hit.Damage, 0, hit.Hit, hit.Critical, enemy.Id));
             }
         }

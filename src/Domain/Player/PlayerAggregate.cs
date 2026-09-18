@@ -65,6 +65,26 @@ public sealed class PlayerWorldState
     public double Y { get; set; }
     /// <summary>迷雾探索与随机掉落种子</summary>
     public double ExplorationSeed { get; set; }
+    /// <summary>
+    /// 当前节点的公共建筑列表（共享注册表投影，由运行时按节拍刷新并持久化；
+    /// 持久化副本供离线/冷挂机补算沿用最近已知状态）。
+    /// </summary>
+    public List<Domain.World.NodeBuildingState> NodeBuildings { get; set; } = [];
+    /// <summary>
+    /// 当前节点已建成建筑的汇总效果（运行时按节拍从共享注册表解析写入；
+    /// 持久化副本供离线补算沿用最近已知状态）。
+    /// </summary>
+    public Domain.World.BuildingEffectSet NodeBuildingEffects { get; set; } = Domain.World.BuildingEffectSet.Empty;
+    /// <summary>
+    /// 建筑投影所属节点 ID：投影与当前节点不一致时（如跨节点快进尚未刷新），
+    /// 消费方必须通过 <see cref="EffectiveNodeBuildingEffects"/> 读取，保证效果不跨节点泄漏。
+    /// </summary>
+    public string? NodeBuildingNodeId { get; set; }
+    /// <summary>当前位置生效的节点建筑效果；投影属于其他节点或缺失时返回空集。</summary>
+    public Domain.World.BuildingEffectSet EffectiveNodeBuildingEffects =>
+        string.Equals(NodeBuildingNodeId, NodeId, StringComparison.Ordinal)
+            ? NodeBuildingEffects
+            : Domain.World.BuildingEffectSet.Empty;
 }
 
 /// <summary>
@@ -270,6 +290,7 @@ public sealed partial class PlayerAggregate
         GameDataFingerprint = gameDataFingerprint;
         _actionsView = _actions.AsReadOnly();
         _dirtySectionsView = new ReadOnlySet<PlayerSectionKind>(_dirtySections);
+        Duel.BindQueue(_actionsView);
     }
 
     /// <summary>玩家聚合唯一标识。</summary>
@@ -340,6 +361,9 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家在线状态无效。");
         if (Presence == presence) return;
         Presence = presence;
+        // 每次离线会话重置离线账本：进入离线即清空上一会话的挂机统计，收益从本次离线起算。
+        if (presence == PresenceState.Offline)
+            Duel.ResetOfflineReport(LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d);
         Touch(PlayerSectionKind.Settings);
     }
 
@@ -451,11 +475,12 @@ public sealed partial class PlayerAggregate
         if (!catalog.Contains(intent.ActionId))
             throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
 
-        // 移除现存的同类行动（保持 world.travel 唯一）
+        // 移除现存的同类行动（保持 world.travel 唯一）；被移除实例的统计账本随之归档。
         for (var i = _actions.Count - 1; i >= 0; i--)
         {
             if (_actions[i].Intent.ActionId == intent.ActionId)
             {
+                ArchiveReportForAction(_actions[i].Id, now);
                 _actions.RemoveAt(i);
             }
         }
@@ -493,7 +518,7 @@ public sealed partial class PlayerAggregate
     /// 从队列中显式取消/移除指定行动实例。
     /// 若移除的是队首正在运行的行动，后续排队的挂起行动立即激活为运行中。
     /// </summary>
-    public bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true)
+    public bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true, double endedAtUnixSeconds = -1)
     {
         var index = _actions.FindIndex(action => action.Id == actionInstanceId);
         if (index < 0) return false;
@@ -502,6 +527,9 @@ public sealed partial class PlayerAggregate
             Combat.Hitpoints = 1;
             MarkDirty(PlayerSectionKind.Combat);
         }
+        // 实例离开队列即归档其统计账本；未传精确时刻时按当前模拟时钟收尾。
+        ArchiveReportForAction(actionInstanceId,
+            endedAtUnixSeconds >= 0 ? endedAtUnixSeconds : LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d);
         _actions.RemoveAt(index);
         if (index == 0 && _actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Pending)
         {
@@ -556,6 +584,8 @@ public sealed partial class PlayerAggregate
         var index = _actions.FindIndex(action => action.Id == actionId);
         if (index < 0) return null;
         var current = _actions[index];
+        // 旧实例出队即归档账本；循环重入产生新实例，将另行建账。
+        ArchiveReportForAction(current.Id, now);
         _actions.RemoveAt(index);
 
         var isLoopable = Settings.LoopEnabled && current.Intent.ActionId.Value != "world.travel";
@@ -635,9 +665,14 @@ public sealed partial class PlayerAggregate
             if (Progression.Experience < cap - 1e-9)
                 throw new DomainException(DomainErrorCode.Conflict, "修为未满，尚未触及瓶颈。");
         }
+        var realmBefore = Progression.RealmLevel;
         Progression.RealmLevel = checked(Progression.RealmLevel + 1);
         Progression.Qi = 0;
         Progression.Experience = 0;
+        // 突破升级计入行动统计账本（realm 级 LevelUp，TargetId 恒为空串）。
+        RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null,
+            LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d,
+            report => report.LevelUps.Add(new PlayerReportLevelUp("realm", "", realmBefore, Progression.RealmLevel)));
         Touch(PlayerSectionKind.Progression);
     }
 

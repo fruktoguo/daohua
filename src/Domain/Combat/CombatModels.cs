@@ -96,6 +96,8 @@ public sealed record CombatantStats(
     public double FireResistance { get; init; }
     /// <summary>土抗性点数（按抗性公式减免土属性伤害）。</summary>
     public double EarthResistance { get; init; }
+    /// <summary>反应效果参数包（汲取/反弹等衍生效果强度）；由钩子管线在攻击结算中读取。</summary>
+    public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
 
     /// <summary>校验属性面板全部字段满足有限性与取值域不变量；非法时抛出 InvalidArgument。</summary>
     internal void Validate()
@@ -115,6 +117,8 @@ public sealed record CombatantStats(
             || !double.IsFinite(MagicPenetrationPercent) || MagicPenetrationPercent is < 0 or > 100
             || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind))
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
+        if (Effects is null) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗反应效果参数无效。");
+        Effects.Validate();
     }
 
     /// <summary>按核心必填属性创建战斗单位规格；扩展属性经 init 赋值后由 Validate 统一复核。</summary>
@@ -594,11 +598,12 @@ public static class DeterministicCombatEngine
     /// <param name="target">受击敌方单位。</param>
     /// <param name="stats">技能折算后的攻击面板。</param>
     /// <param name="castCount">累计施放计数（确定性抽样的计数维度）。</param>
+    /// <param name="abilityId">技能标识（随事件与钩子上下文透传）。</param>
     /// <returns>本次技能命中判定与伤害明细事件。</returns>
-    public static CombatEvent ResolveAbilityAttack(CombatEncounterState encounter, CombatantState target, CombatantStats stats, double castCount)
+    public static CombatEvent ResolveAbilityAttack(CombatEncounterState encounter, CombatantState target, CombatantStats stats, double castCount, string? abilityId = null)
     {
         List<CombatEvent>? events = null;
-        ResolveAttack(encounter.Player, target, encounter.Seed, 2, encounter.ElapsedSeconds, ref events, stats, castCount);
+        ResolveAttack(encounter, encounter.Player, target, 2, encounter.ElapsedSeconds, ref events, stats, castCount, abilityId);
         UpdateOutcome(encounter);
         return events![0];
     }
@@ -611,7 +616,7 @@ public static class DeterministicCombatEngine
         if (TryCastSkill(encounter, player, PlayerAllies(encounter), encounter.Enemies, target, 0, ref events))
             return;
         if (target is not null)
-            ResolveAttack(player, target, encounter.Seed, 0, encounter.ElapsedSeconds, ref events);
+            ResolveAttack(encounter, player, target, 0, encounter.ElapsedSeconds, ref events);
     }
 
     private static IReadOnlyList<CombatantState> PlayerAllies(CombatEncounterState encounter)
@@ -622,7 +627,7 @@ public static class DeterministicCombatEngine
     {
         if (TryCastSkill(encounter, enemy, encounter.Enemies, [encounter.Player], encounter.Player, (ulong)(1 + index), ref events))
             return;
-        ResolveAttack(enemy, encounter.Player, encounter.Seed, (ulong)(1 + index), encounter.ElapsedSeconds, ref events);
+        ResolveAttack(encounter, enemy, encounter.Player, (ulong)(1 + index), encounter.ElapsedSeconds, ref events);
     }
 
     /// <summary>
@@ -725,29 +730,42 @@ public static class DeterministicCombatEngine
         };
         // 一次性怪物技能以槽位序号为抽样计数；可重复镜像技能以累计施放数为计数。
         var count = slot.Triggers is not null ? caster.SkillCastCount + 1 : slotIndex + 1;
-        ResolveAttack(caster, target, encounter.Seed, side, encounter.ElapsedSeconds, ref events, stats, count);
+        ResolveAttack(encounter, caster, target, side, encounter.ElapsedSeconds, ref events, stats, count, id);
         caster.SkillCastCount += 1;
         return true;
     }
 
-    /// <summary>按破拆招、闪避、暴击和两层抗性顺序结算，抽样仅依赖已持久化的种子与出手序号。</summary>
-    private static void ResolveAttack(CombatantState attacker, CombatantState target, long seed, ulong side, double at,
-        ref List<CombatEvent>? events, CombatantStats? statsOverride = null, double? countOverride = null)
+    /// <summary>按破拆招、闪避、暴击和两层抗性顺序结算，抽样仅依赖已持久化的种子与出手序号。
+    /// 判定前、伤害落账前、落账后三个点位依次驱动钩子管线；钩子衍生伤害直接落账不再回流。</summary>
+    private static void ResolveAttack(CombatEncounterState encounter, CombatantState attacker, CombatantState target,
+        ulong side, double at, ref List<CombatEvent>? events,
+        CombatantStats? statsOverride = null, double? countOverride = null, string? abilityId = null)
     {
         if (!attacker.IsAlive || !target.IsAlive) return;
-        var attack = statsOverride ?? attacker.Stats;
+        var context = new CombatHitContext
+        {
+            Encounter = encounter,
+            Attacker = attacker,
+            Target = target,
+            AttackStats = statsOverride ?? attacker.Stats,
+            AbilityId = abilityId,
+            Side = side,
+            Count = countOverride ?? attacker.AttackCount,
+            AtSeconds = at
+        };
+        CombatHookPipeline.MutateResolve(context);
+        var attack = context.AttackStats;
         var defense = target.Stats;
-        var count = countOverride ?? attacker.AttackCount;
-        var contestRoll = Roll(seed, side, count, 0);
+        var contestRoll = Roll(encounter.Seed, side, context.Count, 0);
         var broken = attack.BreakPower > defense.ParryResolve
             && contestRoll < attack.BreakPower / (attack.BreakPower + defense.ParryResolve + 100);
         var parried = defense.ParryResolve > attack.BreakPower
             && contestRoll < defense.ParryResolve / (defense.ParryResolve + attack.BreakPower + 100);
         var accuracy = attack.Accuracy * (broken ? 2 : 1);
         var evasion = defense.Evasion * (parried ? 2 : 1);
-        var hit = Roll(seed, side, count, 1) >= evasion / (evasion + accuracy + 100);
+        var hit = Roll(encounter.Seed, side, context.Count, 1) >= evasion / (evasion + accuracy + 100);
         var criticalPoints = attack.Critical * (broken ? 2 : 1);
-        var critical = hit && Roll(seed, side, count, 2)
+        var critical = hit && Roll(encounter.Seed, side, context.Count, 2)
             < criticalPoints / (criticalPoints + defense.CriticalResistance + 100);
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
         var penetration = attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalPenetrationPercent : attack.MagicPenetrationPercent;
@@ -769,12 +787,21 @@ public static class DeterministicCombatEngine
         if (critical) damage *= attack.CriticalMultiplier;
         // 免伤为负向 Linear 点数：+x 点 → 承受伤害 ×100/(100+x)，负点反向增伤。
         damage *= PercentValue.Multiplier(-(defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints), PercentCurveMode.Linear);
-        target.Hitpoints = Math.Max(0, target.Hitpoints - damage);
+        context.Hit = hit;
+        context.Critical = critical;
+        context.Broken = broken;
+        context.Parried = parried;
+        context.Damage = damage;
+        CombatHookPipeline.MutateDamage(context);
+        context.Damage = Math.Max(0, context.Damage);
+        target.Hitpoints = Math.Max(0, target.Hitpoints - context.Damage);
         attacker.AttackCount += 1;
-        attacker.Threat += damage;
+        attacker.Threat += context.Damage;
         events ??= new List<CombatEvent>();
-        events.Add(new CombatEvent(at, attacker.Id, target.Id, damage, hit, attack.DamageKind, target.Hitpoints)
-        { Critical = critical, Break = broken, Parried = parried });
+        events.Add(new CombatEvent(at, attacker.Id, target.Id, context.Damage, context.Hit, attack.DamageKind, target.Hitpoints)
+        { Critical = context.Critical, Break = context.Broken, Parried = context.Parried, AbilityId = abilityId });
+        CombatHookPipeline.ApplyAftermath(context);
+        if (context.DerivedEvents is { } derived) events.AddRange(derived);
     }
 
     private static string? AbilityText(JsonElement value, string key)
@@ -786,7 +813,7 @@ public static class DeterministicCombatEngine
     private static CombatElement AbilityElement(JsonElement ability)
         => Enum.TryParse<CombatElement>(AbilityText(ability, "element") ?? "none", true, out var element) ? element : CombatElement.None;
 
-    private static double Roll(long seed, ulong side, double attackCount, ulong channel)
+    internal static double Roll(long seed, ulong side, double attackCount, ulong channel)
     {
         // SplitMix64 混合固定计数器；各判定使用独立通道，切片与恢复不会改变随机流。
         unchecked

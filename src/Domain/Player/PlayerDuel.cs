@@ -16,6 +16,16 @@ public sealed record DuelStagedItem(string ItemId, double Quantity, double Acqui
 /// <summary>战报中的物品收益条目。</summary>
 public sealed record PlayerReportItem(string ItemId, double Quantity);
 
+/// <summary>战报中的功法参悟经验条目。</summary>
+public sealed record PlayerReportAbilityExp(string AbilityId, double Experience);
+
+/// <summary>
+/// 战报中的等级提升记录。
+/// Kind ∈ realm/root/ability；root 的 TargetId 用 CoreAspectKind 枚举名小写（如 stamina），
+/// ability 用功法 ID，realm 用空串。
+/// </summary>
+public sealed record PlayerReportLevelUp(string Kind, string TargetId, double FromLevel, double ToLevel);
+
 /// <summary>六维经验增量容器；战报与收益分配共用。</summary>
 public sealed class PlayerRootExpValues
 {
@@ -33,6 +43,13 @@ public sealed class PlayerRootExpValues
     public double Talisman { get; set; }
     /// <summary>六维经验合计</summary>
     public double Total => Stamina + Intelligence + Attack + Defense + Swordsmanship + Talisman;
+    /// <summary>清空六维经验累计（每日账本 rollover 用）。</summary>
+    public void Clear()
+    {
+        Stamina = 0; Intelligence = 0; Attack = 0;
+        Defense = 0; Swordsmanship = 0; Talisman = 0;
+    }
+
     /// <summary>按根骨维度累加经验。</summary>
     public void Add(CoreAspectKind attribute, double amount)
     {
@@ -55,18 +72,18 @@ public sealed class PlayerRootExpValues
 }
 
 /// <summary>
-/// 单次战斗行动收益账本：一次入队行动从开始到移出队列期间的全部收益。
-/// 新行动开始时重置；归档后保存最近 10 次。
+/// 行动统计账本：一个行动实例从建账到出队归档期间的全部收益与计数。
+/// 同一结构同时承担三类账本——行动实例账本、离线挂机账本与每日统计账本。
 /// </summary>
 public sealed class PlayerBattleReport
 {
-    /// <summary>报告标识（绑定行动实例 Id 的 N 格式串）</summary>
+    /// <summary>报告标识（行动实例账本为实例 Id 的 N 格式串；单例账本固定为 offline/daily）</summary>
     public string ReportId { get; set; } = "";
-    /// <summary>绑定的行动实例 Id</summary>
+    /// <summary>绑定的行动实例 Id；离线/每日账本为 Guid.Empty</summary>
     public Guid ActionInstanceId { get; set; }
-    /// <summary>行动配表 ID</summary>
+    /// <summary>行动配表 ID；离线/每日账本为空串</summary>
     public string ActionId { get; set; } = "";
-    /// <summary>行动名称快照</summary>
+    /// <summary>行动名称快照；离线/每日账本为空串</summary>
     public string ActionName { get; set; } = "";
     /// <summary>统计开始时间（Unix 秒）</summary>
     public double StartedAtUnixSeconds { get; set; }
@@ -78,16 +95,40 @@ public sealed class PlayerBattleReport
     public double Experience { get; set; }
     /// <summary>六维经验收益</summary>
     public PlayerRootExpValues RootExp { get; } = new();
+    /// <summary>功法参悟经验收益（按功法 ID 聚合）</summary>
+    public List<PlayerReportAbilityExp> AbilityExp { get; } = [];
+    /// <summary>等级提升记录（境界/六维/功法）</summary>
+    public List<PlayerReportLevelUp> LevelUps { get; } = [];
     /// <summary>物品收益（含暂存区与缴获）</summary>
     public List<PlayerReportItem> Items { get; } = [];
+    /// <summary>物品失去（行动输入消耗、自动消耗品、斗法暂存被缴）</summary>
+    public List<PlayerReportItem> ItemsLost { get; } = [];
+    /// <summary>已完成行动轮次</summary>
+    public double Cycles { get; set; }
+    /// <summary>战斗遭遇场次</summary>
+    public double Encounters { get; set; }
+    /// <summary>普通妖兽击杀数</summary>
+    public double NormalKills { get; set; }
+    /// <summary>精英妖兽击杀数</summary>
+    public double EliteKills { get; set; }
+    /// <summary>首领妖兽击杀数</summary>
+    public double BossKills { get; set; }
+    /// <summary>战斗落败/死亡次数</summary>
+    public double Deaths { get; set; }
     /// <summary>本周期斗法胜场</summary>
     public double DuelWins { get; set; }
     /// <summary>本周期斗法败场（含主动结束判负）</summary>
     public double DuelLosses { get; set; }
+    /// <summary>UTC+8 自然日序号（仅每日账本使用，-1 表示尚未归属任何自然日）</summary>
+    public long DayIndex { get; set; } = -1;
 
     /// <summary>是否存在任何可记录内容；空账本归档时丢弃。</summary>
     public bool HasContent => Qi > 0 || Experience > 0 || RootExp.Total > 0
-        || Items.Count > 0 || DuelWins > 0 || DuelLosses > 0;
+        || AbilityExp.Count > 0 || LevelUps.Count > 0
+        || Items.Count > 0 || ItemsLost.Count > 0
+        || Cycles > 0 || Encounters > 0
+        || NormalKills > 0 || EliteKills > 0 || BossKills > 0 || Deaths > 0
+        || DuelWins > 0 || DuelLosses > 0;
 
     /// <summary>合并记录一件物品收益。</summary>
     public void AddItem(ItemId itemId, double quantity)
@@ -96,13 +137,56 @@ public sealed class PlayerBattleReport
         if (index >= 0) Items[index] = Items[index] with { Quantity = Items[index].Quantity + quantity };
         else Items.Add(new(itemId.Value, quantity));
     }
+
+    /// <summary>合并记录一件物品失去。</summary>
+    public void AddItemLost(ItemId itemId, double quantity)
+    {
+        var index = ItemsLost.FindIndex(entry => entry.ItemId == itemId.Value);
+        if (index >= 0) ItemsLost[index] = ItemsLost[index] with { Quantity = ItemsLost[index].Quantity + quantity };
+        else ItemsLost.Add(new(itemId.Value, quantity));
+    }
+
+    /// <summary>合并记录功法参悟经验。</summary>
+    public void AddAbilityExp(string abilityId, double experience)
+    {
+        var index = AbilityExp.FindIndex(entry => entry.AbilityId == abilityId);
+        if (index >= 0) AbilityExp[index] = AbilityExp[index] with { Experience = AbilityExp[index].Experience + experience };
+        else AbilityExp.Add(new(abilityId, experience));
+    }
+
+    /// <summary>清空全部累计字段（每日账本跨日 rollover 用）；ReportId/行动标识保留。</summary>
+    public void ResetBucket(long dayIndex, double atUnixSeconds)
+    {
+        Qi = 0;
+        Experience = 0;
+        RootExp.Clear();
+        AbilityExp.Clear();
+        LevelUps.Clear();
+        Items.Clear();
+        ItemsLost.Clear();
+        Cycles = 0;
+        Encounters = 0;
+        NormalKills = 0;
+        EliteKills = 0;
+        BossKills = 0;
+        Deaths = 0;
+        DuelWins = 0;
+        DuelLosses = 0;
+        DayIndex = dayIndex;
+        StartedAtUnixSeconds = atUnixSeconds;
+        EndedAtUnixSeconds = atUnixSeconds;
+    }
 }
 
 /// <summary>
-/// 斗法玩法分段状态：遭遇计数、失败冷却、进行中斗法、暂存区与战斗收益记录。
+/// 斗法玩法分段状态：遭遇计数、失败冷却、进行中斗法、暂存区与行动统计三账本
+/// （行动实例账本、离线挂机账本、每日统计账本）及归档历史。
 /// </summary>
 public sealed class PlayerDuelState
 {
+    /// <summary>所属聚合的行动队列视图；供 CurrentReport 定位队首行动账本。</summary>
+    private IReadOnlyList<QueuedAction>? _queue;
+
     /// <summary>斗法遭遇计数；大于 0 时下次进入战斗尝试撮合。</summary>
     public double EncounterCharges { get; set; }
     /// <summary>失败冷却截止时间（Unix 秒）；冷却内不匹配也不被匹配。</summary>
@@ -111,10 +195,45 @@ public sealed class PlayerDuelState
     public string? ActiveDuelId { get; set; }
     /// <summary>暂存区物品（先入先出结算）。</summary>
     public List<DuelStagedItem> StagedItems { get; } = [];
-    /// <summary>当前进行中的收益账本；新战斗行动开始时重建。</summary>
-    public PlayerBattleReport? CurrentReport { get; set; }
+    /// <summary>按行动实例 Id 各持一本的收益账本；实例出队时归档进 Reports。</summary>
+    public Dictionary<Guid, PlayerBattleReport> ActionReports { get; } = [];
+    /// <summary>离线挂机统计账本：Presence 转入 Offline 时重置，离线补算期间全部收益入账。</summary>
+    public PlayerBattleReport OfflineReport { get; set; } = new() { ReportId = "offline" };
+    /// <summary>每日统计账本：按 UTC+8 自然日（DayIndex）自动 rollover。</summary>
+    public PlayerBattleReport DailyReport { get; set; } = new() { ReportId = "daily" };
     /// <summary>最近战报归档（最新在前，最多 MaxBattleReports 条）。</summary>
     public List<PlayerBattleReport> Reports { get; } = [];
+
+    /// <summary>队首行动的收益账本（便捷访问）；队首无账本或空队列时为 null。</summary>
+    public PlayerBattleReport? CurrentReport
+        => _queue is { Count: > 0 } queue ? ReportFor(queue[0].Id) : null;
+
+    /// <summary>绑定所属聚合的行动队列视图；由聚合构造时一次性挂接。</summary>
+    internal void BindQueue(IReadOnlyList<QueuedAction> queue) => _queue = queue;
+
+    /// <summary>查找指定行动实例的收益账本；不存在返回 null。</summary>
+    public PlayerBattleReport? ReportFor(Guid actionInstanceId)
+        => ActionReports.TryGetValue(actionInstanceId, out var report) ? report : null;
+
+    /// <summary>获取或新建指定行动实例的收益账本；新建时 StartedAt=EndedAt=入账时刻。</summary>
+    public PlayerBattleReport GetOrCreateReport(Guid instanceId, string actionId, string actionName, double atUnixSeconds)
+    {
+        if (ActionReports.TryGetValue(instanceId, out var existing)) return existing;
+        var report = new PlayerBattleReport
+        {
+            ReportId = instanceId.ToString("N"),
+            ActionInstanceId = instanceId,
+            ActionId = actionId,
+            ActionName = actionName,
+            StartedAtUnixSeconds = atUnixSeconds,
+            EndedAtUnixSeconds = atUnixSeconds
+        };
+        ActionReports[instanceId] = report;
+        return report;
+    }
+
+    /// <summary>离线账本重置：进入离线会话时清空并重新起算。</summary>
+    public void ResetOfflineReport(double atUnixSeconds) => OfflineReport.ResetBucket(0, atUnixSeconds);
 }
 
 /// <summary>斗法分段的可持久化文档形态。</summary>
@@ -124,7 +243,10 @@ public sealed record PlayerDuelStateDocument(
     string? ActiveDuelId,
     IReadOnlyList<DuelStagedItem> StagedItems,
     PlayerBattleReportDocument? CurrentReport,
-    IReadOnlyList<PlayerBattleReportDocument> Reports);
+    IReadOnlyList<PlayerBattleReportDocument> Reports,
+    IReadOnlyList<PlayerBattleReportDocument>? ActiveReports = null,
+    PlayerBattleReportDocument? OfflineReport = null,
+    PlayerBattleReportDocument? DailyReport = null);
 
 /// <summary>战报的可持久化文档形态（不含内部 ActionInstanceId，由 ReportId 承载）。</summary>
 public sealed record PlayerBattleReportDocument(
@@ -138,7 +260,17 @@ public sealed record PlayerBattleReportDocument(
     PlayerRootExpDocument RootExp,
     IReadOnlyList<PlayerReportItem> Items,
     double DuelWins,
-    double DuelLosses);
+    double DuelLosses,
+    IReadOnlyList<PlayerReportItem>? ItemsLost = null,
+    IReadOnlyList<PlayerReportAbilityExp>? AbilityExp = null,
+    IReadOnlyList<PlayerReportLevelUp>? LevelUps = null,
+    double Cycles = 0,
+    double Encounters = 0,
+    double NormalKills = 0,
+    double EliteKills = 0,
+    double BossKills = 0,
+    double Deaths = 0,
+    long DayIndex = -1);
 
 /// <summary>六维经验文档形态。</summary>
 public sealed record PlayerRootExpDocument(
@@ -292,10 +424,11 @@ public sealed partial class PlayerAggregate
             || !Guid.TryParse(duel.DuelId, out var duelId))
             return null;
         var nowUnix = now.ToUnixTimeMilliseconds() / 1000d;
-        RemoveStagedItems(duel.SelfStagedSnapshot);
+        RemoveStagedItems(duel.SelfStagedSnapshot, nowUnix);
         Duel.ActiveDuelId = null;
         Duel.CooldownUntilUnixSeconds = nowUnix + settings.DefeatCooldownSeconds;
-        Duel.CurrentReport?.DuelLosses += 1;
+        RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null, nowUnix,
+            report => { report.DuelLosses += 1; report.Deaths += 1; });
         Progression.TotalDefeats += 1;
         _actions[0].Expedition = expedition! with
         {
@@ -327,7 +460,9 @@ public sealed partial class PlayerAggregate
         if (!itemId.IsValid || !double.IsFinite(quantity) || quantity <= 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "暂存物品无效。");
         Duel.StagedItems.Add(new(itemId.Value, quantity, acquiredAtUnixSeconds));
-        Duel.CurrentReport?.AddItem(itemId, quantity);
+        // 暂存物品同样计入「获得」：归属未定时先按当前队首行动记账。
+        RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null, acquiredAtUnixSeconds,
+            report => report.AddItem(itemId, quantity));
         MarkDirty(PlayerSectionKind.Duel);
     }
 
@@ -344,8 +479,8 @@ public sealed partial class PlayerAggregate
         return settled;
     }
 
-    /// <summary>按快照清单移除暂存物品（斗法落败被对方缴获）。</summary>
-    internal void RemoveStagedItems(IReadOnlyList<DuelStagedItem> snapshot)
+    /// <summary>按快照清单移除暂存物品（斗法落败被对方缴获），被缴物品计入「失去」。</summary>
+    internal void RemoveStagedItems(IReadOnlyList<DuelStagedItem> snapshot, double atUnixSeconds)
     {
         if (snapshot.Count == 0) return;
         foreach (var item in snapshot)
@@ -353,39 +488,67 @@ public sealed partial class PlayerAggregate
             var index = Duel.StagedItems.IndexOf(item);
             if (index >= 0) Duel.StagedItems.RemoveAt(index);
         }
-        MarkDirty(PlayerSectionKind.Duel);
-    }
-
-    /// <summary>新战斗行动会话开始时重建收益账本；旧账本非空则归档（最多保留 10 条）。</summary>
-    internal void BeginBattleReport(Guid actionInstanceId, ActionId actionId, string actionName, DateTimeOffset now)
-    {
-        if (Duel.CurrentReport?.ActionInstanceId == actionInstanceId) return;
-        ArchiveCurrentReport(now);
-        Duel.CurrentReport = new PlayerBattleReport
+        var headId = _actions.Count > 0 ? _actions[0].Id : (Guid?)null;
+        RecordStats(headId, atUnixSeconds, report =>
         {
-            ReportId = actionInstanceId.ToString("N"),
-            ActionInstanceId = actionInstanceId,
-            ActionId = actionId.Value,
-            ActionName = actionName,
-            StartedAtUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d,
-            EndedAtUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d
-        };
+            foreach (var item in snapshot)
+                report.AddItemLost(new ItemId(item.ItemId), item.Quantity);
+        });
         MarkDirty(PlayerSectionKind.Duel);
     }
 
-    /// <summary>归档当前收益账本；仅当账本与队首行动解绑或行动结束时调用。</summary>
-    internal void ArchiveCurrentReport(DateTimeOffset endedAt)
+    /// <summary>
+    /// 行动统计记账枢纽：同一条 apply 依次作用于
+    /// ①指定行动实例账本（存在才记，不隐式建账）②离线账本（仅 Presence==Offline 时）
+    /// ③每日账本（先按 UTC+8 自然日 rollover 再入账）。任一账本被写入即标记 Duel 脏。
+    /// </summary>
+    internal void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
     {
-        var report = Duel.CurrentReport;
-        if (report is null) return;
-        Duel.CurrentReport = null;
-        report.EndedAtUnixSeconds = endedAt.ToUnixTimeMilliseconds() / 1000d;
-        if (!report.HasContent) { MarkDirty(PlayerSectionKind.Duel); return; }
-        Duel.Reports.Insert(0, report);
-        while (Duel.Reports.Count > DuelSettingsTuning.MaxBattleReports)
-            Duel.Reports.RemoveAt(Duel.Reports.Count - 1);
+        ArgumentNullException.ThrowIfNull(apply);
+        if (actionInstanceId is { } instanceId
+            && Duel.ActionReports.TryGetValue(instanceId, out var actionReport))
+        {
+            apply(actionReport);
+            actionReport.EndedAtUnixSeconds = atUnixSeconds;
+        }
+        if (Presence == PresenceState.Offline)
+        {
+            apply(Duel.OfflineReport);
+            Duel.OfflineReport.EndedAtUnixSeconds = atUnixSeconds;
+        }
+        var dayIndex = (long)Math.Floor((atUnixSeconds + 28800) / 86400);
+        if (Duel.DailyReport.DayIndex != dayIndex)
+            Duel.DailyReport.ResetBucket(dayIndex, atUnixSeconds);
+        apply(Duel.DailyReport);
+        Duel.DailyReport.EndedAtUnixSeconds = atUnixSeconds;
         MarkDirty(PlayerSectionKind.Duel);
     }
+
+    /// <summary>队首行动开始推进时按实例建账（已存在则续用）；仅新建时标脏。</summary>
+    internal void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)
+    {
+        if (Duel.ActionReports.ContainsKey(instanceId)) return;
+        Duel.GetOrCreateReport(instanceId, actionId.Value, actionName, now.ToUnixTimeMilliseconds() / 1000d);
+        MarkDirty(PlayerSectionKind.Duel);
+    }
+
+    /// <summary>行动实例出队时归档其账本；空账本直接丢弃，非空账本插入 Reports 头部并裁剪至上限。</summary>
+    internal void ArchiveReportForAction(Guid instanceId, double endedAtUnixSeconds)
+    {
+        if (!Duel.ActionReports.Remove(instanceId, out var report)) return;
+        report.EndedAtUnixSeconds = endedAtUnixSeconds;
+        if (report.HasContent)
+        {
+            Duel.Reports.Insert(0, report);
+            while (Duel.Reports.Count > DuelSettingsTuning.MaxBattleReports)
+                Duel.Reports.RemoveAt(Duel.Reports.Count - 1);
+        }
+        MarkDirty(PlayerSectionKind.Duel);
+    }
+
+    /// <summary>行动实例出队时归档其账本（DateTimeOffset 便捷重载）。</summary>
+    internal void ArchiveReportForAction(Guid instanceId, DateTimeOffset endedAt)
+        => ArchiveReportForAction(instanceId, endedAt.ToUnixTimeMilliseconds() / 1000d);
 
     /// <summary>
     /// 构建斗法镜像快照：开战瞬间冻结属性面板、功法技能槽与暂存物品清单。

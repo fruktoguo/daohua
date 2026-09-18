@@ -49,7 +49,10 @@ public sealed record PlayerWorldStateDocument(
     double Y,
     double ExplorationSeed,
     string? EdgeId = null,
-    double EdgeProgress = 0);
+    double EdgeProgress = 0,
+    IReadOnlyList<Domain.World.NodeBuildingState>? NodeBuildings = null,
+    Domain.World.BuildingEffectSet? NodeBuildingEffects = null,
+    string? NodeBuildingNodeId = null);
 
 /// <summary>战斗属性数值快照 DTO</summary>
 public sealed record PlayerCombatStateDocument(
@@ -127,7 +130,7 @@ public sealed partial class PlayerAggregate
             GameDataFingerprint,
             new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds,
                 Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds),
-            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress),
+            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
             new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense, Combat.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
             GetCachedEquippedInstances(),
@@ -145,7 +148,10 @@ public sealed partial class PlayerAggregate
         report.Qi, report.Experience,
         new PlayerRootExpDocument(report.RootExp.Stamina, report.RootExp.Intelligence, report.RootExp.Attack,
             report.RootExp.Defense, report.RootExp.Swordsmanship, report.RootExp.Talisman),
-        report.Items.ToArray(), report.DuelWins, report.DuelLosses);
+        report.Items.ToArray(), report.DuelWins, report.DuelLosses,
+        report.ItemsLost.ToArray(), report.AbilityExp.ToArray(), report.LevelUps.ToArray(),
+        report.Cycles, report.Encounters, report.NormalKills, report.EliteKills, report.BossKills,
+        report.Deaths, report.DayIndex);
 
     private PlayerDuelStateDocument ExportDuel() => new(
         Duel.EncounterCharges,
@@ -153,7 +159,10 @@ public sealed partial class PlayerAggregate
         Duel.ActiveDuelId,
         Duel.StagedItems.ToArray(),
         Duel.CurrentReport is null ? null : ExportReport(Duel.CurrentReport),
-        Duel.Reports.Select(ExportReport).ToArray());
+        Duel.Reports.Select(ExportReport).ToArray(),
+        Duel.ActionReports.Values.Select(ExportReport).ToArray(),
+        ExportReport(Duel.OfflineReport),
+        ExportReport(Duel.DailyReport));
 
     private ActiveBuff[] GetCachedBuffs()
     {
@@ -319,6 +328,21 @@ public sealed partial class PlayerAggregate
         aggregate.World.X = state.World.X;
         aggregate.World.Y = state.World.Y;
         aggregate.World.ExplorationSeed = state.World.ExplorationSeed;
+        var buildingKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var building in state.World.NodeBuildings ?? [])
+        {
+            if (building is null || string.IsNullOrWhiteSpace(building.BuildingId) || building.BuildingId.Length > 128
+                || building.Level < 0 || building.TargetLevel < 0
+                || (building.TargetLevel > 0 && building.TargetLevel <= building.Level)
+                || !double.IsFinite(building.StartedAtUnixSeconds)
+                || !buildingKeys.Add(building.BuildingId)
+                || building.ContributedMaterials.Any(pair => string.IsNullOrWhiteSpace(pair.Key)
+                    || !double.IsFinite(pair.Value) || pair.Value < 0))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "节点建筑记录无效。");
+            aggregate.World.NodeBuildings.Add(building);
+        }
+        aggregate.World.NodeBuildingEffects = state.World.NodeBuildingEffects ?? Domain.World.BuildingEffectSet.Empty;
+        aggregate.World.NodeBuildingNodeId = state.World.NodeBuildingNodeId;
         aggregate.Combat.Hitpoints = state.Combat.Hitpoints;
         aggregate.Combat.MaxHitpoints = state.Combat.MaxHitpoints;
         aggregate.Combat.Manapoints = state.Combat.Manapoints;
@@ -468,7 +492,20 @@ public sealed partial class PlayerAggregate
         Duel.ActiveDuelId = document.ActiveDuelId;
         Duel.StagedItems.Clear();
         Duel.StagedItems.AddRange(document.StagedItems);
-        Duel.CurrentReport = document.CurrentReport is null ? null : ImportReport(document.CurrentReport);
+        // 实例账本以 ActiveReports 为准重建；文档 CurrentReport 是冗余导出字段，不参与恢复。
+        Duel.ActionReports.Clear();
+        foreach (var document_ in document.ActiveReports ?? [])
+        {
+            var report = ImportReport(document_);
+            if (report.ActionInstanceId != Guid.Empty)
+                Duel.ActionReports[report.ActionInstanceId] = report;
+        }
+        Duel.OfflineReport = document.OfflineReport is null
+            ? new PlayerBattleReport { ReportId = "offline" }
+            : ImportReport(document.OfflineReport);
+        Duel.DailyReport = document.DailyReport is null
+            ? new PlayerBattleReport { ReportId = "daily" }
+            : ImportReport(document.DailyReport);
         Duel.Reports.Clear();
         Duel.Reports.AddRange(document.Reports.Select(ImportReport));
     }
@@ -487,6 +524,13 @@ public sealed partial class PlayerAggregate
             Experience = document.Experience,
             DuelWins = document.DuelWins,
             DuelLosses = document.DuelLosses,
+            Cycles = document.Cycles,
+            Encounters = document.Encounters,
+            NormalKills = document.NormalKills,
+            EliteKills = document.EliteKills,
+            BossKills = document.BossKills,
+            Deaths = document.Deaths,
+            DayIndex = document.DayIndex,
             RootExp =
             {
                 Stamina = document.RootExp.Stamina,
@@ -498,12 +542,16 @@ public sealed partial class PlayerAggregate
             }
         };
         report.Items.AddRange(document.Items);
+        report.ItemsLost.AddRange(document.ItemsLost ?? []);
+        report.AbilityExp.AddRange(document.AbilityExp ?? []);
+        report.LevelUps.AddRange(document.LevelUps ?? []);
         return report;
     }
 
     private static bool IsValidReportDocument(PlayerBattleReportDocument? report)
         => report is null || (!string.IsNullOrWhiteSpace(report.ReportId) && report.ReportId.Length <= 64
-            && !string.IsNullOrWhiteSpace(report.ActionId) && report.ActionId.Length <= 128
+            // ActionId 允许空串：offline/daily 单例账本无行动绑定。
+            && report.ActionId is not null && report.ActionId.Length <= 128
             && (report.ActionName?.Length ?? 0) <= 128
             && double.IsFinite(report.StartedAtUnixSeconds) && report.StartedAtUnixSeconds >= 0
             && double.IsFinite(report.EndedAtUnixSeconds) && report.EndedAtUnixSeconds >= 0
@@ -516,6 +564,22 @@ public sealed partial class PlayerAggregate
             && report.Items is not null && report.Items.Count <= 512
             && report.Items.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)
                 && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0)
+            && (report.ItemsLost is null || (report.ItemsLost.Count <= 512
+                && report.ItemsLost.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)
+                    && item.ItemId.Length <= 128 && double.IsFinite(item.Quantity) && item.Quantity > 0)))
+            && (report.AbilityExp is null || (report.AbilityExp.Count <= 512
+                && report.AbilityExp.All(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.AbilityId)
+                    && entry.AbilityId.Length <= 128 && double.IsFinite(entry.Experience) && entry.Experience >= 0)))
+            && (report.LevelUps is null || (report.LevelUps.Count <= 512
+                && report.LevelUps.All(entry => entry is not null
+                    && entry.Kind is "realm" or "root" or "ability"
+                    && (entry.TargetId?.Length ?? 0) <= 128
+                    && double.IsFinite(entry.FromLevel) && double.IsFinite(entry.ToLevel)
+                    && entry.FromLevel < entry.ToLevel)))
+            && new[] { report.Cycles, report.Encounters, report.NormalKills,
+                report.EliteKills, report.BossKills, report.Deaths }
+                .All(value => double.IsFinite(value) && value >= 0)
+            && report.DayIndex >= -1
             && double.IsFinite(report.DuelWins) && report.DuelWins >= 0
             && double.IsFinite(report.DuelLosses) && report.DuelLosses >= 0);
 
@@ -527,7 +591,11 @@ public sealed partial class PlayerAggregate
             && document.StagedItems.All(item => item is not null && item.IsValid)
             && IsValidReportDocument(document.CurrentReport)
             && document.Reports is not null && document.Reports.Count <= 100
-            && document.Reports.All(report => report is not null && IsValidReportDocument(report));
+            && document.Reports.All(report => report is not null && IsValidReportDocument(report))
+            && (document.ActiveReports is null || (document.ActiveReports.Count <= 64
+                && document.ActiveReports.All(report => report is not null && IsValidReportDocument(report))))
+            && IsValidReportDocument(document.OfflineReport)
+            && IsValidReportDocument(document.DailyReport);
 
     /// <summary>
     /// 检验动态参数字典的合法性（键非空且不超过64字符，值必须是有效有限浮点数）。

@@ -153,8 +153,20 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvalidArgument, "尚未习得该功法，无法参悟。");
         if (!double.IsFinite(experience) || experience <= 0 || experience > 1_000_000)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能经验无效。");
-        Loadout.AbilityExperiences[abilityId] = Loadout.AbilityExperiences.TryGetValue(abilityId, out var exp)
-            ? exp + experience : experience;
+        var previousExp = Loadout.AbilityExperiences.TryGetValue(abilityId, out var stored) ? stored : 0;
+        var nextExp = previousExp + experience;
+        Loadout.AbilityExperiences[abilityId] = nextExp;
+        var levelBefore = AbilityExpCurve.LevelFor(previousExp);
+        var levelAfter = AbilityExpCurve.LevelFor(nextExp);
+        // 功法经验与参悟升级计入行动统计账本（ability 级 LevelUp，TargetId 为功法 ID）。
+        var headId = _actions.Count > 0 ? _actions[0].Id : (Guid?)null;
+        var abilityIdValue = abilityId.Value;
+        RecordStats(headId, LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d, report =>
+        {
+            report.AddAbilityExp(abilityIdValue, experience);
+            if (levelAfter > levelBefore)
+                report.LevelUps.Add(new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter));
+        });
         Touch(PlayerSectionKind.Loadout);
     }
 

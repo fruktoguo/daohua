@@ -32,6 +32,8 @@ public sealed record PlayerAttributes(
     public double EarthResistance { get; init; }
     /// <summary>抗性缩放倍率（等于当前境界阶位 Tier）。</summary>
     public double ResistanceScale { get; init; } = 1;
+    /// <summary>反应效果参数包：装备特殊机制（汲取/反弹）汇总结果。</summary>
+    public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
     /// <summary>按当前流派（物理/术法）折叠为战斗单位属性规格；术法流派普攻走 Spell 伤害。</summary>
     /// <returns>可进入战斗引擎的单位属性。</returns>
     public CombatantStats ToCombatant() => CombatantStats.Create(MaxHitpoints,
@@ -49,7 +51,8 @@ public sealed record PlayerAttributes(
             CriticalMultiplier = CriticalMultiplier,
             BreakPower = BreakPower, ParryResolve = Parry, ResistanceScale = ResistanceScale,
             MetalResistance = MetalResistance, WoodResistance = WoodResistance, WaterResistance = WaterResistance,
-            FireResistance = FireResistance, EarthResistance = EarthResistance
+            FireResistance = FireResistance, EarthResistance = EarthResistance,
+            Effects = Effects
         };
 }
 
@@ -61,7 +64,10 @@ public static class PlayerAttributeResolver
     /// <param name="catalog">全局配表（境界锚点、装备与功法来源）。</param>
     /// <returns>结算完成的属性面板。</returns>
     public static PlayerAttributes Resolve(PlayerAggregateState state, GameDataCatalog catalog)
-        => Resolve(state.Progression.RealmLevel, state.EquippedItemIds ?? [], state.Loadout, state.Buffs, state.Combat, catalog);
+        => Resolve(state.Progression.RealmLevel, state.EquippedItemIds ?? [], state.Loadout, state.Buffs, state.Combat, catalog,
+            string.Equals(state.World.NodeBuildingNodeId, state.World.NodeId, StringComparison.Ordinal)
+                ? state.World.NodeBuildingEffects
+                : null);
 
     /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。</summary>
     /// <param name="player">在线玩家聚合。</param>
@@ -70,10 +76,11 @@ public static class PlayerAttributeResolver
     public static PlayerAttributes Resolve(PlayerAggregate player, GameDataCatalog catalog)
         => Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
             new(player.Combat.Hitpoints, player.Combat.MaxHitpoints, player.Combat.Manapoints,
-                player.Combat.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog);
+                player.Combat.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
+            player.World.EffectiveNodeBuildingEffects);
 
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
-        PlayerCombatStateDocument combat, GameDataCatalog catalog)
+        PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null)
     {
         if (catalog.BaseAttributes is null)
             return new(combat.MaxHitpoints, combat.MaxManapoints, combat.AttackPower, 0, combat.Defense, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2);
@@ -81,6 +88,7 @@ public static class PlayerAttributeResolver
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
         var threatRatio = 0d;
+        double hpDrain = 0, mpDrain = 0, reflect = 0;
         foreach (var id in equipment)
         {
             if (!catalog.RawEquipments.TryGetValue(id.Value, out var item))
@@ -89,7 +97,12 @@ public static class PlayerAttributeResolver
             Add(item, "flatStats", flat, 1 + enhancement * 0.02);
             Add(item, "baseStatRatios", ratios, 1 + enhancement * 0.02);
             if (item.TryGetProperty("specialMechanics", out var mechanics) && mechanics.ValueKind == JsonValueKind.Object)
+            {
                 threatRatio += ReadMechanic(mechanics, "threatRatio");
+                hpDrain += ReadMechanic(mechanics, "hpDrainRatio");
+                mpDrain += ReadMechanic(mechanics, "mpDrainRatio");
+                reflect += ReadMechanic(mechanics, "damageReflectRatio");
+            }
         }
         var core = loadout.CoreAttributes;
         double Root(string key) => key switch
@@ -108,6 +121,12 @@ public static class PlayerAttributeResolver
         var buffRatios = new Dictionary<string, double>(StringComparer.Ordinal);
         double speed = 0, absorption = 0;
         double hpRegenFlat = 0, mpRegenFlat = 0;
+        // 节点公共建筑效果：气血自然回复固定值与额外减伤并入同名乘区。
+        if (nodeBuildingEffects is not null)
+        {
+            hpRegenFlat += nodeBuildingEffects.CombatHitpointRegen;
+            absorption += nodeBuildingEffects.CombatDamageReductionRatio;
+        }
         foreach (var buff in buffs)
         {
             hpRegenFlat += buff.HpRegen * buff.Stacks;
@@ -153,7 +172,8 @@ public static class PlayerAttributeResolver
         {
             MetalResistance = Stat("metalResistance", 0), WoodResistance = Stat("woodResistance", 0),
             WaterResistance = Stat("waterResistance", 0), FireResistance = Stat("fireResistance", 0),
-            EarthResistance = Stat("earthResistance", 0), ResistanceScale = tier
+            EarthResistance = Stat("earthResistance", 0), ResistanceScale = tier,
+            Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect)
         };
     }
 
