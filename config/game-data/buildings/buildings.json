@@ -1,0 +1,98 @@
+[
+  {
+    "id": "building.gathering-tent",
+    "name": "采葛营帐",
+    "kind": "building",
+    "group": "production",
+    "description": "修士亲手搭建的简易营帐，晾晒绳与药篓一应俱全，长驻一地可从容采集四方灵植。",
+    "effect": "提升此地历练采集行动的收益",
+    "requiredRealmLevel": 1,
+    "modifiers": {
+      "explorationOutputRatio": 0.05
+    },
+    "materials": [
+      { "itemId": "item.peach-wood", "quantity": 20 },
+      { "itemId": "item.beast-hide", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.alchemy-hearth",
+    "name": "携行丹灶",
+    "kind": "building",
+    "group": "production",
+    "description": "以凡铜铸就的便携丹灶，炉火温吞却胜在随取随用，足以就地开炉炼药。",
+    "effect": "提升此地炼丹行动的收益",
+    "requiredRealmLevel": 1,
+    "modifiers": {
+      "alchemyOutputRatio": 0.05
+    },
+    "materials": [
+      { "itemId": "item.dark-iron", "quantity": 15 },
+      { "itemId": "item.peach-wood", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.meditation-circle",
+    "name": "聚灵蒲团",
+    "kind": "building",
+    "group": "production",
+    "description": "以灵草茎秆编织的打坐蒲团，四周以卵石布下简易聚灵阵纹。",
+    "effect": "提升此地吐纳修炼的灵气收益",
+    "requiredRealmLevel": 1,
+    "modifiers": {
+      "cultivationOutputRatio": 0.05
+    },
+    "materials": [
+      { "itemId": "item.ningxue-grass", "quantity": 15 },
+      { "itemId": "item.morning-dew", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.forge-anvil",
+    "name": "淬火铁砧",
+    "kind": "building",
+    "group": "production",
+    "description": "沉入地脉的玄铁砧台，旁置淬火寒潭，可供修士就地锻打精炼法器。",
+    "effect": "提升此地炼丹炼器行动的速度",
+    "requiredRealmLevel": 19,
+    "modifiers": {
+      "alchemySpeedRatio": 0.05
+    },
+    "materials": [
+      { "itemId": "item.dark-iron", "quantity": 40 },
+      { "itemId": "item.beast-bone", "quantity": 20 }
+    ]
+  },
+  {
+    "id": "building.guard-shrine",
+    "name": "护阵石龛",
+    "kind": "building",
+    "group": "combat",
+    "description": "嵌入山岩的小型阵龛，龛内供奉的阵旗可自行结成薄薄一层护体光罩。",
+    "effect": "在此地战斗时提供额外减伤",
+    "requiredRealmLevel": 31,
+    "modifiers": {
+      "combatDamageReductionRatio": 0.03
+    },
+    "materials": [
+      { "itemId": "item.crimson-copper", "quantity": 20 },
+      { "itemId": "item.soul-talisman", "quantity": 10 }
+    ]
+  },
+  {
+    "id": "building.spring-marrow",
+    "name": "养脉泉眼",
+    "kind": "building",
+    "group": "combat",
+    "description": "以灵玉圈出的小小泉眼，泉水中丝丝地脉精气可温养修士经脉。",
+    "effect": "在此地战斗时提升气血自然回复",
+    "requiredRealmLevel": 43,
+    "modifiers": {
+      "combatHitpointRegen": 2
+    },
+    "materials": [
+      { "itemId": "item.banling-flower", "quantity": 10 },
+      { "itemId": "item.spirit-pine-crystal", "quantity": 5 }
+    ]
+  }
+]

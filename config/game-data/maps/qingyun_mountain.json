@@ -43,7 +43,8 @@
             "description": "枝繁叶茂的古槐树，遮蔽半个村口。",
             "effect": "遮阳纳凉"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       },
       {
         "id": "node.shuyu-brook",
@@ -65,7 +66,8 @@
             "description": "溪水中的垫脚青石，晨曦露水在此汇聚凝结。",
             "effect": "晨露采集点"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       },
       {
         "id": "node.herb-valley",
@@ -96,7 +98,8 @@
             "description": "依山谷搭建的草药晾晒竹架，药香四溢。",
             "effect": "灵草采摘点"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       },
       {
         "id": "node.peach-forest",
@@ -118,7 +121,8 @@
             "description": "由坚韧老桃木干搭建的便桥，横跨桃林幽涧。",
             "effect": "桃木采伐点"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       },
       {
         "id": "node.rock-beach",
@@ -140,7 +144,8 @@
             "description": "堆放采矿锤镐与碎石料的粗陋草棚。",
             "effect": "乌铁开采点"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       },
       {
         "id": "node.tea-house",
@@ -165,7 +170,8 @@
             "description": "沿山道搭建的常驻交易茶棚。",
             "effect": "灵市集散地"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       },
       {
         "id": "node.cloud-gate",
@@ -187,7 +193,8 @@
             "description": "没入云雾中的高耸白玉牌坊，刻有青云道纹。",
             "effect": "山门历练试炼场"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       },
       {
         "id": "node.cloud-peak",
@@ -227,7 +234,8 @@
             "description": "崖边突出的平整青石，常有清风抚松。",
             "effect": "静心悟道"
           }
-        ]
+        ],
+        "buildableTemplate": "all"
       }
     ],
     "edges": [
