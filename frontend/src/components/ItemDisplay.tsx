@@ -306,7 +306,7 @@ export function ItemTooltipTarget({
 }
 
 function signedPercent(value: number): string {
-  const percent = Math.round(value * 1000) / 10
+  const percent = Math.round(value * 100)
   return `${percent > 0 ? '+' : ''}${percent}%`
 }
 

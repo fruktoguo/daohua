@@ -209,6 +209,8 @@ export interface CombatantConfig {
   lifeStealRatio?: number;
   armorDamageRatio?: number;
   hpDrainRatio?: number;
+  mpDrainRatio?: number;
+  damageReflectRatio?: number;
   criticalRating?: number;
   criticalChance?: number;
   criticalDamageRatio?: number;

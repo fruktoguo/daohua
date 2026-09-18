@@ -1,16 +1,47 @@
-import { memo } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { useT } from '../i18n'
-import type { NearbyMonsterDefinition } from '../game/types'
+import type { BuildingDefinition, NearbyMonsterDefinition } from '../game/types'
+import { resolveItemMetadata } from '../game/ids'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingPopover, FloatingInfoCard } from './FloatingPopover'
+import { Modal } from './Modal'
+import { UnitNumber } from './UnitNumber'
+import { formatInteger } from '../game/format'
+import { gameClient } from '../network/gameClient'
 
 // 地点/NPC/建筑/怪物名称来自服务端数据，面板框架文本走 i18n。
 
+/** 附近面板分类（由地图页顶部 Tab 传入） */
+export type NearbyTab = 'monsters' | 'people' | 'buildings'
+
+/** 建筑分组展示顺序（与配表 group 字段一致） */
+const BUILDING_GROUP_ORDER = ['production', 'combat', 'other'] as const
+
+const buildingGroupLabelKey = (group: string): string =>
+  group === 'production' ? 'combat.nearby.groupProduction'
+    : group === 'combat' ? 'combat.nearby.groupCombat'
+      : 'combat.nearby.groupOther'
+
+/** 百分比进度条（材料/工期双进度共用） */
+const ProgressBar = ({ value }: { value: number }): React.JSX.Element => (
+  <span className="building-progress-track">
+    <span className="building-progress-fill" style={{ width: `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%` }} />
+  </span>
+)
+
+/**
+ * 栖息生灵单卡片（普通怪 / 精英 / 领主共用模板）
+ *
+ * 卡片本体展示立绘、名称、等级与一行摘要；悬停浮层展开等级、位阶、战力预算、气血、伤害与护甲明细。
+ */
 const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
   monster: NearbyMonsterDefinition
+  /** 刷出节奏提示（精英/领主按每 N 战出现一次展示） */
   intervalHint?: string
+  /** 精英位阶标记（驱动紫金徽记与卡片描边） */
   isElite?: boolean
+  /** 领主位阶标记（驱动危险色徽记与卡片描边） */
   isBoss?: boolean
 }): React.JSX.Element {
   const t = useT()
@@ -23,10 +54,10 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
   const details = [
     { label: t('combat.nearby.statLevel'), value: `Lv.${monster.level}` },
     { label: t('combat.nearby.statRank'), value: rankLabel },
-    { label: t('combat.nearby.statBudget'), value: `${monster.budgetCost}` },
-    { label: t('combat.nearby.statMaxHp'), value: `${monster.maxHitpoints}` },
-    { label: t('combat.nearby.statMaxDamage'), value: `${monster.maxDamage}` },
-    { label: t('combat.nearby.statArmor'), value: `${monster.armor}` },
+    { label: t('combat.nearby.statBudget'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.budgetCost} /> },
+    { label: t('combat.nearby.statMaxHp'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.maxHitpoints} /> },
+    { label: t('combat.nearby.statMaxDamage'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.maxDamage} /> },
+    { label: t('combat.nearby.statArmor'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.armor} /> },
   ]
 
   if (intervalHint) {
@@ -43,7 +74,7 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
           badge={rankLabel}
           badgeTone={monster.rank === 'boss' ? 'danger' : monster.rank === 'elite' ? 'purple' : 'gold'}
           subtitle={t('combat.nearby.monsterSubtitle', { level: monster.level, tier: monster.tier })}
-          description={t('combat.nearby.monsterDescription', { rankDesc, budget: monster.budgetCost })}
+          description={t('combat.nearby.monsterDescription', { rankDesc, budget: formatInteger(monster.budgetCost) })}
           stats={details}
         />
       }
@@ -63,7 +94,7 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
             <span className="nearby-level-badge">Lv.{monster.level}</span>
           </div>
           <p>
-            {t('combat.nearby.monsterSummary', { type: summaryType, budget: monster.budgetCost })}
+            {t('combat.nearby.monsterSummary', { type: summaryType, budget: formatInteger(monster.budgetCost) })}
           </p>
           {intervalHint && <small className="nearby-interval-hint">{intervalHint}</small>}
         </div>
@@ -73,19 +104,88 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
 })
 
 /**
- * 附近同域修士、生灵生态、NPC 与灵地建筑列表面板 (NearbyPanel)
+ * 附近同域修士、生灵生态、NPC 与建筑列表面板 (NearbyPanel)
+ * 怪物 / 人物 / 建筑 三个分类由地图页顶部 Tab 选择，通过 tab 属性传入；内容区纵向滚动。
  */
-export const NearbyPanel = memo(function NearbyPanel(): React.JSX.Element {
+export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }): React.JSX.Element {
   const t = useT()
   const playerId = useGameStore(state => state.playerId)
   const name = useGameStore(state => state.name)
   const world = useGameStore(state => state.world)
+  const stats = useGameStore(state => state.stats)
+  const buildingCatalog = useGameStore(state => state.buildings)
+  const inventory = useGameStore(state => state.inventory)
+  const [buildPickerOpen, setBuildPickerOpen] = useState(false)
+  const [detailBuildingId, setDetailBuildingId] = useState<string | null>(null)
+  const [contributeBuildingId, setContributeBuildingId] = useState<string | null>(null)
+  const [contributeDraft, setContributeDraft] = useState<Record<string, number>>({})
+  const [contributeConfirming, setContributeConfirming] = useState(false)
 
   const monsters = world.monsters ?? []
   const eliteEnemies = world.eliteEnemies ?? []
   const bossEnemies = world.bossEnemies ?? []
   const hasMonsters = monsters.length > 0 || eliteEnemies.length > 0 || bossEnemies.length > 0
   const hasBudget = (world.maxBudget ?? 0) > 0
+  const onEdge = world.edgeId !== null
+  const nodeBuildings = world.nodeBuildings ?? []
+  const buildableIds = world.buildableBuildingIds ?? null
+
+  // 背包材料存量（itemId → 数量），供材料提交输入框上限使用。
+  const inventoryAmounts = useMemo(() => {
+    const amounts = new Map<string, number>()
+    for (const item of inventory) amounts.set(item.itemId, (amounts.get(item.itemId) ?? 0) + item.amount)
+    return amounts
+  }, [inventory])
+
+  // 建造候选：节点可建列表（buildableList/buildableTemplate 下发）∩ 建筑目录，
+  // 排除已存在同类；未达境界的保留灰显。null = 该节点不可建造（隐藏加号卡）。
+  const buildCandidates = useMemo(() => {
+    if (buildableIds === null) return []
+    const realmLevel = stats.realmLevel ?? 1
+    const occupied = new Set(nodeBuildings.map(building => building.entityId))
+    return buildableIds
+      .map(id => buildingCatalog.find(definition => definition.buildingId === id))
+      .filter((definition): definition is BuildingDefinition =>
+        definition !== undefined
+        && !occupied.has(definition.buildingId)
+        && (definition.availableNodeIds == null
+          || definition.availableNodeIds.length === 0
+          || (world.nodeId !== null && definition.availableNodeIds.includes(world.nodeId))))
+      .map(definition => ({ definition, locked: realmLevel < definition.requiredRealmLevel }))
+  }, [buildableIds, nodeBuildings, buildingCatalog, stats.realmLevel, world.nodeId])
+
+  const detailBuilding = nodeBuildings.find(building => building.entityId === detailBuildingId) ?? null
+  const contributeBuilding = nodeBuildings.find(building => building.entityId === contributeBuildingId) ?? null
+  const contributeEntries = (contributeBuilding?.materials ?? []).filter(entry => entry.required - entry.contributed > 0)
+  const contributeTotal = contributeEntries.reduce((sum, entry) => sum + (contributeDraft[entry.itemId] ?? 0), 0)
+
+  const handleBuild = (definition: BuildingDefinition) => {
+    gameClient.sendCommand('building.build', { buildingId: definition.buildingId })
+    setBuildPickerOpen(false)
+  }
+
+  const openContribute = (buildingId: string) => {
+    setContributeDraft({})
+    setContributeConfirming(false)
+    setContributeBuildingId(buildingId)
+  }
+
+  const closeContribute = () => {
+    setContributeBuildingId(null)
+    setContributeDraft({})
+    setContributeConfirming(false)
+  }
+
+  const submitContribute = () => {
+    if (!contributeBuilding) return
+    const materials = Object.fromEntries(
+      contributeEntries
+        .map(entry => [entry.itemId, contributeDraft[entry.itemId] ?? 0])
+        .filter((entry): entry is [string, number] => typeof entry[1] === 'number' && entry[1] > 0))
+    if (Object.keys(materials).length === 0) return
+    gameClient.sendCommand('building.contribute', { buildingId: contributeBuilding.entityId, materials })
+    closeContribute()
+  }
 
   return (
     <div className="nearby-layout">
@@ -95,89 +195,315 @@ export const NearbyPanel = memo(function NearbyPanel(): React.JSX.Element {
           <h3>{world.locationName}</h3>
           {hasBudget && (
             <span className="nearby-budget-pill">
-              {t('combat.nearby.dangerBudget')} {world.minBudget} ~ {world.maxBudget}
+              {t('combat.nearby.dangerBudget')} {formatInteger(world.minBudget ?? 0)} ~ {formatInteger(world.maxBudget ?? 0)}
             </span>
           )}
         </div>
       </header>
 
-      {/* 栖息生灵生态池 */}
-      <section className="nearby-section">
-        <h4>{t('combat.nearby.monstersHeading')}</h4>
-        <div className="nearby-grid">
-          {monsters.map(monster => (
-            <MonsterCard key={monster.monsterId} monster={monster} />
-          ))}
-          {eliteEnemies.map(monster => (
-            <MonsterCard
-              key={`elite-${monster.monsterId}`}
-              monster={monster}
-              isElite
-              intervalHint={t('combat.nearby.eliteIntervalHint', { count: world.eliteInterval ?? 5 })}
-            />
-          ))}
-          {bossEnemies.map(monster => (
-            <MonsterCard
-              key={`boss-${monster.monsterId}`}
-              monster={monster}
-              isBoss
-              intervalHint={t('combat.nearby.bossIntervalHint', { count: world.bossInterval ?? 20 })}
-            />
-          ))}
-          {!hasMonsters && <p className="nearby-empty">{t('combat.nearby.noMonsters')}</p>}
-        </div>
-      </section>
-
-      {/* 常驻人物 */}
-      <section className="nearby-section">
-        <h4>{t('combat.nearby.npcsHeading')}</h4>
-        <div className="nearby-grid">
-          {world.npcs.map(entity => (
-            <article className="nearby-card is-npc" key={entity.entityId}>
-              <span className="nearby-mark">{t('combat.nearby.markNpc')}</span>
-              <div>
-                <strong>{entity.name}</strong>
-                <p>{entity.description}</p>
-                <small>{entity.effect}</small>
-              </div>
-            </article>
-          ))}
-          {world.npcs.length === 0 && <p className="nearby-empty">{t('combat.nearby.noNpcs')}</p>}
-        </div>
-      </section>
-
-      {/* 建筑设施 */}
-      <section className="nearby-section">
-        <h4>{t('combat.nearby.buildingsHeading')}</h4>
-        <div className="nearby-grid">
-          {world.buildings.map(entity => (
-            <article className="nearby-card is-building" key={entity.entityId}>
-              <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
-              <div>
-                <strong>{entity.name}</strong>
-                <p>{entity.description}</p>
-                <small>{entity.effect}</small>
-              </div>
-            </article>
-          ))}
-          {world.buildings.length === 0 && <p className="nearby-empty">{t('combat.nearby.noBuildings')}</p>}
-        </div>
-      </section>
-
-      {/* 附近同域玩家 */}
-      <section className="nearby-section">
-        <h4>{t('combat.nearby.playersHeading')}</h4>
-        <div className="nearby-grid">
-          <article className="nearby-card is-player">
-            <span className="nearby-mark">{t('combat.nearby.markPlayer')}</span>
-            <div>
-              <strong>{name}</strong>
-              <small>{t('combat.nearby.you', { id: playerId.slice(0, 8) })}</small>
+      <div className="nearby-scroll">
+        {tab === 'monsters' && (
+          <section className="nearby-section">
+            <div className="nearby-grid">
+              {monsters.map(monster => (
+                <MonsterCard key={monster.monsterId} monster={monster} />
+              ))}
+              {eliteEnemies.map(monster => (
+                <MonsterCard
+                  key={`elite-${monster.monsterId}`}
+                  monster={monster}
+                  isElite
+                  intervalHint={t('combat.nearby.eliteIntervalHint', { count: world.eliteInterval ?? 5 })}
+                />
+              ))}
+              {bossEnemies.map(monster => (
+                <MonsterCard
+                  key={`boss-${monster.monsterId}`}
+                  monster={monster}
+                  isBoss
+                  intervalHint={t('combat.nearby.bossIntervalHint', { count: world.bossInterval ?? 20 })}
+                />
+              ))}
+              {!hasMonsters && <p className="nearby-empty">{t('combat.nearby.noMonsters')}</p>}
             </div>
-          </article>
-          <p className="nearby-empty">{t('combat.nearby.noPlayers')}</p>
-        </div>
-      </section>
+          </section>
+        )}
+
+        {tab === 'people' && (
+          <>
+            <section className="nearby-section">
+              <h4>{t('combat.nearby.npcsHeading')}</h4>
+              <div className="nearby-grid">
+                {world.npcs.map(entity => (
+                  <article className="nearby-card is-npc" key={entity.entityId}>
+                    <span className="nearby-mark">{t('combat.nearby.markNpc')}</span>
+                    <div>
+                      <strong>{entity.name}</strong>
+                      <p>{entity.description}</p>
+                      <small>{entity.effect}</small>
+                    </div>
+                  </article>
+                ))}
+                {world.npcs.length === 0 && <p className="nearby-empty">{t('combat.nearby.noNpcs')}</p>}
+              </div>
+            </section>
+
+            <section className="nearby-section">
+              <h4>{t('combat.nearby.playersHeading')}</h4>
+              <div className="nearby-grid">
+                <article className="nearby-card is-player">
+                  <span className="nearby-mark">{t('combat.nearby.markPlayer')}</span>
+                  <div>
+                    <strong>{name}</strong>
+                    <small>{t('combat.nearby.you', { id: playerId.slice(0, 8) })}</small>
+                  </div>
+                </article>
+                <p className="nearby-empty">{t('combat.nearby.noPlayers')}</p>
+              </div>
+            </section>
+          </>
+        )}
+
+        {tab === 'buildings' && (
+          <section className="nearby-section">
+            <div className="nearby-grid">
+              {world.buildings.map(entity => (
+                <article className="nearby-card is-building" key={entity.entityId}>
+                  <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
+                  <div>
+                    <strong>{entity.name}</strong>
+                    <p>{entity.description}</p>
+                    <small>{entity.effect}</small>
+                  </div>
+                </article>
+              ))}
+              {nodeBuildings.map(building => (
+                <button
+                  className="nearby-card is-building is-player-building"
+                  key={building.entityId}
+                  onClick={() => setDetailBuildingId(building.entityId)}
+                  type="button"
+                >
+                  <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
+                  <div>
+                    <div className="nearby-monster-title">
+                      <strong>{building.name}</strong>
+                      <span className="nearby-level-badge">
+                        {building.level > 0
+                          ? t('combat.nearby.buildingLevelValue', { level: building.level })
+                          : t('combat.nearby.buildingConstructing')}
+                      </span>
+                    </div>
+                    <small>{building.effect}</small>
+                    {building.targetLevel > 0 && (
+                      <span className="building-card-progress">
+                        <ProgressBar value={building.buildProgress} />
+                      </span>
+                    )}
+                  </div>
+                </button>
+              ))}
+              {!onEdge && buildableIds !== null && buildableIds.length > 0 && (
+                <button
+                  aria-label={t('combat.nearby.buildAdd')}
+                  className="nearby-card nearby-card--add"
+                  onClick={() => setBuildPickerOpen(true)}
+                  title={t('combat.nearby.buildAdd')}
+                  type="button"
+                >
+                  <span className="nearby-add-glyph" aria-hidden="true">＋</span>
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {buildPickerOpen && (
+        <Modal
+          className="build-picker-modal"
+          labelledBy="build-picker-title"
+          onClose={() => setBuildPickerOpen(false)}
+          open
+          size="medium"
+        >
+          <header className="build-picker-header">
+            <h2 id="build-picker-title">{t('combat.nearby.buildPickerTitle')}</h2>
+          </header>
+          <div className="build-picker-list">
+            {BUILDING_GROUP_ORDER.map(group => {
+              const entries = buildCandidates.filter(candidate => candidate.definition.group === group)
+              if (entries.length === 0) return null
+              return (
+                <section className="build-picker-group" key={group}>
+                  <h4>{t(buildingGroupLabelKey(group))}</h4>
+                  {entries.map(({ definition, locked }) => (
+                    <button
+                      className={`nearby-card is-building build-picker-item ${locked ? 'is-locked' : ''}`}
+                      disabled={locked}
+                      key={definition.buildingId}
+                      onClick={() => handleBuild(definition)}
+                      type="button"
+                    >
+                      <span className="nearby-mark">{t('combat.nearby.markBuilding')}</span>
+                      <div>
+                        <strong>{definition.name}</strong>
+                        <p>{definition.description}</p>
+                        <small>
+                          {locked
+                            ? t('combat.nearby.buildingLocked', { level: definition.requiredRealmLevel })
+                            : definition.effect}
+                        </small>
+                      </div>
+                    </button>
+                  ))}
+                </section>
+              )
+            })}
+            {buildCandidates.length === 0 && (
+              <p className="nearby-empty">{t('combat.nearby.buildEmpty')}</p>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {detailBuilding && (
+        <Modal
+          className="building-detail-modal"
+          labelledBy="building-detail-title"
+          onClose={() => setDetailBuildingId(null)}
+          open
+          size="medium"
+        >
+          <header className="build-picker-header">
+            <h2 id="building-detail-title">
+              {detailBuilding.name}
+              <span className="nearby-level-badge">
+                {detailBuilding.level > 0
+                  ? t('combat.nearby.buildingLevelValue', { level: detailBuilding.level })
+                  : t('combat.nearby.buildingConstructing')}
+              </span>
+            </h2>
+          </header>
+          <div className="building-detail-body">
+            <p>{detailBuilding.description}</p>
+            <small>{detailBuilding.level > 0 ? detailBuilding.effect : t('combat.nearby.buildingEffectNone')}</small>
+
+            {detailBuilding.targetLevel > 0 && (
+              <section className="building-detail-progress">
+                <h4>
+                  {detailBuilding.level > 0
+                    ? t('combat.nearby.buildingUpgrading', { level: detailBuilding.targetLevel })
+                    : t('combat.nearby.buildingConstructing')}
+                </h4>
+                <div className="building-progress-row">
+                  <span>{t('combat.nearby.buildingMaterialProgress', { percent: Math.round(detailBuilding.materialProgress * 100) })}</span>
+                  <ProgressBar value={detailBuilding.materialProgress} />
+                </div>
+                <div className="building-progress-row">
+                  <span>{t('combat.nearby.buildingTimeProgress', { percent: Math.round(detailBuilding.timeProgress * 100) })}</span>
+                  <ProgressBar value={detailBuilding.timeProgress} />
+                </div>
+                {detailBuilding.materials.length > 0 && (
+                  <ul className="building-materials">
+                    {detailBuilding.materials.map(material => (
+                      <li key={material.itemId}>
+                        <span>{resolveItemMetadata(material.itemId)?.label ?? material.itemId}</span>
+                        <span>{formatInteger(material.contributed)} / {formatInteger(material.required)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button
+                  className="building-action-btn"
+                  onClick={() => openContribute(detailBuilding.entityId)}
+                  type="button"
+                >{t('combat.nearby.buildingContribute')}</button>
+              </section>
+            )}
+
+            {detailBuilding.level > 0 && detailBuilding.targetLevel <= 0 && (
+              <button
+                className="building-action-btn"
+                onClick={() => gameClient.sendCommand('building.upgrade', { buildingId: detailBuilding.entityId })}
+                type="button"
+              >{t('combat.nearby.buildingUpgrade')}</button>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {contributeBuilding && (
+        <Modal
+          className="building-detail-modal"
+          labelledBy="building-contribute-title"
+          onClose={closeContribute}
+          open
+          size="medium"
+        >
+          <header className="build-picker-header">
+            <h2 id="building-contribute-title">
+              {t('combat.nearby.contributeTitle', { name: contributeBuilding.name })}
+            </h2>
+          </header>
+          <div className="building-detail-body">
+            <p className="contribute-hint">{t('combat.nearby.contributeHint')}</p>
+            <ul className="building-materials contribute-list">
+              {contributeEntries.map(entry => {
+                const remaining = entry.required - entry.contributed
+                const owned = inventoryAmounts.get(entry.itemId) ?? 0
+                const max = Math.min(remaining, owned)
+                const draft = contributeDraft[entry.itemId] ?? 0
+                return (
+                  <li key={entry.itemId}>
+                    <span>{resolveItemMetadata(entry.itemId)?.label ?? entry.itemId}</span>
+                    <small>
+                      {t('combat.nearby.contributeOwned', { amount: formatInteger(owned) })}
+                      {' · '}
+                      {t('combat.nearby.contributeNeed', { amount: formatInteger(remaining) })}
+                    </small>
+                    <input
+                      aria-label={resolveItemMetadata(entry.itemId)?.label ?? entry.itemId}
+                      max={max}
+                      min={0}
+                      onChange={event => {
+                        const parsed = Number(event.target.value)
+                        setContributeDraft(previous => ({
+                          ...previous,
+                          [entry.itemId]: Number.isFinite(parsed) ? Math.max(0, Math.min(max, parsed)) : 0,
+                        }))
+                      }}
+                      type="number"
+                      value={draft}
+                    />
+                  </li>
+                )
+              })}
+            </ul>
+            {!contributeConfirming ? (
+              <button
+                className="building-action-btn"
+                disabled={contributeTotal <= 0}
+                onClick={() => setContributeConfirming(true)}
+                type="button"
+              >{t('combat.nearby.contributeSubmit')}</button>
+            ) : (
+              <div className="contribute-confirm-row">
+                <button
+                  className="building-action-btn is-confirm"
+                  onClick={submitContribute}
+                  type="button"
+                >{t('combat.nearby.contributeConfirm')}</button>
+                <button
+                  className="building-action-btn is-cancel"
+                  onClick={() => setContributeConfirming(false)}
+                  type="button"
+                >{t('combat.nearby.contributeCancel')}</button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   )
 })

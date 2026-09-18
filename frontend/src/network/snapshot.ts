@@ -20,11 +20,13 @@ import type {
   CombatTrigger,
   DuelState,
   ExpeditionDuel,
+  ExpeditionDuelEvent,
   ExpeditionEnemy,
   ExpeditionPhase,
   ExpeditionProgress,
   InventoryItem,
   NearbyMonsterDefinition,
+  NodeBuilding,
   PlayerPatch,
   PlayerSnapshot,
   QueueEntry,
@@ -226,18 +228,38 @@ function mapExecutionKind(value: unknown, fallback?: QueueEntry['executionKind']
   }
 }
 
-/** 解析远征载荷中的斗法回放显示信息（expedition.duel，可缺省） */
+/** 解析远征载荷中的斗法回放显示信息（expedition.duel，可缺省；字段名与 DuelPlaybackState 序列化对齐） */
 function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | null {
   if (value === null || value === undefined) return null
   const row = object(value)
   if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的 duel 载荷无效。`)
-  const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 duel.outcome`)
-  if (outcome > 3) throw new Error(`行动 ${actionId} 的 duel.outcome 枚举值无效。`)
+  const outcome = finiteInteger(row.viewerOutcome, `行动 ${actionId} 的 duel.viewerOutcome`)
+  if (outcome > 3) throw new Error(`行动 ${actionId} 的 duel.viewerOutcome 枚举值无效。`)
+  const opponentMaxHitpoints = finiteNumber(row.opponentMaxHitpoints, `行动 ${actionId} 的 duel.opponentMaxHitpoints`)
+  const opponentHitpoints = finiteNumber(row.opponentHitpoints, `行动 ${actionId} 的 duel.opponentHitpoints`)
+  if (opponentMaxHitpoints <= 0 || opponentHitpoints < 0 || opponentHitpoints > opponentMaxHitpoints) {
+    throw new Error(`行动 ${actionId} 的 duel 对手血量无效。`)
+  }
+  // 剧本事件只提取行动条所需字段（出手时刻、出手方与功法 ID）；其余结算字段由日志呈现。
+  const events: ExpeditionDuelEvent[] = arrayValue(row.events)
+    .map((entry, index) => {
+      const duelEvent = object(entry)
+      const label = `行动 ${actionId} 的 duel.events[${index}]`
+      return {
+        atSeconds: finiteNumber(duelEvent.atSeconds, `${label}.atSeconds`),
+        attackerIsInitiator: booleanValue(duelEvent.attackerIsInitiator),
+        abilityId: optionalString(duelEvent.abilityId, `${label}.abilityId`),
+      }
+    })
   return {
     opponentName: stringValue(row.opponentName),
-    isInitiator: booleanValue(row.isInitiator),
+    isInitiator: booleanValue(row.viewerIsInitiator),
     outcome,
     resolved: booleanValue(row.resolved),
+    opponentMaxHitpoints,
+    opponentHitpoints,
+    durationSeconds: finiteNumber(row.durationSeconds, `行动 ${actionId} 的 duel.durationSeconds`),
+    events,
   }
 }
 
@@ -261,8 +283,8 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
 
   // 这些标量用于恢复/审计，即使当前界面不直接展示，也必须拒绝坏值，避免把损坏快照继续传播。
   finiteValue(row.seed, `行动 ${actionId} 的 seed`)
-  finiteNumber(row.battleElapsedSeconds, `行动 ${actionId} 的 battleElapsedSeconds`)
-  finiteNumber(row.playerNextAttackAtSeconds, `行动 ${actionId} 的 playerNextAttackAtSeconds`)
+  const battleElapsedSeconds = finiteNumber(row.battleElapsedSeconds, `行动 ${actionId} 的 battleElapsedSeconds`)
+  const playerNextAttackAtSeconds = finiteNumber(row.playerNextAttackAtSeconds, `行动 ${actionId} 的 playerNextAttackAtSeconds`)
   finiteNumber(row.playerAttackCount, `行动 ${actionId} 的 playerAttackCount`)
   const playerThreat = finiteNumber(row.playerThreat, `行动 ${actionId} 的 playerThreat`)
   const waveNumber = finiteInteger(row.waveNumber, `行动 ${actionId} 的 waveNumber`)
@@ -292,6 +314,8 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     durationSeconds,
     playerHitpoints,
     playerManapoints,
+    battleElapsedSeconds,
+    playerNextAttackAtSeconds,
     enemyHitpoints: primary?.hitpoints ?? 0,
     enemyManapoints: primary?.manapoints ?? 0,
     enemyId: primary?.enemyId ?? null,
@@ -459,12 +483,29 @@ function mapCombat(value: unknown): { resources: CombatResourceState; attributes
     category: enumValue(source.category, ['physical', 'spell'], 'combat.category'),
     element: enumValue(source.element, ['none', 'metal', 'wood', 'water', 'fire', 'earth'], 'combat.element'),
   }
+  // 技能冷却/吟唱与消耗品冷却：服务端按战斗技能状态与自动使用槽位定长下发。
+  const skills = requiredObject(row.skills, 'combat.skills')
+  // 冷却表允许为空对象（无冷却中技能），不能用 requiredObject 的非空校验。
+  const cooldowns = object(skills.cooldowns)
+  const abilityCooldownMilliseconds: Record<string, number> = {}
+  for (const [abilityId, remaining] of Object.entries(cooldowns)) {
+    abilityCooldownMilliseconds[abilityId] = finiteNumber(remaining, `combat.skills.cooldowns.${abilityId}`)
+  }
+  const consumableCooldownMilliseconds = arrayValue(row.consumableCooldownMilliseconds)
+    .map((value, index) => finiteNumber(value, `combat.consumableCooldownMilliseconds[${index}]`))
+  const castingAbilityId = skills.castingAbilityId === null || skills.castingAbilityId === undefined
+    ? null
+    : identifierValue(skills.castingAbilityId, 'combat.skills.castingAbilityId')
   return {
     resources: {
       hitpoints: finiteNumber(row.hitpoints, 'combat.hitpoints'),
       manapoints: finiteNumber(row.manapoints, 'combat.manapoints'),
       maxHitpoints: attributes.maxHitpoints,
       maxManapoints: attributes.maxManapoints,
+      abilityCooldownMilliseconds,
+      consumableCooldownMilliseconds,
+      castingAbilityId,
+      castRemainingMilliseconds: finiteNumber(skills.castRemainingMilliseconds, 'combat.skills.castRemainingMilliseconds'),
     },
     attributes,
   }
@@ -578,6 +619,38 @@ function mapNearbyMonsters(value: unknown): NearbyMonsterDefinition[] {
   })
 }
 
+function mapNodeBuildings(value: unknown): NodeBuilding[] {
+  if (!Array.isArray(value)) return []
+  return value.map(item => {
+    const row = requiredObject(item, 'world 节点建筑')
+    return {
+      entityId: identifierValue(row.entityId, 'world 节点建筑 ID'),
+      name: stringValue(row.name),
+      kind: stringValue(row.kind, 'building'),
+      description: stringValue(row.description),
+      effect: stringValue(row.effect),
+      group: stringValue(row.group, 'other'),
+      level: numberValue(row.level, 0),
+      targetLevel: numberValue(row.targetLevel, 0),
+      buildProgress: numberValue(row.buildProgress, 0),
+      materialProgress: numberValue(row.materialProgress, 0),
+      timeProgress: numberValue(row.timeProgress, 0),
+      requiredSeconds: numberValue(row.requiredSeconds, 0),
+      elapsedSeconds: numberValue(row.elapsedSeconds, 0),
+      materials: Array.isArray(row.materials)
+        ? row.materials.map(material => {
+            const materialRow = requiredObject(material, 'world 节点建筑材料')
+            return {
+              itemId: identifierValue(materialRow.itemId, 'world 节点建筑材料 ID'),
+              required: numberValue(materialRow.required, 0),
+              contributed: numberValue(materialRow.contributed, 0),
+            }
+          })
+        : [],
+    }
+  })
+}
+
 function optionalWorldNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
@@ -600,6 +673,10 @@ function mapWorld(value: unknown): WorldState {
     encounterIds: requiredStrings(row.encounterIds, 'world.encounterIds'),
     npcs: mapNearbyEntities(row.npcs),
     buildings: mapNearbyEntities(row.buildings),
+    nodeBuildings: mapNodeBuildings(row.nodeBuildings),
+    buildableBuildingIds: Array.isArray(row.buildableBuildingIds)
+      ? row.buildableBuildingIds.filter((id): id is string => typeof id === 'string')
+      : null,
     minBudget: optionalWorldNumber(row.minBudget),
     maxBudget: optionalWorldNumber(row.maxBudget),
     eliteInterval: optionalWorldNumber(row.eliteInterval),
@@ -633,6 +710,28 @@ function mapBuffs(value: unknown): Buff[] {
   })
 }
 
+/** 战报物品条目列表解析（items / itemsLost 共用；字段缺失时容错为空列表） */
+function mapBattleReportItems(value: unknown, name: string): BattleReport['items'] {
+  return arrayValue(value).map((item, index) => {
+    const entry = object(item)
+    return {
+      itemId: identifierValue(entry.itemId, `${name}[${index}].itemId`),
+      quantity: finiteNumber(entry.quantity, `${name}[${index}].quantity`),
+    }
+  })
+}
+
+/**
+ * 战报等级提升 kind 归一化：契约约定 "realm"|"root"|"ability" 字符串，
+ * 同时容忍 System.Text.Json 默认数值枚举（0/1/2）；未知值条目丢弃，避免整包失败。
+ */
+function mapBattleReportLevelUpKind(value: unknown): BattleReport['levelUps'][number]['kind'] | null {
+  if (value === 'realm' || value === 0) return 'realm'
+  if (value === 'root' || value === 1) return 'root'
+  if (value === 'ability' || value === 2) return 'ability'
+  return null
+}
+
 function mapBattleReport(value: unknown, name: string): BattleReport {
   const row = requiredObject(value, name)
   const rootExp = object(row.rootExp)
@@ -652,16 +751,45 @@ function mapBattleReport(value: unknown, name: string): BattleReport {
       swordsmanship: numberValue(rootExp.swordsmanship),
       talisman: numberValue(rootExp.talisman),
     },
-    items: arrayValue(row.items).map((item, index) => {
+    abilityExp: arrayValue(row.abilityExp).flatMap((item, index) => {
       const entry = object(item)
-      return {
-        itemId: identifierValue(entry.itemId, `${name}.items[${index}].itemId`),
-        quantity: finiteNumber(entry.quantity, `${name}.items[${index}].quantity`),
-      }
+      const abilityId = stringValue(entry.abilityId)
+      // 功法 ID 缺失的脏条目直接丢弃（边界容错，不影响其余字段）。
+      if (!abilityId) return []
+      return [{
+        abilityId,
+        experience: finiteValue(entry.experience, `${name}.abilityExp[${index}].experience`),
+      }]
     }),
+    levelUps: arrayValue(row.levelUps).flatMap((item) => {
+      const entry = object(item)
+      const kind = mapBattleReportLevelUpKind(entry.kind)
+      if (kind === null) return []
+      return [{
+        kind,
+        targetId: stringValue(entry.targetId),
+        fromLevel: numberValue(entry.fromLevel),
+        toLevel: numberValue(entry.toLevel),
+      }]
+    }),
+    items: mapBattleReportItems(row.items, `${name}.items`),
+    itemsLost: mapBattleReportItems(row.itemsLost, `${name}.itemsLost`),
+    cycles: numberValue(row.cycles),
+    encounters: numberValue(row.encounters),
+    normalKills: numberValue(row.normalKills),
+    eliteKills: numberValue(row.eliteKills),
+    bossKills: numberValue(row.bossKills),
+    deaths: numberValue(row.deaths),
+    dayIndex: numberValue(row.dayIndex),
     duelWins: numberValue(row.duelWins),
     duelLosses: numberValue(row.duelLosses),
   }
+}
+
+/** 可空账本字段解析：null/undefined → null，其余按 BattleReport 校验 */
+function mapOptionalBattleReport(value: unknown, name: string): BattleReport | null {
+  if (value === null || value === undefined) return null
+  return mapBattleReport(value, name)
 }
 
 function mapDuel(value: unknown): DuelState {
@@ -678,9 +806,11 @@ function mapDuel(value: unknown): DuelState {
         acquiredAtUnixSeconds: finiteNumber(entry.acquiredAtUnixSeconds, `duel.stagedItems[${index}].acquiredAtUnixSeconds`),
       }
     }),
-    currentReport: row.currentReport === null || row.currentReport === undefined
-      ? null
-      : mapBattleReport(row.currentReport, 'duel.currentReport'),
+    currentReport: mapOptionalBattleReport(row.currentReport, 'duel.currentReport'),
+    // 离线挂机与每日统计单例账本（reportId 固定 "offline"/"daily"）。
+    offlineReport: mapOptionalBattleReport(row.offlineReport, 'duel.offlineReport'),
+    dailyReport: mapOptionalBattleReport(row.dailyReport, 'duel.dailyReport'),
+    // activeReports 为在队行动实例账本列表：前端面板不消费，解析层直接忽略。
     reports: arrayValue(row.reports).map((item, index) => mapBattleReport(item, `duel.reports[${index}]`)),
   }
 }

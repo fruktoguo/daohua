@@ -24,6 +24,12 @@ try {
     availableActionIds: ['action.test'], encounterIds: ['encounter.test'],
     npcs: [{ entityId: 'npc.test', name: '测试修士', kind: 'npc', description: '描述', effect: '效果' }],
     buildings: [{ entityId: 'building.test', name: '测试建筑', kind: 'building', description: '', effect: '' }],
+    nodeBuildings: [{
+      entityId: 'building.player-test', name: '自建建筑', kind: 'building', description: '', effect: '',
+      group: 'production', level: 2, targetLevel: 0, buildProgress: 1, materialProgress: 1,
+      timeProgress: 1, requiredSeconds: 0, elapsedSeconds: 0, materials: [],
+    }],
+    buildableBuildingIds: ['building.player-test'],
   }
   const bytes = Buffer.from(JSON.stringify(payload))
   const section = {
@@ -38,6 +44,8 @@ try {
   assert.deepEqual(patch.world.encounterIds, payload.encounterIds)
   assert.deepEqual(patch.world.npcs, payload.npcs)
   assert.deepEqual(patch.world.buildings, payload.buildings)
+  assert.deepEqual(patch.world.nodeBuildings, payload.nodeBuildings)
+  assert.deepEqual(patch.world.buildableBuildingIds, payload.buildableBuildingIds)
   assert.equal(patch.serverTimeUnixSeconds, Date.parse(delta.lastSimulatedAt) / 1000)
   await assert.rejects(decodePlayerSnapshotDeltaDto({ ...delta, lastSimulatedAt: undefined }, current), /lastSimulatedAt/)
   assert.deepEqual(parseCsvToMap('key,zh_source,translation\ncommon.confirm,确认,"Confirm, now"\ncommon.cancel,取消,\n'), { 'common.confirm': 'Confirm, now' })

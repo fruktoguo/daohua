@@ -88,9 +88,10 @@ export const UnitNumber = memo(function UnitNumber({
   )
 
   const toneClass = tone ? `unit-number--tone-${tone}` : ''
+  const noTooltipClass = disableTooltip ? 'unit-number--no-tooltip' : ''
   const element = (
     <span
-      className={`unit-number ${toneClass} ${className}`.trim()}
+      className={`unit-number ${toneClass} ${noTooltipClass} ${className}`.trim()}
       onClick={onClick}
       style={style}
     >

@@ -55,8 +55,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   const abilities = useGameStore(state => state.abilities)
   const inventory = useGameStore(state => state.inventory)
   const abilityCooldowns = useGameStore(
-    state => state.queue.entries[0]?.expedition?.abilityCooldownMilliseconds
-      ?? state.combatResources?.abilityCooldownMilliseconds,
+    state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
 
   const [activePickerSlotIndex, setActivePickerSlotIndex] = useState<number | null>(null)

@@ -375,9 +375,9 @@ export class PercentValue {
   }
 
   /**
-   * 格式化为百分比文本字符串，如 "+100.0%"、"-50.0%"、"50.0%"，向下取整
+   * 格式化为百分比文本字符串，如 "+100%"、"-50%"、"50%"，向下取整，默认不出现小数
    */
-  format(decimals = 1): string {
+  format(decimals = 0): string {
     const val = this.displayPercentage
     const factor = Math.pow(10, decimals)
     const floored = Math.floor(val * factor + 1e-9) / factor

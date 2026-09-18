@@ -63,121 +63,209 @@ export type WireCodec = (typeof WireCodec)[keyof typeof WireCodec]
 
 /** 解码后的统一网络信封结构 */
 export interface WireEnvelope {
+  /** 信封协议版本（当前恒为 1） */
   protocolVersion: number
+  /** 消息类型 */
   messageType: WireMessageType
+  /** 请求关联 ID（UUID；服务端回执/推送时原样回传用于配对） */
   requestId: string
+  /** 服务端状态版本序号（玩家状态单调递增；心跳类帧为连接级序号） */
   sequence: number
+  /** 载荷编码（当前业务恒为 Json） */
   codec: WireCodec
+  /** 原始载荷字节 */
   payload: Uint8Array
 }
 
+/** Hello 握手请求载荷 */
 export interface HelloRequest {
+  /** 客户端构建版本标识 */
   clientVersion: string
+  /** 客户端持有的配表指纹；与服务端不一致时服务端会要求重拉目录 */
   gameDataFingerprint?: string | null
+  /** 防多开设备指纹（硬件特征哈希），服务端启用设备配额时必填 */
+  deviceFingerprint?: string | null
 }
 
+/** 防多开子系统下发的功能开关 */
+export interface AntiMultiOpenConfigDto {
+  tabGuardEnabled: boolean
+}
+
+/** HelloAck 握手应答载荷 */
 export interface HelloResponse {
+  /** 服务端构建版本标识 */
   serverVersion: string
+  /** 服务端协商确认的信封协议版本 */
   protocolVersion: number
+  /** 服务端当前配表指纹 */
   gameDataFingerprint: string
+  /** 服务端推送序列基线 */
   serverSequence: number
+  /** 防多开开关下发（缺省表示服务端未配置） */
+  antiMultiOpen?: AntiMultiOpenConfigDto | null
 }
 
+/** 玩家快照头（持久化元数据摘要） */
 export interface PlayerHeadDto {
   playerId: string
+  /** 玩家整体状态版本（乐观并发与增量对齐基准） */
   stateVersion: number
+  /** 快照结构版本 */
   schemaVersion: number
+  /** 服务端最近模拟推进时刻（ISO 时间） */
   lastSimulatedAt: string
+  /** 快照生成时配表指纹 */
   gameDataFingerprint: string
+  /** 头部校验和 */
   checksum: string
   updatedAt: string
 }
 
+/** 玩家分段状态单元（聚合内 Progression/World/Combat 等独立版本化的切片） */
 export interface PlayerSectionDto {
+  /** 分段标识（对应服务端 PlayerSectionKind） */
   section: string
+  /** 该分段独立版本号 */
   sectionVersion: number
+  /** 分段载荷结构版本 */
   schemaVersion: number
+  /** 分段载荷编码标识（当前为 JSON 文本编码名） */
   codec: string
+  /** Base64 编码的分段业务载荷 */
   payloadBase64: string
+  /** 解码前原始字节数 */
   rawBytes: number
+  /** 服务端落库字节数 */
   storedBytes: number
+  /** 分段校验和 */
   checksum: string
   updatedAt: string
 }
 
+/** 资产余额条目（货币/材料等非物品资产） */
 export interface AssetBalanceDto {
+  /** 资产 ID */
   assetId: string
+  /** 资产变体（如强化等级；null 表示无变体） */
   variant?: string | null
+  /** 持有数量 */
   quantity: number
+  /** 资产版本号 */
   version: number
 }
 
+/** 全量玩家快照载荷（Snapshot 帧） */
 export interface PlayerSnapshotDto {
   playerId: string
+  /** 显示道号 */
   displayName: string
+  /** 服务端权威模拟时刻（前端服务器时钟锚点基准） */
   lastSimulatedAt: string
+  /** 快照对应的整体状态版本 */
   stateVersion: number
+  /** 快照头元数据 */
   head: PlayerHeadDto
+  /** 全量分段列表 */
   sections: PlayerSectionDto[]
+  /** 全量资产列表 */
   assets: AssetBalanceDto[]
 }
 
+/** 增量快照载荷（SnapshotDelta 帧，仅携带变化的分段与资产） */
 export interface PlayerSnapshotDeltaDto {
   playerId: string
+  /** 增量后的整体状态版本；小于等于本地版本时整包丢弃（乱序保护） */
   stateVersion: number
   /** 本次增量的服务端权威模拟时刻，用于校准前端服务端时钟锚点 */
   lastSimulatedAt?: string
+  /** 本次发生变化的分段 */
   changedSections: PlayerSectionDto[]
+  /** 本次发生变化的资产（null/缺省表示无资产变更） */
   changedAssets?: AssetBalanceDto[] | null
 }
 
+/** ActionIntent 行动入队请求载荷 */
 export interface ActionIntentRequest {
+  /** 请求关联 ID（与 ActionResult 配对） */
   requestId: string
+  /** 配表行动 ID */
   actionId: string
+  /** 重复轮次；负值（约定 -1）为无限循环 */
   repeatCount?: number
+  /** 目标世界节点（历练/远征类行动使用） */
   targetNodeId?: string | null
+  /** 附加数值参数表 */
   parameters?: Record<string, number> | null
   /** 是否勾选斗法（PVP 匹配），仅战斗遭遇行动有效 */
   pvpEnabled?: boolean
 }
 
+/** ActionResult 行动入队回执载荷 */
 export interface ActionIntentResponse {
+  /** 对应请求的关联 ID */
   requestId: string
+  /** 服务端分配的队列条目实例 ID（后续移动/取消操作引用它） */
   actionInstanceId: string
+  /** 配表行动 ID */
   actionId: string
+  /** 入队时刻（ISO 时间） */
   enqueuedAt: string
+  /** 剩余轮次；负值为无限循环 */
   remainingRepeats: number
 }
 
+/** Command 通用玩家指令请求载荷 */
 export interface CommandRequest {
+  /** 请求关联 ID（与 CommandResult 配对） */
   requestId: string
+  /** 指令名（如 'action.enqueue'、'queue.move'） */
   command: string
+  /** 指令业务载荷 */
   payload: unknown
+  /** 乐观并发校验的期望状态版本；缺省/0 表示不校验 */
   expectedStateVersion?: number
 }
 
+/** CommandResult 指令执行回执载荷 */
 export interface CommandResultDto {
+  /** 对应请求的关联 ID */
   requestId: string
+  /** 指令是否执行成功 */
   succeeded: boolean
+  /** 结果代码（成功为约定成功码，失败为服务端错误码） */
   code: string
+  /** 可展示的结果/错误文案 */
   message: string
+  /** 执行后的整体状态版本 */
   stateVersion: number
+  /** 指令附带返回数据 */
   payload?: unknown | null
 }
 
+/** Error 协议级错误帧载荷 */
 export interface ErrorDto {
+  /** 服务端错误码 */
   code: string
+  /** 可展示错误文案 */
   message: string
+  /** 关联的请求 ID（能定位时回传） */
   requestId?: string | null
 }
 
+/** 单条日志事件（传音道历原始记录） */
 export interface LogEventDto {
+  /** 服务端日志序号 */
   sequence: number
+  /** 发生时刻（Unix 毫秒） */
   timestampUnixMilliseconds: number
+  /** 语义模板文本（含 {{kind:id|label}} 引用标记） */
   template: string
+  /** 服务端侧已折叠的重复次数 */
   count?: number
 }
 
+/** LogBatch 日志批次推送载荷 */
 export interface LogBatchDto {
   events: LogEventDto[]
 }

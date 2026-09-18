@@ -371,29 +371,23 @@ export interface ExpeditionProgress {
   elapsedSeconds: number
   /** 阶段总秒数 */
   durationSeconds: number
-  /** 行进已走距离 */
+  /** 行进已走距离（travel 相位；当前 wire 未下发，保留给旅行显示契约） */
   travelledDistance?: number | null
-  /** 行进总距离 */
+  /** 行进总距离（travel 相位；当前 wire 未下发，保留给旅行显示契约） */
   totalDistance?: number | null
   /** 玩家当前生命值 */
   playerHitpoints?: number | null
-  /** 玩家最大生命值 */
-  playerMaxHitpoints?: number | null
   /** 玩家当前灵力值 */
   playerManapoints?: number | null
-  /** 玩家最大灵力值 */
-  playerMaxManapoints?: number | null
-  /** 敌方当前生命值 */
+  /** 本场战斗已流逝的战斗时钟秒数（出手/技能时刻表的参照系） */
+  battleElapsedSeconds?: number
+  /** 玩家下一次出手的战斗时刻（秒），配合 battleElapsedSeconds 推导行动条 */
+  playerNextAttackAtSeconds?: number
+  /** 敌方当前生命值（首个存活敌人） */
   enemyHitpoints?: number | null
-  /** 敌方最大生命值 */
-  enemyMaxHitpoints?: number | null
-  /** 敌方当前灵力值 */
+  /** 敌方当前灵力值（首个存活敌人） */
   enemyManapoints?: number | null
-  /** 敌方最大灵力值 */
-  enemyMaxManapoints?: number | null
-  /** 敌人名称 */
-  enemyName?: string | null
-  /** 敌人定义标识符 */
+  /** 敌人定义标识符（首个存活敌人） */
   enemyId?: string | null
   /** 同波全体敌人快照（战斗中非空，按下标稳定排序） */
   enemies?: ExpeditionEnemy[] | null
@@ -401,20 +395,6 @@ export interface ExpeditionProgress {
   waveNumber?: number | null
   /** 玩家累积威胁值 */
   playerThreat?: number | null
-  /** 当前活动描述 */
-  activity?: string | null
-  /** 玩家当前施法/攻击动作 */
-  playerAction?: CombatActionState | null
-  /** 敌方当前施法/攻击动作 */
-  enemyAction?: CombatActionState | null
-  /** 战斗过程记录列表 */
-  activities?: string[] | null
-  /** 战斗事件序列号 */
-  battleSequence?: number
-  /** 功法技能剩余冷却毫秒数映射 */
-  abilityCooldownMilliseconds?: Record<string, number> | null
-  /** 消耗品槽剩余冷却毫秒数数组 */
-  consumableCooldownMilliseconds?: number[] | null
   /** 遭遇战 ID */
   encounterId?: string | null
   /** 斗法回放显示信息（仅 phase 为 duel / duel-pending 时可能下发） */
@@ -456,10 +436,32 @@ export interface BattleReportItem {
 }
 
 /**
- * 单场战斗行动收益战报（reportId = 行动实例 ID）
+ * 战报功法技能经验条目（按 abilityId 聚合）
+ */
+export interface BattleReportAbilityExp {
+  abilityId: string
+  experience: number
+}
+
+/**
+ * 战报等级提升条目：kind 区分境界 / 六维 / 功法三类目标。
+ * - realm：境界提升，targetId 为空串；
+ * - root：六维提升，targetId 为六维键（stamina/intelligence/attack/defense/swordsmanship/talisman）；
+ * - ability：功法提升，targetId 为功法 ID。
+ */
+export interface BattleReportLevelUp {
+  kind: 'realm' | 'root' | 'ability'
+  targetId: string
+  fromLevel: number
+  toLevel: number
+}
+
+/**
+ * 行动收益账本（当前行动实例 / 离线挂机 / 每日统计 / 归档历史共用结构）。
+ * reportId 为行动实例 ID；离线账本固定 "offline"，每日账本固定 "daily"（两者 actionId/actionName 允许空串）。
  */
 export interface BattleReport {
-  /** 战报唯一 ID（行动实例 ID） */
+  /** 账本唯一 ID（行动实例 ID 或固定 offline/daily） */
   reportId: string
   /** 行动配置 ID */
   actionId: string
@@ -475,8 +477,28 @@ export interface BattleReport {
   experience: number
   /** 六维经验入账量 */
   rootExp: BattleReportRootExp
-  /** 物品收益列表 */
+  /** 功法技能经验入账列表 */
+  abilityExp: BattleReportAbilityExp[]
+  /** 期间发生的等级提升（境界/六维/功法） */
+  levelUps: BattleReportLevelUp[]
+  /** 物品获得列表 */
   items: BattleReportItem[]
+  /** 物品失去列表（行动输入、自动消耗品、斗法暂存被缴） */
+  itemsLost: BattleReportItem[]
+  /** 已完成轮次 */
+  cycles: number
+  /** 战斗遭遇场次 */
+  encounters: number
+  /** 普通敌怪击杀数 */
+  normalKills: number
+  /** 精英敌怪击杀数 */
+  eliteKills: number
+  /** 首领敌怪击杀数 */
+  bossKills: number
+  /** 死亡次数（讨伐失败与斗法败北） */
+  deaths: number
+  /** 每日账本所属自然日序号（UTC+8，仅每日账本使用） */
+  dayIndex: number
   /** 本场行动内斗法胜场数 */
   duelWins: number
   /** 本场行动内斗法负场数 */
@@ -495,10 +517,26 @@ export interface DuelState {
   activeDuelId: string | null
   /** 暂存区物品列表 */
   stagedItems: DuelStagedItem[]
-  /** 当前进行中的战斗行动战报 */
+  /** 当前队首行动账本 */
   currentReport: BattleReport | null
+  /** 离线挂机账本（每次离线会话重置，reportId 固定 "offline"） */
+  offlineReport: BattleReport | null
+  /** 每日统计账本（自然日重置，reportId 固定 "daily"） */
+  dailyReport: BattleReport | null
   /** 服务端保留的最近战报（最多 10 条） */
   reports: BattleReport[]
+}
+
+/**
+ * 斗法剧本单条事件（仅解析行动条所需字段：出手时刻与出手方）
+ */
+export interface ExpeditionDuelEvent {
+  /** 事件发生的剧本时刻（秒，与 battleElapsedSeconds 同一时钟） */
+  atSeconds: number
+  /** 出手方是否为斗法发起方（结合 viewerIsInitiator 翻译为本方/对方） */
+  attackerIsInitiator: boolean
+  /** 出手功法 ID（普攻为 null，用于行动条显示技能名） */
+  abilityId?: string | null
 }
 
 /**
@@ -513,16 +551,29 @@ export interface ExpeditionDuel {
   outcome: number
   /** 是否已结算 */
   resolved: boolean
+  /** 对手最大生命值（撮合时锁定的镜像） */
+  opponentMaxHitpoints: number
+  /** 对手当前生命值（随回放事件推进） */
+  opponentHitpoints: number
+  /** 剧本总时长（秒） */
+  durationSeconds: number
+  /** 剧本事件列表（用于推导双方下一次出手的行动条） */
+  events: ExpeditionDuelEvent[]
 }
 
 /**
  * 实时战斗动作状态（攻击、施法、受控、读条）
  */
 export interface CombatActionState {
+  /** 动作显示名 */
   name: string
+  /** 动作类别 */
   kind: CombatActionKind
+  /** 已进行毫秒数 */
   elapsedMilliseconds: number
+  /** 动作总耗时毫秒数 */
   durationMilliseconds: number
+  /** 服务端给出的预计完成时刻（Unix 毫秒，用于校准读条） */
   completesAtUnixMilliseconds?: number | null
 }
 
@@ -542,12 +593,22 @@ export interface CharacterVisual {
  * 实时战斗血蓝资源与冷却状态
  */
 export interface CombatResourceState {
+  /** 当前气血 */
   hitpoints: number
+  /** 气血上限 */
   maxHitpoints: number
+  /** 当前灵力 */
   manapoints: number
+  /** 灵力上限 */
   maxManapoints: number
+  /** 功法冷却表：abilityId -> 剩余冷却毫秒 */
   abilityCooldownMilliseconds?: Record<string, number> | null
+  /** 战斗消耗品冷却表：槽位下标 -> 剩余冷却毫秒 */
   consumableCooldownMilliseconds?: number[] | null
+  /** 当前吟唱中的功法 ID（无则 null） */
+  castingAbilityId?: string | null
+  /** 吟唱剩余毫秒数 */
+  castRemainingMilliseconds?: number
 }
 
 /**
@@ -1142,6 +1203,106 @@ export interface NearbyMonsterDefinition {
 }
 
 /**
+ * 建筑每级基准效果（产出/收益为比率，回血为每 5 秒固定值）
+ */
+export interface BuildingModifiers {
+  /** 历练采集行动加速比率 */
+  explorationSpeedRatio: number
+  /** 历练采集行动收益比率 */
+  explorationOutputRatio: number
+  /** 炼丹炼器行动加速比率 */
+  alchemySpeedRatio: number
+  /** 炼丹炼器行动收益比率 */
+  alchemyOutputRatio: number
+  /** 吐纳修炼灵气收益比率 */
+  cultivationOutputRatio: number
+  /** 战斗气血自然回复（每 5 秒固定值） */
+  combatHitpointRegen: number
+  /** 战斗额外减伤比率 */
+  combatDamageReductionRatio: number
+}
+
+/**
+ * 建筑一级基础材料需求项（第 N 级需求 = 基础 × 1.1^(N-1)）
+ */
+export interface BuildingMaterial {
+  /** 材料物品 ID */
+  itemId: string
+  /** 一级基础数量 */
+  quantity: number
+}
+
+/**
+ * 玩家可建造建筑的静态配表定义（/api/v1/catalog/buildings 下发）
+ */
+export interface BuildingDefinition {
+  /** 建筑配置 ID */
+  buildingId: string
+  /** 建筑显示名 */
+  name: string
+  /** 建筑描述文案 */
+  description: string
+  /** 效果说明文案 */
+  effect: string
+  /** 建造解锁所需境界等级 */
+  requiredRealmLevel: number
+  /** 限定可建造节点 ID 列表（缺省/为空表示任意节点可建） */
+  availableNodeIds?: string[] | null
+  /** 建筑分组（production/combat/other） */
+  group: string
+  /** 每级基准效果 */
+  modifiers?: BuildingModifiers
+  /** 一级基础材料清单 */
+  materials?: BuildingMaterial[]
+}
+
+/**
+ * 节点公共建筑材料明细（本级需求与已交数量）
+ */
+export interface NodeBuildingMaterial {
+  /** 材料物品 ID */
+  itemId: string
+  /** 本级需求数量 */
+  required: number
+  /** 已提交数量 */
+  contributed: number
+}
+
+/**
+ * 节点公共建筑实例（快照 world.nodeBuildings 下发；系统建筑为配表实体，玩家建筑为公共工程）
+ */
+export interface NodeBuilding {
+  /** 建筑配置 ID */
+  entityId: string
+  /** 建筑显示名 */
+  name: string
+  /** 实体类型（building） */
+  kind?: string
+  /** 建筑描述文案 */
+  description: string
+  /** 效果说明文案 */
+  effect: string
+  /** 建筑分组 */
+  group: string
+  /** 已建成有效等级（0 = 尚未建成） */
+  level: number
+  /** 进行中工程目标等级（0 = 空闲） */
+  targetLevel: number
+  /** 建造总进度 = min(材料进度, 时间进度) */
+  buildProgress: number
+  /** 材料填充进度 (0~1) */
+  materialProgress: number
+  /** 时间推进进度 (0~1) */
+  timeProgress: number
+  /** 本级工程所需总秒数 */
+  requiredSeconds: number
+  /** 本级工程已耗时秒数 */
+  elapsedSeconds: number
+  /** 本级材料需求与已交明细 */
+  materials: NodeBuildingMaterial[]
+}
+
+/**
  * 大地图节点定义
  */
 export interface WorldNodeDefinition {
@@ -1239,8 +1400,12 @@ export interface WorldState {
   encounterIds: string[]
   /** 周边 NPC 列表 */
   npcs: NearbyEntity[]
-  /** 周边建筑/功能实体列表 */
+  /** 周边建筑/功能实体列表（系统建筑） */
   buildings: NearbyEntity[]
+  /** 当前节点公共建筑列表（玩家建筑为共享工程，含等级与双进度） */
+  nodeBuildings?: NodeBuilding[]
+  /** 当前节点可建造建筑 ID 列表（null = 该节点不可建造，隐藏加号卡） */
+  buildableBuildingIds?: string[] | null
   /** 刷怪预算下限 */
   minBudget?: number
   /** 刷怪预算上限 */

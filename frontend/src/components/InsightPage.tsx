@@ -187,9 +187,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const parryBreakPoint: number = Math.floor(basePool.baseBreak * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
   const parryResolvePoint: number = Math.floor(basePool.baseParry * (1.0 + boneBonus + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
 
-  // 服务端直接提供每 5 秒的回复点数，展示不乘上限、不添加取整或保底。
-  const hpRegenTotal = attributes?.hpRegenPerFiveSeconds ?? basePool.baseHpRegen
-  const mpRegenTotal = attributes?.mpRegenPerFiveSeconds ?? basePool.baseMpRegen
+  // 服务端直接提供每 5 秒的回复点数；展示层按整数约定向下取整，不出现小数。
+  const hpRegenTotal = Math.floor(attributes?.hpRegenPerFiveSeconds ?? basePool.baseHpRegen)
+  const mpRegenTotal = Math.floor(attributes?.mpRegenPerFiveSeconds ?? basePool.baseMpRegen)
 
   // 2. 特殊战斗属性 (统一百分比类型 PercentValue，内部均为 double 点数)
   const critDamagePercent = PercentValue.linear((attributes?.criticalDamageRatio ?? 1.5) * 100.0)

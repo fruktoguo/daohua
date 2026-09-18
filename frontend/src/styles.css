@@ -2219,6 +2219,23 @@ input[type="checkbox"] {
   width: min(94vw, 680px);
 }
 
+/* 面板头部弱化入口按钮（如战报入口） */
+.ghost-button {
+  padding: 3px 10px;
+  border-color: rgba(201, 180, 109, 0.25);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.ghost-button:hover:not(:disabled) {
+  border-color: var(--gold-dim);
+  color: var(--gold);
+}
+
+.battle-report-modal.modal-shell {
+  width: min(94vw, 560px);
+}
+
 .combat-trigger-editor {
   display: grid;
   gap: 12px;
@@ -6758,6 +6775,15 @@ input[type="checkbox"] {
 
 .unit-number:hover {
   text-decoration-color: rgba(232, 214, 154, 0.85);
+}
+
+.unit-number.unit-number--no-tooltip {
+  cursor: inherit;
+  text-decoration: none;
+}
+
+.unit-number.unit-number--no-tooltip:hover {
+  text-decoration: none;
 }
 
 .unit-number-prefix {

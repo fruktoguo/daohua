@@ -16,10 +16,10 @@ export interface EffectTooltipContent {
 }
 
 /**
- * 格式化技能系数为百分比字符串（保留1位小数，如 "+15.5%"）
+ * 格式化技能系数为整数百分比字符串（如 "+15%"）
  */
 function abilityPercent(ratio: number): string {
-  const percent = Math.round(ratio * 1000) / 10
+  const percent = Math.round(ratio * 100)
   return `${percent > 0 ? '+' : ''}${percent}%`
 }
 
@@ -152,6 +152,13 @@ export function formatNumber(
   options?: FormatUnitOptions
 ): string {
   return formatUnitNumber(value, options)
+}
+
+/**
+ * 战斗属性与收益预览的整数显示约定：统一下取整，保证展示层不出现小数。
+ */
+export function formatInteger(value: number | bigint | string): string {
+  return formatUnitNumber(value, { maxDecimals: 0 })
 }
 
 export interface FormatProgressOptions {

@@ -166,7 +166,9 @@ export const appZh = {
     combatPanel: {
       tabsAria: '历练功能',
       tabMap: '地图',
-      tabNearby: '附近',
+      tabMonsters: '怪物',
+      tabPeople: '人物',
+      tabBuildings: '建筑',
       tabDuel: '详情',
       locationSpecialActions: '本地特殊行动',
       combatTrialActions: '妖兽历练行动',
@@ -254,10 +256,6 @@ export const appZh = {
     avatar: {
       defaultName: '太虚绝世剑仙',
       defaultDesc: '青罗素裳，墨发如瀑，执玄青灵剑，衣袂随风凌空，超凡脱俗。',
-      femaleName: '太虚绝世剑仙 (女)',
-      femaleDesc: '白衣青罗，墨发如瀑，执玄青神剑，超凡脱俗。',
-      maleName: '凌霄傲骨剑尊 (男)',
-      maleDesc: '青衫白袍，束发御风，单手掐诀御剑，剑意凌云。',
     },
     // 设置页面
     settings: {
@@ -345,6 +343,9 @@ export const appZh = {
       errorSubtitle: '未能连接到修仙世界服务端。请检查您的网络连接或确认后端服务已正常启动。',
       retryBtn: '重新连接',
       switchAccountBtn: '返回登录 / 切换账号',
+      tabBlockedTitle: '道心唯一 · 仙境已在别处展开',
+      tabBlockedSubtitle: '检测到游戏已在另一个标签页中运行。为保护账号数据安全，本页已暂停连接。',
+      tabTakeoverBtn: '在本页继续修行',
     },
     // 改名弹窗
     rename: {

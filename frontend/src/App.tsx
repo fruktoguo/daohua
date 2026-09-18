@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
-import { BattleReportPanel } from './components/BattleReportPanel'
-import { CombatArena } from './components/CombatArena'
+import { StatsPanel } from './components/StatsPanel'
+import { CombatArena, resolveEnemyDefinition } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
 import { EffectTooltipTarget } from './components/EffectTooltip'
@@ -14,7 +14,7 @@ import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
 import { InsightPage } from './components/InsightPage'
 import { RealmBadge } from './components/RealmBadge'
-import { NearbyPanel } from './components/NearbyPanel'
+import { NearbyPanel, type NearbyTab } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
 import { WorldMapPanel } from './components/WorldMapPanel'
 import { SettingsPage } from './components/SettingsPage'
@@ -31,6 +31,8 @@ import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
 import { gameClient } from './network/gameClient'
+import { installAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
+import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
 import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
 import { initUiScale } from './utils/uiScale'
@@ -160,6 +162,7 @@ const SmoothProgressBar = memo(function SmoothProgressBar({ entry }: { entry: Qu
 const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element | null {
   const t = useT()
   const expedition = entry.expedition
+  const encounters = useGameStore(state => state.encounters)
   const fillRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
   const metaRef = useRef<HTMLSpanElement>(null)
@@ -167,6 +170,10 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
 
   const isTravel = expedition?.phase === 'travel'
   const totalDist = expedition?.totalDistance ?? 0
+  // 搜寻目标名：expedition 载荷不再带 enemyName，按 encounterId 从遭遇配表解析主敌名。
+  const searchTargetName = expedition?.encounterId
+    ? findEncounterInCatalog(encounters, expedition.encounterId)?.enemy?.name
+    : null
 
   const phaseEntry: QueueEntry = useMemo(() => ({
     ...entry,
@@ -185,7 +192,7 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
         const curDist = Math.min(totalDist, Math.max(0, ratio * totalDist))
         return getT()('app.queue.travelProgress', { current: curDist.toFixed(1), total: totalDist.toFixed(1) })
       }
-        return getT()('app.queue.searchTarget', { name: expedition?.enemyName ?? getT()('app.queue.defaultEnemy') })
+        return getT()('app.queue.searchTarget', { name: searchTargetName ?? getT()('app.queue.defaultEnemy') })
     },
   })
 
@@ -196,7 +203,7 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
         <span ref={metaRef}>
           {isTravel
             ? t('app.queue.travelProgress', { current: '0.0', total: totalDist.toFixed(1) })
-            : t('app.queue.searchTarget', { name: expedition.enemyName ?? t('app.queue.defaultEnemy') })}
+            : t('app.queue.searchTarget', { name: searchTargetName ?? t('app.queue.defaultEnemy') })}
         </span>
         <strong ref={percentRef} />
       </div>
@@ -273,6 +280,9 @@ const CombatActionPhaseProgress = memo(function CombatActionPhaseProgress({
 const CombatActionProgress = memo(function CombatActionProgress({ entry }: { entry: QueueEntry }): React.JSX.Element {
   const t = useT()
   const expedition = entry.expedition
+  const combatResources = useGameStore(state => state.combatResources)
+  const combatAttributes = useGameStore(state => state.combatAttributes)
+  const encounters = useGameStore(state => state.encounters)
   // 斗法回放相位同样展示双方实时气血；duel-pending 等其余阶段走通用相位进度。
   if (expedition && expedition.phase !== 'combat' && expedition.phase !== 'duel') {
     const phaseEntry: QueueEntry = {
@@ -283,22 +293,38 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
     return <CombatActionPhaseProgress entry={phaseEntry} phase={expedition.phase} />
   }
 
-  const playerMax = Math.max(1, expedition?.playerMaxHitpoints ?? 1)
+  // 己方上限取自战斗资源分段；敌方总量为同波全体敌人当前/最大血量之和，
+  // 斗法相位取回放载荷中的对手镜像血量（均无 wire 标量可直接用）。
+  const playerMax = Math.max(1, combatResources?.maxHitpoints ?? combatAttributes?.maxHitpoints ?? 1)
   const playerValue = Math.max(0, Math.min(playerMax, expedition?.playerHitpoints ?? playerMax))
-  const enemyMax = Math.max(1, expedition?.enemyMaxHitpoints ?? 1)
-  const enemyValue = Math.max(0, Math.min(enemyMax, expedition?.enemyHitpoints ?? 0))
+  let enemyValue = 0
+  let enemyMax = 0
+  if (expedition?.phase === 'duel') {
+    enemyMax = Math.max(1, expedition.duel?.opponentMaxHitpoints ?? 1)
+    enemyValue = Math.max(0, Math.min(enemyMax, expedition.duel?.opponentHitpoints ?? enemyMax))
+  } else {
+    const activeEncounter = expedition?.encounterId
+      ? findEncounterInCatalog(encounters, expedition.encounterId)
+      : undefined
+    for (const enemy of expedition?.enemies ?? []) {
+      const definition = resolveEnemyDefinition('', enemy.enemyId, activeEncounter, encounters)
+      enemyMax += Math.max(1, definition?.maxHitpoints ?? enemy.hitpoints)
+      enemyValue += Math.max(0, enemy.hitpoints)
+    }
+    enemyMax = Math.max(1, enemyMax)
+  }
   return (
     <div className="queue-combat-state queue-combat-state--combat">
       <div className="queue-combat-vitals" role="status" aria-label={t('app.queue.combatVitalsAria')}>
         <div className="queue-combat-vital queue-combat-vital--player">
           <span>{t('app.queue.combatVitalSelf')}</span>
           <i><b style={{ transform: `scaleX(${playerValue / playerMax})` }} /></i>
-          <strong><UnitNumber value={playerValue} /> / <UnitNumber value={playerMax} /></strong>
+          <strong><UnitNumber maxDecimals={0} value={playerValue} /> / <UnitNumber maxDecimals={0} value={playerMax} />（{Math.round(playerValue / playerMax * 100)}%）</strong>
         </div>
         <div className="queue-combat-vital queue-combat-vital--enemy">
           <span>{t('app.queue.combatVitalEnemy')}</span>
           <i><b style={{ transform: `scaleX(${enemyValue / enemyMax})` }} /></i>
-          <strong><UnitNumber value={enemyValue} /> / <UnitNumber value={enemyMax} /></strong>
+          <strong><UnitNumber maxDecimals={0} value={enemyValue} /> / <UnitNumber maxDecimals={0} value={enemyMax} />（{Math.round(enemyValue / enemyMax * 100)}%）</strong>
         </div>
       </div>
     </div>
@@ -1161,7 +1187,7 @@ const ActionDetailItem = memo(function ActionDetailItem({ itemId, amount, curren
     <span className="action-detail-item">
       <ItemReference amount={current} itemId={itemId} label={metadata?.label ?? itemId} />
       <strong className={insufficient ? 'is-insufficient' : ''}>
-        {current === undefined ? <UnitNumber prefix="×" value={amount} /> : <><UnitNumber value={current} /> / <UnitNumber value={amount} /></>}
+        {current === undefined ? <UnitNumber maxDecimals={0} prefix="×" value={amount} /> : <><UnitNumber maxDecimals={0} value={current} /> / <UnitNumber maxDecimals={0} value={amount} /></>}
       </strong>
     </span>
   )
@@ -1250,7 +1276,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                 <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={`${entry.kind}-${index}`}>
                   <span className="action-stat-pill-label">{t(`app.action.yieldKind.${entry.kind}`)}</span>
                   <strong className="action-stat-pill-value">
-                    +<UnitNumber disableTooltip value={entry.finalAmount} />{entry.per === 'second' ? t('app.action.yieldPerSecond') : t('app.action.yieldPerRepeat')}
+                    +<UnitNumber disableTooltip maxDecimals={0} value={entry.finalAmount} />{entry.per === 'second' ? t('app.action.yieldPerSecond') : t('app.action.yieldPerRepeat')}
                   </strong>
                 </span>
               ))}
@@ -1440,12 +1466,10 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const itemCatalog = useGameStore(state => state.items)
   const inventory = useGameStore(state => state.inventory)
   const abilityCooldowns = useGameStore(
-    state => state.queue.entries[0]?.expedition?.abilityCooldownMilliseconds
-      ?? state.combatResources?.abilityCooldownMilliseconds,
+    state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
   const consumableCooldowns = useGameStore(
-    state => state.queue.entries[0]?.expedition?.consumableCooldownMilliseconds
-      ?? state.combatResources?.consumableCooldownMilliseconds,
+    state => state.combatResources?.consumableCooldownMilliseconds,
   ) ?? EMPTY_CONSUMABLE_COOLDOWNS
   const [editingTrigger, setEditingTrigger] = useState<{
     kind: 'ability' | 'consumable'
@@ -1771,11 +1795,13 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
   )
 })
 
-type MapSubTab = 'map' | 'nearby'
+type MapSubTab = 'map' | NearbyTab
 
-const MAP_TABS: ReadonlyArray<{ id: MapSubTab; labelKey: 'tabMap' | 'tabNearby' }> = [
+const MAP_TABS: ReadonlyArray<{ id: MapSubTab; labelKey: 'tabMap' | 'tabMonsters' | 'tabPeople' | 'tabBuildings' }> = [
   { id: 'map', labelKey: 'tabMap' },
-  { id: 'nearby', labelKey: 'tabNearby' },
+  { id: 'monsters', labelKey: 'tabMonsters' },
+  { id: 'people', labelKey: 'tabPeople' },
+  { id: 'buildings', labelKey: 'tabBuildings' },
 ]
 
 /**
@@ -1803,7 +1829,7 @@ const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JS
       </header>
       <div className="expedition-content">
         {activeSubTab === 'map' && <WorldMapPanel hidden={hidden} />}
-        {activeSubTab === 'nearby' && <NearbyPanel />}
+        {activeSubTab !== 'map' && <NearbyPanel tab={activeSubTab} />}
       </div>
     </section>
   )
@@ -1815,22 +1841,39 @@ const MapPage = memo(function MapPage({ hidden }: { hidden: boolean }): React.JS
 const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
+  const [reportOpen, setReportOpen] = useState(false)
   const closeModal = useCallback(() => setSelectedAction(null), [])
+  const closeReport = useCallback(() => setReportOpen(false), [])
 
   return (
     <section className="panel expedition-page" hidden={hidden}>
       <header className="panel-header">
         <h2>{t('app.nav.combat')}</h2>
+        <button
+          className="ghost-button battle-report-open"
+          onClick={() => setReportOpen(true)}
+          type="button"
+        >
+          {t('combat.report.title')}
+        </button>
       </header>
       <div className="expedition-content expedition-content--duel">
         <div className="expedition-duel">
           <CombatArena onOpenAction={setSelectedAction} />
           <div className="expedition-duel-config">
             <CombatLoadoutPanel />
-            <BattleReportPanel />
           </div>
         </div>
       </div>
+      <Modal
+        className="battle-report-modal"
+        labelledBy="battle-report-panel-title"
+        onClose={closeReport}
+        open={reportOpen}
+        size="medium"
+      >
+        <StatsPanel />
+      </Modal>
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
@@ -1900,6 +1943,7 @@ export default function App(): React.JSX.Element {
   const mobileLayout = useMobileLayout()
   const connection = useGameStore(state => state.connection)
   const hasReceivedSnapshot = useGameStore(state => state.hasReceivedSnapshot)
+  const tabBlocked = useAntiMultiOpenStore(state => state.tabBlocked)
   const currentAccount = useAccountStore(state => state.currentAccount)
   const sessionChecked = useAccountStore(state => state.sessionChecked)
   const restoreSession = useAccountStore(state => state.restoreSession)
@@ -1909,6 +1953,7 @@ export default function App(): React.JSX.Element {
   const [catalogReady, setCatalogReady] = useState(false)
 
   useEffect(() => {
+    installAntiMultiOpen()
     initUiScale()
     void restoreSession()
     return () => gameClient.dispose()
@@ -1929,6 +1974,7 @@ export default function App(): React.JSX.Element {
         useGameStore.getState().setMaps(catalog.maps)
         useGameStore.getState().setEncounters(catalog.encounters)
         useGameStore.getState().setAbilities(catalog.abilities)
+        useGameStore.getState().setBuildings(catalog.buildings)
         if (catalog.items && catalog.items.length > 0) {
           useGameStore.getState().setItems(catalog.items)
         }
@@ -1950,6 +1996,10 @@ export default function App(): React.JSX.Element {
       })
     return () => controller.abort()
   }, [currentAccount, sessionChecked, catalogAttempt])
+
+  if (tabBlocked) {
+    return <MultiTabBlockedPage />
+  }
 
   if (!currentAccount) {
     return <LoginPage />

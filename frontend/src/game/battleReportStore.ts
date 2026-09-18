@@ -21,6 +21,52 @@ function isStoredReport(value: unknown): value is BattleReport {
     && typeof row.startedAtUnixSeconds === 'number' && Number.isFinite(row.startedAtUnixSeconds)
 }
 
+/** 非负有限数值兜底（旧缓存字段缺失时归 0） */
+function storedNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+/** 非数组兜底为空列表（旧缓存字段缺失时归 []） */
+function storedArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : []
+}
+
+/**
+ * 旧版本缓存条目缺少账本泛化后新增的字段（abilityExp/levelUps/itemsLost/计数器等），
+ * 读取时统一补齐默认值，保证渲染路径不依赖字段存在性。
+ */
+function normalizeStoredReport(report: BattleReport): BattleReport {
+  const rootExp = (report.rootExp ?? {}) as Partial<BattleReport['rootExp']>
+  return {
+    ...report,
+    actionName: typeof report.actionName === 'string' ? report.actionName : '',
+    endedAtUnixSeconds: storedNumber(report.endedAtUnixSeconds),
+    qi: storedNumber(report.qi),
+    experience: storedNumber(report.experience),
+    rootExp: {
+      stamina: storedNumber(rootExp.stamina),
+      intelligence: storedNumber(rootExp.intelligence),
+      attack: storedNumber(rootExp.attack),
+      defense: storedNumber(rootExp.defense),
+      swordsmanship: storedNumber(rootExp.swordsmanship),
+      talisman: storedNumber(rootExp.talisman),
+    },
+    abilityExp: storedArray(report.abilityExp),
+    levelUps: storedArray(report.levelUps),
+    items: storedArray(report.items),
+    itemsLost: storedArray(report.itemsLost),
+    cycles: storedNumber(report.cycles),
+    encounters: storedNumber(report.encounters),
+    normalKills: storedNumber(report.normalKills),
+    eliteKills: storedNumber(report.eliteKills),
+    bossKills: storedNumber(report.bossKills),
+    deaths: storedNumber(report.deaths),
+    dayIndex: storedNumber(report.dayIndex),
+    duelWins: storedNumber(report.duelWins),
+    duelLosses: storedNumber(report.duelLosses),
+  }
+}
+
 /**
  * 读取指定玩家的本地战报历史缓存；存储不可用或数据损坏时返回空列表。
  */
@@ -31,7 +77,7 @@ export function loadBattleReportHistory(playerId: string): BattleReport[] {
     if (!raw) return []
     const parsed: unknown = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
-    return parsed.filter(isStoredReport)
+    return parsed.filter(isStoredReport).map(normalizeStoredReport)
   } catch {
     // 隐私模式等 localStorage 不可用场景：静默回退空历史。
     return []

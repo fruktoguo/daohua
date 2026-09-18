@@ -1,5 +1,5 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
-import type { ActionDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
+import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -17,7 +17,7 @@ export function getApiUrl(path: string): string {
 }
 
 /**
- * 拉取游戏静态配表全集（行动/地图/遭遇/物品/装备/基础属性锚点/功法）。
+ * 拉取游戏静态配表全集（行动/地图/遭遇/物品/装备/基础属性锚点/功法/可建造建筑）。
  * 副作用：baseAttributes 拉取后注册进 combatConstants 锚点表，境界/属性推算依赖其结果。
  * items 端点失败时容忍为空列表（前端保留静态物品兜底），其余端点失败整体抛错。
  */
@@ -28,8 +28,9 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   items: ItemDefinition[]
   equipment: CombatEquipmentDefinition[]
   abilities: CombatAbilityDefinition[]
+  buildings: BuildingDefinition[]
 }> {
-  const [actions, maps, encounters, items, equipment, baseAttributes, abilities] = await Promise.all([
+  const [actions, maps, encounters, items, equipment, baseAttributes, abilities, buildings] = await Promise.all([
     requestJson<ActionDefinition[]>('/api/v1/catalog/actions', { signal }),
     requestJson<WorldMapDefinition[]>('/api/v1/catalog/maps', { signal }),
     requestJson<CombatEncounterDefinition[]>('/api/v1/catalog/encounters', { signal }),
@@ -37,9 +38,10 @@ export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
     requestJson<CombatEquipmentDefinition[]>('/api/v1/catalog/equipment', { signal }),
     requestJson<BaseAttributeAnchor[]>('/api/v1/catalog/base-attributes', { signal }),
     requestJson<CombatAbilityDefinition[]>('/api/v1/catalog/abilities', { signal }),
+    requestJson<BuildingDefinition[]>('/api/v1/catalog/buildings', { signal }),
   ])
   registerBaseAttributeAnchors(baseAttributes)
-  return { actions, maps, encounters, items, equipment, abilities }
+  return { actions, maps, encounters, items, equipment, abilities, buildings }
 }
 
 function parseNumericVariant(value: string | null, fallback: number): number {

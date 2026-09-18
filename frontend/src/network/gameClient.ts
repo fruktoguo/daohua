@@ -17,6 +17,13 @@ import {
 } from './protocol'
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
 import { getSessionAccount } from './sessionState'
+import {
+  ANTI_MULTI_CLOSE_NOTICE_KEYS,
+  applyAntiMultiOpenConfig,
+  getHelloDeviceFingerprint,
+  isTabBlocked,
+  registerBlockedTeardown,
+} from '../antiMulti'
 
 const APP_VERSION = String(import.meta.env.VITE_APP_VERSION ?? 'dev')
 
@@ -102,8 +109,14 @@ export class GameClient {
     }, delay)
   }
 
+  /** 建立/恢复游戏连接：重置退避与序列号后打开 socket；被互斥阻断或未登录时静默置为 offline */
   connect(): void {
     this.clearReconnectTimer()
+    // 标签页被互斥守卫阻断时禁止任何连接尝试（含重试按钮触发的手动重连）。
+    if (isTabBlocked()) {
+      useGameStore.getState().setConnection('offline')
+      return
+    }
     const accountInfo = getSessionAccount()
     if (!accountInfo) {
       useGameStore.getState().setConnection('offline')
@@ -206,7 +219,7 @@ export class GameClient {
       this.reconnectDelay = 500
       useGameStore.getState().setConnection('online')
       this.startHeartbeat()
-      this.sendHello()
+      void this.sendHello()
     })
     socket.addEventListener('message', event => {
       void this.handleMessage(event.data, socket)
@@ -226,6 +239,13 @@ export class GameClient {
         useGameStore.getState().setNotice(getT()('common.net.sessionExpired'))
         return
       }
+      // 防多开关闭码（4005-4008）：被顶替/配额拒绝/重复连接均禁止自动重连，否则两端互踢形成乒乓风暴。
+      const antiMultiNoticeKey = ANTI_MULTI_CLOSE_NOTICE_KEYS[event.code]
+      if (antiMultiNoticeKey) {
+        useGameStore.getState().setConnection('offline')
+        useGameStore.getState().setNotice(getT()(antiMultiNoticeKey))
+        return
+      }
       this.scheduleReconnect()
     })
   }
@@ -235,13 +255,17 @@ export class GameClient {
     this.pendingRequests.clear()
   }
 
-  private sendHello(): void {
+  private async sendHello(): Promise<void> {
     const socket = this.socket
     if (!socket || socket.readyState !== WebSocket.OPEN) return
+    // 设备指纹采集是异步的：等待其完成再发送 Hello，避免配额开启时因缺指纹被拒。
+    const deviceFingerprint = await getHelloDeviceFingerprint().catch(() => null)
+    if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) return
     try {
       socket.send(encodeJsonEnvelope(WireMessageType.Hello, createRequestId(), this.nextOutboundSequence(), {
         clientVersion: APP_VERSION,
         gameDataFingerprint: null,
+        deviceFingerprint,
       }))
     } catch {
       socket.close(1011, '握手发送失败')
@@ -277,6 +301,7 @@ export class GameClient {
         case WireMessageType.HelloAck: {
           const hello = decodeJsonPayload<HelloResponse>(envelope)
           if (hello.protocolVersion !== 1) throw new Error('服务端协议版本不匹配。')
+          applyAntiMultiOpenConfig(hello.antiMultiOpen)
           break
         }
         case WireMessageType.Snapshot: {
@@ -380,8 +405,13 @@ export class GameClient {
   }
 }
 
+/** 全局游戏网络客户端单例（UI 与账号 Store 统一经它收发指令与状态） */
 export const gameClient = new GameClient()
 
+// 标签页被互斥守卫阻断时拆除网络层：断开 socket、停止心跳并禁止自动重连。
+registerBlockedTeardown(() => gameClient.dispose())
+
+/** 识别 CommandResult 附带 payload 是否为全量快照（指令回执可随带最新快照就地应用） */
 function isPlayerSnapshotDto(value: unknown): value is PlayerSnapshotDto {
   if (value === null || typeof value !== 'object') return false
   const row = value as Record<string, unknown>

@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import { gameClient } from '../network/gameClient'
+import '../network/gameClient'
 import { findActionInCatalog, registerCatalogActions, resolveActionDefinition, resolveActionDefinitions } from './ids'
 import { mergeBattleReportHistory } from './battleReportStore'
-import type { ActionDefinition, ActionType, AutoUseSlot, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
+import { useUiStore } from '../uiStore'
+import type { ActionDefinition, ActionType, AutoUseSlot, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, PlayerPatch, PlayerSnapshot, QueueState, WorldMapDefinition } from './types'
 
 /**
  * 前端与服务端的网络连接生命周期状态：
@@ -78,6 +79,8 @@ interface GameStore {
   equipment: readonly CombatEquipmentDefinition[]
   /** 全量大地图世界配置目录 */
   maps: readonly WorldMapDefinition[]
+  /** 全量玩家可建造建筑目录 */
+  buildings: readonly BuildingDefinition[]
   /** 当前网络连接状态 */
   connection: ConnectionState
   /** 顶部全局提示消息（为 null 时隐藏） */
@@ -98,6 +101,8 @@ interface GameStore {
   setEquipment: (equipment: readonly CombatEquipmentDefinition[]) => void
   /** 更新世界地图目录 */
   setMaps: (maps: readonly WorldMapDefinition[]) => void
+  /** 更新可建造建筑目录 */
+  setBuildings: (buildings: readonly BuildingDefinition[]) => void
   /** 应用服务端全量快照 (Snapshot) */
   applySnapshot: (snapshot: PlayerSnapshot) => void
   /** 应用服务端增量补丁 (Delta Patch) */
@@ -148,6 +153,8 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
       activeDuelId: null,
       stagedItems: [],
       currentReport: null,
+      offlineReport: null,
+      dailyReport: null,
       reports: [],
     },
     world: {
@@ -163,6 +170,8 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
       encounterIds: [],
       npcs: [],
       buildings: [],
+      nodeBuildings: [],
+      buildableBuildingIds: null,
     },
   }
 }
@@ -268,6 +277,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   encounters: [],
   equipment: [],
   maps: [],
+  buildings: [],
   connection: 'connecting',
   notice: null,
   setConnection: (connection) => set({ connection }),
@@ -304,10 +314,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setEncounters: (encounters) => set({ encounters }),
   setEquipment: (equipment) => set({ equipment }),
   setMaps: (maps) => set({ maps }),
+  setBuildings: (buildings) => set({ buildings }),
   applySnapshot: (snapshot) => {
     const state = get()
     // 全量快照也可能因命令回执/重连竞态晚到；禁止旧版本回写覆盖当前权威状态。
     if (state.hasReceivedSnapshot && snapshot.version < state.version) return
+    // 记录「页面加载后首个权威快照」标记：仅本次用于刷新自动进详情，重连与后续 patch 不触发。
+    const isFirstSnapshot = !state.hasReceivedSnapshot
     // 每次应用含 duel 分段的快照后，将战报合并写入本地历史缓存（reportId 去重、倒序截断 50 条）。
     mergeBattleReportHistory(snapshot.playerId, snapshot.duel)
     const now = performance.now()
@@ -337,6 +350,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       world: snapshot.world ?? initial.world!,
       duel: snapshot.duel,
     })
+    // 刷新自动进详情：首个权威快照且行动队列非空时，直接切到「详情」页查看当前行动统计与战况。
+    if (isFirstSnapshot && snapshot.queue.entries.length > 0) {
+      useUiStore.getState().setActiveTab('combat')
+    }
   },
   applyPatch: (patch) => {
     const state = get()
@@ -344,15 +361,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!state.hasReceivedSnapshot) {
       return
     }
-    // 2. 丢弃版本过旧或重复的乱序补丁
+    // 2. 丢弃版本过旧或重复的乱序补丁。
+    // 注意：stateVersion 在一次推进内可能多次 +1（transitions/changed/Touch 各路径），
+    // 相邻推送间正常跳 +N；增量 section 携带的是全量当前值而非差分，跳过中间版本无损。
+    // 真实的帧级连续性由 WS 通道与信封 sequence 保证，不得对领域版本做 +1 连续校验——
+    // 否则每个 delta 都会误判为断层，陷入「断开重连 → 全量快照 → 再断层」的死循环。
     if (patch.version <= state.version) return
-    // 3. 版本连续性校验：若出现版本断层 (patch.version > state.version + 1)，触发全量快照重拉
-    if (patch.version > state.version + 1) {
-      queueMicrotask(() => {
-        gameClient.requestSnapshotOrResync()
-      })
-      return
-    }
     // 每次应用含 duel 分段的增量后，将战报合并写入本地历史缓存（reportId 去重、倒序截断 50 条）。
     if (patch.duel) mergeBattleReportHistory(patch.playerId, patch.duel)
     const hasQueueUpdate = Boolean(patch.queue || patch.queueProgress)

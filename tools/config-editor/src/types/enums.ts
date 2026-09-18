@@ -179,7 +179,9 @@ export const STAT_METADATA_LIST: StatMetadata[] = [
   { key: 'cooldownReduction', label: '冷却缩减 (CDR)', category: 'special', unit: '%', description: '缩减神通技能冷却' },
   { key: 'actionSpeedRatio', label: '动作加速 (ATR)', category: 'special', unit: '%', description: '缩短施法与普攻前摇' },
   { key: 'penetrationRatio', label: '护甲/抗性穿透率', category: 'special', unit: '%', description: '穿透目标防御抗性' },
-  { key: 'hpDrainRatio', label: '汲血率 (吸血)', category: 'special', unit: '%', description: '攻击命中吸取生命' }
+  { key: 'hpDrainRatio', label: '汲血率 (吸血)', category: 'special', unit: '%', description: '攻击命中吸取生命' },
+  { key: 'mpDrainRatio', label: '汲蓝率 (吸蓝)', category: 'special', unit: '%', description: '攻击命中偷取目标灵力' },
+  { key: 'damageReflectRatio', label: '反伤率', category: 'special', unit: '%', description: '受击时按比例反弹伤害' }
 ];
 
 export const STAT_METADATA_MAP = new Map<string, StatMetadata>(

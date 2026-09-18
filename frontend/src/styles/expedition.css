@@ -740,14 +740,26 @@
 }
 
 .nearby-layout {
-  min-height: 100%;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
   padding: 4px 2px;
 }
 
 .nearby-heading {
   display: grid;
-  padding: 4px 0 16px;
+  flex: 0 0 auto;
+  padding: 4px 0 12px;
   border-bottom: 1px solid var(--gold-faint);
+}
+
+.nearby-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .nearby-heading-row {
@@ -830,6 +842,36 @@
   border-color: rgba(117, 169, 173, 0.4);
 }
 
+/* 玩家自建建筑与系统建筑仅以边框色相区分 */
+.nearby-card.is-player-building {
+  border-color: rgba(168, 85, 247, 0.55);
+}
+
+.nearby-card--add {
+  grid-template-columns: none;
+  place-items: center;
+  padding: 10px;
+  border: 1px dashed rgba(201, 180, 109, 0.4);
+  color: var(--gold-dim);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.nearby-card--add:hover,
+.nearby-card--add:focus-visible {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.08);
+}
+
+.nearby-add-glyph {
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1;
+}
+
 .nearby-card.is-npc {
   border-color: rgba(201, 180, 109, 0.42);
 }
@@ -904,6 +946,196 @@
   color: var(--text-dim);
   font-size: 11px;
   text-align: center;
+}
+
+.build-picker-header {
+  padding: 2px 0 12px;
+}
+
+.build-picker-header h2 {
+  margin: 0;
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 18px;
+  font-weight: 400;
+}
+
+.build-picker-list {
+  display: grid;
+  gap: 8px;
+}
+
+.build-picker-item {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+/* 建筑分组候选区 */
+.build-picker-group {
+  display: grid;
+  gap: 6px;
+}
+
+.build-picker-group h4 {
+  margin: 4px 0 0;
+  color: var(--gold-dim);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.build-picker-item.is-locked {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* 建筑卡片上的建造进度缩略条 */
+.building-card-progress {
+  display: block;
+  margin-top: 6px;
+}
+
+.building-progress-track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.building-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--gold-dim);
+  transition: width 0.3s ease;
+}
+
+/* 建筑详情 / 材料提交弹窗 */
+.building-detail-body {
+  display: grid;
+  gap: 10px;
+}
+
+.building-detail-body > p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.building-detail-body > small {
+  color: var(--gold-dim);
+  font-size: 11px;
+}
+
+.building-detail-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.building-detail-progress h4 {
+  margin: 0;
+  color: var(--gold-dim);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.building-progress-row {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.building-materials {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.building-materials li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid rgba(201, 180, 109, 0.18);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.building-materials li small {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.contribute-list li {
+  grid-template-columns: 1fr auto auto;
+}
+
+.contribute-list input[type="number"] {
+  width: 72px;
+  padding: 3px 6px;
+  border: 1px solid rgba(201, 180, 109, 0.3);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  text-align: right;
+}
+
+.contribute-hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.building-action-btn {
+  justify-self: start;
+  padding: 6px 18px;
+  border: 1px solid rgba(201, 180, 109, 0.4);
+  border-radius: 4px;
+  background: rgba(201, 180, 109, 0.1);
+  color: var(--gold-bright);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.building-action-btn:hover:not(:disabled),
+.building-action-btn:focus-visible {
+  border-color: var(--gold-dim);
+  background: rgba(201, 180, 109, 0.18);
+}
+
+.building-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.contribute-confirm-row {
+  display: flex;
+  gap: 8px;
+}
+
+.building-action-btn.is-confirm {
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+
+.building-action-btn.is-cancel {
+  color: var(--text-dim);
 }
 
 .expedition-duel {
@@ -2628,7 +2860,7 @@
   opacity: 0.85;
 }
 
-/* ===== 战斗收益战报面板（当前战报 / 斗法暂存区 / 近期历史） ===== */
+/* ===== 行动统计面板（当前行动 / 离线挂机 / 今日统计 / 斗法暂存区 / 近期历史） ===== */
 .battle-report-panel {
   display: grid;
   gap: 8px;
@@ -2655,19 +2887,74 @@
   min-width: 0;
 }
 
-.battle-report-current {
+/* 账本分区容器（当前行动 / 离线挂机 / 今日统计共用） */
+.battle-report-block {
   display: grid;
   gap: 6px;
+  min-width: 0;
   padding: 8px;
   border: 1px solid var(--gold-faint);
+}
+
+.battle-report-block--current {
   background: rgba(201, 180, 109, 0.05);
 }
 
-.battle-report-current-head {
+.battle-report-block-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+}
+
+.battle-report-block-head > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 小节容器（获取经验 / 物品得失 / 行动信息） */
+.battle-report-section {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.battle-report-section-title {
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+
+/* 等级提升行（境界/六维/功法），与斗法战绩同色系弱强调 */
+.battle-report-levelups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  color: #c9a2e8;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 物品得失：获得与失去两列分组，窄屏自动换行不溢出 */
+.battle-report-item-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  min-width: 0;
+}
+
+.battle-report-item-column {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.battle-report-item-column-title {
+  color: var(--text-dim);
+  font-size: 10px;
 }
 
 .battle-report-metrics {
@@ -2761,6 +3048,14 @@
   color: var(--text-dim);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+/* 历史战报行内三小节容器：占满整行宽度 */
+.battle-report-row-sections {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
 }
 
 .battle-report-row .battle-report-metrics {
@@ -3240,4 +3535,17 @@
   color: var(--text-dim);
   line-height: 1.4;
   margin: 0;
+}
+
+/* 战报入口按钮：详情页头部右上角 */
+.battle-report-open {
+  padding: 4px 14px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+/* 战报弹窗内的面板去掉顶部分隔线与内边距（弹窗自带面板外观） */
+.battle-report-modal .battle-report-panel {
+  padding: 0;
+  border-top: none;
 }

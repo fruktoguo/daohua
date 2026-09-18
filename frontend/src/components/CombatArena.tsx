@@ -1,10 +1,10 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { formatNumber } from '../game/format'
+import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
-import type { ActionDefinition, Buff, CharacterVisual, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionProgress, QueueEntry } from '../game/types'
+import { findAbilityInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionDuel, ExpeditionProgress, QueueEntry } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -136,7 +136,7 @@ function ArenaResource({
         <div className="arena-resource-track">
           <i style={{ transform: `scaleX(${normalizedValue / normalizedMax})` }} />
           <span className="arena-resource-badge">
-            <UnitNumber disableTooltip value={normalizedValue} /> / <UnitNumber disableTooltip value={normalizedMax} />
+            <UnitNumber disableTooltip maxDecimals={0} value={normalizedValue} /> / <UnitNumber disableTooltip maxDecimals={0} value={normalizedMax} />
           </span>
         </div>
         <span className="arena-resource-shards" aria-hidden="true">
@@ -176,7 +176,7 @@ function ArenaResource({
                 left: `${Math.max(0.08, Math.min(0.92, effect.left + effect.width / 2)) * 100}%`,
               } as CSSProperties}
             >
-              {effect.delta > 0 ? '+' : ''}{formatNumber(effect.delta)}
+              {effect.delta > 0 ? '+' : ''}{formatInteger(effect.delta)}
             </em>
           ))}
         </span>
@@ -514,7 +514,7 @@ function ArenaPhaseFill({
     const baseElapsedMs = Math.max(0, (expedition.elapsedSeconds ?? (expedition.progress * expedition.durationSeconds)) * 1000)
     const elapsedSinceSync = Math.max(0, performance.now() - lastSyncPerformanceTime)
     const elapsed = Math.max(0, Math.min(duration, baseElapsedMs + elapsedSinceSync))
-    const signature = `${expedition.phase}|${expedition.battleSequence ?? 0}|${duration}`
+    const signature = `${expedition.phase}|${expedition.waveNumber ?? 0}|${duration}`
     const now = performance.now()
     const anchor = anchorRef.current
     if (anchor?.signature === signature) {
@@ -533,7 +533,7 @@ function ArenaPhaseFill({
       [{ transform: `${transformProperty}(${fraction})` }, { transform: `${transformProperty}(1)` }],
       { duration: remaining, easing: 'linear', fill: 'forwards' },
     )
-  }, [expedition.battleSequence, expedition.durationSeconds, expedition.elapsedSeconds, expedition.phase, expedition.progress, lastSyncPerformanceTime, orientation])
+  }, [expedition.waveNumber, expedition.durationSeconds, expedition.elapsedSeconds, expedition.phase, expedition.progress, lastSyncPerformanceTime, orientation])
 
   useEffect(() => () => animationRef.current?.cancel(), [])
 
@@ -1106,7 +1106,7 @@ function CharacterAttributeModal({
 /**
  * 根据敌怪名称或遭遇定义解析出具体的敌怪数值模型 (CombatantDefinition)
  */
-function resolveEnemyDefinition(
+export function resolveEnemyDefinition(
   enemyName: string,
   enemyId: string | null | undefined,
   activeEncounter: CombatEncounterDefinition | null | undefined,
@@ -1138,6 +1138,9 @@ function resolveEnemyDefinition(
   return activeEncounter?.enemy ?? null
 }
 
+/** 敌方单位铺位顺序：纵深优先（前排中→中排中→后排中→前排上→…），同波敌人沿前后轴展开而非上下堆叠 */
+const ENEMY_DEPTH_SLOTS: readonly number[] = [1, 4, 7, 2, 5, 8, 3, 6, 9]
+
 /** 敌方单位展示态：由 wire 快照（enemies[] 或 duel 载荷）与配表定义合并而成的渲染模型 */
 interface EnemyDisplayState {
   actorKey: string
@@ -1151,6 +1154,74 @@ interface EnemyDisplayState {
   action?: CombatActionState | null
   visual?: CharacterVisual | null
   definition?: CombatantDefinition | null
+}
+
+/**
+ * 由战斗时钟合成出手行动条：服务端下发的是下一次出手的战斗时刻（秒），
+ * 用攻速作时长、剩余时间反推已耗时，供 SmoothActionFill/ActionCountdownBadge 平滑推进。
+ * completesAtUnixMilliseconds 必须落在服务端时钟域：ArenaActor 的出手动画调度
+ * 与徽章倒计时都以它做绝对截止比较，缺省会导致动画永不触发、文字被隐藏。
+ */
+function attackActionState(
+  nextAttackAtSeconds: number,
+  battleElapsedSeconds: number,
+  intervalMilliseconds: number,
+  serverNowUnixMilliseconds: number,
+): CombatActionState | null {
+  if (!Number.isFinite(nextAttackAtSeconds) || intervalMilliseconds <= 0) return null
+  const duration = Math.max(1, intervalMilliseconds)
+  const remaining = Math.max(0, (nextAttackAtSeconds - battleElapsedSeconds) * 1000)
+  return {
+    kind: 'attack',
+    // name 仅需非空以通过徽章的待机判定；kind === 'attack' 时统一显示本地化普攻名。
+    name: 'attack',
+    durationMilliseconds: duration,
+    elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+    completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
+  }
+}
+
+/**
+ * 斗法剧本行动条：在回放时钟（battleElapsedSeconds）上找指定出手方的下一个事件，
+ * 时长取该出手方相邻两次出手的间隔（首个事件回退到兜底攻速）；
+ * 携带 abilityId 的剧本事件显示功法名（kind 'cast'），普攻事件走 attack。
+ */
+function duelActionState(
+  duel: ExpeditionDuel | null | undefined,
+  battleElapsedSeconds: number,
+  attackerIsInitiatorSide: boolean,
+  fallbackIntervalMilliseconds: number,
+  serverNowUnixMilliseconds: number,
+  abilities: readonly CombatAbilityDefinition[],
+): CombatActionState | null {
+  if (!duel || duel.resolved || duel.events.length === 0) return null
+  let previousAt = -1
+  for (const duelEvent of duel.events) {
+    if (duelEvent.attackerIsInitiator !== attackerIsInitiatorSide) continue
+    if (duelEvent.atSeconds > battleElapsedSeconds + 1e-9) {
+      const durationSeconds = previousAt >= 0
+        ? Math.max(0.1, duelEvent.atSeconds - previousAt)
+        : Math.max(0.1, fallbackIntervalMilliseconds / 1000)
+      const duration = Math.max(1, durationSeconds * 1000)
+      const remaining = Math.max(0, (duelEvent.atSeconds - battleElapsedSeconds) * 1000)
+      const ability = duelEvent.abilityId ? findAbilityInCatalog(abilities, duelEvent.abilityId) : undefined
+      return {
+        kind: ability ? 'cast' : 'attack',
+        name: ability?.name ?? 'attack',
+        durationMilliseconds: duration,
+        elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+        completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
+      }
+    }
+    previousAt = duelEvent.atSeconds
+  }
+  return null
+}
+
+/** 估算当前服务端 unix 毫秒（快照时刻 + 距同步的本地流逝），与徽章/动画调度同一时钟域。 */
+function estimateServerNowUnixMilliseconds(): number {
+  const state = useGameStore.getState()
+  return state.serverTimeUnixMilliseconds + Math.max(0, performance.now() - state.lastSyncPerformanceTime)
 }
 
 /**
@@ -1176,6 +1247,7 @@ export const CombatArena = memo(function CombatArena({
   const combat = useGameStore(state => state.combat)
   const combatResources = useGameStore(state => state.combatResources)
   const combatAttributes = useGameStore(state => state.combatAttributes)
+  const abilities = useGameStore(state => state.abilities)
   const buffs = useGameStore(state => state.buffs)
   const actions = useGameStore(state => state.actions)
   const encounters = useGameStore(state => state.encounters)
@@ -1206,8 +1278,8 @@ export const CombatArena = memo(function CombatArena({
 
   const fallbackMaxHp = combatAttributes?.maxHitpoints ?? BASELINE_COMBAT_ATTRIBUTES.maxHp
   const fallbackMaxMp = combatAttributes?.maxManapoints ?? BASELINE_COMBAT_ATTRIBUTES.maxMp
-  const playerMaxHp = expedition?.playerMaxHitpoints ?? combatResources?.maxHitpoints ?? fallbackMaxHp
-  const playerMaxMp = expedition?.playerMaxManapoints ?? combatResources?.maxManapoints ?? fallbackMaxMp
+  const playerMaxHp = combatResources?.maxHitpoints ?? fallbackMaxHp
+  const playerMaxMp = combatResources?.maxManapoints ?? fallbackMaxMp
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
   const phase = expedition?.phase ?? (isTravel ? 'travel' : isLifeAction ? 'life-action' : 'idle')
@@ -1217,27 +1289,28 @@ export const CombatArena = memo(function CombatArena({
   // 斗法相位例外：对手为玩家队伍镜像，不走 enemies[]，以 expedition.duel 载荷合成单个对手卡片，
   // 敌人名位置显示「斗法·对手道号」（duel-pending 显示「斗法感应中…」），血条布局不变。
   const enemyEntries = useMemo<EnemyDisplayState[]>(() => {
+    const battleElapsed = expedition?.battleElapsedSeconds ?? 0
+    const serverNow = estimateServerNowUnixMilliseconds()
     if (expedition?.phase === 'duel' || expedition?.phase === 'duel-pending') {
       const pending = expedition.phase === 'duel-pending'
       const name = pending
         ? t('combat.duel.sensing')
         : t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
-      const rawHp = expedition.enemyHitpoints ?? 0
-      const rawMp = expedition.enemyManapoints ?? 0
-      const maxHp = Math.max(1, expedition.enemyMaxHitpoints ?? 0, rawHp)
-      const maxMp = Math.max(1, expedition.enemyMaxManapoints ?? 0, rawMp)
+      // 斗法对手血量由 duel 回放载荷承载（撮合时锁定镜像、随剧本事件更新）；
+      // duel-pending 尚无回放载荷时以满额条占位，避免落入阵亡置灰样式。
+      const maxHp = Math.max(1, expedition.duel?.opponentMaxHitpoints ?? 1)
+      const hp = pending ? maxHp : Math.max(0, Math.min(maxHp, expedition.duel?.opponentHitpoints ?? maxHp))
       return [{
         actorKey: `enemy:duel:${expedition.duel?.opponentName || 'pending'}`,
         enemyId: null,
         name,
         seal: name.slice(0, 1),
-        // 斗法相位不下发 enemies[] 镜像：无对手血条数据（或为 0）时以满额条占位，
-        // 避免落入阵亡置灰样式；实际落败由相位切换/日志表达，不在此处体现。
-        hp: rawHp > 0 ? rawHp : maxHp,
+        hp,
         maxHp,
-        mp: rawMp > 0 ? rawMp : maxMp,
-        maxMp,
-        action: expedition.enemyAction ?? null,
+        // 回放载荷不含对手灵力：满额占位避免空条误导。
+        mp: 1,
+        maxMp: 1,
+        action: pending ? null : duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities),
         visual: null,
         definition: null,
       }]
@@ -1255,12 +1328,14 @@ export const CombatArena = memo(function CombatArena({
         maxHp: definition?.maxHitpoints ?? Math.max(1, entry.hitpoints),
         mp: entry.manapoints,
         maxMp: definition?.maxManapoints ?? Math.max(1, entry.manapoints),
-        action: null,
+        action: entry.hitpoints > 0 && expedition?.phase === 'combat'
+          ? attackActionState(entry.nextAttackAtSeconds, battleElapsed, definition?.attackIntervalMilliseconds ?? 0, serverNow)
+          : null,
         visual: definition?.visual ?? null,
         definition,
       }
     })
-  }, [activeEncounter, encounters, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.enemyHitpoints, expedition?.enemyMaxHitpoints, expedition?.enemyManapoints, expedition?.enemyMaxManapoints, expedition?.enemyAction, t])
+  }, [activeEncounter, abilities, encounters, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
 
   const inspectedEnemyIndex = inspectedActor?.startsWith('enemy:')
     ? Number(inspectedActor.slice(6))
@@ -1272,7 +1347,30 @@ export const CombatArena = memo(function CombatArena({
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (isCombat) {
-      return expedition?.playerAction ?? null
+      const battleElapsed = expedition?.battleElapsedSeconds ?? 0
+      const serverNow = estimateServerNowUnixMilliseconds()
+      const attackInterval = combatAttributes?.attackIntervalMilliseconds ?? 0
+      // 吟唱中的功法优先于普攻条展示；时长取配表 castMilliseconds，剩余由 combat 分段下发。
+      const castingId = combatResources?.castingAbilityId
+      if (castingId && (expedition?.phase === 'combat' || expedition?.phase === 'duel')) {
+        const ability = findAbilityInCatalog(abilities, castingId)
+        const duration = Math.max(1, ability?.castMilliseconds ?? combatResources?.castRemainingMilliseconds ?? 1)
+        const remaining = Math.max(0, combatResources?.castRemainingMilliseconds ?? 0)
+        return {
+          kind: 'cast',
+          name: ability?.name ?? castingId,
+          durationMilliseconds: duration,
+          elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+          completesAtUnixMilliseconds: serverNow + remaining,
+        }
+      }
+      if (expedition?.phase === 'combat') {
+        return attackActionState(expedition.playerNextAttackAtSeconds ?? 0, battleElapsed, attackInterval, serverNow)
+      }
+      if (expedition?.phase === 'duel') {
+        return duelActionState(expedition.duel, battleElapsed, expedition.duel?.isInitiator ?? true, attackInterval, serverNow, abilities)
+      }
+      return null
     }
     if ((isLifeAction || isTravel) && current) {
       const durSec = (isTravel && current.expedition?.durationSeconds) ? current.expedition.durationSeconds : current.durationSeconds
@@ -1291,7 +1389,7 @@ export const CombatArena = memo(function CombatArena({
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime])
+  }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities])
 
   // 详情弹窗当前敌人：默认为首个存活敌人。
   const enemy = inspectedEnemy
@@ -1308,19 +1406,19 @@ export const CombatArena = memo(function CombatArena({
 
     if (inspectedEnemy) {
       const enemyBaseRows: AttributeRow[] = [
-        { label: t('combat.attr.hp'), value: `${formatNumber(enemy?.hp ?? 0)} / ${formatNumber(enemy?.maxHp ?? 1)}` },
-        { label: t('combat.attr.mp'), value: `${formatNumber(enemy?.mp ?? 0)} / ${formatNumber(enemy?.maxMp ?? 1)}` },
-        { label: t('combat.attr.accuracy'), value: formatNumber(enemyDefinition?.accuracyRating ?? 0) },
-        { label: t('combat.attr.evasion'), value: formatNumber(enemyDefinition?.evasionRating ?? 0) },
-        { label: t('combat.attr.maxDamage'), value: formatNumber(enemyDefinition?.maxDamage ?? 0) },
-        { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
-        { label: t('combat.attr.armor'), value: formatNumber(enemyDefinition?.armor ?? 0) },
-        { label: t('combat.attr.magicRes'), value: formatNumber(enemyDefinition?.magicResistance ?? 0) },
-        { label: t('combat.attr.metalRes'), value: formatNumber(enemyDefinition?.metalResistance ?? 0) },
-        { label: t('combat.attr.woodRes'), value: formatNumber(enemyDefinition?.woodResistance ?? 0) },
-        { label: t('combat.attr.waterRes'), value: formatNumber(enemyDefinition?.waterResistance ?? 0) },
-        { label: t('combat.attr.fireRes'), value: formatNumber(enemyDefinition?.fireResistance ?? 0) },
-        { label: t('combat.attr.earthRes'), value: formatNumber(enemyDefinition?.earthResistance ?? 0) },
+        { label: t('combat.attr.hp'), value: `${formatInteger(enemy?.hp ?? 0)} / ${formatInteger(enemy?.maxHp ?? 1)}` },
+        { label: t('combat.attr.mp'), value: `${formatInteger(enemy?.mp ?? 0)} / ${formatInteger(enemy?.maxMp ?? 1)}` },
+        { label: t('combat.attr.accuracy'), value: formatInteger(enemyDefinition?.accuracyRating ?? 0) },
+        { label: t('combat.attr.evasion'), value: formatInteger(enemyDefinition?.evasionRating ?? 0) },
+        { label: t('combat.attr.maxDamage'), value: formatInteger(enemyDefinition?.maxDamage ?? 0) },
+        { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: Math.round((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
+        { label: t('combat.attr.armor'), value: formatInteger(enemyDefinition?.armor ?? 0) },
+        { label: t('combat.attr.magicRes'), value: formatInteger(enemyDefinition?.magicResistance ?? 0) },
+        { label: t('combat.attr.metalRes'), value: formatInteger(enemyDefinition?.metalResistance ?? 0) },
+        { label: t('combat.attr.woodRes'), value: formatInteger(enemyDefinition?.woodResistance ?? 0) },
+        { label: t('combat.attr.waterRes'), value: formatInteger(enemyDefinition?.waterResistance ?? 0) },
+        { label: t('combat.attr.fireRes'), value: formatInteger(enemyDefinition?.fireResistance ?? 0) },
+        { label: t('combat.attr.earthRes'), value: formatInteger(enemyDefinition?.earthResistance ?? 0) },
       ]
       const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'regen']> = [
         [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
@@ -1338,36 +1436,36 @@ export const CombatArena = memo(function CombatArena({
         .map(([label, value, kind]) => ({
           label,
           value: kind === 'percent'
-            ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
+            ? `${value > 0 ? '+' : ''}${Math.round(value * 100)}%`
             : kind === 'regen'
-              ? `+${formatNumber(value)} / 5s`
+              ? `+${formatInteger(value)} / 5s`
               : kind === 'milliseconds'
-                ? t('combat.attr.seconds', { n: formatNumber(value / 1000) })
-                : formatNumber(value),
+                ? t('combat.attr.seconds', { n: Math.round(value / 1000) })
+                : formatInteger(value),
         }))
       return { baseRows: enemyBaseRows, specialRows: enemySpecialRows }
     }
 
     const playerBaseRows: AttributeRow[] = [
-      { label: t('combat.attr.hp'), value: `${formatNumber(playerHp)} / ${formatNumber(playerMaxHp)}` },
-      { label: t('combat.attr.mp'), value: `${formatNumber(playerMp)} / ${formatNumber(playerMaxMp)}` },
-      { label: t('combat.attr.stamina'), value: formatNumber(combat?.staminaLevel ?? 0) },
-      { label: t('combat.attr.meridian'), value: formatNumber(combat?.intelligenceLevel ?? 0) },
-      { label: t('combat.attr.defense'), value: formatNumber(combat?.defenseLevel ?? 0) },
-      { label: t('combat.attr.attack'), value: formatNumber(combat?.attackLevel ?? 0) },
-      { label: t('combat.attr.divineSense'), value: formatNumber(combat?.swordsmanshipLevel ?? 0) },
-      { label: t('combat.attr.movement'), value: formatNumber(combat?.talismanLevel ?? 0) },
-      { label: t('combat.attr.power'), value: formatNumber(combatAttributes?.maxDamage ?? 0) },
-      { label: t('combat.attr.accuracy'), value: formatNumber(combatAttributes?.accuracyRating ?? 0) },
-      { label: t('combat.attr.evasion'), value: formatNumber(combatAttributes?.evasionRating ?? 0) },
-      { label: t('combat.attr.armor'), value: formatNumber(combatAttributes?.armor ?? 0) },
-      { label: t('combat.attr.magicRes'), value: formatNumber(combatAttributes?.magicResistance ?? 0) },
-      { label: t('combat.attr.metalRes'), value: formatNumber(combatAttributes?.metalResistance ?? 0) },
-      { label: t('combat.attr.woodRes'), value: formatNumber(combatAttributes?.woodResistance ?? 0) },
-      { label: t('combat.attr.waterRes'), value: formatNumber(combatAttributes?.waterResistance ?? 0) },
-      { label: t('combat.attr.fireRes'), value: formatNumber(combatAttributes?.fireResistance ?? 0) },
-      { label: t('combat.attr.earthRes'), value: formatNumber(combatAttributes?.earthResistance ?? 0) },
-      { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: formatNumber((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
+      { label: t('combat.attr.hp'), value: `${formatInteger(playerHp)} / ${formatInteger(playerMaxHp)}` },
+      { label: t('combat.attr.mp'), value: `${formatInteger(playerMp)} / ${formatInteger(playerMaxMp)}` },
+      { label: t('combat.attr.stamina'), value: formatInteger(combat?.staminaLevel ?? 0) },
+      { label: t('combat.attr.meridian'), value: formatInteger(combat?.intelligenceLevel ?? 0) },
+      { label: t('combat.attr.defense'), value: formatInteger(combat?.defenseLevel ?? 0) },
+      { label: t('combat.attr.attack'), value: formatInteger(combat?.attackLevel ?? 0) },
+      { label: t('combat.attr.divineSense'), value: formatInteger(combat?.swordsmanshipLevel ?? 0) },
+      { label: t('combat.attr.movement'), value: formatInteger(combat?.talismanLevel ?? 0) },
+      { label: t('combat.attr.power'), value: formatInteger(combatAttributes?.maxDamage ?? 0) },
+      { label: t('combat.attr.accuracy'), value: formatInteger(combatAttributes?.accuracyRating ?? 0) },
+      { label: t('combat.attr.evasion'), value: formatInteger(combatAttributes?.evasionRating ?? 0) },
+      { label: t('combat.attr.armor'), value: formatInteger(combatAttributes?.armor ?? 0) },
+      { label: t('combat.attr.magicRes'), value: formatInteger(combatAttributes?.magicResistance ?? 0) },
+      { label: t('combat.attr.metalRes'), value: formatInteger(combatAttributes?.metalResistance ?? 0) },
+      { label: t('combat.attr.woodRes'), value: formatInteger(combatAttributes?.woodResistance ?? 0) },
+      { label: t('combat.attr.waterRes'), value: formatInteger(combatAttributes?.waterResistance ?? 0) },
+      { label: t('combat.attr.fireRes'), value: formatInteger(combatAttributes?.fireResistance ?? 0) },
+      { label: t('combat.attr.earthRes'), value: formatInteger(combatAttributes?.earthResistance ?? 0) },
+      { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: Math.round((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
     ]
     const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen']> = [
       [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
@@ -1392,10 +1490,10 @@ export const CombatArena = memo(function CombatArena({
       .map(([label, value, kind]) => ({
         label,
         value: kind === 'percent'
-          ? `${value > 0 ? '+' : ''}${Math.round(value * 1000) / 10}%`
+          ? `${value > 0 ? '+' : ''}${Math.round(value * 100)}%`
           : kind === 'regen'
-            ? `+${formatNumber(value)} / 5s`
-            : formatNumber(value),
+            ? `+${formatInteger(value)} / 5s`
+            : formatInteger(value),
       }))
 
     return { baseRows: playerBaseRows, specialRows: playerSpecialRows }
@@ -1451,7 +1549,7 @@ export const CombatArena = memo(function CombatArena({
               <div className="arena-formation arena-formation--enemies">
                 {enemyEntries.map((entry, index) => (
                   <div
-                    className={`arena-slot arena-slot--occupied arena-slot--slot-${index + 1}${entry.hp <= 0 ? ' arena-slot--slain' : ''}`}
+                    className={`arena-slot arena-slot--occupied arena-slot--slot-${ENEMY_DEPTH_SLOTS[Math.min(index, ENEMY_DEPTH_SLOTS.length - 1)]}${entry.hp <= 0 ? ' arena-slot--slain' : ''}`}
                     key={`enemy-slot-${index + 1}`}
                   >
                     <ArenaActor
