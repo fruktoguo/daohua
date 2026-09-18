@@ -9,9 +9,20 @@ using Domain.GameData;
 using Domain.Market;
 using Protocol;
 using Server.Clean;
+using Server.Clean.Ops;
 
 var builder = WebApplication.CreateBuilder(args);
 var processRole = ResolveProcessRole(args);
+var startedAt = DateTimeOffset.UtcNow;
+var opsOptions = OpsOptions.From(builder.Configuration);
+// 运维面板严格限定 Development + API 角色：生产环境即便配置误开也不装配。
+var opsPanelEnabled = opsOptions.Enabled && processRole == ServerProcessRole.Api && builder.Environment.IsDevelopment();
+OpsLogBuffer? opsLogBuffer = null;
+if (opsPanelEnabled)
+{
+    opsLogBuffer = new OpsLogBuffer(opsOptions.LogBufferCapacity);
+    builder.Logging.AddProvider(opsLogBuffer);
+}
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -26,12 +37,24 @@ if (processRole == ServerProcessRole.PersistenceWorker
     // 持久化 worker 不接受公网流量；保留本地健康端点便于容器探针使用。
     builder.WebHost.UseUrls("http://127.0.0.1:0");
 }
-else if (processRole == ServerProcessRole.Api
-         && string.IsNullOrWhiteSpace(builder.Configuration["Server:Urls"])
-         && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS"))
-         && string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")))
+else if (processRole == ServerProcessRole.Api)
 {
-    builder.WebHost.UseUrls("http://127.0.0.1:5128");
+    var explicitUrls = builder.Configuration["Server:Urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+    var hasExplicitPorts = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS"));
+    if (string.IsNullOrWhiteSpace(explicitUrls) && !hasExplicitPorts)
+    {
+        // 未显式配置时绑定本地回环默认端口；面板启用则同时绑定独立运维端口。
+        var urls = new List<string> { "http://127.0.0.1:5128" };
+        if (opsPanelEnabled) urls.Add(opsOptions.Url);
+        builder.WebHost.UseUrls([.. urls]);
+    }
+    else if (opsPanelEnabled && !string.IsNullOrWhiteSpace(explicitUrls))
+    {
+        // 已显式配置主端口：保留原地址并追加运维端口。
+        var urls = explicitUrls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        urls.Add(opsOptions.Url);
+        builder.WebHost.UseUrls([.. urls]);
+    }
 }
 
 builder.Services.AddProblemDetails();
@@ -87,12 +110,18 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<MarketRuntime>();
     builder.Services.AddSingleton<PlayerRuntime>();
     builder.Services.AddSingleton<SessionRegistry>();
+    builder.Services.AddSingleton(options.AntiMultiOpen);
+    builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.DeviceQuotaRegistry>();
+    builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.AntiMultiOpenAdmission>();
     builder.Services.AddDaohuaAuthentication();
+    if (opsLogBuffer is not null) builder.Services.AddSingleton(opsLogBuffer);
 }
 
 // 两种进程都需要 section/outbox 存储；worker 只装配这两个后台消费边界。
 builder.Services.AddSingleton<PostgresSectionRepository>();
 builder.Services.AddSingleton<IPlayerStateRepository>(sp => sp.GetRequiredService<PostgresSectionRepository>());
+builder.Services.AddSingleton<PostgresNodeBuildingRepository>();
+builder.Services.AddSingleton<NodeBuildingRegistry>();
 builder.Services.AddSingleton<IOutboxRepository, PostgresOutboxRepository>();
 builder.Services.AddSingleton<ICommandReceiptStore, PostgresCommandReceiptRepository>();
 builder.Services.AddSingleton<PostgresRetentionRepository>();
@@ -124,6 +153,8 @@ var releaseVersion = typeof(Program).Assembly.GetCustomAttribute<AssemblyInforma
 
 app.UseExceptionHandler();
 app.UseForwardedHeaders();
+// 运维面板端口门禁必须早于静态文件与路由：非运维端口访问面板路径一律 404。
+if (opsPanelEnabled) app.UseOpsGate(opsOptions);
 
 app.MapHealthChecks("/healthz", new HealthCheckOptions
 {
@@ -138,7 +169,11 @@ app.MapHealthChecks("/readyz", new HealthCheckOptions
 
 if (processRole == ServerProcessRole.Api)
 {
-    app.UseStaticFiles();
+    // 生产镜像把前端构建产物拷入 wwwroot；本地开发由 Vite 提供前端，wwwroot 不存在。
+    // 仅在静态站点根存在时装配静态文件与 SPA 回退，避免开发态刷出 WebRootPath 告警。
+    var webRootPath = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+    var hasWebRoot = Directory.Exists(webRootPath);
+    if (hasWebRoot) app.UseStaticFiles();
     app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
     app.UseAuthentication();
     app.UseAuthorization();
@@ -227,6 +262,11 @@ if (processRole == ServerProcessRole.Api)
     {
         ApplyCatalogHeaders(context, gameData.Fingerprint);
         return Results.Ok(StaticGameCatalogMapper.Encounters(gameData));
+    });
+    catalog.MapGet("/buildings", (HttpContext context, GameDataCatalog gameData) =>
+    {
+        ApplyCatalogHeaders(context, gameData.Fingerprint);
+        return Results.Ok(StaticGameCatalogMapper.Buildings(gameData));
     });
 
     var auth = app.MapGroup("/api/v1/auth");
@@ -398,8 +438,9 @@ if (processRole == ServerProcessRole.Api)
         });
     }).RequireAuthorization();
     app.Map("/ws", WebSocketEndpoint.HandleAsync);
+    if (opsPanelEnabled) app.MapOpsPanel(opsOptions, releaseVersion, startedAt);
     app.MapFallback("/api/{**path}", () => Results.NotFound(Problem(404, "NOT_FOUND", "接口不存在。")));
-    app.MapFallbackToFile("index.html");
+    if (hasWebRoot) app.MapFallbackToFile("index.html");
 }
 
 app.Run();

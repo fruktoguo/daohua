@@ -74,6 +74,9 @@ public sealed record ServerOptions(
     /// <summary>冷挂机筛选窗口：只处理最近活跃不超过该时长的玩家（对齐 48 小时离线收益封顶）</summary>
     public TimeSpan ColdCatchUpWindow { get; init; } = TimeSpan.FromHours(48);
 
+    /// <summary>防多开子系统开关与配额（AntiMultiOpen:* 配置节）</summary>
+    public global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions AntiMultiOpen { get; init; } = global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions.Default;
+
     /// <summary>派发链是否具备可运行配置（启用 + 至少一个端点 + 令牌齐备）</summary>
     public bool ComputeNodeConfigured =>
         ComputeNodeEnabled && ComputeNodeEndpoints.Count > 0 && !string.IsNullOrWhiteSpace(ComputeNodeToken);
@@ -189,7 +192,8 @@ public sealed record ServerOptions(
             ColdCatchUpInterval = TimeSpan.FromSeconds(coldScanSeconds),
             ColdCatchUpBatchSize = coldBatchSize,
             ColdCatchUpMinIdle = TimeSpan.FromMinutes(coldMinIdleMinutes),
-            ColdCatchUpWindow = TimeSpan.FromHours(coldWindowHours)
+            ColdCatchUpWindow = TimeSpan.FromHours(coldWindowHours),
+            AntiMultiOpen = global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions.From(configuration)
         };
     }
 

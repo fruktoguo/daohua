@@ -1,0 +1,294 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>道化太初 · 本地运维面板</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --border: #2a323d; --text: #d6dde6;
+    --muted: #8b98a8; --accent: #6ea8fe; --ok: #3fb950; --warn: #d29922; --err: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
+  header h1 { font-size: 15px; margin: 0; color: var(--accent); }
+  header .meta { color: var(--muted); font-size: 12px; }
+  .banner { margin: 8px 16px 0; padding: 8px 12px; border: 1px solid var(--warn); border-radius: 6px; color: var(--warn); font-size: 12px; }
+  nav { display: flex; gap: 4px; padding: 10px 16px 0; flex-wrap: wrap; }
+  nav button { background: var(--panel); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  nav button.active { color: var(--text); border-color: var(--accent); }
+  main { padding: 16px; }
+  section { display: none; }
+  section.active { display: block; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .card .k { color: var(--muted); font-size: 11px; }
+  .card .v { font-size: 16px; margin-top: 4px; word-break: break-all; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: normal; position: sticky; top: 0; background: var(--bg); }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  input, select, button.action { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font: inherit; }
+  button.action { cursor: pointer; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .muted { color: var(--muted); }
+  .log { border-bottom: 1px solid var(--border); padding: 5px 0; display: flex; gap: 8px; }
+  .log .t { color: var(--muted); flex: 0 0 88px; }
+  .log .l { flex: 0 0 54px; }
+  .log .c { color: var(--muted); flex: 0 0 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log .m { flex: 1; white-space: pre-wrap; word-break: break-word; }
+  .log pre { margin: 4px 0 0; color: var(--err); white-space: pre-wrap; }
+  .err-box { color: var(--err); padding: 8px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>道化太初 · 本地运维面板</h1>
+  <span class="meta" id="headMeta">加载中…</span>
+</header>
+<div class="banner">仅本地开发使用：面板只监听本机与局域网私有网段，请勿在生产环境暴露。</div>
+<nav>
+  <button data-tab="overview" class="active">概览</button>
+  <button data-tab="health">健康</button>
+  <button data-tab="players">玩家</button>
+  <button data-tab="sessions">会话</button>
+  <button data-tab="market">市场</button>
+  <button data-tab="logs">日志</button>
+</nav>
+<main>
+  <section id="tab-overview" class="active"><div id="overviewBody" class="muted">加载中…</div></section>
+  <section id="tab-health"><div id="healthBody" class="muted">加载中…</div></section>
+  <section id="tab-players"><div id="playersBody" class="muted">加载中…</div></section>
+  <section id="tab-sessions"><div id="sessionsBody" class="muted">加载中…</div></section>
+  <section id="tab-market">
+    <div class="toolbar">
+      <input id="mAsset" placeholder="assetId（物品 ID）" size="24" />
+      <input id="mVariant" placeholder="variant（可选）" size="14" />
+      <input id="mDepth" type="number" value="20" min="1" max="200" style="width:80px" />
+      <button class="action" id="mQuery">查询盘口</button>
+    </div>
+    <div id="marketBody" class="muted">输入品种后查询。</div>
+  </section>
+  <section id="tab-logs">
+    <div class="toolbar">
+      <select id="logLevel">
+        <option value="Trace">Trace+</option>
+        <option value="Debug">Debug+</option>
+        <option value="Information" selected>Information+</option>
+        <option value="Warning">Warning+</option>
+        <option value="Error">Error+</option>
+      </select>
+      <label class="muted"><input type="checkbox" id="logAuto" checked /> 自动刷新</label>
+      <button class="action" id="logRefresh">刷新</button>
+    </div>
+    <div id="logsBody" class="muted">加载中…</div>
+  </section>
+</main>
+<script>
+const BASE = location.pathname.replace(/\/+$/, '') || '/ops';
+
+async function getJson(path) {
+  const res = await fetch(BASE + path, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+function el(tag, cls, text) {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  return node;
+}
+function showError(target, err) {
+  target.replaceChildren(el('div', 'err-box', '加载失败：' + (err && err.message ? err.message : err)));
+}
+function fmtBytes(n) {
+  if (typeof n !== 'number') return '-';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let v = n, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return v.toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+function fmtDuration(seconds) {
+  if (typeof seconds !== 'number') return '-';
+  const s = Math.floor(seconds % 60), m = Math.floor(seconds / 60) % 60, h = Math.floor(seconds / 3600) % 24, d = Math.floor(seconds / 86400);
+  return `${d ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
+}
+function statusClass(status) {
+  if (status === 'healthy' || status === 'ok') return 'ok';
+  if (status === 'degraded') return 'warn';
+  return 'err';
+}
+function card(k, v, cls) {
+  const c = el('div', 'card');
+  c.append(el('div', 'k', k));
+  c.append(el('div', 'v ' + (cls || ''), v));
+  return c;
+}
+
+async function loadOverview() {
+  const target = document.getElementById('overviewBody');
+  try {
+    const d = await getJson('/api/overview');
+    const cards = el('div', 'cards');
+    cards.append(card('服务', d.service));
+    cards.append(card('环境', d.environment));
+    cards.append(card('版本', d.version));
+    cards.append(card('运行时长', fmtDuration(d.uptimeSeconds)));
+    cards.append(card('在线会话', d.sessions));
+    cards.append(card('已加载玩家', d.loadedPlayers));
+    cards.append(card('工作集内存', fmtBytes(d.workingSetBytes)));
+    cards.append(card('GC 托管内存', fmtBytes(d.gcTotalMemoryBytes)));
+    cards.append(card('线程数', d.threadCount));
+    cards.append(card('协议版本', d.protocolVersion));
+    cards.append(card('Schema 版本', d.schemaVersion));
+    cards.append(card('配表版本', d.gameDataVersion));
+    cards.append(card('市场分片', `${d.market.partitionCount}`));
+    cards.append(card('活动订单', d.market.activeOrderCount));
+    cards.append(card('累计挂单', d.market.placementCount));
+    cards.append(card('累计成交', d.market.matchCount));
+    cards.append(card('累计撤单', d.market.cancelCount));
+    cards.append(card('累计拒绝', d.market.rejectedCount));
+    const details = el('div', 'muted');
+    details.style.marginTop = '12px';
+    details.textContent = `主机 ${d.machineName} · 进程 ${d.processId} · CPU ${d.processorCount} 核 · 启动 ${new Date(d.startedAt).toLocaleString()} · 配表指纹 ${d.gameDataFingerprint}`;
+    target.replaceChildren(cards, details);
+    document.getElementById('headMeta').textContent =
+      `${d.service} · ${d.environment} · ${d.version} · 运行 ${fmtDuration(d.uptimeSeconds)} · 会话 ${d.sessions} / 玩家 ${d.loadedPlayers}`;
+  } catch (err) { showError(target, err); }
+}
+
+async function loadHealth() {
+  const target = document.getElementById('healthBody');
+  try {
+    const d = await getJson('/api/health');
+    const head = el('div', 'toolbar');
+    head.append(el('span', statusClass(d.status), '总体状态：' + d.status));
+    head.append(el('span', 'muted', `耗时 ${d.totalDurationMs.toFixed(1)} ms`));
+    const table = el('table');
+    const thead = el('tr');
+    ['检查项', '状态', '耗时(ms)', '标签', '说明', '异常'].forEach(h => thead.append(el('th', null, h)));
+    table.append(thead);
+    (d.checks || []).forEach(c => {
+      const tr = el('tr');
+      tr.append(el('td', null, c.name));
+      tr.append(el('td', statusClass(c.status), c.status));
+      tr.append(el('td', null, c.durationMs.toFixed(1)));
+      tr.append(el('td', 'muted', (c.tags || []).join(', ')));
+      tr.append(el('td', 'muted', c.description || ''));
+      tr.append(el('td', 'err', c.exception || ''));
+      table.append(tr);
+    });
+    target.replaceChildren(head, table);
+  } catch (err) { showError(target, err); }
+}
+
+async function loadPlayers() {
+  const target = document.getElementById('playersBody');
+  try {
+    const d = await getJson('/api/players');
+    if (!d.length) { target.replaceChildren(el('div', 'muted', '当前没有已加载玩家。')); return; }
+    const table = el('table');
+    const thead = el('tr');
+    ['玩家 ID', '账号', '道号', '在线状态', '状态版本', '上次模拟', '队列动作', '资产条目'].forEach(h => thead.append(el('th', null, h)));
+    table.append(thead);
+    d.forEach(p => {
+      const tr = el('tr');
+      tr.append(el('td', null, p.playerId));
+      tr.append(el('td', null, p.accountId));
+      tr.append(el('td', null, p.displayName));
+      tr.append(el('td', p.presence === 'online' ? 'ok' : 'muted', p.presence));
+      tr.append(el('td', null, p.stateVersion));
+      tr.append(el('td', 'muted', new Date(p.lastSimulatedAt).toLocaleString()));
+      tr.append(el('td', null, p.actionCount));
+      tr.append(el('td', null, p.assetCount));
+      table.append(tr);
+    });
+    target.replaceChildren(table);
+  } catch (err) { showError(target, err); }
+}
+
+async function loadSessions() {
+  const target = document.getElementById('sessionsBody');
+  try {
+    const d = await getJson('/api/sessions');
+    if (!d.length) { target.replaceChildren(el('div', 'muted', '当前没有在线会话。')); return; }
+    const list = el('div');
+    d.forEach(id => list.append(el('div', 'log', id)));
+    target.replaceChildren(el('div', 'muted', `在线会话 ${d.length} 个`), list);
+  } catch (err) { showError(target, err); }
+}
+
+async function queryMarket() {
+  const target = document.getElementById('marketBody');
+  const assetId = document.getElementById('mAsset').value.trim();
+  const variant = document.getElementById('mVariant').value.trim();
+  const depth = document.getElementById('mDepth').value || '20';
+  if (!assetId) { target.replaceChildren(el('div', 'muted', '请输入 assetId。')); return; }
+  try {
+    const url = `/api/market/book?assetId=${encodeURIComponent(assetId)}&variant=${encodeURIComponent(variant)}&depth=${encodeURIComponent(depth)}`;
+    const d = await getJson(url);
+    const head = el('div', 'muted', `品种 ${d.assetId}${d.variant ? '/' + d.variant : ''} · 版本 ${d.version} · 采集 ${new Date(d.capturedAt).toLocaleString()}`);
+    const table = el('table');
+    const thead = el('tr');
+    ['方向', '档位', '价格', '数量', '订单数'].forEach(h => thead.append(el('th', null, h)));
+    table.append(thead);
+    (d.asks || []).slice().reverse().forEach((lvl, i) => table.append(levelRow('卖', i + 1, lvl, 'err')));
+    (d.bids || []).forEach((lvl, i) => table.append(levelRow('买', i + 1, lvl, 'ok')));
+    target.replaceChildren(head, table);
+  } catch (err) { showError(target, err); }
+}
+function levelRow(side, rank, lvl, cls) {
+  const tr = el('tr');
+  tr.append(el('td', cls, side));
+  tr.append(el('td', null, rank));
+  tr.append(el('td', null, lvl.price));
+  tr.append(el('td', null, lvl.quantity));
+  tr.append(el('td', 'muted', lvl.orders));
+  return tr;
+}
+
+async function loadLogs() {
+  const target = document.getElementById('logsBody');
+  try {
+    const level = document.getElementById('logLevel').value;
+    const d = await getJson(`/api/logs?level=${encodeURIComponent(level)}&limit=300`);
+    if (!d.length) { target.replaceChildren(el('div', 'muted', '暂无日志。')); return; }
+    const frag = document.createDocumentFragment();
+    d.forEach(entry => {
+      const row = el('div', 'log');
+      row.append(el('span', 't', new Date(entry.timestamp).toLocaleTimeString()));
+      row.append(el('span', 'l ' + statusClass(entry.level.toLowerCase()), entry.level));
+      row.append(el('span', 'c', entry.category));
+      const msg = el('span', 'm');
+      msg.append(el('div', null, entry.message));
+      if (entry.exception) msg.append(el('pre', null, entry.exception));
+      row.append(msg);
+      frag.append(row);
+    });
+    target.replaceChildren(frag);
+  } catch (err) { showError(target, err); }
+}
+
+const loaders = { overview: loadOverview, health: loadHealth, players: loadPlayers, sessions: loadSessions, logs: loadLogs };
+document.querySelectorAll('nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === 'tab-' + btn.dataset.tab));
+    const loader = loaders[btn.dataset.tab];
+    if (loader) loader();
+  });
+});
+document.getElementById('mQuery').addEventListener('click', queryMarket);
+document.getElementById('logRefresh').addEventListener('click', loadLogs);
+document.getElementById('logLevel').addEventListener('change', loadLogs);
+document.getElementById('mAsset').addEventListener('keydown', e => { if (e.key === 'Enter') queryMarket(); });
+
+loadOverview();
+setInterval(() => {
+  if (document.getElementById('tab-overview').classList.contains('active')) loadOverview();
+  if (document.getElementById('tab-logs').classList.contains('active') && document.getElementById('logAuto').checked) loadLogs();
+}, 3000);
+</script>
+</body>
+</html>

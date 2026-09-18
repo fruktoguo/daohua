@@ -29,4 +29,11 @@
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- 本地运维面板页面：嵌入程序集，避免依赖 wwwroot（Development 下无静态站点根）。 -->
+    <EmbeddedResource Include="Clean/Ops/OpsPage.html">
+      <LogicalName>Server.Ops.OpsPage.html</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

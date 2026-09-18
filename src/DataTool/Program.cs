@@ -135,6 +135,7 @@ static void ValidateReferences(string directory)
     var actions = CollectIds(directory, "actions");
     var abilities = CollectIds(directory, "abilities");
     var items = CollectIds(directory, "items");
+    var buildingIds = CollectIds(directory, "buildings");
     var nodeIds = new HashSet<string>(StringComparer.Ordinal);
     var mapEdges = new List<(string From, string To, string File)>();
 
@@ -151,6 +152,13 @@ static void ValidateReferences(string directory)
                     Require(encounters.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的遭遇 {id}。");
                 foreach (var id in StringArray(node, "availableActionIds"))
                     Require(actions.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 引用了不存在的行动 {id}。");
+                // 节点可建列表：buildableList 自定义 ID 或 buildableTemplate 分组模板二选一。
+                foreach (var id in StringArray(node, "buildableList"))
+                    Require(buildingIds.Contains(id), $"{Rel(directory, file)} 节点 {nodeId} 可建列表引用了不存在的建筑 {id}。");
+                var buildableTemplate = Text(node, "buildableTemplate");
+                if (buildableTemplate.Length > 0)
+                    Require(buildableTemplate is "all" or "production" or "combat" or "other",
+                        $"{Rel(directory, file)} 节点 {nodeId} 的 buildableTemplate={buildableTemplate} 不是合法模板。");
             }
             foreach (var edge in Elements(Property(map, "edges")))
                 mapEdges.Add((Text(edge, "fromNodeId"), Text(edge, "toNodeId"), Rel(directory, file)));
@@ -235,6 +243,27 @@ static void ValidateReferences(string directory)
                 Require(encounters.Contains(encounterId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的遭遇 {encounterId}。");
             foreach (var nodeId in StringArray(action, "availableNodeIds"))
                 Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的地图节点 {nodeId}。");
+        }
+    }
+
+    foreach (var file in JsonFiles(directory, "buildings"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var building in Elements(doc.RootElement))
+        {
+            var id = Text(building, "id");
+            foreach (var nodeId in StringArray(building, "availableNodeIds"))
+                Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 建筑 {id} 引用了不存在的地图节点 {nodeId}。");
+            var group = Text(building, "group");
+            Require(group is "production" or "combat" or "other",
+                $"{Rel(directory, file)} 建筑 {id} 的 group={group} 不是合法分组。");
+            foreach (var material in Elements(Property(building, "materials")))
+            {
+                Require(items.Contains(Text(material, "itemId")),
+                    $"{Rel(directory, file)} 建筑 {id} 材料引用了不存在的物品 {Text(material, "itemId")}。");
+                Require(Number(material, "quantity", 0) > 0,
+                    $"{Rel(directory, file)} 建筑 {id} 材料 {Text(material, "itemId")} 数量必须为正数。");
+            }
         }
     }
 }

@@ -77,7 +77,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 
             if (attempt < maxAcquireAttempts)
             {
-                _logger.LogWarning(
+                // 热重启期间旧实例租约未过期属于预期等待：只保留首条告警，后续重试降级为 Debug，
+                // 避免每次启动刷出数十行同义日志。租约最终仍未取得时由下方异常统一暴露。
+                _logger.Log(
+                    attempt == 1 ? LogLevel.Warning : LogLevel.Debug,
                     "市场分片租约暂不可用 partition={PartitionId} attempt={Attempt}/{MaxAttempts}，等待旧实例租约自然过期",
                     _options.MarketPartitionId,
                     attempt,

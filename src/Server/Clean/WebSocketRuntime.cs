@@ -17,6 +17,7 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
         SingleReader = true,
         SingleWriter = false
     });
+    private readonly TaskCompletionSource _teardownCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _outboundSequence;
     private IReadOnlyList<AssetBalanceDto>? _lastPushedAssets;
     private Dictionary<string, string>? _lastPushedSectionChecksums;
@@ -25,6 +26,15 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     public Guid PlayerId { get; } = playerId;
     /// <summary>下行消息输出通道读取端</summary>
     public ChannelReader<byte[]> Outbound => _outbound.Reader;
+    /// <summary>
+    /// 会话被服务端主动终止时应使用的 WebSocket 关闭码与原因；
+    /// 由防多开准入模块在踢出/拒绝路径上设置（先写字段再 Complete 通道，发送循环完成即建立可见性）。
+    /// </summary>
+    public (int CloseCode, string Reason)? CloseHint { get; private set; }
+    /// <summary>准入时登记的设备指纹；未启用设备配额或未通过准入时为 null</summary>
+    public string? DeviceFingerprint { get; set; }
+    /// <summary>会话拆除（含事件退订、注册表释放与必要的 Actor 卸载）全部完成后置位</summary>
+    public Task TeardownCompleted => _teardownCompleted.Task;
     /// <summary>获取并递增下一个下行信封帧序列号</summary>
     public long NextOutboundSequence() => Interlocked.Increment(ref _outboundSequence);
     /// <summary>向输出通道异步投递待发送的数据包（满时等待背压）</summary>
@@ -33,6 +43,23 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     public bool TrySend(byte[] packet) => _outbound.Writer.TryWrite(packet);
     /// <summary>标记输出通道完成并关闭</summary>
     public void Complete() => _outbound.Writer.TryComplete();
+
+    /// <summary>
+    /// 请求服务端主动终止本会话：可选地先把一个通知帧排入发送队列，再完成输出通道，
+    /// 由所属 HandleAsync 在收尾阶段按 CloseHint 发送 WebSocket 关闭帧。可重复调用，幂等。
+    /// </summary>
+    /// <param name="closeCode">自定义关闭码（4000-4999 私有段）</param>
+    /// <param name="reason">关闭原因</param>
+    /// <param name="noticePacket">可选的下行通知帧（如 Error 包），在关闭前随队列余量一并冲刷</param>
+    public void RequestClose(int closeCode, string reason, byte[]? noticePacket = null)
+    {
+        if (noticePacket is not null) TrySend(noticePacket);
+        CloseHint = (closeCode, reason);
+        Complete();
+    }
+
+    /// <summary>标记会话拆除全部完成，唤醒正在等待顶替他位的后续会话</summary>
+    public void MarkTeardownCompleted() => _teardownCompleted.TrySetResult();
 
     /// <summary>记录本次推送的资产并返回上次基线；增量回调由模拟循环串行驱动，无需加锁。</summary>
     public IReadOnlyList<AssetBalanceDto>? ExchangeAssetBaseline(IReadOnlyList<AssetBalanceDto> current)
@@ -63,25 +90,61 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
 public sealed class SessionRegistry
 {
     private readonly ConcurrentDictionary<Guid, WebSocketSession> _sessions = new();
-    /// <summary>
-    /// 获取 Count。
-    /// </summary>
+    /// <summary>当前在线会话数。</summary>
     public int Count => _sessions.Count;
+    /// <summary>在线会话玩家 ID 快照（本地运维面板只读视图）。</summary>
+    public IReadOnlyList<Guid> SnapshotPlayerIds() => _sessions.Keys.ToArray();
     /// <summary>
-    /// 尝试Add。
+    /// 互斥语义登记：玩家无在线会话时登记成功；已有在线会话时返回 false，调用方负责拒绝新连接。
     /// </summary>
-    /// <param name="session">参数 session。</param>
-    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
+    /// <param name="session">待登记的新会话。</param>
     public bool TryAdd(WebSocketSession session) => _sessions.TryAdd(session.PlayerId, session);
+
     /// <summary>
-    /// 执行Remove。
+    /// 互踢语义登记：原子地把会话注册为指定玩家的当前会话；
+    /// 若已有旧会话则完成替换并通过 <paramref name="kicked"/> 输出，由调用方负责通知与终止它。
+    /// </summary>
+    /// <param name="session">要登记的新会话</param>
+    /// <param name="kicked">被顶替下来的旧会话；不存在时为 null</param>
+    /// <returns>登记始终成功，返回 true</returns>
+    public bool AddOrKick(WebSocketSession session, out WebSocketSession? kicked)
+    {
+        while (true)
+        {
+            if (_sessions.TryGetValue(session.PlayerId, out var existing))
+            {
+                if (ReferenceEquals(existing, session))
+                {
+                    kicked = null;
+                    return true;
+                }
+                if (_sessions.TryUpdate(session.PlayerId, session, existing))
+                {
+                    kicked = existing;
+                    return true;
+                }
+                continue;
+            }
+            if (_sessions.TryAdd(session.PlayerId, session))
+            {
+                kicked = null;
+                return true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// 按实例配对移除会话：只有登记的仍是同一个会话实例时才真正移除，
+    /// 被顶替的旧会话拆除时不会误摘新会话的注册位。
     /// </summary>
     /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="session">参数 session。</param>
-    public void Remove(Guid playerId, WebSocketSession session)
+    /// <param name="session">期望移除的会话实例，按引用与注册表中的当前会话比对。</param>
+    /// <returns>该会话仍为注册表中的当前会话且已移除时返回 true</returns>
+    public bool Remove(Guid playerId, WebSocketSession session)
     {
-        ((ICollection<KeyValuePair<Guid, WebSocketSession>>)_sessions).Remove(new(playerId, session));
+        var removed = ((ICollection<KeyValuePair<Guid, WebSocketSession>>)_sessions).Remove(new(playerId, session));
         session.Complete();
+        return removed;
     }
 }
 
@@ -113,17 +176,14 @@ public static class WebSocketEndpoint
         }
 
         var options = context.RequestServices.GetRequiredService<ServerOptions>();
-        var registry = context.RequestServices.GetRequiredService<SessionRegistry>();
+        var admission = context.RequestServices.GetRequiredService<AntiMultiOpen.AntiMultiOpenAdmission>();
         var runtime = context.RequestServices.GetRequiredService<PlayerRuntime>();
         var gameData = context.RequestServices.GetRequiredService<Domain.GameData.GameDataCatalog>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("WebSocketEndpoint");
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var session = new WebSocketSession(playerId, options.WebSocketOutboundCapacity);
-        if (!registry.TryAdd(session))
-        {
-            await socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, "玩家已有连接。", context.RequestAborted);
-            return;
-        }
+        // 会话准入（单账号互踢/拒绝 + 设备配额）推迟到 Hello 处理时统一裁决：
+        // 设备指纹只随 Hello 载荷到达，accept 阶段缺少裁决所需的全部输入。
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var token = linked.Token;
@@ -145,8 +205,19 @@ public static class WebSocketEndpoint
         try
         {
             var sendTask = SendLoopAsync(socket, session, token);
-            var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, token, options.MaxWebSocketMessageBytes, logger);
+            var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger);
             await Task.WhenAny(sendTask, receiveTask);
+            // 服务端主动终止路径（被顶替/准入拒绝）：先冲刷通知帧再发关闭帧。
+            // 顺序硬约束：取消令牌会中止阻塞中的 ReceiveAsync 并把 socket 置为 Aborted，
+            // 此后任何 CloseAsync 都无效，客户端只能收到 1006——所以关闭帧必须先于 linked.Cancel()。
+            if (session.CloseHint is { } hint)
+            {
+                try { await sendTask.WaitAsync(TimeSpan.FromMilliseconds(500)); } catch { }
+                if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                {
+                    try { await socket.CloseAsync((WebSocketCloseStatus)hint.CloseCode, hint.Reason, CancellationToken.None); } catch { socket.Abort(); }
+                }
+            }
             linked.Cancel();
             try { await Task.WhenAll(sendTask, receiveTask); } catch (OperationCanceledException) { }
         }
@@ -163,10 +234,17 @@ public static class WebSocketEndpoint
         {
             runtime.SnapshotUpdated -= OnSnapshotUpdated;
             runtime.LogBatchEmitted -= OnLogBatchEmitted;
-            registry.Remove(playerId, session);
+            // 会话释放按实例配对：被顶替的旧会话返回 false，不得触碰新会话已加载的 Actor。
+            var owned = admission.Release(session);
+            // 兜底关闭：主流程未发出关闭帧时（如发送循环异常）仍尝试按 CloseHint 收尾。
+            if (session.CloseHint is { } closeHint && socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            {
+                try { await socket.CloseAsync((WebSocketCloseStatus)closeHint.CloseCode, closeHint.Reason, CancellationToken.None); } catch { socket.Abort(); }
+            }
             // 关闭连接时使用独立取消令牌：请求已断开并不应中断权威状态刷盘。
             // 若数据库暂时不可用，RemoveAsync 保留 actor 与脏标记，后台 flush worker 会继续重试。
-            await runtime.RemoveAsync(playerId, true, CancellationToken.None);
+            if (owned) await runtime.RemoveAsync(playerId, true, CancellationToken.None);
+            session.MarkTeardownCompleted();
         }
     }
 
@@ -196,11 +274,12 @@ public static class WebSocketEndpoint
         WebSocketSession session,
         PlayerRuntime runtime,
         Domain.GameData.GameDataCatalog gameData,
+        AntiMultiOpen.AntiMultiOpenAdmission admission,
+        ServerOptions options,
         CancellationToken cancellationToken,
-        int maxMessageBytes,
         ILogger logger)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(maxMessageBytes, 64 * 1024));
+        var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(options.MaxWebSocketMessageBytes, 64 * 1024));
         long lastInboundSequence = 0;
         var handshaken = false;
         try
@@ -214,7 +293,7 @@ public static class WebSocketEndpoint
                     result = await socket.ReceiveAsync(buffer, cancellationToken);
                     if (result.MessageType == WebSocketMessageType.Close) return;
                     if (result.MessageType != WebSocketMessageType.Binary) throw new WebSocketException("只接受二进制协议帧。");
-                    if (stream.Length + result.Count > maxMessageBytes) throw new WebSocketException("消息超过大小限制。");
+                    if (stream.Length + result.Count > options.MaxWebSocketMessageBytes) throw new WebSocketException("消息超过大小限制。");
                     stream.Write(buffer, 0, result.Count);
                 } while (!result.EndOfMessage);
 
@@ -249,13 +328,33 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("GAME_DATA_MISMATCH", "客户端游戏数据版本不匹配。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
+                        // 防多开准入裁决：配额先于顶替，拒绝时通知帧随关闭码一并下发。
+                        var admit = admission.Admit(session, hello.DeviceFingerprint);
+                        if (!admit.Accepted)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId,
+                                new ErrorDto(admit.ErrorCode!, admit.Message ?? "连接被拒绝。", envelope.RequestId.ToString("D")), cancellationToken);
+                            session.RequestClose(admit.CloseCode!.Value, admit.Message ?? string.Empty);
+                            return;
+                        }
+                        if (admit.KickedSession is { } kicked)
+                        {
+                            var kickNotice = EncodeJson(WireMessageType.Error, Guid.NewGuid(), kicked.NextOutboundSequence(),
+                                new ErrorDto(AntiMultiOpen.AntiMultiOpenConstants.SessionKickedErrorCode, "账号已在其他窗口或设备登录，当前连接已被替换。", null));
+                            kicked.RequestClose(AntiMultiOpen.AntiMultiOpenConstants.SessionKickedCloseCode, "Kicked by a newer session.", kickNotice);
+                            // 等待旧会话完成拆除再加载 Actor：杜绝新旧会话并发驱动同一聚合、
+                            // 以及旧会话 finally 误删新加载 Actor 的竞态。
+                            try { await kicked.TeardownCompleted.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken); }
+                            catch (TimeoutException) { logger.LogWarning("被顶替会话拆除超时，继续准入 playerId={PlayerId}", session.PlayerId); }
+                        }
                         var serverVersion = typeof(WebSocketEndpoint).Assembly
                             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
                             .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
                             .FirstOrDefault()?.InformationalVersion ?? "unknown";
                         var helloAckSequence = session.NextOutboundSequence();
                         await session.SendAsync(EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
-                            new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence)), cancellationToken);
+                            new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence,
+                                new AntiMultiOpenConfigDto(options.AntiMultiOpen.TabGuardEnabled))), cancellationToken);
                         var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
                         var initialSnapshot = ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData);
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);

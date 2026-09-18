@@ -125,6 +125,17 @@ public static class PostgresSchema
         updated_at timestamptz NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS game.node_buildings (
+        node_id varchar(128) NOT NULL,
+        building_id varchar(128) NOT NULL,
+        level integer NOT NULL DEFAULT 0 CHECK (level >= 0),
+        target_level integer NOT NULL DEFAULT 0 CHECK (target_level >= 0),
+        started_at_unix_seconds double precision NOT NULL DEFAULT 0,
+        contributed_materials jsonb NOT NULL DEFAULT '{}'::jsonb,
+        updated_at timestamptz NOT NULL,
+        PRIMARY KEY (node_id, building_id)
+    );
+
     CREATE TABLE IF NOT EXISTS economy.player_asset_balances (
         player_id uuid NOT NULL REFERENCES identity.players(player_id),
         asset_id varchar(128) NOT NULL,

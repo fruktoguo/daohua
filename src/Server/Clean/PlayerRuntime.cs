@@ -48,7 +48,8 @@ public sealed class PlayerRuntime(
     MarketRuntime? marketRuntime = null,
     ICommandReceiptStore? commandReceipts = null,
     IPlayerOwnershipStore? ownership = null,
-    IAccountRepository? accounts = null) : IAsyncDisposable
+    IAccountRepository? accounts = null,
+    NodeBuildingRegistry? nodeBuildings = null) : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<Guid, Lazy<Task<PlayerActor>>> _actors = new();
     private readonly ActionCatalog _actions = gameData.Actions;
@@ -290,6 +291,24 @@ public sealed class PlayerRuntime(
         }
     }
 
+    /// <summary>全部已加载玩家中最早的可见事件边界；驱动宿主服务的动态唤醒节拍，无边界为 null。</summary>
+    public DateTimeOffset? NextAdvanceBoundaryUtc
+    {
+        get
+        {
+            DateTimeOffset? best = null;
+            foreach (var entry in _actors)
+            {
+                if (!entry.Value.IsValueCreated) continue;
+                if (entry.Value.Value is not { IsCompletedSuccessfully: true } task) continue;
+                var boundary = task.Result.NextVisibleBoundaryUtc;
+                if (boundary is null) continue;
+                if (best is null || boundary < best) best = boundary;
+            }
+            return best;
+        }
+    }
+
     /// <summary>
     /// 对单个已加载玩家执行一次脏 section 落盘；未加载时直接返回。
     /// </summary>
@@ -360,7 +379,6 @@ public sealed class PlayerRuntime(
                     previousFingerprint,
                     gameData.Fingerprint);
             }
-            aggregate.SetPresence(PresenceState.Online);
         }
             var balances = await assetRepository.LoadBalancesAsync(playerId, cancellationToken);
             var wallet = new AssetWallet(new PlayerId(playerId));
@@ -370,8 +388,10 @@ public sealed class PlayerRuntime(
                 balance.Quantity,
                 balance.Version)));
             var logBuffer = _logBuffers.GetOrAdd(playerId, _ => new PlayerLogBuffer(LogBufferCapacity));
-            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, gameData, logBuffer, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease, accounts);
+            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, gameData, logBuffer, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease, accounts, nodeBuildings);
             var advanced = await actor.AdvanceSimulationAsync(DateTimeOffset.UtcNow, cancellationToken);
+            // 重连补算在 Presence=Offline 下完成，离线收益正确归因离线账本；补算结束后才转入在线。
+            aggregate.SetPresence(PresenceState.Online);
             // 创建时的初始推进可能结算离线行动，产生的战报日志同样在锁外推送。
             await EmitLogBatchAsync(playerId, advanced?.LogEvents);
             return actor;
@@ -420,6 +440,26 @@ public sealed class PlayerRuntime(
     public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) =>
         _logBuffers.TryGetValue(playerId, out var buffer) ? buffer.SnapshotRecent() : [];
 
+    /// <summary>
+    /// 采集全部已加载玩家的只读快照，供本地运维面板展示。
+    /// 单个玩家创建或读取失败仅跳过，不影响整体视图。
+    /// </summary>
+    /// <param name="cancellationToken">取消标记。</param>
+    public async ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default)
+    {
+        var snapshots = new List<PlayerRuntimeSnapshot>(_actors.Count);
+        foreach (var entry in _actors)
+        {
+            if (!entry.Value.IsValueCreated) continue;
+            PlayerActor actor;
+            try { actor = await AwaitActorAsync(entry.Key, entry.Value, cancellationToken); }
+            catch { continue; }
+            try { snapshots.Add(await actor.SnapshotAsync(cancellationToken)); }
+            catch (Exception) { /* 只读诊断视图：单玩家读取失败跳过，不影响其余玩家展示。 */ }
+        }
+        return snapshots;
+    }
+
     private static Guid? TryReadRequestId(JsonElement payload)
     {
         return payload.ValueKind == JsonValueKind.Object
@@ -452,6 +492,8 @@ public sealed class PlayerRuntime(
         private readonly ICommandReceiptStore? commandReceipts;
         private readonly IPlayerOwnershipStore? ownership;
         private readonly IAccountRepository? accounts;
+        private readonly NodeBuildingRegistry? nodeBuildings;
+        private long _nodeBuildingSignature = long.MinValue;
         private readonly Guid ownerInstanceId;
         private readonly TimeSpan ownershipLease;
         private readonly SemaphoreSlim _gate = new(1, 1);
@@ -462,10 +504,23 @@ public sealed class PlayerRuntime(
         private readonly List<CommandReceipt> _pendingReceipts = [];
         private readonly Dictionary<string, long> _sectionVersions;
         private readonly LogThrottle _walletErrorLog = new(TimeSpan.FromMinutes(1));
+        private readonly LogThrottle _advanceErrorLog = new(TimeSpan.FromMinutes(1));
         private long _logicalVersion;
+        // 0 表示无可见边界；由单写者锁内刷新、宿主调度线程无锁读取。
+        private long _nextVisibleBoundaryUtcTicks;
         private bool _walletReloadRequired;
         private bool _disposed;
         private int _disposeStarted;
+
+        /// <summary>下一个用户可见事件边界的墙钟时刻；无边界（空闲/斗法等待/受阻）为 null。</summary>
+        public DateTimeOffset? NextVisibleBoundaryUtc
+        {
+            get
+            {
+                var ticks = Interlocked.Read(ref _nextVisibleBoundaryUtcTicks);
+                return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+            }
+        }
 
         /// <summary>
         /// 初始化 PlayerActor 的新实例。
@@ -502,7 +557,8 @@ public sealed class PlayerRuntime(
             IPlayerOwnershipStore? ownership,
             Guid ownerInstanceId,
             TimeSpan ownershipLease,
-            IAccountRepository? accounts = null)
+            IAccountRepository? accounts = null,
+            NodeBuildingRegistry? nodeBuildings = null)
         {
             this.aggregate = aggregate;
             this.bundle = bundle;
@@ -518,6 +574,7 @@ public sealed class PlayerRuntime(
             this.commandReceipts = commandReceipts;
             this.ownership = ownership;
             this.accounts = accounts;
+            this.nodeBuildings = nodeBuildings;
             this.ownerInstanceId = ownerInstanceId;
             this.ownershipLease = ownershipLease;
             _sectionVersions = bundle.Sections.ToDictionary(x => x.Key, x => x.Value.StateVersion, StringComparer.Ordinal);
@@ -823,6 +880,95 @@ public sealed class PlayerRuntime(
                         Touch();
                         break;
                     }
+                    case "building.build":
+                    {
+                        if (nodeBuildings is null) return Fail("BUILDING_UNAVAILABLE", "建筑服务未装配。");
+                        var buildingId = payload.TryGetProperty("buildingId", out var buildingElement) && buildingElement.ValueKind == JsonValueKind.String
+                            ? buildingElement.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(buildingId) || !gameData.Buildings.TryGetValue(buildingId, out var buildingDefinition))
+                            return Fail("BUILDING_NOT_FOUND", "建筑定义不存在。");
+                        if (aggregate.World.EdgeId is not null)
+                            return Fail("WRONG_LOCATION", "旅途中无法建造建筑。");
+                        if (buildingDefinition.AvailableNodeIds is { Count: > 0 } && !buildingDefinition.AvailableNodeIds.Contains(aggregate.World.NodeId))
+                            return Fail("WRONG_LOCATION", "此地无法建造该建筑。");
+                        if (aggregate.Progression.RealmLevel < buildingDefinition.RequiredRealmLevel)
+                            return Fail("BUILDING_LOCKED", "境界不足，尚未解锁该建筑。");
+                        var buildNow = DateTimeOffset.UtcNow;
+                        var buildResult = await nodeBuildings.StartConstructionAsync(aggregate.World.NodeId, buildingDefinition, buildNow, cancellationToken);
+                        if (!buildResult.Success) return Fail(buildResult.ErrorCode ?? "BUILD_FAILED", buildResult.Message ?? "建造发起失败。");
+                        await RefreshNodeBuildingsAsync(buildNow, cancellationToken);
+                        TouchDirtyOnly();
+                        break;
+                    }
+                    case "building.upgrade":
+                    {
+                        if (nodeBuildings is null) return Fail("BUILDING_UNAVAILABLE", "建筑服务未装配。");
+                        var buildingId = payload.TryGetProperty("buildingId", out var upgradeElement) && upgradeElement.ValueKind == JsonValueKind.String
+                            ? upgradeElement.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(buildingId) || !gameData.Buildings.ContainsKey(buildingId))
+                            return Fail("BUILDING_NOT_FOUND", "建筑定义不存在。");
+                        if (aggregate.World.EdgeId is not null)
+                            return Fail("WRONG_LOCATION", "旅途中无法升级建筑。");
+                        var upgradeNow = DateTimeOffset.UtcNow;
+                        var upgradeResult = await nodeBuildings.StartUpgradeAsync(aggregate.World.NodeId, buildingId, upgradeNow, cancellationToken);
+                        if (!upgradeResult.Success) return Fail(upgradeResult.ErrorCode ?? "UPGRADE_FAILED", upgradeResult.Message ?? "升级发起失败。");
+                        await RefreshNodeBuildingsAsync(upgradeNow, cancellationToken);
+                        TouchDirtyOnly();
+                        break;
+                    }
+                    case "building.contribute":
+                    {
+                        if (nodeBuildings is null) return Fail("BUILDING_UNAVAILABLE", "建筑服务未装配。");
+                        var buildingId = payload.TryGetProperty("buildingId", out var contributeElement) && contributeElement.ValueKind == JsonValueKind.String
+                            ? contributeElement.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(buildingId) || !gameData.Buildings.ContainsKey(buildingId))
+                            return Fail("BUILDING_NOT_FOUND", "建筑定义不存在。");
+                        if (aggregate.World.EdgeId is not null)
+                            return Fail("WRONG_LOCATION", "旅途中无法提交建筑材料。");
+                        var requested = new Dictionary<string, double>(StringComparer.Ordinal);
+                        if (payload.TryGetProperty("materials", out var materialsElement) && materialsElement.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (var entry in materialsElement.EnumerateObject())
+                            {
+                                if (entry.Value.ValueKind == JsonValueKind.Number && entry.Value.TryGetDouble(out var quantity)
+                                    && double.IsFinite(quantity) && quantity > 0)
+                                    requested[entry.Name] = quantity;
+                            }
+                        }
+                        if (requested.Count == 0) return Fail("INVALID_MATERIALS", "提交材料为空。");
+                        await EnsureWalletFreshAsync(cancellationToken);
+                        var contributeResult = await nodeBuildings.ContributeAsync(
+                            aggregate.World.NodeId,
+                            buildingId,
+                            requested,
+                            async applied =>
+                            {
+                                // 注册表锁内先校验背包余额再原子提交扣减事务，避免并发贡献把材料压成负数。
+                                foreach (var (itemId, quantity) in applied)
+                                {
+                                    if (wallet.Get(new AssetKey(new ItemId(itemId), string.Empty)) + 1e-9 < quantity)
+                                        return false;
+                                }
+                                var debitNow = DateTimeOffset.UtcNow;
+                                var transactionId = requestId ?? Guid.NewGuid();
+                                var committed = await economy.CommitAsync(new EconomyTransactionRequest(
+                                    transactionId,
+                                    $"building-contribute:{aggregate.PlayerId.Value:D}:{transactionId:D}",
+                                    command,
+                                    aggregate.PlayerId.Value,
+                                    applied.Select(pair => new AssetDelta(aggregate.PlayerId.Value, pair.Key, string.Empty, -pair.Value)).ToArray(),
+                                    debitNow,
+                                    JsonSerializer.SerializeToUtf8Bytes(new { nodeId = aggregate.World.NodeId, buildingId })), cancellationToken);
+                                return committed.Applied;
+                            },
+                            cancellationToken);
+                        if (!contributeResult.Success)
+                            return Fail(contributeResult.ErrorCode ?? "CONTRIBUTE_FAILED", contributeResult.Message ?? "材料提交失败。");
+                        await RefreshWalletAfterDurableMutationAsync(cancellationToken);
+                        await RefreshNodeBuildingsAsync(DateTimeOffset.UtcNow, cancellationToken);
+                        TouchDirtyOnly();
+                        break;
+                    }
                     case "market.place":
                     {
                         if (marketRuntime is null) return Fail("MARKET_UNAVAILABLE", "市场运行时未装配。");
@@ -915,6 +1061,7 @@ public sealed class PlayerRuntime(
                 IReadOnlyList<LogEventDto>? logEvents = null;
                 if (simulation is { Events.Count: > 0 })
                     logEvents = SimulationLogMapper.ToLogEvents(simulation.Events, gameData, logBuffer);
+                RefreshNextVisibleBoundary();
                 return new PlayerCommandResult(true, "OK", "命令已提交。", Snapshot(), simulation, logEvents);
             }
             catch (DomainException ex)
@@ -945,6 +1092,7 @@ public sealed class PlayerRuntime(
         private async ValueTask<SimulationResult> AdvanceSimulationInternalAsync(DateTimeOffset target, CancellationToken cancellationToken)
         {
             await EnsureWalletFreshAsync(cancellationToken);
+            await RefreshNodeBuildingsAsync(target, cancellationToken);
             var before = aggregate.ExportState();
             var walletBefore = wallet.Balances.ToArray();
             var dirtyBefore = aggregate.DirtySections.ToArray();
@@ -1017,16 +1165,33 @@ public sealed class PlayerRuntime(
         }
 
         /// <summary>
-        /// 推进SimulationAsync（异步）。
+        /// 把该玩家确定性模拟推进到 target；内部复用 simulation.advance 命令路径以保持同一锁与结算语义。
         /// </summary>
-        /// <param name="target">参数 target。</param>
-        /// <param name="cancellationToken">取消操作的标记。</param>
-        /// <returns>异步操作结果，包含 PlayerCommandResult?。</returns>
+        /// <param name="target">目标模拟时刻（通常为 UtcNow）。</param>
+        /// <param name="cancellationToken">取消标记。</param>
+        /// <returns>推进成功时返回含 Simulation 的命令回执；推进失败（无 Simulation）时返回 null 并节流记录错误。</returns>
         public async ValueTask<PlayerCommandResult?> AdvanceSimulationAsync(DateTimeOffset target, CancellationToken cancellationToken)
         {
             var payload = JsonSerializer.SerializeToElement(new { targetTime = target }, ServerJson.Options);
             var result = await ExecuteAsync("simulation.advance", payload, 0, null, cancellationToken);
-            return result.Simulation is null ? null : result;
+            if (result.Simulation is null)
+            {
+                // 推进失败时模拟时钟无法越过边界：清空缓存边界让该玩家退化为 1 秒兜底节拍，
+                // 避免过期边界把宿主循环拖进亚秒级空转重试。
+                Interlocked.Exchange(ref _nextVisibleBoundaryUtcTicks, 0);
+                if (_advanceErrorLog.TryAcquire())
+                    logger.LogError("玩家模拟推进失败 player={PlayerId} code={Code} message={Message}",
+                        aggregate.PlayerId.Value, result.Code, result.Message);
+                return null;
+            }
+            return result;
+        }
+
+        /// <summary>重算并缓存下一个可见事件边界；必须在单写者锁内调用。</summary>
+        private void RefreshNextVisibleBoundary()
+        {
+            var boundary = SimulationSchedule.NextVisibleBoundaryUtc(aggregate, gameData);
+            Interlocked.Exchange(ref _nextVisibleBoundaryUtcTicks, boundary?.UtcTicks ?? 0);
         }
 
         /// <summary>
@@ -1280,7 +1445,59 @@ public sealed class PlayerRuntime(
         private static bool ShouldPersistReceipt(string command) => command is
             "action.enqueue" or "action.remove" or
             "queue.configure" or "queue.move" or "queue.auto_use.configure" or
-            "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or "player.rename" or "market.claim";
+            "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
+            "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "market.claim";
+
+        /// <summary>
+        /// 按当前位置从共享注册表刷新节点公共建筑投影与汇总效果：注册表是跨玩家权威，
+        /// 聚合内仅保留最近已知副本（离线/冷挂机补算沿用）。投影内容变化时才标记 World 分段脏。
+        /// </summary>
+        private async ValueTask RefreshNodeBuildingsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+        {
+            if (nodeBuildings is null) return;
+            if (!string.IsNullOrWhiteSpace(aggregate.World.EdgeId) || string.IsNullOrWhiteSpace(aggregate.World.NodeId))
+            {
+                if (_nodeBuildingSignature == 0) return;
+                _nodeBuildingSignature = 0;
+                aggregate.World.NodeBuildings = [];
+                aggregate.World.NodeBuildingEffects = BuildingEffectSet.Empty;
+                aggregate.World.NodeBuildingNodeId = null;
+                aggregate.MarkDirty(PlayerSectionKind.World);
+                TouchDirtyOnly();
+                return;
+            }
+            var buildings = await nodeBuildings.BuildingsForAsync(aggregate.World.NodeId, now, cancellationToken);
+            var signature = NodeBuildingSignature(buildings);
+            if (signature == _nodeBuildingSignature) return;
+            _nodeBuildingSignature = signature;
+            aggregate.World.NodeBuildings = buildings.ToList();
+            aggregate.World.NodeBuildingEffects = NodeBuildingRules.AggregateEffects(buildings, gameData.Buildings, now.ToUnixTimeMilliseconds() / 1000d);
+            aggregate.World.NodeBuildingNodeId = aggregate.World.NodeId;
+            aggregate.MarkDirty(PlayerSectionKind.World);
+            TouchDirtyOnly();
+        }
+
+        /// <summary>节点建筑投影的轻量指纹：任何等级/工程/材料投入变化都会改写签名，用于跳过重复投影。</summary>
+        private static long NodeBuildingSignature(IReadOnlyList<NodeBuildingState> buildings)
+        {
+            unchecked
+            {
+                var hash = 17L;
+                foreach (var entry in buildings)
+                {
+                    hash = hash * 31 + entry.BuildingId.GetHashCode();
+                    hash = hash * 31 + entry.Level;
+                    hash = hash * 31 + entry.TargetLevel;
+                    hash = hash * 31 + (long)(entry.StartedAtUnixSeconds * 1000);
+                    if (entry.ContributedMaterials is not null)
+                    {
+                        foreach (var pair in entry.ContributedMaterials.OrderBy(item => item.Key, StringComparer.Ordinal))
+                            hash = hash * 31 + pair.Key.GetHashCode() * 7 + (long)(pair.Value * 1000);
+                    }
+                }
+                return hash;
+            }
+        }
 
         private async ValueTask ReloadWalletAsync(CancellationToken cancellationToken)
         {
@@ -1488,8 +1705,10 @@ public sealed class PlayerSimulationHostedService(PlayerRuntime runtime, ILogger
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        // 边界驱动调度：战斗出手、相位切换、行动完成等时刻是确定性可知的，
+        // 在边界时刻醒来推进并推送，事件到达≈发生时刻；无边界按 1 秒兜底，
+        // 斗法撮合、暂存结算与在线心跳等每拍逻辑不受影响。
+        while (!stoppingToken.IsCancellationRequested)
         {
             try { await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow, stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
@@ -1497,6 +1716,12 @@ public sealed class PlayerSimulationHostedService(PlayerRuntime runtime, ILogger
             {
                 if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家模拟推进失败。");
             }
+            var boundary = runtime.NextAdvanceBoundaryUtc;
+            var delay = boundary is { } next ? next - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(1);
+            if (delay < TimeSpan.FromMilliseconds(50)) delay = TimeSpan.FromMilliseconds(50);
+            else if (delay > TimeSpan.FromSeconds(1)) delay = TimeSpan.FromSeconds(1);
+            try { await Task.Delay(delay, stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }
 }

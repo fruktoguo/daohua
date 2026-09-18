@@ -322,14 +322,19 @@ public sealed class CamelCaseKeyDoubleDictionaryConverter : JsonConverter<IReadO
 
 /// <summary>握手问候请求载荷</summary>
 /// <param name="ClientVersion">客户端版本号</param>
-/// <param name="GameDataFingerprint">游戏数据指纹，可选</param>
-public sealed record HelloRequest(string ClientVersion, string? GameDataFingerprint = null);
+/// <param name="GameDataFingerprint">客户端本地游戏数据指纹；与服务端不一致时握手将收到 GAME_DATA_MISMATCH 错误，可选</param>
+/// <param name="DeviceFingerprint">防多开设备指纹（客户端硬件特征哈希），可选；服务端启用设备配额时必填</param>
+public sealed record HelloRequest(string ClientVersion, string? GameDataFingerprint = null, string? DeviceFingerprint = null);
+/// <summary>防多开子系统下发给客户端的功能开关</summary>
+/// <param name="TabGuardEnabled">是否启用前端多标签页互斥守卫</param>
+public sealed record AntiMultiOpenConfigDto(bool TabGuardEnabled);
 /// <summary>握手问候应答载荷</summary>
 /// <param name="ServerVersion">服务端版本号</param>
 /// <param name="ProtocolVersion">协议版本号</param>
 /// <param name="GameDataFingerprint">游戏数据指纹</param>
 /// <param name="ServerSequence">服务端当前序列号</param>
-public sealed record HelloResponse(string ServerVersion, ushort ProtocolVersion, string GameDataFingerprint, long ServerSequence);
+/// <param name="AntiMultiOpen">防多开功能开关，可选</param>
+public sealed record HelloResponse(string ServerVersion, ushort ProtocolVersion, string GameDataFingerprint, long ServerSequence, AntiMultiOpenConfigDto? AntiMultiOpen = null);
 
 /// <summary>玩家持久化头 DTO</summary>
 /// <param name="PlayerId">玩家唯一标识</param>

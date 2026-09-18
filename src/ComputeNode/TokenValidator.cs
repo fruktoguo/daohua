@@ -17,15 +17,8 @@ internal static class TokenValidator
     /// <returns>如果令牌有效则返回 <see langword="true"/>；否则返回 <see langword="false"/>。</returns>
     public static bool IsValid(HttpRequest request, string configuredToken)
     {
+        // 只接受 X-Compute-Token 单一凭证形式，不提供 Authorization 回退（见 README 冷挂机计算节点鉴权口径）。
         var supplied = request.Headers[ComputeContract.TokenHeader].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(supplied))
-        {
-            var authorization = request.Headers.Authorization.FirstOrDefault();
-            if (authorization?.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                supplied = authorization[7..].Trim();
-            }
-        }
 
         if (string.IsNullOrWhiteSpace(supplied)
             || supplied.Length > MaxTokenLength

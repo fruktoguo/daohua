@@ -209,6 +209,37 @@ public static class StaticGameCatalogMapper
             };
         }).ToArray();
 
+    /// <summary>
+    /// 玩家可建造建筑静态目录投影：按 id 排序输出稳定的建造候选定义，供前端加号占位弹窗消费。
+    /// </summary>
+    /// <param name="catalog">当前激活配表。</param>
+    public static IReadOnlyList<object> Buildings(GameDataCatalog catalog) => catalog.Buildings.Values
+        .OrderBy(definition => definition.Id, StringComparer.Ordinal)
+        .Select(definition => (object)new
+        {
+            buildingId = definition.Id,
+            name = definition.Name,
+            description = definition.Description,
+            effect = definition.Effect,
+            requiredRealmLevel = definition.RequiredRealmLevel,
+            availableNodeIds = definition.AvailableNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+            group = definition.Group,
+            modifiers = new
+            {
+                explorationSpeedRatio = definition.Modifiers.ExplorationSpeedRatio,
+                explorationOutputRatio = definition.Modifiers.ExplorationOutputRatio,
+                alchemySpeedRatio = definition.Modifiers.AlchemySpeedRatio,
+                alchemyOutputRatio = definition.Modifiers.AlchemyOutputRatio,
+                cultivationOutputRatio = definition.Modifiers.CultivationOutputRatio,
+                combatHitpointRegen = definition.Modifiers.CombatHitpointRegen,
+                combatDamageReductionRatio = definition.Modifiers.CombatDamageReductionRatio
+            },
+            materials = (definition.Materials ?? [])
+                .OrderBy(material => material.ItemId, StringComparer.Ordinal)
+                .Select(material => (object)new { itemId = material.ItemId, quantity = material.Quantity })
+                .ToArray()
+        }).ToArray();
+
     private static object ToNode(JsonElement node, GameDataCatalog catalog)
     {
         var encounterIds = ReadStringArray(node, "encounterIds");

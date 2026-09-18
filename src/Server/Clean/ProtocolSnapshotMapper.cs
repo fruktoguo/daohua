@@ -192,10 +192,28 @@ public static class ProtocolSnapshotMapper
     private static object ToCombatSection(PlayerAggregateState state, GameDataCatalog catalog)
     {
         var a = PlayerAttributeResolver.Resolve(state, catalog);
+        var nowUnix = state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
+        // 消耗品冷却按槽位下标定长下发；剩余毫秒以快照模拟时刻为基准，供前端冷却遮罩倒计时。
+        var consumableCooldowns = new double[AutoUseSlotState.MaxSlotIndex + 1];
+        foreach (var slot in state.Settings.AutoUseSlots ?? [])
+        {
+            if (slot.ActionType == "combat" && slot.SlotIndex <= AutoUseSlotState.MaxSlotIndex)
+                consumableCooldowns[slot.SlotIndex] = Math.Max(0, (slot.CooldownUntilUnixSeconds - nowUnix) * 1000);
+        }
         return new
         {
             hitpoints = Math.Min(state.Combat.Hitpoints, a.MaxHitpoints), a.MaxHitpoints,
             manapoints = Math.Min(state.Combat.Manapoints, a.MaxManapoints), a.MaxManapoints,
+            skills = new
+            {
+                cooldowns = state.Combat.Skills.Cooldowns.ToDictionary(
+                    cooldown => cooldown.AbilityId,
+                    cooldown => cooldown.RemainingSeconds * 1000,
+                    StringComparer.Ordinal),
+                castingAbilityId = state.Combat.Skills.CastingAbilityId,
+                castRemainingMilliseconds = state.Combat.Skills.CastRemainingSeconds * 1000,
+            },
+            consumableCooldownMilliseconds = consumableCooldowns,
             attributes = new
             {
                 a.MaxHitpoints, a.MaxManapoints, attackIntervalMilliseconds = a.AttackIntervalSeconds * 1000,
@@ -203,7 +221,8 @@ public static class ProtocolSnapshotMapper
                 a.Armor, a.MagicResistance, a.MetalResistance, a.WoodResistance, a.WaterResistance,
                 a.FireResistance, a.EarthResistance, style = "sword", category = "physical", element = "none",
                 tenacity = 0d, hpRegenPerFiveSeconds = a.HpRegen, mpRegenPerFiveSeconds = a.MpRegen,
-                penetrationRatio = 0d, lifeStealRatio = 0d, armorDamageRatio = 0d, hpDrainRatio = 0d,
+                penetrationRatio = 0d, lifeStealRatio = 0d, armorDamageRatio = 0d,
+                hpDrainRatio = a.Effects.HpDrainRatio,
                 damageTakenRatio = 0d, criticalChance = a.Critical / (a.Critical + 100),
                 criticalDamageRatio = 1.5, criticalAvoidance = a.CriticalAvoidance / (a.CriticalAvoidance + 100),
                 criticalRating = a.Critical, criticalAvoidanceRating = a.CriticalAvoidance, a.DamageAbsorptionRatio
@@ -333,6 +352,7 @@ public static class ProtocolSnapshotMapper
             .Where(double.IsFinite).DefaultIfEmpty().Min();
         var bossInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerBoss", ReadDouble(e, "bossInterval", double.NaN)))
             .Where(double.IsFinite).DefaultIfEmpty().Min();
+        var nowUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d;
         return new
         {
             mapId = hasMap ? ReadString(map, "id", "map.qingyun-mountains") : "map.qingyun-mountains",
@@ -349,6 +369,18 @@ public static class ProtocolSnapshotMapper
             encounterIds,
             npcs = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "npcs"),
             buildings = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "buildings"),
+            // 节点可建列表：buildableList/buildableTemplate 二选一解析；null 表示该节点不可建（前端隐藏加号卡）。
+            buildableBuildingIds = onEdge || !hasNode
+                ? null
+                : Domain.World.NodeBuildingRules.ResolveBuildableIds(node, gameData?.Buildings ?? new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal))
+                    ?.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+            // 节点公共建筑：共享注册表投影随 world 分段持久化，快照映射按当前时刻推算双进度。
+            nodeBuildings = onEdge
+                ? Array.Empty<object>()
+                : (world.NodeBuildings ?? [])
+                    .Select(entry => ToNodeBuilding(gameData, entry, nowUnixSeconds))
+                    .Where(entry => entry is not null)
+                    .ToArray(),
             minBudget = double.IsFinite(minBudget) ? minBudget : (double?)null,
             maxBudget = double.IsFinite(maxBudget) ? maxBudget : (double?)null,
             eliteInterval = double.IsFinite(eliteInterval) ? eliteInterval : (double?)null,
@@ -356,6 +388,46 @@ public static class ProtocolSnapshotMapper
             monsters = normalIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray(),
             eliteEnemies = eliteIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray(),
             bossEnemies = bossIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray()
+        };
+    }
+
+    /// <summary>
+    /// 把节点公共建筑记录投影为附近面板消费的建筑 DTO：
+    /// 含等级、建造中目标等级、双进度（材料/时间）与逐项材料需求-已交明细；配表缺失的定义直接丢弃。
+    /// </summary>
+    private static object? ToNodeBuilding(GameDataCatalog? gameData, Domain.World.NodeBuildingState state, double nowUnixSeconds)
+    {
+        if (gameData is null || !gameData.Buildings.TryGetValue(state.BuildingId, out var definition)) return null;
+        var required = state.TargetLevel > 0
+            ? Domain.World.NodeBuildingRules.RequiredMaterials(definition, state.TargetLevel)
+            : new Dictionary<string, double>(StringComparer.Ordinal);
+        var materialProgress = Domain.World.NodeBuildingRules.MaterialFraction(state, definition);
+        // 工期条显示有效工时：材料不足时工程停滞，已流逝的墙钟时间不计入进度，封顶于材料进度。
+        var timeProgress = Math.Min(Domain.World.NodeBuildingRules.TimeFraction(state, nowUnixSeconds), materialProgress);
+        return new
+        {
+            entityId = definition.Id,
+            name = definition.Name,
+            kind = "building",
+            description = definition.Description,
+            effect = definition.Effect,
+            group = definition.Group,
+            level = Domain.World.NodeBuildingRules.EffectiveLevel(state, definition, nowUnixSeconds),
+            targetLevel = state.TargetLevel,
+            buildProgress = Domain.World.NodeBuildingRules.BuildProgress(state, definition, nowUnixSeconds),
+            materialProgress,
+            timeProgress,
+            requiredSeconds = state.TargetLevel > 0 ? Domain.World.NodeBuildingRules.RequiredBuildSeconds(state.TargetLevel) : 0,
+            elapsedSeconds = state.TargetLevel > 0 ? Math.Max(0, nowUnixSeconds - state.StartedAtUnixSeconds) : 0,
+            materials = required
+                .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => (object)new
+                {
+                    itemId = pair.Key,
+                    required = pair.Value,
+                    contributed = Math.Min(pair.Value, state.ContributedMaterials?.GetValueOrDefault(pair.Key) ?? 0)
+                })
+                .ToArray()
         };
     }
 
