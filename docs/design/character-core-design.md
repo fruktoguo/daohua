@@ -2,7 +2,7 @@
 
 > **文档版本**：v1.0.0 权威标准版  
 > **更新时间**：2026-08-24  
-> **所属体系**：游戏顶层哲学 / 角色领域模型 / 状态连续性 / ECS 与数值架构  
+> **所属体系**：游戏顶层哲学 / 角色领域模型 / 状态连续性 / 聚合模型与数值架构  
 > **适用范围**：`src/Domain` 领域规则、`src/Server` 运行时调度、`src/Protocol` 协议 DTO、`frontend` 交互呈现与后续玩法拓展（秘境、PvP 等）
 
 ---
@@ -80,7 +80,7 @@
 
 ### 2.2 修仙境界与修炼底蕴（Cultivation & Realm）
 
-- **十二大境界阶位**：凡人、炼气、筑基、金丹、元婴、化神、炼虚、合体、大乘、渡劫、真仙、金仙（涵盖四大修行阶段）。
+- **十二大境界阶位**：凡胎、叩仙门、练气、筑基、金丹、元婴、化神、炼虚、合体、大乘、渡劫、飞升（涵盖四大修行阶段；数值底座见 `player-expected-attributes-model.md`）。
 - **修为储备（Qi / CultivationExp）**：打坐、炼化灵丹、机缘奇遇累积的灵气总量。
 - **突破瓶颈状态（IsPendingBreakthrough）**：当修为达到当前境界上限时触发，锁定修为增长，必须完成突破心魔、渡劫或服用破境丹药方可晋升下一阶。
 - **寿元与道龄（Lifespan & Age）**：依据境界决定寿元上限，随时间与特定禁术消耗自然流逝。
@@ -182,7 +182,7 @@
   - 若开启队列循环（`LoopEnabled`），阻断的动作被安全移至队尾，尝试执行下一个可用动作；
   - 若全部排队动作均受阻，队列进入**安全空转期**。在此期间，角色进入自然休整状态，持续享受生命与灵力自然回复，直至体征恢复或玩家介入调整。
 
-### 4.3 四大动作类型自动消耗品槽位与银河奶牛式持续时间池
+### 4.3 四大动作类型自动消耗品槽位与动作时间池
 
 为保障全常驻实体在无人值守时也能平滑维持生命体征与修炼增益，系统提供完善的消耗品自动使用体系：
 - **四大分类独立槽位（4 类 × 3 槽）**：修炼（`Cultivation`）、探索（`Exploration`）、炼丹（`Alchemy`）、战斗（`Combat`）各自拥有独立的 3 个自动消耗品槽位（`AutoUseSlotState`）；
@@ -211,8 +211,8 @@
  ┌─────────────────────────────────────────────────────────────────────────┐
  │                      领域聚合根 (PlayerAggregate)                        │
  │   • POCO 纯数据模型，无任何外部框架/IO/数据库依赖                          │
- │   • 按 PlayerSectionKind 七分段聚合                                      │
- │     (Progression/World/Combat/Buffs/Loadout/Settings/ActionQueue)        │
+ │   • 按 PlayerSectionKind 八分段聚合                                      │
+ │     (Progression/World/Combat/Buffs/Loadout/Settings/ActionQueue/Duel)   │
  │   • 资产走 AssetWallet+economy；细粒度脏段追踪 MarkDirty(PlayerSectionKind)│
  └────────────────────────────────────┬────────────────────────────────────┘
                                       │ 作为唯一输入输出
@@ -228,7 +228,7 @@
 ### 5.1 领域层：`PlayerAggregate` 聚合根
 
 - `PlayerAggregate`（定义于 `src/Domain/Player/PlayerAggregate.cs`）是角色全部状态的**唯一权威数据载体**；
-- 内部按 `PlayerSectionKind` 七分段收敛 `PlayerProgression`、`PlayerWorldState`、`PlayerCombatState`（含 `PlayerCombatSkillState`）、`PlayerBuffState`、`PlayerLoadoutState`、`PlayerSettingsState` 与行动队列；资产（灵石、物品、装备实例）不进聚合，统一由 `AssetWallet` + `economy.*` 关系表承载；
+- 内部按 `PlayerSectionKind` 八分段收敛 `PlayerProgression`、`PlayerWorldState`、`PlayerCombatState`（含 `PlayerCombatSkillState`）、`PlayerBuffState`、`PlayerLoadoutState`、`PlayerSettingsState`、`PlayerDuelState` 与行动队列；资产（灵石、物品、装备实例）不进聚合，统一由 `AssetWallet` + `economy.*` 关系表承载；
 - 纯 POCO 设计使得任何状态操作都可以被轻松单元测试、离线重放和确定性断言。
 
 ### 5.2 模拟层：`SimulationEngine` 确定性推进

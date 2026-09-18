@@ -31,8 +31,8 @@
 ├──────────────────────────────┴──────────────────────────────┤
 │ 3. 危险度与预算参数 (Hazard / Budget Parameters)              │
 │  ├─ 危险度总预算区间 [minBudget, maxBudget] (直接代表危险度)  │
-│  ├─ 精英刷新周期 (eliteInterval，如每 5 次遭遇)              │
-│  └─ 领主刷新周期 (bossInterval，如每 20 次遭遇)             │
+│  ├─ 精英刷新周期 (battlesPerElite，如每 5 次遭遇)            │
+│  └─ 领主刷新周期 (battlesPerBoss，如每 20 次遭遇)            │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -64,7 +64,7 @@ interface NpcDefinition {
 
 ### 2.2 怪物数据模型（Monsters / 妖兽）
 怪物代表栖息在该地点的野生妖兽、异化生物或敌对修士。
-每个怪物除了具备既定的阶位（`Tier`）、层次（`Rank`）与属性权重外，**必须配置单体消耗预算 `budgetCost`（对应灵狐的 Quality 质量点数）**。
+每个怪物除了具备既定的阶位（`Tier`）、层次（`Rank`）与属性权重外，**必须配置单体消耗预算 `budgetCost`（质量预算点数）**。
 
 #### 怪物配表结构示例（`config/game-data/monsters/*.json`）：
 ```json
@@ -129,22 +129,12 @@ interface NpcDefinition {
         "x": 13,
         "y": 63,
         "cultivationMultiplier": 1.0,
-        "minBudget": 20,
-        "maxBudget": 50,
-        "eliteInterval": 5,
-        "bossInterval": 20,
         "availableActionIds": [
           "explore.gather-herbs",
           "combat.hunt-qi-beast"
         ],
-        "monsters": [
-          { "monsterId": "enemy.wood-spirit", "weight": 1 }
-        ],
-        "elitePool": [
-          { "monsterId": "enemy.demon-ape", "weight": 1 }
-        ],
-        "bossPool": [
-          { "monsterId": "enemy.chang-tiger", "weight": 1 }
+        "encounterIds": [
+          "encounter.qi-beast"
         ],
         "npcs": [
           {
@@ -152,7 +142,7 @@ interface NpcDefinition {
             "name": "采药人林伯",
             "title": "老药农",
             "description": "熟悉药谷草木灵气流动的老采药人。",
-            "effectDescription": "后续可发布药草搜集委托"
+            "effect": "后续可发布药草搜集委托"
           }
         ],
         "buildings": []
@@ -163,12 +153,15 @@ interface NpcDefinition {
 ```
 
 ### 关键配置字段解析：
-- **`minBudget` ~ `maxBudget`（危险度 / 总预算区间）**：**地图没有单独的危险度评级，危险度本身即为 `[minBudget, maxBudget]` 预算区间**（对应灵狐中的 `[minQuality, maxQuality]`）。单次遇怪时系统在 `[minBudget, maxBudget]` 之间随机生成本场怪群的战力总预算，预算区间的高低直接体现了该地图遭遇战的危险程度与怪物强度规模。
-- **`eliteInterval`（精英周期）**：每进行 N 次战斗必定触发一次精英遇怪（默认 5）。
-- **`bossInterval`（Boss 周期）**：每进行 N 次战斗必定触发一次关底领主 Boss 遇怪（默认 20）。
-- **`monsters`（本地普通怪池）**：当前地图栖息的 1~3 种普通怪物及权重。
-- **`elitePool`（本地精英怪池）**：触发精英波次时抽取的精英阵容。
-- **`bossPool`（本地 Boss 怪池）**：触发领主波次时抽取的 Boss 阵容。
+> 注：节点自身只声明 `encounterIds` 引用；以下预算与怪池字段均位于 `config/game-data/encounters/*.json` 遭遇配表中。
+
+- **`minBudget` ~ `maxBudget`（危险度 / 总预算区间）**：**地图没有单独的危险度评级，危险度本身即为 `[minBudget, maxBudget]` 预算区间**。单次遇怪时系统在 `[minBudget, maxBudget]` 之间随机生成本场怪群的战力总预算，预算区间的高低直接体现了该地图遭遇战的危险程度与怪物强度规模。
+- **`battlesPerElite`（精英周期）**：每进行 N 次战斗必定触发一次精英遇怪（缺省回退 5）。
+- **`battlesPerBoss`（Boss 周期）**：每进行 N 次战斗必定触发一次关底领主 Boss 遇怪（缺省回退 20）。
+- **`randomSpawns`（本地普通怪池）**：当前地图栖息的普通怪物及权重/强度（`enemyId`/`weight`/`strength`）。
+- **`eliteEnemyIds`（本地精英怪池）**：触发精英波次时抽取的精英阵容。
+- **`bossEnemyIds`（本地 Boss 怪池）**：触发领主波次时抽取的 Boss 阵容。
+- **`maxTotalStrength`（总强度上限）**：本波怪物强度总和上限（缺省不封顶）。
 
 ---
 
@@ -176,7 +169,7 @@ interface NpcDefinition {
 
 服务端在玩家完成每次寻怪倒计时（`Search` 阶段）后，调用确定性怪群生成算法：
 
-当前 `EncounterWaveSelector` 按种子从预算区间选取预算，普通怪只从剩余预算可容纳的候选中按权重抽取，每波最多 5 只；第 5 的倍数波优先精英，Boss 使用 `BattlesPerBoss`（缺省 20）且优先于精英。特殊怪先入波，再以最大预算扣除其成本填充护从；指定 Boss 自身成本可以高于普通波预算。成本读取怪物 `BudgetCost`，不以展示字段重算属性。候选为空（普通怪全部超预算且未抽到特殊怪）时保底塞入 1 只消耗预算最低的普通小怪。下面流程图为现行口径示意，原三次失败重抽设计已由可容纳候选筛选取代。
+当前 `EncounterWaveSelector` 按种子从预算区间选取预算，普通怪只从剩余预算可容纳的候选中按权重抽取，每波最多 3 只（`MaxWaveSize`）；第 5 的倍数波优先精英，Boss 使用 `BattlesPerBoss`（缺省 20）且优先于精英。特殊怪先入波，再以最大预算扣除其成本填充护从；指定 Boss 自身成本可以高于普通波预算。成本读取怪物 `BudgetCost`，不以展示字段重算属性。候选为空（普通怪全部超预算且未抽到特殊怪）时保底塞入 1 只消耗预算最低的普通小怪。下面流程图为现行口径示意，原三次失败重抽设计已由可容纳候选筛选取代。
 
 该怪群列表由当前 1v1 引擎逐只推进，整波完成后才增加波次；这不等于同时多敌、仇恨分配或群攻目标选择已实现。
 
@@ -184,19 +177,19 @@ interface NpcDefinition {
 flowchart TD
     Start([寻怪倒计时结束]) --> CheckCount[读取当前地点累计历练完成波次 N]
     
-    CheckCount --> IsBoss{(N + 1) % bossInterval == 0 ?}
-    IsBoss -- 是 (如第20/40场) --> SpawnBoss[从 bossPool 抽取 1 只 Boss<br/>总预算分配 maxBudget]
+    CheckCount --> IsBoss{(N + 1) % battlesPerBoss == 0 ?}
+    IsBoss -- 是 (如第20/40场) --> SpawnBoss[从 bossEnemyIds 抽取 1 只 Boss<br/>总预算分配 maxBudget]
     
-    IsBoss -- 否 --> IsElite{(N + 1) % eliteInterval == 0 ?}
-    IsElite -- 是 (如第5/10/15场) --> SpawnElite[从 elitePool 抽取 1 只精英怪<br/>扣除该精英 budgetCost]
+    IsBoss -- 否 --> IsElite{(N + 1) % battlesPerElite == 0 ?}
+    IsElite -- 是 (如第5/10/15场) --> SpawnElite[从 eliteEnemyIds 抽取 1 只精英怪<br/>扣除该精英 budgetCost]
     IsElite -- 否 --> NormalRoll[在 [minBudget, maxBudget] 随机生成总预算 remainBudget]
     
     SpawnElite --> DeductElite[剩余预算 remainBudget 继续用于抽取小怪护从]
     DeductElite --> LoopExtract
     NormalRoll --> LoopExtract
     
-    subgraph LoopExtract [质量预算扣减循环 (灵狐 Quality 算法)]
-        Filter[筛选 budgetCost <= remainBudget<br/>的可容纳候选池] --> HasCandidate{可容纳候选非空<br/>且 remainBudget > 0<br/>且数量 < 上限(5只)?}
+    subgraph LoopExtract [质量预算扣减循环]
+        Filter[筛选 budgetCost <= remainBudget<br/>的可容纳候选池] --> HasCandidate{可容纳候选非空<br/>且 remainBudget > 0<br/>且数量 < 上限(3只)?}
         HasCandidate -- 是 --> RollMonster[从可容纳候选按 weight 轮盘抽取]
         RollMonster --> AddMonster[将怪物加入 spawnedList<br/>remainBudget -= candidate.budgetCost]
         AddMonster --> Filter
@@ -214,7 +207,7 @@ flowchart TD
 ### 算法执行示例：
 
 #### 示例 A：单怪特色地图（如青岚药谷，仅栖息木灵）
-- **配置**：`minBudget: 20`, `maxBudget: 60`, `monsters: [{ monsterId: "enemy.wood-spirit", weight: 1 }]`（木灵 `budgetCost: 25`）
+- **配置**：`minBudget: 20`, `maxBudget: 60`, `randomSpawns: [{ enemyId: "enemy.wood-spirit", weight: 1, strength: 25 }]`（木灵 `budgetCost: 25`）
 - **常规波次**：
   - 随机本场总预算 `remainBudget = 55`；
   - 第 1 次抽取：抽中【木灵】（`cost 25 <= 55`），加入阵容，`remainBudget = 30`；
@@ -223,7 +216,7 @@ flowchart TD
   - **本场阵容**：`[木灵, 木灵]`（根据预算生成 2 只木灵同场）。
 
 #### 示例 B：多怪复合地图（如落霞西岭，栖息野兔与蛮熊）
-- **配置**：`minBudget: 30`, `maxBudget: 80`, `monsters: [{ monsterId: "enemy.demonized-rabbit", weight: 5 }, { monsterId: "enemy.armored-bear", weight: 2 }]`
+- **配置**：`minBudget: 30`, `maxBudget: 80`, `randomSpawns: [{ enemyId: "enemy.demonized-rabbit", weight: 5, strength: 10 }, { enemyId: "enemy.armored-bear", weight: 2, strength: 45 }]`
   - 魔化野兔（`cost: 15`）、重甲蛮熊（`cost: 35`）
 - **常规波次**：
   - 随机本场总预算 `remainBudget = 65`；

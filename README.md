@@ -19,7 +19,7 @@
 核心原则：
 
 - 玩家在线时由单写者持有完整领域聚合；数据库不是每个字段一次一行，而是共享表中的少量稳定 section。
-- 玩家状态分为 `progression`、`world`、`combat`、`buffs`、`loadout`、`settings`、`action_queue` 七个 section。每个玩家对应共享表中的七行最新值，不建立“每个玩家一张表”。`action_queue` 中的讨伐行动保存搜寻/战斗阶段和确定性战斗标量，`durationSeconds=0` 仅表示由战斗状态机推进，不会被普通计时器丢弃。
+- 玩家状态分为 `progression`、`world`、`combat`、`buffs`、`loadout`、`settings`、`action_queue`、`duel` 八个 section。每个玩家对应共享表中的八行最新值，不建立“每个玩家一张表”。`action_queue` 中的讨伐行动保存搜寻/战斗阶段和确定性战斗标量，`durationSeconds=0` 仅表示由战斗状态机推进，不会被普通计时器丢弃。
 - 普通模拟只在内存推进，脏 section 以 15 秒合并窗口写入 `platform.section_flush_queue`；同一玩家/section 永远只有一条待写记录，不保存逐 Tick 历史。
 - 资产余额、唯一物品、订单冻结、成交、退款和幂等事务由 PostgreSQL 关系模型负责，并在一个事务内提交。
 - WebSocket 帧、心跳、战斗伤害明细和聊天消息不落盘。前端日志只有当前页面内的 100 条内存环形缓冲。
@@ -89,6 +89,7 @@ Vite 默认监听 `http://127.0.0.1:15172`，把 `/api` 和 `/ws` 代理到 `127
 - `/api/v1/players/{playerId}`：授权后的完整玩家快照。
 - `/api/v1/players/{playerId}/commands`：带 `requestId`、`expectedStateVersion` 的通用命令入口。
 - `/api/v1/market/book`、`/api/v1/market/metrics`、`/api/v1/players/{playerId}/market/orders`：市场读模型。
+- `POST /api/v1/market/orders`、`DELETE /api/v1/market/orders/{orderId}`：授权后的市场挂单与撤单写入口。
 
 实时通道是固定版本 `DHW1 / protocol.v1` 二进制信封，包含协议版本、消息类型、请求 ID、单调序列号、编码标识和载荷长度。当前浏览器载荷使用 JSON；PostgreSQL section 使用 JSON，载荷超过阈值时使用 Brotli `br-json`。未知版本、编码、长度、序列或文本帧直接拒绝，不尝试解析旧包格式。
 

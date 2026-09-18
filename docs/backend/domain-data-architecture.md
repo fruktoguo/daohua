@@ -1,6 +1,6 @@
 # 道化太初 · 服务端领域数据架构规约（聚合单写者模型）
 
-本文档定义《道化太初》服务端的领域模型设计、数据类型规范与并发所有权架构。当前实现为 **`PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者**模型；`YuoCore`（Ecs/Persistence/Runtime）基座引用在项目文件中保留待用，不构成当前运行时对象模型。历史 ECS/Fiber 推演稿见 `docs/design/ecs-architecture-and-evolution-plan.md`。当前处于本地开发/内测阶段，数据模型、快照、Protocol 和部署拓扑采用一次性切换，不设计历史兼容层。
+本文档定义《道化太初》服务端的领域模型设计、数据类型规范与并发所有权架构。当前实现为 **`PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者**模型；`YuoCore`（Ecs/Persistence/Runtime）基座引用在项目文件中保留待用，不构成当前运行时对象模型。历史 ECS/Fiber 推演稿见 `docs/archive/design/ecs-architecture-and-evolution-plan.md`。当前处于本地开发/内测阶段，数据模型、快照、Protocol 和部署拓扑采用一次性切换，不设计历史兼容层。
 
 ---
 
@@ -29,7 +29,7 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 1. 策划静态配置 (GameData)      │ 内嵌资源、启动加载、只读字典           │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 2. 运行时领域聚合 (Player)      │ PlayerAggregate 七分段、MarkDirty 驱动 │
+│ 2. 运行时领域聚合 (Player)      │ PlayerAggregate 八分段、MarkDirty 驱动 │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 3. 纯业务逻辑引擎 (Simulation/Combat/Market) │ 确定性推进与纯函数结算    │
 ├────────────────────────────────────────────────────────────────────────┤
@@ -47,16 +47,17 @@
 ### 2. 第二层：运行时领域聚合（`src/Domain/Player/PlayerAggregate`）
 - **职责**：在线玩家的唯一权威可变状态，由专属 `PlayerActor` 单写者持有。
 - **规范**：
-  - `PlayerAggregate` 为单体聚合，内部按持久化边界划分为 **`PlayerSectionKind` 七分段**：
+  - `PlayerAggregate` 为单体聚合，内部按持久化边界划分为 **`PlayerSectionKind` 八分段**：
     - `Progression`（`PlayerProgression`）：境界等级、灵气修为、历史总修为；
     - `World`（`PlayerWorldState`）：所在节点/边、坐标与探索随机数种子，以及当前节点公共建筑投影（`NodeBuildings`/`NodeBuildingEffects`/`NodeBuildingNodeId`，仅最近已知副本，真源在服务端共享注册表）；
     - `Combat`（`PlayerCombatState`，含 `PlayerCombatSkillState` 技能冷却/吟唱）：当前生命/灵力、攻防与 `RegenCarrySeconds` 回复余量；
     - `Buffs`（`PlayerBuffState`）：当前生效 Buff 及到期边界；
     - `Loadout`（`PlayerLoadoutState`，含 `AutoUseSlotState`）：装备实例引用、已学功法与自动使用槽；
     - `Settings`（`PlayerSettingsState`）：低频偏好（循环开关 `LoopEnabled`、语言等）；
-    - `ActionQueue`（`QueuedAction` 队列）：进行中与排队行动，`RemainingRepeats == -1` 为无限循环。
+    - `ActionQueue`（`QueuedAction` 队列）：进行中与排队行动，`RemainingRepeats == -1` 为无限循环；
+    - `Duel`（`PlayerDuelState`）：斗法遭遇计数、冷却、暂存区与战报账本（记账口径见 `docs/design/action-statistics-system.md`）。
   - **脏标记驱动**：状态变更通过 `MarkDirty(PlayerSectionKind)` / `Touch` 记录脏分段；`DirtySections` 只读视图供宿主差量刷盘与增量协议投影使用。
-  - **资产不进聚合**：灵石、可堆叠物品余额与唯一装备实例统一由 `AssetWallet`（运行时钱包视图）+ `economy.*` 关系表管理，聚合七分段不含 Inventory/Stats 切片。
+  - **资产不进聚合**：灵石、可堆叠物品余额与唯一装备实例统一由 `AssetWallet`（运行时钱包视图）+ `economy.*` 关系表管理，聚合八分段不含 Inventory/Stats 切片。
   - **数值边界明确**：属性、收益、倍率和玩法时长遵循 `AGENTS.md` 的 `double` 规范；ID、版本、序列属于离散技术字段，使用强类型表示。
 
 ### 3. 第三层：业务推进与结算引擎（`src/Domain/Simulation/`、`Combat/`、`Market/`）

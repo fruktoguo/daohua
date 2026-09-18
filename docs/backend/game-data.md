@@ -14,6 +14,7 @@
 - `maps/`：世界大地图与节点网络（`qingyun_mountain.json`, `xingyun_realm.json`）。
 - `buildings/`：玩家可建造的节点公共建筑定义（`buildings.json`：分组、每级效果 `modifiers`、材料清单与解锁境界）。
 - `actions/`：玩家修炼、采集、精炼、炼丹、锻造与历练行动（`cultivation.json`, `gathering.json`, `crafting.json`, `alchemy.json`, `forging.json`, `combat.json`, `world.json`）。
+- `duel.json`：斗法（PVP）数值唯一真源（匹配窗口、冷却、收益加成等，详见本文 §7）。
 
 服务启动时经 `GameDataCatalog.LoadEmbedded` 一次性加载内嵌资源中的全部文件并构建不可变目录快照，结算不读取磁盘。当前校验强度分三类如实记录：
 

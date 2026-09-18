@@ -15,14 +15,15 @@
 │               【聚合单写者与纯函数离散模拟流转模型】                    │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 1. 聚合与权威状态（Imperative Aggregate State）                        │
-│    PlayerAggregate 内含 PlayerSectionKind 七分段状态：                  │
+│    PlayerAggregate 内含 PlayerSectionKind 八分段状态：                  │
 │    ├── Progression ──> 境界等级、灵气修为、历史总修为                   │
 │    ├── World ────────> 大地图节点/边位置、坐标与探索种子                │
 │    ├── Combat ───────> 生命/灵力、攻防、RegenCarrySeconds、技能状态     │
 │    ├── Buffs ────────> 生效 Buff 与到期边界                            │
 │    ├── Loadout ──────> 装备实例引用、已学功法、自动使用槽               │
 │    ├── Settings ─────> 循环开关 LoopEnabled、语言等低频偏好             │
-│    └── ActionQueue ──> 行动队列（RemainingRepeats == -1 为无限循环）    │
+│    ├── ActionQueue ──> 行动队列（RemainingRepeats == -1 为无限循环）    │
+│    └── Duel ─────────> 斗法遭遇计数、冷却、暂存区与战报账本             │
 │    ※ 资产（灵石/物品余额/装备实例）不在聚合内，走 AssetWallet+economy   │
 │                                                                        │
 │ 2. 纯函数离散模拟引擎（Functional Core · 确定性推进）                   │
@@ -43,7 +44,7 @@
 
 ## 二、 聚合分段职责规范
 
-`PlayerAggregate`（`src/Domain/Player/PlayerAggregate.cs`）按 `PlayerSectionKind` 七分段组织状态，**分段归属必须准确**：
+`PlayerAggregate`（`src/Domain/Player/PlayerAggregate.cs`）按 `PlayerSectionKind` 八分段组织状态，**分段归属必须准确**：
 
 1. **`Progression`（`PlayerProgression`）**：境界阶位、当前修为、历史总修为。
 2. **`World`（`PlayerWorldState`）**：所在节点/边 ID、坐标、行进进度与探索随机数种子。
@@ -52,6 +53,7 @@
 5. **`Loadout`（`PlayerLoadoutState`）**：已装备物品实例引用、已学功法槽、自动使用槽（`AutoUseSlotState`）。
 6. **`Settings`（`PlayerSettingsState`）**：低频偏好——**循环开关 `LoopEnabled` 在 Settings，不在 ActionQueue**；语言、通知等。
 7. **`ActionQueue`（`QueuedAction` 列表）**：进行中与排队行动、进度、剩余重复次数、远征/移动子状态。
+8. **`Duel`（`PlayerDuelState`）**：斗法遭遇计数、冷却、暂存区与战报账本；记账点口径见 `docs/design/action-statistics-system.md`。
 
 **资产边界**：灵石、可堆叠物品余额、唯一装备实例一律由 `AssetWallet` + `economy.*` 关系表承载，不得塞进聚合分段；聚合内不保留 Inventory/Stats 切片。
 

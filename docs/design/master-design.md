@@ -273,7 +273,7 @@ $$\text{每级强化增量} = \frac{\text{白板基础属性}}{50.0} \quad (\tex
 
 > **危险度预算归遭遇而非节点**：`[minBudget, maxBudget]` 战力预算区间、精英/Boss 周期（`battlesPerElite` 默认 5、`battlesPerBoss` 默认 20）与怪群权重池（`randomSpawns`/`eliteEnemyIds`/`bossEnemyIds`/`maxTotalStrength`）均定义在 `config/game-data/encounters/*.json`，节点仅通过 `encounterIds` 弱引用遭遇。节点不承载预算字段。
 
-## 7.2 质量预算遇怪抽取算法 (灵狐 Quality 算法)
+## 7.2 质量预算遇怪抽取算法
 ```mermaid
 flowchart TD
     Start([寻怪倒计时结束]) --> CheckBoss{waveNumber % battlesPerBoss == 0 ?}
@@ -372,7 +372,7 @@ flowchart TD
 ┌────────────────────────────────────────────────────────────────────────┐
 │ 1. 策划静态配置 (GameData 解析) │ 只读不可变、编译期内嵌启动加载、ReadOnlyDictionary │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 2. 运行时玩家聚合 (PlayerAggregate) │ PlayerSectionKind 七分段、PlayerActor 单写者 │
+│ 2. 运行时玩家聚合 (PlayerAggregate) │ PlayerSectionKind 八分段、PlayerActor 单写者 │
 ├────────────────────────────────────────────────────────────────────────┤
 │ 3. 纯业务逻辑系统 (SimulationEngine) │ 纯函数离散事件模拟推进、100% 确定性      │
 ├────────────────────────────────────────────────────────────────────────┤
@@ -382,7 +382,7 @@ flowchart TD
 
 ## 11.2 纯函数离散模拟引擎与单写者架构
 - **单一真源推进**：所有挂机时间、产物结算与战斗模拟严格以 `SimulationEngine.AdvanceTo(state, now)` 为唯一真源，杜绝任何第二套执行器或过渡调度系统。
-- **领域聚合零损耗**：玩家状态收敛为单体聚合 `PlayerAggregate`，按 `PlayerSectionKind` 划分为 7 大分段（`progression` / `world` / `combat` / `buffs` / `loadout` / `settings` / `action_queue`），高频 Tick 直接访问聚合内存字段，零反射、零哈希查找。
+- **领域聚合零损耗**：玩家状态收敛为单体聚合 `PlayerAggregate`，按 `PlayerSectionKind` 划分为 8 大分段（`progression` / `world` / `combat` / `buffs` / `loadout` / `settings` / `action_queue` / `duel`），高频 Tick 直接访问聚合内存字段，零反射、零哈希查找。
 - **Actor 单写者并发**：同一玩家的命令与模拟推进在其专属 `PlayerActor`（由 `PlayerRuntime` 持有）内串行执行，`SemaphoreSlim` 保证单写者语义；跨边界访问不得直接持有聚合引用，杜绝多重分布式大锁。`YuoCore`（Ecs/Persistence/Runtime）基座引用在项目文件中保留待用，当前不构成运行时对象模型；若未来启用 ECS/Fiber，所有权约束另行定义。
 
 ---
@@ -391,7 +391,7 @@ flowchart TD
 
 ## 12.1 生产运维拓扑与持久化
 - **部署架构**：Release 多阶段构建 $\to$ CCR 不可变标签 + `prod` 标签 $\to$ 服务器 systemd timer 自动更新 $\to$ Caddy 反向代理 HTTPS/WSS 至回环 `127.0.0.1:15128`。
-- **PostgreSQL 权威存储**：账号、玩家快照、Durable Outbox、市场账本与流水全量落库 PostgreSQL；Docker 命名卷 `daohua-local-postgres18` 承载持久数据；每小时自动生成 gzip 压缩备份并生成 SHA-256 校验。
+- **PostgreSQL 权威存储**：账号、玩家快照、Durable Outbox、市场账本与流水全量落库 PostgreSQL；Docker 命名卷 `daohua_daohua-postgres` 承载持久数据；每小时自动生成 gzip 压缩备份并生成 SHA-256 校验。
 
 ## 12.2 2c4g/40g 容量目标与基准数据
 | 场景 | 目标指标 | 实测性能基线 (Release 5800X / 2c4g 换算) | 预算约束 |

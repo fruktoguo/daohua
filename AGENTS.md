@@ -158,7 +158,7 @@ docker compose -f deploy/compose.prod.yaml down
 - 服务端是行动、战斗、市场和资产结算的唯一权威来源。
 - 所有战斗、属性、收益率、计数与时长数值，计算和储存一律统一使用 `double` 类型（前端对应 `number` 即 double 精度），百分比类型内部也必须采用 `double` 点数。
 - **服务端类型命名规约（现行聚合模型）**：
-  - **繁多业务子类型采用帕斯卡前缀法（PascalCase Prefix）**：同族可枚举的业务子类型以业务名作为前缀聚合命名——玩家聚合分段族 `PlayerProgression` / `PlayerWorldState` / `PlayerCombatState` / `PlayerBuffState` / `PlayerLoadoutState` / `PlayerSettingsState` / `PlayerCombatSkillState`，分段枚举 `PlayerSectionKind`（`Progression`/`World`/`Combat`/`Buffs`/`Loadout`/`Settings`/`ActionQueue`），载荷与存储记录 `PlayerStateHead` / `PlayerSectionSnapshot` / `StoredSection` / `StoredAction` / `SectionFlushItem` / `AutoUseSlotState` 等，便于 IDE 极速自动补全与文件树聚类。
+  - **繁多业务子类型采用帕斯卡前缀法（PascalCase Prefix）**：同族可枚举的业务子类型以业务名作为前缀聚合命名——玩家聚合分段族 `PlayerProgression` / `PlayerWorldState` / `PlayerCombatState` / `PlayerBuffState` / `PlayerLoadoutState` / `PlayerSettingsState` / `PlayerCombatSkillState` / `PlayerDuelState`，分段枚举 `PlayerSectionKind`（`Progression`/`World`/`Combat`/`Buffs`/`Loadout`/`Settings`/`ActionQueue`/`Duel`），载荷与存储记录 `PlayerStateHead` / `PlayerSectionSnapshot` / `StoredSection` / `StoredAction` / `SectionFlushItem` / `AutoUseSlotState` 等，便于 IDE 极速自动补全与文件树聚类。
   - **职责型核心类型保留自然后缀法（Natural Suffix）**：引擎与结算 `SimulationEngine` / `CombatSkillEngine`，选择与解算 `EncounterWaveSelector` / `PlayerAttributeResolver`，映射与编解码 `ProtocolSnapshotMapper` / `SectionCodec` / `MarketDtoMapper`，宿主单写者与运行时 `PlayerRuntime`（内含 `PlayerActor`）/ `MarketRuntime` / `WebSocketRuntime`，持久化适配 `Postgres*Repository`，后台任务 `*Worker` / `*HostedService`。
   - **已废弃命名不得复用**：`Task*` 任务数据类、`Executor*` 静态执行器、`*Component`/`*System` ECS 基座后缀属于已被聚合模型取代的历史约定，新增代码不得使用。
 - 确定性快进的在线、离线挂机和重连结果必须保持一致。

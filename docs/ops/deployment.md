@@ -11,7 +11,7 @@
                                                    +--> ComputeNode（内部 HTTP/Token，冷挂机）
 ```
 
-API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取得 `player_id`；客户端不能在 URL 或请求体中声明另一个玩家取得权限。内测账号密码长度为 6-24 个字符。ComputeNode 优先接受 `X-Compute-Token` 头，缺失时回退接受 `Authorization: Bearer`；节点不连接生产数据库、不处理账号和市场写入。
+API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取得 `player_id`；客户端不能在 URL 或请求体中声明另一个玩家取得权限。内测账号密码长度为 6-24 个字符。ComputeNode 仅接受 `X-Compute-Token` 头（无 `Authorization` 回退）；节点不连接生产数据库、不处理账号和市场写入。
 
 目标主机按 `2c4g/40g` 设计：5000+ 账号、100+ 持续连接、500+ 峰值收发和 2000+ 冷挂机补算。容量门禁见 `scripts/verify.sh` 与 `src/LoadTests`。
 
