@@ -12,6 +12,7 @@
 - `monsters/`：各阶位普通妖兽、精英与首领（`tier1_minions.json`, `tier1_elites_bosses.json`, `tier2_minions.json`, `tier2_elites_bosses.json`）。
 - `encounters/`：各区域遭遇生态与怪物波次（`tier1_encounters.json`, `tier2_encounters.json`）。
 - `maps/`：世界大地图与节点网络（`qingyun_mountain.json`, `xingyun_realm.json`）。
+- `buildings/`：玩家可建造的节点公共建筑定义（`buildings.json`：分组、每级效果 `modifiers`、材料清单与解锁境界）。
 - `actions/`：玩家修炼、采集、精炼、炼丹、锻造与历练行动（`cultivation.json`, `gathering.json`, `crafting.json`, `alchemy.json`, `forging.json`, `combat.json`, `world.json`）。
 
 服务启动时经 `GameDataCatalog.LoadEmbedded` 一次性加载内嵌资源中的全部文件并构建不可变目录快照，结算不读取磁盘。当前校验强度分三类如实记录：
@@ -19,6 +20,8 @@
 - **阻止启动**：不兼容的结构版本、必需字段缺失或非法（如空 id、空怪物池、非正耗时/预算）、无效的 `type`/`kind`/`per` 枚举；
 - **静默处理（不报错）**：重复 ID 后者覆盖前者、地图邻接表追加不去重；
 - **尚未校验**：`dropChance`/`minQuantity`/`maxQuantity` 无范围校验，`eliteEnemyIds`/`bossEnemyIds`/`availableActionIds`/`encounterIds` 未做跨文件引用校验。配表评审须人工核对这三类风险。
+
+> `DataTool validate --strict` 另对建筑配表做结构性校验：`group` 合法性、`materials[].itemId` 物品引用与数量为正、节点 `buildableList` 建筑引用、`buildableTemplate` 模板名（`all`/`production`/`combat`/`other`）以及 `availableNodeIds` 节点引用。
 
 ---
 

@@ -54,6 +54,7 @@ Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部�
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。
 - 当前服务端不存在任何 `/api/debug/*` 或 `/api/metrics` 端点；任何 debug/metrics 端点只允许在 `Development` 环境存在，生产 Caddy 必须显式拦截对应路径（拦截规则已配置）。
 - 账号鉴权已落地：`/api/v1/auth/register|login|logout|session`，PBKDF2 密码哈希 + HttpOnly Cookie 会话 + 认证限流；客户端不再仅凭本地 UUID 标识玩家。该实现为内测口径——涉及充值、真实资产或开放注册前，必须先完成服务端身份认证、授权与审计的强化评审。
+- 防多开子系统独立收拢：服务端 `src/Server/Clean/AntiMultiOpen/`（标签互斥开关下发 / 单账号互踢 / 设备指纹配额，关闭码 4005-4008），前端 `frontend/src/antiMulti/`；设计真源见 `docs/backend/anti-multi-open.md`，准入裁决在 Hello 握手时统一执行。
 
 ## 4. 修改前检查
 

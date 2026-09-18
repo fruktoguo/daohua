@@ -2,7 +2,7 @@
 
 > **文档状态**：目标架构基线（2026-08-27）。
 >
-> **权威性**：本文件定义本次一次性 clean-room 重写采用的持久化、恢复、容量和中间件边界。现有代码、旧物理表、旧快照载荷、旧 outbox、旧市场账本、旧 API/WebSocket 字段和旧部署拓扑均不是本方案的兼容约束；实现直接建立当前 **schema v2**（`PostgresSchema.Version = 2`）、清空本地内测数据并删除旧模型。
+> **权威性**：本文件定义本次一次性 clean-room 重写采用的持久化、恢复、容量和中间件边界。现有代码、旧物理表、旧快照载荷、旧 outbox、旧市场账本、旧 API/WebSocket 字段和旧部署拓扑均不是本方案的兼容约束；实现直接建立当前 **schema v3**（`PostgresSchema.Version = 3`）、清空本地内测数据并删除旧模型。
 >
 > **重要说明**：本文是从业务不变量、故障模型、容量预算和运维成本重新推导出的方案。若最终选出的 PostgreSQL、.NET 或单写者模型与当前代码碰巧相同，只代表它们在约束下仍是最优解，不代表继承了旧表、旧载荷或旧调用链。项目既定的层级边界（`Domain` 纯领域、`Protocol` 纯协议、`Server` 宿主、`ComputeNode` 只做冷挂机补算）属于产品硬约束，不是历史兼容层。
 
@@ -44,7 +44,7 @@
 | 容量 | 在 `2c4g/40g` 主机上支持 5000+ 注册账号、100+ 持续收发、500+ 峰值收发和 2000+ 冷挂机补算。 |
 | 硬盘 | 不保存 WebSocket 帧、聊天消息、心跳、战斗 Tick、逐请求日志或每次状态变化历史；本地日志、WAL、队列和归档都有硬上限。 |
 | 扩展性 | section、资产、市场和外部副作用有独立边界；未来可以增加 section 或独立读模型，不需要重写整张玩家表。 |
-| 兼容性 | 当前内测直接采用 schema v2 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级仅由 `migrations/` 独立 SQL 脚本人工显式执行。 |
+| 兼容性 | 当前内测直接采用 schema v3 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级仅由 `migrations/` 独立 SQL 脚本人工显式执行。 |
 
 ### 2. 明确不在本次持久化范围的内容
 
@@ -142,6 +142,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 | game.player_action_queue | player_id, slot, action_id, action_payload, action_version, status, next_due_at, idempotency_key | 只保存当前待执行/进行中的行动；完成后删除或转为最新状态，不记录每个 Tick。 |
 | game.player_runtime_leases | player_id, owner_instance_id, lease_until, renewed_at | 玩家运行时所有权租约：标识哪个宿主实例持有该玩家的 `PlayerActor` 单写者；命令执行前续租校验，防止多实例并发写同一聚合。 |
 | game.player_projection | player_id, realm_rank, current_node_id, presence, last_active_at, projection_version | 供在线状态展示、玩家列表、运营检索与冷挂机筛选的可重建读模型投影；由 section 刷盘提交事务（`PostgresSectionRepository.ApplyBatchAsync`）顺带 `INSERT ... ON CONFLICT (player_id) DO UPDATE` 维护，不参与玩家真源提交，可随时从 section 重建。presence 由 settings section 解码而来：玩家卸载/断线路径先把聚合 presence 落为 offline 再强刷，使投影可区分在线与可冷挂机玩家。 |
+| game.node_buildings | node_id, building_id, level, target_level, started_at_unix_seconds, contributed_materials, updated_at | 节点级**公共建筑**权威注册表（主键 `(node_id, building_id)`）：无建造者概念，同节点同种仅一座，全民可发起建造/填充材料/升级；材料进度以 jsonb 记录逐项已交数量，建造进度按 `min(材料%, 已耗时/本级工期)` 惰性推算，无需后台 tick。运行期由 `NodeBuildingRegistry` 进程内缓存 + 单一信号量串行化，玩家聚合内的建筑投影仅为最近已知副本（供离线/冷挂机补算沿用），不构成真源。 |
 
 ### 3. economy：资产与不可变账本
 
@@ -169,7 +170,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 成交立即入账；领取只保存 `market.settlement_claims` 确认游标，不再次转账。`deploy/market-ledger-archive.sh` 维护按月 RANGE 分区的归档表，热表与归档表应区分描述。
 
-该结构使用 schema v2，一次性初始化新库；不提供 v1 的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。
+该结构使用 schema v3，一次性初始化新库；不提供旧版本（v1/v2）的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。v3 相对 v2 增加 `platform.compute_jobs` 租约字段（`lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，见 `migrations/0002_v2_to_v3.sql`）以及节点公共建筑表 `game.node_buildings`。
 
 唯一装备实例交易尚未实现：现有 `economy.player_asset_instances` 与 reservation 的 `instance_id` 仅为 DDL 设计，当前交易按可堆叠资产和 variant 结算，不能宣称已支持唯一装备冻结、转移和退款。
 
@@ -605,14 +606,14 @@ payload
 
 这是本次 clean-room 重写的一次性实施顺序，不保留旧路径：
 
-1. 冻结本文档的 schema v2、section 编号、协议字段和事务不变量。
+1. 冻结本文档的 schema v3、section 编号、协议字段和事务不变量。
 2. 新建 identity/game/economy/market/platform schema 与索引，清空本地旧数据。
 3. 删除旧的整玩家 Blob、旧市场账本 Blob、旧 outbox 适配和旧协议对象；实现新的 section/资产/市场/queue/outbox 适配。
 4. 在 `PlayerActor` 单写者安全点接入 section 编码和 latest-only queue；Worker 以版本条件提交和删除。
 5. 实现资产/市场同事务、幂等键、fence token、审计和错误证据。
 6. 接入 PostgreSQL WAL/pgBackRest/COS 归档，完成 PITR 和磁盘保护演练。
 7. 运行领域确定性测试、数据库集成测试、崩溃恢复、重复请求、并发成交、队列堆积、磁盘接近满和 capacity-target 门禁。
-8. 只有在上述门禁通过后，才把 schema v2 视为当前唯一生产基线；旧实现不再参与运行。
+8. 只有在上述门禁通过后，才把 schema v3 视为当前唯一生产基线；旧实现不再参与运行。
 
 ---
 

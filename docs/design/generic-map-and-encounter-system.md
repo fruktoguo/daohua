@@ -66,33 +66,23 @@ interface NpcDefinition {
 怪物代表栖息在该地点的野生妖兽、异化生物或敌对修士。
 每个怪物除了具备既定的阶位（`Tier`）、层次（`Rank`）与属性权重外，**必须配置单体消耗预算 `budgetCost`（对应灵狐的 Quality 质量点数）**。
 
-#### 数据结构定义（`MonsterConfig`）：
+#### 怪物配表结构示例（`config/game-data/monsters/*.json`）：
+```json
 {
   "id": "enemy.demonized-rabbit",
   "name": "魔化野兔",
-  "tier": 1,
-  "rank": "minion",
-  "budgetCost": 15,
-  "style": "body",
-  "category": "physical",
-  "element": "none",
-  "weights": {
-    "hp": 1.15,
-    "ad": 1.0,
-    "armor": 0.65,
-    "hit": 1.0,
-    "eva": 1.0
-  },
+  "visual": { "renderer": "text", "source": "兔" },
+  "budgetCost": 10,
+  "weights": { "hp": 1.15, "ad": 0.3, "armor": 0.65, "hit": 1.0, "eva": 1.0 },
   "dropTable": [
-    {
-      "itemId": "item.beast-hide",
-      "dropChance": 1.0,
-      "minQuantity": 1,
-      "maxQuantity": 1
-    }
+    { "itemId": "item.beast-hide", "dropChance": 1.0, "minQuantity": 1, "maxQuantity": 1 }
   ],
-  "rareDropTable": []
+  "qiReward": 10,
+  "experienceReward": 10,
+  "rootExpReward": 10
 }
+```
+> 属性面板由 `budgetCost` 与 `weights` 统一推导；`rank`（`minion`/`elite`/`boss`）决定怪我同构倍率（见第八篇）。`skills` 为敌方技能槽（可选）。
 
 #### 典型预算消耗梯度基准：
 
@@ -250,61 +240,32 @@ flowchart TD
 前端主要涉及「地图/附近（`map`）」面板与「历练（`exploration`）」面板的展示与交互联动。
 
 ### 5.1 地图 / 附近面板（World Map & Nearby Display）
-当玩家停留在某个地图节点时，面板直观展示该地点的全景信息：
+「历练」页（`combat` Tab）下含四个子页签：**地图 / 怪物 / 人物 / 建筑**（`App.tsx` 的 `MAP_TABS`）。当玩家停留在某个地图节点时，各页签直观展示该地点的全景信息：
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ 📍 青岚药谷                                  [ 危险度: 30 ~ 60 ]│
-│ 低阶灵草沿溪谷生长，是初入修行者最稳定的采集与历练之地。      │
-│ 修炼增益: 1.0x    预算池: 30 ~ 60                           │
-├─────────────────────────────────────────────────────────────┤
-│ 👥 常驻人物 (NPC)                                           │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ 🧑‍🌾 采药人林伯 (老药农)                                  │ │
-│ │ 熟悉药谷路径的老采药人。 (后续可提供采集委托)           │ │
-│ └─────────────────────────────────────────────────────────┘ │
-├─────────────────────────────────────────────────────────────┤
-│ 🐾 栖息生灵 (Monsters)                  [ 5战遇精英 / 20战遇领主 ]│
-│ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐       │
-│ │ [立绘] 魔化野兔│ │ [立绘] 木灵   │ │ [立绘] 伥鬼妖虎│       │
-│ │ 预算消耗: 15  │ │ 预算消耗: 25  │ │ 关底领主 BOSS │       │
-│ │ 掉落: 聚气兽核│ │ 掉落: 聚气兽核│ │ 掉落: 妖虎内丹│       │
-│ └───────────────┘ └───────────────┘ └───────────────┘       │
-│ (点击怪物卡片可弹出查看气血、攻防、抗性与技能详情)          │
-├─────────────────────────────────────────────────────────────┤
-│ ⚡ 本地可选行动                                             │
-│ [ 🌿 采集中品草药 ]                [ ⚔️ 药谷后山历练 ]       │
-└─────────────────────────────────────────────────────────────┘
+地图页签：世界节点拓扑、玩家位置、赶路进度与目标地点赶路入口
+怪物页签：栖息生灵（危险度预算区间 [minBudget, maxBudget]、精英/Boss 周期提示、怪物卡与数值详情）
+人物页签：常驻 NPC 与当前分片可见玩家
+建筑页签：当前节点公共建筑卡（等级/效果/双进度）、加号占位与可建候选弹窗
 ```
 
-### 5.2 怪物详情查看弹窗（`MonsterInfoModal`）
-- 点击地图上的怪物卡片，通过复用统一 Modal 弹出展示该怪物的详细数值：
-  - 阶位与层次（如 `一阶 · 小怪` / `一阶 · 精英` / `一阶 · 领主`）；
-  - 基础气血（如 `318 HP`）、法力、物理/法术攻击、护甲、抗性；
-  - 携带的被动与主动法术技能；
-  - 概率掉落物与数量。
+- **怪物卡**：展示预算消耗、气血/攻防/抗性与掉落，点击弹出统一 Modal 查看数值详情（复用公共 Modal，不再单列 `MonsterInfoModal` 组件）。
+- **建筑卡**：展示名称、等级与效果；建造中显示材料%/时间% 双进度缩略；点击弹详情 Modal（逐项材料清单、提交材料、升级）。节点未配置 `buildableTemplate`/`buildableList` 时不显示加号占位。
+- 节点的「本地可选行动」在历练页行动区呈现，与怪物/人物/建筑生态信息分栏。
 
-### 5.3 历练交互流程闭环
+### 5.2 历练交互流程闭环
 1. **点击历练行动**：点击【药谷后山历练】，弹出行动配置弹窗（`ActionModal`）；
 2. **选择挂机轮次**：可设置挑战 1 次、10 次、100 次或点击 `∞` 无限历练；
 3. **确认进入战斗**：点击【开始历练】，系统立即向队列首位插入该历练任务，并**平滑自动跳转至「详情」战斗界面（`CombatArena`）**，实时推进寻怪与波次战斗。
 
 ---
 
-## 6. 实施落地步骤规划
+## 6. 当前实现落点（非待办规划）
 
-1. **配置层数据结构升级**：
-   - 在 `src/Domain/GameData/` 中扩展 `WorldNodeDefinition`，补齐 `MinBudget`、`MaxBudget`、`EliteInterval`、`BossInterval`、`ElitePool`、`BossPool`；
-   - 在 `MonsterConfig` 中增加 `BudgetCost` 字段；
-   - 更新 `config/game-data/maps.json` 与 `monsters.json`。
-2. **领域层怪群模拟器与生成器升级**：
-   - 在 `src/Domain/Simulation/CombatGroupSimulator.cs` 中实现上述 `CreateEnemyGroup` 质量预算扣减算法。
-3. **协议层与服务端映射更新**：
-   - 在 `src/Protocol/` 中扩充地点节点 DTO，暴露 `minBudget`、`maxBudget`、`monsters` 列表（含名称、预算、掉落、立绘）、`npcs` 列表；
-   - 更新 `src/Server/Runtime/StateMapper.cs`。
-4. **前端地图与附近界面渲染升级**：
-   - 在 `frontend/src/components/NearbyPanel.tsx` 中渲染 NPC 卡片、怪物卡片池（含点击查看怪物数值详情）；
-   - 对齐公共组件文档规范。
-5. **门禁与测试**：
-   - 编写确定性怪群预算抽取单测；
-   - 运行 `scripts/verify.sh` 确保 100% 通过。
+本节记录该系统的实际实现落点，供代码对照；字段归属以本节与配表为准。
+
+1. **配置层**：地图节点定义由 `config/game-data/maps/*.json` 的 `WorldNode` 承载（节点坐标、`availableActionIds`、`npcs`、`buildings`、`buildableTemplate`/`buildableList`、`encounterIds`）；遭遇预算与怪群池定义在 `config/game-data/encounters/*.json`（`minBudget`/`maxBudget`/`randomSpawns`/`eliteEnemyIds`/`bossEnemyIds`/`maxTotalStrength`/`battlesPerElite`/`battlesPerBoss`）；怪物定义在 `config/game-data/monsters/*.json`（含 `budgetCost`/`rank`/`strength`）。解析产物为 `GameDataCatalog` 持有的只读定义集合。
+2. **领域层**：确定性波次抽取由 `src/Domain/Combat/EncounterWaveSelector.cs` 的 `Select(encounter, monsters, seed, waveNumber)` 实现质量预算扣减；世界图连通性由 `GameDataCatalog.BuildWorldGraph` 与 `WorldGraph` 维护。
+3. **协议层与服务端映射**：地点节点 DTO 由 `src/Server/Clean/ProtocolSnapshotMapper.cs` 的 `ToWorldSection` 投影，输出 `minBudget`/`maxBudget`/`encounterIds`/`npcs`/`buildings`/`buildableBuildingIds`/`nodeBuildings` 等字段。
+4. **前端**：`frontend/src/components/WorldMapPanel.tsx`（地图）与 `frontend/src/components/NearbyPanel.tsx`（怪物/人物/建筑页签）渲染，快照解码在 `frontend/src/network/snapshot.ts`。
+5. **门禁与测试**：确定性波次抽取由 `tests/Domain.Tests` 覆盖；建筑配表引用由 `DataTool validate --strict` 校验；整体门禁 `scripts/verify.sh`。

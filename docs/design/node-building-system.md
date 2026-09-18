@@ -1,0 +1,85 @@
+# 节点公共建筑系统设计规范 (Node Public Building System)
+
+> 状态：已随 TASK-20260918-05 / TASK-20260918-06 落地。本文是节点公共建筑玩法的唯一权威设计真源。
+> 配表真源：`config/game-data/buildings/buildings.json`；地图节点 `buildableTemplate` / `buildableList`。
+> 领域实现：`src/Domain/World/NodeBuildings.cs`；服务端注册表：`src/Server/Clean/NodeBuildingRegistry.cs`。
+
+## 1. 定位与归属
+
+- 建筑是**节点级公共设施**：无建造者/所有者概念，同节点同种建筑仅一座；任何人可发起建造、填充材料、发起升级。
+- 效果对**同地所有玩家**生效（公共增幅），不区分贡献者。
+- 建筑状态脱离玩家分段，作为**节点级共享注册表**（`nodeId → 建筑实例列表`）独立持久化到 `game.node_buildings`；玩家聚合内的 `World.NodeBuildings` 只是最近已知投影，供离线/冷挂机补算沿用，真源始终在服务端注册表。
+- 跨节点不泄漏：投影记录 `NodeBuildingNodeId`，消费方经 `EffectiveNodeBuildingEffects` 读取，投影节点与当前节点不一致时返回空集。
+
+## 2. 配表结构
+
+单座建筑定义字段：
+
+| 字段 | 含义 |
+| :--- | :--- |
+| `id` / `name` / `description` / `effect` | 标识与展示文本（`effect` 为效果文案） |
+| `group` | 分组：`production`（生产）/ `combat`（战斗）/ `other`（其他），供节点模板与候选弹窗分组 |
+| `requiredRealmLevel` | 建造解锁所需境界等级 |
+| `availableNodeIds` | 可选：限定可建节点；缺省表示不限定（仍受节点可建列表约束） |
+| `modifiers` | **每级基准效果**（见 §4），Lv N 生效 = 基准 × N |
+| `materials` | 一级基础材料清单（`itemId` + `quantity`），第 N 级需求 = 基础 × `1.1^(N-1)` |
+
+节点可建列表（地图 JSON 节点字段，二选一，均不写 = 该节点不可建）：
+
+- `buildableTemplate`：`all` 或分组名（`production`/`combat`/`other`），按分组映射全部建筑；
+- `buildableList`：自定义建筑 ID 数组（优先于模板）。
+
+## 3. 建造与升级流程（双进度条）
+
+- 每条建造/升级任务有两条进度：**材料%** 与 **时间%**；总进度 = `min(材料%, 时间%)`。
+- 材料不足时进度停滞，补足后继续；无需后台 tick，按「起始时刻 + 材料进度」惰性推算。
+- 时间需求：`600 × (1 + 0.2×(N-1))` 秒（基础 10 分钟，每级 +20% 线性；51 级 = 110 分钟）。
+- 材料需求：基础清单 × `1.1^(N-1)`（指数 +10%/级）。
+- 建成永久生效；升级 = 发起新一轮双进度条（目标 N+1）；升级期间维持旧级效果，完成瞬间跳变；无等级上限。
+- 首建期间 `Level=0` 不生效；升级期间 `Level` 维持旧等级。
+- 惰性完工：任何读取路径按当前时刻判定 `min(材料%,时间%)≥1` 即落成目标等级并清空材料投入，落库由注册表串行化完成。
+
+## 4. 效果模型与数值
+
+`modifiers` 七项效果：
+
+| 字段 | 语义 | 接线点 |
+| :--- | :--- | :--- |
+| `explorationSpeedRatio` | 采集行动加速比率（耗时 ÷ `1+ratio`） | `SimulationEngine` 行动耗时 |
+| `explorationOutputRatio` | 采集行动收益增幅 | 行动收益乘区 |
+| `alchemySpeedRatio` | 炼丹行动加速比率 | 行动耗时 |
+| `alchemyOutputRatio` | 炼丹行动收益增幅 | 行动收益乘区 |
+| `cultivationOutputRatio` | 吐纳修炼灵气收益增幅 | 行动收益乘区 |
+| `combatHitpointRegen` | 战斗内每 5 秒气血回复固定值 | `PlayerAttributeResolver` 回血乘区 |
+| `combatDamageReductionRatio` | 战斗减伤比率 | `PlayerAttributeResolver` 减伤乘区 |
+
+- 效果随等级线性成长：`effect(N) = 基准 × N`；多建筑按项相加汇总。
+- 收益增幅与消耗品/灵脉倍率**同乘区叠加**（`× (1 + ratio)`）；速度类为耗时 `÷ (1 + ratio)`。
+- 强度预算口径：产出/收益类按「1% = 1 点」预算，回血按「1 点回复 = 4 点预算」换算，行动加速/减伤属特殊属性人工参考同阶位范围。
+
+### 4.1 当前配表数值（T1~T2 初版）
+
+| 建筑 | 分组 | 解锁境界 | 每级效果 | 一级材料 |
+| :--- | :--- | ---: | :--- | :--- |
+| 采葛营帐 | production | 1 | 采集收益 +5% | 桃木×20、兽皮×10 |
+| 携行丹灶 | production | 1 | 炼丹收益 +5% | 玄铁×15、桃木×10 |
+| 聚灵蒲团 | production | 1 | 修炼收益 +5% | 凝血草×15、晨露×10 |
+| 淬火铁砧 | production | 19 | 炼丹加速 +5% | 玄铁×40、兽骨×20 |
+| 护阵石龛 | combat | 31 | 战斗减伤 +3% | 赤铜×20、聚魂符×10 |
+| 养脉泉眼 | combat | 43 | 战斗每 5 秒回血 +2 | 伴灵花×10、引灵松晶×5 |
+
+> 上述数值为初版占位，后续按 `data-designer` 强度预算方法细调；调整只改配表，不改规则。
+
+## 5. 交互与协议
+
+- 附近面板「建筑」Tab 展示当前节点建筑卡（名称 + 等级 + 效果 + 建造中双进度缩略），点击弹详情 Modal（等级、效果、双进度条、逐项材料清单与提交入口、升级按钮）。
+- 提交材料独立界面：每种材料一个数量输入，范围 `[0, min(背包剩余, 本级所需剩余)]`，提交前二次确认；提交不可退还。
+- 候选弹窗按 `group` 分组列出全部可建建筑；未解锁灰显并标注所需境界。
+- 命令：`building.build` / `building.upgrade` / `building.contribute`；目录端点 `/api/v1/catalog/buildings`。
+- 快照 `world` 段透传 `buildableBuildingIds`（可建列表，null=不可建）与 `nodeBuildings`（等级/双进度/材料明细）。
+
+## 6. 不变量
+
+- 同节点同种建筑仅一座；同一时刻同一节点至多一个进行中的工程。
+- 材料提交在注册表锁内校验钱包余额并原子扣减，禁止并发贡献把材料压成负数。
+- 所有进度推算只依赖持久化字段与当前时刻，在线/离线/冷挂机补算结果一致。

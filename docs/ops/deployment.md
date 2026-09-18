@@ -1,6 +1,6 @@
 # daohua 生产构建与部署
 
-本文只描述本次 clean-room 重写后的生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v2，本地 schema 不一致时默认直接重新初始化。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
+本文只描述本次 clean-room 重写后的生产基线。旧端口、旧 API、旧共享访问令牌、旧存档和旧数据库对象均不属于部署契约；空库启动永远由权威 `PostgresSchema.Sql` 直建当前 schema v3，本地 schema 不一致时默认直接重新初始化。既有库如需保留数据就地升级，可人工执行仓库根目录 `migrations/` 目录下的兼容性迁移脚本（纯 SQL，命名 `NNNN_vX_to_vY.sql`，详见 `migrations/README.md`）；该目录满足可整体删除约束——不参与编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文。
 
 ## 拓扑与边界
 
@@ -48,7 +48,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj --no-launch-profile
 ```
 
-API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v2 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。v2 为市场订单增加持久化到期时间：空库由 `PostgresSchema.Sql` 直建 v2，本地旧库默认重新初始化；如需保留本地数据，可人工执行 `migrations/0001_v1_to_v2.sql` 等兼容性迁移脚本就地升级（该目录可整体删除，运行时无任何依赖）。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
+API 默认监听 `127.0.0.1:5128`。启动时先完成 schema v3 建立/校验，再初始化 Data Protection key ring；不会在首个请求中触发建表竞态。v2 为市场订单增加持久化到期时间，v3 增加 `platform.compute_jobs` 租约字段与节点公共建筑表 `game.node_buildings`：空库由 `PostgresSchema.Sql` 直建 v3，本地旧库默认重新初始化；如需保留本地数据，可人工依次执行 `migrations/0001_v1_to_v2.sql`、`migrations/0002_v2_to_v3.sql` 等兼容性迁移脚本就地升级（该目录可整体删除，运行时无任何依赖）。已有远程数据的替换须先备份并单独授权，恢复归档必须使用匹配 schema 的应用版本。
 
 启动正式前端：
 

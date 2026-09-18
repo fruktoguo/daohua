@@ -67,7 +67,7 @@ Storage__EnableSchemaBootstrap=true \
 dotnet run --project src/Server/Server.csproj
 ```
 
-默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v2**（`PostgresSchema.Version = 2`），启动时校验版本并拒绝旧 schema。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立 SQL 脚本（该目录可整体删除，全新初始化行为不变）。若本地 schema 与当前基线不一致，应在确认数据无需保留后重新初始化本地数据库。
+默认监听 `http://127.0.0.1:5128`。首次使用新数据库时由 `PostgresSchema.Sql` 直建 **schema v3**（`PostgresSchema.Version = 3`），启动时校验版本并拒绝旧 schema。本项目不实现运行时 migration runner；既有库的跨版本就地升级由人工显式执行 `migrations/` 目录中的独立 SQL 脚本（该目录可整体删除，全新初始化行为不变）。若本地 schema 与当前基线不一致，应在确认数据无需保留后重新初始化本地数据库。
 
 同一 section schema 下，游戏数据指纹变化不会要求清库：玩家加载时会自动采用当前指纹并异步写回；只有 schema 版本变化才需要重新初始化本地数据库。
 
@@ -84,7 +84,7 @@ Vite 默认监听 `http://127.0.0.1:15172`，把 `/api` 和 `/ws` 代理到 `127
 当前 HTTP 前缀为 `/api/v1`：
 
 - `/api/v1/meta`：协议、schema 和游戏数据指纹。
-- `/api/v1/catalog/actions`、`/api/v1/catalog/items`、`/api/v1/catalog/abilities`、`/api/v1/catalog/base-attributes`、`/api/v1/catalog/equipment`、`/api/v1/catalog/maps`、`/api/v1/catalog/encounters`：带 ETag（游戏数据指纹）的只读目录。
+- `/api/v1/catalog/actions`、`/api/v1/catalog/items`、`/api/v1/catalog/abilities`、`/api/v1/catalog/base-attributes`、`/api/v1/catalog/equipment`、`/api/v1/catalog/maps`、`/api/v1/catalog/encounters`、`/api/v1/catalog/buildings`：带 ETag（游戏数据指纹）的只读目录。
 - `/api/v1/auth/register`、`/api/v1/auth/login`、`/api/v1/auth/logout`、`/api/v1/auth/session`：账号和会话；内测密码长度为 6-24 个字符。
 - `/api/v1/players/{playerId}`：授权后的完整玩家快照。
 - `/api/v1/players/{playerId}/commands`：带 `requestId`、`expectedStateVersion` 的通用命令入口。

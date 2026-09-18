@@ -1,0 +1,62 @@
+# 行动统计系统设计规范 (Action Statistics System)
+
+> 状态：已随 TASK-20260919-01 落地。本文是行动统计（战报泛化）的唯一权威设计真源。
+> 领域实现：`src/Domain/Player/PlayerDuel.cs`（`PlayerBattleReport` / `PlayerDuelState`）与 `src/Domain/Simulation/SimulationEngine.cs`（记账点）。
+> 前端：`frontend/src/components/StatsPanel.tsx`（原 `BattleReportPanel` 重构），组件登记见 `common-components.md` §24。
+
+## 1. 定位
+
+原「战斗收益战报」泛化为**行动统计**：对任意行动（战斗、采集、炼丹、修炼、赶路等）按三类账本持续记录收益与计数，替代仅服务战斗的旧战报。
+
+## 2. 三个账本
+
+同一 `PlayerBattleReport` 结构承担三类账本：
+
+| 账本 | 绑定 | 生命周期 | 用途 |
+| :--- | :--- | :--- | :--- |
+| 行动实例账本 | 队列中的**行动实例**（`actionInstanceId`） | 建账于实例开始推进，出队即归档 | 一个任务无论重复多少次都算一个行动，持续记录 |
+| 离线挂机账本 | 玩家（单例，`reportId="offline"`） | `Presence` 转入 `Offline` 时重置 | 关闭网页离线挂机期间的全部收益，每次离线会话重置 |
+| 每日统计账本 | 玩家（单例，`reportId="daily"`） | 按 **UTC+8 自然日**（`DayIndex`）自动 rollover | 自然日重置 |
+
+- 交易（坊市）不计入任何账本。
+- 记账枢纽 `PlayerAggregate.RecordStats(actionInstanceId, atUnixSeconds, apply)`：同一条 `apply` 依次作用于 ①实例账本（存在才记，不隐式建账）②离线账本（仅 `Presence==Offline` 时）③每日账本（先按 UTC+8 日界 rollover 再入账），统一 `MarkDirty(Duel)`。
+- 建账：`EnsureActionReport` 在实例通过全部前置校验、开始推进时 get-or-create；`Blocked` 行动不建账。
+- 归档：`ArchiveReportForAction` 挂接在 `RemoveAction`、travel 去重 `RemoveAt`、`CompleteOrRequeueHeadAction` 三处出口；空账本丢弃，非空插入 `Reports` 头部并裁剪至 `MaxBattleReports`（10 条）。
+
+## 3. 账本字段
+
+- **经验**：`Qi`（修为）、`Experience`（底蕴）、`RootExp`（六维：体魄/经脉/攻伐/御守/剑意/符箓）、`AbilityExp`（功法参悟经验，按功法 ID 聚合）、`LevelUps`（等级提升：`Kind ∈ realm/root/ability`，含 `FromLevel`/`ToLevel`）。
+- **物品**：`Items`（获得，含暂存区/缴获）、`ItemsLost`（失去：行动输入材料、自动消耗品扣件、斗法暂存被缴）。
+- **行动信息**：`Cycles`（完成轮次）、`Encounters`（战斗遭遇场次）、`NormalKills`/`EliteKills`/`BossKills`（分级击杀）、`Deaths`（讨伐失败与斗法败北）、`DuelWins`/`DuelLosses`（斗法胜负）、`DayIndex`（仅每日账本）。
+- 记账按**实际入账量**：修为按每秒全额累加；底蕴记瓶颈截断后的真实增量。
+
+## 4. 记账点（SimulationEngine）
+
+| 位置 | 记账 |
+| :--- | :--- |
+| `ApplyContinuousReward` | 每秒收益 Qi / 实际入账 Experience |
+| `CompleteRepeat` | qiGain / 实际经验增量、Item 产出（+）、Inputs（−）、`Cycles+1` |
+| `ApplyCombatRewards` | Qi / Experience / RootExp；掉落（+）或 StageItem（+） |
+| `DistributeRootExp` | 六维入账 + root 级 `LevelUp` 检测 |
+| 波次生成 | `Encounters+1` |
+| 波次清空 | `Cycles+1` + 分级击杀 `NormalKills/EliteKills/BossKills` |
+| 讨伐失败 / 斗法败北 | `Deaths+1`（斗法另计 `DuelLosses`） |
+| 斗法胜 | `DuelWins+1`，缴获入 `Items` |
+| 自动消耗品扣件 | `ItemsLost+1` |
+| travel 抵达 | `Cycles+1` 后实例出队归档 |
+| `GrantAbilityExperience` | `AbilityExp` + ability 级 `LevelUp` |
+| `Breakthrough` | realm 级 `LevelUp` |
+
+## 5. 协议与前端
+
+- wire `duel` 分段 = `PlayerDuelStateDocument` JSON（camelCase），随文档自动下发 `offlineReport`、`dailyReport`、`activeReports`；`currentReport` 为队首行动账本（兼容便捷访问）。
+- `types.ts` / `snapshot.ts` 解析新字段（缺省容错）；`battleReportStore` 读取 localStorage 旧缓存时为新增字段补默认值。
+- `StatsPanel` 分区：当前行动 / 离线挂机 / 今日统计；每区三小节——获取经验（含等级提升）、物品得失、行动信息；另保留斗法暂存区与近期战报历史。
+- 刷新页面且队列非空时自动进入「详情」（combat Tab）。
+
+## 6. 不变量
+
+- 实例账本与实例 Id 一一对应，轮转/重复执行续记不重置，出队即归档。
+- 离线/每日单例账本的 `ActionInstanceId` 为 `Guid.Empty`、`ActionId`/`ActionName` 允许空串。
+- 归档历史上限 10 条；导出/恢复往返后三账本完整还原。
+- 所有记账只依赖确定性模拟推进，在线/离线/冷挂机补算一致。

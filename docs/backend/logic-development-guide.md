@@ -96,6 +96,7 @@
 | `ability.learn` | 功法秘籍学习（`item.tome.*`，幂等键必需） |
 | `progression.breakthrough` | 境界突破 |
 | `world.travel` | 世界节点移动（自动先推进模拟再规划路径） |
+| `building.build` / `building.upgrade` / `building.contribute` | 节点公共建筑发起建造/发起升级/提交材料（注册表锁内校验钱包并原子扣减） |
 | `market.place` / `market.cancel` / `market.claim` | 挂单/撤单/结算领取 |
 | `player.rename` / `player.presence` | 改名/在线状态 |
 | `simulation.advance` | 内部推进命令（补算/心跳路径使用） |

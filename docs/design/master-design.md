@@ -11,7 +11,7 @@
 - [第一篇 核心哲学与顶层定位](#第一篇-核心哲学与顶层定位)
 - [第二篇 修仙境界与四乘区数值底座](#第二篇-修仙境界与四乘区数值底座)
 - [第三篇 装备标准化预算与锻造升阶体系](#第三篇-装备标准化预算与锻造升阶体系)
-- [第四篇 技能神通与五大流派架构](#第四篇-技能神通与五大流派架构)
+- [第四篇 技能神通与秘籍残卷体系 (全量 10 门神通)](#第四篇-技能神通与秘籍残卷体系-全量-10-门神通)
 - [第五篇 持续消耗品机制与生活制造体系](#第五篇-持续消耗品机制与生活制造体系)
 - [第六篇 战斗引擎、减伤公式与状态常驻规约](#第六篇-战斗引擎减伤公式与状态常驻规约)
 - [第七篇 大世界地图拓扑与质量预算遇怪系统](#第七篇-大世界地图拓扑与质量预算遇怪系统)
@@ -20,6 +20,7 @@
 - [第十篇 前端 UI 设计系统与修仙交互规范](#第十篇-前端-ui-设计系统与修仙交互规范)
 - [第十一篇 服务端领域数据架构与聚合运行时规约](#第十一篇-服务端领域数据架构与聚合运行时规约)
 - [第十二篇 生产部署、安全边界与 2c4g/40g 容量目标](#第十二篇-生产部署安全边界与-2c4g40g-容量目标)
+- [第十三篇 行动统计系统（三账本）](#第十三篇-行动统计系统三账本)
 
 ---
 
@@ -267,23 +268,36 @@ $$\text{每级强化增量} = \frac{\text{白板基础属性}}{50.0} \quad (\tex
 ## 7.1 通用世界地点模型 (`WorldNode`)
 不存在割裂的“纯战斗副本”。所有地点均为通用地理节点，包含三大支柱：
 1. **开放行动集合 (`availableActionIds`)**：采集、挖矿、炼丹、打坐、历练等。
-2. **驻留生物生态 (`Creatures`)**：常驻 NPC（任务/传功）与怪物生态池（`monsters`, `elitePool`, `bossPool`）。
-3. **危险度预算参数**：`[minBudget, maxBudget]` 战力预算区间、`eliteInterval` (默认 5 波)、`bossInterval` (默认 20 波)。
+2. **驻留生物生态 (`npcs`, `buildings`)**：常驻 NPC（任务/传功）与场景陈设建筑。
+3. **节点可建列表 (`buildableTemplate` / `buildableList`)**：本节点可建造的公共建筑集合（详见 7.3 与 [`node-building-system.md`](node-building-system.md)）。
+
+> **危险度预算归遭遇而非节点**：`[minBudget, maxBudget]` 战力预算区间、精英/Boss 周期（`battlesPerElite` 默认 5、`battlesPerBoss` 默认 20）与怪群权重池（`randomSpawns`/`eliteEnemyIds`/`bossEnemyIds`/`maxTotalStrength`）均定义在 `config/game-data/encounters/*.json`，节点仅通过 `encounterIds` 弱引用遭遇。节点不承载预算字段。
 
 ## 7.2 质量预算遇怪抽取算法 (灵狐 Quality 算法)
 ```mermaid
 flowchart TD
-    Start([寻怪倒计时结束]) --> CheckBoss{(波次 + 1) % bossInterval == 0 ?}
-    CheckBoss -- 是 --> SpawnBoss[从 bossPool 抽取 1 只 Boss, 分配 maxBudget]
-    CheckBoss -- 否 --> CheckElite{(波次 + 1) % eliteInterval == 0 ?}
-    CheckElite -- 是 --> SpawnElite[从 elitePool 抽取 1 只精英怪, 扣除 budgetCost]
-    CheckElite -- 否 --> RollBudget[在 [minBudget, maxBudget] 随机总预算 remainBudget]
-    
+    Start([寻怪倒计时结束]) --> CheckBoss{waveNumber % battlesPerBoss == 0 ?}
+    CheckBoss -- 是 --> SpawnBoss[从 bossEnemyIds 抽取 1 只 Boss, 预算重置为 maxBudget - bossCost]
+    CheckBoss -- 否 --> CheckElite{waveNumber % battlesPerElite == 0 ?}
+    CheckElite -- 是 --> SpawnElite[从 eliteEnemyIds 抽取 1 只精英怪, 扣除 budgetCost]
+    CheckElite -- 否 --> RollBudget[在 [minBudget, maxBudget] 确定性抽取总预算 remainBudget]
+
     SpawnElite --> DeductElite[剩余预算用于抽取小怪护从]
-    DeductElite --> LoopExtract[质量预算扣减循环: 按权重轮盘抽取, 扣除 budgetCost 直至预算耗尽]
+    DeductElite --> LoopExtract[质量预算扣减循环: 按权重轮盘抽取, 扣除 budgetCost, 直至预算耗尽或满编 3 只]
     RollBudget --> LoopExtract
     LoopExtract --> Finalize[生成怪群阵容 -> 进入 Combat 战斗]
 ```
+
+> 单波满编 3 只（1 特殊怪 + 2 护从 / 3 普通怪），并受 `maxTotalStrength` 强度上限约束；候选池为空时按预算最低普通小怪保底，杜绝空波次。
+
+## 7.3 节点公共建筑系统 (`NodeBuilding`)
+节点级**公共设施**：无建造者概念，同节点同种仅一座，全民可发起建造、填充材料与升级；效果对同地所有玩家生效。核心规则：
+
+- **双进度条**：总进度 = `min(材料%, 时间%)`；时间需求 `600×(1+0.2×(N-1))` 秒，材料需求 `基础×1.1^(N-1)`；惰性推算、无后台 tick。
+- **效果模型**：`modifiers` 七项（采集/炼丹的加速与收益、修炼收益、战斗回血与减伤），Lv N 生效 = 每级基准 × N；收益类与消耗品/灵脉倍率同乘区叠加。
+- **共享持久化**：节点级注册表落 `game.node_buildings`，玩家聚合内仅为最近已知投影。
+
+完整规则、配表字段与数值见 [`node-building-system.md`](node-building-system.md)。
 
 ---
 
@@ -387,6 +401,20 @@ flowchart TD
 | **离线补算** | 2,000+ 离线挂机补算 | 10,000 人 1 小时补算仅 **2.65s 墙钟** (吞吐 135.8 万边界/秒) | 30s 预算 (通过) |
 | **内存工作集** | 运行时常驻内存 | 10,000 人补算后工作集仅 **124.3 MB** | 805.3 MB (通过) |
 | **市场撮合** | 订单簿高频撮合 | 100,000 单并发撮合仅 **217.4 ms** (~46 万单/秒) | 0 错误 (通过) |
+
+---
+
+# 第十三篇 行动统计系统（三账本）
+
+原「战斗收益战报」泛化为**行动统计**，对任意行动持续记录收益与计数，共三类账本：
+
+1. **行动实例账本**：绑定队列中的行动实例，从开始推进到出队归档期间持续记录；一个任务重复多次仍算一个行动。
+2. **离线挂机账本**：`Presence` 转入 `Offline` 时重置，记录本次离线会话全部收益。
+3. **每日统计账本**：按 UTC+8 自然日自动 rollover。
+
+每本账本记录三类信息：**获取经验**（修为/底蕴/六维/功法参悟经验/等级提升）、**物品得失**（获得与失去分列）、**行动信息**（轮次/时长/遭遇场次/分级击杀/死亡/斗法胜负）。交易（坊市）不计入统计。
+
+完整字段、记账点与协议口径见 [`action-statistics-system.md`](action-statistics-system.md)。
 
 ---
 *全景主设计总纲结束。*

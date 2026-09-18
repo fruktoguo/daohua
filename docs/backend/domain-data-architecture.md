@@ -41,7 +41,7 @@
 - **职责**：描述行动、功法、物品、装备、怪物、遭遇、地图等静态数值数据。
 - **规范**：
   - 配置真源为 `config/game-data/` 下的 JSON 文件；`Domain.csproj` 将其编译期嵌入为程序集 `EmbeddedResource`，运行时由 `GameDataCatalog.LoadEmbedded` 统一加载、解析并计算数据指纹，**不再直读磁盘**。
-  - 解析产物为 `GameDataCatalog` 持有的只读定义集合（`CombatAbilityDefinition`、`ItemDefinition`、怪物/遭遇/地图定义、世界图 `WorldGraph` 等），启动后全生命周期只读不可变。
+  - 解析产物为 `GameDataCatalog` 持有的只读定义集合（`ItemDefinition`、`ConsumableDefinition`、`BuildingDefinition`、`ActionDefinition`、怪物/遭遇/地图定义、世界图 `WorldGraph` 等；功法技能定义保留为配表 `JsonElement` 透传），启动后全生命周期只读不可变。
   - 杜绝在配置类中混入运行时可变字段。
 
 ### 2. 第二层：运行时领域聚合（`src/Domain/Player/PlayerAggregate`）
@@ -49,7 +49,7 @@
 - **规范**：
   - `PlayerAggregate` 为单体聚合，内部按持久化边界划分为 **`PlayerSectionKind` 七分段**：
     - `Progression`（`PlayerProgression`）：境界等级、灵气修为、历史总修为；
-    - `World`（`PlayerWorldState`）：所在节点/边、坐标与探索随机数种子；
+    - `World`（`PlayerWorldState`）：所在节点/边、坐标与探索随机数种子，以及当前节点公共建筑投影（`NodeBuildings`/`NodeBuildingEffects`/`NodeBuildingNodeId`，仅最近已知副本，真源在服务端共享注册表）；
     - `Combat`（`PlayerCombatState`，含 `PlayerCombatSkillState` 技能冷却/吟唱）：当前生命/灵力、攻防与 `RegenCarrySeconds` 回复余量；
     - `Buffs`（`PlayerBuffState`）：当前生效 Buff 及到期边界；
     - `Loadout`（`PlayerLoadoutState`，含 `AutoUseSlotState`）：装备实例引用、已学功法与自动使用槽；
@@ -162,8 +162,9 @@ src/Domain/
 │   ├── EncounterWaveSelector.cs
 │   └── PlayerAttributeResolver.cs
 │
-├── World/                   # 地图、节点与世界图
-│   └── WorldModels.cs
+├── World/                   # 地图、节点、世界图与节点公共建筑
+│   ├── WorldModels.cs
+│   └── NodeBuildings.cs     # 节点公共建筑：进度推算、效果汇总与可建列表解析
 │
 ├── Market/                  # 交易子域（盘口、撮合、分片）
 │   ├── MarketModels.cs
@@ -188,6 +189,6 @@ src/Domain/
 
 - [commercial-persistence-architecture.md](commercial-persistence-architecture.md)
 
-当前持久化基线为 **schema v2**（`PostgresSchema.Sql` 直建）；不保留旧表、旧载荷、双读双写或兼容适配。
+当前持久化基线为 **schema v3**（`PostgresSchema.Sql` 直建）；不保留旧表、旧载荷、双读双写或兼容适配。
 
 领域层仍只负责生成可持久化的纯数据投影；数据库连接、事务、压缩、重试、备份和 Redis（若未来经过门槛引入）均属于 Server 基础设施边界。

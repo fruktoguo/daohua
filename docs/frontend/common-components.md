@@ -293,4 +293,16 @@
 - **等级与品质解算引擎**：[`frontend/src/game/ids.ts`](../../frontend/src/game/ids.ts)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.action-cards`, `.action-card`, `.item-corner--top-right`)
 
+---
+
+## 24. 行动统计面板与账本分区 (Stats Panel & Report Blocks)
+
+- **适用场景**：
+  - **行动收益账本统一渲染**：当前行动 / 离线挂机 / 每日统计 / 近期历史共用 `ReportBlock` 分区容器，内部统一拆为三个 memo 小节——`ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）、`ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemReference`）、`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）。
+  - **空账本抑制**：`reportHasContent` 判定全零账本不渲染分区；`endedAtUnixSeconds` 决定时长口径（进行中=估算服务端当前时刻−开始，归档=结束−开始）。
+  - **localStorage 历史缓存**：`battleReportStore` 读取时对旧缓存条目补齐账本新增字段默认值，防渲染崩溃。
+- **组件源码**：[`frontend/src/components/StatsPanel.tsx`](../../frontend/src/components/StatsPanel.tsx)
+- **缓存层**：[`frontend/src/game/battleReportStore.ts`](../../frontend/src/game/battleReportStore.ts)
+- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.battle-report-`)
+
 
