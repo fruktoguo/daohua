@@ -4,6 +4,19 @@ namespace Server.Clean;
 /// 服务端宿主统一运行时配置模型。
 /// 所有字段均在应用启动阶段完成严格的取值范围与有效性校验，快速失败。
 /// </summary>
+/// <param name="ServiceName">进程服务名（日志与部署标识）。</param>
+/// <param name="ConnectionString">PostgreSQL 连接串。</param>
+/// <param name="SectionFlushBatchSize">section 落盘单批上限。</param>
+/// <param name="SectionFlushInterval">脏 section 周期落盘间隔。</param>
+/// <param name="SectionFlushLease">durable 写队列行租约时长；市场分片续租也复用该值。</param>
+/// <param name="OutboxBatchSize">outbox 单批投递上限。</param>
+/// <param name="OutboxPollInterval">outbox 轮询间隔。</param>
+/// <param name="SessionLifetime">账号会话有效期。</param>
+/// <param name="MaxWebSocketMessageBytes">单条 WebSocket 上行消息最大字节数。</param>
+/// <param name="WebSocketOutboundCapacity">每会话下行有界通道容量（帧数）。</param>
+/// <param name="MarketPartitionCount">市场分片总数。</param>
+/// <param name="MarketPartitionId">本进程持有的市场分片序号。</param>
+/// <param name="EnableSchemaBootstrap">启动时是否执行 PostgresSchema 建库自检。</param>
 public sealed record ServerOptions(
     string ServiceName,
     string ConnectionString,
@@ -203,28 +216,23 @@ public sealed record ServerOptions(
 }
 
 /// <summary>
-/// 表示 ServerProcessRole 枚举。
+/// 进程运行角色：决定装配哪些宿主服务与仓储。
 /// </summary>
 public enum ServerProcessRole : byte
 {
-    /// <summary>
-    /// 表示 Api。
-    /// </summary>
+    /// <summary>在线请求角色：承载 HTTP API、WebSocket 与市场/玩家运行时。</summary>
     Api = 0,
-    /// <summary>
-    /// 表示 PersistenceWorker。
-    /// </summary>
+    /// <summary>持久化角色：只跑 section 落盘、outbox 与冷挂机派发等后台任务，不装配 GameDataCatalog。</summary>
     PersistenceWorker = 1
 }
 
 /// <summary>
-/// 提供 ServerJson 相关功能的静态容器。
+/// 服务端内部 JSON 序列化口径（camelCase、忽略 null、严格数字、大小写不敏感读取），
+/// 用于持久化载荷、compute.v1 契约等非协议边界；协议 DTO 走 ProtocolJson.Options。
 /// </summary>
 public static class ServerJson
 {
-    /// <summary>
-    /// 表示只读字段 Options。
-    /// </summary>
+    /// <summary>共享序列化配置；全局只读单例，避免多处各建实例导致口径漂移。</summary>
     public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,

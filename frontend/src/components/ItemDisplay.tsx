@@ -57,6 +57,7 @@ export interface ItemTileProps {
   rarity: ItemRarity
 }
 
+/** 未在注册表登记的物品的最小兜底元数据（凡品/金字兜底，品类走默认标签） */
 function fallbackMetadata(itemId: string): ItemMetadata {
   const t = getT()
   return {
@@ -91,15 +92,7 @@ function rarityToTone(rarity: ItemRarity): FloatingTone {
   }
 }
 
-/**
- * 物品悬浮气泡包裹组件 (ItemTooltipTarget)
- *
- * 鼠标悬停展示修仙风物品卡片气泡体系：
- * 1. 【主卡片 (300px)】：展示物品/装备品阶徽章、名称、背景故事描述、即时回血回蓝、冷却、装备攻防基础数值与品类/等阶；
- * 2. 【专属 Buff 附属卡片窗口 (220px)】：若为丹药附带持续 Buff，或修炼/采集/炼丹持续加成，在右侧独立展开附属面板；
- * 3. 【特殊机制附属卡片窗口 (220px)】：若装备带有特殊机制/特技，在右侧独立展开特殊机制副面板；
- * 4. 【数量副气泡】：若传入 amount，自动在右侧并排展示独立的数量副气泡。
- */
+/** 悬浮主卡片内容渲染组件的内部 Props（override 字段优先于全局配表查询结果） */
 interface ItemTooltipCardContentProps {
   itemId: string
   amount?: number
@@ -109,6 +102,10 @@ interface ItemTooltipCardContentProps {
   enhancementLevel?: number
 }
 
+/**
+ * 悬浮主卡片内容组件：聚合物品/装备定义、品阶徽章、主干效果行与品类/等阶/持存键值对。
+ * Buff 与特殊机制不混入主卡，统一走 Aside 副卡片（见 resolveItemTooltipAsideCards）。
+ */
 function ItemTooltipCardContent({
   itemId,
   amount,
@@ -188,6 +185,11 @@ function ItemTooltipCardContent({
   )
 }
 
+/**
+ * 副卡片聚合解析（惰性求值）：经 FloatingPopover 的 asideCards 函数形式传入，仅在浮层实际展开时执行。
+ * 合并丹药/增益 Buff 副卡、装备特殊机制副卡、功法秘籍/残卷参悟副卡与调用方附加卡片；
+ * 若物品自身 Buff 链路已产出参悟副卡（aside-manual-*），不再重复追加秘籍解析结果。
+ */
 function resolveItemTooltipAsideCards(
   itemId: string,
   metadataOverride?: ItemMetadata,

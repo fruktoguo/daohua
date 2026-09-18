@@ -1,27 +1,24 @@
 namespace Server.Clean;
 
 /// <summary>
-/// 提供 SessionAuthenticationDefaults 相关功能的静态容器。
+/// 会话认证方案的常量定义。
 /// </summary>
 public static class SessionAuthenticationDefaults
 {
-    /// <summary>
-    /// 表示常量 Scheme。
-    /// </summary>
+    /// <summary>认证方案名，注册为默认 authenticate/challenge scheme。</summary>
     public const string Scheme = "DaohuaSession";
-    /// <summary>
-    /// 表示常量 CookieName。
-    /// </summary>
+    /// <summary>承载不透明会话令牌的 HttpOnly Cookie 名；任何取值变更必须与前端同源 cookie 约定一致。</summary>
     public const string CookieName = "daohua_session";
 }
 
 /// <summary>
-/// 表示 SessionAuthenticationHandler 类。
+/// 不透明会话令牌认证处理器：优先读 HttpOnly Cookie，兼容 Bearer 头（非浏览器客户端）；
+/// 令牌经 IAccountRepository.ValidateSessionAsync 换成账号/玩家声明（player_id、display_name）。
 /// </summary>
-/// <param name="accounts">参数 accounts。</param>
-/// <param name="options">服务端配置选项。</param>
-/// <param name="logger">日志记录器。</param>
-/// <param name="encoder">参数 encoder。</param>
+/// <param name="accounts">账号仓储，负责会话令牌校验与身份解析。</param>
+/// <param name="options">认证框架选项监视器。</param>
+/// <param name="logger">日志工厂。</param>
+/// <param name="encoder">URL 编码器（框架必需）。</param>
 public sealed class SessionAuthenticationHandler(
     IAccountRepository accounts,
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -54,15 +51,14 @@ public sealed class SessionAuthenticationHandler(
 }
 
 /// <summary>
-/// 提供 SessionAuthenticationExtensions 相关功能的静态容器。
+/// 会话认证的服务装配扩展。
 /// </summary>
 public static class SessionAuthenticationExtensions
 {
     /// <summary>
-    /// 添加DaohuaAuthentication。
+    /// 注册 DaohuaSession 为默认认证与挑战方案，并启用授权。
     /// </summary>
-    /// <param name="services">参数 services。</param>
-    /// <returns>返回 IServiceCollection 类型的结果。</returns>
+    /// <param name="services">服务集合。</param>
     public static IServiceCollection AddDaohuaAuthentication(this IServiceCollection services)
     {
         services.AddAuthentication(options =>

@@ -490,20 +490,14 @@ static async Task WriteHealthResponse(HttpContext context, HealthReport report, 
     }, ProtocolJson.Options, context.RequestAborted);
 }
 
-/// <summary>
-/// 表示 RegisterRequest 记录。
-/// </summary>
-/// <param name="Account">参数 Account。</param>
-/// <param name="Password">参数 Password。</param>
-/// <param name="DisplayName">参数 DisplayName。</param>
+/// <summary>注册请求体。DisplayName 缺省时服务端回退使用账号名作为初始道号。</summary>
+/// <param name="Account">登录账号（3-32 位字母、数字或下划线，大小写不敏感）。</param>
+/// <param name="Password">明文密码，仅在传输层出现；服务端 PBKDF2 哈希后入库。</param>
+/// <param name="DisplayName">可选初始道号。</param>
 public sealed record RegisterRequest(string Account, string Password, string? DisplayName = null);
-/// <summary>
-/// 表示 LoginRequest 记录。
-/// </summary>
-/// <param name="Account">参数 Account。</param>
-/// <param name="Password">参数 Password。</param>
+/// <summary>登录请求体。</summary>
+/// <param name="Account">登录账号。</param>
+/// <param name="Password">明文密码，仅用于与服务端哈希比对。</param>
 public sealed record LoginRequest(string Account, string Password);
-/// <summary>
-/// 表示 Program 类。
-/// </summary>
+/// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

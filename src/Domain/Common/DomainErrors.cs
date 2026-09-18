@@ -29,13 +29,11 @@ public enum DomainErrorCode
 /// </summary>
 public sealed class DomainException : Exception
 {
-    /// <summary>
-    /// 初始化 Domain异常。
-    /// </summary>
-    /// <param name="code">code 参数。</param>
-    /// <param name="message">message 参数。</param>
+    /// <summary>以错误码与描述创建领域异常。</summary>
+    /// <param name="code">领域错误码。</param>
+    /// <param name="message">面向日志与调用方的可读描述。</param>
     public DomainException(DomainErrorCode code, string message) : base(message) => Code = code;
-    /// <summary>获取或设置 代码 的值。</summary>
+    /// <summary>领域错误码。</summary>
     public DomainErrorCode Code { get; }
 }
 

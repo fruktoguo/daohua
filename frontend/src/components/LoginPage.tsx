@@ -67,6 +67,7 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
 
   const handleRandomName = () => {
     const picked = RANDOM_DAO_NAMES[Math.floor(Math.random() * RANDOM_DAO_NAMES.length)]
+    // 词库道号追加两位数字后缀，降低随机起名撞名概率。
     const suffix = Math.floor(Math.random() * 90 + 10)
     setRegCharName(`${picked}${suffix}`)
     setError(null)

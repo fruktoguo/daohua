@@ -10,9 +10,7 @@ public sealed class PostgresMarketRepository(
     ILogger<PostgresMarketRepository> logger) : IMarketTransactionStore
 {
     private static readonly string CoinsAsset = "currency.spirit-stone";
-    /// <summary>
-    /// 获取 DataSource。
-    /// </summary>
+    /// <summary>底层数据源，供需要在同一连接上组合市场读模型的调用方使用。</summary>
     public NpgsqlDataSource DataSource => dataSource;
 
     /// <summary>
@@ -86,11 +84,7 @@ public sealed class PostgresMarketRepository(
         return new SettlementClaimResult(playerId, requestId, settlementCount, now, false);
     }
 
-    /// <summary>
-    /// 加载ActiveOrdersAsync（异步）。
-    /// </summary>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 IReadOnlyList&lt;StoredMarketOrder。</returns>
+    /// <summary>加载本进程分片全部活动订单，按 sequence 排序；用于启动时重建订单簿。</summary>
     public async ValueTask<IReadOnlyList<StoredMarketOrder>> LoadActiveOrdersAsync(CancellationToken cancellationToken = default)
     {
         var orders = new List<StoredMarketOrder>();
@@ -113,12 +107,7 @@ public sealed class PostgresMarketRepository(
         return orders;
     }
 
-    /// <summary>
-    /// 加载ActiveOrdersAsync（异步）。
-    /// </summary>
-    /// <param name="instrument">市场品种。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 IReadOnlyList&lt;StoredMarketOrder。</returns>
+    /// <summary>加载本分片指定品种的活动订单，按 sequence 排序。</summary>
     public async ValueTask<IReadOnlyList<StoredMarketOrder>> LoadActiveOrdersAsync(
         MarketInstrument instrument,
         CancellationToken cancellationToken = default)
@@ -148,12 +137,7 @@ public sealed class PostgresMarketRepository(
         return orders;
     }
 
-    /// <summary>
-    /// 加载OrderAsync（异步）。
-    /// </summary>
-    /// <param name="orderId">参数 orderId。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 StoredMarketOrder?。</returns>
+    /// <summary>按订单 ID 加载本分片订单；跨分片或不存在的订单返回 null。</summary>
     public async ValueTask<StoredMarketOrder?> LoadOrderAsync(Guid orderId, CancellationToken cancellationToken = default)
     {
         if (orderId == Guid.Empty) return null;
@@ -175,11 +159,9 @@ public sealed class PostgresMarketRepository(
     }
 
     /// <summary>
-    /// 执行AcquireLeaseAsync（异步）。
+    /// 抢占本分片写者租约。仅在租约不存在、已过期或本就属于本实例时成功；
+    /// 每次成功接管 fence_token 递增，使旧写者未提交的事务因 fence 校验失败而无法再写。
     /// </summary>
-    /// <param name="ownerInstanceId">参数 ownerInstanceId。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 bool。</returns>
     public async ValueTask<bool> AcquireLeaseAsync(Guid ownerInstanceId, CancellationToken cancellationToken = default)
     {
         if (ownerInstanceId == Guid.Empty) throw new ArgumentException("ownerInstanceId 不能为空。", nameof(ownerInstanceId));
@@ -209,13 +191,13 @@ public sealed class PostgresMarketRepository(
     }
 
     /// <summary>
-    /// 执行CommitPlacementAsync（异步）。
+    /// 在 Serializable 事务内提交挂单：校验分片租约 fence → 写订单 → 冻结挂单资产 → 逐笔应用成交。
+    /// 幂等键命中已存订单时核对参数一致后直接返回，不重复冻结或成交。
     /// </summary>
-    /// <param name="order">市场订单。</param>
-    /// <param name="fills">参数 fills。</param>
-    /// <param name="fenceToken">参数 fenceToken。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 MarketCommitResult。</returns>
+    /// <param name="order">挂单输入，分片必须与当前写者一致。</param>
+    /// <param name="fills">本次撮合产生的成交列表（可为空）。</param>
+    /// <param name="fenceToken">当前持有的分片租约 fence。</param>
+    /// <returns>提交结局；AlreadyCommitted=true 表示幂等重放。</returns>
     public async ValueTask<MarketCommitResult> CommitPlacementAsync(
         MarketOrderInput order,
         IReadOnlyList<MarketFillInput> fills,
@@ -305,16 +287,7 @@ public sealed class PostgresMarketRepository(
         return new MarketCommitResult(order.OrderId, true, false, tradeIds);
     }
 
-    /// <summary>
-    /// 取消Async（异步）。
-    /// </summary>
-    /// <param name="orderId">参数 orderId。</param>
-    /// <param name="ownerPlayerId">参数 ownerPlayerId。</param>
-    /// <param name="partitionId">分片标识。</param>
-    /// <param name="fenceToken">参数 fenceToken。</param>
-    /// <param name="idempotencyKey">参数 idempotencyKey。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 bool。</returns>
+    /// <summary>主动撤单并退还冻结资产；幂等键必须绑定玩家与订单，防止跨玩家重放。</summary>
     public ValueTask<bool> CancelAsync(
         Guid orderId,
         Guid ownerPlayerId,
@@ -326,15 +299,7 @@ public sealed class PostgresMarketRepository(
         return CloseOrderAsync(orderId, ownerPlayerId, partitionId, fenceToken, idempotencyKey, null, cancellationToken);
     }
 
-    /// <summary>
-    /// 执行ExpireAsync（异步）。
-    /// </summary>
-    /// <param name="orderId">参数 orderId。</param>
-    /// <param name="ownerPlayerId">参数 ownerPlayerId。</param>
-    /// <param name="fenceToken">参数 fenceToken。</param>
-    /// <param name="cutoff">参数 cutoff。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 bool。</returns>
+    /// <summary>过期关单：与撤单共用同一路径，仅当 expires_at 不晚于 cutoff 才关闭并退还冻结。</summary>
     public ValueTask<bool> ExpireAsync(Guid orderId, Guid ownerPlayerId, long fenceToken, DateTimeOffset cutoff, CancellationToken cancellationToken = default) =>
         CloseOrderAsync(orderId, ownerPlayerId, options.MarketPartitionId, fenceToken,
             $"market-expire:{ownerPlayerId:D}:{orderId:D}", cutoff, cancellationToken);
@@ -885,10 +850,8 @@ public sealed class PostgresMarketRepository(
     }
 }
 
-/// <summary>
-/// 表示 MarketLeaseLostException 类。
-/// </summary>
-/// <param name="partitionId">分片标识。</param>
-/// <param name="fenceToken">参数 fenceToken。</param>
+/// <summary>分片租约 fence 校验失败时抛出：当前实例已不再是该分片的合法写者，必须中止本次账本写入。</summary>
+/// <param name="partitionId">丢失租约的分片。</param>
+/// <param name="fenceToken">调用方持有但已失效的 fence。</param>
 public sealed class MarketLeaseLostException(int partitionId, long fenceToken)
     : InvalidOperationException($"市场分片租约已失效 partition={partitionId} fence={fenceToken}");

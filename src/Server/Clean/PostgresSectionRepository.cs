@@ -9,11 +9,10 @@ public sealed class PostgresSectionRepository(
 {
     private readonly LogThrottle _flushErrorLog = new(TimeSpan.FromMinutes(1));
     /// <summary>
-    /// 加载Async（异步）。
+    /// 加载玩家完整持久化状态：identity + 提交头 + 已落盘 section + 尚未落盘的 flush 队列行
+    /// 在 RepeatableRead 快照内合并，队列中的较新版本覆盖旧快照；玩家不存在返回 null，
+    /// 完整性/校验和不过抛 InvalidDataException。
     /// </summary>
-    /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 PlayerStateBundle?。</returns>
     public async ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -264,22 +263,13 @@ public sealed class PostgresSectionRepository(
             $"action:{action.Id:D}")).ToArray();
     }
 
-    /// <summary>
-    /// 执行EnqueueSectionsAsync（异步）。
-    /// </summary>
-    /// <param name="sections">参数 sections。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>把脏 section 写入 latest-only 刷盘队列（无回执场景）。</summary>
     public async ValueTask EnqueueSectionsAsync(
         IReadOnlyCollection<SectionWrite> sections,
         CancellationToken cancellationToken = default)
         => await EnqueueSectionsAsync(sections, [], cancellationToken);
 
-    /// <summary>
-    /// 执行EnqueueSectionsAsync（异步）。
-    /// </summary>
-    /// <param name="sections">参数 sections。</param>
-    /// <param name="receipts">参数 receipts。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>同事务入队 section 与命令回执；写回失败整体回滚，保证回执不会先于状态生效。</summary>
     public async ValueTask EnqueueSectionsAsync(
         IReadOnlyCollection<SectionWrite> sections,
         IReadOnlyCollection<CommandReceipt> receipts,
@@ -296,13 +286,9 @@ public sealed class PostgresSectionRepository(
     }
 
     /// <summary>
-    /// 执行EnqueueInTransactionAsync（异步）。
+    /// 在调用方事务内写入 flush 队列与命令回执；供经济事务等需要「结算 + 状态写回」
+    /// 原子提交的路径复用。队列 UPSERT 只接受更高 state_version，旧版本写回被静默丢弃。
     /// </summary>
-    /// <param name="connection">参数 connection。</param>
-    /// <param name="transaction">参数 transaction。</param>
-    /// <param name="sections">参数 sections。</param>
-    /// <param name="receipts">参数 receipts。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
     internal static async ValueTask EnqueueInTransactionAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
         IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken)
     {
@@ -398,12 +384,10 @@ public sealed class PostgresSectionRepository(
     }
 
     /// <summary>
-    /// 落盘PendingAsync（异步）。
+    /// 租约认领一批到期队列行并落盘：先 UPDATE...FROM CTE 原子打租约，再按（玩家, 版本）分组
+    /// 逐组开事务应用；单组失败回滚该组并退避重试，不阻塞其他玩家。认领行中的较旧版本
+    /// 靠 section_version 谓词自然丢弃，不会让旧快照覆盖新状态。
     /// </summary>
-    /// <param name="maxRows">参数 maxRows。</param>
-    /// <param name="lease">租约信息。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 FlushBatchResult。</returns>
     public async ValueTask<FlushBatchResult> FlushPendingAsync(
         int maxRows,
         TimeSpan lease,
@@ -512,7 +496,7 @@ public sealed class PostgresSectionRepository(
     /// <param name="writes">节点回传并已完成线侧校验的 section 写入集。</param>
     /// <param name="lastSimulatedAt">推进后的模拟时刻。</param>
     /// <param name="gameDataFingerprint">本批使用的游戏数据指纹。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     public async ValueTask<ComputeApplyOutcome> ApplyComputeResultAsync(
         Guid playerId,
         long sourceStateVersion,
@@ -792,20 +776,10 @@ public sealed class PostgresSectionRepository(
             throw new InvalidDataException("section 队列 schema 版本不受支持。");
     }
 
-    /// <summary>
-    /// 表示 SectionCheckpoint 记录。
-    /// </summary>
-    /// <param name="SectionKind">参数 SectionKind。</param>
-    /// <param name="SectionVersion">参数 SectionVersion。</param>
-    /// <param name="Checksum">参数 Checksum。</param>
+    /// <summary>section 行的轻量检查点，用于重算提交头校验和而不必取回完整载荷。</summary>
     private sealed record SectionCheckpoint(string SectionKind, long SectionVersion, string Checksum);
 
-    /// <summary>
-    /// 表示 HeadMetadata 记录。
-    /// </summary>
-    /// <param name="StateVersion">参数 StateVersion。</param>
-    /// <param name="LastSimulatedAt">参数 LastSimulatedAt。</param>
-    /// <param name="GameDataFingerprint">参数 GameDataFingerprint。</param>
+    /// <summary>既有提交头的元数据子集，用于保留 last_simulated_at/指纹不回拨。</summary>
     private sealed record HeadMetadata(long StateVersion, DateTimeOffset LastSimulatedAt, string GameDataFingerprint);
 
     private static async Task<IReadOnlyList<SectionCheckpoint>> ReadSectionChecksumsAsync(

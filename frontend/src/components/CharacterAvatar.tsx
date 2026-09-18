@@ -3,6 +3,7 @@ import { getAvatarCandidateUrls } from '../game/avatarStore'
 import type { CharacterVisual } from '../game/types'
 import { resolveCharacterKind, VectorCharacter } from './VectorCharacter'
 
+/** CharacterAvatar 立绘组件 Props */
 export interface CharacterAvatarProps {
   /** 实体标识符 (如 'player', 'demonized-rabbit', 'enemy.chang-tiger' 等，不关心后缀自动适应) */
   actorId?: string | null

@@ -61,7 +61,7 @@ public sealed record PlayerCombatStateDocument(
     double Defense,
     double RegenCarrySeconds = 0)
 {
-    /// <summary>获取或设置 Skills 的值。</summary>
+    /// <summary>技能调度状态快照。</summary>
     public PlayerCombatSkillState Skills { get; init; } = PlayerCombatSkillState.Empty;
 }
 
@@ -85,7 +85,7 @@ public sealed record QueuedActionState(
     CombatExpeditionState? Expedition = null,
     TravelActionState? Travel = null);
 
-/// <summary>玩家聚合 的领域定义。</summary>
+/// <summary>玩家聚合的快照导出与恢复分部。</summary>
 public sealed partial class PlayerAggregate
 {
     private ActiveBuff[]? _cachedBuffs;

@@ -11,7 +11,8 @@ public sealed class ResourceSimulationTests
     private static readonly DateTimeOffset Baseline = new(2026, 9, 14, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>
-    /// 验证 <c>ConfiguredRegenCarriesAcrossRestoreAndMatchesOfflineAdvancement</c>（Configured Regen Carries Across Restore And Matches Offline Advancement）所描述的领域行为。
+    /// 气血/灵力回复的亚秒进位余量（RegenCarrySeconds）随快照持久化并跨恢复持续累积；
+    /// 分段在线推进与整段离线补算的回复结果必须逐值一致（装备加成参与回复基数）。
     /// </summary>
     [Fact]
     public void ConfiguredRegenCarriesAcrossRestoreAndMatchesOfflineAdvancement()
@@ -49,7 +50,8 @@ public sealed class ResourceSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>ResourceExhaustionKeepsSettledOutputAndAllowsFollowingAction</c>（Resource Exhaustion Keeps Settled Output And Allows Following Action）所描述的领域行为。
+    /// 材料耗尽时已完成轮次的产出不回滚（action.blocked 记录阻塞），
+    /// 队头受阻后轮换执行后续可满足的行动。
     /// </summary>
     [Fact]
     public void ResourceExhaustionKeepsSettledOutputAndAllowsFollowingAction()

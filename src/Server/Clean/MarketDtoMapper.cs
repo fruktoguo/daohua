@@ -4,15 +4,14 @@ using Protocol;
 namespace Server.Clean;
 
 /// <summary>
-/// 提供 MarketDtoMapper 相关功能的静态容器。
+/// 市场领域对象到协议 DTO 的映射器：标识转字符串、Side/Status 枚举转协议 snake_case 口径。
 /// </summary>
 public static class MarketDtoMapper
 {
     /// <summary>
-    /// 转换为Order。
+    /// 把一笔领域订单投影为协议订单 DTO。
     /// </summary>
     /// <param name="order">市场订单。</param>
-    /// <returns>返回 MarketOrderDto 类型的结果。</returns>
     public static MarketOrderDto ToOrder(MarketOrder order) => new(
         order.OrderId.Value.ToString("D"),
         order.OwnerId.Value.ToString("D"),
@@ -36,15 +35,13 @@ public static class MarketDtoMapper
         order.ExpiresAt);
 
     /// <summary>
-    /// 转换为Placement。
+    /// 把挂单结果中的新订单投影为协议 DTO。
     /// </summary>
-    /// <param name="result">操作结果。</param>
-    /// <returns>返回 MarketOrderDto 类型的结果。</returns>
+    /// <param name="result">挂单结算结果。</param>
     public static MarketOrderDto ToPlacement(PlacementResult result) => ToOrder(result.IncomingOrder);
     /// <summary>
-    /// 转换为Cancellation。
+    /// 把撤单结果中的订单投影为协议 DTO。
     /// </summary>
-    /// <param name="result">操作结果。</param>
-    /// <returns>返回 MarketOrderDto 类型的结果。</returns>
+    /// <param name="result">撤单结算结果。</param>
     public static MarketOrderDto ToCancellation(CancellationResult result) => ToOrder(result.Order);
 }

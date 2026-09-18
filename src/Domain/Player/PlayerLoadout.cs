@@ -67,40 +67,38 @@ public static class AbilityExpCurve
     public static double LevelFor(double exp) => RootAttributeCurve.LevelFor(exp);
 }
 
-/// <summary>玩家功法/神通槽位 的领域定义。</summary>
+/// <summary>功法/神通装配槽位：技能 ID（可空）、参悟等级与自定义触发条件。</summary>
 public sealed record PlayerAbilitySlot(string? AbilityId, double Level, IReadOnlyList<JsonElement> Triggers);
-/// <summary>玩家Equipment槽位 的领域定义。</summary>
+/// <summary>装备槽位记录：配表装备 ID 与强化等级。</summary>
 public sealed record PlayerEquipmentSlot(string ItemId, double EnhancementLevel);
-/// <summary>玩家装备配置文档 的领域定义。</summary>
+/// <summary>装配分段的可持久化文档形态。</summary>
 public sealed record PlayerLoadoutDocument(
     PlayerCoreAttributes CoreAttributes,
     IReadOnlyList<PlayerAbilitySlot> AbilitySlots,
     IReadOnlyList<PlayerEquipmentSlot> Equipment,
     IReadOnlyDictionary<string, double>? AbilityExperiences = null);
 
-/// <summary>玩家装备配置状态 的领域定义。</summary>
+/// <summary>装配分段运行时状态（六维根骨、功法槽位、装备与技能经验）。</summary>
 public sealed partial class PlayerLoadoutState
 {
-    /// <summary>获取或设置 Core属性 的值。</summary>
+    /// <summary>六维根骨经验；等级由立方曲线导出。</summary>
     public PlayerCoreAttributes CoreAttributes { get; internal set; } = new();
+    /// <summary>功法装配槽位（至多 4 槽，槽位可空）。</summary>
     public List<PlayerAbilitySlot> AbilitySlots { get; } = [];
+    /// <summary>已穿戴装备槽位列表。</summary>
     public List<PlayerEquipmentSlot> Equipment { get; } = [];
     /// <summary>已习得技能的累计经验，键为 ability ID；等级由 AbilityExpCurve 导出。</summary>
     public Dictionary<AbilityId, double> AbilityExperiences { get; } = [];
 
-    /// <summary>
-    /// 执行 Export 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>导出可持久化装配文档；触发条件 JSON 做防御性深拷贝。</summary>
+    /// <returns>装配分段快照文档。</returns>
     internal PlayerLoadoutDocument Export() => new(CoreAttributes,
         AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }).ToArray(),
         Equipment.ToArray(),
         AbilityExperiences.Count == 0 ? null : AbilityExperiences.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal));
 
-    /// <summary>
-    /// 执行 恢复 操作。
-    /// </summary>
-    /// <param name="document">document 参数。</param>
+    /// <summary>从持久化文档恢复装配状态；结构与数值不满足不变量时抛出 InvalidArgument。</summary>
+    /// <param name="document">装配快照文档。</param>
     internal void Restore(PlayerLoadoutDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -127,13 +125,11 @@ public sealed partial class PlayerLoadoutState
     }
 }
 
-/// <summary>玩家聚合 的领域定义。</summary>
+/// <summary>玩家聚合的功法习得与装配分部。</summary>
 public sealed partial class PlayerAggregate
 {
-    /// <summary>
-    /// 执行 习得功法/神通 操作。
-    /// </summary>
-    /// <param name="abilityId">abilityId 参数。</param>
+    /// <summary>习得功法并登记到装配；首次习得时自动初始化 4 个空装配槽位。</summary>
+    /// <param name="abilityId">待习得的功法/神通 ID。</param>
     public void LearnAbility(AbilityId abilityId)
     {
         if (!abilityId.IsValid || Loadout.LearnedAbilities.Contains(abilityId))

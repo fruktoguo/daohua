@@ -6,7 +6,7 @@ namespace Domain.Tests;
 public sealed class MarketTests
 {
     /// <summary>
-    /// 验证 <c>PriceTimePriorityProducesDeterministicFill</c>（Price Time Priority Produces Deterministic Fill）所描述的领域行为。
+    /// 价格-时间优先撮合：高价买单按更优的挂单价成交，剩余量留在盘口。
     /// </summary>
     [Fact]
     public void PriceTimePriorityProducesDeterministicFill()
@@ -27,7 +27,7 @@ public sealed class MarketTests
     }
 
     /// <summary>
-    /// 验证 <c>OwnerCannotCancelAnotherPlayersOrder</c>（Owner Cannot Cancel Another Players Order）所描述的领域行为。
+    /// 撤单校验所有者身份：非订单所属玩家撤单必须抛错。
     /// </summary>
     [Fact]
     public void OwnerCannotCancelAnotherPlayersOrder()
@@ -41,7 +41,7 @@ public sealed class MarketTests
     }
 
     /// <summary>
-    /// 验证 <c>RestoreRebuildsProjectionWithoutMatching</c>（Restore Rebuilds Projection Without Matching）所描述的领域行为。
+    /// Restore 只重建盘口投影与版本号，不得触发撮合产生意外成交。
     /// </summary>
     [Fact]
     public void RestoreRebuildsProjectionWithoutMatching()
@@ -60,7 +60,7 @@ public sealed class MarketTests
     }
 
     /// <summary>
-    /// 验证 <c>RestoreRejectsInvalidStatusAndSequence</c>（Restore Rejects Invalid Status And Sequence）所描述的领域行为。
+    /// 恢复时未定义的订单状态码、以及低于订单 Sequence 的盘口版本均必须拒绝。
     /// </summary>
     [Fact]
     public void RestoreRejectsInvalidStatusAndSequence()

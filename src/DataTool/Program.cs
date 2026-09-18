@@ -1,3 +1,7 @@
+// DataTool：游戏数据配表（game-data JSON）的离线校验与指纹工具，独立命令行程序，无项目引用。
+// 用法：validate <目录> [--strict] 输出校验报告 JSON；fingerprint <目录> 复用同一管线输出指纹。
+// 退出码：0 校验通过，1 校验失败/目录不存在，2 用法错误。指纹口径为 gamedata.v1，
+// 必须与 ComputeNode 的 GameDataFingerprint 逐字节一致，否则双方会误判配表不一致。
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -25,6 +29,8 @@ if (!Directory.Exists(directory))
 
 try
 {
+    // fingerprint 命令故意复用完整校验管线：指纹必须永远对应"通过校验的这份内容"，
+    // 避免出现"校验失败但指纹可用"的分叉口径。
     var result = Validate(directory, strict);
     Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions(JsonSerializerDefaults.Web)
     {
@@ -56,6 +62,8 @@ static ValidationResult Validate(string directory, bool strict)
         var bytes = File.ReadAllBytes(file);
         try
         {
+            // 配表只允许严格 JSON（禁注释/尾逗号、限制深度）：既保证指纹对应字节在任何
+            // 解析器下口径一致，也把格式问题挡在入库之前。
             using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions
             {
                 MaxDepth = 64,
@@ -89,6 +97,7 @@ static ValidationResult Validate(string directory, bool strict)
         fingerprint.AppendData(bytes);
     }
 
+    // manifest.json 只在 --strict 下强制要求：默认模式兼容尚未引入清单的开发中配表目录。
     var manifestPath = Path.Combine(directory, "manifest.json");
     if (!File.Exists(manifestPath))
     {

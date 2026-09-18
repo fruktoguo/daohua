@@ -16,12 +16,10 @@ public enum PercentCurveMode : byte
 /// </summary>
 public static class PercentValue
 {
-    /// <summary>
-    /// 执行 倍率 操作。
-    /// </summary>
-    /// <param name="points">points 参数。</param>
-    /// <param name="mode">mode 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>把百分比点数换算为乘区倍率；负值按对应曲线软着陆（收益递减而非线性扣减）。</summary>
+    /// <param name="points">百分比点数（100 点 = 100%，允许负值）。</param>
+    /// <param name="mode">曲线模式。</param>
+    /// <returns>乘区倍率（恒为正有限数）。</returns>
     public static double Multiplier(double points, PercentCurveMode mode)
     {
         if (!double.IsFinite(points)) throw new DomainException(DomainErrorCode.InvalidArgument, "百分比点数必须有限。");

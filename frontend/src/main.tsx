@@ -1,5 +1,5 @@
 /**
- * 道化太初 () 前端应用入口脚本
+ * 道化太初前端应用入口脚本
  * 负责挂载 React 根节点并引入全局与组件样式表
  */
 import { createRoot } from 'react-dom/client'

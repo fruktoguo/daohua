@@ -10,9 +10,9 @@ internal sealed class LogThrottle(TimeSpan interval)
     private long _nextAllowedUtcTicks;
 
     /// <summary>
-    /// 尝试Acquire。
+    /// 距上次放行超过配置间隔时放行一次。并发下同一窗口内只有一个调用者拿到 true。
     /// </summary>
-    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
+    /// <returns>本次调用被放行返回 true，窗口期内重复调用返回 false</returns>
     public bool TryAcquire()
     {
         var now = DateTimeOffset.UtcNow.Ticks;

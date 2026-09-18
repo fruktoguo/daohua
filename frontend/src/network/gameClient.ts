@@ -29,6 +29,7 @@ const PARSE_FAILURE_WINDOW_MS = 30_000
 /** 同类解析错误提示的节流间隔，避免坏帧连发刷屏。 */
 const PARSE_FAILURE_NOTICE_THROTTLE_MS = 4_000
 
+/** WebSocket 端点：默认同源 /ws（https 自动切 wss），仅外部后端场景用 VITE_WS_URL 覆盖 */
 function getEndpoint(): string {
   const configured = import.meta.env.VITE_WS_URL as string | undefined
   if (configured) return configured
@@ -119,11 +120,13 @@ export class GameClient {
     this.open()
   }
 
+  /** 登出：断开连接并清空本地账号态 */
   logout(): void {
     this.dispose()
     clearStoredAccount()
   }
 
+  /** 彻底停用客户端：停心跳/重连/挂起请求并关闭 socket；dispose 后不再自动重连 */
   dispose(): void {
     this.disposed = true
     this.clearReconnectTimer()
@@ -135,6 +138,7 @@ export class GameClient {
     useGameStore.getState().setConnection('offline')
   }
 
+  /** 触发快照重建：断开当前连接（走统一重连路径换取全量 Snapshot），未连接时直接重开 */
   requestSnapshotOrResync(): void {
     if (this.disposed) return
     const socket = this.socket

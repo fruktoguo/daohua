@@ -49,6 +49,8 @@ public static class ComputeContract
         {
             var error = ValidateJob(job);
             if (error is not null) return error;
+            // Base64 解码体积约为字符数的 3/4；这里直接用字符数做廉价的批次总量估算，
+            // 在任何一段被实际解码/解压前就拒绝超限批次，避免被压缩载荷放大内存占用。
             totalBytes += job.Sections.Sum(section => section.PayloadBase64.Length);
             if (totalBytes * 3 > MaxBatchBytes)
             {
@@ -79,6 +81,8 @@ public static class ComputeContract
         }
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // 节点只补算已经流逝的时间；目标时间落在未来意味着主服务时钟漂移或请求被伪造，
+        // 仅容忍 5 分钟时钟偏差，超出直接拒绝而不是截断。
         if (job.TargetUnixMilliseconds > now + TimeSpan.FromMinutes(5).TotalMilliseconds)
         {
             return new { code = "TARGET_IN_FUTURE", message = "目标时间不能超过当前时间 5 分钟。" };
@@ -89,6 +93,7 @@ public static class ComputeContract
             return new { code = "INVALID_SECTIONS", message = $"每个任务必须包含 1 到 {MaxSectionsPerJob} 个 section。" };
         }
 
+        // 同一任务内 section kind 必须唯一：重复 kind 会让主服务写回时无法确定哪个版本为准。
         var kinds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var section in job.Sections)
         {
@@ -172,7 +177,7 @@ public sealed record SectionPayload(
 /// </summary>
 /// <param name="ActionId">行动标识。</param>
 /// <param name="DurationSeconds">单次行动持续时间（秒）。</param>
-/// <param name="RepeatCount">重复次数，默认为 1。</param>
+/// <param name="RepeatCount">重复次数，默认为 1；节点只按有界次数估算可完成数，非正值（含领域侧的 -1 无限语义）不计入完成量</param>
 public sealed record ActionIntent(
     string ActionId,
     double DurationSeconds,
@@ -229,6 +234,7 @@ public sealed record AdvanceJobResult(
         string code,
         string message,
         bool retryable = false) =>
+        // 失败结果不带回任何 section，TargetStateVersion 保持与源版本一致，向主服务声明本任务未发生任何推进。
         new(job.JobId, job.PlayerId, false, job.SourceStateVersion, job.SourceStateVersion,
             null, null, code, message, retryable);
 }

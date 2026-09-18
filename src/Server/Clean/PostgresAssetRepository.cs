@@ -3,12 +3,7 @@ namespace Server.Clean;
 /// <summary>资产余额只读投影。它不参与任何结算写入，避免把查询与事务职责混在一起。</summary>
 public sealed class PostgresAssetRepository(NpgsqlDataSource dataSource) : IAssetBalanceRepository
 {
-    /// <summary>
-    /// 加载BalancesAsync（异步）。
-    /// </summary>
-    /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 IReadOnlyList&lt;AssetBalanceRecord。</returns>
+    /// <summary>读取玩家全部正余额资产行，按 asset_id/variant 排序；零余额行不回传以压缩快照。</summary>
     public async ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(
         Guid playerId,
         CancellationToken cancellationToken = default)

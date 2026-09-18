@@ -6,11 +6,12 @@ public sealed class PostgresEconomyRepository(
     ILogger<PostgresEconomyRepository> logger) : IEconomyTransactionStore
 {
     /// <summary>
-    /// 执行CommitAsync（异步）。
+    /// 在单个 Serializable 事务内提交一笔资产变更：幂等键去重、按固定顺序对余额行加锁更新、写入不可变流水，
+    /// 并将分段快照写回与命令回执同事务入队。幂等键已存在时校验请求指纹一致后直接返回首次提交结果。
     /// </summary>
-    /// <param name="request">请求数据传输对象。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 EconomyTransactionResult。</returns>
+    /// <param name="request">资产事务请求：事务 ID、幂等键、类型、发起者、变更行集合及随事务落盘的分段/回执。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>提交结果；<c>IdempotentReplay</c> 为 true 表示命中已有幂等记录、本次未重复生效。</returns>
     public async ValueTask<EconomyTransactionResult> CommitAsync(
         EconomyTransactionRequest request,
         CancellationToken cancellationToken = default)
@@ -201,26 +202,22 @@ public sealed class PostgresEconomyRepository(
 }
 
 /// <summary>
-/// 表示 EconomyInsufficientBalanceException 类。
+/// 余额行锁内结算发现变更后数量为负或非有限值时抛出，携带引发失败的变更与当前可用余额供诊断。
 /// </summary>
-/// <param name="delta">参数 delta。</param>
-/// <param name="available">参数 available。</param>
+/// <param name="delta">触发余额不足的资产变更行。</param>
+/// <param name="available">结算前该行余额数量。</param>
 public sealed class EconomyInsufficientBalanceException(AssetDelta delta, double available)
     : InvalidOperationException($"资产余额不足 player={delta.PlayerId} asset={delta.AssetId} variant={delta.Variant} available={available} requestedDelta={delta.Delta}")
 {
-    /// <summary>
-    /// 获取或设置 Delta。
-    /// </summary>
+    /// <summary>触发失败的资产变更行。</summary>
     public AssetDelta Delta { get; } = delta;
-    /// <summary>
-    /// 获取 Available。
-    /// </summary>
+    /// <summary>结算前该资产行的可用余额。</summary>
     public double Available { get; } = available;
 }
 
 /// <summary>
-/// 表示 EconomyIdempotencyConflictException 类。
+/// 幂等键已被请求指纹不同的历史事务占用时抛出，用于拦截同键异参的重放或并发冲突。
 /// </summary>
-/// <param name="idempotencyKey">参数 idempotencyKey。</param>
+/// <param name="idempotencyKey">发生冲突的幂等键。</param>
 public sealed class EconomyIdempotencyConflictException(string idempotencyKey)
     : InvalidOperationException($"资产事务幂等键已绑定其他请求 idempotencyKey={idempotencyKey}");

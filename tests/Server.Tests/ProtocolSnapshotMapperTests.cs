@@ -9,10 +9,13 @@ using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Protocol Snapshot Mapper Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// 快照协议映射门禁：DTO 不泄露领域运行时对象、资产/分段增量 diff 语义（含删除归零）、
+/// 权威模拟时刻随帧下发，以及行动队列显示字段在配表缺失时的安全回退。
+/// </summary>
 public sealed class ProtocolSnapshotMapperTests
 {
-    /// <summary>验证 Snapshot Mapper Emits Protocol Dto Without Domain Runtime Objects。</summary>
+    /// <summary>快照 DTO 全为协议载荷：8 个分段以 Base64 下发，不含领域运行时对象。</summary>
     [Fact]
     public void SnapshotMapper_EmitsProtocolDtoWithoutDomainRuntimeObjects()
     {
@@ -27,7 +30,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(8, dto.Sections.Count);
         Assert.All(dto.Sections, section => Assert.False(string.IsNullOrWhiteSpace(section.PayloadBase64)));
     }
-    /// <summary>验证 To Delta Carries Only Changed Assets Against Baseline。</summary>
+    /// <summary>资产 diff 只携带相对基线变化的条目；基线一致为空、无基线回退全量。</summary>
 
     [Fact]
     public void ToDelta_CarriesOnlyChangedAssetsAgainstBaseline()
@@ -68,7 +71,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(simulatedAt.ToUniversalTime().ToUnixTimeMilliseconds(), decoded!.LastSimulatedAt.ToUnixTimeMilliseconds());
         Assert.Contains("lastSimulatedAt", System.Text.Encoding.UTF8.GetString(envelope.Payload.Span));
     }
-    /// <summary>验证 Diff Assets Emits Zero Balance For Removed Asset。</summary>
+    /// <summary>资产从账本消失时 diff 必须显式下发 0 余额条目，否则前端会残留旧余额。</summary>
 
     [Fact]
     public void DiffAssets_EmitsZeroBalanceForRemovedAsset()
@@ -82,7 +85,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(0, removed.Quantity);
         Assert.Equal(7, removed.Version);
     }
-    /// <summary>验证 Diff Sections Carries Only Sections With Modified Checksum。</summary>
+    /// <summary>分段 diff 按 checksum 判定变化；基线缺失或为空时回退为全量下发。</summary>
 
     [Fact]
     public void DiffSections_CarriesOnlySectionsWithModifiedChecksum()
@@ -91,7 +94,6 @@ public sealed class ProtocolSnapshotMapperTests
         var section2 = new PlayerSectionDto("world", 1, 1, "json", "payload2", 10, 10, "checksum_world_1", DateTimeOffset.UtcNow);
         var sections = new List<PlayerSectionDto> { section1, section2 };
 
-        // Baseline has same checksum for world, different for progression
         var baseline = new Dictionary<string, string>
         {
             ["progression"] = "checksum_prog_old",
@@ -102,7 +104,6 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Single(diff);
         Assert.Equal("progression", diff[0].Section);
 
-        // Baseline identical -> empty diff
         var identicalBaseline = new Dictionary<string, string>
         {
             ["progression"] = "checksum_prog_1",
@@ -110,11 +111,10 @@ public sealed class ProtocolSnapshotMapperTests
         };
         Assert.Empty(ProtocolSnapshotMapper.DiffSections(identicalBaseline, sections));
 
-        // Baseline null or empty -> all sections returned
         Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(null, sections).Count);
         Assert.Equal(2, ProtocolSnapshotMapper.DiffSections(new Dictionary<string, string>(), sections).Count);
     }
-    /// <summary>验证 To Action Queue Section Graceful Fallback When Game Data Null Or Unknown Action。</summary>
+    /// <summary>配表缺失或行动 Id 未知时队列显示字段安全回退：actionName 置空、actionType 兜底，不得抛错。</summary>
 
     [Fact]
     public void ToActionQueueSection_GracefulFallback_WhenGameDataNullOrUnknownAction()
@@ -153,7 +153,7 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal("赶路", item1Unknown.GetProperty("actionName").GetString());
         Assert.Equal("travel", item1Unknown.GetProperty("actionType").GetString());
     }
-    /// <summary>验证 To Snapshot Action Queue Section Includes Action Name And Type。</summary>
+    /// <summary>行动队列分段载荷必须携带 actionName/actionType，供前端不经配表直接展示。</summary>
 
     [Fact]
     public void ToSnapshot_ActionQueueSection_IncludesActionNameAndType()

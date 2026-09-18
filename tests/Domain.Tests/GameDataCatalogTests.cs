@@ -24,7 +24,7 @@ public sealed class GameDataCatalogTests
     }
 
     /// <summary>
-    /// 验证 <c>JsonResourcesProduceStableFingerprintAndDefinitions</c>（Json Resources Produce Stable Fingerprint And Definitions）所描述的领域行为。
+    /// 相同 JSON 资源两次解析必须产生相同指纹（存档/协议一致性前提），且字段定义正确落位。
     /// </summary>
     [Fact]
     public void JsonResourcesProduceStableFingerprintAndDefinitions()
@@ -41,7 +41,8 @@ public sealed class GameDataCatalogTests
     }
 
     /// <summary>
-    /// 验证 <c>EmbeddedCatalogParsesSustainedConsumableEffects</c>（Embedded Catalog Parses Sustained Consumable Effects）所描述的领域行为。
+    /// 嵌入配表中的持续型消耗品（聚气丹）必须解析出持续时长、修炼倍率与适用行动类型，
+    /// 防止配表结构调整后自动用药静默失效。
     /// </summary>
     [Fact]
     public void EmbeddedCatalogParsesSustainedConsumableEffects()

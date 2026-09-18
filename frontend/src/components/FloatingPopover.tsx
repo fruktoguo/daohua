@@ -238,13 +238,11 @@ interface FloatingContextValue {
 
 const FloatingContext = createContext<FloatingContextValue | null>(null)
 
+/** 供浮层内容（如 FloatingMenuItem）读取的关闭句柄；不在浮层内渲染时返回 null */
 export function useFloatingContext(): FloatingContextValue | null {
   return useContext(FloatingContext)
 }
 
-/**
- * 通用 FloatingPopover 属性
- */
 /**
  * 通用 FloatingPopover 属性定义
  */
@@ -369,6 +367,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
     const openTimerRef = useRef<number | null>(null)
     const closeTimerRef = useRef<number | null>(null)
 
+    // 初始坐标先放到屏幕外：浮层挂载后由 useLayoutEffect 立即完成首次测量定位，避免在 (0,0) 闪一帧。
     const [pos, setPos] = useState<PositionResult>({
       left: -9999,
       top: -9999,
@@ -806,10 +805,7 @@ export function FloatingTooltip({
   )
 }
 
-/**
- * 标准修仙信息卡片气泡组件 (FloatingInfoCard)
- * 具备精致标题、徽记、副标、多行属性条目、富文本及可选操作项
- */
+/** FloatingInfoCard 卡片 Props：标题、徽记、副标、词条行、属性网格与底部操作 */
 export interface FloatingInfoCardProps {
   title: ReactNode
   /** 标题左侧图标地址（物品类卡片传入物品图标，缺省时不渲染） */
@@ -827,6 +823,12 @@ export interface FloatingInfoCardProps {
   className?: string
 }
 
+/**
+ * 标准修仙信息卡片气泡组件 (FloatingInfoCard)
+ *
+ * 具备精致标题、徽记、副标、多行属性条目、富文本及可选操作项；
+ * 作为 FloatingPopover 的 content/aside 卡片统一模板使用。
+ */
 export function FloatingInfoCard({
   title,
   titleIcon,
@@ -897,18 +899,27 @@ export function FloatingInfoCard({
   )
 }
 
-/**
- * 悬浮操作菜单组件 (FloatingMenu)
- */
+/** 悬浮菜单单条目 Props */
 export interface FloatingMenuItemProps {
+  /** 条目主文案 */
   label: ReactNode
+  /** 可选左侧图标 */
   icon?: ReactNode
+  /** 可选右侧浅灰提示（如快捷键/余量） */
   hint?: ReactNode
+  /** 修仙色调主题 */
   tone?: FloatingTone
+  /** 是否禁用该条目 */
   disabled?: boolean
+  /** 点击回调（触发后自动关闭所属浮层） */
   onClick?: (e: React.MouseEvent) => void
 }
 
+/**
+ * 悬浮操作菜单单条目 (FloatingMenuItem)
+ *
+ * 点击执行回调后经 FloatingContext 自动关闭所在浮层，无需调用方手动收尾。
+ */
 export function FloatingMenuItem({
   label,
   icon,
@@ -939,10 +950,12 @@ export function FloatingMenuItem({
   )
 }
 
+/** 悬浮菜单分隔线 */
 export function FloatingMenuDivider(): React.JSX.Element {
   return <div className="daohua-floating-menu-divider" />
 }
 
+/** 悬浮菜单分组容器：可选组标题 + 条目列表 */
 export function FloatingMenuGroup({
   title,
   children,

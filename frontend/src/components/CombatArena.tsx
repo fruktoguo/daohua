@@ -14,6 +14,7 @@ import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { BASELINE_COMBAT_ATTRIBUTES } from '../game/combatConstants'
 import { CharacterAvatar } from './CharacterAvatar'
 
+/** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名 */
 function resolveQueueEntryDisplayName(entry: QueueEntry | null | undefined, fallback?: string): string {
   if (!entry) return fallback || ''
   if (entry.actionName && entry.actionName !== entry.actionId) {
@@ -25,9 +26,13 @@ function resolveQueueEntryDisplayName(entry: QueueEntry | null | undefined, fall
 /** 资源条数值变动特效记录（跳字与血条破裂碎片） */
 interface ResourceEffect {
   id: number
+  /** 本次数值增量（负值为受损） */
   delta: number
+  /** 受损区间起点（占最大值比例 0~1），碎片/跳字按它定位 */
   left: number
+  /** 受损区间宽度（占最大值比例 0~1） */
   width: number
+  /** 跳字横向错位车道（px），错开连续多条跳字避免相互重叠 */
   lane: number
 }
 
@@ -224,6 +229,8 @@ function SmoothActionFill({ action }: { action?: CombatActionState | null }): Re
     const anchor = anchorRef.current
     if (anchor?.signature === signature) {
       const expected = Math.min(anchor.duration, anchor.elapsed + now - anchor.startedAt)
+      // elapsed 明显回退说明同一行动进入了新一轮出手，必须重建动画；
+      // 否则在 ±250ms 估算误差内沿用旧动画，避免每次快照同步都重启 WAAPI 造成进度条抖动。
       const startedNewCycle = elapsed + 50 < anchor.lastObservedElapsed
       anchor.lastObservedElapsed = elapsed
       if (!startedNewCycle && Math.abs(elapsed - expected) <= 250) return
@@ -627,9 +634,12 @@ function ArenaActor({
   visible = true,
   compact = false,
 }: {
+  /** 实体唯一键：切换目标/波次时重置跳字与受击特效状态 */
   actorKey: string
+  /** 实体标识符（立绘资源检索用） */
   actorId?: string | null
   name: string
+  /** 立绘缺失时的单字印章兜底文本 */
   seal: string
   role: 'player' | 'enemy'
   hp: number
@@ -638,8 +648,10 @@ function ArenaActor({
   maxMp: number
   action?: CombatActionState | null
   buffs?: readonly Buff[]
+  /** 点击/回车唤起属性详情模态窗回调 */
   onInspect: () => void
   visual?: CharacterVisual | null
+  /** 非激活态（搜寻阶段敌方未入场）时置灰休眠且不可聚焦 */
   visible?: boolean
   compact?: boolean
 }): React.JSX.Element {
@@ -1126,6 +1138,7 @@ function resolveEnemyDefinition(
   return activeEncounter?.enemy ?? null
 }
 
+/** 敌方单位展示态：由 wire 快照（enemies[] 或 duel 载荷）与配表定义合并而成的渲染模型 */
 interface EnemyDisplayState {
   actorKey: string
   enemyId: string | null

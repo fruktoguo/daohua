@@ -74,7 +74,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         this.setState({ copied: true })
         setTimeout(() => this.setState({ copied: false }), 3000)
       }).catch(() => {
-        // clipboard 降级
+        // 剪贴板权限被拒或不可用时静默跳过：复制失败不应让降级屏自身再抛异常。
       })
     }
   }

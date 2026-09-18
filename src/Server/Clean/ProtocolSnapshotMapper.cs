@@ -212,11 +212,11 @@ public static class ProtocolSnapshotMapper
     }
 
     /// <summary>
-    /// 转换为ActionQueueSection。
+    /// 把行动队列分段投影为协议匿名对象数组：在队列状态之上补充配表解析出的
+    /// 名称、类型、时长与执行种类；travel 行动的时长与类型以 TravelState 为准。
     /// </summary>
-    /// <param name="actions">参数 actions。</param>
-    /// <param name="gameData">游戏数据目录。</param>
-    /// <returns>返回 object[] 类型的结果。</returns>
+    /// <param name="actions">聚合当前的行动队列。</param>
+    /// <param name="gameData">激活配表；为 null 时仅输出队列原始字段（名称等降级为 null）。</param>
     public static object[] ToActionQueueSection(IReadOnlyList<QueuedActionState> actions, GameDataCatalog? gameData)
     {
         if (actions is null || actions.Count == 0) return [];

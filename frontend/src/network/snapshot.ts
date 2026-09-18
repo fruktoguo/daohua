@@ -38,6 +38,7 @@ import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerS
 type JsonObject = Record<string, unknown>
 
 const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
+/** 全量快照必须齐备的分段清单；缺任何一段说明服务端快照残缺，整包拒绝 */
 const REQUIRED_SNAPSHOT_SECTIONS = ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue', 'duel'] as const
 
 function object(value: unknown): JsonObject {
@@ -770,6 +771,7 @@ export async function decodePlayerSnapshotDto(dto: PlayerSnapshotDto, account = 
     visual: visualFor(name),
     world,
     duel,
+    // 待突破 = 境界经验已填满当前层所需（容差 0.0001 吸收浮点误差）且确有修为存量
     isPendingBreakthrough: statsRealm.expToNext > 0 && statsRealm.expToNext - statsRealm.currentLayerExp <= 0.0001 && stats.spirit > 0,
     renameCooldownSeconds: Math.max(0, renameCooldownUntil - serverTime),
   }

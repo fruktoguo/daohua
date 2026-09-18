@@ -87,10 +87,12 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
   }
 })
 
+/** 查询背包中指定物品的持有数量（未持有返回 0） */
 function itemAmount(inventory: InventoryItem[], itemId: string): number {
   return inventory.find(item => item.itemId === itemId)?.amount ?? 0
 }
 
+/** 解析队列条目显示名：优先 wire 携带的 actionName，否则按 actionId 回查配表 */
 function resolveQueueEntryName(entry: QueueEntry, actions?: readonly ActionDefinition[]): string {
   if (entry.actionName && entry.actionName !== entry.actionId) {
     return entry.actionName
@@ -104,6 +106,7 @@ function actionDescription(entry: QueueEntry, actions?: readonly ActionDefinitio
   return def?.description ?? resolveQueueEntryName(entry, actions)
 }
 
+/** 剩余轮次文案：负值（协议约定 -1）表示无限循环 */
 function formatRepeatsLabel(remainingRepeats: number, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (remainingRepeats < 0) return t('app.queue.repeatsInfinite')
   return t('common.repeatsCount', { n: remainingRepeats })

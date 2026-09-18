@@ -20,6 +20,7 @@ internal static class PostgresCapacityProbe
         var process = Process.GetCurrentProcess();
         process.Refresh();
         var cpuBefore = process.TotalProcessorTime;
+        // 先强制回收再取基线，使内存增量口径只反映本次探测自身分配。
         var managedBefore = GC.GetTotalMemory(forceFullCollection: true);
         var started = Stopwatch.GetTimestamp();
 
@@ -279,6 +280,9 @@ internal static class PostgresCapacityProbe
         var count = 0L;
         var rounds = checked(options.StateChangesPerSecond * options.StateChangeSeconds);
         var now = DateTimeOffset.UtcNow;
+        // 模型假设：只有峰值在线玩家产生状态变更；队列主键即 (player, section)，
+        // 同一键反复 upsert 只保留最新版本——这本身就是 latest-only 语义。
+        // updated_at 单调递增，使后续按时间序冲刷的顺序确定。
         for (var index = 0; index < rounds; index++)
         {
             var playerIndex = index % Math.Min(CapacityTargetScenario.PeakNetworkTarget, CapacityTargetScenario.RegisteredAccountTarget);
@@ -296,6 +300,8 @@ internal static class PostgresCapacityProbe
 
     /// <summary>
     /// 按时间顺序将刷新队列中的行批量 upsert 到 section 表并删除已处理队列行。
+    /// 取批、单事务 upsert+删除、FOR UPDATE SKIP LOCKED 均对齐 latest-only Worker 的冲刷方式，
+    /// 使 WAL 与锁开销口径和线上可比；SKIP LOCKED 同时保证多消费者部署下互不阻塞。
     /// </summary>
     /// <param name="connection">数据库连接。</param>
     /// <param name="schema">已转义的 schema 名称。</param>
@@ -414,6 +420,7 @@ internal static class PostgresCapacityProbe
 
     /// <summary>
     /// 计算两个 PostgreSQL WAL LSN 之间的字节差值。
+    /// 实例级口径：共享实例上会混入无关 WAL 增量，门禁预算假定本地专用实例。
     /// </summary>
     /// <param name="connection">数据库连接。</param>
     /// <param name="before">起始 LSN。</param>
@@ -492,6 +499,7 @@ internal static class PostgresCapacityProbe
     {
         Span<byte> bytes = stackalloc byte[16];
         BitConverter.TryWriteBytes(bytes, index + 1);
+        // 末字节 0xD2 标记真实探测来源，与 synthetic 估算的 0xD1 区分。
         bytes[15] = 0xD2;
         return new Guid(bytes);
     }

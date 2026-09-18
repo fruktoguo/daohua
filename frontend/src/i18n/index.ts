@@ -12,10 +12,12 @@ import { zhCN, type Messages } from './locales/zh-CN'
 
 // 构建时只注册实际存在的语言包；模板本身不是可选语言。
 const localeFiles = import.meta.glob(['/public/locales/*.csv', '!/public/locales/template.csv'], { query: '?url', import: 'default' })
+/** 全部可选语言标识（zh-CN 内置 + 构建期扫描到的 CSV 语言包文件名） */
 export const LOCALES: readonly string[] = ['zh-CN', ...Object.keys(localeFiles)
   .map(path => path.split('/').at(-1)!.slice(0, -4))
   .filter(locale => locale !== 'template' && locale !== 'zh-CN')
   .sort()]
+/** 语言标识（以注册表为准，宽松放行 string 以兼容运行时动态值） */
 export type Locale = (typeof LOCALES)[number] | (string & {})
 export type { Messages }
 
@@ -25,7 +27,9 @@ type PathsOf<T> = T extends string
   : { [K in keyof T & string]: T[K] extends string ? K : `${K}.${PathsOf<T[K]>}` }[keyof T & string]
 export type TranslationKey = PathsOf<Messages>
 
+/** 词条插值参数表（对应模板中的 {name} 占位符） */
 export type TParams = Record<string, string | number>
+/** 翻译函数签名：点路径键查词条并做 {name} 参数插值 */
 export type TFunction = (key: TranslationKey | (string & {}), params?: TParams) => string
 
 const DEFAULT_LOCALE: Locale = 'zh-CN'
@@ -150,10 +154,12 @@ export async function loadLocale(locale: Locale): Promise<void> {
   return LOADING_PROMISES[locale]
 }
 
+/** 校验运行时值是否为已注册语言标识 */
 function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && (LOCALES as readonly string[]).includes(value)
 }
 
+/** 读取持久化的语言偏好，缺失或非法时回退默认语言 */
 function detectLocale(): Locale {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY)
@@ -168,15 +174,21 @@ function applyDocumentLocale(locale: Locale): void {
   document.documentElement.lang = locale
 }
 
+/** i18n 内核状态 */
 interface I18nState {
+  /** 用户当前选择的语言（切换立即生效并持久化） */
   locale: Locale
+  /** 词条包实际就绪的语言：外语 CSV 异步加载完成前保持 'zh-CN'，作为 useT 的重渲染触发信号 */
   loadedLocale: Locale
+  /** 最近一次语言包加载失败信息 */
   error: string | null
+  /** 切换语言：持久化选择并异步加载对应 CSV 包；加载失败回退中文并记录 error */
   setLocale: (locale: Locale) => Promise<void>
 }
 
 const initialLocale = detectLocale()
 
+/** i18n 状态 Store（语言选择、就绪状态与加载错误） */
 export const useI18nStore = create<I18nState>((set, get) => ({
   locale: initialLocale,
   error: null,
@@ -218,6 +230,7 @@ if (initialLocale !== 'zh-CN') {
   })
 }
 
+/** 将嵌套词典树展平为点路径→词条的扁平映射（换取 O(1) 查询） */
 function flattenDict(obj: unknown, prefix = ''): Record<string, string> {
   const result: Record<string, string> = {}
   if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return result
@@ -254,6 +267,7 @@ function interpolate(template: string, params?: TParams): string {
   })
 }
 
+/** 查词条并插值：外语 CSV 未命中（未加载或缺键）时逐级回退中文词典，最终回显键名本身 */
 function translate(locale: Locale, key: string, params?: TParams): string {
   let template: string | undefined
   if (locale !== 'zh-CN' && CSV_CACHE[locale]) {

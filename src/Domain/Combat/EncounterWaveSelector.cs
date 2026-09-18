@@ -12,14 +12,12 @@ public static class EncounterWaveSelector
     /// <summary>单波满编怪物数量（1 特殊怪 + 2 护从 / 3 普通怪）。</summary>
     public const int MaxWaveSize = 3;
 
-    /// <summary>
-    /// 执行 Select 操作。
-    /// </summary>
-    /// <param name="encounter">encounter 参数。</param>
-    /// <param name="monsters">monsters 参数。</param>
-    /// <param name="seed">seed 参数。</param>
-    /// <param name="waveNumber">waveNumber 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>按确定性种子抽取本波怪物阵容；Boss/精英波按 waveNumber 整除配表间隔触发。</summary>
+    /// <param name="encounter">遭遇配表（预算、强度上限与刷怪池）。</param>
+    /// <param name="monsters">怪物定义表（预算与强度校验依据）。</param>
+    /// <param name="seed">确定性随机种子。</param>
+    /// <param name="waveNumber">当前波次（1 起）。</param>
+    /// <returns>本波怪物定义列表（1~MaxWaveSize 只）。</returns>
     public static IReadOnlyList<CombatMonsterDefinition> Select(CombatEncounterDefinition encounter,
         IReadOnlyDictionary<string, CombatMonsterDefinition> monsters, long seed, int waveNumber)
     {

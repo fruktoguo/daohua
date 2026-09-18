@@ -199,6 +199,7 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
   const [tab, setTab] = useState<'log' | 'chat'>('log')
   const listRef = useRef<HTMLOListElement>(null)
   const stickToBottom = useRef(true)
+  // 只渲染最近 200 条：日志服务保留的环形缓冲更长，截尾防止长会话 DOM 规模膨胀拖慢渲染。
   const visibleEntries = logState.latest.slice(-200)
 
   // 贴底标记只由用户滚动行为决定：effect 一旦自行清零，当列表尚无滚动条（会话初期日志不足一屏）

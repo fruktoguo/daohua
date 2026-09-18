@@ -9,12 +9,14 @@ namespace Server.Clean;
 internal static class LoadoutCommand
 {
     /// <summary>
-    /// 执行Apply。
+    /// 校验 loadout.replace 载荷并整体替换玩家的功法槽与装备槽。
+    /// JSON 形状与取值错误统一翻译成 InvalidArgument DomainException，
+    /// 避免把反序列化细节直接泄露给协议层。
     /// </summary>
-    /// <param name="payload">命令载荷。</param>
-    /// <param name="player">参数 player。</param>
-    /// <param name="wallet">参数 wallet。</param>
-    /// <param name="catalog">参数 catalog。</param>
+    /// <param name="payload">客户端命令载荷（equipment 与 abilitySlots 数组）</param>
+    /// <param name="player">目标玩家聚合</param>
+    /// <param name="wallet">玩家资产钱包，用于校验装备确已持有</param>
+    /// <param name="catalog">当前激活配表，用于校验装备与功法定义</param>
     public static void Apply(JsonElement payload, PlayerAggregate player, AssetWallet wallet, GameDataCatalog catalog)
     {
         try { ApplyValidated(payload, player, wallet, catalog); }
@@ -40,9 +42,11 @@ internal static class LoadoutCommand
                 || wallet.Get(new AssetKey(new ItemId(id))) < 1)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "装备不存在或未持有。");
             var slot = definition.GetProperty("slot").GetString()!;
+            // 双手武器独占武器与副手两个槽位，与任一单手槽共存即冲突。
             if (!slots.Add(slot) || (slots.Contains("two-hand") && (slots.Contains("weapon") || slots.Contains("off-hand"))))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "装备槽位冲突。");
             var ownedLevel = player.Loadout.Equipment.FirstOrDefault(item => item.ItemId == id)?.EnhancementLevel ?? 0;
+            // 强化等级以玩家已持有记录为准，装配命令不得伪造强化进度。
             if (enhancement != ownedLevel)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "装配不能修改装备强化等级。");
             equipment.Add(new(id, enhancement));

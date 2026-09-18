@@ -19,7 +19,7 @@ public sealed class TravelActionTests
         PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
 
     /// <summary>
-    /// 验证 <c>WorldGraphPlansUndirectedMultiHopPathWithCorrectSegments</c>（World Graph Plans Undirected Multi Hop Path With Correct Segments）所描述的领域行为。
+    /// 无向图多跳路径规划：逆向行走时边顺序、方向与进度端点（1.0→0.0）必须正确。
     /// </summary>
     [Fact]
     public void WorldGraphPlansUndirectedMultiHopPathWithCorrectSegments()
@@ -55,7 +55,7 @@ public sealed class TravelActionTests
     }
 
     /// <summary>
-    /// 验证 <c>PlanFromPositionHandlesMidEdgeForwardAndReverseCorrectly</c>（Plan From Position Handles Mid Edge Forward And Reverse Correctly）所描述的领域行为。
+    /// 边中位置规划：按当前 EdgeProgress 在继续前进与原路折返间选择总耗时更短的方向。
     /// </summary>
     [Fact]
     public void PlanFromPositionHandlesMidEdgeForwardAndReverseCorrectly()
@@ -94,7 +94,7 @@ public sealed class TravelActionTests
     }
 
     /// <summary>
-    /// 验证 <c>PriorityTravelSuspendsCurrentRunningActionAndPreservesProgress</c>（Priority Travel Suspends Current Running Action And Preserves Progress）所描述的领域行为。
+    /// 移动指令插队队首时，原运行中行动被挂起为 Pending 且进度秒严格保留（不丢已做功）。
     /// </summary>
     [Fact]
     public void PriorityTravelSuspendsCurrentRunningActionAndPreservesProgress()
@@ -146,7 +146,8 @@ public sealed class TravelActionTests
     }
 
     /// <summary>
-    /// 验证 <c>TravelSimulationAdvancesPositionFinishesAndResumesSuspendedAction</c>（Travel Simulation Advances Position Finishes And Resumes Suspended Action）所描述的领域行为。
+    /// 移动推进全程：中途位于边内（0&lt;progress&lt;1），到达触发 world.arrived 并出队，
+    /// 被挂起的行动自动恢复 Running 且保留此前进度继续推进。
     /// </summary>
     [Fact]
     public void TravelSimulationAdvancesPositionFinishesAndResumesSuspendedAction()
@@ -219,7 +220,8 @@ public sealed class TravelActionTests
     }
 
     /// <summary>
-    /// 验证 <c>CancelTravelLeavesPlayerAtCurrentEdgePositionAndAllowsRePlanning</c>（Cancel Travel Leaves Player At Current Edge Position And Allows Re Planning）所描述的领域行为。
+    /// 取消移动行动后玩家停留在边中位置（不回弹到节点），
+    /// 且能以该边中坐标为起点重新规划任意目的地。
     /// </summary>
     [Fact]
     public void CancelTravelLeavesPlayerAtCurrentEdgePositionAndAllowsRePlanning()
@@ -276,7 +278,8 @@ public sealed class TravelActionTests
     }
 
     /// <summary>
-    /// 验证 <c>PingPongTurnaroundMidEdgeSimulatesAndCalculatesPreciseSegments</c>（Ping Pong Turnaround Mid Edge Simulates And Calculates Precise Segments）所描述的领域行为。
+    /// 边中反复改向（乒乓折返）场景：每次改向重规划的路段端点与耗时必须精确，
+    /// 推进后位置单调正确，最终到达出队。
     /// </summary>
     [Fact]
     public void PingPongTurnaroundMidEdgeSimulatesAndCalculatesPreciseSegments()
@@ -348,7 +351,7 @@ public sealed class TravelActionTests
     }
 
     /// <summary>
-    /// 验证 <c>LargeOfflineJumpCompletesTravelAndAdvancesFullBacklog</c>（Large Offline Jump Completes Travel And Advances Full Backlog）所描述的领域行为。
+    /// 大步离线快进在同一次 AdvanceTo 内先完成移动，再把剩余时间结算给积压修炼轮次。
     /// </summary>
     [Fact]
     public void LargeOfflineJumpCompletesTravelAndAdvancesFullBacklog()

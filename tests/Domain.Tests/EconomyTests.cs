@@ -6,7 +6,7 @@ namespace Domain.Tests;
 public sealed class EconomyTests
 {
     /// <summary>
-    /// 验证 <c>WalletEnforcesNonNegativeBalanceAndVersions</c>（Wallet Enforces Non Negative Balance And Versions）所描述的领域行为。
+    /// 钱包余额不得透支：借贷按序入账、资产版本逐笔递增，超额扣款必须抛错。
     /// </summary>
     [Fact]
     public void WalletEnforcesNonNegativeBalanceAndVersions()
@@ -25,7 +25,7 @@ public sealed class EconomyTests
     }
 
     /// <summary>
-    /// 验证 <c>TransactionLinesRequireUniquePositiveLineNumbers</c>（Transaction Lines Require Unique Positive Line Numbers）所描述的领域行为。
+    /// 行号唯一且为正的合法流水可正常建立（基准用例，对照下一条拒绝用例）。
     /// </summary>
     [Fact]
     public void TransactionLinesRequireUniquePositiveLineNumbers()
@@ -42,7 +42,7 @@ public sealed class EconomyTests
     }
 
     /// <summary>
-    /// 验证 <c>EconomyTransactionRejectsDuplicateOrZeroLines</c>（Economy Transaction Rejects Duplicate Or Zero Lines）所描述的领域行为。
+    /// 行号重复的流水必须以 InvalidArgument 拒绝，防止同一行被重复结算。
     /// </summary>
     [Fact]
     public void EconomyTransactionRejectsDuplicateOrZeroLines()
@@ -61,7 +61,7 @@ public sealed class EconomyTests
     }
 
     /// <summary>
-    /// 验证 <c>WalletRejectsInvalidAssetAndNonFiniteQuantity</c>（Wallet Rejects Invalid Asset And Non Finite Quantity）所描述的领域行为。
+    /// 空资产标识与非有限数量（NaN）在入账边界即拒绝，防止脏数值进入账本。
     /// </summary>
     [Fact]
     public void WalletRejectsInvalidAssetAndNonFiniteQuantity()
@@ -73,7 +73,7 @@ public sealed class EconomyTests
     }
 
     /// <summary>
-    /// 验证 <c>ApplyZeroDeltaIsNoOp</c>（Apply Zero Delta Is No Op）所描述的领域行为。
+    /// 零增量 Apply 为幂等空操作：无论钱包是否已有余额，余额均不受影响。
     /// </summary>
     [Fact]
     public void ApplyZeroDeltaIsNoOp()

@@ -15,8 +15,10 @@ namespace Server.Tests;
 /// </summary>
 public sealed class AdversarialConcurrencyTests
 {
-    /// <summary>验证 Multi Client Concurrent Broadcast Zero Data Contamination Across Sessions。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>
+    /// 50 客户端并发挂载与推进下：每个会话只能收到自身 PlayerId 的快照增量与日志批次；
+    /// 未发生模拟变更的会话不得收到任何增量（防串号/串包门禁）。
+    /// </summary>
     [Fact]
     public async Task MultiClientConcurrentBroadcast_ZeroDataContaminationAcrossSessions()
     {
@@ -166,41 +168,33 @@ public sealed class AdversarialConcurrencyTests
         }
     }
 
-    /// <summary>包含针对 Multi Player State Repository 的测试用例与断言集合。</summary>
+    /// <summary>按玩家路由到各自假仓库的多租户内存状态仓库。</summary>
     private sealed class MultiPlayerStateRepository(Dictionary<Guid, FakeStateRepository> repos) : IPlayerStateRepository
     {
-        /// <summary>执行 Load Async。</summary>
-        /// <param name="playerId">playerId：玩家唯一标识。</param>
-        /// <param name="cancellationToken">cancellationToken：取消令牌。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) =>
             repos.TryGetValue(playerId, out var repo) ? repo.LoadAsync(playerId, cancellationToken) : ValueTask.FromResult<PlayerStateBundle?>(null);
 
-        /// <summary>Completed Task。</summary>
         public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        /// <summary>Completed Task。</summary>
         public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(new FlushBatchResult(0, 0, 0, TimeSpan.Zero));
     }
 
-    /// <summary>包含针对 Fake State Repository 的测试用例与断言集合。</summary>
+    /// <summary>固定返回一份 PlayerStateBundle 的内存假仓库。</summary>
     private class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository
     {
         public virtual ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.FromResult<PlayerStateBundle?>(bundle);
-        /// <summary>Completed Task。</summary>
         public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
-        /// <summary>Completed Task。</summary>
         public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
         public ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(new FlushBatchResult(0, 0, 0, TimeSpan.Zero));
     }
 
-    /// <summary>包含针对 Empty Asset Repository 的测试用例与断言集合。</summary>
+    /// <summary>空资产假仓库。</summary>
     private sealed class EmptyAssetRepository : IAssetBalanceRepository
     {
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>([]);
     }
 
-    /// <summary>包含针对 Noop Economy Repository 的测试用例与断言集合。</summary>
+    /// <summary>直接返回成功回执的经济事务假实现。</summary>
     private sealed class NoopEconomyRepository : IEconomyTransactionStore
     {
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default) => ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload));

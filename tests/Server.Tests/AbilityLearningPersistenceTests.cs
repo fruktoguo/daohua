@@ -5,11 +5,13 @@ using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Ability Learning Persistence Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// 技能学习持久化集成测试（PostgreSQL）：扣减技能书与 loadout 分段入队必须在
+/// 同一经济事务中原子提交、幂等重放，任一侧失败整笔回滚。
+/// </summary>
 public sealed class AbilityLearningPersistenceTests
 {
-    /// <summary>验证 Manual Debit And Loadout Queue Commit Together And Replay Once。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>扣款与习得分段同事务落库；重复提交幂等命中；分段外键失败时扣款与流水一并回滚。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task ManualDebitAndLoadoutQueueCommitTogetherAndReplayOnce()
@@ -41,11 +43,6 @@ public sealed class AbilityLearningPersistenceTests
         Assert.Equal(0L, await Scalar(source, "SELECT count(*) FROM economy.transactions WHERE transaction_id=$1", badId));
     }
 
-    /// <summary>执行 Scalar。</summary>
-    /// <param name="source">source：数据源。</param>
-    /// <param name="sql">sql：要执行的 SQL 语句。</param>
-    /// <param name="values">values：SQL 参数值集合。</param>
-    /// <returns>表示异步操作的任务。</returns>
     private static async Task<object?> Scalar(NpgsqlDataSource source, string sql, params object[] values)
     {
         await using var command = source.CreateCommand(sql);
@@ -53,11 +50,6 @@ public sealed class AbilityLearningPersistenceTests
         return await command.ExecuteScalarAsync();
     }
 
-    /// <summary>执行 Sql。</summary>
-    /// <param name="source">source：数据源。</param>
-    /// <param name="sql">sql：要执行的 SQL 语句。</param>
-    /// <param name="values">values：SQL 参数值集合。</param>
-    /// <returns>表示异步操作的任务。</returns>
     private static async Task Sql(NpgsqlDataSource source, string sql, params object[] values)
     {
         await using var command = source.CreateCommand(sql);

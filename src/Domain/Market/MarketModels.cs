@@ -5,10 +5,7 @@ namespace Domain.Market;
 /// </summary>
 public readonly record struct MarketInstrument(ItemId ItemId, string Variant = "")
 {
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出 "itemId" 或 "itemId:variant" 标的文本。</summary>
     public override string ToString() => string.IsNullOrEmpty(Variant) ? ItemId.ToString() : $"{ItemId}:{Variant}";
 }
 

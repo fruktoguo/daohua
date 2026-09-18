@@ -8,7 +8,7 @@ public sealed class PlayerAggregateTests
     private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>
-    /// 验证 <c>RestoreRoundTripKeepsStateAndQueue</c>（Restore Round Trip Keeps State And Queue）所描述的领域行为。
+    /// 快照导出/恢复往返保留身份、版本号、修为与队列中行动的进行中进度。
     /// </summary>
     [Fact]
     public void RestoreRoundTripKeepsStateAndQueue()
@@ -28,7 +28,8 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>AutoUseRemainingDurationPersistsAndClearsWhenDisabledOrSwitched</c>（Auto Use Remaining Duration Persists And Clears When Disabled Or Switched）所描述的领域行为。
+    /// 自动用药剩余时长随快照持久化：同款药仅调数量时保留，停用或换药时清零，
+    /// 防止把旧药时长误算到新药上。
     /// </summary>
     [Fact]
     public void AutoUseRemainingDurationPersistsAndClearsWhenDisabledOrSwitched()
@@ -52,7 +53,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>CannotAdvanceBackwards</c>（Cannot Advance Backwards）所描述的领域行为。
+    /// 模拟时钟单调递增：向过去推进必须抛错。
     /// </summary>
     [Fact]
     public void CannotAdvanceBackwards()
@@ -62,7 +63,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>EmptyQueueClockAdvanceDoesNotCreateStateVersion</c>（Empty Queue Clock Advance Does Not Create State Version）所描述的领域行为。
+    /// 空队列推进墙钟是无效推进：不产生版本递增、不标脏分段，避免无谓的快照刷写。
     /// </summary>
     [Fact]
     public void EmptyQueueClockAdvanceDoesNotCreateStateVersion()
@@ -79,7 +80,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>PartialActionAdvanceIsReportedAsChanged</c>（Partial Action Advance Is Reported As Changed）所描述的领域行为。
+    /// 不足一轮的部分推进同样算 Changed：进度秒与按秒收益即时入账，CompletedRepeats 仍为 0。
     /// </summary>
     [Fact]
     public void PartialActionAdvanceIsReportedAsChanged()
@@ -96,7 +97,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>InfiniteActionKeepsQueueEntryAfterCompletedRounds</c>（Infinite Action Keeps Queue Entry After Completed Rounds）所描述的领域行为。
+    /// 无限循环不变量：RemainingRepeats == -1 完成多轮后必须保持队列项不得自动出队。
     /// </summary>
     [Fact]
     public void InfiniteActionKeepsQueueEntryAfterCompletedRounds()
@@ -113,7 +114,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>RestoreKeepsInfiniteActionState</c>（Restore Keeps Infinite Action State）所描述的领域行为。
+    /// -1 无限语义经快照往返不丢失：Intent.RepeatCount 与 RemainingRepeats 均保持 -1。
     /// </summary>
     [Fact]
     public void RestoreKeepsInfiniteActionState()
@@ -129,7 +130,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>InfiniteZeroDurationActionIsRejected</c>（Infinite Zero Duration Action Is Rejected）所描述的领域行为。
+    /// 零时长 + 无限次数会让模拟原地空转，必须在入队边界即拒绝。
     /// </summary>
     [Fact]
     public void InfiniteZeroDurationActionIsRejected()
@@ -145,7 +146,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>EnqueueRejectsNonIntegerRepeatCount</c>（Enqueue Rejects Non Integer Repeat Count）所描述的领域行为。
+    /// 数值统一 double 但次数语义为整数：非整数 RepeatCount 入队即拒绝。
     /// </summary>
     [Fact]
     public void EnqueueRejectsNonIntegerRepeatCount()
@@ -158,7 +159,8 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>RestoreHealsNonIntegerRepeatCountsFromLegacySnapshots</c>（Restore Heals Non Integer Repeat Counts From Legacy Snapshots）所描述的领域行为。
+    /// 存量快照中残留的非整数次数在恢复时自愈：向下取整；取整后耗尽或为负的行动安全出队，
+    /// 且负值不得被翻转成 -1 无限语义。
     /// </summary>
     [Fact]
     public void RestoreHealsNonIntegerRepeatCountsFromLegacySnapshots()
@@ -178,7 +180,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>RestoreRejectsUndefinedActionStatus</c>（Restore Rejects Undefined Action Status）所描述的领域行为。
+    /// 快照中未定义的队列状态枚举值恢复时必须拒绝，防止坏数据进入运行时。
     /// </summary>
     [Fact]
     public void RestoreRejectsUndefinedActionStatus()
@@ -195,7 +197,7 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>RestoreRejectsDuplicateActionIds</c>（Restore Rejects Duplicate Action Ids）所描述的领域行为。
+    /// 快照中重复的行动实例 Id 恢复时必须拒绝。
     /// </summary>
     [Fact]
     public void RestoreRejectsDuplicateActionIds()
@@ -211,7 +213,8 @@ public sealed class PlayerAggregateTests
     }
 
     /// <summary>
-    /// 验证 <c>SimulationRejectsNonFiniteRewardBeforeMutatingProgress</c>（Simulation Rejects Non Finite Reward Before Mutating Progress）所描述的领域行为。
+    /// 收益溢出为非有限值（double.MaxValue 累加溢出）时必须在写入进度前快速失败：
+    /// 修为与 LastSimulatedAt 均不得被部分突变。
     /// </summary>
     [Fact]
     public void SimulationRejectsNonFiniteRewardBeforeMutatingProgress()

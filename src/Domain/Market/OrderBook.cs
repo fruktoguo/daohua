@@ -13,10 +13,8 @@ public sealed class OrderBook
     private long _sequence;
     private long _version;
 
-    /// <summary>
-    /// 初始化 订单账本。
-    /// </summary>
-    /// <param name="instrument">instrument 参数。</param>
+    /// <summary>为指定交易标的创建空订单簿。</summary>
+    /// <param name="instrument">挂钩的交易标的。</param>
     public OrderBook(MarketInstrument instrument)
     {
         if (!instrument.ItemId.IsValid || instrument.Variant is null || instrument.Variant.Length > 128)

@@ -39,6 +39,7 @@ public static class CapacityTargetScenario
         var process = Process.GetCurrentProcess();
         process.Refresh();
         var cpuBefore = process.TotalProcessorTime;
+        // 先强制回收再取基线，使内存增量口径只反映本次压测自身分配。
         var managedBefore = GC.GetTotalMemory(forceFullCollection: true);
         var started = Stopwatch.GetTimestamp();
         var warnings = new List<string>();
@@ -162,6 +163,8 @@ public static class CapacityTargetScenario
         public static SyntheticStorageEstimate EstimateStorage(int players)
         {
             long sectionBytes = 0;
+            // 近似行宽假设：账号行 ~256B，行动队列按每玩家 6 条 × ~128B 估算；
+            // section 行按 48B 行开销 + 实际 synthetic 载荷计。
             var accountBytes = players * 256L;
             var queueBytes = players * 6L * 128L;
             for (var index = 0; index < players; index++)
@@ -189,6 +192,7 @@ public static class CapacityTargetScenario
         public static SyntheticNetworkEstimate EstimatePeakNetwork(int players)
         {
             long total = 0;
+            // 峰值口径：每玩家每秒一帧下行，128B 信封/帧头开销 + 状态载荷。
             for (var index = 0; index < players; index++)
             {
                 total += 128 + CreatePayload(index, "state").Length;
@@ -205,6 +209,7 @@ public static class CapacityTargetScenario
         /// <returns>UTF-8 编码的 JSON 字节。</returns>
         public static byte[] CreatePayload(int index, string kind)
         {
+            // 固定 schema 版本与时间戳使载荷字节长度稳定，估算结果跨运行可复现。
             var payload = JsonSerializer.SerializeToUtf8Bytes(new
             {
                 schemaVersion = 1,
@@ -226,6 +231,7 @@ public static class CapacityTargetScenario
         {
             Span<byte> bytes = stackalloc byte[16];
             BitConverter.TryWriteBytes(bytes, index + 1);
+            // 末字节作生成器标记：synthetic 估算用 0xD1，真实探测用 0xD2（见 PostgresCapacityProbe）。
             bytes[15] = 0xD1;
             return new Guid(bytes);
         }

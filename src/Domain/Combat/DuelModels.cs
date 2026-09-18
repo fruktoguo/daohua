@@ -190,6 +190,12 @@ public static class DuelScriptEngine
 /// <summary>斗法镜像技能触发条件求值：与玩家功法同一套触发 JSON，作用于战斗单位状态。</summary>
 internal static class DuelTriggerEvaluator
 {
+    /// <summary>全部触发条件同时满足才返回 true；任一不满足即短路。</summary>
+    /// <param name="triggers">触发条件 JSON 列表。</param>
+    /// <param name="caster">施放方战斗单位。</param>
+    /// <param name="primaryTarget">当前集火目标（target-enemy 依赖的解析对象，可空）。</param>
+    /// <param name="allies">施放方全体友军。</param>
+    /// <param name="opponents">敌方全体单位。</param>
     public static bool MatchesAll(IReadOnlyList<JsonElement> triggers, CombatantState caster,
         CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents)
     {

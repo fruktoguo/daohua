@@ -92,7 +92,9 @@ public sealed class SessionRegistry
 public static class WebSocketEndpoint
 {
     /// <summary>
-    /// 处理Async（异步）。
+    /// /ws 端点主流程：升级与鉴权校验 → accept socket → 订阅快照/战报事件 →
+    /// 收发双循环（Hello 握手内完成防多开准入裁决）→ 按 CloseHint 发关闭帧 →
+    /// 释放准入登记并卸载玩家 Actor。
     /// </summary>
     /// <param name="context">HTTP 请求上下文。</param>
     public static async Task HandleAsync(HttpContext context)

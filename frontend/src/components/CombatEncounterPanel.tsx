@@ -5,6 +5,7 @@ import { useT } from '../i18n'
 import { FloatingTooltip } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
 
+/** 拼接敌怪类型标签：伤害类别 + 可选五行元素（none 元素省略后缀） */
 function getEnemyTypeLabel(category: string, element: string, t: ReturnType<typeof useT>): string {
   const catKey = `combat.encounter.damageCategory.${category}` as const
   const elemKey = `combat.encounter.element.${element}` as const
@@ -92,6 +93,7 @@ export const CombatEncounterPanel = memo(function CombatEncounterPanel({
   compact?: boolean
 }): React.JSX.Element {
   const t = useT()
+  // 无随机刷怪池的遭遇退化为固定单怪卡片，保证网格至少展示主战敌怪。
   const spawns = useMemo<CombatSpawnDefinition[]>(() => (
     encounter.randomSpawns.length > 0
       ? encounter.randomSpawns

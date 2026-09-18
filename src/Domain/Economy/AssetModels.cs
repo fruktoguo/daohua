@@ -5,10 +5,7 @@ namespace Domain.Economy;
 /// </summary>
 public readonly record struct AssetKey(ItemId ItemId, string Variant = "")
 {
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出 "itemId" 或 "itemId:variant" 复合键文本。</summary>
     public override string ToString() => string.IsNullOrEmpty(Variant) ? ItemId.ToString() : $"{ItemId}:{Variant}";
 }
 
@@ -69,10 +66,8 @@ public sealed class AssetWallet
 {
     private readonly Dictionary<AssetKey, AssetBalance> _balances = [];
 
-    /// <summary>
-    /// 初始化 资产钱包。
-    /// </summary>
-    /// <param name="playerId">playerId 参数。</param>
+    /// <summary>为指定玩家创建空钱包聚合。</summary>
+    /// <param name="playerId">所属玩家标识。</param>
     public AssetWallet(PlayerId playerId)
     {
         if (playerId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "钱包玩家不能为空。");
@@ -172,16 +167,14 @@ public enum EconomyTransactionType : byte
 /// </summary>
 public sealed record EconomyTransaction
 {
-    /// <summary>
-    /// 初始化 经济Transaction。
-    /// </summary>
-    /// <param name="transactionId">transactionId 参数。</param>
-    /// <param name="idempotencyKey">idempotencyKey 参数。</param>
-    /// <param name="type">type 参数。</param>
-    /// <param name="actorId">actorId 参数。</param>
-    /// <param name="createdAt">createdAt 参数。</param>
-    /// <param name="lines">lines 参数。</param>
-    /// <param name="externalEventType">externalEventType 参数。</param>
+    /// <summary>创建不可变事务快照；校验头字段与分录明细（行号唯一、资产合法、增量非零有限）。</summary>
+    /// <param name="transactionId">事务全局唯一标识。</param>
+    /// <param name="idempotencyKey">发起方幂等键（防止重复记账）。</param>
+    /// <param name="type">业务事务类型。</param>
+    /// <param name="actorId">发起操作的角色 ID。</param>
+    /// <param name="createdAt">创建时间（统一转 UTC）。</param>
+    /// <param name="lines">分录明细（至少一条，行号唯一）。</param>
+    /// <param name="externalEventType">关联的外部事件代码（可空）。</param>
     public EconomyTransaction(
         TransactionId transactionId,
         IdempotencyKey idempotencyKey,
@@ -236,14 +229,12 @@ public sealed record EconomyTransaction
 /// </summary>
 public sealed record EconomyTransactionLine
 {
-    /// <summary>
-    /// 初始化 经济TransactionLine。
-    /// </summary>
-    /// <param name="lineNumber">lineNumber 参数。</param>
-    /// <param name="playerId">playerId 参数。</param>
-    /// <param name="asset">asset 参数。</param>
-    /// <param name="delta">delta 参数。</param>
-    /// <param name="instanceId">instanceId 参数。</param>
+    /// <summary>创建单行记账分录。</summary>
+    /// <param name="lineNumber">分录行号（1 起步递增）。</param>
+    /// <param name="playerId">变动涉及的角色 ID。</param>
+    /// <param name="asset">变动的资产类型。</param>
+    /// <param name="delta">变动差值（正数为增加，负数为扣减）。</param>
+    /// <param name="instanceId">非同质资产实例 ID（可空）。</param>
     public EconomyTransactionLine(int lineNumber, PlayerId playerId, AssetKey asset, double delta, InstanceId? instanceId = null)
     {
         LineNumber = lineNumber;

@@ -47,6 +47,7 @@ export const ConnectingPage = memo(function ConnectingPage({ onCancel }: Connect
 
 /** 连接异常重试页面 Props */
 interface ConnectionErrorPageProps {
+  /** 自定义断连说明文案（缺省使用默认断连提示词条） */
   message?: string
   /** 点击重试连接回调 */
   onRetry?: () => void

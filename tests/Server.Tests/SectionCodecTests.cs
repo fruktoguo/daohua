@@ -8,10 +8,13 @@ using CleanSectionCodec = Server.Clean.SectionCodec;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Section Codec Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// 分段编解码门禁：大载荷 Brotli 压缩、checksum 防篡改、聚合分段指纹打标、
+/// Settings 槽位字段序列化兼容，以及写项/刷写队列项的边界校验。
+/// </summary>
 public sealed class SectionCodecTests
 {
-    /// <summary>验证 Large Payload Uses Brotli And Round Trips With Checksum。</summary>
+    /// <summary>大载荷自动走 Brotli 压缩，经 checksum 校验往返还原。</summary>
     [Fact]
     public void LargePayload_UsesBrotliAndRoundTripsWithChecksum()
     {
@@ -24,7 +27,7 @@ public sealed class SectionCodecTests
         var restored = CleanSectionCodec.Decode<Dictionary<string, JsonElement>>(stored);
         Assert.Equal(42d, restored["value"].GetDouble());
     }
-    /// <summary>验证 Tampered Payload Is Rejected。</summary>
+    /// <summary>载荷任一字节被篡改时解码必须抛 InvalidDataException（checksum 防静默损坏）。</summary>
 
     [Fact]
     public void TamperedPayload_IsRejected()
@@ -35,7 +38,7 @@ public sealed class SectionCodecTests
         var stored = new StoredSection(encoded.PlayerId, encoded.SectionKind, encoded.StateVersion, encoded.SchemaVersion, encoded.Codec, payload, encoded.RawBytes, encoded.Checksum, encoded.UpdatedAt);
         Assert.Throws<InvalidDataException>(() => CleanSectionCodec.Decode<JsonElement>(stored));
     }
-    /// <summary>验证 Aggregate Encoding Emits Only Domain Dirty Sections。</summary>
+    /// <summary>聚合编码产出全部 8 个领域分段，且统一打上当前配表指纹。</summary>
 
     [Fact]
     public void AggregateEncoding_EmitsOnlyDomainDirtySections()
@@ -46,7 +49,7 @@ public sealed class SectionCodecTests
         Assert.Contains(sections, section => section.SectionKind == PlayerSectionKinds.ActionQueue);
         Assert.All(sections, section => Assert.Equal("fp", section.GameDataFingerprint));
     }
-    /// <summary>验证 Settings Section Always Serializes Remaining Duration And Legacy Slots Default To Zero。</summary>
+    /// <summary>autoUseSlots 始终序列化 remainingDurationSeconds；缺该字段的旧载荷反序列化默认 0。</summary>
 
     [Fact]
     public void SettingsSectionAlwaysSerializesRemainingDurationAndLegacySlotsDefaultToZero()
@@ -77,7 +80,7 @@ public sealed class SectionCodecTests
         Assert.NotNull(legacy);
         Assert.Equal(0d, legacy.RemainingDurationSeconds);
     }
-    /// <summary>验证 Section Write Rejects Unsupported Codec And Oversized Payload。</summary>
+    /// <summary>SectionWrite 校验拒绝未知 codec 与超过 4MB 的载荷。</summary>
 
     [Fact]
     public void SectionWrite_RejectsUnsupportedCodecAndOversizedPayload()
@@ -105,7 +108,7 @@ public sealed class SectionCodecTests
             new string('a', 64),
             now).Validate());
     }
-    /// <summary>验证 Flush Queue Item Requires Lease When Applying。</summary>
+    /// <summary>刷写队列项在应用（requireLease）时必须携带非空租约令牌。</summary>
 
     [Fact]
     public void FlushQueueItem_RequiresLeaseWhenApplying()

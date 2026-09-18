@@ -4,7 +4,12 @@ using Domain.Market;
 
 namespace Server.Clean;
 
-/// <summary>市场分片运行时：内存 OrderBook 是盘口投影，PostgreSQL 事务是订单与资产权威。</summary>
+/// <summary>
+/// 市场分片运行时：内存 OrderBook 是盘口投影，PostgreSQL 事务是订单与资产权威。
+/// 启动时抢占分片写者租约并以 fence token 对每笔写事务做 fencing；挂单/撤单/到期退款
+/// 经 _gate 单写者串行，内存盘口只随已提交事务更新；持久化边界失败后标记未就绪
+/// fail-fast，等待进程重启从数据库重建。
+/// </summary>
 public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 {
     /// <summary>瞬态数据库错误的有界重试：3 次，50-200ms 线性退避。</summary>
@@ -33,8 +38,8 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     /// <summary>
     /// 初始化 MarketRuntime 的新实例。
     /// </summary>
-    /// <param name="store">参数 store。</param>
-    /// <param name="options">服务端配置选项。</param>
+    /// <param name="store">市场账本仓储：订单、成交与分片租约的 PostgreSQL 适配。</param>
+    /// <param name="options">服务端配置选项（分片数与本进程分片 ID 由此读取）。</param>
     /// <param name="logger">日志记录器。</param>
     public MarketRuntime(PostgresMarketRepository store, ServerOptions options, ILogger<MarketRuntime> logger)
     {
@@ -43,27 +48,21 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         _logger = logger;
     }
 
-    /// <summary>
-    /// 获取 IsReady。
-    /// </summary>
+    /// <summary>分片就绪标记：完成租约获取与盘口恢复后为 true；持久化失败或租约丢失时回落 false 拒绝写入。</summary>
     public bool IsReady => _ready;
-    /// <summary>
-    /// 获取 PartitionId。
-    /// </summary>
+    /// <summary>本进程持有的市场分片序号。</summary>
     public int PartitionId => _options.MarketPartitionId;
-    /// <summary>
-    /// 获取 PartitionCount。
-    /// </summary>
+    /// <summary>市场分片总数。</summary>
     public int PartitionCount => _options.MarketPartitionCount;
-    /// <summary>
-    /// 获取 Algorithm。
-    /// </summary>
+    /// <summary>品种到分片的路由算法标识。</summary>
     public string Algorithm => MarketPartitioner.Algorithm;
 
     /// <summary>
-    /// 启动Async（异步）。
+    /// 启动分片运行时：等待并抢占写者租约 → 读取 fence token → 恢复活动订单重建内存盘口 →
+    /// 结算已到期订单 → 标记就绪并启动 10s 周期续租循环。
+    /// 租约被其他实例持续持有超过约 40 秒时启动失败。
     /// </summary>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         const int maxAcquireAttempts = 40;
@@ -115,9 +114,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>
-    /// 停止Async（异步）。
+    /// 停止分片运行时：取消续租循环并尽力归还租约（把 expires_at 提前到现在，加速新实例接管）。
     /// </summary>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         _ready = false;
@@ -152,19 +151,15 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// 执行Owns。
-    /// </summary>
+    /// <summary>判断品种按路由规则是否归属本进程分片。</summary>
     /// <param name="instrument">市场品种。</param>
-    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
     public bool Owns(MarketInstrument instrument) => MarketPartitioner.GetPartition(instrument, PartitionCount) == PartitionId;
 
     /// <summary>
-    /// 获取Book。
+    /// 返回品种盘口快照；分片未就绪或品种不属于本进程分片时抛异常。
     /// </summary>
     /// <param name="instrument">市场品种。</param>
-    /// <param name="depth">深度。</param>
-    /// <returns>返回 OrderBookSnapshot 类型的结果。</returns>
+    /// <param name="depth">每侧最大档位数。</param>
     public OrderBookSnapshot GetBook(MarketInstrument instrument, int depth = 20)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
@@ -176,11 +171,10 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>
-    /// 获取Orders。
+    /// 返回玩家在内存盘口中的活动订单，按挂入顺序倒序截断。
     /// </summary>
-    /// <param name="ownerId">参数 ownerId。</param>
-    /// <param name="limit">限制数量。</param>
-    /// <returns>返回 IReadOnlyList&lt;MarketOrder&gt; 类型的结果。</returns>
+    /// <param name="ownerId">订单属主玩家。</param>
+    /// <param name="limit">最大返回条数。</param>
     public IReadOnlyList<MarketOrder> GetOrders(PlayerId ownerId, int limit = 100)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
@@ -191,12 +185,13 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>
-    /// 获取OrderAsync（异步）。
+    /// 查询单笔订单：先查内存盘口，未命中再回源持久化订单。
+    /// 订单不属于 ownerId 时一律返回 null，不泄露他人订单存在性。
     /// </summary>
-    /// <param name="orderId">参数 orderId。</param>
-    /// <param name="ownerId">参数 ownerId。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 MarketOrder?。</returns>
+    /// <param name="orderId">订单标识。</param>
+    /// <param name="ownerId">订单属主玩家。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>订单存在且属于该玩家时返回订单，否则 null。</returns>
     public async ValueTask<MarketOrder?> GetOrderAsync(Guid orderId, PlayerId ownerId, CancellationToken cancellationToken = default)
     {
         if (orderId == Guid.Empty || ownerId.IsEmpty) return null;
@@ -213,12 +208,12 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>
-    /// 执行ClaimSettlementAsync（异步）。
+    /// 领取市场结算产物（成交所得/撤单退款等已挂账资产）；requestId 兼作幂等键。
+    /// 多分片部署尚无跨分片领取路由，PartitionCount > 1 时直接拒绝。
     /// </summary>
-    /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="requestId">请求唯一标识。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 SettlementClaimResult。</returns>
+    /// <param name="playerId">结算属主玩家。</param>
+    /// <param name="requestId">客户端请求标识，用于领取幂等去重。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public ValueTask<SettlementClaimResult> ClaimSettlementAsync(PlayerId playerId, Guid requestId, CancellationToken cancellationToken = default)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
@@ -228,9 +223,8 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>
-    /// 获取Metrics。
+    /// 采集分片运行计数快照（活动订单与累计挂单/成交/撤单/拒绝统计）。
     /// </summary>
-    /// <returns>返回 MarketRuntimeMetrics 类型的结果。</returns>
     public MarketRuntimeMetrics GetMetrics() => new(
         PartitionCount,
         ActiveOrderCount,
@@ -242,11 +236,12 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         Volatile.Read(ref _tradedGrossAmount));
 
     /// <summary>
-    /// 提交Async（异步）。
+    /// 挂单入口：撮合在内存 working book 上预演，订单与成交经单事务落库后才替换盘口。
+    /// 相同 OrderId 重复提交按幂等返回既有订单；OrderId 绑定参数不一致时拒绝。
+    /// 外层包裹瞬态数据库错误的有界重试。
     /// </summary>
-    /// <param name="request">请求数据传输对象。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 PlacementResult。</returns>
+    /// <param name="request">挂单请求（订单标识、品种、方向、价格、数量与幂等键）。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public ValueTask<PlacementResult> PlaceAsync(PlaceOrderRequest request, CancellationToken cancellationToken = default) =>
         WithTransientRetryAsync(token => PlaceCoreAsync(request, token), cancellationToken);
 
@@ -353,14 +348,14 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     }
 
     /// <summary>
-    /// 取消Async（异步）。
+    /// 撤单入口：仅允许撤销自己的活动订单，终态订单按 InvalidTransition 拒绝；
+    /// 已取消订单重复撤单按幂等返回。外层包裹瞬态数据库错误的有界重试。
     /// </summary>
-    /// <param name="orderId">参数 orderId。</param>
-    /// <param name="ownerId">参数 ownerId。</param>
+    /// <param name="orderId">待撤销订单标识。</param>
+    /// <param name="ownerId">订单属主玩家。</param>
     /// <param name="instrument">市场品种。</param>
-    /// <param name="idempotencyKey">参数 idempotencyKey。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 CancellationResult。</returns>
+    /// <param name="idempotencyKey">撤单幂等键。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public ValueTask<CancellationResult> CancelAsync(OrderId orderId, PlayerId ownerId, MarketInstrument instrument, string idempotencyKey, CancellationToken cancellationToken = default) =>
         WithTransientRetryAsync(token => CancelCoreAsync(orderId, ownerId, instrument, idempotencyKey, token), cancellationToken);
 
@@ -537,9 +532,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// 执行DisposeAsync（异步）。
-    /// </summary>
+    /// <summary>释放写门闩与生命周期令牌；租约归还由 StopAsync 负责。</summary>
     public ValueTask DisposeAsync()
     {
         _gate.Dispose();
@@ -582,14 +575,16 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 }
 
 /// <summary>
-/// 表示 MarketRuntimeMetrics 记录。
+/// 市场分片运行计数快照。
 /// </summary>
-/// <param name="PartitionCount">参数 PartitionCount。</param>
-/// <param name="ActiveOrderCount">参数 ActiveOrderCount。</param>
-/// <param name="PlacementCount">参数 PlacementCount。</param>
-/// <param name="MatchCount">参数 MatchCount。</param>
-/// <param name="CancelCount">参数 CancelCount。</param>
-/// <param name="RejectedCount">参数 RejectedCount。</param>
+/// <param name="PartitionCount">市场分片总数。</param>
+/// <param name="ActiveOrderCount">内存盘口中当前活动订单数。</param>
+/// <param name="PlacementCount">累计成功挂单数。</param>
+/// <param name="MatchCount">累计成交笔数。</param>
+/// <param name="CancelCount">累计撤单数。</param>
+/// <param name="RejectedCount">累计被拒绝的请求数（含业务拒绝与持久化失败）。</param>
+/// <param name="TradedQuantity">累计成交数量。</param>
+/// <param name="TradedGrossAmount">累计成交金额（未扣费）。</param>
 public sealed record MarketRuntimeMetrics(
     int PartitionCount,
     int ActiveOrderCount,

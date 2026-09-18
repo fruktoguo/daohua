@@ -145,9 +145,10 @@ public sealed record PlayerRootExpDocument(
     double Stamina, double Intelligence, double Attack,
     double Defense, double Swordsmanship, double Talisman);
 
+/// <summary>玩家聚合的斗法玩法分部：匹配预约、回放挂载、暂存区与战报结算。</summary>
 public sealed partial class PlayerAggregate
 {
-    /// <summary>获取或设置 斗法分段状态 的值。</summary>
+    /// <summary>斗法玩法分段状态（遭遇计数、失败冷却、暂存区与战报）。</summary>
     public PlayerDuelState Duel { get; } = new();
 
     /// <summary>当前斗法实力值：六维等级总和（后续可替换为更复杂口径）。</summary>

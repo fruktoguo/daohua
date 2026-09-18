@@ -3,6 +3,7 @@ namespace Domain.Common;
 /// <summary>不可变的强类型标识符基类约定。</summary>
 public interface IIdentifier
 {
+    /// <summary>标识原始值（字符串或 GUID 的规范文本）。</summary>
     string Value { get; }
 }
 
@@ -10,17 +11,11 @@ public interface IIdentifier
 public readonly record struct AccountId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>生成随机新标识。</summary>
     public static AccountId New() => new(Guid.NewGuid());
-    /// <summary>获取或设置 是否为空 的值。</summary>
+    /// <summary>标识是否为空默认值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -28,17 +23,11 @@ public readonly record struct AccountId(Guid Value) : IIdentifier
 public readonly record struct PlayerId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>生成随机新标识。</summary>
     public static PlayerId New() => new(Guid.NewGuid());
-    /// <summary>获取或设置 是否为空 的值。</summary>
+    /// <summary>标识是否为空默认值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -46,12 +35,9 @@ public readonly record struct PlayerId(Guid Value) : IIdentifier
 public readonly record struct ActionId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
-    /// <summary>获取或设置 是否有效 的值。</summary>
+    /// <summary>标识字符串是否满足长度与格式约束。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 128;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value ?? string.Empty;
 }
 
@@ -59,12 +45,9 @@ public readonly record struct ActionId(string Value) : IIdentifier
 public readonly record struct ItemId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
-    /// <summary>获取或设置 是否有效 的值。</summary>
+    /// <summary>标识字符串是否满足长度与格式约束。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 128;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value ?? string.Empty;
 }
 
@@ -72,12 +55,9 @@ public readonly record struct ItemId(string Value) : IIdentifier
 public readonly record struct AbilityId(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
-    /// <summary>获取或设置 是否有效 的值。</summary>
+    /// <summary>标识字符串是否满足长度与格式约束。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 128;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value ?? string.Empty;
 }
 
@@ -85,17 +65,11 @@ public readonly record struct AbilityId(string Value) : IIdentifier
 public readonly record struct InstanceId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>生成随机新标识。</summary>
     public static InstanceId New() => new(Guid.NewGuid());
-    /// <summary>获取或设置 是否为空 的值。</summary>
+    /// <summary>标识是否为空默认值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -103,17 +77,11 @@ public readonly record struct InstanceId(Guid Value) : IIdentifier
 public readonly record struct OrderId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>生成随机新标识。</summary>
     public static OrderId New() => new(Guid.NewGuid());
-    /// <summary>获取或设置 是否为空 的值。</summary>
+    /// <summary>标识是否为空默认值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -121,17 +89,11 @@ public readonly record struct OrderId(Guid Value) : IIdentifier
 public readonly record struct TransactionId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>生成随机新标识。</summary>
     public static TransactionId New() => new(Guid.NewGuid());
-    /// <summary>获取或设置 是否为空 的值。</summary>
+    /// <summary>标识是否为空默认值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -139,17 +101,11 @@ public readonly record struct TransactionId(Guid Value) : IIdentifier
 public readonly record struct ReservationId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>生成随机新标识。</summary>
     public static ReservationId New() => new(Guid.NewGuid());
-    /// <summary>获取或设置 是否为空 的值。</summary>
+    /// <summary>标识是否为空默认值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -157,17 +113,11 @@ public readonly record struct ReservationId(Guid Value) : IIdentifier
 public readonly record struct JobId(Guid Value) : IIdentifier
 {
     string IIdentifier.Value => Value.ToString("N");
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>生成随机新标识。</summary>
     public static JobId New() => new(Guid.NewGuid());
-    /// <summary>获取或设置 是否为空 的值。</summary>
+    /// <summary>标识是否为空默认值。</summary>
     public bool IsEmpty => Value == Guid.Empty;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value.ToString("N");
 }
 
@@ -175,12 +125,9 @@ public readonly record struct JobId(Guid Value) : IIdentifier
 public readonly record struct IdempotencyKey(string Value) : IIdentifier
 {
     string IIdentifier.Value => Value;
-    /// <summary>获取或设置 是否有效 的值。</summary>
+    /// <summary>标识字符串是否满足长度与格式约束。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(Value) && Value.Length <= 200;
-    /// <summary>
-    /// 执行 转换为字符串 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>输出标识的规范文本形式。</summary>
     public override string ToString() => Value ?? string.Empty;
 }
 

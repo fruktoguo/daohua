@@ -79,6 +79,7 @@ public static class SimulationLogMapper
         foreach (var kv in deltas) items[idx++] = kv;
         if (items.Length > 1)
         {
+            // 字典枚举顺序不稳定：按 ItemId 排序保证同一模拟产出同一条战报文本。
             Array.Sort(items, static (a, b) => string.CompareOrdinal(a.Key.Value, b.Key.Value));
         }
 

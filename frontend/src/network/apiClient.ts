@@ -11,10 +11,16 @@ export function getHttpBase(): string {
   return configured ? configured.replace(/\/$/, '') : window.location.origin
 }
 
+/** 拼接完整 API 地址（path 自动补前导斜杠） */
 export function getApiUrl(path: string): string {
   return `${getHttpBase()}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+/**
+ * 拉取游戏静态配表全集（行动/地图/遭遇/物品/装备/基础属性锚点/功法）。
+ * 副作用：baseAttributes 拉取后注册进 combatConstants 锚点表，境界/属性推算依赖其结果。
+ * items 端点失败时容忍为空列表（前端保留静态物品兜底），其余端点失败整体抛错。
+ */
 export async function fetchGameCatalog(signal?: AbortSignal): Promise<{
   actions: ActionDefinition[]
   maps: WorldMapDefinition[]
@@ -42,6 +48,7 @@ function parseNumericVariant(value: string | null, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
 }
 
+/** 服务端错误响应体的宽松形态（RFC 7807 ProblemDetails 及自定义 code/message 变体） */
 export interface ProblemDetailsLike {
   title?: string
   detail?: string
@@ -60,6 +67,11 @@ async function parseError(response: Response): Promise<Error> {
   return new Error(detail)
 }
 
+/**
+ * 同源 JSON API 请求基座。
+ * 携带 HttpOnly Cookie（credentials: include）、强制 JSON 头、15 秒超时中止，
+ * 并转发调用方 AbortSignal；非 2xx 解析错误体抛出可读 Error，204 返回 undefined。
+ */
 export async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
@@ -95,6 +107,11 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
   }
 }
 
+/**
+ * HTTP 玩家命令通道（WebSocket 之外的兜底/管理面路径）。
+ * requestId 同时放入信封顶层与 payload 内供服务端幂等关联；
+ * expectedStateVersion 为乐观并发校验（0 表示不校验）。
+ */
 export function postPlayerCommand<TPayload extends object, TResult = unknown>(
   playerId: string,
   command: string,
@@ -122,6 +139,7 @@ interface MarketBookDto {
   capturedAt: string
 }
 
+/** 拉取指定标的盘口深度（wire 的 assetId/variant 映射为 itemId/enhancementLevel，version 映射为 sequence） */
 export async function fetchMarketBook(
   itemId: string,
   enhancementLevel = 0,
@@ -152,6 +170,7 @@ interface MarketMetricsDto {
   tradedGrossAmount: number
 }
 
+/** 拉取坊市全局撮合统计指标（partitionCount 映射为 shardCount） */
 export async function fetchMarketMetrics(signal?: AbortSignal): Promise<MarketMetrics> {
   const dto = await requestJson<MarketMetricsDto>('/api/v1/market/metrics', { signal })
   return {
@@ -193,6 +212,7 @@ function mapMarketOrderStatus(status: MarketOrderStatusWire): MarketOrder['statu
   }
 }
 
+/** 拉取指定玩家的全部挂单（wire 状态/字段名归一化为前端 MarketOrder 形态） */
 export async function fetchMarketOrders(playerId: string, signal?: AbortSignal): Promise<MarketOrder[]> {
   const rows = await requestJson<MarketOrderDto[]>(`/api/v1/players/${encodeURIComponent(playerId)}/market/orders`, { signal })
   return rows.map(row => ({

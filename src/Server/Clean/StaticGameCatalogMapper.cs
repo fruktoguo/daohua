@@ -7,10 +7,10 @@ namespace Server.Clean;
 public static class StaticGameCatalogMapper
 {
     /// <summary>
-    /// 执行Items。
+    /// 物品静态目录投影：基础字段之外展开消耗品属性与 buff 效果，供前端物品图鉴消费；
+    /// 按 id 排序保证输出稳定可缓存。
     /// </summary>
-    /// <param name="catalog">参数 catalog。</param>
-    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
+    /// <param name="catalog">当前激活配表。</param>
     public static IReadOnlyList<object> Items(GameDataCatalog catalog) => catalog.RawItems.Values
         .OrderBy(item => ReadString(item, "id"), StringComparer.Ordinal)
         .Select(item =>
@@ -92,10 +92,10 @@ public static class StaticGameCatalogMapper
         }).ToArray();
 
     /// <summary>
-    /// 执行Equipments。
+    /// 装备静态目录投影：保留配表原始数值块（baseStatRatios/flatStats/specialMechanics/
+    /// enhancementBonus），并把分散字段归并进前端消费的 stats 协议块。
     /// </summary>
-    /// <param name="catalog">参数 catalog。</param>
-    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
+    /// <param name="catalog">当前激活配表。</param>
     public static IReadOnlyList<object> Equipments(GameDataCatalog catalog) => catalog.RawEquipments.Values
         .OrderBy(eq => ReadString(eq, "id"), StringComparer.Ordinal)
         .Select(eq =>
@@ -155,10 +155,9 @@ public static class StaticGameCatalogMapper
         }).ToArray();
 
     /// <summary>
-    /// 映射s。
+    /// 地图静态目录投影：节点与边完整透传，节点附带的怪物列表经 encounter 引用解析归并。
     /// </summary>
-    /// <param name="catalog">参数 catalog。</param>
-    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
+    /// <param name="catalog">当前激活配表。</param>
     public static IReadOnlyList<object> Maps(GameDataCatalog catalog) => catalog.Maps
         .OrderBy(map => ReadString(map, "id"), StringComparer.Ordinal)
         .Select(map => new
@@ -178,10 +177,10 @@ public static class StaticGameCatalogMapper
         }).Cast<object>().ToArray();
 
     /// <summary>
-    /// 执行Encounters。
+    /// 遭遇配置静态目录投影：randomSpawns/bossEnemies 中的怪物 ID 解析为完整怪物摘要，
+    /// 未知 ID 降级为占位条目而不是让整项目录失败。
     /// </summary>
-    /// <param name="catalog">参数 catalog。</param>
-    /// <returns>返回 IReadOnlyList&lt;object&gt; 类型的结果。</returns>
+    /// <param name="catalog">当前激活配表。</param>
     public static IReadOnlyList<object> Encounters(GameDataCatalog catalog) => catalog.Encounters
         .OrderBy(encounter => ReadString(encounter, "id"), StringComparer.Ordinal)
         .Select(encounter =>

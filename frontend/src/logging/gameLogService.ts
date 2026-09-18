@@ -1,5 +1,6 @@
 import type { LogEvent } from '../game/types'
 
+/** 日志模板引用标记的实体类别（{{kind:id|label}} 中的 kind） */
 export type LogReferenceKind =
   | 'item'
   | 'character'
@@ -10,20 +11,29 @@ export type LogReferenceKind =
   | 'encounter'
   | 'enemy'
 
+/** 日志分词：纯文本段或带交互悬浮卡片能力的实体引用段 */
 export type LogSegment =
   | { type: 'text'; value: string }
   | { type: 'reference'; kind: LogReferenceKind; id: string; label: string; amount?: number; extra?: string }
 
+/** 服务端日志事件落入内存缓冲的归一化存储形态 */
 export interface StoredGameLog {
+  /** 去重 ID（playerId + sequence 组合） */
   id: string
+  /** 所属玩家 ID */
   playerId: string
+  /** 发生时刻（Unix 毫秒） */
   timestampMs: number
+  /** 服务端日志序号 */
   sequence: number
+  /** 语义模板文本（含 {{kind:id|label}} 引用标记） */
   template: string
+  /** 服务端侧已折叠的重复次数 */
   count?: number
 }
 
 export interface GameLogEntry extends StoredGameLog {
+  /** 模板解析后的富文本分词（渲染期直接消费） */
   segments: readonly LogSegment[]
   /** 连续相同模板日志的重复发生次数，默认为 1 */
   count: number
@@ -34,21 +44,31 @@ export interface GameLogEntry extends StoredGameLog {
 /** 日志只保留当前页面内的短环形缓冲，永不写入 IndexedDB、localStorage 或服务端历史表。 */
 export type LogPersistenceState = 'memory'
 
+/** 日志服务对外只读快照（配合 subscribe 的 revision 变化驱动 UI 刷新） */
 export interface GameLogSnapshot {
+  /** 当前激活玩家 ID */
   playerId: string | null
+  /** 折叠后的最新日志列表（按时间正序，上限 VISIBLE_LOG_LIMIT） */
   latest: readonly GameLogEntry[]
+  /** 快照版本号，每次写入递增 */
   revision: number
+  /** 累计接收（未去重前）日志条数 */
   receivedCount: number
+  /** 持久化策略标识（固定 'memory'） */
   persistence: LogPersistenceState
 }
 
+/** 历史翻页游标（当前无历史接口，保留契约位） */
 export interface GameLogCursor {
   timestampMs: number
   sequence: number
 }
 
+/** 内存环形缓冲上限：仅保留最近 200 条折叠后日志 */
 const VISIBLE_LOG_LIMIT = 200
+/** 模板引用标记语法：{{kind:id|label}} 或 {{kind:id|label|extra}}（extra 常为数量） */
 const REFERENCE_PATTERN = /\{\{(item|character|mechanic|action|location|ability|encounter|enemy):([^|{}]+)\|([^{}|]+)(?:\|([^{}]+))?}}/g
+/** 引用标记后紧随的「×N」数量后缀（服务端旧模板未内嵌数量时的兼容形态） */
 const TRAILING_AMOUNT_PATTERN = /^\s*[×x*]\s*(\d+)/
 
 /**
@@ -144,7 +164,7 @@ function eventToStored(playerId: string, event: LogEvent): StoredGameLog {
 
 /**
  * 战报与传音道历全局单例服务。
- * 纯内存维护最近 100 条折叠后的日志，提供响应式订阅能力（对外暴露 subscribe 与 getSnapshot）。
+ * 纯内存维护最近 200 条折叠后的日志，提供响应式订阅能力（对外暴露 subscribe 与 getSnapshot）。
  * 连续完全相同（template 一致）的日志自动合并递增 count，不挤占历史缓冲。
  */
 class GameLogService {
@@ -153,13 +173,16 @@ class GameLogService {
   private collapsedEntries: GameLogEntry[] = []
   private seenIds = new Set<string>()
 
+  /** 订阅快照变更；返回取消订阅函数 */
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
 
+  /** 读取当前快照（不可变引用，配合 revision 判断变更） */
   readonly getSnapshot = (): GameLogSnapshot => this.snapshot
 
+  /** 切换激活玩家：清空缓冲与去重集合；同一玩家重复调用为空操作 */
   activate(playerId: string): void {
     if (this.snapshot.playerId === playerId) return
     this.collapsedEntries = []
@@ -168,10 +191,12 @@ class GameLogService {
     this.notify()
   }
 
+  /** 摄入快照携带的全量日志（events 缺省视为空） */
   ingestSnapshot(playerId: string, events: readonly LogEvent[] | undefined): void {
     this.ingest(playerId, (events ?? []).map(event => eventToStored(playerId, event)))
   }
 
+  /** 摄入增量日志批次（LogBatch 信封路径） */
   ingestBatch(playerId: string, events: readonly LogEvent[]): void {
     this.ingest(playerId, events.map(event => eventToStored(playerId, event)))
   }
@@ -209,6 +234,7 @@ class GameLogService {
       }
     }
 
+    // 去重集合无界增长时保留最近一半，避免长跑会话内存膨胀（牺牲极旧 ID 的重放判定）
     if (this.seenIds.size > 2000) {
       const idsArray = Array.from(this.seenIds)
       this.seenIds = new Set(idsArray.slice(-1000))
@@ -228,4 +254,5 @@ class GameLogService {
   }
 }
 
+/** 全局日志服务单例（供 gameClient 写入、传音面板订阅消费） */
 export const gameLogService = new GameLogService()

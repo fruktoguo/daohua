@@ -9,11 +9,13 @@ using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Frontend Contract Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// 前后端协议契约门禁：服务端真实产出的快照 DTO 落盘后由
+/// scripts/check-frontend-contracts.mjs 以 Node 侧逻辑解码验证，防止单边协议漂移导致断连。
+/// </summary>
 public sealed class FrontendContractTests
 {
-    /// <summary>验证 Real Mapper Snapshot Decodes In Frontend And Loadout Restores。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>真实配表产出的快照 JSON 必须能被前端契约脚本成功解码；习得技能经快照往返不丢失。</summary>
     [Fact]
     public async Task RealMapperSnapshotDecodesInFrontendAndLoadoutRestores()
     {

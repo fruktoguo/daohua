@@ -140,6 +140,7 @@ export const MarketOrderForm = memo(function MarketOrderForm({
       return
     }
 
+    // 订单 ID 由前端预生成：作为服务端撮合的幂等键，重发/重连不会产生重复挂单。
     const orderId = crypto.randomUUID()
     if (!gameClient.sendCommand('market.place', {
       orderId,

@@ -228,6 +228,7 @@ function isWireCodec(value: number): value is WireCodec {
   return value === WireCodec.None || value === WireCodec.Json || value === WireCodec.Protobuf
 }
 
+/** 打包一帧二进制信封（大端序）；类型/编码/序列号/载荷长度非法时抛错 */
 export function encodeEnvelope(
   messageType: WireMessageType,
   requestId: string,
@@ -253,6 +254,7 @@ export function encodeEnvelope(
   return output
 }
 
+/** 将业务对象序列化为 UTF-8 JSON 并打包为信封帧 */
 export function encodeJsonEnvelope(
   messageType: WireMessageType,
   requestId: string,
@@ -264,6 +266,10 @@ export function encodeJsonEnvelope(
   return encodeEnvelope(messageType, requestId, sequence, textEncoder.encode(serialized), WireCodec.Json)
 }
 
+/**
+ * 解包一帧二进制信封并做完整边界校验（魔数/版本/类型/UUID/序列号/长度一致性）。
+ * 任何字段非法即抛错——调用方负责把解析失败计入渐进熔断统计而非静默吞掉。
+ */
 export function decodeEnvelope(input: ArrayBuffer | Uint8Array): WireEnvelope {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input)
   if (bytes.byteLength < WIRE_HEADER_BYTES || bytes.byteLength > WIRE_HEADER_BYTES + MAX_FRAME_BYTES) {
@@ -298,12 +304,14 @@ export function decodeEnvelope(input: ArrayBuffer | Uint8Array): WireEnvelope {
   }
 }
 
+/** 将信封 JSON 载荷解码为业务对象（非 Json 编码直接抛错） */
 export function decodeJsonPayload<T>(envelope: WireEnvelope): T {
   if (envelope.codec !== WireCodec.Json) throw new Error('当前客户端只接受 JSON 业务载荷。')
   const value: unknown = JSON.parse(textDecoder.decode(envelope.payload))
   return value as T
 }
 
+/** 生成新的请求关联 UUID（Command/ActionIntent/HTTP 命令统一入口） */
 export function createRequestId(): string {
   return crypto.randomUUID()
 }

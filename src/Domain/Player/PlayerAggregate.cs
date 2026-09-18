@@ -84,9 +84,9 @@ public sealed class PlayerCombatState
     public double AttackPower { get; set; } = 10;
     /// <summary>基础防御护甲</summary>
     public double Defense { get; set; } = 10;
-    /// <summary>获取或设置 回复进位秒 的值。</summary>
+    /// <summary>自然回复周期（每 5 秒结算一次）的累计进度余量。</summary>
     public double RegenCarrySeconds { get; set; }
-    /// <summary>获取或设置 Skills 的值。</summary>
+    /// <summary>技能调度状态（冷却、吟唱与施放计数）。</summary>
     public PlayerCombatSkillState Skills { get; set; } = PlayerCombatSkillState.Empty;
 }
 
@@ -191,12 +191,10 @@ public sealed record ActionIntent(
 /// </summary>
 public sealed class QueuedAction
 {
-    /// <summary>
-    /// 初始化 排队中行动。
-    /// </summary>
-    /// <param name="id">id 参数。</param>
-    /// <param name="intent">intent 参数。</param>
-    /// <param name="enqueuedAt">enqueuedAt 参数。</param>
+    /// <summary>以意图创建排队行动；剩余重复次数初始化为 intent.RepeatCount。</summary>
+    /// <param name="id">行动实例唯一标识。</param>
+    /// <param name="intent">行动执行意图。</param>
+    /// <param name="enqueuedAt">入队时间（统一转 UTC）。</param>
     public QueuedAction(Guid id, ActionIntent intent, DateTimeOffset enqueuedAt)
     {
         if (id == Guid.Empty) throw new DomainException(DomainErrorCode.InvalidArgument, "行动实例标识不能为空。");
@@ -242,7 +240,7 @@ public sealed class QueuedAction
 /// </summary>
 public sealed partial class PlayerAggregate
 {
-    /// <summary>最大行动队列长度 常量。</summary>
+    /// <summary>行动队列容量上限。</summary>
     public const int MaxActionQueueLength = 256;
     private readonly List<QueuedAction> _actions = [];
     private readonly HashSet<PlayerSectionKind> _dirtySections = [];
@@ -274,35 +272,37 @@ public sealed partial class PlayerAggregate
         _dirtySectionsView = new ReadOnlySet<PlayerSectionKind>(_dirtySections);
     }
 
-    /// <summary>获取或设置 玩家标识 的值。</summary>
+    /// <summary>玩家聚合唯一标识。</summary>
     public PlayerId PlayerId { get; }
-    /// <summary>获取或设置 账号标识 的值。</summary>
+    /// <summary>所属账号标识。</summary>
     public AccountId AccountId { get; }
-    /// <summary>获取或设置 显示名称 的值。</summary>
+    /// <summary>道号/角色显示名。</summary>
     public string DisplayName { get; private set; }
-    /// <summary>获取或设置 Created在 的值。</summary>
+    /// <summary>角色创建时间（UTC）。</summary>
     public DateTimeOffset CreatedAt { get; }
-    /// <summary>获取或设置 上次已模拟在 的值。</summary>
+    /// <summary>上次确定性模拟推进到的时刻（UTC）。</summary>
     public DateTimeOffset LastSimulatedAt { get; internal set; }
-    /// <summary>获取或设置 在线状态 的值。</summary>
+    /// <summary>当前在线状态。</summary>
     public PresenceState Presence { get; private set; } = PresenceState.Offline;
-    /// <summary>获取或设置 状态版本 的值。</summary>
+    /// <summary>聚合单调版本号，持久化层 CAS 乐观锁依据。</summary>
     public long StateVersion { get; internal set; }
-    /// <summary>获取或设置 GameData指纹 的值。</summary>
+    /// <summary>当前绑定的配表内容指纹。</summary>
     public string GameDataFingerprint { get; private set; }
-    /// <summary>获取或设置 修为进度 的值。</summary>
+    /// <summary>境界与修为分段。</summary>
     public PlayerProgression Progression { get; } = new();
-    /// <summary>获取或设置 世界 的值。</summary>
+    /// <summary>世界漫游分段。</summary>
     public PlayerWorldState World { get; } = new();
-    /// <summary>获取或设置 战斗 的值。</summary>
+    /// <summary>战斗属性分段。</summary>
     public PlayerCombatState Combat { get; } = new();
-    /// <summary>获取或设置 Buffs 的值。</summary>
+    /// <summary>Buff 增益分段。</summary>
     public PlayerBuffState Buffs { get; } = new();
-    /// <summary>获取或设置 装备配置 的值。</summary>
+    /// <summary>装备与功法装配分段。</summary>
     public PlayerLoadoutState Loadout { get; } = new();
-    /// <summary>获取或设置 设置 的值。</summary>
+    /// <summary>偏好设置分段。</summary>
     public PlayerSettingsState Settings { get; } = new();
+    /// <summary>行动队列只读视图（队首为当前执行项）。</summary>
     public IReadOnlyList<QueuedAction> Actions => _actionsView;
+    /// <summary>待刷盘脏分段只读视图。</summary>
     public IReadOnlySet<PlayerSectionKind> DirtySections => _dirtySectionsView;
 
     /// <summary>

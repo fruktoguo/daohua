@@ -50,6 +50,7 @@ export function QuantitySelector({
 }: QuantitySelectorProps): React.JSX.Element {
   const t = useT()
   const [draft, setDraft] = useState(String(value < min ? min : value))
+  // 聚焦标记：输入过程中冻结外部 value 对 draft 的回写，否则高频快照推送会冲掉正在键入的文本。
   const focused = useRef(false)
 
   useEffect(() => {

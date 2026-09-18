@@ -18,7 +18,7 @@ interface ConfirmDialogProps {
   cancelLabel?: string
   /** 是否为危险操作（如登出、销毁资产，启用红色警示样式） */
   danger?: boolean
-  /** 点击确认后的回调执行 */
+  /** 点击确认后的回调（回调返回后组件自动触发 onClose 关闭弹窗） */
   onConfirm: () => void
   /** 关闭弹窗回调 */
   onClose: () => void

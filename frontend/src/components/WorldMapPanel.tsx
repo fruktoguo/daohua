@@ -127,6 +127,8 @@ function planShortestTravel(
   if (world.edgeId) {
     const currentEdge = map.edges.find(e => e.edgeId === world.edgeId)
     if (currentEdge) {
+      // 玩家行进在路径边中途：分别以「掉头返回起点」与「继续走到终点」为起点各跑一次
+      // Dijkstra，加上对应的剩余边耗时，取两条候选路线中更短的一条。
       const progress = Math.max(0, Math.min(1, world.edgeProgress))
       const reverseDelay = currentEdge.durationSeconds * progress
       const res1 = dijkstra(currentEdge.fromNodeId)
@@ -167,6 +169,8 @@ function usePlayerDisplayPosition(
   const markerRef = useRef<HTMLDivElement>(null)
   const playerPosRef = useRef<{ x: number; y: number }>({ x: world.x, y: world.y })
 
+  // rAF 循环经 ref 读取最新快照：tick 闭包不随渲染重建，又能始终拿到最新 props；
+  // lastUpdateMs 记录 progressSeconds 跳变时刻，用于同步间隔内的本地插值推进。
   const stateRef = useRef({
     map,
     world,

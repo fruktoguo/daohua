@@ -7,6 +7,7 @@ import {
 import { useT } from '../i18n'
 import type { PillTone } from './PillLabel'
 
+/** UnitNumber 单位数值组件 Props */
 export interface UnitNumberProps {
   /** 原始数值（支持 number, bigint, 纯数字 string） */
   value: number | bigint | string

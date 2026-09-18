@@ -6,14 +6,7 @@ namespace Server.Clean;
 /// </summary>
 public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSource) : IPlayerOwnershipStore
 {
-    /// <summary>
-    /// 执行AcquireAsync（异步）。
-    /// </summary>
-    /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="ownerInstanceId">参数 ownerInstanceId。</param>
-    /// <param name="lease">租约信息。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 bool。</returns>
+    /// <summary>抢占玩家租约：UPSERT 仅在租约过期或已属本实例时生效；被其他实例持有时返回 false。</summary>
     public async ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
     {
         Validate(playerId, ownerInstanceId, lease);
@@ -37,14 +30,7 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
         return await command.ExecuteScalarAsync(cancellationToken) is Guid owner && owner == ownerInstanceId;
     }
 
-    /// <summary>
-    /// 执行RenewAsync（异步）。
-    /// </summary>
-    /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="ownerInstanceId">参数 ownerInstanceId。</param>
-    /// <param name="lease">租约信息。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 bool。</returns>
+    /// <summary>持有者续租；返回 false 表示租约已被其他实例接管，调用方必须按租约丢失处理。</summary>
     public async ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
     {
         // ownerInstanceId 每次进程启动都会重新生成；即使本机时钟跳变导致 lease_until 已过期，
@@ -64,12 +50,7 @@ public sealed class PostgresPlayerOwnershipRepository(NpgsqlDataSource dataSourc
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
-    /// <summary>
-    /// 执行ReleaseAsync（异步）。
-    /// </summary>
-    /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="ownerInstanceId">参数 ownerInstanceId。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>主动释放租约；ownerInstanceId 谓词防止误删已被其他实例接管的新租约。</summary>
     public async ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default)
     {
         if (playerId == Guid.Empty || ownerInstanceId == Guid.Empty) return;

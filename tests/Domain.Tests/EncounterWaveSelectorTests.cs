@@ -3,7 +3,8 @@ using Domain.GameData;
 
 namespace Domain.Tests;
 /// <summary>
-/// 遭遇波次选择器测试。
+/// 遭遇波次选择器测试：同种子同波次确定性选怪、强度池/预算封顶、
+/// 精英波（每 5 波）与 Boss 波（每 20 波）的间隔优先级，以及预算不足时兜底最廉价普通怪。
 /// </summary>
 public sealed class EncounterWaveSelectorTests
 {

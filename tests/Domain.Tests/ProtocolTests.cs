@@ -8,7 +8,7 @@ namespace Domain.Tests;
 public sealed class ProtocolTests
 {
     /// <summary>
-    /// 验证 <c>JsonEnvelopeCanDeserializeTypedPayload</c>（Json Envelope Can Deserialize Typed Payload）所描述的领域行为。
+    /// JSON 信封携带的类型化载荷（HelloRequest）可完整反序列化，字段不丢不错位。
     /// </summary>
     [Fact]
     public void JsonEnvelopeCanDeserializeTypedPayload()
@@ -21,7 +21,7 @@ public sealed class ProtocolTests
     }
 
     /// <summary>
-    /// 验证 <c>DecoderRejectsTruncatedFrame</c>（Decoder Rejects Truncated Frame）所描述的领域行为。
+    /// 截断帧必须安全解码失败（返回 false）而非抛异常或越界，保护连接层不被坏包打断。
     /// </summary>
     [Fact]
     public void DecoderRejectsTruncatedFrame()
@@ -30,7 +30,8 @@ public sealed class ProtocolTests
     }
 
     /// <summary>
-    /// 验证 <c>GenericCommandUsesStableMessageTypeAndJsonPayload</c>（Generic Command Uses Stable Message Type And Json Payload）所描述的领域行为。
+    /// 通用命令通道协议对齐：Command/CommandResult 消息类型码经二进制信封往返稳定，
+    /// 内嵌 JSON 字段（command、expectedStateVersion、actionId）完整保留。
     /// </summary>
     [Fact]
     public void GenericCommandUsesStableMessageTypeAndJsonPayload()
@@ -56,7 +57,8 @@ public sealed class ProtocolTests
     }
 
     /// <summary>
-    /// 验证 <c>ActionIntentParametersRoundTripKeepsCamelCaseKeys</c>（Action Intent Parameters Round Trip Keeps Camel Case Keys）所描述的领域行为。
+    /// 行动意图 Parameters 字典键必须保持 camelCase（前端契约），
+    /// 序列化→反序列化→再序列化后报文逐字节一致。
     /// </summary>
     [Fact]
     public void ActionIntentParametersRoundTripKeepsCamelCaseKeys()

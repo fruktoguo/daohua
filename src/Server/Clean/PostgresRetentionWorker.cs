@@ -9,12 +9,7 @@ public sealed class PostgresRetentionRepository(
     ServerOptions options,
     ILogger<PostgresRetentionRepository> logger)
 {
-    /// <summary>
-    /// 执行PruneAsync（异步）。
-    /// </summary>
-    /// <param name="now">参数 now。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 RetentionResult。</returns>
+    /// <summary>对六类可清理表各删一小批过期行（同一事务），返回各类删除行数。</summary>
     public async ValueTask<RetentionResult> PruneAsync(
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
@@ -99,15 +94,13 @@ public sealed class PostgresRetentionRepository(
     }
 }
 
-/// <summary>
-/// 表示 RetentionResult 记录。
-/// </summary>
-/// <param name="Outbox">参数 Outbox。</param>
-/// <param name="Sessions">参数 Sessions。</param>
-/// <param name="Audit">参数 Audit。</param>
-/// <param name="ComputeJobs">参数 ComputeJobs。</param>
-/// <param name="DataProtectionKeys">参数 DataProtectionKeys。</param>
-/// <param name="SettlementClaims">参数 SettlementClaims。</param>
+/// <summary>一轮清理的删除行数统计。</summary>
+/// <param name="Outbox">已删除的已投递 outbox 行数。</param>
+/// <param name="Sessions">已删除的过期/已撤销会话行数。</param>
+/// <param name="Audit">已删除的审计事件行数。</param>
+/// <param name="ComputeJobs">已删除的终态冷挂机任务行数。</param>
+/// <param name="DataProtectionKeys">已删除的过期 Data Protection key 行数。</param>
+/// <param name="SettlementClaims">已删除的过期结算确认游标行数。</param>
 public sealed record RetentionResult(
     int Outbox,
     int Sessions,
@@ -116,17 +109,11 @@ public sealed record RetentionResult(
     int DataProtectionKeys,
     int SettlementClaims)
 {
-    /// <summary>
-    /// 获取 Total。
-    /// </summary>
+    /// <summary>本轮删除总行数。</summary>
     public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims;
 }
 
-/// <summary>
-/// 表示 PostgresRetentionWorker 类。
-/// </summary>
-/// <param name="repository">参数 repository。</param>
-/// <param name="logger">日志记录器。</param>
+/// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后每小时一批。</summary>
 public sealed class PostgresRetentionWorker(
     PostgresRetentionRepository repository,
     ILogger<PostgresRetentionWorker> logger) : BackgroundService

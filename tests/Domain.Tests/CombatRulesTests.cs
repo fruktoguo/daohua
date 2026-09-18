@@ -6,11 +6,9 @@ namespace Domain.Tests;
 public sealed class CombatRulesTests
 {
     /// <summary>
-    /// 验证 <c>DamageUsesMatchingCategoryPenetrationRealmAndElement</c>（Damage Uses Matching Category Penetration Realm And Element）所描述的领域行为。
+    /// 伤害公式回归：物理吃物理穿透，法术受法抗与元素抗性削减，境界差缩放参与结算；
+    /// 期望值为公式的独立手算结果，防止公式改动静默漂移。
     /// </summary>
-    /// <param name="kind">伤害种类。</param>
-    /// <param name="element">元素类型。</param>
-    /// <param name="expected">预期计算值。</param>
     [Theory]
     [InlineData(CombatDamageKind.Physical, CombatElement.None, 100d * 100 / 121)]
     [InlineData(CombatDamageKind.Spell, CombatElement.Fire, 100d * 100 / 181 * 0.5)]
@@ -29,7 +27,8 @@ public sealed class CombatRulesTests
     }
 
     /// <summary>
-    /// 验证 <c>RandomCombatSurvivesSlicingAndRestoreWithoutChangingEvents</c>（Random Combat Survives Slicing And Restore Without Changing Events）所描述的领域行为。
+    /// 含暴击/破防/格挡等随机判定的战斗：切片推进 + 快照恢复后的事件序列必须与整段推进逐帧一致；
+    /// 不同种子必须产生不同事件流（确定性随机门禁）。
     /// </summary>
     [Fact]
     public void RandomCombatSurvivesSlicingAndRestoreWithoutChangingEvents()

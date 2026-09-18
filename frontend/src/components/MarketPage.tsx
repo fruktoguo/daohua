@@ -129,6 +129,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   }, [instruments, selectedItemId])
 
   useEffect(() => {
+    // disposed 阻止卸载后回写；inFlight 阻止上一轮未完成的轮询重入；controller 随卸载中止在途请求。
     let disposed = false
     let inFlight = false
     let controller: AbortController | null = null

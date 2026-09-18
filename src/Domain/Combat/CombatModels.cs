@@ -66,38 +66,38 @@ public sealed record CombatantStats(
     public double DamageAbsorptionPoints { get; init; }
     /// <summary>仇恨威胁加成（小数比率，+2.0 表示威胁放大 200%）。</summary>
     public double ThreatRatio { get; init; }
-    /// <summary>获取或设置 法术抗性 的值。</summary>
+    /// <summary>法术抗性点数（Spell 伤害的主抗性池）。</summary>
     public double MagicResistance { get; init; }
-    /// <summary>获取或设置 抗性倍率 的值。</summary>
+    /// <summary>抗性缩放倍率（等于境界阶位 Tier，放大全部抗性点数的效果）。</summary>
     public double ResistanceScale { get; init; } = 1;
-    /// <summary>获取或设置 物理穿透百分比 的值。</summary>
+    /// <summary>物理穿透百分比点数（0~100，按比例抵消目标物理抗性）。</summary>
     public double PhysicalPenetrationPercent { get; init; }
-    /// <summary>获取或设置 法术穿透百分比 的值。</summary>
+    /// <summary>法术穿透百分比点数（0~100，按比例抵消目标法术抗性）。</summary>
     public double MagicPenetrationPercent { get; init; }
-    /// <summary>获取或设置 暴击 的值。</summary>
+    /// <summary>暴击点数（与目标暴击抗性对抗决定暴击概率）。</summary>
     public double Critical { get; init; }
-    /// <summary>获取或设置 暴击抗性 的值。</summary>
+    /// <summary>暴击抗性点数（降低被暴击概率）。</summary>
     public double CriticalResistance { get; init; }
-    /// <summary>获取或设置 暴击倍率 的值。</summary>
+    /// <summary>暴击伤害倍率（≥1，暴击时乘入最终伤害）。</summary>
     public double CriticalMultiplier { get; init; } = 1.5;
-    /// <summary>获取或设置 破防威力 的值。</summary>
+    /// <summary>破防威力点数（与招架结算对抗；胜出时削弱目标闪避与抗性）。</summary>
     public double BreakPower { get; init; }
-    /// <summary>获取或设置 招架结算 的值。</summary>
+    /// <summary>招架结算点数（与破防威力对抗；胜出时提升自身闪避与抗性）。</summary>
     public double ParryResolve { get; init; }
-    /// <summary>获取或设置 五行 的值。</summary>
+    /// <summary>攻击五行属性；None 时跳过五行抗性减免。</summary>
     public CombatElement Element { get; init; }
-    /// <summary>获取或设置 金抗性 的值。</summary>
+    /// <summary>金抗性点数（按抗性公式减免金属性伤害）。</summary>
     public double MetalResistance { get; init; }
-    /// <summary>获取或设置 木抗性 的值。</summary>
+    /// <summary>木抗性点数（按抗性公式减免木属性伤害）。</summary>
     public double WoodResistance { get; init; }
-    /// <summary>获取或设置 水抗性 的值。</summary>
+    /// <summary>水抗性点数（按抗性公式减免水属性伤害）。</summary>
     public double WaterResistance { get; init; }
-    /// <summary>获取或设置 火抗性 的值。</summary>
+    /// <summary>火抗性点数（按抗性公式减免火属性伤害）。</summary>
     public double FireResistance { get; init; }
-    /// <summary>获取或设置 土抗性 的值。</summary>
+    /// <summary>土抗性点数（按抗性公式减免土属性伤害）。</summary>
     public double EarthResistance { get; init; }
 
-    /// <summary>执行 校验 操作。</summary>
+    /// <summary>校验属性面板全部字段满足有限性与取值域不变量；非法时抛出 InvalidArgument。</summary>
     internal void Validate()
     {
         double[] nonnegative = [AttackPower, SpellAttack, MaxManapoints, Defense, Accuracy, Evasion, MagicResistance,
@@ -117,17 +117,15 @@ public sealed record CombatantStats(
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
     }
 
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <param name="maxHitpoints">maxHitpoints 参数。</param>
-    /// <param name="attackPower">attackPower 参数。</param>
-    /// <param name="defense">defense 参数。</param>
-    /// <param name="attackIntervalSeconds">attackIntervalSeconds 参数。</param>
-    /// <param name="accuracy">accuracy 参数。</param>
-    /// <param name="evasion">evasion 参数。</param>
-    /// <param name="damageKind">damageKind 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>按核心必填属性创建战斗单位规格；扩展属性经 init 赋值后由 Validate 统一复核。</summary>
+    /// <param name="maxHitpoints">气血上限（必须为正有限数）。</param>
+    /// <param name="attackPower">攻击威能（非负）。</param>
+    /// <param name="defense">防御护甲点数（非负）。</param>
+    /// <param name="attackIntervalSeconds">普攻周期秒数（必须为正）。</param>
+    /// <param name="accuracy">命中点数（非负）。</param>
+    /// <param name="evasion">闪避点数（非负）。</param>
+    /// <param name="damageKind">普攻伤害类型（物理/术法）。</param>
+    /// <returns>通过基础校验的属性规格。</returns>
     public static CombatantStats Create(
         double maxHitpoints,
         double attackPower,
@@ -161,12 +159,10 @@ public sealed record CombatantTemplate(CombatantStats Stats, IReadOnlyList<Monst
 /// </summary>
 public sealed class CombatantState
 {
-    /// <summary>
-    /// 初始化 战斗者状态。
-    /// </summary>
-    /// <param name="id">id 参数。</param>
-    /// <param name="stats">stats 参数。</param>
-    /// <param name="skills">skills 参数。</param>
+    /// <summary>以静态属性创建战斗单位运行时状态；气血灵力初始为满，首次出手需先走完一个普攻周期蓄势。</summary>
+    /// <param name="id">战斗单位标识（player 或 enemy:{index}，≤128 字符）。</param>
+    /// <param name="stats">静态属性面板。</param>
+    /// <param name="skills">随战技能槽（可空）。</param>
     public CombatantState(string id, CombatantStats stats, IReadOnlyList<MonsterSkillSlot>? skills = null)
     {
         if (string.IsNullOrWhiteSpace(id) || id.Length > 128) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗单位标识无效。");
@@ -265,9 +261,7 @@ public sealed class CombatEncounterState
         }
     }
 
-    /// <summary>
-    /// 初始化开启一场新的战斗遭遇
-    /// </summary>
+    /// <summary>开启一场玩家对单敌的遭遇战。</summary>
     public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, CombatantStats enemy)
         => Start(encounterId, seed, player, [new CombatantTemplate(enemy)]);
 
@@ -369,11 +363,11 @@ public sealed record CombatEvent(
     CombatDamageKind DamageKind,
     double TargetHitpointsAfter)
 {
-    /// <summary>获取或设置 暴击 的值。</summary>
+    /// <summary>本次攻击是否暴击。</summary>
     public bool Critical { get; init; }
-    /// <summary>获取或设置 破防 的值。</summary>
+    /// <summary>本次攻击是否触发破防（攻方破拆胜出）。</summary>
     public bool Break { get; init; }
-    /// <summary>获取或设置 被招架 的值。</summary>
+    /// <summary>本次攻击是否被招架（守方招架胜出）。</summary>
     public bool Parried { get; init; }
     /// <summary>施放事件的技能 ID；普通攻击为空。</summary>
     public string? AbilityId { get; init; }
@@ -491,8 +485,11 @@ public static class DeterministicCombatEngine
     public const int MaxEventsPerAdvance = 100_000;
 
     /// <summary>
-    /// 将战斗状态推进至指定的 targetSeconds 目标时刻。
+    /// 将战斗状态按事件驱动推进至目标时刻：只跨过双方出手时刻，不产生等间隔时间片。
     /// </summary>
+    /// <param name="encounter">遭遇战状态（就地推进）。</param>
+    /// <param name="targetSeconds">目标战斗时钟秒数（不得早于当前已推进时间）。</param>
+    /// <returns>本段推进的战斗帧：事件明细、终局裁决与序列号。</returns>
     public static CombatAdvanceResult AdvanceTo(CombatEncounterState encounter, double targetSeconds)
     {
         ArgumentNullException.ThrowIfNull(encounter);
@@ -536,6 +533,10 @@ public static class DeterministicCombatEngine
     }
 
     /// <summary>按存活敌人有效威胁权重抽取玩家攻击目标；全零威胁退化为等概率。</summary>
+    /// <param name="encounter">遭遇战状态。</param>
+    /// <param name="attackerCount">攻击方出手计数（确定性抽样的计数维度）。</param>
+    /// <param name="channel">随机通道号（与其他判定隔离的抽样流）。</param>
+    /// <returns>被选中的存活敌人；无存活敌人返回 null。</returns>
     public static CombatantState? SelectEnemyTarget(CombatEncounterState encounter, double attackerCount, ulong channel)
     {
         var alive = encounter.Enemies.Where(enemy => enemy.IsAlive).ToArray();
@@ -554,6 +555,11 @@ public static class DeterministicCombatEngine
     }
 
     /// <summary>不可重复命中的多目标抽取：动态缩减概率池（Sequential Elimination）。</summary>
+    /// <param name="encounter">遭遇战状态。</param>
+    /// <param name="maxTargets">最多抽取目标数。</param>
+    /// <param name="attackerCount">攻击方出手计数（确定性抽样的计数维度）。</param>
+    /// <param name="channel">随机通道号；多目标逐位递增以隔离抽样流。</param>
+    /// <returns>按抽取顺序排列的不重复存活敌人。</returns>
     public static IReadOnlyList<CombatantState> SelectEnemyTargets(CombatEncounterState encounter, int maxTargets, double attackerCount, ulong channel)
     {
         var alive = encounter.Enemies.Where(enemy => enemy.IsAlive).ToList();
@@ -584,6 +590,11 @@ public static class DeterministicCombatEngine
     }
 
     /// <summary>技能复用普攻对抗与减伤公式；施放方威胁按实际伤害累积。</summary>
+    /// <param name="encounter">遭遇战状态（玩家视为施放方）。</param>
+    /// <param name="target">受击敌方单位。</param>
+    /// <param name="stats">技能折算后的攻击面板。</param>
+    /// <param name="castCount">累计施放计数（确定性抽样的计数维度）。</param>
+    /// <returns>本次技能命中判定与伤害明细事件。</returns>
     public static CombatEvent ResolveAbilityAttack(CombatEncounterState encounter, CombatantState target, CombatantStats stats, double castCount)
     {
         List<CombatEvent>? events = null;

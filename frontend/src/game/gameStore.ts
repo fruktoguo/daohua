@@ -113,6 +113,7 @@ const COMBAT_ABILITY_SLOT_COUNT = 5
 const COMBAT_CONSUMABLE_SLOT_COUNT = 3
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
 
+/** 登录前/登出后的离线占位投影：为渲染层提供全部必需字段的安全默认值，首个权威快照到达后被整体覆盖。 */
 function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
   const nowUnixSeconds = Math.floor(Date.now() / 1000)
   return {
@@ -203,7 +204,8 @@ function normalizeQueue(queue: PlayerSnapshot['queue']): PlayerSnapshot['queue']
 }
 
 /**
- * 归一化战斗装配对象（确保 4 个技能槽、3 个消耗品槽以及已学技能列表完整）
+ * 归一化战斗装配对象（补齐至 5 个技能槽、3 个消耗品槽，并保证已学技能列表完整；
+ * learnedAbilityIds 缺失时从已装配技能槽反推）
  */
 function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['combat'] {
   if (!combat) return combat
@@ -273,6 +275,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setActions: (actions) => {
     registerCatalogActions(actions)
     set((state) => {
+      // 快照可能先于目录到达：此时队列条目的 actionName 只回填了 actionId。
+      // 目录就绪后按 actionId 反查定义，补齐显示名与类型；未命中条目原样保留。
       let entriesChanged = false
       const updatedEntries = state.queue.entries.map(entry => {
         if (!entry.actionName || entry.actionName === entry.actionId) {

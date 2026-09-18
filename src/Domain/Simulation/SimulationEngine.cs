@@ -69,6 +69,12 @@ public static class SimulationEngine
         => AdvanceToCore(player, target, catalog ?? ActionCatalog.Default, null, null);
 
     /// <summary>使用完整游戏配表推进行动，包含战斗遭遇、持续消耗品与怪物属性。</summary>
+    /// <param name="player">角色聚合实例（就地推进）。</param>
+    /// <param name="target">推进截止目标时刻。</param>
+    /// <param name="gameData">全局配表。</param>
+    /// <param name="assetBalances">玩家资产钱包快照（材料判定与记账依据）；为 null 时按无库存处理，有消耗的行动将被阻塞。</param>
+    /// <param name="duel">斗法撮合选项；离线补算必须传 null 或不启用匹配以保持确定性。</param>
+    /// <returns>包含资产变动与事件明细的模拟结算结果。</returns>
     public static SimulationResult AdvanceTo(
         PlayerAggregate player,
         DateTimeOffset target,

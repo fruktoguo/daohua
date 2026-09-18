@@ -37,6 +37,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
   const cancelOrder = useCallback((orderId: string) => {
     if (!gameClient.sendCommand('market.cancel', { orderId })) return
     setNotice(getT()('market.notice.cancelSubmitted'))
+    // 延迟 120ms 再拉取：给服务端一个结算窗口消化撤单指令，避免立刻刷新读到旧快照。
     window.setTimeout(onChanged, 120)
   }, [onChanged, setNotice])
 

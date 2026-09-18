@@ -43,6 +43,7 @@ public static class WebSocketScenario
         var process = Process.GetCurrentProcess();
         process.Refresh();
         var cpuBefore = process.TotalProcessorTime;
+        // 先强制回收再取基线，使内存增量口径只反映本次压测自身分配。
         var managedBefore = GC.GetTotalMemory(forceFullCollection: true);
         var started = Stopwatch.GetTimestamp();
         var warnings = new List<string>();
@@ -62,7 +63,7 @@ public static class WebSocketScenario
             warnings.Add("未指定 --require-server：跳过账号注册，所有连接按匿名 Upgrade 探测执行。");
         }
 
-        // 连接阶段：semaphore 只限制同时进行的握手数，握手完成后连接保持至统一截止时间。
+        // 连接阶段：semaphore 只限制同时进行的 Upgrade 数，升级完成后连接保持至统一截止时间。
         var deadline = DateTimeOffset.UtcNow.AddSeconds(options.DurationSeconds);
         var connectGate = new SemaphoreSlim(options.Concurrency);
         var tasks = new Task[options.Players];
@@ -89,6 +90,7 @@ public static class WebSocketScenario
             ? "cookie"
             : registered > 0 ? "mixed" : "anonymous";
         var helloAckP99 = LatencySummary.P99(stats.HelloAckMilliseconds);
+        // 成功率分母只含带会话的连接；匿名 401 属预期拒绝，另走 serverResponseRate 可达性口径。
         var upgradeSuccessRate = registered == 0 ? 0 : (double)upgraded / registered;
         var serverResponseRate = attempted == 0 ? 0 : (double)(upgraded + rejected) / attempted;
 
@@ -204,6 +206,7 @@ public static class WebSocketScenario
     {
         using var handler = new SocketsHttpHandler { MaxConnectionsPerServer = RegisterConcurrency };
         using var client = new HttpClient(handler) { BaseAddress = httpBaseUri, Timeout = RegisterTimeout };
+        // runToken 使多次运行的账号名互不冲突（login_normalized 有唯一约束）。
         var runToken = Guid.NewGuid().ToString("N")[..8];
         var password = $"LoadTest#{runToken}";
         var gate = new SemaphoreSlim(RegisterConcurrency);
@@ -318,7 +321,8 @@ public static class WebSocketScenario
     }
 
     /// <summary>
-    /// 建立单个 WebSocket 连接：先占连接并发位完成 Upgrade 与握手，再持连接到统一截止时间。
+    /// 建立单个 WebSocket 连接：并发位只覆盖 Upgrade 阶段（随后立即释放），
+    /// 协议握手与连接存续不占并发位，持续到统一截止时间后正常关闭。
     /// </summary>
     private static async Task ConnectAndHoldAsync(
         Uri webSocketUri,
@@ -330,6 +334,7 @@ public static class WebSocketScenario
     {
         Interlocked.Increment(ref stats.Attempted);
         using var socket = new ClientWebSocket();
+        // 15 秒 keepalive：存续窗口内即使长时间无下行增量，也维持连接不被空闲回收。
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(15);
         if (cookie is not null)
         {
@@ -421,6 +426,7 @@ public static class WebSocketScenario
         {
             while (socket.State == WebSocketState.Open)
             {
+                // 两阶段超时：握手用独立短超时，握手完成后切换到全局统一截止时间。
                 var remaining = (handshakeCompleted ? deadline : handshakeDeadline) - DateTimeOffset.UtcNow;
                 if (remaining <= TimeSpan.Zero) break;
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -493,6 +499,7 @@ public static class WebSocketScenario
 
     /// <summary>
     /// 判断 Upgrade 失败是否由服务端返回了非 101 状态码（端点可达但被拒绝）。
+    /// ClientWebSocket 不直接暴露 HTTP 状态码，只能从异常类型与消息文本判定。
     /// </summary>
     private static bool IsServerRejection(Exception exception) =>
         exception switch

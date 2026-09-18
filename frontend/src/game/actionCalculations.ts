@@ -9,6 +9,7 @@ import { getT } from '../i18n'
 /** 非物品、非增益的资源类收益类别（修为/灵力/气血/历练经验） */
 export type ResourceYieldKind = 'qi' | 'mana' | 'hitpoints' | 'experience'
 
+/** 单条生效加成的展示明细 */
 export interface ActiveBonusDetail {
   /** 加成源名称（如 '引气丹' / '青岚山谷' / '吐纳增益'） */
   sourceName: string
@@ -22,11 +23,16 @@ export interface ActiveBonusDetail {
   description?: string
 }
 
+/** 修炼行动专属详情（境界圆满待突破判定） */
 export interface CultivationYieldDetail {
   /** 当前境界是否已圆满待突破（修为转为底蕴） */
   isPendingBreakthrough: boolean
 }
 
+/**
+ * 行动收益预览解算结果：资源收益按综合倍率放大、物品收益聚合后向上取整（保底 1）、
+ * Buff 收益原样透传；仅用于 UI 预估展示，权威结算仍在服务端。
+ */
 export interface ActionYieldPreview {
   /** 是否为修炼动作 */
   isCultivation: boolean
@@ -77,6 +83,7 @@ interface CalculateActionParams {
   stats?: Stats
 }
 
+/** 兼容背包数组与 {itemId: amount} 映射两种入参形态的持有量查询 */
 function getItemAmount(inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>, itemId: string): number {
   if (Array.isArray(inventory)) {
     return inventory.find(i => i.itemId === itemId)?.amount ?? 0
@@ -171,6 +178,7 @@ export function calculateActionYieldPreview({
     }
 
     if (bMult > 1.0) {
+      // 同类 Buff 增益取最高值参与总倍率（不连乘）；注意与上方消耗品的连乘规则不同。
       buffMultiplier = Math.max(buffMultiplier, bMult)
       const percent = Math.round((bMult - 1.0) * 100)
       bonuses.push({
@@ -247,6 +255,7 @@ export function calculateActionYieldPreview({
 
   const itemOutputs = Array.from(itemAmountMap.entries()).map(([itemId, baseAmount]) => {
     const multiplier = totalMultiplier
+    // 物品件数必须向上取整且保底 1：收益展示不允许出现 0.x 件或被倍率抹零。
     const finalAmount = multiplier === 1.0
       ? baseAmount
       : Math.max(1, Math.ceil(baseAmount * multiplier))

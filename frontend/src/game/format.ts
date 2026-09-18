@@ -127,6 +127,7 @@ export function formatAbilityCategory(category?: string, element?: string): stri
   return `${cat}${elem}`
 }
 
+/** Intl.NumberFormat 按语言环境缓存，避免高频渲染路径重复构造格式化器 */
 const numberFormatters = new Map<string, Intl.NumberFormat>()
 
 /**
@@ -450,6 +451,7 @@ export function formatUnitNumber(
   value: number | bigint | string,
   options?: FormatUnitOptions
 ): string {
+  // 快路径：无格式化选项的非负小整数直接输出，跳过选项解析与阶梯计算（渲染热点优化）。
   if (options === undefined && typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < 10000) {
     return String(value)
   }

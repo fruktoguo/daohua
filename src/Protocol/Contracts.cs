@@ -406,7 +406,7 @@ public sealed record PlayerSnapshotDeltaDto(
 /// <summary>行动排队意图请求 DTO</summary>
 /// <param name="RequestId">请求唯一标识，客户端幂等键</param>
 /// <param name="ActionId">行动配置 ID</param>
-/// <param name="RepeatCount">重复执行次数，默认为 1</param>
+/// <param name="RepeatCount">计划重复次数；必须为 [1, 1_000_000] 内的整数，或特殊值 -1 表示无限循环直至玩家取消/资源断绝</param>
 /// <param name="TargetNodeId">目标节点标识，可选</param>
 /// <param name="Parameters">额外参数字典，可选</param>
 /// <param name="PvpEnabled">斗法开关：玩家同意参与 PVP 匹配，仅对战斗遭遇行动生效</param>
@@ -423,7 +423,7 @@ public sealed record ActionIntentRequest(
 /// <param name="ActionInstanceId">行动实例标识</param>
 /// <param name="ActionId">行动配置 ID</param>
 /// <param name="EnqueuedAt">入队时间</param>
-/// <param name="RemainingRepeats">剩余重复次数</param>
+/// <param name="RemainingRepeats">剩余重复次数；-1 表示该行动处于无限循环，结算后不会自动出队</param>
 public sealed record ActionIntentResponse(
     string RequestId,
     string ActionInstanceId,
@@ -438,7 +438,7 @@ public sealed record ActionIntentResponse(
 /// <param name="RequestId">请求唯一标识，客户端幂等键</param>
 /// <param name="Command">命令名称</param>
 /// <param name="Payload">命令 JSON 载荷</param>
-/// <param name="ExpectedStateVersion">期望服务端状态版本，默认为 0</param>
+/// <param name="ExpectedStateVersion">客户端期望的服务端状态版本；大于 0 时若与服务端当前版本不符将返回 STATE_VERSION_CONFLICT，0 表示不做乐观并发校验</param>
 public sealed record CommandEnvelopeDto(
     string RequestId,
     string Command,
@@ -479,7 +479,7 @@ public sealed record AssetDeltaDto(string AssetId, string? Variant, double Quant
 /// <param name="OrderId">订单唯一标识</param>
 /// <param name="AssetId">资产配置 ID</param>
 /// <param name="Variant">资产变体，可选</param>
-/// <param name="Side">买卖方向（Buy/Sell）</param>
+/// <param name="Side">买卖方向（buy/sell，服务端解析大小写不敏感）</param>
 /// <param name="Price">挂单单价</param>
 /// <param name="Quantity">挂单数量</param>
 public sealed record MarketOrderRequestDto(
@@ -500,7 +500,7 @@ public sealed record MarketOrderRequestDto(
 /// <param name="Price">挂单单价</param>
 /// <param name="OriginalQuantity">原始挂单数量</param>
 /// <param name="RemainingQuantity">剩余未成交数量</param>
-/// <param name="Status">订单状态</param>
+/// <param name="Status">订单状态（active/partially_filled/filled/cancelled/expired）</param>
 /// <param name="Sequence">订单序列号</param>
 /// <param name="CreatedAt">创建时间</param>
 /// <param name="ExpiresAt">到期时间；无期限订单为 null</param>

@@ -10,6 +10,7 @@ import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { RealmBadge } from './RealmBadge'
 import { calculateRealmInfo } from '../game/combatConstants'
 
+/** 面板六槽位展示配置：slot 为装备协议槽位，labelKey 对应 app.equipmentPanel.* 词条 */
 interface SlotConfig {
   slot: EquipmentSlot
   labelKey: 'slotHead' | 'slotArmor' | 'slotLegs' | 'slotWeapon' | 'slotTrinket' | 'slotBoots'
@@ -29,6 +30,10 @@ const RIGHT_SLOTS: readonly SlotConfig[] = [
 
 const ALL_SLOTS = [...LEFT_SLOTS, ...RIGHT_SLOTS]
 
+/**
+ * 装备槽位归并匹配：面板六展示位对协议细分槽位做收敛——
+ * weapon 位兼容 two-hand 双手武器；trinket 位归并 ring/neck/talisman 三类饰品。
+ */
 function isSlotMatch(equipmentSlot: EquipmentSlot, targetSlot: EquipmentSlot): boolean {
   if (equipmentSlot === targetSlot) return true
   if (targetSlot === 'weapon' && equipmentSlot === 'two-hand') return true

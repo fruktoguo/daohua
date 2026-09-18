@@ -4,11 +4,10 @@ namespace Server.Clean;
 public sealed class MarketHealthCheck(MarketRuntime runtime) : IHealthCheck
 {
     /// <summary>
-    /// 执行CheckHealthAsync（异步）。
+    /// 分片持有有效写者租约（runtime.IsReady）时报告 Healthy，否则报告 Unhealthy 摘除写流量。
     /// </summary>
-    /// <param name="context">HTTP 请求上下文。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 HealthCheckResult。</returns>
+    /// <param name="context">健康检查上下文。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default) =>

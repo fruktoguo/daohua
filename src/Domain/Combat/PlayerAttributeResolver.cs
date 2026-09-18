@@ -4,7 +4,7 @@ using Domain.Player;
 
 namespace Domain.Combat;
 
-/// <summary>玩家属性 的领域定义。</summary>
+/// <summary>玩家综合战斗属性面板：由境界锚点、装备、Buff 与六维根骨经乘区结算导出。</summary>
 public sealed record PlayerAttributes(
     double MaxHitpoints, double MaxManapoints, double PhysicalAttack, double SpellAttack,
     double Armor, double MagicResistance, double Accuracy, double Evasion,
@@ -20,22 +20,20 @@ public sealed record PlayerAttributes(
     double ThreatRatio = 0,
     bool SpellStyle = false)
 {
-    /// <summary>获取或设置 金抗性 的值。</summary>
+    /// <summary>金抗性点数（减免金属性伤害）。</summary>
     public double MetalResistance { get; init; }
-    /// <summary>获取或设置 木抗性 的值。</summary>
+    /// <summary>木抗性点数（减免木属性伤害）。</summary>
     public double WoodResistance { get; init; }
-    /// <summary>获取或设置 水抗性 的值。</summary>
+    /// <summary>水抗性点数（减免水属性伤害）。</summary>
     public double WaterResistance { get; init; }
-    /// <summary>获取或设置 火抗性 的值。</summary>
+    /// <summary>火抗性点数（减免火属性伤害）。</summary>
     public double FireResistance { get; init; }
-    /// <summary>获取或设置 土抗性 的值。</summary>
+    /// <summary>土抗性点数（减免土属性伤害）。</summary>
     public double EarthResistance { get; init; }
-    /// <summary>获取或设置 抗性倍率 的值。</summary>
+    /// <summary>抗性缩放倍率（等于当前境界阶位 Tier）。</summary>
     public double ResistanceScale { get; init; } = 1;
-    /// <summary>
-    /// 执行 转换为战斗者 操作。
-    /// </summary>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>按当前流派（物理/术法）折叠为战斗单位属性规格；术法流派普攻走 Spell 伤害。</summary>
+    /// <returns>可进入战斗引擎的单位属性。</returns>
     public CombatantStats ToCombatant() => CombatantStats.Create(MaxHitpoints,
         SpellStyle ? SpellAttack : PhysicalAttack, Armor,
         AttackIntervalSeconds, Accuracy, Evasion,
@@ -58,21 +56,17 @@ public sealed record PlayerAttributes(
 /// <summary>战斗和面板共用属性计算；各项回复只读取对应配置列。</summary>
 public static class PlayerAttributeResolver
 {
-    /// <summary>
-    /// 执行 结算 操作。
-    /// </summary>
-    /// <param name="state">state 参数。</param>
-    /// <param name="catalog">catalog 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>从持久化快照文档解析玩家属性面板。</summary>
+    /// <param name="state">玩家聚合快照。</param>
+    /// <param name="catalog">全局配表（境界锚点、装备与功法来源）。</param>
+    /// <returns>结算完成的属性面板。</returns>
     public static PlayerAttributes Resolve(PlayerAggregateState state, GameDataCatalog catalog)
         => Resolve(state.Progression.RealmLevel, state.EquippedItemIds ?? [], state.Loadout, state.Buffs, state.Combat, catalog);
 
-    /// <summary>
-    /// 执行 结算 操作。
-    /// </summary>
-    /// <param name="player">player 参数。</param>
-    /// <param name="catalog">catalog 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。</summary>
+    /// <param name="player">在线玩家聚合。</param>
+    /// <param name="catalog">全局配表。</param>
+    /// <returns>结算完成的属性面板。</returns>
     public static PlayerAttributes Resolve(PlayerAggregate player, GameDataCatalog catalog)
         => Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
             new(player.Combat.Hitpoints, player.Combat.MaxHitpoints, player.Combat.Manapoints,
@@ -185,12 +179,10 @@ public static class PlayerAttributeResolver
         }
     }
 
-    /// <summary>
-    /// 执行 Apply 操作。
-    /// </summary>
-    /// <param name="player">player 参数。</param>
-    /// <param name="catalog">catalog 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>重新解析属性并把生命/灵力/攻防面板写回聚合战斗分段；上限变化时夹取当前值，变更时标记 Combat 分段脏。</summary>
+    /// <param name="player">在线玩家聚合（Combat 分段就地更新）。</param>
+    /// <param name="catalog">全局配表。</param>
+    /// <returns>结算完成的属性面板。</returns>
     public static PlayerAttributes Apply(PlayerAggregate player, GameDataCatalog catalog)
     {
         var attributes = Resolve(player, catalog);

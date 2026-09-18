@@ -2,17 +2,15 @@ using System.Text.RegularExpressions;
 
 namespace Server.Clean;
 
-/// <summary>
-/// 表示 AccountRegistrationResult 记录。
-/// </summary>
-/// <param name="Success">参数 Success。</param>
-/// <param name="AccountId">参数 AccountId。</param>
-/// <param name="PlayerId">参数 PlayerId。</param>
-/// <param name="Account">参数 Account。</param>
-/// <param name="DisplayName">参数 DisplayName。</param>
-/// <param name="ErrorCode">参数 ErrorCode。</param>
-/// <param name="Message">参数 Message。</param>
-/// <param name="SessionToken">参数 SessionToken。</param>
+/// <summary>注册结局；失败时 Success=false 且只携带 ErrorCode/Message，成功时附带已签发的会话令牌。</summary>
+/// <param name="Success">注册是否成功。</param>
+/// <param name="AccountId">新建账号标识。</param>
+/// <param name="PlayerId">新建玩家标识。</param>
+/// <param name="Account">规范化后的登录账号。</param>
+/// <param name="DisplayName">最终生效的道号。</param>
+/// <param name="ErrorCode">失败错误码（如 DUPLICATE_ACCOUNT_OR_NAME）。</param>
+/// <param name="Message">面向用户的失败描述。</param>
+/// <param name="SessionToken">注册即登录签发的会话令牌明文，仅此一次返回给客户端。</param>
 public sealed record AccountRegistrationResult(
     bool Success,
     Guid? AccountId,
@@ -23,17 +21,15 @@ public sealed record AccountRegistrationResult(
     string? Message,
     string? SessionToken = null);
 
-/// <summary>
-/// 表示 AccountLoginResult 记录。
-/// </summary>
-/// <param name="Success">参数 Success。</param>
-/// <param name="AccountId">参数 AccountId。</param>
-/// <param name="PlayerId">参数 PlayerId。</param>
-/// <param name="Account">参数 Account。</param>
-/// <param name="DisplayName">参数 DisplayName。</param>
-/// <param name="ErrorCode">参数 ErrorCode。</param>
-/// <param name="Message">参数 Message。</param>
-/// <param name="SessionToken">参数 SessionToken。</param>
+/// <summary>登录结局；凭据无效与账号停用统一返回 INVALID_CREDENTIALS，不暴露账号是否存在。</summary>
+/// <param name="Success">登录是否成功。</param>
+/// <param name="AccountId">账号标识。</param>
+/// <param name="PlayerId">绑定玩家标识。</param>
+/// <param name="Account">规范化后的登录账号。</param>
+/// <param name="DisplayName">当前道号。</param>
+/// <param name="ErrorCode">失败错误码。</param>
+/// <param name="Message">面向用户的失败描述。</param>
+/// <param name="SessionToken">新签发的会话令牌明文，仅此一次返回给客户端。</param>
 public sealed record AccountLoginResult(
     bool Success,
     Guid? AccountId,
@@ -44,26 +40,26 @@ public sealed record AccountLoginResult(
     string? Message,
     string? SessionToken = null);
 
-/// <summary>
-/// 表示 IAccountRepository 接口。
-/// </summary>
+/// <summary>账号、凭据与认证会话的持久化边界。</summary>
 public interface IAccountRepository
 {
+    /// <summary>注册账号并创建绑定玩家，同一事务写入初始会话与注册审计事件。</summary>
     ValueTask<AccountRegistrationResult> RegisterAsync(string account, string password, string? displayName, CancellationToken cancellationToken = default);
+    /// <summary>校验账号密码；成功时刷新 last_seen_at 并签发新会话令牌。</summary>
     ValueTask<AccountLoginResult> LoginAsync(string account, string password, CancellationToken cancellationToken = default);
+    /// <summary>按令牌明文解析有效会话；未撤销、未过期且账号/玩家均启用才返回身份，否则 null。</summary>
     ValueTask<SessionIdentity?> ValidateSessionAsync(string token, CancellationToken cancellationToken = default);
+    /// <summary>撤销会话；实际命中行时同事务写入登出审计事件。</summary>
     ValueTask RevokeSessionAsync(string token, CancellationToken cancellationToken = default);
     /// <summary>改写道号；display_name_normalized 唯一索引冲突时返回 false。</summary>
     ValueTask<bool> RenamePlayerAsync(Guid playerId, string displayName, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// 表示 SessionIdentity 记录。
-/// </summary>
-/// <param name="AccountId">参数 AccountId。</param>
-/// <param name="PlayerId">参数 PlayerId。</param>
-/// <param name="Account">参数 Account。</param>
-/// <param name="DisplayName">参数 DisplayName。</param>
+/// <summary>一次有效会话解析出的身份。</summary>
+/// <param name="AccountId">会话所属账号。</param>
+/// <param name="PlayerId">绑定玩家标识。</param>
+/// <param name="Account">登录账号。</param>
+/// <param name="DisplayName">当前道号。</param>
 public sealed record SessionIdentity(Guid AccountId, Guid PlayerId, string Account, string DisplayName);
 
 /// <summary>账号与会话的关系存储；密码明文和 token 明文永不入库。</summary>
@@ -73,25 +69,22 @@ public sealed class PostgresAccountRepository(
     ILogger<PostgresAccountRepository> logger,
     IOutboxRepository outbox) : IAccountRepository
 {
-    /// <summary>
-    /// 表示常量 MinPasswordLength。
-    /// </summary>
+    /// <summary>密码长度下限。</summary>
     public const int MinPasswordLength = 6;
-    /// <summary>
-    /// 表示常量 MaxPasswordLength。
-    /// </summary>
+    /// <summary>密码长度上限。</summary>
     public const int MaxPasswordLength = 24;
     private const int Pbkdf2Iterations = 600_000;
     private static readonly Regex AccountPattern = new("^[a-zA-Z0-9_]{3,32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// 注册Async（异步）。
+    /// 注册账号：同一 Serializable 事务内写账号、玩家、初始会话与 outbox 注册事件，
+    /// 任何一步失败整体回滚；账号名或道号撞唯一索引映射为 DUPLICATE_ACCOUNT_OR_NAME。
     /// </summary>
-    /// <param name="account">账号名。</param>
-    /// <param name="password">密码。</param>
-    /// <param name="displayName">显示名称。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 AccountRegistrationResult。</returns>
+    /// <param name="account">登录账号，入库前统一小写规范化。</param>
+    /// <param name="password">明文密码，PBKDF2-SHA512 哈希后入库，明文不落盘。</param>
+    /// <param name="displayName">初始道号；为空时回退为规范化账号名。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>成功时携带新会话令牌的注册结局。</returns>
     public async ValueTask<AccountRegistrationResult> RegisterAsync(
         string account,
         string password,
@@ -170,12 +163,13 @@ public sealed class PostgresAccountRepository(
     }
 
     /// <summary>
-    /// 登录Async（异步）。
+    /// 校验登录凭据并签发新会话。哈希比对用固定时间比较，且停用账号与密码错误
+    /// 走同一失败出口，避免响应差异泄露账号状态。
     /// </summary>
-    /// <param name="account">账号名。</param>
-    /// <param name="password">密码。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 AccountLoginResult。</returns>
+    /// <param name="account">登录账号。</param>
+    /// <param name="password">明文密码。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>成功时携带新会话令牌的登录结局。</returns>
     public async ValueTask<AccountLoginResult> LoginAsync(
         string account,
         string password,
@@ -220,12 +214,7 @@ public sealed class PostgresAccountRepository(
         return new AccountLoginResult(true, accountId, playerId, normalizedAccount, name, null, null, token);
     }
 
-    /// <summary>
-    /// 执行ValidateSessionAsync（异步）。
-    /// </summary>
-    /// <param name="token">会话令牌。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 SessionIdentity?。</returns>
+    /// <summary>按令牌哈希查找未撤销且未过期的会话；每次认证请求调用，令牌明文只用于哈希比对。</summary>
     public async ValueTask<SessionIdentity?> ValidateSessionAsync(string token, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
@@ -248,11 +237,7 @@ public sealed class PostgresAccountRepository(
             : null;
     }
 
-    /// <summary>
-    /// 执行RevokeSessionAsync（异步）。
-    /// </summary>
-    /// <param name="token">会话令牌。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>按令牌哈希撤销会话；命中未撤销行时同事务写登出审计事件，令牌不存在或已撤销时静默返回。</summary>
     public async ValueTask RevokeSessionAsync(string token, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return;

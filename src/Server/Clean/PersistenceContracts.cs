@@ -3,52 +3,30 @@ namespace Server.Clean;
 /// <summary>玩家状态 section 的稳定命名空间。新增 section 只需增加新键，不修改既有载荷。</summary>
 public static class PlayerSectionKinds
 {
-    /// <summary>
-    /// 表示常量 Progression。
-    /// </summary>
+    /// <summary>境界与修为成长分段。</summary>
     public const string Progression = "progression";
-    /// <summary>
-    /// 表示常量 World。
-    /// </summary>
+    /// <summary>世界位置与地图状态分段。</summary>
     public const string World = "world";
-    /// <summary>
-    /// 表示常量 Combat。
-    /// </summary>
+    /// <summary>战斗属性与出战状态分段。</summary>
     public const string Combat = "combat";
-    /// <summary>
-    /// 表示常量 Buffs。
-    /// </summary>
+    /// <summary>生效中的增益/减益列表分段。</summary>
     public const string Buffs = "buffs";
-    /// <summary>
-    /// 表示常量 Loadout。
-    /// </summary>
+    /// <summary>装备实例、已学技能与配装方案分段。</summary>
     public const string Loadout = "loadout";
-    /// <summary>
-    /// 表示常量 Settings。
-    /// </summary>
+    /// <summary>玩家设置与在线状态分段。</summary>
     public const string Settings = "settings";
-    /// <summary>
-    /// 表示常量 ActionQueue。
-    /// </summary>
+    /// <summary>行动队列分段。</summary>
     public const string ActionQueue = "action_queue";
-    /// <summary>
-    /// 表示常量 Duel（斗法：遭遇计数、冷却、暂存区与战斗收益记录）。
-    /// </summary>
+    /// <summary>斗法分段：遭遇计数、冷却、暂存区与战斗收益记录。</summary>
     public const string Duel = "duel";
 
-    /// <summary>
-    /// 表示只读字段 All。
-    /// </summary>
+    /// <summary>全部合法 section 键集合；完整性校验与落库遍历都以它为准。</summary>
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
         Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue, Duel
     };
 
-    /// <summary>
-    /// 判断是否为Valid。
-    /// </summary>
-    /// <param name="value">参数 value。</param>
-    /// <returns>若条件成立则返回 true，否则返回 false。</returns>
+    /// <summary>判断给定键是否是受支持的 section。</summary>
     public static bool IsValid(string value) => All.Contains(value);
 }
 
@@ -66,14 +44,10 @@ public sealed record SectionWrite(
     string GameDataFingerprint = "",
     DateTimeOffset? LastSimulatedAt = null)
 {
-    /// <summary>
-    /// 获取 StoredBytes。
-    /// </summary>
+    /// <summary>压缩后的实际存储字节数。</summary>
     public int StoredBytes => Payload.Length;
 
-    /// <summary>
-    /// 执行Validate。
-    /// </summary>
+    /// <summary>入库前的边界校验：section 键合法、版本为正、载荷与校验和在大小/格式上限内。</summary>
     public void Validate()
     {
         if (PlayerId == Guid.Empty) throw new ArgumentException("PlayerId 不能为空。", nameof(PlayerId));
@@ -155,10 +129,8 @@ public sealed record FlushQueueItem(
     string GameDataFingerprint = "",
     DateTimeOffset? LastSimulatedAt = null)
 {
-    /// <summary>
-    /// 执行Validate。
-    /// </summary>
-    /// <param name="requireLease">参数 requireLease。</param>
+    /// <summary>复用 <see cref="SectionWrite"/> 的边界校验，并额外检查重试元数据。</summary>
+    /// <param name="requireLease">为 true 时要求队列行已被 worker 租约认领（LeaseToken 非空）。</param>
     public void Validate(bool requireLease = false)
     {
         new SectionWrite(PlayerId, SectionKind, StateVersion, SchemaVersion, Codec, Payload, RawBytes, Checksum, UpdatedAt, GameDataFingerprint, LastSimulatedAt).Validate();
@@ -197,8 +169,11 @@ public sealed record OutboxMessage(
 /// <summary>玩家状态仓储接口：负责分段入队与异步流水线批量刷盘</summary>
 public interface IPlayerStateRepository
 {
+    /// <summary>加载玩家完整持久化状态；玩家存在但从未落盘时返回带空头的 bundle，不存在时返回 null。</summary>
     ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default);
+    /// <summary>把脏 section 写入 latest-only 刷盘队列，由 worker 异步落库。</summary>
     ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default);
+    /// <summary>同事务入队 section 与命令回执，保证「状态写回 + 幂等回执」原子生效。</summary>
     async ValueTask EnqueueSectionsAsync(
         IReadOnlyCollection<SectionWrite> sections,
         IReadOnlyCollection<CommandReceipt> receipts,
@@ -206,13 +181,16 @@ public interface IPlayerStateRepository
     {
         await EnqueueSectionsAsync(sections, cancellationToken);
     }
+    /// <summary>租约认领一批到期队列行并落库；行级冲突与坏载荷不回滚整批。</summary>
     ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default);
 }
 
 /// <summary>客户端指令幂等回执存储边界</summary>
 public interface ICommandReceiptStore
 {
+    /// <summary>按玩家与请求 ID 查未过期回执；命中即代表该命令已被执行过。</summary>
     ValueTask<CommandReceipt?> FindAsync(Guid playerId, Guid requestId, CancellationToken cancellationToken = default);
+    /// <summary>物理删除过期回执，返回删除行数；由清理 worker 周期调用。</summary>
     ValueTask<int> PruneExpiredAsync(DateTimeOffset now, CancellationToken cancellationToken = default);
 }
 
@@ -221,23 +199,32 @@ public interface ICommandReceiptStore
 /// </summary>
 public interface IPlayerOwnershipStore
 {
+    /// <summary>抢占玩家租约；仅当租约不存在、已过期或本实例已是持有者时返回 true。</summary>
     ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default);
+    /// <summary>持有者续租；ownerInstanceId 不匹配（已被他实例接管）时返回 false。</summary>
     ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default);
+    /// <summary>持有者主动释放租约；ownerInstanceId 不匹配时不误删他人租约。</summary>
     ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// 表示 PlayerOwnershipLostException 类。
-/// </summary>
-/// <param name="playerId">玩家唯一标识。</param>
+/// <summary>玩家运行时租约被抢占或过期时抛出；调用方必须中止本次写路径。</summary>
+/// <param name="playerId">丢失租约的玩家。</param>
 public sealed class PlayerOwnershipLostException(Guid playerId)
     : InvalidOperationException($"玩家运行时租约已失效 player={playerId:D}");
 
 /// <summary>
-/// 表示 IOutboxRepository 接口。
+/// 事务发件箱存储边界：事件与业务写入同事务追加，由后台 worker 租约认领后投递。
 /// </summary>
 public interface IOutboxRepository
 {
+    /// <summary>在调用方提供的事务内追加一条待投递事件，随业务提交一起生效。</summary>
+    /// <param name="connection">调用方已打开的连接。</param>
+    /// <param name="transaction">业务写入所在的同一事务。</param>
+    /// <param name="aggregateId">产生事件的聚合标识。</param>
+    /// <param name="aggregateType">聚合类型，用于下游路由。</param>
+    /// <param name="eventType">事件类型名。</param>
+    /// <param name="payload">已序列化的事件载荷。</param>
+    /// <param name="occurredAt">业务发生时刻，同时作为首次可见时间。</param>
     ValueTask AppendAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -248,36 +235,36 @@ public interface IOutboxRepository
         DateTimeOffset occurredAt,
         CancellationToken cancellationToken = default);
 
+    /// <summary>原子认领一批到期未投递事件并加租约；租约令牌随消息返回用于回执。</summary>
     ValueTask<IReadOnlyList<OutboxMessage>> ClaimAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default);
+    /// <summary>投递成功后按租约令牌标记 delivered_at；令牌不匹配视为租约已转移，静默忽略。</summary>
     ValueTask MarkDeliveredAsync(Guid outboxId, Guid leaseToken, CancellationToken cancellationToken = default);
+    /// <summary>投递失败时释放租约并按 retryAfter 推迟下次可见时间，error 留作诊断。</summary>
     ValueTask ReleaseAsync(Guid outboxId, Guid leaseToken, string error, TimeSpan retryAfter, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// 表示 AssetDelta 记录。
-/// </summary>
-/// <param name="PlayerId">参数 PlayerId。</param>
-/// <param name="AssetId">参数 AssetId。</param>
-/// <param name="Variant">参数 Variant。</param>
-/// <param name="Delta">参数 Delta。</param>
+/// <summary>一笔资产余额增减。</summary>
+/// <param name="PlayerId">余额所属玩家。</param>
+/// <param name="AssetId">资产标识（物品/货币定义 ID）。</param>
+/// <param name="Variant">资产变体；普通资产为空串。</param>
+/// <param name="Delta">增减量（double，负数为扣减）。</param>
 public sealed record AssetDelta(Guid PlayerId, string AssetId, string Variant, double Delta);
 
 /// <summary>只读资产余额查询边界。余额写入仍然只能经过 IEconomyTransactionStore。</summary>
 public interface IAssetBalanceRepository
 {
+    /// <summary>读取玩家当前正余额列表（quantity > 0），用于快照与展示。</summary>
     ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(
         Guid playerId,
         CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// 表示 AssetBalanceRecord 记录。
-/// </summary>
-/// <param name="PlayerId">参数 PlayerId。</param>
-/// <param name="AssetId">参数 AssetId。</param>
-/// <param name="Variant">参数 Variant。</param>
-/// <param name="Quantity">参数 Quantity。</param>
-/// <param name="Version">参数 Version。</param>
+/// <summary>一行资产余额的持久化视图。</summary>
+/// <param name="PlayerId">余额所属玩家。</param>
+/// <param name="AssetId">资产标识。</param>
+/// <param name="Variant">资产变体。</param>
+/// <param name="Quantity">当前余额。</param>
+/// <param name="Version">乐观并发版本号，随每次写入递增。</param>
 public sealed record AssetBalanceRecord(
     Guid PlayerId,
     string AssetId,
@@ -285,18 +272,16 @@ public sealed record AssetBalanceRecord(
     double Quantity,
     long Version);
 
-/// <summary>
-/// 表示 EconomyTransactionRequest 记录。
-/// </summary>
-/// <param name="TransactionId">参数 TransactionId。</param>
-/// <param name="IdempotencyKey">参数 IdempotencyKey。</param>
-/// <param name="TransactionType">参数 TransactionType。</param>
-/// <param name="ActorId">参数 ActorId。</param>
-/// <param name="Deltas">参数 Deltas。</param>
-/// <param name="OccurredAt">参数 OccurredAt。</param>
-/// <param name="ResultPayload">参数 ResultPayload。</param>
-/// <param name="Sections">参数 Sections。</param>
-/// <param name="Receipts">参数 Receipts。</param>
+/// <summary>一次资产事务的完整提交请求。</summary>
+/// <param name="TransactionId">事务唯一标识，同时作为流水行主键。</param>
+/// <param name="IdempotencyKey">幂等键；同键重复提交返回已存结果而不重复入账。</param>
+/// <param name="TransactionType">事务类型标签（如 market），用于审计与幂等键归属校验。</param>
+/// <param name="ActorId">发起事务的玩家标识。</param>
+/// <param name="Deltas">本事务的全部余额增减行。</param>
+/// <param name="OccurredAt">业务发生时刻；缺省由存储层取当前时间。</param>
+/// <param name="ResultPayload">随事务持久化的结果载荷，重放时原样返回。</param>
+/// <param name="Sections">随事务一并入队的玩家 section 写回。</param>
+/// <param name="Receipts">随事务一并写入的命令幂等回执。</param>
 public sealed record EconomyTransactionRequest(
     Guid TransactionId,
     string IdempotencyKey,
@@ -308,15 +293,13 @@ public sealed record EconomyTransactionRequest(
     IReadOnlyList<SectionWrite>? Sections = null,
     IReadOnlyList<CommandReceipt>? Receipts = null);
 
-/// <summary>
-/// 表示 EconomyTransactionResult 记录。
-/// </summary>
-/// <param name="TransactionId">参数 TransactionId。</param>
-/// <param name="IdempotencyKey">参数 IdempotencyKey。</param>
-/// <param name="Applied">参数 Applied。</param>
-/// <param name="AlreadyCommitted">参数 AlreadyCommitted。</param>
-/// <param name="CommittedAt">参数 CommittedAt。</param>
-/// <param name="ResultPayload">参数 ResultPayload。</param>
+/// <summary>资产事务提交结局。</summary>
+/// <param name="TransactionId">实际落库的事务标识（幂等命中时为已存事务 ID）。</param>
+/// <param name="IdempotencyKey">本次使用的幂等键。</param>
+/// <param name="Applied">事务是否已被接受（含幂等命中）。</param>
+/// <param name="AlreadyCommitted">为 true 表示命中幂等键直接返回历史结果，未重复入账。</param>
+/// <param name="CommittedAt">事务实际提交时刻。</param>
+/// <param name="ResultPayload">随事务保存的结果载荷。</param>
 public sealed record EconomyTransactionResult(
     Guid TransactionId,
     string IdempotencyKey,
@@ -325,27 +308,24 @@ public sealed record EconomyTransactionResult(
     DateTimeOffset CommittedAt,
     ReadOnlyMemory<byte> ResultPayload);
 
-/// <summary>
-/// 表示 IEconomyTransactionStore 接口。
-/// </summary>
+/// <summary>资产事务唯一提交点：余额变更、流水与随附写回在同一 Serializable 事务内完成。</summary>
 public interface IEconomyTransactionStore
 {
+    /// <summary>提交一次资产事务；幂等键冲突且载荷不一致时抛 EconomyIdempotencyConflictException。</summary>
     ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// 表示 MarketOrderInput 记录。
-/// </summary>
-/// <param name="OrderId">参数 OrderId。</param>
-/// <param name="PartitionId">参数 PartitionId。</param>
-/// <param name="OwnerPlayerId">参数 OwnerPlayerId。</param>
-/// <param name="Side">参数 Side。</param>
-/// <param name="AssetId">参数 AssetId。</param>
-/// <param name="Variant">参数 Variant。</param>
-/// <param name="Price">参数 Price。</param>
-/// <param name="Quantity">参数 Quantity。</param>
-/// <param name="IdempotencyKey">参数 IdempotencyKey。</param>
-/// <param name="CreatedAt">参数 CreatedAt。</param>
+/// <summary>一笔待落库的市场挂单输入。</summary>
+/// <param name="OrderId">订单唯一标识，由调用方生成以支持幂等重试。</param>
+/// <param name="PartitionId">订单归属的市场分片。</param>
+/// <param name="OwnerPlayerId">挂单玩家。</param>
+/// <param name="Side">订单方向：buy 或 sell。</param>
+/// <param name="AssetId">标的资产标识。</param>
+/// <param name="Variant">标的变体。</param>
+/// <param name="Price">限价。</param>
+/// <param name="Quantity">委托数量。</param>
+/// <param name="IdempotencyKey">挂单幂等键，绑定订单参数防重放改单。</param>
+/// <param name="CreatedAt">委托时刻；缺省由存储层取当前时间。</param>
 public sealed record MarketOrderInput(
     Guid OrderId,
     int PartitionId,
@@ -358,20 +338,18 @@ public sealed record MarketOrderInput(
     string IdempotencyKey,
     DateTimeOffset? CreatedAt = null);
 
-/// <summary>
-/// 表示 MarketFillInput 记录。
-/// </summary>
-/// <param name="TradeId">参数 TradeId。</param>
-/// <param name="BuyOrderId">参数 BuyOrderId。</param>
-/// <param name="SellOrderId">参数 SellOrderId。</param>
-/// <param name="BuyerId">参数 BuyerId。</param>
-/// <param name="SellerId">参数 SellerId。</param>
-/// <param name="AssetId">参数 AssetId。</param>
-/// <param name="Variant">参数 Variant。</param>
-/// <param name="Price">参数 Price。</param>
-/// <param name="Quantity">参数 Quantity。</param>
-/// <param name="SellerTax">参数 SellerTax。</param>
-/// <param name="TradedAt">参数 TradedAt。</param>
+/// <summary>一笔撮合成交的落库事实。</summary>
+/// <param name="TradeId">成交唯一标识。</param>
+/// <param name="BuyOrderId">买单订单标识。</param>
+/// <param name="SellOrderId">卖单订单标识。</param>
+/// <param name="BuyerId">买方玩家。</param>
+/// <param name="SellerId">卖方玩家。</param>
+/// <param name="AssetId">标的资产标识。</param>
+/// <param name="Variant">标的变体。</param>
+/// <param name="Price">实际成交价（maker 价）。</param>
+/// <param name="Quantity">成交数量。</param>
+/// <param name="SellerTax">向卖方收取的手续费，从成交额中扣除。</param>
+/// <param name="TradedAt">成交时刻；缺省由存储层取当前时间。</param>
 public sealed record MarketFillInput(
     Guid TradeId,
     Guid BuyOrderId,
@@ -385,35 +363,34 @@ public sealed record MarketFillInput(
     double SellerTax,
     DateTimeOffset? TradedAt = null);
 
-/// <summary>
-/// 表示 MarketCommitResult 记录。
-/// </summary>
-/// <param name="OrderId">参数 OrderId。</param>
-/// <param name="Applied">参数 Applied。</param>
-/// <param name="AlreadyCommitted">参数 AlreadyCommitted。</param>
-/// <param name="TradeIds">参数 TradeIds。</param>
+/// <summary>挂单事务提交结局。</summary>
+/// <param name="OrderId">提交的订单标识。</param>
+/// <param name="Applied">订单是否已被账本接受（含幂等命中）。</param>
+/// <param name="AlreadyCommitted">为 true 表示命中幂等，订单与成交未重复写入。</param>
+/// <param name="TradeIds">本次新落库的成交标识列表。</param>
 public sealed record MarketCommitResult(Guid OrderId, bool Applied, bool AlreadyCommitted, IReadOnlyList<Guid> TradeIds);
-/// <summary>
-/// 表示 SettlementClaimResult 记录。
-/// </summary>
-/// <param name="PlayerId">参数 PlayerId。</param>
-/// <param name="RequestId">参数 RequestId。</param>
-/// <param name="SettledTradeCount">参数 SettledTradeCount。</param>
-/// <param name="ClaimedAt">参数 ClaimedAt。</param>
-/// <param name="AlreadyClaimed">参数 AlreadyClaimed。</param>
+/// <summary>结算确认游标的写入结局。</summary>
+/// <param name="PlayerId">领取结算的玩家。</param>
+/// <param name="RequestId">客户端请求标识，用于幂等去重。</param>
+/// <param name="SettledTradeCount">本次确认覆盖的已入账成交笔数。</param>
+/// <param name="ClaimedAt">确认游标写入时刻。</param>
+/// <param name="AlreadyClaimed">为 true 表示同 RequestId 已确认过，本次为幂等重放。</param>
 public sealed record SettlementClaimResult(Guid PlayerId, Guid RequestId, int SettledTradeCount, DateTimeOffset ClaimedAt, bool AlreadyClaimed);
 
-/// <summary>
-/// 表示 IMarketTransactionStore 接口。
-/// </summary>
+/// <summary>市场账本事务边界：挂单、撤单在 Serializable 事务 + 分片租约 fence 校验下提交。</summary>
 public interface IMarketTransactionStore
 {
+    /// <summary>提交挂单及其即时撮合成交；fenceToken 失效抛 MarketLeaseLostException。</summary>
+    /// <param name="order">挂单输入。</param>
+    /// <param name="fills">该挂单撮合产生的成交列表。</param>
+    /// <param name="fenceToken">当前写者持有的分片租约 fence。</param>
     ValueTask<MarketCommitResult> CommitPlacementAsync(
         MarketOrderInput order,
         IReadOnlyList<MarketFillInput> fills,
         long fenceToken,
         CancellationToken cancellationToken = default);
 
+    /// <summary>撤单并释放冻结资产；幂等键已提交过则直接返回 true，订单不可撤返回 false。</summary>
     ValueTask<bool> CancelAsync(Guid orderId, Guid ownerPlayerId, int partitionId, long fenceToken, string idempotencyKey, CancellationToken cancellationToken = default);
 }
 
@@ -428,21 +405,19 @@ public enum ComputeApplyOutcome : byte
     MissingPlayer = 2
 }
 
-/// <summary>
-/// 表示 StoredMarketOrder 记录。
-/// </summary>
-/// <param name="OrderId">参数 OrderId。</param>
-/// <param name="OwnerPlayerId">参数 OwnerPlayerId。</param>
-/// <param name="AssetId">参数 AssetId。</param>
-/// <param name="Variant">参数 Variant。</param>
-/// <param name="Side">参数 Side。</param>
-/// <param name="Price">参数 Price。</param>
-/// <param name="Quantity">参数 Quantity。</param>
-/// <param name="FilledQuantity">参数 FilledQuantity。</param>
-/// <param name="Status">参数 Status。</param>
-/// <param name="Sequence">参数 Sequence。</param>
-/// <param name="CreatedAt">参数 CreatedAt。</param>
-/// <param name="ExpiresAt">参数 ExpiresAt。</param>
+/// <summary>市场订单表的行映射，用于启动时重建订单簿投影与玩家订单查询。</summary>
+/// <param name="OrderId">订单唯一标识。</param>
+/// <param name="OwnerPlayerId">挂单玩家。</param>
+/// <param name="AssetId">标的资产标识。</param>
+/// <param name="Variant">标的变体。</param>
+/// <param name="Side">订单方向：buy 或 sell。</param>
+/// <param name="Price">限价。</param>
+/// <param name="Quantity">委托总量。</param>
+/// <param name="FilledQuantity">已成交数量。</param>
+/// <param name="Status">订单状态（active/partially_filled/filled/cancelled/expired）。</param>
+/// <param name="Sequence">分片内单调递增的撮合优先级序号。</param>
+/// <param name="CreatedAt">委托时刻。</param>
+/// <param name="ExpiresAt">订单过期时刻。</param>
 public sealed record StoredMarketOrder(
     Guid OrderId,
     Guid OwnerPlayerId,

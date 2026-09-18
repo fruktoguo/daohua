@@ -4,10 +4,12 @@ using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Wire Envelope Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// 二进制信封门禁：JSON 载荷编解码往返一致、篡改帧安全拒绝、超 MaxFrameBytes 载荷构造即抛。
+/// </summary>
 public sealed class WireEnvelopeTests
 {
-    /// <summary>验证 Binary Envelope Round Trips Json Payload。</summary>
+    /// <summary>Command 信封经二进制编码往返后类型码、请求 Id、序号与载荷字段全部一致。</summary>
     [Fact]
     public void BinaryEnvelope_RoundTripsJsonPayload()
     {
@@ -22,7 +24,7 @@ public sealed class WireEnvelopeTests
         Assert.NotNull(command);
         Assert.Equal("player.presence", command!.Command);
     }
-    /// <summary>验证 Binary Envelope Rejects Tampering And Oversize Frames。</summary>
+    /// <summary>篡改帧解码返回 false；超 MaxFrameBytes 的载荷在构造信封时即抛 ProtocolException。</summary>
 
     [Fact]
     public void BinaryEnvelope_RejectsTamperingAndOversizeFrames()

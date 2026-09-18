@@ -8,7 +8,7 @@ public sealed class CombatExpeditionSimulationTests
     private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>
-    /// 验证 <c>InfiniteCombatActionCanBeEnqueuedAndKeepsRunningState</c>（Infinite Combat Action Can Be Enqueued And Keeps Running State）所描述的领域行为。
+    /// -1 无限战斗行动完成一波讨伐后仍保持 Running 不出队（无限循环不变量）。
     /// </summary>
     [Fact]
     public void InfiniteCombatActionCanBeEnqueuedAndKeepsRunningState()
@@ -29,7 +29,7 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>FiniteCombatActionIsRemovedAfterWinningEncounter</c>（Finite Combat Action Is Removed After Winning Encounter）所描述的领域行为。
+    /// 有限次数战斗行动清场胜利后按次数出队，完成计数正常入账。
     /// </summary>
     [Fact]
     public void FiniteCombatActionIsRemovedAfterWinningEncounter()
@@ -47,7 +47,8 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>DefeatedCombatActionRestoresAndResumesAtConfiguredRespawnBoundary</c>（Defeated Combat Action Restores And Resumes At Configured Respawn Boundary）所描述的领域行为。
+    /// 战败进入重生相位后：边界前一刻保持 0 血等待，到达配置的重生边界才满血复活回到搜寻相位；
+    /// 快照恢复的副本与在线副本在同一时刻产生一致结果（重生时序确定性）。
     /// </summary>
     [Fact]
     public void DefeatedCombatActionRestoresAndResumesAtConfiguredRespawnBoundary()
@@ -82,8 +83,7 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>CombatWaveFightsAllMonstersSimultaneouslyAndCountsOneRepeatPerWave</c>：同波全体敌人同场交战，
-    /// 清空整波才结算一次完成并推进到下一波。
+    /// 同波全体敌人同场交战，清空整波才结算一次完成并推进到下一波。
     /// </summary>
     [Fact]
     public void CombatWaveFightsAllMonstersSimultaneouslyAndCountsOneRepeatPerWave()
@@ -114,7 +114,7 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>CombatExpeditionStateRoundTripsAndContinuesDeterministically</c>（Combat Expedition State Round Trips And Continues Deterministically）所描述的领域行为。
+    /// 远征状态（含敌人列表）经导出/恢复往返后继续推进，与原实例结果逐字段一致。
     /// </summary>
     [Fact]
     public void CombatExpeditionStateRoundTripsAndContinuesDeterministically()
@@ -136,7 +136,7 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>RegenSyncsExpeditionHitpointsDuringSearchPhase</c>（Regen Syncs Expedition Hitpoints During Search Phase）所描述的领域行为。
+    /// 验证搜寻相位下气血回复同步远征镜像血量。
     /// 搜寻相位（玩家视角的脱战状态）下权威气血按周期回复时，远征镜像血量必须同步，
     /// 否则界面显示冻结在上次战斗结束时的旧值。
     /// </summary>
@@ -158,7 +158,7 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 验证 <c>CombatRestoreRejectsOutcomeThatDoesNotMatchHitpoints</c>（Combat Restore Rejects Outcome That Does Not Match Hitpoints）所描述的领域行为。
+    /// 恢复遭遇状态时血量与结局矛盾（敌人已清零却仍为 Running）必须拒绝，防止损坏快照静默进入模拟。
     /// </summary>
     [Fact]
     public void CombatRestoreRejectsOutcomeThatDoesNotMatchHitpoints()

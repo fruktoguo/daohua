@@ -8,7 +8,7 @@ public static class Program
     /// <summary>
     /// 压测程序主入口。
     /// </summary>
-    /// <param name="args">命令行参数。</param>
+    /// <param name="args">命令行参数（--key value 形式；--flag 无值时按 true 解析）。</param>
     /// <returns>进程退出码；门禁通过返回 0，否则返回 1，参数错误返回 2。</returns>
     public static async Task<int> Main(string[] args)
     {

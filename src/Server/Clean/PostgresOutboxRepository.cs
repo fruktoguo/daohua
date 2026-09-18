@@ -1,10 +1,9 @@
 namespace Server.Clean;
 
-/// <summary>
-/// 表示 IIntegrationEventDispatcher 接口。
-/// </summary>
+/// <summary>outbox 事件的下游投递边界；返回 false 表示暂不可达，事件保留待重试。</summary>
 public interface IIntegrationEventDispatcher
 {
+    /// <summary>投递单条事件；true 已送达可标记，false 由 worker 稍后重试。</summary>
     ValueTask<bool> DispatchAsync(OutboxMessage message, CancellationToken cancellationToken = default);
 }
 
@@ -13,12 +12,7 @@ public sealed class UnconfiguredIntegrationEventDispatcher(ILogger<UnconfiguredI
 {
     private readonly ConcurrentDictionary<string, byte> _warnedEventTypes = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// 执行DispatchAsync（异步）。
-    /// </summary>
-    /// <param name="message">参数 message。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 bool。</returns>
+    /// <summary>始终返回 false 使事件保持 pending；同类事件只告警一次，避免日志风暴。</summary>
     public ValueTask<bool> DispatchAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
         // outbox 是可靠队列，不应因为未配置下游而每轮 poll 重复写 warning；
@@ -31,23 +25,10 @@ public sealed class UnconfiguredIntegrationEventDispatcher(ILogger<UnconfiguredI
     }
 }
 
-/// <summary>
-/// 表示 PostgresOutboxRepository 类。
-/// </summary>
-/// <param name="dataSource">PostgreSQL 数据源。</param>
+/// <summary>platform.integration_outbox 的 PostgreSQL 实现：同事务追加、租约认领与回执。</summary>
 public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOutboxRepository
 {
-    /// <summary>
-    /// 执行AppendAsync（异步）。
-    /// </summary>
-    /// <param name="connection">参数 connection。</param>
-    /// <param name="transaction">参数 transaction。</param>
-    /// <param name="aggregateId">参数 aggregateId。</param>
-    /// <param name="aggregateType">参数 aggregateType。</param>
-    /// <param name="eventType">参数 eventType。</param>
-    /// <param name="payload">命令载荷。</param>
-    /// <param name="occurredAt">参数 occurredAt。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>在调用方事务内插入 outbox 行；事件随业务提交一起可见，保证不丢。</summary>
     public async ValueTask AppendAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -76,12 +57,9 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
     }
 
     /// <summary>
-    /// 执行ClaimAsync（异步）。
+    /// 原子认领到期未投递事件：UPDATE ... FROM CTE 加租约并递增 attempts。
+    /// SKIP LOCKED 让多个 worker 实例互不抢占；按 occurred_at 排序保证近似 FIFO。
     /// </summary>
-    /// <param name="maxRows">参数 maxRows。</param>
-    /// <param name="lease">租约信息。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 IReadOnlyList&lt;OutboxMessage。</returns>
     public async ValueTask<IReadOnlyList<OutboxMessage>> ClaimAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default)
     {
         if (maxRows <= 0) return [];
@@ -123,12 +101,7 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         return result;
     }
 
-    /// <summary>
-    /// 执行MarkDeliveredAsync（异步）。
-    /// </summary>
-    /// <param name="outboxId">参数 outboxId。</param>
-    /// <param name="leaseToken">参数 leaseToken。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>标记已送达并清租约；lease_token 谓词保证只认本批认领的写者。</summary>
     public async ValueTask MarkDeliveredAsync(Guid outboxId, Guid leaseToken, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -142,14 +115,7 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// 执行ReleaseAsync（异步）。
-    /// </summary>
-    /// <param name="outboxId">参数 outboxId。</param>
-    /// <param name="leaseToken">参数 leaseToken。</param>
-    /// <param name="error">参数 error。</param>
-    /// <param name="retryAfter">参数 retryAfter。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>投递失败回租：清租约、记 last_error，并按 retryAfter 推迟 visible_at 形成退避。</summary>
     public async ValueTask ReleaseAsync(Guid outboxId, Guid leaseToken, string error, TimeSpan retryAfter, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -167,12 +133,9 @@ public sealed class PostgresOutboxRepository(NpgsqlDataSource dataSource) : IOut
 }
 
 /// <summary>
-/// 表示 OutboxWorker 类。
+/// outbox 轮询派发后台任务：租约认领 → 逐条投递 → 成功标记/失败退避回租。
+/// 单条投递失败指数退避（封顶 5 分钟），循环级异常经节流后记录，不让故障静默。
 /// </summary>
-/// <param name="repository">参数 repository。</param>
-/// <param name="dispatcher">参数 dispatcher。</param>
-/// <param name="options">服务端配置选项。</param>
-/// <param name="logger">日志记录器。</param>
 public sealed class OutboxWorker(
     IOutboxRepository repository,
     IIntegrationEventDispatcher dispatcher,

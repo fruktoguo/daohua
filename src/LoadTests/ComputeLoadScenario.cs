@@ -60,6 +60,8 @@ public static class ComputeLoadScenario
 
     /// <summary>
     /// 在本地并行模拟指定数量的玩家补算。
+    /// LoadTests 不引用 Domain，补算推进以确定性位混合（<see cref="Mix"/>）近似，
+    /// 校验和聚合保证结果跨运行可复现、可对比。
     /// </summary>
     /// <param name="players">玩家数量。</param>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -67,6 +69,7 @@ public static class ComputeLoadScenario
     internal static Task<ComputeResult> RunLocalAsync(int players, CancellationToken cancellationToken)
     {
         var process = Process.GetCurrentProcess();
+        // 先强制回收再取基线，使内存增量口径只反映本次压测自身分配。
         var managedBefore = GC.GetTotalMemory(forceFullCollection: true);
         var cpuBefore = process.TotalProcessorTime;
         var started = Stopwatch.GetTimestamp();
@@ -80,6 +83,7 @@ public static class ComputeLoadScenario
             players,
             new ParallelOptions
             {
+                // 并行度取本机核数：测原始算力吞吐，再由报告侧按容量预算线性对比外推。
                 MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount),
                 CancellationToken = cancellationToken
             },
@@ -127,7 +131,8 @@ public static class ComputeLoadScenario
     }
 
     /// <summary>
-    /// 64 位混合函数，用于生成伪随机但确定性的状态转移。
+    /// MurmurHash3 fmix64 风格的确定性位混合函数。
+    /// 以纯位运算近似模拟推进的 CPU 开销，且同样输入必得同样输出，使校验和可复现。
     /// </summary>
     /// <param name="value">输入值。</param>
     /// <returns>混合后的输出值。</returns>

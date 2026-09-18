@@ -74,7 +74,8 @@ public static class SectionCodec
     }
 
     /// <summary>
-    /// 表示 Decode 字段。
+    /// 解码单个 section：校验 schema 版本、解压载荷、核对原始长度与 SHA-256 校验和后反序列化。
+    /// 任一项不匹配均抛 <see cref="InvalidDataException"/>，拒绝把损坏存档当作有效状态加载。
     /// </summary>
     public static T Decode<T>(StoredSection section)
     {
@@ -101,12 +102,7 @@ public static class SectionCodec
             ?? throw new InvalidDataException($"section {section.SectionKind} 载荷为空。");
     }
 
-    /// <summary>
-    /// 执行DecodeRaw。
-    /// </summary>
-    /// <param name="codec">参数 codec。</param>
-    /// <param name="payload">命令载荷。</param>
-    /// <returns>返回 byte[] 类型的结果。</returns>
+    /// <summary>按 codec 标识把存储载荷还原为原始 JSON 字节；不认识的 codec 直接拒绝。</summary>
     public static byte[] DecodeRaw(string codec, ReadOnlyMemory<byte> payload)
     {
         return codec switch
@@ -226,11 +222,7 @@ public static class SectionCodec
             loadout.EquippedItemIds);
     }
 
-    /// <summary>
-    /// 转换为StorageKind。
-    /// </summary>
-    /// <param name="section">状态区块。</param>
-    /// <returns>返回 string 类型的结果。</returns>
+    /// <summary>领域分段枚举到持久化键的单向映射。</summary>
     public static string ToStorageKind(DomainSectionKind section) => section switch
     {
         DomainSectionKind.Progression => PlayerSectionKinds.Progression,
@@ -244,11 +236,7 @@ public static class SectionCodec
         _ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
     };
 
-    /// <summary>
-    /// 从配置创建StorageKind。
-    /// </summary>
-    /// <param name="section">状态区块。</param>
-    /// <returns>返回 DomainSectionKind 类型的结果。</returns>
+    /// <summary>持久化键反解为领域分段枚举；未知键抛 <see cref="InvalidDataException"/>。</summary>
     public static DomainSectionKind FromStorageKind(string section) => section switch
     {
         PlayerSectionKinds.Progression => DomainSectionKind.Progression,
@@ -263,10 +251,9 @@ public static class SectionCodec
     };
 
     /// <summary>
-    /// 执行ComputeHeadChecksum。
+    /// 计算提交头校验和：按 section 键排序拼接 kind:version:checksum 后取 SHA-256。
+    /// 提交头借此绑定整组 section 内容，任何单段篡改都会破坏头校验。
     /// </summary>
-    /// <param name="sections">参数 sections。</param>
-    /// <returns>返回 string 类型的结果。</returns>
     public static string ComputeHeadChecksum(IEnumerable<StoredSection> sections)
     {
         ArgumentNullException.ThrowIfNull(sections);
@@ -284,26 +271,13 @@ public static class SectionCodec
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
     }
 
-    /// <summary>
-    /// 表示 LoadoutDocument 记录。
-    /// </summary>
-    /// <param name="EquippedInstances">参数 EquippedInstances。</param>
-    /// <param name="EquippedItemIds">参数 EquippedItemIds。</param>
-    /// <param name="LearnedAbilities">参数 LearnedAbilities。</param>
-    /// <param name="State">参数 State。</param>
+    /// <summary>loadout 分段的落盘文档形状：把装备实例、已学技能与配装状态合并为一个 JSON 载荷。</summary>
     private sealed record LoadoutDocument(
         IReadOnlyList<Domain.Common.InstanceId> EquippedInstances,
         IReadOnlyList<Domain.Common.ItemId> EquippedItemIds,
         IReadOnlyList<Domain.Common.AbilityId> LearnedAbilities,
         PlayerLoadoutDocument State);
-    /// <summary>
-    /// 表示 SettingsDocument 记录。
-    /// </summary>
-    /// <param name="Locale">参数 Locale。</param>
-    /// <param name="NotificationsEnabled">参数 NotificationsEnabled。</param>
-    /// <param name="LoopEnabled">参数 LoopEnabled。</param>
-    /// <param name="AutoUseSlots">参数 AutoUseSlots。</param>
-    /// <param name="Presence">参数 Presence。</param>
+    /// <summary>settings 分段的落盘文档形状：设置项与在线状态合并持久化。</summary>
     private sealed record SettingsDocument(
         string Locale,
         bool NotificationsEnabled,

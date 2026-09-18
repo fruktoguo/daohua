@@ -89,6 +89,7 @@ export const BattleReportPanel = memo(function BattleReportPanel(): React.JSX.El
     return () => window.clearInterval(timer)
   }, [showStaged])
 
+  // 以「快照服务端时刻 + 距上次同步的本地流逝」估算当前服务端时间：倒计时以服务端时钟为准，避免本地时钟偏差。
   const estimatedServerNow = serverTime + Math.max(0, performance.now() - lastSyncPerformanceTime) / 1000
   const current = duel.currentReport
 

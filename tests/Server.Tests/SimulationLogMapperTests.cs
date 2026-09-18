@@ -8,10 +8,13 @@ using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Simulation Log Mapper Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// 模拟日志映射门禁：事件→带实体引用占位符的模板消息、未知事件码回退原文、
+/// 日志缓冲区容量截断、相同事件合并计数，以及大批量事件下的内存分配上限。
+/// </summary>
 public sealed class SimulationLogMapperTests
 {
-    /// <summary>验证 Action Completed With Outputs Maps To Template With Item References。</summary>
+    /// <summary>带产出的完成事件映射为含 {{action}}/{{item}} 引用占位符的模板，并写入日志缓冲区。</summary>
     [Fact]
     public void ActionCompletedWithOutputs_MapsToTemplateWithItemReferences()
     {
@@ -33,7 +36,7 @@ public sealed class SimulationLogMapperTests
         Assert.Equal("完成行动 {{action:gather.spirit-grass|采集灵草}}，获得 {{item:item.spirit-grass|灵草|2.5}}", events[0].Template);
         Assert.Single(buffer.SnapshotRecent());
     }
-    /// <summary>验证 Action Completed Without Outputs Omits Reward Section And Unknown Code Falls Back To Message。</summary>
+    /// <summary>无产出的完成事件不拼奖励段；未注册的事件码回退为原始消息文本。</summary>
 
     [Fact]
     public void ActionCompletedWithoutOutputs_OmitsRewardSectionAndUnknownCodeFallsBackToMessage()
@@ -51,7 +54,7 @@ public sealed class SimulationLogMapperTests
         Assert.Equal("自定义事件文本", events[1].Template);
         Assert.Equal(2, events[1].Sequence);
     }
-    /// <summary>验证 Log Batch Dto Serializes Camel Case And Round Trips。</summary>
+    /// <summary>日志批次 DTO 以 camelCase 序列化且往返一致（协议字段命名门禁）。</summary>
 
     [Fact]
     public void LogBatchDto_SerializesCamelCaseAndRoundTrips()
@@ -69,7 +72,7 @@ public sealed class SimulationLogMapperTests
         Assert.Equal(3, decoded.Events[0].Sequence);
         Assert.Equal("完成行动 {{action:a|行动}}", decoded.Events[0].Template);
     }
-    /// <summary>验证 Simulation Log Mapper 100k Events Truncates To Buffer Capacity And Avoids Memory Blowup。</summary>
+    /// <summary>10 万事件只物化最新 200 条，分配低于 200KB（容量水位门禁，防止大批量补算打爆内存）。</summary>
 
     [Fact]
     public void SimulationLogMapper_100kEvents_TruncatesToBufferCapacityAndAvoidsMemoryBlowup()
@@ -106,7 +109,7 @@ public sealed class SimulationLogMapperTests
         // 验证内存分配在极小范围内（仅 200 个 DTO 和字符串，分配小于 200KB）
         Assert.True(allocated < 200 * 1024, $"100k 事件处理分配内存过大: {allocated} bytes");
     }
-    /// <summary>验证 To Log Events 200 Identical Events Collapses To Single Entry With Count And Occupies Single Buffer Slot。</summary>
+    /// <summary>相同事件合并为单条且 Count 累加，只占一个缓冲槽位。</summary>
 
     [Fact]
     public void ToLogEvents_200IdenticalEvents_CollapsesToSingleEntryWithCountAndOccupiesSingleBufferSlot()
@@ -138,7 +141,7 @@ public sealed class SimulationLogMapperTests
         Assert.Single(snapshot);
         Assert.Equal(200, snapshot[0].Count);
     }
-    /// <summary>验证 Player Log Buffer Identical Events Across Batches Occupies Single Slot And Preserves Previous History。</summary>
+    /// <summary>跨批次追加的相同日志同样合并占单槽位，此前历史条目不受影响。</summary>
 
     [Fact]
     public void PlayerLogBuffer_IdenticalEventsAcrossBatches_OccupiesSingleSlotAndPreservesPreviousHistory()
@@ -166,8 +169,6 @@ public sealed class SimulationLogMapperTests
         Assert.Equal(200, snapshot[10].Count);
     }
 
-    /// <summary>执行 Build Catalog。</summary>
-    /// <returns>返回操作结果。</returns>
     private static GameDataCatalog BuildCatalog()
     {
         var rawItems = new Dictionary<string, JsonElement>(StringComparer.Ordinal)

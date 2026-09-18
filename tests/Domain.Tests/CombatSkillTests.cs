@@ -8,7 +8,7 @@ namespace Domain.Tests;
 public sealed class CombatSkillTests
 {
     /// <summary>
-    /// 验证 <c>CastRestoreChargesManaOnceAndCooldownPreventsRecast</c>（Cast Restore Charges Mana Once And Cooldown Prevents Recast）所描述的领域行为。
+    /// 施法状态经序列化往返后蓝耗只扣一次：引导完成正常结算伤害并进入冷却，冷却中不得重复施法。
     /// </summary>
     [Fact]
     public void CastRestoreChargesManaOnceAndCooldownPreventsRecast()
@@ -33,7 +33,8 @@ public sealed class CombatSkillTests
     }
 
     /// <summary>
-    /// 验证 <c>HealingRespectsTriggerAndCapsHealthAndNoEffectAbilitiesAreRejected</c>（Healing Respects Trigger And Caps Health And No Effect Abilities Are Rejected）所描述的领域行为。
+    /// 治疗技能满血时不触发、残血时按触发条件施放且治疗量封顶不溢出血量上限；
+    /// 嘲讽/破阵子等支援类技能必须能通过装载校验。
     /// </summary>
     [Fact]
     public void HealingRespectsTriggerAndCapsHealthAndNoEffectAbilitiesAreRejected()

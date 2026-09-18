@@ -11,6 +11,7 @@ import { CombatTriggerEditor } from './CombatTriggerEditor'
 import { EffectTooltipTarget } from './EffectTooltip'
 import { ItemIcon } from './ItemDisplay'
 
+// 共享的冻结空表：combatResources 未下发冷却数据时给选择器返回同一引用，避免每次取新对象触发重渲染。
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
 /**
@@ -67,6 +68,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     gameClient.sendCommand('loadout.replace', { ...combat, ...patch })
   }
 
+  // 换装功法时同步清空该槽触发条件：旧技能的触发规则对新技能无意义，防止残留条件被意外沿用。
   const withAbility = (index: number, abilityId: string | null) => combat.abilitySlots.map((slot, slotIndex) => (
     slotIndex === index
       ? { ...slot, abilityId, triggers: abilityId === slot.abilityId ? slot.triggers : [] }

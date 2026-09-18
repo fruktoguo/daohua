@@ -27,11 +27,13 @@ public static class HttpReadScenario
         var process = Process.GetCurrentProcess();
         process.Refresh();
         var cpuBefore = process.TotalProcessorTime;
+        // 先强制回收再取基线，使内存增量口径只反映本次压测自身分配。
         var managedBefore = GC.GetTotalMemory(forceFullCollection: true);
         var started = Stopwatch.GetTimestamp();
         var warnings = new List<string>();
 
         var baseUri = DeriveHttpBaseUri(options.ServerUri);
+        // 连接池上限对齐 worker 数，避免 HttpClient 内部排队先于服务端成为瓶颈。
         using var handler = new SocketsHttpHandler { MaxConnectionsPerServer = options.Concurrency };
         using var client = new HttpClient(handler) { BaseAddress = baseUri, Timeout = RequestTimeout };
 
@@ -123,6 +125,7 @@ public static class HttpReadScenario
 
     /// <summary>
     /// 单个并发 worker：按序号轮转端点，在截止时间前尽可能多发请求。
+    /// 开环（open-loop）模型：不做速率控制，测的是窗口内服务端最大吞吐与尾部延迟。
     /// </summary>
     private static async Task RunWorkerAsync(
         HttpClient client,

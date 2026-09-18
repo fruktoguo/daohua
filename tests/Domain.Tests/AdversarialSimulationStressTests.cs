@@ -14,7 +14,8 @@ public sealed class AdversarialSimulationStressTests
     private static readonly DateTimeOffset Baseline = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>
-    /// 验证 <c>LongOfflineSimulation_24Hours_ExecutesDeterministicallyWithoutOverflow</c>（Long Offline Simulation 24Hours Executes Deterministically Without Overflow）所描述的领域行为。
+    /// 24 小时离线快进（8640 轮无限打坐）必须确定性完成：数值有限、无限行动不出队，
+    /// 且整段内存分配低于 10MB 水位（2c4g 容量红线）。
     /// </summary>
     [Fact]
     public void LongOfflineSimulation_24Hours_ExecutesDeterministicallyWithoutOverflow()
@@ -47,7 +48,8 @@ public sealed class AdversarialSimulationStressTests
     }
 
     /// <summary>
-    /// 验证 <c>MaxTransitionsPerAdvance_BoundaryProtectionEnforced</c>（Max Transitions Per Advance Boundary Protection Enforced）所描述的领域行为。
+    /// 单次 AdvanceTo 超过 10 万次状态转换必须以 InvariantViolation 快速失败，
+    /// 防止异常配置把模拟推进死循环拖垮单写者。
     /// </summary>
     [Fact]
     public void MaxTransitionsPerAdvance_BoundaryProtectionEnforced()

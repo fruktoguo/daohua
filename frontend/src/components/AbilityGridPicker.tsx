@@ -6,6 +6,7 @@ import type { CombatAbilityDefinition } from '../game/types'
 import { EffectTooltipTarget } from './EffectTooltip'
 import { Modal } from './Modal'
 
+/** AbilityGridPicker 功法选择弹窗 Props */
 export interface AbilityGridPickerProps {
   /** 弹窗展开状态 */
   open: boolean
@@ -74,6 +75,7 @@ export function AbilityGridPicker({
   }
 
   const ribbonLabel = isInternalSlot ? t('app.combatPanel.internalRibbon') : t('app.combatPanel.spellRibbon')
+  // 品质色与功法面板槽位统一：内功槽 emperor 帝金、术法槽 mystic 玄紫。
   const rarity = isInternalSlot ? 'emperor' : 'mystic'
 
   return (

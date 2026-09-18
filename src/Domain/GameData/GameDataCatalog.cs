@@ -110,11 +110,9 @@ public sealed record ConsumableDefinition(
     double GatheringMultiplier = 1,
     double AlchemyMultiplier = 1)
 {
-    /// <summary>
-    /// 执行 获取倍率 操作。
-    /// </summary>
-    /// <param name="kind">kind 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>获取该消耗品对指定行动类型的收益倍率；不适用类型恒为 1。</summary>
+    /// <param name="kind">行动类型。</param>
+    /// <returns>对应的收益倍率。</returns>
     public double GetMultiplier(ActionKind kind) => kind switch
     {
         ActionKind.Cultivation => CultivationMultiplier,
@@ -142,10 +140,8 @@ public sealed class ActionCatalog
 {
     private readonly IReadOnlyDictionary<ActionId, ActionDefinition> _definitions;
 
-    /// <summary>
-    /// 初始化 行动目录。
-    /// </summary>
-    /// <param name="definitions">definitions 参数。</param>
+    /// <summary>以行动定义集合创建目录；逐项校验、规范化收益/输入并拒绝重复 ID。</summary>
+    /// <param name="definitions">行动定义集合。</param>
     public ActionCatalog(IEnumerable<ActionDefinition> definitions)
     {
         ArgumentNullException.ThrowIfNull(definitions);
@@ -269,26 +265,26 @@ public sealed class ActionCatalog
 /// </summary>
 public sealed class GameDataCatalog
 {
-    /// <summary>当前Schema版本 常量。</summary>
+    /// <summary>配表结构版本号。</summary>
     public const int CurrentSchemaVersion = 1;
 
-    /// <summary>
-    /// 初始化 GameData目录。
-    /// </summary>
-    /// <param name="contentVersion">contentVersion 参数。</param>
-    /// <param name="fingerprint">fingerprint 参数。</param>
-    /// <param name="actions">actions 参数。</param>
-    /// <param name="items">items 参数。</param>
-    /// <param name="maps">maps 参数。</param>
-    /// <param name="encounters">encounters 参数。</param>
-    /// <param name="monsters">monsters 参数。</param>
-    /// <param name="rawItems">rawItems 参数。</param>
-    /// <param name="rawEquipments">rawEquipments 参数。</param>
-    /// <param name="combatMonsters">combatMonsters 参数。</param>
-    /// <param name="combatEncounters">combatEncounters 参数。</param>
-    /// <param name="worldGraph">worldGraph 参数。</param>
-    /// <param name="baseAttributes">baseAttributes 参数。</param>
-    /// <param name="abilities">abilities 参数。</param>
+    /// <summary>组装全局配表目录；未提供的解析产物（怪物/遭遇/世界图）按既有 JSON 原料自动重建。</summary>
+    /// <param name="contentVersion">配表版本标签。</param>
+    /// <param name="fingerprint">配表内容指纹。</param>
+    /// <param name="actions">行动目录。</param>
+    /// <param name="items">道具定义表。</param>
+    /// <param name="maps">地图原始 JSON 列表。</param>
+    /// <param name="encounters">遭遇原始 JSON 列表。</param>
+    /// <param name="monsters">怪物原始 JSON 表。</param>
+    /// <param name="rawItems">物品原始 JSON 表。</param>
+    /// <param name="rawEquipments">装备原始 JSON 表。</param>
+    /// <param name="combatMonsters">预解析怪物战斗定义（可空，空时由 monsters + baseAttributes 自动解析）。</param>
+    /// <param name="combatEncounters">预解析遭遇定义（可空，空时由 encounters 自动解析）。</param>
+    /// <param name="worldGraph">世界拓扑图（可空，空时由 maps 自动构建）。</param>
+    /// <param name="baseAttributes">境界属性锚点目录（可空）。</param>
+    /// <param name="abilities">功法原始 JSON 表。</param>
+    /// <param name="duel">斗法全局调参（可空，缺省用内建默认）。</param>
+    /// <param name="realmProgression">境界修为上限与寿元配置（可空）。</param>
     public GameDataCatalog(
         string contentVersion,
         string fingerprint,
@@ -361,8 +357,9 @@ public sealed class GameDataCatalog
     public IReadOnlyDictionary<string, CombatMonsterDefinition> CombatMonsters { get; }
     /// <summary>已解析的遭遇战定义，键为 encounter ID。</summary>
     public IReadOnlyDictionary<string, CombatEncounterDefinition> CombatEncounters { get; }
-    /// <summary>获取或设置 基础属性 的值。</summary>
+    /// <summary>境界基础属性锚点目录；未加载 expected-attributes 配置时为 null。</summary>
     public BaseAttributeCatalog? BaseAttributes { get; }
+    /// <summary>功法/神通原始 JSON 定义，键为 ability ID。</summary>
     public IReadOnlyDictionary<string, JsonElement> Abilities { get; }
     /// <summary>斗法玩法全局调参（duel.json）。</summary>
     public DuelSettings Duel { get; }

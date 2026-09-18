@@ -1,19 +1,11 @@
 namespace Server.Clean;
 
-/// <summary>
-/// 表示 PostgresHealthCheck 类。
-/// </summary>
-/// <param name="dataSource">PostgreSQL 数据源。</param>
+/// <summary>PostgreSQL 就绪探针：以短超时 SELECT 1 验证数据库可达，供 /readyz 使用。</summary>
 public sealed class PostgresHealthCheck(NpgsqlDataSource dataSource) : IHealthCheck
 {
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(2);
 
-    /// <summary>
-    /// 执行CheckHealthAsync（异步）。
-    /// </summary>
-    /// <param name="context">HTTP 请求上下文。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 HealthCheckResult。</returns>
+    /// <summary>执行探针；2 秒内未响应判 Unhealthy，避免探针自身拖垮就绪检查。</summary>
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

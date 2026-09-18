@@ -29,11 +29,13 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
   )
 })
 
+/** 侧栏 Tab 配置：id 对应 uiStore 的 RightColumnTab，labelKey 拼入 app.rightTab.* 词条 */
 interface TabConfig {
   id: RightColumnTab
   labelKey: 'inventory' | 'equipment' | 'abilities'
 }
 
+/** 侧栏固定三 Tab：储物袋 / 装备 / 功法 */
 const TABS: readonly TabConfig[] = [
   { id: 'inventory', labelKey: 'inventory' },
   { id: 'equipment', labelKey: 'equipment' },

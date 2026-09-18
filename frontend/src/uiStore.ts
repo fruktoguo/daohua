@@ -62,6 +62,7 @@ interface UiStore {
 export const useUiStore = create<UiStore>(set => ({
   activeTab: 'exploration',
   setActiveTab: activeTab => {
+    // 'alchemy' 不是独立页面：作为直达技艺-炼丹的别名，同时展开二级导航并复位子选项卡
     if (activeTab === 'alchemy') {
       set({ activeTab: 'crafting', craftingMode: 'alchemy', craftingNavExpanded: true, alchemySubTab: 'extraction' })
     } else {
@@ -69,6 +70,7 @@ export const useUiStore = create<UiStore>(set => ({
     }
   },
   craftingMode: 'alchemy',
+  // 切换技艺模式时同时复位对应子选项卡，避免残留上一个模式的深层选中态
   setCraftingMode: craftingMode => set({
     craftingMode,
     ...(craftingMode === 'alchemy' ? { alchemySubTab: 'extraction' } : { forgingSubTab: 'refining' }),

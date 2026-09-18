@@ -10,11 +10,12 @@ public sealed class AuditIntegrationEventDispatcher(
     ILogger<AuditIntegrationEventDispatcher> logger) : IIntegrationEventDispatcher
 {
     /// <summary>
-    /// 执行DispatchAsync（异步）。
+    /// 把一条 outbox 消息归档进审计表；event_id 冲突视为已归档（幂等）。
+    /// 返回 true 表示本通道已处理、OutboxWorker 可标记 delivered；
+    /// 返回 false 表示事件类型不属于审计通道，消息保持 pending 等待其他下游。
     /// </summary>
-    /// <param name="message">参数 message。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 bool。</returns>
+    /// <param name="message">durable outbox 中待投递的一行事件</param>
+    /// <param name="cancellationToken">取消标记</param>
     public async ValueTask<bool> DispatchAsync(OutboxMessage message, CancellationToken cancellationToken = default)
     {
         var eventType = message.EventType;

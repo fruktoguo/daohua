@@ -89,6 +89,7 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'forge.juling-pendant', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.taomu-talisman': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.juling-pendant', amount: 1 }] },
 ]
 
+/** 静态兜底行动的 ID 索引（服务端目录未到达前供 resolveActionDefinition 查询） */
 const ACTION_CORE_MAP = new Map<string, ActionDefinitionCore>(ACTION_DEFINITION_CORES.map(c => [c.id, c]))
 
 /** 动态配表行动字典缓存（在服务端目录拉取后注册） */
@@ -429,6 +430,7 @@ export interface ItemGrade {
   label: string
 }
 
+/** 品阶 1~8 与品质枚举的升序对照表（下标 = tier - 1） */
 const ITEM_GRADE_ORDER: readonly ItemRarity[] = [
   'mundane', 'yellow', 'mystic', 'earth', 'heaven', 'spirit', 'saint', 'emperor',
 ]
@@ -644,6 +646,7 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
   return undefined
 }
 
+/** 兜底装备定义缺省属性段（全零增益，暴击伤害保留基准 150% 倍率） */
 const EMPTY_EQUIP_STATS: CombatEquipmentStats = {
   damageRatio: 0,
   accuracyRatio: 0,
@@ -667,6 +670,7 @@ const EMPTY_EQUIP_STATS: CombatEquipmentStats = {
   damageAbsorptionRatio: 0,
 }
 
+/** 静态兜底物品定义：服务端 catalog 未下发对应条目时，保证常用消耗品仍可展示与解算 */
 const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
   'item.qi-gathering-pill': {
     itemId: 'item.qi-gathering-pill',
@@ -772,6 +776,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
   },
 }
 
+/** 静态兜底装备定义：服务端 catalog 未下发对应条目时，保证一/二阶装备仍可展示属性 */
 const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefinition>> = {
   'equipment.qingfeng-sword': {
     equipmentId: 'equipment.qingfeng-sword',
@@ -907,6 +912,10 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
   },
 }
 
+/**
+ * 按物品 ID 查询静态兜底物品定义，缺省字段补齐为安全默认值；
+ * 未登记的 ID 返回 undefined（交由服务端目录或元数据表兜底）。
+ */
 export function resolveDefaultItemDefinition(itemId: string): ItemDefinition | undefined {
   const def = DEFAULT_ITEM_DEFINITIONS[itemId]
   if (!def) return undefined
@@ -936,6 +945,10 @@ export function resolveDefaultItemDefinition(itemId: string): ItemDefinition | u
   }
 }
 
+/**
+ * 按装备 ID 查询静态兜底装备定义，缺省字段补齐为安全默认值；
+ * 未登记的 ID 返回 undefined（交由服务端目录兜底）。
+ */
 export function resolveDefaultEquipmentDefinition(equipmentId: string): CombatEquipmentDefinition | undefined {
   const def = DEFAULT_EQUIPMENT_DEFINITIONS[equipmentId]
   if (!def) return undefined

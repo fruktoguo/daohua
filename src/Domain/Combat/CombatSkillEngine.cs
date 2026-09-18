@@ -2,17 +2,17 @@ using System.Text.Json;
 
 namespace Domain.Combat;
 
-/// <summary>战斗技能冷却 的领域定义。</summary>
+/// <summary>单个技能的冷却条目：技能 ID 与剩余冷却秒数。</summary>
 public sealed record CombatSkillCooldown(string AbilityId, double RemainingSeconds);
-/// <summary>玩家战斗技能状态 的领域定义。</summary>
+/// <summary>技能调度的可持久化状态：冷却列表、当前吟唱技能与累计施放计数。</summary>
 public sealed record PlayerCombatSkillState(
     IReadOnlyList<CombatSkillCooldown> Cooldowns, string? CastingAbilityId,
     double CastRemainingSeconds, double CastCount)
 {
-    /// <summary>获取或设置 为空 的值。</summary>
+    /// <summary>空技能状态单例（无冷却、无吟唱、计数为零）。</summary>
     public static PlayerCombatSkillState Empty { get; } = new([], null, 0, 0);
 
-    /// <summary>获取或设置 是否有效 的值。</summary>
+    /// <summary>校验状态不变量：冷却项非空且技能 ID 唯一、吟唱字段自洽、计数非负有限。</summary>
     public bool IsValid => Cooldowns is not null && Cooldowns.All(value => !string.IsNullOrWhiteSpace(value.AbilityId)
         && double.IsFinite(value.RemainingSeconds) && value.RemainingSeconds > 0)
         && Cooldowns.Select(value => value.AbilityId).Distinct(StringComparer.Ordinal).Count() == Cooldowns.Count
@@ -21,28 +21,24 @@ public sealed record PlayerCombatSkillState(
         && double.IsFinite(CastCount) && CastCount >= 0;
 }
 
-/// <summary>战斗技能事件 的领域定义。</summary>
+/// <summary>技能施放结算事件：技能 ID、时刻、伤害/治疗量与命中暴击标记。</summary>
 public sealed record CombatSkillEvent(string AbilityId, double AtSeconds, double Damage, double Healing, bool Hit, bool Critical,
     string? TargetId = null);
-/// <summary>战斗技能推进结果 的领域定义。</summary>
+/// <summary>技能推进结果：更新后的调度状态与本段产生的事件。</summary>
 public sealed record CombatSkillAdvanceResult(PlayerCombatSkillState State, IReadOnlyList<CombatSkillEvent> Events);
 
 /// <summary>多敌战斗技能调度；宿主在普通攻击、技能完成、回复等最近边界推进，禁止跨过尚未处理的技能边界。</summary>
 public static class CombatSkillEngine
 {
-    /// <summary>
-    /// 执行 下一次Boundary秒 操作。
-    /// </summary>
-    /// <param name="state">state 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>距离下一个必须结算的技能边界（吟唱完成或最早冷却到期）的秒数。</summary>
+    /// <param name="state">当前技能调度状态。</param>
+    /// <returns>到最近结算边界的秒数；无待结算项时返回 +∞。</returns>
     public static double NextBoundarySeconds(PlayerCombatSkillState state)
         => state.CastingAbilityId is not null ? state.CastRemainingSeconds
             : state.Cooldowns.Select(value => value.RemainingSeconds).DefaultIfEmpty(double.PositiveInfinity).Min();
 
-    /// <summary>
-    /// 执行 校验功法/神通 操作。
-    /// </summary>
-    /// <param name="ability">ability 参数。</param>
+    /// <summary>校验功法/神通配表的可执行性：必须具备有效效果、正施放周期、合法伤害类别与目标类型。</summary>
+    /// <param name="ability">功法配表 JSON；非法时抛出 InvalidArgument。</param>
     public static void ValidateAbility(JsonElement ability)
     {
         var healing = Text(ability, "effectType") == "heal";
@@ -67,10 +63,8 @@ public static class CombatSkillEngine
             foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger);
     }
 
-    /// <summary>
-    /// 执行 校验Trigger 操作。
-    /// </summary>
-    /// <param name="trigger">trigger 参数。</param>
+    /// <summary>校验单条技能触发条件配表：依赖目标、条件字段、比较符与阈值必须合法自洽。</summary>
+    /// <param name="trigger">触发条件 JSON；非法时抛出 InvalidArgument。</param>
     public static void ValidateTrigger(JsonElement trigger)
     {
         var dependency = Text(trigger, "dependency");
@@ -93,16 +87,14 @@ public static class CombatSkillEngine
     public static PlayerCombatSkillState AdvanceIdle(PlayerCombatSkillState state, double seconds)
         => Tick(state, seconds) with { CastingAbilityId = null, CastRemainingSeconds = 0 };
 
-    /// <summary>
-    /// 执行 推进 操作。
-    /// </summary>
-    /// <param name="player">player 参数。</param>
-    /// <param name="catalog">catalog 参数。</param>
-    /// <param name="encounter">encounter 参数。</param>
-    /// <param name="attributes">attributes 参数。</param>
-    /// <param name="state">state 参数。</param>
-    /// <param name="seconds">seconds 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>推进技能调度：先结算已完成吟唱，再按装配槽位与触发条件尝试自动施放。</summary>
+    /// <param name="player">施放方聚合（灵力、Buff 等就地变更）。</param>
+    /// <param name="catalog">全局配表（技能定义来源）。</param>
+    /// <param name="encounter">当前遭遇战（技能作用对象）。</param>
+    /// <param name="attributes">当前属性面板（技能数值折算依据）。</param>
+    /// <param name="state">推进前技能调度状态。</param>
+    /// <param name="seconds">本次推进秒数；不得超过 NextBoundarySeconds，跨边界按违约快速失败。</param>
+    /// <returns>更新后的技能状态与本段技能事件。</returns>
     public static CombatSkillAdvanceResult Advance(PlayerAggregate player, GameDataCatalog catalog,
         CombatEncounterState encounter, PlayerAttributes attributes, PlayerCombatSkillState state, double seconds)
     {

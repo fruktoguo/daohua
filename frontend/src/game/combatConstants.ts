@@ -167,7 +167,10 @@ export const BASE_CRITICAL_DAMAGE_MULTIPLIER = 1.5
 // 6. 六维根基换算系数
 // =========================================================================
 
-// 六维的名称、拼音、描述与增益文案属展示文本，统一走 i18n（insight.root.*），此处仅保留数值系数。
+/**
+ * 六维根基每级属性增益系数表（比例为每级叠加的百分比点数）。
+ * 六维的名称、拼音、描述与增益文案属展示文本，统一走 i18n（insight.root.*），此处仅保留数值系数。
+ */
 export const ROOT_ATTRIBUTES_CONFIG = {
   stamina: {
     hpRatioPerLevel: 0.01,
@@ -387,8 +390,10 @@ export class PercentValue {
 // 8. 境界计算与位阶信息结构 (大境界 · 位阶 · 小境界)
 // =========================================================================
 
+/** 境界等级上限：Lv.127 飞升（18 级凡俗武道 + 9 大修真境界 × 12 层） */
 export const MAX_REALM_LEVEL = 127
 
+/** 每级境界突破所需修为查表（索引 = 等级 - 1；末位 0 表示飞升后无下一级） */
 export const REALM_LEVEL_EXP_TO_NEXT: readonly number[] = [
   10000, // Lv.1 凡胎
   12000, // Lv.2 炼皮
@@ -667,6 +672,8 @@ export function calculateRealmInfo(spirit = 0, explicitRealmLevel?: number): Rea
       stageColor = '#38bdf8'
     }
   } else {
+    // Lv.19 起为修真段：每 12 层为一个大境界，档内 1~9 层冠名「层」，
+    // 第 10/11/12 层分别为巅峰、大圆满与下一境界的「半步」过渡档。
     const cultivationLevel = totalLevel - 18.0
     const majorIndex = Math.floor((cultivationLevel - 1.0) / 12.0) + 1.0
     const layerInMajor = Math.floor(((cultivationLevel - 1.0) % 12.0) + 1.0)
@@ -754,25 +761,45 @@ export interface BaseAttributePool {
  * 境界各关键等级锚点基础数值表（用于不同境界等级区间的线性插值计算）
  */
 export interface BaseAttributeAnchor {
+  /** 锚点对应的境界等级 */
   level: number
+  /** 气血上限 */
   hp: number
+  /** 灵力上限 */
   mp: number
+  /** 物理攻击 */
   ad: number
+  /** 术法攻击 */
   ap: number
+  /** 护甲 */
   armor: number
+  /** 法术抗性 */
   mr: number
+  /** 命中值 */
   acc: number
+  /** 闪避值 */
   eva: number
+  /** 暴击值 */
   crit: number
+  /** 免爆值 */
   cavoid: number
+  /** 破招值 */
   breakPt: number
+  /** 拆招（化解）值 */
   parry: number
+  /** 每五秒气血回复 */
   hpRegen: number
+  /** 每五秒灵力回复 */
   mpRegen: number
 }
 
 let BASE_FLAT_ANCHORS: readonly BaseAttributeAnchor[] = []
 
+/**
+ * 注册服务端 catalog 下发的基础属性锚点表（按 level 严格递增）。
+ * 启动时由 fetchGameCatalog 调用一次；表未注册前 calculateBaseAttributes 会快速失败。
+ * @param anchors 锚点数组，字段必须全为非负有限数且 level 单调递增
+ */
 export function registerBaseAttributeAnchors(anchors: readonly BaseAttributeAnchor[]): void {
   const fields = ['level', 'hp', 'mp', 'ad', 'ap', 'armor', 'mr', 'acc', 'eva', 'crit', 'cavoid', 'breakPt', 'parry', 'hpRegen', 'mpRegen'] as const
   if (!Array.isArray(anchors) || anchors.length === 0 || anchors.some((anchor, index) =>
@@ -793,6 +820,7 @@ export function calculateBaseAttributes(spirit = 0, explicitRealmLevel?: number)
   if (BASE_FLAT_ANCHORS.length === 0) throw new Error('基础属性目录尚未加载。')
   const progress = calculateRealmProgress(spirit, explicitRealmLevel)
   const level = Math.max(1.0, progress.totalLevel)
+  // 品阶档与境界结构对齐：凡俗武道（≤18）为 1~2 阶，此后每 12 级修真境界升一档。
   let tier = 1
   if (level <= 18.0) tier = level <= 1.0 ? 1 : 2
   else if (level <= 30.0) tier = 3

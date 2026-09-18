@@ -9,15 +9,13 @@ public sealed record WorldNode(string Id, string Name, double X, double Y)
     /// <summary>节点栖息生态引用的遭遇 ID 列表；战斗行动按当前节点解析实际遭遇。</summary>
     public IReadOnlyList<string> EncounterIds { get; init; } = [];
 
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <param name="id">id 参数。</param>
-    /// <param name="name">name 参数。</param>
-    /// <param name="x">x 参数。</param>
-    /// <param name="y">y 参数。</param>
+    /// <summary>创建世界节点并校验标识与坐标有限性。</summary>
+    /// <param name="id">节点唯一标识。</param>
+    /// <param name="name">节点名称。</param>
+    /// <param name="x">地图坐标 X。</param>
+    /// <param name="y">地图坐标 Y。</param>
     /// <param name="encounterIds">节点生态遭遇 ID 列表，可为空。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <returns>通过校验的节点实例。</returns>
     public static WorldNode Create(string id, string name, double x, double y, IReadOnlyList<string>? encounterIds = null)
     {
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name) || !double.IsFinite(x) || !double.IsFinite(y))
@@ -32,15 +30,13 @@ public sealed record WorldNode(string Id, string Name, double X, double Y)
 /// <summary>世界两节点间的连通路径（有向/无向边），包含空间物理距离与通行耗时。</summary>
 public sealed record WorldEdge(string Id, string FromNodeId, string ToNodeId, double Distance, double TravelSeconds)
 {
-    /// <summary>
-    /// 执行 创建 操作。
-    /// </summary>
-    /// <param name="id">id 参数。</param>
-    /// <param name="fromNodeId">fromNodeId 参数。</param>
-    /// <param name="toNodeId">toNodeId 参数。</param>
-    /// <param name="distance">distance 参数。</param>
-    /// <param name="travelSeconds">travelSeconds 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>创建世界边并校验端点、距离与耗时；禁止自环。</summary>
+    /// <param name="id">边唯一标识。</param>
+    /// <param name="fromNodeId">起点节点 ID。</param>
+    /// <param name="toNodeId">终点节点 ID。</param>
+    /// <param name="distance">空间距离（正数）。</param>
+    /// <param name="travelSeconds">通行耗时秒数（正数）。</param>
+    /// <returns>通过校验的边实例。</returns>
     public static WorldEdge Create(string id, string fromNodeId, string toNodeId, double distance, double travelSeconds)
     {
         if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(fromNodeId) || string.IsNullOrWhiteSpace(toNodeId) ||
@@ -62,7 +58,7 @@ public sealed record TravelSegment(
     double EndProgress,
     double DurationSeconds)
 {
-    /// <summary>获取或设置 是否有效 的值。</summary>
+    /// <summary>路段字段满足取值域约束（进度 0~1、耗时非负）。</summary>
     public bool IsValid =>
         !string.IsNullOrWhiteSpace(EdgeId) &&
         !string.IsNullOrWhiteSpace(FromNodeId) &&
@@ -82,7 +78,7 @@ public sealed record TravelActionState(
     double SegmentElapsedSeconds = 0,
     double ProgressSeconds = 0)
 {
-    /// <summary>获取或设置 是否有效 的值。</summary>
+    /// <summary>移动状态满足持久化不变量（目标有效、进度非负、路段全部合法）。</summary>
     public bool IsValid =>
         !string.IsNullOrWhiteSpace(TargetNodeId) &&
         double.IsFinite(TotalDurationSeconds) && TotalDurationSeconds >= 0 &&
@@ -104,7 +100,9 @@ public sealed class WorldGraph
     private readonly Dictionary<string, List<WorldOutgoingEdge>> _outgoing = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<(string, string), TravelPlan> _planCache = new();
 
+    /// <summary>全部已注册节点集合。</summary>
     public IReadOnlyCollection<WorldNode> Nodes => _nodes.Values;
+    /// <summary>全部已注册边集合。</summary>
     public IReadOnlyCollection<WorldEdge> Edges => _edges.Values;
 
     /// <summary>向世界图中注册节点</summary>
@@ -302,16 +300,15 @@ public sealed record TravelPlan(
     double TotalDistance,
     IReadOnlyList<TravelSegment>? Segments = null)
 {
+    /// <summary>途经路段明细（含边内起止进度与耗时）。</summary>
     public IReadOnlyList<TravelSegment> Segments { get; init; } = Segments ?? [];
 }
 
 /// <summary>角色沿路径行进过程中的动态进度状态机。</summary>
 public sealed class TravelProgress
 {
-    /// <summary>
-    /// 初始化 游历/移动进度。
-    /// </summary>
-    /// <param name="plan">plan 参数。</param>
+    /// <summary>基于路径方案创建行进进度状态机。</summary>
+    /// <param name="plan">依附的路径规划方案。</param>
     public TravelProgress(TravelPlan plan)
     {
         Plan = plan ?? throw new ArgumentNullException(nameof(plan));

@@ -33,6 +33,8 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
                 var advanced = AdvanceJson(section.Kind, input, job, completedActions, gameDataFingerprint);
                 var encoded = Encode(section.Codec, advanced);
                 outputBytes += encoded.Length;
+                // 回传 checksum 针对编码后字节（含 Brotli 压缩态），与主服务 ComputeSectionCodec.ToSectionWrite
+                // 的线侧校验口径一致；版本 +1 使主服务 CAS 写回能识别本任务确实产生了推进。
                 output.Add(section with
                 {
                     Version = checked(section.Version + 1),
@@ -154,6 +156,8 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
             documentOptions: new JsonDocumentOptions { MaxDepth = jsonOptions.MaxDepth });
         if (node is not JsonObject obj) return input;
 
+        // 节点不解析领域对象，只向 JSON section 注入推进元数据（模拟时刻、完成数、配表指纹、契约版本），
+        // 供主服务写回后审计补算来源；领域字段本身不由节点改写。
         obj["lastSimulatedAtUnixMilliseconds"] = job.TargetUnixMilliseconds;
         obj["simulationElapsedMilliseconds"] = Math.Max(
             0,
@@ -199,6 +203,8 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
         try
         {
+            // 解压真实体积只有边读边累计才能确定：流式校验可在 Brotli 炸弹写满内存前提前中断，
+            // 而不是先完整解压再发现超限。
             while (true)
             {
                 var read = stream.Read(buffer, 0, buffer.Length);

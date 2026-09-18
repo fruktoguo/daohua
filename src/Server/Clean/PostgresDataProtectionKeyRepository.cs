@@ -20,10 +20,7 @@ public sealed class PostgresDataProtectionKeyRepository(
 {
     private const int MaxXmlBytes = 1_048_576;
 
-    /// <summary>
-    /// 获取AllElements。
-    /// </summary>
-    /// <returns>返回 IReadOnlyCollection&lt;XElement&gt; 类型的结果。</returns>
+    /// <summary>读取全部 key ring 元素；XML 超限或解析失败直接抛错，不让框架静默忽略损坏的 key。</summary>
     public IReadOnlyCollection<XElement> GetAllElements()
     {
         using var connection = dataSource.OpenConnection();
@@ -51,11 +48,7 @@ public sealed class PostgresDataProtectionKeyRepository(
         return elements;
     }
 
-    /// <summary>
-    /// 执行StoreElement。
-    /// </summary>
-    /// <param name="element">参数 element。</param>
-    /// <param name="friendlyName">参数 friendlyName。</param>
+    /// <summary>写入新 key 元素；key_id 冲突时 DO NOTHING，多实例并发轮换不会产生重复行。</summary>
     public void StoreElement(XElement element, string friendlyName)
     {
         ArgumentNullException.ThrowIfNull(element);
@@ -89,11 +82,7 @@ public sealed class PostgresDataProtectionKeyRepository(
         }
     }
 
-    /// <summary>
-    /// 读取KeyId。
-    /// </summary>
-    /// <param name="element">参数 element。</param>
-    /// <returns>返回 Guid 类型的结果。</returns>
+    /// <summary>从 key 元素的 id 属性解析 key_id；缺失或非法视为损坏数据直接抛错。</summary>
     public static Guid ReadKeyId(XElement element)
     {
         var value = element.Attribute("id")?.Value;
@@ -102,12 +91,7 @@ public sealed class PostgresDataProtectionKeyRepository(
         return keyId;
     }
 
-    /// <summary>
-    /// 读取Date。
-    /// </summary>
-    /// <param name="element">参数 element。</param>
-    /// <param name="name">参数 name。</param>
-    /// <returns>返回 DateTimeOffset? 类型的结果。</returns>
+    /// <summary>读取 key 元素下的时间子元素（creationDate/expirationDate），解析失败返回 null。</summary>
     public static DateTimeOffset? ReadDate(XElement element, string name)
     {
         var value = element.Element(name)?.Value;
@@ -125,9 +109,7 @@ public sealed class PostgresDataProtectionKeyRepository(
     }
 }
 
-/// <summary>
-/// 提供 DataProtectionServiceCollectionExtensions 相关功能的静态容器。
-/// </summary>
+/// <summary>Data Protection 装配扩展。</summary>
 public static class DataProtectionServiceCollectionExtensions
 {
     /// <summary>配置 PostgreSQL key ring；禁止 ASP.NET 回退到本地文件仓储。</summary>

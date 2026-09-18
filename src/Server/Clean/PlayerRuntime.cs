@@ -76,13 +76,13 @@ public sealed class PlayerRuntime(
     }
 
     /// <summary>
-    /// 执行Async（异步）。
+    /// 在玩家专属 Actor 内串行执行一条领域命令；requestId 从载荷的 requestId 字段透传（缺失则不参与幂等去重）。
     /// </summary>
     /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="command">命令名称。</param>
-    /// <param name="payload">命令载荷。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 PlayerCommandResult。</returns>
+    /// <param name="command">命令名称（如 action.enqueue、world.travel）。</param>
+    /// <param name="payload">命令 JSON 载荷。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>命令回执：成功标志、错误码、执行后快照与战报日志。</returns>
     public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, CancellationToken cancellationToken = default)
         => ExecuteCoreAsync(playerId, command, payload, 0, TryReadRequestId(payload), cancellationToken);
 
@@ -91,15 +91,15 @@ public sealed class PlayerRuntime(
         => ExecuteCoreAsync(playerId, command, payload, expectedStateVersion, TryReadRequestId(payload), cancellationToken);
 
     /// <summary>
-    /// 执行Async（异步）。
+    /// 显式指定期望版本与请求标识的命令入口；requestId 为空或载荷内 requestId 不一致时拒绝。
     /// </summary>
     /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="command">命令名称。</param>
-    /// <param name="payload">命令载荷。</param>
-    /// <param name="expectedStateVersion">期望的状态版本。</param>
-    /// <param name="requestId">请求唯一标识。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
-    /// <returns>异步操作结果，包含 PlayerCommandResult。</returns>
+    /// <param name="command">命令名称（如 action.enqueue、world.travel）。</param>
+    /// <param name="payload">命令 JSON 载荷。</param>
+    /// <param name="expectedStateVersion">期望的状态版本；大于 0 时在单写者锁内校验，不等即返回版本冲突。</param>
+    /// <param name="requestId">请求唯一标识，作为命令幂等去重键。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>命令回执：成功标志、错误码、执行后快照与战报日志。</returns>
     public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
     {
         if (requestId == Guid.Empty) throw new ArgumentException("RequestId 不能为空。", nameof(requestId));
@@ -244,10 +244,10 @@ public sealed class PlayerRuntime(
     }
 
     /// <summary>
-    /// 落盘AllAsync（异步）。
+    /// 对全部已加载玩家执行一次脏 section 落盘；force 为 true 时忽略每段 15 秒最小脏龄门槛。
     /// </summary>
-    /// <param name="force">参数 force。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <param name="force">是否强制写全部脏段；周期刷新传 false，进程退出传 true。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public async ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default)
     {
         foreach (var entry in _actors)
@@ -291,11 +291,11 @@ public sealed class PlayerRuntime(
     }
 
     /// <summary>
-    /// 落盘Async（异步）。
+    /// 对单个已加载玩家执行一次脏 section 落盘；未加载时直接返回。
     /// </summary>
     /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="force">参数 force。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <param name="force">是否强制写全部脏段（忽略 15 秒最小脏龄门槛）。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public async ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default)
     {
         if (!_actors.TryGetValue(playerId, out var lazy) || !lazy.IsValueCreated) return;
@@ -304,11 +304,11 @@ public sealed class PlayerRuntime(
     }
 
     /// <summary>
-    /// 移除Async（异步）。
+    /// 卸载玩家 Actor：可选先落离线状态并强刷，再移出缓存并释放信号量与所有权租约。
     /// </summary>
     /// <param name="playerId">玩家唯一标识。</param>
-    /// <param name="flush">参数 flush。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <param name="flush">是否在卸载前把 presence=offline 与全部脏段强制落盘。</param>
+    /// <param name="cancellationToken">取消标记。</param>
     public async ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
     {
         if (!_actors.TryGetValue(playerId, out var lazy) || !lazy.IsValueCreated) return;
@@ -319,9 +319,7 @@ public sealed class PlayerRuntime(
         await actor.DisposeAsync();
     }
 
-    /// <summary>
-    /// 执行DisposeAsync（异步）。
-    /// </summary>
+    /// <summary>宿主关闭路径：逐个卸载全部已加载玩家并强制落盘；单个玩家失败仅记录不中断整体关闭。</summary>
     public async ValueTask DisposeAsync()
     {
         foreach (var playerId in _actors.Keys.ToArray())
@@ -434,7 +432,9 @@ public sealed class PlayerRuntime(
     }
 
     /// <summary>
-    /// 表示 PlayerActor 类。
+    /// 单玩家单写者执行单元：持有聚合、资产钱包与持久化 bundle，
+    /// 命令执行、模拟推进与 section 落盘全部经 _gate 信号量串行；
+    /// 对外只暴露异步方法，跨边界不泄露聚合引用。
     /// </summary>
     private sealed class PlayerActor : IAsyncDisposable
     {
@@ -470,21 +470,22 @@ public sealed class PlayerRuntime(
         /// <summary>
         /// 初始化 PlayerActor 的新实例。
         /// </summary>
-        /// <param name="aggregate">参数 aggregate。</param>
-        /// <param name="bundle">参数 bundle。</param>
-        /// <param name="wallet">参数 wallet。</param>
-        /// <param name="assetRepository">参数 assetRepository。</param>
-        /// <param name="repository">参数 repository。</param>
-        /// <param name="economy">参数 economy。</param>
-        /// <param name="actions">参数 actions。</param>
-        /// <param name="gameData">游戏数据目录。</param>
-        /// <param name="logBuffer">参数 logBuffer。</param>
+        /// <param name="aggregate">已恢复/新建的玩家聚合。</param>
+        /// <param name="bundle">持久化层加载的状态包（提交头 + section 集合 + 身份）。</param>
+        /// <param name="wallet">从资产余额表重建的玩家钱包。</param>
+        /// <param name="assetRepository">资产余额仓储，用于钱包刷新。</param>
+        /// <param name="repository">玩家状态仓储，用于 section 落盘队列。</param>
+        /// <param name="economy">经济事务存储，资产增量随模拟/命令原子提交。</param>
+        /// <param name="actions">行动定义目录（来自激活配表）。</param>
+        /// <param name="gameData">当前激活的游戏数据目录。</param>
+        /// <param name="logBuffer">战报日志环形缓冲（重连回放用）。</param>
         /// <param name="logger">日志记录器。</param>
-        /// <param name="marketRuntime">市场运行时。</param>
-        /// <param name="commandReceipts">参数 commandReceipts。</param>
-        /// <param name="ownership">参数 ownership。</param>
-        /// <param name="ownerInstanceId">参数 ownerInstanceId。</param>
-        /// <param name="ownershipLease">参数 ownershipLease。</param>
+        /// <param name="marketRuntime">市场运行时；未装配时市场命令返回 MARKET_UNAVAILABLE。</param>
+        /// <param name="commandReceipts">命令回执持久化存储；为 null 时跨重启幂等去重不生效。</param>
+        /// <param name="ownership">玩家所有权租约存储；为 null 时跳过单实例所有权校验。</param>
+        /// <param name="ownerInstanceId">本进程实例标识，写入所有权租约。</param>
+        /// <param name="ownershipLease">所有权租约时长，随每次命令/刷盘续期。</param>
+        /// <param name="accounts">账号仓储，用于改名查重。</param>
         public PlayerActor(
             PlayerAggregate aggregate,
             PlayerStateBundle bundle,
@@ -553,14 +554,16 @@ public sealed class PlayerRuntime(
                 .ToArray());
 
         /// <summary>
-        /// 执行Async（异步）。
+        /// 在单写者锁内执行一条领域命令：先续租所有权 → requestId 幂等去重（内存窗口 +
+        /// 持久化回执双层）→ 期望版本校验 → 命令分发 → 登记回执与待落盘 receipt。
+        /// 业务与协议错误统一收敛为 PlayerCommandResult，不会抛出到调用方。
         /// </summary>
-        /// <param name="command">命令名称。</param>
-        /// <param name="payload">命令载荷。</param>
-        /// <param name="expectedStateVersion">期望的状态版本。</param>
-        /// <param name="requestId">请求唯一标识。</param>
-        /// <param name="cancellationToken">取消操作的标记。</param>
-        /// <returns>异步操作结果，包含 PlayerCommandResult。</returns>
+        /// <param name="command">命令名称（如 action.enqueue、market.place）。</param>
+        /// <param name="payload">命令 JSON 载荷。</param>
+        /// <param name="expectedStateVersion">期望的状态版本；大于 0 时校验，不等即返回 STATE_VERSION_CONFLICT。</param>
+        /// <param name="requestId">可选幂等键；提供时必须与载荷内 requestId 一致。</param>
+        /// <param name="cancellationToken">取消标记。</param>
+        /// <returns>命令回执：成功标志、错误码、执行后快照与战报日志。</returns>
         public async ValueTask<PlayerCommandResult> ExecuteAsync(string command, JsonElement payload, long expectedStateVersion, Guid? requestId, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken);
@@ -1046,10 +1049,12 @@ public sealed class PlayerRuntime(
         }
 
         /// <summary>
-        /// 落盘Async（异步）。
+        /// 把脏 section 与待落盘命令回执编码入 durable 写队列。
+        /// 非 force 时每个 section 需满足 15 秒最小脏龄才写；有待落盘 receipt 时整批提前，
+        /// 避免回执先落盘而对应状态仍停留在内存造成跨重启重放。
         /// </summary>
-        /// <param name="force">参数 force。</param>
-        /// <param name="cancellationToken">取消操作的标记。</param>
+        /// <param name="force">是否忽略脏龄门槛写全部脏段。</param>
+        /// <param name="cancellationToken">取消标记。</param>
         public async ValueTask FlushAsync(bool force, CancellationToken cancellationToken)
         {
             await _gate.WaitAsync(cancellationToken);
@@ -1389,7 +1394,7 @@ public sealed class PlayerRuntime(
         }
 
         /// <summary>
-        /// 执行DisposeAsync（异步）。
+        /// 销毁 Actor：幂等；等待在途命令完成后释放信号量并归还所有权租约。
         /// </summary>
         public async ValueTask DisposeAsync()
         {
@@ -1411,16 +1416,14 @@ public sealed class PlayerLogBuffer(int capacity)
     private readonly List<LogEventDto> _events = [];
     private long _sequence;
 
-    /// <summary>
-    /// 执行NextSequence。
-    /// </summary>
-    /// <returns>返回 long 类型的结果。</returns>
+    /// <summary>分配下一条战报日志的单调递增 sequence（线程安全）。</summary>
     public long NextSequence() => Interlocked.Increment(ref _sequence);
 
     /// <summary>
-    /// 执行Append。
+    /// 追加一条战报日志；与缓冲末尾模板相同则合并计数并更新 sequence/时间戳，
+    /// 超出容量时丢弃最旧条目。
     /// </summary>
-    /// <param name="logEvent">参数 logEvent。</param>
+    /// <param name="logEvent">待写入的战报日志 DTO。</param>
     public void Append(LogEventDto logEvent)
     {
         lock (_lock)
@@ -1445,10 +1448,7 @@ public sealed class PlayerLogBuffer(int capacity)
         }
     }
 
-    /// <summary>
-    /// 执行SnapshotRecent。
-    /// </summary>
-    /// <returns>返回 IReadOnlyList&lt;LogEventDto&gt; 类型的结果。</returns>
+    /// <summary>返回缓冲内全部日志的快照副本，供重连回放。</summary>
     public IReadOnlyList<LogEventDto> SnapshotRecent()
     {
         lock (_lock) return _events.ToArray();
@@ -1456,7 +1456,8 @@ public sealed class PlayerLogBuffer(int capacity)
 }
 
 /// <summary>
-/// 表示 PlayerFlushHostedService 类。
+/// 在线玩家脏 section 的周期落盘后台服务：按 SectionFlushInterval 触发 FlushAllAsync(false)，
+/// 把达到脏龄门槛的分段批量写入 durable 队列。
 /// </summary>
 /// <param name="runtime">玩家运行时。</param>
 /// <param name="options">服务端配置选项。</param>

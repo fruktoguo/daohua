@@ -9,7 +9,8 @@ public sealed class SimulationEngineTests
         PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
 
     /// <summary>
-    /// 验证 <c>SingleAdvanceMatchesPerSecondSplitBitwise</c>（Single Advance Matches Per Second Split Bitwise）所描述的领域行为。
+    /// 确定性门禁：整段推进与逐秒切分推进的修为/经验位级一致，
+    /// 含进行中进度秒与亚秒进位余数（在线逐 tick 与离线一次性补算等价）。
     /// </summary>
     [Fact]
     public void SingleAdvanceMatchesPerSecondSplitBitwise()
@@ -34,7 +35,7 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>CultivationExperienceIsGrantedOnlyWhenRepeatCompletes</c>（Cultivation Experience Is Granted Only When Repeat Completes）所描述的领域行为。
+    /// 修为按秒即时入账，经验仅在整轮完成时发放（不足一轮不给经验）。
     /// </summary>
     [Fact]
     public void CultivationExperienceIsGrantedOnlyWhenRepeatCompletes()
@@ -61,7 +62,7 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>SustainedCultivationConsumableMatchesOfflineAndPerSecondAdvance</c>（Sustained Cultivation Consumable Matches Offline And Per Second Advance）所描述的领域行为。
+    /// 持续型丹药（聚气丹）在整段推进与逐秒推进下：扣件时机、倍率收益与剩余时长完全一致。
     /// </summary>
     [Fact]
     public void SustainedCultivationConsumableMatchesOfflineAndPerSecondAdvance()
@@ -99,7 +100,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>SustainedConsumableDurationIsPreservedWhileActionQueueIsIdle</c>（Sustained Consumable Duration Is Preserved While Action Queue Is Idle）所描述的领域行为。
+    /// 队列空闲（无行动在跑）时推进墙钟不得消耗持续型消耗品的剩余时长；
+    /// 重新入队后从剩余时长继续扣减，不重复扣件。
     /// </summary>
     [Fact]
     public void SustainedConsumableDurationIsPreservedWhileActionQueueIsIdle()
@@ -130,7 +132,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>SustainedConsumableActivatesWhenSimulationCarryIsNonZero</c>（Sustained Consumable Activates When Simulation Carry Is Non Zero）所描述的领域行为。
+    /// SimulationCarrySeconds 是全局亚秒浮点残差而非本轮已产出凭证：
+    /// 非零残差下新周期起点仍须正常扣件激活丹药。
     /// </summary>
     [Fact]
     public void SustainedConsumableActivatesWhenSimulationCarryIsNonZero()
@@ -154,7 +157,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>SustainedConsumableOverdraftBuffsCurrentRepeatThenRequiresNextItem</c>（Sustained Consumable Overdraft Buffs Current Repeat Then Requires Next Item）所描述的领域行为。
+    /// 剩余时长透支规则：本轮收益完整吃满倍率后剩余归零并发出 auto-use.depleted，
+    /// 下一轮需要新丹药才继续生效（本例钱包为空，不再扣件）。
     /// </summary>
     [Fact]
     public void SustainedConsumableOverdraftBuffsCurrentRepeatThenRequiresNextItem()
@@ -175,7 +179,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>SustainedConsumableDoesNotActivateAfterCycleHasAwardedSeconds</c>（Sustained Consumable Does Not Activate After Cycle Has Awarded Seconds）所描述的领域行为。
+    /// 本轮已结算过整秒收益后中途补货不得追溯激活（防止吞掉前半段无倍率收益的公平性漏洞），
+    /// 须等下一轮周期起点才扣件生效。
     /// </summary>
     [Fact]
     public void SustainedConsumableDoesNotActivateAfterCycleHasAwardedSeconds()
@@ -204,7 +209,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>SustainedExplorationAndAlchemyOutputsUseCeilingMultiplier</c>（Sustained Exploration And Alchemy Outputs Use Ceiling Multiplier）所描述的领域行为。
+    /// 探索/炼丹产出按持续消耗品倍率向上取整结算（3×1.5→5、1×1.25→2），
+    /// 两个槽位各自独立扣件与计时。
     /// </summary>
     [Fact]
     public void SustainedExplorationAndAlchemyOutputsUseCeilingMultiplier()
@@ -252,7 +258,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>FractionalSecondSplitMatchesWholeSecondBitwise</c>（Fractional Second Split Matches Whole Second Bitwise）所描述的领域行为。
+    /// 0.1s×10 的浮点尘埃（0.9999999999999999）必须贴整为整秒，
+    /// 与整段推进位级一致，否则在线/离线结算会出现 1 秒漂移。
     /// </summary>
     [Fact]
     public void FractionalSecondSplitMatchesWholeSecondBitwise()
@@ -274,7 +281,7 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>InfiniteActionStaysQueuedUnderBothSplitStyles</c>（Infinite Action Stays Queued Under Both Split Styles）所描述的领域行为。
+    /// -1 无限行动在整段与逐秒两种推进风格下均保持队列项且收益一致。
     /// </summary>
     [Fact]
     public void InfiniteActionStaysQueuedUnderBothSplitStyles()
@@ -297,7 +304,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>RewardCarryPersistsAcrossSnapshotRoundTrip</c>（Reward Carry Persists Across Snapshot Round Trip）所描述的领域行为。
+    /// 亚秒收益进位（SimulationCarrySeconds）随快照持久化：恢复后的半秒余量
+    /// 与下一秒推进合并成一个整秒收益，不得丢失。
     /// </summary>
     [Fact]
     public void RewardCarryPersistsAcrossSnapshotRoundTrip()
@@ -318,7 +326,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>ZeroDurationHeadActionFromHotReloadIsSelfHealedAndQueueContinues</c>（Zero Duration Head Action From Hot Reload Is Self Healed And Queue Continues）所描述的领域行为。
+    /// 配表热更致存量队头行动时长变 0：推进时按自愈规约移出队列（action.invalid-dropped），
+    /// 后续合法行动照常结算，不得空转卡死队列。
     /// </summary>
     [Fact]
     public void ZeroDurationHeadActionFromHotReloadIsSelfHealedAndQueueContinues()
@@ -347,7 +356,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>LegalZeroDurationFiniteActionIsSelfHealedInsteadOfSpinning</c>（Legal Zero Duration Finite Action Is Self Healed Instead Of Spinning）所描述的领域行为。
+    /// 合法配置 duration=0 + 巨大有限次数（100 万）：入队不受限，
+    /// 但推进时同样触发自愈出队而非空转消耗完单次模拟转换上限。
     /// </summary>
     [Fact]
     public void LegalZeroDurationFiniteActionIsSelfHealedInsteadOfSpinning()
@@ -371,8 +381,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>ManaYieldPerSecondCreditsCombatResourceNotProgression</c>：灵力收益必须入账 Combat.Manapoints
-    /// 并按上限截断，不得写入修为；且整段推进与逐秒推进位级一致。
+    /// 灵力收益必须入账 Combat.Manapoints 并按上限截断，不得写入修为；
+    /// 且整段推进与逐秒推进位级一致。
     /// </summary>
     [Fact]
     public void ManaYieldPerSecondCreditsCombatResourceNotProgression()
@@ -400,8 +410,7 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>MixedYieldsSettleIndependentlyOnRepeatCompletion</c>：同一行动的多种收益
-    /// 按声明通道独立入账（修为/灵力/物品/Buff/经验互不串位）。
+    /// 同一行动的多种收益按声明通道独立入账（修为/灵力/物品/Buff/经验互不串位）。
     /// </summary>
     [Fact]
     public void MixedYieldsSettleIndependentlyOnRepeatCompletion()
@@ -443,7 +452,7 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>InvalidYieldDeclarationsAreRejected</c>：非法收益配置在目录装载期拒绝而非静默忽略。
+    /// 非法收益配置在目录装载期拒绝而非静默忽略。
     /// </summary>
     [Fact]
     public void InvalidYieldDeclarationsAreRejected()
@@ -479,8 +488,8 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 验证 <c>YieldsJsonRoundTripsThroughConfigParser</c>：配表 JSON 的 yields 声明
-    /// 经 GameDataCatalog.Parse 正确解析为强类型收益模型。
+    /// 配表 JSON 的 yields 声明经 GameDataCatalog.Parse 正确解析为强类型收益模型；
+    /// 未知收益类型与非法频率在解析期直接拒绝。
     /// </summary>
     [Fact]
     public void YieldsJsonRoundTripsThroughConfigParser()

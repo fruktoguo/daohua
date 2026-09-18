@@ -19,7 +19,7 @@ public sealed class QueueLoopTests
         PlayerAggregate.Create(PlayerId.New(), AccountId.New(), name, Baseline, "catalog-a");
 
     /// <summary>
-    /// 验证 <c>QueueLoop_RepeatsSingleActionIndefinitely_WhenLoopEnabled</c>（Queue Loop Repeats Single Action Indefinitely When Loop Enabled）所描述的领域行为。
+    /// LoopEnabled 下单任务次数耗尽后自动重置续跑，绝不出队（循环队列核心不变量）。
     /// </summary>
     [Fact]
     public void QueueLoop_RepeatsSingleActionIndefinitely_WhenLoopEnabled()
@@ -47,7 +47,7 @@ public sealed class QueueLoopTests
     }
 
     /// <summary>
-    /// 验证 <c>QueueLoop_CyclesMultipleActionsInOrder_WhenLoopEnabled</c>（Queue Loop Cycles Multiple Actions In Order When Loop Enabled）所描述的领域行为。
+    /// LoopEnabled 下多任务按 FIFO 轮转：完成的行动移到队尾，下一项升为队首进入 Running。
     /// </summary>
     [Fact]
     public void QueueLoop_CyclesMultipleActionsInOrder_WhenLoopEnabled()
@@ -93,7 +93,7 @@ public sealed class QueueLoopTests
     }
 
     /// <summary>
-    /// 验证 <c>QueueLoop_RemovesActionDirectly_WhenLoopDisabled</c>（Queue Loop Removes Action Directly When Loop Disabled）所描述的领域行为。
+    /// 关闭循环后次数耗尽直接出队且队列不再复活。
     /// </summary>
     [Fact]
     public void QueueLoop_RemovesActionDirectly_WhenLoopDisabled()
@@ -119,7 +119,7 @@ public sealed class QueueLoopTests
     }
 
     /// <summary>
-    /// 验证 <c>QueueLoop_DoesNotLoopTravelAction_EvenWhenLoopEnabled</c>（Queue Loop Does Not Loop Travel Action Even When Loop Enabled）所描述的领域行为。
+    /// 移动行动是循环豁免：即使 LoopEnabled 开启，到达目的地后也直接出队绝不重入。
     /// </summary>
     [Fact]
     public void QueueLoop_DoesNotLoopTravelAction_EvenWhenLoopEnabled()
@@ -156,7 +156,8 @@ public sealed class QueueLoopTests
     }
 
     /// <summary>
-    /// 验证 <c>QueueLoop_WaitsForRespawnWithoutCompletingOrRotatingDefeatedAction</c>（Queue Loop Waits For Respawn Without Completing Or Rotating Defeated Action）所描述的领域行为。
+    /// 战败重生等待是战斗内部相位而非完成/受阻：队列保持原行动不轮换不计完成，
+    /// 到达重生边界满血复活后同一行动继续执行。
     /// </summary>
     [Fact]
     public void QueueLoop_WaitsForRespawnWithoutCompletingOrRotatingDefeatedAction()

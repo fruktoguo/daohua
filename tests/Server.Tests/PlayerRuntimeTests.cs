@@ -10,11 +10,13 @@ using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Player Runtime Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// PlayerRuntime 装配门禁：命令经单写者串行执行、所有权租约失败关闭、快照按需推送、
+/// 配表指纹重绑、经济事务与权威状态同提交/同回滚，以及 world.travel 移动指令插队语义。
+/// </summary>
 public sealed class PlayerRuntimeTests
 {
-    /// <summary>验证 Loadout Cannot Grant Unlearned Abilities。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>装配未学习技能的 loadout.replace 必须失败，不得反向写入习得列表（防刷技能）。</summary>
     [Fact]
     public async Task LoadoutCannotGrantUnlearnedAbilities()
     {
@@ -37,8 +39,7 @@ public sealed class PlayerRuntimeTests
         Assert.False(result.Success);
         Assert.Empty(result.Snapshot.State.LearnedAbilities);
     }
-    /// <summary>验证 New Player Command Is Serialized Through Single Writer And Flush Queue。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>命令经单写者串行执行：状态版本递增，脏分段与命令回执进入刷写队列。</summary>
 
     [Fact]
     public async Task NewPlayerCommandIsSerializedThroughSingleWriterAndFlushQueue()
@@ -69,8 +70,7 @@ public sealed class PlayerRuntimeTests
         Assert.NotEmpty(repository.Enqueued);
         Assert.Single(repository.Receipts);
     }
-    /// <summary>验证 Lost Player Ownership Fails Closed。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>所有权租约续约失败时命令失败关闭并返回 PLAYER_OWNERSHIP_LOST，不得在他人所有权下继续结算。</summary>
 
     [Fact]
     public async Task LostPlayerOwnershipFailsClosed()
@@ -88,8 +88,7 @@ public sealed class PlayerRuntimeTests
         Assert.False(result.Success);
         Assert.Equal("PLAYER_OWNERSHIP_LOST", result.Code);
     }
-    /// <summary>验证 Failed Actor Creation Is Removed And Retried On Next Command。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>Actor 创建失败（如数据库瞬时故障）不得残留半初始化实例，下一条命令可重试成功。</summary>
 
     [Fact]
     public async Task FailedActorCreationIsRemovedAndRetriedOnNextCommand()
@@ -108,8 +107,7 @@ public sealed class PlayerRuntimeTests
         var snapshot = await runtime.LoadAsync(playerId);
         Assert.Equal(playerId, snapshot.PlayerId);
     }
-    /// <summary>验证 Advance All Async Emits Snapshot Updated Only When Simulation Changes。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>仅模拟产生实际变更时才推送 SnapshotUpdated，空推进不广播（降低无效流量）。</summary>
 
     [Fact]
     public async Task AdvanceAllAsync_EmitsSnapshotUpdatedOnlyWhenSimulationChanges()
@@ -148,8 +146,7 @@ public sealed class PlayerRuntimeTests
         Assert.Single(pushedSnapshots);
         Assert.Equal(playerId, pushedSnapshots[0].PlayerId);
     }
-    /// <summary>验证 Catalog Fingerprint Change Rebinds Stored State Instead Of Rejecting Session。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>存储指纹与当前配表不一致时重绑新指纹并刷写分段，而非拒绝加载存档。</summary>
 
     [Fact]
     public async Task CatalogFingerprintChange_RebindsStoredStateInsteadOfRejectingSession()
@@ -209,8 +206,7 @@ public sealed class PlayerRuntimeTests
             write.SectionKind == PlayerSectionKinds.Settings
             && write.GameDataFingerprint == currentFingerprint);
     }
-    /// <summary>验证 Simulation Advance Commits Sustained Pill Debit With Authoritative State。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>模拟推进中自动用药扣件与权威状态同事务提交：资产流水、快照余额与剩余时长三者一致。</summary>
 
     [Fact]
     public async Task SimulationAdvanceCommitsSustainedPillDebitWithAuthoritativeState()
@@ -248,8 +244,7 @@ public sealed class PlayerRuntimeTests
         Assert.Equal("item.qi-gathering-pill", debit.AssetId);
         Assert.Equal(-1d, debit.Delta);
     }
-    /// <summary>验证 Failed Economy Commit Rolls Back Pill Duration And Cultivation Progress。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>经济事务提交失败时内存侧整体回滚：丹药时长、修为经验、行动进度与资产全部还原，不留半提交状态。</summary>
 
     [Fact]
     public async Task FailedEconomyCommitRollsBackPillDurationAndCultivationProgress()
@@ -286,8 +281,7 @@ public sealed class PlayerRuntimeTests
         Assert.Equal(1d, Assert.Single(after.Assets).Quantity);
         Assert.Single(economy.Requests);
     }
-    /// <summary>验证 World Travel Command Enqueues Priority Action And Suspends Current。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>world.travel 指令插队队首并挂起当前行动（保留进度）；取消移动后原行动恢复 Running。</summary>
 
     [Fact]
     public async Task WorldTravelCommandEnqueuesPriorityActionAndSuspendsCurrent()
@@ -343,8 +337,7 @@ public sealed class PlayerRuntimeTests
         Assert.Equal("cultivation.draw-qi", removeResult.Snapshot.State.Actions[0].Intent.ActionId.Value);
         Assert.Equal(ActionQueueStatus.Running, removeResult.Snapshot.State.Actions[0].Status);
     }
-    /// <summary>验证 World Travel To Current Node At Rest Does Not Add Action And Mid Travel Returns To Origin。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>静止时点选当前所在节点不产生移动行动；行走半途点选出发地自动规划折返路线，到达后恢复修炼。</summary>
 
     [Fact]
     public async Task WorldTravelToCurrentNodeAtRestDoesNotAddActionAndMidTravelReturnsToOrigin()
@@ -404,10 +397,7 @@ public sealed class PlayerRuntimeTests
         Assert.Equal(ActionQueueStatus.Running, advanceResult.Snapshot.State.Actions[0].Status);
     }
 
-    /// <summary>执行 Create Empty Player Repository。</summary>
-    /// <param name="playerId">playerId：玩家唯一标识。</param>
-    /// <param name="name">name：相关参数。</param>
-    /// <returns>返回操作结果。</returns>
+    /// <summary>构造仅含空头、无分段的存量玩家假仓库。</summary>
     private static FakeStateRepository CreateEmptyPlayerRepository(Guid playerId, string name)
     {
         var createdAt = DateTimeOffset.UtcNow;
@@ -418,26 +408,17 @@ public sealed class PlayerRuntimeTests
             []));
     }
 
-    /// <summary>包含针对 Fake State Repository 的测试用例与断言集合。</summary>
+    /// <summary>内存假玩家状态仓库：记录入队的分段与命令回执供断言。</summary>
     private class FakeStateRepository(PlayerStateBundle bundle) : IPlayerStateRepository
     {
         public List<SectionWrite> Enqueued { get; } = [];
         public List<CommandReceipt> Receipts { get; } = [];
         public virtual ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.FromResult<PlayerStateBundle?>(bundle);
-        /// <summary>执行 Enqueue Sections Async。</summary>
-        /// <param name="sections">sections：待写入的分区集合。</param>
-        /// <param name="cancellationToken">cancellationToken：取消令牌。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default)
         {
             Enqueued.AddRange(sections);
             return ValueTask.CompletedTask;
         }
-        /// <summary>执行 Enqueue Sections Async。</summary>
-        /// <param name="sections">sections：待写入的分区集合。</param>
-        /// <param name="receipts">receipts：命令回执集合。</param>
-        /// <param name="cancellationToken">cancellationToken：取消令牌。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken = default)
         {
             Enqueued.AddRange(sections);
@@ -450,39 +431,28 @@ public sealed class PlayerRuntimeTests
     /// <summary>首次读取抛瞬时数据库错误，模拟 actor 创建失败。</summary>
     private sealed class FlakyStateRepository(PlayerStateBundle bundle) : FakeStateRepository(bundle)
     {
-        /// <summary>calls。</summary>
         private int _calls;
-        /// <summary>执行 Load Async。</summary>
-        /// <param name="playerId">playerId：玩家唯一标识。</param>
-        /// <param name="cancellationToken">cancellationToken：取消令牌。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public override ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) =>
             ++_calls == 1
                 ? throw new InvalidOperationException("数据库暂不可用。")
                 : base.LoadAsync(playerId, cancellationToken);
     }
 
-    /// <summary>包含针对 Empty Asset Repository 的测试用例与断言集合。</summary>
+    /// <summary>空资产假仓库。</summary>
     private sealed class EmptyAssetRepository : IAssetBalanceRepository
     {
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) => ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>([]);
     }
 
-    /// <summary>包含针对 Mutable Asset Repository 的测试用例与断言集合。</summary>
+    /// <summary>可变内存资产仓库：按事务增量改余额，透支抛错。</summary>
     private sealed class MutableAssetRepository(params AssetBalanceRecord[] initial) : IAssetBalanceRepository
     {
         private readonly Dictionary<(Guid PlayerId, string AssetId, string Variant), AssetBalanceRecord> _balances =
             initial.ToDictionary(balance => (balance.PlayerId, balance.AssetId, balance.Variant));
 
-        /// <summary>执行 Load Balances Async。</summary>
-        /// <param name="playerId">playerId：玩家唯一标识。</param>
-        /// <param name="cancellationToken">cancellationToken：取消令牌。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(_balances.Values.Where(balance => balance.PlayerId == playerId).ToArray());
 
-        /// <summary>执行 Apply。</summary>
-        /// <param name="request">request：事务请求。</param>
         public void Apply(EconomyTransactionRequest request)
         {
             foreach (var delta in request.Deltas)
@@ -498,15 +468,11 @@ public sealed class PlayerRuntimeTests
         }
     }
 
-    /// <summary>包含针对 Recording Economy Repository 的测试用例与断言集合。</summary>
+    /// <summary>记录每笔事务请求的经济假实现；apply=false 时模拟提交失败以触发回滚路径。</summary>
     private sealed class RecordingEconomyRepository(MutableAssetRepository assets, bool apply) : IEconomyTransactionStore
     {
         public List<EconomyTransactionRequest> Requests { get; } = [];
 
-        /// <summary>执行 Commit Async。</summary>
-        /// <param name="request">request：事务请求。</param>
-        /// <param name="cancellationToken">cancellationToken：取消令牌。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
@@ -521,24 +487,17 @@ public sealed class PlayerRuntimeTests
         }
     }
 
-    /// <summary>包含针对 Noop Economy Repository 的测试用例与断言集合。</summary>
+    /// <summary>直接返回成功回执的经济事务假实现。</summary>
     private sealed class NoopEconomyRepository : IEconomyTransactionStore
     {
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default) => ValueTask.FromResult(new EconomyTransactionResult(request.TransactionId, request.IdempotencyKey, true, false, DateTimeOffset.UtcNow, request.ResultPayload));
     }
 
-    /// <summary>包含针对 Lost Ownership Store 的测试用例与断言集合。</summary>
+    /// <summary>续约恒 false 的所有权假实现，用于触发「租约丢失失败关闭」路径。</summary>
     private sealed class LostOwnershipStore : IPlayerOwnershipStore
     {
-        /// <summary>执行 From Result。</summary>
-        /// <param name="true">true：相关参数。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(true);
-        /// <summary>执行 From Result。</summary>
-        /// <param name="false">false：相关参数。</param>
-        /// <returns>表示异步操作的值任务。</returns>
         public ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
-        /// <summary>Completed Task。</summary>
         public ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 }

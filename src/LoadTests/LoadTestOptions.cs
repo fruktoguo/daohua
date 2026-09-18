@@ -3,17 +3,17 @@ namespace DaoHua.LoadTests;
 /// <summary>
 /// 压测命令行选项。
 /// </summary>
-/// <param name="Scenario">压测场景名称。</param>
-/// <param name="Players">玩家数量。</param>
-/// <param name="DurationSeconds">压测持续时间（秒）。</param>
-/// <param name="Concurrency">并发连接数。</param>
-/// <param name="ServerUri">服务端地址。</param>
-/// <param name="DatabaseConnectionString">PostgreSQL 连接字符串。</param>
-/// <param name="RequireDatabase">是否要求数据库真实门禁。</param>
-/// <param name="RequireServer">是否要求服务端真实门禁。</param>
-/// <param name="KeepProbeSchema">是否保留容量探测临时 schema。</param>
-/// <param name="StateChangesPerSecond">每秒状态变更数。</param>
-/// <param name="StateChangeSeconds">状态变更持续秒数。</param>
+/// <param name="Scenario">压测场景名：capacity-target / websocket / http-read / compute / postgres。</param>
+/// <param name="Players">模拟玩家数；缺省时按场景取容量目标默认值（如 websocket=100、http-read=500）。</param>
+/// <param name="DurationSeconds">持续收发压测窗口（秒），worker 在该窗口内尽量多发。</param>
+/// <param name="Concurrency">同时进行中的连接或握手数上限。</param>
+/// <param name="ServerUri">目标服务端地址；ws(s) 与 http(s) 可混写，由各场景归一化方案与路径。</param>
+/// <param name="DatabaseConnectionString">PostgreSQL 连接串；缺省取 DAOHUA_DATABASE_URL 环境变量，再回退本地开发库。</param>
+/// <param name="RequireDatabase">数据库探测不可达时是否计入门禁失败；false 时仅降级为警告。</param>
+/// <param name="RequireServer">是否要求真实服务端：true 时先注册压测账号换取会话 Cookie，false 时 WebSocket 场景整体走匿名 Upgrade 探测。</param>
+/// <param name="KeepProbeSchema">是否保留容量探测的临时 schema 供事后排查（默认探测结束即删除）。</param>
+/// <param name="StateChangesPerSecond">latest-only 队列模拟的每秒状态变更速率。</param>
+/// <param name="StateChangeSeconds">状态变更持续秒数；与速率相乘得到入队总轮数。</param>
 public sealed record LoadTestOptions(
     string Scenario,
     int Players,
@@ -46,6 +46,7 @@ public sealed record LoadTestOptions(
             }
 
             var key = argument[2..];
+            // 无值的 --flag 约定为布尔 true，使开关类参数可省略显式取值。
             var value = index + 1 < args.Length && !args[index + 1].StartsWith("--", StringComparison.Ordinal)
                 ? args[++index]
                 : "true";
@@ -53,6 +54,7 @@ public sealed record LoadTestOptions(
         }
 
         var scenario = values.GetValueOrDefault("scenario", "capacity-target").Trim().ToLowerInvariant();
+        // 各场景默认玩家数对齐容量目标：不带 --players 的运行即为门禁口径。
         var defaultPlayers = scenario switch
         {
             "capacity-target" => CapacityTargetScenario.RegisteredAccountTarget,

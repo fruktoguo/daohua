@@ -94,6 +94,10 @@ export interface PillBonusLabelProps {
   style?: CSSProperties
 }
 
+/**
+ * 渲染胶囊数值区：纯数字走 UnitNumber 获得紧凑格式化与四位分段气泡；
+ * 外层已挂气泡（tooltip 或数量气泡）时关闭内层 tooltip，避免双重浮层叠加。
+ */
 function renderPillValue(
   value: string | number | ReactNode,
   label: string,

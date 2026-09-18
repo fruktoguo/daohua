@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Domain.GameData;
 
-/// <summary>基础属性Anchor 的领域定义。</summary>
+/// <summary>单个境界等级的基础属性锚点：15 维面板基准值。</summary>
 public sealed record BaseAttributeAnchor(
     double Level, double Hp, double Mp, double Ad, double Ap, double Armor, double Mr,
     double Acc, double Eva, double Crit, double Cavoid, double BreakPt, double Parry,
@@ -12,12 +12,11 @@ public sealed record BaseAttributeAnchor(
 public sealed class BaseAttributeCatalog
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    /// <summary>等级严格递增的属性锚点表。</summary>
     public IReadOnlyList<BaseAttributeAnchor> Anchors { get; }
 
-    /// <summary>
-    /// 初始化 基础属性目录。
-    /// </summary>
-    /// <param name="anchors">anchors 参数。</param>
+    /// <summary>以锚点表创建目录；锚点必须非空、等级严格递增且全部数值非负有限。</summary>
+    /// <param name="anchors">按等级排序的属性锚点表。</param>
     public BaseAttributeCatalog(IReadOnlyList<BaseAttributeAnchor> anchors)
     {
         if (anchors.Count == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "基础属性锚点不能为空。");
@@ -34,22 +33,18 @@ public sealed class BaseAttributeCatalog
         Anchors = anchors.ToArray();
     }
 
-    /// <summary>
-    /// 执行 Parse 操作。
-    /// </summary>
-    /// <param name="value">value 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>从 JSON 数组反序列化锚点目录。</summary>
+    /// <param name="value">锚点 JSON 数组。</param>
+    /// <returns>解析完成的锚点目录。</returns>
     public static BaseAttributeCatalog Parse(JsonElement value)
     {
         return new BaseAttributeCatalog(value.Deserialize<BaseAttributeAnchor[]>(JsonOptions)
             ?? throw new DomainException(DomainErrorCode.InvalidArgument, "基础属性配置无效。"));
     }
 
-    /// <summary>
-    /// 执行 在 操作。
-    /// </summary>
-    /// <param name="level">level 参数。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <summary>按等级在相邻锚点间线性插值；越界时钳制到端点锚点。</summary>
+    /// <param name="level">目标境界等级。</param>
+    /// <returns>插值后的属性基准（Level 字段为目标等级）。</returns>
     public BaseAttributeAnchor At(double level)
     {
         var low = Anchors[0];
@@ -99,11 +94,9 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
         => LifespanYearsByTier.Count == 0 ? 0
             : LifespanYearsByTier[Math.Clamp(tier, 1, LifespanYearsByTier.Count) - 1];
 
-    /// <summary>
-    /// 执行 Parse 操作。
-    /// </summary>
+    /// <summary>解析 realmProgression 配置（修为上限与寿元表）。</summary>
     /// <param name="value">realmProgression JSON 对象。</param>
-    /// <returns>返回处理结果。</returns>
+    /// <returns>解析完成的境界进度配置。</returns>
     public static RealmProgressionCatalog Parse(JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.Object

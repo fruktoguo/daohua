@@ -3,14 +3,10 @@ namespace Server.Clean;
 /// <summary>schema v3 的一次性建库脚本，不迁移旧库。</summary>
 public static class PostgresSchema
 {
-    /// <summary>
-    /// 表示常量 Version。
-    /// </summary>
+    /// <summary>当前 schema 版本；与 platform.schema_version 表中的最大版本必须一致。</summary>
     public const int Version = 3;
 
-    /// <summary>
-    /// 表示常量 Sql。
-    /// </summary>
+    /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
     CREATE SCHEMA IF NOT EXISTS identity;
     CREATE SCHEMA IF NOT EXISTS game;
@@ -327,18 +323,16 @@ public static class PostgresSchema
 }
 
 /// <summary>
-/// 在宿主构建认证与请求管线之前完成 schema v2 的建立/校验。
+/// 在宿主构建认证与请求管线之前完成当前版本 schema 的建立/校验。
 /// Data Protection 的 key ring 依赖同一张 PostgreSQL 表，因此不能把首次建库
 /// 延后到 HostedService 启动阶段，否则首个请求可能先触发 42P01。
 /// </summary>
 public static class PostgresSchemaBootstrap
 {
-    /// <summary>
-    /// 确保Async（异步）。
-    /// </summary>
-    /// <param name="dataSource">PostgreSQL 数据源。</param>
-    /// <param name="enableBootstrap">参数 enableBootstrap。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>启动时执行建库（可选）并最终校验版本；版本不符立即抛错终止启动。</summary>
+    /// <param name="dataSource">目标数据源。</param>
+    /// <param name="enableBootstrap">为 true 时先执行权威 DDL 再校验；false 时仅校验既有库版本。</param>
+    /// <param name="cancellationToken">取消令牌，启动阶段通常带超时。</param>
     public static async Task EnsureAsync(
         NpgsqlDataSource dataSource,
         bool enableBootstrap,
@@ -364,11 +358,7 @@ public static class PostgresSchemaBootstrap
         await VerifyAsync(connection, cancellationToken);
     }
 
-    /// <summary>
-    /// 执行VerifyAsync（异步）。
-    /// </summary>
-    /// <param name="connection">参数 connection。</param>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>校验 platform.schema_version 最新版本等于 PostgresSchema.Version，不符即 fail-fast。</summary>
     public static async Task VerifyAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken = default)
@@ -389,21 +379,13 @@ public static class PostgresSchemaBootstrap
     }
 }
 
-/// <summary>
-/// 表示 PostgresSchemaHostedService 类。
-/// </summary>
-/// <param name="dataSource">PostgreSQL 数据源。</param>
-/// <param name="options">服务端配置选项。</param>
-/// <param name="logger">日志记录器。</param>
+/// <summary>启动期 schema 版本复检：在 HostedService 阶段二次确认库版本可用，异常时阻止服务进入就绪。</summary>
 public sealed class PostgresSchemaHostedService(
     NpgsqlDataSource dataSource,
     ServerOptions options,
     ILogger<PostgresSchemaHostedService> logger) : IHostedService
 {
-    /// <summary>
-    /// 启动Async（异步）。
-    /// </summary>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>连接数据库并校验 schema 版本；版本不符抛出异常使启动失败。</summary>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -414,9 +396,6 @@ public sealed class PostgresSchemaHostedService(
             logger.LogInformation("PostgreSQL schema v{Version} 已就绪。", PostgresSchema.Version);
     }
 
-    /// <summary>
-    /// 停止Async（异步）。
-    /// </summary>
-    /// <param name="cancellationToken">取消操作的标记。</param>
+    /// <summary>无资源需要停止时清理。</summary>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

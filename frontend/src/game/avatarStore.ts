@@ -47,6 +47,7 @@ export function normalizeAvatarId(id?: string | null): string {
   return clean
 }
 
+/** 候选 URL 列表进程内缓存：候选集在会话内不变，避免每次渲染重建数组 */
 const AVATAR_URL_CACHE = new Map<string, readonly string[]>()
 
 /**
@@ -84,13 +85,19 @@ export function getAvatarCandidateUrls(rawId?: string | null): readonly string[]
  */
 export type PlayerAvatarId = 'default' | 'female' | 'male' | 'player'
 
+/** 可选形象条目（名称/描述均走 i18n 键） */
 export interface AvatarOption {
+  /** 形象标识 */
   id: PlayerAvatarId
+  /** 名称 i18n 键 */
   nameKey: 'app.avatar.defaultName'
+  /** 描述 i18n 键 */
   descKey: 'app.avatar.defaultDesc'
+  /** 立绘资源地址 */
   src: string
 }
 
+/** 玩家可选形象清单（当前仅默认法相，扩展时追加条目即可） */
 export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   {
     id: 'default',
@@ -100,9 +107,13 @@ export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   },
 ]
 
+/** 玩家道貌形象选择状态 */
 interface AvatarStore {
+  /** 当前选中的形象标识 */
   avatarId: PlayerAvatarId
+  /** 切换形象并持久化到 localStorage */
   setAvatarId: (avatarId: PlayerAvatarId) => void
+  /** 读取当前形象资源地址 */
   getAvatarSrc: () => string
 }
 

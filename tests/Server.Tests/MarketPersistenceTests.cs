@@ -8,11 +8,16 @@ using Xunit;
 
 namespace Server.Tests;
 
-/// <summary>包含针对 Market Persistence Tests 的测试用例与断言集合。</summary>
+/// <summary>
+/// 市场持久化集成测试（PostgreSQL）：撮合成交税费、30 天过期退款、
+/// 事务原子性、幂等重放与 Serializable 并发竞争的端到端回归。
+/// </summary>
 public sealed class MarketPersistenceTests
 {
-    /// <summary>验证 Partial Trade Tax And Expiration Are Durable Atomic And Idempotent。</summary>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>
+    /// 部分成交→税费落库→重启过期退款全链路：幂等键重放不重复结算，
+    /// 退款中途失败整笔回滚不丢单，并发 Expire 经 40001 重试后金额仍精确一致。
+    /// </summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task PartialTradeTaxAndExpirationAreDurableAtomicAndIdempotent()
@@ -85,12 +90,7 @@ public sealed class MarketPersistenceTests
         }
     }
 
-    /// <summary>执行 Seed。</summary>
-    /// <param name="source">source：数据源。</param>
-    /// <param name="playerId">playerId：玩家唯一标识。</param>
-    /// <param name="asset">asset：相关参数。</param>
-    /// <param name="amount">amount：相关参数。</param>
-    /// <returns>表示异步操作的任务。</returns>
+    /// <summary>造数：建账号、建玩家并预置一笔资产余额。</summary>
     private static async Task Seed(NpgsqlDataSource source, Guid playerId, string asset, double amount)
     {
         await Sql(source, "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", playerId, playerId.ToString());
@@ -98,19 +98,9 @@ public sealed class MarketPersistenceTests
         await Sql(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES ($1,$2,'',$3,1,now())", playerId, asset, amount);
     }
 
-    /// <summary>执行 Balance。</summary>
-    /// <param name="source">source：数据源。</param>
-    /// <param name="player">player：玩家标识。</param>
-    /// <param name="asset">asset：相关参数。</param>
-    /// <returns>表示异步操作的任务。</returns>
     private static async Task<double> Balance(NpgsqlDataSource source, Guid player, string asset) =>
         Convert.ToDouble(await Scalar(source, "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id=$2 AND variant=''", player, asset));
 
-    /// <summary>执行 Scalar。</summary>
-    /// <param name="source">source：数据源。</param>
-    /// <param name="sql">sql：要执行的 SQL 语句。</param>
-    /// <param name="values">values：SQL 参数值集合。</param>
-    /// <returns>表示异步操作的任务。</returns>
     private static async Task<object?> Scalar(NpgsqlDataSource source, string sql, params object[] values)
     {
         await using var command = source.CreateCommand(sql);
@@ -118,11 +108,6 @@ public sealed class MarketPersistenceTests
         return await command.ExecuteScalarAsync();
     }
 
-    /// <summary>执行 Sql。</summary>
-    /// <param name="source">source：数据源。</param>
-    /// <param name="sql">sql：要执行的 SQL 语句。</param>
-    /// <param name="values">values：SQL 参数值集合。</param>
-    /// <returns>表示异步操作的任务。</returns>
     private static async Task Sql(NpgsqlDataSource source, string sql, params object[] values)
     {
         await using var command = source.CreateCommand(sql);
