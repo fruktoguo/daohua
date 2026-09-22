@@ -1,5 +1,7 @@
 import { useGameStore } from '../game/gameStore'
+import { useSocialStore } from '../game/socialStore'
 import { getT } from '../i18n'
+import { chatService } from '../logging/chatService'
 import { gameLogService } from '../logging/gameLogService'
 import { clearStoredAccount } from './account'
 import {
@@ -7,12 +9,20 @@ import {
   decodeEnvelope,
   decodeJsonPayload,
   encodeJsonEnvelope,
+  type ChatChannel,
+  type ChatHistoryDto,
+  type ChatHistoryRequestDto,
+  type ChatMessageDto,
+  type ChatSendDto,
   type CommandResultDto,
   type ErrorDto,
   type HelloResponse,
   type LogBatchDto,
   type PlayerSnapshotDeltaDto,
   type PlayerSnapshotDto,
+  type SocialAction,
+  type SocialActionDto,
+  type SocialStateDto,
   WireMessageType,
 } from './protocol'
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
@@ -125,6 +135,7 @@ export class GameClient {
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
     this.playerId = accountInfo.playerId
     this.account = accountInfo.account
+    chatService.activate(this.playerId)
     this.disposed = false
     this.reconnectDelay = 500
     this.outboundSequence = 0
@@ -145,6 +156,8 @@ export class GameClient {
     this.clearReconnectTimer()
     this.stopHeartbeat()
     this.clearPendingRequests()
+    chatService.reset()
+    useSocialStore.getState().reset()
     const socket = this.socket
     this.socket = null
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) socket.close(1000, '客户端断开')
@@ -187,6 +200,59 @@ export class GameClient {
         if (!this.pendingRequests.delete(requestId)) return
         useGameStore.getState().setNotice(getT()('common.net.requestTimeout'))
       }, GameClient.REQUEST_TIMEOUT_MS))
+      return true
+    } catch {
+      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
+      return false
+    }
+  }
+
+  /**
+   * 发送传音发言（ChatSend 信封）。
+   * 消息权威落库在服务端，本方法只负责上行；回显由服务端广播的 ChatMessage 帧驱动。
+   */
+  sendChat(channel: ChatChannel, body: string, targetPlayerId?: string | null): boolean {
+    const socket = this.ensureOpenSocket()
+    if (!socket) return false
+    const requestId = createRequestId()
+    const payload: ChatSendDto = { requestId, channel, body, ...(targetPlayerId ? { targetPlayerId } : {}) }
+    return this.trySend(socket, WireMessageType.ChatSend, requestId, payload)
+  }
+
+  /** 请求某频道历史回放（ChatHistoryRequest 信封）；服务端以 ChatHistory 应答。 */
+  requestChatHistory(channel: ChatChannel, targetPlayerId?: string | null): boolean {
+    const socket = this.ensureOpenSocket()
+    if (!socket) return false
+    const payload: ChatHistoryRequestDto = { channel, ...(targetPlayerId ? { targetPlayerId } : {}) }
+    return this.trySend(socket, WireMessageType.ChatHistoryRequest, createRequestId(), payload)
+  }
+
+  /** 发送社交指令（SocialAction 信封）；服务端以带 requestId 的 SocialState 应答，失败走 Error 帧。 */
+  sendSocialAction(action: SocialAction, targetPlayerId?: string | null, targetName?: string | null): boolean {
+    const socket = this.ensureOpenSocket()
+    if (!socket) return false
+    const requestId = createRequestId()
+    const payload: SocialActionDto = {
+      requestId,
+      action,
+      ...(targetPlayerId ? { targetPlayerId } : {}),
+      ...(targetName ? { targetName } : {}),
+    }
+    return this.trySend(socket, WireMessageType.SocialAction, requestId, payload)
+  }
+
+  private ensureOpenSocket(): WebSocket | null {
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
+      return null
+    }
+    return socket
+  }
+
+  private trySend<T extends object>(socket: WebSocket, messageType: WireMessageType, requestId: string, payload: T): boolean {
+    try {
+      socket.send(encodeJsonEnvelope(messageType, requestId, this.nextOutboundSequence(), payload))
       return true
     } catch {
       useGameStore.getState().setNotice(getT()('common.net.queueOffline'))
@@ -351,12 +417,30 @@ export class GameClient {
           }
           break
         }
+        case WireMessageType.ChatMessage: {
+          const message = decodeJsonPayload<ChatMessageDto>(envelope)
+          if (message?.messageId) chatService.appendMessage(message)
+          break
+        }
+        case WireMessageType.ChatHistory: {
+          const history = decodeJsonPayload<ChatHistoryDto>(envelope)
+          if (history?.channel) chatService.applyHistory(history)
+          break
+        }
+        case WireMessageType.SocialState: {
+          const state = decodeJsonPayload<SocialStateDto>(envelope)
+          if (state) useSocialStore.getState().applyState(state)
+          break
+        }
         case WireMessageType.Pong:
         case WireMessageType.AssetView:
         case WireMessageType.MarketBook:
         case WireMessageType.MarketOrder:
         case WireMessageType.ComputeAdvanceRequest:
         case WireMessageType.ComputeAdvanceResponse:
+        case WireMessageType.ChatSend:
+        case WireMessageType.ChatHistoryRequest:
+        case WireMessageType.SocialAction:
           break
         default:
           throw new Error('收到未知协议消息。')

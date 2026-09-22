@@ -16,8 +16,8 @@
   - **攻击间隔规则收拢**：修仙规则中装备不具备“攻击间隔”属性，服务端配表映射与前端悬浮展示已彻底移除。
   - **通用独立数量副气泡联动**：传入 `quantity={amount}` 属性，自动在主卡片旁附加独立的数量副气泡（标题为「数量」，内容为中文四位分段「具体数值」）。
   - **通用 Buff / Debuff / 特殊机制附属副气泡窗口 (Aside Cards)**：支持将丹药持续 Buff、修炼/技艺效率加成、装备特殊机制/词缀以及角色身上生效的 Buff/Debuff 自动解析为独立的副气泡卡片窗口，并排挂载联动展示（`resolveItemAsideCards`, `resolveEquipmentAsideCards`, `createBuffAsideCard`）。
-  - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成包含伤害系数、威能、前摇、冷却、灵力消耗与触发条件的 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。
-  - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`）与视口渲染裁剪（`content-visibility: auto`），彻底消除滚动期间的高频 Hover 风暴与 Layout Thrashing。
+  - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。功法悬浮详情统一结构：主描述 = 配表 `description` 招式描述 + 效果句（目标/伤害构成/五行伤害类别，如「对单个目标造成 60%术法攻击 +10.5 木属性术法伤害」，构成单元经 `[[ ]]` 标记由 `ValueText` 渲染为整组胶囊），词条行 = 等级、冷却、吟唱、灵力消耗与次级效果，不输出默认触发条件文本。
+  - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`，命令式切换不经过 React 渲染）与视口渲染裁剪（`content-visibility: auto`）。非交互 hover 气泡（tooltip 语义）在**包含锚点的滚动容器**滚动时立即收起（等同原生 `title`）；与锚点无关的面板自滚（如底部日志 append 后自动滚底、侧栏滚动）不会触碰已打开的气泡。click/interactive 浮层滚动跟随则走 rAF 节流重定位，彻底消除滚动期间的逐事件 `getBoundingClientRect` 测量、整卡重渲染、`backdrop-filter` 重绘与高频 Hover 风暴。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
 - **组件源码**：[`frontend/src/components/FloatingPopover.tsx`](../../frontend/src/components/FloatingPopover.tsx)
 - **样式文件**：[`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css)
@@ -66,8 +66,10 @@
 
 ## 6. 物品方块与图元展示 (Item Tile & Display)
 
+- **强制规则**：物品、装备、材料、消耗品、功法技能的一切展示位必须使用图标组件（整块瓦片 `ItemTile`/`ItemTileReference`、行内 `ItemIcon`、文本行 `ItemReference`），禁止仅用纯文本名称罗列。
 - **适用场景**：
   - 行囊、掉落、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
+  - **仅持有 itemId + 数量的场景**（账本、统计/记录物品得失等）：直接渲染与背包一致的图标方块，自动解析物品/装备目录与元数据 -> `ItemTileReference`（锚点类须已登记进 `selection-grid.css` 共享 `:is()` 组，如 `battle-report-item-anchor`）
   - **图标（有图用图、无图回退文本）**：传入资源 ID 即可。该资源在
     `frontend/src/assets/items/<资源ID>.{webp,png}` 有图时，`ItemTile` 用图片整块替换中间的文本名称；
     没有图时自动保持原文本渲染。行内文本/列表行等不适合放整块方块的场合，改用
@@ -93,6 +95,7 @@
     `.daohua-floating-card-title-icon`（[`floating-popover.css`](../../frontend/src/styles/floating-popover.css)，24px）。
     瓦片绘制区固定为 52px，故 64×64 源在 DPR1 是**缩小** 0.81×、在 DPR2 是**放大** 1.63× —— 两种密度均已实测无走样。
     **但若源图升到 ≥128px，缩小倍率会明显变大（DPR1 约 2.46×），届时必须重新实测这三处。**
+  - **hover 反馈零重绘架构**：瓦片子树不做任何 `transition`——实测密集网格 hover 时任意 transition（含 transform）都会逐帧主线程重绘（79 格扫过约 19fps）。动效全部由合成器线程承担：辉光为常驻 `.item-tile-glow` 叠加层做 `opacity` fade-in（`ItemTile` 内置；裸写 `.item-tile` 的功法槽/功法挑选器需手动补 `<span class="item-tile-glow" aria-hidden="true" />`），丝带与角标缩放走 keyframe `animation`（`item-ribbon-zoom-in` / `item-corner-zoom-in`），边缘扫光保持 transform+opacity keyframes；绘制类属性（丝带底色、角标 `box-shadow`）瞬时切换。选中态辉光为静态 `opacity: 1`。
   - **多气泡联动、Buff/特殊机制副窗口与独立数量气泡**：
     - 主卡片展示品阶、基础说明、即时回血回蓝、冷却时长与装备基础攻防；
     - 丹药持续 Buff、修炼/技艺效率加成提取为独立的 `[丹药增益]` / `[修炼增益]` 副卡片窗口；
@@ -109,7 +112,7 @@
 
 - **适用场景**：
   - **物品网格选择弹窗**（支持搜索、分类筛选、物品图元网格排列、空态选项、数量/品质高亮） -> `ItemGridPicker`
-  - **功法/战技网格选择弹窗**（功法装配槽位选择，网格排列 + 冷却/装配状态标记） -> `AbilityGridPicker`
+  - **功法/战技网格选择弹窗**（功法装配槽位选择，网格排列 + 冷却/装配状态标记；按 `slotIndex` 过滤功法 `discipline`——0 号内功位只列内功心法，术法位只列术法；`levelFor` 提供参悟等级供瓦片角标与悬浮详情） -> `AbilityGridPicker`
   - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板；附带子导出 `PickerTrigger` 选择器触发按钮与 `ChoiceMenu` 下拉选项菜单，供触发条件编辑器等内嵌场景复用） -> `CatalogPicker`
 - **组件源码**：
   - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx) (含 `ItemUseSlot` 消耗品槽位组件，支持与技能/物品冷却完全一致的持续消耗品旋转填充倒计时遮罩 `item-slot-duration-overlay`)
@@ -244,7 +247,7 @@
   - **右侧多 Tab 顶层容器**（聚合储物袋、装备、功法三大核心面板，支持平滑切换） -> `RightSidebar`
   - **储物袋分段陈列**：`InventoryPanel` 按「重要/消耗品/装备法宝/功法/材料」五组小标题分段展示物品网格（非 Tab），分组判定统一走 `resolveInventoryGroup`（物品目录 kind/category + 装备目录命中，itemId 前缀兜底），空组不渲染。
   - **储物袋物品交互单元**（背包格子完整交互收拢：悬停保留 `ItemTooltipTarget` 详情卡片；左键弹出 `FloatingPopover` 操作菜单——秘籍/残卷「参悟研习」(`ability.learn`)、装备「穿戴装备」(`loadout.replace` 槽位互斥剔除)、可交易物品「交易」跳转坊市标的详情、`sellPrice > 0` 物品「系统回收」(`item.sell`)、任意物品「丢弃」(`item.discard`)；右键可直接使用的物品立即触发使用；丢弃/回收经 `Modal` + `QuantitySelector` 数量确认弹窗执行；已装备物品禁用丢弃/回收） -> `InventoryItemCell`
-  - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级调整 + 全部已学功法秘籍目录列表） -> `AbilitiesPanel`
+  - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级徽标；已习得功法按内功心法/神通术法两组方块瓦片网格分列（`item-tile` 方形瓦片：左上元素丝带、右上 Lv 参悟等级、右下装配槽位角标）；槽位与功法 `discipline` 双向互斥——内功位只收 internal、术法位只收 spell；装配等级恒等于已参悟等级（由 `abilityExperiences` 立方曲线导出）；重复装配按「移动」处理——`assignAbilityToSlot` 把功法从原槽位移至新槽位并随迁触发条件；所有 `loadout.replace` 发送点统一经 `sendLoadoutReplace` 归一化） -> `AbilitiesPanel`
 - **组件源码**：
   - [`frontend/src/components/RightSidebar.tsx`](../../frontend/src/components/RightSidebar.tsx)
   - [`frontend/src/components/InventoryItemCell.tsx`](../../frontend/src/components/InventoryItemCell.tsx)
@@ -298,14 +301,44 @@
 
 ---
 
-## 24. 行动统计面板与账本分区 (Stats Panel & Report Blocks)
+## 24. 行动统计/记录面板与账本分区 (Stats Panel / Records Panel & Report Blocks)
 
 - **适用场景**：
-  - **行动收益账本统一渲染**：当前行动 / 离线挂机 / 每日统计 / 近期历史共用 `ReportBlock` 分区容器，内部统一拆为三个 memo 小节——`ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）、`ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemReference`）、`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）。
+  - **两个入口两块面板**：`StatsPanel`（详情页右上角「统计」）只显示本次行动——当前行动账本 + 斗法暂存区；`RecordsPanel`（左侧栏「记录」按钮，设置上方）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。
+  - **行动收益账本统一渲染**：共用组件收拢在 `reportSections.tsx`——`ReportBlock` 分区容器按固定顺序排三个 memo 小节且**不渲染节标题**：`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）→ `ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemTileReference` 背包式图标瓦片横排）→ `ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）。
   - **空账本抑制**：`reportHasContent` 判定全零账本不渲染分区；`endedAtUnixSeconds` 决定时长口径（进行中=估算服务端当前时刻−开始，归档=结束−开始）。
   - **localStorage 历史缓存**：`battleReportStore` 读取时对旧缓存条目补齐账本新增字段默认值，防渲染崩溃。
-- **组件源码**：[`frontend/src/components/StatsPanel.tsx`](../../frontend/src/components/StatsPanel.tsx)
+- **组件源码**：[`frontend/src/components/StatsPanel.tsx`](../../frontend/src/components/StatsPanel.tsx)、[`frontend/src/components/RecordsPanel.tsx`](../../frontend/src/components/RecordsPanel.tsx)、[`frontend/src/components/reportSections.tsx`](../../frontend/src/components/reportSections.tsx)
 - **缓存层**：[`frontend/src/game/battleReportStore.ts`](../../frontend/src/game/battleReportStore.ts)
-- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.battle-report-`)
+- **样式文件**：[`frontend/src/styles/expedition.css`](../../frontend/src/styles/expedition.css) (搜索 `.battle-report-`)；侧栏底部工具区 `.sidebar-footer` 在 `frontend/src/styles.css`
+
+---
+
+## 25. 斗法战斗属性统一面板 (CombatAttributePanel)
+
+- **适用场景**：
+  - 内视「斗法」Tab 与战场单位详情弹窗（`CharacterAttributeModal`，单击己方角色/敌怪头像呼出）共用同一属性面板：基础战斗属性（气血/灵力/回复、物理/术法攻击、护甲/法抗、命中/闪避/暴击/免暴/破招/化解）、特殊战斗属性（暴伤/行动速度/冷却/减耗/减伤/穿透/仇恨）、增免伤与五行属性三组以 `.insight-sub-tabs` 二级导航 Tab 切换展示，外加可选「当前运转丹药与神通加持」Buff 分区。
+  - **数值归一化模型 `CombatAttributePanelModel`**：只承载最终展示数值（点数 + double 比例原始值），格式化统一由面板渲染层完成；玩家侧经 `resolvePlayerCombatAttributeModel(attributes, loadout, basePool)` 解析（实时属性优先、缺省回退境界底座 × 六维加成估算），敌怪侧经 `resolveEnemyCombatAttributeModel(definition)` 由遭遇配表 `CombatantDefinition` 映射（术法系攻强记入术法攻击，暴击/免暴按比例 ×100 折点）。
+  - 新增战斗属性字段时只改模型与面板一处，禁止在弹窗/其他页面另写属性行。
+- **组件源码**：[`frontend/src/components/CombatAttributePanel.tsx`](../../frontend/src/components/CombatAttributePanel.tsx)
+- **样式类名**：复用 `.insight-pill-group` / `.insight-base-layout` / `.insight-base-row` 与 `PillStatLabel` 胶囊体系
+
+---
+
+## 26. 日志/传音分组面板与传音流组件 (Log Groups & Chat Channels)
+
+- **适用场景**：
+  - **日志与传音的通用「时间 + 内容」渲染行**：服务端日志事件（含 `{{kind:id|label}}` 富文本引用胶囊与 `× N` 重复折叠胶囊）与传音消息共用同一网格排版 -> `LogFeed.tsx`（`FeedList` / `toLogFeedItems` / `toChatFeedItems` / `mergeFeedItems` / `useStickyScroll`）。
+  - **8 个分组 Tab 的日志面板**（综合/世界/附近/系统/战斗/好友/宗门/队伍）-> `GameLogPanel`：综合 = 系统日志 + 好友私聊 + 队伍群聊按时间合并（只读）；系统/战斗 = 服务端日志事件按 `channel` 分流；世界/附近/好友/队伍 = 传音频道；宗门为占位。
+  - **传音频道面板**（世界/附近/队伍共用单会话模板）-> `ChatChannelPanel`；**好友私聊面板**（好友列表 + 申请处理 + 道号检索 + 私聊会话）-> `FriendChannelPanel`；**队伍面板**（成员列表 + 邀请 + 队伍群聊）-> `PartyChannelPanel`；**综合只读合并面板** -> `AggregatePanel`。
+  - **传音输入框**：独立持有草稿状态，聊天列表高频刷新不重建输入框，输入焦点与选区保持稳定 -> `ChatComposer`（`frontend/src/components/ChatPanel.tsx`）。
+  - **贴底滚动 Hook**：`useStickyScroll(revision)`，玩家未向上翻查时新内容自动滚到最新行；贴底标记只由用户滚动行为决定。
+- **组件源码**：
+  - [`frontend/src/components/GameLogPanel.tsx`](../../frontend/src/components/GameLogPanel.tsx)
+  - [`frontend/src/components/LogFeed.tsx`](../../frontend/src/components/LogFeed.tsx)
+  - [`frontend/src/components/ChatPanel.tsx`](../../frontend/src/components/ChatPanel.tsx)
+- **状态服务**：[`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)（日志事件，按 `channel` 过滤）、[`frontend/src/logging/chatService.ts`](../../frontend/src/logging/chatService.ts)（传音消息，按会话键分组）、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)（好友/申请/队伍/附近修士）
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-tabs`, `.chat-composer`, `.chat-entry-list`, `.chat-presence`, `.nearby-player-actions`)
+- **设计真源**：[`docs/design/chat-and-log-channels.md`](../design/chat-and-log-channels.md)
 
 

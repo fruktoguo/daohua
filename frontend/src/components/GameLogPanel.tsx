@@ -1,238 +1,85 @@
-import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { describeAbility, formatNumber } from '../game/format'
-import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findEncounterInCatalog } from '../game/ids'
+import { memo, useMemo, useState, useSyncExternalStore } from 'react'
 import { useT } from '../i18n'
-import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
-import { ItemReference } from './ItemDisplay'
-import { gameLogService, type GameLogEntry, type LogSegment } from '../logging/gameLogService'
-import { ValueText } from './ValueText'
-
-/** 格式化日志时间戳为月-日 时:分:秒 */
-function formatLogTime(timestampMs: number): string {
-  const date = new Date(timestampMs)
-  const part = (value: number) => String(value).padStart(2, '0')
-  return `${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}:${part(date.getSeconds())}`
-}
+import { filterLogEntries, gameLogService, type LogChannel } from '../logging/gameLogService'
+import { AggregatePanel, ChatChannelPanel, FriendChannelPanel, PartyChannelPanel } from './ChatPanel'
+import { FeedList, toLogFeedItems, useStickyScroll } from './LogFeed'
 
 /**
- * 战报中的功法/神通引用组件 (AbilityReference)
- *
- * 鼠标悬停展示功法详细效果、伤害加成与冷却机制气泡。
+ * 日志面板分组标识。
+ * 综合 = 系统日志 + 好友私聊 + 队伍群聊；世界/附近/好友/宗门/队伍为传音频道；系统/战斗为服务端日志分组。
  */
-const AbilityReference = memo(function AbilityReference({ abilityId, label }: { abilityId: string; label: string }): React.JSX.Element {
+type LogGroupId = 'all' | 'world' | 'nearby' | 'system' | 'combat' | 'friend' | 'sect' | 'party'
+
+/** 分组顺序固定，与设计真源 docs/design/chat-and-log-channels.md 一致 */
+const LOG_GROUPS: readonly { id: LogGroupId; labelKey: string }[] = [
+  { id: 'all', labelKey: 'combat.chat.tabAll' },
+  { id: 'world', labelKey: 'combat.chat.tabWorld' },
+  { id: 'nearby', labelKey: 'combat.chat.tabNearby' },
+  { id: 'system', labelKey: 'combat.chat.tabSystem' },
+  { id: 'combat', labelKey: 'combat.chat.tabCombat' },
+  { id: 'friend', labelKey: 'combat.chat.tabFriend' },
+  { id: 'sect', labelKey: 'combat.chat.tabSect' },
+  { id: 'party', labelKey: 'combat.chat.tabParty' },
+]
+
+/**
+ * 服务端日志分组面板 (LogGroupPanel)
+ *
+ * 只消费 gameLogService 中对应频道的日志事件；综合分组不在此渲染（走 AggregatePanel）。
+ */
+const LogGroupPanel = memo(function LogGroupPanel({ channel }: { channel: LogChannel }): React.JSX.Element {
   const t = useT()
-  const ability = useGameStore((state) => findAbilityInCatalog(state.abilities, abilityId))
-
-  if (!ability) {
-    return (
-      <FloatingTooltip placement="top" title={t('combat.log.abilityTooltip', { label })} tone="qi">
-        <span className="log-reference log-reference--ability">{label}</span>
-      </FloatingTooltip>
-    )
-  }
-
-  const tooltip = describeAbility(ability, 1)
+  const logState = useSyncExternalStore(gameLogService.subscribe, gameLogService.getSnapshot)
+  const items = useMemo(() => toLogFeedItems(filterLogEntries(logState.latest, channel)), [logState, channel])
+  const { listRef, onScroll } = useStickyScroll(logState.revision)
 
   return (
-    <FloatingPopover
-      closeDelay={120}
-      content={
-        <FloatingInfoCard
-          badge={tooltip.badge}
-          badgeTone="qi"
-          description={tooltip.description}
-          lines={tooltip.lines?.map((line) => (
-            <ValueText className="effect-value-capsule" key={line} text={line} />
-          ))}
-          title={tooltip.title}
-        />
-      }
-      gap={8}
-      interactive={false}
-      openDelay={60}
-      placement="bottom"
-      trigger="hover"
-      triggerClassName="log-reference log-reference--ability"
-    >
-      {label}
-    </FloatingPopover>
+    <ol className="event-log" onScroll={onScroll} ref={listRef}>
+      {items.length === 0 ? <li className="log-state-row">{t('combat.chat.empty')}</li> : <FeedList items={items} />}
+    </ol>
   )
 })
 
 /**
- * 战报中的妖兽/敌方遭遇引用组件 (EnemyReference)
- *
- * 悬停展示敌怪流派、属性、气血真元等面板数据。
- */
-const EnemyReference = memo(function EnemyReference({
-  enemyId,
-  kind,
-  label,
-}: {
-  enemyId: string
-  kind: 'enemy' | 'encounter'
-  label: string
-}): React.JSX.Element {
-  const t = useT()
-  const encounter = useGameStore((state) => findEncounterInCatalog(state.encounters, enemyId))
-  const enemy = encounter?.enemy
-
-  if (encounter || enemy) {
-    const stats: { label: string; value: React.ReactNode; tone?: FloatingTone }[] = []
-    if (enemy?.category) {
-      stats.push({ label: t('combat.log.statCategory'), value: t(`combat.encounter.damageCategory.${enemy.category}`), tone: 'gold' })
-    }
-    if (enemy?.element && enemy.element !== 'none') {
-      stats.push({ label: t('combat.log.statElement'), value: t(`combat.encounter.element.${enemy.element}`), tone: 'purple' })
-    }
-    if (enemy?.maxHitpoints) stats.push({ label: t('combat.log.statHp'), value: formatNumber(enemy.maxHitpoints), tone: 'danger' })
-    if (enemy?.maxManapoints) stats.push({ label: t('combat.log.statMp'), value: formatNumber(enemy.maxManapoints), tone: 'qi' })
-
-    return (
-      <FloatingPopover
-        closeDelay={120}
-        content={
-          <FloatingInfoCard
-            badge={kind === 'encounter' ? t('combat.log.badgeEncounter') : t('combat.log.badgeEnemy')}
-            badgeTone="gold"
-            description={encounter ? t('combat.log.descEncounter') : t('combat.log.descEnemy')}
-            stats={stats.length > 0 ? stats : undefined}
-            title={label || enemy?.name || encounter?.name || enemyId}
-          />
-        }
-        gap={8}
-        interactive={false}
-        openDelay={60}
-        placement="bottom"
-        trigger="hover"
-        triggerClassName={`log-reference log-reference--${kind}`}
-      >
-        {label}
-      </FloatingPopover>
-    )
-  }
-
-  return (
-    <FloatingTooltip placement="top" title={t('combat.log.enemyTooltip', { label })} tone="gold">
-      <span className={`log-reference log-reference--${kind}`}>{label}</span>
-    </FloatingTooltip>
-  )
-})
-
-/**
- * 日志单条分段内容解析分发组件 (LogContent)
- *
- * 识别文本、物品掉落、功法施放、妖兽击败等分段类型并附加富文本高亮与交互气泡。
- */
-const LogContent = memo(function LogContent({ segment }: { segment: LogSegment }): React.JSX.Element {
-  if (segment.type === 'text') return <ValueText className="log-value-capsule" text={segment.value} />
-  if (segment.kind === 'item') {
-    return (
-      <ItemReference
-        amount={segment.amount}
-        className="log-reference log-reference--item"
-        itemId={segment.id}
-        label={segment.label}
-      />
-    )
-  }
-  if (segment.kind === 'ability') {
-    return <AbilityReference abilityId={segment.id} label={segment.label} />
-  }
-  if (segment.kind === 'enemy' || segment.kind === 'encounter') {
-    return <EnemyReference enemyId={segment.id} kind={segment.kind} label={segment.label} />
-  }
-  return (
-    <span className={`log-reference log-reference--${segment.kind}`} title={`${segment.kind}: ${segment.id}`}>
-      {segment.label}
-    </span>
-  )
-})
-
-/**
- * 单行游戏日志展示组件 (LogRow)
- *
- * 当日志为连续完全重复项（count > 1）时，在尾部展示金石微光乘数小胶囊形如 `× 3`。
- */
-const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.JSX.Element {
-  const t = useT()
-  const displayTime = formatLogTime(entry.latestTimestampMs ?? entry.timestampMs)
-  const isRepeated = entry.count > 1
-  const repeatTitle = isRepeated
-    ? t('combat.log.repeatTooltip', {
-        count: entry.count,
-        first: formatLogTime(entry.timestampMs),
-        latest: displayTime,
-      })
-    : undefined
-
-  return (
-    <li>
-      <time dateTime={new Date(entry.latestTimestampMs ?? entry.timestampMs).toISOString()}>{displayTime}</time>
-      <span className="log-message">
-        {entry.segments.map((segment, index) => <LogContent key={`${entry.id}-${index}`} segment={segment} />)}
-        {isRepeated && (
-          <span
-            className="log-repeat-capsule"
-            title={repeatTitle}
-          >
-            × {entry.count}
-          </span>
-        )}
-      </span>
-    </li>
-  )
-})
-
-/**
- * 游戏战报与系统日志主面板组件 (GameLogPanel)
+ * 游戏战报与传音日志主面板组件 (GameLogPanel)
  *
  * 核心机制与交互：
- * 1. 订阅全局 gameLogService 状态快照 (useSyncExternalStore)；
- * 2. 自动贴底滚动：当玩家未向上滚动翻查当前缓冲时，新日志产生自动滑动到最新行；
- * 3. 仅展示当前会话内存环形缓冲，不提供历史网络查询或本地持久化。
+ * 1. 8 个分组 Tab：综合 / 世界 / 附近 / 系统 / 战斗 / 好友 / 宗门 / 队伍；
+ * 2. 每个分组独立订阅各自数据源（服务端日志事件或传音消息），各自保持贴底滚动；
+ * 3. 仅展示当前会话内存缓冲，不提供历史网络查询或本地持久化。
  */
 export function GameLogPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const t = useT()
   const logState = useSyncExternalStore(gameLogService.subscribe, gameLogService.getSnapshot)
-  const [tab, setTab] = useState<'log' | 'chat'>('log')
-  const listRef = useRef<HTMLOListElement>(null)
-  const stickToBottom = useRef(true)
-  // 只渲染最近 200 条：日志服务保留的环形缓冲更长，截尾防止长会话 DOM 规模膨胀拖慢渲染。
-  const visibleEntries = logState.latest.slice(-200)
-
-  // 贴底标记只由用户滚动行为决定：effect 一旦自行清零，当列表尚无滚动条（会话初期日志不足一屏）
-  // 时程序化滚动不会触发 scroll 事件，标记永久停在 false，此后新日志再也不会自动贴底。
-  useLayoutEffect(() => {
-    const list = listRef.current
-    if (!list || tab !== 'log' || !stickToBottom.current) return
-    list.scrollTop = list.scrollHeight
-  }, [logState.revision, tab])
+  const [group, setGroup] = useState<LogGroupId>('all')
 
   return (
     <section className={`panel log-panel ${className}`.trim()}>
       <div className="log-tabs" role="tablist" aria-label={t('combat.log.messagesAria')}>
-        <button className={tab === 'log' ? 'active' : ''} onClick={() => setTab('log')} role="tab" type="button">{t('combat.log.tabLog')}</button>
-        <button className={tab === 'chat' ? 'active' : ''} onClick={() => setTab('chat')} role="tab" type="button">{t('combat.log.tabChat')}</button>
+        {LOG_GROUPS.map(entry => (
+          <button
+            aria-selected={group === entry.id}
+            className={group === entry.id ? 'active' : ''}
+            key={entry.id}
+            onClick={() => setGroup(entry.id)}
+            role="tab"
+            type="button"
+          >{t(entry.labelKey)}</button>
+        ))}
         <span
           aria-label={logState.persistence === 'memory' ? t('combat.log.memoryOnly') : t('combat.log.saved')}
           className={`log-storage-status log-storage-status--${logState.persistence}`}
           title={logState.persistence === 'memory' ? t('combat.log.memoryOnlyTitle') : t('combat.log.saved')}
         />
       </div>
-      {tab === 'log' ? (
-        <ol
-          className="event-log"
-          onScroll={event => {
-            const list = event.currentTarget
-            stickToBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 32
-          }}
-          ref={listRef}
-        >
-          {visibleEntries.map(entry => <LogRow entry={entry} key={entry.id} />)}
-        </ol>
-      ) : <div className="chat-placeholder">{t('combat.log.chatUnavailable')}</div>}
+      {group === 'all' && <AggregatePanel />}
+      {group === 'world' && <ChatChannelPanel channel="world" />}
+      {group === 'nearby' && <ChatChannelPanel channel="nearby" />}
+      {group === 'system' && <LogGroupPanel channel="system" />}
+      {group === 'combat' && <LogGroupPanel channel="combat" />}
+      {group === 'friend' && <FriendChannelPanel />}
+      {group === 'sect' && <div className="chat-placeholder">{t('combat.chat.sectUnavailable')}</div>}
+      {group === 'party' && <PartyChannelPanel />}
     </section>
   )
 }

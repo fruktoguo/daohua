@@ -16,9 +16,10 @@ public sealed class AbilityLearningPersistenceTests
     [Trait("Category", "PostgresIntegration")]
     public async Task ManualDebitAndLoadoutQueueCommitTogetherAndReplayOnce()
     {
-        var connectionString = Environment.GetEnvironmentVariable("DAOHUA_MARKET_TEST_CONNECTION")
-            ?? throw new InvalidOperationException("学习集成测试需要专用 PostgreSQL 库：DAOHUA_MARKET_TEST_CONNECTION。");
+        var connectionString = PostgresTestSchema.RequireConnectionString("学习集成测试");
         await using var source = NpgsqlDataSource.Create(connectionString);
+        // 本用例直接写 identity/economy 表，必须先确保 schema 就绪（不能依赖其他测试类的执行顺序）。
+        await PostgresTestSchema.EnsureAsync(source);
         var player = Guid.NewGuid();
         await Sql(source, "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", player, player.ToString());
         await Sql(source, "INSERT INTO identity.players VALUES ($1,$1,$2,$2,now(),now(),1)", player, player.ToString());

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { collapseLogEntries, gameLogService } from './gameLogService.ts'
+import { collapseLogEntries, filterLogEntries, gameLogService } from './gameLogService.ts'
 
 test('collapseLogEntries 纯函数：连续完全相同模板的日志正确合并折叠', () => {
   const entries = [
@@ -43,6 +43,36 @@ test('collapseLogEntries 边界条件：空数组与单条日志', () => {
   assert.equal(res.length, 1)
   assert.equal(res[0].count, 1)
   assert.equal(res[0].latestTimestampMs, 1000)
+})
+
+test('日志分组：系统与战斗频道即使模板相同也不折叠，filterLogEntries 按频道分流', () => {
+  const entries = [
+    { id: '1', playerId: 'p1', timestampMs: 1000, sequence: 1, template: '同一模板', channel: 'system' },
+    { id: '2', playerId: 'p1', timestampMs: 2000, sequence: 2, template: '同一模板', channel: 'combat' },
+    { id: '3', playerId: 'p1', timestampMs: 3000, sequence: 3, template: '同一模板', channel: 'combat' },
+  ]
+
+  const collapsed = collapseLogEntries(entries)
+  assert.equal(collapsed.length, 2)
+  assert.equal(collapsed[0].channel, 'system')
+  assert.equal(collapsed[0].count, 1)
+  assert.equal(collapsed[1].channel, 'combat')
+  assert.equal(collapsed[1].count, 2)
+
+  assert.deepEqual(filterLogEntries(collapsed, 'system').map(entry => entry.id), ['1'])
+  assert.deepEqual(filterLogEntries(collapsed, 'combat').map(entry => entry.id), ['2'])
+})
+
+test('日志分组：缺省 channel 视为 system，combat 事件不落入系统分组', () => {
+  gameLogService.activate('test-player-channel')
+  gameLogService.ingestBatch('test-player-channel', [
+    { sequence: 1, timestampUnixMilliseconds: 1000, template: '自动使用回气丹。' },
+    { sequence: 2, timestampUnixMilliseconds: 2000, template: '遭遇妖兽：裂隙魔狼。', channel: 'combat' },
+  ])
+
+  const snapshot = gameLogService.getSnapshot()
+  assert.deepEqual(filterLogEntries(snapshot.latest, 'system').map(entry => entry.channel), ['system'])
+  assert.deepEqual(filterLogEntries(snapshot.latest, 'combat').map(entry => entry.channel), ['combat'])
 })
 
 test('gameLogService 单例服务：增量接收连续重复项合并递增与容量保持', () => {

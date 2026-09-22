@@ -110,6 +110,12 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<MarketRuntime>();
     builder.Services.AddSingleton<PlayerRuntime>();
     builder.Services.AddSingleton<SessionRegistry>();
+    // 传音与社交：不属于玩家聚合，独立单例运行时；聊天记录落 PostgreSQL（每作用域保留 100 条）。
+    builder.Services.AddSingleton<Server.Clean.Social.OnlinePresenceRegistry>();
+    builder.Services.AddSingleton<Server.Clean.Social.ISocialRepository, Server.Clean.Social.PostgresSocialRepository>();
+    builder.Services.AddSingleton<Server.Clean.Social.IChatRepository, Server.Clean.Social.PostgresChatRepository>();
+    builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Social.ChatRuntime>();
     builder.Services.AddSingleton(options.AntiMultiOpen);
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.DeviceQuotaRegistry>();
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.AntiMultiOpenAdmission>();

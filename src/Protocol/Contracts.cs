@@ -52,7 +52,19 @@ public enum WireMessageType : byte
     /// <summary>通用玩家命令执行回执</summary>
     CommandResult = 16,
     /// <summary>服务端推送的战报/系统日志事件批次（仅 WebSocket 下行）</summary>
-    LogBatch = 17
+    LogBatch = 17,
+    /// <summary>客户端发起传音频道发言（仅 WebSocket 上行）</summary>
+    ChatSend = 18,
+    /// <summary>服务端广播的单条传音消息（仅 WebSocket 下行）</summary>
+    ChatMessage = 19,
+    /// <summary>服务端回放某频道作用域最近 100 条传音（仅 WebSocket 下行）</summary>
+    ChatHistory = 20,
+    /// <summary>客户端发起社交指令（好友申请/队伍邀请等，仅 WebSocket 上行）</summary>
+    SocialAction = 21,
+    /// <summary>服务端下发社交状态（好友/申请/队伍/附近修士，仅 WebSocket 下行）</summary>
+    SocialState = 22,
+    /// <summary>客户端请求某频道作用域的历史回放（仅 WebSocket 上行）</summary>
+    ChatHistoryRequest = 23
 }
 
 /// <summary>信封内有效载荷的编码格式</summary>
@@ -616,9 +628,170 @@ public sealed record ErrorDto(string Code, string Message, string? RequestId = n
 /// <param name="TimestampUnixMilliseconds">事件时间戳（Unix 毫秒）</param>
 /// <param name="Template">前端模板字符串</param>
 /// <param name="Count">连续相同模板合并次数，默认为 1</param>
-public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template, int Count = 1);
+/// <param name="Channel">日志分组频道：`system`（系统）或 `combat`（战斗），缺省 `system`</param>
+public sealed record LogEventDto(long Sequence, long TimestampUnixMilliseconds, string Template, int Count = 1, string Channel = "system");
 
 /// <summary>日志事件批次载荷，按 sequence 单调递增推送。</summary>
 /// <param name="Events">日志事件列表</param>
 public sealed record LogBatchDto(IReadOnlyList<LogEventDto> Events);
+
+/// <summary>日志分组频道标识常量（前端日志面板 Tab 分流口径）。</summary>
+public static class LogChannels
+{
+    /// <summary>系统分组：消耗品使用、行动完成、抵达、离线补算、斗法撮合与结算及各类系统通知。</summary>
+    public const string System = "system";
+    /// <summary>战斗分组：战斗过程事件（搜寻、遭遇、施放、攻击、胜负、复活）。</summary>
+    public const string Combat = "combat";
+
+    /// <summary>按领域事件码解析所属日志分组：`combat.` 前缀归战斗，其余归系统。</summary>
+    /// <param name="eventCode">领域模拟事件码。</param>
+    /// <returns>日志分组频道标识。</returns>
+    public static string FromEventCode(string eventCode) =>
+        eventCode.StartsWith("combat.", StringComparison.Ordinal) ? Combat : System;
+}
+
+/// <summary>传音频道标识常量（协议与前端共享口径）。</summary>
+public static class ChatChannels
+{
+    /// <summary>世界频道（全服在线修士）</summary>
+    public const string World = "world";
+    /// <summary>附近频道（同一地图节点在线修士）</summary>
+    public const string Nearby = "nearby";
+    /// <summary>好友私聊频道（双向好友 1:1）</summary>
+    public const string Friend = "friend";
+    /// <summary>队伍频道（队伍全体成员）</summary>
+    public const string Party = "party";
+    /// <summary>宗门频道（占位，尚未开放）</summary>
+    public const string Sect = "sect";
+
+    /// <summary>判定是否为当前可收发的频道标识。</summary>
+    /// <param name="channel">频道标识。</param>
+    /// <returns>可收发返回 true；`sect` 与未知值返回 false。</returns>
+    public static bool IsSupported(string? channel) =>
+        channel is World or Nearby or Friend or Party;
+}
+
+/// <summary>客户端传音发言请求。</summary>
+/// <param name="RequestId">请求唯一标识，服务端回执配对与幂等去重键</param>
+/// <param name="Channel">目标频道标识（见 <see cref="ChatChannels"/>）</param>
+/// <param name="Body">消息正文（去除首尾空白后 1~200 字符）</param>
+/// <param name="TargetPlayerId">好友频道必填的私聊对象玩家 ID；其余频道忽略</param>
+public sealed record ChatSendDto(string RequestId, string Channel, string Body, string? TargetPlayerId = null);
+
+/// <summary>单条传音消息。</summary>
+/// <param name="MessageId">消息唯一标识</param>
+/// <param name="Channel">频道标识</param>
+/// <param name="ScopeKey">频道作用域键（世界为空串、附近为节点 ID、好友为双方 ID 升序拼接、队伍为队伍 ID）</param>
+/// <param name="SenderId">发送者玩家 ID</param>
+/// <param name="SenderName">发送者道号</param>
+/// <param name="Body">消息正文</param>
+/// <param name="SentAtUnixMilliseconds">发送时刻（Unix 毫秒）</param>
+public sealed record ChatMessageDto(
+    string MessageId,
+    string Channel,
+    string ScopeKey,
+    string SenderId,
+    string SenderName,
+    string Body,
+    long SentAtUnixMilliseconds);
+
+/// <summary>频道历史回放载荷：某作用域最近 100 条传音，按时间正序。</summary>
+/// <param name="Channel">频道标识</param>
+/// <param name="ScopeKey">频道作用域键</param>
+/// <param name="TargetPlayerId">好友频道的私聊对象玩家 ID；其余频道为 null</param>
+/// <param name="Messages">最近消息列表</param>
+public sealed record ChatHistoryDto(string Channel, string ScopeKey, string? TargetPlayerId, IReadOnlyList<ChatMessageDto> Messages);
+
+/// <summary>客户端频道历史回放请求。</summary>
+/// <param name="Channel">目标频道标识</param>
+/// <param name="TargetPlayerId">好友频道必填的私聊对象玩家 ID</param>
+public sealed record ChatHistoryRequestDto(string Channel, string? TargetPlayerId = null);
+
+/// <summary>社交指令动作标识常量。</summary>
+public static class SocialActions
+{
+    /// <summary>发起好友申请</summary>
+    public const string FriendRequest = "friend.request";
+    /// <summary>接受收到的好友申请</summary>
+    public const string FriendAccept = "friend.accept";
+    /// <summary>拒绝收到的好友申请</summary>
+    public const string FriendReject = "friend.reject";
+    /// <summary>解除好友关系</summary>
+    public const string FriendRemove = "friend.remove";
+    /// <summary>邀请入队</summary>
+    public const string PartyInvite = "party.invite";
+    /// <summary>接受队伍邀请</summary>
+    public const string PartyAccept = "party.accept";
+    /// <summary>拒绝队伍邀请</summary>
+    public const string PartyDecline = "party.decline";
+    /// <summary>离开当前队伍</summary>
+    public const string PartyLeave = "party.leave";
+
+    /// <summary>判定是否为受支持的社交动作。</summary>
+    /// <param name="action">动作标识。</param>
+    /// <returns>受支持返回 true。</returns>
+    public static bool IsSupported(string? action) => action is
+        FriendRequest or FriendAccept or FriendReject or FriendRemove or
+        PartyInvite or PartyAccept or PartyDecline or PartyLeave;
+}
+
+/// <summary>客户端社交指令请求。</summary>
+/// <param name="RequestId">请求唯一标识，服务端回执配对键</param>
+/// <param name="Action">动作标识（见 <see cref="SocialActions"/>）</param>
+/// <param name="TargetPlayerId">目标玩家 ID；好友申请/解除、队伍邀请必填；接受/拒绝好友申请时为目标好友；接受/拒绝队伍邀请忽略该字段</param>
+/// <param name="TargetName">目标道号；仅在 <c>friend.request</c> 且未提供 TargetPlayerId 时用于检索目标</param>
+public sealed record SocialActionDto(string RequestId, string Action, string? TargetPlayerId = null, string? TargetName = null);
+
+/// <summary>好友条目。</summary>
+/// <param name="PlayerId">好友玩家 ID</param>
+/// <param name="DisplayName">好友道号</param>
+/// <param name="Online">是否在线</param>
+public sealed record FriendDto(string PlayerId, string DisplayName, bool Online);
+
+/// <summary>好友申请条目。</summary>
+/// <param name="RequestId">申请唯一标识（用于接受/拒绝）</param>
+/// <param name="PlayerId">对端玩家 ID</param>
+/// <param name="DisplayName">对端道号</param>
+/// <param name="CreatedAtUnixMilliseconds">申请时刻（Unix 毫秒）</param>
+public sealed record FriendRequestDto(string RequestId, string PlayerId, string DisplayName, long CreatedAtUnixMilliseconds);
+
+/// <summary>队伍成员条目。</summary>
+/// <param name="PlayerId">成员玩家 ID</param>
+/// <param name="DisplayName">成员道号</param>
+/// <param name="Online">是否在线</param>
+public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online);
+
+/// <summary>队伍状态。</summary>
+/// <param name="PartyId">队伍唯一标识</param>
+/// <param name="LeaderId">队长玩家 ID</param>
+/// <param name="Members">成员列表（含队长）</param>
+public sealed record PartyDto(string PartyId, string LeaderId, IReadOnlyList<PartyMemberDto> Members);
+
+/// <summary>同节点在线修士条目。</summary>
+/// <param name="PlayerId">修士玩家 ID</param>
+/// <param name="DisplayName">修士道号</param>
+public sealed record NearbyPlayerDto(string PlayerId, string DisplayName);
+
+/// <summary>待处理的队伍邀请条目。</summary>
+/// <param name="PartyId">邀请方队伍标识</param>
+/// <param name="InviterId">邀请人玩家 ID</param>
+/// <param name="InviterName">邀请人道号</param>
+public sealed record PartyInvitationDto(string PartyId, string InviterId, string InviterName);
+
+/// <summary>社交状态下发载荷；RequestId 非空表示对某条 <see cref="SocialActionDto"/> 的回执，为空表示服务端主动推送。</summary>
+/// <param name="RequestId">关联的社交指令请求 ID，主动推送时为 null</param>
+/// <param name="Friends">好友列表</param>
+/// <param name="IncomingRequests">收到的好友申请</param>
+/// <param name="OutgoingRequests">发出的好友申请</param>
+/// <param name="Party">所在队伍；未组队时为 null</param>
+/// <param name="PartyInvitation">待处理的队伍邀请；无邀请时为 null</param>
+/// <param name="NearbyPlayers">同节点在线修士（含自己）</param>
+public sealed record SocialStateDto(
+    string? RequestId,
+    IReadOnlyList<FriendDto> Friends,
+    IReadOnlyList<FriendRequestDto> IncomingRequests,
+    IReadOnlyList<FriendRequestDto> OutgoingRequests,
+    PartyDto? Party,
+    PartyInvitationDto? PartyInvitation,
+    IReadOnlyList<NearbyPlayerDto> NearbyPlayers);
 

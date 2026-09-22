@@ -9,6 +9,16 @@
 - 代码中禁止实现 migration runner，禁止对 本目录的运行时依赖；迁移只能由人工或运维流程显式执行（如 `psql -f` 或 `docker exec ... psql -f`）。
 - 若删除本目录且库版本落后：启动门禁照旧报 schema 版本不匹配，由使用者选择重建库（本地开发默认路径）。
 
+## 本地库升级入口
+
+本地开发库升级请用 `scripts/migrate-local-db.sh`（人工显式调用，运行时与门禁都不引用它）：
+它读取 `platform.schema_version`，按序号链式执行本目录中落后的脚本，最后与 `PostgresSchema.Version` 对账。
+
+```bash
+scripts/migrate-local-db.sh            # 就地升级本地库
+scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
+```
+
 ## 命名与书写规约
 
 - 文件名：`NNNN_vX_to_vY.sql`，`NNNN` 为递增序号，`X`/`Y` 为 `platform.schema_version` 版本号。
@@ -23,5 +33,6 @@
 | :--- | :--- |
 | `0001_v1_to_v2.sql` | `market.orders` 增加 `expires_at`（存量回填 `created_at + 30天`）与过期索引，schema_version 写入 2 |
 | `0002_v2_to_v3.sql` | `platform.compute_jobs` 增加 `lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，schema_version 写入 3 |
+| `0003_v3_to_v4.sql` | 新增 `social` schema 与 `friend_requests`/`friendships`/`parties`/`party_members`/`party_invitations`/`chat_messages` 六张表（传音频道与好友、组队社交），schema_version 写入 4 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

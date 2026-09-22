@@ -1,10 +1,10 @@
 namespace Server.Clean;
 
-/// <summary>schema v3 的一次性建库脚本，不迁移旧库。</summary>
+/// <summary>schema v4 的一次性建库脚本，不迁移旧库。</summary>
 public static class PostgresSchema
 {
     /// <summary>当前 schema 版本；与 platform.schema_version 表中的最大版本必须一致。</summary>
-    public const int Version = 3;
+    public const int Version = 4;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -12,6 +12,7 @@ public static class PostgresSchema
     CREATE SCHEMA IF NOT EXISTS game;
     CREATE SCHEMA IF NOT EXISTS economy;
     CREATE SCHEMA IF NOT EXISTS market;
+    CREATE SCHEMA IF NOT EXISTS social;
     CREATE SCHEMA IF NOT EXISTS platform;
 
     CREATE TABLE IF NOT EXISTS identity.accounts (
@@ -324,12 +325,69 @@ public static class PostgresSchema
     CREATE UNIQUE INDEX IF NOT EXISTS ux_compute_jobs_open
         ON platform.compute_jobs(player_id) WHERE status IN ('pending', 'leased');
 
+    CREATE TABLE IF NOT EXISTS social.friend_requests (
+        request_id uuid PRIMARY KEY,
+        requester_id uuid NOT NULL REFERENCES identity.players(player_id),
+        target_id uuid NOT NULL REFERENCES identity.players(player_id),
+        status varchar(16) NOT NULL CHECK (status IN ('pending', 'accepted', 'rejected', 'cancelled')),
+        created_at timestamptz NOT NULL,
+        updated_at timestamptz NOT NULL,
+        CHECK (requester_id <> target_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_friend_requests_pending
+        ON social.friend_requests(requester_id, target_id) WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS ix_friend_requests_target ON social.friend_requests(target_id, status);
+
+    CREATE TABLE IF NOT EXISTS social.friendships (
+        player_id uuid NOT NULL REFERENCES identity.players(player_id),
+        friend_id uuid NOT NULL REFERENCES identity.players(player_id),
+        created_at timestamptz NOT NULL,
+        PRIMARY KEY (player_id, friend_id),
+        CHECK (player_id <> friend_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS social.parties (
+        party_id uuid PRIMARY KEY,
+        leader_id uuid NOT NULL REFERENCES identity.players(player_id),
+        created_at timestamptz NOT NULL
+    );
+
+    -- 一名玩家最多属于一个队伍：player_id 直接作主键，天然互斥。
+    CREATE TABLE IF NOT EXISTS social.party_members (
+        player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        party_id uuid NOT NULL REFERENCES social.parties(party_id) ON DELETE CASCADE,
+        joined_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_party_members_party ON social.party_members(party_id);
+
+    -- 待处理的队伍邀请：每名玩家最多一条（被邀请人作主键），接受/拒绝/过期后清除。
+    CREATE TABLE IF NOT EXISTS social.party_invitations (
+        invitee_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
+        party_id uuid NOT NULL REFERENCES social.parties(party_id) ON DELETE CASCADE,
+        inviter_id uuid NOT NULL REFERENCES identity.players(player_id),
+        created_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_party_invitations_party ON social.party_invitations(party_id);
+
+    -- 传音消息：每个 (channel, scope_key) 作用域只保留最近 100 条，写入时同事务裁剪。
+    CREATE TABLE IF NOT EXISTS social.chat_messages (
+        message_id uuid PRIMARY KEY,
+        channel varchar(16) NOT NULL CHECK (channel IN ('world', 'nearby', 'friend', 'party')),
+        scope_key varchar(160) NOT NULL,
+        sender_id uuid NOT NULL REFERENCES identity.players(player_id),
+        sender_name varchar(64) NOT NULL,
+        body varchar(200) NOT NULL CHECK (char_length(body) > 0),
+        sent_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_chat_messages_scope
+        ON social.chat_messages(channel, scope_key, sent_at DESC, message_id DESC);
+
     CREATE TABLE IF NOT EXISTS platform.schema_version (
         version integer PRIMARY KEY,
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (3, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (4, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 

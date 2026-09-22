@@ -15,7 +15,7 @@ public sealed class DuelSimulationTests
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "fp");
 
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
-        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3.5), catalog);
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2.5), catalog);
 
         Assert.Equal(1, player.Duel.EncounterCharges);
         Assert.Contains(result.Events, entry => entry.Code == "duel.charge");
@@ -49,7 +49,7 @@ public sealed class DuelSimulationTests
         player.Duel.EncounterCharges = 1;
 
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog);
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1.5), catalog);
 
         var expedition = player.Actions[0].Expedition!;
         Assert.Equal(CombatExpeditionPhase.Combat, expedition.Phase);
@@ -140,7 +140,7 @@ public sealed class DuelSimulationTests
         player.Duel.CooldownUntilUnixSeconds = Baseline.AddHours(1).ToUnixTimeMilliseconds() / 1000d;
 
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1, PvpEnabled: true), Baseline, catalog.Actions);
-        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog, duel: new DuelAdvanceOptions(true));
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1.5), catalog, duel: new DuelAdvanceOptions(true));
 
         Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
         Assert.Equal(5, player.Duel.EncounterCharges);

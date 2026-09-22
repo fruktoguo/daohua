@@ -331,7 +331,10 @@ public sealed class PostgresAccountRepository(
 
     private static string NormalizeAccount(string value) => (value ?? string.Empty).Trim().ToLowerInvariant();
     private static string NormalizeDisplayName(string? value, string account) => string.IsNullOrWhiteSpace(value) ? account : value.Trim();
-    private static string NormalizeNameForLookup(string value) => value.Trim().ToUpperInvariant();
+    /// <summary>道号查重归一化口径：去首尾空白后转大写；好友检索必须与注册/改名使用同一口径。</summary>
+    /// <param name="value">原始道号。</param>
+    /// <returns>归一化后的查重键。</returns>
+    public static string NormalizeNameForLookup(string value) => value.Trim().ToUpperInvariant();
     private static AccountRegistrationResult FailureRegistration(string code, string message) => new(false, null, null, null, null, code, message);
     private static AccountLoginResult FailureLogin(string code, string message) => new(false, null, null, null, null, code, message);
 }

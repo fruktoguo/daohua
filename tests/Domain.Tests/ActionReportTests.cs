@@ -155,7 +155,7 @@ public sealed class ActionReportTests
         var player = CreatePlayer("甲");
         var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
 
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3.5), catalog);
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2.5), catalog);
 
         var report = player.Duel.ReportFor(action.Id);
         Assert.NotNull(report);

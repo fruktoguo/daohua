@@ -1699,7 +1699,7 @@ public sealed class PlayerLogBuffer(int capacity)
     {
         lock (_lock)
         {
-            if (_events.Count > 0 && _events[^1].Template == logEvent.Template)
+            if (_events.Count > 0 && _events[^1].Template == logEvent.Template && _events[^1].Channel == logEvent.Channel)
             {
                 var last = _events[^1];
                 _events[^1] = last with

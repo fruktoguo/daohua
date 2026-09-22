@@ -2,7 +2,7 @@
 
 > **文档状态**：目标架构基线（2026-08-27）。
 >
-> **权威性**：本文件定义本次一次性 clean-room 重写采用的持久化、恢复、容量和中间件边界。现有代码、旧物理表、旧快照载荷、旧 outbox、旧市场账本、旧 API/WebSocket 字段和旧部署拓扑均不是本方案的兼容约束；实现直接建立当前 **schema v3**（`PostgresSchema.Version = 3`）、清空本地内测数据并删除旧模型。
+> **权威性**：本文件定义本次一次性 clean-room 重写采用的持久化、恢复、容量和中间件边界。现有代码、旧物理表、旧快照载荷、旧 outbox、旧市场账本、旧 API/WebSocket 字段和旧部署拓扑均不是本方案的兼容约束；实现直接建立当前 **schema v4**（`PostgresSchema.Version = 4`）、清空本地内测数据并删除旧模型。
 >
 > **重要说明**：本文是从业务不变量、故障模型、容量预算和运维成本重新推导出的方案。若最终选出的 PostgreSQL、.NET 或单写者模型与当前代码碰巧相同，只代表它们在约束下仍是最优解，不代表继承了旧表、旧载荷或旧调用链。项目既定的层级边界（`Domain` 纯领域、`Protocol` 纯协议、`Server` 宿主、`ComputeNode` 只做冷挂机补算）属于产品硬约束，不是历史兼容层。
 
@@ -44,7 +44,7 @@
 | 容量 | 在 `2c4g/40g` 主机上支持 5000+ 注册账号、100+ 持续收发、500+ 峰值收发和 2000+ 冷挂机补算。 |
 | 硬盘 | 不保存 WebSocket 帧、聊天消息、心跳、战斗 Tick、逐请求日志或每次状态变化历史；本地日志、WAL、队列和归档都有硬上限。 |
 | 扩展性 | section、资产、市场和外部副作用有独立边界；未来可以增加 section 或独立读模型，不需要重写整张玩家表。 |
-| 兼容性 | 当前内测直接采用 schema v3 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级仅由 `migrations/` 独立 SQL 脚本人工显式执行。 |
+| 兼容性 | 当前内测直接采用 schema v4 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级仅由 `migrations/` 独立 SQL 脚本人工显式执行。 |
 
 ### 2. 明确不在本次持久化范围的内容
 
@@ -170,7 +170,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 成交立即入账；领取只保存 `market.settlement_claims` 确认游标，不再次转账。`deploy/market-ledger-archive.sh` 维护按月 RANGE 分区的归档表，热表与归档表应区分描述。
 
-该结构使用 schema v3，一次性初始化新库；不提供旧版本（v1/v2）的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。v3 相对 v2 增加 `platform.compute_jobs` 租约字段（`lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，见 `migrations/0002_v2_to_v3.sql`）以及节点公共建筑表 `game.node_buildings`。
+该结构使用 schema v4，一次性初始化新库；不提供旧版本（v1/v2/v3）的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。v3 相对 v2 增加 `platform.compute_jobs` 租约字段（`lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，见 `migrations/0002_v2_to_v3.sql`）以及节点公共建筑表 `game.node_buildings`；v4 相对 v3 新增 `social` schema 与好友/队伍/队伍邀请/传音消息六张表（见 `migrations/0003_v3_to_v4.sql`）。
 
 唯一装备实例交易尚未实现：现有 `economy.player_asset_instances` 与 reservation 的 `instance_id` 仅为 DDL 设计，当前交易按可堆叠资产和 variant 结算，不能宣称已支持唯一装备冻结、转移和退款。
 
@@ -189,6 +189,19 @@ OTel/结构化日志 ───────────► 远端观测平台
 2. `ComputeDispatcherWorker` 以 `FOR UPDATE SKIP LOCKED` 批量领取到期任务（含租约过期的孤儿 leased 行），组装 `AdvanceBatchRequest` 携带 `X-Compute-Token` 与游戏数据指纹 POST 到 `ComputeNode:Endpoints`。
 3. 每个 `AdvanceJobResult` 成功时经 `PostgresSectionRepository.ApplyComputeResultAsync` 落库：先锁提交头并要求 `state_version == SourceStateVersion`，玩家已上线或版本漂移则整体丢弃结果并记日志，绝不覆盖在线写者；随后更新 section 与提交头（同一加锁顺序，与刷盘 worker 无死锁环）。
 4. 失败语义：节点返回 Retryable 失败或响应缺失按指数退避重试；载荷非法、输出污染等不可重试错误直接置 `dead`；HTTP/网络层失败按租约令牌整批退回 pending；领取次数超过 `ComputeNode:MaxAttempts` 一律 dead。`ComputeNode:Endpoints/Token` 未配置时派发器与扫描器安全停用，任务保留 pending，主服务不做内联补算。
+
+### 6. social：好友、队伍与传音
+
+| 表 | 关键字段 | 约束与用途 |
+| --- | --- | --- |
+| social.friend_requests | request_id, requester_id, target_id, status, created_at, updated_at | 好友申请状态机（pending/accepted/rejected/cancelled）；`(requester_id, target_id)` 的部分唯一索引只约束 pending，防止同向重复申请堆积。 |
+| social.friendships | player_id, friend_id, created_at | 双向好友关系（接受申请时同事务写两行，解除时删两行）；主键 `(player_id, friend_id)`，禁止自友。 |
+| social.parties | party_id, leader_id, created_at | 队伍与队长；成员全部离开后由调用方删除空队记录。 |
+| social.party_members | player_id, party_id, joined_at | 一名玩家最多属于一个队伍：`player_id` 直接作主键天然互斥；队伍删除时级联清理。 |
+| social.party_invitations | invitee_id, party_id, inviter_id, created_at | 待处理队伍邀请，每名玩家最多一条（`invitee_id` 作主键）；接受/拒绝后清除，队伍删除时级联清理。 |
+| social.chat_messages | message_id, channel, scope_key, sender_id, sender_name, body, sent_at | 传音消息（channel ∈ world/nearby/friend/party）；写入时同事务裁剪，**每个 `(channel, scope_key)` 作用域只保留最近 100 条**，无历史归档与分页接口。 |
+
+作用域键口径：世界为空串（全局共享 100 条）、附近为地图节点 ID、好友为双方玩家 ID 升序拼接、队伍为队伍 ID。聊天与社交**不进入玩家聚合**，由独立单例运行时（`ChatRuntime` / `SocialRuntime`）串行处理，避免跨玩家写者锁互相阻塞。
 
 ---
 
@@ -606,14 +619,14 @@ payload
 
 这是本次 clean-room 重写的一次性实施顺序，不保留旧路径：
 
-1. 冻结本文档的 schema v3、section 编号、协议字段和事务不变量。
-2. 新建 identity/game/economy/market/platform schema 与索引，清空本地旧数据。
+1. 冻结本文档的 schema v4、section 编号、协议字段和事务不变量。
+2. 新建 identity/game/economy/market/social/platform schema 与索引，清空本地旧数据。
 3. 删除旧的整玩家 Blob、旧市场账本 Blob、旧 outbox 适配和旧协议对象；实现新的 section/资产/市场/queue/outbox 适配。
 4. 在 `PlayerActor` 单写者安全点接入 section 编码和 latest-only queue；Worker 以版本条件提交和删除。
 5. 实现资产/市场同事务、幂等键、fence token、审计和错误证据。
 6. 接入 PostgreSQL WAL/pgBackRest/COS 归档，完成 PITR 和磁盘保护演练。
 7. 运行领域确定性测试、数据库集成测试、崩溃恢复、重复请求、并发成交、队列堆积、磁盘接近满和 capacity-target 门禁。
-8. 只有在上述门禁通过后，才把 schema v3 视为当前唯一生产基线；旧实现不再参与运行。
+8. 只有在上述门禁通过后，才把 schema v4 视为当前唯一生产基线；旧实现不再参与运行。
 
 ---
 

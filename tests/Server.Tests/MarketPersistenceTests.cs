@@ -22,10 +22,9 @@ public sealed class MarketPersistenceTests
     [Trait("Category", "PostgresIntegration")]
     public async Task PartialTradeTaxAndExpirationAreDurableAtomicAndIdempotent()
     {
-        var connectionString = Environment.GetEnvironmentVariable("DAOHUA_MARKET_TEST_CONNECTION")
-            ?? throw new InvalidOperationException("市场集成测试需要专用 PostgreSQL 库：DAOHUA_MARKET_TEST_CONNECTION。");
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场集成测试");
         await using var source = NpgsqlDataSource.Create(connectionString);
-        await Sql(source, PostgresSchema.Sql);
+        await PostgresTestSchema.EnsureAsync(source);
         var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Storage:ConnectionString"] = connectionString,

@@ -1,5 +1,8 @@
 import type { LogEvent } from '../game/types'
 
+/** 日志分组频道（与服务端 Protocol.LogChannels 严格一致） */
+export type LogChannel = 'system' | 'combat'
+
 /** 日志模板引用标记的实体类别（{{kind:id|label}} 中的 kind） */
 export type LogReferenceKind =
   | 'item'
@@ -28,6 +31,8 @@ export interface StoredGameLog {
   sequence: number
   /** 语义模板文本（含 {{kind:id|label}} 引用标记） */
   template: string
+  /** 日志分组频道（system/combat） */
+  channel: LogChannel
   /** 服务端侧已折叠的重复次数 */
   count?: number
 }
@@ -122,7 +127,7 @@ export function collapseLogEntries(entries: readonly StoredGameLog[]): GameLogEn
   for (const entry of entries) {
     const entryCount = typeof entry.count === 'number' && entry.count > 0 ? entry.count : 1
     const last = collapsed[collapsed.length - 1]
-    if (last && last.template === entry.template) {
+    if (last && last.template === entry.template && last.channel === entry.channel) {
       last.count += entryCount
       last.latestTimestampMs = Math.max(last.latestTimestampMs, entry.timestampMs)
     } else {
@@ -158,8 +163,17 @@ function eventToStored(playerId: string, event: LogEvent): StoredGameLog {
     timestampMs: event.timestampUnixMilliseconds,
     sequence: event.sequence,
     template: event.template,
+    channel: event.channel === 'combat' ? 'combat' : 'system',
     count: event.count ?? 1,
   }
+}
+
+/**
+ * 按日志分组频道筛选折叠后的日志条目。
+ * 综合分组不消费日志事件（只合并系统日志与好友/队伍传音），因此这里只服务「系统」与「战斗」两个分组。
+ */
+export function filterLogEntries(entries: readonly GameLogEntry[], channel: LogChannel): GameLogEntry[] {
+  return entries.filter(entry => entry.channel === channel)
 }
 
 /**
@@ -223,7 +237,7 @@ class GameLogService {
       received += 1
 
       const last = this.collapsedEntries[this.collapsedEntries.length - 1]
-      if (last && last.template === entry.template) {
+      if (last && last.template === entry.template && last.channel === entry.channel) {
         last.count += 1
         last.latestTimestampMs = Math.max(last.latestTimestampMs, entry.timestampMs)
       } else {

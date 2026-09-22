@@ -243,15 +243,9 @@ public sealed class ComputeJobRepositoryTests
 
     private static async Task<(NpgsqlDataSource Source, PostgresComputeJobRepository Repository)> OpenRepositoryAsync()
     {
-        var connectionString = Environment.GetEnvironmentVariable("DAOHUA_MARKET_TEST_CONNECTION")
-            ?? throw new InvalidOperationException("冷挂机仓库集成测试需要专用 PostgreSQL 库：DAOHUA_MARKET_TEST_CONNECTION。");
+        var connectionString = PostgresTestSchema.RequireConnectionString("冷挂机仓库集成测试");
         var source = NpgsqlDataSource.Create(connectionString);
-        // 多个集成测试类并行建库时 DDL 可能互相死锁，重试一次即可。
-        try { await SqlAsync(source, PostgresSchema.Sql); }
-        catch (PostgresException exception) when (exception.SqlState is "40P01" or "40001")
-        {
-            await SqlAsync(source, PostgresSchema.Sql);
-        }
+        await PostgresTestSchema.EnsureAsync(source);
         return (source, new PostgresComputeJobRepository(source));
     }
 

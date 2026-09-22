@@ -190,6 +190,6 @@ src/Domain/
 
 - [commercial-persistence-architecture.md](commercial-persistence-architecture.md)
 
-当前持久化基线为 **schema v3**（`PostgresSchema.Sql` 直建）；不保留旧表、旧载荷、双读双写或兼容适配。
+当前持久化基线为 **schema v4**（`PostgresSchema.Sql` 直建）；不保留旧表、旧载荷、双读双写或兼容适配。
 
 领域层仍只负责生成可持久化的纯数据投影；数据库连接、事务、压缩、重试、备份和 Redis（若未来经过门槛引入）均属于 Server 基础设施边界。

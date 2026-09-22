@@ -27,9 +27,10 @@ public static class SimulationLogMapper
         {
             var simulationEvent = events[i];
             var template = ToTemplate(simulationEvent, gameData);
+            var channel = LogChannels.FromEventCode(simulationEvent.Code);
             var timestamp = simulationEvent.At.ToUnixTimeMilliseconds();
 
-            if (result.Count > 0 && result[^1].Template == template)
+            if (result.Count > 0 && result[^1].Template == template && result[^1].Channel == channel)
             {
                 var last = result[^1];
                 result[^1] = last with
@@ -45,7 +46,8 @@ public static class SimulationLogMapper
                     buffer.NextSequence(),
                     timestamp,
                     template,
-                    1);
+                    1,
+                    channel);
                 result.Add(logEvent);
             }
         }

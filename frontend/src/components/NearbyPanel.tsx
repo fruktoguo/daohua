@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
+import { useSocialStore } from '../game/socialStore'
 import { useT } from '../i18n'
 import type { BuildingDefinition, NearbyMonsterDefinition } from '../game/types'
 import { resolveItemMetadata } from '../game/ids'
@@ -115,6 +116,7 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const stats = useGameStore(state => state.stats)
   const buildingCatalog = useGameStore(state => state.buildings)
   const inventory = useGameStore(state => state.inventory)
+  const nearbyPlayers = useSocialStore(state => state.nearbyPlayers)
   const [buildPickerOpen, setBuildPickerOpen] = useState(false)
   const [detailBuildingId, setDetailBuildingId] = useState<string | null>(null)
   const [contributeBuildingId, setContributeBuildingId] = useState<string | null>(null)
@@ -129,6 +131,8 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
   const onEdge = world.edgeId !== null
   const nodeBuildings = world.nodeBuildings ?? []
   const buildableIds = world.buildableBuildingIds ?? null
+  // 同节点在线修士来自服务端社交状态（含自己），这里排除自己后作为「附近修士」列表展示。
+  const otherPlayers = nearbyPlayers.filter(player => player.playerId !== playerId)
 
   // 背包材料存量（itemId → 数量），供材料提交输入框上限使用。
   const inventoryAmounts = useMemo(() => {
@@ -258,7 +262,25 @@ export const NearbyPanel = memo(function NearbyPanel({ tab }: { tab: NearbyTab }
                     <small>{t('combat.nearby.you', { id: playerId.slice(0, 8) })}</small>
                   </div>
                 </article>
-                <p className="nearby-empty">{t('combat.nearby.noPlayers')}</p>
+                {otherPlayers.map(player => (
+                  <article className="nearby-card is-player" key={player.playerId}>
+                    <span className="nearby-mark">{t('combat.nearby.markPlayer')}</span>
+                    <div>
+                      <strong>{player.displayName}</strong>
+                      <span className="nearby-player-actions">
+                        <button
+                          onClick={() => gameClient.sendSocialAction('friend.request', player.playerId)}
+                          type="button"
+                        >{t('combat.chat.addFriendAction')}</button>
+                        <button
+                          onClick={() => gameClient.sendSocialAction('party.invite', player.playerId)}
+                          type="button"
+                        >{t('combat.chat.partyInvite')}</button>
+                      </span>
+                    </div>
+                  </article>
+                ))}
+                {otherPlayers.length === 0 && <p className="nearby-empty">{t('combat.nearby.noPlayers')}</p>}
               </div>
             </section>
           </>

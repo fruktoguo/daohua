@@ -34,7 +34,37 @@ public sealed class SimulationLogMapperTests
         Assert.Equal(1, events[0].Sequence);
         Assert.Equal(1_724_800_000_000, events[0].TimestampUnixMilliseconds);
         Assert.Equal("完成行动 {{action:gather.spirit-grass|采集灵草}}，获得 {{item:item.spirit-grass|灵草|2.5}}", events[0].Template);
+        Assert.Equal(LogChannels.System, events[0].Channel);
         Assert.Single(buffer.SnapshotRecent());
+    }
+
+    /// <summary>战斗事件码归入战斗分组，其余归入系统分组；相同模板跨频道不折叠。</summary>
+    [Fact]
+    public void CombatEventCodes_AreClassifiedIntoCombatChannelAndDoNotCollapseAcrossChannels()
+    {
+        var gameData = BuildCatalog();
+        var buffer = new PlayerLogBuffer(200);
+        var at = DateTimeOffset.FromUnixTimeMilliseconds(1_724_800_000_000);
+        var events = new List<SimulationEvent>
+        {
+            new(at, "combat.started", "遭遇妖兽：裂隙魔狼。", new ActionId("combat.hunt")),
+            new(at.AddSeconds(1), "combat.attack", "青云子命中裂隙魔狼，造成 12 点伤害。", new ActionId("combat.hunt")),
+            new(at.AddSeconds(2), "combat.won", "讨伐成功。", new ActionId("combat.hunt")),
+            new(at.AddSeconds(3), "duel.won", "斗法取胜。", new ActionId("combat.hunt")),
+            new(at.AddSeconds(4), "action.completed", "吐纳炼气", new ActionId("cultivation.draw-qi")),
+            new(at.AddSeconds(5), "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。", null),
+        };
+
+        var mapped = SimulationLogMapper.ToLogEvents(events, gameData, buffer);
+
+        Assert.Equal(6, mapped.Count);
+        Assert.Equal(LogChannels.Combat, mapped[0].Channel);
+        Assert.Equal(LogChannels.Combat, mapped[1].Channel);
+        Assert.Equal(LogChannels.Combat, mapped[2].Channel);
+        // 斗法撮合与结算按口径归入系统分组。
+        Assert.Equal(LogChannels.System, mapped[3].Channel);
+        Assert.Equal(LogChannels.System, mapped[4].Channel);
+        Assert.Equal(LogChannels.System, mapped[5].Channel);
     }
     /// <summary>无产出的完成事件不拼奖励段；未注册的事件码回退为原始消息文本。</summary>
 

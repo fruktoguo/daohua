@@ -94,6 +94,11 @@ public sealed class SessionRegistry
     public int Count => _sessions.Count;
     /// <summary>在线会话玩家 ID 快照（本地运维面板只读视图）。</summary>
     public IReadOnlyList<Guid> SnapshotPlayerIds() => _sessions.Keys.ToArray();
+    /// <summary>按玩家 ID 取出当前在线会话；不在线时返回 false（传音广播收件人解析）。</summary>
+    /// <param name="playerId">玩家唯一标识。</param>
+    /// <param name="session">命中的在线会话。</param>
+    /// <returns>命中返回 true。</returns>
+    public bool TryGet(Guid playerId, out WebSocketSession session) => _sessions.TryGetValue(playerId, out session!);
     /// <summary>
     /// 互斥语义登记：玩家无在线会话时登记成功；已有在线会话时返回 false，调用方负责拒绝新连接。
     /// </summary>
@@ -179,6 +184,10 @@ public static class WebSocketEndpoint
         var admission = context.RequestServices.GetRequiredService<AntiMultiOpen.AntiMultiOpenAdmission>();
         var runtime = context.RequestServices.GetRequiredService<PlayerRuntime>();
         var gameData = context.RequestServices.GetRequiredService<Domain.GameData.GameDataCatalog>();
+        var sessions = context.RequestServices.GetRequiredService<SessionRegistry>();
+        var chat = context.RequestServices.GetRequiredService<Social.ChatRuntime>();
+        var social = context.RequestServices.GetRequiredService<Social.SocialRuntime>();
+        var presence = context.RequestServices.GetRequiredService<Social.OnlinePresenceRegistry>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("WebSocketEndpoint");
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var session = new WebSocketSession(playerId, options.WebSocketOutboundCapacity);
@@ -187,10 +196,12 @@ public static class WebSocketEndpoint
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
         var token = linked.Token;
-        ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot)
+        async ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot)
         {
-            if (snapshot.PlayerId != session.PlayerId) return ValueTask.CompletedTask;
-            return QueueJsonAsync(
+            if (snapshot.PlayerId != session.PlayerId) return;
+            // 权威位置随快照推进：换节点会触发同节点修士的附近列表刷新。
+            await presence.UpdateNodeAsync(snapshot.PlayerId, snapshot.State.World.NodeId, token);
+            await QueueJsonAsync(
                 session,
                 WireMessageType.SnapshotDelta,
                 Guid.NewGuid(),
@@ -200,12 +211,19 @@ public static class WebSocketEndpoint
         ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events) => eventPlayerId != session.PlayerId
             ? ValueTask.CompletedTask
             : QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(events), token);
+        async ValueTask OnSocialStateChanged(Guid eventPlayerId)
+        {
+            if (eventPlayerId != session.PlayerId) return;
+            var state = await social.BuildStateAsync(session.PlayerId, null, token);
+            await QueueJsonAsync(session, WireMessageType.SocialState, Guid.NewGuid(), state, token);
+        }
         runtime.SnapshotUpdated += OnSnapshotUpdated;
         runtime.LogBatchEmitted += OnLogBatchEmitted;
+        social.StateChanged += OnSocialStateChanged;
         try
         {
             var sendTask = SendLoopAsync(socket, session, token);
-            var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger);
+            var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions);
             await Task.WhenAny(sendTask, receiveTask);
             // 服务端主动终止路径（被顶替/准入拒绝）：先冲刷通知帧再发关闭帧。
             // 顺序硬约束：取消令牌会中止阻塞中的 ReceiveAsync 并把 socket 置为 Aborted，
@@ -234,8 +252,16 @@ public static class WebSocketEndpoint
         {
             runtime.SnapshotUpdated -= OnSnapshotUpdated;
             runtime.LogBatchEmitted -= OnLogBatchEmitted;
+            social.StateChanged -= OnSocialStateChanged;
             // 会话释放按实例配对：被顶替的旧会话返回 false，不得触碰新会话已加载的 Actor。
             var owned = admission.Release(session);
+            // 在线存在感以玩家为键：只有仍是当前会话的持有者才能摘除登记，
+            // 否则被顶替的旧会话拆除时会把新会话的存在感一起抹掉。
+            if (owned)
+            {
+                try { await presence.UnregisterAsync(playerId, CancellationToken.None); }
+                catch (Exception exception) { logger.LogError(exception, "在线存在感注销失败 playerId={PlayerId}", playerId); }
+            }
             // 兜底关闭：主流程未发出关闭帧时（如发送循环异常）仍尝试按 CloseHint 收尾。
             if (session.CloseHint is { } closeHint && socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
@@ -277,11 +303,16 @@ public static class WebSocketEndpoint
         AntiMultiOpen.AntiMultiOpenAdmission admission,
         ServerOptions options,
         CancellationToken cancellationToken,
-        ILogger logger)
+        ILogger logger,
+        Social.ChatRuntime chat,
+        Social.SocialRuntime social,
+        Social.OnlinePresenceRegistry presence,
+        SessionRegistry sessions)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(options.MaxWebSocketMessageBytes, 64 * 1024));
         long lastInboundSequence = 0;
         var handshaken = false;
+        var displayName = string.Empty;
         try
         {
             while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
@@ -356,6 +387,7 @@ public static class WebSocketEndpoint
                             new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence,
                                 new AntiMultiOpenConfigDto(options.AntiMultiOpen.TabGuardEnabled))), cancellationToken);
                         var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
+                        displayName = initial.DisplayName;
                         var initialSnapshot = ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData);
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
                         session.ExchangeAssetBaseline(initialSnapshot.Assets);
@@ -364,6 +396,17 @@ public static class WebSocketEndpoint
                         var recentLogs = runtime.GetRecentLogEvents(session.PlayerId);
                         if (recentLogs.Count > 0)
                             await QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(recentLogs), cancellationToken);
+                        // 在线存在感登记：世界/附近广播与好友在线状态都依赖它。
+                        await presence.RegisterAsync(session.PlayerId, displayName, initial.State.World.NodeId, cancellationToken);
+                        await QueueJsonAsync(session, WireMessageType.SocialState, Guid.NewGuid(),
+                            await social.BuildStateAsync(session.PlayerId, null, cancellationToken), cancellationToken);
+                        // 握手时只回放世界与附近两个「无参数」频道；好友私聊与队伍频道由客户端按需请求。
+                        foreach (var channel in new[] { ChatChannels.World, ChatChannels.Nearby })
+                        {
+                            var history = await chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(channel), cancellationToken);
+                            if (history is not null)
+                                await QueueJsonAsync(session, WireMessageType.ChatHistory, Guid.NewGuid(), history, cancellationToken);
+                        }
                         handshaken = true;
                         break;
                     case WireMessageType.Ping:
@@ -449,6 +492,73 @@ public static class WebSocketEndpoint
                             JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(commandResult.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
                         await QueueJsonAsync(session, WireMessageType.CommandResult, envelope.RequestId, commandDto, cancellationToken);
                         break;
+                    case WireMessageType.ChatSend:
+                        if (!handshaken)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        if (!WireEnvelopeCodec.TryDeserializeJson<ChatSendDto>(envelope, out var chatSend) || chatSend is null
+                            || !Guid.TryParse(chatSend.RequestId, out var chatRequestId) || chatRequestId != envelope.RequestId)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_CHAT", "传音载荷无效。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        var chatOutcome = await chat.SendAsync(session.PlayerId, displayName, chatSend, cancellationToken);
+                        if (chatOutcome.Status != Social.ChatSendStatus.Ok)
+                        {
+                            var (chatErrorCode, chatErrorMessage) = chatOutcome.Status switch
+                            {
+                                Social.ChatSendStatus.RateLimited => ("CHAT_RATE_LIMITED", "发言过于频繁，请稍后再试。"),
+                                Social.ChatSendStatus.InvalidBody => ("CHAT_INVALID_BODY", "消息内容为空或超过长度上限。"),
+                                _ => ("CHAT_CHANNEL_UNAVAILABLE", "该传音频道当前不可用。")
+                            };
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto(chatErrorCode, chatErrorMessage, envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        BroadcastChat(sessions, chatOutcome);
+                        break;
+                    case WireMessageType.ChatHistoryRequest:
+                        if (!handshaken)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        if (!WireEnvelopeCodec.TryDeserializeJson<ChatHistoryRequestDto>(envelope, out var historyRequest) || historyRequest is null)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_CHAT_HISTORY", "历史回放请求无效。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        var historyPayload = await chat.LoadHistoryAsync(session.PlayerId, historyRequest, cancellationToken);
+                        if (historyPayload is null)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("CHAT_CHANNEL_UNAVAILABLE", "该传音频道当前不可用。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        await QueueJsonAsync(session, WireMessageType.ChatHistory, envelope.RequestId, historyPayload, cancellationToken);
+                        break;
+                    case WireMessageType.SocialAction:
+                        if (!handshaken)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        if (!WireEnvelopeCodec.TryDeserializeJson<SocialActionDto>(envelope, out var socialAction) || socialAction is null
+                            || !Guid.TryParse(socialAction.RequestId, out var socialRequestId) || socialRequestId != envelope.RequestId)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_SOCIAL", "社交指令载荷无效。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        var socialOutcome = await social.ApplyAsync(session.PlayerId, socialAction, cancellationToken);
+                        if (!socialOutcome.Success)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId,
+                                new ErrorDto(SocialErrorCode(socialOutcome.Failure), SocialErrorMessage(socialOutcome.Failure), envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        await QueueJsonAsync(session, WireMessageType.SocialState, envelope.RequestId,
+                            await social.BuildStateAsync(session.PlayerId, envelope.RequestId.ToString("D"), cancellationToken), cancellationToken);
+                        break;
                     default:
                         await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("UNSUPPORTED_MESSAGE", "不支持的消息类型。"), cancellationToken);
                         break;
@@ -460,6 +570,59 @@ public static class WebSocketEndpoint
         finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
+    /// <summary>
+    /// 把一条已落库的传音消息投递给作用域内全部在线会话。
+    /// 投递走非阻塞 <see cref="WebSocketSession.TrySend"/>：慢客户端不能反向阻塞发言者的接收循环，
+    /// 掉帧可由频道历史回放（最近 100 条）在重连或切频道时补齐。
+    /// </summary>
+    private static void BroadcastChat(SessionRegistry sessions, Social.ChatSendOutcome outcome)
+    {
+        if (outcome.Message is not { } message || outcome.Recipients is not { Count: > 0 } recipients) return;
+        foreach (var recipientId in recipients)
+        {
+            if (!sessions.TryGet(recipientId, out var target)) continue;
+            target.TrySend(EncodeJson(WireMessageType.ChatMessage, Guid.NewGuid(), target.NextOutboundSequence(), message));
+        }
+    }
+
+    /// <summary>社交失败原因到协议错误码的映射。</summary>
+    private static string SocialErrorCode(Social.SocialFailure failure) => failure switch
+    {
+        Social.SocialFailure.InvalidAction => "SOCIAL_INVALID_ACTION",
+        Social.SocialFailure.TargetNotFound => "SOCIAL_TARGET_NOT_FOUND",
+        Social.SocialFailure.SelfTarget => "SOCIAL_SELF_TARGET",
+        Social.SocialFailure.AlreadyFriends => "SOCIAL_ALREADY_FRIENDS",
+        Social.SocialFailure.NotFriends => "SOCIAL_NOT_FRIENDS",
+        Social.SocialFailure.RequestExists => "SOCIAL_REQUEST_EXISTS",
+        Social.SocialFailure.RequestNotFound => "SOCIAL_REQUEST_NOT_FOUND",
+        Social.SocialFailure.TargetAlreadyInParty => "SOCIAL_TARGET_IN_PARTY",
+        Social.SocialFailure.AlreadyInParty => "SOCIAL_ALREADY_IN_PARTY",
+        Social.SocialFailure.NotInParty => "SOCIAL_NOT_IN_PARTY",
+        Social.SocialFailure.PartyFull => "SOCIAL_PARTY_FULL",
+        Social.SocialFailure.NotLeader => "SOCIAL_NOT_LEADER",
+        Social.SocialFailure.InvitationNotFound => "SOCIAL_INVITATION_NOT_FOUND",
+        _ => "SOCIAL_FAILED"
+    };
+
+    /// <summary>社交失败原因到用户可读文案的映射。</summary>
+    private static string SocialErrorMessage(Social.SocialFailure failure) => failure switch
+    {
+        Social.SocialFailure.InvalidAction => "不支持的社交指令。",
+        Social.SocialFailure.TargetNotFound => "目标修士不存在。",
+        Social.SocialFailure.SelfTarget => "不能对自己执行该操作。",
+        Social.SocialFailure.AlreadyFriends => "你们已经是好友。",
+        Social.SocialFailure.NotFriends => "你们还不是好友。",
+        Social.SocialFailure.RequestExists => "已存在待处理的好友申请。",
+        Social.SocialFailure.RequestNotFound => "好友申请不存在或已处理。",
+        Social.SocialFailure.TargetAlreadyInParty => "对方已在其他队伍中。",
+        Social.SocialFailure.AlreadyInParty => "你已经在队伍中。",
+        Social.SocialFailure.NotInParty => "你当前不在队伍中。",
+        Social.SocialFailure.PartyFull => "队伍人数已满。",
+        Social.SocialFailure.NotLeader => "只有队长可以邀请队友。",
+        Social.SocialFailure.InvitationNotFound => "没有待处理的队伍邀请。",
+        _ => "社交操作失败。"
+    };
+
     private static ValueTask QueueJsonAsync<T>(
         WebSocketSession session,
         WireMessageType messageType,
@@ -468,10 +631,11 @@ public static class WebSocketEndpoint
         CancellationToken cancellationToken)
     {
         var packet = EncodeJson(messageType, requestId, session.NextOutboundSequence(), payload);
-        // Snapshot 增量与战报日志属于可丢弃的实时推送，慢客户端不能反向阻塞玩家模拟/持久化。
-        // 队列已满时丢弃该帧，客户端可通过下一次命令响应或重连重新获取完整快照与最近日志；
-        // 命令结果、错误和握手响应仍保留等待语义，确保关键协议不静默丢失。
-        if (messageType is WireMessageType.SnapshotDelta or WireMessageType.LogBatch)
+        // Snapshot 增量、战报日志与传音/社交推送属于可丢弃的实时推送，慢客户端不能反向阻塞玩家模拟/持久化。
+        // 队列已满时丢弃该帧，客户端可通过下一次命令响应、频道历史回放或重连重新获取完整快照、最近日志与社交状态；
+        // 命令结果、错误、握手响应与历史回放仍保留等待语义，确保关键协议不静默丢失。
+        if (messageType is WireMessageType.SnapshotDelta or WireMessageType.LogBatch
+            or WireMessageType.ChatMessage or WireMessageType.SocialState)
         {
             session.TrySend(packet);
             return ValueTask.CompletedTask;

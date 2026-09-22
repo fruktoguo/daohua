@@ -50,6 +50,18 @@ export const WireMessageType = {
   CommandResult: 16,
   /** 战报日志事件批次推送 */
   LogBatch: 17,
+  /** 客户端传音发言 */
+  ChatSend: 18,
+  /** 服务端广播的单条传音消息 */
+  ChatMessage: 19,
+  /** 服务端回放频道最近 100 条传音 */
+  ChatHistory: 20,
+  /** 客户端社交指令（好友申请/队伍邀请等） */
+  SocialAction: 21,
+  /** 服务端下发社交状态（好友/申请/队伍/附近修士） */
+  SocialState: 22,
+  /** 客户端请求频道历史回放 */
+  ChatHistoryRequest: 23,
 } as const
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
 
@@ -263,11 +275,155 @@ export interface LogEventDto {
   template: string
   /** 服务端侧已折叠的重复次数 */
   count?: number
+  /** 日志分组频道：`system`（系统）或 `combat`（战斗），缺省视为 `system` */
+  channel?: LogChannel
 }
+
+/** 日志分组频道（服务端 LogEventDto.channel） */
+export type LogChannel = 'system' | 'combat'
+
+/** 日志分组频道标识，与服务端 LogChannels 严格一致 */
+export const LogChannel = {
+  /** 系统分组 */
+  System: 'system',
+  /** 战斗分组 */
+  Combat: 'combat',
+} as const
 
 /** LogBatch 日志批次推送载荷 */
 export interface LogBatchDto {
   events: LogEventDto[]
+}
+
+/** 传音频道标识，与服务端 ChatChannels 严格一致 */
+export const ChatChannel = {
+  /** 世界频道（全服在线修士） */
+  World: 'world',
+  /** 附近频道（同一地图节点在线修士） */
+  Nearby: 'nearby',
+  /** 好友私聊频道 */
+  Friend: 'friend',
+  /** 队伍频道 */
+  Party: 'party',
+  /** 宗门频道（占位未开放） */
+  Sect: 'sect',
+} as const
+export type ChatChannel = (typeof ChatChannel)[keyof typeof ChatChannel]
+
+/** ChatSend 传音发言请求载荷 */
+export interface ChatSendDto {
+  /** 请求唯一标识 */
+  requestId: string
+  /** 目标频道标识 */
+  channel: ChatChannel
+  /** 消息正文 */
+  body: string
+  /** 好友频道私聊对象玩家 ID */
+  targetPlayerId?: string | null
+}
+
+/** 单条传音消息 */
+export interface ChatMessageDto {
+  messageId: string
+  channel: ChatChannel
+  /** 频道作用域键 */
+  scopeKey: string
+  senderId: string
+  senderName: string
+  body: string
+  sentAtUnixMilliseconds: number
+}
+
+/** ChatHistory 频道历史回放载荷 */
+export interface ChatHistoryDto {
+  channel: ChatChannel
+  scopeKey: string
+  /** 好友频道的私聊对象玩家 ID；其余频道为 null */
+  targetPlayerId?: string | null
+  messages: ChatMessageDto[]
+}
+
+/** ChatHistoryRequest 频道历史回放请求载荷 */
+export interface ChatHistoryRequestDto {
+  channel: ChatChannel
+  targetPlayerId?: string | null
+}
+
+/** 社交动作标识，与服务端 SocialActions 严格一致 */
+export const SocialAction = {
+  FriendRequest: 'friend.request',
+  FriendAccept: 'friend.accept',
+  FriendReject: 'friend.reject',
+  FriendRemove: 'friend.remove',
+  PartyInvite: 'party.invite',
+  PartyAccept: 'party.accept',
+  PartyDecline: 'party.decline',
+  PartyLeave: 'party.leave',
+} as const
+export type SocialAction = (typeof SocialAction)[keyof typeof SocialAction]
+
+/** SocialAction 社交指令请求载荷 */
+export interface SocialActionDto {
+  requestId: string
+  action: SocialAction
+  /** 目标玩家 ID；接受/拒绝队伍邀请时忽略 */
+  targetPlayerId?: string | null
+  /** 目标道号；仅在好友申请且未提供 targetPlayerId 时用于检索 */
+  targetName?: string | null
+}
+
+/** 好友条目 */
+export interface FriendDto {
+  playerId: string
+  displayName: string
+  online: boolean
+}
+
+/** 好友申请条目 */
+export interface FriendRequestDto {
+  requestId: string
+  playerId: string
+  displayName: string
+  createdAtUnixMilliseconds: number
+}
+
+/** 队伍成员条目 */
+export interface PartyMemberDto {
+  playerId: string
+  displayName: string
+  online: boolean
+}
+
+/** 队伍状态 */
+export interface PartyDto {
+  partyId: string
+  leaderId: string
+  members: PartyMemberDto[]
+}
+
+/** 同节点在线修士条目 */
+export interface NearbyPlayerDto {
+  playerId: string
+  displayName: string
+}
+
+/** 待处理的队伍邀请条目 */
+export interface PartyInvitationDto {
+  partyId: string
+  inviterId: string
+  inviterName: string
+}
+
+/** SocialState 社交状态下发载荷 */
+export interface SocialStateDto {
+  /** 关联的社交指令请求 ID；主动推送时为 null */
+  requestId?: string | null
+  friends: FriendDto[]
+  incomingRequests: FriendRequestDto[]
+  outgoingRequests: FriendRequestDto[]
+  party?: PartyDto | null
+  partyInvitation?: PartyInvitationDto | null
+  nearbyPlayers: NearbyPlayerDto[]
 }
 
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1
@@ -309,7 +465,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.LogBatch
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.ChatHistoryRequest
 }
 
 function isWireCodec(value: number): value is WireCodec {
