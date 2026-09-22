@@ -29,6 +29,11 @@
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--muted); font-weight: normal; position: sticky; top: 0; background: var(--bg); }
   .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tabs button { background: var(--panel); color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; }
+  .tabs button.active { color: var(--text); border-color: var(--accent); }
+  .tabs .badge { color: var(--muted); margin-left: 6px; }
+  .tabs button.active .badge { color: var(--accent); }
   input, select, button.action { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font: inherit; }
   button.action { cursor: pointer; }
   .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .muted { color: var(--muted); }
@@ -62,8 +67,8 @@
   <section id="tab-sessions"><div id="sessionsBody" class="muted">加载中…</div></section>
   <section id="tab-market">
     <div class="toolbar">
-      <input id="mAsset" placeholder="assetId（物品 ID）" size="24" />
-      <input id="mVariant" placeholder="variant（可选）" size="14" />
+      <input id="mAsset" placeholder="物品 ID（assetId）" size="24" />
+      <input id="mVariant" placeholder="变体（variant，可选）" size="16" />
       <input id="mDepth" type="number" value="20" min="1" max="200" style="width:80px" />
       <button class="action" id="mQuery">查询盘口</button>
     </div>
@@ -71,13 +76,7 @@
   </section>
   <section id="tab-logs">
     <div class="toolbar">
-      <select id="logLevel">
-        <option value="Trace">Trace+</option>
-        <option value="Debug">Debug+</option>
-        <option value="Information" selected>Information+</option>
-        <option value="Warning">Warning+</option>
-        <option value="Error">Error+</option>
-      </select>
+      <div class="tabs" id="logLevelTabs"></div>
       <label class="muted"><input type="checkbox" id="logAuto" checked /> 自动刷新</label>
       <button class="action" id="logRefresh">刷新</button>
     </div>
@@ -86,6 +85,17 @@
 </main>
 <script>
 const BASE = location.pathname.replace(/\/+$/, '') || '/ops';
+
+// 枚举值中文化映射：接口返回英文枚举，展示层统一转中文。
+const ENV_ZH = { Development: '开发', Production: '生产', Staging: '预发布' };
+const HEALTH_ZH = { healthy: '健康', degraded: '降级', unhealthy: '异常', ok: '正常' };
+const PRESENCE_ZH = { online: '在线', offline: '离线', suspended: '挂起' };
+const LEVEL_ZH = { Trace: '追踪', Debug: '调试', Information: '信息', Warning: '警告', Error: '错误', Critical: '致命', None: '无' };
+const LOG_LEVELS = ['Trace', 'Debug', 'Information', 'Warning', 'Error', 'Critical'];
+const envZh = v => ENV_ZH[v] || v;
+const healthZh = v => HEALTH_ZH[v] || v;
+const presenceZh = v => PRESENCE_ZH[v] || v;
+const levelZh = v => LEVEL_ZH[v] || v;
 
 async function getJson(path) {
   const res = await fetch(BASE + path, { headers: { 'Accept': 'application/json' } });
@@ -112,12 +122,20 @@ function fmtBytes(n) {
 function fmtDuration(seconds) {
   if (typeof seconds !== 'number') return '-';
   const s = Math.floor(seconds % 60), m = Math.floor(seconds / 60) % 60, h = Math.floor(seconds / 3600) % 24, d = Math.floor(seconds / 86400);
-  return `${d ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
+  return `${d ? d + '天 ' : ''}${h}时 ${m}分 ${s}秒`;
 }
 function statusClass(status) {
   if (status === 'healthy' || status === 'ok') return 'ok';
   if (status === 'degraded') return 'warn';
   return 'err';
+}
+// 日志等级着色：信息/调试等低级别用中性色，避免误显示为错误。
+function levelClass(level) {
+  const l = String(level).toLowerCase();
+  if (l === 'error' || l === 'critical') return 'err';
+  if (l === 'warning') return 'warn';
+  if (l === 'information') return 'ok';
+  return 'muted';
 }
 function card(k, v, cls) {
   const c = el('div', 'card');
@@ -132,7 +150,7 @@ async function loadOverview() {
     const d = await getJson('/api/overview');
     const cards = el('div', 'cards');
     cards.append(card('服务', d.service));
-    cards.append(card('环境', d.environment));
+    cards.append(card('环境', envZh(d.environment)));
     cards.append(card('版本', d.version));
     cards.append(card('运行时长', fmtDuration(d.uptimeSeconds)));
     cards.append(card('在线会话', d.sessions));
@@ -154,7 +172,7 @@ async function loadOverview() {
     details.textContent = `主机 ${d.machineName} · 进程 ${d.processId} · CPU ${d.processorCount} 核 · 启动 ${new Date(d.startedAt).toLocaleString()} · 配表指纹 ${d.gameDataFingerprint}`;
     target.replaceChildren(cards, details);
     document.getElementById('headMeta').textContent =
-      `${d.service} · ${d.environment} · ${d.version} · 运行 ${fmtDuration(d.uptimeSeconds)} · 会话 ${d.sessions} / 玩家 ${d.loadedPlayers}`;
+      `${d.service} · ${envZh(d.environment)} · ${d.version} · 运行 ${fmtDuration(d.uptimeSeconds)} · 会话 ${d.sessions} / 玩家 ${d.loadedPlayers}`;
   } catch (err) { showError(target, err); }
 }
 
@@ -163,7 +181,7 @@ async function loadHealth() {
   try {
     const d = await getJson('/api/health');
     const head = el('div', 'toolbar');
-    head.append(el('span', statusClass(d.status), '总体状态：' + d.status));
+    head.append(el('span', statusClass(d.status), '总体状态：' + healthZh(d.status)));
     head.append(el('span', 'muted', `耗时 ${d.totalDurationMs.toFixed(1)} ms`));
     const table = el('table');
     const thead = el('tr');
@@ -172,7 +190,7 @@ async function loadHealth() {
     (d.checks || []).forEach(c => {
       const tr = el('tr');
       tr.append(el('td', null, c.name));
-      tr.append(el('td', statusClass(c.status), c.status));
+      tr.append(el('td', statusClass(c.status), healthZh(c.status)));
       tr.append(el('td', null, c.durationMs.toFixed(1)));
       tr.append(el('td', 'muted', (c.tags || []).join(', ')));
       tr.append(el('td', 'muted', c.description || ''));
@@ -197,7 +215,7 @@ async function loadPlayers() {
       tr.append(el('td', null, p.playerId));
       tr.append(el('td', null, p.accountId));
       tr.append(el('td', null, p.displayName));
-      tr.append(el('td', p.presence === 'online' ? 'ok' : 'muted', p.presence));
+      tr.append(el('td', p.presence === 'online' ? 'ok' : 'muted', presenceZh(p.presence)));
       tr.append(el('td', null, p.stateVersion));
       tr.append(el('td', 'muted', new Date(p.lastSimulatedAt).toLocaleString()));
       tr.append(el('td', null, p.actionCount));
@@ -248,26 +266,53 @@ function levelRow(side, rank, lvl, cls) {
   return tr;
 }
 
+// 日志：一次性拉取近期全部等级，按等级分组渲染 Tab（含计数），选中 Tab 只展示该等级。
+let logEntries = [];
+let logLevel = 'All';
+
 async function loadLogs() {
   const target = document.getElementById('logsBody');
   try {
-    const level = document.getElementById('logLevel').value;
-    const d = await getJson(`/api/logs?level=${encodeURIComponent(level)}&limit=300`);
-    if (!d.length) { target.replaceChildren(el('div', 'muted', '暂无日志。')); return; }
-    const frag = document.createDocumentFragment();
-    d.forEach(entry => {
-      const row = el('div', 'log');
-      row.append(el('span', 't', new Date(entry.timestamp).toLocaleTimeString()));
-      row.append(el('span', 'l ' + statusClass(entry.level.toLowerCase()), entry.level));
-      row.append(el('span', 'c', entry.category));
-      const msg = el('span', 'm');
-      msg.append(el('div', null, entry.message));
-      if (entry.exception) msg.append(el('pre', null, entry.exception));
-      row.append(msg);
-      frag.append(row);
-    });
-    target.replaceChildren(frag);
+    logEntries = await getJson('/api/logs?level=Trace&limit=500');
+    renderLogTabs();
+    renderLogs();
   } catch (err) { showError(target, err); }
+}
+
+function renderLogTabs() {
+  const tabs = document.getElementById('logLevelTabs');
+  const counts = { All: logEntries.length };
+  LOG_LEVELS.forEach(level => { counts[level] = logEntries.filter(e => e.level === level).length; });
+  const items = [{ key: 'All', label: '全部' }, ...LOG_LEVELS.map(level => ({ key: level, label: levelZh(level) }))];
+  tabs.replaceChildren(...items.map(item => {
+    const btn = el('button', item.key === logLevel ? 'active' : null);
+    btn.append(el('span', null, item.label));
+    btn.append(el('span', 'badge', counts[item.key] || 0));
+    btn.addEventListener('click', () => { logLevel = item.key; renderLogTabs(); renderLogs(); });
+    return btn;
+  }));
+}
+
+function renderLogs() {
+  const target = document.getElementById('logsBody');
+  const list = logLevel === 'All' ? logEntries : logEntries.filter(e => e.level === logLevel);
+  if (!list.length) {
+    target.replaceChildren(el('div', 'muted', logEntries.length ? '该等级暂无日志。' : '暂无日志。'));
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  list.forEach(entry => {
+    const row = el('div', 'log');
+    row.append(el('span', 't', new Date(entry.timestamp).toLocaleTimeString()));
+    row.append(el('span', 'l ' + levelClass(entry.level), levelZh(entry.level)));
+    row.append(el('span', 'c', entry.category));
+    const msg = el('span', 'm');
+    msg.append(el('div', null, entry.message));
+    if (entry.exception) msg.append(el('pre', null, entry.exception));
+    row.append(msg);
+    frag.append(row);
+  });
+  target.replaceChildren(frag);
 }
 
 const loaders = { overview: loadOverview, health: loadHealth, players: loadPlayers, sessions: loadSessions, logs: loadLogs };
@@ -281,7 +326,6 @@ document.querySelectorAll('nav button').forEach(btn => {
 });
 document.getElementById('mQuery').addEventListener('click', queryMarket);
 document.getElementById('logRefresh').addEventListener('click', loadLogs);
-document.getElementById('logLevel').addEventListener('change', loadLogs);
 document.getElementById('mAsset').addEventListener('keydown', e => { if (e.key === 'Enter') queryMarket(); });
 
 loadOverview();
