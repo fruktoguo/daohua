@@ -8,6 +8,7 @@ import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, Inventor
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { UnitNumber } from './UnitNumber'
+import { ValueText } from './ValueText'
 
 /** 物品悬浮提示气泡触发器 Props */
 export interface ItemTooltipTargetProps {
@@ -660,6 +661,7 @@ export function resolveManualAsideCard(
     subtitle,
     tone: 'qi',
     lines,
+    content: <ValueText className="effect-value-capsule" text={abilityInfo.description} />,
   }
 }
 
@@ -1022,6 +1024,9 @@ export function ItemTile({
         ? <img alt={name} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
         : <strong className="item-tile-name">{name}</strong>}
       {bottomRight !== null && <span className="item-corner item-corner--bottom-right">{bottomRight}</span>}
+      {/* hover 辉光叠加层：常驻 opacity:0，hover 时只动画 opacity（合成器线程），
+          替代原先逐帧重绘瓦片的 box-shadow 过渡（见 selection-grid.css） */}
+      <span className="item-tile-glow" aria-hidden="true" />
     </span>
   )
 }
@@ -1048,6 +1053,57 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
         itemId={item.itemId}
         level={metadata.level}
         name={item.name}
+        rarity={metadata.rarity}
+      />
+    </ItemTooltipTarget>
+  )
+}
+
+/**
+ * 物品瓦片引用组件 (ItemTileReference)
+ *
+ * 仅凭 itemId 渲染与背包一致的 ItemTile 方块（图标整块 / 品质边框 / 右下数量角标），
+ * 并附带完整悬浮信息气泡；供账本、记录等只持有 itemId + 数量的场景使用。
+ * className 必须指向已在 selection-grid.css 登记的槽位锚点类（如 battle-report-item-anchor），
+ * 以获得固定槽位尺寸与 hover 高亮。
+ */
+export function ItemTileReference({
+  itemId,
+  amount,
+  className = '',
+}: {
+  /** 物品唯一 ID */
+  itemId: string
+  /** 涉及数量（右下角数量角标） */
+  amount?: number
+  /** 悬浮触发器锚点类名 */
+  className?: string
+}): React.JSX.Element {
+  // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
+  useT()
+  const itemDef = useGameStore((state) => findItemInCatalog(state.items, itemId))
+  const eqDef = useGameStore((state) => findEquipmentInCatalog(state.equipment, itemId))
+  const meta = resolveItemMetadata(itemId)
+  const metadata = withItemGrade(
+    meta ?? fallbackMetadata(itemId),
+    itemDef?.tier ?? eqDef?.tier ?? meta?.level ?? 1,
+  )
+  return (
+    <ItemTooltipTarget
+      amount={amount}
+      className={className}
+      definition={itemDef}
+      equipmentDefinition={eqDef}
+      itemId={itemId}
+      metadata={metadata}
+    >
+      <ItemTile
+        amount={amount}
+        category={itemDef?.category ?? eqDef?.slot ?? metadata.category}
+        className=""
+        itemId={itemId}
+        level={metadata.level}
+        name={itemDef?.name || eqDef?.name || metadata.label}
         rarity={metadata.rarity}
       />
     </ItemTooltipTarget>

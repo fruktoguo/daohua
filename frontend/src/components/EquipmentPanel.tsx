@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react'
-import { gameClient } from '../network/gameClient'
 import { useGameStore } from '../game/gameStore'
+import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../game/ids'
 import { useT } from '../i18n'
 import type { CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../game/types'
@@ -226,10 +226,8 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
       })
     }
 
-    gameClient.sendCommand('loadout.replace', {
-      ...combat,
-      equipment: nextEquipped,
-    })
+    // 经统一入口发送：功法槽位会顺带完成类别互斥与等级归一化。
+    sendLoadoutReplace({ equipment: nextEquipped })
 
     setActivePickingSlot(null)
   }

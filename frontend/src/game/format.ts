@@ -24,7 +24,16 @@ function abilityPercent(ratio: number): string {
 }
 
 /**
- * 根据功法技能定义与当前等级，生成用于 Tooltip 展示的结构化说明数据
+ * 伤害构成百分比（不带正负号，如 "60%"、"61.8%"）
+ */
+function abilityRatioPercent(ratio: number): string {
+  return `${+((ratio * 100).toFixed(1))}%`
+}
+
+/**
+ * 根据功法技能定义与当前等级，生成用于 Tooltip 展示的结构化说明数据：
+ * 主描述 = 配表招式描述 + 效果句（目标/五行/伤害类别）；
+ * 词条行 = 等级、冷却、吟唱、灵力与伤害/治疗构成胶囊（标明所吃攻击属性）。
  * @param ability 技能定义
  * @param level 当前技能等级
  * @returns Tooltip 数据结构
@@ -33,32 +42,70 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const t = getT()
   const normalizedLevel = Math.max(1, level)
   const levelOffset = normalizedLevel - 1
-  const damageRatio = ability.damageRatio + (ability.damageRatioLevelBonus ?? 0) * levelOffset
-  const flatDamage = ability.flatDamage + (ability.flatDamageLevelBonus ?? 0) * levelOffset
-  const healingRatio = (ability.healingRatio ?? 0) + (ability.healingRatioLevelBonus ?? 0) * levelOffset
-  const flatHealing = (ability.flatHealing ?? 0) + (ability.flatHealingLevelBonus ?? 0) * levelOffset
-  const targetKey = ability.targetType === 'all-enemies'
+  // 等级成长与服务端 CombatSkillEngine.Complete 同式：倍率项每级 +0.6%，固定值项每级 +1.0%。
+  const ratioBonus = 1 + levelOffset * 0.006
+  const flatBonus = 1 + levelOffset * 0.01
+  const damageRatio = (ability.damageRatio ?? 0) * ratioBonus
+  const flatDamage = (ability.flatDamage ?? 0) * flatBonus
+  const healingRatio = (ability.healingRatio ?? 0) * ratioBonus
+  const flatHealing = (ability.flatHealing ?? 0) * flatBonus
+  const targetKey = ability.targetType === 'allEnemies'
     ? 'all-enemies'
     : ability.targetType === 'self'
       ? 'self'
-      : ability.targetType === 'all-allies'
+      : ability.targetType === 'allAllies'
         ? 'all-allies'
-        : ability.targetType === 'lowest-hp-ally'
+        : ability.targetType === 'lowestHitpointsAlly'
           ? 'lowest-hp-ally'
           : 'enemy'
   const target = t(`game.abilityTarget.${targetKey}`)
+  const categoryLabel = t(`combat.encounter.damageCategory.${ability.category}`)
+  const elementWord = ability.element && ability.element !== 'none'
+    ? t(`game.abilityDesc.elementWord.${ability.element}`)
+    : ''
+  const damageKind = elementWord
+    ? t('game.abilityDesc.damageKindElement', { element: elementWord, category: categoryLabel })
+    : t('game.abilityDesc.damageKindPlain', { category: categoryLabel })
+
+  // 伤害/治疗构成表达式：嵌入主描述句，[[ ]] 由 ValueText 渲染为整组胶囊，
+  // 标明所吃攻击属性（术法吃术法攻击、物理吃物理攻击），与服务端结算一致。
+  const attackStat = t(`game.abilityDesc.attackStat.${ability.category === 'spell' ? 'spell' : 'physical'}`)
+  const composition = (ratio: number, flat: number) => {
+    const parts: string[] = []
+    if (ratio !== 0) parts.push(`[[${abilityRatioPercent(ratio)}${attackStat}]]`)
+    if (flat !== 0) parts.push(`[[+${formatNumber(flat)}]]`)
+    return parts.length > 0 ? `${parts.join(' ')} ` : ''
+  }
+  const damageExpr = composition(damageRatio, flatDamage)
+  const healExpr = composition(healingRatio, flatHealing)
+
+  // 主描述：配表招式描述（如「从掌心发出一道雷光」）+ 按效果类型生成的效果句。
+  const healing = ability.effectType === 'heal'
+  const clause = healing
+    ? t('game.abilityDesc.effectHeal', { target, expr: healExpr })
+    : damageExpr
+      ? t('game.abilityDesc.effectDamage', { target, expr: damageExpr, damageKind })
+      : (ability.threatGain ?? 0) > 0 || (ability.threatRatio ?? 0) > 0
+        ? t('game.abilityDesc.effectThreat')
+        : t('game.abilityDesc.effectBuff', { target })
+  const description = ability.description ? `${ability.description}，${clause}。` : `${clause}。`
+
   const lines = [
     t('game.abilityDesc.level', { n: normalizedLevel }),
-    t('game.abilityDesc.target', { target }),
-    t('game.abilityDesc.manaCost', { n: formatNumber(ability.manaCost) }),
-    t('game.abilityDesc.castTime', { n: (ability.castMilliseconds / 1000).toFixed(1) }),
-    t('game.abilityDesc.cooldownTime', { n: (ability.cooldownMilliseconds / 1000).toFixed(1) }),
+    // 配表字段可缺省，服务端按 0 处理，前端同口径。
+    t('game.abilityDesc.cooldownTime', { n: ((ability.cooldownMilliseconds ?? 0) / 1000).toFixed(1) }),
+    t('game.abilityDesc.castTime', { n: ((ability.castMilliseconds ?? 0) / 1000).toFixed(1) }),
+    t('game.abilityDesc.manaCost', { n: formatNumber(ability.manaCost ?? 0) }),
   ]
-  if (damageRatio !== 0 || flatDamage !== 0) {
-    lines.push(t('game.abilityDesc.damage', { ratio: abilityPercent(damageRatio), flat: formatNumber(flatDamage) }))
+  // 支援类效果数值（嘲讽威胁、破阵子减伤屏障等）。
+  if ((ability.threatGain ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.threatGain', { n: formatNumber(ability.threatGain ?? 0) }))
   }
-  if (healingRatio !== 0 || flatHealing !== 0) {
-    lines.push(t('game.abilityDesc.healing', { ratio: abilityPercent(healingRatio), flat: formatNumber(flatHealing) }))
+  if ((ability.threatRatio ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.threatRatio', { n: abilityPercent(ability.threatRatio ?? 0) }))
+  }
+  if ((ability.buff?.damageAbsorptionRatio ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.buffAbsorb', { n: abilityPercent(ability.buff?.damageAbsorptionRatio ?? 0) }))
   }
   if ((ability.penetrationRatio ?? 0) !== 0) {
     lines.push(t('game.abilityDesc.penetration', { n: abilityPercent(ability.penetrationRatio) }))
@@ -93,15 +140,10 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
       duration: ((ability.silenceMilliseconds ?? 0) / 1000).toFixed(1),
     }))
   }
-  for (const trigger of ability.defaultTriggers ?? []) {
-    lines.push(t('game.abilityDesc.defaultTrigger', { trigger: describeCombatTrigger(trigger) }))
-  }
   return {
     title: ability.name,
     badge: formatAbilityCategory(ability.category, ability.element),
-    description: ability.effectType === 'heal'
-      ? t('game.abilityDesc.heal', { target })
-      : t('game.abilityDesc.effect', { target }),
+    description,
     lines,
   }
 }

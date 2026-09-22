@@ -620,6 +620,79 @@ public sealed class PlayerRuntimeTests
         Assert.Empty(economy.Requests);
     }
 
+    /// <summary>loadout.replace 槽位类别互斥：内功位只收心法内功、术法位只收神通术法，双向拒绝跨类装配。</summary>
+
+    [Fact]
+    public async Task LoadoutReplaceEnforcesInternalSpellSlotDiscipline()
+    {
+        var playerId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var persisted = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), "槽位类别", createdAt, "fp-test");
+        persisted.LearnAbility(new AbilityId("ability.test-heart"));
+        persisted.LearnAbility(new AbilityId("ability.test-strike"));
+        var storedAt = DateTimeOffset.UtcNow;
+        var writes = Server.Clean.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
+        var sections = writes.ToDictionary(
+            write => write.SectionKind,
+            write => new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
+                write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt),
+            StringComparer.Ordinal);
+        var repository = new FakeStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, Guid.NewGuid(), "槽位类别", createdAt),
+            new StoredHead(playerId, persisted.StateVersion, Server.Clean.SectionCodec.CurrentSchemaVersion, persisted.LastSimulatedAt,
+                "fp-test", Server.Clean.SectionCodec.ComputeHeadChecksum(sections.Values), storedAt),
+            sections, []));
+        var catalog = GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
+            [
+              {"id":"ability.test-heart","name":"测试心法","category":"spell","element":"none","discipline":"internal","castMilliseconds":1000,"cooldownMilliseconds":5000,"manaCost":5,"effectType":"heal","healingRatio":0.5,"flatHealing":10,"targetType":"self"},
+              {"id":"ability.test-strike","name":"测试术法","category":"spell","element":"fire","discipline":"spell","castMilliseconds":1000,"cooldownMilliseconds":5000,"manaCost":5,"damageRatio":1.0,"flatDamage":10}
+            ]
+            """)]);
+        var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            catalog, NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        // 术法进内功位 -> 拒绝
+        var spellInInternal = await runtime.ExecuteAsync(playerId, "loadout.replace", JsonSerializer.SerializeToElement(new
+        {
+            equipment = Array.Empty<object>(),
+            abilitySlots = new object[]
+            {
+                new { abilityId = "ability.test-strike", level = 1d, triggers = Array.Empty<object>() },
+                new { abilityId = (string?)null, level = 1d, triggers = Array.Empty<object>() }
+            }
+        }));
+        Assert.False(spellInInternal.Success);
+        Assert.Equal("INVALIDARGUMENT", spellInInternal.Code);
+
+        // 内功进术法位 -> 拒绝
+        var internalInSpell = await runtime.ExecuteAsync(playerId, "loadout.replace", JsonSerializer.SerializeToElement(new
+        {
+            equipment = Array.Empty<object>(),
+            abilitySlots = new object[]
+            {
+                new { abilityId = (string?)null, level = 1d, triggers = Array.Empty<object>() },
+                new { abilityId = "ability.test-heart", level = 1d, triggers = Array.Empty<object>() }
+            }
+        }));
+        Assert.False(internalInSpell.Success);
+        Assert.Equal("INVALIDARGUMENT", internalInSpell.Code);
+
+        // 正确归位 -> 通过
+        var correct = await runtime.ExecuteAsync(playerId, "loadout.replace", JsonSerializer.SerializeToElement(new
+        {
+            equipment = Array.Empty<object>(),
+            abilitySlots = new object[]
+            {
+                new { abilityId = "ability.test-heart", level = 1d, triggers = Array.Empty<object>() },
+                new { abilityId = "ability.test-strike", level = 1d, triggers = Array.Empty<object>() }
+            }
+        }));
+        Assert.True(correct.Success);
+        Assert.Equal("ability.test-heart", correct.Snapshot.State.Loadout.AbilitySlots[0].AbilityId);
+        Assert.Equal("ability.test-strike", correct.Snapshot.State.Loadout.AbilitySlots[1].AbilityId);
+    }
+
     /// <summary>构造物品处置测试目录：含可回收草药、无价物品与一件装备原始定义。</summary>
     private static GameDataCatalog CreateDisposalCatalog() => GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
         [

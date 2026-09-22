@@ -181,11 +181,11 @@ export type CombatAbilityEffectType = 'damage' | 'heal'
  * 功法技能施法目标范围
  */
 export type CombatAbilityTargetType =
-  | 'enemy'
-  | 'all-enemies'
+  | 'targetEnemy'
+  | 'allEnemies'
   | 'self'
-  | 'all-allies'
-  | 'lowest-hp-ally'
+  | 'allAllies'
+  | 'lowestHitpointsAlly'
 
 /**
  * 行动收益类别：修为 (qi)、灵力/战斗蓝 (mana)、气血 (hitpoints)、历练经验 (experience)、物品产出 (item)、增益状态 (buff)
@@ -772,6 +772,8 @@ export interface LogEvent {
   template: string
   /** 服务端侧已折叠的重复次数，缺省为 1 */
   count?: number
+  /** 日志分组频道：`system`（系统）或 `combat`（战斗）；缺省视为 `system` */
+  channel?: 'system' | 'combat'
 }
 
 /**
@@ -890,22 +892,26 @@ export interface CombatAbilityDefinition {
   abilityId: string
   /** 功法显示名 */
   name: string
+  /** 功法招式描述（悬浮详情自然语言开头，如「从掌心发出一道雷光」） */
+  description?: string
+  /** 功法门类：internal 内功心法（仅可装配 0 号内功位）/ spell 神通术法；缺省视为 spell */
+  discipline?: 'internal' | 'spell'
   /** 武道流派 */
   style: CombatStyle
   /** 伤害大类 */
   category: DamageCategory
   /** 五行属性 */
   element: Element
-  /** 冷却毫秒数 */
-  cooldownMilliseconds: number
-  /** 吟唱/引导毫秒数 */
-  castMilliseconds: number
-  /** 灵力消耗（基础点数，实际消耗经 MANA_COST_MULTIPLIER 换算） */
-  manaCost: number
-  /** 伤害倍率（相对攻击属性的比例点数） */
-  damageRatio: number
-  /** 固定附加伤害 */
-  flatDamage: number
+  /** 冷却毫秒数（缺省按 0，即无冷却） */
+  cooldownMilliseconds?: number
+  /** 吟唱/引导毫秒数（缺省按 0） */
+  castMilliseconds?: number
+  /** 灵力消耗（缺省按 0） */
+  manaCost?: number
+  /** 伤害倍率（相对攻击属性的比例点数，缺省按 0） */
+  damageRatio?: number
+  /** 固定附加伤害（缺省按 0） */
+  flatDamage?: number
   /** 抗性穿透比例 */
   penetrationRatio: number
   /** 默认血量触发阈值比例（无触发条件时的兜底规则） */
@@ -936,20 +942,18 @@ export interface CombatAbilityDefinition {
   silenceChance?: number
   /** 沉默时长毫秒数 */
   silenceMilliseconds?: number
-  /** 每级伤害倍率成长 */
-  damageRatioLevelBonus?: number
-  /** 每级固定伤害成长 */
-  flatDamageLevelBonus?: number
-  /** 每级治疗倍率成长 */
-  healingRatioLevelBonus?: number
-  /** 每级固定治疗成长 */
-  flatHealingLevelBonus?: number
   /** 施法目标范围，缺省为单体敌人 */
   targetType?: CombatAbilityTargetType
   /** 对护甲额外伤害比例 */
   armorDamageRatio?: number
   /** 气血汲取（吸血）比例 */
   hpDrainRatio?: number
+  /** 支援类：固定威胁值提升（嘲讽等） */
+  threatGain?: number
+  /** 支援类：威胁值倍率提升 */
+  threatRatio?: number
+  /** 支援类：施放后施加的战内 Buff（破阵子等） */
+  buff?: { name?: string; durationSeconds?: number; damageAbsorptionRatio?: number } | null
 }
 
 /**
@@ -989,8 +993,20 @@ export interface CombatantDefinition {
   damageAbsorptionRatio: number
   hpRegenPerFiveSeconds: number
   mpRegenPerFiveSeconds: number
-  /** 击杀后入账的历练经验 */
+  /** 击杀后入账的历练经验（底蕴） */
   experience: number
+  /** 境界等级（怪物同构建模的等级锚点） */
+  level?: number
+  /** 品阶（由等级映射的境界阶位） */
+  tier?: number
+  /** 占用刷怪强度预算的点数 */
+  budgetCost?: number
+  /** 击杀后入账的修为 */
+  qiReward?: number
+  /** 击杀后入账的六维经验 */
+  rootExpReward?: number
+  /** 掉落物品 ID 列表 */
+  drops?: string[]
   /** 该单位可使用的功法 ID 列表 */
   abilityIds: string[]
 }
@@ -1340,12 +1356,12 @@ export interface WorldNodeDefinition {
   eliteInterval?: number
   /** 首领怪刷新间隔（秒） */
   bossInterval?: number
-  /** 常驻普通怪列表 */
-  monsters?: NearbyMonsterDefinition[]
+  /** 常驻普通怪列表（静态目录投影，CombatantDefinition 形态） */
+  monsters?: CombatantDefinition[]
   /** 精英怪列表 */
-  eliteEnemies?: NearbyMonsterDefinition[]
+  eliteEnemies?: CombatantDefinition[]
   /** 首领怪列表 */
-  bossEnemies?: NearbyMonsterDefinition[]
+  bossEnemies?: CombatantDefinition[]
 }
 
 /**

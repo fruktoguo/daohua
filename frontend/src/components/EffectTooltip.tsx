@@ -48,7 +48,7 @@ export function EffectTooltipTarget({
         <FloatingInfoCard
           badge={content.badge}
           badgeTone="qi"
-          description={content.description}
+          description={<ValueText className="effect-value-capsule" text={content.description} />}
           lines={content.lines.map((line) => (
             <ValueText className="effect-value-capsule" key={line} text={line} />
           ))}

@@ -56,6 +56,9 @@ public static class CombatSkillEngine
         if (Text(ability, "category") is not ("physical" or "spell")
             || !Enum.TryParse<CombatElement>(Text(ability, "element") ?? "none", true, out _))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能伤害类别或五行属性无效。");
+        // discipline 划分内功心法（internal）与神通术法（spell）；缺省视为术法。
+        if (Text(ability, "discipline") is not (null or "internal" or "spell"))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "功法类别（discipline）必须为 internal 或 spell。");
         if (healing ? target is not (null or "self" or "lowestHitpointsAlly" or "allAllies")
             : target is not (null or "targetEnemy" or "allEnemies" or "self" or "allAllies"))
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能目标没有可执行效果。");

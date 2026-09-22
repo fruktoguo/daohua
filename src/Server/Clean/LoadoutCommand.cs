@@ -53,6 +53,7 @@ internal static class LoadoutCommand
         }
         var abilities = new List<PlayerAbilitySlot>();
         var ids = new HashSet<string>(StringComparer.Ordinal);
+        var slotIndex = 0;
         foreach (var raw in rawAbilities.EnumerateArray())
         {
             var id = raw.TryGetProperty("abilityId", out var idElement) && idElement.ValueKind != JsonValueKind.Null ? idElement.GetString() : null;
@@ -63,13 +64,23 @@ internal static class LoadoutCommand
             {
                 if (!catalog.Abilities.ContainsKey(id) || !player.Loadout.LearnedAbilities.Contains(new AbilityId(id)) || !ids.Add(id))
                     throw new DomainException(DomainErrorCode.InvalidArgument, "功法未习得或重复装配。");
-                Domain.Combat.CombatSkillEngine.ValidateAbility(catalog.Abilities[id]);
+                var ability = catalog.Abilities[id];
+                Domain.Combat.CombatSkillEngine.ValidateAbility(ability);
                 var learnedLevel = player.AbilityLevelFor(new AbilityId(id));
                 if (level > learnedLevel)
                     throw new DomainException(DomainErrorCode.InvalidArgument, "装配等级超过已掌握等级。");
+                // 槽位与功法类别互斥：0 号内功位只收心法内功（discipline=internal），
+                // 其余术法位只收神通术法；缺省 discipline 一律按术法处理。
+                var discipline = ability.TryGetProperty("discipline", out var disciplineElement)
+                    && disciplineElement.ValueKind == JsonValueKind.String
+                    ? disciplineElement.GetString() : "spell";
+                if ((slotIndex == 0) != (discipline == "internal"))
+                    throw new DomainException(DomainErrorCode.InvalidArgument,
+                        slotIndex == 0 ? "内功位只能装配心法内功。" : "术法位只能装配神通术法。");
             }
             var triggers = raw.TryGetProperty("triggers", out var rules) ? ReadTriggers(rules) : [];
             abilities.Add(new(id, level, triggers));
+            slotIndex++;
         }
         player.ReplaceCombatSlots(abilities, equipment);
     }

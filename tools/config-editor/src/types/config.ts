@@ -84,6 +84,7 @@ export interface CombatTrigger {
 export interface AbilityConfig {
   id: string;
   name: string;
+  description?: string;
   style: string; // CombatStyle
   category: string; // DamageCategory
   element: string; // Element
@@ -94,12 +95,8 @@ export interface AbilityConfig {
   targetType?: string; // CombatAbilityTargetType
   damageRatio?: number;
   flatDamage?: number;
-  damageRatioLevelBonus?: number;
-  flatDamageLevelBonus?: number;
   healingRatio?: number;
   flatHealing?: number;
-  healingRatioLevelBonus?: number;
-  flatHealingLevelBonus?: number;
   damageOverTimeRatio?: number;
   damageOverTimeMilliseconds?: number;
   damageOverTimeTickMilliseconds?: number;

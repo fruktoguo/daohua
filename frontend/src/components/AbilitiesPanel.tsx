@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react'
-import { gameClient } from '../network/gameClient'
-import { calculateRootLevelAndProgress } from '../game/combatConstants'
+import { assignAbilityToSlot, learnedAbilityLevel } from '../game/ids'
+import { sendLoadoutReplace } from '../game/loadoutCommands'
 import { describeAbility, formatAbilityCategory } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { resolveItemIconUrl } from '../game/itemIcons'
@@ -9,7 +9,6 @@ import type { CombatTrigger } from '../game/types'
 import { AbilityGridPicker } from './AbilityGridPicker'
 import { CombatTriggerEditor } from './CombatTriggerEditor'
 import { EffectTooltipTarget } from './EffectTooltip'
-import { ItemIcon } from './ItemDisplay'
 
 // 共享的冻结空表：combatResources 未下发冷却数据时给选择器返回同一引用，避免每次取新对象触发重渲染。
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
@@ -47,13 +46,13 @@ const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
  *
  * 核心特性：
  * 1. 【横排动态装配槽】：横排排布功法槽位，首格固定为「内功」（心法/本命功法），后续格为「术法」（神通技法），支持后续任意动态扩增；
- * 2. 【已学功法总览】：收拢展示修士已习得的全部功法秘籍，支持查看详细词条、五行属性、灵力消耗与装配状态。
+ *    槽位与功法类别互斥——内功位只收 discipline=internal 的心法，术法位只收术法，与服务端 loadout.replace 校验一致；
+ * 2. 【已学功法分组总览】：已习得功法按内功心法 / 神通术法两组分列，支持查看详细词条、五行属性、灵力消耗与装配状态。
  */
 export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element {
   const t = useT()
   const combat = useGameStore(state => state.combat)
   const abilities = useGameStore(state => state.abilities)
-  const inventory = useGameStore(state => state.inventory)
   const abilityCooldowns = useGameStore(
     state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
@@ -63,16 +62,11 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
 
   if (!combat) return <div className="abilities-panel-empty">{t('common.emptyData')}</div>
 
-  const update = (patch: Partial<typeof combat>) => {
-    gameClient.sendCommand('loadout.replace', { ...combat, ...patch })
-  }
+  // 装配变更统一经 sendLoadoutReplace 发送：内部完成槽位类别互斥与等级归一化。
+  const update = (patch: Partial<typeof combat>) => sendLoadoutReplace(patch)
 
-  // 换装功法时同步清空该槽触发条件：旧技能的触发规则对新技能无意义，防止残留条件被意外沿用。
-  const withAbility = (index: number, abilityId: string | null) => combat.abilitySlots.map((slot, slotIndex) => (
-    slotIndex === index
-      ? { ...slot, abilityId, triggers: abilityId === slot.abilityId ? slot.triggers : [] }
-      : slot
-  ))
+  // 重复装配按「移动」处理：assignAbilityToSlot 会把功法从原槽位移到新槽位。
+  const withAbility = (index: number, abilityId: string | null) => assignAbilityToSlot(combat.abilitySlots, index, abilityId)
 
   const saveTriggers = (triggers: CombatTrigger[] | null) => {
     if (editingTriggerSlotIndex === null) return
@@ -85,14 +79,21 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
   }
 
   const learnedAbilityIds = useMemo(() => new Set(combat.learnedAbilityIds ?? []), [combat.learnedAbilityIds])
-  const abilityExperiences = combat.abilityExperiences ?? {}
   // 已习得技能的参悟等级由技能经验经立方曲线导出，与服务端 AbilityExpCurve 同式。
-  const abilityLevelFor = (abilityId: string) => calculateRootLevelAndProgress(abilityExperiences[abilityId] ?? 0).level
+  const abilityLevelFor = (abilityId: string) => learnedAbilityLevel(combat.abilityExperiences, abilityId)
 
-  // 获得已学功法定义列表
+  // 获得已学功法定义列表，并按 discipline 分为内功心法与神通术法两组（缺省按术法归组）
   const learnedAbilities = useMemo(() => {
     return abilities.filter(ability => learnedAbilityIds.has(ability.abilityId))
   }, [abilities, learnedAbilityIds])
+  const learnedInternal = useMemo(
+    () => learnedAbilities.filter(ability => ability.discipline === 'internal'),
+    [learnedAbilities],
+  )
+  const learnedSpells = useMemo(
+    () => learnedAbilities.filter(ability => ability.discipline !== 'internal'),
+    [learnedAbilities],
+  )
 
   // 检查某个功法当前装备在哪个槽位
   const getEquippedSlotIndex = (abilityId: string): number | null => {
@@ -161,14 +162,15 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
                 ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
                 : <strong className="item-tile-name">{ability.name}</strong>}
               <span className="item-corner item-corner--bottom-right">
-                {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}
+                {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}
               </span>
               {remainingCooldown > 0 && (
                 <AbilityCooldownOverlay
                   remainingMilliseconds={remainingCooldown}
-                  totalMilliseconds={ability.cooldownMilliseconds}
+                  totalMilliseconds={ability.cooldownMilliseconds ?? 0}
                 />
               )}
+              <span aria-hidden="true" className="item-tile-glow" />
             </span>
           ) : (
             <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
@@ -177,23 +179,10 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
 
         {ability && (
           <div className="combat-ability-slot-actions">
-            <span className="combat-ability-level-control" onClick={e => e.stopPropagation()}>
+            {/* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */}
+            <span className="combat-ability-level-control">
               <span aria-hidden="true">Lv.</span>
-              <input
-                aria-label={t('app.combatPanel.levelAria', { name: ability.name })}
-                className="combat-ability-level-input"
-                max={abilityLevelFor(ability.abilityId)}
-                min={1}
-                onChange={event => update({
-                  abilitySlots: combat.abilitySlots.map((current, slotIndex) => (
-                    slotIndex === index
-                      ? { ...current, level: Math.max(1, Math.min(abilityLevelFor(ability.abilityId), Number(event.target.value) || 1)) }
-                      : current
-                  )),
-                })}
-                type="number"
-                value={slot.level}
-              />
+              <span className="combat-ability-level-value">{abilityLevelFor(ability.abilityId)}</span>
             </span>
             <button
               aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
@@ -212,7 +201,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     return (
       <div className={`abilities-slot-card${isInternal ? ' is-internal' : ''}`} key={index}>
         {ability ? (
-          <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, slot.level)} tabIndex={-1}>
+          <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, abilityLevelFor(ability.abilityId))} tabIndex={-1}>
             {slotContent}
           </EffectTooltipTarget>
         ) : (
@@ -263,62 +252,72 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
           </span>
         </div>
 
-        <div className="abilities-list">
-          {inventory.filter(item => item.amount >= 1
-            && (item.itemId.startsWith('item.tome.')
-              || (item.itemId.startsWith('item.fragment.')
-                && learnedAbilityIds.has(`ability.${item.itemId.slice('item.fragment.'.length)}`)))).map(item => (
-            <button key={item.itemId} type="button" className="abilities-card"
-              onClick={() => gameClient.sendCommand('ability.learn', { itemId: item.itemId })}>
-              <ItemIcon itemId={item.itemId} />
-              {t('app.abilitiesPanel.learnManual', { name: item.name })}
-            </button>
-          ))}
-          {learnedAbilities.length === 0 ? (
-            <div className="abilities-empty-state">
-              <p>{t('app.abilitiesPanel.noLearnedAbilities')}</p>
-            </div>
-          ) : (
-            learnedAbilities.map(ability => {
-              const equippedIndex = getEquippedSlotIndex(ability.abilityId)
-              const learnedLevel = abilityLevelFor(ability.abilityId)
-              const tooltipContent = describeAbility(ability, learnedLevel)
+        {learnedAbilities.length === 0 ? (
+          <div className="abilities-empty-state">
+            <p>{t('app.abilitiesPanel.noLearnedAbilities')}</p>
+          </div>
+        ) : (
+          ([
+            { key: 'internal', title: t('app.abilitiesPanel.learnedInternalTitle'), list: learnedInternal },
+            { key: 'spell', title: t('app.abilitiesPanel.learnedSpellTitle'), list: learnedSpells },
+          ] as const).map(group => (
+            <div className="abilities-learned-group" key={group.key}>
+              <div className="abilities-group-header">
+                <span className="abilities-group-label">{group.title}</span>
+                <span className="abilities-section-count">{group.list.length}</span>
+              </div>
+              {/* 已习得功法采用与背包/选择器一致的方块瓦片：左上元素丝带、右上参悟等级、右下装配槽位 */}
+              <div className="abilities-learned-grid">
+                {group.list.map(ability => {
+                  const equippedIndex = getEquippedSlotIndex(ability.abilityId)
+                  const learnedLevel = abilityLevelFor(ability.abilityId)
+                  const iconUrl = resolveItemIconUrl(ability.abilityId)
+                  const ribbonLabel = ability.element && ability.element !== 'none'
+                    ? t(`combat.encounter.element.${ability.element}`)
+                    : formatAbilityCategory(ability.category)
 
-              return (
-                <EffectTooltipTarget
-                  className="abilities-card-wrap"
-                  content={tooltipContent}
-                  key={ability.abilityId}
-                >
-                  <div className={`abilities-card ${equippedIndex !== null ? 'is-equipped' : ''}`}>
-                    <div className="abilities-card-main">
-                      <strong className="abilities-card-name"><ItemIcon itemId={ability.abilityId} />{ability.name}</strong>
-                      <span className="abilities-card-tag tone-cyan">
-                        {t('game.abilityDesc.level', { n: learnedLevel })}
+                  return (
+                    <EffectTooltipTarget
+                      className="item-grid-picker-tooltip"
+                      content={describeAbility(ability, learnedLevel)}
+                      key={ability.abilityId}
+                    >
+                      <span
+                        className={`item-tile combat-ability-cell${equippedIndex !== null ? ' is-equipped' : ''}`}
+                        data-rarity={group.key === 'internal' ? 'emperor' : 'mystic'}
+                      >
+                        <span aria-hidden="true" className="item-type-ribbon">
+                          <span>{ribbonLabel}</span>
+                        </span>
+                        <span className="item-corner item-corner--top-right">
+                          Lv. {learnedLevel}
+                        </span>
+                        {iconUrl
+                          ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
+                          : <strong className="item-tile-name">{ability.name}</strong>}
+                        {equippedIndex !== null && (
+                          <span className="item-corner item-corner--bottom-right abilities-equipped-corner">
+                            {equippedIndex === 0
+                              ? t('app.combatPanel.internalRibbon')
+                              : `${t('app.combatPanel.spellRibbon')}${equippedIndex}`}
+                          </span>
+                        )}
+                        <span aria-hidden="true" className="item-tile-glow" />
                       </span>
-                      <span className={`abilities-card-tag tone-${ability.effectType === 'heal' ? 'green' : 'violet'}`}>
-                        {formatAbilityCategory(ability.category, ability.element)}
-                      </span>
-                    </div>
-                    {equippedIndex !== null && (
-                      <span className={`abilities-equipped-badge${equippedIndex === 0 ? ' is-internal' : ''}`}>
-                        {equippedIndex === 0
-                          ? t('app.abilitiesPanel.equippedInternalBadge')
-                          : t('app.abilitiesPanel.equippedSpellBadge', { slot: equippedIndex })}
-                      </span>
-                    )}
-                  </div>
-                </EffectTooltipTarget>
-              )
-            })
-          )}
-        </div>
+                    </EffectTooltipTarget>
+                  )
+                })}
+              </div>
+            </div>
+          ))
+        )}
       </section>
 
       {/* 功法挑选网格弹窗 */}
       <AbilityGridPicker
         abilities={learnedAbilities}
         allowEmpty
+        levelFor={abilityLevelFor}
         onClose={() => setActivePickerSlotIndex(null)}
         onSelect={value => {
           if (activePickerSlotIndex !== null) {

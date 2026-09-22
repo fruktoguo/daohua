@@ -26,6 +26,8 @@ export interface AbilityGridPickerProps {
   emptyLabel?: string
   /** 正在选择的槽位索引（0 为内功槽位，1+ 为术法槽位） */
   slotIndex?: number
+  /** 已参悟等级查询（用于瓦片角标与悬浮详情展示；缺省按 1 级显示） */
+  levelFor?: (abilityId: string) => number
 }
 
 /**
@@ -44,6 +46,7 @@ export function AbilityGridPicker({
   allowEmpty = true,
   emptyLabel,
   slotIndex,
+  levelFor,
 }: AbilityGridPickerProps): React.JSX.Element | null {
   const t = useT()
   const titleId = useId()
@@ -51,16 +54,24 @@ export function AbilityGridPicker({
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
 
   const isInternalSlot = slotIndex === 0
+  // 槽位类别互斥：内功位（index 0）只列内功心法，术法位只列神通术法；
+  // 与服务端 loadout.replace 的槽位校验一致，缺省 discipline 视为术法；未指定槽位时不过滤。
+  const slotAbilities = useMemo(
+    () => slotIndex === undefined
+      ? abilities
+      : abilities.filter(ability => (ability.discipline ?? 'spell') === (isInternalSlot ? 'internal' : 'spell')),
+    [abilities, isInternalSlot, slotIndex],
+  )
 
   const visibleAbilities = useMemo(() => {
-    if (!normalizedQuery) return abilities
-    return abilities.filter(ability => {
+    if (!normalizedQuery) return slotAbilities
+    return slotAbilities.filter(ability => {
       const catLabel = formatAbilityCategory(ability.category, ability.element)
       return `${ability.name} ${ability.category} ${ability.element ?? ''} ${catLabel}`
         .toLocaleLowerCase('zh-CN')
         .includes(normalizedQuery)
     })
-  }, [abilities, normalizedQuery])
+  }, [slotAbilities, normalizedQuery])
 
   useEffect(() => {
     if (open) setQuery('')
@@ -110,10 +121,11 @@ export function AbilityGridPicker({
         {visibleAbilities.map(ability => {
           const isSelected = value === ability.abilityId
           const iconUrl = resolveItemIconUrl(ability.abilityId)
+          const learnedLevel = levelFor?.(ability.abilityId) ?? 1
           return (
             <EffectTooltipTarget
               className="item-grid-picker-tooltip"
-              content={describeAbility(ability, 1)}
+              content={describeAbility(ability, learnedLevel)}
               key={ability.abilityId}
               tabIndex={-1}
             >
@@ -131,12 +143,16 @@ export function AbilityGridPicker({
                   <span aria-hidden="true" className="item-type-ribbon">
                     <span>{ribbonLabel}</span>
                   </span>
+                  <span className="item-corner item-corner--top-right">
+                    Lv. {learnedLevel}
+                  </span>
                   {iconUrl
                     ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={iconUrl} />
                     : <strong className="item-tile-name">{ability.name}</strong>}
                   <span className="item-corner item-corner--bottom-right">
-                    {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}
+                    {t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}
                   </span>
+                  <span aria-hidden="true" className="item-tile-glow" />
                 </span>
               </button>
             </EffectTooltipTarget>

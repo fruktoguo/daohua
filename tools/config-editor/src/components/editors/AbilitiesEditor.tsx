@@ -249,6 +249,17 @@ export function AbilitiesEditor() {
                 />
               </div>
 
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-zinc-300 tracking-tight">招式描述 (Description)</label>
+                <input
+                  type="text"
+                  value={currentAbility.description || ''}
+                  onChange={e => handleUpdate({ description: e.target.value })}
+                  placeholder="如：从掌心发出一道雷光"
+                  className="w-full bg-zinc-900/90 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-sm text-zinc-100 outline-none"
+                />
+              </div>
+
               <EnumSelect
                 label="道统流派 (Style)"
                 value={currentAbility.style}
@@ -363,21 +374,6 @@ export function AbilitiesEditor() {
               />
 
               <NumberInput
-                label="每级伤害倍率成长"
-                value={currentAbility.damageRatioLevelBonus}
-                onChange={v => handleUpdate({ damageRatioLevelBonus: v })}
-                step={0.01}
-                unit="×"
-              />
-
-              <NumberInput
-                label="每级固定伤害成长"
-                value={currentAbility.flatDamageLevelBonus}
-                onChange={v => handleUpdate({ flatDamageLevelBonus: v })}
-                min={0}
-              />
-
-              <NumberInput
                 label="治疗倍率 (HealingRatio)"
                 value={currentAbility.healingRatio}
                 onChange={v => handleUpdate({ healingRatio: v })}
@@ -389,21 +385,6 @@ export function AbilitiesEditor() {
                 label="固定治疗点数 (FlatHealing)"
                 value={currentAbility.flatHealing}
                 onChange={v => handleUpdate({ flatHealing: v })}
-                min={0}
-              />
-
-              <NumberInput
-                label="每级治疗倍率成长"
-                value={currentAbility.healingRatioLevelBonus}
-                onChange={v => handleUpdate({ healingRatioLevelBonus: v })}
-                step={0.01}
-                unit="×"
-              />
-
-              <NumberInput
-                label="每级固定治疗成长"
-                value={currentAbility.flatHealingLevelBonus}
-                onChange={v => handleUpdate({ flatHealingLevelBonus: v })}
                 min={0}
               />
             </div>

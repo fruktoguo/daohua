@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
+import { RecordsPanel } from './components/RecordsPanel'
 import { CombatArena, resolveEnemyDefinition } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
@@ -24,8 +25,9 @@ import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatChineseSplitNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
+import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
@@ -89,9 +91,9 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
   }
 })
 
-/** 查询背包中指定物品的持有数量（未持有返回 0） */
+/** 查询背包中指定物品的持有数量（未持有返回 0）；只计基础变体，与服务端 AssetKey(itemId) 空变体校验一致 */
 function itemAmount(inventory: InventoryItem[], itemId: string): number {
-  return inventory.find(item => item.itemId === itemId)?.amount ?? 0
+  return inventory.find(item => item.itemId === itemId && !item.variant)?.amount ?? 0
 }
 
 /** 解析队列条目显示名：优先 wire 携带的 actionName，否则按 actionId 回查配表 */
@@ -700,6 +702,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const setCraftingMode = useUiStore(state => state.setCraftingMode)
   const craftingNavExpanded = useUiStore(state => state.craftingNavExpanded)
   const setCraftingNavExpanded = useUiStore(state => state.setCraftingNavExpanded)
+  const [recordsOpen, setRecordsOpen] = useState(false)
 
   return (
     <aside className="sidebar panel" aria-label={t('app.nav.sidebarAria')}>
@@ -823,16 +826,37 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
       </nav>
-      <button
-        className={`nav-item settings-entry${activeTab === 'settings' ? ' active' : ''}`}
-        onClick={() => setActiveTab('settings')}
-        type="button"
+      <div className="sidebar-footer">
+        <button
+          className="nav-item"
+          onClick={() => setRecordsOpen(true)}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="log" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.records')}</span>
+          </span>
+        </button>
+        <button
+          className={`nav-item${activeTab === 'settings' ? ' active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="settings" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.settings')}</span>
+          </span>
+        </button>
+      </div>
+      <Modal
+        className="battle-report-modal"
+        labelledBy="records-panel-title"
+        onClose={() => setRecordsOpen(false)}
+        open={recordsOpen}
+        size="medium"
       >
-        <span className="nav-glyph" aria-hidden="true"><Icon name="settings" /></span>
-        <span className="nav-text">
-          <span className="nav-label">{t('app.nav.settings')}</span>
-        </span>
-      </button>
+        <RecordsPanel />
+      </Modal>
     </aside>
   )
 })
@@ -1483,19 +1507,17 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   }, [abilities, learnedAbilityIds])
   if (!combat) return null
 
-  const update = (patch: Partial<typeof combat>) => {
-    gameClient.sendCommand('loadout.replace', { ...combat, ...patch })
-  }
+  // 装配变更统一经 sendLoadoutReplace 发送：内部完成槽位类别互斥与等级归一化。
+  const update = (patch: Partial<typeof combat>) => sendLoadoutReplace(patch)
+  // 已参悟等级由功法经验经立方曲线导出，与服务端 AbilityExpCurve 同式。
+  const abilityLevelFor = (abilityId: string) => learnedAbilityLevel(combat.abilityExperiences, abilityId)
   const withConsumable = (index: number, itemId: string | null) => combat.consumableSlots.map((slot, slotIndex) => (
     slotIndex === index
       ? { ...slot, itemId, enabled: Boolean(itemId), triggers: itemId === slot.itemId ? slot.triggers : [] }
       : slot
   ))
-  const withAbility = (index: number, abilityId: string | null) => combat.abilitySlots.map((slot, slotIndex) => (
-    slotIndex === index
-      ? { ...slot, abilityId, triggers: abilityId === slot.abilityId ? slot.triggers : [] }
-      : slot
-  ))
+  // 重复装配按「移动」处理：assignAbilityToSlot 会把功法从原槽位移到新槽位。
+  const withAbility = (index: number, abilityId: string | null) => assignAbilityToSlot(combat.abilitySlots, index, abilityId)
   const getTriggers = (target: NonNullable<typeof editingTrigger>): CombatTrigger[] => (
     target.kind === 'ability'
       ? combat.abilitySlots[target.index]?.triggers ?? []
@@ -1621,13 +1643,14 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                         {abilityIconUrl
                           ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
                           : <strong className="item-tile-name">{ability.name}</strong>}
-                        <span className="item-corner item-corner--bottom-right">{t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost) })}</span>
+                        <span className="item-corner item-corner--bottom-right">{t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}</span>
                         {(abilityCooldowns[ability.abilityId] ?? 0) > 0 && (
                           <AbilityCooldownOverlay
                             remainingMilliseconds={abilityCooldowns[ability.abilityId]}
-                            totalMilliseconds={ability.cooldownMilliseconds}
+                            totalMilliseconds={ability.cooldownMilliseconds ?? 0}
                           />
                         )}
+                        <span aria-hidden="true" className="item-tile-glow" />
                       </span>
                     ) : (
                       <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
@@ -1635,23 +1658,10 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   </button>
                   {ability && (
                     <>
-                      <span className="combat-ability-level-control" onClick={event => event.stopPropagation()}>
+                      {/* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */}
+                      <span className="combat-ability-level-control">
                         <span aria-hidden="true">Lv.</span>
-                        <input
-                          aria-label={t('app.combatPanel.levelAria', { name: ability.name })}
-                          className="combat-ability-level-input"
-                          max={100}
-                          min={1}
-                          onChange={event => update({
-                            abilitySlots: combat.abilitySlots.map((current, slotIndex) => (
-                              slotIndex === index
-                                ? { ...current, level: Math.max(1, Math.min(100, Number(event.target.value) || 1)) }
-                                : current
-                            )),
-                          })}
-                          type="number"
-                          value={slot.level}
-                        />
+                        <span className="combat-ability-level-value">{abilityLevelFor(ability.abilityId)}</span>
                       </span>
                       <button
                         aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
@@ -1667,7 +1677,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
               return (
                 <div className="combat-slot-card" key={index}>
                   {ability ? (
-                    <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, slot.level)} tabIndex={-1}>
+                    <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, abilityLevelFor(ability.abilityId))} tabIndex={-1}>
                       {slotContent}
                     </EffectTooltipTarget>
                   ) : <span className="combat-ability-slot-shell">{slotContent}</span>}
@@ -1681,6 +1691,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
       <AbilityGridPicker
         abilities={learnedAbilities}
         allowEmpty
+        levelFor={abilityLevelFor}
         onClose={() => setPickerTarget(null)}
         onSelect={selectPickerValue}
         open={pickerTarget?.kind === 'ability'}

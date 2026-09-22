@@ -2,10 +2,11 @@
   {
     "id": "ability.palm-lightning",
     "name": "掌心雷",
+    "description": "从掌心发出一道雷光",
     "style": "fiveElements",
     "tier": 1,
     "category": "spell",
-    "element": "fire",
+    "element": "wood",
     "castMilliseconds": 2000,
     "damageRatio": 0.6,
     "flatDamage": 10,
@@ -19,11 +20,13 @@
       }
     ],
     "manaCost": 4.0,
-    "rootAttribute": "intelligence"
+    "rootAttribute": "intelligence",
+    "discipline": "spell"
   },
   {
     "id": "ability.blazing-blast",
     "name": "轰炎",
+    "description": "轰出一片灼热烈焰",
     "style": "fiveElements",
     "tier": 1,
     "category": "spell",
@@ -43,11 +46,13 @@
       }
     ],
     "manaCost": 10.0,
-    "rootAttribute": "intelligence"
+    "rootAttribute": "intelligence",
+    "discipline": "spell"
   },
   {
     "id": "ability.qingping-melody",
     "name": "清平乐",
+    "description": "奏响清平雅乐",
     "style": "fiveElements",
     "tier": 2,
     "category": "spell",
@@ -69,15 +74,17 @@
       }
     ],
     "manaCost": 10.0,
-    "rootAttribute": "intelligence"
+    "rootAttribute": "intelligence",
+    "discipline": "internal"
   },
   {
     "id": "ability.lightning-attraction",
     "name": "雷光引",
+    "description": "引动九天雷光轰击敌阵",
     "style": "fiveElements",
     "tier": 2,
     "category": "spell",
-    "element": "fire",
+    "element": "wood",
     "cooldownMilliseconds": 28000,
     "castMilliseconds": 2000,
     "targetType": "allEnemies",
@@ -93,11 +100,13 @@
       }
     ],
     "manaCost": 20.0,
-    "rootAttribute": "intelligence"
+    "rootAttribute": "intelligence",
+    "discipline": "spell"
   },
   {
     "id": "ability.pozhen-melody",
     "name": "破阵子",
+    "description": "奏响破阵战歌",
     "style": "talisman",
     "tier": 2,
     "category": "spell",
@@ -121,6 +130,7 @@
       }
     ],
     "manaCost": 50.0,
-    "rootAttribute": "talisman"
+    "rootAttribute": "talisman",
+    "discipline": "internal"
   }
 ]
