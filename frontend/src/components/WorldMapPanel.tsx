@@ -1,11 +1,16 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { findItemInCatalog } from '../game/ids'
-import type { TravelSegment, WorldMapDefinition, WorldState } from '../game/types'
+import { calculateRealmInfo } from '../game/combatConstants'
+import { formatInteger } from '../game/format'
+import type { CombatantDefinition, TravelSegment, WorldMapDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
-import { FloatingTooltip } from './FloatingPopover'
+import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
+import { ItemTileReference } from './ItemDisplay'
 import { Modal } from './Modal'
+import { UnitNumber } from './UnitNumber'
+import { resolveEnemyCombatAttributeModel } from './CombatAttributePanel'
 /** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
   from: { x: number; y: number },
@@ -363,6 +368,85 @@ function usePlayerDisplayPosition(
   return { playerPosRef, markerRef }
 }
 // 地图节点/地点名称与描述来自服务端数据，仅面板框架文本与 aria 描述模板走 i18n。
+
+/**
+ * 栖息生灵胶囊 + Hover 悬浮详情卡（普通怪 / 精英 / 领主共用模板）
+ *
+ * 胶囊本体保持纯名称；悬停浮层展示位阶徽记、境界与品阶副标、
+ * 生命/灵力/双攻/双防六项基础战斗属性（复用斗法敌怪属性统一口径），
+ * 以及掉落物图标瓦片行与击杀收益（修为/底蕴/六维）明细。
+ */
+const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }: {
+  monster: CombatantDefinition
+  isElite?: boolean
+  isBoss?: boolean
+}): React.JSX.Element {
+  const t = useT()
+  const model = resolveEnemyCombatAttributeModel(monster)
+  const realm = calculateRealmInfo(0, monster.level ?? 1)
+  const rankLabel = isBoss
+    ? t('combat.nearby.rankBoss')
+    : isElite ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
+  const dropIds = monster.drops ?? []
+  const rewardParts = [
+    (monster.qiReward ?? 0) > 0 ? `${t('combat.report.qi')} +${formatInteger(monster.qiReward ?? 0)}` : null,
+    monster.experience > 0 ? `${t('combat.report.experience')} +${formatInteger(monster.experience)}` : null,
+    (monster.rootExpReward ?? 0) > 0 ? `${t('insight.subTab.sixDimensions')} +${formatInteger(monster.rootExpReward ?? 0)}` : null,
+  ].filter((part): part is string => part !== null)
+
+  return (
+    <FloatingPopover
+      content={
+        <FloatingInfoCard
+          badge={rankLabel}
+          badgeTone={isBoss ? 'danger' : isElite ? 'purple' : 'gold'}
+          lines={[
+            ...(rewardParts.length > 0
+              ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`]
+              : []),
+            ...(dropIds.length > 0
+              ? [
+                  <span key="drops">
+                    {t('combat.map.monsterDrops')}：
+                    <span className="world-monster-drops-row">
+                      {dropIds.map(itemId => (
+                        <ItemTileReference className="world-monster-drop-anchor" itemId={itemId} key={itemId} />
+                      ))}
+                    </span>
+                  </span>,
+                ]
+              : []),
+          ]}
+          stats={[
+            { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.maxHitpoints} /> },
+            { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.maxManapoints} /> },
+            { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.physicalAttack} /> },
+            { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.spellAttack} /> },
+            { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.armor} /> },
+            { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.magicResistance} /> },
+          ]}
+          subtitle={t('combat.map.monsterSubtitle', {
+            realm: realm.minorName,
+            level: monster.level ?? 1,
+            tier: monster.tier ?? 1,
+          })}
+          title={monster.name}
+        />
+      }
+      placement="top"
+      trigger="hover"
+    >
+      <span className={`world-monster-pill${isElite ? ' is-elite' : ''}${isBoss ? ' is-boss' : ''}`}>
+        {(isElite || isBoss) && (
+          <small className="monster-rank-tag">
+            {isBoss ? t('combat.nearby.markBoss') : t('combat.nearby.markElite')}
+          </small>
+        )}
+        {monster.name}
+      </span>
+    </FloatingPopover>
+  )
+})
 
 /**
  * 修仙大千世界大地图与游历导航面板 (WorldMapPanel)
@@ -835,21 +919,13 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                   </div>
                   <div className="world-eco-content">
                     {nodeMonsters.normal.map(monster => (
-                      <span className="world-monster-pill" key={monster.monsterId}>
-                        {monster.name}
-                      </span>
+                      <MapMonsterPill key={monster.enemyId} monster={monster} />
                     ))}
                     {nodeMonsters.elite.map(monster => (
-                      <span className="world-monster-pill is-elite" key={monster.monsterId}>
-                        <small className="monster-rank-tag">{t('combat.nearby.markElite')}</small>
-                        {monster.name}
-                      </span>
+                      <MapMonsterPill isElite key={`elite-${monster.enemyId}`} monster={monster} />
                     ))}
                     {nodeMonsters.boss.map(monster => (
-                      <span className="world-monster-pill is-boss" key={monster.monsterId}>
-                        <small className="monster-rank-tag">{t('combat.nearby.markBoss')}</small>
-                        {monster.name}
-                      </span>
+                      <MapMonsterPill isBoss key={`boss-${monster.enemyId}`} monster={monster} />
                     ))}
                   </div>
                 </div>

@@ -282,8 +282,18 @@ public static class StaticGameCatalogMapper
         effect = ReadString(entity, "effect")
     }).Cast<object>().ToArray();
 
-    private static object ResolveMonster(GameDataCatalog catalog, string id) => catalog.Monsters.TryGetValue(id, out var monster)
-        ? new
+    /// <summary>
+    /// 怪物静态摘要投影：攻防/资源/抗性/击杀收益一律取领域解算结果（CombatMonsterDefinition.Stats 与奖励字段），
+    /// 原始配表 JSON 只承担名称、立绘、流派标签与技能列表等声明式字段——属性由「境界锚点 × 品阶倍率 × 倾向权重」
+    /// 派生，配表顶层并不存在 maxManapoints/magicResistance/experience 等同名字段，直接读会恒为 0。
+    /// </summary>
+    private static object ResolveMonster(GameDataCatalog catalog, string id)
+    {
+        if (!catalog.Monsters.TryGetValue(id, out var monster)
+            || !catalog.CombatMonsters.TryGetValue(id, out var definition))
+            return EmptyMonster(id, id);
+        var stats = definition.Stats;
+        return new
         {
             enemyId = id,
             name = ReadString(monster, "name", id),
@@ -292,41 +302,50 @@ public static class StaticGameCatalogMapper
             category = NormalizeEnum(ReadString(monster, "category", "physical")),
             element = NormalizeEnum(ReadString(monster, "element", "none")),
             rank = NormalizeEnum(ReadString(monster, "rank", "normal")),
-            maxHitpoints = catalog.CombatMonsters[id].Stats.MaxHitpoints,
-            maxManapoints = Math.Max(0, ReadDouble(monster, "maxManapoints", 0)),
-            attackIntervalMilliseconds = catalog.CombatMonsters[id].Stats.AttackIntervalSeconds * 1000,
-            accuracyRating = catalog.CombatMonsters[id].Stats.Accuracy,
-            evasionRating = catalog.CombatMonsters[id].Stats.Evasion,
-            maxDamage = catalog.CombatMonsters[id].Stats.AttackPower,
-            armor = catalog.CombatMonsters[id].Stats.Defense,
-            magicResistance = Math.Max(0, ReadDouble(monster, "magicResistance", 0)),
-            metalResistance = Math.Max(0, ReadDouble(monster, "metalResistance", 0)),
-            woodResistance = Math.Max(0, ReadDouble(monster, "woodResistance", 0)),
-            waterResistance = Math.Max(0, ReadDouble(monster, "waterResistance", 0)),
-            fireResistance = Math.Max(0, ReadDouble(monster, "fireResistance", 0)),
-            earthResistance = Math.Max(0, ReadDouble(monster, "earthResistance", 0)),
+            level = definition.Level,
+            tier = catalog.BaseAttributes?.TierAt(definition.Level) ?? 1,
+            budgetCost = definition.BudgetCost,
+            maxHitpoints = stats.MaxHitpoints,
+            maxManapoints = stats.MaxManapoints,
+            attackIntervalMilliseconds = stats.AttackIntervalSeconds * 1000,
+            accuracyRating = stats.Accuracy,
+            evasionRating = stats.Evasion,
+            maxDamage = stats.AttackPower,
+            armor = stats.Defense,
+            magicResistance = stats.MagicResistance,
+            metalResistance = stats.MetalResistance,
+            woodResistance = stats.WoodResistance,
+            waterResistance = stats.WaterResistance,
+            fireResistance = stats.FireResistance,
+            earthResistance = stats.EarthResistance,
             tenacity = ReadDouble(monster, "tenacity", 0),
             lifeStealRatio = ReadDouble(monster, "lifeStealRatio", 0),
             armorDamageRatio = ReadDouble(monster, "armorDamageRatio", 0),
             hpDrainRatio = ReadDouble(monster, "hpDrainRatio", 0),
-            criticalChance = ReadDouble(monster, "criticalChance", 0),
-            criticalDamageRatio = ReadDouble(monster, "criticalDamageRatio", 1.5),
-            criticalAvoidance = ReadDouble(monster, "criticalAvoidance", 0),
-            damageAbsorptionRatio = ReadDouble(monster, "damageAbsorptionRatio", 0),
+            // 前端以「比例 ×100 = 点数」口径展示暴击/免暴/免伤，领域存的是点数，这里折回比例下发。
+            criticalChance = stats.Critical / 100d,
+            criticalDamageRatio = stats.CriticalMultiplier,
+            criticalAvoidance = stats.CriticalResistance / 100d,
+            damageAbsorptionRatio = stats.DamageAbsorptionPoints / 100d,
             hpRegenPerFiveSeconds = ReadDouble(monster, "hpRegen", 0),
             mpRegenPerFiveSeconds = ReadDouble(monster, "mpRegen", 0),
-            experience = ReadDouble(monster, "experience", ReadDouble(monster, "budgetCost", 1)),
+            experience = definition.ExperienceReward,
+            qiReward = definition.QiReward,
+            rootExpReward = definition.RootExpReward,
+            drops = definition.DropTable.Select(drop => drop.ItemId.Value).ToArray(),
             abilityIds = ReadArray(monster, "skills").Select(skill => ReadString(skill, "abilityId")).Where(id => id.Length > 0).ToArray()
-        }
-        : EmptyMonster(id, id);
+        };
+    }
 
     private static object EmptyMonster(string id, string name) => new
     {
         enemyId = id, name, visual = new { renderer = "text", source = "?" }, style = "body", category = "physical", element = "none", rank = "normal",
+        level = 1, tier = 1, budgetCost = 0d,
         maxHitpoints = 1d, maxManapoints = 0d, attackIntervalMilliseconds = 2_000d, accuracyRating = 1d, evasionRating = 0d, maxDamage = 0d,
         armor = 0d, magicResistance = 0d, metalResistance = 0d, woodResistance = 0d, waterResistance = 0d, fireResistance = 0d, earthResistance = 0d,
         tenacity = 0d, lifeStealRatio = 0d, armorDamageRatio = 0d, hpDrainRatio = 0d, criticalChance = 0d, criticalDamageRatio = 1.5d,
-        criticalAvoidance = 0d, damageAbsorptionRatio = 0d, hpRegenPerFiveSeconds = 0d, mpRegenPerFiveSeconds = 0d, experience = 0d, abilityIds = Array.Empty<string>()
+        criticalAvoidance = 0d, damageAbsorptionRatio = 0d, hpRegenPerFiveSeconds = 0d, mpRegenPerFiveSeconds = 0d, experience = 0d,
+        qiReward = 0d, rootExpReward = 0d, drops = Array.Empty<string>(), abilityIds = Array.Empty<string>()
     };
 
     private static bool IsMonsterInRank(GameDataCatalog catalog, string id, string rank) => catalog.Monsters.TryGetValue(id, out var monster)
