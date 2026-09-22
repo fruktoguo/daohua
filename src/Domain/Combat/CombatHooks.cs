@@ -11,10 +11,12 @@ namespace Domain.Combat;
 /// <param name="HpDrainRatio">气血汲取比例：命中后按实际伤害回血（普攻与技能同构）。</param>
 /// <param name="MpDrainRatio">灵力汲取比例：命中后按实际伤害从目标灵力池偷取灵力。</param>
 /// <param name="DamageReflectRatio">伤害反弹比例：受击落账后把实收伤害按比例弹回攻击方。</param>
+/// <param name="HealingBonusRatio">治疗加成比例：施放治疗技能时按比例放大治疗量（对一切施放单位通用）。</param>
 public sealed record CombatEffectProfile(
     double HpDrainRatio = 0,
     double MpDrainRatio = 0,
-    double DamageReflectRatio = 0)
+    double DamageReflectRatio = 0,
+    double HealingBonusRatio = 0)
 {
     /// <summary>全部效果为零的空参数包。</summary>
     public static CombatEffectProfile Empty { get; } = new();
@@ -24,7 +26,8 @@ public sealed record CombatEffectProfile(
     {
         if (!double.IsFinite(HpDrainRatio) || HpDrainRatio < 0
             || !double.IsFinite(MpDrainRatio) || MpDrainRatio < 0
-            || !double.IsFinite(DamageReflectRatio) || DamageReflectRatio < 0)
+            || !double.IsFinite(DamageReflectRatio) || DamageReflectRatio < 0
+            || !double.IsFinite(HealingBonusRatio) || HealingBonusRatio < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗反应效果参数无效。");
     }
 }

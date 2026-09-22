@@ -8,10 +8,7 @@ import { useConfigContext } from '../../context/ConfigContext';
 import type { EquipmentConfig } from '../../types/config';
 import {
   EQUIPMENT_SLOTS,
-  TIER_OPTIONS,
-  COMBAT_STYLES,
-  DAMAGE_CATEGORIES,
-  ELEMENTS
+  TIER_OPTIONS
 } from '../../types/enums';
 import { EnumSelect } from '../common/EnumSelect';
 import { NumberInput } from '../common/NumberInput';
@@ -56,11 +53,10 @@ export function EquipmentEditor() {
     const newEquip: EquipmentConfig = {
       id: newId,
       name: '新法宝神兵',
+      description: '',
       slot: 'weapon',
       tier: 1,
-      style: 'body',
-      category: 'physical',
-      element: 'none',
+      quality: 1,
       baseStatRatios: { physicalAttack: 0.2 }
     };
     updateConfig('equipment.json', prev => [newEquip, ...prev]);
@@ -271,34 +267,12 @@ export function EquipmentEditor() {
                 onChange={v => handleUpdate({ tier: v })}
               />
 
-              <EnumSelect
-                label="流派偏向 (Style)"
-                value={currentEquipment.style}
-                options={COMBAT_STYLES}
-                onChange={v => handleUpdate({ style: v })}
-              />
-
-              <EnumSelect
-                label="伤害偏向 (Category)"
-                value={currentEquipment.category}
-                options={DAMAGE_CATEGORIES}
-                onChange={v => handleUpdate({ category: v })}
-              />
-
-              <EnumSelect
-                label="五行属性 (Element)"
-                value={currentEquipment.element}
-                options={ELEMENTS}
-                onChange={v => handleUpdate({ element: v })}
-              />
-
               <NumberInput
-                label="攻击间隔 (AttackIntervalMilliseconds)"
-                description="仅主武器生效"
-                value={currentEquipment.attackIntervalMilliseconds}
-                onChange={v => handleUpdate({ attackIntervalMilliseconds: v })}
-                step={100}
-                unit="ms"
+                label="品质等级 (Quality)"
+                description="配表品质标签（0=凡品起）"
+                value={currentEquipment.quality}
+                onChange={v => handleUpdate({ quality: v })}
+                min={0}
               />
             </div>
           </div>
@@ -325,37 +299,21 @@ export function EquipmentEditor() {
 
             <StatDictEditor
               label="特殊机制属性 (SpecialMechanics)"
-              description="暴击率/穿透率/吸血/CDR 等加成"
+              description="threatRatio/hpDrainRatio/mpDrainRatio/damageReflectRatio 等"
               value={currentEquipment.specialMechanics}
               onChange={dict => handleUpdate({ specialMechanics: dict })}
               unit="%"
               step={0.01}
             />
 
-            <div className="p-4 bg-zinc-900/60 border border-zinc-800/80 rounded-xl flex flex-col gap-4">
-              <h3 className="text-xs font-semibold text-zinc-200 tracking-tight">数值预算与强度权重 (可选)</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <NumberInput
-                  label="强度系数 (Intensity)"
-                  value={currentEquipment.intensity}
-                  onChange={v => handleUpdate({ intensity: v })}
-                  step={0.1}
-                />
-                <NumberInput
-                  label="数值预算 (Budget)"
-                  value={currentEquipment.budget}
-                  onChange={v => handleUpdate({ budget: v })}
-                  step={10}
-                />
-              </div>
-              <StatDictEditor
-                label="属性分配权重 (Weights)"
-                value={currentEquipment.weights}
-                onChange={dict => handleUpdate({ weights: dict })}
-                unit="w"
-                step={0.1}
-              />
-            </div>
+            <StatDictEditor
+              label="强化附加加成 (EnhancementBonus)"
+              description="每级强化额外属性（映射层透传展示）"
+              value={currentEquipment.enhancementBonus}
+              onChange={dict => handleUpdate({ enhancementBonus: dict })}
+              unit="%"
+              step={0.01}
+            />
           </div>
         </div>
       ) : (

@@ -142,7 +142,7 @@ public static class SimulationEngine
                 // 空闲技能推进只在确有冷却/吟唱待结算时改写状态，避免空推进把聚合标脏。
                 if (skills.Cooldowns.Count > 0 || skills.CastingAbilityId is not null)
                 {
-                    player.Combat.Skills = CombatSkillEngine.AdvanceIdle(skills, step);
+                    player.Combat.Skills = skills.AdvanceIdle(step);
                     player.MarkDirty(PlayerSectionKind.Combat);
                     changed = true;
                 }
@@ -540,7 +540,7 @@ public static class SimulationEngine
                 player.Settings.AutoUseSlots[i] = player.Settings.AutoUseSlots[i] with { CooldownUntilUnixSeconds = 0 };
             player.MarkDirty(PlayerSectionKind.Settings);
             player.MarkDirty(PlayerSectionKind.Combat);
-            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, NextSeed(expedition.Seed));
+            action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, DeterministicSequence.NextSeed(expedition.Seed));
             action.ProgressSeconds = 0;
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.respawned", "复活完成，气血与灵力恢复。", definition.Id);
             return;
@@ -569,7 +569,7 @@ public static class SimulationEngine
                 if (player.Duel.CooldownUntilUnixSeconds <= entryAtUnix)
                 {
                     var chargesBefore = player.Duel.EncounterCharges;
-                    var chargeRoll = (unchecked((ulong)NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
+                    var chargeRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
                     if (chargeRoll < duelSettings.EncounterChancePerBattle)
                     {
                         player.Duel.EncounterCharges += 1;
@@ -595,15 +595,21 @@ public static class SimulationEngine
 
             // 按遭遇预算与波次生成确定性的本波怪物阵容，同波全体敌人同场交战。
             var wave = EncounterWaveSelector.Select(encounter, gameData.CombatMonsters, seed, updated.WaveNumber);
-            var battle = CombatEncounterState.Start(
+            var battle = CombatEncounterState.Create(
                 encounter.Id,
                 seed,
-                PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
+                new CombatantTemplate(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
+                    SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities)),
                 wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray());
             for (var i = 0; i < wave.Count; i++)
                 battle.Enemies[i].DefinitionId = wave[i].Id;
             battle.Player.Hitpoints = Math.Clamp(player.Combat.Hitpoints, 0, player.Combat.MaxHitpoints);
             battle.Player.Manapoints = Math.Clamp(player.Combat.Manapoints, 0, player.Combat.MaxManapoints);
+            // 玩家战外持久 Buff 注入触发求值视图；跨战冷却与未完吟唱折算进通用槽位时间线。
+            battle.Player.ExternalBuffStacks = buffId => player.Buffs.Active
+                .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
+            player.Combat.Skills.ApplyTo(battle.Player);
+            DeterministicCombatEngine.DecideInitialActions(battle);
             var waveNames = string.Join("、", wave.Select(monster => monster.Name));
             if (battle.Player.Hitpoints <= 0)
             {
@@ -641,48 +647,40 @@ public static class SimulationEngine
             var monster = gameData.CombatMonsters[enemy.EnemyId];
             return new CombatantTemplate(monster.Stats, monster.Skills);
         }).ToArray();
+        // 玩家方技能槽与怪物同构：装配功法折叠为通用技能槽进入同一条动作时间线。
+        var playerTemplate = new CombatantTemplate(
+            PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
+            SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities));
         var battleState = CombatEncounterState.Restore(
             encounter.Id,
             expedition.Seed,
-            PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
-            new CombatantSnapshot(expedition.PlayerHitpoints, expedition.PlayerManapoints,
+            playerTemplate,
+            expedition.PlayerState ?? new CombatantSnapshot(expedition.PlayerHitpoints, expedition.PlayerManapoints,
                 expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat),
             templates,
             waveEnemies.Select(enemy => new CombatantSnapshot(enemy.Hitpoints, enemy.Manapoints,
                 enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
                 enemy.PendingSkillIndex, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints,
-                enemy.SkillCooldownUntil, enemy.SkillCastCount)).ToArray(),
+                enemy.SkillCooldownUntil, enemy.SkillCastCount, enemy.Buffs)).ToArray(),
             expedition.BattleElapsedSeconds,
             expedition.Outcome,
             expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.AttackCount));
         for (var i = 0; i < waveEnemies.Count; i++)
             battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
+        // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
+        battleState.Player.ExternalBuffStacks = buffId => player.Buffs.Active
+            .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
         var battleFrom = battleState.ElapsedSeconds;
         var actionElapsedBeforeCombat = (target - from).TotalSeconds - remainingSeconds;
-        var attributes = PlayerAttributeResolver.Resolve(player, gameData);
-        var skillStart = CombatSkillEngine.Advance(player, gameData, battleState, attributes, player.Combat.Skills, 0);
-        player.Combat.Skills = skillStart.State;
-        battleState.Player.Manapoints = player.Combat.Manapoints;
-        // 玩家技能吟唱占用整条动作时间线：吟唱中普攻出手边界顺延至吟唱结束后一个普攻周期。
-        if (player.Combat.Skills.CastingAbilityId is not null)
-            battleState.Player.NextAttackAtSeconds = battleState.ElapsedSeconds
-                + player.Combat.Skills.CastRemainingSeconds + battleState.Player.Stats.AttackIntervalSeconds;
-        var battleTo = battleFrom + Math.Min(remainingSeconds, CombatSkillEngine.NextBoundarySeconds(player.Combat.Skills));
-        var combatResult = DeterministicCombatEngine.AdvanceTo(battleState, battleTo);
+        var combatResult = DeterministicCombatEngine.AdvanceTo(battleState, battleFrom + remainingSeconds);
         // battleTo 由 battleFrom 加法得到，回减时浮点误差可能让 consumed 比剩余预算大 1e-15 量级；
         // 不收敛到剩余预算会把外层 remainingSeconds 减成负数触发不变量。
         var consumed = Math.Clamp(battleState.ElapsedSeconds - battleFrom, 0, remainingSeconds);
-        var skillResult = CombatSkillEngine.Advance(player, gameData, battleState, attributes, player.Combat.Skills, consumed);
-        player.Combat.Skills = skillResult.State;
-        if (player.Combat.Skills.CastingAbilityId is not null)
-            battleState.Player.NextAttackAtSeconds = battleState.ElapsedSeconds
-                + player.Combat.Skills.CastRemainingSeconds + battleState.Player.Stats.AttackIntervalSeconds;
-        foreach (var skillEvent in skillStart.Events.Concat(skillResult.Events))
-            AddCombatEventAt(ref events, from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, skillEvent.AtSeconds - battleFrom)),
-                "combat.skill", $"施放 {skillEvent.AbilityId}，伤害 {skillEvent.Damage:0.##}，治疗 {skillEvent.Healing:0.##}。", definition.Id);
-        combatResult = combatResult with { Outcome = battleState.Outcome };
+        // 玩家技能与普攻共用同一条动作时间线：战后把通用槽位状态折算回跨战持久化形态。
+        player.Combat.Skills = PlayerCombatSkillState.FromCombatant(battleState.Player, battleState.ElapsedSeconds);
         remainingSeconds -= consumed;
         player.Combat.Hitpoints = battleState.Player.Hitpoints;
+        player.Combat.Manapoints = battleState.Player.Manapoints;
         // 战斗中气血是独立持久化分段；仅标记行动队列会导致重连后回退到旧气血。
         player.MarkDirty(PlayerSectionKind.Combat);
         var updatedBattle = ToExpeditionState(battleState, expedition with
@@ -702,8 +700,13 @@ public static class SimulationEngine
             var attacker = NameOf(combatEvent.AttackerId);
             var targetName = NameOf(combatEvent.TargetId);
             var eventAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom));
-            AddCombatEventAt(ref events, eventAt,
-                "combat.attack", $"{attacker}{(combatEvent.Hit ? $"命中{targetName}，造成 {combatEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
+            // 技能施放与普攻共用同一事件流；携带 AbilityId 的帧按施放口径落日志。
+            if (combatEvent.AbilityId is { } abilityId)
+                AddCombatEventAt(ref events, eventAt,
+                    "combat.skill", $"{attacker}施放 {abilityId}，伤害 {combatEvent.Damage:0.##}，治疗 {combatEvent.Healing:0.##}。", definition.Id);
+            else
+                AddCombatEventAt(ref events, eventAt,
+                    "combat.attack", $"{attacker}{(combatEvent.Hit ? $"命中{targetName}，造成 {combatEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
         }
         if (combatResult.Outcome == CombatOutcome.Running) return;
         if (combatResult.Outcome != CombatOutcome.PlayerWon)
@@ -731,7 +734,7 @@ public static class SimulationEngine
         {
             var monster = gameData.CombatMonsters[enemy.EnemyId];
             ApplyCombatRewards(player, monster, killSeed, pvpEnabled, killAtUnix, gameData, action.Id, ref deltas);
-            killSeed = NextSeed(killSeed);
+            killSeed = DeterministicSequence.NextSeed(killSeed);
             switch (monster.Rank)
             {
                 case CombatMonsterRank.Elite: player.Progression.EliteKills += 1; break;
@@ -772,7 +775,7 @@ public static class SimulationEngine
             {
                 action.RemainingRepeats = action.Intent.RepeatCount;
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    gameData, NextSeed(updatedBattle.Seed), waveNumber: 1);
+                    gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1);
                 action.ProgressSeconds = 0;
                 if (player.Actions.Count > 1)
                 {
@@ -784,7 +787,7 @@ public static class SimulationEngine
             return;
         }
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-            gameData, NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1);
+            gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), updatedBattle.WaveNumber + 1);
         action.ProgressSeconds = 0;
     }
 
@@ -813,6 +816,8 @@ public static class SimulationEngine
         var cursor = (int)playback.EventCursor;
         var viewerHp = expedition.PlayerHitpoints;
         var opponentHp = playback.OpponentHitpoints;
+        var viewerMp = expedition.PlayerManapoints;
+        var opponentMp = playback.OpponentManapoints;
         // 回放游标前的事件已全部应用过；游标到 playbackTo 之间的事件逐条应用并写日志。
         for (var i = cursor; i < playback.Events.Count; i++)
         {
@@ -820,8 +825,11 @@ public static class SimulationEngine
             if (duelEvent.AtSeconds > playbackTo + 1e-9) break;
             cursor = i + 1;
             var targetIsViewer = duelEvent.TargetIsInitiator == playback.ViewerIsInitiator;
-            if (targetIsViewer) viewerHp = duelEvent.TargetHitpointsAfter;
-            else opponentHp = duelEvent.TargetHitpointsAfter;
+            var attackerIsViewer = duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator;
+            if (targetIsViewer) { viewerHp = duelEvent.TargetHitpointsAfter; viewerMp = duelEvent.TargetManapointsAfter; }
+            else { opponentHp = duelEvent.TargetHitpointsAfter; opponentMp = duelEvent.TargetManapointsAfter; }
+            if (attackerIsViewer) viewerMp = duelEvent.AttackerManapointsAfter;
+            else opponentMp = duelEvent.AttackerManapointsAfter;
             var attacker = duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator ? "你" : playback.OpponentName;
             var targetName = targetIsViewer ? "你" : playback.OpponentName;
             AddCombatEventAt(ref events, from.AddSeconds(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)),
@@ -831,10 +839,12 @@ public static class SimulationEngine
         {
             BattleElapsedSeconds = playbackTo,
             PlayerHitpoints = viewerHp,
-            Duel = playback with { EventCursor = cursor, OpponentHitpoints = opponentHp }
+            PlayerManapoints = viewerMp,
+            Duel = playback with { EventCursor = cursor, OpponentHitpoints = opponentHp, OpponentManapoints = opponentMp }
         };
         action.Expedition = updated;
         player.Combat.Hitpoints = Math.Clamp(viewerHp, 0, player.Combat.MaxHitpoints);
+        player.Combat.Manapoints = Math.Clamp(viewerMp, 0, player.Combat.MaxManapoints);
         player.MarkDirty(PlayerSectionKind.Combat);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
         if (!playback.Resolved && playbackTo + 1e-9 < playback.DurationSeconds) return;
@@ -859,7 +869,7 @@ public static class SimulationEngine
                         ? $"斗法获胜：{playback.OpponentName} 弃战离去，其暂存物品尽数落袋。"
                         : $"斗法获胜：击败 {playback.OpponentName}，缴获其暂存物品。", definition.Id);
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    gameData, NextSeed(expedition.Seed), waveNumber: 1);
+                    gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1);
                 break;
             case CombatOutcome.EnemyWon:
                 // 弃战路径（ApplyDuelForfeit）已即时记账暂存移除、冷却与败绩，回放落点不再重复结算。
@@ -876,7 +886,7 @@ public static class SimulationEngine
                         ? $"斗法弃战：你已结束斗法行动，暂存物品被 {playback.OpponentName} 取走。"
                         : $"斗法落败：{playback.OpponentName} 取走了你的暂存物品，一小时内不再进入斗法。", definition.Id);
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    gameData, NextSeed(expedition.Seed), waveNumber: 1) with
+                    gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1) with
                 { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
                 player.Combat.Hitpoints = 0;
                 break;
@@ -884,7 +894,7 @@ public static class SimulationEngine
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.draw",
                     $"斗法平局：与 {playback.OpponentName} 战成平手。", definition.Id);
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
-                    gameData, NextSeed(expedition.Seed), waveNumber: 1);
+                    gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1);
                 break;
         }
         player.MarkDirty(PlayerSectionKind.Duel);
@@ -955,6 +965,8 @@ public static class SimulationEngine
         PlayerAttackCount = battle.Player.AttackCount,
         PlayerThreat = battle.Player.Threat,
         Outcome = battle.Outcome,
+        // 玩家单位的完整战斗快照（吟唱槽位/逐槽冷却/施放计数/战内 Buff）随相位持久化，恢复后序列不漂移。
+        PlayerState = CombatEncounterState.Snapshot(battle.Player),
         Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
             enemy.DefinitionId ?? enemy.Id, enemy.Hitpoints, enemy.Manapoints,
             enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
@@ -965,7 +977,8 @@ public static class SimulationEngine
             enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
                 ? DeterministicCombatEngine.AbilityNumber(enemy.Skills[enemy.PendingSkillIndex].Ability, "castMilliseconds") / 1000d * enemy.Stats.CastTimeFactor
                 : enemy.Stats.AttackIntervalSeconds,
-            enemy.SkillCastCount)).ToArray()
+            enemy.SkillCastCount,
+            enemy.Buffs.Count == 0 ? null : enemy.Buffs.ToArray())).ToArray()
     };
 
     /// <summary>
@@ -1000,10 +1013,13 @@ public static class SimulationEngine
         foreach (var drop in monster.DropTable)
         {
             if (!drop.ItemId.IsValid || drop.MinQuantity <= 0 || drop.MaxQuantity < drop.MinQuantity || drop.DropChance <= 0) continue;
-            var roll = (unchecked((ulong)NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
-            seed = NextSeed(seed);
+            // 判定与数量抽样分属两条独立通道：判定 roll 来自主流递推，
+            // 数量 roll 用固定盐位 XOR 出的侧流，彼此不共享抽样值。
+            var roll = (unchecked((ulong)DeterministicSequence.NextSeed(seed)) % 1_000_000UL) / 1_000_000d;
+            var quantityRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DropQuantityChannelSalt)) % 1_000_000UL) / 1_000_000d;
+            seed = DeterministicSequence.NextSeed(seed);
             if (roll > Math.Min(1, drop.DropChance * dropBonus)) continue;
-            var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity) * roll);
+            var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity) * quantityRoll);
             quantity = Math.Max(drop.MinQuantity, quantity);
             if (pvpEnabled)
             {
@@ -1051,11 +1067,11 @@ public static class SimulationEngine
             core = attribute switch
             {
                 CoreAspectKind.Stamina => core with { StaminaExp = core.StaminaExp + share },
-                CoreAspectKind.Intelligence => core with { IntelligenceExp = core.IntelligenceExp + share },
+                CoreAspectKind.Meridians => core with { MeridiansExp = core.MeridiansExp + share },
                 CoreAspectKind.Attack => core with { AttackExp = core.AttackExp + share },
-                CoreAspectKind.Defense => core with { DefenseExp = core.DefenseExp + share },
-                CoreAspectKind.Swordsmanship => core with { SwordsmanshipExp = core.SwordsmanshipExp + share },
-                _ => core with { TalismanExp = core.TalismanExp + share }
+                CoreAspectKind.Bone => core with { BoneExp = core.BoneExp + share },
+                CoreAspectKind.Agility => core with { AgilityExp = core.AgilityExp + share },
+                _ => core with { ConsciousnessExp = core.ConsciousnessExp + share }
             };
             var aspect = attribute;
             player.RecordStats(actionInstanceId, atUnixSeconds, report =>
@@ -1072,11 +1088,11 @@ public static class SimulationEngine
     private static double RootExpOf(PlayerCoreAttributes core, CoreAspectKind attribute) => attribute switch
     {
         CoreAspectKind.Stamina => core.StaminaExp,
-        CoreAspectKind.Intelligence => core.IntelligenceExp,
+        CoreAspectKind.Meridians => core.MeridiansExp,
         CoreAspectKind.Attack => core.AttackExp,
-        CoreAspectKind.Defense => core.DefenseExp,
-        CoreAspectKind.Swordsmanship => core.SwordsmanshipExp,
-        _ => core.TalismanExp
+        CoreAspectKind.Bone => core.BoneExp,
+        CoreAspectKind.Agility => core.AgilityExp,
+        _ => core.ConsciousnessExp
     };
 
     private static bool TryParseCoreAspect(string abilityId, GameDataCatalog catalog, out CoreAspectKind attribute)
@@ -1304,17 +1320,8 @@ public static class SimulationEngine
         }
     }
 
-    private static long NextSeed(long seed)
-    {
-        unchecked
-        {
-            var value = (ulong)seed;
-            value ^= value << 13;
-            value ^= value >> 7;
-            value ^= value << 17;
-            return (long)value;
-        }
-    }
+    /// <summary>掉落数量抽样的侧通道盐位：与判定主流（种子递推）异或隔离，保证两条随机流互不串扰。</summary>
+    private const long DropQuantityChannelSalt = unchecked((long)0x9E3779B97F4A7C15UL);
 
     /// <summary>
     /// 把任意切分的模拟秒数累进持久化进位余数（carry）并取整整秒。

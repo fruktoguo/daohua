@@ -21,7 +21,7 @@
       }
     ],
     "manaCost": 10.0,
-    "rootAttribute": "swordsmanship",
+    "rootAttribute": "agility",
     "discipline": "spell"
   },
   {
@@ -46,7 +46,7 @@
       }
     ],
     "manaCost": 10.0,
-    "rootAttribute": "swordsmanship",
+    "rootAttribute": "agility",
     "discipline": "spell"
   },
   {
@@ -99,7 +99,7 @@
       }
     ],
     "manaCost": 40.0,
-    "rootAttribute": "swordsmanship",
+    "rootAttribute": "agility",
     "discipline": "spell"
   },
   {
@@ -124,7 +124,7 @@
       }
     ],
     "manaCost": 30.0,
-    "rootAttribute": "swordsmanship",
+    "rootAttribute": "agility",
     "discipline": "spell"
   }
 ]

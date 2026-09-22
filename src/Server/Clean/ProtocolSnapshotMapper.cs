@@ -162,17 +162,29 @@ public static class ProtocolSnapshotMapper
         });
         yield return (PlayerSectionKinds.World, ToWorldSection(state.World, gameData));
         yield return (PlayerSectionKinds.Combat, ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")));
+        // Buff 通道唯一形状：ActiveBuff 的平铺权威字段 + 通用属性比率字典（statRatios），
+        // 前端只做展示渲染，所有收益结算均在服务端领域层完成。
         yield return (PlayerSectionKinds.Buffs, state.Buffs.Select(buff => new
         {
-            buff.BuffId, buff.ExpiresAtUnixSeconds, buff.Stacks, buff.Name, buff.SourceItemId,
-            qiGainMultiplier = 1d, attackLevelRatio = 0d, damageRatio = 0d, buff.AttackSpeedRatio,
-            gatheringOutputMultiplier = 1d, alchemyOutputMultiplier = 1d,
-            modifiers = new { buff.HpRegen, buff.MpRegen, buff.DamageAbsorptionRatio, buff.AttackSpeedRatio }
+            buff.BuffId, buff.Name, buff.Stacks, buff.ExpiresAtUnixSeconds, buff.SourceItemId,
+            buff.HpRegen, buff.MpRegen, buff.AttackSpeedRatio, buff.DamageAbsorptionRatio, buff.StatRatios
         }).ToArray());
         yield return (PlayerSectionKinds.Loadout, ToLoadoutSection(state));
         yield return (PlayerSectionKinds.Settings, new { state.Settings, state.Presence });
         yield return (PlayerSectionKinds.ActionQueue, ToActionQueueSection(state.Actions, gameData));
-        yield return (PlayerSectionKinds.Duel, state.Duel);
+        // 斗法分段白名单：ActiveReports（在队行动实例账本）不面向客户端，协议只下发
+        // 当前账本/归档/离线/每日四类已消费通道。
+        yield return (PlayerSectionKinds.Duel, new
+        {
+            state.Duel.EncounterCharges,
+            state.Duel.CooldownUntilUnixSeconds,
+            state.Duel.ActiveDuelId,
+            state.Duel.StagedItems,
+            state.Duel.CurrentReport,
+            state.Duel.Reports,
+            state.Duel.OfflineReport,
+            state.Duel.DailyReport
+        });
     }
 
     private static object ToLoadoutSection(PlayerAggregateState state) => new
@@ -181,12 +193,52 @@ public static class ProtocolSnapshotMapper
         state.Loadout.AbilitySlots,
         state.Loadout.Equipment,
         learnedAbilityIds = state.LearnedAbilities.Select(id => id.Value).ToArray(),
-        abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>(),
-        consumableSlots = (state.Settings.AutoUseSlots ?? []).Where(slot => slot.ActionType == "combat")
-            .OrderBy(slot => slot.SlotIndex).Select(slot => new
-            {
-                slot.ItemId, slot.Quantity, slot.Enabled, triggers = Array.Empty<object>()
-            }).ToArray()
+        abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>()
+    };
+
+    /// <summary>
+    /// 统一战斗属性投影：玩家、妖兽与斗法镜像共用同一字段集与语义。
+    /// 点数制字段（暴击/免暴/免伤）在协议边界统一折算为比率，前端只做展示渲染不得二次换算。
+    /// </summary>
+    public static object ToAttributesDto(PlayerAttributes a) => new
+    {
+        a.MaxHitpoints, a.MaxManapoints,
+        physicalAttack = a.PhysicalAttack, a.SpellAttack,
+        a.Armor, a.MagicResistance,
+        a.Accuracy, a.Evasion,
+        criticalChance = a.Critical / 100d,
+        criticalDamageRatio = a.CriticalMultiplier,
+        criticalAvoidance = a.CriticalAvoidance / 100d,
+        breakPower = a.BreakPower, parryResolve = a.Parry,
+        hpRegenPerFiveSeconds = a.HpRegen, mpRegenPerFiveSeconds = a.MpRegen,
+        attackIntervalMilliseconds = a.AttackIntervalSeconds * 1000,
+        basicAttackRatio = a.BasicAttackRatio, a.SkillIntensity,
+        a.CooldownFactor, a.CastTimeFactor,
+        a.DamageAbsorptionRatio, a.ThreatRatio,
+        a.MetalResistance, a.WoodResistance, a.WaterResistance, a.FireResistance, a.EarthResistance,
+        hpDrainRatio = a.Effects.HpDrainRatio, mpDrainRatio = a.Effects.MpDrainRatio,
+        damageReflectRatio = a.Effects.DamageReflectRatio, healingBonusRatio = a.Effects.HealingBonusRatio
+    };
+
+    /// <summary>战斗单位静态属性（怪物/斗法镜像）到统一属性投影的重载。</summary>
+    public static object ToAttributesDto(CombatantStats s) => new
+    {
+        s.MaxHitpoints, s.MaxManapoints,
+        physicalAttack = s.AttackPower, s.SpellAttack,
+        armor = s.Defense, s.MagicResistance,
+        s.Accuracy, s.Evasion,
+        criticalChance = s.Critical / 100d,
+        criticalDamageRatio = s.CriticalMultiplier,
+        criticalAvoidance = s.CriticalResistance / 100d,
+        s.BreakPower, s.ParryResolve,
+        hpRegenPerFiveSeconds = s.HpRegen, mpRegenPerFiveSeconds = s.MpRegen,
+        attackIntervalMilliseconds = s.AttackIntervalSeconds * 1000,
+        s.BasicAttackRatio, s.SkillIntensity,
+        s.CooldownFactor, s.CastTimeFactor,
+        damageAbsorptionRatio = s.DamageAbsorptionPoints / 100d, s.ThreatRatio,
+        s.MetalResistance, s.WoodResistance, s.WaterResistance, s.FireResistance, s.EarthResistance,
+        hpDrainRatio = s.Effects.HpDrainRatio, mpDrainRatio = s.Effects.MpDrainRatio,
+        damageReflectRatio = s.Effects.DamageReflectRatio, healingBonusRatio = s.Effects.HealingBonusRatio
     };
 
     private static object ToCombatSection(PlayerAggregateState state, GameDataCatalog catalog)
@@ -200,10 +252,22 @@ public static class ProtocolSnapshotMapper
             if (slot.ActionType == "combat" && slot.SlotIndex <= AutoUseSlotState.MaxSlotIndex)
                 consumableCooldowns[slot.SlotIndex] = Math.Max(0, (slot.CooldownUntilUnixSeconds - nowUnix) * 1000);
         }
+        // 吟唱总时长 = 配表吟唱毫秒 × 施法时间乘区，仅在吟唱中下发；前端行动条不得回读配表推算。
+        double? castTotalMilliseconds = null;
+        if (state.Combat.Skills.CastingAbilityId is { } castingId
+            && catalog.Abilities.TryGetValue(castingId, out var castingAbility)
+            && castingAbility.TryGetProperty("castMilliseconds", out var castProperty)
+            && castProperty.TryGetDouble(out var castMilliseconds))
+            castTotalMilliseconds = castMilliseconds * a.CastTimeFactor;
         return new
         {
-            hitpoints = Math.Min(state.Combat.Hitpoints, a.MaxHitpoints), a.MaxHitpoints,
-            manapoints = Math.Min(state.Combat.Manapoints, a.MaxManapoints), a.MaxManapoints,
+            resources = new
+            {
+                hitpoints = Math.Min(state.Combat.Hitpoints, a.MaxHitpoints),
+                manapoints = Math.Min(state.Combat.Manapoints, a.MaxManapoints),
+                maxHitpoints = a.MaxHitpoints,
+                maxManapoints = a.MaxManapoints
+            },
             skills = new
             {
                 cooldowns = state.Combat.Skills.Cooldowns.ToDictionary(
@@ -212,21 +276,10 @@ public static class ProtocolSnapshotMapper
                     StringComparer.Ordinal),
                 castingAbilityId = state.Combat.Skills.CastingAbilityId,
                 castRemainingMilliseconds = state.Combat.Skills.CastRemainingSeconds * 1000,
+                castTotalMilliseconds
             },
             consumableCooldownMilliseconds = consumableCooldowns,
-            attributes = new
-            {
-                a.MaxHitpoints, a.MaxManapoints, attackIntervalMilliseconds = a.AttackIntervalSeconds * 1000,
-                accuracyRating = a.Accuracy, maxDamage = a.PhysicalAttack, evasionRating = a.Evasion,
-                a.Armor, a.MagicResistance, a.MetalResistance, a.WoodResistance, a.WaterResistance,
-                a.FireResistance, a.EarthResistance, style = "sword", category = "physical", element = "none",
-                tenacity = 0d, hpRegenPerFiveSeconds = a.HpRegen, mpRegenPerFiveSeconds = a.MpRegen,
-                penetrationRatio = 0d, lifeStealRatio = 0d, armorDamageRatio = 0d,
-                hpDrainRatio = a.Effects.HpDrainRatio,
-                damageTakenRatio = 0d, criticalChance = a.Critical / (a.Critical + 100),
-                criticalDamageRatio = 1.5, criticalAvoidance = a.CriticalAvoidance / (a.CriticalAvoidance + 100),
-                criticalRating = a.Critical, criticalAvoidanceRating = a.CriticalAvoidance, a.DamageAbsorptionRatio
-            }
+            attributes = ToAttributesDto(a)
         };
     }
 
@@ -258,35 +311,132 @@ public static class ProtocolSnapshotMapper
             var actionName = def?.Name ?? (action.Travel is not null ? "赶路" : null);
             var actionType = (def?.Kind ?? (action.Travel is not null ? ActionKind.Travel : ActionKind.Cultivation)).ToString().ToLowerInvariant();
 
+            // 队列条目白名单：只下发前端消费且为权威真值的字段；
+            // travel 对象本体不外泄，目标/总里程/分段统一走扁平字段与 travelSegments。
             result[i] = new
             {
                 id = action.Id,
                 intent = action.Intent,
                 actionName,
                 actionType,
-                enqueuedAt = action.EnqueuedAt,
                 status = (byte)action.Status,
                 progressSeconds = action.ProgressSeconds,
                 durationSeconds,
                 remainingRepeats = action.RemainingRepeats,
-                completedRepeats = action.CompletedRepeats,
                 executionKind,
                 combatEncounterId = def?.CombatEncounterId ?? action.Expedition?.EncounterId,
-                expedition = action.Expedition,
-                travel = action.Travel,
+                expedition = action.Expedition is null ? null : ToExpeditionDto(action.Expedition, gameData),
                 travelDestinationNodeId = action.Travel?.TargetNodeId ?? action.Intent.TargetNodeId,
-                travelPathEdgeIds = action.Travel?.PathEdgeIds,
+                travelTotalDistance = action.Travel is null || gameData is null
+                    ? (double?)null
+                    : action.Travel.Segments.Sum(s => EdgeDistance(gameData, s.EdgeId, s.DurationSeconds)),
                 travelSegments = action.Travel?.Segments.Select(s => new
                 {
                     edgeId = s.EdgeId,
                     startProgress = s.StartProgress,
                     endProgress = s.EndProgress,
-                    durationSeconds = s.DurationSeconds
+                    durationSeconds = s.DurationSeconds,
+                    distance = EdgeDistance(gameData, s.EdgeId, s.DurationSeconds)
                 })
             };
         }
         return result;
     }
+
+    /// <summary>世界边里程：优先取图边几何距离，配表缺失时退回通行耗时（距离与耗时同构）。</summary>
+    private static double EdgeDistance(GameDataCatalog? gameData, string edgeId, double durationSeconds)
+        => gameData is not null && gameData.WorldGraph.TryGetEdge(edgeId, out var edge) ? edge.Distance : durationSeconds;
+
+    /// <summary>战斗远征相位到协议字符串的映射；wire 上只存在六个相位词。</summary>
+    private static string MapExpeditionPhase(CombatExpeditionPhase phase) => phase switch
+    {
+        CombatExpeditionPhase.InitialSearch => "initial-search",
+        CombatExpeditionPhase.Search => "search",
+        CombatExpeditionPhase.Combat => "combat",
+        CombatExpeditionPhase.Respawning => "respawn",
+        CombatExpeditionPhase.DuelPending => "duel-pending",
+        CombatExpeditionPhase.Duel => "duel",
+        _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null)
+    };
+
+    /// <summary>
+    /// 战斗远征白名单投影：只保留界面渲染与确定性回放所需的字段；
+    /// Seed/Outcome 等审计标量保留下发供前端校验，PlayerState/内部撮合标记不外泄。
+    /// 敌方条目携带完整权威属性（名称/品阶/立绘/属性面板），前端不再反查怪物目录。
+    /// </summary>
+    private static object ToExpeditionDto(CombatExpeditionState expedition, GameDataCatalog? gameData) => new
+    {
+        expedition.EncounterId,
+        phase = MapExpeditionPhase(expedition.Phase),
+        expedition.PhaseElapsedSeconds, expedition.PhaseDurationSeconds,
+        expedition.BattleElapsedSeconds,
+        expedition.PlayerHitpoints, expedition.PlayerManapoints,
+        expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat,
+        expedition.WaveNumber,
+        outcome = (byte)expedition.Outcome,
+        expedition.Seed,
+        enemies = (expedition.Enemies ?? []).Select(enemy => ToExpeditionEnemyDto(enemy, gameData)).ToArray(),
+        duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel)
+    };
+
+    private static object ToExpeditionEnemyDto(ExpeditionEnemyState enemy, GameDataCatalog? gameData)
+    {
+        var definition = gameData is null ? null : gameData.CombatMonsters.GetValueOrDefault(enemy.EnemyId);
+        var found = definition is not null;
+        JsonElement? visual = null;
+        if (gameData is not null
+            && gameData.Monsters.TryGetValue(enemy.EnemyId, out var raw)
+            && raw.ValueKind == JsonValueKind.Object
+            && raw.TryGetProperty("visual", out var visualElement)
+            && visualElement.ValueKind == JsonValueKind.Object)
+            visual = visualElement.Clone();
+        return new
+        {
+            enemy.EnemyId,
+            name = found ? definition!.Name : enemy.EnemyId,
+            rank = !found ? "normal" : definition!.Rank switch
+            {
+                CombatMonsterRank.Elite => "elite",
+                CombatMonsterRank.Boss => "boss",
+                _ => "normal"
+            },
+            visual,
+            enemy.Hitpoints, enemy.Manapoints,
+            enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
+            enemy.PendingAbilityId, enemy.PendingActionDurationSeconds,
+            attributes = found ? ToAttributesDto(definition!.Stats) : null
+        };
+    }
+
+    /// <summary>斗法回放白名单投影：对手完整战斗属性与资源、事件级 MP 快照随剧本下发。</summary>
+    private static object ToDuelPlaybackDto(DuelPlaybackState duel) => new
+    {
+        duel.DuelId,
+        duel.OpponentPlayerId,
+        duel.OpponentName,
+        duel.ViewerIsInitiator,
+        viewerOutcome = (byte)duel.ViewerOutcome,
+        duel.DurationSeconds,
+        duel.OpponentHitpoints,
+        duel.OpponentManapoints,
+        opponentAttributes = ToAttributesDto(duel.OpponentStats),
+        duel.Resolved,
+        duel.Forfeited,
+        events = duel.Events.Select(duelEvent => new
+        {
+            duelEvent.AtSeconds,
+            duelEvent.AttackerIsInitiator,
+            duelEvent.TargetIsInitiator,
+            duelEvent.Damage,
+            duelEvent.Hit,
+            duelEvent.Critical,
+            duelEvent.TargetHitpointsAfter,
+            duelEvent.AbilityId,
+            duelEvent.Healing,
+            duelEvent.AttackerManapointsAfter,
+            duelEvent.TargetManapointsAfter
+        }).ToArray()
+    };
 
     private static object ToWorldSection(PlayerWorldStateDocument world, GameDataCatalog? gameData)
     {
@@ -449,7 +599,7 @@ public static class ProtocolSnapshotMapper
             rank = ReadString(monster, "rank", "normal"),
             budgetCost = ReadDouble(monster, "budgetCost", 1),
             maxHitpoints = def?.Stats.MaxHitpoints ?? 0,
-            maxDamage = def?.Stats.AttackPower ?? 0,
+            physicalAttack = def?.Stats.AttackPower ?? 0,
             armor = def?.Stats.Defense ?? 0,
             drops = ReadArray(monster, "dropTable").Select(d => ReadString(d, "itemId")).Where(s => s.Length > 0).ToArray(),
             visualSource = visual.ValueKind == JsonValueKind.Object ? ReadString(visual, "source") : null,

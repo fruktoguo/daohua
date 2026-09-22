@@ -115,7 +115,6 @@ interface GameStore {
 
 const AUTO_USE_SLOT_COUNT = 3
 const COMBAT_ABILITY_SLOT_COUNT = 5
-const COMBAT_CONSUMABLE_SLOT_COUNT = 3
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
 
 /** 登录前/登出后的离线占位投影：为渲染层提供全部必需字段的安全默认值，首个权威快照到达后被整体覆盖。 */
@@ -132,10 +131,10 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
     queue: {
       loopEnabled: true,
       autoUseSlots: {
-        cultivation: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
-        exploration: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
-        alchemy: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
-        combat: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] })),
+        cultivation: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
+        exploration: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
+        alchemy: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
+        combat: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
       },
       entries: [],
     },
@@ -187,7 +186,6 @@ function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined): AutoUseSlot
     quantity: slot?.quantity ?? 1,
     enabled: slot?.enabled ?? false,
     remainingDurationSeconds: slot?.remainingDurationSeconds ?? 0,
-    triggers: slot?.triggers ?? [],
   }
 }
 
@@ -213,8 +211,8 @@ function normalizeQueue(queue: PlayerSnapshot['queue']): PlayerSnapshot['queue']
 }
 
 /**
- * 归一化战斗装配对象（补齐至 5 个技能槽、3 个消耗品槽，并保证已学技能列表完整；
- * learnedAbilityIds 缺失时从已装配技能槽反推）
+ * 归一化战斗装配对象（补齐至 5 个技能槽，并保证已学技能列表完整；
+ * learnedAbilityIds 缺失时从已装配技能槽反推。消耗品槽位收敛于 queue.autoUseSlots，不在此归一化。）
  */
 function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['combat'] {
   if (!combat) return combat
@@ -228,17 +226,9 @@ function normalizeCombat(combat: PlayerSnapshot['combat']): PlayerSnapshot['comb
   const learnedAbilityIds = Array.isArray(combat.learnedAbilityIds)
     ? combat.learnedAbilityIds
     : normalizedAbilitySlots.map(slot => slot.abilityId).filter((abilityId): abilityId is string => Boolean(abilityId))
-  const consumableSlots = Array.isArray(combat.consumableSlots) ? combat.consumableSlots : []
-  const normalizedConsumableSlots = Array.from({ length: COMBAT_CONSUMABLE_SLOT_COUNT }, (_, index) => ({
-    itemId: consumableSlots[index]?.itemId ?? null,
-    quantity: Math.max(1, consumableSlots[index]?.quantity ?? 1),
-    enabled: consumableSlots[index]?.enabled ?? false,
-    triggers: consumableSlots[index]?.triggers ?? [],
-  }))
   return {
     ...combat,
     abilitySlots: normalizedAbilitySlots,
-    consumableSlots: normalizedConsumableSlots,
     learnedAbilityIds,
   }
 }
@@ -369,22 +359,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (patch.version <= state.version) return
     // 每次应用含 duel 分段的增量后，将战报合并写入本地历史缓存（reportId 去重、倒序截断 50 条）。
     if (patch.duel) mergeBattleReportHistory(patch.playerId, patch.duel)
-    const hasQueueUpdate = Boolean(patch.queue || patch.queueProgress)
+    // action_queue 分段为唯一行动队列通道（全量分段替换），不存在独立的高频进度通道。
+    const hasQueueUpdate = Boolean(patch.queue)
     const now = performance.now()
-    const queue = patch.queue ? normalizeQueue(patch.queue) : (patch.queueProgress
-      ? {
-          ...state.queue,
-          entries: state.queue.entries.map(entry => entry.entryId === patch.queueProgress?.entryId
-            ? {
-                ...entry,
-                status: patch.queueProgress.status,
-                progressSeconds: patch.queueProgress.progressSeconds,
-                durationSeconds: patch.queueProgress.durationSeconds,
-                expedition: patch.queueProgress.expedition ?? entry.expedition,
-              }
-            : entry),
-        }
-      : state.queue)
+    const queue = patch.queue ? normalizeQueue(patch.queue) : state.queue
     set({
       playerId: patch.playerId || state.playerId,
       name: patch.name ?? state.name,

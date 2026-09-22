@@ -20,7 +20,7 @@
       }
     ],
     "manaCost": 4.0,
-    "rootAttribute": "intelligence",
+    "rootAttribute": "meridians",
     "discipline": "spell"
   },
   {
@@ -46,7 +46,7 @@
       }
     ],
     "manaCost": 10.0,
-    "rootAttribute": "intelligence",
+    "rootAttribute": "meridians",
     "discipline": "spell"
   },
   {
@@ -74,7 +74,7 @@
       }
     ],
     "manaCost": 10.0,
-    "rootAttribute": "intelligence",
+    "rootAttribute": "meridians",
     "discipline": "internal"
   },
   {
@@ -100,7 +100,7 @@
       }
     ],
     "manaCost": 20.0,
-    "rootAttribute": "intelligence",
+    "rootAttribute": "meridians",
     "discipline": "spell"
   },
   {
@@ -130,7 +130,7 @@
       }
     ],
     "manaCost": 50.0,
-    "rootAttribute": "talisman",
+    "rootAttribute": "consciousness",
     "discipline": "internal"
   }
 ]

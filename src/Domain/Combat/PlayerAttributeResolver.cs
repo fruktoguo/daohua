@@ -42,6 +42,8 @@ public sealed record PlayerAttributes(
         {
             SpellAttack = SpellAttack,
             MaxManapoints = MaxManapoints,
+            HpRegen = HpRegen,
+            MpRegen = MpRegen,
             BasicAttackRatio = BasicAttackRatio,
             SkillIntensity = SkillIntensity,
             CastTimeFactor = CastTimeFactor,
@@ -89,7 +91,7 @@ public static class PlayerAttributeResolver
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
         var threatRatio = 0d;
-        double hpDrain = 0, mpDrain = 0, reflect = 0;
+        double hpDrain = 0, mpDrain = 0, reflect = 0, healingBonus = 0;
         foreach (var id in equipment)
         {
             if (!catalog.RawEquipments.TryGetValue(id.Value, out var item))
@@ -103,20 +105,21 @@ public static class PlayerAttributeResolver
                 hpDrain += ReadMechanic(mechanics, "hpDrainRatio");
                 mpDrain += ReadMechanic(mechanics, "mpDrainRatio");
                 reflect += ReadMechanic(mechanics, "damageReflectRatio");
+                healingBonus += ReadMechanic(mechanics, "healingBonusRatio");
             }
         }
         var core = loadout.CoreAttributes;
         double Root(string key) => key switch
         {
-            "maxHitpoints" => (core.StaminaLevel + core.DefenseLevel) * 0.01,
-            "maxManapoints" => (core.IntelligenceLevel + core.DefenseLevel) * 0.01,
+            "maxHitpoints" => (core.StaminaLevel + core.BoneLevel) * 0.01,
+            "maxManapoints" => (core.MeridiansLevel + core.BoneLevel) * 0.01,
             "physicalArmor" or "hitpointRegen" => core.StaminaLevel * 0.01,
-            "spellResistance" or "manapointRegen" => core.IntelligenceLevel * 0.01,
+            "spellResistance" or "manapointRegen" => core.MeridiansLevel * 0.01,
             "physicalAttack" or "criticalChance" or "break" => core.AttackLevel * 0.01,
-            "evasion" or "criticalAvoidance" => core.SwordsmanshipLevel * 0.01,
-            "parry" => (core.DefenseLevel + core.SwordsmanshipLevel) * 0.01,
-            "spellAttack" => core.TalismanLevel * 0.02,
-            "accuracy" => core.TalismanLevel * 0.01,
+            "evasion" or "criticalAvoidance" => core.AgilityLevel * 0.01,
+            "parry" => (core.BoneLevel + core.AgilityLevel) * 0.01,
+            "spellAttack" => core.ConsciousnessLevel * 0.02,
+            "accuracy" => core.ConsciousnessLevel * 0.01,
             _ => 0
         };
         var buffRatios = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -145,23 +148,24 @@ public static class PlayerAttributeResolver
             * SoftRatio(buffRatios.GetValueOrDefault(key));
         double hpRegen = Stat("hitpointRegen", a.HpRegen) + hpRegenFlat;
         double mpRegen = Stat("manapointRegen", a.MpRegen) + mpRegenFlat;
-        var progress = Math.Pow((Math.Clamp(level, 1, 127) - 1) / 126d, 2);
+        // 成长乘区与怪物同构：统一走 CombatGrowthCurve 单点实现。
+        var progress = CombatGrowthCurve.Progress(level);
         var tier = catalog.BaseAttributes.TierAt(level);
-        var skillIntensity = 1 + 0.3 * (tier - 1);
-        var cooldownFactor = 1 - 0.75 * progress;
-        var castTimeFactor = 1 - 0.5 * progress;
+        var skillIntensity = CombatGrowthCurve.SkillIntensity(tier);
+        var cooldownFactor = CombatGrowthCurve.CooldownFactor(level);
+        var castTimeFactor = CombatGrowthCurve.CastTimeFactor(level);
         var physical = Stat("physicalAttack", a.Ad);
         var spell = Stat("spellAttack", a.Ap);
         // 普攻节奏全流派统一：基准 1.0s，同时吃行动速度与攻击速度成长；
         // 掌心雷等填充技的吟唱时长走 castMilliseconds ×(1-ATR) 另一条线，不占普攻间隔。
         var interval = castTimeFactor * castTimeFactor / (1 + Math.Max(0, speed));
-        var basicRatio = 1 + progress;
+        var basicRatio = CombatGrowthCurve.BasicAttackRatio(level);
         return new(Stat("maxHitpoints", a.Hp), Stat("maxManapoints", a.Mp), physical,
             spell, Stat("physicalArmor", a.Armor), Stat("spellResistance", a.Mr),
             Stat("accuracy", a.Acc), Stat("evasion", a.Eva), Stat("criticalChance", a.Crit),
             Stat("criticalAvoidance", a.Cavoid), Stat("break", a.BreakPt), Stat("parry", a.Parry),
             hpRegen, mpRegen, interval, Math.Clamp(absorption, 0, 1),
-            CriticalMultiplier: 1.5 + 3.5 * progress,
+            CriticalMultiplier: CombatGrowthCurve.CriticalMultiplier(level),
             SkillIntensity: skillIntensity,
             CooldownFactor: cooldownFactor,
             CastTimeFactor: castTimeFactor,
@@ -172,7 +176,7 @@ public static class PlayerAttributeResolver
             MetalResistance = Stat("metalResistance", 0), WoodResistance = Stat("woodResistance", 0),
             WaterResistance = Stat("waterResistance", 0), FireResistance = Stat("fireResistance", 0),
             EarthResistance = Stat("earthResistance", 0), ResistanceScale = tier,
-            Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect)
+            Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect, healingBonus)
         };
     }
 

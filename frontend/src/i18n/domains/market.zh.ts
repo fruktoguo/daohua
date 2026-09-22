@@ -229,6 +229,13 @@ export const marketZh = {
       hitpointRegen: '生命回复',
       manapointRegen: '灵力回复',
       resilience: '韧性',
+      breakPower: '破防威力',
+      parryResolve: '招架化解',
+      metalResistance: '金抗性',
+      woodResistance: '木抗性',
+      waterResistance: '水抗性',
+      fireResistance: '火抗性',
+      earthResistance: '土抗性',
     },
   },
 }

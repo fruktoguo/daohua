@@ -7,16 +7,16 @@ public enum CoreAspectKind : byte
 {
     /// <summary>体魄</summary>
     Stamina = 0,
-    /// <summary>悟性</summary>
-    Intelligence = 1,
+    /// <summary>经脉</summary>
+    Meridians = 1,
     /// <summary>力道</summary>
     Attack = 2,
-    /// <summary>防御</summary>
-    Defense = 3,
-    /// <summary>剑术</summary>
-    Swordsmanship = 4,
-    /// <summary>符术</summary>
-    Talisman = 5
+    /// <summary>根骨</summary>
+    Bone = 3,
+    /// <summary>身法</summary>
+    Agility = 4,
+    /// <summary>神识</summary>
+    Consciousness = 5
 }
 
 /// <summary>六维经验→等级曲线：Level = floor(cbrt(exp/100)) + 1，与前端 getCumulativeExpForLevel 反函数一致。</summary>
@@ -38,26 +38,26 @@ public static class RootAttributeCurve
 /// </summary>
 public sealed record PlayerCoreAttributes(
     double StaminaExp = RootAttributeCurve.BaseExp,
-    double IntelligenceExp = RootAttributeCurve.BaseExp,
+    double MeridiansExp = RootAttributeCurve.BaseExp,
     double AttackExp = RootAttributeCurve.BaseExp,
-    double DefenseExp = RootAttributeCurve.BaseExp,
-    double SwordsmanshipExp = RootAttributeCurve.BaseExp,
-    double TalismanExp = RootAttributeCurve.BaseExp)
+    double BoneExp = RootAttributeCurve.BaseExp,
+    double AgilityExp = RootAttributeCurve.BaseExp,
+    double ConsciousnessExp = RootAttributeCurve.BaseExp)
 {
     /// <summary>体魄等级（由经验导出）</summary>
     public double StaminaLevel => RootAttributeCurve.LevelFor(StaminaExp);
-    /// <summary>悟性等级（由经验导出）</summary>
-    public double IntelligenceLevel => RootAttributeCurve.LevelFor(IntelligenceExp);
+    /// <summary>经脉等级（由经验导出）</summary>
+    public double MeridiansLevel => RootAttributeCurve.LevelFor(MeridiansExp);
     /// <summary>力道等级（由经验导出）</summary>
     public double AttackLevel => RootAttributeCurve.LevelFor(AttackExp);
-    /// <summary>防御等级（由经验导出）</summary>
-    public double DefenseLevel => RootAttributeCurve.LevelFor(DefenseExp);
-    /// <summary>剑术等级（由经验导出）</summary>
-    public double SwordsmanshipLevel => RootAttributeCurve.LevelFor(SwordsmanshipExp);
-    /// <summary>符术等级（由经验导出）</summary>
-    public double TalismanLevel => RootAttributeCurve.LevelFor(TalismanExp);
+    /// <summary>根骨等级（由经验导出）</summary>
+    public double BoneLevel => RootAttributeCurve.LevelFor(BoneExp);
+    /// <summary>身法等级（由经验导出）</summary>
+    public double AgilityLevel => RootAttributeCurve.LevelFor(AgilityExp);
+    /// <summary>神识等级（由经验导出）</summary>
+    public double ConsciousnessLevel => RootAttributeCurve.LevelFor(ConsciousnessExp);
     /// <summary>六维等级总和，斗法实力匹配的当前口径。</summary>
-    public double TotalLevel => StaminaLevel + IntelligenceLevel + AttackLevel + DefenseLevel + SwordsmanshipLevel + TalismanLevel;
+    public double TotalLevel => StaminaLevel + MeridiansLevel + AttackLevel + BoneLevel + AgilityLevel + ConsciousnessLevel;
 }
 
 /// <summary>技能经验→等级曲线：与六维共用立方曲线，技能书/残卷按点数注入经验。</summary>
@@ -104,7 +104,7 @@ public sealed partial class PlayerLoadoutState
         ArgumentNullException.ThrowIfNull(document);
         var core = document.CoreAttributes;
         if (core is null || document.AbilitySlots is null || document.Equipment is null
-            || new[] { core.StaminaExp, core.IntelligenceExp, core.AttackExp, core.DefenseExp, core.SwordsmanshipExp, core.TalismanExp }
+            || new[] { core.StaminaExp, core.MeridiansExp, core.AttackExp, core.BoneExp, core.AgilityExp, core.ConsciousnessExp }
                 .Any(value => !double.IsFinite(value) || value < 0)
             || document.AbilitySlots.Any(slot => slot is null || !double.IsFinite(slot.Level) || slot.Level < 1 || slot.Triggers is null
                 || slot.Triggers.Any(trigger => trigger.ValueKind != JsonValueKind.Object))

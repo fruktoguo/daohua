@@ -29,20 +29,14 @@ public sealed record DuelSettings(
     /// <summary>从 JSON 对象解析斗法调参；字段缺失回退默认值。</summary>
     public static DuelSettings Parse(JsonElement element)
     {
-        static double Read(JsonElement obj, string key, double fallback) =>
-            obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var value) && value.TryGetDouble(out var number)
-                ? number : fallback;
-        static int ReadInt(JsonElement obj, string key, int fallback) =>
-            obj.ValueKind == JsonValueKind.Object && obj.TryGetProperty(key, out var value) && value.TryGetInt32(out var number)
-                ? number : fallback;
         var settings = new DuelSettings(
-            Read(element, "encounterChancePerBattle", 0.005),
-            Read(element, "powerBandRatio", 0.3),
-            Read(element, "defeatCooldownSeconds", 3600),
-            Read(element, "stagedSettleSeconds", 1200),
-            Read(element, "dropChanceBonusPercent", 20),
-            Read(element, "maxDuelSeconds", 300),
-            ReadInt(element, "maxBattleReports", 10));
+            JsonRead.Number(element, "encounterChancePerBattle", 0.005),
+            JsonRead.Number(element, "powerBandRatio", 0.3),
+            JsonRead.Number(element, "defeatCooldownSeconds", 3600),
+            JsonRead.Number(element, "stagedSettleSeconds", 1200),
+            JsonRead.Number(element, "dropChanceBonusPercent", 20),
+            JsonRead.Number(element, "maxDuelSeconds", 300),
+            JsonRead.Integer(element, "maxBattleReports", 10));
         if (!double.IsFinite(settings.EncounterChancePerBattle) || settings.EncounterChancePerBattle is < 0 or > 1
             || !double.IsFinite(settings.PowerBandRatio) || settings.PowerBandRatio is < 0 or > 10
             || !double.IsFinite(settings.DefeatCooldownSeconds) || settings.DefeatCooldownSeconds < 0
@@ -71,7 +65,11 @@ public sealed record DuelScriptEvent(
     bool Critical,
     double TargetHitpointsAfter,
     string? AbilityId = null,
-    double Healing = 0);
+    double Healing = 0,
+    /// <summary>出手方在事件结算后的剩余灵力（manaCost 起手预扣、汲取与回复均已入账）。</summary>
+    double AttackerManapointsAfter = 0,
+    /// <summary>受击方在事件结算后的剩余灵力。</summary>
+    double TargetManapointsAfter = 0);
 
 /// <summary>斗法完整结算剧本：撮合时一次性推演完毕，双方各自回放同一份确定性结果。</summary>
 public sealed record DuelScript(
@@ -95,8 +93,10 @@ public sealed record DuelPlaybackState(
     IReadOnlyList<DuelScriptEvent> Events,
     IReadOnlyList<DuelStagedItem> SelfStagedSnapshot,
     IReadOnlyList<DuelStagedItem> OpponentStagedSnapshot,
-    double OpponentMaxHitpoints,
+    /// <summary>对手镜像的完整战斗属性（撮合时冻结；气血/灵力上限与属性面板真值均取自这里）。</summary>
+    CombatantStats OpponentStats,
     double OpponentHitpoints,
+    double OpponentManapoints,
     double EventCursor = 0,
     bool Resolved = false,
     bool Forfeited = false)
@@ -109,9 +109,13 @@ public sealed record DuelPlaybackState(
         && double.IsFinite(DurationSeconds) && DurationSeconds > 0
         && Events is not null && Events.Count <= 200_000
         && SelfStagedSnapshot is not null && OpponentStagedSnapshot is not null
-        && double.IsFinite(OpponentMaxHitpoints) && OpponentMaxHitpoints > 0
+        && OpponentStats is not null
+        && double.IsFinite(OpponentStats.MaxHitpoints) && OpponentStats.MaxHitpoints > 0
+        && double.IsFinite(OpponentStats.MaxManapoints) && OpponentStats.MaxManapoints >= 0
         && double.IsFinite(OpponentHitpoints) && OpponentHitpoints >= 0
-        && OpponentHitpoints <= OpponentMaxHitpoints
+        && OpponentHitpoints <= OpponentStats.MaxHitpoints
+        && double.IsFinite(OpponentManapoints) && OpponentManapoints >= 0
+        && OpponentManapoints <= OpponentStats.MaxManapoints
         && double.IsFinite(EventCursor) && EventCursor >= 0 && EventCursor <= Events.Count;
 
     /// <summary>把撮合剧本翻译为单视角回放载荷：胜负与双方暂存快照按观看方翻转。</summary>
@@ -135,8 +139,9 @@ public sealed record DuelPlaybackState(
             script.Events,
             viewerIsInitiator ? script.InitiatorStagedItems : script.DefenderStagedItems,
             viewerIsInitiator ? script.DefenderStagedItems : script.InitiatorStagedItems,
+            opponent.Stats,
             opponent.Stats.MaxHitpoints,
-            opponent.Stats.MaxHitpoints);
+            opponent.Stats.MaxManapoints);
     }
 }
 
@@ -146,7 +151,7 @@ public sealed record DuelCombatant(
     string DisplayName,
     double Power,
     CombatantStats Stats,
-    IReadOnlyList<MonsterSkillSlot> Skills,
+    IReadOnlyList<SkillSlot> Skills,
     IReadOnlyList<DuelStagedItem> StagedItems);
 
 /// <summary>
@@ -171,81 +176,37 @@ public static class DuelScriptEngine
         var result = DeterministicCombatEngine.AdvanceTo(encounter, settings.MaxDuelSeconds);
         var outcome = encounter.Outcome == CombatOutcome.Running ? CombatOutcome.Draw : encounter.Outcome;
         var events = new List<DuelScriptEvent>(result.Events.Count);
+        // 双方灵力沿事件流滚动携带：主事件带结算后真值，衍生事件沿用最近已知值，
+        // 回放侧无需领域推算即可逐帧还原双资源条。
+        var initiatorMp = initiator.Stats.MaxManapoints;
+        var defenderMp = defender.Stats.MaxManapoints;
         foreach (var combatEvent in result.Events)
+        {
+            var attackerIsInitiator = combatEvent.AttackerId == "player";
+            var targetIsInitiator = combatEvent.TargetId == "player";
+            if (combatEvent.AttackerManapointsAfter is { } attackerMp)
+            {
+                if (attackerIsInitiator) initiatorMp = attackerMp; else defenderMp = attackerMp;
+            }
+            if (combatEvent.TargetManapointsAfter is { } targetMp)
+            {
+                if (targetIsInitiator) initiatorMp = targetMp; else defenderMp = targetMp;
+            }
             events.Add(new DuelScriptEvent(
                 combatEvent.AtSeconds,
-                combatEvent.AttackerId == "player",
-                combatEvent.TargetId == "player",
+                attackerIsInitiator,
+                targetIsInitiator,
                 combatEvent.Damage,
                 combatEvent.Hit,
                 combatEvent.Critical,
                 combatEvent.TargetHitpointsAfter,
                 combatEvent.AbilityId,
-                combatEvent.Healing));
+                combatEvent.Healing,
+                attackerIsInitiator ? initiatorMp : defenderMp,
+                targetIsInitiator ? initiatorMp : defenderMp));
+        }
         return new DuelScript(outcome, Math.Max(encounter.ElapsedSeconds, 1e-9), events,
             initiator.StagedItems, defender.StagedItems);
     }
 }
 
-/// <summary>斗法镜像技能触发条件求值：与玩家功法同一套触发 JSON，作用于战斗单位状态。</summary>
-internal static class DuelTriggerEvaluator
-{
-    /// <summary>全部触发条件同时满足才返回 true；任一不满足即短路。</summary>
-    /// <param name="triggers">触发条件 JSON 列表。</param>
-    /// <param name="caster">施放方战斗单位。</param>
-    /// <param name="primaryTarget">当前集火目标（target-enemy 依赖的解析对象，可空）。</param>
-    /// <param name="allies">施放方全体友军。</param>
-    /// <param name="opponents">敌方全体单位。</param>
-    public static bool MatchesAll(IReadOnlyList<JsonElement> triggers, CombatantState caster,
-        CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents)
-    {
-        foreach (var trigger in triggers)
-            if (!Matches(trigger, caster, primaryTarget, allies, opponents)) return false;
-        return true;
-    }
-
-    private static bool Matches(JsonElement trigger, CombatantState caster,
-        CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents)
-    {
-        var dependency = Text(trigger, "dependency") ?? "self";
-        var unit = dependency switch
-        {
-            "self" => caster,
-            "target-enemy" => primaryTarget ?? caster,
-            "ally-lowest-hp" => allies.Where(unit => unit.IsAlive).OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).FirstOrDefault() ?? caster,
-            "ally-highest-hp" => allies.Where(unit => unit.IsAlive).OrderByDescending(unit => unit.Hitpoints).FirstOrDefault() ?? caster,
-            "enemy-lowest-hp" => opponents.Where(unit => unit.IsAlive).OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).FirstOrDefault() ?? primaryTarget ?? caster,
-            "enemy-highest-hp" => opponents.Where(unit => unit.IsAlive).OrderByDescending(unit => unit.Hitpoints).FirstOrDefault() ?? primaryTarget ?? caster,
-            _ => caster
-        };
-        var maxHp = Math.Max(1e-9, unit.Stats.MaxHitpoints);
-        var maxMana = Math.Max(1e-9, unit.Stats.MaxManapoints);
-        var value = Text(trigger, "condition") switch
-        {
-            "current-hp" => unit.Hitpoints,
-            "missing-hp" => maxHp - unit.Hitpoints,
-            "current-hp-percentage" => unit.Hitpoints / maxHp * 100,
-            "missing-hp-percentage" => (maxHp - unit.Hitpoints) / maxHp * 100,
-            "current-mana" => unit.Manapoints,
-            "missing-mana" => maxMana - unit.Manapoints,
-            "current-mana-percentage" => unit.Manapoints / maxMana * 100,
-            "missing-mana-percentage" => (maxMana - unit.Manapoints) / maxMana * 100,
-            // 斗法镜像不携带 Buff 状态，buff-stacks 恒为 0。
-            "buff-stacks" => 0d,
-            _ => 0d
-        };
-        var threshold = trigger.TryGetProperty("value", out var thresholdProperty) && thresholdProperty.TryGetDouble(out var parsed)
-            ? parsed : 0;
-        return Text(trigger, "comparator") switch
-        {
-            "greater-than-equal" => value >= threshold,
-            "less-than-equal" => value <= threshold,
-            "greater-than" => value > threshold,
-            "less-than" => value < threshold,
-            _ => false
-        };
-    }
-
-    private static string? Text(JsonElement value, string key)
-        => value.TryGetProperty(key, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
-}

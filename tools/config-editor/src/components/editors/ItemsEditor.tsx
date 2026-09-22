@@ -10,7 +10,6 @@ import { ITEM_KINDS, ITEM_CATEGORIES, TIER_OPTIONS, ACTION_TYPES } from '../../t
 import { EnumSelect, MultiEnumSelect } from '../common/EnumSelect';
 import { BooleanSelect } from '../common/BooleanSelect';
 import { NumberInput } from '../common/NumberInput';
-import { CombatTriggerEditor } from '../common/CombatTriggerEditor';
 
 export function ItemsEditor() {
   const { configs, updateConfig } = useConfigContext();
@@ -56,7 +55,7 @@ export function ItemsEditor() {
       handleUpdate({ consumable: undefined });
       return;
     }
-    const currentConsumable = currentItem.consumable || { usableInActionTypes: ['cultivate', 'combat'] };
+    const currentConsumable = currentItem.consumable || { usableInActionTypes: ['cultivation', 'combat'] };
     handleUpdate({ consumable: { ...currentConsumable, ...patch } });
   };
 
@@ -335,7 +334,7 @@ export function ItemsEditor() {
                   type="button"
                   onClick={() =>
                     handleUpdateConsumable({
-                      usableInActionTypes: ['cultivate', 'combat', 'gathering', 'alchemy']
+                      usableInActionTypes: ['cultivation', 'exploration', 'combat', 'alchemy']
                     })
                   }
                   className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition-colors shadow-sm"
@@ -398,6 +397,7 @@ export function ItemsEditor() {
 
                   <NumberInput
                     label="恢复气血点数 (HitpointRestore)"
+                    description="即时消耗品生效"
                     value={currentItem.consumable.hitpointRestore}
                     onChange={v => handleUpdateConsumable({ hitpointRestore: v })}
                     unit="HP"
@@ -405,24 +405,19 @@ export function ItemsEditor() {
 
                   <NumberInput
                     label="恢复真元点数 (ManapointRestore)"
+                    description="即时消耗品生效"
                     value={currentItem.consumable.manapointRestore}
                     onChange={v => handleUpdateConsumable({ manapointRestore: v })}
                     unit="MP"
                   />
 
                   <NumberInput
-                    label="自动吃药生命阈值 (TriggerHpRatio)"
-                    description="低于此比例战斗自动服药"
-                    value={currentItem.consumable.triggerHpRatio}
-                    onChange={v => handleUpdateConsumable({ triggerHpRatio: v })}
-                    step={0.05}
-                    unit="×"
-                  />
-
-                  <BooleanSelect
-                    label="战斗开局服食 (TriggerAtCombatStart)"
-                    value={currentItem.consumable.triggerAtCombatStart}
-                    onChange={v => handleUpdateConsumable({ triggerAtCombatStart: v })}
+                    label="服食冷却 (CooldownSeconds)"
+                    description="自动使用即时消耗品必须为正冷却"
+                    value={currentItem.consumable.cooldownSeconds}
+                    onChange={v => handleUpdateConsumable({ cooldownSeconds: v })}
+                    min={0}
+                    unit="秒"
                   />
                 </div>
 
@@ -430,14 +425,6 @@ export function ItemsEditor() {
                 <BuffsListEditor
                   buffs={currentItem.consumable.buffs}
                   onChange={buffs => handleUpdateConsumable({ buffs })}
-                />
-
-                {/* 默认战斗触发策略 */}
-                <CombatTriggerEditor
-                  label="默认战斗触发策略 (DefaultCombatTriggers)"
-                  description="战斗中该消耗品的自动释放触发逻辑"
-                  triggers={currentItem.consumable.defaultCombatTriggers}
-                  onChange={triggers => handleUpdateConsumable({ defaultCombatTriggers: triggers })}
                 />
               </div>
             )}
@@ -464,12 +451,9 @@ function BuffsListEditor({
 
   const handleAdd = () => {
     const next: BuffEffectConfig = {
-      buffId: `buff_${Date.now().toString(36)}`,
+      buffId: `buff.new-${Date.now().toString(36)}`,
       name: '增益光环',
-      durationSeconds: 30,
-      stackable: false,
-      maxStacks: 1,
-      qiGainMultiplier: 1.2
+      durationSeconds: 30
     };
     onChange([...currentBuffs, next]);
   };
@@ -539,25 +523,31 @@ function BuffsListEditor({
               />
 
               <NumberInput
-                label="灵气倍率 (QiGainMultiplier)"
-                value={buff.qiGainMultiplier}
-                onChange={v => handleUpdate(idx, { qiGainMultiplier: v })}
-                step={0.05}
-                unit="×"
+                label="气血回复 (HpRegen)"
+                value={buff.hpRegen}
+                onChange={v => handleUpdate(idx, { hpRegen: v })}
+                step={0.5}
               />
 
               <NumberInput
-                label="伤害加成 (DamageRatio)"
-                value={buff.damageRatio}
-                onChange={v => handleUpdate(idx, { damageRatio: v })}
-                step={0.05}
-                unit="×"
+                label="灵力回复 (MpRegen)"
+                value={buff.mpRegen}
+                onChange={v => handleUpdate(idx, { mpRegen: v })}
+                step={0.5}
               />
 
               <NumberInput
                 label="攻速加成 (AttackSpeedRatio)"
                 value={buff.attackSpeedRatio}
                 onChange={v => handleUpdate(idx, { attackSpeedRatio: v })}
+                step={0.05}
+                unit="×"
+              />
+
+              <NumberInput
+                label="免伤比例 (DamageAbsorptionRatio)"
+                value={buff.damageAbsorptionRatio}
+                onChange={v => handleUpdate(idx, { damageAbsorptionRatio: v })}
                 step={0.05}
                 unit="×"
               />

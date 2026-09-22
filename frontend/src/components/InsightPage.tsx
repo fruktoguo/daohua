@@ -15,7 +15,7 @@ import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
 import { CharacterAvatar } from './CharacterAvatar'
-import { CombatAttributePanel, resolvePlayerCombatAttributeModel } from './CombatAttributePanel'
+import { CombatAttributePanel } from './CombatAttributePanel'
 
 /** 内视四大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
@@ -58,11 +58,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
   const dimensions = useMemo(() => {
     const staminaLevel = Math.floor(Math.max(10, loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 体魄 10
-    const meridiansLevel = Math.floor(Math.max(10, loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 经脉 10
-    const boneLevel = Math.floor(Math.max(10, loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 根骨 10
+    const meridiansLevel = Math.floor(Math.max(10, loadout?.meridiansLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 经脉 10
+    const boneLevel = Math.floor(Math.max(10, loadout?.boneLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 根骨 10
     const strengthLevel = Math.floor(Math.max(10, loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 力道 10
-    const consciousnessLevel = Math.floor(Math.max(10, loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识 10
-    const agilityLevel = Math.floor(Math.max(10, loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法 10
+    const consciousnessLevel = Math.floor(Math.max(10, loadout?.consciousnessLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 神识 10
+    const agilityLevel = Math.floor(Math.max(10, loadout?.agilityLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS)) // 身法 10
 
     // 格式化经验进度：升级所需经验 = 下一级累计经验 - 当前级累计经验；
     // 当前经验 = loadout 下发的真实六维经验 - 当前级累计经验（缺省按 0 处理）。
@@ -94,7 +94,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'meridians',
         tone: 'cyan' as PillTone,
         level: meridiansLevel,
-        progress: getProgress(meridiansLevel, loadout?.intelligenceExp),
+        progress: getProgress(meridiansLevel, loadout?.meridiansExp),
         bonuses: [
           { value: `+${Math.floor(meridiansLevel)}%`, tone: 'cyan' as PillTone },
           { value: `+${Math.floor(meridiansLevel)}%`, tone: 'violet' as PillTone },
@@ -105,7 +105,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'bone',
         tone: 'amber' as PillTone,
         level: boneLevel,
-        progress: getProgress(boneLevel, loadout?.defenseExp),
+        progress: getProgress(boneLevel, loadout?.boneExp),
         bonuses: [
           { value: `+${Math.floor(boneLevel)}%`, tone: 'amber' as PillTone },
           { value: `+${Math.floor(boneLevel)}%`, tone: 'silver' as PillTone },
@@ -127,7 +127,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'consciousness',
         tone: 'purple' as PillTone,
         level: consciousnessLevel,
-        progress: getProgress(consciousnessLevel, loadout?.swordsmanshipExp),
+        progress: getProgress(consciousnessLevel, loadout?.consciousnessExp),
         bonuses: [
           { value: `+${Math.floor(consciousnessLevel * 2)}%`, tone: 'purple' as PillTone },
           { value: `+${Math.floor(consciousnessLevel)}%`, tone: 'sky' as PillTone },
@@ -137,7 +137,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         id: 'agility',
         tone: 'teal' as PillTone,
         level: agilityLevel,
-        progress: getProgress(agilityLevel, loadout?.talismanExp),
+        progress: getProgress(agilityLevel, loadout?.agilityExp),
         bonuses: [
           { value: `+${Math.floor(agilityLevel)}%`, tone: 'teal' as PillTone },
           { value: `+${Math.floor(agilityLevel)}%`, tone: 'muted' as PillTone },
@@ -147,27 +147,23 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     ]
   }, [
     loadout?.attackLevel,
-    loadout?.defenseLevel,
-    loadout?.intelligenceLevel,
+    loadout?.boneLevel,
+    loadout?.meridiansLevel,
     loadout?.staminaLevel,
-    loadout?.swordsmanshipLevel,
-    loadout?.talismanLevel,
+    loadout?.agilityLevel,
+    loadout?.consciousnessLevel,
     loadout?.attackExp,
-    loadout?.defenseExp,
-    loadout?.intelligenceExp,
+    loadout?.boneExp,
+    loadout?.meridiansExp,
     loadout?.staminaExp,
-    loadout?.swordsmanshipExp,
-    loadout?.talismanExp,
+    loadout?.agilityExp,
+    loadout?.consciousnessExp,
   ])
 
   // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
   const basePool = useMemo(() => calculateBaseAttributes(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
 
-  // 斗法战斗属性统一模型：与战场单位详情弹窗共用同一解析口径 (CombatAttributePanel)
-  const combatModel = useMemo(
-    () => resolvePlayerCombatAttributeModel(attributes, loadout, basePool),
-    [attributes, loadout, basePool],
-  )
+  // 斗法战斗属性：直接渲染服务端权威终值 (combat.attributes)，与战场单位详情弹窗共用同一面板
 
   // 4. 生平记录 (斩妖为怪物击败数，破敌严格为斗法击败玩家数，败走为败退次数，苦修为修炼时长，全部向下取整)
   const duel = useGameStore(state => state.duel)
@@ -256,11 +252,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-quick-stats">
               <div className="insight-quick-item">
                 <span>{t('insight.quick.hp')}</span>
-                <strong className="tone-green"><UnitNumber tooltipLabel={t('insight.quick.hp')} tone="jade" value={combatModel.maxHitpoints} /></strong>
+                <strong className="tone-green"><UnitNumber tooltipLabel={t('insight.quick.hp')} tone="jade" value={attributes?.maxHitpoints ?? 0} /></strong>
               </div>
               <div className="insight-quick-item">
                 <span>{t('insight.quick.mp')}</span>
-                <strong className="tone-blue"><UnitNumber tooltipLabel={t('insight.quick.mp')} tone="qi" value={combatModel.maxManapoints} /></strong>
+                <strong className="tone-blue"><UnitNumber tooltipLabel={t('insight.quick.mp')} tone="qi" value={attributes?.maxManapoints ?? 0} /></strong>
               </div>
             </div>
           </div>
@@ -484,7 +480,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         {/* ========================================================================= */}
         {activeTab === 'combat' && (
           <div className="insight-panel insight-panel--combat">
-            <CombatAttributePanel buffs={buffs} model={combatModel} />
+            {attributes && <CombatAttributePanel attributes={attributes} buffs={buffs} />}
           </div>
         )}
 

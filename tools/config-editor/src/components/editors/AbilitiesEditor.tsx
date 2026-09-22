@@ -1,17 +1,20 @@
 // ==============================================================================
 // 文件名称: AbilitiesEditor.tsx
-// 主要职责: 现代扁平化 abilities.json 专属编辑器，支持流派/元素过滤、成长与 Dot/控制
+// 主要职责: 现代扁平化 abilities 专属编辑器，字段与 CombatSkillEngine.ValidateAbility /
+//           CombatModels.CastSkill / LoadoutCommand / SimulationEngine 真实消费集对齐
 // ==============================================================================
 
 import { useState, useMemo } from 'react';
 import { useConfigContext } from '../../context/ConfigContext';
-import type { AbilityConfig } from '../../types/config';
+import type { AbilityConfig, AbilityBuffConfig } from '../../types/config';
 import {
   COMBAT_STYLES,
   DAMAGE_CATEGORIES,
   ELEMENTS,
   COMBAT_ABILITY_EFFECT_TYPES,
   COMBAT_ABILITY_TARGET_TYPES,
+  ABILITY_DISCIPLINES,
+  ROOT_ATTRIBUTES,
   TIER_OPTIONS
 } from '../../types/enums';
 import { EnumSelect } from '../common/EnumSelect';
@@ -52,19 +55,35 @@ export function AbilitiesEditor() {
     );
   };
 
+  const handleUpdateBuff = (patch: Partial<AbilityBuffConfig> | null) => {
+    if (!currentAbility) return;
+    if (patch === null) {
+      handleUpdate({ buff: undefined });
+      return;
+    }
+    handleUpdate({ buff: { ...(currentAbility.buff || { durationSeconds: 30 }), ...patch } });
+  };
+
   const handleAdd = () => {
-    const newId = `ability_${Date.now().toString(36)}`;
+    const newId = `ability.new-${Date.now().toString(36)}`;
     const newAbility: AbilityConfig = {
       id: newId,
       name: '新神通法诀',
+      description: '',
       style: 'fiveElements',
-      category: 'magic',
+      category: 'spell',
       element: 'none',
+      discipline: 'spell',
+      rootAttribute: 'meridians',
       cooldownMilliseconds: 5000,
       castMilliseconds: 1000,
-      damageRatio: 1.5,
-      effectType: 'damage',
-      targetType: 'enemy'
+      manaCost: 10,
+      targetType: 'targetEnemy',
+      damageRatio: 1.0,
+      flatDamage: 0,
+      defaultTriggers: [
+        { dependency: 'target-enemy', condition: 'current-hp', comparator: 'greater-than-equal', value: 1, buffId: null }
+      ]
     };
     updateConfig('abilities.json', prev => [newAbility, ...prev]);
     setSelectedId(newId);
@@ -89,6 +108,11 @@ export function AbilitiesEditor() {
     const remaining = abilities.filter(a => a.id !== currentAbility.id);
     if (remaining.length > 0) setSelectedId(remaining[0].id);
   };
+
+  const isHeal = currentAbility?.effectType === 'heal';
+  const isSupport = currentAbility
+    ? currentAbility.targetType === 'self' || currentAbility.targetType === 'allAllies' || currentAbility.effectType === 'buff'
+    : false;
 
   return (
     <div className="flex-1 flex overflow-hidden h-full">
@@ -264,15 +288,15 @@ export function AbilitiesEditor() {
                 label="道统流派 (Style)"
                 value={currentAbility.style}
                 options={COMBAT_STYLES}
-                onChange={v => handleUpdate({ style: v || 'fiveElements' })}
-                allowClear={false}
+                onChange={v => handleUpdate({ style: v })}
               />
 
               <EnumSelect
                 label="伤害大类 (Category)"
+                description="引擎只接受 physical / spell"
                 value={currentAbility.category}
                 options={DAMAGE_CATEGORIES}
-                onChange={v => handleUpdate({ category: v || 'magic' })}
+                onChange={v => handleUpdate({ category: v || 'spell' })}
                 allowClear={false}
               />
 
@@ -285,6 +309,24 @@ export function AbilitiesEditor() {
               />
 
               <EnumSelect
+                label="功法类别 (Discipline)"
+                description="internal=内功心法(0号槽) / 缺省按术法"
+                value={currentAbility.discipline}
+                options={ABILITY_DISCIPLINES}
+                onChange={v => handleUpdate({ discipline: v })}
+                clearLabel="— 缺省(术法) —"
+              />
+
+              <EnumSelect
+                label="根骨维度 (RootAttribute)"
+                description="决定该功法分摊的六维经验"
+                value={currentAbility.rootAttribute}
+                options={ROOT_ATTRIBUTES}
+                onChange={v => handleUpdate({ rootAttribute: v })}
+                clearLabel="— 全修(六维均分) —"
+              />
+
+              <EnumSelect
                 label="阶位设计 (Tier)"
                 value={currentAbility.tier}
                 options={TIER_OPTIONS}
@@ -293,27 +335,39 @@ export function AbilitiesEditor() {
 
               <EnumSelect
                 label="效果类型 (EffectType)"
+                description="缺省为伤害；heal=治疗 buff=友方增益"
                 value={currentAbility.effectType}
                 options={COMBAT_ABILITY_EFFECT_TYPES}
-                onChange={v => handleUpdate({ effectType: v })}
+                onChange={v => handleUpdate({ effectType: v === 'damage' ? undefined : v })}
+                clearLabel="— 伤害 (缺省) —"
               />
 
               <EnumSelect
                 label="目标类型 (TargetType)"
+                description="缺省按单体敌方"
                 value={currentAbility.targetType}
                 options={COMBAT_ABILITY_TARGET_TYPES}
                 onChange={v => handleUpdate({ targetType: v })}
+                clearLabel="— 单体敌方 (缺省) —"
+              />
+
+              <NumberInput
+                label="目标上限 (MaxTargets)"
+                description="仅 allEnemies 生效，0/空为不限"
+                value={currentAbility.maxTargets}
+                onChange={v => handleUpdate({ maxTargets: v })}
+                min={0}
               />
             </div>
           </div>
 
-          {/* 施法、冷却与真元消耗卡片 */}
+          {/* 施法、冷却与灵力消耗卡片 */}
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
             <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">施法节奏与灵力消耗</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <NumberInput
                 label="施法吟唱 (CastMilliseconds)"
-                description="受角色动作加速(ATR)缩减"
+                description="受施放方行动速度乘区缩减"
                 value={currentAbility.castMilliseconds}
                 onChange={v => handleUpdate({ castMilliseconds: v })}
                 step={100}
@@ -323,7 +377,7 @@ export function AbilitiesEditor() {
 
               <NumberInput
                 label="冷却时间 (CooldownMilliseconds)"
-                description="受角色冷却缩减(CDR)缩减"
+                description="受施放方冷却乘区缩减"
                 value={currentAbility.cooldownMilliseconds}
                 onChange={v => handleUpdate({ cooldownMilliseconds: v })}
                 step={500}
@@ -332,23 +386,13 @@ export function AbilitiesEditor() {
               />
 
               <NumberInput
-                label="灵力消耗系数 (ManaCostRatio)"
-                description="1.0 = 阶位基准 1% MP"
-                value={currentAbility.manaCostRatio}
-                onChange={v => handleUpdate({ manaCostRatio: v })}
-                step={0.5}
-                unit="×"
-              />
-
-              <NumberInput
-                label="释放血线阈值 (TriggerHpRatio)"
-                description="低于此比例自动释放"
-                value={currentAbility.triggerHpRatio}
-                onChange={v => handleUpdate({ triggerHpRatio: v })}
-                step={0.05}
+                label="灵力消耗 (ManaCost)"
+                description="起手预扣，不足则跳过"
+                value={currentAbility.manaCost}
+                onChange={v => handleUpdate({ manaCost: v })}
+                step={1}
                 min={0}
-                max={1}
-                unit="×"
+                unit="MP"
               />
             </div>
           </div>
@@ -375,135 +419,154 @@ export function AbilitiesEditor() {
 
               <NumberInput
                 label="治疗倍率 (HealingRatio)"
+                description="仅 effectType=heal 生效"
                 value={currentAbility.healingRatio}
                 onChange={v => handleUpdate({ healingRatio: v })}
                 step={0.05}
                 unit="×"
+                disabled={!isHeal}
               />
 
               <NumberInput
                 label="固定治疗点数 (FlatHealing)"
+                description="仅 effectType=heal 生效"
                 value={currentAbility.flatHealing}
                 onChange={v => handleUpdate({ flatHealing: v })}
                 min={0}
+                disabled={!isHeal}
               />
             </div>
           </div>
 
-          {/* 持续伤害 (Dot) 与控制异常卡片 */}
+          {/* 支援效果：威胁值与战内 Buff */}
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
-            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">Dot 持续伤害与控制/异常机制</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">支援效果（嘲讽 / 增益）</h3>
+              {isSupport && (
+                <span className="text-[11px] text-emerald-400/80">当前目标类型会使该卡生效</span>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <NumberInput
-                label="Dot 持续伤害倍率"
-                value={currentAbility.damageOverTimeRatio}
-                onChange={v => handleUpdate({ damageOverTimeRatio: v })}
-                step={0.05}
-                unit="×"
-              />
-
-              <NumberInput
-                label="Dot 持续时长 (ms)"
-                value={currentAbility.damageOverTimeMilliseconds}
-                onChange={v => handleUpdate({ damageOverTimeMilliseconds: v })}
-                step={500}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="Dot 跳字间隔 (ms)"
-                value={currentAbility.damageOverTimeTickMilliseconds}
-                onChange={v => handleUpdate({ damageOverTimeTickMilliseconds: v })}
-                step={500}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="眩晕几率 (StunChance)"
-                value={currentAbility.stunChance}
-                onChange={v => handleUpdate({ stunChance: v })}
-                step={0.05}
+                label="威胁值增量 (ThreatGain)"
+                description="结算时直接增加威胁"
+                value={currentAbility.threatGain}
+                onChange={v => handleUpdate({ threatGain: v })}
+                step={10}
                 min={0}
-                max={1}
-                unit="×"
               />
 
               <NumberInput
-                label="眩晕时长 (StunMilliseconds)"
-                value={currentAbility.stunMilliseconds}
-                onChange={v => handleUpdate({ stunMilliseconds: v })}
-                step={500}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="致盲几率 (BlindChance)"
-                value={currentAbility.blindChance}
-                onChange={v => handleUpdate({ blindChance: v })}
-                step={0.05}
+                label="威胁倍率加成 (ThreatRatio)"
+                description="叠加 ThreatRatioBonus"
+                value={currentAbility.threatRatio}
+                onChange={v => handleUpdate({ threatRatio: v })}
+                step={0.1}
                 min={0}
-                max={1}
-                unit="×"
-              />
-
-              <NumberInput
-                label="致盲时长 (BlindMilliseconds)"
-                value={currentAbility.blindMilliseconds}
-                onChange={v => handleUpdate({ blindMilliseconds: v })}
-                step={500}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="沉默几率 (SilenceChance)"
-                value={currentAbility.silenceChance}
-                onChange={v => handleUpdate({ silenceChance: v })}
-                step={0.05}
-                min={0}
-                max={1}
-                unit="×"
-              />
-
-              <NumberInput
-                label="沉默时长 (SilenceMilliseconds)"
-                value={currentAbility.silenceMilliseconds}
-                onChange={v => handleUpdate({ silenceMilliseconds: v })}
-                step={500}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="穿甲削防比例 (PenetrationRatio)"
-                value={currentAbility.penetrationRatio}
-                onChange={v => handleUpdate({ penetrationRatio: v })}
-                step={0.05}
-                unit="×"
-              />
-
-              <NumberInput
-                label="气血汲取比例 (HpDrainRatio)"
-                value={currentAbility.hpDrainRatio}
-                onChange={v => handleUpdate({ hpDrainRatio: v })}
-                step={0.05}
-                unit="×"
-              />
-
-              <NumberInput
-                label="贯穿概率 (PierceChance)"
-                value={currentAbility.pierceChance}
-                onChange={v => handleUpdate({ pierceChance: v })}
-                step={0.05}
-                min={0}
-                max={1}
                 unit="×"
               />
             </div>
+
+            {/* Buff 增益块 */}
+            <div className="pt-3 border-t border-zinc-800/80 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-zinc-300">战内 Buff 块 (Buff)</span>
+                {currentAbility.buff ? (
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateBuff(null)}
+                    className="text-xs text-rose-400 hover:text-rose-300 font-medium"
+                  >
+                    移除 Buff 块
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateBuff({ durationSeconds: 30 })}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    + 配置 Buff
+                  </button>
+                )}
+              </div>
+
+              {currentAbility.buff && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-zinc-300 tracking-tight">Buff ID（缺省 ability-buff:技能ID）</label>
+                    <input
+                      type="text"
+                      value={currentAbility.buff.buffId || ''}
+                      onChange={e => handleUpdateBuff({ buffId: e.target.value || undefined })}
+                      className="w-full bg-zinc-900/90 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 font-mono text-xs text-zinc-100 outline-none"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-medium text-zinc-300 tracking-tight">Buff 名称</label>
+                    <input
+                      type="text"
+                      value={currentAbility.buff.name || ''}
+                      onChange={e => handleUpdateBuff({ name: e.target.value || undefined })}
+                      className="w-full bg-zinc-900/90 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-zinc-100 outline-none"
+                    />
+                  </div>
+
+                  <NumberInput
+                    label="持续时长 (DurationSeconds)"
+                    value={currentAbility.buff.durationSeconds}
+                    onChange={v => handleUpdateBuff({ durationSeconds: v })}
+                    min={0}
+                    unit="秒"
+                  />
+
+                  <NumberInput
+                    label="气血回复 (HpRegen)"
+                    value={currentAbility.buff.hpRegen}
+                    onChange={v => handleUpdateBuff({ hpRegen: v })}
+                    step={0.5}
+                  />
+
+                  <NumberInput
+                    label="灵力回复 (MpRegen)"
+                    value={currentAbility.buff.mpRegen}
+                    onChange={v => handleUpdateBuff({ mpRegen: v })}
+                    step={0.5}
+                  />
+
+                  <NumberInput
+                    label="攻速加成 (AttackSpeedRatio)"
+                    value={currentAbility.buff.attackSpeedRatio}
+                    onChange={v => handleUpdateBuff({ attackSpeedRatio: v })}
+                    step={0.05}
+                    unit="×"
+                  />
+
+                  <NumberInput
+                    label="免伤比例 (DamageAbsorptionRatio)"
+                    value={currentAbility.buff.damageAbsorptionRatio}
+                    onChange={v => handleUpdateBuff({ damageAbsorptionRatio: v })}
+                    step={0.05}
+                    unit="×"
+                  />
+
+                  <NumberInput
+                    label="威胁倍率 (Buff.ThreatRatio)"
+                    description="镜像路径按此叠加全体友方威胁"
+                    value={currentAbility.buff.threatRatio}
+                    onChange={v => handleUpdateBuff({ threatRatio: v })}
+                    step={0.1}
+                    unit="×"
+                  />
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* 默认触发策略 */}
+          {/* 默认触发条件 */}
           <CombatTriggerEditor
-            label="神通默认释放策略 (DefaultTriggers)"
-            description="战斗中该技能的自动释放策略"
+            label="神通默认触发条件 (DefaultTriggers)"
+            description="装配槽未覆写时使用；全部条件满足才自动施放"
             triggers={currentAbility.defaultTriggers}
             onChange={triggers => handleUpdate({ defaultTriggers: triggers })}
           />

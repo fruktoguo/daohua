@@ -32,7 +32,7 @@ export type ActionExecutionKind = 'timed' | 'combat-encounter' | 'travel'
  * - 'duel-pending': 斗法撮合等待中
  * - 'duel': 斗法脚本回放中
  */
-export type ExpeditionPhase = 'none' | 'travel' | 'initial-search' | 'search' | 'combat' | 'respawn' | 'duel-pending' | 'duel'
+export type ExpeditionPhase = 'initial-search' | 'search' | 'combat' | 'respawn' | 'duel-pending' | 'duel'
 
 /**
  * 实时战斗动作类型：攻击 (attack)、施法 (cast)、控制 (control)、等待/调息 (wait)、复活读条 (respawn)
@@ -181,11 +181,11 @@ export type CombatAbilityEffectType = 'damage' | 'heal'
  * 功法技能施法目标范围
  */
 export type CombatAbilityTargetType =
-  | 'targetEnemy'
-  | 'allEnemies'
+  | 'enemy'
+  | 'all-enemies'
   | 'self'
-  | 'allAllies'
-  | 'lowestHitpointsAlly'
+  | 'all-allies'
+  | 'lowest-hp-ally'
 
 /**
  * 行动收益类别：修为 (qi)、灵力/战斗蓝 (mana)、气血 (hitpoints)、历练经验 (experience)、物品产出 (item)、增益状态 (buff)
@@ -214,8 +214,8 @@ export interface ActionYield {
   name?: string | null
   /** Buff 持续秒数（仅 buff 有值） */
   durationSeconds?: number | null
-  /** Buff 修正属性表（仅 buff 有值） */
-  modifiers?: Record<string, number> | null
+  /** Buff 修饰器（仅 buff 有值；与 BuffModifiers 同一形状） */
+  modifiers?: BuffModifiers | null
 }
 
 /**
@@ -272,9 +272,9 @@ export interface QueueEntry {
   combatEncounterId?: string | null
   /** 跨节点移动目标节点 ID */
   travelDestinationNodeId?: string | null
-  /** 移动经过的路径边 ID 列表 */
-  travelPathEdgeIds?: string[] | null
-  /** 移动路段进度详情列表 */
+  /** 移动全程总里程（服务端世界图边距权威值） */
+  travelTotalDistance?: number | null
+  /** 移动路段进度详情列表（每段携带边 ID 与里程） */
   travelSegments?: TravelSegment[] | null
   /** 远征/遭遇战执行进度 */
   expedition?: ExpeditionProgress | null
@@ -282,7 +282,7 @@ export interface QueueEntry {
   pvpEnabled: boolean
 }
 /**
- * 旅行移动路段数据（travelPathEdgeIds 中每一段边的进度切分）
+ * 旅行移动路段数据（服务端世界图权威分段）
  */
 export interface TravelSegment {
   /** 地图边 ID */
@@ -293,6 +293,8 @@ export interface TravelSegment {
   endProgress: number
   /** 该路段耗时（秒） */
   durationSeconds: number
+  /** 该路段里程（世界图边距） */
+  distance: number
 }
 
 
@@ -308,8 +310,6 @@ export interface AutoUseSlot {
   enabled: boolean
   /** 已开启的持续消耗品剩余有效秒数（银河奶牛式） */
   remainingDurationSeconds?: number
-  /** 触发判定条件列表 */
-  triggers?: CombatTrigger[]
 }
 
 /**
@@ -325,28 +325,18 @@ export interface QueueState {
 }
 
 /**
- * 行动进度同步轻量结构（增量补丁中高频推进的当前条目进度，
- * 避免每次 tick 都下发完整 queue 分段）
- */
-export interface QueueProgress {
-  /** 目标队列条目实例 ID */
-  entryId: string
-  /** 条目当前运行状态 */
-  status: QueueEntryStatus
-  /** 当前轮次已执行秒数 */
-  progressSeconds: number
-  /** 单轮总耗时（秒） */
-  durationSeconds: number
-  /** 远征/遭遇战进度（未变更时为 null，沿用旧值） */
-  expedition?: ExpeditionProgress | null
-}
-
-/**
- * 同波单个敌方单位的战斗快照（服务端 CombatExpeditionState.enemies[] 透传）
+ * 同波单个敌方单位的战斗快照（服务端白名单投影：名称/品阶/立绘/完整属性随快照下发，
+ * 前端不得再按 enemyId 反查怪物目录补齐战斗数值）
  */
 export interface ExpeditionEnemy {
   /** 配表怪物定义 ID */
   enemyId: string
+  /** 显示名 */
+  name: string
+  /** 品阶：normal / elite / boss */
+  rank: string
+  /** 立绘渲染配置 */
+  visual?: CharacterVisual | null
   /** 当前气血 */
   hitpoints: number
   /** 当前灵力 */
@@ -359,8 +349,10 @@ export interface ExpeditionEnemy {
   threat: number
   /** 正在吟唱的技能 ID；为 null 时下一次出手是普通攻击 */
   pendingAbilityId?: string | null
-  /** 当前动作总时长秒数（吟唱时长或普攻间隔） */
-  pendingActionDurationSeconds?: number
+  /** 当前动作总时长秒数（吟唱时长或普攻间隔，服务端权威值） */
+  pendingActionDurationSeconds: number
+  /** 完整战斗属性面板（与玩家 combat.attributes 同一形状） */
+  attributes?: CombatAttributes | null
 }
 
 /**
@@ -375,10 +367,6 @@ export interface ExpeditionProgress {
   elapsedSeconds: number
   /** 阶段总秒数 */
   durationSeconds: number
-  /** 行进已走距离（travel 相位；当前 wire 未下发，保留给旅行显示契约） */
-  travelledDistance?: number | null
-  /** 行进总距离（travel 相位；当前 wire 未下发，保留给旅行显示契约） */
-  totalDistance?: number | null
   /** 玩家当前生命值 */
   playerHitpoints?: number | null
   /** 玩家当前灵力值 */
@@ -424,11 +412,11 @@ export interface DuelStagedItem {
  */
 export interface BattleReportRootExp {
   stamina: number
-  intelligence: number
+  meridians: number
   attack: number
-  defense: number
-  swordsmanship: number
-  talisman: number
+  bone: number
+  agility: number
+  consciousness: number
 }
 
 /**
@@ -450,7 +438,7 @@ export interface BattleReportAbilityExp {
 /**
  * 战报等级提升条目：kind 区分境界 / 六维 / 功法三类目标。
  * - realm：境界提升，targetId 为空串；
- * - root：六维提升，targetId 为六维键（stamina/intelligence/attack/defense/swordsmanship/talisman）；
+ * - root：六维提升，targetId 为六维键（stamina/meridians/attack/bone/agility/consciousness）；
  * - ability：功法提升，targetId 为功法 ID。
  */
 export interface BattleReportLevelUp {
@@ -532,15 +520,21 @@ export interface DuelState {
 }
 
 /**
- * 斗法剧本单条事件（仅解析行动条所需字段：出手时刻与出手方）
+ * 斗法剧本单条事件：出手时刻、双方身份与结算后的气血/灵力真值（服务端推演快照透传）
  */
 export interface ExpeditionDuelEvent {
   /** 事件发生的剧本时刻（秒，与 battleElapsedSeconds 同一时钟） */
   atSeconds: number
   /** 出手方是否为斗法发起方（结合 viewerIsInitiator 翻译为本方/对方） */
   attackerIsInitiator: boolean
+  /** 受击方是否为斗法发起方 */
+  targetIsInitiator: boolean
   /** 出手功法 ID（普攻为 null，用于行动条显示技能名） */
   abilityId?: string | null
+  /** 出手方结算后剩余灵力 */
+  attackerManapointsAfter: number
+  /** 受击方结算后剩余灵力 */
+  targetManapointsAfter: number
 }
 
 /**
@@ -555,13 +549,15 @@ export interface ExpeditionDuel {
   outcome: number
   /** 是否已结算 */
   resolved: boolean
-  /** 对手最大生命值（撮合时锁定的镜像） */
-  opponentMaxHitpoints: number
+  /** 对手镜像完整战斗属性（撮合时冻结；上限取 attributes.maxHitpoints/maxManapoints） */
+  opponentAttributes: CombatAttributes
   /** 对手当前生命值（随回放事件推进） */
   opponentHitpoints: number
+  /** 对手当前灵力值（随回放事件推进） */
+  opponentManapoints: number
   /** 剧本总时长（秒） */
   durationSeconds: number
-  /** 剧本事件列表（用于推导双方下一次出手的行动条） */
+  /** 剧本事件列表（用于推导双方下一次出手与资源条的行动条） */
   events: ExpeditionDuelEvent[]
 }
 
@@ -613,42 +609,63 @@ export interface CombatResourceState {
   castingAbilityId?: string | null
   /** 吟唱剩余毫秒数 */
   castRemainingMilliseconds?: number
+  /** 吟唱总毫秒数（配表吟唱 × 施法时间乘区；仅吟唱中下发，无吟唱为 null） */
+  castTotalMilliseconds?: number | null
 }
 
 /**
- * 完整战斗属性面板结构
+ * 统一战斗属性面板（服务端权威终值；玩家/妖兽/斗法镜像同一形状同一语义）。
+ * 暴击率/免暴率/免伤率为比率值（协议边界已由点数折算），其余为点数或倍率。
  */
 export interface CombatAttributes {
   maxHitpoints: number
   maxManapoints: number
-  attackIntervalMilliseconds: number
-  accuracyRating: number
-  maxDamage: number
-  evasionRating: number
+  /** 物理攻击力（普攻结算基准） */
+  physicalAttack: number
+  /** 术法攻击力（术法技能结算基准） */
+  spellAttack: number
   armor: number
   magicResistance: number
+  accuracy: number
+  evasion: number
+  /** 暴击率（比率） */
+  criticalChance: number
+  /** 暴击伤害倍率（≥1） */
+  criticalDamageRatio: number
+  /** 免暴率（比率） */
+  criticalAvoidance: number
+  /** 破防威力点数 */
+  breakPower: number
+  /** 招架化解点数 */
+  parryResolve: number
+  hpRegenPerFiveSeconds: number
+  mpRegenPerFiveSeconds: number
+  attackIntervalMilliseconds: number
+  /** 普攻伤害倍率（成长曲线） */
+  basicAttackRatio: number
+  /** 技能强度乘区 */
+  skillIntensity: number
+  /** 冷却乘区 */
+  cooldownFactor: number
+  /** 吟唱乘区 */
+  castTimeFactor: number
+  /** 免伤率（比率） */
+  damageAbsorptionRatio: number
+  /** 仇恨威胁加成比率 */
+  threatRatio: number
   metalResistance: number
   woodResistance: number
   waterResistance: number
   fireResistance: number
   earthResistance: number
-  style: CombatStyle
-  category: DamageCategory
-  element: Element
-  tenacity: number
-  hpRegenPerFiveSeconds: number
-  mpRegenPerFiveSeconds: number
-  penetrationRatio: number
-  lifeStealRatio: number
-  armorDamageRatio: number
+  /** 气血汲取比率 */
   hpDrainRatio: number
-  damageTakenRatio: number
-  criticalChance: number
-  criticalDamageRatio: number
-  criticalAvoidance: number
-  damageAbsorptionRatio: number
-  criticalRating?: number
-  criticalAvoidanceRating?: number
+  /** 灵力汲取比率 */
+  mpDrainRatio: number
+  /** 伤害反弹比率 */
+  damageReflectRatio: number
+  /** 治疗增益比率 */
+  healingBonusRatio: number
 }
 
 /**
@@ -701,18 +718,10 @@ export interface ItemDefinition {
   usableActionTypes: ActionType[]
   /** 使用冷却秒数 */
   cooldownSeconds: number
-  /** 使用后调息/恢复秒数 */
-  recoverySeconds: number
   /** 使用后即时恢复气血 */
   hitpointRestore: number
   /** 使用后即时恢复灵力 */
   manapointRestore: number
-  /** 默认血量触发阈值比例 */
-  triggerHpRatio: number
-  /** 是否默认在战斗开始时触发使用 */
-  triggerAtCombatStart: boolean
-  /** 出厂默认战斗触发条件 */
-  defaultCombatTriggers?: CombatTrigger[] | null
   /** 使用后附加的 Buff 效果列表 */
   buffEffects?: ItemBuffEffectDefinition[] | null
   /** 持续生效总秒数（持续型消耗品） */
@@ -728,36 +737,32 @@ export interface ItemDefinition {
 }
 
 /**
- * 物品附加 Buff 效果定义
+ * Buff 修饰器唯一形状：行动收益授权 / 物品消耗品增益 / 活跃 Buff 三处共用同一字段集。
+ * statRatios 为通用属性比率字典（key 为属性名，值按层数叠加进属性乘区）。
  */
-export interface ItemBuffEffectDefinition {
+export interface BuffModifiers {
+  /** 每 5 秒结算点气血回复量 */
+  hpRegen?: number
+  /** 每 5 秒结算点灵力回复量 */
+  mpRegen?: number
+  /** 攻速加成比率 */
+  attackSpeedRatio?: number
+  /** 免伤率加成（比率） */
+  damageAbsorptionRatio?: number
+  /** 通用属性比率字典（可选） */
+  statRatios?: Record<string, number> | null
+}
+
+/**
+ * 物品附加 Buff 效果定义（消耗品 buffs[] 配置，与领域结算字段一一对应）
+ */
+export interface ItemBuffEffectDefinition extends BuffModifiers {
   /** Buff 配置 ID（用于叠加归并与到期移除） */
   buffId?: string
   /** Buff 显示名 */
   name: string
   /** 单次生效秒数 */
   durationSeconds: number
-  /** 最大叠加层数 */
-  maxStacks: number
-  /** 效果描述 */
-  description?: string
-  /** 修为收益倍率 */
-  qiGainMultiplier?: number
-  attackLevelRatio?: number
-  damageRatio?: number
-  attackSpeedRatio?: number
-  hpRegen?: number
-  mpRegen?: number
-  damageAbsorptionRatio?: number
-  armor?: number
-  magicResistance?: number
-  criticalChance?: number
-  criticalDamageRatio?: number
-  tenacity?: number
-  gatheringOutputMultiplier?: number
-  alchemyOutputMultiplier?: number
-  /** 任意属性修正表（key 为属性名，覆盖上述固定字段之外的增益） */
-  modifiers?: Record<string, number>
 }
 
 /**
@@ -778,32 +783,21 @@ export interface LogEvent {
 
 /**
  * 角色身上当前生效的增益/减益状态 (Buff)
+ * 字段即服务端 ActiveBuff 权威结算规格；修饰器形状与 BuffModifiers 一致。
  */
-export interface Buff {
+export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen' | 'attackSpeedRatio' | 'damageAbsorptionRatio'>> {
   /** Buff 配置 ID */
   buffId: string
   /** Buff 显示名 */
   name: string
   /** 当前叠加层数 */
   stacks: number
-  /** 修为收益倍率 */
-  qiGainMultiplier: number
   /** 到期时刻（Unix 秒） */
   expiresAtUnixSeconds: number
-  /** 攻击等级加成比例 */
-  attackLevelRatio?: number
-  /** 伤害加成比例 */
-  damageRatio?: number
-  /** 攻速加成比例 */
-  attackSpeedRatio?: number
-  /** 历练采集产出倍率 */
-  gatheringOutputMultiplier?: number
-  /** 炼丹产出倍率 */
-  alchemyOutputMultiplier?: number
   /** 来源物品 ID */
   sourceItemId?: string | null
-  /** 任意属性修正表 */
-  modifiers?: Record<string, number> | null
+  /** 通用属性比率字典（可选） */
+  statRatios?: Record<string, number> | null
 }
 
 /**
@@ -912,10 +906,6 @@ export interface CombatAbilityDefinition {
   damageRatio?: number
   /** 固定附加伤害（缺省按 0） */
   flatDamage?: number
-  /** 抗性穿透比例 */
-  penetrationRatio: number
-  /** 默认血量触发阈值比例（无触发条件时的兜底规则） */
-  triggerHpRatio: number
   /** 效果大类（伤害/治疗），缺省视为伤害 */
   effectType?: CombatAbilityEffectType
   /** 治疗倍率 */
@@ -924,36 +914,18 @@ export interface CombatAbilityDefinition {
   flatHealing?: number
   /** 出厂默认触发条件 */
   defaultTriggers?: CombatTrigger[] | null
-  /** 持续伤害倍率（每跳） */
-  damageOverTimeRatio?: number
-  /** 持续伤害总时长毫秒数 */
-  damageOverTimeMilliseconds?: number
-  /** 持续伤害跳数间隔毫秒数 */
-  damageOverTimeTickMilliseconds?: number
-  /** 眩晕触发概率 */
-  stunChance?: number
-  /** 眩晕时长毫秒数 */
-  stunMilliseconds?: number
-  /** 致盲触发概率 */
-  blindChance?: number
-  /** 致盲时长毫秒数 */
-  blindMilliseconds?: number
-  /** 沉默触发概率 */
-  silenceChance?: number
-  /** 沉默时长毫秒数 */
-  silenceMilliseconds?: number
   /** 施法目标范围，缺省为单体敌人 */
   targetType?: CombatAbilityTargetType
-  /** 对护甲额外伤害比例 */
-  armorDamageRatio?: number
-  /** 气血汲取（吸血）比例 */
-  hpDrainRatio?: number
   /** 支援类：固定威胁值提升（嘲讽等） */
   threatGain?: number
   /** 支援类：威胁值倍率提升 */
   threatRatio?: number
+  /** 品阶（配表声明，缺省视为 1） */
+  tier?: number
+  /** 根骨加成属性键（配表声明） */
+  rootAttribute?: string
   /** 支援类：施放后施加的战内 Buff（破阵子等） */
-  buff?: { name?: string; durationSeconds?: number; damageAbsorptionRatio?: number } | null
+  buff?: { name?: string; durationSeconds?: number; damageAbsorptionRatio?: number; hpRegen?: number; mpRegen?: number; attackSpeedRatio?: number; threatRatio?: number } | null
 }
 
 /**
@@ -970,29 +942,8 @@ export interface CombatantDefinition {
   category: DamageCategory
   element: Element
   rank?: UnitRank
-  maxHitpoints: number
-  maxManapoints: number
-  attackIntervalMilliseconds: number
-  accuracyRating: number
-  evasionRating: number
-  maxDamage: number
-  armor: number
-  magicResistance: number
-  metalResistance: number
-  woodResistance: number
-  waterResistance: number
-  fireResistance: number
-  earthResistance: number
-  tenacity: number
-  lifeStealRatio: number
-  armorDamageRatio: number
-  hpDrainRatio: number
-  criticalChance: number
-  criticalDamageRatio: number
-  criticalAvoidance: number
-  damageAbsorptionRatio: number
-  hpRegenPerFiveSeconds: number
-  mpRegenPerFiveSeconds: number
+  /** 完整战斗属性（与玩家 combat.attributes 同一形状同一语义） */
+  attributes: CombatAttributes
   /** 击杀后入账的历练经验（底蕴） */
   experience: number
   /** 境界等级（怪物同构建模的等级锚点） */
@@ -1054,39 +1005,9 @@ export interface CombatEncounterDefinition {
 /**
  * 装备属性增益汇总
  */
-export interface CombatEquipmentStats {
-  accuracyRatio: number
-  damageRatio: number
-  attackSpeedRatio: number
-  evasionRatio: number
-  armor: number
-  magicResistance: number
-  metalResistance: number
-  woodResistance: number
-  waterResistance: number
-  fireResistance: number
-  earthResistance: number
-  tenacity: number
-  penetrationRatio: number
-  lifeStealRatio: number
-  armorDamageRatio: number
-  hpDrainRatio: number
-  criticalChance: number
-  criticalDamageRatio: number
-  criticalAvoidance: number
-  damageAbsorptionRatio: number
-  /** 覆盖出手间隔（装备改变攻速时使用） */
-  attackIntervalMilliseconds?: number
-  /** 覆盖战斗流派（装备改变攻击形态时使用） */
-  style?: CombatStyle | null
-  /** 覆盖伤害大类 */
-  category?: DamageCategory | null
-  /** 覆盖五行属性 */
-  element?: Element | null
-}
-
 /**
- * 装备配置定义
+ * 装备配置定义（协议只透传配表原始数值块，结算由服务端属性解析器完成；
+ * 前端不得再消费派生 stats 幻影块或本地重建战斗终值）
  */
 export interface CombatEquipmentDefinition {
   /** 装备唯一 ID */
@@ -1097,10 +1018,8 @@ export interface CombatEquipmentDefinition {
   slot: EquipmentSlot
   /** 品阶 */
   tier: number
-  /** 基础属性增益 */
-  stats: CombatEquipmentStats
-  /** 每级强化附加的属性增益 */
-  enhancementBonus: CombatEquipmentStats
+  /** 每级强化附加的属性增益（配表原始字典） */
+  enhancementBonus?: Record<string, number>
   /** 配表原始比例段（服务端透传，供详情面板展示） */
   baseStatRatios?: Record<string, number>
   /** 配表原始固定值段 */
@@ -1120,7 +1039,8 @@ export interface EquippedItem {
 }
 
 /**
- * 战斗消耗品槽位配置
+ * 战斗消耗品槽位配置（服务端 AutoUseSlotState 投影；消耗品不支持触发条件，
+ * 触发判定仅为功法槽位能力，请勿在此叠加 triggers 语义）
  */
 export interface ConsumableSlot {
   /** 绑定的物品 ID（null 为空槽） */
@@ -1129,47 +1049,33 @@ export interface ConsumableSlot {
   quantity: number
   /** 是否启用自动使用 */
   enabled: boolean
-  /** 自动使用触发条件列表 */
-  triggers?: CombatTrigger[]
 }
 
 /**
  * 玩家战斗装配方案
  */
 export interface CombatLoadout {
-  /** 六维根基等级：耐力 */
+  /** 六维根基等级：体魄 */
   staminaLevel: number
-  /** 六维根基等级：悟性 */
-  intelligenceLevel: number
-  /** 六维根基等级：攻击 */
+  /** 六维根基等级：经脉 */
+  meridiansLevel: number
+  /** 六维根基等级：力道 */
   attackLevel: number
-  /** 六维根基等级：防御 */
-  defenseLevel: number
-  /** 六维根基等级：剑术 */
-  swordsmanshipLevel: number
-  /** 六维根基等级：符箓 */
-  talismanLevel: number
+  /** 六维根基等级：根骨 */
+  boneLevel: number
+  /** 六维根基等级：身法 */
+  agilityLevel: number
+  /** 六维根基等级：神识 */
+  consciousnessLevel: number
   /** 六维累计经验（等级由服务端派生，缺省视为 0） */
   staminaExp?: number
-  intelligenceExp?: number
+  meridiansExp?: number
   attackExp?: number
-  defenseExp?: number
-  swordsmanshipExp?: number
-  talismanExp?: number
+  boneExp?: number
+  agilityExp?: number
+  consciousnessExp?: number
   /** 功法技能槽位（第 0 槽为内功位，其余为术法位） */
   abilitySlots: CombatAbilitySlot[]
-  /** 战斗消耗品槽位 */
-  consumableSlots: ConsumableSlot[]
-  /** 战斗掉落率加成 */
-  combatDropRate?: number
-  /** 战斗掉落数量加成 */
-  combatDropQuantity?: number
-  /** 稀有掉落发现加成 */
-  combatRareFind?: number
-  /** 搜寻加速比例 */
-  searchSpeedRatio?: number
-  /** 韧性（控制减免） */
-  tenacity?: number
   /** 已穿戴装备列表 */
   equipment?: EquippedItem[]
   /** 已学会的功法 ID 列表 */
@@ -1212,8 +1118,8 @@ export interface NearbyMonsterDefinition {
   budgetCost: number
   /** 气血上限 */
   maxHitpoints: number
-  /** 最大伤害 */
-  maxDamage: number
+  /** 物理攻击力 */
+  physicalAttack: number
   /** 护甲 */
   armor: number
   /** 掉落物品 ID 列表 */
@@ -1495,8 +1401,7 @@ export interface PlayerSnapshot {
 
 /**
  * 玩家 UI 增量投影（由 wire.v1 PlayerSnapshotDeltaDto 解码得到）。
- * 仅携带本次发生变更的分段；queueProgress 是高频行动进度的轻量通道，
- * 与 queue 互斥使用（queue 为全量分段替换，queueProgress 为单条进度覆盖）。
+ * 仅携带本次发生变更的分段；action_queue 分段为唯一行动队列通道（全量分段替换）。
  */
 export interface PlayerPatch {
   playerId: string
@@ -1508,7 +1413,6 @@ export interface PlayerPatch {
   inventory?: InventoryItem[]
   buffs?: Buff[]
   stats?: Stats
-  queueProgress?: QueueProgress
   combat?: CombatLoadout
   combatResources?: CombatResourceState
   combatAttributes?: CombatAttributes

@@ -167,7 +167,39 @@ function mapPresence(value: unknown): PlayerSnapshot['presenceMode'] {
 }
 
 function emptySlot(): AutoUseSlot {
-  return { itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0, triggers: [] }
+  return { itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 }
+}
+
+/**
+ * 统一战斗属性解码：玩家 combat.attributes、远征敌方条目 attributes、斗法镜像
+ * opponentAttributes 共用同一字段集与语义（服务端协议边界已完成点数→比率折算）。
+ */
+function mapCombatAttributes(value: unknown, name: string): CombatAttributes {
+  const source = requiredObject(value, name)
+  const numericKeys = [
+    'maxHitpoints', 'maxManapoints', 'physicalAttack', 'spellAttack', 'armor', 'magicResistance',
+    'accuracy', 'evasion', 'criticalChance', 'criticalDamageRatio', 'criticalAvoidance',
+    'breakPower', 'parryResolve', 'hpRegenPerFiveSeconds', 'mpRegenPerFiveSeconds',
+    'attackIntervalMilliseconds', 'basicAttackRatio', 'skillIntensity', 'cooldownFactor', 'castTimeFactor',
+    'damageAbsorptionRatio', 'threatRatio',
+    'metalResistance', 'woodResistance', 'waterResistance', 'fireResistance', 'earthResistance',
+    'hpDrainRatio', 'mpDrainRatio', 'damageReflectRatio', 'healingBonusRatio',
+  ] as const
+  const numbers = Object.fromEntries(numericKeys.map(key => [key, finiteValue(source[key], `${name}.${key}`)]))
+  return numbers as unknown as CombatAttributes
+}
+
+/** 立绘渲染配置解码（远征敌方条目随快照下发的 catalog visual 透传对象）。 */
+function mapCharacterVisual(value: unknown, name: string): CharacterVisual | null {
+  if (value === null || value === undefined) return null
+  const row = object(value)
+  const source = stringValue(row.source)
+  if (!source) return null
+  const renderer = stringValue(row.renderer, 'text')
+  if (!['text', 'glyph', 'image', 'live2d', 'model3d'].includes(renderer)) {
+    throw new Error(`${name}.renderer 枚举无效。`)
+  }
+  return { renderer: renderer as CharacterVisual['renderer'], source, poster: optionalString(row.poster, `${name}.poster`) }
 }
 
 function defaultAutoUseSlots(): QueueState['autoUseSlots'] {
@@ -235,12 +267,16 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
   if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的 duel 载荷无效。`)
   const outcome = finiteInteger(row.viewerOutcome, `行动 ${actionId} 的 duel.viewerOutcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 duel.viewerOutcome 枚举值无效。`)
-  const opponentMaxHitpoints = finiteNumber(row.opponentMaxHitpoints, `行动 ${actionId} 的 duel.opponentMaxHitpoints`)
+  const opponentAttributes = mapCombatAttributes(row.opponentAttributes, `行动 ${actionId} 的 duel.opponentAttributes`)
   const opponentHitpoints = finiteNumber(row.opponentHitpoints, `行动 ${actionId} 的 duel.opponentHitpoints`)
-  if (opponentMaxHitpoints <= 0 || opponentHitpoints < 0 || opponentHitpoints > opponentMaxHitpoints) {
+  const opponentManapoints = finiteNumber(row.opponentManapoints, `行动 ${actionId} 的 duel.opponentManapoints`)
+  if (opponentAttributes.maxHitpoints <= 0 || opponentHitpoints < 0 || opponentHitpoints > opponentAttributes.maxHitpoints) {
     throw new Error(`行动 ${actionId} 的 duel 对手血量无效。`)
   }
-  // 剧本事件只提取行动条所需字段（出手时刻、出手方与功法 ID）；其余结算字段由日志呈现。
+  if (opponentManapoints < 0 || opponentManapoints > opponentAttributes.maxManapoints) {
+    throw new Error(`行动 ${actionId} 的 duel 对手灵力无效。`)
+  }
+  // 剧本事件只提取行动条/资源条所需字段（时刻、双方身份、功法与结算后灵力）；伤害文本由日志呈现。
   const events: ExpeditionDuelEvent[] = arrayValue(row.events)
     .map((entry, index) => {
       const duelEvent = object(entry)
@@ -248,7 +284,10 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
       return {
         atSeconds: finiteNumber(duelEvent.atSeconds, `${label}.atSeconds`),
         attackerIsInitiator: booleanValue(duelEvent.attackerIsInitiator),
+        targetIsInitiator: booleanValue(duelEvent.targetIsInitiator),
         abilityId: optionalString(duelEvent.abilityId, `${label}.abilityId`),
+        attackerManapointsAfter: finiteNumber(duelEvent.attackerManapointsAfter, `${label}.attackerManapointsAfter`),
+        targetManapointsAfter: finiteNumber(duelEvent.targetManapointsAfter, `${label}.targetManapointsAfter`),
       }
     })
   return {
@@ -256,8 +295,9 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
     isInitiator: booleanValue(row.viewerIsInitiator),
     outcome,
     resolved: booleanValue(row.resolved),
-    opponentMaxHitpoints,
+    opponentAttributes,
     opponentHitpoints,
+    opponentManapoints,
     durationSeconds: finiteNumber(row.durationSeconds, `行动 ${actionId} 的 duel.durationSeconds`),
     events,
   }
@@ -291,13 +331,17 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 outcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 outcome 枚举值无效。`)
 
-  // 多敌同场：enemies 数组携带同波全体敌人的可持久化快照；搜寻/复活阶段为空。
+  // 多敌同场：enemies 数组携带同波全体敌人的权威快照（名称/品阶/立绘/完整属性均随包下发）；
+  // 搜寻/复活阶段为空。前端不得再按 enemyId 反查本地怪物目录补齐战斗数值。
   const enemies: ExpeditionEnemy[] = (row.enemies === null || row.enemies === undefined ? [] : arrayValue(row.enemies))
     .map((entry, index) => {
       const enemy = object(entry)
       const label = `行动 ${actionId} 的 enemies[${index}]`
       return {
         enemyId: identifierValue(enemy.enemyId, `${label}.enemyId`),
+        name: stringValue(enemy.name) || identifierValue(enemy.enemyId, `${label}.enemyId`),
+        rank: enumValue(enemy.rank, ['normal', 'elite', 'boss'] as const, `${label}.rank`),
+        visual: mapCharacterVisual(enemy.visual, `${label}.visual`),
         hitpoints: finiteNumber(enemy.hitpoints, `${label}.hitpoints`),
         manapoints: finiteNumber(enemy.manapoints, `${label}.manapoints`),
         nextAttackAtSeconds: finiteNumber(enemy.nextAttackAtSeconds, `${label}.nextAttackAtSeconds`),
@@ -306,7 +350,10 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
         pendingAbilityId: enemy.pendingAbilityId === null || enemy.pendingAbilityId === undefined
           ? null
           : identifierValue(enemy.pendingAbilityId, `${label}.pendingAbilityId`),
-        pendingActionDurationSeconds: numberValue(enemy.pendingActionDurationSeconds, 0),
+        pendingActionDurationSeconds: finiteNumber(enemy.pendingActionDurationSeconds, `${label}.pendingActionDurationSeconds`),
+        attributes: enemy.attributes === null || enemy.attributes === undefined
+          ? null
+          : mapCombatAttributes(enemy.attributes, `${label}.attributes`),
       }
     })
   const primary = enemies.find(enemy => enemy.hitpoints > 0) ?? enemies[0] ?? null
@@ -354,7 +401,6 @@ function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
       quantity: Math.max(1, slot.quantity),
       enabled: slot.enabled,
       remainingDurationSeconds,
-      triggers: [],
     }
   }
   return autoUseSlots
@@ -372,6 +418,7 @@ function mapTravelSegments(value: unknown): TravelSegment[] | null {
       startProgress: numberValue(s.startProgress, 0),
       endProgress: numberValue(s.endProgress, 1),
       durationSeconds: numberValue(s.durationSeconds, 0),
+      distance: numberValue(s.distance, numberValue(s.durationSeconds, 0)),
     })
   }
   return segments.length > 0 ? segments : null
@@ -409,9 +456,9 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     const travelDestinationNodeId = typeof row.travelDestinationNodeId === 'string' && row.travelDestinationNodeId.length > 0
       ? row.travelDestinationNodeId
       : (stringValue(intent.targetNodeId) || null)
-    const travelPathEdgeIds = Array.isArray(row.travelPathEdgeIds)
-      ? row.travelPathEdgeIds.map(id => stringValue(id)).filter(id => id.length > 0)
-      : null
+    const travelTotalDistance = row.travelTotalDistance === null || row.travelTotalDistance === undefined
+      ? null
+      : finiteNumber(row.travelTotalDistance, `行动 ${actionId} 的 travelTotalDistance`)
     const travelSegments = mapTravelSegments(row.travelSegments)
     const actionName = serverActionName || definition?.name || actionId
     const type = definition?.type || (ACTION_TYPES.includes(serverActionType as ActionType) ? (serverActionType as ActionType) : undefined) || 'cultivation'
@@ -427,7 +474,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       executionKind,
       combatEncounterId,
       travelDestinationNodeId,
-      travelPathEdgeIds,
+      travelTotalDistance,
       travelSegments,
       expedition,
       pvpEnabled: booleanValue(intent.pvpEnabled),
@@ -471,22 +518,7 @@ function enumValue<T extends string>(value: unknown, values: readonly T[], name:
 
 function mapCombat(value: unknown): { resources: CombatResourceState; attributes: CombatAttributes } {
   const row = requiredObject(value, 'combat')
-  const source = requiredObject(row.attributes, 'combat.attributes')
-  const numericKeys = [
-    'maxHitpoints', 'maxManapoints', 'attackIntervalMilliseconds', 'accuracyRating', 'maxDamage',
-    'evasionRating', 'armor', 'magicResistance', 'metalResistance', 'woodResistance', 'waterResistance',
-    'fireResistance', 'earthResistance', 'tenacity', 'hpRegenPerFiveSeconds', 'mpRegenPerFiveSeconds',
-    'penetrationRatio', 'lifeStealRatio', 'armorDamageRatio', 'hpDrainRatio', 'damageTakenRatio',
-    'criticalChance', 'criticalDamageRatio', 'criticalAvoidance', 'damageAbsorptionRatio',
-    'criticalRating', 'criticalAvoidanceRating',
-  ] as const
-  const numbers = Object.fromEntries(numericKeys.map(key => [key, finiteValue(source[key], `combat.attributes.${key}`)])) as Pick<CombatAttributes, typeof numericKeys[number]>
-  const attributes: CombatAttributes = {
-    ...numbers,
-    style: enumValue(source.style, ['sword', 'blade', 'talisman', 'five-elements', 'body'], 'combat.style'),
-    category: enumValue(source.category, ['physical', 'spell'], 'combat.category'),
-    element: enumValue(source.element, ['none', 'metal', 'wood', 'water', 'fire', 'earth'], 'combat.element'),
-  }
+  const attributes = mapCombatAttributes(row.attributes, 'combat.attributes')
   // 技能冷却/吟唱与消耗品冷却：服务端按战斗技能状态与自动使用槽位定长下发。
   const skills = requiredObject(row.skills, 'combat.skills')
   // 冷却表允许为空对象（无冷却中技能），不能用 requiredObject 的非空校验。
@@ -500,16 +532,23 @@ function mapCombat(value: unknown): { resources: CombatResourceState; attributes
   const castingAbilityId = skills.castingAbilityId === null || skills.castingAbilityId === undefined
     ? null
     : identifierValue(skills.castingAbilityId, 'combat.skills.castingAbilityId')
+  // 资源与上限走 resources 子对象；上限必须与 attributes 面板一致，防双通道漂移。
+  const resources = requiredObject(row.resources, 'combat.resources')
+  const maxHitpoints = finiteNumber(resources.maxHitpoints, 'combat.resources.maxHitpoints')
+  const maxManapoints = finiteNumber(resources.maxManapoints, 'combat.resources.maxManapoints')
   return {
     resources: {
-      hitpoints: finiteNumber(row.hitpoints, 'combat.hitpoints'),
-      manapoints: finiteNumber(row.manapoints, 'combat.manapoints'),
-      maxHitpoints: attributes.maxHitpoints,
-      maxManapoints: attributes.maxManapoints,
+      hitpoints: finiteNumber(resources.hitpoints, 'combat.resources.hitpoints'),
+      manapoints: finiteNumber(resources.manapoints, 'combat.resources.manapoints'),
+      maxHitpoints,
+      maxManapoints,
       abilityCooldownMilliseconds,
       consumableCooldownMilliseconds,
       castingAbilityId,
       castRemainingMilliseconds: finiteNumber(skills.castRemainingMilliseconds, 'combat.skills.castRemainingMilliseconds'),
+      castTotalMilliseconds: skills.castTotalMilliseconds === null || skills.castTotalMilliseconds === undefined
+        ? null
+        : finiteNumber(skills.castTotalMilliseconds, 'combat.skills.castTotalMilliseconds'),
     },
     attributes,
   }
@@ -532,30 +571,26 @@ function mapTriggers(value: unknown): CombatTrigger[] {
 function mapLoadout(value: unknown): CombatLoadout {
   const row = requiredObject(value, 'loadout')
   const core = requiredObject(row.coreAttributes, 'loadout.coreAttributes')
-  if (!Array.isArray(row.abilitySlots) || !Array.isArray(row.equipment) || !Array.isArray(row.consumableSlots)) {
+  // 消耗品槽位已收敛至 settings.autoUseSlots 单一通道，loadout 只携带功法槽与装备。
+  if (!Array.isArray(row.abilitySlots) || !Array.isArray(row.equipment)) {
     throw new Error('loadout section 槽位载荷无效。')
   }
   return {
     staminaLevel: finiteNumber(core.staminaLevel, 'loadout.staminaLevel'),
-    intelligenceLevel: finiteNumber(core.intelligenceLevel, 'loadout.intelligenceLevel'),
+    meridiansLevel: finiteNumber(core.meridiansLevel, 'loadout.meridiansLevel'),
     attackLevel: finiteNumber(core.attackLevel, 'loadout.attackLevel'),
-    defenseLevel: finiteNumber(core.defenseLevel, 'loadout.defenseLevel'),
-    swordsmanshipLevel: finiteNumber(core.swordsmanshipLevel, 'loadout.swordsmanshipLevel'),
-    talismanLevel: finiteNumber(core.talismanLevel, 'loadout.talismanLevel'),
+    boneLevel: finiteNumber(core.boneLevel, 'loadout.boneLevel'),
+    agilityLevel: finiteNumber(core.agilityLevel, 'loadout.agilityLevel'),
+    consciousnessLevel: finiteNumber(core.consciousnessLevel, 'loadout.consciousnessLevel'),
     staminaExp: numberValue(core.staminaExp),
-    intelligenceExp: numberValue(core.intelligenceExp),
+    meridiansExp: numberValue(core.meridiansExp),
     attackExp: numberValue(core.attackExp),
-    defenseExp: numberValue(core.defenseExp),
-    swordsmanshipExp: numberValue(core.swordsmanshipExp),
-    talismanExp: numberValue(core.talismanExp),
+    boneExp: numberValue(core.boneExp),
+    agilityExp: numberValue(core.agilityExp),
+    consciousnessExp: numberValue(core.consciousnessExp),
     abilitySlots: row.abilitySlots.map(item => {
       const slot = requiredObject(item, 'loadout.abilitySlot')
       return { abilityId: optionalString(slot.abilityId, 'abilitySlot.abilityId'), level: finiteNumber(slot.level, 'abilitySlot.level'), triggers: mapTriggers(slot.triggers) }
-    }),
-    consumableSlots: row.consumableSlots.map(item => {
-      const slot = requiredObject(item, 'loadout.consumableSlot')
-      if (typeof slot.enabled !== 'boolean') throw new Error('consumableSlot.enabled 无效。')
-      return { itemId: optionalString(slot.itemId, 'consumableSlot.itemId'), quantity: finiteNumber(slot.quantity, 'consumableSlot.quantity'), enabled: slot.enabled, triggers: mapTriggers(slot.triggers) }
     }),
     equipment: row.equipment.map(item => {
       const equipment = requiredObject(item, 'loadout.equipment')
@@ -614,7 +649,7 @@ function mapNearbyMonsters(value: unknown): NearbyMonsterDefinition[] {
       rank: stringValue(row.rank, 'normal'),
       budgetCost: numberValue(row.budgetCost, 0),
       maxHitpoints: numberValue(row.maxHitpoints, 0),
-      maxDamage: numberValue(row.maxDamage, 0),
+      physicalAttack: numberValue(row.physicalAttack, 0),
       armor: numberValue(row.armor, 0),
       drops: Array.isArray(row.drops) ? row.drops.filter((d): d is string => typeof d === 'string') : [],
       visualSource: typeof row.visualSource === 'string' ? row.visualSource : null,
@@ -697,19 +732,20 @@ function mapBuffs(value: unknown): Buff[] {
     const row = object(item)
     const buffId = stringValue(row.buffId)
     if (!buffId) throw new Error('buffs section 中存在无效 buffId。')
+    // 唯一 Buff 形状：ActiveBuff 平铺权威字段 + 通用属性比率字典 statRatios。
     return {
       buffId,
-      name: identifierValue(row.name, 'buff.name'),
+      name: stringValue(row.name) || buffId,
       stacks: finiteNumber(row.stacks, 'buff.stacks'),
-      qiGainMultiplier: finiteNumber(row.qiGainMultiplier, 'buff.qiGainMultiplier'),
       expiresAtUnixSeconds: finiteNumber(row.expiresAtUnixSeconds, 'buff.expiresAtUnixSeconds'),
-      attackLevelRatio: finiteValue(row.attackLevelRatio, 'buff.attackLevelRatio'),
-      damageRatio: finiteValue(row.damageRatio, 'buff.damageRatio'),
-      attackSpeedRatio: finiteValue(row.attackSpeedRatio, 'buff.attackSpeedRatio'),
-      gatheringOutputMultiplier: finiteNumber(row.gatheringOutputMultiplier, 'buff.gatheringOutputMultiplier'),
-      alchemyOutputMultiplier: finiteNumber(row.alchemyOutputMultiplier, 'buff.alchemyOutputMultiplier'),
+      hpRegen: finiteNumber(row.hpRegen, 'buff.hpRegen'),
+      mpRegen: finiteNumber(row.mpRegen, 'buff.mpRegen'),
+      attackSpeedRatio: finiteNumber(row.attackSpeedRatio, 'buff.attackSpeedRatio'),
+      damageAbsorptionRatio: finiteNumber(row.damageAbsorptionRatio, 'buff.damageAbsorptionRatio'),
       sourceItemId: stringValue(row.sourceItemId) || null,
-      modifiers: Object.fromEntries(Object.entries(object(row.modifiers)).map(([key, value]) => [key, finiteValue(value, `buff.modifiers.${key}`)])),
+      statRatios: row.statRatios === null || row.statRatios === undefined
+        ? null
+        : Object.fromEntries(Object.entries(object(row.statRatios)).map(([key, value]) => [key, finiteValue(value, `buff.statRatios.${key}`)])),
     }
   })
 }
@@ -749,11 +785,11 @@ function mapBattleReport(value: unknown, name: string): BattleReport {
     experience: finiteValue(row.experience, `${name}.experience`),
     rootExp: {
       stamina: numberValue(rootExp.stamina),
-      intelligence: numberValue(rootExp.intelligence),
+      meridians: numberValue(rootExp.meridians),
       attack: numberValue(rootExp.attack),
-      defense: numberValue(rootExp.defense),
-      swordsmanship: numberValue(rootExp.swordsmanship),
-      talisman: numberValue(rootExp.talisman),
+      bone: numberValue(rootExp.bone),
+      agility: numberValue(rootExp.agility),
+      consciousness: numberValue(rootExp.consciousness),
     },
     abilityExp: arrayValue(row.abilityExp).flatMap((item, index) => {
       const entry = object(item)

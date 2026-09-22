@@ -1,6 +1,8 @@
 // ==============================================================================
 // 文件名称: config.ts
 // 主要职责: 游戏全量 9 大配置文件的 TypeScript 强类型接口定义
+// 说明: 字段集与 src/Domain/GameData/GameDataCatalog.cs、CombatSkillEngine.cs、
+//       CombatModels.cs 的真实消费键一一对齐；引擎不读的幻影字段一律不建模。
 // ==============================================================================
 
 // 1. Manifest
@@ -10,54 +12,64 @@ export interface GameDataManifest {
 }
 
 // 2. Actions (actions.json)
+// 行动收益条目：ParseYields 消费 kind/per/amount，item 与 buff 另读 id，
+// buff 再读 name/durationSeconds/modifiers.{hpRegen,mpRegen,attackSpeedRatio,damageAbsorptionRatio,statRatios}
+export interface ActionYieldModifiers {
+  hpRegen?: number;
+  mpRegen?: number;
+  attackSpeedRatio?: number;
+  damageAbsorptionRatio?: number;
+  statRatios?: Record<string, number>;
+}
+
+export interface ActionYieldConfig {
+  kind: string; // qi | mana | hitpoints | experience | item | buff
+  per: string; // second | repeat
+  amount?: number;
+  id?: string; // kind=item 时为 itemId；kind=buff 时为 buffId
+  name?: string; // kind=buff 时的展示名
+  durationSeconds?: number; // kind=buff 时的持续秒数
+  modifiers?: ActionYieldModifiers; // kind=buff 时的修正块
+}
+
 export interface ActionConfig {
   id: string;
   name: string;
   description: string;
-  type: string; // ActionType (cultivate, gathering, alchemy, combat, travel)
+  type: string; // ActionKind: cultivation | exploration | alchemy | combat | travel
   durationSeconds: number;
-  executionKind?: string; // ActionExecutionKind (timed, continuous, instant)
+  executionKind?: string; // ActionExecutionKind: timed | combatEncounter | travel（缺省按 type 推导）
   combatEncounterId?: string; // 关联遭遇战 ID
   availableNodeIds?: string[]; // 可用大地图节点 ID
   hiddenFromCatalog?: boolean;
   inputs?: Record<string, number>; // 消耗配方: itemId -> 数量
-  outputs?: Record<string, number>; // 产出配方: itemId -> 数量
+  yields?: ActionYieldConfig[]; // 声明式收益列表（物品/修为/灵力/气血/经验/增益）
 }
 
 // 3. Items (items.json)
+// 消耗品 Buff：SimulationEngine.ActivateInstantConsumables 消费
+// buffId/name（必需）、durationSeconds/hpRegen/mpRegen/attackSpeedRatio/damageAbsorptionRatio
 export interface BuffEffectConfig {
   buffId: string;
   name: string;
   durationSeconds: number;
-  stackable?: boolean;
-  maxStacks?: number;
-  qiGainMultiplier?: number;
-  attackLevelRatio?: number;
-  damageRatio?: number;
+  hpRegen?: number;
+  mpRegen?: number;
   attackSpeedRatio?: number;
-  gatheringOutputMultiplier?: number;
-  alchemyOutputMultiplier?: number;
-  intensity?: number;
-  weights?: Record<string, number>;
+  damageAbsorptionRatio?: number;
 }
 
 export interface ConsumableConfig {
-  usableInActionTypes: string[]; // ActionType set
+  usableInActionTypes: string[]; // ActionKind set
   durationSeconds?: number;
   isContinuous?: boolean;
   cultivationMultiplier?: number;
   gatheringMultiplier?: number;
   alchemyMultiplier?: number;
-  cooldownSeconds?: number;
-  recoverySeconds?: number;
-  triggerHpRatio?: number;
-  triggerAtCombatStart?: boolean;
+  cooldownSeconds?: number; // 即时消耗品自动使用冷却（必需为正）
   hitpointRestore?: number;
   manapointRestore?: number;
   buffs?: BuffEffectConfig[];
-  defaultCombatTriggers?: CombatTrigger[];
-  intensity?: number;
-  weights?: Record<string, number>;
 }
 
 export interface ItemConfig {
@@ -73,98 +85,87 @@ export interface ItemConfig {
 }
 
 // 4. Abilities (abilities.json)
+// 触发条件五元组：CombatSkillEngine.ValidateTrigger / LoadoutCommand.ReadTriggers 词汇表
 export interface CombatTrigger {
-  condition: string; // CombatTriggerCondition
-  thresholdRatio: number;
-  action: string; // CombatTriggerAction
-  targetAbilityId?: string;
-  targetItemId?: string;
+  dependency: string; // self | target-enemy | ally-lowest-hp | ally-highest-hp | enemy-lowest-hp | enemy-highest-hp
+  condition: string; // current-hp | missing-hp | *-percentage | current-mana | missing-mana | buff-stacks
+  comparator: string; // greater-than-equal | less-than-equal | greater-than | less-than
+  value: number;
+  buffId?: string | null; // condition=buff-stacks 时必需
+}
+
+// 技能增益块：ApplySupport / CastSkill 消费
+// buffId/name/durationSeconds/hpRegen/mpRegen/attackSpeedRatio/damageAbsorptionRatio/threatRatio
+export interface AbilityBuffConfig {
+  buffId?: string;
+  name?: string;
+  durationSeconds?: number;
+  hpRegen?: number;
+  mpRegen?: number;
+  attackSpeedRatio?: number;
+  damageAbsorptionRatio?: number;
+  threatRatio?: number;
 }
 
 export interface AbilityConfig {
   id: string;
   name: string;
   description?: string;
-  style: string; // CombatStyle
-  category: string; // DamageCategory
-  element: string; // Element
+  style?: string; // CombatStyle 展示标签（fiveElements/talisman/body/sword/blade 等）
+  category: string; // physical | spell（ValidateAbility 强制）
+  element: string; // CombatElement: none/metal/wood/water/fire/earth
+  discipline?: string; // internal | spell；缺省视为 spell（0 号内功位只收 internal）
+  rootAttribute?: string; // CoreAspectKind: stamina/meridians/attack/bone/agility/consciousness
+  tier?: number;
   cooldownMilliseconds?: number;
   castMilliseconds?: number;
-  manaCostRatio?: number;
-  effectType?: string; // CombatAbilityEffectType
-  targetType?: string; // CombatAbilityTargetType
+  manaCost?: number;
+  effectType?: string; // heal | buff；缺省为伤害技能
+  targetType?: string; // targetEnemy | allEnemies | self | allAllies | lowestHitpointsAlly
+  maxTargets?: number; // targetType=allEnemies 时的目标上限
   damageRatio?: number;
   flatDamage?: number;
   healingRatio?: number;
   flatHealing?: number;
-  damageOverTimeRatio?: number;
-  damageOverTimeMilliseconds?: number;
-  damageOverTimeTickMilliseconds?: number;
-  stunChance?: number;
-  stunMilliseconds?: number;
-  blindChance?: number;
-  blindMilliseconds?: number;
-  silenceChance?: number;
-  silenceMilliseconds?: number;
-  penetrationRatio?: number;
-  armorDamageRatio?: number;
-  hpDrainRatio?: number;
-  pierceChance?: number;
-  triggerHpRatio?: number;
+  threatGain?: number;
+  threatRatio?: number;
+  buff?: AbilityBuffConfig;
   defaultTriggers?: CombatTrigger[];
-  tier?: number;
 }
 
 // 5. Equipment (equipment.json)
-export interface EquipmentCombatStats {
-  damageRatio?: number;
-  armor?: number;
-  magicResistance?: number;
-  accuracyRatio?: number;
-  evasionRatio?: number;
-  criticalChance?: number;
-  criticalDamageRatio?: number;
-  maxHitpoints?: number;
-  maxManapoints?: number;
-  style?: string;
-  category?: string;
-  element?: string;
-  attackIntervalMilliseconds?: number;
-}
-
+// 真实消费集：LoadoutCommand 读 slot；PlayerAttributeResolver 读 flatStats/baseStatRatios/
+// specialMechanics.{threatRatio,hpDrainRatio,mpDrainRatio,damageReflectRatio}；
+// StaticGameCatalogMapper 投影 baseStatRatios/flatStats/specialMechanics/enhancementBonus。
+// stats/style/category/element/attackIntervalMilliseconds/intensity/budget/weights 均无消费方。
 export interface EquipmentConfig {
   id: string;
   name: string;
-  slot: string; // EquipmentSlot
+  slot: string; // EquipmentSlot（LoadoutCommand 强制读取）
   tier?: number;
   quality?: number;
-  style?: string; // CombatStyle
-  category?: string; // DamageCategory
-  element?: string; // Element
-  attackIntervalMilliseconds?: number;
-  baseStatRatios?: Record<string, number>;
-  flatStats?: Record<string, number>;
-  specialMechanics?: Record<string, number>;
-  stats?: EquipmentCombatStats;
-  enhancementBonus?: EquipmentCombatStats;
-  intensity?: number;
-  budget?: number;
-  weights?: Record<string, number>;
+  baseStatRatios?: Record<string, number>; // 百分比加成，强化每级 +2%
+  flatStats?: Record<string, number>; // 固定点数，强化每级 +2%
+  specialMechanics?: Record<string, number>; // 特殊机制：threatRatio/hpDrainRatio/mpDrainRatio/damageReflectRatio 等
+  enhancementBonus?: Record<string, number>; // 每级强化额外加成（映射层透传展示）
   description?: string;
 }
 
 // 6. Monsters (monsters.json)
+// 怪物与玩家同构建模：战斗属性全部由「等级锚点 × 品阶倍率 × weights 倾向权重」派生，
+// 配表只声明 level/rank/budgetCost/weights/element/attackIntervalMilliseconds/汲取反弹/skills/dropTable/三项奖励。
 export interface CharacterVisualDefinition {
   renderer: string; // VisualRendererKind
   source?: string;
   poster?: string;
 }
 
+// 掉落条目：ParseMonsterDefinitions 消费 itemId/dropChance/minQuantity/maxQuantity
 export interface CombatDropDefinition {
   itemId: string;
-  chance: number;
-  minAmount?: number;
-  maxAmount?: number;
+  dropChance: number;
+  minQuantity?: number;
+  maxQuantity?: number;
 }
 
 export interface MonsterSkillConfig {
@@ -177,64 +178,26 @@ export interface CombatantConfig {
   id: string;
   name: string;
   visual?: CharacterVisualDefinition;
-  style: string; // CombatStyle
-  category: string; // DamageCategory
-  element: string; // Element
+  style?: string; // 展示用流派标签（StaticGameCatalogMapper 投影）
+  category?: string; // 展示用伤害类别（physical | spell）
+  element?: string; // CombatElement
   level?: number;
-  tier?: number;
-  rank?: string; // UnitRank
-  weights?: Record<string, number>;
-  maxHitpoints?: number;
-  maxManapoints?: number;
+  rank?: string; // minion | elite | boss（缺省 minion）
+  budgetCost?: number;
+  weights?: Record<string, number>; // 倾向权重：hp/mp/ad/ap/armor/mres/hit/eva/crit/cavoid/break/parry/各系抗性
   attackIntervalMilliseconds?: number;
-  accuracyRating?: number;
-  evasionRating?: number;
-  maxDamage?: number;
-  defensiveMaxDamage?: number;
-  armor?: number;
-  magicResistance?: number;
-  metalResistance?: number;
-  woodResistance?: number;
-  waterResistance?: number;
-  fireResistance?: number;
-  earthResistance?: number;
-  tenacity?: number;
-  pierceChance?: number;
-  curseRatio?: number;
-  furyRatio?: number;
-  weakenRatio?: number;
-  lifeStealRatio?: number;
-  armorDamageRatio?: number;
   hpDrainRatio?: number;
   mpDrainRatio?: number;
   damageReflectRatio?: number;
-  criticalRating?: number;
-  criticalChance?: number;
-  criticalDamageRatio?: number;
-  criticalAvoidance?: number;
-  damageAbsorptionRatio?: number;
-  hpRegen?: number;
-  mpRegen?: number;
-  hpRegenPerTenSeconds?: number;
-  mpRegenPerTenSeconds?: number;
-  enrageTimeMilliseconds?: number;
-  experienceMultiplier?: number;
-  experience?: number;
-  spiritMin?: number;
-  spiritMax?: number;
   dropTable?: CombatDropDefinition[];
-  rareDropTable?: CombatDropDefinition[];
   skills?: MonsterSkillConfig[];
-  breakRating?: number;
-  parryRating?: number;
-  skillIntensity?: number;
-  dynamicResistanceFactorK?: number;
-  actionSpeedReductionRatio?: number;
-  cooldownReductionRatio?: number;
-  budgetCost?: number;
+  qiReward?: number;
+  experienceReward?: number;
+  rootExpReward?: number;
 }
 
 // 7. Encounters (encounters.json)
+// ParseEncounterDefinitions 消费集
 export interface CombatSpawnConfig {
   enemyId: string;
   weight: number;
@@ -244,30 +207,29 @@ export interface CombatSpawnConfig {
 export interface CombatEncounterConfig {
   id: string;
   name: string;
-  randomSpawns?: CombatSpawnConfig[];
-  maxSpawnCount?: number;
+  minBudget?: number;
+  maxBudget?: number;
   maxTotalStrength?: number;
+  randomSpawns?: CombatSpawnConfig[];
+  eliteEnemyIds?: string[];
   bossEnemyIds?: string[];
+  battlesPerElite?: number;
   battlesPerBoss?: number;
   searchMilliseconds?: number;
   respawnMilliseconds?: number;
   playerRespawnMilliseconds?: number;
-  minBudget?: number;
-  maxBudget?: number;
-  eliteInterval?: number;
-  eliteEnemyIds?: string[];
-  experiencePerWin?: number;
-  spiritMinPerWin?: number;
-  spiritMaxPerWin?: number;
-  enrageTimeMilliseconds?: number;
-  enrageTickMilliseconds?: number;
-  maxEnrageStacks?: number;
-  enrageRatioPerStack?: number;
-  dropTable?: CombatDropDefinition[];
-  rareDropTable?: CombatDropDefinition[];
 }
 
 // 8. Maps (maps.json)
+// 节点 NPC/建筑实体：ReadEntities 消费 id/name/kind/description/effect
+export interface WorldMapEntityDefinition {
+  id: string;
+  name: string;
+  kind?: string; // npc | building
+  description?: string;
+  effect?: string;
+}
+
 export interface WorldMapNodeDefinition {
   id: string;
   name: string;
@@ -277,14 +239,22 @@ export interface WorldMapNodeDefinition {
   cultivationMultiplier?: number;
   availableActionIds?: string[];
   encounterIds?: string[];
-  npcs?: string[];
-  buildings?: string[];
+  npcs?: WorldMapEntityDefinition[];
+  buildings?: WorldMapEntityDefinition[];
+  buildableTemplate?: string; // all | production | combat | other
+  buildableList?: string[]; // 自定义可建建筑 ID 列表（优先于 buildableTemplate）
+  minBudget?: number; // 节点卡片展示用覆盖（StaticGameCatalogMapper 投影）
+  maxBudget?: number;
+  eliteInterval?: number;
+  bossInterval?: number;
 }
 
+// 边：BuildWorldGraph 消费 id/fromNodeId/toNodeId/durationSeconds（无 id 的边会被丢弃）
 export interface WorldMapEdgeDefinition {
+  id: string;
   fromNodeId: string;
   toNodeId: string;
-  distance: number;
+  durationSeconds: number;
 }
 
 export interface WorldMapDefinition {

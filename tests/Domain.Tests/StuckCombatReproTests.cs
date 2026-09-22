@@ -21,7 +21,11 @@ public sealed class StuckCombatReproTests
             new CombatExpeditionState(
                 "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, unchecked((long)4122577177101012044UL),
                 15.472613, 113.48821196563904, 60, 16, 15, 88.20322454180142, CombatOutcome.Running, 1,
-                [new ExpeditionEnemyState("enemy.wood-spirit", 362.3614813405518, 52.89411764705883, 15.997984378936762, 7, 13.111788034361007, 1)]));
+                [new ExpeditionEnemyState("enemy.wood-spirit", 362.3614813405518, 52.89411764705883, 15.997984378936762, 7, 13.111788034361007, 1)])
+            {
+                // 玩家完整战斗快照：吟唱/逐槽冷却/战内 Buff 的恢复依据。
+                PlayerState = new CombatantSnapshot(113.48821196563904, 60, 16, 15, 88.20322454180142)
+            });
         return PlayerAggregate.Restore(exported with
         {
             Actions = [action],

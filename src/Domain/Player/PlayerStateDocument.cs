@@ -146,8 +146,8 @@ public sealed partial class PlayerAggregate
         report.ReportId, report.ActionId, report.ActionName,
         report.StartedAtUnixSeconds, report.EndedAtUnixSeconds,
         report.Qi, report.Experience,
-        new PlayerRootExpDocument(report.RootExp.Stamina, report.RootExp.Intelligence, report.RootExp.Attack,
-            report.RootExp.Defense, report.RootExp.Swordsmanship, report.RootExp.Talisman),
+        new PlayerRootExpDocument(report.RootExp.Stamina, report.RootExp.Meridians, report.RootExp.Attack,
+            report.RootExp.Bone, report.RootExp.Agility, report.RootExp.Consciousness),
         report.Items.ToArray(), report.DuelWins, report.DuelLosses,
         report.ItemsLost.ToArray(), report.AbilityExp.ToArray(), report.LevelUps.ToArray(),
         report.Cycles, report.Encounters, report.NormalKills, report.EliteKills, report.BossKills,
@@ -534,11 +534,11 @@ public sealed partial class PlayerAggregate
             RootExp =
             {
                 Stamina = document.RootExp.Stamina,
-                Intelligence = document.RootExp.Intelligence,
+                Meridians = document.RootExp.Meridians,
                 Attack = document.RootExp.Attack,
-                Defense = document.RootExp.Defense,
-                Swordsmanship = document.RootExp.Swordsmanship,
-                Talisman = document.RootExp.Talisman
+                Bone = document.RootExp.Bone,
+                Agility = document.RootExp.Agility,
+                Consciousness = document.RootExp.Consciousness
             }
         };
         report.Items.AddRange(document.Items);
@@ -558,8 +558,8 @@ public sealed partial class PlayerAggregate
             && double.IsFinite(report.Qi) && report.Qi >= 0
             && double.IsFinite(report.Experience) && report.Experience >= 0
             && report.RootExp is not null
-            && new[] { report.RootExp.Stamina, report.RootExp.Intelligence, report.RootExp.Attack,
-                report.RootExp.Defense, report.RootExp.Swordsmanship, report.RootExp.Talisman }
+            && new[] { report.RootExp.Stamina, report.RootExp.Meridians, report.RootExp.Attack,
+                report.RootExp.Bone, report.RootExp.Agility, report.RootExp.Consciousness }
                 .All(value => double.IsFinite(value) && value >= 0)
             && report.Items is not null && report.Items.Count <= 512
             && report.Items.All(item => item is not null && !string.IsNullOrWhiteSpace(item.ItemId)

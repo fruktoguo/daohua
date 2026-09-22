@@ -3,13 +3,13 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { AbilityGridPicker } from './components/AbilityGridPicker'
 import { StatsPanel } from './components/StatsPanel'
 import { RecordsPanel } from './components/RecordsPanel'
-import { CombatArena, resolveEnemyDefinition } from './components/CombatArena'
+import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEncounterPanel } from './components/CombatEncounterPanel'
 import { EffectTooltipTarget } from './components/EffectTooltip'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
-import { ItemReference, ItemTooltipTarget } from './components/ItemDisplay'
+import { ItemReference, ItemTooltipTarget, describeBuffEffectLines } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
@@ -32,7 +32,7 @@ import { resolveItemIconUrl } from './game/itemIcons'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
-import { gameClient } from './network/gameClient'
+import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
 import { installAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
 import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
 import { useAccountStore } from './network/account'
@@ -42,7 +42,6 @@ import { useUiStore, type TabId, type AlchemySubTab, type ForgingSubTab } from '
 import { useT, getT } from './i18n'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
-const EMPTY_CONSUMABLE_COOLDOWNS: ReadonlyArray<number> = Object.freeze([])
 
 type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'map' | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
 
@@ -170,8 +169,6 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
   const metaRef = useRef<HTMLSpanElement>(null)
   const percentRef = useRef<HTMLElement>(null)
 
-  const isTravel = expedition?.phase === 'travel'
-  const totalDist = expedition?.totalDistance ?? 0
   // 搜寻目标名：expedition 载荷不再带 enemyName，按 encounterId 从遭遇配表解析主敌名。
   const searchTargetName = expedition?.encounterId
     ? findEncounterInCatalog(encounters, expedition.encounterId)?.enemy?.name
@@ -189,13 +186,7 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
     textRef,
     percentRef,
     metaRef,
-    metaFormat: (_currentSec, _dur, ratio) => {
-      if (isTravel) {
-        const curDist = Math.min(totalDist, Math.max(0, ratio * totalDist))
-        return getT()('app.queue.travelProgress', { current: curDist.toFixed(1), total: totalDist.toFixed(1) })
-      }
-        return getT()('app.queue.searchTarget', { name: searchTargetName ?? getT()('app.queue.defaultEnemy') })
-    },
+    metaFormat: () => getT()('app.queue.searchTarget', { name: searchTargetName ?? getT()('app.queue.defaultEnemy') }),
   })
 
   if (!expedition || entry.type === 'combat') return null
@@ -203,9 +194,7 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
     <div className={`qc-expedition qc-expedition--${expedition.phase}`}>
       <div className="qc-expedition-meta">
         <span ref={metaRef}>
-          {isTravel
-            ? t('app.queue.travelProgress', { current: '0.0', total: totalDist.toFixed(1) })
-            : t('app.queue.searchTarget', { name: searchTargetName ?? t('app.queue.defaultEnemy') })}
+          {t('app.queue.searchTarget', { name: searchTargetName ?? t('app.queue.defaultEnemy') })}
         </span>
         <strong ref={percentRef} />
       </div>
@@ -228,7 +217,7 @@ function getCombatPhaseLabel(phase: string | undefined, t: (key: string) => stri
     case 'initial-search': return t('app.queue.phaseSearch')
     case 'combat': return t('app.queue.phaseCombat')
     case 'search': return t('app.queue.phaseResearch')
-    case 'death': return t('app.queue.phaseDeath')
+    case 'respawn': return t('app.queue.phaseDeath')
     case 'duel-pending': return t('app.queue.phaseDuelPending')
     case 'duel': return t('app.queue.phaseDuel')
     default: return t('app.queue.phaseDefault')
@@ -284,7 +273,6 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
   const expedition = entry.expedition
   const combatResources = useGameStore(state => state.combatResources)
   const combatAttributes = useGameStore(state => state.combatAttributes)
-  const encounters = useGameStore(state => state.encounters)
   // 斗法回放相位同样展示双方实时气血；duel-pending 等其余阶段走通用相位进度。
   if (expedition && expedition.phase !== 'combat' && expedition.phase !== 'duel') {
     const phaseEntry: QueueEntry = {
@@ -302,15 +290,12 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
   let enemyValue = 0
   let enemyMax = 0
   if (expedition?.phase === 'duel') {
-    enemyMax = Math.max(1, expedition.duel?.opponentMaxHitpoints ?? 1)
+    enemyMax = Math.max(1, expedition.duel?.opponentAttributes.maxHitpoints ?? 1)
     enemyValue = Math.max(0, Math.min(enemyMax, expedition.duel?.opponentHitpoints ?? enemyMax))
   } else {
-    const activeEncounter = expedition?.encounterId
-      ? findEncounterInCatalog(encounters, expedition.encounterId)
-      : undefined
+    // 敌方上限直连快照下发的权威属性，不再反查怪物目录，也不以当前血量充当上限。
     for (const enemy of expedition?.enemies ?? []) {
-      const definition = resolveEnemyDefinition('', enemy.enemyId, activeEncounter, encounters)
-      enemyMax += Math.max(1, definition?.maxHitpoints ?? enemy.hitpoints)
+      enemyMax += Math.max(1, enemy.attributes?.maxHitpoints ?? 1)
       enemyValue += Math.max(0, enemy.hitpoints)
     }
     enemyMax = Math.max(1, enemyMax)
@@ -341,7 +326,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
   const isCombatExpedition = entry.type === 'combat'
   const phaseLabel = isCombatExpedition
     ? getCombatPhaseLabel(entry.expedition?.phase, t)
-    : entry.expedition?.phase === 'travel'
+    : entry.executionKind === 'travel'
     ? t('app.queue.phaseTravel')
     : entry.expedition?.phase === 'initial-search' || entry.expedition?.phase === 'search'
       ? t('app.queue.phasePrepare')
@@ -551,17 +536,8 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
     <div className="buff-bar" aria-label={t('app.buff.barAria')}>
       {buffs.map(buff => {
         const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
-        const desc = buff.qiGainMultiplier > 1
-          ? t('app.buff.qiGain', { percent: Math.round((buff.qiGainMultiplier - 1) * 100) })
-          : buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1
-            ? t('app.buff.gatheringOutput', { percent: Math.round((buff.gatheringOutputMultiplier - 1) * 100) })
-            : buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1
-              ? t('app.buff.alchemyOutput', { percent: Math.round((buff.alchemyOutputMultiplier - 1) * 100) })
-              : buff.damageRatio && buff.damageRatio > 0
-                ? t('app.buff.damageRatio', { percent: Math.round(buff.damageRatio * 100) })
-                : buff.attackSpeedRatio && buff.attackSpeedRatio > 0
-                  ? t('app.buff.attackSpeed', { percent: Math.round(buff.attackSpeedRatio * 100) })
-                  : t('app.buff.combatBuff')
+        // Buff 描述唯一来源：权威修饰器字段（regen/攻速/免伤/statRatios），不再读收益倍率幻影字段。
+        const desc = describeBuffEffectLines(buff).join('；') || t('app.buff.combatBuff')
 
         return (
           <FloatingPopover
@@ -1058,6 +1034,10 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
     const current = state.queue.entries[0]
     return current?.type === type ? current : null
   })
+  // 消耗品冷却仅 combat 类槽位由服务端按槽位下标定长下发。
+  const consumableCooldowns = useGameStore(
+    state => type === 'combat' ? state.combatResources?.consumableCooldownMilliseconds : undefined,
+  )
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
@@ -1102,10 +1082,17 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
             amount: itemAmount(inventory, selectedDefinition.itemId),
             definition: selectedDefinition,
           } : null
+          const cooldownMs = consumableCooldowns?.[index] ?? 0
           return (
             <div className="auto-use-slot" key={index}>
               <ItemUseSlot
                 activeEntry={activeEntry}
+                cooldownOverlay={cooldownMs > 0 && selectedItem?.definition ? (
+                  <AbilityCooldownOverlay
+                    remainingMilliseconds={cooldownMs}
+                    totalMilliseconds={selectedItem.definition.cooldownSeconds * 1000}
+                  />
+                ) : null}
                 item={selectedItem}
                 remainingDurationSeconds={slot.remainingDurationSeconds}
                 totalDurationSeconds={selectedDefinition?.durationSeconds}
@@ -1225,7 +1212,6 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const inventory = useGameStore(state => state.inventory)
   const items = useGameStore(state => state.items)
   const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
-  const buffs = useGameStore(state => state.buffs)
   const world = useGameStore(state => state.world)
   const stats = useGameStore(state => state.stats)
   const encounter = useGameStore(state => action.combatEncounterId ? findEncounterInCatalog(state.encounters, action.combatEncounterId) : undefined)
@@ -1242,10 +1228,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     inventory,
     items,
     autoUseSlots,
-    buffs,
     world,
     stats,
-  }), [action, inventory, items, autoUseSlots, buffs, world, stats])
+  }), [action, inventory, items, autoUseSlots, world, stats])
 
   const rateBonuses = useMemo(
     () => yieldPreview.bonuses.filter(b => b.type !== 'foundation'),
@@ -1441,7 +1426,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
 })
 
 type CombatPickerTarget = {
-  kind: 'ability' | 'consumable'
+  kind: 'ability'
   index: number
 }
 
@@ -1481,22 +1466,18 @@ const AbilityCooldownOverlay = memo(function AbilityCooldownOverlay({
 })
 
 /**
- * 战斗装配面板（配置 4 个功法技能槽、3 个战斗丹药符箓槽以及释放条件触发器）
+ * 战斗装配面板（配置功法技能槽与释放条件触发器；战斗消耗品槽统一走
+ * queue.autoUseSlots 通道，由 AutoUseSlotGroup 渲染，loadout 不再重复携带）
  */
 const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element | null {
   const t = useT()
   const combat = useGameStore(state => state.combat)
   const abilities = useGameStore(state => state.abilities)
-  const itemCatalog = useGameStore(state => state.items)
-  const inventory = useGameStore(state => state.inventory)
   const abilityCooldowns = useGameStore(
     state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
-  const consumableCooldowns = useGameStore(
-    state => state.combatResources?.consumableCooldownMilliseconds,
-  ) ?? EMPTY_CONSUMABLE_COOLDOWNS
   const [editingTrigger, setEditingTrigger] = useState<{
-    kind: 'ability' | 'consumable'
+    kind: 'ability'
     index: number
   } | null>(null)
   const [pickerTarget, setPickerTarget] = useState<CombatPickerTarget | null>(null)
@@ -1511,98 +1492,31 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   const update = (patch: Partial<typeof combat>) => sendLoadoutReplace(patch)
   // 已参悟等级由功法经验经立方曲线导出，与服务端 AbilityExpCurve 同式。
   const abilityLevelFor = (abilityId: string) => learnedAbilityLevel(combat.abilityExperiences, abilityId)
-  const withConsumable = (index: number, itemId: string | null) => combat.consumableSlots.map((slot, slotIndex) => (
-    slotIndex === index
-      ? { ...slot, itemId, enabled: Boolean(itemId), triggers: itemId === slot.itemId ? slot.triggers : [] }
-      : slot
-  ))
   // 重复装配按「移动」处理：assignAbilityToSlot 会把功法从原槽位移到新槽位。
   const withAbility = (index: number, abilityId: string | null) => assignAbilityToSlot(combat.abilitySlots, index, abilityId)
-  const getTriggers = (target: NonNullable<typeof editingTrigger>): CombatTrigger[] => (
-    target.kind === 'ability'
-      ? combat.abilitySlots[target.index]?.triggers ?? []
-      : combat.consumableSlots[target.index]?.triggers ?? []
-  )
+  const getTriggers = (target: NonNullable<typeof editingTrigger>): CombatTrigger[] =>
+    combat.abilitySlots[target.index]?.triggers ?? []
   const saveTriggers = (triggers: CombatTrigger[] | null) => {
     if (!editingTrigger) return
     const nextTriggers = triggers ?? []
-    if (editingTrigger.kind === 'ability') {
-      update({ abilitySlots: combat.abilitySlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers: nextTriggers } : slot) })
-    } else {
-      update({ consumableSlots: combat.consumableSlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers: nextTriggers } : slot) })
-    }
+    update({ abilitySlots: combat.abilitySlots.map((slot, index) => index === editingTrigger.index ? { ...slot, triggers: nextTriggers } : slot) })
   }
 
-  const consumableItems = itemCatalog
-      .filter(item => item.usableActionTypes.includes('combat') && itemAmount(inventory, item.itemId) > 0)
-      .map(item => ({
-        itemId: item.itemId,
-        name: item.name,
-        description: item.description,
-        category: resolveItemCategoryLabel(item.category, t),
-        tier: item.tier,
-        amount: itemAmount(inventory, item.itemId),
-        definition: item,
-      }))
   const pickerValue = pickerTarget === null
     ? null
-    : pickerTarget.kind === 'ability'
-      ? combat.abilitySlots[pickerTarget.index]?.abilityId ?? null
-      : combat.consumableSlots[pickerTarget.index]?.itemId ?? null
-  const pickerTitle = pickerTarget?.kind === 'ability'
-      ? (pickerTarget.index === 0 ? t('app.combatPanel.chooseInternalTitle') : t('app.combatPanel.chooseSpellTitle', { slot: pickerTarget.index }))
-      : t('app.combatPanel.chooseConsumableTitle', { slot: ((pickerTarget?.index ?? 0) + 1) })
+    : combat.abilitySlots[pickerTarget.index]?.abilityId ?? null
+  const pickerTitle = pickerTarget === null
+      ? ''
+      : (pickerTarget.index === 0 ? t('app.combatPanel.chooseInternalTitle') : t('app.combatPanel.chooseSpellTitle', { slot: pickerTarget.index }))
   const selectPickerValue = (value: string | null) => {
     if (!pickerTarget) return
-    if (pickerTarget.kind === 'ability') {
-      update({ abilitySlots: withAbility(pickerTarget.index, value) })
-    } else {
-      update({ consumableSlots: withConsumable(pickerTarget.index, value) })
-    }
+    update({ abilitySlots: withAbility(pickerTarget.index, value) })
   }
-
-  const consumablePickerTarget = pickerTarget?.kind === 'consumable' ? pickerTarget : null
 
   return (
     <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
       <div className="combat-slot-tray">
-        <section className="slot-group combat-slot-section" aria-label={t('app.combatPanel.consumablesAria')}>
-          <span className="slot-group-label">{t('app.combatPanel.consumablesGroup')}</span>
-          <div className="combat-slot-grid">
-            {combat.consumableSlots.map((slot, index) => {
-              const selectedDefinition = slot.itemId
-                ? findItemInCatalog(itemCatalog, slot.itemId) ?? null
-                : null
-              const selectedItem = selectedDefinition && slot.itemId ? {
-                itemId: selectedDefinition.itemId,
-                name: selectedDefinition.name,
-                description: selectedDefinition.description,
-                category: resolveItemCategoryLabel(selectedDefinition.category, t),
-                tier: selectedDefinition.tier,
-                amount: itemAmount(inventory, selectedDefinition.itemId),
-                definition: selectedDefinition,
-              } : null
-              return (
-                <div className="combat-slot-card" key={index}>
-                  <ItemUseSlot
-                    cooldownOverlay={(consumableCooldowns[index] ?? 0) > 0 && selectedItem?.definition ? (
-                      <AbilityCooldownOverlay
-                        remainingMilliseconds={consumableCooldowns[index]}
-                        totalMilliseconds={selectedItem.definition.cooldownSeconds * 1000}
-                      />
-                    ) : null}
-                    conditionCount={slot.triggers?.length ?? 0}
-                    item={selectedItem}
-                    onClick={() => setPickerTarget({ kind: 'consumable', index })}
-                    onCondition={slot.itemId ? () => setEditingTrigger({ kind: 'consumable', index }) : undefined}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        </section>
-
-        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.generalGroup')} type="combat" />
+        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} type="combat" />
 
         <section className="slot-group combat-slot-section" aria-label={t('app.combatPanel.abilitiesAria')}>
           <span className="slot-group-label">{t('app.combatPanel.abilitiesGroup')}</span>
@@ -1694,17 +1608,8 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
         levelFor={abilityLevelFor}
         onClose={() => setPickerTarget(null)}
         onSelect={selectPickerValue}
-        open={pickerTarget?.kind === 'ability'}
+        open={pickerTarget !== null}
         slotIndex={pickerTarget?.index}
-        title={pickerTitle}
-        value={pickerValue}
-      />
-      <ItemGridPicker
-        emptyLabel={t('common.pickerEmpty')}
-        onClose={() => setPickerTarget(null)}
-        onSelect={selectPickerValue}
-        items={consumableItems}
-        open={consumablePickerTarget !== null}
         title={pickerTitle}
         value={pickerValue}
       />
@@ -1715,7 +1620,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
           onSave={saveTriggers}
           open
           title={t('app.combatPanel.triggerEditorTitle', {
-            kind: editingTrigger.kind === 'ability' ? t('app.rightTab.abilities') : t('app.action.yieldKind.item'),
+            kind: t('app.rightTab.abilities'),
             n: editingTrigger.index + 1,
           })}
         />
@@ -1969,6 +1874,13 @@ export default function App(): React.JSX.Element {
     void restoreSession()
     return () => gameClient.dispose()
   }, [restoreSession])
+
+  // 服务端拒绝 Hello（配表指纹不匹配）时重新拉取配表：成功后经 catalogReady 路径自动重连。
+  useEffect(() => {
+    const onGameDataMismatch = () => setCatalogAttempt(attempt => attempt + 1)
+    window.addEventListener(GAME_DATA_MISMATCH_EVENT, onGameDataMismatch)
+    return () => window.removeEventListener(GAME_DATA_MISMATCH_EVENT, onGameDataMismatch)
+  }, [])
 
   useEffect(() => {
     if (!sessionChecked || !currentAccount) return undefined

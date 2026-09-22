@@ -238,12 +238,14 @@ if (processRole == ServerProcessRole.Api)
                     id = entry.Item?.Value ?? entry.Buff?.BuffId,
                     name = entry.Buff?.Name,
                     durationSeconds = entry.Buff?.DurationSeconds,
+                    // Buff 修饰器唯一形状：领域授权字段 + statRatios 通用比率字典。
                     modifiers = entry.Buff is null ? null : new
                     {
                         hpRegen = entry.Buff.HpRegen,
                         mpRegen = entry.Buff.MpRegen,
                         attackSpeedRatio = entry.Buff.AttackSpeedRatio,
-                        damageAbsorptionRatio = entry.Buff.DamageAbsorptionRatio
+                        damageAbsorptionRatio = entry.Buff.DamageAbsorptionRatio,
+                        statRatios = entry.Buff.StatRatios
                     }
                 }).ToArray(),
                 availableNodeIds = action.AllowedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray()
@@ -515,8 +517,6 @@ static object ToAbilityDto(string id, JsonElement raw)
     node["castMilliseconds"] ??= 0;
     node["flatDamage"] ??= 0;
     node["damageRatio"] ??= 0;
-    node["penetrationRatio"] ??= 0;
-    node["triggerHpRatio"] ??= 0;
     if (node["targetType"] is JsonValue target)
         node["targetType"] = target.GetValue<string>() switch { "allEnemies" => "all-enemies", "allAllies" => "all-allies", "lowestHitpointsAlly" => "lowest-hp-ally", "self" => "self", _ => "enemy" };
     return node;

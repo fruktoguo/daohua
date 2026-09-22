@@ -209,12 +209,12 @@
   ],
   "fourMultiplierFormula": "FinalStat = BaseFlat * (1 + Root%) * (1 + Equip%) * (1 + Buff%)",
   "rules": {
-    "rootScalingFormula": "Root% = Level * 0.03 (每级 3%)",
+    "rootScalingFormula": "Root% = 六维根骨等级 × 每点百分比（体魄/经脉/根骨/力道/身法各 +1%/点、神识对术法攻击 +2%/点对其余 +1%/点；见 combat-design.md §5 与 PlayerAttributeResolver）",
     "singleBuffSingleStatFormula": "EquipPieceBase / 4 (精确整数百分比)",
     "singleBuffAllStatsFormula": "EquipPieceBase / 48",
     "expectedBuffCountFormula": "round(Tier * 1.1^Tier)",
     "equipEquivStatFormula": "EnhancedPieceBase / 2",
-    "enhancementMultiplierFormula": "1.05^EnhancementLevel",
+    "enhancementMultiplierFormula": "1 + 0.02 * EnhancementLevel (线性成长，满级 +20 为 1.40x)",
     "monsterWaveRules": {
       "monstersPerWave": 3,
       "bossWaveFrequency": "每 20 波",
@@ -244,95 +244,127 @@
     "statAllocationStyles": {
       "physicalStyle": {
         "allocationRatio": "1 AD : 1 暴击 : 1 破招",
-        "mechanics": "破招成功触发双倍命中(2x)与双倍暴击(2x)，配合1秒4刀极速出刀与220%高倍单体大招"
+        "mechanics": "破招成功触发双倍命中(2x)与双倍暴击(2x)；普攻为全流派统一模型（1.0s 基准 ×(1-ATR)×(1-攻速成长)，满成长 0.250s / 200% AD 物理伤害），配合高倍率单体绝技"
       },
       "magicStyle": {
-        "allocationRatio": "固定 2.0x AP : 1 命中",
-        "mechanics": "固定 2.0x AP 超高大攻击力在平方减伤下天然破防击穿魔抗，2.0x 命中确保绝对必中，全屏大范围 AoE 极速清怪"
+        "allocationRatio": "AP 仅供技能结算（普攻与物理系统一）",
+        "mechanics": "术法攻击 AP 只参与技能结算；高 AP 面板在平方减伤下天然破防，配合 AP 群攻技能与掌心雷（0CD 填充技）主打范围清场"
       }
     },
     "benchmarkCombatSkillsModel": {
+      "note": "本节引用真实配表技能（config/game-data/abilities/physical_abilities.json 与 spell_abilities.json）作为基准负载；数值为配表基础值，技能等级成长与技能强度阶位乘区在结算时另行放大。",
       "physicalStyle": {
         "name": "物理系标准技能基准 (1 AD : 1 暴击 : 1 破招)",
         "autoAttack": {
-          "name": "物理普通攻击 (平 A)",
+          "name": "普通攻击 (全流派统一)",
           "baseIntervalSeconds": 1.0,
           "baseDamageRatioPct": 100.0,
           "maxExtraAttackSpeedPct": 50.0,
           "maxExtraDamagePct": 100.0,
           "finalIntervalSeconds": 0.25,
           "finalDamageRatioPct": 200.0,
-          "description": "受 ATR 与专属攻速双重缩减，12阶真仙达到 0.250s (1秒4刀) / 200% AD"
+          "description": "受 ATR 与攻速成长双乘区缩减，12阶真仙达到 0.250s / 200% AD 物理伤害"
         },
         "skills": [
           {
             "slot": 1,
-            "name": "核心单体1",
-            "baseDamageRatioPct": 220.0,
-            "baseCooldownSeconds": 12.0,
+            "abilityId": "ability.heavy-slash",
+            "name": "重斩",
+            "baseDamageRatioPct": 180.0,
+            "flatDamage": 20,
+            "baseCooldownSeconds": 18.0,
             "baseCastSeconds": 1.0,
             "maxTargets": 1,
-            "cost": 20
+            "cost": 10
           },
           {
             "slot": 2,
-            "name": "核心单体2",
-            "baseDamageRatioPct": 220.0,
-            "baseCooldownSeconds": 12.0,
+            "abilityId": "ability.chain-strike",
+            "name": "连环",
+            "baseDamageRatioPct": 100.0,
+            "flatDamage": 15,
+            "baseCooldownSeconds": 16.0,
             "baseCastSeconds": 1.0,
             "maxTargets": 1,
-            "cost": 20
+            "cost": 10
           },
           {
             "slot": 3,
-            "name": "群体绝技",
-            "baseDamageRatioPct": 180.0,
-            "baseCooldownSeconds": 18.0,
+            "abilityId": "ability.star-piercer",
+            "name": "贯星",
+            "baseDamageRatioPct": 300.0,
+            "flatDamage": 50,
+            "baseCooldownSeconds": 36.0,
             "baseCastSeconds": 2.0,
-            "maxTargets": 3,
+            "maxTargets": 1,
             "cost": 30
           },
           {
             "slot": 4,
-            "name": "功能Buff",
-            "description": "常驻/被动 Buff 型技能，不参与战斗即时伤害施法，其增益已直接计入四独立乘区中的 Buff 乘区 (1 + Buff%)"
+            "abilityId": "ability.heavy-clouds",
+            "name": "重云",
+            "baseDamageRatioPct": 120.0,
+            "flatDamage": 40,
+            "baseCooldownSeconds": 24.0,
+            "baseCastSeconds": 2.0,
+            "targetType": "allEnemies",
+            "cost": 40
+          },
+          {
+            "slot": 5,
+            "abilityId": "ability.taunt",
+            "name": "嘲讽",
+            "description": "自身威胁爆发 (threatGain 500 / threatRatio 2.0)，CD 55s，动作 0.2s，消耗 20 MP；不参与伤害施法"
           }
         ]
       },
       "magicStyle": {
-        "name": "法术系标准技能基准 (固定 2.0x AP : 1 命中)",
+        "name": "法术系标准技能基准 (AP 仅供技能结算)",
         "autoAttack": {
           "name": "掌心雷 (0CD 填充技，非普攻)",
+          "abilityId": "ability.palm-lightning",
           "baseCastSeconds": 2.0,
           "baseDamageRatioPct": 60.0,
+          "flatDamage": 10,
           "cooldownSeconds": 0.0,
           "finalCastSeconds": 1.0,
           "finalDamageRatioPct": 258.0,
-          "description": "普通技能槽位技能：吟唱 2.0s 仅受 ATR 缩减至 1.00s (1秒1发)，60% AP + 固定伤害，享受技能强度阶位成长 (60% -> 258% AP)。0CD 时放技能栏末尾可在蓝量充足时完全顶替普攻；普攻本身与物理系统一为 1.0s 基准 100%->200% AD 物理伤害。"
+          "description": "普通技能槽位技能：吟唱 2.0s 仅受 ATR 缩减至 1.00s，60% AP + 10 固定伤害，享受技能强度阶位成长 (60% -> 258% AP)。0CD 时放技能栏末尾可在蓝量充足时完全顶替普攻；普攻本身与物理系统一为 1.0s 基准 100%->200% AD 物理伤害。"
         },
         "skills": [
           {
             "slot": 1,
-            "name": "大范围群攻",
-            "baseDamageRatioPct": 90.0,
-            "baseCooldownSeconds": 22.0,
-            "baseCastSeconds": 2.0,
-            "maxTargets": 5,
-            "cost": 30
+            "abilityId": "ability.blazing-blast",
+            "name": "轰炎",
+            "baseDamageRatioPct": 100.0,
+            "flatDamage": 20,
+            "baseCooldownSeconds": 24.0,
+            "baseCastSeconds": 3.0,
+            "targetType": "allEnemies",
+            "cost": 10
           },
           {
             "slot": 2,
-            "name": "强力群攻",
-            "baseDamageRatioPct": 120.0,
-            "baseCooldownSeconds": 20.0,
+            "abilityId": "ability.lightning-attraction",
+            "name": "雷光引",
+            "baseDamageRatioPct": 50.0,
+            "flatDamage": 10,
+            "baseCooldownSeconds": 28.0,
             "baseCastSeconds": 2.0,
-            "maxTargets": 3,
-            "cost": 35
+            "targetType": "allEnemies",
+            "cost": 20
+          },
+          {
+            "slot": 3,
+            "abilityId": "ability.qingping-melody",
+            "name": "清平乐",
+            "description": "治疗最低血量友方 60% AP + 20，CD 30s，吟唱 0.5s，消耗 10 MP"
           },
           {
             "slot": 4,
-            "name": "功能Buff",
-            "description": "常驻/被动 Buff 型技能，不参与战斗即时伤害施法，其增益已直接计入四独立乘区中的 Buff 乘区 (1 + Buff%)"
+            "abilityId": "ability.pozhen-melody",
+            "name": "破阵子",
+            "description": "全体友方战阵增益，CD 60s，吟唱 5s，消耗 50 MP；不参与伤害施法"
           }
         ]
       },

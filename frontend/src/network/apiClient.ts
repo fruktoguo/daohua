@@ -5,6 +5,17 @@ import { createRequestId } from './protocol'
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
 const REQUEST_TIMEOUT_MS = 15_000
 
+/**
+ * 最近一次配表响应的游戏数据指纹（ETag 裸值，已去引号）。
+ * WebSocket Hello 握手回传该值，服务端不一致时以 GAME_DATA_MISMATCH 拒绝并触发配表重载。
+ */
+let catalogFingerprint: string | null = null
+
+/** 当前客户端持有的游戏数据指纹；未拉取过配表时为 null。 */
+export function getCatalogFingerprint(): string | null {
+  return catalogFingerprint
+}
+
 /** HTTP API 只使用同源或显式配置的 v1 地址，认证由 HttpOnly Cookie 承担。 */
 export function getHttpBase(): string {
   const configured = import.meta.env.VITE_API_URL as string | undefined
@@ -98,6 +109,11 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
       cache: init.method && init.method !== 'GET' ? 'no-store' : 'no-cache',
     })
     if (!response.ok) throw await parseError(response)
+    // 配表端点的 ETag 即游戏数据指纹，随每次成功响应刷新，供 Hello 握手回传。
+    if (path.startsWith('/api/v1/catalog/')) {
+      const etag = response.headers.get('ETag')
+      if (etag) catalogFingerprint = etag.replace(/^"|"$/g, '')
+    }
     if (response.status === 204) return undefined as T
     return response.json() as Promise<T>
   } catch (error) {

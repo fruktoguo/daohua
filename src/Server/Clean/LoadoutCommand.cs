@@ -65,7 +65,7 @@ internal static class LoadoutCommand
                 if (!catalog.Abilities.ContainsKey(id) || !player.Loadout.LearnedAbilities.Contains(new AbilityId(id)) || !ids.Add(id))
                     throw new DomainException(DomainErrorCode.InvalidArgument, "功法未习得或重复装配。");
                 var ability = catalog.Abilities[id];
-                Domain.Combat.CombatSkillEngine.ValidateAbility(ability);
+                Domain.Combat.SkillTriggerEvaluator.ValidateAbility(ability);
                 var learnedLevel = player.AbilityLevelFor(new AbilityId(id));
                 if (level > learnedLevel)
                     throw new DomainException(DomainErrorCode.InvalidArgument, "装配等级超过已掌握等级。");
@@ -85,22 +85,13 @@ internal static class LoadoutCommand
         player.ReplaceCombatSlots(abilities, equipment);
     }
 
+    /// <summary>装配槽位触发条件解析：字段词表校验复用领域层统一实现（SkillTriggerEvaluator）。</summary>
     private static JsonElement[] ReadTriggers(JsonElement rules)
     {
         if (rules.ValueKind != JsonValueKind.Array || rules.GetArrayLength() > 4)
             throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件最多四条。");
         foreach (var rule in rules.EnumerateArray())
-        {
-            var dependency = rule.GetProperty("dependency").GetString();
-            var condition = rule.GetProperty("condition").GetString();
-            var comparator = rule.GetProperty("comparator").GetString();
-            var value = rule.GetProperty("value").GetDouble();
-            if (dependency is not ("self" or "target-enemy" or "ally-lowest-hp" or "ally-highest-hp" or "enemy-lowest-hp" or "enemy-highest-hp")
-                || condition is not ("current-hp" or "current-mana" or "missing-hp" or "missing-mana" or "current-hp-percentage" or "missing-hp-percentage" or "current-mana-percentage" or "missing-mana-percentage" or "buff-stacks" or "stun-status" or "blind-status" or "silence-status")
-                || comparator is not ("less-than-equal" or "greater-than-equal" or "is-active" or "is-inactive" or "less-than" or "greater-than")
-                || !double.IsFinite(value) || value < 0)
-                throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件字段无效。");
-        }
+            Domain.Combat.SkillTriggerEvaluator.ValidateTrigger(rule);
         return rules.EnumerateArray().Select(rule => rule.Clone()).ToArray();
     }
 }

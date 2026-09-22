@@ -68,7 +68,7 @@ public static class SimulationSchedule
                         if (double.IsFinite(nextAttack))
                             Consider(Math.Max(0, nextAttack - expedition.BattleElapsedSeconds));
                         // 战斗内技能边界（吟唱/冷却按战斗时钟扣减）。
-                        var battleSkillBoundary = CombatSkillEngine.NextBoundarySeconds(player.Combat.Skills);
+                        var battleSkillBoundary = player.Combat.Skills.NextBoundarySeconds;
                         if (double.IsFinite(battleSkillBoundary)) Consider(Math.Max(0, battleSkillBoundary));
                         break;
                     // DuelPending 不排边界：撮合由每拍兜底处理。
@@ -93,7 +93,7 @@ public static class SimulationSchedule
         // 脱战技能冷却：非交战相位按墙钟扣减（AdvanceIdle 口径）。
         if (action?.Expedition?.Phase != CombatExpeditionPhase.Combat)
         {
-            var idleSkillBoundary = CombatSkillEngine.NextBoundarySeconds(player.Combat.Skills);
+            var idleSkillBoundary = player.Combat.Skills.NextBoundarySeconds;
             if (double.IsFinite(idleSkillBoundary)) Consider(Math.Max(0, idleSkillBoundary));
         }
 

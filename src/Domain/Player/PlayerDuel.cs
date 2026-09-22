@@ -31,23 +31,23 @@ public sealed class PlayerRootExpValues
 {
     /// <summary>体魄经验增量</summary>
     public double Stamina { get; set; }
-    /// <summary>悟性经验增量</summary>
-    public double Intelligence { get; set; }
+    /// <summary>经脉经验增量</summary>
+    public double Meridians { get; set; }
     /// <summary>力道经验增量</summary>
     public double Attack { get; set; }
-    /// <summary>防御经验增量</summary>
-    public double Defense { get; set; }
-    /// <summary>剑术经验增量</summary>
-    public double Swordsmanship { get; set; }
-    /// <summary>符术经验增量</summary>
-    public double Talisman { get; set; }
+    /// <summary>根骨经验增量</summary>
+    public double Bone { get; set; }
+    /// <summary>身法经验增量</summary>
+    public double Agility { get; set; }
+    /// <summary>神识经验增量</summary>
+    public double Consciousness { get; set; }
     /// <summary>六维经验合计</summary>
-    public double Total => Stamina + Intelligence + Attack + Defense + Swordsmanship + Talisman;
+    public double Total => Stamina + Meridians + Attack + Bone + Agility + Consciousness;
     /// <summary>清空六维经验累计（每日账本 rollover 用）。</summary>
     public void Clear()
     {
-        Stamina = 0; Intelligence = 0; Attack = 0;
-        Defense = 0; Swordsmanship = 0; Talisman = 0;
+        Stamina = 0; Meridians = 0; Attack = 0;
+        Bone = 0; Agility = 0; Consciousness = 0;
     }
 
     /// <summary>按根骨维度累加经验。</summary>
@@ -56,18 +56,18 @@ public sealed class PlayerRootExpValues
         switch (attribute)
         {
             case CoreAspectKind.Stamina: Stamina += amount; break;
-            case CoreAspectKind.Intelligence: Intelligence += amount; break;
+            case CoreAspectKind.Meridians: Meridians += amount; break;
             case CoreAspectKind.Attack: Attack += amount; break;
-            case CoreAspectKind.Defense: Defense += amount; break;
-            case CoreAspectKind.Swordsmanship: Swordsmanship += amount; break;
-            default: Talisman += amount; break;
+            case CoreAspectKind.Bone: Bone += amount; break;
+            case CoreAspectKind.Agility: Agility += amount; break;
+            default: Consciousness += amount; break;
         }
     }
     /// <summary>拷贝一份独立副本。</summary>
     public PlayerRootExpValues Clone() => new()
     {
-        Stamina = Stamina, Intelligence = Intelligence, Attack = Attack,
-        Defense = Defense, Swordsmanship = Swordsmanship, Talisman = Talisman
+        Stamina = Stamina, Meridians = Meridians, Attack = Attack,
+        Bone = Bone, Agility = Agility, Consciousness = Consciousness
     };
 }
 
@@ -274,8 +274,8 @@ public sealed record PlayerBattleReportDocument(
 
 /// <summary>六维经验文档形态。</summary>
 public sealed record PlayerRootExpDocument(
-    double Stamina, double Intelligence, double Attack,
-    double Defense, double Swordsmanship, double Talisman);
+    double Stamina, double Meridians, double Attack,
+    double Bone, double Agility, double Consciousness);
 
 /// <summary>玩家聚合的斗法玩法分部：匹配预约、回放挂载、暂存区与战报结算。</summary>
 public sealed partial class PlayerAggregate
@@ -557,17 +557,8 @@ public sealed partial class PlayerAggregate
     public DuelCombatant BuildDuelMirror(GameDataCatalog gameData)
     {
         var stats = PlayerAttributeResolver.Resolve(this, gameData).ToCombatant();
-        var skills = new List<MonsterSkillSlot>();
-        foreach (var slot in Loadout.AbilitySlots)
-        {
-            if (slot.AbilityId is null || !gameData.Abilities.TryGetValue(slot.AbilityId, out var ability)) continue;
-            IReadOnlyList<JsonElement> triggers = slot.Triggers.Count > 0
-                ? slot.Triggers
-                : ability.TryGetProperty("defaultTriggers", out var defaults) && defaults.ValueKind == JsonValueKind.Array
-                    ? defaults.EnumerateArray().ToArray()
-                    : [];
-            skills.Add(new MonsterSkillSlot(ability, slot.Level, 1, triggers));
-        }
+        // 斗法镜像与玩家/怪物共用同一套通用技能槽：触发条件与装配口径完全一致。
+        var skills = SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities);
         return new DuelCombatant(PlayerId, DisplayName, DuelPower, stats, skills, Duel.StagedItems.ToArray());
     }
 

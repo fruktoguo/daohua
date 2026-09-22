@@ -10,7 +10,7 @@ import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPo
 import { ItemTileReference } from './ItemDisplay'
 import { Modal } from './Modal'
 import { UnitNumber } from './UnitNumber'
-import { resolveEnemyCombatAttributeModel } from './CombatAttributePanel'
+
 /** 计算地图两节点之间的欧氏几何连线距离 */
 function getEdgeDistance(
   from: { x: number; y: number },
@@ -163,7 +163,6 @@ function usePlayerDisplayPosition(
     status: string
     progressSeconds: number
     durationSeconds: number
-    travelPathEdgeIds?: string[] | null
     travelSegments?: TravelSegment[] | null
   } | undefined,
   hidden = false,
@@ -219,7 +218,7 @@ function usePlayerDisplayPosition(
 
         let remainingSec = currentElapsedSec
 
-        // 优先使用后端权威下发的 travelSegments（精准支持半路启程、逆向行走与多路段长途移动）
+        // 服务端权威下发的 travelSegments（精准支持半路启程、逆向行走与多路段长途移动）
         if (currTravel.travelSegments && currTravel.travelSegments.length > 0) {
           for (let i = 0; i < currTravel.travelSegments.length; i++) {
             const seg = currTravel.travelSegments[i]
@@ -244,37 +243,6 @@ function usePlayerDisplayPosition(
               }
             } else {
               remainingSec -= segDuration
-            }
-          }
-        } else if (currTravel.travelPathEdgeIds && currTravel.travelPathEdgeIds.length > 0) {
-          // 当服务端未展开 segments 时，按权威边列表计算当前路径位置
-          let currentNodeId: string | null = currWorld.nodeId
-          for (let i = 0; i < currTravel.travelPathEdgeIds.length; i++) {
-            const edgeId = currTravel.travelPathEdgeIds[i]
-            const edge = currMap.edges.find(e => e.edgeId === edgeId)
-            if (!edge) continue
-
-            let fromId = edge.fromNodeId
-            let toId = edge.toNodeId
-            if (currentNodeId && currentNodeId === edge.toNodeId) {
-              fromId = edge.toNodeId
-              toId = edge.fromNodeId
-            }
-            currentNodeId = toId
-
-            const fromNode = currMap.nodes.find(n => n.nodeId === fromId)
-            const toNode = currMap.nodes.find(n => n.nodeId === toId)
-            if (!fromNode || !toNode) continue
-
-            const edgeDuration = edge.durationSeconds
-            if (remainingSec <= edgeDuration || i === currTravel.travelPathEdgeIds.length - 1) {
-              const ratio = edgeDuration > 0 ? Math.min(1, Math.max(0, remainingSec / edgeDuration)) : 1
-              return {
-                x: fromNode.x + (toNode.x - fromNode.x) * ratio,
-                y: fromNode.y + (toNode.y - fromNode.y) * ratio,
-              }
-            } else {
-              remainingSec -= edgeDuration
             }
           }
         }
@@ -382,7 +350,7 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
   isBoss?: boolean
 }): React.JSX.Element {
   const t = useT()
-  const model = resolveEnemyCombatAttributeModel(monster)
+  const monsterAttributes = monster.attributes
   const realm = calculateRealmInfo(0, monster.level ?? 1)
   const rankLabel = isBoss
     ? t('combat.nearby.rankBoss')
@@ -418,12 +386,12 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
               : []),
           ]}
           stats={[
-            { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.maxHitpoints} /> },
-            { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.maxManapoints} /> },
-            { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.physicalAttack} /> },
-            { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.spellAttack} /> },
-            { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.armor} /> },
-            { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip maxDecimals={0} value={model.magicResistance} /> },
+            { label: t('insight.combat.hp'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.maxHitpoints} /> },
+            { label: t('insight.combat.mp'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.maxManapoints} /> },
+            { label: t('insight.combat.physAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.physicalAttack} /> },
+            { label: t('insight.combat.spellAtk'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.spellAttack} /> },
+            { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.armor} /> },
+            { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip maxDecimals={0} value={monsterAttributes.magicResistance} /> },
           ]}
           subtitle={t('combat.map.monsterSubtitle', {
             realm: realm.minorName,
@@ -589,7 +557,10 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   }, [map, selectedNodeId, world.nodeId])
 
   const selectedNode = map?.nodes.find(node => node.nodeId === selectedNodeId)
-  const plannedEdges = useMemo(() => new Set(activeTravel?.travelPathEdgeIds ?? []), [activeTravel?.travelPathEdgeIds])
+  const plannedEdges = useMemo(
+    () => new Set((activeTravel?.travelSegments ?? []).map(segment => segment.edgeId)),
+    [activeTravel?.travelSegments],
+  )
 
   // 拖拽漫游事件监听：仅在位移超过 4px 时激活拖拽捕获，防止截断节点点击
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {

@@ -57,7 +57,7 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
     { label: t('combat.nearby.statRank'), value: rankLabel },
     { label: t('combat.nearby.statBudget'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.budgetCost} /> },
     { label: t('combat.nearby.statMaxHp'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.maxHitpoints} /> },
-    { label: t('combat.nearby.statMaxDamage'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.maxDamage} /> },
+    { label: t('combat.nearby.statMaxDamage'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.physicalAttack} /> },
     { label: t('combat.nearby.statArmor'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.armor} /> },
   ]
 

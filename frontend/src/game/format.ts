@@ -49,16 +49,8 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   const flatDamage = (ability.flatDamage ?? 0) * flatBonus
   const healingRatio = (ability.healingRatio ?? 0) * ratioBonus
   const flatHealing = (ability.flatHealing ?? 0) * flatBonus
-  const targetKey = ability.targetType === 'allEnemies'
-    ? 'all-enemies'
-    : ability.targetType === 'self'
-      ? 'self'
-      : ability.targetType === 'allAllies'
-        ? 'all-allies'
-        : ability.targetType === 'lowestHitpointsAlly'
-          ? 'lowest-hp-ally'
-          : 'enemy'
-  const target = t(`game.abilityTarget.${targetKey}`)
+  // wire 上 targetType 已是 kebab 规范化词（enemy/all-enemies/self/all-allies/lowest-hp-ally）。
+  const target = t(`game.abilityTarget.${ability.targetType ?? 'enemy'}`)
   const categoryLabel = t(`combat.encounter.damageCategory.${ability.category}`)
   const elementWord = ability.element && ability.element !== 'none'
     ? t(`game.abilityDesc.elementWord.${ability.element}`)
@@ -106,39 +98,6 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   }
   if ((ability.buff?.damageAbsorptionRatio ?? 0) !== 0) {
     lines.push(t('game.abilityDesc.buffAbsorb', { n: abilityPercent(ability.buff?.damageAbsorptionRatio ?? 0) }))
-  }
-  if ((ability.penetrationRatio ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.penetration', { n: abilityPercent(ability.penetrationRatio) }))
-  }
-  if ((ability.armorDamageRatio ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.armorDamage', { n: abilityPercent(ability.armorDamageRatio ?? 0) }))
-  }
-  if ((ability.hpDrainRatio ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.hpDrain', { n: abilityPercent(ability.hpDrainRatio ?? 0) }))
-  }
-  if ((ability.damageOverTimeRatio ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.dot', {
-      ratio: abilityPercent(ability.damageOverTimeRatio ?? 0),
-      duration: ((ability.damageOverTimeMilliseconds ?? 0) / 1000).toFixed(1),
-    }))
-  }
-  if ((ability.stunChance ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.stun', {
-      chance: abilityPercent(ability.stunChance ?? 0),
-      duration: ((ability.stunMilliseconds ?? 0) / 1000).toFixed(1),
-    }))
-  }
-  if ((ability.blindChance ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.blind', {
-      chance: abilityPercent(ability.blindChance ?? 0),
-      duration: ((ability.blindMilliseconds ?? 0) / 1000).toFixed(1),
-    }))
-  }
-  if ((ability.silenceChance ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.silence', {
-      chance: abilityPercent(ability.silenceChance ?? 0),
-      duration: ((ability.silenceMilliseconds ?? 0) / 1000).toFixed(1),
-    }))
   }
   return {
     title: ability.name,

@@ -26,6 +26,7 @@ import {
   WireMessageType,
 } from './protocol'
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
+import { getCatalogFingerprint } from './apiClient'
 import { getSessionAccount } from './sessionState'
 import {
   ANTI_MULTI_CLOSE_NOTICE_KEYS,
@@ -36,6 +37,9 @@ import {
 } from '../antiMulti'
 
 const APP_VERSION = String(import.meta.env.VITE_APP_VERSION ?? 'dev')
+
+/** 配表指纹不匹配事件：服务端拒绝 Hello 后派发，App 监听该事件重新拉取配表并放行重连。 */
+export const GAME_DATA_MISMATCH_EVENT = 'daohua:game-data-mismatch'
 
 /** 时间窗内连续解析失败达到该帧数时，触发一次快照重建（resync）。 */
 const PARSE_FAILURE_RESYNC_THRESHOLD = 5
@@ -74,6 +78,8 @@ export class GameClient {
   private parseFailureResynced = false
   private lastParseErrorKey = ''
   private lastParseErrorAt = 0
+  /** 配表指纹不匹配后挂起自动重连，等待 App 重新拉取配表（connect() 时清除）。 */
+  private catalogRefreshPending = false
   private readonly pendingRequests = new Map<string, number>()
   private static readonly REQUEST_TIMEOUT_MS = 15_000
 
@@ -137,6 +143,7 @@ export class GameClient {
     this.account = accountInfo.account
     chatService.activate(this.playerId)
     this.disposed = false
+    this.catalogRefreshPending = false
     this.reconnectDelay = 500
     this.outboundSequence = 0
     this.lastServerSequence = 0
@@ -299,6 +306,11 @@ export class GameClient {
       this.socket = null
       this.clearPendingRequests()
       if (this.disposed) return
+      // 配表指纹不匹配：挂起自动重连，等待 App 重新拉取配表成功后显式 connect() 放行。
+      if (this.catalogRefreshPending) {
+        useGameStore.getState().setConnection('reconnecting')
+        return
+      }
       const authFailure = event.code === 1008 || (event.code >= 4001 && event.code <= 4004)
       if (authFailure) {
         useGameStore.getState().setConnection('offline')
@@ -330,7 +342,7 @@ export class GameClient {
     try {
       socket.send(encodeJsonEnvelope(WireMessageType.Hello, createRequestId(), this.nextOutboundSequence(), {
         clientVersion: APP_VERSION,
-        gameDataFingerprint: null,
+        gameDataFingerprint: getCatalogFingerprint(),
         deviceFingerprint,
       }))
     } catch {
@@ -406,6 +418,13 @@ export class GameClient {
             const timer = this.pendingRequests.get(error.requestId)
             if (timer !== undefined) window.clearTimeout(timer)
             this.pendingRequests.delete(error.requestId)
+          }
+          if (error.code === 'GAME_DATA_MISMATCH') {
+            // 客户端配表落后于服务端：服务端保持连接但不放行握手，
+            // 此处主动断开并挂起自动重连，通知 App 重新拉取配表后再 connect()。
+            this.catalogRefreshPending = true
+            sourceSocket.close(1000, '客户端配表指纹不匹配')
+            window.dispatchEvent(new Event(GAME_DATA_MISMATCH_EVENT))
           }
           useGameStore.getState().setNotice(error.message || error.code)
           break

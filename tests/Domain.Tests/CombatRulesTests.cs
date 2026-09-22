@@ -1,22 +1,22 @@
 namespace Domain.Tests;
 
 /// <summary>
-/// 战斗规则测试：伤害公式、穿透、元素克制、随机切片与状态恢复回归。
+/// 战斗规则测试：伤害公式、元素克制、随机切片与状态恢复回归。
 /// </summary>
 public sealed class CombatRulesTests
 {
     /// <summary>
-    /// 伤害公式回归：物理吃物理穿透，法术受法抗与元素抗性削减，境界差缩放参与结算；
+    /// 伤害公式回归：物理吃防御护甲，法术受法抗与元素抗性削减，抗性缩放参与结算；
     /// 期望值为公式的独立手算结果，防止公式改动静默漂移。
     /// </summary>
     [Theory]
-    [InlineData(CombatDamageKind.Physical, CombatElement.None, 100d * 100 / 121)]
+    [InlineData(CombatDamageKind.Physical, CombatElement.None, 100d * 100 / 141)]
     [InlineData(CombatDamageKind.Spell, CombatElement.Fire, 100d * 100 / 181 * 0.5)]
-    public void DamageUsesMatchingCategoryPenetrationRealmAndElement(
+    public void DamageUsesMatchingCategoryResistanceScaleAndElement(
         CombatDamageKind kind, CombatElement element, double expected)
     {
         var attacker = CombatantStats.Create(1000, 100, 0, 1, damageKind: kind) with
-        { PhysicalPenetrationPercent = 50, Element = element };
+        { Element = element };
         var defender = CombatantStats.Create(1000, 0, 20, 1) with
         { MagicResistance = 40, ResistanceScale = 2, FireResistance = 200 };
         var state = CombatEncounterState.Start("formula", 42, attacker, defender);
@@ -40,7 +40,7 @@ public sealed class CombatRulesTests
         var split = CombatEncounterState.Start("replay", 123, player, enemy);
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 120).Events;
         var first = DeterministicCombatEngine.AdvanceTo(split, 13.2).Events;
-        var restored = CombatEncounterState.Restore("replay", split.Seed, player,
+        var restored = CombatEncounterState.Restore("replay", split.Seed, new CombatantTemplate(player),
             CombatEncounterState.Snapshot(split.Player),
             [new CombatantTemplate(enemy)],
             [CombatEncounterState.Snapshot(split.Enemies[0])],

@@ -66,7 +66,7 @@ public sealed class CombatActionTimelineTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var ability = catalog.Abilities["ability.palm-lightning"];
-        var slot = new MonsterSkillSlot(ability, 1, 1);
+        var slot = new SkillSlot(ability, 1);
         var player = CombatantStats.Create(1_000_000, 30, 0, 1);
         CombatantStats Caster(double interval) => CombatantStats.Create(1000, 20, 0, interval) with
         {
@@ -99,7 +99,7 @@ public sealed class CombatActionTimelineTests
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 30).Events;
         var first = DeterministicCombatEngine.AdvanceTo(split, 1.0).Events;
         Assert.True(split.Enemies[0].PendingSkillIndex >= 0, "1s 时木灵应正处于掌心雷吟唱中。");
-        var restored = CombatEncounterState.Restore("restore", split.Seed, player,
+        var restored = CombatEncounterState.Restore("restore", split.Seed, new CombatantTemplate(player),
             CombatEncounterState.Snapshot(split.Player),
             [template],
             [CombatEncounterState.Snapshot(split.Enemies[0])],

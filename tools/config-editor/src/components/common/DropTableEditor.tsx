@@ -25,7 +25,7 @@ export function DropTableEditor({
   const currentDrops = drops || [];
 
   const handleAdd = () => {
-    const next = [...currentDrops, { itemId: '', chance: 0.1, minAmount: 1, maxAmount: 1 }];
+    const next = [...currentDrops, { itemId: '', dropChance: 0.1, minQuantity: 1, maxQuantity: 1 }];
     onChange(next);
   };
 
@@ -72,8 +72,8 @@ export function DropTableEditor({
               <div className="w-24">
                 <NumberInput
                   label="掉落概率"
-                  value={drop.chance}
-                  onChange={v => handleUpdate(idx, { chance: v ?? 0 })}
+                  value={drop.dropChance}
+                  onChange={v => handleUpdate(idx, { dropChance: v ?? 0 })}
                   step={0.05}
                   min={0}
                   max={1}
@@ -82,18 +82,18 @@ export function DropTableEditor({
 
               <div className="w-20">
                 <NumberInput
-                  label="最小"
-                  value={drop.minAmount ?? 1}
-                  onChange={v => handleUpdate(idx, { minAmount: v ?? 1 })}
+                  label="最小数量"
+                  value={drop.minQuantity ?? 1}
+                  onChange={v => handleUpdate(idx, { minQuantity: v ?? 1 })}
                   min={1}
                 />
               </div>
 
               <div className="w-20">
                 <NumberInput
-                  label="最大"
-                  value={drop.maxAmount ?? 1}
-                  onChange={v => handleUpdate(idx, { maxAmount: v ?? 1 })}
+                  label="最大数量"
+                  value={drop.maxQuantity ?? 1}
+                  onChange={v => handleUpdate(idx, { maxQuantity: v ?? 1 })}
                   min={1}
                 />
               </div>

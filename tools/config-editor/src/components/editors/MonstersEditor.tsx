@@ -1,6 +1,7 @@
 // ==============================================================================
 // 文件名称: MonstersEditor.tsx
-// 主要职责: 现代扁平化 monsters.json 专属编辑器，支持品质过滤、攻防抗性矩阵与掉落
+// 主要职责: 现代扁平化 monsters 专属编辑器；字段与 GameDataCatalog.ParseMonsterDefinitions
+//           消费集对齐——战斗属性全部由「等级锚点 × 品阶倍率 × weights 倾向权重」派生
 // ==============================================================================
 
 import { useState, useMemo } from 'react';
@@ -8,11 +9,11 @@ import { useConfigContext } from '../../context/ConfigContext';
 import type { CombatantConfig, CharacterVisualDefinition } from '../../types/config';
 import {
   UNIT_RANKS,
-  TIER_OPTIONS,
   COMBAT_STYLES,
   DAMAGE_CATEGORIES,
   ELEMENTS,
-  VISUAL_RENDERER_KINDS
+  VISUAL_RENDERER_KINDS,
+  MONSTER_WEIGHT_KEYS
 } from '../../types/enums';
 import { EnumSelect } from '../common/EnumSelect';
 import { NumberInput } from '../common/NumberInput';
@@ -25,21 +26,19 @@ export function MonstersEditor() {
 
   const [selectedId, setSelectedId] = useState<string>(monsters[0]?.id || '');
   const [filterRank, setFilterRank] = useState<string>('all');
-  const [filterTier, setFilterTier] = useState<number | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   // 过滤列表
   const filteredMonsters = useMemo(() => {
     return monsters.filter(m => {
-      if (filterRank !== 'all' && m.rank !== filterRank) return false;
-      if (filterTier !== 'all' && m.tier !== filterTier) return false;
+      if (filterRank !== 'all' && (m.rank || 'minion') !== filterRank) return false;
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         return m.id.toLowerCase().includes(term) || m.name.toLowerCase().includes(term);
       }
       return true;
     });
-  }, [monsters, filterRank, filterTier, searchTerm]);
+  }, [monsters, filterRank, searchTerm]);
 
   // 当前正在编辑的怪物
   const currentMonster = useMemo(() => {
@@ -59,20 +58,32 @@ export function MonstersEditor() {
     handleUpdate({ visual: { ...current, ...patch } });
   };
 
+  const handleUpdateWeight = (key: string, value: number | undefined) => {
+    if (!currentMonster) return;
+    const next = { ...(currentMonster.weights || {}) };
+    if (value === undefined) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    handleUpdate({ weights: Object.keys(next).length > 0 ? next : undefined });
+  };
+
   const handleAdd = () => {
-    const newId = `monster_${Date.now().toString(36)}`;
+    const newId = `enemy.new-${Date.now().toString(36)}`;
     const newMonster: CombatantConfig = {
       id: newId,
       name: '新精怪妖兽',
-      rank: 'normal',
+      rank: 'minion',
       level: 1,
-      tier: 1,
-      style: 'body',
-      category: 'physical',
+      budgetCost: 10,
       element: 'none',
+      style: 'body',
       visual: { renderer: 'text', source: '妖' },
-      maxHitpoints: 100,
-      attackIntervalMilliseconds: 1000
+      weights: { hp: 1 },
+      qiReward: 10,
+      experienceReward: 10,
+      rootExpReward: 10
     };
     updateConfig('monsters.json', prev => [newMonster, ...prev]);
     setSelectedId(newId);
@@ -134,7 +145,7 @@ export function MonstersEditor() {
                   : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              全品质
+              全品阶
             </button>
             {UNIT_RANKS.map(r => (
               <button
@@ -151,29 +162,13 @@ export function MonstersEditor() {
               </button>
             ))}
           </div>
-
-          <div className="flex items-center gap-2 pt-0.5">
-            <span className="text-[11px] text-zinc-500 font-medium shrink-0">品阶:</span>
-            <select
-              value={String(filterTier)}
-              onChange={e => setFilterTier(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-              className="w-full bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-300 rounded-md px-2 py-1 outline-none focus:border-indigo-500"
-            >
-              <option value="all">全阶位 (T1~T12)</option>
-              {TIER_OPTIONS.map(t => (
-                <option key={t.value} value={t.value}>
-                  T{t.value} {t.label.split('·')[1]}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* 列表项 */}
         <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/40 p-1.5">
           {filteredMonsters.map(m => {
             const isSelected = m.id === currentMonster?.id;
-            const rankOpt = UNIT_RANKS.find(r => r.value === m.rank);
+            const rankOpt = UNIT_RANKS.find(r => r.value === (m.rank || 'minion'));
             return (
               <div
                 key={m.id}
@@ -196,7 +191,7 @@ export function MonstersEditor() {
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-zinc-500 font-mono">
                   <span className="truncate">{m.id}</span>
-                  <span>Lv.{m.level || 1} · T{m.tier || 1}</span>
+                  <span>Lv.{m.level || 1} · 预算{m.budgetCost ?? 1}</span>
                 </div>
               </div>
             );
@@ -257,41 +252,45 @@ export function MonstersEditor() {
                 />
               </div>
 
-              <EnumSelect
-                label="妖兽品质等阶 (Rank)"
-                value={currentMonster.rank}
-                options={UNIT_RANKS}
-                onChange={v => handleUpdate({ rank: v })}
-              />
-
-              <EnumSelect
-                label="品阶 (Tier)"
-                value={currentMonster.tier}
-                options={TIER_OPTIONS}
-                onChange={v => handleUpdate({ tier: v })}
-              />
-
               <NumberInput
-                label="基础等级 (Level)"
+                label="等级 (Level)"
+                description="决定锚点与派生品阶 T"
                 value={currentMonster.level}
                 onChange={v => handleUpdate({ level: v })}
                 min={1}
+                max={127}
+              />
+
+              <EnumSelect
+                label="品阶 (Rank)"
+                description="minion/elite/boss，决定属性与气血倍率"
+                value={currentMonster.rank || 'minion'}
+                options={UNIT_RANKS}
+                onChange={v => handleUpdate({ rank: v })}
+                allowClear={false}
+              />
+
+              <NumberInput
+                label="遭遇预算成本 (BudgetCost)"
+                value={currentMonster.budgetCost}
+                onChange={v => handleUpdate({ budgetCost: v })}
+                min={0}
               />
 
               <EnumSelect
                 label="战斗流派 (Style)"
+                description="前端展示标签"
                 value={currentMonster.style}
                 options={COMBAT_STYLES}
-                onChange={v => handleUpdate({ style: v || 'body' })}
-                allowClear={false}
+                onChange={v => handleUpdate({ style: v })}
               />
 
               <EnumSelect
-                label="伤害类型 (Category)"
+                label="伤害类别 (Category)"
+                description="前端展示标签"
                 value={currentMonster.category}
                 options={DAMAGE_CATEGORIES}
-                onChange={v => handleUpdate({ category: v || 'physical' })}
-                allowClear={false}
+                onChange={v => handleUpdate({ category: v })}
               />
 
               <EnumSelect
@@ -335,168 +334,110 @@ export function MonstersEditor() {
             </div>
           </div>
 
-          {/* 攻防抗性矩阵卡片 */}
+          {/* 派生说明 + 攻速与反应效果 */}
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
-            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">气血生命与攻防抗性矩阵</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">节奏与反应效果</h3>
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
+              气血 / 攻击 / 护甲 / 命中 / 闪避 / 暴击等战斗属性由锚点派生（等级锚点 × 品阶倍率 × 下方权重），
+              不在配表中直接书写；此处仅配置引擎直读的攻速基准与汲取/反弹效果包。
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <NumberInput
-                label="最大气血 (MaxHitpoints)"
-                value={currentMonster.maxHitpoints}
-                onChange={v => handleUpdate({ maxHitpoints: v })}
-                min={1}
-                unit="HP"
-              />
-
-              <NumberInput
-                label="最大灵力 (MaxManapoints)"
-                value={currentMonster.maxManapoints}
-                onChange={v => handleUpdate({ maxManapoints: v })}
-                unit="MP"
-              />
-
-              <NumberInput
-                label="普攻间隔 (AttackInterval，与类别无关)"
+                label="普攻间隔基准 (AttackIntervalMilliseconds)"
+                description="缺省 1000ms，再乘行动速度乘区"
                 value={currentMonster.attackIntervalMilliseconds}
                 onChange={v => handleUpdate({ attackIntervalMilliseconds: v })}
                 step={100}
+                min={0}
                 unit="ms"
               />
 
               <NumberInput
-                label="物理护甲 (Armor)"
-                value={currentMonster.armor}
-                onChange={v => handleUpdate({ armor: v })}
+                label="汲血率 (HpDrainRatio)"
+                value={currentMonster.hpDrainRatio}
+                onChange={v => handleUpdate({ hpDrainRatio: v })}
+                step={0.05}
                 min={0}
+                unit="×"
               />
 
               <NumberInput
-                label="法术抗性 (MagicResistance)"
-                value={currentMonster.magicResistance}
-                onChange={v => handleUpdate({ magicResistance: v })}
+                label="汲蓝率 (MpDrainRatio)"
+                value={currentMonster.mpDrainRatio}
+                onChange={v => handleUpdate({ mpDrainRatio: v })}
+                step={0.05}
                 min={0}
+                unit="×"
               />
 
               <NumberInput
-                label="金系抗性"
-                value={currentMonster.metalResistance}
-                onChange={v => handleUpdate({ metalResistance: v })}
+                label="反伤率 (DamageReflectRatio)"
+                value={currentMonster.damageReflectRatio}
+                onChange={v => handleUpdate({ damageReflectRatio: v })}
+                step={0.05}
+                min={0}
+                unit="×"
               />
+            </div>
+          </div>
 
-              <NumberInput
-                label="木系抗性"
-                value={currentMonster.woodResistance}
-                onChange={v => handleUpdate({ woodResistance: v })}
-              />
-
-              <NumberInput
-                label="水系抗性"
-                value={currentMonster.waterResistance}
-                onChange={v => handleUpdate({ waterResistance: v })}
-              />
-
-              <NumberInput
-                label="火系抗性"
-                value={currentMonster.fireResistance}
-                onChange={v => handleUpdate({ fireResistance: v })}
-              />
-
-              <NumberInput
-                label="土系抗性"
-                value={currentMonster.earthResistance}
-                onChange={v => handleUpdate({ earthResistance: v })}
-              />
-
-              <NumberInput
-                label="命中等级"
-                value={currentMonster.accuracyRating}
-                onChange={v => handleUpdate({ accuracyRating: v })}
-              />
-
-              <NumberInput
-                label="闪避等级"
-                value={currentMonster.evasionRating}
-                onChange={v => handleUpdate({ evasionRating: v })}
-              />
-
-              <NumberInput
-                label="暴击等级"
-                value={currentMonster.criticalRating}
-                onChange={v => handleUpdate({ criticalRating: v })}
-              />
-
-              <NumberInput
-                label="暴击抗性"
-                value={currentMonster.criticalAvoidance}
-                onChange={v => handleUpdate({ criticalAvoidance: v })}
-              />
-
-              <NumberInput
-                label="破招等级"
-                value={currentMonster.breakRating}
-                onChange={v => handleUpdate({ breakRating: v })}
-              />
-
-              <NumberInput
-                label="招架等级"
-                value={currentMonster.parryRating}
-                onChange={v => handleUpdate({ parryRating: v })}
-              />
+          {/* 倾向权重矩阵卡片 */}
+          <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">倾向权重矩阵 (Weights)</h3>
+              <span className="text-[11px] text-zinc-500">缺省键 = 1.0；五行抗性权重 ×10 记为抗性点数</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {MONSTER_WEIGHT_KEYS.map(w => (
+                <NumberInput
+                  key={w.key}
+                  label={w.label}
+                  value={currentMonster.weights?.[w.key]}
+                  onChange={v => handleUpdateWeight(w.key, v)}
+                  step={0.05}
+                  unit="×"
+                />
+              ))}
             </div>
           </div>
 
           {/* 技能装配 */}
           <SkillAssemblyEditor
             label="精怪装配神通技能 (Skills)"
-            description="妖兽在战斗中自动释放的神通法决及释放血线"
+            description="abilityId + level + triggerHpRatio（自身气血低于该比例时可起手）"
             skills={currentMonster.skills}
             onChange={skills => handleUpdate({ skills })}
           />
 
           {/* 掉落表配置 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <DropTableEditor
-              label="常规击杀掉落物 (DropTable)"
-              description="基础材料与普通战利品"
-              drops={currentMonster.dropTable}
-              onChange={drops => handleUpdate({ dropTable: drops })}
-            />
+          <DropTableEditor
+            label="击杀掉落物 (DropTable)"
+            description="itemId / dropChance / minQuantity / maxQuantity"
+            drops={currentMonster.dropTable}
+            onChange={drops => handleUpdate({ dropTable: drops })}
+          />
 
-            <DropTableEditor
-              label="稀有专属掉落物 (RareDropTable)"
-              description="极品法宝、妖丹或特殊奇物"
-              drops={currentMonster.rareDropTable}
-              onChange={drops => handleUpdate({ rareDropTable: drops })}
-            />
-          </div>
-
-          {/* 收益与狂暴卡片 */}
+          {/* 三项击杀奖励 */}
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
-            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">击败收益与狂暴时长</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">击杀奖励</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <NumberInput
-                label="击杀经验值 (Experience)"
-                value={currentMonster.experience}
-                onChange={v => handleUpdate({ experience: v })}
+                label="灵气奖励 (QiReward)"
+                value={currentMonster.qiReward}
+                onChange={v => handleUpdate({ qiReward: v })}
                 min={0}
               />
               <NumberInput
-                label="掉落灵石下限 (SpiritMin)"
-                value={currentMonster.spiritMin}
-                onChange={v => handleUpdate({ spiritMin: v })}
+                label="经验奖励 (ExperienceReward)"
+                value={currentMonster.experienceReward}
+                onChange={v => handleUpdate({ experienceReward: v })}
                 min={0}
               />
               <NumberInput
-                label="掉落灵石上限 (SpiritMax)"
-                value={currentMonster.spiritMax}
-                onChange={v => handleUpdate({ spiritMax: v })}
+                label="根骨经验奖励 (RootExpReward)"
+                value={currentMonster.rootExpReward}
+                onChange={v => handleUpdate({ rootExpReward: v })}
                 min={0}
-              />
-              <NumberInput
-                label="狂暴倒计时 (EnrageTimeMs)"
-                value={currentMonster.enrageTimeMilliseconds}
-                onChange={v => handleUpdate({ enrageTimeMilliseconds: v })}
-                step={1000}
-                unit="ms"
               />
             </div>
           </div>

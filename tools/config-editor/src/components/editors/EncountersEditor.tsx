@@ -1,6 +1,7 @@
 // ==============================================================================
 // 文件名称: EncountersEditor.tsx
-// 主要职责: 现代扁平化 encounters.json 专属编辑器，支持刷怪池与波次狂暴
+// 主要职责: 现代扁平化 encounters 专属编辑器；字段与 GameDataCatalog.ParseEncounterDefinitions
+//           消费集对齐（预算 / 刷怪池 / 精英与首领节奏 / 搜寻与复活时长）
 // ==============================================================================
 
 import { useState, useMemo } from 'react';
@@ -8,7 +9,6 @@ import { useConfigContext } from '../../context/ConfigContext';
 import type { CombatEncounterConfig, CombatSpawnConfig } from '../../types/config';
 import { NumberInput } from '../common/NumberInput';
 import { ReferenceSelect, MultiReferenceSelect } from '../common/ReferenceSelect';
-import { DropTableEditor } from '../common/DropTableEditor';
 
 export function EncountersEditor() {
   const { configs, updateConfig } = useConfigContext();
@@ -41,14 +41,19 @@ export function EncountersEditor() {
   };
 
   const handleAdd = () => {
-    const newId = `encounter_${Date.now().toString(36)}`;
+    const newId = `encounter.new-${Date.now().toString(36)}`;
     const newEncounter: CombatEncounterConfig = {
       id: newId,
       name: '新秘境遭遇战',
-      maxSpawnCount: 3,
+      minBudget: 0,
+      maxBudget: 50,
       maxTotalStrength: 50,
+      randomSpawns: [{ enemyId: '', weight: 1, strength: 10 }],
       searchMilliseconds: 5000,
-      respawnMilliseconds: 3000
+      respawnMilliseconds: 5000,
+      playerRespawnMilliseconds: 180000,
+      battlesPerElite: 5,
+      battlesPerBoss: 0
     };
     updateConfig('encounters.json', prev => [newEncounter, ...prev]);
     setSelectedId(newId);
@@ -164,9 +169,9 @@ export function EncountersEditor() {
             </div>
           </div>
 
-          {/* 基础元数据与波次容量卡片 */}
+          {/* 基础元数据与预算容量卡片 */}
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
-            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">基础属性与容量</h3>
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">基础属性与预算</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-zinc-300 tracking-tight">唯一标识符 (ID)</label>
@@ -189,49 +194,27 @@ export function EncountersEditor() {
               </div>
 
               <NumberInput
-                label="同屏最大刷怪数 (MaxSpawnCount)"
-                description="默认 3 只"
-                value={currentEncounter.maxSpawnCount}
-                onChange={v => handleUpdate({ maxSpawnCount: v })}
-                min={1}
-                max={10}
-              />
-
-              <NumberInput
-                label="总强度上限 (MaxTotalStrength)"
-                description="控制小怪强度总和"
-                value={currentEncounter.maxTotalStrength}
-                onChange={v => handleUpdate({ maxTotalStrength: v })}
-                min={1}
-              />
-
-              <NumberInput
-                label="搜怪耗时 (SearchMilliseconds)"
-                description="波次间搜寻等待"
-                value={currentEncounter.searchMilliseconds}
-                onChange={v => handleUpdate({ searchMilliseconds: v })}
-                step={1000}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="怪物复活间隔 (RespawnMilliseconds)"
-                value={currentEncounter.respawnMilliseconds}
-                onChange={v => handleUpdate({ respawnMilliseconds: v })}
-                step={1000}
-                unit="ms"
-              />
-
-              <NumberInput
                 label="最小预算 (MinBudget)"
+                description="单场刷怪预算下限"
                 value={currentEncounter.minBudget}
                 onChange={v => handleUpdate({ minBudget: v })}
+                min={0}
               />
 
               <NumberInput
                 label="最大预算 (MaxBudget)"
+                description="单场刷怪预算上限"
                 value={currentEncounter.maxBudget}
                 onChange={v => handleUpdate({ maxBudget: v })}
+                min={0}
+              />
+
+              <NumberInput
+                label="总强度上限 (MaxTotalStrength)"
+                description="缺省按 maxBudget 计"
+                value={currentEncounter.maxTotalStrength}
+                onChange={v => handleUpdate({ maxTotalStrength: v })}
+                min={0}
               />
             </div>
           </div>
@@ -256,10 +239,10 @@ export function EncountersEditor() {
 
               <NumberInput
                 label="首领出场间隔 (BattlesPerBoss)"
-                description="每经历多少波寻常战斗出现一次 Boss"
+                description="每经历多少波寻常战斗出现一次 Boss；0 为不出现"
                 value={currentEncounter.battlesPerBoss}
                 onChange={v => handleUpdate({ battlesPerBoss: v })}
-                min={1}
+                min={0}
                 unit="波"
               />
             </div>
@@ -275,87 +258,50 @@ export function EncountersEditor() {
               />
 
               <NumberInput
-                label="精英出场间隔 (EliteInterval)"
-                description="每经历多少波出现一次精英"
-                value={currentEncounter.eliteInterval}
-                onChange={v => handleUpdate({ eliteInterval: v })}
-                min={1}
+                label="精英出场间隔 (BattlesPerElite)"
+                description="每经历多少波出现一次精英；缺省 5"
+                value={currentEncounter.battlesPerElite}
+                onChange={v => handleUpdate({ battlesPerElite: v })}
+                min={0}
                 unit="波"
               />
             </div>
           </div>
 
-          {/* 狂暴机制卡片 */}
+          {/* 搜寻与复活节奏卡片 */}
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
-            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">副本狂暴与通关收益</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">搜寻与复活节奏</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <NumberInput
-                label="狂暴倒计时 (EnrageTimeMs)"
-                value={currentEncounter.enrageTimeMilliseconds}
-                onChange={v => handleUpdate({ enrageTimeMilliseconds: v })}
-                step={10000}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="狂暴叠加间隔 (EnrageTickMs)"
-                value={currentEncounter.enrageTickMilliseconds}
-                onChange={v => handleUpdate({ enrageTickMilliseconds: v })}
-                step={10000}
-                unit="ms"
-              />
-
-              <NumberInput
-                label="狂暴最大层数 (MaxEnrageStacks)"
-                value={currentEncounter.maxEnrageStacks}
-                onChange={v => handleUpdate({ maxEnrageStacks: v })}
+                label="搜怪耗时 (SearchMilliseconds)"
+                description="波次间搜寻等待，缺省 5000"
+                value={currentEncounter.searchMilliseconds}
+                onChange={v => handleUpdate({ searchMilliseconds: v })}
+                step={1000}
                 min={1}
+                unit="ms"
               />
 
               <NumberInput
-                label="每层伤害加成 (EnrageRatioPerStack)"
-                value={currentEncounter.enrageRatioPerStack}
-                onChange={v => handleUpdate({ enrageRatioPerStack: v })}
-                step={0.05}
-                unit="×"
+                label="怪物复活间隔 (RespawnMilliseconds)"
+                description="缺省 5000"
+                value={currentEncounter.respawnMilliseconds}
+                onChange={v => handleUpdate({ respawnMilliseconds: v })}
+                step={1000}
+                min={1}
+                unit="ms"
               />
 
               <NumberInput
-                label="每场通关经验 (ExperiencePerWin)"
-                value={currentEncounter.experiencePerWin}
-                onChange={v => handleUpdate({ experiencePerWin: v })}
-                min={0}
-              />
-
-              <NumberInput
-                label="通关灵石下限 (SpiritMinPerWin)"
-                value={currentEncounter.spiritMinPerWin}
-                onChange={v => handleUpdate({ spiritMinPerWin: v })}
-                min={0}
-              />
-
-              <NumberInput
-                label="通关灵石上限 (SpiritMaxPerWin)"
-                value={currentEncounter.spiritMaxPerWin}
-                onChange={v => handleUpdate({ spiritMaxPerWin: v })}
-                min={0}
+                label="玩家复活等待 (PlayerRespawnMilliseconds)"
+                description="缺省 180000"
+                value={currentEncounter.playerRespawnMilliseconds}
+                onChange={v => handleUpdate({ playerRespawnMilliseconds: v })}
+                step={10000}
+                min={1}
+                unit="ms"
               />
             </div>
-          </div>
-
-          {/* 掉落表配置 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <DropTableEditor
-              label="副本额外通关掉落 (DropTable)"
-              drops={currentEncounter.dropTable}
-              onChange={drops => handleUpdate({ dropTable: drops })}
-            />
-
-            <DropTableEditor
-              label="稀有通关专属掉落 (RareDropTable)"
-              drops={currentEncounter.rareDropTable}
-              onChange={drops => handleUpdate({ rareDropTable: drops })}
-            />
           </div>
         </div>
       ) : (
@@ -447,6 +393,7 @@ function RandomSpawnsEditor({
                 type="button"
                 onClick={() => handleRemove(idx)}
                 className="mt-4 p-1.5 text-zinc-500 hover:text-rose-400 hover:bg-zinc-800 rounded-md transition-colors text-sm leading-none"
+                title="删除刷怪项"
               >
                 ✕
               </button>

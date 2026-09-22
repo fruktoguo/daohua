@@ -14,15 +14,16 @@ export interface EnumOption<T extends string | number = string> {
 export const COMBAT_STYLES: EnumOption[] = [
   { value: 'body', label: '炼体 (体修)', en: 'Body', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
   { value: 'sword', label: '剑修 (纯阳剑罡)', en: 'Sword', badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
+  { value: 'blade', label: '刀修 (霸刀狂刃)', en: 'Blade', badgeColor: 'bg-orange-500/10 text-orange-300 border-orange-500/20' },
   { value: 'fiveElements', label: '五行 (灵道玄法)', en: 'FiveElements', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
   { value: 'talisman', label: '符修 (万符归宗)', en: 'Talisman', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
   { value: 'zither', label: '琴修 (九霄天音)', en: 'Zither', badgeColor: 'bg-pink-500/10 text-pink-300 border-pink-500/20' }
 ];
 
-// 2. 伤害大类 (DamageCategory)
+// 2. 伤害大类 (DamageCategory) —— ValidateAbility 只接受 physical / spell
 export const DAMAGE_CATEGORIES: EnumOption[] = [
   { value: 'physical', label: '物理伤害 (Physical)', en: 'Physical', badgeColor: 'bg-orange-500/10 text-orange-300 border-orange-500/20' },
-  { value: 'magic', label: '术法伤害 (Magic)', en: 'Magic', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' }
+  { value: 'spell', label: '术法伤害 (Spell)', en: 'Spell', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' }
 ];
 
 // 3. 五行属性 (Element)
@@ -69,45 +70,43 @@ export const EQUIPMENT_SLOTS: EnumOption[] = [
   { value: 'boots', label: '踏云靴 (Boots)', en: 'Boots', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' }
 ];
 
-// 7. 实体品质/等阶 (UnitRank)
+// 7. 怪物品阶 (CombatMonsterRank) —— ParseMonsterDefinitions: elite/boss 之外一律 minion
 export const UNIT_RANKS: EnumOption[] = [
-  { value: 'normal', label: '寻常小妖 (Normal)', en: 'Normal', badgeColor: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20' },
+  { value: 'minion', label: '寻常小妖 (Minion)', en: 'Minion', badgeColor: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20' },
   { value: 'elite', label: '天地精英 (Elite)', en: 'Elite', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
-  { value: 'boss', label: '秘境首领 (Boss)', en: 'Boss', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
-  { value: 'worldBoss', label: '太古魔尊 (WorldBoss)', en: 'WorldBoss', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' }
+  { value: 'boss', label: '秘境首领 (Boss)', en: 'Boss', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' }
 ];
 
-// 8. 行动类型 (ActionType)
+// 8. 行动类型 (ActionKind) —— ParseKind/ParseExplicitKind 词汇表
 export const ACTION_TYPES: EnumOption[] = [
-  { value: 'cultivate', label: '打坐吐纳 / 修炼 (Cultivate)', en: 'Cultivate', badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
-  { value: 'gathering', label: '灵山采撷 / 采集 (Gathering)', en: 'Gathering', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
-  { value: 'alchemy', label: '开炉炼丹 / 炼丹 (Alchemy)', en: 'Alchemy', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
-  { value: 'crafting', label: '天工开物 / 制造 (Crafting)', en: 'Crafting', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
+  { value: 'cultivation', label: '打坐吐纳 / 修炼 (Cultivation)', en: 'Cultivation', badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
+  { value: 'exploration', label: '灵山采撷 / 探索 (Exploration)', en: 'Exploration', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  { value: 'alchemy', label: '开炉炼丹 / 炼制 (Alchemy)', en: 'Alchemy', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
   { value: 'combat', label: '除魔历练 / 战斗 (Combat)', en: 'Combat', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
   { value: 'travel', label: '御剑腾云 / 赶路 (Travel)', en: 'Travel', badgeColor: 'bg-teal-500/10 text-teal-300 border-teal-500/20' }
 ];
 
-// 9. 行动执行模式 (ActionExecutionKind)
+// 9. 行动执行模式 (ActionExecutionKind) —— ParseExecutionKind 词汇表；缺省按行动类型推导
 export const ACTION_EXECUTION_KINDS: EnumOption[] = [
   { value: 'timed', label: '周期性结算 (Timed)', en: 'Timed', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
-  { value: 'continuous', label: '持续消耗结算 (Continuous)', en: 'Continuous', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
-  { value: 'instant', label: '即时生效 (Instant)', en: 'Instant', badgeColor: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/20' }
+  { value: 'combatEncounter', label: '遭遇战结算 (CombatEncounter)', en: 'CombatEncounter', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
+  { value: 'travel', label: '赶路移动 (Travel)', en: 'Travel', badgeColor: 'bg-teal-500/10 text-teal-300 border-teal-500/20' }
 ];
 
-// 10. 技能效果类型 (CombatAbilityEffectType)
+// 10. 技能效果类型 —— ValidateAbility/CastSkill 只判定 heal 与 buff，缺省为伤害
 export const COMBAT_ABILITY_EFFECT_TYPES: EnumOption[] = [
-  { value: 'damage', label: '神通杀伐 (Damage)', en: 'Damage', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
+  { value: 'damage', label: '神通杀伐 (缺省 Damage)', en: 'Damage', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
   { value: 'heal', label: '回春回血 (Heal)', en: 'Heal', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
-  { value: 'buff', label: '玄光护体 / 增益 (Buff)', en: 'Buff', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
-  { value: 'debuff', label: '摄魂削弱 / 减益 (Debuff)', en: 'Debuff', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' }
+  { value: 'buff', label: '玄光护体 / 增益 (Buff)', en: 'Buff', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' }
 ];
 
-// 11. 技能目标类型 (CombatAbilityTargetType)
+// 11. 技能目标类型 —— ValidateAbility 合法集
 export const COMBAT_ABILITY_TARGET_TYPES: EnumOption[] = [
-  { value: 'enemy', label: '单体敌方 (Enemy)', en: 'Enemy', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
-  { value: 'self', label: '自身 (Self)', en: 'Self', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  { value: 'targetEnemy', label: '单体敌方 (TargetEnemy)', en: 'TargetEnemy', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
   { value: 'allEnemies', label: '全体敌方 (AllEnemies)', en: 'AllEnemies', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
-  { value: 'lowestHpAlly', label: '血量最低友方 (LowestHpAlly)', en: 'LowestHpAlly', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' }
+  { value: 'self', label: '自身 (Self)', en: 'Self', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  { value: 'allAllies', label: '全体友方 (AllAllies)', en: 'AllAllies', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
+  { value: 'lowestHitpointsAlly', label: '血量最低友方 (LowestHitpointsAlly)', en: 'LowestHitpointsAlly', badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' }
 ];
 
 // 12. 视觉渲染器类型 (VisualRendererKind)
@@ -117,20 +116,93 @@ export const VISUAL_RENDERER_KINDS: EnumOption[] = [
   { value: 'image', label: '位图立绘 (Image)', en: 'Image' }
 ];
 
-// 13. 战斗触发条件 (CombatTriggerCondition)
-export const COMBAT_TRIGGER_CONDITIONS: EnumOption[] = [
-  { value: 'hpBelow', label: '自身生命值低于比例 (HpBelow)', en: 'HpBelow' },
-  { value: 'targetHpBelow', label: '目标生命值低于比例 (TargetHpBelow)', en: 'TargetHpBelow' },
-  { value: 'manaBelow', label: '自身灵力值低于比例 (ManaBelow)', en: 'ManaBelow' },
-  { value: 'cooldownReady', label: '技能就绪即放 (CooldownReady)', en: 'CooldownReady' },
-  { value: 'combatStart', label: '战斗开局释放 (CombatStart)', en: 'CombatStart' }
+// 13. 技能触发条件五元组词汇表 —— CombatSkillEngine.ValidateTrigger / DuelTriggerEvaluator
+export const TRIGGER_DEPENDENCIES: EnumOption[] = [
+  { value: 'self', label: '自身 (Self)', en: 'Self' },
+  { value: 'target-enemy', label: '当前敌方目标 (TargetEnemy)', en: 'TargetEnemy' },
+  { value: 'ally-lowest-hp', label: '血量最低友方 (AllyLowestHp)', en: 'AllyLowestHp' },
+  { value: 'ally-highest-hp', label: '血量最高友方 (AllyHighestHp)', en: 'AllyHighestHp' },
+  { value: 'enemy-lowest-hp', label: '血量最低敌方 (EnemyLowestHp)', en: 'EnemyLowestHp' },
+  { value: 'enemy-highest-hp', label: '血量最高敌方 (EnemyHighestHp)', en: 'EnemyHighestHp' }
 ];
 
-// 14. 战斗触发动作 (CombatTriggerAction)
-export const COMBAT_TRIGGER_ACTIONS: EnumOption[] = [
-  { value: 'useAbility', label: '释放神通法决 (UseAbility)', en: 'UseAbility' },
-  { value: 'useItem', label: '服食灵丹妙药 (UseItem)', en: 'UseItem' },
-  { value: 'flee', label: '遁走撤离 (Flee)', en: 'Flee' }
+export const TRIGGER_CONDITIONS: EnumOption[] = [
+  { value: 'current-hp', label: '当前气血 (CurrentHp)', en: 'CurrentHp' },
+  { value: 'missing-hp', label: '已损气血 (MissingHp)', en: 'MissingHp' },
+  { value: 'current-hp-percentage', label: '当前气血百分比 (CurrentHp%)', en: 'CurrentHp%' },
+  { value: 'missing-hp-percentage', label: '已损气血百分比 (MissingHp%)', en: 'MissingHp%' },
+  { value: 'current-mana', label: '当前灵力 (CurrentMana)', en: 'CurrentMana' },
+  { value: 'missing-mana', label: '已损灵力 (MissingMana)', en: 'MissingMana' },
+  { value: 'current-mana-percentage', label: '当前灵力百分比 (CurrentMana%)', en: 'CurrentMana%' },
+  { value: 'missing-mana-percentage', label: '已损灵力百分比 (MissingMana%)', en: 'MissingMana%' },
+  { value: 'buff-stacks', label: 'Buff 层数 (BuffStacks)', en: 'BuffStacks' }
+];
+
+export const TRIGGER_COMPARATORS: EnumOption[] = [
+  { value: 'greater-than-equal', label: '大于等于 (>=)', en: '>=' },
+  { value: 'less-than-equal', label: '小于等于 (<=)', en: '<=' },
+  { value: 'greater-than', label: '大于 (>)', en: '>' },
+  { value: 'less-than', label: '小于 (<)', en: '<' }
+];
+
+// 13b. 功法类别 (discipline)：internal=内功心法（0 号槽位），spell=神通术法（缺省）
+export const ABILITY_DISCIPLINES: EnumOption[] = [
+  { value: 'internal', label: '内功心法 (Internal)', en: 'Internal', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'spell', label: '神通术法 (Spell)', en: 'Spell', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' }
+];
+
+// 13c. 六维根骨 (CoreAspectKind) —— rootAttribute 经验分配维度
+export const ROOT_ATTRIBUTES: EnumOption[] = [
+  { value: 'stamina', label: '体魄 (Stamina)', en: 'Stamina', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
+  { value: 'meridians', label: '经脉 (Meridians)', en: 'Meridians', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
+  { value: 'attack', label: '力道 (Attack)', en: 'Attack', badgeColor: 'bg-orange-500/10 text-orange-300 border-orange-500/20' },
+  { value: 'bone', label: '根骨 (Bone)', en: 'Bone', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
+  { value: 'agility', label: '身法 (Agility)', en: 'Agility', badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
+  { value: 'consciousness', label: '神识 (Consciousness)', en: 'Consciousness', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' }
+];
+
+// 13d. 怪物倾向权重键 —— ParseMonsterDefinitions Weight(...) 实际消费键
+export const MONSTER_WEIGHT_KEYS: { key: string; label: string }[] = [
+  { key: 'hp', label: '气血 (Hp)' },
+  { key: 'mp', label: '灵力 (Mp)' },
+  { key: 'ad', label: '物理攻击 (Ad)' },
+  { key: 'ap', label: '术法攻击 (Ap)' },
+  { key: 'armor', label: '护甲 (Armor)' },
+  { key: 'mres', label: '法抗 (Mres)' },
+  { key: 'hit', label: '命中 (Hit)' },
+  { key: 'eva', label: '闪避 (Eva)' },
+  { key: 'crit', label: '暴击 (Crit)' },
+  { key: 'cavoid', label: '免暴 (Cavoid)' },
+  { key: 'break', label: '破招 (Break)' },
+  { key: 'parry', label: '招架 (Parry)' },
+  { key: 'metalResistance', label: '金抗点数 (×10)' },
+  { key: 'woodResistance', label: '木抗点数 (×10)' },
+  { key: 'waterResistance', label: '水抗点数 (×10)' },
+  { key: 'fireResistance', label: '火抗点数 (×10)' },
+  { key: 'earthResistance', label: '土抗点数 (×10)' }
+];
+
+// 13e. 行动收益类型与结算频率 —— ParseYields 词汇表
+export const ACTION_YIELD_KINDS: EnumOption[] = [
+  { value: 'qi', label: '修为灵气 (Qi)', en: 'Qi', badgeColor: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' },
+  { value: 'mana', label: '灵力 (Mana)', en: 'Mana', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' },
+  { value: 'hitpoints', label: '气血 (Hitpoints)', en: 'Hitpoints', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
+  { value: 'experience', label: '经验 (Experience)', en: 'Experience', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 'item', label: '道具物品 (Item)', en: 'Item', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  { value: 'buff', label: '增益状态 (Buff)', en: 'Buff', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' }
+];
+
+export const ACTION_YIELD_PERS: EnumOption[] = [
+  { value: 'second', label: '每秒结算 (PerSecond)', en: 'PerSecond' },
+  { value: 'repeat', label: '每轮结算 (PerRepeat)', en: 'PerRepeat' }
+];
+
+// 13f. 节点可建模板 —— NodeBuildings.ResolveBuildableIds / DataTool 校验词汇表
+export const BUILDABLE_TEMPLATES: EnumOption[] = [
+  { value: 'all', label: '全部建筑 (All)', en: 'All' },
+  { value: 'production', label: '生产建筑 (Production)', en: 'Production' },
+  { value: 'combat', label: '战斗建筑 (Combat)', en: 'Combat' },
+  { value: 'other', label: '其他建筑 (Other)', en: 'Other' }
 ];
 
 // 15. 品阶阶位 (T1 ~ T12)

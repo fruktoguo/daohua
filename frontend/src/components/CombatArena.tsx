@@ -3,16 +3,16 @@ import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, QueueEntry } from '../game/types'
+import { findAbilityInCatalog, findItemInCatalog, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, QueueEntry } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
-import { BASELINE_COMBAT_ATTRIBUTES, calculateBaseAttributes } from '../game/combatConstants'
 import { CharacterAvatar } from './CharacterAvatar'
-import { CombatAttributePanel, resolveEnemyCombatAttributeModel, resolvePlayerCombatAttributeModel, type CombatAttributePanelModel } from './CombatAttributePanel'
+import { CombatAttributePanel } from './CombatAttributePanel'
+import { describeBuffEffectLines } from './ItemDisplay'
 
 /** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名 */
 function resolveQueueEntryDisplayName(entry: QueueEntry | null | undefined, fallback?: string): string {
@@ -385,32 +385,15 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   }, [buff.expiresAtUnixSeconds])
   const total = baseDuration
 
-  // 效果说明与单字图标（说明文案与字形均随语言切换）
-  let tone: 'qi' | 'jade' | 'purple' | 'danger' | 'gold' = 'gold'
-  let glyph = buff.name.slice(0, 1) || t('combat.arena.glyphGeneric')
-  let effectDesc = t('combat.arena.buffGeneric')
-
-  if (buff.qiGainMultiplier > 1) {
-    tone = 'qi'
-    glyph = t('combat.arena.glyphQi')
-    effectDesc = t('combat.arena.buffQiGain', { n: formatNumber(Math.round((buff.qiGainMultiplier - 1) * 100)) })
-  } else if (buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 1) {
-    tone = 'jade'
-    glyph = t('combat.arena.glyphGathering')
-    effectDesc = t('combat.arena.buffGathering', { n: formatNumber(Math.round((buff.gatheringOutputMultiplier - 1) * 100)) })
-  } else if (buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 1) {
-    tone = 'purple'
-    glyph = t('combat.arena.glyphAlchemy')
-    effectDesc = t('combat.arena.buffAlchemy', { n: formatNumber(Math.round((buff.alchemyOutputMultiplier - 1) * 100)) })
-  } else if (buff.damageRatio && buff.damageRatio > 0) {
-    tone = 'danger'
-    glyph = t('combat.arena.glyphDamage')
-    effectDesc = t('combat.arena.buffDamage', { n: formatNumber(Math.round(buff.damageRatio * 100)) })
-  } else if (buff.attackSpeedRatio && buff.attackSpeedRatio > 0) {
-    tone = 'gold'
-    glyph = t('combat.arena.glyphSpeed')
-    effectDesc = t('combat.arena.buffAttackSpeed', { n: formatNumber(Math.round(buff.attackSpeedRatio * 100)) })
-  }
+  // 效果说明与单字图标：效果行统一由唯一 Buff 形状（hpRegen/mpRegen/attackSpeedRatio/
+  // damageAbsorptionRatio/statRatios）解析；色调按结算语义粗分，字形取 Buff 名首字。
+  const effectLines = describeBuffEffectLines(buff)
+  const effectDesc = effectLines.length > 0 ? effectLines.join('；') : t('combat.arena.buffGeneric')
+  const tone: 'qi' | 'jade' | 'purple' | 'danger' | 'gold' =
+    buff.damageAbsorptionRatio > 0 ? 'jade' : (buff.hpRegen > 0 || buff.mpRegen > 0) ? 'qi' : 'gold'
+  const glyph = buff.attackSpeedRatio > 0
+    ? t('combat.arena.glyphSpeed')
+    : buff.name.slice(0, 1) || t('combat.arena.glyphGeneric')
 
   const radius = 9
   const circumference = 2 * Math.PI * radius
@@ -926,7 +909,7 @@ function ArenaTravelCard({
         ?.nodes.find(n => n.nodeId === queueEntry.travelDestinationNodeId)?.name
     : undefined
   const destinationName = destinationNodeName ?? actionName
-  const totalDistance = expedition?.totalDistance ?? 0
+  const totalDistance = queueEntry?.travelTotalDistance ?? 0
   const duration = Math.max(1, expedition?.durationSeconds || queueEntry?.durationSeconds || 1)
   const progressSec = expedition?.elapsedSeconds || queueEntry?.progressSeconds || 0
 
@@ -1030,12 +1013,12 @@ function ArenaIdleCard(): React.JSX.Element {
 /**
  * 参战单位详细属性与生效 Buff 模态窗组件 (CharacterAttributeModal)
  *
- * 角色与敌怪共用同一斗法属性面板 (CombatAttributePanel)，
- * 仅数值来源不同：角色取服务端实时属性 + 境界底座估算，敌怪取遭遇配表定义。
+ * 角色、敌怪与斗法镜像共用同一斗法属性面板 (CombatAttributePanel)，
+ * 数值统一来自服务端下发的 CombatAttributes 终值，前端不做任何派生估算。
  */
 function CharacterAttributeModal({
   actorId,
-  model,
+  attributes,
   name,
   role = 'player',
   visual,
@@ -1045,7 +1028,8 @@ function CharacterAttributeModal({
   title,
 }: {
   actorId?: string | null
-  model: CombatAttributePanelModel | null
+  /** 服务端权威战斗属性终值（缺省时面板不渲染数值区） */
+  attributes: CombatAttributes | null
   name?: string | null
   role?: 'player' | 'enemy'
   visual?: CharacterVisual | null
@@ -1076,50 +1060,15 @@ function CharacterAttributeModal({
           </span>
         </div>
       </header>
-      {model && <CombatAttributePanel buffs={buffs} model={model} />}
+      {attributes && <CombatAttributePanel attributes={attributes} buffs={buffs} />}
     </Modal>
   )
-}
-
-/**
- * 根据敌怪名称或遭遇定义解析出具体的敌怪数值模型 (CombatantDefinition)
- */
-export function resolveEnemyDefinition(
-  enemyName: string,
-  enemyId: string | null | undefined,
-  activeEncounter: CombatEncounterDefinition | null | undefined,
-  encounters: readonly CombatEncounterDefinition[]
-): CombatantDefinition | null {
-  if (!enemyName && !enemyId && !activeEncounter) return null
-  const findInEncounter = (encounter: CombatEncounterDefinition): CombatantDefinition | null => {
-    if (enemyId) {
-      if (encounter.enemy?.enemyId === enemyId) return encounter.enemy
-      const bossById = encounter.bossEnemies?.find(b => b.enemyId === enemyId)
-      if (bossById) return bossById
-      const spawnById = encounter.randomSpawns?.find(s => s.enemy?.enemyId === enemyId)
-      if (spawnById) return spawnById.enemy
-    }
-    if (encounter.enemy?.name === enemyName) return encounter.enemy
-    const boss = encounter.bossEnemies?.find(b => b.name === enemyName)
-    if (boss) return boss
-    const spawn = encounter.randomSpawns?.find(s => s.enemy?.name === enemyName)
-    return spawn?.enemy ?? null
-  }
-  if (activeEncounter) {
-    const match = findInEncounter(activeEncounter)
-    if (match) return match
-  }
-  for (const enc of encounters) {
-    const match = findInEncounter(enc)
-    if (match) return match
-  }
-  return activeEncounter?.enemy ?? null
 }
 
 /** 敌方单位铺位顺序：纵深优先（前排中→中排中→后排中→前排上→…），同波敌人沿前后轴展开而非上下堆叠 */
 const ENEMY_DEPTH_SLOTS: readonly number[] = [1, 4, 7, 2, 5, 8, 3, 6, 9]
 
-/** 敌方单位展示态：由 wire 快照（enemies[] 或 duel 载荷）与配表定义合并而成的渲染模型 */
+/** 敌方单位展示态：全部渲染字段均来自 wire 快照（enemies[] 或 duel 载荷），不再反查本地配表 */
 interface EnemyDisplayState {
   actorKey: string
   enemyId: string | null
@@ -1131,7 +1080,8 @@ interface EnemyDisplayState {
   maxMp: number
   action?: CombatActionState | null
   visual?: CharacterVisual | null
-  definition?: CombatantDefinition | null
+  /** 服务端下发的完整战斗属性（详情弹窗唯一数值来源） */
+  attributes?: CombatAttributes | null
 }
 
 /**
@@ -1160,23 +1110,21 @@ function attackActionState(
 }
 
 /**
- * 敌方行动条：服务端下发 pendingAbilityId 表示该单位正在吟唱技能——
- * 吟唱占用整条动作时间线，时长取服务端下发的 pendingActionDurationSeconds；
- * 无吟唱时按普攻间隔合成普通攻击条。
+ * 敌方行动条：服务端 pendingActionDurationSeconds 即当前动作总时长（吟唱时长或普攻间隔），
+ * pendingAbilityId 区分吟唱技能与普攻；两者共用同一条战斗时间线，前端不再另取配表时长。
  */
 function enemyActionState(
   entry: ExpeditionEnemy,
   battleElapsedSeconds: number,
-  attackIntervalMilliseconds: number,
   serverNowUnixMilliseconds: number,
   abilities: readonly CombatAbilityDefinition[],
 ): CombatActionState | null {
   const remaining = Math.max(0, (entry.nextAttackAtSeconds - battleElapsedSeconds) * 1000)
+  const duration = Math.max(1, entry.pendingActionDurationSeconds > 0
+    ? entry.pendingActionDurationSeconds * 1000
+    : (entry.attributes?.attackIntervalMilliseconds ?? 1))
   if (entry.pendingAbilityId) {
     const ability = findAbilityInCatalog(abilities, entry.pendingAbilityId)
-    const duration = Math.max(1, (entry.pendingActionDurationSeconds ?? 0) > 0
-      ? entry.pendingActionDurationSeconds! * 1000
-      : ability?.castMilliseconds ?? 1)
     return {
       kind: 'cast',
       name: ability?.name ?? entry.pendingAbilityId,
@@ -1185,7 +1133,14 @@ function enemyActionState(
       completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
     }
   }
-  return attackActionState(entry.nextAttackAtSeconds, battleElapsedSeconds, attackIntervalMilliseconds, serverNowUnixMilliseconds)
+  return {
+    kind: 'attack',
+    // name 仅需非空以通过徽章的待机判定；kind === 'attack' 时统一显示本地化普攻名。
+    name: 'attack',
+    durationMilliseconds: duration,
+    elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+    completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
+  }
 }
 
 /**
@@ -1251,14 +1206,11 @@ export const CombatArena = memo(function CombatArena({
 }): React.JSX.Element {
   const playerName = useGameStore(state => state.name)
   const playerVisual = useGameStore(state => state.visual)
-  const stats = useGameStore(state => state.stats)
-  const combat = useGameStore(state => state.combat)
   const combatResources = useGameStore(state => state.combatResources)
   const combatAttributes = useGameStore(state => state.combatAttributes)
   const abilities = useGameStore(state => state.abilities)
   const buffs = useGameStore(state => state.buffs)
   const actions = useGameStore(state => state.actions)
-  const encounters = useGameStore(state => state.encounters)
   const world = useGameStore(state => state.world)
   const queue = useGameStore(state => state.queue.entries)
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
@@ -1270,30 +1222,25 @@ export const CombatArena = memo(function CombatArena({
 
   const current = queue[0] ?? null
   const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
-  const isTravel = current !== null && (current.executionKind === 'travel' || current.expedition?.phase === 'travel' || current.actionId === 'world.travel')
+  const isTravel = current !== null && (current.executionKind === 'travel' || current.actionId === 'world.travel')
   const isLifeAction = current !== null && !isCombat && !isTravel
   const expedition = isCombat ? current.expedition : null
   const activeAction = current ? actions.find(action => action.id === current.actionId) : null
   const activeEncounterId = expedition?.encounterId ?? activeAction?.combatEncounterId
-  const activeEncounter = activeEncounterId
-    ? findEncounterInCatalog(encounters, activeEncounterId)
-    : null
 
   const availableActions = useMemo(() => actions.filter(action => (
     action.type === 'combat'
       && (!action.availableNodeIds?.length || (world.nodeId !== null && action.availableNodeIds.includes(world.nodeId)))
   )), [actions, world.nodeId])
 
-  const fallbackMaxHp = combatAttributes?.maxHitpoints ?? BASELINE_COMBAT_ATTRIBUTES.maxHp
-  const fallbackMaxMp = combatAttributes?.maxManapoints ?? BASELINE_COMBAT_ATTRIBUTES.maxMp
-  const playerMaxHp = combatResources?.maxHitpoints ?? fallbackMaxHp
-  const playerMaxMp = combatResources?.maxManapoints ?? fallbackMaxMp
+  const playerMaxHp = Math.max(1, combatResources?.maxHitpoints ?? combatAttributes?.maxHitpoints ?? 1)
+  const playerMaxMp = Math.max(1, combatResources?.maxManapoints ?? combatAttributes?.maxManapoints ?? 1)
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
   const phase = expedition?.phase ?? (isTravel ? 'travel' : isLifeAction ? 'life-action' : 'idle')
   const isDuelPhase = phase === 'duel' || phase === 'duel-pending'
 
-  // 同波多敌阵容：以 wire 下发的 enemies[] 快照为准，属性面板从遭遇配表反查定义。
+  // 同波多敌阵容：名称/立绘/属性/出手时间线全部以 wire 下发的 enemies[] 快照为准。
   // 斗法相位例外：对手为玩家队伍镜像，不走 enemies[]，以 expedition.duel 载荷合成单个对手卡片，
   // 敌人名位置显示「斗法·对手道号」（duel-pending 显示「斗法感应中…」），血条布局不变。
   const enemyEntries = useMemo<EnemyDisplayState[]>(() => {
@@ -1304,10 +1251,13 @@ export const CombatArena = memo(function CombatArena({
       const name = pending
         ? t('combat.duel.sensing')
         : t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
-      // 斗法对手血量由 duel 回放载荷承载（撮合时锁定镜像、随剧本事件更新）；
+      // 斗法对手气血/灵力与属性上限由 duel 回放载荷承载（撮合时锁定镜像、随剧本事件更新）；
       // duel-pending 尚无回放载荷时以满额条占位，避免落入阵亡置灰样式。
-      const maxHp = Math.max(1, expedition.duel?.opponentMaxHitpoints ?? 1)
+      const opponentAttributes = expedition.duel?.opponentAttributes ?? null
+      const maxHp = Math.max(1, opponentAttributes?.maxHitpoints ?? 1)
+      const maxMp = Math.max(1, opponentAttributes?.maxManapoints ?? 1)
       const hp = pending ? maxHp : Math.max(0, Math.min(maxHp, expedition.duel?.opponentHitpoints ?? maxHp))
+      const mp = pending ? maxMp : Math.max(0, Math.min(maxMp, expedition.duel?.opponentManapoints ?? maxMp))
       return [{
         actorKey: `enemy:duel:${expedition.duel?.opponentName || 'pending'}`,
         enemyId: null,
@@ -1315,35 +1265,33 @@ export const CombatArena = memo(function CombatArena({
         seal: name.slice(0, 1),
         hp,
         maxHp,
-        // 回放载荷不含对手灵力：满额占位避免空条误导。
-        mp: 1,
-        maxMp: 1,
+        mp,
+        maxMp,
         action: pending ? null : duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities),
         visual: null,
-        definition: null,
+        attributes: opponentAttributes,
       }]
     }
     const wave = expedition?.enemies ?? []
     return wave.map((entry, index) => {
-      const definition = resolveEnemyDefinition('', entry.enemyId, activeEncounter, encounters)
-      const name = definition?.name ?? entry.enemyId
+      const name = entry.name || entry.enemyId
       return {
         actorKey: `enemy:${expedition?.waveNumber ?? 0}:${index}:${entry.enemyId}`,
         enemyId: entry.enemyId,
         name,
         seal: name.slice(0, 1),
         hp: entry.hitpoints,
-        maxHp: definition?.maxHitpoints ?? Math.max(1, entry.hitpoints),
+        maxHp: Math.max(1, entry.attributes?.maxHitpoints ?? entry.hitpoints),
         mp: entry.manapoints,
-        maxMp: definition?.maxManapoints ?? Math.max(1, entry.manapoints),
+        maxMp: Math.max(1, entry.attributes?.maxManapoints ?? entry.manapoints),
         action: entry.hitpoints > 0 && expedition?.phase === 'combat'
-          ? enemyActionState(entry, battleElapsed, definition?.attackIntervalMilliseconds ?? 0, serverNow, abilities)
+          ? enemyActionState(entry, battleElapsed, serverNow, abilities)
           : null,
-        visual: definition?.visual ?? null,
-        definition,
+        visual: entry.visual ?? null,
+        attributes: entry.attributes ?? null,
       }
     })
-  }, [activeEncounter, abilities, encounters, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
+  }, [abilities, expedition?.enemies, expedition?.waveNumber, expedition?.phase, expedition?.duel, expedition?.battleElapsedSeconds, t])
 
   const inspectedEnemyIndex = inspectedActor?.startsWith('enemy:')
     ? Number(inspectedActor.slice(6))
@@ -1358,11 +1306,11 @@ export const CombatArena = memo(function CombatArena({
       const battleElapsed = expedition?.battleElapsedSeconds ?? 0
       const serverNow = estimateServerNowUnixMilliseconds()
       const attackInterval = combatAttributes?.attackIntervalMilliseconds ?? 0
-      // 吟唱中的功法优先于普攻条展示；时长取配表 castMilliseconds，剩余由 combat 分段下发。
+      // 吟唱中的功法优先于普攻条展示；总时长取服务端 castTotalMilliseconds（含施法乘区），剩余由 combat 分段下发。
       const castingId = combatResources?.castingAbilityId
       if (castingId && (expedition?.phase === 'combat' || expedition?.phase === 'duel')) {
         const ability = findAbilityInCatalog(abilities, castingId)
-        const duration = Math.max(1, ability?.castMilliseconds ?? combatResources?.castRemainingMilliseconds ?? 1)
+        const duration = Math.max(1, combatResources?.castTotalMilliseconds ?? ability?.castMilliseconds ?? combatResources?.castRemainingMilliseconds ?? 1)
         const remaining = Math.max(0, combatResources?.castRemainingMilliseconds ?? 0)
         return {
           kind: 'cast',
@@ -1399,24 +1347,13 @@ export const CombatArena = memo(function CombatArena({
     return null
   }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities])
 
-  // 详情弹窗当前敌人：默认为首个存活敌人。
-  const enemy = inspectedEnemy
-    ?? enemyEntries.find(entry => entry.hp > 0)
-    ?? enemyEntries[0]
-    ?? null
-  const enemyDefinition = enemy?.definition ?? null
-
-  // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时惰性解析斗法属性模型，
-  // 彻底消除战斗每帧的冗余计算；角色/敌怪共用 CombatAttributePanel 同一展示口径。
-  const attributeModel = useMemo<CombatAttributePanelModel | null>(() => {
-    if (inspectedActor === null) return null
-    if (inspectedEnemy) return resolveEnemyCombatAttributeModel(enemyDefinition, { maxHitpoints: enemy?.maxHp ?? 0, maxManapoints: enemy?.maxMp ?? 0 })
-    return resolvePlayerCombatAttributeModel(
-      combatAttributes,
-      combat,
-      calculateBaseAttributes(stats.spirit ?? 0, stats.realmLevel),
-    )
-  }, [inspectedActor, inspectedEnemy, enemy, enemyDefinition, combatAttributes, combat, stats.spirit, stats.realmLevel])
+  // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时取用属性；
+  // 角色/敌怪/斗法镜像全部渲染服务端下发的 CombatAttributes 终值，无任何本地估算。
+  const inspectedAttributes: CombatAttributes | null = inspectedActor === null
+    ? null
+    : inspectedEnemy
+      ? inspectedEnemy.attributes ?? null
+      : combatAttributes ?? null
 
   return (
     <div className="combat-arena-shell">
@@ -1539,8 +1476,8 @@ export const CombatArena = memo(function CombatArena({
       </div>
       <CharacterAttributeModal
         actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
+        attributes={inspectedAttributes}
         buffs={inspectedActor === 'player' ? buffs : []}
-        model={attributeModel}
         name={inspectedEnemy?.name ?? playerName}
         onClose={() => setInspectedActor(null)}
         open={inspectedActor !== null}

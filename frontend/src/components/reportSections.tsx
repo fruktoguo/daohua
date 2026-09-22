@@ -10,11 +10,11 @@ import type { BattleReport, BattleReportRootExp } from '../game/types'
 /** 六维经验展示顺序与行标签（复用 combat.attr.* 既有词条） */
 export const ROOT_EXP_ROWS: ReadonlyArray<{ key: keyof BattleReportRootExp; labelKey: string }> = [
   { key: 'stamina', labelKey: 'combat.attr.stamina' },
-  { key: 'intelligence', labelKey: 'combat.attr.meridian' },
+  { key: 'meridians', labelKey: 'combat.attr.meridian' },
   { key: 'attack', labelKey: 'combat.attr.attack' },
-  { key: 'defense', labelKey: 'combat.attr.defense' },
-  { key: 'swordsmanship', labelKey: 'combat.attr.divineSense' },
-  { key: 'talisman', labelKey: 'combat.attr.movement' },
+  { key: 'bone', labelKey: 'combat.attr.defense' },
+  { key: 'agility', labelKey: 'combat.attr.movement' },
+  { key: 'consciousness', labelKey: 'combat.attr.divineSense' },
 ]
 
 /** 战报开始时刻的 HH:MM 短格式（本地时区） */

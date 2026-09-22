@@ -12,6 +12,7 @@ import { BooleanSelect } from '../common/BooleanSelect';
 import { NumberInput } from '../common/NumberInput';
 import { ReferenceSelect, MultiReferenceSelect } from '../common/ReferenceSelect';
 import { RecipeEditor } from '../common/RecipeEditor';
+import { YieldsEditor } from '../common/YieldsEditor';
 
 export function ActionsEditor() {
   const { configs, updateConfig } = useConfigContext();
@@ -55,7 +56,7 @@ export function ActionsEditor() {
       id: newId,
       name: '新建行动',
       description: '描述该行动的修真过程与效用...',
-      type: 'gathering',
+      type: 'exploration',
       durationSeconds: 5,
       executionKind: 'timed'
     };
@@ -243,7 +244,7 @@ export function ActionsEditor() {
                 description="决定结算逻辑与技艺分类"
                 value={currentAction.type}
                 options={ACTION_TYPES}
-                onChange={v => handleUpdate({ type: v || 'gathering' })}
+                onChange={v => handleUpdate({ type: v || 'exploration' })}
                 allowClear={false}
               />
 
@@ -298,7 +299,7 @@ export function ActionsEditor() {
             </div>
           </div>
 
-          {/* 配方系统 (Inputs / Outputs) */}
+          {/* 消耗配方与收益列表 (Inputs / Yields) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <RecipeEditor
               label="消耗材料配方 (Inputs)"
@@ -307,11 +308,11 @@ export function ActionsEditor() {
               onChange={dict => handleUpdate({ inputs: dict })}
             />
 
-            <RecipeEditor
-              label="产出物品配方 (Outputs)"
-              description="执行该行动每次获得的道具及数量"
-              value={currentAction.outputs}
-              onChange={dict => handleUpdate({ outputs: dict })}
+            <YieldsEditor
+              label="声明式收益列表 (Yields)"
+              description="物品 / 修为 / 灵力 / 气血 / 经验 / Buff 收益"
+              yields={currentAction.yields}
+              onChange={list => handleUpdate({ yields: list })}
             />
           </div>
         </div>

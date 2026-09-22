@@ -1,6 +1,6 @@
 import { getT, type TFunction } from '../i18n'
 import { calculateRootLevelAndProgress } from './combatConstants'
-import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatEquipmentDefinition, CombatEquipmentStats, ItemDefinition } from './types'
+import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatEquipmentDefinition, ItemDefinition } from './types'
 
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
@@ -734,30 +734,6 @@ export function resolveItemMetadata(itemId: string): ItemMetadata | undefined {
   return undefined
 }
 
-/** 兜底装备定义缺省属性段（全零增益，暴击伤害保留基准 150% 倍率） */
-const EMPTY_EQUIP_STATS: CombatEquipmentStats = {
-  damageRatio: 0,
-  accuracyRatio: 0,
-  attackSpeedRatio: 0,
-  evasionRatio: 0,
-  armor: 0,
-  magicResistance: 0,
-  metalResistance: 0,
-  woodResistance: 0,
-  waterResistance: 0,
-  fireResistance: 0,
-  earthResistance: 0,
-  tenacity: 0,
-  penetrationRatio: 0,
-  lifeStealRatio: 0,
-  armorDamageRatio: 0,
-  hpDrainRatio: 0,
-  criticalChance: 0,
-  criticalDamageRatio: 1.5,
-  criticalAvoidance: 0,
-  damageAbsorptionRatio: 0,
-}
-
 /** 静态兜底物品定义：服务端 catalog 未下发对应条目时，保证常用消耗品仍可展示与解算 */
 const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
   'item.qi-gathering-pill': {
@@ -786,13 +762,11 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
     usableActionTypes: ['combat'],
     cooldownSeconds: 60,
     hitpointRestore: 0,
-    triggerHpRatio: 0.3,
     buffEffects: [
       {
         buffId: 'buff.zhixue',
         name: '止血散·回春',
         durationSeconds: 30,
-        maxStacks: 1,
         hpRegen: 12,
         damageAbsorptionRatio: 0.05,
       },
@@ -814,7 +788,6 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
         buffId: 'buff.shunqi',
         name: '顺气丸·凝神',
         durationSeconds: 30,
-        maxStacks: 1,
         mpRegen: 8,
         attackSpeedRatio: 0.05,
       },
@@ -1018,12 +991,8 @@ export function resolveDefaultItemDefinition(itemId: string): ItemDefinition | u
     isTradable: def.isTradable ?? true,
     usableActionTypes: def.usableActionTypes ?? [],
     cooldownSeconds: def.cooldownSeconds ?? 0,
-    recoverySeconds: def.recoverySeconds ?? 0,
     hitpointRestore: def.hitpointRestore ?? 0,
     manapointRestore: def.manapointRestore ?? 0,
-    triggerHpRatio: def.triggerHpRatio ?? 0,
-    triggerAtCombatStart: def.triggerAtCombatStart ?? false,
-    defaultCombatTriggers: def.defaultCombatTriggers ?? null,
     buffEffects: def.buffEffects ?? null,
     durationSeconds: def.durationSeconds ?? 0,
     isContinuous: def.isContinuous ?? false,
@@ -1045,8 +1014,7 @@ export function resolveDefaultEquipmentDefinition(equipmentId: string): CombatEq
     name: def.name ?? equipmentId,
     slot: def.slot ?? 'weapon',
     tier: def.tier ?? 1,
-    stats: def.stats ?? EMPTY_EQUIP_STATS,
-    enhancementBonus: def.enhancementBonus ?? EMPTY_EQUIP_STATS,
+    enhancementBonus: def.enhancementBonus,
     baseStatRatios: def.baseStatRatios,
     flatStats: def.flatStats,
     specialMechanics: def.specialMechanics,

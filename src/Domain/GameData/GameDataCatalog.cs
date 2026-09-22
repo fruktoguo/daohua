@@ -338,6 +338,16 @@ public sealed class GameDataCatalog
         RawEquipments = rawEquipments?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         Abilities = abilities ?? new Dictionary<string, JsonElement>();
+        // 功法配表在装载期整体过统一校验：配表笔误（无效触发词表/缺施放周期）加载即拒绝。
+        foreach (var (abilityId, ability) in Abilities)
+            try
+            {
+                Domain.Combat.SkillTriggerEvaluator.ValidateAbility(ability);
+            }
+            catch (DomainException error)
+            {
+                throw new DomainException(error.Code, $"功法 {abilityId} 配表无效：{error.Message}");
+            }
         Duel = duel ?? DuelSettings.Default;
         CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, baseAttributes, Abilities);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
@@ -520,15 +530,14 @@ public sealed class GameDataCatalog
     {
         if (!entry.TryGetProperty("modifiers", out var block) || block.ValueKind != JsonValueKind.Object)
             return World.BuildingEffectSet.Empty;
-        double Read(string key) => block.TryGetProperty(key, out var value) && value.TryGetDouble(out var number) && double.IsFinite(number) ? number : 0;
         return new World.BuildingEffectSet(
-            Read("explorationSpeedRatio"),
-            Read("explorationOutputRatio"),
-            Read("alchemySpeedRatio"),
-            Read("alchemyOutputRatio"),
-            Read("cultivationOutputRatio"),
-            Read("combatHitpointRegen"),
-            Read("combatDamageReductionRatio"));
+            JsonRead.Number(block, "explorationSpeedRatio"),
+            JsonRead.Number(block, "explorationOutputRatio"),
+            JsonRead.Number(block, "alchemySpeedRatio"),
+            JsonRead.Number(block, "alchemyOutputRatio"),
+            JsonRead.Number(block, "cultivationOutputRatio"),
+            JsonRead.Number(block, "combatHitpointRegen"),
+            JsonRead.Number(block, "combatDamageReductionRatio"));
     }
 
     /// <summary>解析建筑一级基础材料清单（materials 数组，缺省为空）。</summary>
@@ -540,7 +549,7 @@ public sealed class GameDataCatalog
         {
             if (item.ValueKind != JsonValueKind.Object) continue;
             var itemId = item.TryGetProperty("itemId", out var idProperty) ? idProperty.GetString() : null;
-            var quantity = item.TryGetProperty("quantity", out var qtyProperty) && qtyProperty.TryGetDouble(out var qty) ? qty : 0;
+            var quantity = JsonRead.Number(item, "quantity");
             if (string.IsNullOrWhiteSpace(itemId) || !double.IsFinite(quantity) || quantity <= 0) continue;
             materials.Add(new World.BuildingMaterial(itemId.Trim(), quantity));
         }
@@ -628,7 +637,7 @@ public sealed class GameDataCatalog
                 "repeat" => ActionYieldPeriod.PerRepeat,
                 _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的收益结算频率无效：{perText ?? "缺失"}。")
             };
-            var amount = element.TryGetProperty("amount", out var amountProperty) && amountProperty.TryGetDouble(out var parsed) ? parsed : 0;
+            var amount = JsonRead.Number(element, "amount");
             if (kind == ActionYieldKind.Item)
             {
                 var itemId = element.TryGetProperty("id", out var itemIdProperty) ? itemIdProperty.GetString() : null;
@@ -639,11 +648,9 @@ public sealed class GameDataCatalog
             {
                 var buffId = element.TryGetProperty("id", out var buffIdProperty) ? buffIdProperty.GetString() : null;
                 var buffName = element.TryGetProperty("name", out var buffNameProperty) ? buffNameProperty.GetString() : null;
-                var durationSeconds = ReadDouble(element, "durationSeconds");
+                var durationSeconds = JsonRead.Number(element, "durationSeconds");
                 double ReadModifier(string key) => element.TryGetProperty("modifiers", out var modifiers)
-                    && modifiers.ValueKind == JsonValueKind.Object
-                    && modifiers.TryGetProperty(key, out var value) && value.TryGetDouble(out var number)
-                    ? number : 0;
+                    ? JsonRead.Number(modifiers, key) : 0;
                 IReadOnlyDictionary<string, double>? statRatios = null;
                 if (element.TryGetProperty("modifiers", out var modifierObject)
                     && modifierObject.ValueKind == JsonValueKind.Object
@@ -688,21 +695,21 @@ public sealed class GameDataCatalog
     {
         var name = entry.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() ?? id : id;
         var description = entry.TryGetProperty("description", out var descriptionProperty) ? descriptionProperty.GetString() ?? string.Empty : string.Empty;
-        var price = entry.TryGetProperty("sellPrice", out var priceProperty) && priceProperty.TryGetDouble(out var parsed) ? parsed : 0;
+        var price = JsonRead.Number(entry, "sellPrice");
         var tradable = !entry.TryGetProperty("isTradable", out var tradableProperty) || tradableProperty.GetBoolean();
         ConsumableDefinition? consumable = null;
         if (entry.TryGetProperty("consumable", out var consumableProperty) && consumableProperty.ValueKind == JsonValueKind.Object)
         {
             var usableKinds = new HashSet<ActionKind>();
-            foreach (var value in ReadStringArray(consumableProperty, "usableInActionTypes"))
+            foreach (var value in JsonRead.StringArray(consumableProperty, "usableInActionTypes"))
                 usableKinds.Add(ParseExplicitKind(value));
             consumable = new ConsumableDefinition(
                 new ReadOnlySet<ActionKind>(usableKinds),
-                ReadDouble(consumableProperty, "durationSeconds"),
-                ReadBool(consumableProperty, "isContinuous"),
-                ReadDouble(consumableProperty, "cultivationMultiplier", 1),
-                ReadDouble(consumableProperty, "gatheringMultiplier", 1),
-                ReadDouble(consumableProperty, "alchemyMultiplier", 1));
+                JsonRead.Number(consumableProperty, "durationSeconds"),
+                JsonRead.Boolean(consumableProperty, "isContinuous"),
+                JsonRead.Number(consumableProperty, "cultivationMultiplier", 1),
+                JsonRead.Number(consumableProperty, "gatheringMultiplier", 1),
+                JsonRead.Number(consumableProperty, "alchemyMultiplier", 1));
         }
         return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable);
     }
@@ -742,15 +749,15 @@ public sealed class GameDataCatalog
         var result = new Dictionary<string, CombatMonsterDefinition>(StringComparer.Ordinal);
         foreach (var (id, value) in raw)
         {
-            var budget = ReadDouble(value, "budgetCost", 1);
+            var budget = JsonRead.Number(value, "budgetCost", 1);
             var weights = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("weights", out var weightsValue) && weightsValue.ValueKind == JsonValueKind.Object
                 ? weightsValue : default;
-            double Weight(string key) => ReadDouble(weights, key, 1);
+            double Weight(string key) => JsonRead.Number(weights, key, 1);
             // 怪我同构建模：以同等级玩家基准属性锚点为底座，按品阶倍率 + 倾向权重派生全部战斗属性。
-            var level = ReadInt(value, "level", 1);
+            var level = JsonRead.Integer(value, "level", 1);
             var anchor = baseAttributes?.At(level)
                 ?? new BaseAttributeAnchor(level, 100, 50, 10, 5, 10, 0, 1, 1, 1, 1, 1, 1, 2, 1);
-            var rank = ReadString(value, "rank", "minion").ToLowerInvariant() switch
+            var rank = JsonRead.Text(value, "rank", "minion").ToLowerInvariant() switch
             {
                 "elite" => CombatMonsterRank.Elite,
                 "boss" => CombatMonsterRank.Boss,
@@ -758,10 +765,10 @@ public sealed class GameDataCatalog
             };
             var attrMultiplier = rank switch { CombatMonsterRank.Elite => 1.2, CombatMonsterRank.Boss => 1.5, _ => 0.8 };
             var hpMultiplier = rank switch { CombatMonsterRank.Elite => 5.0, CombatMonsterRank.Boss => 20.0, _ => 3.0 };
-            var progress = Math.Pow((Math.Clamp((double)level, 1, 127) - 1) / 126d, 2);
-            var actionFactor = 1 - 0.5 * progress;
-            var cooldownFactor = 1 - 0.75 * progress;
-            var interval = ReadDouble(value, "attackIntervalMilliseconds", 0) / 1_000d;
+            // 成长乘区全单位同构：与玩家属性解析共用 CombatGrowthCurve 单点实现。
+            var actionFactor = CombatGrowthCurve.CastTimeFactor(level);
+            var cooldownFactor = CombatGrowthCurve.CooldownFactor(level);
+            var interval = JsonRead.Number(value, "attackIntervalMilliseconds", 0) / 1_000d;
             // 普攻节奏全单位统一：基准 1.0s（或配表覆写基准）×(1-ATR)×(1-攻速成长)；
             // 技能吟唱时长走另一条线：castMilliseconds ×(1-ATR)，不占普攻间隔。
             interval = (interval > 0 ? interval : 1) * actionFactor * actionFactor;
@@ -770,19 +777,43 @@ public sealed class GameDataCatalog
             var tier = baseAttributes?.TierAt(level) ?? 1;
             var drops = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("dropTable", out var dropValue) && dropValue.ValueKind == JsonValueKind.Array
                 ? dropValue.EnumerateArray().Select(drop => new CombatDropDefinition(
-                    new ItemId(ReadString(drop, "itemId")),
-                    ReadDouble(drop, "dropChance", 0),
-                    ReadDouble(drop, "minQuantity", 0),
-                    ReadDouble(drop, "maxQuantity", 0))).ToArray()
+                    new ItemId(JsonRead.Text(drop, "itemId", "")),
+                    JsonRead.Number(drop, "dropChance", 0),
+                    JsonRead.Number(drop, "minQuantity", 0),
+                    JsonRead.Number(drop, "maxQuantity", 0))).ToArray()
                 : [];
-            var skills = ReadArray(value, "skills").Select(skill =>
+            var skills = JsonRead.Array(value, "skills").Select(skill =>
             {
-                var abilityId = ReadString(skill, "abilityId");
+                if (skill.ValueKind != JsonValueKind.Object)
+                    throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 的技能槽配置无效。");
+                var abilityId = JsonRead.Text(skill, "abilityId", "");
                 if (!abilities.TryGetValue(abilityId, out var ability))
                     throw new DomainException(DomainErrorCode.NotFound, $"怪物 {id} 引用了不存在的技能 {abilityId}。");
-                return new MonsterSkillSlot(ability.Clone(), ReadDouble(skill, "level", 1), ReadDouble(skill, "triggerHpRatio", 1));
+                // 触发门槛解析顺序：槽位 triggers → triggerHpRatio 简写折叠 → 配表 defaultTriggers → 恒可用。
+                IReadOnlyList<JsonElement> triggers;
+                if (skill.TryGetProperty("triggers", out var slotTriggers) && slotTriggers.ValueKind == JsonValueKind.Array)
+                {
+                    var parsed = slotTriggers.EnumerateArray().Select(trigger => trigger.Clone()).ToArray();
+                    foreach (var trigger in parsed) Domain.Combat.SkillTriggerEvaluator.ValidateTrigger(trigger);
+                    triggers = parsed;
+                }
+                else if (skill.TryGetProperty("triggerHpRatio", out var ratioElement) && ratioElement.TryGetDouble(out var ratio))
+                {
+                    if (!double.IsFinite(ratio) || ratio < 0)
+                        throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 的技能气血门槛无效。");
+                    triggers = [HpRatioTrigger(ratio)];
+                }
+                else if (ability.TryGetProperty("defaultTriggers", out var defaults) && defaults.ValueKind == JsonValueKind.Array)
+                {
+                    triggers = defaults.EnumerateArray().Select(trigger => trigger.Clone()).ToArray();
+                }
+                else
+                {
+                    triggers = [];
+                }
+                return new SkillSlot(ability.Clone(), JsonRead.Number(skill, "level", 1), triggers);
             }).ToArray();
-            var skillIntensity = 1 + 0.3 * (tier - 1);
+            var skillIntensity = CombatGrowthCurve.SkillIntensity(tier);
             // 五行抗性权重按点数解释：weight × 10 写入对应抗性点数。
             var stats = CombatantStats.Create(
                 anchor.Hp * hpMultiplier * Weight("hp"),
@@ -796,7 +827,7 @@ public sealed class GameDataCatalog
                 SpellAttack = ap,
                 MaxManapoints = anchor.Mp * attrMultiplier * Weight("mp"),
                 // 普攻倍率与玩家同构：全单位统一 100%→200% AD 物理伤害。
-                BasicAttackRatio = 1 + progress,
+                BasicAttackRatio = CombatGrowthCurve.BasicAttackRatio(level),
                 SkillIntensity = skillIntensity,
                 CastTimeFactor = actionFactor,
                 CooldownFactor = cooldownFactor,
@@ -804,27 +835,28 @@ public sealed class GameDataCatalog
                 ResistanceScale = tier,
                 Critical = anchor.Crit * attrMultiplier * Weight("crit"),
                 CriticalResistance = anchor.Cavoid * attrMultiplier * Weight("cavoid"),
-                CriticalMultiplier = 1.5 + 3.5 * progress,
+                CriticalMultiplier = CombatGrowthCurve.CriticalMultiplier(level),
                 BreakPower = anchor.BreakPt * attrMultiplier * Weight("break"),
                 ParryResolve = anchor.Parry * attrMultiplier * Weight("parry"),
-                Element = Enum.Parse<CombatElement>(ReadString(value, "element", "none"), true),
+                Element = Enum.Parse<CombatElement>(JsonRead.Text(value, "element", "none"), true),
                 MetalResistance = Weight("metalResistance") is var metal && metal != 1 ? metal * 10 : 0,
                 WoodResistance = Weight("woodResistance") is var wood && wood != 1 ? wood * 10 : 0,
                 WaterResistance = Weight("waterResistance") is var water && water != 1 ? water * 10 : 0,
                 FireResistance = Weight("fireResistance") is var fire && fire != 1 ? fire * 10 : 0,
                 EarthResistance = Weight("earthResistance") is var earth && earth != 1 ? earth * 10 : 0,
-                // 反应效果参数包：配表直接声明汲取/反弹强度，由钩子管线在结算中读取。
+                // 反应效果参数包：配表直接声明汲取/反弹/治疗加成强度，由钩子管线在结算中读取。
                 Effects = new CombatEffectProfile(
-                    ReadDouble(value, "hpDrainRatio"),
-                    ReadDouble(value, "mpDrainRatio"),
-                    ReadDouble(value, "damageReflectRatio"))
+                    JsonRead.Number(value, "hpDrainRatio"),
+                    JsonRead.Number(value, "mpDrainRatio"),
+                    JsonRead.Number(value, "damageReflectRatio"),
+                    JsonRead.Number(value, "healingBonusRatio"))
             };
-            var qiReward = ReadDouble(value, "qiReward", 0);
-            var experienceReward = ReadDouble(value, "experienceReward", 0);
-            var rootExpReward = ReadDouble(value, "rootExpReward", 0);
+            var qiReward = JsonRead.Number(value, "qiReward", 0);
+            var experienceReward = JsonRead.Number(value, "experienceReward", 0);
+            var rootExpReward = JsonRead.Number(value, "rootExpReward", 0);
             if (qiReward < 0 || experienceReward < 0 || rootExpReward < 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 的击杀奖励不能为负。");
-            result[id] = new CombatMonsterDefinition(id, ReadString(value, "name", id), budget, level, rank, stats, drops, skills,
+            result[id] = new CombatMonsterDefinition(id, JsonRead.Text(value, "name", id), budget, level, rank, stats, drops, skills,
                 qiReward, experienceReward, rootExpReward);
         }
         return result;
@@ -837,54 +869,31 @@ public sealed class GameDataCatalog
         var result = new Dictionary<string, CombatEncounterDefinition>(StringComparer.Ordinal);
         foreach (var value in raw)
         {
-            var id = ReadString(value, "id");
-            var spawns = ReadArray(value, "randomSpawns").Select(spawn => new CombatSpawnDefinition(
-                ReadString(spawn, "enemyId"), ReadDouble(spawn, "weight", 1), ReadDouble(spawn, "strength", 1))).ToArray();
+            var id = JsonRead.Text(value, "id", "");
+            var spawns = JsonRead.Array(value, "randomSpawns").Select(spawn => new CombatSpawnDefinition(
+                JsonRead.Text(spawn, "enemyId", ""), JsonRead.Number(spawn, "weight", 1), JsonRead.Number(spawn, "strength", 1))).ToArray();
             foreach (var spawn in spawns)
                 if (!monsters.ContainsKey(spawn.EnemyId)) throw new DomainException(DomainErrorCode.NotFound, $"遭遇 {id} 引用了不存在的怪物 {spawn.EnemyId}。");
-            var searchSeconds = ReadDouble(value, "searchMilliseconds", 5_000) / 1_000d;
-            var respawnSeconds = ReadDouble(value, "respawnMilliseconds", 5_000) / 1_000d;
-            var playerRespawnSeconds = ReadDouble(value, "playerRespawnMilliseconds", 180_000) / 1_000d;
+            var searchSeconds = JsonRead.Number(value, "searchMilliseconds", 5_000) / 1_000d;
+            var respawnSeconds = JsonRead.Number(value, "respawnMilliseconds", 5_000) / 1_000d;
+            var playerRespawnSeconds = JsonRead.Number(value, "playerRespawnMilliseconds", 180_000) / 1_000d;
             if (string.IsNullOrWhiteSpace(id) || spawns.Length == 0 || searchSeconds <= 0 || respawnSeconds <= 0 || playerRespawnSeconds <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"遭遇 {id} 配置无效。");
             result[id] = new CombatEncounterDefinition(
-                id, ReadString(value, "name", id), ReadDouble(value, "minBudget", 0), ReadDouble(value, "maxBudget", 0),
-                ReadDouble(value, "maxTotalStrength", ReadDouble(value, "maxBudget", 0)), searchSeconds, respawnSeconds,
-                playerRespawnSeconds, spawns, ReadStringArray(value, "eliteEnemyIds"), ReadStringArray(value, "bossEnemyIds"),
-                ReadInt(value, "battlesPerBoss", 0), ReadInt(value, "battlesPerElite", ReadInt(value, "eliteInterval", 5)));
+                id, JsonRead.Text(value, "name", id), JsonRead.Number(value, "minBudget", 0), JsonRead.Number(value, "maxBudget", 0),
+                JsonRead.Number(value, "maxTotalStrength", JsonRead.Number(value, "maxBudget", 0)), searchSeconds, respawnSeconds,
+                playerRespawnSeconds, spawns, JsonRead.StringArray(value, "eliteEnemyIds"), JsonRead.StringArray(value, "bossEnemyIds"),
+                JsonRead.Integer(value, "battlesPerBoss", 0), JsonRead.Integer(value, "battlesPerElite", JsonRead.Integer(value, "eliteInterval", 5)));
         }
         return result;
     }
 
-    private static string ReadString(JsonElement value, string property, string fallback = "") =>
-        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.String
-            ? element.GetString() ?? fallback : fallback;
+    /// <summary>把怪物技能槽的 triggerHpRatio 简写折叠为等价触发器（self 气血百分比 ≤ 阈值×100）。</summary>
+    private static JsonElement HpRatioTrigger(double ratio)
+        => JsonDocument.Parse(
+            $"{{\"dependency\":\"self\",\"condition\":\"current-hp-percentage\",\"comparator\":\"less-than-equal\",\"value\":{(ratio * 100).ToString("G17", System.Globalization.CultureInfo.InvariantCulture)}}}")
+            .RootElement.Clone();
 
-    private static double ReadDouble(JsonElement value, string property, double fallback = 0) =>
-        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.TryGetDouble(out var parsed)
-            ? parsed : fallback;
-
-    private static bool ReadBool(JsonElement value, string property, bool fallback = false) =>
-        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element)
-            ? element.ValueKind switch
-            {
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                _ => fallback
-            }
-            : fallback;
-
-    private static int ReadInt(JsonElement value, string property, int fallback = 0) =>
-        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.TryGetInt32(out var parsed)
-            ? parsed : fallback;
-
-    private static JsonElement[] ReadArray(JsonElement value, string property) =>
-        value.ValueKind == JsonValueKind.Object && value.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.Array
-            ? element.EnumerateArray().ToArray() : [];
-
-    private static string[] ReadStringArray(JsonElement value, string property) =>
-        ReadArray(value, property).Where(item => item.ValueKind == JsonValueKind.String)
-            .Select(item => item.GetString() ?? string.Empty).Where(item => item.Length > 0).ToArray();
 
     private static ReadOnlyDictionary<ItemId, ItemDefinition> NormalizeItems(IReadOnlyDictionary<ItemId, ItemDefinition>? items)
     {
@@ -926,8 +935,8 @@ public sealed class GameDataCatalog
                     if (n.ValueKind != JsonValueKind.Object) continue;
                     var id = n.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
                     var name = n.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : id;
-                    var x = n.TryGetProperty("x", out var xProp) && xProp.TryGetDouble(out var px) ? px : 0;
-                    var y = n.TryGetProperty("y", out var yProp) && yProp.TryGetDouble(out var py) ? py : 0;
+                    var x = JsonRead.Number(n, "x");
+                    var y = JsonRead.Number(n, "y");
                     if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name)) continue;
                     if (!graph.ContainsNode(id))
                     {
@@ -957,7 +966,7 @@ public sealed class GameDataCatalog
                     var id = e.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
                     var from = e.TryGetProperty("fromNodeId", out var fromProp) ? fromProp.GetString() : null;
                     var to = e.TryGetProperty("toNodeId", out var toProp) ? toProp.GetString() : null;
-                    var duration = e.TryGetProperty("durationSeconds", out var dProp) && dProp.TryGetDouble(out var pd) ? pd : 1;
+                    var duration = JsonRead.Number(e, "durationSeconds", 1);
                     if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)) continue;
                     if (duration <= 0) duration = 1;
 

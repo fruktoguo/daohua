@@ -55,24 +55,24 @@ const EnemyCard = memo(function EnemyCard({
           </FloatingTooltip>
         )}
       </div>
-      <FloatingTooltip placement="top" title={t('combat.encounter.hpTip', { n: formatNumber(enemy.maxHitpoints) })} tone="jade">
+      <FloatingTooltip placement="top" title={t('combat.encounter.hpTip', { n: formatNumber(enemy.attributes.maxHitpoints) })} tone="jade">
         <div className="combat-resource-line">
           <span>{t('combat.attr.hp')}</span>
           <div><i /></div>
-          <strong>{formatNumber(enemy.maxHitpoints)}</strong>
+          <strong>{formatNumber(enemy.attributes.maxHitpoints)}</strong>
         </div>
       </FloatingTooltip>
-      <FloatingTooltip placement="top" title={t('combat.encounter.manaTip', { n: formatNumber(enemy.maxManapoints) })} tone="qi">
+      <FloatingTooltip placement="top" title={t('combat.encounter.manaTip', { n: formatNumber(enemy.attributes.maxManapoints) })} tone="qi">
         <div className="combat-resource-line mana">
           <span>{t('combat.attr.mp')}</span>
           <div><i /></div>
-          <strong>{formatNumber(enemy.maxManapoints)}</strong>
+          <strong>{formatNumber(enemy.attributes.maxManapoints)}</strong>
         </div>
       </FloatingTooltip>
       <dl className="combat-enemy-stats">
-        <div><dt>{t('combat.encounter.statDamage')}</dt><dd>{formatNumber(enemy.maxDamage)}</dd></div>
-        <div><dt>{t('combat.encounter.statInterval')}</dt><dd>{formatNumber(enemy.attackIntervalMilliseconds / 1000)}s</dd></div>
-        <div><dt>{t('combat.encounter.statArmor')}</dt><dd>{formatNumber(enemy.armor)}</dd></div>
+        <div><dt>{t('combat.encounter.statDamage')}</dt><dd>{formatNumber(enemy.category === 'spell' ? enemy.attributes.spellAttack : enemy.attributes.physicalAttack)}</dd></div>
+        <div><dt>{t('combat.encounter.statInterval')}</dt><dd>{formatNumber(enemy.attributes.attackIntervalMilliseconds / 1000)}s</dd></div>
+        <div><dt>{t('combat.encounter.statArmor')}</dt><dd>{formatNumber(enemy.attributes.armor)}</dd></div>
       </dl>
     </article>
   )

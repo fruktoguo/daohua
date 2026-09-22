@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback } from 'react'
-import { describeAbility, describeCombatTrigger, formatAbilityCategory, formatNumber } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
@@ -311,12 +311,6 @@ function signedPercent(value: number): string {
   return `${percent > 0 ? '+' : ''}${percent}%`
 }
 
-function multiplierPercent(value?: number | null): string | null {
-  if (value === undefined || value === null) return null
-  const delta = value - 1
-  return Math.abs(delta) < 0.000001 ? null : signedPercent(delta)
-}
-
 /**
  * 提取丹药/消耗品的直接主干效果（留在主卡片）
  * 包含即时回血、即时回蓝、冷却时长、使用条件等
@@ -345,13 +339,13 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />
     )
   }
-  if (definition.recoverySeconds > 0) {
+  if (definition.isContinuous && definition.durationSeconds && definition.durationSeconds > 0) {
     lines.push(
       <PillBonusLabel
         key="item-duration"
         label={t('market.effect.recoveryDuration')}
         tone="teal"
-        value={`${formatNumber(definition.recoverySeconds)}s`}
+        value={`${formatNumber(definition.durationSeconds)}s`}
       />
     )
   }
@@ -365,37 +359,35 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />
     )
   }
-  if (definition.triggerAtCombatStart) {
-    lines.push(
-      <span className="daohua-floating-card-line-text" key="item-trigger-start">
-        {t('market.effect.useAtCombatStart')}
-      </span>
-    )
-  }
-  for (const trigger of definition.defaultCombatTriggers ?? []) {
-    lines.push(
-      <span className="daohua-floating-card-line-text" key={`trigger-${trigger.condition}`}>
-        {describeCombatTrigger(trigger)}
-      </span>
-    )
-  }
-  if (
-    (definition.defaultCombatTriggers?.length ?? 0) === 0 &&
-    (definition.hitpointRestore > 0 || definition.manapointRestore > 0) &&
-    definition.triggerHpRatio > 0
-  ) {
-    lines.push(
-      <span className="daohua-floating-card-line-text" key="item-auto-use">
-        {t('market.effect.autoUseBelowHp', { percent: formatNumber(Math.round(definition.triggerHpRatio * 100)) })}
-      </span>
-    )
-  }
   return lines
 }
 
+/** statRatios 通用属性比率字典 key -> i18n 词条键；未登记的新属性回退原始 wire key */
+const STAT_RATIO_LABEL_KEYS: Record<string, string> = {
+  maxHitpoints: 'market.stat.maxHitpoints',
+  maxManapoints: 'market.stat.maxManapoints',
+  physicalAttack: 'market.stat.physicalAttack',
+  spellAttack: 'market.stat.spellAttack',
+  physicalArmor: 'market.stat.physicalArmor',
+  spellResistance: 'market.stat.spellResistance',
+  accuracy: 'market.stat.accuracy',
+  evasion: 'market.stat.evasion',
+  criticalChance: 'market.stat.critChance',
+  criticalAvoidance: 'market.stat.critAvoidance',
+  break: 'market.stat.breakPower',
+  parry: 'market.stat.parryResolve',
+  hitpointRegen: 'market.stat.hitpointRegen',
+  manapointRegen: 'market.stat.manapointRegen',
+  metalResistance: 'market.stat.metalResistance',
+  woodResistance: 'market.stat.woodResistance',
+  waterResistance: 'market.stat.waterResistance',
+  fireResistance: 'market.stat.fireResistance',
+  earthResistance: 'market.stat.earthResistance',
+}
+
 /**
- * 通用 Buff 数值效果行解析器
- * 能够将任意 Buff 定义、配置或运行时实例中的所有属性字段解析为格式化中文词条
+ * 通用 Buff 数值效果行解析器：唯一 Buff 形状（hpRegen/mpRegen/attackSpeedRatio/
+ * damageAbsorptionRatio/statRatios）解析为格式化词条；statRatios 键按属性名渲染比率。
  */
 export function describeBuffEffectLines(buff: {
   buffId?: string | null
@@ -404,80 +396,34 @@ export function describeBuffEffectLines(buff: {
   hpRegen?: number
   mpRegen?: number
   damageAbsorptionRatio?: number
-  damageRatio?: number
   attackSpeedRatio?: number
-  attackLevelRatio?: number
-  armor?: number
-  magicResistance?: number
-  criticalChance?: number
-  criticalDamageRatio?: number
-  tenacity?: number
-  qiGainMultiplier?: number
-  gatheringOutputMultiplier?: number
-  alchemyOutputMultiplier?: number
-  modifiers?: Record<string, number> | null
+  statRatios?: Record<string, number> | null
 }): string[] {
   const t = getT()
   const lines: string[] = []
 
-  // 1. 每秒回复
-  if (buff.hpRegen && buff.hpRegen > 0) {
+  // 1. 每 5 秒结算点回复
+  if (buff.hpRegen && buff.hpRegen !== 0) {
     lines.push(t('market.effect.hpRegenPerSecond', { n: formatNumber(buff.hpRegen) }))
   }
-  if (buff.mpRegen && buff.mpRegen > 0) {
+  if (buff.mpRegen && buff.mpRegen !== 0) {
     lines.push(t('market.effect.mpRegenPerSecond', { n: formatNumber(buff.mpRegen) }))
   }
 
-  // 2. 伤害与减伤
+  // 2. 减伤与攻速
   if (buff.damageAbsorptionRatio && buff.damageAbsorptionRatio !== 0) {
     lines.push(t('market.effect.damageReductionPct', { n: Math.round(buff.damageAbsorptionRatio * 100) }))
   }
-  if (buff.damageRatio && buff.damageRatio !== 0) {
-    lines.push(`${t('market.stat.damage')} ${signedPercent(buff.damageRatio)}`)
-  }
-
-  // 3. 攻速与命中闪避
   if (buff.attackSpeedRatio && buff.attackSpeedRatio !== 0) {
     lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
   }
-  if (buff.attackLevelRatio && buff.attackLevelRatio !== 0) {
-    lines.push(`${t('market.stat.accuracy')} ${signedPercent(buff.attackLevelRatio)}`)
-  }
 
-  // 4. 防御与抗性
-  if (buff.armor && buff.armor !== 0) {
-    lines.push(t('market.effect.armorFlat', { n: formatNumber(buff.armor) }))
-  }
-  if (buff.magicResistance && buff.magicResistance !== 0) {
-    lines.push(t('market.effect.magicResFlat', { n: formatNumber(buff.magicResistance) }))
-  }
-
-  // 5. 暴击与韧性
-  if (buff.criticalChance && buff.criticalChance !== 0) {
-    lines.push(t('market.effect.critChancePct', { n: Math.round(buff.criticalChance * 100) }))
-  }
-  if (buff.criticalDamageRatio && buff.criticalDamageRatio > 1.5) {
-    lines.push(t('market.effect.critDamagePct', { n: Math.round((buff.criticalDamageRatio - 1.5) * 100) }))
-  }
-  if (buff.tenacity && buff.tenacity !== 0) {
-    lines.push(t('market.effect.tenacityFlat', { n: formatNumber(buff.tenacity) }))
-  }
-
-  // 6. 修炼与技艺收益
-  const qi = multiplierPercent(buff.qiGainMultiplier)
-  if (qi) lines.push(t('market.effect.qiGainBonus', { value: qi }))
-
-  const gathering = multiplierPercent(buff.gatheringOutputMultiplier)
-  if (gathering) lines.push(t('market.effect.gatheringOutput', { value: gathering }))
-
-  const alchemy = multiplierPercent(buff.alchemyOutputMultiplier)
-  if (alchemy) lines.push(t('market.effect.alchemyOutput', { value: alchemy }))
-
-  // 7. 自定义修饰器字典
-  if (buff.modifiers) {
-    for (const [modKey, modVal] of Object.entries(buff.modifiers)) {
+  // 3. 通用属性比率字典（领域 BuffModifiers.statRatios 透传键）
+  if (buff.statRatios) {
+    for (const [modKey, modVal] of Object.entries(buff.statRatios)) {
       if (modVal !== 0) {
-        lines.push(`${modKey}: ${signedPercent(modVal)}`)
+        const label = STAT_RATIO_LABEL_KEYS[modKey] ? t(STAT_RATIO_LABEL_KEYS[modKey]) : modKey
+        lines.push(`${label} ${signedPercent(modVal)}`)
       }
     }
   }
@@ -580,9 +526,6 @@ export function resolveItemAsideCards(
     if (buff.durationSeconds > 0) {
       subParts.push(t('market.aside.duration', { seconds: formatNumber(buff.durationSeconds) }))
     }
-    if (buff.maxStacks > 1) {
-      subParts.push(t('market.aside.maxStacks', { stacks: formatNumber(buff.maxStacks) }))
-    }
 
     cards.push({
       id: `aside-buff-${buff.name}`,
@@ -643,16 +586,6 @@ export function resolveManualAsideCard(
   const subtitle = styleLabel ? `${styleLabel} · ${categoryLabel}` : categoryLabel
 
   const lines = [...abilityInfo.lines]
-  // 结构性去重：默认触发条件里已包含「自身生命低于阈值」时不再重复追加自动使用提示
-  const hasHpTrigger = (ability.defaultTriggers ?? []).some(
-    (tr) =>
-      tr.dependency === 'self' &&
-      tr.condition === 'current-hp-percentage' &&
-      (tr.comparator === 'less-than' || tr.comparator === 'less-than-equal')
-  )
-  if (ability.triggerHpRatio && ability.triggerHpRatio > 0 && !hasHpTrigger) {
-    lines.push(t('market.effect.autoUseBelowHp', { percent: Math.round(ability.triggerHpRatio * 100) }))
-  }
 
   return {
     id: `aside-manual-${ability.abilityId}`,
@@ -819,109 +752,54 @@ function describeEquipmentEffects(
     tenacity: 'market.stat.resilience',
   }
 
-  const hasStructured = Boolean(
-    (equipment.baseStatRatios && Object.keys(equipment.baseStatRatios).length > 0) ||
-    (equipment.flatStats && Object.keys(equipment.flatStats).length > 0)
-  )
-
-  // ⚠️ 彻底移除攻击间隔展示逻辑（修仙规则中装备不带攻击间隔属性）
-
-  if (hasStructured) {
-    if (equipment.baseStatRatios) {
-      for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
-        if (val !== 0) {
-          const label = ratioLabelKeys[key] ? t(ratioLabelKeys[key]) : key
-          const tone = STAT_TONE_MAP[key] ?? 'default'
+  // 装备数值唯一真源为配表原始数值块（baseStatRatios/flatStats），协议不再下发派生 stats 幻影块。
+  if (equipment.baseStatRatios) {
+    for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
+      if (val !== 0) {
+        const label = ratioLabelKeys[key] ? t(ratioLabelKeys[key]) : key
+        const tone = STAT_TONE_MAP[key] ?? 'default'
+        lines.push(
+          <PillBonusLabel
+            key={`ratio-${key}`}
+            label={label}
+            tone={tone}
+            value={signedPercent(val)}
+          />
+        )
+      }
+    }
+  }
+  if (equipment.flatStats) {
+    for (const [key, val] of Object.entries(equipment.flatStats)) {
+      if (val !== 0) {
+        const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
+        const tone = STAT_TONE_MAP[key] ?? 'default'
+        if (key === 'criticalChance' && val <= 1.0) {
           lines.push(
             <PillBonusLabel
-              key={`ratio-${key}`}
+              key={`flat-${key}`}
               label={label}
               tone={tone}
-              value={signedPercent(val)}
+              value={`+${formatNumber(val * 100)}%`}
+            />
+          )
+        } else {
+          // 计算强化带来的加成
+          const bonusPerLevel = equipment.enhancementBonus?.[key] ?? 0
+          const totalBonus = bonusPerLevel * enhancementLevel
+          lines.push(
+            <PillBonusLabel
+              key={`flat-${key}`}
+              label={label}
+              suffix={totalBonus > 0 ? ` (+${formatNumber(totalBonus)})` : undefined}
+              tone={tone}
+              value={`+${formatNumber(val)}`}
             />
           )
         }
       }
     }
-    if (equipment.flatStats) {
-      for (const [key, val] of Object.entries(equipment.flatStats)) {
-        if (val !== 0) {
-          const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
-          const tone = STAT_TONE_MAP[key] ?? 'default'
-          if (key === 'criticalChance' && val <= 1.0) {
-            lines.push(
-              <PillBonusLabel
-                key={`flat-${key}`}
-                label={label}
-                tone={tone}
-                value={`+${formatNumber(val * 100)}%`}
-              />
-            )
-          } else {
-            // 计算强化带来的加成
-            const bonusPerLevel = equipment.enhancementBonus
-              ? (equipment.enhancementBonus as unknown as Record<string, number>)[key] ?? 0
-              : 0
-            const totalBonus = bonusPerLevel * enhancementLevel
-            lines.push(
-              <PillBonusLabel
-                key={`flat-${key}`}
-                label={label}
-                suffix={totalBonus > 0 ? ` (+${formatNumber(totalBonus)})` : undefined}
-                tone={tone}
-                value={`+${formatNumber(val)}`}
-              />
-            )
-          }
-        }
-      }
-    }
-    return lines
   }
-
-  // 兜底回退：当没有结构化字段时读取 stats
-  const stats = equipment.stats
-  const addPercent = (key: string, label: string, value: number) => {
-    if (value !== 0) {
-      const tone = STAT_TONE_MAP[key] ?? 'default'
-      lines.push(
-        <PillBonusLabel
-          key={`stat-${key}`}
-          label={label}
-          tone={tone}
-          value={signedPercent(value)}
-        />
-      )
-    }
-  }
-  const addNumber = (key: string, label: string, value: number) => {
-    if (value !== 0) {
-      const tone = STAT_TONE_MAP[key] ?? 'default'
-      lines.push(
-        <PillBonusLabel
-          key={`stat-${key}`}
-          label={label}
-          tone={tone}
-          value={`+${formatNumber(value)}`}
-        />
-      )
-    }
-  }
-  addPercent('damageRatio', t('market.stat.damage'), stats.damageRatio)
-  addPercent('accuracyRatio', t('market.stat.accuracy'), stats.accuracyRatio)
-  addPercent('attackSpeedRatio', t('market.stat.attackSpeed'), stats.attackSpeedRatio)
-  addPercent('evasionRatio', t('market.stat.evasion'), stats.evasionRatio)
-  addPercent('armor', t('market.stat.armor'), stats.armor)
-  addPercent('magicResistance', t('market.stat.magicRes'), stats.magicResistance)
-  addNumber('tenacity', t('market.stat.tenacity'), stats.tenacity)
-  addPercent('penetrationRatio', t('market.stat.penetration'), stats.penetrationRatio)
-  addPercent('lifeStealRatio', t('market.stat.lifeSteal'), stats.lifeStealRatio)
-  addPercent('armorDamageRatio', t('market.stat.armorDamage'), stats.armorDamageRatio)
-  addPercent('hpDrainRatio', t('market.stat.hpDrain'), stats.hpDrainRatio)
-  addPercent('criticalChance', t('market.stat.critChance'), stats.criticalChance)
-  addPercent('criticalDamageRatio', t('market.stat.critDamage'), stats.criticalDamageRatio)
-  addPercent('criticalAvoidance', t('market.stat.critAvoidance'), stats.criticalAvoidance)
-  addPercent('damageAbsorptionRatio', t('market.stat.damageAbsorption'), stats.damageAbsorptionRatio)
   return lines
 }
 
@@ -974,9 +852,11 @@ export function createBuffAsideCard(
   const lines = describeBuffEffectLines(buff)
 
   const isDebuff =
-    (buff.damageRatio !== undefined && buff.damageRatio < 0) ||
-    (buff.attackSpeedRatio !== undefined && buff.attackSpeedRatio < 0) ||
-    (buff.qiGainMultiplier !== undefined && buff.qiGainMultiplier < 1)
+    buff.attackSpeedRatio < 0 ||
+    buff.damageAbsorptionRatio < 0 ||
+    buff.hpRegen < 0 ||
+    buff.mpRegen < 0 ||
+    Object.values(buff.statRatios ?? {}).some(value => value < 0)
 
   const tone: FloatingTone = isDebuff ? 'danger' : 'gold'
   const resolvedMark = mark ?? (isDebuff ? t('market.aside.debuff') : t('market.aside.buff'))

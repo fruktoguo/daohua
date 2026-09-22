@@ -74,7 +74,7 @@ export function ReferenceSelect({
         return lookups.monsterList.map(m => ({
           id: m.id,
           title: m.name,
-          subtitle: `Lv.${m.level || 1} · T${m.tier || 1} · ${m.rank || '普通'}`,
+          subtitle: `Lv.${m.level || 1} · ${m.rank || 'minion'}`,
           badge: m.rank,
           badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20'
         }));

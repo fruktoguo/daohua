@@ -2,7 +2,7 @@
  * 行动产出、持续消耗品加成与动态加成解算器
  */
 
-import type { ActionDefinition, ActionType, ActionYieldPeriod, AutoUseSlot, Buff, InventoryItem, ItemDefinition, Stats } from './types'
+import type { ActionDefinition, ActionType, ActionYieldPeriod, AutoUseSlot, InventoryItem, ItemDefinition, Stats } from './types'
 import { calculateRealmProgress } from './combatConstants'
 import { getT } from '../i18n'
 
@@ -75,7 +75,6 @@ interface CalculateActionParams {
   inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>
   items: readonly ItemDefinition[] | ItemDefinition[]
   autoUseSlots?: Record<ActionType, AutoUseSlot[]>
-  buffs?: readonly Buff[] | Buff[]
   world?: {
     locationName?: string
     cultivationMultiplier?: number
@@ -99,7 +98,6 @@ export function calculateActionYieldPreview({
   inventory,
   items,
   autoUseSlots,
-  buffs = [],
   world,
   stats,
 }: CalculateActionParams): ActionYieldPreview {
@@ -107,7 +105,6 @@ export function calculateActionYieldPreview({
   const isCultivation = action.type === 'cultivation'
   const actionType = action.type
   const baseDurationSeconds = action.durationSeconds || 10
-  const nowUnixSeconds = Math.floor(Date.now() / 1000)
 
   const bonuses: ActiveBonusDetail[] = []
 
@@ -164,35 +161,9 @@ export function calculateActionYieldPreview({
     }
   }
 
-  // 3. 状态增益 (Buffs)
-  let buffMultiplier = 1.0
-  for (const buff of buffs) {
-    if (buff.expiresAtUnixSeconds <= nowUnixSeconds) continue
-    let bMult = 1.0
-    if (isCultivation && buff.qiGainMultiplier && buff.qiGainMultiplier > 0) {
-      bMult = buff.qiGainMultiplier
-    } else if (actionType === 'exploration' && buff.gatheringOutputMultiplier && buff.gatheringOutputMultiplier > 0) {
-      bMult = buff.gatheringOutputMultiplier
-    } else if (actionType === 'alchemy' && buff.alchemyOutputMultiplier && buff.alchemyOutputMultiplier > 0) {
-      bMult = buff.alchemyOutputMultiplier
-    }
-
-    if (bMult > 1.0) {
-      // 同类 Buff 增益取最高值参与总倍率（不连乘）；注意与上方消耗品的连乘规则不同。
-      buffMultiplier = Math.max(buffMultiplier, bMult)
-      const percent = Math.round((bMult - 1.0) * 100)
-      bonuses.push({
-        sourceName: buff.name,
-        tag: `+${percent}%`,
-        type: 'buff',
-        multiplier: bMult,
-        description: t('app.action.bonusBuffDesc', { name: buff.name, percent }),
-      })
-    }
-  }
-
-  // 综合倍率
-  const totalMultiplier = autoUseMultiplier * worldMultiplier * buffMultiplier
+  // 活跃 Buff 只携带战斗属性修饰器（hpRegen/mpRegen/attackSpeedRatio/damageAbsorptionRatio/statRatios），
+  // 不再承载行动收益倍率——收益加成唯一通道为持续消耗品（autoUseSlots）与灵脉/建筑倍率。
+  const totalMultiplier = autoUseMultiplier * worldMultiplier
 
   // 4. 修炼专属境界判定（产出数值统一由 yields 驱动）
   let cultivationDetail: CultivationYieldDetail | undefined

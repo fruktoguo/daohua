@@ -87,8 +87,8 @@ const EnemyReference = memo(function EnemyReference({
     if (enemy?.element && enemy.element !== 'none') {
       stats.push({ label: t('combat.log.statElement'), value: t(`combat.encounter.element.${enemy.element}`), tone: 'purple' })
     }
-    if (enemy?.maxHitpoints) stats.push({ label: t('combat.log.statHp'), value: formatNumber(enemy.maxHitpoints), tone: 'danger' })
-    if (enemy?.maxManapoints) stats.push({ label: t('combat.log.statMp'), value: formatNumber(enemy.maxManapoints), tone: 'qi' })
+    if (enemy?.attributes.maxHitpoints) stats.push({ label: t('combat.log.statHp'), value: formatNumber(enemy.attributes.maxHitpoints), tone: 'danger' })
+    if (enemy?.attributes.maxManapoints) stats.push({ label: t('combat.log.statMp'), value: formatNumber(enemy.attributes.maxManapoints), tone: 'qi' })
 
     return (
       <FloatingPopover

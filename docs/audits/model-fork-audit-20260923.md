@@ -86,3 +86,17 @@
 
 - `PlayerAttributeResolver.cs:87` 无配表兜底 `interval=2` 已修正为 `1`（审计中确认的旧模型残留，随本次一并落地）。
 - 「灵爆」概念全仓仅存于本任务记录与历史审计文档（预期保留）。
+
+## 六、整改状态（TASK-20260923-04 分组立项）
+
+本审计发现已按边界拆分为五个并行修复分组，各组归属如下：
+
+| 分组 | 文件范围 | 覆盖条目 | 归属 |
+| --- | --- | --- | --- |
+| **A · 领域引擎** | `src/Domain/`、`src/Server/` 领域侧 | #1 触发器求值器收敛、#2 Buff/支援技能单管线（破阵子 `effectType` 失效）、#3 玩家技能纳入 `PendingSkillIndex` 单时间线/灵力双池、#7 成长曲线双份复制、#8 怪物技能校验与 `defaultTriggers` 双轨、#9 快照归一、#10 掉落 roll 拆分、#14 `healingBonusRatio` 零消费 | 领域分组任务 |
+| **B · 协议与前端** | `src/Protocol`、`ProtocolSnapshotMapper`、`frontend/` | #6 `combat.attributes` 真值下发与前端估算删除、#13 buffs wire 占位字段、相位命名 `respawn`/`death` 错位、斗法灵力条硬编码、双时钟域混用、前端死代码清理 | 协议前端分组任务 |
+| **C · 配置编辑器** | `tools/config-editor/` | #4 编辑器 schema 与真实 JSON 脱节重写、DataTool 未消费键告警 | 编辑器分组任务 |
+| **D · 文档与数据** | `docs/design/`、`tools/combat-simulator.html`、`expected-attributes.json` 死数据段 | #5 模拟器「非权威演示工具」标注、#11 死数据陈旧公式（`1.05^强化`、`Root%=Level*0.03`、幻影流派描述）、#12 文档幻影技能/旧口径清理、`generic-map-and-encounter-system.md:174`「1v1 逐只推进」过时声明 | **本任务（TASK-20260923-04 文档与数据部分）** |
+| **E · 六维命名收敛** | `Swordsmanship`/`Talisman` 等六维字段命名 | #12 关联：代码字段名与中文语义错位（Swordsmanship=身法、Talisman=神识），命名归一由集成阶段统一处理，文档侧已按身法/神识口径书写 | 集成阶段统一处理 |
+
+> D 组已落地：模拟器横幅与旧口径文案、benchmark/expected/master-design 三份文档幻影描述、`K = ceil(level/12)` 两处修正为 `TierAt` 锚点计数、`expected-attributes.json` 死数据段落（`rules.*` 与 `benchmarkCombatSkillsModel`）对齐真实实现；运行时消费键 `baseAttributeAnchors`/`realmProgression` 数值未动。

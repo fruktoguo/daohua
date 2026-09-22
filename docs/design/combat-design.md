@@ -130,7 +130,7 @@
 
 1. **第一层：大类抗性非线性平方减伤（护甲 / 法抗）**：
    $$\text{DamageAfterCategory} = \frac{\mathbf{RawDamage^2}}{\mathbf{RawDamage} + \mathbf{RES} \times K + 1.0}$$
-   - **动态抗性系数 $K$**：按等级推导 `K = ceil(level / 12)`，封顶 `12`（T1 得 `1.0`、T2 得 `2.0`，直至 T12 段 `12.0`，详见基准表）。
+   - **动态抗性系数 $K$**：等于当前境界阶位 `Tier`，由 `BaseAttributeCatalog.TierAt(level)` 锚点计数推导（`baseAttributeAnchors` 起始等级 `1/18/30/42/54/66/78/90/102/114/126/127`，等级不超过 `level` 的锚点个数即为 `K`；T1 得 `1.0`、T2 得 `2.0`，直至 T12 段 `12.0`，详见基准表）。
    - **有效抗性 ($\mathbf{RES}$)**：计算穿透比例后实际起效的大类抗性。物理伤害对应守方护甲（`Armor`），术法伤害对应守方法抗（`MagicResistance`）。
    - **公式特性**：单发原始伤害越高，天然穿甲能力越强；法系凭借超大 AP 具备极强天然破防优势。
 

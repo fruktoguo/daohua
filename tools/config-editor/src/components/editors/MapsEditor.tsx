@@ -5,7 +5,9 @@
 
 import { useState, useMemo } from 'react';
 import { useConfigContext } from '../../context/ConfigContext';
-import type { WorldMapDefinition, WorldMapNodeDefinition, WorldMapEdgeDefinition } from '../../types/config';
+import type { WorldMapDefinition, WorldMapNodeDefinition, WorldMapEdgeDefinition, WorldMapEntityDefinition } from '../../types/config';
+import { BUILDABLE_TEMPLATES } from '../../types/enums';
+import { EnumSelect } from '../common/EnumSelect';
 import { NumberInput } from '../common/NumberInput';
 import { MultiReferenceSelect } from '../common/ReferenceSelect';
 
@@ -73,9 +75,10 @@ export function MapsEditor() {
       return;
     }
     const nextEdge: WorldMapEdgeDefinition = {
+      id: `edge.new-${Date.now().toString(36)}`,
       fromNodeId: currentMap.nodes[0].id,
       toNodeId: currentMap.nodes[1].id,
-      distance: 10
+      durationSeconds: 10
     };
     handleUpdateMap({ edges: [...(currentMap.edges || []), nextEdge] });
   };
@@ -203,6 +206,16 @@ export function MapsEditor() {
                       ✕
                     </button>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-500 text-xs shrink-0">路径 ID:</span>
+                    <input
+                      type="text"
+                      value={edge.id}
+                      onChange={e => handleUpdateEdge(idx, { id: e.target.value })}
+                      placeholder="edge.xxx（引擎要求非空）"
+                      className="flex-1 bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-md px-2.5 py-0.5 text-xs font-mono text-zinc-100 outline-none"
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <select
                       value={edge.fromNodeId}
@@ -225,12 +238,12 @@ export function MapsEditor() {
                     </select>
                   </div>
                   <div className="flex items-center gap-2 pt-1">
-                    <span className="text-zinc-500 text-xs">距离 / 赶路耗时:</span>
+                    <span className="text-zinc-500 text-xs">赶路耗时 (秒):</span>
                     <input
                       type="number"
                       min={1}
-                      value={edge.distance}
-                      onChange={e => handleUpdateEdge(idx, { distance: parseInt(e.target.value) || 1 })}
+                      value={edge.durationSeconds}
+                      onChange={e => handleUpdateEdge(idx, { durationSeconds: parseFloat(e.target.value) || 1 })}
                       className="w-20 bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-md px-2.5 py-0.5 text-xs text-right font-mono text-zinc-100 outline-none"
                     />
                   </div>
@@ -355,6 +368,15 @@ export function MapsEditor() {
                   unit="×"
                 />
 
+                <EnumSelect
+                  label="可建模板 (BuildableTemplate)"
+                  description="与 BuildableList 二选一；皆空则不可建造"
+                  value={currentNode.buildableTemplate}
+                  options={BUILDABLE_TEMPLATES}
+                  onChange={v => handleUpdateNode(currentNode.id, { buildableTemplate: v })}
+                  clearLabel="— 不可建造 —"
+                />
+
                 <div className="md:col-span-3 flex flex-col gap-1.5">
                   <label className="text-xs font-medium text-zinc-300 tracking-tight">区域生态描述</label>
                   <input
@@ -364,6 +386,34 @@ export function MapsEditor() {
                     className="w-full bg-zinc-900/90 border border-zinc-800 focus:border-indigo-500 rounded-lg px-3 py-1.5 text-xs text-zinc-200 outline-none"
                   />
                 </div>
+              </div>
+
+              {/* 节点卡片展示覆盖（StaticGameCatalogMapper 投影字段） */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-zinc-800/80">
+                <NumberInput
+                  label="展示预算下限 (MinBudget)"
+                  value={currentNode.minBudget}
+                  onChange={v => handleUpdateNode(currentNode.id, { minBudget: v })}
+                  min={0}
+                />
+                <NumberInput
+                  label="展示预算上限 (MaxBudget)"
+                  value={currentNode.maxBudget}
+                  onChange={v => handleUpdateNode(currentNode.id, { maxBudget: v })}
+                  min={0}
+                />
+                <NumberInput
+                  label="展示精英间隔 (EliteInterval)"
+                  value={currentNode.eliteInterval}
+                  onChange={v => handleUpdateNode(currentNode.id, { eliteInterval: v })}
+                  min={0}
+                />
+                <NumberInput
+                  label="展示首领间隔 (BossInterval)"
+                  value={currentNode.bossInterval}
+                  onChange={v => handleUpdateNode(currentNode.id, { bossInterval: v })}
+                  min={0}
+                />
               </div>
 
               {/* 关联可用行动与遭遇 */}
@@ -386,10 +436,139 @@ export function MapsEditor() {
                   placeholder="+ 添加关联的秘境遭遇..."
                 />
               </div>
+
+              {/* 节点 NPC 与建筑实体（对象数组：id/name/kind/description/effect） */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2 border-t border-zinc-800/80">
+                <NodeEntityListEditor
+                  label="节点 NPC (Npcs)"
+                  entityKind="npc"
+                  entities={currentNode.npcs}
+                  onChange={list => handleUpdateNode(currentNode.id, { npcs: list })}
+                />
+
+                <NodeEntityListEditor
+                  label="节点建筑 (Buildings)"
+                  entityKind="building"
+                  entities={currentNode.buildings}
+                  onChange={list => handleUpdateNode(currentNode.id, { buildings: list })}
+                />
+              </div>
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// 节点 NPC / 建筑实体列表编辑器：实体为对象数组 {id, name, kind, description, effect}
+function NodeEntityListEditor({
+  label,
+  entityKind,
+  entities = [],
+  onChange
+}: {
+  label: string;
+  entityKind: 'npc' | 'building';
+  entities?: WorldMapEntityDefinition[];
+  onChange: (entities: WorldMapEntityDefinition[] | undefined) => void;
+}) {
+  const currentEntities = entities || [];
+
+  const handleAdd = () => {
+    const next: WorldMapEntityDefinition = {
+      id: `${entityKind}.new-${Date.now().toString(36)}`,
+      name: entityKind === 'npc' ? '新 NPC' : '新建筑',
+      kind: entityKind,
+      description: '',
+      effect: ''
+    };
+    onChange([...currentEntities, next]);
+  };
+
+  const handleUpdate = (index: number, patch: Partial<WorldMapEntityDefinition>) => {
+    const next = [...currentEntities];
+    next[index] = { ...next[index], ...patch };
+    onChange(next);
+  };
+
+  const handleRemove = (index: number) => {
+    const next = currentEntities.filter((_, i) => i !== index);
+    onChange(next.length > 0 ? next : undefined);
+  };
+
+  const inputCls =
+    'w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-md px-2.5 py-1 text-xs text-zinc-100 outline-none';
+
+  return (
+    <div className="p-4 bg-zinc-900/60 border border-zinc-800/80 rounded-xl flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-semibold text-zinc-200 tracking-tight">{label}</label>
+          <span className="px-2 py-0.5 text-[10px] font-mono font-medium rounded-full bg-zinc-800 text-zinc-400">
+            {currentEntities.length} 项
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2.5">
+        {currentEntities.map((entity, idx) => (
+          <div
+            key={idx}
+            className="p-3 bg-zinc-900/90 border border-zinc-800 rounded-lg flex flex-col gap-2 text-xs hover:border-zinc-700 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-zinc-300">{entity.name || entity.id || `实体 #${idx + 1}`}</span>
+              <button
+                type="button"
+                onClick={() => handleRemove(idx)}
+                className="text-zinc-500 hover:text-rose-400 p-1 hover:bg-zinc-800 rounded transition-colors text-sm leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={entity.id}
+                onChange={e => handleUpdate(idx, { id: e.target.value })}
+                placeholder={`${entityKind}.xxx 唯一 ID`}
+                className={`${inputCls} font-mono`}
+              />
+              <input
+                type="text"
+                value={entity.name || ''}
+                onChange={e => handleUpdate(idx, { name: e.target.value })}
+                placeholder="显示名称"
+                className={inputCls}
+              />
+              <input
+                type="text"
+                value={entity.description || ''}
+                onChange={e => handleUpdate(idx, { description: e.target.value })}
+                placeholder="背景描述"
+                className={`${inputCls} md:col-span-2`}
+              />
+              <input
+                type="text"
+                value={entity.effect || ''}
+                onChange={e => handleUpdate(idx, { effect: e.target.value })}
+                placeholder="作用说明（effect）"
+                className={`${inputCls} md:col-span-2`}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={handleAdd}
+        className="w-full py-2 bg-zinc-900/40 hover:bg-zinc-800/80 border border-dashed border-zinc-700 text-xs font-medium text-zinc-400 hover:text-indigo-300 rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5"
+      >
+        <span>+ 添加{entityKind === 'npc' ? ' NPC' : '建筑'}实体</span>
+      </button>
     </div>
   );
 }

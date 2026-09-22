@@ -29,7 +29,7 @@ export interface GlobalLookups {
   abilities: Map<string, AbilityConfig>;
   abilityList: { id: string; name: string; style?: string; category?: string; element?: string }[];
   monsters: Map<string, CombatantConfig>;
-  monsterList: { id: string; name: string; rank?: string; level?: number; tier?: number }[];
+  monsterList: { id: string; name: string; rank?: string; level?: number }[];
   encounters: Map<string, CombatEncounterConfig>;
   encounterList: { id: string; name: string; bossCount?: number }[];
   actions: Map<string, ActionConfig>;
@@ -148,8 +148,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
             id: m.id,
             name: m.name || m.id,
             rank: m.rank,
-            level: m.level,
-            tier: m.tier
+            level: m.level
           });
         }
       }
@@ -268,15 +267,15 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-        if (act.outputs) {
-          for (const oid of Object.keys(act.outputs)) {
-            if (!lookups.items.has(oid)) {
+        if (act.yields) {
+          for (const y of act.yields) {
+            if (y.kind === 'item' && y.id && !lookups.items.has(y.id)) {
               errors.push({
-                id: `act-${act.id}-output-${oid}`,
+                id: `act-${act.id}-yield-${y.id}`,
                 sourceFile: 'actions.json',
                 itemId: act.id,
-                field: 'outputs',
-                message: `行动 [${act.name}] 产出的物品 [${oid}] 不存在于 items.json`,
+                field: 'yields',
+                message: `行动 [${act.name}] 产出的物品 [${y.id}] 不存在于 items.json`,
                 severity: 'error'
               });
             }
@@ -316,20 +315,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-        if (m.rareDropTable) {
-          for (const drop of m.rareDropTable) {
-            if (drop.itemId && !lookups.items.has(drop.itemId)) {
-              errors.push({
-                id: `mon-${m.id}-raredraw-${drop.itemId}`,
-                sourceFile: 'monsters.json',
-                itemId: m.id,
-                field: 'rareDropTable',
-                message: `怪物 [${m.name}] 稀有掉落引用的道具 [${drop.itemId}] 不存在于 items.json`,
-                severity: 'error'
-              });
-            }
-          }
-        }
+
       }
     }
 
@@ -378,20 +364,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-        if (enc.dropTable) {
-          for (const drop of enc.dropTable) {
-            if (drop.itemId && !lookups.items.has(drop.itemId)) {
-              errors.push({
-                id: `enc-${enc.id}-drop-${drop.itemId}`,
-                sourceFile: 'encounters.json',
-                itemId: enc.id,
-                field: 'dropTable',
-                message: `遭遇 [${enc.name}] 掉落物 [${drop.itemId}] 不存在于 items.json`,
-                severity: 'error'
-              });
-            }
-          }
-        }
+
       }
     }
 

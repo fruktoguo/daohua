@@ -166,7 +166,7 @@ public sealed class CombatExpeditionSimulationTests
         var stats = CombatantStats.Create(10, 1, 0, 1);
 
         Assert.Throws<DomainException>(() => CombatEncounterState.Restore(
-            "encounter.test", 1, stats,
+            "encounter.test", 1, new CombatantTemplate(stats),
             new CombatantSnapshot(10, 0, 0, 0, 0),
             [new CombatantTemplate(stats)],
             [new CombatantSnapshot(0, 0, 0, 0, 0)],

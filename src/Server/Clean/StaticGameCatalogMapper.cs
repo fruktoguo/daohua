@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Combat;
 using Domain.GameData;
 
 namespace Server.Clean;
@@ -34,34 +35,21 @@ public static class StaticGameCatalogMapper
             var gatheringMultiplier = hasConsumable ? ReadDouble(consumable, "gatheringMultiplier", 1) : 1;
             var alchemyMultiplier = hasConsumable ? ReadDouble(consumable, "alchemyMultiplier", 1) : 1;
             var cooldownSeconds = hasConsumable ? ReadDouble(consumable, "cooldownSeconds", 0) : 0;
-            var recoverySeconds = hasConsumable ? ReadDouble(consumable, "recoverySeconds", 0) : 0;
             var hitpointRestore = hasConsumable ? ReadDouble(consumable, "hitpointRestore", 0) : 0;
             var manapointRestore = hasConsumable ? ReadDouble(consumable, "manapointRestore", 0) : 0;
-            var triggerHpRatio = hasConsumable ? ReadDouble(consumable, "triggerHpRatio", 0) : 0;
-            var triggerAtCombatStart = hasConsumable && ReadBool(consumable, "triggerAtCombatStart", false);
 
+            // 消耗品增益效果与领域结算读取的字段一一对应（SimulationEngine 只消费以下键），
+            // 不下发领域未消费的占位字段，避免前端误以为存在自动触发/阈值语义。
             var buffEffects = hasConsumable && consumable.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array
                 ? buffsArray.EnumerateArray().Select(b => new
                 {
                     buffId = ReadString(b, "buffId"),
                     name = ReadString(b, "name", ReadString(b, "buffId", "增益")),
                     durationSeconds = ReadDouble(b, "durationSeconds", 0),
-                    maxStacks = ReadInt(b, "maxStacks", 1),
-                    description = ReadString(b, "description"),
-                    qiGainMultiplier = ReadDouble(b, "qiGainMultiplier", 1),
-                    attackLevelRatio = ReadDouble(b, "attackLevelRatio", 0),
-                    damageRatio = ReadDouble(b, "damageRatio", 0),
-                    attackSpeedRatio = ReadDouble(b, "attackSpeedRatio", 0),
                     hpRegen = ReadDouble(b, "hpRegen", 0),
                     mpRegen = ReadDouble(b, "mpRegen", 0),
-                    damageAbsorptionRatio = ReadDouble(b, "damageAbsorptionRatio", 0),
-                    armor = ReadDouble(b, "armor", 0),
-                    magicResistance = ReadDouble(b, "magicResistance", 0),
-                    criticalChance = ReadDouble(b, "criticalChance", 0),
-                    criticalDamageRatio = ReadDouble(b, "criticalDamageRatio", 0),
-                    tenacity = ReadDouble(b, "tenacity", 0),
-                    gatheringOutputMultiplier = ReadDouble(b, "gatheringOutputMultiplier", 1),
-                    alchemyOutputMultiplier = ReadDouble(b, "alchemyOutputMultiplier", 1)
+                    attackSpeedRatio = ReadDouble(b, "attackSpeedRatio", 0),
+                    damageAbsorptionRatio = ReadDouble(b, "damageAbsorptionRatio", 0)
                 }).ToArray()
                 : [];
 
@@ -82,18 +70,16 @@ public static class StaticGameCatalogMapper
                 gatheringMultiplier,
                 alchemyMultiplier,
                 cooldownSeconds,
-                recoverySeconds,
                 hitpointRestore,
                 manapointRestore,
-                triggerHpRatio,
-                triggerAtCombatStart,
                 buffEffects
             };
         }).ToArray();
 
     /// <summary>
-    /// 装备静态目录投影：保留配表原始数值块（baseStatRatios/flatStats/specialMechanics/
-    /// enhancementBonus），并把分散字段归并进前端消费的 stats 协议块。
+    /// 装备静态目录投影：只透传配表原始数值块（baseStatRatios/flatStats/specialMechanics/
+    /// enhancementBonus）。战斗终值由服务端 PlayerAttributeResolver 统一结算并经 combat.attributes
+    /// 下发，协议不再提供派生 stats 幻影块，前端也不得本地重建。
     /// </summary>
     /// <param name="catalog">当前激活配表。</param>
     public static IReadOnlyList<object> Equipments(GameDataCatalog catalog) => catalog.RawEquipments.Values
@@ -132,25 +118,7 @@ public static class StaticGameCatalogMapper
                 baseStatRatios,
                 flatStats,
                 specialMechanics,
-                enhancementBonus,
-                stats = new
-                {
-                    damageRatio = baseStatRatios.GetValueOrDefault("damage", baseStatRatios.GetValueOrDefault("physicalAttack", 0)),
-                    accuracyRatio = baseStatRatios.GetValueOrDefault("accuracy", 0),
-                    attackSpeedRatio = baseStatRatios.GetValueOrDefault("actionSpeed", 0),
-                    evasionRatio = baseStatRatios.GetValueOrDefault("evasion", 0),
-                    armor = baseStatRatios.GetValueOrDefault("physicalArmor", baseStatRatios.GetValueOrDefault("armor", 0)),
-                    magicResistance = baseStatRatios.GetValueOrDefault("spellResistance", baseStatRatios.GetValueOrDefault("mr", 0)),
-                    tenacity = flatStats.GetValueOrDefault("tenacity", 0),
-                    penetrationRatio = 0d,
-                    lifeStealRatio = 0d,
-                    armorDamageRatio = 0d,
-                    hpDrainRatio = 0d,
-                    criticalChance = baseStatRatios.GetValueOrDefault("criticalChance", flatStats.GetValueOrDefault("criticalChance", 0)),
-                    criticalDamageRatio = baseStatRatios.GetValueOrDefault("criticalDamage", 1.5),
-                    criticalAvoidance = 0d,
-                    damageAbsorptionRatio = baseStatRatios.GetValueOrDefault("damageAbsorption", 0)
-                }
+                enhancementBonus
             };
         }).ToArray();
 
@@ -305,30 +273,8 @@ public static class StaticGameCatalogMapper
             level = definition.Level,
             tier = catalog.BaseAttributes?.TierAt(definition.Level) ?? 1,
             budgetCost = definition.BudgetCost,
-            maxHitpoints = stats.MaxHitpoints,
-            maxManapoints = stats.MaxManapoints,
-            attackIntervalMilliseconds = stats.AttackIntervalSeconds * 1000,
-            accuracyRating = stats.Accuracy,
-            evasionRating = stats.Evasion,
-            maxDamage = stats.AttackPower,
-            armor = stats.Defense,
-            magicResistance = stats.MagicResistance,
-            metalResistance = stats.MetalResistance,
-            woodResistance = stats.WoodResistance,
-            waterResistance = stats.WaterResistance,
-            fireResistance = stats.FireResistance,
-            earthResistance = stats.EarthResistance,
-            tenacity = ReadDouble(monster, "tenacity", 0),
-            lifeStealRatio = ReadDouble(monster, "lifeStealRatio", 0),
-            armorDamageRatio = ReadDouble(monster, "armorDamageRatio", 0),
-            hpDrainRatio = ReadDouble(monster, "hpDrainRatio", 0),
-            // 前端以「比例 ×100 = 点数」口径展示暴击/免暴/免伤，领域存的是点数，这里折回比例下发。
-            criticalChance = stats.Critical / 100d,
-            criticalDamageRatio = stats.CriticalMultiplier,
-            criticalAvoidance = stats.CriticalResistance / 100d,
-            damageAbsorptionRatio = stats.DamageAbsorptionPoints / 100d,
-            hpRegenPerFiveSeconds = ReadDouble(monster, "hpRegen", 0),
-            mpRegenPerFiveSeconds = ReadDouble(monster, "mpRegen", 0),
+            // 怪物属性与玩家/斗法镜像走同一份协议形状，字段语义完全一致。
+            attributes = ProtocolSnapshotMapper.ToAttributesDto(stats),
             experience = definition.ExperienceReward,
             qiReward = definition.QiReward,
             rootExpReward = definition.RootExpReward,
@@ -341,10 +287,8 @@ public static class StaticGameCatalogMapper
     {
         enemyId = id, name, visual = new { renderer = "text", source = "?" }, style = "body", category = "physical", element = "none", rank = "normal",
         level = 1, tier = 1, budgetCost = 0d,
-        maxHitpoints = 1d, maxManapoints = 0d, attackIntervalMilliseconds = 2_000d, accuracyRating = 1d, evasionRating = 0d, maxDamage = 0d,
-        armor = 0d, magicResistance = 0d, metalResistance = 0d, woodResistance = 0d, waterResistance = 0d, fireResistance = 0d, earthResistance = 0d,
-        tenacity = 0d, lifeStealRatio = 0d, armorDamageRatio = 0d, hpDrainRatio = 0d, criticalChance = 0d, criticalDamageRatio = 1.5d,
-        criticalAvoidance = 0d, damageAbsorptionRatio = 0d, hpRegenPerFiveSeconds = 0d, mpRegenPerFiveSeconds = 0d, experience = 0d,
+        attributes = ProtocolSnapshotMapper.ToAttributesDto(CombatantStats.Create(1, 0, 0, 2)),
+        experience = 0d,
         qiReward = 0d, rootExpReward = 0d, drops = Array.Empty<string>(), abilityIds = Array.Empty<string>()
     };
 

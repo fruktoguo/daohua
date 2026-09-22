@@ -29,7 +29,7 @@ public sealed record CombatMonsterDefinition(
     CombatMonsterRank Rank,
     CombatantStats Stats,
     IReadOnlyList<CombatDropDefinition> DropTable,
-    IReadOnlyList<MonsterSkillSlot> Skills,
+    IReadOnlyList<SkillSlot> Skills,
     double QiReward = 0,
     double ExperienceReward = 0,
     double RootExpReward = 0);

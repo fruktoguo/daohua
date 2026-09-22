@@ -15,7 +15,7 @@ public sealed class CombatHookTests
         var player = CombatantStats.Create(1000, 100, 0, 1) with
         { Effects = new CombatEffectProfile(HpDrainRatio: 0.5) };
         var enemy = CombatantStats.Create(100000, 0, 0, 2);
-        var state = CombatEncounterState.Restore("drain", 7, player,
+        var state = CombatEncounterState.Restore("drain", 7, new CombatantTemplate(player),
             new CombatantSnapshot(500, 0, 1, 0, 0),
             [new CombatantTemplate(enemy)],
             [new CombatantSnapshot(100000, 0, 2, 0, 0)],
@@ -44,7 +44,7 @@ public sealed class CombatHookTests
         var player = CombatantStats.Create(1000, 100, 0, 1) with
         { MaxManapoints = 100, Effects = new CombatEffectProfile(MpDrainRatio: 1) };
         var enemy = CombatantStats.Create(100000, 0, 0, 2) with { MaxManapoints = 200 };
-        var state = CombatEncounterState.Restore("mana", 7, player,
+        var state = CombatEncounterState.Restore("mana", 7, new CombatantTemplate(player),
             new CombatantSnapshot(1000, 50, 1, 0, 0),
             [new CombatantTemplate(enemy)],
             [new CombatantSnapshot(100000, 200, 2, 0, 0)],
@@ -104,7 +104,7 @@ public sealed class CombatHookTests
         { Effects = new CombatEffectProfile(HpDrainRatio: 1) };
         var enemy = CombatantStats.Create(100000, 0, 0, 2, evasion: 1e9) with
         { Effects = new CombatEffectProfile(DamageReflectRatio: 1) };
-        var state = CombatEncounterState.Restore("miss", 7, player,
+        var state = CombatEncounterState.Restore("miss", 7, new CombatantTemplate(player),
             new CombatantSnapshot(500, 0, 1, 0, 0),
             [new CombatantTemplate(enemy)],
             [new CombatantSnapshot(100000, 0, 2, 0, 0)],
