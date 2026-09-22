@@ -299,6 +299,8 @@ export interface FloatingPopoverProps {
   quantity?: number | bigint | string
   /** 数量副气泡标题，默认取 i18n 词条 common.quantity */
   quantityTitle?: string
+  /** 触发器右键（contextmenu）回调：供「右键直接使用」等快捷交互挂载，回调内自行 preventDefault */
+  onContextMenu?: (e: React.MouseEvent) => void
 }
 
 /**
@@ -354,6 +356,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       asideCards,
       quantity,
       quantityTitle,
+      onContextMenu,
     },
     ref
   ) {
@@ -366,6 +369,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
     const floatingRef = useRef<HTMLDivElement>(null)
     const openTimerRef = useRef<number | null>(null)
     const closeTimerRef = useRef<number | null>(null)
+    const repositionRafRef = useRef<number | null>(null)
 
     // 初始坐标先放到屏幕外：浮层挂载后由 useLayoutEffect 立即完成首次测量定位，避免在 (0,0) 闪一帧。
     const [pos, setPos] = useState<PositionResult>({
@@ -492,12 +496,38 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         updatePosition()
       }
 
-      // 触屏滑动页面时平滑收起提示，防止遮挡正在滚动的视线
-      const handleScrollOrTouchMove = () => {
-        if (isTouchPointerDevice() && trigger === 'hover') {
+      // 滚动与手势处理：
+      // 1. 只响应「包含锚点的滚动容器」的 scroll（文档/窗口滚动时 target=document，
+      //    document.contains(anchor) 同样成立）。其他面板自滚——例如底部日志
+      //    append 后自动 scrollTop 到底、侧栏滚动——与锚点无关，必须忽略，
+      //    否则会误关已打开的气泡，造成类似全局刷新的联动；
+      // 2. 非交互 hover 气泡（tooltip 语义）：锚点所在容器滚动即收起，等同原生
+      //    title 提示。否则每个 scroll 事件都同步 getBoundingClientRect +
+      //    React 重渲染整个气泡子树 + backdrop-filter 重绘背景，
+      //    密集列表（坊市网格）悬停滚动必卡。滚动停稳后悬停会重新弹出；
+      // 3. click / interactive 浮层跟随锚点重定位，但用 rAF 节流——
+      //    一帧最多测量一次，scroll 高频事件不再逐事件重渲染。
+      const handleScrollOrTouchMove = (event: Event) => {
+        if (event.type === 'scroll') {
+          const target = event.target
+          const anchor = anchorRef.current
+          if (!(target instanceof Node) || !anchor || !target.contains(anchor)) {
+            return
+          }
+          if (trigger === 'hover' && !interactive) {
+            setOpen(false)
+            return
+          }
+        } else if (isTouchPointerDevice() && trigger === 'hover') {
+          // 触屏滑动页面时平滑收起提示，防止遮挡正在滚动的视线
           setOpen(false)
-        } else {
-          updatePosition()
+          return
+        }
+        if (repositionRafRef.current === null) {
+          repositionRafRef.current = window.requestAnimationFrame(() => {
+            repositionRafRef.current = null
+            updatePosition()
+          })
         }
       }
 
@@ -521,9 +551,13 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         window.removeEventListener('resize', handleReposition)
         window.removeEventListener('scroll', handleScrollOrTouchMove, true)
         window.removeEventListener('touchmove', handleScrollOrTouchMove)
+        if (repositionRafRef.current !== null) {
+          window.cancelAnimationFrame(repositionRafRef.current)
+          repositionRafRef.current = null
+        }
         resizeObserver?.disconnect()
       }
-    }, [isOpen, setOpen, trigger, updatePosition])
+    }, [isOpen, setOpen, trigger, interactive, updatePosition])
 
     // 处理全局点击空白处关闭 (Outside PointerDown / Click) 以及 Escape 键关闭
     // 采用非侵入式被动关闭，绝对不拦截用户对其他按钮的点击
@@ -623,6 +657,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         aria-haspopup="dialog"
         className={`daohua-floating-trigger ${displayContents ? 'daohua-floating-trigger--contents' : ''} ${triggerClassName}`.trim()}
         onClick={handleTriggerClick}
+        onContextMenu={onContextMenu}
         onMouseEnter={handleTriggerMouseEnter}
         onMouseLeave={handleTriggerMouseLeave}
         ref={anchorRef as RefObject<HTMLSpanElement>}

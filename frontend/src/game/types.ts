@@ -653,6 +653,8 @@ export interface CombatAttributes {
 export interface InventoryItem {
   /** 物品配置 ID */
   itemId: string
+  /** 资产变体（如强化等级）；null/缺省表示基础形态。同一 itemId 的不同变体是独立余额行 */
+  variant?: string | null
   /** 物品名称 */
   name: string
   /** 分类名称 */

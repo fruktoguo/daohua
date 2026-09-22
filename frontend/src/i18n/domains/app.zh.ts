@@ -209,6 +209,32 @@ export const appZh = {
       abilities: '功法',
       tabAria: '右侧功能切换',
     },
+    // 储物袋物品操作（左键悬浮菜单 / 右键直接使用 / 数量处置弹窗）
+    inventoryPanel: {
+      useLearn: '使用（参悟研习）',
+      useEquip: '使用（穿戴装备）',
+      trade: '交易（前往坊市）',
+      recycle: '出售',
+      recycleHint: '单价 {price} 灵石',
+      discard: '丢弃',
+      equippedHint: '已装备，请先卸下',
+      quantityAria: '处置数量',
+      discardTitle: '丢弃 {name}',
+      discardDescription: '丢弃后物品将永久销毁，无法找回。',
+      confirmDiscard: '确认丢弃',
+      recycleTitle: '出售 {name}',
+      recycleDescription: '按单价 {price} 灵石出售，货款即时到账。',
+      recycleTotal: '合计可得 {total} 灵石',
+      confirmRecycle: '确认出售',
+      // 储物袋分段小标题（同视图内分组陈列，非 Tab 切换）
+      group: {
+        important: '重要',
+        consumable: '消耗品',
+        equipment: '装备法宝',
+        manual: '功法',
+        material: '材料',
+      },
+    },
     // 装备面板
     equipmentPanel: {
       title: '本命装配',

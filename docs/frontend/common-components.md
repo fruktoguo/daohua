@@ -242,9 +242,12 @@
 
 - **适用场景**：
   - **右侧多 Tab 顶层容器**（聚合储物袋、装备、功法三大核心面板，支持平滑切换） -> `RightSidebar`
+  - **储物袋分段陈列**：`InventoryPanel` 按「重要/消耗品/装备法宝/功法/材料」五组小标题分段展示物品网格（非 Tab），分组判定统一走 `resolveInventoryGroup`（物品目录 kind/category + 装备目录命中，itemId 前缀兜底），空组不渲染。
+  - **储物袋物品交互单元**（背包格子完整交互收拢：悬停保留 `ItemTooltipTarget` 详情卡片；左键弹出 `FloatingPopover` 操作菜单——秘籍/残卷「参悟研习」(`ability.learn`)、装备「穿戴装备」(`loadout.replace` 槽位互斥剔除)、可交易物品「交易」跳转坊市标的详情、`sellPrice > 0` 物品「系统回收」(`item.sell`)、任意物品「丢弃」(`item.discard`)；右键可直接使用的物品立即触发使用；丢弃/回收经 `Modal` + `QuantitySelector` 数量确认弹窗执行；已装备物品禁用丢弃/回收） -> `InventoryItemCell`
   - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级调整 + 全部已学功法秘籍目录列表） -> `AbilitiesPanel`
 - **组件源码**：
   - [`frontend/src/components/RightSidebar.tsx`](../../frontend/src/components/RightSidebar.tsx)
+  - [`frontend/src/components/InventoryItemCell.tsx`](../../frontend/src/components/InventoryItemCell.tsx)
   - [`frontend/src/components/AbilitiesPanel.tsx`](../../frontend/src/components/AbilitiesPanel.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.right-sidebar-panel`, `.abilities-view-panel`)
 ---

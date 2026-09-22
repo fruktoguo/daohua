@@ -1,5 +1,6 @@
 import { getT, type TFunction } from '../i18n'
-import type { ActionDefinition, ActionType, CombatEquipmentDefinition, CombatEquipmentStats, ItemDefinition } from './types'
+import { calculateRootLevelAndProgress } from './combatConstants'
+import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatEquipmentDefinition, CombatEquipmentStats, ItemDefinition } from './types'
 
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
@@ -285,6 +286,93 @@ export function findEquipmentInCatalog<T extends { equipmentId: string }>(equipm
  */
 export function findAbilityInCatalog<T extends { abilityId: string }>(abilities: readonly T[], abilityId: string): T | undefined {
   return getAbilityMap(abilities).get(abilityId)
+}
+
+/**
+ * 储物袋展示分组键：重要（货币与特殊物品）、消耗品、装备法宝、功法、材料
+ */
+export type InventoryGroupKey = 'important' | 'consumable' | 'equipment' | 'manual' | 'material'
+
+/** 储物袋分组固定展示顺序（空组不渲染） */
+export const INVENTORY_GROUP_ORDER: readonly InventoryGroupKey[] = ['important', 'consumable', 'equipment', 'manual', 'material']
+
+/**
+ * 判定背包物品所属的展示分组。
+ * 依据物品目录 kind/category 键与装备目录命中（InventoryItem.category 是本地化展示文案，不可作判定依据）；
+ * 目录未覆盖时按 itemId 前缀兜底，仍无法识别归入材料组。
+ */
+export function resolveInventoryGroup(
+  itemId: string,
+  items: readonly { itemId: string; kind?: string; category?: string }[],
+  equipment: readonly { equipmentId: string }[],
+): InventoryGroupKey {
+  if (itemId.startsWith('equipment.') || findEquipmentInCatalog(equipment, itemId) !== undefined) return 'equipment'
+  if (itemId.startsWith('item.tome.') || itemId.startsWith('item.fragment.')) return 'manual'
+  if (itemId.startsWith('currency.')) return 'important'
+  const definition = findItemInCatalog(items, itemId)
+  if (!definition) return 'material'
+  if (definition.category === 'manual') return 'manual'
+  if (definition.kind === 'equipment' || definition.category === 'equipment') return 'equipment'
+  if (definition.kind === 'currency' || definition.kind === 'resource'
+    || definition.category === 'currency' || definition.category === 'chest') return 'important'
+  if (definition.kind === 'consumable') return 'consumable'
+  return 'material'
+}
+
+/**
+ * 功法已参悟等级：由功法经验表经立方曲线导出，与服务端 AbilityExpCurve 同式；
+ * 未习得或无经验记录按 1 级计。
+ */
+export function learnedAbilityLevel(
+  abilityExperiences: Readonly<Record<string, number>> | undefined,
+  abilityId: string,
+): number {
+  return calculateRootLevelAndProgress(abilityExperiences?.[abilityId] ?? 0).level
+}
+
+/**
+ * 将功法装配到指定槽位：同一功法若已装配在其它槽位，视为「移动」——
+ * 从原槽位移除并把已配置的触发条件一并随迁，而非让服务端以重复装配拒绝；
+ * 换装（abilityId 不同）时清空新槽位的旧触发条件，防止残留条件被沿用。
+ */
+export function assignAbilityToSlot(
+  slots: readonly CombatAbilitySlot[],
+  index: number,
+  abilityId: string | null,
+): CombatAbilitySlot[] {
+  const movedFrom = abilityId === null
+    ? undefined
+    : slots.find((slot, slotIndex) => slotIndex !== index && slot.abilityId === abilityId)
+  return slots.map((slot, slotIndex) => {
+    if (slotIndex === index) {
+      const triggers = abilityId === slot.abilityId ? slot.triggers : (movedFrom?.triggers ?? [])
+      return { ...slot, abilityId, triggers }
+    }
+    return slot.abilityId === abilityId ? { ...slot, abilityId: null, triggers: [] } : slot
+  })
+}
+
+/**
+ * 功法槽位发送前归一化：
+ * 1. 类别互斥——内功位（index 0）只允许 discipline=internal 的心法内功，其余术法位
+ *    只允许神通术法；类别不匹配的槽位 abilityId 置空，清理历史遗留的跨类装配；
+ * 2. 装配等级对齐已参悟等级——技能等级只放大输出数值（灵力消耗不随等级变化），
+ *    调低无收益，统一回填为参悟等级，避免遗留 1 级槽位以低等级结算。
+ * 与服务端 loadout.replace 的槽位校验一致，避免整条命令因旧数据被拒。
+ */
+export function normalizeAbilitySlots(
+  slots: readonly CombatAbilitySlot[],
+  abilities: readonly { abilityId: string; discipline?: 'internal' | 'spell' }[],
+  abilityExperiences: Readonly<Record<string, number>> | undefined,
+): CombatAbilitySlot[] {
+  return slots.map((slot, index) => {
+    if (slot.abilityId === null || slot.abilityId === undefined) return slot
+    const definition = findAbilityInCatalog(abilities, slot.abilityId)
+    const isInternal = (definition?.discipline ?? 'spell') === 'internal'
+    if ((index === 0) !== isInternal) return { ...slot, abilityId: null }
+    const learnedLevel = learnedAbilityLevel(abilityExperiences, slot.abilityId)
+    return slot.level === learnedLevel ? slot : { ...slot, level: learnedLevel }
+  })
 }
 
 /**

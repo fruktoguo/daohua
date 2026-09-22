@@ -3028,6 +3028,10 @@ input[type="checkbox"] {
   background: var(--gold);
 }
 
+.inventory-dialog-total {
+  color: var(--gold) !important;
+}
+
 .action-modal-header {
   display: flex;
   min-width: 0;
@@ -4820,6 +4824,36 @@ input[type="checkbox"] {
   grid-template-columns: repeat(auto-fill, var(--item-slot-size, 64px));
   gap: 6px;
   padding-top: 6px;
+}
+
+/* 储物袋分组小标题（重要/消耗品/装备法宝/功法/材料分段陈列） */
+.inventory-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.inventory-group + .inventory-group {
+  margin-top: 10px;
+}
+
+.inventory-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(201, 180, 109, 0.15);
+}
+
+.inventory-group-title {
+  color: var(--gold-bright);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.inventory-group-count {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .inventory-item-anchor {

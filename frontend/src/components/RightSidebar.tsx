@@ -1,30 +1,53 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { useGameStore } from '../game/gameStore'
+import { INVENTORY_GROUP_ORDER, resolveInventoryGroup, type InventoryGroupKey } from '../game/ids'
+import type { InventoryItem } from '../game/types'
 import { useUiStore, type RightColumnTab } from '../uiStore'
 import { useT } from '../i18n'
-import { ItemCard } from './ItemDisplay'
+import { InventoryItemCell } from './InventoryItemCell'
 import { EquipmentPanel } from './EquipmentPanel'
 import { AbilitiesPanel } from './AbilitiesPanel'
 
 /**
- * 储物袋（背包）物品网格展示面板
+ * 储物袋（背包）物品网格展示面板：
+ * 物品按「重要 / 消耗品 / 装备法宝 / 功法 / 材料」五组小标题分段陈列（非顶部 Tab），
+ * 空组不渲染；组内保持服务端资产顺序（asset_id 字典序）。
  */
 export const InventoryPanel = memo(function InventoryPanel({ className = '' }: { className?: string }): React.JSX.Element {
+  const t = useT()
   const inventory = useGameStore(state => state.inventory)
-  const itemCatalog = useGameStore(state => state.items)
-  const visibleItems = inventory.filter(item => item.amount > 0)
+  const items = useGameStore(state => state.items)
+  const equipment = useGameStore(state => state.equipment)
+
+  const groups = useMemo(() => {
+    const buckets = new Map<InventoryGroupKey, InventoryItem[]>()
+    for (const item of inventory) {
+      if (item.amount <= 0) continue
+      const key = resolveInventoryGroup(item.itemId, items, equipment)
+      const bucket = buckets.get(key)
+      if (bucket) bucket.push(item)
+      else buckets.set(key, [item])
+    }
+    return INVENTORY_GROUP_ORDER
+      .map(key => ({ key, list: buckets.get(key) ?? [] }))
+      .filter(group => group.list.length > 0)
+  }, [inventory, items, equipment])
 
   return (
     <div className={`inventory-view-panel ${className}`.trim()}>
-      <div className="inventory-grid">
-        {visibleItems.map(item => (
-          <ItemCard
-            definition={itemCatalog.find(definition => definition.itemId === item.itemId)}
-            item={item}
-            key={item.itemId}
-          />
-        ))}
-      </div>
+      {groups.map(group => (
+        <section className="inventory-group" key={group.key}>
+          <div className="inventory-group-header">
+            <span className="inventory-group-title">{t(`app.inventoryPanel.group.${group.key}`)}</span>
+            <span className="inventory-group-count">{group.list.length}</span>
+          </div>
+          <div className="inventory-grid">
+            {group.list.map(item => (
+              <InventoryItemCell item={item} key={`${item.itemId}#${item.variant ?? ''}`} />
+            ))}
+          </div>
+        </section>
+      ))}
     </div>
   )
 })
