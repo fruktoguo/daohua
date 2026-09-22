@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../../game/format'
 import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { useT, type TFunction } from '../../i18n'
@@ -250,24 +250,36 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const query = useMarketStore(state => state.query)
   const setQuery = useMarketStore(state => state.setQuery)
 
-  // 2. 滚动容器 Ref 与位置无损恢复控制
+  // 2. 滚动容器 Ref 与位置无损恢复控制。
+  //    is-scrolling 用命令式 classList 切换、scrollTop 先落 ref 再防抖写回 store：
+  //    整个滚动路径不经过任何 React 渲染与 store 通知，保证滚动零重绘。
   const gridRef = useRef<HTMLDivElement>(null)
-  const [isScrolling, setIsScrolling] = useState(false)
   const scrollTimerRef = useRef<number | null>(null)
+  const pendingScrollTopRef = useRef<number | null>(null)
+
+  const flushScrollTop = useCallback(() => {
+    if (pendingScrollTopRef.current !== null) {
+      useMarketStore.getState().setScrollTop(pendingScrollTopRef.current)
+      pendingScrollTopRef.current = null
+    }
+  }, [])
 
   const handleScroll = useCallback(() => {
-    if (gridRef.current) {
-      useMarketStore.getState().setScrollTop(gridRef.current.scrollTop)
+    const grid = gridRef.current
+    if (!grid) return
+    pendingScrollTopRef.current = grid.scrollTop
+    if (!grid.classList.contains('is-scrolling')) {
+      grid.classList.add('is-scrolling')
     }
-    setIsScrolling(true)
     if (scrollTimerRef.current !== null) {
       window.clearTimeout(scrollTimerRef.current)
     }
     scrollTimerRef.current = window.setTimeout(() => {
-      setIsScrolling(false)
       scrollTimerRef.current = null
+      grid.classList.remove('is-scrolling')
+      flushScrollTop()
     }, 100)
-  }, [])
+  }, [flushScrollTop])
 
   // 挂载时瞬时平滑恢复之前的滚动位置（0 抖动、零多余重绘）
   useLayoutEffect(() => {
@@ -282,14 +294,17 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
       if (scrollTimerRef.current !== null) {
         window.clearTimeout(scrollTimerRef.current)
       }
+      flushScrollTop()
     }
-  }, [])
+  }, [flushScrollTop])
 
-  // 3. 背包字典 O(1) 映射，避免每次渲染 80 * N 线性扫描
-  const inventoryMap = useMemo(
-    () => new Map(inventory.map(entry => [entry.itemId, entry.amount])),
-    [inventory]
-  )
+  // 3. 背包字典 O(1) 映射，避免每次渲染 80 * N 线性扫描。
+  //    同一 itemId 可能存在多条变体行（如不同强化等级），角标显示全部变体合计持有量。
+  const inventoryMap = useMemo(() => {
+    const amounts = new Map<string, number>()
+    for (const entry of inventory) amounts.set(entry.itemId, (amounts.get(entry.itemId) ?? 0) + entry.amount)
+    return amounts
+  }, [inventory])
 
   const handlePrimaryTabChange = (newPrimary: PrimaryCategory) => {
     setPrimaryTab(newPrimary)
@@ -381,7 +396,7 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
 
       <div
         aria-label={t('market.browse.gridAria')}
-        className={`market-browse-grid${isScrolling ? ' is-scrolling' : ''}`}
+        className="market-browse-grid"
         onScroll={handleScroll}
         ref={gridRef}
         role="listbox"

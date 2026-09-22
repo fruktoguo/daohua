@@ -83,10 +83,10 @@ interface CalculateActionParams {
   stats?: Stats
 }
 
-/** 兼容背包数组与 {itemId: amount} 映射两种入参形态的持有量查询 */
+/** 兼容背包数组与 {itemId: amount} 映射两种入参形态的持有量查询；数组形态只计基础变体行 */
 function getItemAmount(inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>, itemId: string): number {
   if (Array.isArray(inventory)) {
-    return inventory.find(i => i.itemId === itemId)?.amount ?? 0
+    return inventory.find(i => i.itemId === itemId && !i.variant)?.amount ?? 0
   }
   return (inventory as Record<string, number>)[itemId] ?? 0
 }

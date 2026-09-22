@@ -148,7 +148,10 @@ export async function fetchMarketBook(
   depth = 20,
   signal?: AbortSignal,
 ): Promise<MarketBook> {
-  const query = new URLSearchParams({ assetId: itemId, variant: String(enhancementLevel), depth: String(depth) })
+  // 基础变体在服务端归一为空串：挂单 market.place 以 variant=null 落在 (itemId, "") 簿上，
+  // 这里若发 "0" 会查询到一本不存在的幽灵盘口（还会向 _books 插入空簿），永远显示空深度。
+  const query = new URLSearchParams({ assetId: itemId, depth: String(depth) })
+  if (enhancementLevel > 0) query.set('variant', String(enhancementLevel))
   const dto = await requestJson<MarketBookDto>(`/api/v1/market/book?${query.toString()}`, { signal })
   return {
     itemId: dto.assetId,

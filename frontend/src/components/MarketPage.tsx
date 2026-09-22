@@ -106,7 +106,9 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
     return [...tradableItems, ...tradableEquipments].sort((left, right) => {
       const leftCat = resolveItemCategoryLabel(left.category, t)
       const rightCat = resolveItemCategoryLabel(right.category, t)
-      return leftCat.localeCompare(rightCat, 'zh-CN') || left.name.localeCompare(right.name, 'zh-CN')
+      return leftCat.localeCompare(rightCat, 'zh-CN')
+        || left.name.localeCompare(right.name, 'zh-CN')
+        || (left.itemId < right.itemId ? -1 : left.itemId > right.itemId ? 1 : 0)
     })
   }, [catalog, equipmentCatalog, t])
 
@@ -228,7 +230,8 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
 
   const refresh = useCallback(() => refreshRef.current?.(), [])
   const selected = instruments.find(item => item.itemId === selectedItemId) ?? null
-  const selectedAmount = selected ? (inventory.find(item => item.itemId === selected.itemId)?.amount ?? 0) : 0
+  // 坊市只交易基础变体（挂单冻结空 variant 资产），持有量不能混入强化变体行
+  const selectedAmount = selected ? (inventory.find(item => item.itemId === selected.itemId && !item.variant)?.amount ?? 0) : 0
   return (
     <section className="panel market-page">
       <header className="panel-header market-header">

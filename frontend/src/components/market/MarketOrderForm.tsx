@@ -100,8 +100,8 @@ export const MarketOrderForm = memo(function MarketOrderForm({
   const [quantity, setQuantity] = useState(1)
   const bestAsk = book?.asks[0]?.price
   const bestBid = book?.bids[0]?.price
-  const selectedAmount = inventory.find(item => item.itemId === itemId)?.amount ?? 0
-  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone')?.amount ?? 0
+  const selectedAmount = inventory.find(item => item.itemId === itemId && !item.variant)?.amount ?? 0
+  const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
   const quantityLimit = side === 'sell'
     ? Math.max(1, selectedAmount)
     : Math.max(1, Math.floor(spiritAmount / Math.max(1, Number.parseInt(price, 10) || vendorPrice)))

@@ -175,6 +175,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
 
     /// <summary>
     /// 返回玩家在内存盘口中的活动订单，按挂入顺序倒序截断。
+    /// Sequence 是单个订单簿内的局部序号，不能作为跨品种排序主键：
+    /// 不同簿的同序号订单并列时只能依靠字典枚举序，重启或新增标的簿后顺序会漂移。
+    /// 因此跨簿主排序用 CreatedAt 降序，再以 OrderId 兜底保证整体次序确定。
     /// </summary>
     /// <param name="ownerId">订单属主玩家。</param>
     /// <param name="limit">最大返回条数。</param>
@@ -183,7 +186,12 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
         lock (_booksGate)
         {
-            return _books.Values.SelectMany(book => book.OrdersByOwner(ownerId, limit)).OrderByDescending(order => order.Sequence).Take(limit).ToArray();
+            return _books.Values
+                .SelectMany(book => book.OrdersByOwner(ownerId, limit))
+                .OrderByDescending(order => order.CreatedAt)
+                .ThenBy(order => order.OrderId.Value)
+                .Take(limit)
+                .ToArray();
         }
     }
 

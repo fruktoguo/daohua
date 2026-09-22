@@ -826,6 +826,7 @@ function mapAsset(asset: AssetBalanceDto): InventoryItem {
   const metadata = resolveItemMetadata(asset.assetId)
   return {
     itemId: asset.assetId,
+    variant: asset.variant ?? null,
     name: metadata?.label ?? asset.assetId,
     category: metadata?.category ?? 'general',
     amount: asset.quantity,
@@ -839,6 +840,26 @@ function mapAsset(asset: AssetBalanceDto): InventoryItem {
 
 function mapAssets(assets: readonly AssetBalanceDto[], includeZero = false): InventoryItem[] {
   return assets.map(mapAsset).filter(asset => includeZero || asset.amount !== 0)
+}
+
+/**
+ * 资产行唯一键：同一物品不同变体（如强化等级）是独立的余额行，合入键必须包含 variant，
+ * 否则多行同名资产会在增量合入时互相覆盖。
+ */
+function assetKeyOf(itemId: string, variant: string | null | undefined): string {
+  return variant ? `${itemId}\u001F${variant}` : itemId
+}
+
+/**
+ * 背包渲染顺序与服务端权威顺序对齐：asset_id 字典序（Ordinal）优先、variant 次之。
+ * 增量合入后按此重排，保证增量视图与全量快照顺序完全一致——
+ * 数量增减只更新数值不搬移位置，只有新增/清零才引起列表进出。
+ */
+function compareInventoryItems(left: InventoryItem, right: InventoryItem): number {
+  if (left.itemId !== right.itemId) return left.itemId < right.itemId ? -1 : 1
+  const leftVariant = left.variant ?? ''
+  const rightVariant = right.variant ?? ''
+  return leftVariant === rightVariant ? 0 : leftVariant < rightVariant ? -1 : 1
 }
 
 function seconds(iso: string): number {
@@ -959,8 +980,15 @@ export async function decodePlayerSnapshotDeltaDto(
   if (sections.has('action_queue')) patch.queue = mapQueue(sections.get('action_queue'), settings, current.queue)
   if (dto.changedAssets !== null && dto.changedAssets !== undefined) {
     if (!Array.isArray(dto.changedAssets)) throw new Error('玩家资产增量载荷无效。')
-    const changed = new Map(mapAssets(dto.changedAssets, true).map(item => [item.itemId, item]))
-    patch.inventory = current.inventory.filter(item => !changed.has(item.itemId)).concat(Array.from(changed.values()).filter(item => item.amount !== 0))
+    // 按 (itemId, variant) 复合键原位合入：数量变动只更新数值，不清空原位置再追加到尾部，
+    // 否则每个采集/消耗 tick 都会把变动物品甩到背包末尾（界面表现为物品频繁跳位）。
+    const merged = new Map(current.inventory.map(item => [assetKeyOf(item.itemId, item.variant), item]))
+    for (const item of mapAssets(dto.changedAssets, true)) {
+      const key = assetKeyOf(item.itemId, item.variant)
+      if (item.amount === 0) merged.delete(key)
+      else merged.set(key, item)
+    }
+    patch.inventory = Array.from(merged.values()).sort(compareInventoryItems)
   }
   return patch
 }
