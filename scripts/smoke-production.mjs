@@ -18,13 +18,23 @@ const baseUrl = new URL(process.argv[2] || 'http://127.0.0.1:5128')
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 15_000)
 const requireStatic = process.env.SMOKE_REQUIRE_STATIC !== '0'
 const runWebSocket = process.env.SMOKE_RUN_WEBSOCKET !== '0'
+// 公网模式下 /readyz 属内部端点，应被网关拦截；仍返回 2xx 反而说明内部面泄漏。
+const requireReadyz = process.env.SMOKE_REQUIRE_READYZ !== '0'
 
 async function main() {
   const health = await fetchJson('/healthz')
   if (health.status !== 'ok') throw new Error('健康状态不符合预期。')
   if (typeof health.version !== 'string' || health.version.length === 0) throw new Error('健康端点缺少版本信息。')
-  const ready = await fetchJson('/readyz')
-  if (!['ok', 'ready'].includes(ready.status)) throw new Error('就绪状态不符合预期。')
+  let readyStatus = null
+  if (requireReadyz) {
+    const ready = await fetchJson('/readyz')
+    if (!['ok', 'ready'].includes(ready.status)) throw new Error('就绪状态不符合预期。')
+    readyStatus = ready.status
+  } else {
+    const readyCode = await requestStatus('/readyz')
+    if (readyCode < 400) throw new Error(`公网 /readyz 未被拦截（HTTP ${readyCode}），内部端点泄漏。`)
+    readyStatus = 'blocked'
+  }
   if (requireStatic) {
     const html = await fetchText('/')
     if (!html.includes('id="root"')) throw new Error('首页不是预期的前端入口。')
@@ -46,7 +56,7 @@ async function main() {
     baseUrl: baseUrl.origin,
     version: health.version || health.contractVersion || meta.version || null,
     gameDataFingerprint: meta.gameDataFingerprint || health.gameDataFingerprint || null,
-    readyStatus: ready.status,
+    readyStatus,
     authMode,
     webSocketFirstPacket: firstPacket?.type || null,
     webSocketProtocolVersion: firstPacket?.protocolVersion || null,
@@ -64,7 +74,20 @@ async function fetchText(path) {
   return response.body.toString('utf8')
 }
 
+function requestStatus(path) {
+  return requestHttpRaw(path, 'application/json').then(result => result.statusCode)
+}
+
 function requestHttp(path, accept, method = 'GET', body = undefined) {
+  return requestHttpRaw(path, accept, method, body).then(result => {
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw new Error(`${path} 返回 HTTP ${result.statusCode}: ${result.body.toString('utf8').slice(0, 240)}`)
+    }
+    return result
+  })
+}
+
+function requestHttpRaw(path, accept, method = 'GET', body = undefined) {
   return new Promise((resolve, reject) => {
     const target = new URL(path, baseUrl)
     const transport = target.protocol === 'https:' ? https : http
@@ -78,12 +101,7 @@ function requestHttp(path, accept, method = 'GET', body = undefined) {
       const chunks = []
       response.on('data', chunk => chunks.push(Buffer.from(chunk)))
       response.on('end', () => {
-        const result = { statusCode: response.statusCode || 0, headers: response.headers, body: Buffer.concat(chunks) }
-        if (result.statusCode < 200 || result.statusCode >= 300) {
-          reject(new Error(`${path} 返回 HTTP ${result.statusCode}: ${result.body.toString('utf8').slice(0, 240)}`))
-        } else {
-          resolve(result)
-        }
+        resolve({ statusCode: response.statusCode || 0, headers: response.headers, body: Buffer.concat(chunks) })
       })
     })
     request.once('timeout', () => request.destroy(new Error(`${path} 请求超时`)))
@@ -230,11 +248,12 @@ function encodeClientFrame(payload, opcode = 0x2) {
 function openWebSocket(target, headers) {
   return new Promise((resolve, reject) => {
     const key = crypto.randomBytes(16).toString('base64')
-    const transport = target.protocol === 'wss:' ? tls : net
+    const useTls = target.protocol === 'wss:' || target.protocol === 'https:'
+    const transport = useTls ? tls : net
     const options = {
       host: target.hostname,
-      port: Number(target.port || (target.protocol === 'wss:' ? 443 : 80)),
-      ...(target.protocol === 'wss:' ? { servername: target.hostname, rejectUnauthorized: process.env.SMOKE_TLS_VERIFY !== '0' } : {}),
+      port: Number(target.port || (useTls ? 443 : 80)),
+      ...(useTls ? { servername: target.hostname, rejectUnauthorized: process.env.SMOKE_TLS_VERIFY !== '0' } : {}),
     }
     const raw = transport.connect(options)
     let buffer = Buffer.alloc(0)
@@ -248,7 +267,7 @@ function openWebSocket(target, headers) {
       reject(error)
     }
     raw.once('error', fail)
-    const connectedEvent = target.protocol === 'wss:' ? 'secureConnect' : 'connect'
+    const connectedEvent = useTls ? 'secureConnect' : 'connect'
     raw.once(connectedEvent, () => {
       const path = `${target.pathname || '/'}${target.search || ''}`
       const host = target.port ? `${target.hostname}:${target.port}` : target.hostname

@@ -10,14 +10,15 @@
 #   4. 环境变量与安全校验: 确保远端 /opt/daohua/daohua.env 存在且已配置 PostgreSQL 与 ComputeNode 密钥；
 #   5. 安装资产与触发更新: 将资产安装到 /opt/daohua，显式指定 --image 时固化 APP_IMAGE 后触发 ccr-auto-update.sh 平滑更新；
 #   6. systemd 服务与定时器配置: 启用并启动 CCR 自动更新 timer 与数据库备份 timer；
-#   7. Caddy 反向代理部署: 可选校验并无缝热重载 Caddy 站点配置 (xx.yuohira.com.caddy)；
-#   8. 服务就绪与公网烟测: 检查容器健康与回环 /readyz 端点，执行公网 HTTPS/WebSocket 烟测。
+#   7. Caddy 反向代理部署: 可选校验并无缝热重载 Caddy 站点配置 (daohua.yuohira.com.caddy)；
+#   8. 服务就绪与双层烟测: 检查容器健康与回环 /readyz，先在服务器回环跑全量烟测，
+#      再在本地跑公网 HTTPS/WebSocket 烟测（公网模式下断言 /readyz 已被网关拦截）。
 #
 # 参数说明:
 #   --host HOST       远端 SSH 主机名（默认 yuohira）
 #   --image IMAGE     指定的生产 CCR 镜像引用（默认 ccr.ccs.tencentyun.com/yuohira/daohua:prod）
 #   --skip-caddy      跳过远端 Caddy 站点配置的安装与 reload
-#   --skip-smoke      跳过发布后的公网 HTTP/WebSocket 烟测
+#   --skip-smoke      跳过发布后的内网/公网 HTTP/WebSocket 烟测
 #   -h, --help        显示帮助信息
 # ==============================================================================
 
@@ -42,7 +43,7 @@ usage() {
     '  --image IMAGE     首次部署的 CCR 镜像，默认 prod' \
     '  --compute-image IMAGE  指定 ComputeNode 镜像（默认按 Server 镜像名推导）' \
     '  --skip-caddy      不修改远端 Caddy' \
-    '  --skip-smoke      不执行公网 HTTP/WebSocket 烟测' \
+    '  --skip-smoke      不执行发布后的内网/公网烟测' \
     '  -h, --help        显示帮助'
 }
 
@@ -147,7 +148,8 @@ scp -q \
   "$ROOT_DIR/deploy/daohua-wal-archive.service" \
   "$ROOT_DIR/deploy/daohua-wal-archive.timer" \
   "$ROOT_DIR/deploy/install-caddy.sh" \
-  "$ROOT_DIR/deploy/xx.yuohira.com.caddy" \
+  "$ROOT_DIR/deploy/daohua.yuohira.com.caddy" \
+  "$ROOT_DIR/scripts/smoke-production.mjs" \
   "${REMOTE_HOST}:${REMOTE_TMP}/"
 
 printf '==> 安装生产 Compose 与 systemd timer\n'
@@ -217,8 +219,8 @@ if [[ "$INSTALL_CADDY" == "1" ]]; then
   ssh -o BatchMode=yes "$REMOTE_HOST" "
     set -Eeuo pipefail
     sudo install -m 0755 '$REMOTE_TMP/install-caddy.sh' /opt/daohua/install-caddy.sh
-    sudo install -m 0644 '$REMOTE_TMP/xx.yuohira.com.caddy' /opt/daohua/xx.yuohira.com.caddy
-    sudo /opt/daohua/install-caddy.sh /opt/daohua/xx.yuohira.com.caddy
+    sudo install -m 0644 '$REMOTE_TMP/daohua.yuohira.com.caddy' /opt/daohua/daohua.yuohira.com.caddy
+    sudo /opt/daohua/install-caddy.sh /opt/daohua/daohua.yuohira.com.caddy
   "
 fi
 
@@ -245,10 +247,13 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
 "
 
 if [[ "$RUN_PUBLIC_SMOKE" == "1" ]]; then
-  printf '==> 公网 HTTPS 与 WebSocket 烟测\n'
+  printf '==> 服务器回环全量烟测（信任边界内，含 /readyz）\n'
+  ssh -o BatchMode=yes "$REMOTE_HOST" "node '$REMOTE_TMP/smoke-production.mjs' http://127.0.0.1:15128"
+
+  printf '==> 公网 HTTPS 与 WebSocket 烟测（/readyz 应被拦截）\n'
   smoke_ok=0
   for attempt in {1..6}; do
-    if node "$ROOT_DIR/scripts/smoke-production.mjs" https://xx.yuohira.com; then
+    if SMOKE_REQUIRE_READYZ=0 node "$ROOT_DIR/scripts/smoke-production.mjs" https://daohua.yuohira.com; then
       smoke_ok=1
       break
     fi

@@ -137,6 +137,7 @@ docker compose -f deploy/compose.prod.yaml down
 | `deploy-prod.sh` | 生产服务器受控更新（`--image <不可变镜像>`） |
 | `install-ccr-auth.sh` | 服务器 CCR 登录态安装（`docker login --password-stdin`） |
 | `init-local-db-roles.sh` | 本地 PostgreSQL 角色初始化（对齐 `deploy/postgres-local-roles.sql`） |
+| `migrate-local-db.sh` | 本地库显式兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 落后脚本；`--dry-run` 空跑）。仅供人工调用，运行时与门禁均不引用 |
 
 ## 6. 实现规则
 
@@ -181,6 +182,7 @@ docker compose -f deploy/compose.prod.yaml down
 - 桌面和移动端都必须避免文本溢出、控件重叠和动态内容引发布局跳动。
 - **Store 行为落地红线**：禁止在状态管理器（Zustand、React Context 等）中声明仅有空函数体 `() => {}` 的虚空方法。任何对外暴露的操作方法必须具备实际的状态流转、数据变更或明确的报错抛出，防止伪实现静默吞没调用。
 - **i18n 词条闭环**：UI 代码中每引入一个新的 `t('...')` 国际化键名，必须同步在 `frontend/public/locales/template.csv` 及主语言词典中定义；禁止残留未录入模板的裸露键名。
+- **物品/装备/材料/消耗品/功法技能一律图标化展示**：凡展示物品、装备、材料、消耗品或功法技能条目，必须使用图标组件——整块瓦片用 `ItemTile`/`ItemTileReference`（含品质边框与悬浮详情），行内小图标用 `ItemIcon`，文本行引用用 `ItemReference`；禁止仅用纯文本名称罗列。瓦片锚点类须按约定登记进 `frontend/src/styles/selection-grid.css` 的共享 `:is()` 组。
 - **公共组件与统一模板强制收拢**：
   - 前端开发前，**必须先阅读前端公共组件文档 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**，检索是否存在可复用的公共组件或统一模板（如 Hover 提示、复合 Label、境界徽章、模态弹窗、网格选择器等），禁止随意重新自制相似样式或重复实现。
   - 凡是将任何前端部分收拢走统一模板（如 hoverinfo、label、badge、picker 等），**必须同步登记写入 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**。
@@ -231,7 +233,7 @@ scripts/docker-build-prod.sh --push
 
 ## 12. 生产部署与更新规则
 
-- 默认服务器 SSH 别名为 `yuohira`，域名为 `xx.yuohira.com`。
+- 默认服务器 SSH 别名为 `yuohira`，域名为 `daohua.yuohira.com`。
 - 生产目录固定为 `/opt/daohua`，Compose 项目名固定为 `daohua`。
 - 应用端口只绑定 `127.0.0.1:15128`，禁止直接暴露到公网。
 - 首次部署和受控更新使用 `scripts/deploy-prod.sh --image <不可变镜像>`。

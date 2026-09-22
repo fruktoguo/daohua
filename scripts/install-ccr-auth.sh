@@ -98,6 +98,6 @@ ssh -o BatchMode=yes "$REMOTE_HOST" "
 
 if ssh -o BatchMode=yes "$REMOTE_HOST" 'curl --fail --silent --show-error http://127.0.0.1:15128/readyz >/dev/null 2>&1'; then
   printf '==> 公网闭环烟测\n'
-  node "$ROOT_DIR/scripts/smoke-production.mjs" https://xx.yuohira.com
+  node "$ROOT_DIR/scripts/smoke-production.mjs" https://daohua.yuohira.com
 fi
 printf 'CCR 登录态已安装；存在部署资产时自动更新也已启用。\n'

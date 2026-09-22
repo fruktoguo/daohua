@@ -1,4 +1,4 @@
-xx.yuohira.com {
+daohua.yuohira.com {
 	encode zstd gzip
 
 	@blocked path_regexp blocked (?i)((^|/)[.]|[.](php|sql|sqlite|db|bak|zip|tar|gz|key|pem)$)
@@ -16,7 +16,7 @@ xx.yuohira.com {
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-		Content-Security-Policy "default-src 'self'; connect-src 'self' wss://xx.yuohira.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+		Content-Security-Policy "default-src 'self'; connect-src 'self' wss://daohua.yuohira.com; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		-Server
 	}
 

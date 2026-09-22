@@ -13,7 +13,7 @@
 #   7. 自动故障恢复: 校验或 reload 任意环节失败立即自动恢复至备份配置并重新校验 reload。
 #
 # 使用方式:
-#   /opt/daohua/install-caddy.sh /path/to/xx.yuohira.com.caddy
+#   /opt/daohua/install-caddy.sh /path/to/daohua.yuohira.com.caddy
 # ==============================================================================
 
 set -Eeuo pipefail
