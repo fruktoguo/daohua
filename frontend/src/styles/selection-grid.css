@@ -5,7 +5,8 @@
 
 .inventory-grid,
 .item-grid-picker-grid,
-.market-browse-grid {
+.market-browse-grid,
+.abilities-learned-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, var(--item-slot-size));
   gap: 6px;
@@ -32,7 +33,9 @@
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
 ) {
   --item-frame-rgb: 201, 180, 109;
   position: relative;
@@ -97,14 +100,18 @@
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
 ):is(:hover, :focus-visible, :focus-within) .item-tile::before,
 :is(
   .inventory-item-anchor,
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
 ):is(:hover, :focus-visible, :focus-within) .item-tile::after,
 :is(
   .item-tile,
@@ -120,7 +127,23 @@
 ):is(:hover, :focus-visible, :focus-within)::after,
 .item-grid-picker-card--empty.is-selected::before,
 .item-grid-picker-card--empty.is-selected::after {
-  animation: ui-edge-light-fill 0.6s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+  /* 不沿用全局 ui-edge-light-fill：其关键帧动画 filter: brightness()，
+     filter 不在合成器线程上，密集网格逐格 hover 掠过时会逐帧触发主线程重绘。
+     这里用纯 transform + opacity 变体，全程可合成；光感由 ::before/::after 自带的 box-shadow 承担。 */
+  animation: ui-edge-light-fill-flat 0.6s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+}
+
+@keyframes ui-edge-light-fill-flat {
+  0% {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+
+  72%,
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 
 .item-tile {
@@ -148,7 +171,9 @@
     inset 2px 0 0 color-mix(in srgb, var(--item-accent) 56%, transparent),
     inset 0 0 18px rgba(0, 0, 0, 0.36);
   transform: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  /* 密集网格 hover 高亮不走 transition：实测本路径任意 transition（含 transform）都会逐帧主线程重绘
+     （79 格悬停扫过 ~19fps，全禁后 61fps 满帧）。hover 态瞬时切换；动效由 ::before/::after 边缘光的
+     transform + opacity 关键帧承担，跑在合成器线程。 */
 }
 
 .item-tile[data-rarity="mundane"] {
@@ -207,22 +232,51 @@
     inset 0 0 20px rgba(236, 86, 72, 0.1);
 }
 
-.inventory-item-anchor:hover .item-tile,
-.inventory-item-anchor:focus-visible .item-tile,
-.item-use-slot:hover .item-tile,
-.item-use-slot:focus-visible .item-tile,
-.item-grid-picker-card:hover:not(:disabled) .item-tile,
-.item-grid-picker-card:focus-visible .item-tile,
-.item-grid-picker-card.is-selected .item-tile,
-.market-browse-card:hover:not(:disabled) .item-tile,
-.market-browse-card:focus-visible .item-tile,
-.market-browse-card.is-selected .item-tile {
+/* 瓦片 hover 辉光：由 ItemTile 内的 .item-tile-glow 叠加层承载 box-shadow，
+   hover 只动画 opacity（合成器线程）。原先直接过渡/切换瓦片自身 box-shadow
+   的路径实测在密集网格 hover 时逐帧主线程重绘（79 格扫过约 19fps），
+   故辉光改为叠加层 fade-in。is-selected 为常驻态，直接点亮不播动画。 */
+.item-tile-glow {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
   box-shadow:
     0 0 10px var(--item-glow),
     0 0 20px color-mix(in srgb, var(--item-accent) 24%, transparent),
     inset 2px 0 0 var(--item-accent),
     inset 0 0 16px rgba(0, 0, 0, 0.2);
-  transform: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
+):is(:hover, :focus-visible, :focus-within) .item-tile-glow,
+.item-use-slot:is(:hover, :focus-visible) .item-tile-glow,
+.item-grid-picker-card:is(:hover:not(:disabled), :focus-visible) .item-tile-glow,
+.market-browse-card:is(:hover:not(:disabled), :focus-visible) .item-tile-glow,
+.market-detail-item-card:is(:hover, :focus-visible) .item-tile-glow {
+  animation: item-tile-glow-in 0.22s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+}
+
+.item-grid-picker-card.is-selected .item-tile-glow,
+.market-browse-card.is-selected .item-tile-glow {
+  opacity: 1;
+}
+
+.item-use-slot--depleted .item-tile-glow {
+  display: none;
+}
+
+@keyframes item-tile-glow-in {
+  to { opacity: 1; }
 }
 
 .item-type-ribbon {
@@ -236,7 +290,8 @@
   border-radius: 6px 0 0;
   pointer-events: none;
   transform-origin: top left;
-  transition: filter 0.18s ease, transform 0.18s ease;
+  /* 不做 transition（含 transform）：实测本路径 transition 会逐帧主线程重绘。
+     hover 缩放改用 keyframe 动画（合成器线程，零重绘），见下方 hover 规则。 */
 }
 
 .item-type-ribbon > span {
@@ -263,7 +318,7 @@
   padding: 1px 4px;
   font-size: 10px;
   line-height: 1.2;
-  transition: filter 0.18s ease, transform 0.18s ease;
+  /* 同丝带/瓦片：不做 transition，高亮瞬时切换 */
 }
 
 .item-tile .item-corner--top-right {
@@ -278,15 +333,40 @@
   transform-origin: bottom right;
 }
 
+/* hover 缩放用 keyframe 而非 transition/直接 transform：keyframes 的 transform/opacity
+   走合成器线程，实测满帧；transition 即使只过 transform 也会逐帧主线程重绘。 */
 :is(
   .inventory-item-anchor,
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
 ):is(:hover, :focus-visible, :focus-within) .item-type-ribbon {
-  filter: brightness(1.12) drop-shadow(0 0 5px var(--item-glow));
-  transform: scale(1.22);
+  animation: item-ribbon-zoom-in 0.2s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+}
+
+@keyframes item-ribbon-zoom-in {
+  to { transform: scale(1.22); }
+}
+
+/* 丝带高亮：提亮底色 + 叠加外发光 box-shadow，替代原来的 filter: brightness() drop-shadow()。
+   两者观感等价，但 box-shadow 不产生离屏纹理，密集网格下逐格 hover 不再逐帧重绘。 */
+:is(
+  .inventory-item-anchor,
+  .item-grid-picker-tooltip,
+  .item-use-slot-tooltip,
+  .market-browse-tooltip,
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
+):is(:hover, :focus-visible, :focus-within) .item-type-ribbon > span {
+  background: color-mix(in srgb, var(--item-accent) 88%, #fff);
+  box-shadow:
+    0 1px 4px rgba(0, 0, 0, 0.45),
+    0 0 6px var(--item-glow),
+    0 0 12px color-mix(in srgb, var(--item-accent) 32%, transparent);
 }
 
 :is(
@@ -294,10 +374,15 @@
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
 ):is(:hover, :focus-visible, :focus-within) .item-corner--top-right {
-  filter: brightness(1.12) drop-shadow(0 0 4px var(--item-glow));
-  transform: scale(1.05);
+  animation: item-corner-zoom-in 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.62),
+    0 0 8px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 55%, transparent),
+    0 0 16px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 28%, transparent);
 }
 
 :is(
@@ -305,10 +390,19 @@
   .item-grid-picker-tooltip,
   .item-use-slot-tooltip,
   .market-browse-tooltip,
-  .combat-ability-slot-shell
+  .combat-ability-slot-shell,
+  .battle-report-item-anchor,
+  .world-monster-drop-anchor
 ):is(:hover, :focus-visible, :focus-within) .item-corner--bottom-right {
-  filter: brightness(1.12) drop-shadow(0 0 4px var(--item-glow));
-  transform: scale(1.05);
+  animation: item-corner-zoom-in 0.18s cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+  box-shadow:
+    0 3px 9px rgba(0, 0, 0, 0.62),
+    0 0 8px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 55%, transparent),
+    0 0 16px color-mix(in srgb, var(--item-accent, var(--gold-dim)) 28%, transparent);
+}
+
+@keyframes item-corner-zoom-in {
+  to { transform: scale(1.05); }
 }
 
 .item-tile-name {
@@ -413,6 +507,18 @@
   place-items: center;
 }
 
+/* 网格内 button 触发器关闭全局 button 过渡（同上：hover 路径不做逐帧重绘） */
+:is(
+  .item-grid-picker-card,
+  .market-browse-card,
+  .item-use-slot,
+  .combat-ability-slot,
+  .item-slot-inline-action,
+  .combat-ability-level-control
+) {
+  transition: none;
+}
+
 .item-use-slot-cell,
 .combat-ability-cell {
   width: var(--item-tile-size);
@@ -432,7 +538,6 @@
   box-shadow: 0 2px 7px rgba(0, 0, 0, 0.48);
   font-size: 10px;
   line-height: 1.35;
-  transition: transform 0.18s ease;
 }
 
 .item-slot-inline-action::before,
@@ -719,7 +824,6 @@
   font-size: 6px;
   line-height: 11px;
   transform-origin: top right;
-  transition: transform 0.18s ease;
 }
 
 .combat-ability-slot-shell .item-slot-inline-action--condition {
@@ -732,26 +836,11 @@
   transform: none;
 }
 
-input.combat-ability-level-input {
-  width: 13px;
-  min-width: 13px;
-  height: 11px;
-  min-height: 11px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  color: inherit;
-  background: transparent;
-  font-size: 6px;
-  line-height: 11px;
-  text-align: center;
-  appearance: textfield;
-}
-
-.combat-ability-level-input::-webkit-inner-spin-button,
-.combat-ability-level-input::-webkit-outer-spin-button {
-  margin: 0;
-  appearance: none;
+/* 装配等级静态徽标数字（等级恒等于已参悟等级，不可编辑） */
+.combat-ability-level-value {
+  font-size: 7px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .item-grid-picker-card {

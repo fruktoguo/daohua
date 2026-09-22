@@ -561,6 +561,14 @@
   background: rgba(0, 0, 0, 0.4);
 }
 
+/* 怪物悬浮详情卡：掉落物图标瓦片行 */
+.world-monster-drops-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .world-building-pill {
   display: inline-flex;
   align-items: center;
@@ -2915,17 +2923,11 @@
   white-space: nowrap;
 }
 
-/* 小节容器（获取经验 / 物品得失 / 行动信息） */
+/* 小节容器（行动信息 / 物品得失 / 获取经验，不渲染节标题只排内容） */
 .battle-report-section {
   display: grid;
   gap: 4px;
   min-width: 0;
-}
-
-.battle-report-section-title {
-  color: var(--text-dim);
-  font-size: 11px;
-  letter-spacing: 1px;
 }
 
 /* 等级提升行（境界/六维/功法），与斗法战绩同色系弱强调 */
@@ -2976,11 +2978,12 @@
   color: #c9a2e8;
 }
 
+/* 图标瓦片横排换行：auto-fill 网格在不定宽弹性列中会塌缩为单列，必须用 flex */
 .battle-report-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  align-items: center;
+  gap: 6px;
+  align-items: flex-start;
 }
 
 .battle-report-staged {
