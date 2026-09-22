@@ -5,9 +5,7 @@ import { formatChineseSplitNumber, formatNumber } from '../game/format'
 import { FloatingTooltip } from './FloatingPopover'
 import { UnitNumber } from './UnitNumber'
 import {
-  PercentValue,
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
-  BASELINE_COMBAT_ATTRIBUTES,
   getCumulativeExpForLevel,
   calculateRealmInfo,
   calculateRealmProgress,
@@ -17,6 +15,7 @@ import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
 import { CharacterAvatar } from './CharacterAvatar'
+import { CombatAttributePanel, resolvePlayerCombatAttributeModel } from './CombatAttributePanel'
 
 /** 内视四大核心模块 Tab 标识 */
 type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
@@ -164,59 +163,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
   const basePool = useMemo(() => calculateBaseAttributes(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
 
-  // 1. 基础战斗属性 (固定数值类型，全部向下取整)
-  // 当 attributes 存在时使用实时数值；未推送时以 basePool 为底座应用六维加成
-  const staminaBonus = (loadout?.staminaLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
-  const intelligenceBonus = (loadout?.intelligenceLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
-  const boneBonus = (loadout?.defenseLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01
-
-  const maxHp: number = Math.floor(attributes?.maxHitpoints ?? (basePool.baseHp * (1.0 + staminaBonus) * (1.0 + boneBonus)))
-  const maxMp: number = Math.floor(attributes?.maxManapoints ?? (basePool.baseMp * (1.0 + intelligenceBonus) * (1.0 + boneBonus)))
-  const physAtk: number = Math.floor(attributes
-    ? (attributes.style === 'five-elements' ? (basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)) : attributes.maxDamage)
-    : (basePool.baseAd * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
-  const spellAtk: number = Math.floor(attributes
-    ? (attributes.style === 'five-elements' ? attributes.maxDamage : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
-    : (basePool.baseAp * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.02)))
-  const armor: number = Math.floor(Math.max(0.0, attributes?.armor ?? (basePool.baseArmor * (1.0 + staminaBonus))))
-  const magicRes: number = Math.floor(Math.max(0.0, attributes?.magicResistance ?? (basePool.baseMagicRes * (1.0 + intelligenceBonus))))
-  const accuracy: number = Math.floor(attributes?.accuracyRating ?? (basePool.baseAccuracy * (1.0 + (loadout?.swordsmanshipLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
-  const evasion: number = Math.floor(attributes?.evasionRating ?? (basePool.baseEvasion * (1.0 + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
-  const critPoint: number = Math.floor(attributes ? (attributes.criticalRating ?? attributes.criticalChance * 100.0) : (basePool.baseCrit * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
-  const critAvoidPoint: number = Math.floor(attributes ? (attributes.criticalAvoidanceRating ?? attributes.criticalAvoidance * 100.0) : (basePool.baseCritAvoid * (1.0 + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01)))
-  const parryBreakPoint: number = Math.floor(basePool.baseBreak * (1.0 + (loadout?.attackLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
-  const parryResolvePoint: number = Math.floor(basePool.baseParry * (1.0 + boneBonus + (loadout?.talismanLevel ?? DEFAULT_ROOT_ATTRIBUTE_POINTS) * 0.01))
-
-  // 服务端直接提供每 5 秒的回复点数；展示层按整数约定向下取整，不出现小数。
-  const hpRegenTotal = Math.floor(attributes?.hpRegenPerFiveSeconds ?? basePool.baseHpRegen)
-  const mpRegenTotal = Math.floor(attributes?.mpRegenPerFiveSeconds ?? basePool.baseMpRegen)
-
-  // 2. 特殊战斗属性 (统一百分比类型 PercentValue，内部均为 double 点数)
-  const critDamagePercent = PercentValue.linear((attributes?.criticalDamageRatio ?? 1.5) * 100.0)
-  const actionSpeedPoints = 0.0 // 默认 0.0 点
-  const actionSpeedPercent = PercentValue.nonLinear(actionSpeedPoints)
-  const cooldownSpeedPercent = PercentValue.nonLinear(BASELINE_COMBAT_ATTRIBUTES.percentPoints)
-  const manaCostReductionPercent = PercentValue.nonLinear(BASELINE_COMBAT_ATTRIBUTES.percentPoints)
-  const damageReductionPercent = PercentValue.linear((attributes?.damageAbsorptionRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0)
-  const armorPenPercent = PercentValue.linear((attributes?.penetrationRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0)
-  const magicPenPercent = PercentValue.linear((attributes?.penetrationRatio ?? BASELINE_COMBAT_ATTRIBUTES.percentPoints) * 100.0)
-  const threatBonusPercent = PercentValue.linear(BASELINE_COMBAT_ATTRIBUTES.percentPoints)
-
-  // 3. 其他属性 (增免伤与五行，全部为 PercentValue double)
-  const physBoostPercent = PercentValue.linear(0.0)
-  const physReductionPercent = PercentValue.linear(0.0)
-  const spellBoostPercent = PercentValue.linear(0.0)
-  const spellReductionPercent = PercentValue.linear(0.0)
-  const metalBoostPercent = PercentValue.linear(0.0)
-  const metalReductionPercent = PercentValue.linear(0.0)
-  const woodBoostPercent = PercentValue.linear(0.0)
-  const woodReductionPercent = PercentValue.linear(0.0)
-  const waterBoostPercent = PercentValue.linear(0.0)
-  const waterReductionPercent = PercentValue.linear(0.0)
-  const fireBoostPercent = PercentValue.linear(0.0)
-  const fireReductionPercent = PercentValue.linear(0.0)
-  const earthBoostPercent = PercentValue.linear(0.0)
-  const earthReductionPercent = PercentValue.linear(0.0)
+  // 斗法战斗属性统一模型：与战场单位详情弹窗共用同一解析口径 (CombatAttributePanel)
+  const combatModel = useMemo(
+    () => resolvePlayerCombatAttributeModel(attributes, loadout, basePool),
+    [attributes, loadout, basePool],
+  )
 
   // 4. 生平记录 (斩妖为怪物击败数，破敌严格为斗法击败玩家数，败走为败退次数，苦修为修炼时长，全部向下取整)
   const duel = useGameStore(state => state.duel)
@@ -305,11 +256,11 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-quick-stats">
               <div className="insight-quick-item">
                 <span>{t('insight.quick.hp')}</span>
-                <strong className="tone-green"><UnitNumber tooltipLabel={t('insight.quick.hp')} tone="jade" value={maxHp} /></strong>
+                <strong className="tone-green"><UnitNumber tooltipLabel={t('insight.quick.hp')} tone="jade" value={combatModel.maxHitpoints} /></strong>
               </div>
               <div className="insight-quick-item">
                 <span>{t('insight.quick.mp')}</span>
-                <strong className="tone-blue"><UnitNumber tooltipLabel={t('insight.quick.mp')} tone="qi" value={maxMp} /></strong>
+                <strong className="tone-blue"><UnitNumber tooltipLabel={t('insight.quick.mp')} tone="qi" value={combatModel.maxManapoints} /></strong>
               </div>
             </div>
           </div>
@@ -533,95 +484,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         {/* ========================================================================= */}
         {activeTab === 'combat' && (
           <div className="insight-panel insight-panel--combat">
-            <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">{t('insight.combat.groupBase')}</h4>
-              <div className="insight-base-layout">
-                {/* 第 1 排：气血、灵力与自然回复 */}
-                <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.hp')} value={maxHp} tone="emerald" tooltip={t('insight.combat.hpTooltip')} />
-                  <PillStatLabel label={t('insight.combat.mp')} value={maxMp} tone="cyan" tooltip={t('insight.combat.mpTooltip')} />
-                  <PillStatLabel label={t('insight.combat.hpRegen')} value={hpRegenTotal} tone="emerald" tooltip={t('insight.combat.hpRegenTooltip')} />
-                  <PillStatLabel label={t('insight.combat.mpRegen')} value={mpRegenTotal} tone="cyan" tooltip={t('insight.combat.mpRegenTooltip')} />
-                </div>
-
-                {/* 第 2 排：攻防属性 (物理攻击、术法攻击、物理护甲、术法抗性) */}
-                <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.physAtk')} value={physAtk} tone="crimson" tooltip={t('insight.combat.physAtkTooltip')} />
-                  <PillStatLabel label={t('insight.combat.spellAtk')} value={spellAtk} tone="indigo" tooltip={t('insight.combat.spellAtkTooltip')} />
-                  <PillStatLabel label={t('insight.combat.armor')} value={armor} tone="bronze" tooltip={t('insight.combat.armorTooltip')} />
-                  <PillStatLabel label={t('insight.combat.magicRes')} value={magicRes} tone="violet" tooltip={t('insight.combat.magicResTooltip')} />
-                </div>
-
-                {/* 第 3 排：博弈对抗 (命中/闪避、暴击/免暴、破招/化解) */}
-                <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.accuracy')} value={accuracy} tone="sky" tooltip={t('insight.combat.accuracyTooltip')} />
-                  <PillStatLabel label={t('insight.combat.evasion')} value={evasion} tone="teal" tooltip={t('insight.combat.evasionTooltip')} />
-                  <PillStatLabel label={t('insight.combat.crit')} value={critPoint} tone="gold" tooltip={t('insight.combat.critTooltip')} />
-                  <PillStatLabel label={t('insight.combat.critAvoid')} value={critAvoidPoint} tone="slate" tooltip={t('insight.combat.critAvoidTooltip')} />
-                  <PillStatLabel label={t('insight.combat.parryBreak')} value={parryBreakPoint} tone="amber" tooltip={t('insight.combat.parryBreakTooltip')} />
-                  <PillStatLabel label={t('insight.combat.parryResolve')} value={parryResolvePoint} tone="silver" tooltip={t('insight.combat.parryResolveTooltip')} />
-                </div>
-              </div>
-            </div>
-
-            <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">{t('insight.combat.groupSpecial')}</h4>
-              <div className="insight-base-layout">
-                {/* 第 1 排：时序与施法效能 */}
-                <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.critDamage')} value={critDamagePercent.format()} tone="gold" tooltip={t('insight.combat.critDamageTooltip')} />
-                  <PillStatLabel label={t('insight.combat.actionSpeed')} value={actionSpeedPercent.format()} tone="teal" tooltip={t('insight.combat.actionSpeedTooltip')} />
-                  <PillStatLabel label={t('insight.combat.cooldownSpeed')} value={cooldownSpeedPercent.format()} tone="cyan" tooltip={t('insight.combat.cooldownSpeedTooltip')} />
-                  <PillStatLabel label={t('insight.combat.manaCostReduction')} value={manaCostReductionPercent.format()} tone="cyan" tooltip={t('insight.combat.manaCostReductionTooltip')} />
-                </div>
-
-                {/* 第 2 排：增伤减伤与穿透 */}
-                <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.damageReduction')} value={damageReductionPercent.format()} tone="emerald" tooltip={t('insight.combat.damageReductionTooltip')} />
-                  <PillStatLabel label={t('insight.combat.armorPen')} value={armorPenPercent.format()} tone="bronze" tooltip={t('insight.combat.armorPenTooltip')} />
-                  <PillStatLabel label={t('insight.combat.magicPen')} value={magicPenPercent.format()} tone="violet" tooltip={t('insight.combat.magicPenTooltip')} />
-                  <PillStatLabel label={t('insight.combat.threatBonus')} value={threatBonusPercent.format()} tone="crimson" tooltip={t('insight.combat.threatBonusTooltip')} />
-                </div>
-              </div>
-            </div>
-
-            <div className="insight-pill-group">
-              <h4 className="insight-pill-group-title">{t('insight.combat.groupElements')}</h4>
-              <div className="insight-base-layout">
-                {/* 第 1 排：物法基础增减伤 */}
-                <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.physBoostReduce')} value={`${physBoostPercent.format()} / ${physReductionPercent.format()}`} tone="crimson" tooltip={t('insight.combat.physBoostReduceTooltip')} />
-                  <PillStatLabel label={t('insight.combat.spellBoostReduce')} value={`${spellBoostPercent.format()} / ${spellReductionPercent.format()}`} tone="indigo" tooltip={t('insight.combat.spellBoostReduceTooltip')} />
-                </div>
-
-                {/* 第 2 排：五行克制增免 */}
-                <div className="insight-base-row">
-                  <PillStatLabel label={t('insight.combat.metalBoostReduce')} value={`${metalBoostPercent.format()} / ${metalReductionPercent.format()}`} tone="gold" tooltip={t('insight.combat.metalBoostReduceTooltip')} />
-                  <PillStatLabel label={t('insight.combat.woodBoostReduce')} value={`${woodBoostPercent.format()} / ${woodReductionPercent.format()}`} tone="emerald" tooltip={t('insight.combat.woodBoostReduceTooltip')} />
-                  <PillStatLabel label={t('insight.combat.waterBoostReduce')} value={`${waterBoostPercent.format()} / ${waterReductionPercent.format()}`} tone="cyan" tooltip={t('insight.combat.waterBoostReduceTooltip')} />
-                  <PillStatLabel label={t('insight.combat.fireBoostReduce')} value={`${fireBoostPercent.format()} / ${fireReductionPercent.format()}`} tone="amber" tooltip={t('insight.combat.fireBoostReduceTooltip')} />
-                  <PillStatLabel label={t('insight.combat.earthBoostReduce')} value={`${earthBoostPercent.format()} / ${earthReductionPercent.format()}`} tone="bronze" tooltip={t('insight.combat.earthBoostReduceTooltip')} />
-                </div>
-              </div>
-            </div>
-
-            {/* 运转中的丹药与神通 Buff */}
-            {buffs.length > 0 && (
-              <div className="insight-pill-group">
-                <h4 className="insight-pill-group-title">{t('insight.combat.groupBuffs')}</h4>
-                <div className="insight-pill-group-items">
-                  {buffs.map(buff => (
-                    <PillStatLabel
-                      key={buff.buffId}
-                      label={buff.name}
-                      value={buff.stacks > 1 ? `×${formatNumber(buff.stacks)}` : t('insight.combat.buffActive')}
-                      tone="gold"
-                      tooltip={t('insight.combat.buffTooltip', { name: buff.name, stacks: formatNumber(buff.stacks) })}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+            <CombatAttributePanel buffs={buffs} model={combatModel} />
           </div>
         )}
 

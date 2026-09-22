@@ -8,11 +8,11 @@ import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, 
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
-import { ValueText } from './ValueText'
 import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
-import { BASELINE_COMBAT_ATTRIBUTES } from '../game/combatConstants'
+import { BASELINE_COMBAT_ATTRIBUTES, calculateBaseAttributes } from '../game/combatConstants'
 import { CharacterAvatar } from './CharacterAvatar'
+import { CombatAttributePanel, resolveEnemyCombatAttributeModel, resolvePlayerCombatAttributeModel, type CombatAttributePanelModel } from './CombatAttributePanel'
 
 /** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名 */
 function resolveQueueEntryDisplayName(entry: QueueEntry | null | undefined, fallback?: string): string {
@@ -1027,36 +1027,31 @@ function ArenaIdleCard(): React.JSX.Element {
   )
 }
 
-/** 角色属性行数据 */
-interface AttributeRow {
-  label: string
-  value: string
-}
-
 /**
- * 参战角色详细属性与生效 Buff 模态窗组件 (CharacterAttributeModal)
+ * 参战单位详细属性与生效 Buff 模态窗组件 (CharacterAttributeModal)
+ *
+ * 角色与敌怪共用同一斗法属性面板 (CombatAttributePanel)，
+ * 仅数值来源不同：角色取服务端实时属性 + 境界底座估算，敌怪取遭遇配表定义。
  */
 function CharacterAttributeModal({
   actorId,
+  model,
   name,
   role = 'player',
   visual,
-  baseRows,
   buffs,
   onClose,
   open,
-  specialRows,
   title,
 }: {
   actorId?: string | null
+  model: CombatAttributePanelModel | null
   name?: string | null
   role?: 'player' | 'enemy'
   visual?: CharacterVisual | null
-  baseRows: readonly AttributeRow[]
   buffs: readonly Buff[]
   onClose: () => void
   open: boolean
-  specialRows: readonly AttributeRow[]
   title: string
 }): React.JSX.Element | null {
   const t = useT()
@@ -1081,24 +1076,7 @@ function CharacterAttributeModal({
           </span>
         </div>
       </header>
-      <section className="character-attribute-section">
-        <h3>{t('combat.attrs.base')}</h3>
-        <dl>{baseRows.map(row => <div key={row.label}><dt>{row.label}</dt><dd><ValueText text={row.value} /></dd></div>)}</dl>
-      </section>
-      {specialRows.length > 0 && (
-        <section className="character-attribute-section">
-          <h3>{t('combat.attrs.special')}</h3>
-          <dl>{specialRows.map(row => <div key={row.label}><dt>{row.label}</dt><dd><ValueText text={row.value} /></dd></div>)}</dl>
-        </section>
-      )}
-      {buffs.length > 0 && (
-        <section className="character-attribute-section">
-          <h3>{t('combat.attrs.effects')}</h3>
-          <div className="character-buff-list">
-            {buffs.map(buff => <span key={buff.buffId}>{buff.name}{buff.stacks > 1 ? ` ×${buff.stacks}` : ''}</span>)}
-          </div>
-        </section>
-      )}
+      {model && <CombatAttributePanel buffs={buffs} model={model} />}
     </Modal>
   )
 }
@@ -1273,6 +1251,7 @@ export const CombatArena = memo(function CombatArena({
 }): React.JSX.Element {
   const playerName = useGameStore(state => state.name)
   const playerVisual = useGameStore(state => state.visual)
+  const stats = useGameStore(state => state.stats)
   const combat = useGameStore(state => state.combat)
   const combatResources = useGameStore(state => state.combatResources)
   const combatAttributes = useGameStore(state => state.combatAttributes)
@@ -1427,106 +1406,17 @@ export const CombatArena = memo(function CombatArena({
     ?? null
   const enemyDefinition = enemy?.definition ?? null
 
-  // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时惰性计算攻防与抗性属性数组，彻底消除战斗每帧的冗余数组分配
-  const { baseRows, specialRows } = useMemo(() => {
-    if (inspectedActor === null) {
-      return { baseRows: [], specialRows: [] }
-    }
-
-    if (inspectedEnemy) {
-      const enemyBaseRows: AttributeRow[] = [
-        { label: t('combat.attr.hp'), value: `${formatInteger(enemy?.hp ?? 0)} / ${formatInteger(enemy?.maxHp ?? 1)}` },
-        { label: t('combat.attr.mp'), value: `${formatInteger(enemy?.mp ?? 0)} / ${formatInteger(enemy?.maxMp ?? 1)}` },
-        { label: t('combat.attr.accuracy'), value: formatInteger(enemyDefinition?.accuracyRating ?? 0) },
-        { label: t('combat.attr.evasion'), value: formatInteger(enemyDefinition?.evasionRating ?? 0) },
-        { label: t('combat.attr.maxDamage'), value: formatInteger(enemyDefinition?.maxDamage ?? 0) },
-        { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: Math.round((enemyDefinition?.attackIntervalMilliseconds ?? 0) / 1000) }) },
-        { label: t('combat.attr.armor'), value: formatInteger(enemyDefinition?.armor ?? 0) },
-        { label: t('combat.attr.magicRes'), value: formatInteger(enemyDefinition?.magicResistance ?? 0) },
-        { label: t('combat.attr.metalRes'), value: formatInteger(enemyDefinition?.metalResistance ?? 0) },
-        { label: t('combat.attr.woodRes'), value: formatInteger(enemyDefinition?.woodResistance ?? 0) },
-        { label: t('combat.attr.waterRes'), value: formatInteger(enemyDefinition?.waterResistance ?? 0) },
-        { label: t('combat.attr.fireRes'), value: formatInteger(enemyDefinition?.fireResistance ?? 0) },
-        { label: t('combat.attr.earthRes'), value: formatInteger(enemyDefinition?.earthResistance ?? 0) },
-      ]
-      const enemySpecialCandidates: Array<[string, number, 'percent' | 'number' | 'milliseconds' | 'regen']> = [
-        [t('combat.special.tenacity'), enemyDefinition?.tenacity ?? 0, 'number'],
-        [t('combat.special.hpRegen'), enemyDefinition?.hpRegenPerFiveSeconds ?? 0, 'regen'],
-        [t('combat.special.mpRegen'), enemyDefinition?.mpRegenPerFiveSeconds ?? 0, 'regen'],
-        [t('combat.special.lifeSteal'), enemyDefinition?.lifeStealRatio ?? 0, 'percent'],
-        [t('combat.special.armorDamage'), enemyDefinition?.armorDamageRatio ?? 0, 'percent'],
-        [t('combat.special.hpDrain'), enemyDefinition?.hpDrainRatio ?? 0, 'percent'],
-        [t('combat.special.criticalChance'), enemyDefinition?.criticalChance ?? 0, 'percent'],
-        [t('combat.special.criticalDamage'), enemyDefinition?.criticalDamageRatio ?? 0, 'percent'],
-        [t('combat.special.criticalAvoidance'), enemyDefinition?.criticalAvoidance ?? 0, 'percent'],
-        [t('combat.special.damageAbsorption'), enemyDefinition?.damageAbsorptionRatio ?? 0, 'percent'],
-      ]
-      const enemySpecialRows = enemySpecialCandidates
-        .map(([label, value, kind]) => ({
-          label,
-          value: kind === 'percent'
-            ? `${value > 0 ? '+' : ''}${Math.round(value * 100)}%`
-            : kind === 'regen'
-              ? `+${formatInteger(value)} / 5s`
-              : kind === 'milliseconds'
-                ? t('combat.attr.seconds', { n: Math.round(value / 1000) })
-                : formatInteger(value),
-        }))
-      return { baseRows: enemyBaseRows, specialRows: enemySpecialRows }
-    }
-
-    const playerBaseRows: AttributeRow[] = [
-      { label: t('combat.attr.hp'), value: `${formatInteger(playerHp)} / ${formatInteger(playerMaxHp)}` },
-      { label: t('combat.attr.mp'), value: `${formatInteger(playerMp)} / ${formatInteger(playerMaxMp)}` },
-      { label: t('combat.attr.stamina'), value: formatInteger(combat?.staminaLevel ?? 0) },
-      { label: t('combat.attr.meridian'), value: formatInteger(combat?.intelligenceLevel ?? 0) },
-      { label: t('combat.attr.defense'), value: formatInteger(combat?.defenseLevel ?? 0) },
-      { label: t('combat.attr.attack'), value: formatInteger(combat?.attackLevel ?? 0) },
-      { label: t('combat.attr.divineSense'), value: formatInteger(combat?.swordsmanshipLevel ?? 0) },
-      { label: t('combat.attr.movement'), value: formatInteger(combat?.talismanLevel ?? 0) },
-      { label: t('combat.attr.power'), value: formatInteger(combatAttributes?.maxDamage ?? 0) },
-      { label: t('combat.attr.accuracy'), value: formatInteger(combatAttributes?.accuracyRating ?? 0) },
-      { label: t('combat.attr.evasion'), value: formatInteger(combatAttributes?.evasionRating ?? 0) },
-      { label: t('combat.attr.armor'), value: formatInteger(combatAttributes?.armor ?? 0) },
-      { label: t('combat.attr.magicRes'), value: formatInteger(combatAttributes?.magicResistance ?? 0) },
-      { label: t('combat.attr.metalRes'), value: formatInteger(combatAttributes?.metalResistance ?? 0) },
-      { label: t('combat.attr.woodRes'), value: formatInteger(combatAttributes?.woodResistance ?? 0) },
-      { label: t('combat.attr.waterRes'), value: formatInteger(combatAttributes?.waterResistance ?? 0) },
-      { label: t('combat.attr.fireRes'), value: formatInteger(combatAttributes?.fireResistance ?? 0) },
-      { label: t('combat.attr.earthRes'), value: formatInteger(combatAttributes?.earthResistance ?? 0) },
-      { label: t('combat.attr.attackInterval'), value: t('combat.attr.seconds', { n: Math.round((combatAttributes?.attackIntervalMilliseconds ?? 0) / 1000) }) },
-    ]
-    const playerSpecialCandidates: Array<[string, number, 'percent' | 'number' | 'regen']> = [
-      [t('combat.special.tenacity'), combatAttributes?.tenacity ?? 0, 'number'],
-      [t('combat.special.hpRegen'), combatAttributes?.hpRegenPerFiveSeconds ?? 0, 'regen'],
-      [t('combat.special.mpRegen'), combatAttributes?.mpRegenPerFiveSeconds ?? 0, 'regen'],
-      [t('combat.special.penetration'), combatAttributes?.penetrationRatio ?? 0, 'percent'],
-      [t('combat.special.criticalChance'), combatAttributes?.criticalChance ?? 0, 'percent'],
-      [t('combat.special.criticalDamage'), combatAttributes?.criticalDamageRatio ?? 0, 'percent'],
-      [t('combat.special.criticalAvoidance'), combatAttributes?.criticalAvoidance ?? 0, 'percent'],
-      [t('combat.special.damageAbsorption'), combatAttributes?.damageAbsorptionRatio ?? 0, 'percent'],
-      [t('combat.special.lifeSteal'), combatAttributes?.lifeStealRatio ?? 0, 'percent'],
-      [t('combat.special.armorDamage'), combatAttributes?.armorDamageRatio ?? 0, 'percent'],
-      [t('combat.special.hpDrain'), combatAttributes?.hpDrainRatio ?? 0, 'percent'],
-      [t('combat.special.damageTaken'), combatAttributes?.damageTakenRatio ?? 0, 'percent'],
-      [t('combat.special.dropRate'), combat?.combatDropRate ?? 0, 'percent'],
-      [t('combat.special.dropQuantity'), combat?.combatDropQuantity ?? 0, 'percent'],
-      [t('combat.special.rareFind'), combat?.combatRareFind ?? 0, 'percent'],
-      [t('combat.special.searchSpeed'), combat?.searchSpeedRatio ?? 0, 'percent'],
-    ]
-    const playerSpecialRows = playerSpecialCandidates
-      .filter(([, value]) => Math.abs(value) > 0.000001)
-      .map(([label, value, kind]) => ({
-        label,
-        value: kind === 'percent'
-          ? `${value > 0 ? '+' : ''}${Math.round(value * 100)}%`
-          : kind === 'regen'
-            ? `+${formatInteger(value)} / 5s`
-            : formatInteger(value),
-      }))
-
-    return { baseRows: playerBaseRows, specialRows: playerSpecialRows }
-  }, [inspectedActor, inspectedEnemy, enemy, enemyDefinition, playerHp, playerMaxHp, playerMp, playerMaxMp, combat, combatAttributes, t])
+  // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时惰性解析斗法属性模型，
+  // 彻底消除战斗每帧的冗余计算；角色/敌怪共用 CombatAttributePanel 同一展示口径。
+  const attributeModel = useMemo<CombatAttributePanelModel | null>(() => {
+    if (inspectedActor === null) return null
+    if (inspectedEnemy) return resolveEnemyCombatAttributeModel(enemyDefinition, { maxHitpoints: enemy?.maxHp ?? 0, maxManapoints: enemy?.maxMp ?? 0 })
+    return resolvePlayerCombatAttributeModel(
+      combatAttributes,
+      combat,
+      calculateBaseAttributes(stats.spirit ?? 0, stats.realmLevel),
+    )
+  }, [inspectedActor, inspectedEnemy, enemy, enemyDefinition, combatAttributes, combat, stats.spirit, stats.realmLevel])
 
   return (
     <div className="combat-arena-shell">
@@ -1649,13 +1539,12 @@ export const CombatArena = memo(function CombatArena({
       </div>
       <CharacterAttributeModal
         actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
-        baseRows={baseRows}
         buffs={inspectedActor === 'player' ? buffs : []}
+        model={attributeModel}
         name={inspectedEnemy?.name ?? playerName}
         onClose={() => setInspectedActor(null)}
         open={inspectedActor !== null}
         role={inspectedEnemy ? 'enemy' : 'player'}
-        specialRows={specialRows}
         title={inspectedEnemy?.name ?? playerName}
         visual={inspectedEnemy?.visual ?? null}
       />
