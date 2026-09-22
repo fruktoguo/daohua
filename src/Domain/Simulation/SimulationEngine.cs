@@ -658,13 +658,10 @@ public static class SimulationEngine
             expedition.PlayerState ?? new CombatantSnapshot(expedition.PlayerHitpoints, expedition.PlayerManapoints,
                 expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat),
             templates,
-            waveEnemies.Select(enemy => new CombatantSnapshot(enemy.Hitpoints, enemy.Manapoints,
-                enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
-                enemy.PendingSkillIndex, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints,
-                enemy.SkillCooldownUntil, enemy.SkillCastCount, enemy.Buffs)).ToArray(),
+            waveEnemies.Select(enemy => enemy.State).ToArray(),
             expedition.BattleElapsedSeconds,
             expedition.Outcome,
-            expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.AttackCount));
+            expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.State.AttackCount));
         for (var i = 0; i < waveEnemies.Count; i++)
             battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
         // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
@@ -968,17 +965,13 @@ public static class SimulationEngine
         // 玩家单位的完整战斗快照（吟唱槽位/逐槽冷却/施放计数/战内 Buff）随相位持久化，恢复后序列不漂移。
         PlayerState = CombatEncounterState.Snapshot(battle.Player),
         Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
-            enemy.DefinitionId ?? enemy.Id, enemy.Hitpoints, enemy.Manapoints,
-            enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
-            enemy.PendingSkillIndex, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints,
-            enemy.SkillCooldownUntil,
+            enemy.DefinitionId ?? enemy.Id,
+            CombatEncounterState.Snapshot(enemy),
             enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
                 ? DeterministicCombatEngine.AbilityText(enemy.Skills[enemy.PendingSkillIndex].Ability, "id") : null,
             enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
                 ? DeterministicCombatEngine.AbilityNumber(enemy.Skills[enemy.PendingSkillIndex].Ability, "castMilliseconds") / 1000d * enemy.Stats.CastTimeFactor
-                : enemy.Stats.AttackIntervalSeconds,
-            enemy.SkillCastCount,
-            enemy.Buffs.Count == 0 ? null : enemy.Buffs.ToArray())).ToArray()
+                : enemy.Stats.AttackIntervalSeconds)).ToArray()
     };
 
     /// <summary>

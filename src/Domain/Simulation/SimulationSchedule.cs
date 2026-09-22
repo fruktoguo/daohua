@@ -63,8 +63,8 @@ public static class SimulationSchedule
                             : double.PositiveInfinity;
                         if (expedition.Enemies is not null)
                             foreach (var enemy in expedition.Enemies)
-                                if (enemy.Hitpoints > 0)
-                                    nextAttack = Math.Min(nextAttack, enemy.NextAttackAtSeconds);
+                                if (enemy.State.Hitpoints > 0)
+                                    nextAttack = Math.Min(nextAttack, enemy.State.NextAttackAtSeconds);
                         if (double.IsFinite(nextAttack))
                             Consider(Math.Max(0, nextAttack - expedition.BattleElapsedSeconds));
                         // 战斗内技能边界（吟唱/冷却按战斗时钟扣减）。

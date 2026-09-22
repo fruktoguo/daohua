@@ -1296,11 +1296,11 @@ const MONSTER_CATALOG = {
 
 const ABILITIES_LIST = [
   // 物理武技
-  { id: 'heavy-slash', name: '重斩', category: 'physical', categoryName: '物理武技', element: '金 / 剑术', desc: '破空金芒巨刃劈裂地面，强力受击与大额伤害跳字。', icon: '⚔️', manaCost: 10, castTime: 600, actor: 'player', target: 'enemy' },
-  { id: 'chain-strike', name: '连环', category: 'physical', categoryName: '物理武技', element: '金 / 剑术', desc: '瞬发三连刺，三道凌厉交错剑光疾出，三段快速连续伤害。', icon: '🗡️', manaCost: 10, castTime: 600, actor: 'player', target: 'enemy' },
+  { id: 'heavy-slash', name: '重斩', category: 'physical', categoryName: '物理武技', element: '金 / 剑道', desc: '破空金芒巨刃劈裂地面，强力受击与大额伤害跳字。', icon: '⚔️', manaCost: 10, castTime: 600, actor: 'player', target: 'enemy' },
+  { id: 'chain-strike', name: '连环', category: 'physical', categoryName: '物理武技', element: '金 / 剑道', desc: '瞬发三连刺，三道凌厉交错剑光疾出，三段快速连续伤害。', icon: '🗡️', manaCost: 10, castTime: 600, actor: 'player', target: 'enemy' },
   { id: 'taunt', name: '嘲讽', category: 'physical', categoryName: '物理武技', element: '无 / 炼体', desc: '金刚战意扩散，周身激荡金色防御冲击波与护体金盾。', icon: '🛡️', manaCost: 20, castTime: 300, actor: 'player', target: 'self' },
-  { id: 'heavy-clouds', name: '重云', category: 'physical', categoryName: '物理武技', element: '无 / 剑术', desc: '剑气化作层叠翻滚的厚重云浪剑幕，席卷全场敌方。', icon: '☁️', manaCost: 40, castTime: 800, actor: 'player', target: 'enemy' },
-  { id: 'star-piercer', name: '贯星', category: 'physical', categoryName: '物理武技', element: '金 / 剑术', desc: '汇聚一点星芒，化作贯穿苍穹的炽烈流星长剑穿透目标，全屏震颤。', icon: '✨', manaCost: 30, castTime: 800, actor: 'player', target: 'enemy' },
+  { id: 'heavy-clouds', name: '重云', category: 'physical', categoryName: '物理武技', element: '无 / 剑道', desc: '剑气化作层叠翻滚的厚重云浪剑幕，席卷全场敌方。', icon: '☁️', manaCost: 40, castTime: 800, actor: 'player', target: 'enemy' },
+  { id: 'star-piercer', name: '贯星', category: 'physical', categoryName: '物理武技', element: '金 / 剑道', desc: '汇聚一点星芒，化作贯穿苍穹的炽烈流星长剑穿透目标，全屏震颤。', icon: '✨', manaCost: 30, castTime: 800, actor: 'player', target: 'enemy' },
 
   // 五行术法
   { id: 'palm-lightning', name: '掌心雷', category: 'spell', categoryName: '五行术法', element: '火 / 雷电', desc: '掌心激发跳跃狂暴的紫电青雷弧光，爆鸣炸响。', icon: '⚡', manaCost: 15, castTime: 700, actor: 'player', target: 'enemy' },
@@ -1309,12 +1309,12 @@ const ABILITIES_LIST = [
   { id: 'lightning-attraction', name: '雷光引', category: 'spell', categoryName: '五行术法', element: '火 / 天雷', desc: '九天引雷，召唤多道天雷贯顶连环轰击全场。', icon: '⛈️', manaCost: 35, castTime: 800, actor: 'player', target: 'enemy' },
   { id: 'pozhen-melody', name: '破阵子', category: 'spell', categoryName: '五行术法', element: '符箓 / 增益', desc: '战阵金符光印升腾，加持破阵攻击光环。', icon: '📜', manaCost: 40, castTime: 600, actor: 'player', target: 'self' },
 
-  // 怪物招式
-  { id: 'monster-bite', name: '妖兽·飞扑撕咬', category: 'monster', categoryName: '怪物招式', element: '物理 / 野兽', desc: '妖兽凶性大发，疾冲飞扑狂暴撕咬，鲜红爪痕与血煞四溅。', icon: '🐺', manaCost: 0, castTime: 500, actor: 'enemy', target: 'player' },
-  { id: 'monster-ape-smash', name: '魔猿·开山裂地', category: 'monster', categoryName: '怪物招式', element: '土 / 巨力', desc: '魔猿双拳重重砸地，碎石向外飞溅崩射与剧烈震颤。', icon: '🦍', manaCost: 15, castTime: 700, actor: 'enemy', target: 'player' },
-  { id: 'monster-tiger-roar', name: '伥虎·虎煞魔吼', category: 'monster', categoryName: '怪物招式', element: '煞 / 音波', desc: '伥虎咆哮，赤黑魔煞音波光环与伥鬼幽魂席卷虚空。', icon: '🐯', manaCost: 25, castTime: 800, actor: 'enemy', target: 'player' },
-  { id: 'monster-priest-curse', name: '坠魔祭司·幽冥咒怨', category: 'monster', categoryName: '怪物招式', element: '暗 / 咒术', desc: '魔音吟唱，幽魂鬼火环绕目标爆裂与暗影骷髅诅咒。', icon: '🧙‍♂️', manaCost: 35, castTime: 800, actor: 'enemy', target: 'player' },
-  { id: 'monster-falling-star', name: '坠星兽·天外陨星', category: 'monster', categoryName: '怪物招式', element: '火 / 陨星', desc: '引动天外炽热流星自苍穹砸落，触地白炽爆炸烈焰四射。', icon: '☄️', manaCost: 60, castTime: 900, actor: 'enemy', target: 'player' },
+  // 敌方演示招式（与全单位通用技能同模型）
+  { id: 'monster-bite', name: '妖兽·飞扑撕咬', category: 'monster', categoryName: '通用招式', element: '物理 / 野兽', desc: '妖兽凶性大发，疾冲飞扑狂暴撕咬，鲜红爪痕与血煞四溅。', icon: '🐺', manaCost: 0, castTime: 500, actor: 'enemy', target: 'player' },
+  { id: 'monster-ape-smash', name: '魔猿·开山裂地', category: 'monster', categoryName: '通用招式', element: '土 / 巨力', desc: '魔猿双拳重重砸地，碎石向外飞溅崩射与剧烈震颤。', icon: '🦍', manaCost: 15, castTime: 700, actor: 'enemy', target: 'player' },
+  { id: 'monster-tiger-roar', name: '伥虎·虎煞魔吼', category: 'monster', categoryName: '通用招式', element: '煞 / 音波', desc: '伥虎咆哮，赤黑魔煞音波光环与伥鬼幽魂席卷虚空。', icon: '🐯', manaCost: 25, castTime: 800, actor: 'enemy', target: 'player' },
+  { id: 'monster-priest-curse', name: '坠魔祭司·幽冥咒怨', category: 'monster', categoryName: '通用招式', element: '暗 / 咒术', desc: '魔音吟唱，幽魂鬼火环绕目标爆裂与暗影骷髅诅咒。', icon: '🧙‍♂️', manaCost: 35, castTime: 800, actor: 'enemy', target: 'player' },
+  { id: 'monster-falling-star', name: '坠星兽·天外陨星', category: 'monster', categoryName: '通用招式', element: '火 / 陨星', desc: '引动天外炽热流星自苍穹砸落，触地白炽爆炸烈焰四射。', icon: '☄️', manaCost: 60, castTime: 900, actor: 'enemy', target: 'player' },
 
   // 战斗机制
   { id: 'basic-attack', name: '普通攻击·挥砍', category: 'action', categoryName: '基础机制', element: '金 / 普攻', desc: '基础突进步伐，带有金色斜切刀光 (arena-attack-streak)。', icon: '🗡️', manaCost: 0, castTime: 400, actor: 'player', target: 'enemy' },

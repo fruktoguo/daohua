@@ -490,26 +490,14 @@ public enum CombatExpeditionPhase : byte
     Duel = 5
 }
 
-/// <summary>远征波次中单个敌人的可持久化战斗快照。</summary>
+/// <summary>远征波次中单个敌人的可持久化战斗快照：与玩家共用同一 <see cref="CombatantSnapshot"/> 形态。</summary>
 public sealed record ExpeditionEnemyState(
     string EnemyId,
-    double Hitpoints,
-    double Manapoints,
-    double NextAttackAtSeconds,
-    double AttackCount,
-    double Threat,
-    int PendingSkillIndex = -1,
-    double ThreatRatioBonus = 0,
-    double BonusAbsorptionPoints = 0,
-    IReadOnlyList<double>? SkillCooldownUntil = null,
-    /// <summary>正在吟唱的技能 ID（展示用；出手决策以 PendingSkillIndex 为准）。</summary>
+    CombatantSnapshot State,
+    /// <summary>正在吟唱的技能 ID（展示用；出手决策以 State.PendingSkillIndex 为准）。</summary>
     string? PendingAbilityId = null,
     /// <summary>当前动作总时长秒数（吟唱时长或普攻间隔，展示用）。</summary>
-    double PendingActionDurationSeconds = 0,
-    /// <summary>累计完成施放次数（确定性抽样计数，恢复一致性必需）。</summary>
-    double SkillCastCount = 0,
-    /// <summary>战内 Buff 列表（战斗时钟过期；恢复一致性必需）。</summary>
-    IReadOnlyList<CombatBuffState>? Buffs = null);
+    double PendingActionDurationSeconds = 0);
 
 /// <summary>
 /// 可持久化的妖兽试炼远征状态。
@@ -557,16 +545,8 @@ public sealed record CombatExpeditionState(
         && WaveNumber >= 1
         && (Enemies is null || (Enemies.Count <= 8 && Enemies.All(enemy => enemy is not null
             && !string.IsNullOrWhiteSpace(enemy.EnemyId) && enemy.EnemyId.Length <= 128
-            && double.IsFinite(enemy.Hitpoints) && enemy.Hitpoints >= 0
-            && double.IsFinite(enemy.Manapoints) && enemy.Manapoints >= 0
-            && double.IsFinite(enemy.NextAttackAtSeconds) && enemy.NextAttackAtSeconds >= 0
-            && double.IsFinite(enemy.AttackCount) && enemy.AttackCount >= 0
-            && double.IsFinite(enemy.Threat) && enemy.Threat >= 0
-            && enemy.PendingSkillIndex >= -1
-            && double.IsFinite(enemy.PendingActionDurationSeconds) && enemy.PendingActionDurationSeconds >= 0
-            && double.IsFinite(enemy.SkillCastCount) && enemy.SkillCastCount >= 0
-            && (enemy.SkillCooldownUntil is null || enemy.SkillCooldownUntil.All(value => double.IsFinite(value) && value >= 0))
-            && (enemy.Buffs is null || enemy.Buffs.All(buff => buff is not null && buff.IsValid)))))
+            && enemy.State is not null && enemy.State.IsValid
+            && double.IsFinite(enemy.PendingActionDurationSeconds) && enemy.PendingActionDurationSeconds >= 0)))
         && (PlayerState is null || PlayerState.IsValid)
         && Phase switch
         {

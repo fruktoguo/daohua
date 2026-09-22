@@ -401,8 +401,8 @@ public static class ProtocolSnapshotMapper
                 _ => "normal"
             },
             visual,
-            enemy.Hitpoints, enemy.Manapoints,
-            enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
+            enemy.State.Hitpoints, enemy.State.Manapoints,
+            enemy.State.NextAttackAtSeconds, enemy.State.AttackCount, enemy.State.Threat,
             enemy.PendingAbilityId, enemy.PendingActionDurationSeconds,
             attributes = found ? ToAttributesDto(definition!.Stats) : null
         };

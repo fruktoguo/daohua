@@ -25,7 +25,7 @@
 
 ## 3. 账本字段
 
-- **经验**：`Qi`（修为）、`Experience`（底蕴）、`RootExp`（六维：体魄/经脉/攻伐/御守/剑意/符箓）、`AbilityExp`（功法参悟经验，按功法 ID 聚合）、`LevelUps`（等级提升：`Kind ∈ realm/root/ability`，含 `FromLevel`/`ToLevel`）。
+- **经验**：`Qi`（修为）、`Experience`（底蕴）、`RootExp`（六维：体魄/经脉/根骨/力道/身法/神识）、`AbilityExp`（功法参悟经验，按功法 ID 聚合）、`LevelUps`（等级提升：`Kind ∈ realm/root/ability`，含 `FromLevel`/`ToLevel`）。
 - **物品**：`Items`（获得，含暂存区/缴获）、`ItemsLost`（失去：行动输入材料、自动消耗品扣件、斗法暂存被缴）。
 - **行动信息**：`Cycles`（完成轮次）、`Encounters`（战斗遭遇场次）、`NormalKills`/`EliteKills`/`BossKills`（分级击杀）、`Deaths`（讨伐失败与斗法败北）、`DuelWins`/`DuelLosses`（斗法胜负）、`DayIndex`（仅每日账本）。
 - 记账按**实际入账量**：修为按每秒全额累加；底蕴记瓶颈截断后的真实增量。
