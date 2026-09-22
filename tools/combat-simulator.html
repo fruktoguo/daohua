@@ -231,10 +231,10 @@
             </div>
           </div>
 
-          <!-- 法术普攻灵爆 -->
+          <!-- 掌心雷：0CD 填充技，占用动作时间线、顶替普攻；普攻本身与物理系一致 (1.0s/100% AD 物伤) -->
           <div class="glass-card rounded-lg p-2.5 space-y-2">
             <div class="font-semibold text-gray-200 flex justify-between items-center">
-              <span>法术普攻 (0 CD 灵爆术)</span>
+              <span>掌心雷 (0CD 填充技·顶替普攻)</span>
               <span id="m_auto_summary" class="text-purple-400 font-mono text-[11px]">吟唱 2.0s / 60% AP</span>
             </div>
             <div class="grid grid-cols-2 gap-2">
@@ -383,6 +383,7 @@
       m_s2_ratio: 120, // 3怪 120% AP CD 20s
       m_s2_cd: 20.0,
       m_s2_cast: 2.0,
+      // 掌心雷：技能非普攻，吟唱只吃行动速度 (ATR)，伤害 60% AP 享受技能强度
       m_auto_cast: 2.0,
       m_auto_ratio: 60, // 60% AP
       // 高级机制
@@ -618,6 +619,7 @@
               m_next_s2 = wave_time + cast + params.m_s2_cd * cd_mult;
               wave_time += cast;
             } else {
+              // 掌心雷填充：0CD 时在动作时间线上顶替普攻（吟唱占满本次出手）。
               const raw = p_ap * m_auto_dmg_mult;
               const defStats = { res: alive[0].mres, eva: alive[0].eva, cavoid: alive[0].cavoid, parry: alive[0].parry };
               const dmg = calcActualDamageContest(raw, p_stats, defStats, k_res, crit_dmg_ratio, teamSize);

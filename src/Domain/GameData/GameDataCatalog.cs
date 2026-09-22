@@ -760,12 +760,11 @@ public sealed class GameDataCatalog
             var hpMultiplier = rank switch { CombatMonsterRank.Elite => 5.0, CombatMonsterRank.Boss => 20.0, _ => 3.0 };
             var progress = Math.Pow((Math.Clamp((double)level, 1, 127) - 1) / 126d, 2);
             var actionFactor = 1 - 0.5 * progress;
-            var spell = string.Equals(ReadString(value, "category", "physical"), "spell", StringComparison.OrdinalIgnoreCase);
+            var cooldownFactor = 1 - 0.75 * progress;
             var interval = ReadDouble(value, "attackIntervalMilliseconds", 0) / 1_000d;
-            // 同构普攻节奏：物理系 1.0s 基准 ×(1-ATR)×(1-专属攻速加成)，术法系灵爆 2.0s 基准 ×(1-ATR)。
-            interval = interval > 0
-                ? interval * actionFactor * (spell ? 1 : actionFactor)
-                : spell ? 2 * actionFactor : actionFactor * actionFactor;
+            // 普攻节奏全单位统一：基准 1.0s（或配表覆写基准）×(1-ATR)×(1-攻速成长)；
+            // 技能吟唱时长走另一条线：castMilliseconds ×(1-ATR)，不占普攻间隔。
+            interval = (interval > 0 ? interval : 1) * actionFactor * actionFactor;
             var ad = anchor.Ad * attrMultiplier * Weight("ad");
             var ap = anchor.Ap * attrMultiplier * Weight("ap");
             var tier = baseAttributes?.TierAt(level) ?? 1;
@@ -787,18 +786,20 @@ public sealed class GameDataCatalog
             // 五行抗性权重按点数解释：weight × 10 写入对应抗性点数。
             var stats = CombatantStats.Create(
                 anchor.Hp * hpMultiplier * Weight("hp"),
-                spell ? ap : ad,
+                ad,
                 anchor.Armor * attrMultiplier * Weight("armor"),
                 interval,
                 anchor.Acc * attrMultiplier * Weight("hit"),
                 anchor.Eva * attrMultiplier * Weight("eva"),
-                spell ? CombatDamageKind.Spell : CombatDamageKind.Physical) with
+                CombatDamageKind.Physical) with
             {
                 SpellAttack = ap,
                 MaxManapoints = anchor.Mp * attrMultiplier * Weight("mp"),
-                // 普攻倍率与玩家同构：物理系 1.0→2.0 AD，术法系灵爆 60%→258% AP。
-                BasicAttackRatio = spell ? 0.6 * skillIntensity : 1 + progress,
+                // 普攻倍率与玩家同构：全单位统一 100%→200% AD 物理伤害。
+                BasicAttackRatio = 1 + progress,
                 SkillIntensity = skillIntensity,
+                CastTimeFactor = actionFactor,
+                CooldownFactor = cooldownFactor,
                 MagicResistance = anchor.Mr * attrMultiplier * Weight("mres"),
                 ResistanceScale = tier,
                 Critical = anchor.Crit * attrMultiplier * Weight("crit"),

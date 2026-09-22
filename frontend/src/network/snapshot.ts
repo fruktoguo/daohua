@@ -303,6 +303,10 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
         nextAttackAtSeconds: finiteNumber(enemy.nextAttackAtSeconds, `${label}.nextAttackAtSeconds`),
         attackCount: finiteNumber(enemy.attackCount, `${label}.attackCount`),
         threat: finiteNumber(enemy.threat, `${label}.threat`),
+        pendingAbilityId: enemy.pendingAbilityId === null || enemy.pendingAbilityId === undefined
+          ? null
+          : identifierValue(enemy.pendingAbilityId, `${label}.pendingAbilityId`),
+        pendingActionDurationSeconds: numberValue(enemy.pendingActionDurationSeconds, 0),
       }
     })
   const primary = enemies.find(enemy => enemy.hitpoints > 0) ?? enemies[0] ?? null

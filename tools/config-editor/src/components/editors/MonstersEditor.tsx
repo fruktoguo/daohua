@@ -355,7 +355,7 @@ export function MonstersEditor() {
               />
 
               <NumberInput
-                label="攻击间隔 (AttackInterval)"
+                label="普攻间隔 (AttackInterval，与类别无关)"
                 value={currentMonster.attackIntervalMilliseconds}
                 onChange={v => handleUpdate({ attackIntervalMilliseconds: v })}
                 step={100}

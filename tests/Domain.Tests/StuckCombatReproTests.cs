@@ -41,8 +41,12 @@ public sealed class StuckCombatReproTests
             duel: new DuelAdvanceOptions(MatchingEnabled: true));
 
         Assert.Equal(Baseline.AddSeconds(32_000), player.LastSimulatedAt);
-        Assert.True(result.CompletedRepeats > 0, "长时间补算应完成至少一轮讨伐。");
-        Assert.True(player.Progression.NormalKills + player.Progression.EliteKills + player.Progression.BossKills > 0);
+        // 单时间线模型下该残局对玩家是必败局（木灵掌心雷循环压制）：补算必须持续产生
+        // 战斗结论（胜场轮次或败走计数）并推进相位循环，而不是原地卡死。
+        Assert.True(result.CompletedRepeats > 0 || player.Progression.TotalDefeats > 0,
+            "长时间补算应至少完成一轮讨伐或产生败走结论。");
+        Assert.True(player.Progression.NormalKills + player.Progression.EliteKills
+            + player.Progression.BossKills + player.Progression.TotalDefeats > 0);
     }
 
     /// <summary>在线小步推进路径：远征战斗计时必须持续增长，不得原地踏步。</summary>
@@ -60,6 +64,10 @@ public sealed class StuckCombatReproTests
             SimulationEngine.AdvanceTo(player, cursor, catalog, duel: new DuelAdvanceOptions(MatchingEnabled: true));
         }
         Assert.Equal(cursor, player.LastSimulatedAt);
-        Assert.True(player.Actions[0].Expedition!.BattleElapsedSeconds > 15.472613);
+        // 战斗持续推进即视为健康：仍在交战则战斗时钟前进；已分出胜负则相位已离开 Combat。
+        var expedition = player.Actions[0].Expedition!;
+        Assert.True(expedition.Phase != CombatExpeditionPhase.Combat
+            || expedition.BattleElapsedSeconds > 15.472613,
+            "逐拍推进下战斗时钟与相位均不得原地踏步。");
     }
 }

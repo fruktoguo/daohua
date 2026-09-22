@@ -54,12 +54,16 @@ public sealed record CombatantStats(
     double Evasion = 0,
     CombatDamageKind DamageKind = CombatDamageKind.Physical)
 {
-    /// <summary>术法攻击（法术流派普攻与术法技能共用）。</summary>
+    /// <summary>术法攻击（术法技能结算共用；普攻永远是 100% 物理攻击力）。</summary>
     public double SpellAttack { get; init; }
     /// <summary>灵力上限；敌方技能耗蓝与玩家吟唱共用同构资源池。</summary>
     public double MaxManapoints { get; init; }
-    /// <summary>普通攻击伤害倍率（物理强化平A或法术灵爆折算）。</summary>
+    /// <summary>普通攻击伤害倍率（全单位统一成长曲线 100%→200% AD）。</summary>
     public double BasicAttackRatio { get; init; } = 1;
+    /// <summary>技能吟唱时长乘区（行动速度 ATR）：吟唱时间 = castMilliseconds × 本系数，与攻击速度无关。</summary>
+    public double CastTimeFactor { get; init; } = 1;
+    /// <summary>技能冷却乘区（冷却缩减 CDR）：冷却自吟唱完成时刻起算。</summary>
+    public double CooldownFactor { get; init; } = 1;
     /// <summary>技能强度乘区（SkillIntensity = 1 + (Tier-1) × 0.30）。</summary>
     public double SkillIntensity { get; init; } = 1;
     /// <summary>免伤点数（Linear 百分比点，正点降低承受伤害）。</summary>
@@ -111,6 +115,8 @@ public sealed record CombatantStats(
             || !double.IsFinite(ResistanceScale) || ResistanceScale <= 0
             || !double.IsFinite(CriticalMultiplier) || CriticalMultiplier < 1
             || !double.IsFinite(BasicAttackRatio) || BasicAttackRatio <= 0
+            || !double.IsFinite(CastTimeFactor) || CastTimeFactor <= 0
+            || !double.IsFinite(CooldownFactor) || CooldownFactor <= 0
             || !double.IsFinite(SkillIntensity) || SkillIntensity <= 0
             || !double.IsFinite(DamageAbsorptionPoints) || !double.IsFinite(ThreatRatio) || ThreatRatio < 0
             || !double.IsFinite(PhysicalPenetrationPercent) || PhysicalPenetrationPercent is < 0 or > 100
@@ -148,9 +154,12 @@ public sealed record CombatantStats(
 }
 
 /// <summary>
-/// 战斗单位随战携带的技能槽：配表技能 JSON + 触发血量比例阈值。
-/// Triggers 非空时表示斗法玩家镜像技能：改用配表触发条件判定、按冷却可重复施放；
-/// 为空时为怪物一次性技能：气血比例触发且整场仅施放一次。
+/// 战斗单位随战携带的技能槽：配表技能 JSON + 可用性门槛。
+/// 单时间线出手语义：出手边界先结算待完成动作，再按槽位顺序挑选首个可用技能进入吟唱
+/// （吟唱占用动作时长，仅吃行动速度 ATR），无可用技能时回落普通攻击；
+/// 技能施放后按 cooldownMilliseconds 进入冷却循环，槽位顺序即优先级（0CD 填充技应放末尾）。
+/// TriggerHpRatio 为怪物技能的气血门槛（当前气血比例 ≤ 阈值才可用）；
+/// Triggers 非空时为斗法玩家镜像技能：改用配表触发条件判定替代气血门槛。
 /// </summary>
 public sealed record MonsterSkillSlot(JsonElement Ability, double Level = 1, double TriggerHpRatio = 1,
     IReadOnlyList<JsonElement>? Triggers = null);
@@ -163,7 +172,7 @@ public sealed record CombatantTemplate(CombatantStats Stats, IReadOnlyList<Monst
 /// </summary>
 public sealed class CombatantState
 {
-    /// <summary>以静态属性创建战斗单位运行时状态；气血灵力初始为满，首次出手需先走完一个普攻周期蓄势。</summary>
+    /// <summary>以静态属性创建战斗单位运行时状态；气血灵力初始为满，首次出手动作由开战决策决定。</summary>
     /// <param name="id">战斗单位标识（player 或 enemy:{index}，≤128 字符）。</param>
     /// <param name="stats">静态属性面板。</param>
     /// <param name="skills">随战技能槽（可空）。</param>
@@ -202,11 +211,11 @@ public sealed class CombatantState
     public double ThreatRatioBonus { get; internal set; }
     /// <summary>战内临时免伤点数（如破阵子类全体增益）。</summary>
     public double BonusAbsorptionPoints { get; internal set; }
-    /// <summary>已施放技能的位掩码（每位对应 Skills 下标，单场各触发一次）。</summary>
-    public long UsedSkillMask { get; internal set; }
-    /// <summary>斗法镜像技能的逐槽冷却就绪时刻；怪物一次性技能不使用。仅剧本推演内存态，不持久化。</summary>
+    /// <summary>正在吟唱的技能槽下标；-1 表示下一次出手为普通攻击。吟唱占用整条动作时间线。</summary>
+    public int PendingSkillIndex { get; internal set; } = -1;
+    /// <summary>逐槽技能冷却就绪时刻（所有带技能单位共用）；冷却自吟唱完成时刻起算。</summary>
     public double[]? SkillCooldownUntil { get; internal set; }
-    /// <summary>斗法镜像技能累计施放计数，作为确定性抽样的独立计数器。</summary>
+    /// <summary>累计完成施放的技能次数，作为技能出手的确定性抽样独立计数器。</summary>
     public double SkillCastCount { get; internal set; }
     /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
@@ -221,9 +230,11 @@ public sealed record CombatantSnapshot(
     double NextAttackAtSeconds,
     double AttackCount,
     double Threat,
-    long UsedSkillMask = 0,
+    int PendingSkillIndex = -1,
     double ThreatRatioBonus = 0,
-    double BonusAbsorptionPoints = 0);
+    double BonusAbsorptionPoints = 0,
+    IReadOnlyList<double>? SkillCooldownUntil = null,
+    double SkillCastCount = 0);
 
 /// <summary>
 /// 单场战斗遭遇战状态聚合：一名玩家对阵同波全体敌人。
@@ -287,9 +298,10 @@ public sealed class CombatEncounterState
         for (var i = 0; i < enemies.Count; i++)
             states[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
         var playerState = new CombatantState("player", player.Stats, player.Skills);
-        if (player.Skills is { Count: > 0 } playerSkills && playerSkills.Any(slot => slot.Triggers is not null))
-            playerState.SkillCooldownUntil = new double[playerSkills.Count];
-        return new CombatEncounterState(encounterId, seed, playerState, states);
+        var encounter = new CombatEncounterState(encounterId, seed, playerState, states);
+        // 开战即决策各单位首次出手：可放技能直接进入吟唱，否则按普攻周期蓄势。
+        DeterministicCombatEngine.DecideInitialActions(encounter);
+        return encounter;
     }
 
     /// <summary>从持久化快照恢复一场多敌遭遇战。</summary>
@@ -331,7 +343,8 @@ public sealed class CombatEncounterState
     /// <summary>导出指定单位的可持久化快照。</summary>
     public static CombatantSnapshot Snapshot(CombatantState state)
         => new(state.Hitpoints, state.Manapoints, state.NextAttackAtSeconds, state.AttackCount,
-            state.Threat, state.UsedSkillMask, state.ThreatRatioBonus, state.BonusAbsorptionPoints);
+            state.Threat, state.PendingSkillIndex, state.ThreatRatioBonus, state.BonusAbsorptionPoints,
+            state.SkillCooldownUntil, state.SkillCastCount);
 
     private static void ApplySnapshot(CombatantState state, CombatantSnapshot snapshot, double maxHitpoints, double maxManapoints)
     {
@@ -342,7 +355,10 @@ public sealed class CombatEncounterState
             || !double.IsFinite(snapshot.Threat) || snapshot.Threat < 0
             || !double.IsFinite(snapshot.ThreatRatioBonus) || snapshot.ThreatRatioBonus < 0
             || !double.IsFinite(snapshot.BonusAbsorptionPoints)
-            || snapshot.UsedSkillMask < 0)
+            || snapshot.PendingSkillIndex < -1
+            || !double.IsFinite(snapshot.SkillCastCount) || snapshot.SkillCastCount < 0
+            || (snapshot.SkillCooldownUntil is { } cooldowns
+                && (cooldowns.Count != state.Skills.Count || cooldowns.Any(value => !double.IsFinite(value) || value < 0))))
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
         state.Hitpoints = snapshot.Hitpoints;
         state.Manapoints = snapshot.Manapoints;
@@ -351,7 +367,11 @@ public sealed class CombatEncounterState
         state.Threat = snapshot.Threat;
         state.ThreatRatioBonus = snapshot.ThreatRatioBonus;
         state.BonusAbsorptionPoints = snapshot.BonusAbsorptionPoints;
-        state.UsedSkillMask = snapshot.UsedSkillMask;
+        // 配表技能槽数量可能随版本变化：越界的吟唱槽位回退为普攻出手。
+        state.PendingSkillIndex = snapshot.PendingSkillIndex >= 0 && snapshot.PendingSkillIndex < state.Skills.Count
+            ? snapshot.PendingSkillIndex : -1;
+        state.SkillCooldownUntil = snapshot.SkillCooldownUntil?.ToArray();
+        state.SkillCastCount = snapshot.SkillCastCount;
     }
 }
 
@@ -415,9 +435,16 @@ public sealed record ExpeditionEnemyState(
     double NextAttackAtSeconds,
     double AttackCount,
     double Threat,
-    long UsedSkillMask = 0,
+    int PendingSkillIndex = -1,
     double ThreatRatioBonus = 0,
-    double BonusAbsorptionPoints = 0);
+    double BonusAbsorptionPoints = 0,
+    IReadOnlyList<double>? SkillCooldownUntil = null,
+    /// <summary>正在吟唱的技能 ID（展示用；出手决策以 PendingSkillIndex 为准）。</summary>
+    string? PendingAbilityId = null,
+    /// <summary>当前动作总时长秒数（吟唱时长或普攻间隔，展示用）。</summary>
+    double PendingActionDurationSeconds = 0,
+    /// <summary>累计完成施放次数（确定性抽样计数，恢复一致性必需）。</summary>
+    double SkillCastCount = 0);
 
 /// <summary>
 /// 可持久化的妖兽试炼远征状态。
@@ -465,7 +492,10 @@ public sealed record CombatExpeditionState(
             && double.IsFinite(enemy.NextAttackAtSeconds) && enemy.NextAttackAtSeconds >= 0
             && double.IsFinite(enemy.AttackCount) && enemy.AttackCount >= 0
             && double.IsFinite(enemy.Threat) && enemy.Threat >= 0
-            && enemy.UsedSkillMask >= 0)))
+            && enemy.PendingSkillIndex >= -1
+            && double.IsFinite(enemy.PendingActionDurationSeconds) && enemy.PendingActionDurationSeconds >= 0
+            && double.IsFinite(enemy.SkillCastCount) && enemy.SkillCastCount >= 0
+            && (enemy.SkillCooldownUntil is null || enemy.SkillCooldownUntil.All(value => double.IsFinite(value) && value >= 0)))))
         && Phase switch
         {
             CombatExpeditionPhase.DuelPending => Outcome == CombatOutcome.Running
@@ -517,18 +547,12 @@ public static class DeterministicCombatEngine
             }
             encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, next);
             if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-            {
                 PlayerAct(encounter, ref events);
-                encounter.Player.NextAttackAtSeconds = encounter.ElapsedSeconds + encounter.Player.Stats.AttackIntervalSeconds;
-            }
             for (var i = 0; i < encounter.Enemies.Count; i++)
             {
                 var enemy = encounter.Enemies[i];
                 if (enemy.IsAlive && enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                {
                     EnemyAct(encounter, enemy, i, ref events);
-                    enemy.NextAttackAtSeconds = encounter.ElapsedSeconds + enemy.Stats.AttackIntervalSeconds;
-                }
             }
             encounter.Sequence += 1;
             UpdateOutcome(encounter);
@@ -608,78 +632,98 @@ public static class DeterministicCombatEngine
         return events![0];
     }
 
-    /// <summary>玩家方出手：斗法剧本中优先结算镜像技能，否则普通攻击。</summary>
+    /// <summary>开战即决策各单位的首次出手动作：可放技能直接进入吟唱，否则按普攻周期蓄势。</summary>
+    internal static void DecideInitialActions(CombatEncounterState encounter)
+    {
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+            DecideNextAction(encounter, encounter.Enemies[i], encounter.Enemies, [encounter.Player], encounter.Player);
+        DecideNextAction(encounter, encounter.Player, PlayerAllies(encounter), encounter.Enemies,
+            SelectEnemyTarget(encounter, 0, 3));
+    }
+
+    /// <summary>玩家方出手边界：先结算待完成动作（普攻或吟唱完成的技能），再决策下一动作。</summary>
     private static void PlayerAct(CombatEncounterState encounter, ref List<CombatEvent>? events)
     {
         var player = encounter.Player;
-        var target = SelectEnemyTarget(encounter, player.AttackCount, 3);
-        if (TryCastSkill(encounter, player, PlayerAllies(encounter), encounter.Enemies, target, 0, ref events))
-            return;
-        if (target is not null)
-            ResolveAttack(encounter, player, target, 0, encounter.ElapsedSeconds, ref events);
+        var allies = PlayerAllies(encounter);
+        ResolvePending(encounter, player, allies,
+            SelectEnemyTarget(encounter, player.AttackCount, 3), 0, ref events);
+        DecideNextAction(encounter, player, allies, encounter.Enemies,
+            SelectEnemyTarget(encounter, player.AttackCount, 3));
     }
 
     private static IReadOnlyList<CombatantState> PlayerAllies(CombatEncounterState encounter)
         => [encounter.Player];
 
-    /// <summary>敌方出手：优先检查随战技能（一次性血量触发或可重复镜像技能），否则普通攻击。</summary>
+    /// <summary>敌方出手边界：与玩家同构，先结算待完成动作再决策下一动作。</summary>
     private static void EnemyAct(CombatEncounterState encounter, CombatantState enemy, int index, ref List<CombatEvent>? events)
     {
-        if (TryCastSkill(encounter, enemy, encounter.Enemies, [encounter.Player], encounter.Player, (ulong)(1 + index), ref events))
-            return;
-        ResolveAttack(encounter, enemy, encounter.Player, (ulong)(1 + index), encounter.ElapsedSeconds, ref events);
+        ResolvePending(encounter, enemy, encounter.Enemies, encounter.Player, (ulong)(1 + index), ref events);
+        DecideNextAction(encounter, enemy, encounter.Enemies, [encounter.Player], encounter.Player);
     }
 
     /// <summary>
-    /// 统一技能施放检查：怪物槽位走「气血比例一次性触发」语义（UsedSkillMask）；
-    /// 斗法镜像槽位（Triggers 非空）走「配表触发条件 + 冷却重复施放」语义（SkillCooldownUntil）。
+    /// 结算出手边界上已决定的动作：吟唱中的技能在此刻结算（目标在结算时重新抽取），
+    /// 否则结算普通攻击。
     /// </summary>
-    private static bool TryCastSkill(CombatEncounterState encounter, CombatantState caster,
-        IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents, CombatantState? target,
-        ulong side, ref List<CombatEvent>? events)
+    private static void ResolvePending(CombatEncounterState encounter, CombatantState unit,
+        IReadOnlyList<CombatantState> allies, CombatantState? target, ulong side, ref List<CombatEvent>? events)
     {
-        var skills = caster.Skills;
-        if (skills.Count == 0 || caster.Stats.MaxHitpoints <= 0) return false;
-        for (var i = 0; i < skills.Count; i++)
+        var pending = unit.PendingSkillIndex;
+        unit.PendingSkillIndex = -1;
+        if (pending >= 0 && pending < unit.Skills.Count)
         {
-            var slot = skills[i];
-            if (slot.Triggers is { } triggers)
-            {
-                var cooldowns = caster.SkillCooldownUntil ??= new double[skills.Count];
-                if (cooldowns[i] > encounter.ElapsedSeconds + 1e-12) continue;
-                if (target is null || !DuelTriggerEvaluator.MatchesAll(triggers, caster, target, allies, opponents)) continue;
-                if (!CastSkill(encounter, caster, allies, target, slot, i, side, ref events)) continue;
-                // 吟唱时间折算进冷却：镜像技能即时生效，下一次施放不早于 吟唱+冷却 之和。
-                var cooldown = Math.Max(1,
-                    AbilityNumber(slot.Ability, "castMilliseconds") / 1000d + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d);
-                cooldowns[i] = encounter.ElapsedSeconds + cooldown;
-                return true;
-            }
-            if ((caster.UsedSkillMask & (1L << i)) != 0) continue;
-            var hpRatio = caster.Hitpoints / caster.Stats.MaxHitpoints;
-            if (hpRatio > slot.TriggerHpRatio) continue;
-            if (CastSkill(encounter, caster, allies, target ?? caster, slot, i, side, ref events))
-            {
-                caster.UsedSkillMask |= 1L << i;
-                return true;
-            }
-            break;
+            CastSkill(encounter, unit, allies, target ?? unit, unit.Skills[pending], side, ref events);
+            unit.SkillCastCount += 1;
+            return;
         }
-        return false;
+        if (target is not null)
+            ResolveAttack(encounter, unit, target, side, encounter.ElapsedSeconds, ref events);
     }
 
-    /// <summary>技能施放：伤害/治疗/嘲讽/群体增益统一复用同构结算管线；怪物与斗法镜像共用。</summary>
-    private static bool CastSkill(CombatEncounterState encounter, CombatantState caster,
-        IReadOnlyList<CombatantState> allies, CombatantState target, MonsterSkillSlot slot, int slotIndex,
+    /// <summary>
+    /// 出手决策：按槽位顺序挑选首个可用技能进入吟唱——可用性门槛（怪物气血比例 / 镜像触发条件）、
+    /// 冷却就绪与灵力消耗在起手时判定并预扣；吟唱占用整条动作时间线，时长 = castMilliseconds × 行动速度乘区，
+    /// 冷却自吟唱完成时刻起算。无可用技能时下一次出手回落为普通攻击。
+    /// </summary>
+    private static void DecideNextAction(CombatEncounterState encounter, CombatantState unit,
+        IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents, CombatantState? target)
+    {
+        var skills = unit.Skills;
+        if (skills.Count > 0 && unit.Stats.MaxHitpoints > 0)
+        {
+            var cooldowns = unit.SkillCooldownUntil ??= new double[skills.Count];
+            for (var i = 0; i < skills.Count; i++)
+            {
+                var slot = skills[i];
+                if (cooldowns[i] > encounter.ElapsedSeconds + 1e-12) continue;
+                var available = slot.Triggers is { } triggers
+                    ? target is not null && DuelTriggerEvaluator.MatchesAll(triggers, unit, target, allies, opponents)
+                    : unit.Hitpoints / unit.Stats.MaxHitpoints <= slot.TriggerHpRatio;
+                if (!available) continue;
+                var manaCost = AbilityNumber(slot.Ability, "manaCost");
+                if (unit.Manapoints < manaCost) continue;
+                unit.Manapoints -= manaCost;
+                var castSeconds = Math.Max(1e-9,
+                    AbilityNumber(slot.Ability, "castMilliseconds") / 1000d * unit.Stats.CastTimeFactor);
+                unit.PendingSkillIndex = i;
+                unit.NextAttackAtSeconds = encounter.ElapsedSeconds + castSeconds;
+                cooldowns[i] = unit.NextAttackAtSeconds
+                    + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d * unit.Stats.CooldownFactor;
+                return;
+            }
+        }
+        unit.PendingSkillIndex = -1;
+        unit.NextAttackAtSeconds = encounter.ElapsedSeconds + unit.Stats.AttackIntervalSeconds;
+    }
+
+    /// <summary>技能施放：伤害/治疗/嘲讽/群体增益统一复用同构结算管线；怪物与斗法镜像共用。
+    /// 灵力消耗与冷却已在起手决策时预扣，此处只负责完成结算。</summary>
+    private static void CastSkill(CombatEncounterState encounter, CombatantState caster,
+        IReadOnlyList<CombatantState> allies, CombatantState target, MonsterSkillSlot slot,
         ulong side, ref List<CombatEvent>? events)
     {
         var ability = slot.Ability;
-        var manaCost = ability.TryGetProperty("manaCost", out var costProperty) && costProperty.TryGetDouble(out var cost) ? cost : 0;
-        if (manaCost > 0)
-        {
-            if (caster.Manapoints < manaCost) return false;
-            caster.Manapoints -= manaCost;
-        }
         var spell = AbilityText(ability, "category") == "spell";
         var attackBase = spell ? caster.Stats.SpellAttack : caster.Stats.AttackPower;
         var id = AbilityText(ability, "id") ?? string.Empty;
@@ -695,7 +739,7 @@ public static class DeterministicCombatEngine
             events ??= new List<CombatEvent>();
             events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, ally.Id, 0, true,
                 spell ? CombatDamageKind.Spell : CombatDamageKind.Physical, ally.Hitpoints) { AbilityId = id, Healing = healing });
-            return true;
+            return;
         }
         if (AbilityText(ability, "effectType") == "buff" && ability.TryGetProperty("buff", out var buff))
         {
@@ -708,7 +752,7 @@ public static class DeterministicCombatEngine
             }
             events ??= new List<CombatEvent>();
             events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, caster.Id, 0, true, CombatDamageKind.Spell, caster.Hitpoints) { AbilityId = id });
-            return true;
+            return;
         }
         var threatGain = AbilityNumber(ability, "threatGain");
         var threatRatio = AbilityNumber(ability, "threatRatio");
@@ -718,7 +762,7 @@ public static class DeterministicCombatEngine
             caster.ThreatRatioBonus += threatRatio;
             events ??= new List<CombatEvent>();
             events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, caster.Id, 0, true, CombatDamageKind.Physical, caster.Hitpoints) { AbilityId = id });
-            return true;
+            return;
         }
         var stats = caster.Stats with
         {
@@ -728,11 +772,9 @@ public static class DeterministicCombatEngine
             DamageKind = spell ? CombatDamageKind.Spell : CombatDamageKind.Physical,
             Element = AbilityElement(ability)
         };
-        // 一次性怪物技能以槽位序号为抽样计数；可重复镜像技能以累计施放数为计数。
-        var count = slot.Triggers is not null ? caster.SkillCastCount + 1 : slotIndex + 1;
+        // 技能出手以施放方累计完成次数为抽样计数，保证确定性随机流不依赖槽位语义。
+        var count = caster.SkillCastCount + 1;
         ResolveAttack(encounter, caster, target, side, encounter.ElapsedSeconds, ref events, stats, count, id);
-        caster.SkillCastCount += 1;
-        return true;
     }
 
     /// <summary>按破拆招、闪避、暴击和两层抗性顺序结算，抽样仅依赖已持久化的种子与出手序号。
@@ -804,10 +846,10 @@ public static class DeterministicCombatEngine
         if (context.DerivedEvents is { } derived) events.AddRange(derived);
     }
 
-    private static string? AbilityText(JsonElement value, string key)
+    internal static string? AbilityText(JsonElement value, string key)
         => value.TryGetProperty(key, out var property) && property.ValueKind == JsonValueKind.String ? property.GetString() : null;
 
-    private static double AbilityNumber(JsonElement value, string key)
+    internal static double AbilityNumber(JsonElement value, string key)
         => value.TryGetProperty(key, out var property) && property.TryGetDouble(out var number) ? number : 0;
 
     private static CombatElement AbilityElement(JsonElement ability)

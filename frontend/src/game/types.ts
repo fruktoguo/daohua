@@ -351,12 +351,16 @@ export interface ExpeditionEnemy {
   hitpoints: number
   /** 当前灵力 */
   manapoints: number
-  /** 下一次出手的战斗时刻（秒） */
+  /** 下一次出手的战斗时刻（秒）；吟唱中为吟唱完成时刻 */
   nextAttackAtSeconds: number
   /** 累计出手次数 */
   attackCount: number
   /** 累积威胁值 */
   threat: number
+  /** 正在吟唱的技能 ID；为 null 时下一次出手是普通攻击 */
+  pendingAbilityId?: string | null
+  /** 当前动作总时长秒数（吟唱时长或普攻间隔） */
+  pendingActionDurationSeconds?: number
 }
 
 /**

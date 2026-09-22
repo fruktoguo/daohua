@@ -17,8 +17,7 @@ public sealed record PlayerAttributes(
     double CastTimeFactor = 1,
     double BasicAttackRatio = 1,
     double SearchDelayFactor = 1,
-    double ThreatRatio = 0,
-    bool SpellStyle = false)
+    double ThreatRatio = 0)
 {
     /// <summary>金抗性点数（减免金属性伤害）。</summary>
     public double MetalResistance { get; init; }
@@ -34,17 +33,19 @@ public sealed record PlayerAttributes(
     public double ResistanceScale { get; init; } = 1;
     /// <summary>反应效果参数包：装备特殊机制（汲取/反弹）汇总结果。</summary>
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
-    /// <summary>按当前流派（物理/术法）折叠为战斗单位属性规格；术法流派普攻走 Spell 伤害。</summary>
+    /// <summary>折叠为战斗单位属性规格：普攻全流派统一走物理攻击力与物理伤害；术法攻击仅供技能结算。</summary>
     /// <returns>可进入战斗引擎的单位属性。</returns>
     public CombatantStats ToCombatant() => CombatantStats.Create(MaxHitpoints,
-        SpellStyle ? SpellAttack : PhysicalAttack, Armor,
+        PhysicalAttack, Armor,
         AttackIntervalSeconds, Accuracy, Evasion,
-        SpellStyle ? CombatDamageKind.Spell : CombatDamageKind.Physical) with
+        CombatDamageKind.Physical) with
         {
             SpellAttack = SpellAttack,
             MaxManapoints = MaxManapoints,
             BasicAttackRatio = BasicAttackRatio,
             SkillIntensity = SkillIntensity,
+            CastTimeFactor = CastTimeFactor,
+            CooldownFactor = CooldownFactor,
             DamageAbsorptionPoints = DamageAbsorptionRatio * 100,
             ThreatRatio = ThreatRatio,
             MagicResistance = MagicResistance, Critical = Critical, CriticalResistance = CriticalAvoidance,
@@ -151,11 +152,10 @@ public static class PlayerAttributeResolver
         var castTimeFactor = 1 - 0.5 * progress;
         var physical = Stat("physicalAttack", a.Ad);
         var spell = Stat("spellAttack", a.Ap);
-        var spellStyle = spell > physical;
-        // 普攻节奏：物理系 1.0s 基准 ×(1-ATR)×(1-专属攻速加成)；术法系灵爆 2.0s 基准 ×(1-ATR)。
-        var baseInterval = spellStyle ? 2 : 1;
-        var interval = baseInterval * castTimeFactor * (spellStyle ? 1 : castTimeFactor) / (1 + Math.Max(0, speed));
-        var basicRatio = spellStyle ? 0.6 * skillIntensity : 1 + progress;
+        // 普攻节奏全流派统一：基准 1.0s，同时吃行动速度与攻击速度成长；
+        // 掌心雷等填充技的吟唱时长走 castMilliseconds ×(1-ATR) 另一条线，不占普攻间隔。
+        var interval = castTimeFactor * castTimeFactor / (1 + Math.Max(0, speed));
+        var basicRatio = 1 + progress;
         return new(Stat("maxHitpoints", a.Hp), Stat("maxManapoints", a.Mp), physical,
             spell, Stat("physicalArmor", a.Armor), Stat("spellResistance", a.Mr),
             Stat("accuracy", a.Acc), Stat("evasion", a.Eva), Stat("criticalChance", a.Crit),
@@ -167,8 +167,7 @@ public static class PlayerAttributeResolver
             CastTimeFactor: castTimeFactor,
             BasicAttackRatio: basicRatio,
             SearchDelayFactor: castTimeFactor,
-            ThreatRatio: Math.Max(0, threatRatio),
-            SpellStyle: spellStyle)
+            ThreatRatio: Math.Max(0, threatRatio))
         {
             MetalResistance = Stat("metalResistance", 0), WoodResistance = Stat("woodResistance", 0),
             WaterResistance = Stat("waterResistance", 0), FireResistance = Stat("fireResistance", 0),

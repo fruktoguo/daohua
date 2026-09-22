@@ -4,7 +4,7 @@ import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findEncounterInCatalog, findItemInCatalog, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionDuel, ExpeditionProgress, QueueEntry } from '../game/types'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatEncounterDefinition, CombatantDefinition, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, QueueEntry } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -1182,6 +1182,35 @@ function attackActionState(
 }
 
 /**
+ * 敌方行动条：服务端下发 pendingAbilityId 表示该单位正在吟唱技能——
+ * 吟唱占用整条动作时间线，时长取服务端下发的 pendingActionDurationSeconds；
+ * 无吟唱时按普攻间隔合成普通攻击条。
+ */
+function enemyActionState(
+  entry: ExpeditionEnemy,
+  battleElapsedSeconds: number,
+  attackIntervalMilliseconds: number,
+  serverNowUnixMilliseconds: number,
+  abilities: readonly CombatAbilityDefinition[],
+): CombatActionState | null {
+  const remaining = Math.max(0, (entry.nextAttackAtSeconds - battleElapsedSeconds) * 1000)
+  if (entry.pendingAbilityId) {
+    const ability = findAbilityInCatalog(abilities, entry.pendingAbilityId)
+    const duration = Math.max(1, (entry.pendingActionDurationSeconds ?? 0) > 0
+      ? entry.pendingActionDurationSeconds! * 1000
+      : ability?.castMilliseconds ?? 1)
+    return {
+      kind: 'cast',
+      name: ability?.name ?? entry.pendingAbilityId,
+      durationMilliseconds: duration,
+      elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+      completesAtUnixMilliseconds: serverNowUnixMilliseconds + remaining,
+    }
+  }
+  return attackActionState(entry.nextAttackAtSeconds, battleElapsedSeconds, attackIntervalMilliseconds, serverNowUnixMilliseconds)
+}
+
+/**
  * 斗法剧本行动条：在回放时钟（battleElapsedSeconds）上找指定出手方的下一个事件，
  * 时长取该出手方相邻两次出手的间隔（首个事件回退到兜底攻速）；
  * 携带 abilityId 的剧本事件显示功法名（kind 'cast'），普攻事件走 attack。
@@ -1329,7 +1358,7 @@ export const CombatArena = memo(function CombatArena({
         mp: entry.manapoints,
         maxMp: definition?.maxManapoints ?? Math.max(1, entry.manapoints),
         action: entry.hitpoints > 0 && expedition?.phase === 'combat'
-          ? attackActionState(entry.nextAttackAtSeconds, battleElapsed, definition?.attackIntervalMilliseconds ?? 0, serverNow)
+          ? enemyActionState(entry, battleElapsed, definition?.attackIntervalMilliseconds ?? 0, serverNow, abilities)
           : null,
         visual: definition?.visual ?? null,
         definition,

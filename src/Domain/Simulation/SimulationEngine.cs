@@ -650,7 +650,8 @@ public static class SimulationEngine
             templates,
             waveEnemies.Select(enemy => new CombatantSnapshot(enemy.Hitpoints, enemy.Manapoints,
                 enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
-                enemy.UsedSkillMask, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints)).ToArray(),
+                enemy.PendingSkillIndex, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints,
+                enemy.SkillCooldownUntil, enemy.SkillCastCount)).ToArray(),
             expedition.BattleElapsedSeconds,
             expedition.Outcome,
             expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.AttackCount));
@@ -662,6 +663,10 @@ public static class SimulationEngine
         var skillStart = CombatSkillEngine.Advance(player, gameData, battleState, attributes, player.Combat.Skills, 0);
         player.Combat.Skills = skillStart.State;
         battleState.Player.Manapoints = player.Combat.Manapoints;
+        // 玩家技能吟唱占用整条动作时间线：吟唱中普攻出手边界顺延至吟唱结束后一个普攻周期。
+        if (player.Combat.Skills.CastingAbilityId is not null)
+            battleState.Player.NextAttackAtSeconds = battleState.ElapsedSeconds
+                + player.Combat.Skills.CastRemainingSeconds + battleState.Player.Stats.AttackIntervalSeconds;
         var battleTo = battleFrom + Math.Min(remainingSeconds, CombatSkillEngine.NextBoundarySeconds(player.Combat.Skills));
         var combatResult = DeterministicCombatEngine.AdvanceTo(battleState, battleTo);
         // battleTo 由 battleFrom 加法得到，回减时浮点误差可能让 consumed 比剩余预算大 1e-15 量级；
@@ -669,6 +674,9 @@ public static class SimulationEngine
         var consumed = Math.Clamp(battleState.ElapsedSeconds - battleFrom, 0, remainingSeconds);
         var skillResult = CombatSkillEngine.Advance(player, gameData, battleState, attributes, player.Combat.Skills, consumed);
         player.Combat.Skills = skillResult.State;
+        if (player.Combat.Skills.CastingAbilityId is not null)
+            battleState.Player.NextAttackAtSeconds = battleState.ElapsedSeconds
+                + player.Combat.Skills.CastRemainingSeconds + battleState.Player.Stats.AttackIntervalSeconds;
         foreach (var skillEvent in skillStart.Events.Concat(skillResult.Events))
             AddCombatEventAt(ref events, from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, skillEvent.AtSeconds - battleFrom)),
                 "combat.skill", $"施放 {skillEvent.AbilityId}，伤害 {skillEvent.Damage:0.##}，治疗 {skillEvent.Healing:0.##}。", definition.Id);
@@ -950,7 +958,14 @@ public static class SimulationEngine
         Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
             enemy.DefinitionId ?? enemy.Id, enemy.Hitpoints, enemy.Manapoints,
             enemy.NextAttackAtSeconds, enemy.AttackCount, enemy.Threat,
-            enemy.UsedSkillMask, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints)).ToArray()
+            enemy.PendingSkillIndex, enemy.ThreatRatioBonus, enemy.BonusAbsorptionPoints,
+            enemy.SkillCooldownUntil,
+            enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
+                ? DeterministicCombatEngine.AbilityText(enemy.Skills[enemy.PendingSkillIndex].Ability, "id") : null,
+            enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
+                ? DeterministicCombatEngine.AbilityNumber(enemy.Skills[enemy.PendingSkillIndex].Ability, "castMilliseconds") / 1000d * enemy.Stats.CastTimeFactor
+                : enemy.Stats.AttackIntervalSeconds,
+            enemy.SkillCastCount)).ToArray()
     };
 
     /// <summary>
