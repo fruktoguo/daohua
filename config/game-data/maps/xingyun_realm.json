@@ -40,15 +40,6 @@
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "buildings": [
-          {
-            "id": "building.carrion-monument",
-            "name": "残破古冢",
-            "kind": "building",
-            "description": "被盗掘一空的古修墓穴，死气萦绕。",
-            "effect": "伴灵花采摘点"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -63,15 +54,6 @@
         "encounterIds": [
           "encounter.twilight-valley"
         ],
-        "buildings": [
-          {
-            "id": "building.scorched-branches",
-            "name": "枯焦残木",
-            "kind": "building",
-            "description": "焦黑如碳的古树桩，散发淡淡异香。",
-            "effect": "引灵松采伐点"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -85,15 +67,6 @@
         ],
         "encounterIds": [
           "encounter.twilight-valley"
-        ],
-        "buildings": [
-          {
-            "id": "building.copper-chasm",
-            "name": "荧光地缝",
-            "kind": "building",
-            "description": "滚烫矿石裸露的岩层裂隙。",
-            "effect": "赤铜开采点"
-          }
         ],
         "buildableTemplate": "all"
       },

@@ -58,15 +58,6 @@
         "encounterIds": [
           "encounter.qi-beast"
         ],
-        "buildings": [
-          {
-            "id": "building.shuyu-stones",
-            "name": "漱玉跳岩",
-            "kind": "building",
-            "description": "溪水中的垫脚青石，晨曦露水在此汇聚凝结。",
-            "effect": "晨露采集点"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -90,15 +81,6 @@
         "encounterIds": [
           "encounter.qi-beast"
         ],
-        "buildings": [
-          {
-            "id": "building.herb-rack",
-            "name": "晾药竹架",
-            "kind": "building",
-            "description": "依山谷搭建的草药晾晒竹架，药香四溢。",
-            "effect": "灵草采摘点"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -113,15 +95,6 @@
         "encounterIds": [
           "encounter.sunset-ridge"
         ],
-        "buildings": [
-          {
-            "id": "building.peach-bridge",
-            "name": "断木古桥",
-            "kind": "building",
-            "description": "由坚韧老桃木干搭建的便桥，横跨桃林幽涧。",
-            "effect": "桃木采伐点"
-          }
-        ],
         "buildableTemplate": "all"
       },
       {
@@ -135,15 +108,6 @@
         ],
         "encounterIds": [
           "encounter.sunset-ridge"
-        ],
-        "buildings": [
-          {
-            "id": "building.mining-shed",
-            "name": "淘石草棚",
-            "kind": "building",
-            "description": "堆放采矿锤镐与碎石料的粗陋草棚。",
-            "effect": "乌铁开采点"
-          }
         ],
         "buildableTemplate": "all"
       },
