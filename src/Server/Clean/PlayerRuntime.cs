@@ -1004,6 +1004,59 @@ public sealed class PlayerRuntime(
                         await ReloadWalletAsync(cancellationToken);
                         break;
                     }
+                    case "item.discard":
+                    case "item.sell":
+                    {
+                        // 物品处置（丢弃/系统回收）只动钱包资产：校验定义与持有量后，
+                        // 由经济事务原子扣减；回收入灵石在同一事务内贷记。
+                        if (!requestId.HasValue) return Fail("INVALID_REQUEST_ID", "物品处置必须提供请求 ID。");
+                        var disposeItemId = payload.TryGetProperty("itemId", out var disposeItemElement)
+                            && disposeItemElement.ValueKind == JsonValueKind.String
+                            ? disposeItemElement.GetString() : null;
+                        var disposeQuantity = payload.TryGetProperty("quantity", out var disposeQuantityElement)
+                            && disposeQuantityElement.TryGetDouble(out var parsedDisposeQuantity)
+                            ? parsedDisposeQuantity : double.NaN;
+                        if (string.IsNullOrWhiteSpace(disposeItemId) || !double.IsFinite(disposeQuantity) || disposeQuantity <= 0)
+                            return Fail("INVALID_PAYLOAD", "物品或数量无效。");
+                        var hasItemDefinition = gameData.Items.TryGetValue(new ItemId(disposeItemId), out var disposeDefinition);
+                        if (!hasItemDefinition && !gameData.RawEquipments.ContainsKey(disposeItemId))
+                            return Fail("ITEM_NOT_FOUND", "物品不存在。");
+                        if (aggregate.Loadout.Equipment.Any(slot => slot.ItemId == disposeItemId))
+                            return Fail("ITEM_EQUIPPED", "已装备的物品无法处置，请先卸下。");
+                        var spiritCredit = 0d;
+                        if (command == "item.sell")
+                        {
+                            // 系统回收只认配表 sellPrice 正数的普通物品；装备无回收价，货币不可回收换货币。
+                            if (!hasItemDefinition || disposeDefinition!.SellPrice <= 0
+                                || disposeItemId.StartsWith("currency.", StringComparison.Ordinal))
+                                return Fail("ITEM_NOT_SELLABLE", "该物品不支持系统回收。");
+                            spiritCredit = disposeDefinition.SellPrice * disposeQuantity;
+                        }
+                        await EnsureWalletFreshAsync(cancellationToken);
+                        if (wallet.Get(new AssetKey(new ItemId(disposeItemId))) + 1e-9 < disposeQuantity)
+                            return Fail("INSUFFICIENT_ITEM", "物品数量不足。");
+                        var disposeNow = DateTimeOffset.UtcNow;
+                        var disposeDeltas = new List<AssetDelta>
+                        {
+                            new(aggregate.PlayerId.Value, disposeItemId, string.Empty, -disposeQuantity)
+                        };
+                        if (spiritCredit > 0)
+                            disposeDeltas.Add(new(aggregate.PlayerId.Value, "currency.spirit-stone", string.Empty, spiritCredit));
+                        var disposeResult = await economy.CommitAsync(new EconomyTransactionRequest(
+                            requestId.Value,
+                            $"{command}:{aggregate.PlayerId.Value:D}:{requestId.Value:D}",
+                            command,
+                            aggregate.PlayerId.Value,
+                            disposeDeltas,
+                            disposeNow,
+                            JsonSerializer.SerializeToUtf8Bytes(new { itemId = disposeItemId, quantity = disposeQuantity }),
+                            Receipts: [new CommandReceipt(aggregate.PlayerId.Value, requestId.Value, command, payloadHash,
+                                Math.Max(_logicalVersion, aggregate.StateVersion), disposeNow, disposeNow.AddMinutes(30))]),
+                            cancellationToken);
+                        if (!disposeResult.Applied) return Fail("TRANSACTION_REJECTED", "物品处置事务未提交。");
+                        await RefreshWalletAfterDurableMutationAsync(cancellationToken);
+                        break;
+                    }
                     case "player.rename":
                     {
                         var name = payload.TryGetProperty("displayName", out var nameElement) ? nameElement.GetString() : null;
@@ -1446,7 +1499,8 @@ public sealed class PlayerRuntime(
             "action.enqueue" or "action.remove" or
             "queue.configure" or "queue.move" or "queue.auto_use.configure" or
             "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
-            "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "market.claim";
+            "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "market.claim" or
+            "item.discard" or "item.sell";
 
         /// <summary>
         /// 按当前位置从共享注册表刷新节点公共建筑投影与汇总效果：注册表是跨玩家权威，

@@ -397,6 +397,238 @@ public sealed class PlayerRuntimeTests
         Assert.Equal(ActionQueueStatus.Running, advanceResult.Snapshot.State.Actions[0].Status);
     }
 
+    /// <summary>item.discard：按指定数量原子扣减物品，事务增量与快照余额一致。</summary>
+
+    [Fact]
+    public async Task DiscardItemDeductsQuantityAtomically()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "丢弃测试");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.test-herb", "", 10d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var runtime = new PlayerRuntime(repository, assets, economy, CreateDisposalCatalog(), NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        var result = await runtime.ExecuteAsync(playerId, "item.discard", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.test-herb",
+            quantity = 4d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+
+        Assert.True(result.Success);
+        var transaction = Assert.Single(economy.Requests);
+        var debit = Assert.Single(transaction.Deltas);
+        Assert.Equal("item.test-herb", debit.AssetId);
+        Assert.Equal(-4d, debit.Delta);
+        Assert.Equal(6d, Assert.Single(result.Snapshot.Assets).Quantity);
+    }
+    /// <summary>item.discard：数量超库存、物品不存在与非法数量均被拒绝，且不产生任何资产事务。</summary>
+
+    [Fact]
+    public async Task DiscardItemRejectsOvershootMissingAndInvalidQuantity()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "丢弃校验");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.test-herb", "", 10d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var runtime = new PlayerRuntime(repository, assets, economy, CreateDisposalCatalog(), NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        var overshoot = await runtime.ExecuteAsync(playerId, "item.discard", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.test-herb",
+            quantity = 20d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(overshoot.Success);
+        Assert.Equal("INSUFFICIENT_ITEM", overshoot.Code);
+
+        var missing = await runtime.ExecuteAsync(playerId, "item.discard", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.missing",
+            quantity = 1d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(missing.Success);
+        Assert.Equal("ITEM_NOT_FOUND", missing.Code);
+
+        var invalid = await runtime.ExecuteAsync(playerId, "item.discard", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.test-herb",
+            quantity = 0d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(invalid.Success);
+        Assert.Equal("INVALID_PAYLOAD", invalid.Code);
+
+        Assert.Empty(economy.Requests);
+        Assert.Equal(10d, Assert.Single((await runtime.LoadAsync(playerId)).Assets).Quantity);
+    }
+    /// <summary>item.sell：按 sellPrice 单价（double）扣物品并在同一事务内贷记灵石。</summary>
+
+    [Fact]
+    public async Task SellItemCreditsSpiritStonesInSameTransaction()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "回收测试");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.test-herb", "", 10d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var runtime = new PlayerRuntime(repository, assets, economy, CreateDisposalCatalog(), NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        var result = await runtime.ExecuteAsync(playerId, "item.sell", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.test-herb",
+            quantity = 4d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+
+        Assert.True(result.Success);
+        var transaction = Assert.Single(economy.Requests);
+        Assert.Equal(2, transaction.Deltas.Count);
+        var debit = Assert.Single(transaction.Deltas, delta => delta.AssetId == "item.test-herb");
+        var credit = Assert.Single(transaction.Deltas, delta => delta.AssetId == "currency.spirit-stone");
+        Assert.Equal(-4d, debit.Delta);
+        Assert.Equal(10d, credit.Delta);
+        Assert.Equal(6d, Assert.Single(result.Snapshot.Assets, asset => asset.AssetId == "item.test-herb").Quantity);
+        Assert.Equal(10d, Assert.Single(result.Snapshot.Assets, asset => asset.AssetId == "currency.spirit-stone").Quantity);
+    }
+    /// <summary>item.sell：无回收价物品与装备均被拒绝；缺少 requestId 直接拒绝；货币资产不在物品目录按不存在拒绝。</summary>
+
+    [Fact]
+    public async Task SellItemRejectsUnsellableEquipmentCurrencyAndMissingRequestId()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "回收校验");
+        var assets = new MutableAssetRepository(
+            new AssetBalanceRecord(playerId, "item.no-price", "", 5d, 0),
+            new AssetBalanceRecord(playerId, "equipment.test-sword", "", 1d, 0),
+            new AssetBalanceRecord(playerId, "currency.spirit-stone", "", 3d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var runtime = new PlayerRuntime(repository, assets, economy, CreateDisposalCatalog(), NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        var noPrice = await runtime.ExecuteAsync(playerId, "item.sell", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.no-price",
+            quantity = 1d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(noPrice.Success);
+        Assert.Equal("ITEM_NOT_SELLABLE", noPrice.Code);
+
+        var equipment = await runtime.ExecuteAsync(playerId, "item.sell", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.test-sword",
+            quantity = 1d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(equipment.Success);
+        Assert.Equal("ITEM_NOT_SELLABLE", equipment.Code);
+
+        var currency = await runtime.ExecuteAsync(playerId, "item.sell", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "currency.spirit-stone",
+            quantity = 1d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(currency.Success);
+        Assert.Equal("ITEM_NOT_FOUND", currency.Code);
+
+        var noRequestId = await runtime.ExecuteAsync(playerId, "item.sell", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.no-price",
+            quantity = 1d
+        }));
+        Assert.False(noRequestId.Success);
+        Assert.Equal("INVALID_REQUEST_ID", noRequestId.Code);
+
+        Assert.Empty(economy.Requests);
+    }
+    /// <summary>item.sell 同 requestId 重放返回 IDEMPOTENT_REPLAY，不重复扣物品或重复入账灵石。</summary>
+
+    [Fact]
+    public async Task SellItemIdempotentReplayDoesNotDoubleApply()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "幂等测试");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.test-herb", "", 10d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var runtime = new PlayerRuntime(repository, assets, economy, CreateDisposalCatalog(), NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            itemId = "item.test-herb",
+            quantity = 4d,
+            requestId = Guid.NewGuid().ToString("D")
+        });
+        var first = await runtime.ExecuteAsync(playerId, "item.sell", payload);
+        var replay = await runtime.ExecuteAsync(playerId, "item.sell", payload);
+
+        Assert.True(first.Success);
+        Assert.True(replay.Success);
+        Assert.Equal("IDEMPOTENT_REPLAY", replay.Code);
+        Assert.Single(economy.Requests);
+        Assert.Equal(6d, Assert.Single(replay.Snapshot.Assets, asset => asset.AssetId == "item.test-herb").Quantity);
+        Assert.Equal(10d, Assert.Single(replay.Snapshot.Assets, asset => asset.AssetId == "currency.spirit-stone").Quantity);
+    }
+    /// <summary>已穿戴装备不可丢弃或回收，必须先卸下。</summary>
+
+    [Fact]
+    public async Task EquippedItemCannotBeDiscardedOrSold()
+    {
+        var playerId = Guid.NewGuid();
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var persisted = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), "装备处置", createdAt, "fp-test");
+        persisted.ReplaceLoadout([], [], [new ItemId("equipment.test-sword")]);
+        var storedAt = DateTimeOffset.UtcNow;
+        var writes = Server.Clean.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
+        var sections = writes.ToDictionary(
+            write => write.SectionKind,
+            write => new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
+                write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt),
+            StringComparer.Ordinal);
+        var repository = new FakeStateRepository(new PlayerStateBundle(
+            new PlayerIdentity(playerId, Guid.NewGuid(), "装备处置", createdAt),
+            new StoredHead(playerId, persisted.StateVersion, Server.Clean.SectionCodec.CurrentSchemaVersion, persisted.LastSimulatedAt,
+                "fp-test", Server.Clean.SectionCodec.ComputeHeadChecksum(sections.Values), storedAt),
+            sections, []));
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "equipment.test-sword", "", 1d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: true);
+        var runtime = new PlayerRuntime(repository, assets, economy, CreateDisposalCatalog(), NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        var discard = await runtime.ExecuteAsync(playerId, "item.discard", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.test-sword",
+            quantity = 1d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(discard.Success);
+        Assert.Equal("ITEM_EQUIPPED", discard.Code);
+
+        var sell = await runtime.ExecuteAsync(playerId, "item.sell", JsonSerializer.SerializeToElement(new
+        {
+            itemId = "equipment.test-sword",
+            quantity = 1d,
+            requestId = Guid.NewGuid().ToString("D")
+        }));
+        Assert.False(sell.Success);
+        Assert.Equal("ITEM_EQUIPPED", sell.Code);
+        Assert.Empty(economy.Requests);
+    }
+
+    /// <summary>构造物品处置测试目录：含可回收草药、无价物品与一件装备原始定义。</summary>
+    private static GameDataCatalog CreateDisposalCatalog() => GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
+        [
+          {"id":"item.test-herb","name":"测试草药","description":"可回收","sellPrice":2.5},
+          {"id":"item.no-price","name":"无价之物","description":"无回收价"},
+          {"id":"equipment.test-sword","name":"测试飞剑","slot":"weapon","tier":1}
+        ]
+        """)]);
+
     /// <summary>构造仅含空头、无分段的存量玩家假仓库。</summary>
     private static FakeStateRepository CreateEmptyPlayerRepository(Guid playerId, string name)
     {
