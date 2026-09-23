@@ -51,9 +51,7 @@ public sealed record ServerOptions(
 
     /// <summary>是否启用主服务 → ComputeNode 冷挂机派发链</summary>
     public bool ComputeNodeEnabled { get; init; }
-    /// <summary>ComputeNode 内部批处理端点列表（http/https 绝对地址，可多节点轮询）</summary>
-    public IReadOnlyList<string> ComputeNodeEndpoints { get; init; } = [];
-    /// <summary>内部计算令牌（X-Compute-Token）；只从配置/环境变量读取，绝不写入日志</summary>
+    /// <summary>内部计算令牌（X-Compute-Token，兼作 compute-link 握手凭证）；只从配置/环境变量读取，绝不写入日志</summary>
     public string? ComputeNodeToken { get; init; }
     /// <summary>单次派发领取的最大任务数</summary>
     public int ComputeBatchSize { get; init; } = 64;
@@ -77,9 +75,9 @@ public sealed record ServerOptions(
     /// <summary>防多开子系统开关与配额（AntiMultiOpen:* 配置节）</summary>
     public global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions AntiMultiOpen { get; init; } = global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions.Default;
 
-    /// <summary>派发链是否具备可运行配置（启用 + 至少一个端点 + 令牌齐备）</summary>
+    /// <summary>派发链是否具备可运行配置（启用 + 令牌齐备；节点组经 compute-link 动态拨入）</summary>
     public bool ComputeNodeConfigured =>
-        ComputeNodeEnabled && ComputeNodeEndpoints.Count > 0 && !string.IsNullOrWhiteSpace(ComputeNodeToken);
+        ComputeNodeEnabled && !string.IsNullOrWhiteSpace(ComputeNodeToken);
 
     /// <summary>
     /// 从 IConfiguration 绑定并校验全量服务端配置。
@@ -112,8 +110,6 @@ public sealed record ServerOptions(
         var dataProtectionRetentionDays = configuration.GetValue("Storage:DataProtectionKeyRetentionDays", 180);
         var settlementClaimRetentionDays = configuration.GetValue("Storage:SettlementClaimRetentionDays", 30);
         var computeEnabled = configuration.GetValue("ComputeNode:Enabled", true);
-        // Endpoints 同时兼容单字符串（; , 空白分隔）与数组配置节两种写法。
-        var computeEndpoints = ParseEndpoints(configuration.GetSection("ComputeNode:Endpoints"));
         var computeToken = configuration["ComputeNode:Token"];
         var computeBatchSize = configuration.GetValue("ComputeNode:BatchSize", 64);
         var computePollMs = configuration.GetValue("ComputeNode:PollIntervalMilliseconds", 5_000);
@@ -152,13 +148,6 @@ public sealed record ServerOptions(
         if (coldMinIdleMinutes is < 1 or > 1440) throw new InvalidOperationException("ComputeNode:ColdCatchUpMinIdleMinutes 必须在 1..1440。");
         if (coldWindowHours is < 1 or > 720) throw new InvalidOperationException("ComputeNode:ColdCatchUpWindowHours 必须在 1..720。");
         if (computeToken is { Length: > 512 }) throw new InvalidOperationException("ComputeNode:Token 长度不能超过 512。");
-        foreach (var endpoint in computeEndpoints)
-        {
-            if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
-                || uri.Scheme is not ("http" or "https"))
-                throw new InvalidOperationException($"ComputeNode:Endpoints 含非法端点：{endpoint}。必须是 http/https 绝对地址。");
-        }
-
         return new ServerOptions(
             configuration["Service:Name"] ?? "daohua",
             connectionString,
@@ -182,7 +171,6 @@ public sealed record ServerOptions(
             DataProtectionKeyRetention = TimeSpan.FromDays(dataProtectionRetentionDays),
             SettlementClaimRetention = TimeSpan.FromDays(settlementClaimRetentionDays),
             ComputeNodeEnabled = computeEnabled,
-            ComputeNodeEndpoints = computeEndpoints,
             ComputeNodeToken = string.IsNullOrWhiteSpace(computeToken) ? null : computeToken.Trim(),
             ComputeBatchSize = computeBatchSize,
             ComputePollInterval = TimeSpan.FromMilliseconds(computePollMs),
@@ -197,26 +185,6 @@ public sealed record ServerOptions(
         };
     }
 
-    private static IReadOnlyList<string> ParseEndpoints(IConfigurationSection section)
-    {
-        var endpoints = new List<string>();
-        var children = section.GetChildren().ToList();
-        if (children.Count > 0)
-        {
-            foreach (var child in children)
-            {
-                if (!string.IsNullOrWhiteSpace(child.Value)) endpoints.Add(child.Value.Trim());
-            }
-        }
-        else if (!string.IsNullOrWhiteSpace(section.Value))
-        {
-            foreach (var part in section.Value.Split([';', ',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries))
-            {
-                endpoints.Add(part.Trim());
-            }
-        }
-        return endpoints;
-    }
 }
 
 /// <summary>

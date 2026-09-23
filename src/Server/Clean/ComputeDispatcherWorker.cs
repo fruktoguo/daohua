@@ -1,141 +1,54 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Server.Clean;
 
-/// <summary>批次 HTTP 派发结局。</summary>
-public enum ComputeDispatchStatus : byte
-{
-    /// <summary>节点返回了合法批处理响应。</summary>
-    Ok = 0,
-    /// <summary>节点返回了非 2xx 状态码。</summary>
-    HttpError = 1,
-    /// <summary>网络错误或请求超时。</summary>
-    NetworkError = 2,
-    /// <summary>响应体不是合法的 compute.v1 批次结果。</summary>
-    InvalidResponse = 3
-}
-
-/// <summary>一次批次派发的完整结果。</summary>
-/// <param name="Status">派发结局分类。</param>
-/// <param name="HttpStatus">HTTP 状态码（若已到达节点）。</param>
-/// <param name="Response">合法的批次响应。</param>
-/// <param name="Error">错误描述（不含令牌等敏感信息）。</param>
-public sealed record ComputeDispatchOutcome(
-    ComputeDispatchStatus Status,
-    HttpStatusCode? HttpStatus,
-    ComputeAdvanceBatchResponse? Response,
-    string? Error);
-
 /// <summary>
-/// ComputeNode 内部批处理 HTTP 客户端。
-/// 只负责网络边界：令牌头、契约版本校验与异常分类；不含任何持久化语义，便于注入 fake handler 测试。
-/// </summary>
-public sealed class ComputeNodeClient(HttpClient http)
-{
-    /// <summary>向指定节点端点发起一批冷挂机推进请求。</summary>
-    public async Task<ComputeDispatchOutcome> AdvanceBatchAsync(
-        string endpoint,
-        string token,
-        ComputeAdvanceBatchRequest batch,
-        CancellationToken cancellationToken)
-    {
-        var url = new Uri(endpoint.TrimEnd('/') + ComputeDispatchContract.AdvanceBatchPath, UriKind.Absolute);
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.TryAddWithoutValidation(ComputeDispatchContract.TokenHeader, token);
-        var body = JsonSerializer.SerializeToUtf8Bytes(batch, ServerJson.Options);
-        request.Content = new ByteArrayContent(body);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-
-        HttpResponseMessage response;
-        try
-        {
-            response = await http.SendAsync(request, cancellationToken);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return new ComputeDispatchOutcome(ComputeDispatchStatus.NetworkError, null, null, "请求超时");
-        }
-        catch (HttpRequestException exception)
-        {
-            return new ComputeDispatchOutcome(ComputeDispatchStatus.NetworkError, null, null, exception.Message);
-        }
-
-        using (response)
-        {
-            if (!response.IsSuccessStatusCode)
-            {
-                return new ComputeDispatchOutcome(
-                    ComputeDispatchStatus.HttpError, response.StatusCode, null, $"HTTP {(int)response.StatusCode}");
-            }
-
-            ComputeAdvanceBatchResponse? parsed;
-            try
-            {
-                parsed = await response.Content.ReadFromJsonAsync<ComputeAdvanceBatchResponse>(ServerJson.Options, cancellationToken);
-            }
-            catch (Exception exception) when (exception is JsonException or NotSupportedException)
-            {
-                return new ComputeDispatchOutcome(ComputeDispatchStatus.InvalidResponse, response.StatusCode, null, "响应反序列化失败");
-            }
-
-            if (parsed is null || parsed.Jobs is null
-                || !string.Equals(parsed.ContractVersion, ComputeDispatchContract.Version, StringComparison.Ordinal))
-            {
-                return new ComputeDispatchOutcome(ComputeDispatchStatus.InvalidResponse, response.StatusCode, null, "响应契约无效");
-            }
-
-            return new ComputeDispatchOutcome(ComputeDispatchStatus.Ok, response.StatusCode, parsed, null);
-        }
-    }
-}
-
-/// <summary>
-/// 主服务 → ComputeNode 冷挂机派发 worker。
-/// 轮询领取 platform.compute_jobs 到期任务 → 组装 compute.v1 批次 → POST 到计算节点 →
-/// 成功结果经 SourceStateVersion CAS 门控落库并归档 output_payload；
-/// HTTP/网络层失败按租约令牌整批退回 pending，attempts 超上限自动进入 dead 终态。
-/// 未配置端点或令牌时安全停用（任务保留 pending，等待配置补齐或 retention 策略处理）。
+/// 主服务 → 计算节点组冷挂机派发 worker（compute-link.v1 反向拨入模型）。
+/// 轮询领取 platform.compute_jobs 到期任务 → 从 <see cref="ComputeLinkRegistry"/>
+/// 取剩余容量最大的在线节点 → 经节点链路下发批次 → 结果按 SourceStateVersion CAS 落库。
+/// 无在线节点时不领取任务（attempts 不消耗）；节点断线/批次超时按租约令牌整批退回
+/// pending 并指数退避；领取次数超过上限自动进入 dead 终态保留诊断窗口。
+/// 未配置令牌或派发停用时 worker 安全退出（任务保留 pending）。
 /// </summary>
 public sealed class ComputeDispatcherWorker(
     PostgresComputeJobRepository jobs,
     PostgresSectionRepository sections,
-    HttpClient http,
+    ComputeLinkRegistry registry,
     ServerOptions options,
     GameDataCatalog gameData,
     ILogger<ComputeDispatcherWorker> logger) : BackgroundService
 {
-    /// <summary>共享 HttpClient 注册名。</summary>
-    public const string HttpClientName = "compute-node";
-
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
-    private int _endpointCursor = -1;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.ComputeNodeConfigured)
         {
             logger.LogInformation(
-                "冷挂机派发器未启用：需要 ComputeNode:Enabled=true 且配置 ComputeNode:Endpoints 与 ComputeNode:Token；任务保持 pending。");
+                "冷挂机派发器未启用：需要 ComputeNode:Enabled=true 且配置 ComputeNode:Token；任务保持 pending。");
             return;
         }
 
-        var client = new ComputeNodeClient(http);
-        logger.LogInformation("ComputeDispatcherWorker started batch={Batch} interval={Interval} endpoints={Endpoints}.",
-            options.ComputeBatchSize, options.ComputePollInterval, options.ComputeNodeEndpoints.Count);
+        logger.LogInformation("ComputeDispatcherWorker started batch={Batch} interval={Interval}（compute-link.v1 动态节点组）。",
+            options.ComputeBatchSize, options.ComputePollInterval);
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
+                // 先取节点再领任务：节点组为空时任务留在 pending 不动，不消耗领取次数。
+                var node = registry.Acquire();
+                if (node is null)
+                {
+                    await Task.Delay(options.ComputePollInterval, stoppingToken);
+                    continue;
+                }
                 var claims = await jobs.ClaimDueAsync(options.ComputeBatchSize, options.ComputeLease, stoppingToken);
                 if (claims.Count == 0)
                 {
                     await Task.Delay(options.ComputePollInterval, stoppingToken);
                     continue;
                 }
-                await DispatchBatchAsync(client, claims, stoppingToken);
+                await DispatchBatchAsync(node, claims, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -151,7 +64,7 @@ public sealed class ComputeDispatcherWorker(
     }
 
     private async Task DispatchBatchAsync(
-        ComputeNodeClient client,
+        ComputeLinkNode node,
         IReadOnlyList<ComputeJobClaim> claims,
         CancellationToken cancellationToken)
     {
@@ -178,34 +91,56 @@ public sealed class ComputeDispatcherWorker(
         }
         if (ready.Count == 0) return;
 
-        var endpoint = NextEndpoint();
-        var batch = new ComputeAdvanceBatchRequest(
-            ComputeDispatchContract.Version,
-            gameData.Fingerprint,
-            ready.Select(entry => entry.Request).ToArray());
-        var outcome = await client.AdvanceBatchAsync(endpoint, options.ComputeNodeToken!, batch, cancellationToken);
-        if (outcome.Status != ComputeDispatchStatus.Ok || outcome.Response is null)
+        var batchId = Guid.NewGuid();
+        var waiter = new TaskCompletionSource<ComputeAdvanceBatchResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!node.Pending.TryAdd(batchId, waiter))
         {
-            var backoff = outcome.HttpStatus switch
-            {
-                HttpStatusCode.TooManyRequests => TimeSpan.FromSeconds(10),
-                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden => TimeSpan.FromMinutes(5),
-                HttpStatusCode.Conflict => TimeSpan.FromMinutes(1),
-                _ => Backoff(claims[0].Attempts)
-            };
-            if (_failureLog.TryAcquire())
-            {
-                logger.LogError("ComputeNode 批次派发失败 status={Status} http={HttpStatus} jobs={Jobs} error={Error}",
-                    outcome.Status, outcome.HttpStatus, claims.Count, outcome.Error);
-            }
-            await jobs.ReleaseLeaseAsync(claims[0].LeaseToken,
-                outcome.Error ?? $"http {(int?)outcome.HttpStatus ?? 0}", backoff,
-                options.ComputeMaxAttempts, cancellationToken);
+            await ReleaseClaimsAsync(claims, "批次登记冲突", Backoff(claims[0].Attempts), cancellationToken);
             return;
         }
 
-        var results = new Dictionary<Guid, ComputeAdvanceJobResult>(outcome.Response.Jobs.Count);
-        foreach (var result in outcome.Response.Jobs) results[result.JobId] = result;
+        try
+        {
+            await node.Outbound.Writer.WriteAsync(
+                ComputeLinkCodec.Encode(new ComputeLinkBatch(batchId, new ComputeAdvanceBatchRequest(
+                    ComputeDispatchContract.Version,
+                    gameData.Fingerprint,
+                    ready.Select(entry => entry.Request).ToArray()))),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            node.Pending.TryRemove(batchId, out _);
+            await ReleaseClaimsAsync(claims, $"批次下发失败：{exception.Message}", Backoff(claims[0].Attempts), cancellationToken);
+            return;
+        }
+
+        ComputeAdvanceBatchResponse response;
+        try
+        {
+            response = await waiter.Task.WaitAsync(options.ComputeRequestTimeout, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // 节点断线（FailAllPending 注入异常）或批次超时：整批退回 pending 退避重试。
+            node.Pending.TryRemove(batchId, out _);
+            if (_failureLog.TryAcquire())
+                logger.LogError("ComputeNode 批次派发失败 node={Node} jobs={Jobs} error={Error}",
+                    node.Name, claims.Count, exception.Message);
+            await ReleaseClaimsAsync(claims, exception.Message, Backoff(claims[0].Attempts), cancellationToken);
+            return;
+        }
+
+        if (response is null || response.Jobs is null
+            || !string.Equals(response.ContractVersion, ComputeDispatchContract.Version, StringComparison.Ordinal))
+        {
+            node.Pending.TryRemove(batchId, out _);
+            await ReleaseClaimsAsync(claims, "节点响应契约无效", Backoff(claims[0].Attempts), cancellationToken);
+            return;
+        }
+
+        var results = new Dictionary<Guid, ComputeAdvanceJobResult>(response.Jobs.Count);
+        foreach (var result in response.Jobs) results[result.JobId] = result;
 
         foreach (var (claim, _) in ready)
         {
@@ -258,33 +193,31 @@ public sealed class ComputeDispatcherWorker(
         }
     }
 
-    private string NextEndpoint()
-    {
-        var endpoints = options.ComputeNodeEndpoints;
-        var index = (int)((uint)Interlocked.Increment(ref _endpointCursor) % (uint)endpoints.Count);
-        return endpoints[index];
-    }
+    private async Task ReleaseClaimsAsync(
+        IReadOnlyList<ComputeJobClaim> claims, string error, TimeSpan backoff, CancellationToken cancellationToken)
+        => await jobs.ReleaseLeaseAsync(claims[0].LeaseToken, error, backoff,
+            options.ComputeMaxAttempts, cancellationToken);
 
     private static TimeSpan Backoff(int attempts) =>
         TimeSpan.FromSeconds(Math.Min(300, Math.Pow(2, Math.Min(Math.Max(attempts - 1, 0), 8))));
 }
 
-/// <summary>冷挂机派发链的服务装配扩展。</summary>
+/// <summary>
+/// 冷挂机派发链的服务装配扩展。
+/// Api 与 PersistenceWorker 两种进程角色共用；未配置 ComputeNode:* 时 worker 安全停用。
+/// </summary>
 public static class ComputeDispatchServiceCollectionExtensions
 {
     /// <summary>
-    /// 注册冷挂机派发链：任务仓库、HTTP 客户端、派发 worker 与冷挂机扫描 worker。
-    /// Api 与 PersistenceWorker 两种进程角色共用；未配置 ComputeNode:* 时 worker 安全停用。
+    /// 注册冷挂机派发链：任务仓库、在线节点注册表、派发 worker 与冷挂机扫描 worker。
     /// </summary>
     public static IServiceCollection AddComputeDispatch(this IServiceCollection services)
     {
         // PersistenceWorker 角色不注册 GameDataCatalog；派发器只需要指纹，按惰性工厂兜底。
         services.TryAddSingleton(_ => GameDataCatalog.LoadEmbedded());
         services.AddSingleton<PostgresComputeJobRepository>();
-        services.AddHttpClient(ComputeDispatcherWorker.HttpClientName, (sp, client) =>
-            client.Timeout = sp.GetRequiredService<ServerOptions>().ComputeRequestTimeout);
-        services.AddHostedService(sp => ActivatorUtilities.CreateInstance<ComputeDispatcherWorker>(
-            sp, sp.GetRequiredService<IHttpClientFactory>().CreateClient(ComputeDispatcherWorker.HttpClientName)));
+        services.AddSingleton<ComputeLinkRegistry>();
+        services.AddHostedService<ComputeDispatcherWorker>();
         services.AddHostedService<ColdCatchUpWorker>();
         return services;
     }

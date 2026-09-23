@@ -109,7 +109,6 @@ services:
       Market__PartitionCount: "1"
       Market__PartitionId: "0"
       ComputeNode__Enabled: "true"
-      ComputeNode__Endpoints: http://compute-node:8090
       ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
     read_only: true
     tmpfs:
@@ -154,6 +153,9 @@ services:
       ASPNETCORE_URLS: http://+:8090
       ComputeNode__Urls: http://+:8090
       ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
+      # 反向拨入：节点主动 WebSocket 连接主服链路，进入动态节点组接收批次。
+      ComputeNode__UpstreamUrl: "http://app:8080/internal/compute-link"
+      ComputeNode__NodeName: "local-compute"
       ComputeNode__MaxJobsPerBatch: "128"
       ComputeNode__MaxConcurrentBatches: "2"
       GameData__Directory: /app/config/game-data
@@ -205,7 +207,6 @@ services:
       Storage__OutboxBatchSize: "128"
       Storage__OutboxPollIntervalMilliseconds: "1000"
       ComputeNode__Enabled: "true"
-      ComputeNode__Endpoints: http://compute-node:8090
       ComputeNode__Token: ${COMPUTE_TOKEN:-local-compute-token}
     read_only: true
     tmpfs:

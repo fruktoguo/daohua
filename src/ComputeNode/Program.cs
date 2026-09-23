@@ -1,6 +1,10 @@
 // ComputeNode：可选的高延迟冷挂机补算节点，部署在远程个人设备上。
-// 边界：只做确定性 section 推进，不持玩家权威状态、不直连生产数据库；
-// 唯一业务入口是 /internal/v1/compute/advance-batch，且仅凭 X-Compute-Token 内部令牌鉴权。
+// 边界：只做确定性 section 推进，不持玩家权威状态、不直连生产数据库。
+// 两种工作模式可并存：
+//   1. 反向拨入（推荐）：配置 ComputeNode:UpstreamUrl 后主动 WebSocket 拨入主服
+//      /internal/compute-link，进入动态节点组热插拔取任务，NAT 后免隧道；
+//   2. 独立 HTTP 调试口：/internal/v1/compute/advance-batch 仅凭 X-Compute-Token 鉴权，
+//      供手动/旁路验证批次执行（生产派发不走该口）。
 using DaoHua.ComputeNode;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,6 +60,23 @@ var maxConcurrentBatches = Math.Clamp(
     64);
 // 并发闸：超限时立即以 429 拒绝而非排队——节点可被主服务水平替换，快速失败更利于重试调度。
 var batchGate = new SemaphoreSlim(maxConcurrentBatches, maxConcurrentBatches);
+
+// 反向拨入模式：配置上游地址后节点主动拨出 compute-link 链路进入主服动态节点组。
+var upstreamUrl = builder.Configuration["ComputeNode:UpstreamUrl"]
+                  ?? Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_UPSTREAM_URL");
+if (!string.IsNullOrWhiteSpace(upstreamUrl))
+{
+    var nodeName = builder.Configuration["ComputeNode:NodeName"]
+                   ?? Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_NODE_NAME")
+                   ?? Environment.MachineName;
+    builder.Services.AddHostedService(sp => new UpstreamLinkWorker(
+        upstreamUrl.Trim(), token, nodeName,
+        sp.GetRequiredService<DeterministicBatchEngine>(),
+        sp.GetRequiredService<GameDataFingerprint>(),
+        sp.GetRequiredService<ComputeMetrics>(),
+        maxJobs, maxConcurrentBatches,
+        sp.GetRequiredService<ILoggerFactory>()));
+}
 
 var app = builder.Build();
 var fingerprint = app.Services.GetRequiredService<GameDataFingerprint>();
