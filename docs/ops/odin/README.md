@@ -41,13 +41,14 @@ Termux 层常驻: sshd / postgres:15432 / ddns-go:9876 / frpc / cloudflared / �
               export DAOHUA_COMPUTE_TOKEN=<见设备文件，勿入仓库>
               export DAOHUA_COMPUTE_UPSTREAM_URL=wss://daohua.yuohira.com/internal/compute-link
               export DAOHUA_COMPUTE_NODE_NAME=odin
+              export DAOHUA_COMPUTE_URLS=http://0.0.0.0:8090   # 显式对外，供局域网健康探测
               export DOTNET_gcServer=0 DOTNET_GCConserveMemory=5 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
               exec ./DaoHua.ComputeNode'          # 崩溃/退出后 10s 内自动拉起
 ```
 
 - 二进制：`/root/daohua-compute/`（Ubuntu rootfs 内，glibc 自包含构建）
 - 链路：主动拨出 `wss://daohua.yuohira.com/internal/compute-link`（compute-link.v1）注册进云端动态节点组；NAT 后免隧道，断线自动指数退避重连
-- 本地监听：`0.0.0.0:8090`；健康检查 `GET /healthz`、`/readyz`（无需令牌），`/internal/v1/compute/advance-batch` 仅作调试口
+- 本地监听：`0.0.0.0:8090`（经 `DAOHUA_COMPUTE_URLS` 显式配置；未显式配置时 ComputeNode 默认只绑 `127.0.0.1:8090`，反向拨入模式无需对外暴露调试口）；健康检查 `GET /healthz`、`/readyz`（无需令牌），`/internal/v1/compute/advance-batch` 仅作调试口
 - 日志：`~/daohua_compute.log`（节点 stdout，含 `ComputeNode.Upstream` 链路日志）、`~/daohua_compute_watchdog.log`（守护拉起记录）
 - wrapper 备份：`~/ssh_ubuntu_wrapper.sh.bak-daohua`
 

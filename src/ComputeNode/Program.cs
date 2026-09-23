@@ -27,7 +27,9 @@ if (!string.IsNullOrWhiteSpace(configuredUrls))
 }
 else if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
 {
-    builder.WebHost.UseUrls("http://0.0.0.0:8090");
+    // 反向拨入节点只需主动拨出，调试口默认只绑回环防误暴露；
+    // 需要局域网可达（如 odin 健康探测）时显式配置 ComputeNode:Urls/DAOHUA_COMPUTE_URLS。
+    builder.WebHost.UseUrls("http://127.0.0.1:8090");
 }
 
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
@@ -59,7 +61,9 @@ var maxConcurrentBatches = Math.Clamp(
     1,
     64);
 // 并发闸：超限时立即以 429 拒绝而非排队——节点可被主服务水平替换，快速失败更利于重试调度。
-var batchGate = new SemaphoreSlim(maxConcurrentBatches, maxConcurrentBatches);
+// 注册为 DI 单例供调试口与 UpstreamLinkWorker 共用：两侧批次合计不超 MaxConcurrentBatches，
+// 防止调试批次挤爆节点算力。
+builder.Services.AddSingleton(new SemaphoreSlim(maxConcurrentBatches, maxConcurrentBatches));
 
 // 反向拨入模式：配置上游地址后节点主动拨出 compute-link 链路进入主服动态节点组。
 var upstreamUrl = builder.Configuration["ComputeNode:UpstreamUrl"]
@@ -74,6 +78,7 @@ if (!string.IsNullOrWhiteSpace(upstreamUrl))
         sp.GetRequiredService<DeterministicBatchEngine>(),
         sp.GetRequiredService<GameDataFingerprint>(),
         sp.GetRequiredService<ComputeMetrics>(),
+        sp.GetRequiredService<SemaphoreSlim>(),
         maxJobs, maxConcurrentBatches,
         sp.GetRequiredService<ILoggerFactory>()));
 }
@@ -126,6 +131,7 @@ app.MapGet("/readyz", () => Results.Ok(new
 app.MapPost("/internal/v1/compute/advance-batch", async (
     HttpRequest request,
     AdvanceBatchRequest batch,
+    SemaphoreSlim batchGate,
     CancellationToken cancellationToken,
     ILoggerFactory loggerFactory) =>
 {

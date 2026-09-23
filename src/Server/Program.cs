@@ -180,7 +180,14 @@ if (processRole == ServerProcessRole.Api)
     var webRootPath = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
     var hasWebRoot = Directory.Exists(webRootPath);
     if (hasWebRoot) app.UseStaticFiles();
-    app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
+    // 全局 WS 心跳口径：20s 主动 ping、60s 无回应判定半开断开。
+    // 同时作用于 /ws 玩家连接与 /internal/compute-link 节点链路：
+    // 60s 容忍窗足以覆盖弱网抖动，又能让 NAT 后半开的计算链路在分钟级内被回收。
+    app.UseWebSockets(new WebSocketOptions
+    {
+        KeepAliveInterval = TimeSpan.FromSeconds(20),
+        KeepAliveTimeout = TimeSpan.FromSeconds(60)
+    });
     app.UseAuthentication();
     app.UseAuthorization();
     // 限流分区键需要读取认证后的 player_id；因此必须位于认证中间件之后。

@@ -8,6 +8,14 @@ namespace Server.Clean;
 /// </summary>
 public static class ComputeLinkEndpoint
 {
+    /// <summary>握手令牌长度上限：与节点侧 TokenValidator.MaxTokenLength 对齐的防御边界。</summary>
+    private const int MaxTokenLength = 512;
+
+    // 拒绝路径日志各自独立节流：拨入方重连刷量时保留证据但不被同一类拒绝刷满磁盘。
+    private static readonly LogThrottle TokenRejectLog = new(TimeSpan.FromSeconds(30));
+    private static readonly LogThrottle NodeLimitLog = new(TimeSpan.FromSeconds(30));
+    private static readonly LogThrottle FingerprintRejectLog = new(TimeSpan.FromSeconds(30));
+
     /// <summary>端点主流程。</summary>
     public static async Task HandleAsync(HttpContext context)
     {
@@ -25,12 +33,18 @@ public static class ComputeLinkEndpoint
 
         var presented = context.Request.Headers[ComputeLinkContract.TokenHeader].ToString();
         var expected = options.ComputeNodeToken ?? string.Empty;
-        var presentedBytes = Encoding.UTF8.GetBytes(presented);
-        var expectedBytes = Encoding.UTF8.GetBytes(expected);
-        if (expectedBytes.Length == 0
-            || presentedBytes.Length != expectedBytes.Length
-            || !CryptographicOperations.FixedTimeEquals(presentedBytes, expectedBytes))
+        // 双方各取 SHA256 定长摘要再做固定时间比较，消除令牌长度侧信道
+        // （对齐节点侧 TokenValidator 写法；令牌本体绝不进入日志）。
+        var tokensMatch = expected.Length is > 0 and <= MaxTokenLength
+            && presented.Length is > 0 and <= MaxTokenLength
+            && CryptographicOperations.FixedTimeEquals(
+                SHA256.HashData(Encoding.UTF8.GetBytes(presented)),
+                SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
+        if (!tokensMatch)
         {
+            if (TokenRejectLog.TryAcquire())
+                logger.LogWarning("compute-link 令牌校验失败，拒绝拨入 remote={Remote}",
+                    context.Connection.RemoteIpAddress);
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { code = "UNAUTHORIZED", message = "需要有效的内部计算令牌。" });
             return;
@@ -38,6 +52,9 @@ public static class ComputeLinkEndpoint
 
         if (registry.NodeCount >= ComputeLinkContract.MaxConnectedNodes)
         {
+            if (NodeLimitLog.TryAcquire())
+                logger.LogWarning("compute-link 在线节点数已达上限 {Max}，拒绝拨入 remote={Remote}",
+                    ComputeLinkContract.MaxConnectedNodes, context.Connection.RemoteIpAddress);
             context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
             await context.Response.WriteAsJsonAsync(new { code = "NODE_LIMIT", message = "在线计算节点数已达上限。" });
             return;
@@ -58,24 +75,36 @@ public static class ComputeLinkEndpoint
                 throw new InvalidDataException($"链路契约版本不支持：{hello.ContractVersion}。");
             if (hello.MaxConcurrentBatches is < 1 or > ComputeLinkContract.MaxNodeConcurrency)
                 throw new InvalidDataException("节点并发容量无效。");
-            var fingerprintBytes = Encoding.UTF8.GetBytes(hello.GameDataFingerprint ?? string.Empty);
-            var expectedFingerprint = Encoding.UTF8.GetBytes(gameData.Fingerprint);
-            if (fingerprintBytes.Length != expectedFingerprint.Length
-                || !CryptographicOperations.FixedTimeEquals(fingerprintBytes, expectedFingerprint))
-            {
-                await SendCloseAsync(socket, "GAME_DATA_FINGERPRINT_MISMATCH",
-                    $"配表指纹不匹配，节点需与主服同版本：expected={gameData.Fingerprint}", token);
-                return;
-            }
-
             var name = string.IsNullOrWhiteSpace(hello.NodeName)
                 ? $"node-{context.Connection.RemoteIpAddress}"
                 : hello.NodeName.Trim();
             if (name.Length > ComputeLinkContract.MaxNodeNameLength)
                 name = name[..ComputeLinkContract.MaxNodeNameLength];
+
+            var fingerprintBytes = Encoding.UTF8.GetBytes(hello.GameDataFingerprint ?? string.Empty);
+            var expectedFingerprint = Encoding.UTF8.GetBytes(gameData.Fingerprint);
+            if (fingerprintBytes.Length != expectedFingerprint.Length
+                || !CryptographicOperations.FixedTimeEquals(fingerprintBytes, expectedFingerprint))
+            {
+                // 指纹是 hello 载荷内字段，长度不受节点名约束，进日志前截断防刷量。
+                var actualFingerprint = hello.GameDataFingerprint is { Length: > 128 } longFingerprint
+                    ? longFingerprint[..128]
+                    : hello.GameDataFingerprint;
+                if (FingerprintRejectLog.TryAcquire())
+                    logger.LogWarning(
+                        "计算节点配表指纹不匹配，拒绝接入 name={Name} remote={Remote} expected={Expected} actual={Actual}",
+                        name, context.Connection.RemoteIpAddress, gameData.Fingerprint, actualFingerprint);
+                await SendCloseAsync(socket, "GAME_DATA_FINGERPRINT_MISMATCH",
+                    $"配表指纹不匹配，节点需与主服同版本：expected={gameData.Fingerprint}", token);
+                return;
+            }
+
             node = new ComputeLinkNode(name, hello.MaxConcurrentBatches);
             if (!registry.TryRegister(node))
             {
+                if (NodeLimitLog.TryAcquire())
+                    logger.LogWarning("计算节点注册被拒绝：在线节点数已达上限 name={Name} remote={Remote}",
+                        name, context.Connection.RemoteIpAddress);
                 await SendCloseAsync(socket, "NODE_LIMIT", "在线计算节点数已达上限。", token);
                 return;
             }
@@ -88,7 +117,7 @@ public static class ComputeLinkEndpoint
                 WebSocketMessageType.Text, true, token);
 
             var sendTask = SendLoopAsync(socket, node, token);
-            var receiveTask = ReceiveLoopAsync(socket, node, registry, token);
+            var receiveTask = ReceiveLoopAsync(socket, node, logger, token);
             await Task.WhenAny(sendTask, receiveTask);
             linked.Cancel();
             try { await Task.WhenAll(sendTask, receiveTask); } catch { /* 断开清理路径忽略残余异常 */ }
@@ -113,18 +142,28 @@ public static class ComputeLinkEndpoint
         }
     }
 
-    /// <summary>接收循环：result 帧路由回节点在飞表；其余帧类型一律判协议违规断开。</summary>
+    /// <summary>接收循环：result 帧路由回节点在飞表；迟到/未知结果丢弃不断链，其余帧类型判协议违规断开。</summary>
     private static async Task ReceiveLoopAsync(
-        WebSocket socket, ComputeLinkNode node, ComputeLinkRegistry registry, CancellationToken token)
+        WebSocket socket, ComputeLinkNode node, ILogger logger, CancellationToken token)
     {
+        // 迟到/未知结果丢弃日志按链路节流：弱网节点重放旧结果时留证据但不刷盘。
+        var lateResultLog = new LogThrottle(TimeSpan.FromSeconds(30));
         while (!token.IsCancellationRequested)
         {
             var message = await ReceiveMessageAsync(socket, token);
             switch (message)
             {
                 case ComputeLinkResult result:
+                    // 批次多已被主服按超时/断线退回（迟到结果无害，写回有 CAS 兜底）。
+                    // 若为单条迟到帧断开整条链路，该节点其他在飞批次会一并陪葬。
                     if (result.Response is null || !node.CompleteResult(result.BatchId, result.Response))
-                        throw new InvalidDataException($"未知或已了结的批次结果：{result.BatchId}。");
+                    {
+                        if (lateResultLog.TryAcquire())
+                            logger.LogWarning(
+                                "丢弃迟到或未知的批次结果 node={Node} name={Name} batch={BatchId}",
+                                node.NodeId, node.Name, result.BatchId);
+                        break;
+                    }
                     break;
                 case ComputeLinkHello:
                     throw new InvalidDataException("重复 hello。");
