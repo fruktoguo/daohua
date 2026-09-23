@@ -49,8 +49,8 @@ flowchart TD
 ## 3. 战斗节奏与属性规则
 
 当前标准战斗节奏为：
-- `searchMilliseconds`：遭遇搜寻阶段耗时，默认 5000ms（5.0 秒），字段原样消费；
-- `respawnMilliseconds`：波次间刷怪间隔，默认 5000ms（5.0 秒），字段原样消费；寻敌速度成长与阶位曲线属于数值模型规划项（见 `数值量化模型集.md` 第二部分），落地后以该文档口径为准，当前结算按配置原值执行；
+- `searchMilliseconds`：历练**首次搜寻**读条时长，默认 20000ms（20.0 秒）。首搜是防「反复启停行动刷场」的固定读条，**不吃寻敌速度成长乘区**，字段原样消费；
+- `respawnMilliseconds`：波次间**再搜寻**耗时，默认 5000ms（5.0 秒）。结算时乘以玩家寻敌速度成长乘区 `SearchDelayFactor = 1 - 0.5·x²`（x 为境界成长进度，曲线见 `CombatGrowthCurve.CastTimeFactor`，前期衰减趋近于零）；
 - `playerRespawnMilliseconds`：玩家方团灭后的复活读条时长，默认 180000ms（180 秒）。语义由 `onPartyWipe` 决定：`respawn` 时为战斗内原地起身读条，`defeat` 时为拆场复活点读条。玩家死亡不会完成当前波次，只有当前波怪物全灭才计入一次战斗通关；
 - `onPartyWipe`：团灭分流规则枚举，`"respawn"`（原地复活续战）或 `"defeat"`（团灭即败终局），缺省 `respawn`；规则细则见 [战斗规约 §7.9.4](../design/总纲/07-战斗数值与内视规约.md#794-团灭分流规约原地复活-vs-团灭即败)。
 

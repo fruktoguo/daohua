@@ -1387,21 +1387,36 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
 
       {startsImmediately && (
         <section className="duel-option" aria-label={t('app.action.duel.title')}>
-          <label className="duel-option-toggle">
-            <input
-              checked={pvpEnabled}
-              onChange={event => setPvpEnabled(event.target.checked)}
-              type="checkbox"
-            />
-            <strong>{t('app.action.duel.title')}</strong>
-            <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>
-          </label>
-          <ul className="duel-option-desc">
-            <li>{t('app.action.duel.descMatch')}</li>
-            <li>{t('app.action.duel.descDrop')}</li>
-            <li>{t('app.action.duel.descStaging')}</li>
-            <li>{t('app.action.duel.descPenalty')}</li>
-          </ul>
+          <FloatingPopover
+            content={
+              <FloatingInfoCard
+                badge={t('app.queue.duelBadge')}
+                badgeTone="purple"
+                lines={[
+                  t('app.action.duel.descMatch'),
+                  t('app.action.duel.descDrop'),
+                  t('app.action.duel.descStaging'),
+                  t('app.action.duel.descPenalty'),
+                ]}
+                title={t('app.action.duel.title')}
+              />
+            }
+            displayContents
+            interactive={false}
+            placement="top"
+            size="medium"
+            trigger="hover"
+          >
+            <label className="duel-option-toggle">
+              <input
+                checked={pvpEnabled}
+                onChange={event => setPvpEnabled(event.target.checked)}
+                type="checkbox"
+              />
+              <strong>{t('app.action.duel.title')}</strong>
+              <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>
+            </label>
+          </FloatingPopover>
           <div className="duel-option-status">
             <span>{t('app.action.duel.charges', { n: duel.encounterCharges })}</span>
             {duelCooldownRemaining > 0 && (

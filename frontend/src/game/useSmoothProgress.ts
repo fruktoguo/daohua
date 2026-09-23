@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
+import { formatNumber } from './format'
 import { useGameStore } from './gameStore'
 import type { QueueEntry } from './types'
 
@@ -147,7 +148,7 @@ export function useSmoothProgressRef({
         if (textFormatRef.current) {
           textRef.current.textContent = textFormatRef.current(currentSec, duration, percent)
         } else {
-          textRef.current.textContent = `${Math.floor(currentSec)}s / ${duration}s`
+          textRef.current.textContent = `${Math.floor(currentSec)}s / ${formatNumber(duration, { maxDecimals: 1, roundMode: 'round' })}s`
         }
       }
       if (percentRef?.current) {
