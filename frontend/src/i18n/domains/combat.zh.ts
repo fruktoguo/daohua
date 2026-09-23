@@ -112,21 +112,10 @@ export const combatZh = {
       movement: '身法',
       seconds: '{n} 秒',
     },
-    // 敌情面板
+    // 战斗遭遇通用词条（伤害类别/五行/强度/攻速标签，被日志、功法、生态面板等多处复用）
     encounter: {
-      aria: '{name}敌情',
-      heading: '战区敌情',
-      maxSpawns: '同场上限',
       maxStrength: '强度上限',
-      respawn: '刷新',
-      bossRound: '第 {n} 场',
-      strengthTip: '妖邪生成强度等阶',
-      hpTip: '妖兽生命气血上限：{n}',
-      manaTip: '妖兽灵力上限：{n}',
-      experience: '{type} · {n} 经验',
-      statDamage: '伤害',
       statInterval: '间隔',
-      statArmor: '护甲',
       damageCategory: {
         physical: '物理',
         spell: '术法',
@@ -139,6 +128,15 @@ export const combatZh = {
         fire: '火行',
         earth: '土行',
       },
+    },
+    // 讨伐弹窗节点生态面板（出没妖兽图标网格 + 悬停简卡 + 单击详卡）
+    ecology: {
+      aria: '{name}出没妖兽',
+      heading: '出没妖兽',
+      encounters: '出没遭遇',
+      hint: '悬停查看概要 · 单击图标查看详情',
+      inspectAria: '查看{name}详情',
+      abilities: '施展功法',
     },
     // 附近面板（地点/NPC/建筑内容来自服务端，不收拢）
     nearby: {

@@ -3,8 +3,8 @@ import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findItemInCatalog, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, QueueEntry } from '../game/types'
+import { findAbilityInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -13,14 +13,20 @@ import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel } from './CombatAttributePanel'
 import { describeBuffEffectLines } from './ItemDisplay'
+import { useCombatVfx } from '../vfx/useCombatVfx'
 
-/** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名 */
-function resolveQueueEntryDisplayName(entry: QueueEntry | null | undefined, fallback?: string): string {
-  if (!entry) return fallback || ''
-  if (entry.actionName && entry.actionName !== entry.actionId) {
-    return entry.actionName
-  }
-  return resolveActionDefinition(entry.actionId)?.name || entry.actionName || fallback || ''
+/** 解析队列条目展示名：优先服务端下发的 actionName，缺省时回退本地行动定义名；传入 world+maps 时按当前驻留地点本地化 */
+function resolveQueueEntryDisplayName(
+  entry: QueueEntry | null | undefined,
+  fallback?: string,
+  world?: WorldState,
+  maps?: readonly WorldMapDefinition[],
+): string {
+  const name = !entry ? (fallback || '')
+    : (entry.actionName && entry.actionName !== entry.actionId)
+      ? entry.actionName
+      : resolveActionDefinition(entry.actionId)?.name || entry.actionName || fallback || ''
+  return world && maps ? localizeActionDisplayText(name, world, maps) : name
 }
 
 /** 资源条数值变动特效记录（跳字与血条破裂碎片） */
@@ -385,13 +391,13 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   }, [buff.expiresAtUnixSeconds])
   const total = baseDuration
 
-  // 效果说明与单字图标：效果行统一由唯一 Buff 形状（hpRegen/mpRegen/attackSpeedRatio/
-  // damageAbsorptionRatio/statRatios）解析；色调按结算语义粗分，字形取 Buff 名首字。
+  // 效果说明与单字图标：效果行统一由唯一 Buff 形状（hpRegen/mpRegen/attackSpeedPoints/
+  // damageAbsorptionPoints/statRatios）解析；色调按结算语义粗分，字形取 Buff 名首字。
   const effectLines = describeBuffEffectLines(buff)
   const effectDesc = effectLines.length > 0 ? effectLines.join('；') : t('combat.arena.buffGeneric')
   const tone: 'qi' | 'jade' | 'purple' | 'danger' | 'gold' =
-    buff.damageAbsorptionRatio > 0 ? 'jade' : (buff.hpRegen > 0 || buff.mpRegen > 0) ? 'qi' : 'gold'
-  const glyph = buff.attackSpeedRatio > 0
+    buff.damageAbsorptionPoints > 0 ? 'jade' : (buff.hpRegen > 0 || buff.mpRegen > 0) ? 'qi' : 'gold'
+  const glyph = buff.attackSpeedPoints > 0
     ? t('combat.arena.glyphSpeed')
     : buff.name.slice(0, 1) || t('combat.arena.glyphGeneric')
 
@@ -781,12 +787,14 @@ function ArenaLifeGoalCard({
 }): React.JSX.Element {
   const t = useT()
   const itemCatalog = useGameStore(state => state.items)
+  const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
   const isAlchemy = queueEntry?.type === 'alchemy'
   const isCultivation = queueEntry?.type === 'cultivation'
   const isExploration = queueEntry?.type === 'exploration'
 
   const title = isAlchemy ? t('combat.life.titleAlchemy') : isCultivation ? t('combat.life.titleCultivation') : isExploration ? t('combat.life.titleExploration') : t('combat.life.titleDefault')
-  const actionName = resolveQueueEntryDisplayName(queueEntry, actionDef?.name) || actionDef?.name || t('combat.life.fallbackActionName')
+  const actionName = resolveQueueEntryDisplayName(queueEntry, actionDef?.name, world, maps) || actionDef?.name || t('combat.life.fallbackActionName')
   const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
   const remainingRepeats = queueEntry?.remainingRepeats ?? 0
   const repeats = isInfinite ? -1 : remainingRepeats
@@ -901,9 +909,10 @@ function ArenaTravelCard({
 }): React.JSX.Element {
   const t = useT()
   const expedition = queueEntry?.expedition
-  const actionName = resolveQueueEntryDisplayName(queueEntry, t('combat.travel.fallbackActionName'))
-  // 目的地名称优先按 wire 字段 travelDestinationNodeId 从地图定义解析，不再解析中文前缀
+  const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
+  const actionName = resolveQueueEntryDisplayName(queueEntry, t('combat.travel.fallbackActionName'), world, maps)
+  // 目的地名称优先按 wire 字段 travelDestinationNodeId 从地图定义解析，不再解析中文前缀
   const destinationNodeName = queueEntry?.travelDestinationNodeId
     ? maps.find(m => m.nodes.some(n => n.nodeId === queueEntry.travelDestinationNodeId))
         ?.nodes.find(n => n.nodeId === queueEntry.travelDestinationNodeId)?.name
@@ -1212,6 +1221,7 @@ export const CombatArena = memo(function CombatArena({
   const buffs = useGameStore(state => state.buffs)
   const actions = useGameStore(state => state.actions)
   const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
   const queue = useGameStore(state => state.queue.entries)
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
   // 否则角色行动条与右侧行动卡片会因「非队列补丁」（入灵气、掉落等）产生 0~1 秒的显示差。
@@ -1219,6 +1229,11 @@ export const CombatArena = memo(function CombatArena({
   // 详情弹窗目标：'player' 或 `enemy:{下标}`（同波多敌人逐只可查）。
   const [inspectedActor, setInspectedActor] = useState<string | null>(null)
   const t = useT()
+
+  // 战斗特效：overlay 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
+  const arenaShellRef = useRef<HTMLDivElement | null>(null)
+  const vfxOverlayRef = useRef<HTMLDivElement | null>(null)
+  useCombatVfx(arenaShellRef, vfxOverlayRef)
 
   const current = queue[0] ?? null
   const isCombat = current?.type === 'combat' && current.executionKind === 'combat-encounter'
@@ -1284,7 +1299,7 @@ export const CombatArena = memo(function CombatArena({
         maxHp: Math.max(1, entry.attributes?.maxHitpoints ?? entry.hitpoints),
         mp: entry.manapoints,
         maxMp: Math.max(1, entry.attributes?.maxManapoints ?? entry.manapoints),
-        action: entry.hitpoints > 0 && expedition?.phase === 'combat'
+        action: entry.hitpoints > 0 && expedition?.phase === 'combat' && expedition.playerRespawnAtSeconds == null
           ? enemyActionState(entry, battleElapsed, serverNow, abilities)
           : null,
         visual: entry.visual ?? null,
@@ -1321,6 +1336,19 @@ export const CombatArena = memo(function CombatArena({
         }
       }
       if (expedition?.phase === 'combat') {
+        // 倒地窗口：玩家阵亡原地复活，行动条改为复活读条（战斗时钟上的绝对截止点）。
+        const respawnAt = expedition.playerRespawnAtSeconds
+        if (respawnAt != null) {
+          const duration = Math.max(1, (expedition.playerRespawnDurationSeconds ?? 0) * 1000)
+          const remaining = Math.max(0, (respawnAt - battleElapsed) * 1000)
+          return {
+            kind: 'respawn',
+            name: t('combat.arena.phaseDeath'),
+            durationMilliseconds: duration,
+            elapsedMilliseconds: Math.max(0, Math.min(duration, duration - remaining)),
+            completesAtUnixMilliseconds: serverNow + remaining,
+          }
+        }
         return attackActionState(expedition.playerNextAttackAtSeconds ?? 0, battleElapsed, attackInterval, serverNow)
       }
       if (expedition?.phase === 'duel') {
@@ -1338,14 +1366,14 @@ export const CombatArena = memo(function CombatArena({
       const currentElMs = Math.min(durMs, baseElMs + elapsedSinceSync)
       return {
         kind: 'cast',
-        name: resolveQueueEntryDisplayName(current, current.actionName),
+        name: resolveQueueEntryDisplayName(current, current.actionName, world, maps),
         durationMilliseconds: durMs,
         elapsedMilliseconds: currentElMs,
         completesAtUnixMilliseconds: Date.now() + Math.max(0, durMs - currentElMs),
       }
     }
     return null
-  }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities])
+  }, [current, expedition, isCombat, isLifeAction, isTravel, lastQueueSyncPerformanceTime, combatAttributes, combatResources, abilities, world, maps, t])
 
   // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时取用属性；
   // 角色/敌怪/斗法镜像全部渲染服务端下发的 CombatAttributes 终值，无任何本地估算。
@@ -1356,7 +1384,9 @@ export const CombatArena = memo(function CombatArena({
       : combatAttributes ?? null
 
   return (
-    <div className="combat-arena-shell">
+    <div className="combat-arena-shell" ref={arenaShellRef}>
+      {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
+      <div className="vfx-stage-overlay" ref={vfxOverlayRef} aria-hidden="true" />
       <div className={`combat-arena-field combat-arena-field--${phase}`}>
         {/* 左侧：己方 3x3 阵型 (左为后排，右为前排，1号位在前排正中靠近敌方) */}
         <div className="arena-side arena-side--allies">
@@ -1464,12 +1494,12 @@ export const CombatArena = memo(function CombatArena({
             onClick={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
             type="button"
           >
-            {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName) })}
+            {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName, world, maps) })}
           </button>
         ) : availableActions.length > 0 ? (
           availableActions.map(action => (
             <button key={action.id} onClick={() => onOpenAction(action)} type="button">
-              {action.name}
+              {localizeActionDisplayText(action.name, world, maps)}
             </button>
           ))
         ) : null}

@@ -5,7 +5,7 @@ import { StatsPanel } from './components/StatsPanel'
 import { RecordsPanel } from './components/RecordsPanel'
 import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
-import { CombatEncounterPanel } from './components/CombatEncounterPanel'
+import { CombatEcologyPanel } from './components/CombatEcologyPanel'
 import { EffectTooltipTarget } from './components/EffectTooltip'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
@@ -25,13 +25,13 @@ import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatChineseSplitNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
 import { calculateActionYieldPreview } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
-import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry } from './game/types'
+import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
 import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
 import { installAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
 import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
@@ -95,18 +95,24 @@ function itemAmount(inventory: InventoryItem[], itemId: string): number {
   return inventory.find(item => item.itemId === itemId && !item.variant)?.amount ?? 0
 }
 
-/** 解析队列条目显示名：优先 wire 携带的 actionName，否则按 actionId 回查配表 */
-function resolveQueueEntryName(entry: QueueEntry, actions?: readonly ActionDefinition[]): string {
-  if (entry.actionName && entry.actionName !== entry.actionId) {
-    return entry.actionName
-  }
-  const def = (actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId)
-  return def?.name || entry.actionName || entry.actionId
+/** 解析队列条目显示名：优先 wire 携带的 actionName，否则按 actionId 回查配表；传入 world+maps 时按当前驻留地点本地化 */
+function resolveQueueEntryName(
+  entry: QueueEntry,
+  actions?: readonly ActionDefinition[],
+  world?: WorldState,
+  maps?: readonly WorldMapDefinition[],
+): string {
+  const name = (entry.actionName && entry.actionName !== entry.actionId)
+    ? entry.actionName
+    : ((actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId))?.name
+      || entry.actionName || entry.actionId
+  return world && maps ? localizeActionDisplayText(name, world, maps) : name
 }
 
-function actionDescription(entry: QueueEntry, actions?: readonly ActionDefinition[]): string {
+function actionDescription(entry: QueueEntry, actions?: readonly ActionDefinition[], world?: WorldState, maps?: readonly WorldMapDefinition[]): string {
   const def = (actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId)
-  return def?.description ?? resolveQueueEntryName(entry, actions)
+  const description = def?.description ?? resolveQueueEntryName(entry, actions)
+  return world && maps ? localizeActionDisplayText(description, world, maps) : description
 }
 
 /** 剩余轮次文案：负值（协议约定 -1）表示无限循环 */
@@ -323,6 +329,8 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
  */
 const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = false }: { entry: QueueEntry; departing?: boolean }): React.JSX.Element {
   const t = useT()
+  const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
   const isCombatExpedition = entry.type === 'combat'
   const phaseLabel = isCombatExpedition
     ? getCombatPhaseLabel(entry.expedition?.phase, t)
@@ -344,7 +352,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
       </span>
       <div className="qc-main">
         <div className="qc-title">
-          <strong>{resolveQueueEntryName(entry)}</strong>
+          <strong>{resolveQueueEntryName(entry, undefined, world, maps)}</strong>
           <span className="qc-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
           {(entry.status === 'blocked' || phaseLabel) && (
             <span className={entry.status === 'blocked' ? 'badge badge-danger' : 'badge'}>
@@ -400,6 +408,8 @@ const QueueCurrentStage = memo(function QueueCurrentStage({ entry }: { entry?: Q
 const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
   const t = useT()
   const queue = useGameStore(state => state.queue)
+  const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
   const [open, setOpen] = useState(false)
   const [pendingRemoval, setPendingRemoval] = useState<QueueEntry | null>(null)
   const current = queue.entries[0]
@@ -419,7 +429,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
             displayContents
             key={entry.entryId}
             placement="bottom"
-            title={actionDescription(entry)}
+            title={actionDescription(entry, undefined, world, maps)}
             tone="gold"
           >
             <div className="qc-next">
@@ -427,7 +437,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 <Icon name={entry.type} />
               </span>
               <div className="qc-next-text">
-                <span className="qc-next-name">{resolveQueueEntryName(entry)}</span>
+                <span className="qc-next-name">{resolveQueueEntryName(entry, undefined, world, maps)}</span>
                 <span className="qc-next-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
               </div>
             </div>
@@ -470,13 +480,13 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 </span>
                 <div className="queue-main">
                   <div className="queue-title">
-                    <span className="queue-name">{resolveQueueEntryName(entry)}</span>
+                    <span className="queue-name">{resolveQueueEntryName(entry, undefined, world, maps)}</span>
                     <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
                     {entry.status === 'blocked' && <span className="badge badge-danger">{t('app.queue.blocked')}</span>}
                     {index === 0 && entry.status === 'running' && <span className="badge">{t('app.queue.running')}</span>}
                     {entry.pvpEnabled && <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>}
                   </div>
-                  {actionDescription(entry) && actionDescription(entry) !== resolveQueueEntryName(entry) ? <div className="queue-sub">{actionDescription(entry)}</div> : null}
+                  {actionDescription(entry, undefined, world, maps) && actionDescription(entry, undefined, world, maps) !== resolveQueueEntryName(entry, undefined, world, maps) ? <div className="queue-sub">{actionDescription(entry, undefined, world, maps)}</div> : null}
                 </div>
                 <div className="queue-actions">
                   <button
@@ -509,7 +519,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
       <ConfirmDialog
         confirmLabel={t('app.queue.removeConfirmBtn')}
         danger
-        description={pendingRemoval ? t('app.queue.removeConfirmDesc', { name: resolveQueueEntryName(pendingRemoval) }) : ''}
+        description={pendingRemoval ? t('app.queue.removeConfirmDesc', { name: resolveQueueEntryName(pendingRemoval, undefined, world, maps) }) : ''}
         onClose={() => setPendingRemoval(null)}
         onConfirm={() => {
           if (pendingRemoval) gameClient.sendCommand('action.remove', { actionInstanceId: pendingRemoval.entryId })
@@ -1138,6 +1148,11 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
   const itemCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
   const encounters = useGameStore(state => state.encounters)
+  const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
+
+  // 行动名按当前驻留地点本地化（「讨伐 青云仙山」→「讨伐 漱玉溪」），与节点生态实战语义一致
+  const displayName = useMemo(() => localizeActionDisplayText(action.name, world, maps), [action.name, world, maps])
 
   const level = useMemo(
     () => resolveActionLevel(action, itemCatalog, equipmentCatalog, encounters),
@@ -1169,7 +1184,7 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
       <span className="item-corner item-corner--top-right">
         Lv. <UnitNumber disableTooltip value={level} />
       </span>
-      <strong className="action-card-name">{action.name}</strong>
+      <strong className="action-card-name">{displayName}</strong>
     </button>
   )
 
@@ -1213,8 +1228,8 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const items = useGameStore(state => state.items)
   const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
   const world = useGameStore(state => state.world)
+  const maps = useGameStore(state => state.maps)
   const stats = useGameStore(state => state.stats)
-  const encounter = useGameStore(state => action.combatEncounterId ? findEncounterInCatalog(state.encounters, action.combatEncounterId) : undefined)
   const queueLength = useGameStore(state => state.queue.entries.length)
   const duel = useGameStore(state => state.duel)
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
@@ -1245,6 +1260,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
   const inputs = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
   const titleId = `action-modal-title-${action.id}`
   const startsImmediately = action.executionKind === 'combat-encounter'
+  // 行动名/描述按当前驻留地点本地化（「讨伐 青云仙山」→「讨伐 漱玉溪」）
+  const displayName = localizeActionDisplayText(action.name, world, maps)
+  const displayDescription = action.description ? localizeActionDisplayText(action.description, world, maps) : action.description
   const hasYields = (action.yields?.length ?? 0) > 0
   const isCrafting = action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.')
   // 斗法冷却倒计时：以「服务端时刻 + 本地流逝」估算服务端当前时刻，仅冷却生效期间每秒重渲染。
@@ -1260,8 +1278,8 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
       <header className="action-modal-header">
         <span className={`action-glyph tone-${ACTION_TAB_META[action.type].accent}`} aria-hidden="true"><Icon name={action.type} /></span>
         <div>
-          <h2 id={titleId}>{action.name}</h2>
-          {!isCrafting && action.description ? <p>{action.description}</p> : null}
+          <h2 id={titleId}>{displayName}</h2>
+          {!isCrafting && displayDescription ? <p>{displayDescription}</p> : null}
         </div>
       </header>
 
@@ -1365,7 +1383,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
         </div>
       </dl>
 
-      {encounter && <CombatEncounterPanel compact encounter={encounter} />}
+      {startsImmediately && <CombatEcologyPanel action={action} />}
 
       {startsImmediately && (
         <section className="duel-option" aria-label={t('app.action.duel.title')}>

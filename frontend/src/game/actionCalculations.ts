@@ -161,7 +161,7 @@ export function calculateActionYieldPreview({
     }
   }
 
-  // 活跃 Buff 只携带战斗属性修饰器（hpRegen/mpRegen/attackSpeedRatio/damageAbsorptionRatio/statRatios），
+  // 活跃 Buff 只携带战斗属性修饰器（hpRegen/mpRegen/attackSpeedPoints/damageAbsorptionPoints/statRatios），
   // 不再承载行动收益倍率——收益加成唯一通道为持续消耗品（autoUseSlots）与灵脉/建筑倍率。
   const totalMultiplier = autoUseMultiplier * worldMultiplier
 

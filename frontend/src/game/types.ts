@@ -381,8 +381,12 @@ export interface ExpeditionProgress {
   enemyManapoints?: number | null
   /** 敌人定义标识符（首个存活敌人） */
   enemyId?: string | null
-  /** 同波全体敌人快照（战斗中非空，按下标稳定排序） */
+  /** 同波全体敌人快照（战斗中非空，按下标稳定排序；原地复活倒地窗口内仍保留） */
   enemies?: ExpeditionEnemy[] | null
+  /** 原地复活截止点（战斗时钟秒）：倒地窗口内非空，其余为 null */
+  playerRespawnAtSeconds?: number | null
+  /** 原地复活读条总时长（秒）：倒地窗口内非空 */
+  playerRespawnDurationSeconds?: number | null
   /** 当前波次序号 */
   waveNumber?: number | null
   /** 玩家累积威胁值 */
@@ -615,7 +619,8 @@ export interface CombatResourceState {
 
 /**
  * 统一战斗属性面板（服务端权威终值；玩家/妖兽/斗法镜像同一形状同一语义）。
- * 暴击率/免暴率/免伤率为比率值（协议边界已由点数折算），其余为点数或倍率。
+ * 全部百分比属性按点数下发（100 点 = 100%，总纲第七篇 §7.7.5），
+ * 前端按对应曲线渲染：增伤类 Linear（+x → ×(1+x/100)），减伤/速率类 NonLinear（+x → ×100/(100+x)）。
  */
 export interface CombatAttributes {
   maxHitpoints: number
@@ -628,15 +633,15 @@ export interface CombatAttributes {
   magicResistance: number
   accuracy: number
   evasion: number
-  /** 暴击率（比率） */
-  criticalChance: number
-  /** 暴击伤害倍率（≥1） */
-  criticalDamageRatio: number
-  /** 免暴率（比率） */
-  criticalAvoidance: number
-  /** 破防威力点数 */
+  /** 暴击点数（与目标免暴对抗决定暴击率） */
+  critical: number
+  /** 免暴点数（降低被暴击概率） */
+  criticalResistance: number
+  /** 暴击伤害倍率（≥1，直存倍率） */
+  criticalMultiplier: number
+  /** 破招点数（与化解对抗） */
   breakPower: number
-  /** 招架化解点数 */
+  /** 化解点数（与破招对抗） */
   parryResolve: number
   hpRegenPerFiveSeconds: number
   mpRegenPerFiveSeconds: number
@@ -649,23 +654,48 @@ export interface CombatAttributes {
   cooldownFactor: number
   /** 吟唱乘区 */
   castTimeFactor: number
-  /** 免伤率（比率） */
-  damageAbsorptionRatio: number
-  /** 仇恨威胁加成比率 */
-  threatRatio: number
-  metalResistance: number
-  woodResistance: number
-  waterResistance: number
-  fireResistance: number
-  earthResistance: number
-  /** 气血汲取比率 */
-  hpDrainRatio: number
-  /** 灵力汲取比率 */
-  mpDrainRatio: number
-  /** 伤害反弹比率 */
-  damageReflectRatio: number
-  /** 治疗增益比率 */
-  healingBonusRatio: number
+  /** 物理增伤点数（Linear） */
+  physicalDamageBonusPoints: number
+  /** 法术增伤点数（Linear） */
+  spellDamageBonusPoints: number
+  metalDamageBonusPoints: number
+  woodDamageBonusPoints: number
+  waterDamageBonusPoints: number
+  fireDamageBonusPoints: number
+  earthDamageBonusPoints: number
+  /** 总增伤点数（Linear） */
+  totalDamageBonusPoints: number
+  /** 普攻增幅点数（Linear） */
+  basicAttackBonusPoints: number
+  /** 技能增幅点数（Linear） */
+  skillBonusPoints: number
+  /** 物理减伤点数（NonLinear） */
+  physicalDamageReductionPoints: number
+  /** 法术减伤点数（NonLinear） */
+  spellDamageReductionPoints: number
+  metalDamageReductionPoints: number
+  woodDamageReductionPoints: number
+  waterDamageReductionPoints: number
+  fireDamageReductionPoints: number
+  earthDamageReductionPoints: number
+  /** 总减伤/免伤点数（NonLinear，末位收口） */
+  damageAbsorptionPoints: number
+  /** 攻击速度点数（NonLinear：仅缩短普攻读条） */
+  attackSpeedPoints: number
+  /** 行动速度点数（NonLinear：缩短全部读条） */
+  actionSpeedPoints: number
+  /** 冷却缩减点数（NonLinear：缩短全部冷却） */
+  cooldownReductionPoints: number
+  /** 威胁增幅点数（Linear） */
+  threatBonusPoints: number
+  /** 气血汲取点数（Linear 非负） */
+  hpDrainPoints: number
+  /** 灵力汲取点数（Linear 非负） */
+  mpDrainPoints: number
+  /** 伤害反弹点数 */
+  damageReflectPoints: number
+  /** 治疗增幅点数（Linear） */
+  healingBonusPoints: number
 }
 
 /**
@@ -745,10 +775,10 @@ export interface BuffModifiers {
   hpRegen?: number
   /** 每 5 秒结算点灵力回复量 */
   mpRegen?: number
-  /** 攻速加成比率 */
-  attackSpeedRatio?: number
-  /** 免伤率加成（比率） */
-  damageAbsorptionRatio?: number
+  /** 攻击速度点数（NonLinear） */
+  attackSpeedPoints?: number
+  /** 免伤点数（NonLinear 总减伤乘区） */
+  damageAbsorptionPoints?: number
   /** 通用属性比率字典（可选） */
   statRatios?: Record<string, number> | null
 }
@@ -785,7 +815,7 @@ export interface LogEvent {
  * 角色身上当前生效的增益/减益状态 (Buff)
  * 字段即服务端 ActiveBuff 权威结算规格；修饰器形状与 BuffModifiers 一致。
  */
-export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen' | 'attackSpeedRatio' | 'damageAbsorptionRatio'>> {
+export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen' | 'attackSpeedPoints' | 'damageAbsorptionPoints'>> {
   /** Buff 配置 ID */
   buffId: string
   /** Buff 显示名 */
@@ -918,14 +948,14 @@ export interface CombatAbilityDefinition {
   targetType?: CombatAbilityTargetType
   /** 支援类：固定威胁值提升（嘲讽等） */
   threatGain?: number
-  /** 支援类：威胁值倍率提升 */
-  threatRatio?: number
+  /** 支援类：威胁增幅点数（Linear，施放时并入施放方威胁增幅） */
+  threatPoints?: number
   /** 品阶（配表声明，缺省视为 1） */
   tier?: number
   /** 根骨加成属性键（配表声明） */
   rootAttribute?: string
-  /** 支援类：施放后施加的战内 Buff（破阵子等） */
-  buff?: { name?: string; durationSeconds?: number; damageAbsorptionRatio?: number; hpRegen?: number; mpRegen?: number; attackSpeedRatio?: number; threatRatio?: number } | null
+  /** 支援类：施放后施加的战内 Buff（破阵子等）；修饰字段为点数口径 */
+  buff?: { name?: string; durationSeconds?: number; damageAbsorptionPoints?: number; hpRegen?: number; mpRegen?: number; attackSpeedPoints?: number; threatPoints?: number } | null
 }
 
 /**
@@ -1024,7 +1054,7 @@ export interface CombatEquipmentDefinition {
   baseStatRatios?: Record<string, number>
   /** 配表原始固定值段 */
   flatStats?: Record<string, number>
-  /** 特殊机制段（如 threatRatio 威胁倍率、healingBonusRatio 治疗加成） */
+  /** 特殊机制段（如 threatBonusPoints 威胁增幅、healingBonusPoints 治疗增幅等点数键） */
   specialMechanics?: Record<string, number>
 }
 

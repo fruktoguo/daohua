@@ -2084,10 +2084,11 @@ input[type="checkbox"] {
   background: rgba(201, 180, 109, 0.11);
 }
 
-.combat-encounter-panel {
+.combat-ecology-panel {
   display: grid;
   min-width: 0;
   gap: 8px;
+  margin: 12px 0 4px;
   padding: 10px;
   border: 1px solid rgba(128, 151, 161, 0.28);
   background:
@@ -2151,195 +2152,92 @@ input[type="checkbox"] {
   font-variant-numeric: tabular-nums;
 }
 
-.combat-enemy-grid {
-  display: grid;
+/* 讨伐弹窗节点生态图标网格：瓦片只保留立绘/位阶角标/等级底标，数值进浮层 */
+.ecology-monster-strip {
+  display: flex;
   min-width: 0;
-  grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
-.combat-enemy-card {
+.ecology-monster-tile {
+  position: relative;
   display: grid;
-  min-width: 0;
-  min-height: 132px;
-  align-content: start;
-  gap: 7px;
-  padding: 8px;
-  border: 1px solid rgba(128, 151, 161, 0.22);
-  border-radius: 3px;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(128, 151, 161, 0.28);
+  border-radius: 4px;
   background: rgba(25, 31, 32, 0.72);
+  cursor: pointer;
 }
 
-.combat-enemy-card.is-boss {
-  border-color: rgba(168, 82, 74, 0.55);
-  background: rgba(65, 24, 23, 0.24);
+.ecology-monster-tile:hover {
+  border-color: rgba(201, 180, 109, 0.55);
 }
 
-.combat-enemy-heading {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
+.ecology-monster-tile.is-elite {
+  border-color: rgba(148, 103, 189, 0.5);
 }
 
-.combat-enemy-seal {
-  display: grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid rgba(112, 158, 139, 0.45);
-  border-radius: 50%;
-  color: #98b7a9;
-  background: rgba(56, 104, 84, 0.16);
+.ecology-monster-tile.is-boss {
+  border-color: rgba(168, 82, 74, 0.62);
+}
+
+.ecology-monster-avatar {
+  width: 46px;
+  height: 46px;
+  max-width: 46px;
+  max-height: 46px;
+}
+
+.ecology-monster-rank {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 0 3px;
+  border-left: 1px solid rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.35);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
-  font-size: 15px;
+  font-size: 9px;
+  line-height: 13px;
 }
 
-.is-boss .combat-enemy-seal {
-  border-color: rgba(184, 99, 83, 0.58);
-  color: #d08a77;
-  background: rgba(125, 48, 39, 0.2);
+.ecology-monster-rank.is-elite {
+  color: #c9a4f5;
+  background: rgba(148, 103, 189, 0.28);
 }
 
-.combat-enemy-heading > div {
-  display: grid;
-  min-width: 0;
-  gap: 1px;
+.ecology-monster-rank.is-boss {
+  color: #e8a08e;
+  background: rgba(168, 82, 74, 0.34);
 }
 
-.combat-enemy-heading strong,
-.combat-enemy-heading span {
+.ecology-monster-level {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.combat-enemy-heading strong {
-  color: var(--text);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.combat-enemy-heading span {
-  color: var(--text-dim);
-  font-size: 8px;
-}
-
-.combat-enemy-heading b {
-  display: grid;
-  min-width: 24px;
-  height: 20px;
-  padding: 0 4px;
-  place-items: center;
-  border: 1px solid rgba(201, 180, 109, 0.35);
+  padding: 0 2px;
   color: var(--gold-bright);
-  background: rgba(201, 180, 109, 0.07);
-  font-family: Arial, sans-serif;
-  font-size: 9px;
-  font-weight: 500;
-}
-
-.combat-resource-line {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 24px minmax(30px, 1fr) auto;
-  align-items: center;
-  gap: 5px;
-  color: #87ad99;
-  font-size: 8px;
-}
-
-.combat-resource-line.mana {
-  color: #7da9be;
-}
-
-.combat-resource-line > div {
-  height: 5px;
-  overflow: hidden;
-  border: 1px solid rgba(119, 151, 135, 0.25);
-  background: rgba(3, 5, 5, 0.75);
-}
-
-.combat-resource-line i {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: #57866e;
-}
-
-.combat-resource-line.mana i {
-  background: #527e94;
-}
-
-.combat-resource-line strong {
-  color: currentColor;
+  background: rgba(5, 7, 7, 0.62);
   font-family: Arial, sans-serif;
   font-size: 8px;
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
-}
-
-.combat-enemy-stats {
-  display: grid;
-  margin: 0;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-}
-
-.combat-enemy-stats > div {
-  display: grid;
-  min-width: 0;
-  gap: 1px;
-  padding-top: 5px;
-  border-top: 1px solid rgba(128, 151, 161, 0.14);
-}
-
-.combat-enemy-stats dt {
-  color: var(--text-dim);
-  font-size: 7px;
-}
-
-.combat-enemy-stats dd {
-  margin: 0;
-  overflow: hidden;
-  color: var(--text);
-  font-family: Arial, sans-serif;
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
+  line-height: 12px;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.combat-boss-line {
-  display: grid;
-  grid-template-columns: 76px minmax(154px, 1fr);
-  align-items: stretch;
-  gap: 6px;
-  padding-top: 2px;
-}
-
-.combat-boss-line > span {
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(168, 82, 74, 0.26);
-  color: #b77669;
-  background: rgba(65, 24, 23, 0.18);
-  font-size: 9px;
-  text-align: center;
-}
-
-.combat-encounter-panel.is-compact {
-  margin: 12px 0 4px;
-  padding: 8px;
-}
-
-.combat-encounter-panel.is-compact .combat-enemy-grid {
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-}
-
-.combat-encounter-panel.is-compact .combat-enemy-card {
-  min-height: 124px;
+.ecology-hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 8px;
+  letter-spacing: 0.04em;
 }
 
 .combat-loadout {
@@ -5319,27 +5217,6 @@ input[type="checkbox"] {
   border: 1px solid rgba(248, 113, 113, 0.25);
 }
 
-/* 遭遇面板敌怪头像小方块 (CombatEncounterPanel) */
-.combat-enemy-avatar-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1px solid rgba(201, 180, 109, 0.2);
-  background: rgba(13, 16, 23, 0.85);
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.combat-enemy-avatar {
-  width: 30px;
-  height: 30px;
-  max-width: 30px;
-  max-height: 30px;
-}
-
 .character-attribute-header h2 {
   margin: 0;
   color: var(--gold-bright);
@@ -5789,14 +5666,6 @@ input[type="checkbox"] {
 
   .combat-encounter-heading dl > div {
     text-align: left;
-  }
-
-  .combat-enemy-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .combat-boss-line {
-    grid-template-columns: 62px minmax(0, 1fr);
   }
 
   .market-order-form {

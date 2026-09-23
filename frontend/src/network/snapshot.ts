@@ -172,18 +172,25 @@ function emptySlot(): AutoUseSlot {
 
 /**
  * 统一战斗属性解码：玩家 combat.attributes、远征敌方条目 attributes、斗法镜像
- * opponentAttributes 共用同一字段集与语义（服务端协议边界已完成点数→比率折算）。
+ * opponentAttributes 共用同一字段集与语义（全部百分比属性按点数下发）。
  */
 function mapCombatAttributes(value: unknown, name: string): CombatAttributes {
   const source = requiredObject(value, name)
   const numericKeys = [
     'maxHitpoints', 'maxManapoints', 'physicalAttack', 'spellAttack', 'armor', 'magicResistance',
-    'accuracy', 'evasion', 'criticalChance', 'criticalDamageRatio', 'criticalAvoidance',
+    'accuracy', 'evasion', 'critical', 'criticalResistance', 'criticalMultiplier',
     'breakPower', 'parryResolve', 'hpRegenPerFiveSeconds', 'mpRegenPerFiveSeconds',
     'attackIntervalMilliseconds', 'basicAttackRatio', 'skillIntensity', 'cooldownFactor', 'castTimeFactor',
-    'damageAbsorptionRatio', 'threatRatio',
-    'metalResistance', 'woodResistance', 'waterResistance', 'fireResistance', 'earthResistance',
-    'hpDrainRatio', 'mpDrainRatio', 'damageReflectRatio', 'healingBonusRatio',
+    'physicalDamageBonusPoints', 'spellDamageBonusPoints',
+    'metalDamageBonusPoints', 'woodDamageBonusPoints', 'waterDamageBonusPoints',
+    'fireDamageBonusPoints', 'earthDamageBonusPoints',
+    'totalDamageBonusPoints', 'basicAttackBonusPoints', 'skillBonusPoints',
+    'physicalDamageReductionPoints', 'spellDamageReductionPoints',
+    'metalDamageReductionPoints', 'woodDamageReductionPoints', 'waterDamageReductionPoints',
+    'fireDamageReductionPoints', 'earthDamageReductionPoints',
+    'damageAbsorptionPoints',
+    'attackSpeedPoints', 'actionSpeedPoints', 'cooldownReductionPoints', 'threatBonusPoints',
+    'hpDrainPoints', 'mpDrainPoints', 'damageReflectPoints', 'healingBonusPoints',
   ] as const
   const numbers = Object.fromEntries(numericKeys.map(key => [key, finiteValue(source[key], `${name}.${key}`)]))
   return numbers as unknown as CombatAttributes
@@ -328,6 +335,13 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   finiteNumber(row.playerAttackCount, `行动 ${actionId} 的 playerAttackCount`)
   const playerThreat = finiteNumber(row.playerThreat, `行动 ${actionId} 的 playerThreat`)
   const waveNumber = finiteInteger(row.waveNumber, `行动 ${actionId} 的 waveNumber`)
+  // 倒地窗口（原地复活遭遇）：复活截止点与读条时长均为战斗时钟秒，存活或非倒地形态为 null。
+  const playerRespawnAtSeconds = row.playerRespawnAtSeconds === null || row.playerRespawnAtSeconds === undefined
+    ? null
+    : finiteNumber(row.playerRespawnAtSeconds, `行动 ${actionId} 的 playerRespawnAtSeconds`)
+  const playerRespawnDurationSeconds = row.playerRespawnDurationSeconds === null || row.playerRespawnDurationSeconds === undefined
+    ? null
+    : finiteNumber(row.playerRespawnDurationSeconds, `行动 ${actionId} 的 playerRespawnDurationSeconds`)
   const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 outcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 outcome 枚举值无效。`)
 
@@ -371,6 +385,8 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
     enemyManapoints: primary?.manapoints ?? 0,
     enemyId: primary?.enemyId ?? null,
     enemies,
+    playerRespawnAtSeconds,
+    playerRespawnDurationSeconds,
     waveNumber,
     playerThreat,
     encounterId,
@@ -740,8 +756,8 @@ function mapBuffs(value: unknown): Buff[] {
       expiresAtUnixSeconds: finiteNumber(row.expiresAtUnixSeconds, 'buff.expiresAtUnixSeconds'),
       hpRegen: finiteNumber(row.hpRegen, 'buff.hpRegen'),
       mpRegen: finiteNumber(row.mpRegen, 'buff.mpRegen'),
-      attackSpeedRatio: finiteNumber(row.attackSpeedRatio, 'buff.attackSpeedRatio'),
-      damageAbsorptionRatio: finiteNumber(row.damageAbsorptionRatio, 'buff.damageAbsorptionRatio'),
+      attackSpeedPoints: finiteNumber(row.attackSpeedPoints, 'buff.attackSpeedPoints'),
+      damageAbsorptionPoints: finiteNumber(row.damageAbsorptionPoints, 'buff.damageAbsorptionPoints'),
       sourceItemId: stringValue(row.sourceItemId) || null,
       statRatios: row.statRatios === null || row.statRatios === undefined
         ? null

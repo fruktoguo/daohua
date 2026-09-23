@@ -378,16 +378,11 @@ const STAT_RATIO_LABEL_KEYS: Record<string, string> = {
   parry: 'market.stat.parryResolve',
   hitpointRegen: 'market.stat.hitpointRegen',
   manapointRegen: 'market.stat.manapointRegen',
-  metalResistance: 'market.stat.metalResistance',
-  woodResistance: 'market.stat.woodResistance',
-  waterResistance: 'market.stat.waterResistance',
-  fireResistance: 'market.stat.fireResistance',
-  earthResistance: 'market.stat.earthResistance',
 }
 
 /**
- * 通用 Buff 数值效果行解析器：唯一 Buff 形状（hpRegen/mpRegen/attackSpeedRatio/
- * damageAbsorptionRatio/statRatios）解析为格式化词条；statRatios 键按属性名渲染比率。
+ * 通用 Buff 数值效果行解析器：唯一 Buff 形状（hpRegen/mpRegen/attackSpeedPoints/
+ * damageAbsorptionPoints/statRatios）解析为格式化词条；点数键按 NonLinear 曲线换算有效值。
  */
 export function describeBuffEffectLines(buff: {
   buffId?: string | null
@@ -395,8 +390,8 @@ export function describeBuffEffectLines(buff: {
   description?: string
   hpRegen?: number
   mpRegen?: number
-  damageAbsorptionRatio?: number
-  attackSpeedRatio?: number
+  damageAbsorptionPoints?: number
+  attackSpeedPoints?: number
   statRatios?: Record<string, number> | null
 }): string[] {
   const t = getT()
@@ -410,12 +405,13 @@ export function describeBuffEffectLines(buff: {
     lines.push(t('market.effect.mpRegenPerSecond', { n: formatNumber(buff.mpRegen) }))
   }
 
-  // 2. 减伤与攻速
-  if (buff.damageAbsorptionRatio && buff.damageAbsorptionRatio !== 0) {
-    lines.push(t('market.effect.damageReductionPct', { n: Math.round(buff.damageAbsorptionRatio * 100) }))
+  // 2. 免伤与攻速点数：NonLinear 口径换算有效百分比（减伤 x/(100+x)，速率 +x%）。
+  if (buff.damageAbsorptionPoints && buff.damageAbsorptionPoints !== 0) {
+    const points = buff.damageAbsorptionPoints
+    lines.push(t('market.effect.damageReductionPct', { n: +(points / (100 + points) * 100).toFixed(1) }))
   }
-  if (buff.attackSpeedRatio && buff.attackSpeedRatio !== 0) {
-    lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedRatio)}`)
+  if (buff.attackSpeedPoints && buff.attackSpeedPoints !== 0) {
+    lines.push(`${t('market.stat.attackSpeed')} ${signedPercent(buff.attackSpeedPoints / 100)}`)
   }
 
   // 3. 通用属性比率字典（领域 BuffModifiers.statRatios 透传键）
@@ -691,13 +687,6 @@ export const STAT_TONE_MAP: Record<string, PillTone> = {
 
   // 化解 (银白)
   parryResolve: 'silver',
-
-  // 五行抗性
-  metalResistance: 'gold',
-  woodResistance: 'emerald',
-  waterResistance: 'cyan',
-  fireResistance: 'amber',
-  earthResistance: 'bronze',
 }
 
 /**
@@ -774,29 +763,18 @@ function describeEquipmentEffects(
       if (val !== 0) {
         const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
         const tone = STAT_TONE_MAP[key] ?? 'default'
-        if (key === 'criticalChance' && val <= 1.0) {
-          lines.push(
-            <PillBonusLabel
-              key={`flat-${key}`}
-              label={label}
-              tone={tone}
-              value={`+${formatNumber(val * 100)}%`}
-            />
-          )
-        } else {
-          // 计算强化带来的加成
-          const bonusPerLevel = equipment.enhancementBonus?.[key] ?? 0
-          const totalBonus = bonusPerLevel * enhancementLevel
-          lines.push(
-            <PillBonusLabel
-              key={`flat-${key}`}
-              label={label}
-              suffix={totalBonus > 0 ? ` (+${formatNumber(totalBonus)})` : undefined}
-              tone={tone}
-              value={`+${formatNumber(val)}`}
-            />
-          )
-        }
+        // 计算强化带来的加成
+        const bonusPerLevel = equipment.enhancementBonus?.[key] ?? 0
+        const totalBonus = bonusPerLevel * enhancementLevel
+        lines.push(
+          <PillBonusLabel
+            key={`flat-${key}`}
+            label={label}
+            suffix={totalBonus > 0 ? ` (+${formatNumber(totalBonus)})` : undefined}
+            tone={tone}
+            value={`+${formatNumber(val)}`}
+          />
+        )
       }
     }
   }
@@ -813,17 +791,48 @@ export function resolveEquipmentAsideCards(
   const t = getT()
   const cards: FloatingAsideCard[] = []
 
-  const specialLabelKeys: Record<string, string> = {
-    threatRatio: 'market.effect.threatBonus',
-    healingBonusRatio: 'market.effect.healingBonus',
+  // specialMechanics 键 → 词条标签与曲线口径（战斗设计 §7.5：增伤类 Linear / 减伤速率类 NonLinear）。
+  const specialLabelKeys: Record<string, { label: string; curve: 'linear' | 'nonlinear' | 'rate' }> = {
+    physicalDamageBonusPoints: { label: 'market.stat.physicalDamageBonus', curve: 'linear' },
+    spellDamageBonusPoints: { label: 'market.stat.spellDamageBonus', curve: 'linear' },
+    metalDamageBonusPoints: { label: 'market.stat.metalDamageBonus', curve: 'linear' },
+    woodDamageBonusPoints: { label: 'market.stat.woodDamageBonus', curve: 'linear' },
+    waterDamageBonusPoints: { label: 'market.stat.waterDamageBonus', curve: 'linear' },
+    fireDamageBonusPoints: { label: 'market.stat.fireDamageBonus', curve: 'linear' },
+    earthDamageBonusPoints: { label: 'market.stat.earthDamageBonus', curve: 'linear' },
+    totalDamageBonusPoints: { label: 'market.stat.totalDamageBonus', curve: 'linear' },
+    basicAttackBonusPoints: { label: 'market.stat.basicAttackBonus', curve: 'linear' },
+    skillBonusPoints: { label: 'market.stat.skillBonus', curve: 'linear' },
+    physicalDamageReductionPoints: { label: 'market.stat.physicalDamageReduction', curve: 'nonlinear' },
+    spellDamageReductionPoints: { label: 'market.stat.spellDamageReduction', curve: 'nonlinear' },
+    metalDamageReductionPoints: { label: 'market.stat.metalDamageReduction', curve: 'nonlinear' },
+    woodDamageReductionPoints: { label: 'market.stat.woodDamageReduction', curve: 'nonlinear' },
+    waterDamageReductionPoints: { label: 'market.stat.waterDamageReduction', curve: 'nonlinear' },
+    fireDamageReductionPoints: { label: 'market.stat.fireDamageReduction', curve: 'nonlinear' },
+    earthDamageReductionPoints: { label: 'market.stat.earthDamageReduction', curve: 'nonlinear' },
+    damageAbsorptionPoints: { label: 'market.stat.damageReduction', curve: 'nonlinear' },
+    attackSpeedPoints: { label: 'market.stat.attackSpeed', curve: 'rate' },
+    actionSpeedPoints: { label: 'market.stat.actionSpeed', curve: 'rate' },
+    cooldownReductionPoints: { label: 'market.stat.cooldownReduction', curve: 'rate' },
+    threatBonusPoints: { label: 'market.effect.threatBonus', curve: 'linear' },
+    hpDrainPoints: { label: 'market.stat.hpDrain', curve: 'linear' },
+    mpDrainPoints: { label: 'market.stat.mpDrain', curve: 'linear' },
+    damageReflectPoints: { label: 'market.stat.damageReflect', curve: 'linear' },
+    healingBonusPoints: { label: 'market.effect.healingBonus', curve: 'linear' },
   }
 
   if (equipment.specialMechanics && Object.keys(equipment.specialMechanics).length > 0) {
     const lines: string[] = []
     for (const [key, val] of Object.entries(equipment.specialMechanics)) {
       if (val !== 0) {
-        const labelKey = specialLabelKeys[key]
-        lines.push(labelKey ? t(labelKey, { n: Math.round(val * 100) }) : `${key}: +${val}`)
+        const spec = specialLabelKeys[key]
+        if (!spec) { lines.push(`${key}: +${val}`); continue }
+        // Linear 点数等值即有效百分比；NonLinear 减伤有效值 = x/(100+x)；速率类 +x% 即增速。
+        const effective = spec.curve === 'nonlinear' ? val / (100 + Math.abs(val)) * 100 : val
+        const label = t(spec.label)
+        lines.push(spec.label.startsWith('market.effect.')
+          ? t(spec.label, { n: +effective.toFixed(1) })
+          : `${label} ${effective >= 0 ? '+' : ''}${+effective.toFixed(1)}%`)
       }
     }
     if (lines.length > 0) {
@@ -852,8 +861,8 @@ export function createBuffAsideCard(
   const lines = describeBuffEffectLines(buff)
 
   const isDebuff =
-    buff.attackSpeedRatio < 0 ||
-    buff.damageAbsorptionRatio < 0 ||
+    buff.attackSpeedPoints < 0 ||
+    buff.damageAbsorptionPoints < 0 ||
     buff.hpRegen < 0 ||
     buff.mpRegen < 0 ||
     Object.values(buff.statRatios ?? {}).some(value => value < 0)

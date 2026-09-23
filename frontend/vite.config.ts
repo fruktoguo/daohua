@@ -11,6 +11,11 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 15172,
     strictPort: true,
+    fs: {
+      // 战斗特效真源在 docs/design/战斗演武画廊/vfx/（frontend 之外），
+      // dev server 需放开到仓库根目录才能让 import.meta.glob 引入共享脚本。
+      allow: ['..'],
+    },
     proxy: {
       '/api': 'http://127.0.0.1:5128',
       '/ws': {

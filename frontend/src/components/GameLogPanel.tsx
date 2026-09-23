@@ -10,7 +10,7 @@ import { FeedList, toLogFeedItems, useStickyScroll } from './LogFeed'
  */
 type LogGroupId = 'all' | 'world' | 'nearby' | 'system' | 'combat' | 'friend' | 'sect' | 'party'
 
-/** 分组顺序固定，与设计真源 docs/design/chat-and-log-channels.md 一致 */
+/** 分组顺序固定，与设计真源 docs/design/总纲/14-传音频道与日志分组.md 一致 */
 const LOG_GROUPS: readonly { id: LogGroupId; labelKey: string }[] = [
   { id: 'all', labelKey: 'combat.chat.tabAll' },
   { id: 'world', labelKey: 'combat.chat.tabWorld' },

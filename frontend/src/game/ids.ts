@@ -1,6 +1,6 @@
 import { getT, type TFunction } from '../i18n'
 import { calculateRootLevelAndProgress } from './combatConstants'
-import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatEquipmentDefinition, ItemDefinition } from './types'
+import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatEquipmentDefinition, ItemDefinition, WorldMapDefinition, WorldState } from './types'
 
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
@@ -380,6 +380,25 @@ export function normalizeAbilitySlots(
  */
 export function findEncounterInCatalog<T extends { encounterId: string; enemy?: { enemyId: string } }>(encounters: readonly T[], encounterOrEnemyId: string): T | undefined {
   return getEncounterMap(encounters).get(encounterOrEnemyId)
+}
+
+/**
+ * 行动显示文本按当前驻留地点本地化：
+ * 行动名/描述中内嵌的当前地图名替换为当前节点名
+ * （「讨伐 青云仙山」在漱玉溪显示为「讨伐 漱玉溪」），与「讨伐行动在当前节点
+ * 生态展开」的实战语义一致——服务端 ResolveCombatEncounter 按玩家当前节点
+ * encounterIds 抽取遭遇。行进在道路上（nodeId=null）或文本不含地图名时原样返回。
+ */
+export function localizeActionDisplayText(
+  text: string,
+  world: Pick<WorldState, 'mapId' | 'nodeId' | 'locationName'>,
+  maps: readonly Pick<WorldMapDefinition, 'mapId' | 'name'>[],
+): string {
+  if (world.nodeId === null) return text
+  const mapName = maps.find(map => map.mapId === world.mapId)?.name
+  const { locationName } = world
+  if (!mapName || !locationName || mapName === locationName || !text.includes(mapName)) return text
+  return text.split(mapName).join(locationName)
 }
 
 /**
@@ -768,7 +787,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
         name: '止血散·回春',
         durationSeconds: 30,
         hpRegen: 12,
-        damageAbsorptionRatio: 0.05,
+        damageAbsorptionPoints: 5,
       },
     ],
   },
@@ -789,7 +808,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
         name: '顺气丸·凝神',
         durationSeconds: 30,
         mpRegen: 8,
-        attackSpeedRatio: 0.05,
+        attackSpeedPoints: 5,
       },
     ],
   },
@@ -854,7 +873,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 1,
     baseStatRatios: { physicalAttack: 0.1, physicalArmor: 0.14 },
     flatStats: { physicalAttack: 8, physicalArmor: 8 },
-    specialMechanics: { threatRatio: 2.0 },
+    specialMechanics: { threatBonusPoints: 200 },
   },
   'equipment.jiujie-staff': {
     equipmentId: 'equipment.jiujie-staff',
@@ -871,7 +890,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 1,
     baseStatRatios: { spellAttack: 0.14 },
     flatStats: { spellAttack: 8, manapointRegen: 2 },
-    specialMechanics: { healingBonusRatio: 0.5 },
+    specialMechanics: { healingBonusPoints: 50 },
   },
   'equipment.shufa-scarf': {
     equipmentId: 'equipment.shufa-scarf',
@@ -952,7 +971,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 2,
     baseStatRatios: { physicalAttack: 0.14, physicalArmor: 0.2 },
     flatStats: { physicalAttack: 11, physicalArmor: 11 },
-    specialMechanics: { threatRatio: 3.0 },
+    specialMechanics: { threatBonusPoints: 300 },
   },
   'equipment.chaoyuan-staff': {
     equipmentId: 'equipment.chaoyuan-staff',
@@ -969,7 +988,7 @@ const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefin
     tier: 2,
     baseStatRatios: { spellAttack: 0.18 },
     flatStats: { spellAttack: 12, manapointRegen: 3 },
-    specialMechanics: { healingBonusRatio: 0.5 },
+    specialMechanics: { healingBonusPoints: 50 },
   },
 }
 

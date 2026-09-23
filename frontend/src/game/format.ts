@@ -77,7 +77,7 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
     ? t('game.abilityDesc.effectHeal', { target, expr: healExpr })
     : damageExpr
       ? t('game.abilityDesc.effectDamage', { target, expr: damageExpr, damageKind })
-      : (ability.threatGain ?? 0) > 0 || (ability.threatRatio ?? 0) > 0
+      : (ability.threatGain ?? 0) > 0 || (ability.threatPoints ?? 0) > 0
         ? t('game.abilityDesc.effectThreat')
         : t('game.abilityDesc.effectBuff', { target })
   const description = ability.description ? `${ability.description}，${clause}。` : `${clause}。`
@@ -93,11 +93,12 @@ export function describeAbility(ability: CombatAbilityDefinition, level: number)
   if ((ability.threatGain ?? 0) !== 0) {
     lines.push(t('game.abilityDesc.threatGain', { n: formatNumber(ability.threatGain ?? 0) }))
   }
-  if ((ability.threatRatio ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.threatRatio', { n: abilityPercent(ability.threatRatio ?? 0) }))
+  if ((ability.threatPoints ?? 0) !== 0) {
+    lines.push(t('game.abilityDesc.threatRatio', { n: abilityPercent((ability.threatPoints ?? 0) / 100) }))
   }
-  if ((ability.buff?.damageAbsorptionRatio ?? 0) !== 0) {
-    lines.push(t('game.abilityDesc.buffAbsorb', { n: abilityPercent(ability.buff?.damageAbsorptionRatio ?? 0) }))
+  if ((ability.buff?.damageAbsorptionPoints ?? 0) !== 0) {
+    const points = ability.buff?.damageAbsorptionPoints ?? 0
+    lines.push(t('game.abilityDesc.buffAbsorb', { n: abilityPercent(points / (100 + points)) }))
   }
   return {
     title: ability.name,

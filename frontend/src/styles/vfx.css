@@ -1,0 +1,50 @@
+/* =========================================================================
+ * 道化太初 · 战斗特效覆盖层基础样式 (vfx)
+ *
+ * - .vfx-stage-overlay：铺满 .combat-arena-shell 的特效坐标系，pointer-events 全穿透，
+ *   所有特效节点绝对定位、零回流，不参战布局；
+ * - .vfx-node：特效宿主锚点（宽高 0，子元素自行展开）；
+ * - .is-quake / .is-quake-heavy：震屏（仅 transform，挂 .combat-arena-shell）；
+ * - 粒子基元（.vfx-p-*）与技能专属样式由 src/vfx/ 各模块 injectVfxStyles 自含注入。
+ * ========================================================================= */
+
+.vfx-stage-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* 位于战场内容之上、不影响任何交互与布局 */
+  z-index: 8;
+}
+
+.vfx-node {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.combat-arena-shell.is-quake {
+  animation: vfx-quake 0.36s ease-out;
+}
+
+.combat-arena-shell.is-quake-heavy {
+  animation: vfx-quake-heavy 0.48s ease-out;
+}
+
+@keyframes vfx-quake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-4px, 2px); }
+  40% { transform: translate(3px, -3px); }
+  60% { transform: translate(-2px, -2px); }
+  80% { transform: translate(2px, 1px); }
+}
+
+@keyframes vfx-quake-heavy {
+  0%, 100% { transform: translate(0, 0); }
+  15% { transform: translate(-7px, 4px); }
+  30% { transform: translate(6px, -5px); }
+  45% { transform: translate(-5px, -4px); }
+  60% { transform: translate(4px, 3px); }
+  78% { transform: translate(-2px, 2px); }
+}
