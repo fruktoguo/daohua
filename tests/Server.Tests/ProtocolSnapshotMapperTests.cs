@@ -24,7 +24,7 @@ public sealed class ProtocolSnapshotMapperTests
         var accountId = Guid.NewGuid();
         var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId), "映射测试", DateTimeOffset.UtcNow, "fp");
         var state = aggregate.ExportState();
-        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 1, aggregate.LastSimulatedAt, state, [], []);
+        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 1, aggregate.LastSimulatedAt, state, 0, []);
         var dto = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", GameDataCatalog.BuiltIn);
         Assert.Equal(playerId.ToString("D"), dto.PlayerId);
         Assert.Equal("映射测试", dto.DisplayName);
@@ -61,7 +61,7 @@ public sealed class ProtocolSnapshotMapperTests
         var accountId = Guid.NewGuid();
         var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId), "增量映射测试", DateTimeOffset.UtcNow, "fp");
         var simulatedAt = aggregate.LastSimulatedAt;
-        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 2, simulatedAt, aggregate.ExportState(), [], []);
+        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 2, simulatedAt, aggregate.ExportState(), 0, []);
 
         var delta = ProtocolSnapshotMapper.ToDelta(runtime, "fp", GameDataCatalog.BuiltIn);
         Assert.Equal(simulatedAt, delta.LastSimulatedAt);
@@ -170,7 +170,7 @@ public sealed class ProtocolSnapshotMapperTests
                 new QueuedActionState(Guid.NewGuid(), new ActionIntent(new ActionId("explore.collect-morning-dew")), DateTimeOffset.UtcNow, ActionQueueStatus.Pending, 0, 1, 0)
             ]
         };
-        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 1, aggregate.LastSimulatedAt, state, [], []);
+        var runtime = new PlayerRuntimeSnapshot(playerId, accountId.ToString("D"), aggregate.DisplayName, 1, aggregate.LastSimulatedAt, state, 0, []);
         var snapshot = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData);
 
         var actionSection = Assert.Single(snapshot.Sections, s => s.Section == PlayerSectionKinds.ActionQueue);

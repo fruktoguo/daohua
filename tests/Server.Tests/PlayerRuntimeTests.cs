@@ -693,6 +693,85 @@ public sealed class PlayerRuntimeTests
         Assert.Equal("ability.test-strike", correct.Snapshot.State.Loadout.AbilitySlots[1].AbilityId);
     }
 
+    /// <summary>租约续期去抖：距上次成功续租不足租约 1/3（45s 租约 ≈15s）时，命令、刷盘与模拟推进统一跳过 RenewAsync UPDATE。</summary>
+
+    [Fact]
+    public async Task LeaseRenewsAreDebouncedWithinThirdOfLeaseWindow()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "续租去抖");
+        var ownership = new CountingOwnershipStore();
+        var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            GameDataCatalog.BuiltIn, NullLogger<PlayerRuntime>.Instance, ownership: ownership);
+
+        // 加载路径即完成首次真实续租（actor 创建内嵌的初次推进命令）。
+        await runtime.LoadAsync(playerId);
+        var renewsAfterLoad = ownership.RenewCalls;
+        Assert.True(renewsAfterLoad >= 1);
+
+        // 距上次成功续租不足 15s：后续命令、刷写与推进都不再触发续租 UPDATE。
+        var enqueue = await runtime.ExecuteAsync(playerId, "queue.configure", JsonSerializer.SerializeToElement(new { loopEnabled = true }));
+        var presence = await runtime.ExecuteAsync(playerId, "player.presence", JsonSerializer.SerializeToElement(new { presence = "online" }));
+        await runtime.FlushAsync(playerId, true);
+        await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow);
+
+        Assert.True(enqueue.Success);
+        Assert.True(presence.Success);
+        Assert.Equal(renewsAfterLoad, ownership.RenewCalls);
+    }
+
+    /// <summary>simulation.advance 的客户端 targetTime 必须被服务端钳制：超出 30s 时钟容忍按 UtcNow 结算，快进刷收益失效。</summary>
+
+    [Fact]
+    public async Task SimulationAdvanceClampsClientSuppliedFutureTarget()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "快进封堵");
+        var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+
+        await runtime.LoadAsync(playerId);
+        await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options));
+
+        var result = await runtime.ExecuteAsync(playerId, "simulation.advance", JsonSerializer.SerializeToElement(new
+        {
+            targetTime = DateTimeOffset.UtcNow.AddHours(48)
+        }));
+
+        Assert.True(result.Success);
+        // 目标被钳制到服务端当前时刻，不得推进到 48h 后的世界。
+        Assert.True(result.Snapshot.LastSimulatedAt <= DateTimeOffset.UtcNow.AddSeconds(1));
+        // 修为只按真实流逝结算（引气入体约 1/s），不可能结算出 48h 收益。
+        Assert.True(result.Snapshot.State.Progression.Qi < 100);
+    }
+
+    /// <summary>actor 卸载时同步清理战报环形缓冲：RemoveAsync 后重连回放读取为空，缓冲不随卸载玩家滞留。</summary>
+
+    [Fact]
+    public async Task RemoveAsyncClearsReconnectLogBuffer()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "日志清理");
+        var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+
+        await runtime.LoadAsync(playerId);
+        await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", 1), ProtocolJson.Options));
+        var advanced = await runtime.ExecuteAsync(playerId, "simulation.advance", JsonSerializer.SerializeToElement(new
+        {
+            targetTime = DateTimeOffset.UtcNow.AddSeconds(11)
+        }));
+        Assert.True(advanced.Success);
+        // 完成一次行动产生战报事件并写入环形缓冲。
+        Assert.NotEmpty(runtime.GetRecentLogEvents(playerId));
+
+        await runtime.RemoveAsync(playerId, flush: false);
+
+        Assert.Empty(runtime.GetRecentLogEvents(playerId));
+    }
+
     /// <summary>构造物品处置测试目录：含可回收草药、无价物品与一件装备原始定义。</summary>
     private static GameDataCatalog CreateDisposalCatalog() => GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
         [
@@ -803,6 +882,19 @@ public sealed class PlayerRuntimeTests
     {
         public ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(true);
         public ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(false);
+        public ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    /// <summary>计数版所有权假实现：抢占/续租恒成功并记录续租次数，用于验证续租去抖窗口。</summary>
+    private sealed class CountingOwnershipStore : IPlayerOwnershipStore
+    {
+        public int RenewCalls;
+        public ValueTask<bool> AcquireAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default) => ValueTask.FromResult(true);
+        public ValueTask<bool> RenewAsync(Guid playerId, Guid ownerInstanceId, TimeSpan lease, CancellationToken cancellationToken = default)
+        {
+            RenewCalls++;
+            return ValueTask.FromResult(true);
+        }
         public ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 }

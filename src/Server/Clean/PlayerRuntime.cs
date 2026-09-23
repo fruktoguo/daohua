@@ -11,7 +11,9 @@ namespace Server.Clean;
 
 /// <summary>
 /// 角色运行时只读快照。
-/// 包含内存聚合不可变状态、数据库持久化排队动作与当前资产钱包余额。
+/// 包含内存聚合不可变状态、排队行动计数与当前资产钱包余额。
+/// 排队行动的完整存储投影只有运维计数一个消费方，逐拍序列化全部 Intent 属纯浪费，
+/// 因此快照只携带计数；协议分段与持久化落盘各自从领域状态编码，不经过本字段。
 /// </summary>
 public sealed record PlayerRuntimeSnapshot(
     Guid PlayerId,
@@ -20,7 +22,7 @@ public sealed record PlayerRuntimeSnapshot(
     long StateVersion,
     DateTimeOffset LastSimulatedAt,
     PlayerAggregateState State,
-    IReadOnlyList<StoredAction> Actions,
+    int QueuedActionCount,
     IReadOnlyList<AssetBalanceRecord> Assets);
 
 /// <summary>
@@ -352,6 +354,8 @@ public sealed class PlayerRuntime(
         // 卸载即离线：先落 presence=offline 再强刷，player_projection 才能筛出可冷挂机玩家。
         if (flush) await actor.MarkOfflineAndFlushAsync(cancellationToken);
         _actors.TryRemove(new KeyValuePair<Guid, Lazy<Task<PlayerActor>>>(playerId, lazy));
+        // 战报环形缓冲只服务在线重连回放，actor 卸载即失效：同步清理，避免随卸载玩家单调堆积。
+        _logBuffers.TryRemove(playerId, out _);
         await actor.DisposeAsync();
     }
 
@@ -415,6 +419,8 @@ public sealed class PlayerRuntime(
         }
         catch
         {
+            // 创建失败：本次 GetOrAdd 可能已留下孤儿缓冲，连同租约一起归还，避免泄漏。
+            _logBuffers.TryRemove(playerId, out _);
             if (ownership is not null) await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None);
             throw;
         }
@@ -430,6 +436,7 @@ public sealed class PlayerRuntime(
             && ReferenceEquals(lazy.Value.Result, actor)
             && _actors.TryRemove(new KeyValuePair<Guid, Lazy<Task<PlayerActor>>>(playerId, lazy)))
         {
+            _logBuffers.TryRemove(playerId, out _);
             _ = ReleaseActorQuietlyAsync(playerId, actor);
         }
     }
@@ -453,7 +460,7 @@ public sealed class PlayerRuntime(
         if (handler is not null) await handler(playerId, events);
     }
 
-    /// <summary>读取玩家最近战报日志（用于重连回放）；缓冲在进程生命周期内保留。</summary>
+    /// <summary>读取玩家最近战报日志（用于重连回放）；缓冲随 actor 卸载一并清理，未加载玩家返回空。</summary>
     public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) =>
         _logBuffers.TryGetValue(playerId, out var buffer) ? buffer.SnapshotRecent() : [];
 
@@ -510,7 +517,10 @@ public sealed class PlayerRuntime(
         private readonly IPlayerOwnershipStore? ownership;
         private readonly IAccountRepository? accounts;
         private readonly NodeBuildingRegistry? nodeBuildings;
-        private long _nodeBuildingSignature = long.MinValue;
+        // 节点建筑投影键：版本戳只在同一节点内单调递增，必须连同节点身份比较；
+        // (null, 0) 表示投影已清空（旅途中/无节点），long.MinValue 强制首次必刷新。
+        private long _nodeBuildingVersion = long.MinValue;
+        private string? _nodeBuildingNodeId;
         private readonly Guid ownerInstanceId;
         private readonly TimeSpan ownershipLease;
         private readonly SemaphoreSlim _gate = new(1, 1);
@@ -523,6 +533,9 @@ public sealed class PlayerRuntime(
         private readonly LogThrottle _walletErrorLog = new(TimeSpan.FromMinutes(1));
         private readonly LogThrottle _advanceErrorLog = new(TimeSpan.FromMinutes(1));
         private long _logicalVersion;
+        // 上次成功续租的墙钟时刻；MinValue 表示本 actor 尚未续租过，下一次写路径必须真实续租。
+        // 只由单写者锁内的续租去抖读写。
+        private DateTimeOffset _lastLeaseRenewedUtc = DateTimeOffset.MinValue;
         // 0 表示无可见边界；由单写者锁内刷新、宿主调度线程无锁读取。
         private long _nextVisibleBoundaryUtcTicks;
         private bool _walletReloadRequired;
@@ -615,7 +628,7 @@ public sealed class PlayerRuntime(
             Math.Max(_logicalVersion, aggregate.StateVersion),
             aggregate.LastSimulatedAt,
             aggregate.ExportState() with { StateVersion = Math.Max(_logicalVersion, aggregate.StateVersion) },
-            BuildStoredActions(),
+            aggregate.Actions.Count,
             wallet.Balances
                 .OrderBy(balance => balance.Asset.ItemId.Value, StringComparer.Ordinal)
                 .ThenBy(balance => balance.Asset.Variant, StringComparer.Ordinal)
@@ -644,8 +657,7 @@ public sealed class PlayerRuntime(
             try
             {
                 if (_disposed) throw new ObjectDisposedException(nameof(PlayerActor));
-                if (ownership is not null && !await ownership.RenewAsync(aggregate.PlayerId.Value, ownerInstanceId, ownershipLease, cancellationToken))
-                    throw new PlayerOwnershipLostException(aggregate.PlayerId.Value);
+                await RenewOwnershipLeaseIfDueAsync(cancellationToken);
                 if (string.IsNullOrWhiteSpace(command) || command.Length > 96)
                     return Fail("INVALID_COMMAND", "命令名称无效。");
                 if (requestId.HasValue)
@@ -1098,8 +1110,15 @@ public sealed class PlayerRuntime(
                     }
                     case "simulation.advance":
                     {
+                        // 该命令主要服务内部推进路径（AdvanceAllAsync 节拍/加载补算均经
+                        // AdvanceSimulationAsync 复用本分支），正式前端没有任何调用方；
+                        // 客户端命令面（WS Command/HTTP commands）仍可到达，因此 targetTime
+                        // 必须由服务端钳制：超出 30s 时钟偏差容忍的目标一律按服务端当前时刻
+                        // 结算，封堵客户端伪造未来时刻快进刷收益的漏洞。
+                        var now = DateTimeOffset.UtcNow;
                         var target = payload.TryGetProperty("targetTime", out var targetElement) && targetElement.TryGetDateTimeOffset(out var parsed)
-                            ? parsed : DateTimeOffset.UtcNow;
+                            ? parsed : now;
+                        if (target > now.AddSeconds(30)) target = now;
                         simulation = await AdvanceSimulationInternalAsync(target, cancellationToken);
                         break;
                     }
@@ -1265,6 +1284,21 @@ public sealed class PlayerRuntime(
             return result;
         }
 
+        /// <summary>
+        /// 所有权续租去抖：距上次成功续期不足租约 1/3（45s 租约 ≈ 15s）时跳过本次 UPDATE，
+        /// 命令与内部推进（simulation.advance）共用同一入口统一去抖；仅成功续期才刷新时间戳，
+        /// 到期续租返回 false 仍按 fail-closed 抛出 <see cref="PlayerOwnershipLostException"/>。
+        /// 必须在单写者锁内调用。
+        /// </summary>
+        private async ValueTask RenewOwnershipLeaseIfDueAsync(CancellationToken cancellationToken)
+        {
+            if (ownership is null) return;
+            if (DateTimeOffset.UtcNow - _lastLeaseRenewedUtc < ownershipLease / 3) return;
+            if (!await ownership.RenewAsync(aggregate.PlayerId.Value, ownerInstanceId, ownershipLease, cancellationToken))
+                throw new PlayerOwnershipLostException(aggregate.PlayerId.Value);
+            _lastLeaseRenewedUtc = DateTimeOffset.UtcNow;
+        }
+
         /// <summary>重算并缓存下一个可见事件边界；必须在单写者锁内调用。</summary>
         private void RefreshNextVisibleBoundary()
         {
@@ -1303,7 +1337,11 @@ public sealed class PlayerRuntime(
             await _gate.WaitAsync(cancellationToken);
             try
             {
-                if (ownership is not null && !await ownership.RenewAsync(aggregate.PlayerId.Value, ownerInstanceId, ownershipLease, cancellationToken))
+                try
+                {
+                    await RenewOwnershipLeaseIfDueAsync(cancellationToken);
+                }
+                catch (PlayerOwnershipLostException)
                 {
                     // 所有权已转移给其他实例：本实例内存脏状态不再权威，跳过本次刷盘；
                     // actor 由运行时在下一次命令或推进时失效移除，durable 队列中已入队的写不受影响。
@@ -1529,15 +1567,17 @@ public sealed class PlayerRuntime(
 
         /// <summary>
         /// 按当前位置从共享注册表刷新节点公共建筑投影与汇总效果：注册表是跨玩家权威，
-        /// 聚合内仅保留最近已知副本（离线/冷挂机补算沿用）。投影内容变化时才标记 World 分段脏。
+        /// 聚合内仅保留最近已知副本（离线/冷挂机补算沿用）。
+        /// 注册表为每节点维护单调版本戳，(节点, 版本) 不变即跳过投影，命中才标记 World 分段脏。
         /// </summary>
         private async ValueTask RefreshNodeBuildingsAsync(DateTimeOffset now, CancellationToken cancellationToken)
         {
             if (nodeBuildings is null) return;
             if (!string.IsNullOrWhiteSpace(aggregate.World.EdgeId) || string.IsNullOrWhiteSpace(aggregate.World.NodeId))
             {
-                if (_nodeBuildingSignature == 0) return;
-                _nodeBuildingSignature = 0;
+                if (_nodeBuildingVersion == 0 && _nodeBuildingNodeId is null) return;
+                _nodeBuildingVersion = 0;
+                _nodeBuildingNodeId = null;
                 aggregate.World.NodeBuildings = [];
                 aggregate.World.NodeBuildingEffects = BuildingEffectSet.Empty;
                 aggregate.World.NodeBuildingNodeId = null;
@@ -1545,37 +1585,16 @@ public sealed class PlayerRuntime(
                 TouchDirtyOnly();
                 return;
             }
-            var buildings = await nodeBuildings.BuildingsForAsync(aggregate.World.NodeId, now, cancellationToken);
-            var signature = NodeBuildingSignature(buildings);
-            if (signature == _nodeBuildingSignature) return;
-            _nodeBuildingSignature = signature;
-            aggregate.World.NodeBuildings = buildings.ToList();
-            aggregate.World.NodeBuildingEffects = NodeBuildingRules.AggregateEffects(buildings, gameData.Buildings, now.ToUnixTimeMilliseconds() / 1000d);
-            aggregate.World.NodeBuildingNodeId = aggregate.World.NodeId;
+            var nodeId = aggregate.World.NodeId;
+            var view = await nodeBuildings.BuildingsForAsync(nodeId, now, cancellationToken);
+            if (view.Version == _nodeBuildingVersion && string.Equals(_nodeBuildingNodeId, nodeId, StringComparison.Ordinal)) return;
+            _nodeBuildingVersion = view.Version;
+            _nodeBuildingNodeId = nodeId;
+            aggregate.World.NodeBuildings = view.Buildings.ToList();
+            aggregate.World.NodeBuildingEffects = NodeBuildingRules.AggregateEffects(view.Buildings, gameData.Buildings, now.ToUnixTimeMilliseconds() / 1000d);
+            aggregate.World.NodeBuildingNodeId = nodeId;
             aggregate.MarkDirty(PlayerSectionKind.World);
             TouchDirtyOnly();
-        }
-
-        /// <summary>节点建筑投影的轻量指纹：任何等级/工程/材料投入变化都会改写签名，用于跳过重复投影。</summary>
-        private static long NodeBuildingSignature(IReadOnlyList<NodeBuildingState> buildings)
-        {
-            unchecked
-            {
-                var hash = 17L;
-                foreach (var entry in buildings)
-                {
-                    hash = hash * 31 + entry.BuildingId.GetHashCode();
-                    hash = hash * 31 + entry.Level;
-                    hash = hash * 31 + entry.TargetLevel;
-                    hash = hash * 31 + (long)(entry.StartedAtUnixSeconds * 1000);
-                    if (entry.ContributedMaterials is not null)
-                    {
-                        foreach (var pair in entry.ContributedMaterials.OrderBy(item => item.Key, StringComparer.Ordinal))
-                            hash = hash * 31 + pair.Key.GetHashCode() * 7 + (long)(pair.Value * 1000);
-                    }
-                }
-                return hash;
-            }
         }
 
         private async ValueTask ReloadWalletAsync(CancellationToken cancellationToken)
@@ -1672,21 +1691,6 @@ public sealed class PlayerRuntime(
         {
             var now = DateTimeOffset.UtcNow;
             foreach (var section in aggregate.DirtySections) _dirtyAt.TryAdd(SectionCodec.ToStorageKind(section), now);
-        }
-
-        private IReadOnlyList<StoredAction> BuildStoredActions()
-        {
-            return aggregate.Actions
-                .Select((action, index) => new StoredAction(
-                    aggregate.PlayerId.Value,
-                    index,
-                    action.Intent.ActionId.Value,
-                    JsonSerializer.SerializeToUtf8Bytes(action.Intent, ServerJson.Options),
-                    Math.Max(1, aggregate.StateVersion),
-                    action.Status.ToString().ToLowerInvariant(),
-                    null,
-                    $"action:{action.Id:D}"))
-                .ToArray();
         }
 
         /// <summary>

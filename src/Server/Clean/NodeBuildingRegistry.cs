@@ -84,18 +84,32 @@ public sealed record NodeBuildingMutationResult(
 }
 
 /// <summary>
+/// 单节点建筑只读快照：不可变数组 + 单调递增版本戳。
+/// 同节点内容任何变化（建造/升级/材料/完工）都会递增版本；版本不变即可跳过下游重投影。
+/// </summary>
+public sealed record NodeBuildingSnapshot(long Version, IReadOnlyList<NodeBuildingState> Buildings);
+
+/// <summary>
 /// 节点公共建筑共享注册表：跨玩家的权威建筑状态，进程内缓存 + PostgreSQL 持久化。
-/// 所有读写经单一信号量串行化（低频操作）；完工按 NodeBuildingRules 惰性推算，
-/// 首次被任何玩家观察到时把 Level 落库，保证在线/离线/重算结果一致。
+/// 写路径（建造/升级/贡献/惰性完工落库）仍经单一信号量串行化——contributed_materials
+/// 叠加与完工结算都要求单写者；读路径改为 Volatile 发布的不可变快照，玩家每拍推进
+/// 零锁直读，仅在快照内检测到到期完工工程时才进锁结算并重发该节点快照。
 /// </summary>
 public sealed class NodeBuildingRegistry(
     PostgresNodeBuildingRepository repository,
     GameDataCatalog gameData,
     ILogger<NodeBuildingRegistry> logger)
 {
+    /// <summary>「节点无建筑」的空快照：版本恒 0。</summary>
+    private static readonly NodeBuildingSnapshot EmptySnapshot = new(0, []);
+
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, List<NodeBuildingState>> _nodes = new(StringComparer.Ordinal);
-    private bool _loaded;
+    private readonly Dictionary<string, long> _versions = new(StringComparer.Ordinal);
+    /// <summary>已发布只读快照：锁内整体替换引用；锁外 Volatile 读取，数组内容不可变。</summary>
+    private IReadOnlyDictionary<string, NodeBuildingSnapshot> _snapshot =
+        new Dictionary<string, NodeBuildingSnapshot>(StringComparer.Ordinal);
+    private volatile bool _loaded;
 
     private async ValueTask EnsureLoadedAsync(CancellationToken cancellationToken)
     {
@@ -109,24 +123,30 @@ public sealed class NodeBuildingRegistry(
                 if (!_nodes.TryGetValue(nodeId, out var list)) _nodes[nodeId] = list = [];
                 list.Add(state);
             }
+            PublishAll();
             _loaded = true;
         }
         finally { _gate.Release(); }
     }
 
     /// <summary>
-    /// 返回指定节点当前全部建筑投影（含惰性完工结算；完工跳变会落库）。
-    /// 无建筑返回空数组。
+    /// 返回指定节点当前建筑快照（含惰性完工结算；完工跳变会落库并递增版本）。
+    /// 无到期工程时零锁直读已发布快照；节点无建筑返回版本 0 的空快照。
     /// </summary>
-    public async ValueTask<IReadOnlyList<NodeBuildingState>> BuildingsForAsync(string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
+    public async ValueTask<NodeBuildingSnapshot> BuildingsForAsync(string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         await EnsureLoadedAsync(cancellationToken);
+        var published = Volatile.Read(ref _snapshot);
+        if (!published.TryGetValue(nodeId, out var entry) || !HasDueCompletion(entry.Buildings, now))
+            return entry ?? EmptySnapshot;
+        // 读路径快进快出：只有快照内确有到期完工工程时才进写锁做惰性结算并重发。
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            if (!_nodes.TryGetValue(nodeId, out var list) || list.Count == 0) return [];
-            await FinalizeCompletionsAsync(nodeId, list, now, cancellationToken);
-            return list.ToArray();
+            if (!_nodes.TryGetValue(nodeId, out var list) || list.Count == 0) return EmptySnapshot;
+            if (await FinalizeCompletionsAsync(nodeId, list, now, cancellationToken))
+                PublishNode(nodeId, list);
+            return Volatile.Read(ref _snapshot).GetValueOrDefault(nodeId, EmptySnapshot);
         }
         finally { _gate.Release(); }
     }
@@ -134,9 +154,9 @@ public sealed class NodeBuildingRegistry(
     /// <summary>汇总指定节点已建成建筑效果；无建筑返回空效果集。</summary>
     public async ValueTask<BuildingEffectSet> EffectsForAsync(string nodeId, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var buildings = await BuildingsForAsync(nodeId, now, cancellationToken);
-        if (buildings.Count == 0) return BuildingEffectSet.Empty;
-        return NodeBuildingRules.AggregateEffects(buildings, gameData.Buildings, now.ToUnixTimeMilliseconds() / 1000d);
+        var snapshot = await BuildingsForAsync(nodeId, now, cancellationToken);
+        if (snapshot.Buildings.Count == 0) return BuildingEffectSet.Empty;
+        return NodeBuildingRules.AggregateEffects(snapshot.Buildings, gameData.Buildings, now.ToUnixTimeMilliseconds() / 1000d);
     }
 
     /// <summary>发起新建筑建造（目标等级 1）；同节点同种仅允许一座。</summary>
@@ -157,6 +177,7 @@ public sealed class NodeBuildingRegistry(
                 new Dictionary<string, double>(StringComparer.Ordinal));
             await repository.UpsertAsync(nodeId, state, cancellationToken);
             list.Add(state);
+            PublishNode(nodeId, list);
             return NodeBuildingMutationResult.Ok();
         }
         finally { _gate.Release(); }
@@ -174,7 +195,8 @@ public sealed class NodeBuildingRegistry(
             var index = list.FindIndex(entry => string.Equals(entry.BuildingId, buildingId, StringComparison.Ordinal));
             if (index < 0 || !gameData.Buildings.TryGetValue(buildingId, out var definition))
                 return NodeBuildingMutationResult.Fail("BUILDING_NOT_FOUND", "此地没有该建筑。");
-            await FinalizeCompletionsAsync(nodeId, list, now, cancellationToken);
+            if (await FinalizeCompletionsAsync(nodeId, list, now, cancellationToken))
+                PublishNode(nodeId, list);
             var state = list[index];
             if (state.Level <= 0)
                 return NodeBuildingMutationResult.Fail("BUILDING_INCOMPLETE", "建筑尚未建成，无法升级。");
@@ -188,6 +210,7 @@ public sealed class NodeBuildingRegistry(
             };
             await repository.UpsertAsync(nodeId, upgraded, cancellationToken);
             list[index] = upgraded;
+            PublishNode(nodeId, list);
             return NodeBuildingMutationResult.Ok();
         }
         finally { _gate.Release(); }
@@ -236,14 +259,54 @@ public sealed class NodeBuildingRegistry(
             var updated = state with { ContributedMaterials = merged };
             await repository.UpsertAsync(nodeId, updated, cancellationToken);
             list[index] = updated;
+            PublishNode(nodeId, list);
             return new NodeBuildingMutationResult(true, AppliedMaterials: applied);
         }
         finally { _gate.Release(); }
     }
 
-    /// <summary>惰性完工结算：把已到双进度满格的工程落为有效等级并持久化跳变。</summary>
-    private async ValueTask FinalizeCompletionsAsync(string nodeId, List<NodeBuildingState> list, DateTimeOffset now, CancellationToken cancellationToken)
+    /// <summary>快照内是否存在已到期完工的工程（材料与时间双进度满格）；纯只读推算，不进锁。</summary>
+    private bool HasDueCompletion(IReadOnlyList<NodeBuildingState> buildings, DateTimeOffset now)
     {
+        var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
+        foreach (var state in buildings)
+        {
+            // TargetLevel == Level 的退化行永远不会改写等级，不算到期（与 FinalizeCompletionsAsync 跳过条件对齐）。
+            if (state.TargetLevel <= 0 || state.TargetLevel == state.Level) continue;
+            if (gameData.Buildings.TryGetValue(state.BuildingId, out var definition)
+                && NodeBuildingRules.IsComplete(state, definition, nowUnixSeconds))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>锁内重发单节点快照：复制为不可变数组并递增版本戳，读路径随后零锁可见。</summary>
+    private void PublishNode(string nodeId, List<NodeBuildingState> list)
+    {
+        var version = _versions.GetValueOrDefault(nodeId) + 1;
+        _versions[nodeId] = version;
+        var next = new Dictionary<string, NodeBuildingSnapshot>(_snapshot, StringComparer.Ordinal);
+        next[nodeId] = new NodeBuildingSnapshot(version, list.ToArray());
+        Volatile.Write(ref _snapshot, next);
+    }
+
+    /// <summary>锁内重建全量快照：仅在初次加载后调用一次，各节点版本从 1 起（0 保留给空节点）。</summary>
+    private void PublishAll()
+    {
+        var next = new Dictionary<string, NodeBuildingSnapshot>(_nodes.Count, StringComparer.Ordinal);
+        foreach (var (nodeId, list) in _nodes)
+        {
+            var version = _versions.GetValueOrDefault(nodeId) + 1;
+            _versions[nodeId] = version;
+            next[nodeId] = new NodeBuildingSnapshot(version, list.ToArray());
+        }
+        Volatile.Write(ref _snapshot, next);
+    }
+
+    /// <summary>惰性完工结算：把已到双进度满格的工程落为有效等级并持久化跳变；返回是否有落成。</summary>
+    private async ValueTask<bool> FinalizeCompletionsAsync(string nodeId, List<NodeBuildingState> list, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var changed = false;
         var nowUnixSeconds = now.ToUnixTimeMilliseconds() / 1000d;
         for (var index = 0; index < list.Count; index++)
         {
@@ -253,7 +316,9 @@ public sealed class NodeBuildingRegistry(
             if (ReferenceEquals(finalized, state) || finalized.Level == state.Level) continue;
             await repository.UpsertAsync(nodeId, finalized, cancellationToken);
             list[index] = finalized;
+            changed = true;
             logger.LogInformation("节点建筑完工 node={NodeId} building={BuildingId} level={Level}", nodeId, finalized.BuildingId, finalized.Level);
         }
+        return changed;
     }
 }

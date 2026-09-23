@@ -112,7 +112,7 @@ public static class OpsPanel
                 stateVersion = snapshot.StateVersion,
                 presence = snapshot.State.Presence.ToString().ToLowerInvariant(),
                 lastSimulatedAt = snapshot.LastSimulatedAt,
-                actionCount = snapshot.Actions.Count,
+                actionCount = snapshot.QueuedActionCount,
                 assetCount = snapshot.Assets.Count
             }));
         });

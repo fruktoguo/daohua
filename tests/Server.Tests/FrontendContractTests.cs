@@ -32,7 +32,7 @@ public sealed class FrontendContractTests
         Assert.Equal(10, restored.Loadout.CoreAttributes.StaminaLevel);
         var state = restored.ExportState();
         var snapshot = new PlayerRuntimeSnapshot(player.PlayerId.Value, player.AccountId.Value.ToString(), player.DisplayName,
-            player.StateVersion, player.LastSimulatedAt, state, [], []);
+            player.StateVersion, player.LastSimulatedAt, state, 0, []);
         var dto = ProtocolSnapshotMapper.ToSnapshot(snapshot, catalog.Fingerprint, catalog);
         var fixture = Path.Combine(Path.GetTempPath(), $"daohua-frontend-contract-{Guid.NewGuid():N}.json");
         try
