@@ -32,18 +32,16 @@
 flowchart TD
     Config["单点真实数据源 (Single Source of Truth)<br>config/game-data/expected-attributes.json"]
     
-    Doc1["【玩家与装备模型】<br>player-expected-attributes-model.md<br>(12阶位+8品质 / 4大乘区 / 基础池与最终期望)"]
-    Doc2["【战斗与产出基准】<br>combat-benchmark-model.md<br>(关卡怪物标准 / 动态抗性 / 二次曲线 / 单人与3人队效率比)"]
+    Doc1["【数值量化模型集】<br>数值量化模型集.md<br>(12阶位+8品质 / 4大乘区 / 基础池与最终期望 / 关卡怪物标准与效率比)"]
     
     Domain["领域模型与确定性模拟<br>src/Domain"]
     Server["服务启动装配与聚合运行时<br>src/Server"]
     
-    Config --> Doc1 & Doc2
+    Config --> Doc1
     Config --> Domain & Server
 ```
 
-- **玩家期望属性与装备预算模型**：详见 [`player-expected-attributes-model.md`](../design/player-expected-attributes-model.md)；
-- **战斗基准模拟与产出期望模型**：详见 [`combat-benchmark-model.md`](../design/combat-benchmark-model.md)；
+- **玩家期望属性、装备预算与战斗产出基准模型**：详见 [`数值量化模型集.md`](../design/总纲/11-数值量化模型集.md)；
 - **前端公共组件与模板规范**：详见 [`common-components.md`](../frontend/common-components.md)。
 
 ---
@@ -52,8 +50,9 @@ flowchart TD
 
 当前标准战斗节奏为：
 - `searchMilliseconds`：遭遇搜寻阶段耗时，默认 5000ms（5.0 秒），字段原样消费；
-- `respawnMilliseconds`：波次间刷怪间隔，默认 5000ms（5.0 秒），字段原样消费；寻敌速度成长与阶位曲线属于数值模型规划项（见 `combat-benchmark-model.md`），落地后以该文档口径为准，当前结算按配置原值执行；
-- `playerRespawnMilliseconds`：玩家死亡后的复活时间，默认 180000ms（180 秒）。玩家死亡不会完成当前波次，只有当前波怪物全灭才计入一次战斗通关。
+- `respawnMilliseconds`：波次间刷怪间隔，默认 5000ms（5.0 秒），字段原样消费；寻敌速度成长与阶位曲线属于数值模型规划项（见 `数值量化模型集.md` 第二部分），落地后以该文档口径为准，当前结算按配置原值执行；
+- `playerRespawnMilliseconds`：玩家方团灭后的复活读条时长，默认 180000ms（180 秒）。语义由 `onPartyWipe` 决定：`respawn` 时为战斗内原地起身读条，`defeat` 时为拆场复活点读条。玩家死亡不会完成当前波次，只有当前波怪物全灭才计入一次战斗通关；
+- `onPartyWipe`：团灭分流规则枚举，`"respawn"`（原地复活续战）或 `"defeat"`（团灭即败终局），缺省 `respawn`；规则细则见 [战斗规约 §7.9.4](../design/总纲/07-战斗数值与内视规约.md#794-团灭分流规约原地复活-vs-团灭即败)。
 
 技能灵力消耗以 `manaCost` 字段直接点数声明（如 `manaCost: 10` 即消耗 10 点灵力），不再使用比例换算字段。
 

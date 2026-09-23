@@ -53,7 +53,7 @@
 5. **`Loadout`（`PlayerLoadoutState`）**：已装备物品实例引用、已学功法槽、自动使用槽（`AutoUseSlotState`）。
 6. **`Settings`（`PlayerSettingsState`）**：低频偏好——**循环开关 `LoopEnabled` 在 Settings，不在 ActionQueue**；语言、通知等。
 7. **`ActionQueue`（`QueuedAction` 列表）**：进行中与排队行动、进度、剩余重复次数、远征/移动子状态。
-8. **`Duel`（`PlayerDuelState`）**：斗法遭遇计数、冷却、暂存区与战报账本；记账点口径见 `docs/design/action-statistics-system.md`。
+8. **`Duel`（`PlayerDuelState`）**：斗法遭遇计数、冷却、暂存区与战报账本；记账点口径见 `docs/design/行动统计系统.md`。
 
 **资产边界**：灵石、可堆叠物品余额、唯一装备实例一律由 `AssetWallet` + `economy.*` 关系表承载，不得塞进聚合分段；聚合内不保留 Inventory/Stats 切片。
 

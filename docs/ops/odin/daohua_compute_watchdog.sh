@@ -15,6 +15,8 @@ while true; do
         nohup proot-distro login ubuntu -- /bin/bash -c "
             cd /root/daohua-compute
             export DAOHUA_COMPUTE_TOKEN=odin-local-test-token-0123456789abcdef
+            export DAOHUA_COMPUTE_UPSTREAM_URL=wss://daohua.yuohira.com/internal/compute-link
+            export DAOHUA_COMPUTE_NODE_NAME=odin
             export DOTNET_gcServer=0 DOTNET_GCConserveMemory=5 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
             exec /root/daohua-compute/DaoHua.ComputeNode
         " </dev/null >>/data/data/com.termux/files/home/daohua_compute.log 2>&1 &

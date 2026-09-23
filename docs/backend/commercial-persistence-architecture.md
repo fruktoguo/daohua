@@ -186,9 +186,10 @@ OTel/结构化日志 ───────────► 远端观测平台
 主服务 → ComputeNode 冷挂机派发链已实现，链路为：
 
 1. `ColdCatchUpWorker` 周期性扫描 `game.player_projection`（presence=offline、last_active_at 落在 48h 封顶窗口内、已过断线宽限、无存活运行时租约、无未完结任务），经 `IPlayerStateRepository.LoadAsync` 读取最新有效 section（含 durable 队列叠加），编码为 compute.v1 `AdvanceJobRequest` JSON 作为 input_payload 写入 `platform.compute_jobs`；job_id 由玩家与目标时刻确定性派生，重复入队走 upsert 去重。
-2. `ComputeDispatcherWorker` 以 `FOR UPDATE SKIP LOCKED` 批量领取到期任务（含租约过期的孤儿 leased 行），组装 `AdvanceBatchRequest` 携带 `X-Compute-Token` 与游戏数据指纹 POST 到 `ComputeNode:Endpoints`。
-3. 每个 `AdvanceJobResult` 成功时经 `PostgresSectionRepository.ApplyComputeResultAsync` 落库：先锁提交头并要求 `state_version == SourceStateVersion`，玩家已上线或版本漂移则整体丢弃结果并记日志，绝不覆盖在线写者；随后更新 section 与提交头（同一加锁顺序，与刷盘 worker 无死锁环）。
-4. 失败语义：节点返回 Retryable 失败或响应缺失按指数退避重试；载荷非法、输出污染等不可重试错误直接置 `dead`；HTTP/网络层失败按租约令牌整批退回 pending；领取次数超过 `ComputeNode:MaxAttempts` 一律 dead。`ComputeNode:Endpoints/Token` 未配置时派发器与扫描器安全停用，任务保留 pending，主服务不做内联补算。
+2. 计算节点经 `compute-link.v1` **反向拨入**：节点主动 WebSocket 连接 `/internal/compute-link`（`X-Compute-Token` 鉴权 + hello 握手声明并发容量与配表指纹），握手通过即注册进 `ComputeLinkRegistry` 动态节点组；连接存活即在线，断开即热拔出。节点位于 NAT/防火墙后也可工作（odin 类设备只需求出方向连通），无需隧道或静态端点配置。
+3. `ComputeDispatcherWorker` 先从注册表取剩余容量最大的在线节点（无节点则不领取，任务留 pending 不消耗 attempts），再以 `FOR UPDATE SKIP LOCKED` 批量领取到期任务（含租约过期的孤儿 leased 行），组装 `AdvanceBatchRequest` 经节点链路下发并等待同批次结果帧。
+4. 每个 `AdvanceJobResult` 成功时经 `PostgresSectionRepository.ApplyComputeResultAsync` 落库：先锁提交头并要求 `state_version == SourceStateVersion`，玩家已上线或版本漂移则整体丢弃结果并记日志，绝不覆盖在线写者；随后更新 section 与提交头（同一加锁顺序，与刷盘 worker 无死锁环）。
+5. 失败语义：节点返回 Retryable 失败或响应缺失按指数退避重试；载荷非法、输出污染等不可重试错误直接置 `dead`；节点断线或批次超时按租约令牌整批退回 pending；领取次数超过 `ComputeNode:MaxAttempts` 一律 dead。`ComputeNode:Enabled/Token` 未配置时派发器与扫描器安全停用，任务保留 pending，主服务不做内联补算；hello 配表指纹不匹配的节点被拒绝注册，防止旧版本节点按旧口径算新任务。
 
 ### 6. social：好友、队伍与传音
 

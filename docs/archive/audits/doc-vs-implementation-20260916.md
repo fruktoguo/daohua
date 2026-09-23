@@ -21,7 +21,7 @@
 
 7. **未登记脚本 + dev-service.sh 卷名陈旧**：`check-frontend-contracts.mjs`（被 tests/Server.Tests 实际调用）、`config-editor.sh`、`dev.sh`、`dev-hot.mjs`、`dev-service.sh`、`optimize-svg.mjs` 文档未提；`dev-service.sh:24` 硬编码生产卷名 `daohua_daohua-postgres`，与本地卷 `daohua-local-postgres18`（compose.yaml:225）不符，会在本地创建孤儿卷。【文档滞后+配置陈旧】【中】
 
-8. **docs/README.md 自称「唯一入口」但索引不全**：缺 `audits/`、`临时设计讨论/`、`project-analysis-*.md`、`battle-effects-gallery.html`；`:42` 仍保留已删除的 `ui-layout-island-demo.html` 条目；`:78` 描述 maps.md 为「云脊山脉」「WorldCatalog」（实际青云仙山、该类型 0 命中）。【文档滞后】【中】
+8. **docs/README.md 自称「唯一入口」但索引不全**：缺 `audits/`、`临时设计讨论/`、`project-analysis-*.md`、`战斗演武画廊.html`；`:42` 仍保留已删除的 `ui-layout-island-demo.html` 条目；`:78` 描述 maps.md 为「云脊山脉」「WorldCatalog」（实际青云仙山、该类型 0 命中）。【文档滞后】【中】
 
 9. **README 压测命令不可运行**：`--scenario websocket/http-read` 两命令必抛「未知场景」——LoadTests 只剩 `capacity-target`（`LoadTestOptions.cs:55-60`）；performance-baseline.md §重测入口同样失实（其 §0 声称用正式 Simulation/PacketCodec，实为 `ComputeLoadScenario` 合成哈希循环，且 LoadTests 无 Domain 引用，`PacketCodec` 类型不存在，存储合成仅 6 段缺 `action_queue`）。【描述错误】【高】
 
@@ -141,7 +141,7 @@
 
 59. **生平计数无实现**：文档 normalKills/eliteKills/bossKills/playersDefeated/cultivationSeconds 等；领域层无对应字段，前端 `combatWins/combatLosses/cultivationCycles` 无服务端来源，`InsightPage` 以 `??0` 兜底。【文档超前】【中】
 
-60. **强化公式口径冲突**：expected-attributes.json 自述 `1.05^EnhancementLevel`；实现 `1+enhancement×0.02` 线性且同时乘 flat 与 ratios（master-design「+2%/级」与实现一致，expected-attributes 公式陈旧）。【描述错误】【中】
+60. **强化公式口径冲突**：expected-attributes.json 自述 `1.05^EnhancementLevel`；实现 `1+enhancement×0.02` 线性且同时乘 flat 与 ratios（总纲「+2%/级」与实现一致，expected-attributes 公式陈旧）。【描述错误】【中】
 
 61. **`combatSimulationBaseline` 残留块**：expected-attributes.json 每 tier 的旧版数据与文档表格自相矛盾（T2 CDR 10.1 vs 1.4 等），无代码消费。【描述错误】【低】
 

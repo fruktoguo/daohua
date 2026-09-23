@@ -39,13 +39,16 @@ Termux 层常驻: sshd / postgres:15432 / ddns-go:9876 / frpc / cloudflared / �
         └─ nohup proot-distro login ubuntu -- bash -c '
               cd /root/daohua-compute
               export DAOHUA_COMPUTE_TOKEN=<见设备文件，勿入仓库>
+              export DAOHUA_COMPUTE_UPSTREAM_URL=wss://daohua.yuohira.com/internal/compute-link
+              export DAOHUA_COMPUTE_NODE_NAME=odin
               export DOTNET_gcServer=0 DOTNET_GCConserveMemory=5 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
               exec ./DaoHua.ComputeNode'          # 崩溃/退出后 10s 内自动拉起
 ```
 
 - 二进制：`/root/daohua-compute/`（Ubuntu rootfs 内，glibc 自包含构建）
-- 监听：`0.0.0.0:8090`；健康检查 `GET /healthz`、`/readyz`（无需令牌）
-- 日志：`~/daohua_compute.log`（节点 stdout）、`~/daohua_compute_watchdog.log`（守护拉起记录）
+- 链路：主动拨出 `wss://daohua.yuohira.com/internal/compute-link`（compute-link.v1）注册进云端动态节点组；NAT 后免隧道，断线自动指数退避重连
+- 本地监听：`0.0.0.0:8090`；健康检查 `GET /healthz`、`/readyz`（无需令牌），`/internal/v1/compute/advance-batch` 仅作调试口
+- 日志：`~/daohua_compute.log`（节点 stdout，含 `ComputeNode.Upstream` 链路日志）、`~/daohua_compute_watchdog.log`（守护拉起记录）
 - wrapper 备份：`~/ssh_ubuntu_wrapper.sh.bak-daohua`
 
 ## 常用运维操作
@@ -77,8 +80,8 @@ docs/ops/odin/redeploy-compute.sh
 
 脚本在 Mac 上完成 `linux-arm64` 自包含发布、scp 到 `/root/daohua-compute.new`、原子换目录并触发守护重启。运行中的二进制不可覆写（ETXTBSY），故必须走「新目录 → mv → 杀进程 → 守护拉起」路径。
 
-## 接入主服务的缺口
+## 接入主服务
 
-- 当前令牌为测试值 `odin-local-test-token-0123456789abcdef`（在设备 `~/daohua_compute_watchdog.sh` 内）；正式接入前生成真实 `COMPUTE_TOKEN` 并同步两侧。
-- odin 在内网 NAT 后，云端主服务无法直连 `192.168.1.144:8090`；要让云端把 `compute_jobs` 派发到 odin，需借助设备上已有的 frpc/cloudflared 通道把 8090 以受控方式暴露（`X-Compute-Token` 仍是唯一鉴权边界），或等待双向隧道方案落地。
-- 设备息屏/断网即离线；节点设计为可水平替换，离线只会导致派发失败重试，不影响主服正确性。
+- 接入方式（compute-link.v1）：odin 主动拨出 `wss://daohua.yuohira.com/internal/compute-link`，`X-Compute-Token` 鉴权 + hello 握手（nodeName=odin、并发容量、配表指纹）后进入动态节点组；连接即注册、断开即热拔出，在飞批次由主服按租约退回重试。
+- 令牌：设备 `~/daohua_compute_watchdog.sh` 内的 `DAOHUA_COMPUTE_TOKEN` 必须与云端 `/opt/daohua/daohua.env` 的 `COMPUTE_TOKEN` 一致；仓库内脚本只保留占位值，正式接入时在设备上同步真实令牌（勿入仓库）。
+- 设备息屏/断网即离线；节点设计为可水平替换，离线只会导致其批次退回 pending 由其他节点/稍后重试消化，不影响主服正确性。

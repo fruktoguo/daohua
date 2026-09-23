@@ -32,8 +32,8 @@
 
 | 编号 | 判定 | 当前证据与修正 |
 | --- | --- | --- |
-| A-01 | 成立 | `src/Domain/Combat/CombatModels.cs:300-302` 为单层双曲减伤，与 `docs/design/combat-design.md:132-140` 的平方伤害和五行二次减伤不同。 |
-| A-02 | 部分成立 | 已有 Accuracy/Evasion 阈值比较，缺少文档的概率命中、暴击、破拆招；不能写命中闪避全部零实现。证据同 A-01，规约 `combat-design.md:153-164`。 |
+| A-01 | 成立 | `src/Domain/Combat/CombatModels.cs:300-302` 为单层双曲减伤，与 `docs/design/战斗设计.md:132-140` 的平方伤害和五行二次减伤不同。 |
+| A-02 | 部分成立 | 已有 Accuracy/Evasion 阈值比较，缺少文档的概率命中、暴击、破拆招；不能写命中闪避全部零实现。证据同 A-01，规约 `战斗设计.md:153-164`。 |
 | A-03 | 成立 | `src/Domain/GameData/GameDataCatalog.cs:264-292` 不解析 ability；`CombatModels.cs:276-284` 只有普攻，未发现领域耗蓝执行链。 |
 | A-04 | 成立 | `src/Domain/Simulation/SimulationEngine.cs:104,359` 只推进行动并写战斗掉血；`CombatModels.cs:264-287` 只有攻击时钟，没有回复执行。回复周期的具体冲突见下文 X 复核。 |
 | A-05 | 成立 | `SimulationEngine.cs:310-318,385-393` 战败/死亡进入 Blocked，无复活阶段；`CombatCatalogModels.cs:33` PlayerRespawnSeconds 无消费。 |
@@ -58,7 +58,7 @@
 | B-07 | 成立 | `SimulationEngine.cs:109-122` 非循环 Blocked 直接 break 留在队首，与 `initial-design.md:59` 移除规则不同。 |
 | B-08 | 部分成立 | SpeedBonus/ActualDuration 模型未落地；当前 `SimulationEngine.cs:149,174-179,888` 实际耗时等于基础耗时，扣基础时间没有违反现有实际时长。不能说已有加速效果却扣错。 |
 | B-09 | 成立 | `PlayerAggregate.cs:335` 上限百万，`initial-design.md:58` 上限千。 |
-| B-10 | 成立 | `config/game-data/items/pills.json:29,34-36,52,57-59` 为60秒CD/30秒Buff、12HP/8MP及5%其他属性；`master-design.md:209-210` 为30秒CD/60秒持续、2HP/1MP及100%回复。连CD和持续期也不同，不能称已验证可玩。 |
+| B-10 | 成立 | `config/game-data/items/pills.json:29,34-36,52,57-59` 为60秒CD/30秒Buff、12HP/8MP及5%其他属性；`总纲.md:209-210` 为30秒CD/60秒持续、2HP/1MP及100%回复。连CD和持续期也不同，不能称已验证可玩。 |
 | B-11 | 部分成立 | 文档1与10冲突属实；`initial-design.md:28,53` 是1，master第208行是10MP。实际 `SimulationEngine.cs:751-752` 每轮增加10 Progression.Qi/LifetimeQi，不增加 Combat.Manapoints，应先修正资源语义描述。 |
 
 ## C：市场与经济
@@ -100,15 +100,15 @@
 
 | 编号 | 判定 | 当前证据与修正 |
 | --- | --- | --- |
-| F-01 | 部分成立 | `NearbyPanel.tsx:88` 危险度无数据来源，`snapshot.ts:438` 不保留预算；但 `generic-map-and-encounter-system.md:110-113` 明确预算归 encounters，与自身节点示例冲突。不能直接要求 maps 新增字段。 |
+| F-01 | 部分成立 | `NearbyPanel.tsx:88` 危险度无数据来源，`snapshot.ts:438` 不保留预算；但 `通用地图与遇怪系统.md:110-113` 明确预算归 encounters，与自身节点示例冲突。不能直接要求 maps 新增字段。 |
 | F-02 | 部分成立 | `tier1_minions.json:9,37` 预算10/15，`tier1_elites_bosses.json:67` 为45，数字差异存在；文档 `:219-232` 为算法示例，未确立其为现行配表真源。 |
 | F-03 | 部分成立 | `tier1_elites_bosses.json:4,60,127` 与文档代表/示例名称不同；属文档用词漂移，不是玩法能力缺失。 |
 | F-04 | 部分成立 | 节点ID示例与现行配置不同；`docs/world/maps.md:3-4` 已指定当前八节点基准和未来储备，不应直接补齐旧示例节点。 |
 | F-05 | 成立 | `maps.md:15-18` 四组当前主线坐标与 `config/game-data/maps/qingyun_mountain.json:65,87,109,131` 不同。 |
 | F-06 | 部分成立 | `maps.md:52,66` 称两旧节点已存在，但与其当前八节点基准矛盾；是旧事实未清理，不能据此判配表必须新增节点。 |
 | F-07 | 成立 | `config/game-data/maps/xingyun_realm.json:3-4` 存在第二张地图，design/world 未覆盖该ID或名称。 |
-| F-08 | 误报 | 同名遭遇跨七节点复用，符合 `generic-map-and-encounter-system.md:113` 可跨节点复用的约定；同名不能证明挂载错位。 |
-| F-09 | 误报 | 文档 `generic-map-and-encounter-system.md:67-85` 本就采用预算/权重，缺显式属性不是缺配表。另有真实缺陷：`GameDataCatalog.cs:429-434` 战斗按权重推导，`StaticGameCatalogMapper.cs:245-251` 忽略权重。魔化野兔实际HP115/攻3/甲0.65，静态目录100/10/0（`tier1_minions.json:9-15`）。应修正映射一致性，不应凭此新增冗余数值字段。 |
+| F-08 | 误报 | 同名遭遇跨七节点复用，符合 `通用地图与遇怪系统.md:113` 可跨节点复用的约定；同名不能证明挂载错位。 |
+| F-09 | 误报 | 文档 `通用地图与遇怪系统.md:67-85` 本就采用预算/权重，缺显式属性不是缺配表。另有真实缺陷：`GameDataCatalog.cs:429-434` 战斗按权重推导，`StaticGameCatalogMapper.cs:245-251` 忽略权重。魔化野兔实际HP115/攻3/甲0.65，静态目录100/10/0（`tier1_minions.json:9-15`）。应修正映射一致性，不应凭此新增冗余数值字段。 |
 | F-10 | 部分成立 | `combat.json:28-35` 七节点许可与节点反向列表不完全相同；文档 `:111` 允许行动与遭遇分开挂载，应先明确谁是权威。原报告把 tea-house 归入星陨错误，它在 `qingyun_mountain.json:128`，不在该战斗许可中。 |
 
 ## E：持久化与运维
@@ -148,7 +148,7 @@
 | X-02 | 与 D-14 重复；需要确认丹药 Buff 与自然回复是否共用同一单位，不能仅凭不同标签断言。 |
 | X-03 | `PlayerAggregate.cs:64-70` 初始100/100，`combatConstants.ts:228-229` 基准100/50，不一致成立；实际快照读服务端血蓝，不代表全部UI都显示50。 |
 | X-04 | 命名并存属实，但 `maps.md:3-4` 已区分当前基准与未来储备，不是独立Bug。 |
-| X-05 | 历史证据：`combat-design.md:214` MP每5秒2%，`:217` MP每10秒2%，相差一倍；前端基准100HP/50MP的2/1点仅在该基准恰为2%。后续用户已澄清回复读取基础属性配置，生命2%仅是配表依据，不能由该基准推导灵力固定比例，也不能据旧字段确定五秒或十秒周期。 |
+| X-05 | 历史证据：`战斗设计.md:214` MP每5秒2%，`:217` MP每10秒2%，相差一倍；前端基准100HP/50MP的2/1点仅在该基准恰为2%。后续用户已澄清回复读取基础属性配置，生命2%仅是配表依据，不能由该基准推导灵力固定比例，也不能据旧字段确定五秒或十秒周期。 |
 | X-06 | 当前八节点一致；本轮未重新以图论脚本验证七条边，不作新的完整验收声明。 |
 
 ## 验证与 Git 边界

@@ -19,6 +19,8 @@ docs/
 └── tasks.md   任务面板与开发进度看板（总览索引、状态看板与路线图）
 ```
 
+> 另：本目录 [`DESIGN.md`](DESIGN.md) 为**设计理念总集**——各子系统「为什么这样设计」的意图索引层，浓缩顶层哲学与红线并链接回本目录各专题真源，不复制数值与规则细节。
+
 ## 任务面板
 
 | 文档 | 定位 |
@@ -31,20 +33,11 @@ docs/
 
 | 文档 | 定位 |
 | --- | --- |
-| [master-design.md](design/master-design.md) | **全景主设计总纲 (Master GDD)**：全域最高权威设计总纲，融汇数值底座、装备技能、持续消耗品、战斗引擎、大世界生态、世界观剧情、UI交互系统、服务端聚合架构与运维容量。 |
-| [master-design.html](design/master-design.html) | **全景主设计总纲·单文件修仙沉浸查看器**：独立离线单文件网页，无需开发服务，双击即开，内置暗墨玄石古典美学、大纲导航、实时搜索、数学公式与动态 MD 载入。内嵌数据为 `master-design.md` 的手工同步副本，改 md 后必须同步。 |
-| [character-core-design.md](design/character-core-design.md) | **角色连续性设计哲学**：统一常驻修仙者实体哲学、多维生命体征、跨行为状态连续穿透、Buff/Debuff 统一时间轴衰减、1 HP 濒死复苏、动作互锁。 |
-| [combat-design.md](design/combat-design.md) | 战斗数值与内视设计规约：`double` 数值类型架构、六维根基换算、抗性减伤与对抗公式、反应钩子管线与斗法规约。 |
-| [player-expected-attributes-model.md](design/player-expected-attributes-model.md) | 境界阶位体系与基准玩家期望属性量化模型（数值表为历史生成产物快照，手工同步维护）。 |
-| [combat-benchmark-model.md](design/combat-benchmark-model.md) | 战斗基准模拟与关卡产出期望模型：全 12 阶单人与组队效率基准（数值表为历史生成产物快照，手工同步维护）。 |
-| [generic-map-and-encounter-system.md](design/generic-map-and-encounter-system.md) | **通用地图架构、生物与质量预算遇怪系统设计规范**：摒弃纯战斗地图、确立"通用世界地点"模型，节点生态聚合体（行动体系、NPC 与怪物）与质量预算驱动的遇怪生成。 |
-| [node-building-system.md](design/node-building-system.md) | **节点公共建筑系统设计规范**：节点级公共建筑注册表（无建造者、同种一座、全民可建可填可升）、材料%/时间%双进度条、节点可建模板/自定义列表、效果 modifiers 与数值预算。 |
-| [action-statistics-system.md](design/action-statistics-system.md) | **行动统计系统设计规范**：战报泛化为三账本（行动实例 / 离线会话 / 每日 UTC+8 自然日），经验/物品得失/行动信息分段与记账点。 |
-| [sustained-consumable-system.md](design/sustained-consumable-system.md) | **动作耗时分摊持续消耗品机制设计规范**：立即/持续消耗品分类、按动作实际耗时扣减持续时间、槽位持久化、透支结算与切换惩罚，以及引气入体与引气丹数值基线。 |
-| [battle-scene-demo.html](design/battle-scene-demo.html) | **战斗场景纯 HTML 实机画面 Demo**：对齐当前战斗截图的离线单文件快速验证页，复用角色图像资产并提供基础战斗交互。 |
-| [battle-effects-gallery.html](design/battle-effects-gallery.html) | **战斗特效画廊**：离线单文件特效预览页，用于战斗表现与词条效果的美术/交互走查。 |
+| [总纲/](design/总纲/) | **设计总纲 (Master GDD)**：全域最高权威设计规范，17 篇分卷（篇目目录见文件夹 `README.md`）——核心哲学、角色常驻实体、境界数值底座、装备/技能/消耗品、战斗数值与内视、大世界地图遇怪、节点建筑、怪物产出基准、数值量化模型、世界观剧情、UI 交互、传音日志、服务端架构、运维容量、行动统计；原各专题设计文档已全部收编为对应篇正文，`design/总纲.md` 为指引 stub。 |
+| [总纲/index.html](design/总纲/index.html) | **总纲·修仙沉浸查看器**：自动读取同文件夹全部篇目（`manifest.json` + `NN-*.md`）拼接渲染为整页，内置暗墨玄石古典美学、大纲导航、实时搜索、数学公式与篇目内页内跳转；HTTP 访问永远读最新，file:// 直开回退内嵌快照（`node scripts/sync-master-viewer.mjs` 同步）并可手动读取文件夹。 |
+| [战斗演武画廊/](design/战斗演武画廊/index.html) | **战斗演武画廊**：与正式界面同构的演武沙盘，直链 frontend 真实样式与资源；特效按真实技能 ID 拆分于 `vfx/abilities/`，结算走配表 `castMilliseconds`/`targetType`/`manaCost`，支持单技能点测、全量轮播、敌方演示与 `?selftest=1` 自检。 |
 
-生成链路说明：原 `scripts/generate-combat-benchmark.py` 生成脚本已移除；`player-expected-attributes-model.md`、`combat-benchmark-model.md` 与 `config/game-data/expected-attributes.json` 中的数值表为历史生成产物快照，后续修改数值模型时按设计评审口径手工同步维护，不再经脚本重新生成。
+生成链路说明：原 `scripts/generate-combat-benchmark.py` 生成脚本已移除；`总纲/11-数值量化模型集.md`（由原 `player-expected-attributes-model.md` 与 `combat-benchmark-model.md` 合并）与 `config/game-data/expected-attributes.json` 中的数值表为历史生成产物快照，后续修改数值模型时按设计评审口径手工同步维护，不再经脚本重新生成。
 
 ## backend/ — 服务端开发与架构规范
 
@@ -81,19 +74,19 @@ docs/
 | 文档 | 定位 |
 | --- | --- |
 | [deep-risk-analysis-20260919.md](audits/deep-risk-analysis-20260919.md) | **最新**：六路并行深度风险分析总报告（高10/中19/低23，含证据行号与处置优先级）。 |
-| [doc-vs-implementation-20260919.md](audits/doc-vs-implementation-20260919.md) | 文档与实现一致性审计（2026-09-19）。 |
-| [doc-vs-implementation-20260916.md](audits/doc-vs-implementation-20260916.md) | 文档与实现一致性审计（2026-09-16）。 |
-| [doc-vs-implementation-20260915.md](audits/doc-vs-implementation-20260915.md) | 文档与实现一致性审计（2026-09-15）。 |
-| [doc-vs-implementation-20260914.md](audits/doc-vs-implementation-20260914.md) | 文档与实现一致性审计（2026-09-14）。 |
-| [doc-vs-implementation-20260914-recheck.md](audits/doc-vs-implementation-20260914-recheck.md) | 2026-09-14 审计结论逐项复核。 |
+| [doc-vs-implementation-20260919.md](audits/doc-vs-implementation-20260919.md) | 文档与实现一致性审计（2026-09-19，现行口径）。 |
+| [model-fork-audit-20260923.md](audits/model-fork-audit-20260923.md) | 普攻/吟唱统一时间线模型分叉审计（2026-09-23）。 |
+
+> 已结题的 0914 / 0914-recheck / 0915 / 0916 四轮一致性审计归档于 [`archive/audits/`](archive/audits/)。
 
 ## archive/ — 历史归档
 
 | 文档 | 定位 |
 | --- | --- |
 | [analysis/](archive/analysis/) | 时点性项目分析快照：`project-analysis-20260828.md`、`project-analysis-20260910.md`、`project-analysis-20260915.md`，供追溯演进脉络。 |
-| [design/](archive/design/) | 废弃/被取代的设计稿：`initial-design.md`（v0.1 历史底稿，内容已由 master-design 吸收）、`ecs-architecture-and-evolution-plan.md`（ECS/Fiber 推演稿，已被聚合模型取代）、`early-game-skills-design.md`（废弃 stub，真源为 `config/game-data/abilities/`）、`milky-way-idle-mapping.md`（外部借称清理记录，已废除）。 |
+| [design/](archive/design/) | 废弃/被取代的设计稿：`initial-design.md`（v0.1 历史底稿，内容已由 总纲 吸收）、`ecs-architecture-and-evolution-plan.md`（ECS/Fiber 推演稿，已被聚合模型取代）、`early-game-skills-design.md`（废弃 stub，真源为 `config/game-data/abilities/`）、`milky-way-idle-mapping.md`（外部借称清理记录，已废除）、`battle-scene-demo.html`（早期战斗场景静态演示，已被 战斗演武画廊 演武沙盘取代）。 |
 | [discussions/](archive/discussions/) | 已沉淀或废弃的临时设计草案：`任务队列系统与组件设计草案.md`、`全量物品重构与T1-T2设计草案.md`。 |
+| [audits/](archive/audits/) | 已结题的文档与实现一致性审计旧轮次：`doc-vs-implementation-20260914.md`、`doc-vs-implementation-20260914-recheck.md`、`doc-vs-implementation-20260915.md`、`doc-vs-implementation-20260916.md`，时点性证据仅供追溯。 |
 | [perf-baseline-20260806.md](archive/perf-baseline-20260806.md) | 首轮性能基线历史样本：已删除场景（online/idle-offline 等）与已删除端点的原始数据，仅供追溯。 |
 | [BUGLOOP-20260829.md](archive/BUGLOOP-20260829.md) | 排查循环日志（历史调试记录）。 |
 

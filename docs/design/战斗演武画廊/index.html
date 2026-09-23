@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="道化太初战斗演武画廊：全量功法程序化特效演武台，同构正式前端界面与样式">
+  <title>道化太初 · 战斗演武画廊</title>
+  <!-- 正式前端样式：按 frontend/src/main.tsx 加载顺序直链，永远与真实界面一致、不漂移 -->
+  <link rel="stylesheet" href="../../../frontend/src/styles.css">
+  <link rel="stylesheet" href="../../../frontend/src/styles/selection-grid.css">
+  <link rel="stylesheet" href="../../../frontend/src/styles/expedition.css">
+  <link rel="stylesheet" href="../../../frontend/src/styles/floating-popover.css">
+  <!-- 演武画廊专属样式：特效覆盖层、跳字、演武控制台 -->
+  <link rel="stylesheet" href="gallery.css">
+</head>
+<body>
+  <!-- 图标字库：与 frontend/src/App.tsx Icon 组件同源的 symbol 集合 -->
+  <svg aria-hidden="true" style="display:none">
+    <symbol id="icon-insight" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
+    </symbol>
+    <symbol id="icon-cultivation" viewBox="0 0 24 24">
+      <path d="M12 4.5c2 2.4 2 6.2 0 8.6-2-2.4-2-6.2 0-8.6Z" />
+      <path d="M4.8 8.8c3 .3 5.4 2.4 6.1 5.4-3.2-.2-5.7-2.3-6.1-5.4Z" />
+      <path d="M19.2 8.8c-3 .3-5.4 2.4-6.1 5.4 3.2-.2 5.7-2.3 6.1-5.4Z" />
+      <path d="M3.5 15.5c2.6 2.8 5.4 4 8.5 4s5.9-1.2 8.5-4" />
+    </symbol>
+    <symbol id="icon-exploration" viewBox="0 0 24 24">
+      <circle cx="17.5" cy="6" r="2.2" />
+      <path d="M3 19 9.5 7l4.5 7 2.5-3.5L21 19H3Z" />
+    </symbol>
+    <symbol id="icon-crafting" viewBox="0 0 24 24">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z" />
+    </symbol>
+    <symbol id="icon-map" viewBox="0 0 24 24">
+      <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" />
+      <path d="M9 3v15M15 6v15" />
+    </symbol>
+    <symbol id="icon-combat" viewBox="0 0 24 24">
+      <path d="m5 4 15 15M19 4 4 19" />
+      <path d="m7 7 3-3 3 3M17 17l-3 3-3-3" />
+    </symbol>
+    <symbol id="icon-market" viewBox="0 0 24 24">
+      <path d="M4 8.5h16M6 8.5V20h12V8.5" />
+      <path d="m5 4h14l1 4.5H4L5 4Z" />
+      <path d="M9 12h6M9 15.5h6" />
+    </symbol>
+    <symbol id="icon-inventory" viewBox="0 0 24 24">
+      <path d="M9 7c0-1.8 1.2-2.8 3-2.8s3 1 3 2.8" />
+      <path d="M6.5 9.5C5.5 14.5 7.5 20 12 20s6.5-5.5 5.5-10.5c-1.7 1-3.6 1.5-5.5 1.5s-3.8-.5-5.5-1.5Z" />
+      <path d="M9.5 13.5h5" />
+    </symbol>
+    <symbol id="icon-log" viewBox="0 0 24 24">
+      <path d="M8 4.5h9.5a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H8" />
+      <path d="M8 4.5a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2" />
+      <path d="M11 9.5h5M11 13.5h5" />
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M7.5 16.5l-1.9 1.9M18.5 18.4l1.9 1.9M7.5 16.5l1.9 1.9" />
+    </symbol>
+    <symbol id="icon-buff" viewBox="0 0 24 24">
+      <path d="M7 16a4.2 4.2 0 0 1-.6-8.3 5.2 5.2 0 0 1 10-1.3A3.8 3.8 0 0 1 17.5 16H7Z" />
+    </symbol>
+  </svg>
+
+  <div class="app" id="galleryRoot">
+    <div class="motes" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <!-- ======================= 顶栏：玩家块 + 行动队列中心 + 全局Buff栏 ======================= -->
+    <header class="topbar">
+      <div aria-label="切换至内视主面板，查看完整六维与修真数值" class="player-block" role="button" tabindex="0">
+        <div class="player-info">
+          <div class="player-line">
+            <strong class="player-name">少侠</strong>
+            <div class="insight-realm-master-frame" style="border-color:#c9b46d66;box-shadow:0 0 14px #c9b46d20,inset 0 0 6px rgba(0,0,0,.5)">
+              <div class="insight-realm-major-box" style="border-left-color:#c9b46d;border-right-color:#c9b46d;background-color:#c9b46d18">
+                <span class="insight-realm-major-text">凡俗</span>
+              </div>
+              <div class="insight-realm-diamond-container">
+                <div class="insight-realm-diamond-badge" style="border-color:#c9b46d;background-color:#c9b46d28;box-shadow:0 0 8px #c9b46d44">
+                  <span class="insight-realm-diamond-text" style="color:#c9b46d">武</span>
+                </div>
+              </div>
+              <div class="insight-realm-minor-box" style="border-color:#c9b46d55;background-color:rgba(0,0,0,.45)">
+                <strong class="insight-realm-minor-text" style="color:#c9b46d">易筋</strong>
+              </div>
+            </div>
+            <span class="connection-dot connection-dot--online" aria-label="已连接"></span>
+          </div>
+          <div class="realm-progress" aria-label="修为进度">
+            <i style="width:0%"></i>
+            <span>0 / 2万 (0%)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="queue-center">
+        <div class="qc-current-stage">
+          <div class="qc-current qc-current--entering" data-entry-id="demo-combat">
+            <span class="item-glyph qc-glyph tone-orange" aria-hidden="true">
+              <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-combat"></use></svg>
+            </span>
+            <div class="qc-main">
+              <div class="qc-title">
+                <strong>山门试炼</strong>
+                <span class="qc-repeats">∞</span>
+                <span class="badge">战斗中</span>
+              </div>
+              <div class="queue-combat-state queue-combat-state--combat">
+                <div class="queue-combat-vitals" role="status" aria-label="战斗生命状态">
+                  <div class="queue-combat-vital queue-combat-vital--player">
+                    <span>己</span>
+                    <i><b id="queuePlayerHpFill" style="transform:scaleX(1)"></b></i>
+                    <strong id="queuePlayerHpValue">150 / 150（100%）</strong>
+                  </div>
+                  <div class="queue-combat-vital queue-combat-vital--enemy">
+                    <span>敌</span>
+                    <i><b id="queueEnemyHpFill" style="transform:scaleX(1)"></b></i>
+                    <strong id="queueEnemyHpValue">2250 / 2250（100%）</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="qc-upcoming" aria-label="后续行动">
+          <div class="qc-next">
+            <span class="item-glyph tone-green" aria-hidden="true">
+              <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-cultivation"></use></svg>
+            </span>
+            <div class="qc-next-text"><span class="qc-next-name">引气入体</span><span class="qc-next-repeats">20次</span></div>
+          </div>
+          <div class="qc-next">
+            <span class="item-glyph tone-cyan" aria-hidden="true">
+              <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-exploration"></use></svg>
+            </span>
+            <div class="qc-next-text"><span class="qc-next-name">寒谷采撷</span><span class="qc-next-repeats">10次</span></div>
+          </div>
+        </div>
+
+        <div class="qc-controls">
+          <label class="loop-toggle"><input id="loopCheck" type="checkbox" checked>循环</label>
+          <button aria-expanded="false" class="qc-expand" id="queueExpand" type="button">队列 3 ▾</button>
+        </div>
+
+        <button aria-label="关闭行动队列" class="queue-backdrop" hidden id="queueBackdrop" type="button"></button>
+        <ol class="queue-dropdown" hidden id="queueDropdown">
+          <li class="queue-entry active">
+            <span class="queue-order">1</span>
+            <span class="item-glyph tone-orange" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-combat"></use></svg></span>
+            <div class="queue-main"><div class="queue-title"><span class="queue-name">山门试炼</span><span class="queue-repeats">∞</span><span class="badge">进行中</span></div></div>
+            <div class="queue-actions"><button disabled title="上移" type="button">↑</button><button title="下移" type="button">↓</button><button class="danger" title="移除" type="button">×</button></div>
+          </li>
+          <li class="queue-entry">
+            <span class="queue-order">2</span>
+            <span class="item-glyph tone-green" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-cultivation"></use></svg></span>
+            <div class="queue-main"><div class="queue-title"><span class="queue-name">引气入体</span><span class="queue-repeats">20次</span></div></div>
+            <div class="queue-actions"><button title="上移" type="button">↑</button><button title="下移" type="button">↓</button><button class="danger" title="移除" type="button">×</button></div>
+          </li>
+          <li class="queue-entry">
+            <span class="queue-order">3</span>
+            <span class="item-glyph tone-cyan" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-exploration"></use></svg></span>
+            <div class="queue-main"><div class="queue-title"><span class="queue-name">寒谷采撷</span><span class="queue-repeats">10次</span></div></div>
+            <div class="queue-actions"><button title="上移" type="button">↑</button><button disabled title="下移" type="button">↓</button><button class="danger" title="移除" type="button">×</button></div>
+          </li>
+        </ol>
+      </div>
+
+      <!-- 全局 Buff 栏：玩家获得破阵子等增益时在此出现 buff-chip -->
+      <div class="buff-bar" aria-label="生效增益" id="buffBar" hidden></div>
+    </header>
+
+    <div class="app-body">
+      <!-- ======================= 左侧导航 ======================= -->
+      <aside class="sidebar panel" aria-label="行动导航">
+        <nav class="sidebar-nav">
+          <button class="nav-item" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-insight"></use></svg></span><span class="nav-text"><span class="nav-label">内视</span></span></button>
+          <button class="nav-item" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-market"></use></svg></span><span class="nav-text"><span class="nav-label">坊市</span></span></button>
+          <button class="nav-item" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-cultivation"></use></svg></span><span class="nav-text"><span class="nav-label">修炼</span></span></button>
+          <button class="nav-item" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-exploration"></use></svg></span><span class="nav-text"><span class="nav-label">历练</span></span></button>
+          <div class="nav-group">
+            <button class="nav-item nav-item--collapsible" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-crafting"></use></svg></span><span class="nav-text"><span class="nav-label">技艺</span></span><span class="nav-chevron" aria-hidden="true">›</span></button>
+          </div>
+          <button class="nav-item" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-map"></use></svg></span><span class="nav-text"><span class="nav-label">地图</span></span></button>
+          <button class="nav-item active" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-combat"></use></svg></span><span class="nav-text"><span class="nav-label">详情</span></span></button>
+        </nav>
+        <div class="sidebar-footer">
+          <button class="nav-item" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-log"></use></svg></span><span class="nav-text"><span class="nav-label">图志</span></span></button>
+          <button class="nav-item" type="button"><span class="nav-glyph" aria-hidden="true"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" viewBox="0 0 24 24"><use href="#icon-settings"></use></svg></span><span class="nav-text"><span class="nav-label">设置</span></span></button>
+        </div>
+      </aside>
+
+      <div class="center-column">
+        <!-- ======================= 中央：详情页（演武场 + 装配） ======================= -->
+        <main class="main-content">
+          <section class="panel expedition-page">
+            <header class="panel-header">
+              <h2>详情</h2>
+              <button class="ghost-button battle-report-open" id="reportOpenBtn" type="button">战报</button>
+            </header>
+            <div class="expedition-content expedition-content--duel">
+              <div class="expedition-duel">
+                <div class="combat-arena-shell" id="arenaShell">
+                  <!-- 特效覆盖层：绝对定位、pointer-events:none、零回流，与正式前端同一挂载惯例 -->
+                  <div class="vfx-stage-overlay" id="vfxOverlay" aria-hidden="true"></div>
+
+                  <div class="combat-arena-field combat-arena-field--combat" id="arenaField">
+                    <!-- 左侧：己方 3x3 阵型（1号位前排中 = 玩家，其余空槽与真实战斗一致） -->
+                    <div class="arena-side arena-side--allies">
+                      <div class="arena-formation arena-formation--allies">
+                        <div class="arena-slot arena-slot--occupied arena-slot--slot-1">
+                          <article aria-label="查看少侠属性" class="arena-actor arena-actor--player arena-actor--compact" data-actor="player" role="button" tabindex="0">
+                            <header class="arena-overhead">
+                              <strong>少侠</strong>
+                              <div class="arena-vitals">
+                                <div class="arena-resource arena-resource--hp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">150 / 150</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                                <div class="arena-resource arena-resource--mp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">70 / 70</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                              </div>
+                            </header>
+                            <div class="arena-avatar-stage">
+                              <div class="arena-avatar" aria-label="少侠形象"><img alt="少侠" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.svg"></div>
+                            </div>
+                            <div class="arena-action-bar arena-action-bar--player arena-action-bar--wait">
+                              <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
+                            </div>
+                            <div class="arena-actor-buff-list" aria-label="生效增益"></div>
+                          </article>
+                        </div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-2"></div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-3"></div>
+                        <!-- 4号位：中排中 · 队友「云裳」（青绿滤镜区分头像） -->
+                        <div class="arena-slot arena-slot--occupied arena-slot--slot-4">
+                          <article aria-label="查看云裳属性" class="arena-actor arena-actor--player arena-actor--compact" data-actor="ally2" role="button" tabindex="0">
+                            <header class="arena-overhead">
+                              <strong>云裳</strong>
+                              <div class="arena-vitals">
+                                <div class="arena-resource arena-resource--hp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">120 / 120</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                                <div class="arena-resource arena-resource--mp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">90 / 90</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                              </div>
+                            </header>
+                            <div class="arena-avatar-stage">
+                              <div class="arena-avatar" aria-label="云裳形象"><img alt="云裳" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.svg" style="filter:hue-rotate(150deg) saturate(.85)"></div>
+                            </div>
+                            <div class="arena-action-bar arena-action-bar--player arena-action-bar--wait">
+                              <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
+                            </div>
+                            <div class="arena-actor-buff-list" aria-label="生效增益"></div>
+                          </article>
+                        </div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-5"></div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-6"></div>
+                        <!-- 7号位：后排中 · 队友「岳罡」（暗金滤镜区分头像） -->
+                        <div class="arena-slot arena-slot--occupied arena-slot--slot-7">
+                          <article aria-label="查看岳罡属性" class="arena-actor arena-actor--player arena-actor--compact" data-actor="ally3" role="button" tabindex="0">
+                            <header class="arena-overhead">
+                              <strong>岳罡</strong>
+                              <div class="arena-vitals">
+                                <div class="arena-resource arena-resource--hp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">200 / 200</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                                <div class="arena-resource arena-resource--mp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">50 / 50</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                              </div>
+                            </header>
+                            <div class="arena-avatar-stage">
+                              <div class="arena-avatar" aria-label="岳罡形象"><img alt="岳罡" class="character-avatar character-avatar--player" draggable="false" src="../../../frontend/public/avatars/player.svg" style="filter:hue-rotate(-48deg) saturate(.7) brightness(.82)"></div>
+                            </div>
+                            <div class="arena-action-bar arena-action-bar--player arena-action-bar--wait">
+                              <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
+                            </div>
+                            <div class="arena-actor-buff-list" aria-label="生效增益"></div>
+                          </article>
+                        </div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-8"></div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-9"></div>
+                      </div>
+                    </div>
+
+                    <!-- 右侧：敌方 3x3 阵型（纵深优先：前排中→中排中→后排中，与 ENEMY_DEPTH_SLOTS 一致） -->
+                    <div class="arena-side arena-side--enemies">
+                      <div class="arena-formation arena-formation--enemies">
+                        <div class="arena-slot arena-slot--occupied arena-slot--slot-1">
+                          <article aria-label="查看魔化野兔属性" class="arena-actor arena-actor--enemy arena-actor--compact" data-actor="enemy1" role="button" tabindex="0">
+                            <header class="arena-overhead">
+                              <strong>魔化野兔</strong>
+                              <div class="arena-vitals">
+                                <div class="arena-resource arena-resource--hp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">450 / 450</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                                <div class="arena-resource arena-resource--mp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">100 / 100</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                              </div>
+                            </header>
+                            <div class="arena-avatar-stage">
+                              <div class="arena-avatar" aria-label="魔化野兔形象"><img alt="魔化野兔" class="character-avatar character-avatar--enemy is-flipped" draggable="false" src="../../../frontend/public/avatars/demonized-rabbit.webp"></div>
+                            </div>
+                            <div class="arena-action-bar arena-action-bar--enemy arena-action-bar--wait">
+                              <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
+                            </div>
+                            <div class="arena-actor-buff-list" aria-label="生效增益"></div>
+                          </article>
+                        </div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-2"></div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-3"></div>
+                        <div class="arena-slot arena-slot--occupied arena-slot--slot-4">
+                          <article aria-label="查看魔猿属性" class="arena-actor arena-actor--enemy arena-actor--compact" data-actor="enemy2" role="button" tabindex="0">
+                            <header class="arena-overhead">
+                              <strong>魔猿</strong>
+                              <div class="arena-vitals">
+                                <div class="arena-resource arena-resource--hp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">950 / 950</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                                <div class="arena-resource arena-resource--mp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">250 / 250</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                              </div>
+                            </header>
+                            <div class="arena-avatar-stage">
+                              <div class="arena-avatar" aria-label="魔猿形象"><img alt="魔猿" class="character-avatar character-avatar--enemy is-flipped" draggable="false" src="../../../frontend/public/avatars/demon-ape.webp"></div>
+                            </div>
+                            <div class="arena-action-bar arena-action-bar--enemy arena-action-bar--wait">
+                              <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
+                            </div>
+                            <div class="arena-actor-buff-list" aria-label="生效增益"></div>
+                          </article>
+                        </div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-5"></div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-6"></div>
+                        <div class="arena-slot arena-slot--occupied arena-slot--slot-7">
+                          <article aria-label="查看星屑火鸦属性" class="arena-actor arena-actor--enemy arena-actor--compact" data-actor="enemy3" role="button" tabindex="0">
+                            <header class="arena-overhead">
+                              <strong>星屑火鸦</strong>
+                              <div class="arena-vitals">
+                                <div class="arena-resource arena-resource--hp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">850 / 850</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                                <div class="arena-resource arena-resource--mp">
+                                  <div class="arena-resource-meter">
+                                    <div class="arena-resource-track"><i style="transform:scaleX(1)"></i><span class="arena-resource-badge">350 / 350</span></div>
+                                    <span class="arena-resource-shards" aria-hidden="true"></span>
+                                    <span class="arena-resource-floats" aria-live="polite"></span>
+                                  </div>
+                                </div>
+                              </div>
+                            </header>
+                            <div class="arena-avatar-stage">
+                              <div class="arena-avatar" aria-label="星屑火鸦形象"><img alt="星屑火鸦" class="character-avatar character-avatar--enemy is-flipped" draggable="false" src="../../../frontend/public/avatars/star-flame-crow.webp"></div>
+                            </div>
+                            <div class="arena-action-bar arena-action-bar--enemy arena-action-bar--wait">
+                              <div class="arena-action-track"><i><b style="transform:scaleX(0)"></b></i><span class="arena-action-badge" style="display:none"></span></div>
+                            </div>
+                            <div class="arena-actor-buff-list" aria-label="生效增益"></div>
+                          </article>
+                        </div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-8"></div>
+                        <div class="arena-slot arena-slot--empty arena-slot--slot-9"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="combat-arena-controls">
+                    <button class="danger" id="stopActionBtn" type="button">终止当前行动 (山门试炼)</button>
+                  </div>
+                </div>
+
+                <!-- 历练装配区：消耗药品 3 槽 + 功法 4 槽（内功位×1 + 术法位×3），点击功法即演武 -->
+                <div class="expedition-duel-config">
+                  <div class="combat-loadout" aria-label="历练配置">
+                    <div class="combat-slot-tray">
+                      <section aria-label="消耗药品槽" class="slot-group combat-slot-section">
+                        <span class="slot-group-label">消耗药品</span>
+                        <div class="auto-use-slots">
+                          <div class="auto-use-slot"><button aria-label="选择物品" class="item-use-slot item-use-slot--empty" type="button"><span>选用物品</span></button></div>
+                          <div class="auto-use-slot"><button aria-label="选择物品" class="item-use-slot item-use-slot--empty" type="button"><span>选用物品</span></button></div>
+                          <div class="auto-use-slot"><button aria-label="选择物品" class="item-use-slot item-use-slot--empty" type="button"><span>选用物品</span></button></div>
+                        </div>
+                      </section>
+                      <section aria-label="功法槽位" class="slot-group combat-slot-section">
+                        <span class="slot-group-label">功法</span>
+                        <div class="combat-slot-grid combat-slot-grid--abilities" id="loadoutGrid"></div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <!-- ======================= 底部：日志面板（演武战斗日志实时写入） ======================= -->
+        <div class="desktop-log">
+          <section class="panel log-panel" aria-label="游戏日志">
+            <div class="log-tabs" role="tablist" aria-label="消息类型">
+              <button class="active" data-log-tab="all" role="tab" type="button">全部</button>
+              <button data-log-tab="world" role="tab" type="button">世界</button>
+              <button data-log-tab="nearby" role="tab" type="button">附近</button>
+              <button data-log-tab="system" role="tab" type="button">系统</button>
+              <button data-log-tab="combat" role="tab" type="button">战斗</button>
+              <button data-log-tab="friend" role="tab" type="button">好友</button>
+              <button data-log-tab="sect" role="tab" type="button">宗门</button>
+              <button data-log-tab="party" role="tab" type="button">队伍</button>
+              <span aria-label="日志已保存" class="log-storage-status log-storage-status--ready" title="日志已保存"></span>
+            </div>
+            <ol class="event-log" id="logList"></ol>
+          </section>
+        </div>
+      </div>
+
+      <!-- ======================= 右栏：储物袋 / 装备 / 功法 / 演武 ======================= -->
+      <aside class="right-column">
+        <section class="panel right-sidebar-panel">
+          <header class="right-sidebar-header">
+            <nav aria-label="右侧功能切换" class="right-sidebar-nav">
+              <button aria-selected="false" class="right-sidebar-tab-btn" data-right-tab="inventory" type="button"><span class="right-sidebar-tab-label">储物袋</span></button>
+              <button aria-selected="false" class="right-sidebar-tab-btn" data-right-tab="equipment" type="button"><span class="right-sidebar-tab-label">装备</span></button>
+              <button aria-selected="false" class="right-sidebar-tab-btn" data-right-tab="abilities" type="button"><span class="right-sidebar-tab-label">功法</span></button>
+              <button aria-selected="true" class="right-sidebar-tab-btn is-active" data-right-tab="vfx" type="button"><span class="right-sidebar-tab-label">演武</span></button>
+            </nav>
+          </header>
+          <div class="right-sidebar-body">
+            <div class="inventory-view-panel" data-right-view="inventory" hidden>
+              <div class="inventory-grid">
+                <span class="inventory-item-anchor" role="button" tabindex="0"><span class="item-tile inventory-cell" data-rarity="spirit"><span class="item-type-ribbon" aria-hidden="true"><span>丹药</span></span><span class="item-corner item-corner--top-right">Lv.1</span><strong class="item-tile-name">引气丹</strong><span class="item-corner item-corner--bottom-right">×8</span></span></span>
+                <span class="inventory-item-anchor" role="button" tabindex="0"><span class="item-tile inventory-cell" data-rarity="mystic"><span class="item-type-ribbon" aria-hidden="true"><span>材料</span></span><strong class="item-tile-name">梧木</strong><span class="item-corner item-corner--bottom-right">×23</span></span></span>
+                <span class="inventory-item-anchor" role="button" tabindex="0"><span class="item-tile inventory-cell" data-rarity="spirit"><span class="item-type-ribbon" aria-hidden="true"><span>丹药</span></span><strong class="item-tile-name">止血散</strong><span class="item-corner item-corner--bottom-right">×5</span></span></span>
+              </div>
+            </div>
+
+            <div class="equipment-view-panel" data-right-view="equipment" hidden>
+              <div class="equipment-stage">
+                <div class="equipment-slot-col equipment-slot-col--left">
+                  <button class="equipment-slot-btn is-empty" type="button"><span class="equipment-slot-empty-label">头部</span></button>
+                  <button class="equipment-slot-btn is-empty" type="button"><span class="equipment-slot-empty-label">衣服</span></button>
+                  <button class="equipment-slot-btn is-empty" type="button"><span class="equipment-slot-empty-label">腿部</span></button>
+                </div>
+                <div class="equipment-avatar-center">
+                  <div class="equipment-avatar-phantom-halo" aria-hidden="true"></div>
+                  <div class="equipment-avatar-phantom-stage"><img alt="少侠" class="character-avatar character-avatar--player equipment-avatar-phantom" draggable="false" src="../../../frontend/public/avatars/player.svg"></div>
+                  <div class="equipment-avatar-meta">
+                    <strong class="equipment-avatar-name">少侠</strong>
+                    <div class="equipment-avatar-badge-wrap">
+                      <div class="insight-realm-master-frame" style="border-color:#c9b46d66;box-shadow:0 0 14px #c9b46d20,inset 0 0 6px rgba(0,0,0,.5)">
+                        <div class="insight-realm-major-box" style="border-left-color:#c9b46d;border-right-color:#c9b46d;background-color:#c9b46d18"><span class="insight-realm-major-text">凡俗</span></div>
+                        <div class="insight-realm-diamond-container"><div class="insight-realm-diamond-badge" style="border-color:#c9b46d;background-color:#c9b46d28;box-shadow:0 0 8px #c9b46d44"><span class="insight-realm-diamond-text" style="color:#c9b46d">武</span></div></div>
+                        <div class="insight-realm-minor-box" style="border-color:#c9b46d55;background-color:rgba(0,0,0,.45)"><strong class="insight-realm-minor-text" style="color:#c9b46d">易筋</strong></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="equipment-slot-col equipment-slot-col--right">
+                  <button class="equipment-slot-btn is-empty" type="button"><span class="equipment-slot-empty-label">武器</span></button>
+                  <button class="equipment-slot-btn is-empty" type="button"><span class="equipment-slot-empty-label">饰品</span></button>
+                  <button class="equipment-slot-btn is-empty" type="button"><span class="equipment-slot-empty-label">鞋履</span></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="abilities-view-panel" data-right-view="abilities" hidden>
+              <section class="abilities-section abilities-loadout-section">
+                <div class="abilities-section-header"><span class="abilities-section-title">斗法装配槽</span><span class="abilities-section-count">4 槽位</span></div>
+                <div class="abilities-group-row abilities-group-row--internal">
+                  <div class="abilities-group-header"><span class="abilities-group-label">内功</span></div>
+                  <div class="abilities-group-slots" id="rightSlotInternal"></div>
+                </div>
+                <div class="abilities-group-row abilities-group-row--spells">
+                  <div class="abilities-group-header"><span class="abilities-group-label">术法</span></div>
+                  <div class="abilities-group-slots abilities-group-slots--wrap" id="rightSlotSpells"></div>
+                </div>
+              </section>
+              <section class="abilities-section abilities-catalog-section">
+                <div class="abilities-section-header"><span class="abilities-section-title">已学功法</span><span class="abilities-section-badge" id="catalogCount">10</span></div>
+                <div class="abilities-learned-group">
+                  <div class="abilities-group-header"><span class="abilities-group-label">内功</span><span class="abilities-section-count" id="catalogInternalCount">3</span></div>
+                  <div class="abilities-learned-grid" id="catalogInternal"></div>
+                </div>
+                <div class="abilities-learned-group">
+                  <div class="abilities-group-header"><span class="abilities-group-label">术法</span><span class="abilities-section-count" id="catalogSpellCount">7</span></div>
+                  <div class="abilities-learned-grid" id="catalogSpells"></div>
+                </div>
+              </section>
+            </div>
+
+            <!-- 演武控制台（画廊扩展 tab：沿用右栏面板语法） -->
+            <div class="vfx-console-panel" data-right-view="vfx">
+              <section class="abilities-section">
+                <div class="abilities-section-header"><span class="abilities-section-title">演武控制台</span><span class="abilities-section-badge">VFX</span></div>
+                <div class="vfx-console-block">
+                  <span class="slot-group-label">出手方</span>
+                  <div class="vfx-segment" role="group" aria-label="出手方切换">
+                    <button class="vfx-segment-btn is-active" data-side="ally" type="button">我方演示</button>
+                    <button class="vfx-segment-btn" data-side="enemy" type="button">敌方演示</button>
+                  </div>
+                  <p class="vfx-console-hint">功法点击即演武；敌方可按其配表技能出手（魔猿·重斩 / 火鸦·掌心雷），亦可演示任意功法。</p>
+                </div>
+                <div class="vfx-console-block">
+                  <span class="slot-group-label">连续演武</span>
+                  <div class="vfx-console-actions">
+                    <button class="vfx-ctl-btn" id="autoDemoBtn" type="button">▶ 全量功法轮播</button>
+                    <button class="vfx-ctl-btn" id="ambientBtn" type="button">⏸ 环境普攻已开启</button>
+                  </div>
+                  <p class="vfx-console-hint">轮播按配表吟唱/冷却节奏依次演武全部功法；环境普攻驱动双方行动条与受击反馈，模拟真实战斗底噪。</p>
+                </div>
+                <div class="vfx-console-block">
+                  <span class="slot-group-label">通用反馈</span>
+                  <div class="vfx-console-actions">
+                    <button class="vfx-ctl-btn" data-feedback="attack" type="button">普攻</button>
+                    <button class="vfx-ctl-btn" data-feedback="impact" type="button">受击</button>
+                    <button class="vfx-ctl-btn" data-feedback="crit" type="button">暴击</button>
+                    <button class="vfx-ctl-btn" data-feedback="defeat" type="button">阵亡</button>
+                    <button class="vfx-ctl-btn" data-feedback="regen" type="button">调息</button>
+                    <button class="vfx-ctl-btn" data-feedback="revive" type="button">复活</button>
+                  </div>
+                </div>
+                <div class="vfx-console-block">
+                  <span class="slot-group-label">沙盘</span>
+                  <div class="vfx-console-actions">
+                    <button class="vfx-ctl-btn" id="resetBtn" type="button">↺ 重置战场</button>
+                  </div>
+                  <p class="vfx-console-hint">技能数据镜像自 <code>config/game-data/abilities/*.json</code>；特效脚本按技能 id 拆分于 <code>vfx/abilities/</code>。</p>
+                </div>
+                <div class="vfx-console-block" id="selftestBlock" hidden>
+                  <span class="slot-group-label">自检</span>
+                  <div class="vfx-selftest" id="selftestReport">待运行…</div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <!-- 特效引擎与脚本：经典 script 加载（file:// 直开可用，不依赖 ES module） -->
+  <script src="vfx/core.js"></script>
+  <script src="vfx/catalog.js"></script>
+  <script src="vfx/feedback.js"></script>
+  <script src="vfx/abilities/heavy-slash.js"></script>
+  <script src="vfx/abilities/chain-strike.js"></script>
+  <script src="vfx/abilities/taunt.js"></script>
+  <script src="vfx/abilities/heavy-clouds.js"></script>
+  <script src="vfx/abilities/star-piercer.js"></script>
+  <script src="vfx/abilities/palm-lightning.js"></script>
+  <script src="vfx/abilities/blazing-blast.js"></script>
+  <script src="vfx/abilities/qingping-melody.js"></script>
+  <script src="vfx/abilities/lightning-attraction.js"></script>
+  <script src="vfx/abilities/pozhen-melody.js"></script>
+  <script src="sandbox.js"></script>
+  <script src="gallery.js"></script>
+</body>
+</html>

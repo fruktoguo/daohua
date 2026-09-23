@@ -19,15 +19,15 @@
 
 ## 二、设计真源缺口与滞后
 
-7. **建筑系统无权威设计文档**：实现已全量落地（`src/Domain/World/NodeBuildings.cs`、`NodeBuildingRegistry.cs`、`building.build/upgrade/contribute`、`node_buildings` 表、双进度条、`buildableTemplate/buildableList`），但 `master-design.md` 中「建筑」0 命中，`generic-map-and-encounter-system.md` 仅把 `buildings` 当场景陈设。【文档缺失】【高】
+7. **建筑系统无权威设计文档**：实现已全量落地（`src/Domain/World/NodeBuildings.cs`、`NodeBuildingRegistry.cs`、`building.build/upgrade/contribute`、`node_buildings` 表、双进度条、`buildableTemplate/buildableList`），但 `总纲.md` 中「建筑」0 命中，`通用地图与遇怪系统.md` 仅把 `buildings` 当场景陈设。【文档缺失】【高】
 
 8. **行动统计三账本无设计文档**：三账本（行动实例/离线会话/每日自然日）仅见于任务文档与 `common-components.md` §24，无 `design/` 权威规约。【文档缺失】【中】
 
-9. **`generic-map-and-encounter-system.md` §6 实施步骤引用不存在的文件/类型**：`WorldNodeDefinition`、`MonsterConfig`、`CombatGroupSimulator.cs`、`StateMapper.cs`、`maps.json`、`monsters.json` 全仓 0 命中。【描述错误】【中】
+9. **`通用地图与遇怪系统.md` §6 实施步骤引用不存在的文件/类型**：`WorldNodeDefinition`、`MonsterConfig`、`CombatGroupSimulator.cs`、`StateMapper.cs`、`maps.json`、`monsters.json` 全仓 0 命中。【描述错误】【中】
 
-10. **`generic-map-and-encounter-system.md` §5.1 面板布局与实现不符**：文档为单一「附近」面板；实现已拆为地图/怪物/人物/建筑四 Tab（`App.tsx:1800-1804`）。§5.2 `MonsterInfoModal` 组件不存在。【文档滞后】【中】
+10. **`通用地图与遇怪系统.md` §5.1 面板布局与实现不符**：文档为单一「附近」面板；实现已拆为地图/怪物/人物/建筑四 Tab（`App.tsx:1800-1804`）。§5.2 `MonsterInfoModal` 组件不存在。【文档滞后】【中】
 
-11. **`master-design.html` 第十一篇仍是已废弃 ECS 架构**：`master-design.html:1447-1457` 仍写 `PlayerComponent`/`YuoEntity`/`PlayerShard-N` Fiber；同源 `master-design.md:372` 已改为 `PlayerActor` + `SemaphoreSlim` 聚合单写者。HTML 内嵌独立 markdown 副本未同步。【文档滞后】【中】
+11. **`总纲.html` 第十一篇仍是已废弃 ECS 架构**：`总纲.html:1447-1457` 仍写 `PlayerComponent`/`YuoEntity`/`PlayerShard-N` Fiber；同源 `总纲.md:372` 已改为 `PlayerActor` + `SemaphoreSlim` 聚合单写者。HTML 内嵌独立 markdown 副本未同步。【文档滞后】【中】
 
 12. **`domain-data-architecture.md:44` 引用不存在的 `CombatAbilityDefinition`**：全仓无此类型。0916 审计 #29 声称已修但未修。【描述错误】【中】
 
@@ -43,7 +43,7 @@
 
 ## 四、正向确认（非问题）
 
-- `combat-design.md` §7.4 钩子管线与 `CombatHooks.cs`（`ICombatResolveMutator`/`ICombatDamageMutator`/`ICombatAftermathHook`/`CombatHookOrder`/`NextRoll`）逐项吻合。
+- `战斗设计.md` §7.4 钩子管线与 `CombatHooks.cs`（`ICombatResolveMutator`/`ICombatDamageMutator`/`ICombatAftermathHook`/`CombatHookOrder`/`NextRoll`）逐项吻合。
 - 防多开关闭码 4005-4008 服务端 `AntiMultiOpenConstants.cs` 与前端 `codes.ts` 一致。
 - `common-components.md` §24 已登记 `StatsPanel` 三小节结构，与实现一致。
 - 0916 审计的 `verify.sh --strict`、冒烟口令、`dev-service.sh` 卷名、`Storage__SchemaVersion` 死配置、PG 角色清单、LoadTests 四场景、ComputeNode 派发链均已落地。

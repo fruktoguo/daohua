@@ -1,6 +1,6 @@
 # 玩家存档版本迁移与容错自愈架构规约
 
-> **文档状态（2026-08-27）**：本文是正式运营后的历史/未来运营参考，不属于当前 clean-room 基线的运行契约。当前内测直接建立 **schema v4**（`PostgresSchema.Version = 4`），不实现旧格式迁移、双读双写、兼容 DTO 或 fallback；唯一现行目标方案见 [`commercial-persistence-architecture.md`](commercial-persistence-architecture.md)。
+> **文档状态（2026-08-27）**：本文是正式运营后的历史/未来运营参考，不属于当前 clean-room 基线的运行契约。当前内测直接建立 **schema v4**（`PostgresSchema.Version = 4`），不实现旧格式迁移、双读双写、兼容 DTO 或 fallback；唯一现行目标方案见 [`../backend/commercial-persistence-architecture.md`](../backend/commercial-persistence-architecture.md)。
 
 本文档定义《道化太初》在正式商业运营与本地开发全生命周期中，**玩家存档数据演进、版本链式迁移（Data Migration）与容错自愈（Self-Healing Reconciliation）** 的顶层设计与技术规约。
 

@@ -75,7 +75,7 @@
 
 - 整改实际进度：领域新增 5 文件（BaseAttributeCatalog/PlayerAttributeResolver/CombatSkillEngine/EncounterWaveSelector/PlayerLoadout）、市场 expires_at+税落库、PG18、Caddy 拦截、schema v2、快照 v2、hpRegen 下发均已落地；Domain 83/83、Server 39/39、前端 build 已通过（记忆与会话证据）。
 - 整改未完成：69 项文档逐项闭环只做一半（`initial-design.md:58` 重复次数、`common-components.md` 三处失效指路、README schema v1 残留）、浏览器/容器/容量验收未做、提交未做。
-- 文档体系：`docs/README.md` 索引缺 `audits/`、`临时设计讨论/`；临时草案引用已删除的 PlayerShardHost/ActionQueueComponent/Fiber 架构；废弃文档堆积；master-design 单真源与多分文档并存的历史病灶未根除。
+- 文档体系：`docs/README.md` 索引缺 `audits/`、`临时设计讨论/`；临时草案引用已删除的 PlayerShardHost/ActionQueueComponent/Fiber 架构；废弃文档堆积；总纲 单真源与多分文档并存的历史病灶未根除。
 - 看板：6 个"实质完成待提交"任务堵在同一工作区瓶颈；TASK-20260824-29（悬浮岛屿 UI，3 周）疑似真滞留。
 - 未收敛历史项：ComputeNode 未接线（P2）、market/book 无鉴权（P3）、`player_asset_instances` 零读写（C-04）、威胁/多目标与 SpeedBonus 搁置未落锤、i18n 实质单语言（D-06 半闭环）。
 

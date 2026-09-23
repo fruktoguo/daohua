@@ -61,7 +61,7 @@
 | 9 | 快照同一状态三种表达：`CombatantSnapshot` vs `ExpeditionEnemyState` vs 玩家 `PlayerCombatSkillState`（冷却按 ID 剩余秒 vs 按下标绝对时刻） | `CombatModels.cs:227-237/431-447`、`CombatSkillEngine.cs:8-22` |
 | 10 | 掉落判定与数量共用同一 roll（低掉率恒产最小量，旧审计 M-02 未修） | `SimulationEngine.cs:1003-1006` |
 | 11 | `expected-attributes.json` 约 3400 行运行时死数据含旧公式：`1.05^enhancement`（实现为线性 1+0.02n）、`Root%=Level*0.03`、`magicStyle 2.0x AP 必中`、幻影基准技能表 | `expected-attributes.json:212-347` |
-| 12 | 文档残留：`combat-benchmark-model.md:14-15/73-89` 流派幻影套件；`player-expected-attributes-model.md:40-42` 2.0x AP 必中；`K=ceil(level/12)` 与 `TierAt` 锚点公式两处矛盾（`combat-design.md:133`） | docs/design/ |
+| 12 | 文档残留：`combat-benchmark-model.md:14-15/73-89` 流派幻影套件；`player-expected-attributes-model.md:40-42` 2.0x AP 必中；`K=ceil(level/12)` 与 `TierAt` 锚点公式两处矛盾（`战斗设计.md:133`） | docs/design/ |
 | 13 | buffs wire 占位字段（qiGainMultiplier 等恒 1）被前端收益预览真实消费——死分支 | `ProtocolSnapshotMapper.cs:165-171`、`actionCalculations.ts:168-192` |
 | 14 | 装备 `specialMechanics.healingBonusRatio` 配表声明但引擎零消费（素心琴治疗加成失效） | `weapons.json:57-59` vs `PlayerAttributeResolver.cs:100-106` |
 
@@ -73,7 +73,7 @@
 - `completesAtUnixMilliseconds` 服务端/客户端双时钟域混用（CombatArena.tsx:1140 vs 1396）。
 - 玩家气血双通道（combat vs expedition 分段跨帧错位）。
 - XorShift `NextSeed`、JSON 读取助手、技能等级系数、经验封顶各两份实现。
-- `generic-map-and-encounter-system.md:174`「1v1 逐只推进」声明已过时（多敌同场已落地）。
+- `通用地图与遇怪系统.md:174`「1v1 逐只推进」声明已过时（多敌同场已落地）。
 - `ToAbilityDto`/`StaticGameCatalogMapper` 投影幻影字段（`penetrationRatio`/`triggerHpRatio`/`triggerAtCombatStart`/`recoverySeconds`/`tenacity` 等）。
 
 ## 四、修复优先级建议
@@ -96,7 +96,7 @@
 | **A · 领域引擎** | `src/Domain/`、`src/Server/` 领域侧 | #1 触发器求值器收敛、#2 Buff/支援技能单管线（破阵子 `effectType` 失效）、#3 玩家技能纳入 `PendingSkillIndex` 单时间线/灵力双池、#7 成长曲线双份复制、#8 怪物技能校验与 `defaultTriggers` 双轨、#9 快照归一、#10 掉落 roll 拆分、#14 `healingBonusRatio` 零消费 | 领域分组任务 |
 | **B · 协议与前端** | `src/Protocol`、`ProtocolSnapshotMapper`、`frontend/` | #6 `combat.attributes` 真值下发与前端估算删除、#13 buffs wire 占位字段、相位命名 `respawn`/`death` 错位、斗法灵力条硬编码、双时钟域混用、前端死代码清理 | 协议前端分组任务 |
 | **C · 配置编辑器** | `tools/config-editor/` | #4 编辑器 schema 与真实 JSON 脱节重写、DataTool 未消费键告警 | 编辑器分组任务 |
-| **D · 文档与数据** | `docs/design/`、`tools/combat-simulator.html`、`expected-attributes.json` 死数据段 | #5 模拟器「非权威演示工具」标注、#11 死数据陈旧公式（`1.05^强化`、`Root%=Level*0.03`、幻影流派描述）、#12 文档幻影技能/旧口径清理、`generic-map-and-encounter-system.md:174`「1v1 逐只推进」过时声明 | **本任务（TASK-20260923-04 文档与数据部分）** |
+| **D · 文档与数据** | `docs/design/`、`tools/combat-simulator.html`、`expected-attributes.json` 死数据段 | #5 模拟器「非权威演示工具」标注、#11 死数据陈旧公式（`1.05^强化`、`Root%=Level*0.03`、幻影流派描述）、#12 文档幻影技能/旧口径清理、`通用地图与遇怪系统.md:174`「1v1 逐只推进」过时声明 | **本任务（TASK-20260923-04 文档与数据部分）** |
 | **E · 六维命名收敛** | `Swordsmanship`/`Talisman` 等六维字段命名 | #12 关联：代码字段名与中文语义错位（Swordsmanship=身法、Talisman=神识），命名归一由集成阶段统一处理，文档侧已按身法/神识口径书写 | 集成阶段统一处理 |
 
-> D 组已落地：模拟器横幅与旧口径文案、benchmark/expected/master-design 三份文档幻影描述、`K = ceil(level/12)` 两处修正为 `TierAt` 锚点计数、`expected-attributes.json` 死数据段落（`rules.*` 与 `benchmarkCombatSkillsModel`）对齐真实实现；运行时消费键 `baseAttributeAnchors`/`realmProgression` 数值未动。
+> D 组已落地：模拟器横幅与旧口径文案、benchmark/expected/总纲 三份文档幻影描述、`K = ceil(level/12)` 两处修正为 `TierAt` 锚点计数、`expected-attributes.json` 死数据段落（`rules.*` 与 `benchmarkCombatSkillsModel`）对齐真实实现；运行时消费键 `baseAttributeAnchors`/`realmProgression` 数值未动。

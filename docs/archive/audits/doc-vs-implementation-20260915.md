@@ -14,7 +14,7 @@
 
 - **行动产出是通用可配置模型，不限定产出类型**：不同行动可分别声明产出修为、灵力（战斗资源）、物品、Buff 等任意收益；引擎应按行动配表的收益声明逐项结算，而不是按行动类别硬编码单一通道。
 - 当前实现把「修炼类 → `qiPerSecond` → 修为 Qi」写死，物品产出仅采集/炼丹/炼器的 `outputs` 承载，灵力与 Buff 无任何行动产出通道——**缺的是通用收益模型，不是"补一个灵力字段"**。
-- 文档侧矛盾同样须按此口径重写：`master-design.md:208` 的 10 MP 表述、`sustained-consumable-system.md:136,150` 与 `initial-design.md:28` 的灵力/修为口径，统一改为「行动产出 = 配表声明的收益列表」。
+- 文档侧矛盾同样须按此口径重写：`总纲.md:208` 的 10 MP 表述、`持续消耗品系统.md:136,150` 与 `initial-design.md:28` 的灵力/修为口径，统一改为「行动产出 = 配表声明的收益列表」。
 - 据此 NEW-B-12 重新定性为：**通用行动收益模型缺失（功能缺口）**，P0 → P1；实现语义（修为）本身不算错，错在通道被限定死且文档承诺的灵力产出无任何落地路径。
 
 ## 0. 判定口径（沿用 9/14 审计）
@@ -68,7 +68,7 @@
 
 | 编号 | 状态 | 当前证据 | 备注 |
 | :--- | :--- | :--- | :--- |
-| A-01 | ✅已闭环 | `combat-design.md:132-140` vs `CombatModels.cs:419-430` 两层抗性+五行减免 | 公式已对齐 |
+| A-01 | ✅已闭环 | `战斗设计.md:132-140` vs `CombatModels.cs:419-430` 两层抗性+五行减免 | 公式已对齐 |
 | A-02 | ✅已闭环 | `CombatModels.cs:404-414` break/parry→命中/暴击链 | 命中/闪避/暴击/破招/拆招落地 |
 | A-03 | ◐部分闭环 | `GameDataCatalog.cs:310-313` 解析 ability；`CombatSkillEngine.cs:115-126` CD/吟唱/耗蓝/触发 | 已实现调度，但 Lv.1 蓝量不足以释放（NEW-A-01） |
 | A-04 | ◐部分闭环 | `BaseAttributeCatalog.cs:53-68` 读 HpRegen/MpRegen；`SimulationEngine.cs:107-148` 自然回复 | 数值来源已对齐配置，但周期硬编码 5s（NEW-A-06） |
@@ -81,20 +81,20 @@
 | A-11 | ⚠️仍存在 | `CombatSkillEngine.cs:114-130` 仅单目标；全仓无 Threat | 威胁/多目标未实现 |
 | A-12 | ✅已闭环 | `Domain.csproj:18-21` 嵌入 + `GameDataCatalog.cs:290-291` 解析 | expected-attributes 已成基础属性真源 |
 | X-03 | ⚠️仍存在 | `PlayerAggregate.cs:64-70` 100/100 vs `combatConstants.ts:228-229` 100/50 | 前端基准常量未同步 |
-| X-05 | ✅已闭环 | `combat-design.md:219` 已统一「周期与数值分离」 | — |
+| X-05 | ✅已闭环 | `战斗设计.md:219` 已统一「周期与数值分离」 | — |
 
 ### 2.2 新增偏离
 
 | 编号 | 描述 | 文档位置 | 实现位置 | 性质 | 严重度 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| NEW-A-01 | **Lv.1 玩家无法施放任何技能**：`manaCostRatio`（10~40）×10 后需 100~400+ MP，Lv.1 `MaxManapoints=50`，`CombatSkillEngine.cs:119-120` 判定恒 false，全部技能不可用 | `combat-design.md:146-148`、`combat-benchmark-model.md:53-64`、`physical_abilities.json:11,33,55,77,100` | `CombatSkillEngine.cs:119-120` | 数值不符 | **P0** |
+| NEW-A-01 | **Lv.1 玩家无法施放任何技能**：`manaCostRatio`（10~40）×10 后需 100~400+ MP，Lv.1 `MaxManapoints=50`，`CombatSkillEngine.cs:119-120` 判定恒 false，全部技能不可用 | `战斗设计.md:146-148`、`combat-benchmark-model.md:53-64`、`physical_abilities.json:11,33,55,77,100` | `CombatSkillEngine.cs:119-120` | 数值不符 | **P0** |
 | NEW-A-02 | **怪物波次与品阶倍率未对齐基准**：普通波未按 3 只/80% 属性/300% 生命，精英/Boss 未按 120%/500%、150%/2000% 缩放；前端 `NON_PLAYER_UNIT_TIERS` 仍 1.5/10.0 | `combat-benchmark-model.md:29-31`、`expected-attributes.json:27-32` | `EncounterWaveSelector.cs:42-43`、`GameDataCatalog.cs:465-498`、`combatConstants.ts:288-299` | 数值不符 | **P0** |
 | NEW-A-03 | 攻速/暴伤/CDR/吟唱二次成长未落地：攻速未按 ATR×专属攻速独立乘区；`CriticalMultiplier` 硬编码 1.5；技能 CD 未应用境界 CDR | `combat-benchmark-model.md:46-48`、`player-expected-attributes-model.md:94-107` | `PlayerAttributeResolver.cs:103`、`CombatModels.cs:68`、`CombatSkillEngine.cs:163-164` | 数值不符 | P1 |
-| NEW-A-04 | 快照 v2 战斗属性硬编码：`style/category/element` 固定 sword/physical/none，`criticalDamageRatio` 固定 1.5，`maxDamage` 只取物理攻击，违反「协议快照映射与配表透传」 | `AGENTS.md`（协议快照映射条款）、`master-design.md:87-89` | `ProtocolSnapshotMapper.cs:193-198` | 协议伪造 | P1 |
-| NEW-A-05 | 自动普攻不区分配装流派：`AttackPower` 恒取 `PhysicalAttack`，无法术普攻 2s 吟唱分支 | `combat-benchmark-model.md:47-48`、`master-design.md:88-89` | `PlayerAttributeResolver.cs:31-32`、`CombatSkillEngine.cs:141-142` | 功能缺失 | P1 |
-| NEW-A-06 | **自然回复周期硬编码 5 秒**（`SimulationEngine.cs:107,140`），与用户澄清「周期待讨论、不得据此实现固定 5 秒」直接冲突 | `combat-design.md:219`、9/14 审计顶部用户澄清 | `SimulationEngine.cs:107-108,140-148` | 数值不符（违反已确认需求） | P1 |
+| NEW-A-04 | 快照 v2 战斗属性硬编码：`style/category/element` 固定 sword/physical/none，`criticalDamageRatio` 固定 1.5，`maxDamage` 只取物理攻击，违反「协议快照映射与配表透传」 | `AGENTS.md`（协议快照映射条款）、`总纲.md:87-89` | `ProtocolSnapshotMapper.cs:193-198` | 协议伪造 | P1 |
+| NEW-A-05 | 自动普攻不区分配装流派：`AttackPower` 恒取 `PhysicalAttack`，无法术普攻 2s 吟唱分支 | `combat-benchmark-model.md:47-48`、`总纲.md:88-89` | `PlayerAttributeResolver.cs:31-32`、`CombatSkillEngine.cs:141-142` | 功能缺失 | P1 |
+| NEW-A-06 | **自然回复周期硬编码 5 秒**（`SimulationEngine.cs:107,140`），与用户澄清「周期待讨论、不得据此实现固定 5 秒」直接冲突 | `战斗设计.md:219`、9/14 审计顶部用户澄清 | `SimulationEngine.cs:107-108,140-148` | 数值不符（违反已确认需求） | P1 |
 
-**A 域文档内部矛盾（新）**：`combat-benchmark-model.md:29-31`（普通波 3 只/80%/300%）与 `generic-map-and-encounter-system.md:189-190`（每波最多 5 只、无普通波数量约束）对波次规模口径不一致；实现与后者对齐。
+**A 域文档内部矛盾（新）**：`combat-benchmark-model.md:29-31`（普通波 3 只/80%/300%）与 `通用地图与遇怪系统.md:189-190`（每波最多 5 只、无普通波数量约束）对波次规模口径不一致；实现与后者对齐。
 
 ---
 
@@ -113,16 +113,16 @@
 | B-07 | ✅已闭环 | `SimulationEngine.cs:238-242` 非循环 Blocked 直接 `RemoveAction` | 队首滞留修复 |
 | B-08 | ◐部分闭环 | `SimulationEngine.cs:1075` 仍按基础耗时扣减；无 SpeedBonus 模型 | 当前无速度加成，不产生数值错误 |
 | B-09 | ⚠️仍存在 | `PlayerAggregate.cs:363` / `PlayerStateDocument.cs:324` 上限 1,000,000 vs `initial-design.md:58` 1..1000 | — |
-| B-10 | ⚠️仍存在 | `pills.json:29-36,52-59`（60s CD/30s Buff、12HP/8MP、5%）vs `master-design.md:209-210`（30/60s、2HP/1MP、100%） | 数值/CD/持续期全不符 |
+| B-10 | ⚠️仍存在 | `pills.json:29-36,52-59`（60s CD/30s Buff、12HP/8MP、5%）vs `总纲.md:209-210`（30/60s、2HP/1MP、100%） | 数值/CD/持续期全不符 |
 | B-11 | 🔄状态变化 | `cultivation.json:8` qiPerSecond:1 → `SimulationEngine.cs:929-940` 每轮 +10 `Progression.Qi`，不写 `Combat.Manapoints` | 实现已固定为修为语义，但灵力产出缺失（NEW-B-12）<br>**整改回填（TASK-20260915-06）**：已落地通用 `yields` 模型；引气入体现为 `qi 1/秒 + mana 1/轮 + experience 10/轮`，灵力正确入账 `Combat.Manapoints` |
-| X-01 | ✅已闭环 | 文档矛盾已解：`master-design.md:208` 已由 10 MP 修正为 1 MP→1.3 MP，与 `sustained-consumable-system.md:136,150`（1/轮）及配置一致 | 随 TASK-20260915-06 整改 |
+| X-01 | ✅已闭环 | 文档矛盾已解：`总纲.md:208` 已由 10 MP 修正为 1 MP→1.3 MP，与 `持续消耗品系统.md:136,150`（1/轮）及配置一致 | 随 TASK-20260915-06 整改 |
 
 ### 3.2 新增偏离
 
 | 编号 | 描述 | 文档位置 | 实现位置 | 性质 | 严重度 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| NEW-B-12 | **通用行动收益模型缺失**：实现把「修炼→qiPerSecond→修为」写死为唯一产出通道；按用户确认口径，行动产出应为配表声明的收益列表（修为/灵力/物品/Buff 等），灵力与 Buff 当前无任何行动产出路径 | `initial-design.md:28`、`sustained-consumable-system.md:136,150`、`master-design.md:208` | `SimulationEngine.cs:929-940`、`GameDataCatalog.cs`（cultivation 仅 qiPerSecond 单字段） | 功能缺失 | **P1**（按澄清后口径重新定级，原 P0）<br>**整改回填（TASK-20260915-06）**：已实现 `ActionYield`/`yields` 通用收益声明模型（qi/mana/hitpoints/experience/item/buff × second/repeat），全量配表迁移，`/catalog/actions` 透传 |
-| NEW-B-13 | 装配槽数量未按设计约束：`LoadoutCommand` 允许装备/功法各 16 项，设计为 6 装备部位+4 功法槽位 | `character-core-design.md:103,187` | `LoadoutCommand.cs:31-32,39-69` | 配表不符 | P2 |
+| NEW-B-12 | **通用行动收益模型缺失**：实现把「修炼→qiPerSecond→修为」写死为唯一产出通道；按用户确认口径，行动产出应为配表声明的收益列表（修为/灵力/物品/Buff 等），灵力与 Buff 当前无任何行动产出路径 | `initial-design.md:28`、`持续消耗品系统.md:136,150`、`总纲.md:208` | `SimulationEngine.cs:929-940`、`GameDataCatalog.cs`（cultivation 仅 qiPerSecond 单字段） | 功能缺失 | **P1**（按澄清后口径重新定级，原 P0）<br>**整改回填（TASK-20260915-06）**：已实现 `ActionYield`/`yields` 通用收益声明模型（qi/mana/hitpoints/experience/item/buff × second/repeat），全量配表迁移，`/catalog/actions` 透传 |
+| NEW-B-13 | 装配槽数量未按设计约束：`LoadoutCommand` 允许装备/功法各 16 项，设计为 6 装备部位+4 功法槽位 | `角色核心设计.md:103,187` | `LoadoutCommand.cs:31-32,39-69` | 配表不符 | P2 |
 | NEW-B-14 | （记录，非偏离）`-1` 无限循环不变量成立；`PlayerStateDocument.cs:321-325` 对非 -1 负值直接丢弃属防御性处理 | AGENTS.md 第 7 节 | `PlayerStateDocument.cs:317-326` | — | — |
 
 ---
@@ -240,7 +240,7 @@ i18n 抽样 16/16 静态键命中 template.csv；动态模板字符串拼键（2
 | NEW-E-08 | 「HTTP、WebSocket 和管理入口都必须经过身份认证」与实现不符：`/api/v1/market/book`、`/api/v1/catalog/*`（7 个）、`/api/v1/meta`、register/login 均公开 | `commercial:553` | `Program.cs:303-324,146-213` | 声明与实现不符 | P2 |
 | NEW-E-09 | `identity.audit_events` 死管道：仅 DDL+retention 删除，无任何 INSERT | `commercial:134`、`deployment.md:140` | `PostgresSchema.cs:48-56`、`PostgresRetentionWorker.cs:42-46` | 功能缺失 | P2 |
 | NEW-E-10 | 「/healthz 和 /readyz 会返回内容版本与配置指纹」不成立：健康端点仅 status/service/version/checks | `game-data.md:64` | `Program.cs:146-154` vs `:462-474` | 文档过期 | P2 |
-| NEW-E-11 | `docs/README.md` 索引不完整：缺 `audits/`、`临时设计讨论/`、根级 5 份分析文档、`battle-effects-gallery.html`；`:42` 保留已删除的 `ui-layout-island-demo.html` | `docs/README.md:3,7-16,42` | 文件系统实际清单 | 文档过期 | P2 |
+| NEW-E-11 | `docs/README.md` 索引不完整：缺 `audits/`、`临时设计讨论/`、根级 5 份分析文档、`战斗演武画廊.html`；`:42` 保留已删除的 `ui-layout-island-demo.html` | `docs/README.md:3,7-16,42` | 文件系统实际清单 | 文档过期 | P2 |
 | NEW-E-12 | `domain-data-architecture.md` 大面积过期：引用已删除类型（DataBudgetResolver/CharacterStatResolver/StateSerializer/SnapshotEnvelope/YuoActor/MarketPartitionActor），目录树列不存在的 Constants/、CombatSimulator 等 | `domain-data-architecture.md:44,70,154-155,164-202` | 实际 `src/Domain/` 仅 19 文件，上述类型 0 命中 | 文档过期 | P2 |
 | NEW-E-13 | README HTTP 端点清单不全：漏 abilities/base-attributes/equipment/maps/encounters、`/api/v1/metrics`、market orders POST/DELETE | `README.md:83-88` | `Program.cs:156-213,325-382` | 文档过期 | P2 |
 | NEW-E-14 | `Storage__SchemaVersion:"1"` 死配置且值误导（ServerOptions 无绑定，真实版本硬编码 2） | `deployment.md:51`（写 v2） | `compose.yaml:95`、`compose.prod.yaml:93,191` | 配置不符 | P2 |
@@ -287,7 +287,7 @@ i18n 抽样 16/16 静态键命中 template.csv；动态模板字符串拼键（2
 | NEW-F-07 | 无消费者/默认值不一致字段：遭遇 `randomSpawns[].strength`、`maxTotalStrength` 解析后零消费；`StaticGameCatalogMapper.cs:189` 复活默认 5000ms vs `GameDataCatalog.cs:489` 领域默认 180000ms（差 36 倍）；mapper `maxSpawnCount` 默认与选择器硬上限 5 不符 | `generic-map:189` | `CombatCatalogModels.cs:22,30`、`EncounterWaveSelector.cs:8-52`、`StaticGameCatalogMapper.cs:183-189` | 配表字段无消费+默认值不一致 | P2 |
 | NEW-F-08 | `node.astral-rift`（星陨入口）`availableActionIds` 整体缺失，行动许可列它但节点入口零行动；青云 4 节点与星陨 3 节点同模式未反向登记 | `maps.md:36` | `xingyun_realm.json:8-26`、`combat.json:10-18,28-36` | 配表不一致 | P2 |
 
-**F 域文档内部矛盾（新）**：X-07——`master-design.md:270-283` 仍以「节点三支柱」口径把 `[minBudget,maxBudget]/eliteInterval/bossInterval/monsters/elitePool/bossPool` 描述为 WorldNode 属性；而 `generic-map-and-encounter-system.md:99,113-119,189` 整改后明确「预算属于遭遇、精英/Boss 走 eliteEnemyIds/bossEnemyIds/battlesPerBoss」。两份规约对同一机制给出不同模型归属与字段名。
+**F 域文档内部矛盾（新）**：X-07——`总纲.md:270-283` 仍以「节点三支柱」口径把 `[minBudget,maxBudget]/eliteInterval/bossInterval/monsters/elitePool/bossPool` 描述为 WorldNode 属性；而 `通用地图与遇怪系统.md:99,113-119,189` 整改后明确「预算属于遭遇、精英/Boss 走 eliteEnemyIds/bossEnemyIds/battlesPerBoss」。两份规约对同一机制给出不同模型归属与字段名。
 
 ---
 

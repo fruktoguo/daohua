@@ -55,7 +55,7 @@
     - `Loadout`（`PlayerLoadoutState`，含 `AutoUseSlotState`）：装备实例引用、已学功法与自动使用槽；
     - `Settings`（`PlayerSettingsState`）：低频偏好（循环开关 `LoopEnabled`、语言等）；
     - `ActionQueue`（`QueuedAction` 队列）：进行中与排队行动，`RemainingRepeats == -1` 为无限循环；
-    - `Duel`（`PlayerDuelState`）：斗法遭遇计数、冷却、暂存区与战报账本（记账口径见 `docs/design/action-statistics-system.md`）。
+    - `Duel`（`PlayerDuelState`）：斗法遭遇计数、冷却、暂存区与战报账本（记账口径见 `docs/design/行动统计系统.md`）。
   - **脏标记驱动**：状态变更通过 `MarkDirty(PlayerSectionKind)` / `Touch` 记录脏分段；`DirtySections` 只读视图供宿主差量刷盘与增量协议投影使用。
   - **资产不进聚合**：灵石、可堆叠物品余额与唯一装备实例统一由 `AssetWallet`（运行时钱包视图）+ `economy.*` 关系表管理，聚合八分段不含 Inventory/Stats 切片。
   - **数值边界明确**：属性、收益、倍率和玩法时长遵循 `AGENTS.md` 的 `double` 规范；ID、版本、序列属于离散技术字段，使用强类型表示。

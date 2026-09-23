@@ -52,16 +52,16 @@
 
 | 编号 | 不符点 | 文档位置 | 实现位置 | 性质 |
 | :--- | :--- | :--- | :--- | :--- |
-| A-01 | 减伤公式：文档为「两层抗性 + RawDamage 平方」体系，实现只有单一双曲减伤 | `combat-design.md:132-141`、`master-design.md:222` | `CombatModels.cs:301-302` `mitigation = 100/(100+Defense)` | 数值不符 |
-| A-02 | 命中/闪避/暴击/破招/拆招对抗全部缺失，实现为确定性比较 | `combat-design.md:153-164` | `CombatModels.cs:300` `hit = Accuracy >= Evasion`；`CombatEvent` 无暴击字段 | 功能缺失 |
-| A-03 | 技能（神通）与灵力消耗零实现；`ability.*` 配表未进入领域目录 | `master-design.md:165-178`、`combat-design.md:147` | `GameDataCatalog.cs:271-292` 仅识别 `item./equipment./map./encounter./enemy.`，**无 `ability.` 分支**；`PlayerAggregate.cs:68` Manapoints 零扣减 `✓已复核` | 功能缺失 |
-| A-04 | 每 5 秒生命/灵力自然回复零实现（含死亡回蓝） | `combat-design.md:212-214,227`、`master-design.md:253-256` | 全仓 `Regen` 仅 `StaticGameCatalogMapper.cs:266-267` DTO 透传，**零消费点** `✓已复核` | 功能缺失 || A-05 | 死亡与复活规则零实现 | `combat-design.md:233-234`、`master-design.md:258-260` | `PlayerRespawnSeconds` 全仓**仅 1 处定义**（`CombatCatalogModels.cs:33`），零消费；战败仅置 `Blocked` `✓已复核` | 功能缺失 |
-| A-06 | 怪物品阶倍率：文档 80%/300%、120%/500%、150%/2000% | `combat-design.md:72-74`、`master-design.md:292-294` | `combatConstants.ts:288-301` normal 1.0/1.0、elite 1.2/3.0、boss 1.5/10.0 `✓已复核` | 数值不符 |
-| A-07 | 出怪：文档为预算区间抽怪 + 每 5 波精英 / 每 20 波 Boss；实现仅按权重抽 1 只 | `combat-benchmark-model.md:29-31`、`master-design.md:270-285`、`generic-map-and-encounter-system.md:172-208` | `SimulationEngine.cs:459-476` `TrySelectMonster`；`MinBudget/MaxBudget/EliteEnemyIds/BossEnemyIds/BattlesPerBoss` 除解析外零消费 `✓已复核` | 功能缺失 |
-| A-08 | 攻速/攻击间隔硬编码 2.0 秒；文档为 1.000s→0.250s 成长 | `combat-benchmark-model.md:46,53`、`combat-design.md:88-92` | `SimulationEngine.cs:307,342` `CombatantStats.Create(..., 2)` `✓已复核` | 数值不符 |
-| A-09 | 五行属性与五行抗性零实现 | `combat-design.md:137-141` | `CombatantStats`（`CombatModels.cs:29-36`）无元素/抗性字段；仅 DTO 透传 | 功能缺失 |
-| A-10 | 装备属性未参与战斗数值；玩家 AttackPower/Defense 恒为默认 10 | `player-expected-attributes-model.md:44-56`、`master-design.md:96-111` | `PlayerAggregate.cs:72-74` 默认值，全仓**无装备/六维/境界重算点** `✓已复核` | 功能缺失 |
-| A-11 | 威胁（仇恨）累积与目标选择零实现，固定 1v1 | `combat-design.md:170-178` | 全仓 `Threat/仇恨/Aggro` 0 命中 `◻待复核` | 功能缺失 |
+| A-01 | 减伤公式：文档为「两层抗性 + RawDamage 平方」体系，实现只有单一双曲减伤 | `战斗设计.md:132-141`、`总纲.md:222` | `CombatModels.cs:301-302` `mitigation = 100/(100+Defense)` | 数值不符 |
+| A-02 | 命中/闪避/暴击/破招/拆招对抗全部缺失，实现为确定性比较 | `战斗设计.md:153-164` | `CombatModels.cs:300` `hit = Accuracy >= Evasion`；`CombatEvent` 无暴击字段 | 功能缺失 |
+| A-03 | 技能（神通）与灵力消耗零实现；`ability.*` 配表未进入领域目录 | `总纲.md:165-178`、`战斗设计.md:147` | `GameDataCatalog.cs:271-292` 仅识别 `item./equipment./map./encounter./enemy.`，**无 `ability.` 分支**；`PlayerAggregate.cs:68` Manapoints 零扣减 `✓已复核` | 功能缺失 |
+| A-04 | 每 5 秒生命/灵力自然回复零实现（含死亡回蓝） | `战斗设计.md:212-214,227`、`总纲.md:253-256` | 全仓 `Regen` 仅 `StaticGameCatalogMapper.cs:266-267` DTO 透传，**零消费点** `✓已复核` | 功能缺失 || A-05 | 死亡与复活规则零实现 | `战斗设计.md:233-234`、`总纲.md:258-260` | `PlayerRespawnSeconds` 全仓**仅 1 处定义**（`CombatCatalogModels.cs:33`），零消费；战败仅置 `Blocked` `✓已复核` | 功能缺失 |
+| A-06 | 怪物品阶倍率：文档 80%/300%、120%/500%、150%/2000% | `战斗设计.md:72-74`、`总纲.md:292-294` | `combatConstants.ts:288-301` normal 1.0/1.0、elite 1.2/3.0、boss 1.5/10.0 `✓已复核` | 数值不符 |
+| A-07 | 出怪：文档为预算区间抽怪 + 每 5 波精英 / 每 20 波 Boss；实现仅按权重抽 1 只 | `combat-benchmark-model.md:29-31`、`总纲.md:270-285`、`通用地图与遇怪系统.md:172-208` | `SimulationEngine.cs:459-476` `TrySelectMonster`；`MinBudget/MaxBudget/EliteEnemyIds/BossEnemyIds/BattlesPerBoss` 除解析外零消费 `✓已复核` | 功能缺失 |
+| A-08 | 攻速/攻击间隔硬编码 2.0 秒；文档为 1.000s→0.250s 成长 | `combat-benchmark-model.md:46,53`、`战斗设计.md:88-92` | `SimulationEngine.cs:307,342` `CombatantStats.Create(..., 2)` `✓已复核` | 数值不符 |
+| A-09 | 五行属性与五行抗性零实现 | `战斗设计.md:137-141` | `CombatantStats`（`CombatModels.cs:29-36`）无元素/抗性字段；仅 DTO 透传 | 功能缺失 |
+| A-10 | 装备属性未参与战斗数值；玩家 AttackPower/Defense 恒为默认 10 | `player-expected-attributes-model.md:44-56`、`总纲.md:96-111` | `PlayerAggregate.cs:72-74` 默认值，全仓**无装备/六维/境界重算点** `✓已复核` | 功能缺失 |
+| A-11 | 威胁（仇恨）累积与目标选择零实现，固定 1v1 | `战斗设计.md:170-178` | 全仓 `Threat/仇恨/Aggro` 0 命中 `◻待复核` | 功能缺失 |
 | A-12 | `expected-attributes.json` 被声明为数值单点真源，实际服务端零引用 | `player-expected-attributes-model.md:115` | 服务端 0 引用（仅 docs 与 `tools/config-editor`）；基准值散落在代码常量 `◻待复核` | 文档过期 |
 
 ---
@@ -70,12 +70,12 @@
 
 | 位置 | 规约内容 |
 | :--- | :--- |
-| `docs/design/combat-design.md:203-237` | **§9 权威规约主源**：9.1 世界常驻不重置；**9.2 每 5 秒自然回复 + 协议 10 秒字段 1:2 换算**；9.3 死亡时灵力仍回复；9.4 两类复活表 |
-| `docs/design/master-design.md:251-260` | **§6.4 总纲**：同 5 秒口径 + 死亡回蓝 + 两类复活（180s 读条满状态 / 脱战 1 HP） |
-| `docs/design/master-design.html:1354-1363` | 上述总纲的内嵌 HTML 副本（改口径时须同步，否则前端帮助页与规约分叉） |
-| `docs/design/character-core-design.md:75` | 属性表：脱战不自动回满，依靠**自然回复属性**/疗伤丹药/调息恢复 |
-| `docs/design/character-core-design.md:183` | **队列全受阻的「安全空转期」也应持续享受生命与灵力自然回复**（`RegenerateResources`）——与审计中「空闲不在模拟覆盖范围」的缺口直接对应 |
-| `docs/design/character-core-design.md:258` | 红线：严禁跨玩法免费重置气血/灵力/冷却，「一切恢复必须有法可循（丹药、打坐、技能或自然回复属性）」 |
+| `docs/design/战斗设计.md:203-237` | **§9 权威规约主源**：9.1 世界常驻不重置；**9.2 每 5 秒自然回复 + 协议 10 秒字段 1:2 换算**；9.3 死亡时灵力仍回复；9.4 两类复活表 |
+| `docs/design/总纲.md:251-260` | **§6.4 总纲**：同 5 秒口径 + 死亡回蓝 + 两类复活（180s 读条满状态 / 脱战 1 HP） |
+| `docs/design/总纲.html:1354-1363` | 上述总纲的内嵌 HTML 副本（改口径时须同步，否则前端帮助页与规约分叉） |
+| `docs/design/角色核心设计.md:75` | 属性表：脱战不自动回满，依靠**自然回复属性**/疗伤丹药/调息恢复 |
+| `docs/design/角色核心设计.md:183` | **队列全受阻的「安全空转期」也应持续享受生命与灵力自然回复**（`RegenerateResources`）——与审计中「空闲不在模拟覆盖范围」的缺口直接对应 |
+| `docs/design/角色核心设计.md:258` | 红线：严禁跨玩法免费重置气血/灵力/冷却，「一切恢复必须有法可循（丹药、打坐、技能或自然回复属性）」 |
 | `docs/design/player-expected-attributes-model.md:37` | 数值预算：**每 1 点生命/灵力回复 = 4.0 点装备预算** |
 | `docs/design/ecs-architecture-and-evolution-plan.md:52` | 实现方式建议：回复为**每秒小数推进**，用 `Remainder` 累加器保证整数面板显示与零精度丢失 |
 | `docs/backend/logic-development-guide.md:81` | 后端流程：战斗遭遇推进须同时执行「5 秒自然回复」（引用了已删除的 `CombatSimulator`/`CombatGroupSimulator`） |
@@ -85,7 +85,7 @@
 前端展示常量 `frontend/src/game/combatConstants.ts:240-241` 是固定 `hpRegen 2.0 / mpRegen 1.0` 点、
 `:823-824` 又回到 2% 上限；丹药 `config/game-data/items/pills.json` 的 `hpRegen:12`/`mpRegen:8` 被
 `frontend/src/components/ItemDisplay.tsx:422,425` 渲染为「**每秒**」；协议侧另一半口径在
-`combat-design.md:216-223`（10 秒比率 4%/2%）。这些旧表述不能直接决定整改公式：基础回复读取境界基础属性配置，2% 仅用于生命回复配表，周期仍待讨论。
+`战斗设计.md:216-223`（10 秒比率 4%/2%）。这些旧表述不能直接决定整改公式：基础回复读取境界基础属性配置，2% 仅用于生命回复配表，周期仍待讨论。
 
 ---
 
@@ -94,16 +94,16 @@
 | 编号 | 不符点 | 文档位置 | 实现位置 | 性质 |
 | :--- | :--- | :--- | :--- | :--- |
 | B-01 | 材料不足应进入 `Blocked` 并跳过一次；实现直接写负库存增量 → 资产事务抛错回滚 | `initial-design.md:57,59` | `SimulationEngine.cs:788-790` 无条件写输入负 delta；全流程无输入校验 `✓已复核` | 功能缺失 |
-| B-02 | 立即消耗品的 Buff / 冷却 / 即时回复值零实现 | `sustained-consumable-system.md:41-45` | `GameDataCatalog.cs` `ParseItem` 内 `buff/hitpointRestore/cooldown` **0 命中** `✓已复核`；`ActiveBuff`(`PlayerAggregate.cs:92`) 无构造点 | 功能缺失 |
+| B-02 | 立即消耗品的 Buff / 冷却 / 即时回复值零实现 | `持续消耗品系统.md:41-45` | `GameDataCatalog.cs` `ParseItem` 内 `buff/hitpointRestore/cooldown` **0 命中** `✓已复核`；`ActiveBuff`(`PlayerAggregate.cs:92`) 无构造点 | 功能缺失 |
 | B-03 | 自动使用槽不校验物品合法性与库存 | `initial-design.md:17` | `PlayerAggregate.cs:607-632` 仅校验槽位索引与字符串长度 `✓已复核` | 功能缺失 |
 | B-04 | 行动的地点限制（`availableNodeIds`）在入队与开始时均未校验 | `initial-design.md:158` | `AllowedNodeIds` 仅投影给前端；`PlayerRuntime.cs:424-432` 与模拟引擎均无校验 `◻待复核` | 功能缺失 |
 | B-05 | 地点修炼倍率未参与服务端收益结算 | `initial-design.md:159` | `cultivationMultiplier` 仅经 `StaticGameCatalogMapper.cs:211`、`ProtocolSnapshotMapper.cs:260` 供前端 `◻待复核` | 功能缺失 |
-| B-06 | **战斗与移动行动的持续消耗品永不激活**（`continue` 早于自动使用结算） | `sustained-consumable-system.md:61` | `SimulationEngine.cs:135-148` 在 `:165 PrepareSustainedAutoUse` 之前 `continue` `✓已复核` | 功能缺失 |
+| B-06 | **战斗与移动行动的持续消耗品永不激活**（`continue` 早于自动使用结算） | `持续消耗品系统.md:61` | `SimulationEngine.cs:135-148` 在 `:165 PrepareSustainedAutoUse` 之前 `continue` `✓已复核` | 功能缺失 |
 | B-07 | 非循环队列中受阻行动应被移除；实现只 `break`，行动永久滞留队首 | `initial-design.md:59` | `SimulationEngine.cs:109-123` `✓已复核` | 功能缺失 |
-| B-08 | 持续消耗品应按实际耗时扣减（`ActualDuration = Base / (1+SpeedBonus)`）；实现按基础耗时 | `sustained-consumable-system.md:88-92,110` | `SimulationEngine.cs:888` 直接减 `definition.DurationSeconds`；全仓无 SpeedBonus 概念 `✓已复核` | 功能缺失 |
+| B-08 | 持续消耗品应按实际耗时扣减（`ActualDuration = Base / (1+SpeedBonus)`）；实现按基础耗时 | `持续消耗品系统.md:88-92,110` | `SimulationEngine.cs:888` 直接减 `definition.DurationSeconds`；全仓无 SpeedBonus 概念 `✓已复核` | 功能缺失 |
 | B-09 | 队列重复次数上限：文档 `1..1000`，实现 `1..1_000_000` | `initial-design.md:58` | `PlayerAggregate.cs:335` `> 1_000_000`（`PlayerStateDocument.cs:309` 同值）`✓已复核` | 数值不符 |
-| B-10 | 止血散/顺气丸效果数值与文档完全不同 | `master-design.md:209-210` | `pills.json:35-36` `hpRegen:12`+`damageAbsorptionRatio:0.05`；`:58-59` `mpRegen:8`+`attackSpeedRatio:0.05` `✓已复核` | 数值不符 |
-| B-11 | 引气入体单轮灵力产出文档内部矛盾（1 vs 10） | `sustained-consumable-system.md:136,150` vs `initial-design.md:28` vs `master-design.md:208` | `cultivation.json:8 qiPerSecond:1`，10 秒整秒累加 → 每轮 10 灵力 `✓已复核` | 文档自相矛盾 |
+| B-10 | 止血散/顺气丸效果数值与文档完全不同 | `总纲.md:209-210` | `pills.json:35-36` `hpRegen:12`+`damageAbsorptionRatio:0.05`；`:58-59` `mpRegen:8`+`attackSpeedRatio:0.05` `✓已复核` | 数值不符 |
+| B-11 | 引气入体单轮灵力产出文档内部矛盾（1 vs 10） | `持续消耗品系统.md:136,150` vs `initial-design.md:28` vs `总纲.md:208` | `cultivation.json:8 qiPerSecond:1`，10 秒整秒累加 → 每轮 10 灵力 `✓已复核` | 文档自相矛盾 |
 
 ---
 
@@ -142,7 +142,7 @@
 | D-11 | 文档指路选择器 `.trigger-rule-row` 不存在 | `common-components.md:281` | 0 命中；实际为 `.combat-trigger-card/-list/-fields` `◻待复核` | 文档过期 |
 | D-12 | 文档指路 `styles.css` 中的 `.connecting-screen`/`.error-screen` 无样式定义 | `common-components.md:213` | 类名被 3 处使用（`ConnectingPage.tsx:24,74`、`ErrorBoundary.tsx:88`），但 `frontend/src/styles/**` 0 命中，实际只有 `.status-screen` `✓已复核` | 文档过期 |
 | D-13 | 已收拢的公共组件未登记（`AbilityGridPicker`，及 5 个 market 组件未按条目登记路径） | `common-components.md:108-116` | `AbilityGridPicker.tsx:11-28` 为通用网格选择器 `✓已复核` | 文档过期 |
-| D-14 | 丹药回复周期口径冲突：i18n 写「每 5 秒」，组件写「每秒」 | `insight.zh.ts:83,125`、`master-design.md:253-256` | `ItemDisplay.tsx:422,425` 输出「每秒气血回复」`✓已复核` | 命名不符 |
+| D-14 | 丹药回复周期口径冲突：i18n 写「每 5 秒」，组件写「每秒」 | `insight.zh.ts:83,125`、`总纲.md:253-256` | `ItemDisplay.tsx:422,425` 输出「每秒气血回复」`✓已复核` | 命名不符 |
 
 ---
 
@@ -168,15 +168,15 @@
 
 | 编号 | 不符点 | 文档位置 | 实现位置 | 性质 |
 | :--- | :--- | :--- | :--- | :--- |
-| F-01 | 文档规定 `minBudget/maxBudget/eliteInterval/bossInterval` 为 **`WorldNode` 字段**，配表节点上**完全没有这些字段** → 前端「危险度」恒不显示 | `generic-map-and-encounter-system.md:33-35,138-141,172-177`、`master-design.md:270` | `config/game-data/maps/*.json` 全节点 **0 命中** `✓已复核`；预算实际写在 `encounters/*.json`；`NearbyPanel.tsx:88` 因 `world.maxBudget == null` 恒 false | 配表缺失 |
-| F-02 | 怪物 `budgetCost` 与文档不符（≥3 例） | `generic-map-and-encounter-system.md:222,232` | 木灵 15（文档 25）、魔化野兔 10（文档 15）、铁甲熊 45（文档「重甲蛮熊 35」）`✓已复核` | 配表不符 |
-| F-03 | 怪物中文名不符（3 例） | `generic-map-and-encounter-system.md:103,118-119,264` | `铁甲熊` vs 重甲蛮熊、`魔猿` vs 通臂魔猿、`伥虎` vs 伥鬼妖虎 `✓已复核` | 命名不符 |
-| F-04 | 节点 ID 命名不符 + 文档节点不存在 | `generic-map-and-encounter-system.md:117-120,132` | `node.herb-vale` vs 配表 `node.herb-valley`；`node.twilight-pass`、`node.spirit-spring` 配表 0 命中 `✓已复核` | 命名不符 |
+| F-01 | 文档规定 `minBudget/maxBudget/eliteInterval/bossInterval` 为 **`WorldNode` 字段**，配表节点上**完全没有这些字段** → 前端「危险度」恒不显示 | `通用地图与遇怪系统.md:33-35,138-141,172-177`、`总纲.md:270` | `config/game-data/maps/*.json` 全节点 **0 命中** `✓已复核`；预算实际写在 `encounters/*.json`；`NearbyPanel.tsx:88` 因 `world.maxBudget == null` 恒 false | 配表缺失 |
+| F-02 | 怪物 `budgetCost` 与文档不符（≥3 例） | `通用地图与遇怪系统.md:222,232` | 木灵 15（文档 25）、魔化野兔 10（文档 15）、铁甲熊 45（文档「重甲蛮熊 35」）`✓已复核` | 配表不符 |
+| F-03 | 怪物中文名不符（3 例） | `通用地图与遇怪系统.md:103,118-119,264` | `铁甲熊` vs 重甲蛮熊、`魔猿` vs 通臂魔猿、`伥虎` vs 伥鬼妖虎 `✓已复核` | 命名不符 |
+| F-04 | 节点 ID 命名不符 + 文档节点不存在 | `通用地图与遇怪系统.md:117-120,132` | `node.herb-vale` vs 配表 `node.herb-valley`；`node.twilight-pass`、`node.spirit-spring` 配表 0 命中 `✓已复核` | 命名不符 |
 | F-05 | `maps.md` 节点坐标与配表不符（4 例） | `world/maps.md:15-18` | 百草谷 (10,50)→(10,45)、落霞桃林 (38,55)→(38,78)、清石水滩 (35,75)→(35,92)、望云茶肆 (45,40)→(45,48) `✓已复核` | 文档过期 |
 | F-06 | `maps.md` 声称已存在的节点在配表中不存在 | `world/maps.md:52,66` | `node.stone-vein`、`node.ancient-terrace` config 0 命中 `✓已复核` | 配表缺失 |
-| F-07 | `map.starfall-domain`（星陨异境，7 节点全套 T2）在设计文档中**完全未提** | `world/maps.md:3`、`generic-map-and-encounter-system.md:111-113` | `maps/xingyun_realm.json:3-4` 存在；design/world 文档 0 命中 `✓已复核` | 文档缺失 |
+| F-07 | `map.starfall-domain`（星陨异境，7 节点全套 T2）在设计文档中**完全未提** | `world/maps.md:3`、`通用地图与遇怪系统.md:111-113` | `maps/xingyun_realm.json:3-4` 存在；design/world 文档 0 命中 `✓已复核` | 文档缺失 |
 | F-08 | 遭遇名与节点重名且挂载错位 | `encounters/tier2_encounters.json:4` | 「坠星天坑」遭遇名与 `xingyun_realm.json:141` 节点同名，却挂给另外 6 个节点 `✓已复核` | 命名不符 |
-| F-09 | **怪物配表根本没有属性字段**：`maxHitpoints`/`hpRegenPerTenSeconds`/`mpRegenPerTenSeconds` 全部缺失，属性完全由 `budgetCost` × 权重推导 | `combat-design.md`（怪物属性表）、`StaticGameCatalogMapper.cs:245,266-267` 均按这些字段读取 | 配表实际字段仅 `budgetCost/category/dropTable/element/id/level/name/rank/skills/style/tier/visual/weights` `✓已复核` | 配表缺失 |
+| F-09 | **怪物配表根本没有属性字段**：`maxHitpoints`/`hpRegenPerTenSeconds`/`mpRegenPerTenSeconds` 全部缺失，属性完全由 `budgetCost` × 权重推导 | `战斗设计.md`（怪物属性表）、`StaticGameCatalogMapper.cs:245,266-267` 均按这些字段读取 | 配表实际字段仅 `budgetCost/category/dropTable/element/id/level/name/rank/skills/style/tier/visual/weights` `✓已复核` | 配表缺失 |
 | F-10 | 星陨异境节点与战斗行动的双向声明不一致 | `combat.json` `combat.sweep-twilight-valley.availableNodeIds` 含 `node.astral-rift` | `xingyun_realm.json` 中 `node.astral-rift` 与 `node.tea-house` 的 `availableActionIds` 为 `null` `✓已复核` | 配表不一致 |
 
 ---
@@ -185,11 +185,11 @@
 
 | 编号 | 矛盾内容 | 位置 |
 | :--- | :--- | :--- |
-| X-01 | 引气入体单轮灵力产出：`1 灵力` vs `10 灵力` vs `10 MP → 13 MP` | `sustained-consumable-system.md:136,150` vs `initial-design.md:28` vs `master-design.md:208` |
-| X-02 | 丹药回复周期：设计文档统一「每 5 秒」，前端组件文案为「每秒」 | `master-design.md:253-256` vs `ItemDisplay.tsx:422,425` |
+| X-01 | 引气入体单轮灵力产出：`1 灵力` vs `10 灵力` vs `10 MP → 13 MP` | `持续消耗品系统.md:136,150` vs `initial-design.md:28` vs `总纲.md:208` |
+| X-02 | 丹药回复周期：设计文档统一「每 5 秒」，前端组件文案为「每秒」 | `总纲.md:253-256` vs `ItemDisplay.tsx:422,425` |
 | X-03 | 玩家基准上限：领域默认 HP/MP = 100/100，前端基准 100/50 | `PlayerAggregate.cs:66-70` vs `combatConstants.ts:228-241` |
 | X-04 | 世界观命名体系（云来集 / 青岚药谷 / 落霞西岭…）与主线配表命名体系（云溪村 / 百草谷 / 落霞桃林…）并存，`maps.md` 仅以"未来储备"一句带过 | `world/lore.md:33-41`、`world/story.md:16-22` vs `maps/qingyun_mountain.json` |
-| X-05 | `combat-design.md` 表述「每 10 秒比率字段」与「底层每 5 秒结算」并存，协议字段名与周期语义分离 | `combat-design.md:216-222` |
+| X-05 | `战斗设计.md` 表述「每 10 秒比率字段」与「底层每 5 秒结算」并存，协议字段名与周期语义分离 | `战斗设计.md:216-222` |
 | X-06 | 反例（已对齐，供对照）：`maps.md` 声称以 `map.qingyun-mountains` 8 节点为权威基准，实际配表也是 8 节点 7 条边，此点一致 | — |
 
 ---
@@ -199,7 +199,7 @@
 | 原报告条目 | 剔除原因 |
 | :--- | :--- |
 | 「`frontend/src/game/ids.ts` 装备兜底清单缺 12 件（仅 16 条）」 | **误报**。逐 ID 比对：config 28 件、`ids.ts` 28 件，**双向差集均为空** `✓已复核` |
-| 「`ids.ts` 兜底配方与 `alchemy.json` 不符（`morning-dew:1`、`ningxue-grass:2`）」 | **误报**。`ids.ts` 内不存在 `morning-dew`/`ningxue-grass`/`herb-essence` 任何字段 `✓已复核`；且 `alchemy.json` 配方与 `master-design.md:208-210` 完全一致 |
+| 「`ids.ts` 兜底配方与 `alchemy.json` 不符（`morning-dew:1`、`ningxue-grass:2`）」 | **误报**。`ids.ts` 内不存在 `morning-dew`/`ningxue-grass`/`herb-essence` 任何字段 `✓已复核`；且 `alchemy.json` 配方与 `总纲.md:208-210` 完全一致 |
 | 「`world/lore.md` 节点名在配表中大面积不存在」 | **降级为 X-04**。`maps.md` 已显式声明这些是"未来世界演进储备"，不属于规约与实现不符 |
 | 「`src/Domain` 依赖违反架构边界」 | **误报**。`Domain.csproj` 实际仅引用 `YuoCore.Abstractions` + `YuoCore.Ecs`，依赖方向合规 `✓已复核`（仅"依赖图未列 Abstractions"可作 P2 修正，已并入备注） |
 

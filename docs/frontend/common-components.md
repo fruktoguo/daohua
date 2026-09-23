@@ -317,9 +317,12 @@
 ## 25. 斗法战斗属性统一面板 (CombatAttributePanel)
 
 - **适用场景**：
-  - 内视「斗法」Tab 与战场单位详情弹窗（`CharacterAttributeModal`，单击己方角色/敌怪头像呼出）共用同一属性面板：基础战斗属性（气血/灵力/回复、物理/术法攻击、护甲/法抗、命中/闪避/暴击/免暴/破招/化解）、特殊战斗属性（暴伤/行动速度/冷却/减耗/减伤/穿透/仇恨）、增免伤与五行属性三组以 `.insight-sub-tabs` 二级导航 Tab 切换展示，外加可选「当前运转丹药与神通加持」Buff 分区。
-  - **数值归一化模型 `CombatAttributePanelModel`**：只承载最终展示数值（点数 + double 比例原始值），格式化统一由面板渲染层完成；玩家侧经 `resolvePlayerCombatAttributeModel(attributes, loadout, basePool)` 解析（实时属性优先、缺省回退境界底座 × 六维加成估算），敌怪侧经 `resolveEnemyCombatAttributeModel(definition)` 由遭遇配表 `CombatantDefinition` 映射（术法系攻强记入术法攻击，暴击/免暴按比例 ×100 折点）。
-  - 新增战斗属性字段时只改模型与面板一处，禁止在弹窗/其他页面另写属性行。
+  - 内视「斗法」Tab 与战场单位详情弹窗（`CharacterAttributeModal`，单击己方角色/敌怪头像呼出）共用同一属性面板，三组以 `.insight-sub-tabs` 二级导航 Tab 切换，外加可选「当前运转丹药与神通加持」Buff 分区：
+    - **基础**：气血/灵力/五秒回复、物理/术法攻击、护甲/法抗、命中/闪避/暴击/免暴/破招/化解（全部为点数原值，暴击/免暴不预折百分比）；
+    - **特殊**：攻击速度/行动速度/冷却缩减（NonLinear 点数）、暴击伤害倍率/普攻增幅/技能增幅/威胁增幅、治疗增幅/气血汲取/灵力汲取/伤害反弹（Linear 点数）、成长乘区展示行（普攻倍率/技能强度/吟唱系数/冷却系数，原始倍率直显）；出手间隔为系统常量机制，不上面板；
+    - **伤害增减**：全部伤害/物理伤害/术法伤害 + 金/木/水/火/土 共 8 个条目，每条目以 `增伤 / 减伤` 成对显示（增伤按 Linear、减伤按 NonLinear 各自曲线换算为有效百分比），Hover 只写语义不写公式。
+  - **服务端权威直渲**：面板直接接收 `CombatAttributes` 协议终值（40 键全点数口径，玩家/敌怪/斗法镜像同一形状），不做任何本地估算或配表反查；格式化统一由面板渲染层完成（`linearText`/`nonLinearText`/`factorText`/`boostReduceText`）。
+  - 新增战斗属性字段时只改协议字段集与面板一处，禁止在弹窗/其他页面另写属性行。
 - **组件源码**：[`frontend/src/components/CombatAttributePanel.tsx`](../../frontend/src/components/CombatAttributePanel.tsx)
 - **样式类名**：复用 `.insight-pill-group` / `.insight-base-layout` / `.insight-base-row` 与 `PillStatLabel` 胶囊体系
 
@@ -339,6 +342,34 @@
   - [`frontend/src/components/ChatPanel.tsx`](../../frontend/src/components/ChatPanel.tsx)
 - **状态服务**：[`frontend/src/logging/gameLogService.ts`](../../frontend/src/logging/gameLogService.ts)（日志事件，按 `channel` 过滤）、[`frontend/src/logging/chatService.ts`](../../frontend/src/logging/chatService.ts)（传音消息，按会话键分组）、[`frontend/src/game/socialStore.ts`](../../frontend/src/game/socialStore.ts)（好友/申请/队伍/附近修士）
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.log-tabs`, `.chat-composer`, `.chat-entry-list`, `.chat-presence`, `.nearby-player-actions`)
-- **设计真源**：[`docs/design/chat-and-log-channels.md`](../design/chat-and-log-channels.md)
+- **设计真源**：[`docs/design/传音频道与日志分组.md`](../design/总纲/14-传音频道与日志分组.md)
 
 
+
+---
+
+## 27. 战斗技能特效加载模块 (Combat VFX)
+
+- **适用场景**：
+  - 历练遭遇战/斗法回放中功法出手、普攻命中、吟唱前摇的粒子演出；统一走 `src/vfx/` 模块，禁止在 `CombatArena` 或其他业务组件内硬编码技能特效。
+  - **单一真源**：特效脚本真源在 `docs/design/战斗演武画廊/vfx/`（画廊与正式前端共享同一批 classic-script 队列模块，无 import/export）；脚本向 `window.DaohuaVFXModules` 推入注册函数，前端经 `import.meta.glob(eager)` 引入后在 `createCombatVfx` drain 注册——改画廊脚本即改正式页面演出。
+  - **模块化注册**：`vfx/abilities/<skill>.js` 每真实功法一个模块，`VFX.register('ability.x', handler)`；前端 glob 自动发现——新增技能只需在画廊目录新增文件并在画廊 `index.html` 加一行 script 标签，正式前端零改动。
+  - **演出上下文 `VfxPlayContext`**：`{side, casterEl, targetEls, ability, castMs, after}` 由桥接层在出手时刻解析（目标按配表 `targetType` 从 `.arena-actor--player/enemy:not(.is-dead)` DOM 快照），技能模块只做纯粒子演出，不写结算。
+  - **触发源**：玩家 `combatResources.castingAbilityId`（出现播 `feedback.castRing`、完成时刻播技能）；敌方 `ExpeditionEnemy.pendingAbilityId` + `nextAttackAtSeconds`；斗法 `duel.events[].abilityId + atSeconds`；普攻出手时刻播 `feedback.attack`；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
+  - **结算边界**：伤害跳字/血条碎条/受击震颤/出手动作由服务端快照驱动的既有组件（`ArenaResource`/`ArenaActor`）承担，特效模块不触碰战斗状态。
+- **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` 引擎原语+DaohuaVFX 门面 · `useCombatVfx.ts` React 桥 · `index.ts` 加载器与目标解析）；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
+- **样式文件**：[`frontend/src/styles/vfx.css`](../../frontend/src/styles/vfx.css)（`.vfx-stage-overlay`/`.vfx-node`/震屏 keyframes；技能专属样式各脚本 `VFX.injectStyles` 自含）
+- **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef)` 一行。
+- **注意**：`vite.config.ts` 的 `server.fs.allow: ['..']` 为 dev server serve 仓库根共享脚本所必需，勿删。
+
+---
+
+## 28. 讨伐行动节点生态面板 (CombatEcologyPanel)
+
+- **适用场景**：
+  - 讨伐/战斗行动配置弹窗（`ActionModal`）内的当前地点妖兽生态展示区：主体为怪物**图标瓦片网格**（立绘 + 位阶角标 + 等级底标），**悬停**弹简要信息卡（位阶徽记、境界·等级·阶位副标、气血/攻击威能/护甲三行核心值），**单击**弹详细信息卡（六维属性、攻速间隔、消耗预算、出没周期、击杀收益、施展功法与掉落物图标瓦片）。
+  - **双层浮层嵌套结构**：外层 `FloatingPopover trigger="click"`（详卡，`placement="bottom"`）包内层 `FloatingPopover trigger="hover" interactive={false}`（简卡，`placement="top"`），均 `displayContents` 锚定同一瓦片按钮——hover 与 click 分侧展开互不遮挡，对齐 `InventoryItemCell` 既有嵌套模式。
+  - **数据源即节点生态**：取静态目录 `maps[world.mapId].nodes[world.nodeId]` 的 `monsters`/`eliteEnemies`/`bossEnemies`（服务端 `StaticGameCatalogMapper.ToNode` 按节点 `encounterIds` 预解析的 `CombatantDefinition` 全字段），与服务端 `ResolveCombatEncounter` 实战遭遇同根同源；行进中或节点无生态时回退行动钉死 `combatEncounterId` 的遭遇怪群，禁止再按行动遭遇常驻展示。
+  - **行动名按驻留地点本地化**：`localizeActionDisplayText(text, world, maps)`（`frontend/src/game/ids.ts`）把行动名/描述中内嵌的当前地图名替换为当前节点名（「讨伐 青云仙山」→「讨伐 漱玉溪」）；行进中（`nodeId=null`）不替换。已统一接入 `ActionCard`、`ActionModal`、行动队列显示名与 `CombatArena` 各显示点。
+- **组件源码**：[`frontend/src/components/CombatEcologyPanel.tsx`](../../frontend/src/components/CombatEcologyPanel.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-ecology-panel`, `.ecology-monster-tile`, `.ecology-monster-rank`, `.ecology-monster-level`)
