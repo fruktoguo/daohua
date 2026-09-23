@@ -537,19 +537,19 @@ function BuffsListEditor({
               />
 
               <NumberInput
-                label="攻速加成 (AttackSpeedRatio)"
-                value={buff.attackSpeedRatio}
-                onChange={v => handleUpdate(idx, { attackSpeedRatio: v })}
-                step={0.05}
-                unit="×"
+                label="攻击速度点数 (AttackSpeedPoints)"
+                value={buff.attackSpeedPoints}
+                onChange={v => handleUpdate(idx, { attackSpeedPoints: v })}
+                step={1}
+                unit="点"
               />
 
               <NumberInput
-                label="免伤比例 (DamageAbsorptionRatio)"
-                value={buff.damageAbsorptionRatio}
-                onChange={v => handleUpdate(idx, { damageAbsorptionRatio: v })}
-                step={0.05}
-                unit="×"
+                label="免伤点数 (DamageAbsorptionPoints)"
+                value={buff.damageAbsorptionPoints}
+                onChange={v => handleUpdate(idx, { damageAbsorptionPoints: v })}
+                step={1}
+                unit="点"
               />
             </div>
           </div>

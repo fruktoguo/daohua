@@ -299,7 +299,7 @@ export function EquipmentEditor() {
 
             <StatDictEditor
               label="特殊机制属性 (SpecialMechanics)"
-              description="threatRatio/hpDrainRatio/mpDrainRatio/damageReflectRatio 等"
+              description="百分比点数键：threatBonusPoints/hpDrainPoints/damageReflectPoints/各增减伤 Points 等"
               value={currentEquipment.specialMechanics}
               onChange={dict => handleUpdate({ specialMechanics: dict })}
               unit="%"

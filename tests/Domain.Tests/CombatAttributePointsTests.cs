@@ -1,0 +1,150 @@
+using System.Text.Json;
+using Domain.Combat;
+using Domain.GameData;
+using Domain.Player;
+
+namespace Domain.Tests;
+
+/// <summary>
+/// 百分比点数属性模型测试（战斗设计 §7.5/§7.1）：增减伤 Linear/NonLinear 结算链、
+/// 速率点数读条与冷却结算、装备 specialMechanics 点数汇总到属性面板。
+/// </summary>
+public sealed class CombatAttributePointsTests
+{
+    /// <summary>基础伤害锚点：100 AD 对 0 甲目标的普攻实伤 = 100×100/101。</summary>
+    private const double BaseDamage = 100d * 100 / 101;
+
+    private static double FirstHitDamage(CombatantStats attacker, CombatantStats defender)
+    {
+        var state = CombatEncounterState.Start("points", 7, attacker, defender);
+        var hit = DeterministicCombatEngine.AdvanceTo(state, 1.01).Events[0];
+        Assert.True(hit.Hit);
+        return hit.Damage;
+    }
+
+    /// <summary>增伤点数按 Linear 逐项乘算：大类 ×(1+x/100)、五行按攻击元素匹配、总增伤通用。</summary>
+    [Fact]
+    public void DamageBonusPointsMultiplyLinearly()
+    {
+        var defender = CombatantStats.Create(100000, 0, 0, 2);
+        Assert.Equal(BaseDamage, FirstHitDamage(
+            CombatantStats.Create(1000, 100, 0, 1), defender), 10);
+        Assert.Equal(BaseDamage * 1.5, FirstHitDamage(
+            CombatantStats.Create(1000, 100, 0, 1) with { PhysicalDamageBonusPoints = 50 }, defender), 10);
+        // 五行增伤仅在攻击携带对应元素时生效。
+        Assert.Equal(BaseDamage * 2, FirstHitDamage(
+            CombatantStats.Create(1000, 100, 0, 1) with { Element = CombatElement.Fire, FireDamageBonusPoints = 100 }, defender), 10);
+        Assert.Equal(BaseDamage, FirstHitDamage(
+            CombatantStats.Create(1000, 100, 0, 1) with { Element = CombatElement.Metal, FireDamageBonusPoints = 100 }, defender), 10);
+        Assert.Equal(BaseDamage * 2 * 1.5, FirstHitDamage(
+            CombatantStats.Create(1000, 100, 0, 1) with { TotalDamageBonusPoints = 100, PhysicalDamageBonusPoints = 50 }, defender), 10);
+    }
+
+    /// <summary>减伤点数按 NonLinear 逐项收敛：大类/五行/总减伤 ×100/(100+x)，永不归零。</summary>
+    [Fact]
+    public void DamageReductionPointsConvergeNonLinearly()
+    {
+        var attacker = CombatantStats.Create(1000, 100, 0, 1) with { Element = CombatElement.Fire };
+        Assert.Equal(BaseDamage * 0.5, FirstHitDamage(attacker,
+            CombatantStats.Create(100000, 0, 0, 2) with { PhysicalDamageReductionPoints = 100 }), 10);
+        Assert.Equal(BaseDamage * 0.5, FirstHitDamage(attacker,
+            CombatantStats.Create(100000, 0, 0, 2) with { FireDamageReductionPoints = 100 }), 10);
+        // 非对应五行减伤不生效。
+        Assert.Equal(BaseDamage, FirstHitDamage(attacker,
+            CombatantStats.Create(100000, 0, 0, 2) with { WoodDamageReductionPoints = 100 }), 10);
+        Assert.Equal(BaseDamage * 0.5, FirstHitDamage(attacker,
+            CombatantStats.Create(100000, 0, 0, 2) with { DamageAbsorptionPoints = 100 }), 10);
+        // 三项收敛乘算：0.5³ = 0.125。
+        Assert.Equal(BaseDamage * 0.125, FirstHitDamage(attacker,
+            CombatantStats.Create(100000, 0, 0, 2) with
+            { PhysicalDamageReductionPoints = 100, FireDamageReductionPoints = 100, DamageAbsorptionPoints = 100 }), 10);
+    }
+
+    /// <summary>攻击速度点数（NonLinear）只缩短普攻读条：100 点 → 读条减半。</summary>
+    [Fact]
+    public void AttackSpeedPointsHalveBasicAttackInterval()
+    {
+        var enemy = CombatantStats.Create(100000, 0, 0, 2);
+        var state = CombatEncounterState.Start("speed", 7,
+            CombatantStats.Create(1000, 100, 0, 2) with { AttackSpeedPoints = 100 }, enemy);
+        Assert.Equal(1, state.Player.NextAttackAtSeconds, 9);
+        // 行动速度同样作用于普攻读条（双重除数）。
+        var both = CombatEncounterState.Start("speed", 7,
+            CombatantStats.Create(1000, 100, 0, 2) with { AttackSpeedPoints = 100, ActionSpeedPoints = 100 }, enemy);
+        Assert.Equal(0.5, both.Player.NextAttackAtSeconds, 9);
+    }
+
+    /// <summary>行动速度点数（NonLinear）缩短技能吟唱读条；冷却缩减点数缩短冷却窗。</summary>
+    [Fact]
+    public void ActionSpeedAndCooldownReductionCompressCastAndCooldown()
+    {
+        var ability = JsonDocument.Parse("""
+            {"id":"ability.test","category":"physical","element":"none","castMilliseconds":4000,
+             "cooldownMilliseconds":8000,"manaCost":0,"damageRatio":1}
+            """).RootElement;
+        var enemy = CombatantStats.Create(100000, 0, 0, 60);
+        var slow = CombatEncounterState.Start("cdr", 7,
+            new CombatantTemplate(CombatantStats.Create(1000, 100, 0, 60) with { MaxManapoints = 100 },
+                [new SkillSlot(ability.Clone(), 1)]),
+            [new CombatantTemplate(enemy)]);
+        var fast = CombatEncounterState.Start("cdr", 7,
+            new CombatantTemplate(CombatantStats.Create(1000, 100, 0, 60) with
+            { MaxManapoints = 100, ActionSpeedPoints = 100, CooldownReductionPoints = 100 },
+                [new SkillSlot(ability.Clone(), 1)]),
+            [new CombatantTemplate(enemy)]);
+        // 吟唱 4s：行动速度 100 点 → 2s；冷却 8s：冷却缩减 100 点 → 4s（自吟唱完成起算）。
+        Assert.Equal(4, slow.Player.NextAttackAtSeconds, 9);
+        Assert.Equal(4 + 8, slow.Player.SkillCooldownUntil![0], 9);
+        Assert.Equal(2, fast.Player.NextAttackAtSeconds, 9);
+        Assert.Equal(2 + 4, fast.Player.SkillCooldownUntil![0], 9);
+    }
+
+    /// <summary>装备 specialMechanics 点数键逐项汇入属性面板（含增减伤/速度/汲取全套词汇表）。</summary>
+    [Fact]
+    public void EquipmentMechanicsPointsFlowIntoResolvedAttributes()
+    {
+        var attributes = new BaseAttributeCatalog([new(1, 1000, 100, 10, 5, 10, 0, 100, 0, 0, 0, 0, 0, 7, 3)]);
+        using var equipment = JsonDocument.Parse("""
+            {"specialMechanics":{"physicalDamageBonusPoints":50,"fireDamageReductionPoints":100,
+             "attackSpeedPoints":25,"cooldownReductionPoints":50,"threatBonusPoints":200,
+             "hpDrainPoints":10,"healingBonusPoints":50}}
+            """);
+        var item = new ItemId("equipment.points");
+        var catalog = new GameDataCatalog("test", "test", new ActionCatalog([]), baseAttributes: attributes,
+            rawEquipments: new Dictionary<string, JsonElement> { [item.Value] = equipment.RootElement });
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "点数", DateTimeOffset.UnixEpoch, "test");
+        var state = player.ExportState();
+        var resolved = PlayerAttributeResolver.Resolve(
+            PlayerAggregate.Restore(state with
+            {
+                Loadout = state.Loadout with { CoreAttributes = new(0, 0, 0, 0, 0, 0) },
+                EquippedItemIds = [item]
+            }), catalog);
+        Assert.Equal(50, resolved.PhysicalDamageBonusPoints);
+        Assert.Equal(100, resolved.FireDamageReductionPoints);
+        Assert.Equal(25, resolved.AttackSpeedPoints);
+        Assert.Equal(50, resolved.CooldownReductionPoints);
+        Assert.Equal(200, resolved.ThreatBonusPoints);
+        Assert.Equal(10, resolved.Effects.HpDrainPoints);
+        Assert.Equal(50, resolved.Effects.HealingBonusPoints);
+        // 点数原样透传到战斗单位属性（ToCombatant 不缩放）。
+        var stats = resolved.ToCombatant();
+        Assert.Equal(resolved.PhysicalDamageBonusPoints, stats.PhysicalDamageBonusPoints);
+        Assert.Equal(resolved.FireDamageReductionPoints, stats.FireDamageReductionPoints);
+        Assert.Equal(resolved.Critical, stats.Critical);
+        Assert.Equal(resolved.CriticalAvoidance, stats.CriticalResistance);
+    }
+
+    /// <summary>Buff 点数修饰键汇入属性面板：攻速与免伤按层数叠加。</summary>
+    [Fact]
+    public void BuffPointsAggregateIntoResolvedAttributes()
+    {
+        var attributes = new BaseAttributeCatalog([new(1, 1000, 100, 10, 5, 10, 0, 100, 0, 0, 0, 0, 0, 7, 3)]);
+        var catalog = new GameDataCatalog("test", "test", new ActionCatalog([]), baseAttributes: attributes);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "增益", DateTimeOffset.UnixEpoch, "test");
+        player.Buffs.Active.Add(new ActiveBuff("buff.test", 100, 2, "测试", null, 0, 0, 25, 15));
+        var resolved = PlayerAttributeResolver.Resolve(player, catalog);
+        Assert.Equal(50, resolved.AttackSpeedPoints);
+        Assert.Equal(30, resolved.DamageAbsorptionPoints);
+    }
+}

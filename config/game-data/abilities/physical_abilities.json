@@ -62,7 +62,7 @@
     "targetType": "self",
     "damageRatio": 0.0,
     "threatGain": 500.0,
-    "threatRatio": 2.0,
+    "threatPoints": 200,
     "defaultTriggers": [
       {
         "dependency": "self",

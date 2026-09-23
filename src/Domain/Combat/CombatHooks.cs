@@ -8,15 +8,15 @@ namespace Domain.Combat;
 /// 只需增加字段，无需改动结算签名、快照结构与钩子接口。
 /// 强度来源：装备 specialMechanics 与怪物配表，经属性解析折算写入。
 /// </summary>
-/// <param name="HpDrainRatio">气血汲取比例：命中后按实际伤害回血（普攻与技能同构）。</param>
-/// <param name="MpDrainRatio">灵力汲取比例：命中后按实际伤害从目标灵力池偷取灵力。</param>
-/// <param name="DamageReflectRatio">伤害反弹比例：受击落账后把实收伤害按比例弹回攻击方。</param>
-/// <param name="HealingBonusRatio">治疗加成比例：施放治疗技能时按比例放大治疗量（对一切施放单位通用）。</param>
+/// <param name="HpDrainPoints">气血汲取点数：命中后按「实伤 × 点数/100」回血（Linear 非负钳制，普攻与技能同构）。</param>
+/// <param name="MpDrainPoints">灵力汲取点数：命中后按「实伤 × 点数/100」从目标灵力池偷取灵力。</param>
+/// <param name="DamageReflectPoints">伤害反弹点数：受击落账后把实收伤害按「点数/100」弹回攻击方。</param>
+/// <param name="HealingBonusPoints">治疗增幅点数（Linear）：施放治疗技能时按 1+点数/100 放大治疗量。</param>
 public sealed record CombatEffectProfile(
-    double HpDrainRatio = 0,
-    double MpDrainRatio = 0,
-    double DamageReflectRatio = 0,
-    double HealingBonusRatio = 0)
+    double HpDrainPoints = 0,
+    double MpDrainPoints = 0,
+    double DamageReflectPoints = 0,
+    double HealingBonusPoints = 0)
 {
     /// <summary>全部效果为零的空参数包。</summary>
     public static CombatEffectProfile Empty { get; } = new();
@@ -24,10 +24,10 @@ public sealed record CombatEffectProfile(
     /// <summary>校验全部效果强度为有限非负数；非法时抛出 InvalidArgument。</summary>
     internal void Validate()
     {
-        if (!double.IsFinite(HpDrainRatio) || HpDrainRatio < 0
-            || !double.IsFinite(MpDrainRatio) || MpDrainRatio < 0
-            || !double.IsFinite(DamageReflectRatio) || DamageReflectRatio < 0
-            || !double.IsFinite(HealingBonusRatio) || HealingBonusRatio < 0)
+        if (!double.IsFinite(HpDrainPoints) || HpDrainPoints < 0
+            || !double.IsFinite(MpDrainPoints) || MpDrainPoints < 0
+            || !double.IsFinite(DamageReflectPoints) || DamageReflectPoints < 0
+            || !double.IsFinite(HealingBonusPoints) || HealingBonusPoints < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗反应效果参数无效。");
     }
 }
@@ -161,10 +161,10 @@ public sealed class HpDrainHook : ICombatAftermathHook
     public void Apply(CombatHitContext context)
     {
         if (!context.Hit || context.Damage <= 0 || !context.Attacker.IsAlive) return;
-        var ratio = context.Attacker.Stats.Effects.HpDrainRatio;
-        if (ratio <= 0) return;
+        var points = context.Attacker.Stats.Effects.HpDrainPoints;
+        if (points <= 0) return;
         var healing = Math.Min(context.Attacker.Stats.MaxHitpoints - context.Attacker.Hitpoints,
-            context.Damage * ratio);
+            context.Damage * points / 100);
         if (healing <= 0) return;
         context.Attacker.Hitpoints += healing;
         context.Emit(new CombatEvent(context.AtSeconds, context.Attacker.Id, context.Attacker.Id,
@@ -181,9 +181,9 @@ public sealed class ManaDrainHook : ICombatAftermathHook
     public void Apply(CombatHitContext context)
     {
         if (!context.Hit || context.Damage <= 0 || !context.Attacker.IsAlive) return;
-        var ratio = context.Attacker.Stats.Effects.MpDrainRatio;
-        if (ratio <= 0) return;
-        var drained = Math.Min(context.Target.Manapoints, context.Damage * ratio);
+        var points = context.Attacker.Stats.Effects.MpDrainPoints;
+        if (points <= 0) return;
+        var drained = Math.Min(context.Target.Manapoints, context.Damage * points / 100);
         if (drained <= 0) return;
         context.Target.Manapoints -= drained;
         context.Attacker.Manapoints = Math.Min(context.Attacker.Stats.MaxManapoints,
@@ -199,9 +199,9 @@ public sealed class DamageReflectHook : ICombatAftermathHook
     public void Apply(CombatHitContext context)
     {
         if (!context.Hit || context.Damage <= 0 || !context.Attacker.IsAlive) return;
-        var ratio = context.Target.Stats.Effects.DamageReflectRatio;
-        if (ratio <= 0) return;
-        var reflected = context.Damage * ratio;
+        var points = context.Target.Stats.Effects.DamageReflectPoints;
+        if (points <= 0) return;
+        var reflected = context.Damage * points / 100;
         if (reflected <= 0) return;
         context.Attacker.Hitpoints = Math.Max(0, context.Attacker.Hitpoints - reflected);
         context.Target.Threat += reflected;

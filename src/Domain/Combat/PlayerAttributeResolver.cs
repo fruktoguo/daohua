@@ -4,34 +4,71 @@ using Domain.Player;
 
 namespace Domain.Combat;
 
-/// <summary>玩家综合战斗属性面板：由境界锚点、装备、Buff 与六维根骨经乘区结算导出。</summary>
+/// <summary>
+/// 玩家综合战斗属性面板：由境界锚点、装备、Buff 与六维根骨经乘区结算导出。
+/// 百分比修饰属性一律以点数存储（100 点 = 100%，总纲第七篇 §7.1.2/§7.7.5）。
+/// </summary>
 public sealed record PlayerAttributes(
     double MaxHitpoints, double MaxManapoints, double PhysicalAttack, double SpellAttack,
     double Armor, double MagicResistance, double Accuracy, double Evasion,
     double Critical, double CriticalAvoidance, double BreakPower, double Parry,
     double HpRegen, double MpRegen, double AttackIntervalSeconds,
-    double DamageAbsorptionRatio = 0,
+    double DamageAbsorptionPoints = 0,
     double CriticalMultiplier = 1.5,
     double SkillIntensity = 1,
     double CooldownFactor = 1,
     double CastTimeFactor = 1,
     double BasicAttackRatio = 1,
     double SearchDelayFactor = 1,
-    double ThreatRatio = 0)
+    double ThreatBonusPoints = 0)
 {
-    /// <summary>金抗性点数（减免金属性伤害）。</summary>
-    public double MetalResistance { get; init; }
-    /// <summary>木抗性点数（减免木属性伤害）。</summary>
-    public double WoodResistance { get; init; }
-    /// <summary>水抗性点数（减免水属性伤害）。</summary>
-    public double WaterResistance { get; init; }
-    /// <summary>火抗性点数（减免火属性伤害）。</summary>
-    public double FireResistance { get; init; }
-    /// <summary>土抗性点数（减免土属性伤害）。</summary>
-    public double EarthResistance { get; init; }
+    // ── 增减伤点数（Linear 增伤 / NonLinear 减伤）──
+    /// <summary>物理增伤点数。</summary>
+    public double PhysicalDamageBonusPoints { get; init; }
+    /// <summary>法术增伤点数。</summary>
+    public double SpellDamageBonusPoints { get; init; }
+    /// <summary>金系增伤点数。</summary>
+    public double MetalDamageBonusPoints { get; init; }
+    /// <summary>木系增伤点数。</summary>
+    public double WoodDamageBonusPoints { get; init; }
+    /// <summary>水系增伤点数。</summary>
+    public double WaterDamageBonusPoints { get; init; }
+    /// <summary>火系增伤点数。</summary>
+    public double FireDamageBonusPoints { get; init; }
+    /// <summary>土系增伤点数。</summary>
+    public double EarthDamageBonusPoints { get; init; }
+    /// <summary>总增伤点数。</summary>
+    public double TotalDamageBonusPoints { get; init; }
+    /// <summary>普攻增幅点数。</summary>
+    public double BasicAttackBonusPoints { get; init; }
+    /// <summary>技能增幅点数。</summary>
+    public double SkillBonusPoints { get; init; }
+    /// <summary>物理减伤点数。</summary>
+    public double PhysicalDamageReductionPoints { get; init; }
+    /// <summary>法术减伤点数。</summary>
+    public double SpellDamageReductionPoints { get; init; }
+    /// <summary>金系减伤点数。</summary>
+    public double MetalDamageReductionPoints { get; init; }
+    /// <summary>木系减伤点数。</summary>
+    public double WoodDamageReductionPoints { get; init; }
+    /// <summary>水系减伤点数。</summary>
+    public double WaterDamageReductionPoints { get; init; }
+    /// <summary>火系减伤点数。</summary>
+    public double FireDamageReductionPoints { get; init; }
+    /// <summary>土系减伤点数。</summary>
+    public double EarthDamageReductionPoints { get; init; }
+
+    // ── 特殊属性点数 ──
+    /// <summary>攻击速度点数（NonLinear：仅缩短普攻读条）。</summary>
+    public double AttackSpeedPoints { get; init; }
+    /// <summary>行动速度点数（NonLinear：缩短全部读条）。</summary>
+    public double ActionSpeedPoints { get; init; }
+    /// <summary>冷却缩减点数（NonLinear：缩短全部冷却）。</summary>
+    public double CooldownReductionPoints { get; init; }
+
     /// <summary>抗性缩放倍率（等于当前境界阶位 Tier）。</summary>
     public double ResistanceScale { get; init; } = 1;
-    /// <summary>反应效果参数包：装备特殊机制（汲取/反弹）汇总结果。</summary>
+    /// <summary>反应效果参数包：装备特殊机制（汲取/反弹）汇总结果（点数）。</summary>
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
     /// <summary>折叠为战斗单位属性规格：普攻全流派统一走物理攻击力与物理伤害；术法攻击仅供技能结算。</summary>
     /// <returns>可进入战斗引擎的单位属性。</returns>
@@ -48,13 +85,31 @@ public sealed record PlayerAttributes(
             SkillIntensity = SkillIntensity,
             CastTimeFactor = CastTimeFactor,
             CooldownFactor = CooldownFactor,
-            DamageAbsorptionPoints = DamageAbsorptionRatio * 100,
-            ThreatRatio = ThreatRatio,
+            DamageAbsorptionPoints = DamageAbsorptionPoints,
+            ThreatBonusPoints = ThreatBonusPoints,
             MagicResistance = MagicResistance, Critical = Critical, CriticalResistance = CriticalAvoidance,
             CriticalMultiplier = CriticalMultiplier,
             BreakPower = BreakPower, ParryResolve = Parry, ResistanceScale = ResistanceScale,
-            MetalResistance = MetalResistance, WoodResistance = WoodResistance, WaterResistance = WaterResistance,
-            FireResistance = FireResistance, EarthResistance = EarthResistance,
+            PhysicalDamageBonusPoints = PhysicalDamageBonusPoints,
+            SpellDamageBonusPoints = SpellDamageBonusPoints,
+            MetalDamageBonusPoints = MetalDamageBonusPoints,
+            WoodDamageBonusPoints = WoodDamageBonusPoints,
+            WaterDamageBonusPoints = WaterDamageBonusPoints,
+            FireDamageBonusPoints = FireDamageBonusPoints,
+            EarthDamageBonusPoints = EarthDamageBonusPoints,
+            TotalDamageBonusPoints = TotalDamageBonusPoints,
+            BasicAttackBonusPoints = BasicAttackBonusPoints,
+            SkillBonusPoints = SkillBonusPoints,
+            PhysicalDamageReductionPoints = PhysicalDamageReductionPoints,
+            SpellDamageReductionPoints = SpellDamageReductionPoints,
+            MetalDamageReductionPoints = MetalDamageReductionPoints,
+            WoodDamageReductionPoints = WoodDamageReductionPoints,
+            WaterDamageReductionPoints = WaterDamageReductionPoints,
+            FireDamageReductionPoints = FireDamageReductionPoints,
+            EarthDamageReductionPoints = EarthDamageReductionPoints,
+            AttackSpeedPoints = AttackSpeedPoints,
+            ActionSpeedPoints = ActionSpeedPoints,
+            CooldownReductionPoints = CooldownReductionPoints,
             Effects = Effects
         };
 }
@@ -90,8 +145,13 @@ public static class PlayerAttributeResolver
         var a = catalog.BaseAttributes.At(level);
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
-        var threatRatio = 0d;
-        double hpDrain = 0, mpDrain = 0, reflect = 0, healingBonus = 0;
+        // 点数通道汇总：装备 specialMechanics 全量点数键 + Buff 点数通道（100 点 = 100%）。
+        double threat = 0, hpDrain = 0, mpDrain = 0, reflect = 0, healingBonus = 0;
+        double attackSpeed = 0, actionSpeed = 0, cooldownReduction = 0;
+        double physicalBonus = 0, spellBonus = 0, totalBonus = 0, basicAttackBonus = 0, skillBonus = 0;
+        double physicalReduction = 0, spellReduction = 0;
+        double metalBonus = 0, woodBonus = 0, waterBonus = 0, fireBonus = 0, earthBonus = 0;
+        double metalReduction = 0, woodReduction = 0, waterReduction = 0, fireReduction = 0, earthReduction = 0;
         foreach (var id in equipment)
         {
             if (!catalog.RawEquipments.TryGetValue(id.Value, out var item))
@@ -101,11 +161,31 @@ public static class PlayerAttributeResolver
             Add(item, "baseStatRatios", ratios, 1 + enhancement * 0.02);
             if (item.TryGetProperty("specialMechanics", out var mechanics) && mechanics.ValueKind == JsonValueKind.Object)
             {
-                threatRatio += ReadMechanic(mechanics, "threatRatio");
-                hpDrain += ReadMechanic(mechanics, "hpDrainRatio");
-                mpDrain += ReadMechanic(mechanics, "mpDrainRatio");
-                reflect += ReadMechanic(mechanics, "damageReflectRatio");
-                healingBonus += ReadMechanic(mechanics, "healingBonusRatio");
+                threat += ReadMechanic(mechanics, "threatBonusPoints");
+                hpDrain += ReadMechanic(mechanics, "hpDrainPoints");
+                mpDrain += ReadMechanic(mechanics, "mpDrainPoints");
+                reflect += ReadMechanic(mechanics, "damageReflectPoints");
+                healingBonus += ReadMechanic(mechanics, "healingBonusPoints");
+                attackSpeed += ReadMechanic(mechanics, "attackSpeedPoints");
+                actionSpeed += ReadMechanic(mechanics, "actionSpeedPoints");
+                cooldownReduction += ReadMechanic(mechanics, "cooldownReductionPoints");
+                physicalBonus += ReadMechanic(mechanics, "physicalDamageBonusPoints");
+                spellBonus += ReadMechanic(mechanics, "spellDamageBonusPoints");
+                totalBonus += ReadMechanic(mechanics, "totalDamageBonusPoints");
+                basicAttackBonus += ReadMechanic(mechanics, "basicAttackBonusPoints");
+                skillBonus += ReadMechanic(mechanics, "skillBonusPoints");
+                physicalReduction += ReadMechanic(mechanics, "physicalDamageReductionPoints");
+                spellReduction += ReadMechanic(mechanics, "spellDamageReductionPoints");
+                metalBonus += ReadMechanic(mechanics, "metalDamageBonusPoints");
+                woodBonus += ReadMechanic(mechanics, "woodDamageBonusPoints");
+                waterBonus += ReadMechanic(mechanics, "waterDamageBonusPoints");
+                fireBonus += ReadMechanic(mechanics, "fireDamageBonusPoints");
+                earthBonus += ReadMechanic(mechanics, "earthDamageBonusPoints");
+                metalReduction += ReadMechanic(mechanics, "metalDamageReductionPoints");
+                woodReduction += ReadMechanic(mechanics, "woodDamageReductionPoints");
+                waterReduction += ReadMechanic(mechanics, "waterDamageReductionPoints");
+                fireReduction += ReadMechanic(mechanics, "fireDamageReductionPoints");
+                earthReduction += ReadMechanic(mechanics, "earthDamageReductionPoints");
             }
         }
         var core = loadout.CoreAttributes;
@@ -123,20 +203,20 @@ public static class PlayerAttributeResolver
             _ => 0
         };
         var buffRatios = new Dictionary<string, double>(StringComparer.Ordinal);
-        double speed = 0, absorption = 0;
+        double absorption = 0;
         double hpRegenFlat = 0, mpRegenFlat = 0;
-        // 节点公共建筑效果：气血自然回复固定值与额外减伤并入同名乘区。
+        // 节点公共建筑效果：气血自然回复固定值与额外减伤并入同名乘区（比率键 ×100 折点）。
         if (nodeBuildingEffects is not null)
         {
             hpRegenFlat += nodeBuildingEffects.CombatHitpointRegen;
-            absorption += nodeBuildingEffects.CombatDamageReductionRatio;
+            absorption += nodeBuildingEffects.CombatDamageReductionRatio * 100;
         }
         foreach (var buff in buffs)
         {
             hpRegenFlat += buff.HpRegen * buff.Stacks;
             mpRegenFlat += buff.MpRegen * buff.Stacks;
-            speed += buff.AttackSpeedRatio * buff.Stacks;
-            absorption += buff.DamageAbsorptionRatio * buff.Stacks;
+            attackSpeed += buff.AttackSpeedPoints * buff.Stacks;
+            absorption += buff.DamageAbsorptionPoints * buff.Stacks;
             if (buff.StatRatios is not null)
                 foreach (var pair in buff.StatRatios)
                     buffRatios[pair.Key] = buffRatios.GetValueOrDefault(pair.Key) + pair.Value * buff.Stacks;
@@ -156,26 +236,44 @@ public static class PlayerAttributeResolver
         var castTimeFactor = CombatGrowthCurve.CastTimeFactor(level);
         var physical = Stat("physicalAttack", a.Ad);
         var spell = Stat("spellAttack", a.Ap);
-        // 普攻节奏全流派统一：基准 1.0s，同时吃行动速度与攻击速度成长；
-        // 掌心雷等填充技的吟唱时长走 castMilliseconds ×(1-ATR) 另一条线，不占普攻间隔。
-        var interval = castTimeFactor * castTimeFactor / (1 + Math.Max(0, speed));
+        // 普攻基准读条 = 基准 1.0s × 成长曲线平方（行动速度+攻速双成长通道）；
+        // 攻击速度/行动速度点数由引擎在出手边界按 NonLinear 除数结算，不在此预折。
+        var interval = castTimeFactor * castTimeFactor;
         var basicRatio = CombatGrowthCurve.BasicAttackRatio(level);
         return new(Stat("maxHitpoints", a.Hp), Stat("maxManapoints", a.Mp), physical,
             spell, Stat("physicalArmor", a.Armor), Stat("spellResistance", a.Mr),
             Stat("accuracy", a.Acc), Stat("evasion", a.Eva), Stat("criticalChance", a.Crit),
             Stat("criticalAvoidance", a.Cavoid), Stat("break", a.BreakPt), Stat("parry", a.Parry),
-            hpRegen, mpRegen, interval, Math.Clamp(absorption, 0, 1),
+            hpRegen, mpRegen, interval, Math.Max(0, absorption),
             CriticalMultiplier: CombatGrowthCurve.CriticalMultiplier(level),
             SkillIntensity: skillIntensity,
             CooldownFactor: cooldownFactor,
             CastTimeFactor: castTimeFactor,
             BasicAttackRatio: basicRatio,
             SearchDelayFactor: castTimeFactor,
-            ThreatRatio: Math.Max(0, threatRatio))
+            ThreatBonusPoints: threat)
         {
-            MetalResistance = Stat("metalResistance", 0), WoodResistance = Stat("woodResistance", 0),
-            WaterResistance = Stat("waterResistance", 0), FireResistance = Stat("fireResistance", 0),
-            EarthResistance = Stat("earthResistance", 0), ResistanceScale = tier,
+            PhysicalDamageBonusPoints = physicalBonus,
+            SpellDamageBonusPoints = spellBonus,
+            TotalDamageBonusPoints = totalBonus,
+            BasicAttackBonusPoints = basicAttackBonus,
+            SkillBonusPoints = skillBonus,
+            PhysicalDamageReductionPoints = physicalReduction,
+            SpellDamageReductionPoints = spellReduction,
+            MetalDamageBonusPoints = metalBonus,
+            WoodDamageBonusPoints = woodBonus,
+            WaterDamageBonusPoints = waterBonus,
+            FireDamageBonusPoints = fireBonus,
+            EarthDamageBonusPoints = earthBonus,
+            MetalDamageReductionPoints = metalReduction,
+            WoodDamageReductionPoints = woodReduction,
+            WaterDamageReductionPoints = waterReduction,
+            FireDamageReductionPoints = fireReduction,
+            EarthDamageReductionPoints = earthReduction,
+            AttackSpeedPoints = attackSpeed,
+            ActionSpeedPoints = actionSpeed,
+            CooldownReductionPoints = cooldownReduction,
+            ResistanceScale = tier,
             Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect, healingBonus)
         };
     }

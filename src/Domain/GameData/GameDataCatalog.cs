@@ -86,8 +86,8 @@ public sealed record ActionBuffGrant(
     double DurationSeconds,
     double HpRegen = 0,
     double MpRegen = 0,
-    double AttackSpeedRatio = 0,
-    double DamageAbsorptionRatio = 0,
+    double AttackSpeedPoints = 0,
+    double DamageAbsorptionPoints = 0,
     IReadOnlyDictionary<string, double>? StatRatios = null);
 
 /// <summary>
@@ -250,7 +250,7 @@ public sealed class ActionCatalog
                         && grant.BuffId is { Length: > 0 and <= 128 } && grant.Name is { Length: > 0 and <= 128 }
                         && double.IsFinite(grant.DurationSeconds) && grant.DurationSeconds > 0
                         && double.IsFinite(grant.HpRegen) && double.IsFinite(grant.MpRegen)
-                        && double.IsFinite(grant.AttackSpeedRatio) && double.IsFinite(grant.DamageAbsorptionRatio)
+                        && double.IsFinite(grant.AttackSpeedPoints) && double.IsFinite(grant.DamageAbsorptionPoints)
                     ? $"buff:{grant.BuffId}"
                     : throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {actionId} 的 Buff 收益必须按轮结算并携带完整授权规格。"),
                 _ => yield.Item is null && yield.Buff is null
@@ -662,7 +662,7 @@ public sealed class GameDataCatalog
                 yields.Add(new(kind, period, amount, null, new ActionBuffGrant(
                     buffId ?? string.Empty, buffName ?? string.Empty, durationSeconds,
                     ReadModifier("hpRegen"), ReadModifier("mpRegen"),
-                    ReadModifier("attackSpeedRatio"), ReadModifier("damageAbsorptionRatio"), statRatios)));
+                    ReadModifier("attackSpeedPoints"), ReadModifier("damageAbsorptionPoints"), statRatios)));
                 continue;
             }
             yields.Add(new(kind, period, amount));
@@ -814,7 +814,11 @@ public sealed class GameDataCatalog
                 return new SkillSlot(ability.Clone(), JsonRead.Number(skill, "level", 1), triggers);
             }).ToArray();
             var skillIntensity = CombatGrowthCurve.SkillIntensity(tier);
-            // 五行抗性权重按点数解释：weight × 10 写入对应抗性点数。
+            // modifiers 段直接声明百分比点数（100 点 = 100%）：增减伤、速度与特殊修饰全单位同构。
+            var modifiers = value.ValueKind == JsonValueKind.Object
+                && value.TryGetProperty("modifiers", out var modifiersValue)
+                && modifiersValue.ValueKind == JsonValueKind.Object ? modifiersValue : default;
+            double Modifier(string key) => modifiers.ValueKind == JsonValueKind.Object ? JsonRead.Number(modifiers, key) : 0;
             var stats = CombatantStats.Create(
                 anchor.Hp * hpMultiplier * Weight("hp"),
                 ad,
@@ -839,17 +843,34 @@ public sealed class GameDataCatalog
                 BreakPower = anchor.BreakPt * attrMultiplier * Weight("break"),
                 ParryResolve = anchor.Parry * attrMultiplier * Weight("parry"),
                 Element = Enum.Parse<CombatElement>(JsonRead.Text(value, "element", "none"), true),
-                MetalResistance = Weight("metalResistance") is var metal && metal != 1 ? metal * 10 : 0,
-                WoodResistance = Weight("woodResistance") is var wood && wood != 1 ? wood * 10 : 0,
-                WaterResistance = Weight("waterResistance") is var water && water != 1 ? water * 10 : 0,
-                FireResistance = Weight("fireResistance") is var fire && fire != 1 ? fire * 10 : 0,
-                EarthResistance = Weight("earthResistance") is var earth && earth != 1 ? earth * 10 : 0,
-                // 反应效果参数包：配表直接声明汲取/反弹/治疗加成强度，由钩子管线在结算中读取。
+                PhysicalDamageBonusPoints = Modifier("physicalDamageBonusPoints"),
+                SpellDamageBonusPoints = Modifier("spellDamageBonusPoints"),
+                MetalDamageBonusPoints = Modifier("metalDamageBonusPoints"),
+                WoodDamageBonusPoints = Modifier("woodDamageBonusPoints"),
+                WaterDamageBonusPoints = Modifier("waterDamageBonusPoints"),
+                FireDamageBonusPoints = Modifier("fireDamageBonusPoints"),
+                EarthDamageBonusPoints = Modifier("earthDamageBonusPoints"),
+                TotalDamageBonusPoints = Modifier("totalDamageBonusPoints"),
+                BasicAttackBonusPoints = Modifier("basicAttackBonusPoints"),
+                SkillBonusPoints = Modifier("skillBonusPoints"),
+                PhysicalDamageReductionPoints = Modifier("physicalDamageReductionPoints"),
+                SpellDamageReductionPoints = Modifier("spellDamageReductionPoints"),
+                MetalDamageReductionPoints = Modifier("metalDamageReductionPoints"),
+                WoodDamageReductionPoints = Modifier("woodDamageReductionPoints"),
+                WaterDamageReductionPoints = Modifier("waterDamageReductionPoints"),
+                FireDamageReductionPoints = Modifier("fireDamageReductionPoints"),
+                EarthDamageReductionPoints = Modifier("earthDamageReductionPoints"),
+                DamageAbsorptionPoints = Modifier("damageAbsorptionPoints"),
+                AttackSpeedPoints = Modifier("attackSpeedPoints"),
+                ActionSpeedPoints = Modifier("actionSpeedPoints"),
+                CooldownReductionPoints = Modifier("cooldownReductionPoints"),
+                ThreatBonusPoints = Modifier("threatBonusPoints"),
+                // 反应效果参数包：配表直接声明汲取/反弹/治疗加成点数，由钩子管线在结算中读取。
                 Effects = new CombatEffectProfile(
-                    JsonRead.Number(value, "hpDrainRatio"),
-                    JsonRead.Number(value, "mpDrainRatio"),
-                    JsonRead.Number(value, "damageReflectRatio"),
-                    JsonRead.Number(value, "healingBonusRatio"))
+                    JsonRead.Number(value, "hpDrainPoints"),
+                    JsonRead.Number(value, "mpDrainPoints"),
+                    JsonRead.Number(value, "damageReflectPoints"),
+                    JsonRead.Number(value, "healingBonusPoints"))
             };
             var qiReward = JsonRead.Number(value, "qiReward", 0);
             var experienceReward = JsonRead.Number(value, "experienceReward", 0);
@@ -877,13 +898,20 @@ public sealed class GameDataCatalog
             var searchSeconds = JsonRead.Number(value, "searchMilliseconds", 5_000) / 1_000d;
             var respawnSeconds = JsonRead.Number(value, "respawnMilliseconds", 5_000) / 1_000d;
             var playerRespawnSeconds = JsonRead.Number(value, "playerRespawnMilliseconds", 180_000) / 1_000d;
+            var onPartyWipe = JsonRead.Text(value, "onPartyWipe", "respawn") switch
+            {
+                "respawn" => PartyWipeRule.Respawn,
+                "defeat" => PartyWipeRule.Defeat,
+                var other => throw new DomainException(DomainErrorCode.InvalidArgument, $"遭遇 {id} 的 onPartyWipe 取值无效：{other}。")
+            };
             if (string.IsNullOrWhiteSpace(id) || spawns.Length == 0 || searchSeconds <= 0 || respawnSeconds <= 0 || playerRespawnSeconds <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"遭遇 {id} 配置无效。");
             result[id] = new CombatEncounterDefinition(
                 id, JsonRead.Text(value, "name", id), JsonRead.Number(value, "minBudget", 0), JsonRead.Number(value, "maxBudget", 0),
                 JsonRead.Number(value, "maxTotalStrength", JsonRead.Number(value, "maxBudget", 0)), searchSeconds, respawnSeconds,
                 playerRespawnSeconds, spawns, JsonRead.StringArray(value, "eliteEnemyIds"), JsonRead.StringArray(value, "bossEnemyIds"),
-                JsonRead.Integer(value, "battlesPerBoss", 0), JsonRead.Integer(value, "battlesPerElite", JsonRead.Integer(value, "eliteInterval", 5)));
+                JsonRead.Integer(value, "battlesPerBoss", 0), JsonRead.Integer(value, "battlesPerElite", JsonRead.Integer(value, "eliteInterval", 5)),
+                onPartyWipe);
         }
         return result;
     }

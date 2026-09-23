@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
@@ -179,5 +180,42 @@ public sealed class ProtocolSnapshotMapperTests
 
         Assert.Equal("收集 晨露", item.GetProperty("actionName").GetString());
         Assert.Equal("exploration", item.GetProperty("actionType").GetString());
+    }
+}
+
+public sealed class ProtocolAttributesPointsTests
+{
+    /// <summary>
+    /// 属性 DTO 门禁：百分比属性一律按原始点数下发（100 点 = 100%），
+    /// 暴击/免暴/免伤等不得在协议边界预折为比率；曲线解算只发生在结算与前端展示层。
+    /// </summary>
+    [Fact]
+    public void ToAttributesDto_EmitsRawPointsWithoutRatioConversion()
+    {
+        var attributes = PlayerAttributeResolver.Resolve(
+            PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "点数", DateTimeOffset.UnixEpoch, "fp"),
+            GameDataCatalog.LoadEmbedded());
+        var dto = ProtocolSnapshotMapper.ToAttributesDto(attributes);
+        // 线上序列化走 ProtocolJson.Options（Web 默认 camelCase），测试必须同口径才能看到真实协议键名。
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(dto, ProtocolJson.Options));
+        var root = doc.RootElement;
+        // 点数原样透传：领域值是什么，线上就是什么。
+        Assert.Equal(attributes.Critical, root.GetProperty("critical").GetDouble());
+        Assert.Equal(attributes.CriticalAvoidance, root.GetProperty("criticalResistance").GetDouble());
+        Assert.Equal(attributes.DamageAbsorptionPoints, root.GetProperty("damageAbsorptionPoints").GetDouble());
+        Assert.Equal(attributes.AttackSpeedPoints, root.GetProperty("attackSpeedPoints").GetDouble());
+        Assert.Equal(attributes.CriticalMultiplier, root.GetProperty("criticalMultiplier").GetDouble());
+        // 增减伤 16 项全字段在场（点数）。
+        foreach (var key in new[]
+        {
+            "physicalDamageBonusPoints", "spellDamageBonusPoints",
+            "metalDamageBonusPoints", "woodDamageBonusPoints", "waterDamageBonusPoints",
+            "fireDamageBonusPoints", "earthDamageBonusPoints",
+            "totalDamageBonusPoints", "basicAttackBonusPoints", "skillBonusPoints",
+            "physicalDamageReductionPoints", "spellDamageReductionPoints",
+            "metalDamageReductionPoints", "woodDamageReductionPoints", "waterDamageReductionPoints",
+            "fireDamageReductionPoints", "earthDamageReductionPoints",
+        })
+            Assert.True(root.TryGetProperty(key, out _), $"缺少协议字段 {key}");
     }
 }

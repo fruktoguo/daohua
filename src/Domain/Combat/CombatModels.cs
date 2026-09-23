@@ -66,10 +66,6 @@ public sealed record CombatantStats(
     public double CooldownFactor { get; init; } = 1;
     /// <summary>技能强度乘区（SkillIntensity = 1 + (Tier-1) × 0.30）。</summary>
     public double SkillIntensity { get; init; } = 1;
-    /// <summary>免伤点数（Linear 百分比点，正点降低承受伤害）。</summary>
-    public double DamageAbsorptionPoints { get; init; }
-    /// <summary>仇恨威胁加成（小数比率，+2.0 表示威胁放大 200%）。</summary>
-    public double ThreatRatio { get; init; }
     /// <summary>法术抗性点数（Spell 伤害的主抗性池）。</summary>
     public double MagicResistance { get; init; }
     /// <summary>抗性缩放倍率（等于境界阶位 Tier，放大全部抗性点数的效果）。</summary>
@@ -84,18 +80,56 @@ public sealed record CombatantStats(
     public double BreakPower { get; init; }
     /// <summary>招架结算点数（与破防威力对抗；胜出时提升自身闪避与抗性）。</summary>
     public double ParryResolve { get; init; }
-    /// <summary>攻击五行属性；None 时跳过五行抗性减免。</summary>
+    /// <summary>攻击五行属性；None 时跳过五行增减伤匹配。</summary>
     public CombatElement Element { get; init; }
-    /// <summary>金抗性点数（按抗性公式减免金属性伤害）。</summary>
-    public double MetalResistance { get; init; }
-    /// <summary>木抗性点数（按抗性公式减免木属性伤害）。</summary>
-    public double WoodResistance { get; init; }
-    /// <summary>水抗性点数（按抗性公式减免水属性伤害）。</summary>
-    public double WaterResistance { get; init; }
-    /// <summary>火抗性点数（按抗性公式减免火属性伤害）。</summary>
-    public double FireResistance { get; init; }
-    /// <summary>土抗性点数（按抗性公式减免土属性伤害）。</summary>
-    public double EarthResistance { get; init; }
+
+    // ── 增减伤点数（总纲第七篇 §7.7.5：增伤 Linear / 减伤 NonLinear，100 点 = 100%）──
+    /// <summary>物理增伤点数（Linear：作用于物理大类伤害的攻方乘区）。</summary>
+    public double PhysicalDamageBonusPoints { get; init; }
+    /// <summary>法术增伤点数（Linear：作用于术法大类伤害的攻方乘区）。</summary>
+    public double SpellDamageBonusPoints { get; init; }
+    /// <summary>金系增伤点数（攻击携带金元素时生效）。</summary>
+    public double MetalDamageBonusPoints { get; init; }
+    /// <summary>木系增伤点数。</summary>
+    public double WoodDamageBonusPoints { get; init; }
+    /// <summary>水系增伤点数。</summary>
+    public double WaterDamageBonusPoints { get; init; }
+    /// <summary>火系增伤点数。</summary>
+    public double FireDamageBonusPoints { get; init; }
+    /// <summary>土系增伤点数。</summary>
+    public double EarthDamageBonusPoints { get; init; }
+    /// <summary>总增伤点数（Linear：任意伤害通用攻方乘区）。</summary>
+    public double TotalDamageBonusPoints { get; init; }
+    /// <summary>普攻增幅点数（Linear：普攻与带「普通攻击」tag 技能的增伤修饰）。</summary>
+    public double BasicAttackBonusPoints { get; init; }
+    /// <summary>技能增幅点数（Linear：不带「普通攻击」tag 技能的增伤修饰）。</summary>
+    public double SkillBonusPoints { get; init; }
+    /// <summary>物理减伤点数（NonLinear：守方承受物理伤害的收敛减伤）。</summary>
+    public double PhysicalDamageReductionPoints { get; init; }
+    /// <summary>法术减伤点数。</summary>
+    public double SpellDamageReductionPoints { get; init; }
+    /// <summary>金系减伤点数（承受金元素攻击时生效）。</summary>
+    public double MetalDamageReductionPoints { get; init; }
+    /// <summary>木系减伤点数。</summary>
+    public double WoodDamageReductionPoints { get; init; }
+    /// <summary>水系减伤点数。</summary>
+    public double WaterDamageReductionPoints { get; init; }
+    /// <summary>火系减伤点数。</summary>
+    public double FireDamageReductionPoints { get; init; }
+    /// <summary>土系减伤点数。</summary>
+    public double EarthDamageReductionPoints { get; init; }
+    /// <summary>总减伤/免伤点数（NonLinear：末位收口，负点反向增伤）。</summary>
+    public double DamageAbsorptionPoints { get; init; }
+
+    // ── 特殊属性点数（总纲第七篇 §7.7.5 特殊属性清单）──
+    /// <summary>攻击速度点数（NonLinear：仅缩短普攻读条时间）。</summary>
+    public double AttackSpeedPoints { get; init; }
+    /// <summary>行动速度点数（NonLinear：缩短全部读条时间；普攻上与攻速乘算双重除数）。</summary>
+    public double ActionSpeedPoints { get; init; }
+    /// <summary>冷却缩减点数（NonLinear：缩短全部冷却时间）。</summary>
+    public double CooldownReductionPoints { get; init; }
+    /// <summary>威胁增幅点数（Linear：有效威胁 = 累计威胁 ×(1+点数/100)）。</summary>
+    public double ThreatBonusPoints { get; init; }
     /// <summary>每 5 秒结算点的气血回复量（战斗内按 5 秒网格确定性结算，与脱战回复同口径）。</summary>
     public double HpRegen { get; init; }
     /// <summary>每 5 秒结算点的灵力回复量。</summary>
@@ -107,9 +141,18 @@ public sealed record CombatantStats(
     internal void Validate()
     {
         double[] nonnegative = [AttackPower, SpellAttack, MaxManapoints, Defense, Accuracy, Evasion, MagicResistance,
-            Critical, CriticalResistance, BreakPower, ParryResolve, MetalResistance,
-            WoodResistance, WaterResistance, FireResistance, EarthResistance, HpRegen, MpRegen];
+            Critical, CriticalResistance, BreakPower, ParryResolve, HpRegen, MpRegen];
+        double[] finite = [DamageAbsorptionPoints, ThreatBonusPoints,
+            PhysicalDamageBonusPoints, SpellDamageBonusPoints, TotalDamageBonusPoints,
+            BasicAttackBonusPoints, SkillBonusPoints,
+            PhysicalDamageReductionPoints, SpellDamageReductionPoints,
+            MetalDamageBonusPoints, WoodDamageBonusPoints, WaterDamageBonusPoints,
+            FireDamageBonusPoints, EarthDamageBonusPoints,
+            MetalDamageReductionPoints, WoodDamageReductionPoints, WaterDamageReductionPoints,
+            FireDamageReductionPoints, EarthDamageReductionPoints,
+            AttackSpeedPoints, ActionSpeedPoints, CooldownReductionPoints];
         if (nonnegative.Any(value => !double.IsFinite(value) || value < 0)
+            || finite.Any(value => !double.IsFinite(value))
             || !double.IsFinite(MaxHitpoints) || MaxHitpoints <= 0
             || !double.IsFinite(AttackIntervalSeconds) || AttackIntervalSeconds <= 0
             || !double.IsFinite(ResistanceScale) || ResistanceScale <= 0
@@ -118,7 +161,6 @@ public sealed record CombatantStats(
             || !double.IsFinite(CastTimeFactor) || CastTimeFactor <= 0
             || !double.IsFinite(CooldownFactor) || CooldownFactor <= 0
             || !double.IsFinite(SkillIntensity) || SkillIntensity <= 0
-            || !double.IsFinite(DamageAbsorptionPoints) || !double.IsFinite(ThreatRatio) || ThreatRatio < 0
             || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind))
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
         if (Effects is null) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗反应效果参数无效。");
@@ -160,21 +202,21 @@ public sealed record CombatantStats(
 /// <param name="Stacks">层数（结算按层数线性放大效果量）。</param>
 /// <param name="HpRegen">每 5 秒结算点的气血回复量。</param>
 /// <param name="MpRegen">每 5 秒结算点的灵力回复量。</param>
-/// <param name="AttackSpeedRatio">攻速加成比率：普攻间隔 ÷(1+合计比率)。</param>
-/// <param name="DamageAbsorptionRatio">免伤比率：合计 ×100 折为免伤点数（与面板免伤同乘区）。</param>
-/// <param name="ThreatRatio">仇恨加成比率：叠加进有效威胁乘区。</param>
+/// <param name="AttackSpeedPoints">攻击速度点数：并入普攻读条攻速除数通道。</param>
+/// <param name="DamageAbsorptionPoints">免伤点数：与面板免伤同乘区合并（NonLinear 收口）。</param>
+/// <param name="ThreatPoints">威胁增幅点数：叠加进有效威胁乘区。</param>
 public sealed record CombatBuffState(
     string BuffId, double ExpiresAtSeconds, double Stacks = 1,
-    double HpRegen = 0, double MpRegen = 0, double AttackSpeedRatio = 0,
-    double DamageAbsorptionRatio = 0, double ThreatRatio = 0)
+    double HpRegen = 0, double MpRegen = 0, double AttackSpeedPoints = 0,
+    double DamageAbsorptionPoints = 0, double ThreatPoints = 0)
 {
     /// <summary>校验 Buff 字段满足持久化不变量。</summary>
     internal bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
         && double.IsFinite(ExpiresAtSeconds) && ExpiresAtSeconds >= 0
         && double.IsFinite(Stacks) && Stacks > 0
         && double.IsFinite(HpRegen) && double.IsFinite(MpRegen)
-        && double.IsFinite(AttackSpeedRatio) && double.IsFinite(DamageAbsorptionRatio)
-        && double.IsFinite(ThreatRatio);
+        && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
+        && double.IsFinite(ThreatPoints);
 }
 
 /// <summary>战斗单位生成模板：静态属性 + 可选技能槽。</summary>
@@ -224,8 +266,8 @@ public sealed class CombatantState
     public double AttackCount { get; internal set; }
     /// <summary>累积威胁值：本场对敌方全体造成的总伤害。</summary>
     public double Threat { get; internal set; }
-    /// <summary>嘲讽/仇恨加成（小数比率）；有效威胁 = Threat × (1 + 加成)。</summary>
-    public double ThreatRatioBonus { get; internal set; }
+    /// <summary>嘲讽/威胁增幅加成点数；有效威胁 = Threat ×(1 + 合计增幅点数/100)。</summary>
+    public double ThreatBonusPoints { get; internal set; }
     /// <summary>战内临时免伤点数（如破阵子类全体增益）。</summary>
     public double BonusAbsorptionPoints { get; internal set; }
     /// <summary>正在吟唱的技能槽下标；-1 表示下一次出手为普通攻击。吟唱占用整条动作时间线。</summary>
@@ -236,14 +278,14 @@ public sealed class CombatantState
     public double SkillCastCount { get; internal set; }
     /// <summary>气血大于容差即视作存活</summary>
     public bool IsAlive => Hitpoints > 1e-12;
-    /// <summary>参与目标抽取的有效威胁值：Threat ×(1 + 面板仇恨 + 嘲讽修正 + 战内 Buff 仇恨)。</summary>
-    public double EffectiveThreat => Threat * (1 + Math.Max(0, Stats.ThreatRatio + ThreatRatioBonus + BuffThreatRatio));
-    /// <summary>战内 Buff 合计攻速加成比率。</summary>
-    internal double BuffAttackSpeedRatio => Buffs.Sum(buff => buff.AttackSpeedRatio * buff.Stacks);
-    /// <summary>战内 Buff 合计免伤点数（比率 ×100 折点，与面板免伤同乘区）。</summary>
-    internal double BuffAbsorptionPoints => Buffs.Sum(buff => buff.DamageAbsorptionRatio * buff.Stacks) * 100;
-    /// <summary>战内 Buff 合计仇恨加成比率。</summary>
-    internal double BuffThreatRatio => Buffs.Sum(buff => buff.ThreatRatio * buff.Stacks);
+    /// <summary>参与目标抽取的有效威胁值：Threat ×(1 + (面板威胁增幅 + 嘲讽修正 + 战内 Buff 威胁)/100)。</summary>
+    public double EffectiveThreat => Threat * Math.Max(0, 1 + (Stats.ThreatBonusPoints + ThreatBonusPoints + BuffThreatPoints) / 100);
+    /// <summary>战内 Buff 合计攻击速度点数。</summary>
+    internal double BuffAttackSpeedPoints => Buffs.Sum(buff => buff.AttackSpeedPoints * buff.Stacks);
+    /// <summary>战内 Buff 合计免伤点数（与面板免伤同乘区）。</summary>
+    internal double BuffAbsorptionPoints => Buffs.Sum(buff => buff.DamageAbsorptionPoints * buff.Stacks);
+    /// <summary>战内 Buff 合计威胁增幅点数。</summary>
+    internal double BuffThreatPoints => Buffs.Sum(buff => buff.ThreatPoints * buff.Stacks);
 
     /// <summary>Buff 层数求值：战内 Buff 层数 + 宿主注入的战外视图；buffId 为 null 时合计全部层数。</summary>
     internal double BuffStacks(string? buffId)
@@ -260,7 +302,7 @@ public sealed record CombatantSnapshot(
     double AttackCount,
     double Threat,
     int PendingSkillIndex = -1,
-    double ThreatRatioBonus = 0,
+    double ThreatBonusPoints = 0,
     double BonusAbsorptionPoints = 0,
     IReadOnlyList<double>? SkillCooldownUntil = null,
     double SkillCastCount = 0,
@@ -272,7 +314,7 @@ public sealed record CombatantSnapshot(
         && double.IsFinite(NextAttackAtSeconds) && NextAttackAtSeconds >= 0
         && double.IsFinite(AttackCount) && AttackCount >= 0
         && double.IsFinite(Threat) && Threat >= 0
-        && double.IsFinite(ThreatRatioBonus) && ThreatRatioBonus >= 0
+        && double.IsFinite(ThreatBonusPoints) && ThreatBonusPoints >= 0
         && double.IsFinite(BonusAbsorptionPoints)
         && PendingSkillIndex >= -1
         && double.IsFinite(SkillCastCount) && SkillCastCount >= 0
@@ -285,12 +327,14 @@ public sealed record CombatantSnapshot(
 /// </summary>
 public sealed class CombatEncounterState
 {
-    private CombatEncounterState(string encounterId, long seed, CombatantState player, IReadOnlyList<CombatantState> enemies)
+    private CombatEncounterState(string encounterId, long seed, CombatantState player, IReadOnlyList<CombatantState> enemies,
+        double playerRespawnSeconds)
     {
         EncounterId = encounterId;
         Seed = seed;
         Player = player;
         Enemies = enemies;
+        PlayerRespawnSeconds = playerRespawnSeconds;
     }
 
     /// <summary>遭遇战唯一标识</summary>
@@ -307,6 +351,18 @@ public sealed class CombatEncounterState
     public CombatOutcome Outcome { get; internal set; } = CombatOutcome.Running;
     /// <summary>状态转换序号（递增帧号）</summary>
     public double Sequence { get; internal set; }
+    /// <summary>
+    /// 团灭分流：原地复活读条秒数（战斗时钟口径）。&gt; 0 时玩家阵亡不终局，进入躺尸窗口；
+    /// 0 表示团灭即败（斗法/副本类遭遇），玩家方全灭立即 EnemyWon 终局。
+    /// </summary>
+    public double PlayerRespawnSeconds { get; }
+    /// <summary>
+    /// 原地复活截止点（战斗时钟秒）：玩家阵亡瞬间置为 ElapsedSeconds + PlayerRespawnSeconds，
+    /// 起身后回到 +∞。倒地窗口内双方不出手，回复/冷却/到期照常推进。
+    /// </summary>
+    public double PlayerRespawnAtSeconds { get; internal set; } = double.PositiveInfinity;
+    /// <summary>倒地窗口判定：玩家已阵亡且存在待触发复活点（仅原地复活模式可达）。</summary>
+    public bool IsPlayerDowned => !Player.IsAlive && double.IsFinite(PlayerRespawnAtSeconds);
     /// <summary>玩家当前集火目标：存活敌人中有效威胁最高者。</summary>
     public CombatantState? PrimaryEnemy
     {
@@ -321,27 +377,31 @@ public sealed class CombatEncounterState
     }
 
     /// <summary>开启一场玩家对单敌的遭遇战。</summary>
-    public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, CombatantStats enemy)
-        => Start(encounterId, seed, new CombatantTemplate(player), [new CombatantTemplate(enemy)]);
+    public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, CombatantStats enemy,
+        double playerRespawnSeconds = 0)
+        => Start(encounterId, seed, new CombatantTemplate(player), [new CombatantTemplate(enemy)], playerRespawnSeconds);
 
     /// <summary>开启一场多敌方单位的战斗遭遇。</summary>
-    public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, IReadOnlyList<CombatantTemplate> enemies)
-        => Start(encounterId, seed, new CombatantTemplate(player), enemies);
+    public static CombatEncounterState Start(string encounterId, long seed, CombatantStats player, IReadOnlyList<CombatantTemplate> enemies,
+        double playerRespawnSeconds = 0)
+        => Start(encounterId, seed, new CombatantTemplate(player), enemies, playerRespawnSeconds);
 
     /// <summary>开启一场玩家方携带技能模板的遭遇（斗法剧本双方镜像同构）。</summary>
-    public static CombatEncounterState Start(string encounterId, long seed, CombatantTemplate player, IReadOnlyList<CombatantTemplate> enemies)
+    public static CombatEncounterState Start(string encounterId, long seed, CombatantTemplate player, IReadOnlyList<CombatantTemplate> enemies,
+        double playerRespawnSeconds = 0)
     {
-        var encounter = Create(encounterId, seed, player, enemies);
+        var encounter = Create(encounterId, seed, player, enemies, playerRespawnSeconds);
         // 开战即决策各单位首次出手：可放技能直接进入吟唱，否则按普攻周期蓄势。
         DeterministicCombatEngine.DecideInitialActions(encounter);
         return encounter;
     }
 
     /// <summary>
-    /// 创建遭遇但不决策首次出手：供宿主先注入跨战状态（灵力/冷却/战外 Buff 视图）再显式开局，
+    /// 创建遭遇但不决策首次出手：供宿主先注入跨战状态（灵力/冷却与战外 Buff 视图）再显式开局，
     /// 保证触发条件求值与灵力预扣都基于真实入场状态。
     /// </summary>
-    internal static CombatEncounterState Create(string encounterId, long seed, CombatantTemplate player, IReadOnlyList<CombatantTemplate> enemies)
+    internal static CombatEncounterState Create(string encounterId, long seed, CombatantTemplate player,
+        IReadOnlyList<CombatantTemplate> enemies, double playerRespawnSeconds = 0)
     {
         if (string.IsNullOrWhiteSpace(encounterId) || encounterId.Length > 128)
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇标识无效。");
@@ -350,11 +410,13 @@ public sealed class CombatEncounterState
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇玩家模板无效。");
         if (enemies is null || enemies.Count == 0 || enemies.Any(template => template?.Stats is null))
             throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇敌方阵容无效。");
+        if (!double.IsFinite(playerRespawnSeconds) || playerRespawnSeconds < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇原地复活时长无效。");
         var states = new CombatantState[enemies.Count];
         for (var i = 0; i < enemies.Count; i++)
             states[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
         var playerState = new CombatantState("player", player.Stats, player.Skills);
-        return new CombatEncounterState(encounterId, seed, playerState, states);
+        return new CombatEncounterState(encounterId, seed, playerState, states, playerRespawnSeconds);
     }
 
     /// <summary>从持久化快照恢复一场多敌遭遇战。</summary>
@@ -367,14 +429,17 @@ public sealed class CombatEncounterState
         IReadOnlyList<CombatantSnapshot> enemySnapshots,
         double elapsedSeconds,
         CombatOutcome outcome,
-        double sequence = 0)
+        double sequence = 0,
+        double playerRespawnSeconds = 0,
+        double playerRespawnAtSeconds = double.PositiveInfinity)
     {
         // 恢复路径跳过开局决策：全部出手状态由快照逐字段回填，避免重复预扣灵力。
-        var encounter = Create(encounterId, seed, player, enemies);
+        var encounter = Create(encounterId, seed, player, enemies, playerRespawnSeconds);
         if (enemySnapshots is null || enemySnapshots.Count != enemies.Count
             || !double.IsFinite(elapsedSeconds) || elapsedSeconds < 0
             || !double.IsFinite(sequence) || sequence < 0
-            || !Enum.IsDefined(outcome))
+            || !Enum.IsDefined(outcome)
+            || (double.IsFinite(playerRespawnAtSeconds) && playerRespawnAtSeconds < elapsedSeconds))
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗状态无效。");
         ApplySnapshot(encounter.Player, playerSnapshot, player.Stats.MaxHitpoints, player.Stats.MaxManapoints);
         for (var i = 0; i < enemies.Count; i++)
@@ -382,8 +447,14 @@ public sealed class CombatEncounterState
         encounter.ElapsedSeconds = elapsedSeconds;
         encounter.Outcome = outcome;
         encounter.Sequence = sequence;
+        encounter.PlayerRespawnAtSeconds = playerRespawnAtSeconds;
+        // 复活截止点只在倒地窗口内有意义：存活玩家携带该字段属于损坏快照。
+        if (double.IsFinite(playerRespawnAtSeconds) && encounter.Player.IsAlive)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点与生命状态不一致。");
         var expectedOutcome = (encounter.Player.IsAlive, encounter.Enemies.Any(enemy => enemy.IsAlive)) switch
         {
+            // 倒地等待原地复活不是终局：存活敌人或已被跳死全灭都保持 Running，起身后统一裁定。
+            (false, _) when double.IsFinite(playerRespawnAtSeconds) => CombatOutcome.Running,
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,
             (false, true) => CombatOutcome.EnemyWon,
@@ -397,7 +468,7 @@ public sealed class CombatEncounterState
     /// <summary>导出指定单位的可持久化快照。</summary>
     public static CombatantSnapshot Snapshot(CombatantState state)
         => new(state.Hitpoints, state.Manapoints, state.NextAttackAtSeconds, state.AttackCount,
-            state.Threat, state.PendingSkillIndex, state.ThreatRatioBonus, state.BonusAbsorptionPoints,
+            state.Threat, state.PendingSkillIndex, state.ThreatBonusPoints, state.BonusAbsorptionPoints,
             state.SkillCooldownUntil, state.SkillCastCount,
             state.Buffs.Count == 0 ? null : state.Buffs.ToArray());
 
@@ -408,7 +479,7 @@ public sealed class CombatEncounterState
             || !double.IsFinite(snapshot.NextAttackAtSeconds) || snapshot.NextAttackAtSeconds < 0
             || !double.IsFinite(snapshot.AttackCount) || snapshot.AttackCount < 0
             || !double.IsFinite(snapshot.Threat) || snapshot.Threat < 0
-            || !double.IsFinite(snapshot.ThreatRatioBonus) || snapshot.ThreatRatioBonus < 0
+            || !double.IsFinite(snapshot.ThreatBonusPoints) || snapshot.ThreatBonusPoints < 0
             || !double.IsFinite(snapshot.BonusAbsorptionPoints)
             || snapshot.PendingSkillIndex < -1
             || !double.IsFinite(snapshot.SkillCastCount) || snapshot.SkillCastCount < 0
@@ -421,7 +492,7 @@ public sealed class CombatEncounterState
         state.NextAttackAtSeconds = snapshot.NextAttackAtSeconds;
         state.AttackCount = snapshot.AttackCount;
         state.Threat = snapshot.Threat;
-        state.ThreatRatioBonus = snapshot.ThreatRatioBonus;
+        state.ThreatBonusPoints = snapshot.ThreatBonusPoints;
         state.BonusAbsorptionPoints = snapshot.BonusAbsorptionPoints;
         // 配表技能槽数量可能随版本变化：越界的吟唱槽位回退为普攻出手。
         state.PendingSkillIndex = snapshot.PendingSkillIndex >= 0 && snapshot.PendingSkillIndex < state.Skills.Count
@@ -465,13 +536,17 @@ public sealed record CombatEvent(
 /// <summary>
 /// 战斗步进切片结算结果帧。
 /// </summary>
+/// <param name="PlayerDeathTimestamps">本段内玩家阵亡的战斗时钟时刻（仅原地复活模式可多次出现）。</param>
+/// <param name="PlayerRespawnTimestamps">本段内玩家原地起身的战斗时钟时刻。</param>
 public sealed record CombatAdvanceResult(
     string EncounterId,
     double FromSeconds,
     double ToSeconds,
     CombatOutcome Outcome,
     IReadOnlyList<CombatEvent> Events,
-    double Sequence);
+    double Sequence,
+    IReadOnlyList<double>? PlayerDeathTimestamps = null,
+    IReadOnlyList<double>? PlayerRespawnTimestamps = null);
 
 /// <summary>妖兽试炼远征阶段；状态会随行动队列一同持久化。</summary>
 public enum CombatExpeditionPhase : byte
@@ -528,6 +603,11 @@ public sealed record CombatExpeditionState(
     /// 上方的 Player* 标量字段是面向协议展示的镜像，Combat 相位必须携带完整快照。
     /// </summary>
     public CombatantSnapshot? PlayerState { get; init; }
+    /// <summary>
+    /// 原地复活截止点（战斗时钟秒）：仅原地复活遭遇的倒地窗口内非空，
+    /// 其余相位与存活状态必须为 null。倒地窗口内 Enemies 保持原波次阵容不拆场。
+    /// </summary>
+    public double? PlayerRespawnAtSeconds { get; init; }
 
     /// <summary>校验远征状态是否满足持久化不变量。</summary>
     public bool IsValid => !string.IsNullOrWhiteSpace(EncounterId) && EncounterId.Length <= 128
@@ -548,6 +628,9 @@ public sealed record CombatExpeditionState(
             && enemy.State is not null && enemy.State.IsValid
             && double.IsFinite(enemy.PendingActionDurationSeconds) && enemy.PendingActionDurationSeconds >= 0)))
         && (PlayerState is null || PlayerState.IsValid)
+        // 复活截止点只存在于倒地窗口：必须落在当前战斗时钟之后；非 Combat 相位不得携带。
+        && (PlayerRespawnAtSeconds is null || (double.IsFinite(PlayerRespawnAtSeconds.Value)
+            && PlayerRespawnAtSeconds.Value > BattleElapsedSeconds - 1e-9 && Phase == CombatExpeditionPhase.Combat))
         && Phase switch
         {
             CombatExpeditionPhase.DuelPending => Outcome == CombatOutcome.Running
@@ -557,8 +640,10 @@ public sealed record CombatExpeditionState(
                 && (Enemies is null || Enemies.Count == 0) && PhaseElapsedSeconds <= 1e-9,
             CombatExpeditionPhase.InitialSearch or CombatExpeditionPhase.Search or CombatExpeditionPhase.Respawning
                 => Outcome == CombatOutcome.Running && (Enemies is null || Enemies.Count == 0) && Duel is null,
+            // Combat 相位允许玩家气血为 0：等价于倒地窗口存在（复活截止点非空），团灭即败遭遇不会留下该形态。
             _ => Enemies is { Count: > 0 } && PhaseElapsedSeconds <= 1e-9 && Duel is null
                 && PlayerState is { }
+                && (PlayerHitpoints > 1e-9 || PlayerRespawnAtSeconds is not null)
         };
 }
 
@@ -584,14 +669,20 @@ public static class DeterministicCombatEngine
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗目标时间无效。");
         var from = encounter.ElapsedSeconds;
         List<CombatEvent>? events = null;
+        List<double>? playerDeaths = null;
+        List<double>? playerRespawns = null;
         var eventCount = 0;
         while (encounter.Outcome == CombatOutcome.Running && encounter.ElapsedSeconds < targetSeconds - 1e-12)
         {
             if (++eventCount > MaxEventsPerAdvance)
                 throw new DomainException(DomainErrorCode.InvariantViolation, "战斗推进超过最大事件数。");
-            var next = encounter.Player.IsAlive ? encounter.Player.NextAttackAtSeconds : double.PositiveInfinity;
-            foreach (var enemy in encounter.Enemies)
-                if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
+            // 倒地窗口（原地复活模式）：玩家方全灭不终局，双方均不出手，
+            // 边界只剩战内 Buff/周期回复网格与复活截止点；怪物冷却按绝对时刻自然流逝。
+            var playerDowned = encounter.IsPlayerDowned;
+            var next = playerDowned ? encounter.PlayerRespawnAtSeconds : encounter.Player.NextAttackAtSeconds;
+            if (!playerDowned)
+                foreach (var enemy in encounter.Enemies)
+                    if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
             // 战内 Buff 的到期/周期回复同样是确定性时间线边界，必须与出手边界一起纳入推进。
             var effectAt = NextBuffBoundary(encounter);
             if (effectAt < next) next = effectAt;
@@ -604,18 +695,55 @@ public static class DeterministicCombatEngine
             encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, next);
             // 同刻到期先于出手结算：到达边界的 Buff 先失效/回复再进入动作结算。
             if (effectAt <= encounter.ElapsedSeconds + 1e-12) ApplyBuffTick(encounter, effectAt);
-            if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                PlayerAct(encounter, ref events);
-            for (var i = 0; i < encounter.Enemies.Count; i++)
+            if (playerDowned)
             {
-                var enemy = encounter.Enemies[i];
-                if (enemy.IsAlive && enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                    EnemyAct(encounter, enemy, i, ref events);
+                // 复活点触发起身：仅补满气血（灵力与冷却已在躺尸窗口按自然流逝入账），双方重新蓄势出手。
+                if (encounter.PlayerRespawnAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                {
+                    encounter.Player.Hitpoints = encounter.Player.Stats.MaxHitpoints;
+                    encounter.PlayerRespawnAtSeconds = double.PositiveInfinity;
+                    DecideInitialActions(encounter);
+                    (playerRespawns ??= []).Add(encounter.ElapsedSeconds);
+                }
+            }
+            else
+            {
+                if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                    PlayerAct(encounter, ref events);
+                for (var i = 0; i < encounter.Enemies.Count; i++)
+                {
+                    var enemy = encounter.Enemies[i];
+                    if (enemy.IsAlive && enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                        EnemyAct(encounter, enemy, i, ref events);
+                }
+                // 团灭触发倒地窗口：全场吟唱作废（未释放退还灵力、不进入冷却），复活点挂上战斗时钟。
+                if (!encounter.Player.IsAlive && encounter.PlayerRespawnSeconds > 0)
+                {
+                    encounter.PlayerRespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
+                    InterruptCasts(encounter);
+                    (playerDeaths ??= []).Add(encounter.ElapsedSeconds);
+                }
             }
             encounter.Sequence += 1;
             UpdateOutcome(encounter);
         }
-        return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome, (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence);
+        return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome,
+            (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence, playerDeaths, playerRespawns);
+    }
+
+    /// <summary>团灭瞬间全场吟唱作废：未完成的吟唱视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
+    private static void InterruptCasts(CombatEncounterState encounter)
+    {
+        foreach (var unit in encounter.Enemies.Prepend(encounter.Player))
+        {
+            var pending = unit.PendingSkillIndex;
+            unit.PendingSkillIndex = -1;
+            if (pending < 0 || pending >= unit.Skills.Count) continue;
+            unit.Manapoints = Math.Min(unit.Stats.MaxManapoints,
+                unit.Manapoints + AbilityNumber(unit.Skills[pending].Ability, "manaCost"));
+            if (unit.SkillCooldownUntil is { } cooldowns && pending < cooldowns.Length)
+                cooldowns[pending] = 0;
+        }
     }
 
     /// <summary>按存活敌人有效威胁权重抽取玩家攻击目标；全零威胁退化为等概率。</summary>
@@ -695,8 +823,9 @@ public static class DeterministicCombatEngine
     /// 已恢复吟唱中的单位（PendingSkillIndex ≥ 0）跳过决策，保留跨战延续的施放。</summary>
     internal static void DecideInitialActions(CombatEncounterState encounter)
     {
+        // 复活起身重蓄势也走本入口：已阵亡单位不再排动作，尸体不得携带吟唱标记或预扣灵力。
         for (var i = 0; i < encounter.Enemies.Count; i++)
-            if (encounter.Enemies[i].PendingSkillIndex < 0)
+            if (encounter.Enemies[i].IsAlive && encounter.Enemies[i].PendingSkillIndex < 0)
                 DecideNextAction(encounter, encounter.Enemies[i], encounter.Enemies, [encounter.Player], encounter.Player);
         if (encounter.Player.PendingSkillIndex < 0)
             DecideNextAction(encounter, encounter.Player, PlayerAllies(encounter), encounter.Enemies,
@@ -767,18 +896,25 @@ public static class DeterministicCombatEngine
                 var manaCost = AbilityNumber(slot.Ability, "manaCost");
                 if (unit.Manapoints < manaCost) continue;
                 unit.Manapoints -= manaCost;
+                // 吟唱时长 = 配表 × 成长乘区 ÷ 行动速度除数（NonLinear 点数）。
                 var castSeconds = Math.Max(1e-9,
-                    AbilityNumber(slot.Ability, "castMilliseconds") / 1000d * unit.Stats.CastTimeFactor);
+                    AbilityNumber(slot.Ability, "castMilliseconds") / 1000d * unit.Stats.CastTimeFactor
+                    * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear));
                 unit.PendingSkillIndex = i;
                 unit.NextAttackAtSeconds = encounter.ElapsedSeconds + castSeconds;
+                // 冷却自吟唱完成起算：配表 × 成长乘区 ÷ 冷却缩减除数（NonLinear 点数）。
                 cooldowns[i] = unit.NextAttackAtSeconds
-                    + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d * unit.Stats.CooldownFactor;
+                    + AbilityNumber(slot.Ability, "cooldownMilliseconds") / 1000d * unit.Stats.CooldownFactor
+                    * PercentValue.Multiplier(unit.Stats.CooldownReductionPoints, PercentCurveMode.NonLinear);
                 return;
             }
         }
         unit.PendingSkillIndex = -1;
+        // 普攻读条双重除数：攻击速度（面板+战内 Buff 合并）× 行动速度（NonLinear 点数）。
         unit.NextAttackAtSeconds = encounter.ElapsedSeconds
-            + unit.Stats.AttackIntervalSeconds / Math.Max(0.1, 1 + unit.BuffAttackSpeedRatio);
+            + unit.Stats.AttackIntervalSeconds
+            * PercentValue.Multiplier(unit.Stats.AttackSpeedPoints + unit.BuffAttackSpeedPoints, PercentCurveMode.NonLinear)
+            * PercentValue.Multiplier(unit.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear);
     }
 
     /// <summary>最近的战内效果边界：全体单位 Buff 的最早到期时刻；存在回复类 Buff 时叠加 5 秒结算网格。</summary>
@@ -808,7 +944,6 @@ public static class DeterministicCombatEngine
         if (Math.Abs(at / BuffTickSeconds - Math.Round(at / BuffTickSeconds)) > 1e-9) return;
         foreach (var unit in encounter.Enemies.Prepend(encounter.Player))
         {
-            if (!unit.IsAlive) continue;
             // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次。
             double hp = unit.Stats.HpRegen, mp = unit.Stats.MpRegen;
             foreach (var buff in unit.Buffs)
@@ -816,7 +951,8 @@ public static class DeterministicCombatEngine
                 hp += buff.HpRegen * buff.Stacks;
                 mp += buff.MpRegen * buff.Stacks;
             }
-            if (hp != 0) unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
+            // 阵亡单位气血锁 0 不结算回血，灵力回复照常入账（死亡灵力运转规约战内同构）。
+            if (unit.IsAlive && hp != 0) unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
             if (mp != 0) unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);
         }
     }
@@ -839,7 +975,7 @@ public static class DeterministicCombatEngine
         var targetType = AbilityText(ability, "targetType");
         // 威胁类字段是施放方修正，与技能效果类型无关：任何施放都可携带仇恨增益。
         caster.Threat += AbilityNumber(ability, "threatGain");
-        caster.ThreatRatioBonus += AbilityNumber(ability, "threatRatio");
+        caster.ThreatBonusPoints += AbilityNumber(ability, "threatPoints");
         var healOutput = attackBase * caster.Stats.SkillIntensity * AbilityNumber(ability, "healingRatio") * ratioBonus
             + AbilityNumber(ability, "flatHealing") * flatBonus;
         if (AbilityText(ability, "effectType") == "heal" || healOutput > 0)
@@ -852,7 +988,7 @@ public static class DeterministicCombatEngine
                 _ => allies.Where(unit => unit.IsAlive)
                     .OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).Take(1).ToArray()
             };
-            var output = healOutput * (1 + caster.Stats.Effects.HealingBonusRatio);
+            var output = healOutput * PercentValue.Multiplier(caster.Stats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
             foreach (var ally in healTargets)
             {
                 var healed = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, Math.Max(0, output));
@@ -878,8 +1014,8 @@ public static class DeterministicCombatEngine
                 var grant = new CombatBuffState(buffId,
                     encounter.ElapsedSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), 1,
                     AbilityNumber(buff, "hpRegen"), AbilityNumber(buff, "mpRegen"),
-                    AbilityNumber(buff, "attackSpeedRatio"), AbilityNumber(buff, "damageAbsorptionRatio"),
-                    AbilityNumber(buff, "threatRatio"));
+                    AbilityNumber(buff, "attackSpeedPoints"), AbilityNumber(buff, "damageAbsorptionPoints"),
+                    AbilityNumber(buff, "threatPoints"));
                 // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
                 var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
                 var scope = targetType switch
@@ -935,8 +1071,8 @@ public static class DeterministicCombatEngine
             ResolveAttack(encounter, caster, single, side, encounter.ElapsedSeconds, ref events, stats, count, id);
     }
 
-    /// <summary>按破拆招、闪避、暴击和两层抗性顺序结算，抽样仅依赖已持久化的种子与出手序号。
-    /// 判定前、伤害落账前、落账后三个点位依次驱动钩子管线；钩子衍生伤害直接落账不再回流。</summary>
+    /// <summary>按破招化解、闪避、暴击顺序判定后，沿「大类抗性穿甲 → 攻方分类增伤 → 守方分类减伤 → 暴击 → 总免伤收口」结算链结算；
+    /// 抽样仅依赖已持久化的种子与出手序号。判定前、伤害落账前、落账后三个点位依次驱动钩子管线；钩子衍生伤害直接落账不再回流。</summary>
     private static void ResolveAttack(CombatEncounterState encounter, CombatantState attacker, CombatantState target,
         ulong side, double at, ref List<CombatEvent>? events,
         CombatantStats? statsOverride = null, double? countOverride = null, string? abilityId = null)
@@ -970,25 +1106,46 @@ public static class DeterministicCombatEngine
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
         resistance *= parried ? 2 : 1;
         var rawDamage = attack.AttackPower * attack.BasicAttackRatio;
-        // 等价于 RawDamage² / (RawDamage + RES × K + 1)，先除后乘避免平方中间值溢出。
+        // 第一层：大类抗性平方穿甲。等价于 RawDamage² / (RawDamage + RES × K + 1)，先除后乘避免平方中间值溢出。
         var damage = hit ? rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1)) : 0;
-        var elementResistance = attack.Element switch
-        {
-            CombatElement.Metal => defense.MetalResistance,
-            CombatElement.Wood => defense.WoodResistance,
-            CombatElement.Water => defense.WaterResistance,
-            CombatElement.Fire => defense.FireResistance,
-            CombatElement.Earth => defense.EarthResistance,
-            _ => 0
-        };
-        if (attack.Element != CombatElement.None)
-            damage *= 1 - elementResistance / (elementResistance + 100 * defense.ResistanceScale);
-        if (critical) damage *= attack.CriticalMultiplier;
-        // 免伤为负向 Linear 点数：+x 点 → 承受伤害 ×100/(100+x)，负点反向增伤；
-        // 战内 Buff 免伤（BuffAbsorptionPoints）与面板/临时免伤在同一乘区合并。
+        // 第二层：攻方分类增伤（Linear 点数逐项乘算）：大类增伤 × 五行增伤 × 总增伤 × 普攻/技能增幅。
         damage *= PercentValue.Multiplier(
-            -(defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffAbsorptionPoints),
+            attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalDamageBonusPoints : attack.SpellDamageBonusPoints,
             PercentCurveMode.Linear);
+        if (attack.Element != CombatElement.None)
+            damage *= PercentValue.Multiplier(attack.Element switch
+            {
+                CombatElement.Metal => attack.MetalDamageBonusPoints,
+                CombatElement.Wood => attack.WoodDamageBonusPoints,
+                CombatElement.Water => attack.WaterDamageBonusPoints,
+                CombatElement.Fire => attack.FireDamageBonusPoints,
+                CombatElement.Earth => attack.EarthDamageBonusPoints,
+                _ => 0
+            }, PercentCurveMode.Linear);
+        damage *= PercentValue.Multiplier(attack.TotalDamageBonusPoints, PercentCurveMode.Linear);
+        // 普攻/技能增幅互斥取一：abilityId 为空即普攻（「普通攻击」tag 机制待配表落地）。
+        damage *= PercentValue.Multiplier(
+            abilityId is null ? attack.BasicAttackBonusPoints : attack.SkillBonusPoints,
+            PercentCurveMode.Linear);
+        // 第三层：守方分类减伤（NonLinear 点数逐项收敛）：大类减伤 × 对应五行减伤。
+        damage *= PercentValue.Multiplier(
+            attack.DamageKind == CombatDamageKind.Physical ? defense.PhysicalDamageReductionPoints : defense.SpellDamageReductionPoints,
+            PercentCurveMode.NonLinear);
+        if (attack.Element != CombatElement.None)
+            damage *= PercentValue.Multiplier(attack.Element switch
+            {
+                CombatElement.Metal => defense.MetalDamageReductionPoints,
+                CombatElement.Wood => defense.WoodDamageReductionPoints,
+                CombatElement.Water => defense.WaterDamageReductionPoints,
+                CombatElement.Fire => defense.FireDamageReductionPoints,
+                CombatElement.Earth => defense.EarthDamageReductionPoints,
+                _ => 0
+            }, PercentCurveMode.NonLinear);
+        if (critical) damage *= attack.CriticalMultiplier;
+        // 末位收口：总减伤（免伤点数）NonLinear——面板、临时与战内 Buff 免伤同乘区合并。
+        damage *= PercentValue.Multiplier(
+            defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffAbsorptionPoints,
+            PercentCurveMode.NonLinear);
         context.Hit = hit;
         context.Critical = critical;
         context.Broken = broken;
@@ -1044,6 +1201,8 @@ public static class DeterministicCombatEngine
     {
         encounter.Outcome = (encounter.Player.IsAlive, encounter.Enemies.Any(enemy => enemy.IsAlive)) switch
         {
+            // 原地复活待触发期间团灭不是终局：敌方残存或被持续伤害跳死全灭都保持 Running，起身后统一裁定。
+            (false, _) when double.IsFinite(encounter.PlayerRespawnAtSeconds) => CombatOutcome.Running,
             (true, true) => CombatOutcome.Running,
             (true, false) => CombatOutcome.PlayerWon,
             (false, true) => CombatOutcome.EnemyWon,

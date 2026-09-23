@@ -40,7 +40,7 @@ public static class SkillTriggerEvaluator
         var hasBuff = ability.ValueKind == JsonValueKind.Object
             && ability.TryGetProperty("buff", out buffElement) && buffElement.ValueKind == JsonValueKind.Object;
         var hasEffect = ratio + flat > 0 || healing
-            || supportive && (JsonRead.Number(ability, "threatGain") > 0 || JsonRead.Number(ability, "threatRatio") > 0 || hasBuff);
+            || supportive && (JsonRead.Number(ability, "threatGain") > 0 || JsonRead.Number(ability, "threatPoints") > 0 || hasBuff);
         if (ratio < 0 || flat < 0 || !hasEffect || cast < 0 || cooldown < 0 || cast + cooldown <= 0
             || JsonRead.Number(ability, "manaCost") < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能未配置可执行效果或有效施放周期。");
@@ -58,8 +58,8 @@ public static class SkillTriggerEvaluator
         {
             var duration = JsonRead.Number(buffElement, "durationSeconds");
             JsonRead.Number(buffElement, "hpRegen"); JsonRead.Number(buffElement, "mpRegen");
-            JsonRead.Number(buffElement, "attackSpeedRatio"); JsonRead.Number(buffElement, "damageAbsorptionRatio");
-            JsonRead.Number(buffElement, "threatRatio"); JsonRead.Number(buffElement, "maxStacks");
+            JsonRead.Number(buffElement, "attackSpeedPoints"); JsonRead.Number(buffElement, "damageAbsorptionPoints");
+            JsonRead.Number(buffElement, "threatPoints"); JsonRead.Number(buffElement, "maxStacks");
             if (duration <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "技能 Buff 必须配置正持续时长。");
         }

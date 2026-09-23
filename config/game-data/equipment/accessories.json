@@ -8,7 +8,7 @@
       "physicalAttack": 0.1
     },
     "flatStats": {
-      "criticalChance": 0.04,
+      "criticalChance": 4,
       "hitpointRegen": 2
     }
   },
@@ -36,7 +36,7 @@
       "physicalAttack": 0.16
     },
     "flatStats": {
-      "criticalChance": 0.04,
+      "criticalChance": 4,
       "hitpointRegen": 3
     }
   },

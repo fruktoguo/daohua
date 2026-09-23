@@ -13,12 +13,12 @@ export interface GameDataManifest {
 
 // 2. Actions (actions.json)
 // 行动收益条目：ParseYields 消费 kind/per/amount，item 与 buff 另读 id，
-// buff 再读 name/durationSeconds/modifiers.{hpRegen,mpRegen,attackSpeedRatio,damageAbsorptionRatio,statRatios}
+// buff 再读 name/durationSeconds/modifiers.{hpRegen,mpRegen,attackSpeedPoints,damageAbsorptionPoints,statRatios}
 export interface ActionYieldModifiers {
   hpRegen?: number;
   mpRegen?: number;
-  attackSpeedRatio?: number;
-  damageAbsorptionRatio?: number;
+  attackSpeedPoints?: number;
+  damageAbsorptionPoints?: number;
   statRatios?: Record<string, number>;
 }
 
@@ -48,15 +48,15 @@ export interface ActionConfig {
 
 // 3. Items (items.json)
 // 消耗品 Buff：SimulationEngine.ActivateInstantConsumables 消费
-// buffId/name（必需）、durationSeconds/hpRegen/mpRegen/attackSpeedRatio/damageAbsorptionRatio
+// buffId/name（必需）、durationSeconds/hpRegen/mpRegen/attackSpeedPoints/damageAbsorptionPoints
 export interface BuffEffectConfig {
   buffId: string;
   name: string;
   durationSeconds: number;
   hpRegen?: number;
   mpRegen?: number;
-  attackSpeedRatio?: number;
-  damageAbsorptionRatio?: number;
+  attackSpeedPoints?: number;
+  damageAbsorptionPoints?: number;
 }
 
 export interface ConsumableConfig {
@@ -95,16 +95,16 @@ export interface CombatTrigger {
 }
 
 // 技能增益块：ApplySupport / CastSkill 消费
-// buffId/name/durationSeconds/hpRegen/mpRegen/attackSpeedRatio/damageAbsorptionRatio/threatRatio
+// buffId/name/durationSeconds/hpRegen/mpRegen/attackSpeedPoints/damageAbsorptionPoints/threatPoints
 export interface AbilityBuffConfig {
   buffId?: string;
   name?: string;
   durationSeconds?: number;
   hpRegen?: number;
   mpRegen?: number;
-  attackSpeedRatio?: number;
-  damageAbsorptionRatio?: number;
-  threatRatio?: number;
+  attackSpeedPoints?: number;
+  damageAbsorptionPoints?: number;
+  threatPoints?: number;
 }
 
 export interface AbilityConfig {
@@ -128,14 +128,14 @@ export interface AbilityConfig {
   healingRatio?: number;
   flatHealing?: number;
   threatGain?: number;
-  threatRatio?: number;
+  threatPoints?: number;
   buff?: AbilityBuffConfig;
   defaultTriggers?: CombatTrigger[];
 }
 
 // 5. Equipment (equipment.json)
 // 真实消费集：LoadoutCommand 读 slot；PlayerAttributeResolver 读 flatStats/baseStatRatios/
-// specialMechanics.{threatRatio,hpDrainRatio,mpDrainRatio,damageReflectRatio}；
+// specialMechanics 全量百分比点数键（战斗设计 §7.5 词汇表，DataTool 强制校验）；
 // StaticGameCatalogMapper 投影 baseStatRatios/flatStats/specialMechanics/enhancementBonus。
 // stats/style/category/element/attackIntervalMilliseconds/intensity/budget/weights 均无消费方。
 export interface EquipmentConfig {
@@ -146,7 +146,7 @@ export interface EquipmentConfig {
   quality?: number;
   baseStatRatios?: Record<string, number>; // 百分比加成，强化每级 +2%
   flatStats?: Record<string, number>; // 固定点数，强化每级 +2%
-  specialMechanics?: Record<string, number>; // 特殊机制：threatRatio/hpDrainRatio/mpDrainRatio/damageReflectRatio 等
+  specialMechanics?: Record<string, number>; // 特殊机制点数键：threatBonusPoints/hpDrainPoints/damageReflectPoints/各增减伤 Points 等
   enhancementBonus?: Record<string, number>; // 每级强化额外加成（映射层透传展示）
   description?: string;
 }
@@ -184,11 +184,13 @@ export interface CombatantConfig {
   level?: number;
   rank?: string; // minion | elite | boss（缺省 minion）
   budgetCost?: number;
-  weights?: Record<string, number>; // 倾向权重：hp/mp/ad/ap/armor/mres/hit/eva/crit/cavoid/break/parry/各系抗性
+  weights?: Record<string, number>; // 倾向权重：hp/mp/ad/ap/armor/mres/hit/eva/crit/cavoid/break/parry
+  modifiers?: Record<string, number>; // 百分比点数修饰：增减伤/攻速/冷却/威胁等（DataTool 词汇表校验）
   attackIntervalMilliseconds?: number;
-  hpDrainRatio?: number;
-  mpDrainRatio?: number;
-  damageReflectRatio?: number;
+  hpDrainPoints?: number;
+  mpDrainPoints?: number;
+  damageReflectPoints?: number;
+  healingBonusPoints?: number;
   dropTable?: CombatDropDefinition[];
   skills?: MonsterSkillConfig[];
   qiReward?: number;
@@ -218,6 +220,7 @@ export interface CombatEncounterConfig {
   searchMilliseconds?: number;
   respawnMilliseconds?: number;
   playerRespawnMilliseconds?: number;
+  onPartyWipe?: string; // respawn 原地复活 | defeat 团灭失败，缺省 respawn
 }
 
 // 8. Maps (maps.json)

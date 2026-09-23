@@ -18,7 +18,7 @@ public sealed class CombatRulesTests
         var attacker = CombatantStats.Create(1000, 100, 0, 1, damageKind: kind) with
         { Element = element };
         var defender = CombatantStats.Create(1000, 0, 20, 1) with
-        { MagicResistance = 40, ResistanceScale = 2, FireResistance = 200 };
+        { MagicResistance = 40, ResistanceScale = 2, FireDamageReductionPoints = 100 };
         var state = CombatEncounterState.Start("formula", 42, attacker, defender);
         var hit = DeterministicCombatEngine.AdvanceTo(state, 1.01).Events[0];
         Assert.Equal("player", hit.AttackerId);

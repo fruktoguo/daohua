@@ -243,8 +243,8 @@ if (processRole == ServerProcessRole.Api)
                     {
                         hpRegen = entry.Buff.HpRegen,
                         mpRegen = entry.Buff.MpRegen,
-                        attackSpeedRatio = entry.Buff.AttackSpeedRatio,
-                        damageAbsorptionRatio = entry.Buff.DamageAbsorptionRatio,
+                        attackSpeedPoints = entry.Buff.AttackSpeedPoints,
+                        damageAbsorptionPoints = entry.Buff.DamageAbsorptionPoints,
                         statRatios = entry.Buff.StatRatios
                     }
                 }).ToArray(),
@@ -446,6 +446,8 @@ if (processRole == ServerProcessRole.Api)
         });
     }).RequireAuthorization();
     app.Map("/ws", WebSocketEndpoint.HandleAsync);
+    // 计算节点反向拨入链路：节点主动 WebSocket 注册，主服经连接下发冷挂机批次。
+    app.Map(Server.Clean.ComputeLinkContract.Path, Server.Clean.ComputeLinkEndpoint.HandleAsync);
     if (opsPanelEnabled) app.MapOpsPanel(opsOptions, releaseVersion, startedAt);
     app.MapFallback("/api/{**path}", () => Results.NotFound(Problem(404, "NOT_FOUND", "接口不存在。")));
     if (hasWebRoot) app.MapFallbackToFile("index.html");

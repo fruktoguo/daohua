@@ -500,7 +500,7 @@ public sealed class SimulationEngineTests
                 {"kind":"mana","per":"second","amount":0.5},
                 {"kind":"item","per":"repeat","id":"item.test-herb","amount":2},
                 {"kind":"buff","per":"repeat","id":"buff.calm","name":"入定","amount":1,"durationSeconds":30,
-                 "modifiers":{"hpRegen":1.5,"attackSpeedRatio":0.1}}]}]
+                 "modifiers":{"hpRegen":1.5,"attackSpeedPoints":10}}]}]
             """u8.ToArray();
         var catalog = GameDataCatalog.Parse([actions]);
 
@@ -514,7 +514,7 @@ public sealed class SimulationEngineTests
         Assert.Equal("入定", grant.Name);
         Assert.Equal(30, grant.DurationSeconds);
         Assert.Equal(1.5, grant.HpRegen);
-        Assert.Equal(0.1, grant.AttackSpeedRatio);
+        Assert.Equal(10, grant.AttackSpeedPoints);
 
         // 未知收益类型与非法频率必须在解析期直接拒绝。
         Assert.Throws<DomainException>(() => GameDataCatalog.Parse(

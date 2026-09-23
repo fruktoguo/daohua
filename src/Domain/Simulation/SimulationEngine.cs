@@ -235,7 +235,7 @@ public static class SimulationEngine
                     player.Buffs.Active.RemoveAll(current => current.BuffId == buffId);
                     player.Buffs.Active.Add(new(buffId, now + Read(buff, "durationSeconds"), 1,
                         buff.GetProperty("name").GetString()!, id.Value, Read(buff, "hpRegen"), Read(buff, "mpRegen"),
-                        Read(buff, "attackSpeedRatio"), Read(buff, "damageAbsorptionRatio")));
+                        Read(buff, "attackSpeedPoints"), Read(buff, "damageAbsorptionPoints")));
                 }
             player.Settings.AutoUseSlots[i] = slot with { CooldownUntilUnixSeconds = now + cooldown };
             player.MarkDirty(PlayerSectionKind.Settings);
@@ -600,7 +600,8 @@ public static class SimulationEngine
                 seed,
                 new CombatantTemplate(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
                     SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities)),
-                wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray());
+                wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray(),
+                InBattleRespawnSeconds(encounter));
             for (var i = 0; i < wave.Count; i++)
                 battle.Enemies[i].DefinitionId = wave[i].Id;
             battle.Player.Hitpoints = Math.Clamp(player.Combat.Hitpoints, 0, player.Combat.MaxHitpoints);
@@ -610,11 +611,11 @@ public static class SimulationEngine
                 .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
             player.Combat.Skills.ApplyTo(battle.Player);
             DeterministicCombatEngine.DecideInitialActions(battle);
-            var waveNames = string.Join("、", wave.Select(monster => monster.Name));
+            var entryWaveNames = string.Join("、", wave.Select(monster => monster.Name));
             if (battle.Player.Hitpoints <= 0)
             {
                 action.Status = ActionQueueStatus.Blocked;
-                AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"气血衰竭，无法迎战：{waveNames}。", definition.Id);
+                AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"气血衰竭，无法迎战：{entryWaveNames}。", definition.Id);
                 if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !player.Actions.All(a => a.Status == ActionQueueStatus.Blocked))
                 {
                     player.RotateActionToTail(action.Id);
@@ -634,7 +635,7 @@ public static class SimulationEngine
             player.RecordStats(action.Id,
                 from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
                 report => report.Encounters += 1);
-            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.started", $"遭遇妖兽：{waveNames}。", definition.Id);
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.started", $"遭遇妖兽：{entryWaveNames}。", definition.Id);
             return;
         }
 
@@ -661,7 +662,9 @@ public static class SimulationEngine
             waveEnemies.Select(enemy => enemy.State).ToArray(),
             expedition.BattleElapsedSeconds,
             expedition.Outcome,
-            expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.State.AttackCount));
+            expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.State.AttackCount),
+            InBattleRespawnSeconds(encounter),
+            expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
         for (var i = 0; i < waveEnemies.Count; i++)
             battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
         // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
@@ -692,6 +695,32 @@ public static class SimulationEngine
                 && int.TryParse(combatantId[6..], out var enemyIndex) && enemyIndex >= 0 && enemyIndex < waveEnemies.Count
                 ? gameData.CombatMonsters[waveEnemies[enemyIndex].EnemyId].Name
                 : combatantId;
+        var waveNames = string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name));
+        // 阵亡/起身与战斗事件共用同一战斗时钟：按时刻交错落日志，每次阵亡逐帧计败走与死亡。
+        var deaths = combatResult.PlayerDeathTimestamps ?? [];
+        var respawns = combatResult.PlayerRespawnTimestamps ?? [];
+        // 局部函数无法捕获外层 ref 参数：提前初始化后用普通引用落事件。
+        events ??= [];
+        var eventSink = events;
+        int deathCursor = 0, respawnCursor = 0;
+        void FlushDownedEvents(double uptoBattleSeconds)
+        {
+            while (deathCursor < deaths.Count && deaths[deathCursor] <= uptoBattleSeconds + 1e-9)
+            {
+                var deathAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, deaths[deathCursor++] - battleFrom));
+                player.Progression.TotalDefeats += 1;
+                player.MarkDirty(PlayerSectionKind.Progression);
+                player.RecordStats(action.Id, deathAt.ToUnixTimeMilliseconds() / 1000d, report => report.Deaths += 1);
+                eventSink.Add(new SimulationEvent(deathAt,
+                    "combat.lost", $"阵亡：被 {waveNames} 击倒，原地调息等待复活。", definition.Id));
+            }
+            while (respawnCursor < respawns.Count && respawns[respawnCursor] <= uptoBattleSeconds + 1e-9)
+            {
+                var respawnAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, respawns[respawnCursor++] - battleFrom));
+                eventSink.Add(new SimulationEvent(respawnAt,
+                    "combat.respawned", "原地起身：气血回满，战斗继续。", definition.Id));
+            }
+        }
         foreach (var combatEvent in combatResult.Events)
         {
             var attacker = NameOf(combatEvent.AttackerId);
@@ -704,11 +733,14 @@ public static class SimulationEngine
             else
                 AddCombatEventAt(ref events, eventAt,
                     "combat.attack", $"{attacker}{(combatEvent.Hit ? $"命中{targetName}，造成 {combatEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
+            FlushDownedEvents(combatEvent.AtSeconds);
         }
+        FlushDownedEvents(double.MaxValue);
         if (combatResult.Outcome == CombatOutcome.Running) return;
         if (combatResult.Outcome != CombatOutcome.PlayerWon)
         {
-            // 讨伐失败：计入生平败走，波次重置回第 1 波。
+            // 团灭即败（defeat 分支）：计入生平败走，拆场进入复活点读条，波次重置回第 1 波。
+            // 原地复活遭遇的阵亡不经此分支——引擎保持 Running 直至起身续战。
             player.Progression.TotalDefeats += 1;
             player.MarkDirty(PlayerSectionKind.Progression);
             player.RecordStats(action.Id,
@@ -718,7 +750,6 @@ public static class SimulationEngine
                 waveNumber: 1) with
             { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
             action.ProgressSeconds = 0;
-            var waveNames = string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name));
             AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{waveNames}。", definition.Id);
             return;
         }
@@ -899,6 +930,10 @@ public static class SimulationEngine
         action.ProgressSeconds = 0;
     }
 
+    /// <summary>团灭分流到引擎参数：原地复活遭遇携带复活读条秒数，团灭即败遭遇传 0（引擎按 EnemyWon 终局处理）。</summary>
+    private static double InBattleRespawnSeconds(CombatEncounterDefinition encounter)
+        => encounter.OnPartyWipe == PartyWipeRule.Respawn ? encounter.PlayerRespawnSeconds : 0;
+
     /// <summary>
     /// 解析战斗行动在当前节点实际应战的遭遇：玩家位于已登记生态遭遇的节点时，
     /// 按确定性种子从节点 encounterIds 中抽取；节点无生态或行进中则回退行动钉死的 combatEncounterId。
@@ -962,6 +997,8 @@ public static class SimulationEngine
         PlayerAttackCount = battle.Player.AttackCount,
         PlayerThreat = battle.Player.Threat,
         Outcome = battle.Outcome,
+        // 倒地窗口的复活截止点随相位持久化；存活或战斗终局时回到 null。
+        PlayerRespawnAtSeconds = double.IsFinite(battle.PlayerRespawnAtSeconds) ? battle.PlayerRespawnAtSeconds : null,
         // 玩家单位的完整战斗快照（吟唱槽位/逐槽冷却/施放计数/战内 Buff）随相位持久化，恢复后序列不漂移。
         PlayerState = CombatEncounterState.Snapshot(battle.Player),
         Enemies = battle.Enemies.Select(enemy => new ExpeditionEnemyState(
@@ -971,6 +1008,7 @@ public static class SimulationEngine
                 ? DeterministicCombatEngine.AbilityText(enemy.Skills[enemy.PendingSkillIndex].Ability, "id") : null,
             enemy.PendingSkillIndex >= 0 && enemy.PendingSkillIndex < enemy.Skills.Count
                 ? DeterministicCombatEngine.AbilityNumber(enemy.Skills[enemy.PendingSkillIndex].Ability, "castMilliseconds") / 1000d * enemy.Stats.CastTimeFactor
+                    * PercentValue.Multiplier(enemy.Stats.ActionSpeedPoints, PercentCurveMode.NonLinear)
                 : enemy.Stats.AttackIntervalSeconds)).ToArray()
     };
 
@@ -1481,7 +1519,7 @@ public static class SimulationEngine
                     player.Buffs.Active.RemoveAll(buff => buff.BuffId == grant.BuffId);
                     player.Buffs.Active.Add(new ActiveBuff(grant.BuffId,
                         target.ToUnixTimeMilliseconds() / 1000d + grant.DurationSeconds, yield.Amount,
-                        grant.Name, null, grant.HpRegen, grant.MpRegen, grant.AttackSpeedRatio, grant.DamageAbsorptionRatio,
+                        grant.Name, null, grant.HpRegen, grant.MpRegen, grant.AttackSpeedPoints, grant.DamageAbsorptionPoints,
                         grant.StatRatios));
                     buffTouched = true;
                     break;

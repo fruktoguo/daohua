@@ -8,6 +8,8 @@ import { useState, useMemo } from 'react';
 import { useConfigContext } from '../../context/ConfigContext';
 import type { CombatEncounterConfig, CombatSpawnConfig } from '../../types/config';
 import { NumberInput } from '../common/NumberInput';
+import { EnumSelect } from '../common/EnumSelect';
+import { PARTY_WIPE_RULES } from '../../types/enums';
 import { ReferenceSelect, MultiReferenceSelect } from '../common/ReferenceSelect';
 
 export function EncountersEditor() {
@@ -52,6 +54,7 @@ export function EncountersEditor() {
       searchMilliseconds: 5000,
       respawnMilliseconds: 5000,
       playerRespawnMilliseconds: 180000,
+      onPartyWipe: 'respawn',
       battlesPerElite: 5,
       battlesPerBoss: 0
     };
@@ -300,6 +303,15 @@ export function EncountersEditor() {
                 step={10000}
                 min={1}
                 unit="ms"
+              />
+
+              <EnumSelect
+                label="团灭规则 (OnPartyWipe)"
+                description="缺省 respawn；defeat 时玩家全灭即终局"
+                value={currentEncounter.onPartyWipe}
+                options={PARTY_WIPE_RULES}
+                onChange={v => handleUpdate({ onPartyWipe: v || 'respawn' })}
+                allowClear={false}
               />
             </div>
           </div>

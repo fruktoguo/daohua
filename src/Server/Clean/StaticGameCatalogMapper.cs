@@ -48,8 +48,8 @@ public static class StaticGameCatalogMapper
                     durationSeconds = ReadDouble(b, "durationSeconds", 0),
                     hpRegen = ReadDouble(b, "hpRegen", 0),
                     mpRegen = ReadDouble(b, "mpRegen", 0),
-                    attackSpeedRatio = ReadDouble(b, "attackSpeedRatio", 0),
-                    damageAbsorptionRatio = ReadDouble(b, "damageAbsorptionRatio", 0)
+                    attackSpeedPoints = ReadDouble(b, "attackSpeedPoints", 0),
+                    damageAbsorptionPoints = ReadDouble(b, "damageAbsorptionPoints", 0)
                 }).ToArray()
                 : [];
 

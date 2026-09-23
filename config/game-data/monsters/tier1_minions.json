@@ -44,7 +44,6 @@
       "ad": 0.4,
       "ap": 0.4,
       "armor": 0.87,
-      "woodResistance": 1.08,
       "hit": 1.0,
       "eva": 1.0
     },
@@ -77,7 +76,10 @@
     ],
     "qiReward": 10,
     "experienceReward": 10,
-    "rootExpReward": 10
+    "rootExpReward": 10,
+    "modifiers": {
+      "woodDamageReductionPoints": 10.8
+    }
   },
   {
     "id": "enemy.fire-spirit",
@@ -97,7 +99,6 @@
       "ad": 0.4,
       "ap": 0.4,
       "armor": 0.65,
-      "fireResistance": 1.3,
       "hit": 1.0,
       "eva": 1.0
     },
@@ -130,6 +131,9 @@
     ],
     "qiReward": 10,
     "experienceReward": 10,
-    "rootExpReward": 10
+    "rootExpReward": 10,
+    "modifiers": {
+      "fireDamageReductionPoints": 13.0
+    }
   }
 ]

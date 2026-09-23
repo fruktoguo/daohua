@@ -33,7 +33,7 @@
           "name": "止血散·回春",
           "durationSeconds": 30,
           "hpRegen": 12,
-          "damageAbsorptionRatio": 0.05
+          "damageAbsorptionPoints": 5
         }
       ]
     }
@@ -56,7 +56,7 @@
           "name": "顺气丸·凝神",
           "durationSeconds": 30,
           "mpRegen": 8,
-          "attackSpeedRatio": 0.05
+          "attackSpeedPoints": 5
         }
       ]
     }

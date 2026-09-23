@@ -457,13 +457,13 @@ export function AbilitiesEditor() {
               />
 
               <NumberInput
-                label="威胁倍率加成 (ThreatRatio)"
-                description="叠加 ThreatRatioBonus"
-                value={currentAbility.threatRatio}
-                onChange={v => handleUpdate({ threatRatio: v })}
-                step={0.1}
+                label="威胁增幅点数 (ThreatPoints)"
+                description="叠加施放方威胁增幅（100 点 = +100%）"
+                value={currentAbility.threatPoints}
+                onChange={v => handleUpdate({ threatPoints: v })}
+                step={10}
                 min={0}
-                unit="×"
+                unit="点"
               />
             </div>
 
@@ -535,28 +535,28 @@ export function AbilitiesEditor() {
                   />
 
                   <NumberInput
-                    label="攻速加成 (AttackSpeedRatio)"
-                    value={currentAbility.buff.attackSpeedRatio}
-                    onChange={v => handleUpdateBuff({ attackSpeedRatio: v })}
-                    step={0.05}
-                    unit="×"
+                    label="攻击速度点数 (AttackSpeedPoints)"
+                    value={currentAbility.buff.attackSpeedPoints}
+                    onChange={v => handleUpdateBuff({ attackSpeedPoints: v })}
+                    step={1}
+                    unit="点"
                   />
 
                   <NumberInput
-                    label="免伤比例 (DamageAbsorptionRatio)"
-                    value={currentAbility.buff.damageAbsorptionRatio}
-                    onChange={v => handleUpdateBuff({ damageAbsorptionRatio: v })}
-                    step={0.05}
-                    unit="×"
+                    label="免伤点数 (DamageAbsorptionPoints)"
+                    value={currentAbility.buff.damageAbsorptionPoints}
+                    onChange={v => handleUpdateBuff({ damageAbsorptionPoints: v })}
+                    step={1}
+                    unit="点"
                   />
 
                   <NumberInput
-                    label="威胁倍率 (Buff.ThreatRatio)"
-                    description="镜像路径按此叠加全体友方威胁"
-                    value={currentAbility.buff.threatRatio}
-                    onChange={v => handleUpdateBuff({ threatRatio: v })}
-                    step={0.1}
-                    unit="×"
+                    label="威胁增幅点数 (Buff.ThreatPoints)"
+                    description="按点数叠加全体友方威胁增幅（100 点 = +100%）"
+                    value={currentAbility.buff.threatPoints}
+                    onChange={v => handleUpdateBuff({ threatPoints: v })}
+                    step={10}
+                    unit="点"
                   />
                 </div>
               )}

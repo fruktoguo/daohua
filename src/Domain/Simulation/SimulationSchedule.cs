@@ -57,6 +57,12 @@ public static class SimulationSchedule
                         }
                         break;
                     case CombatExpeditionPhase.Combat:
+                        // 倒地窗口（原地复活）：双方停手，唯一可见边界是复活截止点；回复静默推进不推送。
+                        if (expedition.PlayerRespawnAtSeconds is { } respawnAt)
+                        {
+                            Consider(Math.Max(0, respawnAt - expedition.BattleElapsedSeconds));
+                            break;
+                        }
                         // 出手边界：存活方最早出手时刻（战斗时钟 → 墙钟换算按相位不变前提）。
                         var nextAttack = expedition.PlayerHitpoints > 0
                             ? expedition.PlayerNextAttackAtSeconds

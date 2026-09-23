@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,74 +7,111 @@ using Xunit;
 namespace Server.Tests;
 
 /// <summary>
-/// 主服务侧 compute.v1 派发边界单测：令牌头、端点路径、响应分类与 section 线编码校验。
-/// 通过 fake HttpMessageHandler 验证，不依赖真实 ComputeNode 进程或数据库。
+/// compute-link.v1 派发边界单测：链路帧编解码、动态节点注册表与 section 线编码校验。
+/// 不依赖真实 ComputeNode 进程或数据库。
 /// </summary>
 public sealed class ComputeDispatchTests
 {
-    /// <summary>请求必须携带令牌头、正确的端点路径与可解析的 compute.v1 批次体。</summary>
+    /// <summary>全部链路消息类型必须经 type 判别字段无损往返。</summary>
     [Fact]
-    public async Task AdvanceBatchSendsTokenHeaderAndParsesResponse()
+    public void CodecRoundTripsAllMessageTypes()
     {
-        HttpRequestMessage? captured = null;
-        byte[]? capturedBody = null;
-        var response = new ComputeAdvanceBatchResponse(
-            ComputeDispatchContract.Version, "fp-node", 1_700_000_000_000,
-            [new ComputeAdvanceJobResult(Guid.NewGuid(), Guid.NewGuid(), true, 7, 8, [], null, null, null, false)]);
-        var responseBody = JsonSerializer.Serialize(response, ServerJson.Options);
-        var client = NewClient(async request =>
+        var batchId = Guid.NewGuid();
+        var job = NewJobRequest();
+        object[] messages =
+        [
+            new ComputeLinkHello(ComputeLinkContract.Version, "odin", 4, "fp123"),
+            new ComputeLinkWelcome(ComputeLinkContract.Version, Guid.NewGuid(), 1_700_000_000_000),
+            new ComputeLinkBatch(batchId, new ComputeAdvanceBatchRequest(
+                ComputeDispatchContract.Version, "fp123", [job])),
+            new ComputeLinkResult(batchId, new ComputeAdvanceBatchResponse(
+                ComputeDispatchContract.Version, "fp123", 1_700_000_000_000,
+                [new ComputeAdvanceJobResult(job.JobId, job.PlayerId, true, 7, 8, [], null, null, null, false)])),
+            new ComputeLinkError("NODE_LIMIT", "上限")
+        ];
+
+        foreach (var message in messages)
         {
-            captured = request;
-            capturedBody = await request.Content!.ReadAsByteArrayAsync();
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        }, responseBody);
+            var decoded = ComputeLinkCodec.Decode(ComputeLinkCodec.Encode(message));
+            Assert.IsType(message.GetType(), decoded);
+        }
 
-        var outcome = await client.AdvanceBatchAsync("http://node:8090/", "secret-token",
-            new ComputeAdvanceBatchRequest(ComputeDispatchContract.Version, "fp-server",
-                [NewJobRequest()]), CancellationToken.None);
-
-        Assert.Equal(ComputeDispatchStatus.Ok, outcome.Status);
-        Assert.Single(outcome.Response!.Jobs);
-        Assert.NotNull(captured);
-        Assert.Equal("/internal/v1/compute/advance-batch", captured!.RequestUri!.AbsolutePath);
-        Assert.Equal("secret-token",
-            captured.Headers.GetValues(ComputeDispatchContract.TokenHeader).Single());
-        var sent = JsonSerializer.Deserialize<ComputeAdvanceBatchRequest>(capturedBody, ServerJson.Options);
-        Assert.NotNull(sent);
-        Assert.Equal("fp-server", sent!.GameDataFingerprint);
-        Assert.Single(sent.Jobs);
+        var decodedBatch = (ComputeLinkBatch)ComputeLinkCodec.Decode(
+            ComputeLinkCodec.Encode(messages[2]));
+        Assert.Equal(batchId, decodedBatch.BatchId);
+        Assert.Equal(ComputeDispatchContract.Version, decodedBatch.Request.ContractVersion);
+        Assert.Single(decodedBatch.Request.Jobs);
+        Assert.Equal(job.JobId, decodedBatch.Request.Jobs[0].JobId);
     }
 
-    /// <summary>非 2xx 响应映射为 HttpError，并保留状态码供退避分类。</summary>
+    /// <summary>缺 type 或未知 type 的帧一律判非法，不得静默吞掉。</summary>
     [Fact]
-    public async Task AdvanceBatchMapsHttpError()
+    public void CodecRejectsMalformedAndUnknownFrames()
     {
-        var client = NewClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.TooManyRequests)));
-        var outcome = await client.AdvanceBatchAsync("http://node:8090", "t",
-            new ComputeAdvanceBatchRequest(ComputeDispatchContract.Version, null, []), CancellationToken.None);
-        Assert.Equal(ComputeDispatchStatus.HttpError, outcome.Status);
-        Assert.Equal(HttpStatusCode.TooManyRequests, outcome.HttpStatus);
+        Assert.Throws<InvalidDataException>(() =>
+            ComputeLinkCodec.Decode(Encoding.UTF8.GetBytes("""{"foo":1}""")));
+        Assert.Throws<InvalidDataException>(() =>
+            ComputeLinkCodec.Decode(Encoding.UTF8.GetBytes("""{"type":"bogus"}""")));
     }
 
-    /// <summary>契约版本不匹配的响应一律拒绝，不得按成功批次处理。</summary>
+    /// <summary>派发器总是拿到剩余容量最大的在线节点，节点组为空时返回 null。</summary>
     [Fact]
-    public async Task AdvanceBatchRejectsForeignContractVersion()
+    public void RegistryAcquiresLeastBusyNode()
     {
-        var client = NewClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)),
-            """{"contractVersion":"compute.v0","gameDataFingerprint":"x","serverTimeUnixMilliseconds":0,"jobs":[]}""");
-        var outcome = await client.AdvanceBatchAsync("http://node:8090", "t",
-            new ComputeAdvanceBatchRequest(ComputeDispatchContract.Version, null, []), CancellationToken.None);
-        Assert.Equal(ComputeDispatchStatus.InvalidResponse, outcome.Status);
+        var registry = new ComputeLinkRegistry();
+        Assert.Null(registry.Acquire());
+
+        var idle = new ComputeLinkNode("idle", 4);
+        var busy = new ComputeLinkNode("busy", 4);
+        busy.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        busy.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        Assert.True(registry.TryRegister(idle));
+        Assert.True(registry.TryRegister(busy));
+        Assert.Same(idle, registry.Acquire());
+
+        // idle 塞满后轮到 busy（仍剩 2 格容量）。
+        for (var i = 0; i < 4; i++)
+            idle.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        Assert.Same(busy, registry.Acquire());
+
+        // 全满 → null，任务留 pending 不消耗 attempts。
+        for (var i = 0; i < 2; i++)
+            busy.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        Assert.Null(registry.Acquire());
     }
 
-    /// <summary>网络异常归入 NetworkError，由派发器按租约整批退回。</summary>
+    /// <summary>结果帧必须了结对应批次等待方；未知 batchId 拒绝。</summary>
     [Fact]
-    public async Task AdvanceBatchClassifiesNetworkError()
+    public async Task RegistryCompletesPendingBatchResult()
     {
-        var client = new ComputeNodeClient(new HttpClient(new ThrowingHandler()));
-        var outcome = await client.AdvanceBatchAsync("http://node:8090", "t",
-            new ComputeAdvanceBatchRequest(ComputeDispatchContract.Version, null, []), CancellationToken.None);
-        Assert.Equal(ComputeDispatchStatus.NetworkError, outcome.Status);
+        var registry = new ComputeLinkRegistry();
+        var node = new ComputeLinkNode("n1", 2);
+        Assert.True(registry.TryRegister(node));
+        var batchId = Guid.NewGuid();
+        var waiter = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        node.Pending[batchId] = waiter;
+
+        var response = new ComputeAdvanceBatchResponse(
+            ComputeDispatchContract.Version, "fp", 1, []);
+        Assert.True(node.CompleteResult(batchId, response));
+        Assert.Same(response, await waiter.Task);
+        Assert.False(node.CompleteResult(batchId, response));
+    }
+
+    /// <summary>节点注销时在飞批次必须立即收到断线失败，派发器才能退回租约。</summary>
+    [Fact]
+    public async Task RegistryUnregisterFailsInFlightBatches()
+    {
+        var registry = new ComputeLinkRegistry();
+        var node = new ComputeLinkNode("odin", 2);
+        Assert.True(registry.TryRegister(node));
+        var waiter = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        node.Pending[Guid.NewGuid()] = waiter;
+
+        registry.Unregister(node);
+        Assert.Equal(0, registry.NodeCount);
+        await Assert.ThrowsAsync<ComputeNodeDisconnectedException>(() => waiter.Task);
+        Assert.Null(registry.Acquire());
     }
 
     /// <summary>存储 codec 到线 codec 的映射必须一致，未知存储编码拒绝外传。</summary>
@@ -123,29 +158,4 @@ public sealed class ComputeDispatchTests
         new(Guid.NewGuid(), Guid.NewGuid(), 7, 1_000, 2_000,
             [new ComputeSectionPayload(PlayerSectionKinds.Settings, 1, "identity",
                 Convert.ToBase64String(Encoding.UTF8.GetBytes("{}")), new string('a', 64))]);
-
-    private static ComputeNodeClient NewClient(
-        Func<HttpRequestMessage, Task<HttpResponseMessage>> respond, string responseBody = "{}") =>
-        new(new HttpClient(new StubHandler(async request =>
-        {
-            var response = await respond(request);
-            if (response.StatusCode == HttpStatusCode.OK)
-                response.Content = new StringContent(responseBody, Encoding.UTF8, "application/json");
-            return response;
-        })));
-
-    private sealed class StubHandler(
-        Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
-    {
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken) =>
-            await respond(request);
-    }
-
-    private sealed class ThrowingHandler : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken) =>
-            throw new HttpRequestException("连接被拒");
-    }
 }

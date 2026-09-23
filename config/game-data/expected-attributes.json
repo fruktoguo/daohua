@@ -209,7 +209,7 @@
   ],
   "fourMultiplierFormula": "FinalStat = BaseFlat * (1 + Root%) * (1 + Equip%) * (1 + Buff%)",
   "rules": {
-    "rootScalingFormula": "Root% = 六维根骨等级 × 每点百分比（体魄/经脉/根骨/力道/身法各 +1%/点、神识对术法攻击 +2%/点对其余 +1%/点；见 combat-design.md §5 与 PlayerAttributeResolver）",
+    "rootScalingFormula": "Root% = 六维根骨等级 × 每点百分比（体魄/经脉/根骨/力道/身法各 +1%/点、神识对术法攻击 +2%/点对其余 +1%/点；见 总纲第七篇 §7.5 与 PlayerAttributeResolver）",
     "singleBuffSingleStatFormula": "EquipPieceBase / 4 (精确整数百分比)",
     "singleBuffAllStatsFormula": "EquipPieceBase / 48",
     "expectedBuffCountFormula": "round(Tier * 1.1^Tier)",

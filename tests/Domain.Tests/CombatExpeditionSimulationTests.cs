@@ -47,11 +47,12 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     /// <summary>
-    /// 战败进入重生相位后：边界前一刻保持 0 血等待，到达配置的重生边界才满血复活回到搜寻相位；
-    /// 快照恢复的副本与在线副本在同一时刻产生一致结果（重生时序确定性）。
+    /// 原地复活（onPartyWipe 缺省 respawn）：玩家阵亡不拆场——相位保持 Combat、同波敌人保留、
+    /// 战斗时钟上的复活截止点落地；边界前一刻仍 0 血躺尸，到点满血起身续打同一波残局；
+    /// 快照恢复的副本与在线副本在同一时刻产生一致结果（倒地窗口时序确定性）。
     /// </summary>
     [Fact]
-    public void DefeatedCombatActionRestoresAndResumesAtConfiguredRespawnBoundary()
+    public void DownedPlayerRevivesInPlaceKeepingSameWave()
     {
         var catalog = CreateCatalog(enemyHitpoints: 1_000, enemyAttackPower: 1_000);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
@@ -61,25 +62,65 @@ public sealed class CombatExpeditionSimulationTests
 
         var action = Assert.Single(player.Actions);
         Assert.Equal(ActionQueueStatus.Running, action.Status);
-        Assert.Equal(CombatExpeditionPhase.Respawning, action.Expedition!.Phase);
+        Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition!.Phase);
+        var respawnAt = Assert.IsType<double>(action.Expedition.PlayerRespawnAtSeconds);
         Assert.Equal(0, player.Combat.Hitpoints);
+        var enemy = Assert.Single(action.Expedition.Enemies!);
+        Assert.True(enemy.State.Hitpoints > 0);
         Assert.Contains(result.Events, entry => entry.Code == "combat.lost");
-        var remaining = action.Expedition.PhaseDurationSeconds - action.Expedition.PhaseElapsedSeconds;
-        Assert.Equal(180, action.Expedition.PhaseDurationSeconds);
+        Assert.Equal(1, player.Progression.TotalDefeats);
+        var remaining = respawnAt - action.Expedition.BattleElapsedSeconds;
+        Assert.True(remaining is > 0 and <= 180);
         var restored = PlayerAggregate.Restore(player.ExportState());
         var boundary = player.LastSimulatedAt.AddSeconds(remaining);
         SimulationEngine.AdvanceTo(player, boundary.AddMilliseconds(-1), catalog);
         Assert.Equal(0, player.Combat.Hitpoints);
-        Assert.Equal(CombatExpeditionPhase.Respawning, action.Expedition.Phase);
+        Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition.Phase);
+        Assert.NotNull(action.Expedition.PlayerRespawnAtSeconds);
         var respawned = SimulationEngine.AdvanceTo(player, boundary, catalog);
         SimulationEngine.AdvanceTo(restored, boundary, catalog);
         Assert.Contains(respawned.Events, entry => entry.Code == "combat.respawned");
         Assert.Equal(player.Combat.MaxHitpoints, player.Combat.Hitpoints);
-        Assert.Equal(player.Combat.MaxManapoints, player.Combat.Manapoints);
-        Assert.Equal(CombatExpeditionPhase.Search, action.Expedition.Phase);
+        Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition.Phase);
+        Assert.Null(action.Expedition.PlayerRespawnAtSeconds);
         Assert.Equal(-1, action.RemainingRepeats);
         Assert.Equal(0, action.CompletedRepeats);
-        Assert.Equal(action.Expedition, restored.Actions[0].Expedition);
+        Assert.Equal(action.Expedition with { Enemies = null }, restored.Actions[0].Expedition! with { Enemies = null });
+        Assert.Equal(action.Expedition.Enemies, restored.Actions[0].Expedition!.Enemies);
+    }
+
+    /// <summary>
+    /// 团灭即败（onPartyWipe=defeat）：玩家方全灭即终局拆场——进入复活点读条相位、敌人快照清空、
+    /// 波次重置回第 1 波；读条完成满血满蓝清冷却回到搜寻相位。
+    /// </summary>
+    [Fact]
+    public void DefeatPartyWipeTearsDownAndRestartsFromWaveOne()
+    {
+        var catalog = CreateCatalog(enemyHitpoints: 1_000, enemyAttackPower: 1_000, onPartyWipe: PartyWipeRule.Defeat);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+        var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3), catalog);
+
+        var action = Assert.Single(player.Actions);
+        Assert.Equal(ActionQueueStatus.Running, action.Status);
+        Assert.Equal(CombatExpeditionPhase.Respawning, action.Expedition!.Phase);
+        Assert.Null(action.Expedition.PlayerRespawnAtSeconds);
+        Assert.True(action.Expedition.Enemies is null || action.Expedition.Enemies.Count == 0);
+        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Contains(result.Events, entry => entry.Code == "combat.lost");
+        Assert.Equal(1, player.Progression.TotalDefeats);
+        var remaining = action.Expedition.PhaseDurationSeconds - action.Expedition.PhaseElapsedSeconds;
+        Assert.Equal(180, action.Expedition.PhaseDurationSeconds);
+        var boundary = player.LastSimulatedAt.AddSeconds(remaining);
+        var respawned = SimulationEngine.AdvanceTo(player, boundary, catalog);
+        Assert.Contains(respawned.Events, entry => entry.Code == "combat.respawned");
+        Assert.Equal(player.Combat.MaxHitpoints, player.Combat.Hitpoints);
+        Assert.Equal(player.Combat.MaxManapoints, player.Combat.Manapoints);
+        Assert.Equal(CombatExpeditionPhase.Search, action.Expedition.Phase);
+        Assert.Equal(1, action.Expedition.WaveNumber);
+        Assert.Equal(-1, action.RemainingRepeats);
+        Assert.Equal(0, action.CompletedRepeats);
     }
 
     /// <summary>
@@ -218,7 +259,8 @@ public sealed class CombatExpeditionSimulationTests
     }
 
     private static GameDataCatalog CreateCatalog(double enemyHitpoints, double enemyAttackPower,
-        double searchSeconds = 1, BaseAttributeCatalog? baseAttributes = null)
+        double searchSeconds = 1, BaseAttributeCatalog? baseAttributes = null,
+        PartyWipeRule onPartyWipe = PartyWipeRule.Respawn)
     {
         var actionId = new ActionId("combat.test");
         var actions = new ActionCatalog([
@@ -253,7 +295,8 @@ public sealed class CombatExpeditionSimulationTests
             [new CombatSpawnDefinition("enemy.test", 1, 1)],
             [],
             [],
-            0);
+            0,
+            OnPartyWipe: onPartyWipe);
         return new GameDataCatalog(
             "test-1",
             "test-fingerprint",

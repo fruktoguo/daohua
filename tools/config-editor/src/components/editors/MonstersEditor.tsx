@@ -13,7 +13,8 @@ import {
   DAMAGE_CATEGORIES,
   ELEMENTS,
   VISUAL_RENDERER_KINDS,
-  MONSTER_WEIGHT_KEYS
+  MONSTER_WEIGHT_KEYS,
+  MONSTER_MODIFIER_KEYS
 } from '../../types/enums';
 import { EnumSelect } from '../common/EnumSelect';
 import { NumberInput } from '../common/NumberInput';
@@ -67,6 +68,17 @@ export function MonstersEditor() {
       next[key] = value;
     }
     handleUpdate({ weights: Object.keys(next).length > 0 ? next : undefined });
+  };
+
+  const handleUpdateModifier = (key: string, value: number | undefined) => {
+    if (!currentMonster) return;
+    const next = { ...(currentMonster.modifiers || {}) };
+    if (value === undefined) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    handleUpdate({ modifiers: Object.keys(next).length > 0 ? next : undefined });
   };
 
   const handleAdd = () => {
@@ -353,30 +365,30 @@ export function MonstersEditor() {
               />
 
               <NumberInput
-                label="汲血率 (HpDrainRatio)"
-                value={currentMonster.hpDrainRatio}
-                onChange={v => handleUpdate({ hpDrainRatio: v })}
-                step={0.05}
+                label="气血汲取点数 (HpDrainPoints)"
+                value={currentMonster.hpDrainPoints}
+                onChange={v => handleUpdate({ hpDrainPoints: v })}
+                step={1}
                 min={0}
-                unit="×"
+                unit="点"
               />
 
               <NumberInput
-                label="汲蓝率 (MpDrainRatio)"
-                value={currentMonster.mpDrainRatio}
-                onChange={v => handleUpdate({ mpDrainRatio: v })}
-                step={0.05}
+                label="灵力汲取点数 (MpDrainPoints)"
+                value={currentMonster.mpDrainPoints}
+                onChange={v => handleUpdate({ mpDrainPoints: v })}
+                step={1}
                 min={0}
-                unit="×"
+                unit="点"
               />
 
               <NumberInput
-                label="反伤率 (DamageReflectRatio)"
-                value={currentMonster.damageReflectRatio}
-                onChange={v => handleUpdate({ damageReflectRatio: v })}
-                step={0.05}
+                label="伤害反弹点数 (DamageReflectPoints)"
+                value={currentMonster.damageReflectPoints}
+                onChange={v => handleUpdate({ damageReflectPoints: v })}
+                step={1}
                 min={0}
-                unit="×"
+                unit="点"
               />
             </div>
           </div>
@@ -385,7 +397,7 @@ export function MonstersEditor() {
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">倾向权重矩阵 (Weights)</h3>
-              <span className="text-[11px] text-zinc-500">缺省键 = 1.0；五行抗性权重 ×10 记为抗性点数</span>
+              <span className="text-[11px] text-zinc-500">缺省键 = 1.0；增减伤点数走下方 modifiers 段</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {MONSTER_WEIGHT_KEYS.map(w => (
@@ -396,6 +408,26 @@ export function MonstersEditor() {
                   onChange={v => handleUpdateWeight(w.key, v)}
                   step={0.05}
                   unit="×"
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* 百分比点数修饰矩阵卡片 */}
+          <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">点数修饰矩阵 (Modifiers)</h3>
+              <span className="text-[11px] text-zinc-500">100 点 = 100%；增伤 Linear / 减伤速率 NonLinear</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {MONSTER_MODIFIER_KEYS.map(w => (
+                <NumberInput
+                  key={w.key}
+                  label={w.label}
+                  value={currentMonster.modifiers?.[w.key]}
+                  onChange={v => handleUpdateModifier(w.key, v)}
+                  step={1}
+                  unit="点"
                 />
               ))}
             </div>

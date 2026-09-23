@@ -13,7 +13,7 @@ public sealed class CombatHookTests
     public void HpDrainHealsAttackerByDealtDamage()
     {
         var player = CombatantStats.Create(1000, 100, 0, 1) with
-        { Effects = new CombatEffectProfile(HpDrainRatio: 0.5) };
+        { Effects = new CombatEffectProfile(HpDrainPoints: 50) };
         var enemy = CombatantStats.Create(100000, 0, 0, 2);
         var state = CombatEncounterState.Restore("drain", 7, new CombatantTemplate(player),
             new CombatantSnapshot(500, 0, 1, 0, 0),
@@ -42,7 +42,7 @@ public sealed class CombatHookTests
     public void ManaDrainStealsTargetMana()
     {
         var player = CombatantStats.Create(1000, 100, 0, 1) with
-        { MaxManapoints = 100, Effects = new CombatEffectProfile(MpDrainRatio: 1) };
+        { MaxManapoints = 100, Effects = new CombatEffectProfile(MpDrainPoints: 100) };
         var enemy = CombatantStats.Create(100000, 0, 0, 2) with { MaxManapoints = 200 };
         var state = CombatEncounterState.Restore("mana", 7, new CombatantTemplate(player),
             new CombatantSnapshot(1000, 50, 1, 0, 0),
@@ -63,7 +63,7 @@ public sealed class CombatHookTests
     {
         var player = CombatantStats.Create(1000, 100, 0, 1);
         var enemy = CombatantStats.Create(100000, 0, 0, 2) with
-        { Effects = new CombatEffectProfile(DamageReflectRatio: 0.5) };
+        { Effects = new CombatEffectProfile(DamageReflectPoints: 50) };
         var state = CombatEncounterState.Start("reflect", 7, player, enemy);
         var result = DeterministicCombatEngine.AdvanceTo(state, 1.01);
         Assert.Equal(2, result.Events.Count);
@@ -84,9 +84,9 @@ public sealed class CombatHookTests
     public void ReflectedDamageDoesNotReenterPipeline()
     {
         var player = CombatantStats.Create(1000, 100, 0, 1) with
-        { Effects = new CombatEffectProfile(DamageReflectRatio: 1) };
+        { Effects = new CombatEffectProfile(DamageReflectPoints: 100) };
         var enemy = CombatantStats.Create(100000, 0, 0, 2) with
-        { Effects = new CombatEffectProfile(DamageReflectRatio: 1) };
+        { Effects = new CombatEffectProfile(DamageReflectPoints: 100) };
         var state = CombatEncounterState.Start("norecur", 7, player, enemy);
         var result = DeterministicCombatEngine.AdvanceTo(state, 1.01);
         Assert.Equal(2, result.Events.Count);
@@ -101,9 +101,9 @@ public sealed class CombatHookTests
     public void MissedAttackEmitsNoDerivedEvents()
     {
         var player = CombatantStats.Create(1000, 100, 0, 1) with
-        { Effects = new CombatEffectProfile(HpDrainRatio: 1) };
+        { Effects = new CombatEffectProfile(HpDrainPoints: 100) };
         var enemy = CombatantStats.Create(100000, 0, 0, 2, evasion: 1e9) with
-        { Effects = new CombatEffectProfile(DamageReflectRatio: 1) };
+        { Effects = new CombatEffectProfile(DamageReflectPoints: 100) };
         var state = CombatEncounterState.Restore("miss", 7, new CombatantTemplate(player),
             new CombatantSnapshot(500, 0, 1, 0, 0),
             [new CombatantTemplate(enemy)],
@@ -122,9 +122,9 @@ public sealed class CombatHookTests
     public void HookedCombatStaysDeterministic()
     {
         var player = CombatantStats.Create(1000, 100, 0, 1, 30, 90) with
-        { Effects = new CombatEffectProfile(HpDrainRatio: 0.3, MpDrainRatio: 0.5) };
+        { Effects = new CombatEffectProfile(HpDrainPoints: 30, MpDrainPoints: 50) };
         var enemy = CombatantStats.Create(100000, 50, 0, 0.5) with
-        { MaxManapoints = 200, Effects = new CombatEffectProfile(DamageReflectRatio: 0.2) };
+        { MaxManapoints = 200, Effects = new CombatEffectProfile(DamageReflectPoints: 20) };
         var first = CombatEncounterState.Start("det", 42, player, enemy);
         var second = CombatEncounterState.Start("det", 42, player, enemy);
         var firstEvents = DeterministicCombatEngine.AdvanceTo(first, 30).Events;

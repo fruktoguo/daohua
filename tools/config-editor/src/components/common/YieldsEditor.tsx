@@ -171,19 +171,19 @@ export function YieldsEditor({
                   />
 
                   <NumberInput
-                    label="攻速加成 (Modifiers.AttackSpeedRatio)"
-                    value={y.modifiers?.attackSpeedRatio}
-                    onChange={v => handleUpdateModifiers(idx, { attackSpeedRatio: v })}
-                    step={0.05}
-                    unit="×"
+                    label="攻击速度点数 (Modifiers.AttackSpeedPoints)"
+                    value={y.modifiers?.attackSpeedPoints}
+                    onChange={v => handleUpdateModifiers(idx, { attackSpeedPoints: v })}
+                    step={1}
+                    unit="点"
                   />
 
                   <NumberInput
-                    label="免伤比例 (Modifiers.DamageAbsorptionRatio)"
-                    value={y.modifiers?.damageAbsorptionRatio}
-                    onChange={v => handleUpdateModifiers(idx, { damageAbsorptionRatio: v })}
-                    step={0.05}
-                    unit="×"
+                    label="免伤点数 (Modifiers.DamageAbsorptionPoints)"
+                    value={y.modifiers?.damageAbsorptionPoints}
+                    onChange={v => handleUpdateModifiers(idx, { damageAbsorptionPoints: v })}
+                    step={1}
+                    unit="点"
                   />
                 </div>
 

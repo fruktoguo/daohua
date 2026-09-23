@@ -118,7 +118,7 @@
     "buff": {
       "name": "破阵子",
       "durationSeconds": 30.0,
-      "damageAbsorptionRatio": 0.15
+      "damageAbsorptionPoints": 15
     },
     "defaultTriggers": [
       {

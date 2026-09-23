@@ -167,7 +167,7 @@ public static class ProtocolSnapshotMapper
         yield return (PlayerSectionKinds.Buffs, state.Buffs.Select(buff => new
         {
             buff.BuffId, buff.Name, buff.Stacks, buff.ExpiresAtUnixSeconds, buff.SourceItemId,
-            buff.HpRegen, buff.MpRegen, buff.AttackSpeedRatio, buff.DamageAbsorptionRatio, buff.StatRatios
+            buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints, buff.StatRatios
         }).ToArray());
         yield return (PlayerSectionKinds.Loadout, ToLoadoutSection(state));
         yield return (PlayerSectionKinds.Settings, new { state.Settings, state.Presence });
@@ -198,7 +198,7 @@ public static class ProtocolSnapshotMapper
 
     /// <summary>
     /// 统一战斗属性投影：玩家、妖兽与斗法镜像共用同一字段集与语义。
-    /// 点数制字段（暴击/免暴/免伤）在协议边界统一折算为比率，前端只做展示渲染不得二次换算。
+    /// 全部百分比属性按点数下发（100 点 = 100%，总纲第七篇 §7.7.5），前端只按对应曲线渲染不得二次换算。
     /// </summary>
     public static object ToAttributesDto(PlayerAttributes a) => new
     {
@@ -206,18 +206,25 @@ public static class ProtocolSnapshotMapper
         physicalAttack = a.PhysicalAttack, a.SpellAttack,
         a.Armor, a.MagicResistance,
         a.Accuracy, a.Evasion,
-        criticalChance = a.Critical / 100d,
-        criticalDamageRatio = a.CriticalMultiplier,
-        criticalAvoidance = a.CriticalAvoidance / 100d,
+        critical = a.Critical, criticalResistance = a.CriticalAvoidance,
+        criticalMultiplier = a.CriticalMultiplier,
         breakPower = a.BreakPower, parryResolve = a.Parry,
         hpRegenPerFiveSeconds = a.HpRegen, mpRegenPerFiveSeconds = a.MpRegen,
         attackIntervalMilliseconds = a.AttackIntervalSeconds * 1000,
         basicAttackRatio = a.BasicAttackRatio, a.SkillIntensity,
         a.CooldownFactor, a.CastTimeFactor,
-        a.DamageAbsorptionRatio, a.ThreatRatio,
-        a.MetalResistance, a.WoodResistance, a.WaterResistance, a.FireResistance, a.EarthResistance,
-        hpDrainRatio = a.Effects.HpDrainRatio, mpDrainRatio = a.Effects.MpDrainRatio,
-        damageReflectRatio = a.Effects.DamageReflectRatio, healingBonusRatio = a.Effects.HealingBonusRatio
+        a.PhysicalDamageBonusPoints, a.SpellDamageBonusPoints,
+        a.MetalDamageBonusPoints, a.WoodDamageBonusPoints, a.WaterDamageBonusPoints,
+        a.FireDamageBonusPoints, a.EarthDamageBonusPoints,
+        a.TotalDamageBonusPoints, a.BasicAttackBonusPoints, a.SkillBonusPoints,
+        a.PhysicalDamageReductionPoints, a.SpellDamageReductionPoints,
+        a.MetalDamageReductionPoints, a.WoodDamageReductionPoints, a.WaterDamageReductionPoints,
+        a.FireDamageReductionPoints, a.EarthDamageReductionPoints,
+        a.DamageAbsorptionPoints,
+        a.AttackSpeedPoints, a.ActionSpeedPoints, a.CooldownReductionPoints,
+        a.ThreatBonusPoints,
+        hpDrainPoints = a.Effects.HpDrainPoints, mpDrainPoints = a.Effects.MpDrainPoints,
+        damageReflectPoints = a.Effects.DamageReflectPoints, healingBonusPoints = a.Effects.HealingBonusPoints
     };
 
     /// <summary>战斗单位静态属性（怪物/斗法镜像）到统一属性投影的重载。</summary>
@@ -227,18 +234,25 @@ public static class ProtocolSnapshotMapper
         physicalAttack = s.AttackPower, s.SpellAttack,
         armor = s.Defense, s.MagicResistance,
         s.Accuracy, s.Evasion,
-        criticalChance = s.Critical / 100d,
-        criticalDamageRatio = s.CriticalMultiplier,
-        criticalAvoidance = s.CriticalResistance / 100d,
+        critical = s.Critical, criticalResistance = s.CriticalResistance,
+        criticalMultiplier = s.CriticalMultiplier,
         s.BreakPower, s.ParryResolve,
         hpRegenPerFiveSeconds = s.HpRegen, mpRegenPerFiveSeconds = s.MpRegen,
         attackIntervalMilliseconds = s.AttackIntervalSeconds * 1000,
         s.BasicAttackRatio, s.SkillIntensity,
         s.CooldownFactor, s.CastTimeFactor,
-        damageAbsorptionRatio = s.DamageAbsorptionPoints / 100d, s.ThreatRatio,
-        s.MetalResistance, s.WoodResistance, s.WaterResistance, s.FireResistance, s.EarthResistance,
-        hpDrainRatio = s.Effects.HpDrainRatio, mpDrainRatio = s.Effects.MpDrainRatio,
-        damageReflectRatio = s.Effects.DamageReflectRatio, healingBonusRatio = s.Effects.HealingBonusRatio
+        s.PhysicalDamageBonusPoints, s.SpellDamageBonusPoints,
+        s.MetalDamageBonusPoints, s.WoodDamageBonusPoints, s.WaterDamageBonusPoints,
+        s.FireDamageBonusPoints, s.EarthDamageBonusPoints,
+        s.TotalDamageBonusPoints, s.BasicAttackBonusPoints, s.SkillBonusPoints,
+        s.PhysicalDamageReductionPoints, s.SpellDamageReductionPoints,
+        s.MetalDamageReductionPoints, s.WoodDamageReductionPoints, s.WaterDamageReductionPoints,
+        s.FireDamageReductionPoints, s.EarthDamageReductionPoints,
+        s.DamageAbsorptionPoints,
+        s.AttackSpeedPoints, s.ActionSpeedPoints, s.CooldownReductionPoints,
+        s.ThreatBonusPoints,
+        hpDrainPoints = s.Effects.HpDrainPoints, mpDrainPoints = s.Effects.MpDrainPoints,
+        damageReflectPoints = s.Effects.DamageReflectPoints, healingBonusPoints = s.Effects.HealingBonusPoints
     };
 
     private static object ToCombatSection(PlayerAggregateState state, GameDataCatalog catalog)
@@ -258,7 +272,8 @@ public static class ProtocolSnapshotMapper
             && catalog.Abilities.TryGetValue(castingId, out var castingAbility)
             && castingAbility.TryGetProperty("castMilliseconds", out var castProperty)
             && castProperty.TryGetDouble(out var castMilliseconds))
-            castTotalMilliseconds = castMilliseconds * a.CastTimeFactor;
+            castTotalMilliseconds = castMilliseconds * a.CastTimeFactor
+                * PercentValue.Multiplier(a.ActionSpeedPoints, PercentCurveMode.NonLinear);
         return new
         {
             resources = new
@@ -375,6 +390,11 @@ public static class ProtocolSnapshotMapper
         expedition.WaveNumber,
         outcome = (byte)expedition.Outcome,
         expedition.Seed,
+        // 倒地窗口（原地复活遭遇）：复活截止点与读条时长（战斗时钟秒），前端据此渲染阵亡置灰与复活读条。
+        playerRespawnAtSeconds = expedition.PlayerRespawnAtSeconds,
+        playerRespawnDurationSeconds = expedition.PlayerRespawnAtSeconds is not null
+            && gameData?.CombatEncounters.TryGetValue(expedition.EncounterId, out var respawnEncounter) == true
+                ? respawnEncounter.PlayerRespawnSeconds : (double?)null,
         enemies = (expedition.Enemies ?? []).Select(enemy => ToExpeditionEnemyDto(enemy, gameData)).ToArray(),
         duel = expedition.Duel is null ? null : ToDuelPlaybackDto(expedition.Duel)
     };

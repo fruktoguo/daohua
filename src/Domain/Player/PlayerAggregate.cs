@@ -127,7 +127,7 @@ public sealed class PlayerBuffState
 /// <param name="Stacks">当前叠加层数</param>
 public sealed record ActiveBuff(string BuffId, double ExpiresAtUnixSeconds, double Stacks = 1,
     string Name = "", string? SourceItemId = null, double HpRegen = 0, double MpRegen = 0,
-    double AttackSpeedRatio = 0, double DamageAbsorptionRatio = 0,
+    double AttackSpeedPoints = 0, double DamageAbsorptionPoints = 0,
     IReadOnlyDictionary<string, double>? StatRatios = null);
 
 /// <summary>

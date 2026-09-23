@@ -156,13 +156,13 @@ public sealed class QueueLoopTests
     }
 
     /// <summary>
-    /// 战败重生等待是战斗内部相位而非完成/受阻：队列保持原行动不轮换不计完成，
-    /// 到达重生边界满血复活后同一行动继续执行。
+    /// 原地复活倒地等待是战斗内部阶段而非完成/受阻：队列保持原行动不轮换不计完成，
+    /// 到达复活边界满血起身后同一行动续打同一波敌人。
     /// </summary>
     [Fact]
     public void QueueLoop_WaitsForRespawnWithoutCompletingOrRotatingDefeatedAction()
     {
-        // 死亡是战斗内部等待阶段，不是完成或材料受阻，队列必须保持当前行动。
+        // 阵亡是战斗内部等待阶段，不是完成或材料受阻，队列必须保持当前行动。
         var combatActionId = new ActionId("combat.boss");
         var qiActionId = new ActionId("cultivation.draw-qi");
         var actions = new ActionCatalog([
@@ -194,10 +194,13 @@ public sealed class QueueLoopTests
         Assert.Equal(2, player.Actions.Count);
         var combat = player.Actions[0];
         Assert.Equal(combatActionId, combat.Intent.ActionId);
-        Assert.Equal(CombatExpeditionPhase.Respawning, combat.Expedition!.Phase);
+        // 倒地窗口仍是 Combat 相位：妖皇保留在场上，复活截止点已挂上战斗时钟。
+        Assert.Equal(CombatExpeditionPhase.Combat, combat.Expedition!.Phase);
+        var respawnAt = Assert.IsType<double>(combat.Expedition.PlayerRespawnAtSeconds);
+        Assert.Single(combat.Expedition.Enemies!, e => e.State.Hitpoints > 0);
         Assert.Equal(ActionQueueStatus.Pending, player.Actions[1].Status);
         Assert.Equal(0, player.Progression.CompletedActions);
-        var boundary = player.LastSimulatedAt.AddSeconds(combat.Expedition.PhaseDurationSeconds - combat.Expedition.PhaseElapsedSeconds);
+        var boundary = player.LastSimulatedAt.AddSeconds(respawnAt - combat.Expedition.BattleElapsedSeconds);
         SimulationEngine.AdvanceTo(player, boundary.AddMilliseconds(-1), catalog);
         Assert.Equal(0, player.Combat.Hitpoints);
         var resumed = SimulationEngine.AdvanceTo(player, boundary, catalog);

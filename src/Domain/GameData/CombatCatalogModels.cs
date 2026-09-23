@@ -40,6 +40,18 @@ public sealed record CombatSpawnDefinition(
     double Weight,
     double Strength);
 
+/// <summary>
+/// 团灭分流规则（设计文档 总纲第七篇 §7.9.4）：玩家方全体阵亡后的战斗走向。
+/// Respawn = 原地复活续打同一波残局；Defeat = 团灭即败终局，善后由模式编排层处理。
+/// </summary>
+public enum PartyWipeRule : byte
+{
+    /// <summary>原地复活：战场保留，玩家原地躺尸读条后满血起身续战（野外 PvE 缺省）。</summary>
+    Respawn = 0,
+    /// <summary>团灭即败：战斗终局判负，副本/斗法等模式的善后由编排层处理。</summary>
+    Defeat = 1
+}
+
 /// <summary>妖兽试炼遭遇配表，包含搜寻/复生阶段时长。</summary>
 public sealed record CombatEncounterDefinition(
     string Id,
@@ -54,4 +66,5 @@ public sealed record CombatEncounterDefinition(
     IReadOnlyList<string> EliteEnemyIds,
     IReadOnlyList<string> BossEnemyIds,
     int BattlesPerBoss,
-    int BattlesPerElite = 5);
+    int BattlesPerElite = 5,
+    PartyWipeRule OnPartyWipe = PartyWipeRule.Respawn);

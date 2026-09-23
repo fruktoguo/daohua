@@ -174,12 +174,33 @@ export const MONSTER_WEIGHT_KEYS: { key: string; label: string }[] = [
   { key: 'crit', label: '暴击 (Crit)' },
   { key: 'cavoid', label: '免暴 (Cavoid)' },
   { key: 'break', label: '破招 (Break)' },
-  { key: 'parry', label: '招架 (Parry)' },
-  { key: 'metalResistance', label: '金抗点数 (×10)' },
-  { key: 'woodResistance', label: '木抗点数 (×10)' },
-  { key: 'waterResistance', label: '水抗点数 (×10)' },
-  { key: 'fireResistance', label: '火抗点数 (×10)' },
-  { key: 'earthResistance', label: '土抗点数 (×10)' }
+  { key: 'parry', label: '招架 (Parry)' }
+];
+
+// 13d-2. 怪物百分比点数修饰键 —— ParseMonsterDefinitions modifiers 段消费键（战斗设计 §7.5 词汇表）
+export const MONSTER_MODIFIER_KEYS: { key: string; label: string }[] = [
+  { key: 'physicalDamageBonusPoints', label: '物理增伤点' },
+  { key: 'spellDamageBonusPoints', label: '法术增伤点' },
+  { key: 'metalDamageBonusPoints', label: '金系增伤点' },
+  { key: 'woodDamageBonusPoints', label: '木系增伤点' },
+  { key: 'waterDamageBonusPoints', label: '水系增伤点' },
+  { key: 'fireDamageBonusPoints', label: '火系增伤点' },
+  { key: 'earthDamageBonusPoints', label: '土系增伤点' },
+  { key: 'totalDamageBonusPoints', label: '总增伤点' },
+  { key: 'basicAttackBonusPoints', label: '普攻增幅点' },
+  { key: 'skillBonusPoints', label: '技能增幅点' },
+  { key: 'physicalDamageReductionPoints', label: '物理减伤点' },
+  { key: 'spellDamageReductionPoints', label: '法术减伤点' },
+  { key: 'metalDamageReductionPoints', label: '金系减伤点' },
+  { key: 'woodDamageReductionPoints', label: '木系减伤点' },
+  { key: 'waterDamageReductionPoints', label: '水系减伤点' },
+  { key: 'fireDamageReductionPoints', label: '火系减伤点' },
+  { key: 'earthDamageReductionPoints', label: '土系减伤点' },
+  { key: 'damageAbsorptionPoints', label: '总减伤/免伤点' },
+  { key: 'attackSpeedPoints', label: '攻击速度点' },
+  { key: 'actionSpeedPoints', label: '行动速度点' },
+  { key: 'cooldownReductionPoints', label: '冷却缩减点' },
+  { key: 'threatBonusPoints', label: '威胁增幅点' }
 ];
 
 // 13e. 行动收益类型与结算频率 —— ParseYields 词汇表
@@ -203,6 +224,12 @@ export const BUILDABLE_TEMPLATES: EnumOption[] = [
   { value: 'production', label: '生产建筑 (Production)', en: 'Production' },
   { value: 'combat', label: '战斗建筑 (Combat)', en: 'Combat' },
   { value: 'other', label: '其他建筑 (Other)', en: 'Other' }
+];
+
+// 13g. 团灭规则 (PartyWipeRule) —— CombatEncounterDefinition.OnPartyWipe / GameDataCatalog.ParseEncounterDefinitions
+export const PARTY_WIPE_RULES: EnumOption[] = [
+  { value: 'respawn', label: '原地复活 (Respawn)', en: 'Respawn', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  { value: 'defeat', label: '团灭失败 (Defeat)', en: 'Defeat', badgeColor: 'bg-red-500/10 text-red-300 border-red-500/20' }
 ];
 
 // 15. 品阶阶位 (T1 ~ T12)
@@ -237,23 +264,21 @@ export const STAT_METADATA_LIST: StatMetadata[] = [
   { key: 'magicAttack', label: '法术攻击力 (AP)', category: 'attack', unit: '点', description: '五行道法法术伤害' },
   { key: 'armor', label: '护甲 (Armor)', category: 'defense', unit: '点', description: '减免受到的物理伤害' },
   { key: 'magicResistance', label: '法抗 (MagicResistance)', category: 'defense', unit: '点', description: '减免受到的术法伤害' },
-  { key: 'metalResistance', label: '金系抗性', category: 'defense', unit: '点', description: '金系特殊伤害减免' },
-  { key: 'woodResistance', label: '木系抗性', category: 'defense', unit: '点', description: '木系特殊伤害减免' },
-  { key: 'waterResistance', label: '水系抗性', category: 'defense', unit: '点', description: '水系特殊伤害减免' },
-  { key: 'fireResistance', label: '火系抗性', category: 'defense', unit: '点', description: '火系特殊伤害减免' },
-  { key: 'earthResistance', label: '土系抗性', category: 'defense', unit: '点', description: '土系特殊伤害减免' },
   { key: 'accuracyRating', label: '命中等级 (Accuracy)', category: 'attack', unit: '点', description: '对抗目标闪避几率' },
   { key: 'evasionRating', label: '闪避等级 (Evasion)', category: 'defense', unit: '点', description: '规避攻击几率' },
   { key: 'criticalRating', label: '暴击等级 (Crit)', category: 'attack', unit: '点', description: '触发暴击伤害几率' },
-  { key: 'criticalAvoidance', label: '暴击抗性 (CritAvoid)', category: 'defense', unit: '点', description: '降低被暴击几率' },
+  { key: 'criticalAvoidance', label: '免暴点数 (CritAvoid)', category: 'defense', unit: '点', description: '降低被暴击几率' },
   { key: 'breakRating', label: '破招等级 (Break)', category: 'attack', unit: '点', description: '无视防御与招架' },
   { key: 'parryRating', label: '招架等级 (Parry)', category: 'defense', unit: '点', description: '化解部分伤害' },
-  { key: 'cooldownReduction', label: '冷却缩减 (CDR)', category: 'special', unit: '%', description: '缩减神通技能冷却' },
-  { key: 'actionSpeedRatio', label: '动作加速 (ATR)', category: 'special', unit: '%', description: '缩短施法与普攻前摇' },
-  { key: 'penetrationRatio', label: '护甲/抗性穿透率', category: 'special', unit: '%', description: '穿透目标防御抗性' },
-  { key: 'hpDrainRatio', label: '汲血率 (吸血)', category: 'special', unit: '%', description: '攻击命中吸取生命' },
-  { key: 'mpDrainRatio', label: '汲蓝率 (吸蓝)', category: 'special', unit: '%', description: '攻击命中偷取目标灵力' },
-  { key: 'damageReflectRatio', label: '反伤率', category: 'special', unit: '%', description: '受击时按比例反弹伤害' }
+  { key: 'cooldownReductionPoints', label: '冷却缩减 (CDR)', category: 'special', unit: '点', description: 'NonLinear 缩减全部冷却' },
+  { key: 'attackSpeedPoints', label: '攻击速度', category: 'special', unit: '点', description: 'NonLinear 缩短普攻读条' },
+  { key: 'actionSpeedPoints', label: '行动速度', category: 'special', unit: '点', description: 'NonLinear 缩短全部读条' },
+  { key: 'damageAbsorptionPoints', label: '总减伤/免伤', category: 'special', unit: '点', description: 'NonLinear 末位收口减伤' },
+  { key: 'threatBonusPoints', label: '威胁增幅', category: 'special', unit: '点', description: 'Linear 放大有效威胁' },
+  { key: 'hpDrainPoints', label: '气血汲取', category: 'special', unit: '点', description: '攻击命中按点数/100 回血' },
+  { key: 'mpDrainPoints', label: '灵力汲取', category: 'special', unit: '点', description: '攻击命中按点数/100 偷取灵力' },
+  { key: 'damageReflectPoints', label: '伤害反弹', category: 'special', unit: '点', description: '受击按点数/100 反弹伤害' },
+  { key: 'healingBonusPoints', label: '治疗增幅', category: 'special', unit: '点', description: 'Linear 放大主动治疗量' }
 ];
 
 export const STAT_METADATA_MAP = new Map<string, StatMetadata>(

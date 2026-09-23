@@ -107,7 +107,7 @@ public sealed class CombatSkillTests
         Assert.Equal(1000 - 50, encounter.Player.Manapoints);
         DeterministicCombatEngine.AdvanceTo(encounter, 5 * stats.CastTimeFactor + 1e-9);
         var buff = Assert.Single(encounter.Player.Buffs);
-        Assert.True(buff.DamageAbsorptionRatio > 0);
+        Assert.True(buff.DamageAbsorptionPoints > 0);
         Assert.Equal(5 * stats.CastTimeFactor + 30, buff.ExpiresAtSeconds, 6);
         // 到期后 Buff 移除：推进超过过期时刻后列表清空。
         DeterministicCombatEngine.AdvanceTo(encounter, 5 * stats.CastTimeFactor + 31);

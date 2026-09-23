@@ -136,6 +136,9 @@ static void ValidateReferences(string directory)
     var abilities = CollectIds(directory, "abilities");
     var items = CollectIds(directory, "items");
     var buildingIds = CollectIds(directory, "buildings");
+    var percentPointKeys = PercentPointKeys();
+    var abilityBuffKeys = AbilityBuffKeys();
+    var consumableBuffKeys = ConsumableBuffKeys();
     var nodeIds = new HashSet<string>(StringComparer.Ordinal);
     var mapEdges = new List<(string From, string To, string File)>();
 
@@ -202,6 +205,9 @@ static void ValidateReferences(string directory)
             var minBudget = Number(encounter, "minBudget", 0);
             var maxBudget = Number(encounter, "maxBudget", 0);
             Require(minBudget >= 0 && maxBudget >= minBudget, $"{Rel(directory, file)} 遭遇 {id} 的 minBudget/maxBudget 无效。");
+            var onPartyWipe = Text(encounter, "onPartyWipe");
+            Require(onPartyWipe.Length == 0 || onPartyWipe is "respawn" or "defeat",
+                $"{Rel(directory, file)} 遭遇 {id} 的 onPartyWipe={onPartyWipe} 不是合法团灭规则（respawn|defeat）。");
             foreach (var spawn in Elements(Property(encounter, "randomSpawns")))
             {
                 Require(monsters.Contains(Text(spawn, "enemyId")), $"{Rel(directory, file)} 遭遇 {id} 引用了不存在的怪物 {Text(spawn, "enemyId")}。");
@@ -229,6 +235,42 @@ static void ValidateReferences(string directory)
                 var chance = Number(drop, "dropChance", 1);
                 Require(chance > 0 && chance <= 1, $"{Rel(directory, file)} 怪物 {id} 掉落概率 {chance} 超出 (0,1]。");
             }
+            // modifiers 段为百分比点数词汇表；五行抗性等历史误植键直接拒绝。
+            foreach (var key in ObjectKeys(Property(monster, "modifiers")))
+                Require(percentPointKeys.Contains(key), $"{Rel(directory, file)} 怪物 {id} 的 modifiers.{key} 不在授权词汇表内。");
+        }
+    }
+
+    // 装备 specialMechanics 与怪物 modifiers 共用同一百分比点数词汇表。
+    foreach (var file in JsonFiles(directory, "equipment"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var equipment in Elements(doc.RootElement))
+            foreach (var key in ObjectKeys(Property(equipment, "specialMechanics")))
+                Require(percentPointKeys.Contains(key),
+                    $"{Rel(directory, file)} 装备 {Text(equipment, "id")} 的 specialMechanics.{key} 不在授权词汇表内。");
+    }
+
+    // 技能 Buff 与消耗品 Buff 修饰键同样是授权词汇表；ratio 后缀旧键已废除。
+    foreach (var file in JsonFiles(directory, "abilities"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var ability in Elements(doc.RootElement))
+            foreach (var key in ObjectKeys(Property(ability, "buff")))
+                Require(abilityBuffKeys.Contains(key),
+                    $"{Rel(directory, file)} 技能 {Text(ability, "id")} 的 buff.{key} 不在授权词汇表内。");
+    }
+
+    foreach (var file in JsonFiles(directory, "items"))
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllBytes(file));
+        foreach (var item in Elements(doc.RootElement))
+        {
+            var consumable = Property(item, "consumable");
+            foreach (var buff in Elements(Property(consumable, "buffs")))
+                foreach (var key in ObjectKeys(buff))
+                    Require(consumableBuffKeys.Contains(key),
+                        $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 buffs.{key} 不在授权词汇表内。");
         }
     }
 
@@ -308,6 +350,41 @@ static IEnumerable<string> StringArray(JsonElement element, string name)
     foreach (var item in child.EnumerateArray())
         if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } text) yield return text;
 }
+
+static IEnumerable<string> ObjectKeys(JsonElement element)
+{
+    if (element.ValueKind != JsonValueKind.Object) yield break;
+    foreach (var property in element.EnumerateObject()) yield return property.Name;
+}
+
+/// <summary>百分比点数属性授权词汇表（总纲第七篇 §7.7.5）：装备 specialMechanics 与怪物 modifiers 共用。</summary>
+static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
+{
+    "physicalDamageBonusPoints", "spellDamageBonusPoints",
+    "metalDamageBonusPoints", "woodDamageBonusPoints", "waterDamageBonusPoints",
+    "fireDamageBonusPoints", "earthDamageBonusPoints",
+    "totalDamageBonusPoints", "basicAttackBonusPoints", "skillBonusPoints",
+    "physicalDamageReductionPoints", "spellDamageReductionPoints",
+    "metalDamageReductionPoints", "woodDamageReductionPoints", "waterDamageReductionPoints",
+    "fireDamageReductionPoints", "earthDamageReductionPoints",
+    "damageAbsorptionPoints",
+    "attackSpeedPoints", "actionSpeedPoints", "cooldownReductionPoints", "threatBonusPoints",
+    "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints"
+};
+
+/// <summary>技能战内 Buff 授权键：读条/免伤/威胁点数与回复、时长、叠层上限。</summary>
+static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
+{
+    "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
+    "attackSpeedPoints", "damageAbsorptionPoints", "threatPoints", "maxStacks"
+};
+
+/// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典）。</summary>
+static HashSet<string> ConsumableBuffKeys() => new(StringComparer.Ordinal)
+{
+    "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
+    "attackSpeedPoints", "damageAbsorptionPoints", "statRatios"
+};
 static void Require(bool condition, string message)
 {
     if (!condition) throw new DataValidationException(message);

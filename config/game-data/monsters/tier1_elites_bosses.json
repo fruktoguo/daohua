@@ -144,7 +144,6 @@
       "mp": 1.73,
       "ad": 1.04,
       "armor": 1.04,
-      "fireResistance": 0.58,
       "mres": 0.29,
       "hit": 1.16,
       "eva": 0.87,
@@ -220,6 +219,9 @@
     ],
     "qiReward": 10,
     "experienceReward": 10,
-    "rootExpReward": 10
+    "rootExpReward": 10,
+    "modifiers": {
+      "fireDamageReductionPoints": 5.8
+    }
   }
 ]

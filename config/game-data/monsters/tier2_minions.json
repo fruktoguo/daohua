@@ -68,7 +68,6 @@
       "mp": 1.33,
       "ap": 2.28,
       "armor": 0.82,
-      "fireResistance": 1.13,
       "mres": 0.41,
       "hit": 1.11,
       "eva": 1.66
@@ -114,7 +113,10 @@
     ],
     "qiReward": 10,
     "experienceReward": 10,
-    "rootExpReward": 10
+    "rootExpReward": 10,
+    "modifiers": {
+      "fireDamageReductionPoints": 11.299999999999999
+    }
   },
   {
     "id": "enemy.plunder-cultivator",
@@ -134,7 +136,6 @@
       "mp": 1.48,
       "ap": 2.19,
       "armor": 0.92,
-      "woodResistance": 0.92,
       "mres": 0.51,
       "hit": 1.0,
       "eva": 1.2
@@ -168,6 +169,9 @@
     ],
     "qiReward": 10,
     "experienceReward": 10,
-    "rootExpReward": 10
+    "rootExpReward": 10,
+    "modifiers": {
+      "woodDamageReductionPoints": 9.200000000000001
+    }
   }
 ]
