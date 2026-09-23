@@ -7,7 +7,7 @@ import type { CombatantDefinition, TravelSegment, WorldMapDefinition, WorldState
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
-import { ItemTileReference } from './ItemDisplay'
+import { ItemDropTile } from './ItemDisplay'
 import { Modal } from './Modal'
 import { UnitNumber } from './UnitNumber'
 
@@ -355,7 +355,7 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
   const rankLabel = isBoss
     ? t('combat.nearby.rankBoss')
     : isElite ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
-  const dropIds = monster.drops ?? []
+  const drops = monster.drops ?? []
   const rewardParts = [
     (monster.qiReward ?? 0) > 0 ? `${t('combat.report.qi')} +${formatInteger(monster.qiReward ?? 0)}` : null,
     monster.experience > 0 ? `${t('combat.report.experience')} +${formatInteger(monster.experience)}` : null,
@@ -372,13 +372,13 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
             ...(rewardParts.length > 0
               ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`]
               : []),
-            ...(dropIds.length > 0
+            ...(drops.length > 0
               ? [
                   <span key="drops">
                     {t('combat.map.monsterDrops')}：
                     <span className="world-monster-drops-row">
-                      {dropIds.map(itemId => (
-                        <ItemTileReference className="world-monster-drop-anchor" itemId={itemId} key={itemId} />
+                      {drops.map(drop => (
+                        <ItemDropTile drop={drop} key={drop.itemId} />
                       ))}
                     </span>
                   </span>,

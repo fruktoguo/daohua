@@ -67,7 +67,6 @@ export const combatZh = {
     },
     // 斗法（PVP）相位显示
     duel: {
-      sensing: '斗法感应中…',
       opponent: '斗法·{name}',
       unknownOpponent: '神秘对手',
     },

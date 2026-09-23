@@ -1,10 +1,10 @@
 import { type ReactNode, useCallback } from 'react'
-import { describeAbility, formatAbilityCategory, formatNumber } from '../game/format'
+import { describeAbility, formatAbilityCategory, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
 import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
-import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition } from '../game/types'
+import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition, MonsterDropDefinition } from '../game/types'
 import { type FloatingAsideCard, FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
 import { PillBonusLabel, type PillTone } from './PillLabel'
 import { UnitNumber } from './UnitNumber'
@@ -959,12 +959,15 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
 export function ItemTileReference({
   itemId,
   amount,
+  bottomRightLabel,
   className = '',
 }: {
   /** 物品唯一 ID */
   itemId: string
   /** 涉及数量（右下角数量角标） */
   amount?: number
+  /** 右下角自定义角标（覆盖默认数量文本） */
+  bottomRightLabel?: ReactNode
   /** 悬浮触发器锚点类名 */
   className?: string
 }): React.JSX.Element {
@@ -988,6 +991,7 @@ export function ItemTileReference({
     >
       <ItemTile
         amount={amount}
+        bottomRightLabel={bottomRightLabel}
         category={itemDef?.category ?? eqDef?.slot ?? metadata.category}
         className=""
         itemId={itemId}
@@ -996,6 +1000,40 @@ export function ItemTileReference({
         rarity={metadata.rarity}
       />
     </ItemTooltipTarget>
+  )
+}
+
+/**
+ * 怪物掉落条目瓦片 (ItemDropTile)
+ *
+ * 缩小版物品瓦片 + 瓦片下方居中概率小字：右下角 `×数量` 角标展示掉落数量区间
+ * （min=max 显示单值，否则 `min-max`），下方标注掉落概率百分比。
+ * 对应服务端「先判定后数量」结算语义：先按 dropChance 判定是否掉落，
+ * 命中后再在 [minQuantity, maxQuantity] 整数区间内均匀抽取数量。
+ */
+export function ItemDropTile({
+  drop,
+  className = '',
+}: {
+  /** 怪物掉落条目（物品 ID + 掉落概率 + 数量区间） */
+  drop: MonsterDropDefinition
+  /** 外部样式类名 */
+  className?: string
+}): React.JSX.Element {
+  const quantityLabel = drop.minQuantity === drop.maxQuantity
+    ? `×${formatInteger(drop.minQuantity)}`
+    : `×${formatInteger(drop.minQuantity)}-${formatInteger(drop.maxQuantity)}`
+  // 概率小数比率转百分数并去尾零：1 -> 100%、0.02 -> 2%、0.001 -> 0.1%
+  const chanceLabel = `${+(drop.dropChance * 100).toFixed(2)}%`
+  return (
+    <span className={`world-monster-drop ${className}`.trim()}>
+      <ItemTileReference
+        bottomRightLabel={quantityLabel}
+        className="world-monster-drop-anchor"
+        itemId={drop.itemId}
+      />
+      <span className="world-monster-drop-chance">{chanceLabel}</span>
+    </span>
   )
 }
 

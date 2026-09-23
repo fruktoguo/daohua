@@ -278,7 +278,13 @@ public static class StaticGameCatalogMapper
             experience = definition.ExperienceReward,
             qiReward = definition.QiReward,
             rootExpReward = definition.RootExpReward,
-            drops = definition.DropTable.Select(drop => drop.ItemId.Value).ToArray(),
+            drops = definition.DropTable.Select(drop => new
+            {
+                itemId = drop.ItemId.Value,
+                dropChance = drop.DropChance,
+                minQuantity = drop.MinQuantity,
+                maxQuantity = drop.MaxQuantity
+            }).ToArray(),
             abilityIds = ReadArray(monster, "skills").Select(skill => ReadString(skill, "abilityId")).Where(id => id.Length > 0).ToArray()
         };
     }
@@ -289,7 +295,7 @@ public static class StaticGameCatalogMapper
         level = 1, tier = 1, budgetCost = 0d,
         attributes = ProtocolSnapshotMapper.ToAttributesDto(CombatantStats.Create(1, 0, 0, 2)),
         experience = 0d,
-        qiReward = 0d, rootExpReward = 0d, drops = Array.Empty<string>(), abilityIds = Array.Empty<string>()
+        qiReward = 0d, rootExpReward = 0d, drops = Array.Empty<object>(), abilityIds = Array.Empty<string>()
     };
 
     private static bool IsMonsterInRank(GameDataCatalog catalog, string id, string rank) => catalog.Monsters.TryGetValue(id, out var monster)

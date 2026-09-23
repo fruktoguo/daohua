@@ -30,6 +30,11 @@ try {
       timeProgress: 1, requiredSeconds: 0, elapsedSeconds: 0, materials: [],
     }],
     buildableBuildingIds: ['building.player-test'],
+    monsters: [{
+      monsterId: 'enemy.test', name: '测试妖兽', level: 2, tier: 1, rank: 'normal',
+      budgetCost: 1, maxHitpoints: 10, physicalAttack: 2, armor: 0,
+      drops: [{ itemId: 'item.loot', dropChance: 0.5, minQuantity: 1, maxQuantity: 3 }],
+    }],
   }
   const bytes = Buffer.from(JSON.stringify(payload))
   const section = {
@@ -46,6 +51,11 @@ try {
   assert.deepEqual(patch.world.buildings, payload.buildings)
   assert.deepEqual(patch.world.nodeBuildings, payload.nodeBuildings)
   assert.deepEqual(patch.world.buildableBuildingIds, payload.buildableBuildingIds)
+  // 怪物掉落明细往返：drops 结构化字段（itemId/dropChance/minQuantity/maxQuantity）解码对齐。
+  assert.equal(patch.world.monsters[0].drops[0].itemId, 'item.loot')
+  assert.equal(patch.world.monsters[0].drops[0].dropChance, 0.5)
+  assert.equal(patch.world.monsters[0].drops[0].minQuantity, 1)
+  assert.equal(patch.world.monsters[0].drops[0].maxQuantity, 3)
   assert.equal(patch.serverTimeUnixSeconds, Date.parse(delta.lastSimulatedAt) / 1000)
   await assert.rejects(decodePlayerSnapshotDeltaDto({ ...delta, lastSimulatedAt: undefined }, current), /lastSimulatedAt/)
   assert.deepEqual(parseCsvToMap('key,zh_source,translation\ncommon.confirm,确认,"Confirm, now"\ncommon.cancel,取消,\n'), { 'common.confirm': 'Confirm, now' })

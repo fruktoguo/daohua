@@ -140,7 +140,7 @@ public sealed class PlayerRuntime(
         var seek = await seeker.ReadDuelPendingAsync(cancellationToken);
         if (seek is null) return;
         var band = gameData.Duel.PowerBandRatio;
-        var candidates = new List<PlayerActor>();
+        var candidates = new List<(PlayerActor Actor, Guid PlayerId)>();
         foreach (var entry in _actors)
         {
             if (!entry.Value.IsValueCreated) continue;
@@ -151,14 +151,15 @@ public sealed class PlayerRuntime(
             var info = await candidate.ReadDuelCandidateAsync(cancellationToken);
             if (info is null) continue;
             if (info.Value.Power < seek.Value.Power * (1 - band) || info.Value.Power > seek.Value.Power * (1 + band)) continue;
-            candidates.Add(candidate);
+            candidates.Add((candidate, info.Value.PlayerId));
         }
         if (candidates.Count == 0)
         {
+            // 无候选对手：静默回退为正常波次，不产生任何玩家可见提示。
             await seeker.AbortDuelSeekAsync(cancellationToken);
             return;
         }
-        var picked = candidates[Random.Shared.Next(candidates.Count)];
+        var (picked, pickedId) = candidates[Random.Shared.Next(candidates.Count)];
         var duelId = Guid.NewGuid();
         var initiatorMirror = await seeker.ReserveDuelAsync(duelId, cancellationToken);
         if (initiatorMirror is null)
@@ -196,6 +197,22 @@ public sealed class PlayerRuntime(
             await handler(await seeker.SnapshotAsync(cancellationToken));
             await handler(await picked.SnapshotAsync(cancellationToken));
         }
+        // 撮合成立才补「斗法遭遇」日志：匹配等待阶段不下发提示，无对手时全程静默。
+        await EmitDuelMatchedLogAsync(seek.Value.PlayerId, defenderMirror.DisplayName);
+        await EmitDuelMatchedLogAsync(pickedId, initiatorMirror.DisplayName);
+    }
+
+    /// <summary>撮合成功通知：以玩家战报日志通道写一条「斗法遭遇」并即时推送；不入缓冲时仅跳过。</summary>
+    private async ValueTask EmitDuelMatchedLogAsync(Guid playerId, string opponentName)
+    {
+        if (!_logBuffers.TryGetValue(playerId, out var buffer)) return;
+        var entry = new LogEventDto(
+            buffer.NextSequence(),
+            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            $"斗法遭遇：{opponentName} 与你狭路相逢。",
+            Channel: LogChannels.System);
+        buffer.Append(entry);
+        await EmitLogBatchAsync(playerId, [entry]);
     }
 
     /// <summary>把本侧弃战产生的对手判胜通知路由到对方 Actor，并即时广播双方快照。</summary>

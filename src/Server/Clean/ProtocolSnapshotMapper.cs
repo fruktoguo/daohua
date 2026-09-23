@@ -627,7 +627,16 @@ public static class ProtocolSnapshotMapper
             maxHitpoints = def?.Stats.MaxHitpoints ?? 0,
             physicalAttack = def?.Stats.AttackPower ?? 0,
             armor = def?.Stats.Defense ?? 0,
-            drops = ReadArray(monster, "dropTable").Select(d => ReadString(d, "itemId")).Where(s => s.Length > 0).ToArray(),
+            drops = ReadArray(monster, "dropTable")
+                .Select(d => new
+                {
+                    itemId = ReadString(d, "itemId"),
+                    dropChance = ReadDouble(d, "dropChance", 0),
+                    minQuantity = ReadDouble(d, "minQuantity", 0),
+                    maxQuantity = ReadDouble(d, "maxQuantity", 0)
+                })
+                .Where(d => d.itemId.Length > 0)
+                .ToArray(),
             visualSource = visual.ValueKind == JsonValueKind.Object ? ReadString(visual, "source") : null,
             visualRenderer = visual.ValueKind == JsonValueKind.Object ? ReadString(visual, "renderer") : null
         };

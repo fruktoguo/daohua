@@ -625,6 +625,7 @@ public static class SimulationEngine
                         AddCombatEvent(ref events, from, target, remainingSeconds, "duel.charge", "心血来潮：斗法遭遇感应 +1。", definition.Id);
                     }
                     // 计数大于 0 时进入匹配等待（以判定前计数为准，本波新增的计数留给下次入场）。
+                    // 匹配等待静默进行：撮合结果未知前不写日志，无候选对手时由运行时回退为正常波次。
                     if (chargesBefore > 0 && !updated.DuelSeekFailed && duel?.MatchingEnabled == true)
                     {
                         action.Expedition = updated with
@@ -635,7 +636,6 @@ public static class SimulationEngine
                             DuelSeekFailed = false
                         };
                         action.ProgressSeconds = 0;
-                        AddCombatEvent(ref events, from, target, remainingSeconds, "duel.seeking", "斗法感应触发，正在匹配旗鼓相当的对手……", definition.Id);
                         return;
                     }
                 }
@@ -1109,8 +1109,9 @@ public static class SimulationEngine
             var quantityRoll = (unchecked((ulong)DeterministicSequence.NextSeed(seed ^ DropQuantityChannelSalt)) % 1_000_000UL) / 1_000_000d;
             seed = DeterministicSequence.NextSeed(seed);
             if (roll > Math.Min(1, drop.DropChance * dropBonus)) continue;
-            var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity) * quantityRoll);
-            quantity = Math.Max(drop.MinQuantity, quantity);
+            // 数量为闭区间 [min, max] 整数均匀抽样：跨度 +1 保证最大数量可达。
+            var quantity = Math.Floor(drop.MinQuantity + (drop.MaxQuantity - drop.MinQuantity + 1) * quantityRoll);
+            quantity = Math.Clamp(quantity, drop.MinQuantity, drop.MaxQuantity);
             if (pvpEnabled)
             {
                 // 斗法期间掉落进入暂存区：入账延迟与归属由暂存结算/斗法结算决定；StageItem 内部同步记账。

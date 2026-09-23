@@ -25,7 +25,7 @@ public sealed class SimulationScheduleTests
                 "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, 1,
                 15.472613, 113, 60, 16, 15, 0, CombatOutcome.Running, 1,
                 [new ExpeditionEnemyState("enemy.wood-spirit",
-                    new CombatantSnapshot(362, 50, 15.997984378936762, 7, 0, 1))])
+                    new CombatantSnapshot(362, 4.752941176470588, 15.997984378936762, 7, 0, 1))])
             {
                 PlayerState = new CombatantSnapshot(113, 60, 16, 15, 0)
             });

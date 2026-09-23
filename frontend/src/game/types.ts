@@ -961,6 +961,22 @@ export interface CombatAbilityDefinition {
 }
 
 /**
+ * 怪物掉落条目定义
+ * 结算语义为「先判定后数量」：先按 dropChance 判定是否掉落，
+ * 命中后再在 [minQuantity, maxQuantity] 整数区间内均匀抽取掉落数量。
+ */
+export interface MonsterDropDefinition {
+  /** 掉落物品 ID */
+  itemId: string
+  /** 掉落概率（0~1 小数比率，先判定是否掉落） */
+  dropChance: number
+  /** 数量区间下限（含） */
+  minQuantity: number
+  /** 数量区间上限（含） */
+  maxQuantity: number
+}
+
+/**
  * 参战单位/敌人基础定义
  */
 export interface CombatantDefinition {
@@ -988,8 +1004,8 @@ export interface CombatantDefinition {
   qiReward?: number
   /** 击杀后入账的六维经验 */
   rootExpReward?: number
-  /** 掉落物品 ID 列表 */
-  drops?: string[]
+  /** 掉落条目列表（先按 dropChance 判定，再在数量区间均匀抽取） */
+  drops?: MonsterDropDefinition[]
   /** 该单位可使用的功法 ID 列表 */
   abilityIds: string[]
 }
@@ -1154,8 +1170,8 @@ export interface NearbyMonsterDefinition {
   physicalAttack: number
   /** 护甲 */
   armor: number
-  /** 掉落物品 ID 列表 */
-  drops: string[]
+  /** 掉落条目列表（先按 dropChance 判定，再在数量区间均匀抽取） */
+  drops: MonsterDropDefinition[]
   /** 立绘资源地址 */
   visualSource?: string | null
   /** 立绘渲染器形态 */

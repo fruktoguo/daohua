@@ -69,7 +69,8 @@
 - **强制规则**：物品、装备、材料、消耗品、功法技能的一切展示位必须使用图标组件（整块瓦片 `ItemTile`/`ItemTileReference`、行内 `ItemIcon`、文本行 `ItemReference`），禁止仅用纯文本名称罗列。
 - **适用场景**：
   - 行囊、掉落、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
-  - **仅持有 itemId + 数量的场景**（账本、统计/记录物品得失等）：直接渲染与背包一致的图标方块，自动解析物品/装备目录与元数据 -> `ItemTileReference`（锚点类须已登记进 `selection-grid.css` 共享 `:is()` 组，如 `battle-report-item-anchor`）
+  - **仅持有 itemId + 数量的场景**（账本、统计/记录物品得失等）：直接渲染与背包一致的图标方块，自动解析物品/装备目录与元数据 -> `ItemTileReference`（锚点类须已登记进 `selection-grid.css` 共享 `:is()` 组，如 `battle-report-item-anchor`；支持 `bottomRightLabel` 覆盖右下默认数量角标）
+  - **怪物掉落条目（概率 + 数量区间）**：怪物悬浮/详情卡的掉落明细——缩小版物品瓦片（右下 `×数量` 角标，min=max 显示单值否则 `min-max`）+ 瓦片下方居中概率小字，对应「先按 dropChance 判定再抽数量区间」语义 -> `ItemDropTile`（锚点类 `world-monster-drop-anchor`，迷你尺寸与角标/丝带收拢见 `expedition.css` `.world-monster-drop-*`）
   - **图标（有图用图、无图回退文本）**：传入资源 ID 即可。该资源在
     `frontend/src/assets/items/<资源ID>.{webp,png}` 有图时，`ItemTile` 用图片整块替换中间的文本名称；
     没有图时自动保持原文本渲染。行内文本/列表行等不适合放整块方块的场合，改用

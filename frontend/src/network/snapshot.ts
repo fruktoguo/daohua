@@ -25,6 +25,7 @@ import type {
   ExpeditionPhase,
   ExpeditionProgress,
   InventoryItem,
+  MonsterDropDefinition,
   NearbyMonsterDefinition,
   NodeBuilding,
   PlayerPatch,
@@ -666,6 +667,20 @@ function mapNearbyEntities(value: unknown): WorldState['npcs'] {
   })
 }
 
+/** 怪物掉落条目解析：元素必须是对象且 itemId 非空；概率与数量字段缺省 0，与同级字段缺省风格一致。 */
+function mapMonsterDrops(value: unknown): MonsterDropDefinition[] {
+  if (!Array.isArray(value)) return []
+  return value.map(item => {
+    const row = requiredObject(item, 'world 生灵掉落')
+    return {
+      itemId: identifierValue(row.itemId, 'world 生灵掉落 ID'),
+      dropChance: numberValue(row.dropChance, 0),
+      minQuantity: numberValue(row.minQuantity, 0),
+      maxQuantity: numberValue(row.maxQuantity, 0),
+    }
+  })
+}
+
 function mapNearbyMonsters(value: unknown): NearbyMonsterDefinition[] {
   if (!Array.isArray(value)) return []
   return value.map(item => {
@@ -680,7 +695,7 @@ function mapNearbyMonsters(value: unknown): NearbyMonsterDefinition[] {
       maxHitpoints: numberValue(row.maxHitpoints, 0),
       physicalAttack: numberValue(row.physicalAttack, 0),
       armor: numberValue(row.armor, 0),
-      drops: Array.isArray(row.drops) ? row.drops.filter((d): d is string => typeof d === 'string') : [],
+      drops: mapMonsterDrops(row.drops),
       visualSource: typeof row.visualSource === 'string' ? row.visualSource : null,
       visualRenderer: typeof row.visualRenderer === 'string' ? row.visualRenderer : null,
     }

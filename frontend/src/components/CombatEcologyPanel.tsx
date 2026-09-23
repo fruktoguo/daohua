@@ -7,7 +7,7 @@ import type { ActionDefinition, CombatantDefinition } from '../game/types'
 import { useT } from '../i18n'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
-import { ItemTileReference } from './ItemDisplay'
+import { ItemDropTile } from './ItemDisplay'
 import { UnitNumber } from './UnitNumber'
 
 /** 拼接敌怪类型标签：伤害类别 + 可选五行元素（none 元素省略后缀） */
@@ -73,7 +73,7 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
     />
   )
 
-  const dropIds = enemy.drops ?? []
+  const drops = enemy.drops ?? []
   const abilityNames = enemy.abilityIds
     .map(id => findAbilityInCatalog(abilities, id)?.name ?? id)
     .filter(name => name.length > 0)
@@ -92,13 +92,13 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
         ...(intervalHint ? [`${t('combat.nearby.statInterval')}：${intervalHint}`] : []),
         ...(rewardParts.length > 0 ? [`${t('combat.map.monsterReward')}：${rewardParts.join(' · ')}`] : []),
         ...(abilityNames.length > 0 ? [`${t('combat.ecology.abilities')}：${abilityNames.join('、')}`] : []),
-        ...(dropIds.length > 0
+        ...(drops.length > 0
           ? [
               <span key="drops">
                 {t('combat.map.monsterDrops')}：
                 <span className="world-monster-drops-row">
-                  {dropIds.map(itemId => (
-                    <ItemTileReference className="world-monster-drop-anchor" itemId={itemId} key={itemId} />
+                  {drops.map(drop => (
+                    <ItemDropTile drop={drop} key={drop.itemId} />
                   ))}
                 </span>
               </span>,

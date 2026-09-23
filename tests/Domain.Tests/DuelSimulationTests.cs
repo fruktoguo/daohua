@@ -35,7 +35,8 @@ public sealed class DuelSimulationTests
 
         Assert.Equal(CombatExpeditionPhase.DuelPending, player.Actions[0].Expedition!.Phase);
         Assert.True(player.IsDuelPending);
-        Assert.Contains(result.Events, entry => entry.Code == "duel.seeking");
+        // 匹配等待静默进行：撮合结果未知前不产生日志，无对手时由运行时回退且全程无提示。
+        Assert.DoesNotContain(result.Events, entry => entry.Code == "duel.seeking");
         // 匹配等待不消耗战斗进度，也不消耗遭遇计数（撮合成功预约时才扣）。
         Assert.Equal(1, player.Duel.EncounterCharges);
     }
@@ -169,6 +170,39 @@ public sealed class DuelSimulationTests
         Assert.Contains(settled.Events, entry => entry.Code == "duel.staged-settled");
     }
 
+    /// <summary>区间数量掉落：先判定后数量，抽样落在 [min,max] 闭区间且上限可达（多波次采样覆盖）。</summary>
+    [Fact]
+    public void RangedDropQuantitySamplesWithinInclusiveBounds()
+    {
+        var catalog = CreateCatalog(dropChance: 1, dropMin: 1, dropMax: 3);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "fp");
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        // 逐拍推进并按「单杀增量」采集每次掉落实例：同拍多杀合并的增量跳过不计。
+        var observed = new HashSet<double>();
+        var kills = 0d;
+        var looted = 0d;
+        var at = Baseline;
+        for (var i = 0; i < 180 && observed.Count < 3; i++)
+        {
+            at = at.AddSeconds(1.5);
+            SimulationEngine.AdvanceTo(player, at, catalog);
+            var report = player.Duel.CurrentReport;
+            if (report is null) continue;
+            var newKills = report.NormalKills;
+            var newLooted = report.Items.FirstOrDefault(item => item.ItemId == "item.loot")?.Quantity ?? 0;
+            var killsDelta = newKills - kills;
+            var lootDelta = newLooted - looted;
+            kills = newKills;
+            looted = newLooted;
+            if (killsDelta == 1) observed.Add(lootDelta);
+        }
+
+        Assert.True(observed.Count >= 2, $"采样数不足：{string.Join(',', observed)}");
+        Assert.All(observed, q => Assert.InRange(q, 1, 3));
+        Assert.Contains(3d, observed);
+    }
+
     /// <summary>斗法进行中暂存区冻结：到期物品也不入账，直到斗法标识清空。</summary>
     [Fact]
     public void StagedItemsFreezeWhileDuelIsActive()
@@ -253,6 +287,8 @@ public sealed class DuelSimulationTests
         double searchSeconds = 1,
         DuelSettings? duel = null,
         double dropChance = 0,
+        double dropMin = 1,
+        double dropMax = 1,
         double qiReward = 0,
         double experienceReward = 0,
         double rootExpReward = 0)
@@ -270,7 +306,7 @@ public sealed class DuelSimulationTests
                 CombatEncounterId: "encounter.test")
         ]);
         var drops = dropChance > 0
-            ? new List<CombatDropDefinition> { new(new ItemId("item.loot"), dropChance, 1, 1) }
+            ? new List<CombatDropDefinition> { new(new ItemId("item.loot"), dropChance, dropMin, dropMax) }
             : (IReadOnlyList<CombatDropDefinition>)[];
         var monster = new CombatMonsterDefinition(
             "enemy.test",

@@ -1253,28 +1253,25 @@ export const CombatArena = memo(function CombatArena({
   const playerHp = (isCombat ? expedition?.playerHitpoints : undefined) ?? combatResources?.hitpoints ?? playerMaxHp
   const playerMp = (isCombat ? expedition?.playerManapoints : undefined) ?? combatResources?.manapoints ?? playerMaxMp
   const phase = expedition?.phase ?? (isTravel ? 'travel' : isLifeAction ? 'life-action' : 'idle')
-  const isDuelPhase = phase === 'duel' || phase === 'duel-pending'
+  const isDuelPhase = phase === 'duel'
 
   // 同波多敌阵容：名称/立绘/属性/出手时间线全部以 wire 下发的 enemies[] 快照为准。
-  // 斗法相位例外：对手为玩家队伍镜像，不走 enemies[]，以 expedition.duel 载荷合成单个对手卡片，
-  // 敌人名位置显示「斗法·对手道号」（duel-pending 显示「斗法感应中…」），血条布局不变。
+  // 斗法相位例外：对手为玩家镜像，不走 enemies[]，以 expedition.duel 载荷合成单个对手卡片，
+  // 敌人名位置显示「斗法·对手道号」，血条布局不变；duel-pending（撮合搜寻中）不合成占位卡，
+  // 敌区自然落到空阵型。
   const enemyEntries = useMemo<EnemyDisplayState[]>(() => {
     const battleElapsed = expedition?.battleElapsedSeconds ?? 0
     const serverNow = estimateServerNowUnixMilliseconds()
-    if (expedition?.phase === 'duel' || expedition?.phase === 'duel-pending') {
-      const pending = expedition.phase === 'duel-pending'
-      const name = pending
-        ? t('combat.duel.sensing')
-        : t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
-      // 斗法对手气血/灵力与属性上限由 duel 回放载荷承载（撮合时锁定镜像、随剧本事件更新）；
-      // duel-pending 尚无回放载荷时以满额条占位，避免落入阵亡置灰样式。
+    if (expedition?.phase === 'duel') {
+      const name = t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
+      // 斗法对手气血/灵力与属性上限由 duel 回放载荷承载（撮合时锁定镜像、随剧本事件更新）。
       const opponentAttributes = expedition.duel?.opponentAttributes ?? null
       const maxHp = Math.max(1, opponentAttributes?.maxHitpoints ?? 1)
       const maxMp = Math.max(1, opponentAttributes?.maxManapoints ?? 1)
-      const hp = pending ? maxHp : Math.max(0, Math.min(maxHp, expedition.duel?.opponentHitpoints ?? maxHp))
-      const mp = pending ? maxMp : Math.max(0, Math.min(maxMp, expedition.duel?.opponentManapoints ?? maxMp))
+      const hp = Math.max(0, Math.min(maxHp, expedition.duel?.opponentHitpoints ?? maxHp))
+      const mp = Math.max(0, Math.min(maxMp, expedition.duel?.opponentManapoints ?? maxMp))
       return [{
-        actorKey: `enemy:duel:${expedition.duel?.opponentName || 'pending'}`,
+        actorKey: `enemy:duel:${expedition.duel?.opponentName ?? 'opponent'}`,
         enemyId: null,
         name,
         seal: name.slice(0, 1),
@@ -1282,7 +1279,7 @@ export const CombatArena = memo(function CombatArena({
         maxHp,
         mp,
         maxMp,
-        action: pending ? null : duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities),
+        action: duelActionState(expedition.duel, battleElapsed, !expedition.duel?.isInitiator, 2000, serverNow, abilities),
         visual: null,
         attributes: opponentAttributes,
       }]
