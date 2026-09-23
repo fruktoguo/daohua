@@ -310,6 +310,8 @@ export interface AutoUseSlot {
   enabled: boolean
   /** 已开启的持续消耗品剩余有效秒数（银河奶牛式） */
   remainingDurationSeconds?: number
+  /** 栏位分组：战斗域分 potion（药品栏）与 general（通用栏），其余行动域恒为 general */
+  group?: 'potion' | 'general'
 }
 
 /**
@@ -1069,8 +1071,8 @@ export interface EquippedItem {
 }
 
 /**
- * 战斗消耗品槽位配置（服务端 AutoUseSlotState 投影；消耗品不支持触发条件，
- * 触发判定仅为功法槽位能力，请勿在此叠加 triggers 语义）
+ * 战斗消耗品槽位配置（服务端 AutoUseSlotState 投影；消耗品与功法共用
+ * 「对象-类型-比对」触发条件词表，触发判定在领域层统一求值）
  */
 export interface ConsumableSlot {
   /** 绑定的物品 ID（null 为空槽） */

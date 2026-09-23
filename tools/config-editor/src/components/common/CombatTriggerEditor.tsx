@@ -5,7 +5,8 @@
 // ==============================================================================
 
 import type { CombatTrigger } from '../../types/config';
-import { TRIGGER_DEPENDENCIES, TRIGGER_CONDITIONS, TRIGGER_COMPARATORS } from '../../types/enums';
+import { TRIGGER_DEPENDENCIES, TRIGGER_CONDITIONS, TRIGGER_COMPARATORS,
+  TRIGGER_SET_DEPENDENCIES, TRIGGER_SET_CONDITIONS, TRIGGER_BOOL_CONDITIONS } from '../../types/enums';
 import { EnumSelect } from './EnumSelect';
 import { NumberInput } from './NumberInput';
 
@@ -87,23 +88,46 @@ export function CombatTriggerEditor({
                 label="依赖目标 (Dependency)"
                 value={trig.dependency}
                 options={TRIGGER_DEPENDENCIES}
-                onChange={v => handleUpdate(idx, { dependency: v || 'self' })}
+                onChange={v => {
+                  const dependency = v || 'self';
+                  // 对象-类型矩阵联动：切到集合对象时条件重置为存活数量，切回单体时还原当前气血。
+                  const isSet = TRIGGER_SET_DEPENDENCIES.has(dependency);
+                  const condition = isSet
+                    ? (TRIGGER_SET_CONDITIONS.has(trig.condition) ? trig.condition : 'alive-count')
+                    : (TRIGGER_SET_CONDITIONS.has(trig.condition) ? 'current-hp' : trig.condition);
+                  handleUpdate(idx, { dependency, condition });
+                }}
                 allowClear={false}
               />
 
               <EnumSelect
                 label="条件字段 (Condition)"
                 value={trig.condition}
-                options={TRIGGER_CONDITIONS}
-                onChange={v => handleUpdate(idx, { condition: v || 'current-hp' })}
+                options={TRIGGER_SET_DEPENDENCIES.has(trig.dependency)
+                  ? TRIGGER_CONDITIONS.filter(option => TRIGGER_SET_CONDITIONS.has(option.value))
+                  : TRIGGER_CONDITIONS.filter(option => !TRIGGER_SET_CONDITIONS.has(option.value))}
+                onChange={v => {
+                  const condition = v || 'current-hp';
+                  // 类型-比对矩阵联动：Boolean 条件仅是否比对，数值条件仅大小等于比对。
+                  const isBool = TRIGGER_BOOL_CONDITIONS.has(condition);
+                  const comparator = isBool
+                    ? (trig.comparator === 'is-active' || trig.comparator === 'is-inactive' ? trig.comparator : 'is-active')
+                    : (trig.comparator === 'is-active' || trig.comparator === 'is-inactive' ? 'greater-than-equal' : trig.comparator);
+                  handleUpdate(idx, { condition, comparator });
+                }}
                 allowClear={false}
               />
 
               <EnumSelect
                 label="比较方式 (Comparator)"
                 value={trig.comparator}
-                options={TRIGGER_COMPARATORS}
-                onChange={v => handleUpdate(idx, { comparator: v || 'greater-than-equal' })}
+                options={TRIGGER_BOOL_CONDITIONS.has(trig.condition)
+                  ? TRIGGER_COMPARATORS.filter(option => option.value === 'is-active' || option.value === 'is-inactive')
+                  : TRIGGER_COMPARATORS.filter(option => option.value !== 'is-active' && option.value !== 'is-inactive')}
+                onChange={v => {
+                  const comparator = v || 'greater-than-equal';
+                  handleUpdate(idx, { comparator });
+                }}
                 allowClear={false}
               />
 

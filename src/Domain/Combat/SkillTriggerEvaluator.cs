@@ -67,37 +67,76 @@ public static class SkillTriggerEvaluator
             foreach (var trigger in triggers.EnumerateArray()) ValidateTrigger(trigger);
     }
 
-    /// <summary>校验单条技能触发条件配表：依赖目标、条件字段、比较符与阈值必须合法自洽。</summary>
+    /// <summary>单体对象依赖词表：自身 / 本轮锁定目标 / 友敌双方经成员选择解析出的单体。</summary>
+    private static bool IsUnitDependency(string? dependency) => dependency is "self" or "target-enemy"
+        or "ally-lowest-hp" or "ally-highest-hp" or "enemy-lowest-hp" or "enemy-highest-hp";
+
+    /// <summary>集合对象依赖词表：友方/敌方全体存活单位构成的集合（群体聚合条件的作用域）。</summary>
+    private static bool IsSetDependency(string? dependency) => dependency is "ally" or "enemy";
+
+    /// <summary>集合对象可选条件词表：作用于集合的群体聚合值。</summary>
+    private static bool IsSetCondition(string? condition) => condition is "alive-count" or "dead-count";
+
+    /// <summary>单体数值条件词表。</summary>
+    private static bool IsNumericUnitCondition(string? condition) => condition is "current-hp" or "missing-hp"
+        or "current-hp-percentage" or "missing-hp-percentage" or "current-mana" or "missing-mana"
+        or "current-mana-percentage" or "missing-mana-percentage" or "buff-stacks";
+
+    /// <summary>Boolean 条件词表（活性语义，仅 is-active/is-inactive 比对）。</summary>
+    private static bool IsBoolCondition(string? condition) => condition is "stun-status" or "blind-status" or "silence-status";
+
+    /// <summary>
+    /// 校验单条触发条件配表：对象-类型-比对三元组必须按作用域矩阵自洽——单体对象仅可用
+    /// 单体状态条件，集合对象仅可用群体聚合条件；Boolean 条件只接受是否比对，
+    /// 数值条件只接受大小等于比对。技能与消耗品共用同一词表。
+    /// </summary>
     /// <param name="trigger">触发条件 JSON；非法时抛出 InvalidArgument。</param>
     public static void ValidateTrigger(JsonElement trigger)
     {
         var dependency = JsonRead.Text(trigger, "dependency");
-        if (dependency is not ("self" or "target-enemy" or "ally-lowest-hp" or "ally-highest-hp"
-            or "enemy-lowest-hp" or "enemy-highest-hp"))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "技能触发目标无效。");
+        if (!IsUnitDependency(dependency) && !IsSetDependency(dependency))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件对象无效。");
         var condition = JsonRead.Text(trigger, "condition");
-        if (condition is not ("current-hp" or "missing-hp"
-            or "current-hp-percentage" or "missing-hp-percentage" or "current-mana" or "missing-mana"
-            or "current-mana-percentage" or "missing-mana-percentage" or "buff-stacks"
-            or "stun-status" or "blind-status" or "silence-status"))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "当前战斗没有该触发条件对应的状态。");
-        if (JsonRead.Text(trigger, "comparator") is not ("greater-than-equal" or "less-than-equal"
-            or "greater-than" or "less-than" or "is-active" or "is-inactive"))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "技能触发比较方式无效。");
+        var conditionValid = IsSetDependency(dependency)
+            ? IsSetCondition(condition)
+            : IsNumericUnitCondition(condition) || IsBoolCondition(condition);
+        if (!conditionValid)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件类型对所选对象不可用。");
+        var comparator = JsonRead.Text(trigger, "comparator");
+        var comparatorValid = IsBoolCondition(condition)
+            ? comparator is "is-active" or "is-inactive"
+            : comparator is "greater-than-equal" or "less-than-equal" or "greater-than" or "less-than" or "equal";
+        if (!comparatorValid)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件比对方式与类型不匹配。");
         if (JsonRead.Number(trigger, "value") < 0
             || (condition == "buff-stacks" && string.IsNullOrWhiteSpace(JsonRead.Text(trigger, "buffId"))))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "技能触发阈值无效。");
+            throw new DomainException(DomainErrorCode.InvalidArgument, "触发条件阈值无效。");
     }
 
     private static bool Matches(JsonElement trigger, CombatantState caster,
         CombatantState? primaryTarget, IReadOnlyList<CombatantState> allies, IReadOnlyList<CombatantState> opponents)
     {
         if (trigger.ValueKind != JsonValueKind.Object) return false;
-        var unit = ResolveDependency(JsonRead.Text(trigger, "dependency") ?? "self",
-            caster, primaryTarget, allies, opponents);
-        // 依赖无法解析（如敌方全灭后仍被求值）或词表外输入：运行时一律判定失败，不抛异常。
-        if (unit is null) return false;
-        var value = ReadCondition(trigger, unit);
+        var dependency = JsonRead.Text(trigger, "dependency") ?? "self";
+        double value;
+        if (IsSetDependency(dependency))
+        {
+            // 群体聚合条件：对集合求值，集合为空仍返回真实计数（0）。
+            var set = dependency == "ally" ? allies : opponents;
+            value = JsonRead.Text(trigger, "condition") switch
+            {
+                "alive-count" => set.Count(unit => unit.IsAlive),
+                "dead-count" => set.Count(unit => !unit.IsAlive),
+                _ => double.NaN
+            };
+        }
+        else
+        {
+            var unit = ResolveDependency(dependency, caster, primaryTarget, allies, opponents);
+            // 依赖无法解析（如敌方全灭后仍被求值）或词表外输入：运行时一律判定失败，不抛异常。
+            if (unit is null) return false;
+            value = ReadCondition(trigger, unit);
+        }
         if (!double.IsFinite(value)) return false;
         var threshold = JsonRead.Number(trigger, "value");
         return JsonRead.Text(trigger, "comparator") switch
@@ -106,6 +145,7 @@ public static class SkillTriggerEvaluator
             "less-than-equal" => value <= threshold,
             "greater-than" => value > threshold,
             "less-than" => value < threshold,
+            "equal" => value == threshold,
             // 状态/层数类条件的活性比较：value 为层数计数（当前恒 ≥0）。
             "is-active" => value > 0,
             "is-inactive" => value <= 0,

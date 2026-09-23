@@ -208,6 +208,11 @@ public static class SimulationEngine
         var kind = catalog.Actions.Get(player.Actions[0].Intent.ActionId).Kind;
         var deltas = new List<AssetDelta>();
         var now = at.ToUnixTimeMilliseconds() / 1000d;
+        // 触发求值上下文惰性构建：仅当存在带条件的消耗品时才装配战斗单位视图。
+        CombatantState? evalCaster = null;
+        CombatantState? evalTarget = null;
+        List<CombatantState>? evalAllies = null;
+        List<CombatantState>? evalEnemies = null;
         for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
         {
             var slot = player.Settings.AutoUseSlots[i];
@@ -218,6 +223,13 @@ public static class SimulationEngine
             if (item.Consumable is not { IsContinuous: false } definition
                 || !definition.UsableInActionKinds.Contains(kind)
                 || !catalog.RawItems[id.Value].TryGetProperty("consumable", out var raw)) continue;
+            // 消耗品使用条件与技能共用同一套触发判定模型；求值失败一律跳过本槽。
+            if (definition.Triggers is { Count: > 0 } triggers)
+            {
+                evalCaster ??= BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
+                if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, evalCaster, evalTarget,
+                        evalAllies!, evalEnemies!)) continue;
+            }
             var consumed = deltas.Where(delta => delta.Asset.ItemId == id).Sum(delta => delta.QuantityDelta);
             if (wallet.Get(new AssetKey(id)) + consumed < 1) continue;
             double Read(JsonElement obj, string key) => obj.TryGetProperty(key, out var value) ? value.GetDouble() : 0;
@@ -247,6 +259,41 @@ public static class SimulationEngine
             events.Add(new(at, "auto-use.activated", $"自动使用 {item.Name}。", ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
         }
         return deltas;
+    }
+
+    /// <summary>
+    /// 为消耗品触发判定装配求值单位视图：施放方为当前玩家快照；战斗进行中敌方取
+    /// 当前波存活单位，「目标」对象按当前有效威胁最高者确定性解析（非随机抽取）。
+    /// </summary>
+    private static CombatantState BuildConsumableEvalUnits(PlayerAggregate player, GameDataCatalog catalog,
+        out CombatantState? target, out List<CombatantState> allies, out List<CombatantState> enemies)
+    {
+        var caster = new CombatantState("player", PlayerAttributeResolver.Resolve(player, catalog).ToCombatant())
+        {
+            Hitpoints = player.Combat.Hitpoints,
+            Manapoints = player.Combat.Manapoints
+        };
+        caster.ExternalBuffStacks = buffId => player.Buffs.Active
+            .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
+        allies = [caster];
+        enemies = [];
+        if (player.Actions[0].Expedition is { Phase: CombatExpeditionPhase.Combat, Enemies: { Count: > 0 } waveEnemies })
+            for (var i = 0; i < waveEnemies.Count; i++)
+            {
+                var enemy = waveEnemies[i];
+                if (!catalog.CombatMonsters.TryGetValue(enemy.EnemyId, out var monster)) continue;
+                var unit = new CombatantState($"enemy:{i}", monster.Stats)
+                {
+                    Hitpoints = enemy.State.Hitpoints,
+                    Manapoints = enemy.State.Manapoints,
+                    Threat = enemy.State.Threat,
+                    ThreatBonusPoints = enemy.State.ThreatBonusPoints
+                };
+                if (enemy.State.Buffs is { Count: > 0 } buffs) unit.Buffs.AddRange(buffs);
+                enemies.Add(unit);
+            }
+        target = enemies.Where(unit => unit.IsAlive).MaxBy(unit => unit.EffectiveThreat);
+        return caster;
     }
 
     private static SimulationResult AdvanceToCore(
@@ -332,8 +379,8 @@ public static class SimulationEngine
             {
                 if (gameData is null)
                     throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
-                AdvanceCombatAction(player, action, definition, gameData, duel, from, target, ref remainingSeconds,
-                    ref deltas, ref events, ref completedActions, ref completedRepeats);
+                AdvanceCombatAction(player, action, definition, gameData, assetBalances, duel, from, target,
+                    ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats);
                 continue;
             }
             if (definition.ExecutionKind == ActionExecutionKind.Travel)
@@ -471,6 +518,7 @@ public static class SimulationEngine
         QueuedAction action,
         ActionDefinition definition,
         GameDataCatalog gameData,
+        AssetWallet? assetBalances,
         DuelAdvanceOptions? duel,
         DateTimeOffset from,
         DateTimeOffset target,
@@ -610,7 +658,6 @@ public static class SimulationEngine
             battle.Player.ExternalBuffStacks = buffId => player.Buffs.Active
                 .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
             player.Combat.Skills.ApplyTo(battle.Player);
-            DeterministicCombatEngine.DecideInitialActions(battle);
             var entryWaveNames = string.Join("、", wave.Select(monster => monster.Name));
             if (battle.Player.Hitpoints <= 0)
             {
@@ -622,6 +669,11 @@ public static class SimulationEngine
                 }
                 return;
             }
+            // 战斗域通用栏持续消耗品：入场时为空槽补能（扣 1 件），生效 Buff 时长 = 槽位剩余时长。
+            var rechargeAtUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
+            RechargeCombatSustainedSlots(player, gameData, assetBalances, rechargeAtUnix, action.Id, battle, ref deltas, ref events);
+            InjectSustainedCombatBuffs(player, gameData, battle);
+            DeterministicCombatEngine.DecideInitialActions(battle);
             var combatState = ToExpeditionState(battle, updated with
             {
                 Phase = CombatExpeditionPhase.Combat,
@@ -676,6 +728,10 @@ public static class SimulationEngine
         // battleTo 由 battleFrom 加法得到，回减时浮点误差可能让 consumed 比剩余预算大 1e-15 量级；
         // 不收敛到剩余预算会把外层 remainingSeconds 减成负数触发不变量。
         var consumed = Math.Clamp(battleState.ElapsedSeconds - battleFrom, 0, remainingSeconds);
+        // 战斗持续消耗品按战斗存活时钟扣减：仅战斗进行中消耗（含躺尸等待复活）；
+        // 寻敌、团灭复活读条与退出战斗后均不消耗。
+        DrainCombatSustainedSlots(player, gameData, consumed,
+            from.AddSeconds(actionElapsedBeforeCombat + consumed), definition.Id, ref events);
         // 玩家技能与普攻共用同一条动作时间线：战后把通用槽位状态折算回跨战持久化形态。
         player.Combat.Skills = PlayerCombatSkillState.FromCombatant(battleState.Player, battleState.ElapsedSeconds);
         remainingSeconds -= consumed;
@@ -968,9 +1024,12 @@ public static class SimulationEngine
         long? seed = null,
         int waveNumber = 1)
     {
-        // 搜寻等待时间随境界成长：Wait(Lv) = 5.0 - 2.5·x²，作用于遭遇基础搜寻秒数的乘区。
+        // 首波搜寻为固定读条（默认 20s，searchMilliseconds 可配）：防止反复启停行动刷新战斗节奏，
+        // 不吃寻敌速度衰减；波间再搜寻才应用成长乘区 Wait(Lv) = 5.0 - 2.5·x²。
         var delayFactor = gameData is not null ? PlayerAttributeResolver.Resolve(player, gameData).SearchDelayFactor : 1;
-        var duration = (phase == CombatExpeditionPhase.InitialSearch ? encounter.SearchSeconds : encounter.RespawnSeconds) * delayFactor;
+        var duration = phase == CombatExpeditionPhase.InitialSearch
+            ? encounter.SearchSeconds
+            : encounter.RespawnSeconds * delayFactor;
         return new(
             encounter.Id,
             phase,
@@ -1680,6 +1739,92 @@ public static class SimulationEngine
         consumable = item.Consumable!;
         return consumable is { IsContinuous: true, DurationSeconds: > 0 }
             && consumable.UsableInActionKinds.Contains(actionKind);
+    }
+
+    /// <summary>战斗域通用栏持续消耗品槽位迭代器：仅 general 组可挂持续消耗品。</summary>
+    private static IEnumerable<(int Index, AutoUseSlotState Slot, ItemDefinition Item, ConsumableDefinition Consumable)>
+        CombatSustainedSlots(PlayerAggregate player, GameDataCatalog gameData)
+    {
+        for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
+        {
+            var slot = player.Settings.AutoUseSlots[i];
+            if (!slot.Enabled || slot.ItemId is null || slot.Group != AutoUseSlotState.SlotGroupGeneral
+                || !string.Equals(slot.ActionType, "combat", StringComparison.OrdinalIgnoreCase)) continue;
+            var itemId = new ItemId(slot.ItemId);
+            if (!gameData.Items.TryGetValue(itemId, out var item)
+                || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0 } consumable
+                || !consumable.UsableInActionKinds.Contains(ActionKind.Combat)) continue;
+            yield return (i, slot, item, consumable);
+        }
+    }
+
+    /// <summary>遭遇入场时为空的通用栏持续消耗品槽补能：消耗 1 件物品充入整段时长，条件不满足则跳过。</summary>
+    private static void RechargeCombatSustainedSlots(PlayerAggregate player, GameDataCatalog gameData,
+        AssetWallet? assetBalances, double atUnix, Guid actionInstanceId, CombatEncounterState battle,
+        ref Dictionary<ItemId, double>? deltas, ref List<SimulationEvent>? events)
+    {
+        foreach (var (index, slot, item, consumable) in CombatSustainedSlots(player, gameData).ToArray())
+        {
+            if (slot.RemainingDurationSeconds > 0) continue;
+            // 持续消耗品的入场补能同样走共享触发判定：条件不满足本场不启用，不扣件。
+            if (consumable.Triggers is { Count: > 0 } triggers
+                && !Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, battle.Player,
+                    battle.Enemies.Where(unit => unit.IsAlive).MaxBy(unit => unit.EffectiveThreat),
+                    [battle.Player], battle.Enemies)) continue;
+            var itemId = item.Id;
+            var available = (assetBalances?.Get(new AssetKey(itemId)) ?? 0d)
+                + (deltas?.GetValueOrDefault(itemId) ?? 0d);
+            if (available < 1d) continue;
+            AddDelta(deltas ??= new Dictionary<ItemId, double>(), itemId, -1d);
+            player.RecordStats(actionInstanceId, atUnix, report => report.AddItemLost(itemId, 1));
+            player.Settings.AutoUseSlots[index] = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
+            player.MarkDirty(PlayerSectionKind.Settings);
+            events ??= new List<SimulationEvent>();
+            events.Add(new SimulationEvent(DateTimeOffset.FromUnixTimeMilliseconds((long)(atUnix * 1000)),
+                "auto-use.activated", $"自动使用 {item.Name}，可生效 {consumable.DurationSeconds:0.######} 秒。",
+                null, new Dictionary<ItemId, double> { [itemId] = -1d }));
+        }
+    }
+
+    /// <summary>将持续消耗品的生效 Buff 注入本次遭遇：时长对齐槽位剩余时长，耗尽即自然过期。</summary>
+    private static void InjectSustainedCombatBuffs(PlayerAggregate player, GameDataCatalog gameData,
+        CombatEncounterState battle)
+    {
+        foreach (var (_, slot, item, _) in CombatSustainedSlots(player, gameData))
+        {
+            if (slot.RemainingDurationSeconds <= 0
+                || !gameData.RawItems.TryGetValue(item.Id.Value, out var rawItem)
+                || !rawItem.TryGetProperty("consumable", out var raw)
+                || !raw.TryGetProperty("buffs", out var buffs) || buffs.ValueKind != JsonValueKind.Array)
+                continue;
+            foreach (var buff in buffs.EnumerateArray())
+            {
+                var buffId = buff.GetProperty("buffId").GetString()!;
+                battle.Player.Buffs.RemoveAll(current => current.BuffId == buffId);
+                battle.Player.Buffs.Add(new CombatBuffState(buffId,
+                    battle.ElapsedSeconds + slot.RemainingDurationSeconds, 1,
+                    JsonRead.Number(buff, "hpRegen"), JsonRead.Number(buff, "mpRegen"),
+                    JsonRead.Number(buff, "attackSpeedPoints"), JsonRead.Number(buff, "damageAbsorptionPoints"),
+                    JsonRead.Number(buff, "threatPoints")));
+            }
+        }
+    }
+
+    /// <summary>战斗存活时钟扣减：仅对本场实际推进的战斗秒数生效。</summary>
+    private static void DrainCombatSustainedSlots(PlayerAggregate player, GameDataCatalog gameData,
+        double consumedBattleSeconds, DateTimeOffset at, ActionId actionId, ref List<SimulationEvent>? events)
+    {
+        if (consumedBattleSeconds <= 0) return;
+        foreach (var (index, slot, item, _) in CombatSustainedSlots(player, gameData))
+        {
+            if (slot.RemainingDurationSeconds <= 0) continue;
+            var remaining = Math.Max(0d, slot.RemainingDurationSeconds - consumedBattleSeconds);
+            player.Settings.AutoUseSlots[index] = slot with { RemainingDurationSeconds = remaining };
+            player.MarkDirty(PlayerSectionKind.Settings);
+            if (remaining > 0) continue;
+            events ??= new List<SimulationEvent>();
+            events.Add(new SimulationEvent(at, "auto-use.depleted", $"{item.Name} 的持续时间已耗尽。", actionId));
+        }
     }
 
     private static bool MatchesActionType(string actionType, ActionKind kind) => kind switch

@@ -259,12 +259,18 @@ public static class ProtocolSnapshotMapper
     {
         var a = PlayerAttributeResolver.Resolve(state, catalog);
         var nowUnix = state.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
-        // 消耗品冷却按槽位下标定长下发；剩余毫秒以快照模拟时刻为基准，供前端冷却遮罩倒计时。
-        var consumableCooldowns = new double[AutoUseSlotState.MaxSlotIndex + 1];
+        // 消耗品冷却按战斗域 6 槽定长下发：前 3 位药品栏（potion），后 3 位通用栏（general）；
+        // 剩余毫秒以快照模拟时刻为基准，供前端冷却遮罩倒计时。
+        var consumableCooldowns = new double[AutoUseSlotState.CombatSlotCount];
         foreach (var slot in state.Settings.AutoUseSlots ?? [])
         {
             if (slot.ActionType == "combat" && slot.SlotIndex <= AutoUseSlotState.MaxSlotIndex)
-                consumableCooldowns[slot.SlotIndex] = Math.Max(0, (slot.CooldownUntilUnixSeconds - nowUnix) * 1000);
+            {
+                var index = slot.Group == AutoUseSlotState.SlotGroupPotion
+                    ? slot.SlotIndex
+                    : slot.SlotIndex + AutoUseSlotState.MaxSlotIndex + 1;
+                consumableCooldowns[index] = Math.Max(0, (slot.CooldownUntilUnixSeconds - nowUnix) * 1000);
+            }
         }
         // 吟唱总时长 = 配表吟唱毫秒 × 施法时间乘区，仅在吟唱中下发；前端行动条不得回读配表推算。
         double? castTotalMilliseconds = null;

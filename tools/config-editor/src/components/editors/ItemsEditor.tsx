@@ -10,6 +10,7 @@ import { ITEM_KINDS, ITEM_CATEGORIES, TIER_OPTIONS, ACTION_TYPES } from '../../t
 import { EnumSelect, MultiEnumSelect } from '../common/EnumSelect';
 import { BooleanSelect } from '../common/BooleanSelect';
 import { NumberInput } from '../common/NumberInput';
+import { CombatTriggerEditor } from '../common/CombatTriggerEditor';
 
 export function ItemsEditor() {
   const { configs, updateConfig } = useConfigContext();
@@ -425,6 +426,14 @@ export function ItemsEditor() {
                 <BuffsListEditor
                   buffs={currentItem.consumable.buffs}
                   onChange={buffs => handleUpdateConsumable({ buffs })}
+                />
+
+                {/* 使用条件：与技能共用触发判定词表 */}
+                <CombatTriggerEditor
+                  label="使用条件 (Triggers)"
+                  description="全部条件满足才允许自动使用；空表恒可用"
+                  triggers={currentItem.consumable.triggers}
+                  onChange={triggers => handleUpdateConsumable({ triggers })}
                 />
               </div>
             )}

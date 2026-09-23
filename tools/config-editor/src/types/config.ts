@@ -70,6 +70,7 @@ export interface ConsumableConfig {
   hitpointRestore?: number;
   manapointRestore?: number;
   buffs?: BuffEffectConfig[];
+  triggers?: CombatTrigger[]; // 使用条件：与技能共用「对象-类型-比对」词表
 }
 
 export interface ItemConfig {

@@ -35,6 +35,14 @@
           "hpRegen": 12,
           "damageAbsorptionPoints": 5
         }
+      ],
+      "triggers": [
+        {
+          "dependency": "self",
+          "condition": "current-hp-percentage",
+          "comparator": "less-than-equal",
+          "value": 60
+        }
       ]
     }
   },
@@ -57,6 +65,14 @@
           "durationSeconds": 30,
           "mpRegen": 8,
           "attackSpeedPoints": 5
+        }
+      ],
+      "triggers": [
+        {
+          "dependency": "self",
+          "condition": "current-mana-percentage",
+          "comparator": "less-than-equal",
+          "value": 50
         }
       ]
     }

@@ -731,12 +731,20 @@ public sealed class PlayerRuntime(
                         var itemId = payload.TryGetProperty("itemId", out var itemElement) && itemElement.ValueKind != JsonValueKind.Null ? itemElement.GetString() : null;
                         var quantity = payload.TryGetProperty("quantity", out var quantityElement) && quantityElement.TryGetDouble(out var parsedQuantity) ? parsedQuantity : 1d;
                         var enabled = payload.TryGetProperty("enabled", out var enabledElement) && enabledElement.ValueKind == JsonValueKind.True;
+                        var group = payload.TryGetProperty("group", out var groupElement) ? groupElement.GetString() : null;
                         if (!Enum.TryParse<ActionKind>(actionType, true, out var slotKind))
                             return Fail("INVALID_ACTION_TYPE", "自动使用行动类型无效。");
-                        if (itemId is not null && (!gameData.Items.TryGetValue(new ItemId(itemId), out var slotItem)
+                        ItemDefinition? slotItem = null;
+                        if (itemId is not null && (!gameData.Items.TryGetValue(new ItemId(itemId), out slotItem)
                             || slotItem.Consumable is null || !slotItem.Consumable.UsableInActionKinds.Contains(slotKind)))
                             return Fail("INVALID_CONSUMABLE", "物品不适用于该自动使用槽。");
-                        aggregate.ConfigureAutoUse(actionType ?? string.Empty, slotIndex, itemId, quantity, enabled);
+                        // 战斗域药品栏仅接受药品类即时消耗品；通用栏不限物品分类（符咒/阵法/特殊道具/药品皆可）。
+                        if (group == AutoUseSlotState.SlotGroupPotion
+                            && (slotKind != ActionKind.Combat
+                                || itemId is not null && (slotItem!.Category != ConsumableDefinition.CategoryPill
+                                    || slotItem.Consumable!.IsContinuous)))
+                            return Fail("INVALID_CONSUMABLE", "药品栏只能装配药品类即时消耗品。");
+                        aggregate.ConfigureAutoUse(actionType ?? string.Empty, slotIndex, itemId, quantity, enabled, group);
                         TouchDirtyOnly();
                         break;
                     }

@@ -120,6 +120,8 @@ export const VISUAL_RENDERER_KINDS: EnumOption[] = [
 export const TRIGGER_DEPENDENCIES: EnumOption[] = [
   { value: 'self', label: '自身 (Self)', en: 'Self' },
   { value: 'target-enemy', label: '当前敌方目标 (TargetEnemy)', en: 'TargetEnemy' },
+  { value: 'ally', label: '友方集合 (Ally)', en: 'Ally' },
+  { value: 'enemy', label: '敌方集合 (Enemy)', en: 'Enemy' },
   { value: 'ally-lowest-hp', label: '血量最低友方 (AllyLowestHp)', en: 'AllyLowestHp' },
   { value: 'ally-highest-hp', label: '血量最高友方 (AllyHighestHp)', en: 'AllyHighestHp' },
   { value: 'enemy-lowest-hp', label: '血量最低敌方 (EnemyLowestHp)', en: 'EnemyLowestHp' },
@@ -135,15 +137,30 @@ export const TRIGGER_CONDITIONS: EnumOption[] = [
   { value: 'missing-mana', label: '已损灵力 (MissingMana)', en: 'MissingMana' },
   { value: 'current-mana-percentage', label: '当前灵力百分比 (CurrentMana%)', en: 'CurrentMana%' },
   { value: 'missing-mana-percentage', label: '已损灵力百分比 (MissingMana%)', en: 'MissingMana%' },
-  { value: 'buff-stacks', label: 'Buff 层数 (BuffStacks)', en: 'BuffStacks' }
+  { value: 'buff-stacks', label: 'Buff 层数 (BuffStacks)', en: 'BuffStacks' },
+  { value: 'stun-status', label: '眩晕状态 (Stun)', en: 'Stun' },
+  { value: 'blind-status', label: '致盲状态 (Blind)', en: 'Blind' },
+  { value: 'silence-status', label: '沉默状态 (Silence)', en: 'Silence' },
+  { value: 'alive-count', label: '剩余存活数量 (AliveCount)', en: 'AliveCount' },
+  { value: 'dead-count', label: '已阵亡数量 (DeadCount)', en: 'DeadCount' }
 ];
 
 export const TRIGGER_COMPARATORS: EnumOption[] = [
   { value: 'greater-than-equal', label: '大于等于 (>=)', en: '>=' },
   { value: 'less-than-equal', label: '小于等于 (<=)', en: '<=' },
+  { value: 'equal', label: '等于 (=)', en: '=' },
   { value: 'greater-than', label: '大于 (>)', en: '>' },
-  { value: 'less-than', label: '小于 (<)', en: '<' }
+  { value: 'less-than', label: '小于 (<)', en: '<' },
+  { value: 'is-active', label: '是 (IsActive)', en: 'IsActive' },
+  { value: 'is-inactive', label: '否 (IsInactive)', en: 'IsInactive' }
 ];
+
+/** 集合对象依赖：仅可用群体聚合条件（alive-count/dead-count）。 */
+export const TRIGGER_SET_DEPENDENCIES = new Set(['ally', 'enemy']);
+/** 集合对象可选条件词表。 */
+export const TRIGGER_SET_CONDITIONS = new Set(['alive-count', 'dead-count']);
+/** Boolean 条件词表：仅可配 is-active/is-inactive 比对。 */
+export const TRIGGER_BOOL_CONDITIONS = new Set(['stun-status', 'blind-status', 'silence-status']);
 
 // 13b. 功法类别 (discipline)：internal=内功心法（0 号槽位），spell=神通术法（缺省）
 export const ABILITY_DISCIPLINES: EnumOption[] = [

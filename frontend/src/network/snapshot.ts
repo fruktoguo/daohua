@@ -210,7 +210,14 @@ function mapCharacterVisual(value: unknown, name: string): CharacterVisual | nul
 }
 
 function defaultAutoUseSlots(): QueueState['autoUseSlots'] {
-  return Object.fromEntries(ACTION_TYPES.map(type => [type, Array.from({ length: 3 }, emptySlot)])) as QueueState['autoUseSlots']
+  // 战斗域双组栏位：前 3 槽药品栏（potion），后 3 槽通用栏（general）；其余行动域 3 槽通用栏。
+  return Object.fromEntries(ACTION_TYPES.map(type => [
+    type,
+    Array.from({ length: type === 'combat' ? 6 : 3 }, (_, index) => ({
+      ...emptySlot(),
+      group: type === 'combat' ? (index < 3 ? 'potion' : 'general') : 'general',
+    } as AutoUseSlot)),
+  ])) as QueueState['autoUseSlots']
 }
 
 function mapExpeditionPhase(value: unknown): ExpeditionPhase {
@@ -402,7 +409,12 @@ function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
     if (Object.keys(slot).length === 0) throw new Error('settings.autoUseSlots 中存在无效槽位。')
     const actionType = stringValue(slot.actionType) as ActionType
     const slotIndex = numberValue(slot.slotIndex, -1)
+    const group = slot.group === 'potion' ? 'potion' : 'general'
     if (!ACTION_TYPES.includes(actionType) || !Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= 3) continue
+    // 战斗域映射：potion 组占前 3 位，general 组占后 3 位；非战斗域只有 general 组。
+    const mappedIndex = actionType === 'combat'
+      ? (group === 'potion' ? slotIndex : slotIndex + 3)
+      : slotIndex
     // 服务端以 JsonIgnoreCondition.WhenWritingNull 序列化，未指定物品时可空 itemId 会被整键省略，
     // 因此缺失与 null 必须视为同一语义（未配置物品），而非坏数据。
     if ((slot.itemId !== null && slot.itemId !== undefined && typeof slot.itemId !== 'string') || typeof slot.quantity !== 'number' || !Number.isFinite(slot.quantity) || slot.quantity <= 0 || typeof slot.enabled !== 'boolean') {
@@ -412,11 +424,12 @@ function mapAutoUseSlots(value: unknown): QueueState['autoUseSlots'] {
       slot.remainingDurationSeconds,
       `settings.autoUseSlots[${actionType}:${slotIndex}].remainingDurationSeconds`,
     )
-    autoUseSlots[actionType][slotIndex] = {
+    autoUseSlots[actionType][mappedIndex] = {
       itemId: slot.itemId || null,
       quantity: Math.max(1, slot.quantity),
       enabled: slot.enabled,
       remainingDurationSeconds,
+      group,
     }
   }
   return autoUseSlots

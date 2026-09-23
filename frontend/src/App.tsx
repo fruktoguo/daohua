@@ -1031,20 +1031,26 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   className = '',
   hideLabel = false,
   label,
+  slotGroup = 'general',
   type,
 }: {
   className?: string
   hideLabel?: boolean
   label: string
+  /** 栏位分组：仅战斗域区分 potion（药品栏）/general（通用栏） */
+  slotGroup?: 'potion' | 'general'
   type: ActionType
 }): React.JSX.Element {
   const t = useT()
-  const slots = useGameStore(state => state.queue.autoUseSlots[type])
+  const allSlots = useGameStore(state => state.queue.autoUseSlots[type])
+  // 战斗域槽位数组布局：0-2 药品栏，3-5 通用栏；非战斗域恒为通用栏 0-2。
+  const slotOffset = type === 'combat' && slotGroup === 'general' ? 3 : 0
+  const slots = allSlots.slice(slotOffset, slotOffset + 3)
   const activeEntry = useGameStore(state => {
     const current = state.queue.entries[0]
     return current?.type === type ? current : null
   })
-  // 消耗品冷却仅 combat 类槽位由服务端按槽位下标定长下发。
+  // 消耗品冷却仅 combat 类槽位由服务端按双组下标定长下发（药品栏 0-2、通用栏 3-5）。
   const consumableCooldowns = useGameStore(
     state => type === 'combat' ? state.combatResources?.consumableCooldownMilliseconds : undefined,
   )
@@ -1052,7 +1058,9 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   const itemCatalog = useGameStore(state => state.items)
   const [pickerIndex, setPickerIndex] = useState<number | null>(null)
   const pickerItems = useMemo<ItemPickerEntry[]>(() => itemCatalog
-      .filter(item => item.usableActionTypes.includes(type) && itemAmount(inventory, item.itemId) > 0)
+      .filter(item => item.usableActionTypes.includes(type) && itemAmount(inventory, item.itemId) > 0
+        // 药品栏只放药品类即时消耗品；通用栏任意适用消耗品皆可。
+        && (slotGroup !== 'potion' || (item.category === 'pill' && !item.isContinuous)))
       .map(item => ({
         itemId: item.itemId,
         name: item.name,
@@ -1061,7 +1069,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
         tier: item.tier,
         amount: itemAmount(inventory, item.itemId),
         definition: item,
-      })), [inventory, itemCatalog, t, type])
+      })), [inventory, itemCatalog, slotGroup, t, type])
 
   const updateSlot = useCallback((index: number, itemId: string | null) => {
     gameClient.sendCommand('queue.auto_use.configure', {
@@ -1070,8 +1078,9 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
       itemId,
       quantity: 1,
       enabled: Boolean(itemId),
+      group: slotGroup,
     })
-  }, [type])
+  }, [slotGroup, type])
 
   const pickerSlot = pickerIndex === null ? null : slots[pickerIndex] ?? null
 
@@ -1092,7 +1101,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
             amount: itemAmount(inventory, selectedDefinition.itemId),
             definition: selectedDefinition,
           } : null
-          const cooldownMs = consumableCooldowns?.[index] ?? 0
+          const cooldownMs = consumableCooldowns?.[slotOffset + index] ?? 0
           return (
             <div className="auto-use-slot" key={index}>
               <ItemUseSlot
@@ -1549,7 +1558,8 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
   return (
     <div className="combat-loadout" aria-label={t('app.combatPanel.loadoutAria')}>
       <div className="combat-slot-tray">
-        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} type="combat" />
+        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.consumablesGroup')} slotGroup="potion" type="combat" />
+        <AutoUseSlotGroup className="combat-slot-section" label={t('app.combatPanel.generalGroup')} slotGroup="general" type="combat" />
 
         <section className="slot-group combat-slot-section" aria-label={t('app.combatPanel.abilitiesAria')}>
           <span className="slot-group-label">{t('app.combatPanel.abilitiesGroup')}</span>

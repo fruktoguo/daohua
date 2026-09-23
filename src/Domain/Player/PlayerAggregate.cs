@@ -161,7 +161,8 @@ public sealed class PlayerSettingsState
 }
 
 /// <summary>
-/// 自动化使用快捷槽配置项。
+/// 自动化使用快捷槽配置项。战斗域按 Group 分为药品栏（potion，仅药品类即时消耗品）
+/// 与通用栏（general，任意战斗消耗品）两组，各 3 槽；其余行动域仅通用栏。
 /// </summary>
 public sealed record AutoUseSlotState(
     string ActionType,
@@ -170,10 +171,17 @@ public sealed record AutoUseSlotState(
     double Quantity,
     bool Enabled,
     double RemainingDurationSeconds = 0,
-    double CooldownUntilUnixSeconds = 0)
+    double CooldownUntilUnixSeconds = 0,
+    string Group = "general")
 {
-    /// <summary>每种行动类型的自动使用槽位数；与前端槽位网格（每类 3 槽）保持一致。</summary>
+    /// <summary>每组自动使用槽位数；与前端槽位网格（每组 3 槽）保持一致。</summary>
     public const int MaxSlotIndex = 2;
+    /// <summary>通用栏：任意适用消耗品（符咒、阵法、特殊道具、药品等）。</summary>
+    public const string SlotGroupGeneral = "general";
+    /// <summary>药品栏：仅限药品类即时消耗品；仅战斗行动域有效。</summary>
+    public const string SlotGroupPotion = "potion";
+    /// <summary>战斗行动域槽位总数（药品栏 3 + 通用栏 3）。</summary>
+    public const int CombatSlotCount = (MaxSlotIndex + 1) * 2;
 }
 
 /// <summary>
@@ -727,15 +735,20 @@ public sealed partial class PlayerAggregate
     /// <summary>
     /// 配置特定行动类型（如炼丹、战斗、采集）绑定的消耗品自动使用快捷槽位。
     /// </summary>
-    public void ConfigureAutoUse(string actionType, int slotIndex, string? itemId, double quantity, bool enabled)
+    public void ConfigureAutoUse(string actionType, int slotIndex, string? itemId, double quantity, bool enabled,
+        string? group = null)
     {
         actionType = actionType?.Trim() ?? string.Empty;
         itemId = itemId?.Trim();
+        group = string.IsNullOrWhiteSpace(group) ? AutoUseSlotState.SlotGroupGeneral : group.Trim();
         if (string.IsNullOrWhiteSpace(actionType) || actionType.Length > 32 || slotIndex is < 0 || slotIndex > AutoUseSlotState.MaxSlotIndex
+            || group is not (AutoUseSlotState.SlotGroupGeneral or AutoUseSlotState.SlotGroupPotion)
+            || (group == AutoUseSlotState.SlotGroupPotion && !string.Equals(actionType, "combat", StringComparison.OrdinalIgnoreCase))
             || (itemId is not null && (itemId.Length == 0 || itemId.Length > 128))
             || !double.IsFinite(quantity) || quantity <= 0 || quantity > 1_000_000)
             throw new DomainException(DomainErrorCode.InvalidArgument, "自动使用配置无效。");
-        var index = Settings.AutoUseSlots.FindIndex(slot => slot.ActionType == actionType && slot.SlotIndex == slotIndex);
+        var index = Settings.AutoUseSlots.FindIndex(slot => slot.ActionType == actionType
+            && slot.SlotIndex == slotIndex && slot.Group == group);
         var normalizedEnabled = enabled && !string.IsNullOrWhiteSpace(itemId);
         var remainingDurationSeconds = index >= 0
             && normalizedEnabled
@@ -743,14 +756,17 @@ public sealed partial class PlayerAggregate
                 ? Settings.AutoUseSlots[index].RemainingDurationSeconds
                 : 0d;
         var cooldown = index >= 0 ? Settings.AutoUseSlots[index].CooldownUntilUnixSeconds : 0;
-        var value = new AutoUseSlotState(actionType, slotIndex, itemId, quantity, normalizedEnabled, remainingDurationSeconds, cooldown);
+        var value = new AutoUseSlotState(actionType, slotIndex, itemId, quantity, normalizedEnabled,
+            remainingDurationSeconds, cooldown, group);
         if (index >= 0 && Settings.AutoUseSlots[index] == value) return;
         if (index >= 0) Settings.AutoUseSlots[index] = value;
         else Settings.AutoUseSlots.Add(value);
         Settings.AutoUseSlots.Sort((left, right) =>
         {
             var actionOrder = string.CompareOrdinal(left.ActionType, right.ActionType);
-            return actionOrder != 0 ? actionOrder : left.SlotIndex.CompareTo(right.SlotIndex);
+            if (actionOrder != 0) return actionOrder;
+            var groupOrder = string.CompareOrdinal(left.Group, right.Group);
+            return groupOrder != 0 ? groupOrder : left.SlotIndex.CompareTo(right.SlotIndex);
         });
         Touch(PlayerSectionKind.Settings);
     }

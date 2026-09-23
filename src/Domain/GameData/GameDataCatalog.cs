@@ -108,8 +108,12 @@ public sealed record ConsumableDefinition(
     bool IsContinuous = false,
     double CultivationMultiplier = 1,
     double GatheringMultiplier = 1,
-    double AlchemyMultiplier = 1)
+    double AlchemyMultiplier = 1,
+    IReadOnlyList<JsonElement>? Triggers = null)
 {
+    /// <summary>药品类消耗品分类键：战斗域药品栏仅接受本分类的即时消耗品。</summary>
+    public const string CategoryPill = "pill";
+
     /// <summary>获取该消耗品对指定行动类型的收益倍率；不适用类型恒为 1。</summary>
     /// <param name="kind">行动类型。</param>
     /// <returns>对应的收益倍率。</returns>
@@ -150,7 +154,8 @@ public sealed record ItemDefinition(
     string Description,
     bool IsTradable = true,
     double SellPrice = 0,
-    ConsumableDefinition? Consumable = null)
+    ConsumableDefinition? Consumable = null,
+    string Category = "general")
 {
 }
 
@@ -703,15 +708,25 @@ public sealed class GameDataCatalog
             var usableKinds = new HashSet<ActionKind>();
             foreach (var value in JsonRead.StringArray(consumableProperty, "usableInActionTypes"))
                 usableKinds.Add(ParseExplicitKind(value));
+            List<JsonElement>? triggers = null;
+            if (consumableProperty.TryGetProperty("triggers", out var triggersProperty)
+                && triggersProperty.ValueKind == JsonValueKind.Array)
+            {
+                triggers = [];
+                foreach (var trigger in triggersProperty.EnumerateArray()) triggers.Add(trigger.Clone());
+            }
             consumable = new ConsumableDefinition(
                 new ReadOnlySet<ActionKind>(usableKinds),
                 JsonRead.Number(consumableProperty, "durationSeconds"),
                 JsonRead.Boolean(consumableProperty, "isContinuous"),
                 JsonRead.Number(consumableProperty, "cultivationMultiplier", 1),
                 JsonRead.Number(consumableProperty, "gatheringMultiplier", 1),
-                JsonRead.Number(consumableProperty, "alchemyMultiplier", 1));
+                JsonRead.Number(consumableProperty, "alchemyMultiplier", 1),
+                triggers);
         }
-        return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable);
+        var category = entry.TryGetProperty("category", out var categoryProperty)
+            ? categoryProperty.GetString() ?? "general" : "general";
+        return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable, category);
     }
 
     /// <summary>解析消耗/产出等数量字典</summary>
@@ -895,7 +910,7 @@ public sealed class GameDataCatalog
                 JsonRead.Text(spawn, "enemyId", ""), JsonRead.Number(spawn, "weight", 1), JsonRead.Number(spawn, "strength", 1))).ToArray();
             foreach (var spawn in spawns)
                 if (!monsters.ContainsKey(spawn.EnemyId)) throw new DomainException(DomainErrorCode.NotFound, $"遭遇 {id} 引用了不存在的怪物 {spawn.EnemyId}。");
-            var searchSeconds = JsonRead.Number(value, "searchMilliseconds", 5_000) / 1_000d;
+            var searchSeconds = JsonRead.Number(value, "searchMilliseconds", 20_000) / 1_000d;
             var respawnSeconds = JsonRead.Number(value, "respawnMilliseconds", 5_000) / 1_000d;
             var playerRespawnSeconds = JsonRead.Number(value, "playerRespawnMilliseconds", 180_000) / 1_000d;
             var onPartyWipe = JsonRead.Text(value, "onPartyWipe", "respawn") switch
@@ -940,6 +955,10 @@ public sealed class GameDataCatalog
                     !double.IsFinite(consumable.GatheringMultiplier) || consumable.GatheringMultiplier <= 0 ||
                     !double.IsFinite(consumable.AlchemyMultiplier) || consumable.AlchemyMultiplier <= 0))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "物品定义无效。");
+            // 消耗品使用条件与技能共用同一套触发判定词表，装载期即拒绝词表外输入。
+            if (consumable?.Triggers is { Count: > 0 } triggers)
+                foreach (var trigger in triggers)
+                    Domain.Combat.SkillTriggerEvaluator.ValidateTrigger(trigger);
             if (!normalized.TryAdd(id, definition)) throw new DomainException(DomainErrorCode.Duplicate, $"重复物品定义：{id}。");
         }
         return new ReadOnlyDictionary<ItemId, ItemDefinition>(normalized);

@@ -80,16 +80,61 @@ public sealed class SkillTriggerEvaluatorTests
         Assert.False(SkillTriggerEvaluator.MatchesAll(
             [Trigger("self", "buff-stacks", "greater-than-equal", 3, "buff.war-song")],
             unit, null, peers, peers));
-        // is-active / is-inactive：有层数为 active，无 Buff 或无该 ID 为 inactive。
+        // buff-stacks 为数值类型：层数存在与否按大小等于表达（>=1 / equal 0）。
         Assert.True(SkillTriggerEvaluator.MatchesAll(
-            [Trigger("self", "buff-stacks", "is-active", 0, "buff.war-song")], unit, null, peers, peers));
+            [Trigger("self", "buff-stacks", "greater-than-equal", 1, "buff.war-song")], unit, null, peers, peers));
         Assert.True(SkillTriggerEvaluator.MatchesAll(
-            [Trigger("self", "buff-stacks", "is-inactive", 0, "buff.other")], unit, null, peers, peers));
-        // 控制类预留词表当前恒为 0 层：is-inactive 成立，is-active 不成立。
+            [Trigger("self", "buff-stacks", "equal", 0, "buff.other")], unit, null, peers, peers));
+        // 控制类预留词表为 Boolean 条件（当前恒为 0 层）：is-inactive 成立，is-active 不成立。
         Assert.True(SkillTriggerEvaluator.MatchesAll(
             [Trigger("self", "stun-status", "is-inactive", 0)], unit, null, peers, peers));
         Assert.False(SkillTriggerEvaluator.MatchesAll(
             [Trigger("self", "stun-status", "is-active", 0)], unit, null, peers, peers));
+    }
+
+    /// <summary>
+    /// 集合对象（友方/敌方）群体聚合条件：alive-count/dead-count 对集合求值，
+    /// 单体对象不得使用群体类型；集合对象不得使用单体状态条件（装载期矩阵校验）。
+    /// </summary>
+    [Fact]
+    public void SetDependenciesEvaluateGroupAggregatesAndEnforceScopeMatrix()
+    {
+        var player = CombatantStats.Create(1000, 100, 0, 1);
+        var enemy = CombatantStats.Create(400, 10, 0, 1);
+        var encounter = CombatEncounterState.Restore("set-dep", 3, new CombatantTemplate(player),
+            new CombatantSnapshot(1000, 0, 0, 0, 0), [new CombatantTemplate(enemy), new CombatantTemplate(enemy), new CombatantTemplate(enemy)],
+            [new CombatantSnapshot(200, 0, 0, 0, 0), new CombatantSnapshot(0, 0, 0, 0, 0), new CombatantSnapshot(300, 0, 0, 0, 0)],
+            0, CombatOutcome.Running);
+        var allies = (IReadOnlyList<CombatantState>)[encounter.Player];
+        var opponents = (IReadOnlyList<CombatantState>)encounter.Enemies;
+
+        // enemy 集合：存活 2、阵亡 1。
+        Assert.True(SkillTriggerEvaluator.MatchesAll(
+            [Trigger("enemy", "alive-count", "equal", 2)], encounter.Player, null, allies, opponents));
+        Assert.True(SkillTriggerEvaluator.MatchesAll(
+            [Trigger("enemy", "dead-count", "greater-than-equal", 1)], encounter.Player, null, allies, opponents));
+        Assert.False(SkillTriggerEvaluator.MatchesAll(
+            [Trigger("enemy", "alive-count", "less-than", 2)], encounter.Player, null, allies, opponents));
+        // ally 集合：仅玩家自身存活。
+        Assert.True(SkillTriggerEvaluator.MatchesAll(
+            [Trigger("ally", "alive-count", "equal", 1)], encounter.Player, null, allies, opponents));
+
+        // 作用域矩阵：单体对象不可用群体聚合类型；集合对象不可用单体状态类型。
+        Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("self", "alive-count", "equal", 1)));
+        Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("target-enemy", "dead-count", "equal", 1)));
+        Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("ally", "current-hp-percentage", "less-than-equal", 50)));
+        // Boolean 条件只接受是否比对；数值条件不接受是否比对。
+        Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("self", "stun-status", "equal", 1)));
+        Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTrigger(
+            Trigger("self", "buff-stacks", "is-active", 0, "buff.x")));
+        // 合法组合：单体数值 equal / 集合数值比对 / Boolean 是否。
+        SkillTriggerEvaluator.ValidateTrigger(Trigger("self", "current-hp", "equal", 100));
+        SkillTriggerEvaluator.ValidateTrigger(Trigger("enemy", "alive-count", "less-than-equal", 2));
+        SkillTriggerEvaluator.ValidateTrigger(Trigger("target-enemy", "stun-status", "is-inactive", 0));
     }
 
     /// <summary>
@@ -112,7 +157,7 @@ public sealed class SkillTriggerEvaluatorTests
             Trigger("self", "current-hp", "less-than-equal", -1)));
         // buff-stacks 必须显式声明 buffId。
         Assert.Throws<DomainException>(() => SkillTriggerEvaluator.ValidateTrigger(
-            Trigger("self", "buff-stacks", "is-active", 0)));
+            Trigger("self", "buff-stacks", "greater-than-equal", 1)));
 
         // 运行期兜底：词表外触发器一律判定失败，绝不抛异常打断模拟。
         Assert.False(SkillTriggerEvaluator.MatchesAll(
