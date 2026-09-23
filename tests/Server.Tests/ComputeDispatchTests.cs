@@ -130,6 +130,24 @@ public sealed class ComputeDispatchTests
         Assert.Throws<InvalidDataException>(() => ComputeSectionCodec.ToWire(unknown));
     }
 
+    /// <summary>
+    /// output_payload 摘要口径：完结任务只存 jobId/玩家/版本对/结局/指标/错误，
+    /// 不再整存含全量 base64 section 的 result JSON（存储放大 ~2.3 倍）。
+    /// </summary>
+    [Fact]
+    public void OutputSummaryRoundTripsWithoutSectionPayloads()
+    {
+        var summary = new ComputeJobOutputSummary(
+            Guid.NewGuid(), Guid.NewGuid(), 7, 8, ComputeApplyOutcome.Applied.ToString(),
+            new ComputeAdvanceMetrics(42, 3, 8, 1024, 512), null, null);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(summary, ServerJson.Options);
+        var decoded = JsonSerializer.Deserialize<ComputeJobOutputSummary>(bytes, ServerJson.Options);
+        Assert.Equal(summary, decoded);
+        // 摘要体量应远小于整份 result JSON，且不得携带 section 载荷字段。
+        Assert.True(bytes.Length < 1024);
+        Assert.DoesNotContain("\"sections\"", Encoding.UTF8.GetString(bytes), StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>节点回传 section 必须通过编码字节校验和才能还原为 SectionWrite。</summary>
     [Fact]
     public void ToSectionWriteValidatesEncodedChecksum()

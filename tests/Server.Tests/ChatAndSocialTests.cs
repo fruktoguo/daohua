@@ -13,6 +13,7 @@ namespace Server.Tests;
 /// 2. 聊天保留策略、好友双向关系流转、队伍邀请/接受/离开与队长移交（依赖 DAOHUA_MARKET_TEST_CONNECTION 指向的专用库）。
 /// 集成用例共享同一张 social.chat_messages，因此保留策略用例使用唯一 nearby 作用域，避免与其他用例互相干扰。
 /// </summary>
+[Collection("PostgresIntegration")]
 public sealed class ChatAndSocialTests
 {
     /// <summary>日志分组按事件码前缀分类：combat.* 归战斗，其余（含 duel.*）归系统。</summary>

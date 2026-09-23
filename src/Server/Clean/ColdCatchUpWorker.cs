@@ -1,8 +1,9 @@
 namespace Server.Clean;
 
 /// <summary>
-/// 冷挂机任务生产者：周期性从 game.player_projection 选出离线且仍有未结算进度的玩家，
-/// 从 section 存储读取最新有效状态（含 durable 队列叠加），编码为 compute.v1 任务请求入队。
+/// 冷挂机任务生产者：周期性从 game.player_projection JOIN game.player_state_heads 预筛
+/// 离线且提交头模拟欠债落在窗口内的玩家（last_simulated_at 过滤已前移进扫描 SQL），
+/// 只对入选候选做全量状态加载（含 durable 队列叠加），编码为 compute.v1 任务请求入队。
 /// 玩家上线或所有权租约生效期间自动跳过；同一玩家最多一个未完结任务由数据库唯一约束保证。
 /// </summary>
 public sealed class ColdCatchUpWorker(
@@ -68,7 +69,8 @@ public sealed class ColdCatchUpWorker(
 
             var now = DateTimeOffset.UtcNow;
             var from = bundle.Head.LastSimulatedAt;
-            // 距上次模拟不足最小步长则跳过：既给刚断线玩家宽限，也限制单玩家补算频率。
+            // 轻量复核：扫描 SQL 已按提交头 last_simulated_at 预筛，但叠加 durable 队列后的
+            // 有效头可能更新；距上次模拟不足最小步长则跳过（既给刚断线玩家宽限，也限制补算频率）。
             if (from >= now || now - from < options.ColdCatchUpMinIdle) return false;
             // 收益封顶 48 小时后只推进模拟时钟，无必要再派发任务。
             if (now - from > options.ColdCatchUpWindow) return false;

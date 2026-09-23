@@ -8,6 +8,7 @@ namespace Server.Tests;
 /// platform.compute_jobs 仓库级回归：入队去重、租约领取、完成/失败终态、
 /// SKIP LOCKED 并发语义与冷挂机候选筛选。依赖 DAOHUA_MARKET_TEST_CONNECTION 指向的专用库。
 /// </summary>
+[Collection("PostgresIntegration")]
 public sealed class ComputeJobRepositoryTests
 {
     private const int MaxAttempts = 3;
@@ -154,7 +155,7 @@ public sealed class ComputeJobRepositoryTests
             "SELECT status FROM platform.compute_jobs WHERE job_id = $1", fatal.JobId));
     }
 
-    /// <summary>HTTP 层失败的整批释放：同令牌 leased 行统一退回 pending，超上限进 dead。</summary>
+    /// <summary>HTTP 层失败的整批释放：同令牌指定 jobIds 的 leased 行退回 pending，超上限进 dead。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task ReleaseLeaseRequeuesWholeBatch()
@@ -168,13 +169,29 @@ public sealed class ComputeJobRepositoryTests
         Assert.Equal(2, claims.Count(entry => entry.PlayerId == first || entry.PlayerId == second));
         var token = Assert.Single(claims.Where(entry => entry.PlayerId == first || entry.PlayerId == second)
             .Select(entry => entry.LeaseToken).Distinct());
+        var jobIds = claims.Where(entry => entry.PlayerId == first || entry.PlayerId == second)
+            .Select(entry => entry.JobId).ToArray();
 
-        Assert.Equal(2, await jobs.ReleaseLeaseAsync(token, "连接重置",
+        Assert.Equal(2, await jobs.ReleaseLeaseAsync(token, jobIds, "连接重置",
             TimeSpan.FromMinutes(1), MaxAttempts));
         // 释放会清空租约字段并退回 pending；两条任务应可再次被领取。
         Assert.Equal(2, (long)(await ScalarAsync(source,
             "SELECT count(*) FROM platform.compute_jobs WHERE player_id IN ($1, $2) AND status = 'pending' AND lease_token IS NULL",
             first, second))!);
+
+        // 不在 jobIds 作用域内的行不被误放：重新领取后只释放其中一条。
+        // 释放已按各自 attempts 施加退避闸门，先拨回过去使两任务立即可再领取。
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET next_attempt_at = now() - interval '1 second' WHERE player_id IN ($1, $2)",
+            first, second);
+        var reclaims = await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1));
+        var scoped = Assert.Single(reclaims, entry => entry.PlayerId == first);
+        Assert.Equal(1, await jobs.ReleaseLeaseAsync(scoped.LeaseToken, [scoped.JobId], "部分释放",
+            TimeSpan.FromMinutes(1), MaxAttempts));
+        Assert.Equal("pending", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE player_id = $1", first));
+        Assert.Equal("leased", await ScalarAsync(source,
+            "SELECT status FROM platform.compute_jobs WHERE player_id = $1", second));
     }
 
     /// <summary>SKIP LOCKED：被其他事务持有的行被跳过，未被锁的行仍可领取。</summary>
@@ -204,7 +221,8 @@ public sealed class ComputeJobRepositoryTests
         await transaction.RollbackAsync();
     }
 
-    /// <summary>冷挂机扫描只筛出离线、在窗口内、过宽限且无未完结任务/存活租约的玩家。</summary>
+    /// <summary>冷挂机扫描只筛出离线、在窗口内、过宽限且无未完结任务/存活租约的玩家；
+    /// 模拟欠债窗口按提交头 last_simulated_at 判定（JOIN player_state_heads），投影活跃时间不替代。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task ScanColdPlayersFiltersPresenceWindowAndOpenJobs()
@@ -220,7 +238,10 @@ public sealed class ComputeJobRepositoryTests
         var tooFresh = await SeedPlayerAsync(source);
         var busy = await SeedPlayerAsync(source);
         var leased = await SeedPlayerAsync(source);
-        var seeded = new HashSet<Guid> { eligible, online, tooOld, tooFresh, busy, leased };
+        var headless = await SeedPlayerAsync(source);
+        var simTooOld = await SeedPlayerAsync(source);
+        var simTooFresh = await SeedPlayerAsync(source);
+        var seeded = new HashSet<Guid> { eligible, online, tooOld, tooFresh, busy, leased, headless, simTooOld, simTooFresh };
 
         await UpsertProjectionAsync(source, eligible, "offline", now.AddMinutes(-10));
         await UpsertProjectionAsync(source, online, "online", now.AddMinutes(-10));
@@ -228,6 +249,19 @@ public sealed class ComputeJobRepositoryTests
         await UpsertProjectionAsync(source, tooFresh, "offline", now.AddMinutes(-1));
         await UpsertProjectionAsync(source, busy, "offline", now.AddMinutes(-10));
         await UpsertProjectionAsync(source, leased, "offline", now.AddMinutes(-10));
+        await UpsertProjectionAsync(source, headless, "offline", now.AddMinutes(-10));
+        await UpsertProjectionAsync(source, simTooOld, "offline", now.AddMinutes(-10));
+        await UpsertProjectionAsync(source, simTooFresh, "offline", now.AddMinutes(-10));
+
+        // 提交头 last_simulated_at 才是补算窗口口径：simTooOld/simTooFresh 活跃投影在窗内但模拟时间出窗，必须被 SQL 排除。
+        await InsertHeadAsync(source, eligible, now.AddMinutes(-10));
+        await InsertHeadAsync(source, online, now.AddMinutes(-10));
+        await InsertHeadAsync(source, tooOld, now.AddHours(-60));
+        await InsertHeadAsync(source, tooFresh, now.AddMinutes(-10));
+        await InsertHeadAsync(source, busy, now.AddMinutes(-10));
+        await InsertHeadAsync(source, leased, now.AddMinutes(-10));
+        await InsertHeadAsync(source, simTooOld, now.AddHours(-60));
+        await InsertHeadAsync(source, simTooFresh, now.AddMinutes(-1));
 
         // busy 已有未完结任务；leased 仍被运行时实例持有。
         await jobs.EnqueueAsync(busy, now.AddMinutes(-1), new byte[] { 1 });
@@ -238,7 +272,21 @@ public sealed class ComputeJobRepositoryTests
         var candidates = await jobs.ScanColdPlayersAsync(minIdle, window, 64);
         var picked = candidates.Select(candidate => candidate.PlayerId).ToHashSet();
         Assert.Contains(eligible, picked);
+        Assert.Equal(now.AddMinutes(-10), Assert.Single(candidates, c => c.PlayerId == eligible).LastSimulatedAt, TimeSpan.FromSeconds(5));
         Assert.DoesNotContain(picked, id => seeded.Contains(id) && id != eligible);
+    }
+
+    /// <summary>领取索引口径：pending 到期与 leased 孤儿回收各自由部分索引服务，旧组合索引不再存在。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ComputeJobsClaimIndexesArePartial()
+    {
+        var (source, _) = await OpenRepositoryAsync();
+        var names = (string?)(await ScalarAsync(source,
+            "SELECT string_agg(indexname, ',' ORDER BY indexname) FROM pg_indexes WHERE schemaname = 'platform' AND tablename = 'compute_jobs'"))!;
+        Assert.Contains("ix_compute_jobs_pending_due", names);
+        Assert.Contains("ix_compute_jobs_lease_orphan", names);
+        Assert.DoesNotContain("ix_compute_jobs_ready", names);
     }
 
     private static async Task<(NpgsqlDataSource Source, PostgresComputeJobRepository Repository)> OpenRepositoryAsync()
@@ -268,6 +316,14 @@ public sealed class ComputeJobRepositoryTests
                 (player_id, realm_rank, current_node_id, presence, last_active_at, projection_version, updated_at)
             VALUES ($1, 0, 'node.test', $2, $3, 1, now())
             """, playerId, presence, lastActiveAt);
+
+    private static Task InsertHeadAsync(
+        NpgsqlDataSource source, Guid playerId, DateTimeOffset lastSimulatedAt) =>
+        SqlAsync(source, """
+            INSERT INTO game.player_state_heads
+                (player_id, state_version, schema_version, last_simulated_at, game_data_fingerprint, checksum, updated_at)
+            VALUES ($1, 1, 3, $2, 'fp.test', '0000000000000000000000000000000000000000000000000000000000000000', now())
+            """, playerId, lastSimulatedAt);
 
     private static async Task<long> CountRowsAsync(NpgsqlDataSource source, Guid playerId) =>
         (long)(await ScalarAsync(source,

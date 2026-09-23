@@ -318,7 +318,13 @@ public static class PostgresSchema
         updated_at timestamptz NOT NULL,
         created_at timestamptz NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS ix_compute_jobs_ready ON platform.compute_jobs(status, target_time);
+    -- 领取谓词（pending 到期 + leased 孤儿回收）拆为两个部分索引，与 ClaimDueAsync 分支一一对应；
+    -- 旧的 (status, target_time) 组合索引不再使用（内测库直建/重建，无迁移包袱）。
+    DROP INDEX IF EXISTS platform.ix_compute_jobs_ready;
+    CREATE INDEX IF NOT EXISTS ix_compute_jobs_pending_due
+        ON platform.compute_jobs(target_time) WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS ix_compute_jobs_lease_orphan
+        ON platform.compute_jobs(lease_until) WHERE status = 'leased';
     CREATE INDEX IF NOT EXISTS ix_compute_jobs_retention ON platform.compute_jobs(status, updated_at);
     -- 同一玩家最多一个未完结冷挂机任务：pending/leased 期间重复入队走 upsert/忽略，
     -- 防止同一玩家被并发派发到多个计算批次。

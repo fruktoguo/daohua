@@ -12,6 +12,7 @@ namespace Server.Tests;
 /// 市场持久化集成测试（PostgreSQL）：撮合成交税费、30 天过期退款、
 /// 事务原子性、幂等重放与 Serializable 并发竞争的端到端回归。
 /// </summary>
+[Collection("PostgresIntegration")]
 public sealed class MarketPersistenceTests
 {
     /// <summary>

@@ -1,7 +1,17 @@
 using Npgsql;
 using Server.Clean;
+using Xunit;
 
 namespace Server.Tests;
+
+/// <summary>
+/// 共享同一 PostgreSQL 库的集成测试集合：全部串行执行。
+/// 市场链路使用 Serializable 事务，任何并发写 platform.section_flush_queue / game.* 的
+/// 测试都会与其构成 SSI 谓词冲突（40001），进而触发 MarketRuntime 的就绪熔断；
+/// 统一收进本集合后跨类不再并行落库，各自仍共享同一 schema。
+/// </summary>
+[CollectionDefinition("PostgresIntegration")]
+public sealed class PostgresIntegrationCollection;
 
 /// <summary>
 /// 集成测试建库辅助。

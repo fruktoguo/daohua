@@ -9,6 +9,7 @@ namespace Server.Tests;
 /// 技能学习持久化集成测试（PostgreSQL）：扣减技能书与 loadout 分段入队必须在
 /// 同一经济事务中原子提交、幂等重放，任一侧失败整笔回滚。
 /// </summary>
+[Collection("PostgresIntegration")]
 public sealed class AbilityLearningPersistenceTests
 {
     /// <summary>扣款与习得分段同事务落库；重复提交幂等命中；分段外键失败时扣款与流水一并回滚。</summary>

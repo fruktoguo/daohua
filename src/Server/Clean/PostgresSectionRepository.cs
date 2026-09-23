@@ -472,11 +472,7 @@ public sealed class PostgresSectionRepository(
                     logger.LogError(ex, "写入玩家 section 批次失败 player={PlayerId} version={Version} sections={Sections}",
                         group.Key.PlayerId, group.Key.StateVersion, string.Join(',', items.Select(item => item.SectionKind)));
                 await using var releaseTransaction = await connection.BeginTransactionAsync(cancellationToken);
-                foreach (var item in items)
-                {
-                    await ReleaseClaimAsync(connection, releaseTransaction, item, ex.Message, cancellationToken);
-                }
-
+                await ReleaseClaimsAsync(connection, releaseTransaction, items, ex.Message, cancellationToken);
                 await releaseTransaction.CommitAsync(cancellationToken);
             }
         }
@@ -506,14 +502,47 @@ public sealed class PostgresSectionRepository(
         string gameDataFingerprint,
         CancellationToken cancellationToken = default)
     {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var outcome = await ApplyComputeResultInTransactionAsync(
+            connection, transaction, playerId, sourceStateVersion, targetStateVersion,
+            writes, lastSimulatedAt, gameDataFingerprint, cancellationToken);
+        if (outcome == ComputeApplyOutcome.Applied)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
+        else
+        {
+            // 未应用时事务内只有提交头行锁读，回滚释放即可；合并事务路径由调用方自行提交。
+            await transaction.RollbackAsync(cancellationToken);
+        }
+        return outcome;
+    }
+
+    /// <summary>
+    /// 在调用方事务内执行冷挂机结果落库：提交头行锁 + 版本 CAS + section 合批 upsert + 提交头更新。
+    /// 供 <see cref="ComputeDispatcherWorker"/> 把「section 写回 + compute_jobs 完结」并入同一事务；
+    /// 调用方负责提交或回滚，本方法只返回结局不触碰事务边界。
+    /// </summary>
+    internal async ValueTask<ComputeApplyOutcome> ApplyComputeResultInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid playerId,
+        long sourceStateVersion,
+        long targetStateVersion,
+        IReadOnlyList<SectionWrite> writes,
+        DateTimeOffset lastSimulatedAt,
+        string gameDataFingerprint,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(writes);
         if (writes.Count == 0 || targetStateVersion <= sourceStateVersion)
             throw new ArgumentException("计算结果版本与载荷无效。");
-        foreach (var write in writes) write.Validate();
+        // 同一 (player, kind) 重复出现时只保留首条，与旧逐条 upsert「先到者写入、同版本跳过」语义一致。
+        var deduped = writes.DistinctBy(write => (write.PlayerId, write.SectionKind)).ToArray();
+        foreach (var write in deduped) write.Validate();
 
         var now = DateTimeOffset.UtcNow;
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         long headVersion;
         await using (var headCommand = new NpgsqlCommand("""
             SELECT state_version FROM game.player_state_heads WHERE player_id = $1 FOR UPDATE
@@ -522,48 +551,18 @@ public sealed class PostgresSectionRepository(
             headCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
             var current = await headCommand.ExecuteScalarAsync(cancellationToken);
             if (current is not long version)
-            {
-                await transaction.RollbackAsync(cancellationToken);
                 return ComputeApplyOutcome.MissingPlayer;
-            }
             headVersion = version;
         }
         if (headVersion != sourceStateVersion)
-        {
-            await transaction.RollbackAsync(cancellationToken);
             return ComputeApplyOutcome.StaleVersion;
-        }
 
-        foreach (var write in writes)
+        var applied = await UpsertSectionsAsync(connection, transaction, deduped, cancellationToken);
+        // 仅当这次 UPSERT 真正写入了更新版本时才重建关系型行动队列（RETURNING 集合判定）。
+        foreach (var write in deduped)
         {
-            await using var command = new NpgsqlCommand("""
-                INSERT INTO game.player_state_sections
-                    (player_id, section_kind, section_version, schema_version, codec, payload,
-                     raw_bytes, stored_bytes, checksum, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                ON CONFLICT (player_id, section_kind) DO UPDATE SET
-                    section_version = EXCLUDED.section_version,
-                    schema_version = EXCLUDED.schema_version,
-                    codec = EXCLUDED.codec,
-                    payload = EXCLUDED.payload,
-                    raw_bytes = EXCLUDED.raw_bytes,
-                    stored_bytes = EXCLUDED.stored_bytes,
-                    checksum = EXCLUDED.checksum,
-                    updated_at = EXCLUDED.updated_at
-                WHERE EXCLUDED.section_version > game.player_state_sections.section_version
-                """, connection, transaction);
-            command.Parameters.Add(new NpgsqlParameter { Value = write.PlayerId });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.SectionKind });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.StateVersion });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.SchemaVersion });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.Codec });
-            command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = write.Payload });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.RawBytes });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.Payload.Length });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.Checksum });
-            command.Parameters.Add(new NpgsqlParameter { Value = write.UpdatedAt });
-            var sectionApplied = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
-            if (sectionApplied && write.SectionKind == PlayerSectionKinds.ActionQueue)
+            if (write.SectionKind == PlayerSectionKinds.ActionQueue
+                && applied.Contains((write.PlayerId, write.SectionKind)))
             {
                 await ApplyActionQueueAsync(connection, transaction,
                     new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
@@ -592,8 +591,141 @@ public sealed class PostgresSectionRepository(
             if (await headUpdate.ExecuteNonQueryAsync(cancellationToken) == 0)
                 throw new InvalidOperationException("计算结果落库时提交头发生并发漂移。");
         }
-        await transaction.CommitAsync(cancellationToken);
         return ComputeApplyOutcome.Applied;
+    }
+
+    /// <summary>
+    /// section 合批 upsert：unnest 数组单语句写入，ON CONFLICT 只接受更高版本；
+    /// RETURNING 精确回传真实写入的 (player_id, section_kind) 集合，保持逐 section applied 判定语义。
+    /// SELECT 内按 section_kind 固定行序，调用方必须先持提交头行锁（死锁约定）。
+    /// </summary>
+    private static async Task<HashSet<(Guid PlayerId, string SectionKind)>> UpsertSectionsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        IReadOnlyList<SectionWrite> writes,
+        CancellationToken cancellationToken)
+    {
+        var count = writes.Count;
+        var playerIds = new Guid[count];
+        var sectionKinds = new string[count];
+        var stateVersions = new long[count];
+        var schemaVersions = new int[count];
+        var codecs = new string[count];
+        var payloads = new byte[count][];
+        var rawBytes = new int[count];
+        var storedBytes = new int[count];
+        var checksums = new string[count];
+        var updatedAts = new DateTimeOffset[count];
+        for (var i = 0; i < count; i++)
+        {
+            var write = writes[i];
+            playerIds[i] = write.PlayerId;
+            sectionKinds[i] = write.SectionKind;
+            stateVersions[i] = write.StateVersion;
+            schemaVersions[i] = write.SchemaVersion;
+            codecs[i] = write.Codec;
+            payloads[i] = write.Payload.ToArray();
+            rawBytes[i] = write.RawBytes;
+            storedBytes[i] = write.Payload.Length;
+            checksums[i] = write.Checksum;
+            updatedAts[i] = write.UpdatedAt;
+        }
+        return await UpsertSectionsAsync(connection, transaction,
+            playerIds, sectionKinds, stateVersions, schemaVersions, codecs, payloads,
+            rawBytes, storedBytes, checksums, updatedAts, cancellationToken);
+    }
+
+    /// <inheritdoc cref="UpsertSectionsAsync(NpgsqlConnection, NpgsqlTransaction, IReadOnlyList{SectionWrite}, CancellationToken)"/>
+    private static async Task<HashSet<(Guid PlayerId, string SectionKind)>> UpsertSectionsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        IReadOnlyList<FlushQueueItem> items,
+        CancellationToken cancellationToken)
+    {
+        var count = items.Count;
+        var playerIds = new Guid[count];
+        var sectionKinds = new string[count];
+        var stateVersions = new long[count];
+        var schemaVersions = new int[count];
+        var codecs = new string[count];
+        var payloads = new byte[count][];
+        var rawBytes = new int[count];
+        var storedBytes = new int[count];
+        var checksums = new string[count];
+        var updatedAts = new DateTimeOffset[count];
+        for (var i = 0; i < count; i++)
+        {
+            var item = items[i];
+            playerIds[i] = item.PlayerId;
+            sectionKinds[i] = item.SectionKind;
+            stateVersions[i] = item.StateVersion;
+            schemaVersions[i] = item.SchemaVersion;
+            codecs[i] = item.Codec;
+            payloads[i] = item.Payload;
+            rawBytes[i] = item.RawBytes;
+            storedBytes[i] = item.Payload.Length;
+            checksums[i] = item.Checksum;
+            updatedAts[i] = item.UpdatedAt;
+        }
+        return await UpsertSectionsAsync(connection, transaction,
+            playerIds, sectionKinds, stateVersions, schemaVersions, codecs, payloads,
+            rawBytes, storedBytes, checksums, updatedAts, cancellationToken);
+    }
+
+    private static async Task<HashSet<(Guid PlayerId, string SectionKind)>> UpsertSectionsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid[] playerIds,
+        string[] sectionKinds,
+        long[] stateVersions,
+        int[] schemaVersions,
+        string[] codecs,
+        byte[][] payloads,
+        int[] rawBytes,
+        int[] storedBytes,
+        string[] checksums,
+        DateTimeOffset[] updatedAts,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            INSERT INTO game.player_state_sections
+                (player_id, section_kind, section_version, schema_version, codec, payload,
+                 raw_bytes, stored_bytes, checksum, updated_at)
+            SELECT t.player_id, t.section_kind, t.section_version, t.schema_version, t.codec, t.payload,
+                   t.raw_bytes, t.stored_bytes, t.checksum, t.updated_at
+            FROM unnest($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                AS t(player_id, section_kind, section_version, schema_version, codec, payload,
+                     raw_bytes, stored_bytes, checksum, updated_at)
+            ORDER BY t.section_kind
+            ON CONFLICT (player_id, section_kind) DO UPDATE SET
+                section_version = EXCLUDED.section_version,
+                schema_version = EXCLUDED.schema_version,
+                codec = EXCLUDED.codec,
+                payload = EXCLUDED.payload,
+                raw_bytes = EXCLUDED.raw_bytes,
+                stored_bytes = EXCLUDED.stored_bytes,
+                checksum = EXCLUDED.checksum,
+                updated_at = EXCLUDED.updated_at
+            WHERE EXCLUDED.section_version > game.player_state_sections.section_version
+            RETURNING player_id, section_kind
+            """, connection, transaction);
+        command.Parameters.Add(new NpgsqlParameter { Value = playerIds });
+        command.Parameters.Add(new NpgsqlParameter { Value = sectionKinds });
+        command.Parameters.Add(new NpgsqlParameter { Value = stateVersions });
+        command.Parameters.Add(new NpgsqlParameter { Value = schemaVersions });
+        command.Parameters.Add(new NpgsqlParameter { Value = codecs });
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bytea, Value = payloads });
+        command.Parameters.Add(new NpgsqlParameter { Value = rawBytes });
+        command.Parameters.Add(new NpgsqlParameter { Value = storedBytes });
+        command.Parameters.Add(new NpgsqlParameter { Value = checksums });
+        command.Parameters.Add(new NpgsqlParameter { Value = updatedAts });
+        var applied = new HashSet<(Guid, string)>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            applied.Add((reader.GetGuid(0), reader.GetString(1)));
+        }
+        return applied;
     }
 
     private static async Task ApplyBatchAsync(
@@ -615,49 +747,26 @@ public sealed class PostgresSectionRepository(
             await headLock.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var applied = new List<FlushQueueItem>(items.Count);
         foreach (var item in items)
         {
             if (item.PlayerId != first.PlayerId || item.StateVersion != first.StateVersion)
                 throw new InvalidDataException("section 批次必须属于同一玩家和状态版本。");
             ValidateQueueItem(item);
-            await using var command = new NpgsqlCommand("""
-            INSERT INTO game.player_state_sections
-                (player_id, section_kind, section_version, schema_version, codec, payload,
-                 raw_bytes, stored_bytes, checksum, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (player_id, section_kind) DO UPDATE SET
-                section_version = EXCLUDED.section_version,
-                schema_version = EXCLUDED.schema_version,
-                codec = EXCLUDED.codec,
-                payload = EXCLUDED.payload,
-                raw_bytes = EXCLUDED.raw_bytes,
-                stored_bytes = EXCLUDED.stored_bytes,
-                checksum = EXCLUDED.checksum,
-                updated_at = EXCLUDED.updated_at
-            WHERE EXCLUDED.section_version > game.player_state_sections.section_version
-            """, connection, transaction);
-            command.Parameters.Add(new NpgsqlParameter { Value = item.PlayerId });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.SectionKind });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.StateVersion });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.SchemaVersion });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.Codec });
-            command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = item.Payload });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.RawBytes });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.Payload.Length });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.Checksum });
-            command.Parameters.Add(new NpgsqlParameter { Value = item.UpdatedAt });
-            var sectionApplied = await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+        }
 
-            if (sectionApplied)
+        // 合批 upsert 单语句落库；RETURNING 精确给出真正写入的 (player, kind) 集合，
+        // 保持「逐 section affected-rows → applied」判定语义不变。
+        var appliedKeys = await UpsertSectionsAsync(connection, transaction, items, cancellationToken);
+        var applied = new List<FlushQueueItem>(appliedKeys.Count);
+        foreach (var item in items)
+        {
+            if (!appliedKeys.Contains((item.PlayerId, item.SectionKind))) continue;
+            applied.Add(item);
+            // 仅当这次 UPSERT 真正写入了更新版本时才重建关系型行动队列。
+            // PostgreSQL 的 ON CONFLICT ... WHERE 对旧版本不回行，不能让旧载荷删除新队列。
+            if (item.SectionKind == PlayerSectionKinds.ActionQueue)
             {
-                applied.Add(item);
-                // 仅当这次 UPSERT 真正写入了更新版本时才重建关系型行动队列。
-                // PostgreSQL 的 ON CONFLICT ... WHERE 对旧版本返回 0，不能让旧载荷删除新队列。
-                if (item.SectionKind == PlayerSectionKinds.ActionQueue)
-                {
-                    await ApplyActionQueueAsync(connection, transaction, ToStoredSection(item), cancellationToken);
-                }
+                await ApplyActionQueueAsync(connection, transaction, ToStoredSection(item), cancellationToken);
             }
         }
 
@@ -754,17 +863,29 @@ public sealed class PostgresSectionRepository(
         // 读模型投影与真源提交同事务顺带维护；不参与一致性判定，可随时从 section 重建。
         await UpsertProjectionAsync(connection, transaction, first.PlayerId, applied, now, cancellationToken);
 
-        foreach (var item in items)
+        // 已落盘队列行单语句删除；逐行 (kind, state_version, lease_token) 谓词语义不变。
+        var deleteKinds = new string[items.Count];
+        var deleteVersions = new long[items.Count];
+        var deleteTokens = new Guid[items.Count];
+        for (var i = 0; i < items.Count; i++)
         {
-            await using var delete = new NpgsqlCommand("""
-                DELETE FROM platform.section_flush_queue
-                WHERE player_id = $1 AND section_kind = $2
-                  AND state_version <= $3 AND lease_token = $4
-                """, connection, transaction);
-            delete.Parameters.Add(new NpgsqlParameter { Value = item.PlayerId });
-            delete.Parameters.Add(new NpgsqlParameter { Value = item.SectionKind });
-            delete.Parameters.Add(new NpgsqlParameter { Value = item.StateVersion });
-            delete.Parameters.Add(new NpgsqlParameter { Value = item.LeaseToken });
+            deleteKinds[i] = items[i].SectionKind;
+            deleteVersions[i] = items[i].StateVersion;
+            deleteTokens[i] = items[i].LeaseToken;
+        }
+        await using (var delete = new NpgsqlCommand("""
+            DELETE FROM platform.section_flush_queue AS q
+            USING (SELECT * FROM unnest($1, $2, $3)) AS t(section_kind, state_version, lease_token)
+            WHERE q.player_id = $4
+              AND q.section_kind = t.section_kind
+              AND q.state_version <= t.state_version
+              AND q.lease_token = t.lease_token
+            """, connection, transaction))
+        {
+            delete.Parameters.Add(new NpgsqlParameter { Value = deleteKinds });
+            delete.Parameters.Add(new NpgsqlParameter { Value = deleteVersions });
+            delete.Parameters.Add(new NpgsqlParameter { Value = deleteTokens });
+            delete.Parameters.Add(new NpgsqlParameter { Value = first.PlayerId });
             await delete.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -834,23 +955,40 @@ public sealed class PostgresSectionRepository(
             delete.Parameters.Add(new NpgsqlParameter { Value = stored.PlayerId });
             await delete.ExecuteNonQueryAsync(cancellationToken);
         }
+        if (actions.Count == 0) return;
 
-        for (var slot = 0; slot < actions.Count; slot++)
+        // 关系型行动队列整批重建：DELETE 之后一条 unnest INSERT 落齐全部槽位。
+        var count = actions.Count;
+        var slots = new short[count];
+        var actionIds = new string[count];
+        var actionPayloads = new byte[count][];
+        var statuses = new string[count];
+        var idempotencyKeys = new string[count];
+        for (var slot = 0; slot < count; slot++)
         {
             var action = actions[slot];
-            await using var insert = new NpgsqlCommand("""
-                INSERT INTO game.player_action_queue
-                    (player_id, slot, action_id, action_payload, action_version, status, next_due_at, idempotency_key, updated_at)
-                VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8)
-                """, connection, transaction);
+            slots[slot] = (short)slot;
+            actionIds[slot] = action.Intent.ActionId.Value;
+            actionPayloads[slot] = JsonSerializer.SerializeToUtf8Bytes(action.Intent, ServerJson.Options);
+            statuses[slot] = action.Status.ToString().ToLowerInvariant();
+            idempotencyKeys[slot] = $"action:{action.Id:D}";
+        }
+        await using (var insert = new NpgsqlCommand("""
+            INSERT INTO game.player_action_queue
+                (player_id, slot, action_id, action_payload, action_version, status, next_due_at, idempotency_key, updated_at)
+            SELECT $1, t.slot, t.action_id, t.action_payload, $2, t.status, NULL, t.idempotency_key, $3
+            FROM unnest($4, $5, $6, $7, $8)
+                AS t(slot, action_id, action_payload, status, idempotency_key)
+            """, connection, transaction))
+        {
             insert.Parameters.Add(new NpgsqlParameter { Value = stored.PlayerId });
-            insert.Parameters.Add(new NpgsqlParameter { Value = slot });
-            insert.Parameters.Add(new NpgsqlParameter { Value = action.Intent.ActionId.Value });
-            insert.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bytea, Value = JsonSerializer.SerializeToUtf8Bytes(action.Intent, ServerJson.Options) });
             insert.Parameters.Add(new NpgsqlParameter { Value = stored.StateVersion });
-            insert.Parameters.Add(new NpgsqlParameter { Value = action.Status.ToString().ToLowerInvariant() });
-            insert.Parameters.Add(new NpgsqlParameter { Value = $"action:{action.Id:D}" });
             insert.Parameters.Add(new NpgsqlParameter { Value = stored.UpdatedAt });
+            insert.Parameters.Add(new NpgsqlParameter { Value = slots });
+            insert.Parameters.Add(new NpgsqlParameter { Value = actionIds });
+            insert.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bytea, Value = actionPayloads });
+            insert.Parameters.Add(new NpgsqlParameter { Value = statuses });
+            insert.Parameters.Add(new NpgsqlParameter { Value = idempotencyKeys });
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -958,27 +1096,38 @@ public sealed class PostgresSectionRepository(
         };
     }
 
-    private static async Task ReleaseClaimAsync(
+    /// <summary>整组释放 flush 队列租约：逐行 attempts+1 并按其旧值算指数退避，unnest 单语句合批。</summary>
+    private static async Task ReleaseClaimsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        FlushQueueItem item,
+        IReadOnlyList<FlushQueueItem> items,
         string error,
         CancellationToken cancellationToken)
     {
+        var playerIds = new Guid[items.Count];
+        var sectionKinds = new string[items.Count];
+        var leaseTokens = new Guid[items.Count];
+        for (var i = 0; i < items.Count; i++)
+        {
+            playerIds[i] = items[i].PlayerId;
+            sectionKinds[i] = items[i].SectionKind;
+            leaseTokens[i] = items[i].LeaseToken;
+        }
         await using var command = new NpgsqlCommand("""
-            UPDATE platform.section_flush_queue
-            SET attempts = attempts + 1,
-                next_attempt_at = now() + LEAST((2 ^ LEAST(attempts + 1, 8)) * interval '1 second', interval '5 minutes'),
+            UPDATE platform.section_flush_queue AS q
+            SET attempts = q.attempts + 1,
+                next_attempt_at = now() + LEAST((2 ^ LEAST(q.attempts + 1, 8)) * interval '1 second', interval '5 minutes'),
                 lease_until = NULL,
                 lease_token = NULL,
                 last_error = left($1, 512),
                 updated_at = now()
-            WHERE player_id = $2 AND section_kind = $3 AND lease_token = $4
+            FROM (SELECT * FROM unnest($2, $3, $4)) AS t(player_id, section_kind, lease_token)
+            WHERE q.player_id = t.player_id AND q.section_kind = t.section_kind AND q.lease_token = t.lease_token
             """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = error });
-        command.Parameters.Add(new NpgsqlParameter { Value = item.PlayerId });
-        command.Parameters.Add(new NpgsqlParameter { Value = item.SectionKind });
-        command.Parameters.Add(new NpgsqlParameter { Value = item.LeaseToken });
+        command.Parameters.Add(new NpgsqlParameter { Value = playerIds });
+        command.Parameters.Add(new NpgsqlParameter { Value = sectionKinds });
+        command.Parameters.Add(new NpgsqlParameter { Value = leaseTokens });
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
