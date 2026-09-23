@@ -528,7 +528,8 @@ export function decodeEnvelope(input: ArrayBuffer | Uint8Array): WireEnvelope {
   const rawType = view.getUint8(6)
   const rawCodec = view.getUint8(7)
   if (!isWireMessageType(rawType) || !isWireCodec(rawCodec)) throw new Error('协议消息类型或编码无效。')
-  const requestBytes = bytes.slice(8, 24)
+  // subarray 视图零拷贝：dotnetBytesToUuid 只读消费，WS 每帧独立 ArrayBuffer 无共享写风险。
+  const requestBytes = bytes.subarray(8, 24)
   const requestId = dotnetBytesToUuid(requestBytes)
   if (/^0{8}-0{4}-0{4}-0{4}-0{12}$/.test(requestId)) throw new Error('协议请求 ID 不能为空。')
   const sequenceBig = view.getBigInt64(24, false)
@@ -544,7 +545,8 @@ export function decodeEnvelope(input: ArrayBuffer | Uint8Array): WireEnvelope {
     requestId,
     sequence,
     codec: rawCodec,
-    payload: bytes.slice(WIRE_HEADER_BYTES),
+    // subarray 视图零拷贝：下游仅 decodeJsonPayload → TextDecoder.decode 只读消费。
+    payload: bytes.subarray(WIRE_HEADER_BYTES),
   }
 }
 

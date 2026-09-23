@@ -40,6 +40,20 @@ import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerS
 
 type JsonObject = Record<string, unknown>
 
+declare global {
+  interface Uint8ArrayConstructor {
+    /**
+     * ES2025 `Uint8Array.fromBase64` 最小声明：tsconfig lib 固定 ES2022 未收录该 API。
+     * 浏览器 Baseline 已可用；Node 契约门禁（ssrLoadModule）等旧 V8 运行时可能缺失，
+     * 故声明为可选并做运行时探测回退。
+     */
+    fromBase64?(base64: string, options?: {
+      alphabet?: 'base64' | 'base64url'
+      lastChunkHandling?: 'loose' | 'strict' | 'stop-before-partial'
+    }): Uint8Array
+  }
+}
+
 const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
 /** 全量快照必须齐备的分段清单；缺任何一段说明服务端快照残缺，整包拒绝 */
 const REQUIRED_SNAPSHOT_SECTIONS = ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue', 'duel'] as const
@@ -106,9 +120,15 @@ function identifierValue(value: unknown, name = '标识'): string {
   return result
 }
 
+/** 模块级共享文本解码器：分段解码高频触发，避免每段新建 TextDecoder 的微分配。 */
+const sectionTextDecoder = new TextDecoder()
+
 function base64ToBytes(value: string): Uint8Array {
   const normalized = value.replaceAll('-', '+').replaceAll('_', '/')
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+  // 优先走 ES2025 原生 Uint8Array.fromBase64（无中间 binary string 分配）；
+  // 缺失该 API 的运行时（如契约门禁的 Node 旧 V8）回退 atob + 逐字节拷贝，解码语义一致。
+  if (Uint8Array.fromBase64) return Uint8Array.fromBase64(padded)
   const binary = atob(padded)
   const bytes = new Uint8Array(binary.length)
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
@@ -129,7 +149,7 @@ async function decodeSectionPayload(section: PlayerSectionDto): Promise<unknown>
   const digest = await crypto.subtle.digest('SHA-256', raw.slice().buffer as ArrayBuffer)
   const checksum = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
   if (checksum !== section.checksum.toLowerCase()) throw new Error(`section ${section.section} 校验和不匹配。`)
-  const text = new TextDecoder().decode(raw)
+  const text = sectionTextDecoder.decode(raw)
   return JSON.parse(text) as unknown
 }
 
