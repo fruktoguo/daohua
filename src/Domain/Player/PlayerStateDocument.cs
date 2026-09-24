@@ -92,11 +92,16 @@ public sealed record QueuedActionState(
 public sealed partial class PlayerAggregate
 {
     private ActiveBuff[]? _cachedBuffs;
+    private long _cachedBuffsVersion = -1;
     private InstanceId[]? _cachedEquippedInstances;
     private AbilityId[]? _cachedLearnedAbilities;
     private ItemId[]? _cachedEquippedItemIds;
+    private long _cachedEquippedItemIdsVersion = -1;
     private AutoUseSlotState[]? _cachedAutoUseSlots;
     private PlayerSettingsStateDocument? _cachedSettingsDoc;
+    private PlayerDuelStateDocument? _cachedDuelDocument;
+    private long _cachedDuelRevision = -1;
+    private PlayerBattleReport? _cachedDuelCurrentReport;
 
     /// <summary>
     /// 将当前可变领域聚合导出为不可变的纯数据快照文档。
@@ -153,30 +158,61 @@ public sealed partial class PlayerAggregate
         report.Cycles, report.Encounters, report.NormalKills, report.EliteKills, report.BossKills,
         report.Deaths, report.DayIndex);
 
-    private PlayerDuelStateDocument ExportDuel() => new(
-        Duel.EncounterCharges,
-        Duel.CooldownUntilUnixSeconds,
-        Duel.ActiveDuelId,
-        Duel.StagedItems.ToArray(),
-        Duel.CurrentReport is null ? null : ExportReport(Duel.CurrentReport),
-        Duel.Reports.Select(ExportReport).ToArray(),
-        Duel.ActionReports.Values.Select(ExportReport).ToArray(),
-        ExportReport(Duel.OfflineReport),
-        ExportReport(Duel.DailyReport));
+    /// <summary>
+    /// 斗法分段导出：三级短路——①结构修订号（计数/冷却/进行中斗法/集合增删/账本换引用）
+    /// ②队首行动账本对象引用 ③逐账本 ExportDirty 扫描；全部命中时直接复用上轮文档。
+    /// 重建时未脏账本按位复用其已登记文档，保证导出字节与全量重建逐位一致。
+    /// </summary>
+    private PlayerDuelStateDocument ExportDuel()
+    {
+        var current = Duel.CurrentReport;
+        if (_cachedDuelDocument is { } cached
+            && _cachedDuelRevision == Duel.ExportRevision
+            && ReferenceEquals(_cachedDuelCurrentReport, current)
+            && !AnyDuelReportDirty())
+            return cached;
+        var document = new PlayerDuelStateDocument(
+            Duel.EncounterCharges,
+            Duel.CooldownUntilUnixSeconds,
+            Duel.ActiveDuelId,
+            Duel.StagedItems.ToArray(),
+            current is null ? null : ExportReportCached(current),
+            ExportReportSequence(Duel.Reports),
+            ExportReportSequence(Duel.ActionReports.Values),
+            ExportReportCached(Duel.OfflineReport),
+            ExportReportCached(Duel.DailyReport));
+        _cachedDuelDocument = document;
+        _cachedDuelRevision = Duel.ExportRevision;
+        _cachedDuelCurrentReport = current;
+        return document;
+    }
+
+    /// <summary>逐账本导出：未脏账本复用已登记文档；记账路径仅令被写账本重建。</summary>
+    private static PlayerBattleReportDocument ExportReportCached(PlayerBattleReport report)
+        => !report.ExportDirty && report.ExportedDocument is { } cached ? cached : report.CacheExported(ExportReport(report));
+
+    /// <summary>按原枚举顺序逐账本导出（插入序/归档序保持逐位一致）。</summary>
+    private static PlayerBattleReportDocument[] ExportReportSequence(IEnumerable<PlayerBattleReport> reports)
+        => reports.Select(ExportReportCached).ToArray();
+
+    /// <summary>扫描全部账本脏标记；数量上界 ~3+Reports+ActionReports，远低于重建开销。</summary>
+    private bool AnyDuelReportDirty()
+    {
+        if (Duel.OfflineReport.ExportDirty || Duel.DailyReport.ExportDirty) return true;
+        for (var i = 0; i < Duel.Reports.Count; i++)
+            if (Duel.Reports[i].ExportDirty) return true;
+        foreach (var pair in Duel.ActionReports)
+            if (pair.Value.ExportDirty) return true;
+        return false;
+    }
 
     private ActiveBuff[] GetCachedBuffs()
     {
         if (Buffs.Active.Count == 0) return [];
-        if (_cachedBuffs is not null && _cachedBuffs.Length == Buffs.Active.Count)
-        {
-            var same = true;
-            for (var i = 0; i < _cachedBuffs.Length; i++)
-            {
-                if (_cachedBuffs[i] != Buffs.Active[i]) { same = false; break; }
-            }
-            if (same) return _cachedBuffs;
-        }
-        return _cachedBuffs = Buffs.Active.ToArray();
+        if (_cachedBuffs is not null && _cachedBuffsVersion == Buffs.Active.Version) return _cachedBuffs;
+        _cachedBuffs = Buffs.Active.ToArray();
+        _cachedBuffsVersion = Buffs.Active.Version;
+        return _cachedBuffs;
     }
 
     private InstanceId[] GetCachedEquippedInstances()
@@ -212,16 +248,11 @@ public sealed partial class PlayerAggregate
     private ItemId[] GetCachedEquippedItemIds()
     {
         if (Loadout.EquippedItemIds.Count == 0) return [];
-        if (_cachedEquippedItemIds is not null && _cachedEquippedItemIds.Length == Loadout.EquippedItemIds.Count)
-        {
-            var same = true;
-            for (var i = 0; i < _cachedEquippedItemIds.Length; i++)
-            {
-                if (_cachedEquippedItemIds[i] != Loadout.EquippedItemIds[i]) { same = false; break; }
-            }
-            if (same) return _cachedEquippedItemIds;
-        }
-        return _cachedEquippedItemIds = Loadout.EquippedItemIds.ToArray();
+        if (_cachedEquippedItemIds is not null && _cachedEquippedItemIdsVersion == Loadout.EquippedItemIds.Version)
+            return _cachedEquippedItemIds;
+        _cachedEquippedItemIds = Loadout.EquippedItemIds.ToArray();
+        _cachedEquippedItemIdsVersion = Loadout.EquippedItemIds.Version;
+        return _cachedEquippedItemIds;
     }
 
     private PlayerSettingsStateDocument GetCachedSettings()
@@ -416,7 +447,9 @@ public sealed partial class PlayerAggregate
             };
             aggregate._actions.Add(action);
         }
+        // 恢复出的聚合视为持久化基线：待刷盘脏集合与触及流水号一并清零，不携带恢复过程的标脏痕迹。
         aggregate._dirtySections.Clear();
+        aggregate._dirtyMarks.Clear();
         return aggregate;
     }
 
@@ -481,7 +514,9 @@ public sealed partial class PlayerAggregate
         _actions.Clear();
         for (var i = 0; i < restored._actions.Count; i++)
             _actions.Add(restored._actions[i].Clone());
+        // 事务回滚/权威覆盖重置待刷盘脏集合与触及流水号：回滚点之后的标脏视为未发生。
         _dirtySections.Clear();
+        _dirtyMarks.Clear();
         _sectionVersion = restored._sectionVersion;
     }
 

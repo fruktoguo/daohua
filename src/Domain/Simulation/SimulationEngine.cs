@@ -259,7 +259,12 @@ public static class SimulationEngine
             // 跳过 48 小时上限外的尾段时间：清理过期增益并把时钟推进到真实目标，不结算收益。
             var expired = player.Buffs.Active.RemoveAll(buff => buff.ExpiresAtUnixSeconds <= target.ToUnixTimeMilliseconds() / 1000d);
             if (expired > 0) { player.MarkDirty(PlayerSectionKind.Buffs); changed = true; }
-            player.Combat.Skills = PlayerCombatSkillState.Empty;
+            if (player.Combat.Skills != PlayerCombatSkillState.Empty)
+            {
+                // 超上限丢弃技能时钟会改变 combat 分段内容：必须标脏，保证增量推送与刷盘不漏。
+                player.Combat.Skills = PlayerCombatSkillState.Empty;
+                player.MarkDirty(PlayerSectionKind.Combat);
+            }
             player.LastSimulatedAt = target;
             changed = true;
             events.Add(new SimulationEvent(target, "offline.capped", "离线补算达到 48 小时上限，超出部分未累积收益。", null));
@@ -554,6 +559,9 @@ public static class SimulationEngine
         if (player.Actions.Count > 0 && player.Actions[0].Status == ActionQueueStatus.Pending)
         {
             player.Actions[0].Status = ActionQueueStatus.Running;
+            // transitions==0（零耗时推进或本轮未完成任何转移）时此处是队首状态唯一变更点，
+            // 必须补标 ActionQueue，保证增量触及差集与刷盘不漏状态翻转。
+            if (transitions == 0) player.MarkDirty(PlayerSectionKind.ActionQueue);
         }
         // 空队列只更新内存中的时钟，不递增状态版本，也不标记 section，避免每秒产生无意义的磁盘写入。
         if (transitions > 0)
@@ -1973,7 +1981,7 @@ public static class SimulationEngine
     }
 
     /// <summary>战外 Buff 层数合计：注入战斗单位 ExternalBuffStacks 的求值体，无 LINQ 分配。</summary>
-    private static double SumActiveBuffStacks(List<ActiveBuff> actives, string? buffId)
+    private static double SumActiveBuffStacks(VersionedList<ActiveBuff> actives, string? buffId)
     {
         var total = 0d;
         for (var i = 0; i < actives.Count; i++)

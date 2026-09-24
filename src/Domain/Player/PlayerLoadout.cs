@@ -81,21 +81,50 @@ public sealed record PlayerLoadoutDocument(
 /// <summary>装配分段运行时状态（六维根骨、功法槽位、装备与技能经验）。</summary>
 public sealed partial class PlayerLoadoutState
 {
-    /// <summary>六维根骨经验；等级由立方曲线导出。</summary>
-    public PlayerCoreAttributes CoreAttributes { get; internal set; } = new();
-    /// <summary>功法装配槽位（至多 4 槽，槽位可空）。</summary>
-    public List<PlayerAbilitySlot> AbilitySlots { get; } = [];
-    /// <summary>已穿戴装备槽位列表。</summary>
-    public List<PlayerEquipmentSlot> Equipment { get; } = [];
-    /// <summary>已习得技能的累计经验，键为 ability ID；等级由 AbilityExpCurve 导出。</summary>
-    public Dictionary<AbilityId, double> AbilityExperiences { get; } = [];
+    private PlayerCoreAttributes _coreAttributes = new();
+    private PlayerLoadoutDocument? _exportedDocument;
+    private long _exportedRevision = -1;
 
-    /// <summary>导出可持久化装配文档；触发条件 JSON 做防御性深拷贝。</summary>
+    /// <summary>六维根骨经验；等级由立方曲线导出；写入递增版本号（属性解析与装配导出共用输入）。</summary>
+    public PlayerCoreAttributes CoreAttributes
+    {
+        get => _coreAttributes;
+        internal set
+        {
+            if (_coreAttributes == value) return;
+            _coreAttributes = value;
+            CoreAttributesVersion = checked(CoreAttributesVersion + 1);
+        }
+    }
+
+    /// <summary>六维经验修订号：属性解析与装配导出的共同输入，写入即单调递增。</summary>
+    internal long CoreAttributesVersion { get; private set; }
+
+    /// <summary>功法装配槽位（至多 4 槽，槽位可空）；写入递增版本号供导出缓存失效检测。</summary>
+    public VersionedList<PlayerAbilitySlot> AbilitySlots { get; } = new();
+    /// <summary>已穿戴装备槽位列表；写入递增版本号（属性解析与装配导出共用输入）。</summary>
+    public VersionedList<PlayerEquipmentSlot> Equipment { get; } = new();
+    /// <summary>已习得技能的累计经验，键为 ability ID；等级由 AbilityExpCurve 导出；写入递增版本号。</summary>
+    public VersionedDictionary<AbilityId, double> AbilityExperiences { get; } = new();
+
+    /// <summary>装配文档导出修订号：槽位/装备/技能经验/六维任一写入严格增大。</summary>
+    internal long ExportRevision =>
+        AbilitySlots.Version + Equipment.Version + AbilityExperiences.Version + CoreAttributesVersion;
+
+    /// <summary>导出可持久化装配文档；触发条件 JSON 做防御性深拷贝。
+    /// 修订号未变时直接复用上轮文档（位级一致），仅在装配变更时才重新克隆触发器与字典。</summary>
     /// <returns>装配分段快照文档。</returns>
-    internal PlayerLoadoutDocument Export() => new(CoreAttributes,
-        AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }).ToArray(),
-        Equipment.ToArray(),
-        AbilityExperiences.Count == 0 ? null : AbilityExperiences.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal));
+    internal PlayerLoadoutDocument Export()
+    {
+        if (_exportedDocument is { } cached && _exportedRevision == ExportRevision) return cached;
+        var document = new PlayerLoadoutDocument(CoreAttributes,
+            AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }).ToArray(),
+            Equipment.ToArray(),
+            AbilityExperiences.Count == 0 ? null : AbilityExperiences.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal));
+        _exportedDocument = document;
+        _exportedRevision = ExportRevision;
+        return document;
+    }
 
     /// <summary>从持久化文档恢复装配状态；结构与数值不满足不变量时抛出 InvalidArgument。</summary>
     /// <param name="document">装配快照文档。</param>

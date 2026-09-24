@@ -130,6 +130,23 @@ public sealed class PlayerBattleReport
         || NormalKills > 0 || EliteKills > 0 || BossKills > 0 || Deaths > 0
         || DuelWins > 0 || DuelLosses > 0;
 
+    /// <summary>
+    /// 导出脏标记：账本字段只允许经 RecordStats/归档/重置/建账等聚合记账路径写入，
+    /// 写入路径负责置位本标记；斗法分段导出凭此仅重建被写账本的文档，干净账本直接复用。
+    /// </summary>
+    internal bool ExportDirty { get; private set; } = true;
+    /// <summary>上次导出的文档；ExportDirty 为 false 时可按位级一致语义直接复用。</summary>
+    internal PlayerBattleReportDocument? ExportedDocument { get; private set; }
+    /// <summary>记账路径写入后调用：标记导出文档过期。</summary>
+    internal void MarkExportDirty() => ExportDirty = true;
+    /// <summary>登记导出文档并清除脏标记。</summary>
+    internal PlayerBattleReportDocument CacheExported(PlayerBattleReportDocument document)
+    {
+        ExportedDocument = document;
+        ExportDirty = false;
+        return document;
+    }
+
     /// <summary>合并记录一件物品收益。</summary>
     public void AddItem(ItemId itemId, double quantity)
     {
@@ -186,23 +203,85 @@ public sealed class PlayerDuelState
 {
     /// <summary>所属聚合的行动队列视图；供 CurrentReport 定位队首行动账本。</summary>
     private IReadOnlyList<QueuedAction>? _queue;
+    private double _encounterCharges;
+    private double _cooldownUntilUnixSeconds;
+    private string? _activeDuelId;
+    private PlayerBattleReport _offlineReport = new() { ReportId = "offline" };
+    private PlayerBattleReport _dailyReport = new() { ReportId = "daily" };
 
     /// <summary>斗法遭遇计数；大于 0 时下次进入战斗尝试撮合。</summary>
-    public double EncounterCharges { get; set; }
+    public double EncounterCharges
+    {
+        get => _encounterCharges;
+        set
+        {
+            if (_encounterCharges == value) return;
+            _encounterCharges = value;
+            NoteStructureMutation();
+        }
+    }
     /// <summary>失败冷却截止时间（Unix 秒）；冷却内不匹配也不被匹配。</summary>
-    public double CooldownUntilUnixSeconds { get; set; }
+    public double CooldownUntilUnixSeconds
+    {
+        get => _cooldownUntilUnixSeconds;
+        set
+        {
+            if (_cooldownUntilUnixSeconds == value) return;
+            _cooldownUntilUnixSeconds = value;
+            NoteStructureMutation();
+        }
+    }
     /// <summary>进行中斗法标识；非空时暂存区冻结入账。</summary>
-    public string? ActiveDuelId { get; set; }
-    /// <summary>暂存区物品（先入先出结算）。</summary>
-    public List<DuelStagedItem> StagedItems { get; } = [];
-    /// <summary>按行动实例 Id 各持一本的收益账本；实例出队时归档进 Reports。</summary>
-    public Dictionary<Guid, PlayerBattleReport> ActionReports { get; } = [];
+    public string? ActiveDuelId
+    {
+        get => _activeDuelId;
+        set
+        {
+            if (_activeDuelId == value) return;
+            _activeDuelId = value;
+            NoteStructureMutation();
+        }
+    }
+    /// <summary>暂存区物品（先入先出结算）；写入递增版本号供导出缓存失效检测。</summary>
+    public VersionedList<DuelStagedItem> StagedItems { get; } = new();
+    /// <summary>按行动实例 Id 各持一本的收益账本；实例出队时归档进 Reports；写入递增版本号。</summary>
+    public VersionedDictionary<Guid, PlayerBattleReport> ActionReports { get; } = new();
     /// <summary>离线挂机统计账本：Presence 转入 Offline 时重置，离线补算期间全部收益入账。</summary>
-    public PlayerBattleReport OfflineReport { get; set; } = new() { ReportId = "offline" };
+    public PlayerBattleReport OfflineReport
+    {
+        get => _offlineReport;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (ReferenceEquals(_offlineReport, value)) return;
+            _offlineReport = value;
+            NoteStructureMutation();
+        }
+    }
     /// <summary>每日统计账本：按 UTC+8 自然日（DayIndex）自动 rollover。</summary>
-    public PlayerBattleReport DailyReport { get; set; } = new() { ReportId = "daily" };
-    /// <summary>最近战报归档（最新在前，最多 MaxBattleReports 条）。</summary>
-    public List<PlayerBattleReport> Reports { get; } = [];
+    public PlayerBattleReport DailyReport
+    {
+        get => _dailyReport;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (ReferenceEquals(_dailyReport, value)) return;
+            _dailyReport = value;
+            NoteStructureMutation();
+        }
+    }
+    /// <summary>最近战报归档（最新在前，最多 MaxBattleReports 条）；写入递增版本号。</summary>
+    public VersionedList<PlayerBattleReport> Reports { get; } = new();
+
+    /// <summary>标量与账本对象替换的结构修订号（遭遇计数/冷却/进行中斗法/单例账本换引用）。</summary>
+    internal long StructureVersion { get; private set; }
+    private void NoteStructureMutation() => StructureVersion = checked(StructureVersion + 1);
+
+    /// <summary>
+    /// 斗法文档导出修订号：结构修订号 + 各集合版本号合成。
+    /// 账本字段内容写入不计入本修订号（由 PlayerBattleReport.ExportDirty 单独追踪）。
+    /// </summary>
+    internal long ExportRevision => StructureVersion + StagedItems.Version + Reports.Version + ActionReports.Version;
 
     /// <summary>队首行动的收益账本（便捷访问）；队首无账本或空队列时为 null。</summary>
     public PlayerBattleReport? CurrentReport
@@ -233,7 +312,11 @@ public sealed class PlayerDuelState
     }
 
     /// <summary>离线账本重置：进入离线会话时清空并重新起算。</summary>
-    public void ResetOfflineReport(double atUnixSeconds) => OfflineReport.ResetBucket(0, atUnixSeconds);
+    public void ResetOfflineReport(double atUnixSeconds)
+    {
+        OfflineReport.ResetBucket(0, atUnixSeconds);
+        OfflineReport.MarkExportDirty();
+    }
 }
 
 /// <summary>斗法分段的可持久化文档形态。</summary>
@@ -510,17 +593,20 @@ public sealed partial class PlayerAggregate
         {
             apply(actionReport);
             actionReport.EndedAtUnixSeconds = atUnixSeconds;
+            actionReport.MarkExportDirty();
         }
         if (Presence == PresenceState.Offline)
         {
             apply(Duel.OfflineReport);
             Duel.OfflineReport.EndedAtUnixSeconds = atUnixSeconds;
+            Duel.OfflineReport.MarkExportDirty();
         }
         var dayIndex = (long)Math.Floor((atUnixSeconds + 28800) / 86400);
         if (Duel.DailyReport.DayIndex != dayIndex)
             Duel.DailyReport.ResetBucket(dayIndex, atUnixSeconds);
         apply(Duel.DailyReport);
         Duel.DailyReport.EndedAtUnixSeconds = atUnixSeconds;
+        Duel.DailyReport.MarkExportDirty();
         MarkDirty(PlayerSectionKind.Duel);
     }
 
@@ -537,6 +623,7 @@ public sealed partial class PlayerAggregate
     {
         if (!Duel.ActionReports.Remove(instanceId, out var report)) return;
         report.EndedAtUnixSeconds = endedAtUnixSeconds;
+        report.MarkExportDirty();
         if (report.HasContent)
         {
             Duel.Reports.Insert(0, report);

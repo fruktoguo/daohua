@@ -21,8 +21,22 @@ public enum PresenceState : byte
 /// </summary>
 public sealed class PlayerProgression
 {
+    private int _realmLevel = 1;
+
     /// <summary>当前境界阶层（1: 练气期一层起步）</summary>
-    public int RealmLevel { get; set; } = 1;
+    public int RealmLevel
+    {
+        get => _realmLevel;
+        set
+        {
+            if (_realmLevel == value) return;
+            _realmLevel = value;
+            RealmLevelVersion = checked(RealmLevelVersion + 1);
+        }
+    }
+
+    /// <summary>境界阶层修订号：属性解析输入之一，写入即单调递增（同值写入不计）。</summary>
+    internal long RealmLevelVersion { get; private set; }
     /// <summary>当前阶层已累积灵气（突破时重置）</summary>
     public double Qi { get; set; }
     /// <summary>道法感悟与实战经验</summary>
@@ -53,8 +67,21 @@ public sealed class PlayerProgression
 /// </summary>
 public sealed class PlayerWorldState
 {
+    private string _nodeId = "node.yunxi-village";
+    private Domain.World.BuildingEffectSet _nodeBuildingEffects = Domain.World.BuildingEffectSet.Empty;
+    private string? _nodeBuildingNodeId;
+
     /// <summary>当前所在世界地图节点 ID</summary>
-    public string NodeId { get; set; } = "node.yunxi-village";
+    public string NodeId
+    {
+        get => _nodeId;
+        set
+        {
+            if (_nodeId == value) return;
+            _nodeId = value;
+            NoteAttributeInputMutation();
+        }
+    }
     /// <summary>当前正在通行的世界边 ID（未处于边上时为空）</summary>
     public string? EdgeId { get; set; }
     /// <summary>当前在边上的归一化行进进度 [0, 1]</summary>
@@ -74,17 +101,39 @@ public sealed class PlayerWorldState
     /// 当前节点已建成建筑的汇总效果（运行时按节拍从共享注册表解析写入；
     /// 持久化副本供离线补算沿用最近已知状态）。
     /// </summary>
-    public Domain.World.BuildingEffectSet NodeBuildingEffects { get; set; } = Domain.World.BuildingEffectSet.Empty;
+    public Domain.World.BuildingEffectSet NodeBuildingEffects
+    {
+        get => _nodeBuildingEffects;
+        set
+        {
+            if (_nodeBuildingEffects == value) return;
+            _nodeBuildingEffects = value;
+            NoteAttributeInputMutation();
+        }
+    }
     /// <summary>
     /// 建筑投影所属节点 ID：投影与当前节点不一致时（如跨节点快进尚未刷新），
     /// 消费方必须通过 <see cref="EffectiveNodeBuildingEffects"/> 读取，保证效果不跨节点泄漏。
     /// </summary>
-    public string? NodeBuildingNodeId { get; set; }
+    public string? NodeBuildingNodeId
+    {
+        get => _nodeBuildingNodeId;
+        set
+        {
+            if (_nodeBuildingNodeId == value) return;
+            _nodeBuildingNodeId = value;
+            NoteAttributeInputMutation();
+        }
+    }
     /// <summary>当前位置生效的节点建筑效果；投影属于其他节点或缺失时返回空集。</summary>
     public Domain.World.BuildingEffectSet EffectiveNodeBuildingEffects =>
         string.Equals(NodeBuildingNodeId, NodeId, StringComparison.Ordinal)
             ? NodeBuildingEffects
             : Domain.World.BuildingEffectSet.Empty;
+
+    /// <summary>节点建筑效果相关输入的修订号（NodeId/NodeBuildingEffects/NodeBuildingNodeId 共享计数）。</summary>
+    internal long AttributeInputVersion { get; private set; }
+    private void NoteAttributeInputMutation() => AttributeInputVersion = checked(AttributeInputVersion + 1);
 }
 
 /// <summary>
@@ -115,8 +164,8 @@ public sealed class PlayerCombatState
 /// </summary>
 public sealed class PlayerBuffState
 {
-    /// <summary>活跃 Buff 列表，快进模拟时按过期时间顺序剔除</summary>
-    public List<ActiveBuff> Active { get; } = [];
+    /// <summary>活跃 Buff 列表，快进模拟时按过期时间顺序剔除；写入递增版本号供属性缓存失效检测。</summary>
+    public VersionedList<ActiveBuff> Active { get; } = new();
 }
 
 /// <summary>
@@ -137,8 +186,8 @@ public sealed partial class PlayerLoadoutState
 {
     /// <summary>当前穿戴的非同质化独立装备实例 ID</summary>
     public List<InstanceId> EquippedInstances { get; } = [];
-    /// <summary>当前穿戴的配表装备道具 ID</summary>
-    public List<ItemId> EquippedItemIds { get; } = [];
+    /// <summary>当前穿戴的配表装备道具 ID；写入递增版本号供属性缓存失效检测。</summary>
+    public VersionedList<ItemId> EquippedItemIds { get; } = new();
     /// <summary>已掌握并激活在槽位上的功法神通 ID</summary>
     public List<AbilityId> LearnedAbilities { get; } = [];
 }
@@ -272,9 +321,14 @@ public sealed partial class PlayerAggregate
     public const int MaxActionQueueLength = 256;
     private readonly List<QueuedAction> _actions = [];
     private readonly HashSet<PlayerSectionKind> _dirtySections = [];
+    private readonly Dictionary<PlayerSectionKind, long> _dirtyMarks = [];
+    private long _dirtyStamp;
     private readonly ReadOnlyCollection<QueuedAction> _actionsView;
     private readonly ReadOnlySet<PlayerSectionKind> _dirtySectionsView;
     private long _sectionVersion;
+    private long _cachedAttributeRevision = -1;
+    private GameDataCatalog? _cachedAttributeCatalog;
+    private PlayerAttributes? _cachedAttributes;
 
     private PlayerAggregate(
         PlayerId playerId,
@@ -335,6 +389,49 @@ public sealed partial class PlayerAggregate
     public IReadOnlySet<PlayerSectionKind> DirtySections => _dirtySectionsView;
 
     /// <summary>
+    /// 分段脏标记流水号视图：每次 MarkDirty/Touch 记录单调递增戳（重复标脏戳号继续前进），
+    /// 供单写者锁内做「本次操作触及分段」的 before/after 差集（网络增量窄化用，
+    /// 不替代 DirtySections 的持久化语义，也不随 ConsumeDirtySections 清空）。
+    /// </summary>
+    public IReadOnlyDictionary<PlayerSectionKind, long> DirtySectionMarks => _dirtyMarks;
+
+    /// <summary>
+    /// 属性解析输入修订号：由全部属性输入源的单调版本号合成
+    /// （境界阶层 / 节点建筑效果三元组 / 穿戴装备 ID / 装备槽强化 / 六维经验 / 活跃 Buff）。
+    /// 任一输入源写入都会令其严格增大，合成值相等当且仅当全部输入未变；
+    /// 属性解析缓存以「同配表实例 + 本修订号未变」为命中条件，命中结果与全量重算逐位一致。
+    /// </summary>
+    internal long AttributeInputRevision =>
+        Progression.RealmLevelVersion
+        + World.AttributeInputVersion
+        + Buffs.Active.Version
+        + Loadout.EquippedItemIds.Version
+        + Loadout.Equipment.Version
+        + Loadout.CoreAttributesVersion;
+
+    /// <summary>尝试命中属性解析缓存：同配表实例且属性输入修订号未变时复用上轮结果。</summary>
+    internal bool TryGetCachedAttributes(GameDataCatalog catalog, out PlayerAttributes attributes)
+    {
+        if (_cachedAttributes is not null
+            && _cachedAttributeRevision == AttributeInputRevision
+            && ReferenceEquals(_cachedAttributeCatalog, catalog))
+        {
+            attributes = _cachedAttributes;
+            return true;
+        }
+        attributes = null!;
+        return false;
+    }
+
+    /// <summary>登记一次全量属性解析结果，连同当时的输入修订号与配表实例。</summary>
+    internal void StoreCachedAttributes(GameDataCatalog catalog, PlayerAttributes attributes)
+    {
+        _cachedAttributes = attributes;
+        _cachedAttributeCatalog = catalog;
+        _cachedAttributeRevision = AttributeInputRevision;
+    }
+
+    /// <summary>
     /// 工厂方法：新建修仙者角色聚合实例，并默认将所有分段标记为脏以待初次落库。
     /// </summary>
     public static PlayerAggregate Create(
@@ -371,7 +468,11 @@ public sealed partial class PlayerAggregate
         Presence = presence;
         // 每次离线会话重置离线账本：进入离线即清空上一会话的挂机统计，收益从本次离线起算。
         if (presence == PresenceState.Offline)
+        {
             Duel.ResetOfflineReport(LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d);
+            // OfflineReport 属 duel 分段持久化/下发内容：重置必须标脏 Duel，否则重置结果不落盘。
+            MarkDirty(PlayerSectionKind.Duel);
+        }
         Touch(PlayerSectionKind.Settings);
     }
 
@@ -771,15 +872,19 @@ public sealed partial class PlayerAggregate
         Touch(PlayerSectionKind.Settings);
     }
 
-    /// <summary>将指定分段标记为脏，待下次刷盘时同步</summary>
-    public void MarkDirty(PlayerSectionKind section) => _dirtySections.Add(section);
+    /// <summary>将指定分段标记为脏，待下次刷盘时同步；同时推进该分段的标记流水号供触及差集使用。</summary>
+    public void MarkDirty(PlayerSectionKind section)
+    {
+        _dirtySections.Add(section);
+        _dirtyMarks[section] = checked(++_dirtyStamp);
+    }
 
     /// <summary>命令完成后推进聚合版本并标记相应 section；持久化层以此做 CAS 乐观锁检测。</summary>
     public long Touch(params PlayerSectionKind[] sections)
     {
         if (sections is null || sections.Length == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "至少需要一个脏 section。");
         StateVersion = checked(StateVersion + 1);
-        foreach (var section in sections) _dirtySections.Add(section);
+        foreach (var section in sections) MarkDirty(section);
         return StateVersion;
     }
 

@@ -127,15 +127,25 @@ public static class PlayerAttributeResolver
                 ? state.World.NodeBuildingEffects
                 : null);
 
-    /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。</summary>
+    /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。
+    /// 带「属性输入修订号」缓存：同配表实例且全部输入源版本号未变时直接复用上轮结果；
+    /// 命中结果与全量重算逐位一致。catalog.BaseAttributes 缺失时面板由 Combat 分段兜底，
+    /// 该输入不经修订号覆盖，此路径旁路缓存逐次重算。</summary>
     /// <param name="player">在线玩家聚合。</param>
     /// <param name="catalog">全局配表。</param>
     /// <returns>结算完成的属性面板。</returns>
     public static PlayerAttributes Resolve(PlayerAggregate player, GameDataCatalog catalog)
-        => Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
+    {
+        if (catalog.BaseAttributes is not null && player.TryGetCachedAttributes(catalog, out var cached))
+            return cached;
+        var resolved = Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
             new(player.Combat.Hitpoints, player.Combat.MaxHitpoints, player.Combat.Manapoints,
                 player.Combat.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
             player.World.EffectiveNodeBuildingEffects);
+        if (catalog.BaseAttributes is not null)
+            player.StoreCachedAttributes(catalog, resolved);
+        return resolved;
+    }
 
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
         PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null)

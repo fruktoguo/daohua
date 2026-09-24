@@ -232,4 +232,59 @@ public sealed class PlayerAggregateTests
         Assert.Equal(Baseline, player.LastSimulatedAt);
     }
 
+    /// <summary>
+    /// 触及流水号差集：操作前后 DirtySectionMarks 差分得到「本次新增标脏」分段；
+    /// 重复标脏同段戳号继续前进（已标脏段本次重标仍计入触及），ConsumeDirtySections 不影响流水号。
+    /// </summary>
+    [Fact]
+    public void DirtySectionMarks_TrackPerOperationTouchedSections()
+    {
+        var player = PlayerAggregate.Restore(
+            PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a").ExportState());
+        Assert.Empty(player.DirtySectionMarks);
+        var marksBefore = new Dictionary<PlayerSectionKind, long>(player.DirtySectionMarks);
+
+        // 操作 1：入队行动 → ActionQueue 出现在差集
+        player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), 2), Baseline, ActionCatalog.Default);
+        var touched = player.DirtySectionMarks
+            .Where(pair => !marksBefore.TryGetValue(pair.Key, out var previous) || previous != pair.Value)
+            .Select(pair => pair.Key)
+            .ToHashSet();
+        Assert.Equal([PlayerSectionKind.ActionQueue], touched);
+
+        // 模拟刷盘消费：脏集合清空但流水号保留（网络增量不得消费 DirtySections）
+        Assert.NotEmpty(player.ConsumeDirtySections());
+        Assert.NotEmpty(player.DirtySectionMarks);
+
+        // 操作 2：再次标脏同段（已标脏过不算豁免）→ 戳号前进仍被差集捕获
+        var marksBefore2 = new Dictionary<PlayerSectionKind, long>(player.DirtySectionMarks);
+        player.MarkDirty(PlayerSectionKind.ActionQueue);
+        player.MarkDirty(PlayerSectionKind.Settings);
+        var touched2 = player.DirtySectionMarks
+            .Where(pair => !marksBefore2.TryGetValue(pair.Key, out var previous) || previous != pair.Value)
+            .Select(pair => pair.Key)
+            .ToHashSet();
+        Assert.Equal([PlayerSectionKind.ActionQueue, PlayerSectionKind.Settings], touched2);
+
+        // 事务回滚重置流水号历史：回滚点之后的标脏视为未发生
+        player.RestoreFrom(player.ExportState());
+        Assert.Empty(player.DirtySectionMarks);
+    }
+
+    /// <summary>
+    /// 离线在线状态切换重置斗法离线账本时，Duel 分段必须标脏：重置结果要随刷盘落库。
+    /// </summary>
+    [Fact]
+    public void SetPresenceOffline_MarksDuelSectionForOfflineReportReset()
+    {
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        player.ConsumeDirtySections(); // 新建聚合自带全段脏标记，先清空再断言操作增量
+        player.SetPresence(PresenceState.Online);
+        Assert.DoesNotContain(PlayerSectionKind.Duel, player.DirtySections);
+
+        player.SetPresence(PresenceState.Offline);
+        Assert.Contains(PlayerSectionKind.Duel, player.DirtySections);
+        Assert.Contains(PlayerSectionKind.Settings, player.DirtySections);
+    }
+
 }
