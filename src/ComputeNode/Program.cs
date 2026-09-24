@@ -12,8 +12,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.AddServerHeader = false;
-    // 请求体上限与契约上限对齐：超限批次在 Kestrel 层即以 413 拒绝，不进入模型绑定。
-    options.Limits.MaxRequestBodySize = ComputeContract.MaxBatchBytes;
+    // 请求体上限与契约口径对齐：MaxBatchBytes 是解码后字节上限，JSON+Base64 放大 4/3，
+    // 取 1.5 倍覆盖信封冗余——合法批次不会被 413 误拒，超限批次仍在 Kestrel 层拦下。
+    options.Limits.MaxRequestBodySize = ComputeContract.MaxBatchBytes * 3 / 2;
     // 节点部署在不可控的远程网络环境，收紧空闲与请求头超时以抵御低速连接占用。
     options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(30);
     options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(10);

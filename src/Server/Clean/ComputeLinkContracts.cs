@@ -3,15 +3,16 @@ using System.Text.Json.Nodes;
 namespace Server.Clean;
 
 /// <summary>
-/// compute-link.v1：计算节点 → 主服的反向拨入链路契约。
+/// compute-link.v1.1：计算节点 → 主服的反向拨入链路契约。
 /// 节点主动建立 WebSocket 长连接（握手携带 X-Compute-Token）后即注册进动态节点组，
 /// 主服经该连接下发 compute.v1 批次并回收结果；连接存活即节点在线，断开即热拔出。
+/// v1.1 在 hello 增加节点批次承接能力字段（MaxJobsPerBatch/MaxBatchBytes），主服按协商能力装配批次。
 /// 批次载荷完全复用 <see cref="ComputeDispatchContract"/> 的 compute.v1 类型，链路本身只定义信封。
 /// </summary>
 public static class ComputeLinkContract
 {
-    /// <summary>链路契约版本，必须与节点端 compute-link.v1 完全一致。</summary>
-    public const string Version = "compute-link.v1";
+    /// <summary>链路契约版本，必须与节点端完全一致。</summary>
+    public const string Version = "compute-link.v1.1";
     /// <summary>节点拨入端点路径。</summary>
     public const string Path = "/internal/compute-link";
     /// <summary>握手鉴权请求头（与 compute.v1 同源）。</summary>
@@ -28,12 +29,17 @@ public static class ComputeLinkContract
     public const int MaxNodeNameLength = 128;
 }
 
-/// <summary>节点拨入后的首帧握手：声明契约版本、节点名、并发容量与配表指纹。</summary>
+/// <summary>
+/// 节点拨入后的首帧握手：声明契约版本、节点名、并发容量、配表指纹与批次承接能力。
+/// MaxJobsPerBatch/MaxBatchBytes 为 0 表示未声明，主服按自身配置上限装配。
+/// </summary>
 public sealed record ComputeLinkHello(
     string ContractVersion,
     string NodeName,
     int MaxConcurrentBatches,
-    string? GameDataFingerprint);
+    string? GameDataFingerprint,
+    int MaxJobsPerBatch = 0,
+    long MaxBatchBytes = 0);
 
 /// <summary>主服接受注册后的应答帧。</summary>
 public sealed record ComputeLinkWelcome(
@@ -51,7 +57,7 @@ public sealed record ComputeLinkResult(Guid BatchId, ComputeAdvanceBatchResponse
 public sealed record ComputeLinkError(string Code, string Message);
 
 /// <summary>
-/// compute-link.v1 帧编解码：所有消息扁平序列化为 JSON 文本帧，
+/// compute-link 帧编解码：所有消息扁平序列化为 JSON 文本帧，
 /// 以顶层 type 字段判别类型（hello/welcome/batch/result/error），未知类型直接判非法。
 /// </summary>
 public static class ComputeLinkCodec

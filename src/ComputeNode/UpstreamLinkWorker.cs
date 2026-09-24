@@ -1,7 +1,7 @@
 namespace DaoHua.ComputeNode;
 
 /// <summary>
-/// ComputeNode 客户端模式：主动向主服拨出 WebSocket 长连接（compute-link.v1），
+/// ComputeNode 客户端模式：主动向主服拨出 WebSocket 长连接（compute-link.v1.1），
 /// 注册即进入动态节点组，接收批次、执行确定性推进、回传结果。
 /// 链路中断按指数退避自动重连（1s→30s 封顶 ±20% 抖动）；连续健康存活超过
 /// <see cref="HealthySessionThreshold"/> 的会话断开时退避立即复位，快断快连则保持翻倍。
@@ -81,7 +81,8 @@ public sealed class UpstreamLinkWorker(
 
         await socket.SendAsync(
             LinkCodec.Encode(new LinkHello(
-                ComputeLinkContract.Version, NodeName, maxConcurrentBatches, fingerprint.Value)),
+                ComputeLinkContract.Version, NodeName, maxConcurrentBatches, fingerprint.Value,
+                maxJobsPerBatch, ComputeContract.MaxBatchBytes)),
             WebSocketMessageType.Text, true, cancellationToken);
 
         var first = await ReceiveMessageAsync(socket, cancellationToken)
@@ -153,15 +154,17 @@ public sealed class UpstreamLinkWorker(
         try
         {
             List<AdvanceJobResult> results;
-            var validation = ComputeContract.Validate(batch.Request, maxJobsPerBatch);
-            if (validation is not null)
+            var violation = ComputeContract.ValidateBatch(batch.Request, maxJobsPerBatch);
+            if (violation is not null)
             {
-                // 批次级契约违规：按任务维度回 Failed，主服按不可重试落 dead 保留证据。
+                // 批次级契约违规是主服装配/链路问题，与单任务载荷无关：全部按可重试回传，
+                // 由主服退避重派——不可整批 non-retryable 判死（dead 任务会被冷扫描再生产，
+                // 形成「再生产→整批判死」循环）。
                 results = (batch.Request.Jobs ?? [])
                     .Select(job => job is null
                         ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null,
-                            "INVALID_BATCH", "批次契约校验失败。", false)
-                        : AdvanceJobResult.Failed(job, "INVALID_BATCH", "批次契约校验失败。"))
+                            violation.Code, violation.Message, true)
+                        : AdvanceJobResult.Failed(job, violation.Code, violation.Message, retryable: true))
                     .ToList();
             }
             else if (!string.IsNullOrWhiteSpace(batch.Request.GameDataFingerprint)
@@ -185,7 +188,14 @@ public sealed class UpstreamLinkWorker(
                 foreach (var job in batch.Request.Jobs)
                 {
                     token.ThrowIfCancellationRequested();
-                    var result = engine.Advance(job, fingerprint.Value);
+                    // 任务级契约违规只判死该任务自身（non-retryable），不连坐批内其他任务。
+                    var jobViolation = ComputeContract.ValidateJob(job);
+                    var result = job is null
+                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null,
+                            jobViolation?.Code ?? "INVALID_JOB_ID", jobViolation?.Message ?? "任务为空。", false)
+                        : jobViolation is not null
+                            ? AdvanceJobResult.Failed(job, jobViolation.Code, jobViolation.Message)
+                            : engine.Advance(job, fingerprint.Value);
                     results.Add(result);
                     if (result.Success) metrics.RecordCompletedJob();
                     else metrics.RecordFailedJob();

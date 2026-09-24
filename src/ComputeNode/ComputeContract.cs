@@ -22,39 +22,41 @@ public static class ComputeContract
     public const int MaxPayloadBytesPerSection = 512 * 1024;
 
     /// <summary>
-    /// 校验整个离线批处理请求是否满足契约与大小限制。
+    /// 批次级契约校验：请求体、版本、任务数与解码后字节总量。
+    /// 这一级违规代表主服装配/链路问题，与单个任务载荷无关——
+    /// 调用方必须把整批按可重试退回，不得连坐判死单任务。
     /// </summary>
     /// <param name="batch">批次请求。</param>
     /// <param name="maxJobs">当前配置的单批次最大任务数。</param>
-    /// <returns>若校验通过返回 <see langword="null"/>；否则返回包含错误码与消息的对象。</returns>
-    public static object? Validate(AdvanceBatchRequest? batch, int maxJobs)
+    /// <returns>若校验通过返回 <see langword="null"/>；否则返回违规信息。</returns>
+    public static ContractViolation? ValidateBatch(AdvanceBatchRequest? batch, int maxJobs)
     {
         if (batch is null)
         {
-            return new { code = "INVALID_BODY", message = "请求体不能为空。" };
+            return new ContractViolation("INVALID_BODY", "请求体不能为空。");
         }
 
         if (!string.Equals(batch.ContractVersion, Version, StringComparison.Ordinal))
         {
-            return new { code = "UNSUPPORTED_CONTRACT", message = $"只支持 {Version}。" };
+            return new ContractViolation("UNSUPPORTED_CONTRACT", $"只支持 {Version}。");
         }
 
         if (batch.Jobs is null || batch.Jobs.Count is < 1 or > HardMaxJobs || batch.Jobs.Count > maxJobs)
         {
-            return new { code = "INVALID_BATCH_SIZE", message = $"批次必须包含 1 到 {maxJobs} 个任务。" };
+            return new ContractViolation("INVALID_BATCH_SIZE", $"批次必须包含 1 到 {maxJobs} 个任务。");
         }
 
+        // Base64 解码体积约为字符数的 3/4；这里直接用字符数做廉价的批次总量估算，
+        // 在任何一段被实际解码/解压前就拒绝超限批次，避免被压缩载荷放大内存占用。
+        // 估算口径必须就是解码后字节：totalBytes * 3 / 4（不是 * 3——那会把上限误卡到 ~1/4 处）。
         var totalBytes = 0L;
         foreach (var job in batch.Jobs)
         {
-            var error = ValidateJob(job);
-            if (error is not null) return error;
-            // Base64 解码体积约为字符数的 3/4；这里直接用字符数做廉价的批次总量估算，
-            // 在任何一段被实际解码/解压前就拒绝超限批次，避免被压缩载荷放大内存占用。
-            totalBytes += job.Sections.Sum(section => section.PayloadBase64.Length);
-            if (totalBytes * 3 > MaxBatchBytes)
+            if (job?.Sections is null) continue;
+            totalBytes += job.Sections.Sum(section => (long)(section?.PayloadBase64?.Length ?? 0));
+            if (totalBytes * 3 / 4 > MaxBatchBytes)
             {
-                return new { code = "BATCH_TOO_LARGE", message = "批次载荷超过 16 MiB 限制。" };
+                return new ContractViolation("BATCH_TOO_LARGE", "批次载荷超过 16 MiB 限制。");
             }
         }
 
@@ -62,22 +64,40 @@ public static class ComputeContract
     }
 
     /// <summary>
+    /// 校验整个离线批处理请求（HTTP 调试口口径）：批次级 + 逐任务首个违规。
+    /// </summary>
+    /// <param name="batch">批次请求。</param>
+    /// <param name="maxJobs">当前配置的单批次最大任务数。</param>
+    /// <returns>若校验通过返回 <see langword="null"/>；否则返回违规信息。</returns>
+    public static ContractViolation? Validate(AdvanceBatchRequest? batch, int maxJobs)
+    {
+        var violation = ValidateBatch(batch, maxJobs);
+        if (violation is not null) return violation;
+        foreach (var job in batch!.Jobs)
+        {
+            var error = ValidateJob(job);
+            if (error is not null) return error;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// 校验单个任务请求、section 集合与时间范围是否合法。
     /// </summary>
     /// <param name="job">单个任务请求。</param>
-    /// <returns>若校验通过返回 <see langword="null"/>；否则返回错误对象。</returns>
-    private static object? ValidateJob(AdvanceJobRequest? job)
+    /// <returns>若校验通过返回 <see lang="null"/>；否则返回违规信息。</returns>
+    public static ContractViolation? ValidateJob(AdvanceJobRequest? job)
     {
         if (job is null || job.JobId == Guid.Empty || job.PlayerId == Guid.Empty)
         {
-            return new { code = "INVALID_JOB_ID", message = "JobId 与 PlayerId 必须是非空 UUID。" };
+            return new ContractViolation("INVALID_JOB_ID", "JobId 与 PlayerId 必须是非空 UUID。");
         }
 
         if (job.SourceStateVersion < 0
             || job.FromUnixMilliseconds < 0
             || job.TargetUnixMilliseconds < job.FromUnixMilliseconds)
         {
-            return new { code = "INVALID_TIME_RANGE", message = "状态版本或时间范围无效。" };
+            return new ContractViolation("INVALID_TIME_RANGE", "状态版本或时间范围无效。");
         }
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -85,12 +105,12 @@ public static class ComputeContract
         // 仅容忍 5 分钟时钟偏差，超出直接拒绝而不是截断。
         if (job.TargetUnixMilliseconds > now + TimeSpan.FromMinutes(5).TotalMilliseconds)
         {
-            return new { code = "TARGET_IN_FUTURE", message = "目标时间不能超过当前时间 5 分钟。" };
+            return new ContractViolation("TARGET_IN_FUTURE", "目标时间不能超过当前时间 5 分钟。");
         }
 
         if (job.Sections is null || job.Sections.Count is < 1 or > MaxSectionsPerJob)
         {
-            return new { code = "INVALID_SECTIONS", message = $"每个任务必须包含 1 到 {MaxSectionsPerJob} 个 section。" };
+            return new ContractViolation("INVALID_SECTIONS", $"每个任务必须包含 1 到 {MaxSectionsPerJob} 个 section。");
         }
 
         // 同一任务内 section kind 必须唯一：重复 kind 会让主服务写回时无法确定哪个版本为准。
@@ -108,22 +128,27 @@ public static class ComputeContract
                 || section.Checksum.Length != 64
                 || section.Codec is not ("identity" or "brotli"))
             {
-                return new { code = "INVALID_SECTION", message = "section 字段、编码或大小无效。" };
+                return new ContractViolation("INVALID_SECTION", "section 字段、编码或大小无效。");
             }
         }
 
         if (job.Actions is not null && job.Actions.Count > 256)
         {
-            return new { code = "INVALID_ACTIONS", message = "单个任务行动意图不得超过 256 条。" };
+            return new ContractViolation("INVALID_ACTIONS", "单个任务行动意图不得超过 256 条。");
         }
         if (!string.IsNullOrWhiteSpace(job.IdempotencyKey) && job.IdempotencyKey.Length > 256)
         {
-            return new { code = "INVALID_IDEMPOTENCY_KEY", message = "幂等键长度不能超过 256。" };
+            return new ContractViolation("INVALID_IDEMPOTENCY_KEY", "幂等键长度不能超过 256。");
         }
 
         return null;
     }
 }
+
+/// <summary>契约校验违规：错误码与消息；HTTP 调试口按 {code,message} 线形状回 400。</summary>
+/// <param name="Code">错误码。</param>
+/// <param name="Message">错误消息。</param>
+public sealed record ContractViolation(string Code, string Message);
 
 /// <summary>
 /// 批次推进请求。

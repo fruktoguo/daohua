@@ -15,6 +15,11 @@ public static class ComputeDispatchContract
     public const string AdvanceBatchPath = "/internal/v1/compute/advance-batch";
     /// <summary>每个任务允许包含的最大 section 数量（与节点上限一致）。</summary>
     public const int MaxSectionsPerJob = 32;
+    /// <summary>节点单批次任务数的绝对上限（与节点 ComputeContract.HardMaxJobs 一致）。</summary>
+    public const int HardMaxJobsPerBatch = 256;
+    /// <summary>节点侧单批次解码后字节硬上限（与节点 ComputeContract.MaxBatchBytes 一致）；
+    /// 超过该上限的任务在任何节点上都无法通过契约校验。</summary>
+    public const long MaxBatchBytes = 16L * 1024 * 1024;
 }
 
 /// <summary>compute.v1 批次推进请求。</summary>
@@ -113,6 +118,45 @@ public sealed record ComputeAdvanceMetrics(
     long SectionCount,
     long InputBytes,
     long OutputBytes);
+
+/// <summary>
+/// 批次装配的解码后字节预算口径：Base64 字符数 ×3/4 ≈ 解码后字节，
+/// 与节点 ComputeContract.ValidateBatch 的估算公式逐字一致。
+/// </summary>
+public static class ComputeBatchBudget
+{
+    /// <summary>估算单个任务请求的解码后字节数（PayloadBase64 为 null 的非法载荷按 0 计）。</summary>
+    public static long EstimateDecodedBytes(ComputeAdvanceJobRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return request.Sections.Sum(section => (long)(section?.PayloadBase64?.Length ?? 0)) * 3 / 4;
+    }
+
+    /// <summary>
+    /// 按预算贪心装批：保持输入顺序，装得下的进 <see cref="Fits"/>，放不下的进 <see cref="Overflow"/>。
+    /// 单个元素超过预算时也进 Overflow，由调用方决定退回或判死。
+    /// </summary>
+    public static (List<T> Fits, List<T> Overflow) Pack<T>(
+        IReadOnlyList<T> items, Func<T, long> measure, long budget)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(measure);
+        var fits = new List<T>(items.Count);
+        var overflow = new List<T>();
+        long used = 0;
+        foreach (var item in items)
+        {
+            var size = measure(item);
+            if (used + size > budget) overflow.Add(item);
+            else
+            {
+                fits.Add(item);
+                used += size;
+            }
+        }
+        return (fits, overflow);
+    }
+}
 
 /// <summary>
 /// 冷挂机 section 载荷在存储编码与 compute.v1 线编码之间的转换边界。

@@ -7,7 +7,7 @@ using Xunit;
 namespace Server.Tests;
 
 /// <summary>
-/// compute-link.v1 派发边界单测：链路帧编解码、动态节点注册表与 section 线编码校验。
+/// compute-link.v1.1 派发边界单测：链路帧编解码、动态节点注册表、批次预算与 section 线编码校验。
 /// 不依赖真实 ComputeNode 进程或数据库。
 /// </summary>
 public sealed class ComputeDispatchTests
@@ -20,7 +20,7 @@ public sealed class ComputeDispatchTests
         var job = NewJobRequest();
         object[] messages =
         [
-            new ComputeLinkHello(ComputeLinkContract.Version, "odin", 4, "fp123"),
+            new ComputeLinkHello(ComputeLinkContract.Version, "odin", 4, "fp123", 96, 4L * 1024 * 1024),
             new ComputeLinkWelcome(ComputeLinkContract.Version, Guid.NewGuid(), 1_700_000_000_000),
             new ComputeLinkBatch(batchId, new ComputeAdvanceBatchRequest(
                 ComputeDispatchContract.Version, "fp123", [job])),
@@ -35,6 +35,11 @@ public sealed class ComputeDispatchTests
             var decoded = ComputeLinkCodec.Decode(ComputeLinkCodec.Encode(message));
             Assert.IsType(message.GetType(), decoded);
         }
+
+        var decodedHello = (ComputeLinkHello)ComputeLinkCodec.Decode(
+            ComputeLinkCodec.Encode(messages[0]));
+        Assert.Equal(96, decodedHello.MaxJobsPerBatch);
+        Assert.Equal(4L * 1024 * 1024, decodedHello.MaxBatchBytes);
 
         var decodedBatch = (ComputeLinkBatch)ComputeLinkCodec.Decode(
             ComputeLinkCodec.Encode(messages[2]));
@@ -54,7 +59,7 @@ public sealed class ComputeDispatchTests
             ComputeLinkCodec.Decode(Encoding.UTF8.GetBytes("""{"type":"bogus"}""")));
     }
 
-    /// <summary>派发器总是拿到剩余容量最大的在线节点，节点组为空时返回 null。</summary>
+    /// <summary>派发器总是拿到剩余容量最大的在线节点并原子占槽；节点组为空或全忙时返回 null。</summary>
     [Fact]
     public void RegistryAcquiresLeastBusyNode()
     {
@@ -63,21 +68,72 @@ public sealed class ComputeDispatchTests
 
         var idle = new ComputeLinkNode("idle", 4);
         var busy = new ComputeLinkNode("busy", 4);
-        busy.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
-        busy.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        Assert.True(busy.TryReserveSlot());
+        Assert.True(busy.TryReserveSlot()); // busy 已占 2/4，idle 全空 → idle 最闲。
         Assert.True(registry.TryRegister(idle));
         Assert.True(registry.TryRegister(busy));
-        Assert.Same(idle, registry.Acquire());
+
+        Assert.Same(idle, registry.Acquire()); // Acquire 即占槽：idle 在飞 1/4。
+        Assert.Equal(1, idle.InFlight);
+        Assert.Equal(3, idle.Available);
 
         // idle 塞满后轮到 busy（仍剩 2 格容量）。
-        for (var i = 0; i < 4; i++)
-            idle.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
-        Assert.Same(busy, registry.Acquire());
+        Assert.True(idle.TryReserveSlot());
+        Assert.True(idle.TryReserveSlot());
+        Assert.True(idle.TryReserveSlot());
+        Assert.Equal(0, idle.Available);
+        Assert.False(idle.TryReserveSlot());
+        Assert.Same(busy, registry.Acquire()); // busy 在飞 3/4。
 
         // 全满 → null，任务留 pending 不消耗 attempts。
-        for (var i = 0; i < 2; i++)
-            busy.Pending[Guid.NewGuid()] = new TaskCompletionSource<ComputeAdvanceBatchResponse>();
+        Assert.True(busy.TryReserveSlot());
         Assert.Null(registry.Acquire());
+
+        // 槽位归还后立即可再取。
+        idle.ReleaseSlot();
+        Assert.Equal(1, idle.Available);
+        Assert.Same(idle, registry.Acquire());
+    }
+
+    /// <summary>容量信号：槽位归还与新节点注册都要唤醒等待中的派发循环，且信号为一次性。</summary>
+    [Fact]
+    public async Task RegistryCapacitySignalWakesOnReleaseAndRegister()
+    {
+        var registry = new ComputeLinkRegistry();
+        var node = new ComputeLinkNode("n1", 1);
+        Assert.True(registry.TryRegister(node));
+        Assert.True(node.TryReserveSlot());
+
+        var first = registry.CapacitySignal;
+        Assert.False(first.IsCompleted);
+        node.ReleaseSlot();
+        await first.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // 已完成的信号被消费后必须换新：下一次等待不被旧信号立刻满足。
+        var second = registry.CapacitySignal;
+        Assert.False(second.IsCompleted);
+        Assert.True(registry.TryRegister(new ComputeLinkNode("n2", 1)));
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>装批预算：按解码后字节贪心截断，装不下的进 Overflow；单元素超预算不阻塞后续小任务。</summary>
+    [Fact]
+    public void BatchBudgetPacksByDecodedBytes()
+    {
+        // 200 base64 字符 ≈ 150 解码字节。
+        var payload = new string('a', 200);
+        var job = new ComputeAdvanceJobRequest(Guid.NewGuid(), Guid.NewGuid(), 1, 0, 1,
+            [new ComputeSectionPayload(PlayerSectionKinds.Settings, 1, "identity", payload, new string('a', 64))]);
+        Assert.Equal(150, ComputeBatchBudget.EstimateDecodedBytes(job));
+
+        var (fits, overflow) = ComputeBatchBudget.Pack([300L, 100L, 50L, 80L], size => size, budget: 200);
+        Assert.Equal([100L, 50L], fits);
+        Assert.Equal([300L, 80L], overflow);
+
+        // 恰好装满与空批次边界。
+        var exact = ComputeBatchBudget.Pack([100L, 100L], size => size, budget: 200);
+        Assert.Equal(2, exact.Fits.Count);
+        Assert.Empty(exact.Overflow);
     }
 
     /// <summary>结果帧必须了结对应批次等待方；未知 batchId 拒绝。</summary>

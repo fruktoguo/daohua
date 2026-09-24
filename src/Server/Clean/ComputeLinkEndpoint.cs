@@ -75,6 +75,11 @@ public static class ComputeLinkEndpoint
                 throw new InvalidDataException($"链路契约版本不支持：{hello.ContractVersion}。");
             if (hello.MaxConcurrentBatches is < 1 or > ComputeLinkContract.MaxNodeConcurrency)
                 throw new InvalidDataException("节点并发容量无效。");
+            // 批次承接能力：0 表示未声明（主服按自身配置装配）；超出契约硬上限的声明无意义，直接拒绝。
+            if (hello.MaxJobsPerBatch is < 0 or > ComputeDispatchContract.HardMaxJobsPerBatch)
+                throw new InvalidDataException("节点单批任务上限无效。");
+            if (hello.MaxBatchBytes is < 0 or > ComputeDispatchContract.MaxBatchBytes)
+                throw new InvalidDataException("节点批次字节上限无效。");
             var name = string.IsNullOrWhiteSpace(hello.NodeName)
                 ? $"node-{context.Connection.RemoteIpAddress}"
                 : hello.NodeName.Trim();
@@ -99,7 +104,8 @@ public static class ComputeLinkEndpoint
                 return;
             }
 
-            node = new ComputeLinkNode(name, hello.MaxConcurrentBatches);
+            node = new ComputeLinkNode(
+                name, hello.MaxConcurrentBatches, hello.MaxJobsPerBatch, hello.MaxBatchBytes);
             if (!registry.TryRegister(node))
             {
                 if (NodeLimitLog.TryAcquire())
@@ -108,8 +114,10 @@ public static class ComputeLinkEndpoint
                 await SendCloseAsync(socket, "NODE_LIMIT", "在线计算节点数已达上限。", token);
                 return;
             }
-            logger.LogInformation("计算节点接入 node={Node} name={Name} capacity={Capacity} remote={Remote}",
-                node.NodeId, node.Name, node.Capacity, context.Connection.RemoteIpAddress);
+            logger.LogInformation(
+                "计算节点接入 node={Node} name={Name} capacity={Capacity} maxJobs={MaxJobs} maxBytes={MaxBytes} remote={Remote}",
+                node.NodeId, node.Name, node.Capacity, node.MaxJobsPerBatch, node.MaxBatchBytes,
+                context.Connection.RemoteIpAddress);
 
             await socket.SendAsync(
                 ComputeLinkCodec.Encode(new ComputeLinkWelcome(

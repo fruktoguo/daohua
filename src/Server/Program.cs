@@ -132,7 +132,12 @@ builder.Services.AddSingleton<IOutboxRepository, PostgresOutboxRepository>();
 builder.Services.AddSingleton<ICommandReceiptStore, PostgresCommandReceiptRepository>();
 builder.Services.AddSingleton<PostgresRetentionRepository>();
 builder.Services.AddSingleton<IIntegrationEventDispatcher, AuditIntegrationEventDispatcher>();
-builder.Services.AddComputeDispatch();
+// 冷挂机派发链仅 Api 角色装配：/internal/compute-link 只在 Api map，PersistenceWorker
+// 装配注册表只会空转，ColdCatchUpWorker 还会与 Api 重复生产任务。
+if (processRole == ServerProcessRole.Api)
+{
+    builder.Services.AddComputeDispatch();
+}
 builder.Services.AddHealthChecks()
     .AddCheck("process", () => HealthCheckResult.Healthy(), tags: ["live"])
     .AddCheck<PostgresHealthCheck>("postgres", tags: ["ready"]);

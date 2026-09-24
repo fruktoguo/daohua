@@ -58,6 +58,43 @@ public sealed class ComputeLinkEndpointTests
         Assert.Equal(WebSocketState.Open, client.State);
     }
 
+    /// <summary>hello 声明的批次承接能力必须透传进节点视图，供派发器按能力装配批次。</summary>
+    [Fact]
+    public async Task HelloNegotiatesBatchCapabilities()
+    {
+        await using var app = await StartHostAsync();
+        var registry = app.Services.GetRequiredService<ComputeLinkRegistry>();
+        using var client = await ConnectAsync(app);
+
+        await SendAsync(client, new ComputeLinkHello(
+            ComputeLinkContract.Version, "cap-node", 3, Catalog.Fingerprint, 96, 4L * 1024 * 1024));
+        var welcome = Assert.IsType<ComputeLinkWelcome>(await ReceiveAsync(client));
+        var node = Assert.Single(registry.Nodes, entry => entry.NodeId == welcome.NodeId);
+        Assert.Equal(3, node.Capacity);
+        Assert.Equal(96, node.MaxJobsPerBatch);
+        Assert.Equal(4L * 1024 * 1024, node.MaxBatchBytes);
+    }
+
+    /// <summary>超出契约硬上限的能力声明必须判协议违规并断开，不得注册。</summary>
+    [Fact]
+    public async Task InvalidCapabilityHelloClosesLink()
+    {
+        await using var app = await StartHostAsync();
+        var registry = app.Services.GetRequiredService<ComputeLinkRegistry>();
+        using var client = await ConnectAsync(app);
+
+        await SendAsync(client, new ComputeLinkHello(
+            ComputeLinkContract.Version, "lying-node", 1, Catalog.Fingerprint,
+            ComputeDispatchContract.HardMaxJobsPerBatch + 1, 0));
+
+        // 协议违规路径：先回 LINK_ERROR 帧再以 PolicyViolation 关闭，节点不进注册表。
+        var error = Assert.IsType<ComputeLinkError>(await ReceiveAsync(client));
+        Assert.Equal("LINK_ERROR", error.Code);
+        var close = Assert.IsType<WebSocketReceiveResult>(await ReceiveAsync(client));
+        Assert.Equal(WebSocketMessageType.Close, close.MessageType);
+        Assert.Equal(0, registry.NodeCount);
+    }
+
     /// <summary>令牌不符的拨入必须在升级前以 401 拒绝。</summary>
     [Fact]
     public async Task InvalidTokenIsRejectedWith401()

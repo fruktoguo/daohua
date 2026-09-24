@@ -55,6 +55,13 @@ public sealed record ServerOptions(
     public string? ComputeNodeToken { get; init; }
     /// <summary>单次派发领取的最大任务数</summary>
     public int ComputeBatchSize { get; init; } = 64;
+    /// <summary>
+    /// 单批次解码后字节预算：装配批次时按该上限截断，装不下的任务立即退回 pending 下轮再派。
+    /// 上限取 12 MiB：Base64 编码放大 4/3 后约 16 MiB 帧体，仍低于 compute-link 单帧 20 MiB 上限并保留结果帧冗余。
+    /// </summary>
+    public long ComputeBatchMaxBytes { get; init; } = 8L * 1024 * 1024;
+    /// <summary>节点出站帧队列写入超时：bounded 64 满时防止派发任务被挂死，超时按批次失败退回租约</summary>
+    public TimeSpan ComputeOutboundWriteTimeout { get; init; } = TimeSpan.FromSeconds(10);
     /// <summary>派发轮询间隔</summary>
     public TimeSpan ComputePollInterval { get; init; } = TimeSpan.FromSeconds(5);
     /// <summary>compute_jobs 行租约时长</summary>
@@ -112,6 +119,8 @@ public sealed record ServerOptions(
         var computeEnabled = configuration.GetValue("ComputeNode:Enabled", true);
         var computeToken = configuration["ComputeNode:Token"];
         var computeBatchSize = configuration.GetValue("ComputeNode:BatchSize", 64);
+        var computeBatchMaxBytes = configuration.GetValue("ComputeNode:BatchMaxBytes", 8L * 1024 * 1024);
+        var computeWriteTimeoutSeconds = configuration.GetValue("ComputeNode:OutboundWriteTimeoutSeconds", 10);
         var computePollMs = configuration.GetValue("ComputeNode:PollIntervalMilliseconds", 5_000);
         var computeLeaseSeconds = configuration.GetValue("ComputeNode:LeaseSeconds", 120);
         var computeTimeoutSeconds = configuration.GetValue("ComputeNode:RequestTimeoutSeconds", 30);
@@ -139,6 +148,10 @@ public sealed record ServerOptions(
         if (dataProtectionRetentionDays is < 30 or > 3650) throw new InvalidOperationException("Storage:DataProtectionKeyRetentionDays 必须在 30..3650。");
         if (settlementClaimRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SettlementClaimRetentionDays 必须在 1..3650。");
         if (computeBatchSize is < 1 or > 256) throw new InvalidOperationException("ComputeNode:BatchSize 必须在 1..256。");
+        if (computeBatchMaxBytes is < 64 * 1024 or > 12L * 1024 * 1024)
+            throw new InvalidOperationException("ComputeNode:BatchMaxBytes 必须在 64KiB..12MiB（帧体须低于链路 20MiB 上限）。");
+        if (computeWriteTimeoutSeconds is < 1 or > 120)
+            throw new InvalidOperationException("ComputeNode:OutboundWriteTimeoutSeconds 必须在 1..120。");
         if (computePollMs is < 500 or > 300_000) throw new InvalidOperationException("ComputeNode:PollIntervalMilliseconds 必须在 500..300000。");
         if (computeLeaseSeconds is < 10 or > 3600) throw new InvalidOperationException("ComputeNode:LeaseSeconds 必须在 10..3600。");
         if (computeTimeoutSeconds is < 5 or > 600) throw new InvalidOperationException("ComputeNode:RequestTimeoutSeconds 必须在 5..600。");
@@ -173,6 +186,8 @@ public sealed record ServerOptions(
             ComputeNodeEnabled = computeEnabled,
             ComputeNodeToken = string.IsNullOrWhiteSpace(computeToken) ? null : computeToken.Trim(),
             ComputeBatchSize = computeBatchSize,
+            ComputeBatchMaxBytes = computeBatchMaxBytes,
+            ComputeOutboundWriteTimeout = TimeSpan.FromSeconds(computeWriteTimeoutSeconds),
             ComputePollInterval = TimeSpan.FromMilliseconds(computePollMs),
             ComputeLease = TimeSpan.FromSeconds(computeLeaseSeconds),
             ComputeRequestTimeout = TimeSpan.FromSeconds(computeTimeoutSeconds),
@@ -194,7 +209,7 @@ public enum ServerProcessRole : byte
 {
     /// <summary>在线请求角色：承载 HTTP API、WebSocket 与市场/玩家运行时。</summary>
     Api = 0,
-    /// <summary>持久化角色：只跑 section 落盘、outbox 与冷挂机派发等后台任务，不装配 GameDataCatalog。</summary>
+    /// <summary>持久化角色：只跑 section 落盘、outbox、回执与留存清理等后台任务，不装配 GameDataCatalog 与冷挂机派发链。</summary>
     PersistenceWorker = 1
 }
 
