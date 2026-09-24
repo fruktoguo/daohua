@@ -144,4 +144,141 @@ public sealed class NodeBuildingRegistryTests
         Assert.False(idleProbe.Success);
         Assert.Equal("NOTHING_TO_CONTRIBUTE", idleProbe.ErrorCode);
     }
+
+    /// <summary>
+    /// 交叉写防丢（多实例贡献合并）：读快照后行被外部 UPDATE（模拟另一实例已落库的贡献），
+    /// 本实例再写贡献必须按数据库活行封顶并叠加合并，不得用缓存投影整行覆盖吞掉外部贡献。
+    /// </summary>
+    [Fact]
+    public async Task ContributeMergesOntoLiveRowAfterExternalWrite()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("节点建筑注册表集成测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var repository = new PostgresNodeBuildingRepository(source);
+        var catalog = CatalogWithTestBuilding();
+        var registry = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance);
+        var nodeId = $"node.test-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        var definition = catalog.Buildings["building.test-hut"];
+        Assert.True((await registry.StartConstructionAsync(nodeId, definition, now, CancellationToken.None)).Success);
+
+        // 另一实例的贡献已落库：活行材料 {wood:3}，本实例缓存仍是空材料。
+        await using (var connection = await source.OpenConnectionAsync())
+        {
+            await using var external = new NpgsqlCommand("""
+                UPDATE game.node_buildings
+                SET contributed_materials = '{"item.test-wood": 3}'::jsonb, updated_at = now()
+                WHERE node_id = $1 AND building_id = $2
+                """, connection);
+            external.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+            external.Parameters.Add(new NpgsqlParameter { Value = "building.test-hut" });
+            Assert.Equal(1, await external.ExecuteNonQueryAsync());
+        }
+
+        // 本实例按旧缓存看到的剩余需求是 5：若整行覆盖会扣 min(5,4)=4 并吞掉外部的 3；
+        // 行锁内按活行封顶只接纳剩余 2，合并后落库为 3+2=5。
+        var debited = new Dictionary<string, double>(StringComparer.Ordinal);
+        var result = await registry.ContributeAsync(nodeId, "building.test-hut",
+            new Dictionary<string, double> { ["item.test-wood"] = 4 },
+            debit =>
+            {
+                foreach (var pair in debit) debited[pair.Key] = pair.Value;
+                return ValueTask.FromResult(true);
+            },
+            CancellationToken.None);
+        Assert.True(result.Success);
+        Assert.Equal(2d, result.AppliedMaterials!["item.test-wood"]);
+        Assert.Equal(2d, debited["item.test-wood"]);
+
+        // 数据库行为权威：两份贡献合并保留，外部写入未被覆盖。
+        await using var verify = await source.OpenConnectionAsync();
+        await using var check = new NpgsqlCommand(
+            "SELECT contributed_materials FROM game.node_buildings WHERE node_id = $1 AND building_id = $2", verify);
+        check.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+        check.Parameters.Add(new NpgsqlParameter { Value = "building.test-hut" });
+        var json = Assert.IsType<string>(await check.ExecuteScalarAsync());
+        using (var document = System.Text.Json.JsonDocument.Parse(json))
+            Assert.Equal(5d, document.RootElement.GetProperty("item.test-wood").GetDouble());
+
+        // 缓存快照同步采纳活行：读路径看得到合并结果而非旧投影。
+        var snapshot = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
+        Assert.Equal(5d, Assert.Single(snapshot.Buildings).ContributedMaterials["item.test-wood"]);
+    }
+
+    /// <summary>
+    /// 裁决只认数据库活行：外部实例完工后再贡献按 BUILDING_IDLE 拒绝且不触发扣减，缓存同步采纳完工行；
+    /// 外部新建、缓存未收录的建筑可直接贡献并把活行纳入快照（跨实例创建可见性）。
+    /// </summary>
+    [Fact]
+    public async Task ContributeDecidesOnLiveRowAfterExternalFinalizeAndCreate()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("节点建筑注册表集成测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var repository = new PostgresNodeBuildingRepository(source);
+        var catalog = CatalogWithTestBuilding();
+        var registry = new NodeBuildingRegistry(repository, catalog, NullLogger<NodeBuildingRegistry>.Instance);
+        var nodeId = $"node.test-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+
+        var definition = catalog.Buildings["building.test-hut"];
+        Assert.True((await registry.StartConstructionAsync(nodeId, definition, now.AddSeconds(-700), CancellationToken.None)).Success);
+
+        // 另一实例已把到期工程完工落库（level=1,target=0），本实例缓存仍是 target=1 在建行。
+        await using (var connection = await source.OpenConnectionAsync())
+        {
+            await using var external = new NpgsqlCommand("""
+                UPDATE game.node_buildings
+                SET level = 1, target_level = 0, contributed_materials = '{}'::jsonb, updated_at = now()
+                WHERE node_id = $1 AND building_id = $2
+                """, connection);
+            external.Parameters.Add(new NpgsqlParameter { Value = nodeId });
+            external.Parameters.Add(new NpgsqlParameter { Value = "building.test-hut" });
+            Assert.Equal(1, await external.ExecuteNonQueryAsync());
+        }
+
+        // 旧缓存认为工程仍在进行：行锁内读活行应按 BUILDING_IDLE 拒绝，且扣减回调不被触发。
+        var debitInvoked = false;
+        var idle = await registry.ContributeAsync(nodeId, "building.test-hut",
+            new Dictionary<string, double> { ["item.test-wood"] = 1 },
+            _ =>
+            {
+                debitInvoked = true;
+                return ValueTask.FromResult(true);
+            },
+            CancellationToken.None);
+        Assert.False(idle.Success);
+        Assert.Equal("BUILDING_IDLE", idle.ErrorCode);
+        Assert.False(debitInvoked);
+
+        // 缓存采纳完工活行：快照即刻反映已建成状态。
+        var snapshot = await registry.BuildingsForAsync(nodeId, now, CancellationToken.None);
+        var built = Assert.Single(snapshot.Buildings);
+        Assert.Equal(1, built.Level);
+        Assert.Equal(0, built.TargetLevel);
+
+        // 外部新建的建筑行不在本实例缓存内：贡献按活行成立，并把活行采纳进快照。
+        var foreignNodeId = $"node.test-{Guid.NewGuid():N}";
+        await using (var connection = await source.OpenConnectionAsync())
+        {
+            await using var external = new NpgsqlCommand("""
+                INSERT INTO game.node_buildings (node_id, building_id, level, target_level, started_at_unix_seconds, contributed_materials, updated_at)
+                VALUES ($1, 'building.test-hut', 0, 1, $2, '{}'::jsonb, now())
+                """, connection);
+            external.Parameters.Add(new NpgsqlParameter { Value = foreignNodeId });
+            external.Parameters.Add(new NpgsqlParameter { Value = now.ToUnixTimeMilliseconds() / 1000d });
+            Assert.Equal(1, await external.ExecuteNonQueryAsync());
+        }
+
+        var foreign = await registry.ContributeAsync(foreignNodeId, "building.test-hut",
+            new Dictionary<string, double> { ["item.test-wood"] = 2 },
+            _ => ValueTask.FromResult(true),
+            CancellationToken.None);
+        Assert.True(foreign.Success);
+        Assert.Equal(2d, foreign.AppliedMaterials!["item.test-wood"]);
+        var foreignSnapshot = await registry.BuildingsForAsync(foreignNodeId, now, CancellationToken.None);
+        Assert.Equal(2d, Assert.Single(foreignSnapshot.Buildings).ContributedMaterials["item.test-wood"]);
+    }
 }

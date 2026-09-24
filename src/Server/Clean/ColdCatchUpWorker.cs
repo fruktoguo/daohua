@@ -6,16 +6,26 @@ namespace Server.Clean;
 /// 只对入选候选做全量状态加载（含 durable 队列叠加）+ 正余额快照，编码为 compute.v2 任务请求入队。
 /// 任务携带完整身份与提交头快照：节点凭此重建 PlayerStateBundle 并逐字节还原聚合。
 /// 玩家上线或所有权租约生效期间自动跳过；同一玩家最多一个未完结任务由数据库唯一约束保证。
+/// 多副本部署时由会话级咨询锁选出唯一生产者：未持锁实例每轮空转跳过，
+/// 锁随连接断开/进程退出自动释放，无残留状态（见 docs/distributed-readiness.md §H）。
 /// </summary>
 public sealed class ColdCatchUpWorker(
     PostgresComputeJobRepository jobs,
     IPlayerStateRepository playerStates,
     IAssetBalanceRepository assetBalances,
+    NpgsqlDataSource dataSource,
     ServerOptions options,
     ILogger<ColdCatchUpWorker> logger) : BackgroundService
 {
+    /// <summary>冷挂机生产 leader 会话级咨询锁键：全集群固定，持有者才执行扫描与入队。</summary>
+    private const long ProducerLockKey = 772_311;
+
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
     private readonly LogThrottle _playerErrorLog = new(TimeSpan.FromMinutes(5));
+    /// <summary>持有咨询锁的专用连接：锁是会话级状态，必须让这条连接活到进程退出才自动释放。</summary>
+    private NpgsqlConnection? _lockConnection;
+    /// <summary>本实例当前是否为生产 leader；仅用于持锁状态切换时打一条日志。</summary>
+    private bool _isProducer;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -32,33 +42,87 @@ public sealed class ColdCatchUpWorker(
         try { await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken); }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
 
-        while (!stoppingToken.IsCancellationRequested)
+        try
         {
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                var candidates = await jobs.ScanColdPlayersAsync(
-                    options.ColdCatchUpMinIdle, options.ColdCatchUpWindow,
-                    options.ColdCatchUpBatchSize, stoppingToken);
-                var enqueued = 0;
-                foreach (var candidate in candidates)
+                try
                 {
-                    if (await TryEnqueueAsync(candidate, stoppingToken)) enqueued++;
+                    if (await TryHoldProducerLockAsync(stoppingToken))
+                    {
+                        var candidates = await jobs.ScanColdPlayersAsync(
+                            options.ColdCatchUpMinIdle, options.ColdCatchUpWindow,
+                            options.ColdCatchUpBatchSize, stoppingToken);
+                        var enqueued = 0;
+                        foreach (var candidate in candidates)
+                        {
+                            if (await TryEnqueueAsync(candidate, stoppingToken)) enqueued++;
+                        }
+                        if (enqueued > 0)
+                            logger.LogInformation("冷挂机入队 {Enqueued}/{Candidates} 个玩家。", enqueued, candidates.Count);
+                    }
+                    await Task.Delay(options.ColdCatchUpInterval, stoppingToken);
                 }
-                if (enqueued > 0)
-                    logger.LogInformation("冷挂机入队 {Enqueued}/{Candidates} 个玩家。", enqueued, candidates.Count);
-                await Task.Delay(options.ColdCatchUpInterval, stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception exception)
-            {
-                if (_failureLog.TryAcquire())
-                    logger.LogError(exception, "ColdCatchUpWorker 循环失败，将在下个周期重试。");
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    if (_failureLog.TryAcquire())
+                        logger.LogError(exception, "ColdCatchUpWorker 循环失败，将在下个周期重试。");
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                }
             }
         }
+        finally
+        {
+            // 关闭持锁连接：会话结束即释放咨询锁，优雅停机时让出生产权而不是等连接超时。
+            if (_lockConnection is not null)
+                await _lockConnection.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// 确保本实例持有冷扫描生产咨询锁：已持有返回 true；被其他实例持有则本轮空转跳过。
+    /// pg_try_advisory_lock 可重入，每轮调用同时充当持锁连接的活性探针——连接断开即锁
+    /// 已随会话释放，抛错后丢弃连接，下一轮重建并重抢（holder 宕机由活副本自动接管）。
+    /// </summary>
+    private async ValueTask<bool> TryHoldProducerLockAsync(CancellationToken cancellationToken)
+    {
+        _lockConnection ??= await dataSource.OpenConnectionAsync(cancellationToken);
+        bool held;
+        try
+        {
+            await using var command = new NpgsqlCommand("SELECT pg_try_advisory_lock($1)", _lockConnection);
+            command.Parameters.Add(new NpgsqlParameter { Value = ProducerLockKey });
+            held = await command.ExecuteScalarAsync(cancellationToken) is true;
+        }
+        catch
+        {
+            await _lockConnection.DisposeAsync();
+            _lockConnection = null;
+            _isProducer = false;
+            throw;
+        }
+        if (!held)
+        {
+            // 未抢到：该连接不携带任何锁状态，退回池复用即可。
+            if (_isProducer)
+            {
+                _isProducer = false;
+                logger.LogInformation("冷挂机扫描生产锁由其他实例持有，本实例转入空转待命。");
+            }
+            await _lockConnection.DisposeAsync();
+            _lockConnection = null;
+            return false;
+        }
+        if (!_isProducer)
+        {
+            _isProducer = true;
+            logger.LogInformation("冷挂机扫描已获得生产咨询锁，本实例承担任务生产。");
+        }
+        return true;
     }
 
     private async ValueTask<bool> TryEnqueueAsync(ColdPlayerCandidate candidate, CancellationToken cancellationToken)
