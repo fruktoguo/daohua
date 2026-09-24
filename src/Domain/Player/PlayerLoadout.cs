@@ -152,6 +152,15 @@ public sealed partial class PlayerLoadoutState
             foreach (var pair in document.AbilityExperiences)
                 AbilityExperiences[new AbilityId(pair.Key)] = pair.Value;
     }
+
+    /// <summary>分段回滚检查点专用：把装配各输入源修订号写回备份值；调用方须先把内容恢复到与版本一致的状态。</summary>
+    internal void RestoreRevisionCounters(long coreAttributesVersion, long abilitySlotsVersion, long equipmentVersion, long abilityExperiencesVersion)
+    {
+        CoreAttributesVersion = coreAttributesVersion;
+        AbilitySlots.RestoreVersion(abilitySlotsVersion);
+        Equipment.RestoreVersion(equipmentVersion);
+        AbilityExperiences.RestoreVersion(abilityExperiencesVersion);
+    }
 }
 
 /// <summary>玩家聚合的功法习得与装配分部。</summary>

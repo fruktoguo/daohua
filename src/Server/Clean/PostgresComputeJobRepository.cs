@@ -42,6 +42,7 @@ public sealed record ColdPlayerCandidate(Guid PlayerId, DateTimeOffset LastActiv
 /// <param name="SourceStateVersion">任务发起时的提交头版本。</param>
 /// <param name="TargetStateVersion">推进后的目标版本。</param>
 /// <param name="Outcome">结果落库结局（Applied/StaleVersion/MissingPlayer）。</param>
+/// <param name="AssetDeltaCount">随结果入账的资产增量行数（compute.v2；空推进或被丢弃时为 0）。</param>
 /// <param name="Metrics">节点回传的推进计算指标。</param>
 /// <param name="ErrorCode">节点回传的错误码（成功结果通常为 null）。</param>
 /// <param name="ErrorMessage">节点回传的错误消息（成功结果通常为 null）。</param>
@@ -51,6 +52,7 @@ public sealed record ComputeJobOutputSummary(
     long SourceStateVersion,
     long TargetStateVersion,
     string Outcome,
+    int AssetDeltaCount,
     ComputeAdvanceMetrics? Metrics,
     string? ErrorCode,
     string? ErrorMessage);

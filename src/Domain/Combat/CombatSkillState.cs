@@ -62,6 +62,15 @@ public sealed record PlayerCombatSkillState(
     /// <summary>空技能状态单例（无冷却、无吟唱、计数为零）。</summary>
     public static PlayerCombatSkillState Empty { get; } = new([], null, 0, 0);
 
+    /// <summary>
+    /// 语义空判定：无冷却、无吟唱、无施放计数。
+    /// 反序列化/推进产生的空内容实例与 Empty 单例在记录相等性下不相等（列表引用比较），
+    /// 需要「是否为空」语义时必须用本属性而非 != Empty。
+    /// </summary>
+    [JsonIgnore]
+    public bool IsEmpty => Cooldowns is null
+        || (Cooldowns.Count == 0 && CastingAbilityId is null && CastRemainingSeconds == 0 && CastCount == 0);
+
     /// <summary>校验状态不变量：冷却项非空且技能 ID 唯一、吟唱字段自洽、计数非负有限。</summary>
     public bool IsValid
     {

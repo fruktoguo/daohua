@@ -123,6 +123,22 @@ public sealed class AssetWallet
         }
     }
 
+    /// <summary>
+    /// 经济事务提交后按权威回执就地并入余额行：替代提交后整包重读。
+    /// 回执行已是落库后的最终值（含版本号），仅覆盖本玩家对应资产键；他玩家行不属于本钱包，跳过。
+    /// </summary>
+    internal void SyncCommitted(IReadOnlyList<AssetBalance> committed)
+    {
+        ArgumentNullException.ThrowIfNull(committed);
+        foreach (var balance in committed)
+        {
+            if (balance.PlayerId != PlayerId) continue;
+            if (!balance.Asset.ItemId.IsValid || balance.Quantity < 0 || !double.IsFinite(balance.Quantity) || balance.Version < 0)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "提交回执余额无效。");
+            _balances[balance.Asset] = balance;
+        }
+    }
+
     /// <summary>执行具体数值加减，包含浮点有限性校验与极微小残余误差清零</summary>
     private AssetBalance Apply(AssetKey asset, double delta, string reason)
     {

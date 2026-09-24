@@ -24,8 +24,8 @@ public sealed class ComputeLinkContractAlignmentTests
         AssertRecordFieldsMatch<ComputeLinkResult>(source, "LinkResult");
         AssertRecordFieldsMatch<ComputeLinkError>(source, "LinkError");
 
-        Assert.Equal("compute-link.v1.1", ComputeLinkContract.Version);
-        Assert.Contains("public const string Version = \"compute-link.v1.1\";", source);
+        Assert.Equal("compute-link.v1.2", ComputeLinkContract.Version);
+        Assert.Contains("public const string Version = \"compute-link.v1.2\";", source);
         Assert.Contains("public const string TokenHeader = ComputeContract.TokenHeader;", source);
         Assert.Contains("public const int MaxMessageBytes = 20 * 1024 * 1024;", source);
         Assert.Equal(20 * 1024 * 1024, ComputeLinkContract.MaxMessageBytes);
@@ -33,7 +33,7 @@ public sealed class ComputeLinkContractAlignmentTests
             Assert.Contains(discriminator, source);
     }
 
-    /// <summary>compute.v1 批次契约全部记录：两侧字段集与硬上限常量必须一致。</summary>
+    /// <summary>compute.v2 批次契约全部记录：两侧字段集与硬上限常量必须一致。</summary>
     [Fact]
     public void ComputeBatchContractRecordsMatchNodeSide()
     {
@@ -41,13 +41,14 @@ public sealed class ComputeLinkContractAlignmentTests
         AssertRecordFieldsMatch<ComputeAdvanceBatchRequest>(source, "AdvanceBatchRequest");
         AssertRecordFieldsMatch<ComputeAdvanceJobRequest>(source, "AdvanceJobRequest");
         AssertRecordFieldsMatch<ComputeSectionPayload>(source, "SectionPayload");
-        AssertRecordFieldsMatch<ComputeActionIntent>(source, "ActionIntent");
+        AssertRecordFieldsMatch<ComputeAssetBalance>(source, "AssetBalanceRow");
+        AssertRecordFieldsMatch<ComputeAssetDelta>(source, "AssetDeltaRow");
         AssertRecordFieldsMatch<ComputeAdvanceBatchResponse>(source, "AdvanceBatchResponse");
         AssertRecordFieldsMatch<ComputeAdvanceJobResult>(source, "AdvanceJobResult");
         AssertRecordFieldsMatch<ComputeAdvanceMetrics>(source, "ComputeAdvanceMetrics");
 
-        Assert.Equal("compute.v1", ComputeDispatchContract.Version);
-        Assert.Contains("public const string Version = \"compute.v1\";", source);
+        Assert.Equal("compute.v2", ComputeDispatchContract.Version);
+        Assert.Contains("public const string Version = \"compute.v2\";", source);
         Assert.Equal(ComputeDispatchContract.TokenHeader, "X-Compute-Token");
         Assert.Contains("public const string TokenHeader = \"X-Compute-Token\";", source);
         Assert.Equal(256, ComputeDispatchContract.HardMaxJobsPerBatch);
@@ -63,8 +64,9 @@ public sealed class ComputeLinkContractAlignmentTests
     public void NodeBatchByteEstimateIsDecodedSize()
     {
         var source = NodeSource("ComputeContract.cs");
-        Assert.Contains("totalBytes * 3 / 4 > MaxBatchBytes", source);
-        Assert.DoesNotContain("totalBytes * 3 > MaxBatchBytes", source);
+        Assert.Contains("* 3 / 4", source);
+        Assert.DoesNotContain("* 3 > MaxBatchBytes", source);
+        Assert.Contains("totalBytes > MaxBatchBytes", source);
     }
 
     /// <summary>比较服务端记录属性名（camelCase 线字段）与节点源文件中同名记录的参数名集合。</summary>

@@ -546,6 +546,20 @@ public sealed class PlayerRuntime(
         // 0 表示无可见边界；由单写者锁内刷新、宿主调度线程无锁读取。
         private long _nextVisibleBoundaryUtcTicks;
         private bool _walletReloadRequired;
+        // 分段级回滚基线：每个分段最近一次受保护写操作起点的不可变副本与捕获戳记。
+        // 重捕判据有二：①脏流水戳较基线变化（期间被标脏过）；②属「推进热路径分段」且其后发生过
+        // 一次成功推进——SimulationEngine 有意对道龄/行动进度/回复余量等遥测字段不落脏标记
+        // （避免空转每秒刷盘），戳差集无法察觉这类写入，故用推进节拍号兜底失效。
+        private readonly Dictionary<PlayerSectionKind, object> _sectionCheckpoints = new();
+        private readonly Dictionary<PlayerSectionKind, long> _checkpointMarks = new();
+        private readonly Dictionary<PlayerSectionKind, long> _checkpointAdvanceNonces = new();
+        private long _advanceNonce;
+        private PlayerAggregate.PlayerHeadCheckpoint _headCheckpoint;
+        // 模拟推进可能不经 MarkDirty 写入的分段：Progression.AgeSeconds/SimulationCarrySeconds、
+        // ActionQueue 行动进度与状态翻转、Combat.RegenCarrySeconds；其余分段写入必经标脏留痕。
+        private static readonly HashSet<PlayerSectionKind> AdvanceAccrualSections =
+            [PlayerSectionKind.Progression, PlayerSectionKind.ActionQueue, PlayerSectionKind.Combat];
+        private static readonly PlayerSectionKind[] SectionKinds = Enum.GetValues<PlayerSectionKind>();
         private bool _disposed;
         private int _disposeStarted;
 
@@ -844,7 +858,9 @@ public sealed class PlayerRuntime(
                         if (!isTome && !alreadyLearned)
                             return Fail("ABILITY_NOT_LEARNED", "必须先习得对应功法才能研读残卷。");
                         await EnsureWalletFreshAsync(cancellationToken);
-                        var before = aggregate.ExportState();
+                        // 分段级回滚基线按需补齐到当前状态（只重捕本周期标脏过的分段），失败时按段恢复。
+                        SyncSectionCheckpoints();
+                        var marksBefore = new Dictionary<PlayerSectionKind, long>(aggregate.DirtySectionMarks);
                         var walletBefore = wallet.Balances.ToArray();
                         var dirtyBefore = aggregate.DirtySections.ToArray();
                         var dirtyAtBefore = _dirtyAt.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
@@ -872,11 +888,11 @@ public sealed class PlayerRuntime(
                                 _sectionVersions[write.SectionKind] = write.StateVersion;
                                 _dirtyAt.Remove(write.SectionKind);
                             }
-                            await RefreshWalletAfterDurableMutationAsync(cancellationToken);
+                            await SyncWalletAfterCommitAsync(result, cancellationToken);
                         }
                         catch
                         {
-                            if (!committed) RestoreSimulationState(before, walletBefore, dirtyBefore, dirtyAtBefore, logicalBefore);
+                            if (!committed) RestoreFromCheckpoints(marksBefore, dirtyBefore, dirtyAtBefore, logicalBefore, walletBefore);
                             throw;
                         }
                         break;
@@ -1018,6 +1034,7 @@ public sealed class PlayerRuntime(
                         }
                         if (requested.Count == 0) return Fail("INVALID_MATERIALS", "提交材料为空。");
                         await EnsureWalletFreshAsync(cancellationToken);
+                        EconomyTransactionResult? contributeCommit = null;
                         var contributeResult = await nodeBuildings.ContributeAsync(
                             aggregate.World.NodeId,
                             buildingId,
@@ -1040,12 +1057,16 @@ public sealed class PlayerRuntime(
                                     applied.Select(pair => new AssetDelta(aggregate.PlayerId.Value, pair.Key, string.Empty, -pair.Value)).ToArray(),
                                     debitNow,
                                     JsonSerializer.SerializeToUtf8Bytes(new { nodeId = aggregate.World.NodeId, buildingId })), cancellationToken);
+                                if (committed.Applied) contributeCommit = committed;
                                 return committed.Applied;
                             },
                             cancellationToken);
                         if (!contributeResult.Success)
                             return Fail(contributeResult.ErrorCode ?? "CONTRIBUTE_FAILED", contributeResult.Message ?? "材料提交失败。");
-                        await RefreshWalletAfterDurableMutationAsync(cancellationToken);
+                        if (contributeCommit is { } contributeCommitted)
+                            await SyncWalletAfterCommitAsync(contributeCommitted, cancellationToken);
+                        else
+                            await RefreshWalletAfterDurableMutationAsync(cancellationToken);
                         await RefreshNodeBuildingsAsync(DateTimeOffset.UtcNow, cancellationToken);
                         TouchDirtyOnly();
                         break;
@@ -1135,7 +1156,7 @@ public sealed class PlayerRuntime(
                                 Math.Max(_logicalVersion, aggregate.StateVersion), disposeNow, disposeNow.AddMinutes(30))]),
                             cancellationToken);
                         if (!disposeResult.Applied) return Fail("TRANSACTION_REJECTED", "物品处置事务未提交。");
-                        await RefreshWalletAfterDurableMutationAsync(cancellationToken);
+                        await SyncWalletAfterCommitAsync(disposeResult, cancellationToken);
                         break;
                     }
                     case "player.rename":
@@ -1234,7 +1255,9 @@ public sealed class PlayerRuntime(
         {
             await EnsureWalletFreshAsync(cancellationToken);
             await RefreshNodeBuildingsAsync(target, cancellationToken);
-            var before = aggregate.ExportState();
+            // 分段级回滚基线按需补齐到当前状态（只重捕本周期标脏过的分段），失败时按段恢复。
+            SyncSectionCheckpoints();
+            var marksBefore = new Dictionary<PlayerSectionKind, long>(aggregate.DirtySectionMarks);
             var walletBefore = wallet.Balances.ToArray();
             var dirtyBefore = aggregate.DirtySections.ToArray();
             var dirtyAtBefore = _dirtyAt.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
@@ -1263,43 +1286,59 @@ public sealed class PlayerRuntime(
                     if (!committed.Applied)
                         throw new InvalidOperationException("模拟资产事务未提交。");
                     economyCommitted = true;
-                    try
+                    if (committed.Balances is { } committedBalances)
                     {
-                        await ReloadWalletAsync(cancellationToken);
+                        // 提交单语句 upsert 的 RETURNING 已带回最新余额：直接并入钱包，跳过整包重读。
+                        wallet.SyncCommitted(ToDomainBalances(committedBalances));
                     }
-                    catch (Exception reloadException)
+                    else
                     {
-                        // 资产事务已 durable commit，不能回滚 LastSimulatedAt，否则下一次目标时间
-                        // 会把同一段奖励再次结算。保留聚合进度，标记钱包待刷新；后续资产命令
-                        // 会先强制从 PostgreSQL 读取，期间尽量用本地 delta 保持界面可见值。
-                        _walletReloadRequired = true;
-                        foreach (var delta in result.AssetDeltas)
+                        try
                         {
-                            try { wallet.Apply(delta); }
-                            catch (Exception applyException)
+                            await ReloadWalletAsync(cancellationToken);
+                        }
+                        catch (Exception reloadException)
+                        {
+                            // 资产事务已 durable commit，不能回滚 LastSimulatedAt，否则下一次目标时间
+                            // 会把同一段奖励再次结算。保留聚合进度，标记钱包待刷新；后续资产命令
+                            // 会先强制从 PostgreSQL 读取，期间尽量用本地 delta 保持界面可见值。
+                            _walletReloadRequired = true;
+                            foreach (var delta in result.AssetDeltas)
+                            {
+                                try { wallet.Apply(delta); }
+                                catch (Exception applyException)
+                                {
+                                    if (_walletErrorLog.TryAcquire())
+                                        logger.LogError(applyException, "模拟资产已提交但本地钱包无法应用 delta，等待下次刷新 player={PlayerId}", aggregate.PlayerId.Value);
+                                    break;
+                                }
+                            }
+                            if (reloadException is not OperationCanceledException)
                             {
                                 if (_walletErrorLog.TryAcquire())
-                                    logger.LogError(applyException, "模拟资产已提交但本地钱包无法应用 delta，等待下次刷新 player={PlayerId}", aggregate.PlayerId.Value);
-                                break;
+                                    logger.LogError(reloadException, "模拟资产已提交但钱包刷新失败 player={PlayerId}", aggregate.PlayerId.Value);
                             }
+                            if (reloadException is OperationCanceledException) throw;
                         }
-                        if (reloadException is not OperationCanceledException)
-                        {
-                            if (_walletErrorLog.TryAcquire())
-                                logger.LogError(reloadException, "模拟资产已提交但钱包刷新失败 player={PlayerId}", aggregate.PlayerId.Value);
-                        }
-                        if (reloadException is OperationCanceledException) throw;
                     }
                 }
                 _logicalVersion = Math.Max(_logicalVersion, aggregate.StateVersion);
                 TouchDirtyOnly();
+                // 推进热路径存在不落脏标记的遥测写入：节拍号递增使热路径分段基线在下次受保护操作前失效重捕。
+                _advanceNonce++;
                 return result;
             }
             catch
             {
                 if (!economyCommitted)
                 {
-                    RestoreSimulationState(before, walletBefore, dirtyBefore, dirtyAtBefore, logicalVersionBefore);
+                    RestoreFromCheckpoints(marksBefore, dirtyBefore, dirtyAtBefore, logicalVersionBefore, walletBefore);
+                }
+                else
+                {
+                    // 事务已 durable 提交：推进结果（含不落脏标记的遥测写入）保留生效，
+                    // 节拍号递增让热路径分段基线随之下个受保护操作前失效重捕。
+                    _advanceNonce++;
                 }
                 throw;
             }
@@ -1674,19 +1713,83 @@ public sealed class PlayerRuntime(
             }
         }
 
-        private void RestoreSimulationState(
-            PlayerAggregateState state,
-            IReadOnlyCollection<AssetBalance> balances,
-            IReadOnlyCollection<PlayerSectionKind> dirtySections,
-            IReadOnlyDictionary<string, DateTimeOffset> dirtyAt,
-            long logicalVersion)
+        /// <summary>
+        /// 把分段回滚基线推进到当前聚合状态：逐段比对脏流水戳，只重捕本周期内被标脏过的分段；
+        /// 对推进热路径分段（Progression/ActionQueue/Combat）另按推进节拍号失效——这些分段
+        /// 存在不落脏标记的遥测写入（道龄/行动进度/回复余量），推进成功后基线必须重捕。
+        /// 头标量不经脏标记留痕，每次随基线一并刷新。必须在单写者锁内、受保护写操作动手之前调用。
+        /// </summary>
+        private void SyncSectionCheckpoints()
         {
-            aggregate.RestoreFrom(state);
-            foreach (var section in dirtySections) aggregate.MarkDirty(section);
+            var marks = aggregate.DirtySectionMarks;
+            foreach (var section in SectionKinds)
+            {
+                var tag = marks.TryGetValue(section, out var mark) ? mark : 0L;
+                var staleByAccrual = AdvanceAccrualSections.Contains(section)
+                    && (!_checkpointAdvanceNonces.TryGetValue(section, out var nonce) || nonce != _advanceNonce);
+                if (_checkpointMarks.TryGetValue(section, out var baseline) && baseline == tag && !staleByAccrual)
+                    continue;
+                _sectionCheckpoints[section] = aggregate.CaptureSectionCheckpoint(section);
+                _checkpointMarks[section] = tag;
+                _checkpointAdvanceNonces[section] = _advanceNonce;
+            }
+            _headCheckpoint = aggregate.CaptureHeadCheckpoint();
+        }
+
+        /// <summary>
+        /// 受保护写操作失败时的分段级回滚：每个分段就地写回操作起点的基线副本
+        /// （未变分段写回相同内容无副作用），头标量/脏集合/触及流水号/脏龄/逻辑版本精确复原，
+        /// 钱包回滚到操作前余额。与旧版整份 ExportState+RestoreFrom 的逐位一致语义等价。
+        /// </summary>
+        private void RestoreFromCheckpoints(
+            IReadOnlyDictionary<PlayerSectionKind, long> marksBefore,
+            IReadOnlyCollection<PlayerSectionKind> dirtyBefore,
+            IReadOnlyDictionary<string, DateTimeOffset> dirtyAt,
+            long logicalVersion,
+            IReadOnlyCollection<AssetBalance> balances)
+        {
+            foreach (var section in SectionKinds)
+            {
+                if (!_sectionCheckpoints.TryGetValue(section, out var data))
+                    throw new InvalidOperationException($"分段回滚基线缺失：{section}。");
+                aggregate.RestoreSectionCheckpoint(section, data);
+            }
+            aggregate.RestoreHeadCheckpoint(_headCheckpoint);
+            aggregate.RestoreDirtyTracking(dirtyBefore, marksBefore);
             _dirtyAt.Clear();
             foreach (var pair in dirtyAt) _dirtyAt[pair.Key] = pair.Value;
             _logicalVersion = logicalVersion;
             wallet.Restore(balances);
+        }
+
+        /// <summary>把持久化余额行映射为领域钱包余额对象。</summary>
+        private static AssetBalance[] ToDomainBalances(IReadOnlyList<AssetBalanceRecord> records)
+        {
+            var balances = new AssetBalance[records.Count];
+            for (var i = 0; i < records.Count; i++)
+            {
+                var record = records[i];
+                balances[i] = new AssetBalance(
+                    new PlayerId(record.PlayerId),
+                    new AssetKey(new ItemId(record.AssetId), record.Variant),
+                    record.Quantity,
+                    record.Version);
+            }
+            return balances;
+        }
+
+        /// <summary>
+        /// 经济事务提交后的钱包同步：提交回执携带最新余额时就地并入（零数据库往返）；
+        /// 幂等重放等未携带余额的结果回退为整包重读（含失败降级为下次命令前强制刷新）。
+        /// </summary>
+        private async ValueTask SyncWalletAfterCommitAsync(EconomyTransactionResult committed, CancellationToken cancellationToken)
+        {
+            if (committed.Balances is { } records)
+            {
+                wallet.SyncCommitted(ToDomainBalances(records));
+                return;
+            }
+            await RefreshWalletAfterDurableMutationAsync(cancellationToken);
         }
 
         private static bool TryReadGuid(JsonElement payload, string property, out Guid value)

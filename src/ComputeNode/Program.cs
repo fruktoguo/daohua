@@ -34,13 +34,9 @@ else if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCOR
 }
 
 builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
-builder.Services.AddSingleton(new JsonSerializerOptions(JsonSerializerDefaults.Web)
-{
-    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    WriteIndented = false,
-    MaxDepth = 32
-});
-builder.Services.AddSingleton<GameDataFingerprint>();
+// 配表随 Domain 程序集内嵌装载：节点与主服跑同一 Domain.dll 时指纹天然同源，
+// 无需文件系统配表目录，也不会出现部分文件缺失导致的指纹漂移。
+builder.Services.AddSingleton(GameDataCatalog.LoadEmbedded());
 builder.Services.AddSingleton<DeterministicBatchEngine>();
 builder.Services.AddSingleton<ComputeMetrics>();
 
@@ -77,7 +73,7 @@ if (!string.IsNullOrWhiteSpace(upstreamUrl))
     builder.Services.AddHostedService(sp => new UpstreamLinkWorker(
         upstreamUrl.Trim(), token, nodeName,
         sp.GetRequiredService<DeterministicBatchEngine>(),
-        sp.GetRequiredService<GameDataFingerprint>(),
+        sp.GetRequiredService<GameDataCatalog>(),
         sp.GetRequiredService<ComputeMetrics>(),
         sp.GetRequiredService<SemaphoreSlim>(),
         maxJobs, maxConcurrentBatches,
@@ -85,9 +81,12 @@ if (!string.IsNullOrWhiteSpace(upstreamUrl))
 }
 
 var app = builder.Build();
-var fingerprint = app.Services.GetRequiredService<GameDataFingerprint>();
+var gameData = app.Services.GetRequiredService<GameDataCatalog>();
 var metrics = app.Services.GetRequiredService<ComputeMetrics>();
 var engine = app.Services.GetRequiredService<DeterministicBatchEngine>();
+app.Logger.LogInformation(
+    "ComputeNode 已装配配表 fingerprint={Fingerprint} runtime={Runtime} contract={Contract}",
+    gameData.Fingerprint, NodeRuntime.Fingerprint, ComputeContract.Version);
 
 // 统一异常出口：对外只回通用 ProblemDetails + traceId，内部异常细节仅留在节点日志。
 app.UseExceptionHandler(errorApp =>
@@ -113,7 +112,8 @@ app.MapGet("/healthz", () => Results.Ok(new
     status = "ok",
     service = "daohua-compute-node",
     contractVersion = ComputeContract.Version,
-    gameDataFingerprint = fingerprint.Value,
+    gameDataFingerprint = gameData.Fingerprint,
+    runtimeFingerprint = NodeRuntime.Fingerprint,
     maxJobsPerBatch = maxJobs,
     maxBatchBytes = ComputeContract.MaxBatchBytes
 }));
@@ -123,7 +123,8 @@ app.MapGet("/readyz", () => Results.Ok(new
     status = "ready",
     service = "daohua-compute-node",
     contractVersion = ComputeContract.Version,
-    gameDataFingerprint = fingerprint.Value,
+    gameDataFingerprint = gameData.Fingerprint,
+    runtimeFingerprint = NodeRuntime.Fingerprint,
     activeBatches = metrics.ActiveBatches,
     completedJobs = metrics.CompletedJobs,
     failedJobs = metrics.FailedJobs
@@ -177,13 +178,13 @@ app.MapPost("/internal/v1/compute/advance-batch", async (
         if (!string.IsNullOrWhiteSpace(batch.GameDataFingerprint)
             && !CryptographicOperations.FixedTimeEquals(
                 Encoding.UTF8.GetBytes(batch.GameDataFingerprint),
-                Encoding.UTF8.GetBytes(fingerprint.Value)))
+                Encoding.UTF8.GetBytes(gameData.Fingerprint)))
         {
             metrics.RecordFailedBatch();
             return Results.Conflict(new
             {
                 code = "GAME_DATA_FINGERPRINT_MISMATCH",
-                expected = fingerprint.Value,
+                expected = gameData.Fingerprint,
                 actual = batch.GameDataFingerprint,
                 traceId = request.HttpContext.TraceIdentifier
             });
@@ -193,7 +194,7 @@ app.MapPost("/internal/v1/compute/advance-batch", async (
         foreach (var job in batch.Jobs)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = engine.Advance(job, fingerprint.Value);
+            var result = engine.Advance(job);
             results.Add(result);
             if (result.Success) metrics.RecordCompletedJob();
             else metrics.RecordFailedJob();
@@ -202,7 +203,7 @@ app.MapPost("/internal/v1/compute/advance-batch", async (
         metrics.RecordCompletedBatch(Stopwatch.GetElapsedTime(started));
         return Results.Ok(new AdvanceBatchResponse(
             ComputeContract.Version,
-            fingerprint.Value,
+            gameData.Fingerprint,
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             results));
     }

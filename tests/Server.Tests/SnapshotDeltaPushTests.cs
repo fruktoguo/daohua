@@ -6,7 +6,7 @@ using Protocol;
 using Server.Clean;
 using Server.Clean.Social;
 using Xunit;
-using StoredHead = Server.Clean.PlayerStateHead;
+using StoredHead = Domain.Persistence.PlayerStateHead;
 
 namespace Server.Tests;
 

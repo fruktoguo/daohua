@@ -248,8 +248,8 @@ public sealed class CombatantState
     public string Id { get; }
     /// <summary>配表怪物定义 ID（玩家为 null）。</summary>
     public string? DefinitionId { get; internal set; }
-    /// <summary>战斗静态属性面板</summary>
-    public CombatantStats Stats { get; }
+    /// <summary>战斗静态属性面板；进行中战斗跨步复用时由 <see cref="RefreshStats"/> 换入最新结算结果。</summary>
+    public CombatantStats Stats { get; private set; }
     /// <summary>随战技能槽（玩家/怪物/斗法镜像共用同构槽位模型）。</summary>
     public IReadOnlyList<SkillSlot> Skills { get; }
     /// <summary>战内 Buff 列表（战斗时钟过期，随快照持久化）。</summary>
@@ -309,6 +309,22 @@ public sealed class CombatantState
             for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].ThreatPoints * Buffs[i].Stacks;
             return total;
         }
+    }
+
+    /// <summary>
+    /// 换入重新结算的战斗属性面板：供进行中战斗在外层推进步间跨步复用时同步最新属性输入
+    /// （战外 Buff 增减/到期、六维经验等），沿用恢复快照口径的越界校验——
+    /// 当前气血/灵力超出新上限即拒绝，与 <see cref="CombatEncounterState.Restore"/> 逐位等价。
+    /// </summary>
+    internal void RefreshStats(CombatantStats stats)
+    {
+        ArgumentNullException.ThrowIfNull(stats);
+        stats.Validate();
+        // 与 ApplySnapshot 的气血/灵力口径逐位一致：非负有限且不超出新面板上限。
+        if (!double.IsFinite(Hitpoints) || Hitpoints < 0 || Hitpoints > stats.MaxHitpoints
+            || !double.IsFinite(Manapoints) || Manapoints < 0 || Manapoints > stats.MaxManapoints)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "持久化战斗单位状态无效。");
+        Stats = stats;
     }
 
     /// <summary>Buff 层数求值：战内 Buff 层数 + 宿主注入的战外视图；buffId 为 null 时合计全部层数。</summary>

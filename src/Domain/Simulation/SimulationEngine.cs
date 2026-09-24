@@ -103,6 +103,100 @@ public static class SimulationEngine
     }
 
     /// <summary>
+    /// 外层推进循环内跨步复用的进行中战斗会话：同一行动的 Combat 相位在相邻外层步之间
+    /// 直接续用 <see cref="CombatEncounterState"/> 内存态，不再每步对整场战斗做
+    /// Restore（模板/单位/快照校验重建）与 ToExpeditionState（玩家+敌人快照数组）拆装。
+    /// 会话仅在单次 AdvanceTo 调用内有效：期间只把标量镜像字段写回行动文档，
+    /// 完整单位快照在 Flush（补算收尾、消耗品触发器读文档、会话被顶替）时统一回写，
+    /// 持久化文档与逐位重建口径保持一致。
+    /// </summary>
+    private sealed class LiveCombatBattle
+    {
+        /// <summary>当前存活会话；同一时刻至多一场复用战斗，错位会话由守卫自动失配。</summary>
+        public Entry? Current;
+
+        /// <summary>一场进行中战斗的复用句柄。</summary>
+        public sealed class Entry
+        {
+            /// <summary>战斗所属行动实例。</summary>
+            public required QueuedAction Action { get; init; }
+            /// <summary>内存态战斗上下文。</summary>
+            public required CombatEncounterState Battle { get; init; }
+            /// <summary>本场战斗所属波次号（匹配守卫的一部分）。</summary>
+            public required int WaveNumber { get; init; }
+            /// <summary>最近一次刷新玩家战斗面板时的属性输入修订号；未变则跳过本步面板刷新。</summary>
+            public long AttributeRevision { get; set; }
+        }
+
+        /// <summary>
+        /// 判定行动当前文档仍指向本会话战斗：同行动实例、同遭遇/种子/波次，
+        /// 且文档战斗时钟与内存态一致（文档被外部替换或回写漂移时自动失配，回退全量装配）。
+        /// </summary>
+        private static bool Matches(Entry entry, QueuedAction action, CombatExpeditionState? expedition)
+            => ReferenceEquals(entry.Action, action)
+                && expedition is { Phase: CombatExpeditionPhase.Combat }
+                && expedition.EncounterId == entry.Battle.EncounterId
+                && expedition.Seed == entry.Battle.Seed
+                && expedition.WaveNumber == entry.WaveNumber
+                && expedition.BattleElapsedSeconds == entry.Battle.ElapsedSeconds;
+
+        /// <summary>命中复用时把会话交给调用方；失配返回 false 由调用方走全量装配。</summary>
+        public bool TryReuse(QueuedAction action, CombatExpeditionState? expedition, out Entry? entry)
+        {
+            var current = Current;
+            if (current is not null && Matches(current, action, expedition))
+            {
+                entry = current;
+                return true;
+            }
+            entry = null;
+            return false;
+        }
+
+        /// <summary>
+        /// 登记一场新建/新装配的战斗为复用会话；被顶替的旧会话先按其行动现文档全量回写，
+        /// 防止离开队首的行动滞留仅标量同步过的文档逃逸进持久化快照。
+        /// </summary>
+        public void Adopt(QueuedAction action, CombatEncounterState battle, CombatExpeditionState expedition,
+            long attributeRevision)
+        {
+            Flush();
+            Current = new Entry
+            {
+                Action = action,
+                Battle = battle,
+                WaveNumber = expedition.WaveNumber,
+                AttributeRevision = attributeRevision
+            };
+        }
+
+        /// <summary>会话不再是当前复用对象时丢弃引用（战斗终局、相位离开等）。</summary>
+        public void Release(QueuedAction action)
+        {
+            if (Current is { } current && ReferenceEquals(current.Action, action)) Current = null;
+        }
+
+        /// <summary>
+        /// 把内存态战斗全量回写为持久化文档（含玩家/敌人完整快照）。仅当行动文档仍指向
+        /// 本会话战斗时才覆盖；镜像气血/灵力以文档现值为准——脱战相位（自然回复、
+        /// 即时消耗品）可能已在战斗步之外改写镜像，不能用水位内值覆盖回去。
+        /// </summary>
+        public void Flush()
+        {
+            var current = Current;
+            if (current is null) return;
+            var doc = current.Action.Expedition;
+            if (!Matches(current, current.Action, doc)) return;
+            var exported = ToExpeditionState(current.Battle, doc!);
+            current.Action.Expedition = exported with
+            {
+                PlayerHitpoints = doc!.PlayerHitpoints,
+                PlayerManapoints = doc.PlayerManapoints
+            };
+        }
+    }
+
+    /// <summary>
     /// 将玩家聚合状态从 LastSimulatedAt 确定性推进至目标时间 target。
     /// </summary>
     /// <param name="player">角色聚合实例（在此方法中直接就地更新）</param>
@@ -147,8 +241,12 @@ public static class SimulationEngine
         var events = new SimulationEventTail();
         double actions = 0, repeats = 0;
         var changed = false;
+        // 进行中战斗的跨步复用会话：仅本次调用内有效，结束时统一 Flush 回写完整快照。
+        var live = new LiveCombatBattle();
         // 离线/挂起补算收益上限 48 小时：超出部分只推进模拟时钟与过期清理，不再产出行动收益。
         var computeTarget = target - from > TimeSpan.FromHours(48) ? from.AddHours(48) : target;
+        try
+        {
         while (player.LastSimulatedAt < computeTarget)
         {
             var now = player.LastSimulatedAt;
@@ -170,7 +268,7 @@ public static class SimulationEngine
                 }
             }
             var attributes = PlayerAttributeResolver.Apply(player, gameData);
-            var instantDeltas = ActivateInstantConsumables(player, gameData, wallet, now, events);
+            var instantDeltas = ActivateInstantConsumables(player, gameData, wallet, now, events, live);
             foreach (var delta in instantDeltas)
             {
                 wallet.Apply(delta);
@@ -188,7 +286,7 @@ public static class SimulationEngine
                 var untilCooldown = slot.CooldownUntilUnixSeconds - nowUnix;
                 if (untilCooldown > 1e-9) step = Math.Min(step, untilCooldown);
             }
-            var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet, duel);
+            var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet, duel, live);
             // 无暂存物品时整段跳过：SettleStagedItems 空表恒返回空，标脏只在真实结算时发生。
             if (player.Duel.StagedItems.Count > 0)
             {
@@ -254,14 +352,22 @@ public static class SimulationEngine
                 }
             }
         }
+        }
+        finally
+        {
+            // 复用会话收尾：把仍在进行的战斗完整快照回写行动文档，保证 ExportState/分段落盘
+            // 与外部改动后下一次补算看到的远征状态与逐步拆装口径逐位一致；异常路径同样回写。
+            live.Flush();
+        }
         if (player.LastSimulatedAt < target)
         {
             // 跳过 48 小时上限外的尾段时间：清理过期增益并把时钟推进到真实目标，不结算收益。
             var expired = player.Buffs.Active.RemoveAll(buff => buff.ExpiresAtUnixSeconds <= target.ToUnixTimeMilliseconds() / 1000d);
             if (expired > 0) { player.MarkDirty(PlayerSectionKind.Buffs); changed = true; }
-            if (player.Combat.Skills != PlayerCombatSkillState.Empty)
+            if (!player.Combat.Skills.IsEmpty)
             {
                 // 超上限丢弃技能时钟会改变 combat 分段内容：必须标脏，保证增量推送与刷盘不漏。
+                // 语义判定：反序列化还原的空技能态与 Empty 单例引用不等，!= Empty 会误标脏。
                 player.Combat.Skills = PlayerCombatSkillState.Empty;
                 player.MarkDirty(PlayerSectionKind.Combat);
             }
@@ -276,7 +382,8 @@ public static class SimulationEngine
     }
 
     private static List<AssetDelta> ActivateInstantConsumables(PlayerAggregate player,
-        GameDataCatalog catalog, AssetWallet wallet, DateTimeOffset at, SimulationEventTail events)
+        GameDataCatalog catalog, AssetWallet wallet, DateTimeOffset at, SimulationEventTail events,
+        LiveCombatBattle? live = null)
     {
         if (player.Actions.Count == 0 || player.Combat.Hitpoints <= 0) return [];
         // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与 MatchesActionType 固定税。
@@ -306,7 +413,12 @@ public static class SimulationEngine
             // 消耗品使用条件与技能共用同一套触发判定模型；求值失败一律跳过本槽。
             if (definition.Triggers is { Count: > 0 } triggers)
             {
-                evalCaster ??= BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
+                if (evalCaster is null)
+                {
+                    // 触发器求值读取行动文档中的敌人快照：复用会话需先把内存态全量回写。
+                    live?.Flush();
+                    evalCaster = BuildConsumableEvalUnits(player, catalog, out evalTarget, out evalAllies, out evalEnemies);
+                }
                 if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, evalCaster, evalTarget,
                         evalAllies!, evalEnemies!)) continue;
             }
@@ -391,7 +503,8 @@ public static class SimulationEngine
         ActionCatalog catalog,
         GameDataCatalog? gameData,
         AssetWallet? assetBalances,
-        DuelAdvanceOptions? duel = null)
+        DuelAdvanceOptions? duel = null,
+        LiveCombatBattle? live = null)
     {
         ArgumentNullException.ThrowIfNull(player);
         target = target.ToUniversalTime();
@@ -485,7 +598,7 @@ public static class SimulationEngine
                 if (gameData is null)
                     throw new DomainException(DomainErrorCode.NotFound, $"行动 {definition.Id} 缺少战斗配表上下文。");
                 AdvanceCombatAction(player, action, definition, gameData, assetBalances, duel, from, target,
-                    ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats);
+                    ref remainingSeconds, ref deltas, ref events, ref completedActions, ref completedRepeats, live);
                 continue;
             }
             if (definition.ExecutionKind == ActionExecutionKind.Travel)
@@ -635,7 +748,8 @@ public static class SimulationEngine
         ref Dictionary<ItemId, double>? deltas,
         ref SimulationEventTail? events,
         ref double completedActions,
-        ref double completedRepeats)
+        ref double completedRepeats,
+        LiveCombatBattle? live = null)
     {
         CombatEncounterDefinition encounter;
         var expedition = action.Expedition;
@@ -792,6 +906,7 @@ public static class SimulationEngine
             });
             action.ProgressSeconds = 0;
             action.Expedition = combatState;
+            live?.Adopt(action, battle, combatState, player.AttributeInputRevision);
             player.RecordStats(action.Id,
                 from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
                 report => report.Encounters += 1);
@@ -807,33 +922,51 @@ public static class SimulationEngine
             if (!gameData.CombatMonsters.ContainsKey(waveEnemies[i].EnemyId))
                 throw new DomainException(DomainErrorCode.InvariantViolation, "战斗远征敌人状态无效。");
 
-        var templates = waveEnemies.Select(enemy =>
-        {
-            var monster = gameData.CombatMonsters[enemy.EnemyId];
-            return new CombatantTemplate(monster.Stats, monster.Skills);
-        }).ToArray();
-        // 玩家方技能槽与怪物同构：装配功法折叠为通用技能槽进入同一条动作时间线。
-        var playerTemplate = new CombatantTemplate(
-            PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
-            SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities));
-        var battleState = CombatEncounterState.Restore(
-            encounter.Id,
-            expedition.Seed,
-            playerTemplate,
-            expedition.PlayerState ?? new CombatantSnapshot(expedition.PlayerHitpoints, expedition.PlayerManapoints,
-                expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat),
-            templates,
-            waveEnemies.Select(enemy => enemy.State).ToArray(),
-            expedition.BattleElapsedSeconds,
-            expedition.Outcome,
-            expedition.PlayerAttackCount + SumEnemyAttackCounts(waveEnemies),
-            InBattleRespawnSeconds(encounter),
-            expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
-        for (var i = 0; i < waveEnemies.Count; i++)
-            battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
-        // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
         var activeBuffs = player.Buffs.Active;
-        battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+        CombatEncounterState battleState;
+        if (live is not null && live.TryReuse(action, expedition, out var session))
+        {
+            // 同一场进行中的战斗跨步续用内存态：仅当属性输入修订号变化（Buff 到期、
+            // 消耗品生效、六维经验等）时把最新结算面板换入存活单位，与每步 Restore 的
+            // 模板刷新语义逐位一致；BaseAttributes 旁路目录不经修订号覆盖，逐次重算。
+            battleState = session!.Battle;
+            if (gameData.BaseAttributes is null || session.AttributeRevision != player.AttributeInputRevision)
+            {
+                battleState.Player.RefreshStats(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant());
+                session.AttributeRevision = player.AttributeInputRevision;
+            }
+            battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+        }
+        else
+        {
+            var templates = waveEnemies.Select(enemy =>
+            {
+                var monster = gameData.CombatMonsters[enemy.EnemyId];
+                return new CombatantTemplate(monster.Stats, monster.Skills);
+            }).ToArray();
+            // 玩家方技能槽与怪物同构：装配功法折叠为通用技能槽进入同一条动作时间线。
+            var playerTemplate = new CombatantTemplate(
+                PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(),
+                SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities));
+            battleState = CombatEncounterState.Restore(
+                encounter.Id,
+                expedition.Seed,
+                playerTemplate,
+                expedition.PlayerState ?? new CombatantSnapshot(expedition.PlayerHitpoints, expedition.PlayerManapoints,
+                    expedition.PlayerNextAttackAtSeconds, expedition.PlayerAttackCount, expedition.PlayerThreat),
+                templates,
+                waveEnemies.Select(enemy => enemy.State).ToArray(),
+                expedition.BattleElapsedSeconds,
+                expedition.Outcome,
+                expedition.PlayerAttackCount + SumEnemyAttackCounts(waveEnemies),
+                InBattleRespawnSeconds(encounter),
+                expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
+            for (var i = 0; i < waveEnemies.Count; i++)
+                battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
+            // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
+            battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
+            live?.Adopt(action, battleState, expedition, player.AttributeInputRevision);
+        }
         var battleFrom = battleState.ElapsedSeconds;
         var actionElapsedBeforeCombat = (target - from).TotalSeconds - remainingSeconds;
         var combatResult = DeterministicCombatEngine.AdvanceTo(battleState, battleFrom + remainingSeconds);
@@ -851,11 +984,21 @@ public static class SimulationEngine
         player.Combat.Manapoints = battleState.Player.Manapoints;
         // 战斗中气血是独立持久化分段；仅标记行动队列会导致重连后回退到旧气血。
         player.MarkDirty(PlayerSectionKind.Combat);
-        var updatedBattle = ToExpeditionState(battleState, expedition with
+        // 复用会话驻留期间只回写标量镜像字段：玩家/敌人完整快照由 Flush 在补算收尾、
+        // 触发器读文档或会话顶替时统一导出，标量部分与 ToExpeditionState 逐位一致。
+        var updatedBattle = expedition with
         {
+            BattleElapsedSeconds = battleState.ElapsedSeconds,
+            PlayerHitpoints = battleState.Player.Hitpoints,
+            PlayerManapoints = battleState.Player.Manapoints,
+            PlayerNextAttackAtSeconds = battleState.Player.NextAttackAtSeconds,
+            PlayerAttackCount = battleState.Player.AttackCount,
+            PlayerThreat = battleState.Player.Threat,
+            PlayerRespawnAtSeconds = double.IsFinite(battleState.PlayerRespawnAtSeconds)
+                ? battleState.PlayerRespawnAtSeconds : null,
             PhaseElapsedSeconds = Math.Min(expedition.PhaseDurationSeconds, expedition.PhaseElapsedSeconds + consumed),
             Outcome = combatResult.Outcome
-        });
+        };
         action.Expedition = updatedBattle;
         action.ProgressSeconds = updatedBattle.PhaseElapsedSeconds;
         // 战斗日志名称惰性化：只有确实产生日志帧时才解析怪物名，空事件帧战斗零字典/字符串成本。
@@ -924,6 +1067,8 @@ public static class SimulationEngine
         }
         FlushDownedEvents(double.MaxValue);
         if (combatResult.Outcome == CombatOutcome.Running) return;
+        // 战斗终局：会话随终局文档替换自然失效，提前释放避免下一波误命中守卫。
+        live?.Release(action);
         if (combatResult.Outcome != CombatOutcome.PlayerWon)
         {
             // 团灭即败（defeat 分支）：计入生平败走，拆场进入复活点读条，波次重置回第 1 波。

@@ -104,8 +104,13 @@ public static class ComputeLinkEndpoint
                 return;
             }
 
+            // 运行时指纹仅作诊断展示：超长截断防刷量，绝不参与握手裁决。
+            var runtimeFingerprint = hello.RuntimeFingerprint is { Length: > 256 } longRuntime
+                ? longRuntime[..256]
+                : hello.RuntimeFingerprint;
             node = new ComputeLinkNode(
-                name, hello.MaxConcurrentBatches, hello.MaxJobsPerBatch, hello.MaxBatchBytes);
+                name, hello.MaxConcurrentBatches, hello.MaxJobsPerBatch, hello.MaxBatchBytes,
+                runtimeFingerprint: runtimeFingerprint);
             if (!registry.TryRegister(node))
             {
                 if (NodeLimitLog.TryAcquire())
@@ -115,8 +120,9 @@ public static class ComputeLinkEndpoint
                 return;
             }
             logger.LogInformation(
-                "计算节点接入 node={Node} name={Name} capacity={Capacity} maxJobs={MaxJobs} maxBytes={MaxBytes} remote={Remote}",
+                "计算节点接入 node={Node} name={Name} capacity={Capacity} maxJobs={MaxJobs} maxBytes={MaxBytes} runtime={Runtime} remote={Remote}",
                 node.NodeId, node.Name, node.Capacity, node.MaxJobsPerBatch, node.MaxBatchBytes,
+                node.RuntimeFingerprint ?? "unknown",
                 context.Connection.RemoteIpAddress);
 
             await socket.SendAsync(

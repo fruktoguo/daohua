@@ -283,6 +283,15 @@ public sealed class PlayerDuelState
     /// </summary>
     internal long ExportRevision => StructureVersion + StagedItems.Version + Reports.Version + ActionReports.Version;
 
+    /// <summary>分段回滚检查点专用：把结构与各集合修订号写回备份值；调用方须先把内容恢复到与版本一致的状态。</summary>
+    internal void RestoreRevisionCounters(long structureVersion, long stagedItemsVersion, long reportsVersion, long actionReportsVersion)
+    {
+        StructureVersion = structureVersion;
+        StagedItems.RestoreVersion(stagedItemsVersion);
+        Reports.RestoreVersion(reportsVersion);
+        ActionReports.RestoreVersion(actionReportsVersion);
+    }
+
     /// <summary>队首行动的收益账本（便捷访问）；队首无账本或空队列时为 null。</summary>
     public PlayerBattleReport? CurrentReport
         => _queue is { Count: > 0 } queue ? ReportFor(queue[0].Id) : null;

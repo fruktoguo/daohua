@@ -4,7 +4,7 @@ using Domain.Player;
 using Server.Clean;
 using System.Text.Json;
 using Xunit;
-using CleanSectionCodec = Server.Clean.SectionCodec;
+using CleanSectionCodec = Domain.Persistence.SectionCodec;
 
 namespace Server.Tests;
 

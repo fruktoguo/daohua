@@ -67,12 +67,15 @@ public sealed class ComputeLinkEndpointTests
         using var client = await ConnectAsync(app);
 
         await SendAsync(client, new ComputeLinkHello(
-            ComputeLinkContract.Version, "cap-node", 3, Catalog.Fingerprint, 96, 4L * 1024 * 1024));
+            ComputeLinkContract.Version, "cap-node", 3, Catalog.Fingerprint, 96, 4L * 1024 * 1024,
+            "Arm64/.NET 10.0.1-test"));
         var welcome = Assert.IsType<ComputeLinkWelcome>(await ReceiveAsync(client));
         var node = Assert.Single(registry.Nodes, entry => entry.NodeId == welcome.NodeId);
         Assert.Equal(3, node.Capacity);
         Assert.Equal(96, node.MaxJobsPerBatch);
         Assert.Equal(4L * 1024 * 1024, node.MaxBatchBytes);
+        // v1.2：运行时指纹随 hello 透传进注册视图，供跨架构确定性差异诊断。
+        Assert.Equal("Arm64/.NET 10.0.1-test", node.RuntimeFingerprint);
     }
 
     /// <summary>超出契约硬上限的能力声明必须判协议违规并断开，不得注册。</summary>

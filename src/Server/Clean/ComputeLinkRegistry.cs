@@ -15,7 +15,8 @@ public sealed class ComputeLinkNode(
     int capacity,
     int maxJobsPerBatch = 0,
     long maxBatchBytes = 0,
-    int outboundCapacity = 64)
+    int outboundCapacity = 64,
+    string? runtimeFingerprint = null)
 {
     private int _inFlightSlots;
 
@@ -29,6 +30,8 @@ public sealed class ComputeLinkNode(
     public int MaxJobsPerBatch { get; } = maxJobsPerBatch;
     /// <summary>节点声明的单批最大解码后字节数；0 表示未声明，由主服配置兜底。</summary>
     public long MaxBatchBytes { get; } = maxBatchBytes;
+    /// <summary>节点 hello 自报的运行时指纹（进程架构/运行时描述，仅诊断展示，不参与裁决）。</summary>
+    public string? RuntimeFingerprint { get; } = runtimeFingerprint;
     /// <summary>待发送帧队列：派发器投递，端点发送循环消费。</summary>
     public Channel<byte[]> Outbound { get; } = Channel.CreateBounded<byte[]>(
         new BoundedChannelOptions(outboundCapacity) { SingleReader = true });

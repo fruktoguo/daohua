@@ -16,5 +16,8 @@
     <ProjectReference Include="../../src/Server/Server.csproj" />
     <ProjectReference Include="../../src/Domain/Domain.csproj" />
     <ProjectReference Include="../../src/Protocol/Protocol.csproj" />
+    <!-- 引用 ComputeNode 程序集让 golden vector 直接驱动节点真实引擎（DeterministicBatchEngine），
+         两端比对同一实现而非复刻逻辑；节点内部契约类型经 JSON 线协议往返比对，不走共享类型。 -->
+    <ProjectReference Include="../../src/ComputeNode/ComputeNode.csproj" />
   </ItemGroup>
 </Project>

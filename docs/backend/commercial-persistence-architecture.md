@@ -185,11 +185,11 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 主服务 → ComputeNode 冷挂机派发链已实现，链路为：
 
-1. `ColdCatchUpWorker` 周期性扫描 `game.player_projection`（presence=offline、last_active_at 落在 48h 封顶窗口内、已过断线宽限、无存活运行时租约、无未完结任务），经 `IPlayerStateRepository.LoadAsync` 读取最新有效 section（含 durable 队列叠加），编码为 compute.v1 `AdvanceJobRequest` JSON 作为 input_payload 写入 `platform.compute_jobs`；job_id 由玩家与目标时刻确定性派生，重复入队走 upsert 去重。
-2. 计算节点经 `compute-link.v1` **反向拨入**：节点主动 WebSocket 连接 `/internal/compute-link`（`X-Compute-Token` 鉴权 + hello 握手声明并发容量与配表指纹），握手通过即注册进 `ComputeLinkRegistry` 动态节点组；连接存活即在线，断开即热拔出。节点位于 NAT/防火墙后也可工作（odin 类设备只需求出方向连通），无需隧道或静态端点配置。
-3. `ComputeDispatcherWorker` 先从注册表取剩余容量最大的在线节点（无节点则不领取，任务留 pending 不消耗 attempts），再以 `FOR UPDATE SKIP LOCKED` 批量领取到期任务（含租约过期的孤儿 leased 行），组装 `AdvanceBatchRequest` 经节点链路下发并等待同批次结果帧。
-4. 每个 `AdvanceJobResult` 成功时经 `PostgresSectionRepository.ApplyComputeResultAsync` 落库：先锁提交头并要求 `state_version == SourceStateVersion`，玩家已上线或版本漂移则整体丢弃结果并记日志，绝不覆盖在线写者；随后更新 section 与提交头（同一加锁顺序，与刷盘 worker 无死锁环）。
-5. 失败语义：节点返回 Retryable 失败或响应缺失按指数退避重试；载荷非法、输出污染等不可重试错误直接置 `dead`；节点断线或批次超时按租约令牌整批退回 pending；领取次数超过 `ComputeNode:MaxAttempts` 一律 dead。`ComputeNode:Enabled/Token` 未配置时派发器与扫描器安全停用，任务保留 pending，主服务不做内联补算；hello 配表指纹不匹配的节点被拒绝注册，防止旧版本节点按旧口径算新任务。
+1. `ColdCatchUpWorker` 周期性扫描 `game.player_projection`（presence=offline、last_active_at 落在 48h 封顶窗口内、已过断线宽限、无存活运行时租约、无未完结任务），经 `IPlayerStateRepository.LoadAsync` 读取最新有效 section（含 durable 队列叠加），编码为 compute.v2 `AdvanceJobRequest` JSON 作为 input_payload 写入 `platform.compute_jobs`：v2 载荷携带完整玩家身份（PlayerId/AccountId/DisplayName/CreatedAt）、源状态版本与时间窗、提交头 checksum 与配表指纹、全部 section 原始字节以及资产余额快照，节点凭此零数据库依赖地还原聚合；job_id 由玩家与目标时刻确定性派生，重复入队走 upsert 去重。
+2. 计算节点经 `compute-link.v1.2` **反向拨入**：节点主动 WebSocket 连接 `/internal/compute-link`（`X-Compute-Token` 鉴权 + hello 握手声明并发容量、配表指纹与运行时指纹），握手通过即注册进 `ComputeLinkRegistry` 动态节点组；连接存活即在线，断开即热拔出。节点位于 NAT/防火墙后也可工作（odin 类设备只需求出方向连通），无需隧道或静态端点配置；运行时指纹用于诊断 arm64/x64 与运行时差异。
+3. `ComputeDispatcherWorker` 先从注册表取剩余容量最大的在线节点（无节点则不领取，任务留 pending 不消耗 attempts），再以 `FOR UPDATE SKIP LOCKED` 批量领取到期任务（含租约过期的孤儿 leased 行），组装 `AdvanceBatchRequest` 经节点链路下发并等待同批次结果帧；节点侧批次字节预算按解码后口径估算（Base64 字符数 ×3/4）。
+4. 节点在 `DeterministicBatchEngine` 中真实执行领域补算：线载荷解码 → `Domain.Persistence.SectionCodec.DecodeAggregate` 还原 `PlayerAggregate` → 配表指纹换绑 → `AssetWallet.Restore` 载入余额快照 → `SimulationEngine.AdvanceTo`（离线口径，不进行跨玩家斗法撮合）→ `EncodeAggregate` 产出脏 section 与 `AssetDeltas`。主服收到结果后先校验线 checksum 与解压后存储 checksum，再经 `PostgresSectionRepository.ApplyComputeResultInTransactionAsync` 落库：先锁提交头并要求 `state_version == SourceStateVersion`，玩家已上线或版本漂移则整体丢弃结果并记日志，绝不覆盖在线写者；section CAS、资产增量经济事务（幂等键 `simulation:{playerId}:{stateVersion}:{target}`）与 compute job 完结在**同一数据库事务**中提交；空推进（版本持平、零 section）合法，仅推进 `last_simulated_at`；48h 封顶尾段允许「版本前进 + 零 section」形态。
+5. 失败语义：节点返回 Retryable 失败或响应缺失按指数退避重试；载荷非法、输出污染等不可重试错误直接置 `dead`；节点断线或批次超时按租约令牌整批退回 pending；领取次数超过 `ComputeNode:MaxAttempts` 一律 dead。`ComputeNode:Enabled/Token` 未配置时派发器与扫描器安全停用，任务保留 pending，主服务不做内联补算；hello 契约版本或配表指纹不匹配的节点被拒绝注册，防止旧版本节点按旧口径算新任务。两端一致性由 golden vector 测试保证：同一输入经主服在线路径与节点线协议路径各跑一遍，section 原始字节、checksum、提交头 checksum 与资产增量逐字节一致。
 
 ### 6. social：好友、队伍与传音
 

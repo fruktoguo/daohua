@@ -72,7 +72,7 @@ public static class ProtocolSnapshotMapper
         var head = new PlayerHeadDto(
             runtime.PlayerId.ToString("D"),
             runtime.StateVersion,
-            Domain.Player.PlayerStateHead.CurrentSchemaVersion,
+            Domain.Persistence.PlayerStateHead.CurrentSchemaVersion,
             runtime.LastSimulatedAt,
             gameDataFingerprint,
             checksum,

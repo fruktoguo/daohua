@@ -524,6 +524,16 @@ public sealed class PostgresSectionRepository(
     /// 供 <see cref="ComputeDispatcherWorker"/> 把「section 写回 + compute_jobs 完结」并入同一事务；
     /// 调用方负责提交或回滚，本方法只返回结局不触碰事务边界。
     /// </summary>
+    /// <summary>
+    /// 在调用方事务内执行冷挂机结果落库：提交头行锁 + 版本 CAS + section 合批 upsert + 提交头更新。
+    /// 供 <see cref="ComputeDispatcherWorker"/> 把「section 写回 + compute_jobs 完结」并入同一事务；
+    /// 调用方负责提交或回滚，本方法只返回结局不触碰事务边界。
+    /// compute.v2 口径允许两类空写：
+    /// 1. <paramref name="targetStateVersion"/> 等于源版本（空推进，无 section 变更）——只前移提交头
+    ///    的 last_simulated_at/指纹，防止无变化玩家在扫描窗口内被无限重派且每次重算整个欠债窗口；
+    /// 2. 目标版本前进但 <paramref name="writes"/> 为空（48 小时封顶尾段只推时钟）——提交头照常升级。
+    /// 同版本携带 section 写回属于契约违反（脏段必然伴随版本递增），调用方先行拒绝。
+    /// </summary>
     internal async ValueTask<ComputeApplyOutcome> ApplyComputeResultInTransactionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -536,7 +546,8 @@ public sealed class PostgresSectionRepository(
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(writes);
-        if (writes.Count == 0 || targetStateVersion <= sourceStateVersion)
+        if (targetStateVersion < sourceStateVersion
+            || (targetStateVersion == sourceStateVersion && writes.Count > 0))
             throw new ArgumentException("计算结果版本与载荷无效。");
         // 同一 (player, kind) 重复出现时只保留首条，与旧逐条 upsert「先到者写入、同版本跳过」语义一致。
         var deduped = writes.DistinctBy(write => (write.PlayerId, write.SectionKind)).ToArray();
@@ -557,7 +568,31 @@ public sealed class PostgresSectionRepository(
         if (headVersion != sourceStateVersion)
             return ComputeApplyOutcome.StaleVersion;
 
-        var applied = await UpsertSectionsAsync(connection, transaction, deduped, cancellationToken);
+        if (targetStateVersion == sourceStateVersion)
+        {
+            // 空推进：版本与 section 集不变，仅前移模拟时钟与配表指纹（checksum 覆盖 section，无需重算）。
+            // 行锁已保证串行，版本谓词仍是最后防线；漂移时与下方全量更新一致抛错回滚。
+            await using (var headUpdate = new NpgsqlCommand("""
+                UPDATE game.player_state_heads
+                SET last_simulated_at = $2, game_data_fingerprint = $3, updated_at = $4
+                WHERE player_id = $1 AND state_version = $5
+                """, connection, transaction))
+            {
+                headUpdate.Parameters.Add(new NpgsqlParameter { Value = playerId });
+                headUpdate.Parameters.Add(new NpgsqlParameter { Value = lastSimulatedAt });
+                headUpdate.Parameters.Add(new NpgsqlParameter { Value = gameDataFingerprint });
+                headUpdate.Parameters.Add(new NpgsqlParameter { Value = now });
+                headUpdate.Parameters.Add(new NpgsqlParameter { Value = sourceStateVersion });
+                if (await headUpdate.ExecuteNonQueryAsync(cancellationToken) == 0)
+                    throw new InvalidOperationException("计算结果落库时提交头发生并发漂移。");
+            }
+            return ComputeApplyOutcome.Applied;
+        }
+
+        // 封顶尾段「只推时钟」会让目标版本前进而本节集合为空：跳过 upsert 直接更新提交头。
+        var applied = deduped.Length == 0
+            ? []
+            : await UpsertSectionsAsync(connection, transaction, deduped, cancellationToken);
         // 仅当这次 UPSERT 真正写入了更新版本时才重建关系型行动队列（RETURNING 集合判定）。
         foreach (var write in deduped)
         {

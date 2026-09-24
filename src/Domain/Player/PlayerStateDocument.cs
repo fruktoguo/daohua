@@ -109,20 +109,7 @@ public sealed partial class PlayerAggregate
     /// </summary>
     public PlayerAggregateState ExportState()
     {
-        QueuedActionState[] actions;
-        if (_actions.Count == 0)
-        {
-            actions = [];
-        }
-        else
-        {
-            actions = new QueuedActionState[_actions.Count];
-            for (var i = 0; i < _actions.Count; i++)
-            {
-                var action = _actions[i];
-                actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel);
-            }
-        }
+        var actions = ExportActions();
 
         return new(
             PlayerId,
@@ -145,6 +132,19 @@ public sealed partial class PlayerAggregate
             Loadout.Export(),
             ExportDuel(),
             GetCachedEquippedItemIds());
+    }
+
+    /// <summary>按队列顺序导出行动分段快照数组；供 ExportState 与分段检查点共用，保证两侧产出逐位一致。</summary>
+    private QueuedActionState[] ExportActions()
+    {
+        if (_actions.Count == 0) return [];
+        var actions = new QueuedActionState[_actions.Count];
+        for (var i = 0; i < _actions.Count; i++)
+        {
+            var action = _actions[i];
+            actions[i] = new QueuedActionState(action.Id, action.Intent, action.EnqueuedAt, action.Status, action.ProgressSeconds, action.RemainingRepeats, action.CompletedRepeats, action.Expedition, action.Travel);
+        }
+        return actions;
     }
 
     private static PlayerBattleReportDocument ExportReport(PlayerBattleReport report) => new(
@@ -645,5 +645,211 @@ public sealed partial class PlayerAggregate
                 return true;
         }
         return false;
+    }
+
+    // ---------- 分段级回滚检查点（internal） ----------
+    // 供单写者运行时在「受保护写操作」起点按需捕获分段基线：副本均为不可变文档或独立数组，
+    // 连同该分段内部修订计数一起写回，保证失败后聚合状态与备份时点逐位一致。
+    // 检查点不构成第二套可变状态通道——只能经 Capture/RestoreSectionCheckpoint 成对读写。
+
+    /// <summary>聚合头标量与分段版本游标的回滚副本（不可变）。</summary>
+    internal readonly record struct PlayerHeadCheckpoint(
+        string DisplayName,
+        DateTimeOffset LastSimulatedAt,
+        PresenceState Presence,
+        long StateVersion,
+        string GameDataFingerprint,
+        long SectionVersion,
+        Domain.Combat.DuelSettings DuelSettingsTuning);
+
+    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion);
+    private sealed record WorldCheckpoint(PlayerWorldStateDocument State, long AttributeInputVersion);
+    private sealed record CombatCheckpoint(PlayerCombatStateDocument State);
+    private sealed record BuffsCheckpoint(ActiveBuff[] Items, long Version);
+    private sealed record LoadoutCheckpoint(
+        PlayerLoadoutDocument State,
+        InstanceId[] EquippedInstances,
+        ItemId[] EquippedItemIds,
+        AbilityId[] LearnedAbilities,
+        long CoreAttributesVersion,
+        long AbilitySlotsVersion,
+        long EquipmentVersion,
+        long AbilityExperiencesVersion,
+        long EquippedItemIdsVersion);
+    private sealed record SettingsCheckpoint(PlayerSettingsStateDocument State);
+    private sealed record ActionQueueCheckpoint(QueuedActionState[] Actions);
+    private sealed record DuelCheckpoint(
+        PlayerDuelStateDocument State,
+        long StructureVersion,
+        long StagedItemsVersion,
+        long ReportsVersion,
+        long ActionReportsVersion);
+
+    /// <summary>捕获聚合头标量与分段版本游标的回滚副本；每次受保护写操作起点随基线一并刷新。</summary>
+    internal PlayerHeadCheckpoint CaptureHeadCheckpoint() =>
+        new(DisplayName, LastSimulatedAt, Presence, StateVersion, GameDataFingerprint, _sectionVersion, DuelSettingsTuning);
+
+    /// <summary>把头标量与分段版本游标写回备份值；不回退脏流水戳号（已消耗戳号不复用，差集判定不会漏报）。</summary>
+    internal void RestoreHeadCheckpoint(PlayerHeadCheckpoint head)
+    {
+        DisplayName = head.DisplayName;
+        LastSimulatedAt = head.LastSimulatedAt;
+        Presence = head.Presence;
+        StateVersion = head.StateVersion;
+        GameDataFingerprint = head.GameDataFingerprint;
+        _sectionVersion = head.SectionVersion;
+        DuelSettingsTuning = head.DuelSettingsTuning;
+    }
+
+    /// <summary>
+    /// 捕获单个分段的不可变回滚副本：含分段全部持久化字段与该分段内部修订计数。
+    /// 副本不共享分段内部可变状态，之后的写入不会反向污染基线。
+    /// </summary>
+    internal object CaptureSectionCheckpoint(PlayerSectionKind section) => section switch
+    {
+        PlayerSectionKind.Progression => new ProgressionCheckpoint(
+            new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi,
+                Progression.CompletedActions, Progression.SimulationCarrySeconds, Progression.NormalKills, Progression.EliteKills,
+                Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds),
+            Progression.RealmLevelVersion),
+        PlayerSectionKind.World => new WorldCheckpoint(
+            new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress,
+                World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
+            World.AttributeInputVersion),
+        PlayerSectionKind.Combat => new CombatCheckpoint(
+            new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints,
+                Combat.AttackPower, Combat.Defense, Combat.RegenCarrySeconds) { Skills = Combat.Skills }),
+        PlayerSectionKind.Buffs => new BuffsCheckpoint(Buffs.Active.ToArray(), Buffs.Active.Version),
+        PlayerSectionKind.Loadout => new LoadoutCheckpoint(
+            Loadout.Export(),
+            Loadout.EquippedInstances.ToArray(),
+            Loadout.EquippedItemIds.ToArray(),
+            Loadout.LearnedAbilities.ToArray(),
+            Loadout.CoreAttributesVersion,
+            Loadout.AbilitySlots.Version,
+            Loadout.Equipment.Version,
+            Loadout.AbilityExperiences.Version,
+            Loadout.EquippedItemIds.Version),
+        PlayerSectionKind.Settings => new SettingsCheckpoint(
+            new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
+                Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds)),
+        PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
+        PlayerSectionKind.Duel => new DuelCheckpoint(
+            ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),
+        _ => throw new DomainException(DomainErrorCode.InvalidArgument, "未知玩家分段。")
+    };
+
+    /// <summary>
+    /// 用回滚副本就地恢复单个分段：只写回该分段字段与内部修订计数，
+    /// 不触碰脏集合、脏流水号与头标量（由调用方按操作边界另行恢复）。
+    /// 恢复中校验失败或副本形态不匹配视为内部不变量破坏，直接失败快速抛出。
+    /// </summary>
+    internal void RestoreSectionCheckpoint(PlayerSectionKind section, object checkpoint)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        switch (section)
+        {
+            case PlayerSectionKind.Progression:
+            {
+                var data = (ProgressionCheckpoint)checkpoint;
+                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion);
+                break;
+            }
+            case PlayerSectionKind.World:
+            {
+                var data = (WorldCheckpoint)checkpoint;
+                World.RestoreSnapshot(data.State, data.AttributeInputVersion);
+                break;
+            }
+            case PlayerSectionKind.Combat:
+            {
+                var data = (CombatCheckpoint)checkpoint;
+                Combat.Hitpoints = data.State.Hitpoints;
+                Combat.MaxHitpoints = data.State.MaxHitpoints;
+                Combat.Manapoints = data.State.Manapoints;
+                Combat.MaxManapoints = data.State.MaxManapoints;
+                Combat.AttackPower = data.State.AttackPower;
+                Combat.Defense = data.State.Defense;
+                Combat.RegenCarrySeconds = data.State.RegenCarrySeconds;
+                Combat.Skills = data.State.Skills;
+                break;
+            }
+            case PlayerSectionKind.Buffs:
+            {
+                var data = (BuffsCheckpoint)checkpoint;
+                Buffs.Active.Clear();
+                Buffs.Active.AddRange(data.Items);
+                Buffs.Active.RestoreVersion(data.Version);
+                break;
+            }
+            case PlayerSectionKind.Loadout:
+            {
+                var data = (LoadoutCheckpoint)checkpoint;
+                Loadout.Restore(data.State);
+                Loadout.EquippedInstances.Clear();
+                Loadout.EquippedInstances.AddRange(data.EquippedInstances);
+                Loadout.EquippedItemIds.Clear();
+                Loadout.EquippedItemIds.AddRange(data.EquippedItemIds);
+                Loadout.LearnedAbilities.Clear();
+                Loadout.LearnedAbilities.AddRange(data.LearnedAbilities);
+                Loadout.RestoreRevisionCounters(
+                    data.CoreAttributesVersion, data.AbilitySlotsVersion, data.EquipmentVersion, data.AbilityExperiencesVersion);
+                Loadout.EquippedItemIds.RestoreVersion(data.EquippedItemIdsVersion);
+                break;
+            }
+            case PlayerSectionKind.Settings:
+            {
+                var data = (SettingsCheckpoint)checkpoint;
+                Settings.Locale = data.State.Locale;
+                Settings.NotificationsEnabled = data.State.NotificationsEnabled;
+                Settings.LoopEnabled = data.State.LoopEnabled;
+                Settings.RenameCooldownUntilUnixSeconds = data.State.RenameCooldownUntilUnixSeconds;
+                Settings.AutoUseSlots.Clear();
+                Settings.AutoUseSlots.AddRange(data.State.AutoUseSlots ?? []);
+                break;
+            }
+            case PlayerSectionKind.ActionQueue:
+            {
+                var data = (ActionQueueCheckpoint)checkpoint;
+                _actions.Clear();
+                foreach (var actionState in data.Actions)
+                {
+                    _actions.Add(new QueuedAction(actionState.Id, actionState.Intent, actionState.EnqueuedAt)
+                    {
+                        Status = actionState.Status,
+                        ProgressSeconds = actionState.ProgressSeconds,
+                        RemainingRepeats = actionState.RemainingRepeats,
+                        CompletedRepeats = actionState.CompletedRepeats,
+                        Expedition = actionState.Expedition,
+                        Travel = actionState.Travel
+                    });
+                }
+                break;
+            }
+            case PlayerSectionKind.Duel:
+            {
+                var data = (DuelCheckpoint)checkpoint;
+                RestoreDuel(data.State);
+                Duel.RestoreRevisionCounters(data.StructureVersion, data.StagedItemsVersion, data.ReportsVersion, data.ActionReportsVersion);
+                break;
+            }
+            default:
+                throw new DomainException(DomainErrorCode.InvalidArgument, "未知玩家分段。");
+        }
+    }
+
+    /// <summary>
+    /// 把待刷盘脏集合与触及流水号精确恢复为给定快照：用于失败回滚后保证
+    /// 「标脏集合 + 触及差集」与操作前逐位一致。流水游标不回退——已消耗的戳号不复用，
+    /// 后续标脏仍取严格更大的戳，差集与重捕判定不会因戳号复用而失真。
+    /// </summary>
+    internal void RestoreDirtyTracking(IReadOnlyCollection<PlayerSectionKind> dirtySections, IReadOnlyDictionary<PlayerSectionKind, long> marks)
+    {
+        ArgumentNullException.ThrowIfNull(dirtySections);
+        ArgumentNullException.ThrowIfNull(marks);
+        _dirtySections.Clear();
+        foreach (var section in dirtySections) _dirtySections.Add(section);
+        _dirtyMarks.Clear();
+        foreach (var (section, mark) in marks) _dirtyMarks[section] = mark;
     }
 }

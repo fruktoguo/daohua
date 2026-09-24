@@ -3,21 +3,23 @@ using System.Text.Json.Nodes;
 namespace Server.Clean;
 
 /// <summary>
-/// compute-link.v1.1：计算节点 → 主服的反向拨入链路契约。
+/// compute-link.v1.2：计算节点 → 主服的反向拨入链路契约。
 /// 节点主动建立 WebSocket 长连接（握手携带 X-Compute-Token）后即注册进动态节点组，
-/// 主服经该连接下发 compute.v1 批次并回收结果；连接存活即节点在线，断开即热拔出。
-/// v1.1 在 hello 增加节点批次承接能力字段（MaxJobsPerBatch/MaxBatchBytes），主服按协商能力装配批次。
-/// 批次载荷完全复用 <see cref="ComputeDispatchContract"/> 的 compute.v1 类型，链路本身只定义信封。
+/// 主服经该连接下发 compute.v2 批次并回收结果；连接存活即节点在线，断开即热拔出。
+/// v1.1 在 hello 增加节点批次承接能力字段（MaxJobsPerBatch/MaxBatchBytes），主服按协商能力装配批次；
+/// v1.2 在 hello 增加 RuntimeFingerprint（进程架构/运行时描述），注册视图与接入日志透传，
+/// 用于跨架构确定性差异诊断，不参与裁决。
+/// 批次载荷完全复用 <see cref="ComputeDispatchContract"/> 的 compute.v2 类型，链路本身只定义信封。
 /// </summary>
 public static class ComputeLinkContract
 {
     /// <summary>链路契约版本，必须与节点端完全一致。</summary>
-    public const string Version = "compute-link.v1.1";
+    public const string Version = "compute-link.v1.2";
     /// <summary>节点拨入端点路径。</summary>
     public const string Path = "/internal/compute-link";
     /// <summary>握手鉴权请求头（与 compute.v1 同源）。</summary>
     public const string TokenHeader = ComputeDispatchContract.TokenHeader;
-    /// <summary>单帧消息最大字节数：compute.v1 批次上限 16 MiB + 信封冗余。</summary>
+    /// <summary>单帧消息最大字节数：compute.v2 批次上限 16 MiB + 信封冗余。</summary>
     public const int MaxMessageBytes = 20 * 1024 * 1024;
     /// <summary>同时在线节点数上限，超出拒绝拨入。</summary>
     public const int MaxConnectedNodes = 64;
@@ -30,8 +32,9 @@ public static class ComputeLinkContract
 }
 
 /// <summary>
-/// 节点拨入后的首帧握手：声明契约版本、节点名、并发容量、配表指纹与批次承接能力。
-/// MaxJobsPerBatch/MaxBatchBytes 为 0 表示未声明，主服按自身配置上限装配。
+/// 节点拨入后的首帧握手：声明契约版本、节点名、并发容量、配表指纹、批次承接能力与运行时指纹。
+/// MaxJobsPerBatch/MaxBatchBytes 为 0 表示未声明，主服按自身配置上限装配；
+/// RuntimeFingerprint 形如 "Arm64/.NET 10.0.1"，仅作诊断展示，不参与裁决。
 /// </summary>
 public sealed record ComputeLinkHello(
     string ContractVersion,
@@ -39,7 +42,8 @@ public sealed record ComputeLinkHello(
     int MaxConcurrentBatches,
     string? GameDataFingerprint,
     int MaxJobsPerBatch = 0,
-    long MaxBatchBytes = 0);
+    long MaxBatchBytes = 0,
+    string? RuntimeFingerprint = null);
 
 /// <summary>主服接受注册后的应答帧。</summary>
 public sealed record ComputeLinkWelcome(

@@ -60,6 +60,24 @@ public sealed class PlayerProgression
 
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
     public double SimulationCarrySeconds { get; set; }
+
+    /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
+    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion)
+    {
+        _realmLevel = state.RealmLevel;
+        RealmLevelVersion = realmLevelVersion;
+        Qi = state.Qi;
+        Experience = state.Experience;
+        LifetimeQi = state.LifetimeQi;
+        CompletedActions = state.CompletedActions;
+        SimulationCarrySeconds = state.SimulationCarrySeconds;
+        NormalKills = state.NormalKills;
+        EliteKills = state.EliteKills;
+        BossKills = state.BossKills;
+        TotalDefeats = state.TotalDefeats;
+        CultivationSeconds = state.CultivationSeconds;
+        AgeSeconds = state.AgeSeconds;
+    }
 }
 
 /// <summary>
@@ -134,6 +152,21 @@ public sealed class PlayerWorldState
     /// <summary>节点建筑效果相关输入的修订号（NodeId/NodeBuildingEffects/NodeBuildingNodeId 共享计数）。</summary>
     internal long AttributeInputVersion { get; private set; }
     private void NoteAttributeInputMutation() => AttributeInputVersion = checked(AttributeInputVersion + 1);
+
+    /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把属性输入修订号写回备份值。</summary>
+    internal void RestoreSnapshot(PlayerWorldStateDocument state, long attributeInputVersion)
+    {
+        _nodeId = state.NodeId;
+        EdgeId = state.EdgeId;
+        EdgeProgress = state.EdgeProgress;
+        X = state.X;
+        Y = state.Y;
+        ExplorationSeed = state.ExplorationSeed;
+        NodeBuildings = state.NodeBuildings?.ToList() ?? [];
+        _nodeBuildingEffects = state.NodeBuildingEffects ?? Domain.World.BuildingEffectSet.Empty;
+        _nodeBuildingNodeId = state.NodeBuildingNodeId;
+        AttributeInputVersion = attributeInputVersion;
+    }
 }
 
 /// <summary>
@@ -916,23 +949,6 @@ public sealed partial class PlayerAggregate
 
     /// <summary>获取并自增下一个分段单调版本号</summary>
     public long NextSectionVersion() => checked(++_sectionVersion);
-
-    /// <summary>
-    /// 构造当前聚合的持久化头元数据
-    /// </summary>
-    public PlayerStateHead CreateHead(string checksum, DateTimeOffset now)
-    {
-        if (string.IsNullOrWhiteSpace(checksum))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "玩家头校验值不能为空。");
-        return new PlayerStateHead(
-            PlayerId,
-            StateVersion,
-            PlayerStateHead.CurrentSchemaVersion,
-            LastSimulatedAt,
-            GameDataFingerprint,
-            checksum,
-            now.ToUniversalTime());
-    }
 
     /// <summary>模拟推进器专用：标记某分段受推进影响而发生变更</summary>
     internal void ApplySimulationMutation(PlayerSectionKind section) => MarkDirty(section);

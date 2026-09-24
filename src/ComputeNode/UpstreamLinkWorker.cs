@@ -1,7 +1,7 @@
 namespace DaoHua.ComputeNode;
 
 /// <summary>
-/// ComputeNode 客户端模式：主动向主服拨出 WebSocket 长连接（compute-link.v1.1），
+/// ComputeNode 客户端模式：主动向主服拨出 WebSocket 长连接（compute-link.v1.2），
 /// 注册即进入动态节点组，接收批次、执行确定性推进、回传结果。
 /// 链路中断按指数退避自动重连（1s→30s 封顶 ±20% 抖动）；连续健康存活超过
 /// <see cref="HealthySessionThreshold"/> 的会话断开时退避立即复位，快断快连则保持翻倍。
@@ -13,7 +13,7 @@ public sealed class UpstreamLinkWorker(
     string token,
     string nodeName,
     DeterministicBatchEngine engine,
-    GameDataFingerprint fingerprint,
+    GameDataCatalog gameData,
     ComputeMetrics metrics,
     SemaphoreSlim batchGate,
     int maxJobsPerBatch,
@@ -81,8 +81,8 @@ public sealed class UpstreamLinkWorker(
 
         await socket.SendAsync(
             LinkCodec.Encode(new LinkHello(
-                ComputeLinkContract.Version, NodeName, maxConcurrentBatches, fingerprint.Value,
-                maxJobsPerBatch, ComputeContract.MaxBatchBytes)),
+                ComputeLinkContract.Version, NodeName, maxConcurrentBatches, gameData.Fingerprint,
+                maxJobsPerBatch, ComputeContract.MaxBatchBytes, NodeRuntime.Fingerprint)),
             WebSocketMessageType.Text, true, cancellationToken);
 
         var first = await ReceiveMessageAsync(socket, cancellationToken)
@@ -162,7 +162,7 @@ public sealed class UpstreamLinkWorker(
                 // 形成「再生产→整批判死」循环）。
                 results = (batch.Request.Jobs ?? [])
                     .Select(job => job is null
-                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null,
+                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null, null,
                             violation.Code, violation.Message, true)
                         : AdvanceJobResult.Failed(job, violation.Code, violation.Message, retryable: true))
                     .ToList();
@@ -170,14 +170,14 @@ public sealed class UpstreamLinkWorker(
             else if (!string.IsNullOrWhiteSpace(batch.Request.GameDataFingerprint)
                 && !CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(batch.Request.GameDataFingerprint),
-                    Encoding.UTF8.GetBytes(fingerprint.Value)))
+                    Encoding.UTF8.GetBytes(gameData.Fingerprint)))
             {
                 // 指纹漂移意味着主服已升级而节点二进制过期：主动断开整条链路，
                 // 重连时 hello 重新裁决、节点保持退避直到被重部署，避免把新配表任务算成旧口径。
                 // 本批次不回传结果，主服按租约超时退回改派。
                 _logger.LogWarning(
                     "批次配表指纹不匹配，断开链路重新握手 expected={Expected} actual={Actual}",
-                    fingerprint.Value, batch.Request.GameDataFingerprint);
+                    gameData.Fingerprint, batch.Request.GameDataFingerprint);
                 metrics.RecordCancelledBatch();
                 session.Cancel();
                 return;
@@ -191,11 +191,11 @@ public sealed class UpstreamLinkWorker(
                     // 任务级契约违规只判死该任务自身（non-retryable），不连坐批内其他任务。
                     var jobViolation = ComputeContract.ValidateJob(job);
                     var result = job is null
-                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null,
+                        ? new AdvanceJobResult(Guid.Empty, Guid.Empty, false, 0, 0, null, null, null,
                             jobViolation?.Code ?? "INVALID_JOB_ID", jobViolation?.Message ?? "任务为空。", false)
                         : jobViolation is not null
                             ? AdvanceJobResult.Failed(job, jobViolation.Code, jobViolation.Message)
-                            : engine.Advance(job, fingerprint.Value);
+                            : engine.Advance(job);
                     results.Add(result);
                     if (result.Success) metrics.RecordCompletedJob();
                     else metrics.RecordFailedJob();
@@ -205,7 +205,7 @@ public sealed class UpstreamLinkWorker(
             await outbound.WriteAsync(
                 LinkCodec.Encode(new LinkResult(batch.BatchId, new AdvanceBatchResponse(
                     ComputeContract.Version,
-                    fingerprint.Value,
+                    gameData.Fingerprint,
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     results))),
                 token);

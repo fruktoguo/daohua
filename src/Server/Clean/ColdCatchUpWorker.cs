@@ -3,12 +3,14 @@ namespace Server.Clean;
 /// <summary>
 /// 冷挂机任务生产者：周期性从 game.player_projection JOIN game.player_state_heads 预筛
 /// 离线且提交头模拟欠债落在窗口内的玩家（last_simulated_at 过滤已前移进扫描 SQL），
-/// 只对入选候选做全量状态加载（含 durable 队列叠加），编码为 compute.v1 任务请求入队。
+/// 只对入选候选做全量状态加载（含 durable 队列叠加）+ 正余额快照，编码为 compute.v2 任务请求入队。
+/// 任务携带完整身份与提交头快照：节点凭此重建 PlayerStateBundle 并逐字节还原聚合。
 /// 玩家上线或所有权租约生效期间自动跳过；同一玩家最多一个未完结任务由数据库唯一约束保证。
 /// </summary>
 public sealed class ColdCatchUpWorker(
     PostgresComputeJobRepository jobs,
     IPlayerStateRepository playerStates,
+    IAssetBalanceRepository assetBalances,
     ServerOptions options,
     ILogger<ColdCatchUpWorker> logger) : BackgroundService
 {
@@ -82,15 +84,28 @@ public sealed class ColdCatchUpWorker(
             if (sections.Length == 0 || sections.Length > ComputeDispatchContract.MaxSectionsPerJob)
                 return false;
 
+            // 余额快照随任务冻结：节点钱包还原仅作可用性判定，实际入账仍以回传增量经经济事务为准。
+            // Ordinal 排序保证同一输入产出同一载荷字节（入队幂等键绑定目标时刻，载荷参与存档）。
+            var balances = (await assetBalances.LoadBalancesAsync(candidate.PlayerId, cancellationToken))
+                .Select(row => new ComputeAssetBalance(row.AssetId, row.Variant, row.Quantity))
+                .OrderBy(row => row.AssetId, StringComparer.Ordinal)
+                .ThenBy(row => row.Variant, StringComparer.Ordinal)
+                .ToArray();
+
             var target = now;
             var request = new ComputeAdvanceJobRequest(
                 PostgresComputeJobRepository.DeriveJobId(candidate.PlayerId, target.ToUnixTimeMilliseconds()),
                 candidate.PlayerId,
+                bundle.Identity.AccountId,
+                bundle.Identity.DisplayName,
+                bundle.Identity.CreatedAt.ToUnixTimeMilliseconds(),
                 bundle.Head.StateVersion,
                 from.ToUnixTimeMilliseconds(),
                 target.ToUnixTimeMilliseconds(),
+                bundle.Head.Checksum,
+                bundle.Head.GameDataFingerprint,
                 sections,
-                Actions: null,
+                balances,
                 IdempotencyKey: $"cold:{candidate.PlayerId:D}:{target.ToUnixTimeMilliseconds()}");
             var payload = JsonSerializer.SerializeToUtf8Bytes(request, ServerJson.Options);
             var result = await jobs.EnqueueAsync(candidate.PlayerId, target, payload, cancellationToken);

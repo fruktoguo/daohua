@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Server.Clean;
 using Xunit;
-using CleanSectionCodec = Server.Clean.SectionCodec;
+using CleanSectionCodec = Domain.Persistence.SectionCodec;
 
 namespace Server.Tests;
 
@@ -142,6 +142,56 @@ public sealed class SectionRepositoryTests
         Assert.Equal(ComputeApplyOutcome.Applied, outcome);
         Assert.Equal(8L, await Scalar(source,
             "SELECT count(*) FROM game.player_state_sections WHERE player_id = $1 AND section_version = 2", player));
+    }
+
+    /// <summary>
+    /// compute.v2 两类空写落库：空推进（目标版本持平、零 section）只前移提交头模拟时钟与指纹，
+    /// 版本与 checksum 不变——防止无变化玩家被无限重派；封顶尾段（版本前进、零 section）照常升级提交头。
+    /// 同版本携带 section 属契约违反必须抛错。
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ApplyComputeResultEmptyWritesAdvanceHeadOnly()
+    {
+        var (source, repository) = await OpenRepositoryAsync();
+        var player = await SeedPlayerAsync(source);
+        var now = DateTimeOffset.UtcNow;
+        await repository.EnqueueSectionsAsync(BuildAllSections(player, 1, now, actionCount: 1));
+        await FlushUntilDrainedAsync(repository, source, player);
+        var checksumBefore = (string)(await Scalar(source,
+            "SELECT checksum FROM game.player_state_heads WHERE player_id = $1", player))!;
+        var simulatedAt = now.AddMinutes(30);
+
+        // 空推进：版本持平 + 零 writes → 仅前移模拟时钟/指纹。
+        var outcome = await repository.ApplyComputeResultAsync(player, 1, 1, [], simulatedAt, "fp.next");
+        Assert.Equal(ComputeApplyOutcome.Applied, outcome);
+        Assert.Equal(1L, await Scalar(source,
+            "SELECT state_version FROM game.player_state_heads WHERE player_id = $1", player));
+        Assert.Equal(checksumBefore, await Scalar(source,
+            "SELECT checksum FROM game.player_state_heads WHERE player_id = $1", player));
+        var simulatedStored = (DateTime)(await Scalar(source,
+            "SELECT last_simulated_at FROM game.player_state_heads WHERE player_id = $1", player))!;
+        Assert.True(Math.Abs((simulatedStored - simulatedAt.UtcDateTime).TotalMilliseconds) < 1,
+            $"last_simulated_at 未前移：stored={simulatedStored:o} expected={simulatedAt.UtcDateTime:o}");
+        Assert.Equal("fp.next", await Scalar(source,
+            "SELECT game_data_fingerprint FROM game.player_state_heads WHERE player_id = $1", player));
+
+        // 同版本携带 section 属契约违反：脏段必然伴随版本递增。
+        await Assert.ThrowsAsync<ArgumentException>(() => repository.ApplyComputeResultAsync(
+            player, 1, 1, BuildAllSections(player, 1, now, actionCount: 1), simulatedAt, "fp.test").AsTask());
+
+        // 封顶尾段：版本前进 + 零 writes → 提交头升级、section 表保持 v1。
+        var cappedAt = simulatedAt.AddHours(49);
+        outcome = await repository.ApplyComputeResultAsync(player, 1, 2, [], cappedAt, "fp.next");
+        Assert.Equal(ComputeApplyOutcome.Applied, outcome);
+        Assert.Equal(2L, await Scalar(source,
+            "SELECT state_version FROM game.player_state_heads WHERE player_id = $1", player));
+        Assert.Equal(8L, await Scalar(source,
+            "SELECT count(*) FROM game.player_state_sections WHERE player_id = $1 AND section_version = 1", player));
+        var cappedStored = (DateTime)(await Scalar(source,
+            "SELECT last_simulated_at FROM game.player_state_heads WHERE player_id = $1", player))!;
+        Assert.True(Math.Abs((cappedStored - cappedAt.UtcDateTime).TotalMilliseconds) < 1,
+            $"last_simulated_at 未前移：stored={cappedStored:o} expected={cappedAt.UtcDateTime:o}");
     }
 
     private static SectionWrite[] BuildAllSections(Guid player, long version, DateTimeOffset now, int actionCount)

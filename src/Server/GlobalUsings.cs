@@ -30,5 +30,6 @@ global using Domain.Combat;
 global using Domain.Economy;
 global using Domain.GameData;
 global using Domain.Market;
+global using Domain.Persistence;
 global using Domain.Player;
 global using Domain.World;

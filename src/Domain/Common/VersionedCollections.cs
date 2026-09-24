@@ -98,6 +98,9 @@ public sealed class VersionedList<T> : IList<T>, IReadOnlyList<T>
         _inner.Clear();
         NoteMutation();
     }
+
+    /// <summary>回滚检查点专用：把内容修订号写回备份值；调用方须先把内容恢复到与版本一致的状态。</summary>
+    internal void RestoreVersion(long version) => Version = version;
 }
 
 /// <summary>
@@ -195,4 +198,7 @@ public sealed class VersionedDictionary<TKey, TValue> : IDictionary<TKey, TValue
         NoteMutation();
         return true;
     }
+
+    /// <summary>回滚检查点专用：把内容修订号写回备份值；调用方须先把内容恢复到与版本一致的状态。</summary>
+    internal void RestoreVersion(long version) => Version = version;
 }

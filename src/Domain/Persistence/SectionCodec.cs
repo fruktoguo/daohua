@@ -1,16 +1,21 @@
-using Domain.Player;
+using System.Buffers;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using Domain.Common;
+using Domain.Player;
 using DomainState = Domain.Player.PlayerAggregateState;
 using DomainSectionKind = Domain.Player.PlayerSectionKind;
 
-namespace Server.Clean;
+namespace Domain.Persistence;
 
 /// <summary>
 /// 角色分段（Section）编解码边界适配器。
 /// 职责：
 /// 1. 将内存对象序列化为稳定 JSON 字节流，并计算 SHA-256 小写校验和；
 /// 2. 当数据体积超过阈值（512B）且能有效降低体积时，自适应启用 Brotli 压缩；
-/// 3. 是 Server 宿主与 Domain 领域层及数据库存储之间唯一需要约定的存档落盘边界。
+/// 3. 是 Server 宿主、ComputeNode 计算节点与 Domain 领域层及数据库存储之间唯一需要约定的存档落盘边界。
 /// </summary>
 public static class SectionCodec
 {
@@ -38,7 +43,7 @@ public static class SectionCodec
         bool compress = true)
     {
         ArgumentNullException.ThrowIfNull(payload);
-        var raw = JsonSerializer.SerializeToUtf8Bytes(payload, ServerJson.Options);
+        var raw = JsonSerializer.SerializeToUtf8Bytes(payload, PersistenceJson.Options);
         if (raw.Length == 0 || raw.Length > MaxRawBytes)
             throw new InvalidDataException("section 原始载荷超过大小上限。");
         var checksum = Convert.ToHexStringLower(SHA256.HashData(raw));
@@ -98,7 +103,7 @@ public static class SectionCodec
         {
             throw new InvalidDataException($"section {section.SectionKind} 校验和不匹配。");
         }
-        return JsonSerializer.Deserialize<T>(raw, ServerJson.Options)
+        return JsonSerializer.Deserialize<T>(raw, PersistenceJson.Options)
             ?? throw new InvalidDataException($"section {section.SectionKind} 载荷为空。");
     }
 

@@ -174,8 +174,14 @@ public sealed class ComputeDispatcherWorker(
             {
                 // 坏载荷不会自愈：直接进 dead 保留诊断窗口。
             }
-            if (request is null || request.Sections is not { Count: > 0 }
-                || request.PlayerId != claim.PlayerId
+            // v2 任务必须携带完整身份、提交头快照与全集 8 段载荷——缺一则节点无法还原聚合，
+            // 这里先行判死，不把必然失败的任务送上链路烧节点配额。
+            if (request is null || request.PlayerId != claim.PlayerId
+                || request.AccountId == Guid.Empty
+                || string.IsNullOrWhiteSpace(request.DisplayName)
+                || string.IsNullOrWhiteSpace(request.HeadChecksum)
+                || string.IsNullOrWhiteSpace(request.HeadGameDataFingerprint)
+                || request.Sections is null || request.Sections.Count != PlayerSectionKinds.All.Count
                 || request.Sections.Any(section => section is null || string.IsNullOrEmpty(section.PayloadBase64)))
             {
                 await jobs.FailAsync(claim.JobId, claim.LeaseToken, "input_payload 无效", retryable: false,
@@ -272,13 +278,19 @@ public sealed class ComputeDispatcherWorker(
         // 同一 job 的 section 落库与 compute_jobs 完结并入同一事务。
         await Parallel.ForEachAsync(fits,
             new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
-            (entry, ct) => ApplyJobResultAsync(entry.Claim, results.GetValueOrDefault(entry.Claim.JobId), ct));
+            (entry, ct) => ApplyJobResultAsync(entry, results.GetValueOrDefault(entry.Claim.JobId), ct));
     }
 
-    /// <summary>单个任务结果回写：版本 CAS 落库与任务完结同事务提交；失败按该 job 自身 attempts 退避。</summary>
+    /// <summary>
+    /// 单个任务结果回写（compute.v2）：section CAS、资产增量入账与任务完结并入同一 Serializable 事务，
+    /// 三者同生同灭——结果因版本漂移被丢弃时其资产增量一并丢弃（增量按旧状态结算，不可入账新状态）。
+    /// 空推进（目标版本等于源版本）是合法结果：只前移提交头模拟时钟，阻断无变化玩家的无限重派。
+    /// 失败按该 job 自身 attempts 退避；节点产出污染不可重试，直接判 dead 保留证据。
+    /// </summary>
     private async ValueTask ApplyJobResultAsync(
-        ComputeJobClaim claim, ComputeAdvanceJobResult? result, CancellationToken cancellationToken)
+        ReadyJob entry, ComputeAdvanceJobResult? result, CancellationToken cancellationToken)
     {
+        var claim = entry.Claim;
         if (result is null || result.PlayerId != claim.PlayerId)
         {
             await jobs.FailAsync(claim.JobId, claim.LeaseToken, "节点响应缺少对应任务结果",
@@ -295,13 +307,34 @@ public sealed class ComputeDispatcherWorker(
 
         try
         {
+            // 结果必须回指本任务输入版本且版本只能前进；否则视为节点产出污染。
+            if (result.SourceStateVersion != entry.Request.SourceStateVersion
+                || result.TargetStateVersion < result.SourceStateVersion)
+                throw new InvalidDataException("结果版本与任务输入不一致。");
+            var deltas = MergeAssetDeltas(claim.PlayerId, result.AssetDeltas);
             var now = DateTimeOffset.UtcNow;
-            var writes = result.Sections is { Count: > 0 }
-                ? result.Sections.Select(section => ComputeSectionCodec.ToSectionWrite(
-                    claim.PlayerId, result.TargetStateVersion, section, now)).ToArray()
-                : throw new InvalidDataException("成功结果缺少 section 输出。");
+            var writes = Array.Empty<SectionWrite>();
+            if (result.TargetStateVersion == result.SourceStateVersion)
+            {
+                // 空推进：脏段必然升版本，同版本携带 section/资产增量即契约违反。
+                if (result.Sections is { Count: > 0 } || deltas.Length > 0)
+                    throw new InvalidDataException("版本未推进的结果不得携带 section 或资产增量。");
+            }
+            else
+            {
+                // 版本前进 + 零 section 是合法形态（48h 封顶尾段只推时钟不落段）；
+                // 非空时逐段校验版本与目标一致，转存储写回记录。
+                if (result.Sections is { Count: > 0 })
+                {
+                    if (result.Sections.Any(section => section is null || section.Version != result.TargetStateVersion))
+                        throw new InvalidDataException("结果 section 版本与目标版本不一致。");
+                    writes = result.Sections.Select(section => ComputeSectionCodec.ToSectionWrite(
+                        claim.PlayerId, result.TargetStateVersion, section, now)).ToArray();
+                }
+            }
+
             await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
             var applied = await sections.ApplyComputeResultInTransactionAsync(
                 connection, transaction,
                 claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
@@ -309,8 +342,26 @@ public sealed class ComputeDispatcherWorker(
             // output_payload 只存摘要：result JSON 内含全量 base64 section，整存会把单任务存储放大 ~2.3 倍。
             var output = JsonSerializer.SerializeToUtf8Bytes(new ComputeJobOutputSummary(
                 claim.JobId, claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
-                applied.ToString(), result.Metrics, result.ErrorCode, result.ErrorMessage), ServerJson.Options);
-            if (applied != ComputeApplyOutcome.Applied)
+                applied.ToString(), deltas.Length, result.Metrics, result.ErrorCode, result.ErrorMessage), ServerJson.Options);
+            if (applied == ComputeApplyOutcome.Applied && deltas.Length > 0)
+            {
+                // 资产增量随本事务原子入账：幂等键绑定 job_id，重派重放不重复记账。
+                // 节点不持有数据库权限、不创造第二套资产协议，本事务是节点收益的唯一入账点。
+                var committed = await PostgresEconomyRepository.CommitCoreAsync(
+                    connection, transaction,
+                    new EconomyTransactionRequest(
+                        claim.JobId,
+                        $"simulation.compute:{claim.JobId:D}",
+                        "simulation.reward",
+                        claim.PlayerId,
+                        deltas,
+                        claim.TargetTime,
+                        output),
+                    cancellationToken);
+                if (!committed.Applied)
+                    throw new InvalidOperationException("冷挂机资产事务未提交。");
+            }
+            else if (applied != ComputeApplyOutcome.Applied)
             {
                 // 玩家已上线或版本漂移：结果丢弃但任务仍按完成归档，证据留在 output_payload。
                 logger.LogInformation("冷挂机结果因版本漂移被丢弃 job={JobId} player={PlayerId} outcome={Outcome}",
@@ -333,6 +384,34 @@ public sealed class ComputeDispatcherWorker(
             await jobs.FailAsync(claim.JobId, claim.LeaseToken, exception.Message,
                 retryable: true, Backoff(claim.Attempts), options.ComputeMaxAttempts, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// 校验并合并节点回传的资产增量行：逐行字段与上限校验（非法即契约违反抛 <see cref="InvalidDataException"/>），
+    /// 同 (assetId, variant) 键合并、零和与非有限值过滤，Ordinal 排序保证确定性的入账行序。
+    /// </summary>
+    private static Server.Clean.AssetDelta[] MergeAssetDeltas(Guid playerId, IReadOnlyList<ComputeAssetDelta>? rows)
+    {
+        if (rows is not { Count: > 0 }) return [];
+        if (rows.Count > ComputeDispatchContract.MaxAssetDeltasPerResult)
+            throw new InvalidDataException("资产增量行数超过上限。");
+        var merged = new Dictionary<(string AssetId, string Variant), double>();
+        foreach (var row in rows)
+        {
+            if (row is null
+                || string.IsNullOrWhiteSpace(row.AssetId) || row.AssetId.Length > 128
+                || row.Variant is null || row.Variant.Length > 128
+                || !double.IsFinite(row.QuantityDelta) || row.QuantityDelta == 0)
+                throw new InvalidDataException("资产增量行字段无效。");
+            var key = (row.AssetId, row.Variant);
+            merged[key] = merged.TryGetValue(key, out var sum) ? sum + row.QuantityDelta : row.QuantityDelta;
+        }
+        return merged
+            .Where(pair => pair.Value != 0 && double.IsFinite(pair.Value))
+            .Select(pair => new Server.Clean.AssetDelta(playerId, pair.Key.AssetId, pair.Key.Variant, pair.Value))
+            .OrderBy(delta => delta.AssetId, StringComparer.Ordinal)
+            .ThenBy(delta => delta.Variant, StringComparer.Ordinal)
+            .ToArray();
     }
 
     /// <summary>

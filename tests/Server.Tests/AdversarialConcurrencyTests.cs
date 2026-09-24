@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
 using Server.Clean;
 using Xunit;
-using StoredHead = Server.Clean.PlayerStateHead;
+using StoredHead = Domain.Persistence.PlayerStateHead;
 
 namespace Server.Tests;
 

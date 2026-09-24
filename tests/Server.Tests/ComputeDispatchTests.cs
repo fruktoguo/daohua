@@ -7,7 +7,7 @@ using Xunit;
 namespace Server.Tests;
 
 /// <summary>
-/// compute-link.v1.1 派发边界单测：链路帧编解码、动态节点注册表、批次预算与 section 线编码校验。
+/// compute-link.v1.2 派发边界单测：链路帧编解码、动态节点注册表、批次预算与 section 线编码校验。
 /// 不依赖真实 ComputeNode 进程或数据库。
 /// </summary>
 public sealed class ComputeDispatchTests
@@ -20,13 +20,14 @@ public sealed class ComputeDispatchTests
         var job = NewJobRequest();
         object[] messages =
         [
-            new ComputeLinkHello(ComputeLinkContract.Version, "odin", 4, "fp123", 96, 4L * 1024 * 1024),
+            new ComputeLinkHello(ComputeLinkContract.Version, "odin", 4, "fp123", 96, 4L * 1024 * 1024,
+                "Arm64/.NET 10.0.1"),
             new ComputeLinkWelcome(ComputeLinkContract.Version, Guid.NewGuid(), 1_700_000_000_000),
             new ComputeLinkBatch(batchId, new ComputeAdvanceBatchRequest(
                 ComputeDispatchContract.Version, "fp123", [job])),
             new ComputeLinkResult(batchId, new ComputeAdvanceBatchResponse(
                 ComputeDispatchContract.Version, "fp123", 1_700_000_000_000,
-                [new ComputeAdvanceJobResult(job.JobId, job.PlayerId, true, 7, 8, [], null, null, null, false)])),
+                [new ComputeAdvanceJobResult(job.JobId, job.PlayerId, true, 7, 8, [], null, null, null, null, false)])),
             new ComputeLinkError("NODE_LIMIT", "上限")
         ];
 
@@ -40,6 +41,7 @@ public sealed class ComputeDispatchTests
             ComputeLinkCodec.Encode(messages[0]));
         Assert.Equal(96, decodedHello.MaxJobsPerBatch);
         Assert.Equal(4L * 1024 * 1024, decodedHello.MaxBatchBytes);
+        Assert.Equal("Arm64/.NET 10.0.1", decodedHello.RuntimeFingerprint);
 
         var decodedBatch = (ComputeLinkBatch)ComputeLinkCodec.Decode(
             ComputeLinkCodec.Encode(messages[2]));
@@ -122,7 +124,8 @@ public sealed class ComputeDispatchTests
     {
         // 200 base64 字符 ≈ 150 解码字节。
         var payload = new string('a', 200);
-        var job = new ComputeAdvanceJobRequest(Guid.NewGuid(), Guid.NewGuid(), 1, 0, 1,
+        var job = new ComputeAdvanceJobRequest(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "name",
+            0, 1, 0, 1, new string('a', 64), "fp123",
             [new ComputeSectionPayload(PlayerSectionKinds.Settings, 1, "identity", payload, new string('a', 64))]);
         Assert.Equal(150, ComputeBatchBudget.EstimateDecodedBytes(job));
 
@@ -194,7 +197,7 @@ public sealed class ComputeDispatchTests
     public void OutputSummaryRoundTripsWithoutSectionPayloads()
     {
         var summary = new ComputeJobOutputSummary(
-            Guid.NewGuid(), Guid.NewGuid(), 7, 8, ComputeApplyOutcome.Applied.ToString(),
+            Guid.NewGuid(), Guid.NewGuid(), 7, 8, ComputeApplyOutcome.Applied.ToString(), 3,
             new ComputeAdvanceMetrics(42, 3, 8, 1024, 512), null, null);
         var bytes = JsonSerializer.SerializeToUtf8Bytes(summary, ServerJson.Options);
         var decoded = JsonSerializer.Deserialize<ComputeJobOutputSummary>(bytes, ServerJson.Options);
@@ -229,7 +232,8 @@ public sealed class ComputeDispatchTests
     }
 
     private static ComputeAdvanceJobRequest NewJobRequest() =>
-        new(Guid.NewGuid(), Guid.NewGuid(), 7, 1_000, 2_000,
+        new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "name",
+            0, 7, 1_000, 2_000, new string('a', 64), "fp123",
             [new ComputeSectionPayload(PlayerSectionKinds.Settings, 1, "identity",
                 Convert.ToBase64String(Encoding.UTF8.GetBytes("{}")), new string('a', 64))]);
 }

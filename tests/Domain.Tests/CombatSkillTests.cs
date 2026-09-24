@@ -114,6 +114,26 @@ public sealed class CombatSkillTests
         Assert.Empty(encounter.Player.Buffs);
     }
 
+    /// <summary>
+    /// 语义空判定回归：JSON 往返/推进产生的空内容技能态必须 IsEmpty，
+    /// 与 Empty 单例的记录相等性（列表引用比较）无关——封顶尾段与脱战判定依赖此语义。
+    /// </summary>
+    [Fact]
+    public void DeserializedEmptySkillStateIsSemanticallyEmpty()
+    {
+        // 模拟持久化还原路径：等价空内容但非 Empty 单例的实例。
+        var restored = new PlayerCombatSkillState(new List<CombatSkillCooldown>(), null, 0, 0);
+        Assert.True(restored.IsEmpty);
+        Assert.NotEqual(PlayerCombatSkillState.Empty, restored); // 引用比较语义仍不相等
+        Assert.True(PlayerCombatSkillState.Empty.IsEmpty);
+
+        // 有冷却/吟唱/施放计数的实例不得判空。
+        Assert.False(new PlayerCombatSkillState(
+            [new CombatSkillCooldown("ability.x", 3)], null, 0, 0).IsEmpty);
+        Assert.False((PlayerCombatSkillState.Empty with { CastingAbilityId = "ability.x", CastRemainingSeconds = 1 }).IsEmpty);
+        Assert.False((PlayerCombatSkillState.Empty with { CastCount = 2 }).IsEmpty);
+    }
+
     private static PlayerAggregate CreatePlayer(GameDataCatalog catalog)
     {
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "技能", DateTimeOffset.UnixEpoch, catalog.Fingerprint);

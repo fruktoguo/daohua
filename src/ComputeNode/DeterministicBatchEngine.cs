@@ -1,65 +1,31 @@
 namespace DaoHua.ComputeNode;
 
 /// <summary>
-/// 确定性离线挂机批量补算引擎。
+/// 确定性离线挂机批量补算引擎（compute.v2 真实模拟路径）。
 /// 架构边界：
 /// 1. 节点只运行确定性纯计算，无状态、不持有任何数据库读写权限；
-/// 2. 接收来自主服务的已编码 Section 快照与离线时间跨度，推导生成推进后的 Section 载荷；
-/// 3. 输出的新状态版本号与校验和必须能够被主服务的 CAS 机制无缝校验并落盘。
+/// 2. 与主服重连补算共用同一条领域管线：SectionCodec 解码 8 段载荷 →
+///    PlayerAggregate.Restore 还原聚合 → RebindGameDataFingerprint 对齐当前配表 →
+///    AssetWallet.Restore 还原钱包快照 → SimulationEngine.AdvanceTo 离线推进 →
+///    EncodeAggregate 只编码脏分段。同输入两端逐字节一致由 golden vector 测试守门；
+/// 3. 离线补算一律 <see cref="DuelAdvanceOptions"/>(MatchingEnabled: false)：
+///    斗法撮合是跨玩家交互，只能由主服在线路径完成；
+/// 4. 输出的新版本号与校验和必须能被主服 CAS 与 section checksum 机制校验落盘；
+///    资产增量随结果回传，由主服在结果落库事务内经既有经济事务原子入账——
+///    节点不创造第二套资产协议，也不直接写余额。
 /// </summary>
-public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
+public sealed class DeterministicBatchEngine(GameDataCatalog gameData)
 {
     /// <summary>
-    /// 对离线任务批次执行确定性时间快进推演。
+    /// 对单个离线任务执行确定性时间快进推演。
     /// </summary>
     /// <param name="job">单个离线任务请求。</param>
-    /// <param name="gameDataFingerprint">当前游戏数据指纹。</param>
     /// <returns>任务推进结果。</returns>
-    public AdvanceJobResult Advance(AdvanceJobRequest job, string gameDataFingerprint)
+    public AdvanceJobResult Advance(AdvanceJobRequest job)
     {
         try
         {
-            var started = Stopwatch.GetTimestamp();
-            var elapsed = job.TargetUnixMilliseconds - job.FromUnixMilliseconds;
-            var completedActions = CountCompletedActions(job.Actions, elapsed);
-            var output = new List<SectionPayload>(job.Sections.Count);
-            long inputBytes = 0;
-            long outputBytes = 0;
-
-            foreach (var section in job.Sections)
-            {
-                var input = Decode(section);
-                inputBytes += input.Length;
-                var advanced = AdvanceJson(section.Kind, input, job, completedActions, gameDataFingerprint);
-                var encoded = Encode(section.Codec, advanced);
-                outputBytes += encoded.Length;
-                // 回传 checksum 针对编码后字节（含 Brotli 压缩态），与主服务 ComputeSectionCodec.ToSectionWrite
-                // 的线侧校验口径一致；版本 +1 使主服务 CAS 写回能识别本任务确实产生了推进。
-                output.Add(section with
-                {
-                    Version = checked(section.Version + 1),
-                    PayloadBase64 = Convert.ToBase64String(encoded),
-                    Checksum = Convert.ToHexString(SHA256.HashData(encoded)).ToLowerInvariant()
-                });
-            }
-
-            var metrics = new ComputeAdvanceMetrics(
-                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                completedActions,
-                output.Count,
-                inputBytes,
-                outputBytes);
-            return new AdvanceJobResult(
-                job.JobId,
-                job.PlayerId,
-                true,
-                job.SourceStateVersion,
-                checked(job.SourceStateVersion + 1),
-                output,
-                metrics,
-                null,
-                null,
-                false);
+            return AdvanceCore(job);
         }
         catch (FormatException)
         {
@@ -69,9 +35,14 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         {
             return AdvanceJobResult.Failed(job, "INVALID_JSON_SECTION", "section JSON 载荷无效。", false);
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException exception)
         {
-            return AdvanceJobResult.Failed(job, "INVALID_CODEC", "section 压缩载荷无效。", false);
+            return AdvanceJobResult.Failed(job, "INVALID_CODEC", exception.Message, false);
+        }
+        catch (DomainException exception)
+        {
+            // 存档违反领域不变量（浮点非有限、非法队列态等）：重试不会自愈，判死保留证据。
+            return AdvanceJobResult.Failed(job, "INVALID_STATE", exception.Message, false);
         }
         catch (OverflowException)
         {
@@ -81,14 +52,95 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
         {
             return AdvanceJobResult.Failed(job, "INVALID_SECTION", exception.Message, false);
         }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // 引擎内部未预期异常：不回传细节堆栈，错误码保留可追溯证据，重试同一输入必然复发。
+            return AdvanceJobResult.Failed(job, "ENGINE_ERROR", $"模拟推进异常：{exception.GetType().Name}", false);
+        }
+    }
+
+    /// <summary>真实模拟主流程：解码 → 还原 → 推进 → 编码回传。</summary>
+    private AdvanceJobResult AdvanceCore(AdvanceJobRequest job)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var now = DateTimeOffset.UtcNow;
+        var target = DateTimeOffset.FromUnixTimeMilliseconds(job.TargetUnixMilliseconds);
+
+        // 线载荷还原为存储形态：codec=json + payload=原始 JSON 字节。
+        // DecodeRaw 已按线编码解压，StoredSection.Payload 承载解码后字节、Codec 记为 json，
+        // 是合法且自洽的存储形态（checksum/RawBytes 均按原始字节口径）。
+        var sections = new Dictionary<string, StoredSection>(job.Sections.Count, StringComparer.Ordinal);
+        long inputBytes = 0;
+        foreach (var section in job.Sections)
+        {
+            var stored = DecodeSection(job.PlayerId, section, now);
+            sections.Add(stored.SectionKind, stored);
+            inputBytes += stored.RawBytes;
+        }
+
+        // 重建持久化绑定包：提交头校验和在此完成完整性核验（任一段篡改都会被拒）。
+        var identity = new PlayerIdentity(
+            job.PlayerId, job.AccountId, job.DisplayName,
+            DateTimeOffset.FromUnixTimeMilliseconds(job.CreatedAtUnixMilliseconds));
+        var head = new PlayerStateHead(
+            job.PlayerId, job.SourceStateVersion, SectionCodec.CurrentSchemaVersion,
+            DateTimeOffset.FromUnixTimeMilliseconds(job.FromUnixMilliseconds),
+            job.HeadGameDataFingerprint, job.HeadChecksum, now);
+        var state = SectionCodec.DecodeAggregate(new PlayerStateBundle(identity, head, sections, []));
+        var player = PlayerAggregate.Restore(state);
+        // 与主服重连路径一致：存档指纹切换到当前配表，轮换时 Settings 标脏并入版本。
+        player.RebindGameDataFingerprint(gameData.Fingerprint);
+
+        // 钱包只用于消耗品/材料可用性判定；扣减结果经 AssetDeltas 回传，由主服事务入账。
+        var wallet = new AssetWallet(player.PlayerId);
+        if (job.AssetBalances is { Count: > 0 } rows)
+            wallet.Restore(rows.Select(row => new AssetBalance(
+                player.PlayerId, new AssetKey(new ItemId(row.AssetId), row.Variant ?? ""), row.Quantity, 0)));
+
+        var result = SimulationEngine.AdvanceTo(player, target, gameData, wallet,
+            new DuelAdvanceOptions(MatchingEnabled: false));
+
+        // 只回传推进中真正变更的分段；编码与校验和由共享 SectionCodec 单源产出。
+        var writes = SectionCodec.EncodeAggregate(player, now);
+        var output = new List<SectionPayload>(writes.Count);
+        long outputBytes = 0;
+        foreach (var write in writes)
+        {
+            outputBytes += write.Payload.Length;
+            // 响应侧 checksum 针对编码后线字节：主服 ToSectionWrite 先验传输完整性再解压重算存储口径。
+            output.Add(new SectionPayload(
+                write.SectionKind,
+                write.StateVersion,
+                ToWireCodec(write.Codec),
+                Convert.ToBase64String(write.Payload.Span),
+                Convert.ToHexStringLower(SHA256.HashData(write.Payload.Span))));
+        }
+
+        var metrics = new ComputeAdvanceMetrics(
+            (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+            (long)result.CompletedActions,
+            output.Count,
+            inputBytes,
+            outputBytes);
+        return new AdvanceJobResult(
+            job.JobId,
+            job.PlayerId,
+            true,
+            job.SourceStateVersion,
+            result.StateVersion,
+            output,
+            MergeDeltas(result.AssetDeltas),
+            metrics,
+            null,
+            null,
+            false);
     }
 
     /// <summary>
-    /// 解码并校验单个 section 载荷。
+    /// 解码并校验单个线 section 载荷：Base64 → 按线编码解压 → 原始字节校验和。
+    /// 产出的 StoredSection 以 codec=json 承载原始字节（见 AdvanceCore 注释）。
     /// </summary>
-    /// <param name="section">原始 section 载荷。</param>
-    /// <returns>解码后的原始字节。</returns>
-    private byte[] Decode(SectionPayload section)
+    private static StoredSection DecodeSection(Guid playerId, SectionPayload section, DateTimeOffset now)
     {
         var encoded = Convert.FromBase64String(section.PayloadBase64);
         if (encoded.Length > ComputeContract.MaxPayloadBytesPerSection)
@@ -96,144 +148,56 @@ public sealed class DeterministicBatchEngine(JsonSerializerOptions jsonOptions)
             throw new InvalidDataException("section 载荷超过大小限制。");
         }
 
-        var decoded = section.Codec switch
+        var raw = SectionCodec.DecodeRaw(section.Codec switch
         {
-            "identity" => encoded,
-            "brotli" => DecompressBrotli(encoded),
+            "identity" => SectionCodec.RawJson,
+            "brotli" => SectionCodec.BrotliJson,
             _ => throw new NotSupportedException($"不支持 section 编码: {section.Codec}")
-        };
-        if (decoded.Length > ComputeContract.MaxPayloadBytesPerSection)
+        }, encoded);
+        if (raw.Length > ComputeContract.MaxPayloadBytesPerSection)
         {
             throw new InvalidDataException("解压后的 section 载荷超过大小限制。");
         }
 
-        var checksum = Convert.ToHexString(SHA256.HashData(decoded)).ToLowerInvariant();
-        if (!string.IsNullOrWhiteSpace(section.Checksum)
-            && !string.Equals(checksum, section.Checksum, StringComparison.OrdinalIgnoreCase))
+        // 请求侧 checksum 针对解码后原始 JSON 字节（提交头绑定口径），与存储 checksum 语义一致。
+        var checksum = Convert.ToHexStringLower(SHA256.HashData(raw));
+        if (!string.Equals(checksum, section.Checksum, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidDataException("section 校验和不匹配。");
         }
 
-        return decoded;
+        return new StoredSection(
+            playerId, section.Kind, section.Version, SectionCodec.CurrentSchemaVersion,
+            SectionCodec.RawJson, raw, raw.Length, section.Checksum, now);
     }
 
-    /// <summary>
-    /// 使用指定编码对输出载荷进行编码。
-    /// </summary>
-    /// <param name="codec">目标编码。</param>
-    /// <param name="payload">原始载荷字节。</param>
-    /// <returns>编码后的字节。</returns>
-    private static byte[] Encode(string codec, byte[] payload) => codec switch
+    /// <summary>存储编码到线编码的映射（与主服 ComputeSectionCodec.ToWire 镜像）。</summary>
+    private static string ToWireCodec(string storageCodec) => storageCodec switch
     {
-        "identity" => payload,
-        "brotli" => CompressBrotli(payload),
-        _ => throw new NotSupportedException($"不支持 section 编码: {codec}")
+        SectionCodec.RawJson => "identity",
+        SectionCodec.BrotliJson => "brotli",
+        _ => throw new NotSupportedException($"存储编码不可外传：{storageCodec}。")
     };
 
     /// <summary>
-    /// 对 JSON 格式的 section 注入模拟时间、完成行动数、配置指纹等元数据。
-    /// 非 JSON 二进制 section 将原样返回。
+    /// 按 (assetId, variant) 合并同键增量并过滤零值，Ordinal 排序保证输出稳定；
+    /// 主服经济事务内部同样按键合并入账，此处先行收拢只减少线字节与流水行数。
     /// </summary>
-    /// <param name="kind">section 类型。</param>
-    /// <param name="input">原始载荷字节。</param>
-    /// <param name="job">所属任务请求。</param>
-    /// <param name="completedActions">计算得到的完成行动数。</param>
-    /// <param name="gameDataFingerprint">当前游戏数据指纹。</param>
-    /// <returns>推进后的 JSON 字节或原始字节。</returns>
-    private byte[] AdvanceJson(
-        string kind,
-        byte[] input,
-        AdvanceJobRequest job,
-        long completedActions,
-        string gameDataFingerprint)
+    private static AssetDeltaRow[]? MergeDeltas(IReadOnlyList<Domain.Economy.AssetDelta> deltas)
     {
-        // 非 JSON 的领域二进制 section 原样传递；主服务可在提交前使用自己的 Domain 解码。
-        if (input.Length == 0 || input[0] is not ((byte)'{' or (byte)'[')) return input;
-
-        var node = JsonNode.Parse(
-            input,
-            nodeOptions: null,
-            documentOptions: new JsonDocumentOptions { MaxDepth = jsonOptions.MaxDepth });
-        if (node is not JsonObject obj) return input;
-
-        // 节点不解析领域对象，只向 JSON section 注入推进元数据（模拟时刻、完成数、配表指纹、契约版本），
-        // 供主服务写回后审计补算来源；领域字段本身不由节点改写。
-        obj["lastSimulatedAtUnixMilliseconds"] = job.TargetUnixMilliseconds;
-        obj["simulationElapsedMilliseconds"] = Math.Max(
-            0,
-            job.TargetUnixMilliseconds - job.FromUnixMilliseconds);
-        obj["completedActions"] = completedActions;
-        obj["gameDataFingerprint"] = gameDataFingerprint;
-        obj["computeContractVersion"] = ComputeContract.Version;
-        return JsonSerializer.SerializeToUtf8Bytes(node, jsonOptions);
-    }
-
-    /// <summary>
-    /// 根据行动意图与可用时长，统计可以完成的行动总数。
-    /// </summary>
-    /// <param name="actions">行动意图列表，可为 <see langword="null"/>。</param>
-    /// <param name="elapsedMilliseconds">可用模拟时长（毫秒）。</param>
-    /// <returns>可完成的行动总数。</returns>
-    private static long CountCompletedActions(IReadOnlyList<ActionIntent>? actions, long elapsedMilliseconds)
-    {
-        if (actions is null || actions.Count == 0 || elapsedMilliseconds <= 0) return 0;
-        var elapsedSeconds = elapsedMilliseconds / 1000d;
-        long total = 0;
-        foreach (var action in actions)
+        if (deltas.Count == 0) return null;
+        var merged = new Dictionary<(string AssetId, string Variant), double>();
+        foreach (var delta in deltas)
         {
-            if (action is null || action.DurationSeconds <= 0 || action.RepeatCount <= 0) continue;
-            total = checked(total + Math.Min(
-                action.RepeatCount,
-                (long)Math.Floor(elapsedSeconds / action.DurationSeconds)));
+            var key = (delta.Asset.ItemId.Value, delta.Asset.Variant);
+            merged[key] = merged.TryGetValue(key, out var sum) ? sum + delta.QuantityDelta : delta.QuantityDelta;
         }
-
-        return total;
-    }
-
-    /// <summary>
-    /// 使用 Brotli 解压 section 载荷。
-    /// </summary>
-    /// <param name="input">压缩后的字节。</param>
-    /// <returns>解压后的字节。</returns>
-    private static byte[] DecompressBrotli(byte[] input)
-    {
-        using var source = new MemoryStream(input, writable: false);
-        using var stream = new BrotliStream(source, CompressionMode.Decompress);
-        using var output = new MemoryStream();
-        var buffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
-        try
-        {
-            // 解压真实体积只有边读边累计才能确定：流式校验可在 Brotli 炸弹写满内存前提前中断，
-            // 而不是先完整解压再发现超限。
-            while (true)
-            {
-                var read = stream.Read(buffer, 0, buffer.Length);
-                if (read == 0) break;
-                if (output.Length + read > ComputeContract.MaxPayloadBytesPerSection)
-                    throw new InvalidDataException("解压后的 section 载荷超过大小限制。");
-                output.Write(buffer, 0, read);
-            }
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
-        return output.ToArray();
-    }
-
-    /// <summary>
-    /// 使用 Brotli 压缩 section 载荷。
-    /// </summary>
-    /// <param name="input">原始字节。</param>
-    /// <returns>压缩后的字节。</returns>
-    private static byte[] CompressBrotli(byte[] input)
-    {
-        using var output = new MemoryStream();
-        using (var stream = new BrotliStream(output, CompressionLevel.Fastest, leaveOpen: true))
-        {
-            stream.Write(input);
-        }
-
-        return output.ToArray();
+        var rows = merged
+            .Where(pair => pair.Value != 0 && double.IsFinite(pair.Value))
+            .Select(pair => new AssetDeltaRow(pair.Key.AssetId, pair.Key.Variant, pair.Value))
+            .OrderBy(row => row.AssetId, StringComparer.Ordinal)
+            .ThenBy(row => row.Variant, StringComparer.Ordinal)
+            .ToArray();
+        return rows.Length == 0 ? null : rows;
     }
 }

@@ -811,22 +811,31 @@ public sealed class PostgresMarketRepository(
             return;
         }
 
-        for (var lineNo = 0; lineNo < deltas.Count; lineNo++)
+        // 流水行按传入次序一次写入：unnest+ordinality 保证 line_no 与行序一致。
+        var linePlayers = new Guid[deltas.Count];
+        var lineAssets = new string[deltas.Count];
+        var lineVariants = new string[deltas.Count];
+        var lineAmounts = new double[deltas.Count];
+        for (var i = 0; i < deltas.Count; i++)
         {
-            var delta = deltas[lineNo];
-            await using var line = new NpgsqlCommand("""
-                INSERT INTO economy.transaction_lines
-                    (transaction_id, line_no, player_id, asset_id, variant, delta)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                """, connection, transaction);
-            line.Parameters.Add(new NpgsqlParameter { Value = transactionId });
-            line.Parameters.Add(new NpgsqlParameter { Value = lineNo });
-            line.Parameters.Add(new NpgsqlParameter { Value = delta.PlayerId });
-            line.Parameters.Add(new NpgsqlParameter { Value = delta.AssetId });
-            line.Parameters.Add(new NpgsqlParameter { Value = delta.Variant });
-            line.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = delta.Delta });
-            await line.ExecuteNonQueryAsync(cancellationToken);
+            var delta = deltas[i];
+            linePlayers[i] = delta.PlayerId;
+            lineAssets[i] = delta.AssetId;
+            lineVariants[i] = delta.Variant;
+            lineAmounts[i] = delta.Delta;
         }
+        await using var lines = new NpgsqlCommand("""
+            INSERT INTO economy.transaction_lines
+                (transaction_id, line_no, player_id, asset_id, variant, delta)
+            SELECT $1, (line.ord - 1)::smallint, line.player_id, line.asset_id, line.variant, line.delta
+            FROM unnest($2, $3, $4, $5) WITH ORDINALITY AS line(player_id, asset_id, variant, delta, ord)
+            """, connection, transaction);
+        lines.Parameters.Add(new NpgsqlParameter { Value = transactionId });
+        lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Uuid, Value = linePlayers });
+        lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar, Value = lineAssets });
+        lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Varchar, Value = lineVariants });
+        lines.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Array | NpgsqlTypes.NpgsqlDbType.Double, Value = lineAmounts });
+        await lines.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string ComputeMarketRequestHash(Guid actorId, IReadOnlyList<AssetDelta> deltas)
@@ -845,41 +854,54 @@ public sealed class PostgresMarketRepository(
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString()))).ToLowerInvariant();
     }
 
+    /// <summary>
+    /// 单语句余额增减：存在则累加、不存在则按增量插入；结算结果越界（负余额/非有限）时
+    /// 两侧 WHERE 静默跳过，随后按当前余额抛出与旧实现一致的余额不足错误。
+    /// 与旧的 FOR UPDATE 锁读 + upsert 语义一致，但只有 1 次往返。
+    /// </summary>
     private static async Task ChangeBalanceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, AssetDelta delta, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        // CHECK 约束作用于「候选插入行」本身（先于冲突裁决），因此候选 quantity 不能直接放增量：
+        // 行已存在时（EXISTS 放行）候选值必须为合法余额，此处取 0 占位——冲突后由 DO UPDATE
+        // 计算真实结果，其 WHERE 守卫在被拒元组上不触发 CHECK（已验证行为）。
         await using var command = new NpgsqlCommand("""
-            SELECT quantity, version FROM economy.player_asset_balances
-            WHERE player_id = $1 AND asset_id = $2 AND variant = $3 FOR UPDATE
+            INSERT INTO economy.player_asset_balances
+                (player_id, asset_id, variant, quantity, version, updated_at)
+            SELECT $1, $2, $3,
+                   CASE WHEN $4 >= 0 AND $4 < 'Infinity'::double precision THEN $4 ELSE 0::double precision END,
+                   1, $5
+            WHERE ($4 >= 0 AND $4 < 'Infinity'::double precision)
+               OR EXISTS (
+                   SELECT 1 FROM economy.player_asset_balances b
+                   WHERE b.player_id = $1 AND b.asset_id = $2 AND b.variant = $3)
+            ON CONFLICT (player_id, asset_id, variant) DO UPDATE SET
+                quantity = economy.player_asset_balances.quantity + $4,
+                version = economy.player_asset_balances.version + 1,
+                updated_at = EXCLUDED.updated_at
+            WHERE economy.player_asset_balances.quantity + $4 >= 0
+              AND economy.player_asset_balances.quantity + $4 < 'Infinity'::double precision
+            RETURNING quantity
             """, connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = delta.PlayerId });
         command.Parameters.Add(new NpgsqlParameter { Value = delta.AssetId });
         command.Parameters.Add(new NpgsqlParameter { Value = delta.Variant });
-        double current = 0;
-        long version = 0;
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = delta.Delta });
+        command.Parameters.Add(new NpgsqlParameter { Value = now });
+        if (await command.ExecuteScalarAsync(cancellationToken) is double)
+            return;
+        // 新行值域守卫或既有行余额不足拒绝了写入：读取当前余额构造与旧实现一致的错误证据（事务随即回滚）。
+        double current;
+        await using (var probe = new NpgsqlCommand("""
+            SELECT quantity FROM economy.player_asset_balances
+            WHERE player_id = $1 AND asset_id = $2 AND variant = $3
+            """, connection, transaction))
         {
-            if (await reader.ReadAsync(cancellationToken))
-            {
-                current = reader.GetDouble(0);
-                version = reader.GetInt64(1);
-            }
+            probe.Parameters.Add(new NpgsqlParameter { Value = delta.PlayerId });
+            probe.Parameters.Add(new NpgsqlParameter { Value = delta.AssetId });
+            probe.Parameters.Add(new NpgsqlParameter { Value = delta.Variant });
+            current = await probe.ExecuteScalarAsync(cancellationToken) is double quantity ? quantity : 0;
         }
-        var next = current + delta.Delta;
-        if (double.IsNaN(next) || double.IsInfinity(next) || next < 0) throw new EconomyInsufficientBalanceException(delta, current);
-        await using var update = new NpgsqlCommand("""
-            INSERT INTO economy.player_asset_balances
-                (player_id, asset_id, variant, quantity, version, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (player_id, asset_id, variant) DO UPDATE SET
-                quantity = EXCLUDED.quantity, version = EXCLUDED.version, updated_at = EXCLUDED.updated_at
-            """, connection, transaction);
-        update.Parameters.Add(new NpgsqlParameter { Value = delta.PlayerId });
-        update.Parameters.Add(new NpgsqlParameter { Value = delta.AssetId });
-        update.Parameters.Add(new NpgsqlParameter { Value = delta.Variant });
-        update.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Double, Value = next });
-        update.Parameters.Add(new NpgsqlParameter { Value = version + 1 });
-        update.Parameters.Add(new NpgsqlParameter { Value = now });
-        await update.ExecuteNonQueryAsync(cancellationToken);
+        throw new EconomyInsufficientBalanceException(delta, current);
     }
 
     private static void ValidateOrder(MarketOrderInput order)

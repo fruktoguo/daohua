@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
 using Server.Clean;
 using System.Text.Json;
-using StoredHead = Server.Clean.PlayerStateHead;
+using StoredHead = Domain.Persistence.PlayerStateHead;
 using Xunit;
 
 namespace Server.Tests;
@@ -164,7 +164,7 @@ public sealed class PlayerRuntimeTests
             storedFingerprint);
         persisted.SetPresence(PresenceState.Offline);
         var storedAt = DateTimeOffset.UtcNow;
-        var writes = Server.Clean.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
+        var writes = Domain.Persistence.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
         var sections = writes.ToDictionary(
             write => write.SectionKind,
             write => new StoredSection(
@@ -183,10 +183,10 @@ public sealed class PlayerRuntimeTests
             new StoredHead(
                 playerId,
                 persisted.StateVersion,
-                Server.Clean.SectionCodec.CurrentSchemaVersion,
+                Domain.Persistence.SectionCodec.CurrentSchemaVersion,
                 persisted.LastSimulatedAt,
                 storedFingerprint,
-                Server.Clean.SectionCodec.ComputeHeadChecksum(sections.Values),
+                Domain.Persistence.SectionCodec.ComputeHeadChecksum(sections.Values),
                 storedAt),
             sections,
             []));
@@ -280,6 +280,101 @@ public sealed class PlayerRuntimeTests
         Assert.Equal(0d, Assert.Single(after.State.Actions).ProgressSeconds);
         Assert.Equal(1d, Assert.Single(after.Assets).Quantity);
         Assert.Single(economy.Requests);
+    }
+    /// <summary>推进事务失败按分段检查点回滚：聚合导出逐位一致、操作前已脏分段保留、本次新标脏不泄漏。</summary>
+
+    [Fact]
+    public async Task FailedAdvanceRestoresAggregateBitwiseAndKeepsPriorDirtySections()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "逐位回滚");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.qi-gathering-pill", "", 1d, 0));
+        // 经济提交恒失败：推进中持续药激活扣件触发的事务拒绝提交，驱动回滚路径。
+        var economy = new RecordingEconomyRepository(assets, apply: false);
+        var runtime = new PlayerRuntime(repository, assets, economy, GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+
+        await runtime.LoadAsync(playerId);
+        await runtime.ExecuteAsync(playerId, "queue.auto_use.configure", JsonSerializer.SerializeToElement(new
+        {
+            actionType = "cultivation",
+            slotIndex = 0,
+            itemId = "item.qi-gathering-pill",
+            quantity = 1,
+            enabled = true
+        }));
+        var enqueued = await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options));
+        Assert.True(enqueued.Success);
+
+        // 强刷清空全部脏分段，再让 ActionQueue 重新标脏——构造「部分分段已脏」的混合基线。
+        await runtime.FlushAllAsync(true);
+        var flushedCount = repository.Enqueued.Count;
+        var enqueue2 = await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", 2), ProtocolJson.Options));
+        Assert.True(enqueue2.Success);
+        var baselineJson = JsonSerializer.Serialize(enqueue2.Snapshot.State);
+        var baselineAssets = enqueue2.Snapshot.Assets
+            .Select(asset => (asset.AssetId, asset.Variant, asset.Quantity, asset.Version)).ToArray();
+
+        // 推进 10s：行动启动时激活持续丹药产生扣件增量，经济提交失败触发整体回滚。
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ExecuteAsync(
+            playerId,
+            "simulation.advance",
+            JsonSerializer.SerializeToElement(new { targetTime = enqueue2.Snapshot.LastSimulatedAt.AddSeconds(10) })).AsTask());
+        var after = await runtime.LoadAsync(playerId);
+
+        // 逐位一致：聚合导出快照与资产余额与操作前完全一致（含模拟时钟、行动进度、版本号）。
+        Assert.Equal(baselineJson, JsonSerializer.Serialize(after.State));
+        Assert.Equal(baselineAssets, after.Assets.Select(a => (a.AssetId, a.Variant, a.Quantity, a.Version)).ToArray());
+
+        // 脏集合精确复原：失败推进新标脏的分段不得泄漏，操作前已脏的 ActionQueue 必须保留。
+        await runtime.FlushAllAsync(true);
+        var kinds = repository.Enqueued.Skip(flushedCount).Select(write => write.SectionKind).ToArray();
+        Assert.Equal([PlayerSectionKinds.ActionQueue], kinds);
+    }
+    /// <summary>功法学习事务失败按分段检查点回滚：EncodeAggregate 已消费的脏集合精确复原，习得结果不留痕。</summary>
+
+    [Fact]
+    public async Task FailedAbilityLearnRestoresAggregateAndDirtyTracking()
+    {
+        var playerId = Guid.NewGuid();
+        var repository = CreateEmptyPlayerRepository(playerId, "学功回滚");
+        var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.tome.test-strike", "", 1d, 0));
+        var economy = new RecordingEconomyRepository(assets, apply: false);
+        var catalog = GameDataCatalog.Parse([
+            System.Text.Encoding.UTF8.GetBytes("""[{"id":"item.tome.test-strike","name":"测试秘籍"}]"""),
+            System.Text.Encoding.UTF8.GetBytes("""[{"id":"ability.test-strike","style":"sword","category":"physical","element":"none","damageRatio":1,"flatDamage":1,"cooldownMilliseconds":1000,"castMilliseconds":1000,"manaCost":0}]""")
+        ]);
+        var runtime = new PlayerRuntime(repository, assets, economy, catalog, NullLogger<PlayerRuntime>.Instance);
+        await runtime.LoadAsync(playerId);
+
+        // 清盘构造基线：ActionQueue 保持已脏，其余分段干净。
+        await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", -1), ProtocolJson.Options));
+        await runtime.FlushAllAsync(true);
+        var flushedCount = repository.Enqueued.Count;
+        var enqueued2 = await runtime.ExecuteAsync(playerId, "action.enqueue", JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", 1), ProtocolJson.Options));
+        var baselineJson = JsonSerializer.Serialize(enqueued2.Snapshot.State);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ExecuteAsync(
+            playerId,
+            "ability.learn",
+            JsonSerializer.SerializeToElement(new
+            {
+                itemId = "item.tome.test-strike",
+                requestId = Guid.NewGuid().ToString("D")
+            })).AsTask());
+        var after = await runtime.LoadAsync(playerId);
+        // 逐位一致：秘籍未习得、秘籍仍在钱包、行动队列与模拟时钟与操作前完全相同。
+        Assert.Equal(baselineJson, JsonSerializer.Serialize(after.State));
+        Assert.Empty(after.State.LearnedAbilities);
+        Assert.Equal(1d, Assert.Single(after.Assets, a => a.AssetId == "item.tome.test-strike").Quantity);
+        Assert.Single(economy.Requests);
+        // 脏集合精确复原：Loadout 等本次新标脏分段不泄漏，操作前已脏的 ActionQueue 保留待刷。
+        await runtime.FlushAllAsync(true);
+        var kinds = repository.Enqueued.Skip(flushedCount).Select(write => write.SectionKind).ToArray();
+        Assert.Equal([PlayerSectionKinds.ActionQueue], kinds);
     }
     /// <summary>world.travel 指令插队队首并挂起当前行动（保留进度）；取消移动后原行动恢复 Running。</summary>
 
@@ -584,7 +679,7 @@ public sealed class PlayerRuntimeTests
         var persisted = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), "装备处置", createdAt, "fp-test");
         persisted.ReplaceLoadout([], [], [new ItemId("equipment.test-sword")]);
         var storedAt = DateTimeOffset.UtcNow;
-        var writes = Server.Clean.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
+        var writes = Domain.Persistence.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
         var sections = writes.ToDictionary(
             write => write.SectionKind,
             write => new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
@@ -592,8 +687,8 @@ public sealed class PlayerRuntimeTests
             StringComparer.Ordinal);
         var repository = new FakeStateRepository(new PlayerStateBundle(
             new PlayerIdentity(playerId, Guid.NewGuid(), "装备处置", createdAt),
-            new StoredHead(playerId, persisted.StateVersion, Server.Clean.SectionCodec.CurrentSchemaVersion, persisted.LastSimulatedAt,
-                "fp-test", Server.Clean.SectionCodec.ComputeHeadChecksum(sections.Values), storedAt),
+            new StoredHead(playerId, persisted.StateVersion, Domain.Persistence.SectionCodec.CurrentSchemaVersion, persisted.LastSimulatedAt,
+                "fp-test", Domain.Persistence.SectionCodec.ComputeHeadChecksum(sections.Values), storedAt),
             sections, []));
         var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "equipment.test-sword", "", 1d, 0));
         var economy = new RecordingEconomyRepository(assets, apply: true);
@@ -631,7 +726,7 @@ public sealed class PlayerRuntimeTests
         persisted.LearnAbility(new AbilityId("ability.test-heart"));
         persisted.LearnAbility(new AbilityId("ability.test-strike"));
         var storedAt = DateTimeOffset.UtcNow;
-        var writes = Server.Clean.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
+        var writes = Domain.Persistence.SectionCodec.EncodeAggregate(persisted, storedAt, persisted.StateVersion);
         var sections = writes.ToDictionary(
             write => write.SectionKind,
             write => new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
@@ -639,8 +734,8 @@ public sealed class PlayerRuntimeTests
             StringComparer.Ordinal);
         var repository = new FakeStateRepository(new PlayerStateBundle(
             new PlayerIdentity(playerId, Guid.NewGuid(), "槽位类别", createdAt),
-            new StoredHead(playerId, persisted.StateVersion, Server.Clean.SectionCodec.CurrentSchemaVersion, persisted.LastSimulatedAt,
-                "fp-test", Server.Clean.SectionCodec.ComputeHeadChecksum(sections.Values), storedAt),
+            new StoredHead(playerId, persisted.StateVersion, Domain.Persistence.SectionCodec.CurrentSchemaVersion, persisted.LastSimulatedAt,
+                "fp-test", Domain.Persistence.SectionCodec.ComputeHeadChecksum(sections.Values), storedAt),
             sections, []));
         var catalog = GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
             [
@@ -837,8 +932,10 @@ public sealed class PlayerRuntimeTests
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>(_balances.Values.Where(balance => balance.PlayerId == playerId).ToArray());
 
-        public void Apply(EconomyTransactionRequest request)
+        /// <summary>应用事务增量并返回受影响行的提交后余额（对齐真实仓储 RETURNING 回传形态）。</summary>
+        public IReadOnlyList<AssetBalanceRecord> Apply(EconomyTransactionRequest request)
         {
+            var touched = new List<(Guid PlayerId, string AssetId, string Variant)>();
             foreach (var delta in request.Deltas)
             {
                 var key = (delta.PlayerId, delta.AssetId, delta.Variant);
@@ -848,26 +945,30 @@ public sealed class PlayerRuntimeTests
                 var quantity = current.Quantity + delta.Delta;
                 if (quantity < -1e-12) throw new InvalidOperationException("测试资产余额不足。");
                 _balances[key] = current with { Quantity = Math.Max(0d, quantity), Version = current.Version + 1 };
+                if (!touched.Contains(key)) touched.Add(key);
             }
+            return touched.Select(key => _balances[key]).ToArray();
         }
     }
 
-    /// <summary>记录每笔事务请求的经济假实现；apply=false 时模拟提交失败以触发回滚路径。</summary>
-    private sealed class RecordingEconomyRepository(MutableAssetRepository assets, bool apply) : IEconomyTransactionStore
+    /// <summary>记录每笔事务请求的经济假实现；apply=false 或命中 failOnCall 序号时模拟提交失败以触发回滚路径。</summary>
+    private sealed class RecordingEconomyRepository(MutableAssetRepository assets, bool apply, int failOnCall = -1) : IEconomyTransactionStore
     {
         public List<EconomyTransactionRequest> Requests { get; } = [];
 
         public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
-            if (apply) assets.Apply(request);
+            var applied = apply && Requests.Count != failOnCall;
+            var balances = applied ? assets.Apply(request) : null;
             return ValueTask.FromResult(new EconomyTransactionResult(
                 request.TransactionId,
                 request.IdempotencyKey,
-                apply,
+                applied,
                 false,
                 DateTimeOffset.UtcNow,
-                request.ResultPayload));
+                request.ResultPayload,
+                balances));
         }
     }
 
