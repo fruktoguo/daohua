@@ -1,16 +1,17 @@
 namespace DaoHua.ComputeNode;
 
 /// <summary>
-/// compute-link.v1.2 节点侧镜像定义：节点主动拨入主服 WebSocket 的链路信封。
+/// compute-link.v1.3 节点侧镜像定义：节点主动拨入主服 WebSocket 的链路信封。
 /// v1.1 在 hello 增加节点批次承接能力字段（MaxJobsPerBatch/MaxBatchBytes）；
-/// v1.2 在 hello 增加 RuntimeFingerprint（进程架构/运行时描述），用于跨架构确定性差异诊断。
+/// v1.2 在 hello 增加 RuntimeFingerprint（进程架构/运行时描述），用于跨架构确定性差异诊断；
+/// v1.3 增加优雅排空帧：drain（主服→节点）与 draining（节点→主服），提示语义由任务租约兜底。
 /// 与服务端 Server.Clean.ComputeLinkContracts 通过 JSON 字段名对齐（camelCase + type 判别），
 /// 节点无项目引用，两侧各自维护同一形状的私有副本（字段对齐由 Server.Tests 单测门禁）。
 /// </summary>
 public static class ComputeLinkContract
 {
     /// <summary>链路契约版本，必须与主服完全一致。</summary>
-    public const string Version = "compute-link.v1.2";
+    public const string Version = "compute-link.v1.3";
     /// <summary>握手鉴权请求头（与 compute.v2 同源）。</summary>
     public const string TokenHeader = ComputeContract.TokenHeader;
     /// <summary>单帧消息最大字节数：compute.v2 批次上限 16 MiB + 信封冗余。</summary>
@@ -48,6 +49,18 @@ public sealed record LinkResult(Guid BatchId, AdvanceBatchResponse Response);
 /// <summary>链路级错误帧（握手拒绝等），收到后连接即被主服关闭。</summary>
 public sealed record LinkError(string Code, string Message);
 
+/// <summary>
+/// 主服 → 节点的排空通知（v1.3）：主服停机/滚动升级前下发；
+/// 节点停止接新批次、把在飞批次跑完回传后主动断链并重连。
+/// </summary>
+public sealed record LinkDrain(string? Reason = null);
+
+/// <summary>
+/// 节点 → 主服的排空通知（v1.3）：节点停机/重部署前上报；
+/// 主服收到后停止派发新批次，在飞结果照常回收，节点排空后自行断链。
+/// </summary>
+public sealed record LinkDraining(string? Reason = null);
+
 /// <summary>compute-link 帧编解码：顶层 type 字段判别 + 扁平 JSON 文本帧。</summary>
 public static class LinkCodec
 {
@@ -68,6 +81,8 @@ public static class LinkCodec
             LinkBatch => "batch",
             LinkResult => "result",
             LinkError => "error",
+            LinkDrain => "drain",
+            LinkDraining => "draining",
             _ => throw new InvalidDataException($"未知链路消息类型：{message.GetType().Name}。")
         });
         return JsonSerializer.SerializeToUtf8Bytes(node, Options);
@@ -96,6 +111,10 @@ public static class LinkCodec
                 ?? throw new InvalidDataException("result 帧载荷无效。"),
             "error" => root.Deserialize<LinkError>(Options)
                 ?? throw new InvalidDataException("error 帧载荷无效。"),
+            "drain" => root.Deserialize<LinkDrain>(Options)
+                ?? throw new InvalidDataException("drain 帧载荷无效。"),
+            "draining" => root.Deserialize<LinkDraining>(Options)
+                ?? throw new InvalidDataException("draining 帧载荷无效。"),
             var other => throw new InvalidDataException($"未知链路帧类型：{other}。")
         };
     }

@@ -83,6 +83,7 @@ docs/ops/odin/redeploy-compute.sh
 
 ## 接入主服务
 
-- 接入方式（compute-link.v1）：odin 主动拨出 `wss://daohua.yuohira.com/internal/compute-link`，`X-Compute-Token` 鉴权 + hello 握手（nodeName=odin、并发容量、配表指纹）后进入动态节点组；连接即注册、断开即热拔出，在飞批次由主服按租约退回重试。
+- 接入方式（compute-link.v1.3）：odin 主动拨出 `wss://daohua.yuohira.com/internal/compute-link`，`X-Compute-Token` 鉴权 + hello 握手（nodeName=odin、并发容量、配表指纹）后进入动态节点组；连接即注册、断开即热拔出，在飞批次由主服按租约退回重试。
+- 优雅排空（v1.3）：节点停机/重部署先上报 `draining` 帧，主服立即停派新批次、在飞结果照收；主服停机/滚动升级向所有节点下发 `drain` 帧，节点跑完在飞后主动断链并立即重连。两帧均为提示语义，丢帧退化为原断线-租约语义。
 - 令牌：设备 `~/daohua_compute_watchdog.sh` 内的 `DAOHUA_COMPUTE_TOKEN` 必须与云端 `/opt/daohua/daohua.env` 的 `COMPUTE_TOKEN` 一致；仓库内脚本只保留占位值，正式接入时在设备上同步真实令牌（勿入仓库）。
 - 设备息屏/断网即离线；节点设计为可水平替换，离线只会导致其批次退回 pending 由其他节点/稍后重试消化，不影响主服正确性。

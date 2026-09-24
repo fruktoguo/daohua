@@ -3,18 +3,20 @@ using System.Text.Json.Nodes;
 namespace Server.Clean;
 
 /// <summary>
-/// compute-link.v1.2：计算节点 → 主服的反向拨入链路契约。
+/// compute-link.v1.3：计算节点 → 主服的反向拨入链路契约。
 /// 节点主动建立 WebSocket 长连接（握手携带 X-Compute-Token）后即注册进动态节点组，
 /// 主服经该连接下发 compute.v2 批次并回收结果；连接存活即节点在线，断开即热拔出。
 /// v1.1 在 hello 增加节点批次承接能力字段（MaxJobsPerBatch/MaxBatchBytes），主服按协商能力装配批次；
 /// v1.2 在 hello 增加 RuntimeFingerprint（进程架构/运行时描述），注册视图与接入日志透传，
 /// 用于跨架构确定性差异诊断，不参与裁决。
+/// v1.3 增加优雅排空帧：drain（主服→节点，主服下线/排空通知）与 draining（节点→主服，
+/// 节点停机排空通知）；两帧都是提示语义，底层正确性仍由 compute_jobs 租约兜底。
 /// 批次载荷完全复用 <see cref="ComputeDispatchContract"/> 的 compute.v2 类型，链路本身只定义信封。
 /// </summary>
 public static class ComputeLinkContract
 {
     /// <summary>链路契约版本，必须与节点端完全一致。</summary>
-    public const string Version = "compute-link.v1.2";
+    public const string Version = "compute-link.v1.3";
     /// <summary>节点拨入端点路径。</summary>
     public const string Path = "/internal/compute-link";
     /// <summary>握手鉴权请求头（与 compute.v1 同源）。</summary>
@@ -61,8 +63,22 @@ public sealed record ComputeLinkResult(Guid BatchId, ComputeAdvanceBatchResponse
 public sealed record ComputeLinkError(string Code, string Message);
 
 /// <summary>
+/// 主服 → 节点的排空通知（v1.3）：主服停机/滚动升级前下发，
+/// 节点停止接新批次、把在飞批次跑完回传后主动断链并重连（落点可能是新实例）。
+/// Reason 仅用于日志诊断；帧丢失时退化为普通断线，语义由任务租约兜底。
+/// </summary>
+public sealed record ComputeLinkDrain(string? Reason = null);
+
+/// <summary>
+/// 节点 → 主服的排空通知（v1.3）：节点停机/重部署前上报，
+/// 主服立即把该节点标记为 Draining 停止派发新批次；在飞批次结果照常回收，
+/// 节点排空完成后自行断链，注销仍走既有断线路径。
+/// </summary>
+public sealed record ComputeLinkDraining(string? Reason = null);
+
+/// <summary>
 /// compute-link 帧编解码：所有消息扁平序列化为 JSON 文本帧，
-/// 以顶层 type 字段判别类型（hello/welcome/batch/result/error），未知类型直接判非法。
+/// 以顶层 type 字段判别类型（hello/welcome/batch/result/error/drain/draining），未知类型直接判非法。
 /// </summary>
 public static class ComputeLinkCodec
 {
@@ -78,6 +94,8 @@ public static class ComputeLinkCodec
             ComputeLinkBatch => "batch",
             ComputeLinkResult => "result",
             ComputeLinkError => "error",
+            ComputeLinkDrain => "drain",
+            ComputeLinkDraining => "draining",
             _ => throw new InvalidDataException($"未知链路消息类型：{message.GetType().Name}。")
         });
         return JsonSerializer.SerializeToUtf8Bytes(node, ServerJson.Options);
@@ -106,6 +124,10 @@ public static class ComputeLinkCodec
                 ?? throw new InvalidDataException("result 帧载荷无效。"),
             "error" => root.Deserialize<ComputeLinkError>(ServerJson.Options)
                 ?? throw new InvalidDataException("error 帧载荷无效。"),
+            "drain" => root.Deserialize<ComputeLinkDrain>(ServerJson.Options)
+                ?? throw new InvalidDataException("drain 帧载荷无效。"),
+            "draining" => root.Deserialize<ComputeLinkDraining>(ServerJson.Options)
+                ?? throw new InvalidDataException("draining 帧载荷无效。"),
             var other => throw new InvalidDataException($"未知链路帧类型：{other}。")
         };
     }

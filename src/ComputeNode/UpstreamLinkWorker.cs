@@ -24,7 +24,13 @@ public sealed class UpstreamLinkWorker(
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
     /// <summary>会话健康存活阈值：超过该时长的链路断开视为偶发断线，退避复位而非继续翻倍。</summary>
     private static readonly TimeSpan HealthySessionThreshold = TimeSpan.FromSeconds(60);
+    /// <summary>节点停机排空窗口：上报 draining 后给在飞批次跑完回传的有界时间，窗口外取消按租约退回。</summary>
+    private static readonly TimeSpan NodeDrainWindow = TimeSpan.FromSeconds(10);
     private readonly ILogger _logger = loggerFactory.CreateLogger("ComputeNode.Upstream");
+    /// <summary>主服下发 drain 后置位：本链路在飞批次跑完即主动断链，消费后复位并立即重连。</summary>
+    private int _drainRequested;
+    /// <summary>在飞批次数（ProcessBatchAsync 簿记）：排空等待以此判定"手头算力已清空"。</summary>
+    private int _inFlightBatches;
 
     /// <summary>节点名称（hello 自报，主服仅用于诊断展示）。</summary>
     public string NodeName { get; } = string.IsNullOrWhiteSpace(nodeName) ? "compute-node" : nodeName.Trim();
@@ -45,12 +51,19 @@ public sealed class UpstreamLinkWorker(
             }
             catch (Exception exception)
             {
+                // 主服排空断链不算故障：完成在飞后主动断开，立即重连（落点可能是已恢复/其他主服实例）。
+                var drained = Interlocked.Exchange(ref _drainRequested, 0) != 0;
                 // 存活超过健康阈值的链路断开视为偶发断线：退避复位到最小档，不空等满退避；
                 // 快断快连的会话保留当前退避并继续翻倍，避免弱网设备刷重连压垮主服握手。
-                if (Stopwatch.GetElapsedTime(sessionStarted) >= HealthySessionThreshold)
+                if (drained || Stopwatch.GetElapsedTime(sessionStarted) >= HealthySessionThreshold)
                     retryDelay = MinRetryDelay;
-                _logger.LogWarning("主服链路中断（{Error}），{Delay:N1}s 后重连。",
-                    exception.Message, retryDelay.TotalSeconds);
+                if (drained)
+                    _logger.LogInformation("主服链路排空完成，立即重连。");
+                else if (stoppingToken.IsCancellationRequested)
+                    _logger.LogInformation("节点停机，链路关闭。");
+                else
+                    _logger.LogWarning("主服链路中断（{Error}），{Delay:N1}s 后重连。",
+                        exception.Message, retryDelay.TotalSeconds);
             }
 
             try
@@ -101,22 +114,46 @@ public sealed class UpstreamLinkWorker(
         _logger.LogInformation("已接入主服 node={NodeName} upstream={Upstream}", NodeName, uri);
 
         var outbound = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(64) { SingleReader = true });
-        // 会话级取消源：收发任一环退出即取消全部在飞批次计算并释放算力闸槽位，
-        // 断链重连后不残留旧批次空算（主服侧会按租约超时重新派发）。
-        using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // 链路环与在飞批次用两个取消源：session 控制收发循环，workCts 控制在飞计算。
+        // 断链/协议违规时两者一起取消；节点停机时先入排空流程（上报 draining + 在飞窗口内跑完），
+        // 不随 stoppingToken 直接取消批次，避免把主服已派出去的活白算丢弃。
+        using var session = new CancellationTokenSource();
+        using var workCts = new CancellationTokenSource();
         var sessionToken = session.Token;
+        using var stopRegistration = cancellationToken.Register(
+            () => BeginNodeDrain(session, workCts, outbound.Writer));
         var sendTask = SendLoopAsync(socket, outbound.Reader, sessionToken);
-        var receiveTask = ReceiveLoopAsync(socket, outbound.Writer, session);
+        var receiveTask = ReceiveLoopAsync(socket, outbound.Writer, session, workCts);
         await Task.WhenAny(sendTask, receiveTask);
         session.Cancel();
+        workCts.Cancel();
         outbound.Writer.TryComplete();
         // 任一循环退出即链路不可用：等待另一路收尾并把会话交回重连逻辑。
         try { await Task.WhenAll(sendTask, receiveTask); } catch { }
         throw new InvalidOperationException("主服链路已断开。");
     }
 
-    /// <summary>接收循环：batch 帧交给受闸批次任务；welcome/error/其他帧一律判协议违规断开。</summary>
-    private async Task ReceiveLoopAsync(WebSocket socket, ChannelWriter<byte[]> outbound, CancellationTokenSource session)
+    /// <summary>
+    /// 节点停机排空（stoppingToken 触发，经注册回调在取消线程上同步起跳）：
+    /// 先上报 draining 让主服立即停派新批次；在飞批次给有界窗口跑完回传后才断链，
+    /// 窗口外残余批次取消，未完结任务按租约语义由主服重派。
+    /// </summary>
+    private void BeginNodeDrain(CancellationTokenSource session, CancellationTokenSource workCts, ChannelWriter<byte[]> outbound)
+    {
+        outbound.TryWrite(LinkCodec.Encode(new LinkDraining("node shutdown")));
+        _ = Task.Run(async () =>
+        {
+            var deadline = Stopwatch.GetTimestamp() + (long)(NodeDrainWindow.TotalSeconds * Stopwatch.Frequency);
+            while (Volatile.Read(ref _inFlightBatches) > 0 && Stopwatch.GetTimestamp() < deadline)
+                await Task.Delay(100).ConfigureAwait(false);
+            workCts.Cancel();
+            session.Cancel();
+        });
+    }
+
+    /// <summary>接收循环：batch 帧交给受闸批次任务；drain 帧进入排空；welcome/error/其他帧一律判协议违规断开。</summary>
+    private async Task ReceiveLoopAsync(
+        WebSocket socket, ChannelWriter<byte[]> outbound, CancellationTokenSource session, CancellationTokenSource workCts)
     {
         var token = session.Token;
         while (!token.IsCancellationRequested)
@@ -127,7 +164,15 @@ public sealed class UpstreamLinkWorker(
                 case LinkBatch batch:
                     // 在接收循环内先占闸再派生：节点满负荷时对主服形成自然背压。
                     await batchGate.WaitAsync(token);
-                    _ = ProcessBatchAsync(batch, outbound, session);
+                    Interlocked.Increment(ref _inFlightBatches);
+                    _ = ProcessBatchAsync(batch, outbound, session, workCts);
+                    break;
+                case LinkDrain drain:
+                    // 主服排空/下线：不再接新批次（主服侧已停派），在飞跑完即主动断链重连。
+                    if (Interlocked.Exchange(ref _drainRequested, 1) == 0)
+                        _logger.LogInformation("主服请求排空 reason={Reason}：在飞批次跑完后断链重连。",
+                            drain.Reason ?? "未说明");
+                    if (Volatile.Read(ref _inFlightBatches) == 0) session.Cancel();
                     break;
                 case LinkError error:
                     throw new InvalidOperationException($"主服关闭链路 {error.Code}: {error.Message}");
@@ -144,11 +189,11 @@ public sealed class UpstreamLinkWorker(
             await socket.SendAsync(frame, WebSocketMessageType.Text, true, token);
     }
 
-    /// <summary>执行一个批次：契约校验 + 指纹比对 + 逐任务推进，结果经出站队列回传。</summary>
+    /// <summary>执行一个批次：契约校验 + 指纹比对 + 逐任务推进，结果经出站队列回传。批次取消挂 workCts：断链立即取消，停机排空窗口内照常跑完。</summary>
     private async Task ProcessBatchAsync(
-        LinkBatch batch, ChannelWriter<byte[]> outbound, CancellationTokenSource session)
+        LinkBatch batch, ChannelWriter<byte[]> outbound, CancellationTokenSource session, CancellationTokenSource workCts)
     {
-        var token = session.Token;
+        var token = workCts.Token;
         var started = Stopwatch.GetTimestamp();
         metrics.BeginBatch();
         try
@@ -179,6 +224,7 @@ public sealed class UpstreamLinkWorker(
                     "批次配表指纹不匹配，断开链路重新握手 expected={Expected} actual={Actual}",
                     gameData.Fingerprint, batch.Request.GameDataFingerprint);
                 metrics.RecordCancelledBatch();
+                workCts.Cancel();
                 session.Cancel();
                 return;
             }
@@ -221,6 +267,9 @@ public sealed class UpstreamLinkWorker(
         {
             metrics.EndBatch();
             batchGate.Release();
+            // 排空等待点：主服 drain 后在飞清空即断链，交给重连逻辑落到新上游。
+            if (Interlocked.Decrement(ref _inFlightBatches) == 0 && _drainRequested != 0)
+                session.Cancel();
         }
     }
 

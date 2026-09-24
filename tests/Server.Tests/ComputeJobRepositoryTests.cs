@@ -276,6 +276,51 @@ public sealed class ComputeJobRepositoryTests
         Assert.DoesNotContain(picked, id => seeded.Contains(id) && id != eligible);
     }
 
+    /// <summary>积压快照必须按状态聚合：pending/due/leased/终态计数与最老积压年龄。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task BacklogAggregatesByStatusAndDueGate()
+    {
+        var (source, jobs) = await OpenRepositoryAsync();
+        var due = await SeedPlayerAsync(source);
+        var gated = await SeedPlayerAsync(source);
+
+        await jobs.EnqueueAsync(due, DateTimeOffset.UtcNow.AddMinutes(-5), new byte[] { 1 });
+        // gated 行加未到期重试闸门：pending 计入总数但不计入 pendingDue。
+        await jobs.EnqueueAsync(gated, DateTimeOffset.UtcNow.AddMinutes(-5), new byte[] { 1 });
+        await SqlAsync(source,
+            "UPDATE platform.compute_jobs SET next_attempt_at = now() + interval '30 minutes' WHERE player_id = $1",
+            gated);
+
+        var before = await jobs.GetBacklogAsync();
+        var dueBefore = before.PendingDue;
+        var pendingBefore = before.Pending;
+
+        var claim = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.PlayerId == due);
+        var after = await jobs.GetBacklogAsync();
+        Assert.Equal(pendingBefore - 1, after.Pending);
+        Assert.Equal(dueBefore - 1, after.PendingDue);
+        Assert.True(after.Leased >= 1);
+        Assert.True(after.OldestPendingAgeSeconds is >= 200,
+            "最老 pending 行 target_time 5 分钟前应反映为积压年龄。");
+
+        // 完结后终态计入 succeeded。
+        Assert.True(await jobs.CompleteAsync(claim.JobId, claim.LeaseToken, new byte[] { 2 }));
+        var done = await jobs.GetBacklogAsync();
+        Assert.True(done.Succeeded >= 1);
+        var deadBefore = done.Dead;
+
+        // 不可重试失败进入 dead 计数。
+        await jobs.EnqueueAsync(due, DateTimeOffset.UtcNow.AddMinutes(-1), new byte[] { 1 });
+        var fatal = Assert.Single(await jobs.ClaimDueAsync(64, TimeSpan.FromMinutes(1)),
+            entry => entry.PlayerId == due);
+        Assert.True(await jobs.FailAsync(fatal.JobId, fatal.LeaseToken, "载荷非法",
+            retryable: false, TimeSpan.Zero, MaxAttempts));
+        var dead = await jobs.GetBacklogAsync();
+        Assert.True(dead.Dead >= deadBefore + 1);
+    }
+
     /// <summary>领取索引口径：pending 到期与 leased 孤儿回收各自由部分索引服务，旧组合索引不再存在。</summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]

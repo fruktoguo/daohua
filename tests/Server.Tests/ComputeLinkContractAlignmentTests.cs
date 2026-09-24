@@ -13,7 +13,7 @@ namespace Server.Tests;
 /// </summary>
 public sealed class ComputeLinkContractAlignmentTests
 {
-    /// <summary>compute-link 链路信封五帧：两侧记录字段集必须一致，版本/帧上限/type 判别逐字对齐。</summary>
+    /// <summary>compute-link 链路信封七帧：两侧记录字段集必须一致，版本/帧上限/type 判别逐字对齐。</summary>
     [Fact]
     public void LinkEnvelopeRecordsMatchNodeSide()
     {
@@ -23,13 +23,15 @@ public sealed class ComputeLinkContractAlignmentTests
         AssertRecordFieldsMatch<ComputeLinkBatch>(source, "LinkBatch");
         AssertRecordFieldsMatch<ComputeLinkResult>(source, "LinkResult");
         AssertRecordFieldsMatch<ComputeLinkError>(source, "LinkError");
+        AssertRecordFieldsMatch<ComputeLinkDrain>(source, "LinkDrain");
+        AssertRecordFieldsMatch<ComputeLinkDraining>(source, "LinkDraining");
 
-        Assert.Equal("compute-link.v1.2", ComputeLinkContract.Version);
-        Assert.Contains("public const string Version = \"compute-link.v1.2\";", source);
+        Assert.Equal("compute-link.v1.3", ComputeLinkContract.Version);
+        Assert.Contains("public const string Version = \"compute-link.v1.3\";", source);
         Assert.Contains("public const string TokenHeader = ComputeContract.TokenHeader;", source);
         Assert.Contains("public const int MaxMessageBytes = 20 * 1024 * 1024;", source);
         Assert.Equal(20 * 1024 * 1024, ComputeLinkContract.MaxMessageBytes);
-        foreach (var discriminator in new[] { "\"hello\"", "\"welcome\"", "\"batch\"", "\"result\"", "\"error\"" })
+        foreach (var discriminator in new[] { "\"hello\"", "\"welcome\"", "\"batch\"", "\"result\"", "\"error\"", "\"drain\"", "\"draining\"" })
             Assert.Contains(discriminator, source);
     }
 

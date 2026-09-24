@@ -144,6 +144,9 @@ builder.Services.AddHealthChecks()
 if (processRole == ServerProcessRole.Api)
 {
     builder.Services.AddHealthChecks().AddCheck<MarketHealthCheck>("market", tags: ["ready"]);
+    // compute-link 不挂 ready 标签：节点未接入是容量事实而非服务不就绪，避免干扰 /readyz；
+    // 运维面板 /api/health 全量执行所有检查，节点组健康在面板侧可见。
+    builder.Services.AddHealthChecks().AddCheck<ComputeLinkHealthCheck>("compute-link");
 }
 
 builder.Services.Configure<HostOptions>(host => host.ShutdownTimeout = TimeSpan.FromSeconds(30));

@@ -15,6 +15,7 @@ public static class ComputeLinkEndpoint
     private static readonly LogThrottle TokenRejectLog = new(TimeSpan.FromSeconds(30));
     private static readonly LogThrottle NodeLimitLog = new(TimeSpan.FromSeconds(30));
     private static readonly LogThrottle FingerprintRejectLog = new(TimeSpan.FromSeconds(30));
+    private static readonly LogThrottle HandshakeRejectLog = new(TimeSpan.FromSeconds(30));
 
     /// <summary>端点主流程。</summary>
     public static async Task HandleAsync(HttpContext context)
@@ -29,6 +30,7 @@ public static class ComputeLinkEndpoint
         var options = context.RequestServices.GetRequiredService<ServerOptions>();
         var registry = context.RequestServices.GetRequiredService<ComputeLinkRegistry>();
         var gameData = context.RequestServices.GetRequiredService<Domain.GameData.GameDataCatalog>();
+        var metrics = context.RequestServices.GetService<ComputeLinkMetrics>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ComputeLinkEndpoint");
 
         var presented = context.Request.Headers[ComputeLinkContract.TokenHeader].ToString();
@@ -42,6 +44,7 @@ public static class ComputeLinkEndpoint
                 SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
         if (!tokensMatch)
         {
+            metrics?.RecordTokenRejected();
             if (TokenRejectLog.TryAcquire())
                 logger.LogWarning("compute-link 令牌校验失败，拒绝拨入 remote={Remote}",
                     context.Connection.RemoteIpAddress);
@@ -52,6 +55,7 @@ public static class ComputeLinkEndpoint
 
         if (registry.NodeCount >= ComputeLinkContract.MaxConnectedNodes)
         {
+            metrics?.RecordNodeLimitRejected();
             if (NodeLimitLog.TryAcquire())
                 logger.LogWarning("compute-link 在线节点数已达上限 {Max}，拒绝拨入 remote={Remote}",
                     ComputeLinkContract.MaxConnectedNodes, context.Connection.RemoteIpAddress);
@@ -95,6 +99,7 @@ public static class ComputeLinkEndpoint
                 var actualFingerprint = hello.GameDataFingerprint is { Length: > 128 } longFingerprint
                     ? longFingerprint[..128]
                     : hello.GameDataFingerprint;
+                metrics?.RecordFingerprintRejected();
                 if (FingerprintRejectLog.TryAcquire())
                     logger.LogWarning(
                         "计算节点配表指纹不匹配，拒绝接入 name={Name} remote={Remote} expected={Expected} actual={Actual}",
@@ -113,6 +118,7 @@ public static class ComputeLinkEndpoint
                 runtimeFingerprint: runtimeFingerprint);
             if (!registry.TryRegister(node))
             {
+                metrics?.RecordNodeLimitRejected();
                 if (NodeLimitLog.TryAcquire())
                     logger.LogWarning("计算节点注册被拒绝：在线节点数已达上限 name={Name} remote={Remote}",
                         name, context.Connection.RemoteIpAddress);
@@ -131,10 +137,31 @@ public static class ComputeLinkEndpoint
                 WebSocketMessageType.Text, true, token);
 
             var sendTask = SendLoopAsync(socket, node, token);
-            var receiveTask = ReceiveLoopAsync(socket, node, logger, token);
+            var receiveTask = ReceiveLoopAsync(socket, node, registry, metrics, logger, token);
             await Task.WhenAny(sendTask, receiveTask);
             linked.Cancel();
             try { await Task.WhenAll(sendTask, receiveTask); } catch { /* 断开清理路径忽略残余异常 */ }
+        }
+        catch (ComputeNodeDisconnectedException)
+        {
+            // 对端主动关闭/心跳判定断开：属正常链路生命周期，finally 的离线行已含在飞数，
+            // 无需 Warning 级异常堆栈——弱网节点闪断不再刷告警。
+            logger.LogInformation("计算节点链路被对端关闭 name={Name} remote={Remote}",
+                node?.Name ?? "handshake", context.Connection.RemoteIpAddress);
+        }
+        catch (InvalidDataException exception) when (node is null)
+        {
+            // 握手期协议违规（hello 缺失/契约版本不符/能力声明非法）：计数 + 节流留证据，
+            // 沿用原 LINK_ERROR 关闭帧口径让节点拿到可读拒绝原因。
+            metrics?.RecordHandshakeRejected();
+            if (HandshakeRejectLog.TryAcquire())
+                logger.LogWarning("计算节点握手协议违规，拒绝接入 remote={Remote} error={Error}",
+                    context.Connection.RemoteIpAddress, exception.Message);
+            try
+            {
+                await SendCloseAsync(socket, "LINK_ERROR", exception.Message, CancellationToken.None);
+            }
+            catch { }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -156,9 +183,9 @@ public static class ComputeLinkEndpoint
         }
     }
 
-    /// <summary>接收循环：result 帧路由回节点在飞表；迟到/未知结果丢弃不断链，其余帧类型判协议违规断开。</summary>
+    /// <summary>接收循环：result 帧路由回节点在飞表；draining 帧标记排空停派；迟到/未知结果丢弃不断链，其余帧类型判协议违规断开。</summary>
     private static async Task ReceiveLoopAsync(
-        WebSocket socket, ComputeLinkNode node, ILogger logger, CancellationToken token)
+        WebSocket socket, ComputeLinkNode node, ComputeLinkRegistry registry, ComputeLinkMetrics? metrics, ILogger logger, CancellationToken token)
     {
         // 迟到/未知结果丢弃日志按链路节流：弱网节点重放旧结果时留证据但不刷盘。
         var lateResultLog = new LogThrottle(TimeSpan.FromSeconds(30));
@@ -172,12 +199,21 @@ public static class ComputeLinkEndpoint
                     // 若为单条迟到帧断开整条链路，该节点其他在飞批次会一并陪葬。
                     if (result.Response is null || !node.CompleteResult(result.BatchId, result.Response))
                     {
+                        metrics?.RecordLateResultDropped();
                         if (lateResultLog.TryAcquire())
                             logger.LogWarning(
                                 "丢弃迟到或未知的批次结果 node={Node} name={Name} batch={BatchId}",
                                 node.NodeId, node.Name, result.BatchId);
                         break;
                     }
+                    break;
+                case ComputeLinkDraining draining:
+                    // 节点主动排空（停机/重部署）：立即停派新批次；在飞批次结果照常经在飞表回收，
+                    // 节点排空完成后自行断链，注销仍走统一断线路径。
+                    if (!node.Draining)
+                        logger.LogInformation("计算节点进入排空 node={Node} name={Name} reason={Reason}",
+                            node.NodeId, node.Name, draining.Reason ?? "未说明");
+                    registry.BeginDrain(node);
                     break;
                 case ComputeLinkHello:
                     throw new InvalidDataException("重复 hello。");

@@ -3,17 +3,22 @@ namespace DaoHua.LoadTests;
 /// <summary>
 /// 压测命令行选项。
 /// </summary>
-/// <param name="Scenario">压测场景名：capacity-target / websocket / http-read / compute / postgres。</param>
+/// <param name="Scenario">压测场景名：capacity-target / websocket / http-read / compute / postgres / compute-link。</param>
 /// <param name="Players">模拟玩家数；缺省时按场景取容量目标默认值（如 websocket=100、http-read=500）。</param>
 /// <param name="DurationSeconds">持续收发压测窗口（秒），worker 在该窗口内尽量多发。</param>
 /// <param name="Concurrency">同时进行中的连接或握手数上限。</param>
 /// <param name="ServerUri">目标服务端地址；ws(s) 与 http(s) 可混写，由各场景归一化方案与路径。</param>
 /// <param name="DatabaseConnectionString">PostgreSQL 连接串；缺省取 DAOHUA_DATABASE_URL 环境变量，再回退本地开发库。</param>
+/// <param name="DatabaseExplicit">命令行是否显式传入 --database（compute-link 场景据此决定测试库解析优先级）。</param>
 /// <param name="RequireDatabase">数据库探测不可达时是否计入门禁失败；false 时仅降级为警告。</param>
 /// <param name="RequireServer">是否要求真实服务端：true 时先注册压测账号换取会话 Cookie，false 时 WebSocket 场景整体走匿名 Upgrade 探测。</param>
-/// <param name="KeepProbeSchema">是否保留容量探测的临时 schema 供事后排查（默认探测结束即删除）。</param>
+/// <param name="KeepProbeSchema">是否保留容量探测的临时 schema 与种子数据供事后排查（默认探测结束即删除）。</param>
 /// <param name="StateChangesPerSecond">latest-only 队列模拟的每秒状态变更速率。</param>
 /// <param name="StateChangeSeconds">状态变更持续秒数；与速率相乘得到入队总轮数。</param>
+/// <param name="ComputeNodes">compute-link 场景拨入的计算节点进程数。</param>
+/// <param name="ComputeWaves">compute-link 场景重复播种波次数（每波全员重新变为可补算状态）。</param>
+/// <param name="NodeKill">compute-link 场景是否在中途杀掉一个节点测量断线改派时延。</param>
+/// <param name="RepoRoot">仓库根目录（含 Game.slnx）；缺省从当前目录向上探测，用于定位 Server/ComputeNode 构建产物。</param>
 public sealed record LoadTestOptions(
     string Scenario,
     int Players,
@@ -21,11 +26,16 @@ public sealed record LoadTestOptions(
     int Concurrency,
     Uri ServerUri,
     string DatabaseConnectionString,
+    bool DatabaseExplicit,
     bool RequireDatabase,
     bool RequireServer,
     bool KeepProbeSchema,
     int StateChangesPerSecond,
-    int StateChangeSeconds)
+    int StateChangeSeconds,
+    int ComputeNodes,
+    int ComputeWaves,
+    bool NodeKill,
+    string? RepoRoot)
 {
     /// <summary>
     /// 从命令行参数解析压测选项。
@@ -62,9 +72,11 @@ public sealed record LoadTestOptions(
             "http-read" => 500,
             "compute" => CapacityTargetScenario.ColdComputeTarget,
             "postgres" => CapacityTargetScenario.RegisteredAccountTarget,
+            // compute-link 的 --players 是播种的离线玩家数（每玩家一个冷挂机任务）。
+            "compute-link" => 32,
             _ => throw new ArgumentException($"未知场景: {scenario}")
         };
-        var defaultDuration = 1;
+        var defaultDuration = scenario == "compute-link" ? 180 : 1;
         var defaultConnection = Environment.GetEnvironmentVariable("DAOHUA_DATABASE_URL")
                                 ?? "Host=127.0.0.1;Port=5432;Database=daohua;Username=daohua;Password=daohua-local-dev;Maximum Pool Size=16;Timeout=5;Command Timeout=30";
         return new LoadTestOptions(
@@ -74,11 +86,16 @@ public sealed record LoadTestOptions(
             ReadInt(values, "concurrency", ReadInt(values, "connect-concurrency", 64, 1, 2_048), 1, 2_048),
             ParseUri(values.GetValueOrDefault("url", "ws://127.0.0.1:5128/ws")),
             values.GetValueOrDefault("database", defaultConnection),
+            values.ContainsKey("database"),
             ReadBool(values, "require-database", false),
             ReadBool(values, "require-server", false),
             ReadBool(values, "keep-probe-schema", false),
             ReadInt(values, "state-changes-per-second", 300, 1, 100_000),
-            ReadInt(values, "state-change-seconds", 5, 1, 600));
+            ReadInt(values, "state-change-seconds", 5, 1, 600),
+            ReadInt(values, "compute-nodes", 2, 1, 8),
+            ReadInt(values, "compute-waves", 1, 1, 20),
+            ReadBool(values, "node-kill", true),
+            values.GetValueOrDefault("repo-root"));
     }
 
     /// <summary>

@@ -17,6 +17,7 @@ public sealed class ComputeDispatcherWorker(
     PostgresSectionRepository sections,
     NpgsqlDataSource dataSource,
     ComputeLinkRegistry registry,
+    ComputeLinkMetrics metrics,
     ServerOptions options,
     GameDataCatalog gameData,
     ILogger<ComputeDispatcherWorker> logger) : BackgroundService
@@ -24,6 +25,13 @@ public sealed class ComputeDispatcherWorker(
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
     /// <summary>在飞派发任务簿记：停机时统一等待排空；各任务槽位已在 Acquire 时预留。</summary>
     private readonly ConcurrentDictionary<Task, byte> _dispatches = new();
+    /// <summary>
+    /// 在飞批次的独立生命周期：主循环随 stoppingToken 停派后，已下发批次仍要在排空窗口内
+    /// 照常收结果落库；窗口耗尽才取消，未完结租约按孤儿语义到期重取。
+    /// </summary>
+    private readonly CancellationTokenSource _dispatchCts = new();
+    /// <summary>停机排空窗口：主服下线前给在飞批次的收尾时间，覆盖绝大多数正常批次往返。</summary>
+    private static readonly TimeSpan ShutdownDrainWindow = TimeSpan.FromSeconds(12);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -62,6 +70,7 @@ public sealed class ComputeDispatcherWorker(
                             ? Math.Min(options.ComputeBatchSize, node.MaxJobsPerBatch)
                             : options.ComputeBatchSize;
                         claims = await jobs.ClaimDueAsync(maxJobs, options.ComputeLease, stoppingToken);
+                        metrics.RecordJobsClaimed(claims.Count);
                     }
                     catch
                     {
@@ -71,11 +80,15 @@ public sealed class ComputeDispatcherWorker(
                     if (claims.Count == 0)
                     {
                         node.ReleaseSlot();
-                        await WaitForNextRoundAsync(capacitySignal, stoppingToken);
+                        // 归还自身槽位会完成轮首捕获的信号：必须释放后重取一份新信号再等，
+                        // 否则自唤醒让退避轮询退化为空转，把 ClaimDue 轮询打成满速自旋。
+                        var idleSignal = registry.CapacitySignal;
+                        await Task.WhenAny(idleSignal, Task.Delay(options.ComputePollInterval, stoppingToken));
                         continue;
                     }
-                    // 槽位已占即派生独立批次任务，主循环不等响应直接继续取下一个节点。
-                    Track(DispatchBatchAsync(node, claims, stoppingToken));
+                    // 槽位已占即派生独立批次任务，主循环不等响应直接继续取下一个节点；
+                    // 批次挂 _dispatchCts 而非 stoppingToken：停机时给在飞批次排空窗口照常收结果。
+                    Track(DispatchBatchAsync(node, claims, _dispatchCts.Token));
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -91,10 +104,17 @@ public sealed class ComputeDispatcherWorker(
         }
         finally
         {
-            // 停机收敛：在飞派发共享 stoppingToken 已全部取消，等簿记排空；
-            // 未及时退回的租约按既有孤儿语义到期重取，收敛等待本身有界。
-            try { await Task.WhenAll(_dispatches.Keys).WaitAsync(TimeSpan.FromSeconds(10)); }
+            // 停机收敛：先向全部在线节点下发 drain 提示（compute-link v1.3），节点跑完在飞后
+            // 主动断链重连；在飞批次不受 stoppingToken 影响，在排空窗口内照常收结果落库，
+            // 窗口耗尽才取消——未完结租约按既有孤儿语义到期重取，收敛等待本身有界。
+            try { registry.DrainAll("master draining"); }
+            catch { /* 排空提示下发失败不阻断退出 */ }
+            try { await Task.WhenAll(_dispatches.Keys).WaitAsync(ShutdownDrainWindow); }
             catch { /* 关闭路径不阻断退出 */ }
+            _dispatchCts.Cancel();
+            try { await Task.WhenAll(_dispatches.Keys).WaitAsync(TimeSpan.FromSeconds(2)); }
+            catch { /* 残余派发随租约孤儿语义重取 */ }
+            // _dispatchCts 不 Dispose：进程已在退出，残余任务可能仍持有其 token。
         }
     }
 
@@ -143,6 +163,7 @@ public sealed class ComputeDispatcherWorker(
         {
             // 派发任务级兜底：环节崩溃把本批剩余 claim 退回 pending 退避（已完结行不受影响——
             // ReleaseLease 只命中 status='leased' 的行），不悬挂到租约超时。
+            metrics.RecordBatchFailed(node, ComputeLinkMetrics.BatchFailureKind.Error);
             if (_failureLog.TryAcquire())
                 logger.LogError(exception, "ComputeNode 批次任务异常 node={Node} name={Name}", node.NodeId, node.Name);
             try
@@ -184,6 +205,7 @@ public sealed class ComputeDispatcherWorker(
                 || request.Sections is null || request.Sections.Count != PlayerSectionKinds.All.Count
                 || request.Sections.Any(section => section is null || string.IsNullOrEmpty(section.PayloadBase64)))
             {
+                metrics.RecordJobDead(node);
                 await jobs.FailAsync(claim.JobId, claim.LeaseToken, "input_payload 无效", retryable: false,
                     TimeSpan.Zero, options.ComputeMaxAttempts, cancellationToken);
                 continue;
@@ -202,6 +224,7 @@ public sealed class ComputeDispatcherWorker(
         {
             if (entry.DecodedBytes > groupBudget)
             {
+                metrics.RecordJobDead(node);
                 await jobs.FailAsync(entry.Claim.JobId, entry.Claim.LeaseToken,
                     $"JOB_TOO_LARGE: 单任务解码后 {entry.DecodedBytes}B 超过节点组批次预算 {groupBudget}B",
                     retryable: false, TimeSpan.Zero, options.ComputeMaxAttempts, cancellationToken);
@@ -229,23 +252,31 @@ public sealed class ComputeDispatcherWorker(
             return;
         }
 
+        // 观测口径：解码后字节供批次大小分布；积压等待取批内最大「目标时刻→派发」年龄，近似租约等待时长。
+        var decodedBytes = fits.Sum(entry => entry.DecodedBytes);
+        var maxWaitAgeMs = fits.Max(entry => Math.Max(0, (DateTimeOffset.UtcNow - entry.Claim.TargetTime).TotalMilliseconds));
+        var batchStarted = DateTimeOffset.UtcNow;
+        var frame = ComputeLinkCodec.Encode(new ComputeLinkBatch(batchId, new ComputeAdvanceBatchRequest(
+            ComputeDispatchContract.Version,
+            gameData.Fingerprint,
+            fits.Select(entry => entry.Request).ToArray())));
         try
         {
             // 出站队列 bounded 64：并行派发下可能顶满，补写入超时防止派发任务被挂死。
-            await node.Outbound.Writer.WriteAsync(
-                    ComputeLinkCodec.Encode(new ComputeLinkBatch(batchId, new ComputeAdvanceBatchRequest(
-                        ComputeDispatchContract.Version,
-                        gameData.Fingerprint,
-                        fits.Select(entry => entry.Request).ToArray()))),
-                    cancellationToken)
+            await node.Outbound.Writer.WriteAsync(frame, cancellationToken)
                 .AsTask().WaitAsync(options.ComputeOutboundWriteTimeout, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             node.Pending.TryRemove(batchId, out _);
+            metrics.RecordBatchFailed(node, ComputeLinkMetrics.BatchFailureKind.Write);
+            if (_failureLog.TryAcquire())
+                logger.LogWarning("ComputeNode 批次下发失败 node={Node} name={Name} jobs={Jobs} error={Error}",
+                    node.NodeId, node.Name, fits.Count, exception.Message);
             await ReleaseClaimsAsync(ClaimsOf(fits), $"批次下发失败：{exception.Message}", cancellationToken);
             return;
         }
+        metrics.RecordBatchWritten(node, fits.Count, frame.LongLength);
 
         ComputeAdvanceBatchResponse response;
         try
@@ -256,6 +287,12 @@ public sealed class ComputeDispatcherWorker(
         {
             // 节点断线（FailAllPending 注入异常）或批次超时：整批退回 pending 退避重试。
             node.Pending.TryRemove(batchId, out _);
+            metrics.RecordBatchFailed(node, exception switch
+            {
+                ComputeNodeDisconnectedException => ComputeLinkMetrics.BatchFailureKind.Disconnect,
+                TimeoutException => ComputeLinkMetrics.BatchFailureKind.Timeout,
+                _ => ComputeLinkMetrics.BatchFailureKind.Error
+            });
             if (_failureLog.TryAcquire())
                 logger.LogError("ComputeNode 批次派发失败 node={Node} jobs={Jobs} error={Error}",
                     node.Name, fits.Count, exception.Message);
@@ -266,10 +303,18 @@ public sealed class ComputeDispatcherWorker(
         if (response is null || response.Jobs is null
             || !string.Equals(response.ContractVersion, ComputeDispatchContract.Version, StringComparison.Ordinal))
         {
+            // 契约不符此前静默退回：节点可能跑旧版本，必须留可计数证据。
             node.Pending.TryRemove(batchId, out _);
+            metrics.RecordBatchFailed(node, ComputeLinkMetrics.BatchFailureKind.Contract);
+            if (_failureLog.TryAcquire())
+                logger.LogWarning(
+                    "ComputeNode 批次响应契约无效 node={Node} name={Name} jobs={Jobs} expected={Expected} actual={Actual}",
+                    node.NodeId, node.Name, fits.Count, ComputeDispatchContract.Version,
+                    response?.ContractVersion ?? "null");
             await ReleaseClaimsAsync(ClaimsOf(fits), "节点响应契约无效", cancellationToken);
             return;
         }
+        metrics.RecordBatchCompleted(node, fits.Count, decodedBytes, DateTimeOffset.UtcNow - batchStarted, maxWaitAgeMs);
 
         var results = new Dictionary<Guid, ComputeAdvanceJobResult>(response.Jobs.Count);
         foreach (var result in response.Jobs) results[result.JobId] = result;
@@ -278,7 +323,7 @@ public sealed class ComputeDispatcherWorker(
         // 同一 job 的 section 落库与 compute_jobs 完结并入同一事务。
         await Parallel.ForEachAsync(fits,
             new ParallelOptions { MaxDegreeOfParallelism = 4, CancellationToken = cancellationToken },
-            (entry, ct) => ApplyJobResultAsync(entry, results.GetValueOrDefault(entry.Claim.JobId), ct));
+            (entry, ct) => ApplyJobResultAsync(node, entry, results.GetValueOrDefault(entry.Claim.JobId), ct));
     }
 
     /// <summary>
@@ -288,17 +333,19 @@ public sealed class ComputeDispatcherWorker(
     /// 失败按该 job 自身 attempts 退避；节点产出污染不可重试，直接判 dead 保留证据。
     /// </summary>
     private async ValueTask ApplyJobResultAsync(
-        ReadyJob entry, ComputeAdvanceJobResult? result, CancellationToken cancellationToken)
+        ComputeLinkNode node, ReadyJob entry, ComputeAdvanceJobResult? result, CancellationToken cancellationToken)
     {
         var claim = entry.Claim;
         if (result is null || result.PlayerId != claim.PlayerId)
         {
+            metrics.RecordJobNodeFailed(node);
             await jobs.FailAsync(claim.JobId, claim.LeaseToken, "节点响应缺少对应任务结果",
                 retryable: true, Backoff(claim.Attempts), options.ComputeMaxAttempts, cancellationToken);
             return;
         }
         if (!result.Success)
         {
+            metrics.RecordJobNodeFailed(node);
             await jobs.FailAsync(claim.JobId, claim.LeaseToken,
                 $"{result.ErrorCode}:{result.ErrorMessage}",
                 result.Retryable, Backoff(claim.Attempts), options.ComputeMaxAttempts, cancellationToken);
@@ -333,58 +380,101 @@ public sealed class ComputeDispatcherWorker(
                 }
             }
 
-            await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-            await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-            var applied = await sections.ApplyComputeResultInTransactionAsync(
-                connection, transaction,
-                claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
-                writes, claim.TargetTime, gameData.Fingerprint, cancellationToken);
-            // output_payload 只存摘要：result JSON 内含全量 base64 section，整存会把单任务存储放大 ~2.3 倍。
-            var output = JsonSerializer.SerializeToUtf8Bytes(new ComputeJobOutputSummary(
-                claim.JobId, claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
-                applied.ToString(), deltas.Length, result.Metrics, result.ErrorCode, result.ErrorMessage), ServerJson.Options);
-            if (applied == ComputeApplyOutcome.Applied && deltas.Length > 0)
+            // 结果回写走 Serializable：并发批次命中同一提交头/资产谓词范围会产 40001/40P01，
+            // 属可预期并发代价而非节点或任务错误——事务原地重放（短退避），不烧任务领取次数。
+            ComputeApplyOutcome applied;
+            for (var attempt = 0; ; attempt++)
             {
-                // 资产增量随本事务原子入账：幂等键绑定 job_id，重派重放不重复记账。
-                // 节点不持有数据库权限、不创造第二套资产协议，本事务是节点收益的唯一入账点。
-                var committed = await PostgresEconomyRepository.CommitCoreAsync(
-                    connection, transaction,
-                    new EconomyTransactionRequest(
-                        claim.JobId,
-                        $"simulation.compute:{claim.JobId:D}",
-                        "simulation.reward",
-                        claim.PlayerId,
-                        deltas,
-                        claim.TargetTime,
-                        output),
-                    cancellationToken);
-                if (!committed.Applied)
-                    throw new InvalidOperationException("冷挂机资产事务未提交。");
+                try
+                {
+                    applied = await CommitResultAsync(claim, result, writes, deltas, cancellationToken);
+                    break;
+                }
+                catch (PostgresException exception) when (IsSerializationConflict(exception) && attempt < 3)
+                {
+                    if (_failureLog.TryAcquire())
+                        logger.LogWarning("冷挂机结果落库串行化冲突，重放事务 job={JobId} attempt={Attempt} sqlstate={SqlState}",
+                            claim.JobId, attempt + 1, exception.SqlState);
+                    await Task.Delay(TimeSpan.FromMilliseconds(40 * (attempt + 1) + Random.Shared.Next(0, 40)), cancellationToken);
+                }
             }
-            else if (applied != ComputeApplyOutcome.Applied)
+            if (applied == ComputeApplyOutcome.Applied)
+            {
+                metrics.RecordJobApplied(node);
+            }
+            else
             {
                 // 玩家已上线或版本漂移：结果丢弃但任务仍按完成归档，证据留在 output_payload。
+                metrics.RecordJobDriftDiscarded();
                 logger.LogInformation("冷挂机结果因版本漂移被丢弃 job={JobId} player={PlayerId} outcome={Outcome}",
                     claim.JobId, claim.PlayerId, applied);
             }
-            await PostgresComputeJobRepository.CompleteInTransactionAsync(
-                connection, transaction, claim.JobId, claim.LeaseToken, output, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
         }
         catch (InvalidDataException exception)
         {
-            // 节点产出污染不能重试出正确结果：进 dead 保留诊断窗口。
+            // 节点产出污染不能重试出正确结果：进 dead 保留诊断窗口；此前仅落库不记日志，补上节流证据。
+            metrics.RecordJobDead(node);
+            if (_failureLog.TryAcquire())
+                logger.LogWarning("ComputeNode 产出污染判死 job={JobId} player={PlayerId} node={Node} error={Error}",
+                    claim.JobId, claim.PlayerId, node.Name, exception.Message);
             await jobs.FailAsync(claim.JobId, claim.LeaseToken, $"INVALID_OUTPUT:{exception.Message}",
                 retryable: false, TimeSpan.Zero, options.ComputeMaxAttempts, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            metrics.RecordJobPersistFailed();
             if (_failureLog.TryAcquire())
                 logger.LogError(exception, "冷挂机结果落库失败 job={JobId} player={PlayerId}", claim.JobId, claim.PlayerId);
             await jobs.FailAsync(claim.JobId, claim.LeaseToken, exception.Message,
                 retryable: true, Backoff(claim.Attempts), options.ComputeMaxAttempts, cancellationToken);
         }
     }
+
+    /// <summary>
+    /// 单任务结果回写事务体：section CAS、资产增量入账与任务完结并入同一 Serializable 事务。
+    /// 从 <see cref="ApplyJobResultAsync"/> 抽出供串行化冲突原地重放；事务内任何幂等冲突都以异常上交。
+    /// </summary>
+    private async Task<ComputeApplyOutcome> CommitResultAsync(
+        ComputeJobClaim claim, ComputeAdvanceJobResult result, SectionWrite[] writes,
+        Server.Clean.AssetDelta[] deltas, CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var applied = await sections.ApplyComputeResultInTransactionAsync(
+            connection, transaction,
+            claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
+            writes, claim.TargetTime, gameData.Fingerprint, cancellationToken);
+        // output_payload 只存摘要：result JSON 内含全量 base64 section，整存会把单任务存储放大 ~2.3 倍。
+        var output = JsonSerializer.SerializeToUtf8Bytes(new ComputeJobOutputSummary(
+            claim.JobId, claim.PlayerId, result.SourceStateVersion, result.TargetStateVersion,
+            applied.ToString(), deltas.Length, result.Metrics, result.ErrorCode, result.ErrorMessage), ServerJson.Options);
+        if (applied == ComputeApplyOutcome.Applied && deltas.Length > 0)
+        {
+            // 资产增量随本事务原子入账：幂等键绑定 job_id，重派重放不重复记账。
+            // 节点不持有数据库权限、不创造第二套资产协议，本事务是节点收益的唯一入账点。
+            var committed = await PostgresEconomyRepository.CommitCoreAsync(
+                connection, transaction,
+                new EconomyTransactionRequest(
+                    claim.JobId,
+                    $"simulation.compute:{claim.JobId:D}",
+                    "simulation.reward",
+                    claim.PlayerId,
+                    deltas,
+                    claim.TargetTime,
+                    output),
+                cancellationToken);
+            if (!committed.Applied)
+                throw new InvalidOperationException("冷挂机资产事务未提交。");
+        }
+        await PostgresComputeJobRepository.CompleteInTransactionAsync(
+            connection, transaction, claim.JobId, claim.LeaseToken, output, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return applied;
+    }
+
+    /// <summary>串行化冲突（SSI 40001）与死锁（40P01）判定：两类都是可原地重放的可恢复事务失败。</summary>
+    private static bool IsSerializationConflict(PostgresException exception) =>
+        exception.SqlState is PostgresErrorCodes.SerializationFailure or PostgresErrorCodes.DeadlockDetected;
 
     /// <summary>
     /// 校验并合并节点回传的资产增量行：逐行字段与上限校验（非法即契约违反抛 <see cref="InvalidDataException"/>），
@@ -426,19 +516,24 @@ public sealed class ComputeDispatcherWorker(
         TimeSpan? retryAfter = null)
     {
         if (claims.Count == 0) return;
+        var released = 0;
         if (retryAfter is { } uniform)
         {
-            await jobs.ReleaseLeaseAsync(claims[0].LeaseToken,
+            released = await jobs.ReleaseLeaseAsync(claims[0].LeaseToken,
                 claims.Select(claim => claim.JobId).ToArray(), error,
                 uniform, options.ComputeMaxAttempts, cancellationToken);
-            return;
         }
-        foreach (var group in claims.GroupBy(claim => claim.Attempts))
+        else
         {
-            await jobs.ReleaseLeaseAsync(claims[0].LeaseToken,
-                group.Select(claim => claim.JobId).ToArray(), error,
-                Backoff(group.Key), options.ComputeMaxAttempts, cancellationToken);
+            foreach (var group in claims.GroupBy(claim => claim.Attempts))
+            {
+                released += await jobs.ReleaseLeaseAsync(claims[0].LeaseToken,
+                    group.Select(claim => claim.JobId).ToArray(), error,
+                    Backoff(group.Key), options.ComputeMaxAttempts, cancellationToken);
+            }
         }
+        // 只计实际退回 leased→pending 的行数（完结/超次判死行不重复计）。
+        metrics.RecordJobsReleased(released);
     }
 
     private static IReadOnlyList<ComputeJobClaim> ClaimsOf(IReadOnlyList<ReadyJob> entries) =>
@@ -464,6 +559,7 @@ public static class ComputeDispatchServiceCollectionExtensions
     public static IServiceCollection AddComputeDispatch(this IServiceCollection services)
     {
         services.AddSingleton<PostgresComputeJobRepository>();
+        services.AddSingleton<ComputeLinkMetrics>();
         services.AddSingleton<ComputeLinkRegistry>();
         services.AddHostedService<ComputeDispatcherWorker>();
         services.AddHostedService<ColdCatchUpWorker>();

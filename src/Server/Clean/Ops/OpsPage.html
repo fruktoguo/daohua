@@ -58,6 +58,7 @@
   <button data-tab="players">玩家</button>
   <button data-tab="sessions">会话</button>
   <button data-tab="market">市场</button>
+  <button data-tab="compute">计算</button>
   <button data-tab="logs">日志</button>
 </nav>
 <main>
@@ -74,6 +75,7 @@
     </div>
     <div id="marketBody" class="muted">输入品种后查询。</div>
   </section>
+  <section id="tab-compute"><div id="computeBody" class="muted">加载中…</div></section>
   <section id="tab-logs">
     <div class="toolbar">
       <div class="tabs" id="logLevelTabs"></div>
@@ -315,7 +317,123 @@ function renderLogs() {
   target.replaceChildren(frag);
 }
 
-const loaders = { overview: loadOverview, health: loadHealth, players: loadPlayers, sessions: loadSessions, logs: loadLogs };
+// 计算（compute-link）：节点组视图 + 链路计数 + 队列积压 + 最近批次样本分布。
+async function loadCompute() {
+  const target = document.getElementById('computeBody');
+  try {
+    const d = await getJson('/api/compute');
+    const frag = document.createDocumentFragment();
+    if (!d.enabled) {
+      frag.append(el('div', 'muted', '冷挂机派发链未启用（ComputeNode:Enabled/Token 未配置）。'));
+      target.replaceChildren(frag);
+      return;
+    }
+    const m = d.metrics || {};
+    const s = m.recentBatches || {};
+    const b = d.backlog;
+    const batchFails = (m.batchesFailedWrite || 0) + (m.batchesFailedTimeout || 0)
+      + (m.batchesFailedDisconnect || 0) + (m.batchesFailedContract || 0) + (m.batchesFailedError || 0);
+    const rejects = (m.tokenRejected || 0) + (m.nodeLimitRejected || 0)
+      + (m.fingerprintRejected || 0) + (m.handshakeRejected || 0);
+    const cards = el('div', 'cards');
+    cards.append(card('链路契约', `${d.contractVersion} / ${d.dispatchContractVersion}`));
+    cards.append(card('在线节点', `${d.totals.nodeCount}（接入 ${m.nodesConnected || 0} / 注销 ${m.nodesDisconnected || 0}）`));
+    cards.append(card('节点组容量', `${d.totals.capacity} 批`));
+    cards.append(card('在飞批次', d.totals.inFlight, d.totals.inFlight > 0 ? 'ok' : 'muted'));
+    cards.append(card('等待结果帧', d.totals.pendingResults));
+    cards.append(card('出站积压帧', d.totals.outboundDepth, d.totals.outboundDepth > 32 ? 'warn' : ''));
+    if (b) {
+      cards.append(card('任务积压', `${b.pending}（到期 ${b.pendingDue}）`, b.pendingDue > 0 ? 'warn' : ''));
+      cards.append(card('最老积压', b.oldestPendingAgeSeconds == null ? '-' : fmtDuration(b.oldestPendingAgeSeconds)));
+      cards.append(card('在飞租约', b.leased));
+      cards.append(card('dead 终态', b.dead, b.dead > 0 ? 'err' : 'muted'));
+    }
+    cards.append(card('批次 成功/失败', `${m.batchesCompleted || 0} / ${batchFails}`, batchFails > 0 ? 'warn' : ''));
+    cards.append(card('任务 落库/判死', `${m.jobsApplied || 0} / ${m.jobsDead || 0}`, (m.jobsDead || 0) > 0 ? 'err' : ''));
+    cards.append(card('拨入拒绝', rejects, rejects > 0 ? 'warn' : 'muted'));
+    cards.append(card('迟到结果丢弃', m.lateResultsDropped || 0));
+    frag.append(cards);
+
+    const nodesTitle = el('div', 'muted', '在线节点');
+    nodesTitle.style.marginTop = '12px';
+    frag.append(nodesTitle);
+    if (!d.nodes || !d.nodes.length) {
+      frag.append(el('div', 'muted', '当前没有在线计算节点。'));
+    } else {
+      const table = el('table');
+      const thead = el('tr');
+      ['节点', 'NodeId', '容量', '在飞', '出站', '待回', '拨入时长', '运行时指纹', '批次 发/成/败', '任务 成/败', 'RTT 最近/均/峰(ms)'].forEach(h => thead.append(el('th', null, h)));
+      table.append(thead);
+      d.nodes.forEach(n => {
+        const tr = el('tr');
+        tr.append(el('td', null, n.name + (n.draining ? '（排空中）' : '')));
+        tr.append(el('td', 'muted', String(n.nodeId).slice(0, 8)));
+        tr.append(el('td', null, n.capacity));
+        tr.append(el('td', n.inFlight > 0 ? 'ok' : 'muted', n.inFlight));
+        tr.append(el('td', n.outboundDepth > 32 ? 'warn' : null, n.outboundDepth));
+        tr.append(el('td', null, n.pendingResults));
+        tr.append(el('td', 'muted', fmtDuration(n.uptimeSeconds)));
+        tr.append(el('td', 'muted', n.runtimeFingerprint || '-'));
+        tr.append(el('td', null, `${n.batchesSent}/${n.batchesCompleted}/${n.batchesFailed}`));
+        tr.append(el('td', n.jobsFailed > 0 ? 'warn' : null, `${n.jobsApplied}/${n.jobsFailed}`));
+        tr.append(el('td', 'muted', `${Math.round(n.lastRoundTripMs)}/${Math.round(n.avgRoundTripMs)}/${Math.round(n.maxRoundTripMs)}`));
+        table.append(tr);
+      });
+      frag.append(table);
+    }
+
+    const distTitle = el('div', 'muted', `链路计数与最近批次样本（${s.sampleCount || 0} 批）`);
+    distTitle.style.marginTop = '12px';
+    frag.append(distTitle);
+    const counterTable = el('table');
+    counterTable.append(headRow(['口径', '计数', '口径', '计数']));
+    counterTable.append(twoColRow('批次写入', m.batchesWritten, '任务领取', m.jobsClaimed));
+    counterTable.append(twoColRow('批次失败·写', m.batchesFailedWrite, '任务派发上链', m.jobsDispatched));
+    counterTable.append(twoColRow('批次失败·超时', m.batchesFailedTimeout, '任务退回 pending', m.jobsReleased));
+    counterTable.append(twoColRow('批次失败·断线', m.batchesFailedDisconnect, '任务漂移丢弃', m.jobsDriftDiscarded));
+    counterTable.append(twoColRow('批次失败·契约', m.batchesFailedContract, '任务节点报错', m.jobsNodeFailed));
+    counterTable.append(twoColRow('批次失败·异常', m.batchesFailedError, '任务落库异常', m.jobsPersistFailed));
+    counterTable.append(twoColRow('拒绝·令牌', m.tokenRejected, '拒绝·节点上限', m.nodeLimitRejected));
+    counterTable.append(twoColRow('拒绝·指纹', m.fingerprintRejected, '拒绝·握手违规', m.handshakeRejected));
+    frag.append(counterTable);
+
+    const sampleTable = el('table');
+    sampleTable.append(headRow(['样本口径', 'p50', 'p95', 'max', '均值']));
+    const sampleRow = (label, p50, p95, max, avg) => {
+      const tr = el('tr');
+      tr.append(el('td', null, label));
+      tr.append(el('td', null, p50));
+      tr.append(el('td', null, p95));
+      tr.append(el('td', null, max));
+      tr.append(el('td', 'muted', avg));
+      return tr;
+    };
+    sampleTable.append(sampleRow('批次往返 ms', s.roundTripP50Ms ?? '-', s.roundTripP95Ms ?? '-', s.roundTripMaxMs ?? '-', s.roundTripAvgMs ?? '-'));
+    sampleTable.append(sampleRow('积压等待 ms', s.waitAgeP50Ms ?? '-', s.waitAgeP95Ms ?? '-', s.waitAgeMaxMs ?? '-', '-'));
+    sampleTable.append(sampleRow('批内任务数', s.jobsP50 ?? '-', '-', s.jobsMax ?? '-', '-'));
+    sampleTable.append(sampleRow('批次字节', s.bytesP50 ?? '-', '-', s.bytesMax ?? '-', '-'));
+    frag.append(sampleTable);
+    const hist = s.jobsHistogram || {};
+    frag.append(el('div', 'muted',
+      '批内任务数分布：' + Object.keys(hist).map(k => `${k}=${hist[k]}`).join('  ')));
+    target.replaceChildren(frag);
+  } catch (err) { showError(target, err); }
+}
+function headRow(labels) {
+  const thead = el('tr');
+  labels.forEach(h => thead.append(el('th', null, h)));
+  return thead;
+}
+function twoColRow(k1, v1, k2, v2) {
+  const tr = el('tr');
+  tr.append(el('td', 'muted', k1));
+  tr.append(el('td', null, v1 ?? 0));
+  tr.append(el('td', 'muted', k2));
+  tr.append(el('td', null, v2 ?? 0));
+  return tr;
+}
+
+const loaders = { overview: loadOverview, health: loadHealth, players: loadPlayers, sessions: loadSessions, compute: loadCompute, logs: loadLogs };
 document.querySelectorAll('nav button').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b === btn));
@@ -331,6 +449,7 @@ document.getElementById('mAsset').addEventListener('keydown', e => { if (e.key =
 loadOverview();
 setInterval(() => {
   if (document.getElementById('tab-overview').classList.contains('active')) loadOverview();
+  if (document.getElementById('tab-compute').classList.contains('active')) loadCompute();
   if (document.getElementById('tab-logs').classList.contains('active') && document.getElementById('logAuto').checked) loadLogs();
 }, 3000);
 </script>

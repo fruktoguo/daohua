@@ -327,6 +327,36 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
     }
 
     /// <summary>
+    /// 采集 compute_jobs 队列积压快照：按状态聚合计数 + 立即可领取的到期积压 +
+    /// 最老 pending 行积压年龄。单次往返，供运维面板/诊断端点使用。
+    /// </summary>
+    public async ValueTask<ComputeJobBacklog> GetBacklogAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            SELECT
+                count(*) FILTER (WHERE status = 'pending'),
+                count(*) FILTER (WHERE status = 'pending' AND target_time <= now()
+                                 AND (next_attempt_at IS NULL OR next_attempt_at <= now())),
+                count(*) FILTER (WHERE status = 'leased'),
+                count(*) FILTER (WHERE status = 'succeeded'),
+                count(*) FILTER (WHERE status = 'dead'),
+                EXTRACT(EPOCH FROM (now() - min(target_time) FILTER (WHERE status = 'pending')))
+            FROM platform.compute_jobs
+            """, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            return new ComputeJobBacklog(0, 0, 0, 0, 0, null);
+        return new ComputeJobBacklog(
+            reader.GetInt64(0),
+            reader.GetInt64(1),
+            reader.GetInt64(2),
+            reader.GetInt64(3),
+            reader.GetInt64(4),
+            await reader.IsDBNullAsync(5, cancellationToken) ? null : reader.GetDouble(5));
+    }
+
+    /// <summary>
     /// 从读模型投影筛选冷挂机候选：离线、最近活跃在封顶窗口内、已过断线宽限、
     /// 未被任何运行时实例持有、且当前没有未完结任务。
     /// JOIN player_state_heads 把 last_simulated_at 窗口过滤前移到扫描 SQL：

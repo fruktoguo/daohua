@@ -32,6 +32,7 @@ public static class Program
                 "websocket" => await WebSocketScenario.RunAsync(options),
                 "http-read" => await HttpReadScenario.RunAsync(options),
                 "compute" => await ComputeLoadScenario.RunReportAsync(options),
+                "compute-link" => await ComputeLinkLoadScenario.RunReportAsync(options),
                 "postgres" => await PostgresCapacityProbe.RunReportAsync(options),
                 _ => throw new ArgumentException($"未知场景: {options.Scenario}")
             };

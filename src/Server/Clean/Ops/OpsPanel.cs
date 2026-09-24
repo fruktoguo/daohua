@@ -150,6 +150,38 @@ public static class OpsPanel
             var minLevel = Enum.TryParse<LogLevel>(level, true, out var parsed) ? parsed : LogLevel.Information;
             return Results.Ok(buffer.Snapshot(minLevel, limit ?? 200));
         });
+
+        // 冷挂机派发链运维视图：节点组（名称/容量/在飞/拨入时长/运行时指纹）、
+        // 链路计数快照（吞吐/失败分类/拒绝原因/批次样本分布）与 compute_jobs 队列积压。
+        // 全部经 GetService 可空取用：非 Api 角色或最小测试宿主未装配派发链时返回 enabled=false。
+        // 视图只含计数与协商字段，绝不输出令牌、连接串或玩家载荷。
+        group.MapGet("/api/compute", async (HttpContext context, CancellationToken cancellationToken) =>
+        {
+            var services = context.RequestServices;
+            var serverOptions = services.GetRequiredService<ServerOptions>();
+            var registry = services.GetService<ComputeLinkRegistry>();
+            var metrics = services.GetService<ComputeLinkMetrics>();
+            var jobs = services.GetService<PostgresComputeJobRepository>();
+            var nodes = registry?.Nodes ?? [];
+            var backlog = jobs is null ? null : await jobs.GetBacklogAsync(cancellationToken);
+            return Results.Ok(new
+            {
+                enabled = serverOptions.ComputeNodeConfigured,
+                contractVersion = ComputeLinkContract.Version,
+                dispatchContractVersion = ComputeDispatchContract.Version,
+                totals = new
+                {
+                    nodeCount = nodes.Count,
+                    capacity = nodes.Sum(node => node.Capacity),
+                    inFlight = nodes.Sum(node => node.InFlight),
+                    pendingResults = nodes.Sum(node => node.Pending.Count),
+                    outboundDepth = nodes.Sum(node => Math.Max(0, node.OutboundDepth))
+                },
+                nodes = nodes.Select(ComputeLinkNodeView.From).OrderBy(view => view.Name, StringComparer.Ordinal).ToArray(),
+                metrics = metrics?.Snapshot(),
+                backlog
+            });
+        });
     }
 
     private static string LoadPage()

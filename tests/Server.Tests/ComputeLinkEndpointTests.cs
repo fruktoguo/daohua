@@ -141,6 +141,110 @@ public sealed class ComputeLinkEndpointTests
         Assert.Equal(0, registry.NodeCount);
     }
 
+    /// <summary>令牌拒绝与握手拒绝必须进入指标计数，供运维面板观测拒绝原因分布。</summary>
+    [Fact]
+    public async Task RejectionsAreCountedInMetrics()
+    {
+        await using var app = await StartHostAsync();
+        var metrics = app.Services.GetRequiredService<ComputeLinkMetrics>();
+
+        // 令牌不符：401 前置拒绝。
+        using (var response = await SendUpgradeRequestAsync(app, "bad-token"))
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        // 握手期协议违规（首帧不是 hello 的契约版本）：计数 handshakeRejected。
+        using (var client = await ConnectAsync(app))
+        {
+            await SendAsync(client, new ComputeLinkHello("compute-link.v0.9", "old", 1, Catalog.Fingerprint));
+            var error = Assert.IsType<ComputeLinkError>(await ReceiveAsync(client));
+            Assert.Equal("LINK_ERROR", error.Code);
+        }
+
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, snapshot.TokenRejected);
+        Assert.Equal(1, snapshot.HandshakeRejected);
+        Assert.Equal(0, snapshot.NodesConnected);
+    }
+
+    /// <summary>成功接入与断开必须计入节点生命周期指标；迟到结果进入丢弃计数。</summary>
+    [Fact]
+    public async Task NodeLifecycleAndLateResultsAreCounted()
+    {
+        await using var app = await StartHostAsync();
+        var registry = app.Services.GetRequiredService<ComputeLinkRegistry>();
+        var metrics = app.Services.GetRequiredService<ComputeLinkMetrics>();
+
+        using (var client = await ConnectAsync(app))
+        {
+            await SendAsync(client, new ComputeLinkHello(
+                ComputeLinkContract.Version, "metric-node", 2, Catalog.Fingerprint));
+            var welcome = Assert.IsType<ComputeLinkWelcome>(await ReceiveAsync(client));
+            Assert.Single(registry.Nodes, entry => entry.NodeId == welcome.NodeId);
+
+            // 未知 batchId 的结果帧被丢弃计数。
+            await SendAsync(client, new ComputeLinkResult(Guid.NewGuid(), new ComputeAdvanceBatchResponse(
+                ComputeDispatchContract.Version, Catalog.Fingerprint, 1, [])));
+            await Task.Delay(300);
+        }
+        // 客户端 dispose 触发对端关闭；等服务端注销落定。
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (registry.NodeCount > 0 && DateTimeOffset.UtcNow < deadline)
+            await Task.Delay(50);
+
+        var snapshot = metrics.Snapshot();
+        Assert.Equal(1, snapshot.NodesConnected);
+        Assert.Equal(1, snapshot.NodesDisconnected);
+        Assert.Equal(1, snapshot.LateResultsDropped);
+    }
+
+    /// <summary>节点上报 draining（compute-link v1.3）后必须立即被 Acquire 排除，链路保持回收在飞结果。</summary>
+    [Fact]
+    public async Task DrainingFrameExcludesNodeFromAcquire()
+    {
+        await using var app = await StartHostAsync();
+        var registry = app.Services.GetRequiredService<ComputeLinkRegistry>();
+        using var client = await ConnectAsync(app);
+
+        await SendAsync(client, new ComputeLinkHello(
+            ComputeLinkContract.Version, "draining-node", 2, Catalog.Fingerprint));
+        var welcome = Assert.IsType<ComputeLinkWelcome>(await ReceiveAsync(client));
+        var node = Assert.Single(registry.Nodes, entry => entry.NodeId == welcome.NodeId);
+        Assert.NotNull(registry.Acquire());
+        node.ReleaseSlot();
+
+        await SendAsync(client, new ComputeLinkDraining("node maintenance"));
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (!node.Draining && DateTimeOffset.UtcNow < deadline)
+            await Task.Delay(20);
+
+        Assert.True(node.Draining);
+        Assert.Equal(0, node.Available);
+        Assert.Null(registry.Acquire());
+        // 排空不是断链：在飞批次结果照常回收，链路保持。
+        Assert.Equal(WebSocketState.Open, client.State);
+    }
+
+    /// <summary>主服 DrainAll 必须把 drain 帧下推到每条在线链路并把全部节点标记停派。</summary>
+    [Fact]
+    public async Task DrainAllPushesDrainFrameToNodes()
+    {
+        await using var app = await StartHostAsync();
+        var registry = app.Services.GetRequiredService<ComputeLinkRegistry>();
+        using var client = await ConnectAsync(app);
+
+        await SendAsync(client, new ComputeLinkHello(
+            ComputeLinkContract.Version, "drained-node", 2, Catalog.Fingerprint));
+        var welcome = Assert.IsType<ComputeLinkWelcome>(await ReceiveAsync(client));
+        var node = Assert.Single(registry.Nodes, entry => entry.NodeId == welcome.NodeId);
+
+        registry.DrainAll("master draining");
+
+        var frame = Assert.IsType<ComputeLinkDrain>(await ReceiveAsync(client));
+        Assert.Equal("master draining", frame.Reason);
+        Assert.True(node.Draining);
+        Assert.Null(registry.Acquire());
+    }
+
     /// <summary>装配最小宿主：仅端点所需单例 + WS 中间件 + compute-link 路由。</summary>
     private static async Task<WebApplication> StartHostAsync()
     {
@@ -155,6 +259,7 @@ public sealed class ComputeLinkEndpointTests
         {
             ComputeNodeToken = TestToken
         });
+        builder.Services.AddSingleton<ComputeLinkMetrics>();
         builder.Services.AddSingleton<ComputeLinkRegistry>();
         builder.Services.AddSingleton(Catalog);
 
