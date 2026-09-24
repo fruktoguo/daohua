@@ -3,7 +3,7 @@
     "id": "encounter.qi-beast",
     "name": "溪谷林间",
     "minBudget": 15,
-    "maxBudget": 45,
+    "maxBudget": 30,
     "randomSpawns": [
       {
         "enemyId": "enemy.wood-spirit",
@@ -21,7 +21,7 @@
       {
         "enemyId": "enemy.demonized-rabbit",
         "weight": 3,
-        "strength": 10
+        "strength": 15
       },
       {
         "enemyId": "enemy.armored-bear",
@@ -43,7 +43,7 @@
       {
         "enemyId": "enemy.fire-spirit",
         "weight": 2,
-        "strength": 18
+        "strength": 15
       },
       {
         "enemyId": "enemy.demon-ape",

@@ -25,6 +25,16 @@
 
 ## 改动记录（按时间倒序，最新在前）
 
+### 2026-09-24 17:25:48 · YuoCore 非传统 ECS 性能专项审计（只读）
+
+- **结论**：DaoHua 当前没有启用 YuoCore ECS/Fiber/Runtime。`src/Domain` 与 `src/Server` 只保留项目引用，运行时仍是 `PlayerRuntime` + `PlayerActor` + `SemaphoreSlim` 单写者、普通对象集合、SimulationEngine 和 PostgreSQL；因此 YuoCore ECS 调度成本当前不会进入 DaoHua 在线/离线热路径。
+- **框架形态**：YuoCore 是对象/字典/HashSet 驱动的稀疏 ECS，不是 archetype/chunk/SOA ECS。实体是 class，组件按 `Dictionary<Type,YuoComponent>` 存放，世界维护按类型的 `MultiHashSetMap`，系统维护匹配实体的 `HashSet<YuoEntity>`；每轮系统逐实体检查组件并做 Type 字典查找。它的优势是动态组件、继承型 BaseComponent、实现简单；代价是对象指针跳转、哈希查找、实体级扫描和较弱的缓存局部性。
+- **调度与并行**：Update 系统列表已有直接引用缓存，组过滤也有列表缓存；但一个 System 仍逐实体运行，未自动把同一 World 的实体循环拆成并行批次。并行边界在 Fiber：`TickParallelAsync` 只并行多个独立 World/Fiber，单 Fiber 内仍串行，跨 Fiber 必须走消息或外部存储。
+- **当前机实测**：Release、预热后 `perf-smoke`，10,000 实体 / 100 组件 / 100 系统：1 shard 为 avg 111.516ms、p95 148.924ms、89,673 entity-tick/s；4 shard 为 avg 40.641ms、p95 64.598ms、246,057 entity-tick/s。另一次 `ecs-shape` 10,000 实体 / 4 shard / 20 tick 输出 avg 36.900ms、p95 63.630ms、分配 341.91MB、GC0/1/2=44/18/4。该 workload 是框架极端形状，不能直接换算 DaoHua 容量或生产 SLA。
+- **风险排序**：若未来把 DaoHua 玩家聚合直接迁入 ECS，首要瓶颈会是实体×系统扫描、`Dictionary<Type,...>` 与 `HashSet` 的访问局部性、组件/实体生命周期分配，以及 Fiber mailbox 的消息对象/TCS 开销；不是当前 PostgreSQL 或 WebSocket 路径的直接优化点。
+- **建议**：暂不为未使用的 ECS 做迁移。只有真实 DaoHua 模拟证明单 World 的 ECS tick 成为瓶颈时，才考虑组件组合缓存/预编译执行器、按组件集合直接迭代、减少每实体检查，并以 benchmark + 真实玩家模拟双门禁验证；2c4g/5000 账号/500 峰值应继续用现有 capacity-target、WebSocket、PostgreSQL/WAL 和 compute-link 场景评估。
+- **验证命令**：`dotnet run -c Release --no-restore --project vendor/YuoCore/benchmarks/YuoCore.Benchmarks/YuoCore.Benchmarks.csproj -- --perf-smoke --entities 10000 --ticks 20 --shards 1`；同命令 `--shards 4`；以及 `dotnet run -c Release --no-restore --project vendor/YuoCore/tools/YuoCore.LoadTests/YuoCore.LoadTests.csproj -- --mode ecs-shape --state-entities 10000 --ticks 20 --shards 4 --fail-p95-ms 1000 --fail-max-ms 1500`。运行时有既存 `NU1903 Microsoft.OpenApi` 警告，未修改源码或用户配表改动。
+
 ### `e8b34a6` · 刷盘 sweep 有界并行（W8-A）
 
 - **问题**：每轮"推进+落盘"循环原来一个一个玩家串行处理，500 人在线时一轮耗时=所有人耗时相加——一个大事务或慢查询拖垮整轮。
