@@ -35,7 +35,8 @@ Domain -> YuoCore.Abstractions + YuoCore.Ecs（基座引用保留待用，当前
 Domain.Tests -> Domain + Protocol
 Server.Tests -> Server + Domain + Protocol
 LoadTests -> Protocol + Npgsql
-ComputeNode、DataTool -> 无项目引用（独立可执行进程/工具）
+ComputeNode -> Domain（仅纯领域程序集：确定性补算与 SectionCodec 单源复用，禁止任何宿主/存储引用）
+DataTool -> 无项目引用（独立可执行进程/工具）
 ```
 
 Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
@@ -50,7 +51,7 @@ Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部�
 - 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
 - 主存储固定为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；应用容器不挂载数据卷。
 - 市场账本使用 PostgreSQL Serializable 事务、行锁及带 fence 的分区租约；`Market:PartitionCount` / `Market:PartitionId` 可保留分布式分片边界，但同一分片只能一个写者持有。
-- 远程个人设备只能作为高延迟冷挂机计算节点，通过 `ComputeNode` 的内部 HTTP 批处理接口被主服务调用；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
+- 远程个人设备只能作为高延迟冷挂机计算节点，经 compute-link WebSocket **反向拨入**主服 `/internal/compute-link`（节点多为无公网 NAT 设备，只拨出不监听；节点本地 HTTP 口仅作调试）；节点不得承载在线连接、市场写入、账号鉴权或数据库写权限。
 - 正式前端、HTTP API 和 WebSocket 使用同一来源；生产代码不得硬编码开发端口。
 - 当前服务端不存在任何 `/api/debug/*` 或 `/api/metrics` 端点；任何 debug/metrics 端点只允许在 `Development` 环境存在，生产 Caddy 必须显式拦截对应路径（拦截规则已配置）。
 - 账号鉴权已落地：`/api/v1/auth/register|login|logout|session`，PBKDF2 密码哈希 + HttpOnly Cookie 会话 + 认证限流；客户端不再仅凭本地 UUID 标识玩家。该实现为内测口径——涉及充值、真实资产或开放注册前，必须先完成服务端身份认证、授权与审计的强化评审。

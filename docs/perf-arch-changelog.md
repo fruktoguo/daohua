@@ -61,9 +61,9 @@
 
 | 波次 | 内容 | 状态 |
 | --- | --- | --- |
-| W1 | A:compute-link 韧性批 / B:PlayerRuntime 热路径+NodeBuildingRegistry / C:持久化批量化 / D:Domain 微优化批 / E:前端解码减负 | 🚀 进行中 |
-| W2 | A:派发并行化+批次字节预算+契约 v1.1 / B:脏段 delta+基线回滚+world 缓存 / C:市场恢复+到期堆+OrderBook / D:属性缓存+导出缓存 / E:社交扇出+握手并行+广播编一次 | 待启动 |
-| W3 | 旗舰：ComputeNode 接入真实 Domain 模拟（compute-link.v2：节点 Restore→AdvanceTo→导出+AssetDeltas 回传，契约单源，跨进程 golden vector）；P-battle live battle；P-wire 编码演进 | 待启动 |
+| W1 | A:compute-link 韧性批 / B:PlayerRuntime 热路径+NodeBuildingRegistry / C:持久化批量化 / D:Domain 微优化批 / E:前端解码减负 | ✅ 全部落地（5 批已提交） |
+| W2 | A:派发并行化+批次字节预算+契约 v1.1 / B:脏段 delta+基线回滚+world 缓存 / C:市场恢复+到期堆+OrderBook / D:属性缓存+导出缓存 / E:社交扇出+握手并行+广播编一次 | ✅ 全部落地（5 批已提交） |
+| W3 | 旗舰：ComputeNode 接入真实 Domain 模拟（compute.v2：节点 Restore→AdvanceTo→导出+AssetDeltas 回传，SectionCodec 迁 Domain 单源，跨进程 golden vector）；B:live battle 跨步复用；C:经济提交瘦身+回滚窄化 | 🚀 进行中（A/B/C 并行实施） |
 | W4 | 观测面（compute 指标/拒绝日志/压测口径）、多主服就绪文档化（路由/共享在线态/排空协议）、收尾审计 | 待启动 |
 
 ---
@@ -71,6 +71,39 @@
 ## 变更记录
 
 （按时间顺序追加，每批一条：日期 / 提交号 / 标题 / 原因 / 方向 / 范围 / 验证）
+
+### 2026-09-24 · `561ce55` · W2-B 快照增量脏段窄化与背压基线修正
+
+- **原因**（审计 P-delta/P-world/X3 + D 域 5/13）：每次推送对全部 8 段做 JSON+SHA256+Base64 再 diff——变更检测成本与实际变更解耦，是 500 连接下推进循环 CPU 头号瓶颈；`TrySend` 丢弃时基线已前移 → 慢客户端永久漂移（X3 快照语义漏洞）；world 段每次全地图 JsonElement 扫描+全投影重建；BroadcastChat 逐收件人重复序列化同载荷。
+- **方向**：`PlayerAggregate.DirtySectionMarks` 流水号差集（推进/命令前后差分，不受 `ConsumeDirtySections` 影响）→ `BuildDelta` 只编码触及段，checksum diff 保留兜底裁决；combat 段候选由 `WireAttributesChanged` 精确判定（借属性修订号缓存 `ReferenceEquals`，旁路时安全退化为总变）；`CommitPushBaseline` 只在入队成功后提交（丢弃即基线不动，下拍自愈重发），持续不排空按 `4009 slow consumer` 强断；world 段 `ConditionalWeakTable` 静态投影索引；BroadcastChat 载荷单次序列化共享；握手 `WhenAll` 并行。
+- **范围**：`PlayerRuntime`、`ProtocolSnapshotMapper`、`WebSocketRuntime` + `SnapshotDeltaPushTests`（11 用例）/ `AdversarialConcurrencyTests`。
+- **验证**：Domain.Tests 172/172；Server.Tests 136/136；前端 build；DataTool strict。
+- **取舍**：`CommandResult` 仍携带全量快照（改增量风险中、收益集中于高频命令路径）——保留语义稳定，后续评估；未知差集路径（幂等重放/AttachDuel 等）一律 `TouchedSections=null` 全段候选保守正确。
+
+### 2026-09-24 · `0ab4777` · W2-D 属性解析修订号缓存与导出短路
+
+- **原因**（审计 P-attr/P7）：`PlayerAttributeResolver.Apply` 每 ≤5s 外层步全量重算（Loadout JsonElement 克隆+3 字典+逐装备 `TryGetProperty`），48h 补算≈34560 步×1~2 次，是 Domain 最大 CPU+GC 来源；`ExportDuel`/`Loadout.Export` 无缓存每次全量重建（Duel 因 RecordStats 几乎每拍都脏）。
+- **方向**：新增 `VersionedList`/`VersionedDictionary`（写入即递增 `Version`、结构体枚举器零分配、枚举序与插入序一致）；`AttributeInputRevision` 合成六大输入源版本（RealmLevel/World 建筑投影/Buffs.Active/EquippedItemIds/Equipment/CoreAttributes），`Resolve` 同配表实例+同修订号命中直返；`ExportDuel` 三级短路（结构修订+账本引用+逐账本脏扫描），`Loadout.Export` 装配修订短路——触发器仅真变更时克隆，导出字节逐位相同。`Combat` 面板兜底路径旁路缓存逐次重算（专项测试锁定）。
+- **范围**：`Domain/Common/VersionedCollections.cs`（新）、`PlayerAggregate`、`PlayerLoadout`、`PlayerDuel`、`PlayerStateDocument`、`PlayerAttributeResolver`、`SimulationEngine`（签名适配）+ `AttributeRevisionCacheTests`（11 用例：两路径逐字段+字节相等、扰动全覆盖、兜底旁路）。
+- **验证**：Domain/Server Release 0 警告；Domain.Tests 170/170。
+- **附带**：`PlayerAggregate.DirtySectionMarks` 流水号由本文件承载（W2-B 增量窄化共用机制，测试在 `PlayerAggregateTests`）。
+
+### 2026-09-24 · `a802096` · W2-C 市场恢复力与撮合索引化
+
+- **原因**（审计 X5/P-mkt/P-orderbook）：任意非预期异常 `_ready=false` 即永久停摆须重启（40001 瞬态也降级→重试撞 EnsureReady 的矛盾曾实测出现）；分片大锁下每次 place/cancel 先全扫到期订单+整盘口克隆×2+逐笔到期独立事务；`OrderBook` 撮合每单全簿扫描+候选排序。
+- **方向**：续租循环升监管循环——瞬时错误透出 `WithTransientRetryAsync` 自愈不降级，真失 fence/schema 错走指数退避重获（AcquireLease→`_gate` 内 RestoreBooks 重建→到期结算→`_ready=true`）；OrderBook 三派生索引（ask 价序/bid 价序/到期序）+ `OrderBookJournal` 撤销日志：撮合前缀枚举、到期队首终止、失败 `Undo` 逆序回放；到期落库 `ExpireBatchAsync` 单事务合批。
+- **范围**：`MarketRuntime`、`PostgresMarketRepository`、`Domain/Market/OrderBook.cs` + 测试（`MarketMatchingEquivalenceTests` 400 步随机对照 3 用例、`LeaseLossTriggersFailClosedThenAutoRecovery`）。
+- **验证**：Domain/Server Release 0 警告；Domain.Tests 170/170；Server.Tests 125/125（实测降级→重获→恢复 ~2s）。
+- **取舍**：终态订单在 `_orders` 累积（与 DB 同量级，恢复重建只装活动单），硬上限留后续。
+
+### 2026-09-24 · `312d11d` · W2-A 派发并行化与批次字节预算（compute-link.v1.1）
+
+- **原因**（审计 P-dispatch/X6/X7）：派发器全局单线程串行（Acquire→claim→发批→等响应+落库→下一轮），整个节点组任一时刻仅 1 个在飞批次，节点 `MaxConcurrentBatches` 完全闲置——2000+ 补算吞吐的直接瓶颈；批次只数任务数不看字节 + 节点估算 bug（×3 实为 ~4.2MiB 上限）导致超限批次整批 dead→冷扫描再生产→再 dead 的死循环；persistence-worker 角色白跑派发链并重复生产任务。
+- **方向**：`Acquire()` 改原子占槽（节点 `_inFlightSlots` CAS），全局在飞上限=Σ节点 Capacity、单节点≤64，最闲优先；`CapacitySignal` 唤醒防睡满轮询；出站写补 10s 超时；装批按 `Σbase64长度×3/4` 解码字节预算贪心打包（`ComputeNode:BatchMaxBytes` 默认 8MiB/上限 12MiB），超组预算单任务 `JOB_TOO_LARGE` dead、装不下零退避回 pending；hello 追加 `maxJobsPerBatch/maxBatchBytes` 能力协商，链路版本直升 **v1.1**；批次级违规 retryable、任务级违规 non-retryable 不连坐；`AddComputeDispatch` 仅 Api 装配；节点 Kestrel 调试口放宽到 24MiB 对齐帧体。
+- **契约治理**：Server/ComputeNode 双份手写副本保持（统一代价大），新增 `ComputeLinkContractAlignmentTests` 逐字断言字段集/常量/版本/type 判别/估算公式。
+- **范围**：`ComputeDispatcherWorker`、`ComputeLink{Registry,Contracts,Endpoint}`、`ComputeDispatchContract`、`ServerOptions`、`Server/Program.cs`、`ComputeNode/{ComputeContract,ComputeLinkContracts,UpstreamLinkWorker,Program}.cs` + 测试（新增 7 用例）。
+- **验证**：Server/ComputeNode Release 0 警告；Server.Tests 124/124（全新库）；Domain.Tests 156/156。
+- **取舍**：批次违规未做拆半重发（retryable+预算装批已够）；「介于节点预算与组预算之间」的任务靠 maxAttempts 兜底（Acquire 先 claim 才知大小，字节感知暂不做）。
 
 ### 2026-09-24 · `a884b15` · W2-E 社交扇出与握手合批
 
