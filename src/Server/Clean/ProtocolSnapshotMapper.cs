@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Domain.Player;
 using Domain.GameData;
 using Domain.Combat;
@@ -11,6 +12,22 @@ namespace Server.Clean;
 /// </summary>
 public static class ProtocolSnapshotMapper
 {
+    /// <summary>增量编码的分段遍历顺序：与全量快照排序后的 wire 顺序一致（按存储段名排序），保证 changed 序列语义不变。</summary>
+    private static readonly PlayerSectionKind[] s_deltaSectionOrder =
+    [
+        PlayerSectionKind.ActionQueue, // action_queue
+        PlayerSectionKind.Buffs,       // buffs
+        PlayerSectionKind.Combat,      // combat
+        PlayerSectionKind.Duel,        // duel
+        PlayerSectionKind.Loadout,     // loadout
+        PlayerSectionKind.Progression, // progression
+        PlayerSectionKind.Settings,    // settings
+        PlayerSectionKind.World        // world
+    ];
+
+    // combat 属性面板的跨段输入（境界/地图/装备/技法/功法/Buff/设置节点建筑开关）已由
+    // PlayerRuntimeSnapshot.WireAttributesChanged 在锁内按解析缓存实例引用精确判定，
+    // 不再按输入分段并集放大候选，见 IsDeltaCandidate。
     /// <summary>对单个分段载荷执行规范化 JSON 序列化并生成 PlayerSectionDto。</summary>
     public static PlayerSectionDto EncodeSection(Guid playerId, string kind, long stateVersion, object value, DateTimeOffset updatedAt)
     {
@@ -61,25 +78,6 @@ public static class ProtocolSnapshotMapper
             checksum,
             DateTimeOffset.UtcNow);
 
-        AssetBalanceDto[] assets;
-        if (runtime.Assets.Count == 0)
-        {
-            assets = [];
-        }
-        else
-        {
-            assets = new AssetBalanceDto[runtime.Assets.Count];
-            for (var i = 0; i < runtime.Assets.Count; i++)
-            {
-                var asset = runtime.Assets[i];
-                assets[i] = new AssetBalanceDto(
-                    asset.AssetId,
-                    string.IsNullOrEmpty(asset.Variant) ? null : asset.Variant,
-                    asset.Quantity,
-                    asset.Version);
-            }
-        }
-
         return new PlayerSnapshotDto(
             runtime.PlayerId.ToString("D"),
             runtime.DisplayName,
@@ -87,27 +85,119 @@ public static class ProtocolSnapshotMapper
             runtime.StateVersion,
             head,
             sections,
-            assets);
+            MapAssets(runtime));
     }
 
-    /// <summary>构造增量快照 DTO（仅携带受影响的变更分段与资产变更）</summary>
+    /// <summary>运行时钱包余额投影为协议资产数组；全量快照与增量共用同一映射。</summary>
+    private static AssetBalanceDto[] MapAssets(PlayerRuntimeSnapshot runtime)
+    {
+        if (runtime.Assets.Count == 0) return [];
+        var assets = new AssetBalanceDto[runtime.Assets.Count];
+        for (var i = 0; i < runtime.Assets.Count; i++)
+        {
+            var asset = runtime.Assets[i];
+            assets[i] = new AssetBalanceDto(
+                asset.AssetId,
+                string.IsNullOrEmpty(asset.Variant) ? null : asset.Variant,
+                asset.Quantity,
+                asset.Version);
+        }
+        return assets;
+    }
+
+    /// <summary>
+    /// 构造增量快照 DTO：touchedSections 为触发本次快照的操作在锁内新增的脏标记分段差集，
+    /// 仅用于窄化 JSON/SHA256/Base64 编码范围；最终是否下发仍由 checksum 与基线裁决，
+    /// 语义与全量编码后 DiffSections 完全一致。null 表示未知触及集，回退为全段编码。
+    /// </summary>
+    public static PlayerSnapshotDeltaDto BuildDelta(
+        PlayerRuntimeSnapshot runtime,
+        string gameDataFingerprint,
+        GameDataCatalog gameData,
+        IReadOnlySet<PlayerSectionKind>? touchedSections,
+        IReadOnlyDictionary<string, string>? previousSectionChecksums,
+        IReadOnlyList<AssetBalanceDto>? previousAssets,
+        out IReadOnlyDictionary<string, string> nextSectionChecksums,
+        out IReadOnlyList<AssetBalanceDto> nextAssets)
+    {
+        var state = runtime.State;
+        var next = new Dictionary<string, string>(8, StringComparer.Ordinal);
+        List<PlayerSectionDto>? changed = null;
+        foreach (var section in s_deltaSectionOrder)
+        {
+            var name = SectionCodec.ToStorageKind(section);
+            string? previousChecksum = null;
+            var hasBaseline = previousSectionChecksums is not null
+                && previousSectionChecksums.TryGetValue(name, out previousChecksum);
+            if (hasBaseline && !IsDeltaCandidate(section, state, touchedSections, runtime.WireAttributesChanged))
+            {
+                // 未触及分段沿用基线校验和：不编码、不下发（标脏不变量保证其内容未变）。
+                next[name] = previousChecksum!;
+                continue;
+            }
+            var dto = EncodeSection(runtime.PlayerId, name, runtime.StateVersion, SectionPayload(state, section, gameData), runtime.LastSimulatedAt);
+            next[name] = dto.Checksum;
+            // checksum 最终裁决：无论是否被触及候选覆盖，编码后校验和变化必须纳入增量。
+            if (!hasBaseline || !string.Equals(previousChecksum, dto.Checksum, StringComparison.Ordinal))
+                (changed ??= []).Add(dto);
+        }
+        nextSectionChecksums = next;
+        var assets = MapAssets(runtime);
+        nextAssets = assets;
+        var changedAssets = DiffAssets(previousAssets, assets);
+        return new PlayerSnapshotDeltaDto(
+            runtime.PlayerId.ToString("D"),
+            runtime.StateVersion,
+            runtime.LastSimulatedAt,
+            changed ?? [],
+            changedAssets.Count == 0 ? null : changedAssets);
+    }
+
+    /// <summary>
+    /// 判断分段是否为本次增量编码候选：显式触及其本身、无法静态排除的时钟/跨段派生投影
+    /// 也算候选。touchedSections 为 null 时全部候选（未知触及集等价旧全量编码路径）。
+    /// </summary>
+    private static bool IsDeltaCandidate(PlayerSectionKind section, PlayerAggregateState state,
+        IReadOnlySet<PlayerSectionKind>? touchedSections, bool? wireAttributesChanged)
+    {
+        if (touchedSections is null || touchedSections.Contains(section)) return true;
+        return section switch
+        {
+            // 道龄 AgeSeconds 随每次模拟推进无标脏递增，每次推送都必须重新评估。
+            PlayerSectionKind.Progression => true,
+            // nodeBuildings 工期/材料进度按墙钟实时推算，存在在建条目时世界段内容每拍可变。
+            PlayerSectionKind.World => state.World.NodeBuildings is { Count: > 0 },
+            // combat 属性面板跨段派生：锁内解析实例引用变化即面板输入有变（null=未知按已变），
+            // 消耗品冷却随模拟时钟倒计时同样逐拍改变分段内容。
+            PlayerSectionKind.Combat => wireAttributesChanged != false || HasCombatConsumableCooldownSlot(state),
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// 是否存在带冷却时间的战斗消耗品槽：冷却倒计时随模拟时钟逐拍变化投影，
+    /// 且「本拍刚到期」一帧（正值→0）同样改变分段内容，故以 CooldownUntil &gt; 0 判定
+    /// （冷却槽随自动使用配置存在；槽位清除/变更本身会标脏 Settings 令 combat 重获候选）。
+    /// </summary>
+    private static bool HasCombatConsumableCooldownSlot(PlayerAggregateState state)
+    {
+        foreach (var slot in state.Settings.AutoUseSlots ?? [])
+        {
+            if (slot.ActionType == "combat" && slot.SlotIndex <= AutoUseSlotState.MaxSlotIndex
+                && slot.CooldownUntilUnixSeconds > 0)
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>构造增量快照 DTO（仅携带受影响的变更分段与资产变更）；未知触及集，等价全量编码后裁决。</summary>
     public static PlayerSnapshotDeltaDto ToDelta(
         PlayerRuntimeSnapshot runtime,
         string gameDataFingerprint,
         GameDataCatalog gameData,
         IReadOnlyDictionary<string, string>? previousSectionChecksums = null,
         IReadOnlyList<AssetBalanceDto>? previousAssets = null)
-    {
-        var snapshot = ToSnapshot(runtime, gameDataFingerprint, gameData);
-        var changedSections = DiffSections(previousSectionChecksums, snapshot.Sections);
-        var changedAssets = DiffAssets(previousAssets, snapshot.Assets);
-        return new PlayerSnapshotDeltaDto(
-            snapshot.PlayerId,
-            snapshot.StateVersion,
-            snapshot.LastSimulatedAt,
-            changedSections,
-            changedAssets.Count == 0 ? null : changedAssets);
-    }
+        => BuildDelta(runtime, gameDataFingerprint, gameData, null, previousSectionChecksums, previousAssets, out _, out _);
 
     /// <summary>对比上次推送基线，返回校验和发生变化的分段；无基线时返回全部当前分段。</summary>
     public static IReadOnlyList<PlayerSectionDto> DiffSections(IReadOnlyDictionary<string, string>? previousChecksums, IReadOnlyList<PlayerSectionDto> current)
@@ -150,7 +240,20 @@ public static class ProtocolSnapshotMapper
 
     private static IEnumerable<(string Kind, object Value)> EnumerateSections(PlayerAggregateState state, GameDataCatalog? gameData)
     {
-        yield return (PlayerSectionKinds.Progression, new
+        yield return (PlayerSectionKinds.Progression, SectionPayload(state, PlayerSectionKind.Progression, gameData));
+        yield return (PlayerSectionKinds.World, SectionPayload(state, PlayerSectionKind.World, gameData));
+        yield return (PlayerSectionKinds.Combat, SectionPayload(state, PlayerSectionKind.Combat, gameData));
+        yield return (PlayerSectionKinds.Buffs, SectionPayload(state, PlayerSectionKind.Buffs, gameData));
+        yield return (PlayerSectionKinds.Loadout, SectionPayload(state, PlayerSectionKind.Loadout, gameData));
+        yield return (PlayerSectionKinds.Settings, SectionPayload(state, PlayerSectionKind.Settings, gameData));
+        yield return (PlayerSectionKinds.ActionQueue, SectionPayload(state, PlayerSectionKind.ActionQueue, gameData));
+        yield return (PlayerSectionKinds.Duel, SectionPayload(state, PlayerSectionKind.Duel, gameData));
+    }
+
+    /// <summary>单段协议载荷投影：全量快照逐段遍历与增量候选编码共用同一构造，保证两边编码内容逐位一致。</summary>
+    private static object SectionPayload(PlayerAggregateState state, PlayerSectionKind section, GameDataCatalog? gameData) => section switch
+    {
+        PlayerSectionKind.Progression => new
         {
             state.Progression.RealmLevel, state.Progression.Qi, state.Progression.Experience, state.Progression.LifetimeQi,
             state.Progression.CompletedActions, state.Progression.SimulationCarrySeconds,
@@ -159,22 +262,22 @@ public static class ProtocolSnapshotMapper
             lifespanYears = gameData?.RealmProgression is { } realm && gameData.BaseAttributes is { } baseAttributes
                 ? realm.LifespanYearsFor(baseAttributes.TierAt(state.Progression.RealmLevel))
                 : 0
-        });
-        yield return (PlayerSectionKinds.World, ToWorldSection(state.World, gameData));
-        yield return (PlayerSectionKinds.Combat, ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")));
+        },
+        PlayerSectionKind.World => ToWorldSection(state.World, gameData),
+        PlayerSectionKind.Combat => ToCombatSection(state, gameData ?? throw new InvalidOperationException("协议映射必须提供激活配表。")),
         // Buff 通道唯一形状：ActiveBuff 的平铺权威字段 + 通用属性比率字典（statRatios），
         // 前端只做展示渲染，所有收益结算均在服务端领域层完成。
-        yield return (PlayerSectionKinds.Buffs, state.Buffs.Select(buff => new
+        PlayerSectionKind.Buffs => state.Buffs.Select(buff => new
         {
             buff.BuffId, buff.Name, buff.Stacks, buff.ExpiresAtUnixSeconds, buff.SourceItemId,
             buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints, buff.StatRatios
-        }).ToArray());
-        yield return (PlayerSectionKinds.Loadout, ToLoadoutSection(state));
-        yield return (PlayerSectionKinds.Settings, new { state.Settings, state.Presence });
-        yield return (PlayerSectionKinds.ActionQueue, ToActionQueueSection(state.Actions, gameData));
+        }).ToArray(),
+        PlayerSectionKind.Loadout => ToLoadoutSection(state),
+        PlayerSectionKind.Settings => new { state.Settings, state.Presence },
+        PlayerSectionKind.ActionQueue => ToActionQueueSection(state.Actions, gameData),
         // 斗法分段白名单：ActiveReports（在队行动实例账本）不面向客户端，协议只下发
         // 当前账本/归档/离线/每日四类已消费通道。
-        yield return (PlayerSectionKinds.Duel, new
+        PlayerSectionKind.Duel => new
         {
             state.Duel.EncounterCharges,
             state.Duel.CooldownUntilUnixSeconds,
@@ -184,8 +287,9 @@ public static class ProtocolSnapshotMapper
             state.Duel.Reports,
             state.Duel.OfflineReport,
             state.Duel.DailyReport
-        });
-    }
+        },
+        _ => throw new ArgumentOutOfRangeException(nameof(section), section, null)
+    };
 
     private static object ToLoadoutSection(PlayerAggregateState state) => new
     {
@@ -464,92 +568,142 @@ public static class ProtocolSnapshotMapper
         }).ToArray()
     };
 
-    private static object ToWorldSection(PlayerWorldStateDocument world, GameDataCatalog? gameData)
-    {
-        var hasMap = false;
-        var hasNode = false;
-        var map = default(JsonElement);
-        var node = default(JsonElement);
+    /// <summary>配表实例 → 世界节点静态投影索引缓存：catalog 为 DI 单例启动后不热更，弱引用表随实例回收自然失效。</summary>
+    private static readonly ConditionalWeakTable<GameDataCatalog, WorldStaticProjectionIndex> s_worldProjections = new();
 
-        if (gameData?.Maps is not null)
+    /// <summary>单节点的静态投影：map/节点配置、生态清单、附近生灵、建筑与可建列表等纯配表派生内容。</summary>
+    private sealed class WorldNodeStaticProjection
+    {
+        public required string MapId { get; init; }
+        public required string? Name { get; init; }
+        public required double? X { get; init; }
+        public required double? Y { get; init; }
+        public required double CultivationMultiplier { get; init; }
+        public required string[] AvailableActionIds { get; init; }
+        public required string[] EncounterIds { get; init; }
+        public required object[] Npcs { get; init; }
+        public required object[] Buildings { get; init; }
+        public required string[]? BuildableBuildingIds { get; init; }
+        public required double MinBudget { get; init; }
+        public required double MaxBudget { get; init; }
+        public required double EliteInterval { get; init; }
+        public required double BossInterval { get; init; }
+        public required object[] Monsters { get; init; }
+        public required object[] EliteEnemies { get; init; }
+        public required object[] BossEnemies { get; init; }
+    }
+
+    /// <summary>整表节点静态投影索引：按 nodeId 首个出现者生效（与原线性扫描首个命中语义一致）。</summary>
+    private sealed class WorldStaticProjectionIndex
+    {
+        public required IReadOnlyDictionary<string, WorldNodeStaticProjection> ByNodeId { get; init; }
+
+        public static WorldStaticProjectionIndex Build(GameDataCatalog catalog)
         {
-            for (var i = 0; i < gameData.Maps.Count; i++)
+            var byNodeId = new Dictionary<string, WorldNodeStaticProjection>(StringComparer.Ordinal);
+            if (catalog.Maps is null) return new WorldStaticProjectionIndex { ByNodeId = byNodeId };
+            for (var i = 0; i < catalog.Maps.Count; i++)
             {
-                var candidate = gameData.Maps[i];
-                if (candidate.ValueKind == JsonValueKind.Object
-                    && candidate.TryGetProperty("nodes", out var candidateNodes)
-                    && candidateNodes.ValueKind == JsonValueKind.Array)
+                var map = catalog.Maps[i];
+                if (map.ValueKind != JsonValueKind.Object
+                    || !map.TryGetProperty("nodes", out var nodes)
+                    || nodes.ValueKind != JsonValueKind.Array)
+                    continue;
+                var mapId = ReadString(map, "id", "map.qingyun-mountains");
+                foreach (var node in nodes.EnumerateArray())
                 {
-                    foreach (var n in candidateNodes.EnumerateArray())
+                    var nodeId = ReadString(node, "id");
+                    if (string.IsNullOrEmpty(nodeId) || byNodeId.ContainsKey(nodeId)) continue;
+
+                    // 节点生态：遭遇池弱引用解析出栖息生灵与危险度区间，供 NearbyPanel 直接消费。
+                    var encounterIds = ReadStringArray(node, "encounterIds");
+                    var nodeEncounters = encounterIds
+                        .Select(id => catalog.Encounters.FirstOrDefault(e => e.ValueKind == JsonValueKind.Object && ReadString(e, "id") == id))
+                        .Where(e => e.ValueKind == JsonValueKind.Object)
+                        .ToArray();
+                    var normalIds = new List<string>();
+                    var eliteIds = new List<string>();
+                    var bossIds = new List<string>();
+                    foreach (var e in nodeEncounters)
                     {
-                        if (ReadString(n, "id") == world.NodeId)
-                        {
-                            map = candidate;
-                            hasMap = true;
-                            node = n;
-                            hasNode = true;
-                            break;
-                        }
+                        normalIds.AddRange(ReadArray(e, "randomSpawns").Select(s => ReadString(s, "enemyId")));
+                        normalIds.AddRange(ReadStringArray(e, "normalEnemyIds"));
+                        eliteIds.AddRange(ReadStringArray(e, "eliteEnemyIds"));
+                        bossIds.AddRange(ReadStringArray(e, "bossEnemyIds"));
                     }
-                    if (hasNode) break;
+                    // 与原实现同构：空序列经 DefaultIfEmpty().Min/Max 得到 0，投影原样保留该边界值。
+                    var minBudget = nodeEncounters.Select(e => ReadDouble(e, "minBudget", double.NaN))
+                        .Where(double.IsFinite).DefaultIfEmpty().Min();
+                    var maxBudget = nodeEncounters.Select(e => ReadDouble(e, "maxBudget", double.NaN))
+                        .Where(double.IsFinite).DefaultIfEmpty().Max();
+                    var eliteInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerElite", ReadDouble(e, "eliteInterval", double.NaN)))
+                        .Where(double.IsFinite).DefaultIfEmpty().Min();
+                    var bossInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerBoss", ReadDouble(e, "bossInterval", double.NaN)))
+                        .Where(double.IsFinite).DefaultIfEmpty().Min();
+
+                    byNodeId[nodeId] = new WorldNodeStaticProjection
+                    {
+                        MapId = mapId,
+                        // 与原 ReadString(node,"name",world.NodeId) 同构：缺字段/非字符串 → null 由消费方回退 NodeId；
+                        // 字符串原值（含空串）原样保留。
+                        Name = node.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
+                            ? nameElement.GetString()
+                            : null,
+                        // 与原 ReadDouble(node,"x/y",world.X/Y) 同构：缺失或无法解析 → null 由消费方回退；
+                        // 非 Number 类型与原实现一致抛 InvalidOperationException。
+                        X = node.TryGetProperty("x", out var xElement) && xElement.TryGetDouble(out var nx) ? nx : null,
+                        Y = node.TryGetProperty("y", out var yElement) && yElement.TryGetDouble(out var ny) ? ny : null,
+                        CultivationMultiplier = ReadDouble(node, "cultivationMultiplier", 1),
+                        AvailableActionIds = ReadStringArray(node, "availableActionIds"),
+                        EncounterIds = encounterIds,
+                        Npcs = ReadEntities(node, "npcs"),
+                        Buildings = ReadEntities(node, "buildings"),
+                        BuildableBuildingIds = Domain.World.NodeBuildingRules.ResolveBuildableIds(node, catalog.Buildings ?? new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal))
+                            ?.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+                        MinBudget = minBudget,
+                        MaxBudget = maxBudget,
+                        EliteInterval = eliteInterval,
+                        BossInterval = bossInterval,
+                        Monsters = normalIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!,
+                        EliteEnemies = eliteIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!,
+                        BossEnemies = bossIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(catalog, id)).Where(m => m is not null).ToArray()!
+                    };
                 }
             }
+            return new WorldStaticProjectionIndex { ByNodeId = byNodeId };
         }
+    }
+
+    private static object ToWorldSection(PlayerWorldStateDocument world, GameDataCatalog? gameData)
+    {
+        // 静态投影按配表实例缓存：不再逐次扫描整张地图；动态字段（位置/边进度/在建建筑）仍按当前状态投影。
+        var projection = gameData is null
+            ? null
+            : s_worldProjections.GetValue(gameData, static catalog => WorldStaticProjectionIndex.Build(catalog))
+                .ByNodeId.GetValueOrDefault(world.NodeId ?? string.Empty);
 
         var edgeId = world.EdgeId;
         var edgeProgress = world.EdgeProgress;
-        var x = !string.IsNullOrWhiteSpace(edgeId) ? world.X : (hasNode ? ReadDouble(node, "x", world.X) : world.X);
-        var y = !string.IsNullOrWhiteSpace(edgeId) ? world.Y : (hasNode ? ReadDouble(node, "y", world.Y) : world.Y);
-
-        // 节点生态：遭遇池弱引用解析出栖息生灵与危险度区间，供 NearbyPanel 直接消费。
         var onEdge = !string.IsNullOrWhiteSpace(edgeId);
-        var encounterIds = hasNode && !onEdge ? ReadStringArray(node, "encounterIds") : Array.Empty<string>();
-        var nodeEncounters = gameData is null
-            ? Array.Empty<JsonElement>()
-            : encounterIds
-                .Select(id => gameData.Encounters.FirstOrDefault(e => e.ValueKind == JsonValueKind.Object && ReadString(e, "id") == id))
-                .Where(e => e.ValueKind == JsonValueKind.Object)
-                .ToArray();
-        var normalIds = new List<string>();
-        var eliteIds = new List<string>();
-        var bossIds = new List<string>();
-        foreach (var e in nodeEncounters)
-        {
-            normalIds.AddRange(ReadArray(e, "randomSpawns").Select(s => ReadString(s, "enemyId")));
-            normalIds.AddRange(ReadStringArray(e, "normalEnemyIds"));
-            eliteIds.AddRange(ReadStringArray(e, "eliteEnemyIds"));
-            bossIds.AddRange(ReadStringArray(e, "bossEnemyIds"));
-        }
-        var minBudget = nodeEncounters.Select(e => ReadDouble(e, "minBudget", double.NaN))
-            .Where(double.IsFinite).DefaultIfEmpty().Min();
-        var maxBudget = nodeEncounters.Select(e => ReadDouble(e, "maxBudget", double.NaN))
-            .Where(double.IsFinite).DefaultIfEmpty().Max();
-        var eliteInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerElite", ReadDouble(e, "eliteInterval", double.NaN)))
-            .Where(double.IsFinite).DefaultIfEmpty().Min();
-        var bossInterval = nodeEncounters.Select(e => ReadDouble(e, "battlesPerBoss", ReadDouble(e, "bossInterval", double.NaN)))
-            .Where(double.IsFinite).DefaultIfEmpty().Min();
+        var x = onEdge ? world.X : projection?.X ?? world.X;
+        var y = onEdge ? world.Y : projection?.Y ?? world.Y;
         var nowUnixSeconds = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d;
         return new
         {
-            mapId = hasMap ? ReadString(map, "id", "map.qingyun-mountains") : "map.qingyun-mountains",
-            nodeId = !string.IsNullOrWhiteSpace(edgeId) ? null : world.NodeId,
+            mapId = projection?.MapId ?? "map.qingyun-mountains",
+            nodeId = onEdge ? null : world.NodeId,
             edgeId,
             edgeProgress,
             x,
             y,
-            locationName = !string.IsNullOrWhiteSpace(edgeId)
-                ? "旅途中"
-                : (hasNode ? ReadString(node, "name", world.NodeId) : world.NodeId),
-            cultivationMultiplier = hasNode ? ReadDouble(node, "cultivationMultiplier", 1) : 1d,
-            availableActionIds = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<string>() : ReadStringArray(node, "availableActionIds"),
-            encounterIds,
-            npcs = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "npcs"),
-            buildings = !string.IsNullOrWhiteSpace(edgeId) ? Array.Empty<object>() : ReadEntities(node, "buildings"),
+            locationName = onEdge ? "旅途中" : projection?.Name ?? world.NodeId,
+            cultivationMultiplier = projection?.CultivationMultiplier ?? 1d,
+            availableActionIds = onEdge || projection is null ? Array.Empty<string>() : projection.AvailableActionIds,
+            encounterIds = onEdge || projection is null ? Array.Empty<string>() : projection.EncounterIds,
+            npcs = onEdge || projection is null ? Array.Empty<object>() : projection.Npcs,
+            buildings = onEdge || projection is null ? Array.Empty<object>() : projection.Buildings,
             // 节点可建列表：buildableList/buildableTemplate 二选一解析；null 表示该节点不可建（前端隐藏加号卡）。
-            buildableBuildingIds = onEdge || !hasNode
-                ? null
-                : Domain.World.NodeBuildingRules.ResolveBuildableIds(node, gameData?.Buildings ?? new Dictionary<string, BuildingDefinition>(StringComparer.Ordinal))
-                    ?.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+            buildableBuildingIds = onEdge ? null : projection?.BuildableBuildingIds,
             // 节点公共建筑：共享注册表投影随 world 分段持久化，快照映射按当前时刻推算双进度。
             nodeBuildings = onEdge
                 ? Array.Empty<object>()
@@ -557,13 +711,13 @@ public static class ProtocolSnapshotMapper
                     .Select(entry => ToNodeBuilding(gameData, entry, nowUnixSeconds))
                     .Where(entry => entry is not null)
                     .ToArray(),
-            minBudget = double.IsFinite(minBudget) ? minBudget : (double?)null,
-            maxBudget = double.IsFinite(maxBudget) ? maxBudget : (double?)null,
-            eliteInterval = double.IsFinite(eliteInterval) ? eliteInterval : (double?)null,
-            bossInterval = double.IsFinite(bossInterval) ? bossInterval : (double?)null,
-            monsters = normalIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray(),
-            eliteEnemies = eliteIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray(),
-            bossEnemies = bossIds.Distinct(StringComparer.Ordinal).Select(id => ToNearbyMonster(gameData, id)).Where(m => m is not null).ToArray()
+            minBudget = projection?.MinBudget ?? 0.0,
+            maxBudget = projection?.MaxBudget ?? 0.0,
+            eliteInterval = projection?.EliteInterval ?? 0.0,
+            bossInterval = projection?.BossInterval ?? 0.0,
+            monsters = projection?.Monsters ?? [],
+            eliteEnemies = projection?.EliteEnemies ?? [],
+            bossEnemies = projection?.BossEnemies ?? []
         };
     }
 

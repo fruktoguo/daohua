@@ -7,10 +7,19 @@ namespace Server.Clean;
 /// 核心机制：
 /// 1. 使用有界通道（BoundedChannel）管理下行数据包，避免网络慢客户端造成服务端内存无限膨胀；
 /// 2. 线程安全递增下行 Sequence 帧序号；
-/// 3. 维护上次推送的资产余额基线，用于增量计算（DiffAssets）。
+/// 3. 维护上次推送的分段校验和/资产余额基线，用于增量计算；基线只在帧真正入队后提交，
+///    可丢弃帧被丢弃时基线不前移，客户端不会永久缺失该分段内容；
+/// 4. 可丢弃推送持续丢帧达到阈值时按慢消费者主动关闭（4009），由客户端重连拉取全量快照。
 /// </summary>
 public sealed class WebSocketSession(Guid playerId, int capacity)
 {
+    /// <summary>慢消费者阈值：连续丢弃帧数上限。有界队列满时实时推送逐帧丢弃，连续饱和视为无法消化。</summary>
+    public const int SlowConsumerMaxDrops = 32;
+    /// <summary>慢消费者阈值：自首次丢弃起的持续饱和时长上限，与帧数阈值先到先判。</summary>
+    internal static readonly TimeSpan SlowConsumerSaturationWindow = TimeSpan.FromSeconds(15);
+    /// <summary>慢消费者关闭码：4009 落在自定义私有段且未被防多开占用，前端走默认自动重连恢复全量快照。</summary>
+    public const int SlowConsumerCloseCode = 4009;
+
     private readonly Channel<byte[]> _outbound = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(capacity)
     {
         FullMode = BoundedChannelFullMode.Wait,
@@ -20,7 +29,9 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     private readonly TaskCompletionSource _teardownCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private long _outboundSequence;
     private IReadOnlyList<AssetBalanceDto>? _lastPushedAssets;
-    private Dictionary<string, string>? _lastPushedSectionChecksums;
+    private IReadOnlyDictionary<string, string>? _lastPushedSectionChecksums;
+    private int _consecutiveDrops;
+    private long _firstDropUtcTicks;
 
     /// <summary>会话绑定的修仙者角色 ID</summary>
     public Guid PlayerId { get; } = playerId;
@@ -35,12 +46,45 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     public string? DeviceFingerprint { get; set; }
     /// <summary>会话拆除（含事件退订、注册表释放与必要的 Actor 卸载）全部完成后置位</summary>
     public Task TeardownCompleted => _teardownCompleted.Task;
+    /// <summary>
+    /// 下行推送的构建-发送-基线提交串行化锁：增量推送可由模拟循环与斗法撮合等多线程并发触发，
+    /// 同一会话的「读基线 → 编码 → 入队 → 提交基线」必须整体串行，否则交错会把未送达内容的
+    /// 校验和误记为已推送基线，造成客户端永久漂移。
+    /// </summary>
+    public object OutboundSync { get; } = new();
     /// <summary>获取并递增下一个下行信封帧序列号</summary>
     public long NextOutboundSequence() => Interlocked.Increment(ref _outboundSequence);
     /// <summary>向输出通道异步投递待发送的数据包（满时等待背压）</summary>
     public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken) => _outbound.Writer.WriteAsync(packet, cancellationToken);
-    /// <summary>尝试非阻塞投递数据包</summary>
+    /// <summary>尝试非阻塞投递数据包（不区分可丢弃性，不进入慢消费者统计）</summary>
     public bool TrySend(byte[] packet) => _outbound.Writer.TryWrite(packet);
+
+    /// <summary>
+    /// 尝试非阻塞投递一帧可丢弃的实时推送：满队列丢弃时累计慢消费者证据，
+    /// 连续丢帧或持续饱和达到阈值即按 4009 请求关闭（前端默认重连拉全量）。
+    /// </summary>
+    /// <returns>帧已进入发送队列返回 true；被丢弃（或会话已在关闭流程）返回 false。</returns>
+    public bool TrySendDroppable(byte[] packet)
+    {
+        if (CloseHint is not null) return false;
+        if (_outbound.Writer.TryWrite(packet))
+        {
+            // 队列恢复可写：清零连续丢弃窗口，慢消费者证据随消化能力恢复失效。
+            if (Volatile.Read(ref _consecutiveDrops) != 0)
+            {
+                Interlocked.Exchange(ref _consecutiveDrops, 0);
+                Interlocked.Exchange(ref _firstDropUtcTicks, 0L);
+            }
+            return true;
+        }
+        var drops = Interlocked.Increment(ref _consecutiveDrops);
+        var nowTicks = DateTimeOffset.UtcNow.Ticks;
+        Interlocked.CompareExchange(ref _firstDropUtcTicks, nowTicks, 0L);
+        var saturatedTicks = nowTicks - Interlocked.Read(ref _firstDropUtcTicks);
+        if (drops >= SlowConsumerMaxDrops || saturatedTicks >= SlowConsumerSaturationWindow.Ticks)
+            RequestClose(SlowConsumerCloseCode, "slow consumer");
+        return false;
+    }
     /// <summary>标记输出通道完成并关闭</summary>
     public void Complete() => _outbound.Writer.TryComplete();
 
@@ -61,25 +105,26 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     /// <summary>标记会话拆除全部完成，唤醒正在等待顶替他位的后续会话</summary>
     public void MarkTeardownCompleted() => _teardownCompleted.TrySetResult();
 
-    /// <summary>记录本次推送的资产并返回上次基线；增量回调由模拟循环串行驱动，无需加锁。</summary>
-    public IReadOnlyList<AssetBalanceDto>? ExchangeAssetBaseline(IReadOnlyList<AssetBalanceDto> current)
+    /// <summary>
+    /// 读取上次「已确认入队」的推送基线：分段校验和与资产余额成对返回。
+    /// 增量构建必须在 <see cref="OutboundSync"/> 内与发送、提交串行完成。
+    /// </summary>
+    public (IReadOnlyDictionary<string, string>? SectionChecksums, IReadOnlyList<AssetBalanceDto>? Assets) ReadPushBaseline()
     {
-        var previous = _lastPushedAssets;
-        _lastPushedAssets = current;
-        return previous;
+        lock (OutboundSync) return (_lastPushedSectionChecksums, _lastPushedAssets);
     }
 
-    /// <summary>记录本次推送的分段校验和并返回上次基线；增量回调由模拟循环串行驱动，无需加锁。</summary>
-    public IReadOnlyDictionary<string, string>? ExchangeSectionBaseline(IReadOnlyList<PlayerSectionDto> current)
+    /// <summary>
+    /// 帧成功入队后提交本次推送基线：分段校验和与资产余额原子成对前移；
+    /// 可丢弃帧被丢弃时不得调用，基线保持在上次已送达内容，下一次增量重新携带缺失分段。
+    /// </summary>
+    public void CommitPushBaseline(IReadOnlyDictionary<string, string> sectionChecksums, IReadOnlyList<AssetBalanceDto> assets)
     {
-        var previous = _lastPushedSectionChecksums;
-        var map = new Dictionary<string, string>(current.Count, StringComparer.Ordinal);
-        for (var i = 0; i < current.Count; i++)
+        lock (OutboundSync)
         {
-            map[current[i].Section] = current[i].Checksum;
+            _lastPushedSectionChecksums = sectionChecksums;
+            _lastPushedAssets = assets;
         }
-        _lastPushedSectionChecksums = map;
-        return previous;
     }
 }
 
@@ -201,12 +246,20 @@ public static class WebSocketEndpoint
             if (snapshot.PlayerId != session.PlayerId) return;
             // 权威位置随快照推进：换节点会触发同节点修士的附近列表刷新。
             await presence.UpdateNodeAsync(snapshot.PlayerId, snapshot.State.World.NodeId, token);
-            await QueueJsonAsync(
-                session,
-                WireMessageType.SnapshotDelta,
-                Guid.NewGuid(),
-                BuildDelta(session, snapshot, gameData),
-                token);
+            // 读基线 → 按触及分段窄化编码 → 入队 → 提交基线，在会话锁内整体串行：
+            // 推送可由模拟循环与斗法撮合多线程并发触发，交错会把未送达内容误记为已推送基线。
+            lock (session.OutboundSync)
+            {
+                var (previousSections, previousAssets) = session.ReadPushBaseline();
+                var delta = ProtocolSnapshotMapper.BuildDelta(
+                    snapshot, gameData.Fingerprint, gameData, snapshot.TouchedSections,
+                    previousSections, previousAssets,
+                    out var nextSections, out var nextAssets);
+                var packet = EncodeJson(WireMessageType.SnapshotDelta, Guid.NewGuid(), session.NextOutboundSequence(), delta);
+                // 可丢弃帧入队成功才前移基线；被丢弃时基线保持上次已送达内容，避免客户端永久漂移。
+                if (!session.TrySendDroppable(packet)) return;
+                session.CommitPushBaseline(nextSections, nextAssets);
+            }
         }
         ValueTask OnLogBatchEmitted(Guid eventPlayerId, IReadOnlyList<LogEventDto> events) => eventPlayerId != session.PlayerId
             ? ValueTask.CompletedTask
@@ -272,18 +325,6 @@ public static class WebSocketEndpoint
             if (owned) await runtime.RemoveAsync(playerId, true, CancellationToken.None);
             session.MarkTeardownCompleted();
         }
-    }
-
-    /// <summary>
-    /// 构建增量：以会话上次推送的分段与资产为基线对比，仅携带发生变化的分段与资产品种。
-    /// 同时携带权威模拟时刻 LastSimulatedAt，供浏览器在两次全量快照之间校准服务端时钟。
-    /// </summary>
-    private static PlayerSnapshotDeltaDto BuildDelta(WebSocketSession session, PlayerRuntimeSnapshot snapshot, Domain.GameData.GameDataCatalog gameData)
-    {
-        var current = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData);
-        var changedSections = ProtocolSnapshotMapper.DiffSections(session.ExchangeSectionBaseline(current.Sections), current.Sections);
-        var changedAssets = ProtocolSnapshotMapper.DiffAssets(session.ExchangeAssetBaseline(current.Assets), current.Assets);
-        return new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, current.LastSimulatedAt, changedSections, changedAssets.Count == 0 ? null : changedAssets);
     }
 
     private static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T payload) =>
@@ -388,25 +429,34 @@ public static class WebSocketEndpoint
                                 new AntiMultiOpenConfigDto(options.AntiMultiOpen.TabGuardEnabled))), cancellationToken);
                         var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
                         displayName = initial.DisplayName;
-                        var initialSnapshot = ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData);
+                        // 握手数据获取并行化：快照编码（CPU）、社交/聊天/存在感（独立 IO 与内存计算）互不依赖，
+                        // 总耗时取最大而非求和；下行发送顺序保持 HelloAck → Snapshot → LogBatch → SocialState → ChatHistory 不变。
+                        var snapshotTask = Task.Run(
+                            () => ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData),
+                            cancellationToken);
+                        var socialTask = social.BuildStateAsync(session.PlayerId, null, cancellationToken);
+                        var worldChatTask = chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(ChatChannels.World), cancellationToken);
+                        var nearbyChatTask = chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(ChatChannels.Nearby), cancellationToken);
+                        // 在线存在感登记：世界/附近广播与好友在线状态都依赖它；登记是独立副作用，与上方读取并行。
+                        var presenceTask = presence.RegisterAsync(session.PlayerId, displayName, initial.State.World.NodeId, cancellationToken);
+                        var initialSnapshot = await snapshotTask;
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
-                        session.ExchangeAssetBaseline(initialSnapshot.Assets);
-                        session.ExchangeSectionBaseline(initialSnapshot.Sections);
+                        // 初始快照帧已进入发送队列：直接提交推送基线，后续增量以此裁决变更。
+                        var initialSectionChecksums = new Dictionary<string, string>(initialSnapshot.Sections.Count, StringComparer.Ordinal);
+                        foreach (var section in initialSnapshot.Sections)
+                            initialSectionChecksums[section.Section] = section.Checksum;
+                        session.CommitPushBaseline(initialSectionChecksums, initialSnapshot.Assets);
                         // 重连回放：把环形缓冲内的最近战报一次性补发给本会话。
                         var recentLogs = runtime.GetRecentLogEvents(session.PlayerId);
                         if (recentLogs.Count > 0)
                             await QueueJsonAsync(session, WireMessageType.LogBatch, Guid.NewGuid(), new LogBatchDto(recentLogs), cancellationToken);
-                        // 在线存在感登记：世界/附近广播与好友在线状态都依赖它。
-                        await presence.RegisterAsync(session.PlayerId, displayName, initial.State.World.NodeId, cancellationToken);
-                        await QueueJsonAsync(session, WireMessageType.SocialState, Guid.NewGuid(),
-                            await social.BuildStateAsync(session.PlayerId, null, cancellationToken), cancellationToken);
+                        await presenceTask;
+                        await QueueJsonAsync(session, WireMessageType.SocialState, Guid.NewGuid(), await socialTask, cancellationToken);
                         // 握手时只回放世界与附近两个「无参数」频道；好友私聊与队伍频道由客户端按需请求。
-                        foreach (var channel in new[] { ChatChannels.World, ChatChannels.Nearby })
-                        {
-                            var history = await chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(channel), cancellationToken);
-                            if (history is not null)
-                                await QueueJsonAsync(session, WireMessageType.ChatHistory, Guid.NewGuid(), history, cancellationToken);
-                        }
+                        if (await worldChatTask is { } worldHistory)
+                            await QueueJsonAsync(session, WireMessageType.ChatHistory, Guid.NewGuid(), worldHistory, cancellationToken);
+                        if (await nearbyChatTask is { } nearbyHistory)
+                            await QueueJsonAsync(session, WireMessageType.ChatHistory, Guid.NewGuid(), nearbyHistory, cancellationToken);
                         handshaken = true;
                         break;
                     case WireMessageType.Ping:
@@ -572,16 +622,24 @@ public static class WebSocketEndpoint
 
     /// <summary>
     /// 把一条已落库的传音消息投递给作用域内全部在线会话。
-    /// 投递走非阻塞 <see cref="WebSocketSession.TrySend"/>：慢客户端不能反向阻塞发言者的接收循环，
+    /// 同一消息载荷只序列化一次，全部收件人共享同一段载荷字节；requestId/sequence 属会话私有信封头。
+    /// 投递走非阻塞 <see cref="WebSocketSession.TrySendDroppable"/>：慢客户端不能反向阻塞发言者的接收循环，
     /// 掉帧可由频道历史回放（最近 100 条）在重连或切频道时补齐。
     /// </summary>
-    private static void BroadcastChat(SessionRegistry sessions, Social.ChatSendOutcome outcome)
+    public static void BroadcastChat(SessionRegistry sessions, Social.ChatSendOutcome outcome)
     {
         if (outcome.Message is not { } message || outcome.Recipients is not { Count: > 0 } recipients) return;
+        // 载荷 JSON 与接收方无关：一次编码全体共享，避免按收件人重复序列化。
+        var payloadBytes = (ReadOnlyMemory<byte>)JsonSerializer.SerializeToUtf8Bytes(message, ProtocolJson.Options);
         foreach (var recipientId in recipients)
         {
             if (!sessions.TryGet(recipientId, out var target)) continue;
-            target.TrySend(EncodeJson(WireMessageType.ChatMessage, Guid.NewGuid(), target.NextOutboundSequence(), message));
+            var envelope = WireEnvelope.Create(
+                WireMessageType.ChatMessage,
+                Guid.NewGuid(),
+                target.NextOutboundSequence(),
+                payloadBytes);
+            target.TrySendDroppable(WireEnvelopeCodec.Encode(envelope));
         }
     }
 
@@ -632,12 +690,12 @@ public static class WebSocketEndpoint
     {
         var packet = EncodeJson(messageType, requestId, session.NextOutboundSequence(), payload);
         // Snapshot 增量、战报日志与传音/社交推送属于可丢弃的实时推送，慢客户端不能反向阻塞玩家模拟/持久化。
-        // 队列已满时丢弃该帧，客户端可通过下一次命令响应、频道历史回放或重连重新获取完整快照、最近日志与社交状态；
-        // 命令结果、错误、握手响应与历史回放仍保留等待语义，确保关键协议不静默丢失。
+        // 队列已满时丢弃该帧并累计慢消费者证据，客户端可通过下一次命令响应、频道历史回放或重连
+        // 重新获取完整快照、最近日志与社交状态；命令结果、错误、握手响应与历史回放仍保留等待语义。
         if (messageType is WireMessageType.SnapshotDelta or WireMessageType.LogBatch
             or WireMessageType.ChatMessage or WireMessageType.SocialState)
         {
-            session.TrySend(packet);
+            session.TrySendDroppable(packet);
             return ValueTask.CompletedTask;
         }
         return session.SendAsync(packet, cancellationToken);

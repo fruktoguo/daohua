@@ -66,23 +66,31 @@ public sealed class AdversarialConcurrencyTests
             // 初始化基线
             var initialSnapshot = await runtime.LoadAsync(playerId);
             var initialDto = ProtocolSnapshotMapper.ToSnapshot(initialSnapshot, gameData.Fingerprint, gameData);
-            session.ExchangeSectionBaseline(initialDto.Sections);
-            session.ExchangeAssetBaseline(initialDto.Assets);
+            var initialChecksums = new Dictionary<string, string>(initialDto.Sections.Count, StringComparer.Ordinal);
+            foreach (var section in initialDto.Sections)
+                initialChecksums[section.Section] = section.Checksum;
+            session.CommitPushBaseline(initialChecksums, initialDto.Assets);
 
             ValueTask OnSnapshotUpdated(PlayerRuntimeSnapshot snapshot)
             {
                 if (snapshot.PlayerId != session.PlayerId) return ValueTask.CompletedTask;
-                var current = ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData);
-                var changedSections = ProtocolSnapshotMapper.DiffSections(session.ExchangeSectionBaseline(current.Sections), current.Sections);
-                var changedAssets = ProtocolSnapshotMapper.DiffAssets(session.ExchangeAssetBaseline(current.Assets), current.Assets);
-                var delta = new PlayerSnapshotDeltaDto(current.PlayerId, current.StateVersion, current.LastSimulatedAt, changedSections, changedAssets.Count == 0 ? null : changedAssets);
-                var envelope = WireEnvelope.Json(
-                    WireMessageType.SnapshotDelta,
-                    Guid.NewGuid(),
-                    session.NextOutboundSequence(),
-                    delta);
-                var bytes = WireEnvelopeCodec.Encode(envelope);
-                session.TrySend(bytes);
+                // 镜像生产推送路径：会话锁内读基线 → 窄化编码 → 入队成功才提交基线。
+                lock (session.OutboundSync)
+                {
+                    var (previousSections, previousAssets) = session.ReadPushBaseline();
+                    var delta = ProtocolSnapshotMapper.BuildDelta(
+                        snapshot, gameData.Fingerprint, gameData, snapshot.TouchedSections,
+                        previousSections, previousAssets,
+                        out var nextSections, out var nextAssets);
+                    var envelope = WireEnvelope.Json(
+                        WireMessageType.SnapshotDelta,
+                        Guid.NewGuid(),
+                        session.NextOutboundSequence(),
+                        delta);
+                    var bytes = WireEnvelopeCodec.Encode(envelope);
+                    if (!session.TrySendDroppable(bytes)) return ValueTask.CompletedTask;
+                    session.CommitPushBaseline(nextSections, nextAssets);
+                }
                 return ValueTask.CompletedTask;
             }
 

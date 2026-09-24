@@ -15,6 +15,11 @@ namespace Server.Clean;
 /// 排队行动的完整存储投影只有运维计数一个消费方，逐拍序列化全部 Intent 属纯浪费，
 /// 因此快照只携带计数；协议分段与持久化落盘各自从领域状态编码，不经过本字段。
 /// </summary>
+/// <summary>
+/// 运行时快照视图。TouchedSections 为「触发本次快照的那次操作」在单写者锁内新增的脏标记分段差集
+/// （仅本操作内执行路径可求值；跨操作读取如 LoadAsync/SnapshotAsync 为 null，表示未知需全量编码）。
+/// WireAttributesChanged 为同一锁内解析的属性面板是否变化的判定（null=未知按已变处理）。
+/// </summary>
 public sealed record PlayerRuntimeSnapshot(
     Guid PlayerId,
     string AccountId,
@@ -23,7 +28,9 @@ public sealed record PlayerRuntimeSnapshot(
     DateTimeOffset LastSimulatedAt,
     PlayerAggregateState State,
     int QueuedActionCount,
-    IReadOnlyList<AssetBalanceRecord> Assets);
+    IReadOnlyList<AssetBalanceRecord> Assets,
+    IReadOnlySet<PlayerSectionKind>? TouchedSections = null,
+    bool? WireAttributesChanged = null);
 
 /// <summary>
 /// 玩家指令执行回执契约包。
@@ -620,8 +627,8 @@ public sealed class PlayerRuntime(
             finally { _gate.Release(); }
         }
 
-        /// <summary>无锁快照投影；调用方必须已持有单写者锁。</summary>
-        private PlayerRuntimeSnapshot Snapshot() => new(
+        /// <summary>无锁快照投影；调用方必须已持有单写者锁。touchedSections 为本操作触及分段差集，未知时传 null。</summary>
+        private PlayerRuntimeSnapshot Snapshot(IReadOnlySet<PlayerSectionKind>? touchedSections = null, bool? wireAttributesChanged = null) => new(
             aggregate.PlayerId.Value,
             aggregate.AccountId.Value.ToString("D"),
             aggregate.DisplayName,
@@ -638,7 +645,41 @@ public sealed class PlayerRuntime(
                     balance.Asset.Variant,
                     balance.Quantity,
                     balance.Version))
-                .ToArray());
+                .ToArray(),
+            touchedSections,
+            wireAttributesChanged);
+
+        // 上次解析的协议属性面板实例：Resolve 命中输入修订号缓存返回同一实例，
+        // 引用相等即面板未变；返回新实例（含值相等）保守视为已变。
+        private PlayerAttributes? _lastWireAttributes;
+
+        /// <summary>
+        /// 解析当前属性面板并按缓存实例引用检测是否变化，供增量窄化判定 combat 分段是否需重编码。
+        /// 属性解析缓存被旁路（无基础属性配表）时每轮返回新实例，退化为「总是已变」的保守候选。
+        /// 调用方必须持有单写者锁。
+        /// </summary>
+        private bool RefreshWireAttributesChanged()
+        {
+            var resolved = PlayerAttributeResolver.Resolve(aggregate, gameData);
+            if (ReferenceEquals(resolved, _lastWireAttributes)) return false;
+            _lastWireAttributes = resolved;
+            return true;
+        }
+
+        /// <summary>
+        /// 计算本次操作内新增的脏标记分段差集：未出现的分段与流水号未前进的分段都不算本次触及；
+        /// 已在持久化脏集合中的分段若本次再次标脏（戳号前进）仍计入。调用方必须持有单写者锁。
+        /// </summary>
+        private HashSet<PlayerSectionKind>? TouchedSectionsSince(IReadOnlyDictionary<PlayerSectionKind, long> marksBefore)
+        {
+            HashSet<PlayerSectionKind>? touched = null;
+            foreach (var (section, mark) in aggregate.DirtySectionMarks)
+            {
+                if (!marksBefore.TryGetValue(section, out var previous) || previous != mark)
+                    (touched ??= []).Add(section);
+            }
+            return touched;
+        }
 
         /// <summary>
         /// 在单写者锁内执行一条领域命令：先续租所有权 → requestId 幂等去重（内存窗口 +
@@ -657,6 +698,9 @@ public sealed class PlayerRuntime(
             try
             {
                 if (_disposed) throw new ObjectDisposedException(nameof(PlayerActor));
+                // 操作前脏标记流水号快照：命令/模拟结束后差集得出「本次操作触及分段」，
+                // 供网络增量窄化编码范围（不替代持久化脏集合语义）。
+                var dirtyMarksBefore = new Dictionary<PlayerSectionKind, long>(aggregate.DirtySectionMarks);
                 await RenewOwnershipLeaseIfDueAsync(cancellationToken);
                 if (string.IsNullOrWhiteSpace(command) || command.Length > 96)
                     return Fail("INVALID_COMMAND", "命令名称无效。");
@@ -1159,7 +1203,7 @@ public sealed class PlayerRuntime(
                 if (simulation is { Events.Count: > 0 })
                     logEvents = SimulationLogMapper.ToLogEvents(simulation.Events, gameData, logBuffer);
                 RefreshNextVisibleBoundary();
-                return new PlayerCommandResult(true, "OK", "命令已提交。", Snapshot(), simulation, logEvents);
+                return new PlayerCommandResult(true, "OK", "命令已提交。", Snapshot(TouchedSectionsSince(dirtyMarksBefore), RefreshWireAttributesChanged()), simulation, logEvents);
             }
             catch (DomainException ex)
             {
