@@ -370,11 +370,9 @@ public sealed class SnapshotDeltaPushTests
         var world1 = Assert.Single(first.Sections, s => s.Section == PlayerSectionKinds.World);
         var world2 = Assert.Single(second.Sections, s => s.Section == PlayerSectionKinds.World);
         Assert.Equal(world1.Checksum, world2.Checksum);
-        Assert.Equal(world1.PayloadBase64, world2.PayloadBase64);
+        Assert.Equal(world1.Data.GetRawText(), world2.Data.GetRawText());
 
-        var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(world1.PayloadBase64));
-        using var doc = System.Text.Json.JsonDocument.Parse(json);
-        var root = doc.RootElement;
+        var root = world1.Data;
         Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("mapId").GetString()));
         Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("locationName").GetString()));
         Assert.Equal(aggregate.ExportState().World.NodeId, root.GetProperty("nodeId").GetString());

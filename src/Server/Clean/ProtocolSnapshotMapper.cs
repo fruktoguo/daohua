@@ -28,18 +28,21 @@ public static class ProtocolSnapshotMapper
     // combat 属性面板的跨段输入（境界/地图/装备/技法/功法/Buff/设置节点建筑开关）已由
     // PlayerRuntimeSnapshot.WireAttributesChanged 在锁内按解析缓存实例引用精确判定，
     // 不再按输入分段并集放大候选，见 IsDeltaCandidate。
-    /// <summary>对单个分段载荷执行规范化 JSON 序列化并生成 PlayerSectionDto。</summary>
+    /// <summary>
+    /// 对单个分段载荷执行规范化 JSON 序列化并生成 PlayerSectionDto。
+    /// 规范化字节一次编码后既做 checksum 输入也直接内嵌为 data：
+    /// JsonElement.WriteTo 按原始文本透传，信封中 data 成员的字节区间与 checksum
+    /// 哈希输入逐位一致，客户端可对线上原始字节复算 SHA-256，无需再经 Base64 往返。
+    /// </summary>
     public static PlayerSectionDto EncodeSection(Guid playerId, string kind, long stateVersion, object value, DateTimeOffset updatedAt)
     {
         var encoded = SectionCodec.Encode(playerId, kind, Math.Max(1, stateVersion), value, updatedAt, compress: false);
+        using var document = JsonDocument.Parse(encoded.Payload);
         return new PlayerSectionDto(
             kind,
             encoded.StateVersion,
             encoded.SchemaVersion,
-            encoded.Codec,
-            Convert.ToBase64String(encoded.Payload.Span),
-            encoded.RawBytes,
-            encoded.StoredBytes,
+            document.RootElement.Clone(),
             encoded.Checksum,
             encoded.UpdatedAt);
     }
@@ -54,8 +57,8 @@ public static class ProtocolSnapshotMapper
         var sections = new List<PlayerSectionDto>(8);
         foreach (var (kind, value) in EnumerateSections(state, gameData))
         {
-            // WebSocket v1 的浏览器载荷保持 JSON；Brotli 只用于 PostgreSQL section，避免
-            // 客户端依赖不一致的 Brotli WASM/浏览器实现。
+            // WebSocket v1 的浏览器载荷为内嵌规范化 JSON；Brotli 只用于 PostgreSQL/compute 链路的
+            // 字节通道，避免客户端依赖不一致的 Brotli WASM/浏览器实现。
             sections.Add(EncodeSection(runtime.PlayerId, kind, runtime.StateVersion, value, runtime.LastSimulatedAt));
         }
 

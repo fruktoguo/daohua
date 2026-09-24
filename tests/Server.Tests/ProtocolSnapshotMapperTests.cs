@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Domain.Combat;
 using Domain.Common;
@@ -16,7 +17,7 @@ namespace Server.Tests;
 /// </summary>
 public sealed class ProtocolSnapshotMapperTests
 {
-    /// <summary>快照 DTO 全为协议载荷：8 个分段以 Base64 下发，不含领域运行时对象。</summary>
+    /// <summary>快照 DTO 全为协议载荷：8 个分段以内嵌规范化 JSON 下发，不含领域运行时对象。</summary>
     [Fact]
     public void SnapshotMapper_EmitsProtocolDtoWithoutDomainRuntimeObjects()
     {
@@ -29,7 +30,34 @@ public sealed class ProtocolSnapshotMapperTests
         Assert.Equal(playerId.ToString("D"), dto.PlayerId);
         Assert.Equal("映射测试", dto.DisplayName);
         Assert.Equal(8, dto.Sections.Count);
-        Assert.All(dto.Sections, section => Assert.False(string.IsNullOrWhiteSpace(section.PayloadBase64)));
+        Assert.All(dto.Sections, section => Assert.True(
+            section.Data.ValueKind is JsonValueKind.Object or JsonValueKind.Array,
+            $"section {section.Section} data 必须是内嵌 JSON 值。"));
+    }
+
+    /// <summary>
+    /// checksum 口径门禁：信封 JSON 中 data 成员的线上原始字节即哈希输入——
+    /// JsonElement.WriteTo 逐位透传规范化编码字节，客户端可对同区间字节直接复算 SHA-256，
+    /// 无需 Base64 往返且不存在序列化口径分叉。
+    /// </summary>
+    [Fact]
+    public void Snapshot_SectionDataWireBytes_ReproduceSectionChecksum()
+    {
+        var playerId = Guid.NewGuid();
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), "校验", DateTimeOffset.UtcNow, "fp");
+        var runtime = new PlayerRuntimeSnapshot(playerId, aggregate.AccountId.Value.ToString("D"), aggregate.DisplayName, 1, aggregate.LastSimulatedAt, aggregate.ExportState(), 0, []);
+        var dto = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", GameDataCatalog.BuiltIn);
+
+        var frame = WireEnvelopeCodec.EncodeJson(WireMessageType.Snapshot, Guid.NewGuid(), 1, dto);
+        var envelope = WireEnvelopeCodec.Decode(frame);
+        using var document = JsonDocument.Parse(envelope.Payload);
+        var wireSections = document.RootElement.GetProperty("sections");
+        Assert.Equal(dto.Sections.Count, wireSections.GetArrayLength());
+        for (var i = 0; i < dto.Sections.Count; i++)
+        {
+            var wireDataBytes = System.Text.Encoding.UTF8.GetBytes(wireSections[i].GetProperty("data").GetRawText());
+            Assert.Equal(dto.Sections[i].Checksum, Convert.ToHexStringLower(SHA256.HashData(wireDataBytes)));
+        }
     }
     /// <summary>资产 diff 只携带相对基线变化的条目；基线一致为空、无基线回退全量。</summary>
 
@@ -91,8 +119,8 @@ public sealed class ProtocolSnapshotMapperTests
     [Fact]
     public void DiffSections_CarriesOnlySectionsWithModifiedChecksum()
     {
-        var section1 = new PlayerSectionDto("progression", 1, 1, "json", "payload1", 10, 10, "checksum_prog_1", DateTimeOffset.UtcNow);
-        var section2 = new PlayerSectionDto("world", 1, 1, "json", "payload2", 10, 10, "checksum_world_1", DateTimeOffset.UtcNow);
+        var section1 = new PlayerSectionDto("progression", 1, 1, JsonDocument.Parse("{}").RootElement, "checksum_prog_1", DateTimeOffset.UtcNow);
+        var section2 = new PlayerSectionDto("world", 1, 1, JsonDocument.Parse("{}").RootElement, "checksum_world_1", DateTimeOffset.UtcNow);
         var sections = new List<PlayerSectionDto> { section1, section2 };
 
         var baseline = new Dictionary<string, string>
@@ -174,9 +202,7 @@ public sealed class ProtocolSnapshotMapperTests
         var snapshot = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData);
 
         var actionSection = Assert.Single(snapshot.Sections, s => s.Section == PlayerSectionKinds.ActionQueue);
-        var json = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(actionSection.PayloadBase64));
-        using var doc = JsonDocument.Parse(json);
-        var item = doc.RootElement[0];
+        var item = actionSection.Data[0];
 
         Assert.Equal("收集 晨露", item.GetProperty("actionName").GetString());
         Assert.Equal("exploration", item.GetProperty("actionType").GetString());

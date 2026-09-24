@@ -384,14 +384,15 @@ export class GameClient {
         }
         case WireMessageType.Snapshot: {
           const dto = decodeJsonPayload<PlayerSnapshotDto>(envelope)
-          const snapshot = await decodePlayerSnapshotDto(dto, this.account)
+          // 传入信封原始字节：section checksum 校验直接对线上 data 成员字节区间复算。
+          const snapshot = await decodePlayerSnapshotDto(dto, envelope.payload, this.account)
           useGameStore.getState().applySnapshot(snapshot)
           break
         }
         case WireMessageType.SnapshotDelta: {
           const dto = decodeJsonPayload<PlayerSnapshotDeltaDto>(envelope)
           const current = useGameStore.getState().toSnapshotView()
-          const patch = await decodePlayerSnapshotDeltaDto(dto, current)
+          const patch = await decodePlayerSnapshotDeltaDto(dto, current, envelope.payload)
           useGameStore.getState().applyPatch(patch)
           break
         }
@@ -403,7 +404,8 @@ export class GameClient {
           window.clearTimeout(timer)
           this.pendingRequests.delete(result.requestId)
           if (isPlayerSnapshotDto(result.payload)) {
-            const snapshot = await decodePlayerSnapshotDto(result.payload, this.account)
+            // 内嵌快照的 sections 位于信封 JSON 的 payload 成员内，按路径定位 data 字节区间。
+            const snapshot = await decodePlayerSnapshotDto(result.payload, envelope.payload, this.account, ['payload', 'sections'])
             useGameStore.getState().applySnapshot(snapshot)
           }
           if (result.message) useGameStore.getState().setNotice(result.message)

@@ -142,15 +142,12 @@ export interface PlayerSectionDto {
   sectionVersion: number
   /** 分段载荷结构版本 */
   schemaVersion: number
-  /** 分段载荷编码标识（当前为 JSON 文本编码名） */
-  codec: string
-  /** Base64 编码的分段业务载荷 */
-  payloadBase64: string
-  /** 解码前原始字节数 */
-  rawBytes: number
-  /** 服务端落库字节数 */
-  storedBytes: number
-  /** 分段校验和 */
+  /**
+   * 分段业务载荷：规范化 JSON 直接内嵌（替代旧 Base64 二次编码）。
+   * 信封 JSON 中该成员的原始字节区间即 checksum 哈希输入，解码器对线上字节逐位复算。
+   */
+  data: unknown
+  /** 分段校验和（规范化 JSON 字节的 SHA-256 小写 hex） */
   checksum: string
   updatedAt: string
 }

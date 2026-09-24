@@ -369,20 +369,15 @@ public sealed record PlayerHeadDto(
 /// <param name="Section">分段标识名</param>
 /// <param name="SectionVersion">分段数据版本号</param>
 /// <param name="SchemaVersion">分段 schema 版本号</param>
-/// <param name="Codec">负载编码格式</param>
-/// <param name="PayloadBase64">Base64 编码的原始负载</param>
-/// <param name="RawBytes">原始未压缩字节数</param>
-/// <param name="StoredBytes">存储压缩字节数</param>
-/// <param name="Checksum">数据校验和</param>
+/// <param name="Data">分段业务载荷（规范化 JSON 直接内嵌，不再走 Base64 字节二次编码）；
+/// JsonElement.WriteTo 按原始文本透传，信封中该成员的字节区间即 <paramref name="Checksum"/> 哈希输入，客户端可逐字节复算</param>
+/// <param name="Checksum">规范化 JSON 字节的 SHA-256（小写 hex）</param>
 /// <param name="UpdatedAt">分段更新时间</param>
 public sealed record PlayerSectionDto(
     string Section,
     long SectionVersion,
     int SchemaVersion,
-    string Codec,
-    string PayloadBase64,
-    int RawBytes,
-    int StoredBytes,
+    JsonElement Data,
     string Checksum,
     DateTimeOffset UpdatedAt);
 

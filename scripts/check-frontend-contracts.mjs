@@ -10,8 +10,10 @@ const server = await createServer({ root: new URL('../frontend', import.meta.url
 try {
   const { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } = await server.ssrLoadModule('/src/network/snapshot.ts')
   if (process.argv[2]) {
-    const fixture = JSON.parse(await readFile(process.argv[2], 'utf8'))
-    const decoded = await decodePlayerSnapshotDto(fixture)
+    // fixture 文件字节即信封 JSON 原始字节：section data 区间校验按线上字节逐位复算。
+    const fixtureBytes = await readFile(process.argv[2])
+    const fixture = JSON.parse(fixtureBytes.toString('utf8'))
+    const decoded = await decodePlayerSnapshotDto(fixture, fixtureBytes)
     assert.equal(decoded.combat.learnedAbilityIds[0], 'ability.heavy-slash')
     assert.equal(decoded.combat.abilitySlots[0].abilityId, 'ability.heavy-slash')
     assert.ok(decoded.combatAttributes.hpRegenPerFiveSeconds > 0)
@@ -36,15 +38,16 @@ try {
       drops: [{ itemId: 'item.loot', dropChance: 0.5, minQuantity: 1, maxQuantity: 3 }],
     }],
   }
-  const bytes = Buffer.from(JSON.stringify(payload))
+  // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 3, sectionVersion: 1, codec: 'json',
-    payloadBase64: bytes.toString('base64'), storedBytes: bytes.length, rawBytes: bytes.length,
-    checksum: createHash('sha256').update(bytes).digest('hex'),
+    section: 'world', schemaVersion: 3, sectionVersion: 1,
+    data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
+    updatedAt: '2026-09-14T00:00:05Z',
   }
   const current = { playerId: 'player.test', serverTimeUnixSeconds: 1 }
   const delta = { playerId: current.playerId, stateVersion: 2, lastSimulatedAt: '2026-09-14T00:00:05Z', changedSections: [section] }
-  const patch = await decodePlayerSnapshotDeltaDto(delta, current)
+  const deltaBytes = Buffer.from(JSON.stringify(delta))
+  const patch = await decodePlayerSnapshotDeltaDto(delta, current, deltaBytes)
   assert.deepEqual(patch.world.availableActionIds, payload.availableActionIds)
   assert.deepEqual(patch.world.encounterIds, payload.encounterIds)
   assert.deepEqual(patch.world.npcs, payload.npcs)
@@ -57,7 +60,7 @@ try {
   assert.equal(patch.world.monsters[0].drops[0].minQuantity, 1)
   assert.equal(patch.world.monsters[0].drops[0].maxQuantity, 3)
   assert.equal(patch.serverTimeUnixSeconds, Date.parse(delta.lastSimulatedAt) / 1000)
-  await assert.rejects(decodePlayerSnapshotDeltaDto({ ...delta, lastSimulatedAt: undefined }, current), /lastSimulatedAt/)
+  await assert.rejects(decodePlayerSnapshotDeltaDto({ ...delta, lastSimulatedAt: undefined }, current, deltaBytes), /lastSimulatedAt/)
   assert.deepEqual(parseCsvToMap('key,zh_source,translation\ncommon.confirm,确认,"Confirm, now"\ncommon.cancel,取消,\n'), { 'common.confirm': 'Confirm, now' })
   assert.throws(() => parseCsvToMap('key,translation\ncommon.confirm,"broken"suffix'), /分隔符/)
   assert.ok(!LOCALES.includes('template'))
