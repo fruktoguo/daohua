@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Domain.Player;
 using Domain.Combat;
 using Domain.Simulation;
@@ -68,6 +69,12 @@ public sealed class PlayerRuntime(
 
     /// <summary>每玩家战报日志环形缓冲容量：保留最近 200 条用于重连回放。</summary>
     private const int LogBufferCapacity = 200;
+
+    /// <summary>
+    /// 刷盘 sweep 的有界并发度：单 actor 落盘以数据库往返为主，8 路并行把一轮墙钟从
+    /// 「串行总和」压到「按批排队」，又不至于挤占命令/推进链路的数据库连接余量。
+    /// </summary>
+    private const int FlushSweepMaxConcurrency = 8;
 
     /// <summary>当前已加载并在内存中活跃的玩家 Actor 实例数</summary>
     public int LoadedCount => _actors.Count;
@@ -272,17 +279,53 @@ public sealed class PlayerRuntime(
 
     /// <summary>
     /// 对全部已加载玩家执行一次脏 section 落盘；force 为 true 时忽略每段 15 秒最小脏龄门槛。
+    /// 落盘是纯持久化动作、无跨玩家语义：不同 actor 之间按 <see cref="FlushSweepMaxConcurrency"/>
+    /// 有界并发并行（同一 actor 内部仍由 _gate 单写者串行）。单 actor 失败不拖垮整轮——
+    /// 其余玩家照常落盘，错误收拢后在整轮结束统一抛出，交由宿主按既有节奏节流重试。
+    /// 推进 sweep（AdvanceAllAsync）刻意保持串行：弃战路由与斗法撮合会跨 actor 改写状态，
+    /// 串行枚举保证「先处理者的判负/挂载对后处理者的本拍推进可见」这一既有次序。
     /// </summary>
     /// <param name="force">是否强制写全部脏段；周期刷新传 false，进程退出传 true。</param>
     /// <param name="cancellationToken">取消标记。</param>
     public async ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default)
     {
+        // 物化本轮落盘目标：枚举期间新加载的 actor 留待下一轮，被移除的仍收到一次落盘尝试——
+        // 与旧串行枚举「枚举到谁处理谁」的边界一致。
+        var entries = new List<KeyValuePair<Guid, Lazy<Task<PlayerActor>>>>(_actors.Count);
         foreach (var entry in _actors)
         {
-            if (!entry.Value.IsValueCreated) continue;
-            var actor = await AwaitActorAsync(entry.Key, entry.Value, cancellationToken);
-            await actor.FlushAsync(force, cancellationToken);
+            if (entry.Value.IsValueCreated) entries.Add(entry);
         }
+        if (entries.Count == 0) return;
+
+        var failures = new ConcurrentQueue<Exception>();
+        await Parallel.ForEachAsync(
+            entries,
+            new ParallelOptions { MaxDegreeOfParallelism = FlushSweepMaxConcurrency, CancellationToken = cancellationToken },
+            async (entry, token) =>
+            {
+                try
+                {
+                    var actor = await AwaitActorAsync(entry.Key, entry.Value, token);
+                    await actor.FlushAsync(force, token);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    // 宿主停止：直接传播取消，保持旧串行循环的快速退出语义。
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    // 单 actor 落盘失败仅收拢不阻断本轮其余玩家（含 actor 中途被移除等竞态）。
+                    failures.Enqueue(exception);
+                }
+            });
+
+        if (failures.IsEmpty) return;
+        // 异常上抛语义与旧串行版本一致（宿主记录并延后重试）：单失败原样重抛，多失败聚合。
+        if (failures.Count == 1 && failures.TryDequeue(out var single))
+            ExceptionDispatchInfo.Capture(single).Throw();
+        throw new AggregateException(failures);
     }
 
     /// <summary>推进当前已加载玩家的确定性模拟；只在状态实际变化时向在线会话广播增量。</summary>

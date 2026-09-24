@@ -1,10 +1,14 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using Domain.Combat;
 using Domain.Common;
+using Domain.Economy;
 using Domain.GameData;
 using Domain.Player;
+using Domain.Simulation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
 using Server.Clean;
-using System.Text.Json;
 using StoredHead = Domain.Persistence.PlayerStateHead;
 using Xunit;
 
@@ -867,6 +871,131 @@ public sealed class PlayerRuntimeTests
         Assert.Empty(runtime.GetRecentLogEvents(playerId));
     }
 
+    /// <summary>
+    /// 刷盘 sweep 有界并行：12 名在线玩家同时落盘，观测在途并发实际大于 1 且恒不超过并发上限，
+    /// 一轮落盘的并行度由 FlushSweepMaxConcurrency 封顶而不是串行总和。
+    /// </summary>
+    [Fact]
+    public async Task FlushAllAsyncRunsWithBoundedParallelism()
+    {
+        var playerIds = Enumerable.Range(0, 12).Select(_ => Guid.NewGuid()).ToArray();
+        var repository = new SweepStateRepository(playerIds.ToDictionary(id => id, id => EmptyPlayerBundle(id, "并发落盘")))
+        {
+            EnqueueDelay = TimeSpan.FromMilliseconds(150)
+        };
+        await using var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+        foreach (var playerId in playerIds) await runtime.LoadAsync(playerId);
+
+        await runtime.FlushAllAsync(true);
+
+        Assert.Equal(playerIds.Length, repository.EnqueueCalls.Count);
+        foreach (var playerId in playerIds) Assert.True(repository.EnqueueCalls.ContainsKey(playerId));
+        // 并发上限与 PlayerRuntime.FlushSweepMaxConcurrency（8）一致：
+        // 低于 2 说明退化为串行，超过上限说明有界并发失效。
+        Assert.InRange(repository.MaxInFlight, 2, 8);
+    }
+
+    /// <summary>
+    /// 刷盘 sweep 单 actor 失败不拖垮整轮：失败玩家的异常照常上抛（单失败保持原异常类型），
+    /// 其余玩家的分段仍完成 durable 入队，下一轮可重试。
+    /// </summary>
+    [Fact]
+    public async Task FlushAllAsyncCollectsActorFailureWithoutBlockingOthers()
+    {
+        var playerIds = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        var repository = new SweepStateRepository(playerIds.ToDictionary(id => id, id => EmptyPlayerBundle(id, "失败隔离")))
+        {
+            FailingPlayerId = playerIds[1]
+        };
+        await using var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+            GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+        foreach (var playerId in playerIds) await runtime.LoadAsync(playerId);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.FlushAllAsync(true).AsTask());
+
+        // 三个 actor 都收到了落盘尝试；成功两人的分段已入队，失败玩家未留下半截写入。
+        Assert.Equal(playerIds.Length, repository.EnqueueCalls.Count);
+        Assert.Contains(repository.Enqueued, write => write.PlayerId == playerIds[0]);
+        Assert.Contains(repository.Enqueued, write => write.PlayerId == playerIds[2]);
+        Assert.DoesNotContain(repository.Enqueued, write => write.PlayerId == playerIds[1]);
+    }
+
+    /// <summary>
+    /// 推进 sweep 保持串行撮合时序：匹配等待的寻求者与实力带内候选在同一拍内完成预约与挂载，
+    /// 双方共享同一 duelId 进入 Duel 相位；重跑同一场景配对结果一致。
+    /// </summary>
+    [Fact]
+    public async Task AdvanceAllAsyncDuelMatchingPairsSeekerWithCandidateDeterministically()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        for (var run = 0; run < 3; run++)
+        {
+            var seekerId = Guid.NewGuid();
+            var candidateId = Guid.NewGuid();
+            var repository = new SweepStateRepository(new Dictionary<Guid, PlayerStateBundle>
+            {
+                [seekerId] = PendingDuelSeekerBundle(seekerId, "寻斗者", catalog),
+                [candidateId] = SearchingDuelCandidateBundle(candidateId, "应战者", catalog)
+            });
+            await using var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+                catalog, NullLogger<PlayerRuntime>.Instance);
+            await runtime.LoadAsync(seekerId);
+            await runtime.LoadAsync(candidateId);
+
+            await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow);
+
+            var seeker = await runtime.LoadAsync(seekerId);
+            var candidate = await runtime.LoadAsync(candidateId);
+            Assert.Equal(CombatExpeditionPhase.Duel, seeker.State.Actions[0].Expedition?.Phase);
+            Assert.Equal(CombatExpeditionPhase.Duel, candidate.State.Actions[0].Expedition?.Phase);
+            Assert.NotNull(seeker.State.Duel.ActiveDuelId);
+            Assert.Equal(seeker.State.Duel.ActiveDuelId, candidate.State.Duel.ActiveDuelId);
+        }
+    }
+
+    /// <summary>
+    /// 多寻求者竞争同一候选池时串行撮合次序成立：一轮 sweep 至多产出一对共享 duelId 的斗法，
+    /// 未配对的第三方不被重复消耗（候选一次只属一场撮合，落选寻求者回退正常波次）。
+    /// </summary>
+    [Fact]
+    public async Task AdvanceAllAsyncContendedSeekersYieldSingleDuelPair()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        for (var run = 0; run < 3; run++)
+        {
+            var seeker1Id = Guid.NewGuid();
+            var seeker2Id = Guid.NewGuid();
+            var candidateId = Guid.NewGuid();
+            var repository = new SweepStateRepository(new Dictionary<Guid, PlayerStateBundle>
+            {
+                [seeker1Id] = PendingDuelSeekerBundle(seeker1Id, "寻斗者甲", catalog),
+                [seeker2Id] = PendingDuelSeekerBundle(seeker2Id, "寻斗者乙", catalog),
+                [candidateId] = SearchingDuelCandidateBundle(candidateId, "应战者", catalog)
+            });
+            await using var runtime = new PlayerRuntime(repository, new EmptyAssetRepository(), new NoopEconomyRepository(),
+                catalog, NullLogger<PlayerRuntime>.Instance);
+            await runtime.LoadAsync(seeker1Id);
+            await runtime.LoadAsync(seeker2Id);
+            await runtime.LoadAsync(candidateId);
+
+            await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow);
+
+            var states = new[]
+            {
+                await runtime.LoadAsync(seeker1Id),
+                await runtime.LoadAsync(seeker2Id),
+                await runtime.LoadAsync(candidateId)
+            };
+            var duelers = states.Where(state => state.State.Actions[0].Expedition?.Phase == CombatExpeditionPhase.Duel).ToArray();
+            Assert.Equal(2, duelers.Length);
+            Assert.NotNull(duelers[0].State.Duel.ActiveDuelId);
+            Assert.Equal(duelers[0].State.Duel.ActiveDuelId, duelers[1].State.Duel.ActiveDuelId);
+            var unmatched = Assert.Single(states, state => state.State.Actions[0].Expedition?.Phase != CombatExpeditionPhase.Duel);
+            Assert.Null(unmatched.State.Duel.ActiveDuelId);
+        }
+    }
+
     /// <summary>构造物品处置测试目录：含可回收草药、无价物品与一件装备原始定义。</summary>
     private static GameDataCatalog CreateDisposalCatalog() => GameDataCatalog.Parse([System.Text.Encoding.UTF8.GetBytes("""
         [
@@ -885,6 +1014,65 @@ public sealed class PlayerRuntimeTests
             new StoredHead(playerId, 0, 1, createdAt, string.Empty, string.Empty, createdAt),
             new Dictionary<string, StoredSection>(),
             []));
+    }
+
+    /// <summary>构造仅含空头、无分段的全新玩家持久化包（多玩家仓库用）。</summary>
+    private static PlayerStateBundle EmptyPlayerBundle(Guid playerId, string name)
+    {
+        var createdAt = DateTimeOffset.UtcNow;
+        return new PlayerStateBundle(
+            new PlayerIdentity(playerId, Guid.NewGuid(), name, createdAt),
+            new StoredHead(playerId, 0, 1, createdAt, string.Empty, string.Empty, createdAt),
+            new Dictionary<string, StoredSection>(), []);
+    }
+
+    /// <summary>把内存聚合编码成可加载的持久化包（全分段 + 校验头）。</summary>
+    private static PlayerStateBundle PersistedBundle(Guid playerId, PlayerAggregate aggregate, DateTimeOffset createdAt)
+    {
+        var storedAt = DateTimeOffset.UtcNow;
+        var writes = SectionCodec.EncodeAggregate(aggregate, storedAt, aggregate.StateVersion);
+        var sections = writes.ToDictionary(
+            write => write.SectionKind,
+            write => new StoredSection(write.PlayerId, write.SectionKind, write.StateVersion, write.SchemaVersion,
+                write.Codec, write.Payload.ToArray(), write.RawBytes, write.Checksum, write.UpdatedAt),
+            StringComparer.Ordinal);
+        return new PlayerStateBundle(
+            new PlayerIdentity(playerId, aggregate.AccountId.Value, aggregate.DisplayName, createdAt),
+            new StoredHead(playerId, aggregate.StateVersion, SectionCodec.CurrentSchemaVersion, aggregate.LastSimulatedAt,
+                aggregate.GameDataFingerprint, SectionCodec.ComputeHeadChecksum(sections.Values), storedAt),
+            sections, []);
+    }
+
+    /// <summary>
+    /// 构造一名已推进到斗法匹配等待相位的持久化玩家：勾选斗法的讨伐行动 + 预置遭遇计数，
+    /// 推进越过首个搜寻边界后停在 DuelPending（搜寻等待 20s，+30s 必达）。
+    /// </summary>
+    private static PlayerStateBundle PendingDuelSeekerBundle(Guid playerId, string name, GameDataCatalog catalog)
+    {
+        var createdAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), name, createdAt, catalog.Fingerprint);
+        aggregate.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, null, null, true), createdAt, catalog.Actions);
+        aggregate.Duel.EncounterCharges = 1;
+        SimulationEngine.AdvanceTo(aggregate, createdAt.AddSeconds(30), catalog,
+            new AssetWallet(new PlayerId(playerId)), new DuelAdvanceOptions(MatchingEnabled: true));
+        Assert.Equal(CombatExpeditionPhase.DuelPending, aggregate.Actions[0].Expedition?.Phase);
+        return PersistedBundle(playerId, aggregate, createdAt);
+    }
+
+    /// <summary>
+    /// 构造一名仍在搜寻相位、持有遭遇计数的持久化玩家（撮合池中的应战候选）：
+    /// 只推进 3s，加载补算后也到不了首个搜寻边界，保持非等待相位。
+    /// </summary>
+    private static PlayerStateBundle SearchingDuelCandidateBundle(Guid playerId, string name, GameDataCatalog catalog)
+    {
+        var createdAt = DateTimeOffset.UtcNow.AddSeconds(-10);
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), name, createdAt, catalog.Fingerprint);
+        aggregate.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1, null, null, true), createdAt, catalog.Actions);
+        aggregate.Duel.EncounterCharges = 1;
+        SimulationEngine.AdvanceTo(aggregate, createdAt.AddSeconds(3), catalog,
+            new AssetWallet(new PlayerId(playerId)), new DuelAdvanceOptions(MatchingEnabled: true));
+        Assert.Equal(CombatExpeditionPhase.InitialSearch, aggregate.Actions[0].Expedition?.Phase);
+        return PersistedBundle(playerId, aggregate, createdAt);
     }
 
     /// <summary>内存假玩家状态仓库：记录入队的分段与命令回执供断言。</summary>
@@ -997,5 +1185,58 @@ public sealed class PlayerRuntimeTests
             return ValueTask.FromResult(true);
         }
         public ValueTask ReleaseAsync(Guid playerId, Guid ownerInstanceId, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// 多玩家内存假仓库：按 playerId 分发持久化包；统计每玩家落盘调用次数与
+    /// 最大在途并发（供有界并行断言），可按玩家注入落盘延迟与失败。
+    /// </summary>
+    private sealed class SweepStateRepository(IReadOnlyDictionary<Guid, PlayerStateBundle> bundles) : IPlayerStateRepository
+    {
+        private readonly object _gate = new();
+        private int _inFlight;
+
+        /// <summary>EnqueueSectionsAsync 观察到的最大同时在途调用数。</summary>
+        public int MaxInFlight;
+        /// <summary>每次入队前的人工延迟，用于放大并发窗口。</summary>
+        public TimeSpan EnqueueDelay = TimeSpan.Zero;
+        /// <summary>命中该玩家的入队调用一律抛 InvalidOperationException。</summary>
+        public Guid? FailingPlayerId;
+        /// <summary>每玩家被尝试入队的次数（含失败尝试）。</summary>
+        public ConcurrentDictionary<Guid, int> EnqueueCalls { get; } = new();
+        /// <summary>已成功入队的分段写。</summary>
+        public List<SectionWrite> Enqueued { get; } = [];
+
+        public ValueTask<PlayerStateBundle?> LoadAsync(Guid playerId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(bundles.TryGetValue(playerId, out var bundle) ? bundle : null);
+
+        public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, CancellationToken cancellationToken = default) =>
+            EnqueueCoreAsync(sections, [], cancellationToken);
+
+        public ValueTask EnqueueSectionsAsync(IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken = default) =>
+            EnqueueCoreAsync(sections, receipts, cancellationToken);
+
+        private async ValueTask EnqueueCoreAsync(IReadOnlyCollection<SectionWrite> sections, IReadOnlyCollection<CommandReceipt> receipts, CancellationToken cancellationToken)
+        {
+            var playerId = sections.Count > 0 ? sections.First().PlayerId : receipts.First().PlayerId;
+            var arrived = Interlocked.Increment(ref _inFlight);
+            int observed;
+            do { observed = Volatile.Read(ref MaxInFlight); }
+            while (arrived > observed && Interlocked.CompareExchange(ref MaxInFlight, arrived, observed) != observed);
+            try
+            {
+                if (EnqueueDelay > TimeSpan.Zero) await Task.Delay(EnqueueDelay, cancellationToken);
+                EnqueueCalls.AddOrUpdate(playerId, 1, (_, count) => count + 1);
+                if (FailingPlayerId == playerId) throw new InvalidOperationException("模拟落盘失败。");
+                lock (_gate) Enqueued.AddRange(sections);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inFlight);
+            }
+        }
+
+        public ValueTask<FlushBatchResult> FlushPendingAsync(int maxRows, TimeSpan lease, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new FlushBatchResult(0, 0, 0, TimeSpan.Zero));
     }
 }
