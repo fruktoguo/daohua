@@ -304,6 +304,41 @@ public sealed class PostgresMarketRepository(
         CloseOrderAsync(orderId, ownerPlayerId, options.MarketPartitionId, fenceToken,
             $"market-expire:{ownerPlayerId:D}:{orderId:D}", cutoff, cancellationToken);
 
+    /// <summary>
+    /// 到期关单合批：单个 Serializable 事务内按传入次序逐笔完成幂等检查、订单校验、
+    /// 冻结退款、流水追加与关单更新；任一笔不可关闭则整批回滚返回 false。
+    /// 逐笔执行顺序与退款顺序和原独立事务路径完全一致，仅事务边界收敛为一次提交。
+    /// </summary>
+    /// <param name="orders">到期订单目标列表（订单标识与属主玩家）。</param>
+    /// <param name="fenceToken">当前持有的分片租约 fence。</param>
+    /// <param name="cutoff">到期判定截止时刻；expires_at 晚于该时刻的订单不关闭。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>整批提交成功返回 true，任一订单不可关闭返回 false。</returns>
+    public async ValueTask<bool> ExpireBatchAsync(
+        IReadOnlyList<MarketExpiryOrder> orders,
+        long fenceToken,
+        DateTimeOffset cutoff,
+        CancellationToken cancellationToken = default)
+    {
+        if (orders is null || orders.Count == 0) return true;
+        if (fenceToken <= 0) throw new ArgumentOutOfRangeException(nameof(fenceToken));
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await EnsureLeaseAsync(connection, transaction, options.MarketPartitionId, fenceToken, cancellationToken);
+        foreach (var target in orders)
+        {
+            var canonicalIdempotencyKey = $"market-expire:{target.OwnerPlayerId:D}:{target.OrderId:D}";
+            if (!await CloseOrderCoreAsync(connection, transaction, target.OrderId, target.OwnerPlayerId,
+                    canonicalIdempotencyKey, cutoff, cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
     private async ValueTask<bool> CloseOrderAsync(Guid orderId, Guid ownerPlayerId, int partitionId, long fenceToken,
         string idempotencyKey, DateTimeOffset? expirationCutoff, CancellationToken cancellationToken)
     {
@@ -317,17 +352,37 @@ public sealed class PostgresMarketRepository(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         await EnsureLeaseAsync(connection, transaction, partitionId, fenceToken, cancellationToken);
-        if (await HasEconomyTransactionAsync(connection, transaction, canonicalIdempotencyKey, ownerPlayerId, cancellationToken))
+        if (!await CloseOrderCoreAsync(connection, transaction, orderId, ownerPlayerId, canonicalIdempotencyKey, expirationCutoff, cancellationToken))
         {
-            await transaction.CommitAsync(cancellationToken);
-            return true;
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
         }
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    /// <summary>
+    /// 关单事务体（撤单/到期共用）：在已持有 Serializable 事务与租约校验的连接上，
+    /// 完成幂等短路、订单行锁校验、冻结退款、流水追加与状态更新。
+    /// 返回 false 表示订单不可关闭（不存在/属主不符/非活动/未到期），由调用方决定回滚。
+    /// </summary>
+    private async Task<bool> CloseOrderCoreAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid orderId,
+        Guid ownerPlayerId,
+        string canonicalIdempotencyKey,
+        DateTimeOffset? expirationCutoff,
+        CancellationToken cancellationToken)
+    {
+        if (await HasEconomyTransactionAsync(connection, transaction, canonicalIdempotencyKey, ownerPlayerId, cancellationToken))
+            return true;
         await using var order = new NpgsqlCommand("""
             SELECT owner_player_id, side, asset_id, variant, status, expires_at
             FROM market.orders WHERE order_id = $1 AND partition_id = $2 FOR UPDATE
             """, connection, transaction);
         order.Parameters.Add(new NpgsqlParameter { Value = orderId });
-        order.Parameters.Add(new NpgsqlParameter { Value = partitionId });
+        order.Parameters.Add(new NpgsqlParameter { Value = options.MarketPartitionId });
         var orderOwnerId = Guid.Empty;
         var side = string.Empty;
         var assetId = string.Empty;
@@ -349,16 +404,10 @@ public sealed class PostgresMarketRepository(
             }
         }
         if (!orderFound)
-        {
-            await transaction.RollbackAsync(cancellationToken);
             return false;
-        }
         if (orderOwnerId != ownerPlayerId || status is not ("active" or "partially_filled")
             || (expirationCutoff.HasValue && expiresAt > expirationCutoff.Value))
-        {
-            await transaction.RollbackAsync(cancellationToken);
             return false;
-        }
 
         // 以冻结表中的真实余量退款；买单可能以更低的 maker 价成交，不能用限价反推。
         var releaseAsset = side.Equals("buy", StringComparison.OrdinalIgnoreCase) ? CoinsAsset : assetId;
@@ -388,7 +437,6 @@ public sealed class PostgresMarketRepository(
             reservation.Parameters.Add(new NpgsqlParameter { Value = orderId });
             await reservation.ExecuteNonQueryAsync(cancellationToken);
         }
-        await transaction.CommitAsync(cancellationToken);
         return true;
     }
 
@@ -849,6 +897,11 @@ public sealed class PostgresMarketRepository(
             throw new ArgumentException("成交参数无效。", nameof(fill));
     }
 }
+
+/// <summary>到期合批关单的目标订单（由内存盘口到期索引收集）。</summary>
+/// <param name="OrderId">订单唯一标识。</param>
+/// <param name="OwnerPlayerId">订单属主玩家。</param>
+public sealed record MarketExpiryOrder(Guid OrderId, Guid OwnerPlayerId);
 
 /// <summary>分片租约 fence 校验失败时抛出：当前实例已不再是该分片的合法写者，必须中止本次账本写入。</summary>
 /// <param name="partitionId">丢失租约的分片。</param>

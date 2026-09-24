@@ -90,6 +90,50 @@ public sealed class MarketPersistenceTests
         }
     }
 
+    /// <summary>
+    /// 租约重获回归：写路径命中失效 fence 立即降级 fail-closed（写请求被拒、IsReady 回落）；
+    /// 抢占方租约自然过期后，监管循环自动重获租约并重建盘口恢复写能力，无需进程重启。
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task LeaseLossTriggersFailClosedThenAutoRecovery()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场租约重获测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = connectionString,
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var seller = PlayerId.New();
+        await Seed(source, seller.Value, "item.market-recover", 10);
+        var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+        var instrument = new MarketInstrument(new ItemId("item.market-recover"));
+        await using var runtime = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await runtime.StartAsync(default);
+        Assert.True(runtime.IsReady);
+
+        // 模拟其他实例抢占写者租约：owner 换人且 fence 前移，本实例持有的 fence 立即失效。
+        var usurper = Guid.NewGuid();
+        await Sql(source, "UPDATE market.partition_leases SET owner_instance_id=$1, fence_token=fence_token+100, expires_at=now()+interval '30 seconds' WHERE partition_id=$2", usurper, options.MarketPartitionId);
+        var order = new PlaceOrderRequest(OrderId.New(), seller, instrument, MarketSide.Sell, 10, 1, DateTimeOffset.UtcNow, new IdempotencyKey(Guid.NewGuid().ToString()));
+        await Assert.ThrowsAsync<MarketLeaseLostException>(async () => await runtime.PlaceAsync(order));
+        Assert.False(runtime.IsReady);
+
+        // 抢占方租约不归还期间保持 fail-closed；其过期后监管循环重获写权并恢复就绪。
+        await Sql(source, "UPDATE market.partition_leases SET expires_at=now()-interval '1 second' WHERE partition_id=$1", options.MarketPartitionId);
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(60);
+        while (!runtime.IsReady && DateTimeOffset.UtcNow < deadline)
+            await Task.Delay(250);
+        Assert.True(runtime.IsReady);
+
+        // 恢复后原请求可重新提交：订单落库且冻结资产按正常路径扣除。
+        var result = await runtime.PlaceAsync(order);
+        Assert.Equal(MarketOrderStatus.Active, result.IncomingOrder.Status);
+        Assert.Equal(9d, await Balance(source, seller.Value, "item.market-recover"));
+        await runtime.StopAsync(default);
+    }
+
     /// <summary>造数：建账号、建玩家并预置一笔资产余额。</summary>
     private static async Task Seed(NpgsqlDataSource source, Guid playerId, string asset, double amount)
     {
