@@ -281,17 +281,45 @@ public sealed class CombatantState
     /// <summary>参与目标抽取的有效威胁值：Threat ×(1 + (面板威胁增幅 + 嘲讽修正 + 战内 Buff 威胁)/100)。</summary>
     public double EffectiveThreat => Threat * Math.Max(0, 1 + (Stats.ThreatBonusPoints + ThreatBonusPoints + BuffThreatPoints) / 100);
     /// <summary>战内 Buff 合计攻击速度点数。</summary>
-    internal double BuffAttackSpeedPoints => Buffs.Sum(buff => buff.AttackSpeedPoints * buff.Stacks);
+    internal double BuffAttackSpeedPoints
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].AttackSpeedPoints * Buffs[i].Stacks;
+            return total;
+        }
+    }
     /// <summary>战内 Buff 合计免伤点数（与面板免伤同乘区）。</summary>
-    internal double BuffAbsorptionPoints => Buffs.Sum(buff => buff.DamageAbsorptionPoints * buff.Stacks);
+    internal double BuffAbsorptionPoints
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].DamageAbsorptionPoints * Buffs[i].Stacks;
+            return total;
+        }
+    }
     /// <summary>战内 Buff 合计威胁增幅点数。</summary>
-    internal double BuffThreatPoints => Buffs.Sum(buff => buff.ThreatPoints * buff.Stacks);
+    internal double BuffThreatPoints
+    {
+        get
+        {
+            var total = 0d;
+            for (var i = 0; i < Buffs.Count; i++) total += Buffs[i].ThreatPoints * Buffs[i].Stacks;
+            return total;
+        }
+    }
 
     /// <summary>Buff 层数求值：战内 Buff 层数 + 宿主注入的战外视图；buffId 为 null 时合计全部层数。</summary>
     internal double BuffStacks(string? buffId)
-        => (buffId is null ? Buffs.Sum(buff => buff.Stacks)
-                : Buffs.Where(buff => buff.BuffId == buffId).Sum(buff => buff.Stacks))
-            + (ExternalBuffStacks?.Invoke(buffId) ?? 0);
+    {
+        // 按列表原序累加，与原 LINQ Where+Sum 的累加序位级一致。
+        var total = 0d;
+        for (var i = 0; i < Buffs.Count; i++)
+            if (buffId is null || Buffs[i].BuffId == buffId) total += Buffs[i].Stacks;
+        return total + (ExternalBuffStacks?.Invoke(buffId) ?? 0);
+    }
 }
 
 /// <summary>战斗单位可持久化的运行时快照。</summary>
@@ -363,6 +391,9 @@ public sealed class CombatEncounterState
     public double PlayerRespawnAtSeconds { get; internal set; } = double.PositiveInfinity;
     /// <summary>倒地窗口判定：玩家已阵亡且存在待触发复活点（仅原地复活模式可达）。</summary>
     public bool IsPlayerDowned => !Player.IsAlive && double.IsFinite(PlayerRespawnAtSeconds);
+    /// <summary>玩家方友方列表的会话缓存：玩家独自成军恒定 [Player]，出手边界每帧复用免分配。</summary>
+    private CombatantState[]? _playerAllies;
+    internal IReadOnlyList<CombatantState> PlayerAllies => _playerAllies ??= [Player];
     /// <summary>玩家当前集火目标：存活敌人中有效威胁最高者。</summary>
     public CombatantState? PrimaryEnemy
     {
@@ -451,7 +482,7 @@ public sealed class CombatEncounterState
         // 复活截止点只在倒地窗口内有意义：存活玩家携带该字段属于损坏快照。
         if (double.IsFinite(playerRespawnAtSeconds) && encounter.Player.IsAlive)
             throw new DomainException(DomainErrorCode.InvalidArgument, "持久化复活截止点与生命状态不一致。");
-        var expectedOutcome = (encounter.Player.IsAlive, encounter.Enemies.Any(enemy => enemy.IsAlive)) switch
+        var expectedOutcome = (encounter.Player.IsAlive, DeterministicCombatEngine.AnyAlive(encounter.Enemies)) switch
         {
             // 倒地等待原地复活不是终局：存活敌人或已被跳死全灭都保持 Running，起身后统一裁定。
             (false, _) when double.IsFinite(playerRespawnAtSeconds) => CombatOutcome.Running,
@@ -734,11 +765,14 @@ public static class DeterministicCombatEngine
     /// <summary>团灭瞬间全场吟唱作废：未完成的吟唱视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
     private static void InterruptCasts(CombatEncounterState encounter)
     {
-        foreach (var unit in encounter.Enemies.Prepend(encounter.Player))
+        // 处理顺序与原 Prepend(player) 一致：先玩家后敌人。
+        InterruptCast(encounter.Player);
+        for (var i = 0; i < encounter.Enemies.Count; i++) InterruptCast(encounter.Enemies[i]);
+        static void InterruptCast(CombatantState unit)
         {
             var pending = unit.PendingSkillIndex;
             unit.PendingSkillIndex = -1;
-            if (pending < 0 || pending >= unit.Skills.Count) continue;
+            if (pending < 0 || pending >= unit.Skills.Count) return;
             unit.Manapoints = Math.Min(unit.Stats.MaxManapoints,
                 unit.Manapoints + AbilityNumber(unit.Skills[pending].Ability, "manaCost"));
             if (unit.SkillCooldownUntil is { } cooldowns && pending < cooldowns.Length)
@@ -764,53 +798,138 @@ public static class DeterministicCombatEngine
         => SelectTargets(encounter.Enemies, maxTargets, encounter.Seed, 0, attackerCount, channel);
 
     /// <summary>按有效威胁权重从任意存活目标列表抽取单个目标；全零威胁退化为等概率。</summary>
+    /// <remarks>
+    /// 免分配版：不物化存活列表，直接在 opponents 上按出现顺序扫描。
+    /// 轮盘推进顺序、全零威胁均匀索引的候选序与原 Where().ToArray() 快照位级一致。
+    /// </remarks>
     internal static CombatantState? SelectTarget(IReadOnlyList<CombatantState> opponents, long seed,
         ulong side, double count, ulong channel)
     {
-        var alive = opponents.Where(unit => unit.IsAlive).ToArray();
-        if (alive.Length == 0) return null;
-        if (alive.Length == 1) return alive[0];
-        var roll = Roll(seed, side, count, channel);
-        var total = alive.Sum(unit => unit.EffectiveThreat);
-        if (total <= 1e-12) return alive[(int)Math.Min(alive.Length - 1, (long)(roll * alive.Length))];
-        var ticket = roll * total;
-        foreach (var unit in alive)
+        var aliveCount = 0;
+        var total = 0d;
+        CombatantState? first = null;
+        for (var i = 0; i < opponents.Count; i++)
         {
+            var unit = opponents[i];
+            if (!unit.IsAlive) continue;
+            first ??= unit;
+            aliveCount++;
+            total += unit.EffectiveThreat;
+        }
+        if (aliveCount == 0) return null;
+        if (aliveCount == 1) return first;
+        var roll = Roll(seed, side, count, channel);
+        if (total <= 1e-12)
+            return PickAliveAt(opponents, (int)Math.Min(aliveCount - 1, (long)(roll * aliveCount)));
+        var ticket = roll * total;
+        CombatantState? last = null;
+        for (var i = 0; i < opponents.Count; i++)
+        {
+            var unit = opponents[i];
+            if (!unit.IsAlive) continue;
+            last = unit;
             if (ticket < unit.EffectiveThreat) return unit;
             ticket -= unit.EffectiveThreat;
         }
-        return alive[^1];
+        // 兜底返回最后一个存活单位（原 alive[^1]）：浮点累减使 ticket 始终非负时可达。
+        return last;
     }
 
     /// <summary>不可重复命中的多目标抽取：动态缩减概率池（Sequential Elimination）。</summary>
+    /// <remarks>
+    /// 免分配版：候选池不物化，每轮在 opponents 上跳过已命中单位（引用比较，与 List.Remove 等价）。
+    /// 每轮 Roll 的 channel + result.Count 递增、轮盘顺序、全零威胁均匀索引与原版逐位一致。
+    /// </remarks>
     internal static IReadOnlyList<CombatantState> SelectTargets(IReadOnlyList<CombatantState> opponents, int maxTargets,
         long seed, ulong side, double count, ulong channel)
     {
-        var alive = opponents.Where(unit => unit.IsAlive).ToList();
-        var result = new List<CombatantState>();
-        while (alive.Count > 0 && result.Count < maxTargets)
+        var result = new List<CombatantState>(Math.Min(maxTargets, opponents.Count));
+        while (result.Count < maxTargets)
         {
             var roll = Roll(seed, side, count, channel + (ulong)result.Count);
-            var total = alive.Sum(unit => unit.EffectiveThreat);
-            CombatantState chosen;
+            var total = 0d;
+            var aliveRemaining = 0;
+            for (var i = 0; i < opponents.Count; i++)
+            {
+                var unit = opponents[i];
+                if (!unit.IsAlive || IsAlreadyPicked(result, unit)) continue;
+                aliveRemaining++;
+                total += unit.EffectiveThreat;
+            }
+            if (aliveRemaining == 0) break;
+            CombatantState? chosen;
             if (total <= 1e-12)
             {
-                chosen = alive[(int)Math.Min(alive.Count - 1, (long)(roll * alive.Count))];
+                chosen = PickAliveAt(opponents, result,
+                    (int)Math.Min(aliveRemaining - 1, (long)(roll * aliveRemaining)));
             }
             else
             {
                 var ticket = roll * total;
-                chosen = alive[^1];
-                foreach (var unit in alive)
+                chosen = null;
+                for (var i = 0; i < opponents.Count; i++)
                 {
-                    if (ticket < unit.EffectiveThreat) { chosen = unit; break; }
+                    var unit = opponents[i];
+                    if (!unit.IsAlive || IsAlreadyPicked(result, unit)) continue;
+                    chosen = unit;
+                    if (ticket < unit.EffectiveThreat) break;
                     ticket -= unit.EffectiveThreat;
                 }
             }
-            alive.Remove(chosen);
-            result.Add(chosen);
+            // aliveRemaining ≥ 1 保证 chosen 非空：均匀索引 wanted < aliveRemaining，轮盘至少记录首个候选。
+            result.Add(chosen!);
         }
         return result;
+    }
+
+    /// <summary>血量比例最低的存活友方；与原 Where+OrderBy+Take(1) 一致：按出现顺序严格较小者胜出，
+    /// 平局保留先见者，NaN 参与比较走 double.CompareTo 语义（与原排序键比较器一致）。</summary>
+    private static CombatantState? LowestHitpointsRatioAlly(IReadOnlyList<CombatantState> allies)
+    {
+        CombatantState? best = null;
+        var bestRatio = double.PositiveInfinity;
+        for (var i = 0; i < allies.Count; i++)
+        {
+            var unit = allies[i];
+            if (!unit.IsAlive) continue;
+            var ratio = unit.Hitpoints / unit.Stats.MaxHitpoints;
+            if (best is null || ratio.CompareTo(bestRatio) < 0) { best = unit; bestRatio = ratio; }
+        }
+        return best;
+    }
+
+    /// <summary>是否存在存活单位：与原 Any(IsAlive) 同序短路；CombatEncounterState.Restore 也复用。</summary>
+    internal static bool AnyAlive(IReadOnlyList<CombatantState> units)
+    {
+        for (var i = 0; i < units.Count; i++)
+            if (units[i].IsAlive) return true;
+        return false;
+    }
+
+    /// <summary>已命中集合查询：Sequential Elimination 候选数 ≤ 8，引用比较线性扫描无分配。</summary>
+    private static bool IsAlreadyPicked(List<CombatantState> picked, CombatantState unit)
+    {
+        for (var i = 0; i < picked.Count; i++)
+            if (ReferenceEquals(picked[i], unit)) return true;
+        return false;
+    }
+
+    /// <summary>存活单位中第 wanted 个（出现顺序）；与物化数组下标语义一致。</summary>
+    private static CombatantState? PickAliveAt(IReadOnlyList<CombatantState> opponents, int wanted)
+        => PickAliveAt(opponents, null, wanted);
+
+    /// <summary>在未命中单位中取第 wanted 个存活项；wanted 恒小于存活数，遍历必命中。</summary>
+    private static CombatantState? PickAliveAt(IReadOnlyList<CombatantState> opponents,
+        List<CombatantState>? picked, int wanted)
+    {
+        var seen = 0;
+        for (var i = 0; i < opponents.Count; i++)
+        {
+            var unit = opponents[i];
+            if (!unit.IsAlive || (picked is not null && IsAlreadyPicked(picked, unit))) continue;
+            if (seen++ == wanted) return unit;
+        }
+        return null;
     }
 
     /// <summary>技能出手的随机流侧位偏移：技能判定使用 side+偏移的独立流，与普攻（side 0/1+i）完全隔离。</summary>
@@ -826,9 +945,9 @@ public static class DeterministicCombatEngine
         // 复活起身重蓄势也走本入口：已阵亡单位不再排动作，尸体不得携带吟唱标记或预扣灵力。
         for (var i = 0; i < encounter.Enemies.Count; i++)
             if (encounter.Enemies[i].IsAlive && encounter.Enemies[i].PendingSkillIndex < 0)
-                DecideNextAction(encounter, encounter.Enemies[i], encounter.Enemies, [encounter.Player], encounter.Player);
+                DecideNextAction(encounter, encounter.Enemies[i], encounter.Enemies, encounter.PlayerAllies, encounter.Player);
         if (encounter.Player.PendingSkillIndex < 0)
-            DecideNextAction(encounter, encounter.Player, PlayerAllies(encounter), encounter.Enemies,
+            DecideNextAction(encounter, encounter.Player, encounter.PlayerAllies, encounter.Enemies,
                 SelectEnemyTarget(encounter, 0, 3));
     }
 
@@ -836,21 +955,19 @@ public static class DeterministicCombatEngine
     private static void PlayerAct(CombatEncounterState encounter, ref List<CombatEvent>? events)
     {
         var player = encounter.Player;
-        var allies = PlayerAllies(encounter);
+        var allies = encounter.PlayerAllies;
         ResolvePending(encounter, player, allies, encounter.Enemies,
             SelectEnemyTarget(encounter, player.AttackCount, 3), 0, ref events);
         DecideNextAction(encounter, player, allies, encounter.Enemies,
             SelectEnemyTarget(encounter, player.AttackCount, 3));
     }
 
-    private static IReadOnlyList<CombatantState> PlayerAllies(CombatEncounterState encounter)
-        => [encounter.Player];
 
     /// <summary>敌方出手边界：与玩家同构，先结算待完成动作再决策下一动作。</summary>
     private static void EnemyAct(CombatEncounterState encounter, CombatantState enemy, int index, ref List<CombatEvent>? events)
     {
-        ResolvePending(encounter, enemy, encounter.Enemies, [encounter.Player], encounter.Player, (ulong)(1 + index), ref events);
-        DecideNextAction(encounter, enemy, encounter.Enemies, [encounter.Player], encounter.Player);
+        ResolvePending(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player, (ulong)(1 + index), ref events);
+        DecideNextAction(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player);
     }
 
     /// <summary>
@@ -922,34 +1039,45 @@ public static class DeterministicCombatEngine
     {
         var next = double.PositiveInfinity;
         var regenPending = false;
-        foreach (var unit in encounter.Enemies.Prepend(encounter.Player))
-        {
-            if (unit.Stats.HpRegen != 0 || unit.Stats.MpRegen != 0) regenPending = true;
-            foreach (var buff in unit.Buffs)
-            {
-                if (buff.ExpiresAtSeconds < next) next = buff.ExpiresAtSeconds;
-                if (buff.HpRegen != 0 || buff.MpRegen != 0) regenPending = true;
-            }
-        }
+        // 扫描顺序与原 Prepend(player) 一致：先玩家后敌人；min 求值无平局歧义。
+        Scan(encounter.Player);
+        for (var i = 0; i < encounter.Enemies.Count; i++) Scan(encounter.Enemies[i]);
         if (regenPending)
             next = Math.Min(next, (Math.Floor(encounter.ElapsedSeconds / BuffTickSeconds) + 1) * BuffTickSeconds);
         return next;
+
+        void Scan(CombatantState unit)
+        {
+            if (unit.Stats.HpRegen != 0 || unit.Stats.MpRegen != 0) regenPending = true;
+            var buffs = unit.Buffs;
+            for (var i = 0; i < buffs.Count; i++)
+            {
+                if (buffs[i].ExpiresAtSeconds < next) next = buffs[i].ExpiresAtSeconds;
+                if (buffs[i].HpRegen != 0 || buffs[i].MpRegen != 0) regenPending = true;
+            }
+        }
     }
 
     /// <summary>战内效果边界结算：先剔除到期 Buff，再按 5 秒网格对存活单位结算周期回复。</summary>
     private static void ApplyBuffTick(CombatEncounterState encounter, double at)
     {
-        foreach (var unit in encounter.Enemies.Prepend(encounter.Player))
-            unit.Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        encounter.Player.Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+            encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         if (Math.Abs(at / BuffTickSeconds - Math.Round(at / BuffTickSeconds)) > 1e-9) return;
-        foreach (var unit in encounter.Enemies.Prepend(encounter.Player))
+        // 结算顺序与原 Prepend(player) 一致：先玩家后敌人。
+        Tick(encounter.Player);
+        for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i]);
+
+        static void Tick(CombatantState unit)
         {
             // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次。
             double hp = unit.Stats.HpRegen, mp = unit.Stats.MpRegen;
-            foreach (var buff in unit.Buffs)
+            var buffs = unit.Buffs;
+            for (var i = 0; i < buffs.Count; i++)
             {
-                hp += buff.HpRegen * buff.Stacks;
-                mp += buff.MpRegen * buff.Stacks;
+                hp += buffs[i].HpRegen * buffs[i].Stacks;
+                mp += buffs[i].MpRegen * buffs[i].Stacks;
             }
             // 阵亡单位气血锁 0 不结算回血，灵力回复照常入账（死亡灵力运转规约战内同构）。
             if (unit.IsAlive && hp != 0) unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
@@ -981,26 +1109,35 @@ public static class DeterministicCombatEngine
         if (AbilityText(ability, "effectType") == "heal" || healOutput > 0)
         {
             // 治疗目标范围按 targetType 解析；治疗增益（healingBonusRatio）对一切施放单位通用。
-            var healTargets = targetType switch
-            {
-                "self" => (IReadOnlyList<CombatantState>)[caster],
-                "allAllies" => allies.Where(unit => unit.IsAlive).ToArray(),
-                _ => allies.Where(unit => unit.IsAlive)
-                    .OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).Take(1).ToArray()
-            };
+            // 免分配展开：self 单目标 / allAllies 顺序遍历存活友方 / 缺省取血量比例最低的存活友方
+            // （原 OrderBy+Take(1) 的稳定首元素语义，平局保留列表先见者）。
             var output = healOutput * PercentValue.Multiplier(caster.Stats.Effects.HealingBonusPoints, PercentCurveMode.Linear);
-            foreach (var ally in healTargets)
+            // 局部函数不能捕获外层 ref 参数：events 以 ref 形参传递，语义与原先一致。
+            void ApplyHeal(CombatantState ally, ref List<CombatEvent>? ev)
             {
                 var healed = Math.Min(ally.Stats.MaxHitpoints - ally.Hitpoints, Math.Max(0, output));
                 ally.Hitpoints += healed;
-                events ??= new List<CombatEvent>();
-                events.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, ally.Id, 0, true,
+                ev ??= new List<CombatEvent>();
+                ev.Add(new CombatEvent(encounter.ElapsedSeconds, caster.Id, ally.Id, 0, true,
                     spell ? CombatDamageKind.Spell : CombatDamageKind.Physical, ally.Hitpoints)
                 {
                     AbilityId = id, Healing = healed,
                     AttackerManapointsAfter = caster.Manapoints,
                     TargetManapointsAfter = ally.Manapoints
                 });
+            }
+            if (targetType == "self")
+            {
+                ApplyHeal(caster, ref events);
+            }
+            else if (targetType == "allAllies")
+            {
+                for (var i = 0; i < allies.Count; i++)
+                    if (allies[i].IsAlive) ApplyHeal(allies[i], ref events);
+            }
+            else if (LowestHitpointsRatioAlly(allies) is { } weakest)
+            {
+                ApplyHeal(weakest, ref events);
             }
             return;
         }
@@ -1018,14 +1155,7 @@ public static class DeterministicCombatEngine
                     AbilityNumber(buff, "threatPoints"));
                 // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
                 var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
-                var scope = targetType switch
-                {
-                    "lowestHitpointsAlly" => allies.Where(unit => unit.IsAlive)
-                        .OrderBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints).Take(1).ToArray(),
-                    "allAllies" => allies.Where(unit => unit.IsAlive).ToArray(),
-                    _ => (IReadOnlyList<CombatantState>)[caster]
-                };
-                foreach (var ally in scope)
+                void GrantBuff(CombatantState ally)
                 {
                     var index = ally.Buffs.FindIndex(current => current.BuffId == buffId);
                     if (index < 0) ally.Buffs.Add(grant);
@@ -1034,6 +1164,21 @@ public static class DeterministicCombatEngine
                         ExpiresAtSeconds = grant.ExpiresAtSeconds,
                         Stacks = Math.Min(stackCap, ally.Buffs[index].Stacks + 1)
                     };
+                }
+                // 目标范围与治疗效果同口径展开：lowestHitpointsAlly 取血量比例最低存活友方
+                // （原 OrderBy+Take(1) 稳定首元素语义），allAllies 顺序遍历存活友方，其余作用于自身。
+                if (targetType == "lowestHitpointsAlly")
+                {
+                    if (LowestHitpointsRatioAlly(allies) is { } weakest) GrantBuff(weakest);
+                }
+                else if (targetType == "allAllies")
+                {
+                    for (var i = 0; i < allies.Count; i++)
+                        if (allies[i].IsAlive) GrantBuff(allies[i]);
+                }
+                else
+                {
+                    GrantBuff(caster);
                 }
             }
             events ??= new List<CombatEvent>();
@@ -1199,7 +1344,7 @@ public static class DeterministicCombatEngine
     /// </summary>
     private static void UpdateOutcome(CombatEncounterState encounter)
     {
-        encounter.Outcome = (encounter.Player.IsAlive, encounter.Enemies.Any(enemy => enemy.IsAlive)) switch
+        encounter.Outcome = (encounter.Player.IsAlive, AnyAlive(encounter.Enemies)) switch
         {
             // 原地复活待触发期间团灭不是终局：敌方残存或被持续伤害跳死全灭都保持 Running，起身后统一裁定。
             (false, _) when double.IsFinite(encounter.PlayerRespawnAtSeconds) => CombatOutcome.Running,

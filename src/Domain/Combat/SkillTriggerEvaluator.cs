@@ -123,12 +123,19 @@ public static class SkillTriggerEvaluator
         {
             // 群体聚合条件：对集合求值，集合为空仍返回真实计数（0）。
             var set = dependency == "ally" ? allies : opponents;
-            value = JsonRead.Text(trigger, "condition") switch
+            var condition = JsonRead.Text(trigger, "condition");
+            if (condition is "alive-count" or "dead-count")
             {
-                "alive-count" => set.Count(unit => unit.IsAlive),
-                "dead-count" => set.Count(unit => !unit.IsAlive),
-                _ => double.NaN
-            };
+                var aliveWanted = condition == "alive-count";
+                var count = 0;
+                for (var i = 0; i < set.Count; i++)
+                    if (set[i].IsAlive == aliveWanted) count++;
+                value = count;
+            }
+            else
+            {
+                value = double.NaN;
+            }
         }
         else
         {
@@ -163,14 +170,43 @@ public static class SkillTriggerEvaluator
         {
             "self" => caster,
             "target-enemy" => primaryTarget is { IsAlive: true } ? primaryTarget : null,
-            "ally-lowest-hp" => allies.Where(unit => unit.IsAlive)
-                .MinBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints),
-            "ally-highest-hp" => allies.Where(unit => unit.IsAlive).MaxBy(unit => unit.Hitpoints),
-            "enemy-lowest-hp" => opponents.Where(unit => unit.IsAlive)
-                .MinBy(unit => unit.Hitpoints / unit.Stats.MaxHitpoints),
-            "enemy-highest-hp" => opponents.Where(unit => unit.IsAlive).MaxBy(unit => unit.Hitpoints),
+            "ally-lowest-hp" => MinAliveBy(allies, static unit => unit.Hitpoints / unit.Stats.MaxHitpoints),
+            "ally-highest-hp" => MaxAliveBy(allies, static unit => unit.Hitpoints),
+            "enemy-lowest-hp" => MinAliveBy(opponents, static unit => unit.Hitpoints / unit.Stats.MaxHitpoints),
+            "enemy-highest-hp" => MaxAliveBy(opponents, static unit => unit.Hitpoints),
             _ => null
         };
+
+    /// <summary>存活单位中 key 最小者：复刻 MinBy 语义——按列表序扫描、严格小于才替换（平局保留先见者），
+    /// 空集返回 null；double.CompareTo 保证 NaN 键的比较序与原 Comparer&lt;double&gt;.Default 一致。</summary>
+    private static CombatantState? MinAliveBy(IReadOnlyList<CombatantState> units, Func<CombatantState, double> key)
+    {
+        CombatantState? best = null;
+        var bestKey = 0d;
+        for (var i = 0; i < units.Count; i++)
+        {
+            var unit = units[i];
+            if (!unit.IsAlive) continue;
+            var k = key(unit);
+            if (best is null || k.CompareTo(bestKey) < 0) { best = unit; bestKey = k; }
+        }
+        return best;
+    }
+
+    /// <summary>存活单位中 key 最大者：复刻 MaxBy 语义——严格大于才替换（平局保留先见者），空集返回 null。</summary>
+    private static CombatantState? MaxAliveBy(IReadOnlyList<CombatantState> units, Func<CombatantState, double> key)
+    {
+        CombatantState? best = null;
+        var bestKey = 0d;
+        for (var i = 0; i < units.Count; i++)
+        {
+            var unit = units[i];
+            if (!unit.IsAlive) continue;
+            var k = key(unit);
+            if (best is null || k.CompareTo(bestKey) > 0) { best = unit; bestKey = k; }
+        }
+        return best;
+    }
 
     private static double ReadCondition(JsonElement trigger, CombatantState unit)
     {

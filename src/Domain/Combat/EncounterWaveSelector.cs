@@ -1,4 +1,5 @@
 using Domain.GameData;
+using System.Runtime.CompilerServices;
 
 namespace Domain.Combat;
 
@@ -11,6 +12,20 @@ public static class EncounterWaveSelector
 {
     /// <summary>单波满编怪物数量（1 特殊怪 + 2 护从 / 3 普通怪）。</summary>
     public const int MaxWaveSize = 3;
+
+    /// <summary>
+    /// 遭遇刷怪池的物化缓存：RandomSpawns 拆为并行数组，免每波 ToArray/字段反射。
+    /// 只缓存 encounter 自有字段；monsters 字典解析与全部校验仍逐次执行，异常时机与顺序不变。
+    /// 弱表以配表实例为键，兼容测试直接 new CombatEncounterDefinition 的手工构造。
+    /// </summary>
+    private static readonly ConditionalWeakTable<CombatEncounterDefinition, SpawnArrays> s_spawnCache = new();
+
+    private sealed class SpawnArrays
+    {
+        public required string[] EnemyIds { get; init; }
+        public required double[] Weights { get; init; }
+        public required double[] Strengths { get; init; }
+    }
 
     /// <summary>按确定性种子抽取本波怪物阵容；Boss/精英波按 waveNumber 整除配表间隔触发。</summary>
     /// <param name="encounter">遭遇配表（预算、强度上限与刷怪池）。</param>
@@ -31,9 +46,24 @@ public static class EncounterWaveSelector
         var result = new List<CombatMonsterDefinition>();
         var remain = encounter.MinBudget + (Next(ref seed) % 1_000_000UL) / 1_000_000d * (encounter.MaxBudget - encounter.MinBudget);
         var strengthPool = encounter.MaxTotalStrength > 0 ? encounter.MaxTotalStrength : double.PositiveInfinity;
-        var strengthOf = new Dictionary<string, double>(StringComparer.Ordinal);
-        foreach (var spawn in encounter.RandomSpawns)
-            strengthOf[spawn.EnemyId] = spawn.Strength;
+        var spawns = s_spawnCache.GetValue(encounter, static e =>
+        {
+            var entries = e.RandomSpawns;
+            var ids = new string[entries.Count];
+            var weights = new double[entries.Count];
+            var strengths = new double[entries.Count];
+            for (var i = 0; i < entries.Count; i++)
+            {
+                ids[i] = entries[i].EnemyId;
+                weights[i] = entries[i].Weight;
+                strengths[i] = entries[i].Strength;
+            }
+            return new SpawnArrays { EnemyIds = ids, Weights = weights, Strengths = strengths };
+        });
+        var enemyIds = spawns.EnemyIds;
+        var weights = spawns.Weights;
+        var strengths = spawns.Strengths;
+        var spawnCount = enemyIds.Length;
         if (special is not null && special.Count > 0)
         {
             var id = special[(int)(Next(ref seed) % (ulong)special.Count)];
@@ -42,42 +72,67 @@ public static class EncounterWaveSelector
                 throw new DomainException(DomainErrorCode.InvalidArgument, "特殊怪物预算无效。");
             result.Add(monster);
             remain = encounter.MaxBudget - monster.BudgetCost;
-            strengthPool -= strengthOf.GetValueOrDefault(id);
+            // 特殊怪强度取自刷怪池条目：原 strengthOf 字典按 RandomSpawns 序覆盖填充，
+            // 等价于取最后一个匹配条目——反向扫描复刻该语义，缺省为 0。
+            var specialStrength = 0d;
+            for (var i = spawnCount - 1; i >= 0; i--)
+                if (enemyIds[i] == id) { specialStrength = strengths[i]; break; }
+            strengthPool -= specialStrength;
         }
-        var candidates = encounter.RandomSpawns.ToArray();
-        foreach (var candidate in candidates)
-            if (!double.IsFinite(candidate.Weight) || candidate.Weight <= 0 || !monsters.TryGetValue(candidate.EnemyId, out var definition)
+        // 校验每次调用必跑（保留异常时机与顺序）；顺手物化怪物定义与预算数组，
+        // 后续轮盘循环直接读数组，不再做字典查找或 Where 物化。
+        var resolved = new CombatMonsterDefinition[spawnCount];
+        var budgetCosts = new double[spawnCount];
+        for (var i = 0; i < spawnCount; i++)
+        {
+            if (!double.IsFinite(weights[i]) || weights[i] <= 0 || !monsters.TryGetValue(enemyIds[i], out var definition)
                 || !double.IsFinite(definition.BudgetCost) || definition.BudgetCost <= 0
-                || !double.IsFinite(candidate.Strength) || candidate.Strength <= 0)
+                || !double.IsFinite(strengths[i]) || strengths[i] <= 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇怪物引用、权重、预算或强度无效。");
-        if (candidates.Length == 0 && result.Count == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇没有有效怪物池。");
+            resolved[i] = definition;
+            budgetCosts[i] = definition.BudgetCost;
+        }
+        if (spawnCount == 0 && result.Count == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇没有有效怪物池。");
         while (result.Count < MaxWaveSize && remain > 0)
         {
-            var affordable = candidates.Where(candidate =>
-                monsters[candidate.EnemyId].BudgetCost <= remain && candidate.Strength <= strengthPool).ToArray();
-            if (affordable.Length == 0) break;
-            var total = affordable.Sum(candidate => candidate.Weight);
+            // affordable 子集不物化：单趟按原顺序累加满足预算/强度门槛的候选权重，与原 Where+Sum 同序。
+            var total = 0d;
+            var affordableCount = 0;
+            for (var i = 0; i < spawnCount; i++)
+                if (budgetCosts[i] <= remain && strengths[i] <= strengthPool)
+                {
+                    affordableCount++;
+                    total += weights[i];
+                }
+            if (affordableCount == 0) break;
             if (!double.IsFinite(total)) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇总权重无效。");
             var ticket = (Next(ref seed) % 1_000_000UL) / 1_000_000d * total;
-            var chosen = affordable[^1];
-            foreach (var candidate in affordable)
+            // 轮盘按候选原序推进；chosen 兜底为最后一个可负担候选（原 affordable[^1]）。
+            var chosen = -1;
+            for (var i = 0; i < spawnCount; i++)
             {
-                if (ticket < candidate.Weight) { chosen = candidate; break; }
-                ticket -= candidate.Weight;
+                if (!(budgetCosts[i] <= remain && strengths[i] <= strengthPool)) continue;
+                chosen = i;
+                if (ticket < weights[i]) break;
+                ticket -= weights[i];
             }
-            var monster = monsters[chosen.EnemyId];
+            var monster = resolved[chosen];
             result.Add(monster);
             remain -= monster.BudgetCost;
-            strengthPool -= chosen.Strength;
+            strengthPool -= strengths[chosen];
         }
         if (result.Count == 0)
         {
-            // 保底：候选池为空时塞入预算最低的普通小怪，杜绝空波次。
-            var fallback = candidates.Length == 0 ? null : candidates.MinBy(candidate => monsters[candidate.EnemyId].BudgetCost);
-            if (fallback is null) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇预算不足以生成任何怪物。");
-            result.Add(monsters[fallback.EnemyId]);
+            // 保底：候选池为空时塞入预算最低的普通小怪，杜绝空波次；平局取首个（MinBy 语义）。
+            var fallback = -1;
+            var minCost = double.PositiveInfinity;
+            for (var i = 0; i < spawnCount; i++)
+                if (budgetCosts[i] < minCost) { minCost = budgetCosts[i]; fallback = i; }
+            if (fallback < 0) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇预算不足以生成任何怪物。");
+            result.Add(resolved[fallback]);
         }
         return result;
     }
+
     private static ulong Next(ref long seed) { unchecked { var x = (ulong)seed; x ^= x << 13; x ^= x >> 7; x ^= x << 17; seed = (long)x; return x; } }
 }

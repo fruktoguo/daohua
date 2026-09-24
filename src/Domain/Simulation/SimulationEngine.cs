@@ -21,6 +21,7 @@ public sealed record SimulationEvent(
 /// <summary>
 /// 模拟引擎单次推进的完整结算结果。
 /// 包含时间跨度、推进轮次、物品资产流水变动以及是否引起聚合状态演进。
+/// Events 是有界尾窗（至少保留末尾 256 条、至多 512 条）；更早的事件折叠进 DroppedEventCount。
 /// </summary>
 public sealed record SimulationResult(
     PlayerId PlayerId,
@@ -32,7 +33,9 @@ public sealed record SimulationResult(
     IReadOnlyList<AssetDelta> AssetDeltas,
     IReadOnlyList<SimulationEvent> Events,
     long StateVersion,
-    bool Changed);
+    bool Changed,
+    /// <summary>被事件尾窗折叠丢弃的事件总数：DroppedEventCount + Events.Count == 本次推进实际产出数。</summary>
+    long DroppedEventCount = 0);
 
 /// <summary>
 /// 角色行为与挂机离线收益的唯一确定性快进入口引擎。
@@ -54,6 +57,50 @@ public static class SimulationEngine
 
     /// <summary>单次连续奖励可施加的整秒上限：正常推进远低于该值，越界说明配表或时钟已破坏，快速失败避免巨量循环。</summary>
     private const double MaxWholeSecondsPerApply = 1_000_000_000;
+
+    /// <summary>
+    /// 模拟事件有界尾窗：产出顺序与朴素 List.Add 完全一致，驻留条数封顶 2×TailCapacity；
+    /// 每越过水位整段折叠最旧的 TailCapacity 条并计入 Dropped（摊销搬迁成本）。
+    /// 长跨度离线补算（48h 战斗可产十万级事件）下事件内存恒有界，保留段恒为产出流的连续后缀。
+    /// </summary>
+    private sealed class SimulationEventTail
+    {
+        /// <summary>尾窗保底保留条数：下游日志消费只取末尾 200 条，256 条留出余量。</summary>
+        public const int TailCapacity = 256;
+        /// <summary>触发整段裁剪的水位（2×容量），摊销 RemoveRange 搬迁成本。</summary>
+        private const int TrimThreshold = TailCapacity * 2;
+
+        private readonly List<SimulationEvent> _events = [];
+
+        /// <summary>被折叠丢弃的事件总数（含并入子结果时带入的丢弃计数）。</summary>
+        public long Dropped { get; private set; }
+        /// <summary>当前驻留事件数。</summary>
+        public int Count => _events.Count;
+        /// <summary>驻留事件视图；调用方追加完成后直接作为结果列表，不再回写。</summary>
+        public IReadOnlyList<SimulationEvent> View => _events;
+
+        /// <summary>按原追加语义推入一条事件；越过水位时先整段折叠最旧的 TailCapacity 条。</summary>
+        public void Add(SimulationEvent entry)
+        {
+            if (_events.Count == TrimThreshold)
+            {
+                _events.RemoveRange(0, TailCapacity);
+                Dropped += TailCapacity;
+            }
+            _events.Add(entry);
+        }
+
+        /// <summary>并入子推进结果：其保留段逐条推入，其丢弃计数直接汇总（丢弃段均早于保留段）。</summary>
+        public void Merge(SimulationResult inner)
+        {
+            Dropped += inner.DroppedEventCount;
+            var innerEvents = inner.Events;
+            for (var i = 0; i < innerEvents.Count; i++) Add(innerEvents[i]);
+        }
+
+        /// <summary>合并流中被尾窗裁剪、从未构造实体的事件数直接计入丢弃（不占用列表空间）。</summary>
+        public void Fold(long count) => Dropped += count;
+    }
 
     /// <summary>
     /// 将玩家聚合状态从 LastSimulatedAt 确定性推进至目标时间 target。
@@ -97,7 +144,7 @@ public static class SimulationEngine
         var wallet = new AssetWallet(player.PlayerId);
         if (assets is not null) wallet.Restore(assets.Balances);
         var deltas = new Dictionary<AssetKey, double>();
-        var events = new List<SimulationEvent>();
+        var events = new SimulationEventTail();
         double actions = 0, repeats = 0;
         var changed = false;
         // 离线/挂起补算收益上限 48 小时：超出部分只推进模拟时钟与过期清理，不再产出行动收益。
@@ -105,8 +152,23 @@ public static class SimulationEngine
         while (player.LastSimulatedAt < computeTarget)
         {
             var now = player.LastSimulatedAt;
-            var expired = player.Buffs.Active.RemoveAll(buff => buff.ExpiresAtUnixSeconds <= now.ToUnixTimeMilliseconds() / 1000d);
-            if (expired > 0) { player.MarkDirty(PlayerSectionKind.Buffs); changed = true; }
+            var nowUnix = now.ToUnixTimeMilliseconds() / 1000d;
+            // Buff 到期单趟扫描：无 Buff 时整段跳过；确有到期才移除并按剩余条目重算最早到期点。
+            var nextBuffExpiry = double.PositiveInfinity;
+            var activeBuffs = player.Buffs.Active;
+            if (activeBuffs.Count > 0)
+            {
+                for (var i = 0; i < activeBuffs.Count; i++)
+                    if (activeBuffs[i].ExpiresAtUnixSeconds < nextBuffExpiry) nextBuffExpiry = activeBuffs[i].ExpiresAtUnixSeconds;
+                if (nextBuffExpiry <= nowUnix)
+                {
+                    var expired = activeBuffs.RemoveAll(buff => buff.ExpiresAtUnixSeconds <= nowUnix);
+                    if (expired > 0) { player.MarkDirty(PlayerSectionKind.Buffs); changed = true; }
+                    nextBuffExpiry = double.PositiveInfinity;
+                    for (var i = 0; i < activeBuffs.Count; i++)
+                        if (activeBuffs[i].ExpiresAtUnixSeconds < nextBuffExpiry) nextBuffExpiry = activeBuffs[i].ExpiresAtUnixSeconds;
+                }
+            }
             var attributes = PlayerAttributeResolver.Apply(player, gameData);
             var instantDeltas = ActivateInstantConsumables(player, gameData, wallet, now, events);
             foreach (var delta in instantDeltas)
@@ -116,25 +178,32 @@ public static class SimulationEngine
             }
             var untilRegen = 5 - player.Combat.RegenCarrySeconds;
             var step = Math.Min((computeTarget - now).TotalSeconds, untilRegen);
-            if (player.Buffs.Active.Count > 0)
-                step = Math.Min(step, player.Buffs.Active.Min(buff => buff.ExpiresAtUnixSeconds) - now.ToUnixTimeMilliseconds() / 1000d);
-            foreach (var slot in player.Settings.AutoUseSlots)
+            if (double.IsFinite(nextBuffExpiry))
+                step = Math.Min(step, nextBuffExpiry - nowUnix);
+            var autoUseSlots = player.Settings.AutoUseSlots;
+            for (var i = 0; i < autoUseSlots.Count; i++)
             {
-                var untilCooldown = slot.CooldownUntilUnixSeconds - now.ToUnixTimeMilliseconds() / 1000d;
-                if (slot.Enabled && untilCooldown > 1e-9) step = Math.Min(step, untilCooldown);
+                var slot = autoUseSlots[i];
+                if (!slot.Enabled) continue;
+                var untilCooldown = slot.CooldownUntilUnixSeconds - nowUnix;
+                if (untilCooldown > 1e-9) step = Math.Min(step, untilCooldown);
             }
             var result = AdvanceToCore(player, now.AddSeconds(step), gameData.Actions, gameData, wallet, duel);
-            var stagedSettled = player.SettleStagedItems(now.AddSeconds(step).ToUnixTimeMilliseconds() / 1000d,
-                gameData.Duel.StagedSettleSeconds);
-            foreach (var settledItem in stagedSettled)
+            // 无暂存物品时整段跳过：SettleStagedItems 空表恒返回空，标脏只在真实结算时发生。
+            if (player.Duel.StagedItems.Count > 0)
             {
-                var settledDelta = new AssetDelta(player.PlayerId, new AssetKey(new ItemId(settledItem.ItemId)), settledItem.Quantity, "simulation");
-                wallet.Apply(settledDelta);
-                deltas[settledDelta.Asset] = deltas.GetValueOrDefault(settledDelta.Asset) + settledDelta.QuantityDelta;
-                var settledItemId = new ItemId(settledItem.ItemId);
-                events.Add(new SimulationEvent(now.AddSeconds(step), "duel.staged-settled",
-                    $"暂存物品入账：{gameData.Items.GetValueOrDefault(settledItemId)?.Name ?? settledItem.ItemId} ×{settledItem.Quantity:0.##}。", null,
-                    new Dictionary<ItemId, double> { [settledItemId] = settledItem.Quantity }));
+                var stagedSettled = player.SettleStagedItems(now.AddSeconds(step).ToUnixTimeMilliseconds() / 1000d,
+                    gameData.Duel.StagedSettleSeconds);
+                foreach (var settledItem in stagedSettled)
+                {
+                    var settledDelta = new AssetDelta(player.PlayerId, new AssetKey(new ItemId(settledItem.ItemId)), settledItem.Quantity, "simulation");
+                    wallet.Apply(settledDelta);
+                    deltas[settledDelta.Asset] = deltas.GetValueOrDefault(settledDelta.Asset) + settledDelta.QuantityDelta;
+                    var settledItemId = new ItemId(settledItem.ItemId);
+                    events.Add(new SimulationEvent(now.AddSeconds(step), "duel.staged-settled",
+                        $"暂存物品入账：{gameData.Items.GetValueOrDefault(settledItemId)?.Name ?? settledItem.ItemId} ×{settledItem.Quantity:0.##}。", null,
+                        new Dictionary<ItemId, double> { [settledItemId] = settledItem.Quantity }));
+                }
             }
             if (player.Actions.Count == 0 || player.Actions[0].Expedition?.Phase != CombatExpeditionPhase.Combat)
             {
@@ -152,7 +221,7 @@ public static class SimulationEngine
                 wallet.Apply(delta);
                 deltas[delta.Asset] = deltas.GetValueOrDefault(delta.Asset) + delta.QuantityDelta;
             }
-            events.AddRange(result.Events);
+            events.Merge(result);
             actions += result.CompletedActions;
             repeats += result.CompletedRepeats;
             changed |= result.Changed;
@@ -198,24 +267,30 @@ public static class SimulationEngine
         if (changed) player.StateVersion = checked(player.StateVersion + 1);
         return new(player.PlayerId, from, target, (target - from).TotalSeconds, actions, repeats,
             deltas.Where(pair => pair.Value != 0).Select(pair => new AssetDelta(player.PlayerId, pair.Key, pair.Value, "simulation")).ToArray(),
-            events, player.StateVersion, changed);
+            events.View, player.StateVersion, changed, events.Dropped);
     }
 
     private static List<AssetDelta> ActivateInstantConsumables(PlayerAggregate player,
-        GameDataCatalog catalog, AssetWallet wallet, DateTimeOffset at, List<SimulationEvent> events)
+        GameDataCatalog catalog, AssetWallet wallet, DateTimeOffset at, SimulationEventTail events)
     {
         if (player.Actions.Count == 0 || player.Combat.Hitpoints <= 0) return [];
+        // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与 MatchesActionType 固定税。
+        var slots = player.Settings.AutoUseSlots;
+        var anyEnabled = false;
+        for (var i = 0; i < slots.Count; i++)
+            if (slots[i].Enabled) { anyEnabled = true; break; }
+        if (!anyEnabled) return [];
         var kind = catalog.Actions.Get(player.Actions[0].Intent.ActionId).Kind;
-        var deltas = new List<AssetDelta>();
+        List<AssetDelta>? deltas = null;
         var now = at.ToUnixTimeMilliseconds() / 1000d;
         // 触发求值上下文惰性构建：仅当存在带条件的消耗品时才装配战斗单位视图。
         CombatantState? evalCaster = null;
         CombatantState? evalTarget = null;
         List<CombatantState>? evalAllies = null;
         List<CombatantState>? evalEnemies = null;
-        for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
+        for (var i = 0; i < slots.Count; i++)
         {
-            var slot = player.Settings.AutoUseSlots[i];
+            var slot = slots[i];
             if (!slot.Enabled || slot.ItemId is null || !MatchesActionType(slot.ActionType, kind)
                 || slot.CooldownUntilUnixSeconds > now) continue;
             var id = new ItemId(slot.ItemId);
@@ -230,7 +305,11 @@ public static class SimulationEngine
                 if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, evalCaster, evalTarget,
                         evalAllies!, evalEnemies!)) continue;
             }
-            var consumed = deltas.Where(delta => delta.Asset.ItemId == id).Sum(delta => delta.QuantityDelta);
+            // 已记账扣件汇总按原列表顺序逐条累加（与 LINQ Where+Sum 同序，位级一致）。
+            var consumed = 0d;
+            if (deltas is not null)
+                for (var j = 0; j < deltas.Count; j++)
+                    if (deltas[j].Asset.ItemId == id) consumed += deltas[j].QuantityDelta;
             if (wallet.Get(new AssetKey(id)) + consumed < 1) continue;
             double Read(JsonElement obj, string key) => obj.TryGetProperty(key, out var value) ? value.GetDouble() : 0;
             var hp = Read(raw, "hitpointRestore");
@@ -253,12 +332,12 @@ public static class SimulationEngine
             player.MarkDirty(PlayerSectionKind.Settings);
             player.MarkDirty(PlayerSectionKind.Buffs);
             player.MarkDirty(PlayerSectionKind.Combat);
-            deltas.Add(new(player.PlayerId, new AssetKey(id), -1, "auto-use"));
+            (deltas ??= []).Add(new AssetDelta(player.PlayerId, new AssetKey(id), -1, "auto-use"));
             // 即时消耗品扣件计入队首行动账本「失去」物品。
             player.RecordStats(player.Actions[0].Id, now, report => report.AddItemLost(id, 1));
-            events.Add(new(at, "auto-use.activated", $"自动使用 {item.Name}。", ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
+            events.Add(new SimulationEvent(at, "auto-use.activated", $"自动使用 {item.Name}。", ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
         }
-        return deltas;
+        return deltas ?? [];
     }
 
     /// <summary>
@@ -273,8 +352,8 @@ public static class SimulationEngine
             Hitpoints = player.Combat.Hitpoints,
             Manapoints = player.Combat.Manapoints
         };
-        caster.ExternalBuffStacks = buffId => player.Buffs.Active
-            .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
+        var activeBuffs = player.Buffs.Active;
+        caster.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
         allies = [caster];
         enemies = [];
         if (player.Actions[0].Expedition is { Phase: CombatExpeditionPhase.Combat, Enemies: { Count: > 0 } waveEnemies })
@@ -292,7 +371,12 @@ public static class SimulationEngine
                 if (enemy.State.Buffs is { Count: > 0 } buffs) unit.Buffs.AddRange(buffs);
                 enemies.Add(unit);
             }
-        target = enemies.Where(unit => unit.IsAlive).MaxBy(unit => unit.EffectiveThreat);
+        // 目标 = 存活敌中有效威胁最高者（MaxBy 语义：严格更大才替换，平局保留先见者）。
+        CombatantState? best = null;
+        for (var i = 0; i < enemies.Count; i++)
+            if (enemies[i].IsAlive && (best is null || enemies[i].EffectiveThreat > best.EffectiveThreat))
+                best = enemies[i];
+        target = best;
         return caster;
     }
 
@@ -315,9 +399,12 @@ public static class SimulationEngine
         var completedRepeats = 0d;
         var transitions = 0;
         Dictionary<ItemId, double>? deltas = null;
-        List<SimulationEvent>? events = null;
+        SimulationEventTail? events = null;
 
         var blockedActions = new HashSet<Guid>();
+        // 同一行动 ID 在转换循环中反复出现：按 actionId 缓存最近一次查表结果，跳过重复字典查找。
+        ActionId lastActionId = default;
+        ActionDefinition? lastDefinition = null;
         // 余量按浮点可表达性收尾：战斗时钟以秒级 double 推进，1e-9 以下的残差在 battleFrom + step
         // 回加时会被 ULP 吸收成零消耗，使循环永远不消耗时间而触顶转换上限。
         while (remainingSeconds > 1e-9 && player.Actions.Count > 0)
@@ -336,7 +423,7 @@ public static class SimulationEngine
                 }
                 if (player.Settings.LoopEnabled && player.Actions.Count > 1)
                 {
-                    if (player.Actions.All(a => a.Status == ActionQueueStatus.Blocked))
+                    if (AllActionsBlocked(player.Actions))
                     {
                         break;
                     }
@@ -351,17 +438,30 @@ public static class SimulationEngine
                 throw new DomainException(DomainErrorCode.InvariantViolation,
                     $"单次模拟超过最大状态转换数（action={action.Intent.ActionId} phase={action.Expedition?.Phase} remaining={remainingSeconds:0.######}）。");
 
-            var definition = catalog.Get(action.Intent.ActionId);
+            var actionId = action.Intent.ActionId;
+            if (lastDefinition is null || lastActionId != actionId)
+            {
+                lastDefinition = catalog.Get(actionId);
+                lastActionId = actionId;
+            }
+            var definition = lastDefinition;
             var availableHere = definition.AllowedNodeIds is null || definition.AllowedNodeIds.Count == 0
                 || (player.World.EdgeId is null && definition.AllowedNodeIds.Contains(player.World.NodeId));
-            var hasInputs = definition.Inputs.All(input =>
-                (assetBalances?.Get(new AssetKey(input.Key)) ?? (gameData is null ? double.PositiveInfinity : 0))
-                + (deltas?.GetValueOrDefault(input.Key) ?? 0) >= input.Value);
+            var hasInputs = true;
+            foreach (var input in definition.Inputs)
+            {
+                if ((assetBalances?.Get(new AssetKey(input.Key)) ?? (gameData is null ? double.PositiveInfinity : 0))
+                    + (deltas?.GetValueOrDefault(input.Key) ?? 0) < input.Value)
+                {
+                    hasInputs = false;
+                    break;
+                }
+            }
             if (!availableHere || !hasInputs)
             {
                 action.Status = ActionQueueStatus.Blocked;
-                events ??= [];
-                events.Add(new(from.AddSeconds((target - from).TotalSeconds - remainingSeconds), "action.blocked",
+                events ??= new SimulationEventTail();
+                events.Add(new SimulationEvent(from.AddSeconds((target - from).TotalSeconds - remainingSeconds), "action.blocked",
                     availableHere ? "材料不足，行动受阻。" : "当前位置不允许执行该行动。", definition.Id));
                 continue;
             }
@@ -399,7 +499,7 @@ public static class SimulationEngine
                 // 队头空转会耗尽转换上限并让玩家永久卡死。此处移出失效行动并留事件证据，继续推进后续行动。
                 player.RemoveAction(action.Id, incrementVersion: false,
                     endedAtUnixSeconds: from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d);
-                events ??= new List<SimulationEvent>();
+                events ??= new SimulationEventTail();
                 events.Add(new SimulationEvent(
                     from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
                     "action.invalid-dropped",
@@ -504,9 +604,10 @@ public static class SimulationEngine
             completedActions,
             completedRepeats,
             assetDeltas,
-            (IReadOnlyList<SimulationEvent>?)events ?? [],
+            events?.View ?? [],
             player.StateVersion,
-            transitions > 0);
+            transitions > 0,
+            events?.Dropped ?? 0);
     }
 
     /// <summary>
@@ -524,7 +625,7 @@ public static class SimulationEngine
         DateTimeOffset target,
         ref double remainingSeconds,
         ref Dictionary<ItemId, double>? deltas,
-        ref List<SimulationEvent>? events,
+        ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats)
     {
@@ -655,15 +756,14 @@ public static class SimulationEngine
             battle.Player.Hitpoints = Math.Clamp(player.Combat.Hitpoints, 0, player.Combat.MaxHitpoints);
             battle.Player.Manapoints = Math.Clamp(player.Combat.Manapoints, 0, player.Combat.MaxManapoints);
             // 玩家战外持久 Buff 注入触发求值视图；跨战冷却与未完吟唱折算进通用槽位时间线。
-            battle.Player.ExternalBuffStacks = buffId => player.Buffs.Active
-                .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
+            battle.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
             player.Combat.Skills.ApplyTo(battle.Player);
             var entryWaveNames = string.Join("、", wave.Select(monster => monster.Name));
             if (battle.Player.Hitpoints <= 0)
             {
                 action.Status = ActionQueueStatus.Blocked;
                 AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"气血衰竭，无法迎战：{entryWaveNames}。", definition.Id);
-                if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !player.Actions.All(a => a.Status == ActionQueueStatus.Blocked))
+                if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !AllActionsBlocked(player.Actions))
                 {
                     player.RotateActionToTail(action.Id);
                 }
@@ -691,9 +791,13 @@ public static class SimulationEngine
             return;
         }
 
-        if (expedition.Phase != CombatExpeditionPhase.Combat || expedition.Enemies is not { Count: > 0 } waveEnemies
-            || waveEnemies.Any(enemy => !gameData.CombatMonsters.ContainsKey(enemy.EnemyId)))
+        if (expedition.Phase != CombatExpeditionPhase.Combat
+            || expedition.Enemies is not { Count: > 0 } waveEnemies)
             throw new DomainException(DomainErrorCode.InvariantViolation, "战斗远征敌人状态无效。");
+        // 敌人字典查找展开为显式循环：每场战斗一次、语义与原来的 Any 短路一致。
+        for (var i = 0; i < waveEnemies.Count; i++)
+            if (!gameData.CombatMonsters.ContainsKey(waveEnemies[i].EnemyId))
+                throw new DomainException(DomainErrorCode.InvariantViolation, "战斗远征敌人状态无效。");
 
         var templates = waveEnemies.Select(enemy =>
         {
@@ -714,14 +818,14 @@ public static class SimulationEngine
             waveEnemies.Select(enemy => enemy.State).ToArray(),
             expedition.BattleElapsedSeconds,
             expedition.Outcome,
-            expedition.PlayerAttackCount + waveEnemies.Sum(enemy => enemy.State.AttackCount),
+            expedition.PlayerAttackCount + SumEnemyAttackCounts(waveEnemies),
             InBattleRespawnSeconds(encounter),
             expedition.PlayerRespawnAtSeconds ?? double.PositiveInfinity);
         for (var i = 0; i < waveEnemies.Count; i++)
             battleState.Enemies[i].DefinitionId = waveEnemies[i].EnemyId;
         // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
-        battleState.Player.ExternalBuffStacks = buffId => player.Buffs.Active
-            .Where(buff => buffId is null || buff.BuffId == buffId).Sum(buff => buff.Stacks);
+        var activeBuffs = player.Buffs.Active;
+        battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
         var battleFrom = battleState.ElapsedSeconds;
         var actionElapsedBeforeCombat = (target - from).TotalSeconds - remainingSeconds;
         var combatResult = DeterministicCombatEngine.AdvanceTo(battleState, battleFrom + remainingSeconds);
@@ -746,17 +850,19 @@ public static class SimulationEngine
         });
         action.Expedition = updatedBattle;
         action.ProgressSeconds = updatedBattle.PhaseElapsedSeconds;
+        // 战斗日志名称惰性化：只有确实产生日志帧时才解析怪物名，空事件帧战斗零字典/字符串成本。
+        string? waveNames = null;
+        string WaveNames() => waveNames ??= string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name));
         string NameOf(string combatantId) => combatantId == "player" ? "你"
             : combatantId.StartsWith("enemy:", StringComparison.Ordinal)
                 && int.TryParse(combatantId[6..], out var enemyIndex) && enemyIndex >= 0 && enemyIndex < waveEnemies.Count
                 ? gameData.CombatMonsters[waveEnemies[enemyIndex].EnemyId].Name
                 : combatantId;
-        var waveNames = string.Join("、", waveEnemies.Select(enemy => gameData.CombatMonsters[enemy.EnemyId].Name));
         // 阵亡/起身与战斗事件共用同一战斗时钟：按时刻交错落日志，每次阵亡逐帧计败走与死亡。
         var deaths = combatResult.PlayerDeathTimestamps ?? [];
         var respawns = combatResult.PlayerRespawnTimestamps ?? [];
         // 局部函数无法捕获外层 ref 参数：提前初始化后用普通引用落事件。
-        events ??= [];
+        events ??= new SimulationEventTail();
         var eventSink = events;
         int deathCursor = 0, respawnCursor = 0;
         void FlushDownedEvents(double uptoBattleSeconds)
@@ -768,7 +874,7 @@ public static class SimulationEngine
                 player.MarkDirty(PlayerSectionKind.Progression);
                 player.RecordStats(action.Id, deathAt.ToUnixTimeMilliseconds() / 1000d, report => report.Deaths += 1);
                 eventSink.Add(new SimulationEvent(deathAt,
-                    "combat.lost", $"阵亡：被 {waveNames} 击倒，原地调息等待复活。", definition.Id));
+                    "combat.lost", $"阵亡：被 {WaveNames()} 击倒，原地调息等待复活。", definition.Id));
             }
             while (respawnCursor < respawns.Count && respawns[respawnCursor] <= uptoBattleSeconds + 1e-9)
             {
@@ -777,8 +883,23 @@ public static class SimulationEngine
                     "combat.respawned", "原地起身：气血回满，战斗继续。", definition.Id));
             }
         }
+        // 尾窗门控：战斗事件超过尾窗容量时，按时间序直接跳过注定被丢弃的帧，
+        // 不再为它们构造日志文本；窗口内的阵亡/起身衍生帧仍按战斗时钟交错落日志。
+        var emittedIndex = 0;
+        var keepFrom = combatResult.Events.Count > SimulationEventTail.TailCapacity
+            ? combatResult.Events[combatResult.Events.Count - SimulationEventTail.TailCapacity].AtSeconds
+            : double.NegativeInfinity;
         foreach (var combatEvent in combatResult.Events)
         {
+            if (combatEvent.AtSeconds < keepFrom)
+            {
+                // 该帧不可保留：折叠已滞留域事件并推进阵亡/起身游标，跳过名称与消息构造。
+                eventSink.Fold(emittedIndex);
+                emittedIndex = eventSink.Count;
+                FlushDownedEvents(combatEvent.AtSeconds);
+                emittedIndex = eventSink.Count;
+                continue;
+            }
             var attacker = NameOf(combatEvent.AttackerId);
             var targetName = NameOf(combatEvent.TargetId);
             var eventAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom));
@@ -789,7 +910,9 @@ public static class SimulationEngine
             else
                 AddCombatEventAt(ref events, eventAt,
                     "combat.attack", $"{attacker}{(combatEvent.Hit ? $"命中{targetName}，造成 {combatEvent.Damage:0.##} 点伤害" : $"攻击{targetName}未命中")}。", definition.Id);
+            emittedIndex = eventSink.Count;
             FlushDownedEvents(combatEvent.AtSeconds);
+            emittedIndex = eventSink.Count;
         }
         FlushDownedEvents(double.MaxValue);
         if (combatResult.Outcome == CombatOutcome.Running) return;
@@ -806,7 +929,7 @@ public static class SimulationEngine
                 waveNumber: 1) with
             { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
             action.ProgressSeconds = 0;
-            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{waveNames}。", definition.Id);
+            AddCombatEvent(ref events, from, target, remainingSeconds, "combat.lost", $"讨伐失败：{WaveNames()}。", definition.Id);
             return;
         }
 
@@ -889,7 +1012,7 @@ public static class SimulationEngine
         DateTimeOffset target,
         ref double remainingSeconds,
         ref Dictionary<ItemId, double>? deltas,
-        ref List<SimulationEvent>? events)
+        ref SimulationEventTail? events)
     {
         var expedition = action.Expedition!;
         var playback = expedition.Duel ?? throw new DomainException(DomainErrorCode.InvariantViolation, "斗法回放载荷缺失。");
@@ -1195,16 +1318,16 @@ public static class SimulationEngine
         return Enum.TryParse(property.GetString(), true, out attribute) && Enum.IsDefined(attribute);
     }
 
-    private static void AddCombatEvent(ref List<SimulationEvent>? events, DateTimeOffset from, DateTimeOffset target, double remainingSeconds, string code, string message, ActionId actionId)
+    private static void AddCombatEvent(ref SimulationEventTail? events, DateTimeOffset from, DateTimeOffset target, double remainingSeconds, string code, string message, ActionId actionId)
     {
-        events ??= new List<SimulationEvent>();
+        events ??= new SimulationEventTail();
         var elapsed = Math.Max(0, (target - from).TotalSeconds - remainingSeconds);
         AddCombatEventAt(ref events, from.AddSeconds(elapsed), code, message, actionId);
     }
 
-    private static void AddCombatEventAt(ref List<SimulationEvent>? events, DateTimeOffset at, string code, string message, ActionId actionId)
+    private static void AddCombatEventAt(ref SimulationEventTail? events, DateTimeOffset at, string code, string message, ActionId actionId)
     {
-        events ??= new List<SimulationEvent>();
+        events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(at, code, message, actionId));
     }
 
@@ -1219,7 +1342,7 @@ public static class SimulationEngine
         DateTimeOffset from,
         DateTimeOffset target,
         ref double remainingSeconds,
-        ref List<SimulationEvent>? events,
+        ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats)
     {
@@ -1250,7 +1373,7 @@ public static class SimulationEngine
                 {
                     player.RemoveAction(action.Id, incrementVersion: false,
                         endedAtUnixSeconds: from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d);
-                    events ??= new List<SimulationEvent>();
+                    events ??= new SimulationEventTail();
                     events.Add(new SimulationEvent(
                         from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
                         "action.invalid-dropped",
@@ -1263,7 +1386,7 @@ public static class SimulationEngine
             {
                 player.RemoveAction(action.Id, incrementVersion: false,
                     endedAtUnixSeconds: from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d);
-                events ??= new List<SimulationEvent>();
+                events ??= new SimulationEventTail();
                 events.Add(new SimulationEvent(
                     from.AddSeconds((target - from).TotalSeconds - remainingSeconds),
                     "action.invalid-dropped",
@@ -1358,7 +1481,7 @@ public static class SimulationEngine
         DateTimeOffset from,
         DateTimeOffset target,
         ref double remainingSeconds,
-        ref List<SimulationEvent>? events,
+        ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats,
         WorldGraph? worldGraph)
@@ -1392,7 +1515,7 @@ public static class SimulationEngine
         player.MarkDirty(PlayerSectionKind.Progression);
 
         var arrivalTime = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
-        events ??= new List<SimulationEvent>();
+        events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(
             arrivalTime,
             "world.arrived",
@@ -1532,7 +1655,7 @@ public static class SimulationEngine
         GameDataCatalog? gameData,
         DateTimeOffset target,
         ref Dictionary<ItemId, double>? deltas,
-        ref List<SimulationEvent>? events,
+        ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats)
     {
@@ -1616,7 +1739,7 @@ public static class SimulationEngine
         player.MarkDirty(PlayerSectionKind.ActionQueue);
         if (manaGain != 0 || hitpointGain != 0) player.MarkDirty(PlayerSectionKind.Combat);
         if (buffTouched) player.MarkDirty(PlayerSectionKind.Buffs);
-        events ??= new List<SimulationEvent>();
+        events ??= new SimulationEventTail();
         events.Add(new SimulationEvent(
             target,
             "action.completed",
@@ -1652,7 +1775,7 @@ public static class SimulationEngine
         DateTimeOffset at,
         Guid actionInstanceId,
         ref Dictionary<ItemId, double>? deltas,
-        ref List<SimulationEvent>? events)
+        ref SimulationEventTail? events)
     {
         if (gameData is null || player.Settings.AutoUseSlots.Count == 0) return 1d;
         var multiplier = 1d;
@@ -1680,7 +1803,7 @@ public static class SimulationEngine
                     slot = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
                     player.Settings.AutoUseSlots[i] = slot;
                     player.MarkDirty(PlayerSectionKind.Settings);
-                    events ??= new List<SimulationEvent>();
+                    events ??= new SimulationEventTail();
                     events.Add(new SimulationEvent(
                         at,
                         "auto-use.activated",
@@ -1703,7 +1826,7 @@ public static class SimulationEngine
         ActionDefinition definition,
         GameDataCatalog? gameData,
         DateTimeOffset at,
-        ref List<SimulationEvent>? events)
+        ref SimulationEventTail? events)
     {
         if (gameData is null || player.Settings.AutoUseSlots.Count == 0) return;
         for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
@@ -1716,7 +1839,7 @@ public static class SimulationEngine
             player.Settings.AutoUseSlots[i] = slot with { RemainingDurationSeconds = remaining };
             player.MarkDirty(PlayerSectionKind.Settings);
             if (remaining > 0) continue;
-            events ??= new List<SimulationEvent>();
+            events ??= new SimulationEventTail();
             events.Add(new SimulationEvent(
                 at,
                 "auto-use.depleted",
@@ -1742,36 +1865,47 @@ public static class SimulationEngine
             && consumable.UsableInActionKinds.Contains(actionKind);
     }
 
-    /// <summary>战斗域通用栏持续消耗品槽位迭代器：仅 general 组可挂持续消耗品。</summary>
-    private static IEnumerable<(int Index, AutoUseSlotState Slot, ItemDefinition Item, ConsumableDefinition Consumable)>
-        CombatSustainedSlots(PlayerAggregate player, GameDataCatalog gameData)
+    /// <summary>战斗域通用栏持续消耗品槽判定：仅 general 组可挂持续消耗品。</summary>
+    /// <remarks>由调用方按索引扫描代替迭代器：战斗中逐帧调用路径不分配枚举器，
+    /// 且写回槽位只替换当前索引，实时读与原 ToArray 快照语义等价。</remarks>
+    private static bool TryGetCombatSustainedSlot(PlayerAggregate player, GameDataCatalog gameData, int index,
+        out AutoUseSlotState slot, out ItemDefinition item, out ConsumableDefinition consumable)
     {
-        for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
-        {
-            var slot = player.Settings.AutoUseSlots[i];
-            if (!slot.Enabled || slot.ItemId is null || slot.Group != AutoUseSlotState.SlotGroupGeneral
-                || !string.Equals(slot.ActionType, "combat", StringComparison.OrdinalIgnoreCase)) continue;
-            var itemId = new ItemId(slot.ItemId);
-            if (!gameData.Items.TryGetValue(itemId, out var item)
-                || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0 } consumable
-                || !consumable.UsableInActionKinds.Contains(ActionKind.Combat)) continue;
-            yield return (i, slot, item, consumable);
-        }
+        slot = player.Settings.AutoUseSlots[index];
+        item = null!;
+        consumable = null!;
+        if (!slot.Enabled || slot.ItemId is null || slot.Group != AutoUseSlotState.SlotGroupGeneral
+            || !string.Equals(slot.ActionType, "combat", StringComparison.OrdinalIgnoreCase)) return false;
+        var itemId = new ItemId(slot.ItemId);
+        if (!gameData.Items.TryGetValue(itemId, out item!)
+            || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0 } found
+            || !found.UsableInActionKinds.Contains(ActionKind.Combat)) return false;
+        consumable = found;
+        return true;
     }
 
     /// <summary>遭遇入场时为空的通用栏持续消耗品槽补能：消耗 1 件物品充入整段时长，条件不满足则跳过。</summary>
     private static void RechargeCombatSustainedSlots(PlayerAggregate player, GameDataCatalog gameData,
         AssetWallet? assetBalances, double atUnix, Guid actionInstanceId, CombatEncounterState battle,
-        ref Dictionary<ItemId, double>? deltas, ref List<SimulationEvent>? events)
+        ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
     {
-        foreach (var (index, slot, item, consumable) in CombatSustainedSlots(player, gameData).ToArray())
+        for (var index = 0; index < player.Settings.AutoUseSlots.Count; index++)
         {
+            if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out var consumable)) continue;
             if (slot.RemainingDurationSeconds > 0) continue;
             // 持续消耗品的入场补能同样走共享触发判定：条件不满足本场不启用，不扣件。
-            if (consumable.Triggers is { Count: > 0 } triggers
-                && !Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, battle.Player,
-                    battle.Enemies.Where(unit => unit.IsAlive).MaxBy(unit => unit.EffectiveThreat),
-                    [battle.Player], battle.Enemies)) continue;
+            if (consumable.Triggers is { Count: > 0 } triggers)
+            {
+                // 目标 = 存活敌中有效威胁最高者（MaxBy 语义：严格更大才替换，平局保留先见者）。
+                CombatantState? triggerTarget = null;
+                var battleEnemies = battle.Enemies;
+                for (var i = 0; i < battleEnemies.Count; i++)
+                    if (battleEnemies[i].IsAlive
+                        && (triggerTarget is null || battleEnemies[i].EffectiveThreat > triggerTarget.EffectiveThreat))
+                        triggerTarget = battleEnemies[i];
+                if (!Domain.Combat.SkillTriggerEvaluator.MatchesAll(triggers, battle.Player,
+                        triggerTarget, [battle.Player], battleEnemies)) continue;
+            }
             var itemId = item.Id;
             var available = (assetBalances?.Get(new AssetKey(itemId)) ?? 0d)
                 + (deltas?.GetValueOrDefault(itemId) ?? 0d);
@@ -1780,7 +1914,7 @@ public static class SimulationEngine
             player.RecordStats(actionInstanceId, atUnix, report => report.AddItemLost(itemId, 1));
             player.Settings.AutoUseSlots[index] = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
             player.MarkDirty(PlayerSectionKind.Settings);
-            events ??= new List<SimulationEvent>();
+            events ??= new SimulationEventTail();
             events.Add(new SimulationEvent(DateTimeOffset.FromUnixTimeMilliseconds((long)(atUnix * 1000)),
                 "auto-use.activated", $"自动使用 {item.Name}，可生效 {consumable.DurationSeconds:0.######} 秒。",
                 null, new Dictionary<ItemId, double> { [itemId] = -1d }));
@@ -1791,8 +1925,9 @@ public static class SimulationEngine
     private static void InjectSustainedCombatBuffs(PlayerAggregate player, GameDataCatalog gameData,
         CombatEncounterState battle)
     {
-        foreach (var (_, slot, item, _) in CombatSustainedSlots(player, gameData))
+        for (var index = 0; index < player.Settings.AutoUseSlots.Count; index++)
         {
+            if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out _)) continue;
             if (slot.RemainingDurationSeconds <= 0
                 || !gameData.RawItems.TryGetValue(item.Id.Value, out var rawItem)
                 || !rawItem.TryGetProperty("consumable", out var raw)
@@ -1813,19 +1948,45 @@ public static class SimulationEngine
 
     /// <summary>战斗存活时钟扣减：仅对本场实际推进的战斗秒数生效。</summary>
     private static void DrainCombatSustainedSlots(PlayerAggregate player, GameDataCatalog gameData,
-        double consumedBattleSeconds, DateTimeOffset at, ActionId actionId, ref List<SimulationEvent>? events)
+        double consumedBattleSeconds, DateTimeOffset at, ActionId actionId, ref SimulationEventTail? events)
     {
         if (consumedBattleSeconds <= 0) return;
-        foreach (var (index, slot, item, _) in CombatSustainedSlots(player, gameData))
+        for (var index = 0; index < player.Settings.AutoUseSlots.Count; index++)
         {
+            if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out _)) continue;
             if (slot.RemainingDurationSeconds <= 0) continue;
             var remaining = Math.Max(0d, slot.RemainingDurationSeconds - consumedBattleSeconds);
             player.Settings.AutoUseSlots[index] = slot with { RemainingDurationSeconds = remaining };
             player.MarkDirty(PlayerSectionKind.Settings);
             if (remaining > 0) continue;
-            events ??= new List<SimulationEvent>();
+            events ??= new SimulationEventTail();
             events.Add(new SimulationEvent(at, "auto-use.depleted", $"{item.Name} 的持续时间已耗尽。", actionId));
         }
+    }
+
+    /// <summary>波次敌人攻击计数求和：保持原 LINQ Sum 的逐项累加顺序（double 累加顺序参与位级确定性）。</summary>
+    private static double SumEnemyAttackCounts(IReadOnlyList<ExpeditionEnemyState> waveEnemies)
+    {
+        var total = 0d;
+        for (var i = 0; i < waveEnemies.Count; i++) total += waveEnemies[i].State.AttackCount;
+        return total;
+    }
+
+    /// <summary>战外 Buff 层数合计：注入战斗单位 ExternalBuffStacks 的求值体，无 LINQ 分配。</summary>
+    private static double SumActiveBuffStacks(List<ActiveBuff> actives, string? buffId)
+    {
+        var total = 0d;
+        for (var i = 0; i < actives.Count; i++)
+            if (buffId is null || actives[i].BuffId == buffId) total += actives[i].Stacks;
+        return total;
+    }
+
+    /// <summary>行动队列全阻塞判定：与原 Actions.All 同序短路。</summary>
+    private static bool AllActionsBlocked(IReadOnlyList<QueuedAction> actions)
+    {
+        for (var i = 0; i < actions.Count; i++)
+            if (actions[i].Status != ActionQueueStatus.Blocked) return false;
+        return true;
     }
 
     private static bool MatchesActionType(string actionType, ActionKind kind) => kind switch

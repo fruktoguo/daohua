@@ -63,28 +63,56 @@ public sealed record PlayerCombatSkillState(
     public static PlayerCombatSkillState Empty { get; } = new([], null, 0, 0);
 
     /// <summary>校验状态不变量：冷却项非空且技能 ID 唯一、吟唱字段自洽、计数非负有限。</summary>
-    public bool IsValid => Cooldowns is not null && Cooldowns.All(value => !string.IsNullOrWhiteSpace(value.AbilityId)
-        && double.IsFinite(value.RemainingSeconds) && value.RemainingSeconds > 0)
-        && Cooldowns.Select(value => value.AbilityId).Distinct(StringComparer.Ordinal).Count() == Cooldowns.Count
-        && double.IsFinite(CastRemainingSeconds) && CastRemainingSeconds >= 0
-        && (CastingAbilityId is null ? CastRemainingSeconds == 0 : !string.IsNullOrWhiteSpace(CastingAbilityId))
-        && double.IsFinite(CastCount) && CastCount >= 0;
+    public bool IsValid
+    {
+        get
+        {
+            if (Cooldowns is null) return false;
+            // 单趟校验 + Ordinal 唯一性集合：等价于原 All(...) && Distinct(Ordinal).Count() == Count。
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < Cooldowns.Count; i++)
+            {
+                var value = Cooldowns[i];
+                if (string.IsNullOrWhiteSpace(value.AbilityId)
+                    || !double.IsFinite(value.RemainingSeconds) || value.RemainingSeconds <= 0
+                    || !seen.Add(value.AbilityId)) return false;
+            }
+            return double.IsFinite(CastRemainingSeconds) && CastRemainingSeconds >= 0
+                && (CastingAbilityId is null ? CastRemainingSeconds == 0 : !string.IsNullOrWhiteSpace(CastingAbilityId))
+                && double.IsFinite(CastCount) && CastCount >= 0;
+        }
+    }
 
     /// <summary>距离下一个脱战结算边界（最早冷却到期）的秒数；无待结算项时返回 +∞（计算属性不参与持久化）。</summary>
     [JsonIgnore]
     public double NextBoundarySeconds
-        => CastingAbilityId is not null ? CastRemainingSeconds
-            : Cooldowns.Select(value => value.RemainingSeconds).DefaultIfEmpty(double.PositiveInfinity).Min();
+    {
+        get
+        {
+            if (CastingAbilityId is not null) return CastRemainingSeconds;
+            var next = double.PositiveInfinity;
+            for (var i = 0; i < Cooldowns.Count; i++)
+                if (Cooldowns[i].RemainingSeconds < next) next = Cooldowns[i].RemainingSeconds;
+            return next;
+        }
+    }
 
     /// <summary>非战斗时间也扣减冷却，离开战斗取消吟唱；已支付的灵力不退还。</summary>
     public PlayerCombatSkillState AdvanceIdle(double seconds)
     {
         if (!double.IsFinite(seconds) || seconds < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能推进时间无效。");
+        // 过滤+扣减单趟完成：保留剩余时间大于 seconds+1e-9 的项，按原列表顺序。
+        var cooldowns = new List<CombatSkillCooldown>(Cooldowns.Count);
+        for (var i = 0; i < Cooldowns.Count; i++)
+        {
+            var value = Cooldowns[i];
+            if (value.RemainingSeconds > seconds + 1e-9)
+                cooldowns.Add(value with { RemainingSeconds = value.RemainingSeconds - seconds });
+        }
         return this with
         {
-            Cooldowns = Cooldowns.Where(value => value.RemainingSeconds > seconds + 1e-9)
-                .Select(value => value with { RemainingSeconds = value.RemainingSeconds - seconds }).ToArray(),
+            Cooldowns = cooldowns,
             CastingAbilityId = null,
             CastRemainingSeconds = 0
         };
@@ -102,7 +130,14 @@ public sealed record PlayerCombatSkillState(
         {
             var id = JsonRead.Text(unit.Skills[i].Ability, "id");
             if (id is null) continue;
-            var remaining = Cooldowns.FirstOrDefault(value => value.AbilityId == id)?.RemainingSeconds ?? 0;
+            // 冷却条目数极小，线性扫描代替 FirstOrDefault 委托：取首个同名条目（Ordinal 语义与 ??= 0 一致）。
+            var remaining = 0d;
+            for (var j = 0; j < Cooldowns.Count; j++)
+                if (string.Equals(Cooldowns[j].AbilityId, id, StringComparison.Ordinal))
+                {
+                    remaining = Cooldowns[j].RemainingSeconds;
+                    break;
+                }
             if (remaining > 0) untils[i] = remaining;
         }
         unit.SkillCastCount = CastCount;
