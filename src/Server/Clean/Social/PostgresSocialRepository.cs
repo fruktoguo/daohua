@@ -82,6 +82,108 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         return result;
     }
 
+    /// <summary>
+    /// 一次往返读取社交状态快照：把好友、收/发申请、队伍 ID、队长、成员与邀请共 7 条查询
+    /// 打包进同一连接上的 NpgsqlBatch，替代原先 6 次串行往返。
+    /// 队伍头与成员通过「玩家当前队伍」子查询定位，免去先取 party_id 再查第二轮的依赖往返；
+    /// 玩家未组队或 parties 行缺失时对应结果集为空，拼装语义与逐条查询完全一致。
+    /// </summary>
+    public async ValueTask<SocialStateSnapshot> LoadStateSnapshotAsync(Guid playerId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var batch = new NpgsqlBatch(connection);
+
+        static NpgsqlBatchCommand Command(string sql, Guid playerId)
+        {
+            var command = new NpgsqlBatchCommand(sql);
+            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            return command;
+        }
+
+        batch.BatchCommands.Add(Command("""
+            SELECT f.friend_id, p.display_name
+            FROM social.friendships f
+            JOIN identity.players p ON p.player_id = f.friend_id
+            WHERE f.player_id = $1
+            ORDER BY p.display_name
+            """, playerId));
+        batch.BatchCommands.Add(Command("""
+            SELECT r.request_id, r.requester_id, p.display_name, r.created_at
+            FROM social.friend_requests r
+            JOIN identity.players p ON p.player_id = r.requester_id
+            WHERE r.status = 'pending' AND r.target_id = $1
+            ORDER BY r.created_at
+            """, playerId));
+        batch.BatchCommands.Add(Command("""
+            SELECT r.request_id, r.target_id, p.display_name, r.created_at
+            FROM social.friend_requests r
+            JOIN identity.players p ON p.player_id = r.target_id
+            WHERE r.status = 'pending' AND r.requester_id = $1
+            ORDER BY r.created_at
+            """, playerId));
+        batch.BatchCommands.Add(Command(
+            "SELECT party_id FROM social.party_members WHERE player_id = $1", playerId));
+        batch.BatchCommands.Add(Command("""
+            SELECT leader_id FROM social.parties
+            WHERE party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
+            """, playerId));
+        batch.BatchCommands.Add(Command("""
+            SELECT m.player_id, p.display_name
+            FROM social.party_members m
+            JOIN identity.players p ON p.player_id = m.player_id
+            WHERE m.party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
+            ORDER BY m.joined_at, m.player_id
+            """, playerId));
+        batch.BatchCommands.Add(Command("""
+            SELECT i.party_id, i.inviter_id, p.display_name
+            FROM social.party_invitations i
+            JOIN identity.players p ON p.player_id = i.inviter_id
+            WHERE i.invitee_id = $1
+            """, playerId));
+
+        await using var reader = await batch.ExecuteReaderAsync(cancellationToken);
+
+        var friends = new List<FriendRecord>();
+        while (await reader.ReadAsync(cancellationToken))
+            friends.Add(new FriendRecord(reader.GetGuid(0), reader.GetString(1)));
+
+        var incoming = new List<FriendRequestView>();
+        await reader.NextResultAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            incoming.Add(new FriendRequestView(
+                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2),
+                reader.GetFieldValue<DateTimeOffset>(3)));
+
+        var outgoing = new List<FriendRequestView>();
+        await reader.NextResultAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            outgoing.Add(new FriendRequestView(
+                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2),
+                reader.GetFieldValue<DateTimeOffset>(3)));
+
+        await reader.NextResultAsync(cancellationToken);
+        Guid? partyId = await reader.ReadAsync(cancellationToken) ? reader.GetGuid(0) : null;
+
+        await reader.NextResultAsync(cancellationToken);
+        Guid? leaderId = await reader.ReadAsync(cancellationToken) ? reader.GetGuid(0) : null;
+
+        var members = new List<PartyMemberRecord>();
+        await reader.NextResultAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            members.Add(new PartyMemberRecord(reader.GetGuid(0), reader.GetString(1)));
+
+        await reader.NextResultAsync(cancellationToken);
+        var invitation = await reader.ReadAsync(cancellationToken)
+            ? new PartyInvitationRecord(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2))
+            : null;
+
+        // 成员行存在但 parties 行缺失时视为未组队，与 GetPartyAsync 的判定一致。
+        var party = partyId is { } id && leaderId is { } leader
+            ? new PartyRecord(id, leader, members)
+            : null;
+        return new SocialStateSnapshot(friends, incoming, outgoing, party, invitation);
+    }
+
     /// <summary>判断双方是否已是好友。</summary>
     public async ValueTask<bool> AreFriendsAsync(Guid left, Guid right, CancellationToken cancellationToken = default)
     {

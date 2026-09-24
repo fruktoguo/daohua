@@ -37,6 +37,21 @@ public sealed record PartyRecord(Guid PartyId, Guid LeaderId, IReadOnlyList<Part
 /// <param name="InviterName">邀请人道号。</param>
 public sealed record PartyInvitationRecord(Guid PartyId, Guid InviterId, string InviterName);
 
+/// <summary>
+/// 一次往返装配好的社交状态持久化视图（<see cref="SocialRuntime.BuildStateAsync"/> 的输入）。
+/// </summary>
+/// <param name="Friends">好友列表（按道号排序）。</param>
+/// <param name="IncomingRequests">收到的待处理好友申请。</param>
+/// <param name="OutgoingRequests">发出的待处理好友申请。</param>
+/// <param name="Party">所在队伍与成员；未组队或队伍记录缺失时为 null。</param>
+/// <param name="Invitation">待处理的队伍邀请；无邀请时为 null。</param>
+public sealed record SocialStateSnapshot(
+    IReadOnlyList<FriendRecord> Friends,
+    IReadOnlyList<FriendRequestView> IncomingRequests,
+    IReadOnlyList<FriendRequestView> OutgoingRequests,
+    PartyRecord? Party,
+    PartyInvitationRecord? Invitation);
+
 /// <summary>一条已持久化的传音消息。</summary>
 /// <param name="MessageId">消息唯一标识。</param>
 /// <param name="Channel">频道标识。</param>
@@ -104,6 +119,12 @@ public interface ISocialRepository
 
     /// <summary>列出待处理好友申请的对端视图；incoming 为 true 时返回收到的，否则返回发出的。</summary>
     ValueTask<IReadOnlyList<FriendRequestView>> ListPendingRequestsAsync(Guid playerId, bool incoming, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 一次往返读取构建社交状态所需的全部视图（好友/双向申请/队伍含成员/队伍邀请），
+    /// 供扇出与握手场景批量构建，替代逐条串行查询。
+    /// </summary>
+    ValueTask<SocialStateSnapshot> LoadStateSnapshotAsync(Guid playerId, CancellationToken cancellationToken = default);
 
     /// <summary>判断双方是否已是好友。</summary>
     ValueTask<bool> AreFriendsAsync(Guid left, Guid right, CancellationToken cancellationToken = default);

@@ -14,6 +14,8 @@ public sealed class OnlinePresenceRegistry
 {
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Entry> _entries = [];
+    /// <summary>节点 → 在线玩家集合的倒排索引；与 <see cref="_entries"/> 同锁维护，只索引非空节点。</summary>
+    private readonly Dictionary<string, HashSet<Guid>> _nodeIndex = [];
 
     /// <summary>存在感变化事件：参数为附近列表可能发生变化的玩家 ID 集合。</summary>
     public event Func<IReadOnlyList<Guid>, ValueTask>? PresenceChanged;
@@ -32,6 +34,11 @@ public sealed class OnlinePresenceRegistry
         {
             _entries.TryGetValue(playerId, out var previous);
             _entries[playerId] = new Entry(displayName, nodeId);
+            if (previous.NodeId != nodeId)
+            {
+                RemoveFromNodeIndex(previous.NodeId, playerId);
+                AddToNodeIndex(nodeId, playerId);
+            }
             affected = CollectAffected(previous.NodeId, nodeId);
         }
         return PublishAsync(affected);
@@ -49,6 +56,8 @@ public sealed class OnlinePresenceRegistry
             if (!_entries.TryGetValue(playerId, out var previous)) return ValueTask.CompletedTask;
             if (previous.NodeId == nodeId) return ValueTask.CompletedTask;
             _entries[playerId] = previous with { NodeId = nodeId };
+            RemoveFromNodeIndex(previous.NodeId, playerId);
+            AddToNodeIndex(nodeId, playerId);
             affected = CollectAffected(previous.NodeId, nodeId);
         }
         return PublishAsync(affected);
@@ -63,8 +72,9 @@ public sealed class OnlinePresenceRegistry
         lock (_gate)
         {
             if (!_entries.Remove(playerId, out var previous)) return ValueTask.CompletedTask;
+            // 索引先行摘除：CollectAffected 看到的旧节点集合已不含本人。
+            RemoveFromNodeIndex(previous.NodeId, playerId);
             affected = CollectAffected(previous.NodeId, null);
-            affected.Remove(playerId);
         }
         return PublishAsync(affected);
     }
@@ -90,17 +100,21 @@ public sealed class OnlinePresenceRegistry
     public IReadOnlyList<NearbyPlayerDto> SnapshotAtNode(string? nodeId)
     {
         if (string.IsNullOrEmpty(nodeId)) return [];
+        List<NearbyPlayerDto> result;
         lock (_gate)
         {
-            var result = new List<NearbyPlayerDto>();
-            foreach (var pair in _entries)
+            // 倒排索引直达节点成员：锁内只做 O(节点人数) 的投影，不再全表扫描在线玩家。
+            if (!_nodeIndex.TryGetValue(nodeId, out var members) || members.Count == 0) return [];
+            result = new List<NearbyPlayerDto>(members.Count);
+            foreach (var playerId in members)
             {
-                if (pair.Value.NodeId == nodeId)
-                    result.Add(new NearbyPlayerDto(pair.Key.ToString("D"), pair.Value.DisplayName));
+                // 索引与主表同锁维护，命中集合中的玩家必定仍登记在 _entries。
+                result.Add(new NearbyPlayerDto(playerId.ToString("D"), _entries[playerId].DisplayName));
             }
-            result.Sort(static (left, right) => string.CompareOrdinal(left.DisplayName, right.DisplayName));
-            return result;
         }
+        // 排序移出锁外：避免长时占锁阻塞上下线与换节点。
+        result.Sort(static (left, right) => string.CompareOrdinal(left.DisplayName, right.DisplayName));
+        return result;
     }
 
     /// <summary>读取玩家当前节点；未在线返回 null。</summary>
@@ -111,15 +125,32 @@ public sealed class OnlinePresenceRegistry
         lock (_gate) return _entries.TryGetValue(playerId, out var entry) ? entry.NodeId : null;
     }
 
+    /// <summary>把玩家挂到节点索引上（nodeId 为空时不索引）。</summary>
+    private void AddToNodeIndex(string? nodeId, Guid playerId)
+    {
+        if (nodeId is null) return;
+        if (!_nodeIndex.TryGetValue(nodeId, out var members))
+            _nodeIndex[nodeId] = members = [];
+        members.Add(playerId);
+    }
+
+    /// <summary>把玩家从节点索引摘除；集合腾空后删除节点键避免空桶累积。</summary>
+    private void RemoveFromNodeIndex(string? nodeId, Guid playerId)
+    {
+        if (nodeId is null) return;
+        if (!_nodeIndex.TryGetValue(nodeId, out var members)) return;
+        members.Remove(playerId);
+        if (members.Count == 0) _nodeIndex.Remove(nodeId);
+    }
+
     /// <summary>在锁内计算受影响玩家：旧节点与新节点上的在线玩家，外加移动者本人。</summary>
     private List<Guid> CollectAffected(string? previousNode, string? currentNode)
     {
         var affected = new HashSet<Guid>();
-        foreach (var pair in _entries)
-        {
-            if (pair.Value.NodeId is null) continue;
-            if (pair.Value.NodeId == previousNode || pair.Value.NodeId == currentNode) affected.Add(pair.Key);
-        }
+        if (previousNode is not null && _nodeIndex.TryGetValue(previousNode, out var before))
+            affected.UnionWith(before);
+        if (currentNode is not null && _nodeIndex.TryGetValue(currentNode, out var after))
+            affected.UnionWith(after);
         return [.. affected];
     }
 

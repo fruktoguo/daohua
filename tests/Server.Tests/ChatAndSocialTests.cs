@@ -44,7 +44,10 @@ public sealed class ChatAndSocialTests
         Assert.Contains(right.ToString("D"), forward, StringComparison.Ordinal);
     }
 
-    /// <summary>聊天消息按作用域只保留最近 100 条，超出即删除；历史回放按时间正序。</summary>
+    /// <summary>
+    /// 聊天裁剪按作用域写计数每 16 条摊销一次：周期内最多超限 15 条，触发裁剪后回到恰好 100 条；
+    /// 历史回放始终只取最近 100 条并按时间正序。
+    /// </summary>
     [Fact]
     [Trait("Category", "PostgresIntegration")]
     public async Task ChatRepository_KeepsOnlyLatestHundredPerScope()
@@ -57,19 +60,78 @@ public sealed class ChatAndSocialTests
         var scopeKey = $"node-{Guid.NewGuid():N}";
 
         var baseTime = DateTimeOffset.UtcNow;
-        for (var index = 0; index < 105; index++)
+        // 127 条写入：第 112 条（112 % 16 == 0）触发一次裁剪回到 100，此后累积到 115 条。
+        for (var index = 0; index < 127; index++)
         {
             await chatRepository.AppendAsync(new ChatMessageRecord(
                 Guid.NewGuid(), ChatChannels.Nearby, scopeKey, sender, senderName, $"第 {index} 条", baseTime.AddSeconds(index)), 100);
         }
+        var storedBeforeTrim = await ScalarAsync(source, "SELECT count(*) FROM social.chat_messages WHERE channel = 'nearby' AND scope_key = $1", scopeKey);
+        Assert.Equal(115L, Convert.ToInt64(storedBeforeTrim));
+
+        // 第 128 条（128 % 16 == 0）再次触发裁剪：回收到恰好 100 条，丢弃最旧的 28 条。
+        await chatRepository.AppendAsync(new ChatMessageRecord(
+            Guid.NewGuid(), ChatChannels.Nearby, scopeKey, sender, senderName, "第 127 条", baseTime.AddSeconds(127)), 100);
 
         var recent = await chatRepository.LoadRecentAsync(ChatChannels.Nearby, scopeKey, 100);
 
         Assert.Equal(100, recent.Count);
-        Assert.Equal("第 5 条", recent[0].Body);
-        Assert.Equal("第 104 条", recent[^1].Body);
+        Assert.Equal("第 28 条", recent[0].Body);
+        Assert.Equal("第 127 条", recent[^1].Body);
         var stored = await ScalarAsync(source, "SELECT count(*) FROM social.chat_messages WHERE channel = 'nearby' AND scope_key = $1", scopeKey);
         Assert.Equal(100L, Convert.ToInt64(stored));
+    }
+
+    /// <summary>社交状态构建一次往返取齐好友/双向申请/队伍/邀请，并按存在感投影在线标记与附近修士。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task BuildStateAsync_AssemblesAllSectionsInOneSnapshot()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var presence = new OnlinePresenceRegistry();
+        var (alice, aliceName) = await SeedPlayerAsync(source, "观星者");
+        var (bob, bobName) = await SeedPlayerAsync(source, "听潮客");
+        var (carol, carolName) = await SeedPlayerAsync(source, "拾穗人");
+        var social = new SocialRuntime(repository, presence, NullLogger<SocialRuntime>.Instance);
+        var nodeId = $"node-{Guid.NewGuid():N}";
+
+        // alice↔bob 互成好友；carol 自建队伍邀请 alice，同时发来一条待处理好友申请。
+        Assert.True((await social.ApplyAsync(alice, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.FriendRequest, bob.ToString("D")))).Success);
+        Assert.True((await social.ApplyAsync(bob, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.FriendAccept, alice.ToString("D")))).Success);
+        Assert.True((await social.ApplyAsync(carol, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyInvite, alice.ToString("D")))).Success);
+        Assert.True((await social.ApplyAsync(carol, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.FriendRequest, alice.ToString("D")))).Success);
+
+        await presence.RegisterAsync(alice, aliceName, nodeId);
+        await presence.RegisterAsync(bob, bobName, nodeId);
+
+        var state = await social.BuildStateAsync(alice, "req-1");
+
+        Assert.Equal("req-1", state.RequestId);
+        var friend = Assert.Single(state.Friends);
+        Assert.Equal(bob.ToString("D"), friend.PlayerId);
+        Assert.Equal(bobName, friend.DisplayName);
+        Assert.True(friend.Online);
+        var incoming = Assert.Single(state.IncomingRequests);
+        Assert.Equal(carol.ToString("D"), incoming.PlayerId);
+        Assert.Equal(carolName, incoming.DisplayName);
+        Assert.Empty(state.OutgoingRequests);
+        Assert.NotNull(state.PartyInvitation);
+        Assert.Equal(carol.ToString("D"), state.PartyInvitation!.InviterId);
+        Assert.Equal(carolName, state.PartyInvitation.InviterName);
+        Assert.Null(state.Party);
+        Assert.Equal(2, state.NearbyPlayers.Count);
+
+        // 接受邀请入队后再构建：队伍视图与成员在线标记齐备。
+        Assert.True((await social.ApplyAsync(alice, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyAccept))).Success);
+        var inParty = await social.BuildStateAsync(alice, null);
+        Assert.Null(inParty.RequestId);
+        Assert.NotNull(inParty.Party);
+        Assert.Equal(carol.ToString("D"), inParty.Party!.LeaderId);
+        Assert.Equal(2, inParty.Party.Members.Count);
+        Assert.Contains(inParty.Party.Members, member => member.PlayerId == alice.ToString("D") && member.Online);
+        Assert.Contains(inParty.Party.Members, member => member.PlayerId == carol.ToString("D") && !member.Online);
+        Assert.Null(inParty.PartyInvitation);
     }
 
     /// <summary>好友申请经接受后双向成立，解除后双向失效。</summary>

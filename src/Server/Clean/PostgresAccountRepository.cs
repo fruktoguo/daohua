@@ -74,6 +74,16 @@ public sealed class PostgresAccountRepository(
     /// <summary>密码长度上限。</summary>
     public const int MaxPasswordLength = 24;
     private const int Pbkdf2Iterations = 600_000;
+    /// <summary>
+    /// 会话校验内存缓存 TTL：握手与连续 API 的重复认证不再每次打三表 JOIN。
+    /// 吊销即时性不依赖 TTL——<see cref="RevokeSessionAsync"/> 提交后主动失效缓存项；
+    /// 代价是「绕过本仓储直改 auth_sessions」的吊销最长延迟一个 TTL，当前代码不存在该路径。
+    /// </summary>
+    private static readonly TimeSpan SessionCacheTtl = TimeSpan.FromSeconds(3);
+    /// <summary>缓存容量阈值：超过即整体清空，避免异常流量下令牌键无限膨胀。</summary>
+    private const int SessionCacheLimit = 4096;
+    /// <summary>token_hash(hex) → (身份, 缓存截止时刻)；截止时刻不超过会话自身 expires_at。</summary>
+    private readonly ConcurrentDictionary<string, (SessionIdentity Identity, DateTimeOffset ExpiresAt)> _sessionCache = new();
     private static readonly Regex AccountPattern = new("^[a-zA-Z0-9_]{3,32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -214,14 +224,23 @@ public sealed class PostgresAccountRepository(
         return new AccountLoginResult(true, accountId, playerId, normalizedAccount, name, null, null, token);
     }
 
-    /// <summary>按令牌哈希查找未撤销且未过期的会话；每次认证请求调用，令牌明文只用于哈希比对。</summary>
+    /// <summary>
+    /// 按令牌哈希查找未撤销且未过期的会话；每次认证请求调用，令牌明文只用于哈希比对。
+    /// 命中内存缓存（短 TTL 且不超过会话 expires_at）时直接返回，未命中才落库；
+    /// 只缓存肯定结果，无效/过期/已撤销令牌每次都查库，不会把失败结果固化。
+    /// </summary>
     public async ValueTask<SessionIdentity?> ValidateSessionAsync(string token, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
         var tokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        var cacheKey = Convert.ToHexString(tokenHash);
+        var now = DateTimeOffset.UtcNow;
+        if (_sessionCache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+            return cached.Identity;
+
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT a.account_id, p.player_id, a.login_normalized, p.display_name
+            SELECT a.account_id, p.player_id, a.login_normalized, p.display_name, s.expires_at
             FROM identity.auth_sessions s
             JOIN identity.accounts a ON s.account_id = a.account_id
             JOIN identity.players p ON p.account_id = a.account_id
@@ -232,9 +251,15 @@ public sealed class PostgresAccountRepository(
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = tokenHash });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        return await reader.ReadAsync(cancellationToken)
-            ? new SessionIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3))
-            : null;
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var identity = new SessionIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3));
+        // 缓存截止取「TTL 上限」与「会话自身过期时刻」的较早者，过期语义不被缓存放宽。
+        var sessionExpiresAt = reader.GetFieldValue<DateTimeOffset>(4);
+        var cacheUntil = now.Add(SessionCacheTtl);
+        if (sessionExpiresAt < cacheUntil) cacheUntil = sessionExpiresAt;
+        if (_sessionCache.Count >= SessionCacheLimit) _sessionCache.Clear();
+        _sessionCache[cacheKey] = (identity, cacheUntil);
+        return identity;
     }
 
     /// <summary>按令牌哈希撤销会话；命中未撤销行时同事务写登出审计事件，令牌不存在或已撤销时静默返回。</summary>
@@ -258,6 +283,8 @@ public sealed class PostgresAccountRepository(
                 now, cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
+        // 提交成功后主动失效缓存项：登出/吊销对已缓存令牌的即时性不依赖 TTL。
+        _sessionCache.TryRemove(Convert.ToHexString(tokenHash), out _);
     }
 
     /// <summary>
@@ -278,7 +305,17 @@ public sealed class PostgresAccountRepository(
             command.Parameters.Add(new NpgsqlParameter { Value = normalized });
             command.Parameters.Add(new NpgsqlParameter { Value = NormalizeNameForLookup(normalized) });
             command.Parameters.Add(new NpgsqlParameter { Value = DateTimeOffset.UtcNow });
-            return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+            var renamed = await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+            if (renamed)
+            {
+                // 道号会进入会话声明：改名成功后剔除该玩家的缓存身份，避免 /session 回旧道号。
+                foreach (var pair in _sessionCache)
+                {
+                    if (pair.Value.Identity.PlayerId == playerId)
+                        _sessionCache.TryRemove(pair.Key, out _);
+                }
+            }
+            return renamed;
         }
         catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UniqueViolation)
         {

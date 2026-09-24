@@ -14,6 +14,9 @@ public sealed class SocialRuntime
     /// <summary>队伍人数上限（含队长）。</summary>
     public const int MaxPartyMembers = 5;
 
+    /// <summary>一次扇出推送的最大并行构建数：限制并发占用的数据库连接数。</summary>
+    private const int MaxNotifyParallelism = 4;
+
     private readonly ISocialRepository _repository;
     private readonly OnlinePresenceRegistry _presence;
     private readonly ILogger<SocialRuntime> _logger;
@@ -54,18 +57,17 @@ public sealed class SocialRuntime
     /// <returns>社交状态载荷。</returns>
     public async ValueTask<SocialStateDto> BuildStateAsync(Guid playerId, string? requestId, CancellationToken cancellationToken = default)
     {
-        var friends = await _repository.ListFriendsAsync(playerId, cancellationToken);
-        var incoming = await _repository.ListPendingRequestsAsync(playerId, true, cancellationToken);
-        var outgoing = await _repository.ListPendingRequestsAsync(playerId, false, cancellationToken);
-        var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
-        var party = partyId is null ? null : await _repository.GetPartyAsync(partyId.Value, cancellationToken);
-        var invitation = await _repository.GetPartyInvitationAsync(playerId, cancellationToken);
+        // 持久化视图打包成单连接一次往返（NpgsqlBatch），替换原先 6 次串行查询；
+        // 本方法无副作用且只依赖 playerId，可由握手/扇出等多调用方安全并行调用。
+        var snapshot = await _repository.LoadStateSnapshotAsync(playerId, cancellationToken);
+        var party = snapshot.Party;
+        var invitation = snapshot.Invitation;
 
         return new SocialStateDto(
             requestId,
-            [.. friends.Select(friend => new FriendDto(friend.FriendId.ToString("D"), friend.DisplayName, _presence.IsOnline(friend.FriendId)))],
-            [.. incoming.Select(ToRequestDto)],
-            [.. outgoing.Select(ToRequestDto)],
+            [.. snapshot.Friends.Select(friend => new FriendDto(friend.FriendId.ToString("D"), friend.DisplayName, _presence.IsOnline(friend.FriendId)))],
+            [.. snapshot.IncomingRequests.Select(ToRequestDto)],
+            [.. snapshot.OutgoingRequests.Select(ToRequestDto)],
             party is null
                 ? null
                 : new PartyDto(
@@ -229,12 +231,40 @@ public sealed class SocialRuntime
     {
         var handler = StateChanged;
         if (handler is null || playerIds.Count == 0) return;
-        foreach (var playerId in playerIds.Distinct())
+        // 收件人去重；离线玩家没有会话，构建状态只会白跑数据库查询。
+        var recipients = new List<Guid>(playerIds.Count);
+        var seen = new HashSet<Guid>();
+        foreach (var playerId in playerIds)
         {
-            if (playerId == exclude) continue;
-            // 离线玩家没有会话，构建状态只会白跑数据库查询。
+            if (playerId == exclude || !seen.Add(playerId)) continue;
             if (!_presence.IsOnline(playerId)) continue;
-            await handler(playerId);
+            recipients.Add(playerId);
+        }
+        if (recipients.Count == 0) return;
+        if (recipients.Count == 1)
+        {
+            await handler(recipients[0]);
+            return;
+        }
+        // 小并行扇出：不同玩家的状态构建与推送互不阻塞，上限 4 避免打满连接池；
+        // 同一玩家的推送顺序仍由调用方的串行触发保证，语义不变。
+        using var throttler = new SemaphoreSlim(MaxNotifyParallelism);
+        var pending = new List<Task>(recipients.Count);
+        foreach (var playerId in recipients)
+            pending.Add(NotifyOneAsync(handler, playerId, throttler));
+        await Task.WhenAll(pending);
+
+        static async Task NotifyOneAsync(Func<Guid, ValueTask> handler, Guid playerId, SemaphoreSlim throttler)
+        {
+            await throttler.WaitAsync();
+            try
+            {
+                await handler(playerId);
+            }
+            finally
+            {
+                throttler.Release();
+            }
         }
     }
 

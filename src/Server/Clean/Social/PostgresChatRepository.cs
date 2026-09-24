@@ -4,12 +4,23 @@ namespace Server.Clean.Social;
 /// 传音消息的 PostgreSQL 持久化实现。
 /// 保留策略：写入与裁剪在同一事务内完成，任何 (channel, scope_key) 作用域只保留最新 100 条，
 /// 不存在历史归档与分页接口。
+/// 裁剪按作用域写计数摊销：每写满 <see cref="TrimInterval"/> 条才执行一次 DELETE，
+/// 超限量被约束在 (0, TrimInterval) 条内，随下一次周期裁剪回到上限——100 条不变量最终成立。
 /// </summary>
 public sealed class PostgresChatRepository(NpgsqlDataSource dataSource) : IChatRepository
 {
-    /// <summary>写入一条消息并同事务裁剪该作用域超出保留条数的旧行。</summary>
+    /// <summary>同一作用域每写入多少条做一次裁剪（把每条一次的 DELETE 摊薄为 1/16）。</summary>
+    private const int TrimInterval = 16;
+    /// <summary>写计数表容量阈值：超过即清空重计，避免长跑下作用域键无限膨胀（重计只推迟裁剪，不破坏上限不变量）。</summary>
+    private const int TrimCounterPruneThreshold = 4096;
+
+    /// <summary>(channel, scopeKey) → 自上次裁剪周期起累计的写入数。</summary>
+    private readonly ConcurrentDictionary<(string Channel, string ScopeKey), int> _appendsSinceTrim = new();
+
+    /// <summary>写入一条消息；命中本周期裁剪点时在同事务内裁掉该作用域超出保留条数的旧行。</summary>
     public async ValueTask AppendAsync(ChatMessageRecord message, int retention, CancellationToken cancellationToken = default)
     {
+        var trimDue = ShouldTrim(message.Channel, message.ScopeKey);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var insert = new NpgsqlCommand("""
@@ -26,23 +37,32 @@ public sealed class PostgresChatRepository(NpgsqlDataSource dataSource) : IChatR
             insert.Parameters.Add(new NpgsqlParameter { Value = message.SentAt });
             await insert.ExecuteNonQueryAsync(cancellationToken);
         }
-        await using (var trim = new NpgsqlCommand("""
-            DELETE FROM social.chat_messages
-            WHERE channel = $1 AND scope_key = $2
-              AND message_id NOT IN (
-                  SELECT message_id FROM social.chat_messages
-                  WHERE channel = $1 AND scope_key = $2
-                  ORDER BY sent_at DESC, message_id DESC
-                  LIMIT $3
-              )
-            """, connection, transaction))
+        if (trimDue)
         {
+            await using var trim = new NpgsqlCommand("""
+                DELETE FROM social.chat_messages
+                WHERE channel = $1 AND scope_key = $2
+                  AND message_id NOT IN (
+                      SELECT message_id FROM social.chat_messages
+                      WHERE channel = $1 AND scope_key = $2
+                      ORDER BY sent_at DESC, message_id DESC
+                      LIMIT $3
+                  )
+                """, connection, transaction);
             trim.Parameters.Add(new NpgsqlParameter { Value = message.Channel });
             trim.Parameters.Add(new NpgsqlParameter { Value = message.ScopeKey });
             trim.Parameters.Add(new NpgsqlParameter { Value = retention });
             await trim.ExecuteNonQueryAsync(cancellationToken);
         }
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>按作用域写计数判定本次是否触发裁剪：每第 <see cref="TrimInterval"/> 条写触发一次。</summary>
+    private bool ShouldTrim(string channel, string scopeKey)
+    {
+        if (_appendsSinceTrim.Count >= TrimCounterPruneThreshold) _appendsSinceTrim.Clear();
+        var writes = _appendsSinceTrim.AddOrUpdate((channel, scopeKey), 1, static (_, count) => count + 1);
+        return writes % TrimInterval == 0;
     }
 
     /// <summary>读取某作用域最近若干条消息，按时间正序返回。</summary>
