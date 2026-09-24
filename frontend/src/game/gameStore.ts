@@ -105,8 +105,8 @@ interface GameStore {
   setBuildings: (buildings: readonly BuildingDefinition[]) => void
   /** 应用服务端全量快照 (Snapshot) */
   applySnapshot: (snapshot: PlayerSnapshot) => void
-  /** 应用服务端增量补丁 (Delta Patch) */
-  applyPatch: (patch: PlayerPatch) => void
+  /** 应用服务端增量补丁 (Delta Patch)；allowSameVersion 仅供命令回执：钱包类命令不推版本但携带资产差额 */
+  applyPatch: (patch: PlayerPatch, options?: { allowSameVersion?: boolean }) => void
   /** 导出当前 UI 投影，供 wire.v1 增量解码器合并变更 section。 */
   toSnapshotView: () => PlayerSnapshot
   /** 重置游戏状态至离线初始值（登出时调用） */
@@ -345,7 +345,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       useUiStore.getState().setActiveTab('combat')
     }
   },
-  applyPatch: (patch) => {
+  applyPatch: (patch, options) => {
     const state = get()
     // 1. 若尚未接收到服务端全量快照，则拒绝应用增量包
     if (!state.hasReceivedSnapshot) {
@@ -356,7 +356,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     // 相邻推送间正常跳 +N；增量 section 携带的是全量当前值而非差分，跳过中间版本无损。
     // 真实的帧级连续性由 WS 通道与信封 sequence 保证，不得对领域版本做 +1 连续校验——
     // 否则每个 delta 都会误判为断层，陷入「断开重连 → 全量快照 → 再断层」的死循环。
-    if (patch.version <= state.version) return
+    // 例外：命令回执可能与推送错序到达且钱包类命令不推状态版本——同版本回执仍要合入
+    // 资产差额（同版本分段内容按服务端不变量逐位相同，重写无害），仅严格更旧的回执才丢弃。
+    if (patch.version < state.version || (patch.version === state.version && options?.allowSameVersion !== true)) return
     // 每次应用含 duel 分段的增量后，将战报合并写入本地历史缓存（reportId 去重、倒序截断 50 条）。
     if (patch.duel) mergeBattleReportHistory(patch.playerId, patch.duel)
     // action_queue 分段为唯一行动队列通道（全量分段替换），不存在独立的高频进度通道。

@@ -683,8 +683,10 @@ public sealed class PlayerRuntime(
         /// <summary>
         /// 计算本次操作内新增的脏标记分段差集：未出现的分段与流水号未前进的分段都不算本次触及；
         /// 已在持久化脏集合中的分段若本次再次标脏（戳号前进）仍计入。调用方必须持有单写者锁。
+        /// 差集为空同样是精确答案（如 market.*/item.* 只动钱包不动任何分段），返回空集合而不是
+        /// null「未知」——让回执/推送按最小增量编码，不会退化成全量兜底。
         /// </summary>
-        private HashSet<PlayerSectionKind>? TouchedSectionsSince(IReadOnlyDictionary<PlayerSectionKind, long> marksBefore)
+        private HashSet<PlayerSectionKind> TouchedSectionsSince(IReadOnlyDictionary<PlayerSectionKind, long> marksBefore)
         {
             HashSet<PlayerSectionKind>? touched = null;
             foreach (var (section, mark) in aggregate.DirtySectionMarks)
@@ -692,7 +694,7 @@ public sealed class PlayerRuntime(
                 if (!marksBefore.TryGetValue(section, out var previous) || previous != mark)
                     (touched ??= []).Add(section);
             }
-            return touched;
+            return touched ?? [];
         }
 
         /// <summary>

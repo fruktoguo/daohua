@@ -533,14 +533,10 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("SESSION_CLOSED", "玩家会话已关闭，请重新连接。"), cancellationToken);
                             continue;
                         }
-                        var commandDto = new CommandResultDto(
-                            commandEnvelope.RequestId,
-                            commandResult.Success,
-                            commandResult.Code,
-                            commandResult.Message,
-                            commandResult.Snapshot.StateVersion,
-                            JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(commandResult.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
-                        await QueueJsonAsync(session, WireMessageType.CommandResult, envelope.RequestId, commandDto, cancellationToken);
+                        // 回执快照双形态：触及差集精确且已有推送基线 → delta；否则全量兜底。
+                        var receiptPacket = BuildCommandResultPacket(
+                            session, commandEnvelope.RequestId, envelope.RequestId, commandResult, gameData, out var receiptEnqueued);
+                        if (!receiptEnqueued) await session.SendAsync(receiptPacket, cancellationToken);
                         break;
                     case WireMessageType.ChatSend:
                         if (!handshaken)
@@ -641,6 +637,51 @@ public static class WebSocketEndpoint
                 payloadBytes);
             target.TrySendDroppable(WireEnvelopeCodec.Encode(envelope));
         }
+    }
+
+    /// <summary>
+    /// 构造命令回执帧：成功路径的精确触及差集复用会话推送基线窄化为 delta 形态；
+    /// 失败、幂等重放（TouchedSections 未知）或尚无推送基线时回退全量 snapshot 形态。
+    /// delta 帧与实时推送共用同一条基线，「读基线 → 编码 → 入队 → 提交基线」在 <see cref="WebSocketSession.OutboundSync"/>
+    /// 内整体串行：回执帧在通道中物理先于任何按新基线编码的并发推送，客户端按序合并后与全量状态逐位一致。
+    /// 回执帧不可丢：入队成功才提交基线；满队列时退回锁外阻塞发送（enqueued=false），基线不前移让后续增量补发。
+    /// </summary>
+    /// <param name="enqueued">true 表示帧已进入发送队列；false 时调用方须在锁外 SendAsync 同一数据包。</param>
+    public static byte[] BuildCommandResultPacket(
+        WebSocketSession session,
+        string requestId,
+        Guid envelopeRequestId,
+        PlayerCommandResult result,
+        Domain.GameData.GameDataCatalog gameData,
+        out bool enqueued)
+    {
+        if (result.Snapshot.TouchedSections is { } touched)
+        {
+            lock (session.OutboundSync)
+            {
+                var (previousSections, previousAssets) = session.ReadPushBaseline();
+                if (previousSections is not null)
+                {
+                    var delta = ProtocolSnapshotMapper.BuildDelta(
+                        result.Snapshot, gameData.Fingerprint, gameData, touched,
+                        previousSections, previousAssets,
+                        out var nextSections, out var nextAssets);
+                    var packet = EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(),
+                        new CommandResultDto(requestId, result.Success, result.Code, result.Message,
+                            result.Snapshot.StateVersion, CommandResultSnapshotForms.Delta,
+                            JsonSerializer.SerializeToElement(delta, ProtocolJson.Options)));
+                    enqueued = session.TrySend(packet);
+                    if (enqueued) session.CommitPushBaseline(nextSections, nextAssets);
+                    return packet;
+                }
+            }
+        }
+        var full = new CommandResultDto(
+            requestId, result.Success, result.Code, result.Message,
+            result.Snapshot.StateVersion, CommandResultSnapshotForms.Snapshot,
+            JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
+        enqueued = false;
+        return EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(), full);
     }
 
     /// <summary>社交失败原因到协议错误码的映射。</summary>

@@ -61,6 +61,16 @@ try {
   assert.equal(patch.world.monsters[0].drops[0].maxQuantity, 3)
   assert.equal(patch.serverTimeUnixSeconds, Date.parse(delta.lastSimulatedAt) / 1000)
   await assert.rejects(decodePlayerSnapshotDeltaDto({ ...delta, lastSimulatedAt: undefined }, current, deltaBytes), /lastSimulatedAt/)
+  // 命令回执增量形态：snapshotForm=delta 时 changedSections 位于 snapshot 成员内，
+  // data 字节区间按同一校验和口径复算（与服务端 CommandResultDto 内嵌结构一致）。
+  const receipt = {
+    requestId: 'req-1', succeeded: true, code: 'OK', message: '', stateVersion: 2,
+    snapshotForm: 'delta', snapshot: delta,
+  }
+  const receiptBytes = Buffer.from(JSON.stringify(receipt))
+  const receiptPatch = await decodePlayerSnapshotDeltaDto(receipt.snapshot, current, receiptBytes, ['snapshot', 'changedSections'])
+  assert.equal(receiptPatch.world.nodeId, payload.nodeId)
+  assert.equal(receiptPatch.version, receipt.stateVersion)
   assert.deepEqual(parseCsvToMap('key,zh_source,translation\ncommon.confirm,确认,"Confirm, now"\ncommon.cancel,取消,\n'), { 'common.confirm': 'Confirm, now' })
   assert.throws(() => parseCsvToMap('key,translation\ncommon.confirm,"broken"suffix'), /分隔符/)
   assert.ok(!LOCALES.includes('template'))

@@ -52,8 +52,12 @@ public sealed class ProtocolTests
             WireMessageType.CommandResult,
             requestId: Guid.NewGuid(),
             sequence: 9,
-            new CommandResultDto("req-1", true, "OK", "accepted", 8));
-        Assert.Equal(WireMessageType.CommandResult, WireEnvelopeCodec.Decode(WireEnvelopeCodec.Encode(resultEnvelope)).MessageType);
+            new CommandResultDto("req-1", true, "OK", "accepted", 8, CommandResultSnapshotForms.Delta));
+        var decodedResult = WireEnvelopeCodec.Decode(WireEnvelopeCodec.Encode(resultEnvelope));
+        Assert.Equal(WireMessageType.CommandResult, decodedResult.MessageType);
+        // 回执快照形态字段随信封往返：前端按形态分派全量/增量合并，不做模糊探测。
+        Assert.True(WireEnvelopeCodec.TryDeserializeJson<CommandResultDto>(decodedResult, out var parsedResult));
+        Assert.Equal(CommandResultSnapshotForms.Delta, parsedResult!.SnapshotForm);
     }
 
     /// <summary>

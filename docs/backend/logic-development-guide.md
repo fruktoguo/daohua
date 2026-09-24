@@ -84,7 +84,8 @@
 // 2. SemaphoreSlim 串行进入；先验 requestId 幂等回执与 expectedStateVersion；
 // 3. switch (command) 路由：校验材料、境界、位置等前置条件；
 // 4. 调用 PlayerAggregate 方法修改状态，Touch()/MarkDirty 对应分段；
-// 5. 返回 PlayerCommandResult；增量经 ProtocolSnapshotMapper 推流。
+// 5. 返回 PlayerCommandResult；增量经 ProtocolSnapshotMapper 推流，
+//    命令回执按 snapshotForm 携带 delta（精确触及差集）或 snapshot（兜底）。
 ```
 
 现行命令名（以 `PlayerRuntime.ExecuteAsync` 路由表为准）：

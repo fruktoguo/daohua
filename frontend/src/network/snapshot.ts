@@ -1152,6 +1152,9 @@ export async function decodePlayerSnapshotDto(
   }
 }
 
+/** 推送增量的 changedSections 成员在信封 JSON 中的默认路径（CommandResult 内嵌增量时为 ['snapshot','changedSections']）。 */
+const TOP_CHANGED_SECTIONS_PATH: readonly string[] = ['changedSections']
+
 /**
  * 解码服务端下发的增量快照补丁 DTO。
  * 只反序列化本次发生变更的 Section 与资产差量，生成轻量级的 PlayerPatch 对象供状态机就地合入。
@@ -1160,11 +1163,12 @@ export async function decodePlayerSnapshotDeltaDto(
   dto: PlayerSnapshotDeltaDto,
   current: PlayerSnapshot,
   payloadBytes: Uint8Array,
+  sectionMemberPath: readonly string[] = TOP_CHANGED_SECTIONS_PATH,
 ): Promise<PlayerPatch> {
   if (!dto || dto.playerId !== current.playerId) throw new Error('玩家增量快照归属不一致。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家增量快照')
   if (!Array.isArray(dto.changedSections)) throw new Error('玩家增量 section 列表无效。')
-  const sections = await decodeSections(dto.changedSections, payloadBytes, ['changedSections'])
+  const sections = await decodeSections(dto.changedSections, payloadBytes, sectionMemberPath)
   // 服务端权威时刻必须随每个增量刷新：行动倒计时与进度条以「服务端时刻 + 本地流逝」推算，
   // 若沿用上一次全量快照的时间戳，估算时钟偏移会随页面停留时长线性累积。
   // 每个增量必须提供可信的新时间锚点，缺失即协议错误。

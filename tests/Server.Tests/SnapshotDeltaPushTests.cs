@@ -318,6 +318,164 @@ public sealed class SnapshotDeltaPushTests
     }
 
     /// <summary>
+    /// 命令回执增量形态：触及差集精确且推送基线已建立时，回执只携带触及段与派生候选。
+    /// 客户端以「基线分段 + changedSections 覆盖」合并后，分段校验和与全量快照逐位一致；
+    /// 回执入队成功还会把会话推送基线前移到回执编码口径。
+    /// </summary>
+    [Fact]
+    public async Task CommandReceipt_EnqueueCommand_DeltaForm_MergesToFullState()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = new PlayerRuntime(
+            new FakeRepository(playerId),
+            new EmptyAssets(),
+            new NoopEconomy(),
+            GameDataCatalog.BuiltIn,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+        var session = new WebSocketSession(playerId, 16);
+        var initial = await runtime.LoadAsync(playerId);
+        var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
+        session.CommitPushBaseline(ChecksumsOf(initialDto.Sections), initialDto.Assets);
+
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(requestId.ToString("D"), "cultivation.draw-qi", 3), ProtocolJson.Options);
+        var result = await runtime.ExecuteAsync(playerId, "action.enqueue", payload, 0, requestId);
+        Assert.True(result.Success);
+        Assert.NotNull(result.Snapshot.TouchedSections);
+
+        var packet = WebSocketEndpoint.BuildCommandResultPacket(
+            session, requestId.ToString("D"), requestId, result, GameDataCatalog.BuiltIn, out var enqueued);
+        // 队列有余量：回执已在会话锁内入队并提交基线。
+        Assert.True(enqueued);
+        var envelope = WireEnvelopeCodec.Decode(packet);
+        Assert.Equal(WireMessageType.CommandResult, envelope.MessageType);
+        var receipt = JsonSerializer.Deserialize<CommandResultDto>(envelope.Payload.Span, ProtocolJson.Options)!;
+        Assert.Equal(CommandResultSnapshotForms.Delta, receipt.SnapshotForm);
+        var delta = receipt.Snapshot!.Value.Deserialize<PlayerSnapshotDeltaDto>(ProtocolJson.Options)!;
+        Assert.Equal(result.Snapshot.StateVersion, delta.StateVersion);
+        Assert.Contains(delta.ChangedSections, section => section.Section == PlayerSectionKinds.ActionQueue);
+        // 未触及分段不进入增量载荷。
+        Assert.DoesNotContain(delta.ChangedSections, section => section.Section == PlayerSectionKinds.Loadout);
+        Assert.DoesNotContain(delta.ChangedSections, section => section.Section == PlayerSectionKinds.Settings);
+        Assert.DoesNotContain(delta.ChangedSections, section => section.Section == PlayerSectionKinds.Duel);
+
+        // 客户端合并语义：基线校验和被 changedSections 覆盖后与全量快照逐位一致。
+        var fullDto = ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, "fp", GameDataCatalog.BuiltIn);
+        var merged = ChecksumsOf(initialDto.Sections);
+        foreach (var section in delta.ChangedSections) merged[section.Section] = section.Checksum;
+        Assert.Equal(ChecksumsOf(fullDto.Sections), merged);
+        // 回执已入队：推送基线前移到回执编码口径，后续增量按此裁决。
+        var (nextBaseline, _) = session.ReadPushBaseline();
+        Assert.Equal(merged, nextBaseline);
+    }
+
+    /// <summary>
+    /// 触及集不可判定（命令失败、快照不带差集）时回执回退全量形态：
+    /// 即使推送基线已建立也不得窄化，客户端可无条件重建状态。
+    /// </summary>
+    [Fact]
+    public async Task CommandReceipt_FailedCommand_FallsBackToSnapshotForm()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = new PlayerRuntime(
+            new FakeRepository(playerId),
+            new EmptyAssets(),
+            new NoopEconomy(),
+            GameDataCatalog.BuiltIn,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+        var session = new WebSocketSession(playerId, 16);
+        var initial = await runtime.LoadAsync(playerId);
+        var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
+        session.CommitPushBaseline(ChecksumsOf(initialDto.Sections), initialDto.Assets);
+
+        var result = await runtime.ExecuteAsync(playerId, "action.remove",
+            JsonSerializer.SerializeToElement(new { actionInstanceId = Guid.NewGuid().ToString("D") }));
+        Assert.False(result.Success);
+        Assert.Null(result.Snapshot.TouchedSections);
+
+        var packet = WebSocketEndpoint.BuildCommandResultPacket(
+            session, "req-remove", Guid.NewGuid(), result, GameDataCatalog.BuiltIn, out var enqueued);
+        Assert.False(enqueued);
+        var receipt = JsonSerializer.Deserialize<CommandResultDto>(WireEnvelopeCodec.Decode(packet).Payload.Span, ProtocolJson.Options)!;
+        Assert.Equal(CommandResultSnapshotForms.Snapshot, receipt.SnapshotForm);
+        var full = receipt.Snapshot!.Value.Deserialize<PlayerSnapshotDto>(ProtocolJson.Options)!;
+        Assert.Equal(8, full.Sections.Count);
+    }
+
+    /// <summary>
+    /// 幂等重放：同一 requestId 二次执行直接返回持久化/内存回执，快照不带本次触及差集
+    /// （原命令生成时点的客户端基线无法假设），回执必须标记全量形态。
+    /// </summary>
+    [Fact]
+    public async Task CommandReceipt_IdempotentReplay_ReturnsSnapshotForm()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = new PlayerRuntime(
+            new FakeRepository(playerId),
+            new EmptyAssets(),
+            new NoopEconomy(),
+            GameDataCatalog.BuiltIn,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+        var session = new WebSocketSession(playerId, 16);
+        var initial = await runtime.LoadAsync(playerId);
+        var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
+        session.CommitPushBaseline(ChecksumsOf(initialDto.Sections), initialDto.Assets);
+
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(requestId.ToString("D"), "cultivation.draw-qi", 3), ProtocolJson.Options);
+        var first = await runtime.ExecuteAsync(playerId, "action.enqueue", payload, 0, requestId);
+        Assert.True(first.Success);
+        var replay = await runtime.ExecuteAsync(playerId, "action.enqueue", payload, 0, requestId);
+        Assert.True(replay.Success);
+        Assert.Equal("IDEMPOTENT_REPLAY", replay.Code);
+        Assert.Null(replay.Snapshot.TouchedSections);
+
+        var packet = WebSocketEndpoint.BuildCommandResultPacket(
+            session, requestId.ToString("D"), requestId, replay, GameDataCatalog.BuiltIn, out var enqueued);
+        Assert.False(enqueued);
+        var receipt = JsonSerializer.Deserialize<CommandResultDto>(WireEnvelopeCodec.Decode(packet).Payload.Span, ProtocolJson.Options)!;
+        Assert.Equal(CommandResultSnapshotForms.Snapshot, receipt.SnapshotForm);
+    }
+
+    /// <summary>
+    /// 零触及命令（market.*/空拍推进等只动钱包或完全无写入）差集为空≠未知：
+    /// 回执仍走增量形态，changedSections 只可能含派生候选段（progression 时钟 / combat 属性 / world 建筑）。
+    /// </summary>
+    [Fact]
+    public async Task CommandReceipt_NoTouchedSections_DeltaCarriesDerivedCandidatesOnly()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = new PlayerRuntime(
+            new FakeRepository(playerId),
+            new EmptyAssets(),
+            new NoopEconomy(),
+            GameDataCatalog.BuiltIn,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+        var session = new WebSocketSession(playerId, 16);
+        var initial = await runtime.LoadAsync(playerId);
+        var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
+        session.CommitPushBaseline(ChecksumsOf(initialDto.Sections), initialDto.Assets);
+
+        var result = await runtime.ExecuteAsync(playerId, "simulation.advance",
+            JsonSerializer.SerializeToElement(new { targetTime = DateTimeOffset.UtcNow }));
+        Assert.True(result.Success);
+        var touched = Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(result.Snapshot.TouchedSections);
+        Assert.Empty(touched);
+
+        var packet = WebSocketEndpoint.BuildCommandResultPacket(
+            session, "req-advance", Guid.NewGuid(), result, GameDataCatalog.BuiltIn, out var enqueued);
+        Assert.True(enqueued);
+        var receipt = JsonSerializer.Deserialize<CommandResultDto>(WireEnvelopeCodec.Decode(packet).Payload.Span, ProtocolJson.Options)!;
+        Assert.Equal(CommandResultSnapshotForms.Delta, receipt.SnapshotForm);
+        var delta = receipt.Snapshot!.Value.Deserialize<PlayerSnapshotDeltaDto>(ProtocolJson.Options)!;
+        // 空差集下只有派生候选可进入增量：显式触及的分段一律不得出现。
+        foreach (var section in delta.ChangedSections)
+            Assert.Contains(section.Section, new[] { PlayerSectionKinds.Progression, PlayerSectionKinds.Combat, PlayerSectionKinds.World });
+    }
+
+    /// <summary>
     /// 锁内属性面板判定（WireAttributesChanged）跟随属性输入修订号：
     /// 加载期初始推进已建立面板基线实例，输入未变的命令命中解析缓存 → false；
     /// loadout.replace 重建装备列表递增输入版本、修订号变化 → 重新解析 → true；

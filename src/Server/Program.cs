@@ -495,6 +495,7 @@ static ProblemDetails Problem(int status, string title, string detail) => new()
     Detail = detail
 };
 
+// HTTP 命令回执无会话推送基线可借用，固定全量快照形态；前端按 snapshotForm 分派合并。
 static CommandResultDto ToCommandResult(Guid requestId, PlayerCommandResult result, GameDataCatalog gameData) =>
     new(
         requestId.ToString("D"),
@@ -502,6 +503,7 @@ static CommandResultDto ToCommandResult(Guid requestId, PlayerCommandResult resu
         result.Code,
         result.Message,
         result.Snapshot.StateVersion,
+        CommandResultSnapshotForms.Snapshot,
         JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
 
 static void StampSessionCookie(HttpContext context, string token, TimeSpan lifetime)

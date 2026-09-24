@@ -457,20 +457,31 @@ public sealed record CommandEnvelopeDto(
     JsonElement Payload,
     long ExpectedStateVersion = 0);
 
+/// <summary>命令回执快照形态常量（与前端 CommandResultSnapshotForm 严格一一对应）。</summary>
+public static class CommandResultSnapshotForms
+{
+    /// <summary>全量快照（PlayerSnapshotDto）：触及集不可判定（失败/幂等重放）或无推送基线的兜底形态。</summary>
+    public const string Snapshot = "snapshot";
+    /// <summary>增量快照（PlayerSnapshotDeltaDto）：本次命令触及分段差集 + 派生候选经推送基线校验和裁决。</summary>
+    public const string Delta = "delta";
+}
+
 /// <summary>通用命令回执；失败时不返回内部异常或存储细节。</summary>
 /// <param name="RequestId">请求唯一标识</param>
 /// <param name="Succeeded">命令是否执行成功</param>
 /// <param name="Code">业务结果代码</param>
 /// <param name="Message">可展示给用户的提示消息</param>
 /// <param name="StateVersion">服务端当前状态版本</param>
-/// <param name="Payload">附加结果 JSON 载荷，可选</param>
+/// <param name="SnapshotForm">回执快照形态：<see cref="CommandResultSnapshotForms.Snapshot"/> 全量 / <see cref="CommandResultSnapshotForms.Delta"/> 增量</param>
+/// <param name="Snapshot">快照载荷；按 SnapshotForm 分别解释为 PlayerSnapshotDto（全量）或 PlayerSnapshotDeltaDto（增量），客户端按形态合并，不再做模糊探测</param>
 public sealed record CommandResultDto(
     string RequestId,
     bool Succeeded,
     string Code,
     string Message,
     long StateVersion,
-    JsonElement? Payload = null);
+    string SnapshotForm,
+    JsonElement? Snapshot = null);
 
 /// <summary>资产持有余额传输 DTO</summary>
 /// <param name="AssetId">资产配置 ID</param>

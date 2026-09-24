@@ -236,6 +236,15 @@ export interface CommandRequest {
   expectedStateVersion?: number
 }
 
+/** 命令回执快照形态：与服务端 CommandResultSnapshotForms 严格一一对应 */
+export const CommandResultSnapshotForm = {
+  /** 全量快照兜底：snapshot 字段为 PlayerSnapshotDto */
+  Snapshot: 'snapshot',
+  /** 增量快照：snapshot 字段为 PlayerSnapshotDeltaDto，与推送增量共用合并语义 */
+  Delta: 'delta',
+} as const
+export type CommandResultSnapshotForm = (typeof CommandResultSnapshotForm)[keyof typeof CommandResultSnapshotForm]
+
 /** CommandResult 指令执行回执载荷 */
 export interface CommandResultDto {
   /** 对应请求的关联 ID */
@@ -248,8 +257,10 @@ export interface CommandResultDto {
   message: string
   /** 执行后的整体状态版本 */
   stateVersion: number
-  /** 指令附带返回数据 */
-  payload?: unknown | null
+  /** 回执快照形态：snapshot=全量 / delta=触及分段增量 */
+  snapshotForm: CommandResultSnapshotForm
+  /** 快照载荷；具体 DTO 由 snapshotForm 判定，不再做模糊探测 */
+  snapshot?: unknown | null
 }
 
 /** Error 协议级错误帧载荷 */

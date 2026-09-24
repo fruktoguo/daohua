@@ -15,6 +15,7 @@ import {
   type ChatMessageDto,
   type ChatSendDto,
   type CommandResultDto,
+  CommandResultSnapshotForm,
   type ErrorDto,
   type HelloResponse,
   type LogBatchDto,
@@ -403,9 +404,15 @@ export class GameClient {
           if (timer === undefined) return
           window.clearTimeout(timer)
           this.pendingRequests.delete(result.requestId)
-          if (isPlayerSnapshotDto(result.payload)) {
-            // 内嵌快照的 sections 位于信封 JSON 的 payload 成员内，按路径定位 data 字节区间。
-            const snapshot = await decodePlayerSnapshotDto(result.payload, envelope.payload, this.account, ['payload', 'sections'])
+          // 回执快照双形态：snapshot=全量兜底，delta=触及分段增量（与推送共用合并语义与校验和口径）。
+          if (result.snapshotForm === CommandResultSnapshotForm.Delta && isPlayerSnapshotDeltaDto(result.snapshot)) {
+            const current = useGameStore.getState().toSnapshotView()
+            const patch = await decodePlayerSnapshotDeltaDto(result.snapshot, current, envelope.payload, ['snapshot', 'changedSections'])
+            // 钱包类命令（market.*/item.*）不推状态版本：同版本回执仍携带资产差额必须合入，仅丢弃严格更旧的回执。
+            useGameStore.getState().applyPatch(patch, { allowSameVersion: true })
+          } else if (result.snapshotForm === CommandResultSnapshotForm.Snapshot && isPlayerSnapshotDto(result.snapshot)) {
+            // 内嵌全量快照的 sections 位于信封 JSON 的 snapshot 成员内，按路径定位 data 字节区间。
+            const snapshot = await decodePlayerSnapshotDto(result.snapshot, envelope.payload, this.account, ['snapshot', 'sections'])
             useGameStore.getState().applySnapshot(snapshot)
           }
           if (result.message) useGameStore.getState().setNotice(result.message)
@@ -516,7 +523,7 @@ export const gameClient = new GameClient()
 // 标签页被互斥守卫阻断时拆除网络层：断开 socket、停止心跳并禁止自动重连。
 registerBlockedTeardown(() => gameClient.dispose())
 
-/** 识别 CommandResult 附带 payload 是否为全量快照（指令回执可随带最新快照就地应用） */
+/** 识别 CommandResult.snapshot 是否为全量快照（snapshotForm=snapshot 时应用） */
 function isPlayerSnapshotDto(value: unknown): value is PlayerSnapshotDto {
   if (value === null || typeof value !== 'object') return false
   const row = value as Record<string, unknown>
@@ -524,4 +531,11 @@ function isPlayerSnapshotDto(value: unknown): value is PlayerSnapshotDto {
     && typeof row.displayName === 'string'
     && Array.isArray(row.sections)
     && Array.isArray(row.assets)
+}
+
+/** 识别 CommandResult.snapshot 是否为增量快照（snapshotForm=delta 时应用） */
+function isPlayerSnapshotDeltaDto(value: unknown): value is PlayerSnapshotDeltaDto {
+  if (value === null || typeof value !== 'object') return false
+  const row = value as Record<string, unknown>
+  return typeof row.playerId === 'string' && Array.isArray(row.changedSections)
 }
