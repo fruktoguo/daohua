@@ -1,7 +1,7 @@
 // ComputeNode：可选的高延迟冷挂机补算节点，部署在远程个人设备上。
 // 边界：只做确定性 section 推进，不持玩家权威状态、不直连生产数据库。
 // 两种工作模式可并存：
-//   1. 反向拨入（推荐）：配置 ComputeNode:UpstreamUrl 后主动 WebSocket 拨入主服
+//   1. 反向拨入（推荐）：配置 ComputeNode:UpstreamUrls 后主动 WebSocket 拨入主服
 //      /internal/compute-link，进入动态节点组热插拔取任务，NAT 后免隧道；
 //   2. 独立 HTTP 调试口：/internal/v1/compute/advance-batch 仅凭 X-Compute-Token 鉴权，
 //      供手动/旁路验证批次执行（生产派发不走该口）。
@@ -62,16 +62,17 @@ var maxConcurrentBatches = Math.Clamp(
 // 防止调试批次挤爆节点算力。
 builder.Services.AddSingleton(new SemaphoreSlim(maxConcurrentBatches, maxConcurrentBatches));
 
-// 反向拨入模式：配置上游地址后节点主动拨出 compute-link 链路进入主服动态节点组。
-var upstreamUrl = builder.Configuration["ComputeNode:UpstreamUrl"]
-                  ?? Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_UPSTREAM_URL");
-if (!string.IsNullOrWhiteSpace(upstreamUrl))
+// 反向拨入模式：配置上游地址列表后节点主动拨出 compute-link 链路进入主服动态节点组。
+// ComputeNode:UpstreamUrls 支持配置节数组或分号分隔串（DAOHUA_COMPUTE_UPSTREAM_URLS 同口径）；
+// 列表未配置时回退旧单值键 ComputeNode:UpstreamUrl/DAOHUA_COMPUTE_UPSTREAM_URL。
+var upstreamUrls = ReadUpstreamUrls(builder.Configuration);
+if (upstreamUrls.Count > 0)
 {
     var nodeName = builder.Configuration["ComputeNode:NodeName"]
                    ?? Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_NODE_NAME")
                    ?? Environment.MachineName;
     builder.Services.AddHostedService(sp => new UpstreamLinkWorker(
-        upstreamUrl.Trim(), token, nodeName,
+        upstreamUrls, token, nodeName,
         sp.GetRequiredService<DeterministicBatchEngine>(),
         sp.GetRequiredService<GameDataCatalog>(),
         sp.GetRequiredService<ComputeMetrics>(),
@@ -236,3 +237,32 @@ app.MapPost("/internal/v1/compute/advance-batch", async (
 });
 
 app.Run();
+
+/// <summary>
+/// 读取主服上游地址列表：ComputeNode:UpstreamUrls 的配置节数组、分号分隔串与
+/// DAOHUA_COMPUTE_UPSTREAM_URLS（分号分隔）按序合并去重；三者皆空时回退旧单值键
+/// ComputeNode:UpstreamUrl/DAOHUA_COMPUTE_UPSTREAM_URL（内测期保留可读，便于存量部署平滑过渡）。
+/// </summary>
+static List<string> ReadUpstreamUrls(IConfiguration configuration)
+{
+    var urls = new List<string>();
+    void Add(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return;
+        foreach (var item in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!urls.Contains(item, StringComparer.Ordinal)) urls.Add(item);
+        }
+    }
+
+    Add(configuration["ComputeNode:UpstreamUrls"]);
+    Add(Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_UPSTREAM_URLS"));
+    foreach (var child in configuration.GetSection("ComputeNode:UpstreamUrls").GetChildren())
+        Add(child.Value);
+    if (urls.Count == 0)
+    {
+        Add(configuration["ComputeNode:UpstreamUrl"]);
+        Add(Environment.GetEnvironmentVariable("DAOHUA_COMPUTE_UPSTREAM_URL"));
+    }
+    return urls;
+}

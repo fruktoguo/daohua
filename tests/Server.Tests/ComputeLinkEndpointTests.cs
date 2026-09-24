@@ -98,13 +98,62 @@ public sealed class ComputeLinkEndpointTests
         Assert.Equal(0, registry.NodeCount);
     }
 
-    /// <summary>令牌不符的拨入必须在升级前以 401 拒绝。</summary>
+    /// <summary>令牌不符的拨入：hello 阶段回 UNAUTHORIZED 错误帧并以 PolicyViolation 关闭，节点不进注册表。</summary>
     [Fact]
-    public async Task InvalidTokenIsRejectedWith401()
+    public async Task InvalidTokenIsRejectedAfterHello()
     {
         await using var app = await StartHostAsync();
-        using var response = await SendUpgradeRequestAsync(app, "wrong-token-value");
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        var registry = app.Services.GetRequiredService<ComputeLinkRegistry>();
+        using var client = await ConnectAsync(app, "wrong-token-value");
+
+        await SendAsync(client, new ComputeLinkHello(
+            ComputeLinkContract.Version, "bad-token-node", 1, Catalog.Fingerprint));
+
+        var error = Assert.IsType<ComputeLinkError>(await ReceiveAsync(client));
+        Assert.Equal("UNAUTHORIZED", error.Code);
+        var close = Assert.IsType<WebSocketReceiveResult>(await ReceiveAsync(client));
+        Assert.Equal(WebSocketMessageType.Close, close.MessageType);
+        Assert.Equal(WebSocketCloseStatus.PolicyViolation, close.CloseStatus);
+        Assert.Equal(0, registry.NodeCount);
+    }
+
+    /// <summary>命中 ComputeNode:Tokens 映射的节点只认映射令牌：共享令牌对该节点失效。</summary>
+    [Fact]
+    public async Task MappedNodeRequiresItsOwnToken()
+    {
+        await using var app = await StartHostAsync(
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["odin"] = "odin-secret" });
+        var registry = app.Services.GetRequiredService<ComputeLinkRegistry>();
+
+        // 映射令牌 → 正常接入。
+        using (var client = await ConnectAsync(app, "odin-secret"))
+        {
+            await SendAsync(client, new ComputeLinkHello(
+                ComputeLinkContract.Version, "odin", 1, Catalog.Fingerprint));
+            var welcome = Assert.IsType<ComputeLinkWelcome>(await ReceiveAsync(client));
+            Assert.Single(registry.Nodes, entry => entry.NodeId == welcome.NodeId);
+        }
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (registry.NodeCount > 0 && DateTimeOffset.UtcNow < deadline)
+            await Task.Delay(50);
+
+        // 共享令牌对命中映射的节点失效 → UNAUTHORIZED。
+        using (var client = await ConnectAsync(app, TestToken))
+        {
+            await SendAsync(client, new ComputeLinkHello(
+                ComputeLinkContract.Version, "odin", 1, Catalog.Fingerprint));
+            var error = Assert.IsType<ComputeLinkError>(await ReceiveAsync(client));
+            Assert.Equal("UNAUTHORIZED", error.Code);
+        }
+
+        // 未命中映射的节点回退共享令牌 → 正常接入。
+        using (var client = await ConnectAsync(app, TestToken))
+        {
+            await SendAsync(client, new ComputeLinkHello(
+                ComputeLinkContract.Version, "other-node", 1, Catalog.Fingerprint));
+            var welcome = Assert.IsType<ComputeLinkWelcome>(await ReceiveAsync(client));
+            Assert.Single(registry.Nodes, entry => entry.NodeId == welcome.NodeId);
+        }
     }
 
     /// <summary>在线节点数达到上限时新拨入以 429 拒绝。</summary>
@@ -148,9 +197,14 @@ public sealed class ComputeLinkEndpointTests
         await using var app = await StartHostAsync();
         var metrics = app.Services.GetRequiredService<ComputeLinkMetrics>();
 
-        // 令牌不符：401 前置拒绝。
-        using (var response = await SendUpgradeRequestAsync(app, "bad-token"))
-            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        // 令牌不符：hello 后 UNAUTHORIZED 拒绝。
+        using (var client = await ConnectAsync(app, "bad-token"))
+        {
+            await SendAsync(client, new ComputeLinkHello(
+                ComputeLinkContract.Version, "bad-token", 1, Catalog.Fingerprint));
+            var error = Assert.IsType<ComputeLinkError>(await ReceiveAsync(client));
+            Assert.Equal("UNAUTHORIZED", error.Code);
+        }
 
         // 握手期协议违规（首帧不是 hello 的契约版本）：计数 handshakeRejected。
         using (var client = await ConnectAsync(app))
@@ -246,7 +300,8 @@ public sealed class ComputeLinkEndpointTests
     }
 
     /// <summary>装配最小宿主：仅端点所需单例 + WS 中间件 + compute-link 路由。</summary>
-    private static async Task<WebApplication> StartHostAsync()
+    private static async Task<WebApplication> StartHostAsync(
+        IReadOnlyDictionary<string, string>? nodeTokens = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = [] });
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -257,7 +312,8 @@ public sealed class ComputeLinkEndpointTests
             64, TimeSpan.FromSeconds(1), TimeSpan.FromDays(30),
             64 * 1024, 128, 1, 0, false)
         {
-            ComputeNodeToken = TestToken
+            ComputeNodeToken = TestToken,
+            ComputeNodeTokens = nodeTokens ?? new Dictionary<string, string>()
         });
         builder.Services.AddSingleton<ComputeLinkMetrics>();
         builder.Services.AddSingleton<ComputeLinkRegistry>();
@@ -274,11 +330,11 @@ public sealed class ComputeLinkEndpointTests
         return app;
     }
 
-    /// <summary>以合法令牌建立一条已升级的 compute-link 客户端连接。</summary>
-    private static async Task<ClientWebSocket> ConnectAsync(WebApplication app)
+    /// <summary>以指定令牌（默认合法令牌）建立一条已升级的 compute-link 客户端连接。</summary>
+    private static async Task<ClientWebSocket> ConnectAsync(WebApplication app, string token = TestToken)
     {
         var client = new ClientWebSocket();
-        client.Options.SetRequestHeader(ComputeLinkContract.TokenHeader, TestToken);
+        client.Options.SetRequestHeader(ComputeLinkContract.TokenHeader, token);
         await client.ConnectAsync(LinkUri(app), CancellationToken.None);
         return client;
     }

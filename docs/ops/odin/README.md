@@ -39,7 +39,7 @@ Termux 层常驻: sshd / postgres:15432 / ddns-go:9876 / frpc / cloudflared / �
         └─ nohup proot-distro login ubuntu -- bash -c '
               cd /root/daohua-compute
               export DAOHUA_COMPUTE_TOKEN=<见设备文件，勿入仓库>
-              export DAOHUA_COMPUTE_UPSTREAM_URL=wss://daohua.yuohira.com/internal/compute-link
+              export DAOHUA_COMPUTE_UPSTREAM_URLS=wss://daohua.yuohira.com/internal/compute-link
               export DAOHUA_COMPUTE_NODE_NAME=odin
               export DAOHUA_COMPUTE_URLS=http://0.0.0.0:8090   # 显式对外，供局域网健康探测
               export DOTNET_gcServer=0 DOTNET_GCConserveMemory=5 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
@@ -47,7 +47,7 @@ Termux 层常驻: sshd / postgres:15432 / ddns-go:9876 / frpc / cloudflared / �
 ```
 
 - 二进制：`/root/daohua-compute/`（Ubuntu rootfs 内，glibc 自包含构建）
-- 链路：主动拨出 `wss://daohua.yuohira.com/internal/compute-link`（compute-link.v1）注册进云端动态节点组；NAT 后免隧道，断线自动指数退避重连
+- 链路：主动拨出 `wss://daohua.yuohira.com/internal/compute-link`（compute-link.v1.3）注册进云端动态节点组；NAT 后免隧道，断线自动指数退避重连。`DAOHUA_COMPUTE_UPSTREAM_URLS` 支持分号分隔的多入口列表（多主服多入口时按列表序故障转移，全部失败绕回头部继续退避），旧单值键 `DAOHUA_COMPUTE_UPSTREAM_URL`/`ComputeNode:UpstreamUrl` 在列表未配置时仍可读
 - 本地监听：`0.0.0.0:8090`（经 `DAOHUA_COMPUTE_URLS` 显式配置；未显式配置时 ComputeNode 默认只绑 `127.0.0.1:8090`，反向拨入模式无需对外暴露调试口）；健康检查 `GET /healthz`、`/readyz`（无需令牌），`/internal/v1/compute/advance-batch` 仅作调试口
 - 日志：`~/daohua_compute.log`（节点 stdout，含 `ComputeNode.Upstream` 链路日志）、`~/daohua_compute_watchdog.log`（守护拉起记录）
 - wrapper 备份：`~/ssh_ubuntu_wrapper.sh.bak-daohua`
@@ -85,5 +85,5 @@ docs/ops/odin/redeploy-compute.sh
 
 - 接入方式（compute-link.v1.3）：odin 主动拨出 `wss://daohua.yuohira.com/internal/compute-link`，`X-Compute-Token` 鉴权 + hello 握手（nodeName=odin、并发容量、配表指纹）后进入动态节点组；连接即注册、断开即热拔出，在飞批次由主服按租约退回重试。
 - 优雅排空（v1.3）：节点停机/重部署先上报 `draining` 帧，主服立即停派新批次、在飞结果照收；主服停机/滚动升级向所有节点下发 `drain` 帧，节点跑完在飞后主动断链并立即重连。两帧均为提示语义，丢帧退化为原断线-租约语义。
-- 令牌：设备 `~/daohua_compute_watchdog.sh` 内的 `DAOHUA_COMPUTE_TOKEN` 必须与云端 `/opt/daohua/daohua.env` 的 `COMPUTE_TOKEN` 一致；仓库内脚本只保留占位值，正式接入时在设备上同步真实令牌（勿入仓库）。
+- 令牌：设备 `~/daohua_compute_watchdog.sh` 内的 `DAOHUA_COMPUTE_TOKEN` 必须与云端一致。主服支持每节点独立凭证 `ComputeNode:Tokens`（节点名→令牌映射，环境变量形如 `ComputeNode__Tokens__odin`）：odin 的 hello 携带 `nodeName=odin`，命中映射时只认 odin 专属令牌（共享 `COMPUTE_TOKEN` 对其失效），单节点泄露只需轮换该节点映射；未配置映射的节点仍回退共享 `COMPUTE_TOKEN`。仓库内脚本只保留占位值，正式接入时在设备上同步真实令牌（勿入仓库）。
 - 设备息屏/断网即离线；节点设计为可水平替换，离线只会导致其批次退回 pending 由其他节点/稍后重试消化，不影响主服正确性。

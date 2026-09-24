@@ -51,8 +51,15 @@ public sealed record ServerOptions(
 
     /// <summary>是否启用主服务 → ComputeNode 冷挂机派发链</summary>
     public bool ComputeNodeEnabled { get; init; }
-    /// <summary>内部计算令牌（X-Compute-Token，兼作 compute-link 握手凭证）；只从配置/环境变量读取，绝不写入日志</summary>
+    /// <summary>内部计算令牌（X-Compute-Token，兼作 compute-link 握手共享凭证）；只从配置/环境变量读取，绝不写入日志</summary>
     public string? ComputeNodeToken { get; init; }
+    /// <summary>
+    /// 每节点独立凭证（ComputeNode:Tokens 节点名→令牌映射）：compute-link hello 拨入按节点名解析期望令牌，
+    /// 命中映射时该节点只认映射令牌（共享令牌对其失效）；未命中映射的节点回退 <see cref="ComputeNodeToken"/>。
+    /// 单节点令牌泄露只需轮换该节点映射项，不波及全节点组。
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ComputeNodeTokens { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     /// <summary>单次派发领取的最大任务数</summary>
     public int ComputeBatchSize { get; init; } = 64;
     /// <summary>
@@ -82,9 +89,9 @@ public sealed record ServerOptions(
     /// <summary>防多开子系统开关与配额（AntiMultiOpen:* 配置节）</summary>
     public global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions AntiMultiOpen { get; init; } = global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions.Default;
 
-    /// <summary>派发链是否具备可运行配置（启用 + 令牌齐备；节点组经 compute-link 动态拨入）</summary>
+    /// <summary>派发链是否具备可运行配置（启用 + 共享令牌或任一节点映射令牌齐备；节点组经 compute-link 动态拨入）</summary>
     public bool ComputeNodeConfigured =>
-        ComputeNodeEnabled && !string.IsNullOrWhiteSpace(ComputeNodeToken);
+        ComputeNodeEnabled && (!string.IsNullOrWhiteSpace(ComputeNodeToken) || ComputeNodeTokens.Count > 0);
 
     /// <summary>
     /// 从 IConfiguration 绑定并校验全量服务端配置。
@@ -161,6 +168,20 @@ public sealed record ServerOptions(
         if (coldMinIdleMinutes is < 1 or > 1440) throw new InvalidOperationException("ComputeNode:ColdCatchUpMinIdleMinutes 必须在 1..1440。");
         if (coldWindowHours is < 1 or > 720) throw new InvalidOperationException("ComputeNode:ColdCatchUpWindowHours 必须在 1..720。");
         if (computeToken is { Length: > 512 }) throw new InvalidOperationException("ComputeNode:Token 长度不能超过 512。");
+        // 每节点独立凭证映射：ComputeNode:Tokens:<节点名> = 令牌（环境变量 ComputeNode__Tokens__<名> 同口径）。
+        var computeNodeTokens = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in configuration.GetSection("ComputeNode:Tokens").GetChildren())
+        {
+            var tokenNodeName = entry.Key.Trim();
+            var tokenValue = entry.Value?.Trim();
+            if (tokenNodeName.Length is 0 || tokenNodeName.Length > ComputeLinkContract.MaxNodeNameLength)
+                throw new InvalidOperationException("ComputeNode:Tokens 节点名不能为空且不超过 128 字符。");
+            if (string.IsNullOrWhiteSpace(tokenValue))
+                throw new InvalidOperationException($"ComputeNode:Tokens:{tokenNodeName} 令牌不能为空。");
+            if (tokenValue.Length > 512)
+                throw new InvalidOperationException($"ComputeNode:Tokens:{tokenNodeName} 令牌长度不能超过 512。");
+            computeNodeTokens[tokenNodeName] = tokenValue;
+        }
         return new ServerOptions(
             configuration["Service:Name"] ?? "daohua",
             connectionString,
@@ -185,6 +206,7 @@ public sealed record ServerOptions(
             SettlementClaimRetention = TimeSpan.FromDays(settlementClaimRetentionDays),
             ComputeNodeEnabled = computeEnabled,
             ComputeNodeToken = string.IsNullOrWhiteSpace(computeToken) ? null : computeToken.Trim(),
+            ComputeNodeTokens = computeNodeTokens,
             ComputeBatchSize = computeBatchSize,
             ComputeBatchMaxBytes = computeBatchMaxBytes,
             ComputeOutboundWriteTimeout = TimeSpan.FromSeconds(computeWriteTimeoutSeconds),

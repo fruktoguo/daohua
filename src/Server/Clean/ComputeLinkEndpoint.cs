@@ -2,9 +2,12 @@ namespace Server.Clean;
 
 /// <summary>
 /// /internal/compute-link 端点：计算节点反向拨入的 WebSocket 握手与收发循环。
-/// 流程：升级校验 → X-Compute-Token 固定时间比对 → accept → 首帧 hello
-/// （契约版本 + 配表指纹校验）→ 注册节点 → 发送循环（Outbound 队列）与
-/// 接收循环（result 帧路由回注册表）→ 断开即注销并在飞批次全部失败。
+/// 流程：升级校验 → 节点数上限 → accept → 首帧 hello（解析节点名 → X-Compute-Token
+/// 按 ComputeNode:Tokens 映射/共享令牌固定时间比对 → 契约版本 + 配表指纹校验）→
+/// 注册节点 → 发送循环（Outbound 队列）与接收循环（result 帧路由回注册表）→
+/// 断开即注销并在飞批次全部失败。
+/// 凭证裁决必须在 hello 之后：节点名只随 hello 帧到达，命中 ComputeNode:Tokens 映射的
+/// 节点只认其映射令牌（共享令牌失效），未命中节点回退共享令牌。
 /// </summary>
 public static class ComputeLinkEndpoint
 {
@@ -33,26 +36,6 @@ public static class ComputeLinkEndpoint
         var metrics = context.RequestServices.GetService<ComputeLinkMetrics>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ComputeLinkEndpoint");
 
-        var presented = context.Request.Headers[ComputeLinkContract.TokenHeader].ToString();
-        var expected = options.ComputeNodeToken ?? string.Empty;
-        // 双方各取 SHA256 定长摘要再做固定时间比较，消除令牌长度侧信道
-        // （对齐节点侧 TokenValidator 写法；令牌本体绝不进入日志）。
-        var tokensMatch = expected.Length is > 0 and <= MaxTokenLength
-            && presented.Length is > 0 and <= MaxTokenLength
-            && CryptographicOperations.FixedTimeEquals(
-                SHA256.HashData(Encoding.UTF8.GetBytes(presented)),
-                SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
-        if (!tokensMatch)
-        {
-            metrics?.RecordTokenRejected();
-            if (TokenRejectLog.TryAcquire())
-                logger.LogWarning("compute-link 令牌校验失败，拒绝拨入 remote={Remote}",
-                    context.Connection.RemoteIpAddress);
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { code = "UNAUTHORIZED", message = "需要有效的内部计算令牌。" });
-            return;
-        }
-
         if (registry.NodeCount >= ComputeLinkContract.MaxConnectedNodes)
         {
             metrics?.RecordNodeLimitRejected();
@@ -70,11 +53,39 @@ public static class ComputeLinkEndpoint
         ComputeLinkNode? node = null;
         try
         {
-            // 首帧必须是 hello：契约版本、节点容量与配表指纹都在这里裁决。
+            // 首帧必须是 hello：凭证、契约版本、节点容量与配表指纹都在这里裁决。
             var first = await ReceiveMessageAsync(socket, token)
                 .WaitAsync(ComputeLinkContract.HelloTimeout, token);
             if (first is not ComputeLinkHello hello)
                 throw new InvalidDataException("首帧必须是 hello。");
+            var name = string.IsNullOrWhiteSpace(hello.NodeName)
+                ? $"node-{context.Connection.RemoteIpAddress}"
+                : hello.NodeName.Trim();
+            if (name.Length > ComputeLinkContract.MaxNodeNameLength)
+                name = name[..ComputeLinkContract.MaxNodeNameLength];
+
+            // 凭证裁决先于版本/指纹协商：未授权拨入不泄露任何握手细节。
+            // 节点名命中 ComputeNode:Tokens 映射时只认映射令牌，未命中回退共享令牌；
+            // 双方各取 SHA256 定长摘要再固定时间比较，消除令牌长度侧信道（令牌本体绝不进日志）。
+            var presented = context.Request.Headers[ComputeLinkContract.TokenHeader].ToString();
+            var expected = options.ComputeNodeTokens.TryGetValue(name, out var mappedToken)
+                ? mappedToken
+                : options.ComputeNodeToken ?? string.Empty;
+            var tokensMatch = expected.Length is > 0 and <= MaxTokenLength
+                && presented.Length is > 0 and <= MaxTokenLength
+                && CryptographicOperations.FixedTimeEquals(
+                    SHA256.HashData(Encoding.UTF8.GetBytes(presented)),
+                    SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
+            if (!tokensMatch)
+            {
+                metrics?.RecordTokenRejected();
+                if (TokenRejectLog.TryAcquire())
+                    logger.LogWarning("compute-link 令牌校验失败，拒绝拨入 name={Name} remote={Remote}",
+                        name, context.Connection.RemoteIpAddress);
+                await SendCloseAsync(socket, "UNAUTHORIZED", "需要有效的内部计算令牌。", token);
+                return;
+            }
+
             if (!string.Equals(hello.ContractVersion, ComputeLinkContract.Version, StringComparison.Ordinal))
                 throw new InvalidDataException($"链路契约版本不支持：{hello.ContractVersion}。");
             if (hello.MaxConcurrentBatches is < 1 or > ComputeLinkContract.MaxNodeConcurrency)
@@ -84,11 +95,6 @@ public static class ComputeLinkEndpoint
                 throw new InvalidDataException("节点单批任务上限无效。");
             if (hello.MaxBatchBytes is < 0 or > ComputeDispatchContract.MaxBatchBytes)
                 throw new InvalidDataException("节点批次字节上限无效。");
-            var name = string.IsNullOrWhiteSpace(hello.NodeName)
-                ? $"node-{context.Connection.RemoteIpAddress}"
-                : hello.NodeName.Trim();
-            if (name.Length > ComputeLinkContract.MaxNodeNameLength)
-                name = name[..ComputeLinkContract.MaxNodeNameLength];
 
             var fingerprintBytes = Encoding.UTF8.GetBytes(hello.GameDataFingerprint ?? string.Empty);
             var expectedFingerprint = Encoding.UTF8.GetBytes(gameData.Fingerprint);

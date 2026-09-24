@@ -1,15 +1,18 @@
 namespace DaoHua.ComputeNode;
 
 /// <summary>
-/// ComputeNode 客户端模式：主动向主服拨出 WebSocket 长连接（compute-link.v1.2），
+/// ComputeNode 客户端模式：主动向主服拨出 WebSocket 长连接（compute-link.v1.3），
 /// 注册即进入动态节点组，接收批次、执行确定性推进、回传结果。
+/// 上游支持多入口列表（按列表序优先）：当前上游断线/握手失败时按既有指数退避换下一个，
+/// 全部失败绕回头部继续退避，成功后持续使用该上游直到再次断线——多主服多入口下
+/// 单点故障/滚动升级可自动转移落点。
 /// 链路中断按指数退避自动重连（1s→30s 封顶 ±20% 抖动）；连续健康存活超过
 /// <see cref="HealthySessionThreshold"/> 的会话断开时退避立即复位，快断快连则保持翻倍。
 /// 配表指纹不一致时主服拒绝握手，节点保持退避重试直到被重部署为匹配版本。
 /// 节点在 NAT/防火墙后也可工作：只需要出方向 443/80 连通主服，无任何入站端口要求。
 /// </summary>
 public sealed class UpstreamLinkWorker(
-    string upstreamUrl,
+    IReadOnlyList<string> upstreamUrls,
     string token,
     string nodeName,
     DeterministicBatchEngine engine,
@@ -20,6 +23,9 @@ public sealed class UpstreamLinkWorker(
     int maxConcurrentBatches,
     ILoggerFactory loggerFactory) : BackgroundService
 {
+    private readonly IReadOnlyList<string> _upstreams = upstreamUrls is { Count: > 0 }
+        ? upstreamUrls
+        : throw new ArgumentException("至少配置一个主服上游地址（ComputeNode:UpstreamUrls）。", nameof(upstreamUrls));
     private static readonly TimeSpan MinRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
     /// <summary>会话健康存活阈值：超过该时长的链路断开视为偶发断线，退避复位而非继续翻倍。</summary>
@@ -38,12 +44,19 @@ public sealed class UpstreamLinkWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var retryDelay = MinRetryDelay;
+        var upstreamIndex = 0;
+        // 上游地址不是凭证（token 只走请求头）：启动即记录完整候选列表与每次选择，便于多入口排障。
+        _logger.LogInformation("主服上游列表共 {Count} 个（按优先级序）：{Upstreams}",
+            _upstreams.Count, string.Join(" -> ", _upstreams.Select(DescribeUpstream)));
         while (!stoppingToken.IsCancellationRequested)
         {
+            var upstream = _upstreams[upstreamIndex];
             var sessionStarted = Stopwatch.GetTimestamp();
             try
             {
-                await RunSessionAsync(stoppingToken);
+                _logger.LogInformation("拨入上游 {Index}/{Count} upstream={Upstream}",
+                    upstreamIndex + 1, _upstreams.Count, DescribeUpstream(upstream));
+                await RunSessionAsync(upstream, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -57,13 +70,18 @@ public sealed class UpstreamLinkWorker(
                 // 快断快连的会话保留当前退避并继续翻倍，避免弱网设备刷重连压垮主服握手。
                 if (drained || Stopwatch.GetElapsedTime(sessionStarted) >= HealthySessionThreshold)
                     retryDelay = MinRetryDelay;
+                // 断线/握手失败/主服排空一律按列表序换下一个上游，末尾绕回头部继续退避：
+                // 多入口拓扑下不钉死故障上游，单入口时 index 不变等价原重连行为。
+                upstreamIndex = (upstreamIndex + 1) % _upstreams.Count;
                 if (drained)
-                    _logger.LogInformation("主服链路排空完成，立即重连。");
+                    _logger.LogInformation("主服链路排空完成，改拨下一上游 {Index}/{Count} upstream={Upstream}。",
+                        upstreamIndex + 1, _upstreams.Count, DescribeUpstream(_upstreams[upstreamIndex]));
                 else if (stoppingToken.IsCancellationRequested)
                     _logger.LogInformation("节点停机，链路关闭。");
                 else
-                    _logger.LogWarning("主服链路中断（{Error}），{Delay:N1}s 后重连。",
-                        exception.Message, retryDelay.TotalSeconds);
+                    _logger.LogWarning("上游 upstream={Upstream} 链路中断（{Error}），{Delay:N1}s 后拨下一上游 {Index}/{Count} upstream={NextUpstream}。",
+                        DescribeUpstream(upstream), exception.Message, retryDelay.TotalSeconds,
+                        upstreamIndex + 1, _upstreams.Count, DescribeUpstream(_upstreams[upstreamIndex]));
             }
 
             try
@@ -81,7 +99,7 @@ public sealed class UpstreamLinkWorker(
     }
 
     /// <summary>一次完整链路会话：连接 → hello 握手 → 收发双循环直到断开。</summary>
-    private async Task RunSessionAsync(CancellationToken cancellationToken)
+    private async Task RunSessionAsync(string upstream, CancellationToken cancellationToken)
     {
         using var socket = new ClientWebSocket();
         socket.Options.SetRequestHeader(ComputeLinkContract.TokenHeader, token);
@@ -89,7 +107,7 @@ public sealed class UpstreamLinkWorker(
         // 与主服 UseWebSockets 的全局口径一致。
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
         socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(60);
-        var uri = BuildWebSocketUri(upstreamUrl);
+        var uri = BuildWebSocketUri(upstream);
         await socket.ConnectAsync(uri, cancellationToken);
 
         await socket.SendAsync(
@@ -111,7 +129,7 @@ public sealed class UpstreamLinkWorker(
             default:
                 throw new InvalidDataException("主服首帧必须是 welcome。");
         }
-        _logger.LogInformation("已接入主服 node={NodeName} upstream={Upstream}", NodeName, uri);
+        _logger.LogInformation("已接入主服 node={NodeName} upstream={Upstream}", NodeName, DescribeUri(uri));
 
         var outbound = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(64) { SingleReader = true });
         // 链路环与在飞批次用两个取消源：session 控制收发循环，workCts 控制在飞计算。
@@ -297,7 +315,7 @@ public sealed class UpstreamLinkWorker(
     private static Uri BuildWebSocketUri(string upstream)
     {
         if (!Uri.TryCreate(upstream.Trim(), UriKind.Absolute, out var uri))
-            throw new InvalidOperationException($"ComputeNode:UpstreamUrl 不是合法地址：{upstream}。");
+            throw new InvalidOperationException($"ComputeNode:UpstreamUrls 含非法上游地址：{upstream}。");
         var builder = new UriBuilder(uri);
         builder.Scheme = uri.Scheme switch
         {
@@ -306,9 +324,16 @@ public sealed class UpstreamLinkWorker(
             "http" => "ws",
             "https" => "wss",
             var scheme => throw new InvalidOperationException(
-                $"ComputeNode:UpstreamUrl 只支持 ws/wss/http/https：{scheme}。")
+                $"ComputeNode:UpstreamUrls 只支持 ws/wss/http/https：{scheme}。")
         };
         builder.Port = uri.IsDefaultPort ? -1 : uri.Port;
         return builder.Uri;
     }
+
+    /// <summary>上游地址的日志口径：剥离 userinfo 段防凭证误记（token 只走请求头，本不出现在地址里）。</summary>
+    private static string DescribeUpstream(string upstream) =>
+        Uri.TryCreate(upstream.Trim(), UriKind.Absolute, out var uri) ? DescribeUri(uri) : upstream.Trim();
+
+    private static string DescribeUri(Uri uri) =>
+        new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty }.Uri.ToString();
 }
