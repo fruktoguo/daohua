@@ -13,15 +13,17 @@ NO_RESTORE=0
 FOREGROUND=0
 PORT_OVERRIDE=""
 SIMULATION_TARGET=""
+SHARD_COUNT=""
 
 usage() {
   cat <<'EOF'
-用法：scripts/bench-service.sh --variant oop|ecs-current|ecs-optimized [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间]
+用法：scripts/bench-service.sh --variant oop|ecs-current|ecs-optimized [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间] [--shard-count 数量]
   oop             端口 5128，数据库 daohua_bench_oop，src/Server
   ecs-current     端口 5129，数据库 daohua_bench_ecs_current，src/ServerEcs + vendor/YuoCore
   ecs-optimized   端口 5130，数据库 daohua_bench_ecs_optimized，src/ServerEcsOptimized + vendor/YuoCore-optimized
 环境变量：DAOHUA_DATABASE_URL 覆盖数据库连接串，ASPNETCORE_ENVIRONMENT 默认 Development。
 --simulation-target 仅在 Development 基准服务固定业务模拟截止时间；租约/会话仍使用系统 UTC。
+--shard-count 仅对 ECS 变体设置 Ecs:ShardCount；省略时 ECS 基准默认为 4，OOP 不设置。
 EOF
 }
 
@@ -36,6 +38,7 @@ while (($#)); do
     --no-restore) NO_RESTORE=1; shift ;;
     --port) PORT_OVERRIDE="${2:?--port 缺少值}"; shift 2 ;;
     --simulation-target) SIMULATION_TARGET="${2:?--simulation-target 缺少值}"; shift 2 ;;
+    --shard-count) SHARD_COUNT="${2:?--shard-count 缺少值}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -52,6 +55,7 @@ case "$VARIANT" in
   *) echo "不支持的 variant：$VARIANT" >&2; exit 2 ;;
 esac
 if [[ -n "$PORT_OVERRIDE" ]]; then PORT="$PORT_OVERRIDE"; fi
+if [[ -n "$SHARD_COUNT" ]] && ! [[ "$SHARD_COUNT" =~ ^[0-9]+$ ]] ; then echo "shard 数量无效：$SHARD_COUNT" >&2; exit 2; fi
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || ((PORT < 1024 || PORT > 65535)); then echo "端口无效：$PORT" >&2; exit 2; fi
 
 if [[ ! -f "$PROJECT" ]]; then
@@ -154,6 +158,9 @@ if ((START)); then
   export Storage__EnableSchemaBootstrap=true
   export DAOHUA_BENCH_VARIANT="$VARIANT"
   export DAOHUA_BENCH_MODE="${DAOHUA_BENCH_MODE:-replay}"
+  if [[ "$VARIANT" != "oop" ]]; then
+    export Ecs__ShardCount="${SHARD_COUNT:-4}"
+  fi
   if [[ -n "$SIMULATION_TARGET" ]]; then
     export DAOHUA_BENCH_SIMULATION_TARGET="$SIMULATION_TARGET"
     # ECS 世界的业务时钟必须从同一实验 epoch 启动；租约、会话等运维时钟仍由服务使用 UTC。

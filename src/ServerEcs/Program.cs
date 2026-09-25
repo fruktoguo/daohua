@@ -125,7 +125,7 @@ if (processRole == ServerProcessRole.Api)
         var rawEpoch = Environment.GetEnvironmentVariable("DAOHUA_BENCH_EPOCH");
         var epoch = DateTimeOffset.TryParse(rawEpoch, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
             ? parsed.ToUniversalTime() : simulationClock.UtcNow;
-        return new EcsGameRuntime(catalog, epoch);
+        return new EcsGameRuntime(catalog, epoch, options.EcsShardCount);
     });
     builder.Services.AddSingleton<EcsPlayerRuntimeAdapter>();
     builder.Services.AddSingleton<IPlayerRuntime>(sp => sp.GetRequiredService<EcsPlayerRuntimeAdapter>());

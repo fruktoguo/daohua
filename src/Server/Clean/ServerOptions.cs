@@ -32,6 +32,9 @@ public sealed record ServerOptions(
     int MarketPartitionId,
     bool EnableSchemaBootstrap)
 {
+    /// <summary>ECS 实验运行时的固定 World/Fiber 分片数；OOP 宿主忽略此配置。</summary>
+    public int EcsShardCount { get; init; } = 1;
+
     /// <summary>进程运行角色（API、Worker 或全部）</summary>
     public ServerProcessRole ProcessRole { get; init; } = ServerProcessRole.Api;
     /// <summary>历史过期数据单次清理批次大小</summary>
@@ -115,6 +118,7 @@ public sealed record ServerOptions(
         var outbound = configuration.GetValue("Server:WebSocketOutboundCapacity", 128);
         var partitionCount = configuration.GetValue("Market:PartitionCount", 1);
         var partitionId = configuration.GetValue("Market:PartitionId", 0);
+        var ecsShardCount = configuration.GetValue("Ecs:ShardCount", 1);
         var bootstrap = configuration.GetValue("Storage:EnableSchemaBootstrap", true);
         var retentionBatch = configuration.GetValue("Storage:RetentionBatchSize", 256);
         var outboxRetentionDays = configuration.GetValue("Storage:DeliveredOutboxRetentionDays", 7);
@@ -147,6 +151,7 @@ public sealed record ServerOptions(
         if (outbound is < 8 or > 10_000) throw new InvalidOperationException("Server:WebSocketOutboundCapacity 必须在 8..10000。");
         if (partitionCount is < 1 or > 4096 || partitionId < 0 || partitionId >= partitionCount)
             throw new InvalidOperationException("Market 分片配置无效。");
+        if (ecsShardCount is < 1 or > 64) throw new InvalidOperationException("Ecs:ShardCount 必须在 1..64。");
         if (retentionBatch is < 1 or > 10_000) throw new InvalidOperationException("Storage:RetentionBatchSize 必须在 1..10000。");
         if (outboxRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:DeliveredOutboxRetentionDays 必须在 1..3650。");
         if (sessionRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SessionRetentionDays 必须在 1..3650。");
@@ -218,6 +223,7 @@ public sealed record ServerOptions(
             ColdCatchUpBatchSize = coldBatchSize,
             ColdCatchUpMinIdle = TimeSpan.FromMinutes(coldMinIdleMinutes),
             ColdCatchUpWindow = TimeSpan.FromHours(coldWindowHours),
+            EcsShardCount = ecsShardCount,
             AntiMultiOpen = global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions.From(configuration)
         };
     }
