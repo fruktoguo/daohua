@@ -48,9 +48,30 @@
 
 /* ---- 普攻刀光粒子束 ---- */
 .vfx-slash-swarm { position:absolute; }
+.vfx-attack-streak { position:absolute; left:50%; top:50%; height:2px; border-radius:999px; transform-origin:100% 50%; background:linear-gradient(90deg,transparent 0%,#fff8df 35%,var(--c,#e8d69a) 76%,transparent 100%); box-shadow:0 0 7px var(--c,#e8d69a); animation:vfx-attack-streak var(--dur,340ms) cubic-bezier(.16,.78,.24,1) both; }
+.vfx-attack-thrust { position:absolute; left:-62px; top:50%; width:72px; height:2px; border-radius:999px; background:linear-gradient(90deg,transparent,#fff8df 45%,var(--c,#e8d69a)); box-shadow:0 0 8px var(--c,#e8d69a); animation:vfx-attack-thrust var(--dur,280ms) cubic-bezier(.12,.78,.22,1) both; }
+.vfx-attack-sweep { position:absolute; left:50%; top:50%; width:58px; height:58px; margin:-29px 0 0 -29px; border:1.5px solid transparent; border-top-color:#fff8df; border-right-color:var(--c,#e8d69a); border-radius:50%; filter:drop-shadow(0 0 5px var(--c,#e8d69a)); animation:vfx-attack-sweep var(--dur,360ms) cubic-bezier(.18,.78,.2,1) both; }
+.vfx-attack-pulse { position:absolute; left:50%; top:50%; width:18px; height:18px; margin:-9px 0 0 -9px; border:1.5px solid #fff8df; border-radius:50%; box-shadow:0 0 8px var(--c,#e8d69a),inset 0 0 5px var(--c,#e8d69a); animation:vfx-attack-pulse var(--dur,360ms) ease-out both; }
+@keyframes vfx-attack-streak { 0%{opacity:0;transform:translate(-16px,8px) rotate(var(--rot,-28deg)) scaleX(.28)} 24%{opacity:1} 100%{opacity:0;transform:translate(14px,-8px) rotate(var(--rot,-28deg)) scaleX(1)} }
+@keyframes vfx-attack-thrust { 0%{opacity:0;transform:translateX(-20px) scaleX(.3)} 22%{opacity:1} 100%{opacity:0;transform:translateX(72px) scaleX(1)} }
+@keyframes vfx-attack-sweep { 0%{opacity:0;transform:rotate(var(--rot,-42deg)) scale(.55)} 24%{opacity:1} 100%{opacity:0;transform:rotate(var(--rot,20deg)) scale(1.12)} }
+@keyframes vfx-attack-pulse { 0%{opacity:0;transform:scale(.35)} 24%{opacity:.95} 100%{opacity:0;transform:scale(2.4)} }
+@media (prefers-reduced-motion: reduce) {
+  .vfx-attack-streak, .vfx-attack-thrust, .vfx-attack-sweep, .vfx-attack-pulse { animation-duration: 1ms; }
+}
 `);
 
-  /** 普攻出手：真实 is-action-attack 突进 + 命中点粒子爆闪 + 受击震颤 */
+  const attackVariants = ['cleave', 'thrust', 'sweep', 'pulse'];
+  const attackSequences = new WeakMap();
+
+  function nextAttackVariant(casterEl, explicit) {
+    if (explicit && attackVariants.includes(explicit)) return explicit;
+    const sequence = attackSequences.get(casterEl) || 0;
+    attackSequences.set(casterEl, sequence + 1);
+    return attackVariants[sequence % attackVariants.length];
+  }
+
+  /** 普攻出手：真实 attack 动作 + 四种短促命中轮廓；伤害仍由 ctx.impact 唯一结算。 */
   VFX.register('feedback.attack', (ctx) => {
     const target = ctx.targets[0];
     VFX.motion(ctx.caster.el, 'attack');
@@ -59,30 +80,40 @@
         const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
         const host = VFX.node(null, t.x, t.y);
         host.style.setProperty('--c', '#ffd166');
-        // 命中闪光 + 放射火花 + 光尘
-        const fl = VFX.child(host, 'vfx-p-flare');
-        fl.style.setProperty('--fs', '1.2');
-        VFX.particles(t.x, t.y, { cls: 'vfx-p-spark', count: 22, directional: true, spread: 12, size: [11, 22], dur: [300, 520], dist: [36, 86] });
-        VFX.particles(t.x, t.y, { cls: 'vfx-p-glow', count: 16, spread: 14, size: [4, 8], dur: [380, 700], dist: [26, 70] });
-        VFX.retire(host, 800);
-        VFX.impact(target.el, 0.5);
-        ctx.impact(target, 0);
+        const variant = nextAttackVariant(ctx.caster.el, ctx.variant);
+        if (variant === 'cleave') {
+          const first = VFX.child(host, 'vfx-attack-streak');
+          first.style.width = '68px';
+          first.style.setProperty('--rot', '-30deg');
+          const second = VFX.child(host, 'vfx-attack-streak');
+          second.style.width = '48px';
+          second.style.setProperty('--rot', '38deg');
+          second.style.setProperty('--dur', '300ms');
+          VFX.particles(t.x, t.y, { cls: 'vfx-p-glow', count: 4, spread: 8, size: [3, 5], dur: [260, 420], dist: [18, 38], c: '#f6dfaa' });
+        } else if (variant === 'thrust') {
+          const thrust = VFX.child(host, 'vfx-attack-thrust');
+          thrust.style.setProperty('--c', '#f2d58e');
+          VFX.particles(t.x - 18, t.y, { cls: 'vfx-p-spark', count: 5, directional: true, angle: 0, arc: .18, size: [7, 13], dur: [220, 360], dist: [26, 52], c: '#f6dfaa' });
+        } else if (variant === 'sweep') {
+          const sweep = VFX.child(host, 'vfx-attack-sweep');
+          sweep.style.setProperty('--rot', '-46deg');
+          VFX.particles(t.x, t.y, { cls: 'vfx-p-mote', count: 5, spread: 10, size: [3, 5], dur: [300, 480], dist: [22, 46], c: '#e8d69a' });
+        } else {
+          VFX.child(host, 'vfx-attack-pulse');
+          VFX.particles(t.x, t.y, { cls: 'vfx-p-glow', count: 6, spread: 7, size: [3, 6], dur: [260, 420], dist: [20, 44], c: '#f6dfaa' });
+        }
+        VFX.retire(host, 620);
+        ctx.impact(target, 0, { impactVariant: variant === 'pulse' ? 'ripple' : variant === 'sweep' ? 'splinter' : 'cleave' });
       });
     }
     return 620;
   });
 
-  /** 受击震颤（独立演示入口） */
+  /** 受击震颤（独立演示入口；具体变体由沙盘扣血时统一触发） */
   VFX.register('feedback.impact', (ctx) => {
     const target = ctx.targets[0];
     if (!target) return 0;
-    VFX.impact(target.el, 0.6);
-    const t = VFX.center(target.el.querySelector('.arena-avatar-stage') || target.el);
-    const host = VFX.node(null, t.x, t.y);
-    host.style.setProperty('--c', '#ffb08a');
-    VFX.particles(t.x, t.y, { cls: 'vfx-p-glow', count: 18, spread: 18, size: [4, 8], dur: [350, 600], dist: [28, 66] });
-    VFX.retire(host, 750);
-    ctx.impact(target, 0);
+    ctx.impact(target, 0, { impactVariant: ctx.variant });
     return 560;
   });
 

@@ -1517,7 +1517,7 @@
   --arena-windup: 4px;
 }
 
-.arena-actor.is-hit {
+.arena-actor.is-hit .arena-avatar {
   animation: arena-hit-recoil 0.34s cubic-bezier(0.2, 0.82, 0.24, 1) both;
 }
 
@@ -1620,9 +1620,9 @@
 .arena-avatar::after {
   position: absolute;
   z-index: 3;
-  inset: -20px;
+  inset: 22% 12%;
   opacity: 0;
-  background: radial-gradient(ellipse at center, rgba(255, 244, 220, 0.85) 0%, rgba(255, 110, 60, 0.45) 45%, transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(255, 244, 224, 0.55), rgba(204, 84, 57, 0.2) 42%, transparent 70%);
   border-radius: 50%;
   content: "";
   pointer-events: none;
@@ -2242,8 +2242,10 @@
   --impact-distance: 5px;
   --impact-distance-far: 9px;
   --impact-opacity: 0.9;
-  inset: -24px;
-  filter: drop-shadow(0 0 8px rgba(255, 99, 68, 0.95));
+  --impact-light: #fff1d8;
+  --impact-accent: #d9785c;
+  inset: 15% 2% 17%;
+  filter: drop-shadow(0 0 3px rgba(218, 116, 85, 0.45));
   overflow: visible;
 }
 
@@ -2254,29 +2256,95 @@
 .arena-impact-fx>i {
   position: absolute;
   top: 50%;
-  left: 12%;
-  width: 76%;
-  height: 2px;
+  left: 50%;
   opacity: 0;
-  background: linear-gradient(90deg, transparent, #fff2d0 34%, #ff6e4d 64%, transparent);
-  box-shadow: 0 0 5px rgba(255, 116, 76, 0.9);
-  animation: arena-impact-slash 0.46s cubic-bezier(0.16, 0.82, 0.22, 1) both;
+  pointer-events: none;
 }
 
-.arena-impact-fx>i:nth-child(1) {
+/* 三种受击共用立绘台中的三枚光形，避免吞没角色与相邻资源条。 */
+.arena-impact-fx--cleave>i {
+  width: 88%;
+  height: 1.5px;
+  margin-left: -44%;
+  background: linear-gradient(90deg, transparent 2%, var(--impact-light) 40%, var(--impact-accent) 70%, transparent);
+  transform: rotate(-30deg);
+  animation: arena-impact-cleave 0.36s cubic-bezier(0.16, 0.82, 0.22, 1) both;
+}
+
+.arena-impact-fx--cleave>i:nth-child(2) {
+  width: 64%;
+  margin-left: -32%;
+  transform: rotate(42deg);
+  animation-delay: 24ms;
+}
+
+.arena-impact-fx--cleave>i:nth-child(3) {
+  width: 22%;
+  margin-left: -11%;
+  height: 2px;
+  transform: rotate(-8deg);
+  animation-delay: 40ms;
+}
+
+.arena-impact-fx--ripple>i {
+  width: 60%;
+  aspect-ratio: 1;
+  border: 1px solid var(--impact-light);
+  border-left-color: var(--impact-accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  translate: -50% -50%;
   transform: rotate(-24deg);
+  animation: arena-impact-ripple 0.36s cubic-bezier(0.16, 0.78, 0.24, 1) both;
 }
 
-.arena-impact-fx>i:nth-child(2) {
-  transform: rotate(18deg);
-  animation-delay: 35ms;
+.arena-impact-fx--ripple>i:nth-child(2) {
+  width: 40%;
+  border-color: var(--impact-accent) transparent var(--impact-light);
+  transform: rotate(38deg);
+  animation-delay: 30ms;
 }
 
-.arena-impact-fx>i:nth-child(3) {
-  left: 25%;
-  width: 50%;
-  transform: rotate(-52deg);
-  animation-delay: 65ms;
+.arena-impact-fx--ripple>i:nth-child(3) {
+  width: 16%;
+  height: 2px;
+  margin-left: -8%;
+  border: 0;
+  border-radius: 0;
+  background: var(--impact-light);
+  translate: none;
+  transform: rotate(-12deg);
+  animation: arena-impact-cleave 0.22s ease-out both;
+}
+
+.arena-impact-fx--splinter>i {
+  --splinter-x: 19px;
+  --splinter-y: -12px;
+  --splinter-rotation: -26deg;
+  width: 17%;
+  height: 3px;
+  margin: -1px 0 0 -7%;
+  background: linear-gradient(90deg, var(--impact-light), var(--impact-accent));
+  clip-path: polygon(0 50%, 25% 0, 100% 35%, 78% 100%);
+  transform: rotate(var(--splinter-rotation));
+  animation: arena-impact-splinter 0.34s cubic-bezier(0.12, 0.72, 0.24, 1) both;
+}
+
+.arena-impact-fx--splinter>i:nth-child(2) {
+  --splinter-x: 24px;
+  --splinter-y: 3px;
+  --splinter-rotation: 8deg;
+  width: 22%;
+  height: 2px;
+  animation-delay: 18ms;
+}
+
+.arena-impact-fx--splinter>i:nth-child(3) {
+  --splinter-x: 12px;
+  --splinter-y: 17px;
+  --splinter-rotation: 45deg;
+  width: 13%;
+  animation-delay: 34ms;
 }
 
 @keyframes arena-attack-lunge {
@@ -2459,31 +2527,79 @@
   --arena-hit-settle: 2px;
 }
 
-@keyframes arena-impact-slash {
+@keyframes arena-impact-cleave {
   0% {
     opacity: 0;
-    filter: brightness(2);
-    scale: 0.35 1;
+    scale: 0.2 1;
   }
 
-  28% {
+  20% {
     opacity: var(--impact-opacity);
-    filter: brightness(1.7);
-    scale: 1.08 1;
+    scale: 1 1;
   }
 
-  62% {
-    opacity: 0.8;
-    filter: brightness(1.1);
+  60% {
+    opacity: 0.62;
     translate: var(--impact-distance) 0;
-    scale: 0.92 1;
+    scale: 0.88 1;
   }
 
   100% {
     opacity: 0;
-    filter: blur(0.8px);
     translate: var(--impact-distance-far) 0;
-    scale: 0.45 1;
+    scale: 0.34 0.65;
+  }
+}
+
+@keyframes arena-impact-ripple {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+
+  18% {
+    opacity: var(--impact-opacity);
+    scale: 0.64;
+  }
+
+  100% {
+    opacity: 0;
+    scale: 1.08;
+  }
+}
+
+@keyframes arena-impact-splinter {
+  0% {
+    opacity: 0;
+    scale: 0.35;
+  }
+
+  18% {
+    opacity: var(--impact-opacity);
+    scale: 1;
+  }
+
+  100% {
+    opacity: 0;
+    translate: var(--splinter-x) var(--splinter-y);
+    scale: 0.24;
+  }
+}
+
+@keyframes arena-impact-reduced {
+  0%, 100% { opacity: 0; }
+  20%, 55% { opacity: 0.65; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-actor.is-hit .arena-avatar {
+    animation: none;
+  }
+
+  .arena-actor.is-hit .arena-avatar::after,
+  .arena-actor .arena-impact-fx>i {
+    animation: arena-impact-reduced 0.18s ease-out both;
+    animation-delay: 0ms;
   }
 }
 

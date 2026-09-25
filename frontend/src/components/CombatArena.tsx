@@ -54,9 +54,12 @@ interface ActorMotion {
 /** 实体受击震颤与冲击特效状态 */
 interface ActorImpact {
   id: number
+  variant: typeof actorImpactVariants[number]
   distance: number
   opacity: number
 }
+
+const actorImpactVariants = ['cleave', 'ripple', 'splinter'] as const
 
 // 单次损失低于最大值 2% 时不产生断裂碎片(如持续伤害的小额跳数)
 const resourceShardMinimumRatio = 0.02
@@ -646,6 +649,7 @@ function ArenaActor({
 }): React.JSX.Element {
   const t = useT()
   const nextMotionId = useRef(1)
+  const nextImpactSequence = useRef(0)
   const previousHitpoints = useRef({ actorKey, hp })
   const scheduledAction = useRef<{
     signature: string
@@ -662,6 +666,9 @@ function ArenaActor({
     const previous = previousHitpoints.current
     if (previous.actorKey !== actorKey) {
       previousHitpoints.current = { actorKey, hp }
+      nextImpactSequence.current = 0
+      if (clearImpactTimer.current !== null) window.clearTimeout(clearImpactTimer.current)
+      clearImpactTimer.current = null
       setImpact(null)
       return
     }
@@ -670,6 +677,7 @@ function ArenaActor({
       const strength = Math.max(0.25, Math.min(1, (previous.hp - hp) / Math.max(1, maxHp)))
       const nextImpact = {
         id: nextMotionId.current++,
+        variant: actorImpactVariants[nextImpactSequence.current++ % actorImpactVariants.length],
         distance: 3 + strength * 6,
         opacity: 0.75 + strength * 0.25,
       }
@@ -748,7 +756,7 @@ function ArenaActor({
         )}
         {impact && (
           <span
-            className="arena-impact-fx"
+            className={`arena-impact-fx arena-impact-fx--${impact.variant}`}
             key={impact.id}
             aria-hidden="true"
             style={{

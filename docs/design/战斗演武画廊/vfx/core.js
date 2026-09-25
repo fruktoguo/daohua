@@ -14,6 +14,9 @@
   const injectedStyles = new Set();
   const registry = new Map();
   const liveNodes = new Set();
+  const impactVariants = ['cleave', 'ripple', 'splinter'];
+  let impactSequences = new WeakMap();
+  const activeImpacts = new Map();
 
   /**
    * 特效模块注册队列（双宿主共享契约）：
@@ -353,30 +356,42 @@
   }
 
   /**
-   * 受击反馈（同构 ArenaActor：is-hit 类震颤 + arena-impact-fx 三道刀痕）。
-   * strength 0~1 控制震颤幅度（--impact-distance 等变量与正式组件同式）。
+   * 受击反馈与 ArenaActor 共用三种局部光痕；未指定变体时按目标独立轮换。
+   * 活跃计时器随新命中替换，避免旧命中提前清除新反馈。
    */
-  function impact(actorEl, strength) {
+  function impact(actorEl, strength, variant) {
     if (!actorEl) return;
     const s = Math.max(0.25, Math.min(1, strength || 0.4));
     const stage = actorEl.querySelector('.arena-avatar-stage');
     if (!stage) return;
+    const sequence = impactSequences.get(actorEl) || 0;
+    impactSequences.set(actorEl, sequence + 1);
+    const selectedVariant = impactVariants.includes(variant)
+      ? variant
+      : impactVariants[sequence % impactVariants.length];
+    const previous = activeImpacts.get(actorEl);
+    if (previous) {
+      clearTimeout(previous.timer);
+      timers.delete(previous.timer);
+      previous.fx.remove();
+    }
     actorEl.classList.remove('is-hit');
-    actorEl.querySelectorAll('.arena-impact-fx').forEach(e => e.remove());
     void actorEl.offsetWidth;
     actorEl.classList.add('is-hit');
     const fx = document.createElement('span');
-    fx.className = 'arena-impact-fx';
+    fx.className = 'arena-impact-fx arena-impact-fx--' + selectedVariant;
     fx.setAttribute('aria-hidden', 'true');
     fx.style.setProperty('--impact-distance', (3 + s * 6) + 'px');
     fx.style.setProperty('--impact-distance-far', (3 + s * 6) * 1.8 + 'px');
     fx.style.setProperty('--impact-opacity', String(0.75 + s * 0.25));
     fx.append(document.createElement('i'), document.createElement('i'), document.createElement('i'));
     stage.appendChild(fx);
-    after(560, () => {
+    const timer = after(560, () => {
       actorEl.classList.remove('is-hit');
       fx.remove();
+      activeImpacts.delete(actorEl);
     });
+    activeImpacts.set(actorEl, { fx, timer });
   }
 
   /**
@@ -478,6 +493,8 @@
   function resetAll() {
     timers.forEach(t => clearTimeout(t));
     timers.clear();
+    activeImpacts.clear();
+    impactSequences = new WeakMap();
     liveNodes.forEach(el => el.remove());
     liveNodes.clear();
     const s = shell();

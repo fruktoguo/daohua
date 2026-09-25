@@ -207,7 +207,7 @@
     setVitals(target);
     VFX.resourceSlice(target.el, 'hp', hpAfter, Math.max(0.01, hpBefore - hpAfter));
     VFX.floatText(target.el, '-' + dmg, { kind: 'hp', crit, stamp: crit ? '暴击' : null });
-    VFX.impact(target.el, Math.min(1, dmg / target.maxHp * 3.2));
+    VFX.impact(target.el, Math.min(1, dmg / target.maxHp * 3.2), opts && opts.impactVariant);
     log((spec.name || '普攻') + ' 命中 ' + target.name + '，造成 ' + dmg + ' 点伤害' + (crit ? '（会心）' : ''), 'damage');
 
     if (target.hp <= 0) kill(target);
@@ -393,7 +393,7 @@
       caster: attacker,
       targets: [target],
       castMs: 0,
-      impact: (t, atMs) => VFX.after(atMs || 0, () => applyDamage(attacker, t, { name: '普攻', damageRatio: 0.85, flatDamage: 6 })),
+      impact: (t, atMs, opts) => VFX.after(atMs || 0, () => applyDamage(attacker, t, { name: '普攻', damageRatio: 0.85, flatDamage: 6 }, opts)),
       heal: () => {}, threat: () => {}, buffApply: () => {},
       kill, reviveActor, regen: () => {},
     };
@@ -402,7 +402,7 @@
   }
 
   /* ---------------- 通用反馈演示按钮 ---------------- */
-  function playFeedback(kind) {
+  function playFeedback(kind, variant) {
     const demoCaster = demoSide === 'ally' ? actors.player : (aliveOf('enemy')[0] || actors.enemy1);
     const foes = demoSide === 'ally' ? aliveOf('enemy') : aliveOf('ally');
     const target = foes[0] || actors.player;
@@ -410,11 +410,12 @@
       caster: demoCaster,
       targets: [target],
       castMs: 900,
+      variant,
       impact: (t, atMs, opts) => VFX.after(atMs || 0, () => {
         if (kind === 'crit') {
-          applyDamage(demoCaster, t, { name: '会心一击', damageRatio: 1.4, flatDamage: 30 }, { crit: true });
+          applyDamage(demoCaster, t, { name: '会心一击', damageRatio: 1.4, flatDamage: 30 }, { ...opts, crit: true });
         } else {
-          applyDamage(demoCaster, t, { name: '受击演示', damageRatio: 0.5, flatDamage: 8 });
+          applyDamage(demoCaster, t, { name: '受击演示', damageRatio: 0.5, flatDamage: 8 }, opts);
         }
       }),
       heal: () => {}, threat: () => {},

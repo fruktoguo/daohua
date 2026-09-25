@@ -358,6 +358,7 @@
   - **演出上下文 `VfxPlayContext`**：`{side, casterEl, targetEls, ability, castMs, after}` 由桥接层在出手时刻解析（目标按配表 `targetType` 从 `.arena-actor--player/enemy:not(.is-dead)` DOM 快照），技能模块只做纯粒子演出，不写结算。
   - **触发源**：玩家 `combatResources.castingAbilityId`（出现播 `feedback.castRing`、完成时刻播技能）；敌方 `ExpeditionEnemy.pendingAbilityId` + `nextAttackAtSeconds`；斗法 `duel.events[].abilityId + atSeconds`；普攻出手时刻播 `feedback.attack`；全部按 signature 防重，未知 `abilityId` 回退 `feedback.burst`。
   - **结算边界**：伤害跳字/血条碎条/受击震颤/出手动作由服务端快照驱动的既有组件（`ArenaResource`/`ArenaActor`）承担，特效模块不触碰战斗状态。
+  - **普攻与受击变体**：常态攻击变化复用共享 `vfx/feedback.js`；气血下降的局部反馈复用 `ArenaActor` 与 `expedition.css` 的 `.arena-impact-fx`，画廊由 `vfx/core.js` 挂载相同样式。逐项查看使用画廊演武控制台。
 - **模块源码**：[`frontend/src/vfx/`](../../frontend/src/vfx/)（`engine.ts` 引擎原语+DaohuaVFX 门面 · `useCombatVfx.ts` React 桥 · `index.ts` 加载器与目标解析）；**脚本真源** [`docs/design/战斗演武画廊/vfx/`](../../docs/design/战斗演武画廊/vfx/)
 - **样式文件**：[`frontend/src/styles/vfx.css`](../../frontend/src/styles/vfx.css)（`.vfx-stage-overlay`/`.vfx-node`/震屏 keyframes；技能专属样式各脚本 `VFX.injectStyles` 自含）
 - **接入方式**：`CombatArena` shell 挂 `ref` + 渲染 `<div className="vfx-stage-overlay"/>` + `useCombatVfx(shellRef, overlayRef)` 一行。

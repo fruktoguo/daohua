@@ -187,7 +187,7 @@
 
     // 通用反馈按钮
     document.querySelectorAll('[data-feedback]').forEach(btn => {
-      btn.addEventListener('click', () => SANDBOX.playFeedback(btn.dataset.feedback));
+      btn.addEventListener('click', () => SANDBOX.playFeedback(btn.dataset.feedback, btn.dataset.variant));
     });
 
     // 全量轮播
