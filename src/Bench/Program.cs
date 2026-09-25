@@ -529,6 +529,42 @@ public static class BenchDatabase
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         TestCharacterSeeder.Validate(characters, catalog);
+        // benchmark 数据库只承载一次实验的完整 fixture。清理必须在同一事务内完成，
+        // 否则旧玩家、认证会话、流水和 outbox 会污染下一次三版本对比。
+        await using (var reset = new NpgsqlCommand("""
+            TRUNCATE TABLE
+                identity.auth_sessions,
+                identity.audit_events,
+                identity.players,
+                identity.accounts,
+                game.player_state_heads,
+                game.player_state_sections,
+                game.player_action_queue,
+                game.player_runtime_leases,
+                game.player_projection,
+                economy.player_asset_balances,
+                economy.player_asset_instances,
+                economy.transaction_lines,
+                economy.transactions,
+                economy.reservations,
+                market.orders,
+                market.trades,
+                market.settlement_claims,
+                platform.section_flush_queue,
+                platform.integration_outbox,
+                platform.command_receipts,
+                platform.compute_jobs,
+                social.friend_requests,
+                social.friendships,
+                social.parties,
+                social.party_members,
+                social.party_invitations,
+                social.chat_messages
+            RESTART IDENTITY CASCADE;
+            """, connection, transaction))
+        {
+            await reset.ExecuteNonQueryAsync(cancellationToken);
+        }
         var passwordSalt = SHA256.HashData(Encoding.UTF8.GetBytes("daohua-bench-fixture-password"))[..16];
         var passwordHash = Rfc2898DeriveBytes.Pbkdf2("Bench-Deterministic-Password-2026!", passwordSalt, 600_000, HashAlgorithmName.SHA512, 64);
         foreach (var character in characters)
@@ -617,7 +653,29 @@ public static class BenchDatabase
                 projection.Parameters.AddWithValue(character.PlayerId); projection.Parameters.AddWithValue((double)state.Progression.RealmLevel); projection.Parameters.AddWithValue(state.World.NodeId); projection.Parameters.AddWithValue(character.StartAt); await projection.ExecuteNonQueryAsync(cancellationToken);
             }
         }
+        await ValidateManifestPlayersAsync(connection, transaction, characters, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task ValidateManifestPlayersAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        IReadOnlyList<TestCharacter> characters,
+        CancellationToken cancellationToken)
+    {
+        var expected = characters.Select(character => character.PlayerId).ToHashSet();
+        var actual = new HashSet<Guid>();
+        await using var command = new NpgsqlCommand("SELECT player_id FROM identity.players", connection, transaction);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            actual.Add(reader.GetGuid(0));
+
+        if (actual.SetEquals(expected)) return;
+
+        var extra = actual.Except(expected).Take(5).ToArray();
+        var missing = expected.Except(actual).Take(5).ToArray();
+        throw new InvalidOperationException(
+            $"基准 seed 玩家集合不一致：期望 {expected.Count}，实际 {actual.Count}，多余 [{string.Join(',', extra)}]，缺失 [{string.Join(',', missing)}]。");
     }
 
     public static void EnsureBenchConnection(string connectionString)
