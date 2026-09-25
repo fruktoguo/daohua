@@ -6,7 +6,7 @@ using Domain.Player;
 namespace Server.Clean;
 
 /// <summary>客户端只能装配自己持有的装备与已经习得的功法，不能修改成长数据。</summary>
-internal static class LoadoutCommand
+public static class LoadoutCommand
 {
     /// <summary>
     /// 校验 loadout.replace 载荷并整体替换玩家的功法槽与装备槽。

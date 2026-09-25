@@ -114,7 +114,7 @@ public sealed partial class PlayerLoadoutState
     /// <summary>导出可持久化装配文档；触发条件 JSON 做防御性深拷贝。
     /// 修订号未变时直接复用上轮文档（位级一致），仅在装配变更时才重新克隆触发器与字典。</summary>
     /// <returns>装配分段快照文档。</returns>
-    internal PlayerLoadoutDocument Export()
+    public PlayerLoadoutDocument Export()
     {
         if (_exportedDocument is { } cached && _exportedRevision == ExportRevision) return cached;
         var document = new PlayerLoadoutDocument(CoreAttributes,

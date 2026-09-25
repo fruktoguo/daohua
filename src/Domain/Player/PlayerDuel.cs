@@ -548,15 +548,7 @@ public sealed partial class PlayerAggregate
 
     /// <summary>斗法期间获得物品：进入暂存区而非直接入账。</summary>
     public void StageItem(ItemId itemId, double quantity, double acquiredAtUnixSeconds)
-    {
-        if (!itemId.IsValid || !double.IsFinite(quantity) || quantity <= 0)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "暂存物品无效。");
-        Duel.StagedItems.Add(new(itemId.Value, quantity, acquiredAtUnixSeconds));
-        // 暂存物品同样计入「获得」：归属未定时先按当前队首行动记账。
-        RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null, acquiredAtUnixSeconds,
-            report => report.AddItem(itemId, quantity));
-        MarkDirty(PlayerSectionKind.Duel);
-    }
+        => Domain.Simulation.SimulationEngine.StageCombatItem(this, itemId, quantity, acquiredAtUnixSeconds);
 
     /// <summary>
     /// 结算到期暂存物品：到达入账时间且不在斗法冻结期时返回待入账列表并从暂存区移除。
@@ -573,21 +565,7 @@ public sealed partial class PlayerAggregate
 
     /// <summary>按快照清单移除暂存物品（斗法落败被对方缴获），被缴物品计入「失去」。</summary>
     internal void RemoveStagedItems(IReadOnlyList<DuelStagedItem> snapshot, double atUnixSeconds)
-    {
-        if (snapshot.Count == 0) return;
-        foreach (var item in snapshot)
-        {
-            var index = Duel.StagedItems.IndexOf(item);
-            if (index >= 0) Duel.StagedItems.RemoveAt(index);
-        }
-        var headId = _actions.Count > 0 ? _actions[0].Id : (Guid?)null;
-        RecordStats(headId, atUnixSeconds, report =>
-        {
-            foreach (var item in snapshot)
-                report.AddItemLost(new ItemId(item.ItemId), item.Quantity);
-        });
-        MarkDirty(PlayerSectionKind.Duel);
-    }
+        => Domain.Simulation.SimulationEngine.RemoveStagedCombatItems(this, snapshot, atUnixSeconds);
 
     /// <summary>
     /// 行动统计记账枢纽：同一条 apply 依次作用于
@@ -595,52 +573,15 @@ public sealed partial class PlayerAggregate
     /// ③每日账本（先按 UTC+8 自然日 rollover 再入账）。任一账本被写入即标记 Duel 脏。
     /// </summary>
     internal void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
-    {
-        ArgumentNullException.ThrowIfNull(apply);
-        if (actionInstanceId is { } instanceId
-            && Duel.ActionReports.TryGetValue(instanceId, out var actionReport))
-        {
-            apply(actionReport);
-            actionReport.EndedAtUnixSeconds = atUnixSeconds;
-            actionReport.MarkExportDirty();
-        }
-        if (Presence == PresenceState.Offline)
-        {
-            apply(Duel.OfflineReport);
-            Duel.OfflineReport.EndedAtUnixSeconds = atUnixSeconds;
-            Duel.OfflineReport.MarkExportDirty();
-        }
-        var dayIndex = (long)Math.Floor((atUnixSeconds + 28800) / 86400);
-        if (Duel.DailyReport.DayIndex != dayIndex)
-            Duel.DailyReport.ResetBucket(dayIndex, atUnixSeconds);
-        apply(Duel.DailyReport);
-        Duel.DailyReport.EndedAtUnixSeconds = atUnixSeconds;
-        Duel.DailyReport.MarkExportDirty();
-        MarkDirty(PlayerSectionKind.Duel);
-    }
+        => Domain.Simulation.SimulationEngine.RecordActionStats(this, actionInstanceId, atUnixSeconds, apply);
 
     /// <summary>队首行动开始推进时按实例建账（已存在则续用）；仅新建时标脏。</summary>
     internal void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)
-    {
-        if (Duel.ActionReports.ContainsKey(instanceId)) return;
-        Duel.GetOrCreateReport(instanceId, actionId.Value, actionName, now.ToUnixTimeMilliseconds() / 1000d);
-        MarkDirty(PlayerSectionKind.Duel);
-    }
+        => Domain.Simulation.SimulationEngine.EnsureActionReport(this, instanceId, actionId, actionName, now);
 
     /// <summary>行动实例出队时归档其账本；空账本直接丢弃，非空账本插入 Reports 头部并裁剪至上限。</summary>
     internal void ArchiveReportForAction(Guid instanceId, double endedAtUnixSeconds)
-    {
-        if (!Duel.ActionReports.Remove(instanceId, out var report)) return;
-        report.EndedAtUnixSeconds = endedAtUnixSeconds;
-        report.MarkExportDirty();
-        if (report.HasContent)
-        {
-            Duel.Reports.Insert(0, report);
-            while (Duel.Reports.Count > DuelSettingsTuning.MaxBattleReports)
-                Duel.Reports.RemoveAt(Duel.Reports.Count - 1);
-        }
-        MarkDirty(PlayerSectionKind.Duel);
-    }
+        => Domain.Simulation.SimulationEngine.ArchiveActionReport(this, instanceId, endedAtUnixSeconds, DuelSettingsTuning.MaxBattleReports);
 
     /// <summary>行动实例出队时归档其账本（DateTimeOffset 便捷重载）。</summary>
     internal void ArchiveReportForAction(Guid instanceId, DateTimeOffset endedAt)

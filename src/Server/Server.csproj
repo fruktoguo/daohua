@@ -9,6 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Clean/**/*.cs" />
+    <Compile Include="Clean/PlayerRuntime.cs" Link="Clean/PlayerRuntime.cs" />
+    <EmbeddedResource Remove="Clean/Ops/OpsPage.html" />
+    <ProjectReference Include="../Server.Clean/Server.Clean.csproj" AdditionalProperties="YuoCoreRoot=../../vendor/YuoCore;DomainBuildVariant=server;DomainIsolatedBuild=false" />
     <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />
     <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
@@ -27,13 +31,6 @@
 
   <ItemGroup>
     <PackageReference Include="Npgsql" Version="10.0.3" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- 本地运维面板页面：嵌入程序集，避免依赖 wwwroot（Development 下无静态站点根）。 -->
-    <EmbeddedResource Include="Clean/Ops/OpsPage.html">
-      <LogicalName>Server.Ops.OpsPage.html</LogicalName>
-    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

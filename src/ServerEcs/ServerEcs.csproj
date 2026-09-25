@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ServerEcs</AssemblyName>
+    <RootNamespace>ServerEcs</RootNamespace>
+    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore</YuoCoreRoot>
+    <EcsBuildVariant Condition="'$(EcsBuildVariant)' == ''">ecs-current</EcsBuildVariant>
+    <EcsIsolatedBuild Condition="'$(EcsIsolatedBuild)' == ''">false</EcsIsolatedBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainIsolatedBuild=$(EcsIsolatedBuild);DomainBuildVariant=$(EcsBuildVariant)" />
+    <ProjectReference Include="../Ecs/Ecs.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);EcsBuildVariant=$(EcsBuildVariant);EcsIsolatedBuild=$(EcsIsolatedBuild)" />
+    <ProjectReference Include="../Server.Clean/Server.Clean.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainBuildVariant=$(EcsBuildVariant);DomainIsolatedBuild=$(EcsIsolatedBuild)" />
+    <ProjectReference Include="../Protocol/Protocol.csproj" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="../../config/game-data/*.json">
+      <Link>config/game-data/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

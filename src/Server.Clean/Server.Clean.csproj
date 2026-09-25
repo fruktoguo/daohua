@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Server.Clean</RootNamespace>
+    <AssemblyName>DaoHua.Server.Clean</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore</YuoCoreRoot>
+    <DomainBuildVariant Condition="'$(DomainBuildVariant)' == ''">server-clean</DomainBuildVariant>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainBuildVariant=$(DomainBuildVariant);DomainIsolatedBuild=$(DomainIsolatedBuild)" />
+    <ProjectReference Include="../Protocol/Protocol.csproj" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <Compile Include="GlobalUsings.cs" />
+    <Compile Include="BenchmarkTelemetry.cs" />
+    <Compile Include="BenchmarkHost.cs" />
+    <Compile Include="PlayerLogBuffer.cs" />
+    <Compile Include="../Server/GlobalUsings.cs" Link="GlobalUsings.cs" />
+    <Compile Include="../Server/Clean/**/*.cs" Exclude="../Server/Clean/PlayerRuntime.cs" LinkBase="Clean" />
+    <EmbeddedResource Include="../Server/Clean/Ops/OpsPage.html" Link="Clean/Ops/OpsPage.html">
+      <LogicalName>Server.Ops.OpsPage.html</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

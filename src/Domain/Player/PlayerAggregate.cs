@@ -299,7 +299,7 @@ public sealed record ActionIntent(
 /// <summary>
 /// 排队中的行动实例，维护单次推进的耗时进度与剩余循环计数。
 /// </summary>
-public sealed class QueuedAction
+public sealed class QueuedAction : Domain.Simulation.IPlayerActionState
 {
     /// <summary>以意图创建排队行动；剩余重复次数初始化为 intent.RepeatCount。</summary>
     /// <param name="id">行动实例唯一标识。</param>
@@ -332,6 +332,13 @@ public sealed class QueuedAction
     public CombatExpeditionState? Expedition { get; internal set; }
     /// <summary>移动行动当前路径与路段行进状态；普通行动保持为空。</summary>
     public TravelActionState? Travel { get; internal set; }
+
+    TravelActionState? Domain.Simulation.IPlayerActionState.Travel { get => Travel; set => Travel = value; }
+    CombatExpeditionState? Domain.Simulation.IPlayerActionState.Expedition { get => Expedition; set => Expedition = value; }
+    ActionQueueStatus Domain.Simulation.IPlayerActionState.Status { get => Status; set => Status = value; }
+    double Domain.Simulation.IPlayerActionState.ProgressSeconds { get => ProgressSeconds; set => ProgressSeconds = value; }
+    double Domain.Simulation.IPlayerActionState.RemainingRepeats { get => RemainingRepeats; set => RemainingRepeats = value; }
+    double Domain.Simulation.IPlayerActionState.CompletedRepeats { get => CompletedRepeats; set => CompletedRepeats = value; }
 
     /// <summary>深拷贝当前行动状态副本</summary>
     public QueuedAction Clone() => new(Id, Intent, EnqueuedAt)

@@ -247,7 +247,7 @@ public sealed class CombatantState
     /// <summary>战斗者标识（player 或 enemy:{index}）</summary>
     public string Id { get; }
     /// <summary>配表怪物定义 ID（玩家为 null）。</summary>
-    public string? DefinitionId { get; internal set; }
+    public string? DefinitionId { get; set; }
     /// <summary>战斗静态属性面板；进行中战斗跨步复用时由 <see cref="RefreshStats"/> 换入最新结算结果。</summary>
     public CombatantStats Stats { get; private set; }
     /// <summary>随战技能槽（玩家/怪物/斗法镜像共用同构槽位模型）。</summary>
@@ -316,7 +316,7 @@ public sealed class CombatantState
     /// （战外 Buff 增减/到期、六维经验等），沿用恢复快照口径的越界校验——
     /// 当前气血/灵力超出新上限即拒绝，与 <see cref="CombatEncounterState.Restore"/> 逐位等价。
     /// </summary>
-    internal void RefreshStats(CombatantStats stats)
+    public void RefreshStats(CombatantStats stats)
     {
         ArgumentNullException.ThrowIfNull(stats);
         stats.Validate();
@@ -704,6 +704,55 @@ public static class DeterministicCombatEngine
     public const int MaxEventsPerAdvance = 100_000;
 
     /// <summary>
+    /// 查询下一确定性战斗边界。返回值不会早于当前战斗时钟，也不会晚于 targetSeconds。
+    /// ECS 宿主可用它把一帧拆成离散边界；现行 OOP 调用仍应使用 <see cref="AdvanceTo"/>。
+    /// </summary>
+    public static double NextBoundarySeconds(CombatEncounterState encounter, double targetSeconds)
+    {
+        ArgumentNullException.ThrowIfNull(encounter);
+        ValidateTarget(encounter, targetSeconds);
+        if (encounter.Outcome != CombatOutcome.Running || encounter.ElapsedSeconds >= targetSeconds)
+            return encounter.ElapsedSeconds;
+
+        var next = encounter.IsPlayerDowned ? encounter.PlayerRespawnAtSeconds : encounter.Player.NextAttackAtSeconds;
+        if (!encounter.IsPlayerDowned)
+        {
+            for (var i = 0; i < encounter.Enemies.Count; i++)
+            {
+                var enemy = encounter.Enemies[i];
+                if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
+            }
+        }
+
+        var effectAt = NextBuffBoundary(encounter);
+        if (effectAt < next) next = effectAt;
+        if (!double.IsFinite(next))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "战斗攻击时间无效。");
+        return Math.Min(next, targetSeconds);
+    }
+
+    /// <summary>
+    /// 只推进一个确定性战斗边界：Buff 到期/回复、复活或一个时刻内双方按既有顺序的出手。
+    /// 不复制伤害公式，也不改变随机流；返回结果的事件列表只包含本边界产生的事件。
+    /// 当目标时间早于下一边界时只推进战斗时钟，不产生事件。
+    /// </summary>
+    public static CombatAdvanceResult AdvanceOneBoundary(CombatEncounterState encounter, double targetSeconds)
+    {
+        ArgumentNullException.ThrowIfNull(encounter);
+        ValidateTarget(encounter, targetSeconds);
+        var from = encounter.ElapsedSeconds;
+        if (encounter.Outcome != CombatOutcome.Running || from >= targetSeconds)
+            return EmptyResult(encounter, from, targetSeconds);
+
+        List<CombatEvent>? events = null;
+        List<double>? playerDeaths = null;
+        List<double>? playerRespawns = null;
+        AdvanceBoundary(encounter, targetSeconds, ref events, ref playerDeaths, ref playerRespawns);
+        return new CombatAdvanceResult(encounter.EncounterId, from, encounter.ElapsedSeconds, encounter.Outcome,
+            (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence, playerDeaths, playerRespawns);
+    }
+
+    /// <summary>
     /// 将战斗状态按事件驱动推进至目标时刻：只跨过双方出手时刻，不产生等间隔时间片。
     /// </summary>
     /// <param name="encounter">遭遇战状态（就地推进）。</param>
@@ -712,8 +761,7 @@ public static class DeterministicCombatEngine
     public static CombatAdvanceResult AdvanceTo(CombatEncounterState encounter, double targetSeconds)
     {
         ArgumentNullException.ThrowIfNull(encounter);
-        if (!double.IsFinite(targetSeconds) || targetSeconds < encounter.ElapsedSeconds)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "战斗目标时间无效。");
+        ValidateTarget(encounter, targetSeconds);
         var from = encounter.ElapsedSeconds;
         List<CombatEvent>? events = null;
         List<double>? playerDeaths = null;
@@ -723,59 +771,89 @@ public static class DeterministicCombatEngine
         {
             if (++eventCount > MaxEventsPerAdvance)
                 throw new DomainException(DomainErrorCode.InvariantViolation, "战斗推进超过最大事件数。");
-            // 倒地窗口（原地复活模式）：玩家方全灭不终局，双方均不出手，
-            // 边界只剩战内 Buff/周期回复网格与复活截止点；怪物冷却按绝对时刻自然流逝。
-            var playerDowned = encounter.IsPlayerDowned;
-            var next = playerDowned ? encounter.PlayerRespawnAtSeconds : encounter.Player.NextAttackAtSeconds;
-            if (!playerDowned)
-                foreach (var enemy in encounter.Enemies)
-                    if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
-            // 战内 Buff 的到期/周期回复同样是确定性时间线边界，必须与出手边界一起纳入推进。
-            var effectAt = NextBuffBoundary(encounter);
-            if (effectAt < next) next = effectAt;
-            if (!double.IsFinite(next)) throw new DomainException(DomainErrorCode.InvariantViolation, "战斗攻击时间无效。");
-            if (next > targetSeconds)
-            {
-                encounter.ElapsedSeconds = targetSeconds;
-                break;
-            }
-            encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, next);
-            // 同刻到期先于出手结算：到达边界的 Buff 先失效/回复再进入动作结算。
-            if (effectAt <= encounter.ElapsedSeconds + 1e-12) ApplyBuffTick(encounter, effectAt);
-            if (playerDowned)
-            {
-                // 复活点触发起身：仅补满气血（灵力与冷却已在躺尸窗口按自然流逝入账），双方重新蓄势出手。
-                if (encounter.PlayerRespawnAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                {
-                    encounter.Player.Hitpoints = encounter.Player.Stats.MaxHitpoints;
-                    encounter.PlayerRespawnAtSeconds = double.PositiveInfinity;
-                    DecideInitialActions(encounter);
-                    (playerRespawns ??= []).Add(encounter.ElapsedSeconds);
-                }
-            }
-            else
-            {
-                if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                    PlayerAct(encounter, ref events);
-                for (var i = 0; i < encounter.Enemies.Count; i++)
-                {
-                    var enemy = encounter.Enemies[i];
-                    if (enemy.IsAlive && enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                        EnemyAct(encounter, enemy, i, ref events);
-                }
-                // 团灭触发倒地窗口：全场吟唱作废（未释放退还灵力、不进入冷却），复活点挂上战斗时钟。
-                if (!encounter.Player.IsAlive && encounter.PlayerRespawnSeconds > 0)
-                {
-                    encounter.PlayerRespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
-                    InterruptCasts(encounter);
-                    (playerDeaths ??= []).Add(encounter.ElapsedSeconds);
-                }
-            }
-            encounter.Sequence += 1;
-            UpdateOutcome(encounter);
+            if (!AdvanceBoundary(encounter, targetSeconds, ref events, ref playerDeaths, ref playerRespawns)) break;
         }
         return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome,
             (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence, playerDeaths, playerRespawns);
+    }
+
+    private static void ValidateTarget(CombatEncounterState encounter, double targetSeconds)
+    {
+        if (!double.IsFinite(targetSeconds) || targetSeconds < encounter.ElapsedSeconds)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "战斗目标时间无效。");
+    }
+
+    private static CombatAdvanceResult EmptyResult(CombatEncounterState encounter, double from, double to)
+        => new(encounter.EncounterId, from, to, encounter.Outcome, [], encounter.Sequence);
+
+    private static bool AdvanceBoundary(CombatEncounterState encounter, double targetSeconds,
+        ref List<CombatEvent>? events, ref List<double>? playerDeaths, ref List<double>? playerRespawns)
+    {
+        var naturalBoundary = GetNaturalBoundarySeconds(encounter, out var effectAt);
+        if (naturalBoundary > targetSeconds)
+        {
+            encounter.ElapsedSeconds = targetSeconds;
+            return false;
+        }
+
+        // 与原 AdvanceTo 完全一致：即使浮点差值小于容差，也必须写入边界原值，
+        // 否则 5 秒回复网格在 9.999999999999991 等表示下会重复命中同一边界。
+        encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, naturalBoundary);
+
+        if (effectAt <= encounter.ElapsedSeconds + 1e-12)
+            ApplyBuffTick(encounter, effectAt);
+
+        if (encounter.IsPlayerDowned)
+        {
+            if (encounter.PlayerRespawnAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+            {
+                encounter.Player.Hitpoints = encounter.Player.Stats.MaxHitpoints;
+                encounter.PlayerRespawnAtSeconds = double.PositiveInfinity;
+                DecideInitialActions(encounter);
+                (playerRespawns ??= []).Add(encounter.ElapsedSeconds);
+            }
+        }
+        else
+        {
+            if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                PlayerAct(encounter, ref events);
+            for (var i = 0; i < encounter.Enemies.Count; i++)
+            {
+                var enemy = encounter.Enemies[i];
+                if (enemy.IsAlive && enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
+                    EnemyAct(encounter, enemy, i, ref events);
+            }
+
+            if (!encounter.Player.IsAlive && encounter.PlayerRespawnSeconds > 0)
+            {
+                encounter.PlayerRespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
+                InterruptCasts(encounter);
+                (playerDeaths ??= []).Add(encounter.ElapsedSeconds);
+            }
+        }
+
+        encounter.Sequence += 1;
+        UpdateOutcome(encounter);
+        return true;
+    }
+
+    private static double GetNaturalBoundarySeconds(CombatEncounterState encounter, out double effectAt)
+    {
+        var next = encounter.IsPlayerDowned ? encounter.PlayerRespawnAtSeconds : encounter.Player.NextAttackAtSeconds;
+        if (!encounter.IsPlayerDowned)
+        {
+            for (var i = 0; i < encounter.Enemies.Count; i++)
+            {
+                var enemy = encounter.Enemies[i];
+                if (enemy.IsAlive && enemy.NextAttackAtSeconds < next) next = enemy.NextAttackAtSeconds;
+            }
+        }
+
+        effectAt = NextBuffBoundary(encounter);
+        if (effectAt < next) next = effectAt;
+        if (!double.IsFinite(next))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "战斗攻击时间无效。");
+        return next;
     }
 
     /// <summary>团灭瞬间全场吟唱作废：未完成的吟唱视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>

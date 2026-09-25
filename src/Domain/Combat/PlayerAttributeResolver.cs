@@ -147,6 +147,19 @@ public static class PlayerAttributeResolver
         return resolved;
     }
 
+    /// <summary>直接解析组件持有的领域分段，供非聚合运行时共用同一属性公式。</summary>
+    public static PlayerAttributes Resolve(PlayerProgression progression, PlayerWorldState world,
+        PlayerCombatState combat, PlayerBuffState buffs, PlayerLoadoutState loadout, GameDataCatalog catalog)
+        => Resolve(progression.RealmLevel, loadout.EquippedItemIds, loadout.Export(), buffs.Active,
+            new(combat.Hitpoints, combat.MaxHitpoints, combat.Manapoints, combat.MaxManapoints,
+                combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects);
+
+    /// <summary>同一组直接分段的属性输入修订号，允许状态所有者复用已解析面板。</summary>
+    public static long InputRevision(PlayerProgression progression, PlayerWorldState world,
+        PlayerBuffState buffs, PlayerLoadoutState loadout)
+        => progression.RealmLevelVersion + world.AttributeInputVersion + buffs.Active.Version
+            + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion;
+
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
         PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null)
     {

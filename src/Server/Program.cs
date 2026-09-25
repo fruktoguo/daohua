@@ -1,4 +1,5 @@
 using System.Net;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -89,6 +90,12 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 
 var options = ServerOptions.From(builder.Configuration) with { ProcessRole = processRole };
 builder.Services.AddSingleton(options);
+var benchmark = BenchmarkHost.FromEnvironment(builder.Environment, options);
+// 显式先实例化监听器，确保 bootstrap、首次载入和实体创建都进入同一观测窗口。
+using var benchmarkTelemetry = benchmark is null ? null : new BenchmarkTelemetry(benchmark.ObservabilityEnabled);
+if (benchmarkTelemetry is not null) builder.Services.AddSingleton(benchmarkTelemetry);
+if (benchmark?.IsReplay == true)
+    builder.Services.AddSingleton<ISimulationTransactionIdentity, DeterministicSimulationTransactionIdentity>();
 // schema 必须先于 Data Protection/认证服务解析，避免首次请求在建表 HostedService
 // 之前触发 key ring 查询。worker 角色在 bootstrap 关闭时也会 fail-fast 校验版本。
 var dataSource = NpgsqlDataSource.Create(options.ConnectionString);
@@ -96,7 +103,6 @@ var dataSource = NpgsqlDataSource.Create(options.ConnectionString);
 using (var bootstrapTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30)))
     await PostgresSchemaBootstrap.EnsureAsync(dataSource, options.EnableSchemaBootstrap, bootstrapTimeout.Token);
 builder.Services.AddSingleton(dataSource);
-
 if (processRole == ServerProcessRole.Api)
 {
     builder.Services.AddSingleton(GameDataCatalog.LoadEmbedded());
@@ -108,7 +114,9 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<PostgresMarketRepository>();
     builder.Services.AddSingleton<IMarketTransactionStore>(sp => sp.GetRequiredService<PostgresMarketRepository>());
     builder.Services.AddSingleton<MarketRuntime>();
+builder.Services.AddSingleton<IPlayerSimulationClock>(_ => PlayerSimulationClock.FromEnvironment());
     builder.Services.AddSingleton<PlayerRuntime>();
+    builder.Services.AddSingleton<IPlayerRuntime>(sp => sp.GetRequiredService<PlayerRuntime>());
     builder.Services.AddSingleton<SessionRegistry>();
     // 传音与社交：不属于玩家聚合，独立单例运行时；聊天记录落 PostgreSQL（每作用域保留 100 条）。
     builder.Services.AddSingleton<Server.Clean.Social.OnlinePresenceRegistry>();
@@ -136,7 +144,14 @@ builder.Services.AddSingleton<IIntegrationEventDispatcher, AuditIntegrationEvent
 // 装配注册表只会空转，ColdCatchUpWorker 还会与 Api 重复生产任务。
 if (processRole == ServerProcessRole.Api)
 {
-    builder.Services.AddComputeDispatch();
+    if (benchmark is null) builder.Services.AddComputeDispatch();
+    else
+    {
+        // 基准只保留链路依赖供路由/健康检查解析，冷挂机不得提前消费未加载种子。
+        builder.Services.AddSingleton<PostgresComputeJobRepository>();
+        builder.Services.AddSingleton<ComputeLinkMetrics>();
+        builder.Services.AddSingleton<ComputeLinkRegistry>();
+    }
 }
 builder.Services.AddHealthChecks()
     .AddCheck("process", () => HealthCheckResult.Healthy(), tags: ["live"])
@@ -157,8 +172,11 @@ builder.Services.AddHostedService<CommandReceiptCleanupWorker>();
 builder.Services.AddHostedService<PostgresRetentionWorker>();
 if (processRole == ServerProcessRole.Api)
 {
-    builder.Services.AddHostedService<PlayerFlushHostedService>();
-    builder.Services.AddHostedService<PlayerSimulationHostedService>();
+    if (benchmark?.IsReplay != true)
+    {
+        builder.Services.AddHostedService<PlayerFlushHostedService>();
+        builder.Services.AddHostedService<PlayerSimulationHostedService>();
+    }
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MarketRuntime>());
 }
 
@@ -293,7 +311,7 @@ if (processRole == ServerProcessRole.Api)
     });
 
     var auth = app.MapGroup("/api/v1/auth");
-    auth.MapPost("/register", async (RegisterRequest request, IAccountRepository accounts, PlayerRuntime runtime, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
+    auth.MapPost("/register", async (RegisterRequest request, IAccountRepository accounts, IPlayerRuntime runtime, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
     {
         var result = await accounts.RegisterAsync(request.Account, request.Password, request.DisplayName, ct);
         if (!result.Success)
@@ -338,13 +356,13 @@ if (processRole == ServerProcessRole.Api)
     }).RequireAuthorization();
 
     var players = app.MapGroup("/api/v1/players").RequireAuthorization();
-    players.MapGet("/{playerId:guid}", async (Guid playerId, ClaimsPrincipal user, PlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
+    players.MapGet("/{playerId:guid}", async (Guid playerId, ClaimsPrincipal user, IPlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
     {
         if (!IsPlayer(user, playerId)) return Results.Forbid();
         var snapshot = await runtime.LoadAsync(playerId, ct);
         return Results.Ok(ProtocolSnapshotMapper.ToSnapshot(snapshot, gameData.Fingerprint, gameData));
     });
-    players.MapPost("/{playerId:guid}/commands", async (Guid playerId, CommandEnvelopeDto request, ClaimsPrincipal user, PlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
+    players.MapPost("/{playerId:guid}/commands", async (Guid playerId, CommandEnvelopeDto request, ClaimsPrincipal user, IPlayerRuntime runtime, GameDataCatalog gameData, CancellationToken ct) =>
     {
         if (!IsPlayer(user, playerId)) return Results.Forbid();
         if (!Guid.TryParse(request.RequestId, out var requestId) || requestId == Guid.Empty || string.IsNullOrWhiteSpace(request.Command)
@@ -450,7 +468,7 @@ if (processRole == ServerProcessRole.Api)
         catch (InvalidOperationException exception) { return Results.Conflict(Problem(409, "MARKET_NOT_READY", exception.Message)); }
     }).RequireAuthorization().RequireRateLimiting("command");
 
-    app.MapGet("/api/v1/metrics", (ClaimsPrincipal user, PlayerRuntime playerRuntime, SessionRegistry sessions, MarketRuntime marketRuntime) =>
+    app.MapGet("/api/v1/metrics", (ClaimsPrincipal user, IPlayerRuntime playerRuntime, SessionRegistry sessions, MarketRuntime marketRuntime) =>
     {
         if (user.Identity?.IsAuthenticated != true) return Results.Unauthorized();
         return Results.Ok(new
@@ -460,6 +478,7 @@ if (processRole == ServerProcessRole.Api)
             market = marketRuntime.GetMetrics()
         });
     }).RequireAuthorization();
+    benchmark?.MapEndpoints(app);
     app.Map("/ws", WebSocketEndpoint.HandleAsync);
     // 计算节点反向拨入链路：节点主动 WebSocket 注册，主服经连接下发冷挂机批次。
     app.Map(Server.Clean.ComputeLinkContract.Path, Server.Clean.ComputeLinkEndpoint.HandleAsync);

@@ -11,41 +11,6 @@ using Protocol;
 namespace Server.Clean;
 
 /// <summary>
-/// 角色运行时只读快照。
-/// 包含内存聚合不可变状态、排队行动计数与当前资产钱包余额。
-/// 排队行动的完整存储投影只有运维计数一个消费方，逐拍序列化全部 Intent 属纯浪费，
-/// 因此快照只携带计数；协议分段与持久化落盘各自从领域状态编码，不经过本字段。
-/// </summary>
-/// <summary>
-/// 运行时快照视图。TouchedSections 为「触发本次快照的那次操作」在单写者锁内新增的脏标记分段差集
-/// （仅本操作内执行路径可求值；跨操作读取如 LoadAsync/SnapshotAsync 为 null，表示未知需全量编码）。
-/// WireAttributesChanged 为同一锁内解析的属性面板是否变化的判定（null=未知按已变处理）。
-/// </summary>
-public sealed record PlayerRuntimeSnapshot(
-    Guid PlayerId,
-    string AccountId,
-    string DisplayName,
-    long StateVersion,
-    DateTimeOffset LastSimulatedAt,
-    PlayerAggregateState State,
-    int QueuedActionCount,
-    IReadOnlyList<AssetBalanceRecord> Assets,
-    IReadOnlySet<PlayerSectionKind>? TouchedSections = null,
-    bool? WireAttributesChanged = null);
-
-/// <summary>
-/// 玩家指令执行回执契约包。
-/// 包含执行成功标志、领域/协议错误代码、执行后最新快照以及产生的战报日志。
-/// </summary>
-public sealed record PlayerCommandResult(
-    bool Success,
-    string Code,
-    string Message,
-    PlayerRuntimeSnapshot Snapshot,
-    SimulationResult? Simulation = null,
-    IReadOnlyList<LogEventDto>? LogEvents = null);
-
-/// <summary>
 /// 在线玩家单写者运行时：内存持有完整领域聚合，跨边界只交换消息和 section 载荷。
 /// 每个活跃角色对应一个单线程串行的 PlayerActor，由本地信号量保证指令与模拟推进的严格有序性。
 /// </summary>
@@ -59,7 +24,9 @@ public sealed class PlayerRuntime(
     ICommandReceiptStore? commandReceipts = null,
     IPlayerOwnershipStore? ownership = null,
     IAccountRepository? accounts = null,
-    NodeBuildingRegistry? nodeBuildings = null) : IAsyncDisposable
+    NodeBuildingRegistry? nodeBuildings = null,
+    IPlayerSimulationClock? simulationClock = null,
+    ISimulationTransactionIdentity? transactionIdentity = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, Lazy<Task<PlayerActor>>> _actors = new();
     private readonly ActionCatalog _actions = gameData.Actions;
@@ -407,6 +374,7 @@ public sealed class PlayerRuntime(
         // 战报环形缓冲只服务在线重连回放，actor 卸载即失效：同步清理，避免随卸载玩家单调堆积。
         _logBuffers.TryRemove(playerId, out _);
         await actor.DisposeAsync();
+        RuntimeInstrumentation.Count("lifecycle.player_unloaded");
     }
 
     /// <summary>宿主关闭路径：逐个卸载全部已加载玩家并强制落盘；单个玩家失败仅记录不中断整体关闭。</summary>
@@ -421,6 +389,7 @@ public sealed class PlayerRuntime(
 
     private async Task<PlayerActor> CreateActorAsync(Guid playerId, CancellationToken cancellationToken)
     {
+        using var loadMeasurement = RuntimeInstrumentation.Measure("lifecycle.player_load");
         if (ownership is not null && !await ownership.AcquireAsync(playerId, _ownerInstanceId, _ownershipLease, cancellationToken))
             throw new PlayerOwnershipLostException(playerId);
         try
@@ -459,12 +428,14 @@ public sealed class PlayerRuntime(
                 balance.Quantity,
                 balance.Version)));
             var logBuffer = _logBuffers.GetOrAdd(playerId, _ => new PlayerLogBuffer(LogBufferCapacity));
-            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, gameData, logBuffer, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease, accounts, nodeBuildings);
-            var advanced = await actor.AdvanceSimulationAsync(DateTimeOffset.UtcNow, cancellationToken);
+            var actor = new PlayerActor(aggregate, bundle, wallet, assetRepository, repository, economy, _actions, gameData, logBuffer, logger, marketRuntime, commandReceipts, ownership, _ownerInstanceId, _ownershipLease, accounts, nodeBuildings, simulationClock, transactionIdentity);
+            // 基准实验只固定业务模拟截止时间；租约与安全时限仍由 Actor 使用系统 UTC 处理。
+            var advanced = await actor.AdvanceSimulationAsync(simulationClock?.UtcNow ?? DateTimeOffset.UtcNow, cancellationToken);
             // 重连补算在 Presence=Offline 下完成，离线收益正确归因离线账本；补算结束后才转入在线。
             aggregate.SetPresence(PresenceState.Online);
             // 创建时的初始推进可能结算离线行动，产生的战报日志同样在锁外推送。
             await EmitLogBatchAsync(playerId, advanced?.LogEvents);
+            RuntimeInstrumentation.Count("lifecycle.player_loaded");
             return actor;
         }
         catch
@@ -567,6 +538,8 @@ public sealed class PlayerRuntime(
         private readonly IPlayerOwnershipStore? ownership;
         private readonly IAccountRepository? accounts;
         private readonly NodeBuildingRegistry? nodeBuildings;
+        private readonly IPlayerSimulationClock? simulationClock;
+        private readonly ISimulationTransactionIdentity? transactionIdentity;
         // 节点建筑投影键：版本戳只在同一节点内单调递增，必须连同节点身份比较；
         // (null, 0) 表示投影已清空（旅途中/无节点），long.MinValue 强制首次必刷新。
         private long _nodeBuildingVersion = long.MinValue;
@@ -652,7 +625,9 @@ public sealed class PlayerRuntime(
             Guid ownerInstanceId,
             TimeSpan ownershipLease,
             IAccountRepository? accounts = null,
-            NodeBuildingRegistry? nodeBuildings = null)
+            NodeBuildingRegistry? nodeBuildings = null,
+            IPlayerSimulationClock? simulationClock = null,
+            ISimulationTransactionIdentity? transactionIdentity = null)
         {
             this.aggregate = aggregate;
             this.bundle = bundle;
@@ -669,6 +644,8 @@ public sealed class PlayerRuntime(
             this.ownership = ownership;
             this.accounts = accounts;
             this.nodeBuildings = nodeBuildings;
+            this.simulationClock = simulationClock;
+            this.transactionIdentity = transactionIdentity;
             this.ownerInstanceId = ownerInstanceId;
             this.ownershipLease = ownershipLease;
             _sectionVersions = bundle.Sections.ToDictionary(x => x.Key, x => x.Value.StateVersion, StringComparer.Ordinal);
@@ -679,32 +656,37 @@ public sealed class PlayerRuntime(
         /// <summary>加锁读取快照；仅供未持有单写者锁的外部路径调用，锁内路径必须使用无锁 Snapshot()。</summary>
         public async ValueTask<PlayerRuntimeSnapshot> SnapshotAsync(CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try { return Snapshot(); }
             finally { _gate.Release(); }
         }
 
         /// <summary>无锁快照投影；调用方必须已持有单写者锁。touchedSections 为本操作触及分段差集，未知时传 null。</summary>
-        private PlayerRuntimeSnapshot Snapshot(IReadOnlySet<PlayerSectionKind>? touchedSections = null, bool? wireAttributesChanged = null) => new(
-            aggregate.PlayerId.Value,
-            aggregate.AccountId.Value.ToString("D"),
-            aggregate.DisplayName,
-            Math.Max(_logicalVersion, aggregate.StateVersion),
-            aggregate.LastSimulatedAt,
-            aggregate.ExportState() with { StateVersion = Math.Max(_logicalVersion, aggregate.StateVersion) },
-            aggregate.Actions.Count,
-            wallet.Balances
-                .OrderBy(balance => balance.Asset.ItemId.Value, StringComparer.Ordinal)
-                .ThenBy(balance => balance.Asset.Variant, StringComparer.Ordinal)
-                .Select(balance => new AssetBalanceRecord(
-                    balance.PlayerId.Value,
-                    balance.Asset.ItemId.Value,
-                    balance.Asset.Variant,
-                    balance.Quantity,
-                    balance.Version))
-                .ToArray(),
-            touchedSections,
-            wireAttributesChanged);
+        private PlayerRuntimeSnapshot Snapshot(IReadOnlySet<PlayerSectionKind>? touchedSections = null, bool? wireAttributesChanged = null)
+        {
+            using var snapshotMeasurement = RuntimeInstrumentation.Measure("snapshot.export");
+            return new(
+                aggregate.PlayerId.Value,
+                aggregate.AccountId.Value.ToString("D"),
+                aggregate.DisplayName,
+                Math.Max(_logicalVersion, aggregate.StateVersion),
+                aggregate.LastSimulatedAt,
+                aggregate.ExportState() with { StateVersion = Math.Max(_logicalVersion, aggregate.StateVersion) },
+                aggregate.Actions.Count,
+                wallet.Balances
+                    .OrderBy(balance => balance.Asset.ItemId.Value, StringComparer.Ordinal)
+                    .ThenBy(balance => balance.Asset.Variant, StringComparer.Ordinal)
+                    .Select(balance => new AssetBalanceRecord(
+                        balance.PlayerId.Value,
+                        balance.Asset.ItemId.Value,
+                        balance.Asset.Variant,
+                        balance.Quantity,
+                        balance.Version))
+                    .ToArray(),
+                touchedSections,
+                wireAttributesChanged);
+        }
 
         // 上次解析的协议属性面板实例：Resolve 命中输入修订号缓存返回同一实例，
         // 引用相等即面板未变；返回新实例（含值相等）保守视为已变。
@@ -753,7 +735,8 @@ public sealed class PlayerRuntime(
         /// <returns>命令回执：成功标志、错误码、执行后快照与战报日志。</returns>
         public async ValueTask<PlayerCommandResult> ExecuteAsync(string command, JsonElement payload, long expectedStateVersion, Guid? requestId, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 if (_disposed) throw new ObjectDisposedException(nameof(PlayerActor));
@@ -1225,7 +1208,7 @@ public sealed class PlayerRuntime(
                         // 客户端命令面（WS Command/HTTP commands）仍可到达，因此 targetTime
                         // 必须由服务端钳制：超出 30s 时钟偏差容忍的目标一律按服务端当前时刻
                         // 结算，封堵客户端伪造未来时刻快进刷收益的漏洞。
-                        var now = DateTimeOffset.UtcNow;
+                        var now = simulationClock?.UtcNow ?? DateTimeOffset.UtcNow;
                         var target = payload.TryGetProperty("targetTime", out var targetElement) && targetElement.TryGetDateTimeOffset(out var parsed)
                             ? parsed : now;
                         if (target > now.AddSeconds(30)) target = now;
@@ -1239,7 +1222,8 @@ public sealed class PlayerRuntime(
                         {
                             "online" => PresenceState.Online,
                             "suspended" => PresenceState.Suspended,
-                            _ => PresenceState.Offline
+                            "offline" => PresenceState.Offline,
+                            _ => throw new DomainException(DomainErrorCode.InvalidArgument, "Presence 状态无效。")
                         });
                         Touch();
                         break;
@@ -1312,21 +1296,16 @@ public sealed class PlayerRuntime(
             {
                 // 战斗遭遇与持续消耗品都需要完整配表；钱包仅作开封库存判断，实际扣减仍随 AssetDeltas 原子提交。
                 // 在线推进路径启用斗法撮合；离线补算（ComputeNode 等）不传该选项以保持确定性。
-                var result = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet, new DuelAdvanceOptions(MatchingEnabled: true));
+                var scenario = "idle";
+                if (RuntimeInstrumentation.Enabled && aggregate.Actions.Count > 0
+                    && gameData.Actions.TryGet(aggregate.Actions[0].Intent.ActionId, out var observedAction))
+                    scenario = RuntimeInstrumentation.Scenario(observedAction.Kind);
+                SimulationResult result;
+                using (RuntimeInstrumentation.Measure("core.simulation", scenario))
+                    result = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet, new DuelAdvanceOptions(MatchingEnabled: true));
                 if (result.AssetDeltas.Count > 0)
                 {
-                    var transaction = new EconomyTransactionRequest(
-                        Guid.NewGuid(),
-                        $"simulation:{aggregate.PlayerId.Value:D}:{result.StateVersion}:{result.To.ToUnixTimeMilliseconds()}",
-                        "simulation.reward",
-                        aggregate.PlayerId.Value,
-                        result.AssetDeltas.Select(delta => new Server.Clean.AssetDelta(
-                            delta.PlayerId.Value,
-                            delta.Asset.ItemId.Value,
-                            delta.Asset.Variant,
-                            delta.QuantityDelta)).ToArray(),
-                        result.To,
-                        JsonSerializer.SerializeToUtf8Bytes(new { result.StateVersion, result.To }));
+                    var transaction = SimulationEconomyTransaction.Create(aggregate.PlayerId.Value, result, transactionIdentity);
                     var committed = await economy.CommitAsync(transaction, cancellationToken);
                     if (!committed.Applied)
                         throw new InvalidOperationException("模拟资产事务未提交。");
@@ -1441,13 +1420,16 @@ public sealed class PlayerRuntime(
         /// </summary>
         public async ValueTask MarkOfflineAndFlushAsync(CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 if (!_disposed && aggregate.Presence == PresenceState.Online)
                     aggregate.SetPresence(PresenceState.Offline);
                 // 卸载前强制 Progression 落盘：道龄随空转时间累积但不标脏，需在此收口。
                 aggregate.MarkDirty(PlayerSectionKind.Progression);
+                // 下线重置报告会递增聚合版本；durable队列不能用旧逻辑版本覆盖新载荷。
+                _logicalVersion = Math.Max(_logicalVersion, aggregate.StateVersion);
             }
             finally { _gate.Release(); }
             await FlushAsync(true, cancellationToken);
@@ -1462,7 +1444,8 @@ public sealed class PlayerRuntime(
         /// <param name="cancellationToken">取消标记。</param>
         public async ValueTask FlushAsync(bool force, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 try
@@ -1575,7 +1558,8 @@ public sealed class PlayerRuntime(
         /// <summary>取走并清空本侧产生的弃战通知（命令路径锁内记录、锁外由运行时路由）。</summary>
         public async ValueTask<IReadOnlyList<(Guid DuelId, Guid PeerId)>> DrainDuelForfeitsAsync(CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 var list = _pendingDuelForfeits.ToArray();
@@ -1588,7 +1572,8 @@ public sealed class PlayerRuntime(
         /// <summary>撮合读取：队首处于斗法匹配等待相位时返回自身实力，否则 null。</summary>
         public async ValueTask<(Guid PlayerId, double Power)?> ReadDuelPendingAsync(CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try { return aggregate.IsDuelPending ? (aggregate.PlayerId.Value, aggregate.DuelPower) : null; }
             finally { _gate.Release(); }
         }
@@ -1596,7 +1581,8 @@ public sealed class PlayerRuntime(
         /// <summary>撮合读取：满足斗法入场资格（勾选斗法、有遭遇计数、无冷却、无进行中斗法）时返回实力。</summary>
         public async ValueTask<(Guid PlayerId, double Power)?> ReadDuelCandidateAsync(CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 return aggregate.CanJoinDuel(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d)
@@ -1609,7 +1595,8 @@ public sealed class PlayerRuntime(
         /// <summary>斗法预约：锁定进行中标识并消耗一点遭遇计数，成功时返回本侧开战镜像快照。</summary>
         public async ValueTask<DuelCombatant?> ReserveDuelAsync(Guid duelId, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 if (!aggregate.TryReserveDuel(duelId, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d)) return null;
@@ -1622,7 +1609,8 @@ public sealed class PlayerRuntime(
         /// <summary>解除斗法预约：撮合中断回滚，归还遭遇计数。</summary>
         public async ValueTask ReleaseDuelReservationAsync(Guid duelId, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try { aggregate.ReleaseDuelReservation(duelId); TouchDirtyOnly(); }
             finally { _gate.Release(); }
         }
@@ -1630,7 +1618,8 @@ public sealed class PlayerRuntime(
         /// <summary>挂载斗法回放：把撮合产出的确定性剧本接入队首战斗远征（预约须先成功）。</summary>
         public async ValueTask<bool> AttachDuelAsync(DuelPlaybackState playback, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 aggregate.AttachDuel(playback);
@@ -1644,7 +1633,8 @@ public sealed class PlayerRuntime(
         /// <summary>撤销斗法挂接：对手挂载失败时把本侧从 Duel 相位回滚为搜寻完成态。</summary>
         public async ValueTask DetachDuelAsync(Guid duelId, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try { aggregate.DetachDuel(duelId); TouchDirtyOnly(); }
             finally { _gate.Release(); }
         }
@@ -1652,7 +1642,8 @@ public sealed class PlayerRuntime(
         /// <summary>撮合无可用对手：退出匹配等待相位，本波转正常怪物波次。</summary>
         public async ValueTask AbortDuelSeekAsync(CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try { aggregate.AbortDuelSeek(); TouchDirtyOnly(); }
             finally { _gate.Release(); }
         }
@@ -1660,7 +1651,8 @@ public sealed class PlayerRuntime(
         /// <summary>对手弃战通知：本地回放标记为已裁决胜利，下一拍推进结算缴获。</summary>
         public async ValueTask<bool> ApplyPeerForfeitAsync(Guid duelId, CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(cancellationToken);
             try
             {
                 if (!aggregate.ApplyPeerForfeit(duelId)) return false;
@@ -1894,109 +1886,10 @@ public sealed class PlayerRuntime(
             if (Interlocked.Exchange(ref _disposeStarted, 1) == 1) return;
             _disposed = true;
             // 先等待在途命令完成再销毁信号量，避免并发命令在已释放的 SemaphoreSlim 上抛 ObjectDisposedException。
-            await _gate.WaitAsync(CancellationToken.None);
+            using (RuntimeInstrumentation.Measure("queue.actor_wait"))
+                await _gate.WaitAsync(CancellationToken.None);
             _gate.Dispose();
             if (ownership is not null) await ownership.ReleaseAsync(aggregate.PlayerId.Value, ownerInstanceId, CancellationToken.None);
-        }
-    }
-}
-
-/// <summary>每玩家战报日志环形缓冲与单调递增 sequence；仅进程内存，不持久化。连续完全相同模板日志自动合并且仅占用 1 条容量配额。</summary>
-public sealed class PlayerLogBuffer(int capacity)
-{
-    private readonly object _lock = new();
-    private readonly List<LogEventDto> _events = [];
-    private long _sequence;
-
-    /// <summary>分配下一条战报日志的单调递增 sequence（线程安全）。</summary>
-    public long NextSequence() => Interlocked.Increment(ref _sequence);
-
-    /// <summary>
-    /// 追加一条战报日志；与缓冲末尾模板相同则合并计数并更新 sequence/时间戳，
-    /// 超出容量时丢弃最旧条目。
-    /// </summary>
-    /// <param name="logEvent">待写入的战报日志 DTO。</param>
-    public void Append(LogEventDto logEvent)
-    {
-        lock (_lock)
-        {
-            if (_events.Count > 0 && _events[^1].Template == logEvent.Template && _events[^1].Channel == logEvent.Channel)
-            {
-                var last = _events[^1];
-                _events[^1] = last with
-                {
-                    Sequence = logEvent.Sequence,
-                    TimestampUnixMilliseconds = Math.Max(last.TimestampUnixMilliseconds, logEvent.TimestampUnixMilliseconds),
-                    Count = last.Count + logEvent.Count
-                };
-                return;
-            }
-
-            _events.Add(logEvent);
-            while (_events.Count > capacity)
-            {
-                _events.RemoveAt(0);
-            }
-        }
-    }
-
-    /// <summary>返回缓冲内全部日志的快照副本，供重连回放。</summary>
-    public IReadOnlyList<LogEventDto> SnapshotRecent()
-    {
-        lock (_lock) return _events.ToArray();
-    }
-}
-
-/// <summary>
-/// 在线玩家脏 section 的周期落盘后台服务：按 SectionFlushInterval 触发 FlushAllAsync(false)，
-/// 把达到脏龄门槛的分段批量写入 durable 队列。
-/// </summary>
-/// <param name="runtime">玩家运行时。</param>
-/// <param name="options">服务端配置选项。</param>
-/// <param name="logger">日志记录器。</param>
-public sealed class PlayerFlushHostedService(PlayerRuntime runtime, ServerOptions options, ILogger<PlayerFlushHostedService> logger) : BackgroundService
-{
-    private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try { await runtime.FlushAllAsync(false, stoppingToken); await Task.Delay(options.SectionFlushInterval, stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex)
-            {
-                if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家 section 刷新失败。");
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
-            }
-        }
-    }
-}
-
-/// <summary>在线玩家模拟时钟。推进只发生在内存单写者内，section 仍按低频批次落盘。</summary>
-public sealed class PlayerSimulationHostedService(PlayerRuntime runtime, ILogger<PlayerSimulationHostedService> logger) : BackgroundService
-{
-    private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        // 边界驱动调度：战斗出手、相位切换、行动完成等时刻是确定性可知的，
-        // 在边界时刻醒来推进并推送，事件到达≈发生时刻；无边界按 1 秒兜底，
-        // 斗法撮合、暂存结算与在线心跳等每拍逻辑不受影响。
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try { await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow, stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex)
-            {
-                if (_loopErrorLog.TryAcquire()) logger.LogError(ex, "在线玩家模拟推进失败。");
-            }
-            var boundary = runtime.NextAdvanceBoundaryUtc;
-            var delay = boundary is { } next ? next - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(1);
-            if (delay < TimeSpan.FromMilliseconds(50)) delay = TimeSpan.FromMilliseconds(50);
-            else if (delay > TimeSpan.FromSeconds(1)) delay = TimeSpan.FromSeconds(1);
-            try { await Task.Delay(delay, stoppingToken); }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }
 }

@@ -1,5 +1,8 @@
 using Domain.Common;
 using Domain.Player;
+using Domain.Economy;
+using Domain.GameData;
+using Domain.Simulation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Server.Clean;
@@ -192,6 +195,58 @@ public sealed class SectionRepositoryTests
             "SELECT last_simulated_at FROM game.player_state_heads WHERE player_id = $1", player))!;
         Assert.True(Math.Abs((cappedStored - cappedAt.UtcDateTime).TotalMilliseconds) < 1,
             $"last_simulated_at 未前移：stored={cappedStored:o} expected={cappedAt.UtcDateTime:o}");
+    }
+
+    /// <summary>真实下线必须递增提交版本；否则已落盘duel同版本拒写会丢失新离线会话起点。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task RuntimeUnloadPersistsOfflineReportAtNewSectionAndHeadVersion()
+    {
+        var (source, repository) = await OpenRepositoryAsync();
+        await using var sourceLifetime = source;
+        var playerId = await SeedPlayerAsync(source);
+        var initial = (await repository.LoadAsync(playerId))!;
+        var catalog = GameDataCatalog.LoadEmbedded();
+        // 固定过去的模拟窗口，避免flush队列按业务时间暂缓领取未来3.6秒的载荷。
+        var createdAt = initial.Identity.CreatedAt.AddMinutes(-1);
+        await SqlAsync(source, "UPDATE identity.players SET created_at=$2 WHERE player_id=$1", playerId, createdAt);
+        var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(initial.Identity.AccountId),
+            initial.Identity.DisplayName, createdAt, catalog.Fingerprint);
+        player.SetPresence(PresenceState.Online);
+        player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), -1), player.CreatedAt, catalog.Actions);
+        var target = player.CreatedAt.AddSeconds(3.6);
+        SimulationEngine.AdvanceTo(player, target, catalog, new AssetWallet(player.PlayerId));
+        // 固定v7复现真实回放已有duel v7、下线后应提交v8的冲突边界。
+        var seeded = player.ExportState() with { StateVersion = 7 };
+        await repository.EnqueueSectionsAsync(CleanSectionCodec.EncodeAggregateFull(seeded, DateTimeOffset.UtcNow));
+        await FlushUntilDrainedAsync(repository, source, playerId);
+        await using var runtime = new PlayerRuntime(repository, new PostgresAssetRepository(source),
+            new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance),
+            catalog, NullLogger<PlayerRuntime>.Instance, simulationClock: new FixedSimulationClock(target));
+        var loaded = await runtime.LoadAsync(playerId);
+        Assert.Equal(7, loaded.StateVersion);
+        Assert.Equal(0, loaded.State.Duel!.OfflineReport!.StartedAtUnixSeconds);
+
+        await runtime.RemoveAsync(playerId, flush: true);
+        Assert.Equal(3L, await Scalar(source,
+            "SELECT count(*) FROM platform.section_flush_queue WHERE player_id=$1 AND state_version=8 AND section_kind IN ('duel','settings','progression')", playerId));
+        await FlushUntilDrainedAsync(repository, source, playerId);
+        Assert.Equal(3L, await Scalar(source,
+            "SELECT count(*) FROM game.player_state_sections WHERE player_id=$1 AND section_version=8 AND section_kind IN ('duel','settings','progression')", playerId));
+        Assert.Equal(8L, await Scalar(source,
+            "SELECT state_version FROM game.player_state_heads WHERE player_id=$1", playerId));
+        var persisted = CleanSectionCodec.DecodeAggregate((await repository.LoadAsync(playerId))!);
+        Assert.Equal(PresenceState.Offline, persisted.Presence);
+        Assert.Equal(8, persisted.StateVersion);
+        Assert.Equal(target.ToUnixTimeMilliseconds() / 1000d, persisted.Duel!.OfflineReport!.StartedAtUnixSeconds);
+        Assert.Equal(persisted.Duel.OfflineReport.StartedAtUnixSeconds, persisted.Duel.OfflineReport.EndedAtUnixSeconds);
+    }
+
+    private sealed class FixedSimulationClock(DateTimeOffset value) : IPlayerSimulationClock
+    {
+        public DateTimeOffset UtcNow => value;
+        public bool IsDeterministic => true;
+        public void AdvanceTo(DateTimeOffset target) => throw new NotSupportedException();
     }
 
     private static SectionWrite[] BuildAllSections(Guid player, long version, DateTimeOffset now, int actionCount)

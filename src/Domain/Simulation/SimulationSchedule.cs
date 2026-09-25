@@ -16,7 +16,7 @@ public static class SimulationSchedule
     /// 推导下一个可见事件边界的墙钟时刻；无可见边界（空闲/受阻/斗法等待撮合）返回 null。
     /// 返回值为估计下界：推进器到达该时刻后按真实结算重算，误差只影响推送早晚，不影响结果。
     /// </summary>
-    public static DateTimeOffset? NextVisibleBoundaryUtc(PlayerAggregate player, GameDataCatalog gameData)
+    public static DateTimeOffset? NextVisibleBoundaryUtc(IPlayerResourceContext player, GameDataCatalog gameData)
     {
         var from = player.LastSimulatedAt;
         var fromUnix = from.ToUnixTimeMilliseconds() / 1000d;

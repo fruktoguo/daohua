@@ -57,7 +57,7 @@ public static class OpsPanel
 
         group.MapGet("/api/overview", (
             GameDataCatalog gameData,
-            PlayerRuntime players,
+            IPlayerRuntime players,
             SessionRegistry sessions,
             MarketRuntime market,
             ServerOptions serverOptions) => Results.Ok(new
@@ -101,7 +101,7 @@ public static class OpsPanel
             });
         });
 
-        group.MapGet("/api/players", async (PlayerRuntime players, CancellationToken cancellationToken) =>
+        group.MapGet("/api/players", async (IPlayerRuntime players, CancellationToken cancellationToken) =>
         {
             var snapshots = await players.GetLoadedSnapshotsAsync(cancellationToken);
             return Results.Ok(snapshots.Select(snapshot => new

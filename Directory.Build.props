@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    基准变体通过全局 BenchVariant 注入，必须在 SDK 的 Microsoft.Common.props 之前
+    为每个项目分别指定中间目录。这样 baseline/optimized 同名程序集不会共用
+    project.assets.json、obj 或生成的 AssemblyInfo。普通开发/生产构建不设置该属性，
+    因而完全沿用各项目原有 bin/obj 路径。
+  -->
+  <PropertyGroup Condition="'$(BenchVariant)' != ''">
+    <BenchIsolationRoot Condition="'$(BenchIsolationRoot)' == ''">$(MSBuildThisFileDirectory)artifacts</BenchIsolationRoot>
+    <BaseIntermediateOutputPath>$(BenchIsolationRoot)/obj/$(BenchVariant)/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <OutputPath>$(BenchIsolationRoot)/bin/$(BenchVariant)/$(MSBuildProjectName)/</OutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(MSBuildProjectDirectory)/obj/**;$(MSBuildThisFileDirectory)artifacts/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

@@ -92,6 +92,23 @@ public sealed class PlayerRuntimeTests
         Assert.False(result.Success);
         Assert.Equal("PLAYER_OWNERSHIP_LOST", result.Code);
     }
+    /// <summary>非法presence必须返回明确错误，不能静默转入Offline并重置离线报告。</summary>
+    [Fact]
+    public async Task InvalidPresenceDoesNotChangePlayerState()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = new PlayerRuntime(CreateEmptyPlayerRepository(playerId, "在线边界"),
+            new EmptyAssetRepository(), new NoopEconomyRepository(), GameDataCatalog.BuiltIn,
+            NullLogger<PlayerRuntime>.Instance);
+        var before = await runtime.LoadAsync(playerId);
+        var result = await runtime.ExecuteAsync(playerId, "player.presence",
+            JsonSerializer.SerializeToElement(new { presence = "unrecognized" }));
+        Assert.False(result.Success);
+        Assert.Equal(DomainErrorCode.InvalidArgument.ToString().ToUpperInvariant(), result.Code);
+        Assert.Equal(before.StateVersion, result.Snapshot.StateVersion);
+        Assert.Equal(before.State.Presence, result.Snapshot.State.Presence);
+    }
+
     /// <summary>Actor 创建失败（如数据库瞬时故障）不得残留半初始化实例，下一条命令可重试成功。</summary>
 
     [Fact]
@@ -215,11 +232,14 @@ public sealed class PlayerRuntimeTests
     [Fact]
     public async Task SimulationAdvanceCommitsSustainedPillDebitWithAuthoritativeState()
     {
+        using var telemetry = new BenchmarkTelemetry();
         var playerId = Guid.NewGuid();
         var repository = CreateEmptyPlayerRepository(playerId, "持久事务");
         var assets = new MutableAssetRepository(new AssetBalanceRecord(playerId, "item.qi-gathering-pill", "", 1d, 0));
         var economy = new RecordingEconomyRepository(assets, apply: true);
-        var runtime = new PlayerRuntime(repository, assets, economy, GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance);
+        var transactionIdentity = new DeterministicSimulationTransactionIdentity();
+        var runtime = new PlayerRuntime(repository, assets, economy, GameDataCatalog.LoadEmbedded(), NullLogger<PlayerRuntime>.Instance,
+            transactionIdentity: transactionIdentity);
 
         await runtime.LoadAsync(playerId);
         await runtime.ExecuteAsync(playerId, "queue.auto_use.configure", JsonSerializer.SerializeToElement(new
@@ -244,6 +264,18 @@ public sealed class PlayerRuntimeTests
         Assert.Equal(290d, Assert.Single(result.Snapshot.State.Settings.AutoUseSlots!).RemainingDurationSeconds);
         Assert.Equal(0d, Assert.Single(result.Snapshot.Assets).Quantity);
         var transaction = Assert.Single(economy.Requests);
+        // 确定性回放身份必须穿过运行时与Actor；提交后余额版本仍来自经济仓储。
+        Assert.Equal(transactionIdentity.Create(transaction.IdempotencyKey), transaction.TransactionId);
+        Assert.Equal(1, Assert.Single(result.Snapshot.Assets).Version);
+        var observed = telemetry.Snapshot();
+        foreach (var name in new[] { "core.simulation|other", "snapshot.export|all", "queue.actor_wait|all" })
+        {
+            var measured = observed.Measurements[name];
+            Assert.True(measured.Count > 0);
+            Assert.Equal(measured.Count, measured.Buckets.Sum());
+            Assert.True(measured.TotalMs >= 0 && double.IsFinite(measured.TotalMs));
+        }
+        Assert.True(observed.Counters["lifecycle.player_loaded"] > 0);
         var debit = Assert.Single(transaction.Deltas);
         Assert.Equal("item.qi-gathering-pill", debit.AssetId);
         Assert.Equal(-1d, debit.Delta);

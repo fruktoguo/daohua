@@ -147,17 +147,6 @@ public sealed partial class PlayerAggregate
         return actions;
     }
 
-    private static PlayerBattleReportDocument ExportReport(PlayerBattleReport report) => new(
-        report.ReportId, report.ActionId, report.ActionName,
-        report.StartedAtUnixSeconds, report.EndedAtUnixSeconds,
-        report.Qi, report.Experience,
-        new PlayerRootExpDocument(report.RootExp.Stamina, report.RootExp.Meridians, report.RootExp.Attack,
-            report.RootExp.Bone, report.RootExp.Agility, report.RootExp.Consciousness),
-        report.Items.ToArray(), report.DuelWins, report.DuelLosses,
-        report.ItemsLost.ToArray(), report.AbilityExp.ToArray(), report.LevelUps.ToArray(),
-        report.Cycles, report.Encounters, report.NormalKills, report.EliteKills, report.BossKills,
-        report.Deaths, report.DayIndex);
-
     /// <summary>
     /// 斗法分段导出：三级短路——①结构修订号（计数/冷却/进行中斗法/集合增删/账本换引用）
     /// ②队首行动账本对象引用 ③逐账本 ExportDirty 扫描；全部命中时直接复用上轮文档。
@@ -171,29 +160,12 @@ public sealed partial class PlayerAggregate
             && ReferenceEquals(_cachedDuelCurrentReport, current)
             && !AnyDuelReportDirty())
             return cached;
-        var document = new PlayerDuelStateDocument(
-            Duel.EncounterCharges,
-            Duel.CooldownUntilUnixSeconds,
-            Duel.ActiveDuelId,
-            Duel.StagedItems.ToArray(),
-            current is null ? null : ExportReportCached(current),
-            ExportReportSequence(Duel.Reports),
-            ExportReportSequence(Duel.ActionReports.Values),
-            ExportReportCached(Duel.OfflineReport),
-            ExportReportCached(Duel.DailyReport));
+        var document = PlayerDuelStateCodec.Export(Duel, _actions.Count > 0 ? _actions[0].Id : null);
         _cachedDuelDocument = document;
         _cachedDuelRevision = Duel.ExportRevision;
         _cachedDuelCurrentReport = current;
         return document;
     }
-
-    /// <summary>逐账本导出：未脏账本复用已登记文档；记账路径仅令被写账本重建。</summary>
-    private static PlayerBattleReportDocument ExportReportCached(PlayerBattleReport report)
-        => !report.ExportDirty && report.ExportedDocument is { } cached ? cached : report.CacheExported(ExportReport(report));
-
-    /// <summary>按原枚举顺序逐账本导出（插入序/归档序保持逐位一致）。</summary>
-    private static PlayerBattleReportDocument[] ExportReportSequence(IEnumerable<PlayerBattleReport> reports)
-        => reports.Select(ExportReportCached).ToArray();
 
     /// <summary>扫描全部账本脏标记；数量上界 ~3+Reports+ActionReports，远低于重建开销。</summary>
     private bool AnyDuelReportDirty()
@@ -521,67 +493,9 @@ public sealed partial class PlayerAggregate
     }
 
     private void RestoreDuel(PlayerDuelStateDocument document)
-    {
-        Duel.EncounterCharges = document.EncounterCharges;
-        Duel.CooldownUntilUnixSeconds = document.CooldownUntilUnixSeconds;
-        Duel.ActiveDuelId = document.ActiveDuelId;
-        Duel.StagedItems.Clear();
-        Duel.StagedItems.AddRange(document.StagedItems);
-        // 实例账本以 ActiveReports 为准重建；文档 CurrentReport 是冗余导出字段，不参与恢复。
-        Duel.ActionReports.Clear();
-        foreach (var document_ in document.ActiveReports ?? [])
-        {
-            var report = ImportReport(document_);
-            if (report.ActionInstanceId != Guid.Empty)
-                Duel.ActionReports[report.ActionInstanceId] = report;
-        }
-        Duel.OfflineReport = document.OfflineReport is null
-            ? new PlayerBattleReport { ReportId = "offline" }
-            : ImportReport(document.OfflineReport);
-        Duel.DailyReport = document.DailyReport is null
-            ? new PlayerBattleReport { ReportId = "daily" }
-            : ImportReport(document.DailyReport);
-        Duel.Reports.Clear();
-        Duel.Reports.AddRange(document.Reports.Select(ImportReport));
-    }
+        => PlayerDuelStateCodec.Restore(Duel, document);
 
-    private static PlayerBattleReport ImportReport(PlayerBattleReportDocument document)
-    {
-        var report = new PlayerBattleReport
-        {
-            ReportId = document.ReportId,
-            ActionInstanceId = Guid.TryParse(document.ReportId, out var guid) ? guid : Guid.Empty,
-            ActionId = document.ActionId,
-            ActionName = document.ActionName,
-            StartedAtUnixSeconds = document.StartedAtUnixSeconds,
-            EndedAtUnixSeconds = document.EndedAtUnixSeconds,
-            Qi = document.Qi,
-            Experience = document.Experience,
-            DuelWins = document.DuelWins,
-            DuelLosses = document.DuelLosses,
-            Cycles = document.Cycles,
-            Encounters = document.Encounters,
-            NormalKills = document.NormalKills,
-            EliteKills = document.EliteKills,
-            BossKills = document.BossKills,
-            Deaths = document.Deaths,
-            DayIndex = document.DayIndex,
-            RootExp =
-            {
-                Stamina = document.RootExp.Stamina,
-                Meridians = document.RootExp.Meridians,
-                Attack = document.RootExp.Attack,
-                Bone = document.RootExp.Bone,
-                Agility = document.RootExp.Agility,
-                Consciousness = document.RootExp.Consciousness
-            }
-        };
-        report.Items.AddRange(document.Items);
-        report.ItemsLost.AddRange(document.ItemsLost ?? []);
-        report.AbilityExp.AddRange(document.AbilityExp ?? []);
-        report.LevelUps.AddRange(document.LevelUps ?? []);
-        return report;
-    }
+
 
     private static bool IsValidReportDocument(PlayerBattleReportDocument? report)
         => report is null || (!string.IsNullOrWhiteSpace(report.ReportId) && report.ReportId.Length <= 64

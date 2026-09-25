@@ -164,6 +164,18 @@ dotnet run --project src/LoadTests/LoadTests.csproj -c Release -- \
 SMOKE_REQUIRE_STATIC=0 node scripts/smoke-production.mjs http://127.0.0.1:5128
 ```
 
+## 本地三版本基准控制面
+
+OOP、ECS-current 和 ECS-optimized 实验共享开发控制面，只在 `Development` API 宿主显式配置 `DAOHUA_BENCH_MODE=replay|online` 与 `DAOHUA_BENCH_VARIANT=oop|ecs-current|ecs-optimized` 时装配。数据库必须是本机对应的 `daohua_bench_oop`、`daohua_bench_ecs_current`、`daohua_bench_ecs_optimized`，请求必须来自本机回环地址；控制面拒绝浏览器 Origin 和转发来源。
+
+- `replay` 必须设置 ISO-8601 `DAOHUA_BENCH_SIMULATION_TARGET`，禁用模拟/玩家周期刷盘与冷挂机后台，由控制端显式推进及 flush，采用确定性模拟事务ID。
+- `online` 使用系统业务时钟，禁止设置固定目标；保留在线模拟和周期刷盘，按实际墙钟 duration/concurrency/interval 运行。两种模式均不启用冷挂机派发，租约与会话过期始终使用系统时钟。
+- `POST /api/debug/bench/session` 接收 `{ "playerId": "<已种入基准账号的UUID>" }`，签发真实 PostgreSQL session 与 HttpOnly Cookie；正式登录限流保持原值。`simulation-clock`、`flush`、`metrics` 端点要求该正式会话。
+- `DAOHUA_BENCH_OBSERVABILITY=true|false` 控制业务 Meter，默认 `true`。监听器在数据库 bootstrap 之前创建。`GET /api/debug/bench/metrics` 返回 `measurements`（阶段与场景键、count/totalMs/固定桶/分位）和 `counters`；Bench将测量窗口桶差与事件差写入报告 `server_measurements` / `server_counters`。
+- 现已观测 OOP/ECS 的 `core.simulation`、`snapshot.export`、`queue.actor_wait` 与玩家载入/卸载；ECS额外观测 `ecs.system_tick`、真实实体创建/销毁。样本为实际调用，缺失阶段不填零，累计分位不得相减。请求 RTT 单独报告；在线结束时钟不同，跨库终态严格比较使用独立 replay。
+
+该实验尚未替代正式服务。完整设计、验证记录与剩余门禁见 [`TASK-20260924-09`](docs/tasks/TASK-20260924-09.md)。
+
 ## Docker 与生产部署
 
 生产镜像由多阶段 Dockerfile 构建，只包含发布产物和前端 `dist`，以固定 UID `10001`、只读根文件系统和 `/tmp` tmpfs 运行。根 `compose.yaml` 是本地开发编排（app 以 `Development` 运行），本地容器化验证：

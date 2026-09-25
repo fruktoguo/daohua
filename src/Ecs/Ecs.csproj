@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>DaoHua.Ecs</RootNamespace>
+    <AssemblyName>DaoHua.Ecs</AssemblyName>
+    <!-- ECS-current/optimized 宿主通过此属性路由同名 YuoCore；默认值与现有
+         基线保持一致。构建脚本同时传入独立的 obj/bin 路径。 -->
+    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore</YuoCoreRoot>
+    <EcsBuildVariant Condition="'$(EcsBuildVariant)' == ''">current</EcsBuildVariant>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainIsolatedBuild=$(EcsIsolatedBuild);DomainBuildVariant=$(EcsBuildVariant)" />
+    <ProjectReference Include="$(YuoCoreRoot)/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+    <ProjectReference Include="$(YuoCoreRoot)/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+    <ProjectReference Include="$(YuoCoreRoot)/src/YuoCore.Runtime/YuoCore.Runtime.csproj" />
+  </ItemGroup>
+</Project>

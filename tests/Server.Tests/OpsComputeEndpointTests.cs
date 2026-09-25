@@ -112,6 +112,7 @@ public sealed class OpsComputeEndpointTests
         // 只保证路由元数据推断不把复杂类型误判为 Body）。
         builder.Services.AddSingleton<Domain.GameData.GameDataCatalog>();
         builder.Services.AddSingleton<PlayerRuntime>();
+        builder.Services.AddSingleton<IPlayerRuntime>(services => services.GetRequiredService<PlayerRuntime>());
         builder.Services.AddSingleton<SessionRegistry>();
         builder.Services.AddSingleton<MarketRuntime>();
         builder.Services.AddSingleton(new OpsLogBuffer(100));

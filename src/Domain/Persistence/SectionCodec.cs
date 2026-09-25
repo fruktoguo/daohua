@@ -169,6 +169,31 @@ public static class SectionCodec
     }
 
     /// <summary>
+    /// 从不可变状态完整编码全部玩家分段。ECS 运行时没有 OOP 聚合的 dirty 标记，
+    /// 因此持久化边界必须显式请求全量编码，而不是伪造一次领域命令来污染 dirty 集合。
+    /// </summary>
+    public static IReadOnlyList<SectionWrite> EncodeAggregateFull(PlayerAggregateState state, DateTimeOffset updatedAt)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        var values = new (string Kind, object Value)[]
+        {
+            (PlayerSectionKinds.Progression, state.Progression),
+            (PlayerSectionKinds.World, state.World),
+            (PlayerSectionKinds.Combat, state.Combat),
+            (PlayerSectionKinds.Buffs, state.Buffs),
+            (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence)),
+            (PlayerSectionKinds.ActionQueue, state.Actions),
+            (PlayerSectionKinds.Duel, state.Duel)
+        };
+        return values.Select(value => Encode(state.PlayerId.Value, value.Kind, Math.Max(1, state.StateVersion), value.Value, updatedAt) with
+        {
+            GameDataFingerprint = state.GameDataFingerprint,
+            LastSimulatedAt = state.LastSimulatedAt
+        }).ToArray();
+    }
+
+    /// <summary>
     /// 解码当前 schema 的玩家状态。配表指纹仅记录该状态上次运行时使用的内容版本，
     /// 不参与存档结构兼容判断；结构不兼容统一由 SchemaVersion 明确拒绝。
     /// </summary>

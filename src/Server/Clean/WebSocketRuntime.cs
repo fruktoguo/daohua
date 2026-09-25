@@ -227,7 +227,7 @@ public static class WebSocketEndpoint
 
         var options = context.RequestServices.GetRequiredService<ServerOptions>();
         var admission = context.RequestServices.GetRequiredService<AntiMultiOpen.AntiMultiOpenAdmission>();
-        var runtime = context.RequestServices.GetRequiredService<PlayerRuntime>();
+        var runtime = context.RequestServices.GetRequiredService<IPlayerRuntime>();
         var gameData = context.RequestServices.GetRequiredService<Domain.GameData.GameDataCatalog>();
         var sessions = context.RequestServices.GetRequiredService<SessionRegistry>();
         var chat = context.RequestServices.GetRequiredService<Social.ChatRuntime>();
@@ -339,7 +339,7 @@ public static class WebSocketEndpoint
     private static async Task ReceiveLoopAsync(
         WebSocket socket,
         WebSocketSession session,
-        PlayerRuntime runtime,
+        IPlayerRuntime runtime,
         Domain.GameData.GameDataCatalog gameData,
         AntiMultiOpen.AntiMultiOpenAdmission admission,
         ServerOptions options,
