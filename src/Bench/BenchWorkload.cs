@@ -128,8 +128,20 @@ public static class BenchWorkload
                 await sampleTask;
             }
             // 先统一收尾并等待连接卸载，否则 OOP 的卸载路径会在最终刷盘后追加 Progression 队列行。
-            await Task.WhenAll(sessions.Select(session => session.SetPresenceAsync(PresenceState.Offline, options.Mode, cancellationToken)));
-            await Task.WhenAll(sessions.Select(session => session.CloseWebSocketAsync()));
+            // 下线和关闭本身也会触发服务端的单玩家刷盘。若 500 个会话同时收尾，
+            // 会把压测连接池瞬时打满，导致命令已经完成却因清理失败被误标为 failed。
+            // 收尾并不属于 measured 窗口，因此只限制并发，不改变命令阶段的并发口径。
+            var cleanupConcurrency = Math.Min(options.Concurrency, 8);
+            await ForEachSessionAsync(
+                sessions,
+                cleanupConcurrency,
+                (session, token) => session.SetPresenceAsync(PresenceState.Offline, options.Mode, token),
+                cancellationToken);
+            await ForEachSessionAsync(
+                sessions,
+                cleanupConcurrency,
+                (session, _) => session.CloseWebSocketAsync(),
+                cancellationToken);
             using (var unloadTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
                 unloadTimeout.CancelAfter(TimeSpan.FromSeconds(options.RequestTimeoutSeconds));
@@ -301,6 +313,20 @@ public static class BenchWorkload
         using var document = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(cancellationToken));
         return document.RootElement.Clone();
     }
+
+    private static Task ForEachSessionAsync(
+        IEnumerable<BenchWebSocketSession> sessions,
+        int maxDegreeOfParallelism,
+        Func<BenchWebSocketSession, CancellationToken, Task> action,
+        CancellationToken cancellationToken)
+        => Parallel.ForEachAsync(
+            sessions,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = maxDegreeOfParallelism,
+                CancellationToken = cancellationToken
+            },
+            async (session, token) => await action(session, token));
 
     private static bool IsExpectedFailure(Exception exception)
         => exception is HttpRequestException or OperationCanceledException or WebSocketException or JsonException or InvalidOperationException;
