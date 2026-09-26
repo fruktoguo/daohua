@@ -10,6 +10,7 @@ using Xunit;
 namespace ServerEcs.Tests;
 
 /// <summary>固定分片路由门禁：分片只改变 ECS 所有权，不得改变三类行动结果。</summary>
+[Collection("ECS telemetry")]
 public sealed class EcsShardRoutingTests
 {
     private static readonly DateTimeOffset SeedTime = new(2026, 9, 24, 12, 0, 0, TimeSpan.Zero);
@@ -94,6 +95,7 @@ public sealed class EcsShardRoutingTests
         Assert.True(measurements["ecs.mailbox.post|gathering"].Count > 0);
         Assert.True(measurements["ecs.mailbox.callback|gathering"].Count > 0);
         Assert.True(measurements["ecs.owner_hold|all"].Count > 0);
+        Assert.Contains(measurements.Keys, key => key.StartsWith("yuocore.fiber.tick|", StringComparison.Ordinal));
     }
 
     private static Case[] CreateCases(GameDataCatalog catalog)

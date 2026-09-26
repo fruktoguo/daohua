@@ -122,7 +122,7 @@ public sealed class EcsActionPipeline
     /// <summary>Clock 阶段只开启资源自然窗口并记住本 tick 允许到达的时刻。</summary>
     public void PrepareClock(DateTimeOffset frameTarget)
     {
-        using var stageMeasurement = RuntimeInstrumentation.Measure("ecs.stage.clock");
+        using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.clock");
         if (IsComplete) return;
         if (!_windowOpen)
         {
@@ -154,7 +154,7 @@ public sealed class EcsActionPipeline
     /// <summary>Queue 阶段完成一次准入；重复准备 tick 复用已准备的同一轮，不重复扣用品。</summary>
     public void PrepareQueue()
     {
-        using var stageMeasurement = RuntimeInstrumentation.Measure("ecs.stage.queue");
+        using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.queue");
         if (IsComplete || !_windowOpen || _preparedAction is not null || _waiting) return;
         while (_remainingSeconds > 1e-9 && _player.Actions.Count > 0)
         {
@@ -281,7 +281,7 @@ public sealed class EcsActionPipeline
     /// <summary>由真实战斗实体系统执行一个随机原子边界，窗口预算保持原 double 目标。</summary>
     public void AdvanceCombatEncounter(CombatEncounterComponent encounter)
     {
-        using var stageMeasurement = RuntimeInstrumentation.Measure("ecs.stage.combat_encounter");
+        using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.combat_encounter");
         encounter.LastEvents.Clear();
         if (!ReferenceEquals(_battle, encounter) || _preparedAction is null || _combatStepDue) return;
         if (_frameTarget < NextBoundaryAt) return;
@@ -300,7 +300,7 @@ public sealed class EcsActionPipeline
     /// <summary>窗口或终局收尾才扣持续用品、折算技能、记录死亡与奖励，保留 OOP 的操作顺序。</summary>
     public void CompleteCombatYield()
     {
-        using var stageMeasurement = RuntimeInstrumentation.Measure("ecs.stage.combat_yield");
+        using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.combat_yield");
         if (!_combatStepDue || _battle is not { } encounter || _preparedAction is not { } action || _definition is not { } definition) return;
         var state = encounter.State;
         var result = new CombatAdvanceResult(state.EncounterId, _battleFrom, _battleTarget,

@@ -100,10 +100,34 @@ public sealed record BenchmarkHost(string Mode, string Variant, bool Observabili
             return Results.Ok(new { targetTime = clock.UtcNow, loadedPlayers = runtime.LoadedCount, advanced = advance });
         }).RequireAuthorization();
 
-        group.MapPost("/flush", async (IPlayerRuntime runtime, CancellationToken ct) =>
+        group.MapPost("/flush", async (IPlayerRuntime runtime, PostgresSectionRepository repository,
+            ServerOptions options, CancellationToken ct) =>
         {
             await runtime.FlushAllAsync(true, ct);
-            return Results.Ok(new { flushed = true, loadedPlayers = runtime.LoadedCount });
+            var batches = 0;
+            var applied = 0;
+            var failed = 0;
+            var idlePolls = 0;
+            while (idlePolls < 4)
+            {
+                var result = await repository.FlushPendingNowAsync(options.SectionFlushBatchSize, options.SectionFlushLease, ct);
+                batches++;
+                applied += result.Applied;
+                failed += result.Failed;
+                if (result.Failed > 0)
+                    throw new InvalidOperationException($"基准强制刷盘失败：{failed} 行。");
+                if (result.Claimed == 0)
+                {
+                    idlePolls++;
+                    if (idlePolls < 4) await Task.Delay(TimeSpan.FromMilliseconds(25), ct);
+                }
+                else
+                {
+                    idlePolls = 0;
+                }
+            }
+
+            return Results.Ok(new { flushed = true, loadedPlayers = runtime.LoadedCount, batches, applied });
         }).RequireAuthorization();
 
         group.MapGet("/metrics", (IPlayerRuntime runtime, BenchmarkTelemetry telemetry, SessionRegistry sessions, IPlayerSimulationClock clock) =>

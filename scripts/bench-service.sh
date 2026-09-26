@@ -47,11 +47,11 @@ done
 if [[ -z "$VARIANT" ]]; then echo "必须提供 --variant" >&2; usage >&2; exit 2; fi
 case "$VARIANT" in
   oop)
-    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5128; DATABASE="daohua_bench_oop"; ARTIFACT="$ROOT_DIR/artifacts/runtime/oop"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="452b3a1e202c9454a436b87a49383cef8585773c"; ;;
+    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5128; DATABASE="daohua_bench_oop"; ARTIFACT="$ROOT_DIR/artifacts/runtime/oop"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"; ;;
   ecs-current)
-    PROJECT="$ROOT_DIR/src/ServerEcs/ServerEcs.csproj"; PORT=5129; DATABASE="daohua_bench_ecs_current"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-current"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="452b3a1e202c9454a436b87a49383cef8585773c"; ;;
+    PROJECT="$ROOT_DIR/src/ServerEcs/ServerEcs.csproj"; PORT=5129; DATABASE="daohua_bench_ecs_current"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-current"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"; ;;
   ecs-optimized)
-    PROJECT="$ROOT_DIR/src/ServerEcsOptimized/ServerEcsOptimized.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="35a834ff1e7480ebdc5379e5f4d145533bea0177"; ;;
+    PROJECT="$ROOT_DIR/src/ServerEcsOptimized/ServerEcsOptimized.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="11a7f47ee44c5562193a7d544fb88b603fbc6a32"; ;;
   *) echo "不支持的 variant：$VARIANT" >&2; exit 2 ;;
 esac
 if [[ -n "$PORT_OVERRIDE" ]]; then PORT="$PORT_OVERRIDE"; fi

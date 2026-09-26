@@ -35,23 +35,38 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         // 感知本次命令失败并执行数据库回滚。
         _ownsCloseSystemTry = ownCloseSystemTry;
         _previousCloseSystemTry = YuoWorld.CloseSystemTry;
-        if (ownCloseSystemTry) YuoWorld.CloseSystemTry = true;
-        GameData = gameData ?? GameDataCatalog.BuiltIn;
-        StartAt = startAt ?? DateTimeOffset.UnixEpoch;
-        _fiber = _fiberManager.CreateFiber(fiberName ?? "daohua-ecs", setWorldAsDefault: setWorldAsDefault);
-        _clock = _fiber.World.WorldMain!.GetOrAddComponent<EcsClockComponent>();
-        _clock.Catalog = GameData;
-        _clock.AttachCombatBattle = (entity, battle, startedAt) =>
+        EcsCoreTraceBridge.Install();
+        try
         {
-            var id = CreateEncounterFromStateCore(entity.GetComponent<PlayerIdentityComponent>()!.PlayerId, battle, startedAt);
-            return World.GetEntity(id)!.GetComponent<CombatEncounterComponent>()!;
-        };
-        _clock.ReleaseCombatBattle = entity => DestroyPlayerEncounters(entity.ID);
-        _clock.Current = StartAt;
-        _clock.Target = StartAt;
-        _clock.RequestTarget = StartAt;
-        foreach (var node in GameData.WorldGraph.Nodes)
-            CreateMapNodeCore(node);
+            if (ownCloseSystemTry) YuoWorld.CloseSystemTry = true;
+            GameData = gameData ?? GameDataCatalog.BuiltIn;
+            StartAt = startAt ?? DateTimeOffset.UnixEpoch;
+            _fiber = _fiberManager.CreateFiber(fiberName ?? "daohua-ecs", setWorldAsDefault: setWorldAsDefault);
+            _clock = _fiber.World.WorldMain!.GetOrAddComponent<EcsClockComponent>();
+            _clock.Catalog = GameData;
+            _clock.AttachCombatBattle = (entity, battle, startedAt) =>
+            {
+                var id = CreateEncounterFromStateCore(entity.GetComponent<PlayerIdentityComponent>()!.PlayerId, battle, startedAt);
+                return World.GetEntity(id)!.GetComponent<CombatEncounterComponent>()!;
+            };
+            _clock.ReleaseCombatBattle = entity => DestroyPlayerEncounters(entity.ID);
+            _clock.Current = StartAt;
+            _clock.Target = StartAt;
+            _clock.RequestTarget = StartAt;
+            foreach (var node in GameData.WorldGraph.Nodes)
+                CreateMapNodeCore(node);
+        }
+        catch
+        {
+            try { _fiberManager.Dispose(); }
+            finally
+            {
+                _ownerGate.Dispose();
+                EcsCoreTraceBridge.Uninstall();
+                if (_ownsCloseSystemTry) YuoWorld.CloseSystemTry = _previousCloseSystemTry;
+            }
+            throw;
+        }
     }
 
     public GameDataCatalog GameData { get; }
@@ -740,8 +755,15 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return; _disposed = true; _fiberManager.Dispose(); _ownerGate.Dispose();
-        if (_ownsCloseSystemTry) YuoWorld.CloseSystemTry = _previousCloseSystemTry;
+        if (_disposed) return;
+        _disposed = true;
+        try { _fiberManager.Dispose(); }
+        finally
+        {
+            _ownerGate.Dispose();
+            EcsCoreTraceBridge.Uninstall();
+            if (_ownsCloseSystemTry) YuoWorld.CloseSystemTry = _previousCloseSystemTry;
+        }
     }
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
 }

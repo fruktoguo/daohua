@@ -21,6 +21,17 @@ public static class RuntimeInstrumentation
     public static Measurement MeasureCurrent(string stage)
         => Duration.Enabled ? new(stage, ActiveScenario.Value ?? "all", Stopwatch.GetTimestamp()) : default;
 
+    public static long BeginCurrent(string stage)
+        => Duration.Enabled ? Stopwatch.GetTimestamp() : 0;
+
+    public static void EndCurrent(string stage, long startedAt)
+    {
+        if (startedAt != 0)
+            Duration.Record(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds,
+                new KeyValuePair<string, object?>("stage", stage),
+                new KeyValuePair<string, object?>("scenario", ActiveScenario.Value ?? "all"));
+    }
+
     public static ScenarioScope BeginScenario(string scenario)
     {
         if (!Duration.Enabled) return default;

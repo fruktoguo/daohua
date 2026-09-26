@@ -166,15 +166,17 @@ SMOKE_REQUIRE_STATIC=0 node scripts/smoke-production.mjs http://127.0.0.1:5128
 
 ## 本地三版本基准控制面
 
+`scripts/bench-matrix.sh --manifest <角色清单> --seed-players <清单角色数> --players 10 --hours 1 --scenarios Gathering,Crafting,Combat` 使用同一清单分别重置三套本地实验库并运行真实服务；`--concurrency` 可固定同时执行的玩家命令数。`DAOHUA_BENCH_OBSERVABILITY=false` 可在同负载关闭深度观测，用于判断埋点自身的开销。`--hours 1` 是业务时钟回放一小时，实际墙钟运行时间另见报告。
+
 OOP、ECS-current 和 ECS-optimized 实验共享开发控制面，只在 `Development` API 宿主显式配置 `DAOHUA_BENCH_MODE=replay|online` 与 `DAOHUA_BENCH_VARIANT=oop|ecs-current|ecs-optimized` 时装配。数据库必须是本机对应的 `daohua_bench_oop`、`daohua_bench_ecs_current`、`daohua_bench_ecs_optimized`，请求必须来自本机回环地址；控制面拒绝浏览器 Origin 和转发来源。
 
 - `replay` 必须设置 ISO-8601 `DAOHUA_BENCH_SIMULATION_TARGET`，禁用模拟/玩家周期刷盘与冷挂机后台，由控制端显式推进及 flush，采用确定性模拟事务ID。
 - `online` 使用系统业务时钟，禁止设置固定目标；保留在线模拟和周期刷盘，按实际墙钟 duration/concurrency/interval 运行。两种模式均不启用冷挂机派发，租约与会话过期始终使用系统时钟。
 - `POST /api/debug/bench/session` 接收 `{ "playerId": "<已种入基准账号的UUID>" }`，签发真实 PostgreSQL session 与 HttpOnly Cookie；正式登录限流保持原值。`simulation-clock`、`flush`、`metrics` 端点要求该正式会话。
 - `DAOHUA_BENCH_OBSERVABILITY=true|false` 控制业务 Meter，默认 `true`。监听器在数据库 bootstrap 之前创建。`GET /api/debug/bench/metrics` 返回 `measurements`（阶段与场景键、count/totalMs/固定桶/分位）和 `counters`；Bench将测量窗口桶差与事件差写入报告 `server_measurements` / `server_counters`。
-- 现已观测 OOP/ECS 的 `core.simulation`、`snapshot.export`、`queue.actor_wait` 与玩家载入/卸载；ECS额外观测 `ecs.system_tick`、真实实体创建/销毁。样本为实际调用，缺失阶段不填零，累计分位不得相减。请求 RTT 单独报告；在线结束时钟不同，跨库终态严格比较使用独立 replay。
-- 单版 `bench run`/`probe` 除 JSON 和总览 CSV 外，写出同名 `.stages.csv`：每行一个阶段和场景，含层级、状态、调用次数、累计耗时及 p50/p95/p99/max。`domain.*` 是 OOP/ECS 共用领域原语，`oop.logic.*` 与 `ecs.system.run.*` 分别解释实现内调度；父子计时和并发累计耗时不能相加为墙钟。`not_observed`、`not_applicable`、`unavailable` 的统计字段留空。
-- `dotnet run --project src/Bench -- report --report 'artifacts/bench/<同条件三版报告通配符>.json' --comparison-output artifacts/bench/gathering.comparison.json` 生成阶段横向对比 JSON/CSV，并为旧版输入报告补齐缺失的 `.stages.csv`（不覆盖已有文件）。输入必须是 OOP、ECS-current、ECS-optimized 各一份，且场景、人数、manifest SHA-256、游戏数据指纹、模式、目标时长、并发和成功命令数一致；条件不符仍输出明细，但拒绝计算倍率并返回非零状态。仅同一 `stage|scenario` 且三版实际调用次数相同的共享阶段计算倍率；`all` 运维阶段只并排展示，`count_mismatch` 不计算倍率。
+- 现已观测 OOP/ECS 的 `core.simulation`、`snapshot.export`、`queue.actor_wait` 与玩家载入/卸载；ECS 还观测 `ecs.system_tick`、游戏 System 活动调用、真实实体创建/销毁及 `yuocore.*` 内核路径（Fiber 邮箱、World 分派、System 扫描、组件热路径）。报告把内核阶段归一化为 `ecs.core.*`；仅两版真实边界一致的阶段可比较，优化版专属内部步骤单列。样本为实际调用，缺失阶段不填零，累计分位不得相减。请求 RTT 单独报告；在线结束时钟不同，跨库终态严格比较使用独立 replay。
+- 单版 `bench run`/`probe` 除 JSON 和总览 CSV 外，写出同名 `.stages.csv` 与 `.counters.csv`：阶段行含层级、状态、调用次数、累计耗时、单次均值及 p50/p95/p99/max；计数行记录邮箱、组件、系统等事件次数。`domain.*` 是 OOP/ECS 共用领域原语，`oop.logic.*`、`ecs.system.run.*` 与 `ecs.core.*` 分别解释实现和内核路径；父子计时和并发累计耗时不能相加为墙钟。`not_observed`、`not_applicable`、`unavailable` 的统计字段留空。
+- `dotnet run --project src/Bench -- report --report 'artifacts/bench/<同条件三版报告通配符>.json' --comparison-output artifacts/bench/gathering.comparison.json` 生成阶段与事件计数的横向对比 JSON/CSV，并为旧版输入报告补齐缺失的 `.stages.csv`、`.counters.csv`（不覆盖已有文件）。输入必须是 OOP、ECS-current、ECS-optimized 各一份，且场景、人数、manifest SHA-256、游戏数据指纹、模式、目标时长、并发和成功命令数一致；条件不符仍输出明细，但拒绝计算倍率并返回非零状态。同一 `stage|scenario`、调用边界和调用次数相同的共享阶段可计算三版倍率；两套 ECS 共有阶段只计算优化版/当前版；`all` 运维阶段只并排展示，`count_mismatch` 不计算倍率。
 - 报告尚未记录 ECS `shardCount`，计算倍率前需外部核对两套 ECS 服务的实际分片数。`instrumentation_listener_ms` 是服务端 Meter 监听器窗口耗时下界；完整埋点成本要用相同负载的观测开/关独立重复实验确认。
 
 该实验尚未替代正式服务。完整设计、验证记录与剩余门禁见 [`TASK-20260924-09`](docs/tasks/TASK-20260924-09.md)。

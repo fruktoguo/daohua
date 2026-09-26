@@ -13,6 +13,7 @@ SEED_PLAYERS="3000"
 HOURS="1,8,24,48"
 SCENARIOS="Gathering,Crafting,Combat"
 VARIANTS="oop,ecs-current,ecs-optimized"
+CONCURRENCY="32"
 RUN_ROOT="$ROOT_DIR/artifacts/bench/$RUN_ID"
 EPOCH=""
 
@@ -22,10 +23,11 @@ usage() {
   --run-id ID       输出目录名（默认 UTC 时间）
   --manifest 文件   同一份角色 manifest（默认 artifacts/bench/manifests/characters-3000.json）
   --players 列表    逗号分隔：1,10,1000
-  --seed-players 数  每次重置 manifest 灌库的角色数（默认 3000；小规模验收可设 3）
+  --seed-players 数  校验 manifest 角色数（默认 3000；小规模验收可设 3）
   --hours 列表      逗号分隔：1,8,24,48；通过真实 WS simulation.advance 回放
   --scenarios 列表  Gathering,Crafting,Combat
   --variants 列表   oop,ecs-current,ecs-optimized
+  --concurrency 数  同时执行的玩家命令数（默认 32）
   --epoch ISO时间   业务实验起点（默认取 manifest 第一角色 startAt）
   --output-dir 目录 覆盖 artifacts/bench/<run-id>
 EOF
@@ -40,6 +42,7 @@ while (($#)); do
     --hours) HOURS="${2:?--hours 缺少值}"; shift 2 ;;
     --scenarios) SCENARIOS="${2:?--scenarios 缺少值}"; shift 2 ;;
     --variants) VARIANTS="${2:?--variants 缺少值}"; shift 2 ;;
+    --concurrency) CONCURRENCY="${2:?--concurrency 缺少值}"; shift 2 ;;
     --epoch) EPOCH="${2:?--epoch 缺少值}"; shift 2 ;;
     --output-dir) RUN_ROOT="${2:?--output-dir 缺少值}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -49,6 +52,19 @@ done
 
 [[ -f "$BENCH_DLL" ]] || { echo "缺少 Bench 产物，请先 dotnet build src/Bench/Bench.csproj -c Release" >&2; exit 3; }
 [[ -f "$MANIFEST" ]] || { echo "缺少 manifest：$MANIFEST" >&2; exit 3; }
+[[ "$CONCURRENCY" =~ ^[0-9]+$ ]] && ((CONCURRENCY >= 1 && CONCURRENCY <= 3000)) || {
+  echo "--concurrency 必须为 1..3000" >&2
+  exit 2
+}
+manifest_players="$(python3 - "$MANIFEST" <<'PY'
+import json, sys
+print(len(json.load(open(sys.argv[1]))))
+PY
+)"
+[[ "$manifest_players" == "$SEED_PLAYERS" ]] || {
+  echo "manifest 角色数 $manifest_players 与 --seed-players $SEED_PLAYERS 不一致" >&2
+  exit 3
+}
 mkdir -p "$RUN_ROOT"
 
 url_for() {
@@ -124,7 +140,7 @@ start_variant() {
 seed_all() {
   for variant in "${variant_list[@]}"; do stop_variant "$variant"; done
   for variant in "${variant_list[@]}"; do
-    dotnet "$BENCH_DLL" seed --players "$SEED_PLAYERS" --output "$RUN_ROOT/manifest.json" --epoch "$EPOCH" \
+    dotnet "$BENCH_DLL" seed --manifest "$MANIFEST" --output "$RUN_ROOT/manifest.json" --epoch "$EPOCH" \
       --database "$(connection_for "$(database_for "$variant")")" \
       >"$RUN_ROOT/${variant}.seed.log" 2>&1
     python3 - "$MANIFEST" "$RUN_ROOT/manifest.json" <<'PY'
@@ -154,7 +170,7 @@ for scenario in "${scenario_list[@]}"; do
         set +e
         dotnet "$BENCH_DLL" run \
           --variant "$variant" --url "$url" --manifest "$RUN_ROOT/manifest.json" \
-          --scenario "$scenario" --players "$players" --target-hours "$hours" \
+          --scenario "$scenario" --players "$players" --target-hours "$hours" --concurrency "$CONCURRENCY" \
           --report "$report" >"${report%.json}.stdout.log" 2>"${report%.json}.stderr.log"
         code=$?
         set -e

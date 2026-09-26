@@ -528,9 +528,9 @@ public sealed record BenchVariant(string Name, int Port, string Database, string
 {
     public static BenchVariant Parse(string name) => name.ToLowerInvariant() switch
     {
-        "oop" => new("oop", 5128, "daohua_bench_oop", "artifacts/runtime/oop", "vendor/YuoCore", "452b3a1e202c9454a436b87a49383cef8585773c"),
-        "ecs-current" => new("ecs-current", 5129, "daohua_bench_ecs_current", "artifacts/runtime/ecs-current", "vendor/YuoCore", "452b3a1e202c9454a436b87a49383cef8585773c"),
-        "ecs-optimized" => new("ecs-optimized", 5130, "daohua_bench_ecs_optimized", "artifacts/runtime/ecs-optimized", "vendor/YuoCore-optimized", "35a834ff1e7480ebdc5379e5f4d145533bea0177"),
+        "oop" => new("oop", 5128, "daohua_bench_oop", "artifacts/runtime/oop", "vendor/YuoCore", "f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"),
+        "ecs-current" => new("ecs-current", 5129, "daohua_bench_ecs_current", "artifacts/runtime/ecs-current", "vendor/YuoCore", "f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"),
+        "ecs-optimized" => new("ecs-optimized", 5130, "daohua_bench_ecs_optimized", "artifacts/runtime/ecs-optimized", "vendor/YuoCore-optimized", "11a7f47ee44c5562193a7d544fb88b603fbc6a32"),
         _ => throw new ArgumentException($"未知 variant：{name}")
     };
 }
@@ -1120,6 +1120,7 @@ public static class BenchReportWriter
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(report, BenchJson.Indented));
         await File.WriteAllTextAsync(Path.ChangeExtension(path, ".csv"), ToCsv([report.Metric]));
         await File.WriteAllTextAsync(Path.ChangeExtension(path, ".stages.csv"), BenchStageReports.ToStageCsv(report));
+        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".counters.csv"), BenchStageReports.ToCounterCsv(report));
     }
 
     public static async Task WriteComparisonAsync(string path, BenchComparison comparison)
@@ -1127,6 +1128,7 @@ public static class BenchReportWriter
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(comparison, BenchJson.Indented));
         await File.WriteAllTextAsync(Path.ChangeExtension(path, ".csv"), BenchStageReports.ToComparisonCsv(comparison.Stages));
+        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".counters.csv"), BenchStageReports.ToCounterComparisonCsv(comparison.Counters));
     }
 
     public static async Task<IReadOnlyList<BenchReport>> ReadManyAsync(string path)
@@ -1146,6 +1148,8 @@ public static class BenchReportWriter
         {
             var output = Path.ChangeExtension(files[i], ".stages.csv");
             if (!File.Exists(output)) await File.WriteAllTextAsync(output, BenchStageReports.ToStageCsv(reports[i]));
+            var counters = Path.ChangeExtension(files[i], ".counters.csv");
+            if (!File.Exists(counters)) await File.WriteAllTextAsync(counters, BenchStageReports.ToCounterCsv(reports[i]));
         }
     }
 
@@ -1153,6 +1157,7 @@ public static class BenchReportWriter
         => path.Contains('*')
             ? Directory.EnumerateFiles(Path.GetDirectoryName(path) ?? ".", Path.GetFileName(path))
                 .Where(file => !file.EndsWith(".comparison.json", StringComparison.OrdinalIgnoreCase))
+                .Where(file => !Path.GetFileName(file).StartsWith("compare-", StringComparison.OrdinalIgnoreCase))
                 .Order(StringComparer.Ordinal).ToArray()
             : [path];
 
@@ -1167,7 +1172,8 @@ public static class BenchReportWriter
 }
 
 public sealed record BenchComparison(IReadOnlyList<BenchReport> Reports, IReadOnlyList<string> Differences,
-    IReadOnlyList<BenchStageComparison> Stages, bool RatiosAllowed, IReadOnlyList<string> Warnings)
+    IReadOnlyList<BenchStageComparison> Stages, IReadOnlyList<BenchCounterComparison> Counters,
+    bool RatiosAllowed, IReadOnlyList<string> Warnings)
 {
     public static BenchComparison Create(IReadOnlyList<BenchReport> reports) => BenchStageReports.Compare(reports);
 }

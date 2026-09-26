@@ -388,10 +388,27 @@ public sealed class PostgresSectionRepository(
     /// 逐组开事务应用；单组失败回滚该组并退避重试，不阻塞其他玩家。认领行中的较旧版本
     /// 靠 section_version 谓词自然丢弃，不会让旧快照覆盖新状态。
     /// </summary>
-    public async ValueTask<FlushBatchResult> FlushPendingAsync(
+    public ValueTask<FlushBatchResult> FlushPendingAsync(
         int maxRows,
         TimeSpan lease,
         CancellationToken cancellationToken = default)
+        => FlushPendingCoreAsync(maxRows, lease, ignoreSchedule: false, cancellationToken);
+
+    /// <summary>
+    /// 基准收尾专用刷盘：立即领取队列中的行，忽略模拟时钟产生的 next_attempt_at。
+    /// 正常后台 worker 仍使用 FlushPendingAsync 的退避调度，避免改变生产重试语义。
+    /// </summary>
+    public ValueTask<FlushBatchResult> FlushPendingNowAsync(
+        int maxRows,
+        TimeSpan lease,
+        CancellationToken cancellationToken = default)
+        => FlushPendingCoreAsync(maxRows, lease, ignoreSchedule: true, cancellationToken);
+
+    private async ValueTask<FlushBatchResult> FlushPendingCoreAsync(
+        int maxRows,
+        TimeSpan lease,
+        bool ignoreSchedule,
+        CancellationToken cancellationToken)
     {
         if (maxRows <= 0) return new FlushBatchResult(0, 0, 0, TimeSpan.Zero);
         var stopwatch = Stopwatch.StartNew();
@@ -408,7 +425,7 @@ public sealed class PostgresSectionRepository(
                 WITH candidates AS (
                     SELECT player_id, section_kind
                     FROM platform.section_flush_queue
-                    WHERE next_attempt_at <= $1
+                    WHERE ($5 OR next_attempt_at <= $1)
                       AND (lease_until IS NULL OR lease_until < $1)
                     ORDER BY updated_at
                     FOR UPDATE SKIP LOCKED
@@ -426,6 +443,7 @@ public sealed class PostgresSectionRepository(
             command.Parameters.Add(new NpgsqlParameter { Value = maxRows });
             command.Parameters.Add(new NpgsqlParameter { Value = leaseUntil });
             command.Parameters.Add(new NpgsqlParameter { Value = leaseToken });
+            command.Parameters.Add(new NpgsqlParameter { Value = ignoreSchedule });
             await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
             {
                 while (await reader.ReadAsync(cancellationToken))

@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Domain.Player;
 
 namespace DaoHua.Bench;
 
@@ -125,6 +126,21 @@ public static class BenchWorkload
                 measured.Stop();
                 sampling.Cancel();
                 await sampleTask;
+            }
+            // 先统一收尾并等待连接卸载，否则 OOP 的卸载路径会在最终刷盘后追加 Progression 队列行。
+            await Task.WhenAll(sessions.Select(session => session.SetPresenceAsync(PresenceState.Offline, options.Mode, cancellationToken)));
+            await Task.WhenAll(sessions.Select(session => session.CloseWebSocketAsync()));
+            using (var unloadTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                unloadTimeout.CancelAfter(TimeSpan.FromSeconds(options.RequestTimeoutSeconds));
+                while (true)
+                {
+                    var state = await ReadMetricsAsync(control, unloadTimeout.Token)
+                        ?? throw new InvalidOperationException("连接卸载期间服务端指标不可用。");
+                    if (BenchMeasurements.Integer(state, "sessions") == 0
+                        && BenchMeasurements.Integer(state, "loadedPlayers") == 0) break;
+                    await Task.Delay(TimeSpan.FromMilliseconds(25), unloadTimeout.Token);
+                }
             }
             var flushWatch = Stopwatch.StartNew();
             using var flush = await control.PostAsync("api/debug/bench/flush", null, cancellationToken);

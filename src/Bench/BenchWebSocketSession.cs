@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text.Json;
 using Protocol;
+using Domain.Player;
 
 namespace DaoHua.Bench;
 
@@ -23,6 +24,7 @@ internal sealed class BenchWebSocketSession : IAsyncDisposable
     private long _receivedBytes;
     private long _sentBytes;
     private long _logFrames;
+    private int _socketClosed;
     public HttpClient Client { get; }
     public TestCharacter Character { get; }
     public long ReceivedFrames => Interlocked.Read(ref _receivedFrames);
@@ -82,6 +84,17 @@ internal sealed class BenchWebSocketSession : IAsyncDisposable
         var requestId = TestCharacterSeeder.StableGuid($"ws:advance:{Character.PlayerId:D}:{target:O}:{ordinal}");
         return await CommandAsync("simulation.advance", requestId,
             JsonSerializer.SerializeToElement(new { requestId, targetTime = target }, BenchJson.Options), cancellationToken);
+    }
+
+    public async Task SetPresenceAsync(PresenceState presence, string mode, CancellationToken cancellationToken)
+    {
+        var requestId = TestCharacterSeeder.StableGuid($"ws:presence:{Character.PlayerId:D}:{mode}:{presence}");
+        await CommandAsync("player.presence", requestId,
+            JsonSerializer.SerializeToElement(new
+            {
+                requestId,
+                presence = presence == PresenceState.Online ? "online" : "offline"
+            }, BenchJson.Options), cancellationToken);
     }
 
     private async Task<double> CommandAsync(string command, Guid requestId, JsonElement payload, CancellationToken cancellationToken)
@@ -170,12 +183,18 @@ internal sealed class BenchWebSocketSession : IAsyncDisposable
         catch (WebSocketException) when (_lifetime.IsCancellationRequested) { }
     }
 
-    public async ValueTask DisposeAsync()
+    public async Task CloseWebSocketAsync()
     {
+        if (Interlocked.Exchange(ref _socketClosed, 1) != 0) return;
         _lifetime.Cancel();
         _socket.Abort();
         if (_receiver is not null) await _receiver;
         _socket.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await CloseWebSocketAsync();
         Client.Dispose();
         _lifetime.Dispose();
     }

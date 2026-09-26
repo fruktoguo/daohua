@@ -16,7 +16,23 @@ public sealed record BenchStageMeasurement(
     [property: JsonPropertyName("p95_ms")] double? P95Ms,
     [property: JsonPropertyName("p99_ms")] double? P99Ms,
     [property: JsonPropertyName("max_ms")] double? MaxMs,
-    [property: JsonPropertyName("percentile_method")] string? PercentileMethod);
+    [property: JsonPropertyName("percentile_method")] string? PercentileMethod)
+{
+    [JsonPropertyName("mean_ms")]
+    public double? MeanMs => Count is > 0 && TotalMs is { } total ? total / Count : null;
+}
+
+public sealed record BenchCounterMeasurement(
+    [property: JsonPropertyName("counter")] string Counter,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("count")] double? Count);
+
+public sealed record BenchCounterComparison(
+    [property: JsonPropertyName("counter")] string Counter,
+    [property: JsonPropertyName("status")] string Status,
+    [property: JsonPropertyName("oop")] BenchCounterMeasurement? Oop,
+    [property: JsonPropertyName("ecs_current")] BenchCounterMeasurement? EcsCurrent,
+    [property: JsonPropertyName("ecs_optimized")] BenchCounterMeasurement? EcsOptimized);
 
 public sealed record BenchStageRatios(
     [property: JsonPropertyName("current_to_oop_total")] double? CurrentToOopTotal,
@@ -86,7 +102,7 @@ public static class BenchStageReports
             foreach (var (key, value) in source)
             {
                 var split = key.LastIndexOf('|');
-                var stage = split < 0 ? key : key[..split];
+                var stage = CanonicalStage(split < 0 ? key : key[..split]);
                 var scenario = split < 0 ? "all" : key[(split + 1)..];
                 measurements[(stage, scenario)] = value;
             }
@@ -99,6 +115,15 @@ public static class BenchStageReports
         return keys.OrderBy(key => key.Stage, StringComparer.Ordinal)
             .ThenBy(key => key.Scenario, StringComparer.Ordinal)
             .Select(key => MakeRow(report, key.Stage, key.Scenario, measurements.GetValueOrDefault(key)))
+            .ToArray();
+    }
+
+    public static IReadOnlyList<BenchCounterMeasurement> CounterRows(BenchReport report)
+    {
+        if (report.Metric.ServerCounters is not { Count: > 0 } counters) return [];
+        return counters.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => new BenchCounterMeasurement(pair.Key,
+                pair.Value is { } ? "measured" : "unavailable", pair.Value))
             .ToArray();
     }
 
@@ -124,29 +149,63 @@ public static class BenchStageReports
             var current = Row("ecs-current");
             var optimized = Row("ecs-optimized");
             var spec = SpecFor(key.Stage);
-            var measured = oop?.Status == "measured" && current?.Status == "measured" && optimized?.Status == "measured";
-            var countMismatch = spec.Comparable && measured && (oop!.Count != current!.Count || oop.Count != optimized!.Count);
-            var comparable = ratiosAllowed && spec.Comparable && key.Scenario != "all" && measured && !countMismatch;
-            var ratios = comparable ? new BenchStageRatios(
-                Divide(current!.TotalMs, oop!.TotalMs), Divide(optimized!.TotalMs, oop.TotalMs),
-                Divide(optimized.TotalMs, current.TotalMs), Divide(current.P95Ms, oop.P95Ms),
-                Divide(optimized.P95Ms, oop.P95Ms), Divide(optimized.P95Ms, current.P95Ms)) : null;
+            var sharedMeasured = oop?.Status == "measured" && current?.Status == "measured" && optimized?.Status == "measured";
+            var ecsMeasured = current?.Status == "measured" && optimized?.Status == "measured";
+            var ecsOnly = key.Stage.StartsWith("ecs.", StringComparison.Ordinal);
+            var countMismatch = ecsOnly
+                ? ecsMeasured && current!.Count != optimized!.Count
+                : spec.Comparable && sharedMeasured && (oop!.Count != current!.Count || oop.Count != optimized!.Count);
+            var sharedComparable = ratiosAllowed && spec.Comparable && key.Scenario != "all" && sharedMeasured && !countMismatch;
+            var ecsComparable = ratiosAllowed && ecsOnly && key.Scenario != "all" && ecsMeasured && !countMismatch;
+            var ratios = sharedComparable || ecsComparable ? new BenchStageRatios(
+                sharedComparable ? Divide(current!.TotalMs, oop!.TotalMs) : null,
+                sharedComparable ? Divide(optimized!.TotalMs, oop!.TotalMs) : null,
+                Divide(optimized!.TotalMs, current!.TotalMs),
+                sharedComparable ? Divide(current.P95Ms, oop!.P95Ms) : null,
+                sharedComparable ? Divide(optimized.P95Ms, oop!.P95Ms) : null,
+                Divide(optimized.P95Ms, current.P95Ms)) : null;
             stages.Add(new(key.Stage, key.Scenario, spec.Layer,
-                countMismatch ? "count_mismatch" : comparable ? "comparable" : "not_comparable",
+                countMismatch ? "count_mismatch" : sharedComparable || ecsComparable ? "comparable" : "not_comparable",
                 oop, current, optimized, ratios));
         }
-        return new(reports, differences, stages, ratiosAllowed,
+        var counterNames = reports.SelectMany(report => report.Metric.ServerCounters?.Keys ?? [])
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        var counters = counterNames.Select(name =>
+        {
+            BenchCounterMeasurement? Counter(string variant)
+            {
+                var report = reports.FirstOrDefault(item => item.Metric.Variant == variant);
+                if (report is null) return null;
+                var value = report.Metric.ServerCounters?.GetValueOrDefault(name);
+                return new BenchCounterMeasurement(name, value is { } ? "measured" : "unavailable", value);
+            }
+
+            var oop = Counter("oop");
+            var current = Counter("ecs-current");
+            var optimized = Counter("ecs-optimized");
+            var measured = oop?.Status == "measured" && current?.Status == "measured" && optimized?.Status == "measured";
+            return new BenchCounterComparison(name, measured ? "comparable" : "not_comparable", oop, current, optimized);
+        }).ToArray();
+        return new(reports, differences, stages, counters, ratiosAllowed,
             ["报告未记录 ECS shardCount；计算倍率前须外部核对 ecs-current 与 ecs-optimized 的实际分片数相同。",
              "instrumentation_listener_ms 是监听器耗时下界，完整埋点开销需相同负载的观测开关对照实验。"]);
     }
 
     public static string ToStageCsv(BenchReport report)
     {
-        var csv = new StringBuilder("variant,scenario,stage,layer,status,count,total_ms,p50_ms,p95_ms,p99_ms,max_ms,percentile_method\n");
+        var csv = new StringBuilder("variant,scenario,stage,layer,status,count,total_ms,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,percentile_method\n");
         foreach (var row in Rows(report))
             CsvLine(csv, report.Metric.Variant, row.Scenario, row.Stage, row.Layer, row.Status,
-                Value(row.Count), Value(row.TotalMs), Value(row.P50Ms), Value(row.P95Ms), Value(row.P99Ms),
-                Value(row.MaxMs), row.PercentileMethod);
+                Value(row.Count), Value(row.TotalMs), Value(row.MeanMs), Value(row.P50Ms),
+                Value(row.P95Ms), Value(row.P99Ms), Value(row.MaxMs), row.PercentileMethod);
+        return csv.ToString();
+    }
+
+    public static string ToCounterCsv(BenchReport report)
+    {
+        var csv = new StringBuilder("variant,scenario,counter,status,count\n");
+        foreach (var row in CounterRows(report))
+            CsvLine(csv, report.Metric.Variant, report.Metric.Scenario, row.Counter, row.Status, Value(row.Count));
         return csv.ToString();
     }
 
@@ -154,20 +213,31 @@ public static class BenchStageReports
     {
         var csv = new StringBuilder("stage,scenario,layer,status");
         foreach (var variant in new[] { "oop", "ecs_current", "ecs_optimized" })
-            foreach (var field in new[] { "status", "count", "total_ms", "p50_ms", "p95_ms", "p99_ms", "max_ms" })
+            foreach (var field in new[] { "status", "count", "total_ms", "mean_ms", "p50_ms", "p95_ms", "p99_ms", "max_ms" })
                 csv.Append(',').Append(variant).Append('_').Append(field);
         csv.Append(",current_to_oop_total,optimized_to_oop_total,optimized_to_current_total,current_to_oop_p95,optimized_to_oop_p95,optimized_to_current_p95\n");
         foreach (var stage in stages)
         {
             var cells = new List<string?> { stage.Stage, stage.Scenario, stage.Layer, stage.Status };
             foreach (var row in new[] { stage.Oop, stage.EcsCurrent, stage.EcsOptimized })
-                cells.AddRange([row?.Status, Value(row?.Count), Value(row?.TotalMs), Value(row?.P50Ms),
-                    Value(row?.P95Ms), Value(row?.P99Ms), Value(row?.MaxMs)]);
+                cells.AddRange([row?.Status, Value(row?.Count), Value(row?.TotalMs), Value(row?.MeanMs),
+                    Value(row?.P50Ms), Value(row?.P95Ms), Value(row?.P99Ms), Value(row?.MaxMs)]);
             cells.AddRange([Value(stage.Ratios?.CurrentToOopTotal), Value(stage.Ratios?.OptimizedToOopTotal),
                 Value(stage.Ratios?.OptimizedToCurrentTotal), Value(stage.Ratios?.CurrentToOopP95),
                 Value(stage.Ratios?.OptimizedToOopP95), Value(stage.Ratios?.OptimizedToCurrentP95)]);
             CsvLine(csv, cells.ToArray());
         }
+        return csv.ToString();
+    }
+
+    public static string ToCounterComparisonCsv(IReadOnlyList<BenchCounterComparison> counters)
+    {
+        var csv = new StringBuilder("counter,status,oop_status,oop_count,ecs_current_status,ecs_current_count,ecs_optimized_status,ecs_optimized_count\n");
+        foreach (var row in counters)
+            CsvLine(csv, row.Counter, row.Status,
+                row.Oop?.Status, Value(row.Oop?.Count),
+                row.EcsCurrent?.Status, Value(row.EcsCurrent?.Count),
+                row.EcsOptimized?.Status, Value(row.EcsOptimized?.Count));
         return csv.ToString();
     }
 
@@ -230,9 +300,21 @@ public static class BenchStageReports
     }
 
     private static StageSpec SpecFor(string stage)
-        => Known.FirstOrDefault(spec => spec.Name == stage)
-            ?? new(stage, stage.Split('.')[0], !stage.StartsWith("ecs.", StringComparison.Ordinal),
-                !stage.StartsWith("oop.", StringComparison.Ordinal), stage.StartsWith("domain.", StringComparison.Ordinal));
+    {
+        stage = CanonicalStage(stage);
+        return Known.FirstOrDefault(spec => spec.Name == stage)
+            ?? new(stage, stage.Split('.')[0],
+                !stage.StartsWith("ecs.", StringComparison.Ordinal)
+                    && !stage.StartsWith("yuocore.", StringComparison.Ordinal),
+                !stage.StartsWith("oop.", StringComparison.Ordinal)
+                    && !stage.StartsWith("yuocore.", StringComparison.Ordinal),
+                stage.StartsWith("domain.", StringComparison.Ordinal));
+    }
+
+    private static string CanonicalStage(string stage)
+        => stage.StartsWith("yuocore.", StringComparison.Ordinal)
+            ? "ecs.core." + stage[8..]
+            : stage;
 
     private static bool SameNonBlank(IEnumerable<string?> values)
     {
