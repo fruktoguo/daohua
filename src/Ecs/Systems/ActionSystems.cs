@@ -1,4 +1,5 @@
 using Domain.GameData;
+using Domain.Common;
 using Domain.Player;
 using DaoHua.Ecs.Components;
 using YuoCore.Ecs;
@@ -27,8 +28,9 @@ public sealed class ActionClockSystem : YuoSystem<PlayerActionQueueComponent>, I
 {
     public override void Run(PlayerActionQueueComponent queue)
     {
-        if (EcsSystemContext.ShouldUpdate(queue.Entity))
-            EcsActionPipeline.Find(queue.Entity)?.PrepareClock(EcsSystemContext.Clock(queue.Entity).Current);
+        if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionClockSystem");
+        EcsActionPipeline.Find(queue.Entity)?.PrepareClock(EcsSystemContext.Clock(queue.Entity).Current);
     }
 }
 
@@ -38,8 +40,9 @@ public sealed class ActionQueueSystem : YuoSystem<PlayerActionQueueComponent>, I
 {
     public override void Run(PlayerActionQueueComponent queue)
     {
-        if (EcsSystemContext.ShouldUpdate(queue.Entity))
-            EcsActionPipeline.Find(queue.Entity)?.PrepareQueue();
+        if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionQueueSystem");
+        EcsActionPipeline.Find(queue.Entity)?.PrepareQueue();
     }
 }
 
@@ -50,6 +53,7 @@ public sealed class GatheringActionSystem : YuoSystem<PlayerActionQueueComponent
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.GatheringActionSystem");
         if (EcsActionPipeline.Find(queue.Entity) is { PreparedKind: ActionKind.Exploration } pipeline)
             pipeline.AdvancePreparedAction();
     }
@@ -62,6 +66,7 @@ public sealed class CraftingActionSystem : YuoSystem<PlayerActionQueueComponent>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CraftingActionSystem");
         if (EcsActionPipeline.Find(queue.Entity) is { PreparedKind: ActionKind.Alchemy } pipeline)
             pipeline.AdvancePreparedAction();
     }
@@ -74,6 +79,7 @@ public sealed class ActionBoundarySystem : YuoSystem<PlayerActionQueueComponent>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionBoundarySystem");
         if (EcsActionPipeline.Find(queue.Entity) is { HasPreparedAction: true } pipeline
             && pipeline.PreparedKind is not (ActionKind.Exploration or ActionKind.Alchemy))
             pipeline.AdvancePreparedAction();
@@ -86,7 +92,9 @@ public sealed class TravelActionSystem : YuoSystem<PlayerActionQueueComponent>, 
 {
     public override void Run(PlayerActionQueueComponent queue)
     {
-        if (EcsSystemContext.ShouldUpdate(queue.Entity) && !EcsSystemContext.Clock(queue.Entity).PreparationOnly)
+        if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.TravelActionSystem");
+        if (!EcsSystemContext.Clock(queue.Entity).PreparationOnly)
             EcsActionPipeline.Find(queue.Entity)?.AdvanceTravel();
     }
 }
@@ -97,8 +105,9 @@ public sealed class TimedActionYieldSystem : YuoSystem<PlayerActionQueueComponen
 {
     public override void Run(PlayerActionQueueComponent queue)
     {
-        if (EcsSystemContext.ShouldUpdate(queue.Entity))
-            EcsActionPipeline.Find(queue.Entity)?.CompleteYield();
+        if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.TimedActionYieldSystem");
+        EcsActionPipeline.Find(queue.Entity)?.CompleteYield();
     }
 }
 
@@ -109,7 +118,9 @@ public sealed class CombatActionBoundarySystem : YuoSystem<PlayerActionQueueComp
     public override void Run(PlayerActionQueueComponent queue)
     {
         var clock = EcsSystemContext.Clock(queue.Entity);
-        if (!EcsSystemContext.ShouldUpdate(queue.Entity) || clock.PreparationOnly) return;
+        if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CombatActionBoundarySystem");
+        if (clock.PreparationOnly) return;
         EcsActionPipeline.Find(queue.Entity)?.AdvanceCombatPreparation();
     }
 }
@@ -120,7 +131,9 @@ public sealed class CombatActionYieldSystem : YuoSystem<PlayerActionQueueCompone
 {
     public override void Run(PlayerActionQueueComponent queue)
     {
-        if (EcsSystemContext.ShouldUpdate(queue.Entity) && !EcsSystemContext.Clock(queue.Entity).PreparationOnly)
+        if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CombatActionYieldSystem");
+        if (!EcsSystemContext.Clock(queue.Entity).PreparationOnly)
             EcsActionPipeline.Find(queue.Entity)?.CompleteCombatYield();
     }
 }
@@ -132,18 +145,16 @@ public sealed class PlayerClockCommitSystem : YuoSystem<PlayerActionQueueCompone
     public override void Run(PlayerActionQueueComponent queue)
     {
         var clock = EcsSystemContext.Clock(queue.Entity);
-        if (clock.SkipWorldUpdate)
-        {
-            if (clock.ActivePlayerId is null || queue.Entity.GetComponent<PlayerIdentityComponent>()?.PlayerId == clock.ActivePlayerId)
-            {
-                clock.SkipWorldUpdateEntities = Math.Max(0, clock.SkipWorldUpdateEntities - 1);
-                if (clock.SkipWorldUpdateEntities == 0) clock.SkipWorldUpdate = false;
-            }
-            return;
-        }
         if (clock.ActivePlayerId is { } active
             && queue.Entity.GetComponent<PlayerIdentityComponent>()?.PlayerId != active)
             return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.PlayerClockCommitSystem");
+        if (clock.SkipWorldUpdate)
+        {
+            clock.SkipWorldUpdateEntities = Math.Max(0, clock.SkipWorldUpdateEntities - 1);
+            if (clock.SkipWorldUpdateEntities == 0) clock.SkipWorldUpdate = false;
+            return;
+        }
         if (EcsActionPipeline.Find(queue.Entity) is { } pipeline)
         {
             pipeline.CompleteClock(clock.PreparationOnly);

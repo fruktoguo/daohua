@@ -38,6 +38,7 @@ public static partial class SimulationEngine
         GameDataCatalog gameData, AssetWallet wallet, DateTimeOffset computeTarget,
         SimulationEventTail events, LiveCombatBattle? live, out List<AssetDelta> instantDeltas)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.resource.prepare");
         var now = player.LastSimulatedAt;
         var nowUnix = now.ToUnixTimeMilliseconds() / 1000d;
         var nextBuffExpiry = double.PositiveInfinity;
@@ -147,6 +148,7 @@ public static partial class SimulationEngine
 
     private static bool CompleteResourceRegeneration(IPlayerResourceContext player, GameDataCatalog gameData, double stepSeconds)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.resource.regen");
         player.Combat.RegenCarrySeconds += stepSeconds;
         if (player.Combat.RegenCarrySeconds < 5 - 1e-9) return false;
         player.Combat.RegenCarrySeconds = 0;

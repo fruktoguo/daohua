@@ -11,11 +11,23 @@ public static class RuntimeInstrumentation
     private static readonly Meter Meter = new(MeterName);
     private static readonly Histogram<double> Duration = Meter.CreateHistogram<double>("daohua.runtime.duration", "ms");
     private static readonly Counter<long> Events = Meter.CreateCounter<long>("daohua.runtime.events");
+    private static readonly AsyncLocal<string?> ActiveScenario = new();
 
     public static bool Enabled => Duration.Enabled;
 
     public static Measurement Measure(string stage, string scenario = "all")
         => Duration.Enabled ? new(stage, scenario, Stopwatch.GetTimestamp()) : default;
+
+    public static Measurement MeasureCurrent(string stage)
+        => Duration.Enabled ? new(stage, ActiveScenario.Value ?? "all", Stopwatch.GetTimestamp()) : default;
+
+    public static ScenarioScope BeginScenario(string scenario)
+    {
+        if (!Duration.Enabled) return default;
+        var previous = ActiveScenario.Value;
+        ActiveScenario.Value = scenario;
+        return new(previous, true);
+    }
 
     public static void Count(string name, long count = 1)
     {
@@ -38,6 +50,14 @@ public static class RuntimeInstrumentation
                 Duration.Record(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds,
                     new KeyValuePair<string, object?>("stage", stage),
                     new KeyValuePair<string, object?>("scenario", scenario));
+        }
+    }
+
+    public readonly struct ScenarioScope(string? previous, bool active) : IDisposable
+    {
+        public void Dispose()
+        {
+            if (active) ActiveScenario.Value = previous;
         }
     }
 }

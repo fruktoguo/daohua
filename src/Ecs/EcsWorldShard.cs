@@ -352,6 +352,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     {
         using (RuntimeInstrumentation.Measure("queue.owner_wait"))
             await _ownerGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var ownerHoldMeasurement = RuntimeInstrumentation.Measure("ecs.owner_hold");
         var clockBefore = _clock.Current;
         var backups = new Dictionary<Guid, (PlayerAggregateState State, AssetBalance[] Assets, PlayerSectionKind[] Dirty)>();
         var pipelines = new Dictionary<Guid, EcsActionPipeline>();
@@ -392,8 +393,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 await Tick(next, false).ConfigureAwait(false);
                 cursor = next;
             }
+            using (RuntimeInstrumentation.Measure("ecs.mailbox.post", scenario))
             await _fiber.PostAsync((_, _) =>
             {
+                using var callbackMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.mailbox.callback");
                 _clock.Current = _clock.Target = target;
                 _clock.SkipWorldUpdate = pipelines.Count > 0;
                 _clock.SkipWorldUpdateEntities = pipelines.Count;
@@ -405,13 +408,16 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 }
                 return ValueTask.CompletedTask;
             }, cancellationToken).ConfigureAwait(false);
+            using var scenarioScope = RuntimeInstrumentation.BeginScenario(scenario);
             using (RuntimeInstrumentation.Measure("ecs.system_tick", scenario))
                 await _fiber.TickAsync(cancellationToken).ConfigureAwait(false);
 
             async Task Tick(DateTimeOffset at, bool preparation)
             {
+                using (RuntimeInstrumentation.Measure("ecs.mailbox.post", scenario))
                 await _fiber.PostAsync((_, _) =>
                 {
+                    using var callbackMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.mailbox.callback");
                     _clock.Target = _clock.Current = at;
                     _clock.RequestTarget = target;
                     _clock.DeltaSeconds = preparation ? 0 : (at - cursor).TotalSeconds;
@@ -419,6 +425,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     _clock.PreparationOnly = preparation;
                     return ValueTask.CompletedTask;
                 }, cancellationToken).ConfigureAwait(false);
+                using var scenarioScope = RuntimeInstrumentation.BeginScenario(scenario);
                 using (RuntimeInstrumentation.Measure("ecs.system_tick", scenario))
                     await _fiber.TickAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -443,15 +450,23 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         }
         finally
         {
-            foreach (var pipeline in pipelines.Values) pipeline.Detach();
-            if (!_fiber.IsDisposed)
-                await _fiber.PostAsync((_, _) =>
-                {
-                    _clock.ActivePlayerId = null;
-                    _clock.PreparationOnly = false;
-                    return ValueTask.CompletedTask;
-                }, CancellationToken.None).ConfigureAwait(false);
-            _ownerGate.Release();
+            try
+            {
+                foreach (var pipeline in pipelines.Values) pipeline.Detach();
+                if (!_fiber.IsDisposed)
+                    using (RuntimeInstrumentation.Measure("ecs.mailbox.post"))
+                    await _fiber.PostAsync((_, _) =>
+                    {
+                        _clock.ActivePlayerId = null;
+                        _clock.PreparationOnly = false;
+                        return ValueTask.CompletedTask;
+                    }, CancellationToken.None).ConfigureAwait(false);
+            }
+            finally
+            {
+                ownerHoldMeasurement.Dispose();
+                _ownerGate.Release();
+            }
         }
     }
 
@@ -459,8 +474,13 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         using (RuntimeInstrumentation.Measure("queue.owner_wait")) _ownerGate.Wait();
+        var ownerHoldMeasurement = RuntimeInstrumentation.Measure("ecs.owner_hold");
         try { return action(); }
-        finally { _ownerGate.Release(); }
+        finally
+        {
+            ownerHoldMeasurement.Dispose();
+            _ownerGate.Release();
+        }
     }
     private void ExecuteOwned(Action action) => ExecuteOwned(() => { action(); return true; });
 

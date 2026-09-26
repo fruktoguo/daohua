@@ -264,7 +264,8 @@ public static class BenchWorkload
             AllocatedBytesPerPlayer = successfulConnections > 0 ? (double?)allocated / successfulConnections : null,
             RssMbPerPlayer = successfulConnections > 0 ? rss / successfulConnections : null,
             PeakRssMb = capturedProcessSamples.Length > 0 ? capturedProcessSamples.Max(sample => sample.RssMb) : null,
-            GcPauseMs = NumberDelta("gcPauseMs"), DatabaseRequests = IntegerDelta("databaseRequests"),
+            GcPauseMs = NumberDelta("gcPauseMs"), InstrumentationListenerMs = NumberDelta("instrumentationListenerMs"),
+            DatabaseRequests = IntegerDelta("databaseRequests"),
             DatabaseBytesSent = NumberDelta("databaseBytesSent"), DatabaseBytesReceived = NumberDelta("databaseBytesReceived"),
             ReceivedFrames = receivedFrames, ReceivedBytes = receivedBytes, SentBytes = sentBytes
         };

@@ -268,7 +268,14 @@ public sealed class PlayerRuntimeTests
         Assert.Equal(transactionIdentity.Create(transaction.IdempotencyKey), transaction.TransactionId);
         Assert.Equal(1, Assert.Single(result.Snapshot.Assets).Version);
         var observed = telemetry.Snapshot();
-        foreach (var name in new[] { "core.simulation|other", "snapshot.export|all", "queue.actor_wait|all" })
+        foreach (var name in new[]
+        {
+            "core.simulation|other", "snapshot.export|all", "queue.actor_wait|all",
+            "oop.logic.resource_window|other", "oop.logic.action_dispatch|other",
+            "domain.resource.prepare|other", "domain.resource.regen|other",
+            "domain.action.start|other", "domain.action.prepare|other",
+            "domain.action.advance|other", "domain.action.yield|other"
+        })
         {
             var measured = observed.Measurements[name];
             Assert.True(measured.Count > 0);

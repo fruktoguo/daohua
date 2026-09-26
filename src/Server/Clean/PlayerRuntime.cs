@@ -1301,6 +1301,7 @@ public sealed class PlayerRuntime(
                     && gameData.Actions.TryGet(aggregate.Actions[0].Intent.ActionId, out var observedAction))
                     scenario = RuntimeInstrumentation.Scenario(observedAction.Kind);
                 SimulationResult result;
+                using var scenarioScope = RuntimeInstrumentation.BeginScenario(scenario);
                 using (RuntimeInstrumentation.Measure("core.simulation", scenario))
                     result = SimulationEngine.AdvanceTo(aggregate, target, gameData, wallet, new DuelAdvanceOptions(MatchingEnabled: true));
                 if (result.AssetDeltas.Count > 0)

@@ -1,5 +1,6 @@
 using DaoHua.Ecs.Components;
 using Domain.Combat;
+using Domain.Common;
 using YuoCore.Ecs;
 
 namespace DaoHua.Ecs.Systems;
@@ -26,7 +27,9 @@ public sealed class CombatEventAdvanceSystem : YuoSystem<CombatEncounterComponen
 {
     public override void Run(CombatEncounterComponent encounter)
     {
-        if (!CombatSystemGate.IsActive(encounter) || encounter.State.Outcome != CombatOutcome.Running) return;
+        if (!CombatSystemGate.IsActive(encounter)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CombatEventAdvanceSystem");
+        if (encounter.State.Outcome != CombatOutcome.Running) return;
         var world = encounter.Entity.World;
         var player = world.GetEntity(encounter.PlayerEntityId);
         if (player is null) return;
@@ -42,6 +45,7 @@ public sealed class CombatTargetSystem : YuoSystem<CombatEncounterComponent>, IU
     public override void Run(CombatEncounterComponent encounter)
     {
         if (!CombatSystemGate.IsActive(encounter)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CombatTargetSystem");
         var target = encounter.State.PrimaryEnemy;
         encounter.PrimaryTargetEntityId = 0;
         if (target is null) return;
@@ -60,7 +64,9 @@ public sealed class CombatEventSystem : YuoSystem<CombatEncounterComponent>, IUp
 {
     public override void Run(CombatEncounterComponent encounter)
     {
-        if (!CombatSystemGate.IsActive(encounter) || encounter.LastEvents.Count == 0) return;
+        if (!CombatSystemGate.IsActive(encounter)) return;
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CombatEventSystem");
+        if (encounter.LastEvents.Count == 0) return;
         encounter.Entity.GetOrAddComponent<CombatLogComponent>().Events.AddRange(encounter.LastEvents);
     }
 }

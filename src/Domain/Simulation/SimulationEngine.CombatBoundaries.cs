@@ -27,6 +27,7 @@ public static partial class SimulationEngine
         DuelAdvanceOptions? duel, DateTimeOffset from, DateTimeOffset target, ref double remainingSeconds,
         ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.prepare");
         CombatEncounterDefinition encounter;
         var expedition = action.Expedition;
         if (expedition is null)
@@ -165,6 +166,7 @@ public static partial class SimulationEngine
         ref double remainingSeconds, ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events,
         ref double completedActions, ref double completedRepeats)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.yield");
         var expedition = action.Expedition!;
         var waveEnemies = expedition.Enemies!;
         var battleFrom = combatResult.FromSeconds;

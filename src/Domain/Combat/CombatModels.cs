@@ -789,6 +789,7 @@ public static class DeterministicCombatEngine
     private static bool AdvanceBoundary(CombatEncounterState encounter, double targetSeconds,
         ref List<CombatEvent>? events, ref List<double>? playerDeaths, ref List<double>? playerRespawns)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.event");
         var naturalBoundary = GetNaturalBoundarySeconds(encounter, out var effectAt);
         if (naturalBoundary > targetSeconds)
         {

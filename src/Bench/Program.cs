@@ -83,8 +83,19 @@ public static class Program
     private static async Task<int> RunReportAsync(BenchOptions options)
     {
         var reports = await BenchReportWriter.ReadManyAsync(options.Report);
+        await BenchReportWriter.WriteMissingStageCsvAsync(options.Report, reports);
         var comparison = BenchComparison.Create(reports);
-        Console.WriteLine(JsonSerializer.Serialize(comparison, BenchJson.Indented));
+        var output = options.ComparisonOutput ?? Path.Combine(options.RepoRoot, "artifacts/bench/benchmark.comparison.json");
+        await BenchReportWriter.WriteComparisonAsync(output, comparison);
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            output = Path.GetFullPath(output),
+            csv = Path.GetFullPath(Path.ChangeExtension(output, ".csv")),
+            reports = reports.Count,
+            stages = comparison.Stages.Count,
+            comparison.RatiosAllowed,
+            comparison.Differences
+        }, BenchJson.Indented));
         return comparison.Differences.Count == 0 ? 0 : 1;
     }
 
@@ -170,7 +181,7 @@ public static class Program
         Console.WriteLine("  run --variant oop|ecs-current|ecs-optimized --url http://127.0.0.1:5128 --manifest 文件.json [--scenario Gathering|Crafting|Combat] --players 1 --mode replay|online --concurrency 32 [--target-hours 1] [--duration-seconds 900 --interval-ms 1000] [--report 文件.json]");
         Console.WriteLine("  online 墙钟短测：--duration-seconds 10；15/60 分钟：900/3600。replay 的 --target-hours 仅指业务补算时长。");
         Console.WriteLine("  seed --resource-exhaustion true 单独生成仅够 2 轮制造的耗尽样本；普通种子按实际配表准备 48 小时材料。");
-        Console.WriteLine("  report --report artifacts/bench/*.json");
+        Console.WriteLine("  report --report 'artifacts/bench/*-gathering.json' [--comparison-output artifacts/bench/gathering.comparison.json]（三版本同条件报告）");
         Console.WriteLine("  compare --database-a 连接串 --database-b 连接串 --database-c 连接串 --player-id UUID [--report 文件.json]");
         Console.WriteLine("  provenance --variant oop|ecs-current|ecs-optimized --output artifacts/runtime/<variant>");
         return 0;
@@ -203,7 +214,8 @@ public sealed record BenchOptions(
     double IntervalMs = 1000,
     double RequestTimeoutSeconds = 120,
     double MetricsIntervalSeconds = 5,
-    bool ResourceExhaustion = false)
+    bool ResourceExhaustion = false,
+    string? ComparisonOutput = null)
 {
     public static BenchOptions Parse(IEnumerable<string> arguments)
     {
@@ -236,7 +248,8 @@ public sealed record BenchOptions(
             values.GetValueOrDefault("database-a"), values.GetValueOrDefault("database-b"), values.GetValueOrDefault("database-c"), values.GetValueOrDefault("player-id"),
             mode, ReadDouble(values, "duration-seconds", 10, 0.1, 86400), ReadInt(values, "concurrency", 32, 1, 3000),
             ReadDouble(values, "interval-ms", 1000, 1, 60000), ReadDouble(values, "request-timeout-seconds", 120, 1, 3600),
-            ReadDouble(values, "metrics-interval-seconds", 5, 0.1, 60), ReadBool(values, "resource-exhaustion", false));
+            ReadDouble(values, "metrics-interval-seconds", 5, 0.1, 60), ReadBool(values, "resource-exhaustion", false),
+            values.GetValueOrDefault("comparison-output"));
     }
 
     private static string FindRepoRoot()
@@ -416,6 +429,8 @@ public sealed record BenchMetricRecord(
     public int SampleCount { get; init; }
     [JsonPropertyName("gc_pause_ms")]
     public double? GcPauseMs { get; init; }
+    [JsonPropertyName("instrumentation_listener_ms")]
+    public double? InstrumentationListenerMs { get; init; }
     [JsonPropertyName("database_requests")]
     public long? DatabaseRequests { get; init; }
     [JsonPropertyName("database_bytes_sent")]
@@ -1104,35 +1119,55 @@ public static class BenchReportWriter
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         await File.WriteAllTextAsync(path, JsonSerializer.Serialize(report, BenchJson.Indented));
         await File.WriteAllTextAsync(Path.ChangeExtension(path, ".csv"), ToCsv([report.Metric]));
+        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".stages.csv"), BenchStageReports.ToStageCsv(report));
+    }
+
+    public static async Task WriteComparisonAsync(string path, BenchComparison comparison)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(comparison, BenchJson.Indented));
+        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".csv"), BenchStageReports.ToComparisonCsv(comparison.Stages));
     }
 
     public static async Task<IReadOnlyList<BenchReport>> ReadManyAsync(string path)
     {
-        var files = path.Contains('*') ? Directory.EnumerateFiles(Path.GetDirectoryName(path) ?? ".", Path.GetFileName(path)).ToArray() : [path];
+        var files = ReportFiles(path);
         var result = new List<BenchReport>();
-        foreach (var file in files) result.Add(JsonSerializer.Deserialize<BenchReport>(await File.ReadAllTextAsync(file), BenchJson.Options) ?? throw new InvalidOperationException($"报告为空：{file}"));
+        foreach (var file in files)
+            result.Add(JsonSerializer.Deserialize<BenchReport>(await File.ReadAllTextAsync(file), BenchJson.Options) ?? throw new InvalidOperationException($"报告为空：{file}"));
         return result;
     }
 
+    public static async Task WriteMissingStageCsvAsync(string path, IReadOnlyList<BenchReport> reports)
+    {
+        var files = ReportFiles(path);
+        if (files.Length != reports.Count) throw new InvalidOperationException("报告文件集合在读取期间发生变化。");
+        for (var i = 0; i < files.Length; i++)
+        {
+            var output = Path.ChangeExtension(files[i], ".stages.csv");
+            if (!File.Exists(output)) await File.WriteAllTextAsync(output, BenchStageReports.ToStageCsv(reports[i]));
+        }
+    }
+
+    private static string[] ReportFiles(string path)
+        => path.Contains('*')
+            ? Directory.EnumerateFiles(Path.GetDirectoryName(path) ?? ".", Path.GetFileName(path))
+                .Where(file => !file.EndsWith(".comparison.json", StringComparison.OrdinalIgnoreCase))
+                .Order(StringComparer.Ordinal).ToArray()
+            : [path];
+
     private static string ToCsv(IReadOnlyList<BenchMetricRecord> reports)
     {
-        var header = "variant,scenario,players,duration,total_wall_ms,cpu_ms,simulation_ms,entity_create_ms,system_tick_ms,snapshot_ms,database_ms,network_ms,allocated_bytes,gc0,gc1,gc2,rss_mb,p50_ms,p95_ms,p99_ms,max_ms,sample_count,measurement_status,errors";
-        var rows = reports.Select(metric => string.Join(',', metric.Variant, metric.Scenario, metric.Players, metric.Duration.ToString(CultureInfo.InvariantCulture), Nullable(metric.TotalWallMs), Nullable(metric.CpuMs), Nullable(metric.SimulationMs), Nullable(metric.EntityCreateMs), Nullable(metric.SystemTickMs), Nullable(metric.SnapshotMs), Nullable(metric.DatabaseMs), Nullable(metric.NetworkMs), Nullable(metric.AllocatedBytes), Nullable(metric.Gc0), Nullable(metric.Gc1), Nullable(metric.Gc2), Nullable(metric.RssMb), Nullable(metric.P50Ms), Nullable(metric.P95Ms), Nullable(metric.P99Ms), Nullable(metric.MaxMs), metric.SampleCount, metric.MeasurementStatus, metric.Errors));
+        var header = "variant,scenario,players,duration,total_wall_ms,cpu_ms,simulation_ms,entity_create_ms,system_tick_ms,snapshot_ms,database_ms,network_ms,allocated_bytes,gc0,gc1,gc2,rss_mb,p50_ms,p95_ms,p99_ms,max_ms,instrumentation_listener_ms,sample_count,measurement_status,errors";
+        var rows = reports.Select(metric => string.Join(',', metric.Variant, metric.Scenario, metric.Players, metric.Duration.ToString(CultureInfo.InvariantCulture), Nullable(metric.TotalWallMs), Nullable(metric.CpuMs), Nullable(metric.SimulationMs), Nullable(metric.EntityCreateMs), Nullable(metric.SystemTickMs), Nullable(metric.SnapshotMs), Nullable(metric.DatabaseMs), Nullable(metric.NetworkMs), Nullable(metric.AllocatedBytes), Nullable(metric.Gc0), Nullable(metric.Gc1), Nullable(metric.Gc2), Nullable(metric.RssMb), Nullable(metric.P50Ms), Nullable(metric.P95Ms), Nullable(metric.P99Ms), Nullable(metric.MaxMs), Nullable(metric.InstrumentationListenerMs), metric.SampleCount, metric.MeasurementStatus, metric.Errors));
         return header + Environment.NewLine + string.Join(Environment.NewLine, rows) + Environment.NewLine;
     }
 
     private static string Nullable<T>(T? value) where T : struct => value?.ToString() ?? string.Empty;
 }
 
-public sealed record BenchComparison(IReadOnlyList<BenchReport> Reports, IReadOnlyList<string> Differences)
+public sealed record BenchComparison(IReadOnlyList<BenchReport> Reports, IReadOnlyList<string> Differences,
+    IReadOnlyList<BenchStageComparison> Stages, bool RatiosAllowed, IReadOnlyList<string> Warnings)
 {
-    public static BenchComparison Create(IReadOnlyList<BenchReport> reports)
-    {
-        var differences = new List<string>();
-        var fingerprints = reports.Select(report => report.GameDataFingerprint).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
-        if (fingerprints.Length > 1) differences.Add("不同版本的游戏数据指纹不一致。");
-        if (reports.Any(report => report.Metric.Errors != 0)) differences.Add("至少一个版本的真实协议探针失败。");
-        if (reports.Any(report => report.Metric.MeasurementStatus.Contains("partial", StringComparison.OrdinalIgnoreCase))) differences.Add("报告仍为 partial：未完成业务快照/分段持久化逐位比较，不能据此宣称一致性或性能门禁。");
-        return new(reports, differences);
-    }
+    public static BenchComparison Create(IReadOnlyList<BenchReport> reports) => BenchStageReports.Compare(reports);
 }

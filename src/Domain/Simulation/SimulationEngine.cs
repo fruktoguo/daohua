@@ -510,6 +510,7 @@ public static partial class SimulationEngine
         {
         while (player.LastSimulatedAt < computeTarget)
         {
+            using var windowMeasurement = RuntimeInstrumentation.MeasureCurrent("oop.logic.resource_window");
             var now = player.LastSimulatedAt;
             var resourceBoundary = PrepareResourceBoundaryCore(player, gameData, wallet,
                 computeTarget, events, live, out var instantDeltas);
@@ -703,6 +704,7 @@ public static partial class SimulationEngine
         DuelAdvanceOptions? duel = null,
         LiveCombatBattle? live = null)
     {
+        using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("oop.logic.action_dispatch");
         ArgumentNullException.ThrowIfNull(player);
         target = target.ToUniversalTime();
         if (target < player.LastSimulatedAt)
@@ -892,6 +894,7 @@ public static partial class SimulationEngine
         ref double completedRepeats,
         LiveCombatBattle? live = null)
     {
+        using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("oop.logic.combat_dispatch");
         if (action.Expedition?.Phase != CombatExpeditionPhase.Combat)
         {
             var prepared = AdvanceCombatPreparationCore(player, action, definition, gameData, assetBalances,
@@ -1105,6 +1108,7 @@ public static partial class SimulationEngine
         Guid actionInstanceId,
         ref Dictionary<ItemId, double>? deltas)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.reward");
         if (monster.QiReward > 0)
         {
             player.Progression.Qi += monster.QiReward;
@@ -1511,6 +1515,7 @@ public static partial class SimulationEngine
         ref double completedActions,
         ref double completedRepeats)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.yield");
         // 先汇总数值型收益并完成有限性校验，再统一落账，沿用“先校验后变更”语义。
         double qiGain = 0, experienceGain = 0, manaGain = 0, hitpointGain = 0;
         foreach (var yield in definition.Yields)

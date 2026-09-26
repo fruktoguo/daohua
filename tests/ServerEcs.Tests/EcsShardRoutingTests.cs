@@ -4,6 +4,7 @@ using Domain.Common;
 using Domain.Economy;
 using Domain.GameData;
 using Domain.Player;
+using Server.Clean;
 using Xunit;
 
 namespace ServerEcs.Tests;
@@ -62,6 +63,37 @@ public sealed class EcsShardRoutingTests
             .WaitAsync(TimeSpan.FromSeconds(5));
         runtime.Dispose();
         runtime.Dispose();
+    }
+
+    [Fact]
+    public async Task SystemMeasurementsExcludeInactivePlayersInSameWorld()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var cases = CreateCases(catalog);
+        using var telemetry = new BenchmarkTelemetry();
+
+        using (var single = new EcsGameRuntime(catalog, SeedTime))
+        {
+            single.CreatePlayer(cases[0].State, cases[0].Balances);
+            await single.RunPlayerOnceAsync(cases[0].State.PlayerId.Value, SeedTime.AddSeconds(37));
+        }
+        var first = telemetry.Snapshot().Measurements;
+        var stage = "ecs.system.run.ActionClockSystem|gathering";
+        var singleCount = first[stage].Count;
+        Assert.True(singleCount > 0);
+
+        using (var shared = new EcsGameRuntime(catalog, SeedTime))
+        {
+            shared.CreatePlayer(cases[0].State, cases[0].Balances);
+            shared.CreatePlayer(cases[1].State, cases[1].Balances);
+            await shared.RunPlayerOnceAsync(cases[0].State.PlayerId.Value, SeedTime.AddSeconds(37));
+        }
+        var measurements = telemetry.Snapshot().Measurements;
+        Assert.Equal(singleCount, measurements[stage].Count - singleCount);
+        Assert.True(measurements["ecs.system_tick|gathering"].Count > 0);
+        Assert.True(measurements["ecs.mailbox.post|gathering"].Count > 0);
+        Assert.True(measurements["ecs.mailbox.callback|gathering"].Count > 0);
+        Assert.True(measurements["ecs.owner_hold|all"].Count > 0);
     }
 
     private static Case[] CreateCases(GameDataCatalog catalog)

@@ -75,6 +75,7 @@ public static partial class SimulationEngine
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.start");
         var availableHere = definition.AllowedNodeIds is null || definition.AllowedNodeIds.Count == 0
             || (player.World.EdgeId is null && definition.AllowedNodeIds.Contains(player.World.NodeId));
         var hasInputs = true;
@@ -119,6 +120,7 @@ public static partial class SimulationEngine
         ActionDefinition definition, bool isActionStart, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.prepare");
         var multiplier = PrepareSustainedAutoUse(player, definition, isActionStart, gameData,
             assets, at, action.Id, ref deltas, ref events);
         if (definition.Kind == ActionKind.Cultivation && gameData is not null)
@@ -132,6 +134,7 @@ public static partial class SimulationEngine
         ActionDefinition definition, double multiplier, GameDataCatalog? gameData,
         double stepSeconds, DateTimeOffset at)
     {
+        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.advance");
         var wholeSeconds = QuantizeElapsedSeconds(player, stepSeconds);
         action.ProgressSeconds += wholeSeconds;
         if (definition.Kind == ActionKind.Cultivation && wholeSeconds > 0)

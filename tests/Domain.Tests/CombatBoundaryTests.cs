@@ -1,4 +1,6 @@
 using Domain.Combat;
+using Domain.Common;
+using System.Diagnostics.Metrics;
 
 namespace Domain.Tests;
 
@@ -11,6 +13,30 @@ public sealed class CombatBoundaryTests
     [Fact]
     public void AdvancingOneBoundaryAtATimeMatchesAdvanceTo()
     {
+        var observedBoundaries = 0;
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Meter.Name == RuntimeInstrumentation.MeterName)
+                    meterListener.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<double>((instrument, _, tags, _) =>
+        {
+            if (instrument.Name != "daohua.runtime.duration") return;
+            var stageMatches = false;
+            var scenarioMatches = false;
+            foreach (var tag in tags)
+            {
+                stageMatches |= tag.Key == "stage" && Equals(tag.Value, "domain.combat.event");
+                scenarioMatches |= tag.Key == "scenario" && Equals(tag.Value, "combat");
+            }
+            if (stageMatches && scenarioMatches) Interlocked.Increment(ref observedBoundaries);
+        });
+        listener.Start();
+        using var scenario = RuntimeInstrumentation.BeginScenario("combat");
+
         var player = CombatantStats.Create(500, 80, 0, 1.7) with { MaxManapoints = 500, MpRegen = 2 };
         var enemy = CombatantStats.Create(700, 45, 0, 2.1) with { HpRegen = 1 };
         var whole = CombatEncounterState.Start("boundary", 12345, player, enemy, playerRespawnSeconds: 5);
@@ -42,6 +68,7 @@ public sealed class CombatBoundaryTests
         Assert.Equal(expected.Events, events);
         Assert.Equal(expected.PlayerDeathTimestamps ?? [], deathTimes);
         Assert.Equal(expected.PlayerRespawnTimestamps ?? [], respawnTimes);
+        Assert.True(observedBoundaries >= 2);
     }
 
     [Fact]
