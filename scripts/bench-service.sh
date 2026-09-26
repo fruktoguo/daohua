@@ -51,7 +51,7 @@ case "$VARIANT" in
   ecs-current)
     PROJECT="$ROOT_DIR/src/ServerEcs/ServerEcs.csproj"; PORT=5129; DATABASE="daohua_bench_ecs_current"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-current"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"; ;;
   ecs-optimized)
-    PROJECT="$ROOT_DIR/src/ServerEcsOptimized/ServerEcsOptimized.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="11a7f47ee44c5562193a7d544fb88b603fbc6a32"; ;;
+    PROJECT="$ROOT_DIR/src/ServerEcsOptimized/ServerEcsOptimized.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="68e4b63094ca9d3672e597763e43d3bcb105806f"; ;;
   *) echo "不支持的 variant：$VARIANT" >&2; exit 2 ;;
 esac
 if [[ -n "$PORT_OVERRIDE" ]]; then PORT="$PORT_OVERRIDE"; fi

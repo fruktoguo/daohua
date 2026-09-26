@@ -23,6 +23,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     private readonly ConcurrentDictionary<long, long> _encounters = new();
     private readonly Dictionary<Guid, List<SimulationEvent>> _simulationEvents = [];
     private readonly Dictionary<Guid, SimulationResult> _simulationResults = [];
+    private readonly List<YuoEntity> _activeEntities = new(4);
     private readonly EcsClockComponent _clock;
     private readonly YuoFiber _fiber;
     private readonly bool _previousCloseSystemTry;
@@ -425,7 +426,17 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             }, cancellationToken).ConfigureAwait(false);
             using var scenarioScope = RuntimeInstrumentation.BeginScenario(scenario);
             using (RuntimeInstrumentation.Measure("ecs.system_tick", scenario))
-                await _fiber.TickAsync(cancellationToken).ConfigureAwait(false);
+            {
+                SetActiveEntities(playerId);
+                try
+                {
+                    await _fiber.TickAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    ClearActiveEntities();
+                }
+            }
 
             async Task Tick(DateTimeOffset at, bool preparation)
             {
@@ -442,7 +453,17 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 }, cancellationToken).ConfigureAwait(false);
                 using var scenarioScope = RuntimeInstrumentation.BeginScenario(scenario);
                 using (RuntimeInstrumentation.Measure("ecs.system_tick", scenario))
-                    await _fiber.TickAsync(cancellationToken).ConfigureAwait(false);
+                {
+                    SetActiveEntities(playerId);
+                    try
+                    {
+                        await _fiber.TickAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        ClearActiveEntities();
+                    }
+                }
             }
         }
         catch
@@ -483,6 +504,28 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 _ownerGate.Release();
             }
         }
+    }
+
+    private void SetActiveEntities(Guid? playerId)
+    {
+#if YUOCORE_OPTIMIZED
+        if (playerId is not { } id) return;
+        var player = GetPlayer(id);
+        _activeEntities.Clear();
+        _activeEntities.Add(player);
+        var encounterId = player.GetComponent<PlayerCombatComponent>()!.EncounterEntityId;
+        if (encounterId != 0 && World.GetEntity(encounterId) is { } encounter)
+            _activeEntities.Add(encounter);
+        World.SetActiveEntities(_activeEntities);
+#endif
+    }
+
+    private void ClearActiveEntities()
+    {
+#if YUOCORE_OPTIMIZED
+        World.ClearActiveEntities();
+        _activeEntities.Clear();
+#endif
     }
 
     private T ExecuteOwned<T>(Func<T> action)

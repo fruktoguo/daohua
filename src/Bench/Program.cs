@@ -530,7 +530,7 @@ public sealed record BenchVariant(string Name, int Port, string Database, string
     {
         "oop" => new("oop", 5128, "daohua_bench_oop", "artifacts/runtime/oop", "vendor/YuoCore", "f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"),
         "ecs-current" => new("ecs-current", 5129, "daohua_bench_ecs_current", "artifacts/runtime/ecs-current", "vendor/YuoCore", "f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"),
-        "ecs-optimized" => new("ecs-optimized", 5130, "daohua_bench_ecs_optimized", "artifacts/runtime/ecs-optimized", "vendor/YuoCore-optimized", "11a7f47ee44c5562193a7d544fb88b603fbc6a32"),
+        "ecs-optimized" => new("ecs-optimized", 5130, "daohua_bench_ecs_optimized", "artifacts/runtime/ecs-optimized", "vendor/YuoCore-optimized", "68e4b63094ca9d3672e597763e43d3bcb105806f"),
         _ => throw new ArgumentException($"未知 variant：{name}")
     };
 }

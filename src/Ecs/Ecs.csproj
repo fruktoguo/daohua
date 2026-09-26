@@ -9,6 +9,7 @@
          基线保持一致。构建脚本同时传入独立的 obj/bin 路径。 -->
     <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore</YuoCoreRoot>
     <EcsBuildVariant Condition="'$(EcsBuildVariant)' == ''">current</EcsBuildVariant>
+    <DefineConstants Condition="'$(EcsBuildVariant)' == 'ecs-optimized'">$(DefineConstants);YUOCORE_OPTIMIZED</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainIsolatedBuild=$(EcsIsolatedBuild);DomainBuildVariant=$(EcsBuildVariant)" />
