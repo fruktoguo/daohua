@@ -77,6 +77,39 @@ public sealed class EcsActionParityTests
         Assert.Equal(3, actual.Assets.GetValueOrDefault(output));
     }
 
+    [Fact]
+    public async Task FiniteGatheringThenCombatKeepsTheSameBoundaryAndResults()
+    {
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.Parse("10000000-0000-4000-8000-000000000013");
+        var accountId = Guid.Parse("20000000-0000-4000-8000-000000000013");
+        var player = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(accountId),
+            "采集接战斗", SeedTime, catalog.Fingerprint);
+        player.Enqueue(new ActionIntent(new ActionId("explore.gather-ningxue-grass"), 1), SeedTime, catalog.Actions);
+        player.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), SeedTime, catalog.Actions);
+        var seed = player.ExportState();
+        var expected = PlayerAggregate.Restore(seed);
+        var wallet = CreateWallet(expected, Array.Empty<AssetBalance>());
+        var target = SeedTime.AddSeconds(37);
+        var result = SimulationEngine.AdvanceTo(expected, target, catalog, wallet);
+        foreach (var delta in result.AssetDeltas) wallet.Apply(delta);
+
+        using var runtime = new EcsGameRuntime(catalog, SeedTime);
+        runtime.CreatePlayer(seed);
+        await runtime.RunPlayerOnceAsync(playerId, target);
+        var actual = runtime.ExportSnapshot(playerId);
+
+        AssertStateEqual(expected.ExportState(), actual.State, "采集接战斗");
+        AssertAssetsEqual(wallet, actual.Assets, "采集接战斗");
+        static string EventJson(IEnumerable<SimulationEvent> events)
+            => JsonSerializer.Serialize(events.Select(entry => new
+            {
+                entry.At, entry.Code, entry.Message, entry.ActionId,
+                Items = entry.ItemDeltas?.Select(pair => new { Item = pair.Key.Value, Quantity = pair.Value }).ToArray()
+            }));
+        Assert.Equal(EventJson(result.Events), EventJson(runtime.DrainSimulationEvents(playerId)));
+    }
+
     private static PlayerAggregateState CreateSeedState(
         GameDataCatalog catalog,
         Guid playerId,

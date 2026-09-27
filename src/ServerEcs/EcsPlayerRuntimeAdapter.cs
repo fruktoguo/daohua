@@ -39,7 +39,10 @@ public sealed class EcsPlayerRuntimeAdapter(
     private readonly ConcurrentDictionary<Guid, PlayerLogBuffer> _logs = new();
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _playerGates = new();
     private readonly ConcurrentDictionary<Guid, RecentRequests> _recentRequests = new();
+#if !YUOCORE_OPTIMIZED
+    // 当前 ECS 保留全局加载门，作为基线；优化 ECS 由玩家锁和 shard owner gate 提供隔离。
     private readonly SemaphoreSlim _loadGate = new(1, 1);
+#endif
     private readonly IPlayerSimulationClock _simulationClock = simulationClock ?? PlayerSimulationClock.FromEnvironment();
     private readonly ILogger<EcsPlayerRuntimeAdapter> _logger = logger;
     private const int LogBufferCapacity = 200;
@@ -87,60 +90,64 @@ public sealed class EcsPlayerRuntimeAdapter(
         if (playerId == Guid.Empty) throw new ArgumentException("PlayerId 不能为空。", nameof(playerId));
         if (_loaded.TryGetValue(playerId, out var cached)) return cached;
 
+#if !YUOCORE_OPTIMIZED
         await _loadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_loaded.TryGetValue(playerId, out cached)) return cached;
-            using var loadMeasurement = RuntimeInstrumentation.Measure("lifecycle.player_load");
-            var bundle = await sections.LoadAsync(playerId, cancellationToken).ConfigureAwait(false)
+#endif
+        if (_loaded.TryGetValue(playerId, out cached)) return cached;
+        using var loadMeasurement = RuntimeInstrumentation.Measure("lifecycle.player_load");
+        var bundle = await sections.LoadAsync(playerId, cancellationToken).ConfigureAwait(false)
                 ?? throw new KeyNotFoundException($"玩家不存在：{playerId:D}");
-            var state = bundle.Head.StateVersion > 0 || bundle.Sections.Count > 0
+        var state = bundle.Head.StateVersion > 0 || bundle.Sections.Count > 0
                 ? SectionCodec.DecodeAggregate(bundle)
                 : PlayerAggregate.Create(new PlayerId(playerId), new AccountId(bundle.Identity.AccountId),
                     bundle.Identity.DisplayName, bundle.Identity.CreatedAt, gameData.Fingerprint).ExportState();
-            var balanceRows = await assets.LoadBalancesAsync(playerId, cancellationToken).ConfigureAwait(false);
-            var balances = balanceRows.Select(row => new AssetBalance(
+        var balanceRows = await assets.LoadBalancesAsync(playerId, cancellationToken).ConfigureAwait(false);
+        var balances = balanceRows.Select(row => new AssetBalance(
                 new PlayerId(playerId), new AssetKey(new ItemId(row.AssetId), row.Variant), row.Quantity, row.Version)).ToArray();
-            ecs.CreatePlayer(state, balances);
-            if (bundle.Sections.Count == 0)
-                foreach (var section in Enum.GetValues<PlayerSectionKind>()) ecs.MarkDirty(playerId, section);
-            try
+        ecs.CreatePlayer(state, balances);
+        if (bundle.Sections.Count == 0)
+            foreach (var section in Enum.GetValues<PlayerSectionKind>()) ecs.MarkDirty(playerId, section);
+        try
+        {
+            _wallets[playerId] = balanceRows.ToDictionary(row => new AssetKey(new ItemId(row.AssetId), row.Variant));
+            _dirtyAt[playerId] = [];
+            _pendingReceipts[playerId] = [];
+            var before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            IReadOnlyList<LogEventDto>? logs = null;
+            var target = _simulationClock.UtcNow;
+            await RefreshNodeBuildingsAsync(playerId, before.State.World, target, cancellationToken).ConfigureAwait(false);
+            before = ToSnapshot(ecs.ExportSnapshot(playerId));
+            TrackDirty(playerId);
+            if (target > state.LastSimulatedAt)
             {
-                _wallets[playerId] = balanceRows.ToDictionary(row => new AssetKey(new ItemId(row.AssetId), row.Variant));
-                _dirtyAt[playerId] = [];
-                _pendingReceipts[playerId] = [];
-                var before = ToSnapshot(ecs.ExportSnapshot(playerId));
-                IReadOnlyList<LogEventDto>? logs = null;
-                var target = _simulationClock.UtcNow;
-                await RefreshNodeBuildingsAsync(playerId, before.State.World, target, cancellationToken).ConfigureAwait(false);
-                before = ToSnapshot(ecs.ExportSnapshot(playerId));
-                TrackDirty(playerId);
-                if (target > state.LastSimulatedAt)
-                {
-                    await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
-                    var advanced = ToSnapshot(ecs.ExportSnapshot(playerId));
-                    logs = (await CommitSimulationAsync(playerId, before, advanced, null, cancellationToken).ConfigureAwait(false)).Logs;
-                }
-                // 离线收益先完成事务，随后再转在线；未提交的加载结果不能进入日志回放。
-                ecs.SetPresence(playerId, PresenceState.Online);
-                TrackDirty(playerId);
-                var snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
-                _loaded[playerId] = snapshot;
-                RuntimeInstrumentation.Count("lifecycle.player_loaded");
-                notifications.Add(new RuntimeNotification(playerId, logs));
-                return snapshot;
+                await ecs.RunPlayerOnceAsync(playerId, target, cancellationToken).ConfigureAwait(false);
+                var advanced = ToSnapshot(ecs.ExportSnapshot(playerId));
+                logs = (await CommitSimulationAsync(playerId, before, advanced, null, cancellationToken).ConfigureAwait(false)).Logs;
             }
-            catch
-            {
-                ecs.RemovePlayer(playerId);
-                _wallets.TryRemove(playerId, out _);
-                _logs.TryRemove(playerId, out _);
-                _dirtyAt.TryRemove(playerId, out _);
-                _pendingReceipts.TryRemove(playerId, out _);
-                throw;
-            }
+            // 离线收益先完成事务，随后再转在线；未提交的加载结果不能进入日志回放。
+            ecs.SetPresence(playerId, PresenceState.Online);
+            TrackDirty(playerId);
+            var snapshot = ToSnapshot(ecs.ExportSnapshot(playerId));
+            _loaded[playerId] = snapshot;
+            RuntimeInstrumentation.Count("lifecycle.player_loaded");
+            notifications.Add(new RuntimeNotification(playerId, logs));
+            return snapshot;
+        }
+        catch
+        {
+            ecs.RemovePlayer(playerId);
+            _wallets.TryRemove(playerId, out _);
+            _logs.TryRemove(playerId, out _);
+            _dirtyAt.TryRemove(playerId, out _);
+            _pendingReceipts.TryRemove(playerId, out _);
+            throw;
+        }
+#if !YUOCORE_OPTIMIZED
         }
         finally { _loadGate.Release(); }
+#endif
     }
 
     public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
@@ -400,7 +407,9 @@ public sealed class EcsPlayerRuntimeAdapter(
             catch (Exception exception) { _logger.LogError(exception, "ECS 玩家运行时关闭时释放失败 player={PlayerId}", playerId); }
         }
         _disposed = true;
+#if !YUOCORE_OPTIMIZED
         _loadGate.Dispose();
+#endif
         foreach (var gate in _playerGates.Values) gate.Dispose();
         await ecs.DisposeAsync().ConfigureAwait(false);
     }

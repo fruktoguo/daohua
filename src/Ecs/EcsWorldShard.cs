@@ -395,6 +395,24 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             }
             var cursor = pipelines.Count > 0 ? pipelines.Values.Min(pipeline => pipeline.Current) : target;
             var steps = 0;
+#if YUOCORE_OPTIMIZED
+            // 离线采集/制造的自然边界固定由资源回复窗口切分（默认 5 秒）。
+            // 这些玩家没有战斗实体时，直接执行同一批管线原语可消除数百万次
+            // Fiber/World/System 往返；一旦队列切换到战斗或旅行，立即回到完整 ECS 路径。
+            var bulkCompleted = false;
+            if (playerId is not null && pipelines.Count == 1 && pipelines.Values.All(pipeline => pipeline.CanBulkAdvance))
+            {
+                using var bulkMeasurement = RuntimeInstrumentation.Measure("ecs.bulk_advance", scenario);
+                var pipeline = pipelines.Values.Single();
+                bulkCompleted = pipeline.AdvanceBulkTimedUntilUnsupported(cancellationToken);
+                cursor = pipeline.Current;
+                steps = pipeline.BulkStepCount;
+            }
+#endif
+#if YUOCORE_OPTIMIZED
+            if (!bulkCompleted)
+            {
+#endif
             while (pipelines.Values.Any(pipeline => !pipeline.IsComplete))
             {
                 if (++steps > SimulationEngine.MaxTransitionsPerAdvance)
@@ -409,6 +427,9 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 await Tick(next, false).ConfigureAwait(false);
                 cursor = next;
             }
+#if YUOCORE_OPTIMIZED
+            }
+#endif
             using (RuntimeInstrumentation.Measure("ecs.mailbox.post", scenario))
             await _fiber.PostAsync((_, _) =>
             {

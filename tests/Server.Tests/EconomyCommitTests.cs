@@ -167,6 +167,45 @@ public sealed class EconomyCommitTests
         Assert.Equal(new[] { 3d, 5d, -1d }, lines.Select(row => Convert.ToDouble(row[0])).ToArray());
     }
 
+    /// <summary>
+    /// 并发 Serializable 提交命中同一余额行时，瞬态 40001/40P01 必须重开整笔事务重试；
+    /// 所有唯一幂等请求最终各入账一次，不能因重试重复写事务头或流水。
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task ConcurrentSerializableCommitsRetryAsWholeTransaction()
+    {
+        var (source, repository, player) = await ArrangeAsync();
+        const int commitCount = 8;
+        await Sql(source,
+            "INSERT INTO economy.player_asset_balances VALUES ($1,'currency.test','',0,1,now())",
+            player);
+
+        var requests = Enumerable.Range(0, commitCount)
+            .Select(index => new EconomyTransactionRequest(
+                Guid.NewGuid(), $"concurrent-economy-{Guid.NewGuid():N}", "simulation.concurrent", player,
+                [new(player, "currency.test", "", 1)], DateTimeOffset.UtcNow))
+            .ToArray();
+        var results = await Task.WhenAll(requests.Select(request => repository.CommitAsync(request).AsTask()));
+
+        Assert.Equal(commitCount, results.Length);
+        Assert.All(results, result =>
+        {
+            Assert.True(result.Applied);
+            Assert.False(result.AlreadyCommitted);
+            Assert.Single(result.Balances!);
+        });
+        Assert.Equal(commitCount,
+            Convert.ToInt32(await Scalar(source,
+                "SELECT quantity FROM economy.player_asset_balances WHERE player_id=$1 AND asset_id='currency.test' AND variant=''",
+                player)));
+        Assert.Equal(commitCount, Convert.ToInt32(await Scalar(source,
+            "SELECT count(*) FROM economy.transactions WHERE actor_id=$1 AND transaction_type='simulation.concurrent'", player)));
+        Assert.Equal(commitCount, Convert.ToInt32(await Scalar(source,
+            "SELECT count(*) FROM economy.transaction_lines WHERE transaction_id IN (SELECT transaction_id FROM economy.transactions WHERE actor_id=$1 AND transaction_type='simulation.concurrent')",
+            player)));
+    }
+
     private static async Task<(NpgsqlDataSource Source, PostgresEconomyRepository Repository, Guid Player)> ArrangeAsync()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("经济提交集成测试");

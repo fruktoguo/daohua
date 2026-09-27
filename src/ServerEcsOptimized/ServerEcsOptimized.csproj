@@ -8,6 +8,7 @@
     <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore-optimized</YuoCoreRoot>
     <EcsBuildVariant Condition="'$(EcsBuildVariant)' == ''">ecs-optimized</EcsBuildVariant>
     <EcsIsolatedBuild Condition="'$(EcsIsolatedBuild)' == ''">true</EcsIsolatedBuild>
+    <DefineConstants>$(DefineConstants);YUOCORE_OPTIMIZED</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainIsolatedBuild=$(EcsIsolatedBuild);DomainBuildVariant=$(EcsBuildVariant)" />

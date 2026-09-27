@@ -22,6 +22,9 @@ public sealed class EcsActionExecutionComponent : YuoComponent
 public sealed class EcsActionPipeline
 {
     private readonly YuoEntity _entity;
+#if YUOCORE_OPTIMIZED
+    private readonly PlayerActionQueueComponent _queue;
+#endif
     private readonly GameDataCatalog _catalog;
     private readonly EcsPlayerActionContext _player;
     private readonly AssetWallet _externalWallet;
@@ -59,6 +62,9 @@ public sealed class EcsActionPipeline
     private EcsActionPipeline(YuoEntity entity, GameDataCatalog catalog, DateTimeOffset target)
     {
         _entity = entity;
+#if YUOCORE_OPTIMIZED
+        _queue = entity.GetComponent<PlayerActionQueueComponent>()!;
+#endif
         _catalog = catalog;
         _player = new(entity, catalog);
         _from = _cursor = _player.LastSimulatedAt;
@@ -79,6 +85,59 @@ public sealed class EcsActionPipeline
     public bool HasPreparedAction => _preparedAction is not null;
     public ActionKind? PreparedKind => _definition?.Kind;
     public ActionExecutionKind? PreparedExecutionKind => _definition?.ExecutionKind;
+    public int BulkStepCount { get; private set; }
+
+    /// <summary>
+    /// 优化 ECS 的离线批处理资格。只有不包含战斗实体的计时行动才允许合并自然资源窗口；
+    /// 战斗、旅行和跨类型行动仍由完整 ECS System 顺序推进，避免改变随机数和边界语义。
+    /// </summary>
+    public bool CanBulkAdvance
+    {
+        get
+        {
+            if (_battle is not null || _preparedAction?.Expedition is { Phase: CombatExpeditionPhase.Combat })
+                return false;
+            if (_player.Actions.Count == 0) return true;
+            var definition = _catalog.Actions.Get(_player.Actions[0].Intent.ActionId);
+            return definition.ExecutionKind == ActionExecutionKind.Timed
+                && definition.Kind is ActionKind.Exploration or ActionKind.Alchemy;
+        }
+    }
+
+    /// <summary>
+    /// 在保持系统固定顺序的前提下合并无战斗自然窗口。
+    /// 返回 false 表示队列已经切换到需要完整 ECS 战斗/旅行系统的行动，调用方应继续普通循环。
+    /// </summary>
+    public bool AdvanceBulkTimedUntilUnsupported(CancellationToken cancellationToken)
+    {
+        while (!IsComplete)
+        {
+            if (!CanBulkAdvance) return false;
+            if (++BulkStepCount > SimulationEngine.MaxTransitionsPerAdvance)
+                throw new DomainException(DomainErrorCode.InvariantViolation, "ECS 自然边界推进超过最大转换数。");
+            cancellationToken.ThrowIfCancellationRequested();
+            if (NeedsPreparation)
+            {
+                // 对应 ActionClock -> ActionQueue 的准备 tick；准备阶段不推进实际时间。
+                PrepareClock(_cursor);
+                PrepareQueue();
+                if (!CanBulkAdvance) return false;
+            }
+
+            if (IsComplete) break;
+            var next = NextBoundaryAt;
+            if (next < _cursor)
+                throw new DomainException(DomainErrorCode.InvariantViolation, "ECS 批量自然边界时钟发生倒退。");
+
+            // 对应 Gathering/Crafting -> Yield -> ClockCommit 的固定执行顺序。
+            _frameTarget = next;
+            AdvancePreparedAction();
+            CompleteYield();
+            CompleteClock(preparationOnly: false);
+        }
+
+        return true;
+    }
 
     /// <summary>请求开始时只挂工作区；资源与队列变更由准备 tick 的系统执行。</summary>
     public static void BeginRequest(YuoEntity entity, GameDataCatalog catalog, DateTimeOffset target)
@@ -158,7 +217,11 @@ public sealed class EcsActionPipeline
         if (IsComplete || !_windowOpen || _preparedAction is not null || _waiting) return;
         while (_remainingSeconds > 1e-9 && _player.Actions.Count > 0)
         {
+#if YUOCORE_OPTIMIZED
+            var action = _queue.Actions[0];
+#else
             var action = _entity.GetComponent<PlayerActionQueueComponent>()!.Actions[0];
+#endif
             if (action.Status == ActionQueueStatus.Blocked)
             {
                 if (!SimulationEngine.AdvanceBlockedAction(_player, action, _cursor))

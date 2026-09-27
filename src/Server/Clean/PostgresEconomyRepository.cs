@@ -5,6 +5,16 @@ public sealed class PostgresEconomyRepository(
     NpgsqlDataSource dataSource,
     ILogger<PostgresEconomyRepository> logger) : IEconomyTransactionStore
 {
+    private const int SerializableRetryAttempts = 6;
+    private static readonly TimeSpan[] SerializableRetryBackoff =
+    [
+        TimeSpan.FromMilliseconds(25),
+        TimeSpan.FromMilliseconds(75),
+        TimeSpan.FromMilliseconds(150),
+        TimeSpan.FromMilliseconds(250),
+        TimeSpan.FromMilliseconds(400)
+    ];
+
     /// <summary>
     /// 在单个 Serializable 事务内提交一笔资产变更：幂等键去重、按固定顺序对余额行加锁更新、写入不可变流水，
     /// 并将分段快照写回与命令回执同事务入队。幂等键已存在时校验请求指纹一致后直接返回首次提交结果。
@@ -16,13 +26,38 @@ public sealed class PostgresEconomyRepository(
         EconomyTransactionRequest request,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
-        var result = await CommitCoreAsync(connection, transaction, request, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        logger.LogDebug("资产事务提交 transactionId={TransactionId} lines={Lines}", request.TransactionId, request.Deltas.Count);
-        return result;
+        // 缺省发生时间在重试前固定，保证同一事务重放时的审计时间不变。
+        var stableRequest = request with { OccurredAt = request.OccurredAt ?? DateTimeOffset.UtcNow };
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+                await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+                var result = await CommitCoreAsync(connection, transaction, stableRequest, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                logger.LogDebug("资产事务提交 transactionId={TransactionId} lines={Lines} attempt={Attempt}",
+                    stableRequest.TransactionId, stableRequest.Deltas.Count, attempt);
+                return result;
+            }
+            catch (PostgresException exception) when (IsSerializableConflict(exception)
+                                                       && !cancellationToken.IsCancellationRequested)
+            {
+                if (attempt >= SerializableRetryAttempts)
+                    throw;
+
+                logger.LogWarning(exception,
+                    "资产事务遇到 Serializable 瞬态冲突 transactionId={TransactionId} sqlState={SqlState} attempt={Attempt}/{MaxAttempts}，退避后重试",
+                    stableRequest.TransactionId, exception.SqlState, attempt, SerializableRetryAttempts);
+                // 加少量线程安全抖动，避免同一批并发请求在固定退避点再次形成冲突波峰。
+                var jitter = TimeSpan.FromMilliseconds(Random.Shared.Next(0, 25));
+                await Task.Delay(SerializableRetryBackoff[attempt - 1] + jitter, cancellationToken);
+            }
+        }
     }
+
+    private static bool IsSerializableConflict(PostgresException exception) =>
+        exception.SqlState is "40001" or "40P01";
 
     /// <summary>
     /// 在调用方事务内执行经济事务落库：请求校验、幂等键去重、余额行按序 upsert、流水写入与随附写回。
