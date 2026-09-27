@@ -35,8 +35,24 @@ internal sealed class BenchWebSocketSession : IAsyncDisposable
     private BenchWebSocketSession(TestCharacter character, Uri url)
     {
         Character = character;
-        Client = new HttpClient(new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true })
-        { BaseAddress = new Uri(url, "/"), Timeout = TimeSpan.FromSeconds(30) };
+        Client = CreateClient(url);
+    }
+
+    public static async Task<HttpClient> CreateControlClientAsync(TestCharacter character, BenchOptions options, CancellationToken cancellationToken)
+    {
+        var client = CreateClient(options.Url);
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(options.RequestTimeoutSeconds));
+            await AuthenticateAsync(client, character, timeout.Token);
+            return client;
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
     }
 
     public static async Task<BenchWebSocketSession> ConnectAsync(TestCharacter character, BenchOptions options, CancellationToken cancellationToken)
@@ -47,13 +63,7 @@ internal sealed class BenchWebSocketSession : IAsyncDisposable
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(options.RequestTimeoutSeconds));
             var token = timeout.Token;
-            using var auth = await session.Client.PostAsJsonAsync("api/debug/bench/session", new { playerId = character.PlayerId }, token);
-            if (!auth.IsSuccessStatusCode) throw new InvalidOperationException($"基准会话创建失败 HTTP {(int)auth.StatusCode}。");
-            using var authDocument = JsonDocument.Parse(await auth.Content.ReadAsStreamAsync(token));
-            if (authDocument.RootElement.GetProperty("playerId").GetGuid() != character.PlayerId)
-                throw new InvalidOperationException("基准会话返回了错误玩家。");
-            if (!auth.Headers.TryGetValues("Set-Cookie", out var cookies)) throw new InvalidOperationException("基准会话未返回 Cookie。");
-            session._socket.Options.SetRequestHeader("Cookie", string.Join("; ", cookies.Select(value => value.Split(';', 2)[0])));
+            session._socket.Options.SetRequestHeader("Cookie", await AuthenticateAsync(session.Client, character, token));
             var address = new UriBuilder(options.Url) { Scheme = options.Url.Scheme == "https" ? "wss" : "ws", Path = "/ws" };
             await session._socket.ConnectAsync(address.Uri, token);
             session._receiver = session.ReceiveLoopAsync();
@@ -65,8 +75,12 @@ internal sealed class BenchWebSocketSession : IAsyncDisposable
                 throw new InvalidOperationException("WS HelloAck 配表指纹与 manifest 不符。");
             var snapshot = await session._initialSnapshot.Task.WaitAsync(token);
             if (snapshot.PlayerId != character.PlayerId.ToString("D")) throw new InvalidOperationException("WS 初始快照玩家不符。");
-            if (options.Mode == "replay" && snapshot.LastSimulatedAt != character.StartAt)
-                throw new InvalidOperationException("WS 初始时钟不等于 manifest，拒绝旧状态/旧缓存。");
+            if (options.Mode is "replay" or "offline-login")
+            {
+                var expectedTime = options.Mode == "offline-login" ? character.StartAt.AddHours(options.TargetHours) : character.StartAt;
+                if (snapshot.LastSimulatedAt != expectedTime)
+                    throw new InvalidOperationException("WS 初始时钟不等于预期业务时间，拒绝旧状态/旧缓存。");
+            }
             var presenceId = TestCharacterSeeder.StableGuid($"ws:presence:{character.PlayerId:D}:{options.Mode}");
             await session.CommandAsync("player.presence", presenceId,
                 JsonSerializer.SerializeToElement(new { requestId = presenceId, presence = "online" }, BenchJson.Options), token);
@@ -77,6 +91,21 @@ internal sealed class BenchWebSocketSession : IAsyncDisposable
             await session.DisposeAsync();
             throw;
         }
+    }
+
+    private static HttpClient CreateClient(Uri url)
+        => new(new HttpClientHandler { CookieContainer = new CookieContainer(), UseCookies = true })
+        { BaseAddress = new Uri(url, "/"), Timeout = TimeSpan.FromSeconds(30) };
+
+    private static async Task<string> AuthenticateAsync(HttpClient client, TestCharacter character, CancellationToken cancellationToken)
+    {
+        using var auth = await client.PostAsJsonAsync("api/debug/bench/session", new { playerId = character.PlayerId }, cancellationToken);
+        if (!auth.IsSuccessStatusCode) throw new InvalidOperationException($"基准会话创建失败 HTTP {(int)auth.StatusCode}。");
+        using var authDocument = JsonDocument.Parse(await auth.Content.ReadAsStreamAsync(cancellationToken));
+        if (authDocument.RootElement.GetProperty("playerId").GetGuid() != character.PlayerId)
+            throw new InvalidOperationException("基准会话返回了错误玩家。");
+        if (!auth.Headers.TryGetValues("Set-Cookie", out var cookies)) throw new InvalidOperationException("基准会话未返回 Cookie。");
+        return string.Join("; ", cookies.Select(value => value.Split(';', 2)[0]));
     }
 
     public async Task<double> AdvanceAsync(DateTimeOffset target, long ordinal, CancellationToken cancellationToken)

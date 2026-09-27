@@ -11,11 +11,13 @@ MANIFEST="$ROOT_DIR/artifacts/bench/manifests/characters-3000.json"
 PLAYERS="1,10,1000"
 SEED_PLAYERS="3000"
 HOURS="1,8,24,48"
+MODE="replay"
 SCENARIOS="Gathering,Crafting,Combat"
 VARIANTS="oop,ecs-current,ecs-optimized"
 CONCURRENCY="32"
 RUN_ROOT="$ROOT_DIR/artifacts/bench/$RUN_ID"
 EPOCH=""
+OUTPUT_DIR_SET="false"
 
 usage() {
   cat <<'EOF'
@@ -24,7 +26,8 @@ usage() {
   --manifest 文件   同一份角色 manifest（默认 artifacts/bench/manifests/characters-3000.json）
   --players 列表    逗号分隔：1,10,1000
   --seed-players 数  校验 manifest 角色数（默认 3000；小规模验收可设 3）
-  --hours 列表      逗号分隔：1,8,24,48；通过真实 WS simulation.advance 回放
+  --hours 列表      逗号分隔：1,8,24,48；业务模拟时长
+  --mode 模式       replay（默认，WS 命令回放）或 offline-login（上线时结算）
   --scenarios 列表  Gathering,Crafting,Combat
   --variants 列表   oop,ecs-current,ecs-optimized
   --concurrency 数  同时执行的玩家命令数（默认 32）
@@ -40,18 +43,27 @@ while (($#)); do
     --players) PLAYERS="${2:?--players 缺少值}"; shift 2 ;;
     --seed-players) SEED_PLAYERS="${2:?--seed-players 缺少值}"; shift 2 ;;
     --hours) HOURS="${2:?--hours 缺少值}"; shift 2 ;;
+    --mode) MODE="${2:?--mode 缺少值}"; shift 2 ;;
     --scenarios) SCENARIOS="${2:?--scenarios 缺少值}"; shift 2 ;;
     --variants) VARIANTS="${2:?--variants 缺少值}"; shift 2 ;;
     --concurrency) CONCURRENCY="${2:?--concurrency 缺少值}"; shift 2 ;;
     --epoch) EPOCH="${2:?--epoch 缺少值}"; shift 2 ;;
-    --output-dir) RUN_ROOT="${2:?--output-dir 缺少值}"; shift 2 ;;
+    --output-dir) RUN_ROOT="${2:?--output-dir 缺少值}"; OUTPUT_DIR_SET="true"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
+if [[ "$OUTPUT_DIR_SET" != "true" ]]; then
+  RUN_ROOT="$ROOT_DIR/artifacts/bench/$RUN_ID"
+fi
+
 [[ -f "$BENCH_DLL" ]] || { echo "缺少 Bench 产物，请先 dotnet build src/Bench/Bench.csproj -c Release" >&2; exit 3; }
 [[ -f "$MANIFEST" ]] || { echo "缺少 manifest：$MANIFEST" >&2; exit 3; }
+case "$MODE" in
+  replay|offline-login) ;;
+  *) echo "--mode 必须是 replay 或 offline-login" >&2; exit 2 ;;
+esac
 [[ "$CONCURRENCY" =~ ^[0-9]+$ ]] && ((CONCURRENCY >= 1 && CONCURRENCY <= 3000)) || {
   echo "--concurrency 必须为 1..3000" >&2
   exit 2
@@ -127,8 +139,17 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 start_variant() {
-  local variant="$1" port="$(port_for "$1")" url="$(url_for "$1")"
-  scripts/bench-service.sh --variant "$variant" --port "$port" --start --simulation-target "$EPOCH" >"$RUN_ROOT/${variant}.start.log" 2>&1
+  local variant="$1" hours="$2" port="$(port_for "$1")" url="$(url_for "$1")" target="$EPOCH"
+  if [[ "$MODE" == "offline-login" ]]; then
+    target="$(python3 - "$EPOCH" "$hours" <<'PY'
+from datetime import datetime, timedelta
+import sys
+epoch = datetime.fromisoformat(sys.argv[1].replace('Z', '+00:00'))
+print((epoch + timedelta(hours=float(sys.argv[2]))).isoformat().replace('+00:00', 'Z'))
+PY
+    )"
+  fi
+  scripts/bench-service.sh --variant "$variant" --port "$port" --start --simulation-target "$target" >"$RUN_ROOT/${variant}.start.log" 2>&1
   for _ in {1..60}; do
     if curl --fail --silent --max-time 2 "$url/healthz" >/dev/null 2>&1; then return 0; fi
     sleep 0.5
@@ -154,7 +175,15 @@ PY
 }
 
 summary="$RUN_ROOT/summary.csv"
-echo 'variant,scenario,players,target_hours,report,status' >"$summary"
+if [[ "$MODE" == "offline-login" ]]; then
+  echo 'variant,scenario,players,target_hours,mode,report,status' >"$summary"
+  report_suffix="-offline-login"
+  summary_mode=",$MODE"
+else
+  echo 'variant,scenario,players,target_hours,report,status' >"$summary"
+  report_suffix=""
+  summary_mode=""
+fi
 cp "$MANIFEST" "$RUN_ROOT/manifest.json"
 overall_fail=0
 
@@ -164,13 +193,13 @@ for scenario in "${scenario_list[@]}"; do
       seed_all
       for variant in "${variant_list[@]}"; do
         scenario_slug="$(printf '%s' "$scenario" | tr '[:upper:]' '[:lower:]')"
-        report="$RUN_ROOT/${variant}-${scenario_slug}-${players}p-${hours}h.json"
+        report="$RUN_ROOT/${variant}-${scenario_slug}-${players}p-${hours}h${report_suffix}.json"
         url="$(url_for "$variant")"
-        start_variant "$variant"
+        start_variant "$variant" "$hours"
         set +e
         dotnet "$BENCH_DLL" run \
           --variant "$variant" --url "$url" --manifest "$RUN_ROOT/manifest.json" \
-          --scenario "$scenario" --players "$players" --target-hours "$hours" --concurrency "$CONCURRENCY" \
+          --scenario "$scenario" --players "$players" --mode "$MODE" --target-hours "$hours" --concurrency "$CONCURRENCY" \
           --report "$report" >"${report%.json}.stdout.log" 2>"${report%.json}.stderr.log"
         code=$?
         set -e
@@ -188,16 +217,16 @@ except Exception:
     print(f"failed-invalid-report-{code}")
 PY
         )"
-        echo "$variant,$scenario,$players,$hours,$report,$status" >>"$summary"
+        echo "$variant,$scenario,$players,$hours${summary_mode},$report,$status" >>"$summary"
         if [[ "$code" -ne 0 || "$status" == *partial* || "$status" == failed* ]]; then overall_fail=1; fi
         stop_variant "$variant"
       done
       if [[ "$VARIANTS" != *oop* || "$VARIANTS" != *ecs-current* || "$VARIANTS" != *ecs-optimized* ]]; then
-        echo "compare,${scenario},${players},${hours},,skipped-variants-subset" >>"$summary"
+        echo "compare,${scenario},${players},${hours}${summary_mode},,skipped-variants-subset" >>"$summary"
         continue
       fi
       scenario_slug="$(printf '%s' "$scenario" | tr '[:upper:]' '[:lower:]')"
-      compare="$RUN_ROOT/compare-${scenario_slug}-${players}p-${hours}h.json"
+      compare="$RUN_ROOT/compare-${scenario_slug}-${players}p-${hours}h${report_suffix}.json"
       set +e
       dotnet "$BENCH_DLL" compare --database-a "$(connection_for "$(database_for oop)")" \
         --database-b "$(connection_for "$(database_for ecs-current)")" \
@@ -205,7 +234,7 @@ PY
         --manifest "$RUN_ROOT/manifest.json" --report "$compare" >"${compare%.json}.stdout.log" 2>"${compare%.json}.stderr.log"
       compare_code=$?
       set -e
-      echo "compare,$scenario,$players,$hours,$compare,$([ "$compare_code" -eq 0 ] && echo exact || echo mismatch)" >>"$summary"
+      echo "compare,$scenario,$players,$hours${summary_mode},$compare,$([ "$compare_code" -eq 0 ] && echo exact || echo mismatch)" >>"$summary"
       if [[ "$compare_code" -ne 0 ]]; then overall_fail=1; fi
     done
   done

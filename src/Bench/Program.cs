@@ -178,8 +178,9 @@ public static class Program
         Console.WriteLine("用法：dotnet run --project src/Bench -- seed|probe|run|report [选项]");
         Console.WriteLine("  seed  --output artifacts/bench/characters.json [--players 3000] [--database 连接串]");
         Console.WriteLine("  probe --variant oop|ecs-current|ecs-optimized --url http://127.0.0.1:5128 [--account 账号 --password 密码] [--report 文件.json]");
-        Console.WriteLine("  run --variant oop|ecs-current|ecs-optimized --url http://127.0.0.1:5128 --manifest 文件.json [--scenario Gathering|Crafting|Combat] --players 1 --mode replay|online --concurrency 32 [--target-hours 1] [--duration-seconds 900 --interval-ms 1000] [--report 文件.json]");
+        Console.WriteLine("  run --variant oop|ecs-current|ecs-optimized --url http://127.0.0.1:5128 --manifest 文件.json [--scenario Gathering|Crafting|Combat] --players 1 --mode replay|offline-login|online --concurrency 32 [--target-hours 1] [--duration-seconds 900 --interval-ms 1000] [--report 文件.json]");
         Console.WriteLine("  online 墙钟短测：--duration-seconds 10；15/60 分钟：900/3600。replay 的 --target-hours 仅指业务补算时长。");
+        Console.WriteLine("  offline-login 先推进业务时钟，再以真实 WS 上线触发离线补算；不发送 simulation.advance。可用 scripts/bench-offline-login.sh 执行 12 小时、100/500/1000 人矩阵。");
         Console.WriteLine("  seed --resource-exhaustion true 单独生成仅够 2 轮制造的耗尽样本；普通种子按实际配表准备 48 小时材料。");
         Console.WriteLine("  report --report 'artifacts/bench/*-gathering.json' [--comparison-output artifacts/bench/gathering.comparison.json]（三版本同条件报告）");
         Console.WriteLine("  compare --database-a 连接串 --database-b 连接串 --database-c 连接串 --player-id UUID [--report 文件.json]");
@@ -236,7 +237,7 @@ public sealed record BenchOptions(
         if (!DateTimeOffset.TryParse(epoch, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsedEpoch))
             throw new ArgumentException("--epoch 必须是 ISO-8601 时间。");
         var mode = values.GetValueOrDefault("mode", "replay").ToLowerInvariant();
-        if (mode is not ("online" or "replay")) throw new ArgumentException("--mode 必须是 online 或 replay。");
+        if (mode is not ("online" or "replay" or "offline-login")) throw new ArgumentException("--mode 必须是 online、replay 或 offline-login。");
         return new(
             values.GetValueOrDefault("variant", "oop"), parsed,
             ReadInt(values, "players", 1, 1, 3000),
@@ -352,6 +353,7 @@ public static class TestCharacterSeeder
             player.Combat.Hitpoints = player.Combat.MaxHitpoints = resolved.MaxHitpoints;
             player.Combat.Manapoints = player.Combat.MaxManapoints = resolved.MaxManapoints;
             player.Enqueue(new ActionIntent(action.Id, -1), epoch, catalog.Actions);
+            player.SetPresence(PresenceState.Offline);
             var generated = player.ExportState();
             var state = generated with { Actions = generated.Actions.Select(action => action with { Id = actionInstanceId }).ToArray() };
             result.Add(new(playerId, accountId, player.DisplayName, scenario, local, randomSeed, epoch, fingerprint,
@@ -375,6 +377,7 @@ public static class TestCharacterSeeder
                 || state.DisplayName != character.DisplayName || state.LastSimulatedAt != character.StartAt
                 || state.GameDataFingerprint != catalog.Fingerprint || character.GameDataFingerprint != catalog.Fingerprint
                 || state.World.ExplorationSeed != character.RandomSeed || state.Actions.Count != 1
+                || state.Presence != PresenceState.Offline
                 || state.Actions[0].Id != character.ActionInstanceId || state.Actions[0].Intent.ActionId.Value != character.ActionId
                 || state.Actions[0].RemainingRepeats != -1 || state.Actions[0].Intent.RepeatCount != -1)
                 throw new InvalidOperationException($"{character.DisplayName} manifest 元数据与实际落库初态不一致。");
@@ -440,6 +443,14 @@ public sealed record BenchMetricRecord(
     [JsonPropertyName("mode")] public string? Mode { get; init; }
     [JsonPropertyName("duration_unit")] public string DurationUnit { get; init; } = "seconds";
     [JsonPropertyName("simulated_hours")] public double? SimulatedHours { get; init; }
+    [JsonPropertyName("offline_login_wall_ms")] public double? OfflineLoginWallMs { get; init; }
+    [JsonPropertyName("login_latency_ms")] public BenchLatencySummary? LoginLatency { get; init; }
+    [JsonPropertyName("offline_login_cpu_ms")] public double? OfflineLoginCpuMs { get; init; }
+    [JsonPropertyName("offline_login_allocated_bytes")] public long? OfflineLoginAllocatedBytes { get; init; }
+    [JsonPropertyName("offline_login_simulation_ms")] public double? OfflineLoginSimulationMs { get; init; }
+    [JsonPropertyName("offline_login_system_tick_ms")] public double? OfflineLoginSystemTickMs { get; init; }
+    [JsonPropertyName("offline_login_database_ms")] public double? OfflineLoginDatabaseMs { get; init; }
+    [JsonPropertyName("offline_login_server_measurements")] public IReadOnlyDictionary<string, BenchLatencySummary>? OfflineLoginServerMeasurements { get; init; }
     [JsonPropertyName("requested_duration_seconds")] public double? RequestedDurationSeconds { get; init; }
     [JsonPropertyName("measured_wall_ms")] public double? MeasuredWallMs { get; init; }
     [JsonPropertyName("setup_wall_ms")] public double? SetupWallMs { get; init; }
@@ -475,6 +486,7 @@ public sealed record BenchReport(BenchMetricRecord Metric, DateTimeOffset Starte
     public string? ManifestSha256 { get; init; }
     public IReadOnlyList<BenchProcessSample>? ProcessSamples { get; init; }
     public JsonElement? ServerMetricsBefore { get; init; }
+    public JsonElement? ServerMetricsAfterLogin { get; init; }
     public JsonElement? ServerMetricsAfter { get; init; }
 }
 public sealed record BenchParityStatus(string Status, string Scope, IReadOnlyList<string> ComparedFields, IReadOnlyList<string> NotMeasuredFields);
@@ -1163,8 +1175,8 @@ public static class BenchReportWriter
 
     private static string ToCsv(IReadOnlyList<BenchMetricRecord> reports)
     {
-        var header = "variant,scenario,players,duration,total_wall_ms,cpu_ms,simulation_ms,entity_create_ms,system_tick_ms,snapshot_ms,database_ms,network_ms,allocated_bytes,gc0,gc1,gc2,rss_mb,p50_ms,p95_ms,p99_ms,max_ms,instrumentation_listener_ms,sample_count,measurement_status,errors";
-        var rows = reports.Select(metric => string.Join(',', metric.Variant, metric.Scenario, metric.Players, metric.Duration.ToString(CultureInfo.InvariantCulture), Nullable(metric.TotalWallMs), Nullable(metric.CpuMs), Nullable(metric.SimulationMs), Nullable(metric.EntityCreateMs), Nullable(metric.SystemTickMs), Nullable(metric.SnapshotMs), Nullable(metric.DatabaseMs), Nullable(metric.NetworkMs), Nullable(metric.AllocatedBytes), Nullable(metric.Gc0), Nullable(metric.Gc1), Nullable(metric.Gc2), Nullable(metric.RssMb), Nullable(metric.P50Ms), Nullable(metric.P95Ms), Nullable(metric.P99Ms), Nullable(metric.MaxMs), Nullable(metric.InstrumentationListenerMs), metric.SampleCount, metric.MeasurementStatus, metric.Errors));
+        var header = "variant,scenario,players,duration,total_wall_ms,cpu_ms,simulation_ms,entity_create_ms,system_tick_ms,snapshot_ms,database_ms,network_ms,allocated_bytes,gc0,gc1,gc2,rss_mb,p50_ms,p95_ms,p99_ms,max_ms,instrumentation_listener_ms,sample_count,measurement_status,errors,mode,simulated_hours,offline_login_wall_ms,offline_login_cpu_ms,offline_login_allocated_bytes,offline_login_simulation_ms,offline_login_system_tick_ms,offline_login_database_ms";
+        var rows = reports.Select(metric => string.Join(',', metric.Variant, metric.Scenario, metric.Players, metric.Duration.ToString(CultureInfo.InvariantCulture), Nullable(metric.TotalWallMs), Nullable(metric.CpuMs), Nullable(metric.SimulationMs), Nullable(metric.EntityCreateMs), Nullable(metric.SystemTickMs), Nullable(metric.SnapshotMs), Nullable(metric.DatabaseMs), Nullable(metric.NetworkMs), Nullable(metric.AllocatedBytes), Nullable(metric.Gc0), Nullable(metric.Gc1), Nullable(metric.Gc2), Nullable(metric.RssMb), Nullable(metric.P50Ms), Nullable(metric.P95Ms), Nullable(metric.P99Ms), Nullable(metric.MaxMs), Nullable(metric.InstrumentationListenerMs), metric.SampleCount, metric.MeasurementStatus, metric.Errors, metric.Mode, Nullable(metric.SimulatedHours), Nullable(metric.OfflineLoginWallMs), Nullable(metric.OfflineLoginCpuMs), Nullable(metric.OfflineLoginAllocatedBytes), Nullable(metric.OfflineLoginSimulationMs), Nullable(metric.OfflineLoginSystemTickMs), Nullable(metric.OfflineLoginDatabaseMs)));
         return header + Environment.NewLine + string.Join(Environment.NewLine, rows) + Environment.NewLine;
     }
 

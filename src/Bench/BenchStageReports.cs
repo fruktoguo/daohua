@@ -98,8 +98,11 @@ public static class BenchStageReports
     public static IReadOnlyList<BenchStageMeasurement> Rows(BenchReport report)
     {
         var measurements = new Dictionary<(string Stage, string Scenario), BenchLatencySummary>();
-        if (report.Metric.ServerMeasurements is { } source)
-            foreach (var (key, value) in source)
+        var source = report.Metric.Mode == "offline-login"
+            ? report.Metric.OfflineLoginServerMeasurements ?? report.Metric.ServerMeasurements
+            : report.Metric.ServerMeasurements;
+        if (source is { } measured)
+            foreach (var (key, value) in measured)
             {
                 var split = key.LastIndexOf('|');
                 var stage = CanonicalStage(split < 0 ? key : key[..split]);
@@ -247,8 +250,11 @@ public static class BenchStageReports
         var spec = SpecFor(stage);
         var applicable = report.Metric.Variant == "oop" ? spec.Oop : spec.Ecs;
         var observed = summary is { Count: > 0 };
-        var available = report.Metric.ServerMeasurements is not null || ObservabilityEnabled(report.ServerMetricsBefore)
-            && ObservabilityEnabled(report.ServerMetricsAfter);
+        var available = report.Metric.Mode == "offline-login"
+            ? report.Metric.OfflineLoginServerMeasurements is not null
+                || ObservabilityEnabled(report.ServerMetricsBefore) && ObservabilityEnabled(report.ServerMetricsAfterLogin)
+            : report.Metric.ServerMeasurements is not null
+                || ObservabilityEnabled(report.ServerMetricsBefore) && ObservabilityEnabled(report.ServerMetricsAfter);
         var status = !applicable ? "not_applicable" : observed ? "measured" : available ? "not_observed" : "unavailable";
         return new(stage, scenario, spec.Layer, status,
             observed ? summary!.Count : null, observed ? summary!.TotalMs : null,
@@ -273,7 +279,7 @@ public static class BenchStageReports
             differences.Add("三版游戏数据指纹缺失或不一致。");
         if (!SameNonBlank(reports.Select(report => report.Metric.Mode)))
             differences.Add("三版运行模式缺失或不一致。");
-        else if (reports[0].Metric.Mode == "replay")
+        else if (reports[0].Metric.Mode is "replay" or "offline-login")
         {
             if (reports.Any(report => report.Metric.SimulatedHours is null)
                 || reports.Select(report => report.Metric.SimulatedHours).Distinct().Count() != 1)
@@ -287,11 +293,19 @@ public static class BenchStageReports
                 || reports.Select(report => report.Metric.CommandIntervalMs).Distinct().Count() != 1)
                 differences.Add("三版在线持续时长或命令间隔缺失或不一致。");
         }
-        else differences.Add("report 只接受 replay 或 online 的真实工作负载。");
+        else differences.Add("report 只接受 replay、offline-login 或 online 的真实工作负载。");
         if (reports.Any(report => report.Metric.ConcurrencyLimit is null)
             || reports.Select(report => report.Metric.ConcurrencyLimit).Distinct().Count() != 1)
             differences.Add("三版并发限制缺失或不一致。");
-        if (reports.Any(report => report.Metric.SuccessfulCommands is null)
+        if (reports[0].Metric.Mode == "offline-login")
+        {
+            if (reports.Any(report => report.Metric.ConnectedPlayers != report.Metric.Players
+                || report.Metric.SuccessfulPlayers != report.Metric.Players
+                || report.Metric.SampleCount != report.Metric.Players
+                || report.Metric.OfflineLoginWallMs is null))
+                differences.Add("至少一个版本的离线上线人数或登录耗时不完整。");
+        }
+        else if (reports.Any(report => report.Metric.SuccessfulCommands is null)
             || reports.Select(report => report.Metric.SuccessfulCommands).Distinct().Count() != 1)
             differences.Add("三版成功命令数缺失或不一致。");
         if (reports.Any(report => report.Metric.Errors != 0 || report.Metric.MeasurementStatus != "measured"))

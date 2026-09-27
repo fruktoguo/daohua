@@ -22,26 +22,53 @@ public static class BenchWorkload
         var processSamples = new List<BenchProcessSample>();
         var processSamplesGate = new object();
         var rtt = new BenchLatencyHistogram();
+        var loginLatency = new BenchLatencyHistogram();
         var queue = new BenchLatencyHistogram();
-        JsonElement? before = null, after = null;
+        JsonElement? before = null, afterLogin = null, after = null;
         long attempts = 0, completed = 0;
         var successfulPlayers = new ConcurrentDictionary<Guid, byte>();
         var errors = 0;
         var inFlight = 0;
         var peakInFlight = 0;
         var setupMs = 0d;
+        var loginWallMs = 0d;
         var flushMs = 0d;
         var measured = new Stopwatch();
+        using var sampling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task? sampleTask = null;
+        HttpClient? preclockClient = null;
+        HttpClient? sampleClient = null;
         var successfulConnections = 0;
         long receivedFrames = 0, receivedBytes = 0, sentBytes = 0;
         if (characters.Any(character => character.StartAt != characters[0].StartAt))
             throw new InvalidOperationException("manifest 角色必须共享同一业务起点。");
         try
         {
+            if (options.Mode == "offline-login")
+            {
+                preclockClient = await BenchWebSocketSession.CreateControlClientAsync(characters[0], options, cancellationToken);
+                using var clock = await preclockClient.PostAsJsonAsync("api/debug/bench/simulation-clock",
+                    new { targetTime = characters[0].StartAt.AddHours(options.TargetHours), advance = false }, cancellationToken);
+                clock.EnsureSuccessStatusCode();
+                sampleClient = preclockClient;
+                before = await ReadMetricsAsync(sampleClient, cancellationToken);
+                ValidateBenchmarkMode(before, "replay");
+                if (BenchMeasurements.Integer(before, "sessions") is not 0
+                    || BenchMeasurements.Integer(before, "loadedPlayers") is not 0)
+                    throw new InvalidOperationException("离线上线测试开始前服务端仍有会话或已加载玩家。");
+                measured.Start();
+                if (before is { } initialSample) AddSample(initialSample);
+                sampleTask = SampleAsync();
+            }
             await Parallel.ForEachAsync(characters, new ParallelOptions
             { MaxDegreeOfParallelism = options.Concurrency, CancellationToken = cancellationToken }, async (character, token) =>
             {
-                try { sessions.Add(await BenchWebSocketSession.ConnectAsync(character, options, token)); }
+                var loginStarted = Stopwatch.GetTimestamp();
+                try
+                {
+                    sessions.Add(await BenchWebSocketSession.ConnectAsync(character, options, token));
+                    if (options.Mode == "offline-login") loginLatency.Record(Stopwatch.GetElapsedTime(loginStarted).TotalMilliseconds);
+                }
                 catch (Exception exception) when (IsExpectedFailure(exception))
                 {
                     Interlocked.Increment(ref errors);
@@ -50,32 +77,39 @@ public static class BenchWorkload
             });
             successfulConnections = sessions.Count;
             setupMs = total.Elapsed.TotalMilliseconds;
+            if (options.Mode == "offline-login")
+            {
+                loginWallMs = measured.Elapsed.TotalMilliseconds;
+                measured.Stop();
+                sampling.Cancel();
+                if (sampleTask is not null) await sampleTask;
+            }
             if (successfulConnections != characters.Count) throw new InvalidOperationException($"只建立 {successfulConnections}/{characters.Count} 个会话，拒绝以缩水人数计时。");
             var control = sessions.First().Client;
-            before = await ReadMetricsAsync(control, cancellationToken);
-            if (before is { } initial)
+            if (options.Mode == "offline-login")
             {
-                if (initial.TryGetProperty("benchmarkMode", out var mode) && !string.Equals(mode.GetString(), options.Mode, StringComparison.Ordinal))
-                    throw new InvalidOperationException("服务端 benchmarkMode 与客户端不一致。");
+                afterLogin = await ReadMetricsAsync(control, cancellationToken);
+                if (afterLogin is { } loginSample) AddSample(loginSample);
             }
-            else
+            if (options.Mode != "offline-login")
             {
-                warnings.Enqueue("服务端未提供基准指标；仍执行真实 WS workload，进程/数据库分段指标保持 null。");
-            }
-            if (options.Mode == "replay")
-            {
-                using var clock = await control.PostAsJsonAsync("api/debug/bench/simulation-clock",
-                    new { targetTime = characters[0].StartAt.AddHours(options.TargetHours), advance = false }, cancellationToken);
-                clock.EnsureSuccessStatusCode();
+                sampleClient = control;
+                before = await ReadMetricsAsync(control, cancellationToken);
+                ValidateBenchmarkMode(before, options.Mode);
+                if (options.Mode == "replay")
+                {
+                    using var clock = await control.PostAsJsonAsync("api/debug/bench/simulation-clock",
+                        new { targetTime = characters[0].StartAt.AddHours(options.TargetHours), advance = false }, cancellationToken);
+                    clock.EnsureSuccessStatusCode();
+                }
+                measured.Start();
+                if (before is { } initialSample) AddSample(initialSample);
+                sampleTask = SampleAsync();
             }
             using var semaphore = new SemaphoreSlim(options.Concurrency);
-            using var sampling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            measured.Start();
-            if (before is { } initialSample) AddSample(initialSample);
-            var sampleTask = SampleAsync();
             try
             {
-                await Task.WhenAll(sessions.Select(async session =>
+                if (options.Mode != "offline-login") await Task.WhenAll(sessions.Select(async session =>
                 {
                     long ordinal = 0;
                     while (options.Mode == "replay" ? ordinal == 0 : measured.Elapsed.TotalSeconds < options.DurationSeconds)
@@ -125,7 +159,7 @@ public static class BenchWorkload
             {
                 measured.Stop();
                 sampling.Cancel();
-                await sampleTask;
+                if (sampleTask is not null) await sampleTask;
             }
             // 先统一收尾并等待连接卸载，否则 OOP 的卸载路径会在最终刷盘后追加 Progression 队列行。
             // 下线和关闭本身也会触发服务端的单玩家刷盘。若 500 个会话同时收尾，
@@ -176,6 +210,17 @@ public static class BenchWorkload
                 else AddSample(final);
             }
 
+            void ValidateBenchmarkMode(JsonElement? metrics, string expected)
+            {
+                if (metrics is { } value)
+                {
+                    if (value.TryGetProperty("benchmarkMode", out var mode)
+                        && !string.Equals(mode.GetString(), expected, StringComparison.Ordinal))
+                        throw new InvalidOperationException("服务端 benchmarkMode 与客户端不一致。");
+                }
+                else warnings.Enqueue("服务端未提供基准指标；仍执行真实 WS workload，进程/数据库分段指标保持 null。");
+            }
+
             async Task SampleAsync()
             {
                 try
@@ -183,7 +228,7 @@ public static class BenchWorkload
                     using var timer = new PeriodicTimer(TimeSpan.FromSeconds(options.MetricsIntervalSeconds));
                     while (await timer.WaitForNextTickAsync(sampling.Token))
                     {
-                        var sample = await ReadMetricsAsync(control, sampling.Token);
+                        var sample = await ReadMetricsAsync(sampleClient!, sampling.Token);
                         if (sample is { } value) AddSample(value);
                     }
                 }
@@ -226,6 +271,9 @@ public static class BenchWorkload
         finally
         {
             measured.Stop();
+            sampling.Cancel();
+            if (sampleTask is not null) await sampleTask;
+            preclockClient?.Dispose();
             foreach (var session in sessions)
             {
                 receivedFrames += session.ReceivedFrames;
@@ -237,15 +285,23 @@ public static class BenchWorkload
         total.Stop();
         BenchProcessSample[] capturedProcessSamples;
         lock (processSamplesGate) capturedProcessSamples = processSamples.ToArray();
-        var requestTiming = rtt.Snapshot();
+        var requestTiming = options.Mode == "offline-login" ? loginLatency.Snapshot() : rtt.Snapshot();
         var core = BenchMeasurements.MeasurementDeltas(before, after);
+        var loginCore = BenchMeasurements.MeasurementDeltas(before, afterLogin);
         var counters = BenchMeasurements.CounterDeltas(before, after);
         var queueTiming = queue.Snapshot();
         double? NumberDelta(string name) => BenchMeasurements.Delta(BenchMeasurements.Number(before, name), BenchMeasurements.Number(after, name));
         long? IntegerDelta(string name) => BenchMeasurements.Delta(BenchMeasurements.Integer(before, name), BenchMeasurements.Integer(after, name));
+        double? LoginNumberDelta(string name) => BenchMeasurements.Delta(BenchMeasurements.Number(before, name), BenchMeasurements.Number(afterLogin, name));
+        long? LoginIntegerDelta(string name) => BenchMeasurements.Delta(BenchMeasurements.Integer(before, name), BenchMeasurements.Integer(afterLogin, name));
         double? Sum(string prefix)
         {
             var selected = core.Where(pair => pair.Key == prefix || pair.Key.StartsWith(prefix + "|", StringComparison.Ordinal)).ToArray();
+            return selected.Length == 0 ? null : selected.Sum(pair => pair.Value.TotalMs);
+        }
+        double? LoginSum(string prefix)
+        {
+            var selected = loginCore.Where(pair => pair.Key == prefix || pair.Key.StartsWith(prefix + "|", StringComparison.Ordinal)).ToArray();
             return selected.Length == 0 ? null : selected.Sum(pair => pair.Value.TotalMs);
         }
         var cpu = NumberDelta("cpuMs");
@@ -258,13 +314,19 @@ public static class BenchWorkload
         var hasServerEvidence = core.Count > 0 || counters.Values.Any(value => value is not null)
             || hasProcessDeltas || hasDatabaseDeltas;
         var measurementStatus = errors != 0 ? "failed"
-            : before is null || after is null || !hasServerEvidence ? "partial" : "measured";
+            : before is null || after is null || options.Mode == "offline-login" && afterLogin is null || !hasServerEvidence ? "partial" : "measured";
         if (measurementStatus == "partial")
             warnings.Enqueue("宿主指标窗口缺失或阶段/事件、进程与数据库差分全部不可用；保留真实 WS 结果，测量状态标为 partial。");
-        warnings.Enqueue("p50_ms/p95_ms/p99_ms 为成功命令 RTT；core.* 为服务端真实测量，二者不可互换。CPU/GC/分配为测量窗口进程总量，RSS 包含宿主固定开销；人均分母为成功建立连接的玩家数。");
-        warnings.Enqueue(options.Mode == "online"
-            ? "online 使用真实墙钟与后台模拟；每版本实际时刻不同，终态逐位一致性由独立 replay 同时钟实验验证。"
-            : "replay 使用固定业务截止时间；simulated_hours 为补算跨度，duration 为实际测量秒数。");
+        warnings.Enqueue(options.Mode == "offline-login"
+            ? "p50_ms/p95_ms/p99_ms 为成功登录耗时，包含鉴权、WS、Hello、初始快照和上线登记。"
+            : "p50_ms/p95_ms/p99_ms 为成功命令 RTT；core.* 为服务端真实测量，二者不可互换。");
+        warnings.Enqueue("顶层 CPU/GC/分配为服务端指标起点到最终刷盘的进程总量；offline_login_* 为登录后、清理前的差分。RSS 包含宿主固定开销；人均分母为成功建立连接的玩家数。");
+        warnings.Enqueue(options.Mode switch
+        {
+            "online" => "online 使用真实墙钟与后台模拟；每版本实际时刻不同，终态逐位一致性由独立 replay 同时钟实验验证。",
+            "offline-login" => "offline-login 在登录前固定业务时钟；measured_wall_ms 是并发登录墙钟，simulated_hours 是离线补算跨度；不发送 simulation.advance。",
+            _ => "replay 使用固定业务截止时间；simulated_hours 为补算跨度，duration 为实际测量秒数。"
+        });
         var metric = new BenchMetricRecord(variant.Name, options.Scenario?.ToLowerInvariant() ?? "mixed", characters.Count,
             measured.Elapsed.TotalSeconds, total.Elapsed.TotalMilliseconds, cpu, Sum("core.simulation"), Sum("lifecycle.entity_create"),
             Sum("ecs.system_tick"), Sum("snapshot.export"), NumberDelta("databaseMs"), Sum("network.send"), allocated,
@@ -272,18 +334,26 @@ public static class BenchWorkload
             requestTiming.P50Ms, requestTiming.P95Ms, requestTiming.P99Ms, requestTiming.MaxMs,
             measurementStatus, warnings.ToArray(), errors)
         {
-            Mode = options.Mode, SimulatedHours = options.Mode == "replay" ? options.TargetHours : null,
+            Mode = options.Mode, SimulatedHours = options.Mode is "replay" or "offline-login" ? options.TargetHours : null,
+            OfflineLoginWallMs = options.Mode == "offline-login" ? loginWallMs : null,
+            LoginLatency = options.Mode == "offline-login" && requestTiming.Count > 0 ? requestTiming : null,
+            OfflineLoginCpuMs = LoginNumberDelta("cpuMs"),
+            OfflineLoginAllocatedBytes = LoginIntegerDelta("allocatedBytes"),
+            OfflineLoginSimulationMs = LoginSum("core.simulation"),
+            OfflineLoginSystemTickMs = LoginSum("ecs.system_tick"),
+            OfflineLoginDatabaseMs = LoginNumberDelta("databaseMs"),
+            OfflineLoginServerMeasurements = loginCore.Count == 0 ? null : loginCore,
             RequestedDurationSeconds = options.Mode == "online" ? options.DurationSeconds : null,
             SampleCount = checked((int)requestTiming.Count), MeasuredWallMs = measured.Elapsed.TotalMilliseconds,
             SetupWallMs = setupMs, FlushWallMs = flushMs, ConcurrencyLimit = options.Concurrency,
             PeakInflightRequests = peakInFlight == 0 ? null : peakInFlight,
             ConnectedPlayers = successfulConnections == 0 ? null : successfulConnections,
-            SuccessfulPlayers = successfulPlayers.Count == 0 ? null : successfulPlayers.Count,
+            SuccessfulPlayers = options.Mode == "offline-login" ? successfulConnections : successfulPlayers.Count == 0 ? null : successfulPlayers.Count,
             CommandIntervalMs = options.Mode == "online" ? options.IntervalMs : null,
             AttemptedCommands = attempts == 0 ? null : attempts,
             SuccessfulCommands = completed == 0 ? null : completed,
             CommandsPerSecond = completed == 0 || measured.Elapsed.TotalSeconds <= 0 ? null : completed / measured.Elapsed.TotalSeconds,
-            RequestRtt = requestTiming.Count == 0 ? null : requestTiming,
+            RequestRtt = options.Mode == "offline-login" || requestTiming.Count == 0 ? null : requestTiming,
             ClientQueue = queueTiming.Count == 0 ? null : queueTiming,
             ServerMeasurements = core.Count == 0 ? null : core,
             ServerCounters = counters.Count == 0 ? null : counters,
@@ -302,7 +372,8 @@ public static class BenchWorkload
             new("not_measured", options.Mode, ["manifest", "HelloAck fingerprint", "WS command receipts"], ["terminal persistence parity"]))
         {
             ManifestSha256 = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(characters, BenchJson.Options))).ToLowerInvariant(),
-            ProcessSamples = capturedProcessSamples, ServerMetricsBefore = before, ServerMetricsAfter = after
+            ProcessSamples = capturedProcessSamples, ServerMetricsBefore = before,
+            ServerMetricsAfterLogin = afterLogin, ServerMetricsAfter = after
         };
     }
 
