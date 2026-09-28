@@ -3,7 +3,7 @@ using System.Net;
 
 namespace Server.Clean;
 
-/// <summary>三种实验宿主共用的显式开发边界，启动校验在数据库连接和后台服务之前执行。</summary>
+/// <summary>基准宿主共用的显式开发边界，启动校验在数据库连接和后台服务之前执行。</summary>
 public sealed record BenchmarkHost(string Mode, string Variant, bool ObservabilityEnabled)
 {
     public bool IsReplay => Mode == "replay";
@@ -23,10 +23,8 @@ public sealed record BenchmarkHost(string Mode, string Variant, bool Observabili
         var variant = Environment.GetEnvironmentVariable("DAOHUA_BENCH_VARIANT");
         var database = variant switch
         {
-            "oop" => "daohua_bench_oop",
-            "ecs-current" => "daohua_bench_ecs_current",
             "ecs-optimized" => "daohua_bench_ecs_optimized",
-            _ => throw new InvalidOperationException("基准 variant 必须为 oop、ecs-current 或 ecs-optimized。")
+            _ => throw new InvalidOperationException("基准 variant 必须为 ecs-optimized。")
         };
         var connection = new NpgsqlConnectionStringBuilder(options.ConnectionString);
         if (connection.Database != database || connection.Host is not ("localhost" or "127.0.0.1" or "::1"))

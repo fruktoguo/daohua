@@ -447,12 +447,11 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             }
             var cursor = pipelines.Count > 0 ? pipelines.Values.Min(pipeline => pipeline.Current) : target;
             var steps = 0;
-#if YUOCORE_OPTIMIZED
             // 离线采集/制造的自然边界固定由资源回复窗口切分（默认 5 秒）。
             // 这些玩家没有战斗实体时，直接执行同一批管线原语可消除数百万次
             // Fiber/World/System 往返；一旦队列切换到战斗或旅行，立即回到完整 ECS 路径。
             var bulkCompleted = false;
-            if (EcsAblation.BulkAdvance && playerId is not null && pipelines.Count == 1 && pipelines.Values.All(pipeline => pipeline.CanBulkAdvance))
+            if (playerId is not null && pipelines.Count == 1 && pipelines.Values.All(pipeline => pipeline.CanBulkAdvance))
             {
                 using var bulkMeasurement = RuntimeInstrumentation.Measure("ecs.bulk_advance", scenario);
                 var pipeline = pipelines.Values.Single();
@@ -460,11 +459,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 cursor = pipeline.Current;
                 steps = pipeline.BulkStepCount;
             }
-#endif
-#if YUOCORE_OPTIMIZED
             if (!bulkCompleted)
             {
-#endif
             while (pipelines.Values.Any(pipeline => !pipeline.IsComplete))
             {
                 if (++steps > SimulationEngine.MaxTransitionsPerAdvance)
@@ -485,9 +481,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 await Tick(next, false).ConfigureAwait(false);
                 cursor = next;
             }
-#if YUOCORE_OPTIMIZED
             }
-#endif
             using (RuntimeInstrumentation.Measure("ecs.mailbox.post", scenario))
             await _fiber.PostAsync((_, _) =>
             {
@@ -587,9 +581,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
 
     private void SetActiveEntities(Guid? playerId)
     {
-#if YUOCORE_OPTIMIZED
-        // 消融开关关闭时保持基线语义：系统扫描全体实体，由 ActivePlayerId 门控过滤。
-        if (playerId is not { } id || !EcsAblation.ActiveEntities) return;
+        // 系统 tick 前把扫描集收敛为当前玩家与遭遇实体，避免全量遍历。
+        if (playerId is not { } id) return;
         var player = GetPlayer(id);
         _activeEntities.Clear();
         _activeEntities.Add(player);
@@ -597,15 +590,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         if (encounterId != 0 && World.GetEntity(encounterId) is { } encounter)
             _activeEntities.Add(encounter);
         World.SetActiveEntities(_activeEntities);
-#endif
     }
 
     private void ClearActiveEntities()
     {
-#if YUOCORE_OPTIMIZED
         World.ClearActiveEntities();
         _activeEntities.Clear();
-#endif
     }
 
     private T ExecuteOwned<T>(Func<T> action)

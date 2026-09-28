@@ -84,19 +84,8 @@ public static class Program
     {
         var reports = await BenchReportWriter.ReadManyAsync(options.Report);
         await BenchReportWriter.WriteMissingStageCsvAsync(options.Report, reports);
-        var comparison = BenchComparison.Create(reports);
-        var output = options.ComparisonOutput ?? Path.Combine(options.RepoRoot, "artifacts/bench/benchmark.comparison.json");
-        await BenchReportWriter.WriteComparisonAsync(output, comparison);
-        Console.WriteLine(JsonSerializer.Serialize(new
-        {
-            output = Path.GetFullPath(output),
-            csv = Path.GetFullPath(Path.ChangeExtension(output, ".csv")),
-            reports = reports.Count,
-            stages = comparison.Stages.Count,
-            comparison.RatiosAllowed,
-            comparison.Differences
-        }, BenchJson.Indented));
-        return comparison.Differences.Count == 0 ? 0 : 1;
+        Console.WriteLine(JsonSerializer.Serialize(new { reports = reports.Count }, BenchJson.Indented));
+        return 0;
     }
 
     private static async Task<int> RunWorkloadAsync(BenchOptions options)
@@ -127,7 +116,7 @@ public static class Program
     {
         if (string.IsNullOrWhiteSpace(options.DatabaseB)
             || string.IsNullOrWhiteSpace(options.DatabaseC))
-            throw new ArgumentException("compare 必须提供 --database-b 和 --database-c（--database-a 为可选的历史 oop 参照）。");
+            throw new ArgumentException("compare 必须提供 --database-b 和 --database-c（--database-a 为可选第三库参照）。");
 
         PersistenceCompareResult? result = null;
         PersistenceCompareBatchResult? batch = null;
@@ -176,14 +165,14 @@ public static class Program
     {
         Console.WriteLine("用法：dotnet run --project src/Bench -- seed|probe|run|report [选项]");
         Console.WriteLine("  seed  --output artifacts/bench/characters.json [--players 3000] [--database 连接串]");
-        Console.WriteLine("  probe --variant oop|ecs-current|ecs-optimized --url http://127.0.0.1:5128 [--account 账号 --password 密码] [--report 文件.json]");
-        Console.WriteLine("  run --variant oop|ecs-current|ecs-optimized --url http://127.0.0.1:5128 --manifest 文件.json [--scenario Gathering|Crafting|Combat] --players 1 --mode replay|offline-login|online --concurrency 32 [--target-hours 1] [--duration-seconds 900 --interval-ms 1000] [--report 文件.json]");
+        Console.WriteLine("  probe --variant ecs-optimized --url http://127.0.0.1:5128 [--account 账号 --password 密码] [--report 文件.json]");
+        Console.WriteLine("  run --variant ecs-optimized --url http://127.0.0.1:5128 --manifest 文件.json [--scenario Gathering|Crafting|Combat] --players 1 --mode replay|offline-login|online --concurrency 32 [--target-hours 1] [--duration-seconds 900 --interval-ms 1000] [--report 文件.json]");
         Console.WriteLine("  online 墙钟短测：--duration-seconds 10；15/60 分钟：900/3600。replay 的 --target-hours 仅指业务补算时长。");
         Console.WriteLine("  offline-login 先推进业务时钟，再以真实 WS 上线触发离线补算；不发送 simulation.advance。可用 scripts/bench-offline-login.sh 执行 12 小时、100/500/1000 人矩阵。");
         Console.WriteLine("  seed --resource-exhaustion true 单独生成仅够 2 轮制造的耗尽样本；普通种子按实际配表准备 48 小时材料。");
-        Console.WriteLine("  report --report 'artifacts/bench/*-gathering.json' [--comparison-output artifacts/bench/gathering.comparison.json]（三版本同条件报告）");
+        Console.WriteLine("  report --report 'artifacts/bench/*-gathering.json'（重新生成单报告 stage/counter CSV）");
         Console.WriteLine("  compare --database-b 连接串 --database-c 连接串 [--database-a 连接串] --player-id UUID [--report 文件.json]");
-        Console.WriteLine("  provenance --variant oop|ecs-current|ecs-optimized --output artifacts/runtime/<variant>");
+        Console.WriteLine("  provenance --variant ecs-optimized --output artifacts/runtime/<variant>");
         return 0;
     }
 }
@@ -214,8 +203,7 @@ public sealed record BenchOptions(
     double IntervalMs = 1000,
     double RequestTimeoutSeconds = 120,
     double MetricsIntervalSeconds = 5,
-    bool ResourceExhaustion = false,
-    string? ComparisonOutput = null)
+    bool ResourceExhaustion = false)
 {
     public static BenchOptions Parse(IEnumerable<string> arguments)
     {
@@ -248,8 +236,7 @@ public sealed record BenchOptions(
             values.GetValueOrDefault("database-a"), values.GetValueOrDefault("database-b"), values.GetValueOrDefault("database-c"), values.GetValueOrDefault("player-id"),
             mode, ReadDouble(values, "duration-seconds", 10, 0.1, 86400), ReadInt(values, "concurrency", 32, 1, 3000),
             ReadDouble(values, "interval-ms", 1000, 1, 60000), ReadDouble(values, "request-timeout-seconds", 120, 1, 3600),
-            ReadDouble(values, "metrics-interval-seconds", 5, 0.1, 60), ReadBool(values, "resource-exhaustion", false),
-            values.GetValueOrDefault("comparison-output"));
+            ReadDouble(values, "metrics-interval-seconds", 5, 0.1, 60), ReadBool(values, "resource-exhaustion", false));
     }
 
     private static string FindRepoRoot()
@@ -506,15 +493,14 @@ public sealed record AssemblyProvenance(
         var sourceSha = Directory.Exists(coreDirectory) ? GitSha(Path.GetDirectoryName(coreDirectory)!) : "missing";
         if (!string.Equals(sourceSha, variant.ExpectedYuoCoreSha, StringComparison.Ordinal)) errors.Add($"YuoCore 源码 SHA 不符：{sourceSha}");
         var assemblies = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (var name in new[] { "YuoCore.Abstractions", "YuoCore.Ecs", "YuoCore.Runtime", "Domain", "Server", "ServerEcs", "ServerEcsOptimized", "Protocol" })
+        foreach (var name in new[] { "YuoCore.Abstractions", "YuoCore.Ecs", "YuoCore.Runtime", "Domain", "Server", "Protocol" })
         {
             var path = Path.Combine(artifact, name + ".dll");
             if (!File.Exists(path)) continue;
             var assembly = System.Reflection.Assembly.LoadFile(path);
             assemblies[name] = $"mvid={assembly.ManifestModule.ModuleVersionId:D};sha256={Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant()}";
         }
-        var serverAssembly = variant.Name switch { "oop" => "Server", "ecs-current" => "ServerEcs", _ => "ServerEcsOptimized" };
-        foreach (var required in new[] { serverAssembly, "Domain", "YuoCore.Ecs" })
+        foreach (var required in new[] { "Server", "Domain", "YuoCore.Ecs" })
             if (!assemblies.ContainsKey(required)) errors.Add($"发布目录缺少 {required}.dll");
         return new(variant.Name, sourceSha, assemblies, errors.Count == 0, errors);
     }
@@ -539,10 +525,8 @@ public sealed record BenchVariant(string Name, int Port, string Database, string
 {
     public static BenchVariant Parse(string name) => name.ToLowerInvariant() switch
     {
-        "oop" => new("oop", 5128, "daohua_bench_oop", "artifacts/runtime/oop", "vendor/YuoCore", "f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"),
-        "ecs-current" => new("ecs-current", 5129, "daohua_bench_ecs_current", "artifacts/runtime/ecs-current", "vendor/YuoCore", "f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"),
-        "ecs-optimized" => new("ecs-optimized", 5130, "daohua_bench_ecs_optimized", "artifacts/runtime/ecs-optimized", "vendor/YuoCore-optimized", "68e4b63094ca9d3672e597763e43d3bcb105806f"),
-        _ => throw new ArgumentException($"未知 variant：{name}")
+        "ecs-optimized" => new("ecs-optimized", 5130, "daohua_bench_ecs_optimized", "artifacts/runtime/ecs-optimized", "vendor/YuoCore-optimized", "79cdaebf70ce2c59c33e08adae9f40fdd75e983c"),
+        _ => throw new ArgumentException($"未知 variant：{name}（仅支持 ecs-optimized）")
     };
 }
 
@@ -714,10 +698,10 @@ public static class BenchDatabase
         if (string.IsNullOrWhiteSpace(builder.Database)
             || !builder.Database.StartsWith("daohua_bench_", StringComparison.Ordinal)
             || !BenchVariantNames.Contains(builder.Database, StringComparer.Ordinal))
-            throw new InvalidOperationException("基准 seed 只允许 daohua_bench_oop、daohua_bench_ecs_current 或 daohua_bench_ecs_optimized。");
+            throw new InvalidOperationException("基准 seed 只允许 daohua_bench_ecs_optimized。");
     }
 
-    private static readonly string[] BenchVariantNames = ["daohua_bench_oop", "daohua_bench_ecs_current", "daohua_bench_ecs_optimized"];
+    private static readonly string[] BenchVariantNames = ["daohua_bench_ecs_optimized"];
 }
 
 public static class BenchProbe
@@ -907,9 +891,9 @@ public static class BenchPersistenceComparer
     {
         var rows = new List<PersistenceVariantSnapshot>();
         if (!string.IsNullOrWhiteSpace(databaseA))
-            rows.Add(await ReadAsync("oop", databaseA, playerId, cancellationToken));
-        rows.Add(await ReadAsync("ecs-current", databaseB, playerId, cancellationToken));
-        rows.Add(await ReadAsync("ecs-optimized", databaseC, playerId, cancellationToken));
+            rows.Add(await ReadAsync("a", databaseA, playerId, cancellationToken));
+        rows.Add(await ReadAsync("b", databaseB, playerId, cancellationToken));
+        rows.Add(await ReadAsync("c", databaseC, playerId, cancellationToken));
         var exact = rows.Select(row => row.BusinessFingerprint).Distinct(StringComparer.Ordinal).Count() == 1
                     && rows.All(row => row.Found);
         var warnings = rows.Where(row => !row.Found).Select(row => $"{row.Variant} 未找到玩家 {playerId}。").ToList();
@@ -1133,14 +1117,6 @@ public static class BenchReportWriter
         await File.WriteAllTextAsync(Path.ChangeExtension(path, ".counters.csv"), BenchStageReports.ToCounterCsv(report));
     }
 
-    public static async Task WriteComparisonAsync(string path, BenchComparison comparison)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(comparison, BenchJson.Indented));
-        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".csv"), BenchStageReports.ToComparisonCsv(comparison.Stages));
-        await File.WriteAllTextAsync(Path.ChangeExtension(path, ".counters.csv"), BenchStageReports.ToCounterComparisonCsv(comparison.Counters));
-    }
-
     public static async Task<IReadOnlyList<BenchReport>> ReadManyAsync(string path)
     {
         var files = ReportFiles(path);
@@ -1181,9 +1157,4 @@ public static class BenchReportWriter
     private static string Nullable<T>(T? value) where T : struct => value?.ToString() ?? string.Empty;
 }
 
-public sealed record BenchComparison(IReadOnlyList<BenchReport> Reports, IReadOnlyList<string> Differences,
-    IReadOnlyList<BenchStageComparison> Stages, IReadOnlyList<BenchCounterComparison> Counters,
-    bool RatiosAllowed, IReadOnlyList<string> Warnings)
-{
-    public static BenchComparison Create(IReadOnlyList<BenchReport> reports) => BenchStageReports.Compare(reports);
-}
+

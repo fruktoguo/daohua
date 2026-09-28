@@ -6,7 +6,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
+if [[ ! -f vendor/YuoCore-optimized/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   printf 'YuoCore submodule 未初始化，请执行 git submodule update --init --recursive。\n' >&2
   exit 1
 fi

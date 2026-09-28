@@ -22,9 +22,7 @@ public sealed class EcsActionExecutionComponent : YuoComponent
 public sealed class EcsActionPipeline
 {
     private readonly YuoEntity _entity;
-#if YUOCORE_OPTIMIZED
     private readonly PlayerActionQueueComponent _queue;
-#endif
     private readonly GameDataCatalog _catalog;
     private readonly EcsPlayerActionContext _player;
     private readonly AssetWallet _externalWallet;
@@ -62,9 +60,7 @@ public sealed class EcsActionPipeline
     private EcsActionPipeline(YuoEntity entity, GameDataCatalog catalog, DateTimeOffset target)
     {
         _entity = entity;
-#if YUOCORE_OPTIMIZED
         _queue = entity.GetComponent<PlayerActionQueueComponent>()!;
-#endif
         _catalog = catalog;
         _player = new(entity, catalog);
         _from = _cursor = _player.LastSimulatedAt;
@@ -222,11 +218,7 @@ public sealed class EcsActionPipeline
         if (IsComplete || !_windowOpen || _preparedAction is not null || _waiting) return;
         while (_remainingSeconds > 1e-9 && _player.Actions.Count > 0)
         {
-#if YUOCORE_OPTIMIZED
-            var action = (EcsAblation.ComponentCache ? _queue : _entity.GetComponent<PlayerActionQueueComponent>()!).Actions[0];
-#else
-            var action = _entity.GetComponent<PlayerActionQueueComponent>()!.Actions[0];
-#endif
+            var action = _queue.Actions[0];
             if (action.Status == ActionQueueStatus.Blocked)
             {
                 if (!SimulationEngine.AdvanceBlockedAction(_player, action, _cursor))

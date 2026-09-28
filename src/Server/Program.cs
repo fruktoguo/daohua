@@ -13,7 +13,7 @@ using Protocol;
 using Server.Clean;
 using Server.Clean.Ops;
 using DaoHua.Ecs;
-using ServerEcs;
+using Server;
 
 var builder = WebApplication.CreateBuilder(args);
 var processRole = ResolveProcessRole(args);

@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=../../vendor/YuoCore-optimized" />
+    <ProjectReference Include="../../src/Domain/Domain.csproj" />
     <ProjectReference Include="../../src/Protocol/Protocol.csproj" />
   </ItemGroup>
 </Project>

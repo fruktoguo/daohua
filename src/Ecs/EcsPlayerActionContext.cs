@@ -15,9 +15,8 @@ namespace DaoHua.Ecs;
 public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog catalog) : IPlayerResourceContext
 {
     private PlayerAttributes? _attributes;
-#if YUOCORE_OPTIMIZED
     // 一个请求期间这些粗粒度组件不会被替换，只会修改其内部领域状态。
-    // 优化版缓存引用，避免 8,000 万级自然边界循环反复走组件存储查询。
+    // 缓存引用避免 8,000 万级自然边界循环反复走组件存储查询。
     private readonly PlayerIdentityComponent _identity = entity.GetComponent<PlayerIdentityComponent>()!;
     private readonly PlayerActionQueueComponent _queue = entity.GetComponent<PlayerActionQueueComponent>()!;
     private readonly PlayerProgressionComponent _progression = entity.GetComponent<PlayerProgressionComponent>()!;
@@ -27,7 +26,6 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     private readonly PlayerLoadoutComponent _loadout = entity.GetComponent<PlayerLoadoutComponent>()!;
     private readonly PlayerSettingsComponent _settings = entity.GetComponent<PlayerSettingsComponent>()!;
     private readonly PlayerDuelComponent _duel = entity.GetComponent<PlayerDuelComponent>()!;
-#endif
     private GameDataCatalog? _attributeCatalog;
     private long _attributeRevision = -1;
     private PlayerProgression? _attributeProgression;
@@ -35,87 +33,17 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     private PlayerBuffState? _attributeBuffs;
     private PlayerLoadoutState? _attributeLoadout;
 
-    private PlayerIdentityComponent Identity
-    {
-#if YUOCORE_OPTIMIZED
-        get => EcsAblation.ComponentCache ? _identity : entity.GetComponent<PlayerIdentityComponent>()!;
-#else
-        get => entity.GetComponent<PlayerIdentityComponent>()!;
-#endif
-    }
-
-    private PlayerActionQueueComponent Queue
-    {
-#if YUOCORE_OPTIMIZED
-        get => EcsAblation.ComponentCache ? _queue : entity.GetComponent<PlayerActionQueueComponent>()!;
-#else
-        get => entity.GetComponent<PlayerActionQueueComponent>()!;
-#endif
-    }
+    private PlayerIdentityComponent Identity => _identity;
+    private PlayerActionQueueComponent Queue => _queue;
 
     public PlayerId PlayerId => new(Identity.PlayerId);
-    public PlayerProgression Progression
-    {
-#if YUOCORE_OPTIMIZED
-        get => (EcsAblation.ComponentCache ? _progression : entity.GetComponent<PlayerProgressionComponent>()!).Progression;
-#else
-        get => entity.GetComponent<PlayerProgressionComponent>()!.Progression;
-#endif
-    }
-
-    public PlayerWorldState World
-    {
-#if YUOCORE_OPTIMIZED
-        get => (EcsAblation.ComponentCache ? _world : entity.GetComponent<PlayerWorldComponent>()!).World;
-#else
-        get => entity.GetComponent<PlayerWorldComponent>()!.World;
-#endif
-    }
-
-    public PlayerCombatState Combat
-    {
-#if YUOCORE_OPTIMIZED
-        get => (EcsAblation.ComponentCache ? _combat : entity.GetComponent<PlayerCombatComponent>()!).Combat;
-#else
-        get => entity.GetComponent<PlayerCombatComponent>()!.Combat;
-#endif
-    }
-
-    public PlayerBuffState Buffs
-    {
-#if YUOCORE_OPTIMIZED
-        get => (EcsAblation.ComponentCache ? _buffs : entity.GetComponent<PlayerBuffComponent>()!).Buffs;
-#else
-        get => entity.GetComponent<PlayerBuffComponent>()!.Buffs;
-#endif
-    }
-
-    public PlayerSettingsState Settings
-    {
-#if YUOCORE_OPTIMIZED
-        get => (EcsAblation.ComponentCache ? _settings : entity.GetComponent<PlayerSettingsComponent>()!).Settings;
-#else
-        get => entity.GetComponent<PlayerSettingsComponent>()!.Settings;
-#endif
-    }
-
-    public PlayerLoadoutState Loadout
-    {
-#if YUOCORE_OPTIMIZED
-        get => (EcsAblation.ComponentCache ? _loadout : entity.GetComponent<PlayerLoadoutComponent>()!).Loadout;
-#else
-        get => entity.GetComponent<PlayerLoadoutComponent>()!.Loadout;
-#endif
-    }
-
-    public PlayerDuelState Duel
-    {
-#if YUOCORE_OPTIMIZED
-        get => (EcsAblation.ComponentCache ? _duel : entity.GetComponent<PlayerDuelComponent>()!).Duel;
-#else
-        get => entity.GetComponent<PlayerDuelComponent>()!.Duel;
-#endif
-    }
+    public PlayerProgression Progression => _progression.Progression;
+    public PlayerWorldState World => _world.World;
+    public PlayerCombatState Combat => _combat.Combat;
+    public PlayerBuffState Buffs => _buffs.Buffs;
+    public PlayerSettingsState Settings => _settings.Settings;
+    public PlayerLoadoutState Loadout => _loadout.Loadout;
+    public PlayerDuelState Duel => _duel.Duel;
     public PresenceState Presence => Identity.Presence;
     public DateTimeOffset LastSimulatedAt { get => Queue.LastAdvancedAt; set => Queue.LastAdvancedAt = value; }
     public long StateVersion { get => Identity.StateVersion; set => Identity.StateVersion = value; }

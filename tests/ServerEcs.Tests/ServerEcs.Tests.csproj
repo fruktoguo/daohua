@@ -13,12 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- ecs-current 对照腿测试：直引项目的全局属性集必须与 ServerEcs 侧逐字一致，
-         否则同一编译会话出现两套 Domain/Ecs 实例并行写同名输出目录。 -->
-    <ProjectReference Include="../../src/Ecs/Ecs.csproj" AdditionalProperties="YuoCoreRoot=../../vendor/YuoCore;EcsBuildVariant=ecs-current" />
-    <ProjectReference Include="../../src/ServerEcs/ServerEcs.csproj" />
-    <ProjectReference Include="../../src/Server.Clean/Server.Clean.csproj" AdditionalProperties="YuoCoreRoot=../../vendor/YuoCore" />
-    <ProjectReference Include="../../src/Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=../../vendor/YuoCore" />
+    <ProjectReference Include="../../src/Ecs/Ecs.csproj" />
+    <ProjectReference Include="../../src/Server/Server.csproj" />
+    <ProjectReference Include="../../src/Server.Clean/Server.Clean.csproj" />
+    <ProjectReference Include="../../src/Domain/Domain.csproj" />
     <ProjectReference Include="../../src/Protocol/Protocol.csproj" />
   </ItemGroup>
 </Project>

@@ -11,7 +11,7 @@ using Domain.World;
 using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
 using Server.Clean;
-using ServerEcs;
+using Server;
 using Xunit;
 
 namespace ServerEcs.Tests;

@@ -4,7 +4,7 @@ using Domain.GameData;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Server.Clean;
-using ServerEcs;
+using Server;
 
 namespace Server.Tests;
 

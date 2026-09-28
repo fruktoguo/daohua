@@ -20,7 +20,7 @@ COPY global.json ./
 # 直接复制新基线源码；.dockerignore 排除 bin/obj、运行数据、旧文档和 secrets。
 COPY src/ ./src/
 COPY config/game-data/ ./config/game-data/
-COPY vendor/YuoCore/src/ ./vendor/YuoCore/src/
+COPY vendor/YuoCore-optimized/src/ ./vendor/YuoCore-optimized/src/
 RUN dotnet restore src/Server/Server.csproj --nologo \
     && dotnet restore src/ComputeNode/ComputeNode.csproj --nologo
 RUN dotnet publish src/Server/Server.csproj \

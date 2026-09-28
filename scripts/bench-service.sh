@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 三版本基准服务入口。每次只负责一个变体，避免同名 YuoCore 程序集进入同一进程。
-# 默认不启动生产服务；--build 只发布当前选择的项目，--probe 通过真实 HTTP/WS 探针。
+# 基准服务入口：生产宿主（src/Server = 优化版 ECS）的独立发布/启动/停止/探针。
+# 默认不启动生产服务；--build 只发布到独立产物目录，--probe 通过真实 HTTP/WS 探针。
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VARIANT=""
 BUILD=0
@@ -17,12 +17,11 @@ SHARD_COUNT=""
 
 usage() {
   cat <<'EOF'
-用法：scripts/bench-service.sh --variant ecs-current|ecs-optimized [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间] [--shard-count 数量]
-  ecs-current     端口 5129，数据库 daohua_bench_ecs_current，src/ServerEcs + vendor/YuoCore（基线对照变体）
-  ecs-optimized   端口 5130，数据库 daohua_bench_ecs_optimized，src/Server + vendor/YuoCore-optimized（生产变体）
+用法：scripts/bench-service.sh --variant ecs-optimized [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间] [--shard-count 数量]
+  ecs-optimized   端口 5130，数据库 daohua_bench_ecs_optimized，src/Server + vendor/YuoCore-optimized（生产宿主）
 环境变量：DAOHUA_DATABASE_URL 覆盖数据库连接串，ASPNETCORE_ENVIRONMENT 默认 Development。
 --simulation-target 仅在 Development 基准服务固定业务模拟截止时间；租约/会话仍使用系统 UTC。
---shard-count 仅对 ECS 变体设置 Ecs:ShardCount；省略时 ECS 基准默认为 4，OOP 不设置。
+--shard-count 设置 Ecs:ShardCount；省略时默认为 4。
 EOF
 }
 
@@ -45,13 +44,9 @@ done
 
 if [[ -z "$VARIANT" ]]; then echo "必须提供 --variant" >&2; usage >&2; exit 2; fi
 case "$VARIANT" in
-  oop)
-    echo "oop 变体已退役：生产架构已切换为优化版 ECS（src/Server = ServerEcs 宿主 + vendor/YuoCore-optimized）" >&2; exit 2 ;;
-  ecs-current)
-    PROJECT="$ROOT_DIR/src/ServerEcs/ServerEcs.csproj"; PORT=5129; DATABASE="daohua_bench_ecs_current"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-current"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="056610913033c4296e9e3d9cc13c42dcf8e95686"; ;;
   ecs-optimized)
     PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="79cdaebf70ce2c59c33e08adae9f40fdd75e983c"; ;;
-  *) echo "不支持的 variant：$VARIANT" >&2; exit 2 ;;
+  *) echo "不支持的 variant：$VARIANT（仅保留 ecs-optimized 生产宿主基准）" >&2; exit 2 ;;
 esac
 if [[ -n "$PORT_OVERRIDE" ]]; then PORT="$PORT_OVERRIDE"; fi
 if [[ -n "$SHARD_COUNT" ]] && ! [[ "$SHARD_COUNT" =~ ^[0-9]+$ ]] ; then echo "shard 数量无效：$SHARD_COUNT" >&2; exit 2; fi
@@ -120,19 +115,13 @@ if ((BUILD)); then
   fi
   rm -rf "$ARTIFACT"
   mkdir -p "$ARTIFACT"
-  # BaseIntermediateOutputPath 必须作为全局属性传入（早于 Microsoft.Common.props），
-  # 否则项目引用会混用默认 obj，导致两个同名 YuoCore 的生成文件互相污染。
-  build_args=(publish "$PROJECT" -c Release -o "$ARTIFACT" "/p:BenchVariant=$VARIANT" "/p:EcsBuildVariant=$VARIANT" "/p:DomainBuildVariant=$VARIANT" "/p:EcsIsolatedBuild=true" "/p:DomainIsolatedBuild=true" "/p:YuoCoreRoot=$CORE" "/m:1")
+  build_args=(publish "$PROJECT" -c Release -o "$ARTIFACT" "/m:1")
   if ((NO_RESTORE)); then build_args+=(--no-restore); fi
   dotnet "${build_args[@]}"
 fi
 
 if ((START)); then
-  case "$VARIANT" in
-    ecs-current) dll="$ARTIFACT/ServerEcs.dll" ;;
-    ecs-optimized) dll="$ARTIFACT/Server.dll" ;;
-    *) echo "不支持的 variant：$VARIANT" >&2; exit 2 ;;
-  esac
+  dll="$ARTIFACT/Server.dll"
   if [[ ! -f "$dll" ]]; then
     echo "找不到发布产物，请先使用 --build" >&2; exit 4
   fi

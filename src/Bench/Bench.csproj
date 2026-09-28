@@ -9,7 +9,7 @@
     <RootNamespace>DaoHua.Bench</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=../../vendor/YuoCore-optimized" />
+    <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>

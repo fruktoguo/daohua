@@ -14,7 +14,7 @@ using Domain.World;
 using Protocol;
 using Server.Clean;
 
-namespace ServerEcs;
+namespace Server;
 
 /// <summary>
 /// Clean 宿主到 ECS 世界的单写者适配边界。鉴权、协议、SectionCodec、资产事务和
@@ -43,14 +43,7 @@ public sealed class EcsPlayerRuntimeAdapter(
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _playerGates = new();
     private readonly ConcurrentDictionary<Guid, RecentRequests> _recentRequests = new();
     private readonly ConcurrentDictionary<Guid, long> _attributeRevisions = new();
-#if !YUOCORE_OPTIMIZED
-    // 当前 ECS 保留全局加载门，作为基线；优化 ECS 由玩家锁和 shard owner gate 提供隔离。
-    private const bool UseLoadGate = true;
-#else
-    // 消融实验（TASK-20260927-07）：DAOHUA_ECS_OPT_PARALLELLOAD=0 时在优化版恢复该门。
-    private static bool UseLoadGate => !EcsAblation.ParallelLoad;
-#endif
-    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    // 不设全局加载门：玩家级 gate 与 shard owner gate 已提供单写者隔离。
     private readonly IPlayerSimulationClock _simulationClock = simulationClock ?? PlayerSimulationClock.FromEnvironment();
     private readonly ILogger<EcsPlayerRuntimeAdapter> _logger = logger;
     private const int LogBufferCapacity = 200;
@@ -98,9 +91,6 @@ public sealed class EcsPlayerRuntimeAdapter(
         if (playerId == Guid.Empty) throw new ArgumentException("PlayerId 不能为空。", nameof(playerId));
         if (_loaded.TryGetValue(playerId, out var cached)) return cached;
 
-        if (UseLoadGate) await _loadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
         if (_loaded.TryGetValue(playerId, out cached)) return cached;
         using var loadMeasurement = RuntimeInstrumentation.Measure("lifecycle.player_load");
         var bundle = await sections.LoadAsync(playerId, cancellationToken).ConfigureAwait(false)
@@ -151,8 +141,6 @@ public sealed class EcsPlayerRuntimeAdapter(
             _pendingReceipts.TryRemove(playerId, out _);
             throw;
         }
-        }
-        finally { if (UseLoadGate) _loadGate.Release(); }
     }
 
     public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
@@ -813,7 +801,6 @@ public sealed class EcsPlayerRuntimeAdapter(
             catch (Exception exception) { _logger.LogError(exception, "ECS 玩家运行时关闭时释放失败 player={PlayerId}", playerId); }
         }
         _disposed = true;
-        _loadGate.Dispose();
         foreach (var gate in _playerGates.Values) gate.Dispose();
         await ecs.DisposeAsync().ConfigureAwait(false);
     }

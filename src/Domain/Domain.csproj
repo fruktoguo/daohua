@@ -7,16 +7,11 @@
     <RootNamespace>Domain</RootNamespace>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
-    <!--
-      生产内核即优化版 YuoCore：所有未显式指定根目录的引用方统一落在 optimized。
-      ecs-current 对照腿由 ServerEcs 经 AdditionalProperties 显式传入基线根目录。
-    -->
-    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore-optimized</YuoCoreRoot>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="$(YuoCoreRoot)/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
-    <ProjectReference Include="$(YuoCoreRoot)/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore-optimized/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore-optimized/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
   </ItemGroup>
 
   <ItemGroup>

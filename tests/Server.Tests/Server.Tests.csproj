@@ -4,8 +4,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <!-- 生产宿主即优化版 ECS：直引 Domain/ComputeNode 必须沿引用边显式传入优化内核根，避免基线 YuoCore.Ecs 混入运行时。 -->
-    <YuoCoreRoot>../../vendor/YuoCore-optimized</YuoCoreRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,10 +14,10 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Server/Server.csproj" />
-    <ProjectReference Include="../../src/Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
+    <ProjectReference Include="../../src/Domain/Domain.csproj" />
     <ProjectReference Include="../../src/Protocol/Protocol.csproj" />
     <!-- 引用 ComputeNode 程序集让 golden vector 直接驱动节点真实引擎（DeterministicBatchEngine），
          两端比对同一实现而非复刻逻辑；节点内部契约类型经 JSON 线协议往返比对，不走共享类型。 -->
-    <ProjectReference Include="../../src/ComputeNode/ComputeNode.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
+    <ProjectReference Include="../../src/ComputeNode/ComputeNode.csproj" />
   </ItemGroup>
 </Project>
