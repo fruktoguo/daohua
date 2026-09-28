@@ -28,6 +28,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     private readonly YuoFiber _fiber;
     private readonly bool _previousCloseSystemTry;
     private readonly bool _ownsCloseSystemTry;
+    private EcsCombatTriggerSink? _triggerSink;
     private bool _disposed;
 
     public EcsWorldShard(GameDataCatalog? gameData = null, DateTimeOffset? startAt = null, string? fiberName = null, bool setWorldAsDefault = true, bool ownCloseSystemTry = true)
@@ -693,6 +694,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var encounterEntity = new YuoEntity(World); encounterEntity.EntityName = $"encounter:{encounterId}:{seed}";
         RuntimeInstrumentation.Count("lifecycle.entity_created.encounter");
         var encounter = encounterEntity.AddComponent<CombatEncounterComponent>(); encounter.EncounterId = encounterId; encounter.PlayerEntityId = player.ID; encounter.State = state; encounter.Seed = seed;
+        state.TriggerSink = _triggerSink ??= new EcsCombatTriggerSink(World);
         // 搜寻完成边界已写入 World 时钟，但队列提交系统尚未运行；必须以本帧
         // 的 ECS 时钟作为战斗绝对起点，不能读取仍停在上一边界的 LastAdvancedAt。
         encounter.StartedAt = _clock.Current;
@@ -706,10 +708,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             enemy.GetComponent<MonsterIdentityComponent>()!.DisplayName = enemyDefinitions[i].Name;
             var combatant = enemy.AddComponent<CombatantComponent>(); combatant.CombatantId = state.Enemies[i].Id; combatant.Stats = state.Enemies[i].Stats; combatant.State = state.Enemies[i];
             enemy.AddComponent<SkillStateComponent>().Skills.AddRange(enemyDefinitions[i].Skills); enemy.AddComponent<BuffComponent>(); enemy.AddComponent<DropProfileComponent>().Drops = enemyDefinitions[i].DropTable;
+            CombatTriggerSurface.Attach(enemy, state.Enemies[i]);
             enemyIds.Add(enemy.ID);
         }
         encounter.EnemyEntityIds = enemyIds;
         var playerCombatant = player.GetOrAddComponent<CombatantComponent>(); playerCombatant.CombatantId = state.Player.Id; playerCombatant.Stats = state.Player.Stats; playerCombatant.State = state.Player; playerCombatant.IsPlayer = true;
+        CombatTriggerSurface.Attach(player, state.Player);
         playerCombat.Encounter = state; playerCombat.EncounterSeed = seed;
         playerCombat.EncounterEntityId = encounterEntity.ID;
         encounter.AttributeRevision = PlayerAttributeResolver.InputRevision(player.GetComponent<PlayerProgressionComponent>()!.Progression,
@@ -765,6 +769,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         encounter.PlayerEntityId = player.ID;
         encounter.State = state;
         encounter.Seed = state.Seed;
+        state.TriggerSink = _triggerSink ??= new EcsCombatTriggerSink(World);
         // 搜寻完成边界已写入 World 时钟，但队列提交系统尚未运行；必须以本帧
         // 的 ECS 时钟作为战斗绝对起点，不能读取仍停在上一边界的 LastAdvancedAt。
         encounter.StartedAt = startedAt;
@@ -785,6 +790,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             enemy.AddComponent<SkillStateComponent>().Skills.AddRange(enemyState.Skills);
             enemy.AddComponent<BuffComponent>();
             enemy.AddComponent<DropProfileComponent>().Drops = definition?.DropTable ?? [];
+            CombatTriggerSurface.Attach(enemy, enemyState);
             enemyIds.Add(enemy.ID);
         }
         encounter.EnemyEntityIds = enemyIds;
@@ -793,6 +799,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         playerCombatant.Stats = state.Player.Stats;
         playerCombatant.State = state.Player;
         playerCombatant.IsPlayer = true;
+        CombatTriggerSurface.Attach(player, state.Player);
         var playerCombat = player.GetOrAddComponent<PlayerCombatComponent>();
         playerCombat.Encounter = state;
         playerCombat.EncounterSeed = state.Seed;

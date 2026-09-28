@@ -259,6 +259,7 @@ public sealed class EcsActionPipeline
                     if (_catalog.BaseAttributes is null || revision != _battle.AttributeRevision)
                     {
                         _battle.State.Player.RefreshStats(_player.ResolveAttributes(_catalog).ToCombatant());
+                        CombatTriggerSurface.Sync(_entity, _battle.State.Player);
                         _battle.AttributeRevision = revision;
                     }
                     _battleFrom = _battle.State.ElapsedSeconds;

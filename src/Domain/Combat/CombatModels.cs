@@ -246,6 +246,11 @@ public sealed class CombatantState
 
     /// <summary>战斗者标识（player 或 enemy:{index}）</summary>
     public string Id { get; }
+    /// <summary>
+    /// ECS 宿主挂接的单位实体标识；-1 表示未绑定实体。
+    /// 运行时字段，不进入快照——Attach/恢复挂接时由宿主回填，纯领域路径恒为 -1。
+    /// </summary>
+    public long EntityId { get; set; } = -1;
     /// <summary>配表怪物定义 ID（玩家为 null）。</summary>
     public string? DefinitionId { get; set; }
     /// <summary>战斗静态属性面板；进行中战斗跨步复用时由 <see cref="RefreshStats"/> 换入最新结算结果。</summary>
@@ -407,6 +412,16 @@ public sealed class CombatEncounterState
     public double PlayerRespawnAtSeconds { get; internal set; } = double.PositiveInfinity;
     /// <summary>倒地窗口判定：玩家已阵亡且存在待触发复活点（仅原地复活模式可达）。</summary>
     public bool IsPlayerDowned => !Player.IsAlive && double.IsFinite(PlayerRespawnAtSeconds);
+    /// <summary>
+    /// 段内待派发触发器队列：伤害落账等结算点按序入队，战斗边界在同一序列点统一消费。
+    /// 运行时字段，不进入快照——纯领域路径由引擎内联数学消费，ECS 宿主由 RunSystem 派发消费。
+    /// </summary>
+    public List<PendingCombatTrigger> PendingTriggers { get; } = [];
+    /// <summary>
+    /// 触发器派发口（运行时）：ECS 宿主挂接实体派发器，null 时引擎走内联数学等价路径。
+    /// 不进入快照；恢复战斗由宿主在挂接时重新装配。
+    /// </summary>
+    internal ICombatTriggerSink? TriggerSink { get; set; }
     /// <summary>玩家方友方列表的会话缓存：玩家独自成军恒定 [Player]，出手边界每帧复用免分配。</summary>
     private CombatantState[]? _playerAllies;
     internal IReadOnlyList<CombatantState> PlayerAllies => _playerAllies ??= [Player];

@@ -660,7 +660,6 @@ public static class DeterministicCombatEngine
             Count = countOverride ?? attacker.AttackCount,
             AtSeconds = at
         };
-        CombatHookPipeline.MutateResolve(context);
         var attack = context.AttackStats;
         var defense = target.Stats;
         var contestRoll = Roll(encounter.Seed, side, context.Count, 0);
@@ -722,7 +721,6 @@ public static class DeterministicCombatEngine
         context.Broken = broken;
         context.Parried = parried;
         context.Damage = damage;
-        CombatHookPipeline.MutateDamage(context);
         context.Damage = Math.Max(0, context.Damage);
         target.Hitpoints = Math.Max(0, target.Hitpoints - context.Damage);
         attacker.AttackCount += 1;
@@ -733,13 +731,23 @@ public static class DeterministicCombatEngine
         var mainEventIndex = events.Count;
         events.Add(new CombatEvent(at, attacker.Id, target.Id, context.Damage, context.Hit, attack.DamageKind, target.Hitpoints)
         { Critical = context.Critical, Break = context.Broken, Parried = context.Parried, AbilityId = abilityId });
-        CombatHookPipeline.ApplyAftermath(context);
-        events[mainEventIndex] = events[mainEventIndex] with
-        {
-            AttackerManapointsAfter = attacker.Manapoints,
-            TargetManapointsAfter = target.Manapoints
-        };
-        if (context.DerivedEvents is { } derived) events.AddRange(derived);
+        EmitHitTriggers(encounter, context, events, mainEventIndex);
+    }
+
+    /// <summary>
+    /// 命中落账后的触发器入队与固定点消费：攻击方/受击方各入队一条，按入队顺序立即消费，
+    /// 消费点与原 ApplyAftermath 同位——UpdateOutcome 永远在触发器结算之后运行。
+    /// 衍生事件与主事件灵力回填由派发方按序完成。
+    /// </summary>
+    private static void EmitHitTriggers(CombatEncounterState encounter, CombatHitContext context,
+        List<CombatEvent> events, int mainEventIndex)
+    {
+        var pending = encounter.PendingTriggers;
+        pending.Add(new PendingCombatTrigger(CombatTriggerKind.OnHit,
+            context.Attacker.EntityId, context.Attacker, context, events, mainEventIndex));
+        pending.Add(new PendingCombatTrigger(CombatTriggerKind.OnHit,
+            context.Target.EntityId, context.Target, context, events, mainEventIndex));
+        (encounter.TriggerSink ?? InlineCombatTriggerSink.Instance).Drain(encounter);
     }
 
     internal static string? AbilityText(JsonElement value, string key)
@@ -752,18 +760,7 @@ public static class DeterministicCombatEngine
         => Enum.TryParse<CombatElement>(AbilityText(ability, "element") ?? "none", true, out var element) ? element : CombatElement.None;
 
     internal static double Roll(long seed, ulong side, double attackCount, ulong channel)
-    {
-        // SplitMix64 混合固定计数器；各判定使用独立通道，切片与恢复不会改变随机流。
-        unchecked
-        {
-            var value = (ulong)seed ^ ((ulong)BitConverter.DoubleToInt64Bits(attackCount) * 0x9E3779B97F4A7C15UL)
-                ^ ((side + 1) * 0xD1B54A32D192ED03UL) ^ ((channel + 1) * 0x94D049BB133111EBUL);
-            value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
-            value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
-            value ^= value >> 31;
-            return (value >> 11) * (1d / 9007199254740992d);
-        }
-    }
+        => DeterministicRoll.Next(seed, side, attackCount, channel);
 
     /// <summary>
     /// 根据交战双方存活状态更新战局结果。

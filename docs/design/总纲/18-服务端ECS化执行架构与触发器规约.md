@@ -114,6 +114,7 @@ AdvanceTo(state, windowTarget):
 序列契约（确定性红线）：
 
 - 触发器消费点固定在"本边界结算后、下一边界取数前"；`UpdateOutcome` 永远在触发器结算之后——**OnHitHeal 可以救活自己**，这是"挨打回血顶不顶得住下一刀"语义的正确位置。
+- 命中反应（OnHit）的派发粒度精确化为**每次命中结算后立即 drain**：同一自然边界内可能有多个单位先后出手，若推迟到边界末统一消费，衍生伤害（反伤致死）的落账时序会相对后续出手错位——"命中后立即消费"是保持旧内联结算时序逐位等价的唯一合法点位，同时也是"边界结算后、下一边界取数前"的更严格实现。
 - 触发器内消耗 RNG 只能走 `encounter` 固定随机流，消费顺序 = `PendingTriggers` 入队顺序。
 - 触发器不得改变边界时刻表（只可改数值与队列内容）；新增边界只能走正常 `Next*At` 计算。
 
@@ -138,7 +139,7 @@ AdvanceTo(state, windowTarget):
 
 - 8 个 `PlayerSectionKind` 落库格式主体不动；`ExportSnapshot`/`SectionCodec` 契约不变。
 - 组件↔分段映射层扩展：新组件映射进既有分段（`PlayerResourcesComponent`→Combat；reactive buff→Buffs）。
-- `ActiveBuff` 记录扩展触发器字段（`TriggerKind`/`Params`），Buffs 分段格式升版——内测期允许破坏式升级，同步 `PostgresSchema` 与 DataTool 校验。
+- `ActiveBuff` 记录扩展触发器字段（`TriggerKind`/`Params`）——**挂钩点**：首个"buff 定义携带触发参数"的特性落地时同步扩展，届时 Buffs 分段格式升版并同步 `PostgresSchema` 与 DataTool 校验；当前 reactive 参数经 `CombatantStats.Effects` 链路承载（装备 specialMechanics/怪物配表），无独立 wire 需求。
 
 ## 7. 确定性与并发守则
 
