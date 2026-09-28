@@ -35,10 +35,10 @@ public sealed class EcsCombatParityTests
             [new PlayerAbilitySlot("ability.heavy-slash", 1, [])],
             [new PlayerEquipmentSlot("equipment.qingfeng-sword", 2)]);
         var resolved = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant();
-        player.Combat.MaxHitpoints = resolved.MaxHitpoints;
-        player.Combat.Hitpoints = resolved.MaxHitpoints;
-        player.Combat.MaxManapoints = resolved.MaxManapoints;
-        player.Combat.Manapoints = resolved.MaxManapoints;
+        player.Resources.MaxHitpoints = resolved.MaxHitpoints;
+        player.Resources.Hitpoints = resolved.MaxHitpoints;
+        player.Resources.MaxManapoints = resolved.MaxManapoints;
+        player.Resources.Manapoints = resolved.MaxManapoints;
         player.Buffs.Active.Add(new ActiveBuff("buff.test-haste", SeedTime.AddSeconds(2).ToUnixTimeSeconds(),
             1, "疾风", AttackSpeedPoints: 500));
         var state = player.ExportState();

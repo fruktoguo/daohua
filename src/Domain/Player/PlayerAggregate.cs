@@ -172,7 +172,11 @@ public sealed class PlayerWorldState
 /// <summary>
 /// 角色基础战斗属性（运行时由装备、功法与境界动态加成覆盖）。
 /// </summary>
-public sealed class PlayerCombatState
+/// <summary>
+/// 角色战斗资源分段：气血/灵力池与自然回复游标。战斗内外同一份状态，
+/// 触发器与行动结算直接读写；落库时并入 Combat 分段文档，线上格式不变。
+/// </summary>
+public sealed class PlayerResourceState
 {
     /// <summary>当前气血生命值</summary>
     public double Hitpoints { get; set; } = 100;
@@ -182,12 +186,16 @@ public sealed class PlayerCombatState
     public double Manapoints { get; set; } = 100;
     /// <summary>最大灵力上限</summary>
     public double MaxManapoints { get; set; } = 100;
+    /// <summary>自然回复周期（每 5 秒结算一次）的累计进度余量。</summary>
+    public double RegenCarrySeconds { get; set; }
+}
+
+public sealed class PlayerCombatState
+{
     /// <summary>基础攻击威能</summary>
     public double AttackPower { get; set; } = 10;
     /// <summary>基础防御护甲</summary>
     public double Defense { get; set; } = 10;
-    /// <summary>自然回复周期（每 5 秒结算一次）的累计进度余量。</summary>
-    public double RegenCarrySeconds { get; set; }
     /// <summary>技能调度状态（冷却、吟唱与施放计数）。</summary>
     public PlayerCombatSkillState Skills { get; set; } = PlayerCombatSkillState.Empty;
 }
@@ -415,6 +423,8 @@ public sealed partial class PlayerAggregate
     public PlayerProgression Progression { get; } = new();
     /// <summary>世界漫游分段。</summary>
     public PlayerWorldState World { get; } = new();
+    /// <summary>战斗资源分段（气血/灵力池与回复游标）。</summary>
+    public PlayerResourceState Resources { get; } = new();
     /// <summary>战斗属性分段。</summary>
     public PlayerCombatState Combat { get; } = new();
     /// <summary>Buff 增益分段。</summary>
@@ -671,9 +681,9 @@ public sealed partial class PlayerAggregate
     {
         var index = _actions.FindIndex(action => action.Id == actionInstanceId);
         if (index < 0) return false;
-        if (_actions[index].Expedition is not null && Combat.Hitpoints <= 0)
+        if (_actions[index].Expedition is not null && Resources.Hitpoints <= 0)
         {
-            Combat.Hitpoints = 1;
+            Resources.Hitpoints = 1;
             MarkDirty(PlayerSectionKind.Combat);
         }
         // 实例离开队列即归档其统计账本；未传精确时刻时按当前模拟时钟收尾。

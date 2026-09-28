@@ -64,7 +64,7 @@ public sealed class CombatExpeditionSimulationTests
         Assert.Equal(ActionQueueStatus.Running, action.Status);
         Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition!.Phase);
         var respawnAt = Assert.IsType<double>(action.Expedition.PlayerRespawnAtSeconds);
-        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Equal(0, player.Resources.Hitpoints);
         var enemy = Assert.Single(action.Expedition.Enemies!);
         Assert.True(enemy.State.Hitpoints > 0);
         Assert.Contains(result.Events, entry => entry.Code == "combat.lost");
@@ -74,13 +74,13 @@ public sealed class CombatExpeditionSimulationTests
         var restored = PlayerAggregate.Restore(player.ExportState());
         var boundary = player.LastSimulatedAt.AddSeconds(remaining);
         SimulationEngine.AdvanceTo(player, boundary.AddMilliseconds(-1), catalog);
-        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Equal(0, player.Resources.Hitpoints);
         Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition.Phase);
         Assert.NotNull(action.Expedition.PlayerRespawnAtSeconds);
         var respawned = SimulationEngine.AdvanceTo(player, boundary, catalog);
         SimulationEngine.AdvanceTo(restored, boundary, catalog);
         Assert.Contains(respawned.Events, entry => entry.Code == "combat.respawned");
-        Assert.Equal(player.Combat.MaxHitpoints, player.Combat.Hitpoints);
+        Assert.Equal(player.Resources.MaxHitpoints, player.Resources.Hitpoints);
         Assert.Equal(CombatExpeditionPhase.Combat, action.Expedition.Phase);
         Assert.Null(action.Expedition.PlayerRespawnAtSeconds);
         Assert.Equal(-1, action.RemainingRepeats);
@@ -107,7 +107,7 @@ public sealed class CombatExpeditionSimulationTests
         Assert.Equal(CombatExpeditionPhase.Respawning, action.Expedition!.Phase);
         Assert.Null(action.Expedition.PlayerRespawnAtSeconds);
         Assert.True(action.Expedition.Enemies is null || action.Expedition.Enemies.Count == 0);
-        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Equal(0, player.Resources.Hitpoints);
         Assert.Contains(result.Events, entry => entry.Code == "combat.lost");
         Assert.Equal(1, player.Progression.TotalDefeats);
         var remaining = action.Expedition.PhaseDurationSeconds - action.Expedition.PhaseElapsedSeconds;
@@ -115,8 +115,8 @@ public sealed class CombatExpeditionSimulationTests
         var boundary = player.LastSimulatedAt.AddSeconds(remaining);
         var respawned = SimulationEngine.AdvanceTo(player, boundary, catalog);
         Assert.Contains(respawned.Events, entry => entry.Code == "combat.respawned");
-        Assert.Equal(player.Combat.MaxHitpoints, player.Combat.Hitpoints);
-        Assert.Equal(player.Combat.MaxManapoints, player.Combat.Manapoints);
+        Assert.Equal(player.Resources.MaxHitpoints, player.Resources.Hitpoints);
+        Assert.Equal(player.Resources.MaxManapoints, player.Resources.Manapoints);
         Assert.Equal(CombatExpeditionPhase.Search, action.Expedition.Phase);
         Assert.Equal(1, action.Expedition.WaveNumber);
         Assert.Equal(-1, action.RemainingRepeats);
@@ -170,7 +170,7 @@ public sealed class CombatExpeditionSimulationTests
         var second = SimulationEngine.AdvanceTo(restored, Baseline.AddSeconds(2), catalog);
 
         Assert.Equal(first.CompletedRepeats, second.CompletedRepeats);
-        Assert.Equal(player.Combat.Hitpoints, restored.Combat.Hitpoints);
+        Assert.Equal(player.Resources.Hitpoints, restored.Resources.Hitpoints);
         Assert.Equal(player.Actions[0].Expedition! with { Enemies = null },
             restored.Actions[0].Expedition! with { Enemies = null });
         Assert.Equal(player.Actions[0].Expedition!.Enemies, restored.Actions[0].Expedition!.Enemies);
@@ -187,15 +187,15 @@ public sealed class CombatExpeditionSimulationTests
         var attributes = new BaseAttributeCatalog([new(1, 1000, 100, 10, 0, 0, 0, 100, 0, 0, 0, 0, 0, 7, 3)]);
         var catalog = CreateCatalog(enemyHitpoints: 1, enemyAttackPower: 0, searchSeconds: 30, baseAttributes: attributes);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
-        player.Combat.Hitpoints = 10;
+        player.Resources.Hitpoints = 10;
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(12), catalog);
 
         var action = Assert.Single(player.Actions);
         Assert.Equal(CombatExpeditionPhase.InitialSearch, action.Expedition!.Phase);
-        Assert.True(player.Combat.Hitpoints > 10);
-        Assert.Equal(player.Combat.Hitpoints, action.Expedition.PlayerHitpoints);
+        Assert.True(player.Resources.Hitpoints > 10);
+        Assert.Equal(player.Resources.Hitpoints, action.Expedition.PlayerHitpoints);
     }
 
     /// <summary>

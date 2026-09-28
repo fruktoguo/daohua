@@ -43,13 +43,13 @@ public sealed class EcsStateRoundTripTests
         player.World.ExplorationSeed = 88;
         player.World.EdgeId = "edge.yunxi-shuyu";
         player.World.EdgeProgress = 0.375;
-        player.Combat.Hitpoints = 77;
-        player.Combat.MaxHitpoints = 123;
-        player.Combat.Manapoints = 55;
-        player.Combat.MaxManapoints = 99;
+        player.Resources.Hitpoints = 77;
+        player.Resources.MaxHitpoints = 123;
+        player.Resources.Manapoints = 55;
+        player.Resources.MaxManapoints = 99;
         player.Combat.AttackPower = 31;
         player.Combat.Defense = 17;
-        player.Combat.RegenCarrySeconds = 1.25;
+        player.Resources.RegenCarrySeconds = 1.25;
         player.Buffs.Active.Add(new ActiveBuff("buff.seed", SeedTime.AddSeconds(42).ToUnixTimeSeconds(), 2,
             "种子增益", AttackSpeedPoints: 35, DamageAbsorptionPoints: 4));
         player.ReplaceCombatSlots(

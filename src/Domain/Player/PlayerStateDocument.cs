@@ -123,7 +123,7 @@ public sealed partial class PlayerAggregate
             new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds,
                 Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
-            new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints, Combat.AttackPower, Combat.Defense, Combat.RegenCarrySeconds) { Skills = Combat.Skills },
+            new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
             GetCachedEquippedInstances(),
             GetCachedLearnedAbilities(),
@@ -346,15 +346,15 @@ public sealed partial class PlayerAggregate
         }
         aggregate.World.NodeBuildingEffects = state.World.NodeBuildingEffects ?? Domain.World.BuildingEffectSet.Empty;
         aggregate.World.NodeBuildingNodeId = state.World.NodeBuildingNodeId;
-        aggregate.Combat.Hitpoints = state.Combat.Hitpoints;
-        aggregate.Combat.MaxHitpoints = state.Combat.MaxHitpoints;
-        aggregate.Combat.Manapoints = state.Combat.Manapoints;
-        aggregate.Combat.MaxManapoints = state.Combat.MaxManapoints;
+        aggregate.Resources.Hitpoints = state.Combat.Hitpoints;
+        aggregate.Resources.MaxHitpoints = state.Combat.MaxHitpoints;
+        aggregate.Resources.Manapoints = state.Combat.Manapoints;
+        aggregate.Resources.MaxManapoints = state.Combat.MaxManapoints;
         aggregate.Combat.AttackPower = state.Combat.AttackPower;
         aggregate.Combat.Defense = state.Combat.Defense;
         if (!double.IsFinite(state.Combat.RegenCarrySeconds) || state.Combat.RegenCarrySeconds < 0 || state.Combat.RegenCarrySeconds >= 5)
             throw new DomainException(DomainErrorCode.InvalidArgument, "回复时钟余量无效。");
-        aggregate.Combat.RegenCarrySeconds = state.Combat.RegenCarrySeconds;
+        aggregate.Resources.RegenCarrySeconds = state.Combat.RegenCarrySeconds;
         if (state.Combat.Skills is null || !state.Combat.Skills.IsValid)
             throw new DomainException(DomainErrorCode.InvalidArgument, "技能时钟状态无效。");
         aggregate.Combat.Skills = state.Combat.Skills;
@@ -459,13 +459,13 @@ public sealed partial class PlayerAggregate
         World.X = restored.World.X;
         World.Y = restored.World.Y;
         World.ExplorationSeed = restored.World.ExplorationSeed;
-        Combat.Hitpoints = restored.Combat.Hitpoints;
-        Combat.MaxHitpoints = restored.Combat.MaxHitpoints;
-        Combat.Manapoints = restored.Combat.Manapoints;
-        Combat.MaxManapoints = restored.Combat.MaxManapoints;
+        Resources.Hitpoints = restored.Resources.Hitpoints;
+        Resources.MaxHitpoints = restored.Resources.MaxHitpoints;
+        Resources.Manapoints = restored.Resources.Manapoints;
+        Resources.MaxManapoints = restored.Resources.MaxManapoints;
         Combat.AttackPower = restored.Combat.AttackPower;
         Combat.Defense = restored.Combat.Defense;
-        Combat.RegenCarrySeconds = restored.Combat.RegenCarrySeconds;
+        Resources.RegenCarrySeconds = restored.Resources.RegenCarrySeconds;
         Combat.Skills = restored.Combat.Skills;
         Buffs.Active.Clear();
         Buffs.Active.AddRange(restored.Buffs.Active);
@@ -631,8 +631,8 @@ public sealed partial class PlayerAggregate
                 World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
             World.AttributeInputVersion),
         PlayerSectionKind.Combat => new CombatCheckpoint(
-            new PlayerCombatStateDocument(Combat.Hitpoints, Combat.MaxHitpoints, Combat.Manapoints, Combat.MaxManapoints,
-                Combat.AttackPower, Combat.Defense, Combat.RegenCarrySeconds) { Skills = Combat.Skills }),
+            new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints,
+                Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills }),
         PlayerSectionKind.Buffs => new BuffsCheckpoint(Buffs.Active.ToArray(), Buffs.Active.Version),
         PlayerSectionKind.Loadout => new LoadoutCheckpoint(
             Loadout.Export(),
@@ -678,13 +678,13 @@ public sealed partial class PlayerAggregate
             case PlayerSectionKind.Combat:
             {
                 var data = (CombatCheckpoint)checkpoint;
-                Combat.Hitpoints = data.State.Hitpoints;
-                Combat.MaxHitpoints = data.State.MaxHitpoints;
-                Combat.Manapoints = data.State.Manapoints;
-                Combat.MaxManapoints = data.State.MaxManapoints;
+                Resources.Hitpoints = data.State.Hitpoints;
+                Resources.MaxHitpoints = data.State.MaxHitpoints;
+                Resources.Manapoints = data.State.Manapoints;
+                Resources.MaxManapoints = data.State.MaxManapoints;
                 Combat.AttackPower = data.State.AttackPower;
                 Combat.Defense = data.State.Defense;
-                Combat.RegenCarrySeconds = data.State.RegenCarrySeconds;
+                Resources.RegenCarrySeconds = data.State.RegenCarrySeconds;
                 Combat.Skills = data.State.Skills;
                 break;
             }

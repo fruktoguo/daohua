@@ -139,8 +139,8 @@ public static class PlayerAttributeResolver
         if (catalog.BaseAttributes is not null && player.TryGetCachedAttributes(catalog, out var cached))
             return cached;
         var resolved = Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
-            new(player.Combat.Hitpoints, player.Combat.MaxHitpoints, player.Combat.Manapoints,
-                player.Combat.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
+            new(player.Resources.Hitpoints, player.Resources.MaxHitpoints, player.Resources.Manapoints,
+                player.Resources.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
             player.World.EffectiveNodeBuildingEffects);
         if (catalog.BaseAttributes is not null)
             player.StoreCachedAttributes(catalog, resolved);
@@ -149,9 +149,9 @@ public static class PlayerAttributeResolver
 
     /// <summary>直接解析组件持有的领域分段，供非聚合运行时共用同一属性公式。</summary>
     public static PlayerAttributes Resolve(PlayerProgression progression, PlayerWorldState world,
-        PlayerCombatState combat, PlayerBuffState buffs, PlayerLoadoutState loadout, GameDataCatalog catalog)
+        PlayerResourceState resources, PlayerCombatState combat, PlayerBuffState buffs, PlayerLoadoutState loadout, GameDataCatalog catalog)
         => Resolve(progression.RealmLevel, loadout.EquippedItemIds, loadout.Export(), buffs.Active,
-            new(combat.Hitpoints, combat.MaxHitpoints, combat.Manapoints, combat.MaxManapoints,
+            new(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints,
                 combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects);
 
     /// <summary>同一组直接分段的属性输入修订号，允许状态所有者复用已解析面板。</summary>
@@ -330,16 +330,17 @@ public static class PlayerAttributeResolver
     public static PlayerAttributes Apply(PlayerAggregate player, GameDataCatalog catalog)
     {
         var attributes = Resolve(player, catalog);
+        var r = player.Resources;
         var c = player.Combat;
-        if (c.MaxHitpoints != attributes.MaxHitpoints || c.MaxManapoints != attributes.MaxManapoints
+        if (r.MaxHitpoints != attributes.MaxHitpoints || r.MaxManapoints != attributes.MaxManapoints
             || c.AttackPower != attributes.PhysicalAttack || c.Defense != attributes.Armor)
             player.MarkDirty(PlayerSectionKind.Combat);
-        c.MaxHitpoints = attributes.MaxHitpoints;
-        c.MaxManapoints = attributes.MaxManapoints;
+        r.MaxHitpoints = attributes.MaxHitpoints;
+        r.MaxManapoints = attributes.MaxManapoints;
         c.AttackPower = attributes.PhysicalAttack;
         c.Defense = attributes.Armor;
-        c.Hitpoints = Math.Min(c.Hitpoints, c.MaxHitpoints);
-        c.Manapoints = Math.Min(c.Manapoints, c.MaxManapoints);
+        r.Hitpoints = Math.Min(r.Hitpoints, r.MaxHitpoints);
+        r.Manapoints = Math.Min(r.Manapoints, r.MaxManapoints);
         return attributes;
     }
 }

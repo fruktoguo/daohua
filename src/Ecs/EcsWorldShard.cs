@@ -173,6 +173,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             progression.Progression = aggregate.Progression;
             var world = entity.AddComponent<PlayerWorldComponent>();
             world.World = aggregate.World;
+            var resources = entity.AddComponent<PlayerResourcesComponent>();
+            resources.Resources = aggregate.Resources;
             var combat = entity.AddComponent<PlayerCombatComponent>();
             combat.Combat = aggregate.Combat;
             var buffs = entity.AddComponent<PlayerBuffComponent>();
@@ -816,6 +818,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var progression = entity.GetOrAddComponent<PlayerProgressionComponent>();
         progression.Progression = restored.Progression;
         entity.GetOrAddComponent<PlayerWorldComponent>().World = restored.World;
+        entity.GetOrAddComponent<PlayerResourcesComponent>().Resources = restored.Resources;
         var combat = entity.GetOrAddComponent<PlayerCombatComponent>();
         combat.Combat = restored.Combat;
         entity.GetOrAddComponent<PlayerBuffComponent>().Buffs = restored.Buffs;
@@ -896,6 +899,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var identity = entity.GetComponent<PlayerIdentityComponent>()!;
         var progression = entity.GetComponent<PlayerProgressionComponent>()!;
         var world = entity.GetComponent<PlayerWorldComponent>()!;
+        var resources = entity.GetComponent<PlayerResourcesComponent>()!;
         var combat = entity.GetComponent<PlayerCombatComponent>()!;
         var buffs = entity.GetComponent<PlayerBuffComponent>()!;
         var loadout = entity.GetComponent<PlayerLoadoutComponent>()!;
@@ -906,7 +910,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.StateVersion, identity.GameDataFingerprint,
             new PlayerProgressionState(progression.RealmLevel, progression.Qi, progression.Experience, progression.LifetimeQi, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds),
             new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId),
-            new PlayerCombatStateDocument(combat.Hitpoints, combat.MaxHitpoints, combat.Manapoints, combat.MaxManapoints, combat.AttackPower, combat.Defense, combat.Combat.RegenCarrySeconds) { Skills = combat.Combat.Skills },
+            new PlayerCombatStateDocument(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints, combat.AttackPower, combat.Defense, resources.Resources.RegenCarrySeconds) { Skills = combat.Combat.Skills },
             buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds), actions, loadout.Loadout.Export(), duel.Document,
             loadout.Loadout.EquippedItemIds.ToArray());
         var inventory = entity.GetComponent<PlayerInventoryComponent>()?.Items.ToDictionary(p => p.Key, p => p.Value) ?? new Dictionary<AssetKey, double>();

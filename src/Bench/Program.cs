@@ -336,8 +336,8 @@ public static class TestCharacterSeeder
             player.Settings.AutoUseSlots.Add(new("combat", 0, "item.shunqi-pill", 1, true,
                 Group: AutoUseSlotState.SlotGroupPotion));
             var resolved = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant();
-            player.Combat.Hitpoints = player.Combat.MaxHitpoints = resolved.MaxHitpoints;
-            player.Combat.Manapoints = player.Combat.MaxManapoints = resolved.MaxManapoints;
+            player.Resources.Hitpoints = player.Resources.MaxHitpoints = resolved.MaxHitpoints;
+            player.Resources.Manapoints = player.Resources.MaxManapoints = resolved.MaxManapoints;
             player.Enqueue(new ActionIntent(action.Id, -1), epoch, catalog.Actions);
             player.SetPresence(PresenceState.Offline);
             var generated = player.ExportState();

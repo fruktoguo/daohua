@@ -59,7 +59,7 @@ public static partial class SimulationEngine
         }
         ApplyResourceAttributes(player, gameData);
         instantDeltas = ActivateInstantConsumables(player, gameData, wallet, now, events, live);
-        var untilRegen = 5 - player.Combat.RegenCarrySeconds;
+        var untilRegen = 5 - player.Resources.RegenCarrySeconds;
         var naturalStep = untilRegen;
         if (double.IsFinite(nextBuffExpiry)) naturalStep = Math.Min(naturalStep, nextBuffExpiry - nowUnix);
         var step = Math.Min((computeTarget - now).TotalSeconds, naturalStep);
@@ -112,16 +112,17 @@ public static partial class SimulationEngine
     public static PlayerAttributes ApplyResourceAttributes(IPlayerResourceContext player, GameDataCatalog gameData)
     {
         var attributes = player.ResolveAttributes(gameData);
+        var r = player.Resources;
         var c = player.Combat;
-        if (c.MaxHitpoints != attributes.MaxHitpoints || c.MaxManapoints != attributes.MaxManapoints
+        if (r.MaxHitpoints != attributes.MaxHitpoints || r.MaxManapoints != attributes.MaxManapoints
             || c.AttackPower != attributes.PhysicalAttack || c.Defense != attributes.Armor)
             player.MarkDirty(PlayerSectionKind.Combat);
-        c.MaxHitpoints = attributes.MaxHitpoints;
-        c.MaxManapoints = attributes.MaxManapoints;
+        r.MaxHitpoints = attributes.MaxHitpoints;
+        r.MaxManapoints = attributes.MaxManapoints;
         c.AttackPower = attributes.PhysicalAttack;
         c.Defense = attributes.Armor;
-        c.Hitpoints = Math.Min(c.Hitpoints, c.MaxHitpoints);
-        c.Manapoints = Math.Min(c.Manapoints, c.MaxManapoints);
+        r.Hitpoints = Math.Min(r.Hitpoints, r.MaxHitpoints);
+        r.Manapoints = Math.Min(r.Manapoints, r.MaxManapoints);
         return attributes;
     }
 
@@ -149,23 +150,23 @@ public static partial class SimulationEngine
     private static bool CompleteResourceRegeneration(IPlayerResourceContext player, GameDataCatalog gameData, double stepSeconds)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.resource.regen");
-        player.Combat.RegenCarrySeconds += stepSeconds;
-        if (player.Combat.RegenCarrySeconds < 5 - 1e-9) return false;
-        player.Combat.RegenCarrySeconds = 0;
+        player.Resources.RegenCarrySeconds += stepSeconds;
+        if (player.Resources.RegenCarrySeconds < 5 - 1e-9) return false;
+        player.Resources.RegenCarrySeconds = 0;
         var attributes = ApplyResourceAttributes(player, gameData);
-        var hitpoints = player.Combat.Hitpoints;
-        var manapoints = player.Combat.Manapoints;
-        if (player.Combat.Hitpoints > 0)
-            player.Combat.Hitpoints = Math.Min(attributes.MaxHitpoints, player.Combat.Hitpoints + attributes.HpRegen);
-        player.Combat.Manapoints = Math.Min(attributes.MaxManapoints, player.Combat.Manapoints + attributes.MpRegen);
+        var hitpoints = player.Resources.Hitpoints;
+        var manapoints = player.Resources.Manapoints;
+        if (player.Resources.Hitpoints > 0)
+            player.Resources.Hitpoints = Math.Min(attributes.MaxHitpoints, player.Resources.Hitpoints + attributes.HpRegen);
+        player.Resources.Manapoints = Math.Min(attributes.MaxManapoints, player.Resources.Manapoints + attributes.MpRegen);
         if (player.Actions.Count > 0 && player.Actions[0].Expedition is { } expedition
-            && (expedition.PlayerHitpoints != player.Combat.Hitpoints || expedition.PlayerManapoints != player.Combat.Manapoints))
+            && (expedition.PlayerHitpoints != player.Resources.Hitpoints || expedition.PlayerManapoints != player.Resources.Manapoints))
             player.Actions[0].Expedition = expedition with
             {
-                PlayerHitpoints = player.Combat.Hitpoints,
-                PlayerManapoints = player.Combat.Manapoints
+                PlayerHitpoints = player.Resources.Hitpoints,
+                PlayerManapoints = player.Resources.Manapoints
             };
-        if (player.Combat.Hitpoints == hitpoints && player.Combat.Manapoints == manapoints) return false;
+        if (player.Resources.Hitpoints == hitpoints && player.Resources.Manapoints == manapoints) return false;
         player.MarkDirty(PlayerSectionKind.Combat);
         return true;
     }

@@ -21,6 +21,8 @@ public interface IPlayerActionContext
 {
     PlayerProgression Progression { get; }
     PlayerWorldState World { get; }
+    /// <summary>战斗资源分段（气血/灵力池与回复游标）；战斗内外同一份可变状态。</summary>
+    PlayerResourceState Resources { get; }
     PlayerCombatState Combat { get; }
     PlayerBuffState Buffs { get; }
     PlayerSettingsState Settings { get; }

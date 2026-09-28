@@ -65,7 +65,7 @@ public sealed class PlayerCheckpointTests
         player.Progression.Experience += 3;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.TravelTo("node.other", 3, 4);
-        player.Combat.Hitpoints = 42;
+        player.Resources.Hitpoints = 42;
         player.MarkDirty(PlayerSectionKind.Combat);
         player.Buffs.Active.Add(new ActiveBuff("buff.test", 999, 2));
         player.MarkDirty(PlayerSectionKind.Buffs);
@@ -133,7 +133,7 @@ public sealed class PlayerCheckpointTests
         RestoreBaseline(player, baseline.Sections, baseline.Head, baseline.Dirty, baseline.Marks);
 
         var markCeiling = baseline.Marks.Values.DefaultIfEmpty(0L).Max();
-        player.Combat.Hitpoints = 10;
+        player.Resources.Hitpoints = 10;
         player.MarkDirty(PlayerSectionKind.Combat);
         // 流水游标不回退：新标脏戳号严格大于基线里任何历史戳，差集判定照常工作。
         Assert.True(player.DirtySectionMarks[PlayerSectionKind.Combat] > markCeiling);

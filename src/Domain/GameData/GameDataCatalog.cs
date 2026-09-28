@@ -56,9 +56,9 @@ public enum ActionYieldKind : byte
 {
     /// <summary>修为：境界推进资源，累加 Progression.Qi 与 LifetimeQi</summary>
     Qi = 0,
-    /// <summary>灵力：战斗资源，累加 Combat.Manapoints 并按上限截断</summary>
+    /// <summary>灵力：战斗资源，累加 Resources.Manapoints 并按上限截断</summary>
     Mana = 1,
-    /// <summary>气血：累加 Combat.Hitpoints 并按上限截断</summary>
+    /// <summary>气血：累加 Resources.Hitpoints 并按上限截断</summary>
     Hitpoints = 2,
     /// <summary>历练经验：累加 Progression.Experience</summary>
     Experience = 3,

@@ -381,7 +381,7 @@ public sealed class SimulationEngineTests
     }
 
     /// <summary>
-    /// 灵力收益必须入账 Combat.Manapoints 并按上限截断，不得写入修为；
+    /// 灵力收益必须入账 Resources.Manapoints 并按上限截断，不得写入修为；
     /// 且整段推进与逐秒推进位级一致。
     /// </summary>
     [Fact]
@@ -394,19 +394,19 @@ public sealed class SimulationEngineTests
         ]);
         var single = CreatePlayer("整段");
         var split = CreatePlayer("逐秒");
-        single.Combat.Manapoints = 50;
-        split.Combat.Manapoints = 50;
+        single.Resources.Manapoints = 50;
+        split.Resources.Manapoints = 50;
         single.Enqueue(new ActionIntent(new ActionId("test.mana-spring"), -1), Baseline, actions);
         split.Enqueue(new ActionIntent(new ActionId("test.mana-spring"), -1), Baseline, actions);
 
         SimulationEngine.AdvanceTo(single, Baseline.AddSeconds(40), actions);
         for (var i = 1; i <= 40; i++) SimulationEngine.AdvanceTo(split, Baseline.AddSeconds(i), actions);
 
-        Assert.Equal(100, single.Combat.Manapoints); // 50 + 2*40 = 130 → 上限截断为 100
+        Assert.Equal(100, single.Resources.Manapoints); // 50 + 2*40 = 130 → 上限截断为 100
         Assert.Equal(0, single.Progression.Qi);
         Assert.Equal(0, single.Progression.LifetimeQi);
-        Assert.True(single.Combat.Manapoints == split.Combat.Manapoints,
-            $"灵力位级不一致：{single.Combat.Manapoints:R} != {split.Combat.Manapoints:R}");
+        Assert.True(single.Resources.Manapoints == split.Resources.Manapoints,
+            $"灵力位级不一致：{single.Resources.Manapoints:R} != {split.Resources.Manapoints:R}");
     }
 
     /// <summary>
@@ -430,8 +430,8 @@ public sealed class SimulationEngineTests
                 ])
         ]);
         var player = CreatePlayer("甲");
-        player.Combat.Manapoints = 50;
-        player.Combat.Hitpoints = 50;
+        player.Resources.Manapoints = 50;
+        player.Resources.Hitpoints = 50;
         player.Enqueue(new ActionIntent(new ActionId("test.mixed"), 1), Baseline, actions);
 
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), actions);
@@ -439,8 +439,8 @@ public sealed class SimulationEngineTests
         Assert.Equal(5, player.Progression.Qi);
         Assert.Equal(5, player.Progression.LifetimeQi);
         Assert.Equal(3, player.Progression.Experience);
-        Assert.Equal(60, player.Combat.Manapoints);
-        Assert.Equal(57, player.Combat.Hitpoints);
+        Assert.Equal(60, player.Resources.Manapoints);
+        Assert.Equal(57, player.Resources.Hitpoints);
         var buff = Assert.Single(player.Buffs.Active);
         Assert.Equal("buff.focus", buff.BuffId);
         Assert.Equal(2, buff.Stacks);

@@ -437,9 +437,9 @@ public sealed partial class PlayerAggregate
             throw new DomainException(DomainErrorCode.InvariantViolation, "斗法挂载时远征状态无效。");
         if (Duel.ActiveDuelId != playback.DuelId)
             throw new DomainException(DomainErrorCode.InvariantViolation, "斗法挂载与预约标识不一致。");
-        var attributes = Combat;
-        attributes.Hitpoints = attributes.MaxHitpoints;
-        attributes.Manapoints = attributes.MaxManapoints;
+        var resources = Resources;
+        resources.Hitpoints = resources.MaxHitpoints;
+        resources.Manapoints = resources.MaxManapoints;
         Combat.Skills = PlayerCombatSkillState.Empty;
         _actions[0].Expedition = expedition with
         {
@@ -447,8 +447,8 @@ public sealed partial class PlayerAggregate
             PhaseElapsedSeconds = 0,
             PhaseDurationSeconds = 0,
             BattleElapsedSeconds = 0,
-            PlayerHitpoints = Combat.Hitpoints,
-            PlayerManapoints = Combat.Manapoints,
+            PlayerHitpoints = Resources.Hitpoints,
+            PlayerManapoints = Resources.Manapoints,
             PlayerNextAttackAtSeconds = 0,
             PlayerAttackCount = 0,
             PlayerThreat = 0,

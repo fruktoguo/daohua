@@ -202,10 +202,10 @@ public sealed class QueueLoopTests
         Assert.Equal(0, player.Progression.CompletedActions);
         var boundary = player.LastSimulatedAt.AddSeconds(respawnAt - combat.Expedition.BattleElapsedSeconds);
         SimulationEngine.AdvanceTo(player, boundary.AddMilliseconds(-1), catalog);
-        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Equal(0, player.Resources.Hitpoints);
         var resumed = SimulationEngine.AdvanceTo(player, boundary, catalog);
         Assert.Contains(resumed.Events, e => e.Code == "combat.respawned");
-        Assert.Equal(player.Combat.MaxHitpoints, player.Combat.Hitpoints);
+        Assert.Equal(player.Resources.MaxHitpoints, player.Resources.Hitpoints);
         Assert.Equal(2, player.Actions.Count);
         Assert.Equal(combat.Id, player.Actions[0].Id);
         Assert.Equal(1, combat.RemainingRepeats);

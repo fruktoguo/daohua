@@ -57,15 +57,25 @@ public sealed class PlayerWorldComponent : YuoComponent
     public long NodeBuildingProjectionVersion { get; set; } = long.MinValue;
 }
 
-/// <summary>玩家战斗组件，同时承载 ECS 侧战斗会话与当前资源。</summary>
+/// <summary>
+/// 玩家战斗资源组件：气血/灵力池与自然回复游标，战斗内外同一份状态。
+/// 触发器系统（受击回血/反伤等）直接读写本组件；落库时并入 Combat 分段文档。
+/// </summary>
+public sealed class PlayerResourcesComponent : YuoComponent
+{
+    /// <summary>完整资源分段，包含回复余数。</summary>
+    public PlayerResourceState Resources { get; set; } = new();
+    public double Hitpoints { get => Resources.Hitpoints; set => Resources.Hitpoints = value; }
+    public double MaxHitpoints { get => Resources.MaxHitpoints; set => Resources.MaxHitpoints = value; }
+    public double Manapoints { get => Resources.Manapoints; set => Resources.Manapoints = value; }
+    public double MaxManapoints { get => Resources.MaxManapoints; set => Resources.MaxManapoints = value; }
+}
+
+/// <summary>玩家战斗组件，承载战斗面板基值、技能调度与 ECS 侧战斗会话。</summary>
 public sealed class PlayerCombatComponent : YuoComponent
 {
-    /// <summary>完整战斗分段，包含技能冷却、吟唱和回复余数。</summary>
+    /// <summary>完整战斗分段，包含技能冷却与吟唱。</summary>
     public PlayerCombatState Combat { get; set; } = new();
-    public double Hitpoints { get => Combat.Hitpoints; set => Combat.Hitpoints = value; }
-    public double MaxHitpoints { get => Combat.MaxHitpoints; set => Combat.MaxHitpoints = value; }
-    public double Manapoints { get => Combat.Manapoints; set => Combat.Manapoints = value; }
-    public double MaxManapoints { get => Combat.MaxManapoints; set => Combat.MaxManapoints = value; }
     public double AttackPower { get => Combat.AttackPower; set => Combat.AttackPower = value; }
     public double Defense { get => Combat.Defense; set => Combat.Defense = value; }
     public CombatEncounterState? Encounter { get; set; }

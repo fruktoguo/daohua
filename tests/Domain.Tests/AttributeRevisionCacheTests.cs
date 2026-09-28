@@ -198,8 +198,8 @@ public sealed class AttributeRevisionCacheTests
         var player = CreatePlayer(catalog);
         var cached = AssertConsistentResolve(player, catalog);
 
-        player.Combat.Hitpoints = 42;              // 面板当前值是 Apply 写回目标，不是解析输入
-        player.Combat.Manapoints = 7;
+        player.Resources.Hitpoints = 42;              // 面板当前值是 Apply 写回目标，不是解析输入
+        player.Resources.Manapoints = 7;
         player.Progression.Qi = 123;               // 修为/经验不直接参与属性解析（RealmLevel 才是）
         player.Progression.Experience = 456;
         player.World.X = 5;                        // 坐标不参与解析
@@ -236,8 +236,8 @@ public sealed class AttributeRevisionCacheTests
         var catalog = new GameDataCatalog("test", "test", new ActionCatalog([]));
         var player = CreatePlayer(catalog);
         var first = PlayerAttributeResolver.Resolve(player, catalog);
-        Assert.Equal(player.Combat.MaxHitpoints, first.MaxHitpoints);
-        player.Combat.MaxHitpoints = 777; // 兜底输入变化必须立刻反映（不走修订号）
+        Assert.Equal(player.Resources.MaxHitpoints, first.MaxHitpoints);
+        player.Resources.MaxHitpoints = 777; // 兜底输入变化必须立刻反映（不走修订号）
         var second = PlayerAttributeResolver.Resolve(player, catalog);
         Assert.Equal(777, second.MaxHitpoints);
         Assert.NotSame(first, second);

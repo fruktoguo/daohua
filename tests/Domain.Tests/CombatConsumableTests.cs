@@ -101,7 +101,7 @@ public sealed class CombatConsumableTests
         Assert.Equal(2d, wallet.Get(new AssetKey(PillId)));
 
         // 气血压到 40%（≤50%）：下一个激活边界自动使用并消耗 1 件。
-        player.Combat.Hitpoints = player.Combat.MaxHitpoints * 0.4;
+        player.Resources.Hitpoints = player.Resources.MaxHitpoints * 0.4;
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(30), catalog, wallet);
         result.AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(1d, wallet.Get(new AssetKey(PillId)));
@@ -173,7 +173,7 @@ public sealed class CombatConsumableTests
         // 推进到玩家已被击倒（敌方高攻秒杀），进入原地等待复活窗口。
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Equal(0, player.Resources.Hitpoints);
         Assert.Equal(CombatExpeditionPhase.Combat, player.Actions[0].Expedition!.Phase);
         var downedRemaining = player.Settings.AutoUseSlots[0].RemainingDurationSeconds;
         Assert.InRange(downedRemaining, 45, 60);
@@ -181,7 +181,7 @@ public sealed class CombatConsumableTests
         // 躺尸窗口内继续推进：持续消耗品按战斗时钟继续扣减（不冻结）。
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Equal(0, player.Combat.Hitpoints);
+        Assert.Equal(0, player.Resources.Hitpoints);
         Assert.True(player.Settings.AutoUseSlots[0].RemainingDurationSeconds < downedRemaining);
     }
 }

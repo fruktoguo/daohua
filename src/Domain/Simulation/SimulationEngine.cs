@@ -371,8 +371,8 @@ public static partial class SimulationEngine
             duration,
             seed ?? CreateSeed(encounter.Id, completedRepeats),
             0,
-            player.Combat.Hitpoints,
-            player.Combat.Manapoints,
+            player.Resources.Hitpoints,
+            player.Resources.Manapoints,
             0,
             0,
             0,
@@ -431,8 +431,8 @@ public static partial class SimulationEngine
             wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray(),
             InBattleRespawnSeconds(encounter));
         for (var i = 0; i < wave.Count; i++) battle.Enemies[i].DefinitionId = wave[i].Id;
-        battle.Player.Hitpoints = Math.Clamp(player.Combat.Hitpoints, 0, player.Combat.MaxHitpoints);
-        battle.Player.Manapoints = Math.Clamp(player.Combat.Manapoints, 0, player.Combat.MaxManapoints);
+        battle.Player.Hitpoints = Math.Clamp(player.Resources.Hitpoints, 0, player.Resources.MaxHitpoints);
+        battle.Player.Manapoints = Math.Clamp(player.Resources.Manapoints, 0, player.Resources.MaxManapoints);
         battle.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
         player.Combat.Skills.ApplyTo(battle.Player);
 
@@ -583,7 +583,7 @@ public static partial class SimulationEngine
         GameDataCatalog catalog, AssetWallet wallet, DateTimeOffset at, SimulationEventTail events,
         LiveCombatBattle? live = null)
     {
-        if (player.Actions.Count == 0 || player.Combat.Hitpoints <= 0) return [];
+        if (player.Actions.Count == 0 || player.Resources.Hitpoints <= 0) return [];
         // 无任何启用槽位时整段跳过：免每步 catalog.Actions.Get 与 MatchesActionType 固定税。
         var slots = player.Settings.AutoUseSlots;
         var anyEnabled = false;
@@ -632,8 +632,8 @@ public static partial class SimulationEngine
             var cooldown = Read(raw, "cooldownSeconds");
             if (!raw.TryGetProperty("buffs", out var buffs) && hp == 0 && mp == 0) continue;
             if (cooldown <= 0) throw new DomainException(DomainErrorCode.InvalidArgument, "自动即时消耗品必须配置正冷却。");
-            player.Combat.Hitpoints = Math.Min(player.Combat.MaxHitpoints, player.Combat.Hitpoints + hp);
-            player.Combat.Manapoints = Math.Min(player.Combat.MaxManapoints, player.Combat.Manapoints + mp);
+            player.Resources.Hitpoints = Math.Min(player.Resources.MaxHitpoints, player.Resources.Hitpoints + hp);
+            player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + mp);
             if (buffs.ValueKind == JsonValueKind.Array)
                 foreach (var buff in buffs.EnumerateArray())
                 {
@@ -664,8 +664,8 @@ public static partial class SimulationEngine
     {
         var caster = new CombatantState("player", player.ResolveAttributes(catalog).ToCombatant())
         {
-            Hitpoints = player.Combat.Hitpoints,
-            Manapoints = player.Combat.Manapoints
+            Hitpoints = player.Resources.Hitpoints,
+            Manapoints = player.Resources.Manapoints
         };
         var activeBuffs = player.Buffs.Active;
         caster.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
@@ -992,8 +992,8 @@ public static partial class SimulationEngine
             Duel = playback with { EventCursor = cursor, OpponentHitpoints = opponentHp, OpponentManapoints = opponentMp }
         };
         action.Expedition = updated;
-        player.Combat.Hitpoints = Math.Clamp(viewerHp, 0, player.Combat.MaxHitpoints);
-        player.Combat.Manapoints = Math.Clamp(viewerMp, 0, player.Combat.MaxManapoints);
+        player.Resources.Hitpoints = Math.Clamp(viewerHp, 0, player.Resources.MaxHitpoints);
+        player.Resources.Manapoints = Math.Clamp(viewerMp, 0, player.Resources.MaxManapoints);
         player.MarkDirty(PlayerSectionKind.Combat);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
         if (!playback.Resolved && playbackTo + 1e-9 < playback.DurationSeconds) return;
@@ -1037,7 +1037,7 @@ public static partial class SimulationEngine
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(expedition.Seed), waveNumber: 1) with
                 { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
-                player.Combat.Hitpoints = 0;
+                player.Resources.Hitpoints = 0;
                 break;
             default:
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.draw",
@@ -1474,15 +1474,15 @@ public static partial class SimulationEngine
                     break;
                 case ActionYieldKind.Mana:
                     // 满值时跳过逐秒循环，避免大额离线补算在已饱和资源上空转。
-                    if (player.Combat.Manapoints >= player.Combat.MaxManapoints) break;
-                    for (var i = 0; i < wholeSeconds && player.Combat.Manapoints < player.Combat.MaxManapoints; i++)
-                        player.Combat.Manapoints = Math.Min(player.Combat.MaxManapoints, player.Combat.Manapoints + rate);
+                    if (player.Resources.Manapoints >= player.Resources.MaxManapoints) break;
+                    for (var i = 0; i < wholeSeconds && player.Resources.Manapoints < player.Resources.MaxManapoints; i++)
+                        player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + rate);
                     combatTouched = true;
                     break;
                 case ActionYieldKind.Hitpoints:
-                    if (player.Combat.Hitpoints >= player.Combat.MaxHitpoints) break;
-                    for (var i = 0; i < wholeSeconds && player.Combat.Hitpoints < player.Combat.MaxHitpoints; i++)
-                        player.Combat.Hitpoints = Math.Min(player.Combat.MaxHitpoints, player.Combat.Hitpoints + rate);
+                    if (player.Resources.Hitpoints >= player.Resources.MaxHitpoints) break;
+                    for (var i = 0; i < wholeSeconds && player.Resources.Hitpoints < player.Resources.MaxHitpoints; i++)
+                        player.Resources.Hitpoints = Math.Min(player.Resources.MaxHitpoints, player.Resources.Hitpoints + rate);
                     combatTouched = true;
                     break;
             }
@@ -1588,9 +1588,9 @@ public static partial class SimulationEngine
         player.Progression.LifetimeQi += qiGain;
         player.Progression.Experience = nextExperience;
         if (manaGain != 0)
-            player.Combat.Manapoints = Math.Min(player.Combat.MaxManapoints, player.Combat.Manapoints + manaGain);
+            player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + manaGain);
         if (hitpointGain != 0)
-            player.Combat.Hitpoints = Math.Min(player.Combat.MaxHitpoints, player.Combat.Hitpoints + hitpointGain);
+            player.Resources.Hitpoints = Math.Min(player.Resources.MaxHitpoints, player.Resources.Hitpoints + hitpointGain);
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.ActionQueue);

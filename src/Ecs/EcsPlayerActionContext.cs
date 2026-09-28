@@ -21,6 +21,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     private readonly PlayerActionQueueComponent _queue = entity.GetComponent<PlayerActionQueueComponent>()!;
     private readonly PlayerProgressionComponent _progression = entity.GetComponent<PlayerProgressionComponent>()!;
     private readonly PlayerWorldComponent _world = entity.GetComponent<PlayerWorldComponent>()!;
+    private readonly PlayerResourcesComponent _resources = entity.GetComponent<PlayerResourcesComponent>()!;
     private readonly PlayerCombatComponent _combat = entity.GetComponent<PlayerCombatComponent>()!;
     private readonly PlayerBuffComponent _buffs = entity.GetComponent<PlayerBuffComponent>()!;
     private readonly PlayerLoadoutComponent _loadout = entity.GetComponent<PlayerLoadoutComponent>()!;
@@ -39,6 +40,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerId PlayerId => new(Identity.PlayerId);
     public PlayerProgression Progression => _progression.Progression;
     public PlayerWorldState World => _world.World;
+    public PlayerResourceState Resources => _resources.Resources;
     public PlayerCombatState Combat => _combat.Combat;
     public PlayerBuffState Buffs => _buffs.Buffs;
     public PlayerSettingsState Settings => _settings.Settings;
@@ -69,7 +71,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
             && ReferenceEquals(_attributeProgression, progression) && ReferenceEquals(_attributeWorld, world)
             && ReferenceEquals(_attributeBuffs, buffs) && ReferenceEquals(_attributeLoadout, loadout))
             return cached;
-        var attributes = PlayerAttributeResolver.Resolve(progression, world, Combat, buffs, loadout, gameData);
+        var attributes = PlayerAttributeResolver.Resolve(progression, world, Resources, Combat, buffs, loadout, gameData);
         if (gameData.BaseAttributes is not null)
         {
             _attributes = attributes;
@@ -95,9 +97,9 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
         var actions = Queue.Actions;
         var index = actions.FindIndex(action => action.Id == actionInstanceId);
         if (index < 0) return false;
-        if (actions[index].Expedition is not null && Combat.Hitpoints <= 0)
+        if (actions[index].Expedition is not null && Resources.Hitpoints <= 0)
         {
-            Combat.Hitpoints = 1;
+            Resources.Hitpoints = 1;
             MarkDirty(PlayerSectionKind.Combat);
         }
         SimulationEngine.ArchiveActionReport(this, actionInstanceId,

@@ -83,8 +83,8 @@ public static partial class SimulationEngine
             action.Expedition = expedition with { PhaseElapsedSeconds = expedition.PhaseElapsedSeconds + step };
             action.ProgressSeconds = action.Expedition.PhaseElapsedSeconds;
             if (action.ProgressSeconds + 1e-9 < expedition.PhaseDurationSeconds) return null;
-            player.Combat.Hitpoints = player.Combat.MaxHitpoints;
-            player.Combat.Manapoints = player.Combat.MaxManapoints;
+            player.Resources.Hitpoints = player.Resources.MaxHitpoints;
+            player.Resources.Manapoints = player.Resources.MaxManapoints;
             player.Combat.Skills = PlayerCombatSkillState.Empty;
             for (var i = 0; i < player.Settings.AutoUseSlots.Count; i++)
                 player.Settings.AutoUseSlots[i] = player.Settings.AutoUseSlots[i] with { CooldownUntilUnixSeconds = 0 };
@@ -181,8 +181,8 @@ public static partial class SimulationEngine
         // 玩家技能与普攻共用同一条动作时间线：战后把通用槽位状态折算回跨战持久化形态。
         player.Combat.Skills = PlayerCombatSkillState.FromCombatant(battleState.Player, battleState.ElapsedSeconds);
         remainingSeconds -= consumed;
-        player.Combat.Hitpoints = battleState.Player.Hitpoints;
-        player.Combat.Manapoints = battleState.Player.Manapoints;
+        player.Resources.Hitpoints = battleState.Player.Hitpoints;
+        player.Resources.Manapoints = battleState.Player.Manapoints;
         // 战斗中气血是独立持久化分段；仅标记行动队列会导致重连后回退到旧气血。
         player.MarkDirty(PlayerSectionKind.Combat);
         // 复用会话驻留期间只回写标量镜像字段：玩家/敌人完整快照由 Flush 在补算收尾、

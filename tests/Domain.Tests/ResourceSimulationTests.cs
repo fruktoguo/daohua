@@ -29,24 +29,24 @@ public sealed class ResourceSimulationTests
             Loadout = state.Loadout with { CoreAttributes = new(0, 0, 0, 0, 0, 0) },
             EquippedItemIds = [item]
         });
-        offline.Combat.Hitpoints = 1;
-        offline.Combat.Manapoints = 0;
+        offline.Resources.Hitpoints = 1;
+        offline.Resources.Manapoints = 0;
         var online = PlayerAggregate.Restore(offline.ExportState());
         SimulationEngine.AdvanceTo(online, Baseline.AddSeconds(4.5), catalog);
-        Assert.Equal(1, online.Combat.Hitpoints);
-        Assert.Equal(4.5, online.Combat.RegenCarrySeconds);
+        Assert.Equal(1, online.Resources.Hitpoints);
+        Assert.Equal(4.5, online.Resources.RegenCarrySeconds);
         online = PlayerAggregate.Restore(online.ExportState());
         SimulationEngine.AdvanceTo(online, Baseline.AddSeconds(5), catalog);
-        Assert.Equal(1520, online.Combat.MaxHitpoints);
-        Assert.Equal(8.07, online.Combat.Hitpoints, 6);
-        Assert.Equal(3.03, online.Combat.Manapoints, 6);
+        Assert.Equal(1520, online.Resources.MaxHitpoints);
+        Assert.Equal(8.07, online.Resources.Hitpoints, 6);
+        Assert.Equal(3.03, online.Resources.Manapoints, 6);
         SimulationEngine.AdvanceTo(online, Baseline.AddSeconds(12), catalog);
         SimulationEngine.AdvanceTo(offline, Baseline.AddSeconds(12), catalog);
-        Assert.Equal(15.14, offline.Combat.Hitpoints, 6);
-        Assert.Equal(6.06, offline.Combat.Manapoints, 6);
-        Assert.Equal(offline.Combat.Hitpoints, online.Combat.Hitpoints);
-        Assert.Equal(offline.Combat.Manapoints, online.Combat.Manapoints);
-        Assert.Equal(2, online.Combat.RegenCarrySeconds);
+        Assert.Equal(15.14, offline.Resources.Hitpoints, 6);
+        Assert.Equal(6.06, offline.Resources.Manapoints, 6);
+        Assert.Equal(offline.Resources.Hitpoints, online.Resources.Hitpoints);
+        Assert.Equal(offline.Resources.Manapoints, online.Resources.Manapoints);
+        Assert.Equal(2, online.Resources.RegenCarrySeconds);
     }
 
     /// <summary>
