@@ -29,7 +29,7 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
         _previousCloseSystemTry = YuoWorld.CloseSystemTry;
         // 业务运行时不允许 YuoCore 把 System 异常隔离成成功请求；所有分片共用这个
         // 进程级开关，不能让某个分片的 Dispose 提前恢复它。
-        YuoWorld.CloseSystemTry = true;
+        YuoWorld.CloseSystemTry = Environment.GetEnvironmentVariable("DAOHUA_ECS_CLOSE_SYS_TRY") != "0";
         var shards = new List<EcsWorldShard>(shardCount);
         try
         {
@@ -72,6 +72,9 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
 
     public PlayerSectionKind[] GetDirtySections(Guid playerId)
         => GetShard(playerId).GetDirtySections(playerId);
+
+    public IReadOnlyDictionary<PlayerSectionKind, long> GetDirtyMarks(Guid playerId)
+        => GetShard(playerId).GetDirtyMarks(playerId);
 
     public void MarkDirty(Guid playerId, PlayerSectionKind section)
         => GetShard(playerId).MarkDirty(playerId, section);
@@ -164,6 +167,15 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
 
     public bool RemoveAction(Guid playerId, Guid actionInstanceId)
         => GetShard(playerId).RemoveAction(playerId, actionInstanceId);
+
+    /// <summary>命令级玩家变更通道（与 OOP PlayerActor 命令语义对齐）；返回本次新增的脏标记差集。</summary>
+    public IReadOnlySet<PlayerSectionKind> MutatePlayer(Guid playerId, Action<PlayerAggregate> mutate,
+        bool destroyEncounters = false)
+        => GetShard(playerId).MutatePlayer(playerId, mutate, destroyEncounters);
+
+    /// <summary>属性输入修订号：命令/推进后与原值不一致即等价 OOP 的 WireAttributesChanged。</summary>
+    public long AttributeRevision(Guid playerId)
+        => GetShard(playerId).AttributeRevision(playerId);
 
     private async ValueTask RunAllShardsAsync(DateTimeOffset target, CancellationToken cancellationToken)
     {

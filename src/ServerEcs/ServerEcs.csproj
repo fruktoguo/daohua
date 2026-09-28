@@ -10,9 +10,9 @@
     <EcsIsolatedBuild Condition="'$(EcsIsolatedBuild)' == ''">false</EcsIsolatedBuild>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainIsolatedBuild=$(EcsIsolatedBuild);DomainBuildVariant=$(EcsBuildVariant)" />
-    <ProjectReference Include="../Ecs/Ecs.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);EcsBuildVariant=$(EcsBuildVariant);EcsIsolatedBuild=$(EcsIsolatedBuild)" />
-    <ProjectReference Include="../Server.Clean/Server.Clean.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainBuildVariant=$(EcsBuildVariant);DomainIsolatedBuild=$(EcsIsolatedBuild)" />
+    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
+    <ProjectReference Include="../Ecs/Ecs.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);EcsBuildVariant=$(EcsBuildVariant)" />
+    <ProjectReference Include="../Server.Clean/Server.Clean.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>

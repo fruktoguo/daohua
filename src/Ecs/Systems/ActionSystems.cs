@@ -18,8 +18,6 @@ internal static class EcsSystemContext
         return !clock.SkipWorldUpdate && (clock.ActivePlayerId is not { } active
             || entity.GetComponent<PlayerIdentityComponent>()?.PlayerId == active);
     }
-
-
 }
 
 /// <summary>Clock 阶段开启资源自然窗口；准备阶段不推进实际时间。</summary>
@@ -155,10 +153,6 @@ public sealed class PlayerClockCommitSystem : YuoSystem<PlayerActionQueueCompone
             if (clock.SkipWorldUpdateEntities == 0) clock.SkipWorldUpdate = false;
             return;
         }
-        if (EcsActionPipeline.Find(queue.Entity) is { } pipeline)
-        {
-            pipeline.CompleteClock(clock.PreparationOnly);
-            return;
-        }
+        EcsActionPipeline.Find(queue.Entity)?.CompleteClock(clock.PreparationOnly);
     }
 }

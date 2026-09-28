@@ -220,9 +220,9 @@ public sealed class SectionRepositoryTests
         var seeded = player.ExportState() with { StateVersion = 7 };
         await repository.EnqueueSectionsAsync(CleanSectionCodec.EncodeAggregateFull(seeded, DateTimeOffset.UtcNow));
         await FlushUntilDrainedAsync(repository, source, playerId);
-        await using var runtime = new PlayerRuntime(repository, new PostgresAssetRepository(source),
+        await using var runtime = EcsRuntimeFactory.Create(repository, new PostgresAssetRepository(source),
             new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance),
-            catalog, NullLogger<PlayerRuntime>.Instance, simulationClock: new FixedSimulationClock(target));
+            catalog, simulationClock: new FixedSimulationClock(target));
         var loaded = await runtime.LoadAsync(playerId);
         Assert.Equal(7, loaded.StateVersion);
         Assert.Equal(0, loaded.State.Duel!.OfflineReport!.StartedAtUnixSeconds);

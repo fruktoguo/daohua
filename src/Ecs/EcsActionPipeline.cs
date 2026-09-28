@@ -80,6 +80,11 @@ public sealed class EcsActionPipeline
 
     public DateTimeOffset Target { get; }
     public DateTimeOffset Current => _cursor;
+    /// <summary>不变量违例时的现场证据：窗口/等待/剩余预算/队首行动，供快速失败诊断。</summary>
+    internal string DiagnosticState
+        => $"window={_windowOpen},waiting={_waiting},remaining={_remainingSeconds:0.######}," +
+           $"windowEnd={_windowEnd:o},step={_windowStepSeconds:0.######},action={_preparedAction?.Id.ToString() ?? "-"}," +
+           $"queued={_player.Actions.Count}";
     public bool IsComplete => _cursor >= Target && !_windowOpen;
     public bool NeedsPreparation => !IsComplete && (!_windowOpen || (!_waiting && _preparedAction is null));
     public bool HasPreparedAction => _preparedAction is not null;
@@ -218,7 +223,7 @@ public sealed class EcsActionPipeline
         while (_remainingSeconds > 1e-9 && _player.Actions.Count > 0)
         {
 #if YUOCORE_OPTIMIZED
-            var action = _queue.Actions[0];
+            var action = (EcsAblation.ComponentCache ? _queue : _entity.GetComponent<PlayerActionQueueComponent>()!).Actions[0];
 #else
             var action = _entity.GetComponent<PlayerActionQueueComponent>()!.Actions[0];
 #endif
@@ -296,9 +301,9 @@ public sealed class EcsActionPipeline
         if (_preparedAction is not { } action || _definition is not { ExecutionKind: ActionExecutionKind.Timed } definition || _roundDue) return;
         if (_frameTarget < NextBoundaryAt) return;
         var needed = Math.Max(0, _duration - action.ProgressSeconds);
-        var available = Math.Max(0, (_frameTarget - _cursor).TotalSeconds);
-        if (available <= 0 && needed > 0) return;
-        var step = Math.Min(Math.Min(available, _remainingSeconds), needed);
+        // _frameTarget >= NextBoundaryAt 已保证 min(remaining, needed) 落入本帧；
+        // 不能再按 tick 量化差值推导可用量：亚 tick（~1e-7s）残差会让边界落回同一时刻形成不动点。
+        var step = Math.Min(_remainingSeconds, needed);
         _remainingSeconds -= step;
         _cursor = _windowStart.AddSeconds(_windowElapsedSeconds - _remainingSeconds);
         SimulationEngine.AdvanceTimedAction(_player, action, definition, _multiplier, _catalog, step, _cursor);
@@ -411,7 +416,9 @@ public sealed class EcsActionPipeline
     public void CompleteClock(bool preparationOnly)
     {
         if (IsComplete || !_windowOpen || preparationOnly) return;
-        if (_waiting && _frameTarget >= _windowEnd)
+        // DateTimeOffset 以 tick（1e-7s）量化：窗口末残留的亚 tick 预算无法再用下一帧消费，
+        // 到达窗口末时直接归零，否则 boundary==cursor 会构成死循环不动点。
+        if (_frameTarget >= _windowEnd && (_waiting || _remainingSeconds <= 1e-6))
         {
             _remainingSeconds = 0;
             _cursor = _windowEnd;

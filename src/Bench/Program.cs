@@ -125,10 +125,9 @@ public static class Program
 
     private static async Task<int> RunPersistenceCompareAsync(BenchOptions options)
     {
-        if (string.IsNullOrWhiteSpace(options.DatabaseA)
-            || string.IsNullOrWhiteSpace(options.DatabaseB)
+        if (string.IsNullOrWhiteSpace(options.DatabaseB)
             || string.IsNullOrWhiteSpace(options.DatabaseC))
-            throw new ArgumentException("compare 必须提供 --database-a、--database-b 和 --database-c。");
+            throw new ArgumentException("compare 必须提供 --database-b 和 --database-c（--database-a 为可选的历史 oop 参照）。");
 
         PersistenceCompareResult? result = null;
         PersistenceCompareBatchResult? batch = null;
@@ -183,7 +182,7 @@ public static class Program
         Console.WriteLine("  offline-login 先推进业务时钟，再以真实 WS 上线触发离线补算；不发送 simulation.advance。可用 scripts/bench-offline-login.sh 执行 12 小时、100/500/1000 人矩阵。");
         Console.WriteLine("  seed --resource-exhaustion true 单独生成仅够 2 轮制造的耗尽样本；普通种子按实际配表准备 48 小时材料。");
         Console.WriteLine("  report --report 'artifacts/bench/*-gathering.json' [--comparison-output artifacts/bench/gathering.comparison.json]（三版本同条件报告）");
-        Console.WriteLine("  compare --database-a 连接串 --database-b 连接串 --database-c 连接串 --player-id UUID [--report 文件.json]");
+        Console.WriteLine("  compare --database-b 连接串 --database-c 连接串 [--database-a 连接串] --player-id UUID [--report 文件.json]");
         Console.WriteLine("  provenance --variant oop|ecs-current|ecs-optimized --output artifacts/runtime/<variant>");
         return 0;
     }
@@ -904,14 +903,13 @@ public static class BenchPersistenceComparer
     ["updated_at", "created_at", "last_seen_at", "last_active_at", "auth_sessions", "runtime_leases", "section_flush_queue attempts/leases/timestamps", "integration_outbox visible/lease/attempt fields"];
 
     public static async Task<PersistenceCompareResult> CompareAsync(
-        string databaseA, string databaseB, string databaseC, Guid playerId, CancellationToken cancellationToken = default)
+        string? databaseA, string databaseB, string databaseC, Guid playerId, CancellationToken cancellationToken = default)
     {
-        var rows = new[]
-        {
-            await ReadAsync("oop", databaseA, playerId, cancellationToken),
-            await ReadAsync("ecs-current", databaseB, playerId, cancellationToken),
-            await ReadAsync("ecs-optimized", databaseC, playerId, cancellationToken)
-        };
+        var rows = new List<PersistenceVariantSnapshot>();
+        if (!string.IsNullOrWhiteSpace(databaseA))
+            rows.Add(await ReadAsync("oop", databaseA, playerId, cancellationToken));
+        rows.Add(await ReadAsync("ecs-current", databaseB, playerId, cancellationToken));
+        rows.Add(await ReadAsync("ecs-optimized", databaseC, playerId, cancellationToken));
         var exact = rows.Select(row => row.BusinessFingerprint).Distinct(StringComparer.Ordinal).Count() == 1
                     && rows.All(row => row.Found);
         var warnings = rows.Where(row => !row.Found).Select(row => $"{row.Variant} 未找到玩家 {playerId}。").ToList();
@@ -926,7 +924,7 @@ public static class BenchPersistenceComparer
     }
 
     public static async Task<PersistenceCompareBatchResult> CompareManyAsync(
-        string databaseA, string databaseB, string databaseC, IEnumerable<Guid> playerIds, CancellationToken cancellationToken = default)
+        string? databaseA, string databaseB, string databaseC, IEnumerable<Guid> playerIds, CancellationToken cancellationToken = default)
     {
         var results = new List<PersistenceCompareResult>();
         foreach (var playerId in playerIds.Distinct())

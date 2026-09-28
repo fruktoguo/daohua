@@ -7,12 +7,11 @@
     <AssemblyName>DaoHua.Server.Clean</AssemblyName>
     <IsPackable>false</IsPackable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore</YuoCoreRoot>
-    <DomainBuildVariant Condition="'$(DomainBuildVariant)' == ''">server-clean</DomainBuildVariant>
+    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore-optimized</YuoCoreRoot>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);DomainBuildVariant=$(DomainBuildVariant);DomainIsolatedBuild=$(DomainIsolatedBuild)" />
+    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <Compile Include="GlobalUsings.cs" />

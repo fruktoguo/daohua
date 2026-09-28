@@ -6,19 +6,25 @@
     <AssemblyName>Server</AssemblyName>
     <RootNamespace>Server</RootNamespace>
     <IsPackable>false</IsPackable>
+    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore-optimized</YuoCoreRoot>
+    <EcsBuildVariant Condition="'$(EcsBuildVariant)' == ''">ecs-optimized</EcsBuildVariant>
+    <EcsIsolatedBuild Condition="'$(EcsIsolatedBuild)' == ''">true</EcsIsolatedBuild>
+    <DefineConstants>$(DefineConstants);YUOCORE_OPTIMIZED</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="Clean/**/*.cs" />
-    <Compile Include="Clean/PlayerRuntime.cs" Link="Clean/PlayerRuntime.cs" />
     <EmbeddedResource Remove="Clean/Ops/OpsPage.html" />
-    <ProjectReference Include="../Server.Clean/Server.Clean.csproj" AdditionalProperties="YuoCoreRoot=../../vendor/YuoCore;DomainBuildVariant=server;DomainIsolatedBuild=false" />
-    <ProjectReference Include="../Domain/Domain.csproj" />
+    <!-- 引用边全局属性集必须全仓一致：同一项目若被不同全局集求值会生成多个实例
+         并行写同一 bin 目录（同名程序集互相覆盖/文件锁冲突）。Domain 只认 YuoCoreRoot，
+         Ecs 只认 YuoCoreRoot+EcsBuildVariant，其余变体属性为历史死属性勿再传递。 -->
+    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
+    <ProjectReference Include="../Ecs/Ecs.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot);EcsBuildVariant=$(EcsBuildVariant)" />
+    <ProjectReference Include="../Server.Clean/Server.Clean.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
     <ProjectReference Include="../Protocol/Protocol.csproj" />
-    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
-    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
-    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Persistence/YuoCore.Persistence.csproj" />
-    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj" />
+    <Compile Include="../ServerEcs/Program.cs" Link="Program.cs" />
+    <Compile Include="../ServerEcs/EcsPlayerRuntimeAdapter.cs" Link="EcsPlayerRuntimeAdapter.cs" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,10 +33,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
 </Project>

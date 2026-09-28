@@ -1,14 +1,14 @@
 # 道化太初 · 服务端业务逻辑开发指南（聚合单写者模型）
 
-本文档作为《道化太初》服务端**业务功能开发、系统扩展与日常编码**的唯一权威指南。系统采用 **`PlayerAggregate` 聚合 + `PlayerActor`/`SemaphoreSlim` 单写者 + 纯函数离散模拟引擎 `SimulationEngine`** 架构，确保在 2c4g/40g 服务器预算下达成 5000+ 账号、500+ 网络并发与 2000+ 冷补算的高吞吐确定性结算，杜绝任何多套平行实现。
+本文档作为《道化太初》服务端**业务功能开发、系统扩展与日常编码**的唯一权威指南。系统采用 **优化版 YuoCore ECS 运行时（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber` 分片单写者）+ `PlayerAggregate` 文档往返 + 纯函数离散模拟引擎 `SimulationEngine`** 架构，确保在 2c4g/40g 服务器预算下达成 5000+ 账号、500+ 网络并发与 2000+ 冷补算的高吞吐确定性结算，杜绝任何多套平行实现。
 
-> 历史 ECS/Fiber 推演已被现行聚合模型取代；`YuoCore` 基座引用保留待用，新增代码不得使用 `Task*`、`Executor*`、`*Component`/`*System` 等已废弃命名。
+> 生产运行时为优化版 YuoCore ECS：`src/Server` 装配 `vendor/YuoCore-optimized`，业务层经 `EcsPlayerRuntimeAdapter`（`IPlayerRuntime` 实现）进入 `EcsWorldShard.MutatePlayer` 通道——聚合在命令内重建、执行领域操作、整体回写组件。`*Component`/`*System` 命名仅限 `src/Ecs` 与内核内使用；`Task*`/`Executor*` 历史命名仍禁用。
 
 ---
 
 ## 一、 核心开发哲学：聚合单写者 + 纯函数模拟推进
 
-服务端不使用固定频率轮询，而是通过 **玩家聚合（PlayerAggregate）+ 专属 Actor 串行上下文 + 纯函数推进引擎（SimulationEngine）** 实现高效、零锁、确定性的离散事件推进：
+服务端不使用固定频率轮询，而是通过 **玩家聚合（PlayerAggregate 文档往返）+ ECS 分片 Fiber 串行上下文 + 纯函数推进引擎（SimulationEngine）** 实现高效、零锁、确定性的离散事件推进：
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -29,13 +29,13 @@
 │ 2. 纯函数离散模拟引擎（Functional Core · 确定性推进）                   │
 │    SimulationEngine.AdvanceTo(aggregate, now)                          │
 │    ├── 权威真源：挂机行动（引气/采药/炼丹/赶路）与战斗推进的唯一实现   │
-│    ├── 零锁：由玩家专属 PlayerActor 串行调用                            │
+│    ├── 零锁：由玩家所属 ECS 分片 Fiber 串行调用                         │
 │    └── 100% 确定性：在线秒级推进与离线 48 小时补算执行同一套纯逻辑     │
 │                                                                        │
 │ 3. 宿主路由与增量推流（Host Command & Delta Sync）                     │
-│    PlayerRuntime.ExecuteAsync(playerId, command, payload, ...)         │
-│    ├── 在玩家专属 PlayerActor（SemaphoreSlim 单写者）内串行执行         │
-│    ├── 每次变更标记 aggregate.MarkDirty(PlayerSectionKind.Xxx)         │
+│    EcsPlayerRuntimeAdapter.ExecuteAsync(playerId, command, payload,..) │
+│    ├── 玩家级 SemaphoreSlim 串行 → 分片 Fiber 内 MutatePlayer 执行     │
+│    ├── 聚合重建→领域操作→回写组件→脏段差集（DirtyMarks 流水号）        │
 │    └── WebSocket 仅将变动分段打包为增量推流给前端                       │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -76,19 +76,20 @@
 
 ## 四、 指令处理与网络流转规范
 
-客户端命令经 `/api/v1/players/{playerId}/commands` 或 WebSocket 进入 `PlayerRuntime.ExecuteAsync`，在专属 `PlayerActor` 内路由执行：
+客户端命令经 `/api/v1/players/{playerId}/commands` 或 WebSocket 进入 `EcsPlayerRuntimeAdapter.ExecuteAsync`（`IPlayerRuntime` 实现），在玩家级 `SemaphoreSlim` 串行后进入所属 `EcsWorldShard` 的 Fiber 内路由执行：
 
 ```csharp
 // 指令处理规范（先校验、后修改、即时标记脏）：
-// 1. 按 playerId 获取/唤醒 PlayerActor，续租 game.player_runtime_leases；
-// 2. SemaphoreSlim 串行进入；先验 requestId 幂等回执与 expectedStateVersion；
-// 3. switch (command) 路由：校验材料、境界、位置等前置条件；
-// 4. 调用 PlayerAggregate 方法修改状态，Touch()/MarkDirty 对应分段；
+// 1. 按 playerId 进入玩家级 gate，续租 game.player_runtime_leases；
+// 2. 先验 requestId 幂等回执与 expectedStateVersion；
+// 3. switch (command) 路由：需要聚合的走 MutatePlayer（组件状态→PlayerAggregate
+//    →领域操作→回写→脏段差集），纯队列/状态操作直接走 ECS 原语；
+// 4. 钱包/市场/建筑等副作用走原事务通道（economy 提交 + 回滚语义不变）；
 // 5. 返回 PlayerCommandResult；增量经 ProtocolSnapshotMapper 推流，
 //    命令回执按 snapshotForm 携带 delta（精确触及差集）或 snapshot（兜底）。
 ```
 
-现行命令名（以 `PlayerRuntime.ExecuteAsync` 路由表为准）：
+现行命令名（以 `EcsPlayerRuntimeAdapter.ExecuteAsync` 路由表为准）：
 
 | 命令 | 职责 |
 | --- | --- |

@@ -282,12 +282,11 @@ public sealed class SnapshotDeltaPushTests
     {
         var playerId = Guid.NewGuid();
         var repository = new FakeRepository(playerId);
-        await using var runtime = new PlayerRuntime(
+        await using var runtime = EcsRuntimeFactory.Create(
             repository,
             new EmptyAssets(),
             new NoopEconomy(),
-            GameDataCatalog.BuiltIn,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+            GameDataCatalog.BuiltIn);
         var pushed = new List<PlayerRuntimeSnapshot>();
         runtime.SnapshotUpdated += snapshot =>
         {
@@ -326,12 +325,11 @@ public sealed class SnapshotDeltaPushTests
     public async Task CommandReceipt_EnqueueCommand_DeltaForm_MergesToFullState()
     {
         var playerId = Guid.NewGuid();
-        await using var runtime = new PlayerRuntime(
+        await using var runtime = EcsRuntimeFactory.Create(
             new FakeRepository(playerId),
             new EmptyAssets(),
             new NoopEconomy(),
-            GameDataCatalog.BuiltIn,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+            GameDataCatalog.BuiltIn);
         var session = new WebSocketSession(playerId, 16);
         var initial = await runtime.LoadAsync(playerId);
         var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
@@ -378,19 +376,18 @@ public sealed class SnapshotDeltaPushTests
     public async Task CommandReceipt_FailedCommand_FallsBackToSnapshotForm()
     {
         var playerId = Guid.NewGuid();
-        await using var runtime = new PlayerRuntime(
+        await using var runtime = EcsRuntimeFactory.Create(
             new FakeRepository(playerId),
             new EmptyAssets(),
             new NoopEconomy(),
-            GameDataCatalog.BuiltIn,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+            GameDataCatalog.BuiltIn);
         var session = new WebSocketSession(playerId, 16);
         var initial = await runtime.LoadAsync(playerId);
         var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
         session.CommitPushBaseline(ChecksumsOf(initialDto.Sections), initialDto.Assets);
 
         var result = await runtime.ExecuteAsync(playerId, "action.remove",
-            JsonSerializer.SerializeToElement(new { actionInstanceId = Guid.NewGuid().ToString("D") }));
+            JsonSerializer.SerializeToElement(new { actionInstanceId = Guid.NewGuid().ToString("D") }), 0, Guid.NewGuid());
         Assert.False(result.Success);
         Assert.Null(result.Snapshot.TouchedSections);
 
@@ -411,12 +408,11 @@ public sealed class SnapshotDeltaPushTests
     public async Task CommandReceipt_IdempotentReplay_ReturnsSnapshotForm()
     {
         var playerId = Guid.NewGuid();
-        await using var runtime = new PlayerRuntime(
+        await using var runtime = EcsRuntimeFactory.Create(
             new FakeRepository(playerId),
             new EmptyAssets(),
             new NoopEconomy(),
-            GameDataCatalog.BuiltIn,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+            GameDataCatalog.BuiltIn);
         var session = new WebSocketSession(playerId, 16);
         var initial = await runtime.LoadAsync(playerId);
         var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
@@ -447,19 +443,18 @@ public sealed class SnapshotDeltaPushTests
     public async Task CommandReceipt_NoTouchedSections_DeltaCarriesDerivedCandidatesOnly()
     {
         var playerId = Guid.NewGuid();
-        await using var runtime = new PlayerRuntime(
+        await using var runtime = EcsRuntimeFactory.Create(
             new FakeRepository(playerId),
             new EmptyAssets(),
             new NoopEconomy(),
-            GameDataCatalog.BuiltIn,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+            GameDataCatalog.BuiltIn);
         var session = new WebSocketSession(playerId, 16);
         var initial = await runtime.LoadAsync(playerId);
         var initialDto = ProtocolSnapshotMapper.ToSnapshot(initial, "fp", GameDataCatalog.BuiltIn);
         session.CommitPushBaseline(ChecksumsOf(initialDto.Sections), initialDto.Assets);
 
         var result = await runtime.ExecuteAsync(playerId, "simulation.advance",
-            JsonSerializer.SerializeToElement(new { targetTime = DateTimeOffset.UtcNow }));
+            JsonSerializer.SerializeToElement(new { targetTime = DateTimeOffset.UtcNow }), 0, Guid.NewGuid());
         Assert.True(result.Success);
         var touched = Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(result.Snapshot.TouchedSections);
         Assert.Empty(touched);
@@ -486,29 +481,32 @@ public sealed class SnapshotDeltaPushTests
     {
         var playerId = Guid.NewGuid();
         var repository = new FakeRepository(playerId);
-        await using var runtime = new PlayerRuntime(
+        await using var runtime = EcsRuntimeFactory.Create(
             repository,
             new EmptyAssets(),
             new NoopEconomy(),
-            GameDataCatalog.LoadEmbedded(),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<PlayerRuntime>.Instance);
+            GameDataCatalog.LoadEmbedded());
 
         await runtime.LoadAsync(playerId);
         // 每次入队使用独立 requestId：同请求 ID 会走幂等重放路径（快照不带本操作判定信息）。
-        JsonElement EnqueuePayload() => System.Text.Json.JsonSerializer.SerializeToElement(
-            new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", 3), ProtocolJson.Options);
-        var first = await runtime.ExecuteAsync(playerId, "action.enqueue", EnqueuePayload(), 0);
+        JsonElement EnqueuePayload(out Guid enqueueRequestId)
+        {
+            enqueueRequestId = Guid.NewGuid();
+            return System.Text.Json.JsonSerializer.SerializeToElement(
+                new ActionIntentRequest(enqueueRequestId.ToString("D"), "cultivation.draw-qi", 3), ProtocolJson.Options);
+        }
+        var first = await runtime.ExecuteAsync(playerId, "action.enqueue", EnqueuePayload(out var firstRequestId), 0, firstRequestId);
         Assert.True(first.Success);
         Assert.False(first.Snapshot.WireAttributesChanged);
 
         // 空装配替换同样重建装备版本列表：属性输入修订号严格增大，面板必须重新解析。
         var loadoutPayload = System.Text.Json.JsonSerializer.SerializeToElement(
             new { equipment = Array.Empty<object>(), abilitySlots = Array.Empty<object>() }, ProtocolJson.Options);
-        var replaced = await runtime.ExecuteAsync(playerId, "loadout.replace", loadoutPayload, 0);
+        var replaced = await runtime.ExecuteAsync(playerId, "loadout.replace", loadoutPayload, 0, Guid.NewGuid());
         Assert.True(replaced.Success);
         Assert.True(replaced.Snapshot.WireAttributesChanged);
 
-        var third = await runtime.ExecuteAsync(playerId, "action.enqueue", EnqueuePayload(), 0);
+        var third = await runtime.ExecuteAsync(playerId, "action.enqueue", EnqueuePayload(out var thirdRequestId), 0, thirdRequestId);
         Assert.True(third.Success);
         Assert.False(third.Snapshot.WireAttributesChanged);
     }

@@ -13,7 +13,7 @@ SEED_PLAYERS="3000"
 HOURS="1,8,24,48"
 MODE="replay"
 SCENARIOS="Gathering,Crafting,Combat"
-VARIANTS="oop,ecs-current,ecs-optimized"
+VARIANTS="ecs-current,ecs-optimized"
 CONCURRENCY="32"
 RUN_ROOT="$ROOT_DIR/artifacts/bench/$RUN_ID"
 EPOCH=""
@@ -29,7 +29,7 @@ usage() {
   --hours 列表      逗号分隔：1,8,24,48；业务模拟时长
   --mode 模式       replay（默认，WS 命令回放）或 offline-login（上线时结算）
   --scenarios 列表  Gathering,Crafting,Combat
-  --variants 列表   oop,ecs-current,ecs-optimized
+  --variants 列表   ecs-current,ecs-optimized
   --concurrency 数  同时执行的玩家命令数（默认 32）
   --epoch ISO时间   业务实验起点（默认取 manifest 第一角色 startAt）
   --output-dir 目录 覆盖 artifacts/bench/<run-id>
@@ -81,7 +81,6 @@ mkdir -p "$RUN_ROOT"
 
 url_for() {
   case "$1" in
-    oop) echo 'http://127.0.0.1:15138' ;;
     ecs-current) echo 'http://127.0.0.1:15139' ;;
     ecs-optimized) echo 'http://127.0.0.1:15140' ;;
     *) return 1 ;;
@@ -89,7 +88,6 @@ url_for() {
 }
 port_for() {
   case "$1" in
-    oop) echo 15138 ;;
     ecs-current) echo 15139 ;;
     ecs-optimized) echo 15140 ;;
     *) return 1 ;;
@@ -97,7 +95,6 @@ port_for() {
 }
 database_for() {
   case "$1" in
-    oop) echo daohua_bench_oop ;;
     ecs-current) echo daohua_bench_ecs_current ;;
     ecs-optimized) echo daohua_bench_ecs_optimized ;;
     *) return 1 ;;
@@ -221,14 +218,14 @@ PY
         if [[ "$code" -ne 0 || "$status" == *partial* || "$status" == failed* ]]; then overall_fail=1; fi
         stop_variant "$variant"
       done
-      if [[ "$VARIANTS" != *oop* || "$VARIANTS" != *ecs-current* || "$VARIANTS" != *ecs-optimized* ]]; then
+      if [[ "$VARIANTS" != *ecs-current* || "$VARIANTS" != *ecs-optimized* ]]; then
         echo "compare,${scenario},${players},${hours}${summary_mode},,skipped-variants-subset" >>"$summary"
         continue
       fi
       scenario_slug="$(printf '%s' "$scenario" | tr '[:upper:]' '[:lower:]')"
       compare="$RUN_ROOT/compare-${scenario_slug}-${players}p-${hours}h${report_suffix}.json"
       set +e
-      dotnet "$BENCH_DLL" compare --database-a "$(connection_for "$(database_for oop)")" \
+      dotnet "$BENCH_DLL" compare \
         --database-b "$(connection_for "$(database_for ecs-current)")" \
         --database-c "$(connection_for "$(database_for ecs-optimized)")" \
         --manifest "$RUN_ROOT/manifest.json" --report "$compare" >"${compare%.json}.stdout.log" 2>"${compare%.json}.stderr.log"

@@ -38,7 +38,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     private PlayerIdentityComponent Identity
     {
 #if YUOCORE_OPTIMIZED
-        get => _identity;
+        get => EcsAblation.ComponentCache ? _identity : entity.GetComponent<PlayerIdentityComponent>()!;
 #else
         get => entity.GetComponent<PlayerIdentityComponent>()!;
 #endif
@@ -47,7 +47,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     private PlayerActionQueueComponent Queue
     {
 #if YUOCORE_OPTIMIZED
-        get => _queue;
+        get => EcsAblation.ComponentCache ? _queue : entity.GetComponent<PlayerActionQueueComponent>()!;
 #else
         get => entity.GetComponent<PlayerActionQueueComponent>()!;
 #endif
@@ -57,7 +57,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerProgression Progression
     {
 #if YUOCORE_OPTIMIZED
-        get => _progression.Progression;
+        get => (EcsAblation.ComponentCache ? _progression : entity.GetComponent<PlayerProgressionComponent>()!).Progression;
 #else
         get => entity.GetComponent<PlayerProgressionComponent>()!.Progression;
 #endif
@@ -66,7 +66,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerWorldState World
     {
 #if YUOCORE_OPTIMIZED
-        get => _world.World;
+        get => (EcsAblation.ComponentCache ? _world : entity.GetComponent<PlayerWorldComponent>()!).World;
 #else
         get => entity.GetComponent<PlayerWorldComponent>()!.World;
 #endif
@@ -75,7 +75,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerCombatState Combat
     {
 #if YUOCORE_OPTIMIZED
-        get => _combat.Combat;
+        get => (EcsAblation.ComponentCache ? _combat : entity.GetComponent<PlayerCombatComponent>()!).Combat;
 #else
         get => entity.GetComponent<PlayerCombatComponent>()!.Combat;
 #endif
@@ -84,7 +84,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerBuffState Buffs
     {
 #if YUOCORE_OPTIMIZED
-        get => _buffs.Buffs;
+        get => (EcsAblation.ComponentCache ? _buffs : entity.GetComponent<PlayerBuffComponent>()!).Buffs;
 #else
         get => entity.GetComponent<PlayerBuffComponent>()!.Buffs;
 #endif
@@ -93,7 +93,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerSettingsState Settings
     {
 #if YUOCORE_OPTIMIZED
-        get => _settings.Settings;
+        get => (EcsAblation.ComponentCache ? _settings : entity.GetComponent<PlayerSettingsComponent>()!).Settings;
 #else
         get => entity.GetComponent<PlayerSettingsComponent>()!.Settings;
 #endif
@@ -102,7 +102,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerLoadoutState Loadout
     {
 #if YUOCORE_OPTIMIZED
-        get => _loadout.Loadout;
+        get => (EcsAblation.ComponentCache ? _loadout : entity.GetComponent<PlayerLoadoutComponent>()!).Loadout;
 #else
         get => entity.GetComponent<PlayerLoadoutComponent>()!.Loadout;
 #endif
@@ -111,7 +111,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public PlayerDuelState Duel
     {
 #if YUOCORE_OPTIMIZED
-        get => _duel.Duel;
+        get => (EcsAblation.ComponentCache ? _duel : entity.GetComponent<PlayerDuelComponent>()!).Duel;
 #else
         get => entity.GetComponent<PlayerDuelComponent>()!.Duel;
 #endif
@@ -124,7 +124,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     /// <summary>当前请求实际触及的分段；宿主在完成增量/刷盘交接后可显式清空。</summary>
     public IReadOnlySet<PlayerSectionKind> DirtySections => Identity.DirtySections;
 
-    public void MarkDirty(PlayerSectionKind section) => Identity.DirtySections.Add(section);
+    public void MarkDirty(PlayerSectionKind section) => Identity.MarkDirty(section);
 
     public void ClearDirtySections() => Identity.DirtySections.Clear();
 

@@ -17,10 +17,9 @@ SHARD_COUNT=""
 
 usage() {
   cat <<'EOF'
-用法：scripts/bench-service.sh --variant oop|ecs-current|ecs-optimized [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间] [--shard-count 数量]
-  oop             端口 5128，数据库 daohua_bench_oop，src/Server
-  ecs-current     端口 5129，数据库 daohua_bench_ecs_current，src/ServerEcs + vendor/YuoCore
-  ecs-optimized   端口 5130，数据库 daohua_bench_ecs_optimized，src/ServerEcsOptimized + vendor/YuoCore-optimized
+用法：scripts/bench-service.sh --variant ecs-current|ecs-optimized [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间] [--shard-count 数量]
+  ecs-current     端口 5129，数据库 daohua_bench_ecs_current，src/ServerEcs + vendor/YuoCore（基线对照变体）
+  ecs-optimized   端口 5130，数据库 daohua_bench_ecs_optimized，src/Server + vendor/YuoCore-optimized（生产变体）
 环境变量：DAOHUA_DATABASE_URL 覆盖数据库连接串，ASPNETCORE_ENVIRONMENT 默认 Development。
 --simulation-target 仅在 Development 基准服务固定业务模拟截止时间；租约/会话仍使用系统 UTC。
 --shard-count 仅对 ECS 变体设置 Ecs:ShardCount；省略时 ECS 基准默认为 4，OOP 不设置。
@@ -47,11 +46,11 @@ done
 if [[ -z "$VARIANT" ]]; then echo "必须提供 --variant" >&2; usage >&2; exit 2; fi
 case "$VARIANT" in
   oop)
-    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5128; DATABASE="daohua_bench_oop"; ARTIFACT="$ROOT_DIR/artifacts/runtime/oop"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"; ;;
+    echo "oop 变体已退役：生产架构已切换为优化版 ECS（src/Server = ServerEcs 宿主 + vendor/YuoCore-optimized）" >&2; exit 2 ;;
   ecs-current)
-    PROJECT="$ROOT_DIR/src/ServerEcs/ServerEcs.csproj"; PORT=5129; DATABASE="daohua_bench_ecs_current"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-current"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="f0b78f5b83d9f3d7bfa4a44a52f45690b94072e9"; ;;
+    PROJECT="$ROOT_DIR/src/ServerEcs/ServerEcs.csproj"; PORT=5129; DATABASE="daohua_bench_ecs_current"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-current"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="056610913033c4296e9e3d9cc13c42dcf8e95686"; ;;
   ecs-optimized)
-    PROJECT="$ROOT_DIR/src/ServerEcsOptimized/ServerEcsOptimized.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="68e4b63094ca9d3672e597763e43d3bcb105806f"; ;;
+    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="79cdaebf70ce2c59c33e08adae9f40fdd75e983c"; ;;
   *) echo "不支持的 variant：$VARIANT" >&2; exit 2 ;;
 esac
 if [[ -n "$PORT_OVERRIDE" ]]; then PORT="$PORT_OVERRIDE"; fi
@@ -130,9 +129,9 @@ fi
 
 if ((START)); then
   case "$VARIANT" in
-    oop) dll="$ARTIFACT/Server.dll" ;;
     ecs-current) dll="$ARTIFACT/ServerEcs.dll" ;;
-    ecs-optimized) dll="$ARTIFACT/ServerEcsOptimized.dll" ;;
+    ecs-optimized) dll="$ARTIFACT/Server.dll" ;;
+    *) echo "不支持的 variant：$VARIANT" >&2; exit 2 ;;
   esac
   if [[ ! -f "$dll" ]]; then
     echo "找不到发布产物，请先使用 --build" >&2; exit 4
@@ -158,14 +157,12 @@ if ((START)); then
   export Storage__EnableSchemaBootstrap=true
   export DAOHUA_BENCH_VARIANT="$VARIANT"
   export DAOHUA_BENCH_MODE="${DAOHUA_BENCH_MODE:-replay}"
-  if [[ "$VARIANT" != "oop" ]]; then
-    export Ecs__ShardCount="${SHARD_COUNT:-4}"
-  fi
+  export Ecs__ShardCount="${SHARD_COUNT:-4}"
   if [[ -n "$SIMULATION_TARGET" ]]; then
     export DAOHUA_BENCH_SIMULATION_TARGET="$SIMULATION_TARGET"
     # ECS 世界的业务时钟必须从同一实验 epoch 启动；租约、会话等运维时钟仍由服务使用 UTC。
-    # ServerEcs 在未显式提供 DAOHUA_BENCH_EPOCH 时使用该值作为世界初始时钟。
-    if [[ "$VARIANT" != "oop" ]]; then export DAOHUA_BENCH_EPOCH="$SIMULATION_TARGET"; fi
+    # ECS 变体在未显式提供 DAOHUA_BENCH_EPOCH 时使用该值作为世界初始时钟。
+    export DAOHUA_BENCH_EPOCH="$SIMULATION_TARGET"
   fi
   : >"$LOG_FILE"
   if ((FOREGROUND)); then

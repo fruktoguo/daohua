@@ -24,20 +24,25 @@
 - `tools/`：本地开发辅助工具（`config-editor` 独立 Vite 应用、`combat-simulator.html`），不进入生产镜像。
 - `art/`：美术与图像资源源文件及图标清单。
 - `deploy/`：生产部署资产（`compose.prod.yaml`、systemd 单元、备份/归档/回滚脚本、Caddy 站点配置、PG 角色 SQL）。
-- `vendor/YuoCore`：固定版本的 Git submodule。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。
+- `vendor/YuoCore` / `vendor/YuoCore-optimized`：固定版本的 Git submodule（同一上游的 `main` / `ecs-optimized` 分支）。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。**在 submodule 内工作时，必须遵循其仓库内 `AGENTS.md` → `docs/ai-development-guide.md` → `docs/yuocore-ecs-kernel-rules.md` 的规范链**（ECS 内核的稠密索引纪律、生命周期语义红线、观测零成本与消融归因门禁以该链为准）；submodule 内的提交在其自身分支完成且不推送，本仓库只更新 submodule 指针与 `scripts/bench-service.sh` 的 `CORE_SHA` 钉。
 - `data`：运行数据，不进入镜像，不提交 Git，不随代码发布覆盖。
 
 依赖方向必须保持（以各 `.csproj` 实际 `ProjectReference` 为准）：
 
 ```text
-Server -> Domain + Protocol + YuoCore(Abstractions/Ecs/Persistence/Runtime) + Npgsql
-Domain -> YuoCore.Abstractions + YuoCore.Ecs（基座引用保留待用，当前无 Entity/Fiber 运行时对象）
+Server -> src/Ecs + src/ServerEcs 源 + Server.Clean + Domain + Protocol + YuoCore-optimized(Abstractions/Ecs/Persistence/Runtime) + Npgsql（YUOCORE_OPTIMIZED）
+src/Ecs -> Domain + Protocol + YuoCore-optimized(Abstractions/Ecs)（YuoCoreRoot=vendor/YuoCore-optimized，游戏 ECS 组件/系统/分片/管线）
+src/ServerEcs -> src/Ecs + Server.Clean + Domain + Protocol（EcsPlayerRuntimeAdapter + Program.cs，ecs-current 基线对照变体）
+Domain -> YuoCore.Abstractions + YuoCore.Ecs（纯领域原语引用，不持有宿主所有权对象）
 Domain.Tests -> Domain + Protocol
-Server.Tests -> Server + Domain + Protocol
+Server.Tests -> Server + Domain + Protocol + ComputeNode（全部引用边 AdditionalProperties 对齐 YuoCoreRoot=vendor/YuoCore-optimized）
+ServerEcs.Tests -> ServerEcs + src/Ecs + Domain + Protocol
 LoadTests -> Protocol + Npgsql
 ComputeNode -> Domain（仅纯领域程序集：确定性补算与 SectionCodec 单源复用，禁止任何宿主/存储引用）
 DataTool -> 无项目引用（独立可执行进程/工具）
 ```
+
+引用边必须统一传递 `YuoCoreRoot`（及 `Ecs` 边的 `EcsBuildVariant`）：基线与优化版程序集名同名，任一引用边漏传 `AdditionalProperties` 会产生按默认根求值的第二实例，导致同一输出目录被两变体并行写入或运行时装载错误内核。`ecs-current` 基线腿由 `src/ServerEcs` 自身显式携带 `YuoCoreRoot=vendor/YuoCore`；其余消费者的默认值已翻转为 optimized。
 
 Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
 
@@ -162,13 +167,13 @@ docker compose -f deploy/compose.prod.yaml down
 - 所有战斗、属性、收益率、计数与时长数值，计算和储存一律统一使用 `double` 类型（前端对应 `number` 即 double 精度），百分比类型内部也必须采用 `double` 点数。
 - **服务端类型命名规约（现行聚合模型）**：
   - **繁多业务子类型采用帕斯卡前缀法（PascalCase Prefix）**：同族可枚举的业务子类型以业务名作为前缀聚合命名——玩家聚合分段族 `PlayerProgression` / `PlayerWorldState` / `PlayerCombatState` / `PlayerBuffState` / `PlayerLoadoutState` / `PlayerSettingsState` / `PlayerCombatSkillState` / `PlayerDuelState`，分段枚举 `PlayerSectionKind`（`Progression`/`World`/`Combat`/`Buffs`/`Loadout`/`Settings`/`ActionQueue`/`Duel`），载荷与存储记录 `PlayerStateHead` / `PlayerSectionSnapshot` / `StoredSection` / `StoredAction` / `SectionFlushItem` / `AutoUseSlotState` 等，便于 IDE 极速自动补全与文件树聚类。
-  - **职责型核心类型保留自然后缀法（Natural Suffix）**：引擎与结算 `SimulationEngine` / `CombatSkillEngine`，选择与解算 `EncounterWaveSelector` / `PlayerAttributeResolver`，映射与编解码 `ProtocolSnapshotMapper` / `SectionCodec` / `MarketDtoMapper`，宿主单写者与运行时 `PlayerRuntime`（内含 `PlayerActor`）/ `MarketRuntime` / `WebSocketRuntime`，持久化适配 `Postgres*Repository`，后台任务 `*Worker` / `*HostedService`。
-  - **已废弃命名不得复用**：`Task*` 任务数据类、`Executor*` 静态执行器、`*Component`/`*System` ECS 基座后缀属于已被聚合模型取代的历史约定，新增代码不得使用。
+  - **职责型核心类型保留自然后缀法（Natural Suffix）**：引擎与结算 `SimulationEngine` / `CombatSkillEngine`，选择与解算 `EncounterWaveSelector` / `PlayerAttributeResolver`，映射与编解码 `ProtocolSnapshotMapper` / `SectionCodec` / `MarketDtoMapper`，宿主单写者与运行时 `EcsPlayerRuntimeAdapter` / `MarketRuntime` / `WebSocketRuntime`，持久化适配 `Postgres*Repository`，后台任务 `*Worker` / `*HostedService`。
+  - **已废弃命名不得复用**：`Task*` 任务数据类、`Executor*` 静态执行器属于历史约定，新增代码不得使用；`*Component`/`*System` 仅限定在 `src/Ecs`（游戏 ECS 层）与 YuoCore 内核中使用，禁止出现在 Domain/Server.Clean 等非 ECS 层。
 - 确定性快进的在线、离线挂机和重连结果必须保持一致。
 - **行动队列与无限循环不变量**：行动队列中 `RemainingRepeats == -1`（或负值代表无限重复）在任何 `SimulationEngine.AdvanceTo` 模拟推进与单轮结算完成后，**绝对不得自动出队**；只有正数次数递减至 0、玩家显式取消或资源前置条件断绝时方可移出队列。协议与前端选择器必须完整支持 `-1` 无限循环语义。
 - **协议快照映射与配表透传**：`ProtocolSnapshotMapper` 转换快照与增量 DTO 时必须显式透传当前激活的 `GameDataCatalog`，以保证动作指纹与动态实体上下文完整一致，禁止脱离配表单独伪造协议载荷。
 - 不得为性能优化改变战斗结果、掉落、市场撮合、队列完成边界或快照语义。
-- 玩家并发所有权模型为「`PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者」：同一玩家的命令与模拟推进在专属 Actor 内串行执行，跨边界访问不得直接持有聚合引用。`YuoCore`（Ecs/Persistence/Runtime）基座引用在项目文件中保留待用，当前不构成运行时对象模型；若未来启用 ECS/Fiber，所有权约束另行定义。
+- 玩家并发所有权模型为「`PlayerAggregate` 聚合（命令内文档往返重建）+ 优化版 YuoCore ECS（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber`）+ 玩家级 `SemaphoreSlim` 单写者」：生产宿主 `src/Server` 使用 `vendor/YuoCore-optimized`，同一玩家的命令与模拟推进在其哈希路由的 ECS 分片 Fiber 内串行执行，`EcsPlayerRuntimeAdapter` 的玩家级 gate 保证跨边界串行；跨边界访问不得直接持有聚合或 `YuoEntity` 引用。基线 `src/ServerEcs`（`ecs-current` 变体）仅作差分/基准对照，不再是生产路径。
 - 玩家快照写回失败必须保留可恢复证据；不得为了降噪降低持久化错误等级。
 - 健康端点不得泄露 token、连接串、玩家数据或内部异常。
 - CORS 只允许配置的完整来源；禁止恢复任意来源加凭据的组合。
@@ -242,7 +247,7 @@ scripts/docker-build-prod.sh --push
 - `daohua-ccr-auto-update.timer` 每分钟检查 `prod`；镜像 ID 未变化时不得重建容器。
 - 新镜像未通过健康检查时必须自动回滚，并记录失败镜像 ID；同一失败版本不得循环重试。
 - 更新不得删除、重建或改名 `daohua_daohua-postgres` 卷。
-- 当前进程内在线玩家由 PlayerRuntime 按玩家串行处理，数据库使用市场分区租约及 fence；当前没有 `Runtime:PlayerShardCount` 配置；跨进程玩家分片所有权和红绿无停机仍未完成，正常更新依靠 WebSocket 自动重连、PostgreSQL outbox 和单实例 app 优雅替换恢复。
+- 当前进程内在线玩家由 ECS 适配器按玩家串行处理，数据库使用市场分区租约及 fence；`EcsGameRuntime` 分片数默认 1（构造参数 shardCount）；跨进程玩家分片所有权和红绿无停机仍未完成，正常更新依靠 WebSocket 自动重连、PostgreSQL outbox 和单实例 app 优雅替换恢复。
 - 回滚前先停用自动更新 timer，使用已验证的不可变镜像，验证完成后再决定是否恢复 timer。
 
 ## 13. Caddy 规则

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Protocol;
 using Server.Clean;
 using Server.Clean.Ops;
 using Xunit;
@@ -111,8 +112,7 @@ public sealed class OpsComputeEndpointTests
         // 面板其他端点的参数类型必须可在 DI 推断为服务（懒构造，本测试不请求它们，
         // 只保证路由元数据推断不把复杂类型误判为 Body）。
         builder.Services.AddSingleton<Domain.GameData.GameDataCatalog>();
-        builder.Services.AddSingleton<PlayerRuntime>();
-        builder.Services.AddSingleton<IPlayerRuntime>(services => services.GetRequiredService<PlayerRuntime>());
+        builder.Services.AddSingleton<IPlayerRuntime, UnusedPlayerRuntime>();
         builder.Services.AddSingleton<SessionRegistry>();
         builder.Services.AddSingleton<MarketRuntime>();
         builder.Services.AddSingleton(new OpsLogBuffer(100));
@@ -128,4 +128,30 @@ public sealed class OpsComputeEndpointTests
     private static string BaseAddress(WebApplication app) =>
         app.Services.GetRequiredService<IServer>()
             .Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+
+    /// <summary>仅为路由元数据推断占位的 IPlayerRuntime 空实现；本测试不请求玩家端点，成员永不调用。</summary>
+    private sealed class UnusedPlayerRuntime : IPlayerRuntime
+    {
+        public int LoadedCount => 0;
+        public DateTimeOffset? NextAdvanceBoundaryUtc => null;
+        public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated { add { } remove { } }
+        public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted { add { } remove { } }
+        public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
+            long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) => [];
+        public ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyList<PlayerRuntimeSnapshot>>([]);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 }

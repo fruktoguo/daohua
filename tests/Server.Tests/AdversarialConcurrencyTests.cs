@@ -2,7 +2,6 @@ using System.Text.Json;
 using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
-using Microsoft.Extensions.Logging.Abstractions;
 using Protocol;
 using Server.Clean;
 using Xunit;
@@ -50,12 +49,11 @@ public sealed class AdversarialConcurrencyTests
         }
 
         var multiRepo = new MultiPlayerStateRepository(stateMap);
-        var runtime = new PlayerRuntime(
+        await using var runtime = EcsRuntimeFactory.Create(
             multiRepo,
             new EmptyAssetRepository(),
             new NoopEconomyRepository(),
-            gameData,
-            NullLogger<PlayerRuntime>.Instance);
+            gameData);
 
         // 为每个 session 挂载模拟 WebSocketEndpoint 内部的分发监听
         foreach (var client in clients)
@@ -122,8 +120,9 @@ public sealed class AdversarialConcurrencyTests
             {
                 if (idx % 2 == 1)
                 {
-                    var payload = JsonSerializer.SerializeToElement(new ActionIntentRequest(Guid.NewGuid().ToString("D"), "cultivation.draw-qi", 3), ProtocolJson.Options);
-                    await runtime.ExecuteAsync(client.PlayerId, "action.enqueue", payload);
+                    var requestId = Guid.NewGuid();
+                    var payload = JsonSerializer.SerializeToElement(new ActionIntentRequest(requestId.ToString("D"), "cultivation.draw-qi", 3), ProtocolJson.Options);
+                    await runtime.ExecuteAsync(client.PlayerId, "action.enqueue", payload, 0, requestId);
                 }
             }));
         }

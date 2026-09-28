@@ -8,11 +8,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
     <!--
-      默认继续使用生产基线 YuoCore。ECS 实验宿主通过 ProjectReference 的
-      AdditionalProperties 传入 optimized 根目录；这样 Domain 的传递依赖不会
-      在 optimized 进程中偷偷加载基线程序集。
+      生产内核即优化版 YuoCore：所有未显式指定根目录的引用方统一落在 optimized。
+      ecs-current 对照腿由 ServerEcs 经 AdditionalProperties 显式传入基线根目录。
     -->
-    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore</YuoCoreRoot>
+    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore-optimized</YuoCoreRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +24,7 @@
     <InternalsVisibleTo Include="Server" />
     <InternalsVisibleTo Include="Server.Tests" />
     <InternalsVisibleTo Include="Domain.Tests" />
+    <InternalsVisibleTo Include="DaoHua.Ecs" />
   </ItemGroup>
 
   <ItemGroup>

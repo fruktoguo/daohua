@@ -7,6 +7,8 @@
     <RootNamespace>DaoHua.ComputeNode</RootNamespace>
     <IsPackable>false</IsPackable>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- 生产即优化版内核：与主服 Domain 构建同一 YuoCore 根，避免同一编译会话出现基线/优化两套 Domain 实例互相覆盖输出。 -->
+    <YuoCoreRoot Condition="'$(YuoCoreRoot)' == ''">../../vendor/YuoCore-optimized</YuoCoreRoot>
   </PropertyGroup>
 
   <!--
@@ -16,6 +18,6 @@
     与主服 LoadEmbedded 同源同指纹，无需独立配表目录。
   -->
   <ItemGroup>
-    <ProjectReference Include="../Domain/Domain.csproj" />
+    <ProjectReference Include="../Domain/Domain.csproj" AdditionalProperties="YuoCoreRoot=$(YuoCoreRoot)" />
   </ItemGroup>
 </Project>

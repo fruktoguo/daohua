@@ -21,6 +21,14 @@ public sealed class PlayerIdentityComponent : YuoComponent
     public PresenceState Presence { get; set; } = PresenceState.Online;
     /// <summary>组件持久化脏集合跨请求保留，由宿主成功入 durable queue 后确认。</summary>
     public HashSet<PlayerSectionKind> DirtySections { get; } = [];
+    /// <summary>分段脏流水号：每次标脏单调递增（已脏分段再次触及也递增），
+    /// 与 PlayerAggregateState.DirtySectionMarks 同语义，供命令/推送差集窄化判定。</summary>
+    public Dictionary<PlayerSectionKind, long> DirtyMarks { get; } = [];
+    public void MarkDirty(PlayerSectionKind section)
+    {
+        DirtySections.Add(section);
+        DirtyMarks[section] = DirtyMarks.TryGetValue(section, out var mark) ? mark + 1 : 1;
+    }
 }
 
 /// <summary>玩家成长组件，保存行动系统实际修改的数值，而不是缓存聚合对象。</summary>
