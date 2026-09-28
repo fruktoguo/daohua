@@ -3,29 +3,34 @@ namespace DaoHua.ComputeNode;
 /// <summary>
 /// 确定性离线挂机批量补算引擎（compute.v2 真实模拟路径）。
 /// 架构边界：
-/// 1. 节点只运行确定性纯计算，无状态、不持有任何数据库读写权限；
-/// 2. 与主服重连补算共用同一条领域管线：SectionCodec 解码 8 段载荷 →
-///    PlayerAggregate.Restore 还原聚合 → RebindGameDataFingerprint 对齐当前配表 →
-///    AssetWallet.Restore 还原钱包快照 → SimulationEngine.AdvanceTo 离线推进 →
-///    EncodeAggregate 只编码脏分段。同输入两端逐字节一致由 golden vector 测试守门；
-/// 3. 离线补算一律 <see cref="DuelAdvanceOptions"/>(MatchingEnabled: false)：
-///    斗法撮合是跨玩家交互，只能由主服在线路径完成；
+/// 1. 节点只运行确定性计算，无状态、不持有任何数据库读写权限；
+/// 2. 与主服共用同一套 ECS 执行环境：SectionCodec 解码 8 段载荷 → EcsGameRuntime
+///    装载玩家实体与钱包快照 → MutatePlayer 重绑配表指纹 → RunPlayerOnceAsync
+///    推进 → ExportSnapshot + 脏分段集合编码回传。在线/离线一致性由同一代码路径
+///    构造保证，并由 golden vector 测试守门；
+/// 3. 斗法撮合是跨玩家交互，只能由主服在线路径完成；节点推进路径不含撮合；
 /// 4. 输出的新版本号与校验和必须能被主服 CAS 与 section checksum 机制校验落盘；
 ///    资产增量随结果回传，由主服在结果落库事务内经既有经济事务原子入账——
 ///    节点不创造第二套资产协议，也不直接写余额。
 /// </summary>
-public sealed class DeterministicBatchEngine(GameDataCatalog gameData)
+public sealed class DeterministicBatchEngine(GameDataCatalog gameData) : IDisposable
 {
+    /// <summary>跨任务复用的 ECS 执行环境；玩家实体按 job 装载、完成后卸载。</summary>
+    private readonly EcsGameRuntime _runtime = new(gameData);
+
+    public void Dispose() => _runtime.Dispose();
+
     /// <summary>
     /// 对单个离线任务执行确定性时间快进推演。
     /// </summary>
     /// <param name="job">单个离线任务请求。</param>
+    /// <param name="cancellationToken">批次取消令牌。</param>
     /// <returns>任务推进结果。</returns>
-    public AdvanceJobResult Advance(AdvanceJobRequest job)
+    public async ValueTask<AdvanceJobResult> AdvanceAsync(AdvanceJobRequest job, CancellationToken cancellationToken = default)
     {
         try
         {
-            return AdvanceCore(job);
+            return await AdvanceCore(job, cancellationToken).ConfigureAwait(false);
         }
         catch (FormatException)
         {
@@ -59,8 +64,8 @@ public sealed class DeterministicBatchEngine(GameDataCatalog gameData)
         }
     }
 
-    /// <summary>真实模拟主流程：解码 → 还原 → 推进 → 编码回传。</summary>
-    private AdvanceJobResult AdvanceCore(AdvanceJobRequest job)
+    /// <summary>真实模拟主流程：解码 → 装载实体 → 推进 → 编码回传。</summary>
+    private async ValueTask<AdvanceJobResult> AdvanceCore(AdvanceJobRequest job, CancellationToken cancellationToken)
     {
         var started = Stopwatch.GetTimestamp();
         var now = DateTimeOffset.UtcNow;
@@ -87,53 +92,61 @@ public sealed class DeterministicBatchEngine(GameDataCatalog gameData)
             DateTimeOffset.FromUnixTimeMilliseconds(job.FromUnixMilliseconds),
             job.HeadGameDataFingerprint, job.HeadChecksum, now);
         var state = SectionCodec.DecodeAggregate(new PlayerStateBundle(identity, head, sections, []));
-        var player = PlayerAggregate.Restore(state);
-        // 与主服重连路径一致：存档指纹切换到当前配表，轮换时 Settings 标脏并入版本。
-        player.RebindGameDataFingerprint(gameData.Fingerprint);
 
-        // 钱包只用于消耗品/材料可用性判定；扣减结果经 AssetDeltas 回传，由主服事务入账。
-        var wallet = new AssetWallet(player.PlayerId);
+        // 钱包快照作为实体背包初值进入 ECS；扣减结果经 AssetDeltas 回传主服事务入账。
+        AssetBalance[]? balances = null;
         if (job.AssetBalances is { Count: > 0 } rows)
-            wallet.Restore(rows.Select(row => new AssetBalance(
-                player.PlayerId, new AssetKey(new ItemId(row.AssetId), row.Variant ?? ""), row.Quantity, 0)));
+            balances = rows.Select(row => new AssetBalance(
+                state.PlayerId, new AssetKey(new ItemId(row.AssetId), row.Variant ?? ""), row.Quantity, 0)).ToArray();
 
-        var result = SimulationEngine.AdvanceTo(player, target, gameData, wallet,
-            new DuelAdvanceOptions(MatchingEnabled: false));
-
-        // 只回传推进中真正变更的分段；编码与校验和由共享 SectionCodec 单源产出。
-        var writes = SectionCodec.EncodeAggregate(player, now);
-        var output = new List<SectionPayload>(writes.Count);
-        long outputBytes = 0;
-        foreach (var write in writes)
+        _runtime.CreatePlayer(state, balances);
+        try
         {
-            outputBytes += write.Payload.Length;
-            // 响应侧 checksum 针对编码后线字节：主服 ToSectionWrite 先验传输完整性再解压重算存储口径。
-            output.Add(new SectionPayload(
-                write.SectionKind,
-                write.StateVersion,
-                ToWireCodec(write.Codec),
-                Convert.ToBase64String(write.Payload.Span),
-                Convert.ToHexStringLower(SHA256.HashData(write.Payload.Span))));
-        }
+            // 与主服重连路径一致：存档指纹切换到当前配表，轮换时 Settings 标脏并入版本。
+            _runtime.MutatePlayer(job.PlayerId, aggregate => aggregate.RebindGameDataFingerprint(gameData.Fingerprint));
+            await _runtime.RunPlayerOnceAsync(job.PlayerId, target, cancellationToken).ConfigureAwait(false);
+            var snapshot = _runtime.ExportSnapshot(job.PlayerId);
+            var result = _runtime.DrainSimulationResult(job.PlayerId);
 
-        var metrics = new ComputeAdvanceMetrics(
-            (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-            (long)result.CompletedActions,
-            output.Count,
-            inputBytes,
-            outputBytes);
-        return new AdvanceJobResult(
-            job.JobId,
-            job.PlayerId,
-            true,
-            job.SourceStateVersion,
-            result.StateVersion,
-            output,
-            MergeDeltas(result.AssetDeltas),
-            metrics,
-            null,
-            null,
-            false);
+            // 只回传推进中真正变更的分段；编码与校验和由共享 SectionCodec 单源产出。
+            var writes = SectionCodec.EncodeAggregate(snapshot.State, _runtime.GetDirtySections(job.PlayerId), now);
+            var output = new List<SectionPayload>(writes.Count);
+            long outputBytes = 0;
+            foreach (var write in writes)
+            {
+                outputBytes += write.Payload.Length;
+                // 响应侧 checksum 针对编码后线字节：主服 ToSectionWrite 先验传输完整性再解压重算存储口径。
+                output.Add(new SectionPayload(
+                    write.SectionKind,
+                    write.StateVersion,
+                    ToWireCodec(write.Codec),
+                    Convert.ToBase64String(write.Payload.Span),
+                    Convert.ToHexStringLower(SHA256.HashData(write.Payload.Span))));
+            }
+
+            var metrics = new ComputeAdvanceMetrics(
+                (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                (long)(result?.CompletedActions ?? 0),
+                output.Count,
+                inputBytes,
+                outputBytes);
+            return new AdvanceJobResult(
+                job.JobId,
+                job.PlayerId,
+                true,
+                job.SourceStateVersion,
+                result?.StateVersion ?? snapshot.State.StateVersion,
+                output,
+                MergeDeltas(result?.AssetDeltas ?? []),
+                metrics,
+                null,
+                null,
+                false);
+        }
+        finally
+        {
+            _runtime.RemovePlayer(job.PlayerId);
+        }
     }
 
     /// <summary>

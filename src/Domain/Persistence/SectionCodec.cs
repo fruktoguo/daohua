@@ -141,8 +141,24 @@ public static class SectionCodec
     public static IReadOnlyList<SectionWrite> EncodeAggregate(PlayerAggregate aggregate, DateTimeOffset updatedAt, long? stateVersionOverride = null)
     {
         ArgumentNullException.ThrowIfNull(aggregate);
-        var state = aggregate.ExportState();
-        var dirty = aggregate.ConsumeDirtySections();
+        return EncodeAggregateDirty(aggregate.ExportState(), aggregate.ConsumeDirtySections(), updatedAt, stateVersionOverride);
+    }
+
+    /// <summary>
+    /// 将不可变聚合状态按显式脏分段集合编码；ECS 运行时的脏标记挂在身份组件上，
+    /// 由宿主推进结果显式传入，与聚合路径共用同一段编码面保证字节一致。
+    /// </summary>
+    public static IReadOnlyList<SectionWrite> EncodeAggregate(PlayerAggregateState state,
+        IReadOnlyCollection<DomainSectionKind> dirtySections, DateTimeOffset updatedAt)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(dirtySections);
+        return EncodeAggregateDirty(state, dirtySections, updatedAt, null);
+    }
+
+    private static List<SectionWrite> EncodeAggregateDirty(PlayerAggregateState state,
+        IReadOnlyCollection<DomainSectionKind> dirty, DateTimeOffset updatedAt, long? stateVersionOverride)
+    {
         var result = new List<SectionWrite>(dirty.Count);
         foreach (var section in dirty)
         {
@@ -159,7 +175,7 @@ public static class SectionCodec
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
             };
-            result.Add(Encode(aggregate.PlayerId.Value, key, Math.Max(1, stateVersionOverride ?? state.StateVersion), value, updatedAt) with
+            result.Add(Encode(state.PlayerId.Value, key, Math.Max(1, stateVersionOverride ?? state.StateVersion), value, updatedAt) with
             {
                 GameDataFingerprint = state.GameDataFingerprint,
                 LastSimulatedAt = state.LastSimulatedAt

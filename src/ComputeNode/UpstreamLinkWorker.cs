@@ -259,7 +259,7 @@ public sealed class UpstreamLinkWorker(
                             jobViolation?.Code ?? "INVALID_JOB_ID", jobViolation?.Message ?? "任务为空。", false)
                         : jobViolation is not null
                             ? AdvanceJobResult.Failed(job, jobViolation.Code, jobViolation.Message)
-                            : engine.Advance(job);
+                            : await engine.AdvanceAsync(job, token);
                     results.Add(result);
                     if (result.Success) metrics.RecordCompletedJob();
                     else metrics.RecordFailedJob();

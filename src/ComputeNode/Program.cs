@@ -195,7 +195,7 @@ app.MapPost("/internal/v1/compute/advance-batch", async (
         foreach (var job in batch.Jobs)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var result = engine.Advance(job);
+            var result = await engine.AdvanceAsync(job, cancellationToken);
             results.Add(result);
             if (result.Success) metrics.RecordCompletedJob();
             else metrics.RecordFailedJob();

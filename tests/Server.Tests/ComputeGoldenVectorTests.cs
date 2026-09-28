@@ -342,11 +342,11 @@ public sealed class ComputeGoldenVectorTests
 
     /// <summary>
     /// 经真实 JSON 线协议驱动节点引擎：主服记录 → ServerJson 序列化 → 节点记录反序列化 →
-    /// engine.Advance → 节点结果序列化 → 主服记录反序列化。任一侧字段名漂移即在此处现形。
+    /// engine.AdvanceAsync → 节点结果序列化 → 主服记录反序列化。任一侧字段名漂移即在此处现形。
     /// </summary>
     private static ComputeAdvanceJobResult RunNodeJobOverWire(ComputeAdvanceJobRequest request)
     {
-        var nodeResult = NodeEngine.Advance(ToNodeJob(request));
+        var nodeResult = NodeEngine.AdvanceAsync(ToNodeJob(request)).GetAwaiter().GetResult();
         var wire = JsonSerializer.SerializeToUtf8Bytes(nodeResult, WireJson);
         return JsonSerializer.Deserialize<ComputeAdvanceJobResult>(wire, ServerJson.Options)
             ?? throw new InvalidDataException("节点结果线载荷无法反序列化。");

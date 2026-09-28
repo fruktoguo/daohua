@@ -10,12 +10,13 @@
   </PropertyGroup>
 
   <!--
-    ComputeNode 是无状态、无数据库权限的冷挂机计算进程：仅引用纯领域程序集 Domain，
-    与其共享 SectionCodec/GameDataCatalog/SimulationEngine 单源实现（确定性补算），
-    不依赖 Server、数据库驱动或宿主实现。游戏配表随 Domain.dll 内嵌装载，
-    与主服 LoadEmbedded 同源同指纹，无需独立配表目录。
+    ComputeNode 是无状态、无数据库权限的冷挂机计算进程：经 DaoHua.Ecs 共享 ECS
+    执行环境推进确定性补算（与主服同一套 Entity/System/Pipeline），底层复用
+    SectionCodec/GameDataCatalog 单源实现，不依赖 Server、数据库驱动或宿主实现。
+    游戏配表随 Domain.dll 内嵌装载，与主服 LoadEmbedded 同源同指纹，无需独立配表目录。
   -->
   <ItemGroup>
     <ProjectReference Include="../Domain/Domain.csproj" />
+    <ProjectReference Include="../Ecs/Ecs.csproj" />
   </ItemGroup>
 </Project>

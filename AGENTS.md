@@ -38,7 +38,7 @@ Domain.Tests -> Domain + Protocol
 Server.Tests -> Server + Domain + Protocol + ComputeNode
 Ecs.Tests -> Server + src/Ecs + Server.Clean + Domain + Protocol
 LoadTests -> Protocol + Npgsql
-ComputeNode -> Domain（仅纯领域程序集：确定性补算与 SectionCodec 单源复用，禁止任何宿主/存储引用）
+ComputeNode -> Domain + DaoHua.Ecs（共享 ECS 执行环境推进确定性补算：Entity/System/Pipeline 与主服同一代码路径，禁止任何宿主/存储引用）
 DataTool -> 无项目引用（独立可执行进程/工具）
 ```
 
