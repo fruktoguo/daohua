@@ -13,7 +13,7 @@
 │ 1. 聚合非线程安全：PlayerAggregate 只在命令边界内独占重建与回写，跨边界不常驻 │
 │ 2. 并发粒度是玩家：每个在线玩家路由到唯一 ECS 分片 Fiber，玩家级 gate 兜底串行 │
 │ 3. 跨边界不持引用：命令以 (command, payload) 数据形式进入 MutatePlayer 通道执行 │
-│ 4. 逻辑由唯一引擎驱动：SimulationEngine.AdvanceTo 是唯一确定性推进真源   │
+│ 4. 逻辑由唯一引擎驱动：SimulationEngine.AdvanceTo（src/Ecs/Engine）是唯一确定性推进真源 │
 │ 5. 状态同步与持久化解耦：MarkDirty 标记分段，latest-only 队列异步落盘    │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -60,10 +60,10 @@
   - **资产不进聚合**：灵石、可堆叠物品余额与唯一装备实例统一由 `AssetWallet`（运行时钱包视图）+ `economy.*` 关系表管理，聚合八分段不含 Inventory/Stats 切片。
   - **数值边界明确**：属性、收益、倍率和玩法时长遵循 `AGENTS.md` 的 `double` 规范；ID、版本、序列属于离散技术字段，使用强类型表示。
 
-### 3. 第三层：业务推进与结算引擎（`src/Domain/Simulation/`、`Combat/`、`Market/`）
-- **职责**：驱动离散时间推进、战斗结算与市场撮合。
+### 3. 第三层：业务推进与结算引擎（`src/Ecs/Engine/`、`src/Ecs/Combat/`；Domain 保留 POCO/契约/`Market/`）
+- **职责**：驱动离散时间推进、战斗结算与市场撮合。行动/战斗调度引擎本体位于 `src/Ecs`（对 `IPlayerResourceContext`/`IPlayerActionContext` 接口执行，吃聚合或组件上下文等价）；Domain 保留全部 POCO、结算契约、公式与配表。
 - **规范**：
-  - **单一真源铁律**：所有挂机时间、产物结算与战斗模拟严格以 `SimulationEngine.AdvanceTo` 为唯一实现，确定性、由玩家所属 ECS 分片串行调用。
+  - **单一真源铁律**：所有挂机时间、产物结算与战斗模拟严格以 `SimulationEngine.AdvanceTo`（`DaoHua.Ecs`）为唯一实现，确定性、由玩家所属 ECS 分片串行调用。
   - `CombatSkillEngine` 负责技能施放/冷却/耗蓝结算，`EncounterWaveSelector` 按遭遇预算确定性抽选波次，`PlayerAttributeResolver` 解算面板属性。
   - `OrderBook`/`MarketPartitioner` 提供纯函数撮合与分片路由；市场写者边界在宿主 `MarketRuntime`。
 
@@ -153,12 +153,15 @@ src/Domain/
 │   ├── PlayerDuel.cs        # 斗法分段：遭遇计数/冷却/暂存区/战报账本/预约-挂载-弃战
 │   └── PlayerStateDocument.cs # 分段持久化文档与恢复校验
 │
-├── Simulation/              # 唯一确定性推进真源
-│   └── SimulationEngine.cs
+├── Simulation/              # 行动契约与上下文接口（引擎本体在 src/Ecs/Engine）
+│   ├── SimulationContracts.cs  # SimulationResult/SimulationEvent 结算契约
+│   └── PlayerActionContext.cs  # IPlayerActionContext/IPlayerResourceContext 接口
 │
-├── Combat/                  # 战斗结算与面板解算
+├── Combat/                  # 战斗 POCO/契约与面板解算（调度引擎在 src/Ecs/Combat）
 │   ├── CombatModels.cs
-│   ├── DuelModels.cs        # 斗法剧本推演（DuelScriptEngine）与单视角回放状态
+│   ├── DuelModels.cs        # 斗法剧本数据与单视角回放状态
+│   ├── CombatHooks.cs       # CombatEffectProfile/CombatHitContext/触发器契约
+│   ├── DeterministicRoll.cs # 战斗确定性随机单源
 │   ├── CombatSkillEngine.cs
 │   ├── EncounterWaveSelector.cs
 │   └── PlayerAttributeResolver.cs

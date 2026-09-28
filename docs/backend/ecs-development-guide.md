@@ -6,11 +6,12 @@
 
 | 层 | 位置 | 职责 | 禁止 |
 | --- | --- | --- | --- |
-| 领域原语 | `src/Domain` | 规则、结算、确定性模拟、聚合、配表 | ASP.NET/DB/宿主/ECS 类型 |
-| ECS 运行时 | `src/Ecs` | 组件、系统、分片、行动管线、门面 | 业务规则实现、DB/网络 |
+| 领域原语 | `src/Domain` | POCO 状态、配表、公式、编解码、聚合、持久化 DTO、触发器契约（`PendingCombatTrigger`/`ICombatTriggerSink` 接口） | ASP.NET/DB/宿主/`YuoEntity` 等运行时对象 |
+| ECS 执行 | `src/Ecs` | 组件、系统、分片、行动管线、门面；`Engine/`（`SimulationEngine` 行动/资源/旅行/战斗边界调度）、`Combat/`（`DeterministicCombatEngine`/`DuelScriptEngine`/触发器派发与 reactive 系统） | DB/网络/宿主引用 |
 | 宿主适配 | `src/Server`（`EcsPlayerRuntimeAdapter`、`Program`）| 命令路由、会话、持久化边界 | 直接持有 `PlayerAggregate`/`YuoEntity` |
 | 共享边界 | `src/Server.Clean`（编译 `src/Server/Clean/**`）| 仓储、DTO 映射、Worker | 领域规则 |
 | 内核 | `vendor/YuoCore`（`ecs-optimized` 分支 submodule）| ECS/Fiber 框架原语 | 本仓任务默认不改 |
+| 计算节点 | `src/ComputeNode` | 冷挂机补算：Decode→`EcsWorldShard`→`RunPlayerOnceAsync`→Encode | 生产数据库/宿主引用 |
 
 依赖方向：`Server → src/Ecs + Server.Clean + Domain + Protocol + YuoCore`；`src/Ecs → Domain + YuoCore`；`Domain → YuoCore(Abstractions/Ecs)`。禁止反向与循环。
 
@@ -20,11 +21,13 @@
 
 | 实体 | 组件集 | 生命周期 |
 | --- | --- | --- |
-| 玩家 | `PlayerIdentity`/`Progression`/`World`/`Combat`/`Loadout`/`Buff`/`ActionQueue`/`Inventory`/`Economy`/`Settings`/`Duel`/`EcsActionExecution` | `CreatePlayer`/`RemovePlayer` |
+| 玩家 | `PlayerIdentity`/`Progression`/`World`/`Combat`/`Resources`/`Stats`/`Loadout`/`Buff`/`ActionQueue`/`Inventory`/`Economy`/`Settings`/`Duel`/`EcsActionExecution`；战中加挂 `Combatant`/`CombatTriggerInbox`/reactive buff 标记 | `CreatePlayer`/`RemovePlayer` |
 | 地图节点 | `MapNode`/`NodeBuilding`/`NodePopulation` | `CreateMapNode` |
-| 怪物 | `MonsterIdentity`/`Combatant`/`SkillState`/`Buff`/`DropProfile` | `CreateMonster` |
+| 怪物 | `MonsterIdentity`/`Combatant`/`SkillState`/`Buff`/`DropProfile`/`CombatTriggerInbox`/reactive buff 标记 | `CreateMonster`/遭遇销毁 |
 | 遭遇 | `CombatEncounter`/`CombatLog` | `CreateEncounter`/战斗结束销毁 |
 | 世界主实体 | `EcsClockComponent`（`WorldMain`） | 分片构造即建 |
+
+`CombatantComponent.State` 持有 `CombatantState` POCO 引用（战斗结算的权威运行态）；`CombatantState.EntityId` 在挂接时回填实体标识，`CombatEncounterState.TriggerSink` 装配实体派发器——两字段均为运行时不序列化。
 
 ### 1.2 玩家组件 vs 聚合分段
 
@@ -104,6 +107,24 @@ public sealed class MySystem : YuoSystem<MyComponent>, IUpdate
 - 异常按实体隔离（`CloseSystemTry` 模式下写 stderr 并跳过该实体）；业务不变量失败应抛 `DomainException`，不允许吞掉。
 - 新阶段名同步 `BenchStageReports.Known`；观测埋点必须走 `RuntimeInstrumentation`/`YuoCoreTrace`（`DAOHUA_OBSERVE_OFF`/`YUOCORE_TRACE_OFF` 下零指令），禁止自造计时器。
 
+## 5.5 战斗触发器域（`RunSystem<tag>` 段内派发，不进 Update 序列）
+
+战斗命中等结算点产出的反应效果走**触发器派发**，不走每拍扫描：
+
+```text
+ResolveAttack 落账
+  → encounter.PendingTriggers 入队（攻击方/受击方各一条）
+  → sink.Drain：ECS 路径 RunSystem<IOnHitTrigger>(unitEntity)；无实体路径内联数学
+  → 主事件灵力回填 + 衍生事件按序并入
+（UpdateOutcome 永远在触发器结算之后 → OnHitHeal 可救活自己）
+```
+
+- **双路径同数学**：`CombatTriggerMath` 是唯一实现；`InlineCombatTriggerSink`（斗法/纯领域测试）与 `EcsCombatTriggerSink`（实体派发）参数同源——实体路径读 `Stats.Effects` 与 reactive 标记组件挂摘一致，内联直读 `Stats.Effects`。
+- **Reactive buff 组件是能力标记**：`OnHitLeech`/`ManaLeech`/`Thorns` 不带参数，挂摘由 `CombatTriggerSurface.Attach/Sync` 按 `Stats.Effects` 管理（遭遇挂接 + `RefreshStats` 后同步）；参数永无双写。
+- **新增触发器 checklist**：`CombatTriggerKind` 枚举 → `PendingCombatTrigger` 生产点（引擎结算点）→ `IOnXxxTrigger` tag + tag 映射（`TagTypeOf`）→ reactive 组件 + `YuoSystem<CombatantComponent, Marker>, IOnXxxTrigger` + `SystemOrder`（对齐内联手工序）→ `CombatTriggerMath` 数学 + `InlineCombatTriggerSink.Dispatch` 同序分支 → `CombatTriggerSurface.Sync` 挂摘条件 → parity/金色测试双路径验证。
+- **RNG 与顺序**：触发器随机数走 `context.NextRoll()`（通道 64+，与核心结算 0~15 隔离）；消费顺序 = 入队顺序 + `SystemOrder`，无字典序。
+- **负载传递**：`CombatTriggerInboxComponent.Trigger` 是派发期间唯一通道，派发后清 null；触发器不得改变边界时刻表（只可改数值与队列内容）。
+
 ## 6. 持久化与快照边界
 
 - `ExportSnapshot`/`RestorePlayer`/`PlayerStateDocument` 是唯一序列化通道；新增持久化字段必须落 section 编码 + 文档字段 + 测试金色样本。
@@ -119,6 +140,7 @@ public sealed class MySystem : YuoSystem<MyComponent>, IUpdate
 | 新行动类型 | `config/game-data` 配表 + `ActionKind`/`ExecutionKind` → 管线边界接入 → bulk 资格评估 → parity/金色测试 |
 | 新玩家持久化状态 | `PlayerSectionKind` 归属 → 组件字段 → 聚合映射双向 → `MarkDirty` 点 → 快照编码 → roundtrip 测试 |
 | 新系统 | 组件归属 → `YuoSystem<T>` + `SystemOrder` + `ShouldUpdate` → 埋点 → `Ecs.Tests` 系统级用例 |
+| 新战斗触发器 | `CombatTriggerKind` + 引擎入队点 → tag + `TagTypeOf` → reactive 组件 + System + `CombatTriggerMath` + 内联分支 → `CombatTriggerSurface.Sync` → 双路径 parity |
 | 新实体类别 | 组件组合 + `CreateXxx`/`RemoveXxx` 分片 API + 生命周期测试 |
 | 性能改动 | 先测 baseline（`bench-verify.sh`/`bench-matrix.sh`），结论必须附数据；热路径改动跑 `Ecs.Tests` 全量 |
 

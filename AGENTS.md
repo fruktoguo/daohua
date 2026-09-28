@@ -11,14 +11,14 @@
 
 ## 2. 项目权威边界
 
-- `src/Domain`：纯领域规则、确定性模拟、战斗、地图和市场模型；不得依赖 ASP.NET Core、Docker、数据库或浏览器实现。
+- `src/Domain`：纯领域库——POCO 状态、配表、公式、编解码、市场模型与触发器契约（`PendingCombatTrigger`/`ICombatTriggerSink` 接口）；行动/战斗调度引擎已迁入 `src/Ecs`，Domain 不得依赖 ASP.NET Core、Docker、数据库、浏览器实现或 `YuoEntity`/`YuoComponent` 运行时对象。
 - `src/Protocol`：服务端、浏览器和压测共享的纯数据协议；不得暴露领域聚合、运行时所有权对象或存储实现对象。
 - `src/Server`：ASP.NET Core 宿主、WebSocket、运行时装配和持久化适配。
 - `src/ComputeNode`：可选高延迟冷挂机计算节点；只执行确定性补算，不持有玩家权威状态，不直接访问生产数据库。
 - `src/LoadTests`：负载场景，不是生产运行时依赖。
 - `src/DataTool`：游戏数据 JSON 校验与指纹工具；独立命令行项目，无项目引用。
 - `frontend`：唯一正式 React/Vite 前端。
-- `src/Ecs`：游戏 ECS 层（`EcsGameRuntime`/`EcsWorldShard`/`EcsActionPipeline`、业务组件与行动/战斗系统），生产运行时的游戏状态与调度实现。
+- `src/Ecs`：游戏 ECS 层——组件、系统、分片、行动管线与门面（`EcsGameRuntime`/`EcsWorldShard`/`EcsActionPipeline`），`Engine/` 承载 `SimulationEngine` 行动/资源/旅行/战斗边界调度，`Combat/` 承载 `DeterministicCombatEngine`/`DuelScriptEngine` 与触发器域（`RunSystem<tag>` 段内派发），生产运行时的游戏状态与调度实现。
 - `tests/Ecs.Tests`：ECS 运行时与适配器边界回归门禁（`EcsGameRuntime`/`EcsWorldShard`/`EcsPlayerRuntimeAdapter`）。
 - `tests/Domain.Tests`：领域和协议回归门禁。
 - `tests/Server.Tests`：服务端装配、持久化与跨边界协议回归门禁。
