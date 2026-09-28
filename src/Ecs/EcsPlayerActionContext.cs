@@ -14,7 +14,6 @@ namespace DaoHua.Ecs;
 /// </summary>
 public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog catalog) : IPlayerResourceContext
 {
-    private PlayerAttributes? _attributes;
     // 一个请求期间这些粗粒度组件不会被替换，只会修改其内部领域状态。
     // 缓存引用避免 8,000 万级自然边界循环反复走组件存储查询。
     private readonly PlayerIdentityComponent _identity = entity.GetComponent<PlayerIdentityComponent>()!;
@@ -27,12 +26,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     private readonly PlayerLoadoutComponent _loadout = entity.GetComponent<PlayerLoadoutComponent>()!;
     private readonly PlayerSettingsComponent _settings = entity.GetComponent<PlayerSettingsComponent>()!;
     private readonly PlayerDuelComponent _duel = entity.GetComponent<PlayerDuelComponent>()!;
-    private GameDataCatalog? _attributeCatalog;
-    private long _attributeRevision = -1;
-    private PlayerProgression? _attributeProgression;
-    private PlayerWorldState? _attributeWorld;
-    private PlayerBuffState? _attributeBuffs;
-    private PlayerLoadoutState? _attributeLoadout;
+    private readonly PlayerStatsComponent _stats = entity.GetComponent<PlayerStatsComponent>()!;
 
     private PlayerIdentityComponent Identity => _identity;
     private PlayerActionQueueComponent Queue => _queue;
@@ -58,7 +52,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
 
     public void ClearDirtySections() => Identity.DirtySections.Clear();
 
-    /// <summary>直接以组件引用计算属性；输入未改时复用派生结果，不导出完整玩家。</summary>
+    /// <summary>直接以组件引用计算属性；输入未改时复用 PlayerStatsComponent 上的派生结果。</summary>
     public PlayerAttributes ResolveAttributes(GameDataCatalog gameData)
     {
         var progression = Progression;
@@ -66,21 +60,21 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
         var buffs = Buffs;
         var loadout = Loadout;
         var revision = PlayerAttributeResolver.InputRevision(progression, world, buffs, loadout);
-        if (gameData.BaseAttributes is not null && _attributes is { } cached
-            && ReferenceEquals(_attributeCatalog, gameData) && _attributeRevision == revision
-            && ReferenceEquals(_attributeProgression, progression) && ReferenceEquals(_attributeWorld, world)
-            && ReferenceEquals(_attributeBuffs, buffs) && ReferenceEquals(_attributeLoadout, loadout))
+        if (gameData.BaseAttributes is not null && _stats.Attributes is { } cached
+            && ReferenceEquals(_stats.Catalog, gameData) && _stats.InputRevision == revision
+            && ReferenceEquals(_stats.ProgressionInput, progression) && ReferenceEquals(_stats.WorldInput, world)
+            && ReferenceEquals(_stats.BuffsInput, buffs) && ReferenceEquals(_stats.LoadoutInput, loadout))
             return cached;
         var attributes = PlayerAttributeResolver.Resolve(progression, world, Resources, Combat, buffs, loadout, gameData);
         if (gameData.BaseAttributes is not null)
         {
-            _attributes = attributes;
-            _attributeCatalog = gameData;
-            _attributeRevision = revision;
-            _attributeProgression = progression;
-            _attributeWorld = world;
-            _attributeBuffs = buffs;
-            _attributeLoadout = loadout;
+            _stats.Attributes = attributes;
+            _stats.Catalog = gameData;
+            _stats.InputRevision = revision;
+            _stats.ProgressionInput = progression;
+            _stats.WorldInput = world;
+            _stats.BuffsInput = buffs;
+            _stats.LoadoutInput = loadout;
         }
         return attributes;
     }

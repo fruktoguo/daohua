@@ -175,6 +175,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             world.World = aggregate.World;
             var resources = entity.AddComponent<PlayerResourcesComponent>();
             resources.Resources = aggregate.Resources;
+            entity.AddComponent<PlayerStatsComponent>();
             var combat = entity.AddComponent<PlayerCombatComponent>();
             combat.Combat = aggregate.Combat;
             var buffs = entity.AddComponent<PlayerBuffComponent>();
@@ -819,6 +820,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         progression.Progression = restored.Progression;
         entity.GetOrAddComponent<PlayerWorldComponent>().World = restored.World;
         entity.GetOrAddComponent<PlayerResourcesComponent>().Resources = restored.Resources;
+        entity.GetOrAddComponent<PlayerStatsComponent>();
         var combat = entity.GetOrAddComponent<PlayerCombatComponent>();
         combat.Combat = restored.Combat;
         entity.GetOrAddComponent<PlayerBuffComponent>().Buffs = restored.Buffs;

@@ -94,6 +94,25 @@ public sealed class PlayerLoadoutComponent : YuoComponent
     public List<string> LearnedAbilityIds { get; } = [];
 }
 
+/// <summary>
+/// 解析后战斗面板缓存组件（不落库）：输入修订号与四路分段引用任一变化即重算。
+/// 挂在玩家实体上供触发器/行动系统直接读面板，无需重建解析上下文。
+/// </summary>
+public sealed class PlayerStatsComponent : YuoComponent
+{
+    /// <summary>上次解析产出的完整属性面板；null 表示尚未解析或被替换输入失效。</summary>
+    public PlayerAttributes? Attributes { get; set; }
+    /// <summary>缓存对应的配表实例；换配表即失效。</summary>
+    public GameDataCatalog? Catalog { get; set; }
+    /// <summary>缓存对应的属性输入修订号。</summary>
+    public long InputRevision { get; set; } = -1;
+    /// <summary>修订号命中还要求输入分段对象引用未更换；随分段替换自动失效。</summary>
+    public PlayerProgression? ProgressionInput { get; set; }
+    public PlayerWorldState? WorldInput { get; set; }
+    public PlayerBuffState? BuffsInput { get; set; }
+    public PlayerLoadoutState? LoadoutInput { get; set; }
+}
+
 /// <summary>玩家 Buff 组件，时间由 BuffTickSystem 统一处理。</summary>
 public sealed class PlayerBuffComponent : YuoComponent
 {
