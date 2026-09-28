@@ -46,6 +46,7 @@ docs/
 | [commercial-persistence-architecture.md](backend/commercial-persistence-architecture.md) | **商业级持久化最终架构（清零历史包袱）与 Redis 选型决策**：共享表与 section 快照、资产/市场事务、latest-only 队列、容量/恢复边界，以及 Redis 的不引入条件。该文档是持久化目标方案唯一权威。 |
 | [domain-data-architecture.md](backend/domain-data-architecture.md) | 服务端领域数据架构规约：`PlayerAggregate` 聚合 + `PlayerSectionKind` 八分段、`MarkDirty` 脏标记、`SectionCodec` 编解码与强类型 ID。 |
 | [logic-development-guide.md](backend/logic-development-guide.md) | 服务端业务逻辑开发指南：ECS 运行时 + `PlayerAggregate` 文档往返的命令路由、`SimulationEngine` 推进与 `MarkDirty` 分段标记 SOP 与红线。 |
+| [ecs-development-guide.md](backend/ecs-development-guide.md) | **ECS 业务开发规约（权威）**：组件/系统/分片/管线模型、`MutatePlayer` 命令通道、`CanBulkAdvance` 资格、脏标记差集、持久化边界与新功能落地 checklist。 |
 | [game-data.md](backend/game-data.md) | `config/game-data` 配置架构：权威源、文档拓扑、版本与发布校验。 |
 | [performance-baseline.md](backend/performance-baseline.md) | 性能基线现行入口：当前支持的重测场景与参数口径；2026-08-06 历史样本已归档至 `archive/perf-baseline-20260806.md`。 |
 | [anti-multi-open.md](backend/anti-multi-open.md) | 防多开模块设计规约：标签页互斥 / 单账号互踢 / 设备指纹配额三道独立开关防线、准入裁决顺序、顶替会话安全拆除链与协议关闭码约定。 |

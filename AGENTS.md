@@ -174,6 +174,7 @@ docker compose -f deploy/compose.prod.yaml down
 - **协议快照映射与配表透传**：`ProtocolSnapshotMapper` 转换快照与增量 DTO 时必须显式透传当前激活的 `GameDataCatalog`，以保证动作指纹与动态实体上下文完整一致，禁止脱离配表单独伪造协议载荷。
 - 不得为性能优化改变战斗结果、掉落、市场撮合、队列完成边界或快照语义。
 - 玩家并发所有权模型为「`PlayerAggregate` 聚合（命令内文档往返重建）+ YuoCore ECS（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber`）+ 玩家级 `SemaphoreSlim` 单写者」：生产宿主 `src/Server` 使用 `vendor/YuoCore`，同一玩家的命令与模拟推进在其哈希路由的 ECS 分片 Fiber 内串行执行，`EcsPlayerRuntimeAdapter` 的玩家级 gate 保证跨边界串行；跨边界访问不得直接持有聚合或 `YuoEntity` 引用。
+- **ECS 业务开发唯一权威规约见 `docs/backend/ecs-development-guide.md`**：新增命令/行动/组件/系统/持久化字段必须先对照其中的通道与不变量清单（`MutatePlayer` 通道、脏标记差集、`CanBulkAdvance` 资格、`ShouldUpdate` 闸门、文档往返修订续写）。
 - 玩家快照写回失败必须保留可恢复证据；不得为了降噪降低持久化错误等级。
 - 健康端点不得泄露 token、连接串、玩家数据或内部异常。
 - CORS 只允许配置的完整来源；禁止恢复任意来源加凭据的组合。

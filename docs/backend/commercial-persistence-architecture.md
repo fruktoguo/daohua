@@ -140,7 +140,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 | game.player_state_heads | player_id, state_version, schema_version, last_simulated_at, game_data_fingerprint, checksum, updated_at | 每个玩家一行；保存当前提交头和恢复元数据，不保存巨型载荷。 |
 | game.player_state_sections | player_id, section_kind, section_version, schema_version, codec, payload, raw_bytes, stored_bytes, checksum, updated_at | 主键 (player_id, section_kind)；每个 section 一行；只保留最新版本。 |
 | game.player_action_queue | player_id, slot, action_id, action_payload, action_version, status, next_due_at, idempotency_key | 只保存当前待执行/进行中的行动；完成后删除或转为最新状态，不记录每个 Tick。 |
-| game.player_runtime_leases | player_id, owner_instance_id, lease_until, renewed_at | 玩家运行时所有权租约：标识哪个宿主实例持有该玩家的 `PlayerActor` 单写者；命令执行前续租校验，防止多实例并发写同一聚合。 |
+| game.player_runtime_leases | player_id, owner_instance_id, lease_until, renewed_at | 玩家运行时所有权租约：标识哪个宿主实例持有该玩家的单写者（`EcsPlayerRuntimeAdapter` 加载时抢占、操作前去抖续租、卸载释放）；命令执行前续租校验，防止多实例并发写同一聚合。 |
 | game.player_projection | player_id, realm_rank, current_node_id, presence, last_active_at, projection_version | 供在线状态展示、玩家列表、运营检索与冷挂机筛选的可重建读模型投影；由 section 刷盘提交事务（`PostgresSectionRepository.ApplyBatchAsync`）顺带 `INSERT ... ON CONFLICT (player_id) DO UPDATE` 维护，不参与玩家真源提交，可随时从 section 重建。presence 由 settings section 解码而来：玩家卸载/断线路径先把聚合 presence 落为 offline 再强刷，使投影可区分在线与可冷挂机玩家。 |
 | game.node_buildings | node_id, building_id, level, target_level, started_at_unix_seconds, contributed_materials, updated_at | 节点级**公共建筑**权威注册表（主键 `(node_id, building_id)`）：无建造者概念，同节点同种仅一座，全民可发起建造/填充材料/升级；材料进度以 jsonb 记录逐项已交数量，建造进度按 `min(材料%, 已耗时/本级工期)` 惰性推算，无需后台 tick。运行期由 `NodeBuildingRegistry` 进程内缓存 + 单一信号量串行化，玩家聚合内的建筑投影仅为最近已知副本（供离线/冷挂机补算沿用），不构成真源。 |
 

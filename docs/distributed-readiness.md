@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | 玩家存档/资产/市场账本 | PostgreSQL（唯一真源） | ✅ 已安全：Serializable + 行锁 + fence + 幂等键 |
 | 冷挂机任务 `platform.compute_jobs` | PostgreSQL | ✅ 已安全：`FOR UPDATE SKIP LOCKED` 领取 + `lease_token` 归还 + 租约超时孤儿重取（`PostgresComputeJobRepository.cs:181-218`） |
-| 玩家运行时单写者 | `game.player_runtime_leases` | ✅ 已安全：`PostgresPlayerOwnershipRepository` UPSERT 抢占/续租/释放，失败即 fail-closed（`PlayerRuntime.cs:381`） |
+| 玩家运行时单写者 | `game.player_runtime_leases` | ✅ 已安全：`PostgresPlayerOwnershipRepository` UPSERT 抢占/续租/释放，失败即 fail-closed（`EcsPlayerRuntimeAdapter.cs` 加载时 Acquire、操作前去抖 Renew、卸载 Release） |
 | 市场分片写者 | `market.partition_leases` | ✅ 已安全：抢占 + fence token 递增 fencing（`PostgresMarketRepository.cs:165-191`） |
 | section 落盘队列 / outbox | `platform.section_flush_queue` / `platform.integration_outbox` | ✅ 已安全：SKIP LOCKED + 行租约 |
 | **玩家连接层**（会话/存在感/聊天扇出/设备配额/互踢） | **进程内存** | ❌ 缺口全部在这里 |
@@ -79,9 +79,9 @@
 ### A. 会话注册表 `SessionRegistry`（`WebSocketRuntime.cs:135-199`）
 
 - **现状**：`ConcurrentDictionary<playerId, WebSocketSession>`，`AddOrKick` 原子顶替本进程内的旧会话；互踢、慢消费者关闭（4009）、聊天投递（`BroadcastChat`）全部经它解析"这个玩家的 socket 在哪"。
-- **失效模式**：同一账号从两个入口登录会分别落在两个实例——两边 `SessionRegistry` 互不知道，`AddOrKick` 各自成立，**互踢语义消失**；随后第二个实例在 `CreateActorAsync` 抢 `player_runtime_leases` 失败（`PlayerRuntime.cs:381-382`），Hello 流程半途失败——表现为"第二端登录卡死/被踢，但第一端毫无知觉"。
+- **失效模式**：同一账号从两个入口登录会分别落在两个实例——两边 `SessionRegistry` 互不知道，`AddOrKick` 各自成立，**互踢语义消失**；随后第二个实例在 `LoadOwnedAsync` 抢 `player_runtime_leases` 失败（`EcsPlayerRuntimeAdapter.cs`，`PlayerOwnershipLostException` fail-closed），Hello 流程半途失败——表现为"第二端登录卡死/被踢，但第一端毫无知觉"。
 - **演进路径**：
-  - P1：会话表仍留进程内（socket 本来就是本进程资源），但**互踢裁决改为两级**——本地 `AddOrKick` + 查 `player_runtime_leases`/在线会话表拿到持有者实例号，经 `LISTEN/NOTIFY`（如 `player_kick:<playerId>`）通知持有实例按 4006 关闭旧会话；旧会话拆除走既有 `RemoveAsync → actor.DisposeAsync → ownership.ReleaseAsync`（`PlayerRuntime.cs:1854`）**立即释放租约**，新实例随后抢占成功。实例死亡场景兜底仍是 45s 租约过期。
+  - P1：会话表仍留进程内（socket 本来就是本进程资源），但**互踢裁决改为两级**——本地 `AddOrKick` + 查 `player_runtime_leases`/在线会话表拿到持有者实例号，经 `LISTEN/NOTIFY`（如 `player_kick:<playerId>`）通知持有实例按 4006 关闭旧会话；旧会话拆除走既有 `RemoveAsync → ownership.ReleaseAsync`（`EcsPlayerRuntimeAdapter.cs`）**立即释放租约**，新实例随后抢占成功。实例死亡场景兜底仍是 45s 租约过期。
   - 衔接：这套"踢人→释放租约→新实例接管"与 §G 的玩家路由共用实例目录；`WebSocketSession.TeardownCompleted` 的顶替等待（`WebSocketRuntime.cs:419`）语义原样复用，只是把等待对象从本进程旧会话换成"远端会话已拆+租约已释放"。
 
 ### B. 在线存在感 `OnlinePresenceRegistry`（`Social/OnlinePresenceRegistry.cs`）
@@ -129,7 +129,7 @@
 
 ### G. 玩家请求跨实例路由——多主服的"主缺口"
 
-- **现状**：`PlayerRuntime` 内存 `_actors` + `player_runtime_leases` 租约表（owner_instance_id + lease_until）。租约保证"同一玩家全局只有一个写者"（抢占失败 `PlayerOwnershipLostException`，续租丢失 `PLAYER_OWNERSHIP_LOST` 后逐出 actor 并 fail-closed），但**租约表里只有"谁持有"，没有"持有者在哪、怎么把请求送过去"**。斗法撮合 `TryMatchDuelAsync`（`PlayerRuntime.cs:147` 起）直接遍历 `_actors`，跨实例寻求者互相不可见。
+- **现状**：`EcsPlayerRuntimeAdapter` 内存 `_loaded` + `player_runtime_leases` 租约表（owner_instance_id + lease_until）。租约保证"同一玩家全局只有一个写者"（抢占失败 `PlayerOwnershipLostException`，续租丢失 `PLAYER_OWNERSHIP_LOST` 后逐出实体并 fail-closed），但**租约表里只有"谁持有"，没有"持有者在哪、怎么把请求送过去"**。斗法撮合直接遍历 `_loaded` 已加载玩家，跨实例寻求者互相不可见。
 - **失效模式**：玩家 WS 落到非持有实例 B → B 在 Hello 加载时抢租约失败 → 连接建不起来；HTTP `POST /api/v1/players/{id}/commands` 落到 B 同理失败。玩家唯一出路是等 A 的租约过期（最长 45s）或 A 的会话拆除释放。
 - **演进路径**：
   - P1 第一步（便宜）：**实例目录 `platform.server_instances`**（instance_id、内部地址、版本、心跳、role）。有了它，`owner_instance_id` 才能翻译成可路由目标。
@@ -243,5 +243,5 @@
 
 - **不引入新基础设施**：不引 Redis/etcd/Kafka/服务发现——共享 PG + `LISTEN/NOTIFY` + 既有租约族（玩家、市场、任务）足够覆盖当前规模目标（2c4g/40g、500+ 在线）。
 - **不让节点监听任何端口承担生产职责**：所有"主服找节点"的需求都必须通过节点已建立的 compute-link 下发（drain 帧即范例）；节点本地 HTTP 口永远是调试口。
-- **不为了多主服改变游戏语义**：战斗结果、掉落、撮合、队列、快照语义不因路由/分片改变；玩家单写者永远是"聚合 + PlayerActor + 租约"三层。
+- **不为了多主服改变游戏语义**：战斗结果、掉落、撮合、队列、快照语义不因路由/分片改变；玩家单写者永远是"聚合 + ECS 分片单写者 + 租约"三层。
 - **不做双写/灰度读兼容层**：按 AGENTS.md 本地开发阶段规则，结构演进直接切换，不留并行期。

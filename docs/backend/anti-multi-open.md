@@ -36,10 +36,10 @@ Hello 到达 → 配表指纹校验 → AntiMultiOpenAdmission.Admit
 ### 2.3 顶替会话的安全拆除链
 
 1. 新会话 `Admit` 成功 → 旧会话 `RequestClose(4005, …, SESSION_KICKED 通知帧)`：通知帧先入队再完成输出通道，发送循环冲刷后退出。
-2. 新会话 `await kicked.TeardownCompleted`（10s 超时降级继续）→ 旧会话 finally：事件退订 → `Release` 按实例配对移除（返回 false，**不触发 `runtime.RemoveAsync`**，避免误删新会话正在加载的 Actor）→ 按 `CloseHint` 发 4005 关闭帧 → `MarkTeardownCompleted`。
+2. 新会话 `await kicked.TeardownCompleted`（10s 超时降级继续）→ 旧会话 finally：事件退订 → `Release` 按实例配对移除（返回 false，**不触发 `runtime.RemoveAsync`**，避免误删新会话正在加载的玩家实体）→ 按 `CloseHint` 发 4005 关闭帧 → `MarkTeardownCompleted`。
 3. 新会话继续 `LoadAsync` → 全量快照。
 
-旧会话 `Remove` 返回 false 是 Actor 卸载的否决条件——这是防多开引入顶替语义后必须守住的不变量。
+旧会话 `Remove` 返回 false 是玩家实体卸载的否决条件——这是防多开引入顶替语义后必须守住的不变量。
 
 ### 2.4 主动终止的关闭路径
 

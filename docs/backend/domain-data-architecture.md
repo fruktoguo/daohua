@@ -18,7 +18,7 @@
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-- 同一玩家的命令路由、模拟推进与快照导出全部在专属 `PlayerActor` 内串行执行；`PlayerRuntime` 负责 Actor 生命周期与 `game.player_runtime_leases` 所有权租约续期。
+- 同一玩家的命令路由、模拟推进与快照导出全部在其 `PlayerId` 哈希路由的 ECS 分片 Fiber 内串行执行（`EcsWorldShard` 单写者）；`EcsPlayerRuntimeAdapter` 负责加载/卸载生命周期与 `game.player_runtime_leases` 所有权租约抢占、续期与释放。
 - 领域层（`src/Domain`）是纯 C# 程序集，不引用 ASP.NET Core、Npgsql 或 Protocol；持久化与协议适配全部在 `src/Server` 完成。
 
 ---
@@ -63,14 +63,14 @@
 ### 3. 第三层：业务推进与结算引擎（`src/Domain/Simulation/`、`Combat/`、`Market/`）
 - **职责**：驱动离散时间推进、战斗结算与市场撮合。
 - **规范**：
-  - **单一真源铁律**：所有挂机时间、产物结算与战斗模拟严格以 `SimulationEngine.AdvanceTo` 为唯一实现，确定性、由玩家专属 Actor 串行调用。
+  - **单一真源铁律**：所有挂机时间、产物结算与战斗模拟严格以 `SimulationEngine.AdvanceTo` 为唯一实现，确定性、由玩家所属 ECS 分片串行调用。
   - `CombatSkillEngine` 负责技能施放/冷却/耗蓝结算，`EncounterWaveSelector` 按遭遇预算确定性抽选波次，`PlayerAttributeResolver` 解算面板属性。
   - `OrderBook`/`MarketPartitioner` 提供纯函数撮合与分片路由；市场写者边界在宿主 `MarketRuntime`。
 
 ### 4. 第四层：持久化与协议投影（`src/Server/Clean/`）
 - **职责**：数据库异步落盘、协议快照/增量映射与冷计算传输。
 - **规范**：
-  - **快照不保存运行时引用**：禁止把 Actor、信号量、连接、缓存索引写入载荷。
+  - **快照不保存运行时引用**：禁止把 ECS 实体/组件、信号量、连接、缓存索引写入载荷。
   - **Section 编解码**：`SectionCodec`（Server 侧静态适配器）将分段载荷序列化为稳定 JSON 并计算 SHA-256；原始字节 ≥ 512B 且压缩有效时自适应使用 Brotli（落库 `codec` 为 `json` 或 `br-json`）。
   - **持久化记录**：`PlayerStateHead`（提交头：state_version、schema_version、last_simulated_at、game_data_fingerprint、checksum）+ `PlayerSectionSnapshot`（分段最新行：section_version、codec、raw/stored bytes、checksum），对应 `game.player_state_heads` / `game.player_state_sections`；待写载荷经 `platform.section_flush_queue` latest-only 合并落盘。
   - **协议投影**：`ProtocolSnapshotMapper` 将聚合状态映射为快照/增量 DTO，必须显式透传当前激活的 `GameDataCatalog`，禁止脱离配表伪造协议载荷。
@@ -107,7 +107,7 @@ public readonly record struct IdempotencyKey(string Value) : IIdentifier;
 
 ## 五、 事务模型与跨边界一致性规约
 
-市场与资产事务**不使用跨边界 Actor 消息或 Saga 补偿**，而是「市场本地单写者 + PostgreSQL 同步事务」：
+市场与资产事务**不使用跨边界实体消息或 Saga 补偿**，而是「市场本地单写者 + PostgreSQL 同步事务」：
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐

@@ -32,7 +32,8 @@ public sealed class EcsPlayerRuntimeAdapter(
     ISimulationTransactionIdentity? simulationTransactionIdentity = null,
     NodeBuildingRegistry? nodeBuildings = null,
     MarketRuntime? marketRuntime = null,
-    IAccountRepository? accounts = null) : IPlayerRuntime
+    IAccountRepository? accounts = null,
+    IPlayerOwnershipStore? ownership = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, PlayerRuntimeSnapshot> _loaded = new();
     private readonly ConcurrentDictionary<Guid, Dictionary<AssetKey, AssetBalanceRecord>> _wallets = new();
@@ -43,6 +44,10 @@ public sealed class EcsPlayerRuntimeAdapter(
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _playerGates = new();
     private readonly ConcurrentDictionary<Guid, RecentRequests> _recentRequests = new();
     private readonly ConcurrentDictionary<Guid, long> _attributeRevisions = new();
+    private readonly Guid _ownerInstanceId = Guid.NewGuid();
+    private static readonly TimeSpan OwnershipLease = TimeSpan.FromSeconds(45);
+    /// <summary>本实例已获取租约玩家的上次成功续租时间；键存在即表示持有租约。</summary>
+    private readonly ConcurrentDictionary<Guid, DateTimeOffset> _leaseRenewedAt = new();
     // 不设全局加载门：玩家级 gate 与 shard owner gate 已提供单写者隔离。
     private readonly IPlayerSimulationClock _simulationClock = simulationClock ?? PlayerSimulationClock.FromEnvironment();
     private readonly ILogger<EcsPlayerRuntimeAdapter> _logger = logger;
@@ -92,6 +97,11 @@ public sealed class EcsPlayerRuntimeAdapter(
         if (_loaded.TryGetValue(playerId, out var cached)) return cached;
 
         if (_loaded.TryGetValue(playerId, out cached)) return cached;
+        // 多实例写保护闸门：未抢到 player_runtime_leases 租约即 fail-closed，不进入加载。
+        if (ownership is not null
+            && !await ownership.AcquireAsync(playerId, _ownerInstanceId, OwnershipLease, cancellationToken).ConfigureAwait(false))
+            throw new PlayerOwnershipLostException(playerId);
+        _leaseRenewedAt[playerId] = DateTimeOffset.UtcNow;
         using var loadMeasurement = RuntimeInstrumentation.Measure("lifecycle.player_load");
         var bundle = await sections.LoadAsync(playerId, cancellationToken).ConfigureAwait(false)
                 ?? throw new KeyNotFoundException($"玩家不存在：{playerId:D}");
@@ -149,8 +159,11 @@ public sealed class EcsPlayerRuntimeAdapter(
         var notifications = new List<RuntimeNotification>();
         try
         {
-            return await ExecuteOwnedAsync(playerId, command, payload, expectedStateVersion, requestId,
+            var result = await ExecuteOwnedAsync(playerId, command, payload, expectedStateVersion, requestId,
                 notifications, cancellationToken).ConfigureAwait(false);
+            // 所有权失效的清理必须在命令返回后、锁外执行，避免同链路的下一条命令撞上已释放的 gate。
+            if (result.Code == "PLAYER_OWNERSHIP_LOST") await EvictOwnershipLostAsync(playerId).ConfigureAwait(false);
+            return result;
         }
         finally { await EmitNotificationsAsync(notifications).ConfigureAwait(false); }
     }
@@ -171,6 +184,15 @@ public sealed class EcsPlayerRuntimeAdapter(
         {
             var before = await LoadOwnedAsync(playerId, notifications, cancellationToken).ConfigureAwait(false);
             await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false);
+            }
+            catch (PlayerOwnershipLostException)
+            {
+                // 所有权已转移给其他实例：返回明确错误；实体逐出在锁外由 ExecuteAsync 执行。
+                return new PlayerCommandResult(false, "PLAYER_OWNERSHIP_LOST", "玩家当前由其他服务实例持有，请稍后重试。", before);
+            }
             before = ToSnapshot(ecs.ExportSnapshot(playerId));
             if (payload.ValueKind == JsonValueKind.Object
                 && payload.TryGetProperty("requestId", out var requestElement)
@@ -697,6 +719,25 @@ public sealed class EcsPlayerRuntimeAdapter(
             for (; acquired < gates.Length; acquired++)
                 using (RuntimeInstrumentation.Measure("queue.actor_wait"))
                     await gates[acquired].WaitAsync(cancellationToken).ConfigureAwait(false);
+            // 批量推进同样续租校验：租约已失的玩家逐出并从本批推进中剔除。
+            if (ownership is not null)
+            {
+                var lost = new List<Guid>();
+                foreach (var playerId in ids)
+                    try { await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false); }
+                    catch (PlayerOwnershipLostException) { lost.Add(playerId); }
+                if (lost.Count > 0)
+                {
+                    var lostSet = lost.ToHashSet();
+                    foreach (var playerId in lost)
+                    {
+                        EvictOwnershipLostOwned(playerId);
+                        uncommitted.Remove(playerId);
+                    }
+                    // gates/acquired 仍覆盖原始集合，由 finally 统一释放全部已持有 gate。
+                    ids = ids.Where(id => !lostSet.Contains(id)).ToArray();
+                }
+            }
             foreach (var playerId in ids) await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
             foreach (var playerId in ids)
             {
@@ -782,6 +823,9 @@ public sealed class EcsPlayerRuntimeAdapter(
             _pendingReceipts.TryRemove(playerId, out _);
             _walletReloadRequired.TryRemove(playerId, out _);
             _attributeRevisions.TryRemove(playerId, out _);
+            // 归还租约：仅当本实例确实持有时才释放，避免误删他实例租约。
+            if (_leaseRenewedAt.TryRemove(playerId, out _) && ownership is not null)
+                await ownership.ReleaseAsync(playerId, _ownerInstanceId, CancellationToken.None).ConfigureAwait(false);
         }
         finally { gate.Release(); }
     }
@@ -820,6 +864,16 @@ public sealed class EcsPlayerRuntimeAdapter(
 
     private async ValueTask FlushOwnedAsync(Guid playerId, bool force, CancellationToken cancellationToken)
     {
+        try
+        {
+            await RenewOwnershipLeaseIfDueAsync(playerId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PlayerOwnershipLostException)
+        {
+            // 所有权已转移：本实例内存脏状态不再权威，跳过本次刷盘；实体由命令/推进路径逐出。
+            _logger.LogError("所有权已丢失，跳过玩家刷盘 player={PlayerId}", playerId);
+            return;
+        }
         TrackDirty(playerId);
         var dirty = ecs.GetDirtySections(playerId);
         var pending = _pendingReceipts[playerId];
@@ -851,6 +905,48 @@ public sealed class EcsPlayerRuntimeAdapter(
         var now = DateTimeOffset.UtcNow;
         var times = _dirtyAt[playerId];
         foreach (var section in ecs.GetDirtySections(playerId)) times.TryAdd(section, now);
+    }
+
+    /// <summary>
+    /// 所有权续租去抖：距上次成功续期不足租约 1/3（45s 租约 ≈ 15s）时跳过本次 UPDATE；
+    /// 仅成功续期才刷新时间戳，到期续租返回 false 按 fail-closed 抛出 <see cref="PlayerOwnershipLostException"/>。
+    /// 必须在玩家级 gate 内调用。
+    /// </summary>
+    private async ValueTask RenewOwnershipLeaseIfDueAsync(Guid playerId, CancellationToken cancellationToken)
+    {
+        if (ownership is null || !_leaseRenewedAt.TryGetValue(playerId, out var renewedAt)) return;
+        if (DateTimeOffset.UtcNow - renewedAt < OwnershipLease / 3) return;
+        if (!await ownership.RenewAsync(playerId, _ownerInstanceId, OwnershipLease, cancellationToken).ConfigureAwait(false))
+            throw new PlayerOwnershipLostException(playerId);
+        _leaseRenewedAt[playerId] = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>锁外逐出：命令返回后释放 gate，再重新拿锁检查并移除——避免与并发命令竞态。</summary>
+    private async ValueTask EvictOwnershipLostAsync(Guid playerId)
+    {
+        var gate = _playerGates.GetOrAdd(playerId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try { if (_loaded.ContainsKey(playerId)) EvictOwnershipLostOwned(playerId); }
+        finally { gate.Release(); }
+    }
+
+    /// <summary>
+    /// 租约已被其他实例接管时逐出玩家：本实例内存状态不再权威——直接移除 ECS 实体与全部
+    /// 缓存，不刷盘（脏数据可能过期）、不归还租约（已非持有者）。调用方必须持有该玩家 gate。
+    /// </summary>
+    private void EvictOwnershipLostOwned(Guid playerId)
+    {
+        ecs.RemovePlayer(playerId);
+        _loaded.TryRemove(playerId, out _);
+        _wallets.TryRemove(playerId, out _);
+        _dirtyAt.TryRemove(playerId, out _);
+        _pendingReceipts.TryRemove(playerId, out _);
+        _walletReloadRequired.TryRemove(playerId, out _);
+        _logs.TryRemove(playerId, out _);
+        _recentRequests.TryRemove(playerId, out _);
+        _attributeRevisions.TryRemove(playerId, out _);
+        _leaseRenewedAt.TryRemove(playerId, out _);
+        _logger.LogError("玩家运行时租约已失效，逐出 ECS 实体 player={PlayerId}", playerId);
     }
 
     /// <summary>按分段脏流水号差集得出本次操作触及分段；空集表示零触及（与"不可判定"的 null 区分）。</summary>
