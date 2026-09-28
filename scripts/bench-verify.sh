@@ -16,7 +16,7 @@ done
 echo '==> Bench Release 构建'
 dotnet build src/Bench/Bench.csproj -c Release --no-restore --disable-build-servers --nologo
 
-variant="ecs-optimized"
+variant="ecs"
 echo "==> 独立发布：$variant"
 scripts/bench-service.sh --variant "$variant" --build --no-restore >/tmp/daohua-bench-"$variant"-build.log
 dotnet src/Bench/bin/Release/net10.0/DaoHua.Bench.dll provenance \
@@ -24,6 +24,6 @@ dotnet src/Bench/bin/Release/net10.0/DaoHua.Bench.dll provenance \
   >"artifacts/runtime/$variant/provenance.json"
 
 echo '==> ECS 集成回归测试'
-dotnet test tests/ServerEcs.Tests/ServerEcs.Tests.csproj -c Release --no-restore --disable-build-servers --nologo
+dotnet test tests/Ecs.Tests/Ecs.Tests.csproj -c Release --no-restore --disable-build-servers --nologo
 
 echo '基准构建/provenance 门禁通过；真实服务 workload 与长稳结果需由 bench-matrix.sh 另行生成。'

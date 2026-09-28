@@ -5,7 +5,7 @@
  * 主要职责: 服务端本地开发环境增量监听与平滑热重启守护进程
  *
  * 核心机制与特性:
- *   1. 源码轮询监控: 递归扫描并监听 `src/`、`config/game-data/` 与 `vendor/YuoCore-optimized` 目录下源码与配置变更（.cs/.csproj/.json）；
+ *   1. 源码轮询监控: 递归扫描并监听 `src/`、`config/game-data/` 与 `vendor/YuoCore` 目录下源码与配置变更（.cs/.csproj/.json）；
  *   2. 防抖冷却机制: 每次文件变动刷新防抖计时器（默认静默 60s，可通过 SERVER_DEV_RESTART_DEBOUNCE_MS 调整，0 为立即触发）；
  *   3. 零中断构建保护: 防抖期满先在后台执行 dotnet build；若编译报错则保持旧服务端实例继续对外提供服务，避免调试中断；
  *   4. 优雅停止与生命周期: 编译成功后向旧服务发送 SIGTERM 触发存档持久化与市场写者租约释放，确认退出后再启动新实例；
@@ -106,7 +106,7 @@ function readdirWithTypes(dir) {
 /** 轮询快照对比：跨平台、无 inotify 句柄限制，天然合并短时间内的多次写入。 */
 function snapshotSourceFiles() {
   const map = new Map();
-  for (const dir of ["src", "config/game-data", "vendor/YuoCore-optimized"]) {
+  for (const dir of ["src", "config/game-data", "vendor/YuoCore"]) {
     const base = path.join(rootDir, dir);
     if (!existsSync(base)) continue;
     for (const relative of listFilesRecursive(base)) {

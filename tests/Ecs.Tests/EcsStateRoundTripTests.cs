@@ -6,7 +6,7 @@ using Domain.GameData;
 using Domain.Player;
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 /// <summary>
 /// ECS 玩家实体导入/导出门禁：组件必须承载完整领域分段，不能只保留运行时用到的少数字段。

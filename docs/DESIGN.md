@@ -235,7 +235,7 @@
 
 核心设计意图：
 
-- **聚合 + ECS 分片单写者**：`PlayerAggregate` 按 `PlayerSectionKind` 八分段（命令内经文档往返重建）；运行时为优化版 YuoCore ECS——同一玩家按 `PlayerId` 哈希固定路由到 `EcsWorldShard`（`YuoWorld`+`YuoFiber`），命令与模拟推进在分片 Fiber 内串行，`EcsPlayerRuntimeAdapter` 玩家级 `SemaphoreSlim` 保证跨边界串行；跨边界不得直接持有聚合或 `YuoEntity` 引用。
+- **聚合 + ECS 分片单写者**：`PlayerAggregate` 按 `PlayerSectionKind` 八分段（命令内经文档往返重建）；运行时为 YuoCore ECS——同一玩家按 `PlayerId` 哈希固定路由到 `EcsWorldShard`（`YuoWorld`+`YuoFiber`），命令与模拟推进在分片 Fiber 内串行，`EcsPlayerRuntimeAdapter` 玩家级 `SemaphoreSlim` 保证跨边界串行；跨边界不得直接持有聚合或 `YuoEntity` 引用。
 - **唯一真源推进**：挂机时间、产物结算、战斗模拟全部经 `SimulationEngine.AdvanceTo(state, now)`，杜绝第二套执行器。
 - **latest-only 落盘**：高频变化只更新内存与 WebSocket，按合并后的 section 定时写回，不记逐 Tick 历史；写回失败必须保留可恢复证据。
 - **明确禁止的三种形态**：每玩家一物理表（禁）、一行巨型 Blob 全量重写（禁）、Redis 作关键数据真源（禁）；可重建投影永不当权威。

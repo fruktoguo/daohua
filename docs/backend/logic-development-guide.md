@@ -1,8 +1,8 @@
 # 道化太初 · 服务端业务逻辑开发指南（聚合单写者模型）
 
-本文档作为《道化太初》服务端**业务功能开发、系统扩展与日常编码**的唯一权威指南。系统采用 **优化版 YuoCore ECS 运行时（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber` 分片单写者）+ `PlayerAggregate` 文档往返 + 纯函数离散模拟引擎 `SimulationEngine`** 架构，确保在 2c4g/40g 服务器预算下达成 5000+ 账号、500+ 网络并发与 2000+ 冷补算的高吞吐确定性结算，杜绝任何多套平行实现。
+本文档作为《道化太初》服务端**业务功能开发、系统扩展与日常编码**的唯一权威指南。系统采用 **YuoCore ECS 运行时（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber` 分片单写者）+ `PlayerAggregate` 文档往返 + 纯函数离散模拟引擎 `SimulationEngine`** 架构，确保在 2c4g/40g 服务器预算下达成 5000+ 账号、500+ 网络并发与 2000+ 冷补算的高吞吐确定性结算，杜绝任何多套平行实现。
 
-> 生产运行时为优化版 YuoCore ECS：`src/Server` 装配 `vendor/YuoCore-optimized`，业务层经 `EcsPlayerRuntimeAdapter`（`IPlayerRuntime` 实现）进入 `EcsWorldShard.MutatePlayer` 通道——聚合在命令内重建、执行领域操作、整体回写组件。`*Component`/`*System` 命名仅限 `src/Ecs` 与内核内使用；`Task*`/`Executor*` 历史命名仍禁用。OOP/基线对照设施已退役删除。
+> 生产运行时为 YuoCore ECS：`src/Server` 装配 `vendor/YuoCore`（上游 `ecs-optimized` 分支），业务层经 `EcsPlayerRuntimeAdapter`（`IPlayerRuntime` 实现）进入 `EcsWorldShard.MutatePlayer` 通道——聚合在命令内重建、执行领域操作、整体回写组件。`*Component`/`*System` 命名仅限 `src/Ecs` 与内核内使用；`Task*`/`Executor*` 历史命名仍禁用。OOP/基线对照设施已退役删除。
 
 ---
 

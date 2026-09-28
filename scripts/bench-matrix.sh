@@ -13,7 +13,7 @@ SEED_PLAYERS="3000"
 HOURS="1,8,24,48"
 MODE="replay"
 SCENARIOS="Gathering,Crafting,Combat"
-VARIANTS="ecs-optimized"
+VARIANTS="ecs"
 CONCURRENCY="32"
 RUN_ROOT="$ROOT_DIR/artifacts/bench/$RUN_ID"
 EPOCH=""
@@ -29,7 +29,7 @@ usage() {
   --hours 列表      逗号分隔：1,8,24,48；业务模拟时长
   --mode 模式       replay（默认，WS 命令回放）或 offline-login（上线时结算）
   --scenarios 列表  Gathering,Crafting,Combat
-  --variants 列表   ecs-optimized（仅生产宿主）
+  --variants 列表   ecs（仅生产宿主）
   --concurrency 数  同时执行的玩家命令数（默认 32）
   --epoch ISO时间   业务实验起点（默认取 manifest 第一角色 startAt）
   --output-dir 目录 覆盖 artifacts/bench/<run-id>
@@ -81,19 +81,19 @@ mkdir -p "$RUN_ROOT"
 
 url_for() {
   case "$1" in
-    ecs-optimized) echo 'http://127.0.0.1:15140' ;;
+    ecs) echo 'http://127.0.0.1:15140' ;;
     *) return 1 ;;
   esac
 }
 port_for() {
   case "$1" in
-    ecs-optimized) echo 15140 ;;
+    ecs) echo 15140 ;;
     *) return 1 ;;
   esac
 }
 database_for() {
   case "$1" in
-    ecs-optimized) echo daohua_bench_ecs_optimized ;;
+    ecs) echo daohua_bench_ecs ;;
     *) return 1 ;;
   esac
 }

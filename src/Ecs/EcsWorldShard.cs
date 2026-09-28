@@ -343,7 +343,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
 
     /// <summary>
     /// 命令级玩家变更通道：在 Fiber 所有权内把实体状态还原为聚合、执行变更并整体回写组件，
-    /// 与 OOP PlayerActor 命令语义逐位对齐。返回本次变更新增的脏标记差集（供命令回执窄化编码）；
+    /// 与原聚合运行时命令语义逐位对齐。返回本次变更新增的脏标记差集（供命令回执窄化编码）；
     /// destroyEncounters 仅用于队首战斗行动被移除时的等价实体清理。
     /// </summary>
     public IReadOnlySet<PlayerSectionKind> MutatePlayer(Guid playerId, Action<PlayerAggregate> mutate,

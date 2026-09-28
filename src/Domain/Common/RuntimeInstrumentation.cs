@@ -4,10 +4,16 @@ using Domain.GameData;
 
 namespace Domain.Common;
 
-/// <summary>纯观测入口；没有 Meter 监听器时不读取时钟、不保留样本或玩家数据。</summary>
+/// <summary>
+/// 纯观测入口；没有 Meter 监听器时不读取时钟、不保留样本或玩家数据。
+/// 生产镜像以 <c>DaoHuaObservability=false</c> 发布时（<c>DAOHUA_OBSERVE_OFF</c>），
+/// 全部入口编译为 default 结构体返回，调用点在 JIT 后无任何残留指令。
+/// </summary>
 public static class RuntimeInstrumentation
 {
     public const string MeterName = "DaoHua.Runtime";
+
+#if !DAOHUA_OBSERVE_OFF
     private static readonly Meter Meter = new(MeterName);
     private static readonly Histogram<double> Duration = Meter.CreateHistogram<double>("daohua.runtime.duration", "ms");
     private static readonly Counter<long> Events = Meter.CreateCounter<long>("daohua.runtime.events");
@@ -44,6 +50,21 @@ public static class RuntimeInstrumentation
     {
         if (Events.Enabled) Events.Add(count, new KeyValuePair<string, object?>("name", name));
     }
+#else
+    public static bool Enabled => false;
+
+    public static Measurement Measure(string stage, string scenario = "all") => default;
+
+    public static Measurement MeasureCurrent(string stage) => default;
+
+    public static long BeginCurrent(string stage) => 0;
+
+    public static void EndCurrent(string stage, long startedAt) { }
+
+    public static ScenarioScope BeginScenario(string scenario) => default;
+
+    public static void Count(string name, long count = 1) { }
+#endif
 
     public static string Scenario(ActionKind kind) => kind switch
     {
@@ -57,10 +78,14 @@ public static class RuntimeInstrumentation
     {
         public void Dispose()
         {
+#if !DAOHUA_OBSERVE_OFF
             if (startedAt != 0)
                 Duration.Record(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds,
                     new KeyValuePair<string, object?>("stage", stage),
                     new KeyValuePair<string, object?>("scenario", scenario));
+#else
+            _ = stage; _ = scenario; _ = startedAt;
+#endif
         }
     }
 
@@ -68,7 +93,11 @@ public static class RuntimeInstrumentation
     {
         public void Dispose()
         {
+#if !DAOHUA_OBSERVE_OFF
             if (active) ActiveScenario.Value = previous;
+#else
+            _ = previous; _ = active;
+#endif
         }
     }
 }

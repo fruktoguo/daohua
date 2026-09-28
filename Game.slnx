@@ -12,9 +12,9 @@
   <Folder Name="/tests/">
     <Project Path="tests/Domain.Tests/Domain.Tests.csproj" />
     <Project Path="tests/Server.Tests/Server.Tests.csproj" />
-    <Project Path="tests/ServerEcs.Tests/ServerEcs.Tests.csproj" />
+    <Project Path="tests/Ecs.Tests/Ecs.Tests.csproj" />
   </Folder>
-  <Project Path="vendor/YuoCore-optimized/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
-  <Project Path="vendor/YuoCore-optimized/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
-  <Project Path="vendor/YuoCore-optimized/src/YuoCore.Runtime/YuoCore.Runtime.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+  <Project Path="vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj" />
 </Solution>

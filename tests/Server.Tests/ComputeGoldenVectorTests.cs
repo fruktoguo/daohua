@@ -54,7 +54,7 @@ public sealed class ComputeGoldenVectorTests
         var nodeResult = RunNodeJobOverWire(request);
         Assert.True(nodeResult.Success, $"节点推进失败：{nodeResult.ErrorCode} {nodeResult.ErrorMessage}");
 
-        // 在线参考管线：与 PlayerRuntime 重连补算完全同序——还原 → 指纹重绑 → 钱包 → 离线推进 → 编码脏段。
+        // 在线参考管线：与生产运行时重连补算完全同序——还原 → 指纹重绑 → 钱包 → 离线推进 → 编码脏段。
         var (onlineWrites, onlineResult, onlineVersion) = RunOnlineReference(bundle, target, balances);
 
         Assert.Equal(onlineVersion, nodeResult.TargetStateVersion);
@@ -361,7 +361,7 @@ public sealed class ComputeGoldenVectorTests
     }
 
     /// <summary>
-    /// 在线/重连参考管线：与 PlayerRuntime 补算路径同序——
+    /// 在线/重连参考管线：与生产运行时补算路径同序——
     /// DecodeAggregate → Restore → RebindGameDataFingerprint → 钱包还原 → AdvanceTo(离线) → EncodeAggregate。
     /// 返回推进后的脏段写集、领域模拟结果与聚合新版本。
     /// </summary>

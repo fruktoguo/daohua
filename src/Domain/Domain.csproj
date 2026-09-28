@@ -10,8 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../vendor/YuoCore-optimized/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
-    <ProjectReference Include="../../vendor/YuoCore-optimized/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Abstractions/YuoCore.Abstractions.csproj" />
+    <ProjectReference Include="../../vendor/YuoCore/src/YuoCore.Ecs/YuoCore.Ecs.csproj" />
   </ItemGroup>
 
   <ItemGroup>

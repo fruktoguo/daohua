@@ -8,7 +8,7 @@ using Domain.Player;
 using Domain.Simulation;
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 /// <summary>验证真实阶段调度中重复零时间准备不会重复消费、入账或推进资源窗口。</summary>
 public sealed class EcsTimedPipelineTests

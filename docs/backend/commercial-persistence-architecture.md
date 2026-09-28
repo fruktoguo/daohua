@@ -62,7 +62,7 @@
 | --- | --- | --- |
 | 操作系统 | Ubuntu Server 24.04 LTS，linux/amd64 | 长期安全更新、容器生态成熟；目标镜像不携带运行数据。 |
 | Web/宿主 | .NET 10 / ASP.NET Core 10 / C# | 使用现代 WebApplication、内置健康检查、限流、ProblemDetails 和 Hosted Service；业务逻辑不放在 Endpoint 中。 |
-| 运行时所有权 | `PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者 | 同一玩家的命令与模拟推进在专属 Actor 内串行执行；`YuoCore` 基座引用保留待用，当前不构成运行时对象模型。 |
+| 运行时所有权 | `EcsGameRuntime`/`EcsWorldShard` ECS 分片 Fiber + `EcsPlayerRuntimeAdapter` 玩家级 `SemaphoreSlim` 单写者 + 命令边界 `PlayerAggregate` 聚合重建 | 同一玩家的命令与模拟推进在其哈希路由的分片 Fiber 内串行执行；跨边界不直接持有聚合或 `YuoEntity` 引用。 |
 | 在线并发模型 | 每个玩家一个单写者执行上下文，跨边界不直接持有聚合引用 | Tick 路径零数据库往返；同一玩家和同一市场分片只有一个逻辑写者。 |
 | 主数据库 | PostgreSQL 18.x（固定受支持的最新补丁版） | 事务、唯一约束、外键、行锁、分区、WAL、PITR 和成熟备份工具同时满足权威数据与小规模运维需求。 |
 | 数据访问 | Npgsql 10.x；热路径使用显式 SQL、批处理和 prepared statement | SQL、锁顺序、SKIP LOCKED、版本 CAS 和查询计划可审计；不让 ORM 在战斗/资产热路径隐式生成写放大。 |
@@ -235,7 +235,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 game.player_state_heads.state_version 是玩家的持久化提交头。一次刷盘批次包含一个单调递增的 state_version 和全部脏 section：
 
-1. 玩家专属 `PlayerActor` 单写者在安全点生成独立载荷；
+1. 玩家级单写者（ECS 分片 Fiber + 适配器 gate）在安全点生成独立载荷；
 2. 将每个脏 section UPSERT 到 platform.section_flush_queue；
 3. Worker 按玩家聚合领取队列行；
 4. 在一个 PostgreSQL 事务中写入 game.player_state_sections、更新 game.player_state_heads；列表投影只作为后续可重建读模型，不参与玩家真源提交；
@@ -623,7 +623,7 @@ payload
 1. 冻结本文档的 schema v4、section 编号、协议字段和事务不变量。
 2. 新建 identity/game/economy/market/social/platform schema 与索引，清空本地旧数据。
 3. 删除旧的整玩家 Blob、旧市场账本 Blob、旧 outbox 适配和旧协议对象；实现新的 section/资产/市场/queue/outbox 适配。
-4. 在 `PlayerActor` 单写者安全点接入 section 编码和 latest-only queue；Worker 以版本条件提交和删除。
+4. 在玩家级单写者安全点接入 section 编码和 latest-only queue；Worker 以版本条件提交和删除。
 5. 实现资产/市场同事务、幂等键、fence token、审计和错误证据。
 6. 接入 PostgreSQL WAL/pgBackRest/COS 归档，完成 PITR 和磁盘保护演练。
 7. 运行领域确定性测试、数据库集成测试、崩溃恢复、重复请求、并发成交、队列堆积、磁盘接近满和 capacity-target 门禁。

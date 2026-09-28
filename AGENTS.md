@@ -19,30 +19,30 @@
 - `src/DataTool`：游戏数据 JSON 校验与指纹工具；独立命令行项目，无项目引用。
 - `frontend`：唯一正式 React/Vite 前端。
 - `src/Ecs`：游戏 ECS 层（`EcsGameRuntime`/`EcsWorldShard`/`EcsActionPipeline`、业务组件与行动/战斗系统），生产运行时的游戏状态与调度实现。
-- `tests/ServerEcs.Tests`：ECS 运行时与适配器边界回归门禁（命名保留历史目录，实际引用 `src/Server`）。
+- `tests/Ecs.Tests`：ECS 运行时与适配器边界回归门禁（`EcsGameRuntime`/`EcsWorldShard`/`EcsPlayerRuntimeAdapter`）。
 - `tests/Domain.Tests`：领域和协议回归门禁。
 - `tests/Server.Tests`：服务端装配、持久化与跨边界协议回归门禁。
 - `tools/`：本地开发辅助工具（`config-editor` 独立 Vite 应用、`combat-simulator.html`），不进入生产镜像。
 - `art/`：美术与图像资源源文件及图标清单。
 - `deploy/`：生产部署资产（`compose.prod.yaml`、systemd 单元、备份/归档/回滚脚本、Caddy 站点配置、PG 角色 SQL）。
-- `vendor/YuoCore-optimized`：固定版本的 Git submodule（上游的 `ecs-optimized` 分支），生产运行时内核。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。**在 submodule 内工作时，必须遵循其仓库内 `AGENTS.md` → `docs/ai-development-guide.md` → `docs/yuocore-ecs-kernel-rules.md` 的规范链**（ECS 内核的稠密索引纪律、生命周期语义红线、观测零成本与消融归因门禁以该链为准）；submodule 内的提交在其自身分支完成且不推送，本仓库只更新 submodule 指针与 `scripts/bench-service.sh` 的 `CORE_SHA` 钉。
+- `vendor/YuoCore`：固定版本的 Git submodule（上游的 `ecs-optimized` 分支），生产运行时内核。除非任务明确涉及 YuoCore，不得在本仓库任务中修改 submodule 内容。**在 submodule 内工作时，必须遵循其仓库内 `AGENTS.md` → `docs/ai-development-guide.md` → `docs/yuocore-ecs-kernel-rules.md` 的规范链**（ECS 内核的稠密索引纪律、生命周期语义红线、观测零成本与消融归因门禁以该链为准）；submodule 内的提交在其自身分支完成且不推送，本仓库只更新 submodule 指针与 `scripts/bench-service.sh` 的 `CORE_SHA` 钉。
 - `data`：运行数据，不进入镜像，不提交 Git，不随代码发布覆盖。
 
 依赖方向必须保持（以各 `.csproj` 实际 `ProjectReference` 为准）：
 
 ```text
-Server -> src/Ecs + Server.Clean + Domain + Protocol + YuoCore-optimized(Abstractions/Ecs/Runtime) + Npgsql
-src/Ecs -> Domain + YuoCore-optimized(Abstractions/Ecs/Runtime)（游戏 ECS 组件/系统/分片/管线）
-Domain -> YuoCore-optimized(Abstractions/Ecs)（纯领域原语引用，不持有宿主所有权对象）
+Server -> src/Ecs + Server.Clean + Domain + Protocol + YuoCore(Abstractions/Ecs/Runtime) + Npgsql
+src/Ecs -> Domain + YuoCore(Abstractions/Ecs/Runtime)（游戏 ECS 组件/系统/分片/管线）
+Domain -> YuoCore(Abstractions/Ecs)（纯领域原语引用，不持有宿主所有权对象）
 Domain.Tests -> Domain + Protocol
 Server.Tests -> Server + Domain + Protocol + ComputeNode
-ServerEcs.Tests -> Server + src/Ecs + Server.Clean + Domain + Protocol
+Ecs.Tests -> Server + src/Ecs + Server.Clean + Domain + Protocol
 LoadTests -> Protocol + Npgsql
 ComputeNode -> Domain（仅纯领域程序集：确定性补算与 SectionCodec 单源复用，禁止任何宿主/存储引用）
 DataTool -> 无项目引用（独立可执行进程/工具）
 ```
 
-单内核直引：全仓只存在 `vendor/YuoCore-optimized` 一个内核根，所有 `ProjectReference` 为普通引用，不得重新引入 `YuoCoreRoot`/`EcsBuildVariant`/`AdditionalProperties` 等变体属性。同名程序集双变体机制已随基线 submodule 退役。
+单内核直引：全仓只存在 `vendor/YuoCore` 一个内核根，所有 `ProjectReference` 为普通引用，不得重新引入 `YuoCoreRoot`/`EcsBuildVariant`/`AdditionalProperties` 等变体属性。同名程序集双变体机制已随基线 submodule 退役。
 
 Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部署层。跨层需求优先放入现有适配边界，不新增循环依赖。
 
@@ -173,7 +173,7 @@ docker compose -f deploy/compose.prod.yaml down
 - **行动队列与无限循环不变量**：行动队列中 `RemainingRepeats == -1`（或负值代表无限重复）在任何 `SimulationEngine.AdvanceTo` 模拟推进与单轮结算完成后，**绝对不得自动出队**；只有正数次数递减至 0、玩家显式取消或资源前置条件断绝时方可移出队列。协议与前端选择器必须完整支持 `-1` 无限循环语义。
 - **协议快照映射与配表透传**：`ProtocolSnapshotMapper` 转换快照与增量 DTO 时必须显式透传当前激活的 `GameDataCatalog`，以保证动作指纹与动态实体上下文完整一致，禁止脱离配表单独伪造协议载荷。
 - 不得为性能优化改变战斗结果、掉落、市场撮合、队列完成边界或快照语义。
-- 玩家并发所有权模型为「`PlayerAggregate` 聚合（命令内文档往返重建）+ 优化版 YuoCore ECS（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber`）+ 玩家级 `SemaphoreSlim` 单写者」：生产宿主 `src/Server` 使用 `vendor/YuoCore-optimized`，同一玩家的命令与模拟推进在其哈希路由的 ECS 分片 Fiber 内串行执行，`EcsPlayerRuntimeAdapter` 的玩家级 gate 保证跨边界串行；跨边界访问不得直接持有聚合或 `YuoEntity` 引用。
+- 玩家并发所有权模型为「`PlayerAggregate` 聚合（命令内文档往返重建）+ YuoCore ECS（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber`）+ 玩家级 `SemaphoreSlim` 单写者」：生产宿主 `src/Server` 使用 `vendor/YuoCore`，同一玩家的命令与模拟推进在其哈希路由的 ECS 分片 Fiber 内串行执行，`EcsPlayerRuntimeAdapter` 的玩家级 gate 保证跨边界串行；跨边界访问不得直接持有聚合或 `YuoEntity` 引用。
 - 玩家快照写回失败必须保留可恢复证据；不得为了降噪降低持久化错误等级。
 - 健康端点不得泄露 token、连接串、玩家数据或内部异常。
 - CORS 只允许配置的完整来源；禁止恢复任意来源加凭据的组合。

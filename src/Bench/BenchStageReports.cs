@@ -29,45 +29,45 @@ public sealed record BenchCounterMeasurement(
 
 public static class BenchStageReports
 {
-    private sealed record StageSpec(string Name, string Layer, bool Oop, bool Ecs, bool Comparable = false);
+    private sealed record StageSpec(string Name, string Layer, bool Applicable);
 
     private static readonly StageSpec[] Known =
     [
-        new("core.simulation", "core", true, true, true),
-        new("domain.resource.prepare", "domain", true, true, true),
-        new("domain.resource.regen", "domain", true, true, true),
-        new("domain.action.start", "domain", true, true, true),
-        new("domain.action.prepare", "domain", true, true, true),
-        new("domain.action.advance", "domain", true, true, true),
-        new("domain.action.yield", "domain", true, true, true),
-        new("domain.combat.prepare", "domain", true, true, true),
-        new("domain.combat.event", "domain", true, true, true),
-        new("domain.combat.yield", "domain", true, true, true),
-        new("domain.combat.reward", "domain", true, true, true),
-        new("oop.logic.resource_window", "oop", true, false),
-        new("oop.logic.action_dispatch", "oop", true, false),
-        new("oop.logic.combat_dispatch", "oop", true, false),
-        new("ecs.system_tick", "ecs", false, true),
-        new("ecs.owner_hold", "ecs", false, true),
-        new("ecs.mailbox.post", "ecs", false, true),
-        new("ecs.system.run.ActionClockSystem", "ecs", false, true),
-        new("ecs.system.run.ActionQueueSystem", "ecs", false, true),
-        new("ecs.system.run.GatheringActionSystem", "ecs", false, true),
-        new("ecs.system.run.CraftingActionSystem", "ecs", false, true),
-        new("ecs.system.run.ActionBoundarySystem", "ecs", false, true),
-        new("ecs.system.run.TravelActionSystem", "ecs", false, true),
-        new("ecs.system.run.TimedActionYieldSystem", "ecs", false, true),
-        new("ecs.system.run.CombatActionBoundarySystem", "ecs", false, true),
-        new("ecs.system.run.CombatActionYieldSystem", "ecs", false, true),
-        new("ecs.system.run.PlayerClockCommitSystem", "ecs", false, true),
-        new("ecs.system.run.CombatEventAdvanceSystem", "ecs", false, true),
-        new("ecs.system.run.CombatTargetSystem", "ecs", false, true),
-        new("ecs.system.run.CombatEventSystem", "ecs", false, true),
-        new("queue.actor_wait", "queue", true, true),
-        new("queue.owner_wait", "queue", false, true),
-        new("snapshot.export", "snapshot", true, true),
-        new("lifecycle.player_load", "lifecycle", true, true),
-        new("lifecycle.entity_create", "lifecycle", false, true)
+        new("core.simulation", "core", true),
+        new("domain.resource.prepare", "domain", true),
+        new("domain.resource.regen", "domain", true),
+        new("domain.action.start", "domain", true),
+        new("domain.action.prepare", "domain", true),
+        new("domain.action.advance", "domain", true),
+        new("domain.action.yield", "domain", true),
+        new("domain.combat.prepare", "domain", true),
+        new("domain.combat.event", "domain", true),
+        new("domain.combat.yield", "domain", true),
+        new("domain.combat.reward", "domain", true),
+        new("domain.logic.resource_window", "domain", true),
+        new("domain.logic.action_dispatch", "domain", true),
+        new("domain.logic.combat_dispatch", "domain", true),
+        new("ecs.system_tick", "ecs", true),
+        new("ecs.owner_hold", "ecs", true),
+        new("ecs.mailbox.post", "ecs", true),
+        new("ecs.system.run.ActionClockSystem", "ecs", true),
+        new("ecs.system.run.ActionQueueSystem", "ecs", true),
+        new("ecs.system.run.GatheringActionSystem", "ecs", true),
+        new("ecs.system.run.CraftingActionSystem", "ecs", true),
+        new("ecs.system.run.ActionBoundarySystem", "ecs", true),
+        new("ecs.system.run.TravelActionSystem", "ecs", true),
+        new("ecs.system.run.TimedActionYieldSystem", "ecs", true),
+        new("ecs.system.run.CombatActionBoundarySystem", "ecs", true),
+        new("ecs.system.run.CombatActionYieldSystem", "ecs", true),
+        new("ecs.system.run.PlayerClockCommitSystem", "ecs", true),
+        new("ecs.system.run.CombatEventAdvanceSystem", "ecs", true),
+        new("ecs.system.run.CombatTargetSystem", "ecs", true),
+        new("ecs.system.run.CombatEventSystem", "ecs", true),
+        new("queue.actor_wait", "queue", true),
+        new("queue.owner_wait", "queue", true),
+        new("snapshot.export", "snapshot", true),
+        new("lifecycle.player_load", "lifecycle", true),
+        new("lifecycle.entity_create", "lifecycle", true)
     ];
 
     public static IReadOnlyList<BenchStageMeasurement> Rows(BenchReport report)
@@ -127,7 +127,7 @@ public static class BenchStageReports
         BenchLatencySummary? summary = null)
     {
         var spec = SpecFor(stage);
-        var applicable = report.Metric.Variant == "oop" ? spec.Oop : spec.Ecs;
+        var applicable = spec.Applicable;
         var observed = summary is { Count: > 0 };
         var available = report.Metric.Mode == "offline-login"
             ? report.Metric.OfflineLoginServerMeasurements is not null
@@ -146,12 +146,7 @@ public static class BenchStageReports
     {
         stage = CanonicalStage(stage);
         return Known.FirstOrDefault(spec => spec.Name == stage)
-            ?? new(stage, stage.Split('.')[0],
-                !stage.StartsWith("ecs.", StringComparison.Ordinal)
-                    && !stage.StartsWith("yuocore.", StringComparison.Ordinal),
-                !stage.StartsWith("oop.", StringComparison.Ordinal)
-                    && !stage.StartsWith("yuocore.", StringComparison.Ordinal),
-                stage.StartsWith("domain.", StringComparison.Ordinal));
+            ?? new StageSpec(stage, stage.Split('.')[0], true);
     }
 
     private static string CanonicalStage(string stage)

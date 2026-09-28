@@ -18,7 +18,7 @@
     <Compile Include="BenchmarkHost.cs" />
     <Compile Include="PlayerLogBuffer.cs" />
     <Compile Include="../Server/GlobalUsings.cs" Link="GlobalUsings.cs" />
-    <Compile Include="../Server/Clean/**/*.cs" Exclude="../Server/Clean/PlayerRuntime.cs" LinkBase="Clean" />
+    <Compile Include="../Server/Clean/**/*.cs" LinkBase="Clean" />
     <EmbeddedResource Include="../Server/Clean/Ops/OpsPage.html" Link="Clean/Ops/OpsPage.html">
       <LogicalName>Server.Ops.OpsPage.html</LogicalName>
     </EmbeddedResource>

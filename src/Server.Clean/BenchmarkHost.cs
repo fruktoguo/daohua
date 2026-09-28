@@ -23,8 +23,8 @@ public sealed record BenchmarkHost(string Mode, string Variant, bool Observabili
         var variant = Environment.GetEnvironmentVariable("DAOHUA_BENCH_VARIANT");
         var database = variant switch
         {
-            "ecs-optimized" => "daohua_bench_ecs_optimized",
-            _ => throw new InvalidOperationException("基准 variant 必须为 ecs-optimized。")
+            "ecs" => "daohua_bench_ecs",
+            _ => throw new InvalidOperationException("基准 variant 必须为 ecs。")
         };
         var connection = new NpgsqlConnectionStringBuilder(options.ConnectionString);
         if (connection.Database != database || connection.Host is not ("localhost" or "127.0.0.1" or "::1"))

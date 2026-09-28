@@ -17,8 +17,8 @@ SHARD_COUNT=""
 
 usage() {
   cat <<'EOF'
-用法：scripts/bench-service.sh --variant ecs-optimized [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间] [--shard-count 数量]
-  ecs-optimized   端口 5130，数据库 daohua_bench_ecs_optimized，src/Server + vendor/YuoCore-optimized（生产宿主）
+用法：scripts/bench-service.sh --variant ecs [--build] [--start|--stop|--probe] [--foreground] [--no-restore] [--port 端口] [--simulation-target ISO时间] [--shard-count 数量]
+  ecs   端口 5130，数据库 daohua_bench_ecs，src/Server + vendor/YuoCore（生产宿主）
 环境变量：DAOHUA_DATABASE_URL 覆盖数据库连接串，ASPNETCORE_ENVIRONMENT 默认 Development。
 --simulation-target 仅在 Development 基准服务固定业务模拟截止时间；租约/会话仍使用系统 UTC。
 --shard-count 设置 Ecs:ShardCount；省略时默认为 4。
@@ -44,9 +44,9 @@ done
 
 if [[ -z "$VARIANT" ]]; then echo "必须提供 --variant" >&2; usage >&2; exit 2; fi
 case "$VARIANT" in
-  ecs-optimized)
-    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5130; DATABASE="daohua_bench_ecs_optimized"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs-optimized"; CORE="$ROOT_DIR/vendor/YuoCore-optimized"; CORE_SHA="79cdaebf70ce2c59c33e08adae9f40fdd75e983c"; ;;
-  *) echo "不支持的 variant：$VARIANT（仅保留 ecs-optimized 生产宿主基准）" >&2; exit 2 ;;
+  ecs)
+    PROJECT="$ROOT_DIR/src/Server/Server.csproj"; PORT=5130; DATABASE="daohua_bench_ecs"; ARTIFACT="$ROOT_DIR/artifacts/runtime/ecs"; CORE="$ROOT_DIR/vendor/YuoCore"; CORE_SHA="7b36f8002850dbf06e482682ba27d32cf4a0abe6"; ;;
+  *) echo "不支持的 variant：$VARIANT（仅保留 ecs 生产宿主基准）" >&2; exit 2 ;;
 esac
 if [[ -n "$PORT_OVERRIDE" ]]; then PORT="$PORT_OVERRIDE"; fi
 if [[ -n "$SHARD_COUNT" ]] && ! [[ "$SHARD_COUNT" =~ ^[0-9]+$ ]] ; then echo "shard 数量无效：$SHARD_COUNT" >&2; exit 2; fi

@@ -168,7 +168,7 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     public bool RemoveAction(Guid playerId, Guid actionInstanceId)
         => GetShard(playerId).RemoveAction(playerId, actionInstanceId);
 
-    /// <summary>命令级玩家变更通道（与 OOP PlayerActor 命令语义对齐）；返回本次新增的脏标记差集。</summary>
+    /// <summary>命令级玩家变更通道（与原聚合运行时命令语义对齐）；返回本次新增的脏标记差集。</summary>
     public IReadOnlySet<PlayerSectionKind> MutatePlayer(Guid playerId, Action<PlayerAggregate> mutate,
         bool destroyEncounters = false)
         => GetShard(playerId).MutatePlayer(playerId, mutate, destroyEncounters);

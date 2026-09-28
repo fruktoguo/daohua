@@ -165,14 +165,14 @@ public static class Program
     {
         Console.WriteLine("用法：dotnet run --project src/Bench -- seed|probe|run|report [选项]");
         Console.WriteLine("  seed  --output artifacts/bench/characters.json [--players 3000] [--database 连接串]");
-        Console.WriteLine("  probe --variant ecs-optimized --url http://127.0.0.1:5128 [--account 账号 --password 密码] [--report 文件.json]");
-        Console.WriteLine("  run --variant ecs-optimized --url http://127.0.0.1:5128 --manifest 文件.json [--scenario Gathering|Crafting|Combat] --players 1 --mode replay|offline-login|online --concurrency 32 [--target-hours 1] [--duration-seconds 900 --interval-ms 1000] [--report 文件.json]");
+        Console.WriteLine("  probe --variant ecs --url http://127.0.0.1:5128 [--account 账号 --password 密码] [--report 文件.json]");
+        Console.WriteLine("  run --variant ecs --url http://127.0.0.1:5128 --manifest 文件.json [--scenario Gathering|Crafting|Combat] --players 1 --mode replay|offline-login|online --concurrency 32 [--target-hours 1] [--duration-seconds 900 --interval-ms 1000] [--report 文件.json]");
         Console.WriteLine("  online 墙钟短测：--duration-seconds 10；15/60 分钟：900/3600。replay 的 --target-hours 仅指业务补算时长。");
         Console.WriteLine("  offline-login 先推进业务时钟，再以真实 WS 上线触发离线补算；不发送 simulation.advance。可用 scripts/bench-offline-login.sh 执行 12 小时、100/500/1000 人矩阵。");
         Console.WriteLine("  seed --resource-exhaustion true 单独生成仅够 2 轮制造的耗尽样本；普通种子按实际配表准备 48 小时材料。");
         Console.WriteLine("  report --report 'artifacts/bench/*-gathering.json'（重新生成单报告 stage/counter CSV）");
         Console.WriteLine("  compare --database-b 连接串 --database-c 连接串 [--database-a 连接串] --player-id UUID [--report 文件.json]");
-        Console.WriteLine("  provenance --variant ecs-optimized --output artifacts/runtime/<variant>");
+        Console.WriteLine("  provenance --variant ecs --output artifacts/runtime/<variant>");
         return 0;
     }
 }
@@ -226,7 +226,7 @@ public sealed record BenchOptions(
         var mode = values.GetValueOrDefault("mode", "replay").ToLowerInvariant();
         if (mode is not ("online" or "replay" or "offline-login")) throw new ArgumentException("--mode 必须是 online、replay 或 offline-login。");
         return new(
-            values.GetValueOrDefault("variant", "oop"), parsed,
+            values.GetValueOrDefault("variant", "ecs"), parsed,
             ReadInt(values, "players", 1, 1, 3000),
             values.GetValueOrDefault("output", Path.Combine(root, "artifacts/bench/characters.json")),
             values.GetValueOrDefault("report", Path.Combine(root, "artifacts/bench/report.json")),
@@ -525,8 +525,8 @@ public sealed record BenchVariant(string Name, int Port, string Database, string
 {
     public static BenchVariant Parse(string name) => name.ToLowerInvariant() switch
     {
-        "ecs-optimized" => new("ecs-optimized", 5130, "daohua_bench_ecs_optimized", "artifacts/runtime/ecs-optimized", "vendor/YuoCore-optimized", "79cdaebf70ce2c59c33e08adae9f40fdd75e983c"),
-        _ => throw new ArgumentException($"未知 variant：{name}（仅支持 ecs-optimized）")
+        "ecs" => new("ecs", 5130, "daohua_bench_ecs", "artifacts/runtime/ecs", "vendor/YuoCore", "7b36f8002850dbf06e482682ba27d32cf4a0abe6"),
+        _ => throw new ArgumentException($"未知 variant：{name}（仅支持 ecs）")
     };
 }
 
@@ -698,10 +698,10 @@ public static class BenchDatabase
         if (string.IsNullOrWhiteSpace(builder.Database)
             || !builder.Database.StartsWith("daohua_bench_", StringComparison.Ordinal)
             || !BenchVariantNames.Contains(builder.Database, StringComparer.Ordinal))
-            throw new InvalidOperationException("基准 seed 只允许 daohua_bench_ecs_optimized。");
+            throw new InvalidOperationException("基准 seed 只允许 daohua_bench_ecs。");
     }
 
-    private static readonly string[] BenchVariantNames = ["daohua_bench_ecs_optimized"];
+    private static readonly string[] BenchVariantNames = ["daohua_bench_ecs"];
 }
 
 public static class BenchProbe

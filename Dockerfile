@@ -16,11 +16,11 @@ RUN npm run build
 FROM ${DOTNET_SDK_IMAGE} AS dotnet-build
 WORKDIR /src
 ARG BUILD_VERSION=dev
-COPY global.json ./
+COPY global.json Directory.Build.props ./
 # 直接复制新基线源码；.dockerignore 排除 bin/obj、运行数据、旧文档和 secrets。
 COPY src/ ./src/
 COPY config/game-data/ ./config/game-data/
-COPY vendor/YuoCore-optimized/src/ ./vendor/YuoCore-optimized/src/
+COPY vendor/YuoCore/src/ ./vendor/YuoCore/src/
 RUN dotnet restore src/Server/Server.csproj --nologo \
     && dotnet restore src/ComputeNode/ComputeNode.csproj --nologo
 RUN dotnet publish src/Server/Server.csproj \
@@ -29,6 +29,7 @@ RUN dotnet publish src/Server/Server.csproj \
     --output /out/server \
     --nologo \
     -p:ContinuousIntegrationBuild=true \
+    -p:DaoHuaObservability=false \
     -p:InformationalVersion="${BUILD_VERSION}"
 RUN dotnet publish src/ComputeNode/ComputeNode.csproj \
     --configuration Release \
@@ -36,6 +37,7 @@ RUN dotnet publish src/ComputeNode/ComputeNode.csproj \
     --output /out/compute \
     --nologo \
     -p:ContinuousIntegrationBuild=true \
+    -p:DaoHuaObservability=false \
     -p:InformationalVersion="${BUILD_VERSION}"
 
 FROM ${DOTNET_RUNTIME_IMAGE} AS runtime-base

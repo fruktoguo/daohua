@@ -510,7 +510,7 @@ public static partial class SimulationEngine
         {
         while (player.LastSimulatedAt < computeTarget)
         {
-            using var windowMeasurement = RuntimeInstrumentation.MeasureCurrent("oop.logic.resource_window");
+            using var windowMeasurement = RuntimeInstrumentation.MeasureCurrent("domain.logic.resource_window");
             var now = player.LastSimulatedAt;
             var resourceBoundary = PrepareResourceBoundaryCore(player, gameData, wallet,
                 computeTarget, events, live, out var instantDeltas);
@@ -704,7 +704,7 @@ public static partial class SimulationEngine
         DuelAdvanceOptions? duel = null,
         LiveCombatBattle? live = null)
     {
-        using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("oop.logic.action_dispatch");
+        using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("domain.logic.action_dispatch");
         ArgumentNullException.ThrowIfNull(player);
         target = target.ToUniversalTime();
         if (target < player.LastSimulatedAt)
@@ -894,7 +894,7 @@ public static partial class SimulationEngine
         ref double completedRepeats,
         LiveCombatBattle? live = null)
     {
-        using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("oop.logic.combat_dispatch");
+        using var dispatchMeasurement = RuntimeInstrumentation.MeasureCurrent("domain.logic.combat_dispatch");
         if (action.Expedition?.Phase != CombatExpeditionPhase.Combat)
         {
             var prepared = AdvanceCombatPreparationCore(player, action, definition, gameData, assetBalances,

@@ -14,7 +14,7 @@ using Server.Clean;
 using Server;
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 /// <summary>适配器跨边界门禁：同玩家串行、请求幂等和卸载后从 section/资产恢复。</summary>
 public sealed class EcsAdapterBoundaryTests

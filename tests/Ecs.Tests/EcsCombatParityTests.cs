@@ -8,7 +8,7 @@ using Domain.Player;
 using Domain.Simulation;
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 /// <summary>
 /// 真实战斗 ECS parity 门禁：同一配表、种子、玩家装配技能和战外 Buff，

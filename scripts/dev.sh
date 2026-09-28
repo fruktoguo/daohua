@@ -84,7 +84,7 @@ cleanup() {
 trap cleanup SIGINT SIGTERM EXIT
 
 # 1. 检查 YuoCore submodule
-if [[ ! -f vendor/YuoCore-optimized/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
+if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   printf '==> 初始化 YuoCore submodule...\n'
   git submodule update --init --recursive
 fi

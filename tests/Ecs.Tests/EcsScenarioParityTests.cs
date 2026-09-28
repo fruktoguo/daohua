@@ -9,7 +9,7 @@ using Domain.Simulation;
 using Domain.World;
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 /// <summary>跨自然业务边界的 ECS 门禁：从队列进入搜索，再进入真实战斗单位系统。</summary>
 public sealed class EcsScenarioParityTests

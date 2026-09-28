@@ -7,7 +7,7 @@ using Domain.Player;
 using Server.Clean;
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 /// <summary>固定分片路由门禁：分片只改变 ECS 所有权，不得改变三类行动结果。</summary>
 [Collection("ECS telemetry")]

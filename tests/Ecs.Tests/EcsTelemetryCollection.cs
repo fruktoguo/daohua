@@ -1,6 +1,6 @@
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 [CollectionDefinition("ECS telemetry", DisableParallelization = true)]
 public sealed class EcsTelemetryCollection

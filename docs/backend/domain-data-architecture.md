@@ -1,6 +1,6 @@
 # 道化太初 · 服务端领域数据架构规约（聚合单写者模型）
 
-本文档定义《道化太初》服务端的领域模型设计、数据类型规范与并发所有权架构。当前实现为 **`PlayerAggregate` 聚合 + `PlayerRuntime`/`PlayerActor` + `SemaphoreSlim` 单写者**模型；`YuoCore`（Ecs/Persistence/Runtime）基座引用在项目文件中保留待用，不构成当前运行时对象模型。历史 ECS/Fiber 推演稿见 `docs/archive/design/ecs-architecture-and-evolution-plan.md`。当前处于本地开发/内测阶段，数据模型、快照、Protocol 和部署拓扑采用一次性切换，不设计历史兼容层。
+本文档定义《道化太初》服务端的领域模型设计、数据类型规范与并发所有权架构。当前实现为 **ECS 分片 Fiber 运行时（`EcsGameRuntime`/`EcsWorldShard`/`YuoFiber`，内核 `vendor/YuoCore`）+ `EcsPlayerRuntimeAdapter` 玩家级单写者 + 命令边界 `PlayerAggregate` 聚合重建**模型：玩家状态常驻 ECS 组件，业务命令经 `EcsWorldShard.MutatePlayer` 将组件重建为聚合执行领域操作后整体回写。当前处于本地开发/内测阶段，数据模型、快照、Protocol 和部署拓扑采用一次性切换，不设计历史兼容层。
 
 ---
 
@@ -10,9 +10,9 @@
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        聚合单写者核心设计铁律                          │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 1. 聚合非线程安全：PlayerAggregate 永远只被其专属 PlayerActor 独占访问   │
-│ 2. 并发粒度是玩家：每个在线玩家一个 Actor + SemaphoreSlim，串行零锁      │
-│ 3. 跨边界不持引用：命令以 (command, payload) 数据形式进入 Actor 执行     │
+│ 1. 聚合非线程安全：PlayerAggregate 只在命令边界内独占重建与回写，跨边界不常驻 │
+│ 2. 并发粒度是玩家：每个在线玩家路由到唯一 ECS 分片 Fiber，玩家级 gate 兜底串行 │
+│ 3. 跨边界不持引用：命令以 (command, payload) 数据形式进入 MutatePlayer 通道执行 │
 │ 4. 逻辑由唯一引擎驱动：SimulationEngine.AdvanceTo 是唯一确定性推进真源   │
 │ 5. 状态同步与持久化解耦：MarkDirty 标记分段，latest-only 队列异步落盘    │
 └────────────────────────────────────────────────────────────────────────┘
@@ -45,7 +45,7 @@
   - 杜绝在配置类中混入运行时可变字段。
 
 ### 2. 第二层：运行时领域聚合（`src/Domain/Player/PlayerAggregate`）
-- **职责**：在线玩家的唯一权威可变状态，由专属 `PlayerActor` 单写者持有。
+- **职责**：在线玩家的唯一权威可变状态（常驻形态为 ECS 组件集，命令边界经 `PlayerAggregate` 重建执行领域操作后回写），由所在 ECS 分片单写者持有。
 - **规范**：
   - `PlayerAggregate` 为单体聚合，内部按持久化边界划分为 **`PlayerSectionKind` 八分段**：
     - `Progression`（`PlayerProgression`）：境界等级、灵气修为、历史总修为；
@@ -113,7 +113,7 @@ public readonly record struct IdempotencyKey(string Value) : IIdentifier;
 ┌────────────────────────────────────────────────────────────────────────┐
 │                        挂单事务流转（现行实现）                        │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 1. PlayerActor 校验请求 ──► MarketRuntime（该分片唯一写者）            │
+│ 1. 玩家命令通道校验请求 ──► MarketRuntime（该分片唯一写者）              │
 │ 2. 单个 PostgreSQL Serializable 事务内：                               │
 │      校验 partition_leases fence ──► 冻结资产 ──► 落订单/成交/流水     │
 │ 3. 同步提交后返回结果；失败整体回滚，无补偿分支                         │
@@ -121,7 +121,7 @@ public readonly record struct IdempotencyKey(string Value) : IIdentifier;
 ```
 
 ### 1. 玩家聚合内原子性
-- `PlayerActor` 串行执行天然保证聚合内原子性；跨聚合的资产变更通过 `AssetWallet` + `PostgresEconomyRepository` 在单事务中提交，失败时恢复内存快照证据。
+- 玩家级单写者串行执行天然保证聚合内原子性；跨聚合的资产变更通过 `AssetWallet` + `PostgresEconomyRepository` 在单事务中提交，失败时恢复内存快照证据。
 
 ### 2. 市场分片写者
 - 每个 `partition_id` 只有一个逻辑写者；租约通过 `market.partition_leases` 行与 `fence_token` 管理，续租失败或 fence 不匹配立即拒绝写入。
@@ -178,7 +178,7 @@ src/Domain/
 
 > `src/Domain/Constants/`、`src/Domain/Models/` 为历史遗留空目录，不属于现行拓扑。
 
-宿主侧（`src/Server/Clean/`）：`PlayerRuntime`（内含 `PlayerActor`）、`MarketRuntime`、`WebSocketRuntime`、`ProtocolSnapshotMapper`、`SectionCodec`、`Postgres*Repository`、`*Worker`/`*HostedService`。
+宿主侧（`src/Server/Clean/`）：`EcsPlayerRuntimeAdapter`（`src/Server`，`IPlayerRuntime` 实现）、`MarketRuntime`、`WebSocketRuntime`、`ProtocolSnapshotMapper`、`SectionCodec`、`Postgres*Repository`、`*Worker`/`*HostedService`。
 
 ---
 

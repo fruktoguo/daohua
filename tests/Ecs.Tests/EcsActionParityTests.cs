@@ -7,7 +7,7 @@ using Domain.Player;
 using Domain.Simulation;
 using Xunit;
 
-namespace ServerEcs.Tests;
+namespace Ecs.Tests;
 
 /// <summary>
 /// 采集与制造行动的完整 ECS parity 门禁。两边从同一份已入队快照开始，
