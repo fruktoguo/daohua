@@ -76,11 +76,16 @@ public sealed class EcsActionPipeline
 
     public DateTimeOffset Target { get; }
     public DateTimeOffset Current => _cursor;
-    /// <summary>不变量违例时的现场证据：窗口/等待/剩余预算/队首行动，供快速失败诊断。</summary>
+    /// <summary>不变量违例时的现场证据：窗口/等待/剩余预算/队首行动/战斗边界，供快速失败诊断。</summary>
     internal string DiagnosticState
         => $"window={_windowOpen},waiting={_waiting},remaining={_remainingSeconds:0.######}," +
            $"windowEnd={_windowEnd:o},step={_windowStepSeconds:0.######},action={_preparedAction?.Id.ToString() ?? "-"}," +
-           $"queued={_player.Actions.Count}";
+           $"queued={_player.Actions.Count},kind={_definition?.ExecutionKind.ToString() ?? "-"}," +
+           $"pk={_definition?.Kind.ToString() ?? "-"},battle={_battle is not null}," +
+           $"battleOutcome={_battle?.State.Outcome.ToString() ?? "-"},battleElapsed={_battle?.State.ElapsedSeconds:0.###}," +
+           $"battleTarget={_battleTarget:0.###},due={_combatStepDue},roundDue={_roundDue}," +
+           $"frame={_frameTarget:o},phase={_preparedAction?.Expedition?.Phase.ToString() ?? "-"}," +
+           $"actStatus={_preparedAction?.Status.ToString() ?? "-"}";
     public bool IsComplete => _cursor >= Target && !_windowOpen;
     public bool NeedsPreparation => !IsComplete && (!_windowOpen || (!_waiting && _preparedAction is null));
     public bool HasPreparedAction => _preparedAction is not null;
@@ -163,8 +168,10 @@ public sealed class EcsActionPipeline
             {
                 if (_battle is not null)
                 {
-                    var boundary = DeterministicCombatEngine.NextBoundarySeconds(_battle.State, _battleTarget);
-                    return CombatBoundaryAt(boundary);
+                    // 战斗段与 OOP AdvanceTo 同粒度：tick 落在本窗口战斗预算的终点，
+                    // 单次系统调用内消化全部出手边界；逐边界 tick 会把外层转换预算放大数倍，
+                    // 长时离线补算的连续战斗会合法耗尽最大转换数。
+                    return CombatBoundaryAt(_battleTarget);
                 }
                 var expedition = _preparedAction!.Expedition!;
                 var phaseRemaining = expedition.Phase is CombatExpeditionPhase.Duel or CombatExpeditionPhase.DuelPending
@@ -338,7 +345,10 @@ public sealed class EcsActionPipeline
         _definition = null;
     }
 
-    /// <summary>由真实战斗实体系统执行一个随机原子边界，窗口预算保持原 double 目标。</summary>
+    /// <summary>
+    /// 由真实战斗实体系统推进本窗口战斗段：与 OOP 一致一次性 AdvanceTo 到窗口战斗预算，
+    /// 内部逐自然边界消化随机原子事件；事件顺序、随机流与逐边界调用完全等价。
+    /// </summary>
     public void AdvanceCombatEncounter(CombatEncounterComponent encounter)
     {
         using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.combat_encounter");
@@ -348,7 +358,7 @@ public sealed class EcsActionPipeline
         var state = encounter.State;
         if (state.Outcome == CombatOutcome.Running && state.ElapsedSeconds < _battleTarget - 1e-12)
         {
-            var result = DeterministicCombatEngine.AdvanceOneBoundary(state, _battleTarget);
+            var result = DeterministicCombatEngine.AdvanceTo(state, _battleTarget);
             encounter.LastEvents.AddRange(result.Events);
             _battleEvents.AddRange(result.Events);
             if (result.PlayerDeathTimestamps is { } deaths) _battleDeaths.AddRange(deaths);

@@ -18,9 +18,10 @@ internal static class CombatSystemGate
 }
 
 /// <summary>
-/// 单次只推进一个战斗自然边界。Encounter 持有时钟和随机序列，玩家与怪物
-/// CombatantComponent.State 与其中的单位引用相同，领域原语就地修改真实 ECS 单位。
-/// 同刻技能、Buff、伤害和死亡是不可拆分的随机原子事件，统一由此系统执行。
+/// 每次 tick 推进本帧允许的全部战斗自然边界（整段 AdvanceTo，与 OOP 窗口粒度一致）。
+/// Encounter 持有时钟和随机序列，玩家与怪物 CombatantComponent.State 与其中的单位引用相同，
+/// 领域原语就地修改真实 ECS 单位。同刻技能、Buff、伤害和死亡是不可拆分的随机原子事件，
+/// 统一由此系统按边界顺序结算；逐边界拆 tick 不改变结果，只会放大外层转换预算。
 /// </summary>
 [SystemOrder(600)]
 public sealed class CombatEventAdvanceSystem : YuoSystem<CombatEncounterComponent>, IUpdate

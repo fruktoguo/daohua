@@ -469,7 +469,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                         .OrderBy(pair => pair.Value.NextBoundaryAt).Take(8)
                         .Select(pair => $"{pair.Key:N}:cursor={pair.Value.Current:o},next={pair.Value.NextBoundaryAt:o},[{pair.Value.DiagnosticState}]"));
                     throw new DomainException(DomainErrorCode.InvariantViolation,
-                        $"ECS 自然边界推进超过最大转换数。incomplete=[{diag}]");
+                        $"ECS 自然边界推进超过最大转换数。incomplete=[{diag}] " +
+                        $"clock=[skip={_clock.SkipWorldUpdate},skipN={_clock.SkipWorldUpdateEntities},active={_clock.ActivePlayerId},prep={_clock.PreparationOnly}]");
                 }
                 cancellationToken.ThrowIfCancellationRequested();
                 while (pipelines.Values.Any(pipeline => pipeline.NeedsPreparation))
