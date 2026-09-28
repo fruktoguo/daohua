@@ -34,7 +34,7 @@
 Server -> src/Ecs + Server.Clean + Domain + Protocol + YuoCore(Abstractions/Ecs/Runtime) + Npgsql
 src/Ecs -> Domain + YuoCore(Abstractions/Ecs/Runtime)（游戏 ECS 组件/系统/分片/管线）
 Domain -> YuoCore(Abstractions/Ecs)（纯领域原语引用，不持有宿主所有权对象）
-Domain.Tests -> Domain + Protocol
+Domain.Tests -> Domain + Protocol + src/Ecs（行动/战斗引擎已迁入 Ecs 层，领域语义测试经其公共入口回归）
 Server.Tests -> Server + Domain + Protocol + ComputeNode
 Ecs.Tests -> Server + src/Ecs + Server.Clean + Domain + Protocol
 LoadTests -> Protocol + Npgsql

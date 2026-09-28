@@ -1,6 +1,14 @@
+using System.Collections.ObjectModel;
+using Domain.Common;
+using Domain.Combat;
+using Domain.Economy;
+using Domain.GameData;
+using Domain.Market;
+using Domain.Player;
+using Domain.Simulation;
 using Domain.World;
 
-namespace Domain.Simulation;
+namespace DaoHua.Ecs;
 
 public static partial class SimulationEngine
 {

@@ -1,7 +1,14 @@
+using System.Collections.ObjectModel;
+using Domain.Common;
 using Domain.Combat;
+using Domain.Economy;
 using Domain.GameData;
+using Domain.Market;
+using Domain.Player;
+using Domain.Simulation;
+using Domain.World;
 
-namespace Domain.Simulation;
+namespace DaoHua.Ecs;
 
 /// <summary>
 /// 在线推送调度辅助：从聚合状态推导「下一个用户可见事件」的墙钟时刻。

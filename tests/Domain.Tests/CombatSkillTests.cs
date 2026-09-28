@@ -21,7 +21,7 @@ public sealed class CombatSkillTests
         var ability = catalog.Abilities["ability.heavy-slash"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(100000, 0, 20, 100);
-        var encounter = CombatEncounterState.Start("skill", 71, playerTemplate, [new CombatantTemplate(enemy)]);
+        var encounter = DeterministicCombatEngine.Start("skill", 71, playerTemplate, [new CombatantTemplate(enemy)]);
         // 起手即决策吟唱（target-enemy current-hp ≥ 1 恒成立）：灵力在起手时预扣一次。
         Assert.Equal(0, encounter.Player.PendingSkillIndex);
         Assert.Equal(1000 - 10, encounter.Player.Manapoints);
@@ -69,7 +69,7 @@ public sealed class CombatSkillTests
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(100000, 0, 0, 100);
         // 满血：self missing-hp ≥ 1 不成立，起手不进入吟唱。
-        var full = CombatEncounterState.Start("healing", 8, playerTemplate, [new CombatantTemplate(enemy)]);
+        var full = DeterministicCombatEngine.Start("healing", 8, playerTemplate, [new CombatantTemplate(enemy)]);
         Assert.Equal(-1, full.Player.PendingSkillIndex);
 
         // 残血入场：首次出手边界触发治疗吟唱，0.5s 后按缺失血量封顶结算。
@@ -101,7 +101,7 @@ public sealed class CombatSkillTests
         var ability = catalog.Abilities["ability.pozhen-melody"];
         var playerTemplate = new CombatantTemplate(stats with { MaxHitpoints = 10_000_000 }, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(100000, 100, 0, 1);
-        var encounter = CombatEncounterState.Start("buff", 13, playerTemplate, [new CombatantTemplate(enemy)]);
+        var encounter = DeterministicCombatEngine.Start("buff", 13, playerTemplate, [new CombatantTemplate(enemy)]);
         // 起手即吟唱破阵子（5s×CastTimeFactor）；完成时刻授予全体友方 Buff。
         Assert.Equal(0, encounter.Player.PendingSkillIndex);
         Assert.Equal(1000 - 50, encounter.Player.Manapoints);

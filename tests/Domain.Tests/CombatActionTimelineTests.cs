@@ -38,7 +38,7 @@ public sealed class CombatActionTimelineTests
         var player = CombatantStats.Create(1_000_000, 30, 0, 1);
         // 限制灵力上限：仅够 4 发掌心雷（4×4 灵力），之后必须回落普攻。
         var spiritStats = spirit.Stats with { MaxManapoints = 17 };
-        var state = CombatEncounterState.Start("timeline", 7, player,
+        var state = DeterministicCombatEngine.Start("timeline", 7, player,
             [new CombatantTemplate(spiritStats, spirit.Skills)]);
         var castSeconds = 2 * spirit.Stats.CastTimeFactor;
         var result = DeterministicCombatEngine.AdvanceTo(state, 30);
@@ -72,8 +72,8 @@ public sealed class CombatActionTimelineTests
         {
             SpellAttack = 40, MaxManapoints = 100, CastTimeFactor = 0.8
         };
-        var slow = CombatEncounterState.Start("cast-slow", 3, player, [new CombatantTemplate(Caster(2.5), [slot])]);
-        var fast = CombatEncounterState.Start("cast-fast", 3, player, [new CombatantTemplate(Caster(0.4), [slot])]);
+        var slow = DeterministicCombatEngine.Start("cast-slow", 3, player, [new CombatantTemplate(Caster(2.5), [slot])]);
+        var fast = DeterministicCombatEngine.Start("cast-fast", 3, player, [new CombatantTemplate(Caster(0.4), [slot])]);
         var slowCast = DeterministicCombatEngine.AdvanceTo(slow, 1.61).Events
             .Single(item => item.AttackerId == "enemy:0" && item.AbilityId is not null);
         var fastCast = DeterministicCombatEngine.AdvanceTo(fast, 1.61).Events
@@ -94,8 +94,8 @@ public sealed class CombatActionTimelineTests
         var spirit = catalog.CombatMonsters["enemy.wood-spirit"];
         var player = CombatantStats.Create(1_000_000, 30, 0, 1);
         var template = new CombatantTemplate(spirit.Stats, spirit.Skills);
-        var whole = CombatEncounterState.Start("restore", 11, player, [template]);
-        var split = CombatEncounterState.Start("restore", 11, player, [template]);
+        var whole = DeterministicCombatEngine.Start("restore", 11, player, [template]);
+        var split = DeterministicCombatEngine.Start("restore", 11, player, [template]);
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 30).Events;
         var first = DeterministicCombatEngine.AdvanceTo(split, 1.0).Events;
         Assert.True(split.Enemies[0].PendingSkillIndex >= 0, "1s 时木灵应正处于掌心雷吟唱中。");

@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Domain/Domain.csproj" />
+    <ProjectReference Include="../../src/Ecs/Ecs.csproj" />
     <ProjectReference Include="../../src/Protocol/Protocol.csproj" />
   </ItemGroup>
 </Project>

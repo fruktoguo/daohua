@@ -19,7 +19,7 @@ public sealed class CombatPartyWipeTests
         var ability = catalog.Abilities["ability.heavy-slash"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(100_000, 1_000, 0, 2);
-        var encounter = CombatEncounterState.Start("downed", 5, playerTemplate, [new CombatantTemplate(enemy)],
+        var encounter = DeterministicCombatEngine.Start("downed", 5, playerTemplate, [new CombatantTemplate(enemy)],
             playerRespawnSeconds: 10);
 
         // t=1 玩家完成吟唱（预扣 10 灵力、冷却预排至 19）；t=2 敌方出手击杀玩家 → 倒地窗口至 t=12。
@@ -65,7 +65,7 @@ public sealed class CombatPartyWipeTests
         // 敌方双单位：A 以 0.4s 普攻周期击杀玩家；B 吟唱长技能（1s × CastTimeFactor 10 = 10s）未及释放。
         var killer = CombatantStats.Create(100_000, 1_000, 0, 0.4);
         var caster = CombatantStats.Create(100_000, 1, 0, 100) with { MaxManapoints = 100, CastTimeFactor = 10 };
-        var encounter = CombatEncounterState.Start("interrupt", 7, playerTemplate,
+        var encounter = DeterministicCombatEngine.Start("interrupt", 7, playerTemplate,
             [new CombatantTemplate(killer), new CombatantTemplate(caster, [new SkillSlot(ability, 1)])],
             playerRespawnSeconds: 30);
 
@@ -97,7 +97,7 @@ public sealed class CombatPartyWipeTests
     {
         var playerStats = CombatantStats.Create(100, 10, 0, 2);
         var enemy = CombatantStats.Create(50, 1_000, 0, 2);
-        var encounter = CombatEncounterState.Start("dot", 11,
+        var encounter = DeterministicCombatEngine.Start("dot", 11,
             new CombatantTemplate(playerStats), [new CombatantTemplate(enemy)], playerRespawnSeconds: 10);
         // 玩家阵亡前挂出的持续伤害：战斗时钟每 5s 结算 30 点（负回复即 DoT），无到期时刻。
         encounter.Enemies[0].Buffs.Add(new CombatBuffState("dot.test", double.PositiveInfinity, 1, HpRegen: -30));
@@ -119,7 +119,7 @@ public sealed class CombatPartyWipeTests
     {
         var player = new CombatantTemplate(CombatantStats.Create(100, 10, 0, 2));
         var enemy = CombatantStats.Create(1_000, 1_000, 0, 2);
-        var encounter = CombatEncounterState.Start("defeat", 13, player, [new CombatantTemplate(enemy)],
+        var encounter = DeterministicCombatEngine.Start("defeat", 13, player, [new CombatantTemplate(enemy)],
             playerRespawnSeconds: 0);
 
         var result = DeterministicCombatEngine.AdvanceTo(encounter, 5);

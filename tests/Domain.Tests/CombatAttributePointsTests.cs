@@ -16,7 +16,7 @@ public sealed class CombatAttributePointsTests
 
     private static double FirstHitDamage(CombatantStats attacker, CombatantStats defender)
     {
-        var state = CombatEncounterState.Start("points", 7, attacker, defender);
+        var state = DeterministicCombatEngine.Start("points", 7, attacker, defender);
         var hit = DeterministicCombatEngine.AdvanceTo(state, 1.01).Events[0];
         Assert.True(hit.Hit);
         return hit.Damage;
@@ -65,11 +65,11 @@ public sealed class CombatAttributePointsTests
     public void AttackSpeedPointsHalveBasicAttackInterval()
     {
         var enemy = CombatantStats.Create(100000, 0, 0, 2);
-        var state = CombatEncounterState.Start("speed", 7,
+        var state = DeterministicCombatEngine.Start("speed", 7,
             CombatantStats.Create(1000, 100, 0, 2) with { AttackSpeedPoints = 100 }, enemy);
         Assert.Equal(1, state.Player.NextAttackAtSeconds, 9);
         // 行动速度同样作用于普攻读条（双重除数）。
-        var both = CombatEncounterState.Start("speed", 7,
+        var both = DeterministicCombatEngine.Start("speed", 7,
             CombatantStats.Create(1000, 100, 0, 2) with { AttackSpeedPoints = 100, ActionSpeedPoints = 100 }, enemy);
         Assert.Equal(0.5, both.Player.NextAttackAtSeconds, 9);
     }
@@ -83,11 +83,11 @@ public sealed class CombatAttributePointsTests
              "cooldownMilliseconds":8000,"manaCost":0,"damageRatio":1}
             """).RootElement;
         var enemy = CombatantStats.Create(100000, 0, 0, 60);
-        var slow = CombatEncounterState.Start("cdr", 7,
+        var slow = DeterministicCombatEngine.Start("cdr", 7,
             new CombatantTemplate(CombatantStats.Create(1000, 100, 0, 60) with { MaxManapoints = 100 },
                 [new SkillSlot(ability.Clone(), 1)]),
             [new CombatantTemplate(enemy)]);
-        var fast = CombatEncounterState.Start("cdr", 7,
+        var fast = DeterministicCombatEngine.Start("cdr", 7,
             new CombatantTemplate(CombatantStats.Create(1000, 100, 0, 60) with
             { MaxManapoints = 100, ActionSpeedPoints = 100, CooldownReductionPoints = 100 },
                 [new SkillSlot(ability.Clone(), 1)]),

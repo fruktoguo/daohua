@@ -548,7 +548,7 @@ public sealed partial class PlayerAggregate
 
     /// <summary>斗法期间获得物品：进入暂存区而非直接入账。</summary>
     public void StageItem(ItemId itemId, double quantity, double acquiredAtUnixSeconds)
-        => Domain.Simulation.SimulationEngine.StageCombatItem(this, itemId, quantity, acquiredAtUnixSeconds);
+        => ActionReportBook.StageCombatItem(this, itemId, quantity, acquiredAtUnixSeconds);
 
     /// <summary>
     /// 结算到期暂存物品：到达入账时间且不在斗法冻结期时返回待入账列表并从暂存区移除。
@@ -565,7 +565,7 @@ public sealed partial class PlayerAggregate
 
     /// <summary>按快照清单移除暂存物品（斗法落败被对方缴获），被缴物品计入「失去」。</summary>
     internal void RemoveStagedItems(IReadOnlyList<DuelStagedItem> snapshot, double atUnixSeconds)
-        => Domain.Simulation.SimulationEngine.RemoveStagedCombatItems(this, snapshot, atUnixSeconds);
+        => ActionReportBook.RemoveStagedCombatItems(this, snapshot, atUnixSeconds);
 
     /// <summary>
     /// 行动统计记账枢纽：同一条 apply 依次作用于
@@ -573,15 +573,15 @@ public sealed partial class PlayerAggregate
     /// ③每日账本（先按 UTC+8 自然日 rollover 再入账）。任一账本被写入即标记 Duel 脏。
     /// </summary>
     internal void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
-        => Domain.Simulation.SimulationEngine.RecordActionStats(this, actionInstanceId, atUnixSeconds, apply);
+        => ActionReportBook.RecordActionStats(this, actionInstanceId, atUnixSeconds, apply);
 
     /// <summary>队首行动开始推进时按实例建账（已存在则续用）；仅新建时标脏。</summary>
     internal void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)
-        => Domain.Simulation.SimulationEngine.EnsureActionReport(this, instanceId, actionId, actionName, now);
+        => ActionReportBook.EnsureActionReport(this, instanceId, actionId, actionName, now);
 
     /// <summary>行动实例出队时归档其账本；空账本直接丢弃，非空账本插入 Reports 头部并裁剪至上限。</summary>
     internal void ArchiveReportForAction(Guid instanceId, double endedAtUnixSeconds)
-        => Domain.Simulation.SimulationEngine.ArchiveActionReport(this, instanceId, endedAtUnixSeconds, DuelSettingsTuning.MaxBattleReports);
+        => ActionReportBook.ArchiveActionReport(this, instanceId, endedAtUnixSeconds, DuelSettingsTuning.MaxBattleReports);
 
     /// <summary>行动实例出队时归档其账本（DateTimeOffset 便捷重载）。</summary>
     internal void ArchiveReportForAction(Guid instanceId, DateTimeOffset endedAt)

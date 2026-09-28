@@ -80,10 +80,10 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     }
 
     public void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)
-        => SimulationEngine.EnsureActionReport(this, instanceId, actionId, actionName, now);
+        => ActionReportBook.EnsureActionReport(this, instanceId, actionId, actionName, now);
 
     public void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
-        => SimulationEngine.RecordActionStats(this, actionInstanceId, atUnixSeconds, apply);
+        => ActionReportBook.RecordActionStats(this, actionInstanceId, atUnixSeconds, apply);
 
     /// <summary>出队与聚合保持同一归档、死亡恢复、后继激活及版本时机。</summary>
     public bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true, double endedAtUnixSeconds = -1)
@@ -96,7 +96,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
             Resources.Hitpoints = 1;
             MarkDirty(PlayerSectionKind.Combat);
         }
-        SimulationEngine.ArchiveActionReport(this, actionInstanceId,
+        ActionReportBook.ArchiveActionReport(this, actionInstanceId,
             endedAtUnixSeconds >= 0 ? endedAtUnixSeconds : LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d,
             catalog.Duel.MaxBattleReports);
         actions.RemoveAt(index);

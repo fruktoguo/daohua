@@ -6,8 +6,8 @@ namespace DaoHua.ComputeNode;
 /// ComputeNode 与主服务之间唯一的冷挂机批处理契约。该契约只传输可校验的 section 载荷，
 /// 不暴露 ECS、Fiber、数据库连接或运行时对象。
 ///
-/// v2 相对 v1：节点改为执行真实领域模拟（DecodeAggregate → PlayerAggregate.Restore →
-/// SimulationEngine.AdvanceTo → EncodeAggregate），任务因此必须携带完整玩家身份、
+/// v2 相对 v1：节点改为执行真实领域模拟（DecodeAggregate → EcsWorldShard 实体装配 →
+/// EcsGameRuntime.RunPlayerOnceAsync → EncodeAggregate），任务因此必须携带完整玩家身份、
 /// 提交头快照与资产余额快照；结果回传资产增量行由主服在落库事务内经经济事务入账。
 /// v1 的 Actions/ActionIntent 行动意图字段随假补算路径一并删除。
 /// checksum 口径：请求侧针对「解码后原始 JSON 字节」（提交头绑定口径），

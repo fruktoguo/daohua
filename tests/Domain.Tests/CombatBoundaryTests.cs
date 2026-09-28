@@ -39,8 +39,8 @@ public sealed class CombatBoundaryTests
 
         var player = CombatantStats.Create(500, 80, 0, 1.7) with { MaxManapoints = 500, MpRegen = 2 };
         var enemy = CombatantStats.Create(700, 45, 0, 2.1) with { HpRegen = 1 };
-        var whole = CombatEncounterState.Start("boundary", 12345, player, enemy, playerRespawnSeconds: 5);
-        var stepped = CombatEncounterState.Start("boundary", 12345, player, enemy, playerRespawnSeconds: 5);
+        var whole = DeterministicCombatEngine.Start("boundary", 12345, player, enemy, playerRespawnSeconds: 5);
+        var stepped = DeterministicCombatEngine.Start("boundary", 12345, player, enemy, playerRespawnSeconds: 5);
         stepped.Enemies[0].Buffs.Add(new CombatBuffState("short", 3.5, 1, HpRegen: 4));
         whole.Enemies[0].Buffs.Add(new CombatBuffState("short", 3.5, 1, HpRegen: 4));
 
@@ -74,9 +74,9 @@ public sealed class CombatBoundaryTests
     [Fact]
     public void TargetBeforeNextBoundaryOnlyAdvancesClock()
     {
-        var whole = CombatEncounterState.Start("partial", 77,
+        var whole = DeterministicCombatEngine.Start("partial", 77,
             CombatantStats.Create(500, 1, 0, 10), CombatantStats.Create(500, 1, 0, 10));
-        var stepped = CombatEncounterState.Start("partial", 77,
+        var stepped = DeterministicCombatEngine.Start("partial", 77,
             CombatantStats.Create(500, 1, 0, 10), CombatantStats.Create(500, 1, 0, 10));
 
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 0.25);
@@ -96,8 +96,8 @@ public sealed class CombatBoundaryTests
         // 且逐边界路径与整段路径的事件顺序、生命和序号保持一致。
         var player = CombatantStats.Create(500, 50, 0, 2);
         var enemy = CombatantStats.Create(500, 50, 0, 2);
-        var whole = CombatEncounterState.Start("same-boundary", 88, player, enemy);
-        var stepped = CombatEncounterState.Start("same-boundary", 88, player, enemy);
+        var whole = DeterministicCombatEngine.Start("same-boundary", 88, player, enemy);
+        var stepped = DeterministicCombatEngine.Start("same-boundary", 88, player, enemy);
         whole.Player.Buffs.Add(new CombatBuffState("expiry", 2));
         stepped.Player.Buffs.Add(new CombatBuffState("expiry", 2));
 
@@ -117,8 +117,8 @@ public sealed class CombatBoundaryTests
     {
         var player = CombatantStats.Create(20, 1, 0, 10);
         var enemy = CombatantStats.Create(500, 100, 0, 1);
-        var whole = CombatEncounterState.Start("respawn-boundary", 91, player, enemy, playerRespawnSeconds: 3);
-        var stepped = CombatEncounterState.Start("respawn-boundary", 91, player, enemy, playerRespawnSeconds: 3);
+        var whole = DeterministicCombatEngine.Start("respawn-boundary", 91, player, enemy, playerRespawnSeconds: 3);
+        var stepped = DeterministicCombatEngine.Start("respawn-boundary", 91, player, enemy, playerRespawnSeconds: 3);
 
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 4);
         CombatAdvanceResult? last = null;

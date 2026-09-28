@@ -1,4 +1,13 @@
-namespace Domain.Simulation;
+using System.Collections.ObjectModel;
+using Domain.Common;
+using Domain.Combat;
+using Domain.Economy;
+using Domain.GameData;
+using Domain.Market;
+using Domain.Player;
+using Domain.Simulation;
+using Domain.World;
+namespace DaoHua.Ecs;
 
 /// <summary>同一资源窗口内的行动收益累加器；不拥有玩家或钱包。</summary>
 public sealed class ActionMutationBatch

@@ -254,7 +254,7 @@ public sealed class SkillTriggerEvaluatorTests
         var ability = Ability(",\"targetType\":\"allEnemies\",\"maxTargets\":2,\"cooldownMilliseconds\":10000");
         var caster = CombatantStats.Create(1000, 200, 0, 1) with { MaxManapoints = 100 };
         var enemy = CombatantStats.Create(100_000, 0, 0, 100);
-        var encounter = CombatEncounterState.Start("aoe", 9,
+        var encounter = DeterministicCombatEngine.Start("aoe", 9,
             new CombatantTemplate(caster, [new SkillSlot(ability, 1)]),
             [new CombatantTemplate(enemy), new CombatantTemplate(enemy), new CombatantTemplate(enemy)]);
         var result = DeterministicCombatEngine.AdvanceTo(encounter, 2);
@@ -302,8 +302,8 @@ public sealed class SkillTriggerEvaluatorTests
         var ability = catalog.Abilities["ability.pozhen-melody"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(10_000_000, 50, 0, 2);
-        var whole = CombatEncounterState.Start("buff-restore", 21, playerTemplate, [new CombatantTemplate(enemy)]);
-        var split = CombatEncounterState.Start("buff-restore", 21, playerTemplate, [new CombatantTemplate(enemy)]);
+        var whole = DeterministicCombatEngine.Start("buff-restore", 21, playerTemplate, [new CombatantTemplate(enemy)]);
+        var split = DeterministicCombatEngine.Start("buff-restore", 21, playerTemplate, [new CombatantTemplate(enemy)]);
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 20).Events;
         var first = DeterministicCombatEngine.AdvanceTo(split, 7).Events;
         Assert.NotEmpty(split.Player.Buffs);

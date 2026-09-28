@@ -19,7 +19,7 @@ public sealed class CombatRulesTests
         { Element = element };
         var defender = CombatantStats.Create(1000, 0, 20, 1) with
         { MagicResistance = 40, ResistanceScale = 2, FireDamageReductionPoints = 100 };
-        var state = CombatEncounterState.Start("formula", 42, attacker, defender);
+        var state = DeterministicCombatEngine.Start("formula", 42, attacker, defender);
         var hit = DeterministicCombatEngine.AdvanceTo(state, 1.01).Events[0];
         Assert.Equal("player", hit.AttackerId);
         Assert.True(hit.Hit);
@@ -36,8 +36,8 @@ public sealed class CombatRulesTests
         var player = CombatantStats.Create(1000000, 80, 20, 0.7, 30, 90) with
         { Critical = 150, BreakPower = 90, ParryResolve = 5 };
         var enemy = player with { BreakPower = 10, ParryResolve = 180 };
-        var whole = CombatEncounterState.Start("replay", 123, player, enemy);
-        var split = CombatEncounterState.Start("replay", 123, player, enemy);
+        var whole = DeterministicCombatEngine.Start("replay", 123, player, enemy);
+        var split = DeterministicCombatEngine.Start("replay", 123, player, enemy);
         var expected = DeterministicCombatEngine.AdvanceTo(whole, 120).Events;
         var first = DeterministicCombatEngine.AdvanceTo(split, 13.2).Events;
         var restored = CombatEncounterState.Restore("replay", split.Seed, new CombatantTemplate(player),
@@ -52,7 +52,7 @@ public sealed class CombatRulesTests
         Assert.Contains(expected, attack => attack.Break);
         Assert.Contains(expected, attack => attack.Parried);
         Assert.Equal(whole.Player.Hitpoints, restored.Player.Hitpoints);
-        var differentSeed = CombatEncounterState.Start("replay", 124, player, enemy);
+        var differentSeed = DeterministicCombatEngine.Start("replay", 124, player, enemy);
         Assert.NotEqual(expected[0], DeterministicCombatEngine.AdvanceTo(differentSeed, 120).Events[0]);
     }
 }

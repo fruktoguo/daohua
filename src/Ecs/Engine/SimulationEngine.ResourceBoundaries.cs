@@ -1,4 +1,13 @@
-namespace Domain.Simulation;
+using System.Collections.ObjectModel;
+using Domain.Common;
+using Domain.Combat;
+using Domain.Economy;
+using Domain.GameData;
+using Domain.Market;
+using Domain.Player;
+using Domain.Simulation;
+using Domain.World;
+namespace DaoHua.Ecs;
 
 /// <summary>资源系统选出的一个自然窗口，普通行动可在该窗口内继续切分单轮边界。</summary>
 public readonly record struct ResourceBoundaryPlan(double StepSeconds, bool ReachesNaturalBoundary, bool Changed);

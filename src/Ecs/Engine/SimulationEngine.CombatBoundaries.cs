@@ -1,4 +1,13 @@
-namespace Domain.Simulation;
+using System.Collections.ObjectModel;
+using Domain.Common;
+using Domain.Combat;
+using Domain.Economy;
+using Domain.GameData;
+using Domain.Market;
+using Domain.Player;
+using Domain.Simulation;
+using Domain.World;
+namespace DaoHua.Ecs;
 
 public static partial class SimulationEngine
 {
@@ -384,34 +393,6 @@ public static partial class SimulationEngine
         // 玩家战外持久 Buff 注入触发求值视图（镜像语义与开战入口一致）。
         battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
         return battleState;
-    }
-
-    /// <summary>暂存掉落与聚合入口共用同一账本和标脏顺序。</summary>
-    public static void StageCombatItem(IPlayerResourceContext player, ItemId itemId, double quantity, double acquiredAtUnixSeconds)
-    {
-        if (!itemId.IsValid || !double.IsFinite(quantity) || quantity <= 0)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "暂存物品无效。");
-        player.Duel.StagedItems.Add(new(itemId.Value, quantity, acquiredAtUnixSeconds));
-        player.RecordStats(player.Actions.Count > 0 ? player.Actions[0].Id : (Guid?)null, acquiredAtUnixSeconds,
-            report => report.AddItem(itemId, quantity));
-        player.MarkDirty(PlayerSectionKind.Duel);
-    }
-    /// <summary>斗法掉落移除与败绩结算共用原暂存账本顺序。</summary>
-    public static void RemoveStagedCombatItems(IPlayerResourceContext player, IReadOnlyList<DuelStagedItem> snapshot, double atUnixSeconds)
-    {
-        if (snapshot.Count == 0) return;
-        foreach (var item in snapshot)
-        {
-            var index = player.Duel.StagedItems.IndexOf(item);
-            if (index >= 0) player.Duel.StagedItems.RemoveAt(index);
-        }
-        var headId = player.Actions.Count > 0 ? player.Actions[0].Id : (Guid?)null;
-        player.RecordStats(headId, atUnixSeconds, report =>
-        {
-            foreach (var item in snapshot)
-                report.AddItemLost(new ItemId(item.ItemId), item.Quantity);
-        });
-        player.MarkDirty(PlayerSectionKind.Duel);
     }
 
 }

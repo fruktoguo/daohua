@@ -682,7 +682,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var enemyDefinitions = EncounterWaveSelector.Select(definition, GameData.CombatMonsters, seed, 1).ToArray();
         if (enemyDefinitions.Length == 0) throw new DomainException(DomainErrorCode.InvalidArgument, "遭遇没有可用怪物。");
         var enemyTemplates = enemyDefinitions.Select(m => new CombatantTemplate(m.Stats, m.Skills)).ToArray();
-        var state = CombatEncounterState.Start(encounterId, seed, new CombatantTemplate(playerStats, playerSkills), enemyTemplates, definition.PlayerRespawnSeconds);
+        var state = DeterministicCombatEngine.Start(encounterId, seed, new CombatantTemplate(playerStats, playerSkills), enemyTemplates, definition.PlayerRespawnSeconds);
         var battleStartUnix = player.GetComponent<PlayerActionQueueComponent>()?.LastAdvancedAt.ToUnixTimeSeconds() ?? StartAt.ToUnixTimeSeconds();
         foreach (var active in player.GetComponent<PlayerBuffComponent>()?.Active ?? [])
         {

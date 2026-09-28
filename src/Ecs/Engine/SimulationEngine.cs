@@ -1,41 +1,15 @@
-using Domain.World;
 using System.Text.Json;
+using System.Collections.ObjectModel;
+using Domain.Common;
+using Domain.Combat;
+using Domain.Economy;
+using Domain.GameData;
+using Domain.Market;
+using Domain.Player;
+using Domain.Simulation;
+using Domain.World;
 
-namespace Domain.Simulation;
-
-/// <summary>
-/// 快进模拟推进过程中触发的关键业务事件（如单轮行动完成、掉落产生、失效行动自动移除等）。
-/// </summary>
-/// <param name="At">事件发生时间（UTC）</param>
-/// <param name="Code">事件分类代码</param>
-/// <param name="Message">事件日志文本</param>
-/// <param name="ActionId">触发事件的行动定义 ID</param>
-/// <param name="ItemDeltas">产出或消耗的物品变动明细</param>
-public sealed record SimulationEvent(
-    DateTimeOffset At,
-    string Code,
-    string Message,
-    ActionId? ActionId = null,
-    IReadOnlyDictionary<ItemId, double>? ItemDeltas = null);
-
-/// <summary>
-/// 模拟引擎单次推进的完整结算结果。
-/// 包含时间跨度、推进轮次、物品资产流水变动以及是否引起聚合状态演进。
-/// Events 是有界尾窗（至少保留末尾 256 条、至多 512 条）；更早的事件折叠进 DroppedEventCount。
-/// </summary>
-public sealed record SimulationResult(
-    PlayerId PlayerId,
-    DateTimeOffset From,
-    DateTimeOffset To,
-    double ElapsedSeconds,
-    double CompletedActions,
-    double CompletedRepeats,
-    IReadOnlyList<AssetDelta> AssetDeltas,
-    IReadOnlyList<SimulationEvent> Events,
-    long StateVersion,
-    bool Changed,
-    /// <summary>被事件尾窗折叠丢弃的事件总数：DroppedEventCount + Events.Count == 本次推进实际产出数。</summary>
-    long DroppedEventCount = 0);
+namespace DaoHua.Ecs;
 
 /// <summary>
 /// 战斗搜寻完成后进入本波战斗的共享准备结果。
@@ -1024,7 +998,7 @@ public static partial class SimulationEngine
                 // 弃战路径（ApplyDuelForfeit）已即时记账暂存移除、冷却与败绩，回放落点不再重复结算。
                 if (!playback.Forfeited)
                 {
-                    RemoveStagedCombatItems(player, playback.SelfStagedSnapshot, nowUnix);
+                    ActionReportBook.RemoveStagedCombatItems(player, playback.SelfStagedSnapshot, nowUnix);
                     player.Duel.CooldownUntilUnixSeconds = nowUnix + duelSettings.DefeatCooldownSeconds;
                     player.RecordStats(action.Id, nowUnix,
                         report => { report.DuelLosses += 1; report.Deaths += 1; });
@@ -1139,7 +1113,7 @@ public static partial class SimulationEngine
             if (pvpEnabled)
             {
                 // 斗法期间掉落进入暂存区：入账延迟与归属由暂存结算/斗法结算决定；StageItem 内部同步记账。
-                StageCombatItem(player, drop.ItemId, quantity, killAtUnixSeconds);
+                ActionReportBook.StageCombatItem(player, drop.ItemId, quantity, killAtUnixSeconds);
             }
             else
             {

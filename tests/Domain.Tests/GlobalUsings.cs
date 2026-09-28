@@ -1,3 +1,4 @@
+global using DaoHua.Ecs;
 global using Domain.Common;
 global using Domain.Combat;
 global using Domain.Economy;

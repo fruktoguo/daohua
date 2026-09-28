@@ -46,7 +46,7 @@ public sealed class EcsCombatParityTests
         var encounterDefinition = catalog.CombatEncounters[EncounterId];
         var monsters = EncounterWaveSelector.Select(encounterDefinition, catalog.CombatMonsters, Seed, 1).ToArray();
         Assert.NotEmpty(monsters);
-        var expected = CombatEncounterState.Start(EncounterId, Seed,
+        var expected = DeterministicCombatEngine.Start(EncounterId, Seed,
             new CombatantTemplate(resolved, [new SkillSlot(ability, 1)]),
             monsters.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray(),
             encounterDefinition.PlayerRespawnSeconds);
