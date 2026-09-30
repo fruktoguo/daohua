@@ -57,23 +57,23 @@ export const RenameModal = memo(function RenameModal({ open, onClose }: RenameMo
 
   return (
     <Modal
-      className="rename-modal"
+      className="modal-form-shell"
       labelledBy="rename-modal-title"
       onClose={onClose}
       open={open}
       size="small"
     >
-      <header className="panel-header rename-modal-header">
+      <header className="panel-header modal-form-header">
         <h2 id="rename-modal-title">{t('app.rename.title')}</h2>
       </header>
-      <form onSubmit={handleSubmit} className="rename-form">
-        <div className="rename-field">
-          <label htmlFor="rename-input" className="rename-label">
+      <form onSubmit={handleSubmit} className="modal-form">
+        <div className="modal-form-field">
+          <label htmlFor="modal-form-input" className="modal-form-label">
             {t('app.rename.inputLabel')}
           </label>
           <input
-            id="rename-input"
-            className="rename-input"
+            id="modal-form-input"
+            className="modal-form-input"
             maxLength={12}
             onChange={handleChange}
             placeholder={t('app.rename.inputPlaceholder')}
@@ -81,16 +81,16 @@ export const RenameModal = memo(function RenameModal({ open, onClose }: RenameMo
             value={draft}
             autoFocus
           />
-          {validationError && <span className="rename-error">{validationError}</span>}
-          <p className="rename-hint">{t('app.rename.hint')}</p>
+          {validationError && <span className="modal-form-error">{validationError}</span>}
+          <p className="modal-form-hint">{t('app.rename.hint')}</p>
         </div>
-        <div className="rename-actions">
-          <button type="button" className="rename-cancel" onClick={onClose}>
+        <div className="modal-form-actions">
+          <button type="button" className="modal-form-cancel" onClick={onClose}>
             {t('app.rename.cancelBtn')}
           </button>
           <button
             type="submit"
-            className="rename-submit active"
+            className="modal-form-submit active"
             disabled={Boolean(validationError) || !draft.trim() || draft.trim() === currentName}
           >
             {t('app.rename.submitBtn')}

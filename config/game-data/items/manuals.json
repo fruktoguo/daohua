@@ -13,7 +13,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.heavy-slash",
@@ -29,7 +30,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.chain-strike",
@@ -45,7 +47,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.chain-strike",
@@ -61,7 +64,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.palm-lightning",
@@ -77,7 +81,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.palm-lightning",
@@ -93,7 +98,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.blazing-blast",
@@ -109,7 +115,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.blazing-blast",
@@ -125,7 +132,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.taunt",
@@ -141,7 +149,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.taunt",
@@ -157,7 +166,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.heavy-clouds",
@@ -174,7 +184,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.heavy-clouds",
@@ -191,7 +202,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.qingping-melody",
@@ -208,7 +220,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.qingping-melody",
@@ -225,7 +238,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.lightning-attraction",
@@ -242,7 +256,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.lightning-attraction",
@@ -259,7 +274,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.pozhen-melody",
@@ -276,7 +292,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.pozhen-melody",
@@ -293,7 +310,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   },
   {
     "id": "item.tome.star-piercer",
@@ -310,7 +328,8 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualTome"
   },
   {
     "id": "item.fragment.star-piercer",
@@ -327,6 +346,7 @@
         "alchemy",
         "combat"
       ]
-    }
+    },
+    "subCategory": "manualFragment"
   }
 ]

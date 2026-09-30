@@ -8,7 +8,7 @@
  * 3. 将扁平的分段载荷（Progression, World, Combat, Buffs, Loadout, Settings, ActionQueue）及资产钱包投影为前端响应式 PlayerSnapshot 与 PlayerPatch。
  */
 import { calculateRealmProgress } from '../game/combatConstants'
-import { resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import { ITEM_META_MAP, resolveActionDefinition, resolveItemMetadata, resolveItemSubCategory } from '../game/ids'
 import type {
   ActionType,
   AutoUseSlot,
@@ -270,7 +270,7 @@ async function decodeSections(
       throw new Error('玩家 section 标识重复或为空。')
     }
     names.add(section.section)
-    if (section.schemaVersion !== 3) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
+    if (section.schemaVersion !== 5) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
   }
   const spans = sectionDataSpans(payloadBytes, memberPath)
   if (spans.length !== sections.length) throw new Error('玩家 section 数据区间与列表不一致。')
@@ -414,13 +414,18 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
   if (Object.keys(row).length === 0) throw new Error(`行动 ${actionId} 的 duel 载荷无效。`)
   const outcome = finiteInteger(row.viewerOutcome, `行动 ${actionId} 的 duel.viewerOutcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 duel.viewerOutcome 枚举值无效。`)
-  const opponentAttributes = mapCombatAttributes(row.opponentAttributes, `行动 ${actionId} 的 duel.opponentAttributes`)
+  // 镜像血蓝条分母为常驻标量；完整属性面板为按需投影（观察目标命中镜像位才携带），缺失为合法形态。
+  const opponentMaxHitpoints = finiteNumber(row.opponentMaxHitpoints, `行动 ${actionId} 的 duel.opponentMaxHitpoints`)
+  const opponentMaxManapoints = finiteNumber(row.opponentMaxManapoints, `行动 ${actionId} 的 duel.opponentMaxManapoints`)
+  const opponentAttributes = row.opponentAttributes === null || row.opponentAttributes === undefined
+    ? null
+    : mapCombatAttributes(row.opponentAttributes, `行动 ${actionId} 的 duel.opponentAttributes`)
   const opponentHitpoints = finiteNumber(row.opponentHitpoints, `行动 ${actionId} 的 duel.opponentHitpoints`)
   const opponentManapoints = finiteNumber(row.opponentManapoints, `行动 ${actionId} 的 duel.opponentManapoints`)
-  if (opponentAttributes.maxHitpoints <= 0 || opponentHitpoints < 0 || opponentHitpoints > opponentAttributes.maxHitpoints) {
+  if (opponentMaxHitpoints <= 0 || opponentHitpoints < 0 || opponentHitpoints > opponentMaxHitpoints) {
     throw new Error(`行动 ${actionId} 的 duel 对手血量无效。`)
   }
-  if (opponentManapoints < 0 || opponentManapoints > opponentAttributes.maxManapoints) {
+  if (opponentManapoints < 0 || opponentManapoints > opponentMaxManapoints) {
     throw new Error(`行动 ${actionId} 的 duel 对手灵力无效。`)
   }
   // 剧本事件只提取行动条/资源条所需字段（时刻、双方身份、功法与结算后灵力）；伤害文本由日志呈现。
@@ -442,6 +447,8 @@ function mapExpeditionDuel(value: unknown, actionId: string): ExpeditionDuel | n
     isInitiator: booleanValue(row.viewerIsInitiator),
     outcome,
     resolved: booleanValue(row.resolved),
+    opponentMaxHitpoints,
+    opponentMaxManapoints,
     opponentAttributes,
     opponentHitpoints,
     opponentManapoints,
@@ -485,8 +492,8 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 outcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 outcome 枚举值无效。`)
 
-  // 多敌同场：enemies 数组携带同波全体敌人的权威快照（名称/品阶/立绘/完整属性均随包下发）；
-  // 搜寻/复活阶段为空。前端不得再按 enemyId 反查本地怪物目录补齐战斗数值。
+  // 多敌同场：enemies 数组携带同波全体敌人的权威实时快照（名称/品阶/立绘/血蓝/出手/威胁）；
+  // 搜寻/复活阶段为空。属性面板为按需投影——仅观察目标（UnitInspect）命中下标时携带。
   const enemies: ExpeditionEnemy[] = (row.enemies === null || row.enemies === undefined ? [] : arrayValue(row.enemies))
     .map((entry, index) => {
       const enemy = object(entry)
@@ -498,6 +505,12 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
         visual: mapCharacterVisual(enemy.visual, `${label}.visual`),
         hitpoints: finiteNumber(enemy.hitpoints, `${label}.hitpoints`),
         manapoints: finiteNumber(enemy.manapoints, `${label}.manapoints`),
+        maxHitpoints: enemy.maxHitpoints === null || enemy.maxHitpoints === undefined
+          ? null
+          : finiteNumber(enemy.maxHitpoints, `${label}.maxHitpoints`),
+        maxManapoints: enemy.maxManapoints === null || enemy.maxManapoints === undefined
+          ? null
+          : finiteNumber(enemy.maxManapoints, `${label}.maxManapoints`),
         nextAttackAtSeconds: finiteNumber(enemy.nextAttackAtSeconds, `${label}.nextAttackAtSeconds`),
         attackCount: finiteNumber(enemy.attackCount, `${label}.attackCount`),
         threat: finiteNumber(enemy.threat, `${label}.threat`),
@@ -588,8 +601,8 @@ function mapTravelSegments(value: unknown): TravelSegment[] | null {
 
 function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState): QueueState {
   if (!Array.isArray(value)) throw new Error('action_queue section 载荷必须是数组。')
-  if (settingsValue && (typeof settingsValue.loopEnabled !== 'boolean' || !Array.isArray(settingsValue.autoUseSlots))) {
-    throw new Error('settings section 循环或自动使用字段无效。')
+  if (settingsValue && (typeof settingsValue.loopEnabled !== 'boolean' || typeof settingsValue.autoTravelEnabled !== 'boolean' || !Array.isArray(settingsValue.autoUseSlots))) {
+    throw new Error('settings section 循环、自动移动或自动使用字段无效。')
   }
   const entries = arrayValue(value).map(item => {
     const row = object(item)
@@ -646,6 +659,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
   return {
     entries,
     loopEnabled: settingsValue ? booleanValue(settingsValue.loopEnabled, true) : (base?.loopEnabled ?? true),
+    autoTravelEnabled: settingsValue ? booleanValue(settingsValue.autoTravelEnabled, false) : (base?.autoTravelEnabled ?? false),
     autoUseSlots: settingsValue ? mapAutoUseSlots(settingsValue.autoUseSlots) : (base?.autoUseSlots ?? defaultAutoUseSlots()),
   }
 }
@@ -657,10 +671,10 @@ function mapStats(value: unknown): Stats {
   const bossKills = numberValue(row.bossKills)
   return {
     realmLevel: numberValue(row.realmLevel, 1),
-    qi: numberValue(row.qi),
-    // 服务端 progression 只有一个经验字段 Experience（突破时清零），即境界修为 spirit；
-    // 不存在独立的道基底蕴字段，foundationExp 保持未定义。
-    spirit: numberValue(row.experience),
+    experience: numberValue(row.experience),
+    lifetimeExperience: numberValue(row.lifetimeExperience),
+    foundation: numberValue(row.foundation),
+    combatExperience: numberValue(row.combatExperience),
     completedActions: numberValue(row.completedActions),
     normalKills,
     eliteKills,
@@ -957,8 +971,9 @@ function mapBattleReport(value: unknown, name: string): BattleReport {
     actionName: stringValue(row.actionName),
     startedAtUnixSeconds: finiteNumber(row.startedAtUnixSeconds, `${name}.startedAtUnixSeconds`),
     endedAtUnixSeconds: finiteNumber(row.endedAtUnixSeconds, `${name}.endedAtUnixSeconds`),
-    qi: finiteValue(row.qi, `${name}.qi`),
     experience: finiteValue(row.experience, `${name}.experience`),
+    foundation: numberValue(row.foundation),
+    combatExperience: numberValue(row.combatExperience),
     rootExp: {
       stamina: numberValue(rootExp.stamina),
       meridians: numberValue(rootExp.meridians),
@@ -1040,7 +1055,7 @@ function mapAsset(asset: AssetBalanceDto): InventoryItem {
     itemId: asset.assetId,
     variant: asset.variant ?? null,
     name: metadata?.label ?? asset.assetId,
-    category: metadata?.category ?? 'general',
+    subCategory: resolveItemSubCategory(asset.assetId, undefined, undefined, ITEM_META_MAP[asset.assetId]?.subCategory) ?? 'general',
     amount: asset.quantity,
     tone: metadata?.tone ?? 'gray',
     glyph: metadata?.glyph ?? '◈',
@@ -1099,11 +1114,12 @@ export async function decodePlayerSnapshotDto(
   dto: PlayerSnapshotDto,
   payloadBytes: Uint8Array,
   account = '',
+  sequenceId = 0,
   sectionMemberPath: readonly string[] = TOP_SECTIONS_PATH,
 ): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
-  if (!dto.head || dto.head.schemaVersion !== 3) throw new Error('玩家快照 schema 版本不受支持。')
+  if (!dto.head || dto.head.schemaVersion !== 5) throw new Error('玩家快照 schema 版本不受支持。')
   if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')
@@ -1125,12 +1141,13 @@ export async function decodePlayerSnapshotDto(
   const name = dto.displayName
   const serverTime = seconds(dto.lastSimulatedAt)
   const stats = mapStats(progression)
-  const statsRealm = calculateRealmProgress(stats.spirit, stats.realmLevel)
+  const statsRealm = calculateRealmProgress(stats.experience, stats.realmLevel)
   const renameCooldownUntil = numberValue(settings.renameCooldownUntilUnixSeconds)
   return {
     playerId: dto.playerId,
     name,
     account,
+    sequenceId,
     version: stateVersion,
     serverTimeUnixSeconds: serverTime,
     serverTimeUnixMilliseconds: serverTime * 1000,
@@ -1147,7 +1164,7 @@ export async function decodePlayerSnapshotDto(
     world,
     duel,
     // 待突破 = 境界经验已填满当前层所需（容差 0.0001 吸收浮点误差）且确有修为存量
-    isPendingBreakthrough: statsRealm.expToNext > 0 && statsRealm.expToNext - statsRealm.currentLayerExp <= 0.0001 && stats.spirit > 0,
+    isPendingBreakthrough: statsRealm.expToNext > 0 && statsRealm.expToNext - statsRealm.currentLayerExp <= 0.0001 && stats.experience > 0,
     renameCooldownSeconds: Math.max(0, renameCooldownUntil - serverTime),
   }
 }
@@ -1185,13 +1202,13 @@ export async function decodePlayerSnapshotDeltaDto(
   const settings = settingsEnvelope ? requiredObject(settingsEnvelope.settings, 'settings.settings') : undefined
   if (settingsEnvelope && settings) {
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
-    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
     patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)
   }
   if (sections.has('progression')) {
     patch.stats = mapStats(sections.get('progression'))
-    const realm = calculateRealmProgress(patch.stats.spirit, patch.stats.realmLevel)
-    patch.isPendingBreakthrough = realm.expToNext > 0 && realm.expToNext - realm.currentLayerExp <= 0.0001 && patch.stats.spirit > 0
+    const realm = calculateRealmProgress(patch.stats.experience, patch.stats.realmLevel)
+    patch.isPendingBreakthrough = realm.expToNext > 0 && realm.expToNext - realm.currentLayerExp <= 0.0001 && patch.stats.experience > 0
   }
   if (sections.has('world')) patch.world = mapWorld(sections.get('world'))
   if (sections.has('combat')) {

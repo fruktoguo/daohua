@@ -30,9 +30,7 @@ public sealed record PlayerAggregateState(
 /// <summary>境界与修为进度的离线/持久化快照 DTO</summary>
 public sealed record PlayerProgressionState(
     int RealmLevel,
-    double Qi,
     double Experience,
-    double LifetimeQi,
     double CompletedActions,
     double SimulationCarrySeconds = 0,
     double NormalKills = 0,
@@ -40,7 +38,10 @@ public sealed record PlayerProgressionState(
     double BossKills = 0,
     double TotalDefeats = 0,
     double CultivationSeconds = 0,
-    double AgeSeconds = 0);
+    double AgeSeconds = 0,
+    double Foundation = 0,
+    double CombatExperience = 0,
+    double LifetimeExperience = 0);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -73,6 +74,7 @@ public sealed record PlayerSettingsStateDocument(
     string Locale,
     bool NotificationsEnabled,
     bool LoopEnabled = true,
+    bool AutoTravelEnabled = false,
     IReadOnlyList<AutoUseSlotState>? AutoUseSlots = null,
     double RenameCooldownUntilUnixSeconds = 0);
 
@@ -120,8 +122,9 @@ public sealed partial class PlayerAggregate
             Presence,
             StateVersion,
             GameDataFingerprint,
-            new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi, Progression.CompletedActions, Progression.SimulationCarrySeconds,
-                Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds),
+            new PlayerProgressionState(Progression.RealmLevel, Progression.Experience, Progression.CompletedActions, Progression.SimulationCarrySeconds,
+                Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds,
+                Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
@@ -234,6 +237,7 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.Locale == Settings.Locale
             && _cachedSettingsDoc.NotificationsEnabled == Settings.NotificationsEnabled
             && _cachedSettingsDoc.LoopEnabled == Settings.LoopEnabled
+            && _cachedSettingsDoc.AutoTravelEnabled == Settings.AutoTravelEnabled
             && _cachedSettingsDoc.RenameCooldownUntilUnixSeconds == Settings.RenameCooldownUntilUnixSeconds
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
         {
@@ -243,6 +247,7 @@ public sealed partial class PlayerAggregate
             Settings.Locale,
             Settings.NotificationsEnabled,
             Settings.LoopEnabled,
+            Settings.AutoTravelEnabled,
             slots,
             Settings.RenameCooldownUntilUnixSeconds);
     }
@@ -280,9 +285,7 @@ public sealed partial class PlayerAggregate
         if (state.Progression is null || state.World is null || state.Combat is null || state.Settings is null || state.Buffs is null ||
             state.EquippedInstances is null || state.LearnedAbilities is null || state.Actions is null)
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家 section 不能为空。");
-        if (!double.IsFinite(state.Progression.Qi) || state.Progression.Qi < 0 ||
-            !double.IsFinite(state.Progression.Experience) || state.Progression.Experience < 0 ||
-            !double.IsFinite(state.Progression.LifetimeQi) || state.Progression.LifetimeQi < 0 ||
+        if (!double.IsFinite(state.Progression.Experience) || state.Progression.Experience < 0 ||
             !double.IsFinite(state.Progression.CompletedActions) || state.Progression.CompletedActions < 0 ||
             !double.IsFinite(state.Progression.SimulationCarrySeconds) || state.Progression.SimulationCarrySeconds < 0 ||
             !double.IsFinite(state.Progression.NormalKills) || state.Progression.NormalKills < 0 ||
@@ -291,6 +294,9 @@ public sealed partial class PlayerAggregate
             !double.IsFinite(state.Progression.TotalDefeats) || state.Progression.TotalDefeats < 0 ||
             !double.IsFinite(state.Progression.CultivationSeconds) || state.Progression.CultivationSeconds < 0 ||
             !double.IsFinite(state.Progression.AgeSeconds) || state.Progression.AgeSeconds < 0 ||
+            !double.IsFinite(state.Progression.Foundation) || state.Progression.Foundation < 0 ||
+            !double.IsFinite(state.Progression.CombatExperience) || state.Progression.CombatExperience < 0 ||
+            !double.IsFinite(state.Progression.LifetimeExperience) || state.Progression.LifetimeExperience < 0 ||
             !double.IsFinite(state.World.X) || !double.IsFinite(state.World.Y) || !double.IsFinite(state.World.ExplorationSeed) ||
             !double.IsFinite(state.World.EdgeProgress) || state.World.EdgeProgress < 0 || state.World.EdgeProgress > 1 ||
             !double.IsFinite(state.Combat.Hitpoints) || state.Combat.Hitpoints < 0 ||
@@ -314,9 +320,7 @@ public sealed partial class PlayerAggregate
                 || (slot.ItemId is not null && (slot.ItemId.Length == 0 || slot.ItemId.Length > 128))))
             throw new DomainException(DomainErrorCode.InvalidArgument, "玩家装配或设置 section 无效。");
         aggregate.Progression.RealmLevel = state.Progression.RealmLevel;
-        aggregate.Progression.Qi = state.Progression.Qi;
         aggregate.Progression.Experience = state.Progression.Experience;
-        aggregate.Progression.LifetimeQi = state.Progression.LifetimeQi;
         aggregate.Progression.CompletedActions = state.Progression.CompletedActions;
         aggregate.Progression.SimulationCarrySeconds = state.Progression.SimulationCarrySeconds;
         aggregate.Progression.NormalKills = state.Progression.NormalKills;
@@ -325,6 +329,9 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.TotalDefeats = state.Progression.TotalDefeats;
         aggregate.Progression.CultivationSeconds = state.Progression.CultivationSeconds;
         aggregate.Progression.AgeSeconds = state.Progression.AgeSeconds;
+        aggregate.Progression.Foundation = state.Progression.Foundation;
+        aggregate.Progression.CombatExperience = state.Progression.CombatExperience;
+        aggregate.Progression.LifetimeExperience = state.Progression.LifetimeExperience;
         aggregate.World.NodeId = state.World.NodeId;
         aggregate.World.EdgeId = state.World.EdgeId;
         aggregate.World.EdgeProgress = state.World.EdgeProgress;
@@ -367,6 +374,7 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.Locale = state.Settings.Locale;
         aggregate.Settings.NotificationsEnabled = state.Settings.NotificationsEnabled;
         aggregate.Settings.LoopEnabled = state.Settings.LoopEnabled;
+        aggregate.Settings.AutoTravelEnabled = state.Settings.AutoTravelEnabled;
         aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
         aggregate.Settings.AutoUseSlots.AddRange(state.Settings.AutoUseSlots ?? []);
         if (state.Actions.Count > MaxActionQueueLength)
@@ -378,6 +386,7 @@ public sealed partial class PlayerAggregate
             if (actionState is null || intent is null || actionState.Id == Guid.Empty || !actionIds.Add(actionState.Id) || !intent.ActionId.IsValid ||
                 !Enum.IsDefined(actionState.Status) ||
                 (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128)) ||
+                (intent.AnchorNodeId is not null && (intent.AnchorNodeId.Length == 0 || intent.AnchorNodeId.Length > 128)) ||
                 HasInvalidParameters(intent.Parameters) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
                 !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0 ||
@@ -407,7 +416,8 @@ public sealed partial class PlayerAggregate
                 intent.Parameters is null
                     ? null
                     : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
-                intent.PvpEnabled);
+                intent.PvpEnabled,
+                intent.AnchorNodeId);
             var action = new QueuedAction(actionState.Id, normalizedIntent, actionState.EnqueuedAt)
             {
                 Status = actionState.Status,
@@ -442,9 +452,7 @@ public sealed partial class PlayerAggregate
         StateVersion = restored.StateVersion;
         GameDataFingerprint = restored.GameDataFingerprint;
         Progression.RealmLevel = restored.Progression.RealmLevel;
-        Progression.Qi = restored.Progression.Qi;
         Progression.Experience = restored.Progression.Experience;
-        Progression.LifetimeQi = restored.Progression.LifetimeQi;
         Progression.CompletedActions = restored.Progression.CompletedActions;
         Progression.SimulationCarrySeconds = restored.Progression.SimulationCarrySeconds;
         Progression.NormalKills = restored.Progression.NormalKills;
@@ -453,6 +461,9 @@ public sealed partial class PlayerAggregate
         Progression.TotalDefeats = restored.Progression.TotalDefeats;
         Progression.CultivationSeconds = restored.Progression.CultivationSeconds;
         Progression.AgeSeconds = restored.Progression.AgeSeconds;
+        Progression.Foundation = restored.Progression.Foundation;
+        Progression.CombatExperience = restored.Progression.CombatExperience;
+        Progression.LifetimeExperience = restored.Progression.LifetimeExperience;
         World.NodeId = restored.World.NodeId;
         World.EdgeId = restored.World.EdgeId;
         World.EdgeProgress = restored.World.EdgeProgress;
@@ -504,8 +515,10 @@ public sealed partial class PlayerAggregate
             && (report.ActionName?.Length ?? 0) <= 128
             && double.IsFinite(report.StartedAtUnixSeconds) && report.StartedAtUnixSeconds >= 0
             && double.IsFinite(report.EndedAtUnixSeconds) && report.EndedAtUnixSeconds >= 0
-            && double.IsFinite(report.Qi) && report.Qi >= 0
             && double.IsFinite(report.Experience) && report.Experience >= 0
+            // 底蕴记净变动：兑换消耗为负、满层沉淀为正，只校验有限性；战斗经验恒非负。
+            && double.IsFinite(report.Foundation)
+            && double.IsFinite(report.CombatExperience) && report.CombatExperience >= 0
             && report.RootExp is not null
             && new[] { report.RootExp.Stamina, report.RootExp.Meridians, report.RootExp.Attack,
                 report.RootExp.Bone, report.RootExp.Agility, report.RootExp.Consciousness }
@@ -622,9 +635,10 @@ public sealed partial class PlayerAggregate
     internal object CaptureSectionCheckpoint(PlayerSectionKind section) => section switch
     {
         PlayerSectionKind.Progression => new ProgressionCheckpoint(
-            new PlayerProgressionState(Progression.RealmLevel, Progression.Qi, Progression.Experience, Progression.LifetimeQi,
+            new PlayerProgressionState(Progression.RealmLevel, Progression.Experience,
                 Progression.CompletedActions, Progression.SimulationCarrySeconds, Progression.NormalKills, Progression.EliteKills,
-                Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds),
+                Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds,
+                Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience),
             Progression.RealmLevelVersion),
         PlayerSectionKind.World => new WorldCheckpoint(
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress,
@@ -646,7 +660,7 @@ public sealed partial class PlayerAggregate
             Loadout.EquippedItemIds.Version),
         PlayerSectionKind.Settings => new SettingsCheckpoint(
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
-                Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds)),
+                Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds)),
         PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
         PlayerSectionKind.Duel => new DuelCheckpoint(
             ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),
@@ -717,6 +731,7 @@ public sealed partial class PlayerAggregate
                 Settings.Locale = data.State.Locale;
                 Settings.NotificationsEnabled = data.State.NotificationsEnabled;
                 Settings.LoopEnabled = data.State.LoopEnabled;
+                Settings.AutoTravelEnabled = data.State.AutoTravelEnabled;
                 Settings.RenameCooldownUntilUnixSeconds = data.State.RenameCooldownUntilUnixSeconds;
                 Settings.AutoUseSlots.Clear();
                 Settings.AutoUseSlots.AddRange(data.State.AutoUseSlots ?? []);

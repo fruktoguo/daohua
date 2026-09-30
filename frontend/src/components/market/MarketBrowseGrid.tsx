@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../../game/format'
-import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import { useMarketStore, type MarketPrimaryCategory } from '../../game/marketStore'
@@ -9,6 +9,8 @@ import type { MarketInstrument } from './MarketOrderForm'
 
 // 未注册物品与装备的坊市兜底元数据
 function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  const subCategoryLabel = resolveItemCategoryLabel(
+    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)
   if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
     const tier = Math.max(1, item.tier)
     const grade = resolveItemGrade(tier)
@@ -16,7 +18,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: '⚔️',
       tone: 'gold',
-      category: resolveItemCategoryLabel(item.subCategory || item.category, t),
+      category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
@@ -32,7 +34,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: item.name.slice(0, 1),
       tone: 'gold',
-      category: resolveItemCategoryLabel(item.category, t),
+      category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
@@ -41,7 +43,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   }
   return withItemGrade({
     ...registered,
-    category: resolveItemCategoryLabel(registered.category, t),
+    category: subCategoryLabel,
   }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
@@ -58,12 +60,13 @@ const PRIMARY_TABS: ReadonlyArray<TabConfig<PrimaryCategory>> = [
   { id: 'all', labelKey: 'market.browse.cat.all', fallback: '全部' },
   { id: 'material', labelKey: 'market.browse.cat.material', fallback: '材料' },
   { id: 'equipment', labelKey: 'market.browse.cat.equipment', fallback: '装备' },
-  { id: 'pill', labelKey: 'market.browse.cat.pill', fallback: '丹药' },
+  { id: 'consumable', labelKey: 'market.browse.cat.consumable', fallback: '消耗品' },
   { id: 'manual', labelKey: 'market.browse.cat.manual', fallback: '功法' },
 ]
 
 type MaterialSubCategory = 'all' | 'mineral' | 'herb' | 'other'
 type EquipmentSubCategory = 'all' | 'weapon' | 'armor' | 'trinket'
+type ConsumableSubCategory = 'all' | 'pill' | 'supply'
 type ManualSubCategory = 'all' | 'tome' | 'fragment'
 
 const MATERIAL_SUB_TABS: ReadonlyArray<TabConfig<MaterialSubCategory>> = [
@@ -80,6 +83,12 @@ const EQUIPMENT_SUB_TABS: ReadonlyArray<TabConfig<EquipmentSubCategory>> = [
   { id: 'trinket', labelKey: 'market.browse.sub.trinket', fallback: '饰品' },
 ]
 
+const CONSUMABLE_SUB_TABS: ReadonlyArray<TabConfig<ConsumableSubCategory>> = [
+  { id: 'all', labelKey: 'market.browse.sub.allConsumable', fallback: '全部消耗品' },
+  { id: 'pill', labelKey: 'market.browse.sub.pill', fallback: '丹药' },
+  { id: 'supply', labelKey: 'market.browse.sub.supply', fallback: '补给耗材' },
+]
+
 const MANUAL_SUB_TABS: ReadonlyArray<TabConfig<ManualSubCategory>> = [
   { id: 'all', labelKey: 'market.browse.sub.allManual', fallback: '全部功法' },
   { id: 'tome', labelKey: 'market.browse.sub.tome', fallback: '秘籍全本' },
@@ -89,14 +98,11 @@ const MANUAL_SUB_TABS: ReadonlyArray<TabConfig<ManualSubCategory>> = [
 const ARMOR_SLOTS = new Set(['head', 'armor', 'legs', 'boots'])
 const TRINKET_SLOTS = new Set(['trinket', 'ring', 'neck', 'talisman'])
 const WEAPON_SLOTS = new Set(['weapon', 'two-hand', 'off-hand'])
+// 补给类消耗品细分键（炼丹耗材/探索补给），坊市合并为「补给耗材」子 Tab
+const SUPPLY_SUB_CATEGORIES = new Set(['alchemySupply', 'explorationSupply'])
 
 function isMaterial(item: MarketInstrument): boolean {
-  return (
-    item.category === 'material' ||
-    item.category === 'herb' ||
-    item.category === 'mineral' ||
-    item.definition?.kind === 'material'
-  )
+  return item.category === 'material' || item.definition?.kind === 'material'
 }
 
 function isEquipment(item: MarketInstrument): boolean {
@@ -107,17 +113,13 @@ function isEquipment(item: MarketInstrument): boolean {
   )
 }
 
-function isPill(item: MarketInstrument): boolean {
-  return (
-    item.category === 'pill' ||
-    item.definition?.category === 'pill'
-  )
+function isConsumable(item: MarketInstrument): boolean {
+  return item.category === 'consumable' || item.definition?.category === 'consumable'
 }
 
 function isManual(item: MarketInstrument): boolean {
   return (
     item.category === 'manual' ||
-    item.category === 'manualFragment' ||
     item.itemId.startsWith('item.tome.') ||
     item.itemId.startsWith('item.fragment.')
   )
@@ -128,6 +130,8 @@ function matchesCategory(
   primary: PrimaryCategory,
   sub: string
 ): boolean {
+  // 细分键与品类丝带同一解析口径：装备取槽位，其余取配表 subCategory，功法兜底 ID 前缀
+  const subKey = resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory) ?? ''
   switch (primary) {
     case 'all':
       return true
@@ -135,30 +139,34 @@ function matchesCategory(
     case 'material': {
       if (!isMaterial(item)) return false
       if (sub === 'all') return true
-      if (sub === 'mineral') return item.category === 'mineral'
-      if (sub === 'herb') return item.category === 'herb'
-      if (sub === 'other') return item.category !== 'mineral' && item.category !== 'herb'
+      if (sub === 'mineral') return subKey === 'mineral'
+      if (sub === 'herb') return subKey === 'herb'
+      if (sub === 'other') return subKey !== 'mineral' && subKey !== 'herb'
       return true
     }
 
     case 'equipment': {
       if (!isEquipment(item)) return false
       if (sub === 'all') return true
-      const slot = item.subCategory || item.equipmentDefinition?.slot || ''
-      if (sub === 'weapon') return WEAPON_SLOTS.has(slot) || slot === '' || slot === 'weapon'
-      if (sub === 'armor') return ARMOR_SLOTS.has(slot)
-      if (sub === 'trinket') return TRINKET_SLOTS.has(slot)
+      if (sub === 'weapon') return WEAPON_SLOTS.has(subKey) || subKey === '' || subKey === 'weapon'
+      if (sub === 'armor') return ARMOR_SLOTS.has(subKey)
+      if (sub === 'trinket') return TRINKET_SLOTS.has(subKey)
       return true
     }
 
-    case 'pill':
-      return isPill(item)
+    case 'consumable': {
+      if (!isConsumable(item)) return false
+      if (sub === 'all') return true
+      if (sub === 'pill') return subKey === 'pill'
+      if (sub === 'supply') return SUPPLY_SUB_CATEGORIES.has(subKey)
+      return true
+    }
 
     case 'manual': {
       if (!isManual(item)) return false
       if (sub === 'all') return true
-      if (sub === 'tome') return item.itemId.startsWith('item.tome.')
-      if (sub === 'fragment') return item.itemId.startsWith('item.fragment.') || item.category === 'manualFragment'
+      if (sub === 'tome') return subKey === 'manualTome'
+      if (sub === 'fragment') return subKey === 'manualFragment'
       return true
     }
   }
@@ -209,7 +217,8 @@ const MarketBrowseCardItem = memo(function MarketBrowseCardItem({
       >
         <ItemTile
           amount={amount}
-          category={resolveItemCategoryLabel(item.subCategory || item.category, t)}
+          category={resolveItemCategoryLabel(
+            resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)}
           className="inventory-cell"
           itemId={item.itemId}
           level={metadata.level}
@@ -333,6 +342,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
         return MATERIAL_SUB_TABS
       case 'equipment':
         return EQUIPMENT_SUB_TABS
+      case 'consumable':
+        return CONSUMABLE_SUB_TABS
       case 'manual':
         return MANUAL_SUB_TABS
       default:
@@ -344,7 +355,8 @@ export const MarketBrowseGrid = memo(function MarketBrowseGrid({
   const visibleItems = useMemo(() => instruments.filter(item => {
     if (!matchesCategory(item, primaryTab, subCategory)) return false
     if (!normalizedQuery) return true
-    const catLabel = resolveItemCategoryLabel(item.subCategory || item.category, t)
+    const catLabel = resolveItemCategoryLabel(
+      resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)
     const primaryCatLabel = resolveItemCategoryLabel(item.category, t)
     const searchTarget = `${item.name} ${item.itemId} ${item.category} ${item.subCategory ?? ''} ${catLabel} ${primaryCatLabel}`.toLocaleLowerCase('zh-CN')
     return searchTarget.includes(normalizedQuery)

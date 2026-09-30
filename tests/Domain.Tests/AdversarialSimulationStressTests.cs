@@ -38,10 +38,10 @@ public sealed class AdversarialSimulationStressTests
         Assert.Equal(-1, player.Actions[0].RemainingRepeats);
 
         // 浮点数值有限性与正确性验证
-        Assert.True(double.IsFinite(player.Progression.Qi));
-        Assert.True(double.IsFinite(player.Progression.LifetimeQi));
-        Assert.True(player.Progression.Qi > 0);
-        Assert.Equal(player.Progression.Qi, player.Progression.LifetimeQi);
+        Assert.True(double.IsFinite(player.Progression.Experience));
+        Assert.True(double.IsFinite(player.Progression.LifetimeExperience));
+        Assert.True(player.Progression.Experience > 0);
+        Assert.Equal(player.Progression.Experience, player.Progression.LifetimeExperience);
 
         // 验证单次 24 小时快进产生的内存分配在极低合理范围内 (< 10MB)
         Assert.True(allocated < 10 * 1024 * 1024, $"24小时快进内存分配超标: {allocated} bytes");
@@ -56,7 +56,7 @@ public sealed class AdversarialSimulationStressTests
     {
         // 模拟 1 秒一次的行动，在单次 AdvanceTo 中推进 120,000 秒 (> 100,000 次转换限制) 时必须快速失败
         var fastCatalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.1sec"), "1秒行动", ActionKind.Cultivation, 1, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
+            new ActionDefinition(new ActionId("test.1sec"), "1秒行动", ActionKind.Cultivation, 1, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
         ]);
 
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "极速者", Baseline, "catalog-a");

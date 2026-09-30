@@ -18,11 +18,14 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
   const inventory = useGameStore(state => state.inventory)
   const items = useGameStore(state => state.items)
   const equipment = useGameStore(state => state.equipment)
+  const equippedList = useGameStore(state => state.combat?.equipment)
 
   const groups = useMemo(() => {
+    // 已穿戴装备留在装备面板管理：背包不再陈列该 itemId（资产仍计钱包持存，卸下后回到背包）。
+    const equippedIds = new Set((equippedList ?? []).map(entry => entry.itemId))
     const buckets = new Map<InventoryGroupKey, InventoryItem[]>()
     for (const item of inventory) {
-      if (item.amount <= 0) continue
+      if (item.amount <= 0 || equippedIds.has(item.itemId)) continue
       const key = resolveInventoryGroup(item.itemId, items, equipment)
       const bucket = buckets.get(key)
       if (bucket) bucket.push(item)
@@ -31,7 +34,7 @@ export const InventoryPanel = memo(function InventoryPanel({ className = '' }: {
     return INVENTORY_GROUP_ORDER
       .map(key => ({ key, list: buckets.get(key) ?? [] }))
       .filter(group => group.list.length > 0)
-  }, [inventory, items, equipment])
+  }, [inventory, items, equipment, equippedList])
 
   return (
     <div className={`inventory-view-panel ${className}`.trim()}>

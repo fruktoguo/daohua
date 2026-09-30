@@ -4,7 +4,7 @@
     "name": "引气丹",
     "description": "通体泛着淡青色光泽的初阶灵丹，散发着淡淡的草木清香。",
     "kind": "consumable",
-    "category": "pill",
+    "category": "consumable",
     "sellPrice": 35,
     "consumable": {
       "usableInActionTypes": [
@@ -13,14 +13,15 @@
       "durationSeconds": 300,
       "isContinuous": true,
       "cultivationMultiplier": 1.3
-    }
+    },
+    "subCategory": "pill"
   },
   {
     "id": "item.zhixue-powder",
     "name": "止血散",
     "description": "由草木研磨而成的暗红药粉，药性辛温，微带草木清气。",
     "kind": "consumable",
-    "category": "pill",
+    "category": "consumable",
     "sellPrice": 25,
     "consumable": {
       "usableInActionTypes": [
@@ -44,14 +45,15 @@
           "value": 60
         }
       ]
-    }
+    },
+    "subCategory": "pill"
   },
   {
     "id": "item.shunqi-pill",
     "name": "顺气丸",
     "description": "圆润微润的暗黄药丸，气味清凉醒脑。",
     "kind": "consumable",
-    "category": "pill",
+    "category": "consumable",
     "sellPrice": 25,
     "consumable": {
       "usableInActionTypes": [
@@ -75,14 +77,15 @@
           "value": 50
         }
       ]
-    }
+    },
+    "subCategory": "pill"
   },
   {
     "id": "item.tongmai-pill",
     "name": "通脉丹",
     "description": "丹面铭刻着细密紫纹的凝气灵丹，丹晕如雾缭绕。",
     "kind": "consumable",
-    "category": "pill",
+    "category": "consumable",
     "tier": 2,
     "sellPrice": 200,
     "consumable": {
@@ -92,14 +95,15 @@
       "durationSeconds": 300,
       "isContinuous": true,
       "cultivationMultiplier": 1.5
-    }
+    },
+    "subCategory": "pill"
   },
   {
     "id": "item.gathering-incense",
     "name": "寻灵香",
     "description": "以幽谷异草凝制的线香，点燃后青烟袅袅，香气沉静。",
     "kind": "consumable",
-    "category": "herb",
+    "category": "consumable",
     "sellPrice": 20,
     "consumable": {
       "usableInActionTypes": [
@@ -108,14 +112,15 @@
       "durationSeconds": 300,
       "isContinuous": true,
       "gatheringMultiplier": 1.5
-    }
+    },
+    "subCategory": "explorationSupply"
   },
   {
     "id": "item.alchemy-flame",
     "name": "地火引",
     "description": "封存在温玉小管中的一缕地脉火苗，静默跳动，热力含而不发。",
     "kind": "consumable",
-    "category": "material",
+    "category": "consumable",
     "sellPrice": 22,
     "consumable": {
       "usableInActionTypes": [
@@ -124,6 +129,7 @@
       "durationSeconds": 300,
       "isContinuous": true,
       "alchemyMultiplier": 1.25
-    }
+    },
+    "subCategory": "alchemySupply"
   }
 ]

@@ -114,8 +114,20 @@ interface GameStore {
 }
 
 const AUTO_USE_SLOT_COUNT = 3
+/** 战斗域自动消耗槽为双组栏位（药品栏 potion ×3 + 通用栏 general ×3），共 6 槽。 */
+const COMBAT_AUTO_USE_SLOT_COUNT = AUTO_USE_SLOT_COUNT * 2
 const COMBAT_ABILITY_SLOT_COUNT = 5
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
+
+/** 各行动域自动消耗槽位数：战斗域 6 槽（双组），其余行动域 3 槽（仅通用栏）。 */
+function autoUseSlotCount(type: ActionType): number {
+  return type === 'combat' ? COMBAT_AUTO_USE_SLOT_COUNT : AUTO_USE_SLOT_COUNT
+}
+
+/** 槽位分组按下标位置判定：战斗域前 3 槽为药品栏，其余槽位（含非战斗域全部）为通用栏。 */
+function autoUseSlotGroup(type: ActionType, index: number): AutoUseSlot['group'] {
+  return type === 'combat' && index < AUTO_USE_SLOT_COUNT ? 'potion' : 'general'
+}
 
 /** 登录前/登出后的离线占位投影：为渲染层提供全部必需字段的安全默认值，首个权威快照到达后被整体覆盖。 */
 function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
@@ -130,20 +142,22 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
     presenceMode: 'online',
     queue: {
       loopEnabled: true,
+      autoTravelEnabled: false,
       autoUseSlots: {
-        cultivation: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
-        exploration: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
-        alchemy: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
-        combat: Array.from({ length: AUTO_USE_SLOT_COUNT }, () => ({ itemId: null, quantity: 1, enabled: false, remainingDurationSeconds: 0 })),
+        cultivation: emptyAutoUseSlots('cultivation'),
+        exploration: emptyAutoUseSlots('exploration'),
+        alchemy: emptyAutoUseSlots('alchemy'),
+        combat: emptyAutoUseSlots('combat'),
       },
       entries: [],
     },
     inventory: [],
     buffs: [],
     stats: {
-      qi: 0,
-      spirit: 0,
-      foundationExp: 0,
+      experience: 0,
+      lifetimeExperience: 0,
+      foundation: 0,
+      combatExperience: 0,
       completedActions: 0,
     },
     duel: {
@@ -177,20 +191,32 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
 
 const initial = createInitialSnapshot()
 
+/** 生成指定行动域的空自动消耗槽位集（含分组标记）。 */
+function emptyAutoUseSlots(type: ActionType): AutoUseSlot[] {
+  return Array.from({ length: autoUseSlotCount(type) }, (_, index) => ({
+    itemId: null,
+    quantity: 1,
+    enabled: false,
+    remainingDurationSeconds: 0,
+    group: autoUseSlotGroup(type, index),
+  }))
+}
+
 /**
  * 归一化单个自动消耗槽位数据，确保默认值完整
  */
-function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined): AutoUseSlot {
+function normalizeAutoUseSlot(slot: AutoUseSlot | null | undefined, group: AutoUseSlot['group']): AutoUseSlot {
   return {
     itemId: slot?.itemId ?? null,
     quantity: slot?.quantity ?? 1,
     enabled: slot?.enabled ?? false,
     remainingDurationSeconds: slot?.remainingDurationSeconds ?? 0,
+    group,
   }
 }
 
 /**
- * 归一化各行动类型的自动消耗槽位集合（固定每种类型 3 个槽位）
+ * 归一化各行动类型的自动消耗槽位集合：战斗域 6 槽（前 3 药品栏、后 3 通用栏），其余行动域 3 槽
  */
 function normalizeAutoUseSlots(
   slots: Partial<Record<ActionType, AutoUseSlot[]>> | null | undefined,
@@ -198,7 +224,7 @@ function normalizeAutoUseSlots(
   const normalized = {} as QueueState['autoUseSlots']
   for (const type of ACTION_TYPE_KEYS) {
     const list = Array.isArray(slots?.[type]) ? slots[type] : []
-    normalized[type] = Array.from({ length: AUTO_USE_SLOT_COUNT }, (_, index) => normalizeAutoUseSlot(list[index]))
+    normalized[type] = Array.from({ length: autoUseSlotCount(type) }, (_, index) => normalizeAutoUseSlot(list[index], autoUseSlotGroup(type, index)))
   }
   return normalized
 }

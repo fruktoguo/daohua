@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
 import { getT, useT, type TFunction } from '../i18n'
 import { useGameStore } from '../game/gameStore'
 import type { MarketBook, MarketMetrics, MarketOrder } from '../game/types'
@@ -28,6 +28,8 @@ const MARKET_TABS: ReadonlyArray<{ id: MarketTab }> = [
 
 // 未注册物品与装备的坊市兜底元数据
 function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  const subCategoryLabel = resolveItemCategoryLabel(
+    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)
   if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
     const tier = Math.max(1, item.tier)
     const grade = resolveItemGrade(tier)
@@ -35,7 +37,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: '⚔️',
       tone: 'gold',
-      category: resolveItemCategoryLabel(item.subCategory || item.category, t),
+      category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
@@ -51,7 +53,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: item.name.slice(0, 1),
       tone: 'gold',
-      category: resolveItemCategoryLabel(item.category, t),
+      category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
@@ -60,7 +62,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   }
   return withItemGrade({
     ...registered,
-    category: resolveItemCategoryLabel(registered.category, t),
+    category: subCategoryLabel,
   }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
@@ -88,6 +90,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
         itemId: item.itemId,
         name: item.name,
         category: item.category,
+        subCategory: item.subCategory ?? undefined,
         tier: item.tier,
         sellPrice: item.sellPrice,
         definition: item,
@@ -229,6 +232,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   }, [selectedItemId, playerId])
 
   const refresh = useCallback(() => refreshRef.current?.(), [])
+  const closeOrderModal = useCallback(() => setOrderModalSide(null), [])
   const selected = instruments.find(item => item.itemId === selectedItemId) ?? null
   // 坊市只交易基础变体（挂单冻结空 variant 资产），持有量不能混入强化变体行
   const selectedAmount = selected ? (inventory.find(item => item.itemId === selected.itemId && !item.variant)?.amount ?? 0) : 0
@@ -295,7 +299,8 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                     <div className="market-detail-item-card">
                       <ItemTile
                         amount={selectedAmount}
-                        category={resolveItemCategoryLabel(selected.subCategory || selected.category, t)}
+                        category={resolveItemCategoryLabel(
+                          resolveItemSubCategory(selected.itemId, selected.definition, selected.equipmentDefinition, selected.subCategory || selected.category), t)}
                         className="inventory-cell"
                         itemId={selected.itemId}
                         level={getMetadata(selected, t).level}
@@ -338,7 +343,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
         <MarketOrderModal
           book={book}
           instrument={selected}
-          onClose={() => setOrderModalSide(null)}
+          onClose={closeOrderModal}
           onPlaced={refresh}
           open={orderModalSide !== null}
           side={orderModalSide}

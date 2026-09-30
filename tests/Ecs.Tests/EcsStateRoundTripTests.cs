@@ -27,9 +27,9 @@ public sealed class EcsStateRoundTripTests
             SeedTime,
             catalog.Fingerprint);
         player.Progression.RealmLevel = 3;
-        player.Progression.Qi = 12.5;
+        player.Progression.Experience = 12.5;
         player.Progression.Experience = 7.25;
-        player.Progression.LifetimeQi = 99.5;
+        player.Progression.LifetimeExperience = 99.5;
         player.Progression.CompletedActions = 4;
         player.Progression.SimulationCarrySeconds = 0.75;
         player.Progression.NormalKills = 2;

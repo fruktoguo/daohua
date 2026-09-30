@@ -7,7 +7,7 @@ import type { CombatantDefinition, TravelSegment, WorldMapDefinition, WorldState
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
-import { ItemDropTile } from './ItemDisplay'
+import { ItemDropReference } from './ItemDisplay'
 import { Modal } from './Modal'
 import { UnitNumber } from './UnitNumber'
 
@@ -357,9 +357,7 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
     : isElite ? t('combat.nearby.rankElite') : t('combat.nearby.rankMonster')
   const drops = monster.drops ?? []
   const rewardParts = [
-    (monster.qiReward ?? 0) > 0 ? `${t('combat.report.qi')} +${formatInteger(monster.qiReward ?? 0)}` : null,
     monster.experience > 0 ? `${t('combat.report.experience')} +${formatInteger(monster.experience)}` : null,
-    (monster.rootExpReward ?? 0) > 0 ? `${t('insight.subTab.sixDimensions')} +${formatInteger(monster.rootExpReward ?? 0)}` : null,
   ].filter((part): part is string => part !== null)
 
   return (
@@ -378,7 +376,7 @@ const MapMonsterPill = memo(function MapMonsterPill({ monster, isElite, isBoss }
                     {t('combat.map.monsterDrops')}：
                     <span className="world-monster-drops-row">
                       {drops.map(drop => (
-                        <ItemDropTile drop={drop} key={drop.itemId} />
+                        <ItemDropReference drop={drop} key={drop.itemId} />
                       ))}
                     </span>
                   </span>,

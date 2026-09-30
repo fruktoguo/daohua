@@ -7,7 +7,8 @@
 #   1. 环境前置自检: 检查 YuoCore submodule 是否存在，若缺失自动拉取；
 #   2. 前端依赖自检: 检查 frontend/node_modules 是否就绪，若缺失自动 npm install；
 #   3. 数据库自检自愈: 检查 PostgreSQL 并按需拉起；
-#   4. 端口占用检查: 检测 5128 (后端服务) 与 15172 (前端 Vite) 是否被占用；
+#   4. 端口占用检查: 检测 5128 (后端服务)、5129 (运维面板) 与 15172 (前端 Vite)；
+#      若占用者命令行指向本仓库（上次会话残留的孤儿进程），自动清理后继续，外来进程报错退出；
 #   5. 启动后端守护: 启动 scripts/dev-hot.mjs 监听 C# 源码并在变更时平滑热重启后端；
 #   6. 等待后端就绪: 轮询探测 http://127.0.0.1:5128/healthz 就绪状态；
 #   7. 启动前端服务: 启动 Vite 开发服务器 (127.0.0.1:15172)，反向代理 /api 与 /ws；
@@ -81,8 +82,6 @@ cleanup() {
   printf '服务已全部停止。\n'
 }
 
-trap cleanup SIGINT SIGTERM EXIT
-
 # 1. 检查 YuoCore submodule
 if [[ ! -f vendor/YuoCore/src/YuoCore.Runtime/YuoCore.Runtime.csproj ]]; then
   printf '==> 初始化 YuoCore submodule...\n'
@@ -126,20 +125,46 @@ if ! db_ready; then
   exit 1
 fi
 
-# 4. 检查端口占用
-if port_in_use 5128; then
-  printf '错误: 端口 127.0.0.1:5128 已被占用 (PID: %s)，请先停止冲突进程。\n' "$(port_pids 5128)" >&2
-  exit 1
-fi
+# 4. 检查端口占用：占用者命令行包含本仓库路径时视为上次会话残留的孤儿（dev.sh 被强杀
+#    时 cleanup trap 不会执行，子进程树会残留），自动清理后继续；否则报错退出。
+is_repo_process() {
+  ps -p "$1" -o command= 2>/dev/null | grep -qF "$ROOT_DIR"
+}
 
-if port_in_use 15172; then
-  printf '错误: 端口 127.0.0.1:15172 已被占用 (PID: %s)，请先停止冲突进程。\n' "$(port_pids 15172)" >&2
-  exit 1
-fi
+free_port_or_fail() {
+  local port="$1" desc="$2"
+  port_in_use "$port" || return 0
+  local pids all_repo=1 pid
+  pids="$(port_pids "$port")"
+  for pid in $pids; do
+    is_repo_process "$pid" || all_repo=0
+  done
+  if [[ "$all_repo" -eq 1 ]]; then
+    printf '==> 端口 %s 被上次会话残留的进程占用 (PID: %s)，自动清理后继续。\n' "$desc" "$pids"
+    for pid in $pids; do kill_tree "$pid" TERM; done
+    sleep 1
+    for pid in $pids; do kill_tree "$pid" KILL; done
+  fi
+  if port_in_use "$port"; then
+    printf '错误: 端口 %s 已被占用 (PID: %s)，请先停止冲突进程。\n' "$desc" "$(port_pids "$port")" >&2
+    exit 1
+  fi
+}
 
+free_port_or_fail 5128 "127.0.0.1:5128 (后端服务)"
+free_port_or_fail 15172 "127.0.0.1:15172 (前端 Vite)"
 # 本地运维面板端口（对齐 appsettings.Development.json 的 Ops:Port，绑定 0.0.0.0）。
-if port_in_use 5129; then
-  printf '错误: 端口 5129 (本地运维面板) 已被占用 (PID: %s)，请先停止冲突进程。\n' "$(port_pids 5129)" >&2
+free_port_or_fail 5129 "5129 (本地运维面板)"
+
+trap cleanup SIGINT SIGTERM EXIT
+
+# 4.5 存档版本漂移处置：SectionCodec schema 升级后旧版本玩家的 head/section 载荷会被
+#     运行时直接拒绝（连接即抛「schema 版本不受支持」）。在后端启动前（此时旧进程已清理、
+#     无并发写库）优先执行 migrations/ 兼容性迁移链；不可迁移的漂移必须经
+#     控制台交互确认才重置（保留账号与角色名）。操作者拒绝或脚本失败一律中止启动，
+#     禁止带着必然崩溃的旧存档拉起服务端。
+if ! scripts/reset-outdated-players.sh; then
+  printf '错误: 存档版本漂移未处置（迁移失败或已取消重置），启动中止。\n' >&2
   exit 1
 fi
 

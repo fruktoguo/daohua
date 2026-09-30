@@ -7,7 +7,7 @@ import type { ActionDefinition, CombatantDefinition } from '../game/types'
 import { useT } from '../i18n'
 import { CharacterAvatar } from './CharacterAvatar'
 import { FloatingInfoCard, FloatingPopover, type FloatingTone } from './FloatingPopover'
-import { ItemDropTile } from './ItemDisplay'
+import { ItemDropReference } from './ItemDisplay'
 import { UnitNumber } from './UnitNumber'
 
 /** 拼接敌怪类型标签：伤害类别 + 可选五行元素（none 元素省略后缀） */
@@ -78,9 +78,7 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
     .map(id => findAbilityInCatalog(abilities, id)?.name ?? id)
     .filter(name => name.length > 0)
   const rewardParts = [
-    (enemy.qiReward ?? 0) > 0 ? `${t('combat.report.qi')} +${formatInteger(enemy.qiReward ?? 0)}` : null,
     enemy.experience > 0 ? `${t('combat.report.experience')} +${formatInteger(enemy.experience)}` : null,
-    (enemy.rootExpReward ?? 0) > 0 ? `${t('insight.subTab.sixDimensions')} +${formatInteger(enemy.rootExpReward ?? 0)}` : null,
   ].filter((part): part is string => part !== null)
 
   const detailCard = (
@@ -98,7 +96,7 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
                 {t('combat.map.monsterDrops')}：
                 <span className="world-monster-drops-row">
                   {drops.map(drop => (
-                    <ItemDropTile drop={drop} key={drop.itemId} />
+                    <ItemDropReference drop={drop} key={drop.itemId} />
                   ))}
                 </span>
               </span>,
@@ -113,7 +111,6 @@ const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: 
         { label: t('insight.combat.armor'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.armor} /> },
         { label: t('insight.combat.magicRes'), value: <UnitNumber disableTooltip maxDecimals={0} value={attrs.magicResistance} /> },
         { label: t('combat.encounter.statInterval'), value: `${formatNumber(attrs.attackIntervalMilliseconds / 1000)}s` },
-        { label: t('combat.nearby.statBudget'), value: <UnitNumber disableTooltip maxDecimals={0} value={enemy.budgetCost ?? 0} /> },
       ]}
       subtitle={subtitle}
       title={enemy.name}
@@ -278,7 +275,6 @@ export const CombatEcologyPanel = memo(function CombatEcologyPanel({
       ) : (
         <p className="nearby-empty">{t('combat.nearby.noMonsters')}</p>
       )}
-      {entries.length > 0 && <p className="ecology-hint">{t('combat.ecology.hint')}</p>}
     </section>
   )
 })

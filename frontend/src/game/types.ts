@@ -188,9 +188,9 @@ export type CombatAbilityTargetType =
   | 'lowest-hp-ally'
 
 /**
- * 行动收益类别：修为 (qi)、灵力/战斗蓝 (mana)、气血 (hitpoints)、历练经验 (experience)、物品产出 (item)、增益状态 (buff)
+ * 行动收益类别：灵力/战斗蓝 (mana)、气血 (hitpoints)、修为 (experience)、物品产出 (item)、增益状态 (buff)
  */
-export type ActionYieldKind = 'qi' | 'mana' | 'hitpoints' | 'experience' | 'item' | 'buff'
+export type ActionYieldKind = 'mana' | 'hitpoints' | 'experience' | 'item' | 'buff'
 
 /**
  * 收益结算周期：持续速率 (second) / 单轮完成结算 (repeat)
@@ -240,7 +240,7 @@ export interface ActionDefinition {
   combatEncounterId?: string
   /** 消耗材料物品与数量映射 */
   inputs?: Record<string, number>
-  /** 行动收益列表（修为/灵力/气血/历练经验/物品/增益） */
+  /** 行动收益列表（修为/灵力/气血/物品/增益） */
   yields?: ActionYield[]
   /** 允许执行该行动的地图节点 ID 列表 */
   availableNodeIds?: string[]
@@ -322,13 +322,16 @@ export interface QueueState {
   entries: QueueEntry[]
   /** 是否开启全局循环 */
   loopEnabled: boolean
+  /** 开轮地点不符时是否自动移动回入队锚点 */
+  autoTravelEnabled: boolean
   /** 各行动类型对应的自动消耗品槽位映射 */
   autoUseSlots: Record<ActionType, AutoUseSlot[]>
 }
 
 /**
- * 同波单个敌方单位的战斗快照（服务端白名单投影：名称/品阶/立绘/完整属性随快照下发，
- * 前端不得再按 enemyId 反查怪物目录补齐战斗数值）
+ * 同波单个敌方单位的战斗快照（服务端投影：名称/品阶/立绘/实时战斗字段随快照下发）。
+ * 属性面板为按需一次性交付——UnitInspect 登记后随下一帧快照携带一次即停止，
+ * 前端按 enemyId 缓存复用；未点开详情的怪不占带宽；图鉴/生态等战前查看走 CombatantDefinition 本地目录。
  */
 export interface ExpeditionEnemy {
   /** 配表怪物定义 ID */
@@ -343,6 +346,10 @@ export interface ExpeditionEnemy {
   hitpoints: number
   /** 当前灵力 */
   manapoints: number
+  /** 气血上限（血蓝条分母，配表缺失时为 null） */
+  maxHitpoints?: number | null
+  /** 灵力上限 */
+  maxManapoints?: number | null
   /** 下一次出手的战斗时刻（秒）；吟唱中为吟唱完成时刻 */
   nextAttackAtSeconds: number
   /** 累计出手次数 */
@@ -353,7 +360,7 @@ export interface ExpeditionEnemy {
   pendingAbilityId?: string | null
   /** 当前动作总时长秒数（吟唱时长或普攻间隔，服务端权威值） */
   pendingActionDurationSeconds: number
-  /** 完整战斗属性面板（与玩家 combat.attributes 同一形状） */
+  /** 完整战斗属性面板（与玩家 combat.attributes 同一形状）；仅被观察目标命中时随快照携带 */
   attributes?: CombatAttributes | null
 }
 
@@ -400,16 +407,17 @@ export interface ExpeditionProgress {
 }
 
 /**
- * 斗法（PVP）暂存区物品条目：
+ * 斗法（PVP）暂存区物品批次：
  * 勾选斗法的战斗行动期间，战斗掉落先入暂存区；
- * acquiredAtUnixSeconds + 1200s 到期自动结算入钱包，斗法败北则全部归胜方。
+ * 服务端按 stagedBucketSeconds（300s）档位桶合并，acquiredAtUnixSeconds 为桶尾时刻，
+ * + 1200s 到期自动结算入钱包，斗法败北则全部归胜方。
  */
 export interface DuelStagedItem {
   /** 物品配置 ID */
   itemId: string
-  /** 暂存数量 */
+  /** 本批暂存数量 */
   quantity: number
-  /** 进入暂存区的 Unix 秒时间戳 */
+  /** 批次桶尾 Unix 秒时间戳（结算时刻 = 该值 + 1200s） */
   acquiredAtUnixSeconds: number
 }
 
@@ -469,10 +477,12 @@ export interface BattleReport {
   startedAtUnixSeconds: number
   /** 行动结束/归档 Unix 秒（进行中为 0） */
   endedAtUnixSeconds: number
-  /** 修为入账量 */
-  qi: number
-  /** 底蕴（历练经验）入账量 */
+  /** 修为入账量（当前层修为计量条瓶颈截断后的真实增量） */
   experience: number
+  /** 底蕴净变动（修为满溢沉淀为正、修炼消耗兑换为负） */
+  foundation: number
+  /** 战斗经验入账量（按修为基础量等额入账，不受增幅影响） */
+  combatExperience: number
   /** 六维经验入账量 */
   rootExp: BattleReportRootExp
   /** 功法技能经验入账列表 */
@@ -555,8 +565,12 @@ export interface ExpeditionDuel {
   outcome: number
   /** 是否已结算 */
   resolved: boolean
-  /** 对手镜像完整战斗属性（撮合时冻结；上限取 attributes.maxHitpoints/maxManapoints） */
-  opponentAttributes: CombatAttributes
+  /** 对手气血上限（镜像血蓝条分母，常驻标量） */
+  opponentMaxHitpoints?: number | null
+  /** 对手灵力上限 */
+  opponentMaxManapoints?: number | null
+  /** 对手镜像完整战斗属性（撮合时冻结；按需投影——仅观察目标命中镜像位时随快照携带） */
+  opponentAttributes?: CombatAttributes | null
   /** 对手当前生命值（随回放事件推进） */
   opponentHitpoints: number
   /** 对手当前灵力值（随回放事件推进） */
@@ -710,8 +724,8 @@ export interface InventoryItem {
   variant?: string | null
   /** 物品名称 */
   name: string
-  /** 分类名称 */
-  category: string
+  /** 子类型键（左上角品类丝带展示口径） */
+  subCategory: string
   /** 拥有数量 */
   amount: number
   /** 色调主题 */
@@ -738,8 +752,10 @@ export interface ItemDefinition {
   description: string
   /** 基础形态大类 */
   kind: ItemKind
-  /** 细分分类键 */
+  /** 主类型键（材料/消耗品/功法/货币等大分类） */
   category: ItemCategoryKey | string
+  /** 子类型键（药材/矿石/丹药/秘籍/残卷等细分，左上角丝带展示） */
+  subCategory?: string | null
   /** 品阶（1~8，映射品质与等级） */
   tier: number
   /** 系统出售价（灵石） */
@@ -836,14 +852,16 @@ export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen'
  * 角色历史累计统计数据
  */
 export interface Stats {
-  /** 服务端权威境界等级（1~127），缺省时由 spirit 累计修为反推 */
+  /** 服务端权威境界等级（1~127），缺省时由 experience 当前层修为反推 */
   realmLevel?: number
-  /** 修为累计量（progression.qi 透传，与境界经验 spirit 分属不同计数） */
-  qi: number
-  /** 境界修为（progression.experience 透传，突破时由服务端按规则清零） */
-  spirit: number
-  /** 道基底蕴（当前 wire 未下发独立字段，保留契约位） */
-  foundationExp?: number
+  /** 当前层修为计量条（progression.experience 透传，突破时由服务端按规则清零） */
+  experience: number
+  /** 累计修为总量（progression.lifetimeExperience 透传：历史修为类收益单调累计，突破不归零、满层沉淀亦计入） */
+  lifetimeExperience: number
+  /** 底蕴池（progression.foundation 透传：修为圆满后沉淀，修炼时消耗兑换额外修为，突破不清空） */
+  foundation: number
+  /** 战斗经验池（progression.combatExperience 透传：按修为基础量同步积累，不受增幅影响） */
+  combatExperience: number
   /** 累计采集灵草次数 */
   herbsCollected?: number
   /** 累计炼成丹药次数 */
@@ -858,8 +876,6 @@ export interface Stats {
   combatWins?: number
   /** 战斗败北次数 */
   combatLosses?: number
-  /** 历练经验入账量 */
-  combatExperience?: number
   /** 累计造成伤害 */
   combatDamageDealt?: number
   /** 累计承受伤害 */
@@ -992,7 +1008,7 @@ export interface CombatantDefinition {
   rank?: UnitRank
   /** 完整战斗属性（与玩家 combat.attributes 同一形状同一语义） */
   attributes: CombatAttributes
-  /** 击杀后入账的历练经验（底蕴） */
+  /** 击杀入账经验：同额喂修为（经瓶颈/底蕴结算）、六维均分与战斗经验 */
   experience: number
   /** 境界等级（怪物同构建模的等级锚点） */
   level?: number
@@ -1000,10 +1016,6 @@ export interface CombatantDefinition {
   tier?: number
   /** 占用刷怪强度预算的点数 */
   budgetCost?: number
-  /** 击杀后入账的修为 */
-  qiReward?: number
-  /** 击杀后入账的六维经验 */
-  rootExpReward?: number
   /** 掉落条目列表（先按 dropChance 判定，再在数量区间均匀抽取） */
   drops?: MonsterDropDefinition[]
   /** 该单位可使用的功法 ID 列表 */
@@ -1062,6 +1074,8 @@ export interface CombatEquipmentDefinition {
   equipmentId: string
   /** 装备显示名 */
   name: string
+  /** 装备描述文案 */
+  description?: string
   /** 穿戴槽位 */
   slot: EquipmentSlot
   /** 品阶 */
@@ -1190,7 +1204,7 @@ export interface BuildingModifiers {
   alchemySpeedRatio: number
   /** 炼丹炼器行动收益比率 */
   alchemyOutputRatio: number
-  /** 吐纳修炼灵气收益比率 */
+  /** 吐纳修炼收益比率 */
   cultivationOutputRatio: number
   /** 战斗气血自然回复（每 5 秒固定值） */
   combatHitpointRegen: number

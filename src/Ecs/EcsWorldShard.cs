@@ -236,7 +236,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 throw new DomainException(DomainErrorCode.InvalidArgument, "行动次数无效。");
             var instanceId = actionInstanceId ?? Guid.NewGuid();
             if (instanceId == Guid.Empty) throw new DomainException(DomainErrorCode.InvalidArgument, "行动实例标识不能为空。");
-            queue.Actions.Add(new EcsActionState(instanceId, new ActionIntent(actionId, repeatCount))
+            // 与聚合 Enqueue 同口径：入队锚点记录驻留节点，旅途中不登记。
+            var world = player.GetComponent<PlayerWorldComponent>()!.World;
+            queue.Actions.Add(new EcsActionState(instanceId, new ActionIntent(actionId, repeatCount,
+                AnchorNodeId: world.EdgeId is null ? world.NodeId : null))
             {
                 EnqueuedAt = _clock.Current,
                 Status = queue.Actions.Count == 0 ? ActionQueueStatus.Running : ActionQueueStatus.Pending
@@ -669,7 +672,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         // 战外 Buff 以 CombatEncounterState.Buffs 注入并由战斗边界计时；属性面板解析不能
         // 再把同一组 AttackSpeed/减伤点数折叠一次，否则会产生双倍增益与随机序列漂移。
         var resolved = PlayerAttributeResolver.Resolve(playerState with { Buffs = [] }, GameData);
-        var playerStats = resolved.ToCombatant();
+        var playerStats = resolved.ToCombatant(playerState.Progression.CombatExperience);
         var loadout = player.GetComponent<PlayerLoadoutComponent>()?.Loadout;
         var playerSkills = loadout is null
             ? []
@@ -883,11 +886,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     {
         var post = CaptureAttributeRevisions(aggregate);
         var progression = aggregate.Progression;
-        progression.RestoreSnapshot(new PlayerProgressionState(progression.RealmLevel, progression.Qi,
-            progression.Experience, progression.LifetimeQi, progression.CompletedActions,
+        progression.RestoreSnapshot(new PlayerProgressionState(progression.RealmLevel,
+            progression.Experience, progression.CompletedActions,
             progression.SimulationCarrySeconds, progression.NormalKills, progression.EliteKills,
             progression.BossKills, progression.TotalDefeats, progression.CultivationSeconds,
-            progression.AgeSeconds), prev.Realm + post.Realm - baseline.Realm);
+            progression.AgeSeconds, progression.Foundation, progression.CombatExperience,
+            progression.LifetimeExperience), prev.Realm + post.Realm - baseline.Realm);
         var world = aggregate.World;
         world.RestoreSnapshot(new PlayerWorldStateDocument(world.NodeId, world.X, world.Y,
             world.ExplorationSeed, world.EdgeId, world.EdgeProgress, world.NodeBuildings,
@@ -917,10 +921,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
         var actions = queue.Actions.Select(a => new QueuedActionState(a.Id, a.Intent, a.EnqueuedAt, a.Status, a.ProgressSeconds, a.RemainingRepeats, a.CompletedRepeats, a.Expedition, a.Travel)).ToArray();
         var state = new PlayerAggregateState(new PlayerId(identity.PlayerId), new AccountId(Guid.Parse(identity.AccountId)), identity.DisplayName, identity.CreatedAt, queue.LastAdvancedAt, identity.Presence, identity.StateVersion, identity.GameDataFingerprint,
-            new PlayerProgressionState(progression.RealmLevel, progression.Qi, progression.Experience, progression.LifetimeQi, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds),
+            new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience),
             new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId),
             new PlayerCombatStateDocument(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints, combat.AttackPower, combat.Defense, resources.Resources.RegenCarrySeconds) { Skills = combat.Combat.Skills },
-            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds), actions, loadout.Loadout.Export(), duel.Document,
+            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds), actions, loadout.Loadout.Export(), duel.Document,
             loadout.Loadout.EquippedItemIds.ToArray());
         var inventory = entity.GetComponent<PlayerInventoryComponent>()?.Items.ToDictionary(p => p.Key, p => p.Value) ?? new Dictionary<AssetKey, double>();
         return new EcsPlayerSnapshot(identity.PlayerId, entity.ID, state, inventory);

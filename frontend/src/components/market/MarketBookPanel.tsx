@@ -17,13 +17,11 @@ function MarketRows({ levels, side }: { levels: readonly MarketLevel[]; side: 'a
       <div className="market-level market-level--header" role="row">
         <span role="columnheader">{t('market.book.priceColumn')}</span>
         <span role="columnheader">{t('market.quantity')}</span>
-        <span role="columnheader">{t('market.book.ordersColumn')}</span>
       </div>
       {levels.map(level => (
         <div className={`market-level market-level--${side}`} key={level.price} role="row">
-          <strong role="cell"><UnitNumber value={level.price} tone={side === 'bid' ? 'jade' : 'crimson'} /></strong>
+          <strong role="cell"><UnitNumber tooltipLabel={t('market.unitPrice')} value={level.price} tone={side === 'bid' ? 'jade' : 'crimson'} /></strong>
           <span role="cell"><UnitNumber value={level.quantity} /></span>
-          <span role="cell"><UnitNumber value={level.orderCount} /></span>
         </div>
       ))}
       {levels.length === 0

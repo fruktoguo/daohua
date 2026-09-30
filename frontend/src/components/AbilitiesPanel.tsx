@@ -57,7 +57,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     state => state.combatResources?.abilityCooldownMilliseconds,
   ) ?? EMPTY_ABILITY_COOLDOWNS
 
-  const [activePickerSlotIndex, setActivePickerSlotIndex] = useState<number | null>(null)
+  const [activePicker, setActivePicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
   const [editingTriggerSlotIndex, setEditingTriggerSlotIndex] = useState<number | null>(null)
 
   if (!combat) return <div className="abilities-panel-empty">{t('common.emptyData')}</div>
@@ -101,6 +101,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     return idx >= 0 ? idx : null
   }
 
+  const activePickerSlotIndex = activePicker?.index ?? null
   const currentPickerValue = activePickerSlotIndex !== null
     ? combat.abilitySlots[activePickerSlotIndex]?.abilityId ?? null
     : null
@@ -146,7 +147,10 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         <button
           aria-label={slotAriaLabel}
           className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
-          onClick={() => setActivePickerSlotIndex(index)}
+          onClick={event => {
+            const anchor = event.currentTarget
+            setActivePicker(prev => prev?.index === index ? null : { index, anchor })
+          }}
           type="button"
         >
           <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
@@ -199,7 +203,7 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
     )
 
     return (
-      <div className={`abilities-slot-card${isInternal ? ' is-internal' : ''}`} key={index}>
+      <div className={`abilities-slot-card${isInternal ? ' is-internal' : ''}${activePicker?.index === index ? ' is-picking' : ''}`} key={index}>
         {ability ? (
           <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, abilityLevelFor(ability.abilityId))} tabIndex={-1}>
             {slotContent}
@@ -313,20 +317,21 @@ export const AbilitiesPanel = memo(function AbilitiesPanel(): React.JSX.Element 
         )}
       </section>
 
-      {/* 功法挑选网格弹窗 */}
+      {/* 功法待选列表（贴靠目标槽位浮出） */}
       <AbilityGridPicker
         abilities={learnedAbilities}
         allowEmpty
+        anchor={activePicker?.anchor ?? null}
         levelFor={abilityLevelFor}
-        onClose={() => setActivePickerSlotIndex(null)}
+        onClose={() => setActivePicker(null)}
         onSelect={value => {
-          if (activePickerSlotIndex !== null) {
-            update({ abilitySlots: withAbility(activePickerSlotIndex, value) })
+          if (activePicker !== null) {
+            update({ abilitySlots: withAbility(activePicker.index, value) })
           }
-          setActivePickerSlotIndex(null)
+          setActivePicker(null)
         }}
-        open={activePickerSlotIndex !== null}
-        slotIndex={activePickerSlotIndex ?? undefined}
+        open={activePicker !== null}
+        slotIndex={activePicker?.index}
         title={pickerTitle}
         value={currentPickerValue}
       />

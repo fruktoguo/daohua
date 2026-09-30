@@ -37,12 +37,14 @@ public sealed class PlayerProgression
 
     /// <summary>境界阶层修订号：属性解析输入之一，写入即单调递增（同值写入不计）。</summary>
     internal long RealmLevelVersion { get; private set; }
-    /// <summary>当前阶层已累积灵气（突破时重置）</summary>
-    public double Qi { get; set; }
-    /// <summary>道法感悟与实战经验</summary>
+    /// <summary>当前层修为（突破计量条，expToNext 封顶，突破清零）</summary>
     public double Experience { get; set; }
-    /// <summary>道途中累计获得的灵气总量（单调递增，不随突破清零）</summary>
-    public double LifetimeQi { get; set; }
+    /// <summary>底蕴：修为满层溢出沉淀池；未满层时按 1:1 兑换放大修为获取（单笔 ≤3× 增幅量），突破不清空。</summary>
+    public double Foundation { get; set; }
+    /// <summary>战斗经验：修为类收益按增幅前基础量等额累积的对抗池；只累积不消耗，突破不清空。</summary>
+    public double CombatExperience { get; set; }
+    /// <summary>道途累计获得的修为总量（单调递增，含已沉淀为底蕴的部分，不随突破清零）</summary>
+    public double LifetimeExperience { get; set; }
     /// <summary>总计已完成的行动次数计数</summary>
     public double CompletedActions { get; set; }
     /// <summary>生平斩妖：普通妖兽累计击杀数</summary>
@@ -61,14 +63,54 @@ public sealed class PlayerProgression
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
     public double SimulationCarrySeconds { get; set; }
 
+    /// <summary>
+    /// 修为类收益入账量的纯计算（总纲 §7.11.1）：
+    /// credited = min(3·amp, amp + foundation, max(0, cap - experience))。
+    /// 满层（cap - experience ≤ 0）恒为 0；底蕴按 1:1 兑换补足 amp，单笔总入账封顶 3·amp。
+    /// </summary>
+    /// <param name="amplifiedAmount">玩家增幅倍率作用后的收益量。</param>
+    /// <param name="cap">本层修为上限（expToNext）；无境界进度配置时传 <see cref="double.PositiveInfinity"/>。</param>
+    /// <param name="experience">结算前本层已累积修为。</param>
+    /// <param name="foundation">结算前底蕴池余量。</param>
+    /// <returns>实际计入本层修为的量。</returns>
+    public static double ComputeExperienceCredit(double amplifiedAmount, double cap, double experience, double foundation)
+        => Math.Min(3.0 * amplifiedAmount,
+            Math.Min(amplifiedAmount + foundation, Math.Max(0, cap - experience)));
+
+    /// <summary>
+    /// 修为类收益统一结算（总纲 §7.11.1，连续收益/单轮奖励/击杀奖励与冥想路径共用单点）：
+    /// Experience += credited；Foundation += amp - credited（净变动，可为负）；CombatExperience += base。
+    /// 返回实际计入本层修为的量，供战报账本按真实入账口径记录。
+    /// </summary>
+    /// <param name="baseAmount">增幅前基础量；等额累积进战斗经验，不受加成与瓶颈影响。</param>
+    /// <param name="amplifiedAmount">玩家增幅倍率作用后的收益量。</param>
+    /// <param name="cap">本层修为上限；无境界进度配置时传 <see cref="double.PositiveInfinity"/>。</param>
+    /// <returns>实际计入本层修为的量（≥0）。</returns>
+    public double CreditExperience(double baseAmount, double amplifiedAmount, double cap)
+    {
+        if (!double.IsFinite(baseAmount) || baseAmount < 0
+            || !double.IsFinite(amplifiedAmount) || amplifiedAmount < 0
+            || double.IsNaN(cap) || cap < 0)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "修为收益入账参数无效。");
+        var credited = ComputeExperienceCredit(amplifiedAmount, cap, Experience, Foundation);
+        Experience += credited;
+        Foundation += amplifiedAmount - credited;
+        CombatExperience += baseAmount;
+        LifetimeExperience += amplifiedAmount;
+        if (!double.IsFinite(Experience) || !double.IsFinite(Foundation) || !double.IsFinite(CombatExperience) || !double.IsFinite(LifetimeExperience))
+            throw new DomainException(DomainErrorCode.InvariantViolation, "修为收益入账结果无效。");
+        return credited;
+    }
+
     /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
     internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion)
     {
         _realmLevel = state.RealmLevel;
         RealmLevelVersion = realmLevelVersion;
-        Qi = state.Qi;
         Experience = state.Experience;
-        LifetimeQi = state.LifetimeQi;
+        Foundation = state.Foundation;
+        CombatExperience = state.CombatExperience;
+        LifetimeExperience = state.LifetimeExperience;
         CompletedActions = state.CompletedActions;
         SimulationCarrySeconds = state.SimulationCarrySeconds;
         NormalKills = state.NormalKills;
@@ -244,6 +286,8 @@ public sealed class PlayerSettingsState
     public bool NotificationsEnabled { get; set; } = true;
     /// <summary>行动队列执行完毕后是否整体循环轮循</summary>
     public bool LoopEnabled { get; set; } = true;
+    /// <summary>开轮地点不符时是否自动插队赶路至入队锚点再执行（false 时走 Blocked 跳过语义）</summary>
+    public bool AutoTravelEnabled { get; set; }
     /// <summary>各行动类型绑定的丹药/补给品自动使用槽位配置</summary>
     public List<AutoUseSlotState> AutoUseSlots { get; } = [];
     /// <summary>改名冷却截止时刻（Unix 秒）；0 表示未冷却。</summary>
@@ -295,12 +339,14 @@ public enum ActionQueueStatus : byte
 /// <param name="TargetNodeId">指定世界节点（如跨地图移动或定向采集）</param>
 /// <param name="Parameters">动态参数字典（如配方 ID、目标词条等）</param>
 /// <param name="PvpEnabled">斗法开关：仅对战斗遭遇行动生效；开启后参与斗法遭遇计数与撮合</param>
+/// <param name="AnchorNodeId">入队锚点节点：入队时玩家驻留节点，自动移动（AutoTravelEnabled）开轮地点不符时的自动赶路目的地；旅途中入队为 null</param>
 public sealed record ActionIntent(
     ActionId ActionId,
     double RepeatCount = 1,
     string? TargetNodeId = null,
     IReadOnlyDictionary<string, double>? Parameters = null,
-    bool PvpEnabled = false)
+    bool PvpEnabled = false,
+    string? AnchorNodeId = null)
 {
 }
 
@@ -610,7 +656,9 @@ public sealed partial class PlayerAggregate
             intent.Parameters is null
                 ? null
                 : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
-            intent.PvpEnabled);
+            intent.PvpEnabled,
+            // 锚点记录入队时驻留节点：自动移动开轮准入的唯一目的地真源，旅途中入队不登记。
+            intent.AnchorNodeId ?? (World.EdgeId is null ? World.NodeId : null));
         var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now);
         _actions.Add(action);
         Touch(PlayerSectionKind.ActionQueue);
@@ -621,12 +669,14 @@ public sealed partial class PlayerAggregate
     /// 高优先级插入行动到队列首位（Index 0），专用于 world.travel 移动行动。
     /// 原队首正在执行的行动保留已有进度挂起（状态置为 Pending），待移动完成后自动继续。
     /// 若队列中已有旧的同类行动（如 world.travel），则先行移出替换。
+    /// 模拟推进内部调用时传 incrementVersion: false 并自行 MarkDirty，保持「一次推进一次版本提交」口径。
     /// </summary>
     public QueuedAction EnqueuePriority(
         ActionIntent intent,
         DateTimeOffset now,
         ActionCatalog catalog,
-        TravelActionState? travel = null)
+        TravelActionState? travel = null,
+        bool incrementVersion = true)
     {
         ArgumentNullException.ThrowIfNull(catalog);
         if (intent is null || !intent.ActionId.IsValid)
@@ -660,7 +710,8 @@ public sealed partial class PlayerAggregate
             intent.Parameters is null
                 ? null
                 : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
-            intent.PvpEnabled);
+            intent.PvpEnabled,
+            intent.AnchorNodeId);
 
         var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now)
         {
@@ -669,7 +720,8 @@ public sealed partial class PlayerAggregate
         };
 
         _actions.Insert(0, action);
-        Touch(PlayerSectionKind.ActionQueue);
+        if (incrementVersion) Touch(PlayerSectionKind.ActionQueue);
+        else MarkDirty(PlayerSectionKind.ActionQueue);
         return action;
     }
 
@@ -730,6 +782,16 @@ public sealed partial class PlayerAggregate
     {
         if (Settings.LoopEnabled == enabled) return;
         Settings.LoopEnabled = enabled;
+        Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 切换自动移动开关。开启后开轮行动地点不符时自动插队赶路至入队锚点，替代 Blocked 跳过。
+    /// </summary>
+    public void SetAutoTravelEnabled(bool enabled)
+    {
+        if (Settings.AutoTravelEnabled == enabled) return;
+        Settings.AutoTravelEnabled = enabled;
         Touch(PlayerSectionKind.Settings);
     }
 
@@ -826,7 +888,7 @@ public sealed partial class PlayerAggregate
         }
         var realmBefore = Progression.RealmLevel;
         Progression.RealmLevel = checked(Progression.RealmLevel + 1);
-        Progression.Qi = 0;
+        // 突破只重置本层计量：Experience 清零；Foundation 底蕴池与 CombatExperience 对抗池按设计保留不清空。
         Progression.Experience = 0;
         // 突破升级计入行动统计账本（realm 级 LevelUp，TargetId 恒为空串）。
         RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null,

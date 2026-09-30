@@ -23,8 +23,8 @@ public sealed class SimulationEngineTests
         SimulationEngine.AdvanceTo(single, Baseline.AddSeconds(10), ActionCatalog.Default);
         for (var i = 1; i <= 10; i++) SimulationEngine.AdvanceTo(split, Baseline.AddSeconds(i), ActionCatalog.Default);
 
-        Assert.True(single.Progression.Qi == split.Progression.Qi, $"Qi 位级不一致：{single.Progression.Qi:R} != {split.Progression.Qi:R}");
-        Assert.True(single.Progression.LifetimeQi == split.Progression.LifetimeQi);
+        Assert.True(single.Progression.Experience == split.Progression.Experience,  $"Experience 位级不一致：{single.Progression.Experience:R} != {split.Progression.Experience:R}");
+        Assert.True(single.Progression.LifetimeExperience == split.Progression.LifetimeExperience);
         Assert.True(single.Progression.Experience == split.Progression.Experience);
 
         // 再推进一段未完成的进度，比较进行中的进度与进位余数。
@@ -45,20 +45,16 @@ public sealed class SimulationEngineTests
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(9), catalog.Actions);
-        Assert.Equal(9, player.Progression.Qi);
-        Assert.Equal(0, player.Progression.Experience);
+        Assert.Equal(9, player.Progression.Experience);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog.Actions);
-        Assert.Equal(10, player.Progression.Qi);
-        Assert.Equal(10, player.Progression.Experience);
+        Assert.Equal(20, player.Progression.Experience);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(19), catalog.Actions);
-        Assert.Equal(19, player.Progression.Qi);
-        Assert.Equal(10, player.Progression.Experience);
+        Assert.Equal(29, player.Progression.Experience);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog.Actions);
-        Assert.Equal(20, player.Progression.Qi);
-        Assert.Equal(20, player.Progression.Experience);
+        Assert.Equal(40, player.Progression.Experience);
     }
 
     /// <summary>
@@ -86,9 +82,7 @@ public sealed class SimulationEngineTests
             foreach (var delta in result.AssetDeltas) splitWallet.Apply(delta);
         }
 
-        Assert.Equal(26d, single.Progression.Qi, 10);
-        Assert.Equal(26d, single.Progression.Experience, 10);
-        Assert.Equal(single.Progression.Qi, split.Progression.Qi);
+        Assert.Equal(52d, single.Progression.Experience, 10);
         Assert.Equal(single.Progression.Experience, split.Progression.Experience);
         Assert.Equal(280d, Assert.Single(single.Settings.AutoUseSlots).RemainingDurationSeconds);
         Assert.Equal(280d, Assert.Single(split.Settings.AutoUseSlots).RemainingDurationSeconds);
@@ -127,7 +121,7 @@ public sealed class SimulationEngineTests
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline.AddSeconds(100), catalog.Actions);
         var resumed = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(110), catalog, wallet);
         Assert.Empty(resumed.AssetDeltas);
-        Assert.Equal(26d, player.Progression.Qi, 10);
+        Assert.Equal(52d, player.Progression.Experience, 10);
         Assert.Equal(280d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 
@@ -172,8 +166,7 @@ public sealed class SimulationEngineTests
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog, CreateWallet(player));
 
         Assert.Empty(result.AssetDeltas);
-        Assert.Equal(23d, player.Progression.Qi, 10);
-        Assert.Equal(23d, player.Progression.Experience, 10);
+        Assert.Equal(46d, player.Progression.Experience, 10);
         Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
         Assert.Single(result.Events, entry => entry.Code == "auto-use.depleted");
     }
@@ -198,13 +191,13 @@ public sealed class SimulationEngineTests
         var midCycle = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet);
 
         Assert.Empty(midCycle.AssetDeltas);
-        Assert.Equal(5d, player.Progression.Qi);
+        Assert.Equal(5d, player.Progression.Experience);
         Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
 
         // 下一轮周期起点扣件，且本轮整段收益吃到倍率。
         var nextCycle = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(11), catalog, wallet);
         Assert.Contains(nextCycle.AssetDeltas, delta => delta.Asset.ItemId == pill && delta.QuantityDelta == -1d);
-        Assert.Equal(11.3d, player.Progression.Qi, 10);
+        Assert.Equal(21.3d, player.Progression.Experience, 10);
         Assert.Equal(300d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 
@@ -273,8 +266,8 @@ public sealed class SimulationEngineTests
         for (var i = 1; i <= 10; i++) SimulationEngine.AdvanceTo(split, Baseline.AddSeconds(0.1 * i), ActionCatalog.Default);
 
         // 0.1 累加十次为 0.9999999999999999 < 1.0，必须靠贴整获得同一个整秒。
-        Assert.True(single.Progression.Qi == split.Progression.Qi, $"Qi 位级不一致：{single.Progression.Qi:R} != {split.Progression.Qi:R}");
-        Assert.True(single.Progression.Qi == 1.0, $"单秒修为应恰为 1：{single.Progression.Qi:R}");
+        Assert.True(single.Progression.Experience == split.Progression.Experience,  $"Experience 位级不一致：{single.Progression.Experience:R} != {split.Progression.Experience:R}");
+        Assert.True(single.Progression.Experience == 1.0, $"单秒修为应恰为 1：{single.Progression.Experience:R}");
         Assert.True(single.Actions[0].ProgressSeconds == split.Actions[0].ProgressSeconds);
         Assert.True(single.Actions[0].ProgressSeconds == 1.0);
         Assert.Equal(0, split.Progression.SimulationCarrySeconds);
@@ -300,7 +293,7 @@ public sealed class SimulationEngineTests
         Assert.Equal(splitAction.Id, split.Actions[0].Id);
         Assert.Equal(-1, single.Actions[0].RemainingRepeats);
         Assert.Equal(-1, split.Actions[0].RemainingRepeats);
-        Assert.True(single.Progression.Qi == split.Progression.Qi);
+        Assert.True(single.Progression.Experience == split.Progression.Experience);
     }
 
     /// <summary>
@@ -314,7 +307,7 @@ public sealed class SimulationEngineTests
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline, ActionCatalog.Default);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(0.5), ActionCatalog.Default);
-        Assert.Equal(0, player.Progression.Qi);
+        Assert.Equal(0, player.Progression.Experience);
         Assert.Equal(0.5, player.Progression.SimulationCarrySeconds);
 
         // 旧存档无 carry 字段时默认 0；跨存档恢复后剩余半秒与下一秒合并为一个整秒。
@@ -322,7 +315,7 @@ public sealed class SimulationEngineTests
         Assert.Equal(0.5, restored.Progression.SimulationCarrySeconds);
         SimulationEngine.AdvanceTo(restored, Baseline.AddSeconds(1), ActionCatalog.Default);
 
-        Assert.True(restored.Progression.Qi == 1.0, $"半秒余数应合并为一个整秒：{restored.Progression.Qi:R}");
+        Assert.True(restored.Progression.Experience == 1.0, $"半秒余数应合并为一个整秒：{restored.Progression.Experience:R}");
     }
 
     /// <summary>
@@ -334,12 +327,12 @@ public sealed class SimulationEngineTests
     {
         // 入队时目录时长合法，配表热更后变为 0：存量 -1 行动在推进时按自愈规约移出队列。
         var enqueueCatalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)]),
-            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
+            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)]),
+            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var hotCatalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 0, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)]),
-            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
+            new ActionDefinition(new ActionId("test.broken"), "被热更行动", ActionKind.Cultivation, 0, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)]),
+            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var player = CreatePlayer("甲");
         player.SetLoopEnabled(false);
@@ -352,7 +345,7 @@ public sealed class SimulationEngineTests
         var dropped = Assert.Single(result.Events, entry => entry.Code == "action.invalid-dropped");
         Assert.Equal(new ActionId("test.broken"), dropped.ActionId);
         Assert.Equal(1, result.CompletedRepeats);
-        Assert.True(player.Progression.Qi == 2.0, $"只有有效行动应累积修为：{player.Progression.Qi:R}");
+        Assert.True(player.Progression.Experience == 2.0, $"只有有效行动应累积修为：{player.Progression.Experience:R}");
     }
 
     /// <summary>
@@ -365,7 +358,7 @@ public sealed class SimulationEngineTests
         // 合法配置 duration=0 + 有限大 RepeatCount：入队不受限，推进时同样自愈而不是空转到转换上限。
         var catalog = new ActionCatalog([
             new ActionDefinition(new ActionId("test.instant"), "瞬时行动", ActionKind.Alchemy, 0, new Dictionary<ItemId, double>(), []),
-            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
+            new ActionDefinition(new ActionId("test.valid"), "正常行动", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var player = CreatePlayer("甲");
         player.SetLoopEnabled(false);
@@ -377,7 +370,7 @@ public sealed class SimulationEngineTests
         Assert.Empty(player.Actions);
         Assert.Single(result.Events, entry => entry.Code == "action.invalid-dropped");
         Assert.Equal(1, result.CompletedRepeats);
-        Assert.True(player.Progression.Qi == 2.0);
+        Assert.True(player.Progression.Experience == 2.0);
     }
 
     /// <summary>
@@ -403,8 +396,8 @@ public sealed class SimulationEngineTests
         for (var i = 1; i <= 40; i++) SimulationEngine.AdvanceTo(split, Baseline.AddSeconds(i), actions);
 
         Assert.Equal(100, single.Resources.Manapoints); // 50 + 2*40 = 130 → 上限截断为 100
-        Assert.Equal(0, single.Progression.Qi);
-        Assert.Equal(0, single.Progression.LifetimeQi);
+        Assert.Equal(0, single.Progression.Experience);
+        Assert.Equal(0, single.Progression.LifetimeExperience);
         Assert.True(single.Resources.Manapoints == split.Resources.Manapoints,
             $"灵力位级不一致：{single.Resources.Manapoints:R} != {split.Resources.Manapoints:R}");
     }
@@ -420,7 +413,7 @@ public sealed class SimulationEngineTests
             new ActionDefinition(new ActionId("test.mixed"), "复合收益", ActionKind.Exploration, 2,
                 new Dictionary<ItemId, double>(),
                 [
-                    new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerRepeat, 5),
+                    new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1),
                     new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 10),
                     new ActionYield(ActionYieldKind.Hitpoints, ActionYieldPeriod.PerRepeat, 7),
                     new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 3),
@@ -436,9 +429,8 @@ public sealed class SimulationEngineTests
 
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), actions);
 
-        Assert.Equal(5, player.Progression.Qi);
-        Assert.Equal(5, player.Progression.LifetimeQi);
-        Assert.Equal(3, player.Progression.Experience);
+        Assert.Equal(5, player.Progression.Experience);
+        Assert.Equal(5, player.Progression.LifetimeExperience);
         Assert.Equal(60, player.Resources.Manapoints);
         Assert.Equal(57, player.Resources.Hitpoints);
         var buff = Assert.Single(player.Buffs.Active);
@@ -468,21 +460,21 @@ public sealed class SimulationEngineTests
         Assert.Throws<DomainException>(() => new ActionCatalog([
             new ActionDefinition(new ActionId("test.bad2"), "x", ActionKind.Exploration, 1,
                 new Dictionary<ItemId, double>(),
-                [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, -1)])
+                [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, -1)])
         ]));
         // 资源收益携带实体标识 → 拒绝
         Assert.Throws<DomainException>(() => new ActionCatalog([
             new ActionDefinition(new ActionId("test.bad3"), "x", ActionKind.Exploration, 1,
                 new Dictionary<ItemId, double>(),
-                [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1, herb)])
+                [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1, herb)])
         ]));
         // 同通道同频率重复声明 → 拒绝
         Assert.Throws<DomainException>(() => new ActionCatalog([
             new ActionDefinition(new ActionId("test.bad4"), "x", ActionKind.Exploration, 1,
                 new Dictionary<ItemId, double>(),
                 [
-                    new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1),
-                    new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 2)
+                    new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1),
+                    new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 2)
                 ])
         ]));
     }

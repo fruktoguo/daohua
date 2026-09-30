@@ -19,8 +19,12 @@ namespace Domain.Persistence;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本；v3：新增斗法分段（duel），旧存档按本地开发清零规则直接拒绝。</summary>
-    public const int CurrentSchemaVersion = 3;
+    /// <summary>当前分段编解码模式版本；v5：settings 分段新增 autoTravelEnabled、行动意图新增
+    /// anchorNodeId 入队锚点（v4：progression 重构为 experience/foundation/combatExperience/lifetimeExperience）。
+    /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
+    /// 内嵌 UPDATE schema_version 标签推进（前提：新增字段可缺省解码）；本地启动链自动执行迁移，
+    /// 仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
+    public const int CurrentSchemaVersion = 5;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -170,7 +174,7 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence),
                 DomainSectionKind.ActionQueue => state.Actions,
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -198,7 +202,7 @@ public static class SectionCodec
             (PlayerSectionKinds.Combat, state.Combat),
             (PlayerSectionKinds.Buffs, state.Buffs),
             (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
-            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence)),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence)),
             (PlayerSectionKinds.ActionQueue, state.Actions),
             (PlayerSectionKinds.Duel, state.Duel)
         };
@@ -261,7 +265,7 @@ public static class SectionCodec
             buffs,
             loadout.EquippedInstances,
             loadout.LearnedAbilities,
-            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds),
+            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoTravelEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds),
             actions,
             loadout.State,
             duel,
@@ -328,6 +332,7 @@ public static class SectionCodec
         string Locale,
         bool NotificationsEnabled,
         bool LoopEnabled,
+        bool AutoTravelEnabled,
         IReadOnlyList<AutoUseSlotState> AutoUseSlots,
         double RenameCooldownUntilUnixSeconds,
         PresenceState Presence);

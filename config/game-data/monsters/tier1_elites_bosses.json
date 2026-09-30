@@ -54,9 +54,7 @@
         "triggerHpRatio": 0.9
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10
+    "experience": 10
   },
   {
     "id": "enemy.armored-bear",
@@ -124,9 +122,7 @@
         "triggerHpRatio": 0.8
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10
+    "experience": 10
   },
   {
     "id": "enemy.chang-tiger",
@@ -217,11 +213,9 @@
         "triggerHpRatio": 0.4
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10,
     "modifiers": {
       "fireDamageReductionPoints": 5.8
-    }
+    },
+    "experience": 10
   }
 ]

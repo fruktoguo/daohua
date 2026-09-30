@@ -51,8 +51,8 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const buffs = useGameStore(state => state.buffs)
 
   // 境界计算体系 (大境界 · 位阶 · 小境界)
-  const realmProgress = useMemo(() => calculateRealmProgress(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
-  const realmInfo = useMemo(() => calculateRealmInfo(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
+  const realmProgress = useMemo(() => calculateRealmProgress(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
+  const realmInfo = useMemo(() => calculateRealmInfo(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
 
   // 六维根基换算定义 (横向展示：数值胶囊 + 属性加成胶囊列表)
   // 文本统一从 insight.root.* 词典取，此处只保留 id / tone / level / bonus 数值
@@ -161,7 +161,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   ])
 
   // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
-  const basePool = useMemo(() => calculateBaseAttributes(stats.spirit ?? 0, stats.realmLevel), [stats.realmLevel, stats.spirit])
+  const basePool = useMemo(() => calculateBaseAttributes(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
 
   // 斗法战斗属性：直接渲染服务端权威终值 (combat.attributes)，与战场单位详情弹窗共用同一面板
 
@@ -230,7 +230,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                 title={
                   <div className="unit-number-tooltip-inline">
                     <span className="unit-number-tooltip-label">{t('insight.totalSpirit')}</span>
-                    <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(Math.floor(stats.spirit ?? 0))}</strong>
+                    <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(Math.floor(stats.lifetimeExperience ?? 0))}</strong>
                   </div>
                 }
               >
@@ -238,7 +238,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   <div className="insight-progress-fill" style={{ width: `${isPendingBreakthrough || realmInfo.layerProgress >= 99.99 ? 100 : realmInfo.layerProgress}%` }} />
                 </div>
               </FloatingTooltip>
-              {(isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.spirit ?? 0) > 0)) && (
+              {(isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.experience ?? 0) > 0)) && (
                 <button
                   className="insight-breakthrough-btn"
                   onClick={() => gameClient.sendCommand('progression.breakthrough', {})}
@@ -454,10 +454,10 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             <div className="insight-foundation-pills">
               <div className="insight-foundation-pill-row">
                 <PillStatLabel
-                  label={t('insight.foundation.daoFoundation')}
-                  value={stats.foundationExp === undefined ? t('common.emptyData') : Math.floor(stats.foundationExp)}
+                  label={t('insight.foundation.reserve')}
+                  value={stats.foundation === undefined ? t('common.emptyData') : Math.floor(stats.foundation)}
                   tone="gold"
-                  tooltip={t('insight.foundation.daoFoundationTooltip')}
+                  tooltip={t('insight.foundation.reserveTooltip')}
                   tooltipTone="gold"
                 />
               </div>

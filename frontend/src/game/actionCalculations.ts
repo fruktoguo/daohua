@@ -6,8 +6,8 @@ import type { ActionDefinition, ActionType, ActionYieldPeriod, AutoUseSlot, Inve
 import { calculateRealmProgress } from './combatConstants'
 import { getT } from '../i18n'
 
-/** 非物品、非增益的资源类收益类别（修为/灵力/气血/历练经验） */
-export type ResourceYieldKind = 'qi' | 'mana' | 'hitpoints' | 'experience'
+/** 非物品、非增益的资源类收益类别（修为/灵力/气血） */
+export type ResourceYieldKind = 'mana' | 'hitpoints' | 'experience'
 
 /** 单条生效加成的展示明细 */
 export interface ActiveBonusDetail {
@@ -47,7 +47,7 @@ export interface ActionYieldPreview {
     finalAmount: number
     multiplier: number
   }>
-  /** 资源类收益预览（修为/灵力/气血/历练经验，包含加成） */
+  /** 资源类收益预览（修为/灵力/气血，包含加成） */
   resourceYields: Array<{
     kind: ResourceYieldKind
     per: ActionYieldPeriod
@@ -168,10 +168,10 @@ export function calculateActionYieldPreview({
   // 4. 修炼专属境界判定（产出数值统一由 yields 驱动）
   let cultivationDetail: CultivationYieldDetail | undefined
   if (isCultivation) {
-    const spirit = stats?.spirit ?? 0
-    const realmProgress = calculateRealmProgress(spirit, stats?.realmLevel)
+    const experience = stats?.experience ?? 0
+    const realmProgress = calculateRealmProgress(experience, stats?.realmLevel)
     const expToCap = realmProgress.expToNext - realmProgress.currentLayerExp
-    const isPendingBreakthrough = realmProgress.expToNext > 0 && expToCap <= 0.0001 && spirit > 0
+    const isPendingBreakthrough = realmProgress.expToNext > 0 && expToCap <= 0.0001 && experience > 0
 
     if (isPendingBreakthrough) {
       // 境界圆满待突破
@@ -197,7 +197,6 @@ export function calculateActionYieldPreview({
         itemAmountMap.set(yieldEntry.id, (itemAmountMap.get(yieldEntry.id) ?? 0) + yieldEntry.amount)
         break
       }
-      case 'qi':
       case 'mana':
       case 'hitpoints':
       case 'experience': {

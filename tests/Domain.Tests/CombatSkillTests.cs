@@ -17,7 +17,7 @@ public sealed class CombatSkillTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer(catalog);
-        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant() with { MaxManapoints = 1000 };
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0) with { MaxManapoints = 1000 };
         var ability = catalog.Abilities["ability.heavy-slash"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(100000, 0, 20, 100);
@@ -64,7 +64,7 @@ public sealed class CombatSkillTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer(catalog);
-        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant() with { MaxManapoints = 1000 };
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0) with { MaxManapoints = 1000 };
         var ability = catalog.Abilities["ability.qingping-melody"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(100000, 0, 0, 100);
@@ -97,7 +97,7 @@ public sealed class CombatSkillTests
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer(catalog);
-        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant() with { MaxManapoints = 1000 };
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0) with { MaxManapoints = 1000 };
         var ability = catalog.Abilities["ability.pozhen-melody"];
         var playerTemplate = new CombatantTemplate(stats with { MaxHitpoints = 10_000_000 }, [new SkillSlot(ability, 1)]);
         var enemy = CombatantStats.Create(100000, 100, 0, 1);

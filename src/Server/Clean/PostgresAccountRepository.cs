@@ -11,6 +11,7 @@ namespace Server.Clean;
 /// <param name="ErrorCode">失败错误码（如 DUPLICATE_ACCOUNT_OR_NAME）。</param>
 /// <param name="Message">面向用户的失败描述。</param>
 /// <param name="SessionToken">注册即登录签发的会话令牌明文，仅此一次返回给客户端。</param>
+/// <param name="SequenceId">角色序号（identity.players.player_seq 自增编号）。</param>
 public sealed record AccountRegistrationResult(
     bool Success,
     Guid? AccountId,
@@ -19,7 +20,14 @@ public sealed record AccountRegistrationResult(
     string? DisplayName,
     string? ErrorCode,
     string? Message,
-    string? SessionToken = null);
+    string? SessionToken = null,
+    long? SequenceId = null);
+
+/// <summary>改密结局；失败时 Success=false 且只携带 ErrorCode/Message（INVALID_CREDENTIALS=旧密码错误，INVALID_PASSWORD=新密码不合法）。</summary>
+/// <param name="Success">改密是否成功。</param>
+/// <param name="ErrorCode">失败错误码。</param>
+/// <param name="Message">面向用户的失败描述。</param>
+public sealed record AccountChangePasswordResult(bool Success, string? ErrorCode, string? Message);
 
 /// <summary>登录结局；凭据无效与账号停用统一返回 INVALID_CREDENTIALS，不暴露账号是否存在。</summary>
 /// <param name="Success">登录是否成功。</param>
@@ -30,6 +38,7 @@ public sealed record AccountRegistrationResult(
 /// <param name="ErrorCode">失败错误码。</param>
 /// <param name="Message">面向用户的失败描述。</param>
 /// <param name="SessionToken">新签发的会话令牌明文，仅此一次返回给客户端。</param>
+/// <param name="SequenceId">角色序号（identity.players.player_seq 自增编号）。</param>
 public sealed record AccountLoginResult(
     bool Success,
     Guid? AccountId,
@@ -38,7 +47,8 @@ public sealed record AccountLoginResult(
     string? DisplayName,
     string? ErrorCode,
     string? Message,
-    string? SessionToken = null);
+    string? SessionToken = null,
+    long? SequenceId = null);
 
 /// <summary>账号、凭据与认证会话的持久化边界。</summary>
 public interface IAccountRepository
@@ -53,6 +63,16 @@ public interface IAccountRepository
     ValueTask RevokeSessionAsync(string token, CancellationToken cancellationToken = default);
     /// <summary>改写道号；display_name_normalized 唯一索引冲突时返回 false。</summary>
     ValueTask<bool> RenamePlayerAsync(Guid playerId, string displayName, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 校验当前密码后改写凭据（新随机盐与现行迭代数），同事务吊销该账号除 keepSessionTokenHash
+    /// 指向会话外的全部存活会话并写改密审计事件；旧密码错误返回 INVALID_CREDENTIALS。
+    /// </summary>
+    ValueTask<AccountChangePasswordResult> ChangePasswordAsync(
+        Guid accountId,
+        string currentPassword,
+        string newPassword,
+        byte[]? keepSessionTokenHash,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>一次有效会话解析出的身份。</summary>
@@ -60,7 +80,8 @@ public interface IAccountRepository
 /// <param name="PlayerId">绑定玩家标识。</param>
 /// <param name="Account">登录账号。</param>
 /// <param name="DisplayName">当前道号。</param>
-public sealed record SessionIdentity(Guid AccountId, Guid PlayerId, string Account, string DisplayName);
+/// <param name="SequenceId">角色序号（identity.players.player_seq 自增编号）。</param>
+public sealed record SessionIdentity(Guid AccountId, Guid PlayerId, string Account, string DisplayName, long SequenceId);
 
 /// <summary>账号与会话的关系存储；密码明文和 token 明文永不入库。</summary>
 public sealed class PostgresAccountRepository(
@@ -118,6 +139,7 @@ public sealed class PostgresAccountRepository(
         var sessionToken = CreateSessionToken();
         var sessionTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(sessionToken));
 
+        long playerSeq;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
         try
@@ -143,6 +165,7 @@ public sealed class PostgresAccountRepository(
                     (player_id, account_id, display_name, display_name_normalized,
                      created_at, last_seen_at, status)
                 VALUES ($1, $2, $3, $4, $5, $5, 1)
+                RETURNING player_seq
                 """, connection, transaction))
             {
                 playerCommand.Parameters.Add(new NpgsqlParameter { Value = playerId });
@@ -150,7 +173,7 @@ public sealed class PostgresAccountRepository(
                 playerCommand.Parameters.Add(new NpgsqlParameter { Value = normalizedName });
                 playerCommand.Parameters.Add(new NpgsqlParameter { Value = NormalizeNameForLookup(normalizedName) });
                 playerCommand.Parameters.Add(new NpgsqlParameter { Value = now });
-                await playerCommand.ExecuteNonQueryAsync(cancellationToken);
+                playerSeq = (long)(await playerCommand.ExecuteScalarAsync(cancellationToken))!;
             }
 
             await InsertSessionAsync(connection, transaction, accountId, sessionTokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
@@ -169,7 +192,7 @@ public sealed class PostgresAccountRepository(
         }
 
         logger.LogInformation("新账号注册成功 accountId={AccountId} playerId={PlayerId}", accountId, playerId);
-        return new AccountRegistrationResult(true, accountId, playerId, normalizedAccount, normalizedName, null, null, sessionToken);
+        return new AccountRegistrationResult(true, accountId, playerId, normalizedAccount, normalizedName, null, null, sessionToken, playerSeq);
     }
 
     /// <summary>
@@ -192,7 +215,7 @@ public sealed class PostgresAccountRepository(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             SELECT a.account_id, a.password_hash, a.password_salt, a.password_iterations,
-                   p.player_id, a.status, p.display_name
+                   p.player_id, a.status, p.display_name, p.player_seq
             FROM identity.accounts a
             JOIN identity.players p ON p.account_id = a.account_id
             WHERE a.login_normalized = $1
@@ -209,6 +232,7 @@ public sealed class PostgresAccountRepository(
         var playerId = reader.GetGuid(4);
         var status = reader.GetInt16(5);
         var name = reader.GetString(6);
+        var playerSeq = reader.GetInt64(7);
         var candidate = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA512, hash.Length);
         if (status != 1 || !CryptographicOperations.FixedTimeEquals(candidate, hash))
             return FailureLogin("INVALID_CREDENTIALS", "账号或密码错误。");
@@ -221,7 +245,7 @@ public sealed class PostgresAccountRepository(
         }
 
         var token = await CreateSessionAsync(accountId, playerId, options.SessionLifetime, cancellationToken);
-        return new AccountLoginResult(true, accountId, playerId, normalizedAccount, name, null, null, token);
+        return new AccountLoginResult(true, accountId, playerId, normalizedAccount, name, null, null, token, playerSeq);
     }
 
     /// <summary>
@@ -240,7 +264,7 @@ public sealed class PostgresAccountRepository(
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT a.account_id, p.player_id, a.login_normalized, p.display_name, s.expires_at
+            SELECT a.account_id, p.player_id, a.login_normalized, p.display_name, s.expires_at, p.player_seq
             FROM identity.auth_sessions s
             JOIN identity.accounts a ON s.account_id = a.account_id
             JOIN identity.players p ON p.account_id = a.account_id
@@ -252,7 +276,7 @@ public sealed class PostgresAccountRepository(
         command.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = tokenHash });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
-        var identity = new SessionIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3));
+        var identity = new SessionIdentity(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(5));
         // 缓存截止取「TTL 上限」与「会话自身过期时刻」的较早者，过期语义不被缓存放宽。
         var sessionExpiresAt = reader.GetFieldValue<DateTimeOffset>(4);
         var cacheUntil = now.Add(SessionCacheTtl);
@@ -321,6 +345,94 @@ public sealed class PostgresAccountRepository(
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// 修改密码：先按库存哈希固定时间校验当前密码，再在同一 Serializable 事务内更新凭据、
+    /// 吊销除当前会话外的全部存活会话并写审计事件；提交后剔除该账号的会话缓存条目
+    /// （当前会话行未被吊销，下次校验会重新落库并回填缓存）。
+    /// </summary>
+    public async ValueTask<AccountChangePasswordResult> ChangePasswordAsync(
+        Guid accountId,
+        string currentPassword,
+        string newPassword,
+        byte[]? keepSessionTokenHash,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(newPassword) || newPassword.Length is < MinPasswordLength or > MaxPasswordLength)
+            return new AccountChangePasswordResult(false, "INVALID_PASSWORD", $"新密码长度须在 {MinPasswordLength}-{MaxPasswordLength} 个字符之间。");
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        byte[] hash;
+        byte[] salt;
+        int iterations;
+        await using (var query = new NpgsqlCommand("""
+            SELECT password_hash, password_salt, password_iterations
+            FROM identity.accounts
+            WHERE account_id = $1 AND status = 1
+            """, connection))
+        {
+            query.Parameters.Add(new NpgsqlParameter { Value = accountId });
+            await using var reader = await query.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                return new AccountChangePasswordResult(false, "INVALID_CREDENTIALS", "当前密码错误。");
+            hash = reader.GetFieldValue<byte[]>(0);
+            salt = reader.GetFieldValue<byte[]>(1);
+            iterations = reader.GetInt32(2);
+        }
+
+        var candidate = Rfc2898DeriveBytes.Pbkdf2(currentPassword ?? string.Empty, salt, iterations, HashAlgorithmName.SHA512, hash.Length);
+        if (!CryptographicOperations.FixedTimeEquals(candidate, hash))
+            return new AccountChangePasswordResult(false, "INVALID_CREDENTIALS", "当前密码错误。");
+
+        var newSalt = RandomNumberGenerator.GetBytes(16);
+        var newHash = Rfc2898DeriveBytes.Pbkdf2(newPassword, newSalt, Pbkdf2Iterations, HashAlgorithmName.SHA512, 64);
+        var now = DateTimeOffset.UtcNow;
+
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using (var update = new NpgsqlCommand("""
+            UPDATE identity.accounts
+            SET password_hash = $2, password_salt = $3, password_iterations = $4, updated_at = $5
+            WHERE account_id = $1
+            """, connection, transaction))
+        {
+            update.Parameters.Add(new NpgsqlParameter { Value = accountId });
+            update.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = newHash });
+            update.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea, Value = newSalt });
+            update.Parameters.Add(new NpgsqlParameter { Value = Pbkdf2Iterations });
+            update.Parameters.Add(new NpgsqlParameter { Value = now });
+            await update.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var revoke = new NpgsqlCommand("""
+            UPDATE identity.auth_sessions
+            SET revoked_at = $2
+            WHERE account_id = $1 AND revoked_at IS NULL AND ($3::bytea IS NULL OR token_hash <> $3)
+            """, connection, transaction))
+        {
+            revoke.Parameters.Add(new NpgsqlParameter { Value = accountId });
+            revoke.Parameters.Add(new NpgsqlParameter { Value = now });
+            revoke.Parameters.Add(new NpgsqlParameter
+            {
+                NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Bytea,
+                Value = (object?)keepSessionTokenHash ?? DBNull.Value,
+            });
+            await revoke.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await outbox.AppendAsync(connection, transaction, accountId, "account",
+            "auth.account.password_changed",
+            JsonSerializer.SerializeToUtf8Bytes(new { accountId }),
+            now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        foreach (var pair in _sessionCache)
+        {
+            if (pair.Value.Identity.AccountId == accountId)
+                _sessionCache.TryRemove(pair.Key, out _);
+        }
+        logger.LogInformation("账号改密完成 accountId={AccountId}", accountId);
+        return new AccountChangePasswordResult(true, null, null);
     }
 
     private async Task<string> CreateSessionAsync(Guid accountId, Guid playerId, TimeSpan lifetime, CancellationToken cancellationToken)

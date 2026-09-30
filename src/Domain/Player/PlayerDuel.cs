@@ -4,7 +4,10 @@ using Domain.GameData;
 
 namespace Domain.Player;
 
-/// <summary>暂存区单条物品记录：斗法期间战斗掉落先入暂存，到期或结算后归属才确定。</summary>
+/// <summary>
+/// 暂存区单条物品批次：斗法期间战斗掉落先入暂存，按 stagedBucketSeconds 档位桶合并，
+/// AcquiredAtUnixSeconds 为桶尾时刻（结算时刻 = 桶尾 + stagedSettleSeconds），到期或斗法结算后归属才确定。
+/// </summary>
 public sealed record DuelStagedItem(string ItemId, double Quantity, double AcquiredAtUnixSeconds)
 {
     /// <summary>校验暂存记录不变量。</summary>
@@ -89,10 +92,12 @@ public sealed class PlayerBattleReport
     public double StartedAtUnixSeconds { get; set; }
     /// <summary>统计结束时间（Unix 秒）</summary>
     public double EndedAtUnixSeconds { get; set; }
-    /// <summary>修为收益</summary>
-    public double Qi { get; set; }
-    /// <summary>底蕴收益（修为满溢转化部分单独统计）</summary>
+    /// <summary>修为收益（瓶颈截断与底蕴兑换放大后的本层实际入账量）</summary>
     public double Experience { get; set; }
+    /// <summary>底蕴净变动（满层溢出沉淀为正、兑换放大消耗为负）</summary>
+    public double Foundation { get; set; }
+    /// <summary>战斗经验收益（修为类收益按增幅前基础量等额记账，不受加成）</summary>
+    public double CombatExperience { get; set; }
     /// <summary>六维经验收益</summary>
     public PlayerRootExpValues RootExp { get; } = new();
     /// <summary>功法参悟经验收益（按功法 ID 聚合）</summary>
@@ -123,7 +128,8 @@ public sealed class PlayerBattleReport
     public long DayIndex { get; set; } = -1;
 
     /// <summary>是否存在任何可记录内容；空账本归档时丢弃。</summary>
-    public bool HasContent => Qi > 0 || Experience > 0 || RootExp.Total > 0
+    public bool HasContent => Experience > 0 || Foundation != 0 || CombatExperience > 0
+        || RootExp.Total > 0
         || AbilityExp.Count > 0 || LevelUps.Count > 0
         || Items.Count > 0 || ItemsLost.Count > 0
         || Cycles > 0 || Encounters > 0
@@ -174,8 +180,9 @@ public sealed class PlayerBattleReport
     /// <summary>清空全部累计字段（每日账本跨日 rollover 用）；ReportId/行动标识保留。</summary>
     public void ResetBucket(long dayIndex, double atUnixSeconds)
     {
-        Qi = 0;
         Experience = 0;
+        Foundation = 0;
+        CombatExperience = 0;
         RootExp.Clear();
         AbilityExp.Clear();
         LevelUps.Clear();
@@ -242,7 +249,7 @@ public sealed class PlayerDuelState
             NoteStructureMutation();
         }
     }
-    /// <summary>暂存区物品（先入先出结算）；写入递增版本号供导出缓存失效检测。</summary>
+    /// <summary>暂存区物品批（按结算时刻升序、同物品同桶合并）；写入递增版本号供导出缓存失效检测。</summary>
     public VersionedList<DuelStagedItem> StagedItems { get; } = new();
     /// <summary>按行动实例 Id 各持一本的收益账本；实例出队时归档进 Reports；写入递增版本号。</summary>
     public VersionedDictionary<Guid, PlayerBattleReport> ActionReports { get; } = new();
@@ -347,7 +354,6 @@ public sealed record PlayerBattleReportDocument(
     string ActionName,
     double StartedAtUnixSeconds,
     double EndedAtUnixSeconds,
-    double Qi,
     double Experience,
     PlayerRootExpDocument RootExp,
     IReadOnlyList<PlayerReportItem> Items,
@@ -362,7 +368,9 @@ public sealed record PlayerBattleReportDocument(
     double EliteKills = 0,
     double BossKills = 0,
     double Deaths = 0,
-    long DayIndex = -1);
+    long DayIndex = -1,
+    double Foundation = 0,
+    double CombatExperience = 0);
 
 /// <summary>六维经验文档形态。</summary>
 public sealed record PlayerRootExpDocument(
@@ -546,22 +554,9 @@ public sealed partial class PlayerAggregate
         return true;
     }
 
-    /// <summary>斗法期间获得物品：进入暂存区而非直接入账。</summary>
+    /// <summary>斗法期间获得物品：进入暂存区而非直接入账；入账时刻按当前调参桶长量化。</summary>
     public void StageItem(ItemId itemId, double quantity, double acquiredAtUnixSeconds)
-        => ActionReportBook.StageCombatItem(this, itemId, quantity, acquiredAtUnixSeconds);
-
-    /// <summary>
-    /// 结算到期暂存物品：到达入账时间且不在斗法冻结期时返回待入账列表并从暂存区移除。
-    /// </summary>
-    public IReadOnlyList<DuelStagedItem> SettleStagedItems(double nowUnixSeconds, double settleSeconds)
-    {
-        if (Duel.ActiveDuelId is not null || Duel.StagedItems.Count == 0) return [];
-        var settled = Duel.StagedItems.Where(item => item.AcquiredAtUnixSeconds + settleSeconds <= nowUnixSeconds).ToArray();
-        if (settled.Length == 0) return [];
-        foreach (var item in settled) Duel.StagedItems.Remove(item);
-        MarkDirty(PlayerSectionKind.Duel);
-        return settled;
-    }
+        => ActionReportBook.StageCombatItem(this, itemId, quantity, acquiredAtUnixSeconds, DuelSettingsTuning.StagedBucketSeconds);
 
     /// <summary>按快照清单移除暂存物品（斗法落败被对方缴获），被缴物品计入「失去」。</summary>
     internal void RemoveStagedItems(IReadOnlyList<DuelStagedItem> snapshot, double atUnixSeconds)
@@ -593,7 +588,8 @@ public sealed partial class PlayerAggregate
     /// </summary>
     public DuelCombatant BuildDuelMirror(GameDataCatalog gameData)
     {
-        var stats = PlayerAttributeResolver.Resolve(this, gameData).ToCombatant();
+        // 战斗经验随冻结面板进入镜像：撮合后回放期不再二次解析（总纲 §7.7.6）。
+        var stats = PlayerAttributeResolver.Resolve(this, gameData).ToCombatant(Progression.CombatExperience);
         // 斗法镜像与玩家/怪物共用同一套通用技能槽：触发条件与装配口径完全一致。
         var skills = SkillSlot.FromAbilitySlots(Loadout.AbilitySlots, gameData.Abilities);
         return new DuelCombatant(PlayerId, DisplayName, DuelPower, stats, skills, Duel.StagedItems.ToArray());

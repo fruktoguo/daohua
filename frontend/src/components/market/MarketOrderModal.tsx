@@ -1,7 +1,7 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { getT, useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
@@ -11,8 +11,13 @@ import { Modal } from '../Modal'
 import type { MarketInstrument } from './MarketOrderForm'
 import { getMarketPriceIncrement, normalizeMarketPrice } from './MarketOrderForm'
 
+/** 挂单单价上限：防止 ×2 步进无限放大导致总价显示失真（服务端仅要求有限正数）。 */
+const MARKET_ORDER_MAX_PRICE = 999_999_999
+
 // 未注册物品的坊市兜底元数据：名称/品类保留服务端数据，说明文本走 market 域词典。
 function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
+  const subCategoryLabel = resolveItemCategoryLabel(
+    resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.subCategory || item.category), t)
   if (item.equipmentDefinition || item.category === 'equipment' || item.itemId.startsWith('equipment.')) {
     const tier = Math.max(1, item.tier)
     const grade = resolveItemGrade(tier)
@@ -20,7 +25,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: '⚔️',
       tone: 'gold',
-      category: resolveItemCategoryLabel(item.subCategory || item.category, t),
+      category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
@@ -35,7 +40,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
       label: item.name,
       glyph: item.name.slice(0, 1),
       tone: 'gold',
-      category: resolveItemCategoryLabel(item.category, t),
+      category: subCategoryLabel,
       rarity: grade.rarity,
       rarityLabel: grade.label,
       level: tier,
@@ -44,7 +49,7 @@ function getMetadata(item: MarketInstrument, t: TFunction): ItemMetadata {
   }
   return withItemGrade({
     ...registered,
-    category: resolveItemCategoryLabel(registered.category, t),
+    category: subCategoryLabel,
   }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
@@ -88,10 +93,21 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
+  // 已穿戴装备仍计钱包持存（selectedAmount 会包含它），卖出方向须整体拦截并提示先卸下。
+  const isInstrumentEquipped = useGameStore(
+    state => state.combat?.equipment?.some(entry => entry.itemId === instrument?.itemId) ?? false
+  )
 
   const vendorPrice = Math.max(2, instrument?.sellPrice ?? 2)
   const minimumPrice = useMemo(() => normalizeMarketPrice(vendorPrice, vendorPrice, true), [vendorPrice])
-  const [price, setPrice] = useState(String(minimumPrice))
+  // 单价为步进按钮维护的整数，任何路径写入前都先落到 tick 网格并夹在 [minimumPrice, MARKET_ORDER_MAX_PRICE]。
+  // 初值按打开瞬间的盘口最优价惰性初始化一次；之后行情轮询刷新不得重置用户输入（保持焦点与草稿稳定）。
+  const [price, setPrice] = useState<number>(() => {
+    const initialPrice = side === 'sell'
+      ? (book?.asks[0]?.price ?? minimumPrice)
+      : (book?.bids[0]?.price ?? minimumPrice)
+    return Math.max(minimumPrice, normalizeMarketPrice(initialPrice, vendorPrice, true))
+  })
   const [quantity, setQuantity] = useState(1)
 
   const bestAsk = book?.asks[0]?.price
@@ -100,27 +116,37 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const selectedAmount = instrument ? (inventory.find(item => item.itemId === instrument.itemId && !item.variant)?.amount ?? 0) : 0
   const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
 
-  const parsedPrice = Number.parseInt(price, 10)
-  const effectivePrice = Number.isSafeInteger(parsedPrice) && parsedPrice >= vendorPrice ? parsedPrice : minimumPrice
+  /** 步进调价：−/+ 按当前价位 tick 步长走一档，÷2/×2 折半翻倍后归一化到价格网格。 */
+  const adjustPrice = useCallback((action: 'half' | 'decrease' | 'increase' | 'double') => {
+    setPrice(current => {
+      switch (action) {
+        case 'double':
+          return Math.min(MARKET_ORDER_MAX_PRICE, normalizeMarketPrice(current * 2, vendorPrice, true))
+        case 'half':
+          return Math.max(minimumPrice, normalizeMarketPrice(current / 2, vendorPrice, false))
+        case 'increase':
+          return Math.min(MARKET_ORDER_MAX_PRICE, normalizeMarketPrice(current + getMarketPriceIncrement(current), vendorPrice, true))
+        case 'decrease': {
+          const step = getMarketPriceIncrement(Math.max(minimumPrice, current - 1))
+          return Math.max(minimumPrice, normalizeMarketPrice(current - step, vendorPrice, false))
+        }
+      }
+    })
+  }, [minimumPrice, vendorPrice])
+
+  const applyPricePreset = useCallback((preset: number) => {
+    setPrice(Math.min(MARKET_ORDER_MAX_PRICE, Math.max(minimumPrice, normalizeMarketPrice(preset, vendorPrice, true))))
+  }, [minimumPrice, vendorPrice])
 
   const quantityLimit = useMemo(() => {
     if (side === 'sell') {
       return Math.max(1, selectedAmount)
     }
-    const maxAffordable = Math.floor(spiritAmount / Math.max(1, effectivePrice))
+    const maxAffordable = Math.floor(spiritAmount / Math.max(1, price))
     return Math.max(1, maxAffordable)
-  }, [effectivePrice, selectedAmount, side, spiritAmount])
+  }, [price, selectedAmount, side, spiritAmount])
 
-  useEffect(() => {
-    if (!open || !instrument) return
-    const initialPrice = side === 'sell'
-      ? (bestAsk ?? minimumPrice)
-      : (bestBid ?? minimumPrice)
-    setPrice(String(Math.max(minimumPrice, initialPrice)))
-    setQuantity(1)
-  }, [bestAsk, bestBid, instrument, minimumPrice, open, side])
-
-  const totalPrice = effectivePrice * quantity
+  const totalPrice = price * quantity
   const tax = Math.ceil(totalPrice * 0.02)
   const netEarnings = Math.max(0, totalPrice - tax)
 
@@ -128,26 +154,22 @@ export const MarketOrderModal = memo(function MarketOrderModal({
     event.preventDefault()
     if (!instrument) return
 
-    const numPrice = Number.parseInt(price, 10)
-    const numQuantity = quantity
-
-    if (!Number.isSafeInteger(numPrice) || numPrice < vendorPrice || !Number.isSafeInteger(numQuantity) || numQuantity <= 0) {
+    if (!Number.isSafeInteger(price) || price < vendorPrice || !Number.isSafeInteger(quantity) || quantity <= 0) {
       setNotice(getT()('market.error.invalidInput'))
       return
     }
 
-    if (numPrice !== normalizeMarketPrice(numPrice, vendorPrice, false)) {
-      setPrice(String(normalizeMarketPrice(numPrice, vendorPrice, true)))
-      setNotice(getT()('market.error.priceAdjustedConfirm'))
+    if (side === 'sell' && isInstrumentEquipped) {
+      setNotice(getT()('app.inventoryPanel.equippedHint'))
       return
     }
 
-    if (side === 'sell' && numQuantity > selectedAmount) {
+    if (side === 'sell' && quantity > selectedAmount) {
       setNotice(getT()('market.error.sellExceedsBagStock'))
       return
     }
 
-    if (side === 'buy' && numPrice * numQuantity > spiritAmount) {
+    if (side === 'buy' && price * quantity > spiritAmount) {
       setNotice(getT()('market.error.insufficientSpirit'))
       return
     }
@@ -157,8 +179,8 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       orderId,
       itemId: instrument.itemId,
       side,
-      price: numPrice,
-      quantity: numQuantity,
+      price,
+      quantity,
       variant: null,
     })
 
@@ -167,7 +189,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       onClose()
       window.setTimeout(onPlaced, 120)
     }
-  }, [instrument, onClose, onPlaced, price, quantity, selectedAmount, setNotice, side, spiritAmount, vendorPrice])
+  }, [instrument, isInstrumentEquipped, onClose, onPlaced, price, quantity, selectedAmount, setNotice, side, spiritAmount, vendorPrice])
 
   if (!open || !instrument) return null
 
@@ -189,14 +211,14 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             {side === 'sell' ? t('market.placeSell') : t('market.placeBuy')}
           </span>
           <h2 id={titleId}>{instrument.name}</h2>
-          <span className="market-order-modal-category">{resolveItemCategoryLabel(instrument.subCategory || instrument.category, t)} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
+          <span className="market-order-modal-category">{metadata.category} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
         </div>
       </header>
 
       <div className="market-order-modal-item-preview">
         <ItemTile
           amount={selectedAmount}
-          category={resolveItemCategoryLabel(instrument.subCategory || instrument.category, t)}
+          category={metadata.category}
           className="inventory-cell"
           itemId={instrument.itemId}
           level={metadata.level}
@@ -210,7 +232,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           </div>
           <div className="market-order-modal-meta-row">
             <span>{t('market.vendorFloor')}{formatNumber(vendorPrice)}</span>
-            <span>{t('market.tickSize')}{formatNumber(getMarketPriceIncrement(effectivePrice))}</span>
+            <span>{t('market.tickSize')}{formatNumber(getMarketPriceIncrement(price))}</span>
           </div>
         </div>
       </div>
@@ -218,12 +240,12 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       <form className="market-order-modal-form" onSubmit={submitOrder}>
         <div className="market-order-modal-field">
           <div className="market-order-modal-field-header">
-            <label htmlFor="market-order-price-input">{t('market.unitPriceSpirit')}</label>
+            <label>{t('market.unitPriceSpirit')}</label>
             <div className="market-order-quick-prices" role="group" aria-label={t('market.quickFillAria')}>
               {bestBid !== undefined && (
                 <button
                   className="market-quick-btn market-quick-btn--bid"
-                  onClick={() => setPrice(String(bestBid))}
+                  onClick={() => applyPricePreset(bestBid)}
                   type="button"
                 >
                   {t('market.bidPrice', { price: formatNumber(bestBid) })}
@@ -232,7 +254,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
               {bestAsk !== undefined && (
                 <button
                   className="market-quick-btn market-quick-btn--ask"
-                  onClick={() => setPrice(String(bestAsk))}
+                  onClick={() => applyPricePreset(bestAsk)}
                   type="button"
                 >
                   {t('market.askPrice', { price: formatNumber(bestAsk) })}
@@ -240,27 +262,52 @@ export const MarketOrderModal = memo(function MarketOrderModal({
               )}
               <button
                 className="market-quick-btn"
-                onClick={() => setPrice(String(minimumPrice))}
+                onClick={() => applyPricePreset(minimumPrice)}
                 type="button"
               >
                 {t('market.floorPrice', { price: formatNumber(minimumPrice) })}
               </button>
             </div>
           </div>
-          <input
-            id="market-order-price-input"
-            min={minimumPrice}
-            onBlur={() => {
-              const parsed = Number.parseInt(price, 10)
-              if (Number.isSafeInteger(parsed)) {
-                setPrice(String(normalizeMarketPrice(parsed, vendorPrice, true)))
-              }
-            }}
-            onChange={event => setPrice(event.target.value)}
-            step={getMarketPriceIncrement(Number.parseInt(price, 10) || vendorPrice)}
-            type="number"
-            value={price}
-          />
+          {/* 价格步进控件：左侧 ÷2/−，中央只读价格显示，右侧 +/×2；−/+ 走 tick 档位，÷2/×2 折半翻倍后归一网格。 */}
+          <div className="market-order-price-stepper" role="group" aria-label={t('market.unitPriceSpirit')}>
+            <div className="market-order-price-stepper-side">
+              <button
+                aria-label={t('market.priceStepHalveAria')}
+                className="market-order-price-step-btn"
+                disabled={price <= minimumPrice}
+                onClick={() => adjustPrice('half')}
+                type="button"
+              >÷2</button>
+              <button
+                aria-label={t('market.priceStepDecreaseAria')}
+                className="market-order-price-step-btn"
+                disabled={price <= minimumPrice}
+                onClick={() => adjustPrice('decrease')}
+                type="button"
+              >−</button>
+            </div>
+            <div className="market-order-price-display" aria-live="polite">
+              <strong>{formatNumber(price)}</strong>
+              <span>{t('market.spiritUnit')}</span>
+            </div>
+            <div className="market-order-price-stepper-side">
+              <button
+                aria-label={t('market.priceStepIncreaseAria')}
+                className="market-order-price-step-btn"
+                disabled={price >= MARKET_ORDER_MAX_PRICE}
+                onClick={() => adjustPrice('increase')}
+                type="button"
+              >+</button>
+              <button
+                aria-label={t('market.priceStepDoubleAria')}
+                className="market-order-price-step-btn"
+                disabled={price >= MARKET_ORDER_MAX_PRICE}
+                onClick={() => adjustPrice('double')}
+                type="button"
+              >×2</button>
+            </div>
+          </div>
         </div>
 
         <div className="market-order-modal-field">
@@ -273,9 +320,10 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           <QuantitySelector
             ariaLabel={t('market.quantityAria')}
             compact={false}
+            leadingPresets={[1]}
             max={Math.max(1, quantityLimit)}
+            maxShortcut
             onChange={setQuantity}
-            presets={[1, 5, 10, 50, 100].filter(value => value <= quantityLimit)}
             value={Math.min(quantity, Math.max(1, quantityLimit))}
           />
         </div>
@@ -322,7 +370,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
             className={`market-order-btn-submit market-order-btn-submit--${side}`}
             disabled={
               connection !== 'online' ||
-              (side === 'sell' && (selectedAmount === 0 || quantity > selectedAmount)) ||
+              (side === 'sell' && (isInstrumentEquipped || selectedAmount === 0 || quantity > selectedAmount)) ||
               (side === 'buy' && (spiritAmount < totalPrice || totalPrice <= 0))
             }
             type="submit"

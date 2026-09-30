@@ -53,7 +53,7 @@
     - `Combat`（`PlayerCombatState`，含 `PlayerCombatSkillState` 技能冷却/吟唱）：当前生命/灵力、攻防与 `RegenCarrySeconds` 回复余量；
     - `Buffs`（`PlayerBuffState`）：当前生效 Buff 及到期边界；
     - `Loadout`（`PlayerLoadoutState`，含 `AutoUseSlotState`）：装备实例引用、已学功法与自动使用槽；
-    - `Settings`（`PlayerSettingsState`）：低频偏好（循环开关 `LoopEnabled`、语言等）；
+    - `Settings`（`PlayerSettingsState`）：低频偏好（循环开关 `LoopEnabled`、自动移动开关 `AutoTravelEnabled`、语言等）；
     - `ActionQueue`（`QueuedAction` 队列）：进行中与排队行动，`RemainingRepeats == -1` 为无限循环；
     - `Duel`（`PlayerDuelState`）：斗法遭遇计数、冷却、暂存区与战报账本（记账口径见 `docs/design/行动统计系统.md`）。
   - **脏标记驱动**：状态变更通过 `MarkDirty(PlayerSectionKind)` / `Touch` 记录脏分段；`DirtySections` 只读视图供宿主差量刷盘与增量协议投影使用。
@@ -74,7 +74,7 @@
   - **Section 编解码**：`SectionCodec`（Server 侧静态适配器）将分段载荷序列化为稳定 JSON 并计算 SHA-256；原始字节 ≥ 512B 且压缩有效时自适应使用 Brotli（落库 `codec` 为 `json` 或 `br-json`）。
   - **持久化记录**：`PlayerStateHead`（提交头：state_version、schema_version、last_simulated_at、game_data_fingerprint、checksum）+ `PlayerSectionSnapshot`（分段最新行：section_version、codec、raw/stored bytes、checksum），对应 `game.player_state_heads` / `game.player_state_sections`；待写载荷经 `platform.section_flush_queue` latest-only 合并落盘。
   - **协议投影**：`ProtocolSnapshotMapper` 将聚合状态映射为快照/增量 DTO，必须显式透传当前激活的 `GameDataCatalog`，禁止脱离配表伪造协议载荷。
-  - schema 版本不一致直接拒绝载入，不提供历史迁移。
+  - schema 版本不一致直接拒绝载入，不提供运行时历史迁移；本地库的旧版本存档经 `migrations/` 迁移链（存档标签 UPDATE 内嵌在对应版本文件中，`SectionCodec` bump 时 `PostgresSchema.Version` 同步 +1）由 `reset-outdated-players.sh` 启动链自动推进，不可迁移版本经控制台交互确认后清零。
 
 ---
 

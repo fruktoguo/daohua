@@ -108,7 +108,7 @@ interface PositionResult {
  */
 function computeSafeFloatingPosition(
   anchorRect: DOMRect,
-  floatingRect: DOMRect,
+  floatingSize: { width: number; height: number },
   placement: FloatingPlacement = 'bottom',
   options: {
     gap?: number
@@ -120,8 +120,8 @@ function computeSafeFloatingPosition(
   const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1920
   const viewportHeight = typeof window !== 'undefined' ? window.innerHeight : 1080
 
-  const floatingW = floatingRect.width
-  const floatingH = floatingRect.height
+  const floatingW = floatingSize.width
+  const floatingH = floatingSize.height
 
   // 1. 判断主要方向
   let primary: 'top' | 'bottom' | 'left' | 'right' = 'bottom'
@@ -301,6 +301,9 @@ export interface FloatingPopoverProps {
   quantityTitle?: string
   /** 触发器右键（contextmenu）回调：供「右键直接使用」等快捷交互挂载，回调内自行 preventDefault */
   onContextMenu?: (e: React.MouseEvent) => void
+  /** 外部锚点元素：提供后浮层以该元素为锚点做定位、判外点击排除与滚动跟随
+      （manual 受控模式下让待选列表等浮层贴靠任意槽位元素）；缺省用自身触发器 */
+  anchorEl?: HTMLElement | null
 }
 
 /**
@@ -357,6 +360,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       quantity,
       quantityTitle,
       onContextMenu,
+      anchorEl,
     },
     ref
   ) {
@@ -447,6 +451,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
     )
 
     const getEffectiveAnchorElement = useCallback((): HTMLElement | null => {
+      if (anchorEl) return anchorEl
       if (!anchorRef.current) return null
       const el: HTMLElement = anchorRef.current
       if (displayContents && el.firstElementChild) {
@@ -457,16 +462,26 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         return el.firstElementChild as HTMLElement
       }
       return el
-    }, [displayContents])
+    }, [anchorEl, displayContents])
 
     // 精确重新计算并更新位置
     const updatePosition = useCallback(() => {
       if (!isOpen || !anchorRef.current || !floatingRef.current) return
       const targetAnchor = getEffectiveAnchorElement()
       if (!targetAnchor) return
+      // 锚点已被 React 重挂载/移除时直接关闭：沿用游离矩形会把浮层夹到视口角隅，
+      // 表现为无征兆地跳到角落。
+      if (!targetAnchor.isConnected) {
+        setOpen(false)
+        return
+      }
       const anchorRect = targetAnchor.getBoundingClientRect()
-      const floatingRect = floatingRef.current.getBoundingClientRect()
-      const result = computeSafeFloatingPosition(anchorRect, floatingRect, placement, {
+      // 浮层尺寸必须取未变换布局尺寸：入场动画 scale(0.96→1) 会污染
+      // getBoundingClientRect，首次定位按缩小态算出的坐标要等下一次重测量
+      // （滚动/ResizeObserver/resize 触发）才跳回正确位置——即"打开一秒后突然移动"。
+      const floatingEl = floatingRef.current
+      const floatingSize = { width: floatingEl.offsetWidth, height: floatingEl.offsetHeight }
+      const result = computeSafeFloatingPosition(anchorRect, floatingSize, placement, {
         gap,
         padding,
       })
@@ -480,7 +495,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         }
         return result
       })
-    }, [gap, getEffectiveAnchorElement, isOpen, padding, placement])
+    }, [gap, getEffectiveAnchorElement, isOpen, padding, placement, setOpen])
 
     useLayoutEffect(() => {
       if (isOpen) {
@@ -510,7 +525,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       const handleScrollOrTouchMove = (event: Event) => {
         if (event.type === 'scroll') {
           const target = event.target
-          const anchor = anchorRef.current
+          const anchor = anchorEl ?? anchorRef.current
           if (!(target instanceof Node) || !anchor || !target.contains(anchor)) {
             return
           }
@@ -557,7 +572,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         }
         resizeObserver?.disconnect()
       }
-    }, [isOpen, setOpen, trigger, interactive, updatePosition])
+    }, [anchorEl, isOpen, setOpen, trigger, interactive, updatePosition])
 
     // 处理全局点击空白处关闭 (Outside PointerDown / Click) 以及 Escape 键关闭
     // 采用非侵入式被动关闭，绝对不拦截用户对其他按钮的点击
@@ -567,7 +582,11 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       const handlePointerDownOutside = (event: PointerEvent | MouseEvent) => {
         const target = event.target as Node | null
         if (!target) return
-        if (anchorRef.current?.contains(target) || floatingRef.current?.contains(target)) {
+        if (
+          anchorRef.current?.contains(target)
+          || anchorEl?.contains(target)
+          || floatingRef.current?.contains(target)
+        ) {
           return
         }
         // 静默关闭气泡，不阻止任何原生事件传递
@@ -588,7 +607,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         document.removeEventListener('pointerdown', handlePointerDownOutside, true)
         document.removeEventListener('keydown', handleKeyDown, true)
       }
-    }, [closeOnEsc, isOpen, setOpen])
+    }, [anchorEl, closeOnEsc, isOpen, setOpen])
 
     // 清理定时器
     useEffect(() => {

@@ -84,6 +84,17 @@ public static partial class SimulationEngine
                 step = Math.Min(step, untilCooldown);
             }
         }
+        // 暂存区最早到期时刻并入自然边界：模拟窗口正好切在结算点，与 Buff 到期同一调度口径。
+        if (player.Duel.ActiveDuelId is null && player.Duel.StagedItems.Count > 0)
+        {
+            var untilStaged = player.Duel.StagedItems[0].AcquiredAtUnixSeconds
+                + gameData.Duel.StagedSettleSeconds - nowUnix;
+            if (untilStaged > 1e-9)
+            {
+                naturalStep = Math.Min(naturalStep, untilStaged);
+                step = Math.Min(step, untilStaged);
+            }
+        }
         return new(step, naturalStep <= step + 1e-9, changed);
     }
 
@@ -137,14 +148,7 @@ public static partial class SimulationEngine
 
     private static DuelStagedItem[] SettleResourceItems(IPlayerResourceContext player,
         double nowUnixSeconds, double settleSeconds)
-    {
-        if (player.Duel.ActiveDuelId is not null || player.Duel.StagedItems.Count == 0) return [];
-        var settled = player.Duel.StagedItems.Where(item => item.AcquiredAtUnixSeconds + settleSeconds <= nowUnixSeconds).ToArray();
-        if (settled.Length == 0) return [];
-        foreach (var item in settled) player.Duel.StagedItems.Remove(item);
-        player.MarkDirty(PlayerSectionKind.Duel);
-        return settled;
-    }
+        => ActionReportBook.SettleStagedItems(player, nowUnixSeconds, settleSeconds);
 
     private static bool AdvanceIdleSkillResources(IPlayerResourceContext player, double stepSeconds)
     {

@@ -4,7 +4,8 @@
 # 主要职责: 对**本地开发数据库**按 platform.schema_version 依次执行 migrations/ 中落后的兼容性迁移脚本。
 #
 # 硬约束（AGENTS.md §3）:
-#   1. 本脚本只由人工显式调用；服务端启动门禁、verify.sh 与任何运行时装配都**不引用**它；
+#   1. 本脚本由本地开发启动链（reset-outdated-players.sh 经 dev.sh）自动调用，也可人工显式执行；
+#      服务端启动门禁、verify.sh 与任何运行时装配都**不引用**它；
 #   2. 代码中不存在 migration runner，空库启动永远由 PostgresSchema.Sql 直建当前版本；
 #   3. migrations/ 目录可整体删除，删除后本脚本只会提示「无迁移可用」。
 #
@@ -49,23 +50,36 @@ for arg in "$@"; do
   esac
 done
 
-if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-  printf '错误: 需要可用的 Docker 才能连接本地 PostgreSQL 容器。\n' >&2
-  exit 1
-fi
-
-if ! docker ps --format '{{.Names}}' | grep -qx "$DB_CONTAINER"; then
-  printf '错误: 本地数据库容器 %s 未运行，可先执行 docker compose up -d db。\n' "$DB_CONTAINER" >&2
-  exit 1
-fi
+DB_HOST="${DB_HOST:-127.0.0.1}"
+DB_PORT="${DB_PORT:-5432}"
+DB_PASSWORD="${DB_PASSWORD:-daohua-local-dev}"
 
 psql_exec() {
-  docker exec -i "$DB_CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME"
+  if command -v docker >/dev/null 2>&1 \
+      && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$DB_CONTAINER"; then
+    docker exec -i "$DB_CONTAINER" psql -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME"
+  elif command -v psql >/dev/null 2>&1; then
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME"
+  else
+    return 127
+  fi
 }
 
 psql_scalar() {
-  docker exec -i "$DB_CONTAINER" psql -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c "$1"
+  if command -v docker >/dev/null 2>&1 \
+      && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$DB_CONTAINER"; then
+    docker exec -i "$DB_CONTAINER" psql -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c "$1"
+  elif command -v psql >/dev/null 2>&1; then
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c "$1"
+  else
+    return 127
+  fi
 }
+
+if ! psql_scalar 'SELECT 1;' >/dev/null 2>&1; then
+  printf '错误: 无法连接本地 PostgreSQL（docker 容器 %s 与本机 psql 均不可用）。\n' "$DB_CONTAINER" >&2
+  exit 1
+fi
 
 # 1. 空库直接放行：启动服务端时由权威 DDL 直建当前版本，不走本脚本。
 has_version_table="$(psql_scalar "SELECT to_regclass('platform.schema_version') IS NOT NULL;")"

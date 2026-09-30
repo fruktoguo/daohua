@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback } from 'react'
 import { describeAbility, formatAbilityCategory, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition, MonsterDropDefinition } from '../game/types'
@@ -123,11 +123,14 @@ function ItemTooltipCardContent({
   const eqDef = eqDefOverride ?? findEquipmentInCatalog(equipmentCatalog, itemId) ?? resolveDefaultEquipmentDefinition(itemId)
 
   const baseMetadata = metadataOverride ?? resolveItemMetadata(itemId) ?? fallbackMetadata(itemId)
+  // 品类展示统一走细分解析：装备=槽位、功法书=秘籍/残卷、其余=配表细分 category
+  const subCategoryLabel = resolveItemCategoryLabel(
+    resolveItemSubCategory(itemId, itemDef, eqDef, baseMetadata.category), t)
   const rawMetadata = itemDef
     ? {
         ...baseMetadata,
         label: itemDef.name || baseMetadata.label,
-        category: resolveItemCategoryLabel(itemDef.category, t),
+        category: subCategoryLabel,
         level: itemDef.tier ?? baseMetadata.level,
         description: itemDef.description || baseMetadata.description,
       }
@@ -135,7 +138,7 @@ function ItemTooltipCardContent({
     ? {
         ...baseMetadata,
         label: eqDef.name || baseMetadata.label,
-        category: resolveItemCategoryLabel(eqDef.slot, t),
+        category: subCategoryLabel,
         level: eqDef.tier ?? baseMetadata.level,
       }
     : baseMetadata
@@ -925,7 +928,7 @@ export function ItemTile({
  *
  * 结合了 ItemTooltipTarget 与 ItemTile，用于背包格子的标准渲染。
  */
-export function ItemCard({ item, definition }: { item: InventoryItem; definition?: ItemDefinition }): React.JSX.Element {
+export function ItemCard({ item, definition, equipmentDefinition }: { item: InventoryItem; definition?: ItemDefinition; equipmentDefinition?: CombatEquipmentDefinition }): React.JSX.Element {
   // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
   const t = useT()
   const meta = resolveItemMetadata(item.itemId)
@@ -934,10 +937,10 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
     item.tier ?? meta?.level ?? 1,
   )
   return (
-    <ItemTooltipTarget amount={item.amount} className="inventory-item-anchor" definition={definition} itemId={item.itemId} metadata={metadata}>
+    <ItemTooltipTarget amount={item.amount} className="inventory-item-anchor" definition={definition} equipmentDefinition={equipmentDefinition} itemId={item.itemId} metadata={metadata}>
       <ItemTile
         amount={item.amount}
-        category={resolveItemCategoryLabel(item.category, t)}
+        category={resolveItemCategoryLabel(resolveItemSubCategory(item.itemId, definition, equipmentDefinition, item.subCategory), t)}
         className="inventory-cell"
         itemId={item.itemId}
         level={metadata.level}
@@ -949,69 +952,14 @@ export function ItemCard({ item, definition }: { item: InventoryItem; definition
 }
 
 /**
- * 物品瓦片引用组件 (ItemTileReference)
+ * 怪物掉落条目胶囊 (ItemDropReference)
  *
- * 仅凭 itemId 渲染与背包一致的 ItemTile 方块（图标整块 / 品质边框 / 右下数量角标），
- * 并附带完整悬浮信息气泡；供账本、记录等只持有 itemId + 数量的场景使用。
- * className 必须指向已在 selection-grid.css 登记的槽位锚点类（如 battle-report-item-anchor），
- * 以获得固定槽位尺寸与 hover 高亮。
- */
-export function ItemTileReference({
-  itemId,
-  amount,
-  bottomRightLabel,
-  className = '',
-}: {
-  /** 物品唯一 ID */
-  itemId: string
-  /** 涉及数量（右下角数量角标） */
-  amount?: number
-  /** 右下角自定义角标（覆盖默认数量文本） */
-  bottomRightLabel?: ReactNode
-  /** 悬浮触发器锚点类名 */
-  className?: string
-}): React.JSX.Element {
-  // 订阅语言状态：resolveItemMetadata 返回的文案随语言切换刷新。
-  useT()
-  const itemDef = useGameStore((state) => findItemInCatalog(state.items, itemId))
-  const eqDef = useGameStore((state) => findEquipmentInCatalog(state.equipment, itemId))
-  const meta = resolveItemMetadata(itemId)
-  const metadata = withItemGrade(
-    meta ?? fallbackMetadata(itemId),
-    itemDef?.tier ?? eqDef?.tier ?? meta?.level ?? 1,
-  )
-  return (
-    <ItemTooltipTarget
-      amount={amount}
-      className={className}
-      definition={itemDef}
-      equipmentDefinition={eqDef}
-      itemId={itemId}
-      metadata={metadata}
-    >
-      <ItemTile
-        amount={amount}
-        bottomRightLabel={bottomRightLabel}
-        category={itemDef?.category ?? eqDef?.slot ?? metadata.category}
-        className=""
-        itemId={itemId}
-        level={metadata.level}
-        name={itemDef?.name || eqDef?.name || metadata.label}
-        rarity={metadata.rarity}
-      />
-    </ItemTooltipTarget>
-  )
-}
-
-/**
- * 怪物掉落条目瓦片 (ItemDropTile)
- *
- * 缩小版物品瓦片 + 瓦片下方居中概率小字：右下角 `×数量` 角标展示掉落数量区间
- * （min=max 显示单值，否则 `min-max`），下方标注掉落概率百分比。
+ * 与暂存区/账本同款的复合物品胶囊：行内小图标 + 名称 + `×数量区间` 下划线值
+ * （min=max 显示单值，否则 `min-max`）+ 胶囊尾部括号内掉落概率小字。
  * 对应服务端「先判定后数量」结算语义：先按 dropChance 判定是否掉落，
  * 命中后再在 [minQuantity, maxQuantity] 整数区间内均匀抽取数量。
  */
-export function ItemDropTile({
+export function ItemDropReference({
   drop,
   className = '',
 }: {
@@ -1020,20 +968,22 @@ export function ItemDropTile({
   /** 外部样式类名 */
   className?: string
 }): React.JSX.Element {
-  const quantityLabel = drop.minQuantity === drop.maxQuantity
-    ? `×${formatInteger(drop.minQuantity)}`
-    : `×${formatInteger(drop.minQuantity)}-${formatInteger(drop.maxQuantity)}`
+  const quantityText = drop.minQuantity === drop.maxQuantity
+    ? formatInteger(drop.minQuantity)
+    : `${formatInteger(drop.minQuantity)}-${formatInteger(drop.maxQuantity)}`
   // 概率小数比率转百分数并去尾零：1 -> 100%、0.02 -> 2%、0.001 -> 0.1%
   const chanceLabel = `${+(drop.dropChance * 100).toFixed(2)}%`
   return (
-    <span className={`world-monster-drop ${className}`.trim()}>
-      <ItemTileReference
-        bottomRightLabel={quantityLabel}
-        className="world-monster-drop-anchor"
-        itemId={drop.itemId}
-      />
-      <span className="world-monster-drop-chance">{chanceLabel}</span>
-    </span>
+    <ItemReference
+      className={className}
+      itemId={drop.itemId}
+      valueContent={
+        <>
+          <span className="underlined-value">× {quantityText}</span>
+          <span className="world-monster-drop-chance">（{chanceLabel}）</span>
+        </>
+      }
+    />
   )
 }
 
@@ -1068,6 +1018,7 @@ export function ItemReference({
   itemId,
   amount,
   label,
+  valueContent,
   className = '',
 }: {
   /** 物品唯一 ID */
@@ -1076,6 +1027,8 @@ export function ItemReference({
   amount?: number
   /** 覆写显示文本（默认取物品名称） */
   label?: string
+  /** 覆写胶囊值区内容（默认 `×数量` 下划线值；提供时即便无 amount 也渲染复合胶囊） */
+  valueContent?: ReactNode
   /** 额外样式类名 */
   className?: string
 }): React.JSX.Element {
@@ -1086,7 +1039,7 @@ export function ItemReference({
   const displayLabel = label ?? metadata.label
   const tone = rarityToTone(metadata.rarity)
 
-  if (amount !== undefined) {
+  if (amount !== undefined || valueContent !== undefined) {
     return (
       <ItemTooltipTarget
         amount={amount}
@@ -1096,9 +1049,11 @@ export function ItemReference({
       >
         <ItemIcon itemId={itemId} />
         <span className="capsule-label">{displayLabel}</span>
-        <span className="underlined-value">
-          × <UnitNumber disableTooltip value={amount} />
-        </span>
+        {valueContent ?? (amount !== undefined && (
+          <span className="underlined-value">
+            × <UnitNumber disableTooltip value={amount} />
+          </span>
+        ))}
       </ItemTooltipTarget>
     )
   }

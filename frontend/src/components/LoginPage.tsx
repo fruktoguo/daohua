@@ -364,9 +364,6 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
           </div>
         )}
 
-        <footer className="login-footer">
-          <span>{t('app.login.securityFooter')}</span>
-        </footer>
       </div>
     </div>
   )

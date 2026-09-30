@@ -3,6 +3,7 @@ using System.Text.Json;
 using Domain.Combat;
 using Domain.Common;
 using Domain.GameData;
+using Domain.Persistence;
 using Domain.Player;
 using Domain.World;
 using Protocol;
@@ -243,5 +244,46 @@ public sealed class ProtocolAttributesPointsTests
             "fireDamageReductionPoints", "earthDamageReductionPoints",
         })
             Assert.True(root.TryGetProperty(key, out _), $"缺少协议字段 {key}");
+    }
+
+    /// <summary>
+    /// 按需属性一次性交付门禁：观察目标命中下标的敌怪才投影 attributes 并触发出站记账回调
+    /// （供会话解除交付武装）；未登记观察目标时同一快照不携带属性、不触发回调，
+    /// 血蓝分母等实时标量则不受观察态影响常驻下发。
+    /// </summary>
+    [Fact]
+    public void ToSnapshot_InspectedEnemy_ProjectsAttributesOnceWithEmissionMark()
+    {
+        var gameData = GameDataCatalog.LoadEmbedded();
+        var playerId = Guid.NewGuid();
+        var aggregate = PlayerAggregate.Create(new PlayerId(playerId), new AccountId(Guid.NewGuid()), "观察", DateTimeOffset.UtcNow, "fp");
+        var action = new QueuedActionState(
+            Guid.NewGuid(),
+            new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1),
+            DateTimeOffset.UtcNow, ActionQueueStatus.Running, 0, -1, 0,
+            new CombatExpeditionState(
+                "encounter.qi-beast", CombatExpeditionPhase.Combat, 0, 0, 1,
+                15.47, 113, 60, 16, 15, 0, CombatOutcome.Running, 1,
+                [new ExpeditionEnemyState("enemy.wood-spirit",
+                    new CombatantSnapshot(362, 4.75, 15.99, 7, 0, 1))])
+            { PlayerState = new CombatantSnapshot(113, 60, 16, 15, 0) });
+        var restored = PlayerAggregate.Restore(aggregate.ExportState() with { Actions = [action] });
+        var runtime = new PlayerRuntimeSnapshot(playerId, restored.AccountId.Value.ToString("D"),
+            restored.DisplayName, 1, restored.LastSimulatedAt, restored.ExportState(), 0, []);
+
+        var projected = 0;
+        var inspected = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData, 0, () => projected++);
+        Assert.Equal(1, projected);
+        var inspectedEnemies = inspected.Sections.Single(section => section.Section == PlayerSectionKinds.ActionQueue)
+            .Data[0].GetProperty("expedition").GetProperty("enemies");
+        Assert.Equal(JsonValueKind.Object, inspectedEnemies[0].GetProperty("attributes").ValueKind);
+
+        var uninspected = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData);
+        Assert.Equal(1, projected);
+        var plainEnemies = uninspected.Sections.Single(section => section.Section == PlayerSectionKinds.ActionQueue)
+            .Data[0].GetProperty("expedition").GetProperty("enemies");
+        Assert.Equal(JsonValueKind.Null, plainEnemies[0].GetProperty("attributes").ValueKind);
+        Assert.Equal(JsonValueKind.Number, plainEnemies[0].GetProperty("maxHitpoints").ValueKind);
+        Assert.Equal(JsonValueKind.Number, plainEnemies[0].GetProperty("maxManapoints").ValueKind);
     }
 }

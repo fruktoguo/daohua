@@ -267,11 +267,17 @@ public sealed class EcsPlayerRuntimeAdapter(
                     }
                     case "queue.configure":
                     {
-                        if (!payload.TryGetProperty("loopEnabled", out var loopEnabled)
-                            || loopEnabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "循环设置无效。", before);
-                        var enabled = loopEnabled.GetBoolean();
-                        touched = ecs.MutatePlayer(playerId, aggregate => aggregate.SetLoopEnabled(enabled));
+                        var hasLoop = payload.TryGetProperty("loopEnabled", out var loopEnabled);
+                        var hasAutoTravel = payload.TryGetProperty("autoTravelEnabled", out var autoTravelEnabled);
+                        if ((hasLoop && loopEnabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                            || (hasAutoTravel && autoTravelEnabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                            || (!hasLoop && !hasAutoTravel))
+                            return new PlayerCommandResult(false, "INVALID_PAYLOAD", "队列设置无效。", before);
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            if (hasLoop) aggregate.SetLoopEnabled(loopEnabled.GetBoolean());
+                            if (hasAutoTravel) aggregate.SetAutoTravelEnabled(autoTravelEnabled.GetBoolean());
+                        });
                         break;
                     }
                     case "queue.move":
@@ -309,7 +315,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "INVALID_CONSUMABLE", "物品不适用于该自动使用槽。", before);
                         if (group == AutoUseSlotState.SlotGroupPotion
                             && (slotKind != ActionKind.Combat
-                                || itemId is not null && (slotItem!.Category != ConsumableDefinition.CategoryPill
+                                || itemId is not null && (slotItem!.DisplaySubCategory != ConsumableDefinition.CategoryPill
                                     || slotItem.Consumable!.IsContinuous)))
                             return new PlayerCommandResult(false, "INVALID_CONSUMABLE", "药品栏只能装配药品类即时消耗品。", before);
                         var autoActionType = actionType ?? string.Empty;
@@ -330,6 +336,12 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var isFragment = itemId?.StartsWith("item.fragment.", StringComparison.Ordinal) == true;
                         if (itemId is null || (!isTome && !isFragment) || !gameData.RawItems.ContainsKey(itemId))
                             return new PlayerCommandResult(false, "INVALID_MANUAL", "请选择完整功法秘籍或残卷。", before);
+                        // 批量研读：quantity 缺省 1，与逐本点击严格等价（同一事务内逐本结算）。
+                        var learnQuantity = payload.TryGetProperty("quantity", out var learnQuantityElement)
+                            && learnQuantityElement.TryGetDouble(out var parsedLearnQuantity)
+                            ? parsedLearnQuantity : 1d;
+                        if (!double.IsFinite(learnQuantity) || learnQuantity < 1 || learnQuantity != Math.Floor(learnQuantity))
+                            return new PlayerCommandResult(false, "INVALID_QUANTITY", "研读数量无效。", before);
                         var prefix = isTome ? "item.tome." : "item.fragment.";
                         var abilityId = new AbilityId("ability." + itemId[prefix.Length..]);
                         if (!gameData.Abilities.ContainsKey(abilityId.Value))
@@ -339,10 +351,13 @@ public sealed class EcsPlayerRuntimeAdapter(
                             return new PlayerCommandResult(false, "ABILITY_NOT_LEARNED", "必须先习得对应功法才能研读残卷。", before);
                         await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
                         var dirtyBefore = ecs.GetDirtySections(playerId);
+                        var experiencePerBook = isTome ? 10_000d : 500d;
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
-                            if (alreadyLearned) aggregate.GrantAbilityExperience(abilityId, isTome ? 10_000 : 500);
-                            else aggregate.LearnAbility(abilityId);
+                            if (!alreadyLearned) aggregate.LearnAbility(abilityId);
+                            var experienceBooks = alreadyLearned ? learnQuantity : learnQuantity - 1;
+                            for (var i = 0; i < experienceBooks; i++)
+                                aggregate.GrantAbilityExperience(abilityId, experiencePerBook);
                         });
                         var mutated = ToSnapshot(ecs.ExportSnapshot(playerId));
                         var learnNow = DateTimeOffset.UtcNow;
@@ -352,8 +367,8 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var learnReceipt = CreateReceipt(playerId, requestId, command, payloadHash, mutated.StateVersion);
                         var learnResult = await economy.CommitAsync(new EconomyTransactionRequest(
                             requestId, $"ability-learn:{playerId:D}:{requestId:D}", command, playerId,
-                            [new Server.Clean.AssetDelta(playerId, itemId, string.Empty, -1)], learnNow,
-                            JsonSerializer.SerializeToUtf8Bytes(new { abilityId = abilityId.Value }), writes, [learnReceipt]),
+                            [new Server.Clean.AssetDelta(playerId, itemId, string.Empty, -learnQuantity)], learnNow,
+                            JsonSerializer.SerializeToUtf8Bytes(new { abilityId = abilityId.Value, quantity = learnQuantity }), writes, [learnReceipt]),
                             cancellationToken).ConfigureAwait(false);
                         if (!learnResult.Applied)
                         {
@@ -531,6 +546,9 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var quantity = payload.TryGetProperty("quantity", out var quantityElement) && quantityElement.TryGetDouble(out var parsedQuantity) ? parsedQuantity : double.NaN;
                         if (string.IsNullOrWhiteSpace(assetId) || !Enum.TryParse<MarketSide>(sideText, true, out var side))
                             return new PlayerCommandResult(false, "INVALID_ORDER", "订单品种或方向无效。", before);
+                        // 与 item.discard/item.sell 同一防线：已穿戴装备不可挂单出售（装备仍计钱包持存，须先卸下）。
+                        if (side == MarketSide.Sell && before.State.Loadout.Equipment.Any(slot => slot.ItemId == assetId))
+                            return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法挂单出售，请先卸下。", before);
                         await marketRuntime.PlaceAsync(new PlaceOrderRequest(new OrderId(orderId), new PlayerId(playerId),
                             new MarketInstrument(new ItemId(assetId), variant), side, price, quantity,
                             DateTimeOffset.UtcNow, new IdempotencyKey($"market:{playerId:D}:{orderId:D}")), cancellationToken).ConfigureAwait(false);

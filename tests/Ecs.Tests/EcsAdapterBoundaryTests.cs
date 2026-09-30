@@ -85,6 +85,50 @@ public sealed class EcsAdapterBoundaryTests
         Assert.Equal(PresenceState.Online, restored.State.Presence);
     }
 
+    [Fact]
+    public async Task BatchAbilityLearnDebitsAllManualsAndGrantsPerBookExperience()
+    {
+        var fixture = CreateFixture(
+            new AssetBalanceRecord(PlayerId: Guid.Empty, AssetId: "item.tome.heavy-slash", Variant: "", Quantity: 5, Version: 1),
+            new AssetBalanceRecord(PlayerId: Guid.Empty, AssetId: "item.fragment.heavy-slash", Variant: "", Quantity: 3, Version: 1));
+        await using var adapter = fixture.Adapter;
+
+        // 未习得批量研读 5 本秘籍：首本领悟、其余 4 本各 +10000 经验，钱包整笔扣 5。
+        var tomePayload = JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash", quantity = 5 }, ProtocolJson.Options);
+        var learned = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", tomePayload, 0, Guid.NewGuid());
+
+        Assert.True(learned.Success, learned.Message);
+        Assert.Contains(new AbilityId("ability.heavy-slash"), learned.Snapshot.State.LearnedAbilities);
+        Assert.Equal(40_000d, learned.Snapshot.State.Loadout.AbilityExperiences!["ability.heavy-slash"]);
+        var snapshot = await adapter.LoadAsync(fixture.PlayerId);
+        Assert.Equal(0, snapshot.Assets.Single(asset => asset.AssetId == "item.tome.heavy-slash").Quantity);
+
+        // 已习得后批量研读 3 本残卷：每本 +500，钱包扣 3。
+        var fragmentPayload = JsonSerializer.SerializeToElement(new { itemId = "item.fragment.heavy-slash", quantity = 3 }, ProtocolJson.Options);
+        var fragments = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", fragmentPayload, 0, Guid.NewGuid());
+
+        Assert.True(fragments.Success, fragments.Message);
+        Assert.Equal(41_500d, fragments.Snapshot.State.Loadout.AbilityExperiences!["ability.heavy-slash"]);
+        snapshot = await adapter.LoadAsync(fixture.PlayerId);
+        Assert.Equal(0, snapshot.Assets.Single(asset => asset.AssetId == "item.fragment.heavy-slash").Quantity);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2.5)]
+    public async Task AbilityLearnRejectsNonPositiveOrFractionalQuantity(double quantity)
+    {
+        var fixture = CreateFixture(new AssetBalanceRecord(PlayerId: Guid.Empty, AssetId: "item.tome.heavy-slash", Variant: "", Quantity: 5, Version: 1));
+        await using var adapter = fixture.Adapter;
+        var payload = JsonSerializer.SerializeToElement(new { itemId = "item.tome.heavy-slash", quantity }, ProtocolJson.Options);
+
+        var result = await adapter.ExecuteAsync(fixture.PlayerId, "ability.learn", payload, 0, Guid.NewGuid());
+
+        Assert.False(result.Success);
+        Assert.Equal("INVALID_QUANTITY", result.Code);
+        Assert.Empty(fixture.Economy.Requests);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

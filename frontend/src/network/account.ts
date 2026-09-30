@@ -10,6 +10,8 @@ export interface StoredAccountInfo {
   playerId: string
   account: string
   name: string
+  /** 角色序号（服务端下发的玩家自增编号，旧缓存缺省为 0） */
+  sequenceId?: number
   lastLoginAt: number
 }
 
@@ -25,6 +27,8 @@ export interface AuthResponseDto {
   account?: string
   /** 显示道号 */
   displayName?: string
+  /** 角色序号（服务端自增编号） */
+  sequenceId?: number
   /** 服务端返回的错误/提示文案 */
   message?: string
 }
@@ -34,6 +38,7 @@ interface ServerAuthDto {
   playerId: string
   account: string
   displayName: string
+  sequenceId?: number
 }
 
 const CURRENT_ACCOUNT_KEY = 'daohua.account.v1'
@@ -92,6 +97,7 @@ function authSuccess(dto: ServerAuthDto): AuthResponseDto {
     playerId: dto.playerId,
     account: dto.account,
     displayName: dto.displayName,
+    sequenceId: dto.sequenceId,
   }
 }
 
@@ -121,6 +127,19 @@ export async function requestLogin(account: string, password: string): Promise<A
       body: JSON.stringify({ account: account.trim(), password }),
     })
     return authSuccess(dto)
+  } catch (error) {
+    return authFailure(error)
+  }
+}
+
+/** 修改当前账号登录密码；账号身份由会话 Cookie 承载，成功返回 204。服务端会吊销其他设备会话。 */
+export async function requestChangePassword(currentPassword: string, newPassword: string): Promise<AuthResponseDto> {
+  try {
+    await requestJson('/api/v1/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    })
+    return { success: true }
   } catch (error) {
     return authFailure(error)
   }
@@ -165,6 +184,7 @@ function accountFromResponse(response: AuthResponseDto): StoredAccountInfo {
     playerId: response.playerId,
     account: response.account,
     name: response.displayName || response.account,
+    sequenceId: response.sequenceId ?? 0,
     lastLoginAt: Date.now(),
   }
 }

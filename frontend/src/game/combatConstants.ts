@@ -539,24 +539,24 @@ export const REALM_LEVEL_CUMULATIVE_EXP: readonly number[] = (() => {
 
 /**
  * 根据总修为或当前层修为+显式境界等级计算境界进度与当前等级
- * @param totalSpirit 角色累计获得的总修为（或当前层获得的修为）
+ * @param totalExperience 角色累计获得的总修为（或当前层获得的修为）
  * @param explicitRealmLevel 可选的服务端权威境界等级 (1..127)
  * @returns 包含当前等级、当前重进度、下一重所需修为、百分比与带小数精度的总等级
  */
-export function calculateRealmProgress(totalSpirit = 0, explicitRealmLevel?: number): {
+export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?: number): {
   level: number
   currentLayerExp: number
   expToNext: number
   progressPercentage: number
   totalLevel: number
 } {
-  const spirit = Math.max(0, totalSpirit)
+  const experience = Math.max(0, totalExperience)
   let level = 1
 
   if (typeof explicitRealmLevel === 'number' && Number.isFinite(explicitRealmLevel) && explicitRealmLevel >= 1) {
     level = Math.min(MAX_REALM_LEVEL, Math.floor(explicitRealmLevel))
     const expToNext = level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
-    const currentLayerExp = expToNext > 0 ? Math.min(expToNext, spirit) : 0
+    const currentLayerExp = expToNext > 0 ? Math.min(expToNext, experience) : 0
 
     if (expToNext <= 0 || level >= MAX_REALM_LEVEL) {
       return {
@@ -580,13 +580,13 @@ export function calculateRealmProgress(totalSpirit = 0, explicitRealmLevel?: num
     }
   }
 
-  while (level < MAX_REALM_LEVEL && spirit >= REALM_LEVEL_CUMULATIVE_EXP[level + 1]) {
+  while (level < MAX_REALM_LEVEL && experience >= REALM_LEVEL_CUMULATIVE_EXP[level + 1]) {
     level++
   }
 
   const baseExp = REALM_LEVEL_CUMULATIVE_EXP[level]
   const expToNext = level < MAX_REALM_LEVEL ? REALM_LEVEL_EXP_TO_NEXT[level - 1] : 0
-  const currentLayerExp = spirit - baseExp
+  const currentLayerExp = experience - baseExp
 
   if (expToNext <= 0 || level >= MAX_REALM_LEVEL) {
     return {
@@ -636,12 +636,12 @@ export interface RealmInfo {
 
 /**
  * 根据总修为值与显式境界等级计算当前的 大境界、位阶、小境界 及专属棱形徽章信息
- * @param spirit 角色累计修为（或当前层修为）
+ * @param experience 角色累计修为（或当前层修为）
  * @param explicitRealmLevel 可选的服务端权威境界等级
  * @returns 境界展示数据
  */
-export function calculateRealmInfo(spirit = 0, explicitRealmLevel?: number): RealmInfo {
-  const progress = calculateRealmProgress(spirit, explicitRealmLevel)
+export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number): RealmInfo {
+  const progress = calculateRealmProgress(experience, explicitRealmLevel)
   const totalLevel = progress.totalLevel
   const layerProgress = progress.progressPercentage
   // 境界名属展示文本，统一走 i18n；rankChar 为徽章单字字形，双语共用。
@@ -812,13 +812,13 @@ export function registerBaseAttributeAnchors(anchors: readonly BaseAttributeAnch
 
 /**
  * 根据角色累计修为与显式境界等级计算基础战斗属性池（通过分段线性插值）
- * @param spirit 累计修为（或当前层修为）
+ * @param experience 累计修为（或当前层修为）
  * @param explicitRealmLevel 可选的服务端权威境界等级
  * @returns 角色当前境界对应的基础属性池
  */
-export function calculateBaseAttributes(spirit = 0, explicitRealmLevel?: number): BaseAttributePool {
+export function calculateBaseAttributes(experience = 0, explicitRealmLevel?: number): BaseAttributePool {
   if (BASE_FLAT_ANCHORS.length === 0) throw new Error('基础属性目录尚未加载。')
-  const progress = calculateRealmProgress(spirit, explicitRealmLevel)
+  const progress = calculateRealmProgress(experience, explicitRealmLevel)
   const level = Math.max(1.0, progress.totalLevel)
   // 品阶档与境界结构对齐：凡俗武道（≤18）为 1~2 阶，此后每 12 级修真境界升一档。
   let tier = 1

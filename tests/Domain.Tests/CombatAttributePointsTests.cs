@@ -128,7 +128,7 @@ public sealed class CombatAttributePointsTests
         Assert.Equal(10, resolved.Effects.HpDrainPoints);
         Assert.Equal(50, resolved.Effects.HealingBonusPoints);
         // 点数原样透传到战斗单位属性（ToCombatant 不缩放）。
-        var stats = resolved.ToCombatant();
+        var stats = resolved.ToCombatant(0);
         Assert.Equal(resolved.PhysicalDamageBonusPoints, stats.PhysicalDamageBonusPoints);
         Assert.Equal(resolved.FireDamageReductionPoints, stats.FireDamageReductionPoints);
         Assert.Equal(resolved.Critical, stats.Critical);

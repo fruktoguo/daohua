@@ -4,6 +4,7 @@ using Domain.Common;
 using Domain.GameData;
 using Domain.Player;
 using Domain.Simulation;
+using Domain.World;
 using YuoCore.Ecs;
 
 namespace DaoHua.Ecs;
@@ -118,6 +119,44 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
         if (actions[0].Status == ActionQueueStatus.Pending) actions[0].Status = ActionQueueStatus.Running;
         TouchActionQueue();
         return true;
+    }
+
+    /// <summary>
+    /// 与 <see cref="PlayerAggregate.EnqueuePriority"/> 同一语义：同类行动去重归档、挂起运行中队首、
+    /// 新行动插入队首立即 Running；自动移动与 world.travel 命令共用此通道。
+    /// </summary>
+    public IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog actionCatalog,
+        TravelActionState? travel = null, bool incrementVersion = true)
+    {
+        ArgumentNullException.ThrowIfNull(actionCatalog);
+        if (intent is null || !intent.ActionId.IsValid)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
+        if (!actionCatalog.Contains(intent.ActionId))
+            throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
+        var actions = Queue.Actions;
+        for (var i = actions.Count - 1; i >= 0; i--)
+        {
+            if (actions[i].Intent.ActionId == intent.ActionId)
+            {
+                ActionReportBook.ArchiveActionReport(this, actions[i].Id,
+                    at.ToUnixTimeMilliseconds() / 1000d, catalog.Duel.MaxBattleReports);
+                actions.RemoveAt(i);
+            }
+        }
+        if (actions.Count >= PlayerAggregate.MaxActionQueueLength)
+            throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {PlayerAggregate.MaxActionQueueLength} 项。");
+        if (actions.Count > 0 && actions[0].Status == ActionQueueStatus.Running)
+            actions[0].Status = ActionQueueStatus.Pending;
+        var action = new EcsActionState(Guid.NewGuid(), intent)
+        {
+            EnqueuedAt = at,
+            Status = ActionQueueStatus.Running,
+            Travel = travel
+        };
+        actions.Insert(0, action);
+        if (incrementVersion) TouchActionQueue();
+        else MarkDirty(PlayerSectionKind.ActionQueue);
+        return action;
     }
 
     /// <summary>仅在网络或落盘快照边界导出斗法分段，行动边界不调用此方法。</summary>

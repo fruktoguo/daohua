@@ -28,13 +28,20 @@ if (combined.includes('</script>')) {
 }
 
 const html = readFileSync(HTML, 'utf8');
-const replaced = html.replace(
-  /(<script type="text\/markdown" id="default-markdown">)[\s\S]*?(<\/script>)/,
-  `$1\n${combined}\n$2`,
-);
-if (replaced === html) {
+// 必须用 replacer 函数：替换字符串模式下语料中的 $$、$'、$& 会被再次解释，
+// 曾导致内嵌块反复自我嵌套膨胀（含 LaTeX $$ 语料时必现）。
+const blockRe = /(<script type="text\/markdown" id="default-markdown">)[\s\S]*?(<\/script>)/;
+if (!blockRe.test(html)) {
   console.error('index.html 未找到 default-markdown 内嵌块');
   process.exit(1);
 }
-writeFileSync(HTML, replaced);
-console.log(`已同步：manifest.json + 内嵌快照（${files.length} 篇，${combined.length} 字）`);
+const replaced = html.replace(
+  blockRe,
+  (_match, open, close) => `${open}\n${combined}\n${close}`,
+);
+if (replaced === html) {
+  console.log(`已同步：manifest.json（内嵌快照无变化，${files.length} 篇）`);
+} else {
+  writeFileSync(HTML, replaced);
+  console.log(`已同步：manifest.json + 内嵌快照（${files.length} 篇，${combined.length} 字）`);
+}

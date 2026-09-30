@@ -7,7 +7,7 @@
     "durationSeconds": 10,
     "yields": [
       {
-        "kind": "qi",
+        "kind": "experience",
         "per": "second",
         "amount": 1
       },

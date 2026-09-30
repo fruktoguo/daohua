@@ -3,8 +3,10 @@ namespace Server.Clean;
 /// <summary>schema v4 的一次性建库脚本，不迁移旧库。</summary>
 public static class PostgresSchema
 {
-    /// <summary>当前 schema 版本；与 platform.schema_version 表中的最大版本必须一致。</summary>
-    public const int Version = 4;
+    /// <summary>当前本地库内容版本（表结构 + 存档载荷标签）；与 platform.schema_version 表中的
+    /// 最大版本必须一致。约定：SectionCodec.CurrentSchemaVersion 每次升级时本常量同步 +1，
+    /// 存档标签 UPDATE 内嵌在 migrations/NNNN_vX_to_vY.sql 对应版本文件中。</summary>
+    public const int Version = 5;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -28,6 +30,7 @@ public static class PostgresSchema
 
     CREATE TABLE IF NOT EXISTS identity.players (
         player_id uuid PRIMARY KEY,
+        player_seq bigint GENERATED ALWAYS AS IDENTITY,
         account_id uuid NOT NULL REFERENCES identity.accounts(account_id),
         display_name varchar(64) NOT NULL,
         display_name_normalized varchar(128) NOT NULL UNIQUE,
@@ -393,7 +396,7 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (4, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (5, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 
@@ -450,7 +453,7 @@ public static class PostgresSchemaBootstrap
         };
         var value = await command.ExecuteScalarAsync(cancellationToken);
         if (value is not int version || version != PostgresSchema.Version)
-            throw new InvalidOperationException($"PostgreSQL schema 版本不匹配，要求 v{PostgresSchema.Version}。请重建数据库，或由运维显式执行 migrations/ 目录中的升级脚本。");
+            throw new InvalidOperationException($"PostgreSQL schema 版本不匹配，要求 v{PostgresSchema.Version}。请重建数据库、执行 migrations/ 目录中的升级脚本（本地库可运行 scripts/migrate-local-db.sh 或由 dev.sh 启动链自动执行）。");
     }
 }
 

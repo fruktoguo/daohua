@@ -22,9 +22,7 @@
         "maxQuantity": 1
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10
+    "experience": 10
   },
   {
     "id": "enemy.wood-spirit",
@@ -74,12 +72,10 @@
         "triggerHpRatio": 1.0
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10,
     "modifiers": {
       "woodDamageReductionPoints": 10.8
-    }
+    },
+    "experience": 10
   },
   {
     "id": "enemy.fire-spirit",
@@ -129,11 +125,9 @@
         "triggerHpRatio": 1.0
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10,
     "modifiers": {
       "fireDamageReductionPoints": 13.0
-    }
+    },
+    "experience": 10
   }
 ]

@@ -23,7 +23,7 @@
 │    ├── Combat ───────> 生命/灵力、攻防、RegenCarrySeconds、技能状态     │
 │    ├── Buffs ────────> 生效 Buff 与到期边界                            │
 │    ├── Loadout ──────> 装备实例引用、已学功法、自动使用槽               │
-│    ├── Settings ─────> 循环开关 LoopEnabled、语言等低频偏好             │
+│    ├── Settings ─────> 循环/自动移动开关 LoopEnabled/AutoTravelEnabled、语言等低频偏好 │
 │    ├── ActionQueue ──> 行动队列（RemainingRepeats == -1 为无限循环）    │
 │    └── Duel ─────────> 斗法遭遇计数、冷却、暂存区与战报账本             │
 │    ※ 资产（灵石/物品余额/装备实例）不在聚合内，走 AssetWallet+economy   │
@@ -53,7 +53,7 @@
 3. **`Combat`（`PlayerCombatState`）**：当前生命/灵力、攻防面板、`RegenCarrySeconds` 回复余量、`PlayerCombatSkillState`（技能冷却与吟唱）。
 4. **`Buffs`（`PlayerBuffState`）**：当前生效 Buff 及到期边界。
 5. **`Loadout`（`PlayerLoadoutState`）**：已装备物品实例引用、已学功法槽、自动使用槽（`AutoUseSlotState`）。
-6. **`Settings`（`PlayerSettingsState`）**：低频偏好——**循环开关 `LoopEnabled` 在 Settings，不在 ActionQueue**；语言、通知等。
+6. **`Settings`（`PlayerSettingsState`）**：低频偏好——**循环开关 `LoopEnabled` 与自动移动开关 `AutoTravelEnabled` 在 Settings，不在 ActionQueue**；语言、通知等。
 7. **`ActionQueue`（`QueuedAction` 列表）**：进行中与排队行动、进度、剩余重复次数、远征/移动子状态。
 8. **`Duel`（`PlayerDuelState`）**：斗法遭遇计数、冷却、暂存区与战报账本；记账点口径见 `docs/design/行动统计系统.md`。
 
@@ -96,10 +96,10 @@
 | 命令 | 职责 |
 | --- | --- |
 | `action.enqueue` / `action.remove` | 行动入队（RepeatCount 1..1,000,000 或 -1 无限）/移除 |
-| `queue.configure` / `queue.move` | 循环开关（写 Settings）/队列排序 |
+| `queue.configure` / `queue.move` | 循环与自动移动开关（写 Settings）/队列排序 |
 | `queue.auto_use.configure` | 自动使用槽配置（4 类 × 3 槽展示口径） |
 | `loadout.replace` | 装备/功法/消耗品装配变更 |
-| `ability.learn` | 功法秘籍学习（`item.tome.*`，幂等键必需） |
+| `ability.learn` | 功法秘籍/残卷研读（`item.tome.*`/`item.fragment.*`，`quantity` 支持批量逐本结算，幂等键必需） |
 | `progression.breakthrough` | 境界突破 |
 | `world.travel` | 世界节点移动（自动先推进模拟再规划路径） |
 | `building.build` / `building.upgrade` / `building.contribute` | 节点公共建筑发起建造/发起升级/提交材料（注册表锁内校验钱包并原子扣减） |

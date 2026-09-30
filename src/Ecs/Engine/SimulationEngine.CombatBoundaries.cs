@@ -252,6 +252,10 @@ public static partial class SimulationEngine
             : double.NegativeInfinity;
         foreach (var combatEvent in combatResult.Events)
         {
+            // 技能每次成功施放结算 1 点功法经验：日志尾窗裁剪丢帧不丢入账。
+            if (combatEvent.AttackerId == "player" && combatEvent.AbilityId is { } usedAbility)
+                GrantAbilityUseExperience(player, action.Id, usedAbility,
+                    from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, combatEvent.AtSeconds - battleFrom)).ToUnixTimeMilliseconds() / 1000d);
             if (combatEvent.AtSeconds < keepFrom)
             {
                 // 该帧不可保留：折叠已滞留域事件并推进阵亡/起身游标，跳过名称与消息构造。
@@ -373,7 +377,7 @@ public static partial class SimulationEngine
         }).ToArray();
         // 玩家方技能槽与怪物同构：装配功法折叠为通用技能槽进入同一条动作时间线。
         var playerTemplate = new CombatantTemplate(
-            player.ResolveAttributes(gameData).ToCombatant(),
+            player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
             SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities));
         var battleState = CombatEncounterState.Restore(
             encounter.Id,

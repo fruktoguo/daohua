@@ -58,7 +58,7 @@
 
 - **适用场景**：
   - 面板主分类下的二级切换栏（如内视根基下的「六维」与「基础」切换，采用紧凑暗墨胶囊按键与金色微光高亮）。
-  - **坊市多级分类子导航 (`MarketBrowseGrid`)**：在一级主 Tab（全部/材料/装备/丹药/功法）下方，复用 `.insight-sub-tabs` 与 `.insight-sub-tab-btn` 展示对应二级子分类（材料细分矿石/药材/通用材料；装备细分武器/防具/饰品；功法细分秘籍全本/招式残卷）。
+  - **坊市多级分类子导航 (`MarketBrowseGrid`)**：在一级主 Tab（全部/材料/装备/消耗品/功法，与物品配表 `category` 主类型一一对应）下方，复用 `.insight-sub-tabs` 与 `.insight-sub-tab-btn` 展示对应二级子分类（材料细分矿石/药材/通用材料；装备细分武器/防具/饰品；消耗品细分丹药/补给耗材；功法细分秘籍全本/招式残卷），二级匹配统一走 `resolveItemSubCategory` 的配表 `subCategory` 键。
 - **样式类名**：`.insight-sub-tabs`, `.insight-sub-tab-btn`, `.market-sub-tabs`
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-sub-tabs`)
 
@@ -66,11 +66,12 @@
 
 ## 6. 物品方块与图元展示 (Item Tile & Display)
 
-- **强制规则**：物品、装备、材料、消耗品、功法技能的一切展示位必须使用图标组件（整块瓦片 `ItemTile`/`ItemTileReference`、行内 `ItemIcon`、文本行 `ItemReference`），禁止仅用纯文本名称罗列。
+- **强制规则**：物品、装备、材料、消耗品、功法技能的一切展示位必须使用图标组件（整块瓦片 `ItemTile`、行内 `ItemIcon`、文本行/复合胶囊 `ItemReference`），禁止仅用纯文本名称罗列。
 - **适用场景**：
-  - 行囊、掉落、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
-  - **仅持有 itemId + 数量的场景**（账本、统计/记录物品得失等）：直接渲染与背包一致的图标方块，自动解析物品/装备目录与元数据 -> `ItemTileReference`（锚点类须已登记进 `selection-grid.css` 共享 `:is()` 组，如 `battle-report-item-anchor`；支持 `bottomRightLabel` 覆盖右下默认数量角标）
-  - **怪物掉落条目（概率 + 数量区间）**：怪物悬浮/详情卡的掉落明细——缩小版物品瓦片（右下 `×数量` 角标，min=max 显示单值否则 `min-max`）+ 瓦片下方居中概率小字，对应「先按 dropChance 判定再抽数量区间」语义 -> `ItemDropTile`（锚点类 `world-monster-drop-anchor`，迷你尺寸与角标/丝带收拢见 `expedition.css` `.world-monster-drop-*`）
+  - 行囊、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
+  - **左上品类丝带统一走 `resolveItemSubCategory`**：装备取穿戴槽位（武器/头部/衣服/下装/鞋履/饰品），其余取配表二级 `subCategory`（药材/矿石/丹药/秘籍/残卷/补给耗材等），功法书按 `item.tome./item.fragment.` 前缀兜底区分全本与残卷；所有展示位（背包、装备栏、选择器、坊市、悬浮详情）共享同一解析口径，装备栏不再叠加独立槽位角标。
+  - **仅持有 itemId + 数量的行内场景**（账本物品得失、斗法暂存区、日志引用等）：统一渲染复合胶囊（行内小图标 + 名称胶囊 + `×数量` 下划线值 + 悬浮详情卡片） -> `ItemReference`（`amount` 提供时渲染 `item-reference-compound` 复合胶囊；`valueContent` 可覆写值区内容）
+  - **怪物掉落条目（概率 + 数量区间）**：怪物悬浮/详情卡的掉落明细——同款复合胶囊，`×数量` 值区展示掉落区间（min=max 显示单值否则 `min-max`）+ 胶囊尾部 `（概率%）` dim 小字，对应「先按 dropChance 判定再抽数量区间」语义 -> `ItemDropReference`（薄封装 `ItemReference`，概率样式见 `expedition.css` `.world-monster-drop-chance`）
   - **图标（有图用图、无图回退文本）**：传入资源 ID 即可。该资源在
     `frontend/src/assets/items/<资源ID>.{webp,png}` 有图时，`ItemTile` 用图片整块替换中间的文本名称；
     没有图时自动保持原文本渲染。行内文本/列表行等不适合放整块方块的场合，改用
@@ -112,21 +113,23 @@
 ## 7. 网格选择器与目录拾取器 (Item Grid & Catalog Pickers)
 
 - **适用场景**：
-  - **物品网格选择弹窗**（支持搜索、分类筛选、物品图元网格排列、空态选项、数量/品质高亮） -> `ItemGridPicker`
-  - **功法/战技网格选择弹窗**（功法装配槽位选择，网格排列 + 冷却/装配状态标记；按 `slotIndex` 过滤功法 `discipline`——0 号内功位只列内功心法，术法位只列术法；`levelFor` 提供参悟等级供瓦片角标与悬浮详情） -> `AbilityGridPicker`
-  - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板；附带子导出 `PickerTrigger` 选择器触发按钮与 `ChoiceMenu` 下拉选项菜单，供触发条件编辑器等内嵌场景复用） -> `CatalogPicker`
+  - **通用待选列表**（贴靠目标槽位的浮层候选网格，取代全屏模态挑选：入参 = 设置目标锚点 `anchor` + 所有列表 `options`，`auto-fill` 自动判列，首格可带「空选/移除」，候选数超 `searchThreshold`（默认 12）才出现搜索框，选中/点外/ESC 即关闭，正在设置的槽位以 `is-picking` 高亮描边） -> `CandidatePicker`
+  - **物品待选列表**（`ItemPickerEntry[]` 适配为候选：品阶光晕瓦片 + 悬浮详情 + 持存 0 禁用 + 名称/品类/描述搜索文本） -> `ItemGridPicker`
+  - **功法/战技待选列表**（功法装配槽位选择；按 `slotIndex` 过滤功法 `discipline`——0 号内功位只列内功心法，术法位只列术法；`levelFor` 提供参悟等级供瓦片角标与悬浮详情） -> `AbilityGridPicker`
+  - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板，仍为全屏 Modal；附带子导出 `PickerTrigger` 选择器触发按钮与 `ChoiceMenu` 下拉选项菜单，供触发条件编辑器等内嵌场景复用） -> `CatalogPicker`
 - **组件源码**：
-  - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx) (含 `ItemUseSlot` 消耗品槽位组件，支持与技能/物品冷却完全一致的持续消耗品旋转填充倒计时遮罩 `item-slot-duration-overlay`)
+  - [`frontend/src/components/CandidatePicker.tsx`](../../frontend/src/components/CandidatePicker.tsx)（经 `FloatingPopover` manual 受控 + `anchorEl` 外部锚点贴槽定位，顶部方向优先、自动翻转）
+  - [`frontend/src/components/ItemGridPicker.tsx`](../../frontend/src/components/ItemGridPicker.tsx) (含 `ItemUseSlot` 消耗品槽位组件，支持与技能/物品冷却完全一致的持续消耗品旋转填充倒计时遮罩 `item-slot-duration-overlay`；`onClick` 回传事件供调用方取锚点)
   - [`frontend/src/components/AbilityGridPicker.tsx`](../../frontend/src/components/AbilityGridPicker.tsx)
   - [`frontend/src/components/CatalogPicker.tsx`](../../frontend/src/components/CatalogPicker.tsx) (导出 `CatalogPicker` 主组件 + `PickerTrigger` / `ChoiceMenu` 子组件)
-- **样式文件**：[`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)
+- **样式文件**：[`frontend/src/styles/selection-grid.css`](../../frontend/src/styles/selection-grid.css)（`.candidate-picker-*` 面板与网格、`.is-picking` 目标槽位高亮；单元格复用 `.item-grid-picker-card*` 视觉体系）
 
 ---
 
 ## 8. 数量步进与快捷选择器 (Quantity Selector)
 
 - **适用场景**：
-  - 市场交易、批量制造、行囊使用、派遣探索次数的选择（包含数字输入框、快捷预设数量按钮、可选无限 `∞` 按钮） -> `QuantitySelector`
+  - 市场交易、批量制造、行囊使用、派遣探索次数的选择（包含数字输入框、输入框左侧 `leadingPresets` 档位钮、右侧快捷预设数量按钮 `presets`、右侧「最大」钮 `maxShortcut`（点击填入 `max`）、可选无限 `∞` 按钮） -> `QuantitySelector`
 - **组件源码**：[`frontend/src/components/QuantitySelector.tsx`](../../frontend/src/components/QuantitySelector.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.quantity-selector`)
 
@@ -205,17 +208,20 @@
 
 ---
 
-## 15. 改名弹窗、登录界面与独立连接状态屏幕 (Rename Modal, Login & Connection Screens)
+## 15. 改名/改密弹窗、登录界面与独立连接状态屏幕 (Modal Form, Login & Connection Screens)
 
 - **适用场景**：
+  - **小型表单模态窗统一范式**：`Modal`（`size="small"`，`className="modal-form-shell"`）内放 `.modal-form` 表单——`.modal-form-field`（`.modal-form-label` + `.modal-form-input` + `.modal-form-error`/`.modal-form-hint`）与 `.modal-form-actions`（`.modal-form-cancel` + `.modal-form-submit`）。修改道号与修改密码共用此范式。
   - **修改修士道号弹窗**（含 2~12 字符校验、正则无特殊字符校验、查重与 24 小时改名冷却） -> `RenameModal`
+  - **修改登录密码弹窗**（当前密码 + 新密码 + 确认密码三段校验，走 `/api/v1/auth/change-password`，成功后吊销其他设备会话） -> `ChangePasswordModal`
   - **独立全屏登录/注册界面**（无账号或登出时展示，支持输入账号、道号与可选访问令牌，自带粒子与修仙太极光晕） -> `LoginPage`
   - **独立全屏连接中与断网重试屏幕**（避免未连接时渲染默认 3 任务测试界面引发数据丢失疑惑，提供连接动画、重试与登出/切换账号入口） -> `ConnectingPage`, `ConnectionErrorPage`
 - **组件源码**：
   - [`frontend/src/components/RenameModal.tsx`](../../frontend/src/components/RenameModal.tsx)
+  - [`frontend/src/components/ChangePasswordModal.tsx`](../../frontend/src/components/ChangePasswordModal.tsx)
   - [`frontend/src/components/LoginPage.tsx`](../../frontend/src/components/LoginPage.tsx)
   - [`frontend/src/components/ConnectingPage.tsx`](../../frontend/src/components/ConnectingPage.tsx)
-- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.rename-modal`, `.login-screen`, `.status-screen`, `.status-card`)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.modal-form`, `.login-screen`, `.status-screen`, `.status-card`)
 
 ---
 
@@ -247,7 +253,7 @@
 - **适用场景**：
   - **右侧多 Tab 顶层容器**（聚合储物袋、装备、功法三大核心面板，支持平滑切换） -> `RightSidebar`
   - **储物袋分段陈列**：`InventoryPanel` 按「重要/消耗品/装备法宝/功法/材料」五组小标题分段展示物品网格（非 Tab），分组判定统一走 `resolveInventoryGroup`（物品目录 kind/category + 装备目录命中，itemId 前缀兜底），空组不渲染。
-  - **储物袋物品交互单元**（背包格子完整交互收拢：悬停保留 `ItemTooltipTarget` 详情卡片；左键弹出 `FloatingPopover` 操作菜单——秘籍/残卷「参悟研习」(`ability.learn`)、装备「穿戴装备」(`loadout.replace` 槽位互斥剔除)、可交易物品「交易」跳转坊市标的详情、`sellPrice > 0` 物品「系统回收」(`item.sell`)、任意物品「丢弃」(`item.discard`)；右键可直接使用的物品立即触发使用；丢弃/回收经 `Modal` + `QuantitySelector` 数量确认弹窗执行；已装备物品禁用丢弃/回收） -> `InventoryItemCell`
+  - **储物袋物品交互单元**（背包格子完整交互收拢：悬停保留 `ItemTooltipTarget` 详情卡片；左键弹出 `FloatingPopover` 操作菜单——秘籍/残卷「参悟」(`ability.learn` 数量弹窗批量研读)、装备「装备」(`loadout.replace` 槽位互斥剔除)、可交易物品「交易」跳转坊市标的详情、`sellPrice > 0` 物品「出售」(`item.sell`)、任意物品「丢弃」(`item.discard`)；右键触发使用——秘籍/残卷进批量研读弹窗、装备直接穿戴；使用/丢弃/出售经统一 `Modal` + `QuantitySelector` 数量确认弹窗执行；已装备物品禁用丢弃/出售） -> `InventoryItemCell`
   - **功法神通面板**（1 首位内功心法 + 动态扩展术法槽位横排装配与冷却/触发器/等级徽标；已习得功法按内功心法/神通术法两组方块瓦片网格分列（`item-tile` 方形瓦片：左上元素丝带、右上 Lv 参悟等级、右下装配槽位角标）；槽位与功法 `discipline` 双向互斥——内功位只收 internal、术法位只收 spell；装配等级恒等于已参悟等级（由 `abilityExperiences` 立方曲线导出）；重复装配按「移动」处理——`assignAbilityToSlot` 把功法从原槽位移至新槽位并随迁触发条件；所有 `loadout.replace` 发送点统一经 `sendLoadoutReplace` 归一化） -> `AbilitiesPanel`
 - **组件源码**：
   - [`frontend/src/components/RightSidebar.tsx`](../../frontend/src/components/RightSidebar.tsx)
@@ -306,7 +312,7 @@
 
 - **适用场景**：
   - **两个入口两块面板**：`StatsPanel`（详情页右上角「统计」）只显示本次行动——当前行动账本 + 斗法暂存区；`RecordsPanel`（左侧栏「记录」按钮，设置上方）显示离线挂机 / 今日统计 / 近期战报历史。三本账后台照常记账，仅展示位置不同。
-  - **行动收益账本统一渲染**：共用组件收拢在 `reportSections.tsx`——`ReportBlock` 分区容器按固定顺序排三个 memo 小节且**不渲染节标题**：`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）→ `ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemTileReference` 背包式图标瓦片横排）→ `ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）。
+  - **行动收益账本统一渲染**：共用组件收拢在 `reportSections.tsx`——`ReportBlock` 分区容器按固定顺序排三个 memo 小节且**不渲染节标题**：`ReportInfoSection`（行动信息：轮次/时长/遭遇/分级击杀/死亡/斗法胜负）→ `ReportItemsSection`（物品得失：获得与失去两列分组，复用 `ItemReference` 复合胶囊横排，与斗法暂存区同款）→ `ReportExpSection`（获取经验：修为/底蕴/六维/功法技能经验/等级提升）。
   - **空账本抑制**：`reportHasContent` 判定全零账本不渲染分区；`endedAtUnixSeconds` 决定时长口径（进行中=估算服务端当前时刻−开始，归档=结束−开始）。
   - **localStorage 历史缓存**：`battleReportStore` 读取时对旧缓存条目补齐账本新增字段默认值，防渲染崩溃。
 - **组件源码**：[`frontend/src/components/StatsPanel.tsx`](../../frontend/src/components/StatsPanel.tsx)、[`frontend/src/components/RecordsPanel.tsx`](../../frontend/src/components/RecordsPanel.tsx)、[`frontend/src/components/reportSections.tsx`](../../frontend/src/components/reportSections.tsx)
@@ -319,10 +325,12 @@
 
 - **适用场景**：
   - 内视「斗法」Tab 与战场单位详情弹窗（`CharacterAttributeModal`，单击己方角色/敌怪头像呼出）共用同一属性面板，三组以 `.insight-sub-tabs` 二级导航 Tab 切换，外加可选「当前运转丹药与神通加持」Buff 分区：
+  - **敌怪详情追加第四「掉落」Tab**：传入 `drops`（`MonsterDropDefinition[]`，由 `findCombatantInCatalog(encounters, maps, enemyId)` 从遭遇/节点生态静态目录解析）时渲染，内容为 `ItemDropReference` 复合胶囊列表（`图标 名称 ×数量区间（概率）`，容器复用 `.world-monster-drops-row`）；空列表展示「没有掉落物」空态，未传 `drops`（内视面板/玩家/斗法镜像）维持原三 Tab。
     - **基础**：气血/灵力/五秒回复、物理/术法攻击、护甲/法抗、命中/闪避/暴击/免暴/破招/化解（全部为点数原值，暴击/免暴不预折百分比）；
     - **特殊**：攻击速度/行动速度/冷却缩减（NonLinear 点数）、暴击伤害倍率/普攻增幅/技能增幅/威胁增幅、治疗增幅/气血汲取/灵力汲取/伤害反弹（Linear 点数）、成长乘区展示行（普攻倍率/技能强度/吟唱系数/冷却系数，原始倍率直显）；出手间隔为系统常量机制，不上面板；
     - **伤害增减**：全部伤害/物理伤害/术法伤害 + 金/木/水/火/土 共 8 个条目，每条目以 `增伤 / 减伤` 成对显示（增伤按 Linear、减伤按 NonLinear 各自曲线换算为有效百分比），Hover 只写语义不写公式。
   - **服务端权威直渲**：面板直接接收 `CombatAttributes` 协议终值（40 键全点数口径，玩家/敌怪/斗法镜像同一形状），不做任何本地估算或配表反查；格式化统一由面板渲染层完成（`linearText`/`nonLinearText`/`factorText`/`boostReduceText`）。
+  - **敌方属性为按需一次性交付**：`enemies[].attributes`/`duel.opponentAttributes` 不随快照常驻下发——`CombatArena` 将 `inspectedActor`（`enemy:{下标}`）经 `UnitInspect` 火忘帧登记为会话观察目标，服务端在下一份成功入队的快照帧中投影一次即自动解除武装（帧被丢弃则保留武装重投）；前端按 `enemy:{enemyId}`/`duel:{对手名}` 缓存已交付属性，重复点开即显不触发加载态；图鉴/生态/地图等战前查看走 `CombatantDefinition.attributes` 本地目录反查，与战斗详情通道相互独立。
   - 新增战斗属性字段时只改协议字段集与面板一处，禁止在弹窗/其他页面另写属性行。
 - **组件源码**：[`frontend/src/components/CombatAttributePanel.tsx`](../../frontend/src/components/CombatAttributePanel.tsx)
 - **样式类名**：复用 `.insight-pill-group` / `.insight-base-layout` / `.insight-base-row` 与 `PillStatLabel` 胶囊体系
@@ -369,9 +377,22 @@
 ## 28. 讨伐行动节点生态面板 (CombatEcologyPanel)
 
 - **适用场景**：
-  - 讨伐/战斗行动配置弹窗（`ActionModal`）内的当前地点妖兽生态展示区：主体为怪物**图标瓦片网格**（立绘 + 位阶角标 + 等级底标），**悬停**弹简要信息卡（位阶徽记、境界·等级·阶位副标、气血/攻击威能/护甲三行核心值），**单击**弹详细信息卡（六维属性、攻速间隔、消耗预算、出没周期、击杀收益、施展功法与掉落物图标瓦片）。
+  - 讨伐/战斗行动配置弹窗（`ActionModal`）内的当前地点妖兽生态展示区：主体为怪物**图标瓦片网格**（立绘 + 位阶角标 + 等级底标），**悬停**弹简要信息卡（位阶徽记、境界·等级·阶位副标、气血/攻击威能/护甲三行核心值），**单击**弹详细信息卡（六维属性、攻速间隔、消耗预算、出没周期、击杀收益、施展功法与掉落物胶囊）。
   - **双层浮层嵌套结构**：外层 `FloatingPopover trigger="click"`（详卡，`placement="bottom"`）包内层 `FloatingPopover trigger="hover" interactive={false}`（简卡，`placement="top"`），均 `displayContents` 锚定同一瓦片按钮——hover 与 click 分侧展开互不遮挡，对齐 `InventoryItemCell` 既有嵌套模式。
   - **数据源即节点生态**：取静态目录 `maps[world.mapId].nodes[world.nodeId]` 的 `monsters`/`eliteEnemies`/`bossEnemies`（服务端 `StaticGameCatalogMapper.ToNode` 按节点 `encounterIds` 预解析的 `CombatantDefinition` 全字段），与服务端 `ResolveCombatEncounter` 实战遭遇同根同源；行进中或节点无生态时回退行动钉死 `combatEncounterId` 的遭遇怪群，禁止再按行动遭遇常驻展示。
   - **行动名按驻留地点本地化**：`localizeActionDisplayText(text, world, maps)`（`frontend/src/game/ids.ts`）把行动名/描述中内嵌的当前地图名替换为当前节点名（「讨伐 青云仙山」→「讨伐 漱玉溪」）；行进中（`nodeId=null`）不替换。已统一接入 `ActionCard`、`ActionModal`、行动队列显示名与 `CombatArena` 各显示点。
 - **组件源码**：[`frontend/src/components/CombatEcologyPanel.tsx`](../../frontend/src/components/CombatEcologyPanel.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.combat-ecology-panel`, `.ecology-monster-tile`, `.ecology-monster-rank`, `.ecology-monster-level`)
+
+---
+
+## 29. 设置页布局模板（左栏分类导航 + 分组设置行）
+
+- **适用场景**：
+  - 游戏设置中心及一切「多分类偏好/账号管理」页面：`.settings-layout` = 左侧竖排分类栏（`.settings-nav`，`.settings-nav-item` 图标格 + 楷体标签 + 金色内描边高亮，分类图标经 `SETTINGS_NAV_ICONS` 内联 SVG 按分类键注册）+ 右侧限宽 640px 的 `.settings-content` 内容列（`role="tablist"`/`role="tab"`/`role="tabpanel"` 语义齐备）。
+  - 分组卡片 `.settings-group`（金色左边条小标题 `.settings-group-title`）内统一使用 `.setting-row`「`.setting-text`（`.setting-label` + `.setting-desc`）| 控件/`.setting-value`」设置行，行间虚线分隔；危险操作分组加 `.settings-group--danger`（红调边框与标题）。
+  - 账号资料卡 `.settings-profile`（立绘 `.settings-profile-avatar` + 道号/序号 `.settings-profile-name` + 账号 `.settings-profile-meta` + 改名/冷却入口）；账号安全分组承载修改密码入口（`.inline-modify-btn` + `ChangePasswordModal`）；分段选项按钮复用 `.presence-options`。
+  - 「形象」独立分类页：`.avatar-selection-grid` 内排列 `.avatar-tile` 紧凑瓦片（`.avatar-tile-icon` 立绘 + `.avatar-tile-name` 名称，选中态金色边框），扩展形象只需在 `AVATAR_OPTIONS` 追加条目。
+  - **移动端（≤960px）自动降级**：左栏分类栏变顶部横向滚动分类条（active 态改下划线；`align-self: start` + 布局 `align-content: start` 防止网格行被剩余空间撑高），内容列解除限宽。
+- **组件源码**：[`frontend/src/components/SettingsPage.tsx`](../../frontend/src/components/SettingsPage.tsx)
+- **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.settings-layout`, `.settings-nav-item`, `.settings-group`, `.setting-row`, `.settings-profile`, `.avatar-tile`, `.modal-form-`)

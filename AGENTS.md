@@ -6,6 +6,7 @@
 
 - 所有交流、计划、总结、注释、文档和 Git 提交说明使用中文。
 - 文件名、命令、类型名、变量名、函数名、协议字段、框架和库名可保留英文。
+- 修仙等难以自然英译的专用词汇（如「气」「灵根」「功法」），代码标识符直接使用拼音（`Qi`/`Linggen`/`Gongfa`），禁止生造易混淆的英文近义词；命名与中文语义的对照以 `docs/design/总纲/19-名词术语对照表.md` 为准。
 - 不输出冗长思维链，只说明关键依据、结论和必要取舍。
 - 生产问题先回答：是否仍在发生、是否有数据风险、现在是否需要处理。
 
@@ -50,8 +51,8 @@ Domain 不依赖 Protocol；禁止让 Domain 反向依赖 Server、前端或部�
 
 - 项目内部代表名统一使用 `daohua` / `DaoHua` / `DAOHUA`；不得新增历史旧名的任何大小写形式作为命名、卷名、环境变量或服务名。
 - 当前内测阶段允许直接破坏历史数据、存档格式和部署拓扑兼容性；为了达成容量与落盘目标，可以直接改表、改快照和清空内测数据，但生产/远端真实数据操作仍必须先备份并获得明确许可。
-- **本地开发阶段兼容清零（硬规则）**：当前工作默认处于本地开发/内测阶段，不设计、不实现任何历史兼容路径。旧数据、旧快照、旧数据库 schema、旧 API/WebSocket 字段、旧协议、旧部署拓扑和旧组件模型均可直接废弃；禁止为了它们新增 migration runner、双读双写、兼容 DTO、legacy flag、fallback adapter、旧字段回填或过渡分支。允许一次性改表、改快照、删旧模型和清空本地数据。所谓“行为基线”只用于保护当前明确的业务结算语义，不等于保留历史格式或历史调用方式。
-- **兼容性迁移目录（唯一例外）**：数据库兼容性迁移脚本允许存在，但必须统一收拢在仓库根目录 `migrations/` 独立文件夹中（纯 SQL/脚本文件，命名 `NNNN_vX_to_vY.sql`），仅供既有库就地升级时由人工或运维流程显式执行。该目录必须满足**可整体删除**约束：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文；空库启动永远由权威 `PostgresSchema.Sql` 直建，删除 `migrations/` 后全新初始化行为完全不变。仍禁止在代码中实现 migration runner 或对迁移目录的运行时依赖。
+- **本地开发阶段兼容清零（硬规则）**：当前工作默认处于本地开发/内测阶段，不设计、不实现任何历史兼容路径。旧数据、旧快照、旧数据库 schema、旧 API/WebSocket 字段、旧协议、旧部署拓扑和旧组件模型均可直接废弃；禁止为了它们新增 migration runner、双读双写、兼容 DTO、legacy flag、fallback adapter、旧字段回填或过渡分支。允许一次性改表、改快照、删旧模型和清空本地数据。所谓“行为基线”只用于保护当前明确的业务结算语义，不等于保留历史格式或历史调用方式。**清零玩家存档前必须先尝试对应版本的迁移脚本；迁移不可用或失败时，不得在无人值守下自动删除——必须暂停启动并在控制台交互确认（无 TTY 直接中止），操作者明确确认后才允许执行重置。**
+- **兼容性迁移目录（唯一例外）**：数据库兼容性迁移脚本允许存在，但必须统一收拢在仓库根目录 `migrations/` 独立文件夹中，满足**可整体删除**约束：不参与任何项目编译、不被运行时装配或启动门禁引用、不进入镜像构建上下文；空库启动永远由权威 `PostgresSchema.Sql` 直建，删除 `migrations/` 后全新初始化行为完全不变。仍禁止在代码中实现 migration runner 或对迁移目录的运行时依赖。文件统一为 `NNNN_vX_to_vY.sql`：`platform.schema_version`（本地库内容版本，涵盖表结构与存档载荷标签）兼容性迁移，序号全局递增；存档 `SectionCodec.CurrentSchemaVersion` 每次升级时 `PostgresSchema.Version` 须同步 +1，并在对应版本迁移文件里内嵌 `UPDATE ... SET schema_version` 标签推进（前提：新字段可缺省解码，否则该版本走交互确认清零）。本地开发启动链（`reset-outdated-players.sh` 经 `dev.sh`）可自动执行本链，人工亦可显式调用 `migrate-local-db.sh`。
 - 本地开发可以直接破坏代码和数据结构；只有实际操作远程/生产数据时才执行备份、审批和可恢复性检查，这属于数据安全要求，不得反向变成代码兼容层。
 - 目标服务器按 `2c4g/40g` 预算设计：至少支持 `5000+` 注册账号存储、`100+` 持续网络收发、`500+` 高峰网络收发、`2000+` 偶尔上线/离线挂机玩家补算。
 - 主存储固定为 PostgreSQL：账号、玩家快照、durable outbox、市场账本和市场流水均落库；应用容器不挂载数据卷。
@@ -144,7 +145,8 @@ docker compose -f deploy/compose.prod.yaml down
 | `deploy-prod.sh` | 生产服务器受控更新（`--image <不可变镜像>`） |
 | `install-ccr-auth.sh` | 服务器 CCR 登录态安装（`docker login --password-stdin`） |
 | `init-local-db-roles.sh` | 本地 PostgreSQL 角色初始化（对齐 `deploy/postgres-local-roles.sql`） |
-| `migrate-local-db.sh` | 本地库显式兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 落后脚本；`--dry-run` 空跑）。仅供人工调用，运行时与门禁均不引用 |
+| `migrate-local-db.sh` | 本地库兼容性迁移（按 `platform.schema_version` 链式执行 `migrations/` 落后脚本；`--dry-run` 空跑）。由 `reset-outdated-players.sh`/`dev.sh` 启动链自动调用，也可人工执行；运行时与门禁均不引用 |
+| `reset-outdated-players.sh` | 本地库版本漂移处置：存档行或 `platform.schema_version` 落后时优先执行 `migrations/` 迁移链（经 `migrate-local-db.sh`）；迁移后仍有不可迁移存档漂移时须控制台交互确认（输入 RESET）才重置玩家游戏域数据（保留账号/角色名），拒绝或无 TTY 则中止启动；`dev.sh` 启动时自动调用，仅作用于本地回环库，`--dry-run` 只检测 |
 
 ## 6. 实现规则
 
@@ -190,7 +192,8 @@ docker compose -f deploy/compose.prod.yaml down
 - 桌面和移动端都必须避免文本溢出、控件重叠和动态内容引发布局跳动。
 - **Store 行为落地红线**：禁止在状态管理器（Zustand、React Context 等）中声明仅有空函数体 `() => {}` 的虚空方法。任何对外暴露的操作方法必须具备实际的状态流转、数据变更或明确的报错抛出，防止伪实现静默吞没调用。
 - **i18n 词条闭环**：UI 代码中每引入一个新的 `t('...')` 国际化键名，必须同步在 `frontend/public/locales/template.csv` 及主语言词典中定义；禁止残留未录入模板的裸露键名。
-- **物品/装备/材料/消耗品/功法技能一律图标化展示**：凡展示物品、装备、材料、消耗品或功法技能条目，必须使用图标组件——整块瓦片用 `ItemTile`/`ItemTileReference`（含品质边框与悬浮详情），行内小图标用 `ItemIcon`，文本行引用用 `ItemReference`；禁止仅用纯文本名称罗列。瓦片锚点类须按约定登记进 `frontend/src/styles/selection-grid.css` 的共享 `:is()` 组。
+- **UI 文本简练红线**：界面文案只承载玩家可操作的信息（名称、状态、错误、必要后果与玩法指引），一律简短直白；禁止出现设计/实现层面的说明性文本——包括但不限于内部术语（预算、消耗点数、占位、待扩展、后续版本开放）、实现细节（服务端、缓存、哈希、持久化、CSV/文件路径、协议字段）、功能用途的赘述解释（如「退出登录用于切换账号」）与宣传式脚注。玩法机制、物品风味描述、数值公式 tooltip 属于游戏内容，不受此限，但同样应保持简练。
+- **物品/装备/材料/消耗品/功法技能一律图标化展示**：凡展示物品、装备、材料、消耗品或功法技能条目，必须使用图标组件——整块瓦片用 `ItemTile`（含品质边框与悬浮详情），行内小图标用 `ItemIcon`，文本行/复合胶囊引用用 `ItemReference`；禁止仅用纯文本名称罗列。瓦片锚点类须按约定登记进 `frontend/src/styles/selection-grid.css` 的共享 `:is()` 组。
 - **公共组件与统一模板强制收拢**：
   - 前端开发前，**必须先阅读前端公共组件文档 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**，检索是否存在可复用的公共组件或统一模板（如 Hover 提示、复合 Label、境界徽章、模态弹窗、网格选择器等），禁止随意重新自制相似样式或重复实现。
   - 凡是将任何前端部分收拢走统一模板（如 hoverinfo、label、badge、picker 等），**必须同步登记写入 [`docs/frontend/common-components.md`](./docs/frontend/common-components.md)**。

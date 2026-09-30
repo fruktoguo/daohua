@@ -89,6 +89,18 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
     public double ExpCapFor(int realmLevel)
         => realmLevel >= 1 && realmLevel <= ExpToNext.Count ? ExpToNext[realmLevel - 1] : 0;
 
+    /// <summary>
+    /// 到达指定等级所需的累计修为 Σ expToNext[1..level-1]（怪物战斗经验派生源，总纲 §7.7.6）。
+    /// level ≤ 1 时为空累计返回 0；超出配表上界的等级按已配层数截断。
+    /// </summary>
+    public double CumulativeExpFor(int level)
+    {
+        var count = Math.Clamp(level - 1, 0, ExpToNext.Count);
+        var total = 0d;
+        for (var i = 0; i < count; i++) total += ExpToNext[i];
+        return total;
+    }
+
     /// <summary>阶位对应寿元上限（年）；越界取末档。</summary>
     public double LifespanYearsFor(int tier)
         => LifespanYearsByTier.Count == 0 ? 0

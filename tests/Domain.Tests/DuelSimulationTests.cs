@@ -164,10 +164,45 @@ public sealed class DuelSimulationTests
         Assert.Contains(player.Duel.CurrentReport!.Items, item => item.ItemId == "item.loot");
 
         player.RemoveAction(player.Actions[0].Id);
-        var settled = SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(1300), catalog, duel: new DuelAdvanceOptions(true));
+        // 掉落入账时刻量化到 300s 桶尾（约 t=300），结算时刻 = 1500：推进 1600 秒后必然到期。
+        var settled = SimulationEngine.AdvanceTo(player, player.LastSimulatedAt.AddSeconds(1600), catalog, duel: new DuelAdvanceOptions(true));
         Assert.Empty(player.Duel.StagedItems);
         Assert.Contains(settled.AssetDeltas, delta => delta.Asset.ItemId.Value == "item.loot" && delta.QuantityDelta == 1);
         Assert.Contains(settled.Events, entry => entry.Code == "duel.staged-settled");
+    }
+
+    /// <summary>暂存区档位桶化：同物品同桶合并为一条，跨桶另起批次；结算时刻取桶尾 + 入账延迟。</summary>
+    [Fact]
+    public void StagedItemsMergeByItemWithinSameBucket()
+    {
+        var catalog = CreateCatalog();
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "fp");
+        var t0 = NowUnix();
+
+        player.StageItem(new ItemId("item.loot"), 2, t0 + 10);
+        player.StageItem(new ItemId("item.loot"), 3, t0 + 200);
+        player.StageItem(new ItemId("item.other"), 1, t0 + 200);
+        player.StageItem(new ItemId("item.loot"), 5, t0 + 310);
+
+        // t0+10 与 t0+200 落同一桶（向上取整到同一桶尾）；t0+310 跨入下一桶。
+        var lootBatches = player.Duel.StagedItems.Where(item => item.ItemId == "item.loot").ToArray();
+        Assert.Equal(2, lootBatches.Length);
+        Assert.Equal(5, lootBatches[0].Quantity);
+        Assert.Equal(5, lootBatches[1].Quantity);
+        Assert.Equal(t0 + 300, lootBatches[0].AcquiredAtUnixSeconds);
+        Assert.Equal(t0 + 600, lootBatches[1].AcquiredAtUnixSeconds);
+        Assert.Single(player.Duel.StagedItems, item => item.ItemId == "item.other");
+        // 战报按物品聚合不受批次影响：loot 总入账量 10。
+        Assert.Equal(10, player.Duel.DailyReport.Items.First(item => item.ItemId == "item.loot").Quantity);
+
+        // 第一桶 t0+300 在 t0+1500 到期（loot 与 other 同桶同摘），第二桶 t0+600 在 t0+1800 到期。
+        var firstSettle = ActionReportBook.SettleStagedItems(player, t0 + 1500, 1200);
+        Assert.Equal(2, firstSettle.Length);
+        Assert.Equal(5, firstSettle.First(item => item.ItemId == "item.loot").Quantity);
+        Assert.Single(player.Duel.StagedItems); // 仅剩 loot 第二桶
+        var secondSettle = ActionReportBook.SettleStagedItems(player, t0 + 1800, 1200);
+        Assert.Single(secondSettle);
+        Assert.Empty(player.Duel.StagedItems);
     }
 
     /// <summary>区间数量掉落：先判定后数量，抽样落在 [min,max] 闭区间且上限可达（多波次采样覆盖）。</summary>
@@ -218,11 +253,11 @@ public sealed class DuelSimulationTests
         Assert.DoesNotContain(result.AssetDeltas, delta => delta.Asset.ItemId.Value == "item.loot");
     }
 
-    /// <summary>击杀奖励入账收益账本：修为、底蕴与六维经验按配表字段统计。</summary>
+    /// <summary>击杀奖励入账收益账本：单参数 experience 同时喂修为、战斗经验与六维均分。</summary>
     [Fact]
     public void BattleReportAccumulatesConfiguredKillRewards()
     {
-        var catalog = CreateCatalog(qiReward: 10, experienceReward: 10, rootExpReward: 10);
+        var catalog = CreateCatalog(experience: 10);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "fp");
 
         player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
@@ -230,8 +265,8 @@ public sealed class DuelSimulationTests
 
         var report = player.Duel.CurrentReport;
         Assert.NotNull(report);
-        Assert.Equal(10, report.Qi);
         Assert.Equal(10, report.Experience);
+        Assert.Equal(10, report.CombatExperience);
         Assert.Equal(10, report.RootExp.Total);
     }
 
@@ -239,7 +274,7 @@ public sealed class DuelSimulationTests
     [Fact]
     public void BattleReportArchivesOnNewSessionAndCapsHistory()
     {
-        var catalog = CreateCatalog(duel: new DuelSettings(MaxBattleReports: 10), qiReward: 10);
+        var catalog = CreateCatalog(duel: new DuelSettings(MaxBattleReports: 10), experience: 10);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "fp");
 
         for (var i = 0; i < 12; i++)
@@ -289,9 +324,7 @@ public sealed class DuelSimulationTests
         double dropChance = 0,
         double dropMin = 1,
         double dropMax = 1,
-        double qiReward = 0,
-        double experienceReward = 0,
-        double rootExpReward = 0)
+        double experience = 0)
     {
         var actionId = new ActionId("combat.test");
         var actions = new ActionCatalog([
@@ -317,9 +350,7 @@ public sealed class DuelSimulationTests
             CombatantStats.Create(enemyHitpoints, enemyAttackPower, 0, 2),
             drops,
             [],
-            qiReward,
-            experienceReward,
-            rootExpReward);
+            experience);
         var encounter = new CombatEncounterDefinition(
             "encounter.test",
             "测试遭遇",

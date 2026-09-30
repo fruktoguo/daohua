@@ -62,6 +62,8 @@ export const WireMessageType = {
   SocialState: 22,
   /** 客户端请求频道历史回放 */
   ChatHistoryRequest: 23,
+  /** 客户端登记/清除单位详情观察目标（火忘帧，无回执） */
+  UnitInspect: 24,
 } as const
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
 
@@ -473,7 +475,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.ChatHistoryRequest
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.UnitInspect
 }
 
 function isWireCodec(value: number): value is WireCodec {

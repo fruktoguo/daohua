@@ -55,7 +55,6 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
   const details = [
     { label: t('combat.nearby.statLevel'), value: `Lv.${monster.level}` },
     { label: t('combat.nearby.statRank'), value: rankLabel },
-    { label: t('combat.nearby.statBudget'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.budgetCost} /> },
     { label: t('combat.nearby.statMaxHp'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.maxHitpoints} /> },
     { label: t('combat.nearby.statMaxDamage'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.physicalAttack} /> },
     { label: t('combat.nearby.statArmor'), value: <UnitNumber disableTooltip maxDecimals={0} value={monster.armor} /> },
@@ -75,7 +74,7 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
           badge={rankLabel}
           badgeTone={monster.rank === 'boss' ? 'danger' : monster.rank === 'elite' ? 'purple' : 'gold'}
           subtitle={t('combat.nearby.monsterSubtitle', { level: monster.level, tier: monster.tier })}
-          description={t('combat.nearby.monsterDescription', { rankDesc, budget: formatInteger(monster.budgetCost) })}
+          description={t('combat.nearby.monsterDescription', { rankDesc })}
           stats={details}
         />
       }
@@ -95,7 +94,7 @@ const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, 
             <span className="nearby-level-badge">Lv.{monster.level}</span>
           </div>
           <p>
-            {t('combat.nearby.monsterSummary', { type: summaryType, budget: formatInteger(monster.budgetCost) })}
+            {t('combat.nearby.monsterSummary', { type: summaryType })}
           </p>
           {intervalHint && <small className="nearby-interval-hint">{intervalHint}</small>}
         </div>

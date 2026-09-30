@@ -78,8 +78,9 @@ export const combatZh = {
       currentSection: '当前行动',
       offlineSection: '离线挂机',
       dailySection: '今日统计',
-      qi: '修为',
-      experience: '底蕴',
+      experience: '修为',
+      foundation: '底蕴',
+      combatExperience: '战斗经验',
       realmLabel: '境界',
       levelUp: '{name} Lv.{from} → Lv.{to}',
       itemsGained: '获得',
@@ -91,7 +92,6 @@ export const combatZh = {
       deaths: '死亡 {n} 次',
       duelRecord: '斗法 {wins} 胜 {losses} 负',
       stagedTitle: '斗法暂存区',
-      stagedRemaining: '{time}后结算',
       historyTitle: '近期战报',
     },
     // 角色属性弹窗阵营徽章
@@ -133,7 +133,6 @@ export const combatZh = {
       aria: '{name}出没妖兽',
       heading: '出没妖兽',
       encounters: '出没遭遇',
-      hint: '悬停查看概要 · 单击图标查看详情',
       inspectAria: '查看{name}详情',
       abilities: '施展功法',
     },
@@ -179,7 +178,6 @@ export const combatZh = {
       markBuilding: '筑',
       statLevel: '等级',
       statRank: '位阶',
-      statBudget: '消耗预算',
       statMaxHp: '气血上限',
       statMaxDamage: '攻击威能',
       statArmor: '护甲抗性',
@@ -194,8 +192,8 @@ export const combatZh = {
       titleElite: '精英强敌',
       titleMonster: '普通生灵',
       monsterSubtitle: 'Lv.{level} · 阶位 {tier}',
-      monsterDescription: '栖息于此地的{rankDesc}，战力消耗预算 {budget}。',
-      monsterSummary: '{type} · 预算 {budget}',
+      monsterDescription: '栖息于此地的{rankDesc}。',
+      monsterSummary: '{type}',
     },
     // 世界地图面板（节点/地点名来自服务端，不收拢）
     map: {
@@ -231,9 +229,6 @@ export const combatZh = {
     // 日志面板（日志内容来自服务端模板，不收拢）
     log: {
       messagesAria: '消息',
-      memoryOnly: '日志仅保留在内存',
-      memoryOnlyTitle: '本地存储不可用，当前仅保留最近 200 条',
-      saved: '日志已在本地保存',
       repeatTooltip: '连续发生 {count} 次 (首发: {first} 末次: {latest})',
       abilityTooltip: '功法技能：{label}',
       enemyTooltip: '妖兽敌怪：{label}',

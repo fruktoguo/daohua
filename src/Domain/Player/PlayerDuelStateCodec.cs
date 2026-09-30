@@ -48,13 +48,13 @@ public static class PlayerDuelStateCodec
     private static PlayerBattleReportDocument ExportReport(PlayerBattleReport report) => new(
         report.ReportId, report.ActionId, report.ActionName,
         report.StartedAtUnixSeconds, report.EndedAtUnixSeconds,
-        report.Qi, report.Experience,
+        report.Experience,
         new PlayerRootExpDocument(report.RootExp.Stamina, report.RootExp.Meridians, report.RootExp.Attack,
             report.RootExp.Bone, report.RootExp.Agility, report.RootExp.Consciousness),
         report.Items.ToArray(), report.DuelWins, report.DuelLosses,
         report.ItemsLost.ToArray(), report.AbilityExp.ToArray(), report.LevelUps.ToArray(),
         report.Cycles, report.Encounters, report.NormalKills, report.EliteKills, report.BossKills,
-        report.Deaths, report.DayIndex);
+        report.Deaths, report.DayIndex, report.Foundation, report.CombatExperience);
 
     /// <summary>逐账本导出：未脏账本复用已登记文档；记账路径仅令被写账本重建。</summary>
     private static PlayerBattleReportDocument ExportReportCached(PlayerBattleReport report)
@@ -74,8 +74,9 @@ public static class PlayerDuelStateCodec
             ActionName = document.ActionName,
             StartedAtUnixSeconds = document.StartedAtUnixSeconds,
             EndedAtUnixSeconds = document.EndedAtUnixSeconds,
-            Qi = document.Qi,
             Experience = document.Experience,
+            Foundation = document.Foundation,
+            CombatExperience = document.CombatExperience,
             DuelWins = document.DuelWins,
             DuelLosses = document.DuelLosses,
             Cycles = document.Cycles,

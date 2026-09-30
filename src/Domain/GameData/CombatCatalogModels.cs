@@ -30,9 +30,7 @@ public sealed record CombatMonsterDefinition(
     CombatantStats Stats,
     IReadOnlyList<CombatDropDefinition> DropTable,
     IReadOnlyList<SkillSlot> Skills,
-    double QiReward = 0,
-    double ExperienceReward = 0,
-    double RootExpReward = 0);
+    double Experience = 0);
 
 /// <summary>遭遇中的随机刷怪候选及预算权重。</summary>
 public sealed record CombatSpawnDefinition(

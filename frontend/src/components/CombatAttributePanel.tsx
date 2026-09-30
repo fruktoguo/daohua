@@ -2,11 +2,12 @@ import { memo, useState } from 'react'
 import { PillStatLabel } from './PillLabel'
 import { formatNumber } from '../game/format'
 import { PercentValue } from '../game/combatConstants'
-import type { Buff, CombatAttributes } from '../game/types'
+import type { Buff, CombatAttributes, MonsterDropDefinition } from '../game/types'
 import { useT } from '../i18n'
+import { ItemDropReference } from './ItemDisplay'
 
-/** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊战斗属性 | 增免伤与五行属性 */
-type CombatAttributeGroupTab = 'base' | 'special' | 'elements'
+/** 斗法属性面板分组 Tab 标识：基础战斗属性 | 特殊战斗属性 | 增免伤与五行属性 | 掉落明细（仅敌怪详情） */
+type CombatAttributeGroupTab = 'base' | 'special' | 'elements' | 'drops'
 
 /**
  * 斗法战斗属性统一面板 (CombatAttributePanel)
@@ -15,14 +16,18 @@ type CombatAttributeGroupTab = 'base' | 'special' | 'elements'
  * 只渲染服务端下发的 CombatAttributes 终值，不做任何本地估算或配表反查；
  * 基础点数、特殊点数（战斗设计 §7.5 十项特殊属性）、增减伤十六项三组以 Tab 切换展示，
  * 以及可选的当前运转丹药与神通加持 Buff 分区。
+ * 敌怪详情额外提供 drops（静态配表 CombatantDefinition.drops）时追加第四个「掉落」Tab。
  */
 export const CombatAttributePanel = memo(function CombatAttributePanel({
   attributes,
   buffs = [],
+  drops,
 }: {
   /** 服务端权威战斗属性终值（玩家 combat.attributes / 敌怪 attributes / 斗法镜像 opponentAttributes 同一形状） */
   attributes: CombatAttributes
   buffs?: readonly Buff[]
+  /** 敌怪掉落条目（仅战场敌怪详情提供；undefined = 不渲染掉落 Tab） */
+  drops?: readonly MonsterDropDefinition[]
 }): React.JSX.Element {
   const t = useT()
   const [activeGroup, setActiveGroup] = useState<CombatAttributeGroupTab>('base')
@@ -62,6 +67,15 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
         >
           {t('insight.combat.groupElements')}
         </button>
+        {drops !== undefined && (
+          <button
+            className={`insight-sub-tab-btn ${activeGroup === 'drops' ? 'active' : ''}`}
+            onClick={() => setActiveGroup('drops')}
+            type="button"
+          >
+            {t('insight.combat.groupDrops')}
+          </button>
+        )}
       </div>
 
       {activeGroup === 'base' && (
@@ -147,6 +161,18 @@ export const CombatAttributePanel = memo(function CombatAttributePanel({
             <PillStatLabel label={t('insight.combat.earthBoostReduce')} value={boostReduceText(attributes.earthDamageBonusPoints, attributes.earthDamageReductionPoints)} tone="bronze" tooltip={t('insight.combat.earthBoostReduceTooltip')} />
           </div>
         </div>
+      )}
+
+      {activeGroup === 'drops' && drops !== undefined && (
+        drops.length > 0 ? (
+          <div className="world-monster-drops-row">
+            {drops.map(drop => (
+              <ItemDropReference drop={drop} key={drop.itemId} />
+            ))}
+          </div>
+        ) : (
+          <p className="nearby-empty">{t('insight.combat.dropsEmpty')}</p>
+        )
       )}
 
       {/* 运转中的丹药与神通 Buff */}

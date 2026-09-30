@@ -85,24 +85,21 @@ export function getAvatarCandidateUrls(rawId?: string | null): readonly string[]
  */
 export type PlayerAvatarId = 'default' | 'female' | 'male' | 'player'
 
-/** 可选形象条目（名称/描述均走 i18n 键） */
+/** 可选形象条目（名称走 i18n 键，卡片只呈现图标与名称） */
 export interface AvatarOption {
   /** 形象标识 */
   id: PlayerAvatarId
   /** 名称 i18n 键 */
   nameKey: 'app.avatar.defaultName'
-  /** 描述 i18n 键 */
-  descKey: 'app.avatar.defaultDesc'
   /** 立绘资源地址 */
   src: string
 }
 
-/** 玩家可选形象清单（当前仅默认法相，扩展时追加条目即可） */
+/** 玩家可选形象清单（当前仅默认形象「女剑修」，扩展时追加条目与 nameKey 联合类型即可） */
 export const AVATAR_OPTIONS: readonly AvatarOption[] = [
   {
     id: 'default',
     nameKey: 'app.avatar.defaultName',
-    descKey: 'app.avatar.defaultDesc',
     src: DEFAULT_PLAYER_AVATAR_SRC,
   },
 ]

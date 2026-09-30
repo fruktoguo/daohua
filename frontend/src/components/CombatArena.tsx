@@ -3,8 +3,8 @@ import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
-import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
+import { findAbilityInCatalog, findCombatantInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
 import { Modal } from './Modal'
@@ -1040,6 +1040,7 @@ function CharacterAttributeModal({
   role = 'player',
   visual,
   buffs,
+  drops,
   onClose,
   open,
   title,
@@ -1051,6 +1052,8 @@ function CharacterAttributeModal({
   role?: 'player' | 'enemy'
   visual?: CharacterVisual | null
   buffs: readonly Buff[]
+  /** 敌怪掉落条目（仅敌怪详情传入，驱动第四个「掉落」Tab；undefined 不渲染该 Tab） */
+  drops?: readonly MonsterDropDefinition[]
   onClose: () => void
   open: boolean
   title: string
@@ -1077,7 +1080,9 @@ function CharacterAttributeModal({
           </span>
         </div>
       </header>
-      {attributes && <CombatAttributePanel attributes={attributes} buffs={buffs} />}
+      {attributes
+        ? <CombatAttributePanel attributes={attributes} buffs={buffs} drops={drops} />
+        : <p className="nearby-empty">{t('insight.combat.attributesLoading')}</p>}
     </Modal>
   )
 }
@@ -1085,7 +1090,7 @@ function CharacterAttributeModal({
 /** 敌方单位铺位顺序：纵深优先（前排中→中排中→后排中→前排上→…），同波敌人沿前后轴展开而非上下堆叠 */
 const ENEMY_DEPTH_SLOTS: readonly number[] = [1, 4, 7, 2, 5, 8, 3, 6, 9]
 
-/** 敌方单位展示态：全部渲染字段均来自 wire 快照（enemies[] 或 duel 载荷），不再反查本地配表 */
+/** 敌方单位展示态：实时字段来自 wire 快照（enemies[] 或 duel 载荷）；属性面板为按需投影（UnitInspect） */
 interface EnemyDisplayState {
   actorKey: string
   enemyId: string | null
@@ -1097,7 +1102,7 @@ interface EnemyDisplayState {
   maxMp: number
   action?: CombatActionState | null
   visual?: CharacterVisual | null
-  /** 服务端下发的完整战斗属性（详情弹窗唯一数值来源） */
+  /** 服务端按需投影的完整战斗属性（详情弹窗唯一数值来源；未登记观察目标时为 null） */
   attributes?: CombatAttributes | null
 }
 
@@ -1230,13 +1235,24 @@ export const CombatArena = memo(function CombatArena({
   const actions = useGameStore(state => state.actions)
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
+  const encounters = useGameStore(state => state.encounters)
   const queue = useGameStore(state => state.queue.entries)
   // 队列进度的采样基准：必须与非战斗进度条（useSmoothProgressRef）完全一致，
   // 否则角色行动条与右侧行动卡片会因「非队列补丁」（入灵气、掉落等）产生 0~1 秒的显示差。
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
   // 详情弹窗目标：'player' 或 `enemy:{下标}`（同波多敌人逐只可查）。
   const [inspectedActor, setInspectedActor] = useState<string | null>(null)
+  // 单位属性缓存：敌方/镜像属性为定义级静态值，服务端仅在 UnitInspect 登记后一次性交付；
+  // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名}。
+  const inspectedAttributesCacheRef = useRef(new Map<string, CombatAttributes>())
   const t = useT()
+
+  // 观察目标同步（UnitInspect 火忘帧）：敌方属性面板为按需投影，点开详情才向服务端登记；
+  // 选玩家/关闭弹窗即清除，未点开的单位不占快照带宽；组件常驻战斗页，会话断开自然失效。
+  useEffect(() => {
+    const match = inspectedActor?.match(/^enemy:(\d+)$/)
+    gameClient.sendUnitInspect(match ? { side: 'enemy', index: Number(match[1]) } : null)
+  }, [inspectedActor])
 
   // 战斗特效：overlay 覆盖层 + 模块化 VFX 运行时（演出调度与技能模块注册全部收拢在 src/vfx/）。
   const arenaShellRef = useRef<HTMLDivElement | null>(null)
@@ -1248,6 +1264,15 @@ export const CombatArena = memo(function CombatArena({
   const isTravel = current !== null && (current.executionKind === 'travel' || current.actionId === 'world.travel')
   const isLifeAction = current !== null && !isCombat && !isTravel
   const expedition = isCombat ? current.expedition : null
+  // 一次性交付落账：wire 携带属性时按身份写入缓存，后续快照不再携带也能稳定显示。
+  useEffect(() => {
+    const cache = inspectedAttributesCacheRef.current
+    for (const enemy of expedition?.enemies ?? []) {
+      if (enemy.attributes) cache.set(`enemy:${enemy.enemyId}`, enemy.attributes)
+    }
+    if (expedition?.duel?.opponentAttributes && expedition.duel.opponentName)
+      cache.set(`duel:${expedition.duel.opponentName}`, expedition.duel.opponentAttributes)
+  }, [expedition])
   const activeAction = current ? actions.find(action => action.id === current.actionId) : null
   const activeEncounterId = expedition?.encounterId ?? activeAction?.combatEncounterId
 
@@ -1274,8 +1299,9 @@ export const CombatArena = memo(function CombatArena({
       const name = t('combat.duel.opponent', { name: expedition.duel?.opponentName || t('combat.duel.unknownOpponent') })
       // 斗法对手气血/灵力与属性上限由 duel 回放载荷承载（撮合时锁定镜像、随剧本事件更新）。
       const opponentAttributes = expedition.duel?.opponentAttributes ?? null
-      const maxHp = Math.max(1, opponentAttributes?.maxHitpoints ?? 1)
-      const maxMp = Math.max(1, opponentAttributes?.maxManapoints ?? 1)
+      // 镜像血蓝条分母走常驻标量；完整属性为按需投影，观察目标命中镜像位才携带。
+      const maxHp = Math.max(1, expedition.duel?.opponentMaxHitpoints ?? opponentAttributes?.maxHitpoints ?? 1)
+      const maxMp = Math.max(1, expedition.duel?.opponentMaxManapoints ?? opponentAttributes?.maxManapoints ?? 1)
       const hp = Math.max(0, Math.min(maxHp, expedition.duel?.opponentHitpoints ?? maxHp))
       const mp = Math.max(0, Math.min(maxMp, expedition.duel?.opponentManapoints ?? maxMp))
       return [{
@@ -1301,9 +1327,9 @@ export const CombatArena = memo(function CombatArena({
         name,
         seal: name.slice(0, 1),
         hp: entry.hitpoints,
-        maxHp: Math.max(1, entry.attributes?.maxHitpoints ?? entry.hitpoints),
+        maxHp: Math.max(1, entry.maxHitpoints ?? entry.attributes?.maxHitpoints ?? entry.hitpoints),
         mp: entry.manapoints,
-        maxMp: Math.max(1, entry.attributes?.maxManapoints ?? entry.manapoints),
+        maxMp: Math.max(1, entry.maxManapoints ?? entry.attributes?.maxManapoints ?? entry.manapoints),
         action: entry.hitpoints > 0 && expedition?.phase === 'combat' && expedition.playerRespawnAtSeconds == null
           ? enemyActionState(entry, battleElapsed, serverNow, abilities)
           : null,
@@ -1320,6 +1346,9 @@ export const CombatArena = memo(function CombatArena({
     ? enemyEntries[inspectedEnemyIndex] ?? null
     : null
   const enemyVisible = isCombat && (phase === 'combat' || isDuelPhase || enemyEntries.some(entry => entry.hp > 0))
+  // 空槽只补纵深占位之外的格子：敌怪按 ENEMY_DEPTH_SLOTS 摆位（2 个怪占 1/4 号槽），
+  // 若按顺序编号补空会叠进实体槽位，透明空槽在 DOM 后层拦截点击，导致部分怪点不中。
+  const occupiedEnemySlots = new Set(ENEMY_DEPTH_SLOTS.slice(0, enemyEntries.length))
 
   const playerAction: CombatActionState | null = useMemo(() => {
     if (isCombat) {
@@ -1382,11 +1411,24 @@ export const CombatArena = memo(function CombatArena({
 
   // 仅在玩家显式点击头像唤起详情弹窗 (inspectedActor !== null) 时取用属性；
   // 角色/敌怪/斗法镜像全部渲染服务端下发的 CombatAttributes 终值，无任何本地估算。
+  // 敌方属性为一次性交付：wire 未携带时回退身份缓存（重复点开即显，命中缓存不触发加载态）。
   const inspectedAttributes: CombatAttributes | null = inspectedActor === null
     ? null
     : inspectedEnemy
-      ? inspectedEnemy.attributes ?? null
+      ? inspectedEnemy.attributes
+        ?? inspectedAttributesCacheRef.current.get(
+          inspectedEnemy.enemyId !== null
+            ? `enemy:${inspectedEnemy.enemyId}`
+            : `duel:${expedition?.duel?.opponentName ?? 'opponent'}`)
+        ?? null
       : combatAttributes ?? null
+
+  // 敌怪掉落明细：静态配表查询（与生态面板同根同源）；斗法镜像 enemyId=null 不解析。
+  const inspectedDrops = useMemo<readonly MonsterDropDefinition[] | undefined>(() => {
+    if (inspectedEnemy?.enemyId == null) return undefined
+    const combatant = findCombatantInCatalog(encounters, maps, inspectedEnemy.enemyId)
+    return combatant?.drops ?? []
+  }, [inspectedEnemy?.enemyId, encounters, maps])
 
   return (
     <div className="combat-arena-shell" ref={arenaShellRef}>
@@ -1461,12 +1503,14 @@ export const CombatArena = memo(function CombatArena({
                   </div>
                 ))}
                 {/* 预留空槽维持九宫格与前中后排比例 */}
-                {Array.from({ length: Math.max(0, 9 - enemyEntries.length) }).map((_, i) => (
-                  <div
-                    className={`arena-slot arena-slot--empty arena-slot--slot-${enemyEntries.length + i + 1}`}
-                    key={`enemy-empty-${i}`}
-                  />
-                ))}
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9]
+                  .filter(slot => !occupiedEnemySlots.has(slot))
+                  .map(slot => (
+                    <div
+                      className={`arena-slot arena-slot--empty arena-slot--slot-${slot}`}
+                      key={`enemy-empty-${slot}`}
+                    />
+                  ))}
               </div>
             ) : (
               <div className="arena-formation arena-formation--enemies">
@@ -1513,6 +1557,7 @@ export const CombatArena = memo(function CombatArena({
         actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
         attributes={inspectedAttributes}
         buffs={inspectedActor === 'player' ? buffs : []}
+        drops={inspectedDrops}
         name={inspectedEnemy?.name ?? playerName}
         onClose={() => setInspectedActor(null)}
         open={inspectedActor !== null}

@@ -137,11 +137,17 @@ public sealed record CombatantStats(
     /// <summary>反应效果参数包（汲取/反弹等衍生效果强度）；由钩子管线在攻击结算中读取。</summary>
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
 
+    /// <summary>
+    /// 战斗经验对抗池取值（总纲 §7.7.6）：玩家侧由 Progression.CombatExperience 注入，
+    /// 怪物侧按配表 level 经 RealmProgressionCatalog.CumulativeExpFor 派生，斗法镜像随冻结面板携带。
+    /// </summary>
+    public double CombatExperience { get; init; }
+
     /// <summary>校验属性面板全部字段满足有限性与取值域不变量；非法时抛出 InvalidArgument。</summary>
     internal void Validate()
     {
         double[] nonnegative = [AttackPower, SpellAttack, MaxManapoints, Defense, Accuracy, Evasion, MagicResistance,
-            Critical, CriticalResistance, BreakPower, ParryResolve, HpRegen, MpRegen];
+            Critical, CriticalResistance, BreakPower, ParryResolve, HpRegen, MpRegen, CombatExperience];
         double[] finite = [DamageAbsorptionPoints, ThreatBonusPoints,
             PhysicalDamageBonusPoints, SpellDamageBonusPoints, TotalDamageBonusPoints,
             BasicAttackBonusPoints, SkillBonusPoints,

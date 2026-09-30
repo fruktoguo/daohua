@@ -97,6 +97,9 @@ public static partial class SimulationEngine
             }
         if (!availableHere || !hasInputs)
         {
+            // 地点不符且自动移动开启：插队赶路至入队锚点替代 Blocked；任一前置不满足回落原语义。
+            if (!availableHere && TryEnqueueAutoTravel(player, action, definition, gameData, at, ref events))
+                return false;
             action.Status = ActionQueueStatus.Blocked;
             events ??= new();
             events.Add(new SimulationEvent(at, "action.blocked",
@@ -105,6 +108,46 @@ public static partial class SimulationEngine
         }
         player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
         action.Status = ActionQueueStatus.Running;
+        return true;
+    }
+
+    /// <summary>
+    /// 自动移动准入修正：开轮地点校验失败时，按入队锚点节点插队一条 world.travel 至队首，
+    /// 抵达锚点后原行动按挂起恢复语义续跑。仅在 AutoTravelEnabled 开启、锚点仍在允许节点集、
+    /// 世界图可达时生效；否则返回 false 由调用方走原 Blocked 跳过路径。
+    /// </summary>
+    private static bool TryEnqueueAutoTravel(IPlayerActionContext player, IPlayerActionState action,
+        ActionDefinition definition, GameDataCatalog? gameData, DateTimeOffset at,
+        ref SimulationEventTail? events)
+    {
+        var anchor = action.Intent.AnchorNodeId;
+        var travelId = new ActionId("world.travel");
+        if (!player.Settings.AutoTravelEnabled
+            || gameData?.WorldGraph is not { } worldGraph
+            || string.IsNullOrWhiteSpace(anchor)
+            || definition.AllowedNodeIds is not { } allowedNodes
+            || !allowedNodes.Contains(anchor)
+            || !worldGraph.TryGetNode(anchor, out var anchorNode)
+            || !gameData.Actions.Contains(travelId))
+            return false;
+        TravelPlan plan;
+        try
+        {
+            plan = worldGraph.PlanFromPosition(player.World.EdgeId, player.World.EdgeProgress,
+                player.World.NodeId, anchor);
+        }
+        catch (DomainException)
+        {
+            return false;
+        }
+        // 与 world.travel 命令同一条插队通道；模拟内不额外推版本，仅标脏 ActionQueue。
+        player.EnqueuePriority(new ActionIntent(travelId, 1, anchor), at,
+            gameData.Actions,
+            new TravelActionState(anchor, plan.TotalTravelSeconds, plan.EdgeIds, plan.Segments),
+            incrementVersion: false);
+        events ??= new();
+        events.Add(new SimulationEvent(at, "action.auto-travel",
+            $"当前位置无法执行，自动前往 {anchorNode.Name}。", definition.Id));
         return true;
     }
 

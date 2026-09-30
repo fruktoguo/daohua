@@ -64,7 +64,9 @@ public enum WireMessageType : byte
     /// <summary>服务端下发社交状态（好友/申请/队伍/附近修士，仅 WebSocket 下行）</summary>
     SocialState = 22,
     /// <summary>客户端请求某频道作用域的历史回放（仅 WebSocket 上行）</summary>
-    ChatHistoryRequest = 23
+    ChatHistoryRequest = 23,
+    /// <summary>客户端登记/清除单位详情观察目标（仅 WebSocket 上行，火忘帧：非自身单位属性面板随快照按需投影）</summary>
+    UnitInspect = 24
 }
 
 /// <summary>信封内有效载荷的编码格式</summary>
@@ -800,4 +802,9 @@ public sealed record SocialStateDto(
     PartyDto? Party,
     PartyInvitationDto? PartyInvitation,
     IReadOnlyList<NearbyPlayerDto> NearbyPlayers);
+
+/// <summary>单位详情观察目标（UnitInspect 火忘帧载荷）。</summary>
+/// <param name="Side">观察侧：<c>enemy</c> 敌方 / <c>ally</c> 己方（预留队友）；与 <paramref name="Index"/> 同为 null 时表示清除观察目标</param>
+/// <param name="Index">该侧阵型下标（与前端 enemy:i / 未来 ally:i 一致）</param>
+public sealed record UnitInspectDto(string? Side, int? Index);
 

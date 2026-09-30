@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
-import { findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, withItemGrade } from '../game/ids'
+import { findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
 import { useT } from '../i18n'
 import type { CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../game/types'
 import { CharacterAvatar } from './CharacterAvatar'
@@ -46,38 +46,41 @@ interface EquipmentSlotCardProps {
   equippedItem?: EquippedItem
   definition?: ItemDefinition
   equipmentDef?: CombatEquipmentDefinition
-  onClick: () => void
+  /** 该槽位正被待选列表设置中（高亮描边） */
+  picking?: boolean
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
 }
 const EquipmentSlotCard = memo(function EquipmentSlotCard({
   config,
   equippedItem,
   definition,
   equipmentDef,
+  picking = false,
   onClick,
 }: EquipmentSlotCardProps): React.JSX.Element {
   const t = useT()
   const slotName = t(`app.equipmentPanel.${config.labelKey}`)
 
-  if (equippedItem && definition) {
+  if (equippedItem && equipmentDef) {
     const meta = resolveItemMetadata(equippedItem.itemId)
     const metadata = withItemGrade(
       meta ?? {
-        label: definition.name,
+        label: equipmentDef.name,
         glyph: '·',
         tone: 'gold',
-        category: resolveItemCategoryLabel(definition.category, t),
+        category: resolveItemCategoryLabel(equipmentDef.slot, t),
         rarity: 'mundane',
         rarityLabel: '',
-        description: definition.description,
+        description: equipmentDef.description ?? definition?.description ?? '',
         source: '',
         usage: '',
       },
-      definition.tier ?? meta?.level ?? 1,
+      equipmentDef.tier ?? meta?.level ?? 1,
     )
 
     const displayName = equippedItem.enhancementLevel > 0
-      ? `${definition.name} +${equippedItem.enhancementLevel}`
-      : definition.name
+      ? `${equipmentDef.name} +${equippedItem.enhancementLevel}`
+      : equipmentDef.name
 
     return (
       <ItemTooltipTarget
@@ -89,14 +92,13 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
         metadata={metadata}
       >
         <button
-          className="equipment-slot-btn is-equipped"
+          className={`equipment-slot-btn is-equipped${picking ? ' is-picking' : ''}`}
           onClick={onClick}
           type="button"
           aria-label={`${slotName}: ${displayName}`}
         >
-          <span className="equipment-slot-badge">{slotName}</span>
           <ItemTile
-            category={resolveItemCategoryLabel(definition.category, t)}
+            category={resolveItemCategoryLabel(equipmentDef.slot, t)}
             className="inventory-cell"
             itemId={equippedItem.itemId}
             level={metadata.level}
@@ -110,7 +112,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
 
   return (
     <button
-      className="equipment-slot-btn is-empty"
+      className={`equipment-slot-btn is-empty${picking ? ' is-picking' : ''}`}
       onClick={onClick}
       type="button"
       aria-label={slotName}
@@ -133,16 +135,16 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   const t = useT()
   const playerName = useGameStore(state => state.name)
   const visual = useGameStore(state => state.visual)
-  const spirit = useGameStore(state => state.stats.spirit)
+  const experience = useGameStore(state => state.stats.experience)
   const realmLevel = useGameStore(state => state.stats.realmLevel)
   const combat = useGameStore(state => state.combat)
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
   const equipmentCatalog = useGameStore(state => state.equipment)
 
-  const [activePickingSlot, setActivePickingSlot] = useState<SlotConfig | null>(null)
+  const [activePickingSlot, setActivePickingSlot] = useState<{ config: SlotConfig; anchor: HTMLElement } | null>(null)
 
-  const realmInfo = useMemo(() => calculateRealmInfo(spirit ?? 0, realmLevel), [realmLevel, spirit])
+  const realmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, realmLevel), [realmLevel, experience])
 
   const equippedList = combat?.equipment ?? []
 
@@ -167,7 +169,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   // 当前挑选弹窗的可选装备列表
   const pickerItems = useMemo<ItemPickerEntry[]>(() => {
     if (!activePickingSlot) return []
-    const targetSlot = activePickingSlot.slot
+    const targetSlot = activePickingSlot.config.slot
 
     // 1. 过滤背包中符合该部位的可用装备
     const matchingInventoryItems: ItemPickerEntry[] = []
@@ -181,10 +183,11 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
         itemId: inv.itemId,
         name: inv.name,
         amount: inv.amount,
-        tier: inv.tier ?? 1,
-        category: resolveItemCategoryLabel(inv.category, t),
-        description: itemDef?.description ?? '',
+        tier: inv.tier ?? eqDef.tier,
+        category: resolveItemCategoryLabel(resolveItemSubCategory(inv.itemId, itemDef, eqDef, inv.subCategory), t),
+        description: itemDef?.description ?? eqDef.description ?? '',
         definition: itemDef,
+        equipmentDefinition: eqDef,
       })
     }
 
@@ -192,14 +195,16 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     const currentEquipped = slotEquippedMap.get(targetSlot)
     if (currentEquipped && !matchingInventoryItems.some(item => item.itemId === currentEquipped.item.itemId)) {
       const itemDef = currentEquipped.definition
+      const eqDef = currentEquipped.equipmentDef
       matchingInventoryItems.unshift({
         itemId: currentEquipped.item.itemId,
-        name: itemDef?.name ?? currentEquipped.item.itemId,
+        name: itemDef?.name ?? eqDef?.name ?? currentEquipped.item.itemId,
         amount: 1,
-        tier: itemDef?.tier ?? 1,
-        category: resolveItemCategoryLabel(itemDef?.category, t),
-        description: itemDef?.description ?? '',
+        tier: itemDef?.tier ?? eqDef?.tier ?? 1,
+        category: resolveItemCategoryLabel(resolveItemSubCategory(currentEquipped.item.itemId, itemDef, eqDef), t),
+        description: itemDef?.description ?? eqDef?.description ?? '',
         definition: itemDef,
+        equipmentDefinition: eqDef,
       })
     }
 
@@ -209,7 +214,7 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   // 处理装备选择 / 卸下
   const handleSelectEquipment = (selectedItemId: string | null) => {
     if (!combat || !activePickingSlot) return
-    const targetSlot = activePickingSlot.slot
+    const targetSlot = activePickingSlot.config.slot
 
     // 过滤掉当前部位已穿戴的装备
     const nextEquipped = (combat.equipment ?? []).filter(eq => {
@@ -232,10 +237,10 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     setActivePickingSlot(null)
   }
 
-  const activeSlotEquipped = activePickingSlot ? slotEquippedMap.get(activePickingSlot.slot) : null
+  const activeSlotEquipped = activePickingSlot ? slotEquippedMap.get(activePickingSlot.config.slot) : null
   const currentPickerValue = activeSlotEquipped?.item.itemId ?? null
   const pickerTitle = activePickingSlot
-    ? t('app.equipmentPanel.chooseEquipmentTitle', { slot: t(`app.equipmentPanel.${activePickingSlot.labelKey}`) })
+    ? t('app.equipmentPanel.chooseEquipmentTitle', { slot: t(`app.equipmentPanel.${activePickingSlot.config.labelKey}`) })
     : ''
 
   return (
@@ -253,7 +258,11 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
                 equipmentDef={data?.equipmentDef}
                 equippedItem={data?.item}
                 key={config.slot}
-                onClick={() => setActivePickingSlot(config)}
+                onClick={event => {
+                  const anchor = event.currentTarget
+                  setActivePickingSlot(prev => prev?.config.slot === config.slot ? null : { config, anchor })
+                }}
+                picking={activePickingSlot?.config.slot === config.slot}
               />
             )
           })}
@@ -290,7 +299,11 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
                 equipmentDef={data?.equipmentDef}
                 equippedItem={data?.item}
                 key={config.slot}
-                onClick={() => setActivePickingSlot(config)}
+                onClick={event => {
+                  const anchor = event.currentTarget
+                  setActivePickingSlot(prev => prev?.config.slot === config.slot ? null : { config, anchor })
+                }}
+                picking={activePickingSlot?.config.slot === config.slot}
               />
             )
           })}
@@ -318,9 +331,10 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
         </div>
       </div>
 
-      {/* 装备选择网格弹窗 */}
+      {/* 装备待选列表（贴靠目标槽位浮出） */}
       <ItemGridPicker
         allowEmpty
+        anchor={activePickingSlot?.anchor ?? null}
         emptyLabel={t('app.equipmentPanel.unequip')}
         items={pickerItems}
         onClose={() => setActivePickingSlot(null)}

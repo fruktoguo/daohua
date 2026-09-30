@@ -4,8 +4,9 @@
     "name": "凝血草",
     "description": "生长在深山背阴处的暗红草药，叶脉如血丝交织，触之温润微凉。",
     "kind": "material",
-    "category": "herb",
-    "sellPrice": 5
+    "category": "material",
+    "sellPrice": 5,
+    "subCategory": "herb"
   },
   {
     "id": "item.peach-wood",
@@ -13,15 +14,17 @@
     "description": "向阳坡地采伐的百年老木，木质坚致密实，隐泛淡淡纯阳辟邪之意。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 5
+    "sellPrice": 5,
+    "subCategory": "material"
   },
   {
     "id": "item.dark-iron",
     "name": "乌铁",
     "description": "深山老矿采掘出的未淬原铁，色沉如墨，质地沉重坚硬。",
     "kind": "material",
-    "category": "mineral",
-    "sellPrice": 5
+    "category": "material",
+    "sellPrice": 5,
+    "subCategory": "mineral"
   },
   {
     "id": "item.beast-hide",
@@ -29,7 +32,8 @@
     "description": "凡间野兽异变后留下的粗糙兽皮，皮质坚韧厚密。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 6
+    "sellPrice": 6,
+    "subCategory": "material"
   },
   {
     "id": "item.beast-bone",
@@ -37,7 +41,8 @@
     "description": "山野猛兽身上的坚硬兽骨，骨质密实惨白。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 6
+    "sellPrice": 6,
+    "subCategory": "material"
   },
   {
     "id": "item.morning-dew",
@@ -45,7 +50,8 @@
     "description": "破晓清晨凝结于山涧草木叶尖的无根甘露，清澈明净，不染尘埃。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 8
+    "sellPrice": 8,
+    "subCategory": "material"
   },
   {
     "id": "item.broken-spirit-core",
@@ -53,7 +59,8 @@
     "description": "初具灵机的精怪异兽体内残留的微弱灵核碎屑，晶芒微弱。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 12
+    "sellPrice": 12,
+    "subCategory": "material"
   },
   {
     "id": "item.demon-dan",
@@ -61,7 +68,8 @@
     "description": "深山凶兽体内凝结而成的浑浊兽丹，表面隐现血色煞纹。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 50
+    "sellPrice": 50,
+    "subCategory": "material"
   },
   {
     "id": "item.sha-fang",
@@ -69,16 +77,18 @@
     "description": "凶兽口中浸透血气的森白尖齿，锋刃如匕，透着阵阵森冷凶煞。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 50
+    "sellPrice": 50,
+    "subCategory": "material"
   },
   {
     "id": "item.banling-flower",
     "name": "伴灵花",
     "description": "生长在悬崖灵泉旁的幽蓝野花，花瓣常年吞吐微光，暗香浮动。",
     "kind": "material",
-    "category": "herb",
+    "category": "material",
     "tier": 2,
-    "sellPrice": 15
+    "sellPrice": 15,
+    "subCategory": "herb"
   },
   {
     "id": "item.yinlingsong-wood",
@@ -87,16 +97,18 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 15
+    "sellPrice": 15,
+    "subCategory": "material"
   },
   {
     "id": "item.crimson-copper",
     "name": "赤铜",
     "description": "伴生于灵脉浅层的赤红矿石，触手温热，断面隐现熔岩纹理。",
     "kind": "material",
-    "category": "mineral",
+    "category": "material",
     "tier": 2,
-    "sellPrice": 15
+    "sellPrice": 15,
+    "subCategory": "mineral"
   },
   {
     "id": "item.beast-fang",
@@ -105,7 +117,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 18
+    "sellPrice": 18,
+    "subCategory": "material"
   },
   {
     "id": "item.fire-feather",
@@ -114,7 +127,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 18
+    "sellPrice": 18,
+    "subCategory": "material"
   },
   {
     "id": "item.soul-talisman",
@@ -123,7 +137,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 20
+    "sellPrice": 20,
+    "subCategory": "material"
   },
   {
     "id": "item.broken-blade",
@@ -132,7 +147,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 60
+    "sellPrice": 60,
+    "subCategory": "material"
   },
   {
     "id": "item.sha-bone",
@@ -141,7 +157,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 60
+    "sellPrice": 60,
+    "subCategory": "material"
   },
   {
     "id": "item.demon-core",
@@ -150,7 +167,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 150
+    "sellPrice": 150,
+    "subCategory": "material"
   },
   {
     "id": "item.meteor-fragment",
@@ -159,7 +177,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 150
+    "sellPrice": 150,
+    "subCategory": "material"
   },
   {
     "id": "item.refined-iron",
@@ -167,7 +186,8 @@
     "description": "经凡火千锤百炼去除凡浊的原铁精料，铁质匀密坚固。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 18
+    "sellPrice": 18,
+    "subCategory": "material"
   },
   {
     "id": "item.peach-wood-crystal",
@@ -175,7 +195,8 @@
     "description": "自百年老桃木中淬炼凝结的琥珀状灵晶，木香淡雅，通体晶莹。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 18
+    "sellPrice": 18,
+    "subCategory": "material"
   },
   {
     "id": "item.herb-essence",
@@ -183,7 +204,8 @@
     "description": "萃取百草朝露精粹而成的碧绿药露，香气清纯，生机内蕴。",
     "kind": "material",
     "category": "material",
-    "sellPrice": 20
+    "sellPrice": 20,
+    "subCategory": "material"
   },
   {
     "id": "item.refined-copper",
@@ -192,7 +214,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 50
+    "sellPrice": 50,
+    "subCategory": "material"
   },
   {
     "id": "item.spirit-pine-crystal",
@@ -201,7 +224,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 50
+    "sellPrice": 50,
+    "subCategory": "material"
   },
   {
     "id": "item.banling-essence",
@@ -210,7 +234,8 @@
     "kind": "material",
     "category": "material",
     "tier": 2,
-    "sellPrice": 55
+    "sellPrice": 55,
+    "subCategory": "material"
   },
   {
     "id": "currency.spirit-stone",

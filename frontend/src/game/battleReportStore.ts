@@ -63,8 +63,10 @@ function normalizeStoredReport(report: BattleReport): BattleReport {
     ...report,
     actionName: typeof report.actionName === 'string' ? report.actionName : '',
     endedAtUnixSeconds: storedNumber(report.endedAtUnixSeconds),
-    qi: storedNumber(report.qi),
+
     experience: storedNumber(report.experience),
+    foundation: storedNumber(report.foundation),
+    combatExperience: storedNumber(report.combatExperience),
     rootExp: {
       stamina: storedNumber(rootExp.stamina),
       meridians: storedNumber(rootExp.meridians),

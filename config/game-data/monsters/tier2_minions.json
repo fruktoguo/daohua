@@ -46,9 +46,7 @@
         "triggerHpRatio": 0.85
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10
+    "experience": 10
   },
   {
     "id": "enemy.star-flame-crow",
@@ -111,12 +109,10 @@
         "triggerHpRatio": 1.0
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10,
     "modifiers": {
       "fireDamageReductionPoints": 11.299999999999999
-    }
+    },
+    "experience": 10
   },
   {
     "id": "enemy.plunder-cultivator",
@@ -167,11 +163,9 @@
         "triggerHpRatio": 0.85
       }
     ],
-    "qiReward": 10,
-    "experienceReward": 10,
-    "rootExpReward": 10,
     "modifiers": {
       "woodDamageReductionPoints": 9.200000000000001
-    }
+    },
+    "experience": 10
   }
 ]

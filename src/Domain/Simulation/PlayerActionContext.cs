@@ -32,6 +32,9 @@ public interface IPlayerActionContext
     void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply);
     bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true, double endedAtUnixSeconds = -1);
     bool RotateActionToTail(Guid actionInstanceId);
+    /// <summary>队首高优插队（自动移动/手动赶路共用）：同类去重、挂起运行中队首、新行动立即 Running；模拟内传 incrementVersion: false。</summary>
+    IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog catalog,
+        TravelActionState? travel = null, bool incrementVersion = true);
 }
 
 /// <summary>资源自然窗口需要的直接分段引用；不要求任何聚合或序列化文档。</summary>

@@ -46,9 +46,6 @@ export interface GameLogEntry extends StoredGameLog {
   latestTimestampMs: number
 }
 
-/** 日志只保留当前页面内的短环形缓冲，永不写入 IndexedDB、localStorage 或服务端历史表。 */
-export type LogPersistenceState = 'memory'
-
 /** 日志服务对外只读快照（配合 subscribe 的 revision 变化驱动 UI 刷新） */
 export interface GameLogSnapshot {
   /** 当前激活玩家 ID */
@@ -59,8 +56,6 @@ export interface GameLogSnapshot {
   revision: number
   /** 累计接收（未去重前）日志条数 */
   receivedCount: number
-  /** 持久化策略标识（固定 'memory'） */
-  persistence: LogPersistenceState
 }
 
 /** 历史翻页游标（当前无历史接口，保留契约位） */
@@ -183,7 +178,7 @@ export function filterLogEntries(entries: readonly GameLogEntry[], channel: LogC
  */
 class GameLogService {
   private readonly listeners = new Set<() => void>()
-  private snapshot: GameLogSnapshot = { playerId: null, latest: [], revision: 0, receivedCount: 0, persistence: 'memory' }
+  private snapshot: GameLogSnapshot = { playerId: null, latest: [], revision: 0, receivedCount: 0 }
   private collapsedEntries: GameLogEntry[] = []
   private seenIds = new Set<string>()
 
@@ -201,7 +196,7 @@ class GameLogService {
     if (this.snapshot.playerId === playerId) return
     this.collapsedEntries = []
     this.seenIds.clear()
-    this.snapshot = { playerId, latest: [], revision: this.snapshot.revision + 1, receivedCount: 0, persistence: 'memory' }
+    this.snapshot = { playerId, latest: [], revision: this.snapshot.revision + 1, receivedCount: 0 }
     this.notify()
   }
 

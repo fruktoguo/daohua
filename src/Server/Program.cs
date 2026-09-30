@@ -336,7 +336,8 @@ if (processRole == ServerProcessRole.Api)
             result.AccountId,
             result.PlayerId,
             result.Account,
-            result.DisplayName
+            result.DisplayName,
+            result.SequenceId
         });
     }).RequireRateLimiting("auth");
     auth.MapPost("/login", async (LoginRequest request, IAccountRepository accounts, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
@@ -345,7 +346,7 @@ if (processRole == ServerProcessRole.Api)
         if (!result.Success)
             return Results.Json(Problem(401, result.ErrorCode ?? "INVALID_CREDENTIALS", result.Message ?? "账号或密码错误。"), statusCode: 401);
         StampSessionCookie(context, result.SessionToken!, serverOptions.SessionLifetime);
-        return Results.Ok(new { result.AccountId, result.PlayerId, result.Account, result.DisplayName });
+        return Results.Ok(new { result.AccountId, result.PlayerId, result.Account, result.DisplayName, result.SequenceId });
     }).RequireRateLimiting("auth");
     auth.MapPost("/logout", async (IAccountRepository accounts, HttpContext context, CancellationToken ct) =>
     {
@@ -354,6 +355,19 @@ if (processRole == ServerProcessRole.Api)
         context.Response.Cookies.Delete(SessionAuthenticationDefaults.CookieName, new CookieOptions { Path = "/", HttpOnly = true, SameSite = SameSiteMode.Lax });
         return Results.NoContent();
     });
+    auth.MapPost("/change-password", async (ChangePasswordRequest request, ClaimsPrincipal user, IAccountRepository accounts, HttpContext context, CancellationToken ct) =>
+    {
+        if (!Guid.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), out var accountId))
+            return Results.Json(Problem(401, "UNAUTHENTICATED", "当前没有有效会话。"), statusCode: 401);
+        // 改密吊销其他会话：当前会话令牌哈希作为豁免项传入仓储。
+        byte[]? keepTokenHash = null;
+        if (context.Request.Cookies.TryGetValue(SessionAuthenticationDefaults.CookieName, out var currentToken))
+            keepTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(currentToken));
+        var result = await accounts.ChangePasswordAsync(accountId, request.CurrentPassword, request.NewPassword, keepTokenHash, ct);
+        return result.Success
+            ? Results.NoContent()
+            : Results.BadRequest(Problem(400, result.ErrorCode ?? "CHANGE_PASSWORD_FAILED", result.Message ?? "密码修改失败。"));
+    }).RequireAuthorization().RequireRateLimiting("auth");
     auth.MapGet("/session", (ClaimsPrincipal user) =>
     {
         if (user.Identity?.IsAuthenticated != true || !Guid.TryParse(user.FindFirstValue("player_id"), out var playerId))
@@ -363,7 +377,8 @@ if (processRole == ServerProcessRole.Api)
             accountId = user.FindFirstValue(ClaimTypes.NameIdentifier),
             account = user.FindFirstValue(ClaimTypes.Name),
             playerId,
-            displayName = user.FindFirstValue("display_name")
+            displayName = user.FindFirstValue("display_name"),
+            sequenceId = long.TryParse(user.FindFirstValue("sequence_id"), out var sequenceId) ? sequenceId : 0L
         });
     }).RequireAuthorization();
 
@@ -596,5 +611,9 @@ public sealed record RegisterRequest(string Account, string Password, string? Di
 /// <param name="Account">登录账号。</param>
 /// <param name="Password">明文密码，仅用于与服务端哈希比对。</param>
 public sealed record LoginRequest(string Account, string Password);
+/// <summary>修改密码请求体；CurrentPassword 为改密前的身份二次确认，明文仅存在于传输层。</summary>
+/// <param name="CurrentPassword">当前密码明文。</param>
+/// <param name="NewPassword">新密码明文。</param>
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 /// <summary>顶级语句入口的 Program 类型占位，供测试项目引用入口程序集。</summary>
 public partial class Program;

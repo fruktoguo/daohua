@@ -3,7 +3,7 @@ import { useGameStore } from '../game/gameStore'
 import { formatRemainingSeconds } from '../game/format'
 import { findAbilityInCatalog } from '../game/ids'
 import { useT } from '../i18n'
-import { ItemTileReference } from './ItemDisplay'
+import { ItemReference } from './ItemDisplay'
 import { UnitNumber } from './UnitNumber'
 import type { BattleReport, BattleReportRootExp } from '../game/types'
 
@@ -30,7 +30,7 @@ export function formatReportTime(unixSeconds: number): string {
  * 用于离线挂机 / 每日统计分区的空账本抑制（全零账本不渲染分区）。
  */
 export function reportHasContent(report: BattleReport): boolean {
-  if (report.qi !== 0 || report.experience !== 0) return true
+  if (report.experience !== 0 || report.foundation !== 0 || report.combatExperience !== 0) return true
   if (ROOT_EXP_ROWS.some(row => report.rootExp[row.key] !== 0)) return true
   if (report.abilityExp.length > 0 || report.levelUps.length > 0) return true
   if (report.items.length > 0 || report.itemsLost.length > 0) return true
@@ -40,8 +40,8 @@ export function reportHasContent(report: BattleReport): boolean {
 }
 
 /**
- * 「获取经验」小节：修为 / 底蕴 / 六维 / 功法技能经验 + 期间等级提升（境界/六维/功法）。
- * 所有数值行仅在 >0 时展示；功法名按目录解析，未命中回退 abilityId。
+ * 「获取经验」小节：修为 / 底蕴净变动 / 战斗经验 / 六维 / 功法技能经验 + 期间等级提升（境界/六维/功法）。
+ * 除底蕴（净变动，可为负，非零即展示）外，其余数值行仅在 >0 时展示；功法名按目录解析，未命中回退 abilityId。
  */
 export const ReportExpSection = memo(function ReportExpSection({ report }: { report: BattleReport }): React.JSX.Element | null {
   const t = useT()
@@ -70,18 +70,22 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
     return { key: `${entry.kind}:${entry.targetId}:${index}`, name, from: entry.fromLevel, to: entry.toLevel }
   })
 
-  const hasAny = report.qi > 0 || report.experience > 0
+  const hasAny = report.experience > 0 || report.foundation !== 0 || report.combatExperience > 0
     || rootExpEntries.length > 0 || abilityExpEntries.length > 0 || levelUpEntries.length > 0
   if (!hasAny) return null
 
   return (
     <div className="battle-report-section">
       <div className="battle-report-metrics">
-        {report.qi > 0 && (
-          <span>{t('combat.report.qi')} <strong><UnitNumber disableTooltip prefix="+" value={report.qi} /></strong></span>
-        )}
         {report.experience > 0 && (
           <span>{t('combat.report.experience')} <strong><UnitNumber disableTooltip prefix="+" value={report.experience} /></strong></span>
+        )}
+        {/* 底蕴为净变动口径：沉淀为正、消耗兑换为负，负值由数值自带负号呈现 */}
+        {report.foundation !== 0 && (
+          <span>{t('combat.report.foundation')} <strong><UnitNumber disableTooltip prefix={report.foundation > 0 ? '+' : undefined} value={report.foundation} /></strong></span>
+        )}
+        {report.combatExperience > 0 && (
+          <span>{t('combat.report.combatExperience')} <strong><UnitNumber disableTooltip prefix="+" value={report.combatExperience} /></strong></span>
         )}
         {rootExpEntries.map(entry => (
           <span key={entry.key}>{entry.label} <strong><UnitNumber disableTooltip prefix="+" value={entry.value} /></strong></span>
@@ -105,7 +109,7 @@ export const ReportExpSection = memo(function ReportExpSection({ report }: { rep
 
 /**
  * 「物品得失」小节：获得（items）与失去（itemsLost）分组两列展示；
- * 物品一律按背包同款图标瓦片渲染（图标 + 数量角标 + 品质边框，悬浮出详情卡片）。
+ * 物品一律按暂存区同款复合胶囊渲染（行内图标 + 名称 + ×数量下划线值，悬浮出详情卡片）。
  * 某一侧为空时不渲染该列，两侧皆空时整节不渲染。
  */
 export const ReportItemsSection = memo(function ReportItemsSection({ report }: { report: BattleReport }): React.JSX.Element | null {
@@ -119,7 +123,7 @@ export const ReportItemsSection = memo(function ReportItemsSection({ report }: {
             <span className="battle-report-item-column-title">{t('combat.report.itemsGained')}</span>
             <div className="battle-report-items">
               {report.items.map(item => (
-                <ItemTileReference amount={item.quantity} className="battle-report-item-anchor" itemId={item.itemId} key={item.itemId} />
+                <ItemReference amount={item.quantity} itemId={item.itemId} key={item.itemId} />
               ))}
             </div>
           </div>
@@ -129,7 +133,7 @@ export const ReportItemsSection = memo(function ReportItemsSection({ report }: {
             <span className="battle-report-item-column-title">{t('combat.report.itemsLost')}</span>
             <div className="battle-report-items">
               {report.itemsLost.map(item => (
-                <ItemTileReference amount={item.quantity} className="battle-report-item-anchor" itemId={item.itemId} key={item.itemId} />
+                <ItemReference amount={item.quantity} itemId={item.itemId} key={item.itemId} />
               ))}
             </div>
           </div>

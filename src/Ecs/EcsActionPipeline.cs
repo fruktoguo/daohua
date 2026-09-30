@@ -258,7 +258,7 @@ public sealed class EcsActionPipeline
                     var revision = PlayerAttributeResolver.InputRevision(_player.Progression, _player.World, _player.Buffs, _player.Loadout);
                     if (_catalog.BaseAttributes is null || revision != _battle.AttributeRevision)
                     {
-                        _battle.State.Player.RefreshStats(_player.ResolveAttributes(_catalog).ToCombatant());
+                        _battle.State.Player.RefreshStats(_player.ResolveAttributes(_catalog).ToCombatant(_player.Progression.CombatExperience));
                         CombatTriggerSurface.Sync(_entity, _battle.State.Player);
                         _battle.AttributeRevision = revision;
                     }

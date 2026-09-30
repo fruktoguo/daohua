@@ -30,6 +30,9 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     private long _outboundSequence;
     private IReadOnlyList<AssetBalanceDto>? _lastPushedAssets;
     private IReadOnlyDictionary<string, string>? _lastPushedSectionChecksums;
+    private volatile UnitInspectDto? _inspectedUnit;
+    /// <summary>观察目标的属性面板尚未随成功入队的帧交付：武装于登记，交付后解除，避免观察期间逐拍重复下发。</summary>
+    private volatile bool _inspectDeliveryPending;
     private int _consecutiveDrops;
     private long _firstDropUtcTicks;
 
@@ -46,6 +49,27 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     public string? DeviceFingerprint { get; set; }
     /// <summary>会话拆除（含事件退订、注册表释放与必要的 Actor 卸载）全部完成后置位</summary>
     public Task TeardownCompleted => _teardownCompleted.Task;
+    /// <summary>客户端经 UnitInspect 火忘帧登记的单位详情观察目标；会话级浏览态，断开即销毁。</summary>
+    public UnitInspectDto? InspectedUnit => _inspectedUnit;
+    /// <summary>观察目标解析出的敌方阵型下标：快照按需投影的属性面板只对命中下标的敌怪/斗法镜像下发。</summary>
+    public int? InspectedEnemyIndex => _inspectedUnit is { Side: "enemy", Index: >= 0 } t ? t.Index : null;
+    /// <summary>待交付的观察目标下标：仅登记后属性面板尚未交付期间返回下标；交付后快照不再携带属性面板（前端按 enemyId 缓存复用）。</summary>
+    public int? PendingInspectedEnemyIndex => _inspectDeliveryPending ? InspectedEnemyIndex : null;
+    /// <summary>
+    /// 更新观察目标（null 清除）并重新武装一次性属性交付；写于接收循环、读于推送 OutboundSync，引用字段 volatile 原子可见。
+    /// </summary>
+    public void SetInspectedUnit(UnitInspectDto? target)
+    {
+        _inspectedUnit = target;
+        _inspectDeliveryPending = target is not null;
+    }
+    /// <summary>
+    /// 属性面板已随入队成功的帧交付则解除武装；若登记目标在编码后已变更则保留武装，避免吞掉新目标的交付。
+    /// </summary>
+    public void MarkInspectedAttributesDelivered(int? deliveredIndex)
+    {
+        if (deliveredIndex == InspectedEnemyIndex) _inspectDeliveryPending = false;
+    }
     /// <summary>
     /// 下行推送的构建-发送-基线提交串行化锁：增量推送可由模拟循环与斗法撮合等多线程并发触发，
     /// 同一会话的「读基线 → 编码 → 入队 → 提交基线」必须整体串行，否则交错会把未送达内容的
@@ -251,13 +275,19 @@ public static class WebSocketEndpoint
             lock (session.OutboundSync)
             {
                 var (previousSections, previousAssets) = session.ReadPushBaseline();
+                // 按需属性为一次性交付：仅「登记后尚未送达」期间投影；本帧实际写入属性且入队成功才解除武装，
+                // 被慢消费者丢弃时保留武装由下一拍重投，保证客户端最终拿到面板数据。
+                var pendingInspectIndex = session.PendingInspectedEnemyIndex;
+                var attributesProjected = false;
                 var delta = ProtocolSnapshotMapper.BuildDelta(
                     snapshot, gameData.Fingerprint, gameData, snapshot.TouchedSections,
                     previousSections, previousAssets,
-                    out var nextSections, out var nextAssets);
+                    out var nextSections, out var nextAssets,
+                    pendingInspectIndex, () => attributesProjected = true);
                 var packet = EncodeJson(WireMessageType.SnapshotDelta, Guid.NewGuid(), session.NextOutboundSequence(), delta);
                 // 可丢弃帧入队成功才前移基线；被丢弃时基线保持上次已送达内容，避免客户端永久漂移。
                 if (!session.TrySendDroppable(packet)) return;
+                if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspectIndex);
                 session.CommitPushBaseline(nextSections, nextAssets);
             }
         }
@@ -431,8 +461,10 @@ public static class WebSocketEndpoint
                         displayName = initial.DisplayName;
                         // 握手数据获取并行化：快照编码（CPU）、社交/聊天/存在感（独立 IO 与内存计算）互不依赖，
                         // 总耗时取最大而非求和；下行发送顺序保持 HelloAck → Snapshot → LogBatch → SocialState → ChatHistory 不变。
+                        var handshakeInspectIndex = session.PendingInspectedEnemyIndex;
+                        var inspectAttributesProjected = false;
                         var snapshotTask = Task.Run(
-                            () => ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData),
+                            () => ProtocolSnapshotMapper.ToSnapshot(initial, gameData.Fingerprint, gameData, handshakeInspectIndex, () => inspectAttributesProjected = true),
                             cancellationToken);
                         var socialTask = social.BuildStateAsync(session.PlayerId, null, cancellationToken);
                         var worldChatTask = chat.LoadHistoryAsync(session.PlayerId, new ChatHistoryRequestDto(ChatChannels.World), cancellationToken);
@@ -441,6 +473,8 @@ public static class WebSocketEndpoint
                         var presenceTask = presence.RegisterAsync(session.PlayerId, displayName, initial.State.World.NodeId, cancellationToken);
                         var initialSnapshot = await snapshotTask;
                         await QueueJsonAsync(session, WireMessageType.Snapshot, Guid.NewGuid(), initialSnapshot, cancellationToken);
+                        // 握手快照必达：属性面板实际写入即解除一次性交付武装。
+                        if (inspectAttributesProjected) session.MarkInspectedAttributesDelivered(handshakeInspectIndex);
                         // 初始快照帧已进入发送队列：直接提交推送基线，后续增量以此裁决变更。
                         var initialSectionChecksums = new Dictionary<string, string>(initialSnapshot.Sections.Count, StringComparer.Ordinal);
                         foreach (var section in initialSnapshot.Sections)
@@ -605,6 +639,24 @@ public static class WebSocketEndpoint
                         await QueueJsonAsync(session, WireMessageType.SocialState, envelope.RequestId,
                             await social.BuildStateAsync(session.PlayerId, envelope.RequestId.ToString("D"), cancellationToken), cancellationToken);
                         break;
+                    case WireMessageType.UnitInspect:
+                        if (!handshaken)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        if (!WireEnvelopeCodec.TryDeserializeJson<UnitInspectDto>(envelope, out var inspect) || inspect is null
+                            || (inspect.Side is null) != (inspect.Index is null)
+                            || (inspect.Side is not null && inspect.Side != "enemy" && inspect.Side != "ally")
+                            || (inspect.Index is { } inspectIdx && inspectIdx < 0))
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_INSPECT", "单位观察目标无效。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        // 火忘帧无回执：登记武装一次性属性交付，由下一帧快照按命中下标投影一次后自动解除；
+                        // 帧被慢消费者丢弃则保留武装重投，客户端按 enemyId 缓存复用无需重复下发。
+                        session.SetInspectedUnit(inspect.Side is null ? null : inspect);
+                        break;
                     default:
                         await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("UNSUPPORTED_MESSAGE", "不支持的消息类型。"), cancellationToken);
                         break;
@@ -662,24 +714,34 @@ public static class WebSocketEndpoint
                 var (previousSections, previousAssets) = session.ReadPushBaseline();
                 if (previousSections is not null)
                 {
+                    var pendingInspectIndex = session.PendingInspectedEnemyIndex;
+                    var attributesProjected = false;
                     var delta = ProtocolSnapshotMapper.BuildDelta(
                         result.Snapshot, gameData.Fingerprint, gameData, touched,
                         previousSections, previousAssets,
-                        out var nextSections, out var nextAssets);
+                        out var nextSections, out var nextAssets,
+                        pendingInspectIndex, () => attributesProjected = true);
                     var packet = EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(),
                         new CommandResultDto(requestId, result.Success, result.Code, result.Message,
                             result.Snapshot.StateVersion, CommandResultSnapshotForms.Delta,
                             JsonSerializer.SerializeToElement(delta, ProtocolJson.Options)));
                     enqueued = session.TrySend(packet);
                     if (enqueued) session.CommitPushBaseline(nextSections, nextAssets);
+                    // 回执帧必达：入队失败由调用方锁外 SendAsync 阻塞投递，属性交付直接记账。
+                    if (attributesProjected) session.MarkInspectedAttributesDelivered(pendingInspectIndex);
                     return packet;
                 }
             }
         }
+        var pendingInspectIndexFull = session.PendingInspectedEnemyIndex;
+        var attributesProjectedFull = false;
+        var fullSnapshot = ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData,
+            pendingInspectIndexFull, () => attributesProjectedFull = true);
+        if (attributesProjectedFull) session.MarkInspectedAttributesDelivered(pendingInspectIndexFull);
         var full = new CommandResultDto(
             requestId, result.Success, result.Code, result.Message,
             result.Snapshot.StateVersion, CommandResultSnapshotForms.Snapshot,
-            JsonSerializer.SerializeToElement(ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, gameData.Fingerprint, gameData), ProtocolJson.Options));
+            JsonSerializer.SerializeToElement(fullSnapshot, ProtocolJson.Options));
         enqueued = false;
         return EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(), full);
     }

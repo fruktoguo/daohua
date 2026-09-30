@@ -1,11 +1,11 @@
-import { type ReactNode, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type MouseEvent, type ReactNode, useLayoutEffect, useMemo, useRef } from 'react'
 import { formatNumber } from '../game/format'
-import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, withItemGrade, type ItemMetadata } from '../game/ids'
+import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../game/ids'
 import { useGameStore } from '../game/gameStore'
 import { useT, type TFunction } from '../i18n'
-import type { ItemDefinition, QueueEntry } from '../game/types'
+import type { CombatEquipmentDefinition, ItemDefinition, QueueEntry } from '../game/types'
+import { CandidatePicker, type CandidateOption } from './CandidatePicker'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
-import { Modal } from './Modal'
 
 /**
  * 物品网格选择条目定义
@@ -25,21 +25,25 @@ export interface ItemPickerEntry {
   amount: number
   /** 可选服务端原始定义 */
   definition?: ItemDefinition
+  /** 可选装备目录定义（装备类条目悬浮详情使用） */
+  equipmentDefinition?: CombatEquipmentDefinition
 }
 
 /**
- * 物品网格选择模态窗 Props
+ * 物品网格待选列表 Props
  */
 interface ItemGridPickerProps {
-  /** 弹窗展开状态 */
+  /** 待选列表展开状态 */
   open: boolean
-  /** 弹窗标题 */
+  /** 设置目标锚点元素（正在配置的槽位按钮，面板贴靠其定位） */
+  anchor: HTMLElement | null
+  /** 目标标题 */
   title: string
   /** 可供选择的物品列表 */
   items: readonly ItemPickerEntry[]
   /** 当前选中的物品 ID (null 表示空选/卸下) */
   value: string | null
-  /** 关闭弹窗回调 */
+  /** 关闭回调 */
   onClose: () => void
   /** 选中物品回调 */
   onSelect: (itemId: string | null) => void
@@ -77,58 +81,16 @@ function getMetadata(item: ItemPickerEntry, t: TFunction): ItemMetadata {
   }, item.tier > 0 ? item.tier : registered.level ?? 1)
 }
 
-/** 物品网格单元格组件 */
-function ItemGridCell({
-  item,
-  selected,
-  onSelect,
-}: {
-  item: ItemPickerEntry
-  selected: boolean
-  onSelect: () => void
-}): React.JSX.Element {
-  const t = useT()
-  const metadata = getMetadata(item, t)
-  return (
-    <ItemTooltipTarget
-      amount={item.amount}
-      className="item-grid-picker-tooltip"
-      definition={item.definition}
-      itemId={item.itemId}
-      metadata={metadata}
-      tabIndex={-1}
-    >
-      <button
-        aria-label={t('market.browse.itemOwned', { name: item.name, count: formatNumber(item.amount) })}
-        aria-selected={selected}
-        className={`item-grid-picker-card${selected ? ' is-selected' : ''}${item.amount <= 0 ? ' is-empty' : ''}`}
-        disabled={item.amount <= 0}
-        onClick={onSelect}
-        role="option"
-        type="button"
-      >
-        <ItemTile
-          amount={item.amount}
-          category={resolveItemCategoryLabel(item.category, t)}
-          className="item-grid-picker-cell"
-          itemId={item.itemId}
-          level={metadata.level}
-          name={item.name}
-          rarity={metadata.rarity}
-        />
-      </button>
-    </ItemTooltipTarget>
-  )
-}
-
 /**
- * 物品网格选择器模态窗组件 (ItemGridPicker)
+ * 物品网格待选列表组件 (ItemGridPicker)
  *
  * 用于快捷药品装配、丹药吞服、战斗法宝选用等网格式物品检索与选择。
- * 支持搜索过滤、持存数量气泡查看、空选卸下功能。
+ * 渲染为贴靠目标槽位的通用待选列表（CandidatePicker），
+ * 支持按需搜索过滤、持存数量气泡查看、空选卸下功能。
  */
 export function ItemGridPicker({
   open,
+  anchor,
   title,
   items,
   value,
@@ -136,74 +98,56 @@ export function ItemGridPicker({
   onSelect,
   allowEmpty = true,
   emptyLabel,
-}: ItemGridPickerProps): React.JSX.Element | null {
+}: ItemGridPickerProps): React.JSX.Element {
   const t = useT()
-  const titleId = useId()
-  const [query, setQuery] = useState('')
-  const normalizedQuery = query.trim().toLocaleLowerCase('zh-CN')
-  const visibleItems = useMemo(() => {
-    if (!normalizedQuery) return items
-    return items.filter(item => {
-      const catLabel = resolveItemCategoryLabel(item.category, t)
-      return `${item.name} ${item.category} ${catLabel} ${item.description}`
-        .toLocaleLowerCase('zh-CN')
-        .includes(normalizedQuery)
-    })
-  }, [items, normalizedQuery, t])
-
-  useEffect(() => {
-    if (open) setQuery('')
-  }, [open])
-
-  if (!open) return null
-
-  // 默认参数不能在解构处调用 hook，收拢到组件体内解析。
-  const emptyText = emptyLabel ?? t('common.pickerEmpty')
-  const select = (itemId: string | null) => {
-    onSelect(itemId)
-    onClose()
-  }
+  const options = useMemo<readonly CandidateOption[]>(() => items.map(item => {
+    const metadata = getMetadata(item, t)
+    const categoryLabel = resolveItemCategoryLabel(
+      resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.category), t)
+    return {
+      key: item.itemId,
+      tile: (
+        <ItemTile
+          amount={item.amount}
+          category={categoryLabel}
+          className="item-grid-picker-cell"
+          itemId={item.itemId}
+          level={metadata.level}
+          name={item.name}
+          rarity={metadata.rarity}
+        />
+      ),
+      disabled: item.amount <= 0,
+      ariaLabel: t('market.browse.itemOwned', { name: item.name, count: formatNumber(item.amount) }),
+      searchText: `${item.name} ${item.category} ${categoryLabel} ${item.description}`,
+      wrapCell: cell => (
+        <ItemTooltipTarget
+          amount={item.amount}
+          className="item-grid-picker-tooltip"
+          definition={item.definition}
+          equipmentDefinition={item.equipmentDefinition}
+          itemId={item.itemId}
+          metadata={metadata}
+          tabIndex={-1}
+        >
+          {cell}
+        </ItemTooltipTarget>
+      ),
+    }
+  }), [items, t])
 
   return (
-    <Modal labelledBy={titleId} onClose={onClose} open size="large" className="item-grid-picker-modal">
-      <header className="item-grid-picker-header">
-        <div>
-          <h2 id={titleId}>{title}</h2>
-        </div>
-        <input
-          aria-label={t('market.picker.searchTitleTemplate', { title })}
-          autoComplete="off"
-          onChange={event => setQuery(event.target.value)}
-          placeholder={t('market.browse.searchItems')}
-          type="search"
-          value={query}
-        />
-      </header>
-      <div className="item-grid-picker-grid" role="listbox" aria-label={title}>
-        {allowEmpty && (
-          <button
-            aria-selected={value === null}
-            className={`item-grid-picker-card item-grid-picker-card--empty${value === null ? ' is-selected' : ''}`}
-            onClick={() => select(null)}
-            role="option"
-            type="button"
-          >
-            <span className="item-grid-picker-empty-cell">
-              <strong>{emptyText}</strong>
-            </span>
-          </button>
-        )}
-        {visibleItems.map(item => (
-          <ItemGridCell
-            item={item}
-            key={item.itemId}
-            onSelect={() => select(item.itemId)}
-            selected={value === item.itemId}
-          />
-        ))}
-      </div>
-      {visibleItems.length === 0 && <p className="item-grid-picker-empty">{t('market.picker.noAvailableMatch')}</p>}
-    </Modal>
+    <CandidatePicker
+      allowEmpty={allowEmpty}
+      anchor={anchor}
+      emptyLabel={emptyLabel}
+      onClose={onClose}
+      onSelect={onSelect}
+      open={open}
+      options={options}
+      title={title}
+      value={value}
+    />
   )
 }
 
@@ -304,8 +248,8 @@ export function ItemUseSlot({
   remainingDurationSeconds?: number
   /** 持续消耗品单件总有效秒数 */
   totalDurationSeconds?: number
-  /** 点击槽位选择/更换物品回调 */
-  onClick: () => void
+  /** 点击槽位选择/更换物品回调（回传事件供调用方取锚点元素） */
+  onClick: (event: MouseEvent<HTMLButtonElement>) => void
   /** 点击编辑战斗触发条件回调 */
   onCondition?: () => void
 }): React.JSX.Element {
@@ -346,7 +290,8 @@ export function ItemUseSlot({
         >
           <ItemTile
             amount={item.amount}
-            category={resolveItemCategoryLabel(item.category, t)}
+            category={resolveItemCategoryLabel(
+              resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.category), t)}
             className="item-use-slot-cell"
             itemId={item.itemId}
             level={metadata.level}

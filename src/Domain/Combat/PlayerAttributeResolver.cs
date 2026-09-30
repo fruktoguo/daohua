@@ -71,8 +71,10 @@ public sealed record PlayerAttributes(
     /// <summary>反应效果参数包：装备特殊机制（汲取/反弹）汇总结果（点数）。</summary>
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
     /// <summary>折叠为战斗单位属性规格：普攻全流派统一走物理攻击力与物理伤害；术法攻击仅供技能结算。</summary>
+    /// <param name="combatExperience">战斗经验对抗池取值（总纲 §7.7.6）：由调用方从 Progression.CombatExperience 注入；
+    /// 属性面板不承载该字段——它不随装备/Buff/境界等属性输入修订号变化，缓存命中时也必须取调用方现值。</param>
     /// <returns>可进入战斗引擎的单位属性。</returns>
-    public CombatantStats ToCombatant() => CombatantStats.Create(MaxHitpoints,
+    public CombatantStats ToCombatant(double combatExperience) => CombatantStats.Create(MaxHitpoints,
         PhysicalAttack, Armor,
         AttackIntervalSeconds, Accuracy, Evasion,
         CombatDamageKind.Physical) with
@@ -110,7 +112,8 @@ public sealed record PlayerAttributes(
             AttackSpeedPoints = AttackSpeedPoints,
             ActionSpeedPoints = ActionSpeedPoints,
             CooldownReductionPoints = CooldownReductionPoints,
-            Effects = Effects
+            Effects = Effects,
+            CombatExperience = combatExperience
         };
 }
 

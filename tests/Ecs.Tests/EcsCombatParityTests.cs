@@ -34,7 +34,7 @@ public sealed class EcsCombatParityTests
         player.ReplaceCombatSlots(
             [new PlayerAbilitySlot("ability.heavy-slash", 1, [])],
             [new PlayerEquipmentSlot("equipment.qingfeng-sword", 2)]);
-        var resolved = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant();
+        var resolved = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(player.Progression.CombatExperience);
         player.Resources.MaxHitpoints = resolved.MaxHitpoints;
         player.Resources.Hitpoints = resolved.MaxHitpoints;
         player.Resources.MaxManapoints = resolved.MaxManapoints;

@@ -1,12 +1,8 @@
 import { memo, useEffect, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
-import { formatRemainingSeconds } from '../game/format'
 import { useT } from '../i18n'
 import { ItemReference } from './ItemDisplay'
 import { ReportBlock } from './reportSections'
-
-/** 斗法暂存区到期窗口（秒）：与服务端 StagingWindowSeconds=1200 对齐 */
-const STAGED_WINDOW_SECONDS = 1200
 
 /**
  * 行动统计面板 (StatsPanel)
@@ -14,7 +10,7 @@ const STAGED_WINDOW_SECONDS = 1200
  * 仅展示本次行动相关内容：
  * 1. 当前行动：队首行动账本（duel.currentReport），头行为行动名 + 「进行中」徽标，
  *    含「获取经验 / 物品得失 / 行动信息」三小节；
- * 2. 斗法暂存区（队首行动勾选斗法且有暂存物品时展示，含逐项到期结算倒计时）；
+ * 2. 斗法暂存区（队首行动勾选斗法且有暂存物品时展示；按物品聚合总量胶囊行）；
  * 3. 皆无内容时显示「暂无统计」空态。
  * 离线挂机 / 今日统计 / 历史战报由左侧「记录」按钮的 RecordsPanel 承载。
  */
@@ -25,16 +21,20 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
   const lastSyncPerformanceTime = useGameStore(state => state.lastSyncPerformanceTime)
 
-  // 暂存区仅在「队首为勾选斗法的战斗行动」且存在暂存物品时展示。
+  // 暂存区仅在「队首为勾选斗法的战斗行动」且存在暂存物品时展示；
+  // 服务端按物品+时间桶分多批下发，这里按 itemId 聚合总量成一行胶囊。
   const pvpArmed = Boolean(headEntry && headEntry.executionKind === 'combat-encounter' && headEntry.pvpEnabled)
-  const stagedItems = duel.stagedItems
-  const showStaged = pvpArmed && stagedItems.length > 0
+  const stagedTotals = new Map<string, number>()
+  for (const item of duel.stagedItems) {
+    stagedTotals.set(item.itemId, (stagedTotals.get(item.itemId) ?? 0) + item.quantity)
+  }
+  const showStaged = pvpArmed && stagedTotals.size > 0
 
   const current = duel.currentReport
 
-  // 进行中时长与暂存倒计时需要每秒刷新：仅存在动态内容时启用 tick，
+  // 「进行中」时长需要每秒刷新：仅当前账本存在时启用 tick，
   // 面板关闭时组件随 Modal 一起卸载，定时器自动清理。
-  const needsTick = showStaged || Boolean(current)
+  const needsTick = Boolean(current)
   const [, setTick] = useState(0)
   useEffect(() => {
     if (!needsTick) return undefined
@@ -69,15 +69,9 @@ export const StatsPanel = memo(function StatsPanel(): React.JSX.Element {
             <div className="battle-report-staged">
               <span className="battle-report-staged-title">{t('combat.report.stagedTitle')}</span>
               <div className="battle-report-staged-list">
-                {stagedItems.map(item => {
-                  const remaining = Math.max(0, item.acquiredAtUnixSeconds + STAGED_WINDOW_SECONDS - estimatedServerNow)
-                  return (
-                    <span className="battle-report-staged-item" key={`${item.itemId}:${item.acquiredAtUnixSeconds}`}>
-                      <ItemReference amount={item.quantity} itemId={item.itemId} />
-                      <em>{t('combat.report.stagedRemaining', { time: formatRemainingSeconds(remaining) })}</em>
-                    </span>
-                  )
-                })}
+                {[...stagedTotals].map(([itemId, quantity]) => (
+                  <ItemReference amount={quantity} itemId={itemId} key={itemId} />
+                ))}
               </div>
             </div>
           )}

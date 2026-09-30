@@ -50,7 +50,6 @@ const LogGroupPanel = memo(function LogGroupPanel({ channel }: { channel: LogCha
  */
 export function GameLogPanel({ className = '' }: { className?: string }): React.JSX.Element {
   const t = useT()
-  const logState = useSyncExternalStore(gameLogService.subscribe, gameLogService.getSnapshot)
   const [group, setGroup] = useState<LogGroupId>('all')
 
   return (
@@ -66,11 +65,6 @@ export function GameLogPanel({ className = '' }: { className?: string }): React.
             type="button"
           >{t(entry.labelKey)}</button>
         ))}
-        <span
-          aria-label={logState.persistence === 'memory' ? t('combat.log.memoryOnly') : t('combat.log.saved')}
-          className={`log-storage-status log-storage-status--${logState.persistence}`}
-          title={logState.persistence === 'memory' ? t('combat.log.memoryOnlyTitle') : t('combat.log.saved')}
-        />
       </div>
       {group === 'all' && <AggregatePanel />}
       {group === 'world' && <ChatChannelPanel channel="world" />}

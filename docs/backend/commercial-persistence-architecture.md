@@ -44,7 +44,7 @@
 | 容量 | 在 `2c4g/40g` 主机上支持 5000+ 注册账号、100+ 持续收发、500+ 峰值收发和 2000+ 冷挂机补算。 |
 | 硬盘 | 不保存 WebSocket 帧、聊天消息、心跳、战斗 Tick、逐请求日志或每次状态变化历史；本地日志、WAL、队列和归档都有硬上限。 |
 | 扩展性 | section、资产、市场和外部副作用有独立边界；未来可以增加 section 或独立读模型，不需要重写整张玩家表。 |
-| 兼容性 | 当前内测直接采用 schema v4 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级仅由 `migrations/` 独立 SQL 脚本人工显式执行。 |
+| 兼容性 | 当前内测直接采用最新 schema 和新协议；不实现旧数据双读、双写、legacy DTO、fallback 或兼容分支；既有库的就地升级由 `migrations/` 独立 SQL 脚本完成（本地开发启动链经 `reset-outdated-players.sh`/`dev.sh` 自动执行 `migrate-local-db.sh`，也可人工显式执行；运行时与门禁均不引用）。 |
 
 ### 2. 明确不在本次持久化范围的内容
 
@@ -170,7 +170,7 @@ OTel/结构化日志 ───────────► 远端观测平台
 
 成交立即入账；领取只保存 `market.settlement_claims` 确认游标，不再次转账。`deploy/market-ledger-archive.sh` 维护按月 RANGE 分区的归档表，热表与归档表应区分描述。
 
-该结构使用 schema v4，一次性初始化新库；不提供旧版本（v1/v2/v3）的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。v3 相对 v2 增加 `platform.compute_jobs` 租约字段（`lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，见 `migrations/0002_v2_to_v3.sql`）以及节点公共建筑表 `game.node_buildings`；v4 相对 v3 新增 `social` schema 与好友/队伍/队伍邀请/传音消息六张表（见 `migrations/0003_v3_to_v4.sql`）。
+该结构使用 schema v4，一次性初始化新库；不提供旧版本（v1/v2/v3）的 migration、默认到期列或旧格式回填。部署到已有远程数据库前须独立完成备份与获准的数据替换，不能直接启动旧库。恢复归档时数据库 schema 与应用版本必须一致，启动会拒绝旧 schema；当前热表不因该变更转成分区表。v3 相对 v2 增加 `platform.compute_jobs` 租约字段（`lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，见 `migrations/0002_v2_to_v3.sql`）以及节点公共建筑表 `game.node_buildings`；v4 相对 v3 新增 `social` schema 与好友/队伍/队伍邀请/传音消息六张表（见 `migrations/0003_v3_to_v4.sql`）；v5 相对 v4 为 `identity.players` 增加 `player_seq` 自增序号列，并顺带推进存档载荷 `schema_version` 标签（settings 新增 `autoTravelEnabled`、ActionIntent 新增 `anchorNodeId` 均可缺省解码，见 `migrations/0004_v4_to_v5.sql`）。
 
 唯一装备实例交易尚未实现：现有 `economy.player_asset_instances` 与 reservation 的 `instance_id` 仅为 DDL 设计，当前交易按可堆叠资产和 variant 结算，不能宣称已支持唯一装备冻结、转移和退款。
 

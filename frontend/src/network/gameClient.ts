@@ -81,6 +81,8 @@ export class GameClient {
   private lastParseErrorAt = 0
   /** 配表指纹不匹配后挂起自动重连，等待 App 重新拉取配表（connect() 时清除）。 */
   private catalogRefreshPending = false
+  /** 最近一次登记的单位详情观察目标；重连握手完成后按原样重放，恢复按需属性投影。 */
+  private lastInspectTarget: { side: 'enemy' | 'ally'; index: number } | null = null
   private readonly pendingRequests = new Map<string, number>()
   private static readonly REQUEST_TIMEOUT_MS = 15_000
 
@@ -88,6 +90,8 @@ export class GameClient {
   playerId = getSessionAccount()?.playerId ?? ''
   /** 当前登录的账号名 */
   account = getSessionAccount()?.account ?? ''
+  /** 当前角色的服务端序号（快照注入用，缺省 0） */
+  sequenceId = getSessionAccount()?.sequenceId ?? 0
 
   private clearReconnectTimer(): void {
     if (this.reconnectTimer !== undefined) {
@@ -142,6 +146,7 @@ export class GameClient {
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return
     this.playerId = accountInfo.playerId
     this.account = accountInfo.account
+    this.sequenceId = accountInfo.sequenceId ?? 0
     chatService.activate(this.playerId)
     this.disposed = false
     this.catalogRefreshPending = false
@@ -164,6 +169,7 @@ export class GameClient {
     this.clearReconnectTimer()
     this.stopHeartbeat()
     this.clearPendingRequests()
+    this.lastInspectTarget = null
     chatService.reset()
     useSocialStore.getState().reset()
     const socket = this.socket
@@ -233,6 +239,22 @@ export class GameClient {
     if (!socket) return false
     const payload: ChatHistoryRequestDto = { channel, ...(targetPlayerId ? { targetPlayerId } : {}) }
     return this.trySend(socket, WireMessageType.ChatHistoryRequest, createRequestId(), payload)
+  }
+
+  /**
+   * 登记/清除单位详情观察目标（UnitInspect 火忘帧，无回执）。
+   * 服务端仅对命中下标的敌怪/斗法镜像随快照投影属性面板；target=null 清除。
+   */
+  sendUnitInspect(target: { side: 'enemy' | 'ally'; index: number } | null): boolean {
+    // 相同目标去重：属性为登记后一次性交付，重复登记只会让服务端无谓重投。
+    const last = this.lastInspectTarget
+    if (target === last || (target !== null && last !== null && target.side === last.side && target.index === last.index))
+      return true
+    // 先记账再发送：离线时记录目标，HelloAck 重放恢复观察态。
+    this.lastInspectTarget = target
+    const socket = this.ensureOpenSocket()
+    if (!socket) return false
+    return this.trySend(socket, WireMessageType.UnitInspect, createRequestId(), { side: target?.side ?? null, index: target?.index ?? null })
   }
 
   /** 发送社交指令（SocialAction 信封）；服务端以带 requestId 的 SocialState 应答，失败走 Error 帧。 */
@@ -381,12 +403,17 @@ export class GameClient {
           const hello = decodeJsonPayload<HelloResponse>(envelope)
           if (hello.protocolVersion !== 1) throw new Error('服务端协议版本不匹配。')
           applyAntiMultiOpenConfig(hello.antiMultiOpen)
+          // 重连后重放观察目标：服务端会话级浏览态随旧连接销毁，不补发则详情属性面板停在空态；
+          // 先清账再登记绕开相同目标去重，保证新会话重新武装一次性交付。
+          const inspectReplay = this.lastInspectTarget
+          this.lastInspectTarget = null
+          if (inspectReplay) this.sendUnitInspect(inspectReplay)
           break
         }
         case WireMessageType.Snapshot: {
           const dto = decodeJsonPayload<PlayerSnapshotDto>(envelope)
           // 传入信封原始字节：section checksum 校验直接对线上 data 成员字节区间复算。
-          const snapshot = await decodePlayerSnapshotDto(dto, envelope.payload, this.account)
+          const snapshot = await decodePlayerSnapshotDto(dto, envelope.payload, this.account, this.sequenceId)
           useGameStore.getState().applySnapshot(snapshot)
           break
         }
@@ -412,7 +439,7 @@ export class GameClient {
             useGameStore.getState().applyPatch(patch, { allowSameVersion: true })
           } else if (result.snapshotForm === CommandResultSnapshotForm.Snapshot && isPlayerSnapshotDto(result.snapshot)) {
             // 内嵌全量快照的 sections 位于信封 JSON 的 snapshot 成员内，按路径定位 data 字节区间。
-            const snapshot = await decodePlayerSnapshotDto(result.snapshot, envelope.payload, this.account, ['snapshot', 'sections'])
+            const snapshot = await decodePlayerSnapshotDto(result.snapshot, envelope.payload, this.account, this.sequenceId, ['snapshot', 'sections'])
             useGameStore.getState().applySnapshot(snapshot)
           }
           if (result.message) useGameStore.getState().setNotice(result.message)

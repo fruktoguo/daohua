@@ -6,7 +6,7 @@
 
 - **`expected-attributes.json`**：**全境界阶位数值底座、标准期望面板、特殊属性与战斗模拟产出基准**。
 - `manifest.json`：结构版本和内容版本。
-- `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。
+- `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。物品分类为两级模型：必填 `category` 是一级主类型（`material`/`consumable`/`manual`/`currency`/`equipment` 等），可选 `subCategory` 是二级细分品类（`herb`/`mineral`/`pill`/`alchemySupply`/`explorationSupply`/`manualTome`/`manualFragment` 等）；目录 DTO 原样下发两个字段，前端品类丝带与坊市二级筛选统一按 `subCategory`（缺省回落主类型，见 `ItemDefinition.DisplaySubCategory`）展示，药品栏门控按细分键 `pill` 判定。
 - `equipment/`：武器、防具与饰品（`weapons.json`, `armors.json`, `accessories.json`）。
 - `abilities/`：物理武技与术法神通（`physical_abilities.json`, `spell_abilities.json`）。
 - `monsters/`：各阶位普通妖兽、精英与首领（`tier1_minions.json`, `tier1_elites_bosses.json`, `tier2_minions.json`, `tier2_elites_bosses.json`）。
@@ -120,6 +120,25 @@ scripts/verify.sh
 
 ## 7. 斗法与击杀收益配表字段
 
-- `duel.json`（`id = duel.settings`）：`encounterChancePerBattle`（每次进入战斗计数 +1 概率）、`powerBandRatio`（实力匹配 ± 带宽）、`defeatCooldownSeconds`（败北冷却）、`stagedSettleSeconds`（暂存入账延迟）、`dropChanceBonusPercent`（斗法爆率加成点数）、`maxDuelSeconds`（剧本超时判平）、`maxBattleReports`（战报归档上限）。所有斗法数值以该配表为唯一真源，禁止代码内硬编码。
-- 怪物 `monsters/*.json`：`qiReward`（修为）、`experienceReward`（底蕴）、`rootExpReward`（六维经验总量）为击杀结算字段，缺省为 0。
-- 功法 `abilities/*.json`：`rootAttribute` 声明六维归属（`stamina`/`intelligence`/`attack`/`defense`/`swordsmanship`/`talisman`），`rootExpReward` 按已装备功法槽位的归属集合均分；未声明或无功法时六维均分。
+- `duel.json`（`id = duel.settings`）：`encounterChancePerBattle`（每次进入战斗计数 +1 概率）、`powerBandRatio`（实力匹配 ± 带宽）、`defeatCooldownSeconds`（败北冷却）、`stagedSettleSeconds`（暂存入账延迟）、`stagedBucketSeconds`（暂存批次量化桶长，入账时刻向上取整到桶尾）、`dropChanceBonusPercent`（斗法爆率加成点数）、`maxDuelSeconds`（剧本超时判平）、`maxBattleReports`（战报归档上限）。所有斗法数值以该配表为唯一真源，禁止代码内硬编码。
+- 怪物 `monsters/*.json`：击杀收益为单参数 `experience`（缺省 0）——同额经 `CreditExperience` 结算修为三池（`Experience`/`Foundation`/`CombatExperience`），并按六维归属均分入账六维经验。怪物**战斗经验不入配表**，按其 `level` 对应累计修为 `Σ expToNext[1..level-1]` 派生（`RealmProgressionCatalog.CumulativeExpFor(level)`，详见 [总纲第七篇 §7.7.6](../design/总纲/07-战斗数值与内视规约.md)）。
+- 功法 `abilities/*.json`：`rootAttribute` 声明六维归属（`stamina`/`intelligence`/`attack`/`defense`/`swordsmanship`/`talisman`）；击杀 `experience` 的六维分配仅由已装备内功（`discipline=internal`）的归属集合调整，未装备内功时六维严格均分（各得 1/6）。
+
+---
+
+## 8. 玩家存档 progression 分段字段
+
+`progression` 分段载荷即 `PlayerProgressionState` 的 JSON 序列化形态（camelCase，落库与 wire 下发同一形状）。字段清单：
+
+| 字段 | 语义 |
+| :--- | :--- |
+| `realmLevel` | 当前境界等级（1~127） |
+| `experience` | 修为：本层突破计量条，`expToNext` 封顶，突破清零 |
+| `foundation` | 底蕴：修为满层溢出沉淀池，可兑换修为放大（最高 3 倍），突破不清空（**schema v4 新增**） |
+| `combatExperience` | 战斗经验：修为类收益按增幅前基础量等额入账，用于命中/闪避对抗（**schema v4 新增**） |
+| `lifetimeExperience` | 总修为：历史修为类收益总量（含满层转底蕴部分），单调递增永不清零（**schema v4 新增**） |
+| `completedActions` / `normalKills` / `eliteKills` / `bossKills` / `totalDefeats` / `cultivationSeconds` / `ageSeconds` | 行动与生平计数、道龄 |
+| `simulationCarrySeconds` | 连续收益整秒量化进位余数（离线/在线位级一致保障） |
+
+- **schema 版本**：分段载荷版本由 `SectionCodec.CurrentSchemaVersion` 承载——v3 新增斗法分段（`duel`），v4 为 `progression` 追加 `foundation`/`combatExperience`/`lifetimeExperience` 并移除废案字段 `qi`/`lifetimeQi`，v5 为 `settings` 追加 `autoTravelEnabled` 并为行动意图追加 `anchorNodeId` 入队锚点；内测期直接改载荷结构、不做运行时旧档兼容，旧版本本地存档由 `migrations/` 迁移链推进版本标签（`SectionCodec` bump 时 `PostgresSchema.Version` 同步 +1），不可迁移版本经控制台确认后清零。
+- **`expToNext` 访问器**：`RealmProgressionCatalog.ExpCapFor(level)` 返回本层修为上限；新增 `CumulativeExpFor(level)` 返回 `Σ expToNext[1..level-1]` 累计修为，专供怪物战斗经验派生（见 §7）。

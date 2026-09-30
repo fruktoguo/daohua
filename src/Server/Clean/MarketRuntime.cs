@@ -115,7 +115,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         catch
         {
             _ready = false;
-            await ReleaseLeaseBestEffortAsync(CancellationToken.None);
+            await ReleaseLeaseBestEffortAsync();
             throw;
         }
     }
@@ -132,16 +132,19 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         {
             try { await _renewTask; } catch (OperationCanceledException) { }
         }
-        await ReleaseLeaseBestEffortAsync(cancellationToken);
+        // 停机归还租约脱离停机 token：宿主停机超时触发取消时，Npgsql 会抛 OperationCanceledException，
+        // 逃出 StopAsync 会让进程以未处理异常崩溃（exit 134）；租约本就有 expires_at 兜底过期，
+        // 归还动作本身尽力而为，不应被停机取消。
+        await ReleaseLeaseBestEffortAsync();
         _lifetime?.Dispose();
     }
 
-    private async Task ReleaseLeaseBestEffortAsync(CancellationToken cancellationToken)
+    private async Task ReleaseLeaseBestEffortAsync()
     {
         if (_fenceToken <= 0) return;
         try
         {
-            await using var connection = await _store.DataSource.OpenConnectionAsync(cancellationToken);
+            await using var connection = await _store.DataSource.OpenConnectionAsync();
             await using var command = new NpgsqlCommand("""
                 UPDATE market.partition_leases
                 SET expires_at = now(), renewed_at = now()
@@ -150,9 +153,9 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             command.Parameters.Add(new NpgsqlParameter { Value = PartitionId });
             command.Parameters.Add(new NpgsqlParameter { Value = _ownerInstanceId });
             command.Parameters.Add(new NpgsqlParameter { Value = _fenceToken });
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            await command.ExecuteNonQueryAsync();
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception)
         {
             _logger.LogWarning(exception, "市场分片租约释放失败 partition={PartitionId}", PartitionId);
         }

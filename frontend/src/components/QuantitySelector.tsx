@@ -15,8 +15,12 @@ interface QuantitySelectorProps {
   min?: number
   /** 允许的最大值（默认 1000） */
   max?: number
-  /** 快速预设按钮数值列表（如 [1, 10, 100]） */
+  /** 输入框左侧快捷档位数值列表（如 [1]） */
+  leadingPresets?: readonly number[]
+  /** 快速预设按钮数值列表（如 [1, 10, 100]，渲染在输入框右侧） */
   presets?: readonly number[]
+  /** 是否在输入框右侧提供「最大」快捷钮（点击填入 max） */
+  maxShortcut?: boolean
   /** 是否提供无限循环 (∞, 对应 -1) 按钮 */
   allowInfinity?: boolean
   /** 是否禁用输入与按钮 */
@@ -41,7 +45,9 @@ export function QuantitySelector({
   ariaLabel,
   min = 1,
   max = 1000,
+  leadingPresets = [],
   presets = [],
+  maxShortcut = false,
   allowInfinity = false,
   disabled = false,
   compact = false,
@@ -73,6 +79,16 @@ export function QuantitySelector({
 
   return (
     <div className={`quantity-selector${compact ? ' quantity-selector--compact' : ''} ${className}`.trim()}>
+      {leadingPresets.map(preset => (
+        <button
+          aria-pressed={value === preset}
+          className={value === preset ? 'active' : ''}
+          disabled={disabled}
+          key={preset}
+          onClick={() => choose(preset)}
+          type="button"
+        >{preset}</button>
+      ))}
       <input
         aria-label={ariaLabel}
         disabled={disabled}
@@ -105,6 +121,17 @@ export function QuantitySelector({
           type="button"
         >{preset}</button>
       ))}
+      {maxShortcut && (
+        <button
+          aria-label={t('market.selector.maxAria')}
+          aria-pressed={value === max}
+          className={value === max ? 'active' : ''}
+          disabled={disabled}
+          onClick={() => choose(max)}
+          title={t('market.selector.maxAria')}
+          type="button"
+        >{t('market.selector.max')}</button>
+      )}
       {allowInfinity && (
         <button
           aria-label={t('market.selector.infinityAria')}

@@ -130,7 +130,7 @@ public sealed class CombatLiveBattleReuseTests
         AssertIdenticalOutcome(whole, wholeResult.Events, chunkedPlayer, chunkedEvents);
         Assert.True(whole.Actions[0].CompletedRepeats > 3);
         Assert.True(whole.Progression.NormalKills > 0);
-        Assert.True(whole.Progression.Qi > 0);
+        Assert.True(whole.Progression.Experience > 0);
         AssertFlushedExpedition(whole);
     }
 
@@ -235,9 +235,7 @@ public sealed class CombatLiveBattleReuseTests
             CombatantStats.Create(enemyHitpoints, enemyAttackPower, 0, 2),
             withRewards ? [new CombatDropDefinition(DropItemId, 1, 1, 2)] : [],
             [],
-            QiReward: withRewards ? 10 : 0,
-            ExperienceReward: withRewards ? 5 : 0,
-            RootExpReward: withRewards ? 2 : 0);
+            Experience: withRewards ? 10 : 0);
         var encounter = new CombatEncounterDefinition("encounter.test", "测试遭遇", 1, 1, 1,
             searchSeconds, 1, playerRespawnSeconds,
             [new CombatSpawnDefinition("enemy.test", 1, 1)], [], [], 0);

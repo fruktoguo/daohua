@@ -13,8 +13,8 @@ import { ItemCard } from './ItemDisplay'
 import { Modal } from './Modal'
 import { QuantitySelector } from './QuantitySelector'
 
-/** 物品处置弹窗模式：丢弃（永久销毁）或系统回收（按 sellPrice 兑灵石） */
-type ItemDisposalMode = 'discard' | 'recycle'
+/** 物品数量弹窗模式：使用（批量研习）、丢弃（永久销毁）或系统回收（按 sellPrice 兑灵石） */
+type ItemQuantityDialogMode = 'use' | 'discard' | 'recycle'
 
 /**
  * 判断已装配装备与新装备之间的槽位冲突：
@@ -29,10 +29,10 @@ function equipmentSlotConflicts(existingSlot: string, targetSlot: string): boole
 }
 
 /**
- * 物品数量处置弹窗 (ItemQuantityDialog)
+ * 物品数量弹窗 (ItemQuantityDialog)
  *
- * 丢弃与系统回收共用的「数量选择 + 二次确认」模态框；
- * 回收模式额外展示配表单价与合计灵石收益。
+ * 使用、丢弃与系统回收共用的「数量选择 + 二次确认」模态框；
+ * 使用模式发送 ability.learn 批量研读，回收模式额外展示配表单价与合计灵石收益。
  */
 function ItemQuantityDialog({
   item,
@@ -41,40 +41,49 @@ function ItemQuantityDialog({
   onClose,
 }: {
   item: InventoryItem
-  mode: ItemDisposalMode
-  /** 系统回收单价（灵石/件），丢弃模式忽略 */
+  mode: ItemQuantityDialogMode
+  /** 系统回收单价（灵石/件），仅回收模式使用 */
   unitPrice: number
   onClose: () => void
 }): React.JSX.Element {
   const t = useT()
   const titleId = useId()
+  const isUse = mode === 'use'
   const isDiscard = mode === 'discard'
+  const isTome = item.itemId.startsWith('item.tome.')
   const max = Math.max(1, Math.floor(item.amount))
   const [quantity, setQuantity] = useState(1)
   const presets = [...new Set([1, 10, 100, max].filter(value => value >= 1 && value <= max))].sort((a, b) => a - b)
 
   const confirm = () => {
-    gameClient.sendCommand(isDiscard ? 'item.discard' : 'item.sell', { itemId: item.itemId, quantity })
+    if (isUse) gameClient.sendCommand('ability.learn', { itemId: item.itemId, quantity })
+    else gameClient.sendCommand(isDiscard ? 'item.discard' : 'item.sell', { itemId: item.itemId, quantity })
     onClose()
   }
 
   return (
     <Modal labelledBy={titleId} onClose={onClose} open size="small">
       <div className="confirm-dialog">
-        <h2 id={titleId}>{t(isDiscard ? 'app.inventoryPanel.discardTitle' : 'app.inventoryPanel.recycleTitle', { name: item.name })}</h2>
+        <h2 id={titleId}>
+          {isUse
+            ? t('app.inventoryPanel.useTitle', { name: item.name })
+            : t(isDiscard ? 'app.inventoryPanel.discardTitle' : 'app.inventoryPanel.recycleTitle', { name: item.name })}
+        </h2>
         <p>
-          {isDiscard
-            ? t('app.inventoryPanel.discardDescription')
-            : t('app.inventoryPanel.recycleDescription', { price: formatNumber(unitPrice) })}
+          {isUse
+            ? t(isTome ? 'app.inventoryPanel.useTomeDescription' : 'app.inventoryPanel.useFragmentDescription')
+            : isDiscard
+              ? t('app.inventoryPanel.discardDescription')
+              : t('app.inventoryPanel.recycleDescription', { price: formatNumber(unitPrice) })}
         </p>
         <QuantitySelector
-          ariaLabel={t('app.inventoryPanel.quantityAria')}
+          ariaLabel={t(isUse ? 'app.inventoryPanel.useQuantityAria' : 'app.inventoryPanel.quantityAria')}
           max={max}
           onChange={value => setQuantity(Math.max(1, Math.min(max, value)))}
           presets={presets}
           value={quantity}
         />
-        {!isDiscard && (
+        {mode === 'recycle' && (
           <p className="inventory-dialog-total">
             {t('app.inventoryPanel.recycleTotal', { total: formatNumber(unitPrice * quantity) })}
           </p>
@@ -86,7 +95,7 @@ function ItemQuantityDialog({
             onClick={confirm}
             type="button"
           >
-            {t(isDiscard ? 'app.inventoryPanel.confirmDiscard' : 'app.inventoryPanel.confirmRecycle')}
+            {t(isUse ? 'app.inventoryPanel.confirmUse' : isDiscard ? 'app.inventoryPanel.confirmDiscard' : 'app.inventoryPanel.confirmRecycle')}
           </button>
         </div>
       </div>
@@ -100,12 +109,12 @@ function ItemQuantityDialog({
  * 背包格子的完整交互封装：
  * 1. 【悬停】保留 ItemTooltipTarget 修仙详情卡片（含 Buff/机制副气泡与数量副气泡）；
  * 2. 【左键】弹出悬浮操作菜单——按物品类型动态给出可用动作：
- *    - 使用：功法秘籍/残卷（ability.learn 参悟）与装备（loadout.replace 穿戴，自动互斥同槽位）；
+ *    - 使用：功法秘籍/残卷（ability.learn 参悟，弹数量弹窗支持批量研读）与装备（loadout.replace 穿戴，自动互斥同槽位）；
  *    - 交易：可交易物品/装备跳转坊市标的详情视图（买入/挂售同屏）；
  *    - 回收：配表 sellPrice > 0 的物品按系统价兑换灵石（item.sell）；
  *    - 丢弃：任意持有物品销毁（item.discard），已装备物品禁用；
- * 3. 【右键】可直接使用的物品（秘籍/装备）立即触发使用，其余仅屏蔽浏览器菜单；
- * 4. 【数量】丢弃与回收经统一数量选择 + 二次确认弹窗执行。
+ * 3. 【右键】可直接使用的物品立即触发使用：秘籍/残卷进批量研读弹窗，装备直接穿戴，其余仅屏蔽浏览器菜单；
+ * 4. 【数量】使用（秘籍/残卷）、丢弃与回收经统一数量选择 + 二次确认弹窗执行。
  */
 export const InventoryItemCell = memo(function InventoryItemCell({
   item,
@@ -118,7 +127,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
   const equipped = useGameStore(
     state => state.combat?.equipment?.some(entry => entry.itemId === item.itemId) ?? false
   )
-  const [dialog, setDialog] = useState<ItemDisposalMode | null>(null)
+  const [dialog, setDialog] = useState<ItemQuantityDialogMode | null>(null)
 
   const isManual = item.itemId.startsWith('item.tome.') || item.itemId.startsWith('item.fragment.')
   const usable = !equipped && (isManual || equipmentDef !== undefined)
@@ -128,10 +137,10 @@ export const InventoryItemCell = memo(function InventoryItemCell({
     && definition.sellPrice > 0
     && !item.itemId.startsWith('currency.')
 
-  /** 直接使用：秘籍/残卷参悟（ability.learn）；装备穿戴（loadout.replace 剔除冲突槽位后推入） */
+  /** 使用：秘籍/残卷进批量研读弹窗（ability.learn 携带 quantity）；装备立即穿戴（loadout.replace 剔除冲突槽位后推入） */
   const use = () => {
     if (isManual) {
-      gameClient.sendCommand('ability.learn', { itemId: item.itemId })
+      setDialog('use')
       return
     }
     if (!equipmentDef) return
@@ -201,7 +210,7 @@ export const InventoryItemCell = memo(function InventoryItemCell({
         size="auto"
         trigger="click"
       >
-        <ItemCard definition={definition} item={item} />
+        <ItemCard definition={definition} equipmentDefinition={equipmentDef} item={item} />
       </FloatingPopover>
       {dialog !== null && (
         <ItemQuantityDialog

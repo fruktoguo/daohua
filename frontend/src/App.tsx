@@ -25,7 +25,7 @@ import { RightSidebar } from './components/RightSidebar'
 import { describeAbility, formatChineseSplitNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
@@ -37,7 +37,6 @@ import { installAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
 import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
 import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
-import { initUiScale } from './utils/uiScale'
 import { useUiStore, type TabId, type AlchemySubTab, type ForgingSubTab } from './uiStore'
 import { useT, getT } from './i18n'
 
@@ -289,19 +288,19 @@ const CombatActionProgress = memo(function CombatActionProgress({ entry }: { ent
     return <CombatActionPhaseProgress entry={phaseEntry} phase={expedition.phase} />
   }
 
-  // 己方上限取自战斗资源分段；敌方总量为同波全体敌人当前/最大血量之和，
-  // 斗法相位取回放载荷中的对手镜像血量（均无 wire 标量可直接用）。
+  // 己方上限取自战斗资源分段；敌方总量为同波全体敌人当前/最大血量之和（上限走 wire 常驻标量），
+  // 斗法相位取回放载荷中的对手镜像血量。
   const playerMax = Math.max(1, combatResources?.maxHitpoints ?? combatAttributes?.maxHitpoints ?? 1)
   const playerValue = Math.max(0, Math.min(playerMax, expedition?.playerHitpoints ?? playerMax))
   let enemyValue = 0
   let enemyMax = 0
   if (expedition?.phase === 'duel') {
-    enemyMax = Math.max(1, expedition.duel?.opponentAttributes.maxHitpoints ?? 1)
+    enemyMax = Math.max(1, expedition.duel?.opponentMaxHitpoints ?? expedition.duel?.opponentAttributes?.maxHitpoints ?? 1)
     enemyValue = Math.max(0, Math.min(enemyMax, expedition.duel?.opponentHitpoints ?? enemyMax))
   } else {
-    // 敌方上限直连快照下发的权威属性，不再反查怪物目录，也不以当前血量充当上限。
+    // 敌方上限取快照常驻标量（血蓝条分母），不再反查怪物目录，也不以当前血量充当上限。
     for (const enemy of expedition?.enemies ?? []) {
-      enemyMax += Math.max(1, enemy.attributes?.maxHitpoints ?? 1)
+      enemyMax += Math.max(1, enemy.maxHitpoints ?? enemy.attributes?.maxHitpoints ?? 1)
       enemyValue += Math.max(0, enemy.hitpoints)
     }
     enemyMax = Math.max(1, enemyMax)
@@ -446,14 +445,26 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
       </div>
 
       <div className="qc-controls">
-        <label className="loop-toggle">
-          <input
-            checked={queue.loopEnabled}
-            onChange={event => gameClient.sendCommand('queue.configure', { loopEnabled: event.target.checked })}
-            type="checkbox"
-          />
-          {t('app.queue.loop')}
-        </label>
+        <FloatingTooltip displayContents placement="bottom" title={t('app.queue.loopTip')} tone="gold">
+          <label className="loop-toggle">
+            <input
+              checked={queue.loopEnabled}
+              onChange={event => gameClient.sendCommand('queue.configure', { loopEnabled: event.target.checked })}
+              type="checkbox"
+            />
+            {t('app.queue.loop')}
+          </label>
+        </FloatingTooltip>
+        <FloatingTooltip displayContents placement="bottom" title={t('app.queue.autoTravelTip')} tone="gold">
+          <label className="loop-toggle">
+            <input
+              checked={queue.autoTravelEnabled}
+              onChange={event => gameClient.sendCommand('queue.configure', { autoTravelEnabled: event.target.checked })}
+              type="checkbox"
+            />
+            {t('app.queue.autoTravel')}
+          </label>
+        </FloatingTooltip>
         <button
           aria-expanded={open}
           className="qc-expand"
@@ -611,13 +622,14 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
 const TopBar = memo(function TopBar(): React.JSX.Element {
   const t = useT()
   const name = useGameStore(state => state.name)
-  const spirit = useGameStore(state => state.stats.spirit)
+  const experience = useGameStore(state => state.stats.experience)
+  const lifetimeExperience = useGameStore(state => state.stats.lifetimeExperience)
   const realmLevel = useGameStore(state => state.stats.realmLevel)
   const connection = useGameStore(state => state.connection)
   const presence = useGameStore(state => state.presenceMode)
   const setActiveTab = useUiStore(state => state.setActiveTab)
-  const realmProgress = useMemo(() => calculateRealmProgress(spirit ?? 0, realmLevel), [realmLevel, spirit])
-  const realmInfo = useMemo(() => calculateRealmInfo(spirit ?? 0, realmLevel), [realmLevel, spirit])
+  const realmProgress = useMemo(() => calculateRealmProgress(experience ?? 0, realmLevel), [realmLevel, experience])
+  const realmInfo = useMemo(() => calculateRealmInfo(experience ?? 0, realmLevel), [realmLevel, experience])
   const connectionText = connection === 'online'
     ? t('app.topbar.connected')
     : connection === 'connecting'
@@ -659,7 +671,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
             title={
               <div className="unit-number-tooltip-inline">
                 <span className="unit-number-tooltip-label">{t('app.topbar.totalSpirit')}</span>
-                <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(spirit)}</strong>
+                <strong className="unit-number-tooltip-split">{formatChineseSplitNumber(lifetimeExperience ?? 0)}</strong>
               </div>
             }
             tone="qi"
@@ -1056,16 +1068,16 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
   )
   const inventory = useGameStore(state => state.inventory)
   const itemCatalog = useGameStore(state => state.items)
-  const [pickerIndex, setPickerIndex] = useState<number | null>(null)
+  const [picker, setPicker] = useState<{ index: number; anchor: HTMLElement } | null>(null)
   const pickerItems = useMemo<ItemPickerEntry[]>(() => itemCatalog
       .filter(item => item.usableActionTypes.includes(type) && itemAmount(inventory, item.itemId) > 0
         // 药品栏只放药品类即时消耗品；通用栏任意适用消耗品皆可。
-        && (slotGroup !== 'potion' || (item.category === 'pill' && !item.isContinuous)))
+        && (slotGroup !== 'potion' || (item.subCategory === 'pill' && !item.isContinuous)))
       .map(item => ({
         itemId: item.itemId,
         name: item.name,
         description: item.description,
-        category: resolveItemCategoryLabel(item.category, t),
+        category: resolveItemCategoryLabel(resolveItemSubCategory(item.itemId, item), t),
         tier: item.tier,
         amount: itemAmount(inventory, item.itemId),
         definition: item,
@@ -1082,7 +1094,7 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
     })
   }, [slotGroup, type])
 
-  const pickerSlot = pickerIndex === null ? null : slots[pickerIndex] ?? null
+  const pickerSlot = picker === null ? null : slots[picker.index] ?? null
 
   return (
     <section aria-label={label} className={`slot-group ${className}`.trim()}>
@@ -1096,14 +1108,14 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
             itemId: selectedDefinition.itemId,
             name: selectedDefinition.name,
             description: selectedDefinition.description,
-            category: resolveItemCategoryLabel(selectedDefinition.category, t),
+            category: resolveItemCategoryLabel(resolveItemSubCategory(selectedDefinition.itemId, selectedDefinition), t),
             tier: selectedDefinition.tier,
             amount: itemAmount(inventory, selectedDefinition.itemId),
             definition: selectedDefinition,
           } : null
           const cooldownMs = consumableCooldowns?.[slotOffset + index] ?? 0
           return (
-            <div className="auto-use-slot" key={index}>
+            <div className={`auto-use-slot${picker?.index === index ? ' is-picking' : ''}`} key={index}>
               <ItemUseSlot
                 activeEntry={activeEntry}
                 cooldownOverlay={cooldownMs > 0 && selectedItem?.definition ? (
@@ -1115,22 +1127,27 @@ const AutoUseSlotGroup = memo(function AutoUseSlotGroup({
                 item={selectedItem}
                 remainingDurationSeconds={slot.remainingDurationSeconds}
                 totalDurationSeconds={selectedDefinition?.durationSeconds}
-                onClick={() => setPickerIndex(index)}
+                onClick={event => {
+                  // currentTarget 派发后会被 React 重置为 null，必须在 updater 外同步取值
+                  const anchor = event.currentTarget
+                  setPicker(prev => prev?.index === index ? null : { index, anchor })
+                }}
               />
             </div>
           )
         })}
       </div>
       <ItemGridPicker
+        anchor={picker?.anchor ?? null}
         emptyLabel={t('common.pickerEmpty')}
-        onClose={() => setPickerIndex(null)}
+        onClose={() => setPicker(null)}
         onSelect={itemId => {
-          if (pickerIndex === null) return
-          updateSlot(pickerIndex, itemId)
+          if (picker === null) return
+          updateSlot(picker.index, itemId)
         }}
         items={pickerItems}
-        open={pickerIndex !== null}
-        title={pickerIndex === null ? t('common.selectItem') : t('common.selectItemSlot', { n: pickerIndex + 1 })}
+        open={picker !== null}
+        title={picker === null ? t('common.selectItem') : t('common.selectItemSlot', { n: picker.index + 1 })}
         value={pickerSlot?.itemId ?? null}
       />
     </section>
@@ -1470,6 +1487,8 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
 type CombatPickerTarget = {
   kind: 'ability'
   index: number
+  /** 待选列表贴靠的槽位锚点元素 */
+  anchor: HTMLElement
 }
 
 /**
@@ -1588,7 +1607,10 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   <button
                     aria-label={slotAriaLabel}
                     className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
-                    onClick={() => setPickerTarget({ kind: 'ability', index })}
+                    onClick={event => {
+                      const anchor = event.currentTarget
+                      setPickerTarget(prev => prev?.index === index ? null : { kind: 'ability', index, anchor })
+                    }}
                     type="button"
                   >
                     <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
@@ -1632,7 +1654,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                 </>
               )
               return (
-                <div className="combat-slot-card" key={index}>
+                <div className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`} key={index}>
                   {ability ? (
                     <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, abilityLevelFor(ability.abilityId))} tabIndex={-1}>
                       {slotContent}
@@ -1648,6 +1670,7 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
       <AbilityGridPicker
         abilities={learnedAbilities}
         allowEmpty
+        anchor={pickerTarget?.anchor ?? null}
         levelFor={abilityLevelFor}
         onClose={() => setPickerTarget(null)}
         onSelect={selectPickerValue}
@@ -1913,7 +1936,6 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     installAntiMultiOpen()
-    initUiScale()
     void restoreSession()
     return () => gameClient.dispose()
   }, [restoreSession])

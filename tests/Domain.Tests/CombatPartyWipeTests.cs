@@ -14,7 +14,7 @@ public sealed class CombatPartyWipeTests
     public void DownedWindowFreezesEnemyActionsButKeepsRegenAndCooldownsRunning()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
-        var stats = PlayerAttributeResolver.Resolve(CreatePlayer(catalog), catalog).ToCombatant()
+        var stats = PlayerAttributeResolver.Resolve(CreatePlayer(catalog), catalog).ToCombatant(0)
             with { MaxManapoints = 1000, MpRegen = 2 };
         var ability = catalog.Abilities["ability.heavy-slash"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);
@@ -58,7 +58,7 @@ public sealed class CombatPartyWipeTests
     public void PartyWipeInterruptsAllPendingCastsAndRefundsMana()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
-        var stats = PlayerAttributeResolver.Resolve(CreatePlayer(catalog), catalog).ToCombatant()
+        var stats = PlayerAttributeResolver.Resolve(CreatePlayer(catalog), catalog).ToCombatant(0)
             with { MaxManapoints = 1000 };
         var ability = catalog.Abilities["ability.heavy-slash"];
         var playerTemplate = new CombatantTemplate(stats, [new SkillSlot(ability, 1)]);

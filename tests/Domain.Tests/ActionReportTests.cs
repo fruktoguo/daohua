@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Domain.Tests;
 
 /// <summary>
@@ -56,22 +58,21 @@ public sealed class ActionReportTests
         var first = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
         var second = player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
-        // cultivation.draw-qi：10 秒/轮，每秒 1 修为，每轮 10 底蕴。
+        // cultivation.draw-qi：10 秒/轮，每秒 1 修为 + 每轮 10 修为。
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog.Actions);
-        Assert.Equal(10, player.Duel.ReportFor(first.Id)?.Qi);
+        Assert.Equal(20, player.Duel.ReportFor(first.Id)?.Experience);
         Assert.Equal(1, player.Duel.ReportFor(first.Id)?.Cycles);
-        Assert.Equal(10, player.Duel.ReportFor(first.Id)?.Experience);
 
         // 轮转：第二项上队首建账推进，第一项账本驻留不重置。
         player.MoveAction(second.Id, -1);
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog.Actions);
-        Assert.Equal(10, player.Duel.ReportFor(second.Id)?.Qi);
-        Assert.Equal(10, player.Duel.ReportFor(first.Id)?.Qi);
+        Assert.Equal(20, player.Duel.ReportFor(second.Id)?.Experience);
+        Assert.Equal(20, player.Duel.ReportFor(first.Id)?.Experience);
 
         // 第一项回到队首后续记原账本。
         player.MoveAction(first.Id, -1);
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(30), catalog.Actions);
-        Assert.Equal(20, player.Duel.ReportFor(first.Id)?.Qi);
+        Assert.Equal(40, player.Duel.ReportFor(first.Id)?.Experience);
         Assert.Equal(2, player.Duel.ReportFor(first.Id)?.Cycles);
 
         // 实例出队即归档；账本离开 ActionReports 进入 Reports 头部。
@@ -79,7 +80,7 @@ public sealed class ActionReportTests
         Assert.Null(player.Duel.ReportFor(first.Id));
         Assert.Single(player.Duel.Reports);
         Assert.Equal(first.Id, player.Duel.Reports[0].ActionInstanceId);
-        Assert.Equal(20, player.Duel.Reports[0].Qi);
+        Assert.Equal(40, player.Duel.Reports[0].Experience);
     }
 
     /// <summary>转入 Offline 重置离线账本；离线推进收益同时进离线账本与每日账本。</summary>
@@ -92,19 +93,19 @@ public sealed class ActionReportTests
 
         // 在线推进 10 秒：离线账本不收（Presence=Online），每日账本正常入账。
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog.Actions);
-        Assert.Equal(0, player.Duel.OfflineReport.Qi);
-        Assert.Equal(10, player.Duel.DailyReport.Qi);
+        Assert.Equal(0, player.Duel.OfflineReport.Experience);
+        Assert.Equal(20, player.Duel.DailyReport.Experience);
 
         // 转入离线重置离线账本后推进：收益同时进离线账本与每日账本。
         player.SetPresence(PresenceState.Offline);
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog.Actions);
-        Assert.Equal(10, player.Duel.OfflineReport.Qi);
-        Assert.Equal(20, player.Duel.DailyReport.Qi);
+        Assert.Equal(20, player.Duel.OfflineReport.Experience);
+        Assert.Equal(40, player.Duel.DailyReport.Experience);
 
         // 再次离线会话重置离线账本。
         player.SetPresence(PresenceState.Online);
         player.SetPresence(PresenceState.Offline);
-        Assert.Equal(0, player.Duel.OfflineReport.Qi);
+        Assert.Equal(0, player.Duel.OfflineReport.Experience);
     }
 
     /// <summary>跨 UTC+8 日界推进时每日账本 rollover，只保留当日收益。</summary>
@@ -121,8 +122,8 @@ public sealed class ActionReportTests
         var endUnix = Baseline.AddHours(20).ToUnixTimeMilliseconds() / 1000d;
         var expectedDay = (long)Math.Floor((endUnix + 28800) / 86400);
         Assert.Equal(expectedDay, player.Duel.DailyReport.DayIndex);
-        // 当日仅累计日界之后的约 4 小时收益（每秒 1 修为），而非全程 20 小时。
-        Assert.InRange(player.Duel.DailyReport.Qi, 4 * 3600, 4 * 3600 + 10);
+        // 当日仅累计日界之后的约 4 小时收益（每秒 1 + 每 10 秒 10 ≈ 2 修为/秒），而非全程 20 小时。
+        Assert.InRange(player.Duel.DailyReport.Experience, 8 * 3600, 8 * 3600 + 20);
     }
 
     /// <summary>功法参悟经验入账并记录 ability 级 LevelUp；突破记录 realm 级 LevelUp。</summary>
@@ -151,7 +152,7 @@ public sealed class ActionReportTests
     public void CombatPathRecordsEncountersKillsAndRootExp()
     {
         // 高额六维奖励（20 万均分六维 ≈ 33333/维）足以把默认 10 级推到 11 级，触发 root 升级记录。
-        var catalog = CreateCombatCatalog(rootExpReward: 200_000);
+        var catalog = CreateCombatCatalog(experience: 200_000);
         var player = CreatePlayer("甲");
         var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
 
@@ -167,6 +168,31 @@ public sealed class ActionReportTests
         Assert.Equal(0, report.Deaths);
         Assert.True(report.RootExp.Total > 0);
         Assert.Contains(report.LevelUps, entry => entry.Kind == "root" && entry.ToLevel == 11);
+    }
+
+    /// <summary>技能每次成功施放结算 1 点功法经验：装配分段与战报 AbilityExp 同步入账。</summary>
+    [Fact]
+    public void SkillUseGrantsOneAbilityExpPerCast()
+    {
+        var embedded = GameDataCatalog.LoadEmbedded();
+        var catalog = CreateCombatCatalog(experience: 0,
+            abilities: new Dictionary<string, JsonElement>
+            {
+                ["ability.heavy-slash"] = embedded.Abilities["ability.heavy-slash"].Clone()
+            });
+        var player = CreatePlayer("甲");
+        var abilityId = new AbilityId("ability.heavy-slash");
+        player.LearnAbility(abilityId);
+        player.Loadout.AbilitySlots[0] = new PlayerAbilitySlot("ability.heavy-slash", 1, []);
+        var action = player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        // 单波内重斩（18s 冷却）至多施放一次：短时窗内恰好结算 1 点。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2.6), catalog);
+
+        Assert.Equal(1, player.Loadout.AbilityExperiences[abilityId]);
+        var report = player.Duel.ReportFor(action.Id);
+        Assert.NotNull(report);
+        Assert.Equal(1, Assert.Single(report.AbilityExp, entry => entry.AbilityId == "ability.heavy-slash").Experience);
     }
 
     /// <summary>讨伐失败计入 Deaths。</summary>
@@ -197,10 +223,10 @@ public sealed class ActionReportTests
 
         var report = restored.Duel.ReportFor(action.Id);
         Assert.NotNull(report);
-        Assert.Equal(10, report.Qi);
+        Assert.Equal(20, report.Experience);
         Assert.Equal(1, report.Cycles);
-        Assert.Equal(10, restored.Duel.OfflineReport.Qi);
-        Assert.Equal(10, restored.Duel.DailyReport.Qi);
+        Assert.Equal(20, restored.Duel.OfflineReport.Experience);
+        Assert.Equal(20, restored.Duel.DailyReport.Experience);
         Assert.Equal(player.Duel.DailyReport.DayIndex, restored.Duel.DailyReport.DayIndex);
     }
 
@@ -214,9 +240,8 @@ public sealed class ActionReportTests
     private static GameDataCatalog CreateCombatCatalog(
         double enemyHitpoints = 1,
         double enemyAttackPower = 0,
-        double qiReward = 0,
-        double experienceReward = 0,
-        double rootExpReward = 0)
+        double experience = 0,
+        Dictionary<string, JsonElement>? abilities = null)
     {
         var actionId = new ActionId("combat.test");
         var actions = new ActionCatalog([
@@ -239,9 +264,7 @@ public sealed class ActionReportTests
             CombatantStats.Create(enemyHitpoints, enemyAttackPower, 0, 2),
             [],
             [],
-            qiReward,
-            experienceReward,
-            rootExpReward);
+            experience);
         var encounter = new CombatEncounterDefinition(
             "encounter.test",
             "测试遭遇",
@@ -260,6 +283,7 @@ public sealed class ActionReportTests
             "test-fingerprint",
             actions,
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
-            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter });
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },
+            abilities: abilities);
     }
 }

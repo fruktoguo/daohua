@@ -11,6 +11,8 @@ export interface SessionAccount {
   account: string
   /** 显示道号 */
   name: string
+  /** 角色序号（服务端自增编号，缺省为 0） */
+  sequenceId?: number
 }
 
 let current: SessionAccount | null = null

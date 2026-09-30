@@ -561,60 +561,19 @@
   background: rgba(0, 0, 0, 0.4);
 }
 
-/* 怪物悬浮详情卡：掉落物图标瓦片行 */
+/* 怪物悬浮详情卡：掉落物复合胶囊行（图标 + 名称 + ×数量区间 + 概率，见 ItemDropReference） */
 .world-monster-drops-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   margin-top: 4px;
 }
 
-/* 单个掉落条目：缩小瓦片（图标 + 右下 ×数量角标）+ 下方居中概率小字 */
-.world-monster-drop {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-/* 掉落迷你瓦片：锚点类已登记进 selection-grid.css 共享 :is() 组，槽位/瓦片尺寸由变量驱动 */
-.world-monster-drop-anchor {
-  --item-slot-size: 38px;
-  --item-tile-size: 38px;
-}
-
-/* 迷你瓦片件套收拢：默认角标/丝带按 64px 槽位设计——38px 下角标受 64% 宽度上限截断、
-   丝带占比过大，故缩小字号内边距、放宽角标上限并按比例缩收丝带 */
-.world-monster-drop-anchor .item-corner {
-  max-width: 150%;
-  padding: 1px 5px;
-  font-size: 8px;
-}
-
-.world-monster-drop-anchor .item-corner--top-right {
-  top: -6px;
-  right: -4px;
-}
-
-.world-monster-drop-anchor .item-corner--bottom-right {
-  right: -4px;
-  bottom: -5px;
-}
-
-.world-monster-drop-anchor .item-type-ribbon {
-  transform: scale(0.72);
-}
-
-.world-monster-drop-anchor .item-tile-name {
-  padding: 4px 2px;
-  font-size: 9px;
-}
-
+/* 掉落胶囊尾部概率小字 */
 .world-monster-drop-chance {
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.2;
   color: var(--text-dim);
-  text-align: center;
 }
 
 .world-building-pill {
@@ -3142,7 +3101,7 @@
   color: #c9a2e8;
 }
 
-/* 图标瓦片横排换行：auto-fill 网格在不定宽弹性列中会塌缩为单列，必须用 flex */
+/* 物品胶囊横排换行：auto-fill 网格在不定宽弹性列中会塌缩为单列，必须用 flex */
 .battle-report-items {
   display: flex;
   flex-wrap: wrap;
@@ -3166,24 +3125,9 @@
 }
 
 .battle-report-staged-list {
-  display: grid;
-  gap: 4px;
-}
-
-.battle-report-staged-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.battle-report-staged-item em {
-  flex-shrink: 0;
-  color: var(--text-dim);
-  font-size: 10px;
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .battle-report-history {

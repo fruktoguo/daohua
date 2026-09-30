@@ -84,8 +84,8 @@ public sealed class SimulationEventTailTests
             Assert.Equal(expectedTail[i].ActionId, actualTail[i].ActionId);
         }
         // 状态面位级一致：推进结果不受事件窗口影响。
-        Assert.Equal(single.Progression.Qi, split.Progression.Qi);
-        Assert.Equal(single.Progression.LifetimeQi, split.Progression.LifetimeQi);
+        Assert.Equal(single.Progression.Experience, split.Progression.Experience);
+        Assert.Equal(single.Progression.LifetimeExperience, split.Progression.LifetimeExperience);
         Assert.Equal(single.Actions.Count, split.Actions.Count);
     }
 

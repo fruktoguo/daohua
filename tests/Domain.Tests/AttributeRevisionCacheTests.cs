@@ -200,7 +200,7 @@ public sealed class AttributeRevisionCacheTests
 
         player.Resources.Hitpoints = 42;              // 面板当前值是 Apply 写回目标，不是解析输入
         player.Resources.Manapoints = 7;
-        player.Progression.Qi = 123;               // 修为/经验不直接参与属性解析（RealmLevel 才是）
+        player.Progression.Experience = 123;               // 修为/经验不直接参与属性解析（RealmLevel 才是）
         player.Progression.Experience = 456;
         player.World.X = 5;                        // 坐标不参与解析
         player.Duel.EncounterCharges = 3;          // 斗法标量不参与解析

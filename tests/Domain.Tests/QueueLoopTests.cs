@@ -42,7 +42,7 @@ public sealed class QueueLoopTests
         Assert.Equal(2, action.RemainingRepeats); // 重置后初始 2 次，正在执行第 1 次
         Assert.Equal(5, action.ProgressSeconds);
         Assert.Equal(ActionQueueStatus.Running, action.Status);
-        Assert.Equal(25d, player.Progression.Qi);
+        Assert.Equal(45d, player.Progression.Experience);
         Assert.Equal(2, player.Progression.CompletedActions);
     }
 
@@ -56,7 +56,7 @@ public sealed class QueueLoopTests
         var herb = new ItemId("item.herb");
         var actions = new ActionCatalog([
             new ActionDefinition(new ActionId("test.gather"), "采药", ActionKind.Exploration, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Item, ActionYieldPeriod.PerRepeat, 1, herb)]),
-            new ActionDefinition(new ActionId("test.draw-qi"), "吐纳", ActionKind.Cultivation, 3, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
+            new ActionDefinition(new ActionId("test.draw-qi"), "吐纳", ActionKind.Cultivation, 3, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var catalog = new GameDataCatalog("test", "test", actions, new Dictionary<ItemId, ItemDefinition>());
 
@@ -171,7 +171,7 @@ public sealed class QueueLoopTests
                 ExecutionKind: ActionExecutionKind.CombatEncounter,
                 CombatEncounterId: "encounter.boss"),
             new ActionDefinition(qiActionId, "吐纳", ActionKind.Cultivation, 2,
-                new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1)])
+                new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1)])
         ]);
         var monster = new CombatMonsterDefinition("enemy.boss", "妖皇", 100, 1, CombatMonsterRank.Boss,
             CombatantStats.Create(10_000, 10_000, 0, 1), [], []);

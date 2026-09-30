@@ -51,7 +51,7 @@
 | **Reactive Buff 组件族** | 每种触发型 buff 一个组件类：`OnHitHealBuffComponent`/`ThornsBuffComponent`/`OnKillBuffComponent`…字段=触发参数 | **主动反应** | Buffs（`ActiveBuff` 扩展） |
 | `PlayerInventoryComponent` | 资产条目 | 数据 | 钱包 |
 | `PlayerEconomyComponent` | 市场关联 | 数据 | — |
-| `PlayerSettingsComponent` | 设置/LoopEnabled | 数据 | Settings |
+| `PlayerSettingsComponent` | 设置/LoopEnabled/AutoTravelEnabled | 数据 | Settings |
 | `PlayerDuelComponent` | 斗法 | 数据 | Duel |
 | `EcsActionExecutionComponent` | 请求工作区（窗口/钱包/账本/战斗句柄） | 运行时 | 不落库 |
 

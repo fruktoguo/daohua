@@ -54,18 +54,16 @@ public sealed record ActionDefinition(
 /// </summary>
 public enum ActionYieldKind : byte
 {
-    /// <summary>修为：境界推进资源，累加 Progression.Qi 与 LifetimeQi</summary>
-    Qi = 0,
     /// <summary>灵力：战斗资源，累加 Resources.Manapoints 并按上限截断</summary>
-    Mana = 1,
+    Mana = 0,
     /// <summary>气血：累加 Resources.Hitpoints 并按上限截断</summary>
-    Hitpoints = 2,
-    /// <summary>历练经验：累加 Progression.Experience</summary>
-    Experience = 3,
+    Hitpoints = 1,
+    /// <summary>修为：经 CreditExperience 入账 Progression.Experience/Foundation/CombatExperience</summary>
+    Experience = 2,
     /// <summary>物品：按 Item 进入资产流水</summary>
-    Item = 4,
+    Item = 3,
     /// <summary>Buff：按 Buff 授权规格写入 Buffs.Active</summary>
-    Buff = 5
+    Buff = 4
 }
 
 /// <summary>行动收益结算频率。</summary>
@@ -155,8 +153,11 @@ public sealed record ItemDefinition(
     bool IsTradable = true,
     double SellPrice = 0,
     ConsumableDefinition? Consumable = null,
-    string Category = "general")
+    string Category = "general",
+    string? SubCategory = null)
 {
+    /// <summary>展示用子类型键：缺省时回落主类型（左上角品类丝带与分类筛选的统一口径）。</summary>
+    public string DisplaySubCategory => SubCategory ?? Category;
 }
 
 /// <summary>纯内存行动目录，运行时可由配置载入；不依赖数据库或宿主。</summary>
@@ -203,7 +204,7 @@ public sealed class ActionCatalog
     [
         new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(),
         [
-            new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, 1.0),
+            new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1.0),
             new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 1.0),
             new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10.0)
         ]),
@@ -354,7 +355,7 @@ public sealed class GameDataCatalog
                 throw new DomainException(error.Code, $"功法 {abilityId} 配表无效：{error.Message}");
             }
         Duel = duel ?? DuelSettings.Default;
-        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, baseAttributes, Abilities);
+        CombatMonsters = combatMonsters ?? ParseMonsterDefinitions(Monsters, baseAttributes, Abilities, realmProgression);
         CombatEncounters = combatEncounters ?? ParseEncounterDefinitions(Encounters, CombatMonsters);
         WorldGraph = worldGraph ?? BuildWorldGraph(Maps);
         BaseAttributes = baseAttributes;
@@ -627,7 +628,6 @@ public sealed class GameDataCatalog
             var kindText = element.TryGetProperty("kind", out var kindProperty) ? kindProperty.GetString() : null;
             var kind = kindText?.ToLowerInvariant() switch
             {
-                "qi" => ActionYieldKind.Qi,
                 "mana" => ActionYieldKind.Mana,
                 "hitpoints" => ActionYieldKind.Hitpoints,
                 "experience" => ActionYieldKind.Experience,
@@ -726,7 +726,9 @@ public sealed class GameDataCatalog
         }
         var category = entry.TryGetProperty("category", out var categoryProperty)
             ? categoryProperty.GetString() ?? "general" : "general";
-        return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable, category);
+        var subCategory = entry.TryGetProperty("subCategory", out var subCategoryProperty)
+            ? subCategoryProperty.GetString() : null;
+        return new ItemDefinition(new ItemId(id), name, description, tradable, price, consumable, category, subCategory);
     }
 
     /// <summary>解析消耗/产出等数量字典</summary>
@@ -759,7 +761,7 @@ public sealed class GameDataCatalog
 
     private static Dictionary<string, CombatMonsterDefinition> ParseMonsterDefinitions(
         IReadOnlyDictionary<string, JsonElement> raw, BaseAttributeCatalog? baseAttributes,
-        IReadOnlyDictionary<string, JsonElement> abilities)
+        IReadOnlyDictionary<string, JsonElement> abilities, RealmProgressionCatalog? realmProgression)
     {
         var result = new Dictionary<string, CombatMonsterDefinition>(StringComparer.Ordinal);
         foreach (var (id, value) in raw)
@@ -885,15 +887,16 @@ public sealed class GameDataCatalog
                     JsonRead.Number(value, "hpDrainPoints"),
                     JsonRead.Number(value, "mpDrainPoints"),
                     JsonRead.Number(value, "damageReflectPoints"),
-                    JsonRead.Number(value, "healingBonusPoints"))
+                    JsonRead.Number(value, "healingBonusPoints")),
+                // 战斗经验不入配表：怪物按配表 level 取「升到该级的累计修为」派生（总纲 §7.7.6）。
+                CombatExperience = realmProgression?.CumulativeExpFor(level) ?? 0
             };
-            var qiReward = JsonRead.Number(value, "qiReward", 0);
-            var experienceReward = JsonRead.Number(value, "experienceReward", 0);
-            var rootExpReward = JsonRead.Number(value, "rootExpReward", 0);
-            if (qiReward < 0 || experienceReward < 0 || rootExpReward < 0)
+            // 击杀奖励单参数：experience 同时喂修为结算（瓶颈/底蕴/战斗经验）与六维均分入账（总纲 §7.11）。
+            var experience = JsonRead.Number(value, "experience", 0);
+            if (experience < 0)
                 throw new DomainException(DomainErrorCode.InvalidArgument, $"怪物 {id} 的击杀奖励不能为负。");
             result[id] = new CombatMonsterDefinition(id, JsonRead.Text(value, "name", id), budget, level, rank, stats, drops, skills,
-                qiReward, experienceReward, rootExpReward);
+                experience);
         }
         return result;
     }

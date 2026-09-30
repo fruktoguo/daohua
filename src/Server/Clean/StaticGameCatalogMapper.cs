@@ -21,6 +21,7 @@ public static class StaticGameCatalogMapper
             var desc = ReadString(item, "description");
             var kind = ReadString(item, "kind", "material");
             var category = ReadString(item, "category", "material");
+            var subCategory = ReadString(item, "subCategory");
             var tier = ReadInt(item, "tier", 1);
             var sellPrice = ReadDouble(item, "sellPrice", 0);
             var isTradable = ReadBool(item, "isTradable", true);
@@ -60,6 +61,7 @@ public static class StaticGameCatalogMapper
                 description = desc,
                 kind,
                 category,
+                subCategory = subCategory.Length > 0 ? subCategory : null,
                 tier,
                 sellPrice,
                 isTradable,
@@ -275,9 +277,7 @@ public static class StaticGameCatalogMapper
             budgetCost = definition.BudgetCost,
             // 怪物属性与玩家/斗法镜像走同一份协议形状，字段语义完全一致。
             attributes = ProtocolSnapshotMapper.ToAttributesDto(stats),
-            experience = definition.ExperienceReward,
-            qiReward = definition.QiReward,
-            rootExpReward = definition.RootExpReward,
+            experience = definition.Experience,
             drops = definition.DropTable.Select(drop => new
             {
                 itemId = drop.ItemId.Value,
@@ -295,7 +295,7 @@ public static class StaticGameCatalogMapper
         level = 1, tier = 1, budgetCost = 0d,
         attributes = ProtocolSnapshotMapper.ToAttributesDto(CombatantStats.Create(1, 0, 0, 2)),
         experience = 0d,
-        qiReward = 0d, rootExpReward = 0d, drops = Array.Empty<object>(), abilityIds = Array.Empty<string>()
+        drops = Array.Empty<object>(), abilityIds = Array.Empty<string>()
     };
 
     private static bool IsMonsterInRank(GameDataCatalog catalog, string id, string rank) => catalog.Monsters.TryGetValue(id, out var monster)

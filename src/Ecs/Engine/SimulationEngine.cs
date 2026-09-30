@@ -400,7 +400,7 @@ public static partial class SimulationEngine
         var battle = CombatEncounterState.Create(
             encounter.Id,
             completedSearch.Seed,
-            new CombatantTemplate(player.ResolveAttributes(gameData).ToCombatant(),
+            new CombatantTemplate(player.ResolveAttributes(gameData).ToCombatant(player.Progression.CombatExperience),
                 SkillSlot.FromAbilitySlots(player.Loadout.AbilitySlots, gameData.Abilities)),
             wave.Select(monster => new CombatantTemplate(monster.Stats, monster.Skills)).ToArray(),
             InBattleRespawnSeconds(encounter));
@@ -636,7 +636,7 @@ public static partial class SimulationEngine
     private static CombatantState BuildConsumableEvalUnits(IPlayerResourceContext player, GameDataCatalog catalog,
         out CombatantState? target, out List<CombatantState> allies, out List<CombatantState> enemies)
     {
-        var caster = new CombatantState("player", player.ResolveAttributes(catalog).ToCombatant())
+        var caster = new CombatantState("player", player.ResolveAttributes(catalog).ToCombatant(player.Progression.CombatExperience))
         {
             Hitpoints = player.Resources.Hitpoints,
             Manapoints = player.Resources.Manapoints
@@ -897,7 +897,7 @@ public static partial class SimulationEngine
             battleState = session!.Battle;
             if (gameData.BaseAttributes is null || session.AttributeRevision != player.AttributeInputRevision)
             {
-                battleState.Player.RefreshStats(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant());
+                battleState.Player.RefreshStats(PlayerAttributeResolver.Resolve(player, gameData).ToCombatant(player.Progression.CombatExperience));
                 session.AttributeRevision = player.AttributeInputRevision;
             }
             battleState.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(activeBuffs, buffId);
@@ -949,6 +949,10 @@ public static partial class SimulationEngine
             cursor = i + 1;
             var targetIsViewer = duelEvent.TargetIsInitiator == playback.ViewerIsInitiator;
             var attackerIsViewer = duelEvent.AttackerIsInitiator == playback.ViewerIsInitiator;
+            // 斗法本方施放同样计每次 1 点功法经验；镜像方施放不重复入账。
+            if (attackerIsViewer && duelEvent.AbilityId is { } duelAbility)
+                GrantAbilityUseExperience(player, action.Id, duelAbility,
+                    from.AddSeconds(elapsedBefore + Math.Max(0, duelEvent.AtSeconds - expedition.BattleElapsedSeconds)).ToUnixTimeMilliseconds() / 1000d);
             if (targetIsViewer) { viewerHp = duelEvent.TargetHitpointsAfter; viewerMp = duelEvent.TargetManapointsAfter; }
             else { opponentHp = duelEvent.TargetHitpointsAfter; opponentMp = duelEvent.TargetManapointsAfter; }
             if (attackerIsViewer) viewerMp = duelEvent.AttackerManapointsAfter;
@@ -1025,6 +1029,30 @@ public static partial class SimulationEngine
         action.ProgressSeconds = 0;
     }
 
+    /// <summary>
+    /// 技能每次成功施放结算 1 点功法经验：写入装配分段账本并可触发参悟升级。
+    /// 与 <see cref="PlayerAggregate.GrantAbilityExperience"/> 同一入账口径，面向战斗逐次小额结算。
+    /// </summary>
+    private static void GrantAbilityUseExperience(IPlayerResourceContext player, Guid actionId,
+        string abilityIdValue, double atUnixSeconds)
+    {
+        var abilityId = new AbilityId(abilityIdValue);
+        // 与 GrantAbilityExperience 同规：参悟经验只对已习得功法累计，未习得功法的施放不入账。
+        if (!abilityId.IsValid || !player.Loadout.LearnedAbilities.Contains(abilityId)) return;
+        var previousExp = player.Loadout.AbilityExperiences.TryGetValue(abilityId, out var stored) ? stored : 0;
+        var nextExp = previousExp + 1;
+        player.Loadout.AbilityExperiences[abilityId] = nextExp;
+        var levelBefore = AbilityExpCurve.LevelFor(previousExp);
+        var levelAfter = AbilityExpCurve.LevelFor(nextExp);
+        player.RecordStats(actionId, atUnixSeconds, report =>
+        {
+            report.AddAbilityExp(abilityIdValue, 1);
+            if (levelAfter > levelBefore)
+                report.LevelUps.Add(new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter));
+        });
+        player.MarkDirty(PlayerSectionKind.Loadout);
+    }
+
     /// <summary>团灭分流到引擎参数：原地复活遭遇携带复活读条秒数，团灭即败遭遇传 0（引擎按 EnemyWon 终局处理）。</summary>
     private static double InBattleRespawnSeconds(CombatEncounterDefinition encounter)
         => encounter.OnPartyWipe == PartyWipeRule.Respawn ? encounter.PlayerRespawnSeconds : 0;
@@ -1083,20 +1111,21 @@ public static partial class SimulationEngine
         ref Dictionary<ItemId, double>? deltas)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.reward");
-        if (monster.QiReward > 0)
+        if (monster.Experience > 0)
         {
-            player.Progression.Qi += monster.QiReward;
-            player.Progression.LifetimeQi += monster.QiReward;
-            player.RecordStats(actionInstanceId, killAtUnixSeconds, report => report.Qi += monster.QiReward);
+            // 击杀奖励单参数（总纲 §7.11.1）：experience 一笔同时结算——修为入账（瓶颈截断 + 底蕴
+            // 1:1 兑换放大 ≤3×、溢量沉淀）、战斗经验按基础量等额入账、六维按总量等额分配；
+            // 满级（cap≤0）修为部分全额沉淀为底蕴，六维与战斗经验不受影响。
+            var expCap = gameData.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
+            var creditedExp = player.Progression.CreditExperience(monster.Experience, monster.Experience, expCap);
+            player.RecordStats(actionInstanceId, killAtUnixSeconds, report =>
+            {
+                report.Experience += creditedExp;
+                report.Foundation += monster.Experience - creditedExp;
+                report.CombatExperience += monster.Experience;
+            });
+            DistributeRootExp(player, monster.Experience, gameData, actionInstanceId, killAtUnixSeconds);
         }
-        if (monster.ExperienceReward > 0)
-        {
-            var cappedExpReward = CapExperience(player, monster.ExperienceReward, gameData);
-            player.Progression.Experience += cappedExpReward;
-            player.RecordStats(actionInstanceId, killAtUnixSeconds, report => report.Experience += cappedExpReward);
-        }
-        if (monster.RootExpReward > 0)
-            DistributeRootExp(player, monster.RootExpReward, gameData, actionInstanceId, killAtUnixSeconds);
         var dropBonus = pvpEnabled ? PercentValue.Multiplier(gameData.Duel.DropChanceBonusPercent, PercentCurveMode.Linear) : 1;
         foreach (var drop in monster.DropTable)
         {
@@ -1113,7 +1142,8 @@ public static partial class SimulationEngine
             if (pvpEnabled)
             {
                 // 斗法期间掉落进入暂存区：入账延迟与归属由暂存结算/斗法结算决定；StageItem 内部同步记账。
-                ActionReportBook.StageCombatItem(player, drop.ItemId, quantity, killAtUnixSeconds);
+                ActionReportBook.StageCombatItem(player, drop.ItemId, quantity, killAtUnixSeconds,
+                    gameData.Duel.StagedBucketSeconds);
             }
             else
             {
@@ -1124,27 +1154,30 @@ public static partial class SimulationEngine
     }
 
     /// <summary>
-    /// 六维经验分配：按已装备功法槽位的 rootAttribute 集合均分；
-    /// 无功法或功法未声明归属维度时六维平均分配。
+    /// 六维经验分配：默认六个维度严格均分（各得总量 1/6）；
+    /// 仅已装备内功（discipline=internal）按其 rootAttribute 归属集合调整分配比例，
+    /// 未装备内功时任何神通/外功都不改变均分。内功未声明归属视为全修（仍六维均分）。
     /// </summary>
     private static void DistributeRootExp(IPlayerResourceContext player, double amount, GameDataCatalog gameData,
         Guid actionInstanceId, double atUnixSeconds)
     {
         var targets = new HashSet<CoreAspectKind>();
-        var anySlot = false;
+        var anyInternal = false;
         foreach (var slot in player.Loadout.AbilitySlots)
         {
             if (slot.AbilityId is null) continue;
-            anySlot = true;
+            if (!gameData.Abilities.TryGetValue(slot.AbilityId, out var ability)
+                || DeterministicCombatEngine.AbilityText(ability, "discipline") != "internal") continue;
+            anyInternal = true;
             if (TryParseCoreAspect(slot.AbilityId, gameData, out var attribute))
                 targets.Add(attribute);
             else
             {
-                // 功法未声明归属维度视为全修：覆盖全部六维。
+                // 内功未声明归属维度视为全修：覆盖全部六维。
                 targets.UnionWith(Enum.GetValues<CoreAspectKind>());
             }
         }
-        if (!anySlot || targets.Count == 0)
+        if (!anyInternal || targets.Count == 0)
             targets.UnionWith(Enum.GetValues<CoreAspectKind>());
         var share = amount / targets.Count;
         var core = player.Loadout.CoreAttributes;
@@ -1386,18 +1419,6 @@ public static partial class SimulationEngine
     }
 
     /// <summary>
-    /// 修为经验入账截断：触及本层瓶颈（expToNext）后锁定增长待突破，满级（cap≤0）恒锁定。
-    /// </summary>
-    private static double CapExperience(IPlayerActionContext player, double gain, GameDataCatalog? gameData)
-    {
-        var realm = gameData?.RealmProgression;
-        if (realm is null) return gain;
-        var cap = realm.ExpCapFor(player.Progression.RealmLevel);
-        if (cap <= 0) return 0;
-        return Math.Max(0, Math.Min(cap - player.Progression.Experience, gain));
-    }
-
-    /// <summary>
     /// 结算行动声明的按秒收益（per=second 的修为/灵力/气血/经验等持续通道）。
     /// 逐整秒循环累加，严格确保大跨度离线快进与客户端逐秒在线推进的 IEEE 754 浮点累加序列完全一致；
     /// 灵力与气血按聚合内已刷新的属性上限逐秒截断。
@@ -1406,15 +1427,17 @@ public static partial class SimulationEngine
         double multiplier, GameDataCatalog? gameData, Guid actionInstanceId, double atUnixSeconds)
     {
         if (wholeSeconds <= 0) return;
-        var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel);
-        var realmConfigured = gameData?.RealmProgression is not null;
+        // 本层修为上限：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
+        var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
         // 溢出预检查沿用“先校验后变更”语义：rate * 整秒数越界时不得污染任何进度数值。
         var seconds = (double)wholeSeconds;
         var combatTouched = false;
         var progressionTouched = false;
-        // 账本按实际入账量记录：修为为每秒全额累加；经验记瓶颈截断后的真实增量。
-        var qiRecorded = 0d;
-        var experienceBefore = player.Progression.Experience;
+        // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，
+        // 底蕴记净变动（满层沉淀为正、兑换消耗为负），战斗经验按增幅前基础量等额记账。
+        var experienceCredited = 0d;
+        var foundationDelta = 0d;
+        var combatExperienceGained = 0d;
         foreach (var yield in definition.Yields)
         {
             if (yield.Period != ActionYieldPeriod.PerSecond) continue;
@@ -1424,26 +1447,17 @@ public static partial class SimulationEngine
                 throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
             switch (yield.Kind)
             {
-                case ActionYieldKind.Qi:
-                    if (!double.IsFinite(player.Progression.Qi + total) || !double.IsFinite(player.Progression.LifetimeQi + total))
-                        throw new DomainException(DomainErrorCode.InvariantViolation, "修为收益超出数值范围。");
-                    // 逐整秒累加，与在线逐秒推进保持完全相同的浮点操作序列。
-                    for (var i = 0; i < wholeSeconds; i++)
-                    {
-                        player.Progression.Qi += rate;
-                        player.Progression.LifetimeQi += rate;
-                    }
-                    qiRecorded += total;
-                    progressionTouched = true;
-                    break;
                 case ActionYieldKind.Experience:
-                    if (!double.IsFinite(player.Progression.Experience + total))
+                    // 修为类收益逐秒走统一结算：瓶颈截断 + 底蕴 1:1 兑换放大（单笔 ≤3×rate）+
+                    // 未入账增幅沉淀为底蕴 + 战斗经验按每秒基础量入账；满级（cap≤0）全额沉淀。
+                    if (!double.IsFinite(player.Progression.Experience + 3 * total)
+                        || !double.IsFinite(player.Progression.Foundation + total)
+                        || !double.IsFinite(player.Progression.CombatExperience + yield.Amount * seconds))
                         throw new DomainException(DomainErrorCode.InvariantViolation, "经验收益超出数值范围。");
-                    // 修为触及本层瓶颈后锁定增长，待突破后方可继续累积；满级（cap<=0）恒锁定。
                     for (var i = 0; i < wholeSeconds; i++)
-                        player.Progression.Experience = realmConfigured
-                            ? Math.Min(expCap ?? 0, player.Progression.Experience + rate)
-                            : player.Progression.Experience + rate;
+                        experienceCredited += player.Progression.CreditExperience(yield.Amount, rate, expCap);
+                    foundationDelta += total - experienceCredited;
+                    combatExperienceGained += yield.Amount * seconds;
                     progressionTouched = true;
                     break;
                 case ActionYieldKind.Mana:
@@ -1463,12 +1477,16 @@ public static partial class SimulationEngine
         }
         if (combatTouched) player.MarkDirty(PlayerSectionKind.Combat);
         if (progressionTouched) player.MarkDirty(PlayerSectionKind.Progression);
-        var experienceDelta = player.Progression.Experience - experienceBefore;
-        if (qiRecorded != 0 || experienceDelta != 0)
+        if (experienceCredited != 0 || foundationDelta != 0 || combatExperienceGained != 0)
             player.RecordStats(actionInstanceId, atUnixSeconds,
-                report => { report.Qi += qiRecorded; report.Experience += experienceDelta; });
-        if (!double.IsFinite(player.Progression.Qi) || !double.IsFinite(player.Progression.LifetimeQi)
-            || !double.IsFinite(player.Progression.Experience))
+                report =>
+                {
+                    report.Experience += experienceCredited;
+                    report.Foundation += foundationDelta;
+                    report.CombatExperience += combatExperienceGained;
+                });
+        if (!double.IsFinite(player.Progression.Experience) || !double.IsFinite(player.Progression.Foundation)
+            || !double.IsFinite(player.Progression.CombatExperience))
             throw new DomainException(DomainErrorCode.InvariantViolation, "模拟后的玩家进度数值无效。");
     }
 
@@ -1491,23 +1509,25 @@ public static partial class SimulationEngine
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.yield");
         // 先汇总数值型收益并完成有限性校验，再统一落账，沿用“先校验后变更”语义。
-        double qiGain = 0, experienceGain = 0, manaGain = 0, hitpointGain = 0;
+        // experienceBase 记增幅前基础量（战斗经验记账源），experienceGain 记增幅后总量（底蕴结算输入）。
+        double experienceGain = 0, manaGain = 0, hitpointGain = 0, experienceBase = 0;
         foreach (var yield in definition.Yields)
         {
             if (yield.Period != ActionYieldPeriod.PerRepeat) continue;
             var amount = yield.Amount * autoUseMultiplier;
             switch (yield.Kind)
             {
-                case ActionYieldKind.Qi: qiGain += amount; break;
-                case ActionYieldKind.Experience: experienceGain += amount; break;
+                case ActionYieldKind.Experience: experienceBase += yield.Amount; experienceGain += amount; break;
                 case ActionYieldKind.Mana: manaGain += amount; break;
                 case ActionYieldKind.Hitpoints: hitpointGain += amount; break;
             }
         }
-        var nextExperience = player.Progression.Experience + CapExperience(player, experienceGain, gameData);
-        if (!double.IsFinite(qiGain) || !double.IsFinite(experienceGain) || !double.IsFinite(manaGain) || !double.IsFinite(hitpointGain)
-            || !double.IsFinite(player.Progression.Qi + qiGain) || !double.IsFinite(player.Progression.LifetimeQi + qiGain)
-            || !double.IsFinite(nextExperience))
+        // 本层修为上限：无境界进度配置时取 +∞（不封顶也不沉淀）；封顶 0 表示满级恒锁定。
+        var expCap = gameData?.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
+        if (!double.IsFinite(experienceGain) || !double.IsFinite(experienceBase) || !double.IsFinite(manaGain) || !double.IsFinite(hitpointGain)
+            || !double.IsFinite(player.Progression.Experience + 3 * experienceGain)
+            || !double.IsFinite(player.Progression.Foundation + experienceGain)
+            || !double.IsFinite(player.Progression.CombatExperience + experienceBase))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
         action.ProgressSeconds = 0;
         action.CompletedRepeats += 1;
@@ -1545,12 +1565,16 @@ public static partial class SimulationEngine
             AddDelta(deltas, item, -quantity);
         }
         CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
-        // 账本按实际入账量记录：经验记瓶颈截断后的真实增量，物品产出计获得、输入材料计失去。
-        var experienceDelta = nextExperience - player.Progression.Experience;
+        // 修为类收益统一结算（总纲 §7.11.1）：瓶颈截断 + 底蕴 1:1 兑换放大（≤3×amp）+
+        // 增幅溢量沉淀为底蕴 + 战斗经验按增幅前基础量入账；满级（cap≤0）全额沉淀。
+        var experienceDelta = player.Progression.CreditExperience(experienceBase, experienceGain, expCap);
+        // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，底蕴记净变动，
+        // 战斗经验按基础量记账；物品产出计获得、输入材料计失去。
         player.RecordStats(action.Id, target.ToUnixTimeMilliseconds() / 1000d, report =>
         {
-            report.Qi += qiGain;
             report.Experience += experienceDelta;
+            report.Foundation += experienceGain - experienceDelta;
+            report.CombatExperience += experienceBase;
             report.Cycles += 1;
             if (itemRewards is not null)
                 foreach (var (item, quantity) in itemRewards)
@@ -1558,9 +1582,6 @@ public static partial class SimulationEngine
             foreach (var (item, quantity) in definition.Inputs)
                 report.AddItemLost(item, quantity);
         });
-        player.Progression.Qi += qiGain;
-        player.Progression.LifetimeQi += qiGain;
-        player.Progression.Experience = nextExperience;
         if (manaGain != 0)
             player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + manaGain);
         if (hitpointGain != 0)

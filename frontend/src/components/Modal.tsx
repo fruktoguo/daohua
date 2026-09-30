@@ -65,6 +65,12 @@ export function Modal({
   const resolvedCloseLabel = closeLabel ?? t('common.close')
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  // onClose 走 ref：父级每次渲染常会新建回调引用，若作为 effect 依赖会导致
+  // 焦点陷阱反复重挂——cleanup 还原焦点会直接把输入中焦点抢走（AGENTS：高频更新不得打断交互）。
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   useEffect(() => {
     if (!open) return undefined
@@ -80,7 +86,7 @@ export function Modal({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && dismissible) {
         event.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (event.key !== 'Tab' || !dialogRef.current) return
@@ -104,7 +110,7 @@ export function Modal({
       document.body.style.overflow = previousOverflow
       previouslyFocused?.focus()
     }
-  }, [dismissible, initialFocusRef, onClose, open])
+  }, [dismissible, initialFocusRef, open])
 
   if (!open) return null
 

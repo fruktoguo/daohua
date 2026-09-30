@@ -1,14 +1,44 @@
 import { memo, useEffect, useState } from 'react'
 import { ConfirmDialog } from './ConfirmDialog'
 import { RenameModal } from './RenameModal'
+import { ChangePasswordModal } from './ChangePasswordModal'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
-import { getUiScale, setUiScale } from '../utils/uiScale'
 import { LOCALES, useI18nStore, useT } from '../i18n'
-import { AVATAR_OPTIONS, useAvatarStore } from '../game/avatarStore'
+import { AVATAR_OPTIONS, getPlayerAvatarSrc, useAvatarStore } from '../game/avatarStore'
 
-/** 设置页面 Tab 分类（账号信息与显示偏好） */
-type SettingsTab = 'account' | 'display'
+/** 设置页面分类（账号、显示偏好与形象） */
+type SettingsTab = 'account' | 'display' | 'avatar'
+
+/** 设置分类导航配置：顺序即左栏展示顺序 */
+const SETTINGS_TABS: ReadonlyArray<{ id: SettingsTab; labelKey: 'tabAccount' | 'tabDisplay' | 'tabAvatar' }> = [
+  { id: 'account', labelKey: 'tabAccount' },
+  { id: 'display', labelKey: 'tabDisplay' },
+  { id: 'avatar', labelKey: 'tabAvatar' },
+]
+
+/** 左栏分类小图标（22px 格内 13px 描边矢量，与全局 Icon 同风格） */
+const SETTINGS_NAV_ICONS: Record<SettingsTab, React.JSX.Element> = {
+  account: (
+    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M5.5 19.5c1.3-3.6 3.9-5.3 6.5-5.3s5.2 1.7 6.5 5.3" />
+    </svg>
+  ),
+  display: (
+    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
+      <rect x="3.5" y="5" width="17" height="11.5" rx="1.5" />
+      <path d="M9.5 20h5M12 16.5V20" />
+    </svg>
+  ),
+  avatar: (
+    <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" viewBox="0 0 24 24">
+      <rect x="5" y="3.5" width="14" height="17" rx="1.5" />
+      <circle cx="12" cy="9.5" r="2.4" />
+      <path d="M7.8 17.2c.9-2.5 2.5-3.7 4.2-3.7s3.3 1.2 4.2 3.7" />
+    </svg>
+  ),
+}
 
 /** 格式化绝对时间戳为 YYYY-MM-DD HH:mm:ss 字符串 */
 function formatDateTime(unixSeconds: number, fallbackText: string): string {
@@ -42,16 +72,22 @@ function formatCooldown(seconds: number, t: (key: string, params?: Record<string
 /**
  * 游戏设置中心主页面组件 (SettingsPage)
  *
- * 功能与交互模块：
- * 1. 账号信息 (account Tab)：展示道号、账号、序列 ID、注册时间，支持道号重命名（含冷却倒计时）与退出登录确认；
- * 2. 显示设置 (display Tab)：提供界面缩放比例 (UI Scale: 50%~200% 滑块与预设档位) 与多语言切换 (zh-CN / en-US)。
+ * 布局结构（经典游戏设置范式）：
+ * - 左侧竖排分类栏（账号 / 显示 / 形象，含图标格与金色高亮态），移动端降级为顶部横向分类条；
+ * - 右侧为限宽（640px）的设置内容列，由若干 `settings-group` 分组卡片组成；
+ * - 分组内统一使用 `setting-row`「标签 + 说明 | 控件」设置行。
+ *
+ * 功能模块：
+ * 1. 账号：修士资料卡（立绘 + 道号 + 序号 ID + 改名入口/冷却）、登录账号（含序号）、注册时间与密码修改；会话分组承载退出登录；
+ * 2. 显示：界面语言（分段按钮）；
+ * 3. 形象：本命形象选择瓦片（图标 + 名称），供后续扩展更多形象。
  */
 export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const t = useT()
   const [activeTab, setActiveTab] = useState<SettingsTab>('account')
   const [renameModalOpen, setRenameModalOpen] = useState(false)
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false)
-  const [zoom, setZoom] = useState(getUiScale())
 
   const name = useGameStore(state => state.name)
   const account = useGameStore(state => state.account)
@@ -65,6 +101,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
 
   const avatarId = useAvatarStore(state => state.avatarId)
   const setAvatarId = useAvatarStore(state => state.setAvatarId)
+  const avatarSrc = getPlayerAvatarSrc(avatarId)
 
   const [remainingCooldown, setRemainingCooldown] = useState(renameCooldownSeconds)
 
@@ -80,196 +117,156 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
     return () => window.clearInterval(timer)
   }, [remainingCooldown])
 
-  const handleZoomChange = (newZoom: number) => {
-    const clamped = setUiScale(newZoom)
-    setZoom(clamped)
-  }
-
-  const zoomPresets = [50, 75, 100, 125, 150, 200]
   const cooldownStr = formatCooldown(remainingCooldown, t)
+  const accountValue = `${account || name}${sequenceId > 0 ? `#${sequenceId}` : ''}`
 
   return (
     <section className="panel settings-page">
-      <header className="panel-header settings-header">
+      <header className="panel-header">
         <h2>{t('app.settings.title')}</h2>
-        <nav className="settings-sub-tabs" role="tablist" aria-label={t('app.settings.categoryAria')}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'account'}
-            className={`settings-sub-tab${activeTab === 'account' ? ' active' : ''}`}
-            onClick={() => setActiveTab('account')}
-          >
-            {t('app.settings.tabAccount')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'display'}
-            className={`settings-sub-tab${activeTab === 'display' ? ' active' : ''}`}
-            onClick={() => setActiveTab('display')}
-          >
-            {t('app.settings.tabDisplay')}
-          </button>
-        </nav>
       </header>
 
-      {activeTab === 'account' && (
-        <div className="settings-tab-content">
-          <div className="settings-block">
-            <h3>{t('app.settings.accountHeading')}</h3>
-            <div className="stat-row">
-              <span>{t('app.settings.nameLabel')}</span>
-              <div className="stat-value-with-action">
-                <strong className="player-highlight-name">{name}</strong>
-                {remainingCooldown > 0 ? (
-                  <span className="cooldown-tag" title={t('app.settings.cooldownTitle', { time: cooldownStr })}>
-                    {t('app.settings.cooldownTag', { time: cooldownStr })}
+      <div className="settings-layout">
+        <nav className="settings-nav" role="tablist" aria-label={t('app.settings.categoryAria')}>
+          {SETTINGS_TABS.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={`settings-nav-item${activeTab === tab.id ? ' active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <span className="settings-nav-glyph" aria-hidden="true">{SETTINGS_NAV_ICONS[tab.id]}</span>
+              <span className="settings-nav-label">{t(`app.settings.${tab.labelKey}`)}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="settings-content" role="tabpanel">
+          {activeTab === 'account' && (
+            <>
+              <section className="settings-group" aria-label={t('app.settings.accountHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.accountHeading')}</h3>
+                <div className="settings-profile">
+                  <span className="settings-profile-avatar">
+                    <img alt="" draggable={false} src={avatarSrc} />
                   </span>
-                ) : (
+                  <div className="settings-profile-main">
+                    <span className="settings-profile-name">
+                      {name}
+                      <span className="sequence-id-tag">{sequenceId > 0 ? `#${sequenceId}` : '-'}</span>
+                    </span>
+                    <span className="settings-profile-meta">{accountValue}</span>
+                  </div>
+                  {remainingCooldown > 0 ? (
+                    <span className="cooldown-tag" title={t('app.settings.cooldownTitle', { time: cooldownStr })}>
+                      {t('app.settings.cooldownTag', { time: cooldownStr })}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="inline-modify-btn"
+                      onClick={() => setRenameModalOpen(true)}
+                    >
+                      {t('app.settings.modifyNameBtn')}
+                    </button>
+                  )}
+                </div>
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.settings.accountLabel')}</span>
+                  <span className="setting-value">{accountValue}</span>
+                </div>
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.settings.registeredTimeLabel')}</span>
+                  <span className="setting-value">{formatDateTime(createdAtUnixSeconds, t('app.settings.unknownTime'))}</span>
+                </div>
+              </section>
+
+              <section className="settings-group" aria-label={t('app.settings.securityHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.securityHeading')}</h3>
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.settings.passwordLabel')}</span>
                   <button
                     type="button"
                     className="inline-modify-btn"
-                    onClick={() => setRenameModalOpen(true)}
+                    onClick={() => setPasswordModalOpen(true)}
                   >
-                    {t('app.settings.modifyNameBtn')}
+                    {t('app.settings.changePasswordBtn')}
                   </button>
-                )}
-              </div>
-            </div>
-            <div className="stat-row">
-              <span>{t('app.settings.accountLabel')}</span>
-              <span>{account || name}</span>
-            </div>
-            <div className="stat-row">
-              <span>{t('app.settings.sequenceIdLabel')}</span>
-              <span className="sequence-id-tag">
-                {sequenceId > 0 ? `#${sequenceId}` : '-'}
-              </span>
-            </div>
-            <div className="stat-row">
-              <span>{t('app.settings.registeredTimeLabel')}</span>
-              <span>{formatDateTime(createdAtUnixSeconds, t('app.settings.unknownTime'))}</span>
-            </div>
-          </div>
+                </div>
+              </section>
 
-          <div className="settings-block settings-logout-block">
-            <div className="settings-logout-row">
-              <span className="settings-logout-hint">{t('app.settings.logoutHint')}</span>
-              <button
-                type="button"
-                className="danger logout-action-btn"
-                onClick={() => setLogoutConfirmOpen(true)}
-              >
-                {t('app.settings.logoutBtn')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'display' && (
-        <div className="settings-tab-content">
-          <div className="settings-block">
-            <h3>{t('app.settings.avatarHeading')}</h3>
-            <p className="settings-desc">
-              {t('app.settings.avatarDesc')}
-            </p>
-            <div className="avatar-selection-grid" role="radiogroup" aria-label={t('app.settings.avatarHeading')}>
-              {AVATAR_OPTIONS.map(opt => {
-                const isSelected = avatarId === opt.id
-                return (
+              <section className="settings-group settings-group--danger" aria-label={t('app.settings.sessionHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.sessionHeading')}</h3>
+                <div className="setting-row">
+                  <span className="setting-label">{t('app.settings.logoutBtn')}</span>
                   <button
-                    key={opt.id}
                     type="button"
-                    role="radio"
-                    aria-checked={isSelected}
-                    className={`avatar-option-card${isSelected ? ' active' : ''}`}
-                    onClick={() => setAvatarId(opt.id)}
+                    className="danger logout-action-btn"
+                    onClick={() => setLogoutConfirmOpen(true)}
                   >
-                    <div className="avatar-option-preview">
-                      <img alt={t(opt.nameKey)} draggable={false} src={opt.src} />
-                    </div>
-                    <div className="avatar-option-info">
-                      <strong className="avatar-option-name">{t(opt.nameKey)}</strong>
-                      <span className="avatar-option-desc">{t(opt.descKey)}</span>
-                    </div>
-                    {isSelected && <span className="avatar-selected-tag">{t('app.settings.avatarSelectedTag')}</span>}
+                    {t('app.settings.logoutBtn')}
                   </button>
-                )
-              })}
-            </div>
-          </div>
+                </div>
+              </section>
+            </>
+          )}
 
-          <div className="settings-block">
-            <h3>{t('app.settings.zoomHeading')}</h3>
-            <p className="settings-desc">
-              {t('app.settings.zoomDesc')}
-            </p>
-            <div className="zoom-control-group">
-              <div className="zoom-slider-row">
-                <span className="zoom-min">50%</span>
-                <input
-                  type="range"
-                  min={50}
-                  max={200}
-                  step={5}
-                  value={zoom}
-                  onChange={e => handleZoomChange(Number(e.target.value))}
-                  className="zoom-slider"
-                  aria-label={t('app.settings.zoomAria')}
-                />
-                <span className="zoom-max">200%</span>
-                <strong className="zoom-current-badge">{zoom}%</strong>
-              </div>
-              <div className="zoom-presets">
-                {zoomPresets.map(preset => (
+          {activeTab === 'display' && (
+            <section className="settings-group" aria-label={t('app.settings.languageHeading')}>
+              <h3 className="settings-group-title">{t('app.settings.languageHeading')}</h3>
+              {localeError && <p role="alert">{localeError}</p>}
+              <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
+                {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? t('app.settings.localeBuiltin') : code })).map(loc => (
                   <button
-                    key={preset}
+                    key={loc.code}
+                    aria-pressed={locale === loc.code}
+                    className={locale === loc.code ? 'active' : ''}
+                    onClick={() => setLocale(loc.code)}
                     type="button"
-                    className={`zoom-preset-btn${zoom === preset ? ' active' : ''}`}
-                    onClick={() => handleZoomChange(preset)}
                   >
-                    {preset}%
+                    {loc.label}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  className="zoom-reset-btn"
-                  onClick={() => handleZoomChange(100)}
-                >
-                  {t('app.settings.zoomReset')}
-                </button>
               </div>
-            </div>
-          </div>
+            </section>
+          )}
 
-          <div className="settings-block">
-            <h3>{t('app.settings.languageHeading')}</h3>
-            {localeError && <p role="alert">{localeError}</p>}
-            <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
-              {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? t('app.settings.localeBuiltin') : code })).map(loc => (
-                <button
-                  key={loc.code}
-                  aria-pressed={locale === loc.code}
-                  className={locale === loc.code ? 'active' : ''}
-                  onClick={() => setLocale(loc.code)}
-                  type="button"
-                >
-                  {loc.label}
-                </button>
-              ))}
-            </div>
-            <p className="settings-desc" style={{ marginTop: '0.5rem' }}>
-              {t('app.settings.languageDesc')}
-            </p>
-          </div>
+          {activeTab === 'avatar' && (
+            <section className="settings-group" aria-label={t('app.settings.avatarHeading')}>
+              <h3 className="settings-group-title">{t('app.settings.avatarHeading')}</h3>
+              <div className="avatar-selection-grid" role="radiogroup" aria-label={t('app.settings.avatarHeading')}>
+                {AVATAR_OPTIONS.map(opt => {
+                  const isSelected = avatarId === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      className={`avatar-tile${isSelected ? ' active' : ''}`}
+                      onClick={() => setAvatarId(opt.id)}
+                    >
+                      <img className="avatar-tile-icon" alt="" draggable={false} src={opt.src} />
+                      <span className="avatar-tile-name">{t(opt.nameKey)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          )}
         </div>
-      )}
+      </div>
 
       <RenameModal
         open={renameModalOpen}
         onClose={() => setRenameModalOpen(false)}
+      />
+
+      <ChangePasswordModal
+        open={passwordModalOpen}
+        onClose={() => setPasswordModalOpen(false)}
       />
 
       <ConfirmDialog

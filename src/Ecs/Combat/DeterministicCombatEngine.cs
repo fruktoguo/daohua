@@ -669,6 +669,8 @@ public static class DeterministicCombatEngine
             && contestRoll < defense.ParryResolve / (defense.ParryResolve + attack.BreakPower + 100);
         var accuracy = attack.Accuracy * (broken ? 2 : 1);
         var evasion = defense.Evasion * (parried ? 2 : 1);
+        // 战斗经验对抗修正（总纲 §7.7.6）：作用于两侧等效输入，不占随机通道，不改暴击/破招判定与伤害链。
+        (accuracy, evasion) = ApplyCombatExperienceContest(accuracy, evasion, attack.CombatExperience, defense.CombatExperience);
         var hit = Roll(encounter.Seed, side, context.Count, 1) >= evasion / (evasion + accuracy + 100);
         var criticalPoints = attack.Critical * (broken ? 2 : 1);
         var critical = hit && Roll(encounter.Seed, side, context.Count, 2)
@@ -732,6 +734,22 @@ public static class DeterministicCombatEngine
         events.Add(new CombatEvent(at, attacker.Id, target.Id, context.Damage, context.Hit, attack.DamageKind, target.Hitpoints)
         { Critical = context.Critical, Break = context.Broken, Parried = context.Parried, AbilityId = abilityId });
         EmitHitTriggers(encounter, context, events, mainEventIndex);
+    }
+
+    /// <summary>
+    /// 战斗经验对抗修正（总纲 §7.7.6）：经验比值 r=clamp(aCE/max(bCE,ε), 0.1, 10)，
+    /// 占优方等效按 /8 斜率增益封顶 ×2，劣势方等效按 /16 斜率衰减托底 ×0.5；
+    /// 双方战斗经验均 ≤0 时中立不修正。只作用于命中/闪避等效输入，随机序列不变。
+    /// </summary>
+    public static (double Accuracy, double Evasion) ApplyCombatExperienceContest(
+        double accuracy, double evasion, double attackerCombatExperience, double defenderCombatExperience)
+    {
+        if (attackerCombatExperience <= 0 && defenderCombatExperience <= 0) return (accuracy, evasion);
+        var r = Math.Clamp(attackerCombatExperience / Math.Max(defenderCombatExperience, double.Epsilon), 0.1, 10);
+        if (r >= 1)
+            return (accuracy * Math.Min(2, 1 + (r - 1) / 8), evasion * Math.Max(0.5, 1 - (r - 1) / 16));
+        var s = 1 / r;
+        return (accuracy * Math.Max(0.5, 1 - (s - 1) / 16), evasion * Math.Min(2, 1 + (s - 1) / 8));
     }
 
     /// <summary>

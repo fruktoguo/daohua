@@ -21,7 +21,7 @@ public sealed class PlayerAggregateTests
 
         Assert.Equal(player.PlayerId, restored.PlayerId);
         Assert.Equal(player.StateVersion, restored.StateVersion);
-        Assert.Equal(player.Progression.Qi, restored.Progression.Qi);
+        Assert.Equal(player.Progression.Experience, restored.Progression.Experience);
         Assert.Single(restored.Actions);
         Assert.Equal(action.Id, restored.Actions[0].Id);
         Assert.Equal(player.Actions[0].ProgressSeconds, restored.Actions[0].ProgressSeconds);
@@ -93,7 +93,7 @@ public sealed class PlayerAggregateTests
         Assert.True(result.Changed);
         Assert.Equal(0, result.CompletedRepeats);
         Assert.Equal(1, player.Actions[0].ProgressSeconds);
-        Assert.Equal(1, player.Progression.Qi);
+        Assert.Equal(1, player.Progression.Experience);
     }
 
     /// <summary>
@@ -220,7 +220,7 @@ public sealed class PlayerAggregateTests
     public void SimulationRejectsNonFiniteRewardBeforeMutatingProgress()
     {
         var catalog = new ActionCatalog([
-            new ActionDefinition(new ActionId("test.overflow"), "溢出", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Qi, ActionYieldPeriod.PerSecond, double.MaxValue)])
+            new ActionDefinition(new ActionId("test.overflow"), "溢出", ActionKind.Cultivation, 2, new Dictionary<ItemId, double>(), [new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, double.MaxValue)])
         ]);
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
         player.Enqueue(new ActionIntent(new ActionId("test.overflow")), Baseline, catalog);
@@ -228,7 +228,7 @@ public sealed class PlayerAggregateTests
         var error = Assert.Throws<DomainException>(() => SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(2), catalog));
 
         Assert.Equal(DomainErrorCode.InvariantViolation, error.Code);
-        Assert.Equal(0, player.Progression.Qi);
+        Assert.Equal(0, player.Progression.Experience);
         Assert.Equal(Baseline, player.LastSimulatedAt);
     }
 

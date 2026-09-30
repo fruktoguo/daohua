@@ -37,9 +37,7 @@ public sealed class PlayerProgressionComponent : YuoComponent
     /// <summary>完整领域成长分段由 ECS 单写者直接持有，保留统计、余数与击杀计数。</summary>
     public PlayerProgression Progression { get; set; } = new();
     public int RealmLevel { get => Progression.RealmLevel; set => Progression.RealmLevel = value; }
-    public double Qi { get => Progression.Qi; set => Progression.Qi = value; }
     public double Experience { get => Progression.Experience; set => Progression.Experience = value; }
-    public double LifetimeQi { get => Progression.LifetimeQi; set => Progression.LifetimeQi = value; }
     public double CompletedActions { get => Progression.CompletedActions; set => Progression.CompletedActions = value; }
     public double AgeSeconds { get => Progression.AgeSeconds; set => Progression.AgeSeconds = value; }
 }

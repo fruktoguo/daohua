@@ -282,7 +282,7 @@ public sealed class SkillTriggerEvaluatorTests
         var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "曲线", DateTimeOffset.UnixEpoch, catalog.Fingerprint);
         PlayerAttributeResolver.Apply(player, catalog);
         var level = player.Progression.RealmLevel;
-        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant();
+        var stats = PlayerAttributeResolver.Resolve(player, catalog).ToCombatant(0);
         Assert.Equal(CombatGrowthCurve.CastTimeFactor(level), stats.CastTimeFactor, 12);
         Assert.Equal(CombatGrowthCurve.CooldownFactor(level), stats.CooldownFactor, 12);
         Assert.Equal(CombatGrowthCurve.BasicAttackRatio(level), stats.BasicAttackRatio, 12);

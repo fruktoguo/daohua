@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 /** 坊市一级主分类 */
-export type MarketPrimaryCategory = 'all' | 'material' | 'equipment' | 'pill' | 'manual'
+export type MarketPrimaryCategory = 'all' | 'material' | 'equipment' | 'consumable' | 'manual'
 
 /** 坊市顶层 Tab */
 export type MarketTab = 'browse' | 'orders'

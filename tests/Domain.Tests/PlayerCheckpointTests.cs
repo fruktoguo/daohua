@@ -53,7 +53,7 @@ public sealed class PlayerCheckpointTests
         // 模拟「上一轮已入队刷盘、本轮部分分段又脏」：清空待刷集合但流水戳保留。
         player.ConsumeDirtySections();
         // 操作前已脏：Progression + Settings + ActionQueue。
-        player.Progression.Qi = 5;
+        player.Progression.Experience = 5;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.SetLoopEnabled(false);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, ActionCatalog.Default);
@@ -61,7 +61,7 @@ public sealed class PlayerCheckpointTests
         var versionBefore = player.StateVersion;
 
         // 本次操作弄脏全部 8 个分段（含已脏分段再次标脏）。
-        player.Progression.Qi += 7;
+        player.Progression.Experience += 7;
         player.Progression.Experience += 3;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.TravelTo("node.other", 3, 4);
@@ -98,7 +98,7 @@ public sealed class PlayerCheckpointTests
         player.SetLoopEnabled(false);
         var baseline = CaptureBaseline(player);
 
-        player.Progression.LifetimeQi += 11;
+        player.Progression.LifetimeExperience += 11;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.TravelTo("node.far", 1, 1);
         player.Combat.AttackPower = 99;
@@ -128,7 +128,7 @@ public sealed class PlayerCheckpointTests
         player.ConsumeDirtySections();
         var baseline = CaptureBaseline(player);
 
-        player.Progression.Qi += 1;
+        player.Progression.Experience += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         RestoreBaseline(player, baseline.Sections, baseline.Head, baseline.Dirty, baseline.Marks);
 

@@ -11,6 +11,7 @@ namespace Domain.Combat;
 /// <param name="PowerBandRatio">实力匹配上下浮动范围（0.3 = ±30%）</param>
 /// <param name="DefeatCooldownSeconds">斗法失败冷却秒数（3600 = 一小时）</param>
 /// <param name="StagedSettleSeconds">暂存区物品入账延迟秒数（1200 = 20 分钟）</param>
+/// <param name="StagedBucketSeconds">暂存批次量化桶长（300 = 5 分钟）：入账时刻向上取整到桶尾，同物品同桶合并</param>
 /// <param name="DropChanceBonusPercent">斗法开启时物品爆率加成百分比点数（20 = +20% 乘区）</param>
 /// <param name="MaxDuelSeconds">单场斗法剧本最长结算秒数，超时判平</param>
 /// <param name="MaxBattleReports">战斗收益记录最大保存条数（10）</param>
@@ -19,6 +20,7 @@ public sealed record DuelSettings(
     double PowerBandRatio = 0.3,
     double DefeatCooldownSeconds = 3600,
     double StagedSettleSeconds = 1200,
+    double StagedBucketSeconds = 300,
     double DropChanceBonusPercent = 20,
     double MaxDuelSeconds = 300,
     int MaxBattleReports = 10)
@@ -34,6 +36,7 @@ public sealed record DuelSettings(
             JsonRead.Number(element, "powerBandRatio", 0.3),
             JsonRead.Number(element, "defeatCooldownSeconds", 3600),
             JsonRead.Number(element, "stagedSettleSeconds", 1200),
+            JsonRead.Number(element, "stagedBucketSeconds", 300),
             JsonRead.Number(element, "dropChanceBonusPercent", 20),
             JsonRead.Number(element, "maxDuelSeconds", 300),
             JsonRead.Integer(element, "maxBattleReports", 10));
@@ -41,6 +44,7 @@ public sealed record DuelSettings(
             || !double.IsFinite(settings.PowerBandRatio) || settings.PowerBandRatio is < 0 or > 10
             || !double.IsFinite(settings.DefeatCooldownSeconds) || settings.DefeatCooldownSeconds < 0
             || !double.IsFinite(settings.StagedSettleSeconds) || settings.StagedSettleSeconds < 0
+            || !double.IsFinite(settings.StagedBucketSeconds) || settings.StagedBucketSeconds <= 0
             || !double.IsFinite(settings.DropChanceBonusPercent) || settings.DropChanceBonusPercent < 0
             || !double.IsFinite(settings.MaxDuelSeconds) || settings.MaxDuelSeconds <= 0
             || settings.MaxBattleReports < 1 || settings.MaxBattleReports > 100)

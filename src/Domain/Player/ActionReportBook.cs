@@ -57,15 +57,44 @@ public static class ActionReportBook
         player.MarkDirty(PlayerSectionKind.Duel);
     }
 
-    /// <summary>暂存掉落与聚合入口共用同一账本和标脏顺序。</summary>
-    public static void StageCombatItem(IPlayerResourceContext player, ItemId itemId, double quantity, double acquiredAtUnixSeconds)
+    /// <summary>
+    /// 暂存掉落与聚合入口共用同一账本和标脏顺序。
+    /// 入账时刻向上量化到 <paramref name="bucketSeconds"/> 桶尾：同物品同桶合并为一条，
+    /// 结算时刻 = 桶尾 + stagedSettleSeconds，押存不早于原始延迟；列表按结算时刻升序有界。
+    /// </summary>
+    public static void StageCombatItem(IPlayerResourceContext player, ItemId itemId, double quantity,
+        double acquiredAtUnixSeconds, double bucketSeconds)
     {
-        if (!itemId.IsValid || !double.IsFinite(quantity) || quantity <= 0)
+        if (!itemId.IsValid || !double.IsFinite(quantity) || quantity <= 0 || bucketSeconds <= 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "暂存物品无效。");
-        player.Duel.StagedItems.Add(new(itemId.Value, quantity, acquiredAtUnixSeconds));
+        var bucketedAt = Math.Ceiling(acquiredAtUnixSeconds / bucketSeconds) * bucketSeconds;
+        var staged = player.Duel.StagedItems;
+        var merged = false;
+        for (var i = staged.Count - 1; i >= 0 && staged[i].AcquiredAtUnixSeconds >= bucketedAt; i--)
+        {
+            if (staged[i].ItemId != itemId.Value || staged[i].AcquiredAtUnixSeconds != bucketedAt) continue;
+            staged[i] = staged[i] with { Quantity = staged[i].Quantity + quantity };
+            merged = true;
+            break;
+        }
+        if (!merged) staged.Add(new(itemId.Value, quantity, bucketedAt));
         player.RecordStats(player.Actions.Count > 0 ? player.Actions[0].Id : (Guid?)null, acquiredAtUnixSeconds,
             report => report.AddItem(itemId, quantity));
         player.MarkDirty(PlayerSectionKind.Duel);
+    }
+
+    /// <summary>
+    /// 结算到期暂存批：列表按结算时刻升序，摘除已到期的前缀批次；斗法进行中冻结返回空。
+    /// </summary>
+    public static DuelStagedItem[] SettleStagedItems(IPlayerResourceContext player, double nowUnixSeconds, double settleSeconds)
+    {
+        var staged = player.Duel.StagedItems;
+        if (player.Duel.ActiveDuelId is not null || staged.Count == 0) return [];
+        var settled = staged.Where(item => item.AcquiredAtUnixSeconds + settleSeconds <= nowUnixSeconds).ToArray();
+        if (settled.Length == 0) return [];
+        staged.RemoveAll(item => item.AcquiredAtUnixSeconds + settleSeconds <= nowUnixSeconds);
+        player.MarkDirty(PlayerSectionKind.Duel);
+        return settled;
     }
 
     /// <summary>斗法掉落移除与败绩结算共用原暂存账本顺序。</summary>
