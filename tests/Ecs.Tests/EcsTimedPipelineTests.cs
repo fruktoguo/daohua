@@ -51,8 +51,7 @@ public sealed class EcsTimedPipelineTests
         var id = runtime.CreatePlayer(seed, balances);
         var entity = runtime.World.GetEntity(runtime.ExportSnapshot(id).EntityId)!;
         var clock = runtime.World.WorldMain.GetComponent<EcsClockComponent>()!;
-        EcsActionPipeline.BeginRequest(entity, catalog, target);
-        var pipeline = EcsActionPipeline.Find(entity)!;
+        var execution = EcsActionExecutionComponent.Attach(entity, catalog, target);
         var tickCount = 0;
         async Task Tick(DateTimeOffset at, bool preparation)
         {
@@ -61,22 +60,22 @@ public sealed class EcsTimedPipelineTests
             {
                 clock.Current = clock.Target = at;
                 clock.RequestTarget = target;
-                clock.DeltaSeconds = preparation ? 0 : (at - pipeline.Current).TotalSeconds;
+                clock.DeltaSeconds = preparation ? 0 : (at - EcsActionSession.Current(execution)).TotalSeconds;
                 clock.ActivePlayerId = id;
                 clock.PreparationOnly = preparation;
                 return ValueTask.CompletedTask;
             });
             await runtime.Fiber.TickAsync();
         }
-        while (!pipeline.IsComplete)
+        while (!EcsActionSession.IsComplete(execution))
         {
-            do { await Tick(pipeline.Current, true); } while (pipeline.NeedsPreparation);
+            do { await Tick(EcsActionSession.Current(execution), true); } while (EcsActionSession.NeedsPreparation(execution));
             var prepared = JsonSerializer.Serialize(runtime.ExportSnapshot(id).State);
-            await Tick(pipeline.Current, true);
+            await Tick(EcsActionSession.Current(execution), true);
             Assert.Equal(prepared, JsonSerializer.Serialize(runtime.ExportSnapshot(id).State));
-            if (!pipeline.IsComplete) await Tick(pipeline.NextBoundaryAt, false);
+            if (!EcsActionSession.IsComplete(execution)) await Tick(EcsActionSession.NextBoundaryAt(execution), false);
         }
-        var actualResult = pipeline.Commit();
+        var actualResult = EcsActionSession.Commit(execution);
         var actual = runtime.ExportSnapshot(id);
         Assert.Equal(JsonSerializer.Serialize(player.ExportState()), JsonSerializer.Serialize(actual.State));
         Assert.Equal(JsonSerializer.Serialize(expectedResult.Events.Select(entry => new

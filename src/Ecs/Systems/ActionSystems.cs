@@ -18,6 +18,10 @@ internal static class EcsSystemContext
         return !clock.SkipWorldUpdate && (clock.ActivePlayerId is not { } active
             || entity.GetComponent<PlayerIdentityComponent>()?.PlayerId == active);
     }
+
+    /// <summary>取本实体当前请求期工作组件；未挂请求时返回 null，System 直接跳过。</summary>
+    public static EcsActionExecutionComponent? Execution(YuoEntity entity)
+        => entity.GetComponent<EcsActionExecutionComponent>();
 }
 
 /// <summary>Clock 阶段开启资源自然窗口；准备阶段不推进实际时间。</summary>
@@ -28,7 +32,8 @@ public sealed class ActionClockSystem : YuoSystem<PlayerActionQueueComponent>, I
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionClockSystem");
-        EcsActionPipeline.Find(queue.Entity)?.PrepareClock(EcsSystemContext.Clock(queue.Entity).Current);
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution)
+            EcsActionSession.PrepareClock(execution, EcsSystemContext.Clock(queue.Entity).Current);
     }
 }
 
@@ -40,7 +45,8 @@ public sealed class ActionQueueSystem : YuoSystem<PlayerActionQueueComponent>, I
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionQueueSystem");
-        EcsActionPipeline.Find(queue.Entity)?.PrepareQueue();
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution)
+            EcsActionSession.PrepareQueue(execution);
     }
 }
 
@@ -52,8 +58,9 @@ public sealed class GatheringActionSystem : YuoSystem<PlayerActionQueueComponent
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.GatheringActionSystem");
-        if (EcsActionPipeline.Find(queue.Entity) is { PreparedKind: ActionKind.Exploration } pipeline)
-            pipeline.AdvancePreparedAction();
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution
+            && EcsActionSession.PreparedKind(execution) == ActionKind.Exploration)
+            EcsActionSession.AdvancePreparedAction(execution);
     }
 }
 
@@ -65,8 +72,9 @@ public sealed class CraftingActionSystem : YuoSystem<PlayerActionQueueComponent>
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CraftingActionSystem");
-        if (EcsActionPipeline.Find(queue.Entity) is { PreparedKind: ActionKind.Alchemy } pipeline)
-            pipeline.AdvancePreparedAction();
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution
+            && EcsActionSession.PreparedKind(execution) == ActionKind.Alchemy)
+            EcsActionSession.AdvancePreparedAction(execution);
     }
 }
 
@@ -78,9 +86,10 @@ public sealed class ActionBoundarySystem : YuoSystem<PlayerActionQueueComponent>
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionBoundarySystem");
-        if (EcsActionPipeline.Find(queue.Entity) is { HasPreparedAction: true } pipeline
-            && pipeline.PreparedKind is not (ActionKind.Exploration or ActionKind.Alchemy))
-            pipeline.AdvancePreparedAction();
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution
+            && EcsActionSession.HasPreparedAction(execution)
+            && EcsActionSession.PreparedKind(execution) is not (ActionKind.Exploration or ActionKind.Alchemy))
+            EcsActionSession.AdvancePreparedAction(execution);
     }
 }
 
@@ -92,8 +101,9 @@ public sealed class TravelActionSystem : YuoSystem<PlayerActionQueueComponent>, 
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.TravelActionSystem");
-        if (!EcsSystemContext.Clock(queue.Entity).PreparationOnly)
-            EcsActionPipeline.Find(queue.Entity)?.AdvanceTravel();
+        if (!EcsSystemContext.Clock(queue.Entity).PreparationOnly
+            && EcsSystemContext.Execution(queue.Entity) is { } execution)
+            EcsActionSession.AdvanceTravel(execution);
     }
 }
 
@@ -105,7 +115,8 @@ public sealed class TimedActionYieldSystem : YuoSystem<PlayerActionQueueComponen
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.TimedActionYieldSystem");
-        EcsActionPipeline.Find(queue.Entity)?.CompleteYield();
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution)
+            EcsActionSession.CompleteYield(execution);
     }
 }
 
@@ -119,7 +130,8 @@ public sealed class CombatActionBoundarySystem : YuoSystem<PlayerActionQueueComp
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CombatActionBoundarySystem");
         if (clock.PreparationOnly) return;
-        EcsActionPipeline.Find(queue.Entity)?.AdvanceCombatPreparation();
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution)
+            EcsActionSession.AdvanceCombatPreparation(execution);
     }
 }
 
@@ -131,8 +143,9 @@ public sealed class CombatActionYieldSystem : YuoSystem<PlayerActionQueueCompone
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CombatActionYieldSystem");
-        if (!EcsSystemContext.Clock(queue.Entity).PreparationOnly)
-            EcsActionPipeline.Find(queue.Entity)?.CompleteCombatYield();
+        if (!EcsSystemContext.Clock(queue.Entity).PreparationOnly
+            && EcsSystemContext.Execution(queue.Entity) is { } execution)
+            EcsActionSession.CompleteCombatYield(execution);
     }
 }
 
@@ -153,6 +166,7 @@ public sealed class PlayerClockCommitSystem : YuoSystem<PlayerActionQueueCompone
             if (clock.SkipWorldUpdateEntities == 0) clock.SkipWorldUpdate = false;
             return;
         }
-        EcsActionPipeline.Find(queue.Entity)?.CompleteClock(clock.PreparationOnly);
+        if (EcsSystemContext.Execution(queue.Entity) is { } execution)
+            EcsActionSession.CompleteClock(execution, clock.PreparationOnly);
     }
 }

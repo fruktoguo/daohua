@@ -444,7 +444,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var ownerHoldMeasurement = RuntimeInstrumentation.Measure("ecs.owner_hold");
         var clockBefore = _clock.Current;
         var backups = new Dictionary<Guid, (PlayerAggregateState State, AssetBalance[] Assets, PlayerSectionKind[] Dirty)>();
-        var pipelines = new Dictionary<Guid, EcsActionPipeline>();
+        var executions = new Dictionary<Guid, EcsActionExecutionComponent>();
         try
         {
             var scenario = "batch";
@@ -463,42 +463,41 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 var assets = entity.GetComponent<PlayerInventoryComponent>()!.Items
                     .Select(pair => new AssetBalance(new PlayerId(id), pair.Key, pair.Value, 0)).ToArray();
                 backups[id] = (state, assets, entity.GetComponent<PlayerIdentityComponent>()!.DirtySections.ToArray());
-                EcsActionPipeline.BeginRequest(entity, GameData, target);
-                pipelines[id] = EcsActionPipeline.Find(entity)!;
+                executions[id] = EcsActionExecutionComponent.Attach(entity, GameData, target);
             }
-            var cursor = pipelines.Count > 0 ? pipelines.Values.Min(pipeline => pipeline.Current) : target;
+            var cursor = executions.Count > 0 ? executions.Values.Min(EcsActionSession.Current) : target;
             var steps = 0;
             // 离线采集/制造的自然边界固定由资源回复窗口切分（默认 5 秒）。
             // 这些玩家没有战斗实体时，直接执行同一批管线原语可消除数百万次
             // Fiber/World/System 往返；一旦队列切换到战斗或旅行，立即回到完整 ECS 路径。
             var bulkCompleted = false;
-            if (playerId is not null && pipelines.Count == 1 && pipelines.Values.All(pipeline => pipeline.CanBulkAdvance))
+            if (playerId is not null && executions.Count == 1 && executions.Values.All(EcsActionSession.CanBulkAdvance))
             {
                 using var bulkMeasurement = RuntimeInstrumentation.Measure("ecs.bulk_advance", scenario);
-                var pipeline = pipelines.Values.Single();
-                bulkCompleted = pipeline.AdvanceBulkTimedUntilUnsupported(cancellationToken);
-                cursor = pipeline.Current;
-                steps = pipeline.BulkStepCount;
+                var execution = executions.Values.Single();
+                bulkCompleted = EcsActionSession.AdvanceBulkTimedUntilUnsupported(execution, cancellationToken);
+                cursor = EcsActionSession.Current(execution);
+                steps = execution.BulkStepCount;
             }
             if (!bulkCompleted)
             {
-            while (pipelines.Values.Any(pipeline => !pipeline.IsComplete))
+            while (executions.Values.Any(e => !EcsActionSession.IsComplete(e)))
             {
                 if (++steps > SimulationEngine.MaxTransitionsPerAdvance)
                 {
-                    var diag = string.Join(";", pipelines.Where(pair => !pair.Value.IsComplete)
-                        .OrderBy(pair => pair.Value.NextBoundaryAt).Take(8)
-                        .Select(pair => $"{pair.Key:N}:cursor={pair.Value.Current:o},next={pair.Value.NextBoundaryAt:o},[{pair.Value.DiagnosticState}]"));
+                    var diag = string.Join(";", executions.Where(pair => !EcsActionSession.IsComplete(pair.Value))
+                        .OrderBy(pair => EcsActionSession.NextBoundaryAt(pair.Value)).Take(8)
+                        .Select(pair => $"{pair.Key:N}:cursor={EcsActionSession.Current(pair.Value):o},next={EcsActionSession.NextBoundaryAt(pair.Value):o},[{EcsActionSession.DiagnosticState(pair.Value)}]"));
                     throw new DomainException(DomainErrorCode.InvariantViolation,
                         $"ECS 自然边界推进超过最大转换数。incomplete=[{diag}] " +
                         $"clock=[skip={_clock.SkipWorldUpdate},skipN={_clock.SkipWorldUpdateEntities},active={_clock.ActivePlayerId},prep={_clock.PreparationOnly}]");
                 }
                 cancellationToken.ThrowIfCancellationRequested();
-                while (pipelines.Values.Any(pipeline => pipeline.NeedsPreparation))
+                while (executions.Values.Any(EcsActionSession.NeedsPreparation))
                     await Tick(cursor, true).ConfigureAwait(false);
-                if (pipelines.Values.All(pipeline => pipeline.IsComplete)) break;
-                // 真实系统分别推进自己的自然边界；UTC 只决定执行顺序，不再回减成战斗 double 预算。
-                var next = pipelines.Values.Where(pipeline => !pipeline.IsComplete).Min(pipeline => pipeline.NextBoundaryAt);
+                if (executions.Values.All(EcsActionSession.IsComplete)) break;
+                // 真实系统分别推进自己的自然边界；UTC 只决定执行顺序，不再回减成战斗预算。
+                var next = executions.Values.Where(e => !EcsActionSession.IsComplete(e)).Min(EcsActionSession.NextBoundaryAt);
                 if (next < cursor) throw new DomainException(DomainErrorCode.InvariantViolation, "ECS 自然边界时钟发生倒退。");
                 await Tick(next, false).ConfigureAwait(false);
                 cursor = next;
@@ -509,11 +508,11 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             {
                 using var callbackMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.mailbox.callback");
                 _clock.Current = _clock.Target = target;
-                _clock.SkipWorldUpdate = pipelines.Count > 0;
-                _clock.SkipWorldUpdateEntities = pipelines.Count;
-                foreach (var (id, pipeline) in pipelines)
+                _clock.SkipWorldUpdate = executions.Count > 0;
+                _clock.SkipWorldUpdateEntities = executions.Count;
+                foreach (var (id, execution) in executions)
                 {
-                    var result = pipeline.Commit();
+                    var result = EcsActionSession.Commit(execution);
                     _simulationResults[id] = result;
                     AppendSimulationEvents(id, result.Events);
                 }
@@ -563,7 +562,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         }
         catch
         {
-            foreach (var pipeline in pipelines.Values) pipeline.Detach();
+            foreach (var execution in executions.Values) execution.Detach();
             foreach (var (id, backup) in backups)
             {
                 if (!_players.ContainsKey(id)) continue;
@@ -583,7 +582,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         {
             try
             {
-                foreach (var pipeline in pipelines.Values) pipeline.Detach();
+                foreach (var execution in executions.Values) execution.Detach();
                 if (!_fiber.IsDisposed)
                     using (RuntimeInstrumentation.Measure("ecs.mailbox.post"))
                     await _fiber.PostAsync((_, _) =>

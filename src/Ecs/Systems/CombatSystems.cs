@@ -34,7 +34,8 @@ public sealed class CombatEventAdvanceSystem : YuoSystem<CombatEncounterComponen
         var world = encounter.Entity.World;
         var player = world.GetEntity(encounter.PlayerEntityId);
         if (player is null) return;
-        EcsActionPipeline.Find(player)?.AdvanceCombatEncounter(encounter);
+        if (player.GetComponent<EcsActionExecutionComponent>() is { } execution)
+            EcsActionSession.AdvanceCombatEncounter(execution, encounter);
 
     }
 }
