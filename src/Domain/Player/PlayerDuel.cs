@@ -381,7 +381,7 @@ public sealed record PlayerRootExpDocument(
 public sealed partial class PlayerAggregate
 {
     /// <summary>斗法玩法分段状态（遭遇计数、失败冷却、暂存区与战报）。</summary>
-    public PlayerDuelState Duel { get; } = new();
+    public PlayerDuelState Duel { get; }
 
     /// <summary>当前斗法实力值：六维等级总和（后续可替换为更复杂口径）。</summary>
     public double DuelPower => Loadout.CoreAttributes.TotalLevel;

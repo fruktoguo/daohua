@@ -190,9 +190,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             queue.LastAdvancedAt = state.LastSimulatedAt;
             foreach (var action in state.Actions)
             {
-                queue.Actions.Add(new EcsActionState(action.Id, action.Intent)
+                queue.Actions.Add(new QueuedAction(action.Id, action.Intent, action.EnqueuedAt)
                 {
-                    EnqueuedAt = action.EnqueuedAt,
                     Status = action.Status,
                     ProgressSeconds = action.ProgressSeconds,
                     RemainingRepeats = action.RemainingRepeats,
@@ -238,10 +237,9 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             if (instanceId == Guid.Empty) throw new DomainException(DomainErrorCode.InvalidArgument, "行动实例标识不能为空。");
             // 与聚合 Enqueue 同口径：入队锚点记录驻留节点，旅途中不登记。
             var world = player.GetComponent<PlayerWorldComponent>()!.World;
-            queue.Actions.Add(new EcsActionState(instanceId, new ActionIntent(actionId, repeatCount,
-                AnchorNodeId: world.EdgeId is null ? world.NodeId : null))
+            queue.Actions.Add(new QueuedAction(instanceId, new ActionIntent(actionId, repeatCount,
+                AnchorNodeId: world.EdgeId is null ? world.NodeId : null), _clock.Current)
             {
-                EnqueuedAt = _clock.Current,
                 Status = queue.Actions.Count == 0 ? ActionQueueStatus.Running : ActionQueueStatus.Pending
             });
             var identity = player.GetOrAddComponent<PlayerIdentityComponent>();
@@ -332,25 +330,21 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             if (queue is null) return false;
             var index = queue.Actions.FindIndex(action => action.Id == actionInstanceId);
             if (index < 0) return false;
-            var prevRevisions = CaptureAttributeRevisions(entity);
-            var aggregate = PlayerAggregate.Restore(ExportSnapshotCore(playerId).State);
-            var baselineRevisions = CaptureAttributeRevisions(aggregate);
+            var identity = entity.GetComponent<PlayerIdentityComponent>()!;
+            var aggregate = WrapViewAggregate(entity, identity, queue);
             var removed = aggregate.RemoveAction(actionInstanceId);
             if (!removed) return false;
-            ContinueAttributeRevisions(aggregate, prevRevisions, baselineRevisions);
+            identity.StateVersion = aggregate.StateVersion;
+            queue.LastAdvancedAt = aggregate.LastSimulatedAt;
             if (index == 0) DestroyPlayerEncounters(entity.ID);
-            var wallet = new AssetWallet(aggregate.PlayerId);
-            if (entity.GetComponent<PlayerInventoryComponent>() is { } inventory)
-                wallet.Restore(inventory.Items.Select(pair => new AssetBalance(aggregate.PlayerId, pair.Key, pair.Value, 0)));
-            ApplyAggregateState(entity, aggregate, wallet.Balances);
-            var removedIdentity = entity.GetComponent<PlayerIdentityComponent>()!;
-            foreach (var section in aggregate.DirtySections) removedIdentity.MarkDirty(section);
+            foreach (var section in aggregate.DirtySections) identity.MarkDirty(section);
             return true;
         });
 
     /// <summary>
-    /// 命令级玩家变更通道：在 Fiber 所有权内把实体状态还原为聚合、执行变更并整体回写组件，
-    /// 与原聚合运行时命令语义逐位对齐。返回本次变更新增的脏标记差集（供命令回执窄化编码）；
+    /// 命令级玩家变更通道：在 Fiber 所有权内以「视图聚合」包装组件分段执行聚合命令方法，
+    /// 分段与行动队列就地写组件本体，不再经快照导出/重建/回灌往返。
+    /// 返回本次变更触及的脏标记差集（供命令回执窄化编码）；
     /// destroyEncounters 仅用于队首战斗行动被移除时的等价实体清理。
     /// </summary>
     public IReadOnlySet<PlayerSectionKind> MutatePlayer(Guid playerId, Action<PlayerAggregate> mutate,
@@ -359,25 +353,45 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         {
             var entity = GetPlayer(playerId);
             var identity = entity.GetComponent<PlayerIdentityComponent>()!;
-            var prevRevisions = CaptureAttributeRevisions(entity);
-            var aggregate = PlayerAggregate.Restore(ExportSnapshotCore(playerId).State);
-            var baselineRevisions = CaptureAttributeRevisions(aggregate);
-            var marksBefore = new Dictionary<PlayerSectionKind, long>(aggregate.DirtySectionMarks);
+            var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
+            var aggregate = WrapViewAggregate(entity, identity, queue);
             mutate(aggregate);
-            // 文档往返会把各分段内部修订计数重置为恢复基线：按 prev+Δ 续写，
-            // 属性输入修订号才能像 OOP 聚合一样单调增长，WireAttributesChanged 判定才成立。
-            ContinueAttributeRevisions(aggregate, prevRevisions, baselineRevisions);
+            // 聚合标量头字段回写组件：改名/在线态/指纹/版本号/推进游标由命令方法就地修改。
+            identity.DisplayName = aggregate.DisplayName;
+            identity.Presence = aggregate.Presence;
+            identity.StateVersion = aggregate.StateVersion;
+            identity.GameDataFingerprint = aggregate.GameDataFingerprint;
+            queue.LastAdvancedAt = aggregate.LastSimulatedAt;
             if (destroyEncounters) DestroyPlayerEncounters(entity.ID);
-            var wallet = new AssetWallet(aggregate.PlayerId);
-            if (entity.GetComponent<PlayerInventoryComponent>() is { } inventory)
-                wallet.Restore(inventory.Items.Select(pair => new AssetBalance(aggregate.PlayerId, pair.Key, pair.Value, 0)));
-            ApplyAggregateState(entity, aggregate, wallet.Balances);
             foreach (var section in aggregate.DirtySections) identity.MarkDirty(section);
-            var touched = new HashSet<PlayerSectionKind>();
-            foreach (var (section, mark) in aggregate.DirtySectionMarks)
-                if (!marksBefore.TryGetValue(section, out var previous) || previous != mark) touched.Add(section);
-            return touched;
+            return new HashSet<PlayerSectionKind>(aggregate.DirtySectionMarks.Keys);
         });
+
+    /// <summary>
+    /// 视图聚合装配：分段 POCO 与行动队列直接引用组件持有实例；
+    /// 聚合仅承担命令门面（校验、不变量、脏标记、修订号自增），属性输入修订计数
+    /// 随分段本体单调存活，无需文档往返的基线续写。
+    /// </summary>
+    private static PlayerAggregate WrapViewAggregate(
+        YuoEntity entity, PlayerIdentityComponent identity, PlayerActionQueueComponent queue)
+        => PlayerAggregate.Wrap(
+            new PlayerId(identity.PlayerId),
+            new AccountId(Guid.Parse(identity.AccountId)),
+            identity.DisplayName,
+            identity.CreatedAt,
+            identity.GameDataFingerprint,
+            identity.StateVersion,
+            identity.Presence,
+            queue.LastAdvancedAt,
+            entity.GetComponent<PlayerProgressionComponent>()!.Progression,
+            entity.GetComponent<PlayerWorldComponent>()!.World,
+            entity.GetComponent<PlayerResourcesComponent>()!.Resources,
+            entity.GetComponent<PlayerCombatComponent>()!.Combat,
+            entity.GetComponent<PlayerBuffComponent>()!.Buffs,
+            entity.GetComponent<PlayerLoadoutComponent>()!.Loadout,
+            entity.GetComponent<PlayerSettingsComponent>()!.Settings,
+            entity.GetComponent<PlayerDuelComponent>()!.Duel,
+            queue.Actions);
 
     /// <summary>分段脏流水号快照；差集判定语义与 PlayerAggregateState.DirtySectionMarks 一致。</summary>
     public IReadOnlyDictionary<PlayerSectionKind, long> GetDirtyMarks(Guid playerId)
@@ -844,9 +858,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         queue.Actions.Clear();
         foreach (var action in restored.Actions)
         {
-            queue.Actions.Add(new EcsActionState(action.Id, action.Intent)
+            queue.Actions.Add(new QueuedAction(action.Id, action.Intent, action.EnqueuedAt)
             {
-                EnqueuedAt = action.EnqueuedAt,
                 Status = action.Status,
                 ProgressSeconds = action.ProgressSeconds,
                 RemainingRepeats = action.RemainingRepeats,
@@ -859,50 +872,6 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         inventory.Items.Clear();
         foreach (var balance in balances)
             inventory.Items[balance.Asset] = balance.Quantity;
-    }
-
-    /// <summary>属性输入修订计数快照：对应 PlayerAttributeResolver.InputRevision 的全部输入源。</summary>
-    private readonly record struct AttributeRevisionCounters(
-        long Realm, long World, long Buffs, long Items, long Equipment, long Core);
-
-    private AttributeRevisionCounters CaptureAttributeRevisions(YuoEntity entity)
-        => CaptureAttributeRevisions(
-            entity.GetComponent<PlayerProgressionComponent>()!.Progression,
-            entity.GetComponent<PlayerWorldComponent>()!.World,
-            entity.GetComponent<PlayerBuffComponent>()!.Buffs,
-            entity.GetComponent<PlayerLoadoutComponent>()!.Loadout);
-
-    private static AttributeRevisionCounters CaptureAttributeRevisions(PlayerAggregate player)
-        => CaptureAttributeRevisions(player.Progression, player.World, player.Buffs, player.Loadout);
-
-    private static AttributeRevisionCounters CaptureAttributeRevisions(
-        PlayerProgression progression, PlayerWorldState world, PlayerBuffState buffs, PlayerLoadoutState loadout)
-        => new(progression.RealmLevelVersion, world.AttributeInputVersion, buffs.Active.Version,
-            loadout.EquippedItemIds.Version, loadout.Equipment.Version, loadout.CoreAttributesVersion);
-
-    /// <summary>把聚合内相对恢复基线的修订增量续写到既有计数之上；写操作未触及的源保持原值。</summary>
-    private static void ContinueAttributeRevisions(PlayerAggregate aggregate,
-        in AttributeRevisionCounters prev, in AttributeRevisionCounters baseline)
-    {
-        var post = CaptureAttributeRevisions(aggregate);
-        var progression = aggregate.Progression;
-        progression.RestoreSnapshot(new PlayerProgressionState(progression.RealmLevel,
-            progression.Experience, progression.CompletedActions,
-            progression.SimulationCarrySeconds, progression.NormalKills, progression.EliteKills,
-            progression.BossKills, progression.TotalDefeats, progression.CultivationSeconds,
-            progression.AgeSeconds, progression.Foundation, progression.CombatExperience,
-            progression.LifetimeExperience), prev.Realm + post.Realm - baseline.Realm);
-        var world = aggregate.World;
-        world.RestoreSnapshot(new PlayerWorldStateDocument(world.NodeId, world.X, world.Y,
-            world.ExplorationSeed, world.EdgeId, world.EdgeProgress, world.NodeBuildings,
-            world.NodeBuildingEffects, world.NodeBuildingNodeId),
-            prev.World + post.World - baseline.World);
-        aggregate.Buffs.Active.RestoreVersion(prev.Buffs + post.Buffs - baseline.Buffs);
-        var loadout = aggregate.Loadout;
-        loadout.RestoreRevisionCounters(prev.Core + post.Core - baseline.Core,
-            loadout.AbilitySlots.Version, prev.Equipment + post.Equipment - baseline.Equipment,
-            loadout.AbilityExperiences.Version);
-        loadout.EquippedItemIds.RestoreVersion(prev.Items + post.Items - baseline.Items);
     }
 
     private EcsPlayerSnapshot ExportSnapshotCore(Guid id)

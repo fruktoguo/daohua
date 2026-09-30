@@ -413,7 +413,7 @@ public sealed partial class PlayerAggregate
 {
     /// <summary>行动队列容量上限。</summary>
     public const int MaxActionQueueLength = 256;
-    private readonly List<QueuedAction> _actions = [];
+    private readonly List<QueuedAction> _actions;
     private readonly HashSet<PlayerSectionKind> _dirtySections = [];
     private readonly Dictionary<PlayerSectionKind, long> _dirtyMarks = [];
     private long _dirtyStamp;
@@ -429,7 +429,16 @@ public sealed partial class PlayerAggregate
         AccountId accountId,
         string displayName,
         DateTimeOffset createdAt,
-        string gameDataFingerprint)
+        string gameDataFingerprint,
+        PlayerProgression? progression = null,
+        PlayerWorldState? world = null,
+        PlayerResourceState? resources = null,
+        PlayerCombatState? combat = null,
+        PlayerBuffState? buffs = null,
+        PlayerLoadoutState? loadout = null,
+        PlayerSettingsState? settings = null,
+        PlayerDuelState? duel = null,
+        List<QueuedAction>? actions = null)
     {
         if (playerId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "玩家标识不能为空。");
         if (accountId.IsEmpty) throw new DomainException(DomainErrorCode.InvalidArgument, "账号标识不能为空。");
@@ -444,6 +453,15 @@ public sealed partial class PlayerAggregate
         CreatedAt = createdAt.ToUniversalTime();
         LastSimulatedAt = CreatedAt;
         GameDataFingerprint = gameDataFingerprint;
+        Progression = progression ?? new();
+        World = world ?? new();
+        Resources = resources ?? new();
+        Combat = combat ?? new();
+        Buffs = buffs ?? new();
+        Loadout = loadout ?? new();
+        Settings = settings ?? new();
+        Duel = duel ?? new();
+        _actions = actions ?? [];
         _actionsView = _actions.AsReadOnly();
         _dirtySectionsView = new ReadOnlySet<PlayerSectionKind>(_dirtySections);
         Duel.BindQueue(_actionsView);
@@ -466,19 +484,19 @@ public sealed partial class PlayerAggregate
     /// <summary>当前绑定的配表内容指纹。</summary>
     public string GameDataFingerprint { get; private set; }
     /// <summary>境界与修为分段。</summary>
-    public PlayerProgression Progression { get; } = new();
+    public PlayerProgression Progression { get; }
     /// <summary>世界漫游分段。</summary>
-    public PlayerWorldState World { get; } = new();
+    public PlayerWorldState World { get; }
     /// <summary>战斗资源分段（气血/灵力池与回复游标）。</summary>
-    public PlayerResourceState Resources { get; } = new();
+    public PlayerResourceState Resources { get; }
     /// <summary>战斗属性分段。</summary>
-    public PlayerCombatState Combat { get; } = new();
+    public PlayerCombatState Combat { get; }
     /// <summary>Buff 增益分段。</summary>
-    public PlayerBuffState Buffs { get; } = new();
+    public PlayerBuffState Buffs { get; }
     /// <summary>装备与功法装配分段。</summary>
-    public PlayerLoadoutState Loadout { get; } = new();
+    public PlayerLoadoutState Loadout { get; }
     /// <summary>偏好设置分段。</summary>
-    public PlayerSettingsState Settings { get; } = new();
+    public PlayerSettingsState Settings { get; }
     /// <summary>行动队列只读视图（队首为当前执行项）。</summary>
     public IReadOnlyList<QueuedAction> Actions => _actionsView;
     /// <summary>待刷盘脏分段只读视图。</summary>
@@ -552,6 +570,38 @@ public sealed partial class PlayerAggregate
         aggregate.MarkDirty(PlayerSectionKind.Duel);
         return aggregate;
     }
+
+    /// <summary>
+    /// 视图工厂：包装既有分段实例与行动队列的可变命令门面。
+    /// ECS 宿主命令路径使用——分段与队列直接使用组件持有的 POCO 引用，
+    /// 聚合方法修改的就是组件本体，无需快照导出/重建/回灌往返；
+    /// 脏标记与属性缓存仍为请求级私有状态，标量头字段经显式进出同步。
+    /// </summary>
+    internal static PlayerAggregate Wrap(
+        PlayerId playerId,
+        AccountId accountId,
+        string displayName,
+        DateTimeOffset createdAt,
+        string gameDataFingerprint,
+        long stateVersion,
+        PresenceState presence,
+        DateTimeOffset lastSimulatedAt,
+        PlayerProgression progression,
+        PlayerWorldState world,
+        PlayerResourceState resources,
+        PlayerCombatState combat,
+        PlayerBuffState buffs,
+        PlayerLoadoutState loadout,
+        PlayerSettingsState settings,
+        PlayerDuelState duel,
+        List<QueuedAction> actions)
+        => new(playerId, accountId, displayName, createdAt, gameDataFingerprint,
+            progression, world, resources, combat, buffs, loadout, settings, duel, actions)
+        {
+            StateVersion = stateVersion,
+            Presence = presence,
+            LastSimulatedAt = lastSimulatedAt
+        };
 
     /// <summary>
     /// 设置在线状态；状态变更时标记 Settings 分段为脏。

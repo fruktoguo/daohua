@@ -122,7 +122,7 @@ public sealed class PlayerBuffComponent : YuoComponent
 /// <summary>粗粒度行动队列组件；RemainingRepeats=-1 保持无限循环。</summary>
 public sealed class PlayerActionQueueComponent : YuoComponent
 {
-    public List<EcsActionState> Actions { get; } = [];
+    public List<QueuedAction> Actions { get; } = [];
     public DateTimeOffset LastAdvancedAt { get; set; }
     public DateTimeOffset LastSimulatedAt { get => LastAdvancedAt; set => LastAdvancedAt = value; }
 }
@@ -157,28 +157,6 @@ public sealed class PlayerDuelComponent : YuoComponent
         }
         set => PlayerDuelStateCodec.Restore(Duel, value);
     }
-}
-
-public sealed class EcsActionState : IPlayerActionState
-{
-    public EcsActionState(Guid id, ActionIntent intent)
-    {
-        Id = id;
-        Intent = intent;
-        ActionId = intent.ActionId;
-        RemainingRepeats = intent.RepeatCount;
-    }
-
-    public Guid Id { get; }
-    public ActionId ActionId { get; }
-    public ActionIntent Intent { get; }
-    public DateTimeOffset EnqueuedAt { get; set; }
-    public ActionQueueStatus Status { get; set; } = ActionQueueStatus.Running;
-    public double RemainingRepeats { get; set; }
-    public double CompletedRepeats { get; set; }
-    public double ProgressSeconds { get; set; }
-    public CombatExpeditionState? Expedition { get; set; }
-    public TravelActionState? Travel { get; set; }
 }
 
 

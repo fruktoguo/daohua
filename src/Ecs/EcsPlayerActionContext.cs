@@ -147,9 +147,8 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
             throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {PlayerAggregate.MaxActionQueueLength} 项。");
         if (actions.Count > 0 && actions[0].Status == ActionQueueStatus.Running)
             actions[0].Status = ActionQueueStatus.Pending;
-        var action = new EcsActionState(Guid.NewGuid(), intent)
+        var action = new QueuedAction(Guid.NewGuid(), intent, at)
         {
-            EnqueuedAt = at,
             Status = ActionQueueStatus.Running,
             Travel = travel
         };

@@ -44,7 +44,7 @@ public sealed class EcsActionPipeline
     private bool _waiting;
     private bool _changed;
     private bool _committed;
-    private EcsActionState? _preparedAction;
+    private QueuedAction? _preparedAction;
     private ActionDefinition? _definition;
     private double _duration;
     private double _multiplier;
@@ -237,7 +237,7 @@ public sealed class EcsActionPipeline
                 continue;
             }
             CountTransition();
-            var definition = _catalog.Actions.Get(action.ActionId);
+            var definition = _catalog.Actions.Get(action.Intent.ActionId);
             if (!SimulationEngine.TryStartAction(_player, action, definition, _catalog, _workingWallet, _cursor, _core)) continue;
             if (definition.ExecutionKind == ActionExecutionKind.CombatEncounter)
             {
