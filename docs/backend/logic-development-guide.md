@@ -69,7 +69,7 @@
 1. **时间推进校验**：`now >= aggregate.LastSimulatedAt`，计算差量；
 2. **行动推进循环**：
    - 队列头部行动按时间片推进；
-   - 到达耗时边界结算产出——引气入体（`cultivation.draw-qi`，10 秒/轮）每轮结算为 **qi 1/秒（10s 得 10.0 修为）+ mana 1/轮（+1.0 灵力）+ experience 10/轮（+10.0 功法/历练经验）**；
+   - 到达耗时边界结算产出——引气入体（`cultivation.draw-qi`，10 秒/轮）每轮结算为 **experience 10/轮（+10.0 修为）+ mana 10/轮（+10.0 灵力）**，单轮完成时一次性入账；
    - 扣减剩余次数；`RemainingRepeats == -1`（无限循环）绝不出队，只有正数递减至 0、显式取消或前置条件断绝才移出队列；
 3. **战斗遭遇推进**：战斗行动由战斗状态机与 `CombatSkillEngine` 逐只交战推进；自然回复当前按 5 秒基线周期整额结算（`RegenCarrySeconds` 携带不足一个周期的余量），回复量由基础属性表 hpRegen/mpRegen 锚点提供；
 4. **脏标记**：变更时调用 `MarkDirty(PlayerSectionKind.Xxx)` 记录脏分段。

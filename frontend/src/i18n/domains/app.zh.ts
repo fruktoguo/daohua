@@ -130,8 +130,6 @@ export const appZh = {
         item: '物品',
         buff: '增益',
       },
-      yieldPerSecond: '/秒',
-      yieldPerRepeat: '/轮',
       yieldBuff: '{name} ×{stacks} · {duration}s',
       totalBonus: '总加成',
       bonusBreakdownTitle: '加成构成明细',

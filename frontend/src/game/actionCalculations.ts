@@ -2,7 +2,7 @@
  * 行动产出、持续消耗品加成与动态加成解算器
  */
 
-import type { ActionDefinition, ActionType, ActionYieldPeriod, AutoUseSlot, InventoryItem, ItemDefinition, Stats } from './types'
+import type { ActionDefinition, ActionType, AutoUseSlot, InventoryItem, ItemDefinition, Stats } from './types'
 import { calculateRealmProgress } from './combatConstants'
 import { getT } from '../i18n'
 
@@ -47,10 +47,10 @@ export interface ActionYieldPreview {
     finalAmount: number
     multiplier: number
   }>
-  /** 资源类收益预览（修为/灵力/气血，包含加成） */
+  /** 资源类收益预览（修为/灵力/气血）：同类收益按单轮口径合并，包含加成 */
   resourceYields: Array<{
     kind: ResourceYieldKind
-    per: ActionYieldPeriod
+    /** 单轮基础产出（按秒速率已按整轮耗时折算并入） */
     baseAmount: number
     finalAmount: number
     multiplier: number
@@ -186,9 +186,9 @@ export function calculateActionYieldPreview({
     cultivationDetail = { isPendingBreakthrough }
   }
 
-  // 5. 收益解算：物品按 id 聚合，资源类收益同步应用综合倍率，增益收益原样透传
+  // 5. 收益解算：物品按 id 聚合，资源类收益按 kind 折算合并为单轮总量（产出只展示每轮口径），增益收益原样透传
   const itemAmountMap = new Map<string, number>()
-  const resourceYields: ActionYieldPreview['resourceYields'] = []
+  const resourceBaseMap = new Map<ResourceYieldKind, number>()
   const buffYields: ActionYieldPreview['buffYields'] = []
   for (const yieldEntry of action.yields ?? []) {
     switch (yieldEntry.kind) {
@@ -200,14 +200,8 @@ export function calculateActionYieldPreview({
       case 'mana':
       case 'hitpoints':
       case 'experience': {
-        const baseAmount = yieldEntry.amount
-        resourceYields.push({
-          kind: yieldEntry.kind,
-          per: yieldEntry.per,
-          baseAmount,
-          finalAmount: baseAmount * totalMultiplier,
-          multiplier: totalMultiplier,
-        })
+        const perRound = yieldEntry.per === 'second' ? yieldEntry.amount * baseDurationSeconds : yieldEntry.amount
+        resourceBaseMap.set(yieldEntry.kind, (resourceBaseMap.get(yieldEntry.kind) ?? 0) + perRound)
         break
       }
       case 'buff': {
@@ -222,6 +216,13 @@ export function calculateActionYieldPreview({
       }
     }
   }
+
+  const resourceYields: ActionYieldPreview['resourceYields'] = Array.from(resourceBaseMap.entries()).map(([kind, baseAmount]) => ({
+    kind,
+    baseAmount,
+    finalAmount: baseAmount * totalMultiplier,
+    multiplier: totalMultiplier,
+  }))
 
   const itemOutputs = Array.from(itemAmountMap.entries()).map(([itemId, baseAmount]) => {
     const multiplier = totalMultiplier

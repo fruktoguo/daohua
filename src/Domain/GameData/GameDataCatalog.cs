@@ -204,9 +204,8 @@ public sealed class ActionCatalog
     [
         new(new ActionId("cultivation.draw-qi"), "引气入体", ActionKind.Cultivation, 10, new Dictionary<ItemId, double>(),
         [
-            new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerSecond, 1.0),
-            new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 1.0),
-            new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10.0)
+            new ActionYield(ActionYieldKind.Experience, ActionYieldPeriod.PerRepeat, 10.0),
+            new ActionYield(ActionYieldKind.Mana, ActionYieldPeriod.PerRepeat, 10.0)
         ]),
         new(new ActionId("explore.gather-ningxue-grass"), "采摘凝血草", ActionKind.Exploration, 8, new Dictionary<ItemId, double>(),
         [

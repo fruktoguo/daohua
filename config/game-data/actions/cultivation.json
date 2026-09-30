@@ -8,16 +8,11 @@
     "yields": [
       {
         "kind": "experience",
-        "per": "second",
-        "amount": 1
+        "per": "repeat",
+        "amount": 10
       },
       {
         "kind": "mana",
-        "per": "repeat",
-        "amount": 1
-      },
-      {
-        "kind": "experience",
         "per": "repeat",
         "amount": 10
       }

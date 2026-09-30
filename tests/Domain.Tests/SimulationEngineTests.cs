@@ -45,16 +45,16 @@ public sealed class SimulationEngineTests
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(9), catalog.Actions);
-        Assert.Equal(9, player.Progression.Experience);
+        Assert.Equal(0, player.Progression.Experience);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(10), catalog.Actions);
-        Assert.Equal(20, player.Progression.Experience);
+        Assert.Equal(10, player.Progression.Experience);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(19), catalog.Actions);
-        Assert.Equal(29, player.Progression.Experience);
+        Assert.Equal(10, player.Progression.Experience);
 
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog.Actions);
-        Assert.Equal(40, player.Progression.Experience);
+        Assert.Equal(20, player.Progression.Experience);
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public sealed class SimulationEngineTests
             foreach (var delta in result.AssetDeltas) splitWallet.Apply(delta);
         }
 
-        Assert.Equal(52d, single.Progression.Experience, 10);
+        Assert.Equal(26d, single.Progression.Experience, 10);
         Assert.Equal(single.Progression.Experience, split.Progression.Experience);
         Assert.Equal(280d, Assert.Single(single.Settings.AutoUseSlots).RemainingDurationSeconds);
         Assert.Equal(280d, Assert.Single(split.Settings.AutoUseSlots).RemainingDurationSeconds);
@@ -121,7 +121,7 @@ public sealed class SimulationEngineTests
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi")), Baseline.AddSeconds(100), catalog.Actions);
         var resumed = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(110), catalog, wallet);
         Assert.Empty(resumed.AssetDeltas);
-        Assert.Equal(52d, player.Progression.Experience, 10);
+        Assert.Equal(26d, player.Progression.Experience, 10);
         Assert.Equal(280d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 
@@ -166,7 +166,7 @@ public sealed class SimulationEngineTests
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(20), catalog, CreateWallet(player));
 
         Assert.Empty(result.AssetDeltas);
-        Assert.Equal(46d, player.Progression.Experience, 10);
+        Assert.Equal(23d, player.Progression.Experience, 10);
         Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
         Assert.Single(result.Events, entry => entry.Code == "auto-use.depleted");
     }
@@ -185,19 +185,19 @@ public sealed class SimulationEngineTests
         player.ConfigureAutoUse("cultivation", 0, pill.Value, 1, true);
         player.Enqueue(new ActionIntent(new ActionId("cultivation.draw-qi"), -1), Baseline, catalog.Actions);
 
-        // 本轮已结算过整秒收益（进度 1 秒），中途补货只能等下一轮周期起点，不得追溯激活。
+        // 本轮已有进度（推进过 1 秒），中途补货只能等下一轮周期起点，不得追溯激活本轮。
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog, wallet);
         wallet.Credit(new AssetKey(pill), 1, "test grant");
         var midCycle = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(5), catalog, wallet);
 
         Assert.Empty(midCycle.AssetDeltas);
-        Assert.Equal(5d, player.Progression.Experience);
+        Assert.Equal(0d, player.Progression.Experience);
         Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
 
         // 下一轮周期起点扣件，且本轮整段收益吃到倍率。
         var nextCycle = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(11), catalog, wallet);
         Assert.Contains(nextCycle.AssetDeltas, delta => delta.Asset.ItemId == pill && delta.QuantityDelta == -1d);
-        Assert.Equal(21.3d, player.Progression.Experience, 10);
+        Assert.Equal(10d, player.Progression.Experience, 10);
         Assert.Equal(300d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
     }
 
@@ -267,9 +267,8 @@ public sealed class SimulationEngineTests
 
         // 0.1 累加十次为 0.9999999999999999 < 1.0，必须靠贴整获得同一个整秒。
         Assert.True(single.Progression.Experience == split.Progression.Experience,  $"Experience 位级不一致：{single.Progression.Experience:R} != {split.Progression.Experience:R}");
-        Assert.True(single.Progression.Experience == 1.0, $"单秒修为应恰为 1：{single.Progression.Experience:R}");
         Assert.True(single.Actions[0].ProgressSeconds == split.Actions[0].ProgressSeconds);
-        Assert.True(single.Actions[0].ProgressSeconds == 1.0);
+        Assert.True(single.Actions[0].ProgressSeconds == 1.0, $"本轮进度应恰为 1 秒：{single.Actions[0].ProgressSeconds:R}");
         Assert.Equal(0, split.Progression.SimulationCarrySeconds);
     }
 
@@ -315,7 +314,7 @@ public sealed class SimulationEngineTests
         Assert.Equal(0.5, restored.Progression.SimulationCarrySeconds);
         SimulationEngine.AdvanceTo(restored, Baseline.AddSeconds(1), ActionCatalog.Default);
 
-        Assert.True(restored.Progression.Experience == 1.0, $"半秒余数应合并为一个整秒：{restored.Progression.Experience:R}");
+        Assert.True(restored.Actions[0].ProgressSeconds == 1.0, $"半秒余数应合并为一个整秒：{restored.Actions[0].ProgressSeconds:R}");
     }
 
     /// <summary>

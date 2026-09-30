@@ -814,6 +814,14 @@ input[type="checkbox"] {
   gap: 7px;
 }
 
+/* 循环/自动移动两开关纵向堆叠，展开按钮仍在右侧同行 */
+.qc-toggles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
 .loop-toggle {
   display: flex;
   align-items: center;

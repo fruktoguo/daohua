@@ -93,7 +93,7 @@ public sealed class PlayerAggregateTests
         Assert.True(result.Changed);
         Assert.Equal(0, result.CompletedRepeats);
         Assert.Equal(1, player.Actions[0].ProgressSeconds);
-        Assert.Equal(1, player.Progression.Experience);
+        Assert.Equal(0, player.Progression.Experience);
     }
 
     /// <summary>

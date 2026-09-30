@@ -21,9 +21,8 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   // 修炼
   {
     id: 'cultivation.draw-qi', type: 'cultivation', durationSeconds: 10, yields: [
-      { kind: 'experience', per: 'second', amount: 1 },
-      { kind: 'mana', per: 'repeat', amount: 1 },
       { kind: 'experience', per: 'repeat', amount: 10 },
+      { kind: 'mana', per: 'repeat', amount: 10 },
     ],
   },
 

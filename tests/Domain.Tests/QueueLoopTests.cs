@@ -42,7 +42,7 @@ public sealed class QueueLoopTests
         Assert.Equal(2, action.RemainingRepeats); // 重置后初始 2 次，正在执行第 1 次
         Assert.Equal(5, action.ProgressSeconds);
         Assert.Equal(ActionQueueStatus.Running, action.Status);
-        Assert.Equal(45d, player.Progression.Experience);
+        Assert.Equal(20d, player.Progression.Experience);
         Assert.Equal(2, player.Progression.CompletedActions);
     }
 

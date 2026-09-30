@@ -445,26 +445,28 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
       </div>
 
       <div className="qc-controls">
-        <FloatingTooltip displayContents placement="bottom" title={t('app.queue.loopTip')} tone="gold">
-          <label className="loop-toggle">
-            <input
-              checked={queue.loopEnabled}
-              onChange={event => gameClient.sendCommand('queue.configure', { loopEnabled: event.target.checked })}
-              type="checkbox"
-            />
-            {t('app.queue.loop')}
-          </label>
-        </FloatingTooltip>
-        <FloatingTooltip displayContents placement="bottom" title={t('app.queue.autoTravelTip')} tone="gold">
-          <label className="loop-toggle">
-            <input
-              checked={queue.autoTravelEnabled}
-              onChange={event => gameClient.sendCommand('queue.configure', { autoTravelEnabled: event.target.checked })}
-              type="checkbox"
-            />
-            {t('app.queue.autoTravel')}
-          </label>
-        </FloatingTooltip>
+        <div className="qc-toggles">
+          <FloatingTooltip displayContents placement="bottom" title={t('app.queue.loopTip')} tone="gold">
+            <label className="loop-toggle">
+              <input
+                checked={queue.loopEnabled}
+                onChange={event => gameClient.sendCommand('queue.configure', { loopEnabled: event.target.checked })}
+                type="checkbox"
+              />
+              {t('app.queue.loop')}
+            </label>
+          </FloatingTooltip>
+          <FloatingTooltip displayContents placement="bottom" title={t('app.queue.autoTravelTip')} tone="gold">
+            <label className="loop-toggle">
+              <input
+                checked={queue.autoTravelEnabled}
+                onChange={event => gameClient.sendCommand('queue.configure', { autoTravelEnabled: event.target.checked })}
+                type="checkbox"
+              />
+              {t('app.queue.autoTravel')}
+            </label>
+          </FloatingTooltip>
+        </div>
         <button
           aria-expanded={open}
           className="qc-expand"
@@ -1325,11 +1327,11 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
           <div>
             <dt>{t('app.action.outputs')}</dt>
             <dd>
-              {yieldPreview.resourceYields.map((entry, index) => (
-                <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={`${entry.kind}-${index}`}>
+              {yieldPreview.resourceYields.map(entry => (
+                <span className={`action-stat-pill action-stat-pill--${entry.kind}`} key={entry.kind}>
                   <span className="action-stat-pill-label">{t(`app.action.yieldKind.${entry.kind}`)}</span>
                   <strong className="action-stat-pill-value">
-                    +<UnitNumber disableTooltip maxDecimals={0} value={entry.finalAmount} />{entry.per === 'second' ? t('app.action.yieldPerSecond') : t('app.action.yieldPerRepeat')}
+                    <UnitNumber disableTooltip maxDecimals={1} prefix="×" value={entry.finalAmount} />
                   </strong>
                 </span>
               ))}
