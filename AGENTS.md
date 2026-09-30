@@ -132,7 +132,7 @@ docker compose -f deploy/compose.prod.yaml down
 | 脚本 | 用途 |
 | --- | --- |
 | `verify.sh` | 最小完整门禁：工具链、Release 构建、领域/服务端测试、DataTool 校验、Compose 配置、本地 PostgreSQL 容量验证 |
-| `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite） |
+| `dev.sh` | 一键启动本地前后端联调（数据库自检、端口检查、后端热重启、前端 Vite、Docker 化 Caddy 域名入口 `http://daohua.localhost`） |
 | `dev-hot.mjs` | C# 源码监听与后端平滑热重启（由 `dev.sh` 调用） |
 | `dev-service.sh` | 本地容器化同构环境管理：`up`/`restart`/`down`/`status`/`logs`/`smoke` |
 | `config-editor.sh` | 启动 `tools/config-editor` 可视化配表编辑器（127.0.0.1:5199） |

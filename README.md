@@ -77,7 +77,9 @@ dotnet run --project src/Server/Server.csproj
 npm --prefix frontend run dev
 ```
 
-Vite 默认监听 `http://127.0.0.1:15172`，把 `/api` 和 `/ws` 代理到 `127.0.0.1:5128`。浏览器认证使用服务端 `HttpOnly` Cookie；前端 localStorage 只保存非敏感的账号显示信息和 UI 偏好，不保存 token、玩家快照、日志或消息历史。
+Vite 默认监听 `http://127.0.0.1:15172`，把 `/api`、`/ops/api` 和 `/ws` 代理到 `127.0.0.1:5128`。浏览器认证使用服务端 `HttpOnly` Cookie；前端 localStorage 只保存非敏感的账号显示信息和 UI 偏好，不保存 token、玩家快照、日志或消息历史。
+
+`scripts/dev.sh` 会在前端就绪后额外拉起本地域名入口：Docker 化的 Caddy（`deploy/caddy-local.Caddyfile`）绑定 80 端口，把 **`http://daohua.localhost`** 反代到前端 dev server，本地开发不必再记端口（面板在 `http://daohua.localhost/ops`）。`*.localhost` 由浏览器按 RFC 6761 自动解析到回环地址，无需修改 `/etc/hosts`；容器端口转发由 Docker Desktop 处理，不需要 `sudo`。Docker 不可用或 80 端口被占用时该步骤只提示并跳过，不影响 `127.0.0.1:15172` 直连；设 `DAOHUA_LOCAL_PROXY=0` 可显式关闭。
 
 ## HTTP 与 WebSocket
 

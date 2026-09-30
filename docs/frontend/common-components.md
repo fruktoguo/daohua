@@ -396,3 +396,19 @@
   - **移动端（≤960px）自动降级**：左栏分类栏变顶部横向滚动分类条（active 态改下划线；`align-self: start` + 布局 `align-content: start` 防止网格行被剩余空间撑高），内容列解除限宽。
 - **组件源码**：[`frontend/src/components/SettingsPage.tsx`](../../frontend/src/components/SettingsPage.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.settings-layout`, `.settings-nav-item`, `.settings-group`, `.setting-row`, `.settings-profile`, `.avatar-tile`, `.modal-form-`)
+
+---
+
+## 30. 本地运维面板外壳与展示原语（Ops Panel · Development-only）
+
+- **适用场景**：
+  - **本地开发运维面板页面**（路由 `/ops`，仅开发构建注册；生产产物不含该入口）：`OpsApp` 提供「顶部状态条 + 左侧竖排分组导航 + 内容区」外壳，视图涵盖概览 / 健康 / 调度 / 计算 / 日志 / 玩家 / 会话 / 存储 / 盘口 / 挂单 / 成交 / 市场指标 / 配置 / 运维操作。
+  - **通用运维展示原语**（`opsUi.tsx`，任何后台或诊断页可直接复用）：
+    - `OpsCard` 卡片容器（标题 + 右上角附加区）、`OpsStatGrid` + `OpsStat` 指标卡网格、`OpsTable` 通用数据表格（`OpsColumn<T>` 定义列，`numeric` 列右对齐等宽数字）、`OpsKeyValues` 键值清单、`OpsPill` 语义胶囊（`OpsTone` 七色）、`OpsAsyncView` 加载/失败/内容三态。
+    - `useOpsData(load, deps, intervalMs)` 数据 Hook：首次加载 + 可选轮询 + 手动重试；每次加载新建 AbortController 并在卸载或重载时中止上一次请求，避免旧响应覆盖新数据。
+    - 格式化辅助：`formatBytes` / `formatDuration` / `formatNumber` / `formatTime` / `formatMillis`；枚举中文化 `levelLabel` / `presenceLabel` / `healthLabel` 与色调 `levelTone` / `healthTone`。
+  - **面板数据客户端**（`opsClient.ts`）：`opsGet` 只读、`opsPost` 写操作（自动附带 `X-Ops-Token`；令牌存 sessionStorage，由状态条输入）。
+- **复用约定**：颜色与控件外观全部取自 `frontend/src/styles.css` 游戏主题变量；面板只补充结构样式 `ops.css`（`.ops-*` 前缀），不新造配色体系。写操作统一经 `ConfirmDialog` 二次确认。
+- **组件源码**：[`frontend/src/ops/`](../../frontend/src/ops/)（`OpsApp.tsx` 外壳 · `opsUi.tsx` 原语 · `opsClient.ts` 客户端 · `views/` 视图分组）
+- **样式文件**：[`frontend/src/ops/ops.css`](../../frontend/src/ops/ops.css) (搜索 `.ops-root`, `.ops-topbar`, `.ops-nav`, `.ops-card`, `.ops-stat`, `.ops-table`)
+- **设计真源**：[`docs/backend/ops-panel.md`](../backend/ops-panel.md)

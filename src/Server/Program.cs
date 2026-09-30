@@ -45,20 +45,9 @@ else if (processRole == ServerProcessRole.Api)
 {
     var explicitUrls = builder.Configuration["Server:Urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
     var hasExplicitPorts = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS"));
+    // 未显式配置时绑定本地回环默认端口；运维面板已并入该端口（页面由前端承载），不再单独监听。
     if (string.IsNullOrWhiteSpace(explicitUrls) && !hasExplicitPorts)
-    {
-        // 未显式配置时绑定本地回环默认端口；面板启用则同时绑定独立运维端口。
-        var urls = new List<string> { "http://127.0.0.1:5128" };
-        if (opsPanelEnabled) urls.Add(opsOptions.Url);
-        builder.WebHost.UseUrls([.. urls]);
-    }
-    else if (opsPanelEnabled && !string.IsNullOrWhiteSpace(explicitUrls))
-    {
-        // 已显式配置主端口：保留原地址并追加运维端口。
-        var urls = explicitUrls.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        urls.Add(opsOptions.Url);
-        builder.WebHost.UseUrls([.. urls]);
-    }
+        builder.WebHost.UseUrls("http://127.0.0.1:5128");
 }
 
 builder.Services.AddProblemDetails();
@@ -141,6 +130,12 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.AntiMultiOpenAdmission>();
     builder.Services.AddDaohuaAuthentication();
     if (opsLogBuffer is not null) builder.Services.AddSingleton(opsLogBuffer);
+    if (opsPanelEnabled)
+    {
+        // 面板写操作令牌与存储侧只读查询：仅在 Development 且面板启用时装配。
+        builder.Services.AddSingleton(opsOptions);
+        builder.Services.AddSingleton<Server.Clean.Ops.OpsStorageInsights>();
+    }
 }
 
 // 两种进程都需要 section/outbox 存储；worker 只装配这两个后台消费边界。
@@ -197,8 +192,6 @@ var releaseVersion = typeof(Program).Assembly.GetCustomAttribute<AssemblyInforma
 
 app.UseExceptionHandler();
 app.UseForwardedHeaders();
-// 运维面板端口门禁必须早于静态文件与路由：非运维端口访问面板路径一律 404。
-if (opsPanelEnabled) app.UseOpsGate(opsOptions);
 
 app.MapHealthChecks("/healthz", new HealthCheckOptions
 {
@@ -510,6 +503,10 @@ if (processRole == ServerProcessRole.Api)
     // 计算节点反向拨入链路：节点主动 WebSocket 注册，主服经连接下发冷挂机批次。
     app.Map(Server.Clean.ComputeLinkContract.Path, Server.Clean.ComputeLinkEndpoint.HandleAsync);
     if (opsPanelEnabled) app.MapOpsPanel(opsOptions, releaseVersion, startedAt);
+    // 令牌未配置时本进程随机生成，必须在控制台可见一次，否则写操作无法使用；
+    // 已配置（appsettings.Development.json 默认值）时不再回显，避免口令反复进入日志。
+    if (opsPanelEnabled && string.IsNullOrWhiteSpace(builder.Configuration["Ops:Token"]))
+        app.Logger.LogWarning("运维面板写操作令牌（本进程随机生成）：{Token}", opsOptions.Token);
     app.MapFallback("/api/{**path}", () => Results.NotFound(Problem(404, "NOT_FOUND", "接口不存在。")));
     if (hasWebRoot) app.MapFallbackToFile("index.html");
 }

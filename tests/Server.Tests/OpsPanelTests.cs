@@ -7,8 +7,8 @@ using Xunit;
 namespace Server.Tests;
 
 /// <summary>
-/// 本地运维面板回归门禁：配置校验与路径规范化、日志环形缓冲边界与级别过滤、
-/// 私网来源判定（面板仅允许回环与私有网段访问）。
+/// 本地运维面板回归门禁：配置校验与路径规范化、一次性令牌生成与保密、
+/// 日志环形缓冲边界与过滤、私网来源判定（面板写操作仅允许回环与私有网段）。
 /// </summary>
 public sealed class OpsPanelTests
 {
@@ -21,38 +21,50 @@ public sealed class OpsPanelTests
     [Fact]
     public void Disabled_ReturnsDefaults_WithoutStrictValidation()
     {
-        var options = Options(("Ops:Enabled", "false"), ("Ops:Port", "0"));
+        var options = Options(("Ops:Enabled", "false"), ("Ops:LogBufferCapacity", "1"));
         Assert.False(options.Enabled);
-        Assert.Equal(OpsOptions.DefaultPort, options.Port);
         Assert.Equal("/ops", options.Path);
+        Assert.Equal(string.Empty, options.Token);
     }
 
-    /// <summary>启用时绑定并规范化端口、监听地址、路径与缓冲容量。</summary>
+    /// <summary>启用时绑定并规范化路径、缓冲容量与令牌。</summary>
     [Fact]
     public void Enabled_BindsAndNormalizesValues()
     {
         var options = Options(
             ("Ops:Enabled", "true"),
-            ("Ops:Port", "5200"),
-            ("Ops:ListenAddress", "0.0.0.0"),
             ("Ops:Path", "ops/"),
-            ("Ops:LogBufferCapacity", "800"));
+            ("Ops:LogBufferCapacity", "800"),
+            ("Ops:Token", "local-token"));
         Assert.True(options.Enabled);
-        Assert.Equal(5200, options.Port);
-        Assert.Equal("0.0.0.0", options.ListenAddress);
         Assert.Equal("/ops", options.Path);
         Assert.Equal(800, options.LogBufferCapacity);
-        Assert.Equal("http://0.0.0.0:5200", options.Url);
+        Assert.Equal("local-token", options.Token);
     }
 
-    /// <summary>启用时非法端口、非法监听地址、越界容量均快速失败。</summary>
-    [Theory]
-    [InlineData("Ops:Port", "70000")]
-    [InlineData("Ops:ListenAddress", "not-an-ip")]
-    [InlineData("Ops:LogBufferCapacity", "10")]
-    public void Enabled_InvalidValue_Throws(string key, string value)
+    /// <summary>未配置令牌时进程内生成一次性令牌，且不随 ToString 泄露。</summary>
+    [Fact]
+    public void Enabled_WithoutToken_GeneratesOneTimeToken()
     {
-        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), (key, value) };
+        var options = Options(("Ops:Enabled", "true"));
+        Assert.True(options.Enabled);
+        Assert.Equal(32, options.Token.Length);
+        Assert.DoesNotContain(options.Token, options.ToString());
+    }
+
+    /// <summary>启用时越界容量快速失败。</summary>
+    [Fact]
+    public void Enabled_InvalidCapacity_Throws()
+    {
+        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), ("Ops:LogBufferCapacity", "10") };
+        Assert.Throws<InvalidOperationException>(() => Options([.. entries]));
+    }
+
+    /// <summary>启用时超长令牌快速失败。</summary>
+    [Fact]
+    public void Enabled_TooLongToken_Throws()
+    {
+        var entries = new List<(string, string)> { ("Ops:Enabled", "true"), ("Ops:Token", new string('a', 513)) };
         Assert.Throws<InvalidOperationException>(() => Options([.. entries]));
     }
 
@@ -86,6 +98,23 @@ public sealed class OpsPanelTests
         Assert.All(warnings, entry => Assert.True(entry.Level is "Warning" or "Error"));
         Assert.Contains(warnings, entry => entry.Exception is not null && entry.Exception.Contains("boom"));
         Assert.Single(buffer.Snapshot(LogLevel.Error, 100));
+    }
+
+    /// <summary>日志缓冲支持类别子串与正文/异常关键词过滤（大小写不敏感）。</summary>
+    [Fact]
+    public void LogBuffer_FiltersByCategoryAndQuery()
+    {
+        using var buffer = new OpsLogBuffer(50);
+        var market = buffer.CreateLogger("Server.Clean.MarketRuntime");
+        var player = buffer.CreateLogger("Server.Clean.PlayerRuntime");
+        market.LogInformation("订单撮合完成");
+        player.LogWarning("玩家加载失败");
+        player.LogError(new InvalidOperationException("boom-marker"), "异常");
+
+        Assert.Single(buffer.Snapshot(LogLevel.Information, 100, "marketruntime"));
+        Assert.Single(buffer.Snapshot(LogLevel.Information, 100, null, "撮合"));
+        Assert.Single(buffer.Snapshot(LogLevel.Information, 100, null, "BOOM-MARKER"));
+        Assert.Empty(buffer.Snapshot(LogLevel.Information, 100, "Missing"));
     }
 
     /// <summary>释放后不再写入。</summary>

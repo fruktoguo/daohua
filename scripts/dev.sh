@@ -7,15 +7,21 @@
 #   1. 环境前置自检: 检查 YuoCore submodule 是否存在，若缺失自动拉取；
 #   2. 前端依赖自检: 检查 frontend/node_modules 是否就绪，若缺失自动 npm install；
 #   3. 数据库自检自愈: 检查 PostgreSQL 并按需拉起；
-#   4. 端口占用检查: 检测 5128 (后端服务)、5129 (运维面板) 与 15172 (前端 Vite)；
+#   4. 端口占用检查: 检测 5128 (后端服务) 与 15172 (前端 Vite)；
 #      若占用者命令行指向本仓库（上次会话残留的孤儿进程），自动清理后继续，外来进程报错退出；
 #   5. 启动后端守护: 启动 scripts/dev-hot.mjs 监听 C# 源码并在变更时平滑热重启后端；
 #   6. 等待后端就绪: 轮询探测 http://127.0.0.1:5128/healthz 就绪状态；
-#   7. 启动前端服务: 启动 Vite 开发服务器 (127.0.0.1:15172)，反向代理 /api 与 /ws；
-#   8. 信号捕获清理: 捕获 Ctrl+C (SIGINT) 及退出信号，级联停止前后端全部子进程树。
+#   7. 启动前端服务: 启动 Vite 开发服务器 (127.0.0.1:15172)，反向代理 /api、/ops/api 与 /ws；
+#   8. 启动本地域名入口: 若 Docker 可用且 80 端口空闲，以容器方式拉起 Caddy
+#      （deploy/caddy-local.Caddyfile），把 http://daohua.localhost 反代到前端（免记端口）；
+#      Docker 不可用、80 被占用或容器启动失败时仅提示并跳过，不影响 15172 直连；
+#   9. 信号捕获清理: 捕获 Ctrl+C (SIGINT) 及退出信号，级联停止域名入口、前后端全部子进程树。
 #
 # 使用场景:
 #   - 本地日常前后端交互功能开发与联调测试。
+#
+# 环境变量:
+#   - DAOHUA_LOCAL_PROXY=0: 显式关闭本地域名入口（默认 1，启用）。
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -25,6 +31,8 @@ cd "$ROOT_DIR"
 
 BACKEND_SUPERVISOR_PID=""
 FRONTEND_PID=""
+# 本地域名入口容器名（docker --rm：停止即自动删除）。
+CADDY_CONTAINER="daohua-local-caddy"
 
 port_in_use() {
   local port="$1"
@@ -63,6 +71,10 @@ cleanup() {
   trap - SIGINT SIGTERM EXIT
   SHUTTING_DOWN=1
   printf '\n==> 正在停止前后端服务...\n'
+  if [[ -n "${CADDY_CONTAINER:-}" ]] && command -v docker >/dev/null 2>&1; then
+    # 域名入口是 docker --rm 容器：stop 即停止并自动删除。
+    docker stop "$CADDY_CONTAINER" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${FRONTEND_PID:-}" ]]; then
     kill_tree "$FRONTEND_PID" TERM
   fi
@@ -153,8 +165,6 @@ free_port_or_fail() {
 
 free_port_or_fail 5128 "127.0.0.1:5128 (后端服务)"
 free_port_or_fail 15172 "127.0.0.1:15172 (前端 Vite)"
-# 本地运维面板端口（对齐 appsettings.Development.json 的 Ops:Port，绑定 0.0.0.0）。
-free_port_or_fail 5129 "5129 (本地运维面板)"
 
 trap cleanup SIGINT SIGTERM EXIT
 
@@ -190,18 +200,72 @@ if [[ "$BACKEND_READY" -ne 1 ]]; then
   exit 1
 fi
 
+# 6.5 运维面板就绪探测：面板并入主端口（页面由前端承载，数据端点在后端）。
+#     这里只做告警不阻断启动——面板缺失不影响游戏联调，但静默缺失会误导排查。
+if curl -s -f http://127.0.0.1:5128/ops/api/overview >/dev/null 2>&1; then
+  printf '==> 运维面板数据端点已就绪 (/ops/api/overview)。\n'
+else
+  printf '警告: 运维面板数据端点 (/ops/api/overview) 未就绪，面板可能不可用（请检查 Ops:Enabled 与 Development 环境）。\n' >&2
+fi
+
 # 7. 启动前端（不打开浏览器）
 printf '==> 启动前端开发服务器 (http://127.0.0.1:15172)...\n'
 npm --prefix frontend run dev -- --host 127.0.0.1 --port 15172 --no-open &
 FRONTEND_PID=$!
+
+# 8. 本地域名入口（可选）：Docker 化 Caddy 绑 80，把 http://daohua.localhost 反代到前端 dev server。
+#    *.localhost 由浏览器自动解析到回环，无需改 /etc/hosts；容器端口转发由 Docker Desktop 处理，无需 sudo。
+#    Docker 不可用、80 被占用或容器启动失败时一律只提示并跳过，不阻断 15172 直连。
+LOCAL_ENTRY_STATE="未启用"
+CADDY_CONFIG="$ROOT_DIR/deploy/caddy-local.Caddyfile"
+if [[ "${DAOHUA_LOCAL_PROXY:-1}" == "1" ]]; then
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    printf '提示: Docker 不可用，跳过本地域名入口（仍可用 http://127.0.0.1:15172）。\n'
+  elif [[ ! -f "$CADDY_CONFIG" ]]; then
+    printf '警告: 缺少 %s，跳过本地域名入口。\n' "$CADDY_CONFIG" >&2
+  elif port_in_use 80; then
+    # 80 被占用：若占用者就是本脚本上次留下的同名容器，直接复用（避免误判为外部冲突）。
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CADDY_CONTAINER"; then
+      printf '==> 复用已在运行的本地域名入口容器 %s。\n' "$CADDY_CONTAINER"
+      LOCAL_ENTRY_STATE="已就绪（复用现有容器）"
+    else
+      printf '提示: 端口 80 已被占用，跳过本地域名入口（仍可用 http://127.0.0.1:15172）。\n'
+    fi
+  else
+    printf '==> 启动本地域名入口 (http://daohua.localhost → 127.0.0.1:15172，Docker 化 Caddy)...\n'
+    printf '    首次运行需要拉取 caddy:2-alpine 镜像，可能耗时较久。\n'
+    docker rm -f "$CADDY_CONTAINER" >/dev/null 2>&1 || true
+    if docker run --detach --rm --name "$CADDY_CONTAINER" \
+        --publish 80:80 \
+        --env DAOHUA_FRONTEND_PORT=15172 \
+        --volume "$CADDY_CONFIG:/etc/caddy/Caddyfile:ro" \
+        caddy:2-alpine >/dev/null 2>&1; then
+      for _ in {1..40}; do
+        port_in_use 80 && break
+        sleep 0.25
+      done
+    fi
+    if port_in_use 80; then
+      LOCAL_ENTRY_STATE="已就绪"
+    else
+      printf '警告: 本地域名入口未能在等待窗口内就绪（镜像拉取失败或 Caddy 配置有误），已继续启动。\n' >&2
+      docker rm -f "$CADDY_CONTAINER" >/dev/null 2>&1 || true
+    fi
+  fi
+fi
 
 printf '\n'
 printf '  道化太初 本地开发服务已启动\n'
 printf '  热更新:      源码变更静默 60s 后重建重启（编译失败保持旧进程）\n'
 printf '  后端 API:    http://127.0.0.1:5128\n'
 printf '  WebSocket:  ws://127.0.0.1:5128/ws\n'
-printf '  运维面板:    http://127.0.0.1:5129/ops（局域网: http://<本机IP>:5129/ops）\n'
+printf '  运维面板:    http://127.0.0.1:15172/ops（数据端点经主端口 5128，写操作需面板令牌）\n'
 printf '  前端地址:    http://127.0.0.1:15172\n'
+if [[ "$LOCAL_ENTRY_STATE" == 已就绪* ]]; then
+  printf '  域名入口:    http://daohua.localhost/（面板 http://daohua.localhost/ops）\n'
+else
+  printf '  域名入口:    %s（需 Docker 可用且 80 端口空闲）\n' "$LOCAL_ENTRY_STATE"
+fi
 printf '  ----------------------------------------------------\n'
 printf '====================================================\n\n'
 

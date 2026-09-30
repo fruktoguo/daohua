@@ -84,11 +84,10 @@ internal static class ComputeLinkLoadScenario
             warnings.Add($"子进程日志目录：{logDir}（server/节点 stdout+stderr 落盘供排查）。");
 
             var apiPort = FreePort();
-            var opsPort = FreePort();
             var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
-            var server = SpawnServer(serverDll, apiPort, opsPort, connectionString, token, logDir);
+            var server = SpawnServer(serverDll, apiPort, connectionString, token, logDir);
             spawned.Add(server);
-            Log($"主服已拉起 api=:{apiPort} ops=:{opsPort}，等待健康就绪…");
+            Log($"主服已拉起 api=:{apiPort}，等待健康就绪…");
             await WaitHttpOkAsync($"http://127.0.0.1:{apiPort}/healthz", StartupBudget, cancellationToken);
 
             for (var index = 0; index < options.ComputeNodes; index++)
@@ -96,7 +95,7 @@ internal static class ComputeLinkLoadScenario
                 spawned.Add(SpawnNode(nodeDll, apiPort, token, $"lt-node-{index}", logDir));
             }
             Log($"{options.ComputeNodes} 个计算节点已拉起，等待注册…");
-            var opsBase = $"http://127.0.0.1:{opsPort}/ops";
+            var opsBase = $"http://127.0.0.1:{apiPort}/ops";
             var registered = await WaitNodeCountAsync(opsBase, options.ComputeNodes, NodeRegisterBudget, cancellationToken);
             if (!registered)
             {
@@ -241,7 +240,7 @@ internal static class ComputeLinkLoadScenario
 
     /// <summary>拉起真实主服：compute 派发链全配（短轮询/短租约/短扫描间隔），运维面板开在本机随机端口。</summary>
     private static SpawnedProcess SpawnServer(
-        string serverDll, int apiPort, int opsPort, string connectionString, string token, string logDir)
+        string serverDll, int apiPort, string connectionString, string token, string logDir)
     {
         var psi = new ProcessStartInfo
         {
@@ -268,8 +267,6 @@ internal static class ComputeLinkLoadScenario
         psi.Environment["ComputeNode__ColdCatchUpMinIdleMinutes"] = "1";
         psi.Environment["ComputeNode__ColdCatchUpBatchSize"] = "2000";
         psi.Environment["Ops__Enabled"] = "true";
-        psi.Environment["Ops__Port"] = opsPort.ToString();
-        psi.Environment["Ops__ListenAddress"] = "127.0.0.1";
         psi.Environment["Logging__LogLevel__Default"] = "Information";
         psi.Environment["Logging__LogLevel__Microsoft.AspNetCore"] = "Warning";
         return SpawnedProcess.Start(psi, "server", logDir);

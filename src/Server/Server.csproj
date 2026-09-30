@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <Compile Remove="Clean/**/*.cs" />
-    <EmbeddedResource Remove="Clean/Ops/OpsPage.html" />
     <ProjectReference Include="../Domain/Domain.csproj" />
     <ProjectReference Include="../Ecs/Ecs.csproj" />
     <ProjectReference Include="../Server.Clean/Server.Clean.csproj" />

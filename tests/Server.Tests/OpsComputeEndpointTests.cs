@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using Protocol;
 using Server.Clean;
 using Server.Clean.Ops;
@@ -91,7 +92,7 @@ public sealed class OpsComputeEndpointTests
         Assert.Equal(0, root.GetProperty("metrics").GetProperty("nodesConnected").GetInt64());
     }
 
-    /// <summary>装配最小宿主：面板路由 + 端点实际读取的服务；不挂 UseOpsGate（门禁另有测试）。</summary>
+    /// <summary>装配最小宿主：面板路由 + 端点实际读取的服务（面板已并入主端口，无独立端口门禁）。</summary>
     private static async Task<WebApplication> StartHostAsync(bool computeEnabled = true)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = [] });
@@ -116,10 +117,14 @@ public sealed class OpsComputeEndpointTests
         builder.Services.AddSingleton<SessionRegistry>();
         builder.Services.AddSingleton<MarketRuntime>();
         builder.Services.AddSingleton(new OpsLogBuffer(100));
+        builder.Services.AddSingleton(new OpsOptions(true, "/ops", 500, "test-ops-token"));
+        // 面板路由的复杂类型参数必须在 DI 中可解析，否则最小 API 会把它推断成请求体而整体构建失败。
+        builder.Services.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Database=unused"));
+        builder.Services.AddSingleton<OpsStorageInsights>();
 
         var app = builder.Build();
         app.UseDeveloperExceptionPage();
-        app.MapOpsPanel(new OpsOptions(true, 5129, "127.0.0.1", "/ops", 500),
+        app.MapOpsPanel(new OpsOptions(true, "/ops", 500, "test-ops-token"),
             "test-version", DateTimeOffset.UtcNow);
         await app.StartAsync();
         return app;

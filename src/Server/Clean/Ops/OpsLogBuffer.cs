@@ -35,17 +35,29 @@ public sealed class OpsLogBuffer(int capacity) : ILoggerProvider
     public void Dispose() => _disposed = true;
 
     /// <summary>
-    /// 按序号倒序返回最近日志，可按最低级别过滤。
+    /// 按序号倒序返回最近日志，可按最低级别、类别子串与关键词过滤。
     /// </summary>
     /// <param name="minLevel">最低级别（含）；默认 Information。</param>
     /// <param name="limit">返回条数上限。</param>
-    public IReadOnlyList<OpsLogEntry> Snapshot(LogLevel minLevel = LogLevel.Information, int limit = 200)
+    /// <param name="category">类别子串（大小写不敏感）；为空表示不限。</param>
+    /// <param name="query">正文或异常关键词（大小写不敏感）；为空表示不限。</param>
+    public IReadOnlyList<OpsLogEntry> Snapshot(
+        LogLevel minLevel = LogLevel.Information,
+        int limit = 200,
+        string? category = null,
+        string? query = null)
     {
         var bounded = Math.Clamp(limit, 1, 2_000);
+        var categoryFilter = string.IsNullOrWhiteSpace(category) ? null : category.Trim();
+        var queryFilter = string.IsNullOrWhiteSpace(query) ? null : query.Trim();
         lock (_gate)
         {
             return _entries
                 .Where(entry => ParseLevel(entry.Level) >= minLevel)
+                .Where(entry => categoryFilter is null || entry.Category.Contains(categoryFilter, StringComparison.OrdinalIgnoreCase))
+                .Where(entry => queryFilter is null
+                    || entry.Message.Contains(queryFilter, StringComparison.OrdinalIgnoreCase)
+                    || (entry.Exception?.Contains(queryFilter, StringComparison.OrdinalIgnoreCase) ?? false))
                 .OrderByDescending(entry => entry.Sequence)
                 .Take(bounded)
                 .ToArray();

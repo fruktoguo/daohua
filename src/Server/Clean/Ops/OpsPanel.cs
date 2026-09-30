@@ -1,45 +1,44 @@
 using System.Diagnostics;
-using Domain.Market;
 using Protocol;
 
 namespace Server.Clean.Ops;
 
+/// <summary>踢下线请求。</summary>
+/// <param name="PlayerId">目标玩家 ID。</param>
+public sealed record OpsKickRequest(Guid PlayerId);
+
+/// <summary>强制存档请求。</summary>
+/// <param name="PlayerId">目标玩家 ID；为空表示全部已加载玩家。</param>
+/// <param name="Force">是否强制落盘（忽略落盘节流）。</param>
+public sealed record OpsFlushRequest(Guid? PlayerId, bool Force = true);
+
+/// <summary>卸载玩家运行时请求。</summary>
+/// <param name="PlayerId">目标玩家 ID。</param>
+/// <param name="Flush">是否先落盘再卸载；默认 true（安全默认，避免丢弃内存改动）。</param>
+public sealed record OpsUnloadRequest(Guid PlayerId, bool Flush = true);
+
+/// <summary>计算节点排空请求。</summary>
+/// <param name="NodeId">目标节点 ID；为空表示全部在线节点。</param>
+public sealed record OpsDrainRequest(Guid? NodeId);
+
 /// <summary>
-/// 本地运维信息面板（Development-only）。
-/// 提供只读的概览、健康、玩家、会话、市场与日志视图；面板端口独立监听，
-/// 通过 <see cref="UseOpsGate"/> 强制「仅运维端口 + 仅私网来源 + 仅面板路径」。
+/// 本地运维面板（Development-only）。
+/// 面板并入主 API 端口，页面由前端 React 应用承载；本类只提供 `/ops/api/*` 数据端点。
+/// 只读视图依赖环境装配判定；写操作要求一次性令牌（`X-Ops-Token`），并记录审计日志。
 /// </summary>
 public static class OpsPanel
 {
-    private static readonly string PageHtml = LoadPage();
+    /// <summary>运维踢出会话使用的自定义关闭码（私有段，避开防多开 4005-4008 与慢消费者 4009）。</summary>
+    public const int KickCloseCode = 4010;
+
+    /// <summary>写操作令牌请求头名。</summary>
+    public const string TokenHeader = "X-Ops-Token";
+
+    /// <summary>运维写操作审计日志类别。</summary>
+    public const string AuditCategory = "Ops.Audit";
 
     /// <summary>
-    /// 注册端口门禁中间件：运维端口只接受面板路径与私网来源，其余端口访问面板路径一律 404。
-    /// 必须早于路由与静态文件注册。
-    /// </summary>
-    /// <param name="app">应用构建器。</param>
-    /// <param name="options">面板配置。</param>
-    public static IApplicationBuilder UseOpsGate(this IApplicationBuilder app, OpsOptions options)
-    {
-        ArgumentNullException.ThrowIfNull(app);
-        ArgumentNullException.ThrowIfNull(options);
-        return app.Use(async (context, next) =>
-        {
-            var isOpsPort = context.Connection.LocalPort == options.Port;
-            var isOpsPath = context.Request.Path.StartsWithSegments(options.Path, StringComparison.OrdinalIgnoreCase);
-            var blockedOnOpsPort = isOpsPort && (!isOpsPath || !OpsNetwork.IsPrivateOrLoopback(context.Connection.RemoteIpAddress));
-            var blockedOnMainPort = !isOpsPort && isOpsPath;
-            if (blockedOnOpsPort || blockedOnMainPort)
-            {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return;
-            }
-            await next();
-        });
-    }
-
-    /// <summary>
-    /// 映射面板页面与只读 JSON 接口。
+    /// 映射面板只读视图与令牌保护的写操作端点。
     /// </summary>
     /// <param name="app">应用构建器。</param>
     /// <param name="options">面板配置。</param>
@@ -50,10 +49,6 @@ public static class OpsPanel
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(options);
         var group = app.MapGroup(options.Path);
-
-        // 路由匹配对尾斜杠不敏感，单个 "/ops" 路由同时覆盖 "/ops" 与 "/ops/"；
-        // 重复注册会产生 AmbiguousMatchException。
-        group.MapGet("", () => Results.Content(PageHtml, "text/html; charset=utf-8"));
 
         group.MapGet("/api/overview", (
             GameDataCatalog gameData,
@@ -117,7 +112,93 @@ public static class OpsPanel
             }));
         });
 
-        group.MapGet("/api/sessions", (SessionRegistry sessions) => Results.Ok(sessions.SnapshotPlayerIds()));
+        // 玩家详情只覆盖「已加载」玩家：运维面板不得因查看详情而触发状态加载（那会把冷玩家拉进内存并占租约）。
+        group.MapGet("/api/players/{playerId:guid}", async (Guid playerId, IPlayerRuntime players, CancellationToken cancellationToken) =>
+        {
+            var snapshots = await players.GetLoadedSnapshotsAsync(cancellationToken);
+            var snapshot = snapshots.FirstOrDefault(item => item.PlayerId == playerId);
+            if (snapshot is null) return Results.Json(new { code = "PLAYER_NOT_LOADED", message = "该玩家当前未加载到运行时。" }, statusCode: StatusCodes.Status404NotFound);
+
+            var state = snapshot.State;
+            return Results.Ok(new
+            {
+                playerId = snapshot.PlayerId,
+                accountId = snapshot.AccountId,
+                displayName = snapshot.DisplayName,
+                stateVersion = snapshot.StateVersion,
+                presence = state.Presence.ToString().ToLowerInvariant(),
+                createdAt = state.CreatedAt,
+                lastSimulatedAt = snapshot.LastSimulatedAt,
+                gameDataFingerprint = state.GameDataFingerprint,
+                progression = new
+                {
+                    realmLevel = state.Progression.RealmLevel,
+                    experience = state.Progression.Experience,
+                    completedActions = state.Progression.CompletedActions,
+                    cultivationSeconds = state.Progression.CultivationSeconds,
+                    normalKills = state.Progression.NormalKills,
+                    eliteKills = state.Progression.EliteKills,
+                    bossKills = state.Progression.BossKills,
+                    totalDefeats = state.Progression.TotalDefeats
+                },
+                combat = new
+                {
+                    hitpoints = state.Combat.Hitpoints,
+                    maxHitpoints = state.Combat.MaxHitpoints,
+                    manapoints = state.Combat.Manapoints,
+                    maxManapoints = state.Combat.MaxManapoints,
+                    attackPower = state.Combat.AttackPower,
+                    defense = state.Combat.Defense
+                },
+                world = new
+                {
+                    nodeId = state.World.NodeId,
+                    x = state.World.X,
+                    y = state.World.Y,
+                    edgeId = state.World.EdgeId,
+                    edgeProgress = state.World.EdgeProgress
+                },
+                counts = new
+                {
+                    actions = state.Actions.Count,
+                    assets = snapshot.Assets.Count,
+                    buffs = state.Buffs.Count,
+                    learnedAbilities = state.LearnedAbilities.Count,
+                    equippedInstances = state.EquippedInstances.Count
+                },
+                actions = state.Actions.Select(action => new
+                {
+                    id = action.Id,
+                    actionId = action.Intent.ActionId.Value,
+                    status = action.Status.ToString(),
+                    enqueuedAt = action.EnqueuedAt,
+                    progressSeconds = action.ProgressSeconds,
+                    remainingRepeats = action.RemainingRepeats,
+                    completedRepeats = action.CompletedRepeats,
+                    targetNodeId = action.Intent.TargetNodeId,
+                    anchorNodeId = action.Intent.AnchorNodeId
+                }),
+                assets = snapshot.Assets.Select(asset => new
+                {
+                    assetId = asset.AssetId,
+                    variant = asset.Variant,
+                    quantity = asset.Quantity,
+                    version = asset.Version
+                }),
+                touchedSections = snapshot.TouchedSections?.Select(kind => kind.ToString()).ToArray(),
+                recentLogs = players.GetRecentLogEvents(playerId).TakeLast(50).Select(entry => new
+                {
+                    sequence = entry.Sequence,
+                    timestampUnixMilliseconds = entry.TimestampUnixMilliseconds,
+                    template = entry.Template,
+                    count = entry.Count,
+                    channel = entry.Channel
+                })
+            });
+        });
+
+        group.MapGet("/api/sessions", (SessionRegistry sessions) => Results.Ok(
+            sessions.SnapshotPlayerIds().Select(playerId => DescribeSession(sessions, playerId))));
 
         group.MapGet("/api/market/book", (string? assetId, string? variant, int? depth, MarketRuntime market) =>
         {
@@ -145,11 +226,42 @@ public static class OpsPanel
             }
         });
 
-        group.MapGet("/api/logs", (OpsLogBuffer buffer, string? level, int? limit) =>
+        group.MapGet("/api/market/metrics", (MarketRuntime market) =>
         {
-            var minLevel = Enum.TryParse<LogLevel>(level, true, out var parsed) ? parsed : LogLevel.Information;
-            return Results.Ok(buffer.Snapshot(minLevel, limit ?? 200));
+            try
+            {
+                return Results.Ok(new
+                {
+                    ready = market.IsReady,
+                    partitionId = market.PartitionId,
+                    partitionCount = market.PartitionCount,
+                    algorithm = market.Algorithm,
+                    metrics = market.GetMetrics()
+                });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(new { code = "MARKET_NOT_READY", message = exception.Message }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
         });
+
+        group.MapGet("/api/market/orders", (Guid? playerId, int? limit, MarketRuntime market) =>
+        {
+            if (playerId is null || playerId == Guid.Empty)
+                return Results.BadRequest(new { code = "INVALID_PLAYER", message = "必须提供 playerId。" });
+            try
+            {
+                return Results.Ok(market.GetOrders(new PlayerId(playerId.Value), Math.Clamp(limit ?? 100, 1, 500))
+                    .Select(MarketDtoMapper.ToOrder));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(new { code = "MARKET_NOT_READY", message = exception.Message }, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
+
+        group.MapGet("/api/market/trades", async (int? limit, OpsStorageInsights insights, CancellationToken cancellationToken) =>
+            Results.Ok(await insights.GetRecentTradesAsync(limit ?? 50, cancellationToken)));
 
         // 冷挂机派发链运维视图：节点组（名称/容量/在飞/拨入时长/运行时指纹）、
         // 链路计数快照（吞吐/失败分类/拒绝原因/批次样本分布）与 compute_jobs 队列积压。
@@ -182,14 +294,218 @@ public static class OpsPanel
                 backlog
             });
         });
+
+        group.MapGet("/api/storage", async (OpsStorageInsights insights, CancellationToken cancellationToken) =>
+            Results.Ok(await insights.GetStorageAsync(cancellationToken)));
+
+        // 调度视图只做「已加载玩家快照」的聚合，不触发任何加载，也不进入模拟循环。
+        group.MapGet("/api/scheduler", async (IPlayerRuntime players, CancellationToken cancellationToken) =>
+        {
+            var snapshots = await players.GetLoadedSnapshotsAsync(cancellationToken);
+            var now = DateTimeOffset.UtcNow;
+            var lags = snapshots.Select(snapshot => Math.Max(0, (now - snapshot.LastSimulatedAt).TotalSeconds)).OrderBy(value => value).ToArray();
+            var queueLengths = snapshots.Select(snapshot => (double)snapshot.QueuedActionCount).OrderBy(value => value).ToArray();
+            return Results.Ok(new
+            {
+                loadedPlayers = snapshots.Count,
+                nextAdvanceBoundaryUtc = players.NextAdvanceBoundaryUtc,
+                secondsToNextBoundary = players.NextAdvanceBoundaryUtc is { } boundary ? Math.Max(0, (boundary - now).TotalSeconds) : (double?)null,
+                lag = new
+                {
+                    p50Seconds = Percentile(lags, 0.50),
+                    p95Seconds = Percentile(lags, 0.95),
+                    maxSeconds = lags.Length == 0 ? 0 : lags[^1]
+                },
+                queuedActions = new
+                {
+                    total = queueLengths.Sum(),
+                    p50 = Percentile(queueLengths, 0.50),
+                    max = queueLengths.Length == 0 ? 0 : queueLengths[^1]
+                },
+                byPresence = snapshots
+                    .GroupBy(snapshot => snapshot.State.Presence.ToString().ToLowerInvariant())
+                    .Select(group => new { presence = group.Key, count = group.Count() })
+                    .OrderBy(item => item.presence)
+                    .ToArray(),
+                slowest = snapshots
+                    .OrderByDescending(snapshot => snapshot.LastSimulatedAt)
+                    .Take(20)
+                    .Select(snapshot => new
+                    {
+                        playerId = snapshot.PlayerId,
+                        displayName = snapshot.DisplayName,
+                        lastSimulatedAt = snapshot.LastSimulatedAt,
+                        lagSeconds = Math.Max(0, (now - snapshot.LastSimulatedAt).TotalSeconds),
+                        queuedActions = snapshot.QueuedActionCount
+                    })
+                    .ToArray()
+            });
+        });
+
+        group.MapGet("/api/config", (GameDataCatalog gameData, ServerOptions serverOptions) => Results.Ok(new
+        {
+            service = serverOptions.ServiceName,
+            environment = app.Environment.EnvironmentName,
+            processRole = serverOptions.ProcessRole.ToString(),
+            protocolVersion = ProtocolConstants.CurrentVersion,
+            schemaVersion = PostgresSchema.Version,
+            gameDataVersion = gameData.ContentVersion,
+            gameDataFingerprint = gameData.Fingerprint,
+            storage = new
+            {
+                target = DescribeConnection(serverOptions.ConnectionString),
+                schemaBootstrap = serverOptions.EnableSchemaBootstrap,
+                sectionFlushBatchSize = serverOptions.SectionFlushBatchSize,
+                sectionFlushIntervalMs = serverOptions.SectionFlushInterval.TotalMilliseconds,
+                sectionFlushLeaseSeconds = serverOptions.SectionFlushLease.TotalSeconds,
+                outboxBatchSize = serverOptions.OutboxBatchSize,
+                outboxPollIntervalMs = serverOptions.OutboxPollInterval.TotalMilliseconds,
+                retentionBatchSize = serverOptions.RetentionBatchSize
+            },
+            auth = new { sessionLifetimeDays = serverOptions.SessionLifetime.TotalDays },
+            server = new
+            {
+                maxWebSocketMessageBytes = serverOptions.MaxWebSocketMessageBytes,
+                webSocketOutboundCapacity = serverOptions.WebSocketOutboundCapacity,
+                ecsShardCount = serverOptions.EcsShardCount
+            },
+            market = new { partitionCount = serverOptions.MarketPartitionCount, partitionId = serverOptions.MarketPartitionId },
+            compute = new
+            {
+                enabled = serverOptions.ComputeNodeConfigured,
+                batchSize = serverOptions.ComputeBatchSize,
+                pollIntervalMs = serverOptions.ComputePollInterval.TotalMilliseconds,
+                leaseSeconds = serverOptions.ComputeLease.TotalSeconds,
+                maxAttempts = serverOptions.ComputeMaxAttempts,
+                coldCatchUpIntervalSeconds = serverOptions.ColdCatchUpInterval.TotalSeconds,
+                coldCatchUpWindowHours = serverOptions.ColdCatchUpWindow.TotalHours
+            },
+            antiMultiOpen = new
+            {
+                tabGuardEnabled = serverOptions.AntiMultiOpen.TabGuardEnabled,
+                singleSessionKickEnabled = serverOptions.AntiMultiOpen.SingleSessionKickEnabled,
+                deviceQuotaEnabled = serverOptions.AntiMultiOpen.DeviceQuotaEnabled,
+                deviceQuotaMaxAccounts = serverOptions.AntiMultiOpen.DeviceQuotaMaxAccounts
+            }
+        }));
+
+        group.MapGet("/api/logs", (OpsLogBuffer buffer, string? level, string? category, string? q, int? limit) =>
+        {
+            var minLevel = Enum.TryParse<LogLevel>(level, true, out var parsed) ? parsed : LogLevel.Information;
+            return Results.Ok(buffer.Snapshot(minLevel, limit ?? 200, category, q));
+        });
+
+        group.MapPost("/api/actions/kick", (HttpContext context, OpsKickRequest request, OpsOptions opts, SessionRegistry sessions, ILoggerFactory loggerFactory) =>
+        {
+            if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            if (!sessions.TryGet(request.PlayerId, out var session))
+                return Results.Json(new { code = "SESSION_NOT_FOUND", message = "该玩家当前没有在线会话。" }, statusCode: StatusCodes.Status404NotFound);
+            session.RequestClose(KickCloseCode, "ops kick");
+            Audit(loggerFactory, context, "kick", request.PlayerId);
+            return Results.Ok(new { action = "kick", playerId = request.PlayerId, closeCode = KickCloseCode });
+        });
+
+        group.MapPost("/api/actions/flush", async (HttpContext context, OpsFlushRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        {
+            if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            try
+            {
+                if (request.PlayerId is { } playerId && playerId != Guid.Empty)
+                {
+                    await players.FlushAsync(playerId, request.Force, cancellationToken);
+                    Audit(loggerFactory, context, "flush", playerId);
+                    return Results.Ok(new { action = "flush", scope = "player", playerId, force = request.Force });
+                }
+                await players.FlushAllAsync(request.Force, cancellationToken);
+                Audit(loggerFactory, context, "flush-all", null);
+                return Results.Ok(new { action = "flush", scope = "all", loadedPlayers = players.LoadedCount, force = request.Force });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.Json(new { code = "FLUSH_FAILED", message = exception.Message }, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        group.MapPost("/api/actions/unload", async (HttpContext context, OpsUnloadRequest request, OpsOptions opts, IPlayerRuntime players, ILoggerFactory loggerFactory, CancellationToken cancellationToken) =>
+        {
+            if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            if (request.PlayerId == Guid.Empty)
+                return Results.BadRequest(new { code = "INVALID_PLAYER", message = "必须提供 playerId。" });
+            await players.RemoveAsync(request.PlayerId, request.Flush, cancellationToken);
+            Audit(loggerFactory, context, "unload", request.PlayerId);
+            return Results.Ok(new { action = "unload", playerId = request.PlayerId, flushed = request.Flush });
+        });
+
+        group.MapPost("/api/actions/compute-drain", (HttpContext context, OpsDrainRequest request, OpsOptions opts, ComputeLinkRegistry registry, ILoggerFactory loggerFactory) =>
+        {
+            if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            if (request.NodeId is { } nodeId && nodeId != Guid.Empty)
+            {
+                var node = registry.Nodes.FirstOrDefault(item => item.NodeId == nodeId);
+                if (node is null)
+                    return Results.Json(new { code = "NODE_NOT_FOUND", message = "该计算节点当前不在线。" }, statusCode: StatusCodes.Status404NotFound);
+                registry.BeginDrain(node);
+                Audit(loggerFactory, context, "compute-drain", nodeId);
+                return Results.Ok(new { action = "compute-drain", scope = "node", nodeId, name = node.Name });
+            }
+            registry.DrainAll("ops drain");
+            Audit(loggerFactory, context, "compute-drain-all", null);
+            return Results.Ok(new { action = "compute-drain", scope = "all", nodeCount = registry.NodeCount });
+        });
     }
 
-    private static string LoadPage()
+    /// <summary>会话只读视图：玩家 ID、准入设备指纹与是否已在关闭流程。</summary>
+    private static object DescribeSession(SessionRegistry sessions, Guid playerId)
     {
-        var assembly = typeof(OpsPanel).Assembly;
-        using var stream = assembly.GetManifestResourceStream("Server.Ops.OpsPage.html")
-            ?? throw new InvalidOperationException("缺少运维面板页面嵌入资源 Server.Ops.OpsPage.html。");
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        return reader.ReadToEnd();
+        if (!sessions.TryGet(playerId, out var session)) return new { playerId, deviceFingerprint = (string?)null, closing = false };
+        return new { playerId, deviceFingerprint = session.DeviceFingerprint, closing = session.CloseHint is not null };
+    }
+
+    /// <summary>
+    /// 校验写操作来源与令牌：要求回环/私网来源（纵深防御）且令牌匹配。
+    /// 不通过时返回拒绝结果，通过时返回 null。
+    /// </summary>
+    private static IResult? RejectWriteRequest(HttpContext context, OpsOptions options)
+    {
+        if (!OpsNetwork.IsPrivateOrLoopback(context.Connection.RemoteIpAddress))
+            return Results.Json(new { code = "OPS_SOURCE_REJECTED", message = "运维写操作仅允许本机或私有网段来源。" }, statusCode: StatusCodes.Status403Forbidden);
+        var provided = context.Request.Headers[TokenHeader].ToString();
+        var expected = options.Token;
+        var matches = provided.Length > 0
+            && expected.Length > 0
+            && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), Encoding.UTF8.GetBytes(expected));
+        return matches
+            ? null
+            : Results.Json(new { code = "OPS_TOKEN_INVALID", message = "运维令牌缺失或无效。" }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    /// <summary>记录运维写操作审计（含来源地址，绝不记录令牌）。</summary>
+    private static void Audit(ILoggerFactory loggerFactory, HttpContext context, string action, Guid? target) =>
+        loggerFactory.CreateLogger(AuditCategory).LogWarning(
+            "运维面板写操作 {Action} 目标 {Target} 来源 {Remote}",
+            action,
+            target?.ToString() ?? "all",
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+
+    /// <summary>连接串脱敏摘要：只保留主机、端口、库名与用户名，绝不输出口令。</summary>
+    private static string DescribeConnection(string connectionString)
+    {
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(connectionString);
+            return $"{builder.Host}:{builder.Port}/{builder.Database}@{builder.Username}";
+        }
+        catch (ArgumentException)
+        {
+            return "unparsable";
+        }
+    }
+
+    /// <summary>有序数组的最近秩分位数；空数组返回 0。</summary>
+    private static double Percentile(double[] sorted, double ratio)
+    {
+        if (sorted.Length == 0) return 0;
+        var index = (int)Math.Clamp(Math.Ceiling(ratio * sorted.Length) - 1, 0, sorted.Length - 1);
+        return sorted[index];
     }
 }
