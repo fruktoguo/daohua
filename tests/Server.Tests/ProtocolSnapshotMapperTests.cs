@@ -276,13 +276,15 @@ public sealed class ProtocolAttributesPointsTests
         Assert.Equal(1, projected);
         var inspectedEnemies = inspected.Sections.Single(section => section.Section == PlayerSectionKinds.ActionQueue)
             .Data[0].GetProperty("expedition").GetProperty("enemies");
-        Assert.Equal(JsonValueKind.Object, inspectedEnemies[0].GetProperty("attributes").ValueKind);
+        Assert.True(inspectedEnemies[0].TryGetProperty("attributes", out var inspectedAttributes));
+        Assert.Equal(JsonValueKind.Object, inspectedAttributes.ValueKind);
 
         var uninspected = ProtocolSnapshotMapper.ToSnapshot(runtime, "fp", gameData);
         Assert.Equal(1, projected);
         var plainEnemies = uninspected.Sections.Single(section => section.Section == PlayerSectionKinds.ActionQueue)
             .Data[0].GetProperty("expedition").GetProperty("enemies");
-        Assert.Equal(JsonValueKind.Null, plainEnemies[0].GetProperty("attributes").ValueKind);
+        // 序列化口径为 WhenWritingNull：未观察目标的 attributes 字段整体缺席，不落 null 占位。
+        Assert.False(plainEnemies[0].TryGetProperty("attributes", out _));
         Assert.Equal(JsonValueKind.Number, plainEnemies[0].GetProperty("maxHitpoints").ValueKind);
         Assert.Equal(JsonValueKind.Number, plainEnemies[0].GetProperty("maxManapoints").ValueKind);
     }
