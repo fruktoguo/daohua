@@ -213,7 +213,7 @@ public sealed class EconomyCommitTests
         await PostgresTestSchema.EnsureAsync(source);
         var player = Guid.NewGuid();
         await Sql(source, "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", player, player.ToString());
-        await Sql(source, "INSERT INTO identity.players VALUES ($1,$1,$2,$2,now(),now(),1)", player, player.ToString());
+        await Sql(source, "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,now(),now(),1)", player, player.ToString());
         return (source, new PostgresEconomyRepository(source, NullLogger<PostgresEconomyRepository>.Instance), player);
     }
 
