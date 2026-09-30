@@ -22,7 +22,7 @@ public interface ICombatPlayerDownedPhase : ISystemTag;
 public interface ICombatOutcomePhase : ISystemTag;
 
 /// <summary>
-/// 相位工作上下文：AdvanceBoundary 每次边界推进创建一份，
+/// 相位工作上下文：每次 AdvanceTo 创建一份并在各自然边界间复用，
 /// 相位 System 经 host 组件读取；事件/死亡/复活列表 lazy 分配保持原 null 语义。
 /// </summary>
 public sealed class CombatPhaseContext
@@ -59,7 +59,14 @@ public sealed class EcsCombatPhaseDispatcher : ICombatPhaseDispatcher
     {
         ArgumentNullException.ThrowIfNull(host);
         host.PhaseContext = context;
-        YuoWorld.RunSystem<TTag>(host.Entity);
+        try
+        {
+            YuoWorld.RunSystem<TTag>(host.Entity);
+        }
+        finally
+        {
+            host.PhaseContext = null;
+        }
     }
 }
 

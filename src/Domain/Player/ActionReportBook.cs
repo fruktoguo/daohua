@@ -9,26 +9,25 @@ namespace Domain.Player;
 public static class ActionReportBook
 {
     /// <summary>共享行动、离线与每日三账本记账；导出脏标与日期切换随实际入账更新。</summary>
-    public static void RecordActionStats(IPlayerResourceContext player, Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
+    public static void RecordActionStats(IPlayerResourceContext player, Guid? actionInstanceId, double atUnixSeconds, in PlayerStatsDelta delta)
     {
-        ArgumentNullException.ThrowIfNull(apply);
         if (actionInstanceId is { } instanceId
             && player.Duel.ActionReports.TryGetValue(instanceId, out var actionReport))
         {
-            apply(actionReport);
+            delta.ApplyTo(actionReport);
             actionReport.EndedAtUnixSeconds = atUnixSeconds;
             actionReport.MarkExportDirty();
         }
         if (player.Presence == PresenceState.Offline)
         {
-            apply(player.Duel.OfflineReport);
+            delta.ApplyTo(player.Duel.OfflineReport);
             player.Duel.OfflineReport.EndedAtUnixSeconds = atUnixSeconds;
             player.Duel.OfflineReport.MarkExportDirty();
         }
         var dayIndex = (long)Math.Floor((atUnixSeconds + 28800) / 86400);
         if (player.Duel.DailyReport.DayIndex != dayIndex)
             player.Duel.DailyReport.ResetBucket(dayIndex, atUnixSeconds);
-        apply(player.Duel.DailyReport);
+        delta.ApplyTo(player.Duel.DailyReport);
         player.Duel.DailyReport.EndedAtUnixSeconds = atUnixSeconds;
         player.Duel.DailyReport.MarkExportDirty();
         player.MarkDirty(PlayerSectionKind.Duel);
@@ -79,7 +78,7 @@ public static class ActionReportBook
         }
         if (!merged) staged.Add(new(itemId.Value, quantity, bucketedAt));
         player.RecordStats(player.Actions.Count > 0 ? player.Actions[0].Id : (Guid?)null, acquiredAtUnixSeconds,
-            report => report.AddItem(itemId, quantity));
+            new PlayerStatsDelta { GainedItem = itemId, GainedQuantity = quantity });
         player.MarkDirty(PlayerSectionKind.Duel);
     }
 
@@ -107,11 +106,7 @@ public static class ActionReportBook
             if (index >= 0) player.Duel.StagedItems.RemoveAt(index);
         }
         var headId = player.Actions.Count > 0 ? player.Actions[0].Id : (Guid?)null;
-        player.RecordStats(headId, atUnixSeconds, report =>
-        {
-            foreach (var item in snapshot)
-                report.AddItemLost(new ItemId(item.ItemId), item.Quantity);
-        });
+        player.RecordStats(headId, atUnixSeconds, new PlayerStatsDelta { StagedItemLosses = snapshot });
         player.MarkDirty(PlayerSectionKind.Duel);
     }
 }

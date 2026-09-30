@@ -29,9 +29,11 @@ public interface IPlayerActionContext
     IReadOnlyList<IPlayerActionState> Actions { get; }
     void MarkDirty(PlayerSectionKind section);
     void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now);
-    void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply);
+    void RecordStats(Guid? actionInstanceId, double atUnixSeconds, in PlayerStatsDelta delta);
     bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true, double endedAtUnixSeconds = -1);
     bool RotateActionToTail(Guid actionInstanceId);
+    /// <summary>收益落账后的轮完成裁决；只有重复次数为 0 才循环或离队。</summary>
+    PlayerActionRoundDisposition FinishActionRound(Guid actionInstanceId, bool loopable, double endedAtUnixSeconds);
     /// <summary>队首高优插队（自动移动/手动赶路共用）：同类去重、挂起运行中队首、新行动立即 Running；模拟内传 incrementVersion: false。</summary>
     IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog catalog,
         TravelActionState? travel = null, bool incrementVersion = true);

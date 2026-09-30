@@ -1,25 +1,22 @@
 using DaoHua.Ecs.Combat;
 using DaoHua.Ecs.Components;
+using Domain.Combat;
 using YuoCore.Ecs;
+using static DaoHua.Ecs.DeterministicCombatEngine;
 
 namespace DaoHua.Ecs.Systems;
 
-/// <summary>
-/// 战斗相位 System 集合：每类一个 tag 订阅，Run 体把 component.PhaseContext
-/// 转交给 DeterministicCombatEngine 的同名相位实现。
-/// 实体派发与 Inline 派发共享同一相位方法——两条路径的确定性由单源实现保证。
-/// </summary>
+/// <summary>无世界相位派发只选择对应 System；规则与实体 tag 派发共用唯一实现。</summary>
 internal static class CombatPhaseSystems
 {
-    /// <summary>无世界路径的相位派发：按 tag 类型同步调用同一相位实现。</summary>
     public static void DispatchInline<TTag>(CombatPhaseContext context) where TTag : ISystemTag
     {
-        if (typeof(TTag) == typeof(ICombatBuffTickPhase)) { DeterministicCombatEngine.ApplyBuffTickPhase(context); return; }
-        if (typeof(TTag) == typeof(ICombatPlayerRespawnPhase)) { DeterministicCombatEngine.ApplyPlayerRespawnPhase(context); return; }
-        if (typeof(TTag) == typeof(ICombatPlayerActPhase)) { DeterministicCombatEngine.ApplyPlayerActPhase(context); return; }
-        if (typeof(TTag) == typeof(ICombatEnemyActPhase)) { DeterministicCombatEngine.ApplyEnemyActPhase(context); return; }
-        if (typeof(TTag) == typeof(ICombatPlayerDownedPhase)) { DeterministicCombatEngine.ApplyPlayerDownedPhase(context); return; }
-        if (typeof(TTag) == typeof(ICombatOutcomePhase)) { DeterministicCombatEngine.ApplyOutcomePhase(context); return; }
+        if (typeof(TTag) == typeof(ICombatBuffTickPhase)) { CombatBuffTickSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatPlayerRespawnPhase)) { CombatPlayerRespawnSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatPlayerActPhase)) { CombatPlayerActSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatEnemyActPhase)) { CombatEnemyActSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatPlayerDownedPhase)) { CombatPlayerDownedSystem.Apply(context); return; }
+        if (typeof(TTag) == typeof(ICombatOutcomePhase)) { CombatOutcomeSystem.Apply(context); return; }
         throw new InvalidOperationException($"未登记的战斗相位 tag：{typeof(TTag).Name}。");
     }
 }
@@ -28,40 +25,148 @@ internal static class CombatPhaseSystems
 public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, ICombatBuffTickPhase
 {
     public override void Run(CombatEncounterComponent encounter)
-        => DeterministicCombatEngine.ApplyBuffTickPhase(encounter.PhaseContext!);
+        => Apply(encounter.PhaseContext!);
+
+    /// <summary>战内回复沿既有 5 秒网格落账。</summary>
+    internal const double TickSeconds = 5;
+
+    /// <summary>战内效果相位结算：先剔除到期 Buff，再按 5 秒网格对存活单位结算周期回复。</summary>
+    internal static void Apply(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        var at = context.EffectAt;
+        encounter.Player.Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        for (var i = 0; i < encounter.Enemies.Count; i++)
+            encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
+        if (Math.Abs(at / TickSeconds - Math.Round(at / TickSeconds)) > 1e-9) return;
+        // 结算顺序与原 Prepend(player) 一致：先玩家后敌人。
+        Tick(encounter.Player);
+        for (var i = 0; i < encounter.Enemies.Count; i++) Tick(encounter.Enemies[i]);
+
+        static void Tick(CombatantState unit)
+        {
+            // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次。
+            double hp = unit.Stats.HpRegen, mp = unit.Stats.MpRegen;
+            var buffs = unit.Buffs;
+            for (var i = 0; i < buffs.Count; i++)
+            {
+                hp += buffs[i].HpRegen * buffs[i].Stacks;
+                mp += buffs[i].MpRegen * buffs[i].Stacks;
+            }
+            // 阵亡单位气血锁 0 不结算回血，灵力回复照常入账（死亡灵力运转规约战内同构）。
+            if (unit.IsAlive && hp != 0) unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
+            if (mp != 0) unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);
+        }
+    }
 }
 
 [SystemOrder(110)]
 public sealed class CombatPlayerRespawnSystem : YuoSystem<CombatEncounterComponent>, ICombatPlayerRespawnPhase
 {
     public override void Run(CombatEncounterComponent encounter)
-        => DeterministicCombatEngine.ApplyPlayerRespawnPhase(encounter.PhaseContext!);
+        => Apply(encounter.PhaseContext!);
+
+    /// <summary>玩家复活相位：倒地倒计时到期时恢复满气血、清空复活计时并重新决策初始动作。</summary>
+    internal static void Apply(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        encounter.Player.Hitpoints = encounter.Player.Stats.MaxHitpoints;
+        encounter.PlayerRespawnAtSeconds = double.PositiveInfinity;
+        CombatActSystem.DecideInitialActions(encounter);
+        (context.PlayerRespawns ??= []).Add(encounter.ElapsedSeconds);
+    }
 }
 
 [SystemOrder(120)]
-public sealed class CombatPlayerActSystem : YuoSystem<CombatEncounterComponent>, ICombatPlayerActPhase
+public sealed class CombatPlayerActSystem : CombatActSystem, ICombatPlayerActPhase
 {
     public override void Run(CombatEncounterComponent encounter)
-        => DeterministicCombatEngine.ApplyPlayerActPhase(encounter.PhaseContext!);
+        => Apply(encounter.PhaseContext!);
+
+    /// <summary>玩家方出手相位：先结算待完成动作（普攻或吟唱完成的技能），再决策下一动作。</summary>
+    internal static void Apply(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        var player = encounter.Player;
+        var allies = encounter.PlayerAllies;
+        ResolvePending(encounter, player, allies, encounter.Enemies,
+            SelectEnemyTarget(encounter, player.AttackCount, 3), 0, ref context.Events);
+        DecideNextAction(encounter, player, allies, encounter.Enemies,
+            SelectEnemyTarget(encounter, player.AttackCount, 3));
+    }
 }
 
 [SystemOrder(130)]
-public sealed class CombatEnemyActSystem : YuoSystem<CombatEncounterComponent>, ICombatEnemyActPhase
+public sealed class CombatEnemyActSystem : CombatActSystem, ICombatEnemyActPhase
 {
     public override void Run(CombatEncounterComponent encounter)
-        => DeterministicCombatEngine.ApplyEnemyActPhase(encounter.PhaseContext!);
+        => Apply(encounter.PhaseContext!);
+
+    /// <summary>敌方出手相位：与玩家同构，先结算待完成动作再决策下一动作。</summary>
+    internal static void Apply(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        var enemy = context.Enemy!;
+        ResolvePending(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player,
+            (ulong)(1 + context.EnemyIndex), ref context.Events);
+        DecideNextAction(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player);
+    }
 }
 
 [SystemOrder(140)]
 public sealed class CombatPlayerDownedSystem : YuoSystem<CombatEncounterComponent>, ICombatPlayerDownedPhase
 {
     public override void Run(CombatEncounterComponent encounter)
-        => DeterministicCombatEngine.ApplyPlayerDownedPhase(encounter.PhaseContext!);
+        => Apply(encounter.PhaseContext!);
+
+    /// <summary>玩家死亡相位：倒地瞬间进入复活倒计时，全场吟唱作废并记录死亡时刻。</summary>
+    internal static void Apply(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        encounter.PlayerRespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
+        InterruptCasts(encounter);
+        (context.PlayerDeaths ??= []).Add(encounter.ElapsedSeconds);
+    }
+
+    /// <summary>团灭瞬间全场吟唱作废：未完成的吟唱视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
+    private static void InterruptCasts(CombatEncounterState encounter)
+    {
+        // 处理顺序与原 Prepend(player) 一致：先玩家后敌人。
+        InterruptCast(encounter.Player);
+        for (var i = 0; i < encounter.Enemies.Count; i++) InterruptCast(encounter.Enemies[i]);
+        static void InterruptCast(CombatantState unit)
+        {
+            var pending = unit.PendingSkillIndex;
+            unit.PendingSkillIndex = -1;
+            if (pending < 0 || pending >= unit.Skills.Count) return;
+            unit.Manapoints = Math.Min(unit.Stats.MaxManapoints,
+                unit.Manapoints + AbilityNumber(unit.Skills[pending].Ability, "manaCost"));
+            if (unit.SkillCooldownUntil is { } cooldowns && pending < cooldowns.Length)
+                cooldowns[pending] = 0;
+        }
+    }
 }
 
 [SystemOrder(150)]
 public sealed class CombatOutcomeSystem : YuoSystem<CombatEncounterComponent>, ICombatOutcomePhase
 {
     public override void Run(CombatEncounterComponent encounter)
-        => DeterministicCombatEngine.ApplyOutcomePhase(encounter.PhaseContext!);
+        => Apply(encounter.PhaseContext!);
+
+    /// <summary>
+    /// 根据交战双方存活状态更新战局结果。
+    /// </summary>
+    internal static void Apply(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        encounter.Outcome = (encounter.Player.IsAlive, AnyAlive(encounter.Enemies)) switch
+        {
+            // 原地复活待触发期间团灭不是终局：敌方残存或被持续伤害跳死全灭都保持 Running，起身后统一裁定。
+            (false, _) when double.IsFinite(encounter.PlayerRespawnAtSeconds) => CombatOutcome.Running,
+            (true, true) => CombatOutcome.Running,
+            (true, false) => CombatOutcome.PlayerWon,
+            (false, true) => CombatOutcome.EnemyWon,
+            _ => CombatOutcome.Draw
+        };
+    }
 }

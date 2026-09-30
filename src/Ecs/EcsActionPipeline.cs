@@ -69,7 +69,7 @@ public sealed class EcsActionExecutionComponent : YuoComponent
         if (component.Queue is not null && !component.Committed)
             throw new InvalidOperationException("行动请求尚未结束。");
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
-        var player = new EcsPlayerActionContext(entity, catalog);
+        var player = new EcsPlayerActionContext(entity);
         var from = player.LastSimulatedAt;
         if (target < from) throw new DomainException(DomainErrorCode.InvalidArgument, "行动目标时间不能倒退。");
         var external = new AssetWallet(player.PlayerId);

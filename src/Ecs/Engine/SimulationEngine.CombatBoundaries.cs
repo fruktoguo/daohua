@@ -233,7 +233,7 @@ public static partial class SimulationEngine
                 var deathAt = from.AddSeconds(actionElapsedBeforeCombat + Math.Max(0, deaths[deathCursor++] - battleFrom));
                 player.Progression.TotalDefeats += 1;
                 player.MarkDirty(PlayerSectionKind.Progression);
-                player.RecordStats(action.Id, deathAt.ToUnixTimeMilliseconds() / 1000d, report => report.Deaths += 1);
+                player.RecordStats(action.Id, deathAt.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta { Deaths = 1 });
                 eventSink.Add(new SimulationEvent(deathAt,
                     "combat.lost", $"阵亡：被 {WaveNames()} 击倒，原地调息等待复活。", definition.Id));
             }
@@ -290,7 +290,7 @@ public static partial class SimulationEngine
             player.MarkDirty(PlayerSectionKind.Progression);
             player.RecordStats(action.Id,
                 from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d,
-                report => report.Deaths += 1);
+                new PlayerStatsDelta { Deaths = 1 });
             action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search, gameData, updatedBattle.Seed,
                 waveNumber: 1) with
             { Phase = CombatExpeditionPhase.Respawning, PhaseDurationSeconds = encounter.PlayerRespawnSeconds };
@@ -316,18 +316,19 @@ public static partial class SimulationEngine
             }
         }
         // 波次清空计一次完成轮次，并按怪物分级累计击杀数。
-        player.RecordStats(action.Id, killAtUnix, report =>
+        double normalKills = 0, eliteKills = 0, bossKills = 0;
+        foreach (var enemy in waveEnemies)
         {
-            report.Cycles += 1;
-            foreach (var enemy in waveEnemies)
+            switch (gameData.CombatMonsters[enemy.EnemyId].Rank)
             {
-                switch (gameData.CombatMonsters[enemy.EnemyId].Rank)
-                {
-                    case CombatMonsterRank.Elite: report.EliteKills += 1; break;
-                    case CombatMonsterRank.Boss: report.BossKills += 1; break;
-                    default: report.NormalKills += 1; break;
-                }
+                case CombatMonsterRank.Elite: eliteKills += 1; break;
+                case CombatMonsterRank.Boss: bossKills += 1; break;
+                default: normalKills += 1; break;
             }
+        }
+        player.RecordStats(action.Id, killAtUnix, new PlayerStatsDelta
+        {
+            Cycles = 1, NormalKills = normalKills, EliteKills = eliteKills, BossKills = bossKills
         });
         player.MarkDirty(PlayerSectionKind.Loadout);
         player.MarkDirty(PlayerSectionKind.Progression);
@@ -336,27 +337,21 @@ public static partial class SimulationEngine
 
         completedActions += 1;
         completedRepeats += 1;
-        action.CompletedRepeats += 1;
+        PlayerActionQueueRules.RecordCompletedRound(action);
         player.Progression.CompletedActions += 1;
         player.MarkDirty(PlayerSectionKind.Progression);
         player.MarkDirty(PlayerSectionKind.Combat);
         player.MarkDirty(PlayerSectionKind.ActionQueue);
-        if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
         if (action.RemainingRepeats == 0)
         {
             if (player.Settings.LoopEnabled)
             {
-                action.RemainingRepeats = action.Intent.RepeatCount;
                 action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,
                     gameData, DeterministicSequence.NextSeed(updatedBattle.Seed), waveNumber: 1);
-                action.ProgressSeconds = 0;
-                if (player.Actions.Count > 1)
-                {
-                    player.RotateActionToTail(action.Id);
-                }
+                player.FinishActionRound(action.Id, loopable: true, killAtUnix);
                 return;
             }
-            player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: killAtUnix);
+            player.FinishActionRound(action.Id, loopable: true, killAtUnix);
             return;
         }
         action.Expedition = CreateSearchState(player, action, encounter, CombatExpeditionPhase.Search,

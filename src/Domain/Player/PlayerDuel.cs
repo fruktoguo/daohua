@@ -528,7 +528,7 @@ public sealed partial class PlayerAggregate
         Duel.ActiveDuelId = null;
         Duel.CooldownUntilUnixSeconds = nowUnix + settings.DefeatCooldownSeconds;
         RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null, nowUnix,
-            report => { report.DuelLosses += 1; report.Deaths += 1; });
+            new PlayerStatsDelta { DuelLosses = 1, Deaths = 1 });
         Progression.TotalDefeats += 1;
         _actions[0].Expedition = expedition! with
         {
@@ -563,12 +563,15 @@ public sealed partial class PlayerAggregate
         => ActionReportBook.RemoveStagedCombatItems(this, snapshot, atUnixSeconds);
 
     /// <summary>
-    /// 行动统计记账枢纽：同一条 apply 依次作用于
+    /// 行动统计记账枢纽：同一份已结算增量依次作用于
     /// ①指定行动实例账本（存在才记，不隐式建账）②离线账本（仅 Presence==Offline 时）
     /// ③每日账本（先按 UTC+8 自然日 rollover 再入账）。任一账本被写入即标记 Duel 脏。
     /// </summary>
-    internal void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
-        => ActionReportBook.RecordActionStats(this, actionInstanceId, atUnixSeconds, apply);
+    internal void RecordStats(Guid? actionInstanceId, double atUnixSeconds, in PlayerStatsDelta delta)
+    {
+        if (_statsSink is { } sink) sink.Record(this, actionInstanceId, atUnixSeconds, delta);
+        else ActionReportBook.RecordActionStats(this, actionInstanceId, atUnixSeconds, delta);
+    }
 
     /// <summary>队首行动开始推进时按实例建账（已存在则续用）；仅新建时标脏。</summary>
     internal void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)

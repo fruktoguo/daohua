@@ -12,8 +12,8 @@ public sealed partial class PlayerAggregate : IPlayerResourceContext
     IReadOnlyList<IPlayerActionState> IPlayerActionContext.Actions => _actionsView;
     void IPlayerActionContext.EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)
         => EnsureActionReport(instanceId, actionId, actionName, now);
-    void IPlayerActionContext.RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
-        => RecordStats(actionInstanceId, atUnixSeconds, apply);
+    void IPlayerActionContext.RecordStats(Guid? actionInstanceId, double atUnixSeconds, in PlayerStatsDelta delta)
+        => RecordStats(actionInstanceId, atUnixSeconds, delta);
     // 公共入口返回具体 QueuedAction 供命令路径直接使用；接口按基类型转发同一方法。
     IPlayerActionState IPlayerActionContext.EnqueuePriority(ActionIntent intent, DateTimeOffset at,
         ActionCatalog catalog, TravelActionState? travel, bool incrementVersion)

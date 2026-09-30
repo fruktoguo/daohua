@@ -168,9 +168,10 @@ public sealed class PlayerDuelComponent : YuoComponent
 /// <summary>怪物与玩家共享的战斗单位组件。</summary>
 public sealed class CombatantComponent : YuoComponent
 {
-    public string CombatantId { get; set; } = "";
-    public CombatantStats Stats { get; set; } = CombatantStats.Create(1, 1, 0, 1);
-    public CombatantState? State { get; set; }
+    /// <summary>遭遇与单位组件共同持有的唯一战斗状态；装配完成后即可参与相位或触发器。</summary>
+    public CombatantState State { get; set; } = null!;
+    public string CombatantId => State.Id;
+    public CombatantStats Stats => State.Stats;
     public bool IsPlayer { get; set; }
 }
 
@@ -182,13 +183,17 @@ public sealed class MonsterIdentityComponent : YuoComponent
 
 public sealed class SkillStateComponent : YuoComponent
 {
-    public List<SkillSlot> Skills { get; } = [];
-    public double[] CooldownUntil { get; set; } = [];
+    private CombatantState State => Entity.GetComponent<CombatantComponent>()!.State;
+    public IReadOnlyList<SkillSlot> Skills => State.Skills;
+    public double[]? CooldownUntil { get => State.SkillCooldownUntil; set => State.SkillCooldownUntil = value; }
+    public int PendingSkillIndex { get => State.PendingSkillIndex; set => State.PendingSkillIndex = value; }
+    public double CastCount { get => State.SkillCastCount; set => State.SkillCastCount = value; }
 }
 
 public sealed class BuffComponent : YuoComponent
 {
-    public List<CombatBuffState> Active { get; } = [];
+    /// <summary>战内 Buff 为单位状态的直接视图，授予、叠层和到期不会形成平行列表。</summary>
+    public List<CombatBuffState> Active => Entity.GetComponent<CombatantComponent>()!.State.Buffs;
 }
 
 public sealed class DropProfileComponent : YuoComponent

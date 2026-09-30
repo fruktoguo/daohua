@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 新基线最小充分门禁：代码、领域/服务测试、真实 PostgreSQL/WAL 容量、前端和 Compose 配置。
+# 新基线最小充分门禁：代码、领域/ECS/服务测试、真实 PostgreSQL/WAL 容量、前端和 Compose 配置。
 
 set -Eeuo pipefail
 
@@ -25,6 +25,10 @@ dotnet build Game.slnx --configuration Release --disable-build-servers --nologo
 if [[ -f tests/Domain.Tests/Domain.Tests.csproj ]]; then
   printf '%s\n' '==> 领域测试'
   dotnet test tests/Domain.Tests/Domain.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
+fi
+if [[ -f tests/Ecs.Tests/Ecs.Tests.csproj ]]; then
+  printf '%s\n' '==> ECS 运行时与适配边界测试'
+  dotnet test tests/Ecs.Tests/Ecs.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
 fi
 if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
   printf '%s\n' '==> 服务端测试'

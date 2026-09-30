@@ -99,7 +99,7 @@ public sealed class EcsMapNodeTests
         var worldComponent = playerEntity.GetComponent<PlayerWorldComponent>()!;
         Assert.NotEqual(0, worldComponent.CurrentNodeEntityId);
 
-        var context = new EcsPlayerActionContext(playerEntity, catalog);
+        var context = new EcsPlayerActionContext(playerEntity);
         var expected = runtime.World.GetEntity(worldComponent.CurrentNodeEntityId)!
             .GetComponent<EncounterProfileComponent>()!.EncounterIds;
         Assert.Equal(expected, context.NodeEncounterIds);

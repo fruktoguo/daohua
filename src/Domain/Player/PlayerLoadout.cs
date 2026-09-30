@@ -199,11 +199,12 @@ public sealed partial class PlayerAggregate
         // 功法经验与参悟升级计入行动统计账本（ability 级 LevelUp，TargetId 为功法 ID）。
         var headId = _actions.Count > 0 ? _actions[0].Id : (Guid?)null;
         var abilityIdValue = abilityId.Value;
-        RecordStats(headId, LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d, report =>
+        RecordStats(headId, LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
         {
-            report.AddAbilityExp(abilityIdValue, experience);
-            if (levelAfter > levelBefore)
-                report.LevelUps.Add(new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter));
+            AbilityId = abilityIdValue,
+            AbilityExperience = experience,
+            LevelUp = levelAfter > levelBefore
+                ? new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter) : null
         });
         Touch(PlayerSectionKind.Loadout);
     }

@@ -440,7 +440,7 @@ public static partial class SimulationEngine
         });
         action.ProgressSeconds = 0;
         action.Expedition = combatState;
-        player.RecordStats(action.Id, atUnix, report => report.Encounters += 1);
+        player.RecordStats(action.Id, atUnix, new PlayerStatsDelta { Encounters = 1 });
         AddCombatEventAt(ref events, entryAt, "combat.started", $"遭遇妖兽：{waveNames}。", definition.Id);
         return new CombatEntryPreparation(battle, combatState,
             deltas ?? new Dictionary<ItemId, double>(), events?.View ?? [], false);
@@ -624,7 +624,7 @@ public static partial class SimulationEngine
             player.MarkDirty(PlayerSectionKind.Combat);
             (deltas ??= []).Add(new AssetDelta(player.PlayerId, new AssetKey(id), -1, "auto-use"));
             // 即时消耗品扣件计入队首行动账本「失去」物品。
-            player.RecordStats(player.Actions[0].Id, now, report => report.AddItemLost(id, 1));
+            player.RecordStats(player.Actions[0].Id, now, new PlayerStatsDelta { LostItem = id, LostQuantity = 1 });
             events.Add(new SimulationEvent(at, "auto-use.activated", $"自动使用 {item.Name}。", ItemDeltas: new Dictionary<ItemId, double> { [id] = -1 }));
         }
         return deltas ?? [];
@@ -989,9 +989,9 @@ public static partial class SimulationEngine
                 {
                     var spoilsId = new ItemId(spoils.ItemId);
                     AddDelta(deltas ??= new Dictionary<ItemId, double>(), spoilsId, spoils.Quantity);
-                    player.RecordStats(action.Id, nowUnix, report => report.AddItem(spoilsId, spoils.Quantity));
+                    player.RecordStats(action.Id, nowUnix, new PlayerStatsDelta { GainedItem = spoilsId, GainedQuantity = spoils.Quantity });
                 }
-                player.RecordStats(action.Id, nowUnix, report => report.DuelWins += 1);
+                player.RecordStats(action.Id, nowUnix, new PlayerStatsDelta { DuelWins = 1 });
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.won",
                     playback.Forfeited
                         ? $"斗法获胜：{playback.OpponentName} 弃战离去，其暂存物品尽数落袋。"
@@ -1006,7 +1006,7 @@ public static partial class SimulationEngine
                     ActionReportBook.RemoveStagedCombatItems(player, playback.SelfStagedSnapshot, nowUnix);
                     player.Duel.CooldownUntilUnixSeconds = nowUnix + duelSettings.DefeatCooldownSeconds;
                     player.RecordStats(action.Id, nowUnix,
-                        report => { report.DuelLosses += 1; report.Deaths += 1; });
+                        new PlayerStatsDelta { DuelLosses = 1, Deaths = 1 });
                     player.Progression.TotalDefeats += 1;
                 }
                 AddCombatEvent(ref events, from, target, remainingSeconds, "duel.lost",
@@ -1045,11 +1045,12 @@ public static partial class SimulationEngine
         player.Loadout.AbilityExperiences[abilityId] = nextExp;
         var levelBefore = AbilityExpCurve.LevelFor(previousExp);
         var levelAfter = AbilityExpCurve.LevelFor(nextExp);
-        player.RecordStats(actionId, atUnixSeconds, report =>
+        player.RecordStats(actionId, atUnixSeconds, new PlayerStatsDelta
         {
-            report.AddAbilityExp(abilityIdValue, 1);
-            if (levelAfter > levelBefore)
-                report.LevelUps.Add(new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter));
+            AbilityId = abilityIdValue,
+            AbilityExperience = 1,
+            LevelUp = levelAfter > levelBefore
+                ? new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter) : null
         });
         player.MarkDirty(PlayerSectionKind.Loadout);
     }
@@ -1119,11 +1120,11 @@ public static partial class SimulationEngine
             // 满级（cap≤0）修为部分全额沉淀为底蕴，六维与战斗经验不受影响。
             var expCap = gameData.RealmProgression?.ExpCapFor(player.Progression.RealmLevel) ?? double.PositiveInfinity;
             var creditedExp = player.Progression.CreditExperience(monster.Experience, monster.Experience, expCap);
-            player.RecordStats(actionInstanceId, killAtUnixSeconds, report =>
+            player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta
             {
-                report.Experience += creditedExp;
-                report.Foundation += monster.Experience - creditedExp;
-                report.CombatExperience += monster.Experience;
+                Experience = creditedExp,
+                Foundation = monster.Experience - creditedExp,
+                CombatExperience = monster.Experience
             });
             DistributeRootExp(player, monster.Experience, gameData, actionInstanceId, killAtUnixSeconds);
         }
@@ -1149,7 +1150,7 @@ public static partial class SimulationEngine
             else
             {
                 AddDelta(deltas ??= new Dictionary<ItemId, double>(), drop.ItemId, quantity);
-                player.RecordStats(actionInstanceId, killAtUnixSeconds, report => report.AddItem(drop.ItemId, quantity));
+                player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = drop.ItemId, GainedQuantity = quantity });
             }
         }
     }
@@ -1197,11 +1198,12 @@ public static partial class SimulationEngine
                 _ => core with { ConsciousnessExp = core.ConsciousnessExp + share }
             };
             var aspect = attribute;
-            player.RecordStats(actionInstanceId, atUnixSeconds, report =>
+            player.RecordStats(actionInstanceId, atUnixSeconds, new PlayerStatsDelta
             {
-                report.RootExp.Add(aspect, share);
-                if (levelAfter > levelBefore)
-                    report.LevelUps.Add(new PlayerReportLevelUp("root", aspect.ToString().ToLowerInvariant(), levelBefore, levelAfter));
+                RootAspect = aspect,
+                RootExperience = share,
+                LevelUp = levelAfter > levelBefore
+                    ? new PlayerReportLevelUp("root", aspect.ToString().ToLowerInvariant(), levelBefore, levelAfter) : null
             });
         }
         player.Loadout.CoreAttributes = core;
@@ -1365,7 +1367,7 @@ public static partial class SimulationEngine
         player.MarkDirty(PlayerSectionKind.World);
         var arrivalUnix = from.AddSeconds((target - from).TotalSeconds - remainingSeconds).ToUnixTimeMilliseconds() / 1000d;
         // 抵达终点计一次完成轮次，随后实例出队归档账本。
-        player.RecordStats(action.Id, arrivalUnix, report => report.Cycles += 1);
+        player.RecordStats(action.Id, arrivalUnix, new PlayerStatsDelta { Cycles = 1 });
         player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: arrivalUnix);
         if (player.Actions.Count > 0 && player.Actions[0].Status == ActionQueueStatus.Pending)
         {
@@ -1480,11 +1482,11 @@ public static partial class SimulationEngine
         if (progressionTouched) player.MarkDirty(PlayerSectionKind.Progression);
         if (experienceCredited != 0 || foundationDelta != 0 || combatExperienceGained != 0)
             player.RecordStats(actionInstanceId, atUnixSeconds,
-                report =>
+                new PlayerStatsDelta
                 {
-                    report.Experience += experienceCredited;
-                    report.Foundation += foundationDelta;
-                    report.CombatExperience += combatExperienceGained;
+                    Experience = experienceCredited,
+                    Foundation = foundationDelta,
+                    CombatExperience = combatExperienceGained
                 });
         if (!double.IsFinite(player.Progression.Experience) || !double.IsFinite(player.Progression.Foundation)
             || !double.IsFinite(player.Progression.CombatExperience))
@@ -1531,8 +1533,7 @@ public static partial class SimulationEngine
             || !double.IsFinite(player.Progression.CombatExperience + experienceBase))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动收益超出数值范围。");
         action.ProgressSeconds = 0;
-        action.CompletedRepeats += 1;
-        if (action.RemainingRepeats > 0) action.RemainingRepeats -= 1;
+        PlayerActionQueueRules.RecordCompletedRound(action);
         completedActions += 1;
         completedRepeats += 1;
         Dictionary<ItemId, double>? itemRewards = null;
@@ -1571,17 +1572,14 @@ public static partial class SimulationEngine
         var experienceDelta = player.Progression.CreditExperience(experienceBase, experienceGain, expCap);
         // 账本按实际入账量记录：修为记瓶颈截断与底蕴兑换放大后的真实增量，底蕴记净变动，
         // 战斗经验按基础量记账；物品产出计获得、输入材料计失去。
-        player.RecordStats(action.Id, target.ToUnixTimeMilliseconds() / 1000d, report =>
+        player.RecordStats(action.Id, target.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
         {
-            report.Experience += experienceDelta;
-            report.Foundation += experienceGain - experienceDelta;
-            report.CombatExperience += experienceBase;
-            report.Cycles += 1;
-            if (itemRewards is not null)
-                foreach (var (item, quantity) in itemRewards)
-                    report.AddItem(item, quantity);
-            foreach (var (item, quantity) in definition.Inputs)
-                report.AddItemLost(item, quantity);
+            Experience = experienceDelta,
+            Foundation = experienceGain - experienceDelta,
+            CombatExperience = experienceBase,
+            Cycles = 1,
+            ItemGains = itemRewards,
+            ItemLosses = definition.Inputs
         });
         if (manaGain != 0)
             player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + manaGain);
@@ -1599,24 +1597,8 @@ public static partial class SimulationEngine
             definition.Name,
             definition.Id,
             itemRewards));
-        // -1 表示无限行动：每轮完成后保留队列项并继续下一轮；仅在严格递减至 0 时出队或循环重入。
-        if (action.RemainingRepeats == 0)
-        {
-            if (player.Settings.LoopEnabled && definition.ExecutionKind != ActionExecutionKind.Travel)
-            {
-                action.RemainingRepeats = action.Intent.RepeatCount;
-                action.ProgressSeconds = 0;
-                if (player.Actions.Count > 1)
-                {
-                    player.RotateActionToTail(action.Id);
-                }
-            }
-            else
-            {
-                player.RemoveAction(action.Id, incrementVersion: false,
-                    endedAtUnixSeconds: target.ToUnixTimeMilliseconds() / 1000d);
-            }
-        }
+        player.FinishActionRound(action.Id, definition.ExecutionKind != ActionExecutionKind.Travel,
+            target.ToUnixTimeMilliseconds() / 1000d);
     }
 
     private static double PrepareSustainedAutoUse(
@@ -1652,7 +1634,7 @@ public static partial class SimulationEngine
                     AddDelta(deltas ??= new Dictionary<ItemId, double>(), item.Id, -1d);
                     // 自动消耗品扣件计入「失去」物品。
                     player.RecordStats(actionInstanceId, at.ToUnixTimeMilliseconds() / 1000d,
-                        report => report.AddItemLost(item.Id, 1));
+                        new PlayerStatsDelta { LostItem = item.Id, LostQuantity = 1 });
                     slot = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
                     player.Settings.AutoUseSlots[i] = slot;
                     player.MarkDirty(PlayerSectionKind.Settings);
@@ -1764,7 +1746,7 @@ public static partial class SimulationEngine
                 + (deltas?.GetValueOrDefault(itemId) ?? 0d);
             if (available < 1d) continue;
             AddDelta(deltas ??= new Dictionary<ItemId, double>(), itemId, -1d);
-            player.RecordStats(actionInstanceId, atUnix, report => report.AddItemLost(itemId, 1));
+            player.RecordStats(actionInstanceId, atUnix, new PlayerStatsDelta { LostItem = itemId, LostQuantity = 1 });
             player.Settings.AutoUseSlots[index] = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
             player.MarkDirty(PlayerSectionKind.Settings);
             events ??= new SimulationEventTail();

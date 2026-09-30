@@ -195,6 +195,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             var settings = entity.AddComponent<PlayerSettingsComponent>();
             settings.Settings = aggregate.Settings;
             entity.AddComponent<PlayerDuelComponent>().Document = state.Duel;
+            entity.AddComponent<PlayerStatsInboxComponent>();
             var queue = entity.AddComponent<PlayerActionQueueComponent>();
             queue.LastAdvancedAt = state.LastSimulatedAt;
             foreach (var action in state.Actions)
@@ -209,6 +210,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     Travel = action.Travel
                 });
             }
+            entity.AddComponent<PlayerActionQueueMutationComponent>().Sink
+                = new EcsPlayerActionQueueMutationSink(entity, GameData.Duel.MaxBattleReports);
             var inventory = entity.AddComponent<PlayerInventoryComponent>();
             if (balances is not null)
                 foreach (var balance in balances)
@@ -242,23 +245,14 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     public void EnqueueAction(Guid playerId, ActionId actionId, double repeatCount = 1, Guid? actionInstanceId = null)
         => ExecuteOwned(() =>
         {
-            var player = GetPlayer(playerId);
-            var queue = player.GetComponent<PlayerActionQueueComponent>()!;
-            if (!GameData.Actions.Contains(actionId)) throw new DomainException(DomainErrorCode.NotFound, $"行动 {actionId} 不存在。");
-            if (!double.IsFinite(repeatCount) || (repeatCount != -1 && (repeatCount < 1 || repeatCount != Math.Floor(repeatCount))))
-                throw new DomainException(DomainErrorCode.InvalidArgument, "行动次数无效。");
-            var instanceId = actionInstanceId ?? Guid.NewGuid();
-            if (instanceId == Guid.Empty) throw new DomainException(DomainErrorCode.InvalidArgument, "行动实例标识不能为空。");
-            // 与聚合 Enqueue 同口径：入队锚点记录驻留节点，旅途中不登记。
-            var world = player.GetComponent<PlayerWorldComponent>()!.World;
-            queue.Actions.Add(new QueuedAction(instanceId, new ActionIntent(actionId, repeatCount,
-                AnchorNodeId: world.EdgeId is null ? world.NodeId : null), _clock.Current)
-            {
-                Status = queue.Actions.Count == 0 ? ActionQueueStatus.Running : ActionQueueStatus.Pending
-            });
-            var identity = player.GetOrAddComponent<PlayerIdentityComponent>();
-            identity.StateVersion = checked(identity.StateVersion + 1);
-            identity.MarkDirty(PlayerSectionKind.ActionQueue);
+            if (actionInstanceId == Guid.Empty)
+                throw new DomainException(DomainErrorCode.InvalidArgument, "行动实例标识不能为空。");
+            var entity = GetPlayer(playerId);
+            var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
+            entity.GetComponent<PlayerActionQueueMutationComponent>()!.Sink.Dispatch(
+                new EcsPlayerActionContext(entity), queue.Actions,
+                new(PlayerActionQueueMutationKind.Enqueue, actionInstanceId ?? Guid.Empty,
+                    new ActionIntent(actionId, repeatCount), _clock.Current, GameData.Actions));
         });
 
     public ValueTask RunOnceAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
@@ -286,7 +280,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             .Min());
 
     private DateTimeOffset? NextAdvanceBoundaryCore(Guid playerId)
-        => SimulationSchedule.NextVisibleBoundaryUtc(new EcsPlayerActionContext(GetPlayer(playerId), GameData), GameData);
+        => SimulationSchedule.NextVisibleBoundaryUtc(new EcsPlayerActionContext(GetPlayer(playerId)), GameData);
 
     /// <summary>卸载玩家及其运行中战斗实体；必须在 Fiber 所有权门内完成。</summary>
     public bool RemovePlayer(Guid playerId)
@@ -357,7 +351,6 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             if (!removed) return false;
             identity.StateVersion = aggregate.StateVersion;
             queue.LastAdvancedAt = aggregate.LastSimulatedAt;
-            if (index == 0) DestroyPlayerEncounters(entity.ID);
             SyncNodeMembership(entity);
             foreach (var section in aggregate.DirtySections) identity.MarkDirty(section);
             return true;
@@ -414,7 +407,9 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             entity.GetComponent<PlayerLoadoutComponent>()!.Loadout,
             entity.GetComponent<PlayerSettingsComponent>()!.Settings,
             entity.GetComponent<PlayerDuelComponent>()!.Duel,
-            queue.Actions);
+            queue.Actions,
+            new EcsPlayerStatsSink(entity),
+            entity.GetComponent<PlayerActionQueueMutationComponent>()!.Sink);
 
     /// <summary>分段脏流水号快照；差集判定语义与 PlayerAggregateState.DirtySectionMarks 一致。</summary>
     public IReadOnlyDictionary<PlayerSectionKind, long> GetDirtyMarks(Guid playerId)
@@ -453,10 +448,21 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             YuoWorld.DestroyEntityForce(encounterEntity);
             RuntimeInstrumentation.Count("lifecycle.entity_destroyed.encounter");
         }
-        if (World.GetEntity(playerEntityId)?.GetComponent<PlayerCombatComponent>() is { } combat)
+        if (World.GetEntity(playerEntityId) is { } player)
         {
-            combat.Encounter = null;
-            combat.EncounterEntityId = 0;
+            if (player.GetComponent<PlayerCombatComponent>() is { } combat)
+            {
+                combat.Encounter = null;
+                combat.EncounterEntityId = 0;
+            }
+            // 战内能力面只随遭遇存活；新遭遇重新装配，不能继续暴露已结束单位的状态视图。
+            player.RemoveComponent<OnHitLeechComponent>();
+            player.RemoveComponent<ManaLeechComponent>();
+            player.RemoveComponent<ThornsComponent>();
+            player.RemoveComponent<CombatTriggerInboxComponent>();
+            player.RemoveComponent<SkillStateComponent>();
+            player.RemoveComponent<BuffComponent>();
+            player.RemoveComponent<CombatantComponent>();
         }
     }
 
@@ -715,8 +721,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         identity.MonsterDefinitionId = definition.Id; identity.DisplayName = definition.Name;
         entity.AddComponent<CombatantComponent>();
         var combatant = entity.GetComponent<CombatantComponent>()!;
-        combatant.CombatantId = $"enemy:{entity.ID}"; combatant.Stats = definition.Stats; combatant.State = new CombatantState(combatant.CombatantId, definition.Stats, definition.Skills); combatant.IsPlayer = false;
-        entity.AddComponent<SkillStateComponent>().Skills.AddRange(definition.Skills);
+        combatant.State = new CombatantState($"enemy:{entity.ID}", definition.Stats, definition.Skills); combatant.IsPlayer = false;
+        entity.AddComponent<SkillStateComponent>();
         entity.AddComponent<BuffComponent>();
         entity.AddComponent<DropProfileComponent>().Drops = definition.DropTable;
         if (parentNodeEntityId is { } parent && World.GetEntity(parent) is { } parentEntity)
@@ -776,13 +782,15 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             RuntimeInstrumentation.Count("lifecycle.entity_created.monster");
             enemy.AddComponent<MonsterIdentityComponent>().MonsterDefinitionId = enemyDefinitions[i].Id;
             enemy.GetComponent<MonsterIdentityComponent>()!.DisplayName = enemyDefinitions[i].Name;
-            var combatant = enemy.AddComponent<CombatantComponent>(); combatant.CombatantId = state.Enemies[i].Id; combatant.Stats = state.Enemies[i].Stats; combatant.State = state.Enemies[i];
-            enemy.AddComponent<SkillStateComponent>().Skills.AddRange(enemyDefinitions[i].Skills); enemy.AddComponent<BuffComponent>(); enemy.AddComponent<DropProfileComponent>().Drops = enemyDefinitions[i].DropTable;
+            var combatant = enemy.AddComponent<CombatantComponent>(); combatant.State = state.Enemies[i];
+            enemy.AddComponent<SkillStateComponent>(); enemy.AddComponent<BuffComponent>(); enemy.AddComponent<DropProfileComponent>().Drops = enemyDefinitions[i].DropTable;
             CombatTriggerSurface.Attach(enemy, state.Enemies[i]);
             enemyIds.Add(enemy.ID);
         }
         encounter.EnemyEntityIds = enemyIds;
-        var playerCombatant = player.GetOrAddComponent<CombatantComponent>(); playerCombatant.CombatantId = state.Player.Id; playerCombatant.Stats = state.Player.Stats; playerCombatant.State = state.Player; playerCombatant.IsPlayer = true;
+        var playerCombatant = player.GetOrAddComponent<CombatantComponent>(); playerCombatant.State = state.Player; playerCombatant.IsPlayer = true;
+        player.GetOrAddComponent<SkillStateComponent>();
+        player.GetOrAddComponent<BuffComponent>();
         CombatTriggerSurface.Attach(player, state.Player);
         playerCombat.Encounter = state; playerCombat.EncounterSeed = seed;
         playerCombat.EncounterEntityId = encounterEntity.ID;
@@ -854,10 +862,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             identity.DisplayName = GameData.CombatMonsters.TryGetValue(identity.MonsterDefinitionId, out var definition)
                 ? definition.Name : identity.MonsterDefinitionId;
             var combatant = enemy.AddComponent<CombatantComponent>();
-            combatant.CombatantId = enemyState.Id;
-            combatant.Stats = enemyState.Stats;
             combatant.State = enemyState;
-            enemy.AddComponent<SkillStateComponent>().Skills.AddRange(enemyState.Skills);
+            enemy.AddComponent<SkillStateComponent>();
             enemy.AddComponent<BuffComponent>();
             enemy.AddComponent<DropProfileComponent>().Drops = definition?.DropTable ?? [];
             CombatTriggerSurface.Attach(enemy, enemyState);
@@ -865,10 +871,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         }
         encounter.EnemyEntityIds = enemyIds;
         var playerCombatant = player.GetOrAddComponent<CombatantComponent>();
-        playerCombatant.CombatantId = state.Player.Id;
-        playerCombatant.Stats = state.Player.Stats;
         playerCombatant.State = state.Player;
         playerCombatant.IsPlayer = true;
+        player.GetOrAddComponent<SkillStateComponent>();
+        player.GetOrAddComponent<BuffComponent>();
         CombatTriggerSurface.Attach(player, state.Player);
         var playerCombat = player.GetOrAddComponent<PlayerCombatComponent>();
         playerCombat.Encounter = state;

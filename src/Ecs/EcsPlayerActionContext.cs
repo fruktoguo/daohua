@@ -13,7 +13,7 @@ namespace DaoHua.Ecs;
 /// 行动系统对实体分段的直接视图。该对象只保存实体、配表与派生面板缓存，
 /// 不保存 PlayerAggregate 或聚合快照，队列、资源及账本变更直接进入组件。
 /// </summary>
-public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog catalog) : IPlayerResourceContext
+public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceContext
 {
     // 一个请求期间这些粗粒度组件不会被替换，只会修改其内部领域状态。
     // 缓存引用避免 8,000 万级自然边界循环反复走组件存储查询。
@@ -28,6 +28,9 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     private readonly PlayerSettingsComponent _settings = entity.GetComponent<PlayerSettingsComponent>()!;
     private readonly PlayerDuelComponent _duel = entity.GetComponent<PlayerDuelComponent>()!;
     private readonly PlayerStatsComponent _stats = entity.GetComponent<PlayerStatsComponent>()!;
+    private readonly EcsPlayerStatsSink _statsSink = new(entity);
+    private readonly IPlayerActionQueueMutationSink _actionQueueSink
+        = entity.GetComponent<PlayerActionQueueMutationComponent>()!.Sink;
 
     private PlayerIdentityComponent Identity => _identity;
     private PlayerActionQueueComponent Queue => _queue;
@@ -90,43 +93,17 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     public void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)
         => ActionReportBook.EnsureActionReport(this, instanceId, actionId, actionName, now);
 
-    public void RecordStats(Guid? actionInstanceId, double atUnixSeconds, Action<PlayerBattleReport> apply)
-        => ActionReportBook.RecordActionStats(this, actionInstanceId, atUnixSeconds, apply);
+    public void RecordStats(Guid? actionInstanceId, double atUnixSeconds, in PlayerStatsDelta delta)
+        => _statsSink.Record(this, actionInstanceId, atUnixSeconds, delta);
 
     /// <summary>出队与聚合保持同一归档、死亡恢复、后继激活及版本时机。</summary>
     public bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true, double endedAtUnixSeconds = -1)
-    {
-        var actions = Queue.Actions;
-        var index = actions.FindIndex(action => action.Id == actionInstanceId);
-        if (index < 0) return false;
-        if (actions[index].Expedition is not null && Resources.Hitpoints <= 0)
-        {
-            Resources.Hitpoints = 1;
-            MarkDirty(PlayerSectionKind.Combat);
-        }
-        ActionReportBook.ArchiveActionReport(this, actionInstanceId,
-            endedAtUnixSeconds >= 0 ? endedAtUnixSeconds : LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d,
-            catalog.Duel.MaxBattleReports);
-        actions.RemoveAt(index);
-        if (index == 0 && actions.Count > 0 && actions[0].Status == ActionQueueStatus.Pending)
-            actions[0].Status = ActionQueueStatus.Running;
-        if (incrementVersion) TouchActionQueue();
-        return true;
-    }
+        => _actionQueueSink.Dispatch(this, Queue.Actions, new(PlayerActionQueueMutationKind.Remove, actionInstanceId,
+            IncrementVersion: incrementVersion, EndedAtUnixSeconds: endedAtUnixSeconds)).Changed;
 
     public bool RotateActionToTail(Guid actionInstanceId)
-    {
-        var actions = Queue.Actions;
-        var index = actions.FindIndex(action => action.Id == actionInstanceId);
-        if (index < 0 || actions.Count <= 1) return false;
-        var action = actions[index];
-        actions.RemoveAt(index);
-        if (action.Status == ActionQueueStatus.Running) action.Status = ActionQueueStatus.Pending;
-        actions.Add(action);
-        if (actions[0].Status == ActionQueueStatus.Pending) actions[0].Status = ActionQueueStatus.Running;
-        TouchActionQueue();
-        return true;
-    }
+        => _actionQueueSink.Dispatch(this, Queue.Actions,
+            new(PlayerActionQueueMutationKind.Rotate, actionInstanceId)).Changed;
 
     /// <summary>
     /// 与 <see cref="PlayerAggregate.EnqueuePriority"/> 同一语义：同类行动去重归档、挂起运行中队首、
@@ -134,44 +111,14 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
     /// </summary>
     public IPlayerActionState EnqueuePriority(ActionIntent intent, DateTimeOffset at, ActionCatalog actionCatalog,
         TravelActionState? travel = null, bool incrementVersion = true)
-    {
-        ArgumentNullException.ThrowIfNull(actionCatalog);
-        if (intent is null || !intent.ActionId.IsValid)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
-        if (!actionCatalog.Contains(intent.ActionId))
-            throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
-        var actions = Queue.Actions;
-        for (var i = actions.Count - 1; i >= 0; i--)
-        {
-            if (actions[i].Intent.ActionId == intent.ActionId)
-            {
-                ActionReportBook.ArchiveActionReport(this, actions[i].Id,
-                    at.ToUnixTimeMilliseconds() / 1000d, catalog.Duel.MaxBattleReports);
-                actions.RemoveAt(i);
-            }
-        }
-        if (actions.Count >= PlayerAggregate.MaxActionQueueLength)
-            throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {PlayerAggregate.MaxActionQueueLength} 项。");
-        if (actions.Count > 0 && actions[0].Status == ActionQueueStatus.Running)
-            actions[0].Status = ActionQueueStatus.Pending;
-        var action = new QueuedAction(Guid.NewGuid(), intent, at)
-        {
-            Status = ActionQueueStatus.Running,
-            Travel = travel
-        };
-        actions.Insert(0, action);
-        if (incrementVersion) TouchActionQueue();
-        else MarkDirty(PlayerSectionKind.ActionQueue);
-        return action;
-    }
+        => _actionQueueSink.Dispatch(this, Queue.Actions, new(PlayerActionQueueMutationKind.EnqueuePriority,
+            Intent: intent, At: at, Catalog: actionCatalog, Travel: travel, IncrementVersion: incrementVersion)).Action!;
 
     /// <summary>仅在网络或落盘快照边界导出斗法分段，行动边界不调用此方法。</summary>
     public PlayerDuelStateDocument ExportDuelDocument()
         => PlayerDuelStateCodec.Export(Duel, Queue.Actions.Count == 0 ? null : Queue.Actions[0].Id);
 
-    private void TouchActionQueue()
-    {
-        StateVersion = checked(StateVersion + 1);
-        MarkDirty(PlayerSectionKind.ActionQueue);
-    }
+    public PlayerActionRoundDisposition FinishActionRound(Guid actionInstanceId, bool loopable, double endedAtUnixSeconds)
+        => _actionQueueSink.Dispatch(this, Queue.Actions, new(PlayerActionQueueMutationKind.FinishRound, actionInstanceId,
+            IncrementVersion: false, EndedAtUnixSeconds: endedAtUnixSeconds, Loopable: loopable)).RoundDisposition;
 }

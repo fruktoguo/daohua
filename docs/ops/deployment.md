@@ -64,6 +64,8 @@ Vite 固定监听 `127.0.0.1:15172`，将 `/api`、`/ws` 代理到 API。前端�
 scripts/verify.sh
 ```
 
+该入口包含 Release 构建、Domain/ECS/Server 三套测试、配表校验、PostgreSQL 容量门禁与前端构建。Server 的 PostgreSQL 集成测试须提供 `DAOHUA_MARKET_TEST_CONNECTION`；本地验证可使用独立测试库，与日常开发库隔离。
+
 直接源码烟测且没有静态 `wwwroot` 时：
 
 ```bash

@@ -423,6 +423,9 @@ public sealed partial class PlayerAggregate
     private long _cachedAttributeRevision = -1;
     private GameDataCatalog? _cachedAttributeCatalog;
     private PlayerAttributes? _cachedAttributes;
+    private IPlayerStatsSink? _statsSink;
+    private IPlayerActionQueueMutationSink? _actionQueueSink;
+    private PlayerActionQueueMutationContext? _actionQueueWork;
 
     private PlayerAggregate(
         PlayerId playerId,
@@ -594,13 +597,17 @@ public sealed partial class PlayerAggregate
         PlayerLoadoutState loadout,
         PlayerSettingsState settings,
         PlayerDuelState duel,
-        List<QueuedAction> actions)
+        List<QueuedAction> actions,
+        IPlayerStatsSink statsSink,
+        IPlayerActionQueueMutationSink actionQueueSink)
         => new(playerId, accountId, displayName, createdAt, gameDataFingerprint,
             progression, world, resources, combat, buffs, loadout, settings, duel, actions)
         {
             StateVersion = stateVersion,
             Presence = presence,
-            LastSimulatedAt = lastSimulatedAt
+            LastSimulatedAt = lastSimulatedAt,
+            _statsSink = statsSink,
+            _actionQueueSink = actionQueueSink
         };
 
     /// <summary>
@@ -677,43 +684,8 @@ public sealed partial class PlayerAggregate
     /// 3. 行动必须存在于配表目录中。
     /// </summary>
     public QueuedAction Enqueue(ActionIntent intent, DateTimeOffset now, ActionCatalog catalog)
-    {
-        ArgumentNullException.ThrowIfNull(catalog);
-        // RepeatCount 必须为整数（-1 除外）：非整数递减后会落入负数区间，"== 0" 出队条件永不成立，形成事实上的无限行动。
-        if (intent is null || !intent.ActionId.IsValid || !double.IsFinite(intent.RepeatCount)
-            || (intent.RepeatCount != -1 && (intent.RepeatCount < 1 || intent.RepeatCount > 1_000_000
-                || intent.RepeatCount != Math.Floor(intent.RepeatCount))))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
-        if (_actions.Count >= MaxActionQueueLength)
-            throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
-        if (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "行动目标节点无效。");
-        if (intent.Parameters is not null && intent.Parameters.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value)))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "行动参数无效。");
-        if (!catalog.Contains(intent.ActionId))
-            throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
-        var definition = catalog.Get(intent.ActionId);
-        // 专用执行器（当前为战斗遭遇）不使用普通行动时长，而是由自身阶段时钟推进。
-        // 只有普通计时行动的无限循环才必须拒绝零时长，避免模拟器无法消耗时间。
-        if (intent.RepeatCount == -1
-            && definition.DurationSeconds <= 0
-            && definition.ExecutionKind != ActionExecutionKind.CombatEncounter)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "无限重复行动必须具有正时长，避免模拟无法推进。");
-        var normalizedIntent = new ActionIntent(
-            intent.ActionId,
-            intent.RepeatCount,
-            intent.TargetNodeId,
-            intent.Parameters is null
-                ? null
-                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
-            intent.PvpEnabled,
-            // 锚点记录入队时驻留节点：自动移动开轮准入的唯一目的地真源，旅途中入队不登记。
-            intent.AnchorNodeId ?? (World.EdgeId is null ? World.NodeId : null));
-        var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now);
-        _actions.Add(action);
-        Touch(PlayerSectionKind.ActionQueue);
-        return action;
-    }
+        => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.Enqueue,
+            Intent: intent, At: now, Catalog: catalog)).Action!;
 
     /// <summary>
     /// 高优先级插入行动到队列首位（Index 0），专用于 world.travel 移动行动。
@@ -727,103 +699,24 @@ public sealed partial class PlayerAggregate
         ActionCatalog catalog,
         TravelActionState? travel = null,
         bool incrementVersion = true)
-    {
-        ArgumentNullException.ThrowIfNull(catalog);
-        if (intent is null || !intent.ActionId.IsValid)
-            throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
-        if (!catalog.Contains(intent.ActionId))
-            throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
-
-        // 移除现存的同类行动（保持 world.travel 唯一）；被移除实例的统计账本随之归档。
-        for (var i = _actions.Count - 1; i >= 0; i--)
-        {
-            if (_actions[i].Intent.ActionId == intent.ActionId)
-            {
-                ArchiveReportForAction(_actions[i].Id, now);
-                _actions.RemoveAt(i);
-            }
-        }
-
-        if (_actions.Count >= MaxActionQueueLength)
-            throw new DomainException(DomainErrorCode.Conflict, $"行动队列最多只能包含 {MaxActionQueueLength} 项。");
-
-        // 原首位行动若正在运行，挂起为 Pending，已有 ProgressSeconds 完整保留
-        if (_actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Running)
-        {
-            _actions[0].Status = ActionQueueStatus.Pending;
-        }
-
-        var normalizedIntent = new ActionIntent(
-            intent.ActionId,
-            1,
-            intent.TargetNodeId,
-            intent.Parameters is null
-                ? null
-                : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
-            intent.PvpEnabled,
-            intent.AnchorNodeId);
-
-        var action = new QueuedAction(Guid.NewGuid(), normalizedIntent, now)
-        {
-            Travel = travel,
-            Status = ActionQueueStatus.Running
-        };
-
-        _actions.Insert(0, action);
-        if (incrementVersion) Touch(PlayerSectionKind.ActionQueue);
-        else MarkDirty(PlayerSectionKind.ActionQueue);
-        return action;
-    }
+        => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.EnqueuePriority,
+            Intent: intent, At: now, Catalog: catalog, Travel: travel, IncrementVersion: incrementVersion)).Action!;
 
     /// <summary>
     /// 从队列中显式取消/移除指定行动实例。
     /// 若移除的是队首正在运行的行动，后续排队的挂起行动立即激活为运行中。
     /// </summary>
     public bool RemoveAction(Guid actionInstanceId, bool incrementVersion = true, double endedAtUnixSeconds = -1)
-    {
-        var index = _actions.FindIndex(action => action.Id == actionInstanceId);
-        if (index < 0) return false;
-        if (_actions[index].Expedition is not null && Resources.Hitpoints <= 0)
-        {
-            Resources.Hitpoints = 1;
-            MarkDirty(PlayerSectionKind.Combat);
-        }
-        // 实例离开队列即归档其统计账本；未传精确时刻时按当前模拟时钟收尾。
-        ArchiveReportForAction(actionInstanceId,
-            endedAtUnixSeconds >= 0 ? endedAtUnixSeconds : LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d);
-        _actions.RemoveAt(index);
-        if (index == 0 && _actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Pending)
-        {
-            _actions[0].Status = ActionQueueStatus.Running;
-        }
-        if (incrementVersion) Touch(PlayerSectionKind.ActionQueue);
-        return true;
-    }
+        => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.Remove, actionInstanceId,
+            IncrementVersion: incrementVersion, EndedAtUnixSeconds: endedAtUnixSeconds)).Changed;
 
     /// <summary>
     /// 调整队列中某项行动的执行次序（-1 向上移一位，1 向下移一位）。
     /// 调序后严格维护不变量：仅队首（Index 0）允许为运行中状态，其余项降为排队中。
     /// </summary>
     public bool MoveAction(Guid actionInstanceId, int direction)
-    {
-        if (direction is not (-1 or 1))
-            throw new DomainException(DomainErrorCode.InvalidArgument, "行动移动方向必须为 -1 或 1。");
-        var index = _actions.FindIndex(action => action.Id == actionInstanceId);
-        var target = index + direction;
-        if (index < 0) return false;
-        if (target < 0 || target >= _actions.Count) return false;
-        (_actions[index], _actions[target]) = (_actions[target], _actions[index]);
-        if (_actions.Count > 0)
-        {
-            if (_actions[0].Status == ActionQueueStatus.Pending) _actions[0].Status = ActionQueueStatus.Running;
-            for (var i = 1; i < _actions.Count; i++)
-            {
-                if (_actions[i].Status == ActionQueueStatus.Running) _actions[i].Status = ActionQueueStatus.Pending;
-            }
-        }
-        Touch(PlayerSectionKind.ActionQueue);
-        return true;
-    }
+        => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.Move, actionInstanceId,
+            Direction: direction)).Changed;
 
     /// <summary>
     /// 切换行动队列全局无限循环状态。开启后队列最后一项完成后重新回到头部轮询。
@@ -846,70 +739,22 @@ public sealed partial class PlayerAggregate
     }
 
     /// <summary>
-    /// 完成或根据循环设置重新入队队首行动。
-    /// 若启用全局循环且行动非一次性移动（world.travel），则重置其重复次数与耗时进度后追加至队尾；
-    /// 否则直接移出队列。若队列仍有待执行项，激活新队首。
-    /// </summary>
-    public QueuedAction? CompleteOrRequeueHeadAction(Guid actionId, DateTimeOffset now)
-    {
-        var index = _actions.FindIndex(action => action.Id == actionId);
-        if (index < 0) return null;
-        var current = _actions[index];
-        // 旧实例出队即归档账本；循环重入产生新实例，将另行建账。
-        ArchiveReportForAction(current.Id, now);
-        _actions.RemoveAt(index);
-
-        var isLoopable = Settings.LoopEnabled && current.Intent.ActionId.Value != "world.travel";
-        QueuedAction? requeued = null;
-        if (isLoopable)
-        {
-            var repeats = current.Intent.RepeatCount > 0 ? current.Intent.RepeatCount : 1;
-            requeued = new QueuedAction(Guid.NewGuid(), current.Intent, now)
-            {
-                RemainingRepeats = repeats,
-                CompletedRepeats = 0,
-                ProgressSeconds = 0,
-                Status = _actions.Count == 0 ? ActionQueueStatus.Running : ActionQueueStatus.Pending,
-                Travel = null,
-                Expedition = null
-            };
-            _actions.Add(requeued);
-        }
-
-        if (_actions.Count > 0 && _actions[0].Status == ActionQueueStatus.Pending)
-        {
-            _actions[0].Status = ActionQueueStatus.Running;
-        }
-
-        Touch(PlayerSectionKind.ActionQueue);
-        return isLoopable ? requeued : null;
-    }
-
-    /// <summary>
     /// 将指定行动实例轮转到队列末尾（用于队列无限循环调度或受阻行动换位）。
     /// 轮转后严格维护不变量：新的队首若为 Pending 则置为 Running，原行动若为 Running 则置为 Pending（Blocked 则保持 Blocked）。
     /// </summary>
     public bool RotateActionToTail(Guid actionInstanceId)
-    {
-        var index = _actions.FindIndex(action => action.Id == actionInstanceId);
-        if (index < 0 || _actions.Count <= 1) return false;
+        => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.Rotate, actionInstanceId)).Changed;
 
-        var action = _actions[index];
-        _actions.RemoveAt(index);
-        if (action.Status == ActionQueueStatus.Running)
-        {
-            action.Status = ActionQueueStatus.Pending;
-        }
-        _actions.Add(action);
+    /// <summary>已结算轮次后的队列裁决；负数重复不离队，循环保留原实例账本。</summary>
+    public PlayerActionRoundDisposition FinishActionRound(Guid actionInstanceId, bool loopable, double endedAtUnixSeconds)
+        => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.FinishRound, actionInstanceId,
+            IncrementVersion: false, EndedAtUnixSeconds: endedAtUnixSeconds, Loopable: loopable)).RoundDisposition;
 
-        if (_actions[0].Status == ActionQueueStatus.Pending)
-        {
-            _actions[0].Status = ActionQueueStatus.Running;
-        }
-
-        Touch(PlayerSectionKind.ActionQueue);
-        return true;
-    }
+    private PlayerActionQueueMutationResult ApplyActionQueueMutation(in PlayerActionQueueMutation mutation)
+        => _actionQueueSink is { } sink
+            ? sink.Dispatch(this, _actions, mutation)
+            : PlayerActionQueueRules.DispatchInline(_actionQueueWork ??= new(), this, _actions, mutation,
+                DuelSettingsTuning.MaxBattleReports);
 
     /// <summary>
     /// 轮转队首行动至队尾。当队首被阻断且队列有多项行动时轮换，以便后续未阻断行动得到调度。
@@ -943,7 +788,7 @@ public sealed partial class PlayerAggregate
         // 突破升级计入行动统计账本（realm 级 LevelUp，TargetId 恒为空串）。
         RecordStats(_actions.Count > 0 ? _actions[0].Id : (Guid?)null,
             LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d,
-            report => report.LevelUps.Add(new PlayerReportLevelUp("realm", "", realmBefore, Progression.RealmLevel)));
+            new PlayerStatsDelta { LevelUp = new PlayerReportLevelUp("realm", "", realmBefore, Progression.RealmLevel) });
         Touch(PlayerSectionKind.Progression);
     }
 
