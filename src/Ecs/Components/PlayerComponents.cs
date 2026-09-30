@@ -229,6 +229,8 @@ public sealed class CombatEncounterComponent : YuoComponent
     public long PrimaryTargetEntityId { get; set; }
     public long AttributeRevision { get; set; }
     public List<CombatEvent> LastEvents { get; } = [];
+    /// <summary>AdvanceBoundary 推进期间的相位工作上下文：相位 System 经 RunSystem&lt;tag&gt; 派发后从此读取；请求边界间为 null。</summary>
+    public DaoHua.Ecs.Combat.CombatPhaseContext? PhaseContext { get; set; }
 }
 
 public sealed class CombatLogComponent : YuoComponent

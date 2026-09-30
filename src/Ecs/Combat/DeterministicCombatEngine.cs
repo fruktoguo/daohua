@@ -1,4 +1,6 @@
 using System.Text.Json;
+using DaoHua.Ecs.Combat;
+using DaoHua.Ecs.Components;
 using Domain.Common;
 using Domain.Combat;
 using Domain.GameData;
@@ -67,7 +69,8 @@ public static class DeterministicCombatEngine
     /// 不复制伤害公式，也不改变随机流；返回结果的事件列表只包含本边界产生的事件。
     /// 当目标时间早于下一边界时只推进战斗时钟，不产生事件。
     /// </summary>
-    public static CombatAdvanceResult AdvanceOneBoundary(CombatEncounterState encounter, double targetSeconds)
+    public static CombatAdvanceResult AdvanceOneBoundary(CombatEncounterState encounter, double targetSeconds,
+        ICombatPhaseDispatcher? dispatcher = null, CombatEncounterComponent? host = null)
     {
         ArgumentNullException.ThrowIfNull(encounter);
         ValidateTarget(encounter, targetSeconds);
@@ -75,12 +78,10 @@ public static class DeterministicCombatEngine
         if (encounter.Outcome != CombatOutcome.Running || from >= targetSeconds)
             return EmptyResult(encounter, from, targetSeconds);
 
-        List<CombatEvent>? events = null;
-        List<double>? playerDeaths = null;
-        List<double>? playerRespawns = null;
-        AdvanceBoundary(encounter, targetSeconds, ref events, ref playerDeaths, ref playerRespawns);
+        var context = new CombatPhaseContext { Encounter = encounter };
+        AdvanceBoundary(encounter, targetSeconds, dispatcher ?? InlineCombatPhaseDispatcher.Instance, host, context);
         return new CombatAdvanceResult(encounter.EncounterId, from, encounter.ElapsedSeconds, encounter.Outcome,
-            (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence, playerDeaths, playerRespawns);
+            (IReadOnlyList<CombatEvent>?)context.Events ?? [], encounter.Sequence, context.PlayerDeaths, context.PlayerRespawns);
     }
 
     /// <summary>
@@ -89,23 +90,23 @@ public static class DeterministicCombatEngine
     /// <param name="encounter">遭遇战状态（就地推进）。</param>
     /// <param name="targetSeconds">目标战斗时钟秒数（不得早于当前已推进时间）。</param>
     /// <returns>本段推进的战斗帧：事件明细、终局裁决与序列号。</returns>
-    public static CombatAdvanceResult AdvanceTo(CombatEncounterState encounter, double targetSeconds)
+    public static CombatAdvanceResult AdvanceTo(CombatEncounterState encounter, double targetSeconds,
+        ICombatPhaseDispatcher? dispatcher = null, CombatEncounterComponent? host = null)
     {
         ArgumentNullException.ThrowIfNull(encounter);
         ValidateTarget(encounter, targetSeconds);
         var from = encounter.ElapsedSeconds;
-        List<CombatEvent>? events = null;
-        List<double>? playerDeaths = null;
-        List<double>? playerRespawns = null;
+        dispatcher ??= InlineCombatPhaseDispatcher.Instance;
+        var context = new CombatPhaseContext { Encounter = encounter };
         var eventCount = 0;
         while (encounter.Outcome == CombatOutcome.Running && encounter.ElapsedSeconds < targetSeconds - 1e-12)
         {
             if (++eventCount > MaxEventsPerAdvance)
                 throw new DomainException(DomainErrorCode.InvariantViolation, "战斗推进超过最大事件数。");
-            if (!AdvanceBoundary(encounter, targetSeconds, ref events, ref playerDeaths, ref playerRespawns)) break;
+            if (!AdvanceBoundary(encounter, targetSeconds, dispatcher, host, context)) break;
         }
         return new CombatAdvanceResult(encounter.EncounterId, from, targetSeconds, encounter.Outcome,
-            (IReadOnlyList<CombatEvent>?)events ?? [], encounter.Sequence, playerDeaths, playerRespawns);
+            (IReadOnlyList<CombatEvent>?)context.Events ?? [], encounter.Sequence, context.PlayerDeaths, context.PlayerRespawns);
     }
 
     private static void ValidateTarget(CombatEncounterState encounter, double targetSeconds)
@@ -118,7 +119,7 @@ public static class DeterministicCombatEngine
         => new(encounter.EncounterId, from, to, encounter.Outcome, [], encounter.Sequence);
 
     private static bool AdvanceBoundary(CombatEncounterState encounter, double targetSeconds,
-        ref List<CombatEvent>? events, ref List<double>? playerDeaths, ref List<double>? playerRespawns)
+        ICombatPhaseDispatcher dispatcher, CombatEncounterComponent? host, CombatPhaseContext context)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.event");
         var naturalBoundary = GetNaturalBoundarySeconds(encounter, out var effectAt);
@@ -133,39 +134,37 @@ public static class DeterministicCombatEngine
         encounter.ElapsedSeconds = Math.Max(encounter.ElapsedSeconds, naturalBoundary);
 
         if (effectAt <= encounter.ElapsedSeconds + 1e-12)
-            ApplyBuffTick(encounter, effectAt);
+        {
+            context.EffectAt = effectAt;
+            dispatcher.Dispatch<ICombatBuffTickPhase>(host, context);
+        }
 
         if (encounter.IsPlayerDowned)
         {
             if (encounter.PlayerRespawnAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-            {
-                encounter.Player.Hitpoints = encounter.Player.Stats.MaxHitpoints;
-                encounter.PlayerRespawnAtSeconds = double.PositiveInfinity;
-                DecideInitialActions(encounter);
-                (playerRespawns ??= []).Add(encounter.ElapsedSeconds);
-            }
+                dispatcher.Dispatch<ICombatPlayerRespawnPhase>(host, context);
         }
         else
         {
             if (encounter.Player.IsAlive && encounter.Player.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                PlayerAct(encounter, ref events);
+                dispatcher.Dispatch<ICombatPlayerActPhase>(host, context);
             for (var i = 0; i < encounter.Enemies.Count; i++)
             {
                 var enemy = encounter.Enemies[i];
                 if (enemy.IsAlive && enemy.NextAttackAtSeconds <= encounter.ElapsedSeconds + 1e-12)
-                    EnemyAct(encounter, enemy, i, ref events);
+                {
+                    context.EnemyIndex = i;
+                    context.Enemy = enemy;
+                    dispatcher.Dispatch<ICombatEnemyActPhase>(host, context);
+                }
             }
 
             if (!encounter.Player.IsAlive && encounter.PlayerRespawnSeconds > 0)
-            {
-                encounter.PlayerRespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
-                InterruptCasts(encounter);
-                (playerDeaths ??= []).Add(encounter.ElapsedSeconds);
-            }
+                dispatcher.Dispatch<ICombatPlayerDownedPhase>(host, context);
         }
 
         encounter.Sequence += 1;
-        UpdateOutcome(encounter);
+        dispatcher.Dispatch<ICombatOutcomePhase>(host, context);
         return true;
     }
 
@@ -187,6 +186,29 @@ public static class DeterministicCombatEngine
             throw new DomainException(DomainErrorCode.InvariantViolation, "战斗攻击时间无效。");
         return next;
     }
+
+    /// <summary>玩家复活相位：倒地倒计时到期时恢复满气血、清空复活计时并重新决策初始动作。</summary>
+    internal static void ApplyPlayerRespawnPhase(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        encounter.Player.Hitpoints = encounter.Player.Stats.MaxHitpoints;
+        encounter.PlayerRespawnAtSeconds = double.PositiveInfinity;
+        DecideInitialActions(encounter);
+        (context.PlayerRespawns ??= []).Add(encounter.ElapsedSeconds);
+    }
+
+    /// <summary>玩家死亡相位：倒地瞬间进入复活倒计时，全场吟唱作废并记录死亡时刻。</summary>
+    internal static void ApplyPlayerDownedPhase(CombatPhaseContext context)
+    {
+        var encounter = context.Encounter;
+        encounter.PlayerRespawnAtSeconds = encounter.ElapsedSeconds + encounter.PlayerRespawnSeconds;
+        InterruptCasts(encounter);
+        (context.PlayerDeaths ??= []).Add(encounter.ElapsedSeconds);
+    }
+
+    /// <summary>边界收尾相位：序列推进后按双方存活与战斗预算裁决 Outcome。</summary>
+    internal static void ApplyOutcomePhase(CombatPhaseContext context)
+        => UpdateOutcome(context.Encounter);
 
     /// <summary>团灭瞬间全场吟唱作废：未完成的吟唱视为未释放，退还起手预扣灵力且该槽不进入冷却。</summary>
     private static void InterruptCasts(CombatEncounterState encounter)
@@ -377,22 +399,26 @@ public static class DeterministicCombatEngine
                 SelectEnemyTarget(encounter, 0, 3));
     }
 
-    /// <summary>玩家方出手边界：先结算待完成动作（普攻或吟唱完成的技能），再决策下一动作。</summary>
-    private static void PlayerAct(CombatEncounterState encounter, ref List<CombatEvent>? events)
+    /// <summary>玩家方出手相位：先结算待完成动作（普攻或吟唱完成的技能），再决策下一动作。</summary>
+    internal static void ApplyPlayerActPhase(CombatPhaseContext context)
     {
+        var encounter = context.Encounter;
         var player = encounter.Player;
         var allies = encounter.PlayerAllies;
         ResolvePending(encounter, player, allies, encounter.Enemies,
-            SelectEnemyTarget(encounter, player.AttackCount, 3), 0, ref events);
+            SelectEnemyTarget(encounter, player.AttackCount, 3), 0, ref context.Events);
         DecideNextAction(encounter, player, allies, encounter.Enemies,
             SelectEnemyTarget(encounter, player.AttackCount, 3));
     }
 
 
-    /// <summary>敌方出手边界：与玩家同构，先结算待完成动作再决策下一动作。</summary>
-    private static void EnemyAct(CombatEncounterState encounter, CombatantState enemy, int index, ref List<CombatEvent>? events)
+    /// <summary>敌方出手相位：与玩家同构，先结算待完成动作再决策下一动作。</summary>
+    internal static void ApplyEnemyActPhase(CombatPhaseContext context)
     {
-        ResolvePending(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player, (ulong)(1 + index), ref events);
+        var encounter = context.Encounter;
+        var enemy = context.Enemy!;
+        ResolvePending(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player,
+            (ulong)(1 + context.EnemyIndex), ref context.Events);
         DecideNextAction(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player);
     }
 
@@ -484,9 +510,11 @@ public static class DeterministicCombatEngine
         }
     }
 
-    /// <summary>战内效果边界结算：先剔除到期 Buff，再按 5 秒网格对存活单位结算周期回复。</summary>
-    private static void ApplyBuffTick(CombatEncounterState encounter, double at)
+    /// <summary>战内效果相位结算：先剔除到期 Buff，再按 5 秒网格对存活单位结算周期回复。</summary>
+    internal static void ApplyBuffTickPhase(CombatPhaseContext context)
     {
+        var encounter = context.Encounter;
+        var at = context.EffectAt;
         encounter.Player.Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);
         for (var i = 0; i < encounter.Enemies.Count; i++)
             encounter.Enemies[i].Buffs.RemoveAll(buff => buff.ExpiresAtSeconds <= at + 1e-9);

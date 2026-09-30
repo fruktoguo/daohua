@@ -400,7 +400,8 @@ public static class EcsActionSession
         var state = encounter.State;
         if (state.Outcome == CombatOutcome.Running && state.ElapsedSeconds < e.BattleTarget - 1e-12)
         {
-            var result = DeterministicCombatEngine.AdvanceTo(state, e.BattleTarget);
+            var result = DeterministicCombatEngine.AdvanceTo(state, e.BattleTarget,
+                DaoHua.Ecs.Combat.EcsCombatPhaseDispatcher.Instance, encounter);
             encounter.LastEvents.AddRange(result.Events);
             e.BattleEvents.AddRange(result.Events);
             if (result.PlayerDeathTimestamps is { } deaths) e.BattleDeaths.AddRange(deaths);
