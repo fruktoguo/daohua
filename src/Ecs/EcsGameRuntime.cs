@@ -58,6 +58,9 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     public int PlayerCount => _shards.Sum(shard => shard.PlayerCount);
     public int MapNodeCount => _shards[0].MapNodeCount;
 
+    /// <summary>按节点 ID 解析长期存在的地图节点实体（单分片入口；多分片各 shard 持有自己的节点实体集）。</summary>
+    public long? GetMapNodeEntityId(string nodeId) => _shards[0].GetMapNodeEntityId(nodeId);
+
     public YuoWorld GetWorld(Guid playerId) => GetShard(playerId).World;
     public YuoFiber GetFiber(Guid playerId) => GetShard(playerId).Fiber;
 

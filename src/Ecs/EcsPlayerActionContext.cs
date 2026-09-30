@@ -53,6 +53,13 @@ public sealed class EcsPlayerActionContext(YuoEntity entity, GameDataCatalog cat
 
     public void ClearDirtySections() => Identity.DirtySections.Clear();
 
+    /// <summary>经驻留节点实体读取遭遇池；旅途中（无驻留节点实体）返回 null 走配表查询。</summary>
+    public IReadOnlyList<string>? NodeEncounterIds
+        => _world.CurrentNodeEntityId != 0
+            && entity.World.GetEntity(_world.CurrentNodeEntityId)?.GetComponent<EncounterProfileComponent>() is { } profile
+            ? profile.EncounterIds
+            : null;
+
     /// <summary>直接以组件引用计算属性；输入未改时复用 PlayerStatsComponent 上的派生结果。</summary>
     public PlayerAttributes ResolveAttributes(GameDataCatalog gameData)
     {

@@ -97,6 +97,15 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             current.NodeBuildingEffects = projection.Effects;
             current.NodeBuildingNodeId = projection.NodeId;
             world.NodeBuildingProjectionVersion = projection.Version;
+            // 节点实体侧镜像：MapNodeEntity.NodeBuildingComponent 承载公共建筑投影，
+            // 供节点实体查询/驻留统计使用；权威状态仍在宿主侧 NodeBuildingRegistry。
+            if (projection.NodeId is not null
+                && _nodes.TryGetValue(projection.NodeId, out var nodeEntityId)
+                && World.GetEntity(nodeEntityId)?.GetComponent<NodeBuildingComponent>() is { } nodeBuilding)
+            {
+                nodeBuilding.Effects = projection.Effects;
+                nodeBuilding.Buildings = projection.Buildings;
+            }
             var identity = entity.GetOrAddComponent<PlayerIdentityComponent>();
             identity.MarkDirty(PlayerSectionKind.World);
             return true;
@@ -205,6 +214,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                 foreach (var balance in balances)
                     inventory.Items[balance.Asset] = balance.Quantity;
             _players[state.PlayerId.Value] = entity.ID;
+            SyncNodeMembership(entity);
             return state.PlayerId.Value;
         });
     }
@@ -216,6 +226,10 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     }
 
     public long CreateMapNode(WorldNode node) => ExecuteOwned(() => CreateMapNodeCore(node));
+
+    /// <summary>按节点 ID 解析长期存在的地图节点实体；配表未覆盖的节点返回 null。</summary>
+    public long? GetMapNodeEntityId(string nodeId)
+        => ExecuteOwned(() => _nodes.TryGetValue(nodeId, out var id) ? id : (long?)null);
 
     public long CreateMonster(string monsterDefinitionId, long? parentNodeEntityId = null)
         => ExecuteOwned(() => CreateMonsterCore(monsterDefinitionId, parentNodeEntityId));
@@ -285,7 +299,13 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             RuntimeInstrumentation.Count("lifecycle.entity_destroyed.player");
             DestroyPlayerEncounters(entityId);
             if (World.GetEntity(entityId) is { } playerEntity)
+            {
+                if (playerEntity.GetComponent<PlayerWorldComponent>() is { } leavingWorld
+                    && leavingWorld.CurrentNodeEntityId != 0
+                    && World.GetEntity(leavingWorld.CurrentNodeEntityId)?.GetComponent<NodePopulationComponent>() is { } population)
+                    population.PresentPlayerEntityIds.Remove(entityId);
                 YuoWorld.DestroyEntityForce(playerEntity);
+            }
             return true;
         });
 
@@ -319,6 +339,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             ApplyAggregateState(entity, state, balances);
             _simulationResults.Remove(playerId);
             _simulationEvents.Remove(playerId);
+            SyncNodeMembership(entity);
         });
 
     /// <summary>显式取消行动；队首战斗实体与战报一并按领域移除语义清理。</summary>
@@ -337,6 +358,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             identity.StateVersion = aggregate.StateVersion;
             queue.LastAdvancedAt = aggregate.LastSimulatedAt;
             if (index == 0) DestroyPlayerEncounters(entity.ID);
+            SyncNodeMembership(entity);
             foreach (var section in aggregate.DirtySections) identity.MarkDirty(section);
             return true;
         });
@@ -363,6 +385,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             identity.GameDataFingerprint = aggregate.GameDataFingerprint;
             queue.LastAdvancedAt = aggregate.LastSimulatedAt;
             if (destroyEncounters) DestroyPlayerEncounters(entity.ID);
+            SyncNodeMembership(entity);
             foreach (var section in aggregate.DirtySections) identity.MarkDirty(section);
             return new HashSet<PlayerSectionKind>(aggregate.DirtySectionMarks.Keys);
         });
@@ -515,6 +538,8 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
                     var result = EcsActionSession.Commit(execution);
                     _simulationResults[id] = result;
                     AppendSimulationEvents(id, result.Events);
+                    if (execution.Entity is not null)
+                        SyncNodeMembership(execution.Entity);
                 }
                 return ValueTask.CompletedTask;
             }, cancellationToken).ConfigureAwait(false);
@@ -654,6 +679,30 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         return entity.ID;
     }
 
+    /// <summary>
+    /// 把玩家驻留节点实体引用与节点人口同步到当前 World.NodeId。
+    /// 在创建/恢复、命令 MutatePlayer、行动推进与旅行落地后统一调用；
+    /// 处于边中段（EdgeId 非空）时视为离站，不占任何节点人口。
+    /// </summary>
+    internal void SyncNodeMembership(YuoEntity playerEntity)
+    {
+        var world = playerEntity.GetComponent<PlayerWorldComponent>();
+        if (world is null) return;
+        var targetNodeEntityId = 0L;
+        if (world.World.EdgeId is null
+            && !string.IsNullOrEmpty(world.World.NodeId)
+            && _nodes.TryGetValue(world.World.NodeId, out var nodeEntityId))
+            targetNodeEntityId = nodeEntityId;
+        if (world.CurrentNodeEntityId == targetNodeEntityId) return;
+        if (world.CurrentNodeEntityId != 0
+            && World.GetEntity(world.CurrentNodeEntityId)?.GetComponent<NodePopulationComponent>() is { } previousPopulation)
+            previousPopulation.PresentPlayerEntityIds.Remove(playerEntity.ID);
+        if (targetNodeEntityId != 0
+            && World.GetEntity(targetNodeEntityId)?.GetComponent<NodePopulationComponent>() is { } nextPopulation)
+            nextPopulation.PresentPlayerEntityIds.Add(playerEntity.ID);
+        world.CurrentNodeEntityId = targetNodeEntityId;
+    }
+
     private long CreateMonsterCore(string monsterDefinitionId, long? parentNodeEntityId)
     {
         using var lifecycleMeasurement = RuntimeInstrumentation.Measure("lifecycle.entity_create", "monster");
@@ -670,7 +719,12 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         entity.AddComponent<SkillStateComponent>().Skills.AddRange(definition.Skills);
         entity.AddComponent<BuffComponent>();
         entity.AddComponent<DropProfileComponent>().Drops = definition.DropTable;
-        if (parentNodeEntityId is { } parent && World.GetEntity(parent) is { } parentEntity) World.SetParent(entity, parentEntity);
+        if (parentNodeEntityId is { } parent && World.GetEntity(parent) is { } parentEntity)
+        {
+            World.SetParent(entity, parentEntity);
+            if (parentEntity.GetComponent<NodePopulationComponent>() is { } population)
+                population.ActiveMonsterCount++;
+        }
         return entity.ID;
     }
 

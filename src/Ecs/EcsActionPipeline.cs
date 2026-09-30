@@ -17,7 +17,7 @@ namespace DaoHua.Ecs;
 public sealed class EcsActionExecutionComponent : YuoComponent
 {
     // —— 基础设施引用（Attach 时装配，请求期内不变） ——
-    internal YuoEntity Entity = null!;
+    // 玩家实体引用直接使用 YuoComponent.Entity 基类属性（组件所属实体）。
     internal PlayerActionQueueComponent Queue = null!;
     internal GameDataCatalog Catalog = null!;
     internal EcsPlayerActionContext Player = null!;
@@ -66,7 +66,7 @@ public sealed class EcsActionExecutionComponent : YuoComponent
         YuoEntity entity, GameDataCatalog catalog, DateTimeOffset target)
     {
         var component = entity.GetOrAddComponent<EcsActionExecutionComponent>();
-        if (component.Entity is not null && !component.Committed)
+        if (component.Queue is not null && !component.Committed)
             throw new InvalidOperationException("行动请求尚未结束。");
         var queue = entity.GetComponent<PlayerActionQueueComponent>()!;
         var player = new EcsPlayerActionContext(entity, catalog);
@@ -77,7 +77,6 @@ public sealed class EcsActionExecutionComponent : YuoComponent
             pair => new AssetBalance(player.PlayerId, pair.Key, pair.Value, 0)));
         var working = new AssetWallet(player.PlayerId);
         working.Restore(external.Balances);
-        component.Entity = entity;
         component.Queue = queue;
         component.Catalog = catalog;
         component.Player = player;
@@ -110,7 +109,6 @@ public sealed class EcsActionExecutionComponent : YuoComponent
     /// <summary>请求完成后的工作态摘除：实体保留组件壳但字段复位，下一请求 Attach 复用。</summary>
     public void Detach()
     {
-        Entity = null!;
         Queue = null!;
         Catalog = null!;
         Player = null!;

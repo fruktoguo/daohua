@@ -53,6 +53,11 @@ public sealed class PlayerWorldComponent : YuoComponent
     public double ExplorationSeed { get => World.ExplorationSeed; set => World.ExplorationSeed = value; }
     /// <summary>最近一次节点公共建筑投影版本；仅用于跳过重复读投影，不进入玩家存档。</summary>
     public long NodeBuildingProjectionVersion { get; set; } = long.MinValue;
+    /// <summary>
+    /// 当前驻留节点的实体引用（对应长期存在的 MapNodeEntity）；纯运行时索引，不进入快照。
+    /// 由 EcsWorldShard.SyncNodeMembership 在创建/恢复/命令/移动结算后统一维护。
+    /// </summary>
+    public long CurrentNodeEntityId { get; set; }
 }
 
 /// <summary>
@@ -203,6 +208,8 @@ public sealed class MapNodeComponent : YuoComponent
 public sealed class NodeBuildingComponent : YuoComponent
 {
     public BuildingEffectSet Effects { get; set; } = BuildingEffectSet.Empty;
+    /// <summary>节点建筑运行时状态镜像；权威状态仍在 NodeBuildingRegistry，组件只承载投影供实体查询。</summary>
+    public IReadOnlyList<Domain.World.NodeBuildingState> Buildings { get; set; } = [];
 }
 
 public sealed class EncounterProfileComponent : YuoComponent
@@ -212,6 +219,8 @@ public sealed class EncounterProfileComponent : YuoComponent
 
 public sealed class NodePopulationComponent : YuoComponent
 {
+    /// <summary>当前驻留本节点的玩家实体 ID；由玩家位置变更时同步维护，不进快照。</summary>
+    public HashSet<long> PresentPlayerEntityIds { get; } = [];
     public int ActiveMonsterCount { get; set; }
     public int Capacity { get; set; } = 100;
 }

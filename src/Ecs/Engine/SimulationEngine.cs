@@ -280,11 +280,12 @@ public static partial class SimulationEngine
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗行动完成轮次无效。");
 
         var encounterId = definition.CombatEncounterId;
-        if (string.IsNullOrWhiteSpace(player.World.EdgeId)
-            && gameData.WorldGraph.TryGetNode(player.World.NodeId, out var node)
-            && node.EncounterIds.Count > 0)
+        // 优先经驻留节点实体（MapNodeEntity.EncounterProfileComponent）取生态遭遇池；
+        // 聚合/非实体路径回退到配表 WorldGraph——两者承载同一份静态投影，选择语义不变。
+        var pool = player.NodeEncounterIds
+            ?? (gameData.WorldGraph.TryGetNode(player.World.NodeId, out var node) ? node.EncounterIds : []);
+        if (string.IsNullOrWhiteSpace(player.World.EdgeId) && pool.Count > 0)
         {
-            var pool = node.EncounterIds;
             var index = pool.Count == 1
                 ? 0
                 : (int)((ulong)CreateSeed(definition.Id.Value, completedRepeats) % (ulong)pool.Count);
