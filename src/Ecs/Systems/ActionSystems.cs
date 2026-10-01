@@ -33,7 +33,7 @@ public sealed class ActionClockSystem : YuoSystem<PlayerActionQueueComponent>, I
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionClockSystem");
         if (EcsSystemContext.Execution(queue.Entity) is { } execution)
-            EcsActionSession.PrepareClock(execution, EcsSystemContext.Clock(queue.Entity).Current);
+            ActionExecutionRules.PrepareClock(execution, EcsSystemContext.Clock(queue.Entity).Current);
     }
 }
 
@@ -46,7 +46,7 @@ public sealed class ActionQueueSystem : YuoSystem<PlayerActionQueueComponent>, I
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.ActionQueueSystem");
         if (EcsSystemContext.Execution(queue.Entity) is { } execution)
-            EcsActionSession.PrepareQueue(execution);
+            ActionExecutionRules.PrepareQueue(execution);
     }
 }
 
@@ -60,7 +60,7 @@ public sealed class GatheringActionSystem : YuoSystem<PlayerActionQueueComponent
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.GatheringActionSystem");
         if (EcsSystemContext.Execution(queue.Entity) is { } execution
             && EcsActionSession.PreparedKind(execution) == ActionKind.Exploration)
-            EcsActionSession.AdvancePreparedAction(execution);
+            ActionExecutionRules.AdvancePreparedAction(execution);
     }
 }
 
@@ -74,7 +74,7 @@ public sealed class CraftingActionSystem : YuoSystem<PlayerActionQueueComponent>
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.CraftingActionSystem");
         if (EcsSystemContext.Execution(queue.Entity) is { } execution
             && EcsActionSession.PreparedKind(execution) == ActionKind.Alchemy)
-            EcsActionSession.AdvancePreparedAction(execution);
+            ActionExecutionRules.AdvancePreparedAction(execution);
     }
 }
 
@@ -89,7 +89,7 @@ public sealed class ActionBoundarySystem : YuoSystem<PlayerActionQueueComponent>
         if (EcsSystemContext.Execution(queue.Entity) is { } execution
             && EcsActionSession.HasPreparedAction(execution)
             && EcsActionSession.PreparedKind(execution) is not (ActionKind.Exploration or ActionKind.Alchemy))
-            EcsActionSession.AdvancePreparedAction(execution);
+            ActionExecutionRules.AdvancePreparedAction(execution);
     }
 }
 
@@ -103,7 +103,7 @@ public sealed class TravelActionSystem : YuoSystem<PlayerActionQueueComponent>, 
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.TravelActionSystem");
         if (!EcsSystemContext.Clock(queue.Entity).PreparationOnly
             && EcsSystemContext.Execution(queue.Entity) is { } execution)
-            EcsActionSession.AdvanceTravel(execution);
+            ActionExecutionRules.AdvanceTravel(execution);
     }
 }
 
@@ -116,7 +116,7 @@ public sealed class TimedActionYieldSystem : YuoSystem<PlayerActionQueueComponen
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
         using var measurement = RuntimeInstrumentation.MeasureCurrent("ecs.system.run.TimedActionYieldSystem");
         if (EcsSystemContext.Execution(queue.Entity) is { } execution)
-            EcsActionSession.CompleteYield(execution);
+            ActionExecutionRules.CompleteYield(execution);
     }
 }
 
@@ -167,6 +167,6 @@ public sealed class PlayerClockCommitSystem : YuoSystem<PlayerActionQueueCompone
             return;
         }
         if (EcsSystemContext.Execution(queue.Entity) is { } execution)
-            EcsActionSession.CompleteClock(execution, clock.PreparationOnly);
+            ActionExecutionRules.CompleteClock(execution, clock.PreparationOnly);
     }
 }

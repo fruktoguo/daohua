@@ -18,10 +18,10 @@ public static class DuelScriptEngine
         ArgumentNullException.ThrowIfNull(initiator);
         ArgumentNullException.ThrowIfNull(defender);
         ArgumentNullException.ThrowIfNull(settings);
-        var encounter = DeterministicCombatEngine.Start("duel", seed,
+        var encounter = Systems.CombatEventAdvanceSystem.Start("duel", seed,
             new CombatantTemplate(initiator.Stats, initiator.Skills),
             [new CombatantTemplate(defender.Stats, defender.Skills)]);
-        var result = DeterministicCombatEngine.AdvanceTo(encounter, settings.MaxDuelSeconds);
+        var result = Systems.CombatEventAdvanceSystem.AdvanceTo(encounter, settings.MaxDuelSeconds);
         var outcome = encounter.Outcome == CombatOutcome.Running ? CombatOutcome.Draw : encounter.Outcome;
         var events = new List<DuelScriptEvent>(result.Events.Count);
         // 双方灵力沿事件流滚动携带：主事件带结算后真值，衍生事件沿用最近已知值，

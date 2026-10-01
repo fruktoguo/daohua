@@ -18,9 +18,9 @@
 ## 1. 分层反转
 
 ```
-现在：  System（壳）→ Pipeline（编排）→ SimulationEngine/DeterministicCombatEngine（语义本体，Domain）
-目标：  System（规则本体）→ Component（状态本体）
+当前：  System（规则本体）→ Component（状态本体）
         Domain = 纯库：配表类型 / POCO 状态 / 纯公式 / SectionCodec / 协议映射 / DTO
+        SimulationEngine/DeterministicCombatEngine = 无世界测试与兼容门面，转发到 ECS System
 ```
 
 | 层 | 装什么 | 不装什么 |
@@ -169,17 +169,9 @@ Domain   -> YuoCore.Abstractions（纯库；POCO 状态+配表+公式+编解码�
 ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 ```
 
-## 10. 一次性重构实施序
+## 10. 完整收口记录
 
-长分支承载，门禁全绿前不合入。内部顺序：
-
-1. **组件重划**：按 §2 建立新组件与映射层适配——纯状态搬家，逻辑不动，先全绿。
-2. **行动域本体化**：`SimulationEngine` 的采集/制造/计时/旅行函数逐类搬进对应 System 体内；Domain 侧函数删除。
-3. **战斗迁移**：调度骨架+状态操作迁入 `src/Ecs/Combat/`；`Domain.Tests` 战斗用例迁 `Ecs.Tests`。
-4. **触发器机制**：`PendingTriggers` 队列 + 边界内 `RunSystem<T>` 派发点 + Reactive Buff 组件族 + `ActiveBuff` 扩展序列化。
-5. **ComputeNode 换装**：引用与装配改造 + golden vector 重验。
-6. **全量门禁**：三测试套件 + 真实存档回放 + 30h 狩猎回归 + bench 基线 + 容量门禁。
-7. **文档链收尾**：总纲 15 标废（本文继任）、`ecs-development-guide.md` 重写、依赖图与任务面板收口。
+组件、行动队列与执行规则、战斗边界与相位、Tag 派发、ComputeNode 共用执行环境和文档规约已经按本文目标落地。`SimulationEngine`/`DeterministicCombatEngine` 保留的公开方法仅用于无世界测试与兼容调用，生产 ECS 路径不从门面进入规则编排。验证记录统一登记在 `docs/tasks/TASK-20261001-04.md`。
 
 ## 11. 验证门禁
 
@@ -202,17 +194,19 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 **本规约生效即视总纲 15 中"System 仅调度壳"口径作废；聚合运行时相关分段持久化与单写者语义仍然有效（§6/§7 保留承接）。**
 
-## 13. 审计后的持续实施切片（2026-10-01）
+## 13. 完整 ECS 收口结果（2026-10-01）
 
-静态审计确认：当前 `src/Ecs` 已承担玩家实体、地图节点、遭遇实体及边界调度，但大量规则仍由聚合门面和 `SimulationEngine` 静态方法串联。后续按可验证切片持续收敛，不以增加 `YuoSystem` 类型数量作为完成标准。
+本次收口已经完成。生产运行时中，行动队列、行动执行和战斗的状态变更与调度均由 `src/Ecs` 的组件、阶段 System 和 Tag System 持有；`EcsActionPipeline` 只保留请求工作区、窗口游标、账本和提交边界，不再承载规则转发。
 
-第一阶段固定两个统一入口：
+### 生产 ECS 规则归属
 
-1. **队列变更入口**：入队、优先插队、取消、轮转和轮完成必须共享队列状态变更规则；队首切换、行动报告归档、战斗实体清理和脏段/版本提交必须按固定同步顺序发生。普通命令、普通推进和批量推进不能各自维护一套近似实现。
-2. **统计副反应入口**：行动、战斗、成长和掉落只生产已结算的 typed 统计增量；统计 System 按行动账本→离线账本→UTC+8 每日账本顺序消费。统计 System 不重新计算收益，不访问网络或数据库。
+- `ActionExecutionRules.Pipeline/Resources/Timed/Travel` 与 `ActionClockSystem`、`ActionQueueSystem`、采集/制造/计时/旅行/结算 System 共同持有队列准入、资源边界、行动推进、产出、重复次数和 `-1` 无限循环语义。
+- `CombatActionRules` 持有搜寻、复活、入场、持续用品、斗法回放、胜负、掉落、统计和战斗收尾；`CombatEventAdvanceSystem` 持有自然边界、批量推进和固定相位派发；`CombatSystems` 持有战斗实体推进、目标索引、日志和实体释放。
+- Buff 到期通过 `PlayerBuffExpiryInboxComponent` 与 `IExpirePlayerBuffs` Tag System 在资源边界同步裁决，真实删除才产生 Buffs 脏标记。
+- `DeterministicCombatEngine` 与 `SimulationEngine` 的旧公开入口只作为无世界测试/兼容门面，内部转发到上述 ECS System；Server、ComputeNode 和生产玩家运行时不从这些门面进入规则编排。
 
-同阶段独立收敛战斗状态与已有相位：`CombatantState` 的技能、冷却和战内 Buff 作为唯一权威存储，`SkillStateComponent`/`BuffComponent` 只提供对同一状态的能力视图，不保存第二套列表或冷却数组。六个已存在的相位 System 持有各自状态变更规则；无世界测试与实体 tag 派发共用 System 所属的同一实现。自然边界选择、`AdvanceTo` 批量循环和固定出手顺序继续由调度骨架控制，纯伤害/目标解算可作为共享算法调用。
+### 明确保留在 ECS 之外的边界
 
-这两个入口可以通过请求工作组件携带同步负载，再以 `RunSystem<tag>(entity)` 触发；若批量推进为了性能不进入完整 World tick，必须调用同一规则入口或其等价的同步派发适配，不得绕过副反应。`SystemOrder` 只保证同一 tag 的订阅者顺序，不负责跨 tag 阶段排序。
+纯属性/伤害/目标数学、配表选择器和编解码继续作为无副作用算法；PostgreSQL、快照分段、资产事务、HTTP/WebSocket、认证、协议 DTO、ComputeNode 任务和宿主生命周期继续由 Domain/Server/Protocol/持久化适配层负责。它们通过 ECS 工作区和提交边界交互，不复制行动或战斗规则。
 
-实施时先保持存档分段、协议字段、资产事务和 `AdvanceTo` 批量边界不变；每个切片必须有普通/批量/命令路径的 parity 测试，确认终态、账本、脏标记、事件顺序与 `-1` 无限循环语义逐位一致。
+普通推进、批量补算和命令路径现在共用同一套 ECS System 规则入口，验证覆盖终态、账本、脏标记、事件顺序和 `-1` 无限循环语义；无需再按阶段保留未迁移的行动或战斗编排。

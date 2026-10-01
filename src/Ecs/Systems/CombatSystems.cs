@@ -24,7 +24,7 @@ internal static class CombatSystemGate
 /// 统一由此系统按边界顺序结算；逐边界拆 tick 不改变结果，只会放大外层转换预算。
 /// </summary>
 [SystemOrder(600)]
-public sealed class CombatEventAdvanceSystem : YuoSystem<CombatEncounterComponent>, IUpdate
+public sealed partial class CombatEventAdvanceSystem : YuoSystem<CombatEncounterComponent>, IUpdate
 {
     public override void Run(CombatEncounterComponent encounter)
     {

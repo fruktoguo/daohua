@@ -49,6 +49,8 @@ public interface IPlayerResourceContext : IPlayerActionContext
     DateTimeOffset LastSimulatedAt { get; set; }
     long StateVersion { get; set; }
     PlayerAttributes ResolveAttributes(GameDataCatalog catalog);
+    /// <summary>按资源边界时刻移除到期增益；状态所有者负责 Buff 分段的脏标记。</summary>
+    bool ExpireBuffs(double atUnixSeconds);
     /// <summary>
     /// 当前驻留节点的遭遇池；ECS 路径经 MapNodeEntity.EncounterProfileComponent 提供，
     /// 聚合/非实体路径返回 null，由引擎回退到配表 WorldGraph 查询。旅途（在边上）为 null。

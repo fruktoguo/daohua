@@ -24,6 +24,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
     private readonly PlayerResourcesComponent _resources = entity.GetComponent<PlayerResourcesComponent>()!;
     private readonly PlayerCombatComponent _combat = entity.GetComponent<PlayerCombatComponent>()!;
     private readonly PlayerBuffComponent _buffs = entity.GetComponent<PlayerBuffComponent>()!;
+    private readonly PlayerBuffExpiryInboxComponent _buffExpiryInbox = entity.GetComponent<PlayerBuffExpiryInboxComponent>()!;
     private readonly PlayerLoadoutComponent _loadout = entity.GetComponent<PlayerLoadoutComponent>()!;
     private readonly PlayerSettingsComponent _settings = entity.GetComponent<PlayerSettingsComponent>()!;
     private readonly PlayerDuelComponent _duel = entity.GetComponent<PlayerDuelComponent>()!;
@@ -55,6 +56,23 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
     public void MarkDirty(PlayerSectionKind section) => Identity.MarkDirty(section);
 
     public void ClearDirtySections() => Identity.DirtySections.Clear();
+
+    /// <summary>资源边界同步裁决 Buff 到期；返回后信箱不保留本次时刻与结果。</summary>
+    public bool ExpireBuffs(double atUnixSeconds)
+    {
+        _buffExpiryInbox.AtUnixSeconds = atUnixSeconds;
+        _buffExpiryInbox.Changed = false;
+        try
+        {
+            YuoWorld.RunSystem<IExpirePlayerBuffs>(_buffExpiryInbox.Entity);
+            return _buffExpiryInbox.Changed;
+        }
+        finally
+        {
+            _buffExpiryInbox.AtUnixSeconds = 0;
+            _buffExpiryInbox.Changed = false;
+        }
+    }
 
     /// <summary>经驻留节点实体读取遭遇池；旅途中（无驻留节点实体）返回 null 走配表查询。</summary>
     public IReadOnlyList<string>? NodeEncounterIds

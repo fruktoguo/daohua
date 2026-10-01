@@ -116,7 +116,7 @@ public sealed class PlayerStatsComponent : YuoComponent
     public PlayerLoadoutState? LoadoutInput { get; set; }
 }
 
-/// <summary>玩家 Buff 组件，时间由 BuffTickSystem 统一处理。</summary>
+/// <summary>玩家持久 Buff 组件，到期由 PlayerBuffExpirySystem 按资源边界同步裁决。</summary>
 public sealed class PlayerBuffComponent : YuoComponent
 {
     /// <summary>完整战外 Buff 分段，保留版本号与所有 StatRatios。</summary>

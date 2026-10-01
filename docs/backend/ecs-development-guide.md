@@ -7,7 +7,7 @@
 | 层 | 位置 | 职责 | 禁止 |
 | --- | --- | --- | --- |
 | 领域原语 | `src/Domain` | POCO 状态、配表、公式、编解码、聚合、持久化 DTO、触发器契约（`PendingCombatTrigger`/`ICombatTriggerSink` 接口） | ASP.NET/DB/宿主/`YuoEntity` 等运行时对象 |
-| ECS 执行 | `src/Ecs` | 组件、系统、分片、行动管线、门面；`Engine/`（`SimulationEngine` 行动/资源/旅行/战斗边界调度）、`Combat/`（`DeterministicCombatEngine`/`DuelScriptEngine`/触发器派发与 reactive 系统） | DB/网络/宿主引用 |
+| ECS 执行 | `src/Ecs` | 组件、系统、分片、行动管线、规则本体；`Systems/ActionExecutionRules.*` 持有行动规则，`Systems/CombatActionRules`/`CombatEventAdvanceSystem` 持有战斗规则；`Engine/SimulationEngine` 与 `Combat/DeterministicCombatEngine` 仅为无世界测试/兼容门面 | DB/网络/宿主引用 |
 | 宿主适配 | `src/Server`（`EcsPlayerRuntimeAdapter`、`Program`）| 命令路由、会话、持久化边界 | 直接持有 `PlayerAggregate`/`YuoEntity` |
 | 共享边界 | `src/Server.Clean`（编译 `src/Server/Clean/**`）| 仓储、DTO 映射、Worker | 领域规则 |
 | 内核 | `vendor/YuoCore`（`ecs-optimized` 分支 submodule）| ECS/Fiber 框架原语 | 本仓任务默认不改 |
@@ -78,7 +78,7 @@ case "biz.someCommand":
 
 ### 4.1 请求级管线（`EcsActionPipeline`）
 
-一次玩家推进 = `BeginRequest(entity, catalog, target)` → Fiber Tick 内按边界驱动系统顺序：`ActionClock(100) → ActionQueue(200) → Gathering/Crafting → Boundary/Travel → TimedYield → CombatBoundary → CombatYield → PlayerClockCommit`。管线游标 `_cursor` 即玩家的业务时钟。
+一次玩家推进 = `BeginRequest(entity, catalog, target)` → Fiber Tick 内按边界驱动系统顺序：`ActionClock(100) → ActionQueue(200) → Gathering/Crafting → Boundary/Travel → TimedYield → CombatBoundary → CombatYield → PlayerClockCommit`。管线游标 `_cursor` 即玩家的业务时钟；规则实现由对应 ECS System、`ActionExecutionRules.*` 和 `CombatActionRules` 持有，`EcsActionPipeline` 只提供工作区和提交边界。
 
 ### 4.2 不变量（违反即 `DomainException`，不得静默）
 
@@ -148,7 +148,7 @@ ResolveAttack 落账
 
 ## 5.7 战斗相位规则本体
 
-`DeterministicCombatEngine.AdvanceTo` 只负责自然边界选择、固定相位顺序和批量循环。Buff 到期/回复、复活、玩家出手、敌方出手、倒地打断与终局裁决由六个相位 System 的共享实现持有；实体派发和内联执行调用同一份规则。
+`CombatEventAdvanceSystem.AdvanceTo` 负责自然边界选择、固定相位顺序和批量循环。Buff 到期/回复、复活、玩家出手、敌方出手、倒地打断与终局裁决由六个相位 System 的共享实现持有；实体派发和无世界测试门面调用同一份 ECS 实现。`DeterministicCombatEngine.AdvanceTo` 只做转发，不得重新实现调度。
 
 玩家与怪物出手 System 共用 `CombatActSystem` 的技能起手、施放、普攻入账及命中反应规则。目标选择、随机抽样和纯伤害公式可由 System 调用引擎算法；不能把整个相位再交给引擎修改状态。
 

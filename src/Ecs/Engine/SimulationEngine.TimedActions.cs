@@ -57,156 +57,44 @@ public static partial class SimulationEngine
 {
     /// <summary>受阻队首只执行一次出队或轮转；false 表示当前窗口剩余时间保持停泊。</summary>
     public static bool AdvanceBlockedAction(IPlayerActionContext player, IPlayerActionState action, DateTimeOffset at)
-    {
-        if (!player.Settings.LoopEnabled)
-        {
-            player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
-            return true;
-        }
-        if (player.Actions.Count <= 1) return false;
-        for (var i = 0; i < player.Actions.Count; i++)
-            if (player.Actions[i].Status != ActionQueueStatus.Blocked)
-            {
-                player.RotateActionToTail(action.Id);
-                return true;
-            }
-        return false;
-    }
+        => DaoHua.Ecs.Systems.ActionExecutionRules.AdvanceBlockedAction(player, action, at);
 
     /// <summary>按窗口工作钱包与尚未提交的材料增量检查地点和库存，再建账并激活队首。</summary>
     public static bool TryStartAction(IPlayerActionContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, ActionMutationBatch mutations)
-        => TryStartActionCore(player, action, definition, gameData, assets, at,
-            mutations.Deltas, ref mutations.EventTail);
+        => DaoHua.Ecs.Systems.ActionExecutionRules.TryStartAction(player, action, definition, gameData, assets, at, mutations);
 
     private static bool TryStartActionCore(IPlayerActionContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
-    {
-        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.start");
-        var availableHere = definition.AllowedNodeIds is null || definition.AllowedNodeIds.Count == 0
-            || (player.World.EdgeId is null && definition.AllowedNodeIds.Contains(player.World.NodeId));
-        var hasInputs = true;
-        foreach (var input in definition.Inputs)
-            if ((assets?.Get(new AssetKey(input.Key)) ?? (gameData is null ? double.PositiveInfinity : 0))
-                + (deltas?.GetValueOrDefault(input.Key) ?? 0) < input.Value)
-            {
-                hasInputs = false;
-                break;
-            }
-        if (!availableHere || !hasInputs)
-        {
-            // 地点不符且自动移动开启：插队赶路至入队锚点替代 Blocked；任一前置不满足回落原语义。
-            if (!availableHere && TryEnqueueAutoTravel(player, action, definition, gameData, at, ref events))
-                return false;
-            action.Status = ActionQueueStatus.Blocked;
-            events ??= new();
-            events.Add(new SimulationEvent(at, "action.blocked",
-                availableHere ? "材料不足，行动受阻。" : "当前位置不允许执行该行动。", definition.Id));
-            return false;
-        }
-        player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
-        action.Status = ActionQueueStatus.Running;
-        return true;
-    }
+        => DaoHua.Ecs.Systems.ActionExecutionRules.TryStartActionCore(player, action, definition, gameData, assets, at, deltas, ref events);
 
-    /// <summary>
-    /// 自动移动准入修正：开轮地点校验失败时，按入队锚点节点插队一条 world.travel 至队首，
-    /// 抵达锚点后原行动按挂起恢复语义续跑。仅在 AutoTravelEnabled 开启、锚点仍在允许节点集、
-    /// 世界图可达时生效；否则返回 false 由调用方走原 Blocked 跳过路径。
-    /// </summary>
-    private static bool TryEnqueueAutoTravel(IPlayerActionContext player, IPlayerActionState action,
-        ActionDefinition definition, GameDataCatalog? gameData, DateTimeOffset at,
-        ref SimulationEventTail? events)
-    {
-        var anchor = action.Intent.AnchorNodeId;
-        var travelId = new ActionId("world.travel");
-        if (!player.Settings.AutoTravelEnabled
-            || gameData?.WorldGraph is not { } worldGraph
-            || string.IsNullOrWhiteSpace(anchor)
-            || definition.AllowedNodeIds is not { } allowedNodes
-            || !allowedNodes.Contains(anchor)
-            || !worldGraph.TryGetNode(anchor, out var anchorNode)
-            || !gameData.Actions.Contains(travelId))
-            return false;
-        TravelPlan plan;
-        try
-        {
-            plan = worldGraph.PlanFromPosition(player.World.EdgeId, player.World.EdgeProgress,
-                player.World.NodeId, anchor);
-        }
-        catch (DomainException)
-        {
-            return false;
-        }
-        // 与 world.travel 命令同一条插队通道；模拟内不额外推版本，仅标脏 ActionQueue。
-        player.EnqueuePriority(new ActionIntent(travelId, 1, anchor), at,
-            gameData.Actions,
-            new TravelActionState(anchor, plan.TotalTravelSeconds, plan.EdgeIds, plan.Segments),
-            incrementVersion: false);
-        events ??= new();
-        events.Add(new SimulationEvent(at, "action.auto-travel",
-            $"当前位置无法执行，自动前往 {anchorNode.Name}。", definition.Id));
-        return true;
-    }
 
     /// <summary>计时行动的建筑加速只修正本轮时长，不改变按轮扣除的持续用品时长。</summary>
     public static double TimedActionDuration(IPlayerActionContext player, ActionDefinition definition)
-    {
-        var duration = definition.DurationSeconds;
-        var buildingSpeed = player.World.EffectiveNodeBuildingEffects.SpeedRatioFor(definition.Kind);
-        if (buildingSpeed > 0) duration /= 1 + buildingSpeed;
-        return duration;
-    }
+        => DaoHua.Ecs.Systems.ActionExecutionRules.TimedActionDuration(player, definition);
 
     /// <summary>本轮开始前补充持续用品并解析收益倍率；调用方已完成地点和材料准入。</summary>
     public static double PrepareTimedAction(IPlayerActionContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, ActionMutationBatch mutations)
-        => PrepareTimedActionCore(player, action, definition,
-            action.ProgressSeconds <= SecondQuantizationEpsilon, gameData, assets, at,
-            ref mutations.Deltas, ref mutations.EventTail);
+        => DaoHua.Ecs.Systems.ActionExecutionRules.PrepareTimedAction(player, action, definition, gameData, assets, at, mutations);
 
     private static double PrepareTimedActionCore(IPlayerActionContext player, IPlayerActionState action,
         ActionDefinition definition, bool isActionStart, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
-    {
-        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.prepare");
-        var multiplier = PrepareSustainedAutoUse(player, definition, isActionStart, gameData,
-            assets, at, action.Id, ref deltas, ref events);
-        if (definition.Kind == ActionKind.Cultivation && gameData is not null)
-            multiplier *= CultivationMultiplier(gameData, player.World.NodeId);
-        multiplier *= 1 + player.World.EffectiveNodeBuildingEffects.OutputRatioFor(definition.Kind);
-        return multiplier;
-    }
+        => DaoHua.Ecs.Systems.ActionExecutionRules.PrepareTimedActionCore(player, action, definition, isActionStart, gameData, assets, at, ref deltas, ref events);
 
     /// <summary>推进已由时钟裁剪的本轮片段，按原整秒序列写入进度与连续收益。</summary>
     public static void AdvanceTimedAction(IPlayerActionContext player, IPlayerActionState action,
         ActionDefinition definition, double multiplier, GameDataCatalog? gameData,
         double stepSeconds, DateTimeOffset at)
-    {
-        using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.advance");
-        var wholeSeconds = QuantizeElapsedSeconds(player, stepSeconds);
-        action.ProgressSeconds += wholeSeconds;
-        if (definition.Kind == ActionKind.Cultivation && wholeSeconds > 0)
-            player.Progression.CultivationSeconds += wholeSeconds;
-        ApplyContinuousReward(player, definition, wholeSeconds, multiplier, gameData,
-            action.Id, at.ToUnixTimeMilliseconds() / 1000d);
-        if (stepSeconds > 0)
-            player.MarkDirty(definition.Kind switch
-            {
-                ActionKind.Cultivation => PlayerSectionKind.Progression,
-                ActionKind.Exploration => PlayerSectionKind.World,
-                ActionKind.Combat => PlayerSectionKind.Combat,
-                _ => PlayerSectionKind.ActionQueue
-            });
-    }
+        => DaoHua.Ecs.Systems.ActionExecutionRules.AdvanceTimedAction(player, action, definition, multiplier, gameData, stepSeconds, at);
 
     /// <summary>单轮完成结算：保留原物品、材料、用品、统计和队列修改的先后顺序。</summary>
     public static void CompleteTimedAction(IPlayerActionContext player, IPlayerActionState action,
         ActionDefinition definition, double multiplier, GameDataCatalog? gameData,
         DateTimeOffset at, ActionMutationBatch mutations)
-        => CompleteRepeat(player, action, definition, multiplier, gameData, at,
-            ref mutations.Deltas, ref mutations.EventTail, ref mutations.ActionCount, ref mutations.RepeatCount);
+        => DaoHua.Ecs.Systems.ActionExecutionRules.CompleteTimedAction(player, action, definition, multiplier, gameData, at, mutations);
 }
