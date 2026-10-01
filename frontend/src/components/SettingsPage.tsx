@@ -6,6 +6,7 @@ import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { LOCALES, useI18nStore, useT } from '../i18n'
 import { AVATAR_OPTIONS, getPlayerAvatarSrc, useAvatarStore } from '../game/avatarStore'
+import { useThemeStore } from '../game/themeStore'
 
 /** 设置页面分类（账号、显示偏好与形象） */
 type SettingsTab = 'account' | 'display' | 'avatar'
@@ -79,7 +80,7 @@ function formatCooldown(seconds: number, t: (key: string, params?: Record<string
  *
  * 功能模块：
  * 1. 账号：修士资料卡（立绘 + 道号 + 序号 ID + 改名入口/冷却）、登录账号（含序号）、注册时间与密码修改；会话分组承载退出登录；
- * 2. 显示：界面语言（分段按钮）；
+ * 2. 显示：界面主题与语言（分段按钮）；
  * 3. 形象：本命形象选择瓦片（图标 + 名称），供后续扩展更多形象。
  */
 export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
@@ -98,6 +99,9 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
   const locale = useI18nStore(state => state.locale)
   const setLocale = useI18nStore(state => state.setLocale)
   const localeError = useI18nStore(state => state.error)
+
+  const theme = useThemeStore(state => state.theme)
+  const setTheme = useThemeStore(state => state.setTheme)
 
   const avatarId = useAvatarStore(state => state.avatarId)
   const setAvatarId = useAvatarStore(state => state.setAvatarId)
@@ -214,23 +218,41 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
           )}
 
           {activeTab === 'display' && (
-            <section className="settings-group" aria-label={t('app.settings.languageHeading')}>
-              <h3 className="settings-group-title">{t('app.settings.languageHeading')}</h3>
-              {localeError && <p role="alert">{localeError}</p>}
-              <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
-                {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? t('app.settings.localeBuiltin') : code })).map(loc => (
-                  <button
-                    key={loc.code}
-                    aria-pressed={locale === loc.code}
-                    className={locale === loc.code ? 'active' : ''}
-                    onClick={() => setLocale(loc.code)}
-                    type="button"
-                  >
-                    {loc.label}
-                  </button>
-                ))}
-              </div>
-            </section>
+            <>
+              <section className="settings-group" aria-label={t('app.settings.themeHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.themeHeading')}</h3>
+                <div className="presence-options" role="group" aria-label={t('app.settings.themeHeading')}>
+                  {(['light', 'dark'] as const).map(option => (
+                    <button
+                      key={option}
+                      aria-pressed={theme === option}
+                      className={theme === option ? 'active' : ''}
+                      onClick={() => setTheme(option)}
+                      type="button"
+                    >
+                      {t(option === 'light' ? 'app.settings.themeLight' : 'app.settings.themeDark')}
+                    </button>
+                  ))}
+                </div>
+              </section>
+              <section className="settings-group" aria-label={t('app.settings.languageHeading')}>
+                <h3 className="settings-group-title">{t('app.settings.languageHeading')}</h3>
+                {localeError && <p role="alert">{localeError}</p>}
+                <div className="presence-options" role="group" aria-label={t('app.settings.languageAria')}>
+                  {LOCALES.map(code => ({ code, label: code === 'zh-CN' ? t('app.settings.localeBuiltin') : code })).map(loc => (
+                    <button
+                      key={loc.code}
+                      aria-pressed={locale === loc.code}
+                      className={locale === loc.code ? 'active' : ''}
+                      onClick={() => setLocale(loc.code)}
+                      type="button"
+                    >
+                      {loc.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </>
           )}
 
           {activeTab === 'avatar' && (

@@ -412,3 +412,12 @@
 - **组件源码**：[`frontend/src/ops/`](../../frontend/src/ops/)（`OpsApp.tsx` 外壳 · `opsUi.tsx` 原语 · `opsClient.ts` 客户端 · `views/` 视图分组）
 - **样式文件**：[`frontend/src/ops/ops.css`](../../frontend/src/ops/ops.css) (搜索 `.ops-root`, `.ops-topbar`, `.ops-nav`, `.ops-card`, `.ops-stat`, `.ops-table`)
 - **设计真源**：[`docs/backend/ops-panel.md`](../backend/ops-panel.md)
+
+---
+
+## 31. 显示主题与配色 (Theme)
+
+- **适用场景**：设置 → 显示的浅色/深色分段选择；各页面、公共组件、弹窗与 Portal 使用同一根节点主题，默认浅色并在当前浏览器保存。
+- **设置入口**：[`frontend/src/components/SettingsPage.tsx`](../../frontend/src/components/SettingsPage.tsx)（沿用 `settings-group` 与 `presence-options`）。
+- **首屏恢复 / 状态**：[`frontend/public/theme.js`](../../frontend/public/theme.js)、[`frontend/src/game/themeStore.ts`](../../frontend/src/game/themeStore.ts)。
+- **统一配色样式**：[`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)。

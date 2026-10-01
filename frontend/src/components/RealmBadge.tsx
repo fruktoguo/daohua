@@ -47,9 +47,10 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
       <div
         className={`insight-realm-master-frame ${className}`}
         style={{
-          borderColor: `${realmInfo.stageColor}66`,
-          boxShadow: `0 0 14px ${realmInfo.stageColor}20, inset 0 0 6px rgba(0,0,0,0.5)`,
-        }}
+          '--realm-accent': realmInfo.stageColor,
+          borderColor: 'color-mix(in srgb, var(--realm-accent) 40%, transparent)',
+          boxShadow: '0 0 14px color-mix(in srgb, var(--realm-accent) 12.5%, transparent), inset 0 0 6px rgba(0,0,0,0.5)',
+        } as React.CSSProperties}
       >
       {/* 1. 大境界牌匾框 */}
       <div
@@ -57,7 +58,7 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
         style={{
           borderLeftColor: realmInfo.stageColor,
           borderRightColor: realmInfo.stageColor,
-          backgroundColor: `${realmInfo.stageColor}18`,
+          backgroundColor: 'color-mix(in srgb, var(--realm-accent) 9.4%, transparent)',
         }}
       >
         <span className="insight-realm-major-text">{realmInfo.stageName}</span>
@@ -69,11 +70,11 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
           className="insight-realm-diamond-badge"
           style={{
             borderColor: realmInfo.stageColor,
-            backgroundColor: `${realmInfo.stageColor}28`,
-            boxShadow: `0 0 8px ${realmInfo.stageColor}44`,
+            backgroundColor: 'color-mix(in srgb, var(--realm-accent) 15.7%, transparent)',
+            boxShadow: '0 0 8px color-mix(in srgb, var(--realm-accent) 26.7%, transparent)',
           }}
         >
-          <span className="insight-realm-diamond-text" style={{ color: realmInfo.stageColor }}>
+          <span className="insight-realm-diamond-text" style={{ color: 'var(--realm-ink, var(--realm-accent))' }}>
             {realmInfo.rankChar}
           </span>
         </div>
@@ -83,11 +84,11 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
       <div
         className="insight-realm-minor-box"
         style={{
-          borderColor: `${realmInfo.stageColor}55`,
-          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+          borderColor: 'color-mix(in srgb, var(--realm-accent) 33.3%, transparent)',
+          backgroundColor: 'var(--realm-minor-bg, rgba(0, 0, 0, 0.45))',
         }}
       >
-        <strong className="insight-realm-minor-text" style={{ color: realmInfo.stageColor }}>
+        <strong className="insight-realm-minor-text" style={{ color: 'var(--realm-ink, var(--realm-accent))' }}>
           {realmInfo.minorName}
         </strong>
       </div>
