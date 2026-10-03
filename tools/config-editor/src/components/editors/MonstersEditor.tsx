@@ -1,7 +1,7 @@
 // ==============================================================================
 // 文件名称: MonstersEditor.tsx
 // 主要职责: 现代扁平化 monsters 专属编辑器；字段与 GameDataCatalog.ParseMonsterDefinitions
-//           消费集对齐——战斗属性全部由「等级锚点 × 品阶倍率 × weights 倾向权重」派生
+//           消费集对齐——战斗属性全部由「等级锚点 × 生命层次倍率 × weights 倾向权重」派生
 // ==============================================================================
 
 import { useState, useMemo } from 'react';
@@ -157,7 +157,7 @@ export function MonstersEditor() {
                   : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              全品阶
+              全生命层次
             </button>
             {UNIT_RANKS.map(r => (
               <button
@@ -266,7 +266,7 @@ export function MonstersEditor() {
 
               <NumberInput
                 label="等级 (Level)"
-                description="决定锚点与派生品阶 T"
+                description="决定锚点与派生等阶 T"
                 value={currentMonster.level}
                 onChange={v => handleUpdate({ level: v })}
                 min={1}
@@ -274,7 +274,7 @@ export function MonstersEditor() {
               />
 
               <EnumSelect
-                label="品阶 (Rank)"
+                label="生命层次 (Rank)"
                 description="minion/elite/boss，决定属性与气血倍率"
                 value={currentMonster.rank || 'minion'}
                 options={UNIT_RANKS}
@@ -350,7 +350,7 @@ export function MonstersEditor() {
           <div className="p-5 bg-zinc-900/40 border border-zinc-800/80 rounded-2xl flex flex-col gap-4">
             <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">节奏与反应效果</h3>
             <p className="text-[11px] text-zinc-500 leading-relaxed">
-              气血 / 攻击 / 护甲 / 命中 / 闪避 / 暴击等战斗属性由锚点派生（等级锚点 × 品阶倍率 × 下方权重），
+              气血 / 攻击 / 护甲 / 命中 / 闪避 / 暴击等战斗属性由锚点派生（等级锚点 × 生命层次倍率 × 下方权重），
               不在配表中直接书写；此处仅配置引擎直读的攻速基准与汲取/反弹效果包。
             </p>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

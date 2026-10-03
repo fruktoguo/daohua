@@ -153,7 +153,7 @@ export interface EquipmentConfig {
 }
 
 // 6. Monsters (monsters.json)
-// 怪物与玩家同构建模：战斗属性全部由「等级锚点 × 品阶倍率 × weights 倾向权重」派生，
+// 怪物与玩家同构建模：战斗属性全部由「等级锚点 × 生命层次倍率 × weights 倾向权重」派生，
 // 配表只声明 level/rank/budgetCost/weights/element/attackIntervalMilliseconds/汲取反弹/skills/dropTable/三项奖励。
 export interface CharacterVisualDefinition {
   renderer: string; // VisualRendererKind

@@ -222,8 +222,12 @@ export function MapsEditor() {
                       onChange={e => handleUpdateEdge(idx, { fromNodeId: e.target.value })}
                       className="bg-zinc-950 border border-zinc-800 rounded-md px-2 py-1 text-xs text-zinc-200"
                     >
-                      {currentMap?.nodes.map(n => (
-                        <option key={n.id} value={n.id}>起点: {n.name}</option>
+                      {maps.map(m => (
+                        <optgroup key={m.id} label={`起点 · ${m.name}`}>
+                          {(m.nodes || []).map(n => (
+                            <option key={n.id} value={n.id}>{n.name}</option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
 
@@ -232,8 +236,12 @@ export function MapsEditor() {
                       onChange={e => handleUpdateEdge(idx, { toNodeId: e.target.value })}
                       className="bg-zinc-950 border border-zinc-800 rounded-md px-2 py-1 text-xs text-zinc-200"
                     >
-                      {currentMap?.nodes.map(n => (
-                        <option key={n.id} value={n.id}>终点: {n.name}</option>
+                      {maps.map(m => (
+                        <optgroup key={m.id} label={`终点 · ${m.name}`}>
+                          {(m.nodes || []).map(n => (
+                            <option key={n.id} value={n.id}>{n.name}</option>
+                          ))}
+                        </optgroup>
                       ))}
                     </select>
                   </div>

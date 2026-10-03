@@ -327,7 +327,7 @@ export function AbilitiesEditor() {
               />
 
               <EnumSelect
-                label="阶位设计 (Tier)"
+                label="等阶设计 (Tier)"
                 value={currentAbility.tier}
                 options={TIER_OPTIONS}
                 onChange={v => handleUpdate({ tier: v })}

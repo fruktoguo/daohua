@@ -70,7 +70,7 @@ export const EQUIPMENT_SLOTS: EnumOption[] = [
   { value: 'boots', label: '踏云靴 (Boots)', en: 'Boots', badgeColor: 'bg-blue-500/10 text-blue-300 border-blue-500/20' }
 ];
 
-// 7. 怪物品阶 (CombatMonsterRank) —— ParseMonsterDefinitions: elite/boss 之外一律 minion
+// 7. 怪物生命层次 (CombatMonsterRank) —— ParseMonsterDefinitions: elite/boss 之外一律 minion
 export const UNIT_RANKS: EnumOption[] = [
   { value: 'minion', label: '寻常小妖 (Minion)', en: 'Minion', badgeColor: 'bg-zinc-500/10 text-zinc-300 border-zinc-500/20' },
   { value: 'elite', label: '天地精英 (Elite)', en: 'Elite', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
@@ -249,20 +249,21 @@ export const PARTY_WIPE_RULES: EnumOption[] = [
   { value: 'defeat', label: '团灭失败 (Defeat)', en: 'Defeat', badgeColor: 'bg-red-500/10 text-red-300 border-red-500/20' }
 ];
 
-// 15. 品阶阶位 (T1 ~ T12)
+// 15. 等阶 (T1 ~ T12) —— 以各等阶属性锚点小境界命名（锚点 Lv：1/18/30/42/54/66/78/90/102/114/126/127，
+// 与服务端 BaseAttributeCatalog.TierAt 及总纲 §10.2「代表大境界」列一致）
 export const TIER_OPTIONS: EnumOption<number>[] = [
-  { value: 1, label: 'T1 · 练气境', en: 'Tier 1', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
-  { value: 2, label: 'T2 · 筑基境', en: 'Tier 2', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
-  { value: 3, label: 'T3 · 金丹境', en: 'Tier 3', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
-  { value: 4, label: 'T4 · 元婴境', en: 'Tier 4', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
-  { value: 5, label: 'T5 · 化神境', en: 'Tier 5', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
-  { value: 6, label: 'T6 · 炼虚境', en: 'Tier 6', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
-  { value: 7, label: 'T7 · 合体境', en: 'Tier 7', badgeColor: 'bg-pink-500/10 text-pink-300 border-pink-500/20' },
-  { value: 8, label: 'T8 · 大乘境', en: 'Tier 8', badgeColor: 'bg-red-500/10 text-red-300 border-red-500/20' },
-  { value: 9, label: 'T9 · 渡劫境', en: 'Tier 9', badgeColor: 'bg-orange-500/10 text-orange-300 border-orange-500/20' },
-  { value: 10, label: 'T10 · 真仙境', en: 'Tier 10', badgeColor: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/20' },
-  { value: 11, label: 'T11 · 金仙境', en: 'Tier 11', badgeColor: 'bg-teal-500/10 text-teal-300 border-teal-500/20' },
-  { value: 12, label: 'T12 · 太乙太初境', en: 'Tier 12', badgeColor: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20' }
+  { value: 1, label: 'T1 · 凡俗 凡胎', en: 'Tier 1', badgeColor: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' },
+  { value: 2, label: 'T2 · 凡俗 叩仙门', en: 'Tier 2', badgeColor: 'bg-sky-500/10 text-sky-300 border-sky-500/20' },
+  { value: 3, label: 'T3 · 练气 半步筑基', en: 'Tier 3', badgeColor: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20' },
+  { value: 4, label: 'T4 · 筑基 半步金丹', en: 'Tier 4', badgeColor: 'bg-purple-500/10 text-purple-300 border-purple-500/20' },
+  { value: 5, label: 'T5 · 金丹 半步元婴', en: 'Tier 5', badgeColor: 'bg-amber-500/10 text-amber-300 border-amber-500/20' },
+  { value: 6, label: 'T6 · 元婴 半步化神', en: 'Tier 6', badgeColor: 'bg-rose-500/10 text-rose-300 border-rose-500/20' },
+  { value: 7, label: 'T7 · 化神 半步炼虚', en: 'Tier 7', badgeColor: 'bg-pink-500/10 text-pink-300 border-pink-500/20' },
+  { value: 8, label: 'T8 · 炼虚 半步合体', en: 'Tier 8', badgeColor: 'bg-red-500/10 text-red-300 border-red-500/20' },
+  { value: 9, label: 'T9 · 合体 半步大乘', en: 'Tier 9', badgeColor: 'bg-orange-500/10 text-orange-300 border-orange-500/20' },
+  { value: 10, label: 'T10 · 大乘 半步渡劫', en: 'Tier 10', badgeColor: 'bg-yellow-500/10 text-yellow-300 border-yellow-500/20' },
+  { value: 11, label: 'T11 · 渡劫 半步飞升', en: 'Tier 11', badgeColor: 'bg-teal-500/10 text-teal-300 border-teal-500/20' },
+  { value: 12, label: 'T12 · 飞升', en: 'Tier 12', badgeColor: 'bg-fuchsia-500/10 text-fuchsia-300 border-fuchsia-500/20' }
 ];
 
 // 16. 14维基础属性与特殊机制元数据

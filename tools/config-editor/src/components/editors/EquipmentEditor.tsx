@@ -138,13 +138,13 @@ export function EquipmentEditor() {
           </div>
 
           <div className="flex items-center gap-2 pt-0.5">
-            <span className="text-[11px] text-zinc-500 font-medium shrink-0">品阶:</span>
+            <span className="text-[11px] text-zinc-500 font-medium shrink-0">等阶:</span>
             <select
               value={String(filterTier)}
               onChange={e => setFilterTier(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
               className="w-full bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-300 rounded-md px-2 py-1 outline-none focus:border-indigo-500"
             >
-              <option value="all">全阶位 (T1~T12)</option>
+              <option value="all">全等阶 (T1~T12)</option>
               {TIER_OPTIONS.map(t => (
                 <option key={t.value} value={t.value}>
                   T{t.value} {t.label.split('·')[1]}
@@ -261,7 +261,7 @@ export function EquipmentEditor() {
               </div>
 
               <EnumSelect
-                label="装备品阶 (Tier)"
+                label="装备等阶 (Tier)"
                 value={currentEquipment.tier}
                 options={TIER_OPTIONS}
                 onChange={v => handleUpdate({ tier: v })}

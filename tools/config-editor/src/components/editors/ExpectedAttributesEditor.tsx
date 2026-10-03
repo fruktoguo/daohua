@@ -33,10 +33,10 @@ export function ExpectedAttributesEditor() {
 
   return (
     <div className="flex-1 flex overflow-hidden h-full">
-      {/* 左侧境界阶位导航 */}
+      {/* 左侧境界等阶导航 */}
       <div className="w-64 border-r border-zinc-800/80 bg-zinc-950 flex flex-col shrink-0 select-none">
         <div className="p-3.5 border-b border-zinc-800/80 flex items-center justify-between">
-          <span className="text-xs font-bold text-zinc-300">境界阶位 (T1 ~ T12)</span>
+          <span className="text-xs font-bold text-zinc-300">境界等阶 (T1 ~ T12)</span>
           <span className="text-[11px] text-zinc-500 font-mono">v{expectedConfig.version}</span>
         </div>
         <div className="flex-1 overflow-y-auto divide-y divide-zinc-800/40 p-1.5">
@@ -230,7 +230,7 @@ export function ExpectedAttributesEditor() {
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">
-          请选择一个阶位查看矩阵
+          请选择一个等阶查看矩阵
         </div>
       )}
     </div>
