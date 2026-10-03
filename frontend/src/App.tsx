@@ -7,9 +7,10 @@ import { CombatArena } from './components/CombatArena'
 import { CombatTriggerEditor } from './components/CombatTriggerEditor'
 import { CombatEcologyPanel } from './components/CombatEcologyPanel'
 import { EffectTooltipTarget } from './components/EffectTooltip'
+import { EnhancementPage } from './components/EnhancementPage'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
-import { ItemReference, ItemTooltipTarget, describeBuffEffectLines } from './components/ItemDisplay'
+import { ActionDetailItem, ItemTooltipTarget, describeBuffEffectLines } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
@@ -22,10 +23,12 @@ import { SettingsPage } from './components/SettingsPage'
 import { LoginPage } from './components/LoginPage'
 import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage'
 import { RightSidebar } from './components/RightSidebar'
+import { SocialPage } from './components/SocialPage'
+import { TaijiToggle } from './components/TaijiToggle'
 import { describeAbility, formatChineseSplitNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
 import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
-import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory } from './game/ids'
+import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
@@ -42,7 +45,7 @@ import { useT, getT } from './i18n'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
-type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'map' | 'market' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff'
+type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff' | 'loop' | 'travel'
 
 /**
  * 矢量图标组件（按名称渲染内联 SVG）
@@ -70,12 +73,20 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
       return <svg {...common}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z" /></svg>
     case 'forging':
       return <svg {...common}><path d="M15 12l-8.5 8.5a2.12 2.12 0 1 1-3-3L12 9" /><path d="M17.64 4.36a3 3 0 0 0-4.24 0L12 5.76l4.24 4.24 1.4-1.4a3 3 0 0 0 0-4.24Z" /><path d="m14 7 3 3" /></svg>
+    case 'talisman':
+      return <svg {...common}><path d="M7 3h10v18l-2.5-1.8L12 21l-2.5-1.8L7 21V3Z" /><path d="m10 7 4 4-4 4" /></svg>
+    case 'formation':
+      return <svg {...common}><circle cx="12" cy="12" r="8" /><path d="M12 4v3M12 17v3M4 12h3M17 12h3" /><path d="M12 8.5 15.5 12 12 15.5 8.5 12 12 8.5Z" /></svg>
+    case 'enhancement':
+      return <svg {...common}><path d="m12 3 6 6h-3.5v6h-5V9H6l6-6Z" /><path d="M5 20h14" /></svg>
     case 'map':
       return <svg {...common}><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6Z" /><path d="M9 3v15M15 6v15" /></svg>
     case 'combat':
       return <svg {...common}><path d="m5 4 15 15M19 4 4 19" /><path d="m7 7 3-3 3 3M17 17l-3 3-3-3" /></svg>
     case 'market':
       return <svg {...common}><path d="M4 8.5h16M6 8.5V20h12V8.5" /><path d="m5 4h14l1 4.5H4L5 4Z" /><path d="M9 12h6M9 15.5h6" /></svg>
+    case 'social':
+      return <svg {...common}><circle cx="8.5" cy="8" r="3.2" /><circle cx="16.5" cy="9.5" r="2.6" /><path d="M3.5 19.5c.6-3.4 2.6-5.4 5-5.4s4.4 2 5 5.4M13.5 19.5c.4-2.6 1.6-4.2 3.2-4.2 1.5 0 2.7 1.4 3.3 3.6" /></svg>
     case 'inventory':
       return <svg {...common}><path d="M9 7c0-1.8 1.2-2.8 3-2.8s3 1 3 2.8" /><path d="M6.5 9.5C5.5 14.5 7.5 20 12 20s6.5-5.5 5.5-10.5c-1.7 1-3.6 1.5-5.5 1.5s-3.8-.5-5.5-1.5Z" /><path d="M9.5 13.5h5" /></svg>
     case 'log':
@@ -86,6 +97,10 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
       return <svg {...common}><path d="M12 2.5 18.5 8 12 21.5 5.5 8 12 2.5Z" /><path d="M5.5 8h13M12 2.5 9.5 8 12 21.5" /></svg>
     case 'buff':
       return <svg {...common}><path d="M7 16a4.2 4.2 0 0 1-.6-8.3 5.2 5.2 0 0 1 10-1.3A3.8 3.8 0 0 1 17.5 16H7Z" /></svg>
+    case 'loop':
+      return <svg {...common}><path d="M5.5 12.5a6.5 6.5 0 0 1 11.5-4.2" /><path d="M17.5 3.5v4h-4" /><path d="M18.5 11.5a6.5 6.5 0 0 1-11.5 4.2" /><path d="M6.5 20.5v-4h4" /></svg>
+    case 'travel':
+      return <svg {...common}><circle cx="5" cy="18.5" r="1.8" /><path d="M7.8 18.5h4.7a4 4 0 0 0 4-4v-2a3 3 0 0 1 3-3" /><path d="m16.5 6.5 3 3-3 3" /></svg>
   }
 })
 
@@ -105,7 +120,14 @@ function resolveQueueEntryName(
     ? entry.actionName
     : ((actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId))?.name
       || entry.actionName || entry.actionId
-  return world && maps ? localizeActionDisplayText(name, world, maps) : name
+  const localized = world && maps ? localizeActionDisplayText(name, world, maps) : name
+  // 目标型行动（装备强化）：名称后缀拼接目标装备名与目标强化等级
+  if (entry.targetItemId) {
+    const targetName = useGameStore.getState().items.find(item => item.itemId === entry.targetItemId)?.name ?? entry.targetItemId
+    const levelSuffix = entry.targetLevel != null && entry.targetLevel > 0 ? ` +${Math.floor(entry.targetLevel)}` : ''
+    return `${localized} · ${targetName}${levelSuffix}`
+  }
+  return localized
 }
 
 function actionDescription(entry: QueueEntry, actions?: readonly ActionDefinition[], world?: WorldState, maps?: readonly WorldMapDefinition[]): string {
@@ -449,21 +471,25 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
           <FloatingTooltip displayContents placement="bottom" title={t('app.queue.loopTip')} tone="gold">
             <label className="loop-toggle">
               <input
+                aria-label={t('app.queue.loop')}
                 checked={queue.loopEnabled}
                 onChange={event => gameClient.sendCommand('queue.configure', { loopEnabled: event.target.checked })}
                 type="checkbox"
               />
-              {t('app.queue.loop')}
+              <span className="loop-toggle-icon" aria-hidden="true"><Icon name="loop" /></span>
+              <span className="loop-toggle-text">{t('app.queue.loop')}</span>
             </label>
           </FloatingTooltip>
           <FloatingTooltip displayContents placement="bottom" title={t('app.queue.autoTravelTip')} tone="gold">
             <label className="loop-toggle">
               <input
+                aria-label={t('app.queue.autoTravel')}
                 checked={queue.autoTravelEnabled}
                 onChange={event => gameClient.sendCommand('queue.configure', { autoTravelEnabled: event.target.checked })}
                 type="checkbox"
               />
-              {t('app.queue.autoTravel')}
+              <span className="loop-toggle-icon" aria-hidden="true"><Icon name="travel" /></span>
+              <span className="loop-toggle-text">{t('app.queue.autoTravel')}</span>
             </label>
           </FloatingTooltip>
         </div>
@@ -487,20 +513,11 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 className={`queue-entry${index === 0 ? ' active' : ''}${entry.status === 'blocked' ? ' blocked' : ''}`}
                 key={entry.entryId}
               >
-                <span className="queue-order">{index + 1}</span>
                 <span className={`item-glyph tone-${ACTION_TAB_META[entry.type].accent}`} aria-hidden="true">
                   <Icon name={entry.type} />
                 </span>
-                <div className="queue-main">
-                  <div className="queue-title">
-                    <span className="queue-name">{resolveQueueEntryName(entry, undefined, world, maps)}</span>
-                    <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
-                    {entry.status === 'blocked' && <span className="badge badge-danger">{t('app.queue.blocked')}</span>}
-                    {index === 0 && entry.status === 'running' && <span className="badge">{t('app.queue.running')}</span>}
-                    {entry.pvpEnabled && <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>}
-                  </div>
-                  {actionDescription(entry, undefined, world, maps) && actionDescription(entry, undefined, world, maps) !== resolveQueueEntryName(entry, undefined, world, maps) ? <div className="queue-sub">{actionDescription(entry, undefined, world, maps)}</div> : null}
-                </div>
+                <span className="queue-name">{resolveQueueEntryName(entry, undefined, world, maps)}</span>
+                <span className="queue-repeats">{formatRepeatsLabel(entry.remainingRepeats, t)}</span>
                 <div className="queue-actions">
                   <button
                     aria-label={t('app.queue.moveUpAria')}
@@ -558,7 +575,9 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
   return (
     <div className="buff-bar" aria-label={t('app.buff.barAria')}>
       {buffs.map(buff => {
-        const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
+        // durable 阵盘类永驻 Buff：到期时间投影为有限哨兵（≥1e15），按常驻展示而非倒计时。
+        const permanent = buff.expiresAtUnixSeconds >= 1e15
+        const remaining = permanent ? 0 : Math.max(0, buff.expiresAtUnixSeconds - serverTime)
         // Buff 描述唯一来源：权威修饰器字段（regen/攻速/免伤/statRatios），不再读收益倍率幻影字段。
         const desc = describeBuffEffectLines(buff).join('；') || t('app.buff.combatBuff')
 
@@ -570,7 +589,9 @@ const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
                 badge={t('app.buff.stackAria', { n: buff.stacks })}
                 badgeTone="gold"
                 description={desc}
-                subtitle={t('app.buff.remainingStacks', { remaining, stacks: buff.stacks })}
+                subtitle={permanent
+                  ? t('app.buff.permanentStacks', { stacks: buff.stacks })
+                  : t('app.buff.remainingStacks', { remaining, stacks: buff.stacks })}
                 title={buff.name}
               />
             }
@@ -687,6 +708,7 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
       </div>
       <QueueCenter />
       <BuffBar />
+      <TaijiToggle />
     </header>
   )
 })
@@ -748,7 +770,7 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </span>
         </button>
 
-        {/* 技艺（可展开/折叠二级菜单：炼丹、炼器） */}
+        {/* 技艺（可展开/折叠二级菜单：炼丹、炼器、符箓、阵法、强化） */}
         <div className="nav-group">
           <button
             className={`nav-item nav-item--collapsible${activeTab === 'crafting' ? ' active' : ''}`}
@@ -801,6 +823,39 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
                 <span className="nav-sub-glyph" aria-hidden="true"><Icon name="forging" /></span>
                 <span className="nav-sub-label">{t('app.crafting.forging')}</span>
               </button>
+              <button
+                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'talisman' ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveTab('crafting')
+                  setCraftingMode('talisman')
+                }}
+                type="button"
+              >
+                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="talisman" /></span>
+                <span className="nav-sub-label">{t('app.crafting.talisman')}</span>
+              </button>
+              <button
+                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'formation' ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveTab('crafting')
+                  setCraftingMode('formation')
+                }}
+                type="button"
+              >
+                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="formation" /></span>
+                <span className="nav-sub-label">{t('app.crafting.formation')}</span>
+              </button>
+              <button
+                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'enhancement' ? ' active' : ''}`}
+                onClick={() => {
+                  setActiveTab('crafting')
+                  setCraftingMode('enhancement')
+                }}
+                type="button"
+              >
+                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="enhancement" /></span>
+                <span className="nav-sub-label">{t('app.crafting.enhancement')}</span>
+              </button>
             </div>
           )}
         </div>
@@ -823,6 +878,16 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           <span className="nav-glyph" aria-hidden="true"><Icon name="combat" /></span>
           <span className="nav-text">
             <span className="nav-label">{t('app.nav.combat')}</span>
+          </span>
+        </button>
+        <button
+          className={`nav-item${activeTab === 'social' ? ' active' : ''}`}
+          onClick={() => setActiveTab('social')}
+          type="button"
+        >
+          <span className="nav-glyph" aria-hidden="true"><Icon name="social" /></span>
+          <span className="nav-text">
+            <span className="nav-label">{t('app.nav.social')}</span>
           </span>
         </button>
       </nav>
@@ -916,10 +981,15 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   // 当前模式与当前子选项卡下的行动列表过滤与等级升序排列
   const filteredActions = useMemo(() => {
     let list: ActionDefinition[] = []
-    if (craftingMode === 'alchemy') {
+    if (craftingMode === 'talisman' || craftingMode === 'formation') {
+      // 符箓/阵法制造行动复用 alchemy 行动类型，按 technique 归属独立页签展示
+      list = availableActions.filter(a => a.technique === craftingMode)
+    } else if (craftingMode === 'alchemy') {
+      // 炼丹行动池须剥离符箓/阵法/强化技艺行动，避免经 type=alchemy 串入炼丹列表
+      const pool = availableActions.filter(a => a.technique !== 'talisman' && a.technique !== 'formation' && a.technique !== 'enhancement')
       if (alchemySubTab === 'extraction') {
         // 提炼：草木精华、伴灵精华等纯药材提炼（排除锻造精炼）
-        list = availableActions.filter(a =>
+        list = pool.filter(a =>
           (a.id === 'craft.extract-herb-essence' ||
            a.id === 'craft.extract-banling-essence' ||
            a.id.startsWith('craft.extract-') ||
@@ -929,25 +999,26 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         )
       } else if (alchemySubTab === 'cultivation') {
         // 修炼丹药：引气丹、通脉丹
-        list = availableActions.filter(a =>
+        list = pool.filter(a =>
           a.id === 'alchemy.refine-qi-pill' ||
           a.id === 'alchemy.refine-tongmai-pill' ||
           (a.type === 'alchemy' && !a.id.includes('zhixue') && !a.id.includes('shunqi') && !a.id.startsWith('craft.extract-') && !a.id.startsWith('forge.') && !a.id.startsWith('craft.refine-'))
         )
       } else {
         // 斗法药剂：止血散、顺气丸
-        list = availableActions.filter(a =>
+        list = pool.filter(a =>
           a.id === 'alchemy.refine-zhixue-powder' ||
           a.id === 'alchemy.refine-shunqi-pill' ||
           a.id.includes('zhixue') ||
           a.id.includes('shunqi')
         )
       }
-    } else {
+    } else if (craftingMode === 'forging') {
       // 炼器：精炼、武器、头部、衣服、腿部、鞋履、饰品
+      const pool = availableActions.filter(a => a.technique !== 'talisman' && a.technique !== 'formation' && a.technique !== 'enhancement')
       if (forgingSubTab === 'refining') {
         // 精炼：百炼铁、桃木晶、赤铜精、灵松晶等锻造灵材精炼
-        list = availableActions.filter(a =>
+        list = pool.filter(a =>
           a.id === 'craft.refine-iron' ||
           a.id === 'craft.refine-peach-wood-crystal' ||
           a.id === 'craft.refine-copper' ||
@@ -956,7 +1027,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
           (a.id.startsWith('craft.') && !a.id.startsWith('craft.extract-'))
         )
       } else {
-        list = availableActions.filter(a => {
+        list = pool.filter(a => {
           for (const yieldEntry of a.yields ?? []) {
             if (yieldEntry.kind !== 'item' || !yieldEntry.id) continue
             const slot = equipmentSlotMap[yieldEntry.id]
@@ -993,8 +1064,8 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
       <header className="panel-header crafting-page-header">
         <h2>{t(`app.crafting.${craftingMode}`)}</h2>
 
-        {/* 顶部子选项卡 */}
-        {craftingMode === 'alchemy' ? (
+        {/* 顶部子选项卡（符箓/阵法/强化模式无二级分类） */}
+        {craftingMode === 'alchemy' && (
           <div className="crafting-sub-tabs" role="tablist">
             {ALCHEMY_SUB_TABS.map(tab => (
               <button
@@ -1009,7 +1080,8 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
               </button>
             ))}
           </div>
-        ) : (
+        )}
+        {craftingMode === 'forging' && (
           <div className="crafting-sub-tabs" role="tablist">
             {FORGING_SUB_TABS.map(tab => (
               <button
@@ -1027,11 +1099,15 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
         )}
       </header>
 
-      <div className="action-cards">
-        {filteredActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
-        {filteredActions.length === 0 && <p className="location-action-empty">{t('app.crafting.empty')}</p>}
-      </div>
-      <AutoUse type="alchemy" />
+      {craftingMode === 'enhancement' ? (
+        <EnhancementPage />
+      ) : (
+        <div className="action-cards">
+          {filteredActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
+          {filteredActions.length === 0 && <p className="location-action-empty">{t('app.crafting.empty')}</p>}
+        </div>
+      )}
+      <AutoUse type={craftingMode === 'enhancement' ? 'enhancement' : 'alchemy'} />
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
@@ -1232,22 +1308,6 @@ const ActionCard = memo(function ActionCard({ action, onOpen }: { action: Action
 })
 
 /**
- * 行动详情弹窗中的单个材料消耗/产出条目
- */
-const ActionDetailItem = memo(function ActionDetailItem({ itemId, amount, current }: { itemId: string; amount: number; current?: number }): React.JSX.Element {
-  const metadata = resolveItemMetadata(itemId)
-  const insufficient = current !== undefined && current < amount
-  return (
-    <span className="action-detail-item">
-      <ItemReference amount={current} itemId={itemId} label={metadata?.label ?? itemId} />
-      <strong className={insufficient ? 'is-insufficient' : ''}>
-        {current === undefined ? <UnitNumber maxDecimals={0} prefix="×" value={amount} /> : <><UnitNumber maxDecimals={0} value={current} /> / <UnitNumber maxDecimals={0} value={amount} /></>}
-      </strong>
-    </span>
-  )
-})
-
-/**
  * 行动执行配置模态弹窗（设置循环轮次、查看消耗产出并加入行动队列）
  */
 const ActionModal = memo(function ActionModal({ action, onClose }: { action: ActionDefinition; onClose: () => void }): React.JSX.Element {
@@ -1275,15 +1335,20 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
     stats,
   }), [action, inventory, items, autoUseSlots, world, stats])
 
-  const rateBonuses = useMemo(
-    () => yieldPreview.bonuses.filter(b => b.type !== 'foundation'),
+  // 耗时加速类加成不乘产出倍率：拆出单独徽标常显，不并入「总加成」构成明细
+  const multiplierBonuses = useMemo(
+    () => yieldPreview.bonuses.filter(b => b.type !== 'foundation' && b.type !== 'speed'),
+    [yieldPreview.bonuses]
+  )
+  const speedBonuses = useMemo(
+    () => yieldPreview.bonuses.filter(b => b.type === 'speed'),
     [yieldPreview.bonuses]
   )
   const totalMultiplier = yieldPreview.totalMultiplier
   const totalPercent = Math.round((totalMultiplier - 1.0) * 100)
-  const hasRateBonus = rateBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
+  const hasRateBonus = multiplierBonuses.length > 0 && Math.abs(totalMultiplier - 1.0) > 0.001
   const isPending = action.type === 'cultivation' && Boolean(yieldPreview.cultivation?.isPendingBreakthrough)
-  const hasBonuses = hasRateBonus || isPending
+  const hasBonuses = hasRateBonus || speedBonuses.length > 0 || isPending
 
   const inputs = Object.entries(action.inputs ?? {}).map(([itemId, amount]) => ({ itemId, amount }))
   const titleId = `action-modal-title-${action.id}`
@@ -1369,7 +1434,7 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                     <div className="action-bonus-tooltip-content">
                       <div className="action-bonus-tooltip-title">{t('app.action.bonusBreakdownTitle')}</div>
                       <div className="action-bonus-tooltip-list">
-                        {rateBonuses.map((bonus, idx) => (
+                        {multiplierBonuses.map((bonus, idx) => (
                           <div className="action-bonus-tooltip-row" key={idx}>
                             <span className="action-bonus-tooltip-name">{bonus.sourceName}</span>
                             <strong className="action-bonus-tooltip-tag">{bonus.tag}</strong>
@@ -1387,6 +1452,20 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
                   </span>
                 </FloatingTooltip>
               )}
+
+              {speedBonuses.map((bonus, idx) => (
+                <FloatingTooltip
+                  key={`speed-${idx}`}
+                  placement="top"
+                  title={bonus.description}
+                  tone="gold"
+                >
+                  <span className="action-bonus-pill action-bonus-pill--world">
+                    <span className="action-bonus-pill-source">{bonus.sourceName}</span>
+                    <strong className="action-bonus-pill-tag">{bonus.tag}</strong>
+                  </span>
+                </FloatingTooltip>
+              ))}
 
               {isPending && (
                 <FloatingTooltip
@@ -1406,7 +1485,9 @@ const ActionModal = memo(function ActionModal({ action, onClose }: { action: Act
         <div>
           <dt>{t('app.action.duration')}</dt>
           <dd><span className="action-detail-value">
-            {startsImmediately ? t('app.action.combatUnlimited') : t('app.action.durationPerRound', { seconds: action.durationSeconds })}
+            {startsImmediately
+              ? t('app.action.combatUnlimited')
+              : t('app.action.durationPerRound', { seconds: Math.max(1, Math.ceil(yieldPreview.actualDurationSeconds - 1e-9)) })}
           </span></dd>
         </div>
       </dl>
@@ -1604,64 +1685,64 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
                   ? t('app.combatPanel.chooseInternalSlotAria')
                   : t('app.combatPanel.chooseSpellSlotAria', { slot: index })
 
-              const slotContent = (
-                <>
-                  <button
-                    aria-label={slotAriaLabel}
-                    className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
-                    onClick={event => {
-                      const anchor = event.currentTarget
-                      setPickerTarget(prev => prev?.index === index ? null : { kind: 'ability', index, anchor })
-                    }}
-                    type="button"
-                  >
-                    <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
-                      {slotTypeTag}
+              const slotButton = (
+                <button
+                  aria-label={slotAriaLabel}
+                  className={`combat-ability-slot${isInternal ? ' is-internal-slot' : ' is-spell-slot'}${ability ? '' : ' combat-ability-slot--empty'}`}
+                  onClick={event => {
+                    const anchor = event.currentTarget
+                    setPickerTarget(prev => prev?.index === index ? null : { kind: 'ability', index, anchor })
+                  }}
+                  type="button"
+                >
+                  <span className={`abilities-slot-tag-badge${isInternal ? ' is-internal' : ''}`}>
+                    {slotTypeTag}
+                  </span>
+                  {ability ? (
+                    <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
+                      <span className="item-type-ribbon" aria-hidden="true"><span>{ribbonLabel}</span></span>
+                      {abilityIconUrl
+                        ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
+                        : <strong className="item-tile-name">{ability.name}</strong>}
+                      <span className="item-corner item-corner--bottom-right">{t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}</span>
+                      {(abilityCooldowns[ability.abilityId] ?? 0) > 0 && (
+                        <AbilityCooldownOverlay
+                          remainingMilliseconds={abilityCooldowns[ability.abilityId]}
+                          totalMilliseconds={ability.cooldownMilliseconds ?? 0}
+                        />
+                      )}
+                      <span aria-hidden="true" className="item-tile-glow" />
                     </span>
-                    {ability ? (
-                      <span className="item-tile combat-ability-cell" data-rarity={isInternal ? 'emperor' : 'mystic'}>
-                        <span className="item-type-ribbon" aria-hidden="true"><span>{ribbonLabel}</span></span>
-                        {abilityIconUrl
-                          ? <img alt={ability.name} className="item-tile-icon" decoding="async" draggable={false} src={abilityIconUrl} />
-                          : <strong className="item-tile-name">{ability.name}</strong>}
-                        <span className="item-corner item-corner--bottom-right">{t('app.combatPanel.manaCost', { mana: Math.round(ability.manaCost ?? 0) })}</span>
-                        {(abilityCooldowns[ability.abilityId] ?? 0) > 0 && (
-                          <AbilityCooldownOverlay
-                            remainingMilliseconds={abilityCooldowns[ability.abilityId]}
-                            totalMilliseconds={ability.cooldownMilliseconds ?? 0}
-                          />
-                        )}
-                        <span aria-hidden="true" className="item-tile-glow" />
-                      </span>
-                    ) : (
-                      <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
-                    )}
-                  </button>
-                  {ability && (
-                    <>
-                      {/* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */}
-                      <span className="combat-ability-level-control">
-                        <span aria-hidden="true">Lv.</span>
-                        <span className="combat-ability-level-value">{abilityLevelFor(ability.abilityId)}</span>
-                      </span>
-                      <button
-                        aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
-                        className="item-slot-inline-action item-slot-inline-action--condition"
-                        onClick={() => setEditingTrigger({ kind: 'ability', index })}
-                        title={t('app.combatPanel.editTriggersTitle')}
-                        type="button"
-                      >{t('app.combatPanel.triggerConditionBtn', { count: (slot.triggers?.length ?? 0) > 0 ? (slot.triggers?.length ?? 0) : '' })}</button>
-                    </>
+                  ) : (
+                    <span className="abilities-slot-empty-label">{emptyBtnLabel}</span>
                   )}
+                </button>
+              )
+              const slotExtras = ability && (
+                <>
+                  {/* 装配等级恒等于已参悟等级（调低无收益），展示为静态徽标而非输入框 */}
+                  <span className="combat-ability-level-control">
+                    <span aria-hidden="true">Lv.</span>
+                    <span className="combat-ability-level-value">{abilityLevelFor(ability.abilityId)}</span>
+                  </span>
+                  <button
+                    aria-label={t('app.combatPanel.editTriggersAria', { name: ability.name, count: slot.triggers?.length ?? 0 })}
+                    className="item-slot-inline-action item-slot-inline-action--condition"
+                    onClick={() => setEditingTrigger({ kind: 'ability', index })}
+                    title={t('app.combatPanel.editTriggersTitle')}
+                    type="button"
+                  >{t('app.combatPanel.triggerConditionBtn', { count: (slot.triggers?.length ?? 0) > 0 ? (slot.triggers?.length ?? 0) : '' })}</button>
                 </>
               )
               return (
                 <div className={`combat-slot-card${pickerTarget?.index === index ? ' is-picking' : ''}`} key={index}>
                   {ability ? (
                     <EffectTooltipTarget className="combat-ability-slot-shell" content={describeAbility(ability, abilityLevelFor(ability.abilityId))} tabIndex={-1}>
-                      {slotContent}
+                      {slotButton}
                     </EffectTooltipTarget>
-                  ) : <span className="combat-ability-slot-shell">{slotContent}</span>}
+                  ) : <span className="combat-ability-slot-shell">{slotButton}</span>}
+                  {/* Lv 徽标与条件按钮移出 tooltip 触发域：避免点开触发器编辑器时 tooltip 叠在 modal 上 */}
+                  {slotExtras}
                 </div>
               )
             })}
@@ -1826,8 +1907,10 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
   const t = useT()
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
+  const [recordsOpen, setRecordsOpen] = useState(false)
   const closeModal = useCallback(() => setSelectedAction(null), [])
   const closeReport = useCallback(() => setReportOpen(false), [])
+  const closeRecords = useCallback(() => setRecordsOpen(false), [])
 
   return (
     <section className="panel expedition-page" hidden={hidden}>
@@ -1839,6 +1922,14 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
           type="button"
         >
           {t('combat.report.title')}
+        </button>
+        {/* 侧边栏在移动端整体隐藏，详情页补充「记录」入口保证竖屏可达 */}
+        <button
+          className="ghost-button records-open-mobile"
+          onClick={() => setRecordsOpen(true)}
+          type="button"
+        >
+          {t('app.nav.records')}
         </button>
       </header>
       <div className="expedition-content expedition-content--duel">
@@ -1858,6 +1949,15 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
       >
         <StatsPanel />
       </Modal>
+      <Modal
+        className="battle-report-modal"
+        labelledBy="records-panel-title-mobile"
+        onClose={closeRecords}
+        open={recordsOpen}
+        size="medium"
+      >
+        <RecordsPanel titleId="records-panel-title-mobile" />
+      </Modal>
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
   )
@@ -1865,7 +1965,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
 
 
 
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'map' | 'combat' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
+const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },
   { tab: 'cultivation', labelKey: 'cultivation', icon: 'cultivation' },
@@ -1873,6 +1973,7 @@ const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 
   { tab: 'crafting', labelKey: 'crafting', icon: 'crafting' },
   { tab: 'map', labelKey: 'map', icon: 'map' },
   { tab: 'combat', labelKey: 'combat', icon: 'combat' },
+  { tab: 'social', labelKey: 'social', icon: 'social' },
   { tab: 'inventory', labelKey: 'inventory', icon: 'inventory' },
   { tab: 'log', labelKey: 'log', icon: 'log' },
   { tab: 'settings', labelKey: 'settings', icon: 'settings' },
@@ -1907,15 +2008,16 @@ const BottomNav = memo(function BottomNav(): React.JSX.Element {
  */
 const Notice = memo(function Notice(): React.JSX.Element | null {
   const notice = useGameStore(state => state.notice)
+  const noticeSeq = useGameStore(state => state.noticeSeq)
   const setNotice = useGameStore(state => state.setNotice)
 
   useEffect(() => {
     if (!notice) return undefined
     const timer = window.setTimeout(() => setNotice(null), 2600)
     return () => window.clearTimeout(timer)
-  }, [notice, setNotice])
+  }, [notice, noticeSeq, setNotice])
 
-  return notice ? <div className="notice" role="status">{notice}</div> : null
+  return notice ? <div className="notice" key={noticeSeq} role="status">{notice}</div> : null
 })
 
 /**
@@ -2023,6 +2125,7 @@ export default function App(): React.JSX.Element {
             <MapPage hidden={activeTab !== 'map'} />
             <CombatDetailsPage hidden={activeTab !== 'combat'} />
             {activeTab === 'market' && <MarketPage />}
+            {activeTab === 'social' && <SocialPage />}
             {activeTab === 'settings' && <SettingsPage />}
             {activeTab === 'inventory' && <RightSidebar className="mobile-tab" />}
             {activeTab === 'log' && mobileLayout && <GameLogPanel className="mobile-tab" />}

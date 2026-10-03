@@ -8,7 +8,7 @@ import { ValueText } from './ValueText'
 export interface EffectTooltipContent {
   /** 气泡主标题（如技能或词条名称） */
   title: string
-  /** 可选顶部徽章文本（如品阶/流派） */
+  /** 可选顶部徽章文本（如品质/流派） */
   badge?: string
   /** 效果简要说明描述 */
   description: string

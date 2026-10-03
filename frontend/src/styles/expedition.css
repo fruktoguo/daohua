@@ -247,6 +247,39 @@
   stroke-width: 4px;
 }
 
+/* 区域界框与名牌：大世界共用坐标系下按区域分组的显示边界 */
+.world-map-region {
+  pointer-events: none;
+}
+
+.world-map-region-frame {
+  fill: rgba(114, 169, 140, 0.028);
+  stroke: rgba(114, 169, 140, 0.3);
+  stroke-width: 1px;
+  stroke-dasharray: 7 6;
+}
+
+.world-map-region-name {
+  fill: rgba(114, 169, 140, 0.72);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 13px;
+  letter-spacing: 4px;
+  paint-order: stroke;
+  stroke: rgba(6, 8, 6, 0.9);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* 跨域长路：两端节点分属不同区域的边以虚线区别于图内道路 */
+.world-map-edge-group.is-crossing .world-map-edge-line {
+  stroke: rgba(114, 169, 140, 0.55);
+  stroke-dasharray: 5 5;
+}
+
+.world-map-edge-group.is-crossing:hover .world-map-edge-line {
+  stroke: #7fd0a8;
+}
+
 @keyframes world-route-flow {
   to {
     stroke-dashoffset: -10;
@@ -299,6 +332,24 @@
   border-color: var(--gold-bright);
   background: rgba(86, 70, 27, 0.92);
   box-shadow: 0 0 0 3px rgba(7, 6, 4, 0.68), 0 0 24px rgba(232, 214, 154, 0.45);
+}
+
+/* 关口节点：持有通往其他区域跨域边的节点，右上角界门菱标 */
+.world-map-node.is-gateway {
+  border-color: rgba(114, 169, 140, 0.85);
+}
+
+.world-map-node.is-gateway::before {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 8px;
+  height: 8px;
+  background: #72a98c;
+  box-shadow: 0 0 6px rgba(114, 169, 140, 0.9);
+  content: "";
+  pointer-events: none;
+  transform: rotate(45deg);
 }
 
 .world-map-node.is-current::after {
@@ -3228,6 +3279,12 @@
 }
 
 @media (max-width: 760px) {
+  /* 竖屏：功法槽组允许收缩换行，覆盖上方 min-width:max-content 避免整组撑出视口 */
+  .combat-slot-tray .slot-group:last-child {
+    min-width: 0;
+    width: 100%;
+  }
+
   .expedition-header {
     align-items: stretch;
   }
@@ -3242,8 +3299,12 @@
   }
 
   .world-map-stage {
-    min-height: 420px;
-    aspect-ratio: 1 / 1;
+    /* 显式宽高：aspect-ratio 配 min-height 会在窄屏把宽度反推撑出容器，导致右上工具栏溢出 */
+    width: 100%;
+    min-width: 0;
+    height: 420px;
+    min-height: 0;
+    justify-self: stretch;
   }
 
   .world-location-panel {
@@ -3314,6 +3375,86 @@
 
   .combat-trigger-row input {
     width: 88px;
+  }
+}
+
+/* 移动端补充的「记录」入口：桌面端由侧边栏底部承载，默认隐藏避免重复（须在媒体查询块之前声明） */
+.records-open-mobile {
+  display: none;
+  padding: 4px 14px;
+  font-size: 12px;
+  letter-spacing: 1px;
+}
+
+@media (max-width: 960px) {
+  /* 竖屏：详情页头部露出「记录」入口（侧边栏入口在此断点隐藏） */
+  .records-open-mobile {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* 竖屏：终止/快捷行动按钮不再悬浮遮挡卡片，落到战场下方独立一行 */
+  .combat-arena-controls {
+    position: static;
+    justify-content: center;
+    padding: 2px 8px 8px;
+  }
+
+  .combat-arena-controls button {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 竖屏：生活/赶路/空闲卡片限高并场内滚动，避免溢出遮住控件行 */
+  .arena-life-card,
+  .arena-idle-card {
+    width: 100%;
+    max-width: 224px;
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: auto;
+  }
+
+  /* 卡内进度区吸附底部常显；战场下方终止条仅保留战斗相位，生活/赶路卡内终止按钮不再隐藏 */
+  .arena-life-footer {
+    position: sticky;
+    bottom: 0;
+    padding-top: 4px;
+    background: rgba(10, 9, 6, 0.97);
+  }
+
+  /* 竖屏：战斗槽位托盘三组纵向堆叠，格子均分整行宽度 */
+  .combat-slot-tray {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    overflow-x: hidden;
+  }
+
+  .combat-slot-section {
+    width: 100%;
+    min-width: 0;
+    flex: none;
+  }
+
+  .combat-slot-section + .combat-slot-section {
+    padding-top: 6px;
+    border-top: 1px solid var(--gold-faint);
+    border-left: 0;
+  }
+
+  .combat-slot-section .auto-use-slots,
+  .combat-slot-section .combat-slot-grid {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .combat-slot-grid--abilities {
+    justify-content: flex-start;
   }
 }
 
@@ -3398,14 +3539,13 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  width: clamp(180px, 26vw, 290px);
-  min-height: 200px;
-  padding: 12px;
+  width: clamp(160px, 19vw, 224px);
+  padding: 10px;
   background: linear-gradient(135deg, rgba(16, 14, 10, 0.95), rgba(9, 8, 6, 0.98));
   border: 1px solid rgba(201, 180, 109, 0.35);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 16px rgba(201, 180, 109, 0.05);
   border-radius: 4px;
-  gap: 10px;
+  gap: 8px;
 }
 
 .arena-life-header {
@@ -3440,7 +3580,7 @@
 .arena-life-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   flex: 1;
 }
 
@@ -3449,8 +3589,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: 42px;
+  height: 42px;
   margin: 0 auto;
   border-radius: 4px;
   border: 1px solid var(--gold);
@@ -3465,7 +3605,7 @@
 }
 
 .arena-life-glyph {
-  font-size: 26px;
+  font-size: 19px;
   line-height: 1;
 }
 
@@ -3488,7 +3628,7 @@
   flex-direction: column;
   gap: 4px;
   background: rgba(0, 0, 0, 0.3);
-  padding: 8px;
+  padding: 6px;
   border-radius: 3px;
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -3620,9 +3760,9 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  width: clamp(180px, 26vw, 290px);
-  min-height: 200px;
-  padding: 20px 14px;
+  width: clamp(160px, 19vw, 224px);
+  min-height: 140px;
+  padding: 16px 12px;
   background: rgba(14, 12, 8, 0.65);
   border: 1px dashed rgba(201, 180, 109, 0.25);
   border-radius: 4px;

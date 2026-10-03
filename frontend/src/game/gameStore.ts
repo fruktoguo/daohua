@@ -85,6 +85,8 @@ interface GameStore {
   connection: ConnectionState
   /** 顶部全局提示消息（为 null 时隐藏） */
   notice: string | null
+  /** 提示序号：每次下发非空提示递增，供气泡在同文案重复时重置计时并重播动画 */
+  noticeSeq: number
   /** 设置网络连接状态 */
   setConnection: (connection: ConnectionState) => void
   /** 设置顶部全局提示消息 */
@@ -117,7 +119,7 @@ const AUTO_USE_SLOT_COUNT = 3
 /** 战斗域自动消耗槽为双组栏位（药品栏 potion ×3 + 通用栏 general ×3），共 6 槽。 */
 const COMBAT_AUTO_USE_SLOT_COUNT = AUTO_USE_SLOT_COUNT * 2
 const COMBAT_ABILITY_SLOT_COUNT = 5
-const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
+const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat', 'enhancement']
 
 /** 各行动域自动消耗槽位数：战斗域 6 槽（双组），其余行动域 3 槽（仅通用栏）。 */
 function autoUseSlotCount(type: ActionType): number {
@@ -148,6 +150,7 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
         exploration: emptyAutoUseSlots('exploration'),
         alchemy: emptyAutoUseSlots('alchemy'),
         combat: emptyAutoUseSlots('combat'),
+        enhancement: emptyAutoUseSlots('enhancement'),
       },
       entries: [],
     },
@@ -296,8 +299,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   buildings: [],
   connection: 'connecting',
   notice: null,
+  noticeSeq: 0,
   setConnection: (connection) => set({ connection }),
-  setNotice: (notice) => set({ notice }),
+  setNotice: (notice) => set(state => ({ notice, noticeSeq: notice === null ? state.noticeSeq : state.noticeSeq + 1 })),
   setActions: (actions) => {
     registerCatalogActions(actions)
     set((state) => {

@@ -2,7 +2,7 @@
  * 行动产出、持续消耗品加成与动态加成解算器
  */
 
-import type { ActionDefinition, ActionType, AutoUseSlot, InventoryItem, ItemDefinition, Stats } from './types'
+import type { ActionDefinition, ActionType, AutoUseSlot, InventoryItem, ItemDefinition, NodeBuildingEffectSet, Stats } from './types'
 import { calculateRealmProgress } from './combatConstants'
 import { getT } from '../i18n'
 
@@ -16,7 +16,7 @@ export interface ActiveBonusDetail {
   /** 加成标签（如 '+30%' / '+20%' / '3倍加速'） */
   tag: string
   /** 加成类别 */
-  type: 'pill' | 'world' | 'buff' | 'foundation' | 'speed'
+  type: 'pill' | 'world' | 'building' | 'buff' | 'foundation' | 'speed'
   /** 数值乘率（如 1.3） */
   multiplier?: number
   /** 说明描述 */
@@ -78,12 +78,13 @@ interface CalculateActionParams {
   world?: {
     locationName?: string
     cultivationMultiplier?: number
+    buildingEffects?: NodeBuildingEffectSet
   }
   stats?: Stats
 }
 
 /** 兼容背包数组与 {itemId: amount} 映射两种入参形态的持有量查询；数组形态只计基础变体行 */
-function getItemAmount(inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>, itemId: string): number {
+export function getItemAmount(inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>, itemId: string): number {
   if (Array.isArray(inventory)) {
     return inventory.find(i => i.itemId === itemId && !i.variant)?.amount ?? 0
   }
@@ -108,14 +109,16 @@ export function calculateActionYieldPreview({
 
   const bonuses: ActiveBonusDetail[] = []
 
-  // 1. 持续消耗品 / 丹药加成
+  // 1. 持续消耗品 / 丹药加成（与服务端 TryGetSustainedConsumable 同口径：
+  //    槽位启用、物品存在、持续型且时长为正、适用行动类型匹配）
   let autoUseMultiplier = 1.0
   const slotsForType = autoUseSlots?.[actionType] ?? []
   for (const slot of slotsForType) {
     if (!slot || !slot.enabled || !slot.itemId) continue
     const itemDef = items.find(item => item.itemId === slot.itemId)
     if (!itemDef) continue
-    const isApplicable = itemDef.usableActionTypes?.includes(actionType)
+    const isContinuous = itemDef.isContinuous === true && (itemDef.durationSeconds ?? 0) > 0
+    const isApplicable = isContinuous && (itemDef.usableActionTypes?.includes(actionType) ?? false)
     if (!isApplicable) continue
 
     // 检查是否有持续时间或背包有货可自动补充
@@ -131,15 +134,18 @@ export function calculateActionYieldPreview({
     } else if (actionType === 'alchemy' && itemDef.alchemyMultiplier && itemDef.alchemyMultiplier > 0) {
       itemMult = itemDef.alchemyMultiplier
     }
-    if (itemMult > 1.0) {
+    if (itemMult !== 1.0) {
       autoUseMultiplier *= itemMult
       const percent = Math.round((itemMult - 1.0) * 100)
       bonuses.push({
         sourceName: itemDef.name,
-        tag: `+${percent}%`,
+        tag: `${percent >= 0 ? '+' : ''}${percent}%`,
         type: 'pill',
         multiplier: itemMult,
-        description: t('app.action.bonusPillDesc', { name: itemDef.name, percent }),
+        description: t('app.action.bonusPillDesc', {
+          name: itemDef.name,
+          percent: `${percent >= 0 ? '+' : ''}${percent}`,
+        }),
       })
     }
   }
@@ -161,9 +167,46 @@ export function calculateActionYieldPreview({
     }
   }
 
+  // 3. 当前节点公共建筑加成（与服务端 OutputRatioFor/SpeedRatioFor 同口径）：
+  //    产出类乘进总倍率；耗时加速只缩短每轮时长、不乘产出，且按轮扣除持续用品时长。
+  const effects = world?.buildingEffects
+  const buildingOutputRatio =
+    actionType === 'cultivation' ? (effects?.cultivationOutputRatio ?? 0)
+    : actionType === 'exploration' ? (effects?.explorationOutputRatio ?? 0)
+    : actionType === 'alchemy' ? (effects?.alchemyOutputRatio ?? 0)
+    : 0
+  const buildingSpeedRatio =
+    actionType === 'exploration' ? (effects?.explorationSpeedRatio ?? 0)
+    : actionType === 'alchemy' ? (effects?.alchemySpeedRatio ?? 0)
+    : 0
+  const actualDurationSeconds = buildingSpeedRatio > 0
+    ? baseDurationSeconds / (1 + buildingSpeedRatio)
+    : baseDurationSeconds
+
+  if (buildingOutputRatio !== 0) {
+    const percent = Math.round(buildingOutputRatio * 100)
+    bonuses.push({
+      sourceName: t('app.action.bonusBuildingSource'),
+      tag: `${percent >= 0 ? '+' : ''}${percent}%`,
+      type: 'building',
+      multiplier: 1 + buildingOutputRatio,
+      description: t('app.action.bonusBuildingDesc', { percent: `${percent >= 0 ? '+' : ''}${percent}%` }),
+    })
+  }
+  if (buildingSpeedRatio > 0) {
+    // 耗时缩短率 = ratio / (1 + ratio)，与每轮实际耗时口径一致
+    const shortenPercent = Math.round((buildingSpeedRatio / (1 + buildingSpeedRatio)) * 100)
+    bonuses.push({
+      sourceName: t('app.action.bonusBuildingSource'),
+      tag: t('app.action.bonusBuildingSpeedTag', { percent: shortenPercent }),
+      type: 'speed',
+      description: t('app.action.bonusBuildingSpeedDesc', { percent: shortenPercent }),
+    })
+  }
+
   // 活跃 Buff 只携带战斗属性修饰器（hpRegen/mpRegen/attackSpeedPoints/damageAbsorptionPoints/statRatios），
   // 不再承载行动收益倍率——收益加成唯一通道为持续消耗品（autoUseSlots）与灵脉/建筑倍率。
-  const totalMultiplier = autoUseMultiplier * worldMultiplier
+  const totalMultiplier = autoUseMultiplier * worldMultiplier * (1 + buildingOutputRatio)
 
   // 4. 修炼专属境界判定（产出数值统一由 yields 驱动）
   let cultivationDetail: CultivationYieldDetail | undefined
@@ -186,7 +229,9 @@ export function calculateActionYieldPreview({
     cultivationDetail = { isPendingBreakthrough }
   }
 
-  // 5. 收益解算：物品按 id 聚合，资源类收益按 kind 折算合并为单轮总量（产出只展示每轮口径），增益收益原样透传
+  // 5. 收益解算：物品按 id 聚合，资源类收益按 kind 折算合并为单轮总量（产出只展示每轮口径），增益收益原样透传。
+  //    按秒收益整轮总量 = 速率 × 实际耗时整秒数（服务端进度按整秒量化推进，时长浮点贴整取上界）。
+  const effectiveRoundSeconds = Math.max(0, Math.ceil(actualDurationSeconds - 1e-9))
   const itemAmountMap = new Map<string, number>()
   const resourceBaseMap = new Map<ResourceYieldKind, number>()
   const buffYields: ActionYieldPreview['buffYields'] = []
@@ -200,7 +245,7 @@ export function calculateActionYieldPreview({
       case 'mana':
       case 'hitpoints':
       case 'experience': {
-        const perRound = yieldEntry.per === 'second' ? yieldEntry.amount * baseDurationSeconds : yieldEntry.amount
+        const perRound = yieldEntry.per === 'second' ? yieldEntry.amount * effectiveRoundSeconds : yieldEntry.amount
         resourceBaseMap.set(yieldEntry.kind, (resourceBaseMap.get(yieldEntry.kind) ?? 0) + perRound)
         break
       }
@@ -247,6 +292,6 @@ export function calculateActionYieldPreview({
     buffYields,
     bonuses,
     baseDurationSeconds,
-    actualDurationSeconds: baseDurationSeconds,
+    actualDurationSeconds,
   }
 }

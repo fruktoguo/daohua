@@ -71,6 +71,56 @@ body::after {
   transform: rotate(160deg);
 }
 
+/* 主题切换圆形扩散过渡：新主题快照以圆心裁切展开覆盖旧快照，关闭默认交叉淡化。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 0; }
+::view-transition-new(root) { z-index: 2147483646; }
+
+/* 顶栏太极开关：对称正置双鱼，盘底为偏差暖米色，鱼眼取对色；常态静止，仅点击时经 --taiji-spin 翻转 180°。 */
+.taiji-toggle {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  place-items: center;
+  justify-self: end;
+  padding: 2px;
+  border-radius: 50%;
+}
+
+.taiji-spin {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  transform: rotate(var(--taiji-spin, 0deg));
+  transition: transform 0.9s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+.taiji-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1.5px solid color-mix(in srgb, var(--text) 48%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--gold-faint), inset 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
+.taiji-toggle:hover .taiji-icon {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px var(--gold-faint), inset 0 1px 4px rgba(0, 0, 0, 0.16);
+}
+
+.taiji-yang { fill: #f8f4e4; }
+.taiji-yin { fill: #12100b; }
+
+/* 盘底偏差色：略沉于纯阳的暖米色，异色鱼眼与阴鱼边界均清晰可辨。 */
+.taiji-yang-bg { fill: #e7dcba; }
+
 button,
 input,
 select {
@@ -145,6 +195,10 @@ button:active:not(:disabled) {
 button:disabled {
   cursor: default;
   opacity: 0.35;
+}
+
+.taiji-toggle::before {
+  content: none;
 }
 
 button.danger {
@@ -344,7 +398,7 @@ input[type="checkbox"] {
   max-height: 85px;
   min-width: 0;
   flex-shrink: 0;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 12px;
   padding: 9px 12px 15px 12px;
@@ -619,7 +673,7 @@ input[type="checkbox"] {
 
 .qc-current::before {
   position: absolute;
-  inset: -1px;
+  inset: 0;
   padding: 1px;
   pointer-events: none;
   background: conic-gradient(from var(--gold-angle), rgba(201, 180, 109, 0.1) 0deg 245deg, var(--gold-bright) 300deg, var(--gold) 320deg, rgba(201, 180, 109, 0.1) 360deg);
@@ -835,6 +889,11 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+/* 图标形态仅在移动端启用，桌面端保持「勾选框 + 文字」 */
+.loop-toggle-icon {
+  display: none;
+}
+
 .qc-expand {
   white-space: nowrap;
   font-size: 12px;
@@ -1029,7 +1088,7 @@ input[type="checkbox"] {
   position: absolute;
   top: calc(100% + 14px);
   right: 0;
-  left: 0;
+  width: 60%;
   z-index: 30;
   display: flex;
   max-height: min(340px, 60vh);
@@ -1068,40 +1127,11 @@ input[type="checkbox"] {
   border-color: var(--danger);
 }
 
-.queue-order {
-  width: 20px;
-  flex-shrink: 0;
-  color: var(--text-dim);
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.queue-main {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.queue-title {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
 .queue-name {
+  min-width: 0;
   overflow: hidden;
+  flex: 1;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.queue-sub {
-  overflow: hidden;
-  color: var(--text-dim);
-  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2145,7 +2175,7 @@ input[type="checkbox"] {
   font-variant-numeric: tabular-nums;
 }
 
-/* 讨伐弹窗节点生态图标网格：瓦片只保留立绘/位阶角标/等级底标，数值进浮层 */
+/* 讨伐弹窗节点生态图标网格：瓦片只保留立绘/生命层次角标/等级底标，数值进浮层 */
 .ecology-monster-strip {
   display: flex;
   min-width: 0;
@@ -2692,7 +2722,7 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
-/* 品阶 8 阶色彩由 selection-grid.css 统一收拢管理（参考 daojie-yusheng 规范）；
+/* 品质八品色彩由 selection-grid.css 统一收拢管理（参考 daojie-yusheng 规范）；
    hover 辉光统一由 selection-grid.css 的 .item-tile-glow 叠加层承载 */
 
 .item-use-slot.item-use-slot--depleted .item-tile,
@@ -3436,6 +3466,43 @@ input[type="checkbox"] {
   flex: 0 0 64px;
 }
 
+/* 装备强化页：左侧目标/方案配置 + 右侧实时预览双栏 */
+.enhancement-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.enhancement-layout .settings-group {
+  min-width: 0;
+}
+
+.enhancement-layout .item-use-slot,
+.enhancement-layout .item-use-slot-shell {
+  width: 100%;
+}
+
+.enhancement-charm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.enhancement-charm-toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.enhancement-outcome {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.enhancement-layout .action-detail-list {
+  margin-top: 0;
+}
+
 /* 斗法勾选块：仅 combat-encounter 行动弹窗展示 */
 .duel-option {
   display: grid;
@@ -4057,6 +4124,7 @@ input[type="checkbox"] {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  padding-right: 38px;
 }
 
 .market-order-modal-title-row h2 {
@@ -5199,6 +5267,19 @@ input[type="checkbox"] {
   background: #171208;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
   font-size: 12px;
+  animation: notice-enter 180ms ease-out;
+}
+
+@keyframes notice-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (max-width: 1500px) {
@@ -5257,14 +5338,100 @@ input[type="checkbox"] {
   .queue-center {
     grid-column: 1 / -1;
     grid-row: 2;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
   .qc-current {
     min-width: 0;
   }
 
-  .realm-progress {
-    width: 120px;
+  /* 竖屏：两个待执行任务收拢为右侧纵向图标列，文字进悬浮提示 */
+  .qc-upcoming {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .qc-next {
+    width: 26px;
+    height: 26px;
+    min-width: 26px;
+    min-height: 26px;
+    max-height: 26px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .qc-next-text {
+    display: none;
+  }
+
+  .qc-next .item-glyph {
+    width: 15px;
+    height: 15px;
+    border: 0;
+    background: none;
+  }
+
+  .qc-next .item-glyph svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 循环/自动移动开关图标化：方块按钮 + 图标，勾选态金色高亮 */
+  .qc-controls {
+    gap: 5px;
+  }
+
+  .qc-toggles {
+    gap: 4px;
+  }
+
+  .loop-toggle {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    justify-content: center;
+    border: 1px solid var(--gold-faint);
+    background: rgba(201, 180, 109, 0.05);
+  }
+
+  .loop-toggle input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .loop-toggle-icon {
+    display: grid;
+    width: 15px;
+    height: 15px;
+    place-items: center;
+    pointer-events: none;
+  }
+
+  .loop-toggle-icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .loop-toggle-text {
+    display: none;
+  }
+
+  .loop-toggle:has(input:checked) {
+    border-color: var(--gold);
+    color: var(--gold-bright);
+    background: rgba(201, 180, 109, 0.14);
+    box-shadow: 0 0 8px rgba(201, 180, 109, 0.18);
   }
 
   .app-body {
@@ -5392,24 +5559,10 @@ input[type="checkbox"] {
   }
 
   .queue-center {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 4px;
   }
 
-  .qc-current-stage {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .qc-upcoming {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
   .qc-controls {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    justify-self: end;
     gap: 4px;
   }
 
@@ -5436,12 +5589,36 @@ input[type="checkbox"] {
     padding: 7px 6px;
   }
 
-  .queue-entry > .item-glyph {
-    display: none;
+  /* 竖屏：队列卡内敌我血条改为上下两行，避免数值溢出重叠 */
+  .queue-combat-vitals {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
 
-  .queue-sub {
-    max-width: 150px;
+  .queue-combat-vital {
+    grid-template-columns: 12px minmax(24px, 1fr) auto;
+    gap: 4px;
+    font-size: 7px;
+  }
+
+  .queue-combat-vital strong {
+    font-size: 7px;
+    letter-spacing: -0.2px;
+  }
+
+  /* 坊市详情导航：窄屏把发起求购/挂售挪到第二行整行，避免文字竖排截断 */
+  .market-detail-navbar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .market-detail-actions {
+    grid-column: 1 / -1;
+  }
+
+  .market-action-btn {
+    flex: 1;
+    padding-right: 8px;
+    padding-left: 8px;
   }
 
   .panel {
@@ -5654,26 +5831,12 @@ input[type="checkbox"] {
     display: none;
   }
 
-  .realm-progress {
-    width: 105px;
-  }
-
   .wallet-label {
     display: none;
   }
 
   .wallet-block {
     min-width: 0;
-  }
-
-  .loop-toggle {
-    font-size: 0;
-  }
-
-  .loop-toggle input {
-    width: 16px;
-    height: 16px;
-    margin: 0;
   }
 
   .queue-actions button {
@@ -5771,67 +5934,6 @@ input[type="checkbox"] {
   padding: 4px 0 8px 0;
 }
 
-.insight-avatar-stage {
-  position: relative;
-  width: 84px;
-  height: 112px;
-  flex-shrink: 0;
-  background: radial-gradient(circle at 50% 60%, rgba(201, 180, 109, 0.14) 0%, rgba(10, 10, 14, 0.85) 70%);
-  border: 1px solid rgba(201, 180, 109, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  cursor: default;
-  padding: 0;
-  outline: none;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-}
-
-.insight-avatar-stage:hover {
-  border-color: var(--gold-bright);
-  box-shadow: 0 0 12px rgba(201, 180, 109, 0.35);
-  transform: translateY(-1px);
-}
-
-.insight-avatar-stage .insight-avatar-img,
-.insight-avatar-stage .vector-character {
-  width: 92%;
-  height: 92%;
-  object-fit: contain;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
-  transition: transform 0.2s ease;
-}
-
-.insight-avatar-stage:hover .insight-avatar-img,
-.insight-avatar-stage:hover .vector-character {
-  transform: scale(1.06);
-}
-
-.insight-avatar-switch-hint {
-  position: absolute;
-  bottom: 3px;
-  right: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: rgba(10, 10, 14, 0.85);
-  border: 1px solid var(--gold-dim);
-  color: var(--gold-bright);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  opacity: 0.65;
-  transition: opacity 0.2s ease, transform 0.3s ease, border-color 0.2s ease;
-}
-
-.insight-avatar-stage:hover .insight-avatar-switch-hint {
-  opacity: 1;
-  border-color: var(--gold-bright);
-  transform: rotate(180deg);
-}
-
 .insight-hero-info {
   flex: 1;
   min-width: 0;
@@ -5893,7 +5995,7 @@ input[type="checkbox"] {
   font-family: serif, "Songti SC", "SimSun";
 }
 
-/* 2. 位阶框：古典旋转棱形徽章 */
+/* 2. 境界阶段框：古典旋转棱形徽章 */
 .insight-realm-diamond-container {
   display: flex;
   align-items: center;
@@ -6641,11 +6743,6 @@ input[type="checkbox"] {
 }
 
 @media (max-width: 600px) {
-  .insight-hero {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
   .insight-title-row {
     justify-content: center;
   }
@@ -6686,6 +6783,111 @@ input[type="checkbox"] {
   background: linear-gradient(135deg, rgba(201, 180, 109, 0.5) 0%, rgba(232, 214, 154, 0.65) 100%);
   box-shadow: 0 0 16px rgba(232, 214, 154, 0.6);
   transform: translateY(-1px);
+}
+
+/* 破境突破确认弹窗：境界跃迁与基础属性逐项增量对比 */
+.breakthrough-modal-title {
+  margin: 0;
+  padding-right: 36px;
+  color: var(--gold);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 20px;
+  font-weight: var(--font-weight-regular);
+}
+
+.breakthrough-modal-realm {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 14px 0 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.breakthrough-modal-realm strong {
+  color: var(--gold);
+}
+
+.breakthrough-modal-realm-arrow {
+  color: var(--gold-bright);
+}
+
+.breakthrough-modal-attrs {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.breakthrough-modal-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 2px;
+}
+
+.breakthrough-modal-row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.breakthrough-modal-row-label {
+  color: var(--text-dim);
+}
+
+.breakthrough-modal-row-change {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.breakthrough-modal-row-before {
+  color: var(--text-dim);
+}
+
+/* 箭头/新值/增益胶囊复用 underlined-value 的 pill-tone 专属色（与内视属性面板同源）；
+   箭头是装饰符号，去掉下划线与加粗，只取色调。 */
+.breakthrough-modal-row-arrow.underlined-value {
+  padding: 0;
+  border-bottom: none;
+  font-weight: 400;
+}
+
+/* 行尾增益胶囊：中性暗底 + 属性专属色调文字，形状收拢为胶囊 */
+.breakthrough-modal-row-gain.underlined-value {
+  padding: 1px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.breakthrough-modal-empty {
+  margin: 0 0 16px;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+
+.breakthrough-modal-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.breakthrough-modal-actions button {
+  min-height: 38px;
+}
+
+.breakthrough-modal-actions .breakthrough-modal-confirm {
+  border-color: var(--gold);
+  color: #0a0805;
+  background: var(--gold);
 }
 
 .insight-panel--foundation {
@@ -6925,6 +7127,7 @@ input[type="checkbox"] {
 .settings-profile {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 14px;
   margin-bottom: 4px;
   padding: 10px 12px;
@@ -6952,7 +7155,7 @@ input[type="checkbox"] {
 
 .settings-profile-main {
   display: flex;
-  min-width: 0;
+  min-width: 140px;
   flex: 1;
   flex-direction: column;
   gap: 4px;
@@ -7067,6 +7270,11 @@ input[type="checkbox"] {
     /* 行按内容排列，剩余空间沉到底部，分类条与内容之间不产生死空档 */
     align-content: start;
     gap: 12px;
+  }
+
+  /* 强化页双栏在窄屏收拢为单列纵向流 */
+  .enhancement-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-nav {
@@ -7613,3 +7821,376 @@ input[type="checkbox"] {
   word-break: break-all;
 }
 
+
+/* ===== 同道页：队伍组队 / 匹配 / 大厅 ===== */
+
+.social-page {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.social-page-header {
+  flex-shrink: 0;
+}
+
+.social-page-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  padding-top: 14px;
+}
+
+.party-mode-tabs {
+  flex: 0 0 auto;
+}
+
+.party-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(201, 180, 109, 0.03);
+}
+
+.party-card h3 {
+  margin: 0;
+  padding-left: 9px;
+  border-left: 2px solid var(--gold);
+  color: var(--gold);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 14px;
+  font-weight: var(--font-weight-regular);
+}
+
+.party-card-desc {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.party-card--header {
+  gap: 4px;
+}
+
+.party-card--danger {
+  border-color: rgba(200, 82, 63, 0.28);
+  background: rgba(200, 82, 63, 0.04);
+}
+
+.party-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.party-name {
+  margin: 0;
+  padding-left: 0;
+  border-left: none;
+  color: var(--gold-bright);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 16px;
+}
+
+.party-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.party-field {
+  display: flex;
+  min-width: 140px;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.party-field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.party-field input {
+  padding: 6px 8px;
+  border: 1px solid var(--gold-dim);
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.35);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.party-field input:focus {
+  border-color: var(--gold);
+  outline: none;
+}
+
+/* 细条内联下拉（DropdownSelect）：与输入框等高的横条触发器 + 贴边弹出列表。 */
+.party-select {
+  position: relative;
+  min-width: 0;
+}
+
+.party-select-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 31px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--gold-dim);
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  text-align: left;
+}
+
+.party-select.is-open .party-select-trigger {
+  border-color: var(--gold);
+}
+
+.party-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-select-arrow {
+  flex: 0 0 auto;
+  color: var(--gold);
+  font-size: 10px;
+}
+
+.party-select-popover {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 3px);
+  left: 0;
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(360px, calc(100vw - 32px));
+  max-height: 240px;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--gold);
+  background: #0e0c07;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.65);
+}
+
+.party-select-option {
+  padding: 5px 8px;
+  border-color: transparent;
+  color: var(--text);
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.party-select-option:hover:not(:disabled),
+.party-select-option.is-selected {
+  border-color: var(--gold-dim);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.12);
+}
+
+.party-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 分享行的私聊对象下拉：定宽横条，与相邻按钮高度一致。 */
+.party-card-actions .party-select {
+  flex: 0 0 180px;
+}
+
+.party-seeking {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--gold-dim);
+  background: rgba(201, 180, 109, 0.05);
+  font-size: 12px;
+}
+
+.party-invitation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--gold);
+  background: rgba(201, 180, 109, 0.1);
+  font-size: 12px;
+}
+
+.party-my-valuation {
+  color: var(--jade);
+  font-size: 11px;
+}
+
+.party-list-heading {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-family: "Kaiti SC", STKaiti, KaiTi, serif;
+  font-size: 12px;
+  font-weight: var(--font-weight-regular);
+}
+
+.party-lobby-list {
+  display: flex;
+  max-height: 300px;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.party-lobby-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+}
+
+.party-lobby-entry-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.party-lobby-entry-head strong {
+  color: var(--text);
+}
+
+.party-lobby-map {
+  color: var(--text-dim);
+}
+
+.party-lobby-count {
+  margin-left: auto;
+  color: var(--gold-dim);
+  font-size: 11px;
+}
+
+.party-lobby-entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.party-lobby-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.party-lobby-empty {
+  padding: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+  list-style: none;
+  text-align: center;
+}
+
+.party-gate--met {
+  color: var(--jade);
+}
+
+.party-gate--unmet {
+  color: var(--danger);
+}
+
+.party-member-list {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+}
+
+.party-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--gold-faint);
+  font-size: 12px;
+}
+
+.party-member:last-child {
+  border-bottom: none;
+}
+
+.party-member-valuation {
+  margin-left: auto;
+  color: var(--jade);
+  font-size: 11px;
+}
+
+.party-invite-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gold-faint);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+/* 传音消息内嵌的队伍链接卡 */
+.party-link-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--gold-dim);
+  background: rgba(201, 180, 109, 0.07);
+  font-size: 11px;
+}
+
+.party-link-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+}
+
+.party-link-main strong {
+  color: var(--gold-bright);
+}
+
+.party-link-join {
+  flex-shrink: 0;
+}

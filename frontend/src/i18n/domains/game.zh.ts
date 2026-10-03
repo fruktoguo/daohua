@@ -1,4 +1,4 @@
-// 游戏数据域词典（zh-CN）：行动、物品、品阶、境界体系、触发条件、导航等客户端静态文本。
+// 游戏数据域词典（zh-CN）：行动、物品、品质、境界体系、触发条件、导航等客户端静态文本。
 // 物品 category 与 rarityLabel 已去重为独立映射，条目内只保留专属文本（label/description/source/usage）。
 export const gameZh = {
   game: {
@@ -7,6 +7,7 @@ export const gameZh = {
       exploration: '历练',
       alchemy: '炼丹',
       combat: '详情',
+      enhancement: '强化',
       map: '地图',
     },
     grade: {
@@ -29,6 +30,7 @@ export const gameZh = {
       food: '灵食',
       drink: '灵饮',
       talisman: '符箓',
+      formation: '阵法',
       manual: '功法',
       equipment: '装备',
       chest: '宝箱',
@@ -56,7 +58,7 @@ export const gameZh = {
       twoHandImplement: '双手武器',
     },
     rarityLabel: {
-      mundane: '基础',
+      mundane: '凡品',
       yellow: '黄品',
       mystic: '玄品',
       earth: '地品',
@@ -71,7 +73,7 @@ export const gameZh = {
       'cultivation.draw-qi': { name: '引气入体', description: '吐纳周天，凝聚一缕灵气，增长修为与灵力。' },
 
       // 采集
-      'explore.gather-ningxue-grass': { name: '采摘 凝血草', description: '在幽深背阴的百草谷采摘暗红的凡阶凝血草。' },
+      'explore.gather-ningxue-grass': { name: '采摘 凝血草', description: '在幽深背阴的百草谷采摘暗红的凡品凝血草。' },
       'explore.chop-peach-wood': { name: '采伐 桃木', description: '在落霞阳坡采伐带有微弱纯阳灵气的坚韧古桃木。' },
       'explore.mine-dark-iron': { name: '挖掘 乌铁矿', description: '在清石水滩露天砂石层中开采沉重致密的乌铁原矿。' },
       'explore.collect-morning-dew': { name: '收集 晨露', description: '破晓时分在漱玉溪边草木叶尖汲取纯净无根晨露。' },
@@ -84,7 +86,7 @@ export const gameZh = {
 
       // 炼丹
       'alchemy.refine-qi-pill': { name: '引气丹', description: '以凝血草与清澈晨露炼制而成的基础引气灵丹，可略微加快吐纳效率。' },
-      'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝血草炼制而成的凡阶止血散剂，可迅速闭合寻常外伤创口。' },
+      'alchemy.refine-zhixue-powder': { name: '止血散', description: '研磨凝血草炼制而成的凡品止血散剂，可迅速闭合寻常外伤创口。' },
       'alchemy.refine-shunqi-pill': { name: '顺气丸', description: '以草木精华与伴灵花炼制的调息灵丸，可抚平体内翻涌气血，加速灵力恢复。' },
       'alchemy.refine-tongmai-pill': { name: '通脉丹', description: '以伴灵精华与妖核淬炼而成的通脉灵丹，药力直透经络百骸，大益周天行气。' },
 
@@ -96,7 +98,7 @@ export const gameZh = {
       'craft.refine-spirit-pine-crystal': { name: '灵松晶', description: '淬炼引灵松木凝结的青翠树芯灵晶。' },
       'craft.extract-banling-essence': { name: '伴灵精华', description: '萃取伴灵花幽蓝灵机与清晨甘露融炼的纯净灵液。' },
 
-      // 锻造装备 (一阶)
+      // 锻造装备 (等阶1)
       'forge.qingfeng-sword': { name: '青锋剑', description: '以百炼铁与兽骨精铸的三尺长剑，剑身青光澄澈。' },
       'forge.pishan-blade': { name: '劈山刀', description: '以百炼铁与兽骨打造的厚重朴刀，势大力沉。' },
       'forge.shufa-scarf': { name: '束发巾', description: '以百炼铁与兽皮编织的武行束发头巾，简朴干练。' },
@@ -112,7 +114,7 @@ export const gameZh = {
       'forge.shifang-shoes': { name: '十方鞋', description: '以桃木晶与兽皮纳制的轻便道鞋，鞋底轻软舒适。' },
       'forge.taomu-talisman': { name: '桃木符', description: '以桃木晶与破碎灵核雕琢的辟邪木符，草木幽香内蕴。' },
 
-      // 锻造装备 (二阶)
+      // 锻造装备 (等阶2)
       'forge.pogang-sword': { name: '破罡剑', description: '融入赤铜精与兽牙重铸青锋剑而成的破罡利刃。' },
       'forge.zhansha-blade': { name: '斩煞刀', description: '融入赤铜精与兽牙重铸劈山刀而成的煞气重刀。' },
       'forge.chijin-helmet': { name: '赤金盔', description: '以赤铜精与兽牙重铸束发巾打造的金光护盔。' },
@@ -127,6 +129,11 @@ export const gameZh = {
       'forge.liuyun-skirt': { name: '流云裳', description: '以灵松晶与火羽重铸行气裤织就的飘逸下裳。' },
       'forge.bichen-shoes': { name: '避尘履', description: '以灵松晶与火羽重铸十方鞋制成的乘风法履。' },
       'forge.juling-pendant': { name: '聚灵佩', description: '以灵松晶与残魄灵符重铸桃木符雕琢的聚灵玉佩。' },
+
+      // 符箓·阵法·强化
+      'talisman.draw-leiji': { name: '雷击符', description: '以残魄灵符为纸、桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。' },
+      'formation.deploy-juling': { name: '聚灵阵盘', description: '以灵松晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。' },
+      'enhance.equipment': { name: '装备强化', description: '以强化精华淬炼装备本体、灵石为媒逐级铭纹，成败之间砥砺器物威能。' },
 
       // 讨伐战斗
       'combat.hunt-qi-beast': { name: '讨伐 青云仙山', description: '在青云仙山各处搜寻妖兽踪迹，迎战山野灵物与守山妖兽。' },
@@ -148,6 +155,9 @@ export const gameZh = {
       'item.beast-fang': { label: '兽牙', description: '荒野妖狼口中脱落的锋锐利齿，尖端坚硬如铁。' },
       'item.fire-feather': { label: '火羽', description: '灵禽异鸟身上的赤红翎羽，羽丝流转着点点火光星芒。' },
       'item.soul-talisman': { label: '残魄灵符', description: '残破泛黄的古旧符纸，朱砂符印斑驳，仍隐有灵力回荡。' },
+      'item.leiji-talisman': { label: '雷击符', description: '朱砂勾勒雷纹的青色灵符，符面电光游走不散，祭出即唤木行天雷直击敌首。' },
+      'item.juling-formation-disk': { label: '聚灵阵盘', description: '灵松晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入主人体内。' },
+      'item.enhance-essence': { label: '强化精华', description: '自百炼精金中淬出的淬炼精髓，流光内蕴不熄，是装备强化铭纹不可或缺的引料。' },
       'item.broken-blade': { label: '残刃', description: '战场遗迹中出土的古战断刃，虽缺锋芒，却自有一股肃杀戾气。' },
       'item.sha-bone': { label: '煞骨', description: '历经魔煞侵蚀的苍黑异骨，触之刺骨冰寒。' },
       'item.demon-core': { label: '妖核', description: '异种古兽心脉凝成的晶核，内里流转着狂暴深邃的星陨灵息。' },
@@ -181,7 +191,7 @@ export const gameZh = {
       'item.fragment.lightning-attraction': { label: '《雷光引·残卷》', description: '被电芒烧蚀半角的高阶雷经残页，雷纹隐现。' },
       'item.tome.pozhen-melody': { label: '《破阵子秘籍》', description: '铁划银钩写就的金戈战曲秘本，翻之顿觉杀伐之气扑面。' },
       'item.fragment.pozhen-melody': { label: '《破阵子·残卷》', description: '染有点点干涸血迹的战曲谱篇残页，杀气逼人。' },
-      'item.tome.star-piercer': { label: '《贯星秘籍》', description: '以银丝装订的天阶箭道真解，星芒内蕴，锋芒毕露。' },
+      'item.tome.star-piercer': { label: '《贯星秘籍》', description: '以银丝装订的黄品箭道真解，星芒内蕴，锋芒毕露。' },
       'item.fragment.star-piercer': { label: '《贯星·残卷》', description: '带有星辰荧光的道法残页，纸质坚硬似玉。' },
       'item.gathering-incense': { label: '寻灵香', description: '以幽谷异草凝制的线香，点燃后青烟袅袅，香气沉静。' },
       'item.alchemy-flame': { label: '地火引', description: '封存在温玉小管中的一缕地脉火苗，静默跳动，热力含而不发。' },
@@ -216,9 +226,9 @@ export const gameZh = {
     },
     realm: {
       stageFallback: '凡俗',
-      phaseMortal1: '凡武',
-      phaseMortal2: '通玄',
-      phaseMortal3: '天人',
+      phaseMortal1: '武',
+      phaseMortal2: '玄',
+      phaseMortal3: '天',
       minorFallback: '凡胎',
       ascension: '飞升',
       mortal: {

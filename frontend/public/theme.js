@@ -9,5 +9,5 @@
   document.documentElement.dataset.theme = theme
   document.documentElement.style.colorScheme = theme
   document.querySelector('meta[name="color-scheme"]').content = theme
-  document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#070604' : '#e7dfcf'
+  document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#070604' : '#f1ecdc'
 })()

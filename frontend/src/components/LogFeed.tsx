@@ -4,6 +4,8 @@ import { useGameStore } from '../game/gameStore'
 import { findAbilityInCatalog, findEncounterInCatalog } from '../game/ids'
 import { useT } from '../i18n'
 import type { ChatMessage } from '../logging/chatService'
+import { gameClient } from '../network/gameClient'
+import type { PartyLinkDto } from '../network/protocol'
 import type { GameLogEntry, LogSegment } from '../logging/gameLogService'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip, type FloatingTone } from './FloatingPopover'
 import { ItemReference } from './ItemDisplay'
@@ -187,6 +189,34 @@ const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.J
 })
 
 /**
+ * 传音消息内嵌的队伍链接卡 (PartyLinkCard)
+ *
+ * 渲染分享时刻的队伍快照（party_ref 持久化引用）；点击「加入」走 party.join 社交指令，
+ * 队伍解散后服务端会清掉 partyLink（此处不渲染），过期快照由服务端门槛裁决兜底。
+ */
+const PartyLinkCard = memo(function PartyLinkCard({ link }: { link: PartyLinkDto }): React.JSX.Element {
+  const t = useT()
+  const maps = useGameStore(state => state.maps)
+  const mapName = link.mapId ? maps.find(map => map.mapId === link.mapId)?.name ?? link.mapId : t('social.field.anyMap')
+  return (
+    <span className="party-link-card">
+      <span className="party-link-main">
+        <strong>{link.name}</strong>
+        <span className="badge">{t(`social.activity.${link.activityKind}`)}</span>
+        <span>{mapName}</span>
+        <span>{t('social.memberCount', { count: link.memberCount })}</span>
+        {link.minValuation > 0 && <span>{t('social.minValuationValue', { value: formatNumber(link.minValuation) })}</span>}
+      </span>
+      <button
+        className="party-link-join"
+        onClick={() => gameClient.sendSocialAction('party.join', undefined, undefined, { partyId: link.partyId })}
+        type="button"
+      >{t('social.action.join')}</button>
+    </span>
+  )
+})
+
+/**
  * 单条传音消息展示组件 (ChatRow)
  *
  * 复用战报日志的「时间 + 内容」网格排版，正文前展示发送者道号胶囊。
@@ -199,6 +229,7 @@ const ChatRow = memo(function ChatRow({ message }: { message: ChatMessage }): Re
       <span className="log-message">
         <span className="chat-sender">{message.senderName}</span>
         <span className="chat-body">{message.body}</span>
+        {message.partyLink && <PartyLinkCard link={message.partyLink} />}
       </span>
     </li>
   )

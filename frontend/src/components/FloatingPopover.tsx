@@ -638,7 +638,19 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
       if (trigger === 'click') {
         handleToggle()
       } else if (isTouchPointerDevice()) {
-        // 触屏模式下，如果触发器没有被其他更深层按钮处理，做轻量展示切换，不阻止默认动作与冒泡
+        // 触屏模式下，如果触发器没有被其他更深层按钮处理，做轻量展示切换，不阻止默认动作与冒泡。
+        // 两种场景跳过本次轻量弹出，避免 hover 详情气泡与业务浮层叠层：
+        // 1. 点击落在触发器内部的交互控件（按钮/链接/输入框等）上——业务操作优先；
+        // 2. 触发器嵌套在另一个 click 触发的浮层内（如背包物品行：外菜单内详情气泡）——
+        //    本次点击即将冒泡打开外层菜单，气泡跟着弹出会压在菜单上。
+        const target = e.target as HTMLElement | null
+        const self = e.currentTarget as HTMLElement
+        if (target && target !== self && target.closest('button, a, input, select, textarea, [role="button"], [role="menuitem"]')) {
+          return
+        }
+        if (self.parentElement?.closest('[data-floating-trigger="click"]')) {
+          return
+        }
         handleToggle()
       }
     }
@@ -675,6 +687,7 @@ export const FloatingPopover = React.forwardRef<FloatingPopoverHandle, FloatingP
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         className={`daohua-floating-trigger ${displayContents ? 'daohua-floating-trigger--contents' : ''} ${triggerClassName}`.trim()}
+        data-floating-trigger={trigger}
         onClick={handleTriggerClick}
         onContextMenu={onContextMenu}
         onMouseEnter={handleTriggerMouseEnter}
@@ -870,7 +883,7 @@ export interface FloatingInfoCardProps {
   description?: ReactNode
   /** 词条 / 属性行 */
   lines?: readonly (string | ReactNode)[]
-  /** 键值对网格，如 攻击 +120 / 品阶 极品 */
+  /** 键值对网格，如 攻击 +120 / 品质 极品 */
   stats?: readonly { label: string; value: ReactNode; tone?: FloatingTone }[]
   /** 底部操作按钮或说明 */
   footer?: ReactNode

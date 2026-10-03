@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { useT } from '../i18n'
 import { Modal } from './Modal'
 
@@ -45,8 +45,24 @@ export function ConfirmDialog({
   const confirmText = confirmLabel ?? t('common.confirm')
   const cancelText = cancelLabel ?? t('common.cancel')
   const titleId = useId()
+  const confirmRef = useRef<HTMLButtonElement>(null)
+
+  // Enter 快捷确认：与焦点位置无关，按下即等同点击主确认按钮；
+  // preventDefault 抑制焦点按钮（含取消/关闭）的原生 click 派发，避免连带误触发；
+  // repeat 拦截长按 Enter 的连续重复 keydown，防止弹窗由 Enter 唤起时被长按瞬间穿透确认。
+  useEffect(() => {
+    if (!open) return undefined
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || event.repeat) return
+      event.preventDefault()
+      confirmRef.current?.click()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open])
+
   return (
-    <Modal labelledBy={titleId} onClose={onClose} open={open} size="small">
+    <Modal initialFocusRef={confirmRef} labelledBy={titleId} onClose={onClose} open={open} size="small">
       <div className="confirm-dialog">
         <h2 id={titleId}>{title}</h2>
         <p>{description}</p>
@@ -58,6 +74,7 @@ export function ConfirmDialog({
               onConfirm()
               onClose()
             }}
+            ref={confirmRef}
             type="button"
           >{confirmText}</button>
         </div>

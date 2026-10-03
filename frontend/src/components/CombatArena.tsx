@@ -3,7 +3,9 @@ import type { CSSProperties } from 'react'
 import { formatInteger, formatNumber } from '../game/format'
 import { UnitNumber } from './UnitNumber'
 import { useGameStore } from '../game/gameStore'
-import { findAbilityInCatalog, findCombatantInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import { ACTION_TAB_META, findAbilityInCatalog, findCombatantInCatalog, findItemInCatalog, localizeActionDisplayText, resolveActionDefinition, resolveItemMetadata } from '../game/ids'
+import { calculateActionYieldPreview } from '../game/actionCalculations'
+import type { ResourceYieldKind } from '../game/actionCalculations'
 import type { ActionDefinition, Buff, CharacterVisual, CombatAbilityDefinition, CombatActionState, CombatAttributes, ExpeditionDuel, ExpeditionEnemy, ExpeditionProgress, MonsterDropDefinition, QueueEntry, WorldMapDefinition, WorldState } from '../game/types'
 import { gameClient } from '../network/gameClient'
 import { getT, useT } from '../i18n'
@@ -12,6 +14,7 @@ import { useSmoothProgressRef } from '../game/useSmoothProgress'
 import { FloatingInfoCard, FloatingPopover } from './FloatingPopover'
 import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel } from './CombatAttributePanel'
+import { ConfirmDialog } from './ConfirmDialog'
 import { describeBuffEffectLines } from './ItemDisplay'
 import { useCombatVfx } from '../vfx/useCombatVfx'
 
@@ -383,12 +386,15 @@ function ArenaActionBar({ action, role }: { action?: CombatActionState | null; r
 function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
   const t = useT()
   const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
-  const remaining = Math.max(0, buff.expiresAtUnixSeconds - serverTime)
+  // durable 阵盘类永驻 Buff：到期时间投影为有限哨兵（≥1e15），按常驻展示而非倒计时。
+  const permanent = buff.expiresAtUnixSeconds >= 1e15
+  const remaining = permanent ? 0 : Math.max(0, buff.expiresAtUnixSeconds - serverTime)
   const circleRef = useRef<SVGCircleElement>(null)
   // 环形倒计时基准：服务端同步到该 buff（到期时间变化）时，以同步时刻的剩余时间重建基准，
-  // 使 buff 被刷新为更长或更短的持续时间时比例都保持真实。
+  // 使 buff 被刷新为更长或更短的持续时间时比例都保持真实；常驻 Buff 不重建倒计时基准。
   const [baseDuration, setBaseDuration] = useState(() => Math.max(10, remaining))
   useEffect(() => {
+    if (buff.expiresAtUnixSeconds >= 1e15) return
     const syncedRemaining = buff.expiresAtUnixSeconds - useGameStore.getState().serverTimeUnixSeconds
     setBaseDuration(Math.max(10, Math.max(0, syncedRemaining)))
   }, [buff.expiresAtUnixSeconds])
@@ -412,6 +418,11 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
     if (!circle) return
 
     circle.style.strokeDasharray = `${circumference}`
+    // 常驻 Buff 环形遮罩恒满（offset=0），不启动 RAF 循环。
+    if (buff.expiresAtUnixSeconds >= 1e15) {
+      circle.style.strokeDashoffset = '0'
+      return
+    }
     let animationFrameId: number
 
     const update = () => {
@@ -436,7 +447,9 @@ function ArenaBuffSquare({ buff }: { buff: Buff }): React.JSX.Element {
           badge={t('combat.arena.buffStacks', { n: formatNumber(buff.stacks) })}
           badgeTone={tone}
           description={effectDesc}
-          subtitle={t('combat.arena.buffRemaining', { n: formatNumber(remaining) })}
+          subtitle={permanent
+            ? t('combat.arena.buffPermanent')
+            : t('combat.arena.buffRemaining', { n: formatNumber(remaining) })}
           title={buff.name}
         />
       }
@@ -775,11 +788,35 @@ function ArenaActor({
   )
 }
 
+/** 生活目标卡单条产出展示行（物品 / 修为·灵力·气血资源 / 增益） */
+interface LifeYieldRow {
+  key: string
+  name: string
+  glyph: string
+  tone: string
+  /** 单轮产出（buff 行为层数） */
+  perRound: number
+  /** 剩余计划总产出（无限循环或不可累计的 buff 为 null） */
+  total: number | null
+  unit: string
+  /** Buff 持续秒数（仅 buff 行有值） */
+  buffDurationSeconds?: number
+}
+
+/** 资源类产出（修为/灵力/气血）的图标字印与色调 */
+const RESOURCE_YIELD_META: Record<ResourceYieldKind, { glyph: string; tone: string }> = {
+  experience: { glyph: '修', tone: 'gold' },
+  mana: { glyph: '灵', tone: 'cyan' },
+  hitpoints: { glyph: '血', tone: 'red' },
+}
+
 /**
  * 非战斗生活行动总目标与轮次进度卡片 (ArenaLifeGoalCard)
  *
  * 当玩家队列首项为炼丹、打坐修炼、游历采集等生活类行动时，
  * 右侧敌方九宫格无缝切换为此卡片，显示目标产物大图标、计划总产出、所需原料消耗清单与平滑进度条。
+ * 产出明细与行动详情弹窗共用 calculateActionYieldPreview 口径（含持续消耗品/灵脉倍率与按秒速率折算），
+ * 行动配表 yields 变更经 actionDef 下发后自动同步，禁止再按类型硬编造假产物。
  */
 function ArenaLifeGoalCard({
   queueEntry,
@@ -795,29 +832,77 @@ function ArenaLifeGoalCard({
 }): React.JSX.Element {
   const t = useT()
   const itemCatalog = useGameStore(state => state.items)
+  const inventory = useGameStore(state => state.inventory)
+  const autoUseSlots = useGameStore(state => state.queue.autoUseSlots)
+  const stats = useGameStore(state => state.stats)
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
-  const isAlchemy = queueEntry?.type === 'alchemy'
-  const isCultivation = queueEntry?.type === 'cultivation'
-  const isExploration = queueEntry?.type === 'exploration'
 
-  const title = isAlchemy ? t('combat.life.titleAlchemy') : isCultivation ? t('combat.life.titleCultivation') : isExploration ? t('combat.life.titleExploration') : t('combat.life.titleDefault')
+  const actionId = queueEntry?.actionId ?? actionDef?.id ?? ''
+  // forge.* 与 craft.* 精炼归炼器，alchemy.* 与 craft.extract-* 提炼归炼丹：两者同为 alchemy 大类，按 id 前缀区分
+  const isForging = actionId.startsWith('forge.') || (actionId.startsWith('craft.') && !actionId.startsWith('craft.extract-'))
+  const title = queueEntry?.type === 'cultivation' ? t('combat.life.tagCultivation')
+    : isForging ? t('combat.life.tagForging')
+    : queueEntry?.type === 'alchemy' ? t('combat.life.tagAlchemy')
+    : queueEntry?.type === 'exploration' ? t('combat.life.tagExploration')
+    : t('combat.life.tagDefault')
   const actionName = resolveQueueEntryDisplayName(queueEntry, actionDef?.name, world, maps) || actionDef?.name || t('combat.life.fallbackActionName')
   const isInfinite = (queueEntry?.remainingRepeats ?? 0) < 0
   const remainingRepeats = queueEntry?.remainingRepeats ?? 0
   const repeats = isInfinite ? -1 : remainingRepeats
 
-  // 目标产物分析（取 yields 中首个物品收益）
-  const primaryYield = actionDef?.yields?.find(yieldEntry => yieldEntry.kind === 'item' && yieldEntry.id)
-  const primaryItemId = primaryYield?.id ?? null
-  const primaryAmountPerBatch = primaryYield?.amount ?? 1
-  const totalTargetDisplay = isInfinite ? '∞' : formatNumber(primaryAmountPerBatch * repeats)
+  const yieldPreview = actionDef ? calculateActionYieldPreview({
+    action: actionDef,
+    inventory,
+    items: itemCatalog,
+    autoUseSlots,
+    world,
+    stats,
+  }) : null
 
-  const itemMeta = primaryItemId ? resolveItemMetadata(primaryItemId) : null
-  const itemDefinition = primaryItemId ? findItemInCatalog(itemCatalog, primaryItemId) : null
-  const itemName = itemDefinition?.name || itemMeta?.label || (isCultivation ? t('combat.life.qiName') : t('combat.life.fallbackItemName'))
-  const itemGlyph = itemMeta?.glyph || (isAlchemy ? '⚗️' : isCultivation ? '☯' : '🌿')
-  const itemTone = itemMeta?.tone || 'gold'
+  // 产出展示行：首项为主产物（驱动大图标/目标产物/计划总量），其余进「其余产出」清单
+  const outputs: LifeYieldRow[] = []
+  if (yieldPreview) {
+    for (const output of yieldPreview.itemOutputs) {
+      const meta = resolveItemMetadata(output.itemId)
+      const definition = findItemInCatalog(itemCatalog, output.itemId)
+      outputs.push({
+        key: `item:${output.itemId}`,
+        name: definition?.name || meta?.label || output.itemId,
+        glyph: meta?.glyph ?? '🌿',
+        tone: meta?.tone ?? 'gold',
+        perRound: output.finalAmount,
+        total: isInfinite ? null : output.finalAmount * repeats,
+        unit: t('combat.life.unitItem'),
+      })
+    }
+    for (const entry of yieldPreview.resourceYields) {
+      const meta = RESOURCE_YIELD_META[entry.kind]
+      outputs.push({
+        key: `resource:${entry.kind}`,
+        name: t(`app.action.yieldKind.${entry.kind}`),
+        glyph: meta.glyph,
+        tone: meta.tone,
+        perRound: entry.finalAmount,
+        total: isInfinite ? null : entry.finalAmount * repeats,
+        unit: t('combat.life.unitPoint'),
+      })
+    }
+    for (const buff of yieldPreview.buffYields) {
+      outputs.push({
+        key: `buff:${buff.buffId}`,
+        name: buff.name,
+        glyph: t('combat.arena.glyphGeneric'),
+        tone: 'gold',
+        perRound: buff.stacks,
+        total: null,
+        unit: t('combat.life.unitStack'),
+        buffDurationSeconds: buff.durationSeconds,
+      })
+    }
+  }
+  const primary = outputs[0] ?? null
+  const isPendingBreakthrough = yieldPreview?.cultivation?.isPendingBreakthrough === true
 
   // 所需原料分析
   const inputs = actionDef?.inputs || {}
@@ -842,27 +927,61 @@ function ArenaLifeGoalCard({
       </header>
 
       <div className="arena-life-body">
-        <div className={`arena-life-icon-box arena-life-icon-box--${itemTone}`}>
-          <span className="arena-life-glyph">{itemGlyph}</span>
-          <span className="arena-life-count-badge">{isInfinite ? '∞' : `x${totalTargetDisplay}`}</span>
+        <div className={`arena-life-icon-box arena-life-icon-box--${primary?.tone ?? 'gold'}`}>
+          <span className="arena-life-glyph">{primary?.glyph ?? (queueEntry ? ACTION_TAB_META[queueEntry.type].glyph : '☯')}</span>
+          <span className="arena-life-count-badge">
+            {isInfinite
+              ? '∞'
+              : primary === null
+                ? '—'
+                : primary.total !== null
+                  ? `x${formatNumber(primary.total)}`
+                  : `×${formatNumber(primary.perRound)}`}
+          </span>
         </div>
 
         <div className="arena-life-meta">
           <div className="arena-life-target-title">
             <span>{t('combat.life.targetOutput')}</span>
-            <strong className="tone-gold">{itemName}</strong>
+            <strong className="tone-gold">{primary?.name ?? '—'}</strong>
           </div>
-          <div className="arena-life-target-total">
-            <span>{t('combat.life.plannedTotal')}</span>
-            <strong className="tone-bright">
-              {totalTargetDisplay} {isCultivation ? t('combat.life.unitQi') : t('combat.life.unitItem')}
-            </strong>
-          </div>
+          {primary && (
+            <div className="arena-life-target-total">
+              <span>{t('combat.life.plannedTotal')}</span>
+              <strong className="tone-bright">
+                {isInfinite
+                  ? '∞'
+                  : primary.total !== null
+                    ? `${formatNumber(primary.total)} ${primary.unit}`
+                    : t('combat.life.buffPerRound', { n: formatNumber(primary.perRound) })}
+              </strong>
+            </div>
+          )}
           <div className="arena-life-subinfo">
-            <span>{t('combat.life.perBatch', { n: formatNumber(primaryAmountPerBatch) })}</span>
+            <span>{primary ? t('combat.life.perBatch', { n: `${formatNumber(primary.perRound)} ${primary.unit}` }) : ''}</span>
             <span>{isInfinite ? t('combat.life.infiniteRounds') : t('combat.life.remainingRounds', { n: formatNumber(remainingRepeats) })}</span>
           </div>
         </div>
+
+        {(outputs.length > 1 || isPendingBreakthrough) && (
+          <div className="arena-life-inputs">
+            <span className="arena-life-inputs-label">{t('combat.life.extraOutputsLabel')}</span>
+            <div className="arena-life-inputs-list">
+              {outputs.slice(1).map(row => (
+                <span className="arena-life-input-chip" key={row.key}>
+                  {row.buffDurationSeconds !== undefined
+                    ? t('combat.life.buffChip', { name: row.name, stacks: formatNumber(row.perRound), duration: row.buffDurationSeconds })
+                    : row.total !== null
+                      ? t('combat.life.yieldChip', { name: row.name, n: formatNumber(row.perRound), total: formatNumber(row.total) })
+                      : t('combat.life.yieldChipInfinite', { name: row.name, n: formatNumber(row.perRound) })}
+                </span>
+              ))}
+              {isPendingBreakthrough && (
+                <span className="arena-life-input-chip">{t('app.action.pendingBreakthroughTag')} → {t('combat.report.foundation')}</span>
+              )}
+            </div>
+          </div>
+        )}
 
         {inputEntries.length > 0 && (
           <div className="arena-life-inputs">
@@ -895,7 +1014,7 @@ function ArenaLifeGoalCard({
         </div>
         {onStop && (
           <button className="arena-life-stop-btn danger" onClick={onStop} type="button">
-            {isAlchemy ? t('combat.life.stopAlchemy') : isCultivation ? t('combat.life.stopCultivation') : t('combat.life.stopAction')}
+            {t('combat.life.stopAction')}
           </button>
         )}
       </div>
@@ -1242,6 +1361,8 @@ export const CombatArena = memo(function CombatArena({
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
   // 详情弹窗目标：'player' 或 `enemy:{下标}`（同波多敌人逐只可查）。
   const [inspectedActor, setInspectedActor] = useState<string | null>(null)
+  // 终止当前行动的二次确认目标（队首 entryId）；目标离开队首（自然完成/被移除）时自动失效收起弹窗
+  const [pendingStopEntryId, setPendingStopEntryId] = useState<string | null>(null)
   // 单位属性缓存：敌方/镜像属性为定义级静态值，服务端仅在 UnitInspect 登记后一次性交付；
   // 按身份缓存使重复点开即显，送达的新值由下方 effect 静默覆盖，key 为 enemy:{enemyId} / duel:{对手名}。
   const inspectedAttributesCacheRef = useRef(new Map<string, CombatAttributes>())
@@ -1430,6 +1551,9 @@ export const CombatArena = memo(function CombatArena({
     return combatant?.drops ?? []
   }, [inspectedEnemy?.enemyId, encounters, maps])
 
+  // 待终止目标仅在仍为队首时有效；自然完成或被队列他处移除后，确认弹窗自动收起
+  const stopTarget = current && current.entryId === pendingStopEntryId ? current : null
+
   return (
     <div className="combat-arena-shell" ref={arenaShellRef}>
       {/* 技能特效覆盖层：绝对定位铺满战场，粒子节点全部渲染于此，零回流不参战布局 */}
@@ -1521,13 +1645,13 @@ export const CombatArena = memo(function CombatArena({
             )
           ) : isTravel ? (
             <ArenaTravelCard
-              onStop={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
+              onStop={() => setPendingStopEntryId(current.entryId)}
               queueEntry={current}
             />
           ) : isLifeAction ? (
             <ArenaLifeGoalCard
               actionDef={activeAction}
-              onStop={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
+              onStop={() => setPendingStopEntryId(current.entryId)}
               queueEntry={current}
             />
           ) : (
@@ -1537,14 +1661,17 @@ export const CombatArena = memo(function CombatArena({
       </div>
 
       <div className="combat-arena-controls">
+        {/* 生活/赶路详情卡自带终止按钮；此处独立终止钮仅保留给右侧无卡片的战斗相位 */}
         {current ? (
-          <button
-            className="danger"
-            onClick={() => gameClient.sendCommand('action.remove', { actionInstanceId: current.entryId })}
-            type="button"
-          >
-            {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName, world, maps) })}
-          </button>
+          isCombat ? (
+            <button
+              className="danger"
+              onClick={() => setPendingStopEntryId(current.entryId)}
+              type="button"
+            >
+              {t('combat.arena.stopCurrent', { name: resolveQueueEntryDisplayName(current, current.actionName, world, maps) })}
+            </button>
+          ) : null
         ) : availableActions.length > 0 ? (
           availableActions.map(action => (
             <button key={action.id} onClick={() => onOpenAction(action)} type="button">
@@ -1553,6 +1680,17 @@ export const CombatArena = memo(function CombatArena({
           ))
         ) : null}
       </div>
+      <ConfirmDialog
+        confirmLabel={t('combat.arena.stopConfirmBtn')}
+        danger
+        description={stopTarget ? t('combat.arena.stopConfirmDesc', { name: resolveQueueEntryDisplayName(stopTarget, stopTarget.actionName, world, maps) }) : ''}
+        onClose={() => setPendingStopEntryId(null)}
+        onConfirm={() => {
+          if (stopTarget) gameClient.sendCommand('action.remove', { actionInstanceId: stopTarget.entryId })
+        }}
+        open={stopTarget !== null}
+        title={t('combat.arena.stopConfirmTitle')}
+      />
       <CharacterAttributeModal
         actorId={inspectedEnemy ? (inspectedEnemy.enemyId ?? activeEncounterId) : 'player'}
         attributes={inspectedAttributes}

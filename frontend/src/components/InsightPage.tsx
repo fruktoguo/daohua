@@ -6,19 +6,22 @@ import { FloatingTooltip } from './FloatingPopover'
 import { UnitNumber } from './UnitNumber'
 import {
   DEFAULT_ROOT_ATTRIBUTE_POINTS,
+  TECHNIQUE_IDS,
+  TECHNIQUE_SPEED_RATIO_PER_LEVEL,
   getCumulativeExpForLevel,
   calculateRealmInfo,
   calculateRealmProgress,
   calculateBaseAttributes,
+  calculateTechniqueProgress,
 } from '../game/combatConstants'
 import { useGameStore } from '../game/gameStore'
 import { gameClient } from '../network/gameClient'
 import { useT } from '../i18n'
-import { CharacterAvatar } from './CharacterAvatar'
 import { CombatAttributePanel } from './CombatAttributePanel'
+import { BreakthroughConfirmModal } from './BreakthroughConfirmModal'
 
-/** 内视四大核心模块 Tab 标识 */
-type InsightTab = 'roots' | 'foundation' | 'combat' | 'biography'
+/** 内视五大核心模块 Tab 标识 */
+type InsightTab = 'roots' | 'foundation' | 'combat' | 'technique' | 'biography'
 
 /** 根基模块二级子 Tab 标识 (六维灵根与基础属性乘区) */
 type RootsSubTab = 'sixDimensions' | 'baseAttributes'
@@ -27,7 +30,7 @@ type RootsSubTab = 'sixDimensions' | 'baseAttributes'
  * 角色内视修行总览主页面 (InsightPage)
  *
  * 体系与交互结构：
- * 1. 头部修仙境界展示：当前大境界/位阶/小境界 (RealmBadge)、所在地灵气倍率、修为突破进度条与一键突破按钮；
+ * 1. 头部修仙境界展示：当前大境界/境界阶段/小境界 (RealmBadge)、所在地灵气倍率、修为突破进度条与一键突破按钮；
  * 2. 根基 Tab (roots)：
  *    - 六维根基 (sixDimensions)：体魄、经脉、根骨、力道、神识、身法等级与属性百分比加成；
  *    - 基础属性 (baseAttributes)：展示当前境界的基础属性底座数值 (Base Pool)；
@@ -39,10 +42,9 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const t = useT()
   const [activeTab, setActiveTab] = useState<InsightTab>('roots')
   const [rootsSubTab, setRootsSubTab] = useState<RootsSubTab>('sixDimensions')
+  const [isBreakthroughModalOpen, setIsBreakthroughModalOpen] = useState(false)
 
-  const playerId = useGameStore(state => state.playerId)
   const name = useGameStore(state => state.name)
-  const visual = useGameStore(state => state.visual)
   const stats = useGameStore(state => state.stats)
   const isPendingBreakthrough = useGameStore(state => state.isPendingBreakthrough)
   const loadout = useGameStore(state => state.combat)
@@ -50,7 +52,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const world = useGameStore(state => state.world)
   const buffs = useGameStore(state => state.buffs)
 
-  // 境界计算体系 (大境界 · 位阶 · 小境界)
+  // 境界计算体系 (大境界 · 境界阶段 · 小境界)
   const realmProgress = useMemo(() => calculateRealmProgress(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
   const realmInfo = useMemo(() => calculateRealmInfo(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
 
@@ -160,6 +162,40 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
     loadout?.consciousnessExp,
   ])
 
+  // 七项生活技艺：等级/经验进度复用修为曲线（0 级起步），每级提供对应技艺行动 5% 速度加成
+  const techniques = useMemo(() => {
+    const experiences = loadout?.techniqueExperiences ?? {}
+    const tones: Record<string, PillTone> = {
+      alchemy: 'emerald',
+      forging: 'crimson',
+      talisman: 'amber',
+      enhancement: 'gold',
+      formation: 'purple',
+      gathering: 'teal',
+      mining: 'bronze',
+    }
+    return TECHNIQUE_IDS.map(id => {
+      const progress = calculateTechniqueProgress(experiences[id] ?? 0)
+      const maxed = progress.expToNext <= 0 && progress.level > 0
+      return {
+        id,
+        tone: tones[id] ?? ('default' as PillTone),
+        level: progress.level,
+        speedPercent: progress.level * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100,
+        progress: {
+          current: Math.floor(progress.currentLayerExp),
+          max: Math.max(1, Math.floor(progress.expToNext)),
+          text: maxed
+            ? t('insight.technique.maxLevelLabel')
+            : t('insight.technique.expProgress', {
+                current: formatNumber(Math.floor(progress.currentLayerExp)),
+                max: formatNumber(Math.floor(progress.expToNext)),
+              }),
+        },
+      }
+    })
+  }, [loadout?.techniqueExperiences, t])
+
   // 0. 当前境界基础属性底座 (Base Flat · 乘区一)
   const basePool = useMemo(() => calculateBaseAttributes(stats.experience ?? 0, stats.realmLevel), [stats.realmLevel, stats.experience])
 
@@ -193,15 +229,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
       {/* 头部：道号、境界与形象总览 */}
       <header className="panel-header insight-page-header">
         <div className="insight-hero">
-          <div className="insight-avatar-stage">
-            <CharacterAvatar
-              actorId={playerId}
-              className="insight-avatar-img"
-              name={name}
-              role="player"
-              visual={visual}
-            />
-          </div>
           <div className="insight-hero-info">
             <div className="insight-title-row">
               <h2 className="insight-main-title">{name}</h2>
@@ -241,7 +268,7 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               {(isPendingBreakthrough || (realmInfo.layerProgress >= 99.99 && (stats.experience ?? 0) > 0)) && (
                 <button
                   className="insight-breakthrough-btn"
-                  onClick={() => gameClient.sendCommand('progression.breakthrough', {})}
+                  onClick={() => setIsBreakthroughModalOpen(true)}
                   type="button"
                 >
                   {t('insight.breakthroughBtn')}
@@ -284,6 +311,13 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
             type="button"
           >
             {t('insight.tab.combat')}
+          </button>
+          <button
+            className={`insight-tab-btn ${activeTab === 'technique' ? 'active' : ''}`}
+            onClick={() => setActiveTab('technique')}
+            type="button"
+          >
+            {t('insight.tab.technique')}
           </button>
           <button
             className={`insight-tab-btn ${activeTab === 'biography' ? 'active' : ''}`}
@@ -485,7 +519,38 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         )}
 
         {/* ========================================================================= */}
-        {/* TAB 4: 生平 (历练、争锋、修行)                                             */}
+        {/* TAB 4: 技艺 (七项生活技艺：等级 + 本级经验进度 + 每级 5% 行动速度加成)          */}
+        {/* ========================================================================= */}
+        {activeTab === 'technique' && (
+          <div className="insight-panel insight-panel--technique">
+            <div className="insight-roots-list">
+              {techniques.map(tech => (
+                <div className="insight-root-row" key={tech.id}>
+                  <PillStatLabel
+                    label={t(`insight.technique.${tech.id}`)}
+                    progress={tech.progress}
+                    tone={tech.tone}
+                    tooltip={t(`insight.technique.${tech.id}Tooltip`)}
+                    tooltipTone="gold"
+                    value={t('insight.technique.levelLabel', { level: tech.level })}
+                  />
+                  <div className="insight-root-bonuses">
+                    <PillBonusLabel
+                      label={t('insight.technique.speedBonusLabel')}
+                      tooltip={t('insight.technique.speedBonusTooltip')}
+                      tooltipTone="gold"
+                      tone={tech.tone}
+                      value={`+${formatNumber(tech.speedPercent, { maxDecimals: 0 })}%`}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 5: 生平 (历练、争锋、修行)                                             */}
         {/* ========================================================================= */}
         {activeTab === 'biography' && (
           <div className="insight-panel insight-panel--biography">
@@ -517,6 +582,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
           </div>
         )}
       </div>
+
+      {/* 破境突破二次确认弹窗：确认后才发送突破命令 */}
+      <BreakthroughConfirmModal
+        open={isBreakthroughModalOpen}
+        currentRealmLevel={stats.realmLevel}
+        onConfirm={() => gameClient.sendCommand('progression.breakthrough', {})}
+        onClose={() => setIsBreakthroughModalOpen(false)}
+      />
     </section>
   )
 })

@@ -285,9 +285,9 @@ export function getCumulativeExpForLevel(level: number): number {
 }
 
 /**
- * 非玩家单位品阶层级量化定义（普通、精英、首领对应的全属性与生命倍率）
+ * 非玩家单位生命层次量化定义（普通、精英、首领对应的全属性与生命倍率）
  */
-// 单位品阶显示名走 i18n（game.unitTier.*），此处仅保留数值倍率。
+// 单位生命层次显示名走 i18n（combat.nearby.rankMonster/rankElite/rankBoss），此处仅保留数值倍率。
 export const NON_PLAYER_UNIT_TIERS = {
   normal: {
     allStatsMultiplier: 1.0,
@@ -387,7 +387,7 @@ export class PercentValue {
 }
 
 // =========================================================================
-// 8. 境界计算与位阶信息结构 (大境界 · 位阶 · 小境界)
+// 8. 境界计算与境界阶段信息结构 (大境界 · 境界阶段 · 小境界)
 // =========================================================================
 
 /** 境界等级上限：Lv.127 飞升（18 级凡俗武道 + 9 大修真境界 × 12 层） */
@@ -611,6 +611,90 @@ export function calculateRealmProgress(totalExperience = 0, explicitRealmLevel?:
 }
 
 /**
+ * 生活技艺体系（七技）：技艺等级与修为共用同一经验曲线
+ * （RealmProgressionCatalog.ExpToNext，0→1 级需 expToNext[0]），
+ * 但技艺默认 0 级起步——等级 = 同一累计经验在修为曲线下导出的境界级 - 1。
+ */
+
+/** 技艺标识固定展示顺序：炼丹、炼器、符箓、强化、阵法、采集、挖掘 */
+export const TECHNIQUE_IDS = ['alchemy', 'forging', 'talisman', 'enhancement', 'formation', 'gathering', 'mining'] as const
+
+/** 每级技艺提供的行动速度加成比率：actual = base / (1 + 0.05×level) */
+export const TECHNIQUE_SPEED_RATIO_PER_LEVEL = 0.05
+
+/**
+ * 技艺等级与经验进度（累计经验 → 0 级起步的技艺等级 + 本级进度）。
+ * 复用修为曲线同一张表：level = calculateRealmProgress(exp).level - 1，
+ * 本级已耗/下一级需求与修为层级逐段一致。
+ */
+export function calculateTechniqueProgress(totalExperience = 0): {
+  /** 技艺等级（0 起步） */
+  level: number
+  /** 本级已积累的经验值 */
+  currentLayerExp: number
+  /** 升下一级所需经验值（满级为 0） */
+  expToNext: number
+  /** 本级进度百分比 (0 - 100) */
+  progressPercentage: number
+} {
+  const progress = calculateRealmProgress(Math.max(0, totalExperience))
+  const level = Math.max(0, progress.level - 1)
+  return {
+    level,
+    currentLayerExp: progress.currentLayerExp,
+    expToNext: progress.expToNext,
+    progressPercentage: progress.progressPercentage,
+  }
+}
+
+/**
+ * 装备强化规则常量（与服务端结算口径对齐，前端仅作预览镜像；权威结算以服务端为准）。
+ */
+
+/** 装备强化行动 ID */
+export const ENHANCE_ACTION_ID = 'enhance.equipment'
+/** 强化精华物品 ID（每轮强化固定消耗） */
+export const ENHANCE_ESSENCE_ITEM_ID = 'item.enhance-essence'
+/** 灵石货币物品 ID（按目标等级线性消耗） */
+export const SPIRIT_STONE_ITEM_ID = 'currency.spirit-stone'
+/** 强化等级上限 +N */
+export const ENHANCE_MAX_LEVEL = 20
+/** 目标等级 t≤10 的基础成功率表（下标 = t-1） */
+export const ENHANCE_BASE_SUCCESS_RATES = [0.5, 0.45, 0.45, 0.4, 0.4, 0.4, 0.35, 0.35, 0.35, 0.35] as const
+/** 目标等级 t≥11 的基础成功率衰减：0.3 × 0.95^(t-11) */
+export const ENHANCE_HIGH_TIER_BASE = 0.3
+export const ENHANCE_HIGH_TIER_DECAY = 0.95
+/** 单轮强化基础耗时 = ENHANCE_DURATION_BASE + targetLevel */
+export const ENHANCE_DURATION_BASE = 5
+
+/** 计算某目标等级 t 的单次强化成功率（与 EnhancementRules 镜像：base clamp [0.01,0.5]，技艺修正后 clamp [0,0.99]） */
+export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number): number {
+  const t = Math.max(1, Math.floor(targetLevel))
+  const base = t <= 10
+    ? ENHANCE_BASE_SUCCESS_RATES[t - 1]
+    : ENHANCE_HIGH_TIER_BASE * Math.pow(ENHANCE_HIGH_TIER_DECAY, t - 11)
+  const clampedBase = Math.max(0.01, Math.min(0.5, base))
+  const L = Math.max(0, techniqueLevel)
+  const rate = L >= t ? clampedBase + 0.01 * L : clampedBase * Math.pow(0.9, t - L)
+  return Math.max(0, Math.min(0.99, rate))
+}
+
+/** 单轮强化精华消耗 = max(1, floor(t/2)) */
+export function enhanceEssenceCost(targetLevel: number): number {
+  return Math.max(1, Math.floor(Math.max(1, Math.floor(targetLevel)) / 2))
+}
+
+/** 单轮灵石消耗 = t × 10 */
+export function enhanceSpiritStoneCost(targetLevel: number): number {
+  return Math.max(1, Math.floor(targetLevel)) * 10
+}
+
+/** 单轮强化基础耗时（秒）= 5 + t；技艺经验入账同此值 */
+export function enhanceBaseDurationSeconds(targetLevel: number): number {
+  return ENHANCE_DURATION_BASE + Math.max(1, Math.floor(targetLevel))
+}
+
+/**
  * 境界展示信息结构体（用于 UI 渲染境界文本、颜色与徽章字形）
  */
 export interface RealmInfo {
@@ -620,7 +704,7 @@ export interface RealmInfo {
   layerProgress: number
   /** 大境界名称 (如 "练气期", "筑基期") */
   stageName: string
-  /** 位阶名称 (如 "前期", "中期", "后期", "巅峰") */
+  /** 境界阶段名 (如 "武", "玄", "初", "中", "后", "极") */
   phaseName: string
   /** 小境界/层数名称 (如 "练气一层", "筑基圆满") */
   minorName: string
@@ -635,7 +719,7 @@ export interface RealmInfo {
 }
 
 /**
- * 根据总修为值与显式境界等级计算当前的 大境界、位阶、小境界 及专属棱形徽章信息
+ * 根据总修为值与显式境界等级计算当前的 大境界、境界阶段、小境界 及专属棱形徽章信息
  * @param experience 角色累计修为（或当前层修为）
  * @param explicitRealmLevel 可选的服务端权威境界等级
  * @returns 境界展示数据
@@ -690,7 +774,10 @@ export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number):
     const nextMajorName = majorIndex + 1 >= 1 && majorIndex + 1 <= majorCount
       ? t(`game.realm.major.${majorIndex + 1}`)
       : t('game.realm.ascension')
-    if (layerInMajor <= 9) {
+    if (majorIndex > majorCount) {
+      // 飞升（Lv.127）越出九大修真境界档，小境界名即大境界本名
+      minorName = rawMajorName
+    } else if (layerInMajor <= 9) {
       minorName = t('game.realm.layer', {
         major: rawMajorName,
         digit: t(`game.realm.digit.${layerInMajor}`),
@@ -704,7 +791,11 @@ export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number):
       minorName = t('game.realm.halfStep', { next: nextMajorName })
     }
 
-    if (layerInMajor <= 3) {
+    if (majorIndex > majorCount) {
+      // 飞升（Lv.127）越出九大修真境界档，无档内分层，境界阶段固定为「极」
+      phaseName = t('game.realm.phasePeak')
+      rankChar = '极'
+    } else if (layerInMajor <= 3) {
       phaseName = t('game.realm.phaseEarly')
       rankChar = '初'
     } else if (layerInMajor <= 6) {
@@ -740,7 +831,6 @@ export function calculateRealmInfo(experience = 0, explicitRealmLevel?: number):
  */
 export interface BaseAttributePool {
   level: number
-  tier: number
   baseHp: number
   baseMp: number
   baseAd: number
@@ -820,19 +910,6 @@ export function calculateBaseAttributes(experience = 0, explicitRealmLevel?: num
   if (BASE_FLAT_ANCHORS.length === 0) throw new Error('基础属性目录尚未加载。')
   const progress = calculateRealmProgress(experience, explicitRealmLevel)
   const level = Math.max(1.0, progress.totalLevel)
-  // 品阶档与境界结构对齐：凡俗武道（≤18）为 1~2 阶，此后每 12 级修真境界升一档。
-  let tier = 1
-  if (level <= 18.0) tier = level <= 1.0 ? 1 : 2
-  else if (level <= 30.0) tier = 3
-  else if (level <= 42.0) tier = 4
-  else if (level <= 54.0) tier = 5
-  else if (level <= 66.0) tier = 6
-  else if (level <= 78.0) tier = 7
-  else if (level <= 90.0) tier = 8
-  else if (level <= 102.0) tier = 9
-  else if (level <= 114.0) tier = 10
-  else if (level <= 126.0) tier = 11
-  else tier = 12
 
   let lowIndex = 0
   for (let i = 0; i < BASE_FLAT_ANCHORS.length - 1; i++) {
@@ -869,7 +946,6 @@ export function calculateBaseAttributes(experience = 0, explicitRealmLevel?: num
 
   return {
     level,
-    tier,
     baseHp,
     baseMp,
     baseAd,

@@ -19,7 +19,7 @@ export interface ItemPickerEntry {
   description: string
   /** 物品品类 */
   category: string
-  /** 物品等阶/品阶 */
+  /** 物品等阶 */
   tier: number
   /** 玩家背包持存数量 */
   amount: number
@@ -27,6 +27,18 @@ export interface ItemPickerEntry {
   definition?: ItemDefinition
   /** 可选装备目录定义（装备类条目悬浮详情使用） */
   equipmentDefinition?: CombatEquipmentDefinition
+  /** 资产变体键（强化等级行形如 "+3"）；同 itemId 多变体行以复合键区分 */
+  variant?: string | null
+  /** 强化等级（装备变体行：悬浮详情按该等级缩放属性预览） */
+  enhancementLevel?: number
+}
+
+/**
+ * 待选条目复合键：itemId + 变体分隔符（与钱包 AssetKey 合入键同构），
+ * 保证同物品不同强化等级行在选择器内不互相覆盖。
+ */
+export function itemPickerEntryKey(itemId: string, variant?: string | null): string {
+  return variant ? `${itemId}\u001F${variant}` : itemId
 }
 
 /**
@@ -41,12 +53,12 @@ interface ItemGridPickerProps {
   title: string
   /** 可供选择的物品列表 */
   items: readonly ItemPickerEntry[]
-  /** 当前选中的物品 ID (null 表示空选/卸下) */
+  /** 当前选中的条目键（itemId 或 itemId+变体复合键；null 表示空选/卸下） */
   value: string | null
   /** 关闭回调 */
   onClose: () => void
-  /** 选中物品回调 */
-  onSelect: (itemId: string | null) => void
+  /** 选中物品回调：回传物品 ID 与完整条目（含变体/强化等级），空选为 null */
+  onSelect: (itemId: string | null, entry?: ItemPickerEntry | null) => void
   /** 是否提供空选/卸下槽位按钮（默认 true） */
   allowEmpty?: boolean
   /** 空选项文本标签 */
@@ -105,7 +117,7 @@ export function ItemGridPicker({
     const categoryLabel = resolveItemCategoryLabel(
       resolveItemSubCategory(item.itemId, item.definition, item.equipmentDefinition, item.category), t)
     return {
-      key: item.itemId,
+      key: itemPickerEntryKey(item.itemId, item.variant),
       tile: (
         <ItemTile
           amount={item.amount}
@@ -125,6 +137,7 @@ export function ItemGridPicker({
           amount={item.amount}
           className="item-grid-picker-tooltip"
           definition={item.definition}
+          enhancementLevel={item.enhancementLevel}
           equipmentDefinition={item.equipmentDefinition}
           itemId={item.itemId}
           metadata={metadata}
@@ -142,7 +155,10 @@ export function ItemGridPicker({
       anchor={anchor}
       emptyLabel={emptyLabel}
       onClose={onClose}
-      onSelect={onSelect}
+      onSelect={key => {
+        const entry = key === null ? null : items.find(item => itemPickerEntryKey(item.itemId, item.variant) === key) ?? null
+        onSelect(entry?.itemId ?? null, entry)
+      }}
       open={open}
       options={options}
       title={title}
@@ -274,6 +290,8 @@ export function ItemUseSlot({
       amount={item.amount}
       className="item-use-slot-tooltip"
       definition={item.definition}
+      enhancementLevel={item.enhancementLevel}
+      equipmentDefinition={item.equipmentDefinition}
       itemId={item.itemId}
       metadata={metadata}
       tabIndex={-1}

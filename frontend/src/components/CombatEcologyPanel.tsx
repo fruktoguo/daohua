@@ -19,7 +19,7 @@ function getEnemyTypeLabel(category: string, element: string, t: ReturnType<type
   return `${cat}${elem}`
 }
 
-/** 节点生态怪物的位阶分组（驱动角标徽记与瓦片描边色调） */
+/** 节点生态怪物的生命层次分组（驱动角标徽记与瓦片描边色调） */
 type EcologyMonsterRank = 'normal' | 'elite' | 'boss'
 
 interface EcologyMonsterEntry {
@@ -39,8 +39,8 @@ const RANK_BADGE_TONE: Record<EcologyMonsterRank, FloatingTone> = {
 /**
  * 栖息妖兽图标瓦片 (EcologyMonsterTile)
  *
- * 瓦片本体只保留立绘图标、位阶角标与等级底标；
- * 悬停弹出简要信息卡（位阶/境界/气血/攻击/护甲），
+ * 瓦片本体只保留立绘图标、生命层次角标与等级底标；
+ * 悬停弹出简要信息卡（生命层次/境界/气血/攻击/护甲），
  * 单击弹出详细信息卡（六维属性、消耗预算、攻速间隔、出没周期、击杀收益、施展功法与掉落物图标）。
  */
 const EcologyMonsterTile = memo(function EcologyMonsterTile({ entry }: { entry: EcologyMonsterEntry }): React.JSX.Element {

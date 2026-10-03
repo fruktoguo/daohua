@@ -3,11 +3,12 @@ import { useGameStore } from '../game/gameStore'
 import { findItemInCatalog } from '../game/ids'
 import { calculateRealmInfo } from '../game/combatConstants'
 import { formatInteger } from '../game/format'
-import type { CombatantDefinition, TravelSegment, WorldMapDefinition, WorldState } from '../game/types'
+import type { CombatantDefinition, TravelSegment, WorldEdgeDefinition, WorldNodeDefinition, WorldState } from '../game/types'
 import { useT } from '../i18n'
 import { gameClient } from '../network/gameClient'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './FloatingPopover'
 import { ItemDropReference } from './ItemDisplay'
+import { ConfirmDialog } from './ConfirmDialog'
 import { Modal } from './Modal'
 import { UnitNumber } from './UnitNumber'
 
@@ -17,6 +18,21 @@ function getEdgeDistance(
   to: { x: number; y: number },
 ): number {
   return Math.hypot(to.x - from.x, to.y - from.y)
+}
+
+/**
+ * 合并后的世界图视图：大世界共用单一坐标系，区域（maps 条目）仅作显示分组；
+ * 寻路与玩家位置插值一律对全图求值，跨区域路径天然可用。
+ */
+interface WorldGraphView {
+  nodes: readonly WorldNodeDefinition[]
+  edges: readonly WorldEdgeDefinition[]
+}
+
+/** 世界坐标包围盒（决定画布相对视口的尺寸：1 世界单位 = 1% 视口宽/高） */
+interface WorldBounds {
+  width: number
+  height: number
 }
 
 /** 路径规划计算结果 */
@@ -33,7 +49,7 @@ interface PathPlanResult {
  * 使用 Dijkstra 算法精确规划当前玩家位置到目标地点的最短路径与耗时
  */
 function planShortestTravel(
-  map: WorldMapDefinition,
+  map: WorldGraphView,
   world: WorldState,
   targetNodeId: string,
 ): PathPlanResult | null {
@@ -157,7 +173,7 @@ function planShortestTravel(
  * 实时计算并插值玩家在地图上的精准动态坐标（DOM Ref 直操位移，零 React Re-render 负担）
  */
 function usePlayerDisplayPosition(
-  map: WorldMapDefinition | undefined,
+  map: WorldGraphView | undefined,
   world: WorldState,
   activeTravel: {
     status: string
@@ -165,6 +181,7 @@ function usePlayerDisplayPosition(
     durationSeconds: number
     travelSegments?: TravelSegment[] | null
   } | undefined,
+  worldBounds: WorldBounds,
   hidden = false,
 ): {
   playerPosRef: React.RefObject<{ x: number; y: number }>
@@ -180,6 +197,7 @@ function usePlayerDisplayPosition(
     world,
     activeTravel,
     hidden,
+    worldBounds,
     lastProgressSec: activeTravel?.progressSeconds ?? 0,
     lastUpdateMs: performance.now(),
   })
@@ -194,10 +212,11 @@ function usePlayerDisplayPosition(
       world,
       activeTravel,
       hidden,
+      worldBounds,
       lastProgressSec: activeTravel?.progressSeconds ?? 0,
       lastUpdateMs: progressChanged || travelChanged ? now : prev.lastUpdateMs,
     }
-  }, [map, world, activeTravel, hidden])
+  }, [map, world, activeTravel, hidden, worldBounds])
 
   useEffect(() => {
     let animId: number | null = null
@@ -277,8 +296,9 @@ function usePlayerDisplayPosition(
     const syncDom = (coord: { x: number; y: number }) => {
       playerPosRef.current = coord
       if (markerRef.current) {
-        markerRef.current.style.left = `${coord.x}%`
-        markerRef.current.style.top = `${coord.y}%`
+        const bounds = stateRef.current.worldBounds
+        markerRef.current.style.left = `${(coord.x / bounds.width) * 100}%`
+        markerRef.current.style.top = `${(coord.y / bounds.height) * 100}%`
       }
     }
 
@@ -331,7 +351,7 @@ function usePlayerDisplayPosition(
       }
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [map, world, activeTravel, hidden])
+  }, [map, world, activeTravel, hidden, worldBounds])
 
   return { playerPosRef, markerRef }
 }
@@ -340,7 +360,7 @@ function usePlayerDisplayPosition(
 /**
  * 栖息生灵胶囊 + Hover 悬浮详情卡（普通怪 / 精英 / 领主共用模板）
  *
- * 胶囊本体保持纯名称；悬停浮层展示位阶徽记、境界与品阶副标、
+ * 胶囊本体保持纯名称；悬停浮层展示生命层次徽记、境界与等阶副标、
  * 生命/灵力/双攻/双防六项基础战斗属性（复用斗法敌怪属性统一口径），
  * 以及掉落物图标瓦片行与击杀收益（修为/底蕴/六维）明细。
  */
@@ -431,11 +451,120 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
   const actions = useGameStore(state => state.actions)
   const items = useGameStore(state => state.items)
   const queue = useGameStore(state => state.queue.entries)
-  const map = maps.find(item => item.mapId === world.mapId)
   const activeTravel = queue.find(entry => entry.executionKind === 'travel')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(world.nodeId)
   const [travelModalOpen, setTravelModalOpen] = useState<boolean>(false)
-  const { playerPosRef, markerRef } = usePlayerDisplayPosition(map, world, activeTravel, hidden)
+  // 中断赶路的二次确认目标（行进中条目 entryId）；目标离场（抵达/被移除）时自动失效收起弹窗
+  const [pendingStopTravelId, setPendingStopTravelId] = useState<string | null>(null)
+
+  // 全局世界索引：nodeId→所属区域、全节点与全边合并视图。
+  // 大世界共用单一坐标系，区域（maps 条目）仅作显示分组；寻路与插值一律对合并图求值。
+  const worldIndex = useMemo(() => {
+    const nodeOwner = new Map<string, string>()
+    const nodes: WorldNodeDefinition[] = []
+    const edges: WorldEdgeDefinition[] = []
+    for (const m of maps) {
+      for (const node of m.nodes) {
+        if (!nodeOwner.has(node.nodeId)) {
+          nodeOwner.set(node.nodeId, m.mapId)
+          nodes.push(node)
+        }
+      }
+      for (const edge of m.edges) edges.push(edge)
+    }
+    return { nodeOwner, nodes, edges }
+  }, [maps])
+  const worldGraphView = useMemo<WorldGraphView>(
+    () => ({ nodes: worldIndex.nodes, edges: worldIndex.edges }),
+    [worldIndex],
+  )
+
+  // 世界坐标包围盒：画布按世界尺寸铺放（1 世界单位 = 1% 视口宽/高）。
+  const worldBounds = useMemo<WorldBounds>(() => {
+    let maxX = 100
+    let maxY = 100
+    for (const node of worldIndex.nodes) {
+      if (node.x > maxX) maxX = node.x
+      if (node.y > maxY) maxY = node.y
+    }
+    return { width: maxX + 12, height: maxY + 8 }
+  }, [worldIndex])
+  const nx = useCallback((x: number) => `${(x / worldBounds.width) * 100}%`, [worldBounds])
+  const ny = useCallback((y: number) => `${(y / worldBounds.height) * 100}%`, [worldBounds])
+
+  // 区域可见集合：驻留节点 → 所在区域 + 跨域边直达的邻接区域（关口双显）；
+  // 行进在边上 → 两端点所属区域（跨界路途中双显、图内边单显）；兜底 world.mapId。
+  const visibleMapIds = useMemo(() => {
+    const ids = new Set<string>()
+    const addNodeRegion = (nodeId: string | null | undefined) => {
+      if (!nodeId) return
+      const owner = worldIndex.nodeOwner.get(nodeId)
+      if (owner) ids.add(owner)
+    }
+    if (world.nodeId) {
+      addNodeRegion(world.nodeId)
+      for (const edge of worldIndex.edges) {
+        if (edge.fromNodeId === world.nodeId) addNodeRegion(edge.toNodeId)
+        else if (edge.toNodeId === world.nodeId) addNodeRegion(edge.fromNodeId)
+      }
+    } else if (world.edgeId) {
+      const edge = worldIndex.edges.find(e => e.edgeId === world.edgeId)
+      addNodeRegion(edge?.fromNodeId)
+      addNodeRegion(edge?.toNodeId)
+    }
+    if (ids.size === 0 && world.mapId) ids.add(world.mapId)
+    return ids
+  }, [worldIndex, world.nodeId, world.edgeId, world.mapId])
+  const visibleKey = useMemo(
+    () => [...visibleMapIds].sort().join('|'),
+    [visibleMapIds],
+  )
+
+  // 当前可见区域及其节点包围盒（界框/名牌绘制与视口适配共用）
+  const visibleRegions = useMemo(() => maps
+    .filter(m => visibleMapIds.has(m.mapId))
+    .map(m => {
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const node of m.nodes) {
+        if (node.x < minX) minX = node.x
+        if (node.x > maxX) maxX = node.x
+        if (node.y < minY) minY = node.y
+        if (node.y > maxY) maxY = node.y
+      }
+      return { map: m, bounds: { minX, minY, maxX, maxY } }
+    })
+    .filter(r => Number.isFinite(r.bounds.minX)),
+  [maps, visibleMapIds])
+
+  // 关口节点：持有通往其他区域跨域边的节点，给界门描边提示
+  const gatewayNodeIds = useMemo(() => {
+    const set = new Set<string>()
+    for (const edge of worldIndex.edges) {
+      const from = worldIndex.nodeOwner.get(edge.fromNodeId)
+      const to = worldIndex.nodeOwner.get(edge.toNodeId)
+      if (from && to && from !== to) {
+        set.add(edge.fromNodeId)
+        set.add(edge.toNodeId)
+      }
+    }
+    return set
+  }, [worldIndex])
+
+  const visibleNodes = useMemo(
+    () => worldIndex.nodes.filter(n => visibleMapIds.has(worldIndex.nodeOwner.get(n.nodeId)!)),
+    [worldIndex, visibleMapIds],
+  )
+  const visibleEdges = useMemo(
+    () => worldIndex.edges.filter(e =>
+      visibleMapIds.has(worldIndex.nodeOwner.get(e.fromNodeId) ?? '')
+      && visibleMapIds.has(worldIndex.nodeOwner.get(e.toNodeId) ?? '')),
+    [worldIndex, visibleMapIds],
+  )
+
+  const { playerPosRef, markerRef } = usePlayerDisplayPosition(worldGraphView, world, activeTravel, worldBounds, hidden)
 
   // 视口拖拽漫游与缩放状态
   const stageRef = useRef<HTMLDivElement>(null)
@@ -474,7 +603,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
 
       const zoomFactor = event.deltaY < 0 ? 1.12 : 0.89
       const prevZoom = zoomRef.current
-      const nextZoom = Math.min(1.8, Math.max(0.6, prevZoom * zoomFactor))
+      const nextZoom = Math.min(1.8, Math.max(0.3, prevZoom * zoomFactor))
       if (nextZoom === prevZoom) return
 
       // 以鼠标位置为锚点缩放：先求指针下的世界坐标，再反推新的平移量。
@@ -508,29 +637,63 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       y: Math.round(stageH / 2 - playerPxY * z),
     })
   }, [zoom])
-  // 打开地图或视口初始化时，默认将玩家当前位置居中
-  const hasAutoCenteredRef = useRef<boolean>(false)
+  // 视口适配可见区域并集：缩放至区域包围盒（含边距）恰好填满视口并居中。
+  // 常态单区域约等于满幅；驻留关口/行进跨界时自动缩放至双区域全景。
+  const fitToVisibleRegions = useCallback(() => {
+    const stage = stageRef.current
+    if (!stage || visibleRegions.length === 0) return
+    const stageW = stage.clientWidth
+    const stageH = stage.clientHeight
+    if (!stageW || !stageH) return
+
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const region of visibleRegions) {
+      minX = Math.min(minX, region.bounds.minX)
+      minY = Math.min(minY, region.bounds.minY)
+      maxX = Math.max(maxX, region.bounds.maxX)
+      maxY = Math.max(maxY, region.bounds.maxY)
+    }
+    const pad = 10
+    minX -= pad
+    minY -= pad
+    maxX += pad
+    maxY += pad
+    const unionW = Math.max(1, maxX - minX)
+    const unionH = Math.max(1, maxY - minY)
+    // 1 世界单位 = 1% 视口：unionW 单位在 zoom z 下占 unionW/100*stage*z px，
+    // 令其约等于视口的 96% → z = 96/unionW，与视口尺寸无关。
+    const nextZoom = Math.min(1.8, Math.max(0.3, Math.min(96 / unionW, 96 / unionH)))
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    setZoom(nextZoom)
+    setPan({
+      x: Math.round(stageW / 2 - (cx / 100) * stageW * nextZoom),
+      y: Math.round(stageH / 2 - (cy / 100) * stageH * nextZoom),
+    })
+  }, [visibleRegions])
+
+  // 区域可见集合变化（含首次布局就绪）时自动适配视口；集合不变期间不打断玩家手动漫游
+  const fittedKeyRef = useRef<string | null>(null)
   useEffect(() => {
     const stage = stageRef.current
     if (!stage) return
 
-    const tryCenter = () => {
-      const stageW = stage.clientWidth
-      const stageH = stage.clientHeight
-      if (stageW > 0 && stageH > 0 && !hasAutoCenteredRef.current) {
-        centerOnPlayer(zoom)
-        hasAutoCenteredRef.current = true
+    const tryFit = () => {
+      if (stage.clientWidth > 0 && stage.clientHeight > 0 && fittedKeyRef.current !== visibleKey) {
+        fitToVisibleRegions()
+        fittedKeyRef.current = visibleKey
       }
     }
 
-    tryCenter()
-    const rafId = requestAnimationFrame(tryCenter)
+    tryFit()
+    const rafId = requestAnimationFrame(tryFit)
     const resizeObserver = new ResizeObserver(entries => {
       for (const entry of entries) {
         if (entry.contentRect.width > 0 && entry.contentRect.height > 0) {
-          if (!hasAutoCenteredRef.current) {
-            tryCenter()
-          }
+          tryFit()
         }
       }
     })
@@ -540,21 +703,17 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
       cancelAnimationFrame(rafId)
       resizeObserver.disconnect()
     }
-  }, [map?.mapId, centerOnPlayer, zoom])
+  }, [visibleKey, fitToVisibleRegions])
 
-  // 地图切换时重置自动居中标志
+  // 选中节点离开可见区域（区域切换）时回退到当前驻留节点或首个可见节点
   useEffect(() => {
-    hasAutoCenteredRef.current = false
-  }, [map?.mapId])
-
-  useEffect(() => {
-    if (!map) return
-    if (!selectedNodeId || !map.nodes.some(node => node.nodeId === selectedNodeId)) {
-      setSelectedNodeId(world.nodeId ?? map.nodes[0]?.nodeId ?? null)
+    if (visibleNodes.length === 0) return
+    if (!selectedNodeId || !visibleNodes.some(node => node.nodeId === selectedNodeId)) {
+      setSelectedNodeId(world.nodeId ?? visibleNodes[0]?.nodeId ?? null)
     }
-  }, [map, selectedNodeId, world.nodeId])
+  }, [visibleNodes, selectedNodeId, world.nodeId])
 
-  const selectedNode = map?.nodes.find(node => node.nodeId === selectedNodeId)
+  const selectedNode = visibleNodes.find(node => node.nodeId === selectedNodeId)
   const plannedEdges = useMemo(
     () => new Set((activeTravel?.travelSegments ?? []).map(segment => segment.edgeId)),
     [activeTravel?.travelSegments],
@@ -669,23 +828,30 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
     return selectedNode?.buildings ?? []
   }, [selectedNode])
 
-  // 4. 计算当前位置到选中地点的最短路径规划
+  // 4. 计算当前位置到选中地点的最短路径规划（合并世界图，跨区域可达）
   const plannedTravel = useMemo(() => {
-    if (!map || !selectedNodeId) return null
-    return planShortestTravel(map, world, selectedNodeId)
-  }, [map, world, selectedNodeId])
+    if (worldIndex.nodes.length === 0 || !selectedNodeId) return null
+    return planShortestTravel(worldGraphView, world, selectedNodeId)
+  }, [worldIndex, worldGraphView, world, selectedNodeId])
 
   const atSelectedNode = selectedNode?.nodeId === world.nodeId
   const travellingToSelected = selectedNode?.nodeId === activeTravel?.travelDestinationNodeId
 
-  if (!map) {
+  // 待中断目标仅在仍在行进时有效；目的地名优先按 wire 字段 travelDestinationNodeId 从地图定义解析
+  const stopTravelTarget = activeTravel && activeTravel.entryId === pendingStopTravelId ? activeTravel : null
+  const stopTravelDestName = stopTravelTarget?.travelDestinationNodeId
+    ? maps.find(m => m.nodes.some(n => n.nodeId === stopTravelTarget.travelDestinationNodeId))
+        ?.nodes.find(n => n.nodeId === stopTravelTarget.travelDestinationNodeId)?.name
+    : undefined
+
+  if (worldIndex.nodes.length === 0) {
     return <div className="world-map-loading">{t('combat.map.loading')}</div>
   }
 
   return (
     <div className="world-map-layout">
       <section
-        aria-label={t('combat.map.stageAria', { name: map.name })}
+        aria-label={t('combat.map.stageAria', { name: visibleRegions.map(r => r.map.name).join(' · ') || world.locationName })}
         className={`world-map-stage${isDragging ? ' is-dragging' : ''}`}
         onPointerCancel={handlePointerUp}
         onPointerDown={handlePointerDown}
@@ -718,7 +884,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             <button
               className="world-map-tool-btn icon-only"
               onClick={() => {
-                const nextZoom = Math.max(0.6, zoom - 0.15)
+                const nextZoom = Math.max(0.3, zoom - 0.15)
                 setZoom(nextZoom)
                 centerOnPlayer(nextZoom)
               }}
@@ -727,59 +893,88 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             >－</button>
             <button
               className="world-map-tool-btn icon-only"
-              onClick={() => {
-                setZoom(1)
-                setPan({ x: 0, y: 0 })
-              }}
+              onClick={fitToVisibleRegions}
               title={t('combat.map.resetView')}
               type="button"
             >↺</button>
           </div>
         </div>
 
-        {/* 漫游画布视口 */}
+        {/* 漫游画布视口：尺寸 = 世界坐标包围盒，区域按全局坐标落位 */}
         <div
           className="world-map-canvas"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
             transformOrigin: '0 0',
+            width: `${worldBounds.width}%`,
+            height: `${worldBounds.height}%`,
           }}
         >
-          {/* SVG 路径与距离标注（像素渲染，100% 正常字形比例） */}
+          {/* SVG 区域界框 / 路径与距离标注（像素渲染，100% 正常字形比例） */}
           <svg className="world-map-edges">
             <defs>
               <filter id="world-route-glow" x="-20%" y="-20%" width="140%" height="140%">
                 <feDropShadow dx="0" dy="0" floodColor="#e8d69a" floodOpacity="0.7" stdDeviation="3" />
               </filter>
             </defs>
-            {map.edges.map(edge => {
-              const from = map.nodes.find(node => node.nodeId === edge.fromNodeId)
-              const to = map.nodes.find(node => node.nodeId === edge.toNodeId)
+            {/* 可见区域虚线界框与区域名牌 */}
+            {visibleRegions.map(({ map: region, bounds }) => {
+              const framePad = 8
+              const fx = bounds.minX - framePad
+              const fy = bounds.minY - framePad
+              const fw = bounds.maxX - bounds.minX + framePad * 2
+              const fh = bounds.maxY - bounds.minY + framePad * 2
+              return (
+                <g className="world-map-region" key={region.mapId}>
+                  <rect
+                    className="world-map-region-frame"
+                    height={`${(fh / worldBounds.height) * 100}%`}
+                    rx={14}
+                    width={`${(fw / worldBounds.width) * 100}%`}
+                    x={nx(fx)}
+                    y={ny(fy)}
+                  />
+                  <text
+                    className="world-map-region-name"
+                    dominantBaseline="central"
+                    textAnchor="middle"
+                    x={nx((bounds.minX + bounds.maxX) / 2)}
+                    y={ny(Math.max(3, fy + 3.5))}
+                  >
+                    {region.name}
+                  </text>
+                </g>
+              )
+            })}
+            {visibleEdges.map(edge => {
+              const from = worldIndex.nodes.find(node => node.nodeId === edge.fromNodeId)
+              const to = worldIndex.nodes.find(node => node.nodeId === edge.toNodeId)
               if (!from || !to) return null
               const distance = getEdgeDistance(from, to)
               const isPlanned = plannedEdges.has(edge.edgeId)
+              const isCrossing = worldIndex.nodeOwner.get(edge.fromNodeId) !== worldIndex.nodeOwner.get(edge.toNodeId)
               const midX = (from.x + to.x) / 2
               const midY = (from.y + to.y) / 2
 
               return (
                 <g
                   aria-label={t('combat.map.edgeAria', { from: from.name, to: to.name, distance: distance.toFixed(1) })}
-                  className={`world-map-edge-group${isPlanned ? ' is-planned' : ''}`}
+                  className={`world-map-edge-group${isPlanned ? ' is-planned' : ''}${isCrossing ? ' is-crossing' : ''}`}
                   key={edge.edgeId}
                 >
                   {/* 宽容度高的透明交互拾取层 (28px) */}
-                  <line className="world-map-edge-hitbox" x1={`${from.x}%`} x2={`${to.x}%`} y1={`${from.y}%`} y2={`${to.y}%`} />
+                  <line className="world-map-edge-hitbox" x1={nx(from.x)} x2={nx(to.x)} y1={ny(from.y)} y2={ny(to.y)} />
                   {/* 底色衬线 */}
-                  <line className="world-map-edge-bg" x1={`${from.x}%`} x2={`${to.x}%`} y1={`${from.y}%`} y2={`${to.y}%`} />
+                  <line className="world-map-edge-bg" x1={nx(from.x)} x2={nx(to.x)} y1={ny(from.y)} y2={ny(to.y)} />
                   {/* 核心主路径 */}
-                  <line className="world-map-edge-line" x1={`${from.x}%`} x2={`${to.x}%`} y1={`${from.y}%`} y2={`${to.y}%`} />
+                  <line className="world-map-edge-line" x1={nx(from.x)} x2={nx(to.x)} y1={ny(from.y)} y2={ny(to.y)} />
                   {/* 距离文字标注（标准字形比例，带黑色轮廓发光） */}
                   <text
                     className="world-map-edge-label-text"
                     dominantBaseline="central"
                     textAnchor="middle"
-                    x={`${midX}%`}
-                    y={`${midY}%`}
+                    x={nx(midX)}
+                    y={ny(midY)}
                   >
                     {t('combat.map.edgeDistance', { distance: distance.toFixed(1) })}
                   </text>
@@ -788,23 +983,24 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             })}
           </svg>
 
-          {/* 地图节点实体按钮 */}
-          {map.nodes.map(node => {
+          {/* 地图节点实体按钮（仅渲染可见区域） */}
+          {visibleNodes.map(node => {
             const isCurrent = node.nodeId === world.nodeId
             const isSelected = selectedNodeId === node.nodeId
+            const isGateway = gatewayNodeIds.has(node.nodeId)
 
             return (
               <button
                 aria-label={t('combat.map.nodeAria', { name: node.name, description: node.description })}
                 aria-pressed={isSelected}
-                className={`world-map-node${isCurrent ? ' is-current' : ''}${isSelected ? ' is-selected' : ''}`}
+                className={`world-map-node${isCurrent ? ' is-current' : ''}${isSelected ? ' is-selected' : ''}${isGateway ? ' is-gateway' : ''}`}
                 data-node-id={node.nodeId}
                 key={node.nodeId}
                 onClick={e => {
                   e.stopPropagation()
                   setSelectedNodeId(node.nodeId)
                 }}
-                style={{ left: `${node.x}%`, top: `${node.y}%` }}
+                style={{ left: nx(node.x), top: ny(node.y) }}
                 type="button"
               >
                 <strong>{node.name}</strong>
@@ -818,8 +1014,8 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
             className={`world-player-marker${world.nodeId ? ' is-at-node' : ' is-travelling'}`}
             ref={markerRef}
             style={{
-              left: `${playerPosRef.current.x}%`,
-              top: `${playerPosRef.current.y}%`,
+              left: nx(playerPosRef.current.x),
+              top: ny(playerPosRef.current.y),
             }}
             title={world.locationName}
           >
@@ -946,7 +1142,7 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
                 {activeTravel && (
                   <button
                     className="danger world-stop-btn"
-                    onClick={() => gameClient.sendCommand('action.remove', { actionInstanceId: activeTravel.entryId })}
+                    onClick={() => setPendingStopTravelId(activeTravel.entryId)}
                     type="button"
                   >
                     {t('combat.map.stopTravel')}
@@ -959,6 +1155,21 @@ export const WorldMapPanel = memo(function WorldMapPanel({ hidden = false }: { h
           <p className="world-map-select-prompt">{t('combat.map.selectPrompt')}</p>
         )}
       </aside>
+
+      {/* 中断赶路二次确认：目标条目离场（抵达/被移除）时自动收起 */}
+      <ConfirmDialog
+        confirmLabel={t('combat.map.stopTravelConfirmBtn')}
+        danger
+        description={stopTravelTarget
+          ? t('combat.map.stopTravelConfirmDesc', { name: stopTravelDestName ?? stopTravelTarget.actionName })
+          : ''}
+        onClose={() => setPendingStopTravelId(null)}
+        onConfirm={() => {
+          if (stopTravelTarget) gameClient.sendCommand('action.remove', { actionInstanceId: stopTravelTarget.entryId })
+        }}
+        open={stopTravelTarget !== null}
+        title={t('combat.map.stopTravelConfirmTitle')}
+      />
 
       {/* 启程前往确认弹窗 */}
       {selectedNode && (

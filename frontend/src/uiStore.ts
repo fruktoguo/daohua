@@ -10,14 +10,25 @@ import { create } from 'zustand'
  * - 'map': 地图（包含地图与附近子选项卡）
  * - 'combat': 详情（战斗对决现场与战备装配详情）
  * - 'market': 坊市交易行
+ * - 'social': 同道（队伍组队、匹配与组队大厅）
  * - 'inventory': 储物袋（背包）
  * - 'log': 传音道历（日志）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'inventory' | 'log' | 'settings'
+export type TabId = 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'
 
-/** 技艺当前模式：炼丹 vs 炼器 */
-export type CraftingMode = 'alchemy' | 'forging'
+/** 同道页子选项卡：当前仅「队伍」，后续同道玩法（宗门、结义等）沿用同一结构扩展 */
+export type SocialSubTab = 'party'
+
+/**
+ * 队伍页内部页签：
+ * - 无队伍态为三入口自选：lobby 组队大厅 / match 队伍匹配 / create 创建队伍；
+ * - 有队伍态为 overview 队伍信息 / lobby 组队大厅（招募散人，邀请按钮仅队长可见）。
+ */
+export type PartySubTab = 'lobby' | 'match' | 'create' | 'overview'
+
+/** 技艺当前模式：炼丹 | 炼器 | 符箓 | 阵法 | 强化 */
+export type CraftingMode = 'alchemy' | 'forging' | 'talisman' | 'formation' | 'enhancement'
 
 /** 炼丹顶部子选项卡：提炼 vs 修炼丹药 vs 斗法药剂 */
 export type AlchemySubTab = 'extraction' | 'cultivation' | 'combat'
@@ -54,6 +65,14 @@ interface UiStore {
   rightColumnTab: RightColumnTab
   /** 切换右侧主栏子选项卡 */
   setRightColumnTab: (tab: RightColumnTab) => void
+  /** 同道页当前子选项卡 */
+  socialSubTab: SocialSubTab
+  /** 切换同道页子选项卡 */
+  setSocialSubTab: (tab: SocialSubTab) => void
+  /** 队伍页内部当前页签 */
+  partySubTab: PartySubTab
+  /** 切换队伍页内部页签 */
+  setPartySubTab: (tab: PartySubTab) => void
 }
 
 /**
@@ -71,9 +90,14 @@ export const useUiStore = create<UiStore>(set => ({
   },
   craftingMode: 'alchemy',
   // 切换技艺模式时同时复位对应子选项卡，避免残留上一个模式的深层选中态
+  // （符箓/阵法/强化无二级子选项卡，仅切模式即可）
   setCraftingMode: craftingMode => set({
     craftingMode,
-    ...(craftingMode === 'alchemy' ? { alchemySubTab: 'extraction' } : { forgingSubTab: 'refining' }),
+    ...(craftingMode === 'alchemy'
+      ? { alchemySubTab: 'extraction' as AlchemySubTab }
+      : craftingMode === 'forging'
+        ? { forgingSubTab: 'refining' as ForgingSubTab }
+        : {}),
   }),
   craftingNavExpanded: false,
   setCraftingNavExpanded: expanded => set(state => ({
@@ -85,4 +109,8 @@ export const useUiStore = create<UiStore>(set => ({
   setForgingSubTab: forgingSubTab => set({ forgingSubTab }),
   rightColumnTab: 'inventory',
   setRightColumnTab: rightColumnTab => set({ rightColumnTab }),
+  socialSubTab: 'party',
+  setSocialSubTab: socialSubTab => set({ socialSubTab }),
+  partySubTab: 'lobby',
+  setPartySubTab: partySubTab => set({ partySubTab }),
 }))

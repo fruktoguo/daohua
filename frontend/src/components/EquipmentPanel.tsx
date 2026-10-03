@@ -1,11 +1,11 @@
 import { memo, useMemo, useState } from 'react'
 import { useGameStore } from '../game/gameStore'
 import { sendLoadoutReplace } from '../game/loadoutCommands'
-import { findEquipmentInCatalog, findItemInCatalog, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
+import { findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveItemCategoryLabel, resolveItemMetadata, resolveItemSubCategory, withItemGrade } from '../game/ids'
 import { useT } from '../i18n'
 import type { CombatEquipmentDefinition, EquipmentSlot, EquippedItem, ItemDefinition } from '../game/types'
 import { CharacterAvatar } from './CharacterAvatar'
-import { ItemGridPicker, type ItemPickerEntry } from './ItemGridPicker'
+import { ItemGridPicker, itemPickerEntryKey, type ItemPickerEntry } from './ItemGridPicker'
 import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { RealmBadge } from './RealmBadge'
 import { calculateRealmInfo } from '../game/combatConstants'
@@ -179,40 +179,53 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
       if (!eqDef || !isSlotMatch(eqDef.slot, targetSlot)) continue
 
       const itemDef = findItemInCatalog(itemCatalog, inv.itemId)
+      const invEnhancementLevel = parseEnhancementVariant(inv.variant)
       matchingInventoryItems.push({
         itemId: inv.itemId,
-        name: inv.name,
+        name: invEnhancementLevel > 0 ? `${inv.name} +${invEnhancementLevel}` : inv.name,
         amount: inv.amount,
         tier: inv.tier ?? eqDef.tier,
         category: resolveItemCategoryLabel(resolveItemSubCategory(inv.itemId, itemDef, eqDef, inv.subCategory), t),
         description: itemDef?.description ?? eqDef.description ?? '',
         definition: itemDef,
         equipmentDefinition: eqDef,
+        variant: inv.variant,
+        enhancementLevel: invEnhancementLevel,
       })
     }
 
     // 2. 若当前部位已穿戴，且背包中数量为 0，补充展示当前穿戴装备便于对比/选中
     const currentEquipped = slotEquippedMap.get(targetSlot)
-    if (currentEquipped && !matchingInventoryItems.some(item => item.itemId === currentEquipped.item.itemId)) {
+    const equippedKey = currentEquipped
+      ? itemPickerEntryKey(
+        currentEquipped.item.itemId,
+        currentEquipped.item.enhancementLevel > 0 ? `+${Math.floor(currentEquipped.item.enhancementLevel)}` : null,
+      )
+      : null
+    if (currentEquipped && !matchingInventoryItems.some(item => itemPickerEntryKey(item.itemId, item.variant) === equippedKey)) {
       const itemDef = currentEquipped.definition
       const eqDef = currentEquipped.equipmentDef
       matchingInventoryItems.unshift({
         itemId: currentEquipped.item.itemId,
-        name: itemDef?.name ?? eqDef?.name ?? currentEquipped.item.itemId,
+        name: currentEquipped.item.enhancementLevel > 0
+          ? `${itemDef?.name ?? eqDef?.name ?? currentEquipped.item.itemId} +${Math.floor(currentEquipped.item.enhancementLevel)}`
+          : (itemDef?.name ?? eqDef?.name ?? currentEquipped.item.itemId),
         amount: 1,
         tier: itemDef?.tier ?? eqDef?.tier ?? 1,
         category: resolveItemCategoryLabel(resolveItemSubCategory(currentEquipped.item.itemId, itemDef, eqDef), t),
         description: itemDef?.description ?? eqDef?.description ?? '',
         definition: itemDef,
         equipmentDefinition: eqDef,
+        variant: currentEquipped.item.enhancementLevel > 0 ? `+${Math.floor(currentEquipped.item.enhancementLevel)}` : null,
+        enhancementLevel: Math.floor(currentEquipped.item.enhancementLevel),
       })
     }
 
     return matchingInventoryItems
   }, [activePickingSlot, inventory, equipmentCatalog, itemCatalog, slotEquippedMap, t])
 
-  // 处理装备选择 / 卸下
-  const handleSelectEquipment = (selectedItemId: string | null) => {
+  // 处理装备选择 / 卸下（entry 携带变体：穿戴 +N 行时以对应强化等级写入槽位）
+  const handleSelectEquipment = (selectedItemId: string | null, entry?: ItemPickerEntry | null) => {
     if (!combat || !activePickingSlot) return
     const targetSlot = activePickingSlot.config.slot
 
@@ -223,11 +236,11 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
       return !isSlotMatch(eqDef.slot, targetSlot)
     })
 
-    // 若选择了新装备则推入
+    // 若选择了新装备则推入（强化变体行以条目自带等级为准）
     if (selectedItemId) {
       nextEquipped.push({
         itemId: selectedItemId,
-        enhancementLevel: 0,
+        enhancementLevel: entry?.enhancementLevel ?? 0,
       })
     }
 
@@ -238,7 +251,13 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
   }
 
   const activeSlotEquipped = activePickingSlot ? slotEquippedMap.get(activePickingSlot.config.slot) : null
-  const currentPickerValue = activeSlotEquipped?.item.itemId ?? null
+  // 已穿戴选中键与变体复合键对齐：+N 槽位高亮落在同变体行而非基础行。
+  const currentPickerValue = activeSlotEquipped
+    ? itemPickerEntryKey(
+      activeSlotEquipped.item.itemId,
+      activeSlotEquipped.item.enhancementLevel > 0 ? `+${Math.floor(activeSlotEquipped.item.enhancementLevel)}` : null,
+    )
+    : null
   const pickerTitle = activePickingSlot
     ? t('app.equipmentPanel.chooseEquipmentTitle', { slot: t(`app.equipmentPanel.${activePickingSlot.config.labelKey}`) })
     : ''

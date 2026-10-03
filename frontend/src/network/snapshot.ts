@@ -39,9 +39,12 @@ import type {
 } from '../game/types'
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
+/** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion（v7）保持一致。 */
+const SNAPSHOT_SCHEMA_VERSION = 7
+
 type JsonObject = Record<string, unknown>
 
-const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
+const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat', 'enhancement']
 /** 全量快照必须齐备的分段清单；缺任何一段说明服务端快照残缺，整包拒绝 */
 const REQUIRED_SNAPSHOT_SECTIONS = ['progression', 'world', 'combat', 'buffs', 'loadout', 'settings', 'action_queue', 'duel'] as const
 
@@ -270,7 +273,7 @@ async function decodeSections(
       throw new Error('玩家 section 标识重复或为空。')
     }
     names.add(section.section)
-    if (section.schemaVersion !== 5) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
+    if (section.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) throw new Error(`不支持的 section schema 版本: ${section.section} v${section.schemaVersion}。`)
   }
   const spans = sectionDataSpans(payloadBytes, memberPath)
   if (spans.length !== sections.length) throw new Error('玩家 section 数据区间与列表不一致。')
@@ -492,7 +495,7 @@ function mapExpedition(value: unknown, actionId: string): ExpeditionProgress {
   const outcome = finiteInteger(row.outcome, `行动 ${actionId} 的 outcome`)
   if (outcome > 3) throw new Error(`行动 ${actionId} 的 outcome 枚举值无效。`)
 
-  // 多敌同场：enemies 数组携带同波全体敌人的权威实时快照（名称/品阶/立绘/血蓝/出手/威胁）；
+  // 多敌同场：enemies 数组携带同波全体敌人的权威实时快照（名称/生命层次/立绘/血蓝/出手/威胁）；
   // 搜寻/复活阶段为空。属性面板为按需投影——仅观察目标（UnitInspect）命中下标时携带。
   const enemies: ExpeditionEnemy[] = (row.enemies === null || row.enemies === undefined ? [] : arrayValue(row.enemies))
     .map((entry, index) => {
@@ -637,6 +640,18 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     const travelSegments = mapTravelSegments(row.travelSegments)
     const actionName = serverActionName || definition?.name || actionId
     const type = definition?.type || (ACTION_TYPES.includes(serverActionType as ActionType) ? (serverActionType as ActionType) : undefined) || 'cultivation'
+    // 强化等行动的目标/辅助物品：优先队列行顶层字段，回落 intent 内嵌字段（队列快照两种形态均可下发）。
+    const targetItemId = optionalString(row.targetItemId, `行动 ${actionId} 的 targetItemId`)
+      || optionalString(intent.targetItemId, `行动 ${actionId} 的 intent.targetItemId`)
+      || null
+    const auxItemId = optionalString(row.auxItemId, `行动 ${actionId} 的 auxItemId`)
+      || optionalString(intent.auxItemId, `行动 ${actionId} 的 intent.auxItemId`)
+      || null
+    const targetLevel = typeof row.targetLevel === 'number' && Number.isFinite(row.targetLevel)
+      ? row.targetLevel
+      : (typeof object(intent.parameters).targetLevel === 'number' && Number.isFinite(object(intent.parameters).targetLevel)
+          ? object(intent.parameters).targetLevel as number
+          : null)
     const entry: QueueEntry = {
       entryId,
       actionId,
@@ -653,6 +668,9 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
       travelSegments,
       expedition,
       pvpEnabled: booleanValue(intent.pvpEnabled),
+      targetItemId,
+      auxItemId,
+      targetLevel,
     }
     return entry
   })
@@ -774,6 +792,8 @@ function mapLoadout(value: unknown): CombatLoadout {
     }),
     learnedAbilityIds: requiredStrings(row.learnedAbilityIds, 'loadout.learnedAbilityIds'),
     abilityExperiences: mapAbilityExperiences(row.abilityExperiences),
+    // 技艺经验表与功法经验表同构（缺省空对象，键值经同一数值校验）。
+    techniqueExperiences: mapAbilityExperiences(row.techniqueExperiences),
   }
 }
 
@@ -884,6 +904,18 @@ function optionalWorldNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+function mapWorldBuildingEffects(value: unknown): WorldState['buildingEffects'] {
+  if (value === null || value === undefined) return undefined
+  const row = requiredObject(value, 'world 建筑效果')
+  return {
+    explorationSpeedRatio: numberValue(row.explorationSpeedRatio, 0),
+    explorationOutputRatio: numberValue(row.explorationOutputRatio, 0),
+    alchemySpeedRatio: numberValue(row.alchemySpeedRatio, 0),
+    alchemyOutputRatio: numberValue(row.alchemyOutputRatio, 0),
+    cultivationOutputRatio: numberValue(row.cultivationOutputRatio, 0),
+  }
+}
+
 function mapWorld(value: unknown): WorldState {
   const row = object(value)
   const edgeId = typeof row.edgeId === 'string' && row.edgeId.length > 0 ? row.edgeId : null
@@ -898,6 +930,7 @@ function mapWorld(value: unknown): WorldState {
     y: numberValue(row.y, 65),
     locationName: stringValue(row.locationName, nodeId ?? '旅途中'),
     cultivationMultiplier: numberValue(row.cultivationMultiplier, 1),
+    buildingEffects: mapWorldBuildingEffects(row.buildingEffects),
     availableActionIds: requiredStrings(row.availableActionIds, 'world.availableActionIds'),
     encounterIds: requiredStrings(row.encounterIds, 'world.encounterIds'),
     npcs: mapNearbyEntities(row.npcs),
@@ -932,6 +965,8 @@ function mapBuffs(value: unknown): Buff[] {
       mpRegen: finiteNumber(row.mpRegen, 'buff.mpRegen'),
       attackSpeedPoints: finiteNumber(row.attackSpeedPoints, 'buff.attackSpeedPoints'),
       damageAbsorptionPoints: finiteNumber(row.damageAbsorptionPoints, 'buff.damageAbsorptionPoints'),
+      hpRegenPostRatio: numberValue(row.hpRegenPostRatio),
+      mpRegenPostRatio: numberValue(row.mpRegenPostRatio),
       sourceItemId: stringValue(row.sourceItemId) || null,
       statRatios: row.statRatios === null || row.statRatios === undefined
         ? null
@@ -1119,7 +1154,7 @@ export async function decodePlayerSnapshotDto(
 ): Promise<PlayerSnapshot> {
   if (!dto || typeof dto.playerId !== 'string' || !dto.playerId) throw new Error('玩家快照缺少 playerId。')
   const stateVersion = stateVersionValue(dto.stateVersion, '玩家快照')
-  if (!dto.head || dto.head.schemaVersion !== 5) throw new Error('玩家快照 schema 版本不受支持。')
+  if (!dto.head || dto.head.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) throw new Error('玩家快照 schema 版本不受支持。')
   if (dto.head.playerId !== dto.playerId || dto.head.stateVersion !== stateVersion) throw new Error('玩家快照头与主体版本不一致。')
   if (!dto.displayName) throw new Error('玩家快照缺少 displayName。')
   if (!Array.isArray(dto.sections) || !Array.isArray(dto.assets)) throw new Error('玩家快照 sections/assets 载荷无效。')

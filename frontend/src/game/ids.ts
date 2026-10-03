@@ -5,7 +5,7 @@ import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatantDefiniti
 /**
  * 游戏四大核心行动类型数组（修炼、探索、炼丹、战斗）
  */
-export const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat']
+export const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat', 'enhancement']
 
 /**
  * 行动定义纯数据核心（不包含多语言展示文案）
@@ -56,7 +56,7 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'combat.hunt-qi-beast', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-pass' },
   { id: 'combat.sweep-twilight-valley', type: 'combat', durationSeconds: 0, executionKind: 'combat-encounter', combatEncounterId: 'encounter.twilight-valley' },
 
-  // 锻造装备 (一阶)
+  // 锻造装备 (等阶1)
   { id: 'forge.qingfeng-sword', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.qingfeng-sword', amount: 1 }] },
   { id: 'forge.pishan-blade', type: 'alchemy', durationSeconds: 15, inputs: { 'item.refined-iron': 7, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pishan-blade', amount: 1 }] },
   { id: 'forge.shufa-scarf', type: 'alchemy', durationSeconds: 10, inputs: { 'item.refined-iron': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.shufa-scarf', amount: 1 }] },
@@ -72,7 +72,7 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'forge.shifang-shoes', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-hide': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.shifang-shoes', amount: 1 }] },
   { id: 'forge.taomu-talisman', type: 'alchemy', durationSeconds: 10, inputs: { 'item.peach-wood-crystal': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.taomu-talisman', amount: 1 }] },
 
-  // 锻造装备 (二阶)
+  // 锻造装备 (等阶2)
   { id: 'forge.pogang-sword', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.qingfeng-sword': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.pogang-sword', amount: 1 }] },
   { id: 'forge.zhansha-blade', type: 'alchemy', durationSeconds: 25, inputs: { 'item.refined-copper': 7, 'item.beast-fang': 1, 'equipment.pishan-blade': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.zhansha-blade', amount: 1 }] },
   { id: 'forge.chijin-helmet', type: 'alchemy', durationSeconds: 20, inputs: { 'item.refined-copper': 5, 'item.beast-fang': 1, 'equipment.shufa-scarf': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.chijin-helmet', amount: 1 }] },
@@ -186,8 +186,8 @@ export function resolveActionDefinitions(): ActionDefinition[] {
 }
 
 /**
- * 将品阶 (Tier) 换算为修士/物品等级 (Level)
- * 1阶 -> 1级, 2阶 -> 18级, 3阶 -> 30级, N阶(>=2) -> 18 + (N - 2) * 12 级
+ * 将等阶 (Tier) 换算为修士/物品等级 (Level)
+ * 等阶1 -> 1级, 等阶2 -> 18级, 等阶3 -> 30级, 等阶N(>=2) -> 18 + (N - 2) * 12 级
  */
 export function convertTierToLevel(tier = 1): number {
   const t = Math.max(1, Math.floor(tier))
@@ -435,7 +435,7 @@ export function localizeActionDisplayText(
 /**
  * 根据行动配置与其关联的产出/消耗/遭遇，解析行动的真实等级 (Level)
  * 优先级：
- * 1. 产出物品/装备的显式等级或通过品阶换算得到的等级
+ * 1. 产出物品/装备的显式等级或通过等阶换算得到的等级
  * 2. 战斗遭遇 (combatEncounterId) 对应的等级
  * 3. 输入消耗材料的最大等级
  * 4. 默认 1 级
@@ -546,6 +546,7 @@ export const ACTION_TAB_META: Record<ActionType, { glyph: string; accent: string
   exploration: { glyph: '⌕', accent: 'green' },
   alchemy: { glyph: '⚗', accent: 'violet' },
   combat: { glyph: '⚔', accent: 'orange' },
+  enhancement: { glyph: '⬡', accent: 'gold' },
 }
 
 /**
@@ -556,26 +557,26 @@ export function actionTabLabel(type: ActionType): string {
 }
 
 /**
- * 物品品阶品质枚举：凡品、黄阶、玄阶、地阶、天阶、灵品、圣品、帝品
+ * 物品品质枚举：凡、黄、玄、地、天、灵、圣、帝
  */
 export type ItemRarity = 'mundane' | 'yellow' | 'mystic' | 'earth' | 'heaven' | 'spirit' | 'saint' | 'emperor'
 
 /**
- * 物品品阶信息（包含品质枚举与本地化文案）
+ * 物品品质信息（包含品质枚举与本地化文案）
  */
 export interface ItemGrade {
   rarity: ItemRarity
   label: string
 }
 
-/** 品阶 1~8 与品质枚举的升序对照表（下标 = tier - 1） */
+/** 品质档 1~8 与品质枚举的升序对照表（下标 = tier - 1） */
 const ITEM_GRADE_ORDER: readonly ItemRarity[] = [
   'mundane', 'yellow', 'mystic', 'earth', 'heaven', 'spirit', 'saint', 'emperor',
 ]
 
 /**
- * 根据阶位数值 (tier, 1~8) 计算对应的物品品质与多语言文本
- * @param tier 阶位数值
+ * 根据品质档数值 (tier, 1~8) 计算对应的物品品质与多语言文本
+ * @param tier 品质档数值
  */
 export function resolveItemGrade(tier = 1): ItemGrade {
   const index = Math.max(0, Math.min(ITEM_GRADE_ORDER.length - 1, Math.floor(tier) - 1))
@@ -584,7 +585,7 @@ export function resolveItemGrade(tier = 1): ItemGrade {
 }
 
 /**
- * 将指定品阶/等阶应用到物品元数据上
+ * 将指定品质档应用到物品元数据上
  */
 export function withItemGrade(metadata: ItemMetadata, tier = metadata.level ?? 1): ItemMetadata {
   const grade = resolveItemGrade(tier)
@@ -605,7 +606,7 @@ export interface ItemMetadata {
   category: string
   /** 品质等级 */
   rarity: ItemRarity
-  /** 品质中文/多语言标签（如 "黄阶", "通宝"） */
+  /** 品质中文/多语言标签（如 "黄品", "通宝"） */
   rarityLabel: string
   /** 物品等阶 */
   level?: number
@@ -622,7 +623,7 @@ export interface ItemMetadata {
  */
 export type ItemCategoryKey =
   | 'general' | 'material' | 'herb' | 'mineral' | 'pill' | 'food' | 'drink'
-  | 'talisman' | 'manual' | 'manualTome' | 'equipment' | 'chest' | 'currency' | 'resource'
+  | 'talisman' | 'formation' | 'manual' | 'manualTome' | 'equipment' | 'chest' | 'currency' | 'resource'
   | 'spiritFood' | 'spiritDrink' | 'loot' | 'rareLoot' | 'manualFragment'
   | 'explorationSupply' | 'alchemySupply' | 'weapon' | 'two-hand' | 'off-hand' | 'head' | 'armor'
   | 'legs' | 'boots' | 'trinket' | 'ring' | 'neck' | 'mainHandImplement' | 'twoHandImplement'
@@ -670,6 +671,17 @@ export function resolveItemSubCategory(
 }
 
 /**
+ * 装备强化资产变体解析：钱包行 variant 为 "+"+level（如 "+3"），基础行缺省/空串。
+ * 返回非负整数强化等级；非法或缺省一律按 0 计。
+ */
+export function parseEnhancementVariant(variant?: string | null): number {
+  if (!variant) return 0
+  const normalized = variant.startsWith('+') ? variant.slice(1) : variant
+  const parsed = Number(normalized)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0
+}
+
+/**
  * 物品元数据纯数据核心
  */
 interface ItemMetaCore {
@@ -702,6 +714,9 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.beast-fang': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.fire-feather': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.soul-talisman': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
+  'item.leiji-talisman': { glyph: '⚡', tone: 'cyan', rarity: 'yellow', level: 2, subCategory: 'talisman' },
+  'item.juling-formation-disk': { glyph: '⬡', tone: 'violet', rarity: 'yellow', level: 2, subCategory: 'formation' },
+  'item.enhance-essence': { glyph: '💧', tone: 'gold', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.broken-blade': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.sha-bone': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.demon-core': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
@@ -914,7 +929,7 @@ const DEFAULT_ITEM_DEFINITIONS: Record<string, Partial<ItemDefinition>> = {
   },
 }
 
-/** 静态兜底装备定义：服务端 catalog 未下发对应条目时，保证一/二阶装备仍可展示属性 */
+/** 静态兜底装备定义：服务端 catalog 未下发对应条目时，保证等阶1/2 装备仍可展示属性 */
 const DEFAULT_EQUIPMENT_DEFINITIONS: Record<string, Partial<CombatEquipmentDefinition>> = {
   'equipment.qingfeng-sword': {
     equipmentId: 'equipment.qingfeng-sword',

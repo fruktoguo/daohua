@@ -1,7 +1,14 @@
 /**
- * 玩家四大行动类型：修炼 (cultivation)、探索 (exploration)、炼丹 (alchemy)、战斗 (combat)
+ * 玩家行动类型：修炼 (cultivation)、探索 (exploration)、炼丹技艺 (alchemy)、战斗 (combat)、装备强化 (enhancement)
+ * 符箓/阵法制造行动复用 alchemy 大类（经 technique 字段区分所属技艺）。
  */
-export type ActionType = 'cultivation' | 'exploration' | 'alchemy' | 'combat'
+export type ActionType = 'cultivation' | 'exploration' | 'alchemy' | 'combat' | 'enhancement'
+
+/**
+ * 生活技艺标识（七技）：炼丹 alchemy、炼器 forging、符箓 talisman、强化 enhancement、
+ * 阵法 formation、采集 gathering、挖掘 mining。配表行动经 technique 字段归属到对应技艺。
+ */
+export type TechniqueId = 'alchemy' | 'forging' | 'talisman' | 'enhancement' | 'formation' | 'gathering' | 'mining'
 
 /**
  * 玩家在线与离线挂机状态模式：
@@ -73,6 +80,7 @@ export type ItemCategoryKey =
   | 'food'
   | 'drink'
   | 'talisman'
+  | 'formation'
   | 'manual'
   | 'equipment'
   | 'chest'
@@ -98,7 +106,7 @@ export type EquipmentSlot =
   | 'talisman'
 
 /**
- * 参战单位/怪物阶位等级：
+ * 参战单位/怪物生命层次：
  * 小怪 (minion)、普通 (normal)、精英 (elite)、领袖 (leader)、首领/Boss (boss)、
  * 召唤物 (summon)、宠物 (pet)、镜像玩家 (player-mirror)、NPC (npc)
  */
@@ -230,6 +238,8 @@ export interface ActionDefinition {
   description: string
   /** 行动大类 */
   type: ActionType
+  /** 归属生活技艺（配表可省；技艺经验按完成轮次的基础耗时入账） */
+  technique?: TechniqueId | string | null
   /** 单轮执行耗时（秒） */
   durationSeconds: number
   /** 特殊执行类型（如 'combat-encounter'） */
@@ -280,6 +290,12 @@ export interface QueueEntry {
   expedition?: ExpeditionProgress | null
   /** 是否勾选斗法（PVP 匹配），仅战斗遭遇行动有效 */
   pvpEnabled: boolean
+  /** 强化等行动的目标物品 ID（ActionIntent.TargetItemId 投影） */
+  targetItemId?: string | null
+  /** 辅助物品 ID（如强化保护材料；ActionIntent.AuxItemId 投影） */
+  auxItemId?: string | null
+  /** 行动参数中的目标强化等级（ActionIntent.Parameters["targetLevel"] 投影） */
+  targetLevel?: number | null
 }
 /**
  * 旅行移动路段数据（服务端世界图权威分段）
@@ -329,7 +345,7 @@ export interface QueueState {
 }
 
 /**
- * 同波单个敌方单位的战斗快照（服务端投影：名称/品阶/立绘/实时战斗字段随快照下发）。
+ * 同波单个敌方单位的战斗快照（服务端投影：名称/生命层次/立绘/实时战斗字段随快照下发）。
  * 属性面板为按需一次性交付——UnitInspect 登记后随下一帧快照携带一次即停止，
  * 前端按 enemyId 缓存复用；未点开详情的怪不占带宽；图鉴/生态等战前查看走 CombatantDefinition 本地目录。
  */
@@ -338,7 +354,7 @@ export interface ExpeditionEnemy {
   enemyId: string
   /** 显示名 */
   name: string
-  /** 品阶：normal / elite / boss */
+  /** 生命层次：normal / elite / boss */
   rank: string
   /** 立绘渲染配置 */
   visual?: CharacterVisual | null
@@ -732,7 +748,7 @@ export interface InventoryItem {
   tone: 'green' | 'violet' | 'gold' | 'cyan' | string
   /** 图标字符/符号 */
   glyph: string
-  /** 品阶等级 */
+  /** 等阶 */
   tier?: number
   /** 描述文本 */
   description?: string
@@ -756,7 +772,7 @@ export interface ItemDefinition {
   category: ItemCategoryKey | string
   /** 子类型键（药材/矿石/丹药/秘籍/残卷等细分，左上角丝带展示） */
   subCategory?: string | null
-  /** 品阶（1~8，映射品质与等级） */
+  /** 等阶（1~8，映射品质与等级） */
   tier: number
   /** 系统出售价（灵石） */
   sellPrice: number
@@ -782,6 +798,24 @@ export interface ItemDefinition {
   gatheringMultiplier?: number
   /** 炼丹产出倍率 */
   alchemyMultiplier?: number
+  /** 耐久型持续消耗品（true 时槽位持有即生效，不消耗不耗竭；如聚灵阵盘） */
+  durable?: boolean
+  /** 即时打击规格（符箓类消耗品：祭出即耗灵力造成元素术法伤害，无吟唱/命中/暴击掷点） */
+  strike?: ConsumableStrikeDefinition | null
+}
+
+/**
+ * 消耗品即时打击定义（雷击符等：按灵力消耗换算元素术法伤害直取敌首）
+ */
+export interface ConsumableStrikeDefinition {
+  /** 祭出消耗灵力占比（×最大灵力值） */
+  manaCostRatio: number
+  /** 基础伤害占比（×最大灵力值） */
+  manaDamageRatio: number
+  /** 术法攻击加成占比（×术法攻击） */
+  spellAttackRatio: number
+  /** 五行元素类别（metal/wood/water/fire/earth） */
+  element: string
 }
 
 /**
@@ -797,6 +831,10 @@ export interface BuffModifiers {
   attackSpeedPoints?: number
   /** 免伤点数（NonLinear 总减伤乘区） */
   damageAbsorptionPoints?: number
+  /** 气血回复后段比率（生效值 = 基础回复 ×(1+Σ比率)，与 mpRegenPostRatio 同为回复乘区末段） */
+  hpRegenPostRatio?: number
+  /** 灵力回复后段比率 */
+  mpRegenPostRatio?: number
   /** 通用属性比率字典（可选） */
   statRatios?: Record<string, number> | null
 }
@@ -844,6 +882,10 @@ export interface Buff extends Required<Pick<BuffModifiers, 'hpRegen' | 'mpRegen'
   expiresAtUnixSeconds: number
   /** 来源物品 ID */
   sourceItemId?: string | null
+  /** 气血回复后段比率（可选，缺省 0；生效值 = 基础回复 ×(1+Σ比率)） */
+  hpRegenPostRatio?: number
+  /** 灵力回复后段比率（可选，缺省 0） */
+  mpRegenPostRatio?: number
   /** 通用属性比率字典（可选） */
   statRatios?: Record<string, number> | null
 }
@@ -968,7 +1010,7 @@ export interface CombatAbilityDefinition {
   threatGain?: number
   /** 支援类：威胁增幅点数（Linear，施放时并入施放方威胁增幅） */
   threatPoints?: number
-  /** 品阶（配表声明，缺省视为 1） */
+  /** 等阶（配表声明，缺省视为 1） */
   tier?: number
   /** 根骨加成属性键（配表声明） */
   rootAttribute?: string
@@ -1012,7 +1054,7 @@ export interface CombatantDefinition {
   experience: number
   /** 境界等级（怪物同构建模的等级锚点） */
   level?: number
-  /** 品阶（由等级映射的境界阶位） */
+  /** 等阶（由等级映射的 T 级） */
   tier?: number
   /** 占用刷怪强度预算的点数 */
   budgetCost?: number
@@ -1078,7 +1120,7 @@ export interface CombatEquipmentDefinition {
   description?: string
   /** 穿戴槽位 */
   slot: EquipmentSlot
-  /** 品阶 */
+  /** 等阶 */
   tier: number
   /** 每级强化附加的属性增益（配表原始字典） */
   enhancementBonus?: Record<string, number>
@@ -1088,6 +1130,8 @@ export interface CombatEquipmentDefinition {
   flatStats?: Record<string, number>
   /** 特殊机制段（如 threatBonusPoints 威胁增幅、healingBonusPoints 治疗增幅等点数键） */
   specialMechanics?: Record<string, number>
+  /** 强化保护材料白名单：配置后可用列表内任一材料代护；缺省时以同装备无强化基础件代护 */
+  enhanceProtectionItems?: string[]
 }
 
 /**
@@ -1144,6 +1188,8 @@ export interface CombatLoadout {
   learnedAbilityIds?: string[]
   /** 功法经验表：abilityId -> 累计经验 */
   abilityExperiences?: Record<string, number>
+  /** 技艺经验表：TechniqueId -> 累计经验（等级由累计经验按修为曲线导出，默认 0 级） */
+  techniqueExperiences?: Record<string, number>
 }
 
 /**
@@ -1172,9 +1218,9 @@ export interface NearbyMonsterDefinition {
   name: string
   /** 等级 */
   level: number
-  /** 品阶 */
+  /** 等阶 */
   tier: number
-  /** 阶位（normal/elite/boss 等） */
+  /** 生命层次（normal/elite/boss 等） */
   rank: string
   /** 占用刷怪预算的点数 */
   budgetCost: number
@@ -1365,6 +1411,23 @@ export interface WorldMapDefinition {
 }
 
 /**
+ * 当前节点公共建筑生效效果汇总（服务端 EffectiveNodeBuildingEffects 权威投影）：
+ * 产出类为收益增幅比率，速度类为耗时加速比率（实际耗时 = 基准 / (1 + ratio)）。
+ */
+export interface NodeBuildingEffectSet {
+  /** 历练采集耗时加速比率 */
+  explorationSpeedRatio: number
+  /** 历练采集产出增幅比率 */
+  explorationOutputRatio: number
+  /** 炼丹/炼器耗时加速比率 */
+  alchemySpeedRatio: number
+  /** 炼丹/炼器产出增幅比率 */
+  alchemyOutputRatio: number
+  /** 吐纳修炼产出增幅比率 */
+  cultivationOutputRatio: number
+}
+
+/**
  * 玩家当前所在的世界位置与周边环境状态
  */
 export interface WorldState {
@@ -1384,6 +1447,8 @@ export interface WorldState {
   locationName: string
   /** 当前地点修炼收益倍率 */
   cultivationMultiplier: number
+  /** 当前节点公共建筑生效效果汇总（缺失/他节点投影视为全零） */
+  buildingEffects?: NodeBuildingEffectSet
   /** 当前地点可执行的行动 ID 列表 */
   availableActionIds: string[]
   /** 当前地点可进入的遭遇战 ID 列表 */

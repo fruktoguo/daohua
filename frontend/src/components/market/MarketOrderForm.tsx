@@ -18,7 +18,7 @@ export interface MarketInstrument {
   category: string
   /** 子品类 (可选，如装备 slot 或材料细分类别) */
   subCategory?: string
-  /** 物品等阶/品阶 */
+  /** 物品等阶 */
   tier: number
   /** 系统商店回收底价 (Vendor Price) */
   sellPrice: number

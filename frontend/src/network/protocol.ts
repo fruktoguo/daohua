@@ -64,6 +64,10 @@ export const WireMessageType = {
   ChatHistoryRequest: 23,
   /** 客户端登记/清除单位详情观察目标（火忘帧，无回执） */
   UnitInspect: 24,
+  /** 客户端请求组队大厅筛选结果 */
+  PartyLobbyRequest: 25,
+  /** 服务端下发组队大厅：公开队伍与匹配中散人列表 */
+  PartyLobby: 26,
 } as const
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
 
@@ -332,6 +336,22 @@ export interface ChatSendDto {
   targetPlayerId?: string | null
 }
 
+/** 传音消息内嵌的队伍卡片快照；队伍解散后缺席（party_ref 置空） */
+export interface PartyLinkDto {
+  /** 队伍唯一标识（点击加入的凭据） */
+  partyId: string
+  /** 队伍名称 */
+  name: string
+  /** 目标类型（见 PartyActivityKind） */
+  activityKind: PartyActivityKind
+  /** 目标地图 ID；空串表示不限 */
+  mapId: string
+  /** 加入身价门槛；0 表示不设门槛 */
+  minValuation: number
+  /** 发布时刻的队伍人数 */
+  memberCount: number
+}
+
 /** 单条传音消息 */
 export interface ChatMessageDto {
   messageId: string
@@ -342,6 +362,8 @@ export interface ChatMessageDto {
   senderName: string
   body: string
   sentAtUnixMilliseconds: number
+  /** 内嵌队伍卡片；无链接或队伍已解散时为 null */
+  partyLink?: PartyLinkDto | null
 }
 
 /** ChatHistory 频道历史回放载荷 */
@@ -359,6 +381,19 @@ export interface ChatHistoryRequestDto {
   targetPlayerId?: string | null
 }
 
+/** 队伍目标类型标识，与服务端 PartyActivityKinds 严格一致（招募标签口径，不参与战斗结算） */
+export const PartyActivityKind = {
+  /** 不限目标 */
+  Any: 'any',
+  /** 讨伐战斗 */
+  Combat: 'combat',
+  /** 历练采集 */
+  Exploration: 'exploration',
+  /** 吐纳修炼 */
+  Cultivation: 'cultivation',
+} as const
+export type PartyActivityKind = (typeof PartyActivityKind)[keyof typeof PartyActivityKind]
+
 /** 社交动作标识，与服务端 SocialActions 严格一致 */
 export const SocialAction = {
   FriendRequest: 'friend.request',
@@ -369,17 +404,53 @@ export const SocialAction = {
   PartyAccept: 'party.accept',
   PartyDecline: 'party.decline',
   PartyLeave: 'party.leave',
+  /** 创建队伍并任队长（party 载荷必填） */
+  PartyCreate: 'party.create',
+  /** 更新队伍档案补丁（队长） */
+  PartyUpdate: 'party.update',
+  /** 解散队伍（队长） */
+  PartyDisband: 'party.disband',
+  /** 移出成员（队长；targetPlayerId 必填） */
+  PartyKick: 'party.kick',
+  /** 按队伍 ID 加入（大厅公开队伍与聊天链接共用；partyId 必填） */
+  PartyJoin: 'party.join',
+  /** 登记/更新匹配条件并尝试自动并入公开队伍 */
+  PartyMatchSet: 'party.match.set',
+  /** 撤下匹配登记 */
+  PartyMatchClear: 'party.match.clear',
+  /** 把当前队伍卡片发布到指定传音频道（channel 必填，好友频道附带 targetPlayerId） */
+  PartyShare: 'party.share',
 } as const
 export type SocialAction = (typeof SocialAction)[keyof typeof SocialAction]
+
+/** 队伍档案补丁：party.create 时五字段语义齐全，party.update 仅应用非空字段 */
+export interface PartyProfileDto {
+  /** 队伍名称（1~32 字符；创建时空值由服务端生成默认名） */
+  name?: string | null
+  /** 目标类型 */
+  activityKind?: PartyActivityKind | null
+  /** 目标地图 ID；空串表示不限 */
+  mapId?: string | null
+  /** 身价门槛；0 表示不设门槛 */
+  minValuation?: number | null
+  /** 是否进入组队大厅 */
+  isPublic?: boolean | null
+}
 
 /** SocialAction 社交指令请求载荷 */
 export interface SocialActionDto {
   requestId: string
   action: SocialAction
-  /** 目标玩家 ID；接受/拒绝队伍邀请时忽略 */
+  /** 目标玩家 ID；接受/拒绝队伍邀请时忽略；party.kick/party.share(friend) 必填 */
   targetPlayerId?: string | null
   /** 目标道号；仅在好友申请且未提供 targetPlayerId 时用于检索 */
   targetName?: string | null
+  /** 目标队伍 ID；仅 party.join 使用 */
+  partyId?: string | null
+  /** 目标传音频道；仅 party.share 使用 */
+  channel?: ChatChannel | null
+  /** 队伍档案补丁；party.create/party.update/party.match.set 使用 */
+  party?: PartyProfileDto | null
 }
 
 /** 好友条目 */
@@ -402,12 +473,24 @@ export interface PartyMemberDto {
   playerId: string
   displayName: string
   online: boolean
+  /** 成员身价（服务端估值口径，非战斗属性） */
+  valuation: number
 }
 
 /** 队伍状态 */
 export interface PartyDto {
   partyId: string
   leaderId: string
+  /** 队伍名称（空名由服务端回落默认名后下发，此处恒非空） */
+  name: string
+  /** 目标类型 */
+  activityKind: PartyActivityKind
+  /** 目标地图 ID；空串表示不限 */
+  mapId: string
+  /** 身价门槛；0 表示不设门槛 */
+  minValuation: number
+  /** 是否进入组队大厅 */
+  isPublic: boolean
   members: PartyMemberDto[]
 }
 
@@ -422,6 +505,20 @@ export interface PartyInvitationDto {
   partyId: string
   inviterId: string
   inviterName: string
+  /** 邀请方队伍名称 */
+  partyName?: string | null
+}
+
+/** 本人「匹配中」散人登记 */
+export interface PartySeekerDto {
+  /** 目标类型 */
+  activityKind: PartyActivityKind
+  /** 目标地图 ID；空串表示不限 */
+  mapId: string
+  /** 期望队友的最低身价；0 表示不设要求 */
+  minValuation: number
+  /** 登记时刻（Unix 毫秒） */
+  createdAtUnixMilliseconds: number
 }
 
 /** SocialState 社交状态下发载荷 */
@@ -434,6 +531,66 @@ export interface SocialStateDto {
   party?: PartyDto | null
   partyInvitation?: PartyInvitationDto | null
   nearbyPlayers: NearbyPlayerDto[]
+  /** 本人匹配中登记；未登记为 null */
+  seeking?: PartySeekerDto | null
+}
+
+/** PartyLobbyRequest 组队大厅筛选请求载荷 */
+export interface PartyLobbyRequestDto {
+  /** 请求唯一标识（回执配对键） */
+  requestId: string
+  /** 目标类型筛选；空/缺省表示不限 */
+  activityKind?: PartyActivityKind | null
+  /** 目标地图筛选；空/缺省表示不限 */
+  mapId?: string | null
+  /** 身价下限筛选：队伍按成员最低身价、散人按本人身价过滤；空/0 表示不限 */
+  minValuation?: number | null
+}
+
+/** 大厅公开队伍的成员预览条目 */
+export interface PartyLobbyMemberDto {
+  playerId: string
+  displayName: string
+  online: boolean
+  valuation: number
+}
+
+/** 大厅公开队伍条目 */
+export interface PartyLobbyEntryDto {
+  /** 队伍唯一标识（加入凭据） */
+  partyId: string
+  name: string
+  activityKind: PartyActivityKind
+  mapId: string
+  leaderId: string
+  leaderName: string
+  minValuation: number
+  createdAtUnixMilliseconds: number
+  members: PartyLobbyMemberDto[]
+}
+
+/** 大厅「匹配中」散人条目 */
+export interface PartyLobbySeekerDto {
+  playerId: string
+  displayName: string
+  online: boolean
+  valuation: number
+  activityKind: PartyActivityKind
+  mapId: string
+  minValuation: number
+  createdAtUnixMilliseconds: number
+}
+
+/** PartyLobby 组队大厅下发载荷 */
+export interface PartyLobbyDto {
+  /** 关联的 PartyLobbyRequest 请求 ID */
+  requestId: string
+  /** 请求者本人当前身价（判定加入可行性） */
+  myValuation: number
+  /** 公开队伍列表（按创建时间倒序，至多 50 条） */
+  parties: PartyLobbyEntryDto[]
+  /** 匹配中散人列表（按登记时间倒序，至多 50 条） */
+  seekers: PartyLobbySeekerDto[]
 }
 
 const MAGIC = new Uint8Array([0x44, 0x48, 0x57, 0x31]) // DHW1
@@ -475,7 +632,7 @@ function dotnetBytesToUuid(bytes: Uint8Array): string {
 }
 
 function isWireMessageType(value: number): value is WireMessageType {
-  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.UnitInspect
+  return Number.isInteger(value) && value >= WireMessageType.Hello && value <= WireMessageType.PartyLobby
 }
 
 function isWireCodec(value: number): value is WireCodec {

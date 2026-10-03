@@ -7,7 +7,7 @@ import { useT } from '../i18n'
 
 /** 境界徽章组件 Props */
 interface RealmBadgeProps {
-  /** 境界计算数据结构 (大境界、位阶、小境界、阶段颜色与总等级) */
+  /** 境界计算数据结构 (大境界、境界阶段、小境界、阶段颜色与总等级) */
   realmInfo: RealmInfo
   /** 外部样式类名 */
   className?: string
@@ -18,7 +18,7 @@ interface RealmBadgeProps {
  *
  * 视觉构成与交互：
  * 1. 大境界牌匾框 (major-box)：显示“练气”、“筑基”、“金丹”等大境界名；
- * 2. 位阶棱形徽章 (diamond-badge)：居中悬浮“武/玄/天/初/中/后/极”位阶单字；
+ * 2. 境界阶段棱形徽章 (diamond-badge)：居中悬浮“武/玄/天/初/中/后/极”境界阶段单字；
  * 3. 小境界灵气胶囊 (minor-box)：展示当前“前期/中期/后期/圆满/九重”小境界；
  * 4. 悬浮触发 FloatingPopover，展示大境界说明、当前总等级 Lv 与小境界突破进度百分比。
  */
@@ -33,7 +33,7 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
           title={`${realmInfo.stageName} · ${realmInfo.minorName}`}
           badge={t('insight.badge.levelBadge', { level: formatNumber(lv) })}
           badgeTone="gold"
-          subtitle={t('insight.badge.phase', { phase: realmInfo.phaseName, rank: realmInfo.rankChar })}
+          subtitle={t('insight.badge.phase', { phase: realmInfo.phaseName })}
           description={t('insight.badge.description')}
           stats={[
             { label: t('insight.badge.stage'), value: realmInfo.stageName, tone: 'gold' },
@@ -64,7 +64,7 @@ export function RealmBadge({ realmInfo, className = '' }: RealmBadgeProps): Reac
         <span className="insight-realm-major-text">{realmInfo.stageName}</span>
       </div>
 
-      {/* 2. 位阶棱形徽章框 (武/玄/天/初/中/后/极) */}
+      {/* 2. 境界阶段棱形徽章框 (武/玄/天/初/中/后/极) */}
       <div className="insight-realm-diamond-container">
         <div
           className="insight-realm-diamond-badge"

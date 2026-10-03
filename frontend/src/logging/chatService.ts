@@ -1,4 +1,4 @@
-import type { ChatChannel, ChatHistoryDto, ChatMessageDto } from '../network/protocol'
+import type { ChatChannel, ChatHistoryDto, ChatMessageDto, PartyLinkDto } from '../network/protocol'
 
 /** 单条传音消息的本地内存形态 */
 export interface ChatMessage {
@@ -16,6 +16,8 @@ export interface ChatMessage {
   body: string
   /** 发送时刻（Unix 毫秒） */
   sentAtMs: number
+  /** 分享时的队伍快照（队伍链接卡） */
+  partyLink?: PartyLinkDto | null
 }
 
 /** 传音服务对外只读快照（配合 subscribe 的 revision 变化驱动 UI 刷新） */
@@ -53,6 +55,7 @@ function toMessage(dto: ChatMessageDto): ChatMessage {
     senderName: dto.senderName,
     body: dto.body,
     sentAtMs: dto.sentAtUnixMilliseconds,
+    partyLink: dto.partyLink ?? null,
   }
 }
 

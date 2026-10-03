@@ -19,6 +19,9 @@ import {
   type ErrorDto,
   type HelloResponse,
   type LogBatchDto,
+  type PartyLobbyDto,
+  type PartyLobbyRequestDto,
+  type PartyProfileDto,
   type PlayerSnapshotDeltaDto,
   type PlayerSnapshotDto,
   type SocialAction,
@@ -257,8 +260,17 @@ export class GameClient {
     return this.trySend(socket, WireMessageType.UnitInspect, createRequestId(), { side: target?.side ?? null, index: target?.index ?? null })
   }
 
-  /** 发送社交指令（SocialAction 信封）；服务端以带 requestId 的 SocialState 应答，失败走 Error 帧。 */
-  sendSocialAction(action: SocialAction, targetPlayerId?: string | null, targetName?: string | null): boolean {
+  /**
+   * 发送社交指令（SocialAction 信封）；服务端以带 requestId 的 SocialState 应答，失败走 Error 帧。
+   * 队伍类指令通过 extras 携带扩展载荷：party.join 用 partyId，party.share 用 channel，
+   * party.create/party.update/party.match.set 用 party 档案补丁。
+   */
+  sendSocialAction(
+    action: SocialAction,
+    targetPlayerId?: string | null,
+    targetName?: string | null,
+    extras?: { partyId?: string | null; channel?: ChatChannel | null; party?: PartyProfileDto | null },
+  ): boolean {
     const socket = this.ensureOpenSocket()
     if (!socket) return false
     const requestId = createRequestId()
@@ -267,8 +279,24 @@ export class GameClient {
       action,
       ...(targetPlayerId ? { targetPlayerId } : {}),
       ...(targetName ? { targetName } : {}),
+      ...(extras?.partyId ? { partyId: extras.partyId } : {}),
+      ...(extras?.channel ? { channel: extras.channel } : {}),
+      ...(extras?.party ? { party: extras.party } : {}),
     }
     return this.trySend(socket, WireMessageType.SocialAction, requestId, payload)
+  }
+
+  /** 请求组队大厅视图（PartyLobbyRequest 信封）；服务端以 PartyLobby 应答，结果整体替换 socialStore.lobby。 */
+  requestPartyLobby(filter: { activityKind?: string | null; mapId?: string | null; minValuation?: number | null } = {}): boolean {
+    const socket = this.ensureOpenSocket()
+    if (!socket) return false
+    const payload: PartyLobbyRequestDto = {
+      requestId: createRequestId(),
+      ...(filter.activityKind ? { activityKind: filter.activityKind as PartyLobbyRequestDto['activityKind'] } : {}),
+      ...(filter.mapId ? { mapId: filter.mapId } : {}),
+      ...(filter.minValuation !== undefined && filter.minValuation !== null ? { minValuation: filter.minValuation } : {}),
+    }
+    return this.trySend(socket, WireMessageType.PartyLobbyRequest, payload.requestId, payload)
   }
 
   private ensureOpenSocket(): WebSocket | null {
@@ -487,6 +515,11 @@ export class GameClient {
           if (state) useSocialStore.getState().applyState(state)
           break
         }
+        case WireMessageType.PartyLobby: {
+          const lobby = decodeJsonPayload<PartyLobbyDto>(envelope)
+          if (lobby) useSocialStore.getState().applyLobby(lobby)
+          break
+        }
         case WireMessageType.Pong:
         case WireMessageType.AssetView:
         case WireMessageType.MarketBook:
@@ -496,6 +529,7 @@ export class GameClient {
         case WireMessageType.ChatSend:
         case WireMessageType.ChatHistoryRequest:
         case WireMessageType.SocialAction:
+        case WireMessageType.PartyLobbyRequest:
           break
         default:
           throw new Error('收到未知协议消息。')

@@ -227,7 +227,7 @@ export const SettingsPage = memo(function SettingsPage(): React.JSX.Element {
                       key={option}
                       aria-pressed={theme === option}
                       className={theme === option ? 'active' : ''}
-                      onClick={() => setTheme(option)}
+                      onClick={event => setTheme(option, { x: event.clientX, y: event.clientY })}
                       type="button"
                     >
                       {t(option === 'light' ? 'app.settings.themeLight' : 'app.settings.themeDark')}

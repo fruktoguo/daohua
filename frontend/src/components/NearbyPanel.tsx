@@ -34,15 +34,15 @@ const ProgressBar = ({ value }: { value: number }): React.JSX.Element => (
 /**
  * 栖息生灵单卡片（普通怪 / 精英 / 领主共用模板）
  *
- * 卡片本体展示立绘、名称、等级与一行摘要；悬停浮层展开等级、位阶、战力预算、气血、伤害与护甲明细。
+ * 卡片本体展示立绘、名称、等级与一行摘要；悬停浮层展开等级、生命层次、战力预算、气血、伤害与护甲明细。
  */
 const MonsterCard = memo(function MonsterCard({ monster, intervalHint, isElite, isBoss }: {
   monster: NearbyMonsterDefinition
   /** 刷出节奏提示（精英/领主按每 N 战出现一次展示） */
   intervalHint?: string
-  /** 精英位阶标记（驱动紫金徽记与卡片描边） */
+  /** 精英生命层次标记（驱动紫金徽记与卡片描边） */
   isElite?: boolean
-  /** 领主位阶标记（驱动危险色徽记与卡片描边） */
+  /** 领主生命层次标记（驱动危险色徽记与卡片描边） */
   isBoss?: boolean
 }): React.JSX.Element {
   const t = useT()

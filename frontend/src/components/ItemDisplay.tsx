@@ -1,7 +1,7 @@
-import { type ReactNode, useCallback } from 'react'
+import { memo, type ReactNode, useCallback } from 'react'
 import { describeAbility, formatAbilityCategory, formatInteger, formatNumber } from '../game/format'
 import { useGameStore } from '../game/gameStore'
-import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
+import { convertTierToLevel, findEquipmentInCatalog, findItemInCatalog, parseEnhancementVariant, resolveDefaultEquipmentDefinition, resolveDefaultItemDefinition, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata, type ItemRarity } from '../game/ids'
 import { resolveItemIconUrl } from '../game/itemIcons'
 import { getT, useT } from '../i18n'
 import type { Buff, CombatAbilityDefinition, CombatEquipmentDefinition, InventoryItem, ItemDefinition, MonsterDropDefinition } from '../game/types'
@@ -50,7 +50,7 @@ export interface ItemTileProps {
   className: string
   /** 物品唯一 ID：命中图标资源时整块瓦片改用图片渲染，未命中则回退为文本名称 */
   itemId?: string
-  /** 物品等阶/品级（展示在右上角） */
+  /** 物品等阶（展示在右上角） */
   level?: number
   /** 物品名称（无图标时的兜底文本，同时作为图片替代文本） */
   name: string
@@ -104,7 +104,7 @@ interface ItemTooltipCardContentProps {
 }
 
 /**
- * 悬浮主卡片内容组件：聚合物品/装备定义、品阶徽章、主干效果行与品类/等阶/持存键值对。
+ * 悬浮主卡片内容组件：聚合物品/装备定义、品质徽章、主干效果行与品类/等阶/持存键值对。
  * Buff 与特殊机制不混入主卡，统一走 Aside 副卡片（见 resolveItemTooltipAsideCards）。
  */
 function ItemTooltipCardContent({
@@ -244,7 +244,7 @@ function resolveItemTooltipAsideCards(
  * 物品悬浮气泡包裹组件 (ItemTooltipTarget)
  *
  * 鼠标悬停展示修仙风物品卡片气泡体系：
- * 1. 【主卡片 (300px)】：展示物品/装备品阶徽章、名称、背景故事描述、即时回血回蓝、冷却、装备攻防基础数值与品类/等阶；
+ * 1. 【主卡片 (300px)】：展示物品/装备品质徽章、名称、背景故事描述、即时回血回蓝、冷却、装备攻防基础数值与品类/等阶；
  * 2. 【专属 Buff 附属卡片窗口 (220px)】：若为丹药附带持续 Buff，或修炼/采集/炼丹持续加成，在右侧独立展开附属面板；
  * 3. 【特殊机制附属卡片窗口 (220px)】：若装备带有特殊机制/特技，在右侧独立展开特殊机制副面板；
  * 4. 【数量副气泡】：若传入 amount，自动在右侧并排展示独立的数量副气泡。
@@ -342,6 +342,38 @@ function describeItemEffects(definition?: ItemDefinition): ReactNode[] {
       />
     )
   }
+  // 即时打击规格（符箓）：祭出耗灵一击，伤害 = 最大灵力×manaDamageRatio + 术法攻击×spellAttackRatio
+  if (definition.strike) {
+    const strike = definition.strike
+    lines.push(
+      <PillBonusLabel
+        key="item-strike"
+        label={t('market.effect.strikeDamage', { element: t(`combat.encounter.element.${strike.element}`) })}
+        tone="crimson"
+        value={t('market.effect.strikeDamageFormula', {
+          ap: formatNumber(strike.spellAttackRatio * 100, { maxDecimals: 0 }),
+          mana: formatNumber(strike.manaDamageRatio * 100, { maxDecimals: 0 }),
+        })}
+      />,
+      <PillBonusLabel
+        key="item-strike-cost"
+        label={t('market.effect.strikeCost')}
+        tone="cyan"
+        value={`${formatNumber(strike.manaCostRatio * 100, { maxDecimals: 1 })}%`}
+      />,
+    )
+  }
+  // 耐久型持续消耗品（阵盘）：部署后槽位持有即生效，不消耗不耗竭
+  if (definition.durable) {
+    lines.push(
+      <PillBonusLabel
+        key="item-durable"
+        label={t('market.effect.durableTag')}
+        tone="gold"
+        value="∞"
+      />
+    )
+  }
   if (definition.isContinuous && definition.durationSeconds && definition.durationSeconds > 0) {
     lines.push(
       <PillBonusLabel
@@ -393,6 +425,8 @@ export function describeBuffEffectLines(buff: {
   description?: string
   hpRegen?: number
   mpRegen?: number
+  hpRegenPostRatio?: number
+  mpRegenPostRatio?: number
   damageAbsorptionPoints?: number
   attackSpeedPoints?: number
   statRatios?: Record<string, number> | null
@@ -406,6 +440,14 @@ export function describeBuffEffectLines(buff: {
   }
   if (buff.mpRegen && buff.mpRegen !== 0) {
     lines.push(t('market.effect.mpRegenPerSecond', { n: formatNumber(buff.mpRegen) }))
+  }
+
+  // 1b. 回复后段乘区（生效值 = 基础回复 ×(1+Σ比率)，阵盘等 durable 增益走此区）
+  if (buff.hpRegenPostRatio && buff.hpRegenPostRatio !== 0) {
+    lines.push(t('market.effect.hpRegenPostRatio', { n: signedPercent(buff.hpRegenPostRatio) }))
+  }
+  if (buff.mpRegenPostRatio && buff.mpRegenPostRatio !== 0) {
+    lines.push(t('market.effect.mpRegenPostRatio', { n: signedPercent(buff.mpRegenPostRatio) }))
   }
 
   // 2. 免伤与攻速点数：NonLinear 口径换算有效百分比（减伤 x/(100+x)，速率 +x%）。
@@ -936,15 +978,26 @@ export function ItemCard({ item, definition, equipmentDefinition }: { item: Inve
     meta ?? fallbackMetadata(item.itemId),
     item.tier ?? meta?.level ?? 1,
   )
+  // 强化变体行（AssetKey "+N"）：名称附强化等级、悬浮卡片按该等级缩放属性预览。
+  const enhancementLevel = parseEnhancementVariant(item.variant)
+  const displayName = enhancementLevel > 0 ? `${item.name} +${enhancementLevel}` : item.name
   return (
-    <ItemTooltipTarget amount={item.amount} className="inventory-item-anchor" definition={definition} equipmentDefinition={equipmentDefinition} itemId={item.itemId} metadata={metadata}>
+    <ItemTooltipTarget
+      amount={item.amount}
+      className="inventory-item-anchor"
+      definition={definition}
+      enhancementLevel={enhancementLevel}
+      equipmentDefinition={equipmentDefinition}
+      itemId={item.itemId}
+      metadata={metadata}
+    >
       <ItemTile
         amount={item.amount}
         category={resolveItemCategoryLabel(resolveItemSubCategory(item.itemId, definition, equipmentDefinition, item.subCategory), t)}
         className="inventory-cell"
         itemId={item.itemId}
         level={metadata.level}
-        name={item.name}
+        name={displayName}
         rarity={metadata.rarity}
       />
     </ItemTooltipTarget>
@@ -1070,3 +1123,34 @@ export function ItemReference({
     </ItemTooltipTarget>
   )
 }
+
+/**
+ * 消耗/产出条目胶囊组件 (ActionDetailItem)
+ *
+ * 行动详情与强化预览共用的「物品 ×需求 / 持有·需求」行内条目：
+ * current 提供时显示 `持有 / 需求` 并在不足时以 `is-insufficient` 警示色标记，
+ * 缺省时仅显示 `×需求`。
+ */
+export const ActionDetailItem = memo(function ActionDetailItem({
+  itemId,
+  amount,
+  current,
+}: {
+  /** 物品唯一 ID */
+  itemId: string
+  /** 需求数量 */
+  amount: number
+  /** 当前持有数量（提供时显示 持有/需求 并做不足标红） */
+  current?: number
+}): React.JSX.Element {
+  const metadata = resolveItemMetadata(itemId)
+  const insufficient = current !== undefined && current < amount
+  return (
+    <span className="action-detail-item">
+      <ItemReference amount={current} itemId={itemId} label={metadata?.label ?? itemId} />
+      <strong className={insufficient ? 'is-insufficient' : ''}>
+        {current === undefined ? <UnitNumber maxDecimals={0} prefix="×" value={amount} /> : <><UnitNumber maxDecimals={0} value={current} /> / <UnitNumber maxDecimals={0} value={amount} /></>}
+      </strong>
+    </span>
+  )
+})

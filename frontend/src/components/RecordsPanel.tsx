@@ -20,7 +20,7 @@ const SINGLETON_REPORT_IDS: ReadonlySet<string> = new Set(['offline', 'daily'])
  * 3. 近期战报历史（服务端 reports 合并 localStorage 本地缓存，按 reportId 去重、倒序取 10 条）；
  * 4. 皆无内容时显示空态。
  */
-export const RecordsPanel = memo(function RecordsPanel(): React.JSX.Element {
+export const RecordsPanel = memo(function RecordsPanel({ titleId = 'records-panel-title' }: { titleId?: string }): React.JSX.Element {
   const t = useT()
   const playerId = useGameStore(state => state.playerId)
   const duel = useGameStore(state => state.duel)
@@ -60,7 +60,7 @@ export const RecordsPanel = memo(function RecordsPanel(): React.JSX.Element {
   return (
     <section aria-label={t('app.nav.records')} className="battle-report-panel">
       <header className="battle-report-header">
-        <span className="battle-report-title" id="records-panel-title">{t('app.nav.records')}</span>
+        <span className="battle-report-title" id={titleId}>{t('app.nav.records')}</span>
       </header>
       {isEmpty ? (
         <p className="battle-report-empty">{t('combat.report.empty')}</p>

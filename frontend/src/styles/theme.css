@@ -6,49 +6,48 @@
   font-synthesis: weight;
   color: var(--text);
   background: var(--bg);
-  --bg: #e7dfcf;
-  --bg-raised: #ded3bd;
-  --panel: #efe8da;
-  --surface-rgb: 239, 232, 218;
-  --shade-rgb: 216, 202, 175;
-  --gold: #755319;
-  --gold-bright: #5e3e0d;
-  --gold-dim: #77643e;
-  --gold-faint: rgba(117, 83, 25, 0.3);
+  --bg: #f1ecdc;
+  --bg-raised: #e4dbc4;
+  --panel: #f9f5ea;
+  --surface-rgb: 249, 245, 234;
+  --shade-rgb: 226, 215, 190;
+  --gold: #7d521a;
+  --gold-bright: #61400e;
+  --gold-dim: #8f7243;
+  --gold-faint: rgba(125, 82, 26, 0.28);
   --gold-light: var(--gold-bright);
   --gold-primary: var(--gold);
-  --text: #30291f;
-  --text-dim: #514737;
+  --seal: #b23327;
+  --seal-deep: #8c2418;
+  --seal-faint: rgba(178, 51, 39, 0.09);
+  --seal-border: rgba(178, 51, 39, 0.38);
+  --text: #2b2417;
+  --text-dim: #584d3a;
   --jade: #176043;
   --qi: #165c76;
-  --danger: #9b3428;
+  --danger: var(--seal);
   --purple: #69408c;
-  --amber: #874418;
+  --amber: #8a4514;
   --rose: #903c58;
   --silver: #4c5868;
-  --on-accent: #fffdf5;
+  --on-accent: #fffaf0;
   --font-weight-regular: 600;
   --font-weight-medium: 600;
 }
 
-/* 纸白材质与墨色文字分别配对，不对图像或特效施加反色滤镜。 */
+/* 纸白材质与墨色文字分别配对，不对图像或特效施加反色滤镜；背景平色，不叠渐变。 */
 :root[data-theme="light"] body {
-  background:
-    radial-gradient(1200px 700px at 50% -10%, #d8c9ab 0%, transparent 60%),
-    radial-gradient(900px 600px at 50% 115%, #ddcfb2 0%, transparent 55%),
-    var(--bg);
+  background: var(--bg);
 }
 
 :root[data-theme="light"] .panel {
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 44 44' fill='none' stroke='%238a6c35' stroke-width='2.2'%3E%3Cpath d='M9 42L2 42L2 2L42 2L42 9'/%3E%3Cpath d='M8 34L8 8L34 8' stroke='%23a99161' stroke-width='1'/%3E%3Crect x='0.4' y='0.4' width='3.2' height='3.2' transform='rotate(45 2 2)' fill='%23614519' stroke='none'/%3E%3C/svg%3E") left -2px top -2px / 44px 44px no-repeat,
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 56 56' fill='none' stroke='%238a6c35' stroke-width='1.6'%3E%3Cpath d='M46 2L54 2L54 54L2 54L2 46'/%3E%3C/svg%3E") right -2px bottom -2px / 56px 56px no-repeat,
-    radial-gradient(140% 100% at 50% 0%, rgba(201, 180, 109, 0.05), transparent 55%),
     var(--panel);
-  box-shadow: 0 0 0 1px rgba(117, 83, 25, 0.12),
-    0 8px 24px rgba(71, 49, 18, 0.1),
-    inset 0 0 0 5px var(--panel), inset 0 0 0 6px var(--gold-faint),
-    inset 0 0 60px rgba(91, 64, 21, 0.07);
+  box-shadow: 0 0 0 1px rgba(125, 82, 26, 0.12),
+    0 8px 24px rgba(60, 44, 20, 0.09),
+    inset 0 0 0 5px var(--panel), inset 0 0 0 6px var(--gold-faint);
 }
 
 :root[data-theme="light"] :is(.topbar, .bottom-nav) {
@@ -65,9 +64,66 @@
 :root[data-theme="light"] textarea { font-weight: var(--font-weight-regular); }
 :root[data-theme="light"] :is(input, textarea)::placeholder { color: var(--text-dim); opacity: 1; }
 :root[data-theme="light"] select option { color: var(--text); background: var(--panel); }
-:root[data-theme="light"] :is(button, input, select, textarea):focus-visible { outline-color: var(--gold-bright); }
-:root[data-theme="light"] ::selection { color: var(--on-accent); background: var(--gold); }
+:root[data-theme="light"] :is(button, input, select, textarea):focus-visible { outline-color: var(--seal); }
+:root[data-theme="light"] ::selection { color: var(--on-accent); background: var(--seal); }
+:root[data-theme="light"] input[type="checkbox"] { accent-color: var(--seal); }
 :root[data-theme="light"] :is(.panel-header h2, .world-map-node > strong, .arena-overhead > strong, .arena-buff-glyph, .arena-search-text-vertical) { text-shadow: none; }
+
+/* 印章红接管主操作与选中态：实心主按钮、导航红条、tab/胶囊选中、勾选项，金色退回纹饰与语义。 */
+:root[data-theme="light"] :is(.action-modal-submit, .modal-form-submit, .login-submit-btn, .status-btn.primary, .confirm-dialog-actions .confirm-primary:not(.danger), .quantity-selector button.active) {
+  border-color: var(--seal-deep);
+  background: var(--seal);
+}
+
+:root[data-theme="light"] :is(.action-modal-submit, .modal-form-submit, .login-submit-btn, .status-btn.primary, .confirm-dialog-actions .confirm-primary:not(.danger)):hover:not(:disabled) {
+  border-color: var(--seal-deep);
+  background: var(--seal-deep);
+}
+
+:root[data-theme="light"] :is(.nav-item.active, .nav-sub-item.active, .settings-nav-item.active) {
+  border-color: var(--seal-border);
+  background: var(--seal-faint);
+  box-shadow: inset 2px 0 0 var(--seal);
+}
+
+:root[data-theme="light"] .settings-nav-item.active,
+:root[data-theme="light"] .nav-item.active .nav-label,
+:root[data-theme="light"] .nav-sub-item.active {
+  color: var(--seal);
+}
+
+:root[data-theme="light"] :is(.nav-item.active .nav-glyph, .settings-nav-item.active .settings-nav-glyph, .bottom-nav button.active .bottom-glyph) {
+  border-color: var(--seal);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] :is(.log-tabs button.active, .market-tabs button.active, .market-category-chips button.active, .crafting-sub-tab-btn.active, .insight-sub-tab-btn.active, .combat-zone-tabs button.active, .presence-options button.active, .auth-tab-btn.active) {
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .insight-tab-btn.active {
+  border-bottom-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+}
+
+:root[data-theme="light"] .bottom-nav button.active { color: var(--seal); }
+:root[data-theme="light"] .chat-entry-list li.is-active { background: var(--seal-faint); }
+:root[data-theme="light"] .choice-menu-option.is-selected,
+:root[data-theme="light"] .item-grid-picker-card--empty.is-selected {
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+}
+:root[data-theme="light"] .catalog-picker-card.is-selected {
+  border-color: var(--seal);
+  background: var(--seal-faint);
+  box-shadow: none;
+}
+:root[data-theme="light"] .market-browse-card.is-selected .item-tile { outline-color: var(--seal); }
 
 :root[data-theme="light"] button.danger,
 :root[data-theme="light"] button.danger:hover:not(:disabled),
@@ -157,7 +213,6 @@
 :root[data-theme="light"] .qc-next:hover,
 :root[data-theme="light"] .right-sidebar-tab-btn:hover,
 :root[data-theme="light"] .equipment-slot-btn.is-equipped,
-:root[data-theme="light"] .insight-avatar-switch-hint,
 :root[data-theme="light"] .insight-stat-box,
 :root[data-theme="light"] .insight-buffs-box,
 :root[data-theme="light"] .insight-record-card {
@@ -338,7 +393,11 @@
 }
 
 :root[data-theme="light"] .right-sidebar-tab-btn.is-active {
-  background: linear-gradient(180deg, rgba(201, 180, 109, 0.22) 0%, rgba(var(--surface-rgb), 0.95) 100%);
+  border-color: var(--seal);
+  color: var(--seal);
+  background: var(--seal-faint);
+  box-shadow: none;
+  text-shadow: none;
 }
 
 :root[data-theme="light"] .equipment-slot-btn.is-empty:hover,
@@ -382,10 +441,6 @@
 :root[data-theme="light"] .insight-page-header,
 :root[data-theme="light"] .error-stack-container {
   background: rgba(var(--surface-rgb), 0.6);
-}
-
-:root[data-theme="light"] .insight-avatar-stage {
-  background: radial-gradient(circle at 50% 60%, rgba(201, 180, 109, 0.14) 0%, rgba(var(--surface-rgb), 0.85) 70%);
 }
 
 :root[data-theme="light"] .insight-sub-tab-btn,
@@ -535,7 +590,6 @@
 :root[data-theme="light"] .panel-header::after { background: linear-gradient(90deg, var(--gold-dim), var(--gold-faint) 70%, transparent); }
 :root[data-theme="light"] :is(.action-card, .item-tile, .avatar-tile, .settings-profile-avatar) { box-shadow: inset 0 0 12px rgba(91, 64, 21, 0.12), 0 2px 5px rgba(71, 49, 18, 0.12); }
 :root[data-theme="light"] :is(.settings-group, .presence-options button, .auth-tab-btn, .right-sidebar-tab-btn) { border-color: var(--gold-dim); }
-:root[data-theme="light"] :is(.settings-nav-item.active, .presence-options button.active) { border-color: var(--gold); background: linear-gradient(90deg, rgba(117, 83, 25, 0.14), rgba(117, 83, 25, 0.03)); }
 
 /* 浅色阴影沿用原有层数与纹饰几何，减弱黑色压边，避免细节变成灰糊。 */
 :root[data-theme="light"] .progress { box-shadow: inset 0 0 8px rgba(71, 49, 18, 0.212), 0 1px 0 rgba(232, 214, 154, 0.05); }
@@ -559,7 +613,7 @@
 :root[data-theme="light"] .item-tooltip { box-shadow: 0 12px 32px rgba(71, 49, 18, 0.18), inset 0 0 24px rgba(201, 180, 109, 0.035); }
 :root[data-theme="light"] .effect-tooltip { box-shadow: 0 12px 32px rgba(71, 49, 18, 0.18), inset 0 0 24px rgba(117, 169, 173, 0.045); }
 :root[data-theme="light"] .character-attribute-avatar-stage { box-shadow: inset 0 0 12px rgba(71, 49, 18, 0.15); }
-:root[data-theme="light"] .insight-modal { box-shadow: 0 16px 48px rgba(71, 49, 18, 0.212), 0 0 24px rgba(201, 180, 109, 0.15); }
+:root[data-theme="light"] .insight-modal { box-shadow: 0 16px 48px rgba(71, 49, 18, 0.212), 0 0 24px rgba(201, 180, 109, 0.15) !important; }
 :root[data-theme="light"] .insight-realm-minor-box { box-shadow: inset 0 0 6px rgba(71, 49, 18, 0.125); }
 :root[data-theme="light"] .insight-stat-tooltip { box-shadow: 0 4px 16px rgba(71, 49, 18, 0.212); }
 :root[data-theme="light"] .avatar-tile:hover { box-shadow: 0 4px 14px rgba(71, 49, 18, 0.113); }
@@ -605,13 +659,51 @@
 :root[data-theme="light"] .arena-search-text-vertical { text-shadow: 0 1px 3px rgba(71, 49, 18, 0.225); }
 :root[data-theme="light"] .arena-life-card { box-shadow: 0 4px 20px rgba(71, 49, 18, 0.15), inset 0 0 16px rgba(201, 180, 109, 0.05); }
 
+/* 图标与立绘的投影在浅色纸面上换成暖棕柔影；死亡灰化保留，仅降投影浓度。 */
+:root[data-theme="light"] .item-tile-icon,
+:root[data-theme="light"] .avatar-tile-icon,
+:root[data-theme="light"] .settings-profile-avatar img,
+:root[data-theme="light"] .daohua-floating-card-title-icon {
+  filter: drop-shadow(0 1px 2px rgba(71, 49, 18, 0.25));
+}
+:root[data-theme="light"] .character-avatar,
+:root[data-theme="light"] .arena-avatar .character-avatar {
+  filter: drop-shadow(0 4px 6px rgba(71, 49, 18, 0.28));
+}
+:root[data-theme="light"] .character-avatar.is-dead,
+:root[data-theme="light"] .character-avatar-vector-wrap.is-dead,
+:root[data-theme="light"] .arena-actor.is-dead .arena-avatar .character-avatar {
+  filter: grayscale(1) drop-shadow(0 2px 4px rgba(71, 49, 18, 0.2));
+}
+:root[data-theme="light"] .world-player-arrow-svg {
+  filter: drop-shadow(0 2px 5px rgba(71, 49, 18, 0.4));
+}
+:root[data-theme="light"] .taiji-icon {
+  box-shadow: 0 0 8px var(--gold-faint), inset 0 1px 4px rgba(71, 49, 18, 0.14);
+}
+:root[data-theme="light"] .taiji-toggle:hover .taiji-icon {
+  box-shadow: 0 0 12px var(--gold-faint), inset 0 1px 4px rgba(71, 49, 18, 0.14);
+}
+
 /* 头像台与全屏入口保留原有径向层次，避免多层深色渐变变成同一平面。 */
 :root[data-theme="light"] .equipment-stage {
   background: radial-gradient(ellipse at 50% 50%, rgba(68, 110, 125, 0.16) 0%, rgba(var(--shade-rgb), 0.5) 80%),
     linear-gradient(180deg, rgba(var(--surface-rgb), 0.95) 0%, rgba(var(--shade-rgb), 0.55) 100%);
 }
-:root[data-theme="light"] :is(.login-screen, .status-screen) { background: radial-gradient(circle at 50% 40%, #efe8da 0%, #dcd1bb 70%); }
-:root[data-theme="light"] .insight-modal { background: linear-gradient(180deg, #efe8da 0%, #ded3bd 100%); }
+:root[data-theme="light"] :is(.login-screen, .status-screen) { background: var(--bg); }
+:root[data-theme="light"] .insight-modal { background: var(--panel) !important; }
 :root[data-theme="light"] .insight-realm-master-frame { background: linear-gradient(135deg, #eee4ce, #dbd0b9); }
 :root[data-theme="light"] .arena-idle-sigil { opacity: 0.9; }
 :root[data-theme="light"] .item-use-slot-shell.is-depleted .item-corner--bottom-right { color: var(--on-accent); background: var(--danger); }
+
+/* 窄屏设置分类条横向排列，激活红线由左侧竖条切换为底部横条。 */
+@media (max-width: 960px) {
+  :root[data-theme="light"] .settings-nav-item.active {
+    box-shadow: inset 0 -2px 0 var(--seal);
+  }
+
+  /* 竖屏生活卡吸底进度区沿用面板底色，避免深色横条压在浅色卡面上 */
+  :root[data-theme="light"] .arena-life-footer {
+    background: rgba(var(--surface-rgb), 0.97);
+  }
+}
