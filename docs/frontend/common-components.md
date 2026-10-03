@@ -19,6 +19,7 @@
   - **功法书与招式残卷参悟副气泡联动**：针对 `item.tome.*` 与 `item.fragment.*`（或 `manual`/`manualFragment` 类别），自动检索全局战技配置，通过 `describeAbility(ability, 1)` 生成 `[秘籍参悟]` / `[残卷参悟]` 副卡片（色调 `qi`），挂载于悬浮主卡片旁联动展示（`resolveManualAsideCard`）。功法悬浮详情统一结构：主描述 = 配表 `description` 招式描述 + 效果句（目标/伤害构成/五行伤害类别，如「对单个目标造成 60%术法攻击 +10.5 木属性术法伤害」，构成单元经 `[[ ]]` 标记由 `ValueText` 渲染为整组胶囊），词条行 = 等级、冷却、吟唱、灵力消耗与次级效果，不输出默认触发条件文本。
   - **懒求值与密集长列表滚动性能保障**：`FloatingPopover` 具备 `isOpen` 短路懒计算机制，未展开时完全不执行 `content` 与 `mergedAsideCards` 的解析与 JSX 构建；在密集网格长列表（如坊市 `MarketBrowseGrid`）中，支持滚动抑制（`is-scrolling` 配合 `pointer-events: none`，命令式切换不经过 React 渲染）与视口渲染裁剪（`content-visibility: auto`）。非交互 hover 气泡（tooltip 语义）在**包含锚点的滚动容器**滚动时立即收起（等同原生 `title`）；与锚点无关的面板自滚（如底部日志 append 后自动滚底、侧栏滚动）不会触碰已打开的气泡。click/interactive 浮层滚动跟随则走 rAF 节流重定位，彻底消除滚动期间的逐事件 `getBoundingClientRect` 测量、整卡重渲染、`backdrop-filter` 重绘与高频 Hover 风暴。
   - 点击/右键呼出的悬浮操作菜单、处置选项列表 -> `FloatingPopover`（菜单容器）、`FloatingMenuItem`、`FloatingMenuGroup`、`FloatingMenuDivider`
+  - **右下角全局浮动气泡（自动 2.6s 消失）**：命令回执 `message` 是唯一服务端下发管道——成功文案按命令差异化（`EcsPlayerRuntimeAdapter.SuccessNotice`），高频或界面已自证的命令回空串静默；发送即知结果的操作（坊市挂单/撤单）在调用点就地 `setNotice` 即时提示。同文案重复提示经 `noticeSeq` 重置计时并重播入场动画 -> `Notice`（App.tsx）+ `.notice`（styles.css）
 - **组件源码**：[`frontend/src/components/FloatingPopover.tsx`](../../frontend/src/components/FloatingPopover.tsx)
 - **样式文件**：[`frontend/src/styles/floating-popover.css`](../../frontend/src/styles/floating-popover.css)
 - **专项设计规范**：[`floating-popover.md`](./floating-popover.md)
@@ -36,10 +37,10 @@
 
 ---
 
-## 3. 境界徽章与位阶牌匾 (Realm Badge)
+## 3. 境界徽章与境界阶段牌匾 (Realm Badge)
 
 - **适用场景**：
-  - 角色/敌方境界标准牌匾展示（包含大境界牌匾框、位阶棱形徽章框【武/玄/天/初/中/后/极】、小境界灵气胶囊框，自带 Hover 弹出大境界与属性详情浮层） -> `RealmBadge`
+  - 角色/敌方境界标准牌匾展示（包含大境界牌匾框、境界阶段棱形徽章框【武/玄/天/初/中/后/极】、小境界灵气胶囊框，自带 Hover 弹出大境界与属性详情浮层） -> `RealmBadge`
 - **组件源码**：[`frontend/src/components/RealmBadge.tsx`](../../frontend/src/components/RealmBadge.tsx)
 - **样式文件**：[`frontend/src/styles.css`](../../frontend/src/styles.css) (搜索 `.insight-realm-*`)
 
@@ -68,9 +69,10 @@
 
 - **强制规则**：物品、装备、材料、消耗品、功法技能的一切展示位必须使用图标组件（整块瓦片 `ItemTile`、行内 `ItemIcon`、文本行/复合胶囊 `ItemReference`），禁止仅用纯文本名称罗列。
 - **适用场景**：
-  - 行囊、交易、装备槽位中的单个物品方块（包含品阶光晕色调、数量角标、品质边框、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
+  - 行囊、交易、装备槽位中的单个物品方块（包含品质光晕色调与边框、数量角标、内置 Hover 悬浮信息） -> `ItemTile`, `ItemTooltipTarget`
   - **左上品类丝带统一走 `resolveItemSubCategory`**：装备取穿戴槽位（武器/头部/衣服/下装/鞋履/饰品），其余取配表二级 `subCategory`（药材/矿石/丹药/秘籍/残卷/补给耗材等），功法书按 `item.tome./item.fragment.` 前缀兜底区分全本与残卷；所有展示位（背包、装备栏、选择器、坊市、悬浮详情）共享同一解析口径，装备栏不再叠加独立槽位角标。
   - **仅持有 itemId + 数量的行内场景**（账本物品得失、斗法暂存区、日志引用等）：统一渲染复合胶囊（行内小图标 + 名称胶囊 + `×数量` 下划线值 + 悬浮详情卡片） -> `ItemReference`（`amount` 提供时渲染 `item-reference-compound` 复合胶囊；`valueContent` 可覆写值区内容）
+  - **消耗/产出条目（持有·需求对照）**：行动详情与强化预览的「物品 ×需求 / 持有/需求」行内条目统一用 `ActionDetailItem`（ItemDisplay 导出）；`current` 提供时显示 `持有 / 需求` 并在不足时以 `is-insufficient` 警示，缺省仅显示 `×需求`。
   - **怪物掉落条目（概率 + 数量区间）**：怪物悬浮/详情卡的掉落明细——同款复合胶囊，`×数量` 值区展示掉落区间（min=max 显示单值否则 `min-max`）+ 胶囊尾部 `（概率%）` dim 小字，对应「先按 dropChance 判定再抽数量区间」语义 -> `ItemDropReference`（薄封装 `ItemReference`，概率样式见 `expedition.css` `.world-monster-drop-chance`）
   - **图标（有图用图、无图回退文本）**：传入资源 ID 即可。该资源在
     `frontend/src/assets/items/<资源ID>.{webp,png}` 有图时，`ItemTile` 用图片整块替换中间的文本名称；
@@ -98,8 +100,9 @@
     瓦片绘制区固定为 52px，故 64×64 源在 DPR1 是**缩小** 0.81×、在 DPR2 是**放大** 1.63× —— 两种密度均已实测无走样。
     **但若源图升到 ≥128px，缩小倍率会明显变大（DPR1 约 2.46×），届时必须重新实测这三处。**
   - **hover 反馈零重绘架构**：瓦片子树不做任何 `transition`——实测密集网格 hover 时任意 transition（含 transform）都会逐帧主线程重绘（79 格扫过约 19fps）。动效全部由合成器线程承担：辉光为常驻 `.item-tile-glow` 叠加层做 `opacity` fade-in（`ItemTile` 内置；裸写 `.item-tile` 的功法槽/功法挑选器需手动补 `<span class="item-tile-glow" aria-hidden="true" />`），丝带与角标缩放走 keyframe `animation`（`item-ribbon-zoom-in` / `item-corner-zoom-in`），边缘扫光保持 transform+opacity keyframes；绘制类属性（丝带底色、角标 `box-shadow`）瞬时切换。选中态辉光为静态 `opacity: 1`。
+  - **强化装备 `+N` 资产变体**：钱包以 `variant="+N"` 区分强化等级资产行。展示链路统一约定——`parseEnhancementVariant(variant)` 解析等级；`ItemCard`/候选条目名称显示 `装备名 +N`；`ItemTooltipTarget` 接收 `enhancementLevel`，`describeEquipmentEffects` 按 `enhancementBonus × level` 在主卡追加 `(+强化加成)` 后缀；已装备槽位名同样带 `+N`。任何新增装备展示位必须沿用该口径，不得自行拼字符串或丢等级。
   - **多气泡联动、Buff/特殊机制副窗口与独立数量气泡**：
-    - 主卡片展示品阶、基础说明、即时回血回蓝、冷却时长与装备基础攻防；
+    - 主卡片展示品质、基础说明、即时回血回蓝、冷却时长与装备基础攻防；
     - 丹药持续 Buff、修炼/技艺效率加成提取为独立的 `[丹药增益]` / `[修炼增益]` 副卡片窗口；
     - 装备特殊机制提取为独立的 `[特殊机制]` 副卡片窗口；
     - 数量副气泡并排联动（标题为「数量」，内容为中文四位分段「具体数值」）。
@@ -114,7 +117,8 @@
 
 - **适用场景**：
   - **通用待选列表**（贴靠目标槽位的浮层候选网格，取代全屏模态挑选：入参 = 设置目标锚点 `anchor` + 所有列表 `options`，`auto-fill` 自动判列，首格可带「空选/移除」，候选数超 `searchThreshold`（默认 12）才出现搜索框，选中/点外/ESC 即关闭，正在设置的槽位以 `is-picking` 高亮描边） -> `CandidatePicker`
-  - **物品待选列表**（`ItemPickerEntry[]` 适配为候选：品阶光晕瓦片 + 悬浮详情 + 持存 0 禁用 + 名称/品类/描述搜索文本） -> `ItemGridPicker`
+  - **物品待选列表**（`ItemPickerEntry[]` 适配为候选：品质光晕瓦片 + 悬浮详情 + 持存 0 禁用 + 名称/品类/描述搜索文本） -> `ItemGridPicker`
+  - **资产变体复合键纪律**：`ItemPickerEntry` 携带 `variant`（形如 `"+3"`）与 `enhancementLevel`；同 itemId 的多个强化等级资产行必须经 `itemPickerEntryKey(itemId, variant)` 复合键区分（与钱包 AssetKey 合入键同构），禁止仅以 itemId 去重或作选中态判定。`onSelect(itemId, entry)` 第二参回传完整条目，装备槽穿戴等需要保留强化等级的场景一律读取 `entry.enhancementLevel`，不得默认归 0。
   - **功法/战技待选列表**（功法装配槽位选择；按 `slotIndex` 过滤功法 `discipline`——0 号内功位只列内功心法，术法位只列术法；`levelFor` 提供参悟等级供瓦片角标与悬浮详情） -> `AbilityGridPicker`
   - **通用目录选择弹窗**（针对秘籍、配方、地图地点等条目的网格选择模板，仍为全屏 Modal；附带子导出 `PickerTrigger` 选择器触发按钮与 `ChoiceMenu` 下拉选项菜单，供触发条件编辑器等内嵌场景复用） -> `CatalogPicker`
 - **组件源码**：
@@ -300,7 +304,7 @@
 
 - **适用场景**：
   - 修炼、炼丹、炼器、采集与历练等交互行动的纯净微型展示卡片（标准每行 4 个网格排布，严格遵循“只显示名称，不展示多余图标或详情”规范，右上角复用标准 `item-corner item-corner--top-right` 内部胶囊角标，整张卡片与角标受 `data-rarity` 品质色彩驱动，点击唤起对应配置/执行弹窗） -> `ActionCard`
-  - **真实等级换算**：未指定显式等级时，由 `convertTierToLevel` 统一将品阶换算为等级（1阶->1级，2阶->18级，3阶->30级，N阶->`18 + (N - 2) * 12` 级）。
+  - **真实等级换算**：未指定显式等级时，由 `convertTierToLevel` 统一将等阶换算为等级（等阶1->1级，等阶2->18级，等阶3->30级，等阶N->`18 + (N - 2) * 12` 级）。
   - **品质色彩联动**：由 `resolveActionRarity` 依据产出物/装备/遭遇解析品质色调（`mundane`/`spirit`/`mystic`/`earth`/`heaven`等），驱动边框微光与背景着色。
 - **组件源码**：[`frontend/src/App.tsx`](../../frontend/src/App.tsx)
 - **等级与品质解算引擎**：[`frontend/src/game/ids.ts`](../../frontend/src/game/ids.ts)
@@ -377,7 +381,7 @@
 ## 28. 讨伐行动节点生态面板 (CombatEcologyPanel)
 
 - **适用场景**：
-  - 讨伐/战斗行动配置弹窗（`ActionModal`）内的当前地点妖兽生态展示区：主体为怪物**图标瓦片网格**（立绘 + 位阶角标 + 等级底标），**悬停**弹简要信息卡（位阶徽记、境界·等级·阶位副标、气血/攻击威能/护甲三行核心值），**单击**弹详细信息卡（六维属性、攻速间隔、消耗预算、出没周期、击杀收益、施展功法与掉落物胶囊）。
+  - 讨伐/战斗行动配置弹窗（`ActionModal`）内的当前地点妖兽生态展示区：主体为怪物**图标瓦片网格**（立绘 + 生命层次角标 + 等级底标），**悬停**弹简要信息卡（生命层次徽记、境界·等级·等阶副标、气血/攻击威能/护甲三行核心值），**单击**弹详细信息卡（六维属性、攻速间隔、消耗预算、出没周期、击杀收益、施展功法与掉落物胶囊）。
   - **双层浮层嵌套结构**：外层 `FloatingPopover trigger="click"`（详卡，`placement="bottom"`）包内层 `FloatingPopover trigger="hover" interactive={false}`（简卡，`placement="top"`），均 `displayContents` 锚定同一瓦片按钮——hover 与 click 分侧展开互不遮挡，对齐 `InventoryItemCell` 既有嵌套模式。
   - **数据源即节点生态**：取静态目录 `maps[world.mapId].nodes[world.nodeId]` 的 `monsters`/`eliteEnemies`/`bossEnemies`（服务端 `StaticGameCatalogMapper.ToNode` 按节点 `encounterIds` 预解析的 `CombatantDefinition` 全字段），与服务端 `ResolveCombatEncounter` 实战遭遇同根同源；行进中或节点无生态时回退行动钉死 `combatEncounterId` 的遭遇怪群，禁止再按行动遭遇常驻展示。
   - **行动名按驻留地点本地化**：`localizeActionDisplayText(text, world, maps)`（`frontend/src/game/ids.ts`）把行动名/描述中内嵌的当前地图名替换为当前节点名（「讨伐 青云仙山」→「讨伐 漱玉溪」）；行进中（`nodeId=null`）不替换。已统一接入 `ActionCard`、`ActionModal`、行动队列显示名与 `CombatArena` 各显示点。

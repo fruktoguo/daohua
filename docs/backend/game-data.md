@@ -4,12 +4,12 @@
 
 正式游戏数据位于 `config/game-data`，运行时以 JSON 为唯一权威源（Single Source of Truth）：
 
-- **`expected-attributes.json`**：**全境界阶位数值底座、标准期望面板、特殊属性与战斗模拟产出基准**。
+- **`expected-attributes.json`**：**全 12 等阶（T1~T12）数值底座、标准期望面板、特殊属性与战斗模拟产出基准**。
 - `manifest.json`：结构版本和内容版本。
 - `items/`：物品、消耗品、丹药、秘籍与残卷（`materials.json`, `pills.json`, `manuals.json`）。物品分类为两级模型：必填 `category` 是一级主类型（`material`/`consumable`/`manual`/`currency`/`equipment` 等），可选 `subCategory` 是二级细分品类（`herb`/`mineral`/`pill`/`alchemySupply`/`explorationSupply`/`manualTome`/`manualFragment` 等）；目录 DTO 原样下发两个字段，前端品类丝带与坊市二级筛选统一按 `subCategory`（缺省回落主类型，见 `ItemDefinition.DisplaySubCategory`）展示，药品栏门控按细分键 `pill` 判定。
 - `equipment/`：武器、防具与饰品（`weapons.json`, `armors.json`, `accessories.json`）。
 - `abilities/`：物理武技与术法神通（`physical_abilities.json`, `spell_abilities.json`）。
-- `monsters/`：各阶位普通妖兽、精英与首领（`tier1_minions.json`, `tier1_elites_bosses.json`, `tier2_minions.json`, `tier2_elites_bosses.json`）。
+- `monsters/`：各等阶妖兽、精英与妖王（`tier1_minions.json`, `tier1_elites_bosses.json`, `tier2_minions.json`, `tier2_elites_bosses.json`）。
 - `encounters/`：各区域遭遇生态与怪物波次（`tier1_encounters.json`, `tier2_encounters.json`）。
 - `maps/`：世界大地图与节点网络（`qingyun_mountain.json`, `xingyun_realm.json`）。
 - `buildings/`：玩家可建造的节点公共建筑定义（`buildings.json`：分组、每级效果 `modifiers`、材料清单与解锁境界）。
@@ -32,7 +32,7 @@
 flowchart TD
     Config["单点真实数据源 (Single Source of Truth)<br>config/game-data/expected-attributes.json"]
     
-    Doc1["【数值量化模型集】<br>数值量化模型集.md<br>(12阶位+8品质 / 4大乘区 / 基础池与最终期望 / 关卡怪物标准与效率比)"]
+    Doc1["【数值量化模型集】<br>数值量化模型集.md<br>(12等阶+8品质 / 4大乘区 / 基础池与最终期望 / 关卡怪物标准与效率比)"]
     
     Domain["领域模型与确定性模拟<br>src/Domain"]
     Server["服务启动装配与聚合运行时<br>src/Server"]

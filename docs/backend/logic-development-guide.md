@@ -48,7 +48,7 @@
 
 `PlayerAggregate`（`src/Domain/Player/PlayerAggregate.cs`）按 `PlayerSectionKind` 八分段组织状态，**分段归属必须准确**：
 
-1. **`Progression`（`PlayerProgression`）**：境界阶位、当前修为、历史总修为。
+1. **`Progression`（`PlayerProgression`）**：境界等级、当前修为、历史总修为。
 2. **`World`（`PlayerWorldState`）**：所在节点/边 ID、坐标、行进进度与探索随机数种子。
 3. **`Combat`（`PlayerCombatState`）**：当前生命/灵力、攻防面板、`RegenCarrySeconds` 回复余量、`PlayerCombatSkillState`（技能冷却与吟唱）。
 4. **`Buffs`（`PlayerBuffState`）**：当前生效 Buff 及到期边界。
