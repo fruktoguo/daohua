@@ -230,7 +230,7 @@
   fill: #e8d69a;
   font-family: Arial, "Kaiti SC", STKaiti, KaiTi, sans-serif;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   paint-order: stroke;
   stroke: rgba(6, 8, 6, 0.95);
   stroke-width: 3px;
@@ -279,7 +279,7 @@
   color: var(--gold-bright);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   text-shadow: 0 1px 3px #000;
   white-space: nowrap;
   pointer-events: none;
@@ -439,7 +439,7 @@
   color: var(--gold-bright);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 18px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .world-location-header p {
@@ -495,7 +495,7 @@
 }
 
 .eco-label-name {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--gold-bright);
   font-size: 11px;
   padding-left: 2px;
@@ -550,7 +550,7 @@
   border-color: rgba(234, 179, 8, 0.6);
   background: rgba(234, 179, 8, 0.15);
   color: #fef08a;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .monster-rank-tag {
@@ -637,7 +637,7 @@
   width: 100%;
   min-height: 38px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 
@@ -717,7 +717,7 @@
 
 .travel-route-node.is-dest {
   color: var(--gold-bright);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .travel-route-arrow {
@@ -794,7 +794,7 @@
   color: var(--gold-bright);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 20px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .nearby-budget-pill {
@@ -822,7 +822,7 @@
   margin: 0 0 8px;
   color: var(--gold);
   font-size: 12px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .nearby-grid {
@@ -883,7 +883,7 @@
 .nearby-add-glyph {
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 30px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   line-height: 1;
 }
 
@@ -921,7 +921,7 @@
 
 .nearby-interval-hint {
   color: #c084fc !important;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .nearby-mark {
@@ -937,7 +937,7 @@
 
 .nearby-card strong {
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .nearby-card p,
@@ -972,7 +972,7 @@
   color: var(--gold-bright);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 18px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .build-picker-list {
@@ -999,7 +999,7 @@
   color: var(--gold-dim);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 13px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .build-picker-item.is-locked {
@@ -1056,7 +1056,7 @@
   color: var(--gold-dim);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 13px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .building-progress-row {
@@ -1218,7 +1218,7 @@
   color: var(--gold-bright);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 17px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1660,7 +1660,7 @@
   z-index: 1;
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 30px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   text-shadow: 0 0 14px currentColor;
 }
 
@@ -2565,7 +2565,7 @@
 .arena-resource>strong {
   color: var(--text);
   font-size: 9px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -2846,7 +2846,7 @@
 .duel-action-grid button strong {
   color: var(--text);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .duel-action-grid p {
@@ -2878,7 +2878,7 @@
 .combat-arena-footer strong {
   color: var(--text);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .arena-event-log {
@@ -3152,7 +3152,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .battle-report-row-time {

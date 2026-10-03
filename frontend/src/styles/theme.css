@@ -1,8 +1,9 @@
-/** 显示主题：仅调整配色，沿用原有布局、纹饰与交互动效。 */
+/** 显示主题：仅调整配色与字重，沿用原有布局、纹饰与交互动效。 */
 :root[data-theme="dark"] { color-scheme: dark; }
 
 :root[data-theme="light"] {
   color-scheme: light;
+  font-synthesis: weight;
   color: var(--text);
   background: var(--bg);
   --bg: #e7dfcf;
@@ -26,6 +27,8 @@
   --rose: #903c58;
   --silver: #4c5868;
   --on-accent: #fffdf5;
+  --font-weight-regular: 600;
+  --font-weight-medium: 600;
 }
 
 /* 纸白材质与墨色文字分别配对，不对图像或特效施加反色滤镜。 */
@@ -59,6 +62,7 @@
 
 :root[data-theme="light"] .modal-backdrop { background: rgba(47, 39, 24, 0.32); }
 :root[data-theme="light"] :is(input, select, textarea) { color: var(--text); background-color: var(--panel); border-color: var(--gold-dim); }
+:root[data-theme="light"] textarea { font-weight: var(--font-weight-regular); }
 :root[data-theme="light"] :is(input, textarea)::placeholder { color: var(--text-dim); opacity: 1; }
 :root[data-theme="light"] select option { color: var(--text); background: var(--panel); }
 :root[data-theme="light"] :is(button, input, select, textarea):focus-visible { outline-color: var(--gold-bright); }

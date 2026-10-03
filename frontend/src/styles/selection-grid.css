@@ -397,7 +397,7 @@
   color: var(--text);
   font-family: "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 13px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   line-height: 1.2;
   text-align: center;
 }
@@ -1049,7 +1049,7 @@
   margin: 2px 0 0;
   color: var(--gold-bright);
   font-size: 18px;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .choice-menu-options {

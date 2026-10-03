@@ -401,7 +401,7 @@
   color: var(--gold-bright, #e8d69a);
   font-family: "Noto Serif SC", "Kaiti SC", STKaiti, KaiTi, serif;
   font-size: 16px;
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   letter-spacing: 0.5px;
 }
 
@@ -474,7 +474,7 @@
 }
 
 .daohua-floating-stat-value {
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--gold-bright, #e8d69a);
 }
 

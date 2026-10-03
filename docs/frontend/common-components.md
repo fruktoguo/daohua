@@ -417,7 +417,7 @@
 
 ## 31. 显示主题与配色 (Theme)
 
-- **适用场景**：设置 → 显示的浅色/深色分段选择；各页面、公共组件、弹窗与 Portal 使用同一根节点主题，默认浅色并在当前浏览器保存。
+- **适用场景**：设置 → 显示的浅色/深色分段选择；各页面、公共组件、弹窗与 Portal 使用同一根节点主题（含配色与主题字重），默认浅色并在当前浏览器保存。
 - **设置入口**：[`frontend/src/components/SettingsPage.tsx`](../../frontend/src/components/SettingsPage.tsx)（沿用 `settings-group` 与 `presence-options`）。
 - **首屏恢复 / 状态**：[`frontend/public/theme.js`](../../frontend/public/theme.js)、[`frontend/src/game/themeStore.ts`](../../frontend/src/game/themeStore.ts)。
 - **统一配色样式**：[`frontend/src/styles/theme.css`](../../frontend/src/styles/theme.css)。
