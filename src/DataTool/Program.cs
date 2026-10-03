@@ -267,10 +267,30 @@ static void ValidateReferences(string directory)
         foreach (var item in Elements(doc.RootElement))
         {
             var consumable = Property(item, "consumable");
+            foreach (var key in ObjectKeys(consumable))
+                Require(ConsumableKeys().Contains(key),
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 consumable.{key} 不在授权词汇表内。");
+            foreach (var kind in StringArray(consumable, "usableInActionTypes"))
+                Require(ActionKindVocabulary().Contains(kind),
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 usableInActionTypes.{kind} 不是合法行动类型。");
             foreach (var buff in Elements(Property(consumable, "buffs")))
                 foreach (var key in ObjectKeys(buff))
                     Require(consumableBuffKeys.Contains(key),
                         $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 buffs.{key} 不在授权词汇表内。");
+            var strike = Property(consumable, "strike");
+            foreach (var key in ObjectKeys(strike))
+                Require(StrikeKeys().Contains(key),
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike.{key} 不在授权词汇表内。");
+            if (strike.ValueKind == JsonValueKind.Object)
+            {
+                Require(Number(strike, "manaCostRatio", 0) > 0
+                        && Number(strike, "manaDamageRatio", 0) >= 0
+                        && Number(strike, "spellAttackRatio", 0) >= 0,
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike 比率必须为非负且 manaCostRatio>0。");
+                var element = Text(strike, "element");
+                Require(element.Length == 0 || CombatElementVocabulary().Contains(element),
+                    $"{Rel(directory, file)} 物品 {Text(item, "id")} 的 strike.element={element} 不是合法元素。");
+            }
         }
     }
 
@@ -280,6 +300,12 @@ static void ValidateReferences(string directory)
         foreach (var action in Elements(doc.RootElement))
         {
             var id = Text(action, "id");
+            var type = Text(action, "type");
+            Require(type.Length == 0 || ActionKindVocabulary().Contains(type),
+                $"{Rel(directory, file)} 行动 {id} 的 type={type} 不是合法行动类型。");
+            var technique = Text(action, "technique");
+            Require(technique.Length == 0 || TechniqueVocabulary().Contains(technique),
+                $"{Rel(directory, file)} 行动 {id} 的 technique={technique} 不是合法技艺。");
             var encounterId = Text(action, "combatEncounterId");
             if (encounterId.Length > 0)
                 Require(encounters.Contains(encounterId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的遭遇 {encounterId}。");
@@ -376,14 +402,48 @@ static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
 static HashSet<string> AbilityBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
-    "attackSpeedPoints", "damageAbsorptionPoints", "threatPoints", "maxStacks"
+    "attackSpeedPoints", "damageAbsorptionPoints", "threatPoints", "maxStacks",
+    "hpRegenPostRatio", "mpRegenPostRatio"
 };
 
-/// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典）。</summary>
+/// <summary>消耗品战外 Buff 授权键（含 statRatios 通用比率字典与回复后段乘区）。</summary>
 static HashSet<string> ConsumableBuffKeys() => new(StringComparer.Ordinal)
 {
     "buffId", "name", "durationSeconds", "hpRegen", "mpRegen",
-    "attackSpeedPoints", "damageAbsorptionPoints", "statRatios"
+    "attackSpeedPoints", "damageAbsorptionPoints", "statRatios",
+    "hpRegenPostRatio", "mpRegenPostRatio"
+};
+
+/// <summary>消耗品顶层授权键（durable 阵盘与 strike 雷击符规格）。</summary>
+static HashSet<string> ConsumableKeys() => new(StringComparer.Ordinal)
+{
+    "usableInActionTypes", "durationSeconds", "isContinuous", "durable",
+    "cultivationMultiplier", "gatheringMultiplier", "alchemyMultiplier",
+    "cooldownSeconds", "hitpointRestore", "manapointRestore", "buffs", "triggers", "strike"
+};
+
+/// <summary>雷击符打击规格授权键。</summary>
+static HashSet<string> StrikeKeys() => new(StringComparer.Ordinal)
+{
+    "manaCostRatio", "manaDamageRatio", "spellAttackRatio", "element"
+};
+
+/// <summary>行动类型词汇表：与 GameDataCatalog.ParseKind/ParseExplicitKind 同口径。</summary>
+static HashSet<string> ActionKindVocabulary() => new(StringComparer.Ordinal)
+{
+    "cultivation", "exploration", "alchemy", "combat", "travel", "enhancement"
+};
+
+/// <summary>七技艺词汇表：与 TechniqueCatalog 固定标识同口径。</summary>
+static HashSet<string> TechniqueVocabulary() => new(StringComparer.Ordinal)
+{
+    "alchemy", "forging", "talisman", "enhancement", "formation", "gathering", "mining"
+};
+
+/// <summary>五行元素词汇表（none 为无元素）。</summary>
+static HashSet<string> CombatElementVocabulary() => new(StringComparer.Ordinal)
+{
+    "none", "metal", "wood", "water", "fire", "earth"
 };
 static void Require(bool condition, string message)
 {

@@ -4,6 +4,7 @@
     "name": "引气丹",
     "description": "",
     "type": "alchemy",
+    "technique": "alchemy",
     "durationSeconds": 12,
     "inputs": {
       "item.ningxue-grass": 3
@@ -22,6 +23,7 @@
     "name": "止血散",
     "description": "",
     "type": "alchemy",
+    "technique": "alchemy",
     "durationSeconds": 10,
     "inputs": {
       "item.herb-essence": 1,
@@ -41,6 +43,7 @@
     "name": "顺气丸",
     "description": "",
     "type": "alchemy",
+    "technique": "alchemy",
     "durationSeconds": 10,
     "inputs": {
       "item.herb-essence": 1,
@@ -60,6 +63,7 @@
     "name": "通脉丹",
     "description": "",
     "type": "alchemy",
+    "technique": "alchemy",
     "durationSeconds": 20,
     "inputs": {
       "item.banling-essence": 2,

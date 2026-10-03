@@ -237,7 +237,7 @@
     },
     "damageMitigationFormula": {
       "model": "Damage Squared Resistance Penetration (攻击力与伤害非线性平方模型)",
-      "dynamicResistanceCoefficientFormula": "K(Tier) = Tier (1阶为1.0，12阶真仙为12.0)",
+      "dynamicResistanceCoefficientFormula": "K(Tier) = Tier（等阶1为1.0，等阶12为12.0）",
       "mitigatedDamageFormula": "ActualDamage = RawDamage * (RawDamage / (RawDamage + EffectiveResistance * K + 1.0)) * (isCritical ? CritDmg : 1.0)",
       "description": "单发原始伤害越高，天然穿甲能力越强；单发原始伤害低，受抗性拦截更严重"
     },
@@ -252,7 +252,7 @@
       }
     },
     "benchmarkCombatSkillsModel": {
-      "note": "本节引用真实配表技能（config/game-data/abilities/physical_abilities.json 与 spell_abilities.json）作为基准负载；数值为配表基础值，技能等级成长与技能强度阶位乘区在结算时另行放大。",
+      "note": "本节引用真实配表技能（config/game-data/abilities/physical_abilities.json 与 spell_abilities.json）作为基准负载；数值为配表基础值，技能等级成长与技能强度等阶乘区在结算时另行放大。",
       "physicalStyle": {
         "name": "物理系标准技能基准 (1 AD : 1 暴击 : 1 破招)",
         "autoAttack": {
@@ -263,7 +263,7 @@
           "maxExtraDamagePct": 100.0,
           "finalIntervalSeconds": 0.25,
           "finalDamageRatioPct": 200.0,
-          "description": "受 ATR 与攻速成长双乘区缩减，12阶真仙达到 0.250s / 200% AD 物理伤害"
+          "description": "受 ATR 与攻速成长双乘区缩减，等阶12（飞升）达到 0.250s / 200% AD 物理伤害"
         },
         "skills": [
           {
@@ -329,7 +329,7 @@
           "cooldownSeconds": 0.0,
           "finalCastSeconds": 1.0,
           "finalDamageRatioPct": 258.0,
-          "description": "普通技能槽位技能：吟唱 2.0s 仅受 ATR 缩减至 1.00s，60% AP + 10 固定伤害，享受技能强度阶位成长 (60% -> 258% AP)。0CD 时放技能栏末尾可在蓝量充足时完全顶替普攻；普攻本身与物理系统一为 1.0s 基准 100%->200% AD 物理伤害。"
+          "description": "普通技能槽位技能：吟唱 2.0s 仅受 ATR 缩减至 1.00s，60% AP + 10 固定伤害，享受技能强度等阶成长 (60% -> 258% AP)。0CD 时放技能栏末尾可在蓝量充足时完全顶替普攻；普攻本身与物理系统一为 1.0s 基准 100%->200% AD 物理伤害。"
         },
         "skills": [
           {
@@ -2578,8 +2578,8 @@
     },
     {
       "level": 11,
-      "name": "凡俗 [玄] 通玄",
-      "kind": "位阶晋升",
+      "name": "凡俗 [玄] 天权",
+      "kind": "境界阶段晋升",
       "budgetPoints": 11,
       "delta": {
         "hp": 48.0,
@@ -2612,8 +2612,8 @@
     },
     {
       "level": 17,
-      "name": "凡俗 [天] 天人",
-      "kind": "位阶晋升",
+      "name": "凡俗 [天] 临渊",
+      "kind": "境界阶段晋升",
       "budgetPoints": 17,
       "delta": {
         "hp": 84.0,
@@ -2681,7 +2681,7 @@
     {
       "level": 22,
       "name": "练气 [中] 练气四层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 22,
       "delta": {
         "hp": 36.0,
@@ -2715,7 +2715,7 @@
     {
       "level": 25,
       "name": "练气 [后] 练气七层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 25,
       "delta": {
         "hp": 36.0,
@@ -2749,7 +2749,7 @@
     {
       "level": 28,
       "name": "练气 [极] 练气巅峰",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 28,
       "delta": {
         "hp": 48.0,
@@ -2817,7 +2817,7 @@
     {
       "level": 34,
       "name": "筑基 [中] 筑基四层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 34,
       "delta": {
         "hp": 72.0,
@@ -2851,7 +2851,7 @@
     {
       "level": 37,
       "name": "筑基 [后] 筑基七层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 37,
       "delta": {
         "hp": 84.0,
@@ -2885,7 +2885,7 @@
     {
       "level": 40,
       "name": "筑基 [极] 筑基巅峰",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 40,
       "delta": {
         "hp": 84.0,
@@ -2953,7 +2953,7 @@
     {
       "level": 46,
       "name": "金丹 [中] 金丹四层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 46,
       "delta": {
         "hp": 96.0,
@@ -2987,7 +2987,7 @@
     {
       "level": 49,
       "name": "金丹 [后] 金丹七层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 49,
       "delta": {
         "hp": 108.0,
@@ -3021,7 +3021,7 @@
     {
       "level": 52,
       "name": "金丹 [极] 金丹巅峰",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 52,
       "delta": {
         "hp": 108.0,
@@ -3089,7 +3089,7 @@
     {
       "level": 58,
       "name": "元婴 [中] 元婴四层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 58,
       "delta": {
         "hp": 192.0,
@@ -3123,7 +3123,7 @@
     {
       "level": 61,
       "name": "元婴 [后] 元婴七层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 61,
       "delta": {
         "hp": 204.0,
@@ -3157,7 +3157,7 @@
     {
       "level": 64,
       "name": "元婴 [极] 元婴巅峰",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 64,
       "delta": {
         "hp": 216.0,
@@ -3225,7 +3225,7 @@
     {
       "level": 70,
       "name": "化神 [中] 化神四层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 70,
       "delta": {
         "hp": 240.0,
@@ -3259,7 +3259,7 @@
     {
       "level": 73,
       "name": "化神 [后] 化神七层",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 73,
       "delta": {
         "hp": 240.0,
@@ -3293,7 +3293,7 @@
     {
       "level": 76,
       "name": "化神 [极] 化神巅峰",
-      "kind": "位阶晋升",
+      "kind": "境界阶段晋升",
       "budgetPoints": 76,
       "delta": {
         "hp": 252.0,
@@ -3497,23 +3497,23 @@
   ],
   "terminology": {
     "tierSystem": {
-      "name": "阶位",
+      "name": "等阶",
       "field": "tier",
       "count": 12,
-      "description": "横向境界层级（一阶 ~ 十二阶），对应 12 个修仙境界，统领装备、法宝、技能、丹药、灵材与怪物的基础数值底座"
+      "description": "横向等阶（等阶1~12，编号写法 T1~T12），统领装备、法宝、技能、丹药、灵材与怪物的基础数值底座与产出分档；锚点等级 1/18/30/42/54/66/78/90/102/114/126/127，半步X 与叩仙门计入下一等阶"
     },
     "qualitySystem": {
       "name": "品质",
       "field": "quality",
       "count": 8,
-      "description": "纵向稀有度品阶（天地玄黄凡等 8 档品质），决定词条数量、完美度与稀有度偏置"
+      "description": "纵向品质八品（凡、黄、玄、地、天、灵、圣、帝），决定词条数量、完美度与稀有度偏置"
     },
     "namingRule": {
-      "itemDisplayName": "物品/技能直接使用本名（例：青锋剑、太乙神雷），不在名称中强行拼接入阶位和品质前缀；阶位与品质在详情面板/Tooltip 标签中展示"
+      "itemDisplayName": "物品/技能直接使用本名（例：青锋剑、太乙神雷），不在名称中强行拼接等阶与品质前缀；等阶与品质在详情面板/Tooltip 标签中展示"
     }
   },
   "realmProgression": {
-    "description": "境界修为上限与寿元：expToNext 为达到下一级所需的本层修为（索引=当前等级-1，Lv.127 封顶为 0）；lifespanYearsByTier 为 T1~T12 阶位寿元上限（年），按 80 年凡俗基数逐阶约翻倍。",
+    "description": "境界修为上限与寿元：expToNext 为达到下一级所需的本层修为（索引=当前等级-1，Lv.127 封顶为 0）；lifespanYearsByTier 为 T1~T12 等阶寿元上限（年），按 80 年凡俗基数逐阶约翻倍。",
     "expToNext": [
       10000.0,
       12000.0,

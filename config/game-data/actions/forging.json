@@ -4,6 +4,7 @@
     "name": "青锋剑",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
       "item.refined-iron": 7,
@@ -23,6 +24,7 @@
     "name": "劈山刀",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
       "item.refined-iron": 7,
@@ -42,6 +44,7 @@
     "name": "束发巾",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.refined-iron": 5,
@@ -61,6 +64,7 @@
     "name": "百衲甲",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
       "item.refined-iron": 7,
@@ -80,6 +84,7 @@
     "name": "扎口裤",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.refined-iron": 5,
@@ -99,6 +104,7 @@
     "name": "行山靴",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.refined-iron": 5,
@@ -118,6 +124,7 @@
     "name": "兽牙坠",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.refined-iron": 5,
@@ -137,6 +144,7 @@
     "name": "九节杖",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
       "item.peach-wood-crystal": 7,
@@ -156,6 +164,7 @@
     "name": "素心琴",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
       "item.peach-wood-crystal": 7,
@@ -175,6 +184,7 @@
     "name": "混元巾",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.peach-wood-crystal": 5,
@@ -194,6 +204,7 @@
     "name": "素麻袍",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 15,
     "inputs": {
       "item.peach-wood-crystal": 7,
@@ -213,6 +224,7 @@
     "name": "行气裤",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.peach-wood-crystal": 5,
@@ -232,6 +244,7 @@
     "name": "十方鞋",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.peach-wood-crystal": 5,
@@ -251,6 +264,7 @@
     "name": "桃木符",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 10,
     "inputs": {
       "item.peach-wood-crystal": 5,
@@ -270,6 +284,7 @@
     "name": "破罡剑",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 25,
     "inputs": {
       "item.refined-copper": 7,
@@ -290,6 +305,7 @@
     "name": "斩煞刀",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 25,
     "inputs": {
       "item.refined-copper": 7,
@@ -310,6 +326,7 @@
     "name": "赤金盔",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
@@ -330,6 +347,7 @@
     "name": "鱼鳞甲",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 25,
     "inputs": {
       "item.refined-copper": 7,
@@ -350,6 +368,7 @@
     "name": "踏阵胫",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
@@ -370,6 +389,7 @@
     "name": "踏山靴",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
@@ -390,6 +410,7 @@
     "name": "赤纹戒",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.refined-copper": 5,
@@ -410,6 +431,7 @@
     "name": "朝元杖",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 25,
     "inputs": {
       "item.spirit-pine-crystal": 7,
@@ -430,6 +452,7 @@
     "name": "松风琴",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 25,
     "inputs": {
       "item.spirit-pine-crystal": 7,
@@ -450,6 +473,7 @@
     "name": "子午冠",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,
@@ -470,6 +494,7 @@
     "name": "辟尘衫",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 25,
     "inputs": {
       "item.spirit-pine-crystal": 7,
@@ -490,6 +515,7 @@
     "name": "流云裳",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,
@@ -510,6 +536,7 @@
     "name": "避尘履",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,
@@ -530,6 +557,7 @@
     "name": "聚灵佩",
     "description": "",
     "type": "alchemy",
+    "technique": "forging",
     "durationSeconds": 20,
     "inputs": {
       "item.spirit-pine-crystal": 5,

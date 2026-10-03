@@ -238,6 +238,65 @@
     "subCategory": "material"
   },
   {
+    "id": "item.leiji-talisman",
+    "name": "雷击符",
+    "description": "朱砂勾勒雷纹的青色灵符，符面电光游走不散，祭出即唤木行天雷直击敌首。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 65,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": false,
+      "cooldownSeconds": 60,
+      "triggers": [],
+      "strike": {
+        "manaCostRatio": 0.05,
+        "manaDamageRatio": 0.2,
+        "spellAttackRatio": 2.0,
+        "element": "wood"
+      }
+    },
+    "subCategory": "talisman"
+  },
+  {
+    "id": "item.juling-formation-disk",
+    "name": "聚灵阵盘",
+    "description": "灵松晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入主人体内。",
+    "kind": "consumable",
+    "category": "consumable",
+    "tier": 2,
+    "sellPrice": 150,
+    "consumable": {
+      "usableInActionTypes": [
+        "combat"
+      ],
+      "isContinuous": true,
+      "durable": true,
+      "buffs": [
+        {
+          "buffId": "formation.juling",
+          "name": "聚灵阵",
+          "mpRegen": 5,
+          "mpRegenPostRatio": 0.3
+        }
+      ]
+    },
+    "subCategory": "formation"
+  },
+  {
+    "id": "item.enhance-essence",
+    "name": "强化精华",
+    "description": "自百炼精金中淬出的淬炼精髓，流光内蕴不熄，是装备强化铭纹不可或缺的引料。",
+    "kind": "material",
+    "category": "material",
+    "tier": 2,
+    "sellPrice": 30,
+    "subCategory": "material"
+  },
+  {
     "id": "currency.spirit-stone",
     "name": "灵石",
     "description": "蕴含纯净天地灵气的六角晶石，光华内敛。",
