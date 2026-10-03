@@ -19,12 +19,13 @@ namespace Domain.Persistence;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本；v5：settings 分段新增 autoTravelEnabled、行动意图新增
-    /// anchorNodeId 入队锚点（v4：progression 重构为 experience/foundation/combatExperience/lifetimeExperience）。
+    /// <summary>当前分段编解码模式版本；v7：平台社交表结构升级（队伍档案/散人池/聊天队伍链接），
+    /// 存档载荷本体无字段变化，仅标签随库内容版本同步推进（v6：loadout 分段新增 techniqueExperiences
+    /// 技艺累计经验、行动意图新增 targetItemId/auxItemId 目标与辅助物品、战报新增 techniqueExp）。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进（前提：新增字段可缺省解码）；本地启动链自动执行迁移，
     /// 仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 7;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -319,6 +320,18 @@ public static class SectionCodec
             sb.Append(s.SectionKind).Append(':').Append(s.StateVersion).Append(':').Append(s.Checksum);
         }
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())));
+    }
+
+    /// <summary>解码 loadout 分段的装配文档。
+    /// 供身价估值等轻量读取场景只取装备与功法经验，不必校验整包聚合的完整性。</summary>
+    /// <param name="section">loadout 分段的持久化行。</param>
+    /// <returns>装配文档（装备槽位 + 功法经验等）。</returns>
+    public static PlayerLoadoutDocument DecodeLoadout(StoredSection section)
+    {
+        ArgumentNullException.ThrowIfNull(section);
+        if (section.SectionKind != PlayerSectionKinds.Loadout)
+            throw new InvalidDataException($"section {section.SectionKind} 不是 loadout 分段。");
+        return Decode<LoadoutDocument>(section).State;
     }
 
     /// <summary>loadout 分段的落盘文档形状：把装备实例、已学技能与配装状态合并为一个 JSON 载荷。</summary>

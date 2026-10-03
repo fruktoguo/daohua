@@ -63,7 +63,7 @@ public sealed class BaseAttributeCatalog
             Mix(low.Parry, high.Parry), Mix(low.HpRegen, high.HpRegen), Mix(low.MpRegen, high.MpRegen));
     }
 
-    /// <summary>阶位 = 等级不超过给定等级的锚点个数（锚点即各阶位起始等级），T1 起步。</summary>
+    /// <summary>等阶 = 等级不超过给定等级的锚点个数（锚点即各等阶起始等级），T1 起步。</summary>
     public int TierAt(double level)
     {
         var tier = 0;
@@ -78,7 +78,7 @@ public sealed class BaseAttributeCatalog
 
 /// <summary>
 /// 境界修为与寿元配置：expToNext 为本层升至下一级所需修为（Lv.127 封顶为 0），
-/// lifespanYearsByTier 为 T1~T12 阶位寿元上限（年）。
+/// lifespanYearsByTier 为 T1~T12 等阶寿元上限（年）。
 /// </summary>
 public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IReadOnlyList<double> LifespanYearsByTier)
 {
@@ -101,7 +101,7 @@ public sealed record RealmProgressionCatalog(IReadOnlyList<double> ExpToNext, IR
         return total;
     }
 
-    /// <summary>阶位对应寿元上限（年）；越界取末档。</summary>
+    /// <summary>等阶对应寿元上限（年）；越界取末档。</summary>
     public double LifespanYearsFor(int tier)
         => LifespanYearsByTier.Count == 0 ? 0
             : LifespanYearsByTier[Math.Clamp(tier, 1, LifespanYearsByTier.Count) - 1];

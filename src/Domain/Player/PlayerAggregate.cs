@@ -57,7 +57,7 @@ public sealed class PlayerProgression
     public double TotalDefeats { get; set; }
     /// <summary>生平修炼时长累计（秒）</summary>
     public double CultivationSeconds { get; set; }
-    /// <summary>道龄（已流逝寿元，秒）；随模拟时间自然累积，寿元上限由境界阶位配表决定。</summary>
+    /// <summary>道龄（已流逝寿元，秒）；随模拟时间自然累积，寿元上限由等阶配表决定。</summary>
     public double AgeSeconds { get; set; }
 
     /// <summary>连续奖励整秒量化的持久化进位余数，保证在线逐秒推进与离线快进的浮点结果位级一致。</summary>
@@ -260,7 +260,8 @@ public sealed class PlayerBuffState
 public sealed record ActiveBuff(string BuffId, double ExpiresAtUnixSeconds, double Stacks = 1,
     string Name = "", string? SourceItemId = null, double HpRegen = 0, double MpRegen = 0,
     double AttackSpeedPoints = 0, double DamageAbsorptionPoints = 0,
-    IReadOnlyDictionary<string, double>? StatRatios = null);
+    IReadOnlyDictionary<string, double>? StatRatios = null,
+    double HpRegenPostRatio = 0, double MpRegenPostRatio = 0);
 
 /// <summary>
 /// 角色装备配置与已习得功法。
@@ -346,7 +347,9 @@ public sealed record ActionIntent(
     string? TargetNodeId = null,
     IReadOnlyDictionary<string, double>? Parameters = null,
     bool PvpEnabled = false,
-    string? AnchorNodeId = null)
+    string? AnchorNodeId = null,
+    string? TargetItemId = null,
+    string? AuxItemId = null)
 {
 }
 

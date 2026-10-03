@@ -200,7 +200,8 @@ public sealed partial class CombatEventAdvanceSystem
             for (var i = 0; i < buffs.Count; i++)
             {
                 if (buffs[i].ExpiresAtSeconds < next) next = buffs[i].ExpiresAtSeconds;
-                if (buffs[i].HpRegen != 0 || buffs[i].MpRegen != 0) regenPending = true;
+                if (buffs[i].HpRegen != 0 || buffs[i].MpRegen != 0
+                    || buffs[i].HpRegenPostRatio != 0 || buffs[i].MpRegenPostRatio != 0) regenPending = true;
             }
         }
     }

@@ -76,7 +76,8 @@ public sealed record PlayerLoadoutDocument(
     PlayerCoreAttributes CoreAttributes,
     IReadOnlyList<PlayerAbilitySlot> AbilitySlots,
     IReadOnlyList<PlayerEquipmentSlot> Equipment,
-    IReadOnlyDictionary<string, double>? AbilityExperiences = null);
+    IReadOnlyDictionary<string, double>? AbilityExperiences = null,
+    IReadOnlyDictionary<string, double>? TechniqueExperiences = null);
 
 /// <summary>装配分段运行时状态（六维根骨、功法槽位、装备与技能经验）。</summary>
 public sealed partial class PlayerLoadoutState
@@ -106,10 +107,12 @@ public sealed partial class PlayerLoadoutState
     public VersionedList<PlayerEquipmentSlot> Equipment { get; } = new();
     /// <summary>已习得技能的累计经验，键为 ability ID；等级由 AbilityExpCurve 导出；写入递增版本号。</summary>
     public VersionedDictionary<AbilityId, double> AbilityExperiences { get; } = new();
+    /// <summary>七技艺的累计经验，键为 TechniqueId；等级经境界修为曲线逐段推进导出；写入递增版本号。</summary>
+    public VersionedDictionary<string, double> TechniqueExperiences { get; } = new();
 
-    /// <summary>装配文档导出修订号：槽位/装备/技能经验/六维任一写入严格增大。</summary>
+    /// <summary>装配文档导出修订号：槽位/装备/技能经验/技艺经验/六维任一写入严格增大。</summary>
     internal long ExportRevision =>
-        AbilitySlots.Version + Equipment.Version + AbilityExperiences.Version + CoreAttributesVersion;
+        AbilitySlots.Version + Equipment.Version + AbilityExperiences.Version + TechniqueExperiences.Version + CoreAttributesVersion;
 
     /// <summary>导出可持久化装配文档；触发条件 JSON 做防御性深拷贝。
     /// 修订号未变时直接复用上轮文档（位级一致），仅在装配变更时才重新克隆触发器与字典。</summary>
@@ -120,7 +123,8 @@ public sealed partial class PlayerLoadoutState
         var document = new PlayerLoadoutDocument(CoreAttributes,
             AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }).ToArray(),
             Equipment.ToArray(),
-            AbilityExperiences.Count == 0 ? null : AbilityExperiences.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal));
+            AbilityExperiences.Count == 0 ? null : AbilityExperiences.ToDictionary(pair => pair.Key.Value, pair => pair.Value, StringComparer.Ordinal),
+            TechniqueExperiences.Count == 0 ? null : TechniqueExperiences.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
         _exportedDocument = document;
         _exportedRevision = ExportRevision;
         return document;
@@ -140,6 +144,8 @@ public sealed partial class PlayerLoadoutState
             || document.Equipment.Any(item => item is null || string.IsNullOrWhiteSpace(item.ItemId)
                 || !double.IsFinite(item.EnhancementLevel) || item.EnhancementLevel < 0)
             || (document.AbilityExperiences?.Any(pair => string.IsNullOrWhiteSpace(pair.Key)
+                || !double.IsFinite(pair.Value) || pair.Value < 0) ?? false)
+            || (document.TechniqueExperiences?.Any(pair => !Domain.GameData.TechniqueCatalog.IsKnown(pair.Key)
                 || !double.IsFinite(pair.Value) || pair.Value < 0) ?? false))
             throw new DomainException(DomainErrorCode.InvalidArgument, "装配快照无效。");
         CoreAttributes = core;
@@ -147,19 +153,32 @@ public sealed partial class PlayerLoadoutState
         AbilitySlots.AddRange(document.AbilitySlots.Select(slot => slot with { Triggers = slot.Triggers.Select(trigger => trigger.Clone()).ToArray() }));
         Equipment.Clear();
         Equipment.AddRange(document.Equipment);
-        AbilityExperiences.Clear();
+        // 功法参悟经验与技艺经验同语义：只在文档显式携带时覆盖；
+        // 槽位装配替换（ReplaceCombatSlots）构造的局部文档不抹除既有累计。
         if (document.AbilityExperiences is not null)
+        {
+            AbilityExperiences.Clear();
             foreach (var pair in document.AbilityExperiences)
                 AbilityExperiences[new AbilityId(pair.Key)] = pair.Value;
+        }
+        // 技艺经验只在文档显式携带时覆盖：槽位装配替换（ReplaceCombatSlots）构造的局部文档不抹除既有技艺累计。
+        if (document.TechniqueExperiences is not null)
+        {
+            TechniqueExperiences.Clear();
+            foreach (var pair in document.TechniqueExperiences)
+                TechniqueExperiences[pair.Key] = pair.Value;
+        }
     }
 
     /// <summary>分段回滚检查点专用：把装配各输入源修订号写回备份值；调用方须先把内容恢复到与版本一致的状态。</summary>
-    internal void RestoreRevisionCounters(long coreAttributesVersion, long abilitySlotsVersion, long equipmentVersion, long abilityExperiencesVersion)
+    internal void RestoreRevisionCounters(long coreAttributesVersion, long abilitySlotsVersion, long equipmentVersion,
+        long abilityExperiencesVersion, long techniqueExperiencesVersion = 0)
     {
         CoreAttributesVersion = coreAttributesVersion;
         AbilitySlots.RestoreVersion(abilitySlotsVersion);
         Equipment.RestoreVersion(equipmentVersion);
         AbilityExperiences.RestoreVersion(abilityExperiencesVersion);
+        TechniqueExperiences.RestoreVersion(techniqueExperiencesVersion);
     }
 }
 
@@ -205,6 +224,43 @@ public sealed partial class PlayerAggregate
             AbilityExperience = experience,
             LevelUp = levelAfter > levelBefore
                 ? new PlayerReportLevelUp("ability", abilityIdValue, levelBefore, levelAfter) : null
+        });
+        Touch(PlayerSectionKind.Loadout);
+    }
+
+    /// <summary>技艺当前等级：由累计经验经境界修为曲线逐段推进导出；未接触按 0 级计。</summary>
+    public double TechniqueLevelFor(string techniqueId, Domain.GameData.GameDataCatalog? gameData)
+        => Domain.GameData.TechniqueCatalog.LevelFor(
+            Loadout.TechniqueExperiences.TryGetValue(techniqueId, out var exp) ? exp : 0,
+            gameData?.RealmProgression);
+
+    /// <summary>
+    /// 授予技艺累计经验并同步等级跃迁账本（kind "technique"）；
+    /// 经验量为当次行动的基础耗时（强化行动按当次实际基础耗时），与既有收益通道同一记账口径。
+    /// </summary>
+    /// <param name="techniqueId">技艺标识（七技艺之一）。</param>
+    /// <param name="experience">本批次入账的累计经验量。</param>
+    /// <param name="gameData">配表（提供技艺经验曲线所复用的境界修为段表；缺失时经验照记但等级停在 0）。</param>
+    public void GrantTechniqueExperience(string techniqueId, double experience, Domain.GameData.GameDataCatalog? gameData)
+    {
+        if (!Domain.GameData.TechniqueCatalog.IsKnown(techniqueId))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技艺标识无效。");
+        if (!double.IsFinite(experience) || experience <= 0 || experience > 1_000_000)
+            throw new DomainException(DomainErrorCode.InvalidArgument, "技艺经验无效。");
+        var progression = gameData?.RealmProgression;
+        var previousExp = Loadout.TechniqueExperiences.TryGetValue(techniqueId, out var stored) ? stored : 0;
+        var nextExp = previousExp + experience;
+        Loadout.TechniqueExperiences[techniqueId] = nextExp;
+        var levelBefore = Domain.GameData.TechniqueCatalog.LevelFor(previousExp, progression);
+        var levelAfter = Domain.GameData.TechniqueCatalog.LevelFor(nextExp, progression);
+        // 技艺经验与升段计入行动统计账本（technique 级 LevelUp，TargetId 为技艺 ID）。
+        var headId = _actions.Count > 0 ? _actions[0].Id : (Guid?)null;
+        RecordStats(headId, LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d, new PlayerStatsDelta
+        {
+            TechniqueId = techniqueId,
+            TechniqueExperience = experience,
+            LevelUp = levelAfter > levelBefore
+                ? new PlayerReportLevelUp("technique", techniqueId, levelBefore, levelAfter) : null
         });
         Touch(PlayerSectionKind.Loadout);
     }

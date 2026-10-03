@@ -764,9 +764,14 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
         var battleStartUnix = player.GetComponent<PlayerActionQueueComponent>()?.LastAdvancedAt.ToUnixTimeSeconds() ?? StartAt.ToUnixTimeSeconds();
         foreach (var active in player.GetComponent<PlayerBuffComponent>()?.Active ?? [])
         {
-            var expiresAt = Math.Max(0, active.ExpiresAtUnixSeconds - battleStartUnix);
+            // durable 阵盘的 ActiveBuff 过期时刻为 +∞：战内以 double.MaxValue 表达永驻，
+            // 既满足 CombatBuffState 有限性不变量，也永不触达过期剔除边界。
+            var expiresAt = double.IsFinite(active.ExpiresAtUnixSeconds)
+                ? Math.Max(0, active.ExpiresAtUnixSeconds - battleStartUnix)
+                : double.MaxValue;
             state.Player.Buffs.Add(new CombatBuffState(active.BuffId, expiresAt, active.Stacks,
-                active.HpRegen, active.MpRegen, active.AttackSpeedPoints, active.DamageAbsorptionPoints));
+                active.HpRegen, active.MpRegen, active.AttackSpeedPoints, active.DamageAbsorptionPoints,
+                0, active.HpRegenPostRatio, active.MpRegenPostRatio));
         }
         var encounterEntity = new YuoEntity(World); encounterEntity.EntityName = $"encounter:{encounterId}:{seed}";
         RuntimeInstrumentation.Count("lifecycle.entity_created.encounter");

@@ -66,7 +66,11 @@ public enum WireMessageType : byte
     /// <summary>客户端请求某频道作用域的历史回放（仅 WebSocket 上行）</summary>
     ChatHistoryRequest = 23,
     /// <summary>客户端登记/清除单位详情观察目标（仅 WebSocket 上行，火忘帧：非自身单位属性面板随快照按需投影）</summary>
-    UnitInspect = 24
+    UnitInspect = 24,
+    /// <summary>客户端请求组队大厅筛选结果（仅 WebSocket 上行）</summary>
+    PartyLobbyRequest = 25,
+    /// <summary>服务端下发组队大厅：公开队伍与匹配中散人列表（仅 WebSocket 下行）</summary>
+    PartyLobby = 26
 }
 
 /// <summary>信封内有效载荷的编码格式</summary>
@@ -422,15 +426,19 @@ public sealed record PlayerSnapshotDeltaDto(
 /// <param name="ActionId">行动配置 ID</param>
 /// <param name="RepeatCount">计划重复次数；必须为 [1, 1_000_000] 内的整数，或特殊值 -1 表示无限循环直至玩家取消/资源断绝</param>
 /// <param name="TargetNodeId">目标节点标识，可选</param>
-/// <param name="Parameters">额外参数字典，可选</param>
+/// <param name="Parameters">额外参数字典，可选（强化目标等级走 <c>targetLevel</c> 键）</param>
 /// <param name="PvpEnabled">斗法开关：玩家同意参与 PVP 匹配，仅对战斗遭遇行动生效</param>
+/// <param name="TargetItemId">目标物品标识，可选；强化行动必填目标装备</param>
+/// <param name="AuxItemId">辅助物品标识，可选；强化行动用于指定护符等辅助消耗品</param>
 public sealed record ActionIntentRequest(
     string RequestId,
     string ActionId,
     double RepeatCount = 1,
     string? TargetNodeId = null,
     [property: JsonConverter(typeof(CamelCaseKeyDoubleDictionaryConverter))] IReadOnlyDictionary<string, double>? Parameters = null,
-    bool PvpEnabled = false);
+    bool PvpEnabled = false,
+    string? TargetItemId = null,
+    string? AuxItemId = null);
 
 /// <summary>行动排队意图应答 DTO</summary>
 /// <param name="RequestId">请求唯一标识</param>
@@ -686,6 +694,21 @@ public static class ChatChannels
 /// <param name="TargetPlayerId">好友频道必填的私聊对象玩家 ID；其余频道忽略</param>
 public sealed record ChatSendDto(string RequestId, string Channel, string Body, string? TargetPlayerId = null);
 
+/// <summary>传音消息内嵌的队伍卡片快照；队伍解散后缺席（party_ref 置空）。</summary>
+/// <param name="PartyId">队伍唯一标识（点击加入的凭据）</param>
+/// <param name="Name">队伍名称</param>
+/// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限</param>
+/// <param name="MinValuation">加入身价门槛；0 表示不设门槛</param>
+/// <param name="MemberCount">发布时刻的队伍人数</param>
+public sealed record PartyLinkDto(
+    string PartyId,
+    string Name,
+    string ActivityKind,
+    string NodeId,
+    double MinValuation,
+    int MemberCount);
+
 /// <summary>单条传音消息。</summary>
 /// <param name="MessageId">消息唯一标识</param>
 /// <param name="Channel">频道标识</param>
@@ -694,6 +717,7 @@ public sealed record ChatSendDto(string RequestId, string Channel, string Body, 
 /// <param name="SenderName">发送者道号</param>
 /// <param name="Body">消息正文</param>
 /// <param name="SentAtUnixMilliseconds">发送时刻（Unix 毫秒）</param>
+/// <param name="PartyLink">内嵌队伍卡片；无链接时为 null</param>
 public sealed record ChatMessageDto(
     string MessageId,
     string Channel,
@@ -701,7 +725,8 @@ public sealed record ChatMessageDto(
     string SenderId,
     string SenderName,
     string Body,
-    long SentAtUnixMilliseconds);
+    long SentAtUnixMilliseconds,
+    PartyLinkDto? PartyLink = null);
 
 /// <summary>频道历史回放载荷：某作用域最近 100 条传音，按时间正序。</summary>
 /// <param name="Channel">频道标识</param>
@@ -715,6 +740,36 @@ public sealed record ChatHistoryDto(string Channel, string ScopeKey, string? Tar
 /// <param name="TargetPlayerId">好友频道必填的私聊对象玩家 ID</param>
 public sealed record ChatHistoryRequestDto(string Channel, string? TargetPlayerId = null);
 
+/// <summary>队伍目标类型标识常量（招募标签口径，不参与行动/战斗结算）。</summary>
+public static class PartyActivityKinds
+{
+    /// <summary>不限目标</summary>
+    public const string Any = "any";
+    /// <summary>讨伐战斗</summary>
+    public const string Combat = "combat";
+    /// <summary>历练采集</summary>
+    public const string Exploration = "exploration";
+    /// <summary>吐纳修炼</summary>
+    public const string Cultivation = "cultivation";
+    /// <summary>炼丹</summary>
+    public const string Alchemy = "alchemy";
+    /// <summary>炼器</summary>
+    public const string Forging = "forging";
+    /// <summary>符箓</summary>
+    public const string Talisman = "talisman";
+    /// <summary>阵法</summary>
+    public const string Formation = "formation";
+    /// <summary>强化</summary>
+    public const string Enhancement = "enhancement";
+
+    /// <summary>判定是否为受支持的目标类型。</summary>
+    /// <param name="kind">目标类型标识。</param>
+    /// <returns>受支持返回 true。</returns>
+    public static bool IsSupported(string? kind) => kind is
+        Any or Combat or Exploration or Cultivation or
+        Alchemy or Forging or Talisman or Formation or Enhancement;
+}
+
 /// <summary>社交指令动作标识常量。</summary>
 public static class SocialActions
 {
@@ -726,29 +781,70 @@ public static class SocialActions
     public const string FriendReject = "friend.reject";
     /// <summary>解除好友关系</summary>
     public const string FriendRemove = "friend.remove";
-    /// <summary>邀请入队</summary>
+    /// <summary>邀请入队（未组队时自建队伍并任队长）</summary>
     public const string PartyInvite = "party.invite";
     /// <summary>接受队伍邀请</summary>
     public const string PartyAccept = "party.accept";
     /// <summary>拒绝队伍邀请</summary>
     public const string PartyDecline = "party.decline";
-    /// <summary>离开当前队伍</summary>
+    /// <summary>离开当前队伍（队长离开按加入序移交最早成员）</summary>
     public const string PartyLeave = "party.leave";
+    /// <summary>创建队伍并任队长（Party 载荷必填）</summary>
+    public const string PartyCreate = "party.create";
+    /// <summary>更新队伍档案补丁（队长）</summary>
+    public const string PartyUpdate = "party.update";
+    /// <summary>解散队伍（队长）</summary>
+    public const string PartyDisband = "party.disband";
+    /// <summary>移出成员（队长；TargetPlayerId 必填）</summary>
+    public const string PartyKick = "party.kick";
+    /// <summary>按队伍 ID 加入（大厅公开队伍与聊天链接共用；PartyId 必填）</summary>
+    public const string PartyJoin = "party.join";
+    /// <summary>登记/更新匹配条件并尝试自动并入公开队伍</summary>
+    public const string PartyMatchSet = "party.match.set";
+    /// <summary>撤下匹配登记</summary>
+    public const string PartyMatchClear = "party.match.clear";
+    /// <summary>把当前队伍卡片发布到指定传音频道（Channel 必填，好友频道附带 TargetPlayerId）</summary>
+    public const string PartyShare = "party.share";
 
     /// <summary>判定是否为受支持的社交动作。</summary>
     /// <param name="action">动作标识。</param>
     /// <returns>受支持返回 true。</returns>
     public static bool IsSupported(string? action) => action is
         FriendRequest or FriendAccept or FriendReject or FriendRemove or
-        PartyInvite or PartyAccept or PartyDecline or PartyLeave;
+        PartyInvite or PartyAccept or PartyDecline or PartyLeave or
+        PartyCreate or PartyUpdate or PartyDisband or PartyKick or PartyJoin or
+        PartyMatchSet or PartyMatchClear or PartyShare;
 }
+
+/// <summary>队伍档案补丁载荷：party.create 时 name/activityKind/mapId/minValuation/isPublic 语义齐全，party.update 仅应用非空字段。</summary>
+/// <param name="Name">队伍名称（1~32 字符；创建时空值由服务端生成「{队长道号}的小队」）</param>
+/// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限</param>
+/// <param name="MinValuation">身价门槛；0 表示不设门槛</param>
+/// <param name="IsPublic">是否进入组队大厅（false 只能经邀请或聊天队伍链接进入）</param>
+public sealed record PartyProfileDto(
+    string? Name = null,
+    string? ActivityKind = null,
+    string? NodeId = null,
+    double? MinValuation = null,
+    bool? IsPublic = null);
 
 /// <summary>客户端社交指令请求。</summary>
 /// <param name="RequestId">请求唯一标识，服务端回执配对键</param>
 /// <param name="Action">动作标识（见 <see cref="SocialActions"/>）</param>
-/// <param name="TargetPlayerId">目标玩家 ID；好友申请/解除、队伍邀请必填；接受/拒绝好友申请时为目标好友；接受/拒绝队伍邀请忽略该字段</param>
+/// <param name="TargetPlayerId">目标玩家 ID；好友申请/解除、队伍邀请/移出必填；接受/拒绝好友申请时为目标好友；接受/拒绝队伍邀请忽略该字段</param>
 /// <param name="TargetName">目标道号；仅在 <c>friend.request</c> 且未提供 TargetPlayerId 时用于检索目标</param>
-public sealed record SocialActionDto(string RequestId, string Action, string? TargetPlayerId = null, string? TargetName = null);
+/// <param name="PartyId">目标队伍 ID；仅 <c>party.join</c> 使用</param>
+/// <param name="Channel">目标传音频道；仅 <c>party.share</c> 使用</param>
+/// <param name="Party">队伍档案补丁；<c>party.create</c>/<c>party.update</c>/<c>party.match.set</c> 使用</param>
+public sealed record SocialActionDto(
+    string RequestId,
+    string Action,
+    string? TargetPlayerId = null,
+    string? TargetName = null,
+    string? PartyId = null,
+    string? Channel = null,
+    PartyProfileDto? Party = null);
 
 /// <summary>好友条目。</summary>
 /// <param name="PlayerId">好友玩家 ID</param>
@@ -767,13 +863,27 @@ public sealed record FriendRequestDto(string RequestId, string PlayerId, string 
 /// <param name="PlayerId">成员玩家 ID</param>
 /// <param name="DisplayName">成员道号</param>
 /// <param name="Online">是否在线</param>
-public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online);
+/// <param name="Valuation">成员身价（服务端估值口径，非战斗属性）</param>
+public sealed record PartyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation);
 
 /// <summary>队伍状态。</summary>
 /// <param name="PartyId">队伍唯一标识</param>
 /// <param name="LeaderId">队长玩家 ID</param>
+/// <param name="Name">队伍名称</param>
+/// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限</param>
+/// <param name="MinValuation">身价门槛；0 表示不设门槛</param>
+/// <param name="IsPublic">是否进入组队大厅</param>
 /// <param name="Members">成员列表（含队长）</param>
-public sealed record PartyDto(string PartyId, string LeaderId, IReadOnlyList<PartyMemberDto> Members);
+public sealed record PartyDto(
+    string PartyId,
+    string LeaderId,
+    string Name,
+    string ActivityKind,
+    string NodeId,
+    double MinValuation,
+    bool IsPublic,
+    IReadOnlyList<PartyMemberDto> Members);
 
 /// <summary>同节点在线修士条目。</summary>
 /// <param name="PlayerId">修士玩家 ID</param>
@@ -784,7 +894,15 @@ public sealed record NearbyPlayerDto(string PlayerId, string DisplayName);
 /// <param name="PartyId">邀请方队伍标识</param>
 /// <param name="InviterId">邀请人玩家 ID</param>
 /// <param name="InviterName">邀请人道号</param>
-public sealed record PartyInvitationDto(string PartyId, string InviterId, string InviterName);
+/// <param name="PartyName">邀请方队伍名称</param>
+public sealed record PartyInvitationDto(string PartyId, string InviterId, string InviterName, string? PartyName = null);
+
+/// <summary>本人「匹配中」散人登记。</summary>
+/// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限</param>
+/// <param name="MinValuation">期望队友的最低身价；0 表示不设要求</param>
+/// <param name="CreatedAtUnixMilliseconds">登记时刻（Unix 毫秒）</param>
+public sealed record PartySeekerDto(string ActivityKind, string NodeId, double MinValuation, long CreatedAtUnixMilliseconds);
 
 /// <summary>社交状态下发载荷；RequestId 非空表示对某条 <see cref="SocialActionDto"/> 的回执，为空表示服务端主动推送。</summary>
 /// <param name="RequestId">关联的社交指令请求 ID，主动推送时为 null</param>
@@ -794,6 +912,7 @@ public sealed record PartyInvitationDto(string PartyId, string InviterId, string
 /// <param name="Party">所在队伍；未组队时为 null</param>
 /// <param name="PartyInvitation">待处理的队伍邀请；无邀请时为 null</param>
 /// <param name="NearbyPlayers">同节点在线修士（含自己）</param>
+/// <param name="Seeking">本人匹配中登记；未登记为 null</param>
 public sealed record SocialStateDto(
     string? RequestId,
     IReadOnlyList<FriendDto> Friends,
@@ -801,7 +920,73 @@ public sealed record SocialStateDto(
     IReadOnlyList<FriendRequestDto> OutgoingRequests,
     PartyDto? Party,
     PartyInvitationDto? PartyInvitation,
-    IReadOnlyList<NearbyPlayerDto> NearbyPlayers);
+    IReadOnlyList<NearbyPlayerDto> NearbyPlayers,
+    PartySeekerDto? Seeking = null);
+
+/// <summary>组队大厅筛选请求。</summary>
+/// <param name="RequestId">请求唯一标识，回执配对键</param>
+/// <param name="ActivityKind">目标类型筛选；空/缺省表示不限</param>
+/// <param name="NodeId">目标节点筛选；空/缺省表示不限</param>
+/// <param name="MinValuation">身价下限筛选：队伍按成员最低身价、散人按本人身价过滤；空/0 表示不限</param>
+public sealed record PartyLobbyRequestDto(string RequestId, string? ActivityKind = null, string? NodeId = null, double? MinValuation = null);
+
+/// <summary>大厅公开队伍的成员预览条目。</summary>
+/// <param name="PlayerId">成员玩家 ID</param>
+/// <param name="DisplayName">成员道号</param>
+/// <param name="Online">是否在线</param>
+/// <param name="Valuation">成员身价</param>
+public sealed record PartyLobbyMemberDto(string PlayerId, string DisplayName, bool Online, double Valuation);
+
+/// <summary>大厅公开队伍条目。</summary>
+/// <param name="PartyId">队伍唯一标识（加入凭据）</param>
+/// <param name="Name">队伍名称</param>
+/// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限</param>
+/// <param name="LeaderId">队长玩家 ID</param>
+/// <param name="LeaderName">队长道号</param>
+/// <param name="MinValuation">身价门槛</param>
+/// <param name="CreatedAtUnixMilliseconds">创建时刻（Unix 毫秒）</param>
+/// <param name="Members">成员预览（含队长）</param>
+public sealed record PartyLobbyEntryDto(
+    string PartyId,
+    string Name,
+    string ActivityKind,
+    string NodeId,
+    string LeaderId,
+    string LeaderName,
+    double MinValuation,
+    long CreatedAtUnixMilliseconds,
+    IReadOnlyList<PartyLobbyMemberDto> Members);
+
+/// <summary>大厅「匹配中」散人条目。</summary>
+/// <param name="PlayerId">散人玩家 ID</param>
+/// <param name="DisplayName">散人道号</param>
+/// <param name="Online">是否在线</param>
+/// <param name="Valuation">散人身价</param>
+/// <param name="ActivityKind">目标类型</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限</param>
+/// <param name="MinValuation">期望队友的最低身价</param>
+/// <param name="CreatedAtUnixMilliseconds">登记时刻（Unix 毫秒）</param>
+public sealed record PartyLobbySeekerDto(
+    string PlayerId,
+    string DisplayName,
+    bool Online,
+    double Valuation,
+    string ActivityKind,
+    string NodeId,
+    double MinValuation,
+    long CreatedAtUnixMilliseconds);
+
+/// <summary>组队大厅下发载荷。</summary>
+/// <param name="RequestId">关联的 <see cref="PartyLobbyRequestDto"/> 请求 ID</param>
+/// <param name="MyValuation">请求者本人当前身价（供前端判定加入可行性）</param>
+/// <param name="Parties">公开队伍列表（按创建时间倒序，至多 50 条）</param>
+/// <param name="Seekers">匹配中散人列表（按登记时间倒序，至多 50 条）</param>
+public sealed record PartyLobbyDto(
+    string RequestId,
+    double MyValuation,
+    IReadOnlyList<PartyLobbyEntryDto> Parties,
+    IReadOnlyList<PartyLobbySeekerDto> Seekers);
 
 /// <summary>单位详情观察目标（UnitInspect 火忘帧载荷）。</summary>
 /// <param name="Side">观察侧：<c>enemy</c> 敌方 / <c>ally</c> 己方（预留队友）；与 <paramref name="Index"/> 同为 null 时表示清除观察目标</param>

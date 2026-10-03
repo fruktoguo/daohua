@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using Domain.World;
 
 namespace Domain.Player;
@@ -53,7 +54,15 @@ public sealed record PlayerWorldStateDocument(
     double EdgeProgress = 0,
     IReadOnlyList<Domain.World.NodeBuildingState>? NodeBuildings = null,
     Domain.World.BuildingEffectSet? NodeBuildingEffects = null,
-    string? NodeBuildingNodeId = null);
+    string? NodeBuildingNodeId = null)
+{
+    /// <summary>当前位置生效的节点建筑效果；投影属于其他节点或缺失时返回空集（与聚合侧同名语义一致）。计算属性不参与持久化。</summary>
+    [JsonIgnore]
+    public Domain.World.BuildingEffectSet EffectiveNodeBuildingEffects =>
+        string.Equals(NodeBuildingNodeId, NodeId, StringComparison.Ordinal)
+            ? NodeBuildingEffects ?? Domain.World.BuildingEffectSet.Empty
+            : Domain.World.BuildingEffectSet.Empty;
+}
 
 /// <summary>战斗属性数值快照 DTO</summary>
 public sealed record PlayerCombatStateDocument(
@@ -387,6 +396,8 @@ public sealed partial class PlayerAggregate
                 !Enum.IsDefined(actionState.Status) ||
                 (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128)) ||
                 (intent.AnchorNodeId is not null && (intent.AnchorNodeId.Length == 0 || intent.AnchorNodeId.Length > 128)) ||
+                (intent.TargetItemId is not null && (intent.TargetItemId.Length == 0 || intent.TargetItemId.Length > 128)) ||
+                (intent.AuxItemId is not null && (intent.AuxItemId.Length == 0 || intent.AuxItemId.Length > 128)) ||
                 HasInvalidParameters(intent.Parameters) ||
                 !double.IsFinite(actionState.ProgressSeconds) || actionState.ProgressSeconds < 0 ||
                 !double.IsFinite(actionState.CompletedRepeats) || actionState.CompletedRepeats < 0 ||
@@ -417,7 +428,9 @@ public sealed partial class PlayerAggregate
                     ? null
                     : new ReadOnlyDictionary<string, double>(intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
                 intent.PvpEnabled,
-                intent.AnchorNodeId);
+                intent.AnchorNodeId,
+                intent.TargetItemId,
+                intent.AuxItemId);
             var action = new QueuedAction(actionState.Id, normalizedIntent, actionState.EnqueuedAt)
             {
                 Status = actionState.Status,
@@ -532,9 +545,13 @@ public sealed partial class PlayerAggregate
             && (report.AbilityExp is null || (report.AbilityExp.Count <= 512
                 && report.AbilityExp.All(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.AbilityId)
                     && entry.AbilityId.Length <= 128 && double.IsFinite(entry.Experience) && entry.Experience >= 0)))
+            && (report.TechniqueExp is null || (report.TechniqueExp.Count <= 512
+                && report.TechniqueExp.All(entry => entry is not null
+                    && Domain.GameData.TechniqueCatalog.IsKnown(entry.TechniqueId)
+                    && double.IsFinite(entry.Experience) && entry.Experience >= 0)))
             && (report.LevelUps is null || (report.LevelUps.Count <= 512
                 && report.LevelUps.All(entry => entry is not null
-                    && entry.Kind is "realm" or "root" or "ability"
+                    && entry.Kind is "realm" or "root" or "ability" or "technique"
                     && (entry.TargetId?.Length ?? 0) <= 128
                     && double.IsFinite(entry.FromLevel) && double.IsFinite(entry.ToLevel)
                     && entry.FromLevel < entry.ToLevel)))
@@ -602,6 +619,7 @@ public sealed partial class PlayerAggregate
         long AbilitySlotsVersion,
         long EquipmentVersion,
         long AbilityExperiencesVersion,
+        long TechniqueExperiencesVersion,
         long EquippedItemIdsVersion);
     private sealed record SettingsCheckpoint(PlayerSettingsStateDocument State);
     private sealed record ActionQueueCheckpoint(QueuedActionState[] Actions);
@@ -657,6 +675,7 @@ public sealed partial class PlayerAggregate
             Loadout.AbilitySlots.Version,
             Loadout.Equipment.Version,
             Loadout.AbilityExperiences.Version,
+            Loadout.TechniqueExperiences.Version,
             Loadout.EquippedItemIds.Version),
         PlayerSectionKind.Settings => new SettingsCheckpoint(
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
@@ -721,7 +740,8 @@ public sealed partial class PlayerAggregate
                 Loadout.LearnedAbilities.Clear();
                 Loadout.LearnedAbilities.AddRange(data.LearnedAbilities);
                 Loadout.RestoreRevisionCounters(
-                    data.CoreAttributesVersion, data.AbilitySlotsVersion, data.EquipmentVersion, data.AbilityExperiencesVersion);
+                    data.CoreAttributesVersion, data.AbilitySlotsVersion, data.EquipmentVersion,
+                    data.AbilityExperiencesVersion, data.TechniqueExperiencesVersion);
                 Loadout.EquippedItemIds.RestoreVersion(data.EquippedItemIdsVersion);
                 break;
             }

@@ -130,7 +130,9 @@ public static class PlayerActionQueueRules
                         intent.Parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)),
                     intent.PvpEnabled,
                     priority ? intent.AnchorNodeId : intent.AnchorNodeId ??
-                        (work.Player.World.EdgeId is null ? work.Player.World.NodeId : null));
+                        (work.Player.World.EdgeId is null ? work.Player.World.NodeId : null),
+                    intent.TargetItemId,
+                    intent.AuxItemId);
                 work.Action = new(instanceId, normalized, mutation.At) { Travel = mutation.Travel };
                 work.ActivateHead = priority;
                 work.Changed = true;
@@ -190,14 +192,20 @@ public static class PlayerActionQueueRules
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动意图无效。");
         if (intent.TargetNodeId is not null && (intent.TargetNodeId.Length == 0 || intent.TargetNodeId.Length > 128))
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动目标节点无效。");
+        if (intent.TargetItemId is not null && (intent.TargetItemId.Length == 0 || intent.TargetItemId.Length > 128))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "行动目标物品无效。");
+        if (intent.AuxItemId is not null && (intent.AuxItemId.Length == 0 || intent.AuxItemId.Length > 128))
+            throw new DomainException(DomainErrorCode.InvalidArgument, "行动辅助物品无效。");
         if (intent.Parameters is not null && intent.Parameters.Any(pair =>
             string.IsNullOrWhiteSpace(pair.Key) || pair.Key.Length > 64 || !double.IsFinite(pair.Value)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "行动参数无效。");
         if (!catalog.Contains(intent.ActionId))
             throw new DomainException(DomainErrorCode.NotFound, $"行动 {intent.ActionId} 不存在。");
         var definition = catalog.Get(intent.ActionId);
+        // 强化行动轮次时长由目标等级派生（5+t 恒正），配表 durationSeconds 为 0 不构成死循环。
         if (!priority && intent.RepeatCount == -1 && definition.DurationSeconds <= 0
-            && definition.ExecutionKind != ActionExecutionKind.CombatEncounter)
+            && definition.ExecutionKind != ActionExecutionKind.CombatEncounter
+            && definition.Kind != ActionKind.Enhancement)
             throw new DomainException(DomainErrorCode.InvalidArgument, "无限重复行动必须具有正时长，避免模拟无法推进。");
         return intent;
     }

@@ -36,6 +36,15 @@ public sealed class OrderBook
     public MarketInstrument Instrument { get; }
     /// <summary>订单簿单调演进版本号</summary>
     public long Version => _version;
+    /// <summary>当前最低活动卖价（卖一档价）；索引只登记活动挂牌单，无卖单返回 null。</summary>
+    public double? BestAskPrice
+    {
+        get
+        {
+            foreach (var entry in _askIndex) return entry.Key.Price;
+            return null;
+        }
+    }
     /// <summary>当前全部处于活跃挂牌排队状态的订单列表</summary>
     public IReadOnlyCollection<MarketOrder> ActiveOrders
     {

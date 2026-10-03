@@ -276,6 +276,55 @@ public static class DeterministicCombatEngine
     }
 
     /// <summary>
+    /// 雷击符类打击伤害（总纲 §20.2）：无命中/破招/格挡/暴击掷点、不消耗随机通道；
+    /// 固定走抗性平方穿透 → 攻方 Linear 增伤 → 守方 NonLinear 减伤 → 免伤收口，
+    /// 普攻/技能乘位按技能侧（SkillBonusPoints）取值。
+    /// </summary>
+    internal static double ResolveStrikeDamage(CombatantStats attack, CombatantState target)
+    {
+        var defense = target.Stats;
+        var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
+        var rawDamage = attack.AttackPower * attack.BasicAttackRatio;
+        // 第一层：大类抗性平方穿甲（与 ResolveHit 同式）。
+        var damage = rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1));
+        // 第二层：攻方分类增伤（Linear）：大类 × 五行 × 总增伤 × 技能增幅。
+        damage *= PercentValue.Multiplier(
+            attack.DamageKind == CombatDamageKind.Physical ? attack.PhysicalDamageBonusPoints : attack.SpellDamageBonusPoints,
+            PercentCurveMode.Linear);
+        if (attack.Element != CombatElement.None)
+            damage *= PercentValue.Multiplier(attack.Element switch
+            {
+                CombatElement.Metal => attack.MetalDamageBonusPoints,
+                CombatElement.Wood => attack.WoodDamageBonusPoints,
+                CombatElement.Water => attack.WaterDamageBonusPoints,
+                CombatElement.Fire => attack.FireDamageBonusPoints,
+                CombatElement.Earth => attack.EarthDamageBonusPoints,
+                _ => 0
+            }, PercentCurveMode.Linear);
+        damage *= PercentValue.Multiplier(attack.TotalDamageBonusPoints, PercentCurveMode.Linear);
+        damage *= PercentValue.Multiplier(attack.SkillBonusPoints, PercentCurveMode.Linear);
+        // 第三层：守方分类减伤（NonLinear）：大类 × 对应五行。
+        damage *= PercentValue.Multiplier(
+            attack.DamageKind == CombatDamageKind.Physical ? defense.PhysicalDamageReductionPoints : defense.SpellDamageReductionPoints,
+            PercentCurveMode.NonLinear);
+        if (attack.Element != CombatElement.None)
+            damage *= PercentValue.Multiplier(attack.Element switch
+            {
+                CombatElement.Metal => defense.MetalDamageReductionPoints,
+                CombatElement.Wood => defense.WoodDamageReductionPoints,
+                CombatElement.Water => defense.WaterDamageReductionPoints,
+                CombatElement.Fire => defense.FireDamageReductionPoints,
+                CombatElement.Earth => defense.EarthDamageReductionPoints,
+                _ => 0
+            }, PercentCurveMode.NonLinear);
+        // 末位收口：总减伤（免伤点数）NonLinear。
+        damage *= PercentValue.Multiplier(
+            defense.DamageAbsorptionPoints + target.BonusAbsorptionPoints + target.BuffAbsorptionPoints,
+            PercentCurveMode.NonLinear);
+        return Math.Max(0, damage);
+    }
+
+    /// <summary>
     /// 战斗经验对抗修正（总纲 §7.7.6）：经验比值 r=clamp(aCE/max(bCE,ε), 0.1, 10)，
     /// 占优方等效按 /8 斜率增益封顶 ×2，劣势方等效按 /16 斜率衰减托底 ×0.5；
     /// 双方战斗经验均 ≤0 时中立不修正。只作用于命中/闪避等效输入，随机序列不变。

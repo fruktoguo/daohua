@@ -34,7 +34,7 @@ public enum AssetInstanceState : byte
 }
 
 /// <summary>
-/// 具备独立属性的资产实例（如特定品阶词缀法宝、装备）。
+/// 具备独立属性的资产实例（如特定等阶词缀法宝、装备）。
 /// </summary>
 public sealed record AssetInstance(
     InstanceId InstanceId,

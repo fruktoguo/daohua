@@ -9,18 +9,18 @@ public sealed record CombatDropDefinition(
     double MinQuantity,
     double MaxQuantity);
 
-/// <summary>怪物品阶：普通妖修 / 精英大妖 / 妖王魔尊。</summary>
+/// <summary>怪物生命层次：妖兽 / 精英 / 妖王。</summary>
 public enum CombatMonsterRank : byte
 {
-    /// <summary>普通妖修：80% 全属性，300% 玩家生命。</summary>
+    /// <summary>妖兽：80% 全属性，300% 玩家生命。</summary>
     Minion = 0,
-    /// <summary>精英大妖：120% 全属性，500% 玩家生命。</summary>
+    /// <summary>精英：120% 全属性，500% 玩家生命。</summary>
     Elite = 1,
-    /// <summary>妖王魔尊：150% 全属性，2000% 玩家生命。</summary>
+    /// <summary>妖王：150% 全属性，2000% 玩家生命。</summary>
     Boss = 2
 }
 
-/// <summary>怪物战斗静态属性、品阶、随战技能、掉落配表与击杀奖励（修为/底蕴/六维经验）。</summary>
+/// <summary>怪物战斗静态属性、生命层次、随战技能、掉落配表与击杀奖励（修为/底蕴/六维经验）。</summary>
 public sealed record CombatMonsterDefinition(
     string Id,
     string Name,

@@ -66,7 +66,7 @@ public sealed record PlayerAttributes(
     /// <summary>冷却缩减点数（NonLinear：缩短全部冷却）。</summary>
     public double CooldownReductionPoints { get; init; }
 
-    /// <summary>抗性缩放倍率（等于当前境界阶位 Tier）。</summary>
+    /// <summary>抗性缩放倍率（等于当前等阶 Tier）。</summary>
     public double ResistanceScale { get; init; } = 1;
     /// <summary>反应效果参数包：装备特殊机制（汲取/反弹）汇总结果（点数）。</summary>
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
@@ -231,6 +231,7 @@ public static class PlayerAttributeResolver
         var buffRatios = new Dictionary<string, double>(StringComparer.Ordinal);
         double absorption = 0;
         double hpRegenFlat = 0, mpRegenFlat = 0;
+        double hpRegenPost = 0, mpRegenPost = 0;
         // 节点公共建筑效果：气血自然回复固定值与额外减伤并入同名乘区（比率键 ×100 折点）。
         if (nodeBuildingEffects is not null)
         {
@@ -241,6 +242,8 @@ public static class PlayerAttributeResolver
         {
             hpRegenFlat += buff.HpRegen * buff.Stacks;
             mpRegenFlat += buff.MpRegen * buff.Stacks;
+            hpRegenPost += buff.HpRegenPostRatio * buff.Stacks;
+            mpRegenPost += buff.MpRegenPostRatio * buff.Stacks;
             attackSpeed += buff.AttackSpeedPoints * buff.Stacks;
             absorption += buff.DamageAbsorptionPoints * buff.Stacks;
             if (buff.StatRatios is not null)
@@ -252,8 +255,9 @@ public static class PlayerAttributeResolver
             (value * (1 + Root(key)) + flat.GetValueOrDefault(key))
             * SoftRatio(ratios.GetValueOrDefault(key))
             * SoftRatio(buffRatios.GetValueOrDefault(key));
-        double hpRegen = Stat("hitpointRegen", a.HpRegen) + hpRegenFlat;
-        double mpRegen = Stat("manapointRegen", a.MpRegen) + mpRegenFlat;
+        // 回复收口公式（总纲 §20.3）：(面板回复 + Σ固定加成) × (1 + Σ后段比率)。
+        double hpRegen = (Stat("hitpointRegen", a.HpRegen) + hpRegenFlat) * (1 + hpRegenPost);
+        double mpRegen = (Stat("manapointRegen", a.MpRegen) + mpRegenFlat) * (1 + mpRegenPost);
         // 成长乘区与怪物同构：统一走 CombatGrowthCurve 单点实现。
         var progress = CombatGrowthCurve.Progress(level);
         var tier = catalog.BaseAttributes.TierAt(level);

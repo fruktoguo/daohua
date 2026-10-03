@@ -17,7 +17,9 @@ public enum ActionKind : byte
     /// <summary>野外或秘境战斗交锋</summary>
     Combat = 3,
     /// <summary>御剑漫游/跨地图长途迁跃</summary>
-    Travel = 4
+    Travel = 4,
+    /// <summary>装备强化升阶</summary>
+    Enhancement = 5
 }
 
 /// <summary>行动在模拟器中的执行方式。</summary>
@@ -45,7 +47,8 @@ public sealed record ActionDefinition(
     IReadOnlySet<string>? AllowedNodeIds = null,
     bool HiddenFromCatalog = false,
     ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
-    string? CombatEncounterId = null)
+    string? CombatEncounterId = null,
+    string? Technique = null)
 {
 }
 
@@ -99,6 +102,19 @@ public sealed record ActionYield(
     ItemId? Item = null,
     ActionBuffGrant? Buff = null);
 
+/// <summary>
+/// 即时打击类消耗品的打击规格（雷击符）：扣除自身灵力后对当前主要敌人造成一次无命中/暴击掷点的技能伤害。
+/// </summary>
+/// <param name="ManaCostRatio">灵力消耗占上限比率。</param>
+/// <param name="ManaDamageRatio">伤害中按灵力上限折算的部分。</param>
+/// <param name="SpellAttackRatio">伤害中按法攻折算的部分。</param>
+/// <param name="Element">打击元素（决定攻方增伤与守方减伤的元素通道）。</param>
+public sealed record ConsumableStrike(
+    double ManaCostRatio,
+    double ManaDamageRatio,
+    double SpellAttackRatio,
+    Domain.Combat.CombatElement Element);
+
 /// <summary>持续/自动消耗品对各行动类型提供的权威效果定义。</summary>
 public sealed record ConsumableDefinition(
     IReadOnlySet<ActionKind> UsableInActionKinds,
@@ -107,7 +123,9 @@ public sealed record ConsumableDefinition(
     double CultivationMultiplier = 1,
     double GatheringMultiplier = 1,
     double AlchemyMultiplier = 1,
-    IReadOnlyList<JsonElement>? Triggers = null)
+    IReadOnlyList<JsonElement>? Triggers = null,
+    bool Durable = false,
+    ConsumableStrike? Strike = null)
 {
     /// <summary>药品类消耗品分类键：战斗域药品栏仅接受本分类的即时消耗品。</summary>
     public const string CategoryPill = "pill";
@@ -608,7 +626,11 @@ public sealed class GameDataCatalog
             && encounter.ValueKind == JsonValueKind.String
             ? encounter.GetString()
             : null;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId);
+        var technique = entry.TryGetProperty("technique", out var techniqueProperty)
+            && techniqueProperty.ValueKind == JsonValueKind.String
+            ? techniqueProperty.GetString()
+            : null;
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId, technique);
     }
 
     /// <summary>
@@ -714,6 +736,20 @@ public sealed class GameDataCatalog
                 triggers = [];
                 foreach (var trigger in triggersProperty.EnumerateArray()) triggers.Add(trigger.Clone());
             }
+            ConsumableStrike? strike = null;
+            if (consumableProperty.TryGetProperty("strike", out var strikeProperty)
+                && strikeProperty.ValueKind == JsonValueKind.Object)
+            {
+                var elementText = strikeProperty.TryGetProperty("element", out var elementProperty)
+                    ? elementProperty.GetString() : null;
+                if (!Enum.TryParse<Domain.Combat.CombatElement>(elementText ?? "none", true, out var element))
+                    element = Domain.Combat.CombatElement.None;
+                strike = new ConsumableStrike(
+                    JsonRead.Number(strikeProperty, "manaCostRatio"),
+                    JsonRead.Number(strikeProperty, "manaDamageRatio"),
+                    JsonRead.Number(strikeProperty, "spellAttackRatio"),
+                    element);
+            }
             consumable = new ConsumableDefinition(
                 new ReadOnlySet<ActionKind>(usableKinds),
                 JsonRead.Number(consumableProperty, "durationSeconds"),
@@ -721,7 +757,9 @@ public sealed class GameDataCatalog
                 JsonRead.Number(consumableProperty, "cultivationMultiplier", 1),
                 JsonRead.Number(consumableProperty, "gatheringMultiplier", 1),
                 JsonRead.Number(consumableProperty, "alchemyMultiplier", 1),
-                triggers);
+                triggers,
+                JsonRead.Boolean(consumableProperty, "durable"),
+                strike);
         }
         var category = entry.TryGetProperty("category", out var categoryProperty)
             ? categoryProperty.GetString() ?? "general" : "general";
@@ -745,6 +783,7 @@ public sealed class GameDataCatalog
         "alchemy" => ActionKind.Alchemy,
         "combat" => ActionKind.Combat,
         "travel" => ActionKind.Travel,
+        "enhancement" => ActionKind.Enhancement,
         _ => ActionKind.Exploration
     };
 
@@ -755,6 +794,7 @@ public sealed class GameDataCatalog
         "alchemy" => ActionKind.Alchemy,
         "combat" => ActionKind.Combat,
         "travel" => ActionKind.Travel,
+        "enhancement" => ActionKind.Enhancement,
         _ => throw new DomainException(DomainErrorCode.InvalidArgument, $"消耗品适用行动类型无效：{value}。")
     };
 
@@ -769,7 +809,7 @@ public sealed class GameDataCatalog
             var weights = value.ValueKind == JsonValueKind.Object && value.TryGetProperty("weights", out var weightsValue) && weightsValue.ValueKind == JsonValueKind.Object
                 ? weightsValue : default;
             double Weight(string key) => JsonRead.Number(weights, key, 1);
-            // 怪我同构建模：以同等级玩家基准属性锚点为底座，按品阶倍率 + 倾向权重派生全部战斗属性。
+            // 怪我同构建模：以同等级玩家基准属性锚点为底座，按生命层次倍率 + 倾向权重派生全部战斗属性。
             var level = JsonRead.Integer(value, "level", 1);
             var anchor = baseAttributes?.At(level)
                 ?? new BaseAttributeAnchor(level, 100, 50, 10, 5, 10, 0, 1, 1, 1, 1, 1, 1, 2, 1);
@@ -952,10 +992,17 @@ public sealed class GameDataCatalog
                 consumable is not null && (
                     consumable.UsableInActionKinds is null || consumable.UsableInActionKinds.Any(kind => !Enum.IsDefined(kind)) ||
                     !double.IsFinite(consumable.DurationSeconds) || consumable.DurationSeconds < 0 ||
-                    consumable.IsContinuous && consumable.DurationSeconds <= 0 ||
+                    // durable 持续消耗品持有即生效、无时长耗竭，不要求 durationSeconds；非 durable 持续品仍需正时长。
+                    consumable.IsContinuous && !consumable.Durable && consumable.DurationSeconds <= 0 ||
+                    consumable.Durable && !consumable.IsContinuous ||
                     !double.IsFinite(consumable.CultivationMultiplier) || consumable.CultivationMultiplier <= 0 ||
                     !double.IsFinite(consumable.GatheringMultiplier) || consumable.GatheringMultiplier <= 0 ||
-                    !double.IsFinite(consumable.AlchemyMultiplier) || consumable.AlchemyMultiplier <= 0))
+                    !double.IsFinite(consumable.AlchemyMultiplier) || consumable.AlchemyMultiplier <= 0 ||
+                    consumable.Strike is { } strike && (
+                        !double.IsFinite(strike.ManaCostRatio) || strike.ManaCostRatio <= 0 ||
+                        !double.IsFinite(strike.ManaDamageRatio) || strike.ManaDamageRatio < 0 ||
+                        !double.IsFinite(strike.SpellAttackRatio) || strike.SpellAttackRatio < 0 ||
+                        !Enum.IsDefined(strike.Element) || consumable.IsContinuous)))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "物品定义无效。");
             // 消耗品使用条件与技能共用同一套触发判定词表，装载期即拒绝词表外输入。
             if (consumable?.Triggers is { Count: > 0 } triggers)

@@ -23,6 +23,8 @@ public readonly struct PlayerStatsDelta
     public double RootExperience { get; init; }
     public string? AbilityId { get; init; }
     public double AbilityExperience { get; init; }
+    public string? TechniqueId { get; init; }
+    public double TechniqueExperience { get; init; }
     public PlayerReportLevelUp? LevelUp { get; init; }
     public ItemId? GainedItem { get; init; }
     public double GainedQuantity { get; init; }
@@ -49,6 +51,7 @@ public readonly struct PlayerStatsDelta
         if (DuelLosses != 0) report.DuelLosses += DuelLosses;
         if (RootAspect is { } aspect) report.RootExp.Add(aspect, RootExperience);
         if (AbilityId is { } abilityId) report.AddAbilityExp(abilityId, AbilityExperience);
+        if (TechniqueId is { } techniqueId) report.AddTechniqueExp(techniqueId, TechniqueExperience);
         if (LevelUp is { } levelUp) report.LevelUps.Add(levelUp);
         if (GainedItem is { } gainedItem) report.AddItem(gainedItem, GainedQuantity);
         if (LostItem is { } lostItem) report.AddItemLost(lostItem, LostQuantity);

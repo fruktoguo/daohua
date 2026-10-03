@@ -68,7 +68,7 @@ public sealed record CombatantStats(
     public double SkillIntensity { get; init; } = 1;
     /// <summary>法术抗性点数（Spell 伤害的主抗性池）。</summary>
     public double MagicResistance { get; init; }
-    /// <summary>抗性缩放倍率（等于境界阶位 Tier，放大全部抗性点数的效果）。</summary>
+    /// <summary>抗性缩放倍率（等于等阶 Tier，放大全部抗性点数的效果）。</summary>
     public double ResistanceScale { get; init; } = 1;
     /// <summary>暴击点数（与目标暴击抗性对抗决定暴击概率）。</summary>
     public double Critical { get; init; }
@@ -211,10 +211,13 @@ public sealed record CombatantStats(
 /// <param name="AttackSpeedPoints">攻击速度点数：并入普攻读条攻速除数通道。</param>
 /// <param name="DamageAbsorptionPoints">免伤点数：与面板免伤同乘区合并（NonLinear 收口）。</param>
 /// <param name="ThreatPoints">威胁增幅点数：叠加进有效威胁乘区。</param>
+/// <param name="HpRegenPostRatio">气血回复后段乘区比率：所有固定回复合并后再乘 (1+Σ)。</param>
+/// <param name="MpRegenPostRatio">灵力回复后段乘区比率：所有固定回复合并后再乘 (1+Σ)。</param>
 public sealed record CombatBuffState(
     string BuffId, double ExpiresAtSeconds, double Stacks = 1,
     double HpRegen = 0, double MpRegen = 0, double AttackSpeedPoints = 0,
-    double DamageAbsorptionPoints = 0, double ThreatPoints = 0)
+    double DamageAbsorptionPoints = 0, double ThreatPoints = 0,
+    double HpRegenPostRatio = 0, double MpRegenPostRatio = 0)
 {
     /// <summary>校验 Buff 字段满足持久化不变量。</summary>
     internal bool IsValid => !string.IsNullOrWhiteSpace(BuffId) && BuffId.Length <= 128
@@ -222,7 +225,8 @@ public sealed record CombatBuffState(
         && double.IsFinite(Stacks) && Stacks > 0
         && double.IsFinite(HpRegen) && double.IsFinite(MpRegen)
         && double.IsFinite(AttackSpeedPoints) && double.IsFinite(DamageAbsorptionPoints)
-        && double.IsFinite(ThreatPoints);
+        && double.IsFinite(ThreatPoints)
+        && double.IsFinite(HpRegenPostRatio) && double.IsFinite(MpRegenPostRatio);
 }
 
 /// <summary>战斗单位生成模板：静态属性 + 可选技能槽。</summary>

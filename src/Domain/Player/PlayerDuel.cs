@@ -22,10 +22,13 @@ public sealed record PlayerReportItem(string ItemId, double Quantity);
 /// <summary>战报中的功法参悟经验条目。</summary>
 public sealed record PlayerReportAbilityExp(string AbilityId, double Experience);
 
+/// <summary>战报中的技艺修行经验条目。</summary>
+public sealed record PlayerReportTechniqueExp(string TechniqueId, double Experience);
+
 /// <summary>
 /// 战报中的等级提升记录。
-/// Kind ∈ realm/root/ability；root 的 TargetId 用 CoreAspectKind 枚举名小写（如 stamina），
-/// ability 用功法 ID，realm 用空串。
+/// Kind ∈ realm/root/ability/technique；root 的 TargetId 用 CoreAspectKind 枚举名小写（如 stamina），
+/// ability 用功法 ID，technique 用技艺 ID，realm 用空串。
 /// </summary>
 public sealed record PlayerReportLevelUp(string Kind, string TargetId, double FromLevel, double ToLevel);
 
@@ -102,6 +105,8 @@ public sealed class PlayerBattleReport
     public PlayerRootExpValues RootExp { get; } = new();
     /// <summary>功法参悟经验收益（按功法 ID 聚合）</summary>
     public List<PlayerReportAbilityExp> AbilityExp { get; } = [];
+    /// <summary>技艺修行经验收益（按技艺 ID 聚合）</summary>
+    public List<PlayerReportTechniqueExp> TechniqueExp { get; } = [];
     /// <summary>等级提升记录（境界/六维/功法）</summary>
     public List<PlayerReportLevelUp> LevelUps { get; } = [];
     /// <summary>物品收益（含暂存区与缴获）</summary>
@@ -130,7 +135,7 @@ public sealed class PlayerBattleReport
     /// <summary>是否存在任何可记录内容；空账本归档时丢弃。</summary>
     public bool HasContent => Experience > 0 || Foundation != 0 || CombatExperience > 0
         || RootExp.Total > 0
-        || AbilityExp.Count > 0 || LevelUps.Count > 0
+        || AbilityExp.Count > 0 || TechniqueExp.Count > 0 || LevelUps.Count > 0
         || Items.Count > 0 || ItemsLost.Count > 0
         || Cycles > 0 || Encounters > 0
         || NormalKills > 0 || EliteKills > 0 || BossKills > 0 || Deaths > 0
@@ -177,6 +182,14 @@ public sealed class PlayerBattleReport
         else AbilityExp.Add(new(abilityId, experience));
     }
 
+    /// <summary>合并记录技艺修行经验。</summary>
+    public void AddTechniqueExp(string techniqueId, double experience)
+    {
+        var index = TechniqueExp.FindIndex(entry => entry.TechniqueId == techniqueId);
+        if (index >= 0) TechniqueExp[index] = TechniqueExp[index] with { Experience = TechniqueExp[index].Experience + experience };
+        else TechniqueExp.Add(new(techniqueId, experience));
+    }
+
     /// <summary>清空全部累计字段（每日账本跨日 rollover 用）；ReportId/行动标识保留。</summary>
     public void ResetBucket(long dayIndex, double atUnixSeconds)
     {
@@ -185,6 +198,7 @@ public sealed class PlayerBattleReport
         CombatExperience = 0;
         RootExp.Clear();
         AbilityExp.Clear();
+        TechniqueExp.Clear();
         LevelUps.Clear();
         Items.Clear();
         ItemsLost.Clear();
@@ -361,6 +375,7 @@ public sealed record PlayerBattleReportDocument(
     double DuelLosses,
     IReadOnlyList<PlayerReportItem>? ItemsLost = null,
     IReadOnlyList<PlayerReportAbilityExp>? AbilityExp = null,
+    IReadOnlyList<PlayerReportTechniqueExp>? TechniqueExp = null,
     IReadOnlyList<PlayerReportLevelUp>? LevelUps = null,
     double Cycles = 0,
     double Encounters = 0,

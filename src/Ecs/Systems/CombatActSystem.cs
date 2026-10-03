@@ -162,7 +162,8 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
                     encounter.ElapsedSeconds + Math.Max(0, AbilityNumber(buff, "durationSeconds")), 1,
                     AbilityNumber(buff, "hpRegen"), AbilityNumber(buff, "mpRegen"),
                     AbilityNumber(buff, "attackSpeedPoints"), AbilityNumber(buff, "damageAbsorptionPoints"),
-                    AbilityNumber(buff, "threatPoints"));
+                    AbilityNumber(buff, "threatPoints"),
+                    AbilityNumber(buff, "hpRegenPostRatio"), AbilityNumber(buff, "mpRegenPostRatio"));
                 // maxStacks 缺省为 1：同 ID 重复授予刷新时长并叠层至上限。
                 var stackCap = Math.Max(1, AbilityNumber(buff, "maxStacks"));
                 void GrantBuff(CombatantState ally)

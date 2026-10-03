@@ -19,7 +19,7 @@ namespace DaoHua.Ecs;
 public sealed record CombatEntryPreparation(
     CombatEncounterState? Battle,
     CombatExpeditionState Expedition,
-    IReadOnlyDictionary<ItemId, double> AssetDeltas,
+    IReadOnlyDictionary<AssetKey, double> AssetDeltas,
     IReadOnlyList<SimulationEvent> Events,
     bool Blocked);
 
@@ -457,7 +457,7 @@ public static partial class SimulationEngine
         var completedActions = 0d;
         var completedRepeats = 0d;
         var transitions = 0;
-        Dictionary<ItemId, double>? deltas = null;
+        Dictionary<AssetKey, double>? deltas = null;
         SimulationEventTail? events = null;
 
         var blockedActions = new HashSet<Guid>();
@@ -522,7 +522,7 @@ public static partial class SimulationEngine
                     ref events, ref completedActions, ref completedRepeats);
                 continue;
             }
-            var duration = TimedActionDuration(player, definition);
+            var duration = TimedActionDuration(player, action, definition, gameData, assetBalances, deltas);
             if (duration <= 0)
             {
                 // 开发期容错自愈：Enqueue 拒绝“-1 且时长≤0”，但配表热更可能把存量行动时长改为 0，
@@ -547,7 +547,7 @@ public static partial class SimulationEngine
             AdvanceTimedAction(player, action, definition, autoUseMultiplier, gameData, step,
                 from.AddSeconds((target - from).TotalSeconds - remainingSeconds));
             if (action.ProgressSeconds + 1e-9 < duration) break;
-            CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events, ref completedActions, ref completedRepeats);
+            CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, assetBalances, from.AddSeconds((target - from).TotalSeconds - remainingSeconds), ref deltas, ref events, ref completedActions, ref completedRepeats);
         }
 
         // 道龄随模拟时间自然流逝；Progression 仅在发生实际状态转移时标脏，避免空队列每秒刷盘。
@@ -576,7 +576,7 @@ public static partial class SimulationEngine
         }
         else
         {
-            var validDeltas = new List<KeyValuePair<ItemId, double>>(deltas.Count);
+            var validDeltas = new List<KeyValuePair<AssetKey, double>>(deltas.Count);
             foreach (var pair in deltas)
             {
                 if (Math.Abs(pair.Value) > 1e-12)
@@ -591,13 +591,17 @@ public static partial class SimulationEngine
             }
             else
             {
-                validDeltas.Sort(static (a, b) => string.CompareOrdinal(a.Key.Value, b.Key.Value));
+                validDeltas.Sort(static (a, b) =>
+                {
+                    var order = string.CompareOrdinal(a.Key.ItemId.Value, b.Key.ItemId.Value);
+                    return order != 0 ? order : string.CompareOrdinal(a.Key.Variant, b.Key.Variant);
+                });
                 assetDeltas = new AssetDelta[validDeltas.Count];
                 var playerId = player.PlayerId;
                 for (var i = 0; i < validDeltas.Count; i++)
                 {
                     var pair = validDeltas[i];
-                    assetDeltas[i] = new AssetDelta(playerId, new AssetKey(pair.Key), pair.Value, "simulation");
+                    assetDeltas[i] = new AssetDelta(playerId, pair.Key, pair.Value, "simulation");
                 }
             }
         }
@@ -630,7 +634,7 @@ public static partial class SimulationEngine
         DateTimeOffset from,
         DateTimeOffset target,
         ref double remainingSeconds,
-        ref Dictionary<ItemId, double>? deltas,
+        ref Dictionary<AssetKey, double>? deltas,
         ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats,
@@ -722,17 +726,18 @@ public static partial class SimulationEngine
     /// 若次数归零则移出队列；若为 -1（无限重复）则绝对保留队列项供下一轮循环。
     /// </summary>
     private static void CompleteRepeat(
-        IPlayerActionContext player,
+        IPlayerResourceContext player,
         IPlayerActionState action,
         ActionDefinition definition,
         double autoUseMultiplier,
         GameDataCatalog? gameData,
+        AssetWallet? assets,
         DateTimeOffset target,
-        ref Dictionary<ItemId, double>? deltas,
+        ref Dictionary<AssetKey, double>? deltas,
         ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats)
-        => DaoHua.Ecs.Systems.ActionExecutionRules.CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, target, ref deltas, ref events, ref completedActions, ref completedRepeats);
+        => DaoHua.Ecs.Systems.ActionExecutionRules.CompleteRepeat(player, action, definition, autoUseMultiplier, gameData, assets, target, ref deltas, ref events, ref completedActions, ref completedRepeats);
 
 
 
@@ -757,6 +762,10 @@ public static partial class SimulationEngine
     /// <summary>
     /// 累计资产变动差额并执行有限性校验。
     /// </summary>
-    internal static void AddDelta(Dictionary<ItemId, double> deltas, ItemId item, double amount)
+    internal static void AddDelta(Dictionary<AssetKey, double> deltas, AssetKey asset, double amount)
+        => DaoHua.Ecs.Systems.ActionExecutionRules.AddDelta(deltas, asset, amount);
+
+    /// <summary>ItemId 便捷重载：基础键变体为空串。</summary>
+    internal static void AddDelta(Dictionary<AssetKey, double> deltas, ItemId item, double amount)
         => DaoHua.Ecs.Systems.ActionExecutionRules.AddDelta(deltas, item, amount);
 }

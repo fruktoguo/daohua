@@ -53,7 +53,7 @@ internal static class CombatActionRules
     internal static CombatEncounterState? AdvanceCombatPreparationCore(IPlayerResourceContext player,
         IPlayerActionState action, ActionDefinition definition, GameDataCatalog gameData, AssetWallet? assetBalances,
         DuelAdvanceOptions? duel, DateTimeOffset from, DateTimeOffset target, ref double remainingSeconds,
-        ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
+        ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.prepare");
         CombatEncounterDefinition encounter;
@@ -166,8 +166,8 @@ internal static class CombatActionRules
             var entryAt = from.AddSeconds((target - from).TotalSeconds - remainingSeconds);
             var preparation = PrepareCombatEntry(player, action, definition, encounter, updated,
                 gameData, assetBalances, entryAt);
-            foreach (var (item, quantity) in preparation.AssetDeltas)
-                AddDelta(deltas ??= new Dictionary<ItemId, double>(), item, quantity);
+            foreach (var (asset, quantity) in preparation.AssetDeltas)
+                AddDelta(deltas ??= new Dictionary<AssetKey, double>(), asset, quantity);
             foreach (var simulationEvent in preparation.Events)
                 (events ??= new SimulationEventTail()).Add(simulationEvent);
             return preparation.Battle;
@@ -191,7 +191,7 @@ internal static class CombatActionRules
     internal static void CompleteCombatAdvanceCore(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, CombatEncounterDefinition encounter, GameDataCatalog gameData,
         CombatEncounterState battleState, CombatAdvanceResult combatResult, DateTimeOffset from, DateTimeOffset target,
-        ref double remainingSeconds, ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events,
+        ref double remainingSeconds, ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events,
         ref double completedActions, ref double completedRepeats)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.yield");
@@ -515,7 +515,7 @@ internal static class CombatActionRules
         battle.Player.ExternalBuffStacks = buffId => SumActiveBuffStacks(player.Buffs.Active, buffId);
         player.Combat.Skills.ApplyTo(battle.Player);
 
-        Dictionary<ItemId, double>? deltas = null;
+        Dictionary<AssetKey, double>? deltas = null;
         SimulationEventTail? events = null;
         var waveNames = string.Join("、", wave.Select(monster => monster.Name));
         if (battle.Player.Hitpoints <= 0)
@@ -526,7 +526,7 @@ internal static class CombatActionRules
             if (player.Settings.LoopEnabled && player.Actions.Count > 1 && !AllActionsBlocked(player.Actions))
                 player.RotateActionToTail(action.Id);
             return new CombatEntryPreparation(null, completedSearch,
-                deltas ?? new Dictionary<ItemId, double>(), events?.View ?? [], true);
+                deltas ?? new Dictionary<AssetKey, double>(), events?.View ?? [], true);
         }
 
         var atUnix = entryAt.ToUnixTimeMilliseconds() / 1000d;
@@ -547,7 +547,7 @@ internal static class CombatActionRules
         player.RecordStats(action.Id, atUnix, new PlayerStatsDelta { Encounters = 1 });
         AddCombatEventAt(ref events, entryAt, "combat.started", $"遭遇妖兽：{waveNames}。", definition.Id);
         return new CombatEntryPreparation(battle, combatState,
-            deltas ?? new Dictionary<ItemId, double>(), events?.View ?? [], false);
+            deltas ?? new Dictionary<AssetKey, double>(), events?.View ?? [], false);
     }
 
 
@@ -564,7 +564,7 @@ internal static class CombatActionRules
         DateTimeOffset from,
         DateTimeOffset target,
         ref double remainingSeconds,
-        ref Dictionary<ItemId, double>? deltas,
+        ref Dictionary<AssetKey, double>? deltas,
         ref SimulationEventTail? events)
     {
         var expedition = action.Expedition!;
@@ -624,7 +624,7 @@ internal static class CombatActionRules
                 foreach (var spoils in playback.OpponentStagedSnapshot)
                 {
                     var spoilsId = new ItemId(spoils.ItemId);
-                    AddDelta(deltas ??= new Dictionary<ItemId, double>(), spoilsId, spoils.Quantity);
+                    AddDelta(deltas ??= new Dictionary<AssetKey, double>(), spoilsId, spoils.Quantity);
                     player.RecordStats(action.Id, nowUnix, new PlayerStatsDelta { GainedItem = spoilsId, GainedQuantity = spoils.Quantity });
                 }
                 player.RecordStats(action.Id, nowUnix, new PlayerStatsDelta { DuelWins = 1 });
@@ -746,7 +746,7 @@ internal static class CombatActionRules
         double killAtUnixSeconds,
         GameDataCatalog gameData,
         Guid actionInstanceId,
-        ref Dictionary<ItemId, double>? deltas)
+        ref Dictionary<AssetKey, double>? deltas)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.combat.reward");
         if (monster.Experience > 0)
@@ -785,7 +785,7 @@ internal static class CombatActionRules
             }
             else
             {
-                AddDelta(deltas ??= new Dictionary<ItemId, double>(), drop.ItemId, quantity);
+                AddDelta(deltas ??= new Dictionary<AssetKey, double>(), drop.ItemId, quantity);
                 player.RecordStats(actionInstanceId, killAtUnixSeconds, new PlayerStatsDelta { GainedItem = drop.ItemId, GainedQuantity = quantity });
             }
         }
@@ -892,7 +892,7 @@ internal static class CombatActionRules
             || !string.Equals(slot.ActionType, "combat", StringComparison.OrdinalIgnoreCase)) return false;
         var itemId = new ItemId(slot.ItemId);
         if (!gameData.Items.TryGetValue(itemId, out item!)
-            || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0 } found
+            || item.Consumable is not { IsContinuous: true, DurationSeconds: > 0, Durable: false } found
             || !found.UsableInActionKinds.Contains(ActionKind.Combat)) return false;
         consumable = found;
         return true;
@@ -901,7 +901,7 @@ internal static class CombatActionRules
     /// <summary>遭遇入场时为空的通用栏持续消耗品槽补能：消耗 1 件物品充入整段时长，条件不满足则跳过。</summary>
     private static void RechargeCombatSustainedSlots(IPlayerResourceContext player, GameDataCatalog gameData,
         AssetWallet? assetBalances, double atUnix, Guid actionInstanceId, CombatEncounterState battle,
-        ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
+        ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
     {
         for (var index = 0; index < player.Settings.AutoUseSlots.Count; index++)
         {
@@ -922,9 +922,9 @@ internal static class CombatActionRules
             }
             var itemId = item.Id;
             var available = (assetBalances?.Get(new AssetKey(itemId)) ?? 0d)
-                + (deltas?.GetValueOrDefault(itemId) ?? 0d);
+                + (deltas?.GetValueOrDefault(new AssetKey(itemId)) ?? 0d);
             if (available < 1d) continue;
-            AddDelta(deltas ??= new Dictionary<ItemId, double>(), itemId, -1d);
+            AddDelta(deltas ??= new Dictionary<AssetKey, double>(), itemId, -1d);
             player.RecordStats(actionInstanceId, atUnix, new PlayerStatsDelta { LostItem = itemId, LostQuantity = 1 });
             player.Settings.AutoUseSlots[index] = slot with { RemainingDurationSeconds = consumable.DurationSeconds };
             player.MarkDirty(PlayerSectionKind.Settings);
@@ -955,7 +955,8 @@ internal static class CombatActionRules
                     battle.ElapsedSeconds + slot.RemainingDurationSeconds, 1,
                     JsonRead.Number(buff, "hpRegen"), JsonRead.Number(buff, "mpRegen"),
                     JsonRead.Number(buff, "attackSpeedPoints"), JsonRead.Number(buff, "damageAbsorptionPoints"),
-                    JsonRead.Number(buff, "threatPoints")));
+                    JsonRead.Number(buff, "threatPoints"),
+                    JsonRead.Number(buff, "hpRegenPostRatio"), JsonRead.Number(buff, "mpRegenPostRatio")));
             }
         }
     }

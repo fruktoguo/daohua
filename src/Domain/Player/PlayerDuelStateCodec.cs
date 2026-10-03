@@ -52,7 +52,7 @@ public static class PlayerDuelStateCodec
         new PlayerRootExpDocument(report.RootExp.Stamina, report.RootExp.Meridians, report.RootExp.Attack,
             report.RootExp.Bone, report.RootExp.Agility, report.RootExp.Consciousness),
         report.Items.ToArray(), report.DuelWins, report.DuelLosses,
-        report.ItemsLost.ToArray(), report.AbilityExp.ToArray(), report.LevelUps.ToArray(),
+        report.ItemsLost.ToArray(), report.AbilityExp.ToArray(), report.TechniqueExp.ToArray(), report.LevelUps.ToArray(),
         report.Cycles, report.Encounters, report.NormalKills, report.EliteKills, report.BossKills,
         report.Deaths, report.DayIndex, report.Foundation, report.CombatExperience);
 
@@ -99,6 +99,7 @@ public static class PlayerDuelStateCodec
         report.Items.AddRange(document.Items);
         report.ItemsLost.AddRange(document.ItemsLost ?? []);
         report.AbilityExp.AddRange(document.AbilityExp ?? []);
+        report.TechniqueExp.AddRange(document.TechniqueExp ?? []);
         report.LevelUps.AddRange(document.LevelUps ?? []);
         return report;
     }

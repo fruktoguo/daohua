@@ -36,15 +36,15 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>按窗口工作钱包与尚未提交的材料增量检查地点和库存，再建账并激活队首。</summary>
-    public static bool TryStartAction(IPlayerActionContext player, IPlayerActionState action,
+    public static bool TryStartAction(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, ActionMutationBatch mutations)
         => TryStartActionCore(player, action, definition, gameData, assets, at,
             mutations.Deltas, ref mutations.EventTail);
 
-    internal static bool TryStartActionCore(IPlayerActionContext player, IPlayerActionState action,
+    internal static bool TryStartActionCore(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, GameDataCatalog? gameData, AssetWallet? assets,
-        DateTimeOffset at, Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
+        DateTimeOffset at, Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.start");
         var availableHere = definition.AllowedNodeIds is null || definition.AllowedNodeIds.Count == 0
@@ -52,11 +52,38 @@ internal static partial class ActionExecutionRules
         var hasInputs = true;
         foreach (var input in definition.Inputs)
             if ((assets?.Get(new AssetKey(input.Key)) ?? (gameData is null ? double.PositiveInfinity : 0))
-                + (deltas?.GetValueOrDefault(input.Key) ?? 0) < input.Value)
+                + (deltas?.GetValueOrDefault(new AssetKey(input.Key)) ?? 0) < input.Value)
             {
                 hasInputs = false;
                 break;
             }
+        var blockedReason = availableHere
+            ? "材料不足，行动受阻。"
+            : "当前位置不允许执行该行动。";
+        if (availableHere && hasInputs && definition.Kind == ActionKind.Enhancement)
+        {
+            // 强化准入：目标装备/等级上限/意图目标/材料/护符一次结算；已达标则整行动提前完成出队。
+            var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
+            var techniqueLevel = TechniqueCatalog.LevelFor(
+                player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
+                gameData?.RealmProgression);
+            if (EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
+                    out var check, out var reason) is null)
+            {
+                if (check == EnhancementRules.Check.TargetReached)
+                {
+                    player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
+                    events ??= new();
+                    events.Add(new SimulationEvent(at, "action.completed", definition.Name, definition.Id));
+                    player.RemoveAction(action.Id, incrementVersion: false,
+                        endedAtUnixSeconds: at.ToUnixTimeMilliseconds() / 1000d);
+                    return false;
+                }
+                availableHere = true;
+                hasInputs = false;
+                blockedReason = reason;
+            }
+        }
         if (!availableHere || !hasInputs)
         {
             // 地点不符且自动移动开启：插队赶路至入队锚点替代 Blocked；任一前置不满足回落原语义。
@@ -64,8 +91,7 @@ internal static partial class ActionExecutionRules
                 return false;
             action.Status = ActionQueueStatus.Blocked;
             events ??= new();
-            events.Add(new SimulationEvent(at, "action.blocked",
-                availableHere ? "材料不足，行动受阻。" : "当前位置不允许执行该行动。", definition.Id));
+            events.Add(new SimulationEvent(at, "action.blocked", blockedReason, definition.Id));
             return false;
         }
         player.EnsureActionReport(action.Id, definition.Id, definition.Name, at);
@@ -113,12 +139,34 @@ internal static partial class ActionExecutionRules
         return true;
     }
 
-    /// <summary>计时行动的建筑加速只修正本轮时长，不改变按轮扣除的持续用品时长。</summary>
-    public static double TimedActionDuration(IPlayerActionContext player, ActionDefinition definition)
+    /// <summary>
+    /// 计时行动的时长结算：强化按当次目标等级取 5+t 动态时长，其余取配表静态时长；
+    /// 节点建筑速度乘区与对应技艺等级速度乘区（每级 +5%）同点除法结算，保持确定性。
+    /// </summary>
+    public static double TimedActionDuration(IPlayerResourceContext player, IPlayerActionState action,
+        ActionDefinition definition, GameDataCatalog? gameData,
+        AssetWallet? assets, IReadOnlyDictionary<AssetKey, double>? deltas)
     {
         var duration = definition.DurationSeconds;
+        if (definition.Kind == ActionKind.Enhancement)
+        {
+            var current = action.Intent.TargetItemId is { } targetText
+                ? EnhancementRules.CurrentLevel(player.Loadout, new Domain.Common.ItemId(targetText),
+                    EnhancementRulesEffectiveBalances(assets, deltas))
+                : -1;
+            duration = current >= 0 && current < EnhancementRules.MaxLevel
+                ? EnhancementRules.DurationSeconds(current + 1)
+                : 0;
+        }
         var buildingSpeed = player.World.EffectiveNodeBuildingEffects.SpeedRatioFor(definition.Kind);
         if (buildingSpeed > 0) duration /= 1 + buildingSpeed;
+        if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))
+        {
+            var level = TechniqueCatalog.LevelFor(
+                player.Loadout.TechniqueExperiences.TryGetValue(technique, out var exp) ? exp : 0,
+                gameData?.RealmProgression);
+            if (level > 0) duration /= 1 + TechniqueCatalog.SpeedBonusRatio(level);
+        }
         return duration;
     }
 
@@ -132,7 +180,7 @@ internal static partial class ActionExecutionRules
 
     internal static double PrepareTimedActionCore(IPlayerActionContext player, IPlayerActionState action,
         ActionDefinition definition, bool isActionStart, GameDataCatalog? gameData, AssetWallet? assets,
-        DateTimeOffset at, ref Dictionary<ItemId, double>? deltas, ref SimulationEventTail? events)
+        DateTimeOffset at, ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.prepare");
         var multiplier = PrepareSustainedAutoUse(player, definition, isActionStart, gameData,
@@ -166,10 +214,10 @@ internal static partial class ActionExecutionRules
     }
 
     /// <summary>单轮完成结算：保留原物品、材料、用品、统计和队列修改的先后顺序。</summary>
-    public static void CompleteTimedAction(IPlayerActionContext player, IPlayerActionState action,
-        ActionDefinition definition, double multiplier, GameDataCatalog? gameData,
+    public static void CompleteTimedAction(IPlayerResourceContext player, IPlayerActionState action,
+        ActionDefinition definition, double multiplier, GameDataCatalog? gameData, AssetWallet? assets,
         DateTimeOffset at, ActionMutationBatch mutations)
-        => CompleteRepeat(player, action, definition, multiplier, gameData, at,
+        => CompleteRepeat(player, action, definition, multiplier, gameData, assets, at,
             ref mutations.Deltas, ref mutations.EventTail, ref mutations.ActionCount, ref mutations.RepeatCount);
 
     /// <summary>
@@ -268,18 +316,25 @@ internal static partial class ActionExecutionRules
     /// 若次数归零则移出队列；若为 -1（无限重复）则绝对保留队列项供下一轮循环。
     /// </summary>
     internal static void CompleteRepeat(
-        IPlayerActionContext player,
+        IPlayerResourceContext player,
         IPlayerActionState action,
         ActionDefinition definition,
         double autoUseMultiplier,
         GameDataCatalog? gameData,
+        AssetWallet? assets,
         DateTimeOffset target,
-        ref Dictionary<ItemId, double>? deltas,
+        ref Dictionary<AssetKey, double>? deltas,
         ref SimulationEventTail? events,
         ref double completedActions,
         ref double completedRepeats)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.yield");
+        if (definition.Kind == ActionKind.Enhancement)
+        {
+            CompleteEnhancementRepeat(player, action, definition, gameData, assets, target,
+                ref deltas, ref events, ref completedActions, ref completedRepeats);
+            return;
+        }
         // 先汇总数值型收益并完成有限性校验，再统一落账，沿用“先校验后变更”语义。
         // experienceBase 记增幅前基础量（战斗经验记账源），experienceGain 记增幅后总量（底蕴结算输入）。
         double experienceGain = 0, manaGain = 0, hitpointGain = 0, experienceBase = 0;
@@ -313,9 +368,9 @@ internal static partial class ActionExecutionRules
             switch (yield.Kind)
             {
                 case ActionYieldKind.Item:
-                    deltas ??= new Dictionary<ItemId, double>();
+                    deltas ??= new Dictionary<AssetKey, double>();
                     var scaled = ScaleOutput(yield.Amount, autoUseMultiplier);
-                    AddDelta(deltas, yield.Item!.Value, scaled);
+                    AddDelta(deltas, new AssetKey(yield.Item!.Value), scaled);
                     (itemRewards ??= new Dictionary<ItemId, double>())[yield.Item.Value] =
                         itemRewards.GetValueOrDefault(yield.Item.Value) + scaled;
                     break;
@@ -332,8 +387,8 @@ internal static partial class ActionExecutionRules
         }
         foreach (var (item, quantity) in definition.Inputs)
         {
-            deltas ??= new Dictionary<ItemId, double>();
-            AddDelta(deltas, item, -quantity);
+            deltas ??= new Dictionary<AssetKey, double>();
+            AddDelta(deltas, new AssetKey(item), -quantity);
         }
         CompleteSustainedAutoUse(player, definition, gameData, target, ref events);
         // 修为类收益统一结算（总纲 §7.11.1）：瓶颈截断 + 底蕴 1:1 兑换放大（≤3×amp）+
@@ -350,6 +405,10 @@ internal static partial class ActionExecutionRules
             ItemGains = itemRewards,
             ItemLosses = definition.Inputs
         });
+        // 技艺经验按当轮基础耗时入账（总纲 §20.1.2）：等级跃迁写入同一份 LevelUp 账本。
+        if (definition.Technique is { } technique && TechniqueCatalog.IsKnown(technique))
+            GrantTechniqueExperience(player, action.Id, technique, definition.DurationSeconds, gameData,
+                target.ToUnixTimeMilliseconds() / 1000d);
         if (manaGain != 0)
             player.Resources.Manapoints = Math.Min(player.Resources.MaxManapoints, player.Resources.Manapoints + manaGain);
         if (hitpointGain != 0)
@@ -378,7 +437,7 @@ internal static partial class ActionExecutionRules
         AssetWallet? assetBalances,
         DateTimeOffset at,
         Guid actionInstanceId,
-        ref Dictionary<ItemId, double>? deltas,
+        ref Dictionary<AssetKey, double>? deltas,
         ref SimulationEventTail? events)
     {
         if (gameData is null || player.Settings.AutoUseSlots.Count == 0) return 1d;
@@ -397,10 +456,10 @@ internal static partial class ActionExecutionRules
             if (isActionStart && slot.RemainingDurationSeconds <= 0)
             {
                 var available = assetBalances?.Get(new AssetKey(item.Id)) ?? 0d;
-                if (deltas is not null && deltas.TryGetValue(item.Id, out var pendingDelta)) available += pendingDelta;
+                if (deltas is not null && deltas.TryGetValue(new AssetKey(item.Id), out var pendingDelta)) available += pendingDelta;
                 if (available + 1e-12 >= 1d)
                 {
-                    AddDelta(deltas ??= new Dictionary<ItemId, double>(), item.Id, -1d);
+                    AddDelta(deltas ??= new Dictionary<AssetKey, double>(), new AssetKey(item.Id), -1d);
                     // 自动消耗品扣件计入「失去」物品。
                     player.RecordStats(actionInstanceId, at.ToUnixTimeMilliseconds() / 1000d,
                         new PlayerStatsDelta { LostItem = item.Id, LostQuantity = 1 });
@@ -465,7 +524,8 @@ internal static partial class ActionExecutionRules
         var itemId = new ItemId(slot.ItemId);
         if (!itemId.IsValid || !gameData.Items.TryGetValue(itemId, out item!)) return false;
         consumable = item.Consumable!;
-        return consumable is { IsContinuous: true, DurationSeconds: > 0 }
+        // durable 持续品（阵盘）不走时长扣件路径：由资源边界的 ActiveBuff 注入/清除承载。
+        return consumable is { IsContinuous: true, DurationSeconds: > 0, Durable: false }
             && consumable.UsableInActionKinds.Contains(actionKind);
     }
 
@@ -476,6 +536,7 @@ internal static partial class ActionExecutionRules
         ActionKind.Alchemy => string.Equals(actionType, "alchemy", StringComparison.OrdinalIgnoreCase),
         ActionKind.Combat => string.Equals(actionType, "combat", StringComparison.OrdinalIgnoreCase),
         ActionKind.Travel => string.Equals(actionType, "travel", StringComparison.OrdinalIgnoreCase),
+        ActionKind.Enhancement => string.Equals(actionType, "enhancement", StringComparison.OrdinalIgnoreCase),
         _ => false
     };
 
@@ -500,13 +561,151 @@ internal static partial class ActionExecutionRules
     /// <summary>
     /// 累计资产变动差额并执行有限性校验。
     /// </summary>
-    internal static void AddDelta(Dictionary<ItemId, double> deltas, ItemId item, double amount)
+    internal static void AddDelta(Dictionary<AssetKey, double> deltas, AssetKey asset, double amount)
     {
-        if (!item.IsValid || !double.IsFinite(amount))
+        if (!asset.ItemId.IsValid || asset.Variant is null || asset.Variant.Length > 128 || !double.IsFinite(amount))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动资源增量无效。");
-        var next = deltas.TryGetValue(item, out var current) ? current + amount : amount;
+        var next = deltas.TryGetValue(asset, out var current) ? current + amount : amount;
         if (!double.IsFinite(next))
             throw new DomainException(DomainErrorCode.InvariantViolation, "行动资源累计增量超出数值范围。");
-        deltas[item] = next;
+        deltas[asset] = next;
+    }
+
+    /// <summary>ItemId 便捷重载：基础键变体为空串。</summary>
+    internal static void AddDelta(Dictionary<AssetKey, double> deltas, ItemId item, double amount)
+        => AddDelta(deltas, new AssetKey(item), amount);
+
+    /// <summary>合并钱包余额与窗口暂存增量的有效余额视图：强化等级/材料判定共用同一口径。</summary>
+    internal static IReadOnlyDictionary<AssetKey, double> EnhancementRulesEffectiveBalances(
+        AssetWallet? assets, IReadOnlyDictionary<AssetKey, double>? deltas)
+    {
+        var merged = new Dictionary<AssetKey, double>();
+        if (assets is not null)
+            foreach (var balance in assets.Balances)
+                merged[balance.Asset] = balance.Quantity;
+        if (deltas is not null)
+            foreach (var (asset, quantity) in deltas)
+                merged[asset] = merged.GetValueOrDefault(asset) + quantity;
+        return merged;
+    }
+
+    /// <summary>
+    /// 授予技艺累计经验并按境界修为曲线折算等级跃迁（kind "technique"）；
+    /// 与 <see cref="PlayerAggregate.GrantTechniqueExperience"/> 同一入账口径，面向行动逐轮结算。
+    /// </summary>
+    internal static void GrantTechniqueExperience(IPlayerResourceContext player, Guid actionId,
+        string techniqueId, double experience, GameDataCatalog? gameData, double atUnixSeconds)
+    {
+        var previousExp = player.Loadout.TechniqueExperiences.TryGetValue(techniqueId, out var stored) ? stored : 0;
+        var nextExp = previousExp + experience;
+        player.Loadout.TechniqueExperiences[techniqueId] = nextExp;
+        var levelBefore = TechniqueCatalog.LevelFor(previousExp, gameData?.RealmProgression);
+        var levelAfter = TechniqueCatalog.LevelFor(nextExp, gameData?.RealmProgression);
+        player.RecordStats(actionId, atUnixSeconds, new PlayerStatsDelta
+        {
+            TechniqueId = techniqueId,
+            TechniqueExperience = experience,
+            LevelUp = levelAfter > levelBefore
+                ? new PlayerReportLevelUp("technique", techniqueId, levelBefore, levelAfter) : null
+        });
+        player.MarkDirty(PlayerSectionKind.Loadout);
+    }
+
+    /// <summary>
+    /// 强化行动单轮结算（总纲 §20.4.2）：开轮已冻结时长，本轮重新解析当前等级与成本，
+    /// 判定后完成材料/护符扣减与 +N 资产变体迁移，已装备槽位同步等级；
+    /// 不走静态 inputs/yields——收益/消耗全部由强化规则动态结算。
+    /// </summary>
+    private static void CompleteEnhancementRepeat(
+        IPlayerResourceContext player,
+        IPlayerActionState action,
+        ActionDefinition definition,
+        GameDataCatalog? gameData,
+        AssetWallet? assets,
+        DateTimeOffset target,
+        ref Dictionary<AssetKey, double>? deltas,
+        ref SimulationEventTail? events,
+        ref double completedActions,
+        ref double completedRepeats)
+    {
+        var holdings = EnhancementRulesEffectiveBalances(assets, deltas);
+        var techniqueLevel = TechniqueCatalog.LevelFor(
+            player.Loadout.TechniqueExperiences.TryGetValue(TechniqueCatalog.Enhancement, out var storedExp) ? storedExp : 0,
+            gameData?.RealmProgression);
+        var atUnix = target.ToUnixTimeMilliseconds() / 1000d;
+        var prep = EnhancementRules.Resolve(player.Loadout, action.Intent, holdings, gameData, techniqueLevel,
+            out var check, out var reason);
+        if (prep is null)
+        {
+            // 轮间状态漂移（材料被消耗/装备被移除/目标已达成）：按开轮准入同语义回退为阻塞或提前完成，
+            // 本轮耗时已消耗但不产生强化结算，与材料不足阻塞口径一致。
+            if (check == EnhancementRules.Check.TargetReached)
+            {
+                action.ProgressSeconds = 0;
+                events ??= new SimulationEventTail();
+                events.Add(new SimulationEvent(target, "action.completed", definition.Name, definition.Id));
+                player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: atUnix);
+                return;
+            }
+            action.Status = ActionQueueStatus.Blocked;
+            events ??= new SimulationEventTail();
+            events.Add(new SimulationEvent(target, "action.blocked", reason, definition.Id));
+            return;
+        }
+        var outcome = EnhancementRules.Roll(action.Id, action.CompletedRepeats, prep);
+        var resultLevel = EnhancementRules.ResultLevel(prep, outcome);
+        var fromKey = EnhancementRules.KeyFor(prep.ItemId, prep.CurrentLevel);
+        var toKey = EnhancementRules.KeyFor(prep.ItemId, resultLevel);
+        action.ProgressSeconds = 0;
+        PlayerActionQueueRules.RecordCompletedRound(action);
+        completedActions += 1;
+        completedRepeats += 1;
+        deltas ??= new Dictionary<AssetKey, double>();
+        // 材料与保护材料扣减先行，再做装备变体迁移：账本顺序与静态 inputs 扣减一致。
+        AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.EssenceItemId)), -prep.EssenceCost);
+        AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), -prep.SpiritStoneCost);
+        var itemLosses = new Dictionary<ItemId, double>
+        {
+            [new ItemId(EnhancementRules.EssenceItemId)] = prep.EssenceCost,
+            [new ItemId(EnhancementRules.SpiritStoneItemId)] = prep.SpiritStoneCost
+        };
+        // 保护材料恒按无强化基础键扣 1：配表列表内材料或同装备裸件均走 AssetKey(裸变体)。
+        if (prep.ProtectionItemId is { } protectionId)
+        {
+            AddDelta(deltas, new AssetKey(protectionId), -1d);
+            itemLosses[protectionId] = 1;
+        }
+        AddDelta(deltas, fromKey, -1d);
+        AddDelta(deltas, toKey, 1d);
+        // 已装备槽位同步强化等级：与资产变体键口径一致（0 级回到基础键）。
+        var slotChanged = false;
+        for (var i = 0; i < player.Loadout.Equipment.Count; i++)
+        {
+            var slot = player.Loadout.Equipment[i];
+            if (!string.Equals(slot.ItemId, prep.ItemId.Value, StringComparison.Ordinal)
+                || slot.EnhancementLevel == resultLevel) continue;
+            player.Loadout.Equipment[i] = slot with { EnhancementLevel = resultLevel };
+            slotChanged = true;
+        }
+        // 强化技艺经验按当次实际基础耗时（5+t）入账。
+        GrantTechniqueExperience(player, action.Id, TechniqueCatalog.Enhancement,
+            EnhancementRules.DurationSeconds(prep.TargetLevel), gameData, atUnix);
+        player.RecordStats(action.Id, atUnix, new PlayerStatsDelta
+        {
+            Cycles = 1,
+            ItemLosses = itemLosses
+        });
+        player.Progression.CompletedActions += 1;
+        player.MarkDirty(PlayerSectionKind.Progression);
+        player.MarkDirty(PlayerSectionKind.ActionQueue);
+        if (slotChanged) player.MarkDirty(PlayerSectionKind.Loadout);
+        events ??= new SimulationEventTail();
+        events.Add(new SimulationEvent(target,
+            outcome == EnhancementRules.Outcome.Success ? "enhance.succeeded" : "enhance.failed",
+            outcome == EnhancementRules.Outcome.Success
+                ? $"强化成功：{prep.ItemId} 提升至 +{resultLevel}。"
+                : $"强化失败：{prep.ItemId} 回落至 +{resultLevel}。",
+            definition.Id));
+        player.FinishActionRound(action.Id, definition.ExecutionKind != ActionExecutionKind.Travel, atUnix);
     }
 }

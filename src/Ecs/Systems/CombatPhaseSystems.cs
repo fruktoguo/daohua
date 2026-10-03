@@ -45,14 +45,20 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
 
         static void Tick(CombatantState unit)
         {
-            // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次。
+            // 面板回复与战内 Buff 回复同口径：均为每 5 秒结算点一次；
+            // 收口公式（总纲 §20.3）：(固定回复合计) × (1 + Σ后段比率)。
             double hp = unit.Stats.HpRegen, mp = unit.Stats.MpRegen;
+            double hpPost = 0, mpPost = 0;
             var buffs = unit.Buffs;
             for (var i = 0; i < buffs.Count; i++)
             {
                 hp += buffs[i].HpRegen * buffs[i].Stacks;
                 mp += buffs[i].MpRegen * buffs[i].Stacks;
+                hpPost += buffs[i].HpRegenPostRatio * buffs[i].Stacks;
+                mpPost += buffs[i].MpRegenPostRatio * buffs[i].Stacks;
             }
+            hp *= 1 + hpPost;
+            mp *= 1 + mpPost;
             // 阵亡单位气血锁 0 不结算回血，灵力回复照常入账（死亡灵力运转规约战内同构）。
             if (unit.IsAlive && hp != 0) unit.Hitpoints = Math.Clamp(unit.Hitpoints + hp, 0, unit.Stats.MaxHitpoints);
             if (mp != 0) unit.Manapoints = Math.Clamp(unit.Manapoints + mp, 0, unit.Stats.MaxManapoints);

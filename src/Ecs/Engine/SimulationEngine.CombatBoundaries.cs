@@ -23,7 +23,7 @@ public static partial class SimulationEngine
     private static CombatEncounterState? AdvanceCombatPreparationCore(IPlayerResourceContext player,
         IPlayerActionState action, ActionDefinition definition, GameDataCatalog gameData, AssetWallet? assetBalances,
         DuelAdvanceOptions? duel, DateTimeOffset from, DateTimeOffset target, ref double remainingSeconds,
-        ref Dictionary<Domain.Common.ItemId, double>? deltas, ref SimulationEventTail? events)
+        ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
         => Systems.CombatActionRules.AdvanceCombatPreparationCore(player, action, definition, gameData,
             assetBalances, duel, from, target, ref remainingSeconds, ref deltas, ref events);
 
@@ -38,7 +38,7 @@ public static partial class SimulationEngine
     private static void CompleteCombatAdvanceCore(IPlayerResourceContext player, IPlayerActionState action,
         ActionDefinition definition, CombatEncounterDefinition encounter, GameDataCatalog gameData,
         CombatEncounterState battleState, CombatAdvanceResult combatResult, DateTimeOffset from, DateTimeOffset target,
-        ref double remainingSeconds, ref Dictionary<Domain.Common.ItemId, double>? deltas, ref SimulationEventTail? events,
+        ref double remainingSeconds, ref Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events,
         ref double completedActions, ref double completedRepeats)
         => Systems.CombatActionRules.CompleteCombatAdvanceCore(player, action, definition, encounter, gameData,
             battleState, combatResult, from, target, ref remainingSeconds, ref deltas, ref events,

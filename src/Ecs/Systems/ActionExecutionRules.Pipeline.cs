@@ -142,7 +142,7 @@ internal static partial class ActionExecutionRules
                 e.Definition = definition;
                 return;
             }
-            var duration = TimedActionDuration(e.Player, definition);
+            var duration = TimedActionDuration(e.Player, action, definition, e.Catalog, e.WorkingWallet, e.Core.Deltas);
             if (duration <= 0)
             {
                 e.Player.RemoveAction(action.Id, incrementVersion: false, endedAtUnixSeconds: e.Cursor.ToUnixTimeMilliseconds() / 1000d);
@@ -178,7 +178,7 @@ internal static partial class ActionExecutionRules
     public static void CompleteYield(EcsActionExecutionComponent e)
     {
         if (!e.RoundDue || e.PreparedAction is not { } action || e.Definition is not { } definition) return;
-        CompleteTimedAction(e.Player, action, definition, e.Multiplier, e.Catalog, e.Cursor, e.Core);
+        CompleteTimedAction(e.Player, action, definition, e.Multiplier, e.Catalog, e.WorkingWallet, e.Cursor, e.Core);
         e.RoundDue = false;
         e.PreparedAction = null;
         e.Definition = null;
