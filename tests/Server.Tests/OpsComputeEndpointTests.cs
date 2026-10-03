@@ -143,6 +143,7 @@ public sealed class OpsComputeEndpointTests
         public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted { add { } remove { } }
         public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+        public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => null;
         public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
             long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();

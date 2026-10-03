@@ -193,6 +193,8 @@ public sealed class OpsWriteEndpointTests
         public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => null;
+
         public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
             long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();

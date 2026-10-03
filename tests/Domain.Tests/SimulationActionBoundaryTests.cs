@@ -156,7 +156,7 @@ public sealed class SimulationActionBoundaryTests
                 transitions++;
                 var definition = catalog.Actions.Get(action.Intent.ActionId);
                 if (!SimulationEngine.TryStartAction(player, action, definition, catalog, wallet, at, core)) continue;
-                var duration = SimulationEngine.TimedActionDuration(player, definition);
+                var duration = SimulationEngine.TimedActionDuration(player, action, definition, catalog, wallet, core.ItemDeltas);
                 var multiplier = SimulationEngine.PrepareTimedAction(player, action, definition, catalog, wallet, at, core);
                 while (cutIndex < cuts.Length && from.AddSeconds(cuts[cutIndex]) <= at) cutIndex++;
                 var available = cutIndex < cuts.Length ? Math.Min(remaining, (from.AddSeconds(cuts[cutIndex]) - at).TotalSeconds) : remaining;
@@ -165,7 +165,7 @@ public sealed class SimulationActionBoundaryTests
                 at = windowStart.AddSeconds(plan.StepSeconds - remaining);
                 SimulationEngine.AdvanceTimedAction(player, action, definition, multiplier, catalog, step, at);
                 if (action.ProgressSeconds + 1e-9 >= duration)
-                    SimulationEngine.CompleteTimedAction(player, action, definition, multiplier, catalog, at, core);
+                    SimulationEngine.CompleteTimedAction(player, action, definition, multiplier, catalog, wallet, at, core);
             }
             player.Progression.AgeSeconds += (windowEnd - windowStart).TotalSeconds;
             player.LastSimulatedAt = windowEnd;

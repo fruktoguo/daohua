@@ -1,8 +1,11 @@
+using Domain.GameData;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Protocol;
 using Server.Clean;
 using Server.Clean.Social;
+using System.Text.Json;
 using Xunit;
 
 namespace Server.Tests;
@@ -93,7 +96,7 @@ public sealed class ChatAndSocialTests
         var (alice, aliceName) = await SeedPlayerAsync(source, "观星者");
         var (bob, bobName) = await SeedPlayerAsync(source, "听潮客");
         var (carol, carolName) = await SeedPlayerAsync(source, "拾穗人");
-        var social = new SocialRuntime(repository, presence, NullLogger<SocialRuntime>.Instance);
+        var social = CreateSocialRuntime(source, repository, presence);
         var nodeId = $"node-{Guid.NewGuid():N}";
 
         // alice↔bob 互成好友；carol 自建队伍邀请 alice，同时发来一条待处理好友申请。
@@ -143,7 +146,7 @@ public sealed class ChatAndSocialTests
         await using var _ = source;
         var (alice, aliceName) = await SeedPlayerAsync(source, "青莲子");
         var (bob, _) = await SeedPlayerAsync(source, "白云客");
-        var social = new SocialRuntime(repository, new OnlinePresenceRegistry(), NullLogger<SocialRuntime>.Instance);
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
 
         var requested = await social.ApplyAsync(alice, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.FriendRequest, bob.ToString("D")));
         Assert.True(requested.Success);
@@ -182,7 +185,7 @@ public sealed class ChatAndSocialTests
         await using var _ = source;
         var (leader, leaderName) = await SeedPlayerAsync(source, "队长甲");
         var (member, _) = await SeedPlayerAsync(source, "队员乙");
-        var social = new SocialRuntime(repository, new OnlinePresenceRegistry(), NullLogger<SocialRuntime>.Instance);
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
 
         Assert.Null(await repository.GetPartyIdAsync(leader));
 
@@ -218,6 +221,218 @@ public sealed class ChatAndSocialTests
         var lastLeft = await social.ApplyAsync(member, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyLeave));
         Assert.True(lastLeft.Success);
         Assert.Null(await repository.GetPartyAsync(partyId.Value));
+    }
+
+    /// <summary>创建公开队伍后进入组队大厅：档案字段、成员预览与请求者身价齐备；非法档案被拒。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PartyCreate_PublicParty_AppearsInLobby()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (leader, leaderName) = await SeedPlayerAsync(source, "队长甲");
+        var (seeker, _) = await SeedPlayerAsync(source, "散修乙");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+        // 大厅是全局视图：清掉历史用例遗留的队伍/散人行，断言只认本用例建的队。
+        await ResetPartyTablesAsync(source);
+
+        // 非法档案：未知活动类型 / 超长队名 / 负身价门槛 / 未知地图一律拒绝。
+        foreach (var bad in new[]
+        {
+            new PartyProfileDto(ActivityKind: "dungeon"),
+            new PartyProfileDto(Name: new string('队', 33)),
+            new PartyProfileDto(MinValuation: -1),
+            new PartyProfileDto(MapId: "map.not-exist"),
+        })
+        {
+            var rejected = await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyCreate, Party: bad));
+            Assert.Equal(SocialFailure.InvalidPartyProfile, rejected.Failure);
+        }
+
+        var profile = new PartyProfileDto("听潮小队", PartyActivityKinds.Exploration, string.Empty, 0, true);
+        var created = await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyCreate, Party: profile));
+        Assert.True(created.Success);
+        var partyId = (await repository.GetPartyIdAsync(leader))!.Value;
+
+        var lobby = await social.BuildLobbyAsync(seeker, new PartyLobbyRequestDto(Guid.NewGuid().ToString("D")));
+        var entry = Assert.Single(lobby.Parties, party => party.PartyId == partyId.ToString("D"));
+        Assert.Equal("听潮小队", entry.Name);
+        Assert.Equal(leader.ToString("D"), entry.LeaderId);
+        Assert.Equal(leaderName, entry.LeaderName);
+        Assert.Equal(PartyActivityKinds.Exploration, entry.ActivityKind);
+        Assert.True(entry.Members.Count == 1 && entry.Members[0].PlayerId == leader.ToString("D"));
+        Assert.Equal(0, lobby.MyValuation);
+
+        // 活动类型「不限」双向通配：本队目标为 exploration，combat 筛选不命中，any 筛选命中。
+        var combatOnly = await social.BuildLobbyAsync(seeker, new PartyLobbyRequestDto(Guid.NewGuid().ToString("D"), PartyActivityKinds.Combat));
+        Assert.DoesNotContain(combatOnly.Parties, party => party.PartyId == partyId.ToString("D"));
+        var anyFilter = await social.BuildLobbyAsync(seeker, new PartyLobbyRequestDto(Guid.NewGuid().ToString("D"), PartyActivityKinds.Any));
+        Assert.Contains(anyFilter.Parties, party => party.PartyId == partyId.ToString("D"));
+    }
+
+    /// <summary>不公开队伍不进大厅；持有 partyId 的链接点击仍可加入，身价门槛照旧裁决。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PartyJoin_PrivatePartyViaId_NotInLobbyButJoinable()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (leader, _) = await SeedPlayerAsync(source, "隐者");
+        var (joiner, _) = await SeedPlayerAsync(source, "投帖客");
+        var (gate, _) = await SeedPlayerAsync(source, "门外汉");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+        await ResetPartyTablesAsync(source);
+
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyCreate,
+            Party: new PartyProfileDto("暗流", PartyActivityKinds.Any, string.Empty, 0, false)))).Success);
+        var partyId = await repository.GetPartyIdAsync(leader);
+        Assert.NotNull(partyId);
+
+        var lobby = await social.BuildLobbyAsync(joiner, new PartyLobbyRequestDto(Guid.NewGuid().ToString("D")));
+        Assert.DoesNotContain(lobby.Parties, party => party.PartyId == partyId.Value.ToString("D"));
+
+        // 不存在的队伍 ID：链接失效路径。
+        var ghost = await social.ApplyAsync(joiner, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyJoin, PartyId: Guid.NewGuid().ToString("D")));
+        Assert.Equal(SocialFailure.PartyNotFound, ghost.Failure);
+
+        // 队长把门槛抬到 1：散人身价为 0，链接加入被门槛拒。
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyUpdate,
+            Party: new PartyProfileDto(MinValuation: 1)))).Success);
+        var blocked = await social.ApplyAsync(gate, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyJoin, PartyId: partyId.Value.ToString("D")));
+        Assert.Equal(SocialFailure.ValuationTooLow, blocked.Failure);
+
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyUpdate,
+            Party: new PartyProfileDto(MinValuation: 0)))).Success);
+        var joined = await social.ApplyAsync(joiner, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyJoin, PartyId: partyId.Value.ToString("D")));
+        Assert.True(joined.Success);
+        Assert.Equal(partyId, await repository.GetPartyIdAsync(joiner));
+    }
+
+    /// <summary>匹配登记：命中公开队伍时自动并入并清除登记；未命中保持「匹配中」，撤下后从大厅散人列表消失。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PartyMatchSet_JoinsMatchingPartyOrStaysSeeking()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (leader, _) = await SeedPlayerAsync(source, "组头");
+        var (hit, _) = await SeedPlayerAsync(source, "顺风耳");
+        var (miss, _) = await SeedPlayerAsync(source, "独行者");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+        // 自动并入的候选池是全库公开队伍：先清场，保证唯一候选就是本用例建的队。
+        await ResetPartyTablesAsync(source);
+
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyCreate,
+            Party: new PartyProfileDto("历练队", PartyActivityKinds.Exploration, string.Empty, 0, true)))).Success);
+        var partyId = await repository.GetPartyIdAsync(leader);
+        Assert.NotNull(partyId);
+
+        // 目标一致的散人自动并入：登记清除、直接入队。
+        var autoJoin = await social.ApplyAsync(hit, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyMatchSet,
+            Party: new PartyProfileDto(ActivityKind: PartyActivityKinds.Exploration)));
+        Assert.True(autoJoin.Success);
+        Assert.Equal(partyId, await repository.GetPartyIdAsync(hit));
+        Assert.Null(await repository.GetPartySeekerAsync(hit));
+
+        // 目标不一致的散人保持匹配中：seeking 下发、大厅散人列表可见。
+        var staying = await social.ApplyAsync(miss, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyMatchSet,
+            Party: new PartyProfileDto(ActivityKind: PartyActivityKinds.Cultivation, MinValuation: 5)));
+        Assert.True(staying.Success);
+        Assert.Null(await repository.GetPartyIdAsync(miss));
+        var seeker = await repository.GetPartySeekerAsync(miss);
+        Assert.NotNull(seeker);
+        var state = await social.BuildStateAsync(miss, null);
+        Assert.NotNull(state.Seeking);
+        Assert.Equal(PartyActivityKinds.Cultivation, state.Seeking!.ActivityKind);
+        var lobby = await social.BuildLobbyAsync(leader, new PartyLobbyRequestDto(Guid.NewGuid().ToString("D")));
+        Assert.Contains(lobby.Seekers, entry => entry.PlayerId == miss.ToString("D"));
+
+        var cleared = await social.ApplyAsync(miss, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyMatchClear));
+        Assert.True(cleared.Success);
+        Assert.Null(await repository.GetPartySeekerAsync(miss));
+        var again = await social.ApplyAsync(miss, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyMatchClear));
+        Assert.Equal(SocialFailure.SeekingNotFound, again.Failure);
+    }
+
+    /// <summary>并发加入由行锁事务裁决：5 人满员上限不被并发击穿，超额者收到明确失败。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PartyJoin_ConcurrentJoins_RespectCapacity()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var (leader, _) = await SeedPlayerAsync(source, "擂主");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyCreate,
+            Party: new PartyProfileDto("满编擂台", PartyActivityKinds.Any, string.Empty, 0, true)))).Success);
+        var partyId = (await repository.GetPartyIdAsync(leader))!.Value;
+
+        var joiners = new List<Guid>();
+        for (var index = 0; index < 6; index++)
+            joiners.Add((await SeedPlayerAsync(source, $"抢位{index}")).PlayerId);
+
+        var outcomes = await Task.WhenAll(joiners.Select(joiner =>
+            social.ApplyAsync(joiner, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyJoin, PartyId: partyId.ToString("D"))).AsTask()));
+
+        Assert.Equal(4, outcomes.Count(outcome => outcome.Success));
+        Assert.All(outcomes.Where(outcome => !outcome.Success), outcome => Assert.Equal(SocialFailure.PartyFull, outcome.Failure));
+        var party = await repository.GetPartyAsync(partyId);
+        Assert.Equal(SocialRuntime.MaxPartyMembers, party!.Members.Count);
+    }
+
+    /// <summary>队长更新档案与移出成员；非队长操作被拒；解散后大厅与聊天链接一并失效。</summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task PartyManage_UpdateKickDisband_AndLinkExpiry()
+    {
+        var (source, repository) = await OpenAsync();
+        await using var _ = source;
+        var chatRepository = new PostgresChatRepository(source);
+        var (leader, _) = await SeedPlayerAsync(source, "执掌");
+        var (member, _) = await SeedPlayerAsync(source, "随行");
+        var social = CreateSocialRuntime(source, repository, new OnlinePresenceRegistry());
+
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyCreate,
+            Party: new PartyProfileDto("行脚团", PartyActivityKinds.Any, string.Empty, 0, true)))).Success);
+        var partyId = (await repository.GetPartyIdAsync(leader))!.Value;
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyInvite, member.ToString("D")))).Success);
+        Assert.True((await social.ApplyAsync(member, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyAccept))).Success);
+
+        // 非队长更新/移出/解散一律 NotLeader。
+        Assert.Equal(SocialFailure.NotLeader, (await social.ApplyAsync(member, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyUpdate, Party: new PartyProfileDto(Name: "篡名")))).Failure);
+        Assert.Equal(SocialFailure.NotLeader, (await social.ApplyAsync(member, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyKick, leader.ToString("D")))).Failure);
+        Assert.Equal(SocialFailure.NotLeader, (await social.ApplyAsync(member, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyDisband))).Failure);
+
+        // 队长改名并公开化，档案下发到位。
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyUpdate,
+            Party: new PartyProfileDto(Name: "改旗", MinValuation: 3)))).Success);
+        var updated = await repository.GetPartyAsync(partyId);
+        Assert.Equal("改旗", updated!.Profile.Name);
+        Assert.Equal(3, updated.Profile.MinValuation);
+
+        // 分享卡片到世界频道：消息带 partyLink 快照。
+        var share = await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyShare, Channel: ChatChannels.World));
+        Assert.True(share.Success);
+        var worldLog = await chatRepository.LoadRecentAsync(ChatChannels.World, string.Empty, 100);
+        var card = worldLog.LastOrDefault(message => message.SenderId == leader);
+        Assert.NotNull(card?.PartyLink);
+        Assert.Equal(partyId, card!.PartyLink!.PartyId);
+        Assert.Equal("改旗", card.PartyLink.Name);
+
+        // 移出成员后其队伍清空。
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyKick, member.ToString("D")))).Success);
+        Assert.Null(await repository.GetPartyIdAsync(member));
+
+        // 解散：成员清空、大厅不再列出、历史消息保留但链接失效。
+        Assert.True((await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyDisband))).Success);
+        Assert.Null(await repository.GetPartyAsync(partyId));
+        Assert.Null(await repository.GetPartyIdAsync(leader));
+        var afterDisband = await social.BuildLobbyAsync(member, new PartyLobbyRequestDto(Guid.NewGuid().ToString("D")));
+        Assert.DoesNotContain(afterDisband.Parties, party => party.PartyId == partyId.ToString("D"));
+        var staleLog = await chatRepository.LoadRecentAsync(ChatChannels.World, string.Empty, 100);
+        var staleCard = staleLog.LastOrDefault(message => message.SenderId == leader);
+        Assert.NotNull(staleCard);
+        Assert.Null(staleCard!.PartyLink);
     }
 
     /// <summary>好友频道私聊要求双方已是好友；世界/附近频道按作用域解析收件人；宗门与空正文被拒。</summary>
@@ -262,12 +477,63 @@ public sealed class ChatAndSocialTests
         Assert.Contains(history.Messages, message => message.Body == "此地灵气充裕");
     }
 
+    /// <summary>
+    /// 清空队伍域三张表（成员/邀请/散人/链接引用随外键一并清理）。
+    /// 大厅查询是无作用域的全局视图，历史用例遗留行会污染断言——PostgresIntegration 集合内用例串行执行，清场安全。
+    /// </summary>
+    private static async Task ResetPartyTablesAsync(NpgsqlDataSource source) =>
+        await SqlAsync(source, "TRUNCATE social.party_seekers, social.party_invitations, social.party_members, social.parties CASCADE");
+
     private static async Task<(NpgsqlDataSource Source, PostgresSocialRepository Repository)> OpenAsync()
     {
         var connectionString = PostgresTestSchema.RequireConnectionString("传音/社交集成测试");
         var source = NpgsqlDataSource.Create(connectionString);
         await PostgresTestSchema.EnsureAsync(source);
         return (source, new PostgresSocialRepository(source));
+    }
+
+    /// <summary>
+    /// 装配集成测试用的社交运行时：市场分片不启动（未就绪时卖一档价返回 null，身价全部回落回收价），
+    /// 运行时宿主为永不装载替身（离线估值只走 loadout 分段读取路径）。
+    /// </summary>
+    private static SocialRuntime CreateSocialRuntime(NpgsqlDataSource source, PostgresSocialRepository repository, OnlinePresenceRegistry presence)
+    {
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = "Host=unused;Database=unused",
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var market = new MarketRuntime(
+            new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance),
+            options,
+            NullLogger<MarketRuntime>.Instance);
+        var sections = new PostgresSectionRepository(source, NullLogger<PostgresSectionRepository>.Instance);
+        var catalog = GameDataCatalog.LoadEmbedded();
+        var valuation = new PartyValuationService(new EmptyPlayerRuntime(), sections, market, catalog);
+        var chat = new ChatRuntime(new PostgresChatRepository(source), repository, presence);
+        return new SocialRuntime(repository, presence, valuation, chat, catalog, NullLogger<SocialRuntime>.Instance);
+    }
+
+    /// <summary>估值测试路径不触发装载的运行时替身。</summary>
+    private sealed class EmptyPlayerRuntime : IPlayerRuntime
+    {
+        public int LoadedCount => 0;
+        public DateTimeOffset? NextAdvanceBoundaryUtc => null;
+        public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated { add { } remove { } }
+        public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted { add { } remove { } }
+        public ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) => null;
+        public ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
+            long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+        public ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId) => [];
+        public ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<IReadOnlyList<PlayerRuntimeSnapshot>>([]);
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     /// <summary>播种一个玩家；道号带随机后缀，避免与既有测试数据或历史运行撞唯一索引。</summary>
