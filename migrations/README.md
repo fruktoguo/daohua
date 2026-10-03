@@ -37,5 +37,7 @@ scripts/migrate-local-db.sh --dry-run  # 只打印将要执行的迁移
 | `0002_v2_to_v3.sql` | `platform.compute_jobs` 增加 `lease_token`/`next_attempt_at`/`last_error` 与单开任务部分唯一索引 `ux_compute_jobs_open`，schema_version 写入 3 |
 | `0003_v3_to_v4.sql` | 新增 `social` schema 与 `friend_requests`/`friendships`/`parties`/`party_members`/`party_invitations`/`chat_messages` 六张表（传音频道与好友、组队社交），schema_version 写入 4 |
 | `0004_v4_to_v5.sql` | `identity.players` 增加 `player_seq` 自增序号列（存量由序列回填）；并存档载荷 v4→v5：settings 新增 `autoTravelEnabled`、ActionIntent 新增 `anchorNodeId` 均可缺省解码，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 5 |
+| `0005_v5_to_v6.sql` | 仅存档载荷标签 v5→v6：loadout 分段新增 `techniqueExperiences`、ActionIntent 新增 `targetItemId`/`auxItemId`、LoadoutDocument 新增 `TechniqueExperiences`，均可缺省解码，推进三张存档表的 `schema_version` 标签；platform schema_version 写入 6 |
+| `0006_v6_to_v7.sql` | `social.parties` 追加队伍档案列（name/activity_kind/map_id/min_valuation/is_public/updated_at）、新增 `social.party_seekers` 散人池、`social.chat_messages` 增 `party_ref` 队伍链接外键（ON DELETE SET NULL）；无存档载荷变更，schema_version 写入 7 |
 
 > 说明：节点公共建筑表 `game.node_buildings` 属于 v3 权威 DDL 的一部分，由 `PostgresSchema.Sql` 的 `CREATE TABLE IF NOT EXISTS` 在启用 schema bootstrap 的进程启动时自动补齐，因此不单独提供迁移脚本。仅在既有 v3 库且**全部**进程都关闭 schema bootstrap 时，才需要人工执行等价 `CREATE TABLE IF NOT EXISTS`（结构见 `src/Server/Clean/PostgresSchema.cs`）。

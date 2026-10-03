@@ -279,8 +279,13 @@ public static class ProtocolSnapshotMapper
         // 前端只做展示渲染，所有收益结算均在服务端领域层完成。
         PlayerSectionKind.Buffs => state.Buffs.Select(buff => new
         {
-            buff.BuffId, buff.Name, buff.Stacks, buff.ExpiresAtUnixSeconds, buff.SourceItemId,
-            buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints, buff.StatRatios
+            buff.BuffId, buff.Name, buff.Stacks,
+            // durable 注入的 +∞ 永驻 Buff 投影为有限哨兵：JSON 无法表达非有限数，
+            // 前端按 ≥1e15 阈值识别常驻展示，后端剔除逻辑不依赖该投影值。
+            expiresAtUnixSeconds = double.IsFinite(buff.ExpiresAtUnixSeconds) ? buff.ExpiresAtUnixSeconds : double.MaxValue,
+            buff.SourceItemId,
+            buff.HpRegen, buff.MpRegen, buff.AttackSpeedPoints, buff.DamageAbsorptionPoints, buff.StatRatios,
+            buff.HpRegenPostRatio, buff.MpRegenPostRatio
         }).ToArray(),
         PlayerSectionKind.Loadout => ToLoadoutSection(state),
         PlayerSectionKind.Settings => new { state.Settings, state.Presence },
@@ -307,7 +312,8 @@ public static class ProtocolSnapshotMapper
         state.Loadout.AbilitySlots,
         state.Loadout.Equipment,
         learnedAbilityIds = state.LearnedAbilities.Select(id => id.Value).ToArray(),
-        abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>()
+        abilityExperiences = state.Loadout.AbilityExperiences ?? new Dictionary<string, double>(),
+        techniqueExperiences = state.Loadout.TechniqueExperiences ?? new Dictionary<string, double>()
     };
 
     /// <summary>
@@ -456,6 +462,9 @@ public static class ProtocolSnapshotMapper
                 intent = action.Intent,
                 actionName,
                 actionType,
+                // 强化队列显示：目标/辅助物品在 intent 之外再平铺一行字段，前端队列行免回读嵌套对象。
+                targetItemId = action.Intent.TargetItemId,
+                auxItemId = action.Intent.AuxItemId,
                 status = (byte)action.Status,
                 progressSeconds = action.ProgressSeconds,
                 durationSeconds,
@@ -724,6 +733,16 @@ public static class ProtocolSnapshotMapper
             y,
             locationName = onEdge ? "旅途中" : projection?.Name ?? world.NodeId,
             cultivationMultiplier = projection?.CultivationMultiplier ?? 1d,
+            // 当前节点公共建筑生效效果汇总（聚合侧同一口径）：前端行动产出预览按此计入
+            // 产出/耗时加成；跨节点投影泄漏由 EffectiveNodeBuildingEffects 统一拦截。
+            buildingEffects = new
+            {
+                explorationSpeedRatio = world.EffectiveNodeBuildingEffects.ExplorationSpeedRatio,
+                explorationOutputRatio = world.EffectiveNodeBuildingEffects.ExplorationOutputRatio,
+                alchemySpeedRatio = world.EffectiveNodeBuildingEffects.AlchemySpeedRatio,
+                alchemyOutputRatio = world.EffectiveNodeBuildingEffects.AlchemyOutputRatio,
+                cultivationOutputRatio = world.EffectiveNodeBuildingEffects.CultivationOutputRatio,
+            },
             availableActionIds = onEdge || projection is null ? Array.Empty<string>() : projection.AvailableActionIds,
             encounterIds = onEdge || projection is null ? Array.Empty<string>() : projection.EncounterIds,
             npcs = onEdge || projection is null ? Array.Empty<object>() : projection.Npcs,

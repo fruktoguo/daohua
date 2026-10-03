@@ -38,9 +38,22 @@ public static class StaticGameCatalogMapper
             var cooldownSeconds = hasConsumable ? ReadDouble(consumable, "cooldownSeconds", 0) : 0;
             var hitpointRestore = hasConsumable ? ReadDouble(consumable, "hitpointRestore", 0) : 0;
             var manapointRestore = hasConsumable ? ReadDouble(consumable, "manapointRestore", 0) : 0;
+            // durable 持续消耗品：部署后不消耗不耗竭、槽位持有即生效（聚灵阵盘）。
+            var durable = hasConsumable && ReadBool(consumable, "durable", false);
+            // strike 即时打击（雷击符）：耗蓝代价 + 蓝量/法攻折算的木系法术一击。
+            var strike = hasConsumable && consumable.TryGetProperty("strike", out var strikeElement) && strikeElement.ValueKind == JsonValueKind.Object
+                ? new
+                {
+                    manaCostRatio = ReadDouble(strikeElement, "manaCostRatio", 0),
+                    manaDamageRatio = ReadDouble(strikeElement, "manaDamageRatio", 0),
+                    spellAttackRatio = ReadDouble(strikeElement, "spellAttackRatio", 0),
+                    element = ReadString(strikeElement, "element")
+                }
+                : null;
 
             // 消耗品增益效果与领域结算读取的字段一一对应（SimulationEngine 只消费以下键），
             // 不下发领域未消费的占位字段，避免前端误以为存在自动触发/阈值语义。
+            // hpRegenPostRatio/mpRegenPostRatio 为后段回复乘区（固定回复合并后再乘）。
             var buffEffects = hasConsumable && consumable.TryGetProperty("buffs", out var buffsArray) && buffsArray.ValueKind == JsonValueKind.Array
                 ? buffsArray.EnumerateArray().Select(b => new
                 {
@@ -49,6 +62,8 @@ public static class StaticGameCatalogMapper
                     durationSeconds = ReadDouble(b, "durationSeconds", 0),
                     hpRegen = ReadDouble(b, "hpRegen", 0),
                     mpRegen = ReadDouble(b, "mpRegen", 0),
+                    hpRegenPostRatio = ReadDouble(b, "hpRegenPostRatio", 0),
+                    mpRegenPostRatio = ReadDouble(b, "mpRegenPostRatio", 0),
                     attackSpeedPoints = ReadDouble(b, "attackSpeedPoints", 0),
                     damageAbsorptionPoints = ReadDouble(b, "damageAbsorptionPoints", 0)
                 }).ToArray()
@@ -74,6 +89,8 @@ public static class StaticGameCatalogMapper
                 cooldownSeconds,
                 hitpointRestore,
                 manapointRestore,
+                durable,
+                strike,
                 buffEffects
             };
         }).ToArray();
@@ -110,6 +127,12 @@ public static class StaticGameCatalogMapper
                 ? eb.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetDouble(), StringComparer.Ordinal)
                 : new Dictionary<string, double>();
 
+            // 强化保护材料白名单：配了列表就从列表内任选材料代护，未配时前端回退为同装备基础件提示。
+            var enhanceProtectionItems = eq.TryGetProperty("enhanceProtectionItems", out var ep) && ep.ValueKind == JsonValueKind.Array
+                ? ep.EnumerateArray().Where(entry => entry.ValueKind == JsonValueKind.String)
+                    .Select(entry => entry.GetString()!).Where(text => text.Length > 0).ToArray()
+                : null;
+
             return (object)new
             {
                 equipmentId = id,
@@ -120,7 +143,8 @@ public static class StaticGameCatalogMapper
                 baseStatRatios,
                 flatStats,
                 specialMechanics,
-                enhancementBonus
+                enhancementBonus,
+                enhanceProtectionItems
             };
         }).ToArray();
 
@@ -254,7 +278,7 @@ public static class StaticGameCatalogMapper
 
     /// <summary>
     /// 怪物静态摘要投影：攻防/资源/抗性/击杀收益一律取领域解算结果（CombatMonsterDefinition.Stats 与奖励字段），
-    /// 原始配表 JSON 只承担名称、立绘、流派标签与技能列表等声明式字段——属性由「境界锚点 × 品阶倍率 × 倾向权重」
+    /// 原始配表 JSON 只承担名称、立绘、流派标签与技能列表等声明式字段——属性由「等级锚点 × 生命层次倍率 × 倾向权重」
     /// 派生，配表顶层并不存在 maxManapoints/magicResistance/experience 等同名字段，直接读会恒为 0。
     /// </summary>
     private static object ResolveMonster(GameDataCatalog catalog, string id)

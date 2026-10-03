@@ -123,8 +123,9 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.OnlinePresenceRegistry>();
     builder.Services.AddSingleton<Server.Clean.Social.ISocialRepository, Server.Clean.Social.PostgresSocialRepository>();
     builder.Services.AddSingleton<Server.Clean.Social.IChatRepository, Server.Clean.Social.PostgresChatRepository>();
-    builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Social.PartyValuationService>();
     builder.Services.AddSingleton<Server.Clean.Social.ChatRuntime>();
+    builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
     builder.Services.AddSingleton(options.AntiMultiOpen);
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.DeviceQuotaRegistry>();
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.AntiMultiOpenAdmission>();
@@ -258,6 +259,7 @@ if (processRole == ServerProcessRole.Api)
                 name = action.Name,
                 description = string.Empty,
                 type = action.Kind.ToString().ToLowerInvariant(),
+                technique = action.Technique,
                 durationSeconds = action.DurationSeconds,
                 executionKind = action.ExecutionKind switch
                 {

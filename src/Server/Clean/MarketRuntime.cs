@@ -180,6 +180,17 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         }
     }
 
+    /// <summary>读取品种当前最低挂售（卖一档）价；分片未就绪、品种不属本进程分片或无卖单时返回 null。</summary>
+    /// <param name="instrument">市场品种。</param>
+    public double? TryGetBestAskPrice(MarketInstrument instrument)
+    {
+        if (!_ready || !Owns(instrument)) return null;
+        lock (_booksGate)
+        {
+            return _books.TryGetValue(instrument, out var book) ? book.BestAskPrice : null;
+        }
+    }
+
     /// <summary>
     /// 返回玩家在内存盘口中的活动订单，按挂入顺序倒序截断。
     /// Sequence 是单个订单簿内的局部序号，不能作为跨品种排序主键：

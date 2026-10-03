@@ -89,6 +89,10 @@ public sealed class EcsPlayerRuntimeAdapter(
         }
     }
 
+    /// <summary>读取已加载玩家的最新快照；未加载返回 null（不触发装载）。</summary>
+    public PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId) =>
+        _loaded.TryGetValue(playerId, out var snapshot) ? snapshot : null;
+
     private async ValueTask<PlayerRuntimeSnapshot> LoadOwnedAsync(Guid playerId,
         List<RuntimeNotification> notifications, CancellationToken cancellationToken)
     {
@@ -205,7 +209,7 @@ public sealed class EcsPlayerRuntimeAdapter(
             var recent = _recentRequests.GetOrAdd(playerId, static _ => new RecentRequests());
             if (recent.Entries.TryGetValue(requestId, out var remembered))
                 return remembered.Command == command && remembered.PayloadHash == payloadHash
-                    ? new PlayerCommandResult(true, "IDEMPOTENT_REPLAY", "命令已处理。", before)
+                    ? new PlayerCommandResult(true, "IDEMPOTENT_REPLAY", SuccessNotice(command), before)
                     : new PlayerCommandResult(false, "REQUEST_ID_CONFLICT", "请求 ID 已用于其他命令。", before);
             if (commandReceipts is not null && ShouldPersistReceipt(command))
             {
@@ -215,7 +219,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                     if (persisted.Command != command || persisted.PayloadHash != payloadHash)
                         return new PlayerCommandResult(false, "REQUEST_ID_CONFLICT", "请求 ID 已用于其他命令。", before);
                     recent.Remember(requestId, command, payloadHash);
-                    return new PlayerCommandResult(true, "IDEMPOTENT_REPLAY", "命令已处理。", before);
+                    return new PlayerCommandResult(true, "IDEMPOTENT_REPLAY", SuccessNotice(command), before);
                 }
             }
             if (expectedStateVersion > 0 && before.StateVersion != expectedStateVersion)
@@ -238,11 +242,17 @@ public sealed class EcsPlayerRuntimeAdapter(
                         if (!Guid.TryParse(request.RequestId, out var actionRequestId) || actionRequestId != requestId)
                             throw new DomainException(DomainErrorCode.InvalidArgument, "请求标识不一致。");
                         var intent = new ActionIntent(new ActionId(request.ActionId), request.RepeatCount,
-                            request.TargetNodeId, request.Parameters, request.PvpEnabled);
-                        if (gameData.Actions.TryGet(intent.ActionId, out var actionDefinition)
-                            && actionDefinition.AllowedNodeIds is { Count: > 0 }
-                            && (before.State.World.EdgeId is not null || !actionDefinition.AllowedNodeIds.Contains(before.State.World.NodeId)))
-                            return new PlayerCommandResult(false, "WRONG_LOCATION", "当前位置不允许执行该行动。", before);
+                            request.TargetNodeId, request.Parameters, request.PvpEnabled)
+                            with { TargetItemId = request.TargetItemId, AuxItemId = request.AuxItemId };
+                        if (gameData.Actions.TryGet(intent.ActionId, out var actionDefinition))
+                        {
+                            // 强化行动必须指定目标装备；缺 targetItemId 载荷无效，不入队。
+                            if (actionDefinition.Kind == ActionKind.Enhancement && string.IsNullOrWhiteSpace(request.TargetItemId))
+                                return new PlayerCommandResult(false, "INVALID_PAYLOAD", "强化行动必须指定目标装备。", before);
+                            if (actionDefinition.AllowedNodeIds is { Count: > 0 }
+                                && (before.State.World.EdgeId is not null || !actionDefinition.AllowedNodeIds.Contains(before.State.World.NodeId)))
+                                return new PlayerCommandResult(false, "WRONG_LOCATION", "当前位置不允许执行该行动。", before);
+                        }
                         var now = _simulationClock.UtcNow;
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Enqueue(intent, now, gameData.Actions));
                         break;
@@ -692,7 +702,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                 notifications.Add(new RuntimeNotification(playerId, outcome.Logs, after));
                 if (forfeit is { } resolvedForfeit)
                     await RouteDuelForfeitAsync(resolvedForfeit, notifications, cancellationToken).ConfigureAwait(false);
-                return new PlayerCommandResult(true, "OK", "命令已提交。", after, outcome.Simulation, outcome.Logs);
+                return new PlayerCommandResult(true, "OK", SuccessNotice(command), after, outcome.Simulation, outcome.Logs);
             }
             catch (DomainException exception)
             {
@@ -977,6 +987,26 @@ public sealed class EcsPlayerRuntimeAdapter(
             if (!marksBefore.TryGetValue(section, out var previous) || previous != mark) touched.Add(section);
         return touched;
     }
+
+    /// <summary>
+    /// 成功回执的浮动气泡文案：只有需要文字确认的命令才给文本；高频操作或界面已自证
+    /// （队列/装备即时刷新、market.place/cancel 前端发送时已弹方向专属提示）返回空串静默，
+    /// 前端对空 message 不弹气泡。失败提示不走此表，仍在各分支内就地返回。
+    /// </summary>
+    private static string SuccessNotice(string command) => command switch
+    {
+        "ability.learn" => "功法参悟完毕。",
+        "progression.breakthrough" => "突破成功，境界晋升。",
+        "world.travel" => "已启程赶路。",
+        "building.build" => "建造已发起。",
+        "building.upgrade" => "升级已发起。",
+        "building.contribute" => "材料已提交。",
+        "market.claim" => "结算领取已提交。",
+        "item.discard" => "物品已丢弃。",
+        "item.sell" => "物品已售出。",
+        "player.rename" => "道号已更新。",
+        _ => string.Empty,
+    };
 
     private async ValueTask RefreshNodeBuildingsAsync(Guid playerId, PlayerWorldStateDocument world,
         DateTimeOffset now, CancellationToken cancellationToken)

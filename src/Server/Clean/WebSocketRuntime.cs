@@ -639,6 +639,21 @@ public static class WebSocketEndpoint
                         await QueueJsonAsync(session, WireMessageType.SocialState, envelope.RequestId,
                             await social.BuildStateAsync(session.PlayerId, envelope.RequestId.ToString("D"), cancellationToken), cancellationToken);
                         break;
+                    case WireMessageType.PartyLobbyRequest:
+                        if (!handshaken)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("HANDSHAKE_REQUIRED", "请先完成 hello 握手。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        if (!WireEnvelopeCodec.TryDeserializeJson<PartyLobbyRequestDto>(envelope, out var lobbyRequest) || lobbyRequest is null
+                            || !Guid.TryParse(lobbyRequest.RequestId, out var lobbyRequestId) || lobbyRequestId != envelope.RequestId)
+                        {
+                            await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("INVALID_PARTY_LOBBY", "组队大厅请求无效。", envelope.RequestId.ToString("D")), cancellationToken);
+                            continue;
+                        }
+                        await QueueJsonAsync(session, WireMessageType.PartyLobby, envelope.RequestId,
+                            await social.BuildLobbyAsync(session.PlayerId, lobbyRequest, cancellationToken), cancellationToken);
+                        break;
                     case WireMessageType.UnitInspect:
                         if (!handshaken)
                         {
@@ -762,6 +777,12 @@ public static class WebSocketEndpoint
         Social.SocialFailure.PartyFull => "SOCIAL_PARTY_FULL",
         Social.SocialFailure.NotLeader => "SOCIAL_NOT_LEADER",
         Social.SocialFailure.InvitationNotFound => "SOCIAL_INVITATION_NOT_FOUND",
+        Social.SocialFailure.PartyNotFound => "SOCIAL_PARTY_NOT_FOUND",
+        Social.SocialFailure.ValuationTooLow => "SOCIAL_VALUATION_TOO_LOW",
+        Social.SocialFailure.InvalidPartyProfile => "SOCIAL_INVALID_PARTY_PROFILE",
+        Social.SocialFailure.SeekingNotFound => "SOCIAL_SEEKING_NOT_FOUND",
+        Social.SocialFailure.RateLimited => "SOCIAL_RATE_LIMITED",
+        Social.SocialFailure.ChannelUnavailable => "SOCIAL_CHANNEL_UNAVAILABLE",
         _ => "SOCIAL_FAILED"
     };
 
@@ -779,8 +800,14 @@ public static class WebSocketEndpoint
         Social.SocialFailure.AlreadyInParty => "你已经在队伍中。",
         Social.SocialFailure.NotInParty => "你当前不在队伍中。",
         Social.SocialFailure.PartyFull => "队伍人数已满。",
-        Social.SocialFailure.NotLeader => "只有队长可以邀请队友。",
+        Social.SocialFailure.NotLeader => "只有队长可以执行该操作。",
         Social.SocialFailure.InvitationNotFound => "没有待处理的队伍邀请。",
+        Social.SocialFailure.PartyNotFound => "队伍不存在或已解散。",
+        Social.SocialFailure.ValuationTooLow => "身价未达到队伍门槛。",
+        Social.SocialFailure.InvalidPartyProfile => "队伍配置无效。",
+        Social.SocialFailure.SeekingNotFound => "你没有进行中的队伍匹配。",
+        Social.SocialFailure.RateLimited => "操作过于频繁，请稍后再试。",
+        Social.SocialFailure.ChannelUnavailable => "该传音频道当前不可用。",
         _ => "社交操作失败。"
     };
 

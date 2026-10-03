@@ -38,17 +38,20 @@ public static class LoadoutCommand
         {
             var id = raw.GetProperty("itemId").GetString() ?? throw new JsonException("装备 ID 不能为空。");
             var enhancement = raw.GetProperty("enhancementLevel").GetDouble();
+            if (!double.IsFinite(enhancement) || enhancement < 0 || enhancement != Math.Floor(enhancement))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "装备强化等级无效。");
+            // 强化进度由资产变体承载：+N 装备对应 AssetKey(itemId, "+N") 独立余额行，
+            // 变体余额即强化持有证明——装配只校验余额，客户端上报等级不再是信任输入。
+            var heldKey = enhancement > 0
+                ? new AssetKey(new ItemId(id), FormattableString.Invariant($"+{enhancement:0}"))
+                : new AssetKey(new ItemId(id));
             if (!catalog.RawEquipments.TryGetValue(id, out var definition)
-                || wallet.Get(new AssetKey(new ItemId(id))) < 1)
+                || wallet.Get(heldKey) < 1)
                 throw new DomainException(DomainErrorCode.InvalidArgument, "装备不存在或未持有。");
             var slot = definition.GetProperty("slot").GetString()!;
             // 双手武器独占武器与副手两个槽位，与任一单手槽共存即冲突。
             if (!slots.Add(slot) || (slots.Contains("two-hand") && (slots.Contains("weapon") || slots.Contains("off-hand"))))
                 throw new DomainException(DomainErrorCode.InvalidArgument, "装备槽位冲突。");
-            var ownedLevel = player.Loadout.Equipment.FirstOrDefault(item => item.ItemId == id)?.EnhancementLevel ?? 0;
-            // 强化等级以玩家已持有记录为准，装配命令不得伪造强化进度。
-            if (enhancement != ownedLevel)
-                throw new DomainException(DomainErrorCode.InvalidArgument, "装配不能修改装备强化等级。");
             equipment.Add(new(id, enhancement));
         }
         var abilities = new List<PlayerAbilitySlot>();

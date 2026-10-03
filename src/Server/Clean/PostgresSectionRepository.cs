@@ -129,6 +129,122 @@ public sealed class PostgresSectionRepository(
         return new PlayerStateBundle(identity, head, sections, actions);
     }
 
+    /// <summary>
+    /// 读取玩家单个分段的生效载荷：已落盘行 + 刷盘队列中较新版本叠加（与 <see cref="LoadAsync"/> 同一口径）。
+    /// 供身价估值等轻量场景只取目标分段，不必加载全部八段与整包校验。
+    /// </summary>
+    /// <param name="playerId">玩家 ID。</param>
+    /// <param name="sectionKind">分段键（见 <see cref="PlayerSectionKinds"/>）。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>生效分段；未落盘且队列无挂起时为 null。</returns>
+    public async ValueTask<StoredSection?> LoadSectionAsync(Guid playerId, string sectionKind, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        StoredSection? persisted = null;
+        await using (var command = new NpgsqlCommand("""
+            SELECT player_id, section_kind, section_version, schema_version, codec,
+                   payload, raw_bytes, checksum, updated_at
+            FROM game.player_state_sections
+            WHERE player_id = $1 AND section_kind = $2
+            """, connection))
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                persisted = new StoredSection(
+                    reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
+                    reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
+            }
+        }
+        await using (var command = new NpgsqlCommand("""
+            SELECT player_id, section_kind, state_version, schema_version, codec,
+                   payload, raw_bytes, checksum, updated_at
+            FROM platform.section_flush_queue
+            WHERE player_id = $1 AND section_kind = $2
+            ORDER BY state_version DESC
+            """, connection))
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = playerId });
+            command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            // 队列为 latest-only：首个（最新）行即候选；比已落盘版本新则采用，同版本校验不一致载荷。
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var pending = new StoredSection(
+                    reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
+                    reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
+                if (persisted is null || pending.StateVersion > persisted.StateVersion) persisted = pending;
+                else if (pending.StateVersion == persisted.StateVersion
+                         && !string.Equals(pending.Checksum, persisted.Checksum, StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException("玩家 section 同一版本载荷冲突。");
+                }
+            }
+        }
+        return persisted;
+    }
+
+    /// <summary>
+    /// 批量读取多名玩家同一分段的生效载荷：已落盘行 + 刷盘队列中较新版本叠加（与 <see cref="LoadAsync"/> 同一口径）。
+    /// 供组队大厅等批量估值场景一次往返取回全体成员的 loadout 分段。
+    /// </summary>
+    /// <param name="playerIds">玩家 ID 集合。</param>
+    /// <param name="sectionKind">分段键（见 <see cref="PlayerSectionKinds"/>）。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>playerId → 生效分段；未落盘且队列无挂起的玩家缺席。</returns>
+    public async ValueTask<IReadOnlyDictionary<Guid, StoredSection>> LoadSectionsAsync(
+        IReadOnlyCollection<Guid> playerIds, string sectionKind, CancellationToken cancellationToken = default)
+    {
+        if (playerIds.Count == 0) return new Dictionary<Guid, StoredSection>();
+        var ids = playerIds.ToArray();
+        var result = new Dictionary<Guid, StoredSection>(ids.Length);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using (var command = new NpgsqlCommand("""
+            SELECT player_id, section_kind, section_version, schema_version, codec,
+                   payload, raw_bytes, checksum, updated_at
+            FROM game.player_state_sections
+            WHERE player_id = ANY($1) AND section_kind = $2
+            """, connection))
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = ids });
+            command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                result[reader.GetGuid(0)] = new StoredSection(
+                    reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
+                    reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
+            }
+        }
+        await using (var command = new NpgsqlCommand("""
+            SELECT player_id, section_kind, state_version, schema_version, codec,
+                   payload, raw_bytes, checksum, updated_at
+            FROM platform.section_flush_queue
+            WHERE player_id = ANY($1) AND section_kind = $2
+            """, connection))
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = ids });
+            command.Parameters.Add(new NpgsqlParameter { Value = sectionKind });
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var pending = new StoredSection(
+                    reader.GetGuid(0), reader.GetString(1), reader.GetInt64(2), reader.GetInt32(3), reader.GetString(4),
+                    reader.GetFieldValue<byte[]>(5), reader.GetInt32(6), reader.GetString(7), reader.GetFieldValue<DateTimeOffset>(8));
+                if (!result.TryGetValue(pending.PlayerId, out var persisted)
+                    || pending.StateVersion > persisted.StateVersion) result[pending.PlayerId] = pending;
+                else if (pending.StateVersion == persisted.StateVersion
+                         && !string.Equals(pending.Checksum, persisted.Checksum, StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException("玩家 section 同一版本载荷冲突。");
+                }
+            }
+        }
+        return result;
+    }
+
     private static async Task<List<StoredAction>> LoadStoredActionsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,

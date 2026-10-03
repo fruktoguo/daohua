@@ -63,6 +63,8 @@ public interface IPlayerRuntime : IAsyncDisposable
     event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
     event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
     ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default);
+    /// <summary>读取已加载玩家的最新快照；未加载返回 null（不触发装载，供估值等只读旁路）。</summary>
+    PlayerRuntimeSnapshot? TryGetLoaded(Guid playerId);
     ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload, long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default);
     ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default);
     ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default);

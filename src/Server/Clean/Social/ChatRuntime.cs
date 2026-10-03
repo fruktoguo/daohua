@@ -81,6 +81,40 @@ public sealed class ChatRuntime
         return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record), recipients);
     }
 
+    /// <summary>
+    /// 发布队伍招募卡片：party.share 社交动作借道传音通道，
+    /// 正文为服务端规范文本（不消耗玩家 200 字输入），party_ref 外键随消息落库。
+    /// 作用域解析与限频口径与 <see cref="SendAsync"/> 一致；好友频道要求目标为双向好友。
+    /// </summary>
+    /// <param name="senderId">分享者玩家 ID（须为队伍成员）。</param>
+    /// <param name="senderName">分享者道号。</param>
+    /// <param name="channel">目标频道（world/nearby/friend；party 频道分享本队无意义，不支持）。</param>
+    /// <param name="targetId">好友频道的私聊对象；其余频道忽略。</param>
+    /// <param name="party">当前队伍记录。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>处理结局（Status 为 Ok 时 Message/Recipients 非空，由 WebSocket 端广播）。</returns>
+    public async ValueTask<ChatSendOutcome> SendPartyShareAsync(
+        Guid senderId, string senderName, string? channel, Guid? targetId, PartyRecord party, CancellationToken cancellationToken = default)
+    {
+        if (channel is not (ChatChannels.World or ChatChannels.Nearby or ChatChannels.Friend))
+            return new ChatSendOutcome(ChatSendStatus.ChannelUnavailable);
+        PruneRateWindowsIfNeeded();
+        if (!TryConsumeRateLimit(senderId, channel)) return new ChatSendOutcome(ChatSendStatus.RateLimited);
+
+        var scopeKey = await ResolveScopeAsync(channel, senderId, targetId, cancellationToken);
+        if (scopeKey is null) return new ChatSendOutcome(ChatSendStatus.ChannelUnavailable);
+
+        var link = new PartyLinkRecord(
+            party.PartyId, party.Profile.Name, party.Profile.ActivityKind,
+            party.Profile.MapId, party.Profile.MinValuation, party.Members.Count);
+        var body = $"「{party.Profile.Name}」正在招募同道，点击卡片加入。";
+        var record = new ChatMessageRecord(
+            Guid.NewGuid(), channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, link);
+        await _repository.AppendAsync(record, RetentionPerScope, cancellationToken);
+        var recipients = await ResolveRecipientsAsync(channel, scopeKey, senderId, targetId, cancellationToken);
+        return new ChatSendOutcome(ChatSendStatus.Ok, ToDto(record), recipients);
+    }
+
     /// <summary>读取某频道作用域的最近消息（时间正序）。</summary>
     /// <param name="playerId">请求玩家 ID（好友/队伍作用域按请求者解析）。</param>
     /// <param name="request">历史回放请求载荷。</param>
@@ -192,5 +226,14 @@ public sealed class ChatRuntime
         record.SenderId.ToString("D"),
         record.SenderName,
         record.Body,
-        record.SentAt.ToUnixTimeMilliseconds());
+        record.SentAt.ToUnixTimeMilliseconds(),
+        record.PartyLink is null
+            ? null
+            : new PartyLinkDto(
+                record.PartyLink.PartyId.ToString("D"),
+                record.PartyLink.Name,
+                record.PartyLink.ActivityKind,
+                record.PartyLink.MapId,
+                record.PartyLink.MinValuation,
+                record.PartyLink.MemberCount));
 }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Domain.GameData;
 using Protocol;
 
 namespace Server.Clean.Social;
@@ -7,29 +9,54 @@ namespace Server.Clean.Social;
 /// 设计要点：
 /// 1. 好友与队伍不属于玩家聚合状态，因此不进入玩家级单写者门禁，避免跨玩家互相阻塞；
 /// 2. 所有状态变更落 PostgreSQL 后，向受影响玩家推送完整 <see cref="SocialStateDto"/>；
-/// 3. 在线存在感变化（上线/下线/换节点）会触发相关玩家的社交状态刷新（好友在线状态与附近修士列表）。
+/// 3. 在线存在感变化（上线/下线/换节点）会触发相关玩家的社交状态刷新（好友在线状态与附近修士列表）；
+/// 4. 队伍档案/匹配/大厅是招募标签层（docs/design/总纲/21）：身价裁决与并发加队由服务端权威完成，
+///    加队满员判定在 <see cref="ISocialRepository.TryJoinPartyAsync"/> 的行锁事务内收敛。
 /// </summary>
 public sealed class SocialRuntime
 {
     /// <summary>队伍人数上限（含队长）。</summary>
     public const int MaxPartyMembers = 5;
+    /// <summary>组队大厅各类列表的最大返回条数。</summary>
+    public const int LobbyListLimit = 50;
 
     /// <summary>一次扇出推送的最大并行构建数：限制并发占用的数据库连接数。</summary>
     private const int MaxNotifyParallelism = 4;
+    /// <summary>队伍名称长度上限（字符）。</summary>
+    private const int MaxPartyNameLength = 32;
 
     private readonly ISocialRepository _repository;
     private readonly OnlinePresenceRegistry _presence;
+    private readonly PartyValuationService _valuation;
+    private readonly ChatRuntime _chat;
     private readonly ILogger<SocialRuntime> _logger;
+    /// <summary>配表已知地图 ID 集合：party profile 的 mapId 合法性判定。</summary>
+    private readonly HashSet<string> _mapIds;
 
     /// <summary>构造并接管在线存在感变化订阅。</summary>
     /// <param name="repository">好友/队伍持久化边界。</param>
     /// <param name="presence">在线存在感注册表。</param>
+    /// <param name="valuation">身价估值服务。</param>
+    /// <param name="chat">传音运行时（party.share 复用频道作用域与限频）。</param>
+    /// <param name="catalog">游戏配表（地图合法性校验）。</param>
     /// <param name="logger">日志记录器。</param>
-    public SocialRuntime(ISocialRepository repository, OnlinePresenceRegistry presence, ILogger<SocialRuntime> logger)
+    public SocialRuntime(
+        ISocialRepository repository,
+        OnlinePresenceRegistry presence,
+        PartyValuationService valuation,
+        ChatRuntime chat,
+        GameDataCatalog catalog,
+        ILogger<SocialRuntime> logger)
     {
         _repository = repository;
         _presence = presence;
+        _valuation = valuation;
+        _chat = chat;
         _logger = logger;
+        _mapIds = catalog.Maps
+            .Select(map => map.TryGetProperty("id", out var id) ? id.GetString() : null)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .ToHashSet(StringComparer.Ordinal)!;
         _presence.PresenceChanged += OnPresenceChangedAsync;
     }
 
@@ -63,6 +90,13 @@ public sealed class SocialRuntime
         var party = snapshot.Party;
         var invitation = snapshot.Invitation;
 
+        // 队伍成员身价走展示缓存口径（≤30s），推送风暴下摊薄估值开销。
+        IReadOnlyDictionary<Guid, double> valuations = new Dictionary<Guid, double>();
+        if (party is { Members.Count: > 0 })
+            valuations = await _valuation.ComputeDisplayAsync(
+                [.. party.Members.Select(member => member.PlayerId)], cancellationToken);
+        var leaderName = party?.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName;
+
         return new SocialStateDto(
             requestId,
             [.. snapshot.Friends.Select(friend => new FriendDto(friend.FriendId.ToString("D"), friend.DisplayName, _presence.IsOnline(friend.FriendId)))],
@@ -73,11 +107,95 @@ public sealed class SocialRuntime
                 : new PartyDto(
                     party.PartyId.ToString("D"),
                     party.LeaderId.ToString("D"),
-                    [.. party.Members.Select(member => new PartyMemberDto(member.PlayerId.ToString("D"), member.DisplayName, _presence.IsOnline(member.PlayerId)))]),
+                    DisplayName(party.Profile, leaderName),
+                    party.Profile.ActivityKind,
+                    party.Profile.MapId,
+                    party.Profile.MinValuation,
+                    party.Profile.IsPublic,
+                    [.. party.Members.Select(member => new PartyMemberDto(
+                        member.PlayerId.ToString("D"), member.DisplayName,
+                        _presence.IsOnline(member.PlayerId),
+                        valuations.TryGetValue(member.PlayerId, out var value) ? value : 0))]),
             invitation is null
                 ? null
-                : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName),
-            _presence.SnapshotAtNode(_presence.GetNodeId(playerId)));
+                : new PartyInvitationDto(invitation.PartyId.ToString("D"), invitation.InviterId.ToString("D"), invitation.InviterName, invitation.PartyName),
+            _presence.SnapshotAtNode(_presence.GetNodeId(playerId)),
+            snapshot.Seeker is null
+                ? null
+                : new PartySeekerDto(
+                    snapshot.Seeker.ActivityKind, snapshot.Seeker.MapId, snapshot.Seeker.MinValuation,
+                    snapshot.Seeker.CreatedAt.ToUnixTimeMilliseconds()));
+    }
+
+    /// <summary>
+    /// 构建组队大厅视图：公开队伍与匹配中散人，按筛选条件过滤。
+    /// minValuation 语义：队伍按成员最低身价、散人按本人身价过滤。
+    /// </summary>
+    /// <param name="playerId">请求玩家 ID。</param>
+    /// <param name="request">大厅筛选请求。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>大厅载荷（含请求者本人身价）。</returns>
+    public async ValueTask<PartyLobbyDto> BuildLobbyAsync(Guid playerId, PartyLobbyRequestDto request, CancellationToken cancellationToken = default)
+    {
+        // 非法筛选收敛为「不限」，大厅是只读视图不做拒绝语义。
+        var activity = PartyActivityKinds.IsSupported(request.ActivityKind) ? request.ActivityKind! : PartyActivityKinds.Any;
+        var mapId = string.IsNullOrWhiteSpace(request.MapId) ? string.Empty : request.MapId.Trim();
+        var minValuation = request.MinValuation is { } floor && double.IsFinite(floor) ? Math.Max(0, floor) : 0;
+
+        var parties = await _repository.ListPublicPartiesAsync(activity, mapId, LobbyListLimit, cancellationToken);
+        var seekers = await _repository.ListPartySeekersAsync(activity, mapId, LobbyListLimit, cancellationToken);
+
+        var subjectIds = new HashSet<Guid> { playerId };
+        foreach (var party in parties)
+            foreach (var member in party.Members)
+                subjectIds.Add(member.PlayerId);
+        foreach (var seeker in seekers)
+            subjectIds.Add(seeker.PlayerId);
+        var valuations = await _valuation.ComputeDisplayAsync(subjectIds, cancellationToken);
+
+        var entries = new List<PartyLobbyEntryDto>(parties.Count);
+        foreach (var party in parties)
+        {
+            if (party.Members.Count == 0) continue;
+            var memberDtos = new List<PartyLobbyMemberDto>(party.Members.Count);
+            var minMemberValuation = double.MaxValue;
+            foreach (var member in party.Members)
+            {
+                var value = valuations.TryGetValue(member.PlayerId, out var found) ? found : 0;
+                if (value < minMemberValuation) minMemberValuation = value;
+                memberDtos.Add(new PartyLobbyMemberDto(
+                    member.PlayerId.ToString("D"), member.DisplayName,
+                    _presence.IsOnline(member.PlayerId), value));
+            }
+            if (minMemberValuation < minValuation) continue;
+            entries.Add(new PartyLobbyEntryDto(
+                party.PartyId.ToString("D"),
+                DisplayName(party.Profile, party.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName),
+                party.Profile.ActivityKind, party.Profile.MapId,
+                party.LeaderId.ToString("D"),
+                party.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName ?? string.Empty,
+                party.Profile.MinValuation,
+                party.CreatedAt.ToUnixTimeMilliseconds(),
+                memberDtos));
+        }
+
+        var seekerDtos = new List<PartyLobbySeekerDto>(seekers.Count);
+        foreach (var seeker in seekers)
+        {
+            var value = valuations.TryGetValue(seeker.PlayerId, out var found) ? found : 0;
+            if (value < minValuation) continue;
+            seekerDtos.Add(new PartyLobbySeekerDto(
+                seeker.PlayerId.ToString("D"), seeker.DisplayName,
+                _presence.IsOnline(seeker.PlayerId), value,
+                seeker.ActivityKind, seeker.MapId, seeker.MinValuation,
+                seeker.CreatedAt.ToUnixTimeMilliseconds()));
+        }
+
+        return new PartyLobbyDto(
+            request.RequestId,
+            valuations.TryGetValue(playerId, out var mine) ? mine : 0,
+            entries,
+            seekerDtos);
     }
 
     /// <summary>执行一条社交指令。</summary>
@@ -130,14 +248,27 @@ public sealed class SocialRuntime
                 await NotifyAsync([playerId, targetId.Value], playerId);
                 return SocialOutcome.Ok;
             }
+            case SocialActions.PartyCreate:
+            {
+                if (await _repository.GetPartyIdAsync(playerId, cancellationToken) is not null)
+                    return new SocialOutcome(SocialFailure.AlreadyInParty);
+                if (!TryBuildProfile(action.Party, PartyProfileRecord.Default, full: true, out var profile))
+                    return new SocialOutcome(SocialFailure.InvalidPartyProfile);
+                // 自建队伍任队长；匹配登记与旧邀请随入队一并清除（创建路径无成员冲突）。
+                await _repository.TryClearPartySeekerAsync(playerId, cancellationToken);
+                await _repository.TryClearPartyInvitationAsync(playerId, cancellationToken);
+                var partyId = await _repository.CreatePartyAsync(playerId, profile, now, cancellationToken);
+                await NotifyAsync([playerId], playerId);
+                return SocialOutcome.Ok;
+            }
             case SocialActions.PartyInvite:
             {
                 var targetId = ResolveTargetId(action);
                 if (targetId is null) return new SocialOutcome(SocialFailure.TargetNotFound);
                 if (targetId == playerId) return new SocialOutcome(SocialFailure.SelfTarget);
-                // 未组队时以邀请人自建队伍并任队长：邀请是组队的唯一入口，不再单独暴露「创建队伍」指令。
+                // 未组队时以默认档案自建队伍并任队长：好友列表的「邀请入队」不经大厅表单也可直达。
                 var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken)
-                    ?? await _repository.CreatePartyAsync(playerId, now, cancellationToken);
+                    ?? await _repository.CreatePartyAsync(playerId, PartyProfileRecord.Default, now, cancellationToken);
                 var party = await _repository.GetPartyAsync(partyId, cancellationToken);
                 if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
                 if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
@@ -158,14 +289,25 @@ public sealed class SocialRuntime
                     return new SocialOutcome(SocialFailure.AlreadyInParty);
                 }
                 var party = await _repository.GetPartyAsync(invitation.PartyId, cancellationToken);
-                if (party is null || party.Members.Count >= MaxPartyMembers)
+                if (party is null)
                 {
                     await _repository.TryClearPartyInvitationAsync(playerId, cancellationToken);
-                    return new SocialOutcome(party is null ? SocialFailure.NotInParty : SocialFailure.PartyFull);
+                    return new SocialOutcome(SocialFailure.PartyNotFound);
                 }
-                if (!await _repository.TryAddPartyMemberAsync(invitation.PartyId, playerId, now, cancellationToken))
-                    return new SocialOutcome(SocialFailure.AlreadyInParty);
-                await _repository.TryClearPartyInvitationAsync(playerId, cancellationToken);
+                if (party.Profile.MinValuation > 0
+                    && await _valuation.ComputeAsync(playerId, cancellationToken) < party.Profile.MinValuation)
+                    return new SocialOutcome(SocialFailure.ValuationTooLow);
+                var join = await _repository.TryJoinPartyAsync(invitation.PartyId, playerId, MaxPartyMembers, now, cancellationToken);
+                if (join != PartyJoinResult.Joined)
+                {
+                    if (join == PartyJoinResult.NotFound) await _repository.TryClearPartyInvitationAsync(playerId, cancellationToken);
+                    return new SocialOutcome(join switch
+                    {
+                        PartyJoinResult.NotFound => SocialFailure.PartyNotFound,
+                        PartyJoinResult.Full => SocialFailure.PartyFull,
+                        _ => SocialFailure.AlreadyInParty
+                    });
+                }
                 await NotifyAsync([.. party.Members.Select(member => member.PlayerId), playerId, invitation.InviterId], playerId);
                 return SocialOutcome.Ok;
             }
@@ -174,6 +316,149 @@ public sealed class SocialRuntime
                 if (!await _repository.TryClearPartyInvitationAsync(playerId, cancellationToken))
                     return new SocialOutcome(SocialFailure.InvitationNotFound);
                 await NotifyAsync([playerId], playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyJoin:
+            {
+                if (!Guid.TryParse(action.PartyId, out var partyId) || partyId == Guid.Empty)
+                    return new SocialOutcome(SocialFailure.PartyNotFound);
+                if (await _repository.GetPartyIdAsync(playerId, cancellationToken) is not null)
+                    return new SocialOutcome(SocialFailure.AlreadyInParty);
+                var party = await _repository.GetPartyAsync(partyId, cancellationToken);
+                if (party is null) return new SocialOutcome(SocialFailure.PartyNotFound);
+                // 公开队伍大厅加入与不公开队伍链接点击共用此校验：满员与身价门槛服务端说了算。
+                if (party.Profile.MinValuation > 0
+                    && await _valuation.ComputeAsync(playerId, cancellationToken) < party.Profile.MinValuation)
+                    return new SocialOutcome(SocialFailure.ValuationTooLow);
+                var join = await _repository.TryJoinPartyAsync(partyId, playerId, MaxPartyMembers, now, cancellationToken);
+                if (join != PartyJoinResult.Joined)
+                {
+                    return new SocialOutcome(join switch
+                    {
+                        PartyJoinResult.NotFound => SocialFailure.PartyNotFound,
+                        PartyJoinResult.Full => SocialFailure.PartyFull,
+                        _ => SocialFailure.AlreadyInParty
+                    });
+                }
+                await NotifyAsync([.. party.Members.Select(member => member.PlayerId), playerId], playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyUpdate:
+            {
+                var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
+                if (partyId is null) return new SocialOutcome(SocialFailure.NotInParty);
+                var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
+                if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
+                if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+                if (!TryBuildProfile(action.Party, party.Profile, full: false, out var profile))
+                    return new SocialOutcome(SocialFailure.InvalidPartyProfile);
+                if (!await _repository.TryUpdatePartyProfileAsync(partyId.Value, profile, now, cancellationToken))
+                    return new SocialOutcome(SocialFailure.PartyNotFound);
+                await NotifyAsync([.. party.Members.Select(member => member.PlayerId)], playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyKick:
+            {
+                var targetId = ResolveTargetId(action);
+                if (targetId is null) return new SocialOutcome(SocialFailure.TargetNotFound);
+                if (targetId == playerId) return new SocialOutcome(SocialFailure.SelfTarget);
+                var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
+                if (partyId is null) return new SocialOutcome(SocialFailure.NotInParty);
+                var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
+                if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
+                if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+                if (!await _repository.TryKickPartyMemberAsync(partyId.Value, targetId.Value, cancellationToken))
+                    return new SocialOutcome(SocialFailure.TargetNotFound);
+                await NotifyAsync([.. party.Members.Select(member => member.PlayerId), targetId.Value], playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyDisband:
+            {
+                var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
+                if (partyId is null) return new SocialOutcome(SocialFailure.NotInParty);
+                var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
+                if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
+                if (party.LeaderId != playerId) return new SocialOutcome(SocialFailure.NotLeader);
+                // 成员/邀请随 ON DELETE CASCADE 清除，聊天卡片链接置空失效。
+                var former = await _repository.DisbandPartyAsync(partyId.Value, cancellationToken);
+                if (former is null) return new SocialOutcome(SocialFailure.PartyNotFound);
+                await NotifyAsync([.. former.Select(member => member.PlayerId)], playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyMatchSet:
+            {
+                if (await _repository.GetPartyIdAsync(playerId, cancellationToken) is not null)
+                    return new SocialOutcome(SocialFailure.AlreadyInParty);
+                if (!TryBuildSeekerCriteria(action.Party, out var activity, out var mapId, out var minValuation))
+                    return new SocialOutcome(SocialFailure.InvalidPartyProfile);
+                await _repository.UpsertPartySeekerAsync(playerId, activity, mapId, minValuation, now, cancellationToken);
+                // 自动并入：公开且未满员、目标匹配、双向身价门槛满足的队伍；多命中取人多者、再取创建最早者。
+                var myValuation = await _valuation.ComputeAsync(playerId, cancellationToken);
+                var candidates = await _repository.ListPublicPartiesAsync(activity, mapId, LobbyListLimit, cancellationToken);
+                PartyRecord? best = null;
+                foreach (var candidate in candidates)
+                {
+                    if (candidate.Members.Count >= MaxPartyMembers) continue;
+                    if (candidate.Profile.MinValuation > myValuation) continue;
+                    if (minValuation > 0)
+                    {
+                        // 我方申报的队友门槛：每名在队成员身价都要满足（实时口径）。
+                        var memberIds = candidate.Members.Select(member => member.PlayerId).ToArray();
+                        var meetsAll = true;
+                        foreach (var memberId in memberIds)
+                        {
+                            if (await _valuation.ComputeAsync(memberId, cancellationToken) < minValuation)
+                            {
+                                meetsAll = false;
+                                break;
+                            }
+                        }
+                        if (!meetsAll) continue;
+                    }
+                    if (best is null
+                        || candidate.Members.Count > best.Members.Count
+                        || (candidate.Members.Count == best.Members.Count && candidate.CreatedAt < best.CreatedAt))
+                    {
+                        best = candidate;
+                    }
+                }
+                if (best is not null)
+                {
+                    var join = await _repository.TryJoinPartyAsync(best.PartyId, playerId, MaxPartyMembers, now, cancellationToken);
+                    if (join == PartyJoinResult.Joined)
+                    {
+                        await NotifyAsync([.. best.Members.Select(member => member.PlayerId), playerId], playerId);
+                        return SocialOutcome.Ok;
+                    }
+                    // 并入竞争失败（满员/他队截胡）：登记已写入，保持匹配中。
+                    if (join == PartyJoinResult.AlreadyInParty) return new SocialOutcome(SocialFailure.AlreadyInParty);
+                }
+                await NotifyAsync([playerId], playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyMatchClear:
+            {
+                if (!await _repository.TryClearPartySeekerAsync(playerId, cancellationToken))
+                    return new SocialOutcome(SocialFailure.SeekingNotFound);
+                await NotifyAsync([playerId], playerId);
+                return SocialOutcome.Ok;
+            }
+            case SocialActions.PartyShare:
+            {
+                var partyId = await _repository.GetPartyIdAsync(playerId, cancellationToken);
+                if (partyId is null) return new SocialOutcome(SocialFailure.NotInParty);
+                var party = await _repository.GetPartyAsync(partyId.Value, cancellationToken);
+                if (party is null) return new SocialOutcome(SocialFailure.NotInParty);
+                var senderName = party.Members.FirstOrDefault(member => member.PlayerId == playerId)?.DisplayName ?? string.Empty;
+                var share = await _chat.SendPartyShareAsync(
+                    playerId, senderName, action.Channel, ResolveTargetId(action), party, cancellationToken);
+                if (share.Status != ChatSendStatus.Ok)
+                {
+                    return new SocialOutcome(share.Status == ChatSendStatus.RateLimited
+                        ? SocialFailure.RateLimited
+                        : SocialFailure.ChannelUnavailable);
+                }
+                // 队伍卡片发言不改变社交状态，但仍回执一帧供前端确认。
                 return SocialOutcome.Ok;
             }
             case SocialActions.PartyLeave:
@@ -222,6 +507,81 @@ public sealed class SocialRuntime
             _logger.LogError(exception, "在线存在感变化推送社交状态失败。");
         }
     }
+
+    /// <summary>
+    /// 档案补丁归一化：full=true（创建）时未提供字段回落默认值，full=false（更新）时保留基线字段。
+    /// 队伍名允许空串（展示层回落「{队长道号}的小队」），非空名称去首尾空白后限长 32。
+    /// </summary>
+    private bool TryBuildProfile(PartyProfileDto? patch, PartyProfileRecord baseline, bool full, out PartyProfileRecord result)
+    {
+        result = baseline;
+        var name = baseline.Name;
+        if (patch?.Name is { } rawName)
+        {
+            name = rawName.Trim();
+            if (name.Length > MaxPartyNameLength) return false;
+        }
+        else if (full) name = string.Empty;
+
+        var activity = baseline.ActivityKind;
+        if (patch?.ActivityKind is { } rawActivity)
+        {
+            activity = rawActivity.Trim();
+            if (!PartyActivityKinds.IsSupported(activity)) return false;
+        }
+        else if (full) activity = PartyActivityKinds.Any;
+
+        var mapId = baseline.MapId;
+        if (patch?.MapId is { } rawMap)
+        {
+            mapId = rawMap.Trim();
+            if (mapId.Length > 0 && !_mapIds.Contains(mapId)) return false;
+        }
+        else if (full) mapId = string.Empty;
+
+        var minValuation = baseline.MinValuation;
+        if (patch?.MinValuation is { } rawMin)
+        {
+            if (!double.IsFinite(rawMin) || rawMin < 0) return false;
+            minValuation = rawMin;
+        }
+        else if (full) minValuation = 0;
+
+        var isPublic = baseline.IsPublic;
+        if (patch?.IsPublic is { } rawPublic) isPublic = rawPublic;
+        else if (full) isPublic = false;
+
+        result = new PartyProfileRecord(name, activity, mapId, minValuation, isPublic);
+        return true;
+    }
+
+    /// <summary>匹配登记条件解析：只取 activityKind/mapId/minValuation 三个招募条件字段。</summary>
+    private bool TryBuildSeekerCriteria(PartyProfileDto? patch, out string activity, out string mapId, out double minValuation)
+    {
+        activity = PartyActivityKinds.Any;
+        mapId = string.Empty;
+        minValuation = 0;
+        if (patch?.ActivityKind is { } rawActivity)
+        {
+            activity = rawActivity.Trim();
+            if (!PartyActivityKinds.IsSupported(activity)) return false;
+        }
+        if (patch?.MapId is { } rawMap)
+        {
+            mapId = rawMap.Trim();
+            if (mapId.Length > 0 && !_mapIds.Contains(mapId)) return false;
+        }
+        if (patch?.MinValuation is { } rawMin)
+        {
+            if (!double.IsFinite(rawMin) || rawMin < 0) return false;
+            minValuation = rawMin;
+        }
+        return true;
+    }
+
+    /// <summary>队伍显示名：档案名称为空时回落「{队长道号}的小队」。</summary>
+    private static string DisplayName(PartyProfileRecord profile, string? leaderName) =>
+        profile.Name.Length > 0 ? profile.Name : $"{leaderName ?? string.Empty}的小队";
 
     /// <summary>
     /// 向受影响玩家推送最新社交状态。发起指令的玩家由 WebSocket 端点用带 requestId 的回执帧单独回复，
