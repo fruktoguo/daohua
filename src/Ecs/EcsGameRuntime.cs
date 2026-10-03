@@ -24,6 +24,7 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     public EcsGameRuntime(GameDataCatalog? gameData = null, DateTimeOffset? startAt = null, int shardCount = 1)
     {
         if (shardCount is < 1 or > 64) throw new ArgumentOutOfRangeException(nameof(shardCount), "ECS shard 数量必须在 1..64。");
+        InlineCombatTriggerRegistry.EnsureInitialized();
         GameData = gameData ?? GameDataCatalog.BuiltIn;
         StartAt = startAt ?? DateTimeOffset.UnixEpoch;
         _previousCloseSystemTry = YuoWorld.CloseSystemTry;

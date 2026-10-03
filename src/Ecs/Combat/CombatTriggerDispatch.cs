@@ -34,6 +34,8 @@ public sealed class InlineCombatTriggerSink : ICombatTriggerSink
 {
     public static InlineCombatTriggerSink Instance { get; } = new();
 
+    static InlineCombatTriggerSink() => InlineCombatTriggerRegistry.EnsureInitialized();
+
     public void Drain(CombatEncounterState encounter)
     {
         var pending = encounter.PendingTriggers;
@@ -44,23 +46,7 @@ public sealed class InlineCombatTriggerSink : ICombatTriggerSink
 
     private static void Dispatch(PendingCombatTrigger trigger)
     {
-        var context = trigger.Context;
-        switch (trigger.Kind)
-        {
-            case CombatTriggerKind.OnHit:
-                // 与实体路径同序：宿主为攻击方跑汲取系（Leech 100 → Mana 110），
-                // 宿主为受击方跑反伤系（Thorns 200）；SystemOrder 序在此手工对齐。
-                if (ReferenceEquals(trigger.Unit, context.Attacker))
-                {
-                    CombatTriggerMath.HpDrain(context, context.Attacker.Stats.Effects.HpDrainPoints);
-                    CombatTriggerMath.ManaDrain(context, context.Attacker.Stats.Effects.MpDrainPoints);
-                }
-                else if (ReferenceEquals(trigger.Unit, context.Target))
-                {
-                    CombatTriggerMath.DamageReflect(context, context.Target.Stats.Effects.DamageReflectPoints);
-                }
-                break;
-        }
+        InlineCombatTriggerRegistry.Dispatch(trigger);
         Settle(trigger);
     }
 
@@ -119,7 +105,11 @@ public sealed class EcsCombatTriggerSink : ICombatTriggerSink
 {
     private readonly YuoWorld _world;
 
-    public EcsCombatTriggerSink(YuoWorld world) => _world = world;
+    public EcsCombatTriggerSink(YuoWorld world)
+    {
+        InlineCombatTriggerRegistry.EnsureInitialized();
+        _world = world;
+    }
 
     public void Drain(CombatEncounterState encounter)
     {

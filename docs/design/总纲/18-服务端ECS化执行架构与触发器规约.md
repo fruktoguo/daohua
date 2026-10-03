@@ -85,7 +85,7 @@
 
 ### Trigger 域（不占 Update 序，`RunSystem<T>(entity)` 点名）
 
-由战斗边界循环在固定点同步派发（§4）。每类触发器一个 tag：
+由战斗边界循环在固定点同步派发（§4）。有实体宿主时每类触发器一个 ECS tag；无实体宿主的内联路径使用 §4.1 的轻量处理器，不进入 YuoCore Tag 注册：
 
 ```
 IOnHitTrigger    OnHitHealSystem / ThornsSystem / OnHitLeechSystem …
@@ -107,7 +107,8 @@ AdvanceTo(state, windowTarget):
       ResolveBoundary(boundary)               // 出手/技能/回复 本体结算
       DrainTriggers(encounter.PendingTriggers) // ← 固定派发点
           foreach trigger in 入队顺序:
-              RunSystem<trigger.Tag>(unitEntity)   // 同步执行，立即生效
+              有实体宿主：RunSystem<trigger.Tag>(unitEntity)
+              无实体宿主：InlineTriggerPipeline.Dispatch(trigger)
       UpdateOutcome()                          // 死亡/胜负永远在触发器结算之后
 ```
 
@@ -117,6 +118,17 @@ AdvanceTo(state, windowTarget):
 - 命中反应（OnHit）的派发粒度精确化为**每次命中结算后立即 drain**：同一自然边界内可能有多个单位先后出手，若推迟到边界末统一消费，衍生伤害（反伤致死）的落账时序会相对后续出手错位——"命中后立即消费"是保持旧内联结算时序逐位等价的唯一合法点位，同时也是"边界结算后、下一边界取数前"的更严格实现。
 - 触发器内消耗 RNG 只能走 `encounter` 固定随机流，消费顺序 = `PendingTriggers` 入队顺序。
 - 触发器不得改变边界时刻表（只可改数值与队列内容）；新增边界只能走正常 `Next*At` 计算。
+
+### 4.1 轻量内联触发器处理流程
+
+无实体战斗（纯领域推进、斗法剧本）不需要 `YuoSystem`、组件标记或 `YuoWorld.RunSystem`。这条路径使用 `CombatTriggerHandler` 基类和按事件固定签名的接口（如 `IInlineOnHitTrigger.OnHit(PendingCombatTrigger)`）：
+
+- 启动时只扫描 `DaoHua.Ecs` 程序集中的 `CombatTriggerHandler` 非抽象子类，实例化一次并按 `CombatTriggerOrder` 排序；不扫描测试程序集，也不把轻量接口继承为 `ISystemTag`。
+- 每种事件缓存为强类型接口数组。热路径只按 `CombatTriggerKind` 选择数组并进行接口调用，不使用 `MethodInfo.Invoke`、`Dictionary<Type>` 或运行时反射。
+- 同一事件类型按顺序号升序执行；顺序号相同时按处理器全名 `StringComparer.Ordinal` 二次排序，消除 `GetTypes()` 返回顺序差异。
+- 处理器只接收 `PendingCombatTrigger` 或事件专用领域上下文，不能持有 `YuoEntity`、`YuoWorld` 或宿主服务引用。
+- `InlineCombatTriggerSink` 和 `EcsCombatTriggerSink` 是互斥消费路径；一条 pending trigger 只能交给其中一个 sink，防止同一效果重复结算。两条路径继续共用 `CombatTriggerMath` 与 `Settle` 语义。
+- 新增既有事件下的效果只需新增处理器类；新增事件种类仍需定义事件接口、参数记录和 `CombatTriggerKind` 派发槽位。当前仓库没有 AOT/裁剪发布约束；未来启用时必须为扫描类型保留元数据，或将注册表替换为源生成实现。
 
 桥接（Domain 不碰实体的解法）：战斗调度器整体迁入 `src/Ecs/Combat/`，操作的就是组件化状态，`RunSystem` 直接调用无分层冲突；`CombatantState` 增加运行时字段 `EntityId`（`AttachCombat` 时设置，不序列化）。
 
