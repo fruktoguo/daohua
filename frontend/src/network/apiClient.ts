@@ -1,5 +1,5 @@
 import { registerBaseAttributeAnchors, type BaseAttributeAnchor } from '../game/combatConstants'
-import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, WorldMapDefinition } from '../game/types'
+import type { ActionDefinition, BuildingDefinition, CombatAbilityDefinition, CombatEncounterDefinition, CombatEquipmentDefinition, ItemDefinition, MarketBook, MarketMetrics, MarketOrder, MarketVariantSummary, WorldMapDefinition } from '../game/types'
 import { createRequestId } from './protocol'
 
 /** API 请求的最大等待时间，避免网络半断开时页面永久停留在加载态。 */
@@ -166,8 +166,9 @@ export async function fetchMarketBook(
 ): Promise<MarketBook> {
   // 基础变体在服务端归一为空串：挂单 market.place 以 variant=null 落在 (itemId, "") 簿上，
   // 这里若发 "0" 会查询到一本不存在的幽灵盘口（还会向 _books 插入空簿），永远显示空深度。
+  // 强化变体必须与钱包资产键同构发送 "+N"（EnhancementRules.ParseLevel 只认 '+' 前缀）。
   const query = new URLSearchParams({ assetId: itemId, depth: String(depth) })
-  if (enhancementLevel > 0) query.set('variant', String(enhancementLevel))
+  if (enhancementLevel > 0) query.set('variant', `+${enhancementLevel}`)
   const dto = await requestJson<MarketBookDto>(`/api/v1/market/book?${query.toString()}`, { signal })
   return {
     itemId: dto.assetId,
@@ -178,6 +179,27 @@ export async function fetchMarketBook(
       + dto.bids.reduce((count, level) => count + level.orderCount, 0),
     sequence: dto.version,
   }
+}
+
+interface MarketVariantDto {
+  assetId: string
+  variant: string | null
+  bestAsk: number | null
+  bestBid: number | null
+}
+
+/**
+ * 拉取指定标的存在活动挂单（买或卖任一侧）的全部资产变体摘要。
+ * 服务端只回有挂单的变体簿；variant 为 "+N"/null，经 parseNumericVariant 归一为强化等级（基础=0）。
+ */
+export async function fetchMarketVariants(itemId: string, signal?: AbortSignal): Promise<MarketVariantSummary[]> {
+  const query = new URLSearchParams({ assetId: itemId })
+  const rows = await requestJson<MarketVariantDto[]>(`/api/v1/market/variants?${query.toString()}`, { signal })
+  return rows.map(row => ({
+    enhancementLevel: parseNumericVariant(row.variant, 0),
+    bestAsk: row.bestAsk,
+    bestBid: row.bestBid,
+  }))
 }
 
 interface MarketMetricsDto {

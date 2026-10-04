@@ -101,6 +101,7 @@
     **但若源图升到 ≥128px，缩小倍率会明显变大（DPR1 约 2.46×），届时必须重新实测这三处。**
   - **hover 反馈零重绘架构**：瓦片子树不做任何 `transition`——实测密集网格 hover 时任意 transition（含 transform）都会逐帧主线程重绘（79 格扫过约 19fps）。动效全部由合成器线程承担：辉光为常驻 `.item-tile-glow` 叠加层做 `opacity` fade-in（`ItemTile` 内置；裸写 `.item-tile` 的功法槽/功法挑选器需手动补 `<span class="item-tile-glow" aria-hidden="true" />`），丝带与角标缩放走 keyframe `animation`（`item-ribbon-zoom-in` / `item-corner-zoom-in`），边缘扫光保持 transform+opacity keyframes；绘制类属性（丝带底色、角标 `box-shadow`）瞬时切换。选中态辉光为静态 `opacity: 1`。
   - **强化装备 `+N` 资产变体**：钱包以 `variant="+N"` 区分强化等级资产行。展示链路统一约定——`parseEnhancementVariant(variant)` 解析等级；`ItemCard`/候选条目名称显示 `装备名 +N`；`ItemTooltipTarget` 接收 `enhancementLevel`，`describeEquipmentEffects` 按 `enhancementBonus × level` 在主卡追加 `(+强化加成)` 后缀；已装备槽位名同样带 `+N`。任何新增装备展示位必须沿用该口径，不得自行拼字符串或丢等级。
+  - **坊市装备强化等级盘口选择视图**：装备标的在坊市选中后先进入 `MarketEnhancementPicker`（`market-enhance-*` 四列网格行：物品瓦片 + 悬浮详情按 `enhancementLevel` 缩放 + 该变体行持有量 | 最佳出售价+购买 | 最佳收购价+出售 | 查看全部进入该级盘口），开单/持存/已装备拦截全部按 `(itemId, "+N")` 变体键对账，`market.place` 负载 `variant: "+N"`。
   - **多气泡联动、Buff/特殊机制副窗口与独立数量气泡**：
     - 主卡片展示品质、基础说明、即时回血回蓝、冷却时长与装备基础攻防；
     - 丹药持续 Buff、修炼/技艺效率加成提取为独立的 `[丹药增益]` / `[修炼增益]` 副卡片窗口；

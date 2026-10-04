@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # 脚本名称: seed-market-system-listings.sh
-# 主要职责: 本地开发库坊市种子——以系统身份为全部可回收物品挂 1 亿份卖单（价格=回收价一半）。
+# 主要职责: 本地开发库坊市种子——以系统身份为全部可回收物品与装备挂 1 亿份卖单
+#   （物品价格=回收价一半；装备 +0/+10/+20 全档=锻造配方材料成本价）。
 #
 # 硬约束（AGENTS.md §3）:
 #   1. 仅作用于本地回环库（daohua-local-db），不涉及生产数据；
@@ -43,8 +44,11 @@ usage() {
 
 说明:
   - 「可回收物品」= config/game-data/items/*.json 中 sellPrice > 0 的非货币物品；
-    灵石（currency.*）为货币本身不挂售，装备无回收价目无法定价，均排除。
-  - 挂售价 = sellPrice / 2，数量 1 亿份，有效期 3650 天。
+    灵石（currency.*）为货币本身不挂售。
+  - 装备 = config/game-data/equipment/*.json 全部件，每件挂 +0/+10/+20 三档变体，
+    统一按锻造配方材料成本价（actions/*.json 中产出的配方 inputs 按物品
+    sellPrice×数量求和，equipment.* 投入递归展开）；配方缺失的装备跳过并告警。
+  - 挂售价：物品 = sellPrice / 2，装备 = 上述口径；数量 1 亿份，有效期 3650 天。
   - 幂等：重复执行只为缺失品种补挂；已成交/已撤销的系统订单不会自动重挂。
   - 落库后需重启后端重建坊市盘口。
 EOF
@@ -121,18 +125,20 @@ function deterministicUuid(name) {
 
 // 复刻 PostgresMarketRepository.ComputeMarketRequestHash 的规范化哈希（单行 delta 场景），
 // 保证种子流水与运行时流水在幂等冲突校验口径上一致。
-function marketRequestHash(assetId, delta) {
-  const canonical = `${playerId}\n${playerId}|${assetId}||${delta}\n`;
+function marketRequestHash(assetId, variant, delta) {
+  const canonical = `${playerId}\n${playerId}|${assetId}|${variant}|${delta}\n`;
   return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
 const dataDir = path.join('config', 'game-data', 'items');
 const items = [];
+const sellPriceById = new Map();
 for (const file of fs.readdirSync(dataDir).sort()) {
   if (!file.endsWith('.json')) continue;
   const list = JSON.parse(fs.readFileSync(path.join(dataDir, file), 'utf8'));
   for (const item of list) {
     const id = String(item.id ?? '');
+    if (typeof item.sellPrice === 'number') sellPriceById.set(id, item.sellPrice);
     if (typeof item.sellPrice === 'number' && item.sellPrice > 0 && !id.startsWith('currency.')) {
       items.push({ id, name: String(item.name ?? id), sellPrice: item.sellPrice });
     }
@@ -145,10 +151,90 @@ if (items.length === 0) {
   process.exit(1);
 }
 
+// 装备定价基准 = 锻造材料成本价：扫描全部行动配表，以 yields 产出定位配方；
+// inputs 中 item.* 按回收价×数量计、equipment.* 投入递归展开（T2 配方含 T1 装备投入）。
+const recipeByProduct = new Map();
+const actionsDir = path.join('config', 'game-data', 'actions');
+for (const file of fs.readdirSync(actionsDir).sort()) {
+  if (!file.endsWith('.json')) continue;
+  const list = JSON.parse(fs.readFileSync(path.join(actionsDir, file), 'utf8'));
+  for (const action of list) {
+    if (!action.inputs || typeof action.inputs !== 'object') continue;
+    for (const yieldEntry of action.yields ?? []) {
+      if (yieldEntry.kind === 'item' && typeof yieldEntry.id === 'string' && !recipeByProduct.has(yieldEntry.id)) {
+        recipeByProduct.set(yieldEntry.id, action.inputs);
+      }
+    }
+  }
+}
+
+const maxRecipeDepth = 4; // 配方链最深 T2→T1 两层，超限视为配表成环直接报错
+const equipmentCostCache = new Map();
+function equipmentMaterialCost(equipmentId, depth) {
+  if (depth > maxRecipeDepth) {
+    console.error(`错误: 装备配方递归超过深度上限 ${maxRecipeDepth}（疑似成环）：${equipmentId}`);
+    process.exit(1);
+  }
+  if (equipmentCostCache.has(equipmentId)) return equipmentCostCache.get(equipmentId);
+  const inputs = recipeByProduct.get(equipmentId);
+  if (!inputs) return null;
+  let cost = 0;
+  for (const [inputId, quantity] of Object.entries(inputs)) {
+    const amount = Number(quantity);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    if (inputId.startsWith('equipment.')) {
+      const nested = equipmentMaterialCost(inputId, depth + 1);
+      if (nested === null) return null;
+      cost += nested * amount;
+    } else {
+      const sellPrice = sellPriceById.get(inputId);
+      if (typeof sellPrice !== 'number' || sellPrice <= 0) return null;
+      cost += sellPrice * amount;
+    }
+  }
+  equipmentCostCache.set(equipmentId, cost);
+  return cost;
+}
+
+const equipments = [];
+const equipmentDir = path.join('config', 'game-data', 'equipment');
+for (const file of fs.readdirSync(equipmentDir).sort()) {
+  if (!file.endsWith('.json')) continue;
+  const list = JSON.parse(fs.readFileSync(path.join(equipmentDir, file), 'utf8'));
+  for (const equipment of list) {
+    const id = String(equipment.id ?? '');
+    const cost = equipmentMaterialCost(id, 0);
+    if (cost === null) {
+      console.error(`警告: 装备 ${id} 缺少锻造配方或材料无回收价，跳过挂售。`);
+      continue;
+    }
+    equipments.push({ id, name: String(equipment.name ?? id), cost });
+  }
+}
+equipments.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+
+// 装备强化变体挂售档位：+10/+20 与基础件同价（系统货架统一按最低系统报价=材料成本价）。
+const enhancedSeedLevels = [10, 20];
+
+// 统一挂售清单：物品价 = 回收价一半、装备全部变体档 = 材料成本价；定价基准写入 SQL 注释备查。
+// 基础变体幂等键沿用 system-seed:{assetId}（与历史种子兼容），强化变体追加 :{variant} 后缀，
+// 保证重复执行只为缺失变体补挂。
+const listings = [
+  ...items.map(item => ({ id: item.id, variant: '', name: item.name, price: item.sellPrice / 2, basis: `回收价 ${item.sellPrice} → 挂售价 ${item.sellPrice / 2}` })),
+  ...equipments.flatMap(equipment => [
+    { id: equipment.id, variant: '', name: equipment.name, price: equipment.cost, basis: `锻造材料成本价 ${equipment.cost}` },
+    ...enhancedSeedLevels.map(level => ({
+      id: equipment.id, variant: `+${level}`, name: `${equipment.name} +${level}`,
+      price: equipment.cost, basis: `锻造材料成本价 ${equipment.cost}（与 +0 同价）`,
+    })),
+  ]),
+];
+
 const esc = (text) => String(text).replace(/'/g, "''");
 const lines = [];
 lines.push(`-- 由 scripts/seed-market-system-listings.sh 生成：系统身份坊市挂售种子`);
-lines.push(`-- 分区 ${partitionId}，品种 ${items.length} 个，每品种 ${listingQuantity} 份，挂售价 = 回收价 / 2`);
+lines.push(`-- 分区 ${partitionId}，挂单 ${listings.length} 条（物品 ${items.length} + 装备 ${equipments.length}×3 档变体），每条 ${listingQuantity} 份`);
+lines.push(`-- 挂售价口径：物品 = 回收价 / 2，装备 +0/+10/+20 全档 = 锻造材料成本价`);
 lines.push('BEGIN;');
 lines.push('');
 lines.push('-- 系统身份：不可登录账号 + 货架玩家（固定 UUID 幂等）');
@@ -163,16 +249,20 @@ lines.push(`INSERT INTO identity.players
 VALUES ('${playerId}', '${accountId}', '${esc(systemDisplayName)}', '${esc(systemDisplayName)}', now(), now(), 1)
 ON CONFLICT (player_id) DO NOTHING;`);
 
-for (const item of items) {
-  const price = item.sellPrice / 2;
-  const orderId = deterministicUuid(`order|${item.id}`);
-  const reservationId = deterministicUuid(`reservation|${item.id}`);
-  const grantTxId = deterministicUuid(`grant-tx|${item.id}`);
-  const orderTxId = deterministicUuid(`order-tx|${item.id}`);
-  const grantHash = marketRequestHash(item.id, listingQuantity);
-  const orderHash = marketRequestHash(item.id, -listingQuantity);
+for (const listing of listings) {
+  const price = listing.price;
+  const variant = listing.variant;
+  // 幂等键后缀：基础变体沿用历史键 system-seed:{assetId}，强化变体追加 :{variant} 互不冲突。
+  const keySuffix = variant === '' ? '' : `:${variant}`;
+  const uuidSuffix = variant === '' ? '' : `|${variant}`;
+  const orderId = deterministicUuid(`order|${listing.id}${uuidSuffix}`);
+  const reservationId = deterministicUuid(`reservation|${listing.id}${uuidSuffix}`);
+  const grantTxId = deterministicUuid(`grant-tx|${listing.id}${uuidSuffix}`);
+  const orderTxId = deterministicUuid(`order-tx|${listing.id}${uuidSuffix}`);
+  const grantHash = marketRequestHash(listing.id, variant, listingQuantity);
+  const orderHash = marketRequestHash(listing.id, variant, -listingQuantity);
   lines.push('');
-  lines.push(`-- ${item.id} ${item.name}（回收价 ${item.sellPrice} → 挂售价 ${price}）`);
+  lines.push(`-- ${listing.id} ${listing.name}（${listing.basis}）`);
   lines.push(`-- 库存语义：系统玩家的 1 亿库存全部冻结进卖单（reservation 持有），余额表不落行；
 -- 账本记「注入 +1亿 / 冻结 -1亿」两行流水，净额 0 与余额一致；撤单/到期退款按需自动建余额行。
 WITH new_order AS (
@@ -180,37 +270,37 @@ WITH new_order AS (
         (order_id, partition_id, owner_player_id, side, asset_id, variant, price,
          quantity, filled_quantity, status, version, sequence, idempotency_key,
          created_at, expires_at, updated_at)
-    VALUES ('${orderId}', ${partitionId}, '${playerId}', 'sell', '${esc(item.id)}', '', ${price},
+    VALUES ('${orderId}', ${partitionId}, '${playerId}', 'sell', '${esc(listing.id)}', '${esc(variant)}', ${price},
             ${listingQuantity}, 0, 'active', 1,
             (SELECT COALESCE(max(sequence), 0) + 1 FROM market.orders WHERE partition_id = ${partitionId}),
-            'system-seed:${esc(item.id)}', now(), now() + interval '${listingDays} days', now())
+            'system-seed:${esc(listing.id)}${esc(keySuffix)}', now(), now() + interval '${listingDays} days', now())
     ON CONFLICT DO NOTHING
-    RETURNING order_id, asset_id, quantity
+    RETURNING order_id, asset_id, variant, quantity
 ), grant_tx AS (
     INSERT INTO economy.transactions
         (transaction_id, idempotency_key, request_hash, transaction_type, actor_id, created_at)
-    SELECT '${grantTxId}', 'system-grant:${esc(item.id)}', '${grantHash}', 'system-grant', '${playerId}', now() FROM new_order
+    SELECT '${grantTxId}', 'system-grant:${esc(listing.id)}${esc(keySuffix)}', '${grantHash}', 'system-grant', '${playerId}', now() FROM new_order
     ON CONFLICT (idempotency_key) DO NOTHING
 ), grant_lines AS (
     INSERT INTO economy.transaction_lines
         (transaction_id, line_no, player_id, asset_id, variant, delta)
-    SELECT '${grantTxId}', 0, '${playerId}', asset_id, '', quantity FROM new_order
+    SELECT '${grantTxId}', 0, '${playerId}', asset_id, variant, quantity FROM new_order
     ON CONFLICT (transaction_id, line_no) DO NOTHING
 ), order_tx AS (
     INSERT INTO economy.transactions
         (transaction_id, idempotency_key, request_hash, transaction_type, actor_id, created_at)
-    SELECT '${orderTxId}', 'market-order:system-seed:${esc(item.id)}', '${orderHash}', 'market', '${playerId}', now() FROM new_order
+    SELECT '${orderTxId}', 'market-order:system-seed:${esc(listing.id)}${esc(keySuffix)}', '${orderHash}', 'market', '${playerId}', now() FROM new_order
     ON CONFLICT (idempotency_key) DO NOTHING
 ), order_lines AS (
     INSERT INTO economy.transaction_lines
         (transaction_id, line_no, player_id, asset_id, variant, delta)
-    SELECT '${orderTxId}', 0, '${playerId}', asset_id, '', -quantity FROM new_order
+    SELECT '${orderTxId}', 0, '${playerId}', asset_id, variant, -quantity FROM new_order
     ON CONFLICT (transaction_id, line_no) DO NOTHING
 ), reservation AS (
     INSERT INTO economy.reservations
         (reservation_id, order_id, player_id, asset_id, variant, instance_id, side,
          quantity, reserved_value, status, created_at, updated_at)
-    SELECT '${reservationId}', order_id, '${playerId}', asset_id, '', NULL, 'sell',
+    SELECT '${reservationId}', order_id, '${playerId}', asset_id, variant, NULL, 'sell',
            quantity, 0, 'active', now(), now()
     FROM new_order
     ON CONFLICT DO NOTHING

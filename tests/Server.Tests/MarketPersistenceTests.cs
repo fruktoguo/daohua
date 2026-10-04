@@ -134,12 +134,66 @@ public sealed class MarketPersistenceTests
         await runtime.StopAsync(default);
     }
 
+    /// <summary>
+    /// 变体摘要只回有单簿：基础簿与 "+N" 簿各自独立统计卖一/买一价，
+    /// 全部成交后的空簿跳过，其他品种簿不混入；输出按基础簿居前、等级升序。
+    /// </summary>
+    [Fact]
+    [Trait("Category", "PostgresIntegration")]
+    public async Task VariantSummariesReturnOnlyBooksWithActiveOrders()
+    {
+        var connectionString = PostgresTestSchema.RequireConnectionString("市场变体摘要测试");
+        await using var source = NpgsqlDataSource.Create(connectionString);
+        await PostgresTestSchema.EnsureAsync(source);
+        var options = ServerOptions.From(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Storage:ConnectionString"] = connectionString,
+        }).Build()) with { MarketPartitionId = 0, MarketPartitionCount = 1 };
+        var seller = PlayerId.New();
+        var buyer = PlayerId.New();
+        var itemId = new ItemId("equipment.variant-test");
+        await Seed(source, seller.Value, "equipment.variant-test", 5);
+        await SeedVariant(source, seller.Value, "equipment.variant-test", "+2", 5);
+        await SeedVariant(source, seller.Value, "equipment.variant-test", "+4", 5);
+        await Seed(source, buyer.Value, "currency.spirit-stone", 2000);
+        var repository = new PostgresMarketRepository(source, options, NullLogger<PostgresMarketRepository>.Instance);
+        await using var runtime = new MarketRuntime(repository, options, NullLogger<MarketRuntime>.Instance);
+        await runtime.StartAsync(default);
+        var now = DateTimeOffset.UtcNow;
+        // 基础簿挂卖单、+2 簿挂卖单、+3 簿挂买单：三簿各带一档；+4 簿买卖全额成交后成空簿。
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), seller, new MarketInstrument(itemId), MarketSide.Sell, 100, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), seller, new MarketInstrument(itemId, "+2"), MarketSide.Sell, 200, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), buyer, new MarketInstrument(itemId, "+3"), MarketSide.Buy, 50, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), seller, new MarketInstrument(itemId, "+4"), MarketSide.Sell, 60, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+        await runtime.PlaceAsync(new PlaceOrderRequest(OrderId.New(), buyer, new MarketInstrument(itemId, "+4"), MarketSide.Buy, 60, 1, now, new IdempotencyKey(Guid.NewGuid().ToString())));
+
+        var summaries = runtime.GetVariantSummaries(itemId);
+
+        Assert.Equal(3, summaries.Count);
+        Assert.Equal("", summaries[0].Variant);
+        Assert.Equal(100, summaries[0].BestAskPrice);
+        Assert.Null(summaries[0].BestBidPrice);
+        Assert.Equal("+2", summaries[1].Variant);
+        Assert.Equal(200, summaries[1].BestAskPrice);
+        Assert.Null(summaries[1].BestBidPrice);
+        Assert.Equal("+3", summaries[2].Variant);
+        Assert.Null(summaries[2].BestAskPrice);
+        Assert.Equal(50, summaries[2].BestBidPrice);
+        await runtime.StopAsync(default);
+    }
+
     /// <summary>造数：建账号、建玩家并预置一笔资产余额。</summary>
     private static async Task Seed(NpgsqlDataSource source, Guid playerId, string asset, double amount)
     {
         await Sql(source, "INSERT INTO identity.accounts VALUES ($1,$2,'\\x00','\\x00',100000,1,now(),now())", playerId, playerId.ToString());
         await Sql(source, "INSERT INTO identity.players(player_id,account_id,display_name,display_name_normalized,created_at,last_seen_at,status) VALUES ($1,$1,$2,$2,now(),now(),1)", playerId, playerId.ToString());
         await Sql(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES ($1,$2,'',$3,1,now())", playerId, asset, amount);
+    }
+
+    /// <summary>向已建账号的玩家追加一笔带变体的资产余额行（建号由 <see cref="Seed"/> 负责）。</summary>
+    private static async Task SeedVariant(NpgsqlDataSource source, Guid playerId, string asset, string variant, double amount)
+    {
+        await Sql(source, "INSERT INTO economy.player_asset_balances(player_id,asset_id,variant,quantity,version,updated_at) VALUES ($1,$2,$3,$4,1,now())", playerId, asset, variant, amount);
     }
 
     private static async Task<double> Balance(NpgsqlDataSource source, Guid player, string asset) =>

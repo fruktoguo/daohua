@@ -600,6 +600,13 @@ public sealed record MarketBookDto(
 /// <param name="OrderCount">该价格订单数</param>
 public sealed record MarketLevelDto(double Price, double Quantity, int OrderCount);
 
+/// <summary>坊市变体盘口一阶价摘要 DTO（GET /api/v1/market/variants 返回项）</summary>
+/// <param name="AssetId">资产配置 ID</param>
+/// <param name="Variant">资产变体；null 表示基础（无强化）簿</param>
+/// <param name="BestAsk">当前最低挂售价（卖一档）；无卖单为 null</param>
+/// <param name="BestBid">当前最高收购价（买一档）；无买单为 null</param>
+public sealed record MarketVariantSummaryDto(string AssetId, string? Variant, double? BestAsk, double? BestBid);
+
 /// <summary>调度冷挂机计算节点进行确定性离线补算请求 DTO</summary>
 /// <param name="JobId">任务唯一标识</param>
 /// <param name="PlayerId">玩家唯一标识</param>
@@ -997,4 +1004,3 @@ public sealed record PartyLobbyDto(
 /// <param name="Side">观察侧：<c>enemy</c> 敌方 / <c>ally</c> 己方（预留队友）；与 <paramref name="Index"/> 同为 null 时表示清除观察目标</param>
 /// <param name="Index">该侧阵型下标（与前端 enemy:i / 未来 ally:i 一致）</param>
 public sealed record UnitInspectDto(string? Side, int? Index);
-

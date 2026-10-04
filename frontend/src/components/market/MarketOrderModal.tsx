@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 import { QuantitySelector } from '../QuantitySelector'
 import { formatNumber } from '../../game/format'
-import { resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
+import { parseEnhancementVariant, resolveItemCategoryLabel, resolveItemGrade, resolveItemMetadata, resolveItemSubCategory, withItemGrade, type ItemMetadata } from '../../game/ids'
 import { getT, useT, type TFunction } from '../../i18n'
 import { useGameStore } from '../../game/gameStore'
 import type { MarketBook } from '../../game/types'
@@ -65,6 +65,8 @@ interface MarketOrderModalProps {
   book: MarketBook | null
   /** 盘口快捷入口锁定的开单价格（买一卖出/卖一买入），优先于盘口默认初值 */
   initialPrice?: number
+  /** 标的强化等级（0 = 基础变体；>0 对应 "+N" 变体盘口与钱包变体行） */
+  enhancementLevel?: number
   /** 关闭弹窗回调 */
   onClose: () => void
   /** 挂单成功后的刷新回调 */
@@ -89,6 +91,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   instrument,
   book,
   initialPrice,
+  enhancementLevel = 0,
   onClose,
   onPlaced,
 }: MarketOrderModalProps): React.JSX.Element | null {
@@ -96,9 +99,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const inventory = useGameStore(state => state.inventory)
   const connection = useGameStore(state => state.connection)
   const setNotice = useGameStore(state => state.setNotice)
-  // 已穿戴装备仍计钱包持存（selectedAmount 会包含它），卖出方向须整体拦截并提示先卸下。
+  // 已穿戴装备仍计钱包同变体行持存（selectedAmount 会包含它），卖出方向按「同标的 + 同强化等级」拦截：
+  // 钱包按 (itemId, "+N") 行冻结，挂着 +3 的已装备件不挡基础件/其他等级的出售。
   const isInstrumentEquipped = useGameStore(
-    state => state.combat?.equipment?.some(entry => entry.itemId === instrument?.itemId) ?? false
+    state => state.combat?.equipment?.some(
+      entry => entry.itemId === instrument?.itemId && Math.floor(entry.enhancementLevel) === enhancementLevel) ?? false
   )
 
   const vendorPrice = Math.max(2, instrument?.sellPrice ?? 2)
@@ -116,8 +121,11 @@ export const MarketOrderModal = memo(function MarketOrderModal({
 
   const bestAsk = book?.asks[0]?.price
   const bestBid = book?.bids[0]?.price
-  // 坊市只交易基础变体（挂单冻结空 variant 资产），可卖量/灵石不能混入强化变体行
-  const selectedAmount = instrument ? (inventory.find(item => item.itemId === instrument.itemId && !item.variant)?.amount ?? 0) : 0
+  // 可卖量按 (itemId, "+N") 变体行计数：挂单冻结同一资产键，不同强化等级余额互不相混；
+  // 灵石等非变体资产仍归一在空 variant 基础行。
+  const selectedAmount = instrument
+    ? (inventory.find(item => item.itemId === instrument.itemId && parseEnhancementVariant(item.variant) === enhancementLevel)?.amount ?? 0)
+    : 0
   const spiritAmount = inventory.find(item => item.itemId === 'currency.spirit-stone' && !item.variant)?.amount ?? 0
 
   /** 步进调价：−/+ 按当前价位 tick 步长走一档，÷2/×2 折半翻倍后归一化到价格网格。 */
@@ -185,7 +193,8 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       side,
       price,
       quantity,
-      variant: null,
+      // 与服务端变体口径一致："+N" 落强化等级簿，null 落基础簿（仅装备允许带强化变体）。
+      variant: enhancementLevel > 0 ? `+${enhancementLevel}` : null,
     })
 
     if (success) {
@@ -193,12 +202,14 @@ export const MarketOrderModal = memo(function MarketOrderModal({
       onClose()
       window.setTimeout(onPlaced, 120)
     }
-  }, [instrument, isInstrumentEquipped, onClose, onPlaced, price, quantity, selectedAmount, setNotice, side, spiritAmount, vendorPrice])
+  }, [enhancementLevel, instrument, isInstrumentEquipped, onClose, onPlaced, price, quantity, selectedAmount, setNotice, side, spiritAmount, vendorPrice])
 
   if (!open || !instrument) return null
 
   const metadata = getMetadata(instrument, t)
   const titleId = `market-order-modal-title-${instrument.itemId}`
+  // 标题与物品卡名称口径与背包变体行一致：强化变体展示 "名称 +N"。
+  const displayName = enhancementLevel > 0 ? `${instrument.name} +${enhancementLevel}` : instrument.name
 
   return (
     <Modal
@@ -214,7 +225,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           <span className={`market-order-badge market-order-badge--${side}`}>
             {side === 'sell' ? t('market.placeSell') : t('market.placeBuy')}
           </span>
-          <h2 id={titleId}>{instrument.name}</h2>
+          <h2 id={titleId}>{displayName}</h2>
           <span className="market-order-modal-category">{metadata.category} · {metadata.rarityLabel ?? t('market.fallbackGrade')}</span>
         </div>
       </header>
@@ -226,7 +237,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
           className="inventory-cell"
           itemId={instrument.itemId}
           level={metadata.level}
-          name={instrument.name}
+          name={displayName}
           rarity={metadata.rarity}
         />
         <div className="market-order-modal-item-info">

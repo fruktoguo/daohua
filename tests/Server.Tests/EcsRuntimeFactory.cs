@@ -15,7 +15,8 @@ internal static class EcsRuntimeFactory
 {
     public static EcsPlayerRuntimeAdapter Create(IPlayerStateRepository sections,
         IAssetBalanceRepository assets, IEconomyTransactionStore economy, GameDataCatalog catalog,
-        IPlayerSimulationClock? simulationClock = null, DateTimeOffset? startAt = null)
+        IPlayerSimulationClock? simulationClock = null, DateTimeOffset? startAt = null,
+        MarketRuntime? marketRuntime = null)
         => new(new EcsGameRuntime(catalog, startAt ?? DateTimeOffset.UnixEpoch), sections, assets, economy,
-            catalog, NullLogger<EcsPlayerRuntimeAdapter>.Instance, simulationClock);
+            catalog, NullLogger<EcsPlayerRuntimeAdapter>.Instance, simulationClock, marketRuntime: marketRuntime);
 }

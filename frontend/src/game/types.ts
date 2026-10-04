@@ -1589,6 +1589,21 @@ export interface MarketBook {
 }
 
 /**
+ * 市场资产变体行情摘要（强化等级盘口一览）
+ *
+ * 对应 GET /api/v1/market/variants 单条记录：服务端只下发存在活动挂单
+ * （买或卖任一侧）的变体簿；variant="+N"/null 已归一为强化等级数字。
+ */
+export interface MarketVariantSummary {
+  /** 强化等级（0 = 基础无强化变体簿） */
+  enhancementLevel: number
+  /** 当前最低卖价（卖一）；该侧无挂单时为 null */
+  bestAsk: number | null
+  /** 当前最高买价（买一）；该侧无挂单时为 null */
+  bestBid: number | null
+}
+
+/**
  * 市场交易整体指标度量数据
  */
 export interface MarketMetrics {

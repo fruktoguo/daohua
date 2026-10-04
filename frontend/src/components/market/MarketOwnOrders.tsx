@@ -1,5 +1,6 @@
 import { memo, useCallback } from 'react'
 import { formatNumber } from '../../game/format'
+import { findEquipmentInCatalog } from '../../game/ids'
 import { ItemIcon } from '../ItemDisplay'
 import { UnitNumber } from '../UnitNumber'
 import { getT, useT } from '../../i18n'
@@ -33,6 +34,7 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
 }: MarketOwnOrdersProps): React.JSX.Element {
   const t = useT()
   const catalog = useGameStore(state => state.items)
+  const equipmentCatalog = useGameStore(state => state.equipment)
   const setNotice = useGameStore(state => state.setNotice)
   const cancelOrder = useCallback((orderId: string) => {
     if (!gameClient.sendCommand('market.cancel', { orderId })) return
@@ -50,10 +52,16 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
       <section className="market-own-orders">
         {orders.length === 0
           ? <div className="market-own-empty">{t('market.noActiveOrders')}</div>
-          : orders.map(order => (
+          : orders.map(order => {
+              // 强化变体订单展示 "名称 +N"；装备名走装备目录（物品目录查不到 equipment.*）。
+              const baseName = catalog.find(item => item.itemId === order.itemId)?.name
+                ?? findEquipmentInCatalog(equipmentCatalog ?? [], order.itemId)?.name
+                ?? order.itemId
+              const displayName = order.enhancementLevel > 0 ? `${baseName} +${order.enhancementLevel}` : baseName
+              return (
               <div className="market-own-order" key={order.orderId}>
                 <span className={`market-own-side market-own-side--${order.side}`}>{order.side === 'buy' ? t('market.side.buy') : t('market.side.sell')}</span>
-                <strong><ItemIcon itemId={order.itemId} />{catalog.find(item => item.itemId === order.itemId)?.name ?? order.itemId}</strong>
+                <strong><ItemIcon itemId={order.itemId} />{displayName}</strong>
                 <span><UnitNumber value={order.price} /> × <UnitNumber value={order.remainingQuantity} /></span>
                 <span>{order.status === 'partially-filled' ? t('market.status.partiallyFilled') : t('market.status.open')}</span>
                 <time dateTime={order.expiresAt ?? order.createdAt} title={t('market.createdAt', { time: new Date(order.createdAt).toLocaleString('zh-CN') })}>
@@ -61,7 +69,8 @@ export const MarketOwnOrders = memo(function MarketOwnOrders({
                 </time>
                 <button aria-label={t('market.cancelOrder')} onClick={() => cancelOrder(order.orderId)} title={t('market.cancelOrder')} type="button">×</button>
               </div>
-            ))}
+              )
+            })}
       </section>
       <footer className="market-footer">
         <span>{t('market.metricsTraded', { count: formatNumber(metrics?.tradedQuantity ?? 0) })}</span>

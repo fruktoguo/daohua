@@ -4,10 +4,10 @@ namespace Server.Clean.Ops;
 
 /// <summary>系统身份批量下单请求。</summary>
 /// <param name="Side">订单方向：sell（挂售）或 buy（收购）。</param>
-/// <param name="Scope">范围：item（单个物品）/ category（按主类型）/ all（全部可回收物品）。</param>
-/// <param name="ItemId">Scope=item 时的物品 ID。</param>
-/// <param name="Category">Scope=category 时的物品主类型。</param>
-/// <param name="Price">限价；缺省用回收价（sellPrice）。</param>
+/// <param name="Scope">范围：item（单个品种）/ category（按主类型）/ all（全部可挂售品种：可回收物品 + 装备）。</param>
+/// <param name="ItemId">Scope=item 时的品种 ID（item.* 或 equipment.*）。</param>
+/// <param name="Category">Scope=category 时的品种主类型（装备为 equipment）。</param>
+/// <param name="Price">限价；缺省物品用回收价（sellPrice）、装备用锻造材料成本价。</param>
 /// <param name="Quantity">委托数量；缺省 1 亿份（对齐种子任务口径）。</param>
 public sealed record OpsSystemOrderRequest(
     string Side,
@@ -45,18 +45,19 @@ public static class OpsMarketActions
     /// <summary>映射市场快捷操作端点（由 OpsPanel 在面板装配时统一挂载）。</summary>
     internal static void MapOpsMarketActions(this IEndpointRouteBuilder group)
     {
-        // 可挂售物品目录：非货币 + 可交易 + 有回收价，与种子脚本「可回收物品」口径一致；
-        // 装备无回收价目，不在目录内（系统挂售无定价基准）。
+        // 可挂售品种目录：非货币 + 可交易 + 有回收价的物品，与全部装备（category=equipment、
+        // subCategory=槽位）；sellPrice 字段语义为「缺省挂单价」——物品=回收价、装备=锻造材料成本价，
+        // 与种子脚本 seed-market-system-listings.sh 口径一致。
         group.MapGet("/api/market/catalog", (GameDataCatalog gameData) =>
         {
-            var items = ListRecyclableItems(gameData)
-                .Select(item => new
+            var items = ListOrderableTargets(gameData)
+                .Select(target => new
                 {
-                    id = item.Id.Value,
-                    name = item.Name,
-                    category = item.Category,
-                    subCategory = item.DisplaySubCategory,
-                    sellPrice = item.SellPrice
+                    id = target.AssetId,
+                    name = target.Name,
+                    category = target.Category,
+                    subCategory = target.SubCategory,
+                    sellPrice = target.Price
                 })
                 .ToArray();
             var categories = items.Select(item => item.category).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
@@ -92,12 +93,12 @@ public static class OpsMarketActions
             var batchId = Guid.NewGuid();
             var outcomes = new List<OpsItemOutcome>(targets.Count);
             await EnsureSystemIdentityAsync(services.GetRequiredService<NpgsqlDataSource>(), cancellationToken);
-            foreach (var item in targets)
+            foreach (var target in targets)
             {
-                var itemPrice = request.Price ?? item.SellPrice;
+                var itemPrice = request.Price ?? target.Price;
                 var itemQuantity = request.Quantity ?? DefaultQuantity;
                 outcomes.Add(await PlaceSystemOrderAsync(
-                    market, economy, batchId, side, item, itemPrice, itemQuantity, cancellationToken));
+                    market, economy, batchId, side, target, itemPrice, itemQuantity, cancellationToken));
             }
             OpsPanel.Audit(services.GetRequiredService<ILoggerFactory>(), context, $"market-system-orders:{sideText}", null);
             return Results.Ok(new
@@ -187,25 +188,87 @@ public static class OpsMarketActions
         int Fills,
         string? Error);
 
-    /// <summary>可挂售物品口径：非货币 + 可交易 + 有回收价，按 ID 排序保证输出稳定。</summary>
-    private static IReadOnlyList<ItemDefinition> ListRecyclableItems(GameDataCatalog gameData) => gameData.Items.Values
-        .Where(item => item.IsTradable
-            && item.SellPrice > 0
-            && !item.Id.Value.StartsWith("currency.", StringComparison.Ordinal))
-        .OrderBy(item => item.Id.Value, StringComparer.Ordinal)
-        .ToArray();
+    /// <summary>
+    /// 系统下单目标品种：可回收物品与装备的统一口径。
+    /// </summary>
+    /// <param name="AssetId">品种资产 ID（item.* 或 equipment.*）。</param>
+    /// <param name="Name">品种展示名。</param>
+    /// <param name="Category">主类型；装备固定为 equipment。</param>
+    /// <param name="SubCategory">子类型；装备为槽位（weapon/head/armor/…）。</param>
+    /// <param name="Price">缺省挂单价：物品=回收价，装备=锻造材料成本价。</param>
+    private sealed record OpsMarketTarget(string AssetId, string Name, string Category, string SubCategory, double Price);
 
-    /// <summary>按范围解析目标物品；解析失败返回 null 并给出错误信息。</summary>
-    private static IReadOnlyList<ItemDefinition>? ResolveTargets(GameDataCatalog gameData, OpsSystemOrderRequest request, out string? error)
+    /// <summary>
+    /// 可挂售品种口径：非货币 + 可交易 + 有回收价的物品，以及全部装备
+    /// （category=equipment、subCategory=槽位、缺省价=锻造材料成本价），按 ID 排序保证输出稳定。
+    /// </summary>
+    private static IReadOnlyList<OpsMarketTarget> ListOrderableTargets(GameDataCatalog gameData)
     {
-        var recyclable = ListRecyclableItems(gameData);
+        var targets = new List<OpsMarketTarget>(gameData.Items.Count + gameData.RawEquipments.Count);
+        targets.AddRange(gameData.Items.Values
+            .Where(item => item.IsTradable
+                && item.SellPrice > 0
+                && !item.Id.Value.StartsWith("currency.", StringComparison.Ordinal))
+            .Select(item => new OpsMarketTarget(item.Id.Value, item.Name, item.Category, item.DisplaySubCategory, item.SellPrice)));
+        // 装备无回收价目，以锻造配方材料成本价定价；无配方或材料无价的装备无法定价，跳过。
+        var materialCosts = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var (id, equipment) in gameData.RawEquipments)
+        {
+            if (ComputeEquipmentMaterialCost(gameData, id, materialCosts, 0) is not { } cost) continue;
+            var name = equipment.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() ?? id : id;
+            var slot = equipment.TryGetProperty("slot", out var slotProperty) ? slotProperty.GetString() ?? "equipment" : "equipment";
+            targets.Add(new OpsMarketTarget(id, name, "equipment", slot, cost));
+        }
+        return targets.OrderBy(target => target.AssetId, StringComparer.Ordinal).ToArray();
+    }
+
+    /// <summary>
+    /// 装备材料成本价：定位 yields 产出该装备的锻造行动，inputs 中 item.* 按回收价×数量求和、
+    /// equipment.* 投入递归展开（T2 配方含 T1 装备投入）；递归深度上限对齐种子脚本口径。
+    /// </summary>
+    private static double? ComputeEquipmentMaterialCost(GameDataCatalog gameData, string equipmentId,
+        Dictionary<string, double> cache, int depth)
+    {
+        const int MaxRecipeDepth = 4;
+        if (depth > MaxRecipeDepth)
+            throw new DomainException(DomainErrorCode.InvariantViolation, $"装备配方递归超过深度上限（疑似配表成环）：{equipmentId}。");
+        if (cache.TryGetValue(equipmentId, out var cached)) return cached;
+        var recipe = gameData.Actions.All.FirstOrDefault(action =>
+            action.Yields.Any(yield => yield.Item is { } product && product.Value == equipmentId));
+        if (recipe is null) return null;
+        double cost = 0;
+        foreach (var (input, quantity) in recipe.Inputs)
+        {
+            if (input.Value.StartsWith("equipment.", StringComparison.Ordinal))
+            {
+                if (ComputeEquipmentMaterialCost(gameData, input.Value, cache, depth + 1) is not { } nested) return null;
+                cost += nested * quantity;
+            }
+            else if (gameData.Items.TryGetValue(input, out var material) && material.SellPrice > 0)
+            {
+                cost += material.SellPrice * quantity;
+            }
+            else
+            {
+                // 配方材料不在物品目录或无回收价 → 该装备无法定价。
+                return null;
+            }
+        }
+        cache[equipmentId] = cost;
+        return cost;
+    }
+
+    /// <summary>按范围解析目标品种；解析失败返回 null 并给出错误信息。</summary>
+    private static IReadOnlyList<OpsMarketTarget>? ResolveTargets(GameDataCatalog gameData, OpsSystemOrderRequest request, out string? error)
+    {
+        var orderable = ListOrderableTargets(gameData);
         switch (request.Scope)
         {
             case "item":
-                var target = recyclable.FirstOrDefault(candidate => candidate.Id.Value == request.ItemId?.Trim());
+                var target = orderable.FirstOrDefault(candidate => candidate.AssetId == request.ItemId?.Trim());
                 if (target is null)
                 {
-                    error = "物品不存在或不在可挂售目录（口径：非货币、可交易、有回收价）。";
+                    error = "品种不存在或不在可挂售目录（口径：非货币可交易物品，或装备）。";
                     return null;
                 }
                 error = null;
@@ -217,22 +280,22 @@ public static class OpsMarketActions
                     error = "必须提供品类。";
                     return null;
                 }
-                var matched = recyclable.Where(candidate => candidate.Category == category).ToArray();
+                var matched = orderable.Where(candidate => candidate.Category == category).ToArray();
                 if (matched.Length == 0)
                 {
-                    error = $"品类 {category} 下没有可挂售物品。";
+                    error = $"品类 {category} 下没有可挂售品种。";
                     return null;
                 }
                 error = null;
                 return matched;
             case "all":
-                if (recyclable.Count == 0)
+                if (orderable.Count == 0)
                 {
-                    error = "配表中没有可挂售物品。";
+                    error = "配表中没有可挂售品种。";
                     return null;
                 }
                 error = null;
-                return recyclable;
+                return orderable;
             default:
                 error = "范围必须是 item、category 或 all。";
                 return null;
@@ -240,15 +303,16 @@ public static class OpsMarketActions
     }
 
     /// <summary>
-    /// 为单个品种注入资金并以系统身份下单：卖单注入物品份数、买单注入灵石金额，
+    /// 为单个品种注入资金并以系统身份下单：卖单注入品种份数、买单注入灵石金额，
     /// 随后 PlaceAsync 在同一持久化事务内完成冻结扣减、预留与撮合。
+    /// 装备只挂基础变体（variant 恒为空串），+N 强化簿不在系统下单范围。
     /// </summary>
     private static async ValueTask<OpsItemOutcome> PlaceSystemOrderAsync(
         MarketRuntime market,
         IEconomyTransactionStore economy,
         Guid batchId,
         MarketSide side,
-        ItemDefinition item,
+        OpsMarketTarget target,
         double price,
         double quantity,
         CancellationToken cancellationToken)
@@ -256,16 +320,16 @@ public static class OpsMarketActions
         var sideText = side == MarketSide.Buy ? "buy" : "sell";
         try
         {
-            var instrument = new MarketInstrument(item.Id, string.Empty);
+            var instrument = new MarketInstrument(new ItemId(target.AssetId), string.Empty);
             if (!market.Owns(instrument))
                 throw new InvalidOperationException("该品种不属于当前市场分片。");
-            var orderId = DeterministicGuid(batchId, $"order|{sideText}|{item.Id.Value}");
+            var orderId = DeterministicGuid(batchId, $"order|{sideText}|{target.AssetId}");
             // 先注入资金再下单：PlaceAsync 的持久化事务会冻结扣减，余额不足会快速失败。
             var funding = side == MarketSide.Buy
                 ? new AssetDelta(SystemPlayerId, CoinsAsset, string.Empty, price * quantity)
-                : new AssetDelta(SystemPlayerId, item.Id.Value, string.Empty, quantity);
+                : new AssetDelta(SystemPlayerId, target.AssetId, string.Empty, quantity);
             await economy.CommitAsync(new EconomyTransactionRequest(
-                DeterministicGuid(batchId, $"grant|{sideText}|{item.Id.Value}"),
+                DeterministicGuid(batchId, $"grant|{sideText}|{target.AssetId}"),
                 $"system-grant:{orderId:D}",
                 "system-grant",
                 SystemPlayerId,
@@ -278,12 +342,12 @@ public static class OpsMarketActions
                 price,
                 quantity,
                 DateTimeOffset.UtcNow,
-                new IdempotencyKey($"system-ops:{batchId:D}:{sideText}:{item.Id.Value}")), cancellationToken);
-            return new OpsItemOutcome(item.Id.Value, item.Name, price, quantity, "placed", orderId, placement.Fills.Count, null);
+                new IdempotencyKey($"system-ops:{batchId:D}:{sideText}:{target.AssetId}")), cancellationToken);
+            return new OpsItemOutcome(target.AssetId, target.Name, price, quantity, "placed", orderId, placement.Fills.Count, null);
         }
         catch (Exception exception) when (exception is InvalidOperationException or DomainException or PostgresException)
         {
-            return new OpsItemOutcome(item.Id.Value, item.Name, price, quantity, "failed", null, 0, exception.Message);
+            return new OpsItemOutcome(target.AssetId, target.Name, price, quantity, "failed", null, 0, exception.Message);
         }
     }
 

@@ -127,6 +127,7 @@ public readonly record struct IdempotencyKey(string Value) : IIdentifier;
 - 每个 `partition_id` 只有一个逻辑写者；租约通过 `market.partition_leases` 行与 `fence_token` 管理，续租失败或 fence 不匹配立即拒绝写入。
 - 市场事务使用 Serializable 隔离、分片租约行锁与 fence 校验；订单、冻结、余额和流水在同一事务原子提交。订单 `version` 是修订记录，不是独立的 CAS 比较入口。
 - 订单簿是内存投影；重启时由活跃订单与未完成冻结重建。
+- 装备强化等级以 `"+N"` 变体开独立订单簿（基础簿变体为空串），钱包按 `(itemId, variant)` 行冻结互不挤占；`GET /api/v1/market/variants` 返回各变体簿卖一/买一价摘要，属分片局部视图（`_books` 仅含本进程分片品种）；`market.place` 服务端校验 `"+N"` 仅限装备且等级 ≤20（`EnhancementRules.MaxLevel`），`"+0"`/`"+03"` 等非规范写法归一到规范键。
 
 ### 3. 持久化原子性
 - 玩家 section 使用版本条件更新 + latest-only 刷盘队列；命令幂等经 `platform.command_receipts` 回执去重；需要可靠外部副作用时在同一事务追加 `platform.integration_outbox`。

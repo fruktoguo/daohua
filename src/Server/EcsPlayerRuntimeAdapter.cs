@@ -603,8 +603,16 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var quantity = payload.TryGetProperty("quantity", out var quantityElement) && quantityElement.TryGetDouble(out var parsedQuantity) ? parsedQuantity : double.NaN;
                         if (string.IsNullOrWhiteSpace(assetId) || !Enum.TryParse<MarketSide>(sideText, true, out var side))
                             return new PlayerCommandResult(false, "INVALID_ORDER", "订单品种或方向无效。", before);
-                        // 与 item.discard/item.sell 同一防线：已穿戴装备不可挂单出售（装备仍计钱包持存，须先卸下）。
-                        if (side == MarketSide.Sell && before.State.Loadout.Equipment.Any(slot => slot.ItemId == assetId))
+                        // 强化变体校验："+N" 独立盘口仅限装备且等级不超上限；
+                        // "+0"/空白归一为基础簿，"+03" 等非规范写法归一为 "+N"，避免同一簿被异形键拆串。
+                        if (EnhancementRules.ParseLevel(variant) is not { } variantLevel
+                            || variantLevel > EnhancementRules.MaxLevel
+                            || (variantLevel > 0 && !gameData.RawEquipments.ContainsKey(assetId)))
+                            return new PlayerCommandResult(false, "INVALID_VARIANT", "订单变体无效。", before);
+                        variant = EnhancementRules.KeyFor(new ItemId(assetId), variantLevel).Variant;
+                        // 与 item.discard/item.sell 同一防线但收窄到同级匹配：钱包按变体行冻结，
+                        // 仅同 itemId 且同强化等级的已装备件拦截出售，其他等级变体挂单互不挤占。
+                        if (side == MarketSide.Sell && before.State.Loadout.Equipment.Any(slot => slot.ItemId == assetId && (int)slot.EnhancementLevel == variantLevel))
                             return new PlayerCommandResult(false, "ITEM_EQUIPPED", "已装备的物品无法挂单出售，请先卸下。", before);
                         await marketRuntime.PlaceAsync(new PlaceOrderRequest(new OrderId(orderId), new PlayerId(playerId),
                             new MarketInstrument(new ItemId(assetId), variant), side, price, quantity,

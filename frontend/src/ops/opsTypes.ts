@@ -410,12 +410,13 @@ export interface OpsLogEntry {
   sequence: number
 }
 
-/** 可挂售物品目录条目（与 `GET /ops/api/market/catalog` 对齐）。 */
+/** 可挂售品种目录条目（与 `GET /ops/api/market/catalog` 对齐）。 */
 export interface OpsCatalogItem {
   id: string
   name: string
   category: string
   subCategory: string
+  /** 缺省挂单价：物品=回收价，装备=锻造材料成本价 */
   sellPrice: number
 }
 

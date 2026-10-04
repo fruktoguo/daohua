@@ -436,10 +436,10 @@ export function describeBuffEffectLines(buff: {
 
   // 1. 每 5 秒结算点回复
   if (buff.hpRegen && buff.hpRegen !== 0) {
-    lines.push(t('market.effect.hpRegenPerSecond', { n: formatNumber(buff.hpRegen) }))
+    lines.push(t('market.effect.hpRegenPerFiveSeconds', { n: formatNumber(buff.hpRegen) }))
   }
   if (buff.mpRegen && buff.mpRegen !== 0) {
-    lines.push(t('market.effect.mpRegenPerSecond', { n: formatNumber(buff.mpRegen) }))
+    lines.push(t('market.effect.mpRegenPerFiveSeconds', { n: formatNumber(buff.mpRegen) }))
   }
 
   // 1b. 回复后段乘区（生效值 = 基础回复 ×(1+Σ比率)，阵盘等 durable 增益走此区）
@@ -787,6 +787,9 @@ function describeEquipmentEffects(
   }
 
   // 装备数值唯一真源为配表原始数值块（baseStatRatios/flatStats），协议不再下发派生 stats 幻影块。
+  // 强化结算口径与服务端 PlayerAttributeResolver 一致：两段基础属性同乘 (1 + 0.02 × 强化等级)，
+  // 悬浮卡直接显示结算后真实值（战斗属性展示约定为下取整，不出现小数）。
+  const enhanceScale = 1 + enhancementLevel * 0.02
   if (equipment.baseStatRatios) {
     for (const [key, val] of Object.entries(equipment.baseStatRatios)) {
       if (val !== 0) {
@@ -797,7 +800,7 @@ function describeEquipmentEffects(
             key={`ratio-${key}`}
             label={label}
             tone={tone}
-            value={signedPercent(val)}
+            value={signedPercent(val * enhanceScale)}
           />
         )
       }
@@ -808,16 +811,12 @@ function describeEquipmentEffects(
       if (val !== 0) {
         const label = flatLabelKeys[key] ? t(flatLabelKeys[key]) : key
         const tone = STAT_TONE_MAP[key] ?? 'default'
-        // 计算强化带来的加成
-        const bonusPerLevel = equipment.enhancementBonus?.[key] ?? 0
-        const totalBonus = bonusPerLevel * enhancementLevel
         lines.push(
           <PillBonusLabel
             key={`flat-${key}`}
             label={label}
-            suffix={totalBonus > 0 ? ` (+${formatNumber(totalBonus)})` : undefined}
             tone={tone}
-            value={`+${formatNumber(val)}`}
+            value={`+${formatInteger(val * enhanceScale)}`}
           />
         )
       }

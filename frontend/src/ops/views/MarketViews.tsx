@@ -204,7 +204,7 @@ interface PendingSystemAction {
 }
 
 /**
- * 系统下单视图：以系统身份批量挂售/收购（单个物品 / 按品类 / 全部物品），
+ * 系统下单视图：以系统身份批量挂售/收购（单个品种 / 按品类 / 全部品种：可回收物品 + 装备），
  * 下单即时上架无需重启；下方列出系统当前挂单，支持逐条与一键撤销。
  * 全部写操作经二次确认，结果与失败原因都留在页面上。
  */
@@ -269,11 +269,11 @@ export function OpsSystemOrderView({ intervalMs }: { intervalMs: number }): Reac
       return
     }
     const scopeLabel = scope === 'item'
-      ? `物品「${targets[0].name}」`
+      ? `品种「${targets[0].name}」`
       : scope === 'category'
-        ? `品类「${category}」（${targets.length} 个物品）`
-        : `全部物品（${targets.length} 个）`
-    const priceLabel = parsedPrice === null ? '回收价' : formatNumber(parsedPrice, 2)
+        ? `品类「${category}」（${targets.length} 个品种）`
+        : `全部品种（${targets.length} 个）`
+    const priceLabel = parsedPrice === null ? '回收价（装备为材料成本价）' : formatNumber(parsedPrice, 2)
     const quantityLabel = `${formatNumber(parsedQuantity ?? DEFAULT_QUANTITY)} 份`
     const fundsLabel = side === 'buy' ? `，系统需注入灵石约 ${formatNumber(fundsNeeded, 2)}` : ''
     setPending({
@@ -307,7 +307,7 @@ export function OpsSystemOrderView({ intervalMs }: { intervalMs: number }): Reac
       <OpsAsyncView loading={catalogLoading} error={catalogError} hasData={catalog !== null} onRetry={reloadCatalog}>
         <OpsCard title="系统下单（挂售 / 收购）">
           <p className="ops-note">
-            以系统身份（系统坊市）挂售/收购，下单即时上架；价格缺省为回收价，数量缺省 1 亿份。
+            以系统身份（系统坊市）挂售/收购，下单即时上架；价格缺省为回收价（装备为锻造材料成本价），数量缺省 1 亿份。
           </p>
           <div className="ops-toolbar">
             <label>
@@ -320,16 +320,16 @@ export function OpsSystemOrderView({ intervalMs }: { intervalMs: number }): Reac
             <label>
               范围
               <select value={scope} onChange={event => setScope(event.target.value as SystemOrderScope)}>
-                <option value="item">单个物品</option>
+                <option value="item">单个品种</option>
                 <option value="category">按品类</option>
-                <option value="all">全部物品</option>
+                <option value="all">全部品种</option>
               </select>
             </label>
             {scope === 'item' && (
               <label>
-                物品
+                品种
                 <select value={itemId} onChange={event => setItemId(event.target.value)}>
-                  <option value="">请选择物品…</option>
+                  <option value="">请选择品种…</option>
                   {items.map(item => (
                     <option key={item.id} value={item.id}>{item.name}（{item.id}）</option>
                   ))}
@@ -352,7 +352,7 @@ export function OpsSystemOrderView({ intervalMs }: { intervalMs: number }): Reac
               <input
                 value={priceDraft}
                 inputMode="decimal"
-                placeholder={scope === 'item' && targets.length === 1 ? `默认回收价 ${targets[0].sellPrice}` : '默认回收价（按物品各自计）'}
+                placeholder={scope === 'item' && targets.length === 1 ? `缺省定价 ${targets[0].sellPrice}` : '缺省定价（回收价；装备为材料成本价）'}
                 onChange={event => setPriceDraft(event.target.value)}
               />
             </label>
@@ -391,7 +391,7 @@ export function OpsSystemOrderView({ intervalMs }: { intervalMs: number }): Reac
             rowKey={order => order.orderId}
             empty="系统身份当前没有挂单。"
             columns={[
-              { header: '品种', cell: order => `${nameById.get(order.assetId) ?? order.assetId}（${order.assetId}）` },
+              { header: '品种', cell: order => `${nameById.get(order.assetId) ?? order.assetId}${order.variant ? ` ${order.variant}` : ''}（${order.assetId}）` },
               { header: '方向', cell: order => <OpsPill tone={order.side === 'buy' ? 'jade' : 'danger'}>{order.side === 'buy' ? '买' : '卖'}</OpsPill> },
               { header: '价格', numeric: true, cell: order => formatNumber(order.price, 2) },
               { header: '原始/剩余', numeric: true, cell: order => `${formatNumber(order.originalQuantity, 2)} / ${formatNumber(order.remainingQuantity, 2)}` },

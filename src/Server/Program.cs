@@ -478,6 +478,25 @@ if (processRole == ServerProcessRole.Api)
             return Results.Conflict(Problem(409, "MARKET_NOT_READY", exception.Message));
         }
     });
+    market.MapGet("/variants", (string assetId, MarketRuntime marketRuntime) =>
+    {
+        if (string.IsNullOrWhiteSpace(assetId) || assetId.Length > 128)
+            return Results.BadRequest(Problem(400, "INVALID_INSTRUMENT", "市场品种无效。"));
+        try
+        {
+            // 不做 Owns 前置校验：_books 本身只含本进程分片品种，返回天然是分片局部视图。
+            var summaries = marketRuntime.GetVariantSummaries(new ItemId(assetId));
+            return Results.Ok(summaries.Select(summary => new MarketVariantSummaryDto(
+                assetId,
+                summary.Variant.Length == 0 ? null : summary.Variant,
+                summary.BestAskPrice,
+                summary.BestBidPrice)));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Results.Conflict(Problem(409, "MARKET_NOT_READY", exception.Message));
+        }
+    });
     market.MapGet("/metrics", (ClaimsPrincipal user, MarketRuntime marketRuntime) =>
     {
         if (user.Identity?.IsAuthenticated != true) return Results.Unauthorized();

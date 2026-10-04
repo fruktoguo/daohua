@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using Domain.Common;
 using Domain.Market;
+using Domain.Player;
 
 namespace Server.Clean;
 
@@ -214,6 +215,34 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 .OrderByDescending(order => order.CreatedAt)
                 .ThenBy(order => order.OrderId.Value)
                 .Take(limit)
+                .ToArray();
+        }
+    }
+
+    /// <summary>
+    /// 汇总指定标的一阶盘口：扫描内存簿中同 ItemId 的全部变体簿，各取 Snapshot(1)
+    /// 得出卖一/买一价；两侧均无挂单的空簿不列入。分片未就绪时抛异常。
+    /// </summary>
+    /// <param name="itemId">标的道具 ID。</param>
+    public IReadOnlyList<MarketVariantSummary> GetVariantSummaries(ItemId itemId)
+    {
+        if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
+        lock (_booksGate)
+        {
+            var summaries = new List<MarketVariantSummary>();
+            foreach (var book in _books.Values)
+            {
+                if (book.Instrument.ItemId != itemId) continue;
+                var snapshot = book.Snapshot(1);
+                var bestAsk = snapshot.Asks.Count > 0 ? snapshot.Asks[0].Price : (double?)null;
+                var bestBid = snapshot.Bids.Count > 0 ? snapshot.Bids[0].Price : (double?)null;
+                if (bestAsk is null && bestBid is null) continue;
+                summaries.Add(new MarketVariantSummary(book.Instrument.Variant, bestAsk, bestBid));
+            }
+            // 展示序固定：基础簿居前，强化簿按等级升序，非强化变体兜底排尾并按字典序定序。
+            return summaries
+                .OrderBy(summary => EnhancementRules.ParseLevel(summary.Variant) ?? int.MaxValue)
+                .ThenBy(summary => summary.Variant, StringComparer.Ordinal)
                 .ToArray();
         }
     }
@@ -812,3 +841,13 @@ public sealed record MarketRuntimeMetrics(
     long RejectedCount,
     double TradedQuantity,
     double TradedGrossAmount);
+
+/// <summary>
+/// 单变体盘口的一阶价摘要（经 GET /api/v1/market/variants 透出）。
+/// 口径：_books 仅收录本进程分片 Owns 的品种，多分片部署下该摘要是分片局部视图，
+/// 其他分片持有的变体簿需向对应实例查询。
+/// </summary>
+/// <param name="Variant">盘口变体："" 为基础簿，"+N" 为强化等级簿。</param>
+/// <param name="BestAskPrice">当前最低挂售价（卖一档）；无卖单为 null。</param>
+/// <param name="BestBidPrice">当前最高收购价（买一档）；无买单为 null。</param>
+public sealed record MarketVariantSummary(string Variant, double? BestAskPrice, double? BestBidPrice);
