@@ -1,7 +1,7 @@
 ---
 name: data-designer
 description: >-
-  Use this skill whenever designing, reviewing, modifying, or balancing skills, equipment, items, buffs, monsters, and encounters in the  codebase. Enforces the strict 'Intensity (Budget) + Attribute Weights' quantitative methodology, ensuring all numerical values in config files are derived deterministically.
+  凡在代码库中设计、评审、修改或配平技能、装备、物品、Buff、怪物与遭遇战数值时使用本技能。强制执行「强度（预算）+ 属性权重」量化方法论，确保配表中的所有数值均可被确定性推导。
 ---
 
 # 《道化太初》数值设计规范
@@ -39,7 +39,7 @@ description: >-
 | 13 | 生命回复 (每5秒) | `HpRegen` | 每 1 点属性值 = **4 点**预算 |
 | 14 | 灵力回复 (每5秒) | `MpRegen` | 每 1 点属性值 = **4 点**预算 |
 
-> **关键**：12 个基础属性的单位预算消耗相同（1:1），不做差异化换算——属性之间的价值差异已经由 `BaseFlatAnchors` 锚点表的数值量级天然体现（HP 数值远大于 AD，所以 +1 HP 自然比 +1 AD 便宜得多）。
+> **关键**：12 个基础属性的单位预算消耗相同（1:1），不做差异化换算——属性之间的价值差异已经由 `BaseFlatAnchors` 锚点表的数值量级天然体现（生命值数值远大于物理攻击，所以 +1 生命值自然比 +1 物理攻击便宜得多）。
 
 #### 第二类：任意属性的百分比增幅
 
@@ -160,7 +160,7 @@ $$B_{\text{skill}} = B_T \times K$$
   - 固定值（如 +100 生命、+2 护甲）直接填写，不走反推。
   - 特殊机制（穿透、攻速、CD 减免、吸血、反伤等）直接配置，不走预算分摊。
 
-### 5.3 品质乘区与部位权重 (Quality & Slot Multipliers)
+### 5.3 品质乘区与部位权重
 
 | 品质 | 名称 | 倍率 $Q_{\text{mult}}$ |
 | :--: | :--: | :--: |
@@ -174,11 +174,11 @@ $$B_{\text{skill}} = B_T \times K$$
 | Q8 | 混沌 | 3.50× |
 
 **部位预算权重（6 件套总和 6.0× 严格守恒）**：
-- **武器 (Weapon)**：**1.4×**（倾斜攻击，T1=40点 / T2=56点）
+- **武器**：**1.4×**（倾斜攻击，T1=40点 / T2=56点）
   - *重装刀系*：攻击+护甲双加成，附带 +200%(T1)/+300%(T2) 额外威胁值。
   - *辅助琴系*：专精治疗与回蓝（无需命中），附带 +50% 额外治疗加成，总预算减少 25%（T1=30点 / T2=42点）。
-- **衣服 (Armor)**：**1.4×**（倾斜防护，T1=40点 / T2=56点）
-- **头 / 腿 / 鞋 / 饰 (Other)**：**0.8×**（各扣减一点，T1=22点 / T2=32点）
+- **衣服**：**1.4×**（倾斜防护，T1=40点 / T2=56点）
+- **头 / 腿 / 鞋 / 饰**：**0.8×**（各扣减一点，T1=22点 / T2=32点）
   - *自动回复收拢*：生命/灵力回复主要集中于饰品（1点回复消耗 4 点预算），前期防具不引入破招拆招。
 - **总和验算**：$1.4 + 1.4 + 0.8 \times 4 = 6.0\times$（全套总预算严格等于 $6 \times B_T$）
 
@@ -190,7 +190,7 @@ $$\text{每级强化增量} = \frac{\text{白板基础属性}}{50.0} \quad (\tex
 
 强化至 +20 满级时 = 总属性获得稳定 +40% 提升。
 
-### 5.5 预算正向审计公式 (Budget Audit Formula)
+### 5.5 预算正向审计公式
 
 $$\text{实际消耗预算 } B_{\text{actual}} = \sum (\text{基础 14 属性百分比点数} \times 1.0) + \dots$$
 $$\text{目标预算 } B_{\text{target}} = B_T \times Q_{\text{mult}}$$
@@ -212,7 +212,7 @@ $$\text{偏差率 } \Delta = \frac{B_{\text{actual}} - B_{\text{target}}}{B_{\te
 
 Buff 提供的百分比增幅同样遵循 1 点预算 = 1% 增幅的规则。持续时长和叠加层数属于特殊属性，人工平衡。
 
-### 6.3 物品配表最简原则 (Lean Configuration Principle)
+### 6.3 物品配表最简原则
 
 配表严禁平铺或硬编码无意义的默认参数（如 `0`、`false`、`1.0`、空数组 `[]`）：
 - **功法秘籍与残卷 (`category: manual` / `item.tome.*` / `item.fragment.*`)**：

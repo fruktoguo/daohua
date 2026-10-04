@@ -1,4 +1,4 @@
-# Angular-Planar 提示词组装与生产规范指南
+# 极简折面提示词组装与生产规范指南
 
 本指南提供了将设计需求转化为高质量 AI 图像生成提示词的标准方法。适用于 Midjourney、DALL-E 3、Stable Diffusion 及定制图像生成模型。
 
@@ -7,104 +7,104 @@
 ## 1. 组装总公式
 
 所有提示词必须严格拆分为两部分：
-$$\mathbf{Prompt} = \mathbf{固定公共渲染段\ (Part\ A)} + \mathbf{实体定制结构段\ (Part\ B)}$$
+$$\mathbf{提示词} = \mathbf{固定公共渲染段（A 段）} + \mathbf{实体定制结构段（B 段）}$$
 
-- **Part A（固定公共段）**：锁定画风、镜头视角、媒介属性、色彩比例预算与全局负面约束。
-- **Part B（实体定制段）**：定义实体的承重模式、质量几何、轮廓张力、骨白结构面、单彩拓扑与专属避坑清单。
+- **A 段（固定公共段）**：锁定画风、镜头视角、媒介属性、色彩比例预算与全局负面约束。
+- **B 段（实体定制段）**：定义实体的承重模式、质量几何、轮廓张力、骨白结构面、单彩拓扑与专属避坑清单。
 
 ---
 
 ## 2. 标准模板库
 
-### Part A: 固定公共渲染段 (Universal Common Block)
+### A 段：固定公共渲染段
 
 ```text
-Create exactly one finished 2D game sprite of [ENTITY_NAME]. Use a clean flat cut-shape visual language: near-black continuous main mass (60-80%), a few broad bone-white structural planes (12-28%), and one saturated accent color (5-14%). Use hard-edged planar shapes with controlled chamfers, solid fills, no texture, no gradients, no soft shading, no glow, no blur, no 3D rendering, no text, no watermark. Keep the whole entity visible, centered, and readable at 96 px. Use a clear right-facing, near-orthographic side-dominant paper-card camera with slight three-quarter volume; no dramatic perspective shortening, extreme tilt, or mixed camera angles. Add a thin warm-white paperboard outline outside the entity, separated by a narrow ink-black groove.
+请精确生成一张已完成的 2D 游戏精灵图，主体为 [ENTITY_NAME]。使用干净的扁平切割形视觉语言：近黑连续主体块面（60%~80%）、少量宽大骨白结构面（12%~28%）、单一高饱和强调色（5%~14%）。使用带克制倒角的硬边平面形状、实色填充；禁止纹理、禁止渐变、禁止柔光阴影、禁止发光、禁止模糊、禁止 3D 渲染、禁止文字、禁止水印。整个实体必须完整可见、居中，并在 96px 下清晰可读。使用明确的朝右、近正交的侧向为主纸片卡视角，带轻微四分之三体积感；禁止强烈的透视缩短、极端倾斜或混合机位。在实体外侧加一圈细暖骨白纸板描边，描边与实体之间以一道极窄墨黑凹槽分隔。
 ```
 
-### Part B: 实体定制结构段 (Custom Structural Block)
+### B 段：实体定制结构段
 
 ```text
-Architecture and Silhouette:
-[ENTITY_NAME] is a [SUPPORT_MODE] entity with a [MASS_GEOMETRY] mass geometry. Its primary visual axis is [AXIS], and its mass tension is [MASS_TENSION]. Design one continuous near-black silhouette solving [SILHOUETTE_PROBLEM].
+架构与剪影：
+[ENTITY_NAME] 是一个 [SUPPORT_MODE] 实体，质量几何为 [MASS_GEOMETRY]。主视觉轴为 [AXIS]，质量张力为 [MASS_TENSION]。设计一条连续的近黑剪影，解决 [SILHOUETTE_PROBLEM]。
 
-Bone-White Structures:
-Add [1-3] broad closed bone-white planes: [PLANE_1 explaining STRUCTURAL_JOB_1]; [PLANE_2 explaining STRUCTURAL_JOB_2]. Use one small sharp diamond mark for [EYE_OR_FOCAL_POINT]. No white face mask or random white fills.
+骨白结构面：
+添加 [1-3] 块宽大闭合的骨白色面：[PLANE_1，说明 STRUCTURAL_JOB_1]；[PLANE_2，说明 STRUCTURAL_JOB_2]。用一个小的锐利菱形标记表现 [EYE_OR_FOCAL_POINT]。禁止白色面具或随机白色填充。
 
-Accent Topology:
-Use [ACCENT_COLOR] in a [ACCENT_TOPOLOGY] shape located at [ACCENT_LOCATION]. It functions as [STRUCTURAL_FUNCTION], starting at [START_POINT] and ending at [END_POINT]. Keep intentional black breathing space between white and accent planes. Do not color [FORBIDDEN_AREAS].
+强调色拓扑：
+将 [ACCENT_COLOR] 以 [ACCENT_TOPOLOGY] 形状布置在 [ACCENT_LOCATION]。它承担 [STRUCTURAL_FUNCTION] 职责，起点为 [START_POINT]，终点为 [END_POINT]。在白色面与强调色面之间保留刻意的黑色呼吸空间。禁止给 [FORBIDDEN_AREAS] 上色。
 
-Avoid:
-Avoid [FAILURE_MODE_1], [FAILURE_MODE_2], and generic decorative clutter.
+规避：
+规避 [FAILURE_MODE_1]、[FAILURE_MODE_2]，以及泛泛的装饰性杂乱。
 ```
 
 ---
 
 ## 3. 标准实体组装范例
 
-### 范例 1：重装前锋机甲 (Heavy Vanguard Construct)
+### 范例 1：重装前锋机甲
 
 ```text
-[Part A: 固定公共渲染段]
+[A 段：固定公共渲染段]
 
-Architecture and Silhouette:
-Heavy Vanguard Construct is a Grounded Footed (G) entity with a Compact (C) mass geometry. Its primary visual axis is the shoulder-to-ground load line, and its mass tension is an oversized reinforced shoulder versus a planted stance. Design one continuous near-black silhouette solving the stability of a massive armored frontal hull.
+架构与剪影：
+重装前锋机甲是一个贴地多足（G）实体，质量几何为紧凑重装（C）。主视觉轴为肩部到地面的承重线，质量张力为超大强化肩甲与稳固站姿的对抗。设计一条连续的近黑剪影，解决巨型装甲正面船壳的稳定性。
 
-Bone-White Structures:
-Add 2 broad closed bone-white planes: one heavy chest keel plane providing vertical structural stability; one broad angled forearm contact plane. Use one small sharp diamond mark for the central sensor eye. No white mask or decorative white trims.
+骨白结构面：
+添加 2 块宽大闭合的骨白色面：一块厚重的胸部龙骨面，提供纵向结构稳定；一块宽大的斜角前臂接触面。用一个小的锐利菱形标记表现中央传感器之眼。禁止白色面具或装饰性白色镶边。
 
-Accent Topology:
-Use Saturated Crimson in a Core topology shape located inside the upper chest and scapula. It functions as the central power housing, enclosed firmly within the shoulder mass. Keep intentional black breathing space between the bone-white keel and crimson core. Do not color the outer shoulder rim, back contour, or foot edges.
+强调色拓扑：
+使用饱和绯红，以核心晶核拓扑形状布置在上胸与肩胛内部。它承担中央动力舱职责，被牢牢包覆在肩部块面之内。在骨白龙骨面与绯红晶核之间保留刻意的黑色呼吸空间。禁止给外肩缘、背部轮廓或足部边缘上色。
 
-Avoid:
-Avoid continuous lightning stripes across the torso, thin decorative circuitry lines, and spiky armor plates.
+规避：
+规避横贯躯干的连续闪电条纹、纤细的装饰电路线，以及尖刺装甲板。
 ```
 
-### 范例 2：敏捷后掠侦察机 (Agile Sweep Scout)
+### 范例 2：敏捷后掠侦察机
 
 ```text
-[Part A: 固定公共渲染段]
+[A 段：固定公共渲染段]
 
-Architecture and Silhouette:
-Agile Sweep Scout is an Airborne Thrust (W) entity with a Flat (F) mass geometry. Its primary visual axis is the forward-leading nose to swept-tail axis, and its mass tension is a sharp leading prow versus broad negative space beneath the wing. Design one continuous near-black silhouette solving high-speed horizontal thrust.
+架构与剪影：
+敏捷后掠侦察机是一个悬浮推进（W）实体，质量几何为扁平流线（F）。主视觉轴为前伸机鼻到后掠尾翼的轴线，质量张力为锐利的前部冲角与机翼下方宽阔负空间的对抗。设计一条连续的近黑剪影，解决高速水平推进感。
 
-Bone-White Structures:
-Add 2 broad closed bone-white planes: one leading-edge intake wedge defining forward direction; one lower keel plane for aerodynamic balance. Use one small sharp diamond mark for the prow navigation point.
+骨白结构面：
+添加 2 块宽大闭合的骨白色面：一块前缘进气楔面，指明前进方向；一块下龙骨面，维持气动平衡。用一个小的锐利菱形标记表现机鼻导航点。
 
-Accent Topology:
-Use Saturated Cyan in a Sweep topology shape located along the internal wing root and primary thrust conduit. It functions as the propulsion impulse plane, fanning out towards the rear and terminating cleanly before the trailing wing tip. Keep intentional black breathing space between the white intake and cyan sweep. Do not color the entire outer wing contour or trailing edges.
+强调色拓扑：
+使用饱和青色，以扫掠光弧拓扑形状布置在内部翼根与主推进导管沿线。它承担推进脉冲面职责，向后呈扇形展开并在后翼尖之前干净收尾。在白色进气面与青色扫掠之间保留刻意的黑色呼吸空间。禁止给整个外翼轮廓或后缘上色。
 
-Avoid:
-Avoid glowing exhaust smoke, soft energy trails, symmetrical circular badges, and low-poly faceted shards.
+规避：
+规避发光的排气烟雾、柔和的能量拖尾、对称的圆形徽章，以及低多边形碎片。
 ```
 
-### 范例 3：多足开采漫游者 (Hexapod Mining Crawler)
+### 范例 3：多足开采漫游者
 
 ```text
-[Part A: 固定公共渲染段]
+[A 段：固定公共渲染段]
 
-Architecture and Silhouette:
-Hexapod Mining Crawler is a Segmented Modular (X) entity with a Low-slung (L) mass geometry. Its primary visual axis is a long low horizontal chassis supported by three selected rigid leg pairs, and its mass tension is a heavy front-mounted cutter versus a rear cargo hull. Design one continuous near-black silhouette solving clear modular articulation without micro-leg clutter.
+架构与剪影：
+多足开采漫游者是一个节段模块化（X）实体，质量几何为线性低伏（L）。主视觉轴为低伏的长横向底盘，由三组选定的刚性腿对支撑，质量张力为前部重型切割器与后部货舱的对抗。设计一条连续的近黑剪影，解决清晰的模块化关节而不产生细碎腿部杂乱。
 
-Bone-White Structures:
-Add 2 broad closed bone-white planes: one front chassis armor plate; one heavy rear counterbalance plate. Use one small sharp diamond mark for the cockpit orientation cue.
+骨白结构面：
+添加 2 块宽大闭合的骨白色面：一块前部底盘装甲板；一块厚重的尾部配重板。用一个小的锐利菱形标记表现座舱朝向提示。
 
-Accent Topology:
-Use Saturated Amber Orange in a Split topology shape located at the front cutter hinge and the rear power generator. It functions as two distinct functional nodes operating in visual balance. Keep intentional black breathing space between the chassis white planes and amber nodes. Do not color all legs, joints, or individual wheel/tread segments.
+强调色拓扑：
+使用饱和琥珀橙，以分置对峙拓扑形状布置在前部切割器铰链与后部动力发生器。它承担两个视觉平衡的独立功能节点职责。在底盘白色面与琥珀节点之间保留刻意的黑色呼吸空间。禁止给全部腿节、关节或单个轮/履带段上色。
 
-Avoid:
-Avoid coloring every leg joint, mechanical pipe spaghetti, tiny screws/rivets, and rounded bubble cockpits.
+规避：
+规避给每个腿部关节上色、杂乱缠绕的机械管线、细小螺丝/铆钉，以及圆润泡泡座舱。
 ```
 
 ---
 
-## 4. 提示词生成前检查清单 (Pre-flight Checklist)
+## 4. 提示词生成前检查清单
 
 在将提示词提交给 AI 渲染前，逐项自检以下 6 项：
 
 1. **[ ] 架构与几何匹配**：承重模式（G/V/W/L/R/X）与质量形态（C/D/T/F/S/R）是否准确描述该实体？
-2. **[ ] 剔除抽象工程词**：是否已剔除 `force path`、`energy pipeline`、`transmission` 等会导致模型发散的理论词，全部转化为可见的几何切面描述？
-3. **[ ] 强调色拓扑唯一**：强调色是否明确指定为 Plane / Brace / Sweep / Core / Fan / Split / Channel 之一，且指定了起始与闭合边界？
+2. **[ ] 剔除抽象工程词**：是否已剔除「力传导路径」「能量管线」「传动结构」等会导致模型发散的理论词，全部转化为可见的几何切面描述？
+3. **[ ] 强调色拓扑唯一**：强调色是否明确指定为 大甲面/支架/扫掠/晶核/扇面/分置/导流 之一，且指定了起始与闭合边界？
 4. **[ ] 骨白职责明确**：每一块白色是否都有具体的承重、铰接、朝向或外甲职责？
 5. **[ ] 明确禁止区域**：是否清晰指明了哪些外沿尖端、轮廓线必须保持近黑？
 6. **[ ] 96px 图标预估**：该结构在 96px 下是否依然能清晰读出大轮廓与主色块？
