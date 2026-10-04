@@ -1336,6 +1336,14 @@
   - 动作中途切换或暂停时，剩余秒数精确保存在槽位中，绝不凭空蒸发；
   - 透支免单与切槽惩罚：剩余时间不足以覆盖单次动作时，允许该次动作享受完整增益且不提前吃药；若玩家在尚有剩余时长时主动更换绑定的丹药，旧丹药剩余时长清零（切槽惩罚）。
 
+### 2.4.4 队列级暂停与一键清空（Queue Pause & Clear-All）
+
+- **队列停泊开关（`QueuePaused`）**：`PlayerSettingsState` 玩家级开关，与 `LoopEnabled`/`AutoTravelEnabled` 同族，随 settings 分段持久化与下发，客户端经 `queue.configure { paused }` 切换；
+  - 暂停时行动队列整体冻结——计时进度、战斗/搜寻/复活/斗法相位、旅行推进、斗法撮合全部不消费墙钟；队列结构与进度原样保留，恢复后按原进度继续；
+  - 墙钟资源窗口照常结算（自然回复、Buff 到期、自动使用冷却、暂存物品、道龄与 48h 离线截断），与 Blocked「时间照走、行动停走」同族；暂停不购买任何额外收益，只是不执行动作；
+  - 在线与离线补算语义一致（服务端权威）；暂停期间入队、插队（`world.travel`）与调序照常受理，仅不推进。
+- **一键清空（`queue.clear`）**：先补算到当前时刻，队首若为斗法按弃战判负（`ApplyDuelForfeit`，与单项移除同语义）；全部实例经统一队列变更管线归档行动账本、死亡远征恢复最低气血，单次版本提交并清理队首战斗实体；高危操作，前端必须二次确认。
+
 ---
 
 ## 2.5 技术架构与系统落地映射（Technical Architecture & Implementation）
@@ -2005,7 +2013,8 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 - **落账后衍生结算**（触发器域，`CombatTriggerMath`）：
   - **气血汲取**（Order 100，`OnHitLeechSystem`）：命中后按 `实伤 × HpDrainRatio` 回复攻击方气血，产出治疗衍生事件；
   - **灵力汲取**（Order 110，`ManaLeechSystem`）：按 `实伤 × MpDrainRatio` 从目标灵力池偷取，目标扣全额、攻击方只装得下的部分；
-  - **伤害反弹**（Order 200，`ThornsSystem`）：受击方把 `实伤 × DamageReflectRatio` 弹回攻击方，计入受击方威胁值。
+  - **伤害反弹**（Order 200，`ThornsSystem`）：受击方把 `实伤 × DamageReflectRatio` 弹回攻击方，计入受击方威胁值；
+  - **受击涨威胁**（Order 300，`ThreatOnTakenSystem`）：受击方按 `原始伤害（减免前面板威力）× ThreatOnTakenRatio` 增加自身威胁；仅命中生效，未命中不算「受到伤害」。
 
 效果强度统一打包在 `CombatantStats.Effects`（`CombatEffectProfile`）：玩家侧由装备 `specialMechanics.hpDrainRatio` / `mpDrainRatio` / `damageReflectRatio` 经属性解析汇入，怪物侧由配表同名字段直接声明；reactive 标记组件（`OnHitLeech`/`ManaLeech`/`Thorns`）由 `CombatTriggerSurface` 按 Effects 管理挂摘，参数永无双写。
 
@@ -2066,6 +2075,7 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
   - 嘲讽类技能或 Buff 提供的威胁加成效果为**即时生效（Real-time Applied）**；
   - 在计算有效威胁值时，直接按该百分比放大：
     $$\text{有效威胁值} = \text{基础累积伤害威胁} \times (1 + \text{嘲讽/仇恨增加百分比})$$
+- **受击累积（特质类来源）**：除「打出伤害」外，`ThreatOnTakenPoints` 效果提供第二条累积通道——单位**受到伤害时**按攻击方面板原始伤害（减免链前 `AttackPower × BasicAttackRatio`）折算自身威胁；未命中不产生累积。
 
 ### 7.8.2 技能目标选择与命中概率分配规则
 战斗中，除全体技能或明确锁定特殊类型（如生命最低友方、自身、特定指定单位等）的技能外，其余所有单体与非全体范围技能**均按候选目标的威胁值比例进行目标选择**。
@@ -2102,6 +2112,8 @@ $$\text{最终灵力消耗} = \text{manaCost（配表点数）}$$
 ```
 
 实现落点：`DecideNextAction` 的 `primaryTarget` 入参即该锁定目标（`SelectEnemyTarget` 按 `EffectiveThreat` 抽取）；技能落账时的实际命中目标仍按 §7.8.2 在结算时刻抽取。
+
+**敌方侧同构**：敌方出手与决策同样在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取目标（出手随机通道 18、决策 19）。玩家方当前恒为单成员（`PlayerAllies = [Player]`），`SelectTarget` 单存活成员提前返回不掷点——单盟友行为与「固定打玩家」逐位等价；多盟友（召唤物/组队）落地后威胁权重自动生效，受击涨威胁与威胁抑制类特质由此具备真实嘲讽/隐身语义。
 
 #### 2. 使用条件三元组模型（技能与消耗品共用）
 
@@ -2268,13 +2280,32 @@ $$Experience \mathrel{+}= \text{credited};\quad Foundation \mathrel{+}= amp - \t
 - 「战斗经验」tooltip（`insight.foundation.combatExpTooltip` 权威口径）：**每次获得修为时按增幅前基础量等额累积的实战经验，不受任何加成；与敌方战斗经验的比值在命中/闪避对抗末尾修正双方等效（上限 ×2 / 下限 ×0.5，见 §7.7.6）。**（旧文案「诛灭敌方按对手修为获益/按等级差指数」等历史机制描述作废。）
 - 确定性约束：底蕴结算与经验对抗均为纯函数确定性结算——不读墙钟、不占随机通道；离线补算与在线逐秒推进位级一致。
 
+---
+
+## 7.12 特质系统规约
+
+**特质（Trait）**是单位常驻持有的特殊效果标识：`trait.*` ID 集合随属性面板下发（`CombatantStats.Traits`），设计上分三类、实现上各走各的通道，不做统一抽象：
+
+| 类别 | 生效方式 | 实现通道 |
+| :--- | :--- | :--- |
+| 纯属性增益 | 面板数值 | 特质 → 属性解析点数/固定值通道汇入面板 |
+| 常驻修饰 | 反应/修饰参数 | 特质 → `CombatEffectProfile` 同族点数通道（如 `ThreatOnTakenPoints`），由既有触发器/公式消费 |
+| 条件触发 | 时机判定 | 特质 ID 进 `CombatantStats.Traits`，由授予点/触发器按 ID 判定（如开战授予 buff） |
+
+玩家侧载体：`PlayerProgression.TraitIds`（已解锁特质 ID 集合，存档持久化）→ `PlayerAttributeResolver` 折算并透传 → `CombatantStats.Traits`/`Effects`。怪物侧可由配表 `Stats.Traits` 同构声明。特质→效果映射第一版集中于 `CombatTraitRules`（Domain）：点数折算供属性解析调用，开战 buff 映射供遭遇创建调用；配表化（`traits` 词表）属远期扩展。
+
+### 7.12.1 首批特质
+
+- **看不到我（`trait.bukandaowo`）**：开战授予 `buff.yinshen`（持续 10 秒，`ThreatPoints = -100`）——`EffectiveThreat` 乘区归零，敌方针对此单位的威胁权重恒为 0。授予点只在 `CombatEncounterState.Create`（首次开战）；快照恢复由 Buffs 还原不重复授予，玩家复活不视为「开战」不补授。注意 §7.8.2 全零退化规则：若敌方全体候选目标威胁均为 0，退化为等概率抽取——「威胁为 0」是权重归零而非绝对不可选中。
+- **力微饭否（`trait.liweifanfou`）**：折算 `ThreatOnTakenPoints = 100`——受到伤害时按攻击方面板原始伤害（减免链前）等额累积自身威胁（§7.8.1 受击累积通道），变相嘲讽。该点数通道对装备 `specialMechanics` 与怪物配表同构开放，不绑定特质 ID。
+
 <!-- FILE:08-大世界地图与质量预算遇怪系统.md -->
 # 第八篇 大世界地图与质量预算遇怪系统
 
 > **版本**：v1.0.0  
 > **状态**：设计评审中  
 > **编写时间**：2026-08-23  
-> **对应任务**：[TASK-20260823-06](../../tasks/TASK-20260823-06.md)
+> **对应任务**：[TASK-20260823-06](../../tasks/archive/archive-2026-09.md)
 
 ---
 
@@ -2527,6 +2558,24 @@ flowchart TD
 - **建筑卡**：展示名称、等级与效果；建造中显示材料%/时间% 双进度缩略；点击弹详情 Modal（逐项材料清单、提交材料、升级）。节点未配置 `buildableTemplate`/`buildableList` 时不显示加号占位。
 - 节点的「本地可选行动」在历练页行动区呈现，与怪物/人物/建筑生态信息分栏。
 
+#### 历练页行动分组与地点约束
+
+历练页（`exploration`）按固定顺序分栏展示当前地点可执行行动：
+
+1. **常驻**：`type=cultivation` 的修炼类行动（如引气入体 `cultivation.draw-qi`）。常驻行动默认**全图可行、无需逐节点登记**——仅当配表显式配置 `excludedNodeIds`（黑名单）时，驻足所列节点不可执行；行进在道路上（无驻留节点）不触发排除。
+2. **技艺组**：配置了 `technique` 归属的探索行动（采集/挖掘等），组名 = 技艺名 + 玩家当前技艺等级（如「采集 Lv.3」），按 `TECHNIQUE_IDS` 顺序排列。
+3. **历练**：未配置技艺归属的其余探索行动。
+4. **讨伐**：`type=combat` 的战斗行动。
+
+行动侧地点约束（`ActionDefinition`，与执行门禁同源）：
+
+| 字段 | 语义 |
+| --- | --- |
+| `availableNodeIds` | 白名单：非空时仅所列节点可执行；缺省/空 = 不限定 |
+| `excludedNodeIds` | 黑名单：驻足所列节点不可执行；与白名单**互斥**（同配即装配拒绝） |
+
+服务端 `ActionExecutionRules` 开轮门禁、入队 `WRONG_LOCATION` 校验与自动移动锚点判定均按「白名单须在列 且 黑名单不含」同口径执行；前端 `isActionAvailableAtNode` 为同口径预览。`DataTool validate --strict` 校验两者节点引用存在且互斥。
+
 ### 8.5.2 历练交互流程闭环
 1. **点击历练行动**：点击讨伐/历练行动卡，弹出行动配置弹窗（`ActionModal`）；
 2. **行动名按驻留地点本地化**：战斗行动显示名与描述中内嵌的地图名替换为当前节点名（人在「漱玉溪」时显示「讨伐 漱玉溪」而非「讨伐 青云仙山」），行动卡、弹窗、队列与战斗区显示同口径；行进在道路上时保留地图级原名；
@@ -2540,7 +2589,7 @@ flowchart TD
 
 本节记录该系统的实际实现落点，供代码对照；字段归属以本节与配表为准。
 
-1. **配置层**：地图节点定义由 `config/game-data/maps/*.json` 的 `WorldNode` 承载（节点坐标、`availableActionIds`、`npcs`、`buildings`、`buildableTemplate`/`buildableList`、`encounterIds`）；遭遇预算与怪群池定义在 `config/game-data/encounters/*.json`（`minBudget`/`maxBudget`/`randomSpawns`/`eliteEnemyIds`/`bossEnemyIds`/`maxTotalStrength`/`battlesPerElite`/`battlesPerBoss`）；怪物定义在 `config/game-data/monsters/*.json`（含 `budgetCost`/`rank`/`strength`）。解析产物为 `GameDataCatalog` 持有的只读定义集合。
+1. **配置层**：地图节点定义由 `config/game-data/maps/*.json` 的 `WorldNode` 承载（节点坐标、`availableActionIds`、`npcs`、`buildings`、`buildableTemplate`/`buildableList`、`encounterIds`）；行动侧地点约束由 `config/game-data/actions/*.json` 的 `availableNodeIds`（白名单）/`excludedNodeIds`（黑名单，互斥）承载；遭遇预算与怪群池定义在 `config/game-data/encounters/*.json`（`minBudget`/`maxBudget`/`randomSpawns`/`eliteEnemyIds`/`bossEnemyIds`/`maxTotalStrength`/`battlesPerElite`/`battlesPerBoss`）；怪物定义在 `config/game-data/monsters/*.json`（含 `budgetCost`/`rank`/`strength`）。解析产物为 `GameDataCatalog` 持有的只读定义集合。
 2. **领域层**：确定性波次抽取由 `src/Domain/Combat/EncounterWaveSelector.cs` 的 `Select(encounter, monsters, seed, waveNumber)` 实现质量预算扣减；世界图连通性由 `GameDataCatalog.BuildWorldGraph` 与 `WorldGraph` 维护。
 3. **协议层与服务端映射**：地点节点 DTO 由 `src/Server/Clean/ProtocolSnapshotMapper.cs` 的 `ToWorldSection` 投影，输出 `minBudget`/`maxBudget`/`encounterIds`/`npcs`/`buildings`/`buildableBuildingIds`/`nodeBuildings` 等字段。
 4. **前端**：`frontend/src/components/WorldMapPanel.tsx`（地图，内建 `nodeId→mapId` 全局索引与区域可见集合，画布为世界包围盒）与 `frontend/src/components/NearbyPanel.tsx`（怪物/人物/建筑页签）渲染，快照解码在 `frontend/src/network/snapshot.ts`；讨伐行动弹窗的节点生态图标面板为 `frontend/src/components/CombatEcologyPanel.tsx`（悬停简卡 + 单击详卡双层浮层），行动名地点本地化为 `frontend/src/game/ids.ts` 的 `localizeActionDisplayText`。
@@ -3551,10 +3600,10 @@ DaoHua ECS 玩家级推进在每次 Fiber Tick 前设置当前玩家实体及其
 
 ### Trigger 域（不占 Update 序，`RunSystem<T>(entity)` 点名）
 
-由战斗边界循环在固定点同步派发（§4）。每类触发器一个 tag：
+由战斗边界循环在固定点同步派发（§4）。有实体宿主时每类触发器一个 ECS tag；无实体宿主的内联路径使用 §4.1 的轻量处理器，不进入 YuoCore Tag 注册：
 
 ```
-IOnHitTrigger    OnHitHealSystem / ThornsSystem / OnHitLeechSystem …
+IOnHitTrigger    OnHitLeechSystem / ManaLeechSystem / ThornsSystem / ThreatOnTakenSystem …
 IOnKillTrigger   OnKillBuffSystem / OnKillLootSystem …
 IOnCastTrigger   OnCastInterruptSystem / OnCastBonusSystem …
 IOnExpireTrigger OnExpireExplodeSystem …
@@ -3573,7 +3622,8 @@ AdvanceTo(state, windowTarget):
       ResolveBoundary(boundary)               // 出手/技能/回复 本体结算
       DrainTriggers(encounter.PendingTriggers) // ← 固定派发点
           foreach trigger in 入队顺序:
-              RunSystem<trigger.Tag>(unitEntity)   // 同步执行，立即生效
+              有实体宿主：RunSystem<trigger.Tag>(unitEntity)
+              无实体宿主：InlineTriggerPipeline.Dispatch(trigger)
       UpdateOutcome()                          // 死亡/胜负永远在触发器结算之后
 ```
 
@@ -3584,9 +3634,29 @@ AdvanceTo(state, windowTarget):
 - 触发器内消耗 RNG 只能走 `encounter` 固定随机流，消费顺序 = `PendingTriggers` 入队顺序。
 - 触发器不得改变边界时刻表（只可改数值与队列内容）；新增边界只能走正常 `Next*At` 计算。
 
+### 4.1 轻量内联触发器处理流程
+
+无实体战斗（纯领域推进、斗法剧本）不需要 `YuoSystem`、组件标记或 `YuoWorld.RunSystem`。这条路径使用 `CombatTriggerHandler` 基类和按事件固定签名的接口（如 `IInlineOnHitTrigger.OnHit(PendingCombatTrigger)`）：
+
+- 启动时只扫描 `DaoHua.Ecs` 程序集中的 `CombatTriggerHandler` 非抽象子类，实例化一次并按 `CombatTriggerOrder` 排序；不扫描测试程序集，也不把轻量接口继承为 `ISystemTag`。
+- 每种事件缓存为强类型接口数组。热路径只按 `CombatTriggerKind` 选择数组并进行接口调用，不使用 `MethodInfo.Invoke`、`Dictionary<Type>` 或运行时反射。
+- 同一事件类型按顺序号升序执行；顺序号相同时按处理器全名 `StringComparer.Ordinal` 二次排序，消除 `GetTypes()` 返回顺序差异。
+- 处理器只接收 `PendingCombatTrigger` 或事件专用领域上下文，不能持有 `YuoEntity`、`YuoWorld` 或宿主服务引用。
+- `InlineCombatTriggerSink` 和 `EcsCombatTriggerSink` 是互斥消费路径；一条 pending trigger 只能交给其中一个 sink，防止同一效果重复结算。两条路径继续共用 `CombatTriggerMath` 与 `Settle` 语义。
+- 新增既有事件下的效果只需新增处理器类；新增事件种类仍需定义事件接口、参数记录和 `CombatTriggerKind` 派发槽位。当前仓库没有 AOT/裁剪发布约束；未来启用时必须为扫描类型保留元数据，或将注册表替换为源生成实现。
+- 双路径同效果落地固定为四件套：内联 `CombatTriggerHandler`（`CombatTriggerOrder`）+ 薄 `YuoSystem`（`SystemOrder` 同一先后关系）+ 能力标记组件（`CombatTriggerSurface.Sync` 按 `Stats.Effects`/`Stats.Traits` 挂摘）+ `CombatTriggerMath` 共享本体。
+- 特质载体：`CombatantStats.Traits`（`trait.*` ID 集合，面板字段，快照重建不带快照负担）。条件触发型特质按 ID 判定（如 `trait.bukandaowo` → `CombatEncounterState.Create` 开战授予 `buff.yinshen`）；数值型特质经 `CombatTraitRules` 折算进 `Stats.Effects` 点数通道（如 `trait.liweifanfou` → `ThreatOnTakenPoints = 100`）。
+- 随机通道分配（目标抽取族）：0~15 核心结算保留、3 玩家目标、16 单体兜底、17 AoE 多目标、**18 敌方盟友目标（出手）、19 敌方盟友目标（决策）**、64+ 触发器专属。敌方出手与决策在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取——单存活成员 `SelectTarget` 提前返回不掷点，单盟友行为与固定目标逐位等价。
+
 桥接（Domain 不碰实体的解法）：战斗调度器整体迁入 `src/Ecs/Combat/`，操作的就是组件化状态，`RunSystem` 直接调用无分层冲突；`CombatantState` 增加运行时字段 `EntityId`（`AttachCombat` 时设置，不序列化）。
 
 `DeterministicCombatEngine` 的归宿：边界调度骨架迁入 `src/Ecs/Combat/BattleScheduler`；伤害/技能/回复公式留在 Domain 作纯函数，被 boundary handler 调用。`Domain.Tests` 中的 `AdvanceOneBoundary` 直测迁移到 `Ecs.Tests`。
+
+### 4.2 特殊效果实现工作流
+
+装备被动、技能附加效果、Buff/Debuff、怪物特性及其他玩法特殊效果的新增、修改、修复和评审，统一使用仓库级 [special-effects Skill](../../../.agents/skills/special-effects/SKILL.md)。效果数值与预算由 [data-designer Skill](../../../.agents/skills/data-designer/SKILL.md) 配合处理；纯视觉特效不属于此工作流。
+
+效果先明确触发时机、作用侧、结算口径、叠层与生命周期，再选择属性公式、固定事件接口或已有计时边界。轻量处理器实例全局复用，必须无战斗状态；冷却、次数、层数和到期时间由单位/遭遇/玩家状态持有。当前实际事件只有 `OnHit`，其他事件按具体需求补齐生产点与消费点；实体路径与内联路径继续共享效果本体，并用启用实际效果的场景验证等价性。
 
 ## 5. 行动实现本体化样板
 
@@ -3637,7 +3707,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 ## 10. 完整收口记录
 
-组件、行动队列与执行规则、战斗边界与相位、Tag 派发、ComputeNode 共用执行环境和文档规约已经按本文目标落地。`SimulationEngine`/`DeterministicCombatEngine` 保留的公开方法仅用于无世界测试与兼容调用，生产 ECS 路径不从门面进入规则编排。验证记录统一登记在 `docs/tasks/TASK-20261001-04.md`。
+组件、行动队列与执行规则、战斗边界与相位、Tag 派发、ComputeNode 共用执行环境和文档规约已经按本文目标落地。`SimulationEngine`/`DeterministicCombatEngine` 保留的公开方法仅用于无世界测试与兼容调用，生产 ECS 路径不从门面进入规则编排。验证记录统一登记在 `docs/tasks/archive/archive-2026-09.md`。
 
 ## 11. 验证门禁
 
@@ -3725,6 +3795,8 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | 化解 | `ParryResolve`（属性侧 `Parry`） | 胜出时双抗/闪避等效 ×2 |
 | 普攻间隔 | `AttackIntervalSeconds` | wire 下发毫秒 `attackIntervalMilliseconds` |
 | 威胁 | `Threat`/`ThreatBonusPoints` | 仇恨值与增幅点数 |
+| 特质 | `CombatantStats.Traits`（`trait.*` ID 集合） | 常驻特殊效果标识：三分流（属性/常驻修饰/条件触发），见 §7.12 |
+| 受击涨威胁点数 | `CombatEffectProfile.ThreatOnTakenPoints` | 受击时按原始伤害 ×点数/100 累积自身威胁（力微饭否=100） |
 | 五行 | `CombatElement` | Metal/Wood/Water/Fire/Earth/None |
 | 伤害大类 | `CombatDamageKind` | Physical/Spell |
 | 战斗经验（面板） | `CombatantStats.CombatExperience`（新） | 玩家取 `Progression.CombatExperience`，怪物取 `CumulativeExpFor(level)` |
@@ -3769,7 +3841,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | 中文名 | 变量名 | 一句话 |
 | :--- | :--- | :--- |
 | 分段枚举/键 | `PlayerSectionKind`/`PlayerSectionKinds` | progression/world/combat/buffs/loadout/settings/action_queue/duel |
-| 存档版本 | `SectionCodec.CurrentSchemaVersion` = 5 | v5 = settings 增 `autoTravelEnabled`、行动意图增 `anchorNodeId` 入队锚点 |
+| 存档版本 | `SectionCodec.CurrentSchemaVersion` = 9 | v9 = progression 增 `traitIds` 特质 ID 集合（可缺省解码） |
 | 前端 Stats | `stats.{experience, lifetimeExperience, foundation, combatExperience, realmLevel, ...}` | `mapStats` 逐字段透传 wire progression |
 | 在线状态 | `PresenceState` | Offline/Online/Suspended |
 | 玩家聚合 | `PlayerAggregate` | 八分段唯一权威载体 |
@@ -3795,6 +3867,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 2. **可直译词用准确英文**：`Foundation` 底蕴、`CombatExperience` 战斗经验、`Experience` 修为。
 3. **同构双名已冻结**：战斗面板 `AttackPower`/`Defense`/`CriticalResistance`/`ParryResolve` ↔ 玩家属性 `PhysicalAttack`/`Armor`/`CriticalAvoidance`/`Parry`，不再造第三名字。
 4. **死契约不保留**：废弃键直接删并记入 §19.6，不留兼容路径。
+5. **特质 ID 前缀 `trait.`**：特质拼音连写（`trait.liweifanfou` 力微饭否、`trait.bukandaowo` 看不到我）；特质衍生 buff 按 buff 惯例拼音（`buff.yinshen` 隐身）。
 
 ## 19.8 同道与组队（§21）
 
@@ -3879,7 +3952,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 - 目标等级 `t = 当前等级 + 1`；`t > 20` 拒绝开轮。
 - 耗时：`5 + t` 秒/次，再受强化技艺速度加成。
-- 成本：`强化精华 × max(1, floor(t/2))` + `灵石 × t×10`。
+- 成本：`灵石 × t×10`。
 - 成功率：`t≤10` 查表 `[0.5,0.45,0.45,0.4,0.4,0.4,0.35,0.35,0.35,0.35]`；`t≥11` → `0.3×0.95^(t-11)`，clamp `[0.01,0.5]`；技艺等级 `L≥t` 加性 `+0.01×L`，`L<t` 乘性 `×0.9^(t-L)`；终值 clamp `[0,0.99]`。
 - 判定走确定性随机（种子=行动实例 Id 前 8 字节，channel 独立不扰战斗种子）。
 - 成功 → 资产键升至 `+t`（已装备者同步槽位等级）；失败：启用保护材料（每轮消耗 1 个）则维持当前等级（`max(0, t-1)`），无保护归零（回到基础键）。保护材料由 `AuxItemId` 指定：装备配表 `enhanceProtectionItems` 非空时取列表内任一物品，未配置时以同装备无强化基础件（裸 `AssetKey`）代护；保护材料与本体共用裸键时（+0 装备以自身裸件代护）须持有 ≥2。
@@ -3904,7 +3977,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 ## 21.1 定位与边界
 
-1. **队伍是招募组织层**：目标类型/目标地图/身价门槛均为招募标签，不改变行动与战斗结算；本期不含「同图并肩作战」的战斗协同结算，队伍频道与成员在线态是已有的协作基础。
+1. **队伍是招募组织层**：目标类型/目标节点/身价门槛均为招募标签，不改变行动与战斗结算；本期不含「同图并肩作战」的战斗协同结算，队伍频道与成员在线态是已有的协作基础。
 2. **同道 Tab**：左侧顶级导航「同道」是社交入口容器，本期只有「队伍」一个子页；好友管理仍留在聊天面板内，后续子页以同一子 Tab 结构扩展。
 3. **服务端权威**：队伍档案、成员关系、匹配登记、大厅结果与身价数值全部由服务端产出；前端不本地推演成员/门槛/匹配结果，只保存最近一次服务端视图。
 
@@ -3915,8 +3988,8 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 | 字段 | 协议字段 | 口径 |
 | :--- | :--- | :--- |
 | 队伍名称 | `name` | 1~32 字符；为空时服务端生成「{队长道号}的小队」 |
-| 目标类型 | `activityKind` | `any`（不限）/`combat`（讨伐战斗）/`exploration`（历练采集）/`cultivation`（吐纳修炼） |
-| 目标地图 | `mapId` | 空串 = 不限；否则必须是配表已知 `mapId` |
+| 目标类型 | `activityKind` | `any`（不限）/`combat`（讨伐战斗）/`exploration`（历练采集）/`cultivation`（吐纳修炼）+ 五门技艺 `alchemy`（炼丹）/`forging`（炼器）/`talisman`（符箓）/`formation`（阵法）/`enhancement`（强化） |
+| 目标节点 | `nodeId` | 空串 = 不限；否则必须是世界图已知节点 ID（`WorldGraph.ContainsNode`）；前端选项按「区域 · 地点」展示，创建/匹配表单默认当前地点 |
 | 身价门槛 | `minValuation` | ≥0；0 表示不设门槛；加入者与自动匹配均按它裁决 |
 | 公开性 | `isPublic` | true 进组队大厅；false 只能被邀请或经聊天队伍链接进入 |
 
@@ -3947,22 +4020,22 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 | 入口 | 语义 |
 | :--- | :--- |
-| 自主选择 | 三模式卡片：「队伍匹配」「组队大厅」「创建队伍」任选其一 |
-| 队伍匹配 | 填目标类型/目标地图/队友最低身价 → `party.match.set`：服务端**先尝试自动并入**满足条件的公开队伍，未命中则登记入「匹配中」散人池 |
+| 自主选择 | 三模式页签：「组队大厅」「队伍匹配」「创建队伍」任选其一，一次只显示所选模式面板 |
+| 队伍匹配 | 填目标类型/目标节点/队友最低身价 → `party.match.set`：服务端**先尝试自动并入**满足条件的公开队伍，未命中则登记入「匹配中」散人池 |
 | 组队大厅 | 同类筛选 + 列表展示：公开队伍（含成员预览、门槛、加入按钮）与匹配中散人 |
-| 创建队伍 | 填队名（可空→默认名）/目标类型/目标地图/身价门槛/是否公开 → 创建者任队长 |
+| 创建队伍 | 填队名（可空→默认名）/目标类型/目标节点/身价门槛/是否公开 → 创建者任队长 |
 
 ## 21.5 匹配语义
 
-1. `party.match.set {activityKind?, mapId?, minValuation?}`：仅无队伍玩家可用；先写/更新 `social.party_seekers` 行，再扫描公开队伍尝试自动并入。
-2. 自动并入条件（全部满足）：队伍 `is_public` 且未满员；活动类型与地图与我方筛选一致（我方「不限」项放行全部）；我方身价 ≥ 队伍 `min_valuation`；**每名在队成员身价 ≥ 我方申报的队友最低身价**。命中多队时取人数最多、其次创建最早者。
+1. `party.match.set {activityKind?, nodeId?, minValuation?}`：仅无队伍玩家可用；先写/更新 `social.party_seekers` 行，再扫描公开队伍尝试自动并入。
+2. 自动并入条件（全部满足）：队伍 `is_public` 且未满员；活动类型与目标节点须与我方条件一致——`any`/空串为「不限」，筛选侧与被筛侧任一为不限即放行（不限目标的队伍对所有筛选可见，不限筛选的散人匹配全部队伍）；我方身价 ≥ 队伍 `min_valuation`；**每名在队成员身价 ≥ 我方申报的队友最低身价**。命中多队时取人数最多、其次创建最早者。
 3. 未命中：保持「匹配中」状态（`SocialStateDto.seeking` 下发），可随时 `party.match.clear` 撤下；加入队伍时登记自动清除。
 4. 散人池不自建队伍、不反向强拉：大厅里队长可对散人发 `party.invite`（走既有邀请-接受流程）。
 
 ## 21.6 组队大厅
 
-- 拉取式：`PartyLobbyRequest(25) {requestId, activityKind?, mapId?, minValuation?}` → `PartyLobby(26) {requestId, myValuation, parties[], seekers[]}`。
-- `minValuation` 筛选语义：公开队伍按「成员最低身价 ≥ 阈值」、散人按「本人身价 ≥ 阈值」。
+- 拉取式：`PartyLobbyRequest(25) {requestId, activityKind?, nodeId?, minValuation?}` → `PartyLobby(26) {requestId, myValuation, parties[], seekers[]}`。
+- `activityKind`/`nodeId` 筛选沿用「不限双向通配」口径（同 §21.5）；`minValuation` 筛选语义：公开队伍按「成员最低身价 ≥ 阈值」、散人按「本人身价 ≥ 阈值」。
 - 公开队伍条目含成员预览（道号/在线/身价），前端据此展示加入可行性（我的身价 < 门槛时置灰但可见）。
 - 散人条目含道号/在线/身价/目标/队友门槛；本人是队长时提供「邀请」按钮。
 - 上限：各类列表最多返回最近 50 条，按创建时间倒序。
@@ -3971,7 +4044,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 | 操作 | 权限 | 说明 |
 | :--- | :--- | :--- |
-| `party.update` | 队长 | 档案补丁：name/activityKind/mapId/minValuation/isPublic 任一非空字段即生效 |
+| `party.update` | 队长 | 档案补丁：name/activityKind/nodeId/minValuation/isPublic 任一非空字段即生效 |
 | `party.invite` | 队长 | 按道号/ID 邀请；未满员、对方未组队 |
 | `party.kick` | 队长 | 移除成员（不能踢自己，队长离队走 leave/移交） |
 | `party.disband` | 队长 | 解散整队：成员行随 `ON DELETE CASCADE` 清除，聊天链接置空失效 |
@@ -3997,7 +4070,7 @@ party.create | party.update | party.disband | party.kick | party.join
 party.match.set | party.match.clear | party.share
 ```
 
-`SocialActionDto` 扩展：`partyId?`、`channel?`、`party?`（`PartyProfileDto{name?,activityKind?,mapId?,minValuation?,isPublic?}` 补丁语义）。
+`SocialActionDto` 扩展：`partyId?`、`channel?`、`party?`（`PartyProfileDto{name?,activityKind?,nodeId?,minValuation?,isPublic?}` 补丁语义）。
 
 ### 新增帧
 
@@ -4008,10 +4081,10 @@ party.match.set | party.match.clear | party.share
 
 ### 字段扩展
 
-- `PartyDto {partyId, leaderId, name, activityKind, mapId, minValuation, isPublic, members[]}`；`PartyMemberDto` 增 `valuation`。
+- `PartyDto {partyId, leaderId, name, activityKind, nodeId, minValuation, isPublic, members[]}`；`PartyMemberDto` 增 `valuation`。
 - `SocialStateDto` 增 `seeking`（本人匹配中登记，无则 null）。
 - `PartyInvitationDto` 增 `partyName`。
-- `ChatMessageDto` 增 `partyLink?`：`PartyLinkDto{partyId,name,activityKind,mapId,minValuation,memberCount}`。
+- `ChatMessageDto` 增 `partyLink?`：`PartyLinkDto{partyId,name,activityKind,nodeId,minValuation,memberCount}`。
 
 ### PostgreSQL（schema v7）
 
@@ -4053,8 +4126,8 @@ ALTER TABLE social.chat_messages ADD party_ref uuid REFERENCES social.parties(pa
 
 - `uiStore.TabId` 新增 `social`；侧边导航「同道」+ 底部快捷栏同位。
 - `SocialPage`（同道）→ 子 Tab「队伍」→ `PartyPanel`：
-  - 无队伍：三模式卡片 → 匹配表单 / 大厅 / 创建表单；
-  - 有队伍：档案头（名称徽标/目标/门槛/公开）、成员表（队长徽标、在线点、身价）、管理区（队长：改名/目标编辑/门槛/公开开关/踢人/解散/邀请）；全体成员可用「分享队伍」（世界/附近/好友三向）与「大厅」（散人邀请入口）。
+  - 无队伍：模式页签（大厅/匹配/创建，单面板切换）→ 匹配表单 / 大厅 / 创建表单；创建与匹配表单默认「讨伐 + 当前地点」，大厅筛选默认不限全量展示；
+  - 有队伍：档案头（名称徽标/目标/门槛/公开）+「队伍信息/组队大厅」页签；信息页含成员表（队长徽标、在线点、身价）、管理区（队长：改名/目标编辑/门槛/公开开关/踢人/解散/邀请）、全体成员可用的「分享队伍」（世界/附近/好友三向）与离队/解散；大厅页是散人邀请入口（邀请按钮仅队长可见）。
 - `socialStore` 增 `seeking`、`lobby`（最近一次大厅结果 + `myValuation`）。
 - `ChatRow` 卡片渲染与加入按钮；文案全部入 `social` i18n 域。
 </script>

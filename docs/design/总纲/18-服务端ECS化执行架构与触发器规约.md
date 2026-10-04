@@ -88,7 +88,7 @@
 由战斗边界循环在固定点同步派发（§4）。有实体宿主时每类触发器一个 ECS tag；无实体宿主的内联路径使用 §4.1 的轻量处理器，不进入 YuoCore Tag 注册：
 
 ```
-IOnHitTrigger    OnHitHealSystem / ThornsSystem / OnHitLeechSystem …
+IOnHitTrigger    OnHitLeechSystem / ManaLeechSystem / ThornsSystem / ThreatOnTakenSystem …
 IOnKillTrigger   OnKillBuffSystem / OnKillLootSystem …
 IOnCastTrigger   OnCastInterruptSystem / OnCastBonusSystem …
 IOnExpireTrigger OnExpireExplodeSystem …
@@ -129,10 +129,19 @@ AdvanceTo(state, windowTarget):
 - 处理器只接收 `PendingCombatTrigger` 或事件专用领域上下文，不能持有 `YuoEntity`、`YuoWorld` 或宿主服务引用。
 - `InlineCombatTriggerSink` 和 `EcsCombatTriggerSink` 是互斥消费路径；一条 pending trigger 只能交给其中一个 sink，防止同一效果重复结算。两条路径继续共用 `CombatTriggerMath` 与 `Settle` 语义。
 - 新增既有事件下的效果只需新增处理器类；新增事件种类仍需定义事件接口、参数记录和 `CombatTriggerKind` 派发槽位。当前仓库没有 AOT/裁剪发布约束；未来启用时必须为扫描类型保留元数据，或将注册表替换为源生成实现。
+- 双路径同效果落地固定为四件套：内联 `CombatTriggerHandler`（`CombatTriggerOrder`）+ 薄 `YuoSystem`（`SystemOrder` 同一先后关系）+ 能力标记组件（`CombatTriggerSurface.Sync` 按 `Stats.Effects`/`Stats.Traits` 挂摘）+ `CombatTriggerMath` 共享本体。
+- 特质载体：`CombatantStats.Traits`（`trait.*` ID 集合，面板字段，快照重建不带快照负担）。条件触发型特质按 ID 判定（如 `trait.bukandaowo` → `CombatEncounterState.Create` 开战授予 `buff.yinshen`）；数值型特质经 `CombatTraitRules` 折算进 `Stats.Effects` 点数通道（如 `trait.liweifanfou` → `ThreatOnTakenPoints = 100`）。
+- 随机通道分配（目标抽取族）：0~15 核心结算保留、3 玩家目标、16 单体兜底、17 AoE 多目标、**18 敌方盟友目标（出手）、19 敌方盟友目标（决策）**、64+ 触发器专属。敌方出手与决策在 `PlayerAllies` 上按 `EffectiveThreat` 轮盘抽取——单存活成员 `SelectTarget` 提前返回不掷点，单盟友行为与固定目标逐位等价。
 
 桥接（Domain 不碰实体的解法）：战斗调度器整体迁入 `src/Ecs/Combat/`，操作的就是组件化状态，`RunSystem` 直接调用无分层冲突；`CombatantState` 增加运行时字段 `EntityId`（`AttachCombat` 时设置，不序列化）。
 
 `DeterministicCombatEngine` 的归宿：边界调度骨架迁入 `src/Ecs/Combat/BattleScheduler`；伤害/技能/回复公式留在 Domain 作纯函数，被 boundary handler 调用。`Domain.Tests` 中的 `AdvanceOneBoundary` 直测迁移到 `Ecs.Tests`。
+
+### 4.2 特殊效果实现工作流
+
+装备被动、技能附加效果、Buff/Debuff、怪物特性及其他玩法特殊效果的新增、修改、修复和评审，统一使用仓库级 [special-effects Skill](../../../.agents/skills/special-effects/SKILL.md)。效果数值与预算由 [data-designer Skill](../../../.agents/skills/data-designer/SKILL.md) 配合处理；纯视觉特效不属于此工作流。
+
+效果先明确触发时机、作用侧、结算口径、叠层与生命周期，再选择属性公式、固定事件接口或已有计时边界。轻量处理器实例全局复用，必须无战斗状态；冷却、次数、层数和到期时间由单位/遭遇/玩家状态持有。当前实际事件只有 `OnHit`，其他事件按具体需求补齐生产点与消费点；实体路径与内联路径继续共享效果本体，并用启用实际效果的场景验证等价性。
 
 ## 5. 行动实现本体化样板
 
@@ -183,7 +192,7 @@ ComputeNode -> Ecs + Domain（ECS 执行环境，无宿主/存储）
 
 ## 10. 完整收口记录
 
-组件、行动队列与执行规则、战斗边界与相位、Tag 派发、ComputeNode 共用执行环境和文档规约已经按本文目标落地。`SimulationEngine`/`DeterministicCombatEngine` 保留的公开方法仅用于无世界测试与兼容调用，生产 ECS 路径不从门面进入规则编排。验证记录统一登记在 `docs/tasks/TASK-20261001-04.md`。
+组件、行动队列与执行规则、战斗边界与相位、Tag 派发、ComputeNode 共用执行环境和文档规约已经按本文目标落地。`SimulationEngine`/`DeterministicCombatEngine` 保留的公开方法仅用于无世界测试与兼容调用，生产 ECS 路径不从门面进入规则编排。验证记录统一登记在 `docs/tasks/archive/archive-2026-09.md`。
 
 ## 11. 验证门禁
 

@@ -20,9 +20,9 @@
 
 - **阻止启动**：不兼容的结构版本、必需字段缺失或非法（如空 id、空怪物池、非正耗时/预算）、无效的 `type`/`kind`/`per` 枚举；
 - **静默处理（不报错）**：重复 ID 后者覆盖前者、地图邻接表追加不去重；
-- **尚未校验**：`dropChance`/`minQuantity`/`maxQuantity` 无范围校验，`eliteEnemyIds`/`bossEnemyIds`/`availableActionIds`/`encounterIds` 未做跨文件引用校验。配表评审须人工核对这三类风险。
+- **尚未校验**：`dropChance`/`minQuantity`/`maxQuantity` 无范围校验，`eliteEnemyIds`/`bossEnemyIds` 未做跨文件引用校验。配表评审须人工核对这两类风险。
 
-> `DataTool validate --strict` 另对建筑配表做结构性校验：`group` 合法性、`materials[].itemId` 物品引用与数量为正、节点 `buildableList` 建筑引用、`buildableTemplate` 模板名（`all`/`production`/`combat`/`other`）以及 `availableNodeIds` 节点引用。
+> `DataTool validate --strict` 另做结构性校验：建筑 `group` 合法性、`materials[].itemId` 物品引用与数量为正、节点 `buildableList` 建筑引用与 `buildableTemplate` 模板名（`all`/`production`/`combat`/`other`）、节点 `encounterIds`/`availableActionIds` 跨文件引用、边端点节点引用、建筑 `availableNodeIds` 节点引用，以及行动 `type`/`technique` 词汇表、`combatEncounterId` 遭遇引用、`availableNodeIds`/`excludedNodeIds` 节点引用与两者互斥。
 
 ---
 
