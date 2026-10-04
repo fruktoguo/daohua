@@ -6,8 +6,14 @@ namespace Server.Clean;
 /// <summary>基准宿主共用的显式开发边界，启动校验在数据库连接和后台服务之前执行。</summary>
 public sealed record BenchmarkHost(string Mode, string Variant, bool ObservabilityEnabled)
 {
+    /// <summary>当前基准是否为 replay 模式：模拟时钟与墙钟脱钩，只能经 /simulation-clock 端点显式推进。</summary>
     public bool IsReplay => Mode == "replay";
 
+    /// <summary>
+    /// 从 DAOHUA_BENCH_* 环境变量装配基准宿主；未设置 BENCH_MODE 返回 null（按正常宿主启动）。
+    /// 显式基准边界 fail-fast：仅允许 Development API 宿主、本机 PostgreSQL 的 bench 专用库，
+    /// replay 必须提供有效固定模拟时刻，防止基准流量误入生产拓扑。
+    /// </summary>
     public static BenchmarkHost? FromEnvironment(IHostEnvironment environment, ServerOptions options)
     {
         var mode = Environment.GetEnvironmentVariable("DAOHUA_BENCH_MODE")?.Trim().ToLowerInvariant();
@@ -40,6 +46,11 @@ public sealed record BenchmarkHost(string Mode, string Variant, bool Observabili
         return new(mode, variant!, enabled);
     }
 
+    /// <summary>
+    /// 挂载 /api/debug/bench 运维端点：bench 会话签发、模拟时钟推进、强制刷盘与遥测读取。
+    /// 过滤器只放行无代理头的本机回环请求（生产另有 Caddy 拦截 /api/debug/* 双保险），
+    /// 时钟推进与刷盘端点另要求已认证会话。
+    /// </summary>
     public void MapEndpoints(WebApplication app)
     {
         var group = app.MapGroup("/api/debug/bench");
@@ -150,4 +161,6 @@ public sealed record BenchmarkHost(string Mode, string Variant, bool Observabili
     }
 }
 
+/// <summary>基准会话签发请求体：为指定玩家直接签发会话 Cookie，免去压测脚本走登录流程。</summary>
+/// <param name="PlayerId">目标玩家；必须属于 bench_ 前缀账号且账号/角色均处于正常状态。</param>
 public sealed record BenchmarkSessionRequest(Guid PlayerId);

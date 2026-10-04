@@ -300,6 +300,7 @@ public sealed class PostgresComputeJobRepository(NpgsqlDataSource dataSource)
     /// <param name="error">诊断错误信息。</param>
     /// <param name="retryAfter">本组任务的统一退避时长；不同 attempts 的任务由调用方分组后分别调用。</param>
     /// <param name="maxAttempts">最大领取次数。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     public async ValueTask<int> ReleaseLeaseAsync(
         Guid leaseToken,
         IReadOnlyCollection<Guid> jobIds,

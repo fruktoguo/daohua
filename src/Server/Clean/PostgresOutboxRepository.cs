@@ -145,6 +145,11 @@ public sealed class OutboxWorker(
     private static readonly TimeSpan Lease = TimeSpan.FromSeconds(30);
     private readonly LogThrottle _failureLog = new(TimeSpan.FromMinutes(1));
 
+    /// <summary>
+    /// 派发主循环：按 OutboxPollInterval 轮询租约认领一批事件并逐条投递——成功标记 delivered，
+    /// 调度器不可用按固定 1 分钟回租，单条异常按 attempts 指数退避（封顶 5 分钟）回租；
+    /// 循环级异常经节流记录后进入下一轮，停机令牌取消即退出。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("OutboxWorker started batch={Batch} interval={Interval}.", options.OutboxBatchSize, options.OutboxPollInterval);

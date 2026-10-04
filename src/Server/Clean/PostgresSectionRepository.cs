@@ -1309,6 +1309,10 @@ public sealed class SectionFlushWorker(
 {
     private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));
 
+    /// <summary>
+    /// 刷盘主循环：按 SectionFlushInterval 轮询 durable 刷盘队列，把到期分段按批落库
+    /// （认领/应用/失败计数见 Debug 日志）；循环异常经节流记录后 2 秒退避重试，停机令牌取消即退出。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("SectionFlushWorker started batch={Batch} interval={Interval}.", options.SectionFlushBatchSize, options.SectionFlushInterval);

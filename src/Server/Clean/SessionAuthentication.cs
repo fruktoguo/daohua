@@ -25,6 +25,11 @@ public sealed class SessionAuthenticationHandler(
     ILoggerFactory logger,
     UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
 {
+    /// <summary>
+    /// 认证入口：优先读会话 Cookie，非浏览器客户端回退 Bearer 头；令牌经账号仓储校验后
+    /// 构造含 player_id/display_name/sequence_id 声明的票据。无令牌返回 NoResult（按匿名走挑战），
+    /// 令牌无效或过期返回 Fail。
+    /// </summary>
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var token = Request.Cookies[SessionAuthenticationDefaults.CookieName];

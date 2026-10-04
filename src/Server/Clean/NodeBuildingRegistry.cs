@@ -281,7 +281,11 @@ public sealed record NodeBuildingMutationResult(
     string? Message = null,
     IReadOnlyDictionary<string, double>? AppliedMaterials = null)
 {
+    /// <summary>构造失败结局；不携带材料回执。</summary>
+    /// <param name="code">机器可读错误码（如 BUILDING_EXISTS、INSUFFICIENT_MATERIALS）。</param>
+    /// <param name="message">面向客户端的中文提示。</param>
     public static NodeBuildingMutationResult Fail(string code, string message) => new(false, code, message);
+    /// <summary>构造成功结局；贡献命令请改用直接构造以携带 AppliedMaterials。</summary>
     public static NodeBuildingMutationResult Ok() => new(true);
 }
 
@@ -425,6 +429,10 @@ public sealed class NodeBuildingRegistry(
     /// 扣减成功才合并写回；全部已满或无有效数量时不做任何变更。
     /// </summary>
     /// <param name="commitDebitAsync">在建筑行锁内执行的背包扣减回调；返回 false 视为材料不足放弃。</param>
+    /// <param name="nodeId">目标节点标识。</param>
+    /// <param name="buildingId">目标建筑定义 ID。</param>
+    /// <param name="requested">本次提交的材料数量（按材料 ID）；仅有限正数项生效。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     public async ValueTask<NodeBuildingMutationResult> ContributeAsync(
         string nodeId,
         string buildingId,

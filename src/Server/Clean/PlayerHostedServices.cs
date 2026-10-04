@@ -4,6 +4,10 @@ namespace Server.Clean;
 public sealed class PlayerFlushHostedService(IPlayerRuntime runtime, ServerOptions options, ILogger<PlayerFlushHostedService> logger) : BackgroundService
 {
     private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));
+    /// <summary>
+    /// 刷盘主循环：按 SectionFlushInterval 周期把全部在线玩家的脏分段写入 durable 队列；
+    /// 单轮失败经节流记日志后 2 秒退避重试，停机令牌取消即退出（BackgroundService 停止时由宿主等待本任务结束）。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -23,6 +27,11 @@ public sealed class PlayerFlushHostedService(IPlayerRuntime runtime, ServerOptio
 public sealed class PlayerSimulationHostedService(IPlayerRuntime runtime, IPlayerSimulationClock clock, ILogger<PlayerSimulationHostedService> logger) : BackgroundService
 {
     private readonly LogThrottle _loopErrorLog = new(TimeSpan.FromMinutes(1));
+    /// <summary>
+    /// 模拟推进主循环：把全部在线玩家推进到模拟时钟当前时刻，步进间隔夹紧在
+    /// 「下一次行动到期边界」与 50ms~1s 之间——有到期行动时贴边界唤醒，无到期行动时空转 1 秒；
+    /// 单轮失败经节流记日志后继续下一轮，停机令牌取消即退出。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)

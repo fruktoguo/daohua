@@ -763,6 +763,11 @@ public static class WebSocketEndpoint
     /// 内整体串行：回执帧在通道中物理先于任何按新基线编码的并发推送，客户端按序合并后与全量状态逐位一致。
     /// 回执帧不可丢：入队成功才提交基线；满队列时退回锁外阻塞发送（enqueued=false），基线不前移让后续增量补发。
     /// </summary>
+    /// <param name="session">目标会话；提供推送基线读取/提交与发送队列。</param>
+    /// <param name="requestId">业务请求 ID，原样回填到 CommandResultDto 供客户端匹配请求。</param>
+    /// <param name="envelopeRequestId">信封头请求 ID，与出站序号一起写入帧头。</param>
+    /// <param name="result">运行时命令回执；TouchedSections 非空且会话已有基线时编码为 delta 形态。</param>
+    /// <param name="gameData">配表目录，提供快照/差量编码所需的指纹与定义。</param>
     /// <param name="enqueued">true 表示帧已进入发送队列；false 时调用方须在锁外 SendAsync 同一数据包。</param>
     public static byte[] BuildCommandResultPacket(
         WebSocketSession session,

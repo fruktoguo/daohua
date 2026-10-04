@@ -33,6 +33,11 @@ public sealed class ComputeDispatcherWorker(
     /// <summary>停机排空窗口：主服下线前给在飞批次的收尾时间，覆盖绝大多数正常批次往返。</summary>
     private static readonly TimeSpan ShutdownDrainWindow = TimeSpan.FromSeconds(12);
 
+    /// <summary>
+    /// 派发主循环：未配置计算节点令牌/停用时直接退出（任务保留 pending）；
+    /// 否则按类注释所述「Acquire 节点槽位 → ClaimDue 领取 → 派生独立派发任务」运转，
+    /// 无空闲节点或无到期任务时等待容量信号唤醒或轮询周期到期；停机时先停派发再排空在飞批次。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.ComputeNodeConfigured)

@@ -36,14 +36,22 @@ public sealed class EcsPlayerRuntimeAdapter(
     IPlayerOwnershipStore? ownership = null) : IPlayerRuntime
 {
     private readonly ConcurrentDictionary<Guid, PlayerRuntimeSnapshot> _loaded = new();
+    // 钱包以存储余额为权威：ECS 库存组件由它同步重建，市场等外部入账经失效标记触发重读。
     private readonly ConcurrentDictionary<Guid, Dictionary<AssetKey, AssetBalanceRecord>> _wallets = new();
+    // 每分段首次置脏时刻：FlushOwnedAsync 按 15s 脏龄去抖，没到龄的分段不进 durable 队列。
     private readonly ConcurrentDictionary<Guid, Dictionary<PlayerSectionKind, DateTimeOffset>> _dirtyAt = new();
+    // 已提交命令待落库的回执：随下一次 section 入队同事务写入，保证回执不先于状态生效。
     private readonly ConcurrentDictionary<Guid, List<CommandReceipt>> _pendingReceipts = new();
+    // 钱包失效标记（值无意义，键存在即需重读）：市场外部入账 NotifyMarketWalletCredited 只负责打标。
     private readonly ConcurrentDictionary<Guid, byte> _walletReloadRequired = new();
     private readonly ConcurrentDictionary<Guid, PlayerLogBuffer> _logs = new();
+    // 玩家级单写者门：命令/装载/刷盘/卸载统一经此串行进入 Fiber，不设全局加载门。
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _playerGates = new();
+    // 进程内请求幂等窗（上限 1024/玩家）：跨重连去重由持久化 command_receipts 兜底。
     private readonly ConcurrentDictionary<Guid, RecentRequests> _recentRequests = new();
+    // 上次推送时的属性流水号：命令后用差值判定 WireAttributesChanged，驱动网络层是否发属性增量。
     private readonly ConcurrentDictionary<Guid, long> _attributeRevisions = new();
+    // 本实例在 player_runtime_leases 上的持有者标识：租约获取/续租/归还都以它 fence 防误删他实例租约。
     private readonly Guid _ownerInstanceId = Guid.NewGuid();
     private static readonly TimeSpan OwnershipLease = TimeSpan.FromSeconds(45);
     /// <summary>本实例已获取租约玩家的上次成功续租时间；键存在即表示持有租约。</summary>
@@ -70,11 +78,19 @@ public sealed class EcsPlayerRuntimeAdapter(
         }
     }
 
+    /// <inheritdoc />
     public int LoadedCount => _loaded.Count;
+    /// <inheritdoc />
     public event Func<PlayerRuntimeSnapshot, ValueTask>? SnapshotUpdated;
+    /// <inheritdoc />
     public event Func<Guid, IReadOnlyList<LogEventDto>, ValueTask>? LogBatchEmitted;
+    /// <inheritdoc />
     public DateTimeOffset? NextAdvanceBoundaryUtc => ecs.NextAdvanceBoundaryUtc;
 
+    /// <summary>
+    /// 装载玩家到内存：经玩家 gate 串行，先获取所有权租约（被他实例持有则 fail-closed），
+    /// 再读取持久化分段与余额重建 ECS 实体、补算离线欠债后才转在线；玩家不存在抛 <see cref="KeyNotFoundException"/>。
+    /// </summary>
     public async ValueTask<PlayerRuntimeSnapshot> LoadAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var notifications = new List<RuntimeNotification>();
@@ -157,6 +173,16 @@ public sealed class EcsPlayerRuntimeAdapter(
         }
     }
 
+    /// <summary>
+    /// 执行一条玩家领域命令：经玩家 gate 串行进入 Fiber，依次做幂等去重（进程内窗口 + 持久化回执）、
+    /// 乐观版本校验、命令分发与持久化提交；失败不抛异常而以错误码返回（领域违例、所有权丢失等）。
+    /// </summary>
+    /// <param name="playerId">目标玩家。</param>
+    /// <param name="command">领域命令名（如 action.enqueue、market.place、player.presence）。</param>
+    /// <param name="payload">命令载荷；含 requestId 字段时必须与 <paramref name="requestId"/> 一致。</param>
+    /// <param name="expectedStateVersion">调用方期望的状态版本；大于 0 且与当前不符时返回 STATE_VERSION_CONFLICT。</param>
+    /// <param name="requestId">请求幂等标识；空 GUID 直接返回 INVALID_REQUEST_ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     public async ValueTask<PlayerCommandResult> ExecuteAsync(Guid playerId, string command, JsonElement payload,
         long expectedStateVersion, Guid requestId, CancellationToken cancellationToken = default)
     {
@@ -268,7 +294,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                         var wasHead = before.State.Actions.Count > 0 && before.State.Actions[0].Id == actionId;
                         if (!wasHead && before.State.Actions.All(action => action.Id != actionId))
                             return new PlayerCommandResult(false, "ACTION_NOT_FOUND", "行动不存在。", before);
-                        // OOP 同序：移除队首先把已流逝模拟结算掉，再进行弃战判定与移除。
+                        // 沿袭历史 OOP 运行时的次序基线：移除队首先把已流逝模拟结算掉，再进行弃战判定与移除。
                         if (wasHead && _simulationClock.UtcNow > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
                         touched = ecs.MutatePlayer(playerId, aggregate =>
@@ -303,7 +329,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                             || !payload.TryGetProperty("direction", out var directionElement)
                             || !directionElement.TryGetInt32(out var direction))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "行动移动参数无效。", before);
-                        // OOP 同序：先推进到当前，再按是否挪动队首做弃战判定。
+                        // 沿袭历史 OOP 运行时的次序基线：先推进到当前，再按是否挪动队首做弃战判定。
                         if (_simulationClock.UtcNow > before.State.LastSimulatedAt)
                             await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
                         var moved = false;
@@ -741,9 +767,11 @@ public sealed class EcsPlayerRuntimeAdapter(
         finally { gate.Release(); }
     }
 
+    /// <inheritdoc />
     public ValueTask FlushAsync(Guid playerId, bool force, CancellationToken cancellationToken = default)
         => FlushLoadedAsync(playerId, force, cancellationToken);
 
+    /// <inheritdoc />
     public async ValueTask FlushAllAsync(bool force, CancellationToken cancellationToken = default)
     {
         var failures = new ConcurrentQueue<Exception>();
@@ -759,6 +787,11 @@ public sealed class EcsPlayerRuntimeAdapter(
         throw new AggregateException(failures);
     }
 
+    /// <summary>
+    /// 把全部已加载玩家统一推进到 target：按 ID 稳定排序一次性获取全部玩家 gate（避免与单玩家命令交叉死锁），
+    /// 完成租约续期与失效钱包重读后由 ECS 世界整批推进，再逐玩家提交持久化并收集推送通知。
+    /// 任一玩家提交失败时把本批未提交玩家回滚到推进前快照并整体抛出，不留半提交状态。
+    /// </summary>
     public async ValueTask AdvanceAllAsync(DateTimeOffset target, CancellationToken cancellationToken = default)
     {
         var ids = _loaded.Keys.OrderBy(id => id).ToArray();
@@ -826,7 +859,7 @@ public sealed class EcsPlayerRuntimeAdapter(
                 _attributeRevisions[playerId] = advanceRevision;
                 _loaded[playerId] = after;
                 uncommitted.Remove(playerId);
-                // 与 OOP PlayerRuntime 一致：日志无条件下发，快照仅在模拟真实变更（Changed）时推送，
+                // 行为基线（沿袭历史 OOP 运行时口径）：日志无条件下发，快照仅在模拟真实变更（Changed）时推送，
                 // 空闲玩家仅时间前进不产生 ChangedSections，不得收到空增量。
                 // 例外：外部入账（市场结算等）已重读钱包并推进版本——Changed=false 时也必须推送，
                 // 否则余额差量无回执可携带，在线对手方要等重连才能看到入账。
@@ -855,6 +888,7 @@ public sealed class EcsPlayerRuntimeAdapter(
         }
     }
 
+    /// <inheritdoc />
     public async ValueTask RemoveAsync(Guid playerId, bool flush, CancellationToken cancellationToken = default)
     {
         if (!_loaded.TryGetValue(playerId, out var snapshot)) return;
@@ -890,9 +924,11 @@ public sealed class EcsPlayerRuntimeAdapter(
         finally { gate.Release(); }
     }
 
+    /// <inheritdoc />
     public IReadOnlyList<LogEventDto> GetRecentLogEvents(Guid playerId)
         => _logs.TryGetValue(playerId, out var log) ? log.SnapshotRecent() : [];
 
+    /// <inheritdoc />
     public ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default)
         => ValueTask.FromResult<IReadOnlyList<PlayerRuntimeSnapshot>>(_loaded.Values.OrderBy(value => value.PlayerId).ToArray());
 
@@ -907,6 +943,10 @@ public sealed class EcsPlayerRuntimeAdapter(
         if (_loaded.ContainsKey(playerId)) _walletReloadRequired[playerId] = 0;
     }
 
+    /// <summary>
+    /// 优雅停机：解除市场入账订阅后逐玩家强制落盘并卸载（单个失败只记日志不阻断其余玩家），
+    /// 最后释放玩家 gate 并销毁 ECS 世界；重复调用幂等。
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
@@ -1184,7 +1224,7 @@ public sealed class EcsPlayerRuntimeAdapter(
         await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>本侧弃战产生的对手判胜通知：对手已加载时在其锁内记账，并广播对方快照（对齐 OOP RouteDuelForfeitsAsync）。</summary>
+    /// <summary>本侧弃战产生的对手判胜通知：对手已加载时在其锁内记账，并广播对方快照（次序沿袭历史 OOP 运行时基线）。</summary>
     private async ValueTask RouteDuelForfeitAsync((Guid DuelId, Guid PeerId) forfeit,
         List<RuntimeNotification> notifications, CancellationToken cancellationToken)
     {
@@ -1205,7 +1245,7 @@ public sealed class EcsPlayerRuntimeAdapter(
         finally { peerGate.Release(); }
     }
 
-    /// <summary>命令回执持久化清单（与 OOP ShouldPersistReceipt 一致）；market.place/cancel 走订单幂等键不入回执。</summary>
+    /// <summary>命令回执持久化清单（口径沿袭历史 OOP 运行时基线）；market.place/cancel 走订单幂等键不入回执。</summary>
     private static bool ShouldPersistReceipt(string command) => command is
         "action.enqueue" or "action.remove" or
         "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or

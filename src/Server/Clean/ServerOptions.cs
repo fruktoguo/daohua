@@ -32,7 +32,7 @@ public sealed record ServerOptions(
     int MarketPartitionId,
     bool EnableSchemaBootstrap)
 {
-    /// <summary>ECS 实验运行时的固定 World/Fiber 分片数；OOP 宿主忽略此配置。</summary>
+    /// <summary>ECS 运行时的固定 World/Fiber 分片数；仅 ECS 宿主消费此配置。</summary>
     public int EcsShardCount { get; init; } = 1;
 
     /// <summary>进程运行角色（API、Worker 或全部）</summary>

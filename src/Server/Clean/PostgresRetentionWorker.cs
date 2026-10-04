@@ -120,6 +120,11 @@ public sealed class PostgresRetentionWorker(
 {
     private readonly LogThrottle _errorLog = new(TimeSpan.FromMinutes(1));
 
+    /// <summary>
+    /// 清理主循环：启动延迟 5 分钟（避开建库与 key-ring 热路径）后首跑，
+    /// 之后经 PeriodicTimer 每小时触发一轮 <see cref="PostgresRetentionRepository.PruneAsync"/>；
+    /// 单轮失败经节流记日志，下个周期重试，停机令牌取消即退出。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // 避开刚启动时的 schema/key-ring 热路径；之后每小时最多做一次小批量删除。

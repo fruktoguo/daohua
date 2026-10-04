@@ -170,7 +170,7 @@ public static class ComputeBatchBudget
     }
 
     /// <summary>
-    /// 按预算贪心装批：保持输入顺序，装得下的进 <see cref="Fits"/>，放不下的进 <see cref="Overflow"/>。
+    /// 按预算贪心装批：保持输入顺序，装得下的进返回元组的 Fits，放不下的进 Overflow。
     /// 单个元素超过预算时也进 Overflow，由调用方决定退回或判死。
     /// </summary>
     public static (List<T> Fits, List<T> Overflow) Pack<T>(

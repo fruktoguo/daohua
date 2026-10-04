@@ -16,11 +16,16 @@ public sealed class BenchmarkTelemetry : IDisposable
     private readonly Dictionary<string, double> _npgsqlSums = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _npgsqlSamples = new(StringComparer.Ordinal);
     // 每个阶段固定 1025 桶，百分位为桶上界；相邻有限桶最多相差 2%。
+    /// <summary>
+    /// 时长直方图的桶上界序列（毫秒）：1024 个按 1.02 倍几何递增的有限桶（相邻桶差 ≤2%）
+    /// 加一个 +∞ 兜底桶，共 1025 项；随 /metrics 原样下发，供压测端按同口径还原百分位。
+    /// </summary>
     public static readonly double[] HistogramUpperBoundsMs = Enumerable.Range(0, 1024)
         .Select(index => 0.001 * Math.Pow(1.02, index)).Append(double.MaxValue).ToArray();
     private readonly Dictionary<string, DurationAggregate> _durations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _counters = new(StringComparer.Ordinal);
     private long _listenerTicks;
+    /// <summary>是否监听领域运行时 Meter（RuntimeInstrumentation）；false 时只收 Npgsql/db.client 指标，用于消融归因。</summary>
     public bool ObservabilityEnabled { get; }
     private readonly long _startAllocatedBytes;
     private readonly TimeSpan _startCpu;
@@ -32,6 +37,11 @@ public sealed class BenchmarkTelemetry : IDisposable
     private bool _sawSentBytes;
     private bool _sawReceivedBytes;
 
+    /// <summary>
+    /// 创建遥测读取器并开始监听 Meter；同时记录进程起点（累计分配字节/CPU/GC 暂停），
+    /// 供 <see cref="Snapshot"/> 按差值输出本基准窗口的用量。
+    /// </summary>
+    /// <param name="observabilityEnabled">是否监听领域运行时 Meter；消融实验传 false 以剥离插桩开销。</param>
     public BenchmarkTelemetry(bool observabilityEnabled = true)
     {
         ObservabilityEnabled = observabilityEnabled;
@@ -83,6 +93,7 @@ public sealed class BenchmarkTelemetry : IDisposable
         }
     }
 
+    /// <summary>停止 Meter 监听并释放进程句柄；之后调用 <see cref="Snapshot"/> 抛 <see cref="ObjectDisposedException"/>。</summary>
     public void Dispose()
     {
         if (_disposed) return;
@@ -211,5 +222,13 @@ public sealed record BenchmarkTelemetrySnapshot(
     IReadOnlyDictionary<string, BenchmarkDurationSnapshot> Measurements,
     IReadOnlyDictionary<string, long> Counters);
 
+/// <summary>单个阶段/场景的时长分布快照，由固定桶直方图聚合而来。</summary>
+/// <param name="Count">记录的样本总数。</param>
+/// <param name="TotalMs">样本总时长（毫秒）。</param>
+/// <param name="P50Ms">第 50 百分位（毫秒，桶上界近似）。</param>
+/// <param name="P95Ms">第 95 百分位（毫秒，桶上界近似）。</param>
+/// <param name="P99Ms">第 99 百分位（毫秒，桶上界近似）。</param>
+/// <param name="MaxMs">最大样本时长（毫秒）。</param>
+/// <param name="Buckets">各桶样本计数，下标对应 <see cref="BenchmarkTelemetry.HistogramUpperBoundsMs"/> 的桶上界。</param>
 public sealed record BenchmarkDurationSnapshot(long Count, double TotalMs, double P50Ms, double P95Ms,
     double P99Ms, double MaxMs, long[] Buckets);

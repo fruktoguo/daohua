@@ -44,9 +44,7 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     private readonly LogThrottle _persistenceErrorLog = new(TimeSpan.FromMinutes(1));
     private readonly LogThrottle _recoveryLog = new(TimeSpan.FromMinutes(1));
 
-    /// <summary>
-    /// 初始化 MarketRuntime 的新实例。
-    /// </summary>
+    /// <summary>创建分片运行时实例；不触库，租约抢占与盘口恢复延迟到 <see cref="StartAsync"/>。</summary>
     /// <param name="store">市场账本仓储：订单、成交与分片租约的 PostgreSQL 适配。</param>
     /// <param name="options">服务端配置选项（分片数与本进程分片 ID 由此读取）。</param>
     /// <param name="logger">日志记录器。</param>

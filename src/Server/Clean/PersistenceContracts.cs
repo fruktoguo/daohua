@@ -117,6 +117,7 @@ public interface IOutboxRepository
     /// <param name="eventType">事件类型名。</param>
     /// <param name="payload">已序列化的事件载荷。</param>
     /// <param name="occurredAt">业务发生时刻，同时作为首次可见时间。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     ValueTask AppendAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -279,6 +280,7 @@ public interface IMarketTransactionStore
     /// <param name="order">挂单输入。</param>
     /// <param name="fills">该挂单撮合产生的成交列表。</param>
     /// <param name="fenceToken">当前写者持有的分片租约 fence。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     ValueTask<MarketCommitResult> CommitPlacementAsync(
         MarketOrderInput order,
         IReadOnlyList<MarketFillInput> fills,

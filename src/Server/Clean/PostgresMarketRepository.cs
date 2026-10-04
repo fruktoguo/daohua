@@ -197,6 +197,7 @@ public sealed class PostgresMarketRepository(
     /// <param name="order">挂单输入，分片必须与当前写者一致。</param>
     /// <param name="fills">本次撮合产生的成交列表（可为空）。</param>
     /// <param name="fenceToken">当前持有的分片租约 fence。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>提交结局；AlreadyCommitted=true 表示幂等重放。</returns>
     public async ValueTask<MarketCommitResult> CommitPlacementAsync(
         MarketOrderInput order,

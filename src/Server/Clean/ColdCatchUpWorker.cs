@@ -27,6 +27,11 @@ public sealed class ColdCatchUpWorker(
     /// <summary>本实例当前是否为生产 leader；仅用于持锁状态切换时打一条日志。</summary>
     private bool _isProducer;
 
+    /// <summary>
+    /// 扫描主循环：未配置计算节点派发链时直接退出；启动延迟 30 秒避开建库热路径后，
+    /// 每 ColdCatchUpInterval 一轮——仅持有生产咨询锁的实例扫描离线欠债玩家并逐个入队，
+    /// 循环异常经节流记录后 5 秒退避重试，停机时释放持锁连接（会话结束即让出生产权）。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.ComputeNodeConfigured)

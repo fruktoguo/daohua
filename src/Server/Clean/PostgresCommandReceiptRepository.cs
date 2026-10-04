@@ -45,6 +45,7 @@ public sealed class CommandReceiptCleanupWorker(
     ICommandReceiptStore receipts,
     ILogger<CommandReceiptCleanupWorker> logger) : BackgroundService
 {
+    /// <summary>清理主循环：每 10 分钟删除一次过期回执；单轮失败只记日志，下个周期重试，停机令牌取消即退出。</summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMinutes(10));
