@@ -2,13 +2,11 @@ import { memo, useEffect, useMemo, useState } from 'react'
 import { getItemAmount } from '../game/actionCalculations'
 import {
   ENHANCE_ACTION_ID,
-  ENHANCE_ESSENCE_ITEM_ID,
   ENHANCE_MAX_LEVEL,
   SPIRIT_STONE_ITEM_ID,
   TECHNIQUE_SPEED_RATIO_PER_LEVEL,
   calculateTechniqueProgress,
   enhanceBaseDurationSeconds,
-  enhanceEssenceCost,
   enhanceSpiritStoneCost,
   enhanceSuccessRate,
 } from '../game/combatConstants'
@@ -115,7 +113,6 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const techniqueProgress = calculateTechniqueProgress(combat?.techniqueExperiences?.enhancement ?? 0)
   const techniqueLevel = techniqueProgress.level
 
-  const essenceOwned = getItemAmount(inventory, ENHANCE_ESSENCE_ITEM_ID)
   const spiritOwned = getItemAmount(inventory, SPIRIT_STONE_ITEM_ID)
 
   // 保护材料候选：装备配了 enhanceProtectionItems 白名单则从列表任选，
@@ -137,11 +134,10 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
 
   const preview = useMemo(() => {
     const successRate = enhanceSuccessRate(nextLevel, techniqueLevel)
-    const essenceCost = enhanceEssenceCost(nextLevel)
     const spiritCost = enhanceSpiritStoneCost(nextLevel)
     const baseDuration = enhanceBaseDurationSeconds(nextLevel)
     const actualDuration = baseDuration / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel)
-    return { successRate, essenceCost, spiritCost, baseDuration, actualDuration }
+    return { successRate, spiritCost, baseDuration, actualDuration }
   }, [nextLevel, techniqueLevel])
 
   const submit = () => {
@@ -252,7 +248,6 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
             <div>
               <dt>{t('app.enhancement.costLabel')}</dt>
               <dd>
-                <ActionDetailItem amount={preview.essenceCost} current={essenceOwned} itemId={ENHANCE_ESSENCE_ITEM_ID} />
                 <ActionDetailItem amount={preview.spiritCost} current={spiritOwned} itemId={SPIRIT_STONE_ITEM_ID} />
                 {protectionActive && protectionItemId !== null && (
                   <ActionDetailItem amount={protectionRequired} current={protectionOwned} itemId={protectionItemId} />

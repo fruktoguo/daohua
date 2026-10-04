@@ -653,8 +653,6 @@ export function calculateTechniqueProgress(totalExperience = 0): {
 
 /** 装备强化行动 ID */
 export const ENHANCE_ACTION_ID = 'enhance.equipment'
-/** 强化精华物品 ID（每轮强化固定消耗） */
-export const ENHANCE_ESSENCE_ITEM_ID = 'item.enhance-essence'
 /** 灵石货币物品 ID（按目标等级线性消耗） */
 export const SPIRIT_STONE_ITEM_ID = 'currency.spirit-stone'
 /** 强化等级上限 +N */
@@ -677,11 +675,6 @@ export function enhanceSuccessRate(targetLevel: number, techniqueLevel: number):
   const L = Math.max(0, techniqueLevel)
   const rate = L >= t ? clampedBase + 0.01 * L : clampedBase * Math.pow(0.9, t - L)
   return Math.max(0, Math.min(0.99, rate))
-}
-
-/** 单轮强化精华消耗 = max(1, floor(t/2)) */
-export function enhanceEssenceCost(targetLevel: number): number {
-  return Math.max(1, Math.floor(Math.max(1, Math.floor(targetLevel)) / 2))
 }
 
 /** 单轮灵石消耗 = t × 10 */

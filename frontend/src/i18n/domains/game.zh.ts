@@ -133,7 +133,7 @@ export const gameZh = {
       // 符箓·阵法·强化
       'talisman.draw-leiji': { name: '雷击符', description: '以残魄灵符为纸、桃木晶为引，朱砂走笔勾勒雷纹，绘成一击即发的木行雷击灵符。' },
       'formation.deploy-juling': { name: '聚灵阵盘', description: '以灵松晶为枢、破碎灵核为眼，篆刻聚灵阵纹于阵盘之上，布下后绵绵汇聚方圆灵机。' },
-      'enhance.equipment': { name: '装备强化', description: '以强化精华淬炼装备本体、灵石为媒逐级铭纹，成败之间砥砺器物威能。' },
+      'enhance.equipment': { name: '装备强化', description: '以灵石为媒淬炼装备本体逐级铭纹，成败之间砥砺器物威能。' },
 
       // 讨伐战斗
       'combat.hunt-qi-beast': { name: '讨伐 青云仙山', description: '在青云仙山各处搜寻妖兽踪迹，迎战山野灵物与守山妖兽。' },
@@ -157,7 +157,6 @@ export const gameZh = {
       'item.soul-talisman': { label: '残魄灵符', description: '残破泛黄的古旧符纸，朱砂符印斑驳，仍隐有灵力回荡。' },
       'item.leiji-talisman': { label: '雷击符', description: '朱砂勾勒雷纹的青色灵符，符面电光游走不散，祭出即唤木行天雷直击敌首。' },
       'item.juling-formation-disk': { label: '聚灵阵盘', description: '灵松晶纹密布的方寸阵盘，置于身侧便展开无形聚灵小阵，四方灵气源源汇入主人体内。' },
-      'item.enhance-essence': { label: '强化精华', description: '自百炼精金中淬出的淬炼精髓，流光内蕴不熄，是装备强化铭纹不可或缺的引料。' },
       'item.broken-blade': { label: '残刃', description: '战场遗迹中出土的古战断刃，虽缺锋芒，却自有一股肃杀戾气。' },
       'item.sha-bone': { label: '煞骨', description: '历经魔煞侵蚀的苍黑异骨，触之刺骨冰寒。' },
       'item.demon-core': { label: '妖核', description: '异种古兽心脉凝成的晶核，内里流转着狂暴深邃的星陨灵息。' },

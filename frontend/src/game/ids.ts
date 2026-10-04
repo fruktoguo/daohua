@@ -716,7 +716,6 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.soul-talisman': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.leiji-talisman': { glyph: '⚡', tone: 'cyan', rarity: 'yellow', level: 2, subCategory: 'talisman' },
   'item.juling-formation-disk': { glyph: '⬡', tone: 'violet', rarity: 'yellow', level: 2, subCategory: 'formation' },
-  'item.enhance-essence': { glyph: '💧', tone: 'gold', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.broken-blade': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.sha-bone': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
   'item.demon-core': { glyph: '🪵', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'material' },
