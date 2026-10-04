@@ -30,7 +30,7 @@
 
 | # | 风险 | 证据 | 来源 |
 | --- | --- | --- | --- |
-| H1 | **混合工作区未提交**：73 跟踪 +1335/−422 横跨坊市 UI、时钟修复、图标管线、审计整改四个主题；阻断 `docker-build-prod.sh`（dirty 拒绝），回滚/追责困难 | `git status` 实测；`docs/tasks/TASK-20260914-09.md` 七阶段全未勾选 | E |
+| H1 | **混合工作区未提交**：73 跟踪 +1335/−422 横跨坊市 UI、时钟修复、图标管线、审计整改四个主题；阻断 `docker-build-prod.sh`（dirty 拒绝），回滚/追责困难 | `git status` 实测；`docs/tasks/archive/archive-2026-09.md` 七阶段全未勾选 | E |
 | H2 | **schema v2 + 快照 v2 双断点**：现存本地库与 v1 存档将被拒绝启动；`README.md:67` 仍写"schema v1" | `PostgresSchema.cs:311,363`；`snapshot.ts:134` | E/A |
 | H3 | **ComputeNode 假补算 + 全链路未接线**：`DeterministicBatchEngine` 只改写 JSON 字段、版本 +1，不复用 `SimulationEngine`；`platform.compute_jobs` 无生产者；Server 无任何 `advance-batch` 调用；无 ComputeNode 测试 | `DeterministicBatchEngine.cs:117-157`；`ComputeNode.csproj` 零项目引用 | B/D/E |
 | H4 | **YuoCore 引用悬空**：`Domain.csproj:13-14`、`Server.csproj:14-17` 引用 Abstractions/Ecs/Persistence/Runtime，src 全树零 `using YuoCore`；AGENTS 命名规约（Task*/Executor*/*Component/*System）对应未实施架构，属规则-代码漂移 | grep 零命中；`docs/临时设计讨论/任务队列系统与组件设计草案.md` 标注"尚未进入代码实现" | A/B/D |

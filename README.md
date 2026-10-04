@@ -183,7 +183,7 @@ OOP、ECS-current 和 ECS-optimized 实验共享开发控制面，只在 `Develo
 - `dotnet run --project src/Bench -- report --report 'artifacts/bench/<同条件三版报告通配符>.json' --comparison-output artifacts/bench/gathering.comparison.json` 生成阶段与事件计数的横向对比 JSON/CSV，并为旧版输入报告补齐缺失的 `.stages.csv`、`.counters.csv`（不覆盖已有文件）。输入必须是 OOP、ECS-current、ECS-optimized 各一份，且场景、人数、manifest SHA-256、游戏数据指纹、模式、目标时长、并发和成功命令数一致；条件不符仍输出明细，但拒绝计算倍率并返回非零状态。同一 `stage|scenario`、调用边界和调用次数相同的共享阶段可计算三版倍率；两套 ECS 共有阶段只计算优化版/当前版；`all` 运维阶段只并排展示，`count_mismatch` 不计算倍率。
 - 报告尚未记录 ECS `shardCount`，计算倍率前需外部核对两套 ECS 服务的实际分片数。`instrumentation_listener_ms` 是服务端 Meter 监听器窗口耗时下界；完整埋点成本要用相同负载的观测开/关独立重复实验确认。
 
-该实验尚未替代正式服务。完整设计、验证记录与剩余门禁见 [`TASK-20260924-09`](docs/tasks/TASK-20260924-09.md)。
+该实验尚未替代正式服务。完整设计、验证记录与剩余门禁见 [`TASK-20260924-09`](docs/tasks/archive/archive-2026-09.md)。
 
 ## Docker 与生产部署
 

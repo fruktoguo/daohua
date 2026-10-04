@@ -87,11 +87,11 @@
     - **资产分层约定**：非运行时位置只留**原始分辨率** —— AI 原图在 `art/source/`，
       另有 26 张早期图标的**唯一高清副本**在 `art/legacy_128/`（其原图在本机已不存在，不可删）。
       切图中间档（256 工程母版）**不常驻**，需要时由 `art/sheets.json` 一条命令重建。
-      详见 [`TASK-20260913-06.md`](../tasks/TASK-20260913-06.md)。
+      详见 [`TASK-20260913-06.md`](../tasks/archive/archive-2026-09.md)。
     - **编码档位**：**降色 256 + 无损 WebP**（`--web-palette 256 --web-lossless`）。
       90 张合计 **168.1 KB**：同口径下比原先的有损 q90（267.2 KB）**小 37%**，可见像素 RGB 还高 4.13 dB。
       有损 WebP 会把**边缘半透明像素的 RGB** 带偏（表现为轮廓发白、整体褪色发灰），降色 + 无损没有这个毛病。
-      换编码档位前先读 [`TASK-20260913-07.md`](../tasks/TASK-20260913-07.md) 的实测对照表。
+      换编码档位前先读 [`TASK-20260913-07.md`](../tasks/archive/archive-2026-09.md) 的实测对照表。
   - **图标渲染统一关闭线性插值（`image-rendering: pixelated`）**：三处图标 `<img>` 都用最近邻缩放，
     保留像素质感（改动前是浏览器默认双线性，会发虚）。位置：
     `.item-tile-icon`（[`selection-grid.css`](../../frontend/src/styles/selection-grid.css)）、
