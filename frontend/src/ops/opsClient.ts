@@ -64,6 +64,7 @@ export async function opsPost<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T
 }
 
+/** 提取错误响应的可读文案（message 优先，其次 code，最后回退状态码）。 */
 async function readMessage(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { message?: string; code?: string }

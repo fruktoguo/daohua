@@ -1135,6 +1135,9 @@ function visualFor(name: string): CharacterVisual {
   return { renderer: 'text', source: name.slice(0, 1) || '修' }
 }
 
+/** 全量快照 sections 成员在信封 JSON 中的默认路径（CommandResult 内嵌快照时为 ['payload','sections']）。 */
+const TOP_SECTIONS_PATH: readonly string[] = ['sections']
+
 /**
  * 解码并严格校验服务端下发的全量玩家快照 DTO。
  * 流程：
@@ -1143,9 +1146,6 @@ function visualFor(name: string): CharacterVisual {
  * 3. 并行解码并逐段校验各 Section 的 SHA-256 校验和；
  * 4. 解析转换为前端 PlayerSnapshot 完整聚合状态。
  */
-/** 全量快照 sections 成员在信封 JSON 中的默认路径（CommandResult 内嵌快照时为 ['payload','sections']）。 */
-const TOP_SECTIONS_PATH: readonly string[] = ['sections']
-
 export async function decodePlayerSnapshotDto(
   dto: PlayerSnapshotDto,
   payloadBytes: Uint8Array,

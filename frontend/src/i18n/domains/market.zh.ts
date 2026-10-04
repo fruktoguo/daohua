@@ -1,5 +1,7 @@
-// market 域词典（zh-CN）：坊市页面、订单表单、选择器与物品展示等文本收拢。
-// 服务端下发的物品名/品类/描述（state.items）不属于本词典，保持原样。
+/**
+ * market 域词典（zh-CN）：坊市页面、订单表单、选择器与物品展示等文本收拢。
+ * 服务端下发的物品名/品类/描述（state.items）不属于本词典，保持原样。
+ */
 export const marketZh = {
   market: {
     title: '坊市',

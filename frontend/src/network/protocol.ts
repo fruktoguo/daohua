@@ -69,6 +69,7 @@ export const WireMessageType = {
   /** 服务端下发组队大厅：公开队伍与匹配中散人列表 */
   PartyLobby: 26,
 } as const
+/** WireMessageType 常量表对应的值联合类型（帧类型编号） */
 export type WireMessageType = (typeof WireMessageType)[keyof typeof WireMessageType]
 
 /** 载荷编码格式枚举 */
@@ -77,6 +78,7 @@ export const WireCodec = {
   Json: 1,
   Protobuf: 2,
 } as const
+/** WireCodec 常量表对应的值联合类型 */
 export type WireCodec = (typeof WireCodec)[keyof typeof WireCodec]
 
 /** 解码后的统一网络信封结构 */
@@ -251,6 +253,7 @@ export const CommandResultSnapshotForm = {
   /** 增量快照：snapshot 字段为 PlayerSnapshotDeltaDto，与推送增量共用合并语义 */
   Delta: 'delta',
 } as const
+/** CommandResultSnapshotForm 常量表对应的值联合类型 */
 export type CommandResultSnapshotForm = (typeof CommandResultSnapshotForm)[keyof typeof CommandResultSnapshotForm]
 
 /** CommandResult 指令执行回执载荷 */
@@ -324,6 +327,7 @@ export const ChatChannel = {
   /** 宗门频道（占位未开放） */
   Sect: 'sect',
 } as const
+/** ChatChannel 常量表对应的值联合类型（传音频道标识） */
 export type ChatChannel = (typeof ChatChannel)[keyof typeof ChatChannel]
 
 /** ChatSend 传音发言请求载荷 */
@@ -404,6 +408,7 @@ export const PartyActivityKind = {
   /** 强化 */
   Enhancement: 'enhancement',
 } as const
+/** PartyActivityKind 常量表对应的值联合类型（队伍目标类型） */
 export type PartyActivityKind = (typeof PartyActivityKind)[keyof typeof PartyActivityKind]
 
 /** 社交动作标识，与服务端 SocialActions 严格一致 */
@@ -433,6 +438,7 @@ export const SocialAction = {
   /** 把当前队伍卡片发布到指定传音频道（channel 必填，好友频道附带 targetPlayerId） */
   PartyShare: 'party.share',
 } as const
+/** SocialAction 常量表对应的值联合类型（社交指令标识） */
 export type SocialAction = (typeof SocialAction)[keyof typeof SocialAction]
 
 /** 队伍档案补丁：party.create 时五字段语义齐全，party.update 仅应用非空字段 */

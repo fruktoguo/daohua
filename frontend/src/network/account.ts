@@ -12,6 +12,7 @@ export interface StoredAccountInfo {
   name: string
   /** 角色序号（服务端下发的玩家自增编号，旧缓存缺省为 0） */
   sequenceId?: number
+  /** 最近登录时间（客户端 Date.now() 毫秒，仅供快捷列表排序） */
   lastLoginAt: number
 }
 

@@ -44,6 +44,7 @@ import { fetchGameCatalog } from './network/apiClient'
 import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab } from './uiStore'
 import { useT, getT } from './i18n'
 
+/** 全局共享的空冷却表（冻结对象）：避免每次渲染创建新引用触发下游 memo 失效 */
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
 type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff' | 'loop' | 'travel'
@@ -131,6 +132,7 @@ function resolveQueueEntryName(
   return localized
 }
 
+/** 解析队列条目的描述文本（配表 description），并按当前驻留地点做地点化文本替换 */
 function actionDescription(entry: QueueEntry, actions?: readonly ActionDefinition[], world?: WorldState, maps?: readonly WorldMapDefinition[]): string {
   const def = (actions ? findActionInCatalog(actions, entry.actionId) : undefined) ?? resolveActionDefinition(entry.actionId)
   const description = def?.description ?? resolveQueueEntryName(entry, actions)
@@ -240,6 +242,7 @@ const ExpeditionActionProgress = memo(function ExpeditionActionProgress({ entry 
   )
 })
 
+/** 历练遭遇战相位名 → i18n 词条（搜索敌/战斗中/研读/死亡回城/斗法等待/斗法中） */
 function getCombatPhaseLabel(phase: string | undefined, t: (key: string) => string): string {
   switch (phase) {
     case 'initial-search': return t('app.queue.phaseSearch')
@@ -252,6 +255,7 @@ function getCombatPhaseLabel(phase: string | undefined, t: (key: string) => stri
   }
 }
 
+/** 遭遇战相位进度条：按相位名展示标签 + 平滑进度（复用 useSmoothProgressRef 直写 DOM） */
 const CombatActionPhaseProgress = memo(function CombatActionPhaseProgress({
   entry,
   phase,
@@ -962,12 +966,14 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   )
 })
 
+/** 炼丹页顶部子选项卡配置（id 对应 uiStore 的 AlchemySubTab，labelKey 为 i18n 键） */
 const ALCHEMY_SUB_TABS: ReadonlyArray<{ id: AlchemySubTab; labelKey: 'alchemyExtraction' | 'alchemyCultivation' | 'alchemyCombat' }> = [
   { id: 'extraction', labelKey: 'alchemyExtraction' },
   { id: 'cultivation', labelKey: 'alchemyCultivation' },
   { id: 'combat', labelKey: 'alchemyCombat' },
 ]
 
+/** 炼器页顶部子选项卡配置（精炼 + 六大装备部位） */
 const FORGING_SUB_TABS: ReadonlyArray<{ id: ForgingSubTab; labelKey: 'forgeRefining' | 'forgeWeapon' | 'forgeHead' | 'forgeArmor' | 'forgeLegs' | 'forgeBoots' | 'forgeTrinket' }> = [
   { id: 'refining', labelKey: 'forgeRefining' },
   { id: 'weapon', labelKey: 'forgeWeapon' },
@@ -1896,6 +1902,7 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
 
 type MapSubTab = 'map' | NearbyTab
 
+/** 地图页子选项卡配置：地图本体 + 附近面板的妖兽/修士/建筑三视图 */
 const MAP_TABS: ReadonlyArray<{ id: MapSubTab; labelKey: 'tabMap' | 'tabMonsters' | 'tabPeople' | 'tabBuildings' }> = [
   { id: 'map', labelKey: 'tabMap' },
   { id: 'monsters', labelKey: 'tabMonsters' },
@@ -1999,6 +2006,7 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
 
 
 
+/** 移动端底部导航栏页签配置（顺序即展示顺序，labelKey/icon 均与 TabId 同名） */
 const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },

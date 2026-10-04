@@ -206,6 +206,7 @@ export async function fetchMarketMetrics(signal?: AbortSignal): Promise<MarketMe
   }
 }
 
+/** wire 下发的挂单状态枚举（snake_case，经 mapMarketOrderStatus 归一化为前端 kebab-case） */
 type MarketOrderStatusWire = 'active' | 'partially_filled' | 'filled' | 'cancelled' | 'expired'
 
 interface MarketOrderDto {

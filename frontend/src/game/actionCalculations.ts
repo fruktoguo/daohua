@@ -70,6 +70,7 @@ export interface ActionYieldPreview {
   actualDurationSeconds: number
 }
 
+/** calculateActionYieldPreview 的入参集合：行动定义 + 评估现场（背包/世界节点/玩家属性） */
 interface CalculateActionParams {
   action: ActionDefinition
   inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>

@@ -29,6 +29,7 @@ interface LeaseRecord {
   heartbeatAt: number
 }
 
+/** 互斥守卫句柄：供被阻断页请求接管与守卫生命周期清理 */
 export interface TabGuardHandle {
   /** 被阻断页请求接管：通知持有页让位，随后刷新本页重新竞逐 */
   requestTakeover: () => void

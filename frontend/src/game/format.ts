@@ -163,6 +163,7 @@ export function formatInteger(value: number | bigint | string): string {
   return formatUnitNumber(value, { maxDecimals: 0 })
 }
 
+/** formatProgressText 的展示选项 */
 export interface FormatProgressOptions {
   /** 是否展示百分比后缀，默认 true */
   showPercent?: boolean
@@ -194,11 +195,11 @@ export function formatProgressText(
   return options?.showPercent === false ? `${curStr}/${maxStr}` : `${curStr}/${maxStr} (${pct}%)`
 }
 
+// 触发条件枚举 -> 展示文案统一走 i18n；组合语序由模板键承载（中英语序不同）。
 /**
  * 战斗触发条件转展示文案（如「自身生命值 <= 30%」）
  * @param trigger 触发条件对象
  */
-// 触发条件枚举 -> 展示文案统一走 i18n；组合语序由模板键承载（中英语序不同）。
 export function describeCombatTrigger(trigger: CombatTrigger): string {
   const t = getT()
   const dependency = t(`game.trigger.dependency.${trigger.dependency}`)
@@ -327,6 +328,7 @@ export function parseNumericParts(value: number | bigint | string): ParsedNumeri
   }
 }
 
+/** 中文万进制分段格式化的精度与取整选项 */
 export interface FormatChineseSplitOptions {
   /** 小数点后最多位数，默认 2 */
   maxDecimals?: number

@@ -284,10 +284,10 @@ export function getCumulativeExpForLevel(level: number): number {
   return 100.0 * Math.pow(l, 3.0)
 }
 
+// 单位生命层次显示名走 i18n（combat.nearby.rankMonster/rankElite/rankBoss），此处仅保留数值倍率。
 /**
  * 非玩家单位生命层次量化定义（普通、精英、首领对应的全属性与生命倍率）
  */
-// 单位生命层次显示名走 i18n（combat.nearby.rankMonster/rankElite/rankBoss），此处仅保留数值倍率。
 export const NON_PLAYER_UNIT_TIERS = {
   normal: {
     allStatsMultiplier: 1.0,
@@ -353,7 +353,7 @@ export class PercentValue {
         ? 1.0 + this.points / 100.0
         : 100.0 / (100.0 + Math.abs(this.points))
     }
-    // non-linear (速率倒数缩减)
+    // 非线性档（速率倒数缩减）：正点数按 100/(100+点数) 收敛，攻速/冷却缩减等属性不随点数无限递增
     return this.points >= 0
       ? 100.0 / (100.0 + this.points)
       : 1.0 + Math.abs(this.points) / 100.0
@@ -368,7 +368,7 @@ export class PercentValue {
         ? this.points
         : -(Math.abs(this.points) / (100.0 + Math.abs(this.points))) * 100.0
     }
-    // non-linear
+    // 非线性档（softcap）：正点数展示值按 点数/(100+点数) 收敛，与 multiplier 的倒数缩减口径一致
     return this.points >= 0
       ? (this.points / (100.0 + this.points)) * 100.0
       : -Math.abs(this.points)
@@ -661,6 +661,7 @@ export const ENHANCE_MAX_LEVEL = 20
 export const ENHANCE_BASE_SUCCESS_RATES = [0.5, 0.45, 0.45, 0.4, 0.4, 0.4, 0.35, 0.35, 0.35, 0.35] as const
 /** 目标等级 t≥11 的基础成功率衰减：0.3 × 0.95^(t-11) */
 export const ENHANCE_HIGH_TIER_BASE = 0.3
+/** 高阶衰减底数：目标等级 t≥11 时成功率按 ENHANCE_HIGH_TIER_BASE × 0.95^(t-11) 计算 */
 export const ENHANCE_HIGH_TIER_DECAY = 0.95
 /** 单轮强化基础耗时 = ENHANCE_DURATION_BASE + targetLevel */
 export const ENHANCE_DURATION_BASE = 5

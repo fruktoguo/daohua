@@ -163,6 +163,11 @@ interface Point {
   y: number
 }
 
+/**
+ * 战斗特效播放引擎（表现层，不参与结算）。
+ * 向覆盖层挂载特效节点并托管其生命周期；画廊共享脚本经 register 注册为
+ * 同名 handler，结算类方法在前端为 noop。dispose 时统一清理节点与计时器。
+ */
 export class VfxEngine {
   private readonly shellEl: HTMLElement
   private readonly overlayEl: HTMLElement

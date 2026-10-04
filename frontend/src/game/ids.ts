@@ -7,11 +7,11 @@ import type { ActionDefinition, ActionType, CombatAbilitySlot, CombatantDefiniti
  */
 export const ACTION_TYPES: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat', 'enhancement']
 
+// 行动定义只保留纯数据核心：显示文本统一走 i18n（game.action.<id>.*），
+// 由 resolveActionDefinition 在渲染期按当前语言解析，避免数据表内重复存放文案。
 /**
  * 行动定义纯数据核心（不包含多语言展示文案）
  */
-// 行动定义只保留纯数据核心：显示文本统一走 i18n（game.action.<id>.*），
-// 由 resolveActionDefinition 在渲染期按当前语言解析，避免数据表内重复存放文案。
 export type ActionDefinitionCore = Omit<ActionDefinition, 'name' | 'description'>
 
 /**
@@ -176,11 +176,11 @@ export function resolveActionDefinition(id: string): ActionDefinition | undefine
   return undefined
 }
 
+// 离线兜底目录：仅在服务端目录尚未到达时展示；语言取模块加载时的当前语言，
+// 服务端目录到达后即被整体替换。
 /**
  * 解析全部离线兜底行动定义
  */
-// 离线兜底目录：仅在服务端目录尚未到达时展示；语言取模块加载时的当前语言，
-// 服务端目录到达后即被整体替换。
 export function resolveActionDefinitions(): ActionDefinition[] {
   return ACTION_DEFINITION_CORES.map(core => resolveActionDefinition(core.id)!)
 }
@@ -537,10 +537,10 @@ export function resolveActionRarity(
   return 'mundane'
 }
 
+// 页签仅保留非文本元数据；label 统一经 actionTabLabel() 走 i18n。
 /**
  * 各行动类型对应的 UI 图标符号与主题色
  */
-// 页签仅保留非文本元数据；label 统一经 actionTabLabel() 走 i18n。
 export const ACTION_TAB_META: Record<ActionType, { glyph: string; accent: string }> = {
   cultivation: { glyph: '☯', accent: 'cyan' },
   exploration: { glyph: '⌕', accent: 'green' },

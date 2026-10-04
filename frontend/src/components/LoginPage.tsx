@@ -40,11 +40,11 @@ export const LoginPage = memo(function LoginPage({ onLoggedIn }: LoginPageProps)
   const registerWithAuth = useAccountStore(state => state.registerWithAuth)
   const removeAccountAction = useAccountStore(state => state.removeSavedAccount)
 
-  // Login form state
+  // 登录表单状态
   const [loginAccount, setLoginAccount] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
 
-  // Register form state
+  // 注册表单状态
   const [regAccount, setRegAccount] = useState('')
   const [regCharName, setRegCharName] = useState('')
   const [regPassword, setRegPassword] = useState('')

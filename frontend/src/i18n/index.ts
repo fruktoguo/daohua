@@ -25,6 +25,7 @@ export type { Messages }
 type PathsOf<T> = T extends string
   ? never
   : { [K in keyof T & string]: T[K] extends string ? K : `${K}.${PathsOf<T[K]>}` }[keyof T & string]
+/** 词条点路径键类型（由 zh-CN 词典推导出的全部合法路径联合） */
 export type TranslationKey = PathsOf<Messages>
 
 /** 词条插值参数表（对应模板中的 {name} 占位符） */

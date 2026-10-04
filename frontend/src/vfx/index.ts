@@ -67,6 +67,10 @@ function aliveActors(shellEl: HTMLElement, cls: string): HTMLElement[] {
     .filter(el => !el.classList.contains('is-dead'))
 }
 
+/**
+ * 战斗特效运行时门面：封装引擎实例与 DOM 锚点解析。
+ * 构造时 drain 共享脚本队列完成功法演出注册；调用方只关心 playCast/playCastRing/dispose 三个动作。
+ */
 export class CombatVfxRuntime {
   private readonly engine: VfxEngine
   private readonly shellEl: HTMLElement

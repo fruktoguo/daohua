@@ -37,6 +37,7 @@ export interface StoredGameLog {
   count?: number
 }
 
+/** 渲染就绪的游戏日志条目：原始模板已解析为富文本分词并完成相邻重复折叠 */
 export interface GameLogEntry extends StoredGameLog {
   /** 模板解析后的富文本分词（渲染期直接消费） */
   segments: readonly LogSegment[]

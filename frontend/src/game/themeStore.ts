@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 
+/** 界面配色主题；首屏由 index.html 内联脚本恢复，Store 只维护会话内状态。 */
 export type Theme = 'light' | 'dark'
 
+/** 主题切换动画的触发原点（页面像素坐标）；缺省时使用右上角默认锚点。 */
 export interface ThemeOrigin {
   x: number
   y: number
@@ -51,6 +53,7 @@ function persistTheme(theme: Theme): void {
   }
 }
 
+/** 主题全局 Store：写入时应用根节点配色并持久化到 localStorage（daohua.theme）。 */
 export const useThemeStore = create<ThemeStore>(set => ({
   theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
   setTheme: (theme, origin) => {

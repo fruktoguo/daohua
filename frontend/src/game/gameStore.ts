@@ -115,10 +115,13 @@ interface GameStore {
   resetGameStore: () => void
 }
 
+/** 非战斗行动域的自动消耗槽位数（仅通用栏）。 */
 const AUTO_USE_SLOT_COUNT = 3
 /** 战斗域自动消耗槽为双组栏位（药品栏 potion ×3 + 通用栏 general ×3），共 6 槽。 */
 const COMBAT_AUTO_USE_SLOT_COUNT = AUTO_USE_SLOT_COUNT * 2
+/** 战斗装配的功法槽位下限（1 内功心法位 + 4 术法位；服务端扩容时取 max 保留）。 */
 const COMBAT_ABILITY_SLOT_COUNT = 5
+/** 行动域全集，归一化时按此顺序补齐槽位，保证与协议字段顺序一致。 */
 const ACTION_TYPE_KEYS: readonly ActionType[] = ['cultivation', 'exploration', 'alchemy', 'combat', 'enhancement']
 
 /** 各行动域自动消耗槽位数：战斗域 6 槽（双组），其余行动域 3 槽（仅通用栏）。 */

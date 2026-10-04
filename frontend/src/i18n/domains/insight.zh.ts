@@ -1,4 +1,6 @@
-// insight 域词典（zh-CN）：内视面板、境界徽章、词条标签等文本收拢。
+/**
+ * insight 域词典（zh-CN）：内视面板、境界徽章、词条标签等文本收拢。
+ */
 export const insightZh = {
   insight: {
     progressLabel: '修为',
