@@ -20,6 +20,7 @@
     <InternalsVisibleTo Include="Server.Tests" />
     <InternalsVisibleTo Include="Domain.Tests" />
     <InternalsVisibleTo Include="DaoHua.Ecs" />
+    <InternalsVisibleTo Include="Ecs.Tests" />
   </ItemGroup>
 
   <ItemGroup>
