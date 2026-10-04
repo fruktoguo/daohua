@@ -92,6 +92,10 @@ public sealed class EcsGameRuntime : IAsyncDisposable, IDisposable
     public void SyncAssetBalances(Guid playerId, IReadOnlyCollection<AssetBalance> balances)
         => GetShard(playerId).SyncAssetBalances(playerId, balances);
 
+    /// <summary>外部来源（市场结算入账等）改动了玩家客户端可见状态：仅推进版本不伪造分段脏。</summary>
+    public void MarkExternalStateChanged(Guid playerId)
+        => GetShard(playerId).MarkExternalStateChanged(playerId);
+
     public Guid CreatePlayer(PlayerAggregateState state, IReadOnlyCollection<AssetBalance>? balances = null)
     {
         ArgumentNullException.ThrowIfNull(state);

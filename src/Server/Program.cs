@@ -207,6 +207,11 @@ app.MapHealthChecks("/readyz", new HealthCheckOptions
 
 if (processRole == ServerProcessRole.Api)
 {
+    // 市场入账事件 → 在线玩家钱包失效：成交对手方/退款属主的余额差量
+    // 由下一次玩家门内推进经推送带给客户端（DisposeAsync 中解绑）。
+    var marketRuntime = app.Services.GetRequiredService<MarketRuntime>();
+    marketRuntime.WalletCredited += app.Services.GetRequiredService<EcsPlayerRuntimeAdapter>().NotifyMarketWalletCredited;
+
     // 生产镜像把前端构建产物拷入 wwwroot；本地开发由 Vite 提供前端，wwwroot 不存在。
     // 仅在静态站点根存在时装配静态文件与 SPA 回退，避免开发态刷出 WebRootPath 告警。
     var webRootPath = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
@@ -288,7 +293,8 @@ if (processRole == ServerProcessRole.Api)
                         statRatios = entry.Buff.StatRatios
                     }
                 }).ToArray(),
-                availableNodeIds = action.AllowedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray()
+                availableNodeIds = action.AllowedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+                excludedNodeIds = action.ExcludedNodeIds?.OrderBy(value => value, StringComparer.Ordinal).ToArray()
             }));
     });
     catalog.MapGet("/items", (HttpContext context, GameDataCatalog gameData) =>
