@@ -197,13 +197,24 @@ const LogRow = memo(function LogRow({ entry }: { entry: GameLogEntry }): React.J
 const PartyLinkCard = memo(function PartyLinkCard({ link }: { link: PartyLinkDto }): React.JSX.Element {
   const t = useT()
   const maps = useGameStore(state => state.maps)
-  const mapName = link.mapId ? maps.find(map => map.mapId === link.mapId)?.name ?? link.mapId : t('social.field.anyMap')
+  // 队伍目标节点解析为「区域 · 地点」；未配（空串）显示「不限」，未知 ID 原样透出。
+  let nodeName = t('social.field.anyNode')
+  if (link.nodeId) {
+    nodeName = link.nodeId
+    for (const map of maps) {
+      const node = map.nodes.find(item => item.nodeId === link.nodeId)
+      if (node) {
+        nodeName = `${map.name} · ${node.name}`
+        break
+      }
+    }
+  }
   return (
     <span className="party-link-card">
       <span className="party-link-main">
         <strong>{link.name}</strong>
         <span className="badge">{t(`social.activity.${link.activityKind}`)}</span>
-        <span>{mapName}</span>
+        <span>{nodeName}</span>
         <span>{t('social.memberCount', { count: link.memberCount })}</span>
         {link.minValuation > 0 && <span>{t('social.minValuationValue', { value: formatNumber(link.minValuation) })}</span>}
       </span>

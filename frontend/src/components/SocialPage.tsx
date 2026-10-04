@@ -8,12 +8,17 @@ import { PartyActivityKind, type ChatChannel, type PartyActivityKind as PartyAct
 import { useUiStore, type SocialSubTab } from '../uiStore'
 import { ConfirmDialog } from './ConfirmDialog'
 
-/** 队伍目标类型的固定选项集（协议值 + i18n 键后缀） */
+/** 队伍目标类型的固定选项集（协议值 + i18n 键后缀）：不限 + 战斗/历练/修炼 + 五门技艺 */
 const ACTIVITY_OPTIONS: readonly PartyActivityKindType[] = [
   PartyActivityKind.Any,
   PartyActivityKind.Combat,
   PartyActivityKind.Exploration,
   PartyActivityKind.Cultivation,
+  PartyActivityKind.Alchemy,
+  PartyActivityKind.Forging,
+  PartyActivityKind.Talisman,
+  PartyActivityKind.Formation,
+  PartyActivityKind.Enhancement,
 ]
 
 /** 身价门槛输入框解析：空串/0 视为不设门槛（协议约定 minValuation=0），负数与非法输入钳制为 0。 */
@@ -22,10 +27,15 @@ function parseMinValuation(raw: string): number {
   return Number.isFinite(value) && value > 0 ? value : 0
 }
 
-/** 地图显示名解析：mapId 为空或未知时显示「不限」。 */
-function mapLabel(mapId: string, mapNames: ReadonlyMap<string, string>, anyLabel: string): string {
-  if (!mapId) return anyLabel
-  return mapNames.get(mapId) ?? mapId
+/** 节点显示名解析：nodeId 为空或未知时显示「不限」；nodeNames 为 nodeId →「区域 · 地点」标签。 */
+function nodeLabel(nodeId: string, nodeNames: ReadonlyMap<string, string>, anyLabel: string): string {
+  if (!nodeId) return anyLabel
+  return nodeNames.get(nodeId) ?? nodeId
+}
+
+/** 表单默认目标节点：当前所在节点；行进在边上（nodeId=null）时回落「不限」。 */
+function useDefaultNodeId(): string {
+  return useGameStore(state => state.world.nodeId) ?? ''
 }
 
 /**
@@ -107,16 +117,21 @@ const DropdownSelect = memo(function DropdownSelect({
 const PartyProfileFields = memo(function PartyProfileFields({
   value,
   onChange,
-  mapNames,
+  nodeNames,
   showPublic = false,
 }: {
-  value: { activityKind: PartyActivityKindType; mapId: string; minValuation: string; isPublic: boolean }
-  onChange: (next: { activityKind: PartyActivityKindType; mapId: string; minValuation: string; isPublic: boolean }) => void
-  mapNames: ReadonlyMap<string, string>
+  value: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }
+  onChange: (next: { activityKind: PartyActivityKindType; nodeId: string; minValuation: string; isPublic: boolean }) => void
+  nodeNames: ReadonlyMap<string, string>
   showPublic?: boolean
 }): React.JSX.Element {
   const t = useT()
   const maps = useGameStore(state => state.maps)
+  // 目标节点选项：不限 + 全图节点，标签「区域 · 地点」。
+  const nodeOptions = useMemo(() => [
+    { id: '', label: t('social.field.anyNode') },
+    ...maps.flatMap(map => map.nodes.map(node => ({ id: node.nodeId, label: nodeNames.get(node.nodeId) ?? `${map.name} · ${node.name}` }))),
+  ], [maps, nodeNames, t])
   return (
     <div className="party-fields">
       <div className="party-field">
@@ -129,15 +144,12 @@ const PartyProfileFields = memo(function PartyProfileFields({
         />
       </div>
       <div className="party-field">
-        <span>{t('social.field.map')}</span>
+        <span>{t('social.field.node')}</span>
         <DropdownSelect
-          label={t('social.field.map')}
-          onSelect={id => onChange({ ...value, mapId: id })}
-          options={[
-            { id: '', label: t('social.field.anyMap') },
-            ...maps.map(map => ({ id: map.mapId, label: mapNames.get(map.mapId) ?? map.name })),
-          ]}
-          value={value.mapId}
+          label={t('social.field.node')}
+          onSelect={id => onChange({ ...value, nodeId: id })}
+          options={nodeOptions}
+          value={value.nodeId}
         />
       </div>
       <label className="party-field">
@@ -181,15 +193,16 @@ const PartyInvitationBanner = memo(function PartyInvitationBanner(): React.JSX.E
 })
 
 /** 队伍匹配卡片：登记散人条件；已登记时展示当前条件与撤下入口。 */
-const MatchSection = memo(function MatchSection({ mapNames }: { mapNames: ReadonlyMap<string, string> }): React.JSX.Element {
+const MatchSection = memo(function MatchSection({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element {
   const t = useT()
   const seeking = useSocialStore(state => state.seeking)
-  const [form, setForm] = useState({ activityKind: PartyActivityKind.Any as PartyActivityKindType, mapId: '', minValuation: '', isPublic: true })
+  const defaultNodeId = useDefaultNodeId()
+  const [form, setForm] = useState({ activityKind: PartyActivityKind.Combat as PartyActivityKindType, nodeId: defaultNodeId, minValuation: '', isPublic: true })
 
   const submit = (): void => {
     const party: PartyProfileDto = {
       activityKind: form.activityKind,
-      mapId: form.mapId,
+      nodeId: form.nodeId,
       minValuation: parseMinValuation(form.minValuation),
     }
     gameClient.sendSocialAction('party.match.set', undefined, undefined, { party })
@@ -202,13 +215,13 @@ const MatchSection = memo(function MatchSection({ mapNames }: { mapNames: Readon
       {seeking ? (
         <div className="party-seeking">
           <span className="badge">{t('social.match.seeking')}</span>
-          <span>{t(`social.activity.${seeking.activityKind}`)} · {mapLabel(seeking.mapId, mapNames, t('social.field.anyMap'))}</span>
+          <span>{t(`social.activity.${seeking.activityKind}`)} · {nodeLabel(seeking.nodeId, nodeNames, t('social.field.anyNode'))}</span>
           {seeking.minValuation > 0 && <span>{t('social.minValuationValue', { value: formatNumber(seeking.minValuation) })}</span>}
           <button onClick={() => gameClient.sendSocialAction('party.match.clear')} type="button">{t('social.action.matchClear')}</button>
         </div>
       ) : (
         <>
-          <PartyProfileFields mapNames={mapNames} onChange={setForm} value={form} />
+          <PartyProfileFields nodeNames={nodeNames} onChange={setForm} value={form} />
           <div className="party-card-actions">
             <button className="confirm-primary" onClick={submit} type="button">{t('social.action.matchSet')}</button>
           </div>
@@ -219,7 +232,7 @@ const MatchSection = memo(function MatchSection({ mapNames }: { mapNames: Readon
 })
 
 /** 组队大厅卡片：筛选请求 PartyLobby，渲染公开队伍与匹配中散人。 */
-const LobbySection = memo(function LobbySection({ mapNames }: { mapNames: ReadonlyMap<string, string> }): React.JSX.Element {
+const LobbySection = memo(function LobbySection({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element {
   const t = useT()
   const lobby = useSocialStore(state => state.lobby)
   const myValuation = useSocialStore(state => state.myValuation)
@@ -229,12 +242,13 @@ const LobbySection = memo(function LobbySection({ mapNames }: { mapNames: Readon
     const party = state.party
     return party !== null && party.leaderId === myPlayerId
   })
-  const [filter, setFilter] = useState({ activityKind: PartyActivityKind.Any as PartyActivityKindType, mapId: '', minValuation: '', isPublic: true })
+  // 大厅是浏览工具：筛选默认「不限」全量展示，与创建/匹配表单的「战斗+当前地点」默认区分。
+  const [filter, setFilter] = useState({ activityKind: PartyActivityKind.Any as PartyActivityKindType, nodeId: '', minValuation: '', isPublic: true })
 
   const refresh = (): void => {
     gameClient.requestPartyLobby({
       activityKind: filter.activityKind === PartyActivityKind.Any ? null : filter.activityKind,
-      mapId: filter.mapId || null,
+      nodeId: filter.nodeId || null,
       minValuation: parseMinValuation(filter.minValuation) || null,
     })
   }
@@ -248,7 +262,7 @@ const LobbySection = memo(function LobbySection({ mapNames }: { mapNames: Readon
     <section className="party-card">
       <h3>{t('social.lobby.heading')}</h3>
       <p className="party-card-desc">{t('social.lobby.desc')}</p>
-      <PartyProfileFields mapNames={mapNames} onChange={setFilter} value={filter} />
+      <PartyProfileFields nodeNames={nodeNames} onChange={setFilter} value={filter} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={refresh} type="button">{t('social.action.refreshLobby')}</button>
         {myValuation !== null && <span className="party-my-valuation">{t('social.lobby.myValuation', { value: formatNumber(myValuation) })}</span>}
@@ -264,7 +278,7 @@ const LobbySection = memo(function LobbySection({ mapNames }: { mapNames: Readon
               <div className="party-lobby-entry-head">
                 <strong>{entry.name}</strong>
                 <span className="badge">{t(`social.activity.${entry.activityKind}`)}</span>
-                <span className="party-lobby-map">{mapLabel(entry.mapId, mapNames, t('social.field.anyMap'))}</span>
+                <span className="party-lobby-node">{nodeLabel(entry.nodeId, nodeNames, t('social.field.anyNode'))}</span>
                 <span className="party-lobby-count">{t('social.memberCount', { count: entry.members.length })}</span>
               </div>
               <div className="party-lobby-entry-meta">
@@ -299,7 +313,7 @@ const LobbySection = memo(function LobbySection({ mapNames }: { mapNames: Readon
                 {seeker.online ? t('social.online') : t('social.offline')}
               </span>
               <span className="badge">{t(`social.activity.${seeker.activityKind}`)}</span>
-              <span className="party-lobby-map">{mapLabel(seeker.mapId, mapNames, t('social.field.anyMap'))}</span>
+              <span className="party-lobby-node">{nodeLabel(seeker.nodeId, nodeNames, t('social.field.anyNode'))}</span>
             </div>
             <div className="party-lobby-entry-meta">
               <span>{t('social.valuationValue', { value: formatNumber(seeker.valuation) })}</span>
@@ -319,16 +333,17 @@ const LobbySection = memo(function LobbySection({ mapNames }: { mapNames: Readon
 })
 
 /** 创建队伍卡片：名称 + 目标三件套 + 公开开关，提交 party.create。 */
-const CreateSection = memo(function CreateSection({ mapNames }: { mapNames: ReadonlyMap<string, string> }): React.JSX.Element {
+const CreateSection = memo(function CreateSection({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element {
   const t = useT()
   const [name, setName] = useState('')
-  const [form, setForm] = useState({ activityKind: PartyActivityKind.Any as PartyActivityKindType, mapId: '', minValuation: '', isPublic: true })
+  const defaultNodeId = useDefaultNodeId()
+  const [form, setForm] = useState({ activityKind: PartyActivityKind.Combat as PartyActivityKindType, nodeId: defaultNodeId, minValuation: '', isPublic: true })
 
   const submit = (): void => {
     const party: PartyProfileDto = {
       name: name.trim() || null,
       activityKind: form.activityKind,
-      mapId: form.mapId,
+      nodeId: form.nodeId,
       minValuation: parseMinValuation(form.minValuation),
       isPublic: form.isPublic,
     }
@@ -350,7 +365,7 @@ const CreateSection = memo(function CreateSection({ mapNames }: { mapNames: Read
           />
         </label>
       </div>
-      <PartyProfileFields mapNames={mapNames} onChange={setForm} showPublic value={form} />
+      <PartyProfileFields nodeNames={nodeNames} onChange={setForm} showPublic value={form} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={submit} type="button">{t('social.action.create')}</button>
       </div>
@@ -366,7 +381,7 @@ const PARTYLESS_TABS: ReadonlyArray<{ id: 'lobby' | 'match' | 'create'; labelKey
 ]
 
 /** 无队伍视图：邀请横幅置顶 + 模式页签，按所选模式渲染单一面板。 */
-const PartylessView = memo(function PartylessView({ mapNames }: { mapNames: ReadonlyMap<string, string> }): React.JSX.Element {
+const PartylessView = memo(function PartylessView({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element {
   const t = useT()
   const partySubTab = useUiStore(state => state.partySubTab)
   const setPartySubTab = useUiStore(state => state.setPartySubTab)
@@ -387,21 +402,21 @@ const PartylessView = memo(function PartylessView({ mapNames }: { mapNames: Read
           >{t(tab.labelKey)}</button>
         ))}
       </nav>
-      {entryTab === 'lobby' && <LobbySection mapNames={mapNames} />}
-      {entryTab === 'match' && <MatchSection mapNames={mapNames} />}
-      {entryTab === 'create' && <CreateSection mapNames={mapNames} />}
+      {entryTab === 'lobby' && <LobbySection nodeNames={nodeNames} />}
+      {entryTab === 'match' && <MatchSection nodeNames={nodeNames} />}
+      {entryTab === 'create' && <CreateSection nodeNames={nodeNames} />}
     </>
   )
 })
 
 /** 队长档案编辑区：改名 + 三件套 + 公开开关，一键提交 party.update 补丁。 */
-const LeaderProfileEditor = memo(function LeaderProfileEditor({ mapNames }: { mapNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
+const LeaderProfileEditor = memo(function LeaderProfileEditor({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
   const t = useT()
   const party = useSocialStore(state => state.party)
   const [name, setName] = useState(party?.name ?? '')
   const [form, setForm] = useState({
     activityKind: (party?.activityKind ?? PartyActivityKind.Any) as PartyActivityKindType,
-    mapId: party?.mapId ?? '',
+    nodeId: party?.nodeId ?? '',
     minValuation: party && party.minValuation > 0 ? String(party.minValuation) : '',
     isPublic: party?.isPublic ?? true,
   })
@@ -411,7 +426,7 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ mapNames }: { ma
     const partyPatch: PartyProfileDto = {
       name: name.trim() || null,
       activityKind: form.activityKind,
-      mapId: form.mapId,
+      nodeId: form.nodeId,
       minValuation: parseMinValuation(form.minValuation),
       isPublic: form.isPublic,
     }
@@ -427,7 +442,7 @@ const LeaderProfileEditor = memo(function LeaderProfileEditor({ mapNames }: { ma
           <input maxLength={32} onChange={event => setName(event.target.value)} value={name} />
         </label>
       </div>
-      <PartyProfileFields mapNames={mapNames} onChange={setForm} showPublic value={form} />
+      <PartyProfileFields nodeNames={nodeNames} onChange={setForm} showPublic value={form} />
       <div className="party-card-actions">
         <button className="confirm-primary" onClick={submit} type="button">{t('social.action.saveProfile')}</button>
       </div>
@@ -476,7 +491,7 @@ const PARTY_TABS: ReadonlyArray<{ id: 'overview' | 'lobby'; labelKey: string }> 
 ]
 
 /** 在队视图：档案头 + 「队伍信息/组队大厅」页签；信息页含成员表、队长管理、分享与离队/解散。 */
-const PartyView = memo(function PartyView({ mapNames }: { mapNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
+const PartyView = memo(function PartyView({ nodeNames }: { nodeNames: ReadonlyMap<string, string> }): React.JSX.Element | null {
   const t = useT()
   const party = useSocialStore(state => state.party)
   const myPlayerId = useGameStore(state => state.playerId)
@@ -500,7 +515,7 @@ const PartyView = memo(function PartyView({ mapNames }: { mapNames: ReadonlyMap<
         <div className="party-header">
           <h3 className="party-name">{party.name}</h3>
           <span className="badge">{t(`social.activity.${party.activityKind}`)}</span>
-          <span className="badge">{mapLabel(party.mapId, mapNames, t('social.field.anyMap'))}</span>
+          <span className="badge">{nodeLabel(party.nodeId, nodeNames, t('social.field.anyNode'))}</span>
           <span className={`badge ${party.isPublic ? '' : 'badge-danger'}`}>
             {party.isPublic ? t('social.visibility.public') : t('social.visibility.private')}
           </span>
@@ -524,7 +539,7 @@ const PartyView = memo(function PartyView({ mapNames }: { mapNames: ReadonlyMap<
 
       {manageTab === 'lobby' ? (
         /* 大厅对在队成员开放浏览；散人条目上的「邀请」按钮仅队长可见（§21.5/§21.6）。 */
-        <LobbySection mapNames={mapNames} />
+        <LobbySection nodeNames={nodeNames} />
       ) : (
         <>
           <section className="party-card">
@@ -560,7 +575,7 @@ const PartyView = memo(function PartyView({ mapNames }: { mapNames: ReadonlyMap<
             )}
           </section>
 
-          {isLeader && <LeaderProfileEditor mapNames={mapNames} />}
+          {isLeader && <LeaderProfileEditor nodeNames={nodeNames} />}
           <ShareSection />
 
           <section className="party-card party-card--danger">
@@ -619,9 +634,10 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
   const socialSubTab = useUiStore(state => state.socialSubTab)
   const setSocialSubTab = useUiStore(state => state.setSocialSubTab)
 
-  const mapNames = useMemo(() => {
+  // 节点标签表：nodeId →「区域 · 地点」，选项与展示徽标共用同一解析口径。
+  const nodeNames = useMemo(() => {
     const names = new Map<string, string>()
-    for (const map of maps) names.set(map.mapId, map.name)
+    for (const map of maps) for (const node of map.nodes) names.set(node.nodeId, `${map.name} · ${node.name}`)
     return names
   }, [maps])
 
@@ -643,7 +659,7 @@ export const SocialPage = memo(function SocialPage(): React.JSX.Element {
         </nav>
       </header>
       <div className="social-page-body">
-        {socialSubTab === 'party' && (party ? <PartyView mapNames={mapNames} /> : <PartylessView mapNames={mapNames} />)}
+        {socialSubTab === 'party' && (party ? <PartyView nodeNames={nodeNames} /> : <PartylessView nodeNames={nodeNames} />)}
       </div>
     </section>
   )

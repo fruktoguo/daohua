@@ -119,7 +119,8 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   const setActiveTab = useMarketStore(state => state.setActiveTab)
   const selectedItemId = useMarketStore(state => state.selectedItemId)
   const setSelectedItemId = useMarketStore(state => state.setSelectedItemId)
-  const [orderModalSide, setOrderModalSide] = useState<'sell' | 'buy' | null>(null)
+  // 挂单弹窗请求：盘口快捷按钮除了方向还锁定对手档价格（买一卖出/卖一买入），顶部按钮只给方向。
+  const [orderModal, setOrderModal] = useState<{ side: 'sell' | 'buy'; price?: number } | null>(null)
   const [book, setBook] = useState<MarketBook | null>(null)
   const [metrics, setMetrics] = useState<MarketMetrics | null>(null)
   const [orders, setOrders] = useState<MarketOrder[]>([])
@@ -137,6 +138,9 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
     // disposed 阻止卸载后回写；inFlight 阻止上一轮未完成的轮询重入；controller 随卸载中止在途请求。
     let disposed = false
     let inFlight = false
+    // 挂单/撤单/领取后的强制刷新撞上在途轮询时不能吞掉：记账，在途请求收尾后补一轮全量刷新，
+    // 否则我的订单/持仓最坏滞后一个轮询周期才可见。
+    let pendingForceRefresh = false
     let controller: AbortController | null = null
     let timer: number | null = null
     let lastMetricsAt = 0
@@ -146,7 +150,11 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
       reason instanceof DOMException && reason.name === 'AbortError'
 
     const refresh = async (force = false) => {
-      if (inFlight || disposed || (!force && document.visibilityState !== 'visible')) return
+      if (disposed || (!force && document.visibilityState !== 'visible')) return
+      if (inFlight) {
+        if (force) pendingForceRefresh = true
+        return
+      }
       inFlight = true
       controller = new AbortController()
       const now = Date.now()
@@ -195,6 +203,10 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
       } finally {
         if (!disposed) setLoading(false)
         inFlight = false
+        if (pendingForceRefresh && !disposed) {
+          pendingForceRefresh = false
+          void refresh(true)
+        }
       }
     }
 
@@ -232,7 +244,12 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
   }, [selectedItemId, playerId])
 
   const refresh = useCallback(() => refreshRef.current?.(), [])
-  const closeOrderModal = useCallback(() => setOrderModalSide(null), [])
+  const closeOrderModal = useCallback(() => setOrderModal(null), [])
+  // 盘口最优档快捷入口：买一行=按买一价卖出，卖一行=按卖一价买入；
+  // 仍走挂单弹窗确认数量与明细，避免一键无确认成交。
+  const openQuickTrade = useCallback((side: 'sell' | 'buy', price: number) => {
+    setOrderModal({ side, price })
+  }, [])
   const selected = instruments.find(item => item.itemId === selectedItemId) ?? null
   // 坊市只交易基础变体（挂单冻结空 variant 资产），持有量不能混入强化变体行
   const selectedAmount = selected ? (inventory.find(item => item.itemId === selected.itemId && !item.variant)?.amount ?? 0) : 0
@@ -314,14 +331,14 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                 <div className="market-detail-actions" role="group" aria-label={t('market.actionsGroupAria')}>
                   <button
                     className="market-action-btn market-action-btn--buy"
-                    onClick={() => setOrderModalSide('buy')}
+                    onClick={() => setOrderModal({ side: 'buy' })}
                     type="button"
                   >
                     {t('market.placeBuy')}
                   </button>
                   <button
                     className="market-action-btn market-action-btn--sell"
-                    onClick={() => setOrderModalSide('sell')}
+                    onClick={() => setOrderModal({ side: 'sell' })}
                     type="button"
                   >
                     {t('market.placeSell')}
@@ -329,7 +346,7 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
                 </div>
               </div>
 
-              <MarketBookPanel book={book} sides={['bid', 'ask']} />
+              <MarketBookPanel book={book} onQuickTrade={openQuickTrade} sides={['bid', 'ask']} />
             </div>
           )
         )}
@@ -339,14 +356,15 @@ export const MarketPage = memo(function MarketPage(): React.JSX.Element {
         )}
       </div>
 
-      {orderModalSide !== null && selected !== null && (
+      {orderModal !== null && selected !== null && (
         <MarketOrderModal
           book={book}
+          initialPrice={orderModal.price}
           instrument={selected}
           onClose={closeOrderModal}
           onPlaced={refresh}
-          open={orderModalSide !== null}
-          side={orderModalSide}
+          open
+          side={orderModal.side}
         />
       )}
     </section>

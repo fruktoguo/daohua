@@ -63,6 +63,8 @@ interface MarketOrderModalProps {
   instrument: MarketInstrument | null
   /** 当前盘口行情深度 */
   book: MarketBook | null
+  /** 盘口快捷入口锁定的开单价格（买一卖出/卖一买入），优先于盘口默认初值 */
+  initialPrice?: number
   /** 关闭弹窗回调 */
   onClose: () => void
   /** 挂单成功后的刷新回调 */
@@ -86,6 +88,7 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   side,
   instrument,
   book,
+  initialPrice,
   onClose,
   onPlaced,
 }: MarketOrderModalProps): React.JSX.Element | null {
@@ -102,11 +105,12 @@ export const MarketOrderModal = memo(function MarketOrderModal({
   const minimumPrice = useMemo(() => normalizeMarketPrice(vendorPrice, vendorPrice, true), [vendorPrice])
   // 单价为步进按钮维护的整数，任何路径写入前都先落到 tick 网格并夹在 [minimumPrice, MARKET_ORDER_MAX_PRICE]。
   // 初值按打开瞬间的盘口最优价惰性初始化一次；之后行情轮询刷新不得重置用户输入（保持焦点与草稿稳定）。
+  // 快捷入口锁定价（initialPrice）按方向归一化：买入向上取整、卖出向下取整，保证落价能立即撮合对手档。
   const [price, setPrice] = useState<number>(() => {
-    const initialPrice = side === 'sell'
+    const bookDefault = side === 'sell'
       ? (book?.asks[0]?.price ?? minimumPrice)
       : (book?.bids[0]?.price ?? minimumPrice)
-    return Math.max(minimumPrice, normalizeMarketPrice(initialPrice, vendorPrice, true))
+    return Math.max(minimumPrice, normalizeMarketPrice(initialPrice ?? bookDefault, vendorPrice, side === 'buy'))
   })
   const [quantity, setQuantity] = useState(1)
 
