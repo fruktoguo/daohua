@@ -242,7 +242,7 @@ public sealed class ChatAndSocialTests
             new PartyProfileDto(ActivityKind: "dungeon"),
             new PartyProfileDto(Name: new string('队', 33)),
             new PartyProfileDto(MinValuation: -1),
-            new PartyProfileDto(MapId: "map.not-exist"),
+            new PartyProfileDto(NodeId: "node.not-exist"),
         })
         {
             var rejected = await social.ApplyAsync(leader, new SocialActionDto(Guid.NewGuid().ToString("D"), SocialActions.PartyCreate, Party: bad));

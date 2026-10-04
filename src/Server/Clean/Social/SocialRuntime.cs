@@ -30,15 +30,15 @@ public sealed class SocialRuntime
     private readonly PartyValuationService _valuation;
     private readonly ChatRuntime _chat;
     private readonly ILogger<SocialRuntime> _logger;
-    /// <summary>配表已知地图 ID 集合：party profile 的 mapId 合法性判定。</summary>
-    private readonly HashSet<string> _mapIds;
+    /// <summary>配表已知世界节点 ID 集合：party profile 的 nodeId 合法性判定。</summary>
+    private readonly HashSet<string> _nodeIds;
 
     /// <summary>构造并接管在线存在感变化订阅。</summary>
     /// <param name="repository">好友/队伍持久化边界。</param>
     /// <param name="presence">在线存在感注册表。</param>
     /// <param name="valuation">身价估值服务。</param>
     /// <param name="chat">传音运行时（party.share 复用频道作用域与限频）。</param>
-    /// <param name="catalog">游戏配表（地图合法性校验）。</param>
+    /// <param name="catalog">游戏配表（节点合法性校验）。</param>
     /// <param name="logger">日志记录器。</param>
     public SocialRuntime(
         ISocialRepository repository,
@@ -53,10 +53,7 @@ public sealed class SocialRuntime
         _valuation = valuation;
         _chat = chat;
         _logger = logger;
-        _mapIds = catalog.Maps
-            .Select(map => map.TryGetProperty("id", out var id) ? id.GetString() : null)
-            .Where(id => !string.IsNullOrEmpty(id))
-            .ToHashSet(StringComparer.Ordinal)!;
+        _nodeIds = catalog.WorldGraph.Nodes.Select(node => node.Id).ToHashSet(StringComparer.Ordinal);
         _presence.PresenceChanged += OnPresenceChangedAsync;
     }
 
@@ -109,7 +106,7 @@ public sealed class SocialRuntime
                     party.LeaderId.ToString("D"),
                     DisplayName(party.Profile, leaderName),
                     party.Profile.ActivityKind,
-                    party.Profile.MapId,
+                    party.Profile.NodeId,
                     party.Profile.MinValuation,
                     party.Profile.IsPublic,
                     [.. party.Members.Select(member => new PartyMemberDto(
@@ -123,7 +120,7 @@ public sealed class SocialRuntime
             snapshot.Seeker is null
                 ? null
                 : new PartySeekerDto(
-                    snapshot.Seeker.ActivityKind, snapshot.Seeker.MapId, snapshot.Seeker.MinValuation,
+                    snapshot.Seeker.ActivityKind, snapshot.Seeker.NodeId, snapshot.Seeker.MinValuation,
                     snapshot.Seeker.CreatedAt.ToUnixTimeMilliseconds()));
     }
 
@@ -139,11 +136,11 @@ public sealed class SocialRuntime
     {
         // 非法筛选收敛为「不限」，大厅是只读视图不做拒绝语义。
         var activity = PartyActivityKinds.IsSupported(request.ActivityKind) ? request.ActivityKind! : PartyActivityKinds.Any;
-        var mapId = string.IsNullOrWhiteSpace(request.MapId) ? string.Empty : request.MapId.Trim();
+        var nodeId = string.IsNullOrWhiteSpace(request.NodeId) ? string.Empty : request.NodeId.Trim();
         var minValuation = request.MinValuation is { } floor && double.IsFinite(floor) ? Math.Max(0, floor) : 0;
 
-        var parties = await _repository.ListPublicPartiesAsync(activity, mapId, LobbyListLimit, cancellationToken);
-        var seekers = await _repository.ListPartySeekersAsync(activity, mapId, LobbyListLimit, cancellationToken);
+        var parties = await _repository.ListPublicPartiesAsync(activity, nodeId, LobbyListLimit, cancellationToken);
+        var seekers = await _repository.ListPartySeekersAsync(activity, nodeId, LobbyListLimit, cancellationToken);
 
         var subjectIds = new HashSet<Guid> { playerId };
         foreach (var party in parties)
@@ -171,7 +168,7 @@ public sealed class SocialRuntime
             entries.Add(new PartyLobbyEntryDto(
                 party.PartyId.ToString("D"),
                 DisplayName(party.Profile, party.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName),
-                party.Profile.ActivityKind, party.Profile.MapId,
+                party.Profile.ActivityKind, party.Profile.NodeId,
                 party.LeaderId.ToString("D"),
                 party.Members.FirstOrDefault(member => member.PlayerId == party.LeaderId)?.DisplayName ?? string.Empty,
                 party.Profile.MinValuation,
@@ -187,7 +184,7 @@ public sealed class SocialRuntime
             seekerDtos.Add(new PartyLobbySeekerDto(
                 seeker.PlayerId.ToString("D"), seeker.DisplayName,
                 _presence.IsOnline(seeker.PlayerId), value,
-                seeker.ActivityKind, seeker.MapId, seeker.MinValuation,
+                seeker.ActivityKind, seeker.NodeId, seeker.MinValuation,
                 seeker.CreatedAt.ToUnixTimeMilliseconds()));
         }
 
@@ -389,12 +386,12 @@ public sealed class SocialRuntime
             {
                 if (await _repository.GetPartyIdAsync(playerId, cancellationToken) is not null)
                     return new SocialOutcome(SocialFailure.AlreadyInParty);
-                if (!TryBuildSeekerCriteria(action.Party, out var activity, out var mapId, out var minValuation))
+                if (!TryBuildSeekerCriteria(action.Party, out var activity, out var nodeId, out var minValuation))
                     return new SocialOutcome(SocialFailure.InvalidPartyProfile);
-                await _repository.UpsertPartySeekerAsync(playerId, activity, mapId, minValuation, now, cancellationToken);
+                await _repository.UpsertPartySeekerAsync(playerId, activity, nodeId, minValuation, now, cancellationToken);
                 // 自动并入：公开且未满员、目标匹配、双向身价门槛满足的队伍；多命中取人多者、再取创建最早者。
                 var myValuation = await _valuation.ComputeAsync(playerId, cancellationToken);
-                var candidates = await _repository.ListPublicPartiesAsync(activity, mapId, LobbyListLimit, cancellationToken);
+                var candidates = await _repository.ListPublicPartiesAsync(activity, nodeId, LobbyListLimit, cancellationToken);
                 PartyRecord? best = null;
                 foreach (var candidate in candidates)
                 {
@@ -531,13 +528,13 @@ public sealed class SocialRuntime
         }
         else if (full) activity = PartyActivityKinds.Any;
 
-        var mapId = baseline.MapId;
-        if (patch?.MapId is { } rawMap)
+        var nodeId = baseline.NodeId;
+        if (patch?.NodeId is { } rawNode)
         {
-            mapId = rawMap.Trim();
-            if (mapId.Length > 0 && !_mapIds.Contains(mapId)) return false;
+            nodeId = rawNode.Trim();
+            if (nodeId.Length > 0 && !_nodeIds.Contains(nodeId)) return false;
         }
-        else if (full) mapId = string.Empty;
+        else if (full) nodeId = string.Empty;
 
         var minValuation = baseline.MinValuation;
         if (patch?.MinValuation is { } rawMin)
@@ -551,25 +548,25 @@ public sealed class SocialRuntime
         if (patch?.IsPublic is { } rawPublic) isPublic = rawPublic;
         else if (full) isPublic = false;
 
-        result = new PartyProfileRecord(name, activity, mapId, minValuation, isPublic);
+        result = new PartyProfileRecord(name, activity, nodeId, minValuation, isPublic);
         return true;
     }
 
-    /// <summary>匹配登记条件解析：只取 activityKind/mapId/minValuation 三个招募条件字段。</summary>
-    private bool TryBuildSeekerCriteria(PartyProfileDto? patch, out string activity, out string mapId, out double minValuation)
+    /// <summary>匹配登记条件解析：只取 activityKind/nodeId/minValuation 三个招募条件字段。</summary>
+    private bool TryBuildSeekerCriteria(PartyProfileDto? patch, out string activity, out string nodeId, out double minValuation)
     {
         activity = PartyActivityKinds.Any;
-        mapId = string.Empty;
+        nodeId = string.Empty;
         minValuation = 0;
         if (patch?.ActivityKind is { } rawActivity)
         {
             activity = rawActivity.Trim();
             if (!PartyActivityKinds.IsSupported(activity)) return false;
         }
-        if (patch?.MapId is { } rawMap)
+        if (patch?.NodeId is { } rawNode)
         {
-            mapId = rawMap.Trim();
-            if (mapId.Length > 0 && !_mapIds.Contains(mapId)) return false;
+            nodeId = rawNode.Trim();
+            if (nodeId.Length > 0 && !_nodeIds.Contains(nodeId)) return false;
         }
         if (patch?.MinValuation is { } rawMin)
         {

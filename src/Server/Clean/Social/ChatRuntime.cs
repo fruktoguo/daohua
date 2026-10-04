@@ -106,7 +106,7 @@ public sealed class ChatRuntime
 
         var link = new PartyLinkRecord(
             party.PartyId, party.Profile.Name, party.Profile.ActivityKind,
-            party.Profile.MapId, party.Profile.MinValuation, party.Members.Count);
+            party.Profile.NodeId, party.Profile.MinValuation, party.Members.Count);
         var body = $"「{party.Profile.Name}」正在招募同道，点击卡片加入。";
         var record = new ChatMessageRecord(
             Guid.NewGuid(), channel, scopeKey, senderId, senderName, body, DateTimeOffset.UtcNow, link);
@@ -233,7 +233,7 @@ public sealed class ChatRuntime
                 record.PartyLink.PartyId.ToString("D"),
                 record.PartyLink.Name,
                 record.PartyLink.ActivityKind,
-                record.PartyLink.MapId,
+                record.PartyLink.NodeId,
                 record.PartyLink.MinValuation,
                 record.PartyLink.MemberCount));
 }

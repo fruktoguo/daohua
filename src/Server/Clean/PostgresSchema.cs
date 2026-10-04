@@ -6,9 +6,11 @@ public static class PostgresSchema
     /// <summary>当前本地库内容版本（表结构 + 存档载荷标签）；与 platform.schema_version 表中的
     /// 最大版本必须一致。约定：SectionCodec.CurrentSchemaVersion 每次升级时本常量同步 +1，
     /// 存档标签 UPDATE 内嵌在 migrations/NNNN_vX_to_vY.sql 对应版本文件中。</summary>
-    /// v7：social.parties 追加队伍档案列（name/activity_kind/map_id/min_valuation/is_public/updated_at）、
+    /// v9：progression 分段载荷新增 traitIds 特质 ID 集合，可缺省解码，无存档结构变更。
+    /// v8：settings 分段载荷新增 queuePaused 队列暂停开关，可缺省解码，无存档结构变更。
+    /// v7：social.parties 追加队伍档案列（name/activity_kind/node_id/min_valuation/is_public/updated_at）、
     /// 新增 social.party_seekers 散人池、social.chat_messages 增 party_ref 队伍链接外键；存档载荷未变。
-    public const int Version = 7;
+    public const int Version = 9;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -360,18 +362,18 @@ public static class PostgresSchema
     CREATE TABLE IF NOT EXISTS social.parties (
         party_id uuid PRIMARY KEY,
         leader_id uuid NOT NULL REFERENCES identity.players(player_id),
-        -- 队伍档案：招募标签口径（目标类型/地图/身价门槛/公开性），不参与行动或战斗结算。
+        -- 队伍档案：招募标签口径（目标类型/目标节点/身价门槛/公开性），不参与行动或战斗结算。
         name varchar(32) NOT NULL DEFAULT '',
         activity_kind varchar(16) NOT NULL DEFAULT 'any'
-            CHECK (activity_kind IN ('any', 'combat', 'exploration', 'cultivation')),
-        map_id varchar(128) NOT NULL DEFAULT '',
+            CHECK (activity_kind IN ('any', 'combat', 'exploration', 'cultivation', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement')),
+        node_id varchar(128) NOT NULL DEFAULT '',
         min_valuation double precision NOT NULL DEFAULT 0 CHECK (min_valuation >= 0),
         is_public boolean NOT NULL DEFAULT false,
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL DEFAULT now()
     );
     -- 大厅只读视图按公开性与目标过滤。
-    CREATE INDEX IF NOT EXISTS ix_parties_lobby ON social.parties(is_public, activity_kind, map_id)
+    CREATE INDEX IF NOT EXISTS ix_parties_lobby ON social.parties(is_public, activity_kind, node_id)
         WHERE is_public;
 
     -- 一名玩家最多属于一个队伍：player_id 直接作主键，天然互斥。
@@ -395,13 +397,13 @@ public static class PostgresSchema
     CREATE TABLE IF NOT EXISTS social.party_seekers (
         player_id uuid PRIMARY KEY REFERENCES identity.players(player_id),
         activity_kind varchar(16) NOT NULL DEFAULT 'any'
-            CHECK (activity_kind IN ('any', 'combat', 'exploration', 'cultivation')),
-        map_id varchar(128) NOT NULL DEFAULT '',
+            CHECK (activity_kind IN ('any', 'combat', 'exploration', 'cultivation', 'alchemy', 'forging', 'talisman', 'formation', 'enhancement')),
+        node_id varchar(128) NOT NULL DEFAULT '',
         min_valuation double precision NOT NULL DEFAULT 0 CHECK (min_valuation >= 0),
         created_at timestamptz NOT NULL,
         updated_at timestamptz NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS ix_party_seekers_goal ON social.party_seekers(activity_kind, map_id);
+    CREATE INDEX IF NOT EXISTS ix_party_seekers_goal ON social.party_seekers(activity_kind, node_id);
 
     -- 传音消息：每个 (channel, scope_key) 作用域只保留最近 100 条，写入时同事务裁剪。
     -- party_ref 为队伍卡片外键：队伍解散后置空，消息正文仍保留为普通文本。
@@ -423,7 +425,7 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (7, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (9, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 

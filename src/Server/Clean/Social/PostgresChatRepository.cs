@@ -73,7 +73,7 @@ public sealed class PostgresChatRepository(NpgsqlDataSource dataSource) : IChatR
         // party_ref 随队伍解散 ON DELETE SET NULL 自动变回普通文本；存活队伍联出档案与人数供卡片渲染。
         await using var command = new NpgsqlCommand("""
             SELECT message_id, channel, scope_key, sender_id, sender_name, body, sent_at,
-                   pt.party_id, pt.name, pt.activity_kind, pt.map_id, pt.min_valuation,
+                   pt.party_id, pt.name, pt.activity_kind, pt.node_id, pt.min_valuation,
                    (SELECT count(*) FROM social.party_members pm WHERE pm.party_id = pt.party_id) AS member_count
             FROM (
                 SELECT message_id, channel, scope_key, sender_id, sender_name, body, party_ref, sent_at

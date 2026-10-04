@@ -124,7 +124,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         batch.BatchCommands.Add(Command(
             "SELECT party_id FROM social.party_members WHERE player_id = $1", playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT leader_id, name, activity_kind, map_id, min_valuation, is_public, created_at
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at
             FROM social.parties
             WHERE party_id = (SELECT party_id FROM social.party_members WHERE player_id = $1)
             """, playerId));
@@ -143,7 +143,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             WHERE i.invitee_id = $1
             """, playerId));
         batch.BatchCommands.Add(Command("""
-            SELECT s.activity_kind, s.map_id, s.min_valuation, s.created_at
+            SELECT s.activity_kind, s.node_id, s.min_valuation, s.created_at
             FROM social.party_seekers s
             WHERE s.player_id = $1
             """, playerId));
@@ -319,7 +319,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         PartyProfileRecord? profile = null;
         DateTimeOffset createdAt = default;
         await using (var partyCommand = new NpgsqlCommand("""
-            SELECT leader_id, name, activity_kind, map_id, min_valuation, is_public, created_at
+            SELECT leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at
             FROM social.parties WHERE party_id = $1
             """, connection))
         {
@@ -354,7 +354,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await using (var party = new NpgsqlCommand("""
-            INSERT INTO social.parties(party_id, leader_id, name, activity_kind, map_id, min_valuation, is_public, created_at, updated_at)
+            INSERT INTO social.parties(party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
             """, connection, transaction))
         {
@@ -362,7 +362,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
             party.Parameters.Add(new NpgsqlParameter { Value = leaderId });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.Name });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.ActivityKind });
-            party.Parameters.Add(new NpgsqlParameter { Value = profile.MapId });
+            party.Parameters.Add(new NpgsqlParameter { Value = profile.NodeId });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.MinValuation });
             party.Parameters.Add(new NpgsqlParameter { Value = profile.IsPublic });
             party.Parameters.Add(new NpgsqlParameter { Value = now });
@@ -386,13 +386,13 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
             UPDATE social.parties
-            SET name = $2, activity_kind = $3, map_id = $4, min_valuation = $5, is_public = $6, updated_at = $7
+            SET name = $2, activity_kind = $3, node_id = $4, min_valuation = $5, is_public = $6, updated_at = $7
             WHERE party_id = $1
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = partyId });
         command.Parameters.Add(new NpgsqlParameter { Value = profile.Name });
         command.Parameters.Add(new NpgsqlParameter { Value = profile.ActivityKind });
-        command.Parameters.Add(new NpgsqlParameter { Value = profile.MapId });
+        command.Parameters.Add(new NpgsqlParameter { Value = profile.NodeId });
         command.Parameters.Add(new NpgsqlParameter { Value = profile.MinValuation });
         command.Parameters.Add(new NpgsqlParameter { Value = profile.IsPublic });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
@@ -520,22 +520,22 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     }
 
     /// <summary>列出公开队伍（含成员与道号）；目标类型/地图为空串表示不限；按创建时间倒序。</summary>
-    public async ValueTask<IReadOnlyList<PartyRecord>> ListPublicPartiesAsync(string activityKind, string mapId, int limit, CancellationToken cancellationToken = default)
+    public async ValueTask<IReadOnlyList<PartyRecord>> ListPublicPartiesAsync(string activityKind, string nodeId, int limit, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var parties = new List<(PartyRecord Seed, List<PartyMemberRecord> Members)>();
         await using (var command = new NpgsqlCommand("""
-            SELECT party_id, leader_id, name, activity_kind, map_id, min_valuation, is_public, created_at
+            SELECT party_id, leader_id, name, activity_kind, node_id, min_valuation, is_public, created_at
             FROM social.parties
             WHERE is_public
               AND ($1 = '' OR $1 = 'any' OR activity_kind = 'any' OR activity_kind = $1)
-              AND ($2 = '' OR map_id = $2)
+              AND ($2 = '' OR node_id = $2)
             ORDER BY created_at DESC
             LIMIT $3
             """, connection))
         {
             command.Parameters.Add(new NpgsqlParameter { Value = activityKind });
-            command.Parameters.Add(new NpgsqlParameter { Value = mapId });
+            command.Parameters.Add(new NpgsqlParameter { Value = nodeId });
             command.Parameters.Add(new NpgsqlParameter { Value = limit });
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
@@ -570,21 +570,21 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     }
 
     /// <summary>写入或覆盖玩家的匹配登记。</summary>
-    public async ValueTask UpsertPartySeekerAsync(Guid playerId, string activityKind, string mapId, double minValuation, DateTimeOffset now, CancellationToken cancellationToken = default)
+    public async ValueTask UpsertPartySeekerAsync(Guid playerId, string activityKind, string nodeId, double minValuation, DateTimeOffset now, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            INSERT INTO social.party_seekers(player_id, activity_kind, map_id, min_valuation, created_at, updated_at)
+            INSERT INTO social.party_seekers(player_id, activity_kind, node_id, min_valuation, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $5)
             ON CONFLICT (player_id) DO UPDATE
             SET activity_kind = EXCLUDED.activity_kind,
-                map_id = EXCLUDED.map_id,
+                node_id = EXCLUDED.node_id,
                 min_valuation = EXCLUDED.min_valuation,
                 updated_at = EXCLUDED.updated_at
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
         command.Parameters.Add(new NpgsqlParameter { Value = activityKind });
-        command.Parameters.Add(new NpgsqlParameter { Value = mapId });
+        command.Parameters.Add(new NpgsqlParameter { Value = nodeId });
         command.Parameters.Add(new NpgsqlParameter { Value = minValuation });
         command.Parameters.Add(new NpgsqlParameter { Value = now });
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -605,7 +605,7 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand("""
-            SELECT s.activity_kind, s.map_id, s.min_valuation, s.created_at
+            SELECT s.activity_kind, s.node_id, s.min_valuation, s.created_at
             FROM social.party_seekers s WHERE s.player_id = $1
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = playerId });
@@ -617,22 +617,22 @@ public sealed class PostgresSocialRepository(NpgsqlDataSource dataSource) : ISoc
     }
 
     /// <summary>列出匹配中散人（排除已在队伍中的滞留登记）；目标类型/地图为空串表示不限。</summary>
-    public async ValueTask<IReadOnlyList<PartySeekerRecord>> ListPartySeekersAsync(string activityKind, string mapId, int limit, CancellationToken cancellationToken = default)
+    public async ValueTask<IReadOnlyList<PartySeekerRecord>> ListPartySeekersAsync(string activityKind, string nodeId, int limit, CancellationToken cancellationToken = default)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var seekers = new List<PartySeekerRecord>();
         await using var command = new NpgsqlCommand("""
-            SELECT s.player_id, p.display_name, s.activity_kind, s.map_id, s.min_valuation, s.created_at
+            SELECT s.player_id, p.display_name, s.activity_kind, s.node_id, s.min_valuation, s.created_at
             FROM social.party_seekers s
             JOIN identity.players p ON p.player_id = s.player_id
             WHERE ($1 = '' OR $1 = 'any' OR s.activity_kind = 'any' OR s.activity_kind = $1)
-              AND ($2 = '' OR s.map_id = $2)
+              AND ($2 = '' OR s.node_id = $2)
               AND NOT EXISTS (SELECT 1 FROM social.party_members m WHERE m.player_id = s.player_id)
             ORDER BY s.created_at DESC
             LIMIT $3
             """, connection);
         command.Parameters.Add(new NpgsqlParameter { Value = activityKind });
-        command.Parameters.Add(new NpgsqlParameter { Value = mapId });
+        command.Parameters.Add(new NpgsqlParameter { Value = nodeId });
         command.Parameters.Add(new NpgsqlParameter { Value = limit });
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

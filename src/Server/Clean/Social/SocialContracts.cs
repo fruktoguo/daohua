@@ -28,10 +28,10 @@ public sealed record PartyMemberRecord(Guid PlayerId, string DisplayName);
 /// <summary>队伍档案（招募标签口径，不参与行动/战斗结算）。</summary>
 /// <param name="Name">队伍名称；空串表示尚未命名（展示层回落「{队长道号}的小队」）。</param>
 /// <param name="ActivityKind">目标类型：any/combat/exploration/cultivation。</param>
-/// <param name="MapId">目标地图 ID；空串表示不限。</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限。</param>
 /// <param name="MinValuation">身价门槛；0 表示不设门槛。</param>
 /// <param name="IsPublic">是否进入组队大厅。</param>
-public sealed record PartyProfileRecord(string Name, string ActivityKind, string MapId, double MinValuation, bool IsPublic)
+public sealed record PartyProfileRecord(string Name, string ActivityKind, string NodeId, double MinValuation, bool IsPublic)
 {
     /// <summary>默认档案：不限目标、无门槛、不公开（邀请制自建队伍沿用）。</summary>
     public static readonly PartyProfileRecord Default = new("", "any", "", 0, false);
@@ -56,10 +56,10 @@ public sealed record PartyInvitationRecord(Guid PartyId, Guid InviterId, string 
 /// <param name="PlayerId">散人玩家 ID。</param>
 /// <param name="DisplayName">散人道号。</param>
 /// <param name="ActivityKind">目标类型。</param>
-/// <param name="MapId">目标地图 ID；空串表示不限。</param>
+/// <param name="NodeId">目标节点 ID；空串表示不限。</param>
 /// <param name="MinValuation">期望队友的最低身价。</param>
 /// <param name="CreatedAt">登记时刻。</param>
-public sealed record PartySeekerRecord(Guid PlayerId, string DisplayName, string ActivityKind, string MapId, double MinValuation, DateTimeOffset CreatedAt);
+public sealed record PartySeekerRecord(Guid PlayerId, string DisplayName, string ActivityKind, string NodeId, double MinValuation, DateTimeOffset CreatedAt);
 
 /// <summary>
 /// 一次往返装配好的社交状态持久化视图（<see cref="SocialRuntime.BuildStateAsync"/> 的输入）。
@@ -82,10 +82,10 @@ public sealed record SocialStateSnapshot(
 /// <param name="PartyId">队伍唯一标识。</param>
 /// <param name="Name">队伍名称。</param>
 /// <param name="ActivityKind">目标类型。</param>
-/// <param name="MapId">目标地图 ID。</param>
+/// <param name="NodeId">目标节点 ID。</param>
 /// <param name="MinValuation">身价门槛。</param>
 /// <param name="MemberCount">当前队伍人数。</param>
-public sealed record PartyLinkRecord(Guid PartyId, string Name, string ActivityKind, string MapId, double MinValuation, int MemberCount);
+public sealed record PartyLinkRecord(Guid PartyId, string Name, string ActivityKind, string NodeId, double MinValuation, int MemberCount);
 
 /// <summary>一条已持久化的传音消息。</summary>
 /// <param name="MessageId">消息唯一标识。</param>
@@ -133,7 +133,7 @@ public enum SocialFailure : byte
     PartyNotFound,
     /// <summary>加入者身价未达队伍门槛。</summary>
     ValuationTooLow,
-    /// <summary>队伍档案字段非法（目标类型/地图/门槛/名称）。</summary>
+    /// <summary>队伍档案字段非法（目标类型/节点/门槛/名称）。</summary>
     InvalidPartyProfile,
     /// <summary>本人没有匹配中登记。</summary>
     SeekingNotFound,
@@ -232,11 +232,11 @@ public interface ISocialRepository
     /// <summary>成员全部离开后删除空队伍记录。</summary>
     ValueTask DeletePartyIfEmptyAsync(Guid partyId, CancellationToken cancellationToken = default);
 
-    /// <summary>列出公开队伍（含成员与道号）；目标类型/地图为空串表示不限；按创建时间倒序，至多 limit 条。</summary>
-    ValueTask<IReadOnlyList<PartyRecord>> ListPublicPartiesAsync(string activityKind, string mapId, int limit, CancellationToken cancellationToken = default);
+    /// <summary>列出公开队伍（含成员与道号）；目标类型/节点为空串表示不限；按创建时间倒序，至多 limit 条。</summary>
+    ValueTask<IReadOnlyList<PartyRecord>> ListPublicPartiesAsync(string activityKind, string nodeId, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>写入或覆盖玩家的匹配登记（每名玩家最多一条）。</summary>
-    ValueTask UpsertPartySeekerAsync(Guid playerId, string activityKind, string mapId, double minValuation, DateTimeOffset now, CancellationToken cancellationToken = default);
+    ValueTask UpsertPartySeekerAsync(Guid playerId, string activityKind, string nodeId, double minValuation, DateTimeOffset now, CancellationToken cancellationToken = default);
 
     /// <summary>撤下玩家的匹配登记；实际删除行时返回 true。</summary>
     ValueTask<bool> TryClearPartySeekerAsync(Guid playerId, CancellationToken cancellationToken = default);
@@ -244,8 +244,8 @@ public interface ISocialRepository
     /// <summary>读取玩家的匹配登记；未登记返回 null。</summary>
     ValueTask<PartySeekerRecord?> GetPartySeekerAsync(Guid playerId, CancellationToken cancellationToken = default);
 
-    /// <summary>列出匹配中散人（自动排除已在队伍中的滞留登记）；目标类型/地图为空串表示不限；按登记时间倒序，至多 limit 条。</summary>
-    ValueTask<IReadOnlyList<PartySeekerRecord>> ListPartySeekersAsync(string activityKind, string mapId, int limit, CancellationToken cancellationToken = default);
+    /// <summary>列出匹配中散人（自动排除已在队伍中的滞留登记）；目标类型/节点为空串表示不限；按登记时间倒序，至多 limit 条。</summary>
+    ValueTask<IReadOnlyList<PartySeekerRecord>> ListPartySeekersAsync(string activityKind, string nodeId, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>写入或覆盖玩家的待处理队伍邀请（每名玩家最多一条）。</summary>
     ValueTask UpsertPartyInvitationAsync(Guid partyId, Guid inviteeId, Guid inviterId, DateTimeOffset now, CancellationToken cancellationToken = default);
