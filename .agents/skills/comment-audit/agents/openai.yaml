@@ -1,0 +1,6 @@
+interface:
+  display_name: "注释检查分析"
+  short_description: "全局审计并补齐中等详细度的中文 XML 注释，为非自明实现补充行间注释，只改注释不改逻辑"
+  default_prompt: "使用 $comment-audit 对指定范围做注释检查与补全：公共 API 补中等详细度中文 XML 注释，无法一眼看懂的方法内实现补行间注释，修正低质量注释，只改注释不改任何代码逻辑。"
+policy:
+  allow_implicit_invocation: true
