@@ -452,6 +452,9 @@ public static class OpsPanel
             Audit(loggerFactory, context, "compute-drain-all", null);
             return Results.Ok(new { action = "compute-drain", scope = "all", nodeCount = registry.NodeCount });
         });
+
+        // 市场快捷操作：系统身份批量挂售/收购与撤单（端点实现在 OpsMarketActions）。
+        group.MapOpsMarketActions();
     }
 
     /// <summary>会话只读视图：玩家 ID、准入设备指纹与是否已在关闭流程。</summary>
@@ -465,7 +468,7 @@ public static class OpsPanel
     /// 校验写操作来源与令牌：要求回环/私网来源（纵深防御）且令牌匹配。
     /// 不通过时返回拒绝结果，通过时返回 null。
     /// </summary>
-    private static IResult? RejectWriteRequest(HttpContext context, OpsOptions options)
+    internal static IResult? RejectWriteRequest(HttpContext context, OpsOptions options)
     {
         if (!OpsNetwork.IsPrivateOrLoopback(context.Connection.RemoteIpAddress))
             return Results.Json(new { code = "OPS_SOURCE_REJECTED", message = "运维写操作仅允许本机或私有网段来源。" }, statusCode: StatusCodes.Status403Forbidden);
@@ -480,7 +483,7 @@ public static class OpsPanel
     }
 
     /// <summary>记录运维写操作审计（含来源地址，绝不记录令牌）。</summary>
-    private static void Audit(ILoggerFactory loggerFactory, HttpContext context, string action, Guid? target) =>
+    internal static void Audit(ILoggerFactory loggerFactory, HttpContext context, string action, Guid? target) =>
         loggerFactory.CreateLogger(AuditCategory).LogWarning(
             "运维面板写操作 {Action} 目标 {Target} 来源 {Remote}",
             action,

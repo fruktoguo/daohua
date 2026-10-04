@@ -4,7 +4,7 @@ import type { OpsOverview } from './opsTypes'
 import { OpsPill, formatDuration, formatNumber, useOpsData } from './opsUi'
 import { OpsActionsView } from './views/ActionsView'
 import { OpsPlayersView, OpsSessionsView, OpsStorageView } from './views/DataViews'
-import { OpsBookView, OpsMarketMetricsView, OpsOrdersView, OpsTradesView } from './views/MarketViews'
+import { OpsBookView, OpsMarketMetricsView, OpsOrdersView, OpsSystemOrderView, OpsTradesView } from './views/MarketViews'
 import { OpsConfigView, OpsHealthView, OpsOverviewView } from './views/OverviewViews'
 import { OpsComputeView, OpsLogsView, OpsSchedulerView } from './views/RuntimeViews'
 import './ops.css'
@@ -14,7 +14,7 @@ type OpsViewId =
   | 'overview' | 'health'
   | 'scheduler' | 'compute' | 'logs'
   | 'players' | 'sessions' | 'storage'
-  | 'book' | 'orders' | 'trades' | 'market'
+  | 'book' | 'orders' | 'trades' | 'market' | 'systemOrders'
   | 'config' | 'actions'
 
 /** 左侧竖排导航分组。 */
@@ -29,6 +29,7 @@ const NAV_GROUPS: Array<{ group: string; items: Array<{ id: OpsViewId; label: st
       { id: 'orders', label: '挂单' },
       { id: 'trades', label: '成交' },
       { id: 'market', label: '市场指标' },
+      { id: 'systemOrders', label: '系统下单' },
     ],
   },
   { group: '系统', items: [{ id: 'config', label: '配置' }, { id: 'actions', label: '运维操作' }] },
@@ -124,6 +125,7 @@ export function OpsApp(): React.JSX.Element {
           {view === 'orders' && <OpsOrdersView />}
           {view === 'trades' && <OpsTradesView intervalMs={intervalMs} />}
           {view === 'market' && <OpsMarketMetricsView intervalMs={intervalMs} />}
+          {view === 'systemOrders' && <OpsSystemOrderView intervalMs={intervalMs} />}
           {view === 'config' && <OpsConfigView />}
           {view === 'actions' && <OpsActionsView />}
         </main>

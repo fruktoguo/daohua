@@ -333,3 +333,60 @@ export interface OpsLogEntry {
   exception: string | null
   sequence: number
 }
+
+/** 可挂售物品目录条目（与 `GET /ops/api/market/catalog` 对齐）。 */
+export interface OpsCatalogItem {
+  id: string
+  name: string
+  category: string
+  subCategory: string
+  sellPrice: number
+}
+
+/** 物品目录视图：条目与去重后的品类列表。 */
+export interface OpsCatalog {
+  items: OpsCatalogItem[]
+  categories: string[]
+}
+
+/** 系统下单逐品种回执。 */
+export interface OpsSystemOrderItemResult {
+  assetId: string
+  name: string
+  price: number
+  quantity: number
+  status: 'placed' | 'failed'
+  orderId: string | null
+  fills: number
+  error: string | null
+}
+
+/** 系统批量下单回执。 */
+export interface OpsSystemOrderResponse {
+  batchId: string
+  side: string
+  scope: string
+  requested: number
+  placed: number
+  failed: number
+  results: OpsSystemOrderItemResult[]
+}
+
+/** 系统撤单逐单回执。 */
+export interface OpsSystemCancelItemResult {
+  assetId: string
+  price: number
+  quantity: number
+  status: 'cancelled' | 'failed'
+  orderId: string | null
+  error: string | null
+}
+
+/** 系统撤单回执。 */
+export interface OpsSystemCancelResponse {
+  action: string
+  scope: string
+  cancelled: number
+  failed: number
+  results: OpsSystemCancelItemResult[]
+}

@@ -67,6 +67,7 @@
 | `GET /ops/api/market/book` | 指定品种盘口 | `MarketRuntime.GetBook` |
 | `GET /ops/api/market/metrics` | 市场分片、租约就绪、账本计数 | `MarketRuntime.GetMetrics` |
 | `GET /ops/api/market/orders` | 指定玩家挂单列表 | `MarketRuntime.GetOrders` |
+| `GET /ops/api/market/catalog` | 可挂售物品目录（id/名称/主类型/子类型/回收价）与品类列表，口径 = 非货币 + 可交易 + `sellPrice > 0` | `GameDataCatalog` |
 | `GET /ops/api/compute` | 计算节点组、链路计数、任务积压 | `ComputeLinkRegistry` / `ComputeLinkMetrics` / `PostgresComputeJobRepository` |
 | `GET /ops/api/storage` | durable outbox 状态分布与积压、玩家 section 版本分布、核心表体量、留存清理计数 | 新增仓储只读查询 |
 | `GET /ops/api/scheduler` | 推进边界、玩家推进延迟分布、行动队列长度分布、待触发队列规模 | 运行时快照聚合 |
@@ -81,11 +82,27 @@
 | `POST /ops/api/actions/flush` | 强制存档（单玩家或全部） | `IPlayerRuntime.FlushAsync` / `FlushAllAsync(force: true)` |
 | `POST /ops/api/actions/unload` | 卸载玩家运行时（不落盘） | `IPlayerRuntime.RemoveAsync(flush: false)` |
 | `POST /ops/api/actions/compute-drain` | 排空计算节点（单个或全部） | `ComputeLinkRegistry.BeginDrain` / `DrainAll` |
+| `POST /ops/api/actions/market-system-orders` | 以系统身份批量挂售/收购（单个物品 / 按品类 / 全部物品） | 资金注入（`IEconomyTransactionStore`，`system-grant`）→ `MarketRuntime.PlaceAsync` 正常下单链路，即时上架 |
+| `POST /ops/api/actions/market-system-cancel` | 撤销系统挂单（指定品种或全部） | `MarketRuntime.GetOrders(系统玩家)` → 逐单 `CancelAsync` |
 
 约束：
 
-- 写操作只经 `IPlayerRuntime` / `SessionRegistry` / `ComputeLinkRegistry` 的既有边界调用，不新增底层能力。
+- 写操作只经 `IPlayerRuntime` / `SessionRegistry` / `ComputeLinkRegistry` / `MarketRuntime` 的既有边界调用，不新增底层能力。
 - 写操作响应必须回执结果与影响对象，禁止静默吞异常。
+
+### 4.3 系统身份市场下单契约
+
+- 系统身份与 `scripts/seed-market-system-listings.sh` 共用固定 UUID（账号 `f0000000-0000-4000-8000-000000000001`、
+  玩家 `f0000000-0000-4000-8000-000000000002`，道号「系统坊市」，随机口令不可登录）；下单前以
+  `INSERT ... ON CONFLICT DO NOTHING` 确保身份行存在。
+- 下单资金链：每单先注入所需资金（卖单注入物品份数、买单注入 `价格 × 数量` 灵石，`system-grant` 流水），
+  再走 `MarketRuntime.PlaceAsync`——其持久化事务自带冻结扣减、冻结预留、经济流水与即时撮合，
+  余额不足会快速失败，因此注入必须先行。
+- 幂等口径：订单幂等键 `system-ops:{batchId}:{side}:{assetId}`（batchId 为每次请求服务端生成），
+  撤单幂等键沿用仓储规范格式 `market-cancel:{系统玩家}:{orderId}`（`CloseOrderAsync` 强制校验）；
+  逐物品结果如实回执，部分失败不回滚已成功项。
+- 默认值：价格默认回收价（`sellPrice`），数量默认 1 亿份；两者均可显式指定。
+  「全部物品」与种子脚本同口径 = `sellPrice > 0` 的非货币可交易物品。
 
 ## 5. 前端承载与信息架构
 
@@ -105,7 +122,7 @@
 | 总览 | 概览、健康 |
 | 运行 | 调度、计算、日志 |
 | 数据 | 玩家、会话、存储 |
-| 交易 | 市场盘口、市场指标与挂单 |
+| 交易 | 市场盘口、市场指标与挂单、系统下单 |
 | 系统 | 配置、运维操作 |
 
 - **内容区**：分组卡片 + 数据表格；表格沿用游戏前端的表格与卡片视觉。

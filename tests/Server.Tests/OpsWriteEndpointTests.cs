@@ -133,6 +133,78 @@ public sealed class OpsWriteEndpointTests
         });
     }
 
+    /// <summary>系统下单与撤单端点：无令牌与错误令牌一律 401。</summary>
+    [Fact]
+    public async Task MarketSystemWriteWithoutValidToken_IsRejected()
+    {
+        await using var app = await StartHostAsync();
+        using var http = new HttpClient();
+
+        var missing = await http.PostAsJsonAsync($"{BaseAddress(app)}/ops/api/actions/market-system-orders", new { side = "sell", scope = "all" });
+        Assert.Equal(HttpStatusCode.Unauthorized, missing.StatusCode);
+
+        var cancelMissing = await http.PostAsJsonAsync($"{BaseAddress(app)}/ops/api/actions/market-system-cancel", new { assetId = (string?)null });
+        Assert.Equal(HttpStatusCode.Unauthorized, cancelMissing.StatusCode);
+
+        using var wrong = new HttpRequestMessage(HttpMethod.Post, $"{BaseAddress(app)}/ops/api/actions/market-system-orders")
+        {
+            Content = JsonContent.Create(new { side = "sell", scope = "all" })
+        };
+        wrong.Headers.Add(OpsPanel.TokenHeader, "not-the-token");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await http.SendAsync(wrong)).StatusCode);
+    }
+
+    /// <summary>系统下单端点参数边界：非法方向与非法范围返回 400。</summary>
+    [Fact]
+    public async Task MarketSystemOrders_InvalidArguments_AreRejected()
+    {
+        await using var app = await StartHostAsync();
+        using var http = new HttpClient();
+
+        using var badSide = Authorized(HttpMethod.Post, $"{BaseAddress(app)}/ops/api/actions/market-system-orders", new { side = "x", scope = "all" });
+        Assert.Equal(HttpStatusCode.BadRequest, (await http.SendAsync(badSide)).StatusCode);
+
+        using var badScope = Authorized(HttpMethod.Post, $"{BaseAddress(app)}/ops/api/actions/market-system-orders", new { side = "sell", scope = "bogus" });
+        Assert.Equal(HttpStatusCode.BadRequest, (await http.SendAsync(badScope)).StatusCode);
+    }
+
+    /// <summary>市场分片未就绪时系统下单与撤单返回 503，且不触碰经济事务存储。</summary>
+    [Fact]
+    public async Task MarketSystemWrite_WhenMarketNotReady_Returns503()
+    {
+        await using var app = await StartHostAsync();
+        var economy = (RecordingEconomyStore)app.Services.GetRequiredService<IEconomyTransactionStore>();
+        using var http = new HttpClient();
+
+        using var place = Authorized(HttpMethod.Post, $"{BaseAddress(app)}/ops/api/actions/market-system-orders", new { side = "sell", scope = "all" });
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await http.SendAsync(place)).StatusCode);
+
+        using var cancel = Authorized(HttpMethod.Post, $"{BaseAddress(app)}/ops/api/actions/market-system-cancel", new { assetId = (string?)null });
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await http.SendAsync(cancel)).StatusCode);
+
+        Assert.Equal(0, economy.CommitCalls);
+    }
+
+    /// <summary>可挂售物品目录：全部为非货币、有回收价的物品，并下发品类列表。</summary>
+    [Fact]
+    public async Task MarketCatalog_ReturnsRecyclableItems()
+    {
+        await using var app = await StartHostAsync();
+        using var http = new HttpClient();
+
+        var response = await http.GetAsync($"{BaseAddress(app)}/ops/api/market/catalog");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = payload.GetProperty("items");
+        Assert.True(items.GetArrayLength() > 0);
+        foreach (var item in items.EnumerateArray())
+        {
+            Assert.False(item.GetProperty("id").GetString()!.StartsWith("currency.", StringComparison.Ordinal));
+            Assert.True(item.GetProperty("sellPrice").GetDouble() > 0);
+        }
+        Assert.True(payload.GetProperty("categories").GetArrayLength() > 0);
+    }
+
     private static HttpRequestMessage Authorized(HttpMethod method, string url, object body)
     {
         var request = new HttpRequestMessage(method, url) { Content = JsonContent.Create(body) };
@@ -162,9 +234,11 @@ public sealed class OpsWriteEndpointTests
         // 面板路由整组一次性构建：任一端点的参数类型解析失败都会让整个 /ops 组 500，
         // 因此必须把只读视图实际读取的服务全部注册齐（与 Api 角色装配口径一致）。
         builder.Services.AddSingleton(Domain.GameData.GameDataCatalog.LoadEmbedded());
+        builder.Services.AddSingleton<PostgresMarketRepository>();
         builder.Services.AddSingleton<MarketRuntime>();
         builder.Services.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Database=unused"));
         builder.Services.AddSingleton<OpsStorageInsights>();
+        builder.Services.AddSingleton<IEconomyTransactionStore>(new RecordingEconomyStore());
         builder.Services.AddHealthChecks();
 
         var app = builder.Build();
@@ -226,5 +300,23 @@ public sealed class OpsWriteEndpointTests
             => ValueTask.FromResult<IReadOnlyList<PlayerRuntimeSnapshot>>([]);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>经济事务存储替身：只统计提交调用次数，不落库（市场快捷操作端点的参数解析依赖）。</summary>
+    private sealed class RecordingEconomyStore : IEconomyTransactionStore
+    {
+        public int CommitCalls { get; private set; }
+
+        public ValueTask<EconomyTransactionResult> CommitAsync(EconomyTransactionRequest request, CancellationToken cancellationToken = default)
+        {
+            CommitCalls++;
+            return ValueTask.FromResult(new EconomyTransactionResult(
+                request.TransactionId,
+                request.IdempotencyKey,
+                Applied: true,
+                AlreadyCommitted: false,
+                DateTimeOffset.UtcNow,
+                ReadOnlyMemory<byte>.Empty));
+        }
     }
 }
