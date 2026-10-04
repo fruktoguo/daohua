@@ -6,24 +6,44 @@ namespace Domain.Player;
 /// <summary>队列变化的业务原因；消息只携带已确定的操作，不持有运行时实体。</summary>
 public enum PlayerActionQueueMutationKind : byte
 {
+    /// <summary>按顺序追加到队尾。</summary>
     Enqueue,
+    /// <summary>高优插队到队首：同 ActionId 旧实例去重、原队首挂起、新行动立即 Running。</summary>
     EnqueuePriority,
+    /// <summary>显式移除指定行动实例。</summary>
     Remove,
+    /// <summary>队列内上下移动一位。</summary>
     Move,
+    /// <summary>指定实例轮转到队尾。</summary>
     Rotate,
+    /// <summary>单轮结算完成后的循环/离队裁决。</summary>
     FinishRound,
+    /// <summary>一键清空整个队列。</summary>
     Clear
 }
 
 /// <summary>轮完成后的队列裁决；无限重复属于 Continue，不进入离队分支。</summary>
 public enum PlayerActionRoundDisposition : byte
 {
+    /// <summary>留队继续推进（含无限重复与未触发离队条件）。</summary>
     Continue,
+    /// <summary>剩余次数归零后按循环开关重置进度并轮转到队尾。</summary>
     Recycled,
+    /// <summary>出队并归档行动账本。</summary>
     Removed
 }
 
 /// <summary>同步队列操作负载，不进入存档或协议。</summary>
+/// <param name="Kind">队列变化类型。</param>
+/// <param name="InstanceId">目标行动实例 Id；入队时可指定，缺省由规则层生成新 Id。</param>
+/// <param name="Intent">入队行动意图（Enqueue/EnqueuePriority 必填并校验）。</param>
+/// <param name="At">操作发生的墙钟时刻，用于入队时间与归档时刻推导。</param>
+/// <param name="Catalog">行动配表目录，用于校验意图合法性。</param>
+/// <param name="Travel">插队移动行动附带的路径状态。</param>
+/// <param name="IncrementVersion">本次变更是否提交聚合版本号；模拟内部推进传 false。</param>
+/// <param name="EndedAtUnixSeconds">归档结束时刻（Unix 秒）；负数表示按变更类型推导。</param>
+/// <param name="Direction">Move 方向，仅允许 -1/1。</param>
+/// <param name="Loopable">FinishRound 是否允许走循环裁决；false 时次数归零即离队。</param>
 public readonly record struct PlayerActionQueueMutation(
     PlayerActionQueueMutationKind Kind,
     Guid InstanceId = default,
@@ -36,12 +56,20 @@ public readonly record struct PlayerActionQueueMutation(
     int Direction = 0,
     bool Loopable = true);
 
+/// <summary>队列变更管线的同步结果；不携带借用的运行时引用，可安全跨阶段返回。</summary>
+/// <param name="Changed">本次变更是否实际改动了队列。</param>
+/// <param name="Action">新建或命中的行动实例；未命中或无涉及时为 null。</param>
+/// <param name="RoundDisposition">FinishRound 的离队/循环裁决；非 FinishRound 恒为 Continue。</param>
 public readonly record struct PlayerActionQueueMutationResult(
     bool Changed, QueuedAction? Action, PlayerActionRoundDisposition RoundDisposition);
 
 /// <summary>命令门面与行动上下文借用的同步队列入口；实现不得保存调用方状态引用。</summary>
 public interface IPlayerActionQueueMutationSink
 {
+    /// <summary>按统一变更管线同步消费一条队列操作并返回结果。</summary>
+    /// <param name="player">玩家状态视图（资源恢复、脏标与版本提交的直接对象）。</param>
+    /// <param name="actions">被变更的行动队列可变列表。</param>
+    /// <param name="mutation">队列操作负载。</param>
     PlayerActionQueueMutationResult Dispatch(IPlayerResourceContext player, List<QueuedAction> actions,
         in PlayerActionQueueMutation mutation);
 }
@@ -52,27 +80,44 @@ public interface IPlayerActionQueueMutationSink
 /// </summary>
 public sealed class PlayerActionQueueMutationContext
 {
+    /// <summary>本次变更绑定的玩家状态视图；仅 Begin/End 生命周期内有效。</summary>
     public IPlayerResourceContext Player { get; private set; } = null!;
+    /// <summary>被变更的行动队列可变列表；实现不得在 End 之后继续持有。</summary>
     public List<QueuedAction> Actions { get; private set; } = null!;
+    /// <summary>本次队列操作负载。</summary>
     public PlayerActionQueueMutation Mutation { get; private set; }
+    /// <summary>行动账本归档保留上限（入队校验与归档裁剪共用）。</summary>
     public int MaxBattleReports { get; private set; }
+    /// <summary>待归档行动实例 ID；在结构变更前确定，任何阶段不重新寻找已离队的实例。</summary>
     public List<Guid> ArchiveIds { get; } = [];
+    /// <summary>目标实例在队列中的索引；未命中为 -1。</summary>
     public int Index { get; internal set; }
+    /// <summary>Move 操作的交换目标索引。</summary>
     public int TargetIndex { get; internal set; }
+    /// <summary>本次变更是否实际改动队列；未改动时后续阶段直接跳过。</summary>
     public bool Changed { get; internal set; }
+    /// <summary>死亡中的远征队首被移除时需按同语义恢复最低气血（1 点）。</summary>
     public bool RecoverHitpoints { get; internal set; }
+    /// <summary>结构变更后是否需要把队首从 Pending 激活为 Running。</summary>
     public bool ActivateHead { get; internal set; }
+    /// <summary>是否提交聚合版本号；模拟内部推进传 false，由轮结算统一提交。</summary>
     public bool IncrementVersion { get; internal set; }
+    /// <summary>Begin 时记录的原队首 ID，用于 HeadChanged 判定；空队为 null。</summary>
     public Guid? PreviousHeadId { get; private set; }
+    /// <summary>新建（入队）或命中（其余操作）的行动实例；无涉及时为 null。</summary>
     public QueuedAction? Action { get; internal set; }
+    /// <summary>FinishRound 的循环/离队裁决；非 FinishRound 恒为 Continue。</summary>
     public PlayerActionRoundDisposition RoundDisposition { get; internal set; }
+    /// <summary>队首是否相对 Begin 时刻发生变化（含清空队列）。</summary>
     public bool HeadChanged => PreviousHeadId != (Actions.Count == 0 ? null : Actions[0].Id);
+    /// <summary>归档结束时刻：显式指定优先，插队取操作时刻，其余取最后推进时刻。</summary>
     public double EndedAtUnixSeconds => Mutation.EndedAtUnixSeconds >= 0
         ? Mutation.EndedAtUnixSeconds
         : Mutation.Kind == PlayerActionQueueMutationKind.EnqueuePriority
             ? Mutation.At.ToUnixTimeMilliseconds() / 1000d
             : Player.LastSimulatedAt.ToUnixTimeMilliseconds() / 1000d;
 
+    /// <summary>绑定工作区；重复绑定视为管线重入，立即失败以暴露所有权破坏。</summary>
     public void Begin(IPlayerResourceContext player, List<QueuedAction> actions,
         in PlayerActionQueueMutation mutation, int maxBattleReports)
     {
@@ -90,8 +135,10 @@ public sealed class PlayerActionQueueMutationContext
         ArchiveIds.Clear();
     }
 
+    /// <summary>导出本次变更的同步结果；不携带借用的运行时引用。</summary>
     public PlayerActionQueueMutationResult Result => new(Changed, Action, RoundDisposition);
 
+    /// <summary>解除绑定并清空借用引用；管线以 finally 保证调用，防止工作区跨请求残留。</summary>
     public void End()
     {
         Player = null!;
@@ -108,6 +155,10 @@ public sealed class PlayerActionQueueMutationContext
 /// </summary>
 public static class PlayerActionQueueRules
 {
+    /// <summary>
+    /// 管线阶段一：参数归一化与裁决。校验意图、确定归档名单与循环/离队裁决，
+    /// 只写工作区不改队列结构；未命中实例或无可做变更时置 Changed=false 短路后续阶段。
+    /// </summary>
     public static void Prepare(PlayerActionQueueMutationContext work)
     {
         var mutation = work.Mutation;
@@ -226,6 +277,7 @@ public static class PlayerActionQueueRules
         work.ActivateHead = work.Index == 0;
     }
 
+    /// <summary>管线阶段二：按 Prepare 裁决执行队列结构变更（增删/换位/轮转/清空）。</summary>
     public static void ApplyStructure(PlayerActionQueueMutationContext work)
     {
         if (!work.Changed) return;
@@ -278,6 +330,7 @@ public static class PlayerActionQueueRules
         work.Actions.Add(action);
     }
 
+    /// <summary>管线阶段三：按裁决激活队首（仅 Changed 且裁决要求时把 Pending 队首置为 Running）。</summary>
     public static void ActivateHead(PlayerActionQueueMutationContext work)
     {
         if (work.Changed && work.ActivateHead && work.Actions.Count > 0
@@ -285,6 +338,10 @@ public static class PlayerActionQueueRules
             work.Actions[0].Status = ActionQueueStatus.Running;
     }
 
+    /// <summary>
+    /// 管线阶段四：提交版本号与脏标记。模拟内移除与单项循环由轮结算统一标脏，
+    /// 仅插队路径立即标脏以保证在线请求即时可见。
+    /// </summary>
     public static void Commit(PlayerActionQueueMutationContext work)
     {
         if (!work.Changed) return;

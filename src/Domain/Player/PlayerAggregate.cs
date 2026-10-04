@@ -217,9 +217,6 @@ public sealed class PlayerWorldState
 }
 
 /// <summary>
-/// 角色基础战斗属性（运行时由装备、功法与境界动态加成覆盖）。
-/// </summary>
-/// <summary>
 /// 角色战斗资源分段：气血/灵力池与自然回复游标。战斗内外同一份状态，
 /// 触发器与行动结算直接读写；落库时并入 Combat 分段文档，线上格式不变。
 /// </summary>
@@ -237,6 +234,10 @@ public sealed class PlayerResourceState
     public double RegenCarrySeconds { get; set; }
 }
 
+/// <summary>
+/// 角色基础战斗属性分段（运行时由装备、功法与境界动态加成覆盖）。
+/// 存档保存的是加成前的基础值；面板真值经属性解析器合成，不在此处缓存。
+/// </summary>
 public sealed class PlayerCombatState
 {
     /// <summary>基础攻击威能</summary>
@@ -262,6 +263,15 @@ public sealed class PlayerBuffState
 /// <param name="BuffId">配表 Buff 唯一标识</param>
 /// <param name="ExpiresAtUnixSeconds">过期时间戳（Unix 秒）</param>
 /// <param name="Stacks">当前叠加层数</param>
+/// <param name="Name">展示名（配表缺省时回退 BuffId）。</param>
+/// <param name="SourceItemId">授予该 Buff 的物品 ID（消耗品来源追溯用）。</param>
+/// <param name="HpRegen">每个回复周期（每 5 秒）的气血固定回复量，按层数叠加后与境界锚点值相加。</param>
+/// <param name="MpRegen">每个回复周期（每 5 秒）的灵力固定回复量，按层数叠加后与境界锚点值相加。</param>
+/// <param name="AttackSpeedPoints">普攻间隔减免点数。</param>
+/// <param name="DamageAbsorptionPoints">每次受击固定减免的伤害点数。</param>
+/// <param name="StatRatios">按属性名到比率百分点的修饰字典（如 attackpower: 10 = +10%）。</param>
+/// <param name="HpRegenPostRatio">气血后段回复乘区（百分点）：全部固定回复合并后再乘 (1 + 比率)。</param>
+/// <param name="MpRegenPostRatio">灵力后段回复乘区（百分点）：全部固定回复合并后再乘 (1 + 比率)。</param>
 public sealed record ActiveBuff(string BuffId, double ExpiresAtUnixSeconds, double Stacks = 1,
     string Name = "", string? SourceItemId = null, double HpRegen = 0, double MpRegen = 0,
     double AttackSpeedPoints = 0, double DamageAbsorptionPoints = 0,
@@ -348,6 +358,8 @@ public enum ActionQueueStatus : byte
 /// <param name="Parameters">动态参数字典（如配方 ID、目标词条等）</param>
 /// <param name="PvpEnabled">斗法开关：仅对战斗遭遇行动生效；开启后参与斗法遭遇计数与撮合</param>
 /// <param name="AnchorNodeId">入队锚点节点：入队时玩家驻留节点，自动移动（AutoTravelEnabled）开轮地点不符时的自动赶路目的地；旅途中入队为 null</param>
+/// <param name="TargetItemId">目标物品 ID：强化行动指定要强化的装备（决定强化等级与动态时长）。</param>
+/// <param name="AuxItemId">辅助物品 ID：强化行动的保护材料（须在装备配表 enhanceProtectionItems 列表内，或同装备无强化基础件代护）。</param>
 public sealed record ActionIntent(
     ActionId ActionId,
     double RepeatCount = 1,

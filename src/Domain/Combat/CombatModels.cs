@@ -597,6 +597,12 @@ public sealed record CombatEvent(
 /// <summary>
 /// 战斗步进切片结算结果帧。
 /// </summary>
+/// <param name="EncounterId">本次步进的遭遇定义 ID。</param>
+/// <param name="FromSeconds">切片起始战斗时钟（秒）。</param>
+/// <param name="ToSeconds">切片结束战斗时钟（秒）。</param>
+/// <param name="Outcome">切片结束时的战斗结局；未分出胜负为 Running。</param>
+/// <param name="Events">切片内按时间序的攻击/受创事件明细。</param>
+/// <param name="Sequence">切片序号，用于回放端校验切片连续性。</param>
 /// <param name="PlayerDeathTimestamps">本段内玩家阵亡的战斗时钟时刻（仅原地复活模式可多次出现）。</param>
 /// <param name="PlayerRespawnTimestamps">本段内玩家原地起身的战斗时钟时刻。</param>
 public sealed record CombatAdvanceResult(
@@ -627,12 +633,14 @@ public enum CombatExpeditionPhase : byte
 }
 
 /// <summary>远征波次中单个敌人的可持久化战斗快照：与玩家共用同一 <see cref="CombatantSnapshot"/> 形态。</summary>
+/// <param name="EnemyId">敌人实例 ID。</param>
+/// <param name="State">敌人完整战斗快照（属性/吟唱/冷却/施放计数）。</param>
+/// <param name="PendingAbilityId">正在吟唱的技能 ID（展示用；出手决策以 State.PendingSkillIndex 为准）。</param>
+/// <param name="PendingActionDurationSeconds">当前动作总时长秒数（吟唱时长或普攻间隔，展示用）。</param>
 public sealed record ExpeditionEnemyState(
     string EnemyId,
     CombatantSnapshot State,
-    /// <summary>正在吟唱的技能 ID（展示用；出手决策以 State.PendingSkillIndex 为准）。</summary>
     string? PendingAbilityId = null,
-    /// <summary>当前动作总时长秒数（吟唱时长或普攻间隔，展示用）。</summary>
     double PendingActionDurationSeconds = 0);
 
 /// <summary>

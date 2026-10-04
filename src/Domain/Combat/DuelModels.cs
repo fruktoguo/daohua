@@ -60,6 +60,17 @@ public sealed record DuelAdvanceOptions(bool MatchingEnabled);
 /// 斗法剧本单条事件（以发起方为 player 视角的权威结算帧）。
 /// 回放时按 ViewerIsInitiator 做视角翻译，不区分挑战/被挑战。
 /// </summary>
+/// <param name="AtSeconds">事件发生的战斗时钟（秒）。</param>
+/// <param name="AttackerIsInitiator">出手方是否为斗法发起方。</param>
+/// <param name="TargetIsInitiator">受击方是否为斗法发起方。</param>
+/// <param name="Damage">本次结算的伤害量（治疗事件为 0）。</param>
+/// <param name="Hit">本次攻击是否命中。</param>
+/// <param name="Critical">本次攻击是否暴击。</param>
+/// <param name="TargetHitpointsAfter">受击方在事件结算后的剩余气血。</param>
+/// <param name="AbilityId">施放的技能 ID；普通攻击为空。</param>
+/// <param name="Healing">本次结算的治疗量（伤害事件为 0）。</param>
+/// <param name="AttackerManapointsAfter">出手方在事件结算后的剩余灵力（manaCost 起手预扣、汲取与回复均已入账）。</param>
+/// <param name="TargetManapointsAfter">受击方在事件结算后的剩余灵力。</param>
 public sealed record DuelScriptEvent(
     double AtSeconds,
     bool AttackerIsInitiator,
@@ -70,9 +81,7 @@ public sealed record DuelScriptEvent(
     double TargetHitpointsAfter,
     string? AbilityId = null,
     double Healing = 0,
-    /// <summary>出手方在事件结算后的剩余灵力（manaCost 起手预扣、汲取与回复均已入账）。</summary>
     double AttackerManapointsAfter = 0,
-    /// <summary>受击方在事件结算后的剩余灵力。</summary>
     double TargetManapointsAfter = 0);
 
 /// <summary>斗法完整结算剧本：撮合时一次性推演完毕，双方各自回放同一份确定性结果。</summary>
@@ -87,6 +96,21 @@ public sealed record DuelScript(
 /// 单个玩家视角的斗法回放状态；随战斗远征分段持久化，断线重连按事件游标续播。
 /// ViewerOutcome 已在挂载时翻译为「本视角」胜负（PlayerWon 即本玩家胜）。
 /// </summary>
+/// <param name="DuelId">斗法场次唯一标识。</param>
+/// <param name="OpponentPlayerId">对手玩家 ID。</param>
+/// <param name="OpponentName">对手展示名。</param>
+/// <param name="ViewerIsInitiator">观看方是否为斗法发起方。</param>
+/// <param name="ViewerOutcome">本视角胜负（挂载时已翻译）。</param>
+/// <param name="DurationSeconds">斗法剧本总时长（秒）。</param>
+/// <param name="Events">确定性剧本事件轴（双方共享同一份）。</param>
+/// <param name="SelfStagedSnapshot">本方暂存区快照（撮合时冻结）。</param>
+/// <param name="OpponentStagedSnapshot">对手暂存区快照（撮合时冻结）。</param>
+/// <param name="OpponentStats">对手镜像的完整战斗属性（撮合时冻结；气血/灵力上限与属性面板真值均取自这里）。</param>
+/// <param name="OpponentHitpoints">对手当前气血（回放起点）。</param>
+/// <param name="OpponentManapoints">对手当前灵力（回放起点）。</param>
+/// <param name="EventCursor">已回放事件游标；断线重连按它续播。</param>
+/// <param name="Resolved">结算是否已入账（暂存与胜负已落账）。</param>
+/// <param name="Forfeited">本方是否认输弃赛。</param>
 public sealed record DuelPlaybackState(
     string DuelId,
     string OpponentPlayerId,
@@ -97,7 +121,6 @@ public sealed record DuelPlaybackState(
     IReadOnlyList<DuelScriptEvent> Events,
     IReadOnlyList<DuelStagedItem> SelfStagedSnapshot,
     IReadOnlyList<DuelStagedItem> OpponentStagedSnapshot,
-    /// <summary>对手镜像的完整战斗属性（撮合时冻结；气血/灵力上限与属性面板真值均取自这里）。</summary>
     CombatantStats OpponentStats,
     double OpponentHitpoints,
     double OpponentManapoints,

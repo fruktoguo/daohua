@@ -23,6 +23,17 @@ public sealed record SimulationEvent(
 /// 包含时间跨度、推进轮次、物品资产流水变动以及是否引起聚合状态演进。
 /// Events 是有界尾窗（至少保留末尾 256 条、至多 512 条）；更早的事件折叠进 DroppedEventCount。
 /// </summary>
+/// <param name="PlayerId">本次推进归属的玩家。</param>
+/// <param name="From">推进起点时刻（UTC）。</param>
+/// <param name="To">推进终点时刻（UTC）。</param>
+/// <param name="ElapsedSeconds">本次推进的模拟时长（秒）。</param>
+/// <param name="CompletedActions">完成的行动实例数。</param>
+/// <param name="CompletedRepeats">完成的行动轮次数。</param>
+/// <param name="AssetDeltas">物品资产流水变动明细。</param>
+/// <param name="Events">事件尾窗（按发生时间升序）。</param>
+/// <param name="StateVersion">推进后的聚合状态版本号。</param>
+/// <param name="Changed">本次推进是否引起聚合状态演进。</param>
+/// <param name="DroppedEventCount">被事件尾窗折叠丢弃的事件总数：DroppedEventCount + Events.Count == 本次推进实际产出数。</param>
 public sealed record SimulationResult(
     PlayerId PlayerId,
     DateTimeOffset From,
@@ -34,5 +45,4 @@ public sealed record SimulationResult(
     IReadOnlyList<SimulationEvent> Events,
     long StateVersion,
     bool Changed,
-    /// <summary>被事件尾窗折叠丢弃的事件总数：DroppedEventCount + Events.Count == 本次推进实际产出数。</summary>
     long DroppedEventCount = 0);

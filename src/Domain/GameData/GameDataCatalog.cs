@@ -37,6 +37,19 @@ public enum ActionExecutionKind : byte
 /// 单个行动的静态配表定义。
 /// 包含单轮时长、材料消耗与声明式收益列表；收益类型与行动类别无关，由配表逐项声明。
 /// </summary>
+/// <param name="Id">行动唯一标识。</param>
+/// <param name="Name">行动展示名。</param>
+/// <param name="Kind">行动类别（修炼/历练/炼丹/战斗/赶路等）。</param>
+/// <param name="DurationSeconds">单轮基准时长（秒）；强化行动按目标等级动态覆盖。</param>
+/// <param name="Inputs">单轮材料消耗表（ItemId → 数量）。</param>
+/// <param name="Yields">声明式收益列表（按 Kind 决定入账通道）。</param>
+/// <param name="AllowedNodeIds">允许执行该行动的地图节点集合（白名单）；null 表示全图可行。</param>
+/// <param name="HiddenFromCatalog">是否在行动目录中隐藏（仅经入口/剧情开放）。</param>
+/// <param name="ExecutionKind">执行方式（计时/战斗遭遇/旅行）。</param>
+/// <param name="CombatEncounterId">战斗遭遇行动绑定的遭遇定义 ID；非战斗行动为 null。</param>
+/// <param name="Technique">关联的技艺 ID（对应技艺等级提供行动速度加成）；无关联为 null。</param>
+/// <param name="ExcludedNodeIds">禁止执行该行动的地图节点集合（黑名单）：AllowedNodeIds 缺省时行动默认全图可行，
+/// 仅此处列出的节点被排除（如引气入体之类常驻行动按地点裁剪）；与 AllowedNodeIds 互斥。</param>
 public sealed record ActionDefinition(
     ActionId Id,
     string Name,
@@ -49,8 +62,6 @@ public sealed record ActionDefinition(
     ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
     string? CombatEncounterId = null,
     string? Technique = null,
-    /// <summary>禁止执行该行动的地图节点集合（黑名单）：AllowedNodeIds 缺省时行动默认全图可行，
-    /// 仅此处列出的节点被排除（如引气入体之类常驻行动按地点裁剪）；与 AllowedNodeIds 互斥。</summary>
     IReadOnlySet<string>? ExcludedNodeIds = null)
 {
 }
@@ -336,6 +347,7 @@ public sealed class GameDataCatalog
     /// <param name="abilities">功法原始 JSON 表。</param>
     /// <param name="duel">斗法全局调参（可空，缺省用内建默认）。</param>
     /// <param name="realmProgression">境界修为上限与寿元配置（可空）。</param>
+    /// <param name="buildings">公共建筑定义表（可空，空时无节点建筑可装配）。</param>
     public GameDataCatalog(
         string contentVersion,
         string fingerprint,
