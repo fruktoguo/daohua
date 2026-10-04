@@ -16,9 +16,9 @@ export const combatZh = {
       glyphGeneric: '益',
       glyphSpeed: '速',
       buffsAria: '当前状态效果',
-      phaseDeath: '还魂中',
-      phaseSearch: '神识探微',
-      phaseHunt: '灵觉索敌',
+      phaseDeath: '复活中',
+      phaseSearch: '寻找中',
+      phaseHunt: '搜寻目标',
       sigilSearch: '识',
       sigilHunt: '觅',
       inspectAria: '查看{name}属性',
@@ -58,7 +58,7 @@ export const combatZh = {
     },
     // 赶路/移动总目标卡
     travel: {
-      tag: '御风而行',
+      tag: '赶路',
       fallbackActionName: '赶路',
       badgeMoving: '移动中',
       destination: '目标地点：',
@@ -71,7 +71,7 @@ export const combatZh = {
     // 空闲状态卡
     idle: {
       sigil: '道',
-      title: '气定神闲 · 心如明镜',
+      title: '空闲',
       desc: '当前暂无正在执行的行动，可前往左侧行动列表开启吐纳、探索、炼丹或进入地图历练。',
     },
     // 斗法（PVP）相位显示
@@ -247,7 +247,7 @@ export const combatZh = {
       statCategory: '大类',
       statElement: '五行',
       statHp: '气血',
-      statMp: '真元',
+      statMp: '灵力',
       badgeEncounter: '遭遇敌怪',
       badgeEnemy: '妖兽敌人',
       descEncounter: '出没于修仙界中的敌方遭遇。',

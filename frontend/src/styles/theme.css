@@ -162,7 +162,6 @@
 
 :root[data-theme="light"] ::-webkit-scrollbar-thumb,
 :root[data-theme="light"] .queue-dropdown,
-:root[data-theme="light"] .buff-tip,
 :root[data-theme="light"] .choice-menu-popover,
 :root[data-theme="light"] .item-tooltip,
 :root[data-theme="light"] .effect-tooltip,
@@ -240,7 +239,6 @@
   color: var(--purple);
 }
 
-:root[data-theme="light"] .buff-stack,
 :root[data-theme="light"] .confirm-dialog-actions .confirm-primary:not(.danger),
 :root[data-theme="light"] .quantity-selector button.active,
 :root[data-theme="light"] .action-modal-submit,
@@ -597,8 +595,6 @@
 :root[data-theme="light"] .right-sidebar-tab-btn.is-active,
 :root[data-theme="light"] .arena-life-progress-text { text-shadow: 0 1px 2px rgba(71, 49, 18, 0.2); }
 :root[data-theme="light"] .queue-dropdown { box-shadow: 0 14px 36px rgba(71, 49, 18, 0.163); }
-:root[data-theme="light"] .buff-stack { box-shadow: 0 2px 6px rgba(71, 49, 18, 0.175); }
-:root[data-theme="light"] .buff-tip { box-shadow: 0 8px 20px rgba(71, 49, 18, 0.138); }
 :root[data-theme="light"] .choice-menu-popover { box-shadow: 0 12px 28px rgba(71, 49, 18, 0.163); }
 :root[data-theme="light"] .item-use-slot-shell.is-depleted .item-corner--bottom-right { box-shadow: 0 3px 9px rgba(71, 49, 18, 0.155), 0 0 9px rgba(238, 98, 86, 0.48); }
 :root[data-theme="light"] .item-use-slot.item-use-slot--depleted .item-tile,

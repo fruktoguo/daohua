@@ -83,12 +83,16 @@ interface GameStore {
   buildings: readonly BuildingDefinition[]
   /** 当前网络连接状态 */
   connection: ConnectionState
+  /** 终态断连原因的 i18n 词条 key（顶号/会话失效等；null 表示无特定原因，恢复在线时自动清除） */
+  disconnectReason: string | null
   /** 顶部全局提示消息（为 null 时隐藏） */
   notice: string | null
   /** 提示序号：每次下发非空提示递增，供气泡在同文案重复时重置计时并重播动画 */
   noticeSeq: number
   /** 设置网络连接状态 */
   setConnection: (connection: ConnectionState) => void
+  /** 设置终态断连原因词条 key */
+  setDisconnectReason: (key: string | null) => void
   /** 设置顶部全局提示消息 */
   setNotice: (notice: string | null) => void
   /** 更新行动目录 */
@@ -302,9 +306,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   maps: [],
   buildings: [],
   connection: 'connecting',
+  disconnectReason: null,
   notice: null,
   noticeSeq: 0,
-  setConnection: (connection) => set({ connection }),
+  setConnection: (connection) => set(state => ({ connection, disconnectReason: connection === 'online' ? null : state.disconnectReason })),
+  setDisconnectReason: (key) => set({ disconnectReason: key }),
   setNotice: (notice) => set(state => ({ notice, noticeSeq: notice === null ? state.noticeSeq : state.noticeSeq + 1 })),
   setActions: (actions) => {
     registerCatalogActions(actions)
@@ -462,6 +468,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     version: 0,
     hasReceivedSnapshot: false,
     connection: 'offline',
+    disconnectReason: null,
     notice: null,
     queue: initial.queue,
     inventory: initial.inventory,

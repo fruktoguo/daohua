@@ -35,7 +35,7 @@ export const appZh = {
       // 二级导航悬浮气泡：等级 / 本级经验进度 / 行动速度加成
       navTooltipLevel: '{level} 级',
       navTooltipExp: '经验 {current} / {max}',
-      navTooltipMaxed: '已臻化境',
+      navTooltipMaxed: '已达最高等级',
       navTooltipSpeed: '行动速度 +{value}%',
       alchemy: '炼丹',
       forging: '炼器',
@@ -162,23 +162,6 @@ export const appZh = {
       combatVitalsAria: '战斗生命状态',
       combatVitalSelf: '己',
       combatVitalEnemy: '敌',
-    },
-    // 增益栏
-    buff: {
-      barAria: '当前增益',
-      stackAria: '{n} 层',
-      locationStackAria: '地点增益',
-      locationMark: '地',
-      qiGain: '灵气收益 +{percent}%',
-      gatheringOutput: '灵草产出 +{percent}%',
-      alchemyOutput: '丹药产出 +{percent}%',
-      damageRatio: '术式伤害 +{percent}%',
-      attackSpeed: '攻速 +{percent}%',
-      combatBuff: '战斗增益',
-      remainingStacks: '剩余 {remaining}s · 共 {stacks} 层',
-      permanentStacks: '常驻生效 · 共 {stacks} 层',
-      locationEfficiency: '{name} · 修炼效率 {sign}{percent}%',
-      locationOnly: '仅在当前位置生效',
     },
     // 行动与技能页面
     action: {
@@ -445,16 +428,16 @@ export const appZh = {
     },
     // 连接状态屏幕
     connect: {
-      connectingTitle: '正在连通仙界',
-      connectingSubtitle: '感应天地法则，正在同步宗门仙境与修士本相…',
+      connectingTitle: '正在连接服务器',
+      connectingSubtitle: '正在同步游戏数据与角色状态…',
       returnLogin: '返回登录',
-      errorTitle: '仙途阻隔 · 未能连通',
-      errorSubtitle: '网络连接异常，请稍后重试。',
+      errorTitle: '连接已断开',
+      errorSubtitle: '与服务器的连接已中断，可重新连接或返回登录。',
       retryBtn: '重新连接',
       switchAccountBtn: '返回登录 / 切换账号',
-      tabBlockedTitle: '道心唯一 · 仙境已在别处展开',
+      tabBlockedTitle: '游戏已在其他标签页运行',
       tabBlockedSubtitle: '检测到游戏已在另一个标签页中运行。为保护账号数据安全，本页已暂停连接。',
-      tabTakeoverBtn: '在本页继续修行',
+      tabTakeoverBtn: '在本页继续游戏',
     },
     // 改名弹窗
     rename: {
@@ -471,13 +454,13 @@ export const appZh = {
     },
     // 错误边界与异常自愈
     errorBoundary: {
-      title: '灵台受扰 · 仙境暂隐',
-      subtitle: '遭遇未知的道韵紊乱，界面显化中断。此异常已被拦截，您的道体修为不受影响。',
-      detailsLabel: '查看紊乱真象 (错误堆栈)',
-      collapseDetails: '收起紊乱真象',
-      reRenderBtn: '尝试重新显化',
+      title: '界面发生错误',
+      subtitle: '界面遇到未处理的异常，已被拦截并停止渲染，您的角色数据不受影响。',
+      detailsLabel: '查看错误详情（错误堆栈）',
+      collapseDetails: '收起错误详情',
+      reRenderBtn: '尝试重新渲染',
       resetCacheBtn: '清除缓存并重启',
-      copyErrorBtn: '复制紊乱符印',
+      copyErrorBtn: '复制错误信息',
       copiedNotice: '已复制故障信息到剪贴板',
     },
   },

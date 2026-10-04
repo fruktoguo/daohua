@@ -10,7 +10,7 @@ import { EffectTooltipTarget } from './components/EffectTooltip'
 import { EnhancementPage } from './components/EnhancementPage'
 import { FloatingInfoCard, FloatingPopover, FloatingTooltip } from './components/FloatingPopover'
 import { GameLogPanel } from './components/GameLogPanel'
-import { ActionDetailItem, ItemTooltipTarget, describeBuffEffectLines } from './components/ItemDisplay'
+import { ActionDetailItem, ItemTooltipTarget } from './components/ItemDisplay'
 import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/ItemGridPicker'
 import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
@@ -47,7 +47,7 @@ import { useT, getT } from './i18n'
 /** 全局共享的空冷却表（冻结对象）：避免每次渲染创建新引用触发下游 memo 失效 */
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
 
-type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'buff' | 'loop' | 'travel'
+type IconName = 'insight' | ActionType | 'crafting' | 'forging' | 'talisman' | 'formation' | 'map' | 'market' | 'social' | 'inventory' | 'log' | 'settings' | 'spirit' | 'loop' | 'travel'
 
 /**
  * 矢量图标组件（按名称渲染内联 SVG）
@@ -97,8 +97,6 @@ const Icon = memo(function Icon({ name }: { name: IconName }): React.JSX.Element
       return <svg {...common}><circle cx="12" cy="12" r="3.2" /><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M18.4 5.6l-1.9 1.9M7.5 16.5l-1.9 1.9" /></svg>
     case 'spirit':
       return <svg {...common}><path d="M12 2.5 18.5 8 12 21.5 5.5 8 12 2.5Z" /><path d="M5.5 8h13M12 2.5 9.5 8 12 21.5" /></svg>
-    case 'buff':
-      return <svg {...common}><path d="M7 16a4.2 4.2 0 0 1-.6-8.3 5.2 5.2 0 0 1 10-1.3A3.8 3.8 0 0 1 17.5 16H7Z" /></svg>
     case 'loop':
       return <svg {...common}><path d="M5.5 12.5a6.5 6.5 0 0 1 11.5-4.2" /><path d="M17.5 3.5v4h-4" /><path d="M18.5 11.5a6.5 6.5 0 0 1-11.5 4.2" /><path d="M6.5 20.5v-4h4" /></svg>
     case 'travel':
@@ -596,85 +594,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
 })
 
 /**
- * 顶部 Buff 与灵脉环境增益状态栏
- */
-const BuffBar = memo(function BuffBar(): React.JSX.Element | null {
-  const t = useT()
-  const buffs = useGameStore(state => state.buffs)
-  const serverTime = useGameStore(state => state.serverTimeUnixSeconds)
-  const world = useGameStore(state => state.world)
-  const hasLocationEffect = Math.abs(world.cultivationMultiplier - 1) > 0.001
-  if (buffs.length === 0 && !hasLocationEffect) return null
-
-  return (
-    <div className="buff-bar" aria-label={t('app.buff.barAria')}>
-      {buffs.map(buff => {
-        // durable 阵盘类永驻 Buff：到期时间投影为有限哨兵（≥1e15），按常驻展示而非倒计时。
-        const permanent = buff.expiresAtUnixSeconds >= 1e15
-        const remaining = permanent ? 0 : Math.max(0, buff.expiresAtUnixSeconds - serverTime)
-        // Buff 描述唯一来源：权威修饰器字段（regen/攻速/免伤/statRatios），不再读收益倍率幻影字段。
-        const desc = describeBuffEffectLines(buff).join('；') || t('app.buff.combatBuff')
-
-        return (
-          <FloatingPopover
-            closeDelay={80}
-            content={
-              <FloatingInfoCard
-                badge={t('app.buff.stackAria', { n: buff.stacks })}
-                badgeTone="gold"
-                description={desc}
-                subtitle={permanent
-                  ? t('app.buff.permanentStacks', { stacks: buff.stacks })
-                  : t('app.buff.remainingStacks', { remaining, stacks: buff.stacks })}
-                title={buff.name}
-              />
-            }
-            interactive={false}
-            key={buff.buffId}
-            openDelay={60}
-            placement="bottom"
-            size="small"
-          >
-            <span className="buff-chip">
-              <Icon name="buff" />
-              <span className="buff-stack" aria-label={t('app.buff.stackAria', { n: buff.stacks })}>{buff.stacks}</span>
-            </span>
-          </FloatingPopover>
-        )
-      })}
-      {hasLocationEffect && (
-        <FloatingPopover
-          closeDelay={80}
-          content={
-            <FloatingInfoCard
-              badge={t('app.buff.locationMark')}
-              badgeTone="qi"
-              description={t('app.buff.locationEfficiency', {
-                name: world.locationName,
-                sign: world.cultivationMultiplier > 1 ? '+' : '',
-                percent: Math.round((world.cultivationMultiplier - 1) * 100),
-              })}
-              subtitle={t('app.buff.locationOnly')}
-              title={world.locationName}
-            />
-          }
-          interactive={false}
-          openDelay={60}
-          placement="bottom"
-          size="small"
-        >
-          <span className="buff-chip buff-chip--location">
-            <Icon name="spirit" />
-            <span className="buff-stack" aria-label={t('app.buff.locationStackAria')}>{t('app.buff.locationMark')}</span>
-          </span>
-        </FloatingPopover>
-      )}
-    </div>
-  )
-})
-
-/**
- * 客户端全局顶栏组件（包含道号、境界徽章、修为进度条、队列控制中心与 Buff 栏）
+ * 客户端全局顶栏组件（包含道号、境界徽章、修为进度条与队列控制中心）
  */
 const TopBar = memo(function TopBar(): React.JSX.Element {
   const t = useT()
@@ -741,7 +661,6 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
         </div>
       </div>
       <QueueCenter />
-      <BuffBar />
       <TaijiToggle />
     </header>
   )
@@ -2066,10 +1985,12 @@ const Notice = memo(function Notice(): React.JSX.Element | null {
  * 负责应用初始化、鉴权状态路由（登录页 / 连接加载页 / 错误重试页 / 游戏主舞台）以及响应式多列布局渲染
  */
 export default function App(): React.JSX.Element {
+  const t = useT()
   const activeTab = useUiStore(state => state.activeTab)
   const mobileLayout = useMobileLayout()
   const connection = useGameStore(state => state.connection)
   const hasReceivedSnapshot = useGameStore(state => state.hasReceivedSnapshot)
+  const disconnectReason = useGameStore(state => state.disconnectReason)
   const tabBlocked = useAntiMultiOpenStore(state => state.tabBlocked)
   const currentAccount = useAccountStore(state => state.currentAccount)
   const sessionChecked = useAccountStore(state => state.sessionChecked)
@@ -2154,7 +2075,12 @@ export default function App(): React.JSX.Element {
     if (connection === 'connecting' || connection === 'reconnecting' || connection === 'online') {
       return <ConnectingPage onCancel={logout} />
     }
-    return <ConnectionErrorPage onRetry={() => gameClient.connect()} onLogout={logout} />
+    return <ConnectionErrorPage message={disconnectReason ? t(disconnectReason) : undefined} onRetry={() => gameClient.connect()} onLogout={logout} />
+  }
+
+  // 已进入游戏后连接进入终态离线（被顶号/会话失效等，无自动重连）：全屏透出断连原因，替代 2.6 秒即逝的气泡。
+  if (connection === 'offline') {
+    return <ConnectionErrorPage message={disconnectReason ? t(disconnectReason) : undefined} onRetry={() => gameClient.connect()} onLogout={logout} />
   }
 
   return (

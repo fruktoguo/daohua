@@ -337,6 +337,8 @@ export class GameClient {
     if (this.disposed || !getSessionAccount()) return
     this.outboundSequence = 0
     this.lastServerSequence = 0
+    // 新连接发起即清除上一次的终态断连原因，避免旧原因残留到下一次断连。
+    useGameStore.getState().setDisconnectReason(null)
     useGameStore.getState().setConnection(this.reconnectDelay > 500 ? 'reconnecting' : 'connecting')
     let socket: WebSocket
     try {
@@ -383,6 +385,7 @@ export class GameClient {
       const authFailure = event.code === 1008 || (event.code >= 4001 && event.code <= 4004)
       if (authFailure) {
         useGameStore.getState().setConnection('offline')
+        useGameStore.getState().setDisconnectReason('common.net.sessionExpired')
         useGameStore.getState().setNotice(getT()('common.net.sessionExpired'))
         return
       }
@@ -390,6 +393,7 @@ export class GameClient {
       const antiMultiNoticeKey = ANTI_MULTI_CLOSE_NOTICE_KEYS[event.code]
       if (antiMultiNoticeKey) {
         useGameStore.getState().setConnection('offline')
+        useGameStore.getState().setDisconnectReason(antiMultiNoticeKey)
         useGameStore.getState().setNotice(getT()(antiMultiNoticeKey))
         return
       }

@@ -226,7 +226,7 @@ export const insightZh = {
       speedBonus: '行动速度 +{value}%',
       speedBonusTooltip: '每级技艺使对应技艺行动耗时缩短，按 耗时 ÷（1 + 5% × 等级）折算',
       expProgress: '{current} / {max}',
-      maxLevelLabel: '已臻化境',
+      maxLevelLabel: '已达最高等级',
       alchemy: '炼丹',
       alchemyTooltip: '草木入炉，凝液成丹。',
       forging: '炼器',
@@ -245,7 +245,7 @@ export const insightZh = {
     badge: {
       levelBadge: '境界 Lv.{level}',
       phase: '境界阶段：{phase}',
-      description: '道法自然，夺天地之造化。突破更高境界可大幅提升气血、真元及各项仙道杀伐防御属性。',
+      description: '突破更高境界可大幅提升生命、灵力及各项战斗属性。',
       stage: '大境界',
       minor: '小境界',
       totalLevel: '总等级',
