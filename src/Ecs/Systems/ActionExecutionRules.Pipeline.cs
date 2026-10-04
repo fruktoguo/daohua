@@ -87,6 +87,8 @@ internal static partial class ActionExecutionRules
     {
         using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.queue");
         if (IsComplete(e) || !e.WindowOpen || e.PreparedAction is not null || e.Waiting) return;
+        // 队列暂停时本窗口不准备任何行动：结构与进度原样保留，恢复后下一窗口继续。
+        if (e.Player.Settings.QueuePaused) { e.Waiting = true; return; }
         while (e.RemainingSeconds > 1e-9 && e.Player.Actions.Count > 0)
         {
             var action = e.Queue.Actions[0];
@@ -211,9 +213,11 @@ internal static partial class ActionExecutionRules
         e.Cursor = e.WindowEnd;
         e.Player.Progression.AgeSeconds += e.WindowElapsedSeconds;
         e.Player.LastSimulatedAt = e.WindowEnd;
+        var headActivated = false;
         if (e.Player.Actions.Count > 0 && e.Player.Actions[0].Status == ActionQueueStatus.Pending)
         {
             e.Player.Actions[0].Status = ActionQueueStatus.Running;
+            headActivated = true;
             if (e.Transitions == 0) e.Player.MarkDirty(PlayerSectionKind.ActionQueue);
         }
         if (e.Transitions > 0)
@@ -221,11 +225,13 @@ internal static partial class ActionExecutionRules
             e.Player.MarkDirty(PlayerSectionKind.Progression);
             e.Player.MarkDirty(PlayerSectionKind.ActionQueue);
         }
-        e.Versions.RecordCoreStep(e.Transitions > 0, endsNaturalBoundary: true);
+        // 队首 Pending→Running 是可见状态翻转：暂停队列等零转移窗口同样产生 Core 版本与推送，
+        // 不计入会让队列显示长期停在「排队中」直到下一次真实转移。
+        e.Versions.RecordCoreStep(e.Transitions > 0 || headActivated, endsNaturalBoundary: true);
         var changed = CompleteResourceBoundary(e.Player, e.Catalog, e.WorkingWallet,
             e.WindowStart, e.WindowStepSeconds, e.Core, e.Request);
         e.Versions.MarkRequestChanged(changed);
-        e.Changed |= e.Transitions > 0 || changed;
+        e.Changed |= e.Transitions > 0 || headActivated || changed;
         e.WindowOpen = false;
         e.Waiting = false;
         e.PreparedAction = null;

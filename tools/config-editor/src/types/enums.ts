@@ -296,7 +296,8 @@ export const STAT_METADATA_LIST: StatMetadata[] = [
   { key: 'hpDrainPoints', label: '气血汲取', category: 'special', unit: '点', description: '攻击命中按点数/100 回血' },
   { key: 'mpDrainPoints', label: '灵力汲取', category: 'special', unit: '点', description: '攻击命中按点数/100 偷取灵力' },
   { key: 'damageReflectPoints', label: '伤害反弹', category: 'special', unit: '点', description: '受击按点数/100 反弹伤害' },
-  { key: 'healingBonusPoints', label: '治疗增幅', category: 'special', unit: '点', description: 'Linear 放大主动治疗量' }
+  { key: 'healingBonusPoints', label: '治疗增幅', category: 'special', unit: '点', description: 'Linear 放大主动治疗量' },
+  { key: 'threatOnTakenPoints', label: '受击涨威胁', category: 'special', unit: '点', description: '受击按减免前原始伤害 ×点数/100 累积自身威胁' }
 ];
 
 export const STAT_METADATA_MAP = new Map<string, StatMetadata>(

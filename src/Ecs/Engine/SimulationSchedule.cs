@@ -39,7 +39,8 @@ public static class SimulationSchedule
         }
 
         var action = player.Actions.Count > 0 ? player.Actions[0] : null;
-        if (action is not null && action.Status != ActionQueueStatus.Blocked)
+        // 队列暂停时行动侧边界全部冻结；Buff/技能/自动使用等墙钟边界照常参与调度。
+        if (action is not null && action.Status != ActionQueueStatus.Blocked && !player.Settings.QueuePaused)
         {
             if (action.Expedition is { } expedition)
             {

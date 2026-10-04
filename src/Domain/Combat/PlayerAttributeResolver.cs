@@ -70,6 +70,8 @@ public sealed record PlayerAttributes(
     public double ResistanceScale { get; init; } = 1;
     /// <summary>反应效果参数包：装备特殊机制（汲取/反弹）汇总结果（点数）。</summary>
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
+    /// <summary>已解锁特质 ID 集合（trait.*，总纲 §7.12）：条件触发型特质的判定载体，随面板下发。</summary>
+    public IReadOnlyList<string>? Traits { get; init; }
     /// <summary>折叠为战斗单位属性规格：普攻全流派统一走物理攻击力与物理伤害；术法攻击仅供技能结算。</summary>
     /// <param name="combatExperience">战斗经验对抗池取值（总纲 §7.7.6）：由调用方从 Progression.CombatExperience 注入；
     /// 属性面板不承载该字段——它不随装备/Buff/境界等属性输入修订号变化，缓存命中时也必须取调用方现值。</param>
@@ -113,6 +115,7 @@ public sealed record PlayerAttributes(
             ActionSpeedPoints = ActionSpeedPoints,
             CooldownReductionPoints = CooldownReductionPoints,
             Effects = Effects,
+            Traits = Traits,
             CombatExperience = combatExperience
         };
 }
@@ -128,7 +131,7 @@ public static class PlayerAttributeResolver
         => Resolve(state.Progression.RealmLevel, state.EquippedItemIds ?? [], state.Loadout, state.Buffs, state.Combat, catalog,
             string.Equals(state.World.NodeBuildingNodeId, state.World.NodeId, StringComparison.Ordinal)
                 ? state.World.NodeBuildingEffects
-                : null);
+                : null, state.Progression.TraitIds);
 
     /// <summary>从在线玩家聚合解析属性面板（含装备强化、Buff 与六维加成）。
     /// 带「属性输入修订号」缓存：同配表实例且全部输入源版本号未变时直接复用上轮结果；
@@ -144,7 +147,7 @@ public static class PlayerAttributeResolver
         var resolved = Resolve(player.Progression.RealmLevel, player.Loadout.EquippedItemIds, player.Loadout.Export(), player.Buffs.Active,
             new(player.Resources.Hitpoints, player.Resources.MaxHitpoints, player.Resources.Manapoints,
                 player.Resources.MaxManapoints, player.Combat.AttackPower, player.Combat.Defense), catalog,
-            player.World.EffectiveNodeBuildingEffects);
+            player.World.EffectiveNodeBuildingEffects, player.Progression.TraitIds);
         if (catalog.BaseAttributes is not null)
             player.StoreCachedAttributes(catalog, resolved);
         return resolved;
@@ -155,19 +158,27 @@ public static class PlayerAttributeResolver
         PlayerResourceState resources, PlayerCombatState combat, PlayerBuffState buffs, PlayerLoadoutState loadout, GameDataCatalog catalog)
         => Resolve(progression.RealmLevel, loadout.EquippedItemIds, loadout.Export(), buffs.Active,
             new(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints,
-                combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects);
+                combat.AttackPower, combat.Defense), catalog, world.EffectiveNodeBuildingEffects, progression.TraitIds);
 
     /// <summary>同一组直接分段的属性输入修订号，允许状态所有者复用已解析面板。</summary>
     public static long InputRevision(PlayerProgression progression, PlayerWorldState world,
         PlayerBuffState buffs, PlayerLoadoutState loadout)
         => progression.RealmLevelVersion + world.AttributeInputVersion + buffs.Active.Version
-            + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion;
+            + loadout.EquippedItemIds.Version + loadout.Equipment.Version + loadout.CoreAttributesVersion
+            + progression.TraitIds.Version;
 
     private static PlayerAttributes Resolve(int level, IReadOnlyList<ItemId> equipment, PlayerLoadoutDocument loadout, IReadOnlyList<ActiveBuff> buffs,
-        PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null)
+        PlayerCombatStateDocument combat, GameDataCatalog catalog, Domain.World.BuildingEffectSet? nodeBuildingEffects = null,
+        IReadOnlyList<string>? traitIds = null)
     {
+        var traits = traitIds is { Count: > 0 } ? traitIds.ToArray() : null;
+        var threatOnTaken = CombatTraitRules.ThreatOnTakenPoints(traits);
         if (catalog.BaseAttributes is null)
-            return new(combat.MaxHitpoints, combat.MaxManapoints, combat.AttackPower, 0, combat.Defense, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1);
+            return new(combat.MaxHitpoints, combat.MaxManapoints, combat.AttackPower, 0, combat.Defense, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1)
+            {
+                Traits = traits,
+                Effects = new CombatEffectProfile(ThreatOnTakenPoints: threatOnTaken)
+            };
         var a = catalog.BaseAttributes.At(level);
         var flat = new Dictionary<string, double>(StringComparer.Ordinal);
         var ratios = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -192,6 +203,7 @@ public static class PlayerAttributeResolver
                 mpDrain += ReadMechanic(mechanics, "mpDrainPoints");
                 reflect += ReadMechanic(mechanics, "damageReflectPoints");
                 healingBonus += ReadMechanic(mechanics, "healingBonusPoints");
+                threatOnTaken += ReadMechanic(mechanics, "threatOnTakenPoints");
                 attackSpeed += ReadMechanic(mechanics, "attackSpeedPoints");
                 actionSpeed += ReadMechanic(mechanics, "actionSpeedPoints");
                 cooldownReduction += ReadMechanic(mechanics, "cooldownReductionPoints");
@@ -304,7 +316,8 @@ public static class PlayerAttributeResolver
             ActionSpeedPoints = actionSpeed,
             CooldownReductionPoints = cooldownReduction,
             ResistanceScale = tier,
-            Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect, healingBonus)
+            Traits = traits,
+            Effects = new CombatEffectProfile(hpDrain, mpDrain, reflect, healingBonus, threatOnTaken)
         };
     }
 

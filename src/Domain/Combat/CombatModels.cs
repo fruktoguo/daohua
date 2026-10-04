@@ -136,6 +136,8 @@ public sealed record CombatantStats(
     public double MpRegen { get; init; }
     /// <summary>反应效果参数包（汲取/反弹等衍生效果强度）；由钩子管线在攻击结算中读取。</summary>
     public CombatEffectProfile Effects { get; init; } = CombatEffectProfile.Empty;
+    /// <summary>特质 ID 集合（trait.*，总纲 §7.12）：条件触发型特质的判定载体；面板字段，快照恢复时随模板重建。</summary>
+    public IReadOnlyList<string>? Traits { get; init; }
 
     /// <summary>
     /// 战斗经验对抗池取值（总纲 §7.7.6）：玩家侧由 Progression.CombatExperience 注入，
@@ -167,7 +169,8 @@ public sealed record CombatantStats(
             || !double.IsFinite(CastTimeFactor) || CastTimeFactor <= 0
             || !double.IsFinite(CooldownFactor) || CooldownFactor <= 0
             || !double.IsFinite(SkillIntensity) || SkillIntensity <= 0
-            || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind))
+            || !Enum.IsDefined(Element) || !Enum.IsDefined(DamageKind)
+            || (Traits is not null && Traits.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128)))
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗属性无效。");
         if (Effects is null) throw new DomainException(DomainErrorCode.InvalidArgument, "战斗反应效果参数无效。");
         Effects.Validate();
@@ -469,6 +472,11 @@ public sealed class CombatEncounterState
         for (var i = 0; i < enemies.Count; i++)
             states[i] = new CombatantState($"enemy:{i}", enemies[i].Stats, enemies[i].Skills);
         var playerState = new CombatantState("player", player.Stats, player.Skills);
+        // 特质开战授予（如看不到我→隐身 buff）：仅首次开战路径生效；
+        // 快照恢复由 Buffs 还原不重复授予，复活起身亦不视为开战。
+        CombatTraitRules.ApplyBattleStartTraits(playerState);
+        for (var i = 0; i < states.Length; i++)
+            CombatTraitRules.ApplyBattleStartTraits(states[i]);
         return new CombatEncounterState(encounterId, seed, playerState, states, playerRespawnSeconds);
     }
 

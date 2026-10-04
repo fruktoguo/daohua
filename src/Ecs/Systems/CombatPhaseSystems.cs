@@ -108,14 +108,19 @@ public sealed class CombatEnemyActSystem : CombatActSystem, ICombatEnemyActPhase
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
-    /// <summary>敌方出手相位：与玩家同构，先结算待完成动作再决策下一动作。</summary>
+    /// <summary>敌方出手相位：与玩家同构，先结算待完成动作再决策下一动作。
+    /// 目标在玩家方友军上按有效威胁轮盘抽取（通道 18/19）；单盟友提前返回不掷点，
+    /// 与固定锁定玩家逐位等价，多盟友（召唤物/组队）下威胁权重自动生效。</summary>
     internal static void Apply(CombatPhaseContext context)
     {
         var encounter = context.Encounter;
         var enemy = context.Enemy!;
-        ResolvePending(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player,
-            (ulong)(1 + context.EnemyIndex), ref context.Events);
-        DecideNextAction(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, encounter.Player);
+        var side = (ulong)(1 + context.EnemyIndex);
+        var target = SelectTarget(encounter.PlayerAllies, encounter.Seed, side, enemy.AttackCount, 18);
+        ResolvePending(encounter, enemy, encounter.Enemies, encounter.PlayerAllies, target,
+            side, ref context.Events);
+        DecideNextAction(encounter, enemy, encounter.Enemies, encounter.PlayerAllies,
+            SelectTarget(encounter.PlayerAllies, encounter.Seed, side, enemy.AttackCount, 19));
     }
 }
 

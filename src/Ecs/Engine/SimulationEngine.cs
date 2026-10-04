@@ -384,6 +384,8 @@ public static partial class SimulationEngine
             {
                 var stagedSettled = SettleResourceItems(player, now.AddSeconds(step).ToUnixTimeMilliseconds() / 1000d,
                     gameData.Duel.StagedSettleSeconds);
+                // 暂存物品入账写入 Duel 账本与资产差量：不计 changed 会让入账已落库但无推送下发。
+                changed |= stagedSettled.Length > 0;
                 foreach (var settledItem in stagedSettled)
                 {
                     var settledDelta = new AssetDelta(player.PlayerId, new AssetKey(new ItemId(settledItem.ItemId)), settledItem.Quantity, "simulation");
@@ -466,7 +468,8 @@ public static partial class SimulationEngine
         ActionDefinition? lastDefinition = null;
         // 余量按浮点可表达性收尾：战斗时钟以秒级 double 推进，1e-9 以下的残差在 battleFrom + step
         // 回加时会被 ULP 吸收成零消耗，使循环永远不消耗时间而触顶转换上限。
-        while (remainingSeconds > 1e-9 && player.Actions.Count > 0)
+        // 队列停泊开关：暂停时行动整体冻结，墙钟资源窗口仍由外层资源边界照常结算。
+        while (remainingSeconds > 1e-9 && player.Actions.Count > 0 && !player.Settings.QueuePaused)
         {
             var action = player.Actions[0];
             // 阻塞项是明确的停泊状态。它不能被本次推进重新标记为 Running，
@@ -554,19 +557,25 @@ public static partial class SimulationEngine
         player.Progression.AgeSeconds += (target - from).TotalSeconds;
         player.LastSimulatedAt = target;
         if (remainingSeconds < 0) throw new DomainException(DomainErrorCode.InvariantViolation, "模拟时间出现负余量。");
+        var headActivated = false;
         if (player.Actions.Count > 0 && player.Actions[0].Status == ActionQueueStatus.Pending)
         {
             player.Actions[0].Status = ActionQueueStatus.Running;
+            headActivated = true;
             // transitions==0（零耗时推进或本轮未完成任何转移）时此处是队首状态唯一变更点，
             // 必须补标 ActionQueue，保证增量触及差集与刷盘不漏状态翻转。
             if (transitions == 0) player.MarkDirty(PlayerSectionKind.ActionQueue);
         }
-        // 空队列只更新内存中的时钟，不递增状态版本，也不标记 section，避免每秒产生无意义的磁盘写入。
-        if (transitions > 0)
+        // 队首 Pending→Running 是可见状态翻转：暂停队列等零转移窗口同样推进版本与推送，
+        // 空队列才只更新内存时钟（不递增版本不标脏），避免每秒产生无意义磁盘写入。
+        if (transitions > 0 || headActivated)
         {
             player.StateVersion = checked(player.StateVersion + 1);
-            player.MarkDirty(PlayerSectionKind.Progression);
-            player.MarkDirty(PlayerSectionKind.ActionQueue);
+            if (transitions > 0)
+            {
+                player.MarkDirty(PlayerSectionKind.Progression);
+                player.MarkDirty(PlayerSectionKind.ActionQueue);
+            }
         }
 
         AssetDelta[] assetDeltas;
@@ -616,7 +625,7 @@ public static partial class SimulationEngine
             assetDeltas,
             events?.View ?? [],
             player.StateVersion,
-            transitions > 0,
+            transitions > 0 || headActivated,
             events?.Dropped ?? 0);
     }
 

@@ -10,11 +10,13 @@ namespace Domain.Combat;
 /// <param name="MpDrainPoints">灵力汲取点数：命中后按「实伤 × 点数/100」从目标灵力池偷取灵力。</param>
 /// <param name="DamageReflectPoints">伤害反弹点数：受击落账后把实收伤害按「点数/100」弹回攻击方。</param>
 /// <param name="HealingBonusPoints">治疗增幅点数（Linear）：施放治疗技能时按 1+点数/100 放大治疗量。</param>
+/// <param name="ThreatOnTakenPoints">受击涨威胁点数：受到伤害（命中）时按攻击方面板原始伤害 ×点数/100 累积自身威胁。</param>
 public sealed record CombatEffectProfile(
     double HpDrainPoints = 0,
     double MpDrainPoints = 0,
     double DamageReflectPoints = 0,
-    double HealingBonusPoints = 0)
+    double HealingBonusPoints = 0,
+    double ThreatOnTakenPoints = 0)
 {
     /// <summary>全部效果为零的空参数包。</summary>
     public static CombatEffectProfile Empty { get; } = new();
@@ -25,7 +27,8 @@ public sealed record CombatEffectProfile(
         if (!double.IsFinite(HpDrainPoints) || HpDrainPoints < 0
             || !double.IsFinite(MpDrainPoints) || MpDrainPoints < 0
             || !double.IsFinite(DamageReflectPoints) || DamageReflectPoints < 0
-            || !double.IsFinite(HealingBonusPoints) || HealingBonusPoints < 0)
+            || !double.IsFinite(HealingBonusPoints) || HealingBonusPoints < 0
+            || !double.IsFinite(ThreatOnTakenPoints) || ThreatOnTakenPoints < 0)
             throw new DomainException(DomainErrorCode.InvalidArgument, "战斗反应效果参数无效。");
     }
 }
@@ -66,6 +69,9 @@ public sealed class CombatHitContext
     public bool Parried { get; set; }
     /// <summary>最终结算伤害；落账前触发器可改写（护盾/上限/免死），引擎按非负夹取落账。</summary>
     public double Damage { get; set; }
+    /// <summary>减免链前原始威力（<c>AttackPower × BasicAttackRatio</c>，由核心结算填充）；
+    /// 未命中时仍有值，触发器须以 <see cref="Hit"/> 决定生效。力微饭否类「减免前」口径读此字段。</summary>
+    public double RawDamage { get; set; }
 
     /// <summary>触发器产出的衍生事件（汲取回血、反伤跳字等）；在主事件之后按序并入。</summary>
     public List<CombatEvent>? DerivedEvents { get; set; }

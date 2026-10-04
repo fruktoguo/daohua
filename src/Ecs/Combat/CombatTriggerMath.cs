@@ -5,8 +5,8 @@ namespace DaoHua.Ecs;
 /// <summary>
 /// 战斗触发器效果数学：内联分发与 RunSystem 实体分发两条路径共用同一实现，
 /// 保证无实体宿主（纯领域测试、斗法推演）与实体宿主的结算逐位一致。
-/// 参数点数由调用方提供：实体路径读 reactive buff 组件，内联路径读 Stats.Effects——
-/// 组件参数在挂接时从同一 Effects 快照，战斗期间不变。
+/// 参数点数由调用方实时读取 Stats.Effects 传入——实体路径的标记组件只是
+/// 「该效果开启」的能力开关，不携带参数；挂摘由 CombatTriggerSurface.Sync 按 Effects 重评估。
 /// </summary>
 public static class CombatTriggerMath
 {
@@ -47,5 +47,17 @@ public static class CombatTriggerMath
         context.Target.Threat += reflected;
         context.Emit(new CombatEvent(context.AtSeconds, context.Target.Id, context.Attacker.Id,
             reflected, true, context.AttackStats.DamageKind, context.Attacker.Hitpoints));
+    }
+
+    /// <summary>
+    /// 受击涨威胁（力微饭否类嘲讽）：受击方按减免链前原始威力 <see cref="CombatHitContext.RawDamage"/>
+    /// 折算点数累积自身威胁；未命中不算「受到伤害」，零原始伤害不产生威胁。
+    /// </summary>
+    public static void ThreatOnTaken(CombatHitContext context, double points)
+    {
+        if (!context.Hit || points <= 0) return;
+        var gained = context.RawDamage * points / 100;
+        if (gained <= 0) return;
+        context.Target.Threat += gained;
     }
 }

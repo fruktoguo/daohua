@@ -42,7 +42,8 @@ public sealed record PlayerProgressionState(
     double AgeSeconds = 0,
     double Foundation = 0,
     double CombatExperience = 0,
-    double LifetimeExperience = 0);
+    double LifetimeExperience = 0,
+    IReadOnlyList<string>? TraitIds = null);
 
 /// <summary>世界地理坐标与探索种子快照 DTO</summary>
 public sealed record PlayerWorldStateDocument(
@@ -85,7 +86,8 @@ public sealed record PlayerSettingsStateDocument(
     bool LoopEnabled = true,
     bool AutoTravelEnabled = false,
     IReadOnlyList<AutoUseSlotState>? AutoUseSlots = null,
-    double RenameCooldownUntilUnixSeconds = 0);
+    double RenameCooldownUntilUnixSeconds = 0,
+    bool QueuePaused = false);
 
 /// <summary>行动项状态快照 DTO，记录进度与剩余轮次</summary>
 public sealed record QueuedActionState(
@@ -133,7 +135,8 @@ public sealed partial class PlayerAggregate
             GameDataFingerprint,
             new PlayerProgressionState(Progression.RealmLevel, Progression.Experience, Progression.CompletedActions, Progression.SimulationCarrySeconds,
                 Progression.NormalKills, Progression.EliteKills, Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds,
-                Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience),
+                Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
+                Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null),
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress, World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
             new PlayerCombatStateDocument(Resources.Hitpoints, Resources.MaxHitpoints, Resources.Manapoints, Resources.MaxManapoints, Combat.AttackPower, Combat.Defense, Resources.RegenCarrySeconds) { Skills = Combat.Skills },
             GetCachedBuffs(),
@@ -247,6 +250,7 @@ public sealed partial class PlayerAggregate
             && _cachedSettingsDoc.NotificationsEnabled == Settings.NotificationsEnabled
             && _cachedSettingsDoc.LoopEnabled == Settings.LoopEnabled
             && _cachedSettingsDoc.AutoTravelEnabled == Settings.AutoTravelEnabled
+            && _cachedSettingsDoc.QueuePaused == Settings.QueuePaused
             && _cachedSettingsDoc.RenameCooldownUntilUnixSeconds == Settings.RenameCooldownUntilUnixSeconds
             && ReferenceEquals(_cachedSettingsDoc.AutoUseSlots, slots))
         {
@@ -258,7 +262,8 @@ public sealed partial class PlayerAggregate
             Settings.LoopEnabled,
             Settings.AutoTravelEnabled,
             slots,
-            Settings.RenameCooldownUntilUnixSeconds);
+            Settings.RenameCooldownUntilUnixSeconds,
+            Settings.QueuePaused);
     }
 
     private AutoUseSlotState[] GetCachedAutoUseSlots()
@@ -341,6 +346,12 @@ public sealed partial class PlayerAggregate
         aggregate.Progression.Foundation = state.Progression.Foundation;
         aggregate.Progression.CombatExperience = state.Progression.CombatExperience;
         aggregate.Progression.LifetimeExperience = state.Progression.LifetimeExperience;
+        if (state.Progression.TraitIds is { Count: > 0 } traitIds)
+        {
+            if (traitIds.Any(id => string.IsNullOrWhiteSpace(id) || id.Length > 128))
+                throw new DomainException(DomainErrorCode.InvalidArgument, "玩家特质记录无效。");
+            aggregate.Progression.TraitIds.AddRange(traitIds);
+        }
         aggregate.World.NodeId = state.World.NodeId;
         aggregate.World.EdgeId = state.World.EdgeId;
         aggregate.World.EdgeProgress = state.World.EdgeProgress;
@@ -384,6 +395,7 @@ public sealed partial class PlayerAggregate
         aggregate.Settings.NotificationsEnabled = state.Settings.NotificationsEnabled;
         aggregate.Settings.LoopEnabled = state.Settings.LoopEnabled;
         aggregate.Settings.AutoTravelEnabled = state.Settings.AutoTravelEnabled;
+        aggregate.Settings.QueuePaused = state.Settings.QueuePaused;
         aggregate.Settings.RenameCooldownUntilUnixSeconds = state.Settings.RenameCooldownUntilUnixSeconds;
         aggregate.Settings.AutoUseSlots.AddRange(state.Settings.AutoUseSlots ?? []);
         if (state.Actions.Count > MaxActionQueueLength)
@@ -477,6 +489,8 @@ public sealed partial class PlayerAggregate
         Progression.Foundation = restored.Progression.Foundation;
         Progression.CombatExperience = restored.Progression.CombatExperience;
         Progression.LifetimeExperience = restored.Progression.LifetimeExperience;
+        Progression.TraitIds.Clear();
+        if (restored.Progression.TraitIds.Count > 0) Progression.TraitIds.AddRange(restored.Progression.TraitIds);
         World.NodeId = restored.World.NodeId;
         World.EdgeId = restored.World.EdgeId;
         World.EdgeProgress = restored.World.EdgeProgress;
@@ -504,6 +518,8 @@ public sealed partial class PlayerAggregate
         Settings.Locale = restored.Settings.Locale;
         Settings.NotificationsEnabled = restored.Settings.NotificationsEnabled;
         Settings.LoopEnabled = restored.Settings.LoopEnabled;
+        Settings.AutoTravelEnabled = restored.Settings.AutoTravelEnabled;
+        Settings.QueuePaused = restored.Settings.QueuePaused;
         Settings.RenameCooldownUntilUnixSeconds = restored.Settings.RenameCooldownUntilUnixSeconds;
         Settings.AutoUseSlots.Clear();
         Settings.AutoUseSlots.AddRange(restored.Settings.AutoUseSlots);
@@ -606,7 +622,7 @@ public sealed partial class PlayerAggregate
         long SectionVersion,
         Domain.Combat.DuelSettings DuelSettingsTuning);
 
-    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion);
+    private sealed record ProgressionCheckpoint(PlayerProgressionState State, long RealmLevelVersion, long TraitIdsVersion);
     private sealed record WorldCheckpoint(PlayerWorldStateDocument State, long AttributeInputVersion);
     private sealed record CombatCheckpoint(PlayerCombatStateDocument State);
     private sealed record BuffsCheckpoint(ActiveBuff[] Items, long Version);
@@ -656,8 +672,10 @@ public sealed partial class PlayerAggregate
             new PlayerProgressionState(Progression.RealmLevel, Progression.Experience,
                 Progression.CompletedActions, Progression.SimulationCarrySeconds, Progression.NormalKills, Progression.EliteKills,
                 Progression.BossKills, Progression.TotalDefeats, Progression.CultivationSeconds, Progression.AgeSeconds,
-                Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience),
-            Progression.RealmLevelVersion),
+                Progression.Foundation, Progression.CombatExperience, Progression.LifetimeExperience,
+                Progression.TraitIds.Count > 0 ? Progression.TraitIds.ToArray() : null),
+            Progression.RealmLevelVersion,
+            Progression.TraitIds.Version),
         PlayerSectionKind.World => new WorldCheckpoint(
             new PlayerWorldStateDocument(World.NodeId, World.X, World.Y, World.ExplorationSeed, World.EdgeId, World.EdgeProgress,
                 World.NodeBuildings.ToArray(), World.NodeBuildingEffects, World.NodeBuildingNodeId),
@@ -679,7 +697,8 @@ public sealed partial class PlayerAggregate
             Loadout.EquippedItemIds.Version),
         PlayerSectionKind.Settings => new SettingsCheckpoint(
             new PlayerSettingsStateDocument(Settings.Locale, Settings.NotificationsEnabled, Settings.LoopEnabled,
-                Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds)),
+                Settings.AutoTravelEnabled, Settings.AutoUseSlots.ToArray(), Settings.RenameCooldownUntilUnixSeconds,
+                Settings.QueuePaused)),
         PlayerSectionKind.ActionQueue => new ActionQueueCheckpoint(ExportActions()),
         PlayerSectionKind.Duel => new DuelCheckpoint(
             ExportDuel(), Duel.StructureVersion, Duel.StagedItems.Version, Duel.Reports.Version, Duel.ActionReports.Version),
@@ -699,7 +718,7 @@ public sealed partial class PlayerAggregate
             case PlayerSectionKind.Progression:
             {
                 var data = (ProgressionCheckpoint)checkpoint;
-                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion);
+                Progression.RestoreSnapshot(data.State, data.RealmLevelVersion, data.TraitIdsVersion);
                 break;
             }
             case PlayerSectionKind.World:
@@ -752,6 +771,7 @@ public sealed partial class PlayerAggregate
                 Settings.NotificationsEnabled = data.State.NotificationsEnabled;
                 Settings.LoopEnabled = data.State.LoopEnabled;
                 Settings.AutoTravelEnabled = data.State.AutoTravelEnabled;
+                Settings.QueuePaused = data.State.QueuePaused;
                 Settings.RenameCooldownUntilUnixSeconds = data.State.RenameCooldownUntilUnixSeconds;
                 Settings.AutoUseSlots.Clear();
                 Settings.AutoUseSlots.AddRange(data.State.AutoUseSlots ?? []);

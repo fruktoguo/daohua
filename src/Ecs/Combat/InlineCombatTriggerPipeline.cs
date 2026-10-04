@@ -154,3 +154,16 @@ public sealed class InlineThornsHandler : CombatTriggerHandler, IInlineOnHitTrig
             trigger.Context.Target.Stats.Effects.DamageReflectPoints);
     }
 }
+
+[CombatTriggerOrder(300)]
+public sealed class InlineThreatOnTakenHandler : CombatTriggerHandler, IInlineOnHitTrigger
+{
+    public void OnHit(PendingCombatTrigger trigger)
+    {
+        if (!ReferenceEquals(trigger.Unit, trigger.Context.Target)) return;
+
+        CombatTriggerMath.ThreatOnTaken(
+            trigger.Context,
+            trigger.Context.Target.Stats.Effects.ThreatOnTakenPoints);
+    }
+}

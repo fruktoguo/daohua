@@ -11,7 +11,8 @@ public enum PlayerActionQueueMutationKind : byte
     Remove,
     Move,
     Rotate,
-    FinishRound
+    FinishRound,
+    Clear
 }
 
 /// <summary>轮完成后的队列裁决；无限重复属于 Continue，不进入离队分支。</summary>
@@ -142,6 +143,13 @@ public static class PlayerActionQueueRules
                 if (mutation.Direction is not (-1 or 1))
                     throw new DomainException(DomainErrorCode.InvalidArgument, "行动移动方向必须为 -1 或 1。");
                 break;
+            case PlayerActionQueueMutationKind.Clear:
+                work.Changed = actions.Count > 0;
+                if (!work.Changed) return;
+                // 远征状态只可能挂在队首实例：死亡中的队首远征按单项移除同语义恢复最低气血。
+                work.RecoverHitpoints = actions[0].Expedition is not null && work.Player.Resources.Hitpoints <= 0;
+                for (var i = 0; i < actions.Count; i++) work.ArchiveIds.Add(actions[i].Id);
+                return;
         }
 
         work.Index = actions.FindIndex(action => action.Id == mutation.InstanceId);
@@ -255,6 +263,9 @@ public static class PlayerActionQueueRules
                     work.Action.ProgressSeconds = 0;
                     if (actions.Count > 1) Rotate(work);
                 }
+                break;
+            case PlayerActionQueueMutationKind.Clear:
+                actions.Clear();
                 break;
         }
     }

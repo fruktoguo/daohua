@@ -227,6 +227,7 @@ public static class DeterministicCombatEngine
         var resistance = attack.DamageKind == CombatDamageKind.Physical ? defense.Defense : defense.MagicResistance;
         resistance *= parried ? 2 : 1;
         var rawDamage = attack.AttackPower * attack.BasicAttackRatio;
+        context.RawDamage = rawDamage;
         // 第一层：大类抗性平方穿甲。等价于 RawDamage² / (RawDamage + RES × K + 1)，先除后乘避免平方中间值溢出。
         var damage = hit ? rawDamage * (rawDamage / (rawDamage + resistance * defense.ResistanceScale + 1)) : 0;
         // 第二层：攻方分类增伤（Linear 点数逐项乘算）：大类增伤 × 五行增伤 × 总增伤 × 普攻/技能增幅。

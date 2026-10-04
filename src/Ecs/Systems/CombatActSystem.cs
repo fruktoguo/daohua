@@ -23,9 +23,11 @@ public abstract class CombatActSystem : YuoSystem<CombatEncounterComponent>
     internal static void DecideInitialActions(CombatEncounterState encounter)
     {
         // 复活起身重蓄势也走本入口：已阵亡单位不再排动作，尸体不得携带吟唱标记或预扣灵力。
+        // 敌方起手目标同样在玩家方友军威胁轮盘上抽取（决策通道 19）：单盟友提前返回零掷点。
         for (var i = 0; i < encounter.Enemies.Count; i++)
             if (encounter.Enemies[i].IsAlive && encounter.Enemies[i].PendingSkillIndex < 0)
-                DecideNextAction(encounter, encounter.Enemies[i], encounter.Enemies, encounter.PlayerAllies, encounter.Player);
+                DecideNextAction(encounter, encounter.Enemies[i], encounter.Enemies, encounter.PlayerAllies,
+                    SelectTarget(encounter.PlayerAllies, encounter.Seed, (ulong)(1 + i), encounter.Enemies[i].AttackCount, 19));
         if (encounter.Player.PendingSkillIndex < 0)
             DecideNextAction(encounter, encounter.Player, encounter.PlayerAllies, encounter.Enemies,
                 SelectEnemyTarget(encounter, 0, 3));

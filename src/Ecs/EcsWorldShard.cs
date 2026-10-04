@@ -159,6 +159,17 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             foreach (var balance in balances) inventory[balance.Asset] = balance.Quantity;
         });
 
+    /// <summary>
+    /// 宿主外部来源（市场结算入账等）改动了玩家客户端可见状态但不属任何分段：
+    /// 仅推进状态版本不伪造分段脏——版本推进让增量推送的资产差量通过客户端版本门禁。
+    /// </summary>
+    public void MarkExternalStateChanged(Guid playerId)
+        => ExecuteOwned(() =>
+        {
+            var identity = GetPlayer(playerId).GetComponent<PlayerIdentityComponent>()!;
+            identity.StateVersion = checked(identity.StateVersion + 1);
+        });
+
     /// <summary>在拥有 Fiber 的线程内创建玩家实体；状态按完整领域快照映射到粗粒度组件。</summary>
     public Guid CreatePlayer(PlayerAggregateState state, IReadOnlyCollection<AssetBalance>? balances = null)
     {
@@ -460,6 +471,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             player.RemoveComponent<OnHitLeechComponent>();
             player.RemoveComponent<ManaLeechComponent>();
             player.RemoveComponent<ThornsComponent>();
+            player.RemoveComponent<ThreatOnTakenComponent>();
             player.RemoveComponent<CombatTriggerInboxComponent>();
             player.RemoveComponent<SkillStateComponent>();
             player.RemoveComponent<BuffComponent>();
@@ -958,7 +970,7 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
             new PlayerProgressionState(progression.RealmLevel, progression.Experience, progression.CompletedActions, progression.Progression.SimulationCarrySeconds, progression.Progression.NormalKills, progression.Progression.EliteKills, progression.Progression.BossKills, progression.Progression.TotalDefeats, progression.Progression.CultivationSeconds, progression.AgeSeconds, progression.Progression.Foundation, progression.Progression.CombatExperience, progression.Progression.LifetimeExperience),
             new PlayerWorldStateDocument(world.NodeId, world.X, world.Y, world.ExplorationSeed, world.World.EdgeId, world.World.EdgeProgress, world.World.NodeBuildings, world.World.NodeBuildingEffects, world.World.NodeBuildingNodeId),
             new PlayerCombatStateDocument(resources.Hitpoints, resources.MaxHitpoints, resources.Manapoints, resources.MaxManapoints, combat.AttackPower, combat.Defense, resources.Resources.RegenCarrySeconds) { Skills = combat.Combat.Skills },
-            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds), actions, loadout.Loadout.Export(), duel.Document,
+            buffs.Active.ToArray(), loadout.Loadout.EquippedInstances.ToArray(), loadout.Loadout.LearnedAbilities.ToArray(), new PlayerSettingsStateDocument(settings.Settings.Locale, settings.Settings.NotificationsEnabled, settings.Settings.LoopEnabled, settings.Settings.AutoTravelEnabled, settings.Settings.AutoUseSlots.ToArray(), settings.Settings.RenameCooldownUntilUnixSeconds, settings.Settings.QueuePaused), actions, loadout.Loadout.Export(), duel.Document,
             loadout.Loadout.EquippedItemIds.ToArray());
         var inventory = entity.GetComponent<PlayerInventoryComponent>()?.Items.ToDictionary(p => p.Key, p => p.Value) ?? new Dictionary<AssetKey, double>();
         return new EcsPlayerSnapshot(identity.PlayerId, entity.ID, state, inventory);

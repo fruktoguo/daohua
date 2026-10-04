@@ -37,6 +37,8 @@ public sealed class PlayerProgression
 
     /// <summary>境界阶层修订号：属性解析输入之一，写入即单调递增（同值写入不计）。</summary>
     internal long RealmLevelVersion { get; private set; }
+    /// <summary>已解锁特质 ID 集合（trait.*，总纲 §7.12）：常驻特殊效果的获得标记；写入递增版本号供属性缓存失效检测。</summary>
+    public VersionedList<string> TraitIds { get; } = new();
     /// <summary>当前层修为（突破计量条，expToNext 封顶，突破清零）</summary>
     public double Experience { get; set; }
     /// <summary>底蕴：修为满层溢出沉淀池；未满层时按 1:1 兑换放大修为获取（单笔 ≤3× 增幅量），突破不清空。</summary>
@@ -103,10 +105,13 @@ public sealed class PlayerProgression
     }
 
     /// <summary>分段回滚检查点专用：按备份文档就地恢复全部字段，并把境界修订号写回备份值。</summary>
-    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion)
+    internal void RestoreSnapshot(PlayerProgressionState state, long realmLevelVersion, long traitIdsVersion)
     {
         _realmLevel = state.RealmLevel;
         RealmLevelVersion = realmLevelVersion;
+        TraitIds.Clear();
+        if (state.TraitIds is { Count: > 0 } traits) TraitIds.AddRange(traits);
+        TraitIds.RestoreVersion(traitIdsVersion);
         Experience = state.Experience;
         Foundation = state.Foundation;
         CombatExperience = state.CombatExperience;
@@ -289,6 +294,8 @@ public sealed class PlayerSettingsState
     public bool LoopEnabled { get; set; } = true;
     /// <summary>开轮地点不符时是否自动插队赶路至入队锚点再执行（false 时走 Blocked 跳过语义）</summary>
     public bool AutoTravelEnabled { get; set; }
+    /// <summary>队列停泊开关：暂停时行动队列整体冻结不消费墙钟，队列结构与进度保留，恢复后继续</summary>
+    public bool QueuePaused { get; set; }
     /// <summary>各行动类型绑定的丹药/补给品自动使用槽位配置</summary>
     public List<AutoUseSlotState> AutoUseSlots { get; } = [];
     /// <summary>改名冷却截止时刻（Unix 秒）；0 表示未冷却。</summary>
@@ -722,6 +729,13 @@ public sealed partial class PlayerAggregate
             Direction: direction)).Changed;
 
     /// <summary>
+    /// 一键清空行动队列：全部实例经统一变更管线归档行动账本，队首远征死亡时恢复最低气血，
+    /// 单次版本提交；斗法弃战判负由命令路径在调用前另行结算。
+    /// </summary>
+    public bool ClearActions()
+        => ApplyActionQueueMutation(new(PlayerActionQueueMutationKind.Clear)).Changed;
+
+    /// <summary>
     /// 切换行动队列全局无限循环状态。开启后队列最后一项完成后重新回到头部轮询。
     /// </summary>
     public void SetLoopEnabled(bool enabled)
@@ -738,6 +752,17 @@ public sealed partial class PlayerAggregate
     {
         if (Settings.AutoTravelEnabled == enabled) return;
         Settings.AutoTravelEnabled = enabled;
+        Touch(PlayerSectionKind.Settings);
+    }
+
+    /// <summary>
+    /// 切换队列停泊开关。暂停时行动队列整体冻结（计时/相位/旅行/撮合不消费墙钟），
+    /// 墙钟资源窗口照常结算；恢复后按原进度继续。
+    /// </summary>
+    public void SetQueuePaused(bool paused)
+    {
+        if (Settings.QueuePaused == paused) return;
+        Settings.QueuePaused = paused;
         Touch(PlayerSectionKind.Settings);
     }
 

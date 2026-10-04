@@ -19,13 +19,15 @@ namespace Domain.Persistence;
 /// </summary>
 public static class SectionCodec
 {
-    /// <summary>当前分段编解码模式版本；v7：平台社交表结构升级（队伍档案/散人池/聊天队伍链接），
+    /// <summary>当前分段编解码模式版本；v9：progression 分段载荷新增 traitIds 特质 ID 集合
+    /// （可缺省解码，无表结构变化）。v8：settings 分段载荷新增 queuePaused 队列暂停开关
+    /// （可缺省解码，无表结构变化）。v7：平台社交表结构升级（队伍档案/散人池/聊天队伍链接），
     /// 存档载荷本体无字段变化，仅标签随库内容版本同步推进（v6：loadout 分段新增 techniqueExperiences
     /// 技艺累计经验、行动意图新增 targetItemId/auxItemId 目标与辅助物品、战报新增 techniqueExp）。
     /// 升级约定：每次 bump 时 PostgresSchema.Version 同步 +1，并在 migrations/NNNN_vX_to_vY.sql
     /// 内嵌 UPDATE schema_version 标签推进（前提：新增字段可缺省解码）；本地启动链自动执行迁移，
     /// 仍不可迁移的旧版本经控制台交互确认后清零。运行时解码仍只接受当前版本。</summary>
-    public const int CurrentSchemaVersion = 7;
+    public const int CurrentSchemaVersion = 9;
     /// <summary>未压缩 JSON 编码标识</summary>
     public const string RawJson = "json";
     /// <summary>Brotli 压缩 JSON 编码标识</summary>
@@ -175,7 +177,7 @@ public static class SectionCodec
                 DomainSectionKind.Combat => state.Combat,
                 DomainSectionKind.Buffs => state.Buffs,
                 DomainSectionKind.Loadout => new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout),
-                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence),
+                DomainSectionKind.Settings => new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Presence),
                 DomainSectionKind.ActionQueue => state.Actions,
                 DomainSectionKind.Duel => state.Duel,
                 _ => throw new InvalidDataException($"未知玩家 section: {section}")
@@ -203,7 +205,7 @@ public static class SectionCodec
             (PlayerSectionKinds.Combat, state.Combat),
             (PlayerSectionKinds.Buffs, state.Buffs),
             (PlayerSectionKinds.Loadout, new LoadoutDocument(state.EquippedInstances, state.EquippedItemIds ?? [], state.LearnedAbilities, state.Loadout)),
-            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Presence)),
+            (PlayerSectionKinds.Settings, new SettingsDocument(state.Settings.Locale, state.Settings.NotificationsEnabled, state.Settings.LoopEnabled, state.Settings.AutoTravelEnabled, state.Settings.AutoUseSlots ?? [], state.Settings.RenameCooldownUntilUnixSeconds, state.Settings.QueuePaused, state.Presence)),
             (PlayerSectionKinds.ActionQueue, state.Actions),
             (PlayerSectionKinds.Duel, state.Duel)
         };
@@ -266,7 +268,7 @@ public static class SectionCodec
             buffs,
             loadout.EquippedInstances,
             loadout.LearnedAbilities,
-            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoTravelEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds),
+            new(settings.Locale, settings.NotificationsEnabled, settings.LoopEnabled, settings.AutoTravelEnabled, settings.AutoUseSlots, settings.RenameCooldownUntilUnixSeconds, settings.QueuePaused),
             actions,
             loadout.State,
             duel,
@@ -348,5 +350,6 @@ public static class SectionCodec
         bool AutoTravelEnabled,
         IReadOnlyList<AutoUseSlotState> AutoUseSlots,
         double RenameCooldownUntilUnixSeconds,
+        bool QueuePaused,
         PresenceState Presence);
 }

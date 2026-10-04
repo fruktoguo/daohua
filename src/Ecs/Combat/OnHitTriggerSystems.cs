@@ -40,3 +40,15 @@ public sealed class ThornsSystem : YuoSystem<CombatantComponent, ThornsComponent
         CombatTriggerMath.DamageReflect(trigger.Context, unit.State!.Stats.Effects.DamageReflectPoints);
     }
 }
+
+/// <summary>受击涨威胁：受击方按攻击方面板原始伤害累积自身威胁（力微饭否类嘲讽）。</summary>
+[SystemOrder(300)]
+public sealed class ThreatOnTakenSystem : YuoSystem<CombatantComponent, ThreatOnTakenComponent>, IOnHitTrigger
+{
+    public override void Run(CombatantComponent unit, ThreatOnTakenComponent marker)
+    {
+        var trigger = unit.Entity.GetComponent<CombatTriggerInboxComponent>()?.Trigger;
+        if (trigger is null || !ReferenceEquals(trigger.Context.Target, unit.State)) return;
+        CombatTriggerMath.ThreatOnTaken(trigger.Context, unit.State!.Stats.Effects.ThreatOnTakenPoints);
+    }
+}
