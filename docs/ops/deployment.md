@@ -13,7 +13,7 @@
 
 API 使用 `daohua_session` HttpOnly Cookie 认证，服务端从会话声明取得 `player_id`；客户端不能在 URL 或请求体中声明另一个玩家取得权限。内测账号密码长度为 6-24 个字符。ComputeNode 仅接受 `X-Compute-Token` 头（无 `Authorization` 回退）；节点不连接生产数据库、不处理账号和市场写入。
 
-目标主机按 `2c4g/40g` 设计：5000+ 账号、100+ 持续连接、500+ 峰值收发和 2000+ 冷挂机补算。容量门禁见 `scripts/verify.sh` 与 `src/LoadTests`。
+目标主机按 `2c4g/40g` 设计：5000+ 账号、100+ 持续连接、500+ 峰值收发和 2000+ 冷挂机补算。容量门禁见 `scripts/capacity-target.sh` 与 `src/LoadTests`。
 
 ## 环境与凭据
 
@@ -64,7 +64,7 @@ Vite 固定监听 `127.0.0.1:15172`，将 `/api`、`/ws` 代理到 API。前端�
 scripts/verify.sh
 ```
 
-该入口包含 Release 构建、Domain/ECS/Server 三套测试、配表校验、PostgreSQL 容量门禁与前端构建。Server 的 PostgreSQL 集成测试须提供 `DAOHUA_MARKET_TEST_CONNECTION`；本地验证可使用独立测试库，与日常开发库隔离。
+该入口包含 Release 构建、Domain/ECS/Server 三套测试、配表校验、Compose 配置校验与前端构建。Server 的 PostgreSQL 集成测试使用 `DAOHUA_MARKET_TEST_CONNECTION` 指向的独立测试库：verify.sh 在本地库可达时自动供给 `daohua_market_test` 并导出该变量，也可预设变量指向自己的专用库（须与日常开发库隔离）。容量门禁不在合并必跑内，容量相关变更与发布前执行 `scripts/capacity-target.sh`。
 
 直接源码烟测且没有静态 `wwwroot` 时：
 

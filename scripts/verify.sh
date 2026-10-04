@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# 新基线最小充分门禁：代码、领域/ECS/服务测试、真实 PostgreSQL/WAL 容量、前端和 Compose 配置。
+# 合并必跑最小充分门禁：工具链、Release 构建、Domain/Ecs/Server 三套测试（自动供给
+# daohua_market_test 集成测试库）、DataTool 校验、Compose 配置与前端构建。
+# 容量门禁不在合并必跑内：容量相关变更与发布前执行 scripts/capacity-target.sh（AGENTS.md §9）。
 
 set -Eeuo pipefail
 
@@ -31,6 +33,56 @@ if [[ -f tests/Ecs.Tests/Ecs.Tests.csproj ]]; then
   dotnet test tests/Ecs.Tests/Ecs.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
 fi
 if [[ -f tests/Server.Tests/Server.Tests.csproj ]]; then
+  # PostgresIntegration 集成测试需要专用库：本地 PG 可达时幂等创建 daohua_market_test
+  # 并导出 DAOHUA_MARKET_TEST_CONNECTION；未供给成功时相关测试失败并报明所需环境变量。
+  printf '%s\n' '==> 供给 PostgreSQL 集成测试库'
+  DB_HOST="${DB_HOST:-127.0.0.1}"
+  DB_PORT="${DB_PORT:-5432}"
+  DB_USER="${DB_USER:-daohua}"
+  DB_PASSWORD="${DB_PASSWORD:-daohua-local-dev}"
+  DB_CONTAINER="${DB_CONTAINER:-daohua-local-db}"
+  pg_admin() {
+    if command -v docker >/dev/null 2>&1 \
+        && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$DB_CONTAINER"; then
+      docker exec -i "$DB_CONTAINER" psql -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
+    elif command -v psql >/dev/null 2>&1; then
+      PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -X -t -A -v ON_ERROR_STOP=1 -U "$DB_USER" -d postgres "$@"
+    else
+      return 127
+    fi
+  }
+
+  if ! (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+      docker compose -f compose.yaml up -d db
+      for _ in {1..60}; do
+        if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then break; fi
+        sleep 1
+      done
+    fi
+  fi
+
+  if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null \
+      && [[ -z "${DAOHUA_MARKET_TEST_CONNECTION:-}" ]]; then
+    TEST_DB_NAME="${TEST_DB_NAME:-daohua_market_test}"
+    TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
+    if [[ "$TEST_DB_EXISTS" != "1" ]]; then
+      pg_admin -c "CREATE DATABASE ${TEST_DB_NAME};" >/dev/null 2>&1 || true
+      TEST_DB_EXISTS="$(pg_admin -c "SELECT 1 FROM pg_database WHERE datname='${TEST_DB_NAME}';" 2>/dev/null || true)"
+    fi
+    if [[ "$TEST_DB_EXISTS" == "1" ]]; then
+      export DAOHUA_MARKET_TEST_CONNECTION="Host=${DB_HOST};Port=${DB_PORT};Database=${TEST_DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD};Maximum Pool Size=16;Timeout=5;Command Timeout=30"
+      printf '已导出 DAOHUA_MARKET_TEST_CONNECTION（库 %s）。\n' "$TEST_DB_NAME"
+    else
+      printf '警告: 无法供给集成测试库 %s；PostgresIntegration 测试将失败。\n' "$TEST_DB_NAME" >&2
+      printf '      请手动创建该库，或预设 DAOHUA_MARKET_TEST_CONNECTION。\n' >&2
+    fi
+  elif (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
+    printf '检测到预设 DAOHUA_MARKET_TEST_CONNECTION，直接使用。\n'
+  else
+    printf '警告: PostgreSQL 不可达且未设 DAOHUA_MARKET_TEST_CONNECTION；PostgresIntegration 测试将失败。\n' >&2
+  fi
+
   printf '%s\n' '==> 服务端测试'
   dotnet test tests/Server.Tests/Server.Tests.csproj --configuration Release --no-build --disable-build-servers --nologo
 fi
@@ -49,27 +101,6 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     docker compose -f deploy/compose.prod.yaml config --quiet
 else
   printf '%s\n' 'Docker 不可用，跳过 Compose 运行时检查。'
-fi
-
-printf '%s\n' '==> 启动本地 PostgreSQL（若尚未运行）'
-DB_HOST="${DB_HOST:-127.0.0.1}"
-DB_PORT="${DB_PORT:-5432}"
-if ! (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    docker compose -f compose.yaml up -d db
-    for _ in {1..60}; do
-      if (echo >/dev/tcp/"$DB_HOST"/"$DB_PORT") 2>/dev/null; then break; fi
-      sleep 1
-    done
-  fi
-fi
-
-if [[ -f src/LoadTests/LoadTests.csproj ]]; then
-  printf '%s\n' '==> 2c4g/40g 容量目标门禁（真实 PostgreSQL/WAL）'
-  dotnet run --project src/LoadTests/LoadTests.csproj --configuration Release --no-build -- \
-    --scenario capacity-target \
-    --require-database \
-    --database "${DAOHUA_DATABASE_URL:-Host=${DB_HOST};Port=${DB_PORT};Database=daohua;Username=daohua;Password=${DB_PASSWORD:-daohua-local-dev};Maximum Pool Size=16;Timeout=5;Command Timeout=30}"
 fi
 
 printf '%s\n' '==> 前端类型检查与生产构建'
