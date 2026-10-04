@@ -48,7 +48,10 @@ public sealed record ActionDefinition(
     bool HiddenFromCatalog = false,
     ActionExecutionKind ExecutionKind = ActionExecutionKind.Timed,
     string? CombatEncounterId = null,
-    string? Technique = null)
+    string? Technique = null,
+    /// <summary>禁止执行该行动的地图节点集合（黑名单）：AllowedNodeIds 缺省时行动默认全图可行，
+    /// 仅此处列出的节点被排除（如引气入体之类常驻行动按地点裁剪）；与 AllowedNodeIds 互斥。</summary>
+    IReadOnlySet<string>? ExcludedNodeIds = null)
 {
 }
 
@@ -198,7 +201,10 @@ public sealed class ActionCatalog
                 Yields = NormalizeYields(definition.Yields, definition.Id),
                 AllowedNodeIds = definition.AllowedNodeIds is null
                     ? null
-                    : new HashSet<string>(definition.AllowedNodeIds.Where(value => !string.IsNullOrWhiteSpace(value)), StringComparer.Ordinal)
+                    : new HashSet<string>(definition.AllowedNodeIds.Where(value => !string.IsNullOrWhiteSpace(value)), StringComparer.Ordinal),
+                ExcludedNodeIds = definition.ExcludedNodeIds is null
+                    ? null
+                    : new HashSet<string>(definition.ExcludedNodeIds.Where(value => !string.IsNullOrWhiteSpace(value)), StringComparer.Ordinal)
             };
             if (!map.TryAdd(normalized.Id, normalized))
                 throw new DomainException(DomainErrorCode.Duplicate, $"重复行动定义：{definition.Id}。");
@@ -246,6 +252,9 @@ public sealed class ActionCatalog
             || (definition.ExecutionKind == ActionExecutionKind.CombatEncounter
                 && string.IsNullOrWhiteSpace(definition.CombatEncounterId)))
             throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的执行元数据无效。");
+        // 地点约束互斥：白名单（仅列处可执行）与黑名单（仅列处禁执行）不可同配，否则语义含糊。
+        if (definition.AllowedNodeIds is { Count: > 0 } && definition.ExcludedNodeIds is { Count: > 0 })
+            throw new DomainException(DomainErrorCode.InvalidArgument, $"行动 {definition.Id} 的节点白名单与黑名单互斥。");
     }
 
     /// <summary>
@@ -618,6 +627,9 @@ public sealed class GameDataCatalog
         var nodes = entry.TryGetProperty("availableNodeIds", out var nodeArray) && nodeArray.ValueKind == JsonValueKind.Array
             ? new HashSet<string>(nodeArray.EnumerateArray().Select(value => value.GetString() ?? string.Empty).Where(value => value.Length > 0), StringComparer.Ordinal)
             : null;
+        var excludedNodes = entry.TryGetProperty("excludedNodeIds", out var excludedArray) && excludedArray.ValueKind == JsonValueKind.Array
+            ? new HashSet<string>(excludedArray.EnumerateArray().Select(value => value.GetString() ?? string.Empty).Where(value => value.Length > 0), StringComparer.Ordinal)
+            : null;
         var duration = entry.TryGetProperty("durationSeconds", out var durationProperty) ? durationProperty.GetDouble() : 0;
         var hiddenFromCatalog = entry.TryGetProperty("hiddenFromCatalog", out var hiddenProperty)
             && hiddenProperty.ValueKind == JsonValueKind.True;
@@ -630,7 +642,7 @@ public sealed class GameDataCatalog
             && techniqueProperty.ValueKind == JsonValueKind.String
             ? techniqueProperty.GetString()
             : null;
-        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId, technique);
+        return new ActionDefinition(new ActionId(id), entry.TryGetProperty("name", out var name) ? name.GetString() ?? id : id, kind, duration, inputs, yields, nodes, hiddenFromCatalog, executionKind, combatEncounterId, technique, excludedNodes);
     }
 
     /// <summary>

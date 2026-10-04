@@ -110,9 +110,6 @@ public sealed class TechniqueAndEnhancementTests
 
         Assert.Equal(6, EnhancementRules.DurationSeconds(1));
         Assert.Equal(25, EnhancementRules.DurationSeconds(20));
-        Assert.Equal(1, EnhancementRules.EssenceCostFor(1));
-        Assert.Equal(1, EnhancementRules.EssenceCostFor(2));
-        Assert.Equal(2, EnhancementRules.EssenceCostFor(4));
         Assert.Equal(10, EnhancementRules.SpiritStoneCostFor(1));
         Assert.Equal(200, EnhancementRules.SpiritStoneCostFor(20));
 
@@ -127,7 +124,7 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Equal(0.4 + 0.01 * 5, EnhancementRules.SuccessRate(5, 5), 12);
 
         // 判定种子取行动实例 Id 前 8 字节、通道独立：同实例同轮必得同结果，异实例结果流独立。
-        var prep = new EnhancementRules.Preparation(sword, 0, 1, 1, 10, null, 0.5);
+        var prep = new EnhancementRules.Preparation(sword, 0, 1, 10, null, 0.5);
         var instanceA = Guid.NewGuid();
         var instanceB = Guid.NewGuid();
         Assert.Equal(EnhancementRules.Roll(instanceA, 0, prep), EnhancementRules.Roll(instanceA, 0, prep));
@@ -174,16 +171,14 @@ public sealed class TechniqueAndEnhancementTests
             rawEquipments: rawEquipments,
             realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
         var player = CreatePlayer("强化者");
-        var essence = new ItemId(EnhancementRules.EssenceItemId);
         var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
         var wallet = CreateWallet(player,
-            (new AssetKey(sword), 1), (new AssetKey(essence), 10), (new AssetKey(stone), 500));
+            (new AssetKey(sword), 1), (new AssetKey(stone), 500));
         player.Enqueue(new ActionIntent(enhance.Id, -1, TargetItemId: sword.Value), Baseline, catalog.Actions);
 
         // t=1 基础耗时 6s（技艺 0 级无折减）：一轮结算后材料按冻结成本扣除。
         var result = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(6.2), catalog, wallet);
         result.AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Equal(9, wallet.Get(new AssetKey(essence)));
         Assert.Equal(490, wallet.Get(new AssetKey(stone)));
         // 强化资产守恒：目标装备总持有恒为 1，落在基础键或 +1 变体键上。
         var swordHeld = wallet.Get(new AssetKey(sword)) + wallet.Get(new AssetKey(sword, "+1"));
@@ -225,7 +220,6 @@ public sealed class TechniqueAndEnhancementTests
         var sword = new ItemId("equipment.test-sword");
         var guardOre = new ItemId("item.guard-ore");
         var other = new ItemId("item.other-mat");
-        var essence = new ItemId(EnhancementRules.EssenceItemId);
         var stone = new ItemId(EnhancementRules.SpiritStoneItemId);
         var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
         {
@@ -238,7 +232,7 @@ public sealed class TechniqueAndEnhancementTests
         static Dictionary<AssetKey, double> Holdings(params (AssetKey Key, double Qty)[] rows)
             => rows.ToDictionary(row => row.Key, row => row.Qty);
         var ready = Holdings(
-            (new AssetKey(essence), 99), (new AssetKey(stone), 999));
+            (new AssetKey(stone), 999));
 
         // 未配置白名单：+0 本体代护，本体+代护同一裸键，仅持 1 件不足。
         var intent = new ActionIntent(new ActionId("enhance.equipment"), -1,

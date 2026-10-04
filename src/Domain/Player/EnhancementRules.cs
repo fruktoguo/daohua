@@ -15,8 +15,6 @@ public static class EnhancementRules
     public const int MaxLevel = 20;
     /// <summary>单次强化基础耗时基数：实际耗时 = BaseDurationSeconds + 目标等级。</summary>
     public const double BaseDurationSeconds = 5;
-    /// <summary>强化精华物品 ID；每次强化消耗 max(1, floor(t/2))。</summary>
-    public const string EssenceItemId = "item.enhance-essence";
     /// <summary>保护材料意图槽键：AuxItemId 指定每轮消耗的保护材料 ID（装备配表 enhanceProtectionItems 列表内任一材料，或未配置时同装备无强化基础件）。</summary>
     /// <summary>强化灵石货币 ID；每次强化消耗 t×10。</summary>
     public const string SpiritStoneItemId = "currency.spirit-stone";
@@ -56,7 +54,6 @@ public static class EnhancementRules
         ItemId ItemId,
         int CurrentLevel,
         int TargetLevel,
-        double EssenceCost,
         double SpiritStoneCost,
         ItemId? ProtectionItemId,
         double SuccessRate);
@@ -96,9 +93,6 @@ public static class EnhancementRules
 
     /// <summary>当次强化（目标等级 t）基础耗时秒数：5 + t；技艺速度加成由行动层另乘。</summary>
     public static double DurationSeconds(int targetLevel) => BaseDurationSeconds + targetLevel;
-
-    /// <summary>当次强化精华消耗：max(1, floor(t/2))。</summary>
-    public static double EssenceCostFor(int targetLevel) => Math.Max(1, Math.Floor(targetLevel / 2d));
 
     /// <summary>当次强化灵石消耗：t × 10。</summary>
     public static double SpiritStoneCostFor(int targetLevel) => targetLevel * 10d;
@@ -191,10 +185,8 @@ public static class EnhancementRules
             return null;
         }
         var target = current + 1;
-        var essenceCost = EssenceCostFor(target);
         var spiritStoneCost = SpiritStoneCostFor(target);
-        if (holdings.GetValueOrDefault(new AssetKey(new ItemId(EssenceItemId))) < essenceCost
-            || holdings.GetValueOrDefault(new AssetKey(new ItemId(SpiritStoneItemId))) < spiritStoneCost)
+        if (holdings.GetValueOrDefault(new AssetKey(new ItemId(SpiritStoneItemId))) < spiritStoneCost)
             return null;
         if (protectionItemId is { } protectionId)
         {
@@ -210,7 +202,7 @@ public static class EnhancementRules
         }
         check = Check.Ready;
         reason = string.Empty;
-        return new Preparation(itemId, current, target, essenceCost, spiritStoneCost,
+        return new Preparation(itemId, current, target, spiritStoneCost,
             protectionItemId, SuccessRate(target, techniqueLevel));
     }
 

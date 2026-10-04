@@ -31,19 +31,19 @@ public sealed class EnhancementContractTests
         var requestId = Guid.NewGuid();
         var payload = JsonSerializer.SerializeToElement(new ActionIntentRequest(
             requestId.ToString("D"), "cultivation.draw-qi", 5,
-            TargetItemId: "equipment.qingfeng-sword", AuxItemId: "item.enhance-essence"), ProtocolJson.Options);
+            TargetItemId: "equipment.qingfeng-sword", AuxItemId: "item.soul-talisman"), ProtocolJson.Options);
         var result = await runtime.ExecuteAsync(playerId, "action.enqueue", payload, 0, requestId);
         Assert.True(result.Success, $"{result.Code}: {result.Message}");
 
         var queued = Assert.Single(result.Snapshot.State.Actions);
         Assert.Equal("equipment.qingfeng-sword", queued.Intent.TargetItemId);
-        Assert.Equal("item.enhance-essence", queued.Intent.AuxItemId);
+        Assert.Equal("item.soul-talisman", queued.Intent.AuxItemId);
 
         var dto = ProtocolSnapshotMapper.ToSnapshot(result.Snapshot, "fp", catalog);
         var queue = Assert.Single(dto.Sections, section => section.Section == PlayerSectionKinds.ActionQueue);
         var row = Assert.Single(queue.Data.EnumerateArray());
         Assert.Equal("equipment.qingfeng-sword", row.GetProperty("targetItemId").GetString());
-        Assert.Equal("item.enhance-essence", row.GetProperty("auxItemId").GetString());
+        Assert.Equal("item.soul-talisman", row.GetProperty("auxItemId").GetString());
         Assert.Equal("equipment.qingfeng-sword", row.GetProperty("intent").GetProperty("targetItemId").GetString());
     }
 

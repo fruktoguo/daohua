@@ -325,6 +325,8 @@ public static class TestCharacterSeeder
             player.World.ExplorationSeed = randomSeed;
             if (action.AllowedNodeIds is { Count: > 0 } nodes && !nodes.Contains(player.World.NodeId))
                 player.World.NodeId = nodes.Order(StringComparer.Ordinal).First();
+            if (action.ExcludedNodeIds is { Count: > 0 } excluded && excluded.Contains(player.World.NodeId))
+                player.World.NodeId = string.Empty;
             player.LearnAbility(new("ability.heavy-slash"));
             player.ReplaceCombatSlots([new("ability.heavy-slash", 1, [])], [new("equipment.qingfeng-sword", 0)]);
             // 初始 Buff 完整取自当前顺气丸配表；自动药品槽让真实长战斗继续覆盖 Buff/冷却路径。

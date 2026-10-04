@@ -47,8 +47,11 @@ internal static partial class ActionExecutionRules
         DateTimeOffset at, Dictionary<AssetKey, double>? deltas, ref SimulationEventTail? events)
     {
         using var measurement = RuntimeInstrumentation.MeasureCurrent("domain.action.start");
-        var availableHere = definition.AllowedNodeIds is null || definition.AllowedNodeIds.Count == 0
-            || (player.World.EdgeId is null && definition.AllowedNodeIds.Contains(player.World.NodeId));
+        var availableHere = (definition.AllowedNodeIds is null || definition.AllowedNodeIds.Count == 0
+            || (player.World.EdgeId is null && definition.AllowedNodeIds.Contains(player.World.NodeId)))
+            && (definition.ExcludedNodeIds is not { Count: > 0 } excludedNodes
+                || player.World.EdgeId is not null
+                || !excludedNodes.Contains(player.World.NodeId));
         var hasInputs = true;
         foreach (var input in definition.Inputs)
             if ((assets?.Get(new AssetKey(input.Key)) ?? (gameData is null ? double.PositiveInfinity : 0))
@@ -110,11 +113,14 @@ internal static partial class ActionExecutionRules
     {
         var anchor = action.Intent.AnchorNodeId;
         var travelId = new ActionId("world.travel");
+        // 锚点准入口径与开轮门禁同构：白名单须在列；黑名单须不含锚点（未配约束时全图可执行）。
+        var anchorUnavailable = definition.AllowedNodeIds is { Count: > 0 } allowedNodes
+            ? !allowedNodes.Contains(anchor)
+            : definition.ExcludedNodeIds is { } excludedNodes && anchor is not null && excludedNodes.Contains(anchor);
         if (!player.Settings.AutoTravelEnabled
             || gameData?.WorldGraph is not { } worldGraph
             || string.IsNullOrWhiteSpace(anchor)
-            || definition.AllowedNodeIds is not { } allowedNodes
-            || !allowedNodes.Contains(anchor)
+            || anchorUnavailable
             || !worldGraph.TryGetNode(anchor, out var anchorNode)
             || !gameData.Actions.Contains(travelId))
             return false;
@@ -662,11 +668,9 @@ internal static partial class ActionExecutionRules
         completedRepeats += 1;
         deltas ??= new Dictionary<AssetKey, double>();
         // 材料与保护材料扣减先行，再做装备变体迁移：账本顺序与静态 inputs 扣减一致。
-        AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.EssenceItemId)), -prep.EssenceCost);
         AddDelta(deltas, new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId)), -prep.SpiritStoneCost);
         var itemLosses = new Dictionary<ItemId, double>
         {
-            [new ItemId(EnhancementRules.EssenceItemId)] = prep.EssenceCost,
             [new ItemId(EnhancementRules.SpiritStoneItemId)] = prep.SpiritStoneCost
         };
         // 保护材料恒按无强化基础键扣 1：配表列表内材料或同装备裸件均走 AssetKey(裸变体)。

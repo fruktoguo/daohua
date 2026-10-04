@@ -311,6 +311,11 @@ static void ValidateReferences(string directory)
                 Require(encounters.Contains(encounterId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的遭遇 {encounterId}。");
             foreach (var nodeId in StringArray(action, "availableNodeIds"))
                 Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的地图节点 {nodeId}。");
+            foreach (var nodeId in StringArray(action, "excludedNodeIds"))
+                Require(nodeIds.Contains(nodeId), $"{Rel(directory, file)} 行动 {id} 引用了不存在的地图节点 {nodeId}。");
+            // 地点约束互斥：白名单与黑名单同配语义含糊，直接拒绝。
+            Require(!(StringArray(action, "availableNodeIds").Any() && StringArray(action, "excludedNodeIds").Any()),
+                $"{Rel(directory, file)} 行动 {id} 的 availableNodeIds 与 excludedNodeIds 互斥。");
         }
     }
 
@@ -395,7 +400,7 @@ static HashSet<string> PercentPointKeys() => new(StringComparer.Ordinal)
     "fireDamageReductionPoints", "earthDamageReductionPoints",
     "damageAbsorptionPoints",
     "attackSpeedPoints", "actionSpeedPoints", "cooldownReductionPoints", "threatBonusPoints",
-    "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints"
+    "hpDrainPoints", "mpDrainPoints", "damageReflectPoints", "healingBonusPoints", "threatOnTakenPoints"
 };
 
 /// <summary>技能战内 Buff 授权键：读条/免伤/威胁点数与回复、时长、叠层上限。</summary>

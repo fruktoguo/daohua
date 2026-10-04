@@ -287,16 +287,6 @@
     "subCategory": "formation"
   },
   {
-    "id": "item.enhance-essence",
-    "name": "强化精华",
-    "description": "自百炼精金中淬出的淬炼精髓，流光内蕴不熄，是装备强化铭纹不可或缺的引料。",
-    "kind": "material",
-    "category": "material",
-    "tier": 2,
-    "sellPrice": 30,
-    "subCategory": "material"
-  },
-  {
     "id": "currency.spirit-stone",
     "name": "灵石",
     "description": "蕴含纯净天地灵气的六角晶石，光华内敛。",
