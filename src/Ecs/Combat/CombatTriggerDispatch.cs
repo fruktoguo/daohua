@@ -13,6 +13,7 @@ public interface IOnHitTrigger : ISystemTag;
 /// <summary>触发器派发期间的负载信箱：实体挂接时常驻，派发前写入、派发后清除。</summary>
 public sealed class CombatTriggerInboxComponent : YuoComponent
 {
+    /// <summary>当前待消费的触发器负载；非派发期间为 null。</summary>
     public PendingCombatTrigger? Trigger { get; set; }
 }
 
@@ -35,10 +36,12 @@ public sealed class ThreatOnTakenComponent : YuoComponent;
 /// </summary>
 public sealed class InlineCombatTriggerSink : ICombatTriggerSink
 {
+    /// <summary>进程级共享实例（无战斗状态）。</summary>
     public static InlineCombatTriggerSink Instance { get; } = new();
 
     static InlineCombatTriggerSink() => InlineCombatTriggerRegistry.EnsureInitialized();
 
+    /// <summary>按入队顺序消费并清空遭遇的待派发触发器（无实体路径）。</summary>
     public void Drain(CombatEncounterState encounter)
     {
         var pending = encounter.PendingTriggers;
@@ -102,19 +105,21 @@ public static class CombatTriggerSurface
 }
 
 /// <summary>
-/// 实体触发器派发器：PendingTriggers 逐条按宿住实体 RunSystem&lt;tag&gt; 同步派发，
+/// 实体触发器派发器：PendingTriggers 逐条按宿主实体 RunSystem&lt;tag&gt; 同步派发，
 /// 消费点固定在命中结算之后、下一边界取数前——UpdateOutcome 永远在触发器之后运行。
 /// </summary>
 public sealed class EcsCombatTriggerSink : ICombatTriggerSink
 {
     private readonly YuoWorld _world;
 
+    /// <summary>绑定分片 World 并确保内联注册表已初始化（静态扫描错误在启动阶段暴露）。</summary>
     public EcsCombatTriggerSink(YuoWorld world)
     {
         InlineCombatTriggerRegistry.EnsureInitialized();
         _world = world;
     }
 
+    /// <summary>按入队顺序消费并清空遭遇的待派发触发器（实体路径）。</summary>
     public void Drain(CombatEncounterState encounter)
     {
         var pending = encounter.PendingTriggers;

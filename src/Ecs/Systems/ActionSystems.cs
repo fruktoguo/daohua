@@ -12,6 +12,10 @@ internal static class EcsSystemContext
         => entity.World.WorldMain.GetComponent<EcsClockComponent>()
            ?? throw new InvalidOperationException("ECS world clock is not initialized.");
 
+    /// <summary>
+    /// 行动 System 的公共推进守门：请求提交阶段（SkipWorldUpdate）或非活跃玩家的 tick 一律跳过，
+    /// 保证同一玩家全部变更仍只在分片 Fiber 内串行发生。
+    /// </summary>
     public static bool ShouldUpdate(YuoEntity entity)
     {
         var clock = Clock(entity);
@@ -28,6 +32,7 @@ internal static class EcsSystemContext
 [SystemOrder(100)]
 public sealed class ActionClockSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：为挂有请求工作区的玩家实体开启本 tick 资源窗口；准备阶段不推进时间。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -41,6 +46,7 @@ public sealed class ActionClockSystem : YuoSystem<PlayerActionQueueComponent>, I
 [SystemOrder(200)]
 public sealed class ActionQueueSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：为挂有请求工作区的玩家实体做一次队首准入。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -54,6 +60,7 @@ public sealed class ActionQueueSystem : YuoSystem<PlayerActionQueueComponent>, I
 [SystemOrder(300)]
 public sealed class GatheringActionSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：本轮已准备为采集（Exploration）时推进整秒进度与持续收益。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -68,6 +75,7 @@ public sealed class GatheringActionSystem : YuoSystem<PlayerActionQueueComponent
 [SystemOrder(310)]
 public sealed class CraftingActionSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：本轮已准备为制造（Alchemy）时推进。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -82,6 +90,7 @@ public sealed class CraftingActionSystem : YuoSystem<PlayerActionQueueComponent>
 [SystemOrder(320)]
 public sealed class ActionBoundarySystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：推进已准备的其余计时行动（修炼等）单轮片段。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -97,6 +106,7 @@ public sealed class ActionBoundarySystem : YuoSystem<PlayerActionQueueComponent>
 [SystemOrder(330)]
 public sealed class TravelActionSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：非准备阶段时推进路径分段、地图坐标与到达结算。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -111,6 +121,7 @@ public sealed class TravelActionSystem : YuoSystem<PlayerActionQueueComponent>, 
 [SystemOrder(400)]
 public sealed class TimedActionYieldSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：提交本轮到期的奖励、材料扣除、账本与队列完成状态。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -124,6 +135,7 @@ public sealed class TimedActionYieldSystem : YuoSystem<PlayerActionQueueComponen
 [SystemOrder(550)]
 public sealed class CombatActionBoundarySystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：非准备阶段时推进搜寻/复活读条，入场后挂接真实战斗实体。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         var clock = EcsSystemContext.Clock(queue.Entity);
@@ -139,6 +151,7 @@ public sealed class CombatActionBoundarySystem : YuoSystem<PlayerActionQueueComp
 [SystemOrder(700)]
 public sealed class CombatActionYieldSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：非准备阶段且战斗片段到点时提交死亡、掉落与远征阶段。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         if (!EcsSystemContext.ShouldUpdate(queue.Entity)) return;
@@ -153,6 +166,7 @@ public sealed class CombatActionYieldSystem : YuoSystem<PlayerActionQueueCompone
 [SystemOrder(800)]
 public sealed class PlayerClockCommitSystem : YuoSystem<PlayerActionQueueComponent>, IUpdate
 {
+    /// <summary>Update 入口：提交本帧实体时钟；SkipWorldUpdate 期间只递减待提交实体计数。</summary>
     public override void Run(PlayerActionQueueComponent queue)
     {
         var clock = EcsSystemContext.Clock(queue.Entity);

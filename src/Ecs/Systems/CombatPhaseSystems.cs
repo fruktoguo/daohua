@@ -21,9 +21,14 @@ internal static class CombatPhaseSystems
     }
 }
 
+/// <summary>
+/// 战内效果相位（order 100）：剔除到期 Buff 并按 5 秒网格对存活单位结算周期回复。
+/// 实体路径经 RunSystem 派发、内联路径直接调用，两者共用 Apply 实现。
+/// </summary>
 [SystemOrder(100)]
 public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, ICombatBuffTickPhase
 {
+    /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
@@ -66,9 +71,11 @@ public sealed class CombatBuffTickSystem : YuoSystem<CombatEncounterComponent>, 
     }
 }
 
+/// <summary>玩家复活相位（order 110）：倒地倒计时到期时恢复满气血并重新决策初始动作。</summary>
 [SystemOrder(110)]
 public sealed class CombatPlayerRespawnSystem : YuoSystem<CombatEncounterComponent>, ICombatPlayerRespawnPhase
 {
+    /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
@@ -83,9 +90,11 @@ public sealed class CombatPlayerRespawnSystem : YuoSystem<CombatEncounterCompone
     }
 }
 
+/// <summary>玩家出手相位（order 120）：结算待完成动作（普攻/吟唱完成的技能）后决策下一动作。</summary>
 [SystemOrder(120)]
 public sealed class CombatPlayerActSystem : CombatActSystem, ICombatPlayerActPhase
 {
+    /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
@@ -102,9 +111,14 @@ public sealed class CombatPlayerActSystem : CombatActSystem, ICombatPlayerActPha
     }
 }
 
+/// <summary>
+/// 敌方出手相位（order 130）：与玩家同构，先结算待完成动作再决策下一动作。
+/// 目标在玩家方友军上按有效威胁轮盘抽取（通道 18/19），多盟友下威胁权重自动生效。
+/// </summary>
 [SystemOrder(130)]
 public sealed class CombatEnemyActSystem : CombatActSystem, ICombatEnemyActPhase
 {
+    /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
@@ -124,9 +138,11 @@ public sealed class CombatEnemyActSystem : CombatActSystem, ICombatEnemyActPhase
     }
 }
 
+/// <summary>玩家死亡相位（order 140）：倒地瞬间进入复活倒计时，全场吟唱作废并记录死亡时刻。</summary>
 [SystemOrder(140)]
 public sealed class CombatPlayerDownedSystem : YuoSystem<CombatEncounterComponent>, ICombatPlayerDownedPhase
 {
+    /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
@@ -158,14 +174,16 @@ public sealed class CombatPlayerDownedSystem : YuoSystem<CombatEncounterComponen
     }
 }
 
+/// <summary>终局裁决相位（order 150）：按双方存活状态更新战局结果，是每个自然边界的收尾派发点。</summary>
 [SystemOrder(150)]
 public sealed class CombatOutcomeSystem : YuoSystem<CombatEncounterComponent>, ICombatOutcomePhase
 {
+    /// <summary>相位入口：从遭遇组件读取相位上下文并执行本相位结算。</summary>
     public override void Run(CombatEncounterComponent encounter)
         => Apply(encounter.PhaseContext!);
 
     /// <summary>
-    /// 根据交战双方存活状态更新战局结果。
+    /// 按双方存活状态裁决战局；原地复活待触发期间团灭不算终局（保持 Running，起身后统一裁定）。
     /// </summary>
     internal static void Apply(CombatPhaseContext context)
     {

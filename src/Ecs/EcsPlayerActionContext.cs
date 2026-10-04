@@ -36,25 +36,40 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
     private PlayerIdentityComponent Identity => _identity;
     private PlayerActionQueueComponent Queue => _queue;
 
+    /// <summary>玩家标识。</summary>
     public PlayerId PlayerId => new(Identity.PlayerId);
+    /// <summary>成长分段：修为/底蕴/战斗经验/境界与道龄（组件本体直接暴露）。</summary>
     public PlayerProgression Progression => _progression.Progression;
+    /// <summary>世界漫游分段：驻留节点、旅途进度与探索种子。</summary>
     public PlayerWorldState World => _world.World;
+    /// <summary>战斗资源分段（气血/灵力池与回复游标）；战斗内外同一份可变状态。</summary>
     public PlayerResourceState Resources => _resources.Resources;
+    /// <summary>基础战斗属性分段：装备/功法/境界加成前的基础值。</summary>
     public PlayerCombatState Combat => _combat.Combat;
+    /// <summary>临时增益/减益分段。</summary>
     public PlayerBuffState Buffs => _buffs.Buffs;
+    /// <summary>客户端偏好与挂机自动化配置分段。</summary>
     public PlayerSettingsState Settings => _settings.Settings;
+    /// <summary>装备配置与已习得功法分段。</summary>
     public PlayerLoadoutState Loadout => _loadout.Loadout;
+    /// <summary>斗法分段：撮合状态、回放载荷与暂存区。</summary>
     public PlayerDuelState Duel => _duel.Duel;
+    /// <summary>在线状态（Offline/Online/Suspended）。</summary>
     public PresenceState Presence => Identity.Presence;
+    /// <summary>最近一次模拟推进到的墙钟时刻；离线补算与在线推进共用同一推进游标。</summary>
     public DateTimeOffset LastSimulatedAt { get => Queue.LastAdvancedAt; set => Queue.LastAdvancedAt = value; }
+    /// <summary>聚合状态版本号；每次对外可见变更递增，用于并发冲突检测。</summary>
     public long StateVersion { get => Identity.StateVersion; set => Identity.StateVersion = value; }
+    /// <summary>行动队列只读视图；结构变更须经队列派发原语，不在此处直接增删。</summary>
     public IReadOnlyList<IPlayerActionState> Actions => Queue.Actions;
 
     /// <summary>当前请求实际触及的分段；宿主在完成增量/刷盘交接后可显式清空。</summary>
     public IReadOnlySet<PlayerSectionKind> DirtySections => Identity.DirtySections;
 
+    /// <summary>把指定分段加入待持久化集合。</summary>
     public void MarkDirty(PlayerSectionKind section) => Identity.MarkDirty(section);
 
+    /// <summary>宿主完成增量/刷盘交接后清空待持久化集合。</summary>
     public void ClearDirtySections() => Identity.DirtySections.Clear();
 
     /// <summary>资源边界同步裁决 Buff 到期；返回后信箱不保留本次时刻与结果。</summary>
@@ -89,6 +104,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
         var buffs = Buffs;
         var loadout = Loadout;
         var revision = PlayerAttributeResolver.InputRevision(progression, world, buffs, loadout);
+        // 修订号与四个分段输入引用同时命中才复用缓存，防止不同聚合实例的修订号巧合相等。
         if (gameData.BaseAttributes is not null && _stats.Attributes is { } cached
             && ReferenceEquals(_stats.Catalog, gameData) && _stats.InputRevision == revision
             && ReferenceEquals(_stats.ProgressionInput, progression) && ReferenceEquals(_stats.WorldInput, world)
@@ -108,9 +124,11 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
         return attributes;
     }
 
+    /// <summary>确保指定行动实例的战报账本存在；缺失时按参数补建并标脏 Duel 分段。</summary>
     public void EnsureActionReport(Guid instanceId, ActionId actionId, string actionName, DateTimeOffset now)
         => ActionReportBook.EnsureActionReport(this, instanceId, actionId, actionName, now);
 
+    /// <summary>把一批已结算增量经统计信箱同步派发到行动/离线/每日三账本。</summary>
     public void RecordStats(Guid? actionInstanceId, double atUnixSeconds, in PlayerStatsDelta delta)
         => _statsSink.Record(this, actionInstanceId, atUnixSeconds, delta);
 
@@ -119,6 +137,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
         => _actionQueueSink.Dispatch(this, Queue.Actions, new(PlayerActionQueueMutationKind.Remove, actionInstanceId,
             IncrementVersion: incrementVersion, EndedAtUnixSeconds: endedAtUnixSeconds)).Changed;
 
+    /// <summary>把指定行动实例轮转到队尾（手动轮换用）；实例不存在时返回 false。</summary>
     public bool RotateActionToTail(Guid actionInstanceId)
         => _actionQueueSink.Dispatch(this, Queue.Actions,
             new(PlayerActionQueueMutationKind.Rotate, actionInstanceId)).Changed;
@@ -136,6 +155,7 @@ public sealed class EcsPlayerActionContext(YuoEntity entity) : IPlayerResourceCo
     public PlayerDuelStateDocument ExportDuelDocument()
         => PlayerDuelStateCodec.Export(Duel, Queue.Actions.Count == 0 ? null : Queue.Actions[0].Id);
 
+    /// <summary>收益落账后的轮完成裁决；只有重复次数为 0 才循环或离队（-1 无限循环恒驻留队列）。</summary>
     public PlayerActionRoundDisposition FinishActionRound(Guid actionInstanceId, bool loopable, double endedAtUnixSeconds)
         => _actionQueueSink.Dispatch(this, Queue.Actions, new(PlayerActionQueueMutationKind.FinishRound, actionInstanceId,
             IncrementVersion: false, EndedAtUnixSeconds: endedAtUnixSeconds, Loopable: loopable)).RoundDisposition;

@@ -8,6 +8,7 @@ namespace DaoHua.Ecs.Systems;
 public sealed class PlayerBuffExpirySystem
     : YuoSystem<PlayerBuffExpiryInboxComponent, PlayerBuffComponent, PlayerIdentityComponent>, IExpirePlayerBuffs
 {
+    /// <summary>Tag 派发入口：删除到期增益并写回变更结果；有真实删除才标脏 Buffs 分段。</summary>
     public override void Run(PlayerBuffExpiryInboxComponent inbox, PlayerBuffComponent buffs, PlayerIdentityComponent identity)
     {
         inbox.Changed = buffs.Active.RemoveAll(buff => buff.ExpiresAtUnixSeconds <= inbox.AtUnixSeconds) > 0;

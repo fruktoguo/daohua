@@ -991,9 +991,21 @@ internal sealed class EcsWorldShard : IAsyncDisposable, IDisposable
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
 }
 
+/// <summary>
+/// 玩家实体的完整导出快照：领域聚合状态、资产余额与实体标识。
+/// 宿主持久化、增量推送与 ComputeNode 补算都以它为唯一交接载体。
+/// </summary>
+/// <param name="PlayerId">玩家标识。</param>
+/// <param name="EntityId">玩家实体 ID（分片 World 内唯一，仅运行期有效）。</param>
+/// <param name="State">完整领域聚合状态（八分段 + 行动队列）。</param>
+/// <param name="Assets">资产余额快照（AssetKey → 数量）。</param>
 public sealed record EcsPlayerSnapshot(Guid PlayerId, long EntityId, PlayerAggregateState State, IReadOnlyDictionary<AssetKey, double> Assets);
 
 /// <summary>Server.Clean 与 ECS 之间的纯数据节点建筑投影，避免 Ecs 项目反向引用宿主程序集。</summary>
+/// <param name="Version">宿主侧投影版本号；相同版本且内容一致时跳过写入。</param>
+/// <param name="Buildings">节点公共建筑列表。</param>
+/// <param name="Effects">建筑效果集合（属性乘区输入）。</param>
+/// <param name="NodeId">投影所属节点 ID；null 表示无驻留节点。</param>
 public sealed record EcsNodeBuildingProjection(
     long Version,
     IReadOnlyList<NodeBuildingState> Buildings,

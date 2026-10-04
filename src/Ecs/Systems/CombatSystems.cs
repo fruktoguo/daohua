@@ -26,6 +26,7 @@ internal static class CombatSystemGate
 [SystemOrder(600)]
 public sealed partial class CombatEventAdvanceSystem : YuoSystem<CombatEncounterComponent>, IUpdate
 {
+    /// <summary>Update 入口：活跃遭遇经行动会话按窗口战斗预算整段推进（AdvanceTo 批量粒度）。</summary>
     public override void Run(CombatEncounterComponent encounter)
     {
         if (!CombatSystemGate.IsActive(encounter)) return;
@@ -44,6 +45,7 @@ public sealed partial class CombatEventAdvanceSystem : YuoSystem<CombatEncounter
 [SystemOrder(610)]
 public sealed class CombatTargetSystem : YuoSystem<CombatEncounterComponent>, IUpdate
 {
+    /// <summary>Update 入口：把领域主目标引用解析回怪物实体 ID，供外部查询与前端锁定展示。</summary>
     public override void Run(CombatEncounterComponent encounter)
     {
         if (!CombatSystemGate.IsActive(encounter)) return;
@@ -64,6 +66,7 @@ public sealed class CombatTargetSystem : YuoSystem<CombatEncounterComponent>, IU
 [SystemOrder(650)]
 public sealed class CombatEventSystem : YuoSystem<CombatEncounterComponent>, IUpdate
 {
+    /// <summary>Update 入口：把本帧战斗事件按产生原序追加到日志组件，不重算随机数。</summary>
     public override void Run(CombatEncounterComponent encounter)
     {
         if (!CombatSystemGate.IsActive(encounter)) return;

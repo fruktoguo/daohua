@@ -13,6 +13,7 @@ public abstract class CombatTriggerHandler;
 /// <summary>无实体命中触发器的固定事件契约。</summary>
 public interface IInlineOnHitTrigger
 {
+    /// <summary>处理一条待派发命中触发器；处理器自行判定宿主是攻击方还是受击方，不匹配时直接返回。</summary>
     void OnHit(PendingCombatTrigger trigger);
 }
 
@@ -20,8 +21,10 @@ public interface IInlineOnHitTrigger
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class CombatTriggerOrderAttribute : Attribute
 {
+    /// <summary>声明处理器在同类事件中的执行顺序。</summary>
     public CombatTriggerOrderAttribute(int order) => Order = order;
 
+    /// <summary>升序执行顺序号；相同时按处理器类型全名 Ordinal 二次排序，消除反射扫描顺序差异。</summary>
     public int Order { get; }
 }
 
@@ -116,11 +119,14 @@ internal static class InlineCombatTriggerRegistry
     }
 }
 
+/// <summary>内联气血汲取：命中后攻击方按实伤比例回血（与实体路径 OnHitLeechSystem 等价）。</summary>
 [CombatTriggerOrder(100)]
 public sealed class InlineOnHitLeechHandler : CombatTriggerHandler, IInlineOnHitTrigger
 {
+    /// <summary>宿主为攻击方时按 Stats.Effects.HpDrainPoints 结算气血汲取。</summary>
     public void OnHit(PendingCombatTrigger trigger)
     {
+        // 一条 OnHit 触发器会广播给全部处理器；本处理器只消费宿主为攻击方的条目。
         if (!ReferenceEquals(trigger.Unit, trigger.Context.Attacker)) return;
 
         CombatTriggerMath.HpDrain(
@@ -129,9 +135,11 @@ public sealed class InlineOnHitLeechHandler : CombatTriggerHandler, IInlineOnHit
     }
 }
 
+/// <summary>内联灵力汲取：命中后攻击方按实伤从目标灵力池偷取（与实体路径 ManaLeechSystem 等价）。</summary>
 [CombatTriggerOrder(110)]
 public sealed class InlineManaLeechHandler : CombatTriggerHandler, IInlineOnHitTrigger
 {
+    /// <summary>宿主为攻击方时按 Stats.Effects.MpDrainPoints 结算灵力汲取。</summary>
     public void OnHit(PendingCombatTrigger trigger)
     {
         if (!ReferenceEquals(trigger.Unit, trigger.Context.Attacker)) return;
@@ -142,9 +150,11 @@ public sealed class InlineManaLeechHandler : CombatTriggerHandler, IInlineOnHitT
     }
 }
 
+/// <summary>内联伤害反弹：受击方把实收伤害按比例弹回攻击方（与实体路径 ThornsSystem 等价）。</summary>
 [CombatTriggerOrder(200)]
 public sealed class InlineThornsHandler : CombatTriggerHandler, IInlineOnHitTrigger
 {
+    /// <summary>宿主为受击方时按 Stats.Effects.DamageReflectPoints 结算伤害反弹。</summary>
     public void OnHit(PendingCombatTrigger trigger)
     {
         if (!ReferenceEquals(trigger.Unit, trigger.Context.Target)) return;
@@ -155,9 +165,11 @@ public sealed class InlineThornsHandler : CombatTriggerHandler, IInlineOnHitTrig
     }
 }
 
+/// <summary>内联受击涨威胁：受击方按攻击方面板原始伤害累积自身威胁（与实体路径 ThreatOnTakenSystem 等价）。</summary>
 [CombatTriggerOrder(300)]
 public sealed class InlineThreatOnTakenHandler : CombatTriggerHandler, IInlineOnHitTrigger
 {
+    /// <summary>宿主为受击方时按 Stats.Effects.ThreatOnTakenPoints 结算受击涨威胁。</summary>
     public void OnHit(PendingCombatTrigger trigger)
     {
         if (!ReferenceEquals(trigger.Unit, trigger.Context.Target)) return;

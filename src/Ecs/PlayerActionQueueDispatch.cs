@@ -11,7 +11,9 @@ public interface IPlayerActionQueueMutation : ISystemTag;
 /// <summary>复用队列操作工作区，只在同步派发期间借用调用方状态。</summary>
 public sealed class PlayerActionQueueMutationComponent : YuoComponent
 {
+    /// <summary>队列规则管线的工作区；Begin/End 生命周期内绑定玩家视图与队列列表，其余时刻为空。</summary>
     public PlayerActionQueueMutationContext Work { get; } = new();
+    /// <summary>实体级队列派发器；分片创建玩家时装配，命令门面与行动上下文共用。</summary>
     public IPlayerActionQueueMutationSink Sink { get; internal set; } = null!;
 }
 
@@ -19,6 +21,7 @@ public sealed class PlayerActionQueueMutationComponent : YuoComponent
 public sealed class EcsPlayerActionQueueMutationSink(YuoEntity entity, int maxBattleReports)
     : IPlayerActionQueueMutationSink
 {
+    /// <summary>同步派发一条队列操作：绑定工作区 → RunSystem 按阶段消费 → 返回结果并解除绑定。</summary>
     public PlayerActionQueueMutationResult Dispatch(IPlayerResourceContext player, List<QueuedAction> actions,
         in PlayerActionQueueMutation mutation)
     {
@@ -37,6 +40,7 @@ public sealed class EcsPlayerActionQueueMutationSink(YuoEntity entity, int maxBa
 [SystemOrder(100)]
 public sealed class PlayerActionQueuePrepareSystem : YuoSystem<PlayerActionQueueMutationComponent, PlayerActionQueueComponent>, IPlayerActionQueueMutation
 {
+    /// <summary>管线阶段一：校验意图并固定归档名单；未命中实例时置 Changed=false 短路后续阶段。</summary>
     public override void Run(PlayerActionQueueMutationComponent mutation, PlayerActionQueueComponent queue)
         => PlayerActionQueueRules.Prepare(mutation.Work);
 }
@@ -45,6 +49,7 @@ public sealed class PlayerActionQueuePrepareSystem : YuoSystem<PlayerActionQueue
 [SystemOrder(110)]
 public sealed class PlayerActionQueueRecoverySystem : YuoSystem<PlayerActionQueueMutationComponent, PlayerResourcesComponent>, IPlayerActionQueueMutation
 {
+    /// <summary>管线阶段二：死亡远征被移除时把气血恢复到 1 点并标脏 Combat 分段。</summary>
     public override void Run(PlayerActionQueueMutationComponent mutation, PlayerResourcesComponent resources)
     {
         var work = mutation.Work;
@@ -58,6 +63,7 @@ public sealed class PlayerActionQueueRecoverySystem : YuoSystem<PlayerActionQueu
 [SystemOrder(120)]
 public sealed class PlayerActionQueueReportArchiveSystem : YuoSystem<PlayerActionQueueMutationComponent, PlayerDuelComponent>, IPlayerActionQueueMutation
 {
+    /// <summary>管线阶段三：把 Prepare 固定的归档名单逐个归档出队战报（含插队替换的旧实例）。</summary>
     public override void Run(PlayerActionQueueMutationComponent mutation, PlayerDuelComponent duel)
     {
         var work = mutation.Work;
@@ -70,6 +76,7 @@ public sealed class PlayerActionQueueReportArchiveSystem : YuoSystem<PlayerActio
 [SystemOrder(130)]
 public sealed class PlayerActionQueueApplySystem : YuoSystem<PlayerActionQueueMutationComponent, PlayerActionQueueComponent>, IPlayerActionQueueMutation
 {
+    /// <summary>管线阶段四：执行队列结构变更、激活队首并提交版本与脏标记。</summary>
     public override void Run(PlayerActionQueueMutationComponent mutation, PlayerActionQueueComponent queue)
     {
         PlayerActionQueueRules.ApplyStructure(mutation.Work);
@@ -82,9 +89,11 @@ public sealed class PlayerActionQueueApplySystem : YuoSystem<PlayerActionQueueMu
 [SystemOrder(140)]
 public sealed class PlayerActionQueueCombatReleaseSystem : YuoSystem<PlayerActionQueueMutationComponent, PlayerCombatComponent>, IPlayerActionQueueMutation
 {
+    /// <summary>管线阶段五：队首变化且非推进会话时释放旧战斗实体。</summary>
     public override void Run(PlayerActionQueueMutationComponent mutation, PlayerCombatComponent combat)
     {
         var work = mutation.Work;
+        // 推进会话（EcsPlayerActionContext）的遭遇释放由战斗段 Yield 清理点负责，这里只处理命令路径。
         if (!work.Changed || !work.HeadChanged || combat.EncounterEntityId == 0
             || work.Player is EcsPlayerActionContext) return;
         mutation.Entity.World.WorldMain.GetComponent<EcsClockComponent>()!.ReleaseCombatBattle!(mutation.Entity);

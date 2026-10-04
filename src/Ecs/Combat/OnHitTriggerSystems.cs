@@ -8,6 +8,7 @@ namespace DaoHua.Ecs;
 [SystemOrder(100)]
 public sealed class OnHitLeechSystem : YuoSystem<CombatantComponent, OnHitLeechComponent>, IOnHitTrigger
 {
+    /// <summary>Tag 派发入口：信箱负载宿主为攻击方时按实伤比例回血。</summary>
     public override void Run(CombatantComponent unit, OnHitLeechComponent leech)
     {
         var trigger = unit.Entity.GetComponent<CombatTriggerInboxComponent>()?.Trigger;
@@ -21,6 +22,7 @@ public sealed class OnHitLeechSystem : YuoSystem<CombatantComponent, OnHitLeechC
 [SystemOrder(110)]
 public sealed class ManaLeechSystem : YuoSystem<CombatantComponent, ManaLeechComponent>, IOnHitTrigger
 {
+    /// <summary>Tag 派发入口：信箱负载宿主为攻击方时按实伤从目标灵力池偷取。</summary>
     public override void Run(CombatantComponent unit, ManaLeechComponent leech)
     {
         var trigger = unit.Entity.GetComponent<CombatTriggerInboxComponent>()?.Trigger;
@@ -33,6 +35,7 @@ public sealed class ManaLeechSystem : YuoSystem<CombatantComponent, ManaLeechCom
 [SystemOrder(200)]
 public sealed class ThornsSystem : YuoSystem<CombatantComponent, ThornsComponent>, IOnHitTrigger
 {
+    /// <summary>Tag 派发入口：信箱负载宿主为受击方时把实收伤害按比例弹回攻击方。</summary>
     public override void Run(CombatantComponent unit, ThornsComponent thorns)
     {
         var trigger = unit.Entity.GetComponent<CombatTriggerInboxComponent>()?.Trigger;
@@ -45,6 +48,7 @@ public sealed class ThornsSystem : YuoSystem<CombatantComponent, ThornsComponent
 [SystemOrder(300)]
 public sealed class ThreatOnTakenSystem : YuoSystem<CombatantComponent, ThreatOnTakenComponent>, IOnHitTrigger
 {
+    /// <summary>Tag 派发入口：信箱负载宿主为受击方时按攻击方面板原始伤害累积自身威胁。</summary>
     public override void Run(CombatantComponent unit, ThreatOnTakenComponent marker)
     {
         var trigger = unit.Entity.GetComponent<CombatTriggerInboxComponent>()?.Trigger;

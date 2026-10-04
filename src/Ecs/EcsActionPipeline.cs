@@ -61,8 +61,16 @@ public sealed class EcsActionExecutionComponent : YuoComponent
     internal readonly List<double> BattleRespawns = [];
 
     internal int BulkStepCount { get; set; }
+    /// <summary>调用方请求的原始目标时刻（未封顶）；实际推进以 ComputeTarget 为界。</summary>
     public DateTimeOffset Target { get; internal set; }
 
+    /// <summary>
+    /// 装配请求工作区：复用组件壳，快照外部钱包为工作钱包并重置全部推进游标与准备态。
+    /// 上一请求尚未提交（Committed=false）时抛异常，防止管线重入破坏单写者语义。
+    /// </summary>
+    /// <param name="entity">玩家实体。</param>
+    /// <param name="catalog">本请求使用的配表目录。</param>
+    /// <param name="target">请求目标时刻；不得早于玩家上次推进时刻。</param>
     public static EcsActionExecutionComponent Attach(
         YuoEntity entity, GameDataCatalog catalog, DateTimeOffset target)
     {
@@ -77,6 +85,8 @@ public sealed class EcsActionExecutionComponent : YuoComponent
         external.Restore(entity.GetComponent<PlayerInventoryComponent>()!.Items.Select(
             pair => new AssetBalance(player.PlayerId, pair.Key, pair.Value, 0)));
         var working = new AssetWallet(player.PlayerId);
+        // 双钱包语义：外部钱包承载已提交真值，工作钱包承接本请求全部变更；
+        // Commit 时才把合并流水一次性应用回外部钱包，事务失败可直接丢弃工作钱包。
         working.Restore(external.Balances);
         component.Queue = queue;
         component.Catalog = catalog;
@@ -87,6 +97,8 @@ public sealed class EcsActionExecutionComponent : YuoComponent
         component.Versions = new();
         component.Core = new();
         component.From = component.Cursor = from;
+        // 离线补算单请求最多推进 48 小时：超出部分由调用方分段请求，
+        // 防止单请求的事件量与转换预算失控（MaxTransitionsPerAdvance 保险丝）。
         component.ComputeTarget = target > from.AddHours(48) ? from.AddHours(48) : target;
         component.Target = target;
         component.WindowStart = component.WindowEnd = component.FrameTarget = from;
@@ -131,12 +143,18 @@ public sealed class EcsActionExecutionComponent : YuoComponent
 /// </summary>
 public static class EcsActionSession
 {
+    /// <summary>当前推进游标：本 tick 已实际到达的时刻。</summary>
     public static DateTimeOffset Current(EcsActionExecutionComponent e) => e.Cursor;
+    /// <summary>游标到达目标且无未收口窗口时请求完成。</summary>
     public static bool IsComplete(EcsActionExecutionComponent e) => e.Cursor >= e.Target && !e.WindowOpen;
+    /// <summary>需要先跑准备 tick（Clock+Queue）：请求未完成且窗口未开，或已开窗但本轮尚未备好。</summary>
     public static bool NeedsPreparation(EcsActionExecutionComponent e)
         => !IsComplete(e) && (!e.WindowOpen || (!e.Waiting && e.PreparedAction is null));
+    /// <summary>本轮是否已有已准备行动。</summary>
     public static bool HasPreparedAction(EcsActionExecutionComponent e) => e.PreparedAction is not null;
+    /// <summary>已准备行动的行动类型；未准备返回 null。</summary>
     public static ActionKind? PreparedKind(EcsActionExecutionComponent e) => e.Definition?.Kind;
+    /// <summary>已准备行动的执行方式（Timed/CombatEncounter/Travel）；未准备返回 null。</summary>
     public static ActionExecutionKind? PreparedExecutionKind(EcsActionExecutionComponent e) => e.Definition?.ExecutionKind;
 
     /// <summary>不变量违例时的现场证据：窗口/等待/剩余预算/队首行动/战斗边界，供快速失败诊断。</summary>
@@ -240,6 +258,8 @@ public static class EcsActionSession
     {
         using var stageMeasurement = RuntimeInstrumentation.MeasureCurrent("ecs.stage.combat_encounter");
         encounter.LastEvents.Clear();
+        // 非本会话挂接的遭遇、无待结算行动或战斗段已到点（CombatStepDue）时直接跳过，
+        // 防止同一窗口战斗段被重复推进造成随机流错位。
         if (!ReferenceEquals(e.Battle, encounter) || e.PreparedAction is null || e.CombatStepDue) return;
         if (e.FrameTarget < NextBoundaryAt(e)) return;
         var state = encounter.State;

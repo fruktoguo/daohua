@@ -27,9 +27,13 @@ public interface ICombatOutcomePhase : ISystemTag;
 /// </summary>
 public sealed class CombatPhaseContext
 {
+    /// <summary>本边界推进的遭遇战状态（就地可变）。</summary>
     public CombatEncounterState Encounter = null!;
+    /// <summary>本段产生的领域事件列表；无事件保持 null（与原 OOP 结果语义一致）。</summary>
     public List<CombatEvent>? Events;
+    /// <summary>玩家死亡时刻列表（战斗时钟秒）；无死亡保持 null。</summary>
     public List<double>? PlayerDeaths;
+    /// <summary>玩家复活时刻列表（战斗时钟秒）；无复活保持 null。</summary>
     public List<double>? PlayerRespawns;
     /// <summary>敌方出手相位的当前敌下标；其它相位保持 -1。</summary>
     public int EnemyIndex = -1;
@@ -53,8 +57,10 @@ public interface ICombatPhaseDispatcher
 /// <summary>实体宿主派发：经 RunSystem&lt;tag&gt; 把相位消息发给战斗实体。</summary>
 public sealed class EcsCombatPhaseDispatcher : ICombatPhaseDispatcher
 {
+    /// <summary>进程级共享实例（无状态）。</summary>
     public static readonly EcsCombatPhaseDispatcher Instance = new();
 
+    /// <summary>把相位上下文挂到遭遇组件后经 RunSystem<tag> 派发，派发完摘除上下文。</summary>
     public void Dispatch<TTag>(CombatEncounterComponent? host, CombatPhaseContext context) where TTag : ISystemTag
     {
         ArgumentNullException.ThrowIfNull(host);
@@ -73,8 +79,10 @@ public sealed class EcsCombatPhaseDispatcher : ICombatPhaseDispatcher
 /// <summary>无世界路径派发：相位 System 的共享实现直接同步调用，语义与实体派发逐位一致。</summary>
 public sealed class InlineCombatPhaseDispatcher : ICombatPhaseDispatcher
 {
+    /// <summary>进程级共享实例（无状态）。</summary>
     public static readonly InlineCombatPhaseDispatcher Instance = new();
 
+    /// <summary>无实体路径：直接同步调用相位 System 的共享实现。</summary>
     public void Dispatch<TTag>(CombatEncounterComponent? host, CombatPhaseContext context) where TTag : ISystemTag
         => Systems.CombatPhaseSystems.DispatchInline<TTag>(context);
 }

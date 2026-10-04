@@ -17,10 +17,15 @@ public sealed class ActionMutationBatch
     internal double ActionCount;
     internal double RepeatCount;
 
+    /// <summary>窗口内资产增量（AssetKey → 净变化量）；未产生增量时为空字典。</summary>
     public IReadOnlyDictionary<AssetKey, double> ItemDeltas => Deltas is { } deltas ? deltas : EmptyDeltas;
+    /// <summary>窗口内产生的领域事件（产出原序，事件尾窗有界保留）。</summary>
     public IReadOnlyList<SimulationEvent> Events => EventTail?.View ?? [];
+    /// <summary>事件尾窗折叠丢弃的旧事件数（长跨度离线补算下有界内存的代价计数）。</summary>
     public long DroppedEventCount => EventTail?.Dropped ?? 0;
+    /// <summary>窗口内完成的行动次数。</summary>
     public double CompletedActions => ActionCount;
+    /// <summary>窗口内完成的轮次数。</summary>
     public double CompletedRepeats => RepeatCount;
 
 
@@ -28,6 +33,8 @@ public sealed class ActionMutationBatch
     public IReadOnlyList<AssetDelta> ToAssetDeltas(PlayerId playerId, bool sortByItem = true)
     {
         if (Deltas is null || Deltas.Count == 0) return [];
+        // 两种过滤口径：排序路径（Commit 汇总）按原 Core 口径丢弃 ±1e-12 内的浮点残差；
+        // 请求汇总路径保留任何非零增量，保证账本与协议侧逐位一致。
         var rows = Deltas.Where(pair => sortByItem ? Math.Abs(pair.Value) > 1e-12 : pair.Value != 0).ToList();
         if (sortByItem) rows.Sort(static (a, b) =>
         {

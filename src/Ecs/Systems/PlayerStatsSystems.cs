@@ -8,6 +8,7 @@ namespace DaoHua.Ecs.Systems;
 [SystemOrder(100)]
 public sealed class ActionStatsSystem : YuoSystem<PlayerStatsInboxComponent, PlayerDuelComponent>, IRecordPlayerStats
 {
+    /// <summary>Tag 派发入口：指定行动账本已建立时入账并刷新结束时刻；没有账本不隐式建账。</summary>
     public override void Run(PlayerStatsInboxComponent inbox, PlayerDuelComponent duel)
     {
         if (inbox.ActionInstanceId is not { } instanceId
@@ -22,6 +23,7 @@ public sealed class ActionStatsSystem : YuoSystem<PlayerStatsInboxComponent, Pla
 [SystemOrder(200)]
 public sealed class OfflineStatsSystem : YuoSystem<PlayerStatsInboxComponent, PlayerDuelComponent>, IRecordPlayerStats
 {
+    /// <summary>Tag 派发入口：玩家处于离线态时入账离线会话账本；在线收益不写入。</summary>
     public override void Run(PlayerStatsInboxComponent inbox, PlayerDuelComponent duel)
     {
         if (inbox.Player!.Presence != PresenceState.Offline) return;
@@ -36,6 +38,7 @@ public sealed class OfflineStatsSystem : YuoSystem<PlayerStatsInboxComponent, Pl
 [SystemOrder(300)]
 public sealed class DailyStatsSystem : YuoSystem<PlayerStatsInboxComponent, PlayerDuelComponent>, IRecordPlayerStats
 {
+    /// <summary>Tag 派发入口：按 UTC+8 归日入账每日账本；三账本记账完成后只标脏一次 Duel 分段。</summary>
     public override void Run(PlayerStatsInboxComponent inbox, PlayerDuelComponent duel)
     {
         var report = duel.Duel.DailyReport;
