@@ -907,6 +907,8 @@ internal static class CombatActionRules
         {
             if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out var consumable)) continue;
             if (slot.RemainingDurationSeconds > 0) continue;
+            // 持续消耗品冷却自耗竭时刻起算（DrainCombatSustainedSlots 写入）：冷却未走完不入战补能。
+            if (slot.CooldownUntilUnixSeconds > atUnix) continue;
             // 持续消耗品的入场补能同样走共享触发判定：条件不满足本场不启用，不扣件。
             if (consumable.Triggers is { Count: > 0 } triggers)
             {
@@ -968,10 +970,22 @@ internal static class CombatActionRules
         if (consumedBattleSeconds <= 0) return;
         for (var index = 0; index < player.Settings.AutoUseSlots.Count; index++)
         {
-            if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out _)) continue;
+            if (!TryGetCombatSustainedSlot(player, gameData, index, out var slot, out var item, out var consumable)) continue;
             if (slot.RemainingDurationSeconds <= 0) continue;
             var remaining = Math.Max(0d, slot.RemainingDurationSeconds - consumedBattleSeconds);
-            player.Settings.AutoUseSlots[index] = slot with { RemainingDurationSeconds = remaining };
+            var updated = slot with { RemainingDurationSeconds = remaining };
+            if (remaining <= 0 && consumable.CooldownSeconds > 0)
+            {
+                // 持续消耗品冷却自耗竭时刻起算：耗竭点在战斗时钟上恰好是本次扣减前的剩余秒数，
+                // 折回墙钟 = 片末时刻 - (实耗 - 旧剩余)。按激活时刻起算会让冷却恒早于耗竭结束、永不生效。
+                var atUnix = at.ToUnixTimeMilliseconds() / 1000d;
+                updated = updated with
+                {
+                    CooldownUntilUnixSeconds = atUnix - (consumedBattleSeconds - slot.RemainingDurationSeconds)
+                        + consumable.CooldownSeconds
+                };
+            }
+            player.Settings.AutoUseSlots[index] = updated;
             player.MarkDirty(PlayerSectionKind.Settings);
             if (remaining > 0) continue;
             events ??= new SimulationEventTail();

@@ -28,8 +28,25 @@ public sealed class CombatConsumableTests
          "buffs":[{"buffId":"buff.test-guard","name":"护身","durationSeconds":60,"damageAbsorptionPoints":10}]}}
         """;
 
+    /// <summary>测试阵盘：战斗持续消耗品，2s 持续时长 + 40s 冷却（耗竭起算），携带回蓝 Buff。</summary>
+    private static readonly ItemId DiskId = new("item.test-disk");
+    private static readonly string DiskJson = """
+        {"id":"item.test-disk","name":"测试阵盘","kind":"consumable","category":"formation",
+         "consumable":{"usableInActionTypes":["combat"],"durationSeconds":2,"cooldownSeconds":40,"isContinuous":true,
+         "buffs":[{"buffId":"formation.test","name":"聚灵测试","durationSeconds":2,"mpRegen":5,"mpRegenPostRatio":0.3}]}}
+        """;
+
+    /// <summary>测试回复药品：即时消耗、60s 冷却，回复走 30s Buff（hpRegen=12，每 5 秒结算点）。</summary>
+    private static readonly ItemId RegenPillId = new("item.test-regen-pill");
+    private static readonly string RegenPillJson = """
+        {"id":"item.test-regen-pill","name":"测试回春散","kind":"consumable","category":"pill",
+         "consumable":{"usableInActionTypes":["combat"],"cooldownSeconds":60,
+         "buffs":[{"buffId":"buff.test-regen","name":"回春","durationSeconds":30,"hpRegen":12}],
+         "triggers":[{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than-equal","value":50}]}}
+        """;
+
     private static GameDataCatalog CreateCatalog(double enemyHitpoints, double enemyAttackPower,
-        double searchSeconds = 1, double respawnSeconds = 1)
+        double searchSeconds = 1, double respawnSeconds = 1, BaseAttributeCatalog? baseAttributes = null)
     {
         var actions = new ActionCatalog([
             new ActionDefinition(new ActionId("combat.test"), "讨伐测试", ActionKind.Combat, 0,
@@ -40,17 +57,29 @@ public sealed class CombatConsumableTests
         {
             [PillId] = new(PillId, "测试丹药", "", true, 0,
                 new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
-                    Triggers: [Json("""{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than-equal","value":50}""")]),
+                    Triggers: [Json("""{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than-equal","value":50}""")],
+                    CooldownSeconds: 60),
                 "pill"),
             [TalismanId] = new(TalismanId, "护身符", "", true, 0,
                 new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
                     DurationSeconds: 60, IsContinuous: true),
                 "talisman"),
+            [DiskId] = new(DiskId, "测试阵盘", "", true, 0,
+                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                    DurationSeconds: 2, IsContinuous: true, CooldownSeconds: 40),
+                "formation"),
+            [RegenPillId] = new(RegenPillId, "测试回春散", "", true, 0,
+                new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
+                    Triggers: [Json("""{"dependency":"self","condition":"current-hp-percentage","comparator":"less-than-equal","value":50}""")],
+                    CooldownSeconds: 60),
+                "pill"),
         };
         var rawItems = new Dictionary<string, JsonElement>
         {
             [PillId.Value] = Json(PillJson),
             [TalismanId.Value] = Json(TalismanJson),
+            [DiskId.Value] = Json(DiskJson),
+            [RegenPillId.Value] = Json(RegenPillJson),
         };
         var monster = new CombatMonsterDefinition("enemy.test", "测试妖兽", 1, 1, CombatMonsterRank.Minion,
             CombatantStats.Create(enemyHitpoints, enemyAttackPower, 0, 2), [], []);
@@ -59,7 +88,8 @@ public sealed class CombatConsumableTests
         return new GameDataCatalog("test-1", "test-fingerprint", actions,
             items: items, rawItems: rawItems,
             combatMonsters: new Dictionary<string, CombatMonsterDefinition> { [monster.Id] = monster },
-            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter });
+            combatEncounters: new Dictionary<string, CombatEncounterDefinition> { [encounter.Id] = encounter },
+            baseAttributes: baseAttributes);
     }
 
     private static AssetWallet CreateWallet(PlayerAggregate player, params (ItemId ItemId, double Quantity)[] balances)
@@ -183,5 +213,86 @@ public sealed class CombatConsumableTests
             .AssetDeltas.ToList().ForEach(wallet.Apply);
         Assert.Equal(0, player.Resources.Hitpoints);
         Assert.True(player.Settings.AutoUseSlots[0].RemainingDurationSeconds < downedRemaining);
+    }
+
+    /// <summary>
+    /// 持续消耗品耗竭后进入冷却：阵盘 2s 时长耗竭写入 40s 冷却，
+    /// 冷却未走完时下一波入场不补能；冷却走完后入场重新扣件充能。
+    /// </summary>
+    [Fact]
+    public void SustainedSlotCooldownsAfterDepletionBeforeNextRecharge()
+    {
+        // 妖兽 30 血、0 攻击：波次战斗稳定数秒内结束，玩家永不阵亡；
+        // 波间搜寻 30s 保证第二波入场落在冷却窗口内、第三波落在窗口外。
+        var catalog = CreateCatalog(enemyHitpoints: 30, enemyAttackPower: 0, searchSeconds: 5, respawnSeconds: 30);
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var wallet = CreateWallet(player, (DiskId, 2));
+        player.ConfigureAutoUse("combat", 0, DiskId.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+
+        // T+15：首波入场扣 1 件充入 2s，战斗时钟耗竭后写入冷却（耗竭时刻 +40s）。
+        var first = SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(15), catalog, wallet);
+        first.AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(1d, wallet.Get(new AssetKey(DiskId)));
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+        var cooldownUntil = player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds;
+        Assert.InRange(cooldownUntil, Baseline.AddSeconds(45).ToUnixTimeSeconds(),
+            Baseline.AddSeconds(60).ToUnixTimeSeconds());
+        Assert.Contains(first.Events, entry => entry.Code == "auto-use.depleted");
+
+        // T+45：第二波已入场，冷却未走完不补能——钱包不扣、时长仍为 0。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(45), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(1d, wallet.Get(new AssetKey(DiskId)));
+        Assert.Equal(0d, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
+
+        // T+100：第三波入场时冷却已走完，重新扣件充能。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(100), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(0d, wallet.Get(new AssetKey(DiskId)));
+        Assert.InRange(player.Settings.AutoUseSlots[0].RemainingDurationSeconds, 0, 2);
+    }
+
+    /// <summary>
+    /// 药品回复走 Buff 通道：激活不写即时回血，30s Buff 折叠进属性回复收口，
+    /// 战外按 5 秒结算点入账，到期后回复回落到基础值。
+    /// </summary>
+    [Fact]
+    public void InstantPillRegenFlowsThroughBuffOnFiveSecondTicks()
+    {
+        // 搜寻 30s：药品激活发生在入战前，战外资源回复路径可直接观测；
+        // 锚点基准回复 hpRegen=2（每 5 秒结算点），属性缓存通道同时被覆盖。
+        var catalog = CreateCatalog(enemyHitpoints: 100_000, enemyAttackPower: 0, searchSeconds: 30,
+            baseAttributes: new BaseAttributeCatalog(
+                [new BaseAttributeAnchor(1, 1000, 100, 10, 0, 0, 0, 100, 0, 0, 0, 0, 0, 2, 1)]));
+        var player = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "甲", Baseline, "catalog-a");
+        var wallet = CreateWallet(player, (RegenPillId, 1));
+        player.ConfigureAutoUse("combat", 0, RegenPillId.Value, 1, true, AutoUseSlotState.SlotGroupPotion);
+        player.Enqueue(new ActionIntent(new ActionId("combat.test"), -1), Baseline, catalog.Actions);
+        // 触发条件 self 气血≤50%：40 点气血相对 1000 上限为 4%，必定激活。
+        player.Resources.Hitpoints = 40;
+        var baseline = PlayerAttributeResolver.Resolve(player, catalog);
+
+        // T+3：药品已激活——无即时回血（无 hitpointRestore 字段），回复只进 Buff。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(3), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(0d, wallet.Get(new AssetKey(RegenPillId)));
+        var buff = Assert.Single(player.Buffs.Active, entry => entry.BuffId == "buff.test-regen");
+        Assert.Equal(12, buff.HpRegen);
+        Assert.Equal(RegenPillId.Value, buff.SourceItemId);
+        Assert.Equal(40, player.Resources.Hitpoints, 6);
+
+        // 回复收口公式：(锚点经乘区 + Buff 12) 每 5 秒结算点一次——T+5 边界后入账一次。
+        var perTick = PlayerAttributeResolver.Resolve(player, catalog).HpRegen;
+        Assert.Equal(12, perTick - baseline.HpRegen, 9);
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(8), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.Equal(40 + perTick, player.Resources.Hitpoints, 6);
+
+        // Buff 到期（激活后 30s）后回复回落到基础值。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(40), catalog, wallet)
+            .AssetDeltas.ToList().ForEach(wallet.Apply);
+        Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "buff.test-regen");
+        Assert.Equal(baseline.HpRegen, PlayerAttributeResolver.Resolve(player, catalog).HpRegen, 9);
     }
 }

@@ -4,7 +4,7 @@ namespace Domain.Tests;
 
 /// <summary>
 /// 七技艺体系与装备强化的领域门禁（总纲 §20）：经验曲线逐段推进、技艺速度折减、
-/// 强化成本/成功率/确定性判定、+N 资产变体迁移、雷击符打击与 durable 阵盘注入。
+/// 强化成本/成功率/确定性判定、+N 资产变体迁移、雷击符打击与阵盘持续消耗品生命周期。
 /// </summary>
 public sealed class TechniqueAndEnhancementTests
 {
@@ -298,42 +298,36 @@ public sealed class TechniqueAndEnhancementTests
     }
 
     /// <summary>
-    /// durable 阵盘：持有并部署槽位即注入 +∞ 战外 Buff，不扣件、不耗竭；
-    /// 回复收口 (基础+固定)×(1+后段) 进入面板；钱包清空后注入即刻清除。
+    /// 聚灵阵盘为普通持续消耗品：入场自动消耗 1 件充入 300s（战斗时钟扣减），
+    /// 不再走 durable 战外永驻注入；耗竭前槽位不写冷却。
     /// </summary>
     [Fact]
-    public void DurableFormationDiskInjectsInfiniteBuffWithoutConsuming()
+    public void FormationDiskChargesDurationOnBattleEntryWithoutDurableBuff()
     {
         var catalog = GameDataCatalog.LoadEmbedded();
         var player = CreatePlayer("阵修");
         var disk = new ItemId("item.juling-formation-disk");
-        var wallet = CreateWallet(player, (new AssetKey(disk), 1));
+        // 配表判定：普通持续消耗品 300s 持续 + 300s 冷却，buff 双通道不变。
+        var consumable = catalog.Items[disk].Consumable!;
+        Assert.True(consumable.IsContinuous);
+        Assert.False(consumable.Durable);
+        Assert.Equal(300, consumable.DurationSeconds);
+        Assert.Equal(300, consumable.CooldownSeconds);
+        var wallet = CreateWallet(player, (new AssetKey(disk), 2));
         player.ConfigureAutoUse("combat", 0, disk.Value, 1, true, AutoUseSlotState.SlotGroupGeneral);
         player.Enqueue(new ActionIntent(new ActionId("combat.hunt-qi-beast"), -1), Baseline, catalog.Actions);
-        // 注入前的面板锚点：回复收口 (面板 + Σ固定) × (1 + Σ后段) 以本值为被加项。
-        var before = PlayerAttributeResolver.Resolve(player, catalog);
 
+        // 非 durable：战斗行动推进中不再注入战外永驻 ActiveBuff。
         SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(1), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
-        var buff = Assert.Single(player.Buffs.Active, entry => entry.BuffId == "formation.juling");
-        // durable buff 用 MaxValue 哨兵而非 +∞：Strict JSON 下 +∞ 不可序列化，语义同为永不过期。
-        Assert.Equal(double.MaxValue, buff.ExpiresAtUnixSeconds);
-        Assert.Equal(5, buff.MpRegen);
-        Assert.Equal(0.3, buff.MpRegenPostRatio);
-        // durable 不扣件、不充能时长。
-        Assert.Equal(1, wallet.Get(new AssetKey(disk)));
-        Assert.Equal(0, player.Settings.AutoUseSlots[0].RemainingDurationSeconds);
-        // 回复收口：(基础回复 + 5) × (1 + 0.3) 进入面板。
-        var attributes = PlayerAttributeResolver.Resolve(player, catalog);
-        Assert.Equal((before.MpRegen + 5) * 1.3, attributes.MpRegen, 9);
+        Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "formation.juling");
 
-        // 长跨度推进：Buff 不耗竭；钱包清空后下一次资源边界即刻清除注入。
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(600), catalog, wallet)
+        // 搜寻结束入场：自动消耗 1 件并充入 300s 剩余时长；耗竭前冷却为零。
+        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(40), catalog, wallet)
             .AssetDeltas.ToList().ForEach(wallet.Apply);
-        Assert.Contains(player.Buffs.Active, entry => entry.BuffId == "formation.juling");
-        var drained = new AssetWallet(player.PlayerId);
-        SimulationEngine.AdvanceTo(player, Baseline.AddSeconds(605), catalog, drained)
-            .AssetDeltas.ToList().ForEach(drained.Apply);
+        Assert.Equal(1d, wallet.Get(new AssetKey(disk)));
+        Assert.InRange(player.Settings.AutoUseSlots[0].RemainingDurationSeconds, 0, 300);
+        Assert.Equal(0, player.Settings.AutoUseSlots[0].CooldownUntilUnixSeconds);
         Assert.DoesNotContain(player.Buffs.Active, entry => entry.BuffId == "formation.juling");
     }
 
@@ -359,7 +353,8 @@ public sealed class TechniqueAndEnhancementTests
         {
             [strike] = new(strike, "测试雷符", "", true, 0,
                 new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
-                    Strike: new ConsumableStrike(0.05, 0.2, 2.0, CombatElement.Wood)),
+                    Strike: new ConsumableStrike(0.05, 0.2, 2.0, CombatElement.Wood),
+                    CooldownSeconds: 60),
                 "talisman"),
         };
         var rawItems = new Dictionary<string, JsonElement> { [strike.Value] = Json(strikeJson) };
@@ -410,7 +405,8 @@ public sealed class TechniqueAndEnhancementTests
         {
             [strike] = new(strike, "测试雷符", "", true, 0,
                 new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
-                    Strike: new ConsumableStrike(0.5, 0.2, 2.0, CombatElement.Wood)),
+                    Strike: new ConsumableStrike(0.5, 0.2, 2.0, CombatElement.Wood),
+                    CooldownSeconds: 60),
                 "talisman"),
         };
         var rawItems = new Dictionary<string, JsonElement> { [strike.Value] = Json(strikeJson) };

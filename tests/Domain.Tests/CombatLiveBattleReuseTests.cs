@@ -249,7 +249,8 @@ public sealed class CombatLiveBattleReuseTests
             {
                 [PillId] = new(PillId, "测试丹药", "", true, 0,
                     new ConsumableDefinition((IReadOnlySet<ActionKind>)new HashSet<ActionKind> { ActionKind.Combat },
-                        Triggers: [Json(trigger)]),
+                        Triggers: [Json(trigger)],
+                        CooldownSeconds: 30),
                     "pill")
             };
             rawItems = new Dictionary<string, JsonElement>

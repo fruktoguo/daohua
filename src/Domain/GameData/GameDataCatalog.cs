@@ -139,7 +139,8 @@ public sealed record ConsumableDefinition(
     double AlchemyMultiplier = 1,
     IReadOnlyList<JsonElement>? Triggers = null,
     bool Durable = false,
-    ConsumableStrike? Strike = null)
+    ConsumableStrike? Strike = null,
+    double CooldownSeconds = 0)
 {
     /// <summary>药品类消耗品分类键：战斗域药品栏仅接受本分类的即时消耗品。</summary>
     public const string CategoryPill = "pill";
@@ -783,7 +784,8 @@ public sealed class GameDataCatalog
                 JsonRead.Number(consumableProperty, "alchemyMultiplier", 1),
                 triggers,
                 JsonRead.Boolean(consumableProperty, "durable"),
-                strike);
+                strike,
+                JsonRead.Number(consumableProperty, "cooldownSeconds"));
         }
         var category = entry.TryGetProperty("category", out var categoryProperty)
             ? categoryProperty.GetString() ?? "general" : "general";
@@ -1016,6 +1018,7 @@ public sealed class GameDataCatalog
                 consumable is not null && (
                     consumable.UsableInActionKinds is null || consumable.UsableInActionKinds.Any(kind => !Enum.IsDefined(kind)) ||
                     !double.IsFinite(consumable.DurationSeconds) || consumable.DurationSeconds < 0 ||
+                    !double.IsFinite(consumable.CooldownSeconds) || consumable.CooldownSeconds < 0 ||
                     // durable 持续消耗品持有即生效、无时长耗竭，不要求 durationSeconds；非 durable 持续品仍需正时长。
                     consumable.IsContinuous && !consumable.Durable && consumable.DurationSeconds <= 0 ||
                     consumable.Durable && !consumable.IsContinuous ||

@@ -38,7 +38,7 @@ public static class StaticGameCatalogMapper
             var cooldownSeconds = hasConsumable ? ReadDouble(consumable, "cooldownSeconds", 0) : 0;
             var hitpointRestore = hasConsumable ? ReadDouble(consumable, "hitpointRestore", 0) : 0;
             var manapointRestore = hasConsumable ? ReadDouble(consumable, "manapointRestore", 0) : 0;
-            // durable 持续消耗品：部署后不消耗不耗竭、槽位持有即生效（聚灵阵盘）。
+            // durable 持续消耗品：部署后不消耗不耗竭、槽位持有即生效。
             var durable = hasConsumable && ReadBool(consumable, "durable", false);
             // strike 即时打击（雷击符）：耗蓝代价 + 蓝量/法攻折算的木系法术一击。
             var strike = hasConsumable && consumable.TryGetProperty("strike", out var strikeElement) && strikeElement.ValueKind == JsonValueKind.Object

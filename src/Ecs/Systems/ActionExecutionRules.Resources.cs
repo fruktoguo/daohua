@@ -52,7 +52,7 @@ internal static partial class ActionExecutionRules
                     if (activeBuffs[i].ExpiresAtUnixSeconds < nextBuffExpiry) nextBuffExpiry = activeBuffs[i].ExpiresAtUnixSeconds;
             }
         }
-        // durable 持续消耗品（阵盘）随槽位/钱包状态注入或清除无限期 ActiveBuff：
+        // durable 持续消耗品随槽位/钱包状态注入或清除无限期 ActiveBuff：
         // 必须在属性解析前同步，保证回复后段乘区进入本步面板与战内单位。
         changed |= SyncDurableConsumableBuffs(player, gameData, wallet);
         ApplyResourceAttributes(player, gameData);
@@ -246,7 +246,7 @@ internal static partial class ActionExecutionRules
             double Read(JsonElement obj, string key) => obj.TryGetProperty(key, out var value) ? value.GetDouble() : 0;
             var hp = Read(raw, "hitpointRestore");
             var mp = Read(raw, "manapointRestore");
-            var cooldown = Read(raw, "cooldownSeconds");
+            var cooldown = definition.CooldownSeconds;
             if (!raw.TryGetProperty("buffs", out var buffs) && hp == 0 && mp == 0 && definition.Strike is null) continue;
             if (cooldown <= 0) throw new DomainException(DomainErrorCode.InvalidArgument, "自动即时消耗品必须配置正冷却。");
             if (definition.Strike is { } strike)
