@@ -40,14 +40,17 @@ try {
   }
   // data 内嵌 JSON 对象；checksum = 该成员在信封 JSON 中原始字节（JSON.stringify 原文）的 SHA-256。
   const section = {
-    section: 'world', schemaVersion: 7, sectionVersion: 1,
+    section: 'world', schemaVersion: 9, sectionVersion: 1,
     data: payload, checksum: createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex'),
     updatedAt: '2026-09-14T00:00:05Z',
   }
   const current = { playerId: 'player.test', serverTimeUnixSeconds: 1 }
-  const delta = { playerId: current.playerId, stateVersion: 2, lastSimulatedAt: '2026-09-14T00:00:05Z', changedSections: [section] }
+  const delta = { playerId: current.playerId, stateVersion: 2, lastSimulatedAt: '2026-09-14T00:00:05Z', changedSections: [section], displayName: '契约道号' }
   const deltaBytes = Buffer.from(JSON.stringify(delta))
   const patch = await decodePlayerSnapshotDeltaDto(delta, current, deltaBytes)
+  // 道号属身份标量而非分段：delta 透传后即时生效（改名无需等待全量快照）。
+  assert.equal(patch.name, '契约道号')
+  assert.equal(patch.visual.name, '契约道号')
   assert.deepEqual(patch.world.availableActionIds, payload.availableActionIds)
   assert.deepEqual(patch.world.encounterIds, payload.encounterIds)
   assert.deepEqual(patch.world.npcs, payload.npcs)

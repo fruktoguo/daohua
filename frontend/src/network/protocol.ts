@@ -198,6 +198,8 @@ export interface PlayerSnapshotDeltaDto {
   changedSections: PlayerSectionDto[]
   /** 本次发生变化的资产（null/缺省表示无资产变更） */
   changedAssets?: AssetBalanceDto[] | null
+  /** 当前道号：身份标量不属任何分段，随增量透传使改名即时生效 */
+  displayName?: string | null
 }
 
 /** ActionIntent 行动入队请求载荷 */
@@ -344,8 +346,8 @@ export interface PartyLinkDto {
   name: string
   /** 目标类型（见 PartyActivityKind） */
   activityKind: PartyActivityKind
-  /** 目标地图 ID；空串表示不限 */
-  mapId: string
+  /** 目标节点 ID；空串表示不限 */
+  nodeId: string
   /** 加入身价门槛；0 表示不设门槛 */
   minValuation: number
   /** 发布时刻的队伍人数 */
@@ -391,6 +393,16 @@ export const PartyActivityKind = {
   Exploration: 'exploration',
   /** 吐纳修炼 */
   Cultivation: 'cultivation',
+  /** 炼丹 */
+  Alchemy: 'alchemy',
+  /** 炼器 */
+  Forging: 'forging',
+  /** 符箓 */
+  Talisman: 'talisman',
+  /** 阵法 */
+  Formation: 'formation',
+  /** 强化 */
+  Enhancement: 'enhancement',
 } as const
 export type PartyActivityKind = (typeof PartyActivityKind)[keyof typeof PartyActivityKind]
 
@@ -429,8 +441,8 @@ export interface PartyProfileDto {
   name?: string | null
   /** 目标类型 */
   activityKind?: PartyActivityKind | null
-  /** 目标地图 ID；空串表示不限 */
-  mapId?: string | null
+  /** 目标节点 ID；空串表示不限 */
+  nodeId?: string | null
   /** 身价门槛；0 表示不设门槛 */
   minValuation?: number | null
   /** 是否进入组队大厅 */
@@ -485,8 +497,8 @@ export interface PartyDto {
   name: string
   /** 目标类型 */
   activityKind: PartyActivityKind
-  /** 目标地图 ID；空串表示不限 */
-  mapId: string
+  /** 目标节点 ID；空串表示不限 */
+  nodeId: string
   /** 身价门槛；0 表示不设门槛 */
   minValuation: number
   /** 是否进入组队大厅 */
@@ -513,8 +525,8 @@ export interface PartyInvitationDto {
 export interface PartySeekerDto {
   /** 目标类型 */
   activityKind: PartyActivityKind
-  /** 目标地图 ID；空串表示不限 */
-  mapId: string
+  /** 目标节点 ID；空串表示不限 */
+  nodeId: string
   /** 期望队友的最低身价；0 表示不设要求 */
   minValuation: number
   /** 登记时刻（Unix 毫秒） */
@@ -541,8 +553,8 @@ export interface PartyLobbyRequestDto {
   requestId: string
   /** 目标类型筛选；空/缺省表示不限 */
   activityKind?: PartyActivityKind | null
-  /** 目标地图筛选；空/缺省表示不限 */
-  mapId?: string | null
+  /** 目标节点筛选；空/缺省表示不限 */
+  nodeId?: string | null
   /** 身价下限筛选：队伍按成员最低身价、散人按本人身价过滤；空/0 表示不限 */
   minValuation?: number | null
 }
@@ -561,7 +573,7 @@ export interface PartyLobbyEntryDto {
   partyId: string
   name: string
   activityKind: PartyActivityKind
-  mapId: string
+  nodeId: string
   leaderId: string
   leaderName: string
   minValuation: number
@@ -576,7 +588,7 @@ export interface PartyLobbySeekerDto {
   online: boolean
   valuation: number
   activityKind: PartyActivityKind
-  mapId: string
+  nodeId: string
   minValuation: number
   createdAtUnixMilliseconds: number
 }

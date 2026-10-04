@@ -87,6 +87,11 @@ export class GameClient {
   /** 最近一次登记的单位详情观察目标；重连握手完成后按原样重放，恢复按需属性投影。 */
   private lastInspectTarget: { side: 'enemy' | 'ally'; index: number } | null = null
   private readonly pendingRequests = new Map<string, number>()
+  /**
+   * 入站帧串行链：delta 的 section checksum 解码是真异步（crypto.subtle），
+   * 并发处理会让多帧共享同一旧基线互相覆盖应用结果；串行后应用顺序恒等于通道到达序。
+   */
+  private messageChain: Promise<void> = Promise.resolve()
   private static readonly REQUEST_TIMEOUT_MS = 15_000
 
   /** 当前登录的角色 ID */
@@ -156,6 +161,8 @@ export class GameClient {
     this.reconnectDelay = 500
     this.outboundSequence = 0
     this.lastServerSequence = 0
+    // 新会话起一条干净的入站串行链；旧链残留任务由 handleMessage 的 socket 一致性检查拦截。
+    this.messageChain = Promise.resolve()
     this.clearPendingRequests()
     this.open()
   }
@@ -283,17 +290,24 @@ export class GameClient {
       ...(extras?.channel ? { channel: extras.channel } : {}),
       ...(extras?.party ? { party: extras.party } : {}),
     }
-    return this.trySend(socket, WireMessageType.SocialAction, requestId, payload)
+    if (!this.trySend(socket, WireMessageType.SocialAction, requestId, payload)) return false
+    // 社交成功应答是带 requestId 的 SocialState（必达）、失败是 Error 帧：登记超时计时器做兜底，
+    // 超时仅提示——状态由重连全量握手或下一次 StateChanged 广播最终一致。
+    this.pendingRequests.set(requestId, window.setTimeout(() => {
+      if (!this.pendingRequests.delete(requestId)) return
+      useGameStore.getState().setNotice(getT()('common.net.requestTimeout'))
+    }, GameClient.REQUEST_TIMEOUT_MS))
+    return true
   }
 
   /** 请求组队大厅视图（PartyLobbyRequest 信封）；服务端以 PartyLobby 应答，结果整体替换 socialStore.lobby。 */
-  requestPartyLobby(filter: { activityKind?: string | null; mapId?: string | null; minValuation?: number | null } = {}): boolean {
+  requestPartyLobby(filter: { activityKind?: string | null; nodeId?: string | null; minValuation?: number | null } = {}): boolean {
     const socket = this.ensureOpenSocket()
     if (!socket) return false
     const payload: PartyLobbyRequestDto = {
       requestId: createRequestId(),
       ...(filter.activityKind ? { activityKind: filter.activityKind as PartyLobbyRequestDto['activityKind'] } : {}),
-      ...(filter.mapId ? { mapId: filter.mapId } : {}),
+      ...(filter.nodeId ? { nodeId: filter.nodeId } : {}),
       ...(filter.minValuation !== undefined && filter.minValuation !== null ? { minValuation: filter.minValuation } : {}),
     }
     return this.trySend(socket, WireMessageType.PartyLobbyRequest, payload.requestId, payload)
@@ -346,7 +360,11 @@ export class GameClient {
       void this.sendHello()
     })
     socket.addEventListener('message', event => {
-      void this.handleMessage(event.data, socket)
+      const data = event.data
+      // handleMessage 自身消化协议解析异常；链上兜底防意外异常永久阻塞后续全部帧。
+      this.messageChain = this.messageChain
+        .then(() => this.handleMessage(data, socket))
+        .catch(error => this.handleParseFailure(error))
     })
     socket.addEventListener('error', () => {
       // close 事件统一重连，避免重复提示。
@@ -456,10 +474,13 @@ export class GameClient {
           const result = decodeJsonPayload<CommandResultDto>(envelope)
           if (result.requestId !== envelope.requestId) return
           const timer = this.pendingRequests.get(result.requestId)
-          if (timer === undefined) return
-          window.clearTimeout(timer)
-          this.pendingRequests.delete(result.requestId)
-          // 回执快照双形态：snapshot=全量兜底，delta=触及分段增量（与推送共用合并语义与校验和口径）。
+          if (timer !== undefined) {
+            window.clearTimeout(timer)
+            this.pendingRequests.delete(result.requestId)
+          }
+          // 超 15s 晚到的回执仍要合入快照：pending 计时器只负责超时提示，资产差额仅由回执
+          // 携带（推送基线已前移后不再重发），整帧丢弃会造成永久缺失；过旧/重复内容
+          // 由 applyPatch/applySnapshot 的版本门禁幂等丢弃，requestId 必须与信封一致。
           if (result.snapshotForm === CommandResultSnapshotForm.Delta && isPlayerSnapshotDeltaDto(result.snapshot)) {
             const current = useGameStore.getState().toSnapshotView()
             const patch = await decodePlayerSnapshotDeltaDto(result.snapshot, current, envelope.payload, ['snapshot', 'changedSections'])
@@ -512,6 +533,12 @@ export class GameClient {
         }
         case WireMessageType.SocialState: {
           const state = decodeJsonPayload<SocialStateDto>(envelope)
+          // 带 requestId 的应答即社交指令成功回执：配对清除超时计时器；主动推送无 requestId。
+          if (state?.requestId) {
+            const timer = this.pendingRequests.get(state.requestId)
+            if (timer !== undefined) window.clearTimeout(timer)
+            this.pendingRequests.delete(state.requestId)
+          }
           if (state) useSocialStore.getState().applyState(state)
           break
         }

@@ -45,6 +45,8 @@ export function useSmoothProgressRef({
   metaFormat,
 }: UseSmoothProgressOptions): void {
   const lastQueueSyncPerformanceTime = useGameStore(state => state.lastQueueSyncPerformanceTime ?? state.lastSyncPerformanceTime)
+  // 队列手动暂停时冻结一切进度插值（计时/旅行/远征相位共用此 Hook，服务端权威暂停期间本地不再推进）。
+  const paused = useGameStore(state => state.queue.paused)
   // 调用方通常在渲染中创建格式化闭包；用 ref 读取最新回调，避免每次父组件更新都重启 RAF。
   const textFormatRef = useRef(textFormat)
   const metaFormatRef = useRef(metaFormat)
@@ -68,7 +70,7 @@ export function useSmoothProgressRef({
 
   useEffect(() => {
     if (!entry) return
-    const isRunning = entry.status === 'running'
+    const isRunning = entry.status === 'running' && !paused
     const duration = Math.max(1, entry.durationSeconds)
     const baseProgress = entry.progressSeconds
     const isInfinite = entry.remainingRepeats < 0
@@ -178,6 +180,7 @@ export function useSmoothProgressRef({
     entry?.progressSeconds,
     entry?.remainingRepeats,
     lastQueueSyncPerformanceTime,
+    paused,
     fillRef,
     textRef,
     percentRef,

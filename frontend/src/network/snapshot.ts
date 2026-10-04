@@ -39,8 +39,8 @@ import type {
 } from '../game/types'
 import type { AssetBalanceDto, PlayerSectionDto, PlayerSnapshotDeltaDto, PlayerSnapshotDto } from './protocol'
 
-/** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion（v7）保持一致。 */
-const SNAPSHOT_SCHEMA_VERSION = 7
+/** 当前支持的存档 schema 版本：与服务端 SectionCodec.CurrentSchemaVersion（v8）保持一致。 */
+const SNAPSHOT_SCHEMA_VERSION = 9
 
 type JsonObject = Record<string, unknown>
 
@@ -604,8 +604,8 @@ function mapTravelSegments(value: unknown): TravelSegment[] | null {
 
 function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState): QueueState {
   if (!Array.isArray(value)) throw new Error('action_queue section 载荷必须是数组。')
-  if (settingsValue && (typeof settingsValue.loopEnabled !== 'boolean' || typeof settingsValue.autoTravelEnabled !== 'boolean' || !Array.isArray(settingsValue.autoUseSlots))) {
-    throw new Error('settings section 循环、自动移动或自动使用字段无效。')
+  if (settingsValue && (typeof settingsValue.loopEnabled !== 'boolean' || typeof settingsValue.autoTravelEnabled !== 'boolean' || typeof settingsValue.queuePaused !== 'boolean' || !Array.isArray(settingsValue.autoUseSlots))) {
+    throw new Error('settings section 循环、自动移动、队列暂停或自动使用字段无效。')
   }
   const entries = arrayValue(value).map(item => {
     const row = object(item)
@@ -678,6 +678,7 @@ function mapQueue(value: unknown, settingsValue?: JsonObject, base?: QueueState)
     entries,
     loopEnabled: settingsValue ? booleanValue(settingsValue.loopEnabled, true) : (base?.loopEnabled ?? true),
     autoTravelEnabled: settingsValue ? booleanValue(settingsValue.autoTravelEnabled, false) : (base?.autoTravelEnabled ?? false),
+    paused: settingsValue ? booleanValue(settingsValue.queuePaused, false) : (base?.paused ?? false),
     autoUseSlots: settingsValue ? mapAutoUseSlots(settingsValue.autoUseSlots) : (base?.autoUseSlots ?? defaultAutoUseSlots()),
   }
 }
@@ -1233,11 +1234,16 @@ export async function decodePlayerSnapshotDeltaDto(
     serverTimeUnixSeconds: serverTime,
     serverTimeUnixMilliseconds: serverTime * 1000,
   }
+  // 道号属身份标量而非分段：delta 透传后即时生效（改名无需等待全量快照）。
+  if (typeof dto.displayName === 'string' && dto.displayName.length > 0) {
+    patch.name = dto.displayName
+    patch.visual = visualFor(dto.displayName)
+  }
   const settingsEnvelope = sections.has('settings') ? requiredObject(sections.get('settings'), 'settings') : undefined
   const settings = settingsEnvelope ? requiredObject(settingsEnvelope.settings, 'settings.settings') : undefined
   if (settingsEnvelope && settings) {
     patch.presenceMode = mapPresence(settingsEnvelope.presence)
-    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
+    patch.queue = { ...current.queue, loopEnabled: booleanValue(settings.loopEnabled, true), autoTravelEnabled: booleanValue(settings.autoTravelEnabled, false), paused: booleanValue(settings.queuePaused, false), autoUseSlots: mapAutoUseSlots(settings.autoUseSlots) }
     patch.renameCooldownSeconds = Math.max(0, numberValue(settings.renameCooldownUntilUnixSeconds) - serverTime)
   }
   if (sections.has('progression')) {

@@ -254,6 +254,8 @@ export interface ActionDefinition {
   yields?: ActionYield[]
   /** 允许执行该行动的地图节点 ID 列表 */
   availableNodeIds?: string[]
+  /** 禁止执行该行动的地图节点 ID 列表（与 availableNodeIds 互斥；常驻行动按地点裁剪） */
+  excludedNodeIds?: string[]
 }
 
 /**
@@ -340,6 +342,8 @@ export interface QueueState {
   loopEnabled: boolean
   /** 开轮地点不符时是否自动移动回入队锚点 */
   autoTravelEnabled: boolean
+  /** 队列是否处于手动暂停 */
+  paused: boolean
   /** 各行动类型对应的自动消耗品槽位映射 */
   autoUseSlots: Record<ActionType, AutoUseSlot[]>
 }

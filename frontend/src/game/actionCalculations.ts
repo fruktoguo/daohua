@@ -92,6 +92,20 @@ export function getItemAmount(inventory: readonly InventoryItem[] | InventoryIte
 }
 
 /**
+ * 行动在当前地点的可执行性（与服务端开轮门禁同口径）：
+ * 白名单 availableNodeIds 非空 → 须在列；黑名单 excludedNodeIds → 驻足该节点时禁用
+ * （移动途中 nodeId 为空不算驻足，不触发排除）。
+ */
+export function isActionAvailableAtNode(
+  action: { availableNodeIds?: string[]; excludedNodeIds?: string[] },
+  nodeId: string | null,
+): boolean {
+  if (action.availableNodeIds?.length)
+    return nodeId !== null && action.availableNodeIds.includes(nodeId)
+  return !(nodeId !== null && (action.excludedNodeIds?.includes(nodeId) ?? false))
+}
+
+/**
  * 实时解算指定行动在当前状态下的实际产出与全部生效加成
  */
 export function calculateActionYieldPreview({

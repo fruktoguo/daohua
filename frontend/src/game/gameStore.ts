@@ -145,6 +145,7 @@ function createInitialSnapshot(playerId = 'local-player'): PlayerSnapshot {
     queue: {
       loopEnabled: true,
       autoTravelEnabled: false,
+      paused: false,
       autoUseSlots: {
         cultivation: emptyAutoUseSlots('cultivation'),
         exploration: emptyAutoUseSlots('exploration'),
