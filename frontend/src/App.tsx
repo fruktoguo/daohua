@@ -15,6 +15,7 @@ import { ItemGridPicker, ItemUseSlot, type ItemPickerEntry } from './components/
 import { MarketPage } from './components/MarketPage'
 import { Modal } from './components/Modal'
 import { InsightPage } from './components/InsightPage'
+import type { PillTone } from './components/PillLabel'
 import { RealmBadge } from './components/RealmBadge'
 import { NearbyPanel, type NearbyTab } from './components/NearbyPanel'
 import { QuantitySelector } from './components/QuantitySelector'
@@ -25,14 +26,14 @@ import { ConnectingPage, ConnectionErrorPage } from './components/ConnectingPage
 import { RightSidebar } from './components/RightSidebar'
 import { SocialPage } from './components/SocialPage'
 import { TaijiToggle } from './components/TaijiToggle'
-import { describeAbility, formatChineseSplitNumber, formatProgressText, formatRemainingSeconds } from './game/format'
+import { describeAbility, formatChineseSplitNumber, formatNumber, formatProgressText, formatRemainingSeconds } from './game/format'
 import { UnitNumber } from './components/UnitNumber'
-import { calculateRealmInfo, calculateRealmProgress } from './game/combatConstants'
+import { calculateRealmInfo, calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './game/combatConstants'
 import { ACTION_TAB_META, actionTabLabel, assignAbilityToSlot, findAbilityInCatalog, findActionInCatalog, findEncounterInCatalog, findItemInCatalog, learnedAbilityLevel, localizeActionDisplayText, resolveActionDefinition, resolveActionLevel, resolveActionRarity, resolveItemCategoryLabel, resolveItemSubCategory } from './game/ids'
 import { useGameStore } from './game/gameStore'
 import { sendLoadoutReplace } from './game/loadoutCommands'
 import { resolveItemIconUrl } from './game/itemIcons'
-import { calculateActionYieldPreview } from './game/actionCalculations'
+import { calculateActionYieldPreview, isActionAvailableAtNode } from './game/actionCalculations'
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
 import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
@@ -40,7 +41,7 @@ import { installAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
 import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
 import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
-import { useUiStore, type TabId, type AlchemySubTab, type ForgingSubTab } from './uiStore'
+import { useUiStore, type TabId, type CraftingMode, type AlchemySubTab, type ForgingSubTab } from './uiStore'
 import { useT, getT } from './i18n'
 
 const EMPTY_ABILITY_COOLDOWNS: Readonly<Record<string, number>> = Object.freeze({})
@@ -352,6 +353,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
   const t = useT()
   const world = useGameStore(state => state.world)
   const maps = useGameStore(state => state.maps)
+  const queuePaused = useGameStore(state => state.queue.paused)
   const isCombatExpedition = entry.type === 'combat'
   const phaseLabel = isCombatExpedition
     ? getCombatPhaseLabel(entry.expedition?.phase, t)
@@ -380,6 +382,7 @@ const CurrentActionCard = memo(function CurrentActionCard({ entry, departing = f
               {entry.status === 'blocked' ? t('app.queue.blocked') : phaseLabel}
             </span>
           )}
+          {queuePaused && <span className="badge">{t('app.queue.paused')}</span>}
           {entry.pvpEnabled && <span className="badge badge-duel">{t('app.queue.duelBadge')}</span>}
         </div>
         {isCombatExpedition
@@ -433,6 +436,7 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
   const maps = useGameStore(state => state.maps)
   const [open, setOpen] = useState(false)
   const [pendingRemoval, setPendingRemoval] = useState<QueueEntry | null>(null)
+  const [pendingClearAll, setPendingClearAll] = useState(false)
   const current = queue.entries[0]
   const upcoming = queue.entries.slice(1, 3)
 
@@ -543,6 +547,21 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
                 </div>
               </li>
             ))}
+            <li className="queue-footer">
+              <button
+                aria-label={queue.paused ? t('app.queue.resumeAria') : t('app.queue.pauseAria')}
+                className={queue.paused ? 'is-paused' : undefined}
+                onClick={() => gameClient.sendCommand('queue.configure', { paused: !queue.paused })}
+                title={queue.paused ? t('app.queue.resumeTitle') : t('app.queue.pauseTitle')}
+                type="button"
+              >{queue.paused ? t('app.queue.resume') : t('app.queue.pause')}</button>
+              <button
+                aria-label={t('app.queue.clearAllAria')}
+                className="danger"
+                onClick={() => setPendingClearAll(true)}
+                type="button"
+              >{t('app.queue.clearAll')}</button>
+            </li>
           </ol>
         </>
       )}
@@ -556,6 +575,17 @@ const QueueCenter = memo(function QueueCenter(): React.JSX.Element {
         }}
         open={pendingRemoval !== null}
         title={t('app.queue.removeConfirmTitle')}
+      />
+      <ConfirmDialog
+        confirmLabel={t('app.queue.clearAllConfirmBtn')}
+        danger
+        description={t('app.queue.clearAllConfirmDesc', { count: queue.entries.length })}
+        onClose={() => setPendingClearAll(false)}
+        onConfirm={() => {
+          if (pendingClearAll) gameClient.sendCommand('queue.clear', {})
+        }}
+        open={pendingClearAll}
+        title={t('app.queue.clearAllConfirmTitle')}
       />
     </div>
   )
@@ -713,6 +743,16 @@ const TopBar = memo(function TopBar(): React.JSX.Element {
   )
 })
 
+/** 技艺二级导航固定项：顺序与图标同技艺页签（采集/挖掘无技艺页签入口，不入导航）；
+ * tone 与内视技艺 Tab 的分色一致，经验条与等级数字共用同一修仙色调。 */
+const CRAFTING_NAV_MODES: ReadonlyArray<{ id: CraftingMode; icon: IconName; tone: PillTone }> = [
+  { id: 'alchemy', icon: 'alchemy', tone: 'emerald' },
+  { id: 'forging', icon: 'forging', tone: 'crimson' },
+  { id: 'talisman', icon: 'talisman', tone: 'amber' },
+  { id: 'formation', icon: 'formation', tone: 'purple' },
+  { id: 'enhancement', icon: 'enhancement', tone: 'gold' },
+]
+
 /**
  * 桌面端主侧边导航栏组件
  */
@@ -725,6 +765,32 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
   const craftingNavExpanded = useUiStore(state => state.craftingNavExpanded)
   const setCraftingNavExpanded = useUiStore(state => state.setCraftingNavExpanded)
   const [recordsOpen, setRecordsOpen] = useState(false)
+
+  // 技艺子菜单等级与经验进度：技艺经验随 combat 快照下发，等级按修为曲线导出（0 级起步）；
+  // 满级（expToNext=0）时进度条恒显满格，悬浮气泡经验行改显「已臻化境」。
+  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
+  const techniqueStates = useMemo(() => {
+    const states = {} as Record<CraftingMode, {
+      level: number
+      ratio: number
+      maxed: boolean
+      current: number
+      max: number
+      speedPercent: number
+    }>
+    for (const mode of CRAFTING_NAV_MODES) {
+      const progress = calculateTechniqueProgress(techniqueExperiences?.[mode.id] ?? 0)
+      states[mode.id] = {
+        level: progress.level,
+        ratio: progress.expToNext > 0 ? Math.min(100, (progress.currentLayerExp / progress.expToNext) * 100) : 100,
+        maxed: progress.expToNext <= 0 && progress.level > 0,
+        current: Math.floor(progress.currentLayerExp),
+        max: Math.max(1, Math.floor(progress.expToNext)),
+        speedPercent: progress.level * TECHNIQUE_SPEED_RATIO_PER_LEVEL * 100,
+      }
+    }
+    return states
+  }, [techniqueExperiences])
 
   return (
     <aside className="sidebar panel" aria-label={t('app.nav.sidebarAria')}>
@@ -747,16 +813,6 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           <span className="nav-glyph" aria-hidden="true"><Icon name="market" /></span>
           <span className="nav-text">
             <span className="nav-label">{t('app.nav.market')}</span>
-          </span>
-        </button>
-        <button
-          className={`nav-item${activeTab === 'cultivation' ? ' active' : ''}`}
-          onClick={() => setActiveTab('cultivation')}
-          type="button"
-        >
-          <span className="nav-glyph" aria-hidden="true"><Icon name="cultivation" /></span>
-          <span className="nav-text">
-            <span className="nav-label">{t('app.nav.cultivation')}</span>
           </span>
         </button>
         <button
@@ -801,61 +857,41 @@ const Sidebar = memo(function Sidebar(): React.JSX.Element {
           </button>
           {craftingNavExpanded && (
             <div className="nav-sub-menu">
-              <button
-                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'alchemy' ? ' active' : ''}`}
-                onClick={() => {
-                  setActiveTab('crafting')
-                  setCraftingMode('alchemy')
-                }}
-                type="button"
-              >
-                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="alchemy" /></span>
-                <span className="nav-sub-label">{t('app.crafting.alchemy')}</span>
-              </button>
-              <button
-                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'forging' ? ' active' : ''}`}
-                onClick={() => {
-                  setActiveTab('crafting')
-                  setCraftingMode('forging')
-                }}
-                type="button"
-              >
-                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="forging" /></span>
-                <span className="nav-sub-label">{t('app.crafting.forging')}</span>
-              </button>
-              <button
-                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'talisman' ? ' active' : ''}`}
-                onClick={() => {
-                  setActiveTab('crafting')
-                  setCraftingMode('talisman')
-                }}
-                type="button"
-              >
-                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="talisman" /></span>
-                <span className="nav-sub-label">{t('app.crafting.talisman')}</span>
-              </button>
-              <button
-                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'formation' ? ' active' : ''}`}
-                onClick={() => {
-                  setActiveTab('crafting')
-                  setCraftingMode('formation')
-                }}
-                type="button"
-              >
-                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="formation" /></span>
-                <span className="nav-sub-label">{t('app.crafting.formation')}</span>
-              </button>
-              <button
-                className={`nav-sub-item${activeTab === 'crafting' && craftingMode === 'enhancement' ? ' active' : ''}`}
-                onClick={() => {
-                  setActiveTab('crafting')
-                  setCraftingMode('enhancement')
-                }}
-                type="button"
-              >
-                <span className="nav-sub-glyph" aria-hidden="true"><Icon name="enhancement" /></span>
-                <span className="nav-sub-label">{t('app.crafting.enhancement')}</span>
-              </button>
+              {CRAFTING_NAV_MODES.map(mode => {
+                const state = techniqueStates[mode.id]
+                // 悬浮气泡：技艺名 · 等级 / 本级经验进度（满级显「已臻化境」）/ 行动速度加成
+                const tooltipText = [
+                  `${t(`app.crafting.${mode.id}`)} · ${t('app.crafting.navTooltipLevel', { level: state.level })}`,
+                  state.maxed
+                    ? t('app.crafting.navTooltipMaxed')
+                    : t('app.crafting.navTooltipExp', {
+                        current: formatNumber(state.current),
+                        max: formatNumber(state.max),
+                      }),
+                  t('app.crafting.navTooltipSpeed', { value: formatNumber(state.speedPercent, { maxDecimals: 0 }) }),
+                ].join('\n')
+                return (
+                  <FloatingTooltip displayContents key={mode.id} placement="right" title={tooltipText} tone="gold">
+                    <button
+                      className={`nav-sub-item${activeTab === 'crafting' && craftingMode === mode.id ? ' active' : ''}`}
+                      onClick={() => {
+                        setActiveTab('crafting')
+                        setCraftingMode(mode.id)
+                      }}
+                      type="button"
+                    >
+                      <span className="nav-sub-main">
+                        <span className="nav-sub-glyph" aria-hidden="true"><Icon name={mode.icon} /></span>
+                        <span className="nav-sub-label">{t(`app.crafting.${mode.id}`)}</span>
+                        <span className={`nav-sub-level underlined-value pill-tone--${mode.tone}`}>{state.level}</span>
+                      </span>
+                      <span aria-hidden="true" className={`nav-sub-progress pill-tone--${mode.tone}`}>
+                        <i className="compound-stat-progress-fill" style={{ width: `${state.ratio}%` }} />
+                      </span>
+                    </button>
+                  </FloatingTooltip>
+                )
+              })}
             </div>
           )}
         </div>
@@ -971,7 +1007,7 @@ const CraftingPage = memo(function CraftingPage({ hidden }: { hidden: boolean })
   // 当前世界节点可执行的所有工艺类行动
   const availableActions = useMemo(() => actions.filter(action => (
     (action.type === 'alchemy' || action.id.startsWith('craft.') || action.id.startsWith('forge.') || action.id.startsWith('alchemy.'))
-      && (!action.availableNodeIds?.length || (worldNodeId !== null && action.availableNodeIds.includes(worldNodeId)))
+      && isActionAvailableAtNode(action, worldNodeId)
   )), [actions, worldNodeId])
 
   const itemCatalog = useGameStore(state => state.items)
@@ -1779,53 +1815,58 @@ const CombatLoadoutPanel = memo(function CombatLoadoutPanel(): React.JSX.Element
 })
 
 /**
- * 通用单类行动列表页面（修炼、炼丹）
- */
-const SkillPage = memo(function SkillPage({ type, hidden }: { type: ActionType; hidden: boolean }): React.JSX.Element {
-  const t = useT()
-  const actions = useGameStore(state => state.actions)
-  const worldNodeId = useGameStore(state => state.world.nodeId)
-  const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
-  const visibleActions = useMemo(() => actions.filter(action => (
-    action.type === type
-      && (!action.availableNodeIds?.length || (worldNodeId !== null && action.availableNodeIds.includes(worldNodeId)))
-  )), [actions, type, worldNodeId])
-  const closeModal = useCallback(() => setSelectedAction(null), [])
-
-  return (
-    <section className="panel skill-page" hidden={hidden}>
-      <header className="panel-header">
-        <h2>{t(`app.nav.${type}`)}</h2>
-      </header>
-      <div className="action-cards">
-        {visibleActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
-        {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
-      </div>
-      <AutoUse type={type} />
-      {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
-    </section>
-  )
-})
-
-/**
- * 历练页面：显示当前地点的可选特殊行动（采集等）与妖兽历练行动
+ * 历练页面：常驻行动（修炼类，默认全图可行、地点可用 excludedNodeIds 裁剪）+
+ * 按技艺归属分组的地点行动（采集/挖掘等，组名跟随技艺并展示当前技艺等级）+ 讨伐战斗行动。
  */
 const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: boolean }): React.JSX.Element {
   const t = useT()
   const actions = useGameStore(state => state.actions)
   const worldNodeId = useGameStore(state => state.world.nodeId)
   const world = useGameStore(state => state.world)
+  const techniqueExperiences = useGameStore(state => state.combat?.techniqueExperiences)
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
 
   const visibleActions = useMemo(() => actions.filter(action => (
     !action.hiddenFromCatalog
       && action.executionKind !== 'travel'
-      && (action.type === 'exploration' || action.type === 'combat')
-      && (!action.availableNodeIds?.length || (worldNodeId !== null && action.availableNodeIds.includes(worldNodeId)))
+      && (action.type === 'exploration' || action.type === 'combat' || action.type === 'cultivation')
+      && isActionAvailableAtNode(action, worldNodeId)
   )), [actions, worldNodeId])
 
-  const specialActions = useMemo(() => visibleActions.filter(action => action.type === 'exploration'), [visibleActions])
-  const combatActions = useMemo(() => visibleActions.filter(action => action.type === 'combat'), [visibleActions])
+  // 分组顺序：常驻（cultivation）→ 技艺组（technique 归属，随技艺等级）→ 历练（无技艺探索）→ 讨伐（combat）
+  const groups = useMemo(() => {
+    interface ActionGroup { key: string; label: string; actions: ActionDefinition[] }
+    const result: ActionGroup[] = []
+    const resident: ActionDefinition[] = []
+    const hunts: ActionDefinition[] = []
+    const others: ActionDefinition[] = []
+    const byTechnique = new Map<string, ActionDefinition[]>()
+    for (const action of visibleActions) {
+      if (action.type === 'cultivation') { resident.push(action); continue }
+      if (action.type === 'combat') { hunts.push(action); continue }
+      if (action.technique) {
+        const list = byTechnique.get(action.technique) ?? []
+        list.push(action)
+        byTechnique.set(action.technique, list)
+        continue
+      }
+      others.push(action)
+    }
+    if (resident.length > 0) result.push({ key: 'resident', label: t('app.combatPanel.residentActions'), actions: resident })
+    for (const id of TECHNIQUE_IDS) {
+      const list = byTechnique.get(id)
+      if (!list || list.length === 0) continue
+      const level = calculateTechniqueProgress(techniqueExperiences?.[id] ?? 0).level
+      result.push({
+        key: `technique:${id}`,
+        label: t('app.combatPanel.techniqueGroup', { name: t(`insight.technique.${id}`), level }),
+        actions: list,
+      })
+    }
+    if (others.length > 0) result.push({ key: 'other', label: t('app.combatPanel.otherActions'), actions: others })
+    if (hunts.length > 0) result.push({ key: 'combat', label: t('app.combatPanel.huntActions'), actions: hunts })
+    return result
+  }, [techniqueExperiences, t, visibleActions])
 
   const closeModal = useCallback(() => setSelectedAction(null), [])
 
@@ -1836,24 +1877,17 @@ const ExplorationPage = memo(function ExplorationPage({ hidden }: { hidden: bool
         {world.locationName && <span className="location-sub-badge">{world.locationName}</span>}
       </header>
       <div className="action-sections">
-        {specialActions.length > 0 && (
-          <div className="action-group-section">
-            <span className="slot-group-label">{t('app.combatPanel.locationSpecialActions')}</span>
+        {groups.map(group => (
+          <div className="action-group-section" key={group.key}>
+            <span className="slot-group-label">{group.label}</span>
             <div className="action-group-list">
-              {specialActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
+              {group.actions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
             </div>
           </div>
-        )}
-        {combatActions.length > 0 && (
-          <div className="action-group-section">
-            <span className="slot-group-label">{t('app.combatPanel.combatTrialActions')}</span>
-            <div className="action-group-list">
-              {combatActions.map(action => <ActionCard action={action} key={action.id} onOpen={setSelectedAction} />)}
-            </div>
-          </div>
-        )}
+        ))}
         {visibleActions.length === 0 && <p className="location-action-empty">{t('app.action.locationActionEmpty')}</p>}
       </div>
+      <AutoUse type="cultivation" />
       <AutoUse type="exploration" />
       {selectedAction && <ActionModal action={selectedAction} onClose={closeModal} />}
     </section>
@@ -1965,10 +1999,9 @@ const CombatDetailsPage = memo(function CombatDetailsPage({ hidden }: { hidden: 
 
 
 
-const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
+const BOTTOM_TABS: ReadonlyArray<{ tab: TabId; labelKey: 'insight' | 'market' | 'exploration' | 'crafting' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'; icon: IconName }> = [
   { tab: 'insight', labelKey: 'insight', icon: 'insight' },
   { tab: 'market', labelKey: 'market', icon: 'market' },
-  { tab: 'cultivation', labelKey: 'cultivation', icon: 'cultivation' },
   { tab: 'exploration', labelKey: 'exploration', icon: 'exploration' },
   { tab: 'crafting', labelKey: 'crafting', icon: 'crafting' },
   { tab: 'map', labelKey: 'map', icon: 'map' },
@@ -2119,7 +2152,6 @@ export default function App(): React.JSX.Element {
         <div className="center-column">
           <main className="main-content">
             {activeTab === 'insight' && <InsightPage />}
-            <SkillPage hidden={activeTab !== 'cultivation'} type="cultivation" />
             <ExplorationPage hidden={activeTab !== 'exploration'} />
             <CraftingPage hidden={activeTab !== 'crafting'} />
             <MapPage hidden={activeTab !== 'map'} />

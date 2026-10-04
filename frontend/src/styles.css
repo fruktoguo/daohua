@@ -1150,6 +1150,23 @@ input[type="checkbox"] {
   place-items: center;
 }
 
+/* 队列展开下拉的底部操作区：暂停/继续 + 移除全部 */
+.queue-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px 4px;
+  border-top: 1px solid rgba(201, 180, 109, 0.16);
+}
+
+/* 暂停生效中的「继续」按钮：金色描边呼应激活态 */
+.queue-footer button.is-paused {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  background: rgba(201, 180, 109, 0.12);
+}
+
 .buff-bar {
   display: flex;
   align-items: center;
@@ -1352,9 +1369,10 @@ input[type="checkbox"] {
 
 .nav-sub-item {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 10px 7px;
   border: 1px solid transparent;
   background: rgba(201, 180, 109, 0.02);
   color: var(--text-dim);
@@ -1387,6 +1405,33 @@ input[type="checkbox"] {
   align-items: center;
   justify-content: center;
   color: var(--gold);
+}
+/* 技艺子菜单主行：图标 + 名称 + 等级数字 */
+.nav-sub-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 等级数字：复用 underlined-value 的 pill-tone 专属色（与底边经验条同源取色），去下划线与加粗 */
+.nav-sub-level.underlined-value {
+  padding: 0;
+  border-bottom: none;
+  font-weight: 400;
+  font-size: 11px;
+}
+
+/* 技艺子菜单底边经验条：2px 细条，fill 复用 compound-stat-progress-fill 的 pill-tone 分色 */
+.nav-sub-progress {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.nav-sub-progress .compound-stat-progress-fill {
+  display: block;
 }
 /* 侧栏底部工具区（记录 / 设置）：吸底并与导航分隔 */
 .sidebar-footer {
@@ -3942,7 +3987,7 @@ input[type="checkbox"] {
 .market-level {
   display: grid;
   min-height: 29px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: center;
   padding: 4px 8px;
   border-bottom: 1px solid rgba(201, 180, 109, 0.06);
@@ -3984,6 +4029,35 @@ input[type="checkbox"] {
 .market-level--placeholder {
   min-height: 26px;
   border-bottom: 1px solid rgba(201, 180, 109, 0.05);
+}
+
+.market-level-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.market-level-trade-btn {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--gold-faint);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.market-level-trade-btn--bid {
+  color: #8fc3a6;
+  border-color: rgba(143, 195, 166, 0.35);
+}
+
+.market-level-trade-btn--ask {
+  color: #dda184;
+  border-color: rgba(221, 161, 132, 0.35);
+}
+
+.market-level-trade-btn:hover {
+  color: var(--gold-bright);
+  border-color: var(--gold-dim);
 }
 
 .market-empty {
@@ -6040,26 +6114,6 @@ input[type="checkbox"] {
   letter-spacing: 0.5px;
 }
 
-.insight-location {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.insight-location strong {
-  color: var(--text);
-}
-
-.insight-multiplier {
-  color: var(--jade);
-  font-style: normal;
-  font-size: 11px;
-}
-
 .insight-progress-block {
   display: flex;
   flex-direction: column;
@@ -6086,24 +6140,6 @@ input[type="checkbox"] {
   height: 100%;
   background: linear-gradient(90deg, #059669 0%, #10b981 100%);
   transition: width 0.3s ease;
-}
-
-.insight-quick-stats {
-  display: flex;
-  gap: 14px;
-  margin-top: 2px;
-  flex-wrap: wrap;
-}
-
-.insight-quick-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-}
-
-.insight-quick-item span {
-  color: var(--text-dim);
 }
 
 .tone-green { color: #34d399 !important; }
@@ -6746,12 +6782,6 @@ input[type="checkbox"] {
   .insight-title-row {
     justify-content: center;
   }
-  .insight-location {
-    justify-content: center;
-  }
-  .insight-quick-stats {
-    justify-content: center;
-  }
   .insight-dimensions-grid,
   .insight-stat-sections,
   .insight-records-grid {
@@ -6812,26 +6842,30 @@ input[type="checkbox"] {
   color: var(--gold-bright);
 }
 
+/* 对比列表：整表共享列轨道（行 display:contents 摊平为网格项），
+   五列 = 属性名 | 当前值(右对齐) | 箭头(居中) | 突破后值(左对齐) | 增益胶囊(右贴边)，
+   各列宽度取全表最大内容宽，所有行的数值与胶囊天然纵向对齐。 */
 .breakthrough-modal-attrs {
   display: grid;
-  gap: 2px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
   margin: 0 0 16px;
   padding: 0;
   list-style: none;
 }
 
 .breakthrough-modal-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 10px;
+  display: contents;
+}
+
+.breakthrough-modal-row > * {
   padding: 3px 8px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  border-radius: 2px;
 }
 
-.breakthrough-modal-row:nth-child(odd) {
+/* 斑马纹：奇数行整行单元格同底色（列间无 gap，背景连续） */
+.breakthrough-modal-row:nth-child(odd) > * {
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -6839,26 +6873,29 @@ input[type="checkbox"] {
   color: var(--text-dim);
 }
 
-.breakthrough-modal-row-change {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
 .breakthrough-modal-row-before {
   color: var(--text-dim);
+  text-align: right;
 }
 
 /* 箭头/新值/增益胶囊复用 underlined-value 的 pill-tone 专属色（与内视属性面板同源）；
-   箭头是装饰符号，去掉下划线与加粗，只取色调。 */
+   三者均为 inline-flex，作为网格项会被块化为 flex 容器，text-align 不生效，
+   需用 justify-content 控制内容横向对齐：箭头居中、突破后值右贴（与当前值列同为右对齐数字列）。 */
 .breakthrough-modal-row-arrow.underlined-value {
-  padding: 0;
+  padding-left: 0;
+  padding-right: 0;
   border-bottom: none;
   font-weight: 400;
+  justify-content: center;
 }
 
-/* 行尾增益胶囊：中性暗底 + 属性专属色调文字，形状收拢为胶囊 */
+.breakthrough-modal-row-after.underlined-value {
+  justify-content: flex-end;
+}
+
+/* 行尾增益胶囊：中性暗底 + 属性专属色调文字，右贴边对齐 */
 .breakthrough-modal-row-gain.underlined-value {
+  justify-self: end;
   padding: 1px 9px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
@@ -8089,7 +8126,7 @@ input[type="checkbox"] {
   color: var(--text);
 }
 
-.party-lobby-map {
+.party-lobby-node {
   color: var(--text-dim);
 }
 

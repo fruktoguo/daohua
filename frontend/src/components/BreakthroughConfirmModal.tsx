@@ -103,11 +103,9 @@ export function BreakthroughConfirmModal({
             {changedRows.map(row => (
               <li className={`breakthrough-modal-row pill-tone--${row.tone}`} key={row.key}>
                 <span className="breakthrough-modal-row-label">{t(`insight.base.${row.key}`)}</span>
-                <span className="breakthrough-modal-row-change">
-                  <span className="breakthrough-modal-row-before">{formatNumber(row.before)}</span>
-                  <span aria-hidden="true" className="breakthrough-modal-row-arrow underlined-value">→</span>
-                  <span className="breakthrough-modal-row-after underlined-value">{formatNumber(row.after)}</span>
-                </span>
+                <span className="breakthrough-modal-row-before">{formatNumber(row.before)}</span>
+                <span aria-hidden="true" className="breakthrough-modal-row-arrow underlined-value">→</span>
+                <span className="breakthrough-modal-row-after underlined-value">{formatNumber(row.after)}</span>
                 <span className="breakthrough-modal-row-gain underlined-value">+{formatNumber(row.delta)}</span>
               </li>
             ))}

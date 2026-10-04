@@ -49,7 +49,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
   const isPendingBreakthrough = useGameStore(state => state.isPendingBreakthrough)
   const loadout = useGameStore(state => state.combat)
   const attributes = useGameStore(state => state.combatAttributes)
-  const world = useGameStore(state => state.world)
   const buffs = useGameStore(state => state.buffs)
 
   // 境界计算体系 (大境界 · 境界阶段 · 小境界)
@@ -234,11 +233,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
               <h2 className="insight-main-title">{name}</h2>
               <RealmBadge realmInfo={realmInfo} />
             </div>
-            <p className="insight-location">
-              <span>{t('insight.location')}</span>
-              <strong>{world.locationName || t('insight.locationFallback')}</strong>
-              <em className="insight-multiplier">{t('insight.multiplier', { value: (world.cultivationMultiplier || 1.0).toFixed(2) })}</em>
-            </p>
             {/* 突破修为进度 */}
             <div className="insight-progress-block">
               <div className="insight-progress-meta">
@@ -274,17 +268,6 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
                   {t('insight.breakthroughBtn')}
                 </button>
               )}
-            </div>
-            {/* 核心生息快照 */}
-            <div className="insight-quick-stats">
-              <div className="insight-quick-item">
-                <span>{t('insight.quick.hp')}</span>
-                <strong className="tone-green"><UnitNumber tooltipLabel={t('insight.quick.hp')} tone="jade" value={attributes?.maxHitpoints ?? 0} /></strong>
-              </div>
-              <div className="insight-quick-item">
-                <span>{t('insight.quick.mp')}</span>
-                <strong className="tone-blue"><UnitNumber tooltipLabel={t('insight.quick.mp')} tone="qi" value={attributes?.maxManapoints ?? 0} /></strong>
-              </div>
             </div>
           </div>
         </div>
@@ -583,11 +566,14 @@ export const InsightPage = memo(function InsightPage(): React.JSX.Element {
         )}
       </div>
 
-      {/* 破境突破二次确认弹窗：确认后才发送突破命令 */}
+      {/* 破境突破二次确认弹窗：确认后才发送突破命令，发送即关闭（突破后预览已失效） */}
       <BreakthroughConfirmModal
         open={isBreakthroughModalOpen}
         currentRealmLevel={stats.realmLevel}
-        onConfirm={() => gameClient.sendCommand('progression.breakthrough', {})}
+        onConfirm={() => {
+          gameClient.sendCommand('progression.breakthrough', {})
+          setIsBreakthroughModalOpen(false)
+        }}
         onClose={() => setIsBreakthroughModalOpen(false)}
       />
     </section>

@@ -3,8 +3,7 @@ import { create } from 'zustand'
 /**
  * 客户端主界面顶级页签标识：
  * - 'insight': 悟道 / 属性 / 境界突破详情
- * - 'cultivation': 修炼（吐纳）
- * - 'exploration': 历练（当前地点特殊行动与妖兽历练）
+ * - 'exploration': 历练（常驻修炼行动与当前地点技艺、讨伐行动）
  * - 'crafting': 技艺（炼丹与炼器）
  * - 'alchemy': 炼丹入口（映射至技艺/炼丹）
  * - 'map': 地图（包含地图与附近子选项卡）
@@ -15,7 +14,7 @@ import { create } from 'zustand'
  * - 'log': 传音道历（日志）
  * - 'settings': 个人与系统设置
  */
-export type TabId = 'insight' | 'market' | 'cultivation' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'
+export type TabId = 'insight' | 'market' | 'exploration' | 'crafting' | 'alchemy' | 'map' | 'combat' | 'social' | 'inventory' | 'log' | 'settings'
 
 /** 同道页子选项卡：当前仅「队伍」，后续同道玩法（宗门、结义等）沿用同一结构扩展 */
 export type SocialSubTab = 'party'
