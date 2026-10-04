@@ -565,7 +565,9 @@ public sealed partial class PlayerAggregate
         {
             Duel = duel with { Resolved = true, Forfeited = true, ViewerOutcome = CombatOutcome.PlayerWon }
         };
-        MarkDirty(PlayerSectionKind.ActionQueue);
+        // Touch 推进 StateVersion：对手弃战判胜由 RouteDuelForfeitAsync 主动推送，
+        // 仅标脏不推版本会得到同版本快照，被客户端版本门禁丢弃后判胜永不显示。
+        Touch(PlayerSectionKind.ActionQueue);
         return true;
     }
 

@@ -317,6 +317,42 @@ public sealed class SnapshotDeltaPushTests
     }
 
     /// <summary>
+    /// 版本未推进的命令（market.*/item.* 钱包类与空拍推进同路径）不再附加快照推送：
+    /// 同版本推送会被客户端版本门禁丢弃，却前移推送基线、把命令回执的资产差集烧空——
+    /// 钱包差额只能由必达的命令回执 delta 携带。版本推进的命令仍照常推送。
+    /// </summary>
+    [Fact]
+    public async Task CommandPush_SameStateVersion_SnapshotSuppressed()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId),
+            new EmptyAssets(),
+            new NoopEconomy(),
+            GameDataCatalog.BuiltIn);
+        var pushed = new List<PlayerRuntimeSnapshot>();
+        runtime.SnapshotUpdated += snapshot =>
+        {
+            lock (pushed) pushed.Add(snapshot);
+            return ValueTask.CompletedTask;
+        };
+
+        var initial = await runtime.LoadAsync(playerId);
+        var advance = await runtime.ExecuteAsync(playerId, "simulation.advance",
+            JsonSerializer.SerializeToElement(new { targetTime = DateTimeOffset.UtcNow }), 0, Guid.NewGuid());
+        Assert.True(advance.Success);
+        Assert.Equal(initial.StateVersion, advance.Snapshot.StateVersion);
+        Assert.Empty(pushed);
+
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(requestId.ToString("D"), "cultivation.draw-qi", 3), ProtocolJson.Options);
+        var enqueued = await runtime.ExecuteAsync(playerId, "action.enqueue", payload, 0, requestId);
+        Assert.True(enqueued.Success);
+        Assert.Single(pushed);
+    }
+
+    /// <summary>
     /// 命令回执增量形态：触及差集精确且推送基线已建立时，回执只携带触及段与派生候选。
     /// 客户端以「基线分段 + changedSections 覆盖」合并后，分段校验和与全量快照逐位一致；
     /// 回执入队成功还会把会话推送基线前移到回执编码口径。

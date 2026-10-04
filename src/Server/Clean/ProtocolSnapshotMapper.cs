@@ -157,7 +157,8 @@ public static class ProtocolSnapshotMapper
             runtime.StateVersion,
             runtime.LastSimulatedAt,
             changed ?? [],
-            changedAssets.Count == 0 ? null : changedAssets);
+            changedAssets.Count == 0 ? null : changedAssets,
+            runtime.DisplayName);
     }
 
     /// <summary>

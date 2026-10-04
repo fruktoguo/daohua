@@ -252,6 +252,10 @@ public sealed class EcsPlayerRuntimeAdapter(
                             if (actionDefinition.AllowedNodeIds is { Count: > 0 }
                                 && (before.State.World.EdgeId is not null || !actionDefinition.AllowedNodeIds.Contains(before.State.World.NodeId)))
                                 return new PlayerCommandResult(false, "WRONG_LOCATION", "当前位置不允许执行该行动。", before);
+                            // 黑名单节点同样拒入队（常驻行动按地点裁剪）。
+                            if (actionDefinition.ExcludedNodeIds is { Count: > 0 }
+                                && before.State.World.EdgeId is null && actionDefinition.ExcludedNodeIds.Contains(before.State.World.NodeId))
+                                return new PlayerCommandResult(false, "WRONG_LOCATION", "当前位置不允许执行该行动。", before);
                         }
                         var now = _simulationClock.UtcNow;
                         touched = ecs.MutatePlayer(playerId, aggregate => aggregate.Enqueue(intent, now, gameData.Actions));
@@ -279,14 +283,17 @@ public sealed class EcsPlayerRuntimeAdapter(
                     {
                         var hasLoop = payload.TryGetProperty("loopEnabled", out var loopEnabled);
                         var hasAutoTravel = payload.TryGetProperty("autoTravelEnabled", out var autoTravelEnabled);
+                        var hasPaused = payload.TryGetProperty("paused", out var paused);
                         if ((hasLoop && loopEnabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                             || (hasAutoTravel && autoTravelEnabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
-                            || (!hasLoop && !hasAutoTravel))
+                            || (hasPaused && paused.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                            || (!hasLoop && !hasAutoTravel && !hasPaused))
                             return new PlayerCommandResult(false, "INVALID_PAYLOAD", "队列设置无效。", before);
                         touched = ecs.MutatePlayer(playerId, aggregate =>
                         {
                             if (hasLoop) aggregate.SetLoopEnabled(loopEnabled.GetBoolean());
                             if (hasAutoTravel) aggregate.SetAutoTravelEnabled(autoTravelEnabled.GetBoolean());
+                            if (hasPaused) aggregate.SetQueuePaused(paused.GetBoolean());
                         });
                         break;
                     }
@@ -307,6 +314,20 @@ public sealed class EcsPlayerRuntimeAdapter(
                             moved = aggregate.MoveAction(actionInstanceId, direction);
                         });
                         if (!moved) return new PlayerCommandResult(false, "ACTION_NOT_FOUND", "行动不存在或已在边界位置。", before);
+                        break;
+                    }
+                    case "queue.clear":
+                    {
+                        if (before.State.Actions.Count == 0)
+                            return new PlayerCommandResult(false, "QUEUE_EMPTY", "队列已为空。", before);
+                        // 与 action.remove 同序：先把已流逝模拟结算掉，再对队首斗法做弃战判定并整队清空。
+                        if (_simulationClock.UtcNow > before.State.LastSimulatedAt)
+                            await ecs.RunPlayerOnceAsync(playerId, _simulationClock.UtcNow, cancellationToken).ConfigureAwait(false);
+                        touched = ecs.MutatePlayer(playerId, aggregate =>
+                        {
+                            forfeit = aggregate.ApplyDuelForfeit(_simulationClock.UtcNow, gameData.Duel);
+                            aggregate.ClearActions();
+                        }, destroyEncounters: true);
                         break;
                     }
                     case "queue.auto_use.configure":
@@ -699,7 +720,11 @@ public sealed class EcsPlayerRuntimeAdapter(
                 _attributeRevisions[playerId] = revisionNow;
                 _loaded[playerId] = after;
                 recent.Remember(requestId, command, payloadHash);
-                notifications.Add(new RuntimeNotification(playerId, outcome.Logs, after));
+                // 版本未推进的命令（market.*/item.* 钱包类）不附加快照推送：
+                // 同版本推送会被客户端版本门禁丢弃，却前移会话推送基线、把回执的资产差集烧空；
+                // 此类差额只能由必达的命令回执 delta 携带（客户端按同版本回执合入资产）。
+                notifications.Add(new RuntimeNotification(playerId, outcome.Logs,
+                    after.StateVersion != before.StateVersion ? after : null));
                 if (forfeit is { } resolvedForfeit)
                     await RouteDuelForfeitAsync(resolvedForfeit, notifications, cancellationToken).ConfigureAwait(false);
                 return new PlayerCommandResult(true, "OK", SuccessNotice(command), after, outcome.Simulation, outcome.Logs);
@@ -766,7 +791,11 @@ public sealed class EcsPlayerRuntimeAdapter(
                     ids = ids.Where(id => !lostSet.Contains(id)).ToArray();
                 }
             }
-            foreach (var playerId in ids) await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false);
+            // 市场等外部来源的入账使缓存钱包失效：重读并收集余额真实变化的玩家，
+            // 随后推进其版本让本轮推送把资产差量带给客户端（资产不属分段编码轴）。
+            var walletsSynced = new HashSet<Guid>();
+            foreach (var playerId in ids)
+                if (await EnsureWalletFreshAsync(playerId, cancellationToken).ConfigureAwait(false)) walletsSynced.Add(playerId);
             foreach (var playerId in ids)
             {
                 await RefreshNodeBuildingsAsync(playerId, _loaded[playerId].State.World, target, cancellationToken).ConfigureAwait(false);
@@ -774,6 +803,7 @@ public sealed class EcsPlayerRuntimeAdapter(
             }
             before = ids.ToDictionary(id => id, id => ToSnapshot(ecs.ExportSnapshot(id)));
             var marksBefore = ids.ToDictionary(id => id, ecs.GetDirtyMarks);
+            foreach (var playerId in walletsSynced) ecs.MarkExternalStateChanged(playerId);
             await ecs.RunOnceAsync(target, cancellationToken).ConfigureAwait(false);
             foreach (var playerId in ids)
             {
@@ -798,9 +828,11 @@ public sealed class EcsPlayerRuntimeAdapter(
                 uncommitted.Remove(playerId);
                 // 与 OOP PlayerRuntime 一致：日志无条件下发，快照仅在模拟真实变更（Changed）时推送，
                 // 空闲玩家仅时间前进不产生 ChangedSections，不得收到空增量。
-                if (outcome.Logs is { Count: > 0 } || outcome.Simulation is { Changed: true })
-                    notifications.Add(new RuntimeNotification(playerId, outcome.Logs,
-                        outcome.Simulation is { Changed: true } ? after : null));
+                // 例外：外部入账（市场结算等）已重读钱包并推进版本——Changed=false 时也必须推送，
+                // 否则余额差量无回执可携带，在线对手方要等重连才能看到入账。
+                var snapshotChanged = outcome.Simulation is { Changed: true } || walletsSynced.Contains(playerId);
+                if (outcome.Logs is { Count: > 0 } || snapshotChanged)
+                    notifications.Add(new RuntimeNotification(playerId, outcome.Logs, snapshotChanged ? after : null));
             }
         }
         catch
@@ -864,9 +896,21 @@ public sealed class EcsPlayerRuntimeAdapter(
     public ValueTask<IReadOnlyList<PlayerRuntimeSnapshot>> GetLoadedSnapshotsAsync(CancellationToken cancellationToken = default)
         => ValueTask.FromResult<IReadOnlyList<PlayerRuntimeSnapshot>>(_loaded.Values.OrderBy(value => value.PlayerId).ToArray());
 
+    /// <summary>
+    /// 市场结算把资产计入该玩家余额（成交对手方/撤单与到期退款/结算领取）：
+    /// 在线玩家的缓存钱包标记失效，下一次玩家门内推进重读存储余额并推进版本，
+    /// 推送以新版本差量把入账带给客户端；未加载玩家的余额由下次装载读取，无需标记。
+    /// 回调约束：仅做字典标记，不阻塞市场写门闩、不抛异常。
+    /// </summary>
+    public void NotifyMarketWalletCredited(Guid playerId)
+    {
+        if (_loaded.ContainsKey(playerId)) _walletReloadRequired[playerId] = 0;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
+        if (marketRuntime is not null) marketRuntime.WalletCredited -= NotifyMarketWalletCredited;
         foreach (var playerId in _loaded.Keys.ToArray())
         {
             try { await RemoveAsync(playerId, true, CancellationToken.None).ConfigureAwait(false); }
@@ -1084,17 +1128,34 @@ public sealed class EcsPlayerRuntimeAdapter(
         return new(logs, simulation);
     }
 
-    private async ValueTask EnsureWalletFreshAsync(Guid playerId, CancellationToken cancellationToken)
+    /// <summary>失效标记存在时重读钱包；返回缓存余额是否真实变化（市场外部入账检测用）。</summary>
+    private async ValueTask<bool> EnsureWalletFreshAsync(Guid playerId, CancellationToken cancellationToken)
     {
-        if (_walletReloadRequired.ContainsKey(playerId)) await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
+        if (!_walletReloadRequired.ContainsKey(playerId)) return false;
+        return await ReloadWalletAsync(playerId, cancellationToken).ConfigureAwait(false);
     }
 
-    private async ValueTask ReloadWalletAsync(Guid playerId, CancellationToken cancellationToken)
+    /// <summary>从存储权威重读钱包并同步 ECS 库存组件；返回重读前后余额是否变化。</summary>
+    private async ValueTask<bool> ReloadWalletAsync(Guid playerId, CancellationToken cancellationToken)
     {
         var rows = await assets.LoadBalancesAsync(playerId, cancellationToken).ConfigureAwait(false);
+        var changed = WalletChanged(playerId, rows);
         _wallets[playerId] = rows.ToDictionary(row => new AssetKey(new ItemId(row.AssetId), row.Variant));
         SyncEcsWallet(playerId);
         _walletReloadRequired.TryRemove(playerId, out _);
+        return changed;
+    }
+
+    /// <summary>比较重读结果与缓存钱包：数量增减、条目新增/移除任一差异即视为变化（版本号不参与判定）。</summary>
+    private bool WalletChanged(Guid playerId, IReadOnlyList<AssetBalanceRecord> rows)
+    {
+        if (!_wallets.TryGetValue(playerId, out var cached) || cached.Count != rows.Count) return true;
+        foreach (var row in rows)
+        {
+            if (!cached.TryGetValue(new AssetKey(new ItemId(row.AssetId), row.Variant), out var existing)
+                || existing.Quantity != row.Quantity) return true;
+        }
+        return false;
     }
 
     private void SyncEcsWallet(Guid playerId)
@@ -1135,6 +1196,8 @@ public sealed class EcsPlayerRuntimeAdapter(
             var applied = false;
             ecs.MutatePlayer(forfeit.PeerId, aggregate => applied = aggregate.ApplyPeerForfeit(forfeit.DuelId));
             if (!applied) return;
+            // 对手门外的标脏必须进刷盘轨道：若对方此后无操作，判胜结果不能丢在内存脏集里。
+            TrackDirty(forfeit.PeerId);
             var peerAfter = ToSnapshot(ecs.ExportSnapshot(forfeit.PeerId));
             _loaded[forfeit.PeerId] = peerAfter;
             notifications.Add(new RuntimeNotification(forfeit.PeerId, null, peerAfter));
@@ -1145,7 +1208,7 @@ public sealed class EcsPlayerRuntimeAdapter(
     /// <summary>命令回执持久化清单（与 OOP ShouldPersistReceipt 一致）；market.place/cancel 走订单幂等键不入回执。</summary>
     private static bool ShouldPersistReceipt(string command) => command is
         "action.enqueue" or "action.remove" or
-        "queue.configure" or "queue.move" or "queue.auto_use.configure" or
+        "queue.configure" or "queue.move" or "queue.clear" or "queue.auto_use.configure" or
         "loadout.replace" or "ability.learn" or "progression.breakthrough" or "world.travel" or
         "building.build" or "building.upgrade" or "building.contribute" or "player.rename" or "market.claim" or
         "item.discard" or "item.sell";

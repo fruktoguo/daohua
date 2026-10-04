@@ -414,12 +414,14 @@ public sealed record PlayerSnapshotDto(
 /// <param name="LastSimulatedAt">最近一次模拟推进时间</param>
 /// <param name="ChangedSections">本次变更的分段快照列表</param>
 /// <param name="ChangedAssets">本次变更的资产余额列表，可选</param>
+/// <param name="DisplayName">当前道号：身份标量不属任何分段，随增量透传使改名无需等待全量快照，可选</param>
 public sealed record PlayerSnapshotDeltaDto(
     string PlayerId,
     long StateVersion,
     DateTimeOffset LastSimulatedAt,
     IReadOnlyList<PlayerSectionDto> ChangedSections,
-    IReadOnlyList<AssetBalanceDto>? ChangedAssets = null);
+    IReadOnlyList<AssetBalanceDto>? ChangedAssets = null,
+    string? DisplayName = null);
 
 /// <summary>行动排队意图请求 DTO</summary>
 /// <param name="RequestId">请求唯一标识，客户端幂等键</param>
@@ -816,7 +818,7 @@ public static class SocialActions
         PartyMatchSet or PartyMatchClear or PartyShare;
 }
 
-/// <summary>队伍档案补丁载荷：party.create 时 name/activityKind/mapId/minValuation/isPublic 语义齐全，party.update 仅应用非空字段。</summary>
+/// <summary>队伍档案补丁载荷：party.create 时 name/activityKind/nodeId/minValuation/isPublic 语义齐全，party.update 仅应用非空字段。</summary>
 /// <param name="Name">队伍名称（1~32 字符；创建时空值由服务端生成「{队长道号}的小队」）</param>
 /// <param name="ActivityKind">目标类型（见 <see cref="PartyActivityKinds"/>）</param>
 /// <param name="NodeId">目标节点 ID；空串表示不限</param>

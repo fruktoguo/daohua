@@ -57,6 +57,13 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         _logger = logger;
     }
 
+    /// <summary>
+    /// 市场结算把资产计入某玩家余额时触发（成交双方/撤单与到期退款属主/结算领取人）。
+    /// 订阅者（玩家运行时）据此标记在线玩家的缓存钱包失效：余额由下一次玩家门内操作重读，
+    /// 经推进推送以新版本差量送达客户端；订阅者回调必须在不抛异常、不阻塞市场写门闩的前提下完成。
+    /// </summary>
+    public event Action<Guid>? WalletCredited;
+
     /// <summary>分片就绪标记：完成租约获取与盘口恢复后为 true；持久化失败或租约丢失时回落 false 拒绝写入。</summary>
     public bool IsReady => _ready;
     /// <summary>本进程持有的市场分片序号。</summary>
@@ -243,12 +250,15 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
     /// <param name="playerId">结算属主玩家。</param>
     /// <param name="requestId">客户端请求标识，用于领取幂等去重。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    public ValueTask<SettlementClaimResult> ClaimSettlementAsync(PlayerId playerId, Guid requestId, CancellationToken cancellationToken = default)
+    public async ValueTask<SettlementClaimResult> ClaimSettlementAsync(PlayerId playerId, Guid requestId, CancellationToken cancellationToken = default)
     {
         if (!_ready) throw new InvalidOperationException("市场分片尚未就绪。");
         if (PartitionCount != 1)
             throw new InvalidOperationException("多市场分片尚未提供跨分片结算领取路由，当前请求已拒绝。");
-        return WithTransientRetryAsync(token => _store.ClaimSettlementAsync(playerId.Value, requestId, token), cancellationToken);
+        var result = await WithTransientRetryAsync(token => _store.ClaimSettlementAsync(playerId.Value, requestId, token), cancellationToken);
+        // 挂账结算已领取入账属主钱包：通知在线玩家运行时重读余额并推送差额。
+        NotifyWalletsCredited([playerId.Value]);
+        return result;
     }
 
     /// <summary>
@@ -362,6 +372,8 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                     // 成交统计为 double（无 Interlocked.Add 重载），此段在写门闩内串行，读侧用 Volatile.Read。
                     _tradedQuantity += fills.Sum(fill => fill.Quantity);
                     _tradedGrossAmount += fills.Sum(fill => fill.Quantity * fill.Price);
+                    // 买卖双方钱包均已随成交事务入账：通知在线玩家运行时重读余额并推送差额。
+                    NotifyWalletsCredited(result.Fills.SelectMany(fill => new[] { fill.BuyerId.Value, fill.SellerId.Value }));
                 }
                 return result;
             }
@@ -445,6 +457,8 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
                 if (!await _store.CancelAsync(orderId.Value, ownerId.Value, PartitionId, _fenceToken, idempotencyKey, cancellationToken))
                     throw new InvalidOperationException("市场撤单事务未提交。");
                 Interlocked.Increment(ref _cancelCount);
+                // 撤单退款已入账属主钱包：在线玩家的缓存余额需要失效重读。
+                NotifyWalletsCredited([ownerId.Value]);
                 return result;
             }
             catch
@@ -562,6 +576,8 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
         {
             foreach (var book in dueBooks) book.Expire(now);
         }
+        // 到期退款已合批入账各属主钱包：通知在线玩家运行时重读余额并推送差额。
+        NotifyWalletsCredited(targets.Select(target => target.OwnerPlayerId));
     }
 
     /// <summary>
@@ -687,6 +703,20 @@ public sealed class MarketRuntime : IHostedService, IAsyncDisposable
             if (_recoveryLog.TryAcquire())
                 _logger.LogError(exception, "市场分片写权恢复失败 partition={PartitionId}，退避后重试", PartitionId);
             return false;
+        }
+    }
+
+    /// <summary>
+    /// 触发钱包入账事件：订阅者回调不抛异常、不阻塞市场写门闩——隔离失败只记录日志，
+    /// 绝不让通知缺陷反向拖垮市场事务路径。
+    /// </summary>
+    private void NotifyWalletsCredited(IEnumerable<Guid> playerIds)
+    {
+        if (WalletCredited is null) return;
+        foreach (var playerId in playerIds.Distinct())
+        {
+            try { WalletCredited.Invoke(playerId); }
+            catch (Exception exception) { _logger.LogError(exception, "市场入账通知处理失败 player={PlayerId}", playerId); }
         }
     }
 

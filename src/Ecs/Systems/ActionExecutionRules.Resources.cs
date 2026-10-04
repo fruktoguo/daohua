@@ -54,9 +54,12 @@ internal static partial class ActionExecutionRules
         }
         // durable 持续消耗品（阵盘）随槽位/钱包状态注入或清除无限期 ActiveBuff：
         // 必须在属性解析前同步，保证回复后段乘区进入本步面板与战内单位。
-        SyncDurableConsumableBuffs(player, gameData, wallet);
+        changed |= SyncDurableConsumableBuffs(player, gameData, wallet);
         ApplyResourceAttributes(player, gameData);
         instantDeltas = ActivateInstantConsumables(player, gameData, wallet, now, events, live);
+        // 即时消耗品扣件/注入 Buff/冷却回写是真实可见变更：不计 changed 会让资产已落库
+        // 但 SimulationResult.Changed=false，推进推送跳过该玩家直到下一条命令。
+        changed |= instantDeltas.Count > 0;
         var untilRegen = 5 - player.Resources.RegenCarrySeconds;
         var naturalStep = untilRegen;
         if (double.IsFinite(nextBuffExpiry)) naturalStep = Math.Min(naturalStep, nextBuffExpiry - nowUnix);
@@ -93,8 +96,11 @@ internal static partial class ActionExecutionRules
         ActionMutationBatch core, ActionMutationBatch request)
     {
         var at = windowStart.AddSeconds(stepSeconds);
-        foreach (var item in SettleResourceItems(player, at.ToUnixTimeMilliseconds() / 1000d,
-            gameData.Duel.StagedSettleSeconds))
+        var stagedItems = SettleResourceItems(player, at.ToUnixTimeMilliseconds() / 1000d,
+            gameData.Duel.StagedSettleSeconds);
+        // 暂存物品入账写入 Duel 账本与资产差量：不计 changed 会让入账已落库但无推送下发。
+        var changed = stagedItems.Length > 0;
+        foreach (var item in stagedItems)
         {
             var itemId = new ItemId(item.ItemId);
             var delta = new AssetDelta(player.PlayerId, new AssetKey(itemId), item.Quantity, "simulation");
@@ -104,8 +110,10 @@ internal static partial class ActionExecutionRules
                 $"暂存物品入账：{gameData.Items.GetValueOrDefault(itemId)?.Name ?? item.ItemId} ×{item.Quantity:0.##}。", null,
                 new Dictionary<ItemId, double> { [itemId] = item.Quantity }));
         }
-        var changed = AdvanceIdleSkillResources(player, stepSeconds);
-        foreach (var delta in core.ToAssetDeltas(player.PlayerId))
+        changed |= AdvanceIdleSkillResources(player, stepSeconds);
+        var coreDeltas = core.ToAssetDeltas(player.PlayerId);
+        changed |= coreDeltas.Count > 0;
+        foreach (var delta in coreDeltas)
         {
             wallet.Apply(delta);
             request.AddAsset(delta);
@@ -421,12 +429,13 @@ internal static partial class ActionExecutionRules
     /// 把配表 buffs 注入 ActiveBuff（+∞ 过期随槽位驻留，随 5 秒回复边界生效）；
     /// 条件失效时该物品注入的 Buff 立即清除。durable 不消耗物品、不耗竭时长。
     /// </summary>
-    internal static void SyncDurableConsumableBuffs(IPlayerResourceContext player, GameDataCatalog gameData,
+    internal static bool SyncDurableConsumableBuffs(IPlayerResourceContext player, GameDataCatalog gameData,
         AssetWallet wallet)
     {
         var slots = player.Settings.AutoUseSlots;
         var activeBuffs = player.Buffs.Active;
-        if (slots.Count == 0) return;
+        var changed = false;
+        if (slots.Count == 0) return false;
         var kind = player.Actions.Count > 0
             ? gameData.Actions.Get(player.Actions[0].Intent.ActionId).Kind
             : (ActionKind?)null;
@@ -457,7 +466,7 @@ internal static partial class ActionExecutionRules
                     Read(buff, "hpRegenPostRatio"), Read(buff, "mpRegenPostRatio")));
             }
         }
-        if (durableItemIds.Count == 0) return;
+        if (durableItemIds.Count == 0) return false;
         // 先移除"条件已失效"的注入：SourceItemId 属于 durable 物品但不在期望集合内。
         for (var i = activeBuffs.Count - 1; i >= 0; i--)
         {
@@ -470,6 +479,7 @@ internal static partial class ActionExecutionRules
             {
                 activeBuffs.RemoveAt(i);
                 player.MarkDirty(PlayerSectionKind.Buffs);
+                changed = true;
             }
         }
         // 再补入/更新期望的注入：同 buffId + SourceItemId 且字段全等则跳过。
@@ -492,6 +502,8 @@ internal static partial class ActionExecutionRules
             activeBuffs.RemoveAll(b => b.BuffId == want.BuffId);
             activeBuffs.Add(want);
             player.MarkDirty(PlayerSectionKind.Buffs);
+            changed = true;
         }
+        return changed;
     }
 }

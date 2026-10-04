@@ -76,12 +76,54 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     /// 校验和误记为已推送基线，造成客户端永久漂移。
     /// </summary>
     public object OutboundSync { get; } = new();
-    /// <summary>获取并递增下一个下行信封帧序列号</summary>
+    /// <summary>
+    /// 获取并递增下一个下行信封帧序列号。
+    /// 注意：仅在 <see cref="OutboundSync"/> 内与同锁的入队组合使用时才能保证「序号递增序 = 通道物理序」；
+    /// 锁外取号与写入分离会让并发生产者把合法帧倒序入队，被客户端按序号丢弃。
+    /// </summary>
     public long NextOutboundSequence() => Interlocked.Increment(ref _outboundSequence);
     /// <summary>向输出通道异步投递待发送的数据包（满时等待背压）</summary>
     public ValueTask SendAsync(byte[] packet, CancellationToken cancellationToken) => _outbound.Writer.WriteAsync(packet, cancellationToken);
     /// <summary>尝试非阻塞投递数据包（不区分可丢弃性，不进入慢消费者统计）</summary>
     public bool TrySend(byte[] packet) => _outbound.Writer.TryWrite(packet);
+
+    /// <summary>
+    /// 必达 JSON 帧的有序投递：取号-编码-首次入队尝试在 <see cref="OutboundSync"/> 内整体完成，
+    /// 与并发推送的基线临界区互斥，保证通道物理序严格等于序号递增序；
+    /// 满队列时退回锁外阻塞发送（必达帧不丢，慢消费者由可丢弃帧与踢线阈值兜底）。
+    /// </summary>
+    public ValueTask SendJsonAsync<T>(WireMessageType messageType, Guid requestId, T payload, CancellationToken cancellationToken)
+    {
+        byte[] packet;
+        bool enqueued;
+        lock (OutboundSync)
+        {
+            packet = WireEnvelopeCodec.EncodeJson(messageType, requestId, Math.Max(0, NextOutboundSequence()), payload);
+            enqueued = TrySend(packet);
+        }
+        return enqueued ? ValueTask.CompletedTask : SendAsync(packet, cancellationToken);
+    }
+
+    /// <summary>
+    /// 可丢弃 JSON 帧的有序投递：取号-编码-入队在 <see cref="OutboundSync"/> 内原子完成；
+    /// 满队列丢弃并累计慢消费者证据（语义同 <see cref="TrySendDroppable"/>）。
+    /// </summary>
+    /// <returns>帧已进入发送队列返回 true；被丢弃（或会话已在关闭流程）返回 false。</returns>
+    public bool TrySendJsonDroppable<T>(WireMessageType messageType, Guid requestId, T payload)
+    {
+        lock (OutboundSync)
+            return TrySendDroppable(WireEnvelopeCodec.EncodeJson(messageType, requestId, Math.Max(0, NextOutboundSequence()), payload));
+    }
+
+    /// <summary>
+    /// 共享载荷字节的可丢弃广播帧：多收件人复用同一段已序列化载荷，取号-编码-入队仍在 <see cref="OutboundSync"/> 内原子完成。
+    /// </summary>
+    public bool TrySendDroppableEnvelope(WireMessageType messageType, Guid requestId, ReadOnlyMemory<byte> payload)
+    {
+        lock (OutboundSync)
+            return TrySendDroppable(WireEnvelopeCodec.Encode(
+                WireEnvelope.Create(messageType, requestId, Math.Max(0, NextOutboundSequence()), payload)));
+    }
 
     /// <summary>
     /// 尝试非阻塞投递一帧可丢弃的实时推送：满队列丢弃时累计慢消费者证据，
@@ -441,9 +483,13 @@ public static class WebSocketEndpoint
                         }
                         if (admit.KickedSession is { } kicked)
                         {
-                            var kickNotice = EncodeJson(WireMessageType.Error, Guid.NewGuid(), kicked.NextOutboundSequence(),
-                                new ErrorDto(AntiMultiOpen.AntiMultiOpenConstants.SessionKickedErrorCode, "账号已在其他窗口或设备登录，当前连接已被替换。", null));
-                            kicked.RequestClose(AntiMultiOpen.AntiMultiOpenConstants.SessionKickedCloseCode, "Kicked by a newer session.", kickNotice);
+                            // 踢线通知取号-编码-入队在被踢会话锁内完成：与其推送生产者的序号次序保持一致。
+                            lock (kicked.OutboundSync)
+                            {
+                                kicked.TrySend(EncodeJson(WireMessageType.Error, Guid.NewGuid(), kicked.NextOutboundSequence(),
+                                    new ErrorDto(AntiMultiOpen.AntiMultiOpenConstants.SessionKickedErrorCode, "账号已在其他窗口或设备登录，当前连接已被替换。", null)));
+                            }
+                            kicked.RequestClose(AntiMultiOpen.AntiMultiOpenConstants.SessionKickedCloseCode, "Kicked by a newer session.");
                             // 等待旧会话完成拆除再加载 Actor：杜绝新旧会话并发驱动同一聚合、
                             // 以及旧会话 finally 误删新加载 Actor 的竞态。
                             try { await kicked.TeardownCompleted.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken); }
@@ -453,10 +499,17 @@ public static class WebSocketEndpoint
                             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
                             .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
                             .FirstOrDefault()?.InformationalVersion ?? "unknown";
-                        var helloAckSequence = session.NextOutboundSequence();
-                        await session.SendAsync(EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
-                            new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence,
-                                new AntiMultiOpenConfigDto(options.AntiMultiOpen.TabGuardEnabled))), cancellationToken);
+                        // HelloAck 序号内嵌载荷（客户端据此对齐下行序）：取号-编码在同一会话锁内完成，
+                        // 与可能并发的快照推送保持「序号递增序 = 通道物理序」，随后锁外阻塞投递保证必达。
+                        byte[] helloAckPacket;
+                        lock (session.OutboundSync)
+                        {
+                            var helloAckSequence = session.NextOutboundSequence();
+                            helloAckPacket = EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
+                                new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence,
+                                    new AntiMultiOpenConfigDto(options.AntiMultiOpen.TabGuardEnabled)));
+                        }
+                        await session.SendAsync(helloAckPacket, cancellationToken);
                         var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
                         displayName = initial.DisplayName;
                         // 握手数据获取并行化：快照编码（CPU）、社交/聊天/存在感（独立 IO 与内存计算）互不依赖，
@@ -636,7 +689,9 @@ public static class WebSocketEndpoint
                                 new ErrorDto(SocialErrorCode(socialOutcome.Failure), SocialErrorMessage(socialOutcome.Failure), envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
-                        await QueueJsonAsync(session, WireMessageType.SocialState, envelope.RequestId,
+                        // 社交操作的成功应答必达：它是发起方唯一的操作确认（StateChanged 广播排除发起方，
+                        // 且广播形态在可丢弃清单内），丢失会让客户端永久看不到本次操作结果。
+                        await session.SendJsonAsync(WireMessageType.SocialState, envelope.RequestId,
                             await social.BuildStateAsync(session.PlayerId, envelope.RequestId.ToString("D"), cancellationToken), cancellationToken);
                         break;
                     case WireMessageType.PartyLobbyRequest:
@@ -697,12 +752,7 @@ public static class WebSocketEndpoint
         foreach (var recipientId in recipients)
         {
             if (!sessions.TryGet(recipientId, out var target)) continue;
-            var envelope = WireEnvelope.Create(
-                WireMessageType.ChatMessage,
-                Guid.NewGuid(),
-                target.NextOutboundSequence(),
-                payloadBytes);
-            target.TrySendDroppable(WireEnvelopeCodec.Encode(envelope));
+            target.TrySendDroppableEnvelope(WireMessageType.ChatMessage, Guid.NewGuid(), payloadBytes);
         }
     }
 
@@ -757,8 +807,14 @@ public static class WebSocketEndpoint
             requestId, result.Success, result.Code, result.Message,
             result.Snapshot.StateVersion, CommandResultSnapshotForms.Snapshot,
             JsonSerializer.SerializeToElement(fullSnapshot, ProtocolJson.Options));
-        enqueued = false;
-        return EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(), full);
+        // 全量兜底回执同样取号-编码-入队在会话锁内完成，保持与并发推送的序号次序一致；
+        // 满队列时 enqueued=false 由调用方锁外 SendAsync 阻塞投递。
+        lock (session.OutboundSync)
+        {
+            var packet = EncodeJson(WireMessageType.CommandResult, envelopeRequestId, session.NextOutboundSequence(), full);
+            enqueued = session.TrySend(packet);
+            return packet;
+        }
     }
 
     /// <summary>社交失败原因到协议错误码的映射。</summary>
@@ -818,16 +874,16 @@ public static class WebSocketEndpoint
         T payload,
         CancellationToken cancellationToken)
     {
-        var packet = EncodeJson(messageType, requestId, session.NextOutboundSequence(), payload);
         // Snapshot 增量、战报日志与传音/社交推送属于可丢弃的实时推送，慢客户端不能反向阻塞玩家模拟/持久化。
         // 队列已满时丢弃该帧并累计慢消费者证据，客户端可通过下一次命令响应、频道历史回放或重连
         // 重新获取完整快照、最近日志与社交状态；命令结果、错误、握手响应与历史回放仍保留等待语义。
+        // 取号-编码-入队由会话方法在 OutboundSync 内整体完成：通道物理序恒等于序号递增序。
         if (messageType is WireMessageType.SnapshotDelta or WireMessageType.LogBatch
             or WireMessageType.ChatMessage or WireMessageType.SocialState)
         {
-            session.TrySendDroppable(packet);
+            session.TrySendJsonDroppable(messageType, requestId, payload);
             return ValueTask.CompletedTask;
         }
-        return session.SendAsync(packet, cancellationToken);
+        return session.SendJsonAsync(messageType, requestId, payload, cancellationToken);
     }
 }
