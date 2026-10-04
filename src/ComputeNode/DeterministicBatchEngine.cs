@@ -18,6 +18,7 @@ public sealed class DeterministicBatchEngine(GameDataCatalog gameData) : IDispos
     /// <summary>跨任务复用的 ECS 执行环境；玩家实体按 job 装载、完成后卸载。</summary>
     private readonly EcsGameRuntime _runtime = new(gameData);
 
+    /// <summary>释放跨任务复用的 ECS 执行环境（卸载其全部玩家分片资源），随进程退出由宿主统一调用。</summary>
     public void Dispose() => _runtime.Dispose();
 
     /// <summary>

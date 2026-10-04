@@ -238,11 +238,10 @@ app.MapPost("/internal/v1/compute/advance-batch", async (
 
 app.Run();
 
-/// <summary>
-/// 读取主服上游地址列表：ComputeNode:UpstreamUrls 的配置节数组、分号分隔串与
-/// DAOHUA_COMPUTE_UPSTREAM_URLS（分号分隔）按序合并去重；三者皆空时回退旧单值键
-/// ComputeNode:UpstreamUrl/DAOHUA_COMPUTE_UPSTREAM_URL（内测期保留可读，便于存量部署平滑过渡）。
-/// </summary>
+// 读取主服上游地址列表：ComputeNode:UpstreamUrls 的配置节数组、分号分隔串与
+// DAOHUA_COMPUTE_UPSTREAM_URLS（分号分隔）按序合并去重；三者皆空时回退旧单值键
+// ComputeNode:UpstreamUrl/DAOHUA_COMPUTE_UPSTREAM_URL（内测期保留可读，便于存量部署平滑过渡）。
+// 注意：局部函数不支持 XML 文档注释（CS1587），故用普通行间注释。
 static List<string> ReadUpstreamUrls(IConfiguration configuration)
 {
     var urls = new List<string>();

@@ -41,6 +41,9 @@ public sealed class UpstreamLinkWorker(
     /// <summary>节点名称（hello 自报，主服仅用于诊断展示）。</summary>
     public string NodeName { get; } = string.IsNullOrWhiteSpace(nodeName) ? "compute-node" : nodeName.Trim();
 
+    /// <summary>
+    /// 拨入主循环：按列表序建立上游会话，断线/握手失败/主服排空后按指数退避换下一个上游，直到取消。
+    /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var retryDelay = MinRetryDelay;
