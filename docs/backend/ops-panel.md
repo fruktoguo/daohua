@@ -59,6 +59,7 @@
 
 | 端点 | 内容 | 数据来源 |
 | --- | --- | --- |
+| `GET /ops/api/account-abuse` | 动态账号检测策略、判定统计、近期事件与脱敏关联 | `PostgresAccountRiskRepository` |
 | `GET /ops/api/overview` | 服务名/版本/环境/进程资源/运行时长/协议与 schema 版本/配表指纹/会话与玩家计数/市场指标 | 现有实现保留 |
 | `GET /ops/api/health` | 全量健康检查逐项状态 | `HealthCheckService` |
 | `GET /ops/api/players` | 已加载玩家摘要 | `IPlayerRuntime.GetLoadedSnapshotsAsync` |
@@ -78,6 +79,7 @@
 
 | 端点 | 作用 | 实现路径 |
 | --- | --- | --- |
+| `POST /ops/api/account-abuse/policy` | 更新模块开关、设备必填、额度与软风险处置，提交数据库审计 | `PostgresAccountRiskRepository.ReplacePolicyAsync` |
 | `POST /ops/api/actions/kick` | 踢下线指定玩家会话 | `SessionRegistry` 取出会话并请求关闭（带关闭码与原因） |
 | `POST /ops/api/actions/flush` | 强制存档（单玩家或全部） | `IPlayerRuntime.FlushAsync` / `FlushAllAsync(force: true)` |
 | `POST /ops/api/actions/unload` | 卸载玩家运行时（不落盘） | `IPlayerRuntime.RemoveAsync(flush: false)` |
@@ -121,7 +123,7 @@
 | --- | --- |
 | 总览 | 概览、健康 |
 | 运行 | 调度、计算、日志 |
-| 数据 | 玩家、会话、存储 |
+| 数据 | 玩家、会话、存储、账号检测 |
 | 交易 | 市场盘口、市场指标与挂单、系统下单 |
 | 系统 | 配置、运维操作 |
 
@@ -159,3 +161,9 @@
   - `http://127.0.0.1:15172/ops` 可打开面板且为游戏黑金主题；
   - 无令牌的写操作返回 401，带正确令牌的写操作生效；
   - 生产构建产物中不存在 `/ops` 面板入口。
+
+## 9. 账号检测页
+
+账号检测页复用现有 OpsCard、OpsTable、OpsStatGrid 与 ConfirmDialog，不新增公共模板。设备 ID 注册额度和账号关联额度属于硬限制；设备配置、IP、网段、浏览器指纹、成功注册频率属于软评分，只有软模块编辑权重与命中阈值。策略修改沿用令牌、私有来源校验与确认弹窗，草稿不会被自动刷新覆盖。
+
+统计口径是风险判定次数；事件区分注册、登录和连接握手，拒绝登录不会签发会话。只显示账号 UUID 与 HMAC 摘要前缀，不显示口令、Cookie、完整 IP 或原始设备字段。详情与动态生效边界见 [`anti-multi-open.md`](anti-multi-open.md)。

@@ -14,6 +14,10 @@ import net from 'node:net'
 import tls from 'node:tls'
 import process from 'node:process'
 
+const smokeDeviceId = 'c83595a1-f72a-4720-8dda-9f9c321adbc5'
+const smokeDeviceConfig = crypto.createHash('sha256').update('daohua-smoke-device-v1').digest('hex')
+const riskSignals = { deviceId: smokeDeviceId, deviceConfigHash: smokeDeviceConfig, browserFingerprint: smokeDeviceConfig }
+
 const baseUrl = new URL(process.argv[2] || 'http://127.0.0.1:5128')
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS || 15_000)
 const requireStatic = process.env.SMOKE_REQUIRE_STATIC !== '0'
@@ -125,7 +129,7 @@ async function getWebSocketAuthHeaders() {
 
   let loginError = null
   try {
-    const login = await requestHttp('/api/v1/auth/login', 'application/json', 'POST', { account, password })
+    const login = await requestHttp('/api/v1/auth/login', 'application/json', 'POST', { account, password, riskSignals })
     return { mode: 'login', headers: { Cookie: cookieHeader(login.headers) } }
   } catch (error) {
     loginError = error
@@ -139,12 +143,13 @@ async function getWebSocketAuthHeaders() {
       account,
       password,
       displayName: process.env.SMOKE_DISPLAY_NAME || `部署烟测-${account}`,
+      riskSignals,
     })
     return { mode: 'register', headers: { Cookie: cookieHeader(registration.headers) } }
   } catch (registrationError) {
     // 账号可能已经存在但密码正确：再次登录获取当前 session。
     try {
-      const login = await requestHttp('/api/v1/auth/login', 'application/json', 'POST', { account, password })
+      const login = await requestHttp('/api/v1/auth/login', 'application/json', 'POST', { account, password, riskSignals })
       return { mode: 'login-after-register-conflict', headers: { Cookie: cookieHeader(login.headers) } }
     } catch (loginError) {
       throw new Error(`烟测账号注册/登录均失败：注册=${registrationError.message}；登录=${loginError.message}`)
@@ -155,7 +160,7 @@ async function getWebSocketAuthHeaders() {
 function cookieHeader(headers) {
   const setCookie = headers['set-cookie']
   if (!setCookie || setCookie.length === 0) throw new Error('鉴权响应缺少会话 Cookie。')
-  return setCookie[0].split(';', 1)[0]
+  return setCookie.map(value => value.split(';', 1)[0]).join('; ')
 }
 
 async function smokeWebSocket(gameDataFingerprint, authHeaders) {
@@ -165,6 +170,9 @@ async function smokeWebSocket(gameDataFingerprint, authHeaders) {
     const requestId = crypto.randomUUID()
     socket.write(encodeClientFrame(encodeEnvelope(1, {
       clientVersion: 'smoke',
+      deviceFingerprint: smokeDeviceConfig,
+      deviceConfigHash: smokeDeviceConfig,
+      deviceId: smokeDeviceId,
       gameDataFingerprint,
     })))
 

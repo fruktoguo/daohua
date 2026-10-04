@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Server.Clean;
+using Server.Clean.AccountAbuse;
 using Xunit;
 
 namespace Server.Tests;
@@ -21,7 +22,7 @@ public sealed class AccountAuthTests
     {
         var (source, repository) = await OpenRepositoryAsync();
         var account = UniqueAccount();
-        var registered = await repository.RegisterAsync(account, "old-pass-1", null);
+        var registered = await repository.RegisterAsync(account, "old-pass-1", null, new AccountRiskSignals(DeviceId: account));
         Assert.True(registered.Success);
 
         var result = await repository.ChangePasswordAsync(
@@ -29,7 +30,7 @@ public sealed class AccountAuthTests
 
         Assert.False(result.Success);
         Assert.Equal("INVALID_CREDENTIALS", result.ErrorCode);
-        var relogin = await repository.LoginAsync(account, "old-pass-1");
+        var relogin = await repository.LoginAsync(account, "old-pass-1", new AccountRiskSignals(DeviceId: account));
         Assert.True(relogin.Success);
         await source.DisposeAsync();
     }
@@ -41,7 +42,7 @@ public sealed class AccountAuthTests
     {
         var (source, repository) = await OpenRepositoryAsync();
         var account = UniqueAccount();
-        var registered = await repository.RegisterAsync(account, "old-pass-1", null);
+        var registered = await repository.RegisterAsync(account, "old-pass-1", null, new AccountRiskSignals(DeviceId: account));
         Assert.True(registered.Success);
 
         var result = await repository.ChangePasswordAsync(
@@ -62,10 +63,10 @@ public sealed class AccountAuthTests
     {
         var (source, repository) = await OpenRepositoryAsync();
         var account = UniqueAccount();
-        var registered = await repository.RegisterAsync(account, "old-pass-1", null);
+        var registered = await repository.RegisterAsync(account, "old-pass-1", null, new AccountRiskSignals(DeviceId: account));
         Assert.True(registered.Success);
         var firstToken = registered.SessionToken!;
-        var secondLogin = await repository.LoginAsync(account, "old-pass-1");
+        var secondLogin = await repository.LoginAsync(account, "old-pass-1", new AccountRiskSignals(DeviceId: account));
         Assert.True(secondLogin.Success);
         var secondToken = secondLogin.SessionToken!;
 
@@ -76,8 +77,8 @@ public sealed class AccountAuthTests
         Assert.True(result.Success);
         Assert.NotNull(await repository.ValidateSessionAsync(firstToken));
         Assert.Null(await repository.ValidateSessionAsync(secondToken));
-        Assert.False((await repository.LoginAsync(account, "old-pass-1")).Success);
-        Assert.True((await repository.LoginAsync(account, "new-pass-2")).Success);
+        Assert.False((await repository.LoginAsync(account, "old-pass-1", new AccountRiskSignals(DeviceId: account))).Success);
+        Assert.True((await repository.LoginAsync(account, "new-pass-2", new AccountRiskSignals(DeviceId: account))).Success);
         await source.DisposeAsync();
     }
 
@@ -94,6 +95,7 @@ public sealed class AccountAuthTests
             64, TimeSpan.FromSeconds(1), TimeSpan.FromDays(30),
             64 * 1024, 128, 1, 0, EnableSchemaBootstrap: false);
         return (source, new PostgresAccountRepository(
-            source, options, NullLogger<PostgresAccountRepository>.Instance, new PostgresOutboxRepository(source)));
+            source, options, NullLogger<PostgresAccountRepository>.Instance, new PostgresOutboxRepository(source),
+            new AccountRiskPolicyRegistry(), new AccountRiskHasher("account-auth-tests")));
     }
 }

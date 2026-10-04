@@ -163,9 +163,13 @@ public sealed class WebSocketSession(Guid playerId, int capacity)
     /// <param name="noticePacket">可选的下行通知帧（如 Error 包），在关闭前随队列余量一并冲刷</param>
     public void RequestClose(int closeCode, string reason, byte[]? noticePacket = null)
     {
-        if (noticePacket is not null) TrySend(noticePacket);
-        CloseHint = (closeCode, reason);
-        Complete();
+        lock (OutboundSync)
+        {
+            if (CloseHint is not null) return;
+            if (noticePacket is not null) TrySend(noticePacket);
+            CloseHint = (closeCode, reason);
+            Complete();
+        }
     }
 
     /// <summary>标记会话拆除全部完成，唤醒正在等待顶替他位的后续会话</summary>
@@ -300,6 +304,9 @@ public static class WebSocketEndpoint
         var social = context.RequestServices.GetRequiredService<Social.SocialRuntime>();
         var presence = context.RequestServices.GetRequiredService<Social.OnlinePresenceRegistry>();
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("WebSocketEndpoint");
+        var accountRisk = context.RequestServices.GetRequiredService<AccountAbuse.PostgresAccountRiskRepository>();
+        var riskContext = context.RequestServices.GetRequiredService<AccountAbuse.AccountRiskRequestContext>();
+        var accountId = Guid.Parse(context.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var session = new WebSocketSession(playerId, options.WebSocketOutboundCapacity);
         // 会话准入（单账号互踢/拒绝 + 设备配额）推迟到 Hello 处理时统一裁决：
@@ -348,7 +355,8 @@ public static class WebSocketEndpoint
         try
         {
             var sendTask = SendLoopAsync(socket, session, token);
-            var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions);
+            var receiveTask = ReceiveLoopAsync(socket, session, runtime, gameData, admission, options, token, logger, chat, social, presence, sessions,
+                accountRisk, riskContext, context, accountId);
             await Task.WhenAny(sendTask, receiveTask);
             // 服务端主动终止路径（被顶替/准入拒绝）：先冲刷通知帧再发关闭帧。
             // 顺序硬约束：取消令牌会中止阻塞中的 ReceiveAsync 并把 socket 置为 Aborted，
@@ -358,7 +366,7 @@ public static class WebSocketEndpoint
                 try { await sendTask.WaitAsync(TimeSpan.FromMilliseconds(500)); } catch { }
                 if (socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
                 {
-                    try { await socket.CloseAsync((WebSocketCloseStatus)hint.CloseCode, hint.Reason, CancellationToken.None); } catch { socket.Abort(); }
+                    try { await CloseSocketAsync(socket, (WebSocketCloseStatus)hint.CloseCode, hint.Reason); } catch { socket.Abort(); }
                 }
             }
             linked.Cancel();
@@ -370,7 +378,7 @@ public static class WebSocketEndpoint
             logger.LogError(ex, "WebSocket 会话异常 playerId={PlayerId}", playerId);
             if (socket.State == WebSocketState.Open)
             {
-                try { await socket.CloseAsync(WebSocketCloseStatus.InternalServerError, "服务器错误。", CancellationToken.None); } catch { socket.Abort(); }
+                try { await CloseSocketAsync(socket, WebSocketCloseStatus.InternalServerError, "服务器错误。"); } catch { socket.Abort(); }
             }
         }
         finally
@@ -390,13 +398,20 @@ public static class WebSocketEndpoint
             // 兜底关闭：主流程未发出关闭帧时（如发送循环异常）仍尝试按 CloseHint 收尾。
             if (session.CloseHint is { } closeHint && socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
             {
-                try { await socket.CloseAsync((WebSocketCloseStatus)closeHint.CloseCode, closeHint.Reason, CancellationToken.None); } catch { socket.Abort(); }
+                try { await CloseSocketAsync(socket, (WebSocketCloseStatus)closeHint.CloseCode, closeHint.Reason); } catch { socket.Abort(); }
             }
             // 关闭连接时使用独立取消令牌：请求已断开并不应中断权威状态刷盘。
             // 若数据库暂时不可用，RemoveAsync 保留 actor 与脏标记，后台 flush worker 会继续重试。
             if (owned) await runtime.RemoveAsync(playerId, true, CancellationToken.None);
             session.MarkTeardownCompleted();
         }
+    }
+
+    /// <summary>有界发送关闭帧，不让不回应的客户端占住会话拆除。</summary>
+    private static async Task CloseSocketAsync(WebSocket socket, WebSocketCloseStatus status, string reason)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await socket.CloseOutputAsync(status, reason, timeout.Token);
     }
 
     private static byte[] EncodeJson<T>(WireMessageType messageType, Guid requestId, long sequence, T payload) =>
@@ -420,11 +435,20 @@ public static class WebSocketEndpoint
         Social.ChatRuntime chat,
         Social.SocialRuntime social,
         Social.OnlinePresenceRegistry presence,
-        SessionRegistry sessions)
+        SessionRegistry sessions,
+        AccountAbuse.PostgresAccountRiskRepository accountRisk,
+        AccountAbuse.AccountRiskRequestContext riskContext,
+        HttpContext context,
+        Guid accountId)
     {
         var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(options.MaxWebSocketMessageBytes, 64 * 1024));
         long lastInboundSequence = 0;
         var handshaken = false;
+        using var handshakeDeadline = new CancellationTokenSource();
+        var deadlineTask = Task.Delay(TimeSpan.FromSeconds(10), handshakeDeadline.Token).ContinueWith(task =>
+        {
+            if (!task.IsCanceled) session.RequestClose(1008, "握手超时。");
+        }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
         var displayName = string.Empty;
         try
         {
@@ -472,8 +496,34 @@ public static class WebSocketEndpoint
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId, new ErrorDto("GAME_DATA_MISMATCH", "客户端游戏数据版本不匹配。", envelope.RequestId.ToString("D")), cancellationToken);
                             continue;
                         }
+                        // 握手期限只约束「客户端首次发言」：合法 Hello 到达即解除——
+                        // 后续风险观测/准入/快照构建是服务端耗时，不能让期限在握手途中关通道
+                        // （否则 RequestClose 与 QueueJsonAsync 竞态产生 ChannelClosedException 噪音）。
+                        handshakeDeadline.Cancel();
                         // 防多开准入裁决：配额先于顶替，拒绝时通知帧随关闭码一并下发。
-                        var admit = admission.Admit(session, hello.DeviceFingerprint);
+                        AccountAbuse.AccountRiskSignals riskSignals;
+                        try
+                        {
+                            riskSignals = riskContext.Collect(context,
+                                new AccountAbuse.AccountRiskClientSignals(hello.DeviceConfigHash, hello.DeviceId, null, hello.DeviceFingerprint), persistCookie: false);
+                        }
+                        catch (ArgumentException)
+                        {
+                            await accountRisk.RecordInvalidSignalsAsync("handshake", accountId, cancellationToken);
+                            session.RequestClose(4007, "设备校验信息无效。");
+                            return;
+                        }
+                        var riskPolicy = await accountRisk.LoadPolicyAsync(cancellationToken);
+                        var riskDecision = await accountRisk.ObserveLoginAsync(accountId, riskSignals, cancellationToken, riskPolicy, "handshake");
+                        if (!riskDecision.Allowed)
+                        {
+                            var closeCode = riskDecision.ErrorCode == AccountAbuse.AccountRiskErrorCodes.RiskSignalRequired ? 4007 : 4006;
+                            session.RequestClose(closeCode, riskDecision.Message ?? "账号关联超限。");
+                            return;
+                        }
+                        // 设备标识优先，避免相同配置的独立设备被合并为同一在线额度主体。
+                        var quotaKey = riskSignals.DeviceId ?? riskSignals.DeviceConfigHash ?? hello.DeviceFingerprint;
+                        var admit = admission.Admit(session, quotaKey, riskPolicy);
                         if (!admit.Accepted)
                         {
                             await QueueJsonAsync(session, WireMessageType.Error, envelope.RequestId,
@@ -507,7 +557,7 @@ public static class WebSocketEndpoint
                             var helloAckSequence = session.NextOutboundSequence();
                             helloAckPacket = EncodeJson(WireMessageType.HelloAck, envelope.RequestId, helloAckSequence,
                                 new HelloResponse(serverVersion, ProtocolConstants.CurrentVersion, gameData.Fingerprint, helloAckSequence,
-                                    new AntiMultiOpenConfigDto(options.AntiMultiOpen.TabGuardEnabled)));
+                                    new AntiMultiOpenConfigDto(riskPolicy.Enabled && riskPolicy.Modules.Single(item => item.Id == "tabGuard").Enabled)));
                         }
                         await session.SendAsync(helloAckPacket, cancellationToken);
                         var initial = await runtime.LoadAsync(session.PlayerId, cancellationToken);
@@ -735,7 +785,12 @@ public static class WebSocketEndpoint
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (WebSocketException ex) { logger.LogDebug(ex, "WebSocket disconnected playerId={PlayerId}", session.PlayerId); }
-        finally { ArrayPool<byte>.Shared.Return(buffer); }
+        finally
+        {
+            handshakeDeadline.Cancel();
+            await deadlineTask;
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     /// <summary>

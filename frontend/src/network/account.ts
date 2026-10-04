@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { collectAccountSignals } from '../antiMulti/accountSignals'
 import { useGameStore } from '../game/gameStore'
 import { requestJson } from './apiClient'
 import { gameClient } from './gameClient'
@@ -110,9 +111,10 @@ function authFailure(error: unknown): AuthResponseDto {
 /** 注册账号并建立会话（HttpOnly Cookie 由服务端下发）；UI 层按返回 message 展示错误 */
 export async function requestRegister(account: string, password: string, displayName?: string): Promise<AuthResponseDto> {
   try {
+    const signals = await collectAccountSignals()
     const dto = await requestJson<ServerAuthDto>('/api/v1/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ account: account.trim(), password, displayName: displayName?.trim() || null }),
+      body: JSON.stringify({ account: account.trim(), password, displayName: displayName?.trim() || null, riskSignals: signals }),
     })
     return authSuccess(dto)
   } catch (error) {
@@ -123,9 +125,10 @@ export async function requestRegister(account: string, password: string, display
 /** 账号密码登录；成功即由服务端写入会话 Cookie */
 export async function requestLogin(account: string, password: string): Promise<AuthResponseDto> {
   try {
+    const signals = await collectAccountSignals()
     const dto = await requestJson<ServerAuthDto>('/api/v1/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ account: account.trim(), password }),
+      body: JSON.stringify({ account: account.trim(), password, riskSignals: signals }),
     })
     return authSuccess(dto)
   } catch (error) {

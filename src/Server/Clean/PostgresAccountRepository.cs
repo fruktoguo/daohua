@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Server.Clean.AccountAbuse;
 
 namespace Server.Clean;
 
@@ -53,10 +54,12 @@ public sealed record AccountLoginResult(
 /// <summary>账号、凭据与认证会话的持久化边界。</summary>
 public interface IAccountRepository
 {
-    /// <summary>注册账号并创建绑定玩家，同一事务写入初始会话与注册审计事件。</summary>
-    ValueTask<AccountRegistrationResult> RegisterAsync(string account, string password, string? displayName, CancellationToken cancellationToken = default);
-    /// <summary>校验账号密码；成功时刷新 last_seen_at 并签发新会话令牌。</summary>
-    ValueTask<AccountLoginResult> LoginAsync(string account, string password, CancellationToken cancellationToken = default);
+    /// <summary>注册账号并创建绑定玩家，同一事务执行风控并写入初始会话与注册审计事件。</summary>
+    ValueTask<AccountRegistrationResult> RegisterAsync(string account, string password, string? displayName, AccountRiskSignals? riskSignals,
+        CancellationToken cancellationToken = default, AccountRiskPolicy? policySnapshot = null);
+    /// <summary>校验账号密码后，同一事务执行风控；通过才刷新 last_seen_at 并签发新会话。</summary>
+    ValueTask<AccountLoginResult> LoginAsync(string account, string password, AccountRiskSignals? riskSignals,
+        CancellationToken cancellationToken = default, AccountRiskPolicy? policySnapshot = null);
     /// <summary>按令牌明文解析有效会话；未撤销、未过期且账号/玩家均启用才返回身份，否则 null。</summary>
     ValueTask<SessionIdentity?> ValidateSessionAsync(string token, CancellationToken cancellationToken = default);
     /// <summary>撤销会话；实际命中行时同事务写入登出审计事件。</summary>
@@ -88,7 +91,9 @@ public sealed class PostgresAccountRepository(
     NpgsqlDataSource dataSource,
     ServerOptions options,
     ILogger<PostgresAccountRepository> logger,
-    IOutboxRepository outbox) : IAccountRepository
+    IOutboxRepository outbox,
+    AccountRiskPolicyRegistry riskPolicyRegistry,
+    AccountRiskHasher riskHasher) : IAccountRepository
 {
     /// <summary>密码长度下限。</summary>
     public const int MinPasswordLength = 6;
@@ -108,19 +113,23 @@ public sealed class PostgresAccountRepository(
     private static readonly Regex AccountPattern = new("^[a-zA-Z0-9_]{3,32}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// 注册账号：同一 Serializable 事务内写账号、玩家、初始会话与 outbox 注册事件，
+    /// 注册账号：同一 ReadCommitted 事务内执行风控并写账号、玩家、初始会话与 outbox 注册事件，
     /// 任何一步失败整体回滚；账号名或道号撞唯一索引映射为 DUPLICATE_ACCOUNT_OR_NAME。
     /// </summary>
     /// <param name="account">登录账号，入库前统一小写规范化。</param>
     /// <param name="password">明文密码，PBKDF2-SHA512 哈希后入库，明文不落盘。</param>
     /// <param name="displayName">初始道号；为空时回退为规范化账号名。</param>
+    /// <param name="riskSignals">注册设备与身份信号；服务端规范化后只保存 HMAC 摘要。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="policySnapshot">宿主已读取的可信策略快照，确保该次注册不受并发策略替换影响。</param>
     /// <returns>成功时携带新会话令牌的注册结局。</returns>
     public async ValueTask<AccountRegistrationResult> RegisterAsync(
         string account,
         string password,
         string? displayName,
-        CancellationToken cancellationToken = default)
+        AccountRiskSignals? riskSignals,
+        CancellationToken cancellationToken = default,
+        AccountRiskPolicy? policySnapshot = null)
     {
         var normalizedAccount = NormalizeAccount(account);
         var normalizedName = NormalizeDisplayName(displayName, normalizedAccount);
@@ -138,12 +147,26 @@ public sealed class PostgresAccountRepository(
         var now = DateTimeOffset.UtcNow;
         var sessionToken = CreateSessionToken();
         var sessionTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(sessionToken));
+        var riskPolicy = policySnapshot ?? riskPolicyRegistry.Current;
+        var riskHashes = riskHasher.Hash(riskSignals, riskPolicy);
 
         long playerSeq;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
         try
         {
+            // 风控按信号取得事务锁；后续查询可见前一个持锁注册刚提交的关联行。
+            var decision = await PostgresAccountRiskRepository.EvaluateAsync(
+                connection, transaction, accountId, riskHashes, riskPolicy, cancellationToken);
+            if (!decision.Allowed)
+            {
+                // 此时尚未建账号；提交拒绝审计保留无信号和额度拒绝的证据。
+                await PostgresAccountRiskRepository.AppendEventAsync(
+                    connection, transaction, null, decision, now, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return FailureRegistration(decision.ErrorCode!, decision.Message!);
+            }
+
             await using (var accountCommand = new NpgsqlCommand("""
                 INSERT INTO identity.accounts
                     (account_id, login_normalized, password_hash, password_salt,
@@ -178,6 +201,10 @@ public sealed class PostgresAccountRepository(
 
             await InsertSessionAsync(connection, transaction, accountId, sessionTokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
 
+            if (riskHashes.Count > 0)
+                await PostgresAccountRiskRepository.PersistSignalsAsync(connection, transaction, accountId, riskHashes, now, cancellationToken);
+            await PostgresAccountRiskRepository.AppendEventAsync(connection, transaction, accountId, decision, now, cancellationToken);
+
             await outbox.AppendAsync(connection, transaction, accountId, "account",
                 "auth.account.registered",
                 JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId, account = normalizedAccount }),
@@ -196,17 +223,21 @@ public sealed class PostgresAccountRepository(
     }
 
     /// <summary>
-    /// 校验登录凭据并签发新会话。哈希比对用固定时间比较，且停用账号与密码错误
-    /// 走同一失败出口，避免响应差异泄露账号状态。
+    /// 校验登录凭据后，在同一事务内执行风控、保存关联并签发会话和成功事件。
+    /// 风控拒绝只提交拒绝审计；停用账号与密码错误走同一出口，避免泄露账号状态。
     /// </summary>
     /// <param name="account">登录账号。</param>
     /// <param name="password">明文密码。</param>
+    /// <param name="riskSignals">登录设备与身份信号；缺失时由当前策略判定并记录审计。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="policySnapshot">宿主已读取的可信策略快照。</param>
     /// <returns>成功时携带新会话令牌的登录结局。</returns>
     public async ValueTask<AccountLoginResult> LoginAsync(
         string account,
         string password,
-        CancellationToken cancellationToken = default)
+        AccountRiskSignals? riskSignals,
+        CancellationToken cancellationToken = default,
+        AccountRiskPolicy? policySnapshot = null)
     {
         var normalizedAccount = NormalizeAccount(account);
         if (!AccountPattern.IsMatch(normalizedAccount) || string.IsNullOrEmpty(password))
@@ -238,13 +269,32 @@ public sealed class PostgresAccountRepository(
             return FailureLogin("INVALID_CREDENTIALS", "账号或密码错误。");
 
         await reader.DisposeAsync();
-        await using (var update = new NpgsqlCommand("UPDATE identity.players SET last_seen_at = now() WHERE player_id = $1", connection))
+        var riskPolicy = policySnapshot ?? riskPolicyRegistry.Current;
+        var riskHashes = riskHasher.Hash(riskSignals, riskPolicy);
+        var now = DateTimeOffset.UtcNow;
+        await using var transaction = await connection.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken);
+        var decision = await PostgresAccountRiskRepository.EvaluateAsync(
+            connection, transaction, accountId, riskHashes, riskPolicy, cancellationToken, registration: false);
+        await PostgresAccountRiskRepository.AppendEventAsync(connection, transaction, accountId, decision, now, cancellationToken, "login");
+        if (!decision.Allowed)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return FailureLogin(decision.ErrorCode!, decision.Message!);
+        }
+
+        await PostgresAccountRiskRepository.PersistSignalsAsync(connection, transaction, accountId, riskHashes, now, cancellationToken);
+        await using (var update = new NpgsqlCommand("UPDATE identity.players SET last_seen_at = now() WHERE player_id = $1", connection, transaction))
         {
             update.Parameters.Add(new NpgsqlParameter { Value = playerId });
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        var token = await CreateSessionAsync(accountId, playerId, options.SessionLifetime, cancellationToken);
+        var token = CreateSessionToken();
+        var tokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        await InsertSessionAsync(connection, transaction, accountId, tokenHash, now, now.Add(options.SessionLifetime), cancellationToken);
+        await outbox.AppendAsync(connection, transaction, accountId, "account",
+            "auth.account.login", JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId }), now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return new AccountLoginResult(true, accountId, playerId, normalizedAccount, name, null, null, token, playerSeq);
     }
 
@@ -433,22 +483,6 @@ public sealed class PostgresAccountRepository(
         }
         logger.LogInformation("账号改密完成 accountId={AccountId}", accountId);
         return new AccountChangePasswordResult(true, null, null);
-    }
-
-    private async Task<string> CreateSessionAsync(Guid accountId, Guid playerId, TimeSpan lifetime, CancellationToken cancellationToken)
-    {
-        var token = CreateSessionToken();
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(token));
-        var now = DateTimeOffset.UtcNow;
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        await InsertSessionAsync(connection, transaction, accountId, hash, now, now.Add(lifetime), cancellationToken);
-        await outbox.AppendAsync(connection, transaction, accountId, "account",
-            "auth.account.login",
-            JsonSerializer.SerializeToUtf8Bytes(new { accountId, playerId }),
-            now, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return token;
     }
 
     private static async Task InsertSessionAsync(

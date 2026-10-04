@@ -37,7 +37,7 @@ import { calculateActionYieldPreview, isActionAvailableAtNode } from './game/act
 import { useSmoothProgressRef } from './game/useSmoothProgress'
 import type { ActionDefinition, ActionType, CombatTrigger, EquipmentSlot, InventoryItem, QueueEntry, WorldMapDefinition, WorldState } from './game/types'
 import { gameClient, GAME_DATA_MISMATCH_EVENT } from './network/gameClient'
-import { installAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
+import { installAntiMultiOpen, disposeAntiMultiOpen, useAntiMultiOpenStore } from './antiMulti'
 import { MultiTabBlockedPage } from './antiMulti/MultiTabBlockedPage'
 import { useAccountStore } from './network/account'
 import { fetchGameCatalog } from './network/apiClient'
@@ -2082,7 +2082,13 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     installAntiMultiOpen()
     void restoreSession()
-    return () => gameClient.dispose()
+    const onUnblocked = () => gameClient.connect()
+    window.addEventListener('daohua:tab-unblocked', onUnblocked)
+    return () => {
+      window.removeEventListener('daohua:tab-unblocked', onUnblocked)
+      gameClient.dispose()
+      disposeAntiMultiOpen()
+    }
   }, [restoreSession])
 
   // 服务端拒绝 Hello（配表指纹不匹配）时重新拉取配表：成功后经 catalogReady 路径自动重连。

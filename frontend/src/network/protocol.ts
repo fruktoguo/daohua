@@ -103,8 +103,11 @@ export interface HelloRequest {
   clientVersion: string
   /** 客户端持有的配表指纹；与服务端不一致时服务端会要求重拉目录 */
   gameDataFingerprint?: string | null
-  /** 防多开设备指纹（硬件特征哈希），服务端启用设备配额时必填 */
+  /** 辅助浏览器指纹，可缺失；稳定设备额度默认由设备 ID 提供 */
   deviceFingerprint?: string | null
+  /** 设备配置摘要与持久设备标识，用于服务端账号关联。 */
+  deviceConfigHash?: string | null
+  deviceId?: string | null
 }
 
 /** 防多开子系统下发的功能开关 */

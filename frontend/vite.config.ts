@@ -1,8 +1,35 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import JavaScriptObfuscator from 'javascript-obfuscator'
+
+/** 只保护采集和标签互斥代码，避免对游戏高频逻辑引入混淆开销。 */
+function accountSignalObfuscation(): Plugin {
+  return {
+    name: 'daohua-account-signal-obfuscation',
+    apply: 'build',
+    enforce: 'post',
+    transform(code, id) {
+      if (!id.replace(/\\/g, '/').includes('/src/antiMulti/') || id.endsWith('.tsx')) return null
+      const result = JavaScriptObfuscator.obfuscate(code, {
+        compact: true,
+        target: 'browser',
+        controlFlowFlattening: true,
+        controlFlowFlatteningThreshold: 0.35,
+        stringArray: true,
+        stringArrayEncoding: ['rc4'],
+        stringArrayThreshold: 1,
+        renameGlobals: false,
+        selfDefending: false,
+        debugProtection: false,
+        sourceMap: false,
+      })
+      return { code: result.getObfuscatedCode(), map: null }
+    },
+  }
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), accountSignalObfuscation()],
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'zustand'],
     ignoreOutdatedRequests: true,
@@ -28,6 +55,7 @@ export default defineConfig({
     },
   },
   build: {
+    sourcemap: false,
     // 图标注册表（game/itemIcons.ts）在构建期 eager 引用 assets/items 下的每一张图。
     // 默认 4KB 以下内联成 base64，会让入口 JS 随图标数量线性膨胀
     // （实测 64 张 64px WebP 约 240KB base64，几乎全部塞进 index.js）。

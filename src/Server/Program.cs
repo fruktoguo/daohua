@@ -12,6 +12,7 @@ using Domain.Market;
 using Protocol;
 using Server.Clean;
 using Server.Clean.Ops;
+using Server.Clean.AccountAbuse;
 using DaoHua.Ecs;
 using Server;
 
@@ -99,6 +100,11 @@ if (processRole == ServerProcessRole.Api)
 {
     builder.Services.AddSingleton(GameDataCatalog.LoadEmbedded());
     builder.Services.AddDaohuaPostgresDataProtection();
+    using (var riskKeyTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
+        builder.Services.AddSingleton(await AccountRiskHasher.CreateAsync(dataSource, riskKeyTimeout.Token));
+    builder.Services.AddSingleton<AccountRiskPolicyRegistry>();
+    builder.Services.AddSingleton<PostgresAccountRiskRepository>();
+    builder.Services.AddSingleton<AccountRiskRequestContext>();
     builder.Services.AddSingleton<IAccountRepository, PostgresAccountRepository>();
     builder.Services.AddSingleton<IAssetBalanceRepository, PostgresAssetRepository>();
     builder.Services.AddSingleton<IEconomyTransactionStore, PostgresEconomyRepository>();
@@ -126,7 +132,6 @@ if (processRole == ServerProcessRole.Api)
     builder.Services.AddSingleton<Server.Clean.Social.PartyValuationService>();
     builder.Services.AddSingleton<Server.Clean.Social.ChatRuntime>();
     builder.Services.AddSingleton<Server.Clean.Social.SocialRuntime>();
-    builder.Services.AddSingleton(options.AntiMultiOpen);
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.DeviceQuotaRegistry>();
     builder.Services.AddSingleton<Server.Clean.AntiMultiOpen.AntiMultiOpenAdmission>();
     builder.Services.AddDaohuaAuthentication();
@@ -324,9 +329,23 @@ if (processRole == ServerProcessRole.Api)
     });
 
     var auth = app.MapGroup("/api/v1/auth");
-    auth.MapPost("/register", async (RegisterRequest request, IAccountRepository accounts, IPlayerRuntime runtime, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
+    auth.MapGet("/client-policy", async (PostgresAccountRiskRepository risk, HttpContext context, CancellationToken ct) =>
     {
-        var result = await accounts.RegisterAsync(request.Account, request.Password, request.DisplayName, ct);
+        context.Response.Headers.CacheControl = "no-store";
+        var policy = await risk.LoadPolicyAsync(ct);
+        return Results.Ok(new { tabGuardEnabled = policy.Enabled && policy.Modules.Single(item => item.Id == "tabGuard").Enabled });
+    });
+    auth.MapPost("/register", async (RegisterRequest request, IAccountRepository accounts, PostgresAccountRiskRepository risk, AccountRiskRequestContext riskContext, IPlayerRuntime runtime, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
+    {
+        AccountRiskSignals signals;
+        try { signals = riskContext.Collect(context, request.RiskSignals); }
+        catch (ArgumentException)
+        {
+            await risk.RecordInvalidSignalsAsync("register", null, ct);
+            return Results.BadRequest(Problem(400, "INVALID_RISK_SIGNALS", "设备校验信息无效。"));
+        }
+        var policy = await risk.LoadPolicyAsync(ct);
+        var result = await accounts.RegisterAsync(request.Account, request.Password, request.DisplayName, signals, ct, policy);
         if (!result.Success)
             return Results.BadRequest(Problem(400, result.ErrorCode ?? "REGISTRATION_FAILED", result.Message ?? "注册失败。"));
         await runtime.LoadAsync(result.PlayerId!.Value, ct);
@@ -341,11 +360,22 @@ if (processRole == ServerProcessRole.Api)
             result.SequenceId
         });
     }).RequireRateLimiting("auth");
-    auth.MapPost("/login", async (LoginRequest request, IAccountRepository accounts, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
+    auth.MapPost("/login", async (LoginRequest request, IAccountRepository accounts, PostgresAccountRiskRepository risk, AccountRiskRequestContext riskContext, ServerOptions serverOptions, HttpContext context, CancellationToken ct) =>
     {
-        var result = await accounts.LoginAsync(request.Account, request.Password, ct);
+        AccountRiskSignals signals;
+        try { signals = riskContext.Collect(context, request.RiskSignals); }
+        catch (ArgumentException)
+        {
+            await risk.RecordInvalidSignalsAsync("login", null, ct);
+            return Results.BadRequest(Problem(400, "INVALID_RISK_SIGNALS", "设备校验信息无效。"));
+        }
+        var policy = await risk.LoadPolicyAsync(ct);
+        var result = await accounts.LoginAsync(request.Account, request.Password, signals, ct, policy);
         if (!result.Success)
-            return Results.Json(Problem(401, result.ErrorCode ?? "INVALID_CREDENTIALS", result.Message ?? "账号或密码错误。"), statusCode: 401);
+        {
+            var status = result.ErrorCode == "INVALID_CREDENTIALS" ? 401 : 403;
+            return Results.Json(Problem(status, result.ErrorCode!, result.Message!), statusCode: status);
+        }
         StampSessionCookie(context, result.SessionToken!, serverOptions.SessionLifetime);
         return Results.Ok(new { result.AccountId, result.PlayerId, result.Account, result.DisplayName, result.SequenceId });
     }).RequireRateLimiting("auth");
@@ -611,11 +641,13 @@ static async Task WriteHealthResponse(HttpContext context, HealthReport report, 
 /// <param name="Account">登录账号（3-32 位字母、数字或下划线，大小写不敏感）。</param>
 /// <param name="Password">明文密码，仅在传输层出现；服务端 PBKDF2 哈希后入库。</param>
 /// <param name="DisplayName">可选初始道号。</param>
-public sealed record RegisterRequest(string Account, string Password, string? DisplayName = null);
+/// <param name="RiskSignals">客户端采集的设备摘要；IP 和主体键由服务端生成。</param>
+public sealed record RegisterRequest(string Account, string Password, string? DisplayName = null, AccountRiskClientSignals? RiskSignals = null);
 /// <summary>登录请求体。</summary>
 /// <param name="Account">登录账号。</param>
 /// <param name="Password">明文密码，仅用于与服务端哈希比对。</param>
-public sealed record LoginRequest(string Account, string Password);
+/// <param name="RiskSignals">客户端采集的设备摘要，用于登录账号关联。</param>
+public sealed record LoginRequest(string Account, string Password, AccountRiskClientSignals? RiskSignals = null);
 /// <summary>修改密码请求体；CurrentPassword 为改密前的身份二次确认，明文仅存在于传输层。</summary>
 /// <param name="CurrentPassword">当前密码明文。</param>
 /// <param name="NewPassword">新密码明文。</param>

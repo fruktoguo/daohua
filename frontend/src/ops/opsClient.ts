@@ -1,3 +1,5 @@
+import type { OpsAccountAbuseOverview, OpsAccountAbusePolicy } from './opsTypes'
+
 /**
  * 运维面板 API 客户端（Development-only）。
  *
@@ -62,6 +64,16 @@ export async function opsPost<T>(path: string, body: unknown): Promise<T> {
   })
   if (!response.ok) throw new OpsApiError(await readMessage(response), response.status)
   return (await response.json()) as T
+}
+
+/** 读取账号检测总览（策略、统计、近期事件与脱敏关联）。 */
+export function opsGetAccountAbuse(signal?: AbortSignal): Promise<OpsAccountAbuseOverview> {
+  return opsGet<OpsAccountAbuseOverview>('/account-abuse', signal)
+}
+
+/** 更新账号检测策略；服务端负责令牌校验、范围校验和审计。 */
+export function opsUpdateAccountAbusePolicy(policy: Omit<OpsAccountAbusePolicy, 'updatedAt'>): Promise<unknown> {
+  return opsPost('/account-abuse/policy', policy)
 }
 
 /** 提取错误响应的可读文案（message 优先，其次 code，最后回退状态码）。 */

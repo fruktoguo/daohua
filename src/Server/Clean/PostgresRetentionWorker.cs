@@ -9,7 +9,7 @@ public sealed class PostgresRetentionRepository(
     ServerOptions options,
     ILogger<PostgresRetentionRepository> logger)
 {
-    /// <summary>对六类可清理表各删一小批过期行（同一事务），返回各类删除行数。</summary>
+    /// <summary>对七类可清理表各删一小批过期行（同一事务），返回各类删除行数。</summary>
     public async ValueTask<RetentionResult> PruneAsync(
         DateTimeOffset now,
         CancellationToken cancellationToken = default)
@@ -17,6 +17,7 @@ public sealed class PostgresRetentionRepository(
         var outboxBefore = now - options.DeliveredOutboxRetention;
         var sessionsBefore = now - options.SessionRetention;
         var auditBefore = now - options.AuditRetention;
+        var riskBefore = now - options.AccountRiskEventRetention;
         var computeBefore = now - options.ComputeJobRetention;
         var keysBefore = now - options.DataProtectionKeyRetention;
         var claimsBefore = now - options.SettlementClaimRetention;
@@ -45,6 +46,10 @@ public sealed class PostgresRetentionRepository(
             ORDER BY occurred_at
             LIMIT $2
             """, "DELETE FROM identity.audit_events e USING ({0}) doomed WHERE e.event_id = doomed.event_id", auditBefore, cancellationToken);
+        var deletedRisk = await DeleteBatchAsync(connection, transaction, """
+            SELECT event_id FROM identity.account_risk_events WHERE occurred_at < $1 ORDER BY occurred_at LIMIT $2
+            """, "DELETE FROM identity.account_risk_events e USING ({0}) doomed WHERE e.event_id=doomed.event_id", riskBefore, cancellationToken,
+                batchSize: Math.Min(10_000, options.RetentionBatchSize * 16));
         var deletedCompute = await DeleteBatchAsync(connection, transaction, """
             SELECT job_id
             FROM platform.compute_jobs
@@ -69,10 +74,10 @@ public sealed class PostgresRetentionRepository(
             """, "DELETE FROM market.settlement_claims c USING ({0}) doomed WHERE c.player_id = doomed.player_id AND c.request_id = doomed.request_id", claimsBefore, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims);
+        var result = new RetentionResult(deletedOutbox, deletedSessions, deletedAudit, deletedCompute, deletedKeys, deletedClaims, deletedRisk);
         if (result.Total > 0)
-            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims}",
-                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims);
+            logger.LogInformation("已完成低频运行数据清理 outbox={Outbox} sessions={Sessions} audit={Audit} compute={Compute} dataProtectionKeys={DataProtectionKeys} settlementClaims={SettlementClaims} accountRiskEvents={AccountRiskEvents}",
+                result.Outbox, result.Sessions, result.Audit, result.ComputeJobs, result.DataProtectionKeys, result.SettlementClaims, result.AccountRiskEvents);
         return result;
     }
 
@@ -82,14 +87,15 @@ public sealed class PostgresRetentionRepository(
         string selectorSql,
         string deleteTemplate,
         DateTimeOffset before,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? batchSize = null)
     {
         await using var command = new NpgsqlCommand(string.Format(
             System.Globalization.CultureInfo.InvariantCulture,
             deleteTemplate,
             selectorSql), connection, transaction);
         command.Parameters.Add(new NpgsqlParameter { Value = before });
-        command.Parameters.Add(new NpgsqlParameter { Value = options.RetentionBatchSize });
+        command.Parameters.Add(new NpgsqlParameter { Value = batchSize ?? options.RetentionBatchSize });
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
@@ -107,10 +113,11 @@ public sealed record RetentionResult(
     int Audit,
     int ComputeJobs,
     int DataProtectionKeys,
-    int SettlementClaims)
+    int SettlementClaims,
+    int AccountRiskEvents)
 {
     /// <summary>本轮删除总行数。</summary>
-    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims;
+    public int Total => Outbox + Sessions + Audit + ComputeJobs + DataProtectionKeys + SettlementClaims + AccountRiskEvents;
 }
 
 /// <summary>低频清理后台任务：启动 5 分钟后首次执行，之后每小时一批。</summary>

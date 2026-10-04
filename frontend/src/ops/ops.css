@@ -290,6 +290,37 @@
   color: var(--text-dim);
 }
 
+/* ---------- 账号检测策略 ---------- */
+
+.ops-account-policy-toolbar {
+  align-items: end;
+}
+
+.ops-account-policy-toolbar label {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.ops-account-policy-toolbar label:has(input[type='checkbox']) {
+  flex-direction: row;
+  align-items: center;
+}
+
+.ops-number-input {
+  width: 84px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-inline-check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ops-account-policy-toolbar + .ops-table-wrap .ops-table { min-width: 520px; }
+.ops-account-event-table .ops-table,
+.ops-account-association-table .ops-table { min-width: 780px; }
+
 .ops-empty,
 .ops-note {
   margin: 6px 0;

@@ -341,8 +341,11 @@ public sealed class CamelCaseKeyDoubleDictionaryConverter : JsonConverter<IReadO
 /// <summary>握手问候请求载荷</summary>
 /// <param name="ClientVersion">客户端版本号</param>
 /// <param name="GameDataFingerprint">客户端本地游戏数据指纹；与服务端不一致时握手将收到 GAME_DATA_MISMATCH 错误，可选</param>
-/// <param name="DeviceFingerprint">防多开设备指纹（客户端硬件特征哈希），可选；服务端启用设备配额时必填</param>
-public sealed record HelloRequest(string ClientVersion, string? GameDataFingerprint = null, string? DeviceFingerprint = null);
+/// <param name="DeviceFingerprint">辅助浏览器指纹（客户端特征摘要），可选；默认由设备 ID 提供稳定额度锚点</param>
+/// <param name="DeviceConfigHash">设备配置摘要，只参与综合风险评分，不单独证明唯一设备。</param>
+/// <param name="DeviceId">持久设备标识，服务端设备 Cookie 优先。</param>
+public sealed record HelloRequest(string ClientVersion, string? GameDataFingerprint = null, string? DeviceFingerprint = null,
+    string? DeviceConfigHash = null, string? DeviceId = null);
 /// <summary>防多开子系统下发给客户端的功能开关</summary>
 /// <param name="TabGuardEnabled">是否启用前端多标签页互斥守卫</param>
 public sealed record AntiMultiOpenConfigDto(bool TabGuardEnabled);

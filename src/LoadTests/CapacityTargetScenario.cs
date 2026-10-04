@@ -165,7 +165,8 @@ public static class CapacityTargetScenario
             long sectionBytes = 0;
             // 近似行宽假设：账号行 ~256B，行动队列按每玩家 6 条 × ~128B 估算；
             // section 行按 48B 行开销 + 实际 synthetic 载荷计。
-            var accountBytes = players * 256L;
+            // 账号检测：每账号6项信号及索引约3KiB，30天内100次事件约100KiB。
+            var accountBytes = players * (256L + 3 * 1024L + 100 * 1024L);
             var queueBytes = players * 6L * 128L;
             for (var index = 0; index < players; index++)
             {

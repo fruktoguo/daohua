@@ -66,11 +66,13 @@ export function installTabGuard(onBlocked: () => void): TabGuardHandle {
   const bornAt = Date.now()
   let blocked = false
   let leader = false
+  let heartbeatTimer: number | undefined
 
   const markBlocked = () => {
     if (blocked) return
     blocked = true
     leader = false
+    window.clearInterval(heartbeatTimer)
     onBlocked()
   }
 
@@ -137,27 +139,30 @@ export function installTabGuard(onBlocked: () => void): TabGuardHandle {
     return { requestTakeover: () => undefined, dispose: () => undefined }
   }
 
+  const requestStorageTakeover = () => {
+    if (!blocked) return
+    const claimId = newTabId()
+    try {
+      window.localStorage.setItem(TAKEOVER_KEY, claimId)
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ tabId: claimId, bornAt: Date.now(), heartbeatAt: Date.now() } satisfies LeaseRecord))
+    } catch {
+      // 存储不可写时刷新后重新检测。
+    }
+    takeoverReload()
+  }
   const existing = readLease()
   const takeoverMatched = existing !== null && pendingTakeover !== null && existing.tabId === pendingTakeover
   if (existing !== null && !takeoverMatched && Date.now() - existing.heartbeatAt <= LEASE_TTL_MS) {
     markBlocked()
     return {
-      requestTakeover: () => {
-        const claimId = newTabId()
-        try {
-          window.localStorage.setItem(TAKEOVER_KEY, claimId)
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ tabId: claimId, bornAt: Date.now(), heartbeatAt: Date.now() } satisfies LeaseRecord))
-        } catch {
-          // 写入失败时直接刷新，租约过期后仍可继位。
-        }
-        takeoverReload()
-      },
+      requestTakeover: requestStorageTakeover,
       dispose: () => undefined,
     }
   }
 
   leader = true
   const writeLease = () => {
+    if (blocked || !leader) return
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ tabId, bornAt, heartbeatAt: Date.now() } satisfies LeaseRecord))
     } catch {
@@ -165,7 +170,7 @@ export function installTabGuard(onBlocked: () => void): TabGuardHandle {
     }
   }
   writeLease()
-  const heartbeatTimer = window.setInterval(writeLease, HEARTBEAT_MS)
+  heartbeatTimer = window.setInterval(writeLease, HEARTBEAT_MS)
   const onStorage = (event: StorageEvent) => {
     if (event.key !== STORAGE_KEY || typeof event.newValue !== 'string') return
     try {
@@ -179,10 +184,13 @@ export function installTabGuard(onBlocked: () => void): TabGuardHandle {
   window.addEventListener('storage', onStorage)
 
   return {
-    requestTakeover: () => undefined,
+    requestTakeover: requestStorageTakeover,
     dispose: () => {
       window.clearInterval(heartbeatTimer)
       window.removeEventListener('storage', onStorage)
+      try {
+        if (readLease()?.tabId === tabId) window.localStorage.removeItem(STORAGE_KEY)
+      } catch { /* 存储不可用时租约自然过期。 */ }
     },
   }
 }

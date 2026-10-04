@@ -122,6 +122,9 @@ public sealed class OpsComputeEndpointTests
         builder.Services.AddSingleton(NpgsqlDataSource.Create("Host=127.0.0.1;Database=unused"));
         builder.Services.AddSingleton<OpsStorageInsights>();
 
+        builder.Services.AddSingleton(new Server.Clean.AccountAbuse.AccountRiskPolicyRegistry());
+        builder.Services.AddSingleton(new Server.Clean.AccountAbuse.AccountRiskHasher("ops-endpoint-tests"));
+        builder.Services.AddSingleton<Server.Clean.AccountAbuse.PostgresAccountRiskRepository>();
         var app = builder.Build();
         app.UseDeveloperExceptionPage();
         app.MapOpsPanel(new OpsOptions(true, "/ops", 500, "test-ops-token"),

@@ -17,6 +17,7 @@ GRANT SELECT ON platform.schema_version TO daohua_api, daohua_worker;
 -- API 当前内置刷盘、outbox 和 retention worker，所以同时需要其运行权限。
 GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
     identity.auth_sessions, identity.audit_events, identity.data_protection_keys,
+    identity.account_risk_signals, identity.account_risk_events, platform.account_risk_policy, platform.account_risk_key,
     game.player_state_heads, game.player_state_sections, game.player_action_queue,
     game.player_runtime_leases, game.player_projection,
     economy.player_asset_balances, economy.player_asset_instances, economy.transactions,
@@ -26,7 +27,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON identity.accounts, identity.players,
 GRANT SELECT, INSERT, UPDATE, DELETE ON game.player_state_heads, game.player_state_sections,
     game.player_action_queue, game.player_projection, platform.section_flush_queue,
     platform.integration_outbox TO daohua_worker;
-GRANT SELECT, DELETE ON identity.auth_sessions, identity.audit_events, identity.data_protection_keys,
+GRANT SELECT, DELETE ON identity.auth_sessions, identity.audit_events, identity.data_protection_keys, identity.account_risk_events,
     platform.compute_jobs, platform.command_receipts, market.settlement_claims TO daohua_worker;
 -- metrics 只读取 PostgreSQL 统计，不获得账号、密钥、玩家载荷或账本的 SELECT。
 GRANT pg_read_all_stats TO daohua_metrics;

@@ -241,6 +241,9 @@ public sealed class OpsWriteEndpointTests
         builder.Services.AddSingleton<IEconomyTransactionStore>(new RecordingEconomyStore());
         builder.Services.AddHealthChecks();
 
+        builder.Services.AddSingleton(new Server.Clean.AccountAbuse.AccountRiskPolicyRegistry());
+        builder.Services.AddSingleton(new Server.Clean.AccountAbuse.AccountRiskHasher("ops-endpoint-tests"));
+        builder.Services.AddSingleton<Server.Clean.AccountAbuse.PostgresAccountRiskRepository>();
         var app = builder.Build();
         app.UseDeveloperExceptionPage();
         app.MapOpsPanel(options, "test-version", DateTimeOffset.UtcNow);

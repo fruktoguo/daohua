@@ -141,7 +141,7 @@ sudo /opt/daohua/pitr-restore.sh \
 
 市场成交与审计属于长期权威流水，不由在线 retention worker 删除：`market-ledger-archive.sh` 每日把超过 90 天的 `market.trades` 和 `identity.audit_events` 按 UTC 月份在事务内移动到 `market.trades_archive_YYYYMM` / `identity.audit_events_archive_YYYYMM` 分区表；归档分区可独立 `pg_dump --table` 后上传对象存储，再按合规保留期删除。生产 `Storage__AuditRetentionDays=3650` 仅作最终兜底，不能替代分区归档。
 
-服务端每小时执行 `PostgresRetentionWorker`，小批量清理六类数据：已投递 outbox、过期会话、旧审计事件、已结束冷挂机任务、过期 Data Protection key，以及超过 `Storage:SettlementClaimRetentionDays`（默认 30 天）的 `market.settlement_claims`。过期命令回执不属于该 worker，由独立的 `CommandReceiptCleanupWorker` 每 10 分钟清理。两类 worker 都不会删除余额、订单、成交或未投递 outbox。Docker `json-file` 日志按 Compose 上限轮转，WebSocket/聊天/战斗 Tick 不写数据库。
+服务端每小时执行 `PostgresRetentionWorker`，小批量清理七类数据：已投递 outbox、过期会话、旧审计事件、账号检测事件、已结束冷挂机任务、过期 Data Protection key，以及超过 `Storage:SettlementClaimRetentionDays`（默认 30 天）的 `market.settlement_claims`。过期命令回执不属于该 worker，由独立的 `CommandReceiptCleanupWorker` 每 10 分钟清理。两类 worker 都不会删除余额、订单、成交或未投递 outbox。Docker `json-file` 日志按 Compose 上限轮转，WebSocket/聊天/战斗 Tick 不写数据库。
 
 ## 健康与安全边界
 
@@ -178,3 +178,11 @@ sudo /opt/daohua/pitr-restore.sh \
 基础属性目录 `GET /api/v1/catalog/base-attributes` 返回当前配表境界锚点，复用目录 ETag 与缓存策略；前端不得自行按生命上限计算回复。
 
 技能目录 `GET /api/v1/catalog/abilities` 返回当前技能配表及前端协议字段；`manaCost` 已按战斗规约换算为实际灵力点数，前端直接显示，不再次乘倍率。默认触发条件与装配协议统一使用 kebab-case。目录包含设计配置，无伤害、治疗等已实现效果的技能不能装配；技能吟唱、冷却与施放计数属于战斗持久化状态。
+
+## 账号检测与反小号（schema v10）
+
+账号检测策略由 `platform.account_risk_policy` 保存，不再读取 `AntiMultiOpen:*` 启动配置。注册、登录和 Hello 使用当前策略；`GET /api/v1/auth/client-policy` 仅返回标签互斥开关，前端每 30 秒更新。注册/登录请求新增 `riskSignals`（设备 ID、配置摘要、网络类型摘要、浏览器指纹），Hello 新增 `deviceId` 与 `deviceConfigHash`。
+
+默认稳定设备只注册一个账号、关联最多两个账号；配置/IP/网段/指纹/成功注册频率参与风险评分。自然人身份无法仅凭浏览器确定。Development 运维面板新增“账号检测”，策略写入仍需令牌、私有来源和确认；生产 Ops 访问边界保持关闭。规则与模块独立关闭语义见 [`anti-multi-open.md`](../backend/anti-multi-open.md)。
+
+数据库备份必须包括 `identity.account_risk_signals`、`identity.account_risk_events`、`platform.account_risk_policy`、`platform.account_risk_key` 与现有 Data Protection key。丢失 HMAC 密钥会破坏历史关联匹配；设备 Cookie 依赖 Data Protection key，二者不得独立清空。风险事件按独立 `Storage:AccountRiskEventRetentionDays`（默认 30 天、范围 1..365）小批量清理，每小时批次为普通清理批次的 16 倍且不超过 10000，稳定关联和风险密钥保留。API/worker 角色授权已同步 `deploy/postgres-local-roles.sql`。本任务未执行任何远端迁移或发布；生产升级 schema v10 须另行授权、先备份并显式应用独立迁移脚本。

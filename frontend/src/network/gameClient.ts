@@ -32,10 +32,10 @@ import {
 import { decodePlayerSnapshotDeltaDto, decodePlayerSnapshotDto } from './snapshot'
 import { getCatalogFingerprint } from './apiClient'
 import { getSessionAccount } from './sessionState'
+import { collectAccountSignals } from '../antiMulti/accountSignals'
 import {
   ANTI_MULTI_CLOSE_NOTICE_KEYS,
   applyAntiMultiOpenConfig,
-  getHelloDeviceFingerprint,
   isTabBlocked,
   registerBlockedTeardown,
 } from '../antiMulti'
@@ -406,13 +406,16 @@ export class GameClient {
     const socket = this.socket
     if (!socket || socket.readyState !== WebSocket.OPEN) return
     // 设备指纹采集是异步的：等待其完成再发送 Hello，避免配额开启时因缺指纹被拒。
-    const deviceFingerprint = await getHelloDeviceFingerprint().catch(() => null)
+    const accountSignals = await collectAccountSignals()
+    const deviceFingerprint = accountSignals.browserFingerprint
     if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) return
     try {
       socket.send(encodeJsonEnvelope(WireMessageType.Hello, createRequestId(), this.nextOutboundSequence(), {
         clientVersion: APP_VERSION,
         gameDataFingerprint: getCatalogFingerprint(),
         deviceFingerprint,
+        deviceConfigHash: accountSignals.deviceConfigHash,
+        deviceId: accountSignals.deviceId,
       }))
     } catch {
       socket.close(1011, '握手发送失败')

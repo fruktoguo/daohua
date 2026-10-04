@@ -7,6 +7,7 @@ import { OpsPlayersView, OpsSessionsView, OpsStorageView } from './views/DataVie
 import { OpsBookView, OpsMarketMetricsView, OpsOrdersView, OpsSystemOrderView, OpsTradesView } from './views/MarketViews'
 import { OpsConfigView, OpsHealthView, OpsOverviewView } from './views/OverviewViews'
 import { OpsComputeView, OpsLogsView, OpsSchedulerView } from './views/RuntimeViews'
+import { OpsAccountAbuseView } from './views/AccountAbuseView'
 import './ops.css'
 
 /** 面板视图标识。 */
@@ -14,6 +15,7 @@ type OpsViewId =
   | 'overview' | 'health'
   | 'scheduler' | 'compute' | 'logs'
   | 'players' | 'sessions' | 'storage'
+  | 'accountAbuse'
   | 'book' | 'orders' | 'trades' | 'market' | 'systemOrders'
   | 'config' | 'actions'
 
@@ -21,7 +23,7 @@ type OpsViewId =
 const NAV_GROUPS: Array<{ group: string; items: Array<{ id: OpsViewId; label: string }> }> = [
   { group: '总览', items: [{ id: 'overview', label: '概览' }, { id: 'health', label: '健康' }] },
   { group: '运行', items: [{ id: 'scheduler', label: '调度' }, { id: 'compute', label: '计算' }, { id: 'logs', label: '日志' }] },
-  { group: '数据', items: [{ id: 'players', label: '玩家' }, { id: 'sessions', label: '会话' }, { id: 'storage', label: '存储' }] },
+  { group: '数据', items: [{ id: 'players', label: '玩家' }, { id: 'sessions', label: '会话' }, { id: 'storage', label: '存储' }, { id: 'accountAbuse', label: '账号检测' }] },
   {
     group: '交易',
     items: [
@@ -121,6 +123,7 @@ export function OpsApp(): React.JSX.Element {
           {view === 'players' && <OpsPlayersView intervalMs={intervalMs} />}
           {view === 'sessions' && <OpsSessionsView intervalMs={intervalMs} />}
           {view === 'storage' && <OpsStorageView intervalMs={intervalMs} />}
+          {view === 'accountAbuse' && <OpsAccountAbuseView intervalMs={intervalMs} />}
           {view === 'book' && <OpsBookView />}
           {view === 'orders' && <OpsOrdersView />}
           {view === 'trades' && <OpsTradesView intervalMs={intervalMs} />}

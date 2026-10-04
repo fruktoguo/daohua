@@ -6,11 +6,12 @@ public static class PostgresSchema
     /// <summary>当前本地库内容版本（表结构 + 存档载荷标签）；与 platform.schema_version 表中的
     /// 最大版本必须一致。约定：SectionCodec.CurrentSchemaVersion 每次升级时本常量同步 +1，
     /// 存档标签 UPDATE 内嵌在 migrations/NNNN_vX_to_vY.sql 对应版本文件中。</summary>
+    /// v10：账号注册风控信号、判定事件与设备/身份关联索引。
     /// v9：progression 分段载荷新增 traitIds 特质 ID 集合，可缺省解码，无存档结构变更。
     /// v8：settings 分段载荷新增 queuePaused 队列暂停开关，可缺省解码，无存档结构变更。
     /// v7：social.parties 追加队伍档案列（name/activity_kind/node_id/min_valuation/is_public/updated_at）、
     /// 新增 social.party_seekers 散人池、social.chat_messages 增 party_ref 队伍链接外键；存档载荷未变。
-    public const int Version = 9;
+    public const int Version = 10;
 
     /// <summary>空库初始化用的权威 DDL；幂等（IF NOT EXISTS），仅限全新建库，不承担就地升级。</summary>
     public const string Sql = """
@@ -64,6 +65,47 @@ public static class PostgresSchema
         occurred_at timestamptz NOT NULL
     );
     CREATE INDEX IF NOT EXISTS ix_audit_events_occurred ON identity.audit_events(occurred_at DESC);
+
+    CREATE TABLE IF NOT EXISTS identity.account_risk_signals (
+        signal_id uuid PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES identity.accounts(account_id) ON DELETE CASCADE,
+        signal_kind varchar(32) NOT NULL,
+        signal_hash char(64) NOT NULL,
+        first_seen_at timestamptz NOT NULL,
+        last_seen_at timestamptz NOT NULL,
+        hit_count bigint NOT NULL DEFAULT 1 CHECK (hit_count > 0),
+        UNIQUE (account_id, signal_kind, signal_hash)
+    );
+    CREATE INDEX IF NOT EXISTS ix_account_risk_signal_lookup
+        ON identity.account_risk_signals(signal_kind, signal_hash, last_seen_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_account_risk_signal_account
+        ON identity.account_risk_signals(account_id, last_seen_at DESC);
+
+    CREATE TABLE IF NOT EXISTS identity.account_risk_events (
+        event_id uuid PRIMARY KEY,
+        account_id uuid NULL REFERENCES identity.accounts(account_id) ON DELETE SET NULL,
+        decision varchar(16) NOT NULL CHECK (decision IN ('allow', 'review', 'deny')),
+        error_code varchar(64) NULL,
+        signals jsonb NOT NULL DEFAULT '[]'::jsonb,
+        risk_score integer NOT NULL DEFAULT 0 CHECK (risk_score >= 0 AND risk_score <= 100),
+        reasons jsonb NOT NULL DEFAULT '[]'::jsonb,
+        event_kind varchar(16) NOT NULL DEFAULT 'register' CHECK (event_kind IN ('register', 'login', 'handshake')),
+        occurred_at timestamptz NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_account_risk_events_occurred
+        ON identity.account_risk_events(occurred_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_account_risk_events_account
+        ON identity.account_risk_events(account_id, occurred_at DESC);
+
+    CREATE TABLE IF NOT EXISTS platform.account_risk_policy (
+        policy_id smallint PRIMARY KEY CHECK (policy_id = 1),
+        payload jsonb NOT NULL,
+        updated_at timestamptz NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS platform.account_risk_key (
+        key_id smallint PRIMARY KEY CHECK (key_id = 1),
+        key_bytes bytea NOT NULL CHECK (octet_length(key_bytes) = 32)
+    );
 
     CREATE TABLE IF NOT EXISTS identity.data_protection_keys (
         key_id uuid PRIMARY KEY,
@@ -425,7 +467,7 @@ public static class PostgresSchema
         applied_at timestamptz NOT NULL
     );
     INSERT INTO platform.schema_version(version, applied_at)
-    VALUES (9, now()) ON CONFLICT (version) DO NOTHING;
+    VALUES (10, now()) ON CONFLICT (version) DO NOTHING;
     """;
 }
 

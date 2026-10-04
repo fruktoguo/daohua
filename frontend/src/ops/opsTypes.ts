@@ -324,6 +324,82 @@ export interface OpsConfig {
   antiMultiOpen: Record<string, string | number | boolean>
 }
 
+/** 账号检测模块标识。模块由服务端策略下发，前端只负责展示与提交开关。 */
+export type OpsAccountAbuseModuleId =
+  | 'deviceConfigHash'
+  | 'deviceId'
+  | 'ipAddress'
+  | 'network'
+  | 'browserFingerprint'
+  | 'registrationVelocity'
+
+/** 单项账号检测模块策略。 */
+export interface OpsAccountAbuseModulePolicy {
+  id: OpsAccountAbuseModuleId | string
+  name: string
+  enabled: boolean
+  weight: number
+  threshold: number
+}
+
+/** 账号检测总策略。敏感原始值不进入该 DTO。 */
+export interface OpsAccountAbusePolicy {
+  enabled: boolean
+  requireDeviceSignal: boolean
+  registrationEnabled: boolean
+  maxAccountsPerPerson: number
+  maxAccountsPerDevice: number
+  riskThreshold: number
+  highRiskAction: 'allow' | 'review' | 'deny' | string
+  modules: OpsAccountAbuseModulePolicy[]
+  updatedAt: string | null
+}
+
+/** 账号检测计数摘要。 */
+export interface OpsAccountAbuseStats {
+  accountCount: number
+  linkedPersonCount: number
+  linkedDeviceCount: number
+  registrationsToday: number
+  allowedToday: number
+  reviewedToday: number
+  blockedToday: number
+  highRiskToday: number
+  recentEventCount: number
+}
+
+/** 近期账号风险事件；所有账号、设备和网络标识均应由服务端脱敏。 */
+export interface OpsAccountAbuseEvent {
+  eventId: string
+  occurredAt: string
+  kind: string
+  action: 'allow' | 'review' | 'deny' | string
+  riskScore: number
+  accountKey: string | null
+  deviceKey: string | null
+  networkKey: string | null
+  reasons: string[]
+}
+
+/** 账号关联摘要；只显示脱敏键和计数，不显示原始指纹或完整 IP。 */
+export interface OpsAccountAbuseAssociation {
+  associationKey: string
+  accountCount: number
+  accountKeys: string[]
+  deviceCount: number
+  networkCount: number
+  maxRiskScore: number
+  lastSeenAt: string
+}
+
+/** 账号检测运维视图。 */
+export interface OpsAccountAbuseOverview {
+  policy: OpsAccountAbusePolicy
+  stats: OpsAccountAbuseStats
+  recentEvents: OpsAccountAbuseEvent[]
+  associations: OpsAccountAbuseAssociation[]
+}
+
 /** 日志条目。 */
 export interface OpsLogEntry {
   timestamp: string

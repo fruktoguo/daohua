@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Protocol;
+using Server.Clean.AccountAbuse;
 
 namespace Server.Clean.Ops;
 
@@ -20,6 +21,10 @@ public sealed record OpsUnloadRequest(Guid PlayerId, bool Flush = true);
 /// <summary>计算节点排空请求。</summary>
 /// <param name="NodeId">目标节点 ID；为空表示全部在线节点。</param>
 public sealed record OpsDrainRequest(Guid? NodeId);
+
+/// <summary>运维面板可修改的账号检测策略；所有阈值由服务端校验。</summary>
+public sealed record OpsAccountRiskPolicyRequest(bool Enabled, bool RequireDeviceSignal, bool RegistrationEnabled, int MaxAccountsPerPerson,
+    int MaxAccountsPerDevice, int RiskThreshold, string HighRiskAction, IReadOnlyList<AccountRiskModulePolicy> Modules);
 
 /// <summary>
 /// 本地运维面板（Development-only）。
@@ -49,6 +54,23 @@ public static class OpsPanel
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(options);
         var group = app.MapGroup(options.Path);
+
+        group.MapGet("/api/account-abuse", async (PostgresAccountRiskRepository risk, CancellationToken ct) =>
+            Results.Ok(await risk.GetOpsOverviewAsync(ct)));
+        group.MapPost("/api/account-abuse/policy", async (HttpContext context, OpsAccountRiskPolicyRequest request,
+            OpsOptions opts, PostgresAccountRiskRepository risk, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        {
+            if (RejectWriteRequest(context, opts) is { } rejected) return rejected;
+            var current = await risk.LoadPolicyAsync(ct);
+            var policy = current with { Enabled = request.Enabled, RequireDeviceSignal = request.RequireDeviceSignal, RegistrationEnabled = request.RegistrationEnabled,
+                MaxAccountsPerPerson = request.MaxAccountsPerPerson, MaxAccountsPerDevice = request.MaxAccountsPerDevice,
+                RiskThreshold = request.RiskThreshold, HighRiskAction = request.HighRiskAction, Modules = request.Modules };
+            try { policy.Validate(); }
+            catch (InvalidOperationException) { return Results.BadRequest(new { code = "INVALID_RISK_POLICY", message = "账号检测策略无效。" }); }
+            await risk.ReplacePolicyAsync(policy, ct);
+            Audit(loggerFactory, context, "account-risk-policy", null);
+            return Results.Ok(new { action = "account-risk-policy", updated = true });
+        });
 
         group.MapGet("/api/overview", (
             GameDataCatalog gameData,
@@ -342,7 +364,7 @@ public static class OpsPanel
             });
         });
 
-        group.MapGet("/api/config", (GameDataCatalog gameData, ServerOptions serverOptions) => Results.Ok(new
+        group.MapGet("/api/config", (GameDataCatalog gameData, ServerOptions serverOptions, AccountRiskPolicyRegistry riskPolicies) => Results.Ok(new
         {
             service = serverOptions.ServiceName,
             environment = app.Environment.EnvironmentName,
@@ -382,10 +404,10 @@ public static class OpsPanel
             },
             antiMultiOpen = new
             {
-                tabGuardEnabled = serverOptions.AntiMultiOpen.TabGuardEnabled,
-                singleSessionKickEnabled = serverOptions.AntiMultiOpen.SingleSessionKickEnabled,
-                deviceQuotaEnabled = serverOptions.AntiMultiOpen.DeviceQuotaEnabled,
-                deviceQuotaMaxAccounts = serverOptions.AntiMultiOpen.DeviceQuotaMaxAccounts
+                tabGuardEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.Single(item => item.Id == "tabGuard").Enabled,
+                singleSessionKickEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.Single(item => item.Id == "singleSession").Enabled,
+                deviceQuotaEnabled = riskPolicies.Current.Enabled && riskPolicies.Current.Modules.Single(item => item.Id == "onlineDeviceQuota").Enabled,
+                deviceQuotaMaxAccounts = riskPolicies.Current.MaxAccountsPerPerson
             }
         }));
 

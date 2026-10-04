@@ -1,71 +1,73 @@
-# 防多开模块（AntiMultiOpen）设计规约
+# 反多开与反小号模块设计规约
 
-> 状态：已随 TASK-20260917-04 落地。本文档是该模块的唯一权威设计真源。
+> TASK-20261004-10 的实现真源。服务端裁决，前端采集，数据库保存关联与策略。
 
-## 1. 目标与定位
+## 1. 目标与边界
 
-防止同一玩家通过多标签页、多端登录或多账号同机挂机获得不当并发收益。模块按 ROI 分三道防线，**全部实现收拢在独立模块中**，与游戏主逻辑仅保留窄接缝：
+默认同一设备安装标识只能注册一个账号，同一稳定设备主体最多关联两个账号；同账号只保留一个在线连接。配置、网络、指纹与注册速度联合识别批量小号。浏览器无法证明自然人身份，上限是设备关联约束；换设备、清理所有存储或伪造环境仍可能绕过，目标是增加批量操作成本。
 
-| 防线 | 拦截目标 | 开关配置 | 实现位置 |
-| :--- | :--- | :--- | :--- |
-| 标签页互斥 | 同浏览器误开/多开标签页 | `AntiMultiOpen:TabGuardEnabled` | `frontend/src/antiMulti/` |
-| 单账号会话唯一 | 同账号跨设备/跨窗口重复登录 | `AntiMultiOpen:SingleSessionKickEnabled` | `src/Server/Clean/AntiMultiOpen/` |
-| 设备配额 | 同设备多账号并发挂机 | `AntiMultiOpen:DeviceQuotaEnabled` + `DeviceQuotaMaxAccounts` | 服务端模块 + 前端指纹采集 |
+前端执行的代码不能通过加密永久隐藏。生产构建对 `antiMulti/*.ts` 执行字符串 RC4 编码与控制流混淆，关闭 source map；客户端不持有服务端 HMAC 密钥，不进行权威账号裁决。
 
-**不引入 Redis**（遵守 `commercial-persistence-architecture.md` 选型决策）：单实例部署下所有注册表均为进程内 `ConcurrentDictionary` 实现；socket 生命周期即在线真值，不需要心跳续期。
+## 2. 模块与默认策略
 
-## 2. 服务端子系统 `src/Server/Clean/AntiMultiOpen/`
+所有策略集中在 `platform.account_risk_policy`，不再绑定启动期 `AntiMultiOpen:*` 配置。
 
-### 2.1 组件
+| 模块 ID | 默认行为 | 性质 |
+| --- | --- | --- |
+| `deviceId` | 相同安装标识最多注册 1 个账号 | 硬限制 |
+| `deviceConfigHash` | 关联账号数达到 2 后加 45 分 | 软风险，同型号设备可能相同 |
+| `ipAddress` | 关联账号数达到 2 后加 20 分 | 软风险 |
+| `network` | 同网段关联数达到 2 后加 15 分 | 软风险 |
+| `browserFingerprint` | 指纹关联数达到 2 后加 10 分 | 软风险 |
+| `registrationVelocity` | 同 IP 一小时内成功注册达到 10 次后加 80 分 | 软风险，拒绝事件不计入速度 |
+| `accountAssociation` | 相同稳定设备主体最多关联 2 个账号 | 硬限制 |
+| `tabGuard` | 同浏览器标签页互斥，提供接管入口 | 客户端交互约束 |
+| `singleSession` | 新连接顶替同账号旧连接 | 服务端在线所有权 |
+| `onlineDeviceQuota` | 同设备最多 2 个不同账号在线 | 服务端在线配额 |
 
-- `AntiMultiOpenOptions`：`AntiMultiOpen:*` 配置节绑定与启动期校验（配额 1..64）。
-- `AntiMultiOpenConstants`：自定义关闭码 `4005`（被顶替）/ `4006`（配额超限）/ `4007`（缺指纹）/ `4008`（重复连接被拒）与对应协议错误码；与 `frontend/src/antiMulti/codes.ts` 严格同步。
-- `DeviceQuotaRegistry`：`指纹 → (PlayerId → 引用计数)`。同账号重复登记只占一个名额；连接断开引用归零即移除，设备为空即整条清除。
-- `AntiMultiOpenAdmission`：准入仲裁器，`Admit(session, fingerprint)` 在 **Hello 握手时**调用一次，`Release(session)` 在会话拆除时调用。
+配置、IP、网段、指纹的评分覆盖注册、登录和握手；速度仅作用于注册。风险分数累加后截断至 100，默认阈值 80、处置 `deny`。`allow` 放行并记录，`review` 放行并标记复核，`deny` 拒绝本次请求。设备注册与主体关联额度直接拒绝，不受软风险处置影响。总开关、注册检测、设备信号必填、两类上限、软模块权重/阈值及所有模块开关均可动态调整。
 
-### 2.2 关键裁决顺序
+关闭设备 ID 模块只关闭安装标识注册额度；账号关联模块仍独立使用稳定主体限制账号数。关闭配置模块只移除配置评分，不残留配置派生的主体限制。单账号互踢关闭时仍拒绝第二个同时连接，避免破坏玩家单写者所有权。
 
-```
-Hello 到达 → 配表指纹校验 → AntiMultiOpenAdmission.Admit
-  ├─ 互踢开启：先设备配额校验（失败直接拒绝，不动旧会话）→ AddOrKick 原子替换 → 踢出旧会话
-  └─ 互踢关闭：先 TryAdd 登记（失败即拒绝新连接）→ 再配额校验（失败回滚登记）
-```
+## 3. 信号边界与权威存储
 
-准入必须推迟到 Hello 的原因：设备指纹只随 `HelloRequest.DeviceFingerprint` 到达，accept 阶段无法裁决配额；若在 accept 期先踢旧会话，配额失败的登录会无谓踢掉在线连接。
+- `AccountRiskRequestContext` 严格校验 64 位十六进制摘要和 UUID。稳定主体由设备 ID 推导，不用低熵配置摘要认人；无实际 ID 且无有效受保护 Cookie 时不生成随机锚点。默认设备 ID 模块开启且必填时，单独配置摘要不能替代设备 ID。
+- 服务端签发 `daohua.device` 的 Data Protection Cookie（HttpOnly、SameSite=Lax、HTTPS 时 Secure），有效 Cookie 优先于客户端重报的 ID。前端普通 Cookie 与 localStorage 双份保存安装 UUID，均属于可伪造信号，不是认证凭据。
+- 来源 IP 只读取可信代理处理后的 `RemoteIpAddress`，IPv4-mapped 归一化；网段由服务端推导为 IPv4 `/24` 或 IPv6 `/64`。客户端上报的网络类型摘要不决定权威网段。
+- `AccountRiskHasher` 使用数据库首次生成的 32 字节 HMAC 密钥。`identity.account_risk_signals` 只保存 HMAC 与关联时间，`identity.account_risk_events` 保存脱敏判定、理由和分数；原始 IP、设备配置和浏览器摘要不落库。
+- 密钥存于 `platform.account_risk_key`，与关联数据一同备份。密钥与数据库同时泄露仍可能对低熵信号进行枚举，因此不能把 HMAC 当作数据库泄露后的匿名化保证。
 
-### 2.3 顶替会话的安全拆除链
+## 4. 注册与登录事务
 
-1. 新会话 `Admit` 成功 → 旧会话 `RequestClose(4005, …, SESSION_KICKED 通知帧)`：通知帧先入队再完成输出通道，发送循环冲刷后退出。
-2. 新会话 `await kicked.TeardownCompleted`（10s 超时降级继续）→ 旧会话 finally：事件退订 → `Release` 按实例配对移除（返回 false，**不触发 `runtime.RemoveAsync`**，避免误删新会话正在加载的玩家实体）→ 按 `CloseHint` 发 4005 关闭帧 → `MarkTeardownCompleted`。
-3. 新会话继续 `LoadAsync` → 全量快照。
+注册使用 ReadCommitted 事务，按种类/摘要固定顺序取得 PostgreSQL advisory xact lock，再查询关联和速度。等待锁后读取前一事务提交的结果，防止并发突破额度。通过后账号、玩家、会话、信号、审计与 outbox 同事务提交；拒绝只提交风险审计。
 
-旧会话 `Remove` 返回 false 是玩家实体卸载的否决条件——这是防多开引入顶替语义后必须守住的不变量。
+登录先校验口令，再在同一 ReadCommitted 事务执行关联额度、写风险事件；通过后才更新最近登录、签发会话与成功 outbox。拒绝不产生会话或成功登录事件。密码错误返回 401，风险拒绝返回 403。
 
-### 2.4 主动终止的关闭路径
+每次注册、登录和 Hello 从数据库取得策略快照；同一请求的观测、准入和 HelloAck 使用同一份快照。策略仓储实例串行读写，避免旧读结果覆盖当前进程的新策略。非法信号也记录脱敏拒绝事件。事件种类为 `register`、`login`、`handshake`；运维统计是判定次数，不是独立登录人数。
 
-`WebSocketSession.RequestClose` 设置 `CloseHint` 并完成输出通道；`HandleAsync` 在 `WhenAny` 返回后给发送循环 500ms 冲刷窗口，确保通知帧先于关闭帧到达；finally 中按 `CloseHint` 发送 WebSocket 关闭帧。
+## 5. WebSocket 在线准入
 
-## 3. 前端子系统 `frontend/src/antiMulti/`
+独立在线模块位于 `src/Server/Clean/AntiMultiOpen/`：
 
-- `tabGuard.ts`：BroadcastChannel 竞逐（claim/held/takeover 三消息 + bornAt/tabId 决胜）；无 BC 时降级 localStorage 租约（心跳续期 + 接管凭据）。被阻断页提供「在本页继续」接管入口。
-- `deviceFingerprint.ts`：只采集**跨浏览器稳定**的硬件/系统特征（WebGL 渲染器、CPU 线程数、屏幕规格、时区、音频渲染微差），SHA-256 摘要；不采 Canvas/UA 等浏览器相关维度。进程内记忆化。
-- `store.ts`：模块独立 zustand store（`tabBlocked` / `tabGuardEnabled`，后者持久化 localStorage 供连接建立前读取）。
-- `codes.ts`：与服务端常量同步的关闭码表与提示词映射。
-- `MultiTabBlockedPage.tsx`：阻断页（复用 status-screen 样式族）。
+- `DeviceQuotaRegistry` 单锁覆盖设备桶生命周期，按不同玩家计数，同账号重连使用引用计数。
+- Hello 到达后先执行账号关联观测，再以设备 ID 优先的规范化键进行在线准入；摘要统一大小写，避免拆分配额桶。
+- 互踢开启时先检查设备额度，再原子顶替旧连接；配额失败不踢旧会话。互踢关闭时先登记单会话，配额失败回滚登记。
+- 拆除按会话实例配对，旧连接不卸载新连接的玩家实体；新连接等待旧会话拆除后加载快照。
+- 首个合法 Hello 有 10 秒期限；未发送则关闭 1008。发送关闭帧最多等待 2 秒，不因客户端不响应无限占用连接。
+- 关闭码 4005（被顶替）、4006（额度超限）、4007（设备信息缺失/无效）、4008（重复连接）禁止自动重连；用户可手动重试。
 
-### 3.1 主逻辑接缝（全部）
+## 6. 前端接缝
 
-- `App.tsx`：挂载时 `installAntiMultiOpen()`；`tabBlocked` 时渲染阻断页。
-- `gameClient.ts`：握手携带 `deviceFingerprint`、HelloAck 应用 `tabGuardEnabled`、close 4005–4008 不重连并提示、`registerBlockedTeardown(dispose)`。
-- `protocol.ts`：`HelloRequest.deviceFingerprint` / `HelloResponse.antiMultiOpen` 类型对齐。
+- `accountSignals.ts` 统一采集安装 ID、配置摘要、网络类型及辅助指纹；音频指纹最多等待 2 秒，不可用时返回缺失值。
+- `account.ts` 注册/登录发送 `riskSignals`；`gameClient.ts` Hello 发送 `deviceId`、`deviceConfigHash` 和 `deviceFingerprint`。
+- `tabGuard.ts` 使用 BroadcastChannel 竞逐，无该能力时使用 localStorage 租约。被阻断页可接管；拆除停止心跳并清除自身租约。
+- `index.ts` 安装/释放守卫，读取 HelloAck，并每 30 秒读取 `GET /api/v1/auth/client-policy`。关闭后已阻断标签页自动解除并连接；客户端只收到标签互斥布尔值，不获得服务端评分策略。
+- `App.tsx` 负责阻断页与解除事件。无需新增游戏全局状态。
 
-## 4. 客户端行为约定
+## 7. 运维与留存
 
-- 4005–4008 与既有 1008/4001–4004 一样**禁止自动重连**，防止乒乓互踢风暴；提示文案按码区分。
-- 被顶替端显示「账号已在其他窗口或设备登录」，用户手动重连会把对方顶回——用户主动行为，允许。
+“账号检测”页复用 OpsCard、OpsTable、OpsStat 与 ConfirmDialog，显示策略、成功注册数、判定次数、最近 100 个事件、最近 100 组脱敏关联。写操作需要现有运维令牌、私有来源和二次确认，并产生策略更新审计；编辑草稿不会被自动刷新覆盖。
 
-## 5. 已知边界
+接口为 `GET /ops/api/account-abuse` 与 `POST /ops/api/account-abuse/policy`。沿用面板 Development-only 边界；生产不装配 Ops 路由，生产 Caddy 拦截 `/ops`。当前生产部署中修改策略需另行授权受控运维流程，本任务没有将开发面板开放到公网。
 
-- 指纹是软对抗：可被伪造插件/虚拟机绕过；Safari 会掩蔽 WebGL renderer 降低熵。定位为「提高小号成本」，不承载资产安全断言。
-- 配额按「不同账号数」计；同账号同设备重连不占新名额（引用计数保证顶替不漂移）。
-- 标签守卫开关经 HelloAck 下发并缓存 localStorage；服务端改开关后已打开页面需刷新生效。
+风险事件按 `Storage:AccountRiskEventRetentionDays`（默认 30 天）分批清理，稳定账号关联和 HMAC 密钥不随事件清理。schema 与分段标签统一为 v10，载荷结构未改变；一次性迁移位于 `migrations/0010_v9_to_v10.sql`，不参与运行时。独立压测环境若需要大量注册，应显式调整策略，禁止在生产绕过检测。

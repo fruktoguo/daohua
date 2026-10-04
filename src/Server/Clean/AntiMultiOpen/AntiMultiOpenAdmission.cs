@@ -26,11 +26,11 @@ public sealed record AntiMultiOpenAdmissionResult(
 /// 3. 互踢关闭时先做单会话登记再校验配额，配额失败时回滚登记，旧连接全程不受影响；
 /// 4. 会话释放按实例配对，被顶替的旧会话拆除时不会误删新会话已加载的玩家 Actor。
 /// </summary>
-/// <param name="options">防多开开关与配额配置</param>
+/// <param name="policies">账号检测动态策略注册表</param>
 /// <param name="sessions">在线会话注册表</param>
 /// <param name="devices">设备配额注册表</param>
 public sealed class AntiMultiOpenAdmission(
-    AntiMultiOpenOptions options,
+    AccountAbuse.AccountRiskPolicyRegistry policies,
     SessionRegistry sessions,
     DeviceQuotaRegistry devices)
 {
@@ -39,8 +39,16 @@ public sealed class AntiMultiOpenAdmission(
     /// </summary>
     /// <param name="session">待准入的会话</param>
     /// <param name="deviceFingerprint">客户端 Hello 上报的设备指纹（可为 null）</param>
-    public AntiMultiOpenAdmissionResult Admit(WebSocketSession session, string? deviceFingerprint)
+    /// <param name="policySnapshot">本次握手风险观测所用策略，防止准入途中切换开关。</param>
+    public AntiMultiOpenAdmissionResult Admit(WebSocketSession session, string? deviceFingerprint,
+        AccountAbuse.AccountRiskPolicy? policySnapshot = null)
     {
+        var policy = policySnapshot ?? policies.Current;
+        var options = new AntiMultiOpenOptions(
+            policy.Enabled && policy.Modules.Single(item => item.Id == "tabGuard").Enabled,
+            policy.Enabled && policy.Modules.Single(item => item.Id == "singleSession").Enabled,
+            policy.Enabled && policy.Modules.Single(item => item.Id == "onlineDeviceQuota").Enabled,
+            policy.MaxAccountsPerPerson);
         var fingerprint = NormalizeFingerprint(deviceFingerprint);
 
         if (options.SingleSessionKickEnabled)
@@ -110,6 +118,6 @@ public sealed class AntiMultiOpenAdmission(
     {
         if (string.IsNullOrWhiteSpace(fingerprint)) return null;
         var trimmed = fingerprint.Trim();
-        return trimmed.Length <= AntiMultiOpenConstants.MaxDeviceFingerprintLength ? trimmed : null;
+        return trimmed.Length <= AntiMultiOpenConstants.MaxDeviceFingerprintLength ? trimmed.ToUpperInvariant() : null;
     }
 }

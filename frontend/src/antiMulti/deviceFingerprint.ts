@@ -74,12 +74,6 @@ async function hashFingerprint(raw: string): Promise<string> {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw))
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
   } catch {
-    // 非安全上下文降级为 FNV-1a，仍满足配额判等的稳定性要求。
-    let hash = 0x811c9dc5 >>> 0
-    for (let index = 0; index < raw.length; index += 1) {
-      hash ^= raw.charCodeAt(index)
-      hash = Math.imul(hash, 0x01000193) >>> 0
-    }
-    return `fnv-${hash.toString(16).padStart(8, '0')}-${raw.length}`
+    throw new Error('设备摘要不可用。')
   }
 }

@@ -45,6 +45,8 @@ public sealed record ServerOptions(
     public TimeSpan SessionRetention { get; init; } = TimeSpan.FromDays(7);
     /// <summary>审计日志最长保留期限</summary>
     public TimeSpan AuditRetention { get; init; } = TimeSpan.FromDays(30);
+    /// <summary>账号检测判定事件保留期，独立于需要长期归档的业务审计。</summary>
+    public TimeSpan AccountRiskEventRetention { get; init; } = TimeSpan.FromDays(30);
     /// <summary>离线补算任务记录保留期限</summary>
     public TimeSpan ComputeJobRetention { get; init; } = TimeSpan.FromDays(7);
     /// <summary>ASP.NET 数据保护密钥保留期限</summary>
@@ -89,9 +91,6 @@ public sealed record ServerOptions(
     /// <summary>冷挂机筛选窗口：只处理最近活跃不超过该时长的玩家（对齐 48 小时离线收益封顶）</summary>
     public TimeSpan ColdCatchUpWindow { get; init; } = TimeSpan.FromHours(48);
 
-    /// <summary>防多开子系统开关与配额（AntiMultiOpen:* 配置节）</summary>
-    public global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions AntiMultiOpen { get; init; } = global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions.Default;
-
     /// <summary>派发链是否具备可运行配置（启用 + 共享令牌或任一节点映射令牌齐备；节点组经 compute-link 动态拨入）</summary>
     public bool ComputeNodeConfigured =>
         ComputeNodeEnabled && (!string.IsNullOrWhiteSpace(ComputeNodeToken) || ComputeNodeTokens.Count > 0);
@@ -124,6 +123,7 @@ public sealed record ServerOptions(
         var outboxRetentionDays = configuration.GetValue("Storage:DeliveredOutboxRetentionDays", 7);
         var sessionRetentionDays = configuration.GetValue("Storage:SessionRetentionDays", 7);
         var auditRetentionDays = configuration.GetValue("Storage:AuditRetentionDays", 30);
+        var riskRetentionDays = configuration.GetValue("Storage:AccountRiskEventRetentionDays", 30);
         var computeRetentionDays = configuration.GetValue("Storage:ComputeJobRetentionDays", 7);
         var dataProtectionRetentionDays = configuration.GetValue("Storage:DataProtectionKeyRetentionDays", 180);
         var settlementClaimRetentionDays = configuration.GetValue("Storage:SettlementClaimRetentionDays", 30);
@@ -156,6 +156,7 @@ public sealed record ServerOptions(
         if (outboxRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:DeliveredOutboxRetentionDays 必须在 1..3650。");
         if (sessionRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SessionRetentionDays 必须在 1..3650。");
         if (auditRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:AuditRetentionDays 必须在 1..3650。");
+        if (riskRetentionDays is < 1 or > 365) throw new InvalidOperationException("Storage:AccountRiskEventRetentionDays 必须在 1..365。");
         if (computeRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:ComputeJobRetentionDays 必须在 1..3650。");
         if (dataProtectionRetentionDays is < 30 or > 3650) throw new InvalidOperationException("Storage:DataProtectionKeyRetentionDays 必须在 30..3650。");
         if (settlementClaimRetentionDays is < 1 or > 3650) throw new InvalidOperationException("Storage:SettlementClaimRetentionDays 必须在 1..3650。");
@@ -206,6 +207,7 @@ public sealed record ServerOptions(
             DeliveredOutboxRetention = TimeSpan.FromDays(outboxRetentionDays),
             SessionRetention = TimeSpan.FromDays(sessionRetentionDays),
             AuditRetention = TimeSpan.FromDays(auditRetentionDays),
+            AccountRiskEventRetention = TimeSpan.FromDays(riskRetentionDays),
             ComputeJobRetention = TimeSpan.FromDays(computeRetentionDays),
             DataProtectionKeyRetention = TimeSpan.FromDays(dataProtectionRetentionDays),
             SettlementClaimRetention = TimeSpan.FromDays(settlementClaimRetentionDays),
@@ -223,8 +225,7 @@ public sealed record ServerOptions(
             ColdCatchUpBatchSize = coldBatchSize,
             ColdCatchUpMinIdle = TimeSpan.FromMinutes(coldMinIdleMinutes),
             ColdCatchUpWindow = TimeSpan.FromHours(coldWindowHours),
-            EcsShardCount = ecsShardCount,
-            AntiMultiOpen = global::Server.Clean.AntiMultiOpen.AntiMultiOpenOptions.From(configuration)
+            EcsShardCount = ecsShardCount
         };
     }
 

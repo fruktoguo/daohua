@@ -266,7 +266,10 @@ public static class WebSocketScenario
         CancellationToken cancellationToken)
     {
         var payload = JsonSerializer.SerializeToUtf8Bytes(
-            new { account, password, displayName = account },
+            new { account, password, displayName = account, riskSignals = new {
+                deviceId = Guid.NewGuid().ToString("D"),
+                deviceConfigHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(account)))
+            } },
             ProtocolJson.Options);
         for (var attempt = 0; attempt <= RegisterMaxRetries; attempt++)
         {
@@ -411,7 +414,7 @@ public static class WebSocketScenario
             WireMessageType.Hello,
             Guid.NewGuid(),
             1,
-            new HelloRequest("loadtest", null));
+            new HelloRequest("loadtest", null, Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)), DeviceId: Guid.NewGuid().ToString("D")));
         var helloStart = Stopwatch.GetTimestamp();
         await socket.SendAsync(helloFrame, WebSocketMessageType.Binary, true, cancellationToken);
         Interlocked.Increment(ref stats.SentFrames);
