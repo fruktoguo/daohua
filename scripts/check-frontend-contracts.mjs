@@ -50,7 +50,7 @@ try {
   const patch = await decodePlayerSnapshotDeltaDto(delta, current, deltaBytes)
   // 道号属身份标量而非分段：delta 透传后即时生效（改名无需等待全量快照）。
   assert.equal(patch.name, '契约道号')
-  assert.equal(patch.visual.name, '契约道号')
+  assert.deepEqual(patch.visual, { renderer: 'text', source: '契' })
   assert.deepEqual(patch.world.availableActionIds, payload.availableActionIds)
   assert.deepEqual(patch.world.encounterIds, payload.encounterIds)
   assert.deepEqual(patch.world.npcs, payload.npcs)

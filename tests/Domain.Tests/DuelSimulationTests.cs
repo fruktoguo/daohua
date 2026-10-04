@@ -124,7 +124,10 @@ public sealed class DuelSimulationTests
         Assert.Equal(1, initiator.Duel.CurrentReport?.DuelLosses);
         Assert.True(initiator.Duel.CooldownUntilUnixSeconds > 0);
 
+        // 对手弃战判胜必须推进版本：RouteDuelForfeitAsync 主动推送的同版本快照会被客户端版本门禁丢弃。
+        var versionBeforePeerForfeit = defender.StateVersion;
         Assert.True(defender.ApplyPeerForfeit(duelId));
+        Assert.True(defender.StateVersion > versionBeforePeerForfeit);
         var peerResult = SimulationEngine.AdvanceTo(defender, defender.LastSimulatedAt.AddSeconds(1), catalog, duel: new DuelAdvanceOptions(true));
         Assert.Contains(peerResult.AssetDeltas, delta => delta.Asset.ItemId.Value == "item.loot" && delta.QuantityDelta == 2);
         Assert.Equal(1, defender.Duel.CurrentReport?.DuelWins);

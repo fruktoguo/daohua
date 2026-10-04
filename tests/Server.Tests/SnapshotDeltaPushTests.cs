@@ -429,7 +429,8 @@ public sealed class SnapshotDeltaPushTests
 
         var packet = WebSocketEndpoint.BuildCommandResultPacket(
             session, "req-remove", Guid.NewGuid(), result, GameDataCatalog.BuiltIn, out var enqueued);
-        Assert.False(enqueued);
+        // 全量兜底回执同样在会话锁内取号-编码-入队：队列有余量即已入队，调用方无需补发。
+        Assert.True(enqueued);
         var receipt = JsonSerializer.Deserialize<CommandResultDto>(WireEnvelopeCodec.Decode(packet).Payload.Span, ProtocolJson.Options)!;
         Assert.Equal(CommandResultSnapshotForms.Snapshot, receipt.SnapshotForm);
         var full = receipt.Snapshot!.Value.Deserialize<PlayerSnapshotDto>(ProtocolJson.Options)!;
@@ -466,7 +467,7 @@ public sealed class SnapshotDeltaPushTests
 
         var packet = WebSocketEndpoint.BuildCommandResultPacket(
             session, requestId.ToString("D"), requestId, replay, GameDataCatalog.BuiltIn, out var enqueued);
-        Assert.False(enqueued);
+        Assert.True(enqueued);
         var receipt = JsonSerializer.Deserialize<CommandResultDto>(WireEnvelopeCodec.Decode(packet).Payload.Span, ProtocolJson.Options)!;
         Assert.Equal(CommandResultSnapshotForms.Snapshot, receipt.SnapshotForm);
     }
@@ -574,6 +575,140 @@ public sealed class SnapshotDeltaPushTests
         Assert.True(root.TryGetProperty("bossInterval", out _));
     }
 
+    /// <summary>
+    /// 并发多生产者有序投递：必达帧与可丢弃帧交错时，通道物理序必须严格等于序号递增序——
+    /// 取号-编码-入队在会话锁内原子完成，杜绝「先取号后写入」的倒序窗口（客户端按序号丢帧）。
+    /// </summary>
+    [Fact]
+    public async Task WebSocketSession_ConcurrentProducers_ChannelOrderMatchesSequence()
+    {
+        var session = new WebSocketSession(Guid.NewGuid(), capacity: 4096);
+        const int producers = 8;
+        const int framesPerProducer = 64;
+        await Parallel.ForEachAsync(Enumerable.Range(0, producers), async (index, _) =>
+        {
+            for (var i = 0; i < framesPerProducer; i++)
+            {
+                if ((i + index) % 3 == 0)
+                    session.TrySendJsonDroppable(WireMessageType.SnapshotDelta, Guid.NewGuid(), new { n = i });
+                else
+                    await session.SendJsonAsync(WireMessageType.CommandResult, Guid.NewGuid(), new { n = i }, CancellationToken.None);
+            }
+        });
+        var sequences = new List<long>();
+        while (session.Outbound.TryRead(out var packet)) sequences.Add(WireEnvelopeCodec.Decode(packet).Sequence);
+        Assert.Equal(producers * framesPerProducer, sequences.Count);
+        for (var i = 1; i < sequences.Count; i++)
+            Assert.True(sequences[i] > sequences[i - 1], $"帧序号倒序：{sequences[i - 1]} -> {sequences[i]}");
+    }
+
+    /// <summary>
+    /// 必达帧满队列时不丢弃而是阻塞等待背压（社交成功应答/命令回执/错误帧同语义）：
+    /// 队列排空后按序送达且序号与通道物理序一致。
+    /// </summary>
+    [Fact]
+    public async Task WebSocketSession_SendJsonAsync_FullQueue_BlocksThenDelivers()
+    {
+        var session = new WebSocketSession(Guid.NewGuid(), capacity: 1);
+        Assert.True(session.TrySend([0]));
+        var sendTask = session.SendJsonAsync(WireMessageType.SocialState, Guid.NewGuid(), new { ok = true }, CancellationToken.None).AsTask();
+        await Task.Delay(50);
+        Assert.False(sendTask.IsCompleted);
+        Assert.True(session.Outbound.TryRead(out _));
+        await sendTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(session.Outbound.TryRead(out var packet));
+        Assert.Equal(1, WireEnvelopeCodec.Decode(packet).Sequence);
+    }
+
+    /// <summary>
+    /// 道号属身份标量而非分段：增量推送随帧透传当前 DisplayName，
+    /// 改名无需等待全量快照即可下发到客户端。
+    /// </summary>
+    [Fact]
+    public void BuildDelta_CarriesDisplayName()
+    {
+        var catalog = GameDataCatalog.BuiltIn;
+        var aggregate = PlayerAggregate.Create(PlayerId.New(), AccountId.New(), "新道号", Baseline, "fp");
+        var baselineDto = ProtocolSnapshotMapper.ToSnapshot(SnapshotOf(aggregate), "fp", catalog);
+        var delta = ProtocolSnapshotMapper.BuildDelta(
+            SnapshotOf(aggregate), "fp", catalog, null,
+            ChecksumsOf(baselineDto.Sections), baselineDto.Assets,
+            out _, out _);
+        Assert.Equal("新道号", delta.DisplayName);
+    }
+
+    /// <summary>
+    /// 队首 Pending→Running 零转移翻转（暂停队列推进）也算真实变更：
+    /// 版本推进且附带推送——不计入会让客户端队列显示停在「排队中」直到下一次真实转移。
+    /// </summary>
+    [Fact]
+    public async Task AdvancePush_PausedQueueHeadActivation_StillPushes()
+    {
+        var playerId = Guid.NewGuid();
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId),
+            new EmptyAssets(),
+            new NoopEconomy(),
+            GameDataCatalog.BuiltIn);
+        var pushed = new List<PlayerRuntimeSnapshot>();
+        runtime.SnapshotUpdated += snapshot =>
+        {
+            lock (pushed) pushed.Add(snapshot);
+            return ValueTask.CompletedTask;
+        };
+
+        var initial = await runtime.LoadAsync(playerId);
+        // 暂停队列后普通入队：非优先入队不翻转队首，行动停在 Pending。
+        var pause = await runtime.ExecuteAsync(playerId, "queue.configure",
+            JsonSerializer.SerializeToElement(new { paused = true }), 0, Guid.NewGuid());
+        Assert.True(pause.Success);
+        var requestId = Guid.NewGuid();
+        var payload = JsonSerializer.SerializeToElement(
+            new ActionIntentRequest(requestId.ToString("D"), "cultivation.draw-qi", 1), ProtocolJson.Options);
+        var enqueued = await runtime.ExecuteAsync(playerId, "action.enqueue", payload, 0, requestId);
+        Assert.True(enqueued.Success);
+        Assert.Equal(ActionQueueStatus.Pending, enqueued.Snapshot.State.Actions[0].Status);
+        pushed.Clear();
+
+        await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow.AddSeconds(30));
+        var push = pushed.SingleOrDefault(s => s.PlayerId == playerId);
+        Assert.NotNull(push);
+        Assert.True(push!.StateVersion > initial.StateVersion);
+        // 队首已翻转为 Running：ActionQueue 在触及差集内。
+        Assert.Contains(PlayerSectionKind.ActionQueue,
+            Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(push.TouchedSections));
+    }
+
+    /// <summary>
+    /// 市场结算入账（对手方成交/退款/领取）：在线玩家缓存钱包失效后下一次推进重读余额、
+    /// 推进版本并推送——资产差量由推送 delta 携带；版本推进不伪造分段脏（资产不属分段轴）。
+    /// </summary>
+    [Fact]
+    public async Task AdvancePush_MarketWalletCredited_PushesNewVersion()
+    {
+        var playerId = Guid.NewGuid();
+        var assets = new MutableAssets();
+        await using var runtime = EcsRuntimeFactory.Create(
+            new FakeRepository(playerId), assets, new NoopEconomy(), GameDataCatalog.BuiltIn);
+        var pushed = new List<PlayerRuntimeSnapshot>();
+        runtime.SnapshotUpdated += snapshot =>
+        {
+            lock (pushed) pushed.Add(snapshot);
+            return ValueTask.CompletedTask;
+        };
+
+        var initial = await runtime.LoadAsync(playerId);
+        // 市场结算把灵石计入余额：对手方无任何命令，仅缓存钱包被标记失效。
+        assets.Rows = [new AssetBalanceRecord(playerId, "item.spirit-stone", "", 100, 1)];
+        runtime.NotifyMarketWalletCredited(playerId);
+
+        await runtime.AdvanceAllAsync(DateTimeOffset.UtcNow.AddSeconds(30));
+        var push = pushed.SingleOrDefault(s => s.PlayerId == playerId);
+        Assert.NotNull(push);
+        Assert.True(push!.StateVersion > initial.StateVersion);
+        Assert.Empty(Assert.IsAssignableFrom<IReadOnlySet<PlayerSectionKind>>(push.TouchedSections));
+    }
+
     /// <summary>单玩家假仓库。</summary>
     private sealed class FakeRepository(Guid playerId) : IPlayerStateRepository
     {
@@ -593,6 +728,14 @@ public sealed class SnapshotDeltaPushTests
     {
         public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult<IReadOnlyList<AssetBalanceRecord>>([]);
+    }
+
+    /// <summary>可变余额假仓库：市场入账测试按帧切换返回集。</summary>
+    private sealed class MutableAssets : IAssetBalanceRepository
+    {
+        public IReadOnlyList<AssetBalanceRecord> Rows = [];
+        public ValueTask<IReadOnlyList<AssetBalanceRecord>> LoadBalancesAsync(Guid playerId, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(Rows);
     }
 
     private sealed class NoopEconomy : IEconomyTransactionStore
