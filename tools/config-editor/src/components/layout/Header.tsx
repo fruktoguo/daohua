@@ -8,6 +8,7 @@ import { useConfigContext } from '../../context/ConfigContext';
 import { GlobalValidator } from '../validation/GlobalValidator';
 import { RawJsonModal } from './RawJsonModal';
 
+/** 编辑器顶栏工具栏：当前文件与保存状态指示、跨表校验入口、JSON 源码预览、快照备份、重载与单文件/批量保存操作。 */
 export function Header() {
   const {
     activeFile,

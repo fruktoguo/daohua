@@ -21,6 +21,7 @@ import { NumberInput } from '../common/NumberInput';
 import { SkillAssemblyEditor } from '../common/SkillAssemblyEditor';
 import { DropTableEditor } from '../common/DropTableEditor';
 
+/** monsters.json 编辑器：左侧按生命层次过滤精怪，右侧编辑身份外观、节奏与反应效果、倾向权重矩阵（派生战斗属性）、点数修饰矩阵、技能装配、掉落表与击杀奖励。 */
 export function MonstersEditor() {
   const { configs, updateConfig } = useConfigContext();
   const monsters = configs?.['monsters.json'] || [];
@@ -67,6 +68,7 @@ export function MonstersEditor() {
     } else {
       next[key] = value;
     }
+    // 空字典置 undefined 而非保留 {}：避免写回无意义的空 weights/modifiers 段污染配表。
     handleUpdate({ weights: Object.keys(next).length > 0 ? next : undefined });
   };
 

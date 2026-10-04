@@ -23,6 +23,7 @@ import {
   type ApiResponse
 } from '../api/client';
 
+/** 跨表引用索引：每张表提供 O(1) 的 id→完整配置 Map 与供下拉搜索的轻量条目列表；nodes 索引跨地图聚合并附 mapId/mapName 归属。全部由 configs 派生，随编辑实时重建。 */
 export interface GlobalLookups {
   items: Map<string, ItemConfig>;
   itemList: { id: string; name: string; kind?: string; tier?: number; category?: string }[];
@@ -38,6 +39,7 @@ export interface GlobalLookups {
   nodeList: { id: string; name: string; mapId: string; mapName: string; x: number; y: number }[];
 }
 
+/** 单条跨表死链告警：sourceFile 定位到出问题的逻辑文件供「前往修复」跳转，severity 区分阻断性错误与提示性警告。 */
 export interface ValidationErrorItem {
   id: string;
   sourceFile: ConfigFileName;
@@ -72,6 +74,8 @@ interface ConfigContextValue {
 
 const ConfigContext = createContext<ConfigContextValue | null>(null);
 
+/** 配置编辑器全局状态 Provider：装载/编辑/脏标记/保存/重置/校验的唯一数据源。
+ *  originalConfigs 始终保存最近一次与磁盘同步的深拷贝快照，作为「放弃修改」与脏检测的基准。 */
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +92,8 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       setError(null);
       const data = await fetchAllConfigs();
+      // 深拷贝一份作为磁盘基准快照：originalConfigs 与 configs 必须不共享引用，
+      // 否则编辑会原地污染基准，导致「放弃修改」失效、脏检测永远为假。
       setOriginalConfigs(JSON.parse(JSON.stringify(data)));
       setConfigs(data);
       setDirtyFiles(new Set());
@@ -462,6 +468,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
           return next;
         });
         if (originalConfigs) {
+          // 保存成功后同步刷新磁盘基准快照，保证后续脏检测与「放弃修改」以新内容为准。
           setOriginalConfigs({
             ...originalConfigs,
             [activeFile]: JSON.parse(JSON.stringify(configs[activeFile]))
@@ -484,6 +491,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
     for (const file of dirtyFiles) {
       modified[file] = configs[file] as any;
     }
+    // 无脏文件时直接视为成功，避免向后端发送空批量请求。
     if (Object.keys(modified).length === 0) return true;
 
     try {
@@ -582,6 +590,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** 消费全局配置状态的唯一入口；在 ConfigProvider 之外调用会抛错，防止拿到空 context 静默失效。 */
 export function useConfigContext() {
   const context = useContext(ConfigContext);
   if (!context) {

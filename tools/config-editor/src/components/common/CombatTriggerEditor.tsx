@@ -18,6 +18,7 @@ interface CombatTriggerEditorProps {
   className?: string;
 }
 
+/** 触发条件五元组编辑器：dependency/condition/comparator 三级下拉按「对象-类型-比对」矩阵联动约束（集合对象只配群体聚合条件、Boolean 条件只配是否比对），保证组合始终落在引擎 ValidateTrigger 合法集内。 */
 export function CombatTriggerEditor({
   label,
   description,

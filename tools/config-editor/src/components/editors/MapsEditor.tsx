@@ -11,6 +11,7 @@ import { EnumSelect } from '../common/EnumSelect';
 import { NumberInput } from '../common/NumberInput';
 import { MultiReferenceSelect } from '../common/ReferenceSelect';
 
+/** maps.json 编辑器：管理大地图元数据、区域节点（行动/遭遇/建筑挂载点）与路径网络；删除节点时联动清理相关边，防止留下悬空死链。 */
 export function MapsEditor() {
   const { configs, updateConfig } = useConfigContext();
   const maps = configs?.['maps.json'] || [];
@@ -61,6 +62,7 @@ export function MapsEditor() {
   const handleDeleteNode = (nodeId: string) => {
     if (!currentMap) return;
     if (!confirm(`确定要删除地图节点 [${nodeId}] 吗？相关的路径连线也将一并清理。`)) return;
+    // 删除节点必须同步删除引用它的边：残留悬空边会被 DataTool 判为「边端点不是已登记节点」而校验失败。
     const nextNodes = currentMap.nodes.filter(n => n.id !== nodeId);
     const nextEdges = (currentMap.edges || []).filter(
       e => e.fromNodeId !== nodeId && e.toNodeId !== nodeId
@@ -470,6 +472,7 @@ export function MapsEditor() {
 }
 
 // 节点 NPC / 建筑实体列表编辑器：实体为对象数组 {id, name, kind, description, effect}
+// kind 固定为传入的 entityKind，保证与 ReadEntities 的实体分类口径一致
 function NodeEntityListEditor({
   label,
   entityKind,

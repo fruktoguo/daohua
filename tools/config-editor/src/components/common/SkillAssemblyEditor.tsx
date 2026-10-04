@@ -15,6 +15,7 @@ interface SkillAssemblyEditorProps {
   className?: string;
 }
 
+/** 精怪技能装配编辑器：每条为 abilityId + 等级 + 血线触发比例（triggerHpRatio ∈ [0,1]，自身气血低于该比例才起手，1 表示随时可放）。 */
 export function SkillAssemblyEditor({
   label,
   description,

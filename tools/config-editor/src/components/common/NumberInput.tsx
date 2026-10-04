@@ -17,6 +17,7 @@ interface NumberInputProps {
   disabled?: boolean;
 }
 
+/** 数值步进输入框：空输入回传 undefined 表示清除可选字段；步进经 toFixed(4) 消除浮点累加误差，越界时钳到 min/max。 */
 export function NumberInput({
   label,
   description,
@@ -32,6 +33,7 @@ export function NumberInput({
 }: NumberInputProps) {
   const currentVal = value ?? '';
 
+  // 步进以当前值为基准；toFixed(4) 抵消 0.05/0.01 等小数步长在二进制浮点下的累加误差（如 0.30000000004）。
   const handleStep = (delta: number) => {
     if (disabled) return;
     const base = value ?? 0;

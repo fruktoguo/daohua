@@ -14,6 +14,7 @@ import { ReferenceSelect, MultiReferenceSelect } from '../common/ReferenceSelect
 import { RecipeEditor } from '../common/RecipeEditor';
 import { YieldsEditor } from '../common/YieldsEditor';
 
+/** actions.json 编辑器：左侧按类型/关键字过滤行动列表，右侧编辑基础属性、遭遇战/节点关联、消耗配方与声明式收益。 */
 export function ActionsEditor() {
   const { configs, updateConfig } = useConfigContext();
   const actions = configs?.['actions.json'] || [];

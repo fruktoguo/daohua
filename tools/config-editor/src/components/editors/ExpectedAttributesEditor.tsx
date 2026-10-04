@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useConfigContext } from '../../context/ConfigContext';
 import { TIER_OPTIONS, STAT_METADATA_MAP } from '../../types/enums';
 
+/** expected-attributes.json 编辑器：按等阶（T1~T12）浏览四大乘区解算矩阵，可编辑各等阶基础白字（baseFlat），并展示双流派挂机仿真对比。 */
 export function ExpectedAttributesEditor() {
   const { configs, updateConfig } = useConfigContext();
   const expectedConfig = configs?.['expected-attributes.json'];

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>道化太初 · 战斗数值平衡与调参可视化模拟器</title>
-  <!-- Tailwind CSS & Chart.js CDN -->
+  <!-- CDN 引入：Tailwind CSS 与 Chart.js（仅本地演示工具使用，不进入生产构建） -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -12,7 +12,7 @@
     .glass-panel { background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(51, 65, 85, 0.6); }
     .glass-card { background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(71, 85, 105, 0.4); }
     input[type=range] { accent-color: #3b82f6; }
-    /* Scrollbar */
+    /* 滚动条样式 */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #0b1120; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
@@ -32,7 +32,7 @@
     </div>
   </div>
 
-  <!-- Top Navigation / Header -->
+  <!-- 顶栏：标题与快捷操作 -->
   <header class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 mb-4 border-b border-gray-800">
     <div>
       <div class="flex items-center gap-3">
@@ -49,7 +49,7 @@
       </p>
     </div>
 
-    <!-- Quick Actions -->
+    <!-- 快捷操作：波次选择 / 重置 / 导出 -->
     <div class="flex items-center gap-3 self-end md:self-auto">
       <div class="flex items-center gap-2 bg-gray-900/90 px-3 py-1.5 rounded-lg border border-gray-700 text-xs">
         <span class="text-gray-400">模拟波次:</span>
@@ -69,7 +69,7 @@
     </div>
   </header>
 
-  <!-- 🌟 4 STAGE DYNAMIC EVALUATION KPI BANNERS -->
+  <!-- 四阶段动态评估 KPI 横幅（前期/中期/后期/大后期 + 组队提速） -->
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
     <div class="glass-panel rounded-xl p-3 text-center border-l-4 border-slate-500">
       <div class="text-[11px] text-gray-400">前期 (T1~T2 凡俗)</div>
@@ -98,10 +98,10 @@
     </div>
   </div>
 
-  <!-- Main Grid Layout: Left Controls (5 cols), Right Visualization (7 cols) -->
+  <!-- 主布局：左侧调参面板（5 列），右侧可视化结果（7 列） -->
   <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
     
-    <!-- LEFT PANEL: Parameters Tuning -->
+    <!-- 左侧面板：参数调校 -->
     <div class="lg:col-span-5 space-y-4 max-h-[calc(100vh-230px)] overflow-y-auto pr-1.5">
       
       <!-- 1. 物理系配置卡片 (1 AD : 1 暴击 : 1 破招) -->
@@ -354,9 +354,10 @@
 
   </div>
 
-  <!-- Javascript Logic -->
+  <!-- JavaScript 逻辑 -->
   <script>
-    // Global Static Player Expected Attributes Baseline (Tiers 1~12)
+    // 全局静态玩家期望属性锚点（T1~T12）：演示用硬编码基线，数值与 expected-attributes.json 的
+    // finalExpected 口径对齐；真实引擎经 BaseAttributeCatalog 派生，与本页脱钩。
     const BASE_TIERS = [
       { tier: 1,  name: "凡胎", stage: "前期", level: 1,   hp: 310,    mp: 60,      ad: 17.5,    armor: 13.5,   mres: 9.0,   hit: 12.0,  eva: 8.0,   crit: 10.0,  cavoid: 8.0,  breakR: 10.0, parry: 8.0 },
       { tier: 2,  name: "叩仙门", stage: "前期", level: 18, hp: 1205,   mp: 388,     ad: 68.0,    armor: 52.6,   mres: 35.0,  hit: 46.8,  eva: 31.2,  crit: 39.0,  cavoid: 31.2, breakR: 39.0, parry: 31.2 },
@@ -372,7 +373,7 @@
       { tier: 12, name: "真仙", stage: "大后期", level: 127, hp: 1186572,mp: 791048,  ad: 66958.2, armor: 22287.2,mres: 13561.7,hit: 46115, eva: 30743, crit: 38429, cavoid: 30743,breakR:38429, parry: 30743 }
     ];
 
-    // Current Final Balanced Parameters
+    // 当前平衡调参参数（可经左侧滑块实时修改，resetToDefaults 恢复基准）
     let params = {
       // 物理系: 1 AD : 1 暴击 : 1 破招
       p_auto_interval: 1.0,
@@ -462,12 +463,13 @@
       }
     }
 
-    // Precise Non-linear damage calculation with Contest Breakdown & Resistance Reduction
+    // 精确非线性伤害结算：对抗分解（破招/命中/暴击）与抗性减伤
     function calcActualDamageContest(rawDmg, pAtkStats, targetDefStats, kRes, critDmgRatio, teamSize) {
       if (rawDmg <= 0) return 0;
       const totalRaw = rawDmg * teamSize;
 
       // 1. 破招 vs 拆招 (物理系高破招，法术系基线)
+      // 演示假设：攻方破招占优时破招触发概率打 7.5 折，否则打 2.5 折——模拟「破招压制但非必触」的对抗手感。
       const breakProb = pAtkStats.breakR / (pAtkStats.breakR + targetDefStats.parry + 100.0);
       const isBreak = (pAtkStats.breakR > targetDefStats.parry) ? (breakProb * 0.75) : (breakProb * 0.25);
 
@@ -488,10 +490,11 @@
       return totalRaw * reduction * hitProb * critMult;
     }
 
-    // Stabilized Deterministic Short-Simulation Kernel
+    // 稳定化确定性短模拟内核：按波次推进动作时间线，无随机数（期望值口径可复现）
     function simulateTier(tData, teamType, teamSize, totalWaves) {
       const lv = tData.level;
       const t = tData.tier;
+      // 二次成长曲线：CDR/ATR/暴伤等高级机制随等级平方推进，低等级近乎为零、高等级逼近上限。
       const x = (lv - 1) / 126.0;
       const x_quad = x * x;
 
@@ -500,6 +503,7 @@
       const cd_mult = 1.0 - cdr;
       const action_mult = 1.0 - atr;
       const skill_int = 1.0 + (t - 1) * params.skill_inc;
+      // 波次间搜寻等待：随等阶从 5s 缩短到 2.5s，模拟高阶修士寻怪效率提升。
       const wait_delay = 5.0 - 2.5 * x_quad;
 
       const p_extra_spd = (x_quad * params.p_auto_spd_max) / 100.0;
@@ -520,6 +524,7 @@
       const k_res = t * 1.0;
       const crit_dmg_ratio = (150.0 + x_quad * (params.crit_dmg_max - 150.0)) / 100.0;
 
+      // 对抗属性按流派取演示偏置：物理系翻倍暴击/破招、法术系翻倍命中——对应「1 AD : 1 暴击 : 1 破招」的分配假设。
       let p_stats;
       if (teamType === "physical") {
         p_stats = {
@@ -541,6 +546,7 @@
       let total_dur = 0.0;
       let kills = 0;
 
+      // 波次节奏：每 20 波一次 Boss、每 5 波一次精英（Boss 波优先），其余为寻常怪；怪物属性按玩家锚点倍率缩放。
       for (let w = 1; w <= totalWaves; w++) {
         total_dur += wait_delay;
         const is_boss = (w % 20 === 0);
@@ -565,11 +571,13 @@
         let p_next_s1 = 0.0, p_next_s2 = 0.0, p_next_s3 = 0.0;
         let m_next_s1 = 0.0, m_next_s2 = 0.0;
 
+        // 900 秒单波硬上限：防止极端参数下技能永远杀不死怪导致死循环；超时波按当前时长计入统计。
         while (mobs.some(m => m.hp > 0) && wave_time < 900.0) {
           let alive = mobs.filter(m => m.hp > 0);
           if (alive.length === 0) break;
 
           if (teamType === "physical") {
+            // 物理动作优先级：S1 → S2 → AOE → 普攻；S2 为第二技能槽占位，演示中复用 S1 参数（双同阶技能轮转）。
             if (wave_time >= p_next_s1) {
               const raw = p_ad * (params.p_s1_ratio / 100.0) * skill_int;
               const defStats = { res: alive[0].armor, eva: alive[0].eva, cavoid: alive[0].cavoid, parry: alive[0].parry };
@@ -649,6 +657,7 @@
       const non_boss_list = normal_durations.concat(elite_durations);
       const avg_non_boss = non_boss_list.reduce((a, b) => a + b, 0) / Math.max(1, non_boss_list.length);
       const avg_boss = boss_durations.reduce((a, b) => a + b, 0) / Math.max(1, boss_durations.length);
+      // 产出口径：以模拟总时长折算每小时清怪数，作为物理/法术效率比与组队提速的统一基准。
       const hourly_kills = (kills / total_dur) * 3600.0;
       const hourly_waves = (totalWaves / total_dur) * 3600.0;
 
@@ -667,6 +676,8 @@
       };
     }
 
+    // 主仿真入口：对每个等阶分别跑物理/法术 × 单人/3 人队四组模拟，产出效率比（物理/法术每小时清怪比值，
+    // 100% 为绝对平衡）、组队提速倍数与四阶段（前期/中期/后期/大后期）聚合 KPI。
     function runSimulation() {
       const totalWaves = parseInt(document.getElementById("simWavesSelect").value) || 60;
       
@@ -691,8 +702,10 @@
         const tp = simulateTier(tData, "physical", 3, totalWaves);
         const tm = simulateTier(tData, "magic", 3, totalWaves);
 
+        // 效率比 = 物理每小时清怪 / 法术每小时清怪 × 100%；>100% 物优，<100% 法优（对数换算领先幅度）。
         const solo_overall_r = (sp.hourlyKills / Math.max(0.01, sm.hourlyKills)) * 100.0;
         const party_overall_r = (tp.hourlyKills / Math.max(0.01, tm.hourlyKills)) * 100.0;
+        // 组队提速 = 3 人队合计清怪 / 单人合计清怪，衡量组队收益。
         const speedup = (tp.hourlyKills + tm.hourlyKills) / Math.max(0.1, (sp.hourlyKills + sm.hourlyKills));
 
         soloOverallRatios.push(solo_overall_r.toFixed(1));
@@ -768,6 +781,7 @@
       document.getElementById("tierMatrixGrid").innerHTML = gridCardsHtml;
       document.getElementById("resultTableBody").innerHTML = tableRowsHtml;
 
+      // 四阶段聚合：按等阶区间分组求平均效率比，驱动顶部 KPI 横幅。
       const avgStage1 = stage1Ratios.reduce((a, b) => a + b, 0) / stage1Ratios.length;
       const avgStage2 = stage2Ratios.reduce((a, b) => a + b, 0) / stage2Ratios.length;
       const avgStage3 = stage3Ratios.reduce((a, b) => a + b, 0) / stage3Ratios.length;
@@ -783,6 +797,7 @@
       renderCharts(labels, soloOverallRatios, partyOverallRatios);
     }
 
+    // 效率比折线图：单人/3 人队两条曲线 + 100% 平衡基线虚线；每次重绘前销毁旧实例防止 Chart.js 叠加。
     function renderCharts(labels, soloRatios, partyRatios) {
       if (ratioChart) ratioChart.destroy();
       const ctx = document.getElementById("ratioChart").getContext("2d");
@@ -845,6 +860,7 @@
       });
     }
 
+    // 导出当前调参快照为 JSON 文件（仅调参参数，不含模拟结果）
     function exportConfigJson() {
       const exportData = {
         exportedAt: new Date().toISOString(),

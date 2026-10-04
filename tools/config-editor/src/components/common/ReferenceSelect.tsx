@@ -6,6 +6,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useConfigContext } from '../../context/ConfigContext';
 
+/** 跨表引用目标种类：决定选项数据源与徽章配色，与 GlobalLookups 的六张索引表一一对应。 */
 export type ReferenceKind = 'item' | 'ability' | 'monster' | 'encounter' | 'action' | 'node';
 
 interface ReferenceSelectProps {
@@ -20,6 +21,7 @@ interface ReferenceSelectProps {
   disabled?: boolean;
 }
 
+/** 跨表外键引用选择器：按 kind 从全局索引取候选，Popover 内支持按名称/ID/副标题模糊搜索；引用值在索引中不存在时以红色「无效外键」警示（实时死链提示）。 */
 export function ReferenceSelect({
   kind,
   label,
@@ -46,6 +48,7 @@ export function ReferenceSelect({
     };
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      // 延迟聚焦：弹层刚挂载时 ref 尚未绑定到 DOM，同步 focus 会落空，必须等下一帧渲染完成。
       setTimeout(() => inputRef.current?.focus(), 50);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -254,6 +257,7 @@ interface MultiReferenceSelectProps {
   className?: string;
 }
 
+/** 多值跨表引用编辑器：已选条目以可删除 Chip 展示，底部内嵌单选 ReferenceSelect 追加新引用；重复添加会被静默忽略。 */
 export function MultiReferenceSelect({
   kind,
   label,

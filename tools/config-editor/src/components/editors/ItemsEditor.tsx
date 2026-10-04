@@ -12,6 +12,7 @@ import { BooleanSelect } from '../common/BooleanSelect';
 import { NumberInput } from '../common/NumberInput';
 import { CombatTriggerEditor } from '../common/CombatTriggerEditor';
 
+/** items.json 编辑器：左侧按大类/等阶/关键字过滤道具，右侧编辑基础属性与消耗品专项（服食参数、Buff 列表、自动使用触发条件）。 */
 export function ItemsEditor() {
   const { configs, updateConfig } = useConfigContext();
   const items = configs?.['items.json'] || [];
@@ -448,7 +449,7 @@ export function ItemsEditor() {
   );
 }
 
-// 嵌套 Buff 效果编辑器
+// 嵌套 Buff 效果编辑器：consumable.buffs 数组的增删改；buffId/name/durationSeconds 为必需三元组
 function BuffsListEditor({
   buffs = [],
   onChange

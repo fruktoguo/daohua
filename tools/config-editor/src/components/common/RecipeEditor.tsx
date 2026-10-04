@@ -14,6 +14,7 @@ interface RecipeEditorProps {
   className?: string;
 }
 
+/** 配方消耗编辑器：维护 itemId → 数量 字典（对应 ActionConfig.inputs / 建筑材料等消耗配方）。数量最低钳为 1；全部条目删除后回传 undefined 清空字段。 */
 export function RecipeEditor({
   label,
   description,
@@ -32,6 +33,7 @@ export function RecipeEditor({
   };
 
   const handleUpdateAmount = (itemId: string, amount: number) => {
+    // parseInt 失败（空串/非数字）时回退为 1：配表语义上消耗数量必须为正，0 或负数无意义。
     const next = { ...(value || {}), [itemId]: amount };
     onChange(next);
   };

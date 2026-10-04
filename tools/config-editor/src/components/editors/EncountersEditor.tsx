@@ -12,6 +12,7 @@ import { EnumSelect } from '../common/EnumSelect';
 import { PARTY_WIPE_RULES } from '../../types/enums';
 import { ReferenceSelect, MultiReferenceSelect } from '../common/ReferenceSelect';
 
+/** encounters.json 编辑器：左侧搜索遭遇列表，右侧编辑预算容量、随机刷怪池、精英/首领节奏、搜寻与复活时长及团灭规则。 */
 export function EncountersEditor() {
   const { configs, updateConfig } = useConfigContext();
   const encounters = configs?.['encounters.json'] || [];
@@ -325,6 +326,7 @@ export function EncountersEditor() {
   );
 }
 
+// 随机刷怪池编辑器：randomSpawns 数组的增删改；weight 为抽取权重、strength 为体量强度（DataTool 要求两者为正）
 function RandomSpawnsEditor({
   spawns = [],
   onChange

@@ -6,6 +6,7 @@
 import { useConfigContext } from '../../context/ConfigContext';
 import { NumberInput } from '../common/NumberInput';
 
+/** manifest.json 编辑器：编辑 Schema/Content 双版本号，并展示全量数据要素统计与跨表外键完整性概览。 */
 export function ManifestEditor() {
   const { configs, updateConfig, lookups, validationErrors } = useConfigContext();
   const manifest = configs?.['manifest.json'];

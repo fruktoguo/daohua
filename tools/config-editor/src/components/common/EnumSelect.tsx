@@ -17,6 +17,7 @@ interface EnumSelectProps<T extends string | number = string> {
   disabled?: boolean;
 }
 
+/** 单选枚举下拉框：options 取自 types/enums 词表，选中项在标签旁渲染彩色徽章；清空回传 undefined 表示字段缺省。 */
 export function EnumSelect<T extends string | number = string>({
   label,
   description,
@@ -86,6 +87,7 @@ interface MultiEnumSelectProps<T extends string = string> {
   className?: string;
 }
 
+/** 多选枚举胶囊组：以 Pill 按钮集合呈现，点击切换选中态；输出为数组（保持插入序去重），用于 usableInActionTypes 等集合字段。 */
 export function MultiEnumSelect<T extends string = string>({
   label,
   description,

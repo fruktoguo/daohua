@@ -16,6 +16,7 @@ interface StatDictEditorProps {
   className?: string;
 }
 
+/** 属性字典编辑器：键集限定为 STAT_METADATA_LIST 授权属性（新增下拉只列未配置项），防止写入引擎不认识的属性键。空字典回传 undefined 清空字段。 */
 export function StatDictEditor({
   label,
   description,
@@ -34,6 +35,7 @@ export function StatDictEditor({
 
   const handleAdd = () => {
     if (!selectedNewStat) return;
+    // 新增条目给一个非零初值：百分比属性 0.1（=10%）、点数属性 10 点，避免 0 值条目被误认为无效配置。
     const next = { ...(value || {}), [selectedNewStat]: unit === '%' ? 0.1 : 10 };
     onChange(next);
     setSelectedNewStat('');

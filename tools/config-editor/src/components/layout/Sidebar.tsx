@@ -7,6 +7,7 @@ import { useConfigContext } from '../../context/ConfigContext';
 import { CONFIG_FILE_LIST, type ConfigFileName } from '../../types/config';
 
 // 9 大配置文件对应现代化扁平 SVG 图标
+// 内联 SVG 而非图标库：避免为侧边栏单独引入 lucide-react 运行时依赖
 function getFileIcon(name: ConfigFileName) {
   switch (name) {
     case 'manifest.json':
@@ -66,12 +67,14 @@ function getFileIcon(name: ConfigFileName) {
   }
 }
 
+/** 编辑器侧边栏导航：9 大配置文件切换入口，每项展示未保存脉冲点、跨表死链告警计数与条目总数，底部汇总全局状态。 */
 export function Sidebar() {
   const { activeFile, setActiveFile, dirtyFiles, configs, validationErrors } = useConfigContext();
 
   const getCount = (filename: ConfigFileName) => {
     if (!configs) return null;
     const data = configs[filename];
+    // 数组类配置直接取长度；expected-attributes.json 是对象结构，条目数取 tiers 数组长度。
     if (Array.isArray(data)) return data.length;
     if (filename === 'expected-attributes.json') return configs['expected-attributes.json']?.tiers?.length ?? null;
     return null;

@@ -21,6 +21,7 @@ import { EnumSelect } from '../common/EnumSelect';
 import { NumberInput } from '../common/NumberInput';
 import { CombatTriggerEditor } from '../common/CombatTriggerEditor';
 
+/** abilities.json 编辑器：左侧按流派/伤害大类过滤神通，右侧编辑道统分类、施法节奏、伤害/治疗数值、支援效果（威胁/Buff 块）与默认触发条件；治疗字段仅在 effectType=heal 时可编辑。 */
 export function AbilitiesEditor() {
   const { configs, updateConfig } = useConfigContext();
   const abilities = configs?.['abilities.json'] || [];

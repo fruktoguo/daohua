@@ -11,6 +11,7 @@ interface GlobalValidatorProps {
   onClose: () => void;
 }
 
+/** 全局校验面板：上半部分为前端实时跨表死链列表（可跳转到源文件修复），下半部分为后端 DataTool 领域校验报告（需手动触发）。 */
 export function GlobalValidator({ isOpen, onClose }: GlobalValidatorProps) {
   const {
     validationErrors,

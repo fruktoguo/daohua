@@ -15,6 +15,7 @@ interface DropTableEditorProps {
   className?: string;
 }
 
+/** 怪物掉落表编辑器：每条为 itemId + 掉落概率（(0,1]，DataTool 强制）+ 数量区间 [minQuantity, maxQuantity]。 */
 export function DropTableEditor({
   label,
   description,

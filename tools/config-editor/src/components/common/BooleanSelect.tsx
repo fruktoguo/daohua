@@ -16,6 +16,7 @@ interface BooleanSelectProps {
   disabled?: boolean;
 }
 
+/** 三态布尔分段开关（缺省/是/否）。value 为 undefined 或 null 时视为「缺省未配置」，onChange 回传 undefined 表示清除字段——用于可选布尔配表字段的显式三态编辑。 */
 export function BooleanSelect({
   label,
   description,

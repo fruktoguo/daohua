@@ -19,6 +19,7 @@ interface YieldsEditorProps {
   className?: string;
 }
 
+/** 行动声明式收益列表编辑器：按 kind（item/buff）条件渲染附加字段；buff 收益的 modifiers 子块支持一键清空（patch 传 null）。空列表回传 undefined 清空字段。 */
 export function YieldsEditor({
   label,
   description,
@@ -44,6 +45,7 @@ export function YieldsEditor({
 
   const handleUpdateModifiers = (index: number, patch: Partial<ActionYieldModifiers> | null) => {
     const current = currentYields[index];
+    // patch 为 null 是「移除整个 modifiers 块」的约定信号，与部分更新（对象）区分开。
     if (patch === null) {
       handleUpdate(index, { modifiers: undefined });
       return;

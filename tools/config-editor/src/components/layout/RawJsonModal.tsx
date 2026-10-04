@@ -11,6 +11,7 @@ interface RawJsonModalProps {
   onClose: () => void;
 }
 
+/** 原始 JSON 预览弹窗：展示当前编辑文件的完整 JSON 文本（含未保存改动），支持一键复制到剪贴板。 */
 export function RawJsonModal({ isOpen, onClose }: RawJsonModalProps) {
   const { configs, activeFile } = useConfigContext();
   const [copied, setCopied] = useState(false);

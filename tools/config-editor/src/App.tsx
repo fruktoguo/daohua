@@ -18,11 +18,13 @@ import { EncountersEditor } from './components/editors/EncountersEditor';
 import { MapsEditor } from './components/editors/MapsEditor';
 import { ExpectedAttributesEditor } from './components/editors/ExpectedAttributesEditor';
 
+/** 编辑器主布局：装载/错误全屏态、Ctrl+S 保存快捷键与按 activeFile 切换九大编辑面板。 */
 function EditorLayout() {
   const { activeFile, loading, error, saveCurrentFile, reloadAllConfigs } = useConfigContext();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 拦截浏览器默认 Ctrl/Cmd+S（打开保存网页对话框），改触当前文件保存。
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         saveCurrentFile();
@@ -100,6 +102,7 @@ function EditorLayout() {
   );
 }
 
+/** 应用根组件：以 ConfigProvider 包裹编辑器布局，全站共享配置状态。 */
 export default function App() {
   return (
     <ConfigProvider>

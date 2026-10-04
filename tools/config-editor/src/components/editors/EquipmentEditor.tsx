@@ -14,6 +14,7 @@ import { EnumSelect } from '../common/EnumSelect';
 import { NumberInput } from '../common/NumberInput';
 import { StatDictEditor } from '../common/StatDictEditor';
 
+/** equipment.json 编辑器：左侧按槽位/等阶过滤法宝，右侧编辑基础属性与三段式属性字典（百分比加成/固定点数/特殊机制点数 + 强化附加）。 */
 export function EquipmentEditor() {
   const { configs, updateConfig } = useConfigContext();
   const equipment = configs?.['equipment.json'] || [];
