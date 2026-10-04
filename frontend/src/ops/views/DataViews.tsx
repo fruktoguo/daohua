@@ -90,7 +90,7 @@ function OpsPlayerDetailModal({ playerId, onClose }: { playerId: string; onClose
                 <OpsStat label="普通/精英/首领击杀" value={`${formatNumber(data.progression.normalKills)}/${formatNumber(data.progression.eliteKills)}/${formatNumber(data.progression.bossKills)}`} />
                 <OpsStat label="累计败北" value={formatNumber(data.progression.totalDefeats)} tone={data.progression.totalDefeats > 0 ? 'warn' : 'muted'} />
                 <OpsStat label="气血" value={`${formatNumber(data.combat.hitpoints, 1)} / ${formatNumber(data.combat.maxHitpoints, 1)}`} />
-                <OpsStat label="真元" value={`${formatNumber(data.combat.manapoints, 1)} / ${formatNumber(data.combat.maxManapoints, 1)}`} />
+                <OpsStat label="灵力" value={`${formatNumber(data.combat.manapoints, 1)} / ${formatNumber(data.combat.maxManapoints, 1)}`} />
                 <OpsStat label="攻击/防御" value={`${formatNumber(data.combat.attackPower, 1)} / ${formatNumber(data.combat.defense, 1)}`} />
                 <OpsStat label="所在节点" value={data.world.nodeId} />
                 <OpsStat label="坐标" value={`${formatNumber(data.world.x, 1)}, ${formatNumber(data.world.y, 1)}`} />
