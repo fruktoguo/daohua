@@ -572,5 +572,145 @@
         "amount": 1
       }
     ]
+  },
+  {
+    "id": "forge.tool-herb-hoe",
+    "name": "药锄",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.refined-iron": 3,
+      "item.peach-wood": 2
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-herb-hoe",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-prospect-compass",
+    "name": "探矿罗盘",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-copper": 3,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-prospect-compass",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-flame-ding",
+    "name": "灵火鼎",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.fire-feather": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-flame-ding",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-forge-hammer",
+    "name": "锻灵锤",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.refined-iron": 5,
+      "item.beast-bone": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-forge-hammer",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-talisman-brush",
+    "name": "朱砂符笔",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 10,
+    "inputs": {
+      "item.peach-wood": 3,
+      "item.soul-talisman": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-talisman-brush",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-formation-flag",
+    "name": "布阵旗",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 15,
+    "inputs": {
+      "item.peach-wood": 3,
+      "item.spirit-pine-crystal": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-formation-flag",
+        "amount": 1
+      }
+    ]
+  },
+  {
+    "id": "forge.tool-quench-anvil",
+    "name": "淬灵砧",
+    "description": "",
+    "type": "alchemy",
+    "technique": "forging",
+    "durationSeconds": 20,
+    "inputs": {
+      "item.refined-iron": 7,
+      "item.broken-spirit-core": 1
+    },
+    "yields": [
+      {
+        "kind": "item",
+        "per": "repeat",
+        "id": "equipment.tool-quench-anvil",
+        "amount": 1
+      }
+    ]
   }
 ]

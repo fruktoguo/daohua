@@ -452,6 +452,75 @@ public sealed class TechniqueAndEnhancementTests
         Assert.Throws<DomainException>(() => loadout.Restore(invalid));
     }
 
+    /// <summary>
+    /// 技艺工具：装备 tool-mining 槽位后 mining 行动耗时按 基础/(1+0.1) 折减，
+    /// 与技艺等级加成并入同一除数加算；不匹配技艺的行动与不匹配技艺的工具均不生效。
+    /// </summary>
+    [Fact]
+    public void EquippedToolSpeedsMatchingTechniqueAction()
+    {
+        var compass = new ItemId("equipment.tool-prospect-compass");
+        var hoe = new ItemId("equipment.tool-herb-hoe");
+        var mining = new ActionDefinition(new ActionId("mine.test"), "挖矿测试", ActionKind.Exploration, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Mining);
+        var alchemy = new ActionDefinition(new ActionId("alchemy.test"), "炼丹测试", ActionKind.Alchemy, 10,
+            new Dictionary<ItemId, double>(), [], Technique: TechniqueCatalog.Alchemy);
+        var catalog = CreateMinimalCatalog(actions: new ActionCatalog([mining, alchemy]),
+            rawEquipments: new Dictionary<string, JsonElement>
+            {
+                [compass.Value] = Json("""{"id":"equipment.tool-prospect-compass","name":"探矿罗盘","slot":"tool-mining","tier":1,"techniqueBonus":{"technique":"mining","speedRatio":0.1}}"""),
+                [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"药锄","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
+            },
+            realmProgression: new RealmProgressionCatalog([100, 200, 300], [80]));
+        var player = CreatePlayer("矿工");
+        var wallet = CreateWallet(player);
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(compass.Value, 0));
+        var miningAction = player.Enqueue(new ActionIntent(mining.Id, -1), Baseline, catalog.Actions);
+
+        // 工具命中绑定技艺：10 / (1 + 0.1)；配表缺失时按无加成计。
+        Assert.Equal(10 / 1.1, SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+        Assert.Equal(0.1, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, catalog), 12);
+        Assert.Equal(0, TechniqueCatalog.EquippedToolSpeedRatio(player.Loadout, TechniqueCatalog.Mining, null));
+
+        // 技艺等级与工具加成同点加算：300 经验逐段至 2 级 → 10 / (1 + 0.1 + 0.1)。
+        player.Loadout.TechniqueExperiences[TechniqueCatalog.Mining] = 300;
+        Assert.Equal(10 / 1.2, SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+
+        // 不匹配技艺的行动（alchemy）不受 mining 工具加成；
+        // 绑定其他技艺的工具（药锄→gathering）也不计入 mining 除数。
+        var alchemyAction = player.Enqueue(new ActionIntent(alchemy.Id, -1), Baseline, catalog.Actions);
+        Assert.Equal(10, SimulationEngine.TimedActionDuration(player, alchemyAction, alchemy, catalog, wallet, null));
+        player.Loadout.Equipment.Add(new PlayerEquipmentSlot(hoe.Value, 0));
+        Assert.Equal(10 / 1.2, SimulationEngine.TimedActionDuration(player, miningAction, mining, catalog, wallet, null), 12);
+
+        // 工具槽位前缀判定。
+        Assert.True(TechniqueCatalog.IsToolSlot("tool-mining"));
+        Assert.False(TechniqueCatalog.IsToolSlot("weapon"));
+        Assert.False(TechniqueCatalog.IsToolSlot(null));
+    }
+
+    /// <summary>技艺工具不可强化：tool- 槽位装备在强化准入直接 Blocked 并给出专属文案。</summary>
+    [Fact]
+    public void TechniqueToolIsRejectedByEnhancement()
+    {
+        var hoe = new ItemId("equipment.tool-herb-hoe");
+        var catalog = CreateMinimalCatalog(rawEquipments: new Dictionary<string, JsonElement>
+        {
+            [hoe.Value] = Json("""{"id":"equipment.tool-herb-hoe","name":"药锄","slot":"tool-gathering","tier":1,"techniqueBonus":{"technique":"gathering","speedRatio":0.1}}""")
+        });
+        var intent = new ActionIntent(new ActionId("enhance.equipment"), -1, TargetItemId: hoe.Value);
+        var holdings = new Dictionary<AssetKey, double>
+        {
+            [new AssetKey(hoe)] = 1,
+            [new AssetKey(new ItemId(EnhancementRules.SpiritStoneItemId))] = 999
+        };
+        var prep = EnhancementRules.Resolve(new PlayerLoadoutState(), intent, holdings, catalog, 0,
+            out var check, out var reason);
+        Assert.Null(prep);
+        Assert.Equal(EnhancementRules.Check.Blocked, check);
+        Assert.Equal("技艺工具无法强化。", reason);
+    }
+
     private static GameDataCatalog CreateMinimalCatalog(
         ActionCatalog? actions = null,
         Dictionary<string, JsonElement>? rawEquipments = null,

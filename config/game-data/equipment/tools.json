@@ -1,0 +1,79 @@
+[
+  {
+    "id": "equipment.tool-herb-hoe",
+    "name": "药锄",
+    "description": "铁刃桃柄，入土护根。\n精铁锻刃、桃木为柄的采药小锄，入土三分而不伤灵根。",
+    "slot": "tool-gathering",
+    "tier": 1,
+    "techniqueBonus": {
+      "technique": "gathering",
+      "speedRatio": 0.1
+    }
+  },
+  {
+    "id": "equipment.tool-prospect-compass",
+    "name": "探矿罗盘",
+    "description": "灵针指矿脉，铜盘辨地珍。\n以碎灵核为针的铜面罗盘，针尖所向之处矿脉微鸣。",
+    "slot": "tool-mining",
+    "tier": 1,
+    "techniqueBonus": {
+      "technique": "mining",
+      "speedRatio": 0.1
+    }
+  },
+  {
+    "id": "equipment.tool-flame-ding",
+    "name": "灵火鼎",
+    "description": "三足小鼎蕴灵火。\n内嵌火羽的三足小鼎，炉温恒定，丹药成色自此有凭。",
+    "slot": "tool-alchemy",
+    "tier": 1,
+    "techniqueBonus": {
+      "technique": "alchemy",
+      "speedRatio": 0.1
+    }
+  },
+  {
+    "id": "equipment.tool-forge-hammer",
+    "name": "锻灵锤",
+    "description": "骨芯铁锤，落锤生灵。\n兽骨作芯的百炼铁锤，落锤之处灵纹自现，器物渐通灵。",
+    "slot": "tool-forging",
+    "tier": 1,
+    "techniqueBonus": {
+      "technique": "forging",
+      "speedRatio": 0.1
+    }
+  },
+  {
+    "id": "equipment.tool-talisman-brush",
+    "name": "朱砂符笔",
+    "description": "桃杆凝魂锋，落纸符意成。\n桃木为杆、魂丝聚锋的符笔，蘸朱砂落纸，符意一气呵成。",
+    "slot": "tool-talisman",
+    "tier": 1,
+    "techniqueBonus": {
+      "technique": "talisman",
+      "speedRatio": 0.1
+    }
+  },
+  {
+    "id": "equipment.tool-formation-flag",
+    "name": "布阵旗",
+    "description": "旗落之处地气调。\n引灵松晶缀顶的小小阵旗，插落之处地气听调，阵势应手而成。",
+    "slot": "tool-formation",
+    "tier": 1,
+    "techniqueBonus": {
+      "technique": "formation",
+      "speedRatio": 0.1
+    }
+  },
+  {
+    "id": "equipment.tool-quench-anvil",
+    "name": "淬灵砧",
+    "description": "灵芯淬刃，功成有凭。\n碎灵芯嵌面的淬火铁砧，器物落砧灵光内蕴，强化事半功倍。",
+    "slot": "tool-enhancement",
+    "tier": 1,
+    "techniqueBonus": {
+      "technique": "enhancement",
+      "speedRatio": 0.1
+    }
+  }
+]

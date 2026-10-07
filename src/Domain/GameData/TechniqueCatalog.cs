@@ -1,3 +1,6 @@
+using System.Text.Json;
+using Domain.Player;
+
 namespace Domain.GameData;
 
 /// <summary>
@@ -31,6 +34,43 @@ public static class TechniqueCatalog
 
     /// <summary>等级对应的行动耗时折减：duration /= 1 + 0.05×L。</summary>
     public static double SpeedBonusRatio(double level) => 0.05d * Math.Max(0, level);
+
+    /// <summary>技艺工具专属槽位前缀：装备配表 slot 以此前缀声明绑定对应技艺的工具槽。</summary>
+    public const string ToolSlotPrefix = "tool-";
+
+    /// <summary>判定装备槽位是否为技艺工具专属槽（tool- 前缀）。</summary>
+    public static bool IsToolSlot(string? slot)
+        => slot is not null && slot.StartsWith(ToolSlotPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 已装备技艺工具对指定技艺的行动速度加成合计：遍历装配槽位，
+    /// 装备配表 techniqueBonus.technique 命中时累加其 speedRatio；
+    /// 与技艺等级加成同点加算（duration /= 1 + 0.05×L + Σ工具加成）。
+    /// 配表缺失、字段非法或 technique 不匹配一律忽略。
+    /// </summary>
+    /// <param name="loadout">玩家装配分段（装备槽来源）。</param>
+    /// <param name="techniqueId">行动关联的技艺标识。</param>
+    /// <param name="catalog">配表（装备 techniqueBonus 来源）；为 null 时按无加成计。</param>
+    public static double EquippedToolSpeedRatio(PlayerLoadoutState loadout, string techniqueId, GameDataCatalog? catalog)
+    {
+        if (catalog is null || string.IsNullOrEmpty(techniqueId)) return 0;
+        var ratio = 0d;
+        foreach (var slot in loadout.Equipment)
+        {
+            if (!catalog.RawEquipments.TryGetValue(slot.ItemId, out var equipment)
+                || !equipment.TryGetProperty("techniqueBonus", out var bonus)
+                || bonus.ValueKind != JsonValueKind.Object
+                || !bonus.TryGetProperty("technique", out var technique)
+                || technique.ValueKind != JsonValueKind.String
+                || !string.Equals(technique.GetString(), techniqueId, StringComparison.Ordinal))
+                continue;
+            if (bonus.TryGetProperty("speedRatio", out var speedRatio)
+                && speedRatio.TryGetDouble(out var value)
+                && double.IsFinite(value) && value > 0)
+                ratio += value;
+        }
+        return ratio;
+    }
 
     /// <summary>
     /// 累计经验换算技艺等级（0 级起）：逐段消费 ExpToNext[L]，不足一段停在当前级；

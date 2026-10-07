@@ -10,10 +10,16 @@ import { ItemTile, ItemTooltipTarget } from './ItemDisplay'
 import { RealmBadge } from './RealmBadge'
 import { calculateRealmInfo } from '../game/combatConstants'
 
-/** 面板六槽位展示配置：slot 为装备协议槽位，labelKey 对应 app.equipmentPanel.* 词条 */
+/** 槽位标签词条键（app.equipmentPanel 段下）：六部位 + 七技艺工具空槽文案 */
+type EquipmentSlotLabelKey =
+  | 'slotHead' | 'slotArmor' | 'slotLegs' | 'slotWeapon' | 'slotTrinket' | 'slotBoots'
+  | 'toolGathering' | 'toolMining' | 'toolAlchemy' | 'toolForging'
+  | 'toolTalisman' | 'toolFormation' | 'toolEnhancement'
+
+/** 面板槽位展示配置：slot 为装备协议槽位，labelKey 对应 app.equipmentPanel.* 词条 */
 interface SlotConfig {
   slot: EquipmentSlot
-  labelKey: 'slotHead' | 'slotArmor' | 'slotLegs' | 'slotWeapon' | 'slotTrinket' | 'slotBoots'
+  labelKey: EquipmentSlotLabelKey
 }
 
 const LEFT_SLOTS: readonly SlotConfig[] = [
@@ -31,14 +37,35 @@ const RIGHT_SLOTS: readonly SlotConfig[] = [
 const ALL_SLOTS = [...LEFT_SLOTS, ...RIGHT_SLOTS]
 
 /**
+ * 技艺工具专属槽位（tool-<techniqueId>）：采集/挖掘/炼丹/炼器/符箓/阵法/强化。
+ * 服务端按 slot 字符串唯一互斥；穿戴后为对应技艺行动提供 techniqueBonus.speedRatio 速度加成。
+ */
+const TOOL_SLOTS: readonly SlotConfig[] = [
+  { slot: 'tool-gathering', labelKey: 'toolGathering' },
+  { slot: 'tool-mining', labelKey: 'toolMining' },
+  { slot: 'tool-alchemy', labelKey: 'toolAlchemy' },
+  { slot: 'tool-forging', labelKey: 'toolForging' },
+  { slot: 'tool-talisman', labelKey: 'toolTalisman' },
+  { slot: 'tool-formation', labelKey: 'toolFormation' },
+  { slot: 'tool-enhancement', labelKey: 'toolEnhancement' },
+]
+
+/**
  * 装备槽位归并匹配：面板六展示位对协议细分槽位做收敛——
  * weapon 位兼容 two-hand 双手武器；trinket 位归并 ring/neck/talisman 三类饰品。
+ * 注意：技艺工具槽位不参与此归并，须经 isSlotMatchTarget 走精确比对。
  */
 function isSlotMatch(equipmentSlot: EquipmentSlot, targetSlot: EquipmentSlot): boolean {
   if (equipmentSlot === targetSlot) return true
   if (targetSlot === 'weapon' && equipmentSlot === 'two-hand') return true
   if (targetSlot === 'trinket' && (equipmentSlot === 'ring' || equipmentSlot === 'neck' || equipmentSlot === 'talisman')) return true
   return false
+}
+
+/** 目标槽位命中判定：tool-* 工具槽位按协议槽位精确比对，其余走六部位归并 */
+function isSlotMatchTarget(equipmentSlot: EquipmentSlot, targetSlot: EquipmentSlot): boolean {
+  if (targetSlot.startsWith('tool-')) return equipmentSlot === targetSlot
+  return isSlotMatch(equipmentSlot, targetSlot)
 }
 
 interface EquipmentSlotCardProps {
@@ -100,6 +127,7 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
           <ItemTile
             category={resolveItemCategoryLabel(equipmentDef.slot, t)}
             className="inventory-cell"
+            enhancementLevel={equippedItem.enhancementLevel}
             itemId={equippedItem.itemId}
             level={metadata.level}
             name={displayName}
@@ -129,7 +157,8 @@ const EquipmentSlotCard = memo(function EquipmentSlotCard({
  * 1. 【角色虚影居中】：中间展示角色立绘虚影与灵光法阵；
  * 2. 【六大部位环绕】：左侧（头部/衣服/腿部）与右侧（武器/饰品/鞋靴）对称竖排排列；
  * 3. 【穿脱与挑选】：点击槽位打开专属物品网格挑选弹窗，支持一键穿戴与卸下；
- * 4. 【技艺工具预留】：底部整齐排布 4 个技艺/工具装备扩展槽位（采矿/伐木/炼丹/炼器）。
+ * 4. 【技艺工具槽位】：底部排布 7 个技艺工具专属槽位（采集/挖掘/炼丹/炼器/符箓/阵法/强化），
+ *    点击同样呼出网格挑选穿脱，已装备工具为对应技艺行动提供速度加成。
  */
 export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element {
   const t = useT()
@@ -148,13 +177,19 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
 
   const equippedList = combat?.equipment ?? []
 
-  // 构建各槽位当前装备的映射
+  // 构建各槽位当前装备的映射（六部位归并展示位 + tool-* 工具槽位精确落位）
   const slotEquippedMap = useMemo(() => {
     const map = new Map<EquipmentSlot, { item: EquippedItem; definition?: ItemDefinition; equipmentDef?: CombatEquipmentDefinition }>()
     for (const eq of equippedList) {
       const eqDef = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
       if (!eqDef) continue
       const itemDef = findItemInCatalog(itemCatalog, eq.itemId)
+
+      // 技艺工具：协议槽位即展示位，服务端保证同槽唯一
+      if (eqDef.slot.startsWith('tool-')) {
+        map.set(eqDef.slot, { item: eq, definition: itemDef, equipmentDef: eqDef })
+        continue
+      }
 
       for (const config of ALL_SLOTS) {
         if (isSlotMatch(eqDef.slot, config.slot)) {
@@ -171,12 +206,12 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     if (!activePickingSlot) return []
     const targetSlot = activePickingSlot.config.slot
 
-    // 1. 过滤背包中符合该部位的可用装备
+    // 1. 过滤背包中符合该槽位的可用装备（tool-* 工具槽按协议槽位精确比对）
     const matchingInventoryItems: ItemPickerEntry[] = []
     for (const inv of inventory) {
       if (inv.amount <= 0) continue
       const eqDef = findEquipmentInCatalog(equipmentCatalog, inv.itemId)
-      if (!eqDef || !isSlotMatch(eqDef.slot, targetSlot)) continue
+      if (!eqDef || !isSlotMatchTarget(eqDef.slot, targetSlot)) continue
 
       const itemDef = findItemInCatalog(itemCatalog, inv.itemId)
       const invEnhancementLevel = parseEnhancementVariant(inv.variant)
@@ -229,11 +264,11 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
     if (!combat || !activePickingSlot) return
     const targetSlot = activePickingSlot.config.slot
 
-    // 过滤掉当前部位已穿戴的装备
+    // 剔除当前槽位已穿戴的装备（tool-* 工具槽同样按精确比对互斥）
     const nextEquipped = (combat.equipment ?? []).filter(eq => {
       const eqDef = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
       if (!eqDef) return true
-      return !isSlotMatch(eqDef.slot, targetSlot)
+      return !isSlotMatchTarget(eqDef.slot, targetSlot)
     })
 
     // 若选择了新装备则推入（强化变体行以条目自带等级为准）
@@ -329,24 +364,29 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
         </div>
       </div>
 
-      {/* 底部技艺法宝与工具装备扩展槽位 */}
+      {/* 底部技艺工具专属槽位（七技艺各一，点击呼出网格挑选穿脱） */}
       <div className="equipment-tools-section">
         <div className="equipment-tools-header">
           <span className="equipment-tools-title">{t('app.equipmentPanel.toolsTitle')}</span>
         </div>
         <div className="equipment-tools-grid">
-          <div className="equipment-tool-slot is-empty">
-            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolMining')}</span>
-          </div>
-          <div className="equipment-tool-slot is-empty">
-            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolLogging')}</span>
-          </div>
-          <div className="equipment-tool-slot is-empty">
-            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolAlchemy')}</span>
-          </div>
-          <div className="equipment-tool-slot is-empty">
-            <span className="equipment-tool-empty-label">{t('app.equipmentPanel.toolForging')}</span>
-          </div>
+          {TOOL_SLOTS.map(config => {
+            const data = slotEquippedMap.get(config.slot)
+            return (
+              <EquipmentSlotCard
+                config={config}
+                definition={data?.definition}
+                equipmentDef={data?.equipmentDef}
+                equippedItem={data?.item}
+                key={config.slot}
+                onClick={event => {
+                  const anchor = event.currentTarget
+                  setActivePickingSlot(prev => prev?.config.slot === config.slot ? null : { config, anchor })
+                }}
+                picking={activePickingSlot?.config.slot === config.slot}
+              />
+            )
+          })}
         </div>
       </div>
 
@@ -354,7 +394,6 @@ export const EquipmentPanel = memo(function EquipmentPanel(): React.JSX.Element 
       <ItemGridPicker
         allowEmpty
         anchor={activePickingSlot?.anchor ?? null}
-        emptyLabel={t('app.equipmentPanel.unequip')}
         items={pickerItems}
         onClose={() => setActivePickingSlot(null)}
         onSelect={handleSelectEquipment}

@@ -3,7 +3,8 @@
  */
 
 import type { ActionDefinition, ActionType, AutoUseSlot, InventoryItem, ItemDefinition, NodeBuildingEffectSet, Stats } from './types'
-import { calculateRealmProgress } from './combatConstants'
+import { calculateRealmProgress, calculateTechniqueProgress, TECHNIQUE_IDS, TECHNIQUE_SPEED_RATIO_PER_LEVEL } from './combatConstants'
+import { findEquipmentInCatalog } from './ids'
 import { getT } from '../i18n'
 
 /** 非物品、非增益的资源类收益类别（修为/灵力/气血） */
@@ -70,7 +71,7 @@ export interface ActionYieldPreview {
   actualDurationSeconds: number
 }
 
-/** calculateActionYieldPreview 的入参集合：行动定义 + 评估现场（背包/世界节点/玩家属性） */
+/** calculateActionYieldPreview 的入参集合：行动定义 + 评估现场（背包/世界节点/玩家属性/装配快照） */
 interface CalculateActionParams {
   action: ActionDefinition
   inventory: readonly InventoryItem[] | InventoryItem[] | Record<string, number>
@@ -82,6 +83,18 @@ interface CalculateActionParams {
     buildingEffects?: NodeBuildingEffectSet
   }
   stats?: Stats
+  /** 装配快照：技艺经验表与已装备列表（技艺等级/技艺工具耗时加成来源） */
+  combat?: {
+    equipment?: readonly { itemId: string }[]
+    techniqueExperiences?: Record<string, number>
+  } | null
+  /** 装备目录（techniqueBonus 加成块的查询来源；缺省按无工具加成计） */
+  equipmentCatalog?: readonly {
+    equipmentId: string
+    name?: string
+    slot?: string
+    techniqueBonus?: { technique: string; speedRatio: number } | null
+  }[]
 }
 
 /** 兼容背包数组与 {itemId: amount} 映射两种入参形态的持有量查询；数组形态只计基础变体行 */
@@ -116,6 +129,8 @@ export function calculateActionYieldPreview({
   autoUseSlots,
   world,
   stats,
+  combat,
+  equipmentCatalog,
 }: CalculateActionParams): ActionYieldPreview {
   const t = getT()
   const isCultivation = action.type === 'cultivation'
@@ -194,9 +209,55 @@ export function calculateActionYieldPreview({
     actionType === 'exploration' ? (effects?.explorationSpeedRatio ?? 0)
     : actionType === 'alchemy' ? (effects?.alchemySpeedRatio ?? 0)
     : 0
-  const actualDurationSeconds = buildingSpeedRatio > 0
+
+  // 技艺耗时加成（与服务端 TimedActionDuration / TechniqueCatalog 同口径）：
+  // 行动 technique 命中七种已知技艺时，技艺等级加成（每级 +5%）与已装备工具
+  // techniqueBonus.speedRatio 并入同一除数；建筑速度乘区保持独立除法。
+  let techniqueSpeedRatio = 0
+  const techniqueId = typeof action.technique === 'string' ? action.technique : null
+  if (techniqueId && (TECHNIQUE_IDS as readonly string[]).includes(techniqueId)) {
+    const techniqueLevel = calculateTechniqueProgress(combat?.techniqueExperiences?.[techniqueId] ?? 0).level
+    const levelRatio = TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel
+    techniqueSpeedRatio += levelRatio
+    if (techniqueLevel > 0) {
+      // 耗时缩短率 = ratio / (1 + ratio)，与每轮实际耗时口径一致
+      const shortenPercent = Math.round((levelRatio / (1 + levelRatio)) * 100)
+      const techniqueName = t(`insight.technique.${techniqueId}`)
+      bonuses.push({
+        sourceName: techniqueName,
+        tag: t('app.action.bonusBuildingSpeedTag', { percent: shortenPercent }),
+        type: 'speed',
+        description: t('app.action.bonusTechniqueSpeedDesc', {
+          name: techniqueName,
+          level: techniqueLevel,
+          percent: shortenPercent,
+        }),
+      })
+    }
+    // 已装备技艺工具：techniqueBonus.technique 命中本行动技艺时累加 speedRatio
+    for (const equipped of combat?.equipment ?? []) {
+      const eqDef = findEquipmentInCatalog(equipmentCatalog ?? [], equipped.itemId)
+      const bonus = eqDef?.techniqueBonus
+      if (!bonus || bonus.technique !== techniqueId) continue
+      if (!Number.isFinite(bonus.speedRatio) || bonus.speedRatio <= 0) continue
+      techniqueSpeedRatio += bonus.speedRatio
+      const toolName = eqDef.name ?? equipped.itemId
+      const shortenPercent = Math.round((bonus.speedRatio / (1 + bonus.speedRatio)) * 100)
+      bonuses.push({
+        sourceName: toolName,
+        tag: t('app.action.bonusBuildingSpeedTag', { percent: shortenPercent }),
+        type: 'speed',
+        description: t('app.action.bonusToolSpeedDesc', {
+          name: toolName,
+          percent: shortenPercent,
+        }),
+      })
+    }
+  }
+
+  const actualDurationSeconds = (buildingSpeedRatio > 0
     ? baseDurationSeconds / (1 + buildingSpeedRatio)
-    : baseDurationSeconds
+    : baseDurationSeconds) / (1 + techniqueSpeedRatio)
 
   if (buildingOutputRatio !== 0) {
     const percent = Math.round(buildingOutputRatio * 100)

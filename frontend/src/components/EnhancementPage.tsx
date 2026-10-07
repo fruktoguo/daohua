@@ -24,6 +24,7 @@ import { QuantitySelector } from './QuantitySelector'
  * 装备强化候选条目：以装备基础 itemId 归并——同物不同 +N 资产变体行与已装备
  * 槽位按服务端权威口径取「最高强化等级行」作为目标物展示（协议 targetItemId
  * 只携带基础 ID，服务端按目标物自行裁定当前等级）。
+ * tool-* 技艺工具槽位装备不可强化（服务端 EnhancementRules 同步拦截），不进候选。
  */
 function collectEquipmentCandidates(
   inventory: ReturnType<typeof useGameStore.getState>['inventory'],
@@ -34,7 +35,8 @@ function collectEquipmentCandidates(
 ): ItemPickerEntry[] {
   const rows = new Map<string, { maxLevel: number; total: number }>()
   for (const inv of inventory) {
-    if (!findEquipmentInCatalog(equipmentCatalog, inv.itemId)) continue
+    const eqDef = findEquipmentInCatalog(equipmentCatalog, inv.itemId)
+    if (!eqDef || eqDef.slot?.startsWith('tool-')) continue
     const level = parseEnhancementVariant(inv.variant)
     const row = rows.get(inv.itemId) ?? { maxLevel: 0, total: 0 }
     row.maxLevel = Math.max(row.maxLevel, level)
@@ -42,6 +44,9 @@ function collectEquipmentCandidates(
     rows.set(inv.itemId, row)
   }
   for (const eq of combatEquipment ?? []) {
+    // 已装备的工具槽位同样拦截：工具不进入强化目标归并
+    const eqDef = findEquipmentInCatalog(equipmentCatalog, eq.itemId)
+    if (eqDef?.slot?.startsWith('tool-')) continue
     const row = rows.get(eq.itemId) ?? { maxLevel: 0, total: 0 }
     row.maxLevel = Math.max(row.maxLevel, Math.floor(eq.enhancementLevel))
     // 已装备行未必以钱包变体行存在，兜底计 1 保证目标可选。
@@ -132,13 +137,26 @@ export const EnhancementPage = memo(function EnhancementPage(): React.JSX.Elemen
   const protectionName = (id: string) =>
     findItemInCatalog(items, id)?.name ?? findEquipmentInCatalog(equipmentCatalog, id)?.name ?? id
 
+  // 淬灵砧等已装备强化工具的速度加成：techniqueBonus.technique === 'enhancement' 的
+  // speedRatio 与技艺等级加成并入同一除数（服务端 TimedActionDuration 同口径）。
+  const toolSpeedRatio = useMemo(() => {
+    let ratio = 0
+    for (const eq of combat?.equipment ?? []) {
+      const bonus = findEquipmentInCatalog(equipmentCatalog, eq.itemId)?.techniqueBonus
+      if (bonus && bonus.technique === 'enhancement' && Number.isFinite(bonus.speedRatio) && bonus.speedRatio > 0) {
+        ratio += bonus.speedRatio
+      }
+    }
+    return ratio
+  }, [combat?.equipment, equipmentCatalog])
+
   const preview = useMemo(() => {
     const successRate = enhanceSuccessRate(nextLevel, techniqueLevel)
     const spiritCost = enhanceSpiritStoneCost(nextLevel)
     const baseDuration = enhanceBaseDurationSeconds(nextLevel)
-    const actualDuration = baseDuration / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel)
+    const actualDuration = baseDuration / (1 + TECHNIQUE_SPEED_RATIO_PER_LEVEL * techniqueLevel + toolSpeedRatio)
     return { successRate, spiritCost, baseDuration, actualDuration }
-  }, [nextLevel, techniqueLevel])
+  }, [nextLevel, techniqueLevel, toolSpeedRatio])
 
   const submit = () => {
     if (!selected || maxedOut) return

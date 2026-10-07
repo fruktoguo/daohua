@@ -87,6 +87,15 @@ const ACTION_DEFINITION_CORES: readonly ActionDefinitionCore[] = [
   { id: 'forge.liuyun-skirt', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.xingqi-pants': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.liuyun-skirt', amount: 1 }] },
   { id: 'forge.bichen-shoes', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.fire-feather': 1, 'equipment.shifang-shoes': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.bichen-shoes', amount: 1 }] },
   { id: 'forge.juling-pendant', type: 'alchemy', durationSeconds: 20, inputs: { 'item.spirit-pine-crystal': 5, 'item.soul-talisman': 1, 'equipment.taomu-talisman': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.juling-pendant', amount: 1 }] },
+
+  // 技艺工具锻造（炼器技艺，产出 tool-* 专属槽位装备）
+  { id: 'forge.tool-herb-hoe', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.refined-iron': 3, 'item.peach-wood': 2 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-herb-hoe', amount: 1 }] },
+  { id: 'forge.tool-prospect-compass', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-copper': 3, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-prospect-compass', amount: 1 }] },
+  { id: 'forge.tool-flame-ding', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 5, 'item.fire-feather': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-flame-ding', amount: 1 }] },
+  { id: 'forge.tool-forge-hammer', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.refined-iron': 5, 'item.beast-bone': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-forge-hammer', amount: 1 }] },
+  { id: 'forge.tool-talisman-brush', type: 'alchemy', technique: 'forging', durationSeconds: 10, inputs: { 'item.peach-wood': 3, 'item.soul-talisman': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-talisman-brush', amount: 1 }] },
+  { id: 'forge.tool-formation-flag', type: 'alchemy', technique: 'forging', durationSeconds: 15, inputs: { 'item.peach-wood': 3, 'item.spirit-pine-crystal': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-formation-flag', amount: 1 }] },
+  { id: 'forge.tool-quench-anvil', type: 'alchemy', technique: 'forging', durationSeconds: 20, inputs: { 'item.refined-iron': 7, 'item.broken-spirit-core': 1 }, yields: [{ kind: 'item', per: 'repeat', id: 'equipment.tool-quench-anvil', amount: 1 }] },
 ]
 
 /** 静态兜底行动的 ID 索引（服务端目录未到达前供 resolveActionDefinition 查询） */
@@ -331,23 +340,17 @@ export function learnedAbilityLevel(
 
 /**
  * 将功法装配到指定槽位：同一功法若已装配在其它槽位，视为「移动」——
- * 从原槽位移除并把已配置的触发条件一并随迁，而非让服务端以重复装配拒绝；
- * 换装（abilityId 不同）时清空新槽位的旧触发条件，防止残留条件被沿用。
+ * 从原槽位移除，而非让服务端以重复装配拒绝。
+ * 触发条件按功法 ID 独立挂接（combat.abilityTriggers），装配移动时无需随迁。
  */
 export function assignAbilityToSlot(
   slots: readonly CombatAbilitySlot[],
   index: number,
   abilityId: string | null,
 ): CombatAbilitySlot[] {
-  const movedFrom = abilityId === null
-    ? undefined
-    : slots.find((slot, slotIndex) => slotIndex !== index && slot.abilityId === abilityId)
   return slots.map((slot, slotIndex) => {
-    if (slotIndex === index) {
-      const triggers = abilityId === slot.abilityId ? slot.triggers : (movedFrom?.triggers ?? [])
-      return { ...slot, abilityId, triggers }
-    }
-    return slot.abilityId === abilityId ? { ...slot, abilityId: null, triggers: [] } : slot
+    if (slotIndex === index) return { ...slot, abilityId }
+    return slot.abilityId === abilityId ? { ...slot, abilityId: null } : slot
   })
 }
 
@@ -624,7 +627,7 @@ export interface ItemMetadata {
 export type ItemCategoryKey =
   | 'general' | 'material' | 'herb' | 'mineral' | 'pill' | 'food' | 'drink'
   | 'talisman' | 'formation' | 'manual' | 'manualTome' | 'equipment' | 'chest' | 'currency' | 'resource'
-  | 'spiritFood' | 'spiritDrink' | 'loot' | 'rareLoot' | 'manualFragment'
+  | 'spiritFood' | 'spiritDrink' | 'loot' | 'rareLoot' | 'manualFragment' | 'tool'
   | 'explorationSupply' | 'alchemySupply' | 'weapon' | 'two-hand' | 'off-hand' | 'head' | 'armor'
   | 'legs' | 'boots' | 'trinket' | 'ring' | 'neck' | 'mainHandImplement' | 'twoHandImplement'
 
@@ -636,12 +639,14 @@ export type ItemCategoryKey =
 export function resolveItemCategoryLabel(category?: string | null, t?: TFunction): string {
   if (!category) return (t ?? getT())('game.category.general')
   const fn = t ?? getT()
-  const key = `game.category.${category}`
+  // 技艺工具槽位键（tool-<techniqueId>）归一为统一「技艺工具」品类词条，避免逐槽位立词条
+  const normalized = category.startsWith('tool-') ? 'tool' : category
+  const key = `game.category.${normalized}`
   const translated = fn(key)
   if (translated !== key) {
     return translated
   }
-  const lower = category.toLowerCase()
+  const lower = normalized.toLowerCase()
   const lowerKey = `game.category.${lower}`
   const lowerTranslated = fn(lowerKey)
   if (lowerTranslated !== lowerKey) {
@@ -731,6 +736,8 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'item.shunqi-pill': { glyph: '💊', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'pill' },
   'item.tongmai-pill': { glyph: '💊', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'pill' },
   'currency.spirit-stone': { glyph: '◈', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
+  'item.gongde': { glyph: '功', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
+  'item.gongde-bound': { glyph: '德', tone: 'gold', rarity: 'heaven', level: 1, subCategory: 'currency', rarityLabelOverride: 'currency' },
   'item.tome.heavy-slash': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
   'item.fragment.heavy-slash': { glyph: '📜', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualFragment' },
   'item.tome.chain-strike': { glyph: '📘', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'manualTome' },
@@ -781,6 +788,14 @@ const ITEM_META_CORES: Record<string, ItemMetaCore> = {
   'equipment.liuyun-skirt': { glyph: '👖', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'legs' },
   'equipment.bichen-shoes': { glyph: '👞', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'boots' },
   'equipment.juling-pendant': { glyph: '💍', tone: 'green', rarity: 'yellow', level: 2, subCategory: 'trinket' },
+  // 七技艺工具（tool-<techniqueId> 专属槽位；品类经 tool- 归一显示「技艺工具」）
+  'equipment.tool-herb-hoe': { glyph: '⛏️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-prospect-compass': { glyph: '🧭', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-flame-ding': { glyph: '🔥', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-forge-hammer': { glyph: '🔨', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-talisman-brush': { glyph: '🖌️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-formation-flag': { glyph: '🚩', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
+  'equipment.tool-quench-anvil': { glyph: '⚒️', tone: 'gray', rarity: 'mundane', level: 1, subCategory: 'tool' },
 }
 
 /**

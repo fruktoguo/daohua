@@ -133,6 +133,15 @@ public static class StaticGameCatalogMapper
                     .Select(entry => entry.GetString()!).Where(text => text.Length > 0).ToArray()
                 : null;
 
+            // 技艺工具加成块：配表声明 techniqueBonus 时透传绑定技艺与速度比率，普通装备下发 null。
+            var techniqueBonus = eq.TryGetProperty("techniqueBonus", out var tb) && tb.ValueKind == JsonValueKind.Object
+                ? new
+                {
+                    technique = ReadString(tb, "technique"),
+                    speedRatio = ReadDouble(tb, "speedRatio", 0)
+                }
+                : null;
+
             return (object)new
             {
                 equipmentId = id,
@@ -144,7 +153,8 @@ public static class StaticGameCatalogMapper
                 flatStats,
                 specialMechanics,
                 enhancementBonus,
-                enhanceProtectionItems
+                enhanceProtectionItems,
+                techniqueBonus
             };
         }).ToArray();
 
